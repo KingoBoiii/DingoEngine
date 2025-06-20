@@ -23,7 +23,16 @@ project "DingoEngine"
 	includedirs { 
 		"include/", 
 		"src/", 
-		"vendor/"
+		"vendor/",
+        "%{IncludeDir.glfw}"
+	}
+
+	links {
+		"glfw"
+	}
+
+	defines {
+		"GLFW_INCLUDE_NONE"
 	}
 
 	filter "system:windows"

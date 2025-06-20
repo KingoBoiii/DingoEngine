@@ -15,8 +15,18 @@ workspace "DingoEngine"
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
+IncludeDir = {}
+IncludeDir['glfw'] = "%{wks.location}/DingoEngine/vendor/glfw/include";
+
+LibraryDir = {}
+Library = {}
+
 group "Engine"
 include "DingoEngine"
+group ""
+
+group "Dependencies"
+include "DingoEngine/vendor/glfw"
 group ""
 
 include "Sandbox"
