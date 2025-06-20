@@ -33,4 +33,15 @@ namespace DingoEngine
 		glfwTerminate();
 	}
 
+	void Window::Update()
+	{
+		glfwSwapBuffers(m_WindowHandle);
+		glfwPollEvents();
+	}
+
+	bool Window::IsRunning() const
+	{
+		return glfwWindowShouldClose(m_WindowHandle) == GLFW_FALSE;
+	}
+
 }

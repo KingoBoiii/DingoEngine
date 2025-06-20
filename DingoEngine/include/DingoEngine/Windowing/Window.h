@@ -24,6 +24,10 @@ namespace DingoEngine
 	public:
 		void Initialize();
 		void Shutdown();
+
+		void Update();
+
+		bool IsRunning() const;
 	private:
 		WindowOptions m_Options;
 		GLFWwindow* m_WindowHandle = nullptr;
