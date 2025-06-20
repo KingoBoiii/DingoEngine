@@ -24,8 +24,6 @@ namespace vk
 namespace DingoEngine
 {
 
-	//static nvrhi::vulkan::DeviceHandle s_DeviceHandler = nullptr;
-
 	namespace Utils
 	{
 
@@ -64,47 +62,6 @@ namespace DingoEngine
 
 		return VK_FALSE;
 	}
-
-	//nvrhi::DeviceHandle VulkanGraphicsContext::CreateDeviceHandle()
-	//{
-	//	CreateVkInstance();
-	//	SetupDebugMessenger();
-	//	m_PhysicalDevice = VulkanPhysicalDevice::Pick(m_Instance);
-	//	m_Device = VulkanDevice::Create(m_PhysicalDevice);
-
-	//	//const char* deviceExtensions[] = {
-	//	//	"VK_KHR_acceleration_structure",
-	//	//	"VK_KHR_deferred_host_operations",
-	//	//	"VK_KHR_ray_tracing_pipeline",
-	//	//	// list the extensions that were requested when the device was created
-	//	//};
-	//	nvrhi::vulkan::DeviceDesc deviceDesc;
-	//	//deviceDesc.errorCB = g_MyMessageCallback;
-	//	deviceDesc.instance = m_Instance;
-	//	deviceDesc.physicalDevice = m_PhysicalDevice->m_VkPhysicalDevice;
-	//	deviceDesc.graphicsQueueIndex = m_PhysicalDevice->GetQueueFamilyIndices().GraphicsFamilyIndex.value();
-	//	deviceDesc.device = m_Device->m_VkDevice;
-	//	deviceDesc.graphicsQueue = m_Device->m_VkGraphicsQueue;
-
-	//	//deviceDesc.deviceExtensions = deviceExtensions;
-	//	//deviceDesc.numDeviceExtensions = std::size(deviceExtensions);
-
-	//	//nvrhi::vulkan::DeviceHandle handler = nvrhi::vulkan::createDevice(deviceDesc);
-
-	//	return nvrhi::DeviceHandle();
-	//}
-
-	//void VulkanGraphicsContext::DestroyDeviceHandle(nvrhi::DeviceHandle deviceHandle)
-	//{
-	//	delete m_PhysicalDevice;
-
-	//	if (enableValidationLayers)
-	//	{
-	//		Utils::DestroyDebugUtilsMessengerEXT(m_Instance, m_DebugMessenger, nullptr);
-	//	}
-
-	//	vkDestroyInstance(m_Instance, nullptr);
-	//}
 
 	void VulkanGraphicsContext::Initialize()
 	{
