@@ -18,11 +18,19 @@ workspace "DingoEngine"
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
+-- Grab Vulkan SDK path
+VULKAN_SDK = os.getenv("VULKAN_SDK")
+
 IncludeDir = {}
 IncludeDir['glfw'] = "%{wks.location}/DingoEngine/vendor/glfw/include";
+IncludeDir['nvrhi'] = "%{wks.location}/DingoEngine/vendor/nvrhi/include";
+IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 
 LibraryDir = {}
+LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
+
 Library = {}
+Library['vulkan'] = "%{LibraryDir.vulkan}/vulkan-1.lib";
 
 group "Engine"
 include "DingoEngine"

@@ -24,11 +24,15 @@ project "DingoEngine"
 		"include/", 
 		"src/", 
 		"vendor/",
-        "%{IncludeDir.glfw}"
+        "%{IncludeDir.glfw}",
+        "%{IncludeDir.vulkan}",
+        "%{IncludeDir.nvrhi}"
 	}
 
 	links {
-		"glfw"
+		"glfw",
+		"%{Library.vulkan}",
+		"nvrhi"
 	}
 
 	defines {
