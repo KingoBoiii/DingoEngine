@@ -13,6 +13,9 @@ workspace "DingoEngine"
 		"_CRT_SECURE_NO_WARNINGS"
 	}
 
+    filter "language:C++ or language:C"
+		architecture "x86_64"
+
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
 IncludeDir = {}
@@ -27,6 +30,7 @@ group ""
 
 group "Dependencies"
 include "DingoEngine/vendor/glfw"
+include "DingoEngine/vendor/nvrhi"
 group ""
 
 include "Sandbox"
