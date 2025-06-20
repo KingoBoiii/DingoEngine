@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
 
 #include <glfw/glfw3.h>
 
@@ -23,6 +24,9 @@ namespace DingoEngine
 			glfwTerminate();
 			throw new std::exception("Failed to create GLFW window.");
 		}
+
+		GraphicsContext* gfxCtx = GraphicsContext::Create(GraphicsAPI::Vulkan);
+		gfxCtx->Initialize();
 
 		glfwMakeContextCurrent(m_WindowHandle);
 	}

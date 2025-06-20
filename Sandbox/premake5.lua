@@ -16,7 +16,9 @@ project "Sandbox"
         "../DingoEngine/include/"
     }
 
-    links { "DingoEngine" }
+    links { 
+		"DingoEngine"
+	}
 
 	filter "system:windows"
 		systemversion "latest"
