@@ -20,14 +20,4 @@ namespace DingoEngine
 		: m_GraphicsAPI(graphicsAPI)
 	{}
 
-	void GraphicsContext::Initialize()
-	{
-		m_DeviceHandle = CreateDeviceHandle();
-	}
-
-	void GraphicsContext::Shutdown()
-	{
-		DestroyDeviceHandle(m_DeviceHandle);
-	}
-
 }

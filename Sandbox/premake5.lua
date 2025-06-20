@@ -12,8 +12,8 @@ project "Sandbox"
 	}
 	
 	includedirs {
-        "src/",
-        "../DingoEngine/include/"
+        "src",
+        "%{wks.location}/DingoEngine/include"
     }
 
     links { 

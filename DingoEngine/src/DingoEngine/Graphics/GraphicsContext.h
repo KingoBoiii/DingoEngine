@@ -1,6 +1,7 @@
 #pragma once
 #include "DingoEngine/Common.h"
 
+#include <string>
 #include <nvrhi/nvrhi.h>
 
 namespace DingoEngine
@@ -16,15 +17,11 @@ namespace DingoEngine
 		virtual ~GraphicsContext() = default;
 
 	public:
-		void Initialize();
-		void Shutdown();
+		virtual void Initialize() = 0;
+		virtual void Shutdown() = 0;
 
 	protected:
-		virtual nvrhi::DeviceHandle CreateDeviceHandle() = 0;
-		virtual void DestroyDeviceHandle(nvrhi::DeviceHandle deviceHandle) = 0;
-
-	private:
-		nvrhi::DeviceHandle m_DeviceHandle;
+		nvrhi::DeviceHandle m_DeviceHandler;
 		GraphicsAPI m_GraphicsAPI;
 	};
 

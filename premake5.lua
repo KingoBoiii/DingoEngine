@@ -10,7 +10,8 @@ workspace "DingoEngine"
     flags { "MultiProcessorCompile" }
 
     defines {
-		"_CRT_SECURE_NO_WARNINGS"
+		"_CRT_SECURE_NO_WARNINGS",
+        "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1"
 	}
 
     filter "language:C++ or language:C"

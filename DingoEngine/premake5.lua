@@ -21,9 +21,9 @@ project "DingoEngine"
 	}
 	
 	includedirs { 
-		"include/", 
-		"src/", 
-		"vendor/",
+		"include", 
+		"src", 
+		"vendor",
         "%{IncludeDir.glfw}",
         "%{IncludeDir.vulkan}",
         "%{IncludeDir.nvrhi}"

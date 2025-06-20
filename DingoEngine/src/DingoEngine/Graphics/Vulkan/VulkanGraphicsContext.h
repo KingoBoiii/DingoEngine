@@ -3,8 +3,6 @@
 #include "VulkanPhysicalDevice.h"
 #include "VulkanDevice.h"
 
-#include <vulkan/vulkan.h>
-
 namespace DingoEngine
 {
 
@@ -13,9 +11,11 @@ namespace DingoEngine
 	public:
 		VulkanGraphicsContext() : GraphicsContext(GraphicsAPI::Vulkan) {}
 		virtual ~VulkanGraphicsContext() = default;
-	protected:
-		virtual nvrhi::DeviceHandle CreateDeviceHandle() override;
-		virtual void DestroyDeviceHandle(nvrhi::DeviceHandle deviceHandle) override;
+
+	public:
+		virtual void Initialize() override;
+		virtual void Shutdown() override;
+
 	private:
 		void CreateVkInstance();
 		void SetupDebugMessenger();
