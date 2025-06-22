@@ -4,6 +4,8 @@
 #include <glfw/glfw3.h>
 #include "VulkanGraphicsContext.h"
 
+#undef max
+
 namespace DingoEngine
 {
 
@@ -137,7 +139,8 @@ namespace DingoEngine
 		const VkResult result = glfwCreateWindowSurface(graphicsContext.m_VulkanInstance, m_Options.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
 		if (result != VK_SUCCESS)
 		{
-			throw std::runtime_error("Failed to create a GLFW window surface, error code = " + std::string(nvrhi::vulkan::resultToString(result)));
+			DE_CORE_ERROR("Failed to create a GLFW window surface, error code = {}", std::string(nvrhi::vulkan::resultToString(result)));
+			DE_CORE_ASSERT(true);
 		}
 	}
 
@@ -207,10 +210,7 @@ namespace DingoEngine
 			swapChainCreateInfo.pNext = &imageFormatListCreateInfo;
 
 		const vk::Result result = graphicsContext.m_VulkanDevice.createSwapchainKHR(&swapChainCreateInfo, nullptr, &m_SwapChain);
-		if (result != vk::Result::eSuccess)
-		{
-			__debugbreak();
-		}
+		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan swapchain.");
 
 		std::vector<vk::Image> images = graphicsContext.m_VulkanDevice.getSwapchainImagesKHR(m_SwapChain);
 		for (vk::Image image : images)

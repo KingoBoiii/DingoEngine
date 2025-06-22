@@ -4,13 +4,7 @@
 
 #include <glfw/glfw3.h>
 
-#include <stdexcept>
 #include <iostream>
-
-//#include <nvrhi/vulkan.h>
-//#include <nvrhi/validation.h>
-//#include <vulkan/vulkan.hpp>
-//#include <glfw/glfw3.h>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -43,21 +37,36 @@ namespace DingoEngine
 			const char* msg,
 			void* userData)
 	{
-		std::cerr << "Vulkan [location=0x" << location << ", code=" << code << ", layerPrefix='" << layerPrefix << "']: " << msg << std::endl;
+		switch (flags)
+		{
+			case VK_DEBUG_REPORT_ERROR_BIT_EXT:
+				DE_CORE_ERROR("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
+				break;
+
+			case VK_DEBUG_REPORT_WARNING_BIT_EXT:
+			case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
+				DE_CORE_WARN("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
+				break;
+
+			case VK_DEBUG_REPORT_INFORMATION_BIT_EXT:
+				DE_CORE_INFO("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
+				break;
+
+			default:
+				DE_CORE_TRACE("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
+				break;
+		}
 
 		return VK_FALSE;
 	}
 
 	VulkanGraphicsContext::VulkanGraphicsContext(GLFWwindow* nativeWindowHandle)
-		: GraphicsContext(GraphicsAPI::Vulkan, nativeWindowHandle)//, s_DynamicLoader(new vk::detail::DynamicLoader())
+		: GraphicsContext(GraphicsAPI::Vulkan, nativeWindowHandle)
 	{}
 
 	void VulkanGraphicsContext::Initialize()
 	{
-		if (!glfwVulkanSupported())
-		{
-			throw std::runtime_error("GLFW reports that Vulkan is not supported. Perhaps missing a call to glfwInit()?");
-		}
+		DE_CORE_ASSERT(glfwVulkanSupported(), "GLFW reports that Vulkan is not supported. Perhaps missing a call to glfwInit()?");
 
 		// add any extensions required by GLFW
 		uint32_t glfwExtCount;
@@ -74,27 +83,6 @@ namespace DingoEngine
 		FindQueueFamilies(m_VulkanPhysicalDevice);
 		CreateDevice();
 		CreateDeviceHandle();
-
-#if 0
-		//const char* deviceExtensions[] = {
-		//	"VK_KHR_acceleration_structure",
-		//	"VK_KHR_deferred_host_operations",
-		//	"VK_KHR_ray_tracing_pipeline",
-		//	// list the extensions that were requested when the device was created
-		//};
-		nvrhi::vulkan::DeviceDesc deviceDesc;
-		//deviceDesc.errorCB = g_MyMessageCallback;
-		deviceDesc.instance = m_Instance;
-		deviceDesc.physicalDevice = m_PhysicalDevice->m_VkPhysicalDevice;
-		deviceDesc.graphicsQueueIndex = m_PhysicalDevice->GetQueueFamilyIndices().GraphicsFamilyIndex.value();
-		deviceDesc.device = m_LogicalDevice->m_VkDevice;
-		deviceDesc.graphicsQueue = m_LogicalDevice->m_VkGraphicsQueue;
-
-		//deviceDesc.deviceExtensions = deviceExtensions;
-		//deviceDesc.numDeviceExtensions = std::size(deviceExtensions);
-
-		m_DeviceHandler = nvrhi::vulkan::createDevice(deviceDesc);
-#endif
 	}
 
 	void VulkanGraphicsContext::Shutdown()
@@ -120,7 +108,7 @@ namespace DingoEngine
 		}
 	}
 
-	bool VulkanGraphicsContext::CreateInstance()
+	void VulkanGraphicsContext::CreateInstance()
 	{
 		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		enabledExtensions.instance.insert(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
@@ -154,7 +142,7 @@ namespace DingoEngine
 			}
 
 			std::cout << ss.str().c_str() << std::endl;
-			return false;
+			return;
 		}
 
 		std::cout << "Enabled Vulkan instance extensions:" << std::endl;
@@ -186,7 +174,7 @@ namespace DingoEngine
 			}
 
 			std::cout << "" << ss.str().c_str() << std::endl;
-			return false;
+			return;
 		}
 
 		std::cout << "Enabled Vulkan layers:" << std::endl;
@@ -200,12 +188,12 @@ namespace DingoEngine
 
 		// Query the Vulkan API version supported on the system to make sure we use at least 1.3 when that's present.
 		uint32_t apiVersion = 0;
-		vk::Result res = vk::enumerateInstanceVersion(&apiVersion);
-
+		const vk::Result res = vk::enumerateInstanceVersion(&apiVersion);
 		if (res != vk::Result::eSuccess)
 		{
-			std::cout << "Call to vkEnumerateInstanceVersion failed, error code = {}" << nvrhi::vulkan::resultToString(VkResult(res)) << std::endl;
-			return false;
+			DE_CORE_ERROR("Call to vkEnumerateInstanceVersion failed, error code = {}", nvrhi::vulkan::resultToString(VkResult(res)));
+			DE_CORE_ASSERT(true);
+			return;
 		}
 
 		const uint32_t minimumVulkanVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
@@ -213,10 +201,10 @@ namespace DingoEngine
 		// Check if the Vulkan API version is sufficient.
 		if (apiVersion < minimumVulkanVersion)
 		{
-			//std::cout << "The Vulkan API version supported on the system ({}.{}.{}) is too low, at least {}.{}.{} is required.",
-			//	VK_API_VERSION_MAJOR(applicationInfo.apiVersion), VK_API_VERSION_MINOR(applicationInfo.apiVersion), VK_API_VERSION_PATCH(applicationInfo.apiVersion),
-			//	VK_API_VERSION_MAJOR(minimumVulkanVersion), VK_API_VERSION_MINOR(minimumVulkanVersion), VK_API_VERSION_PATCH(minimumVulkanVersion) << std::end;
-			return false;
+			DE_CORE_ERROR("The Vulkan API version supported on the system ({}.{}.{}) is too low, at least {}.{}.{} is required.", 
+				VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion),
+				VK_API_VERSION_MAJOR(minimumVulkanVersion), VK_API_VERSION_MINOR(minimumVulkanVersion), VK_API_VERSION_PATCH(minimumVulkanVersion));
+			DE_CORE_ASSERT(true);
 		}
 
 		vk::ApplicationInfo applicationInfo = vk::ApplicationInfo()
@@ -233,16 +221,12 @@ namespace DingoEngine
 			.setPApplicationInfo(&applicationInfo);
 
 		const vk::Result result = vk::createInstance(&instanceCreateInfo, nullptr, &m_VulkanInstance);
-		if (result != vk::Result::eSuccess)
-		{
-			__debugbreak();
-		}
+		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan instance.");
 
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanInstance);
-		return false;
 	}
 
-	bool VulkanGraphicsContext::CreateDebugMessenger()
+	void VulkanGraphicsContext::CreateDebugMessenger()
 	{
 		vk::DebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = vk::DebugReportCallbackCreateInfoEXT()
 			.setFlags(vk::DebugReportFlagBitsEXT::eError |
@@ -253,13 +237,7 @@ namespace DingoEngine
 			.setPUserData(nullptr);
 
 		const vk::Result result = m_VulkanInstance.createDebugReportCallbackEXT(&debugReportCallbackCreateInfo, nullptr, &m_DebugReportCallback);
-		if (result != vk::Result::eSuccess)
-		{
-			__debugbreak();
-			return false;
-		}
-
-		return true;
+		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create debug report callback.");
 	}
 
 	bool VulkanGraphicsContext::PickPhysicalDevice()
@@ -412,7 +390,7 @@ namespace DingoEngine
 		return true;
 	}
 
-	bool VulkanGraphicsContext::CreateDevice()
+	void VulkanGraphicsContext::CreateDevice()
 	{
 		enabledExtensions.device.insert(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
@@ -479,11 +457,7 @@ namespace DingoEngine
 			.setPNext(&vulkan12features);
 
 		const vk::Result result = m_VulkanPhysicalDevice.createDevice(&deviceCreateInfo, nullptr, &m_VulkanDevice);
-		if (result != vk::Result::eSuccess)
-		{
-			__debugbreak();
-			return false;
-		}
+		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan device.");
 
 		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Graphics, 0, &m_GraphicsQueue);
 		//if (m_DeviceParams.enableComputeQueue)
@@ -495,12 +469,10 @@ namespace DingoEngine
 
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanDevice);
 
-		std::cout << "Created Vulkan device: " << m_RendererString.c_str() << std::endl;
-
-		return true;
+		DE_CORE_TRACE("Created Vulkan device: {}", m_RendererString);
 	}
 
-	bool VulkanGraphicsContext::CreateDeviceHandle()
+	void VulkanGraphicsContext::CreateDeviceHandle()
 	{
 		auto vecInstanceExt = Utils::stringSetToVector(enabledExtensions.instance);
 		auto vecLayers = Utils::stringSetToVector(enabledExtensions.layers);
@@ -530,8 +502,8 @@ namespace DingoEngine
 		deviceDesc.bufferDeviceAddressSupported = m_BufferDeviceAddressSupported;
 
 		m_DeviceHandle = m_NvrhiDevice = nvrhi::vulkan::createDevice(deviceDesc);
-
-		return false;
+		DE_CORE_ASSERT(m_DeviceHandle != nullptr);
+		DE_CORE_ASSERT(m_NvrhiDevice != nullptr);
 	}
 
 }

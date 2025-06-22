@@ -13,18 +13,15 @@ namespace DingoEngine
 
 	void Window::Initialize()
 	{
-		if (glfwInit() == GLFW_FALSE)
-		{
-			throw new std::exception("Failed to initialize GLFW.");
-		}
+		DE_CORE_ASSERT(glfwInit(), "Failed to initialize GLFW library.");
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
 		m_WindowHandle = glfwCreateWindow(m_Options.Width, m_Options.Height, m_Options.Title.c_str(), nullptr, nullptr);
+		DE_CORE_ASSERT(m_WindowHandle, "Failed to create GLFW window.");
 		if (!m_WindowHandle)
 		{
 			glfwTerminate();
-			throw new std::exception("Failed to create GLFW window.");
 		}
 
 		m_GraphicsContext = GraphicsContext::Create(GraphicsAPI::Vulkan, m_WindowHandle);

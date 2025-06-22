@@ -31,12 +31,12 @@ namespace DingoEngine
 		virtual void Shutdown() override;
 
 	private:
-		bool CreateInstance();
-		bool CreateDebugMessenger();
+		void CreateInstance();
+		void CreateDebugMessenger();
 		bool PickPhysicalDevice();
 		bool FindQueueFamilies(vk::PhysicalDevice physicalDevice);
-		bool CreateDevice();
-		bool CreateDeviceHandle();
+		void CreateDevice();
+		void CreateDeviceHandle();
 
 	private:
 		std::string m_RendererString;

@@ -13,12 +13,17 @@ project "Sandbox"
 	
 	includedirs {
         "src",
+        "%{IncludeDir.spdlog}", -- TODO: Client apps should not depend on this...
         "%{wks.location}/DingoEngine/include"
     }
 
     links { 
 		"DingoEngine"
 	}
+
+    buildoptions {
+        "/utf-8"
+    }
 
 	filter "system:windows"
 		systemversion "latest"

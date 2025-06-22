@@ -24,12 +24,14 @@ project "DingoEngine"
 		"include", 
 		"src", 
 		"vendor",
+        "%{IncludeDir.spdlog}",
         "%{IncludeDir.glfw}",
         "%{IncludeDir.vulkan}",
         "%{IncludeDir.nvrhi}"
 	}
 
 	links {
+		"spdlog",
 		"glfw",
 		"%{Library.vulkan}",
 		"nvrhi"
@@ -38,6 +40,10 @@ project "DingoEngine"
 	defines {
 		"GLFW_INCLUDE_NONE"
 	}
+
+	buildoptions {
+        "/utf-8"
+    }
 
 	filter "system:windows"
 		systemversion "latest"
