@@ -10,7 +10,10 @@ namespace DingoEngine
 
 	enum class GraphicsAPI
 	{
-		Vulkan
+		Headless,
+		Vulkan,
+		DirectX11,
+		DirectX12
 	};
 
 }
