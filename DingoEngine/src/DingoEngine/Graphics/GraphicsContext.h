@@ -23,7 +23,6 @@ namespace DingoEngine
 		virtual void Shutdown() = 0;
 
 		void RenderStatic() const;
-		void CreateSwapChain();
 
 		static GraphicsAPI GetApi()
 		{
@@ -32,7 +31,7 @@ namespace DingoEngine
 
 		static nvrhi::DeviceHandle GetDeviceHandle()
 		{
-			return s_Instance->m_DeviceHandler;
+			return s_Instance->m_DeviceHandle;
 		}
 
 		static GraphicsContext& Get()
@@ -41,7 +40,7 @@ namespace DingoEngine
 		}
 
 	protected:
-		nvrhi::DeviceHandle m_DeviceHandler;
+		nvrhi::DeviceHandle m_DeviceHandle;
 		GraphicsAPI m_GraphicsAPI;
 		GLFWwindow* m_NativeWindowHandle;
 

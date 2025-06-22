@@ -33,7 +33,116 @@ namespace DingoEngine
 
 	void VulkanSwapChain::Initialize()
 	{
-#if 0
+		CreateWindowSurface();
+		CreateSwapChain();
+	}
+
+	void VulkanSwapChain::Destroy()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		if (graphicsContext.m_VulkanDevice)
+		{
+			graphicsContext.m_VulkanDevice.waitIdle();
+		}
+
+		if (m_SwapChain)
+		{
+			graphicsContext.m_VulkanDevice.destroySwapchainKHR(m_SwapChain);
+			m_SwapChain = nullptr;
+		}
+
+		m_SwapChainImages.clear();
+
+		for (auto& semaphore : m_PresentSemaphores)
+		{
+			if (semaphore)
+			{
+				graphicsContext.m_VulkanDevice.destroySemaphore(semaphore);
+				semaphore = vk::Semaphore();
+			}
+		}
+
+		for (auto& semaphore : m_AcquireSemaphores)
+		{
+			if (semaphore)
+			{
+				graphicsContext.m_VulkanDevice.destroySemaphore(semaphore);
+				semaphore = vk::Semaphore();
+			}
+		}
+
+		m_PresentSemaphores.clear();
+		m_AcquireSemaphores.clear();
+	}
+
+	void VulkanSwapChain::BeginFrame()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		const auto& semaphore = m_AcquireSemaphores[m_AcquireSemaphoreIndex];
+
+		vk::Result result;
+
+		const int32_t maxAttempts = 3;
+		for (size_t attempt = 0; attempt < maxAttempts; ++attempt)
+		{
+			result = graphicsContext.m_VulkanDevice.acquireNextImageKHR(m_SwapChain,std::numeric_limits<uint64_t>::max(), semaphore, vk::Fence(), &m_SwapChainIndex);
+			if (result == vk::Result::eErrorOutOfDateKHR && attempt < maxAttempts)
+			{
+				__debugbreak();
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
+
+		if (result == vk::Result::eSuccess)
+		{
+			// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
+			graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, semaphore, 0);
+		}
+	}
+
+	void VulkanSwapChain::Present()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		const auto& semaphore = m_PresentSemaphores[m_PresentSemaphoreIndex];
+
+		vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
+			.setWaitSemaphoreCount(1)
+			.setPWaitSemaphores(&semaphore)
+			.setSwapchainCount(1)
+			.setPSwapchains(&m_SwapChain)
+			.setPImageIndices(&m_SwapChainIndex);
+
+		const vk::Result result = graphicsContext.m_PresentQueue.presentKHR(&presentInfo);
+		if (result != vk::Result::eSuccess && result != vk::Result::eErrorOutOfDateKHR)
+		{
+			__debugbreak();
+		}
+
+
+		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
+	}
+
+	void VulkanSwapChain::CreateWindowSurface()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		const VkResult result = glfwCreateWindowSurface(graphicsContext.m_VulkanInstance, m_Options.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
+		if (result != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to create a GLFW window surface, error code = " + std::string(nvrhi::vulkan::resultToString(result)));
+		}
+	}
+
+	void VulkanSwapChain::CreateSwapChain()
+	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
 		m_SwapChainFormat = {
@@ -43,30 +152,29 @@ namespace DingoEngine
 
 		vk::Extent2D extent = vk::Extent2D(m_Options.Width, m_Options.Height);
 
-		const bool vsyncEnabled = false;
-		const bool m_SwapChainMutableFormatSupported = false;
-
-		auto indices = graphicsContext.m_PhysicalDevice->GetQueueFamilyIndices();
-
 		std::unordered_set<uint32_t> uniqueQueues = {
-			uint32_t(indices.GraphicsFamilyIndex.value()) // ,
-			//uint32_t(m_PresentQueueFamily) 
+			uint32_t(graphicsContext.m_QueueFamilyIndices.Graphics),
+			uint32_t(graphicsContext.m_QueueFamilyIndices.Present)
 		};
 
 		std::vector<uint32_t> queues = Utils::setToVector(uniqueQueues);
 
 		const bool enableSwapChainSharing = queues.size() > 1;
 
-		vk::SwapchainCreateInfoKHR swapChainCreateInfoKhr = vk::SwapchainCreateInfoKHR()
-			.setSurface(*graphicsContext.m_WindowSurface)
-			.setMinImageCount(3)
+		const uint32_t swapChainBufferCount = 3;
+		const bool vsyncEnabled = false;
+		const bool swapChainMutableFormatSupported = false;
+
+		vk::SwapchainCreateInfoKHR swapChainCreateInfo = vk::SwapchainCreateInfoKHR()
+			.setSurface(m_WindowSurface)
+			.setMinImageCount(swapChainBufferCount)
 			.setImageFormat(m_SwapChainFormat.format)
 			.setImageColorSpace(m_SwapChainFormat.colorSpace)
 			.setImageExtent(extent)
 			.setImageArrayLayers(1)
 			.setImageUsage(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled)
 			.setImageSharingMode(enableSwapChainSharing ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive)
-			.setFlags(m_SwapChainMutableFormatSupported ? vk::SwapchainCreateFlagBitsKHR::eMutableFormat : vk::SwapchainCreateFlagBitsKHR(0))
+			.setFlags(swapChainMutableFormatSupported ? vk::SwapchainCreateFlagBitsKHR::eMutableFormat : vk::SwapchainCreateFlagBitsKHR(0))
 			.setQueueFamilyIndexCount(enableSwapChainSharing ? uint32_t(queues.size()) : 0)
 			.setPQueueFamilyIndices(enableSwapChainSharing ? queues.data() : nullptr)
 			.setPreTransform(vk::SurfaceTransformFlagBitsKHR::eIdentity)
@@ -90,18 +198,49 @@ namespace DingoEngine
 			case vk::Format::eB8G8R8A8Srgb:
 				imageFormats.push_back(vk::Format::eB8G8R8A8Unorm);
 				break;
-			default:
-				break;
 		}
 
-		auto imageFormatListCreateInfo = vk::ImageFormatListCreateInfo()
+		vk::ImageFormatListCreateInfo imageFormatListCreateInfo = vk::ImageFormatListCreateInfo()
 			.setViewFormats(imageFormats);
 
-		if (m_SwapChainMutableFormatSupported)
+		if (swapChainMutableFormatSupported)
+			swapChainCreateInfo.pNext = &imageFormatListCreateInfo;
+
+		const vk::Result result = graphicsContext.m_VulkanDevice.createSwapchainKHR(&swapChainCreateInfo, nullptr, &m_SwapChain);
+		if (result != vk::Result::eSuccess)
 		{
-			swapChainCreateInfoKhr.pNext = &imageFormatListCreateInfo;
+			__debugbreak();
 		}
-#endif
+
+		std::vector<vk::Image> images = graphicsContext.m_VulkanDevice.getSwapchainImagesKHR(m_SwapChain);
+		for (vk::Image image : images)
+		{
+			nvrhi::TextureDesc textureDesc;
+			textureDesc.width = m_Options.Width;
+			textureDesc.height = m_Options.Height;
+			textureDesc.format = nvrhi::Format::RGBA8_UNORM; // deviceParams.swapChainFormat;
+			textureDesc.debugName = "Swap chain image";
+			textureDesc.initialState = nvrhi::ResourceStates::Present;
+			textureDesc.keepInitialState = true;
+			textureDesc.isRenderTarget = true;
+
+			m_SwapChainImages.push_back(SwapChainImage{
+				.image = image,
+				.rhiHandle = GraphicsContext::GetDeviceHandle()->createHandleForNativeTexture(nvrhi::ObjectTypes::VK_Image, nvrhi::Object(image), textureDesc)
+			});
+		}
+
+		m_SwapChainIndex = 0;
+
+		const uint32_t maxFramesInFlight = 2;
+
+		m_PresentSemaphores.reserve(maxFramesInFlight + 1);
+		m_AcquireSemaphores.reserve(maxFramesInFlight + 1);
+		for (uint32_t i = 0; i < maxFramesInFlight + 1; ++i)
+		{
+			m_PresentSemaphores.push_back(graphicsContext.m_VulkanDevice.createSemaphore(vk::SemaphoreCreateInfo()));
+			m_AcquireSemaphores.push_back(graphicsContext.m_VulkanDevice.createSemaphore(vk::SemaphoreCreateInfo()));
+		}
 	}
 
 }

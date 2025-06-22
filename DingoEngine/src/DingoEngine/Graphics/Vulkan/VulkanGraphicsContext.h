@@ -33,16 +33,10 @@ namespace DingoEngine
 	private:
 		bool CreateInstance();
 		bool CreateDebugMessenger();
-		void CreateWindowSurface();
 		bool PickPhysicalDevice();
 		bool FindQueueFamilies(vk::PhysicalDevice physicalDevice);
 		bool CreateDevice();
-
-#if 0
-	private:
-		bool CheckValidationLayerSupport() const;
-		std::vector<const char*> GetRequiredExtensions() const;
-#endif
+		bool CreateDeviceHandle();
 
 	private:
 		std::string m_RendererString;
@@ -58,7 +52,11 @@ namespace DingoEngine
 		vk::Queue m_ComputeQueue;
 		vk::Queue m_TransferQueue;
 		vk::Queue m_PresentQueue;
-		vk::SurfaceKHR* m_WindowSurface = nullptr;
+
+		nvrhi::vulkan::IDevice* m_NvrhiDevice = nullptr;
+
+		bool m_SwapChainMutableFormatSupported = false;
+		bool m_BufferDeviceAddressSupported = false;
 
 		struct VulkanExtensionSet
 		{

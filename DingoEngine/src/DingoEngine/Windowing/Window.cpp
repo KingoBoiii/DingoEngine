@@ -30,19 +30,23 @@ namespace DingoEngine
 		m_GraphicsContext = GraphicsContext::Create(GraphicsAPI::Vulkan, m_WindowHandle);
 		m_GraphicsContext->Initialize();
 
-		//const SwapChainOptions swapChainOptions = {
-		//	.NativeWindowHandle = m_WindowHandle,
-		//	.Width = m_Options.Width,
-		//	.Height = m_Options.Height
-		//};
-		//m_SwapChain = SwapChain::Create(swapChainOptions);
-		//m_SwapChain->Initialize();
+		const SwapChainOptions swapChainOptions = {
+			.NativeWindowHandle = m_WindowHandle,
+			.Width = m_Options.Width,
+			.Height = m_Options.Height
+		};
+		m_SwapChain = SwapChain::Create(swapChainOptions);
+		m_SwapChain->Initialize();
 
 		//glfwMakeContextCurrent(m_WindowHandle);
 	}
 
 	void Window::Shutdown()
 	{
+		m_SwapChain->Destroy();
+
+		m_GraphicsContext->Shutdown();
+
 		glfwDestroyWindow(m_WindowHandle);
 		glfwTerminate();
 	}

@@ -31,18 +31,4 @@ namespace DingoEngine
 	{
 	}
 
-	void GraphicsContext::CreateSwapChain()
-	{
-		//auto textureDesc = nvrhi::TextureDesc()
-		//	.setDimension(nvrhi::TextureDimension::Texture2D)
-		//	.setFormat(nvrhi::Format::RGBA8_UNORM)
-		//	.setWidth(swapChainWidth)
-		//	.setHeight(swapChainHeight)
-		//	.setIsRenderTarget(true)
-		//	.setDebugName("Swap Chain Image");
-
-		//nvrhi::Object* swapChainTexture;
-		//m_DeviceHandler->createHandleForNativeTexture(nvrhi::ObjectTypes::VK_Image, swapChainTexture, textureDesc);
-	}
-
 }

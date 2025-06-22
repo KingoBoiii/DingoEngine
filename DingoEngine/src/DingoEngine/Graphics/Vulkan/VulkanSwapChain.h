@@ -4,11 +4,6 @@
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
-namespace vk
-{
-	class SurfaceKHR;
-}
-
 namespace DingoEngine
 {
 
@@ -20,13 +15,33 @@ namespace DingoEngine
 
 	public:
 		virtual void Initialize() override;
+		virtual void Destroy() override;
 
-	//private:
-		//void CreateWindowSurface();
+		virtual void BeginFrame() override;
+		virtual void Present() override;
 
 	private:
-		vk::SurfaceKHR* m_WindowSurface = nullptr;
+		void CreateWindowSurface();
+		void CreateSwapChain();
+
+	private:
+		vk::SurfaceKHR m_WindowSurface = nullptr;
+		vk::SwapchainKHR m_SwapChain = nullptr;
 		vk::SurfaceFormatKHR m_SwapChainFormat;
+
+		std::vector<vk::Semaphore> m_AcquireSemaphores;
+		std::vector<vk::Semaphore> m_PresentSemaphores;
+		uint32_t m_AcquireSemaphoreIndex = 0;
+		uint32_t m_PresentSemaphoreIndex = 0;
+
+		struct SwapChainImage
+		{
+			vk::Image image;
+			nvrhi::TextureHandle rhiHandle;
+		};
+
+		uint32_t m_SwapChainIndex = -1;
+		std::vector<SwapChainImage> m_SwapChainImages;
 	};
 
 }

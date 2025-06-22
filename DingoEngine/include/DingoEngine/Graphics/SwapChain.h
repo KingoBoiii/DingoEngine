@@ -1,11 +1,13 @@
 #pragma once
 
+struct GLFWwindow;
+
 namespace DingoEngine
 {
 
 	struct SwapChainOptions
 	{
-		void* NativeWindowHandle;
+		GLFWwindow* NativeWindowHandle;
 		int32_t Width;
 		int32_t Height;
 	};
@@ -21,6 +23,10 @@ namespace DingoEngine
 
 	public:
 		virtual void Initialize() = 0;
+		virtual void Destroy() = 0;
+
+		virtual void BeginFrame() = 0;
+		virtual void Present() = 0;
 
 	protected:
 		SwapChainOptions m_Options;

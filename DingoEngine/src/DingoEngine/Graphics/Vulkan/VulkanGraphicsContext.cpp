@@ -70,10 +70,10 @@ namespace DingoEngine
 
 		CreateInstance();
 		CreateDebugMessenger();
-		CreateWindowSurface();
 		PickPhysicalDevice();
 		FindQueueFamilies(m_VulkanPhysicalDevice);
 		CreateDevice();
+		CreateDeviceHandle();
 
 #if 0
 		//const char* deviceExtensions[] = {
@@ -117,18 +117,6 @@ namespace DingoEngine
 		{
 			m_VulkanInstance.destroy();
 			m_VulkanInstance = nullptr;
-		}
-	}
-
-	void VulkanGraphicsContext::CreateWindowSurface()
-	{
-		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
-
-		const VkResult result = glfwCreateWindowSurface(m_VulkanInstance, m_NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
-		//const VkResult result = glfwCreateWindowSurface(graphicsContext.m_Instance, m_NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
-		if (result != VK_SUCCESS)
-		{
-			throw std::runtime_error("Failed to create a GLFW window surface, error code = " + std::string(nvrhi::vulkan::resultToString(result)));
 		}
 	}
 
@@ -197,7 +185,7 @@ namespace DingoEngine
 				ss << std::endl << "  - " << ext;
 			}
 
-			std::cout << "{}" << ss.str().c_str() << std::endl;
+			std::cout << "" << ss.str().c_str() << std::endl;
 			return false;
 		}
 
@@ -512,52 +500,38 @@ namespace DingoEngine
 		return true;
 	}
 
-#if 0
-	bool VulkanGraphicsContext::CheckValidationLayerSupport() const
+	bool VulkanGraphicsContext::CreateDeviceHandle()
 	{
-		uint32_t layerCount;
-		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+		auto vecInstanceExt = Utils::stringSetToVector(enabledExtensions.instance);
+		auto vecLayers = Utils::stringSetToVector(enabledExtensions.layers);
+		auto vecDeviceExt = Utils::stringSetToVector(enabledExtensions.device);
 
-		std::vector<VkLayerProperties> availableLayers(layerCount);
-		vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+		nvrhi::vulkan::DeviceDesc deviceDesc;
+		// deviceDesc.errorCB = &DefaultMessageCallback::GetInstance();
+		deviceDesc.instance = m_VulkanInstance;
+		deviceDesc.physicalDevice = m_VulkanPhysicalDevice;
+		deviceDesc.device = m_VulkanDevice;
+		deviceDesc.graphicsQueue = m_GraphicsQueue;
+		deviceDesc.graphicsQueueIndex = m_QueueFamilyIndices.Graphics;
+		//if (m_DeviceParams.enableComputeQueue)
+		//{
+		//	deviceDesc.computeQueue = m_ComputeQueue;
+		//	deviceDesc.computeQueueIndex = m_QueueFamilyIndices.Compute;
+		//}
+		//if (m_DeviceParams.enableCopyQueue)
+		//{
+		//	deviceDesc.transferQueue = m_TransferQueue;
+		//	deviceDesc.transferQueueIndex = m_QueueFamilyIndices.Transfer;
+		//}
+		deviceDesc.instanceExtensions = vecInstanceExt.data();
+		deviceDesc.numInstanceExtensions = vecInstanceExt.size();
+		deviceDesc.deviceExtensions = vecDeviceExt.data();
+		deviceDesc.numDeviceExtensions = vecDeviceExt.size();
+		deviceDesc.bufferDeviceAddressSupported = m_BufferDeviceAddressSupported;
 
-		for (const char* layerName : validationLayers)
-		{
-			bool layerFound = false;
+		m_DeviceHandle = m_NvrhiDevice = nvrhi::vulkan::createDevice(deviceDesc);
 
-			for (const auto& layerProperties : availableLayers)
-			{
-				if (strcmp(layerName, layerProperties.layerName) == 0)
-				{
-					layerFound = true;
-					break;
-				}
-			}
-
-			if (!layerFound)
-			{
-				return false;
-			}
-		}
-
-		return true;
+		return false;
 	}
-
-	std::vector<const char*> VulkanGraphicsContext::GetRequiredExtensions() const
-	{
-		uint32_t glfwExtensionCount = 0;
-		const char** glfwExtensions;
-		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-		if (enableValidationLayers)
-		{
-			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		}
-
-		return extensions;
-	}
-#endif
 
 }
