@@ -4,25 +4,49 @@
 #include <string>
 #include <nvrhi/nvrhi.h>
 
+struct GLFWwindow;
+
 namespace DingoEngine
 {
 
 	class GraphicsContext
 	{
 	public:
-		static GraphicsContext* Create(GraphicsAPI graphicsAPI);
+		static GraphicsContext* Create(GraphicsAPI graphicsAPI, GLFWwindow* nativeWindowHandle);
 
 	public:
-		GraphicsContext(GraphicsAPI graphicsAPI);
-		virtual ~GraphicsContext() = default;
+		GraphicsContext(GraphicsAPI graphicsAPI, GLFWwindow* nativeWindowHandle);
+		virtual ~GraphicsContext();
 
 	public:
 		virtual void Initialize() = 0;
 		virtual void Shutdown() = 0;
 
+		void RenderStatic() const;
+		void CreateSwapChain();
+
+		static GraphicsAPI GetApi()
+		{
+			return s_Instance->m_GraphicsAPI;
+		}
+
+		static nvrhi::DeviceHandle GetDeviceHandle()
+		{
+			return s_Instance->m_DeviceHandler;
+		}
+
+		static GraphicsContext& Get()
+		{
+			return *s_Instance;
+		}
+
 	protected:
 		nvrhi::DeviceHandle m_DeviceHandler;
 		GraphicsAPI m_GraphicsAPI;
+		GLFWwindow* m_NativeWindowHandle;
+
+	private:
+		inline static GraphicsContext* s_Instance = nullptr;
 	};
 
 }

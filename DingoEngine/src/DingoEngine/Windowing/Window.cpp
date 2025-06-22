@@ -1,6 +1,6 @@
 #include "depch.h"
-#include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Windowing/Window.h"
 
 #include <glfw/glfw3.h>
 
@@ -18,6 +18,8 @@ namespace DingoEngine
 			throw new std::exception("Failed to initialize GLFW.");
 		}
 
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
 		m_WindowHandle = glfwCreateWindow(m_Options.Width, m_Options.Height, m_Options.Title.c_str(), nullptr, nullptr);
 		if (!m_WindowHandle)
 		{
@@ -25,10 +27,18 @@ namespace DingoEngine
 			throw new std::exception("Failed to create GLFW window.");
 		}
 
-		GraphicsContext* gfxCtx = GraphicsContext::Create(GraphicsAPI::Vulkan);
-		gfxCtx->Initialize();
+		m_GraphicsContext = GraphicsContext::Create(GraphicsAPI::Vulkan, m_WindowHandle);
+		m_GraphicsContext->Initialize();
 
-		glfwMakeContextCurrent(m_WindowHandle);
+		//const SwapChainOptions swapChainOptions = {
+		//	.NativeWindowHandle = m_WindowHandle,
+		//	.Width = m_Options.Width,
+		//	.Height = m_Options.Height
+		//};
+		//m_SwapChain = SwapChain::Create(swapChainOptions);
+		//m_SwapChain->Initialize();
+
+		//glfwMakeContextCurrent(m_WindowHandle);
 	}
 
 	void Window::Shutdown()

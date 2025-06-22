@@ -6,20 +6,13 @@
 
 #include <stdexcept>
 #include <iostream>
-#include <string>
 
-#include <nvrhi/vulkan.h>
-#include <vulkan/vulkan.hpp>
+//#include <nvrhi/vulkan.h>
+//#include <nvrhi/validation.h>
+//#include <vulkan/vulkan.hpp>
+//#include <glfw/glfw3.h>
 
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
-namespace vk
-{
-	namespace detail
-	{
-		DispatchLoaderDynamic defaultDispatchLoaderDynamic;
-	}
-}
-#endif
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 namespace DingoEngine
 {
@@ -27,49 +20,62 @@ namespace DingoEngine
 	namespace Utils
 	{
 
-		VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
+		static std::vector<const char*> stringSetToVector(const std::unordered_set<std::string>& set)
 		{
-			auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-			if (func != nullptr)
+			std::vector<const char*> ret;
+			for (const auto& s : set)
 			{
-				return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+				ret.push_back(s.c_str());
 			}
-			else
-			{
-				return VK_ERROR_EXTENSION_NOT_PRESENT;
-			}
-		}
 
-		void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
-		{
-			auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-			if (func != nullptr)
-			{
-				func(instance, debugMessenger, pAllocator);
-			}
+			return ret;
 		}
 
 	}
 
-	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-		VkDebugUtilsMessageTypeFlagsEXT messageType,
-		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-		void* pUserData)
+	static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
+			VkDebugReportFlagsEXT flags,
+			VkDebugReportObjectTypeEXT objType,
+			uint64_t obj,
+			size_t location,
+			int32_t code,
+			const char* layerPrefix,
+			const char* msg,
+			void* userData)
 	{
-
-		std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+		std::cerr << "Vulkan [location=0x" << location << ", code=" << code << ", layerPrefix='" << layerPrefix << "']: " << msg << std::endl;
 
 		return VK_FALSE;
 	}
 
+	VulkanGraphicsContext::VulkanGraphicsContext(GLFWwindow* nativeWindowHandle)
+		: GraphicsContext(GraphicsAPI::Vulkan, nativeWindowHandle)//, s_DynamicLoader(new vk::detail::DynamicLoader())
+	{}
+
 	void VulkanGraphicsContext::Initialize()
 	{
-		CreateVkInstance();
-		SetupDebugMessenger();
-		m_PhysicalDevice = VulkanPhysicalDevice::Pick(m_Instance);
-		m_Device = VulkanDevice::Create(m_PhysicalDevice);
+		if (!glfwVulkanSupported())
+		{
+			throw std::runtime_error("GLFW reports that Vulkan is not supported. Perhaps missing a call to glfwInit()?");
+		}
 
+		// add any extensions required by GLFW
+		uint32_t glfwExtCount;
+		const char** glfwExt = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+
+		for (uint32_t i = 0; i < glfwExtCount; i++)
+		{
+			enabledExtensions.instance.insert(std::string(glfwExt[i]));
+		}
+
+		CreateInstance();
+		CreateDebugMessenger();
+		CreateWindowSurface();
+		PickPhysicalDevice();
+		FindQueueFamilies(m_VulkanPhysicalDevice);
+		CreateDevice();
+
+#if 0
 		//const char* deviceExtensions[] = {
 		//	"VK_KHR_acceleration_structure",
 		//	"VK_KHR_deferred_host_operations",
@@ -81,93 +87,432 @@ namespace DingoEngine
 		deviceDesc.instance = m_Instance;
 		deviceDesc.physicalDevice = m_PhysicalDevice->m_VkPhysicalDevice;
 		deviceDesc.graphicsQueueIndex = m_PhysicalDevice->GetQueueFamilyIndices().GraphicsFamilyIndex.value();
-		deviceDesc.device = m_Device->m_VkDevice;
-		deviceDesc.graphicsQueue = m_Device->m_VkGraphicsQueue;
+		deviceDesc.device = m_LogicalDevice->m_VkDevice;
+		deviceDesc.graphicsQueue = m_LogicalDevice->m_VkGraphicsQueue;
 
 		//deviceDesc.deviceExtensions = deviceExtensions;
 		//deviceDesc.numDeviceExtensions = std::size(deviceExtensions);
 
 		m_DeviceHandler = nvrhi::vulkan::createDevice(deviceDesc);
+#endif
 	}
 
 	void VulkanGraphicsContext::Shutdown()
 	{
-		delete m_Device;
+		m_RendererString.clear();
 
-		delete m_PhysicalDevice;
-
-		if (enableValidationLayers)
+		if (m_VulkanDevice)
 		{
-			Utils::DestroyDebugUtilsMessengerEXT(m_Instance, m_DebugMessenger, nullptr);
+			m_VulkanDevice.destroy();
+			m_VulkanDevice = nullptr;
 		}
 
-		vkDestroyInstance(m_Instance, nullptr);
+		if (m_DebugReportCallback)
+		{
+			m_VulkanInstance.destroyDebugReportCallbackEXT(m_DebugReportCallback);
+			m_DebugReportCallback = nullptr;
+		}
+
+		if (m_VulkanInstance)
+		{
+			m_VulkanInstance.destroy();
+			m_VulkanInstance = nullptr;
+		}
 	}
 
-	void VulkanGraphicsContext::CreateVkInstance()
+	void VulkanGraphicsContext::CreateWindowSurface()
 	{
-		if (enableValidationLayers && !CheckValidationLayerSupport())
-		{
-			throw std::runtime_error("validation layers requested, but not available!");
-		}
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		VkApplicationInfo appInfo{};
-		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-		appInfo.pApplicationName = "Hello Triangle";
-		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-		appInfo.pEngineName = "Dingo Engine";
-		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-		appInfo.apiVersion = VK_API_VERSION_1_3;
-
-		VkInstanceCreateInfo createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-		createInfo.pApplicationInfo = &appInfo;
-
-		auto extensions = GetRequiredExtensions();
-		createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-		createInfo.ppEnabledExtensionNames = extensions.data();
-
-		if (enableValidationLayers)
-		{
-			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-			createInfo.ppEnabledLayerNames = validationLayers.data();
-		}
-		else
-		{
-			createInfo.enabledLayerCount = 0;
-		}
-
-		VkResult result = vkCreateInstance(&createInfo, nullptr, &m_Instance);
+		const VkResult result = glfwCreateWindowSurface(m_VulkanInstance, m_NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
+		//const VkResult result = glfwCreateWindowSurface(graphicsContext.m_Instance, m_NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
 		if (result != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to create a GLFW window surface, error code = " + std::string(nvrhi::vulkan::resultToString(result)));
+		}
+	}
+
+	bool VulkanGraphicsContext::CreateInstance()
+	{
+		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		enabledExtensions.instance.insert(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+		enabledExtensions.layers.insert("VK_LAYER_KHRONOS_validation");
+
+		//PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader->getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+		PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+
+		std::unordered_set<std::string> requiredExtensions = enabledExtensions.instance;
+
+		// figure out which optional extensions are supported
+		for (const auto& instanceExt : vk::enumerateInstanceExtensionProperties())
+		{
+			const std::string name = instanceExt.extensionName;
+			if (optionalExtensions.instance.find(name) != optionalExtensions.instance.end())
+			{
+				enabledExtensions.instance.insert(name);
+			}
+
+			requiredExtensions.erase(name);
+		}
+
+		if (!requiredExtensions.empty())
+		{
+			std::stringstream ss;
+			ss << "Cannot create a Vulkan instance because the following required extension(s) are not supported:";
+			for (const auto& ext : requiredExtensions)
+			{
+				ss << std::endl << "  - " << ext;
+			}
+
+			std::cout << ss.str().c_str() << std::endl;
+			return false;
+		}
+
+		std::cout << "Enabled Vulkan instance extensions:" << std::endl;
+		for (const auto& ext : enabledExtensions.instance)
+		{
+			std::cout << "    " << ext.c_str() << std::endl;;
+		}
+
+		std::unordered_set<std::string> requiredLayers = enabledExtensions.layers;
+
+		for (const auto& layer : vk::enumerateInstanceLayerProperties())
+		{
+			const std::string name = layer.layerName;
+			if (optionalExtensions.layers.find(name) != optionalExtensions.layers.end())
+			{
+				enabledExtensions.layers.insert(name);
+			}
+
+			requiredLayers.erase(name);
+		}
+
+		if (!requiredLayers.empty())
+		{
+			std::stringstream ss;
+			ss << "Cannot create a Vulkan instance because the following required layer(s) are not supported:";
+			for (const auto& ext : requiredLayers)
+			{
+				ss << std::endl << "  - " << ext;
+			}
+
+			std::cout << "{}" << ss.str().c_str() << std::endl;
+			return false;
+		}
+
+		std::cout << "Enabled Vulkan layers:" << std::endl;
+		for (const auto& layer : enabledExtensions.layers)
+		{
+			std::cout << "    " << layer.c_str() << std::endl;
+		}
+
+		auto instanceExtVec = Utils::stringSetToVector(enabledExtensions.instance);
+		auto layerVec = Utils::stringSetToVector(enabledExtensions.layers);
+
+		// Query the Vulkan API version supported on the system to make sure we use at least 1.3 when that's present.
+		uint32_t apiVersion = 0;
+		vk::Result res = vk::enumerateInstanceVersion(&apiVersion);
+
+		if (res != vk::Result::eSuccess)
+		{
+			std::cout << "Call to vkEnumerateInstanceVersion failed, error code = {}" << nvrhi::vulkan::resultToString(VkResult(res)) << std::endl;
+			return false;
+		}
+
+		const uint32_t minimumVulkanVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
+
+		// Check if the Vulkan API version is sufficient.
+		if (apiVersion < minimumVulkanVersion)
+		{
+			//std::cout << "The Vulkan API version supported on the system ({}.{}.{}) is too low, at least {}.{}.{} is required.",
+			//	VK_API_VERSION_MAJOR(applicationInfo.apiVersion), VK_API_VERSION_MINOR(applicationInfo.apiVersion), VK_API_VERSION_PATCH(applicationInfo.apiVersion),
+			//	VK_API_VERSION_MAJOR(minimumVulkanVersion), VK_API_VERSION_MINOR(minimumVulkanVersion), VK_API_VERSION_PATCH(minimumVulkanVersion) << std::end;
+			return false;
+		}
+
+		vk::ApplicationInfo applicationInfo = vk::ApplicationInfo()
+			.setPApplicationName("Hello Triangle")
+			.setApplicationVersion(VK_MAKE_VERSION(1, 0, 0))
+			.setPEngineName("Dingo Engine")
+			.setApiVersion(VK_API_VERSION_1_3);
+
+		vk::InstanceCreateInfo instanceCreateInfo = vk::InstanceCreateInfo()
+			.setEnabledLayerCount(uint32_t(layerVec.size()))
+			.setPpEnabledLayerNames(layerVec.data())
+			.setEnabledExtensionCount(uint32_t(instanceExtVec.size()))
+			.setPpEnabledExtensionNames(instanceExtVec.data())
+			.setPApplicationInfo(&applicationInfo);
+
+		const vk::Result result = vk::createInstance(&instanceCreateInfo, nullptr, &m_VulkanInstance);
+		if (result != vk::Result::eSuccess)
 		{
 			__debugbreak();
 		}
 
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
-		vk::detail::defaultDispatchLoaderDynamic.init(m_Instance, vkGetInstanceProcAddr);
-#endif
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanInstance);
+		return false;
 	}
 
-	void VulkanGraphicsContext::SetupDebugMessenger()
+	bool VulkanGraphicsContext::CreateDebugMessenger()
 	{
-		if (!enableValidationLayers)
+		vk::DebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = vk::DebugReportCallbackCreateInfoEXT()
+			.setFlags(vk::DebugReportFlagBitsEXT::eError |
+					  vk::DebugReportFlagBitsEXT::eWarning |
+					  vk::DebugReportFlagBitsEXT::eInformation |
+					  vk::DebugReportFlagBitsEXT::ePerformanceWarning)
+			.setPfnCallback(vulkanDebugCallback)
+			.setPUserData(nullptr);
+
+		const vk::Result result = m_VulkanInstance.createDebugReportCallbackEXT(&debugReportCallbackCreateInfo, nullptr, &m_DebugReportCallback);
+		if (result != vk::Result::eSuccess)
 		{
-			return;
+			__debugbreak();
+			return false;
 		}
 
-		VkDebugUtilsMessengerCreateInfoEXT createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-		createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-		createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-		createInfo.pfnUserCallback = debugCallback;
-		createInfo.pUserData = nullptr; // Optional
-
-		if (Utils::CreateDebugUtilsMessengerEXT(m_Instance, &createInfo, nullptr, &m_DebugMessenger) != VK_SUCCESS)
-		{
-			throw std::runtime_error("failed to set up debug messenger!");
-		}
+		return true;
 	}
 
+	bool VulkanGraphicsContext::PickPhysicalDevice()
+	{
+		std::vector<vk::PhysicalDevice> physicalDevices = m_VulkanInstance.enumeratePhysicalDevices();
+
+		int firstDevice = 0;
+		int lastDevice = int(physicalDevices.size()) - 1;
+
+		// Start building an error message in case we cannot find a device.
+		std::stringstream errorStream;
+		errorStream << "Cannot find a Vulkan device that supports all the required extensions and properties.";
+
+		// build a list of GPUs
+		std::vector<vk::PhysicalDevice> discreteGPUs;
+		std::vector<vk::PhysicalDevice> otherGPUs;
+
+		for (int deviceIndex = firstDevice; deviceIndex <= lastDevice; ++deviceIndex)
+		{
+			vk::PhysicalDevice const& dev = physicalDevices[deviceIndex];
+			vk::PhysicalDeviceProperties prop = dev.getProperties();
+
+			errorStream << std::endl << prop.deviceName.data() << ":";
+
+			// check that all required device extensions are present
+			std::unordered_set<std::string> requiredExtensions = enabledExtensions.device;
+			auto deviceExtensions = dev.enumerateDeviceExtensionProperties();
+			for (const auto& ext : deviceExtensions)
+			{
+				requiredExtensions.erase(std::string(ext.extensionName.data()));
+			}
+
+			bool deviceIsGood = true;
+
+			if (!requiredExtensions.empty())
+			{
+				// device is missing one or more required extensions
+				for (const auto& ext : requiredExtensions)
+				{
+					errorStream << std::endl << "  - missing " << ext;
+				}
+				deviceIsGood = false;
+			}
+
+			auto deviceFeatures = dev.getFeatures();
+			if (!deviceFeatures.samplerAnisotropy)
+			{
+				// device is a toaster oven
+				errorStream << std::endl << "  - does not support samplerAnisotropy";
+				deviceIsGood = false;
+			}
+			if (!deviceFeatures.textureCompressionBC)
+			{
+				errorStream << std::endl << "  - does not support textureCompressionBC";
+				deviceIsGood = false;
+			}
+
+			if (!FindQueueFamilies(dev))
+			{
+				// device doesn't have all the queue families we need
+				errorStream << std::endl << "  - does not support the necessary queue types";
+				deviceIsGood = false;
+			}
+
+
+			if (!deviceIsGood)
+				continue;
+
+			if (prop.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+			{
+				discreteGPUs.push_back(dev);
+			}
+			else
+			{
+				otherGPUs.push_back(dev);
+			}
+		}
+
+		// pick the first discrete GPU if it exists, otherwise the first integrated GPU
+		if (!discreteGPUs.empty())
+		{
+			m_VulkanPhysicalDevice = discreteGPUs[0];
+			return true;
+		}
+
+		if (!otherGPUs.empty())
+		{
+			m_VulkanPhysicalDevice = otherGPUs[0];
+			return true;
+		}
+
+		return false;
+	}
+
+	bool VulkanGraphicsContext::FindQueueFamilies(vk::PhysicalDevice physicalDevice)
+	{
+		auto props = physicalDevice.getQueueFamilyProperties();
+
+		for (int i = 0; i < int(props.size()); i++)
+		{
+			const auto& queueFamily = props[i];
+
+			if (m_QueueFamilyIndices.Graphics == -1)
+			{
+				if (queueFamily.queueCount > 0 && (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
+				{
+					m_QueueFamilyIndices.Graphics = i;
+				}
+			}
+
+			if (m_QueueFamilyIndices.Compute == -1)
+			{
+				if (queueFamily.queueCount > 0 &&
+					(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) &&
+					!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
+				{
+					m_QueueFamilyIndices.Compute = i;
+				}
+			}
+
+			if (m_QueueFamilyIndices.Transfer == -1)
+			{
+				if (queueFamily.queueCount > 0 &&
+					(queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) &&
+					!(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) &&
+					!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
+				{
+					m_QueueFamilyIndices.Transfer = i;
+				}
+			}
+
+			if (m_QueueFamilyIndices.Present == -1)
+			{
+				if (queueFamily.queueCount > 0 &&
+					glfwGetPhysicalDevicePresentationSupport(m_VulkanInstance, physicalDevice, i))
+				{
+					m_QueueFamilyIndices.Present = i;
+				}
+			}
+		}
+
+		//if (m_QueueFamilyIndices.Graphics == -1 ||
+		//	m_QueueFamilyIndices.Present == -1 && !m_DeviceParams.headlessDevice ||
+		//	(m_QueueFamilyIndices.Compute == -1 && m_DeviceParams.enableComputeQueue) ||
+		//	(m_QueueFamilyIndices.Transfer == -1 && m_DeviceParams.enableCopyQueue))
+		//{
+		//	return false;
+		//}
+
+		return true;
+	}
+
+	bool VulkanGraphicsContext::CreateDevice()
+	{
+		enabledExtensions.device.insert(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+
+		const vk::PhysicalDeviceProperties physicalDeviceProperties = m_VulkanPhysicalDevice.getProperties();
+		m_RendererString = std::string(physicalDeviceProperties.deviceName.data());
+
+		vk::PhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = vk::PhysicalDeviceBufferDeviceAddressFeatures();
+
+		std::unordered_set<int> uniqueQueueFamilies = {
+			m_QueueFamilyIndices.Graphics,
+			m_QueueFamilyIndices.Present
+		};
+
+		//if (!m_DeviceParams.headlessDevice)
+		//	uniqueQueueFamilies.insert(m_QueueFamilyIndices.Present);
+
+		//if (m_DeviceParams.enableComputeQueue)
+		//	uniqueQueueFamilies.insert(m_QueueFamilyIndices.Compute);
+
+		//if (m_DeviceParams.enableCopyQueue)
+		//	uniqueQueueFamilies.insert(m_QueueFamilyIndices.Transfer);
+
+		float priority = 1.f;
+		std::vector<vk::DeviceQueueCreateInfo> queueDesc;
+		queueDesc.reserve(uniqueQueueFamilies.size());
+		for (int queueFamily : uniqueQueueFamilies)
+		{
+			queueDesc.push_back(vk::DeviceQueueCreateInfo()
+									.setQueueFamilyIndex(queueFamily)
+									.setQueueCount(1)
+									.setPQueuePriorities(&priority));
+		}
+
+		vk::PhysicalDeviceFeatures deviceFeatures = vk::PhysicalDeviceFeatures()
+			.setShaderImageGatherExtended(true)
+			.setSamplerAnisotropy(true)
+			.setTessellationShader(true)
+			.setTextureCompressionBC(true)
+			.setGeometryShader(true)
+			.setImageCubeArray(true)
+			.setDualSrcBlend(true);
+
+		vk::PhysicalDeviceVulkan12Features vulkan12features = vk::PhysicalDeviceVulkan12Features()
+			.setDescriptorIndexing(true)
+			.setRuntimeDescriptorArray(true)
+			.setDescriptorBindingPartiallyBound(true)
+			.setDescriptorBindingVariableDescriptorCount(true)
+			.setTimelineSemaphore(true)
+			.setShaderSampledImageArrayNonUniformIndexing(true)
+			.setBufferDeviceAddress(bufferDeviceAddressFeatures.bufferDeviceAddress);
+		//.setPNext(pNext);
+
+		auto layerVec = Utils::stringSetToVector(enabledExtensions.layers);
+		auto extVec = Utils::stringSetToVector(enabledExtensions.device);
+
+		vk::DeviceCreateInfo deviceCreateInfo = vk::DeviceCreateInfo()
+			.setPQueueCreateInfos(queueDesc.data())
+			.setQueueCreateInfoCount(uint32_t(queueDesc.size()))
+			.setPEnabledFeatures(&deviceFeatures)
+			.setEnabledExtensionCount(uint32_t(extVec.size()))
+			.setPpEnabledExtensionNames(extVec.data())
+			.setEnabledLayerCount(uint32_t(layerVec.size()))
+			.setPpEnabledLayerNames(layerVec.data())
+			.setPNext(&vulkan12features);
+
+		const vk::Result result = m_VulkanPhysicalDevice.createDevice(&deviceCreateInfo, nullptr, &m_VulkanDevice);
+		if (result != vk::Result::eSuccess)
+		{
+			__debugbreak();
+			return false;
+		}
+
+		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Graphics, 0, &m_GraphicsQueue);
+		//if (m_DeviceParams.enableComputeQueue)
+		//	m_VulkanDevice.getQueue(m_QueueFamilyIndices.Compute, 0, &m_ComputeQueue);
+		//if (m_DeviceParams.enableCopyQueue)
+		//	m_VulkanDevice.getQueue(m_QueueFamilyIndices.Transfer, 0, &m_TransferQueue);
+		//if (!m_DeviceParams.headlessDevice)
+		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Present, 0, &m_PresentQueue);
+
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanDevice);
+
+		std::cout << "Created Vulkan device: " << m_RendererString.c_str() << std::endl;
+
+		return true;
+	}
+
+#if 0
 	bool VulkanGraphicsContext::CheckValidationLayerSupport() const
 	{
 		uint32_t layerCount;
@@ -213,5 +558,6 @@ namespace DingoEngine
 
 		return extensions;
 	}
+#endif
 
 }

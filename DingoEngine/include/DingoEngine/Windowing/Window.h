@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Common.h"
+#include "DingoEngine/Graphics/SwapChain.h"
 
 struct GLFWwindow;
 
@@ -18,6 +19,8 @@ namespace DingoEngine
 		{}
 	};
 
+	class GraphicsContext;
+
 	class Window
 	{
 	public:
@@ -33,6 +36,8 @@ namespace DingoEngine
 	private:
 		WindowOptions m_Options;
 		GLFWwindow* m_WindowHandle = nullptr;
+		GraphicsContext* m_GraphicsContext = nullptr;
+		SwapChain* m_SwapChain = nullptr;
 	};
 
 }
