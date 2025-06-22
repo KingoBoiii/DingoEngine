@@ -23,7 +23,7 @@ namespace DingoEngine
 	class VulkanGraphicsContext : public GraphicsContext
 	{
 	public:
-		VulkanGraphicsContext(GLFWwindow* nativeWindowHandle);
+		VulkanGraphicsContext();
 		virtual ~VulkanGraphicsContext() = default;
 
 	public:

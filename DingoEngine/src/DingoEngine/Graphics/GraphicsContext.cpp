@@ -6,18 +6,18 @@
 namespace DingoEngine
 {
 
-	GraphicsContext* GraphicsContext::Create(GraphicsAPI graphicsAPI, GLFWwindow* nativeWindowHandle)
+	GraphicsContext* GraphicsContext::Create(GraphicsAPI graphicsAPI)
 	{
 		switch (graphicsAPI)
 		{
-			case DingoEngine::GraphicsAPI::Vulkan: return new VulkanGraphicsContext(nativeWindowHandle);
+			case DingoEngine::GraphicsAPI::Vulkan: return new VulkanGraphicsContext();
 			default: break;
 		}
 		return nullptr;
 	}
 
-	GraphicsContext::GraphicsContext(GraphicsAPI graphicsAPI, GLFWwindow* nativeWindowHandle)
-		: m_GraphicsAPI(graphicsAPI), m_NativeWindowHandle(nativeWindowHandle)
+	GraphicsContext::GraphicsContext(GraphicsAPI graphicsAPI)
+		: m_GraphicsAPI(graphicsAPI)
 	{
 		s_Instance = this;
 	}

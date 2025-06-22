@@ -24,7 +24,7 @@ namespace DingoEngine
 			glfwTerminate();
 		}
 
-		m_GraphicsContext = GraphicsContext::Create(GraphicsAPI::Vulkan, m_WindowHandle);
+		m_GraphicsContext = GraphicsContext::Create(m_Options.GraphicsAPI);
 		m_GraphicsContext->Initialize();
 
 		const SwapChainOptions swapChainOptions = {

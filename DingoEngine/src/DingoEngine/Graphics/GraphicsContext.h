@@ -12,10 +12,10 @@ namespace DingoEngine
 	class GraphicsContext
 	{
 	public:
-		static GraphicsContext* Create(GraphicsAPI graphicsAPI, GLFWwindow* nativeWindowHandle);
+		static GraphicsContext* Create(GraphicsAPI graphicsAPI);
 
 	public:
-		GraphicsContext(GraphicsAPI graphicsAPI, GLFWwindow* nativeWindowHandle);
+		GraphicsContext(GraphicsAPI graphicsAPI);
 		virtual ~GraphicsContext();
 
 	public:
@@ -42,7 +42,6 @@ namespace DingoEngine
 	protected:
 		nvrhi::DeviceHandle m_DeviceHandle;
 		GraphicsAPI m_GraphicsAPI;
-		GLFWwindow* m_NativeWindowHandle;
 
 	private:
 		inline static GraphicsContext* s_Instance = nullptr;

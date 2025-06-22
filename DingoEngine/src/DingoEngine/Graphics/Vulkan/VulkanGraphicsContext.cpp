@@ -60,8 +60,8 @@ namespace DingoEngine
 		return VK_FALSE;
 	}
 
-	VulkanGraphicsContext::VulkanGraphicsContext(GLFWwindow* nativeWindowHandle)
-		: GraphicsContext(GraphicsAPI::Vulkan, nativeWindowHandle)
+	VulkanGraphicsContext::VulkanGraphicsContext()
+		: GraphicsContext(GraphicsAPI::Vulkan)
 	{}
 
 	void VulkanGraphicsContext::Initialize()
