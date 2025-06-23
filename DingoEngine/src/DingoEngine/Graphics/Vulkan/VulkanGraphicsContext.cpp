@@ -89,6 +89,18 @@ namespace DingoEngine
 	{
 		m_RendererString.clear();
 
+		//if (m_DeviceHandle)
+		//{
+		//	m_DeviceHandle->Release();
+		//	m_DeviceHandle = nullptr;
+		//}
+
+		if (m_NvrhiDevice)
+		{
+			m_NvrhiDevice->Release();
+			m_NvrhiDevice = nullptr;
+		}
+
 		if (m_VulkanDevice)
 		{
 			m_VulkanDevice.destroy();
@@ -201,7 +213,7 @@ namespace DingoEngine
 		// Check if the Vulkan API version is sufficient.
 		if (apiVersion < minimumVulkanVersion)
 		{
-			DE_CORE_ERROR("The Vulkan API version supported on the system ({}.{}.{}) is too low, at least {}.{}.{} is required.", 
+			DE_CORE_ERROR("The Vulkan API version supported on the system ({}.{}.{}) is too low, at least {}.{}.{} is required.",
 				VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion),
 				VK_API_VERSION_MAJOR(minimumVulkanVersion), VK_API_VERSION_MINOR(minimumVulkanVersion), VK_API_VERSION_PATCH(minimumVulkanVersion));
 			DE_CORE_ASSERT(true);
@@ -502,6 +514,7 @@ namespace DingoEngine
 		deviceDesc.bufferDeviceAddressSupported = m_BufferDeviceAddressSupported;
 
 		m_DeviceHandle = m_NvrhiDevice = nvrhi::vulkan::createDevice(deviceDesc);
+
 		DE_CORE_ASSERT(m_DeviceHandle != nullptr);
 		DE_CORE_ASSERT(m_NvrhiDevice != nullptr);
 	}

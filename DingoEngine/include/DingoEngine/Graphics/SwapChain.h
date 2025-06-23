@@ -1,4 +1,5 @@
 #pragma once
+#include "Framebuffer.h"
 
 struct GLFWwindow;
 
@@ -28,8 +29,11 @@ namespace DingoEngine
 		virtual void BeginFrame() = 0;
 		virtual void Present() = 0;
 
+		Framebuffer* GetFramebuffer(uint32_t index);
+
 	protected:
 		SwapChainOptions m_Options;
+		std::vector<Framebuffer*> m_SwapChainFramebuffers;
 	};
 
 }

@@ -1,5 +1,5 @@
 #include "depch.h"
-#include "GraphicsContext.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
 
 #include "Vulkan/VulkanGraphicsContext.h"
 

@@ -33,6 +33,8 @@ namespace DingoEngine
 		void Update();
 
 		bool IsRunning() const;
+
+		SwapChain* GetSwapChain() const { return m_SwapChain; }
 	private:
 		WindowOptions m_Options;
 		GLFWwindow* m_WindowHandle = nullptr;

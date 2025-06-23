@@ -37,6 +37,14 @@ namespace DingoEngine
 	{
 		CreateWindowSurface();
 		CreateSwapChain();
+
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+		m_SwapChainFramebuffers.resize(m_SwapChainImages.size());
+		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
+		{
+			m_SwapChainFramebuffers[index] = Framebuffer::Create(m_SwapChainImages[index].rhiHandle);
+			m_SwapChainFramebuffers[index]->Initialize();
+		}
 	}
 
 	void VulkanSwapChain::Destroy()
@@ -47,6 +55,12 @@ namespace DingoEngine
 		{
 			graphicsContext.m_VulkanDevice.waitIdle();
 		}
+
+		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
+		{
+			m_SwapChainFramebuffers[index]->Destroy();
+		}
+		m_SwapChainFramebuffers.clear();
 
 		if (m_SwapChain)
 		{
@@ -61,7 +75,7 @@ namespace DingoEngine
 			if (semaphore)
 			{
 				graphicsContext.m_VulkanDevice.destroySemaphore(semaphore);
-				semaphore = vk::Semaphore();
+				semaphore = nullptr;
 			}
 		}
 
@@ -70,12 +84,18 @@ namespace DingoEngine
 			if (semaphore)
 			{
 				graphicsContext.m_VulkanDevice.destroySemaphore(semaphore);
-				semaphore = vk::Semaphore();
+				semaphore = nullptr;
 			}
 		}
 
 		m_PresentSemaphores.clear();
 		m_AcquireSemaphores.clear();
+
+		if (m_WindowSurface)
+		{
+			graphicsContext.m_VulkanInstance.destroySurfaceKHR(m_WindowSurface);
+			m_WindowSurface = nullptr;
+		}
 	}
 
 	void VulkanSwapChain::BeginFrame()
@@ -132,6 +152,11 @@ namespace DingoEngine
 		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
 	}
 
+	Framebuffer* SwapChain::GetFramebuffer(uint32_t index)
+	{
+		return m_SwapChainFramebuffers[index];
+	}
+
 	void VulkanSwapChain::CreateWindowSurface()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
@@ -164,7 +189,7 @@ namespace DingoEngine
 
 		const bool enableSwapChainSharing = queues.size() > 1;
 
-		const uint32_t swapChainBufferCount = 3;
+		const uint32_t swapChainBufferCount = 2; // 3
 		const bool vsyncEnabled = false;
 		const bool swapChainMutableFormatSupported = false;
 
