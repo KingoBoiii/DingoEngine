@@ -29,7 +29,8 @@ namespace DingoEngine
 		virtual void BeginFrame() = 0;
 		virtual void Present() = 0;
 
-		Framebuffer* GetFramebuffer(uint32_t index);
+		Framebuffer* GetFramebuffer(uint32_t index) const;
+		virtual Framebuffer* GetCurrentFramebuffer() const = 0;
 
 	protected:
 		SwapChainOptions m_Options;

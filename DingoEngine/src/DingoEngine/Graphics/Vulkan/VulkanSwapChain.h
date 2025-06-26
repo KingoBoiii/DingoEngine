@@ -20,6 +20,12 @@ namespace DingoEngine
 		virtual void BeginFrame() override;
 		virtual void Present() override;
 
+
+		virtual Framebuffer* SwapChain::GetCurrentFramebuffer() const
+		{
+			return GetFramebuffer(m_SwapChainIndex);
+		}
+
 	private:
 		void CreateWindowSurface();
 		void CreateSwapChain();

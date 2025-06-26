@@ -21,6 +21,7 @@ namespace DingoEngine
 		m_InputLayoutHandle = device->createInputLayout(nullptr, 0, m_Shader->m_VertexShaderHandle);
 
 		nvrhi::GraphicsPipelineDesc graphicsPipelineDesc = nvrhi::GraphicsPipelineDesc()
+			.setPrimType(nvrhi::PrimitiveType::TriangleList)
 			.setInputLayout(m_InputLayoutHandle)
 			.setVertexShader(m_Shader->m_VertexShaderHandle)
 			.setPixelShader(m_Shader->m_FragmentShaderHandle);

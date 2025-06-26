@@ -102,14 +102,14 @@ namespace DingoEngine
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		const auto& semaphore = m_AcquireSemaphores[m_AcquireSemaphoreIndex];
+		//const auto& semaphore = m_AcquireSemaphores[m_AcquireSemaphoreIndex];
 
 		vk::Result result;
 
 		const int32_t maxAttempts = 3;
 		for (size_t attempt = 0; attempt < maxAttempts; ++attempt)
 		{
-			result = graphicsContext.m_VulkanDevice.acquireNextImageKHR(m_SwapChain,std::numeric_limits<uint64_t>::max(), semaphore, vk::Fence(), &m_SwapChainIndex);
+			result = graphicsContext.m_VulkanDevice.acquireNextImageKHR(m_SwapChain, std::numeric_limits<uint64_t>::max(), m_AcquireSemaphores[m_AcquireSemaphoreIndex], {}, &m_SwapChainIndex);
 			if (result == vk::Result::eErrorOutOfDateKHR && attempt < maxAttempts)
 			{
 				__debugbreak();
@@ -120,39 +120,59 @@ namespace DingoEngine
 			}
 		}
 
-		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
+		//m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
 
-		if (result == vk::Result::eSuccess)
-		{
-			// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
-			graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, semaphore, 0);
-		}
+		//if (result == vk::Result::eSuccess)
+		//{
+		//	// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
+		//}
+		graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
 	}
 
 	void VulkanSwapChain::Present()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		const auto& semaphore = m_PresentSemaphores[m_PresentSemaphoreIndex];
+		//const auto& semaphore = m_PresentSemaphores[m_PresentSemaphoreIndex];
+
+		const vk::PipelineStageFlags waitStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+
+		//vk::CommandBuffer commandBuffer = graphicsContext.m_VulkanDevice.command(nvrhi::CommandQueue::Graphics);
+		graphicsContext.m_NvrhiDevice->queueSignalSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
+
+		graphicsContext.m_NvrhiDevice->executeCommandLists(nullptr, 0);
+
+		vk::SubmitInfo submitInfo = vk::SubmitInfo()
+			.setPWaitDstStageMask(&waitStageMask)
+			.setWaitSemaphoreCount(1)
+			.setPWaitSemaphores(&m_AcquireSemaphores[m_AcquireSemaphoreIndex])
+			.setSignalSemaphoreCount(1)
+			.setPSignalSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex]);
+
+
+		const vk::Result r = graphicsContext.m_GraphicsQueue.submit(1, &submitInfo, {});
+		DE_CORE_ASSERT(r == vk::Result::eSuccess);
 
 		vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
 			.setWaitSemaphoreCount(1)
-			.setPWaitSemaphores(&semaphore)
+			.setPWaitSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex])
 			.setSwapchainCount(1)
 			.setPSwapchains(&m_SwapChain)
 			.setPImageIndices(&m_SwapChainIndex);
 
 		const vk::Result result = graphicsContext.m_PresentQueue.presentKHR(&presentInfo);
-		if (result != vk::Result::eSuccess && result != vk::Result::eErrorOutOfDateKHR)
-		{
-			__debugbreak();
-		}
-
+		DE_CORE_ASSERT(result == vk::Result::eSuccess || result == vk::Result::eErrorOutOfDateKHR);
 
 		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
+		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
+
+		//if (true)
+		//{
+		//	graphicsContext.m_PresentQueue.waitIdle();
+		//}
 	}
 
-	Framebuffer* SwapChain::GetFramebuffer(uint32_t index)
+	Framebuffer* SwapChain::GetFramebuffer(uint32_t index) const
 	{
 		return m_SwapChainFramebuffers[index];
 	}
@@ -238,17 +258,18 @@ namespace DingoEngine
 		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan swapchain.");
 
 		std::vector<vk::Image> images = graphicsContext.m_VulkanDevice.getSwapchainImagesKHR(m_SwapChain);
+
+		nvrhi::TextureDesc textureDesc;
+		textureDesc.width = m_Options.Width;
+		textureDesc.height = m_Options.Height;
+		textureDesc.format = nvrhi::Format::RGBA8_UNORM; // deviceParams.swapChainFormat;
+		textureDesc.debugName = "Swap chain image";
+		textureDesc.initialState = nvrhi::ResourceStates::Present;
+		textureDesc.keepInitialState = true;
+		textureDesc.isRenderTarget = true;
+
 		for (vk::Image image : images)
 		{
-			nvrhi::TextureDesc textureDesc;
-			textureDesc.width = m_Options.Width;
-			textureDesc.height = m_Options.Height;
-			textureDesc.format = nvrhi::Format::RGBA8_UNORM; // deviceParams.swapChainFormat;
-			textureDesc.debugName = "Swap chain image";
-			textureDesc.initialState = nvrhi::ResourceStates::Present;
-			textureDesc.keepInitialState = true;
-			textureDesc.isRenderTarget = true;
-
 			m_SwapChainImages.push_back(SwapChainImage{
 				.image = image,
 				.rhiHandle = GraphicsContext::GetDeviceHandle()->createHandleForNativeTexture(nvrhi::ObjectTypes::VK_Image, nvrhi::Object(image), textureDesc)

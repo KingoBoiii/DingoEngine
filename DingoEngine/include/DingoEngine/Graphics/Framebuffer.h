@@ -23,6 +23,7 @@ namespace DingoEngine
 		nvrhi::FramebufferHandle m_FramebufferHandle;
 
 		friend class Pipeline;
+		friend class CommandList;
 	};
 
 }

@@ -50,7 +50,7 @@ namespace DingoEngine
 
 	void Window::Update()
 	{
-		glfwSwapBuffers(m_WindowHandle);
+		//glfwSwapBuffers(m_WindowHandle);
 		glfwPollEvents();
 	}
 

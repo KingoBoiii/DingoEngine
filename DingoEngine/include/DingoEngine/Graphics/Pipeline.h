@@ -24,6 +24,8 @@ namespace DingoEngine
 		Framebuffer* m_Framebuffer;
 		nvrhi::InputLayoutHandle m_InputLayoutHandle;
 		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
+
+		friend class CommandList;
 	};
 
 }
