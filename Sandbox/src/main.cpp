@@ -30,7 +30,7 @@ int main()
 		window->GetSwapChain()->BeginFrame();
 
 		commandList->Begin(pipeline);
-		commandList->Clear(window->GetSwapChain()->GetFramebuffer(0));
+		commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
 		commandList->End();
 
 		window->GetSwapChain()->Present();

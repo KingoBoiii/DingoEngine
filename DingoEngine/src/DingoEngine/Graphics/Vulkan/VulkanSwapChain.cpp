@@ -88,8 +88,18 @@ namespace DingoEngine
 			}
 		}
 
+		for (auto& fence : m_InFlightFences)
+		{
+			if (fence)
+			{
+				graphicsContext.m_VulkanDevice.destroyFence(fence);
+				fence = nullptr;
+			}
+		}
+
 		m_PresentSemaphores.clear();
 		m_AcquireSemaphores.clear();
+		m_InFlightFences.clear();
 
 		if (m_WindowSurface)
 		{
@@ -101,6 +111,13 @@ namespace DingoEngine
 	void VulkanSwapChain::BeginFrame()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		//m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
+		//m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
+
+		// Wait for the previous frame to finish
+		graphicsContext.m_VulkanDevice.waitForFences(1, &m_InFlightFences[m_AcquireSemaphoreIndex], VK_TRUE, UINT64_MAX);
+		graphicsContext.m_VulkanDevice.resetFences(1, &m_InFlightFences[m_AcquireSemaphoreIndex]);
 
 		//const auto& semaphore = m_AcquireSemaphores[m_AcquireSemaphoreIndex];
 
@@ -122,11 +139,11 @@ namespace DingoEngine
 
 		//m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
 
-		//if (result == vk::Result::eSuccess)
-		//{
-		//	// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
-		//}
-		graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
+		if (result == vk::Result::eSuccess)
+		{
+			// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
+			graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
+		}
 	}
 
 	void VulkanSwapChain::Present()
@@ -150,7 +167,7 @@ namespace DingoEngine
 			.setPSignalSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex]);
 
 
-		const vk::Result r = graphicsContext.m_GraphicsQueue.submit(1, &submitInfo, {});
+		const vk::Result r = graphicsContext.m_GraphicsQueue.submit(1, &submitInfo, m_InFlightFences[m_PresentSemaphoreIndex]);
 		DE_CORE_ASSERT(r == vk::Result::eSuccess);
 
 		vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
@@ -258,18 +275,17 @@ namespace DingoEngine
 		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan swapchain.");
 
 		std::vector<vk::Image> images = graphicsContext.m_VulkanDevice.getSwapchainImagesKHR(m_SwapChain);
-
-		nvrhi::TextureDesc textureDesc;
-		textureDesc.width = m_Options.Width;
-		textureDesc.height = m_Options.Height;
-		textureDesc.format = nvrhi::Format::RGBA8_UNORM; // deviceParams.swapChainFormat;
-		textureDesc.debugName = "Swap chain image";
-		textureDesc.initialState = nvrhi::ResourceStates::Present;
-		textureDesc.keepInitialState = true;
-		textureDesc.isRenderTarget = true;
-
 		for (vk::Image image : images)
 		{
+			nvrhi::TextureDesc textureDesc;
+			textureDesc.width = m_Options.Width;
+			textureDesc.height = m_Options.Height;
+			textureDesc.format = nvrhi::Format::RGBA8_UNORM; // deviceParams.swapChainFormat;
+			textureDesc.debugName = "Swap chain image";
+			textureDesc.initialState = nvrhi::ResourceStates::Present;
+			textureDesc.keepInitialState = true;
+			textureDesc.isRenderTarget = true;
+
 			m_SwapChainImages.push_back(SwapChainImage{
 				.image = image,
 				.rhiHandle = GraphicsContext::GetDeviceHandle()->createHandleForNativeTexture(nvrhi::ObjectTypes::VK_Image, nvrhi::Object(image), textureDesc)
@@ -282,10 +298,12 @@ namespace DingoEngine
 
 		m_PresentSemaphores.reserve(maxFramesInFlight + 1);
 		m_AcquireSemaphores.reserve(maxFramesInFlight + 1);
+		m_InFlightFences.resize(maxFramesInFlight + 1);
 		for (uint32_t i = 0; i < maxFramesInFlight + 1; ++i)
 		{
 			m_PresentSemaphores.push_back(graphicsContext.m_VulkanDevice.createSemaphore(vk::SemaphoreCreateInfo()));
 			m_AcquireSemaphores.push_back(graphicsContext.m_VulkanDevice.createSemaphore(vk::SemaphoreCreateInfo()));
+			m_InFlightFences[i] = graphicsContext.m_VulkanDevice.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled));
 		}
 	}
 

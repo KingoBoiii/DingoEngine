@@ -40,6 +40,8 @@ namespace DingoEngine
 		uint32_t m_AcquireSemaphoreIndex = 0;
 		uint32_t m_PresentSemaphoreIndex = 0;
 
+		std::vector<vk::Fence> m_InFlightFences;
+
 		struct SwapChainImage
 		{
 			vk::Image image;

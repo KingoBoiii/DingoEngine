@@ -14,7 +14,11 @@ namespace DingoEngine
 
 	void CommandList::Initialize()
 	{
-		m_CommandListHandle = GraphicsContext::GetDeviceHandle()->createCommandList();
+		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
+			//.setEnableImmediateExecution(false) // Set to true for immediate execution, false for deferred execution
+			.setQueueType(nvrhi::CommandQueue::Graphics);
+
+		m_CommandListHandle = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
 	}
 
 	void CommandList::Destroy()
@@ -44,12 +48,19 @@ namespace DingoEngine
 		//	.setStartIndexLocation(0); // Starting instance index
 
 		//m_CommandListHandle->draw(drawArguments); // Draw a triangle (3 vertices starting from index 0)
+
+		//m_CommandListHandle->setTextureState(
+		//	pipeline->m_Framebuffer->m_Texture,
+		//	{},
+		//	nvrhi::ResourceStates::Present);
+
 	}
 
 	void CommandList::End()
 	{
 		m_CommandListHandle->close();
 		GraphicsContext::GetDeviceHandle()->executeCommandList(m_CommandListHandle);
+		m_CommandListHandle->Release(); // Release the command list handle after execution
 	}
 
 	void CommandList::Clear(Framebuffer* framebuffer)
@@ -58,3 +69,4 @@ namespace DingoEngine
 	}
 
 }
+
