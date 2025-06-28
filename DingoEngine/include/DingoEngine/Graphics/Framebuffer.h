@@ -12,11 +12,11 @@ namespace DingoEngine
 
 	public:
 		Framebuffer(nvrhi::ITexture* texture);
-		~Framebuffer() = default;
+		virtual ~Framebuffer() = default;
 
 	public:
-		void Initialize();
-		void Destroy();
+		virtual void Initialize();
+		virtual void Destroy();
 
 	protected:
 		nvrhi::ITexture* m_Texture;

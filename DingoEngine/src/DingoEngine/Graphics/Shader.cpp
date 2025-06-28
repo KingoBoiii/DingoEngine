@@ -54,6 +54,7 @@ namespace DingoEngine
 	{
 		nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
 			.setShaderType(shaderType)
+			.setDebugName("Shader")
 			.setEntryName("main");
 
 		return GraphicsContext::GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size());

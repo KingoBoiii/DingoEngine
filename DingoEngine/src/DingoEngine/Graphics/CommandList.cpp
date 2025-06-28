@@ -29,10 +29,22 @@ namespace DingoEngine
 		}
 	}
 
-	void CommandList::Begin(Pipeline* pipeline)
+	void CommandList::Begin(Framebuffer* framebuffer)
 	{
 		m_CommandListHandle->open();
 
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
+		//nvrhi::utils::ClearColorAttachment(m_CommandListHandle, pipeline->m_Framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.0f));
+	}
+
+	void CommandList::End()
+	{
+		m_CommandListHandle->close();
+		GraphicsContext::GetDeviceHandle()->executeCommandList(m_CommandListHandle);
+	}
+
+	void CommandList::SetPipeline(Pipeline* pipeline)
+	{
 		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
 		auto& graphicsState = nvrhi::GraphicsState()
 			.setPipeline(pipeline->m_GraphicsPipelineHandle)
@@ -40,12 +52,6 @@ namespace DingoEngine
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhi::Viewport(1600, 900)));
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
-	}
-
-	void CommandList::End()
-	{
-		m_CommandListHandle->close();
-		GraphicsContext::GetDeviceHandle()->executeCommandList(m_CommandListHandle);
 	}
 
 	void CommandList::Clear(Framebuffer* framebuffer)
@@ -57,9 +63,9 @@ namespace DingoEngine
 	{
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
 			.setVertexCount(3) // Number of vertices to draw
-			.setInstanceCount(1) // Number of instances to draw
-			.setStartVertexLocation(0) // Starting vertex index
-			.setStartIndexLocation(0); // Starting instance index
+			.setInstanceCount(1); // Number of instances to draw
+			//.setStartIndexLocation(0) // Starting instance index
+			//.setStartVertexLocation(0); // Starting vertex index
 
 		m_CommandListHandle->draw(drawArguments); // Draw a triangle (3 vertices starting from index 0)
 	}

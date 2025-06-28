@@ -2,11 +2,18 @@
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
+#include "Vulkan/VulkanFramebuffer.h"
+
 namespace DingoEngine
 {
 
 	Framebuffer* Framebuffer::Create(nvrhi::ITexture* texture)
 	{
+		if(GraphicsContext::GetApi() == GraphicsAPI::Vulkan)
+		{
+			return new VulkanFramebuffer(texture);
+		}
+
 		return new Framebuffer(texture);
 	}
 

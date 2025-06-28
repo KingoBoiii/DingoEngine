@@ -32,8 +32,9 @@ int main()
 
 		renderer->BeginFrame();
 
-		commandList->Begin(pipeline);
-		commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
+		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer());
+		//commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
+		commandList->SetPipeline(pipeline);
 		commandList->Draw();
 		commandList->End();
 

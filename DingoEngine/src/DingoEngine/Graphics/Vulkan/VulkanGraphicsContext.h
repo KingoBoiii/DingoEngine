@@ -30,6 +30,9 @@ namespace DingoEngine
 		virtual void Initialize() override;
 		virtual void Shutdown() override;
 
+		nvrhi::vulkan::IDevice* GetNvrhiDevice() const { return m_NvrhiDevice; }
+		vk::Device GetDeviceHandle() const { return m_VulkanDevice; }
+
 	private:
 		void CreateInstance();
 		void CreateDebugMessenger();
@@ -75,7 +78,8 @@ namespace DingoEngine
 			{ },
 			// device
 			{
-				VK_KHR_MAINTENANCE1_EXTENSION_NAME
+				VK_KHR_MAINTENANCE1_EXTENSION_NAME,
+				VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME
 			},
 		};
 
