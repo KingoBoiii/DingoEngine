@@ -26,7 +26,7 @@ namespace DingoEngine
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
 
-		virtual void BeginFrame() = 0;
+		virtual void AcquireNextImage() = 0;
 		virtual void Present() = 0;
 
 		Framebuffer* GetFramebuffer(uint32_t index) const;

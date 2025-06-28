@@ -22,9 +22,9 @@ namespace DingoEngine
 
 		void Begin(Pipeline* pipeline);
 		void End();
-		void Submit();
 
 		void Clear(Framebuffer* framebuffer);
+		void Draw();
 
 	private:
 		nvrhi::CommandListHandle m_CommandListHandle;

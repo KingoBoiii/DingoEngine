@@ -22,8 +22,6 @@ namespace DingoEngine
 		virtual void Initialize() = 0;
 		virtual void Shutdown() = 0;
 
-		void RenderStatic() const;
-
 		static GraphicsAPI GetApi()
 		{
 			return s_Instance->m_GraphicsAPI;

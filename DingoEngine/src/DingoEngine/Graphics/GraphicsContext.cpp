@@ -27,8 +27,4 @@ namespace DingoEngine
 		s_Instance = nullptr;
 	}
 
-	void GraphicsContext::RenderStatic() const
-	{
-	}
-
 }

@@ -14,6 +14,9 @@ int main()
 	DingoEngine::Window* window = new DingoEngine::Window();
 	window->Initialize();
 
+	DingoEngine::Renderer* renderer = DingoEngine::Renderer::Create(window->GetSwapChain());
+	renderer->Initialize();
+
 	DingoEngine::Shader* shader = DingoEngine::Shader::Create("assets/shaders/static_triangle.vert.spv", "assets/shaders/static_triangle.frag.spv");
 	shader->Initialize();
 
@@ -27,13 +30,16 @@ int main()
 	{
 		window->Update();
 
-		window->GetSwapChain()->BeginFrame();
+		renderer->BeginFrame();
 
 		commandList->Begin(pipeline);
 		commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
+		commandList->Draw();
 		commandList->End();
 
-		window->GetSwapChain()->Present();
+		renderer->EndFrame();
+		renderer->Present();
+		renderer->WaitAndClear();
 	}
 
 	commandList->Destroy();
@@ -41,6 +47,9 @@ int main()
 	pipeline->Destroy();
 
 	shader->Destroy();
+
+	renderer->Destroy();
+	delete renderer;
 
 	window->Shutdown();
 	delete window;

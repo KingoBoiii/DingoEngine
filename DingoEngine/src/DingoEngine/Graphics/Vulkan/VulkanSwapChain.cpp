@@ -108,18 +108,19 @@ namespace DingoEngine
 		}
 	}
 
-	void VulkanSwapChain::BeginFrame()
+	void VulkanSwapChain::AcquireNextImage()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		//m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
-		//m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
-
 		// Wait for the previous frame to finish
-		graphicsContext.m_VulkanDevice.waitForFences(1, &m_InFlightFences[m_AcquireSemaphoreIndex], VK_TRUE, UINT64_MAX);
-		graphicsContext.m_VulkanDevice.resetFences(1, &m_InFlightFences[m_AcquireSemaphoreIndex]);
+		{
+			vk::Result result;
+			result = graphicsContext.m_VulkanDevice.waitForFences(1, &m_InFlightFences[m_AcquireSemaphoreIndex], VK_TRUE, UINT64_MAX);
+			DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to wait for fence.");
 
-		//const auto& semaphore = m_AcquireSemaphores[m_AcquireSemaphoreIndex];
+			result = graphicsContext.m_VulkanDevice.resetFences(1, &m_InFlightFences[m_AcquireSemaphoreIndex]);
+			DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to reset fence.");
+		}
 
 		vk::Result result;
 
@@ -137,8 +138,6 @@ namespace DingoEngine
 			}
 		}
 
-		//m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
-
 		if (result == vk::Result::eSuccess)
 		{
 			// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
@@ -150,11 +149,8 @@ namespace DingoEngine
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		//const auto& semaphore = m_PresentSemaphores[m_PresentSemaphoreIndex];
-
 		const vk::PipelineStageFlags waitStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
-		//vk::CommandBuffer commandBuffer = graphicsContext.m_VulkanDevice.command(nvrhi::CommandQueue::Graphics);
 		graphicsContext.m_NvrhiDevice->queueSignalSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
 
 		graphicsContext.m_NvrhiDevice->executeCommandLists(nullptr, 0);
@@ -183,10 +179,10 @@ namespace DingoEngine
 		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
 		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
 
-		//if (true)
-		//{
-		//	graphicsContext.m_PresentQueue.waitIdle();
-		//}
+		if (true) // vsync 
+		{
+			graphicsContext.m_PresentQueue.waitIdle();
+		}
 	}
 
 	Framebuffer* SwapChain::GetFramebuffer(uint32_t index) const

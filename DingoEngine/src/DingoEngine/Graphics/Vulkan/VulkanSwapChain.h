@@ -17,7 +17,7 @@ namespace DingoEngine
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 
-		virtual void BeginFrame() override;
+		virtual void AcquireNextImage() override;
 		virtual void Present() override;
 
 
