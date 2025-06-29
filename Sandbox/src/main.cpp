@@ -32,19 +32,6 @@ int main()
 
 	DingoEngine::Log::Initialize();
 
-	DE_CORE_TRACE("ENGINE {}", "TRACE");
-	DE_CORE_INFO("ENGINE {}", "INFO");
-	DE_CORE_WARN("ENGINE {}", "WARN");
-	DE_CORE_ERROR("ENGINE {}", "ERROR");
-	DE_CORE_FATAL("ENGINE {}", "FATAL");
-
-	DE_TRACE("TRACE");
-	DE_INFO("INFO");
-	DE_WARN("WARN");
-	DE_ERROR("ERROR");
-	DE_FATAL("FATAL");
-
-#ifdef USE_STD_FMT
 	DE_CORE_TRACE_TAG("TAG", "ENGINE {} {}", "TRACE", glm::vec2(69.0f, 420.0f));
 	DE_CORE_INFO_TAG("TAG", "ENGINE {}", "INFO");
 	DE_CORE_WARN_TAG("TAG", "ENGINE {}", "WARN");
@@ -56,7 +43,6 @@ int main()
 	DE_WARN_TAG("TAG", "WARN");
 	DE_ERROR_TAG("TAG", "ERROR");
 	DE_FATAL_TAG("TAG", "FATAL");
-#endif
 
 	DingoEngine::Application* app = DingoEngine::CreateApplication();
 	app->Run();
