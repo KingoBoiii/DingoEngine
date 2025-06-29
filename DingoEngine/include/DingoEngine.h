@@ -9,3 +9,4 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/CommandList.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/VertexBuffer.h"

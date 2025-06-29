@@ -6,12 +6,38 @@
 namespace DingoEngine
 {
 
+	struct VertexLayoutAttribute
+	{
+		std::string Name;
+		nvrhi::Format Format;
+		uint32_t Offset = 0;
+	};
+
+	struct VertexLayout
+	{
+		uint32_t Stride = 0;
+		std::vector<VertexLayoutAttribute> Attributes;
+
+		VertexLayout& SetStride(uint32_t stride)
+		{
+			Stride = stride;
+			return *this;
+		}
+
+		VertexLayout& AddAttribute(const std::string& name, nvrhi::Format format, uint32_t offset)
+		{
+			Attributes.push_back({ name, format, offset });
+			return *this;
+		}
+	};
+
 	struct PipelineParams
 	{
 		Shader* Shader = nullptr;
 		Framebuffer* Framebuffer = nullptr;
 		FillMode FillMode = FillMode::Solid;
 		CullMode CullMode = CullMode::Back;
+		VertexLayout VertexLayout;
 
 		PipelineParams& SetShader(DingoEngine::Shader* shader)
 		{
@@ -36,6 +62,12 @@ namespace DingoEngine
 			CullMode = cullMode;
 			return *this;
 		}
+
+		PipelineParams& SetVertexLayout(const DingoEngine::VertexLayout& vertexLayout)
+		{
+			VertexLayout = vertexLayout;
+			return *this;
+		}
 	};
 
 	class Pipeline
@@ -53,6 +85,9 @@ namespace DingoEngine
 		void Destroy();
 
 		const PipelineParams& GetParams() const { return m_Params; }
+
+	private:
+		void CreateInputLayout();
 
 	private:
 		PipelineParams m_Params;

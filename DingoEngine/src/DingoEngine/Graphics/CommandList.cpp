@@ -29,6 +29,32 @@ namespace DingoEngine
 		}
 	}
 
+	void CommandList::Begin(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer)
+	{
+		m_CommandListHandle->open();
+
+		m_CommandListHandle->writeBuffer(vertexBuffer->m_BufferHandle, vertexBuffer->m_Data, vertexBuffer->m_Size);
+
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
+		//nvrhi::utils::ClearColorAttachment(m_CommandListHandle, pipeline->m_Framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.0f));
+
+		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
+			.setBuffer(vertexBuffer->m_BufferHandle)
+			.setOffset(0)
+			.setSlot(0); // Assuming slot 0 for the vertex buffer
+			//.setStride(pipeline->m_VertexLayout.Stride);
+
+		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
+		auto& graphicsState = nvrhi::GraphicsState()
+			.addVertexBuffer(vertexBufferBinding)
+			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setFramebuffer(framebuffer->m_FramebufferHandle)
+			.addVertexBuffer(vertexBufferBinding)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(framebuffer->m_Viewport));
+
+		m_CommandListHandle->setGraphicsState(graphicsState);
+	}
+
 	void CommandList::Begin(Framebuffer* framebuffer, Pipeline* pipeline)
 	{
 		m_CommandListHandle->open();
@@ -41,7 +67,6 @@ namespace DingoEngine
 			.setPipeline(pipeline->m_GraphicsPipelineHandle)
 			.setFramebuffer(framebuffer->m_FramebufferHandle)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(framebuffer->m_Viewport));
-			//.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhi::Viewport(1600, 900)));
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
 	}

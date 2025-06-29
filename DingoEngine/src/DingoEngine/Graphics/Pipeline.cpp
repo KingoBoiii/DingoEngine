@@ -53,6 +53,8 @@ namespace DingoEngine
 	{
 		const auto device = GraphicsContext::GetDeviceHandle();
 
+		CreateInputLayout();
+
 		//nvrhi::VertexAttributeDesc attributes[] = {
 		//	nvrhi::VertexAttributeDesc()
 		//		.setName("POSITION")
@@ -67,8 +69,6 @@ namespace DingoEngine
 
 		nvrhi::RenderState renderState = nvrhi::RenderState()
 			.setRasterState(rasterState);
-
-		m_InputLayoutHandle = device->createInputLayout(nullptr, 0, m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
 
 		nvrhi::GraphicsPipelineDesc graphicsPipelineDesc = nvrhi::GraphicsPipelineDesc()
 			.setPrimType(nvrhi::PrimitiveType::TriangleList)
@@ -91,6 +91,35 @@ namespace DingoEngine
 		{
 			m_GraphicsPipelineHandle->Release();
 		}
+	}
+
+	void Pipeline::CreateInputLayout()
+	{
+		const auto device = GraphicsContext::GetDeviceHandle();
+
+		if(m_Params.VertexLayout.Attributes.empty())
+		{
+			m_InputLayoutHandle = device->createInputLayout(nullptr, 0, m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
+			return; // No attributes to create input layout
+		}
+
+		std::vector< nvrhi::VertexAttributeDesc> attributes;
+		int32_t index = 0;
+		for (const auto& attribute : m_Params.VertexLayout.Attributes)
+		{
+			nvrhi::VertexAttributeDesc vertexAttributeDesc = nvrhi::VertexAttributeDesc()
+				.setBufferIndex(index)
+				.setName(attribute.Name)
+				.setFormat(attribute.Format)
+				.setOffset(attribute.Offset)
+				.setElementStride(m_Params.VertexLayout.Stride);
+
+			attributes.push_back(vertexAttributeDesc);
+
+			//index++;
+		}
+
+		m_InputLayoutHandle = device->createInputLayout(attributes.data(), attributes.size(), m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
 	}
 
 }
