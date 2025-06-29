@@ -7,8 +7,8 @@
 namespace DingoEngine
 {
 
-	Window::Window(const WindowOptions& options)
-		: m_Options(options)
+	Window::Window(const WindowParams& params)
+		: m_Params(params)
 	{}
 
 	void Window::Initialize()
@@ -17,20 +17,22 @@ namespace DingoEngine
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-		m_WindowHandle = glfwCreateWindow(m_Options.Width, m_Options.Height, m_Options.Title.c_str(), nullptr, nullptr);
+		glfwWindowHint(GLFW_RESIZABLE, m_Params.Resizable ? GLFW_TRUE : GLFW_FALSE);
+
+		m_WindowHandle = glfwCreateWindow(m_Params.Width, m_Params.Height, m_Params.Title.c_str(), nullptr, nullptr);
 		DE_CORE_ASSERT(m_WindowHandle, "Failed to create GLFW window.");
 		if (!m_WindowHandle)
 		{
 			glfwTerminate();
 		}
 
-		m_GraphicsContext = GraphicsContext::Create(m_Options.GraphicsAPI);
+		m_GraphicsContext = GraphicsContext::Create(m_Params.GraphicsAPI);
 		m_GraphicsContext->Initialize();
 
 		const SwapChainOptions swapChainOptions = {
 			.NativeWindowHandle = m_WindowHandle,
-			.Width = m_Options.Width,
-			.Height = m_Options.Height
+			.Width = m_Params.Width,
+			.Height = m_Params.Height
 		};
 		m_SwapChain = SwapChain::Create(swapChainOptions);
 		m_SwapChain->Initialize();

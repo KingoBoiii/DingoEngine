@@ -1,17 +1,31 @@
 #pragma once
+#include "Enums.h"
+#include <filesystem>
 
 #include <nvrhi/nvrhi.h>
 
 namespace DingoEngine
 {
 
+	struct ShaderParams
+	{
+		std::unordered_map<ShaderType, std::filesystem::path> ShaderFilePaths;
+
+		ShaderParams& AddShaderType(ShaderType shaderType, const std::filesystem::path& filePath)
+		{
+			ShaderFilePaths[shaderType] = filePath;
+			return *this;
+		}
+	};
+
 	class Shader
 	{
 	public:
 		static Shader* Create(const std::string& vertexFilePath, const std::string& fragmentFilePath);
+		static Shader* Create(const ShaderParams& params);
 
 	public:
-		Shader(const std::string& vertexFilePath, const std::string& fragmentFilePath);
+		Shader(const ShaderParams& params);
 		~Shader() = default;
 
 	public:
@@ -19,14 +33,11 @@ namespace DingoEngine
 		void Destroy();
 
 	private:
-		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary);
+		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary, const std::string& debugName = "Shader");
 
 	private:
-		std::string m_VertexFilePath;
-		std::string m_FragmentFilePath;
-
-		nvrhi::ShaderHandle m_VertexShaderHandle;
-		nvrhi::ShaderHandle m_FragmentShaderHandle;
+		ShaderParams m_Params;
+		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;
 
 		friend class Pipeline;
 	};

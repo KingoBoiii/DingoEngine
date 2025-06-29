@@ -4,6 +4,7 @@
 #include <Windows.h>
 #endif
 
+#include <filesystem>
 #include <string>
 #include <sstream>
 #include <vector>

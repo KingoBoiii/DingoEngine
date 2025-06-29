@@ -20,10 +20,9 @@ namespace DingoEngine
 		void Initialize();
 		void Destroy();
 
-		void Begin(Framebuffer* framebuffer);
+		void Begin(Framebuffer* framebuffer, Pipeline* pipeline);
 		void End();
 
-		void SetPipeline(Pipeline* pipeline);
 		void Clear(Framebuffer* framebuffer);
 		void Draw();
 

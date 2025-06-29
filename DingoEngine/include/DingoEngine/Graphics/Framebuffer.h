@@ -5,6 +5,17 @@
 namespace DingoEngine
 {
 
+	struct FramebufferParams
+	{
+		nvrhi::ITexture* Texture = nullptr;
+
+		FramebufferParams& SetTexture(nvrhi::ITexture* texture)
+		{
+			Texture = texture;
+			return *this;
+		}
+	};
+
 	class Framebuffer
 	{
 	public:

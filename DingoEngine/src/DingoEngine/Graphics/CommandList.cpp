@@ -29,29 +29,26 @@ namespace DingoEngine
 		}
 	}
 
-	void CommandList::Begin(Framebuffer* framebuffer)
+	void CommandList::Begin(Framebuffer* framebuffer, Pipeline* pipeline)
 	{
 		m_CommandListHandle->open();
 
 		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
 		//nvrhi::utils::ClearColorAttachment(m_CommandListHandle, pipeline->m_Framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.0f));
+
+		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
+		auto& graphicsState = nvrhi::GraphicsState()
+			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setFramebuffer(framebuffer->m_FramebufferHandle)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhi::Viewport(1600, 900)));
+
+		m_CommandListHandle->setGraphicsState(graphicsState);
 	}
 
 	void CommandList::End()
 	{
 		m_CommandListHandle->close();
 		GraphicsContext::GetDeviceHandle()->executeCommandList(m_CommandListHandle);
-	}
-
-	void CommandList::SetPipeline(Pipeline* pipeline)
-	{
-		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
-		auto& graphicsState = nvrhi::GraphicsState()
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
-			.setFramebuffer(pipeline->m_Framebuffer->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhi::Viewport(1600, 900)));
-
-		m_CommandListHandle->setGraphicsState(graphicsState);
 	}
 
 	void CommandList::Clear(Framebuffer* framebuffer)

@@ -11,7 +11,10 @@ int main()
 	DE_ERROR("ERROR");
 	DE_FATAL("FATAL");
 
-	DingoEngine::Window* window = new DingoEngine::Window();
+	DingoEngine::WindowParams windowParams = DingoEngine::WindowParams()
+		.SetResizable(false);
+
+	DingoEngine::Window* window = new DingoEngine::Window(windowParams);
 	window->Initialize();
 
 	DingoEngine::Renderer* renderer = DingoEngine::Renderer::Create(window->GetSwapChain());
@@ -20,7 +23,13 @@ int main()
 	DingoEngine::Shader* shader = DingoEngine::Shader::Create("assets/shaders/static_triangle.vert.spv", "assets/shaders/static_triangle.frag.spv");
 	shader->Initialize();
 
-	DingoEngine::Pipeline* pipeline = DingoEngine::Pipeline::Create(shader, window->GetSwapChain()->GetFramebuffer(0));
+	DingoEngine::PipelineParams pipelineParams = DingoEngine::PipelineParams()
+		.SetShader(shader)
+		.SetFramebuffer(window->GetSwapChain()->GetFramebuffer(0))
+		.SetFillMode(DingoEngine::FillMode::Solid)
+		.SetCullMode(DingoEngine::CullMode::BackAndFront);
+
+	DingoEngine::Pipeline* pipeline = DingoEngine::Pipeline::Create(pipelineParams);
 	pipeline->Initialize();
 
 	DingoEngine::CommandList* commandList = DingoEngine::CommandList::Create();
@@ -32,9 +41,7 @@ int main()
 
 		renderer->BeginFrame();
 
-		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer());
-		//commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
-		commandList->SetPipeline(pipeline);
+		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer(), pipeline);
 		commandList->Draw();
 		commandList->End();
 

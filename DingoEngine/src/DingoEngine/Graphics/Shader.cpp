@@ -24,37 +24,73 @@ namespace DingoEngine
 			return buffer;
 		}
 
+		static nvrhi::ShaderType ConvertShaderTypeToNVRHI(ShaderType shaderType)
+		{
+			switch (shaderType)
+			{
+				case ShaderType::Vertex: return nvrhi::ShaderType::Vertex;
+				case ShaderType::Fragment: return nvrhi::ShaderType::Pixel;
+				default: break;
+			}
+
+			DE_CORE_ASSERT(false, "Unsupported shader type.");
+			return nvrhi::ShaderType::All; // Should never reach here
+		}
+
+		static std::string GetFileName(const std::filesystem::path& filepath)
+		{
+			const std::string& filepathString = filepath.string();
+
+			// Extract name from filepath
+			auto lastSlash = filepathString.find_last_of("/\\");
+			lastSlash = lastSlash == std::string::npos ? 0 : lastSlash + 1;
+			auto lastDot = filepathString.rfind('.');
+			auto count = lastDot == std::string::npos ? filepathString.size() - lastSlash : lastDot - lastSlash;
+			return filepathString.substr(lastSlash, count);
+		}
+
 	}
 
 	Shader* Shader::Create(const std::string& vertexFilePath, const std::string& fragmentFilePath)
 	{
-		return new Shader(vertexFilePath, fragmentFilePath);
+		ShaderParams params = ShaderParams()
+			.AddShaderType(ShaderType::Vertex, vertexFilePath)
+			.AddShaderType(ShaderType::Fragment, fragmentFilePath);
+
+		return new Shader(params);
 	}
 
-	Shader::Shader(const std::string& vertexFilePath, const std::string& fragmentFilePath)
-		: m_VertexFilePath(vertexFilePath), m_FragmentFilePath(fragmentFilePath)
+	Shader* Shader::Create(const ShaderParams& params)
+	{
+		return new Shader(params);
+	}
+
+	Shader::Shader(const ShaderParams& params)
+		: m_Params(params)
 	{}
 
 	void Shader::Initialize()
 	{
-		const std::vector<char> vertexSpvBinaries = Utils::ReadSpvFile(m_VertexFilePath);
-		m_VertexShaderHandle = CreateShaderHandle(nvrhi::ShaderType::Vertex, vertexSpvBinaries);
+		for(const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
+		{
+			const std::string& fileName = Utils::GetFileName(filePath);
 
-		const std::vector<char> fragmentSpvBinaries = Utils::ReadSpvFile(m_FragmentFilePath);
-		m_FragmentShaderHandle = CreateShaderHandle(nvrhi::ShaderType::Pixel, fragmentSpvBinaries);
+			const std::vector<char> spvBinaries = Utils::ReadSpvFile(filePath.string());
+			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), spvBinaries);
+			DE_CORE_INFO("Shader handle created for {}: {}", fileName, filePath.string());
+		}
 	}
 
 	void Shader::Destroy()
 	{
-		m_VertexShaderHandle->Release();
-		m_FragmentShaderHandle->Release();
+		m_ShaderHandles.clear();
 	}
 
-	nvrhi::ShaderHandle Shader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary)
+	nvrhi::ShaderHandle Shader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary, const std::string& debugName)
 	{
 		nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
 			.setShaderType(shaderType)
-			.setDebugName("Shader")
+			.setDebugName(debugName)
 			.setEntryName("main");
 
 		return GraphicsContext::GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size());
