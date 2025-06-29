@@ -46,3 +46,5 @@ namespace DingoEngine
 #define DE_WARN(...)			::DingoEngine::Log::GetClientLogger()->warn(__VA_ARGS__)
 #define DE_ERROR(...)			::DingoEngine::Log::GetClientLogger()->error(__VA_ARGS__)
 #define DE_FATAL(...)			::DingoEngine::Log::GetClientLogger()->critical(__VA_ARGS__)
+
+#include "Assertion.h"

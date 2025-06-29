@@ -1,6 +1,9 @@
 #pragma once
 
 #include "DingoEngine/Log.h"
+
+#include "DingoEngine/Core/Application.h"
+
 #include "DingoEngine/Windowing/Window.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
