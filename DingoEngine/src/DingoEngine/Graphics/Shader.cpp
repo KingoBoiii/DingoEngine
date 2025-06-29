@@ -37,6 +37,24 @@ namespace DingoEngine
 			return nvrhi::ShaderType::All; // Should never reach here
 		}
 
+		static std::string ConvertShaderTypeToString(ShaderType shaderType)
+		{
+			switch (shaderType)
+			{
+				case ShaderType::Vertex: return "Vertex";
+				case ShaderType::Fragment: return "Fragment";
+				case ShaderType::Geometry: return "Geometry";
+				case ShaderType::Compute: return "Compute";
+				case ShaderType::RayGeneration: return "Ray Generation";
+				case ShaderType::RayAnyHit: return "Ray Any Hit";
+				case ShaderType::RayClosestHit: return "Ray Closest Hit";
+				case ShaderType::RayMiss: return "Ray Miss";
+				case ShaderType::RayIntersection: return "Ray Intersection";
+				case ShaderType::RayCallable: return "Ray Callable";
+				default: return "Unknown";
+			}
+		}
+
 		static std::string GetFileName(const std::filesystem::path& filepath)
 		{
 			const std::string& filepathString = filepath.string();
@@ -71,13 +89,22 @@ namespace DingoEngine
 
 	void Shader::Initialize()
 	{
-		for(const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
+		std::string name = m_Params.Name;
+		if (name.empty())
 		{
-			const std::string& fileName = Utils::GetFileName(filePath);
+			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
+		}
+
+		for (const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
+		{
+			if (name.empty())
+			{
+				name = Utils::GetFileName(filePath);
+			}
 
 			const std::vector<char> spvBinaries = Utils::ReadSpvFile(filePath.string());
-			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), spvBinaries);
-			DE_CORE_INFO("Shader handle created for {}: {}", fileName, filePath.string());
+			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), spvBinaries, name);
+			DE_CORE_INFO("Shader handle created for {} ({}): {}", name, Utils::ConvertShaderTypeToString(shaderType), filePath.string());
 		}
 	}
 

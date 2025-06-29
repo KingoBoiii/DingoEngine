@@ -20,7 +20,12 @@ int main()
 	DingoEngine::Renderer* renderer = DingoEngine::Renderer::Create(window->GetSwapChain());
 	renderer->Initialize();
 
-	DingoEngine::Shader* shader = DingoEngine::Shader::Create("assets/shaders/static_triangle.vert.spv", "assets/shaders/static_triangle.frag.spv");
+	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
+		.SetName("StaticTriangle")
+		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/static_triangle.vert.spv")
+		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/static_triangle.frag.spv");
+
+	DingoEngine::Shader* shader = DingoEngine::Shader::Create(shaderParams);
 	shader->Initialize();
 
 	DingoEngine::PipelineParams pipelineParams = DingoEngine::PipelineParams()

@@ -9,7 +9,14 @@ namespace DingoEngine
 
 	struct ShaderParams
 	{
+		std::string Name;
 		std::unordered_map<ShaderType, std::filesystem::path> ShaderFilePaths;
+
+		ShaderParams& SetName(const std::string& name)
+		{
+			Name = name;
+			return *this;
+		}
 
 		ShaderParams& AddShaderType(ShaderType shaderType, const std::filesystem::path& filePath)
 		{
