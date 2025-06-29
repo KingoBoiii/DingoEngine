@@ -9,16 +9,24 @@ namespace DingoEngine
 
 	Framebuffer* Framebuffer::Create(nvrhi::ITexture* texture)
 	{
-		if(GraphicsContext::GetApi() == GraphicsAPI::Vulkan)
-		{
-			return new VulkanFramebuffer(texture);
-		}
+		FramebufferParams params = FramebufferParams()
+			.SetTexture(texture);
 
-		return new Framebuffer(texture);
+		return Create(params);
 	}
 
-	Framebuffer::Framebuffer(nvrhi::ITexture* texture)
-		: m_Texture(texture)
+	Framebuffer* Framebuffer::Create(const FramebufferParams& params)
+	{
+		if (GraphicsContext::GetApi() == GraphicsAPI::Vulkan)
+		{
+			return new VulkanFramebuffer(params);
+		}
+
+		return new Framebuffer(params);
+	}
+
+	Framebuffer::Framebuffer(const FramebufferParams& params)
+		: m_Params(params)
 	{}
 
 	void Framebuffer::Initialize()
@@ -27,9 +35,11 @@ namespace DingoEngine
 		const bool targetSwapChain = true;
 
 		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc()
-			.addColorAttachment(m_Texture);
+			.addColorAttachment(m_Params.Texture);
 
 		m_FramebufferHandle = device->createFramebuffer(framebufferDesc);
+
+		m_Viewport = nvrhi::Viewport(static_cast<float>(m_Params.Width), static_cast<float>(m_Params.Height));
 	}
 
 	void Framebuffer::Destroy()

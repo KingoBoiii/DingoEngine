@@ -37,38 +37,15 @@ namespace DingoEngine
 	{
 		CreateWindowSurface();
 		CreateSwapChain();
-
-		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
-		m_SwapChainFramebuffers.resize(m_SwapChainImages.size());
-		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
-		{
-			m_SwapChainFramebuffers[index] = Framebuffer::Create(m_SwapChainImages[index].rhiHandle);
-			m_SwapChainFramebuffers[index]->Initialize();
-		}
+		CreateFramebuffers();
+		CreateSynchronizationObjects();
 	}
 
 	void VulkanSwapChain::Destroy()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		if (graphicsContext.m_VulkanDevice)
-		{
-			graphicsContext.m_VulkanDevice.waitIdle();
-		}
-
-		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
-		{
-			m_SwapChainFramebuffers[index]->Destroy();
-		}
-		m_SwapChainFramebuffers.clear();
-
-		if (m_SwapChain)
-		{
-			graphicsContext.m_VulkanDevice.destroySwapchainKHR(m_SwapChain);
-			m_SwapChain = nullptr;
-		}
-
-		m_SwapChainImages.clear();
+		DestroySwapChain();
 
 		for (auto& semaphore : m_PresentSemaphores)
 		{
@@ -108,6 +85,14 @@ namespace DingoEngine
 		}
 	}
 
+	void VulkanSwapChain::Resize(int32_t width, int32_t height)
+	{
+		m_Options.Width = width;
+		m_Options.Height = height;
+
+		RecreateSwapChain();
+	}
+
 	void VulkanSwapChain::AcquireNextImage()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
@@ -130,7 +115,9 @@ namespace DingoEngine
 			result = graphicsContext.m_VulkanDevice.acquireNextImageKHR(m_SwapChain, std::numeric_limits<uint64_t>::max(), m_AcquireSemaphores[m_AcquireSemaphoreIndex], {}, &m_SwapChainIndex);
 			if (result == vk::Result::eErrorOutOfDateKHR && attempt < maxAttempts)
 			{
-				__debugbreak();
+				DE_CORE_WARN("Swapchain is out of date, recreating it.");
+				RecreateSwapChain();
+				break;
 			}
 			else
 			{
@@ -174,7 +161,13 @@ namespace DingoEngine
 			.setPImageIndices(&m_SwapChainIndex);
 
 		const vk::Result result = graphicsContext.m_PresentQueue.presentKHR(&presentInfo);
-		DE_CORE_ASSERT(result == vk::Result::eSuccess || result == vk::Result::eErrorOutOfDateKHR);
+		if (result == vk::Result::eErrorOutOfDateKHR)
+		{
+			DE_CORE_WARN("Swapchain is out of date, recreating it.");
+			RecreateSwapChain();
+			//return;
+		}
+		DE_CORE_ASSERT(result == vk::Result::eSuccess);
 
 		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
 		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
@@ -289,6 +282,27 @@ namespace DingoEngine
 		}
 
 		m_SwapChainIndex = 0;
+	}
+
+	void VulkanSwapChain::CreateFramebuffers()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+		m_SwapChainFramebuffers.resize(m_SwapChainImages.size());
+		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
+		{
+			FramebufferParams framebufferParams = FramebufferParams()
+				.SetWidth(m_Options.Width)
+				.SetHeight(m_Options.Height)
+				.SetTexture(m_SwapChainImages[index].rhiHandle);
+
+			m_SwapChainFramebuffers[index] = Framebuffer::Create(framebufferParams);
+			m_SwapChainFramebuffers[index]->Initialize();
+		}
+	}
+
+	void VulkanSwapChain::CreateSynchronizationObjects()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
 		const uint32_t maxFramesInFlight = 2;
 
@@ -301,6 +315,41 @@ namespace DingoEngine
 			m_AcquireSemaphores.push_back(graphicsContext.m_VulkanDevice.createSemaphore(vk::SemaphoreCreateInfo()));
 			m_InFlightFences[i] = graphicsContext.m_VulkanDevice.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled));
 		}
+
+		m_AcquireSemaphoreIndex = 0;
+		m_PresentSemaphoreIndex = 0;
+	}
+
+	void VulkanSwapChain::DestroySwapChain()
+	{
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		if (graphicsContext.m_VulkanDevice)
+		{
+			graphicsContext.m_VulkanDevice.waitIdle();
+		}
+
+		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
+		{
+			m_SwapChainFramebuffers[index]->Destroy();
+		}
+		m_SwapChainFramebuffers.clear();
+
+		if (m_SwapChain)
+		{
+			graphicsContext.m_VulkanDevice.destroySwapchainKHR(m_SwapChain);
+			m_SwapChain = nullptr;
+		}
+
+		m_SwapChainImages.clear();
+	}
+
+	void VulkanSwapChain::RecreateSwapChain()
+	{
+		DestroySwapChain();
+
+		CreateSwapChain();
+		CreateFramebuffers();
 	}
 
 }

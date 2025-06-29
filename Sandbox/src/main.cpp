@@ -11,10 +11,7 @@ int main()
 	DE_ERROR("ERROR");
 	DE_FATAL("FATAL");
 
-	DingoEngine::WindowParams windowParams = DingoEngine::WindowParams()
-		.SetResizable(false);
-
-	DingoEngine::Window* window = new DingoEngine::Window(windowParams);
+	DingoEngine::Window* window = new DingoEngine::Window();
 	window->Initialize();
 
 	DingoEngine::Renderer* renderer = DingoEngine::Renderer::Create(window->GetSwapChain());

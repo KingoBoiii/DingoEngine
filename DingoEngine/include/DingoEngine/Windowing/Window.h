@@ -56,6 +56,10 @@ namespace DingoEngine
 		bool IsRunning() const;
 
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
+
+	private:
+		void SetupGLFWCallbacks() const;
+
 	private:
 		WindowParams m_Params;
 		GLFWwindow* m_WindowHandle = nullptr;

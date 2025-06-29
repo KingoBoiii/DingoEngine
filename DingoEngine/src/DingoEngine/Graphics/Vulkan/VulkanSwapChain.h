@@ -16,10 +16,10 @@ namespace DingoEngine
 	public:
 		virtual void Initialize() override;
 		virtual void Destroy() override;
+		virtual void Resize(int32_t width, int32_t height) override;
 
 		virtual void AcquireNextImage() override;
 		virtual void Present() override;
-
 
 		virtual Framebuffer* SwapChain::GetCurrentFramebuffer() const
 		{
@@ -27,9 +27,14 @@ namespace DingoEngine
 		}
 
 	private:
+
 		void CreateWindowSurface();
 		void CreateSwapChain();
+		void CreateFramebuffers();
+		void CreateSynchronizationObjects();
+		void DestroySwapChain();
 
+		void RecreateSwapChain();
 	private:
 		vk::SurfaceKHR m_WindowSurface = nullptr;
 		vk::SwapchainKHR m_SwapChain = nullptr;

@@ -37,6 +37,10 @@ namespace DingoEngine
 		m_SwapChain = SwapChain::Create(swapChainOptions);
 		m_SwapChain->Initialize();
 
+		glfwSetWindowUserPointer(m_WindowHandle, this);
+
+		SetupGLFWCallbacks();
+
 		//glfwMakeContextCurrent(m_WindowHandle);
 	}
 
@@ -59,6 +63,19 @@ namespace DingoEngine
 	bool Window::IsRunning() const
 	{
 		return glfwWindowShouldClose(m_WindowHandle) == GLFW_FALSE;
+	}
+
+	void Window::SetupGLFWCallbacks() const
+	{
+		glfwSetWindowSizeCallback(m_WindowHandle, [](GLFWwindow* window, int width, int height)
+		{
+			DE_CORE_TRACE("Window resized: {}x{}", width, height);
+
+			Window& w = *((Window*)glfwGetWindowUserPointer(window));
+
+			// Priorite to resizing the swap chain
+			w.m_SwapChain->Resize(width, height);
+		});
 	}
 
 }

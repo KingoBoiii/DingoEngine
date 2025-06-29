@@ -40,7 +40,8 @@ namespace DingoEngine
 		auto& graphicsState = nvrhi::GraphicsState()
 			.setPipeline(pipeline->m_GraphicsPipelineHandle)
 			.setFramebuffer(framebuffer->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhi::Viewport(1600, 900)));
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(framebuffer->m_Viewport));
+			//.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhi::Viewport(1600, 900)));
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
 	}

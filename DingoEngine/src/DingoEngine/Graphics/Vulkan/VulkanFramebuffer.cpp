@@ -7,22 +7,22 @@
 namespace DingoEngine
 {
 
-	VulkanFramebuffer::VulkanFramebuffer(nvrhi::ITexture* texture)
-		: Framebuffer(texture)
+	VulkanFramebuffer::VulkanFramebuffer(const FramebufferParams& params)
+		: Framebuffer(params)
 	{}
 
 	void VulkanFramebuffer::Initialize()
 	{
 		// 1. Get the Vulkan image view and format from the nvrhi texture
-		auto textureViewObj = m_Texture->getNativeView(nvrhi::ObjectTypes::VK_ImageView, m_Texture->getDesc().format);
+		auto textureViewObj = m_Params.Texture->getNativeView(nvrhi::ObjectTypes::VK_ImageView, m_Params.Texture->getDesc().format);
 		VkImageView imageView = reinterpret_cast<VkImageView>(textureViewObj.pointer);
 
-		VkFormat colorFormat = static_cast<VkFormat>(m_Texture->getDesc().format);
+		VkFormat colorFormat = static_cast<VkFormat>(m_Params.Texture->getDesc().format);
 
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
 		vk::AttachmentDescription attachmentDescription = vk::AttachmentDescription()
-			.setFormat(vk::Format(nvrhi::vulkan::convertFormat(m_Texture->getDesc().format)))
+			.setFormat(vk::Format(nvrhi::vulkan::convertFormat(m_Params.Texture->getDesc().format)))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eNone)
 			.setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -62,8 +62,8 @@ namespace DingoEngine
 			.setRenderPass(renderPass)
 			.setAttachmentCount(1)
 			.setPAttachments((vk::ImageView*)&imageView)
-			.setWidth(m_Texture->getDesc().width)
-			.setHeight(m_Texture->getDesc().height)
+			.setWidth(m_Params.Texture->getDesc().width)
+			.setHeight(m_Params.Texture->getDesc().height)
 			.setLayers(1);
 
 		//framebufferCreateInfo.pAttachments = &imageView;
@@ -71,9 +71,11 @@ namespace DingoEngine
 		vk::Framebuffer framebuffer = graphicsContext.GetDeviceHandle().createFramebuffer(framebufferCreateInfo);
 
 		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc()
-			.addColorAttachment(m_Texture);
+			.addColorAttachment(m_Params.Texture);
 
 		m_FramebufferHandle = graphicsContext.GetNvrhiDevice()->createHandleForNativeFramebuffer(renderPass, framebuffer, framebufferDesc, true);
+
+		m_Viewport = nvrhi::Viewport(static_cast<float>(m_Params.Width), static_cast<float>(m_Params.Height));
 	}
 
 }

@@ -25,6 +25,7 @@ namespace DingoEngine
 	public:
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
+		virtual void Resize(int32_t width, int32_t height) = 0;
 
 		virtual void AcquireNextImage() = 0;
 		virtual void Present() = 0;

@@ -7,7 +7,21 @@ namespace DingoEngine
 
 	struct FramebufferParams
 	{
+		int32_t Width;
+		int32_t Height;
 		nvrhi::ITexture* Texture = nullptr;
+
+		FramebufferParams& SetWidth(int32_t width)
+		{
+			Width = width;
+			return *this;
+		}
+
+		FramebufferParams& SetHeight(int32_t height)
+		{
+			Height = height;
+			return *this;
+		}
 
 		FramebufferParams& SetTexture(nvrhi::ITexture* texture)
 		{
@@ -20,9 +34,10 @@ namespace DingoEngine
 	{
 	public:
 		static Framebuffer* Create(nvrhi::ITexture* texture);
+		static Framebuffer* Create(const FramebufferParams& params);
 
 	public:
-		Framebuffer(nvrhi::ITexture* texture);
+		Framebuffer(const FramebufferParams& params);
 		virtual ~Framebuffer() = default;
 
 	public:
@@ -30,8 +45,9 @@ namespace DingoEngine
 		virtual void Destroy();
 
 	protected:
-		nvrhi::ITexture* m_Texture;
+		FramebufferParams m_Params;
 		nvrhi::FramebufferHandle m_FramebufferHandle;
+		nvrhi::Viewport m_Viewport;
 
 		friend class Pipeline;
 		friend class CommandList;

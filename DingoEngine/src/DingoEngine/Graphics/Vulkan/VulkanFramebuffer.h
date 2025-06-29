@@ -7,7 +7,7 @@ namespace DingoEngine
 	class VulkanFramebuffer : public Framebuffer
 	{
 	public:
-		VulkanFramebuffer(nvrhi::ITexture* texture);
+		VulkanFramebuffer(const FramebufferParams& params);
 		virtual ~VulkanFramebuffer() = default;
 	public:
 		virtual void Initialize() override;
