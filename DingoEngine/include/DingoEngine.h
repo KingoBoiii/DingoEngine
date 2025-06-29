@@ -3,6 +3,7 @@
 #include "DingoEngine/Log.h"
 
 #include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Core/Layer.h"
 
 #include "DingoEngine/Windowing/Window.h"
 

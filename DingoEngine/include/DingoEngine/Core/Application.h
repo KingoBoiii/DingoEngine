@@ -1,5 +1,7 @@
 #pragma once
+#include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 namespace DingoEngine
 {
@@ -18,6 +20,9 @@ namespace DingoEngine
 		void Destroy();
 		void Run();
 
+		void PushLayer(Layer* layer);
+		void PushOverlay(Layer* overlay);
+
 		Window& GetWindow() { return *m_Window; }
 		static Application& Get() { return *s_Instance; }
 
@@ -29,7 +34,9 @@ namespace DingoEngine
 		virtual void OnDestroy() {}
 
 	private:
+		LayerStack m_LayerStack;
 		Window* m_Window = nullptr;
+		Renderer* m_Renderer = nullptr;
 
 	private:
 		inline static Application* s_Instance = nullptr;

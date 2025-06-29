@@ -1,5 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Core/Layer.h"
+#include "DingoEngine/Core/Layers/DefaultLayer.h"
 
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/CommandList.h"
@@ -11,19 +13,8 @@
 
 #include <glm/glm.hpp>
 
-#define RENDER_STATIC_TRIANGLE 0
 #define RENDER_VERTEX_BUFFER_TRIANGLE 0
-#define RENDER_QUAD 1
-
-#if RENDER_STATIC_TRIANGLE
-struct StaticTriangleRenderPipeline
-{
-	DingoEngine::Shader* Shader = nullptr;
-	DingoEngine::Pipeline* Pipeline = nullptr;
-};
-const StaticTriangleRenderPipeline SetupStaticTriangle(DingoEngine::Framebuffer* framebuffer);
-void DestroyStaticTriangle(const StaticTriangleRenderPipeline& staticTriangle);
-#endif // RENDER_STATIC_TRIANGLE
+#define RENDER_QUAD 0
 
 #if RENDER_VERTEX_BUFFER_TRIANGLE | RENDER_QUAD
 struct Vertex
@@ -94,12 +85,31 @@ namespace DingoEngine
 		m_Window = new Window();
 		m_Window->Initialize();
 
+		m_Renderer = Renderer::Create(m_Window->GetSwapChain());
+		m_Renderer->Initialize();
+
 		OnInitialize();
+
+		if(m_LayerStack.Empty())
+		{
+			// If no layers are pushed, we can push a default layer
+			DE_CORE_ERROR("No layers pushed to the application. Pushing a default layer.");
+			PushLayer(new DefaultLayer());
+		}
 	}
 
 	void Application::Destroy()
 	{
 		OnDestroy();
+
+		m_LayerStack.Clear();
+
+		if (m_Renderer)
+		{
+			m_Renderer->Destroy();
+			delete m_Renderer;
+			m_Renderer = nullptr;
+		}
 
 		if (m_Window)
 		{
@@ -111,13 +121,6 @@ namespace DingoEngine
 
 	void Application::Run()
 	{
-		DingoEngine::Renderer* renderer = DingoEngine::Renderer::Create(m_Window->GetSwapChain());
-		renderer->Initialize();
-
-#if RENDER_STATIC_TRIANGLE
-		const StaticTriangleRenderPipeline staticTriangleRenderPipeline = SetupStaticTriangle(m_Window->GetSwapChain()->GetFramebuffer(0));
-#endif // RENDER_STATIC_TRIANGLE
-
 #if RENDER_VERTEX_BUFFER_TRIANGLE
 		const VertexBufferTriangleRenderPipeline vertexBufferTriangleRenderPipeline = SetupVertexBufferTriangle(m_Window->GetSwapChain()->GetFramebuffer(0));
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
@@ -136,14 +139,11 @@ namespace DingoEngine
 		{
 			m_Window->Update();
 
-			renderer->BeginFrame();
-
-#if RENDER_STATIC_TRIANGLE
-			commandList->Begin();
-			commandList->Clear(m_Window->GetSwapChain()->GetCurrentFramebuffer());
-			commandList->Draw(m_Window->GetSwapChain()->GetCurrentFramebuffer(), staticTriangleRenderPipeline.Pipeline);
-			commandList->End();
-#endif // RENDER_STATIC_TRIANGLE
+			m_Renderer->BeginFrame();
+			for (Layer* layer : m_LayerStack)
+			{
+				layer->OnUpdate();
+			}
 
 #if RENDER_VERTEX_BUFFER_TRIANGLE
 			commandList->Begin();
@@ -159,16 +159,12 @@ namespace DingoEngine
 			commandList->End();
 #endif // RENDER_QUAD
 
-			renderer->EndFrame();
-			renderer->Present();
-			renderer->WaitAndClear();
+			m_Renderer->EndFrame();
+			m_Renderer->Present();
+			m_Renderer->WaitAndClear();
 		}
 
 		commandList->Destroy();
-
-#if RENDER_STATIC_TRIANGLE
-		DestroyStaticTriangle(staticTriangleRenderPipeline);
-#endif // RENDER_STATIC_TRIANGLE
 
 #if RENDER_VERTEX_BUFFER_TRIANGLE
 		DestroyVertexBufferTriangle(vertexBufferTriangleRenderPipeline);
@@ -177,45 +173,21 @@ namespace DingoEngine
 #if RENDER_QUAD
 		DestroyQuad(quadRenderPipeline);
 #endif // RENDER_QUAD
+	}
 
-		renderer->Destroy();
-		delete renderer;
+	void Application::PushLayer(Layer* layer)
+	{
+		m_LayerStack.PushLayer(layer);
+		layer->OnAttach();
+	}
+
+	void Application::PushOverlay(Layer* overlay)
+	{
+		m_LayerStack.PushOverlay(overlay);
+		overlay->OnAttach();
 	}
 
 }
-
-#if RENDER_STATIC_TRIANGLE
-const StaticTriangleRenderPipeline SetupStaticTriangle(DingoEngine::Framebuffer* framebuffer)
-{
-	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
-		.SetName("StaticTriangle")
-		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/static_triangle.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/static_triangle.frag.spv");
-
-	DingoEngine::Shader* shader = DingoEngine::Shader::Create(shaderParams);
-	shader->Initialize();
-
-	DingoEngine::PipelineParams pipelineParams = DingoEngine::PipelineParams()
-		.SetShader(shader)
-		.SetFramebuffer(framebuffer)
-		.SetFillMode(DingoEngine::FillMode::Solid)
-		.SetCullMode(DingoEngine::CullMode::BackAndFront);
-
-	DingoEngine::Pipeline* pipeline = DingoEngine::Pipeline::Create(pipelineParams);
-	pipeline->Initialize();
-
-	return StaticTriangleRenderPipeline{
-		.Shader = shader,
-		.Pipeline = pipeline
-	};
-}
-
-void DestroyStaticTriangle(const StaticTriangleRenderPipeline& staticTriangleRenderPipeline)
-{
-	staticTriangleRenderPipeline.Pipeline->Destroy();
-	staticTriangleRenderPipeline.Shader->Destroy();
-}
-#endif // RENDER_STATIC_TRIANGLE
 
 #if RENDER_VERTEX_BUFFER_TRIANGLE
 const VertexBufferTriangleRenderPipeline SetupVertexBufferTriangle(DingoEngine::Framebuffer* framebuffer)
