@@ -21,19 +21,29 @@ project "DingoEngine"
 	}
 	
 	includedirs { 
-		"include/", 
-		"src/", 
-		"vendor/",
-        "%{IncludeDir.glfw}"
+		"include", 
+		"src",
+        "%{IncludeDir.spdlog}",
+        "%{IncludeDir.glfw}",
+        "%{IncludeDir.vulkan}",
+        "%{IncludeDir.nvrhi}",
+        "%{IncludeDir.glm}"
 	}
 
 	links {
-		"glfw"
+		"spdlog",
+		"glfw",
+		"%{Library.vulkan}",
+		"nvrhi"
 	}
 
 	defines {
 		"GLFW_INCLUDE_NONE"
 	}
+
+	buildoptions {
+        "/utf-8"
+    }
 
 	filter "system:windows"
 		systemversion "latest"

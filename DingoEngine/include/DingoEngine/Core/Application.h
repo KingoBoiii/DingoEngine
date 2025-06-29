@@ -1,0 +1,47 @@
+#pragma once
+#include "DingoEngine/Core/LayerStack.h"
+#include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Graphics/Renderer.h"
+
+namespace DingoEngine
+{
+
+	struct ApplicationParams
+	{
+	};
+
+	class Application
+	{
+	public:
+		virtual ~Application();
+
+	public:
+		void Initialize();
+		void Destroy();
+		void Run();
+
+		void PushLayer(Layer* layer);
+		void PushOverlay(Layer* overlay);
+
+		Window& GetWindow() { return *m_Window; }
+		static Application& Get() { return *s_Instance; }
+
+	protected:
+		Application(const ApplicationParams& params = {});
+
+	protected:
+		virtual void OnInitialize() {}
+		virtual void OnDestroy() {}
+
+	private:
+		LayerStack m_LayerStack;
+		Window* m_Window = nullptr;
+		Renderer* m_Renderer = nullptr;
+
+	private:
+		inline static Application* s_Instance = nullptr;
+	};
+
+	Application* CreateApplication();
+
+}

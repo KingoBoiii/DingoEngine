@@ -12,11 +12,21 @@ project "Sandbox"
 	}
 	
 	includedirs {
-        "src/",
-        "../DingoEngine/include/"
+        "%{wks.location}/DingoEngine/include",
+        "src",
+        "%{IncludeDir.glm}",
+
+        "%{IncludeDir.spdlog}", -- TODO: Client apps should not depend on this...
+        "%{IncludeDir.nvrhi}" -- TODO: Client apps should not depend on this...
     }
 
-    links { "DingoEngine" }
+    links { 
+		"DingoEngine"
+	}
+
+    buildoptions {
+        "/utf-8"
+    }
 
 	filter "system:windows"
 		systemversion "latest"

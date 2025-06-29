@@ -1,3 +1,12 @@
 [submodule "DingoEngine/vendor/glfw"]
 	path = DingoEngine/vendor/glfw
 	url = https://github.com/KingoBoiii/glfw.git
+[submodule "DingoEngine/vendor/nvrhi"]
+	path = DingoEngine/vendor/nvrhi
+	url = https://github.com/KingoBoiii/NVRHI.git
+[submodule "DingoEngine/vendor/spdlog"]
+	path = DingoEngine/vendor/spdlog
+	url = https://github.com/KingoBoiii/spdlog.git
+[submodule "DingoEngine/vendor/glm"]
+	path = DingoEngine/vendor/glm
+	url = https://github.com/KingoBoiii/glm.git
