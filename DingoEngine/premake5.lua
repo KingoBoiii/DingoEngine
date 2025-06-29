@@ -22,12 +22,12 @@ project "DingoEngine"
 	
 	includedirs { 
 		"include", 
-		"src", 
-		"vendor",
+		"src",
         "%{IncludeDir.spdlog}",
         "%{IncludeDir.glfw}",
         "%{IncludeDir.vulkan}",
-        "%{IncludeDir.nvrhi}"
+        "%{IncludeDir.nvrhi}",
+        "%{IncludeDir.glm}"
 	}
 
 	links {

@@ -12,10 +12,12 @@ project "Sandbox"
 	}
 	
 	includedirs {
+        "%{wks.location}/DingoEngine/include",
         "src",
+        "%{IncludeDir.glm}",
+
         "%{IncludeDir.spdlog}", -- TODO: Client apps should not depend on this...
-        "%{IncludeDir.nvrhi}", -- TODO: Client apps should not depend on this...
-        "%{wks.location}/DingoEngine/include"
+        "%{IncludeDir.nvrhi}" -- TODO: Client apps should not depend on this...
     }
 
     links { 

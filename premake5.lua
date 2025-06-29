@@ -26,6 +26,7 @@ IncludeDir = {}
 IncludeDir['spdlog'] = "%{wks.location}/DingoEngine/Vendor/spdlog/include";
 IncludeDir['glfw'] = "%{wks.location}/DingoEngine/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/DingoEngine/vendor/nvrhi/include";
+IncludeDir['glm'] = "%{wks.location}/DingoEngine/Vendor/glm";
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 
 LibraryDir = {}
