@@ -38,8 +38,8 @@ int main()
 
 	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
 		.SetName("StaticTriangle")
-		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/static_triangle.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/static_triangle.frag.spv");
+		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/static_triangle.vert.spv")
+		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/static_triangle.frag.spv");
 
 	DingoEngine::Shader* shader = DingoEngine::Shader::Create(shaderParams);
 	shader->Initialize();
