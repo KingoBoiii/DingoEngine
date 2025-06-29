@@ -7,19 +7,19 @@
 namespace DingoEngine
 {
 
-	SwapChain* SwapChain::Create(const SwapChainOptions& options)
+	SwapChain* SwapChain::Create(const SwapChainParams& params)
 	{
 		switch (GraphicsContext::GetApi())
 		{
-			case DingoEngine::GraphicsAPI::Vulkan: return new VulkanSwapChain(options);
+			case DingoEngine::GraphicsAPI::Vulkan: return new VulkanSwapChain(params);
 			default: break;
 		}
 
 		return nullptr;
 	}
 
-	SwapChain::SwapChain(const SwapChainOptions& options)
-		: m_Options(options)
+	SwapChain::SwapChain(const SwapChainParams& params)
+		: m_Params(params)
 	{}
 
 }

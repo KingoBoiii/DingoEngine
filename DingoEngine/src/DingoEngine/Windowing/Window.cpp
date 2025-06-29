@@ -16,7 +16,6 @@ namespace DingoEngine
 		DE_CORE_ASSERT(glfwInit(), "Failed to initialize GLFW library.");
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
 		glfwWindowHint(GLFW_RESIZABLE, m_Params.Resizable ? GLFW_TRUE : GLFW_FALSE);
 
 		m_WindowHandle = glfwCreateWindow(m_Params.Width, m_Params.Height, m_Params.Title.c_str(), nullptr, nullptr);
@@ -29,7 +28,7 @@ namespace DingoEngine
 		m_GraphicsContext = GraphicsContext::Create(m_Params.GraphicsAPI);
 		m_GraphicsContext->Initialize();
 
-		const SwapChainOptions swapChainOptions = {
+		const SwapChainParams swapChainOptions = {
 			.NativeWindowHandle = m_WindowHandle,
 			.Width = m_Params.Width,
 			.Height = m_Params.Height
@@ -40,8 +39,6 @@ namespace DingoEngine
 		glfwSetWindowUserPointer(m_WindowHandle, this);
 
 		SetupGLFWCallbacks();
-
-		//glfwMakeContextCurrent(m_WindowHandle);
 	}
 
 	void Window::Shutdown()
@@ -56,7 +53,6 @@ namespace DingoEngine
 
 	void Window::Update()
 	{
-		//glfwSwapBuffers(m_WindowHandle);
 		glfwPollEvents();
 	}
 
@@ -69,8 +65,6 @@ namespace DingoEngine
 	{
 		glfwSetWindowSizeCallback(m_WindowHandle, [](GLFWwindow* window, int width, int height)
 		{
-			DE_CORE_TRACE("Window resized: {}x{}", width, height);
-
 			Window& w = *((Window*)glfwGetWindowUserPointer(window));
 
 			// Priorite to resizing the swap chain

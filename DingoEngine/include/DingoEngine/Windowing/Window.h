@@ -13,6 +13,7 @@ namespace DingoEngine
 		int32_t Width = 1600;
 		int32_t Height = 900;
 		GraphicsAPI GraphicsAPI = GraphicsAPI::Vulkan;
+		bool VSync = true;
 		bool Resizable = true;
 
 		WindowParams SetTitle(const std::string& title)
@@ -30,6 +31,18 @@ namespace DingoEngine
 		WindowParams SetHeight(int32_t height)
 		{
 			Height = height;
+			return *this;
+		}
+
+		WindowParams SetGraphicsAPI(DingoEngine::GraphicsAPI graphicsAPI)
+		{
+			GraphicsAPI = graphicsAPI;
+			return *this;
+		}
+
+		WindowParams SetVSync(bool vsync)
+		{
+			VSync = vsync;
 			return *this;
 		}
 

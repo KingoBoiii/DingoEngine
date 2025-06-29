@@ -6,20 +6,45 @@ struct GLFWwindow;
 namespace DingoEngine
 {
 
-	struct SwapChainOptions
+	struct SwapChainParams
 	{
 		GLFWwindow* NativeWindowHandle;
 		int32_t Width;
 		int32_t Height;
+		bool VSync = true;
+
+		SwapChainParams SetNativeWindowHandle(GLFWwindow* handle)
+		{
+			NativeWindowHandle = handle;
+			return *this;
+		}
+
+		SwapChainParams SetWidth(int32_t width)
+		{
+			Width = width;
+			return *this;
+		}
+
+		SwapChainParams SetHeight(int32_t height)
+		{
+			Height = height;
+			return *this;
+		}
+		
+		SwapChainParams SetVSync(bool vsync)
+		{
+			VSync = vsync;
+			return *this;
+		}
 	};
 
 	class SwapChain
 	{
 	public:
-		static SwapChain* Create(const SwapChainOptions& options = {});
+		static SwapChain* Create(const SwapChainParams& params = {});
 
 	public:
-		SwapChain(const SwapChainOptions& options = {});
+		SwapChain(const SwapChainParams& params = {});
 		virtual ~SwapChain() = default;
 
 	public:
@@ -34,7 +59,7 @@ namespace DingoEngine
 		virtual Framebuffer* GetCurrentFramebuffer() const = 0;
 
 	protected:
-		SwapChainOptions m_Options;
+		SwapChainParams m_Params;
 		std::vector<Framebuffer*> m_SwapChainFramebuffers;
 	};
 

@@ -10,7 +10,7 @@ namespace DingoEngine
 	class VulkanSwapChain : public SwapChain
 	{
 	public:
-		VulkanSwapChain(const SwapChainOptions& options);
+		VulkanSwapChain(const SwapChainParams& options);
 		virtual ~VulkanSwapChain();
 
 	public:

@@ -26,8 +26,8 @@ namespace DingoEngine
 
 	}
 
-	VulkanSwapChain::VulkanSwapChain(const SwapChainOptions& options)
-		: SwapChain(options)
+	VulkanSwapChain::VulkanSwapChain(const SwapChainParams& params)
+		: SwapChain(params)
 	{}
 
 	VulkanSwapChain::~VulkanSwapChain()
@@ -93,8 +93,8 @@ namespace DingoEngine
 			return;
 		}
 
-		m_Options.Width = width;
-		m_Options.Height = height;
+		m_Params.Width = width;
+		m_Params.Height = height;
 
 		RecreateSwapChain();
 	}
@@ -182,7 +182,7 @@ namespace DingoEngine
 		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
 		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
 
-		if (true) // vsync 
+		if (m_Params.VSync) // vsync 
 		{
 			graphicsContext.m_PresentQueue.waitIdle();
 		}
@@ -197,7 +197,7 @@ namespace DingoEngine
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
-		const VkResult result = glfwCreateWindowSurface(graphicsContext.m_VulkanInstance, m_Options.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
+		const VkResult result = glfwCreateWindowSurface(graphicsContext.m_VulkanInstance, m_Params.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
 		if (result != VK_SUCCESS)
 		{
 			DE_CORE_ERROR("Failed to create a GLFW window surface, error code = {}", std::string(nvrhi::vulkan::resultToString(result)));
@@ -214,7 +214,7 @@ namespace DingoEngine
 			vk::ColorSpaceKHR::eSrgbNonlinear
 		};
 
-		vk::Extent2D extent = vk::Extent2D(m_Options.Width, m_Options.Height);
+		vk::Extent2D extent = vk::Extent2D(m_Params.Width, m_Params.Height);
 
 		std::unordered_set<uint32_t> uniqueQueues = {
 			uint32_t(graphicsContext.m_QueueFamilyIndices.Graphics),
@@ -226,7 +226,6 @@ namespace DingoEngine
 		const bool enableSwapChainSharing = queues.size() > 1;
 
 		const uint32_t swapChainBufferCount = 2; // 3
-		const bool vsyncEnabled = false;
 		const bool swapChainMutableFormatSupported = false;
 
 		vk::SwapchainCreateInfoKHR swapChainCreateInfo = vk::SwapchainCreateInfoKHR()
@@ -243,7 +242,7 @@ namespace DingoEngine
 			.setPQueueFamilyIndices(enableSwapChainSharing ? queues.data() : nullptr)
 			.setPreTransform(vk::SurfaceTransformFlagBitsKHR::eIdentity)
 			.setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
-			.setPresentMode(vsyncEnabled ? vk::PresentModeKHR::eFifo : vk::PresentModeKHR::eImmediate)
+			.setPresentMode(m_Params.VSync ? vk::PresentModeKHR::eFifo : vk::PresentModeKHR::eImmediate)
 			.setClipped(true)
 			.setOldSwapchain(nullptr);
 
@@ -277,8 +276,8 @@ namespace DingoEngine
 		for (vk::Image image : images)
 		{
 			nvrhi::TextureDesc textureDesc;
-			textureDesc.width = m_Options.Width;
-			textureDesc.height = m_Options.Height;
+			textureDesc.width = m_Params.Width;
+			textureDesc.height = m_Params.Height;
 			textureDesc.format = nvrhi::Format::RGBA8_UNORM; // deviceParams.swapChainFormat;
 			textureDesc.debugName = "Swap chain image";
 			textureDesc.initialState = nvrhi::ResourceStates::Present;
@@ -301,8 +300,8 @@ namespace DingoEngine
 		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
 		{
 			FramebufferParams framebufferParams = FramebufferParams()
-				.SetWidth(m_Options.Width)
-				.SetHeight(m_Options.Height)
+				.SetWidth(m_Params.Width)
+				.SetHeight(m_Params.Height)
 				.SetTexture(m_SwapChainImages[index].rhiHandle);
 
 			m_SwapChainFramebuffers[index] = Framebuffer::Create(framebufferParams);
