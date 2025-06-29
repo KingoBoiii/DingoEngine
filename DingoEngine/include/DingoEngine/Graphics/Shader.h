@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include <nvrhi/nvrhi.h>
+#include <unordered_map>
 
 namespace DingoEngine
 {

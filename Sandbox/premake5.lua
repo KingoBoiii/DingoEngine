@@ -16,17 +16,12 @@ project "Sandbox"
         "src",
         "%{IncludeDir.glm}",
 
-        "%{IncludeDir.spdlog}", -- TODO: Client apps should not depend on this...
         "%{IncludeDir.nvrhi}" -- TODO: Client apps should not depend on this...
     }
 
     links { 
 		"DingoEngine"
 	}
-
-    buildoptions {
-        "/utf-8"
-    }
 
 	filter "system:windows"
 		systemversion "latest"
