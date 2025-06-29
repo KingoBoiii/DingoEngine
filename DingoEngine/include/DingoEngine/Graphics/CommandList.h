@@ -21,14 +21,14 @@ namespace DingoEngine
 		void Initialize();
 		void Destroy();
 
-		void Begin(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer);
-		void Begin(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer);
-		void Begin(Framebuffer* framebuffer, Pipeline* pipeline);
+		void Begin();
 		void End();
 
 		void Clear(Framebuffer* framebuffer);
-		void Draw();
-		void DrawIndexed(IndexBuffer* indexBuffer);
+
+		void Draw(Framebuffer* framebuffer, Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
+		void Draw(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer);
+		void DrawIndexed(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer);
 
 	private:
 		nvrhi::CommandListHandle m_CommandListHandle;

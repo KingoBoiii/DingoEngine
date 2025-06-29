@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Buffer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
+#include "GraphicsUtils.h"
+
 namespace DingoEngine
 {
 
@@ -24,6 +26,15 @@ namespace DingoEngine
 			.setByteSize(m_Size);
 
 		m_BufferHandle = GraphicsContext::GetDeviceHandle()->createBuffer(bufferDesc);
+
+		{
+			nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
+				.setQueueType(nvrhi::CommandQueue::Graphics);
+
+			nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+
+			Utils::WriteBuffer(commandList, m_BufferHandle, m_Data, m_Size);
+		}
 	}
 
 	void VertexBuffer::Destroy()
@@ -53,6 +64,15 @@ namespace DingoEngine
 			.setByteSize(sizeof(uint16_t) * m_Count);
 
 		m_BufferHandle = GraphicsContext::GetDeviceHandle()->createBuffer(bufferDesc);
+
+		{
+			nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
+				.setQueueType(nvrhi::CommandQueue::Graphics);
+
+			nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+
+			Utils::WriteBuffer(commandList, m_BufferHandle, m_Indices, m_Count * sizeof(uint16_t));
+		}
 	}
 
 	void IndexBuffer::Destroy()

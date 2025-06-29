@@ -413,6 +413,7 @@ namespace DingoEngine
 
 		std::unordered_set<int> uniqueQueueFamilies = {
 			m_QueueFamilyIndices.Graphics,
+			m_QueueFamilyIndices.Transfer,
 			m_QueueFamilyIndices.Present
 		};
 
@@ -473,9 +474,9 @@ namespace DingoEngine
 
 		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Graphics, 0, &m_GraphicsQueue);
 		//if (m_DeviceParams.enableComputeQueue)
-		//	m_VulkanDevice.getQueue(m_QueueFamilyIndices.Compute, 0, &m_ComputeQueue);
+		//m_VulkanDevice.getQueue(m_QueueFamilyIndices.Compute, 0, &m_ComputeQueue);
 		//if (m_DeviceParams.enableCopyQueue)
-		//	m_VulkanDevice.getQueue(m_QueueFamilyIndices.Transfer, 0, &m_TransferQueue);
+		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Transfer, 0, &m_TransferQueue);
 		//if (!m_DeviceParams.headlessDevice)
 		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Present, 0, &m_PresentQueue);
 
@@ -502,11 +503,11 @@ namespace DingoEngine
 		//	deviceDesc.computeQueue = m_ComputeQueue;
 		//	deviceDesc.computeQueueIndex = m_QueueFamilyIndices.Compute;
 		//}
-		//if (m_DeviceParams.enableCopyQueue)
-		//{
-		//	deviceDesc.transferQueue = m_TransferQueue;
-		//	deviceDesc.transferQueueIndex = m_QueueFamilyIndices.Transfer;
-		//}
+		if (true)
+		{
+			deviceDesc.transferQueue = m_TransferQueue;
+			deviceDesc.transferQueueIndex = m_QueueFamilyIndices.Transfer;
+		}
 		deviceDesc.instanceExtensions = vecInstanceExt.data();
 		deviceDesc.numInstanceExtensions = vecInstanceExt.size();
 		deviceDesc.deviceExtensions = vecDeviceExt.data();

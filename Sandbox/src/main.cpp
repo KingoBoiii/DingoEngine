@@ -121,21 +121,23 @@ int main()
 		renderer->BeginFrame();
 
 #if RENDER_STATIC_TRIANGLE
-		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer(), staticTriangleRenderPipeline.Pipeline);
-		commandList->Draw();
+		commandList->Begin();
+		commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
+		commandList->Draw(window->GetSwapChain()->GetCurrentFramebuffer(), staticTriangleRenderPipeline.Pipeline);
 		commandList->End();
 #endif // RENDER_STATIC_TRIANGLE
 
 #if RENDER_VERTEX_BUFFER_TRIANGLE
-		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer(), vertexBufferTriangleRenderPipeline.Pipeline, vertexBufferTriangleRenderPipeline.VertexBuffer);
-		//commandList->SetVertexBuffer(vertices.data(), sizeof(Vertex) * vertices.size());
-		commandList->Draw();
+		commandList->Begin();
+		commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
+		commandList->Draw(window->GetSwapChain()->GetCurrentFramebuffer(), vertexBufferTriangleRenderPipeline.Pipeline, vertexBufferTriangleRenderPipeline.VertexBuffer);
 		commandList->End();
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
 
 #if RENDER_QUAD
-		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer(), quadRenderPipeline.Pipeline, quadRenderPipeline.VertexBuffer, quadRenderPipeline.IndexBuffer);
-		commandList->DrawIndexed(quadRenderPipeline.IndexBuffer);
+		commandList->Begin();
+		commandList->Clear(window->GetSwapChain()->GetCurrentFramebuffer());
+		commandList->DrawIndexed(window->GetSwapChain()->GetCurrentFramebuffer(), quadRenderPipeline.Pipeline, quadRenderPipeline.VertexBuffer, quadRenderPipeline.IndexBuffer);
 		commandList->End();
 #endif // RENDER_QUAD
 
@@ -208,7 +210,7 @@ void DestroyStaticTriangle(const StaticTriangleRenderPipeline& staticTriangleRen
 const VertexBufferTriangleRenderPipeline SetupVertexBufferTriangle(DingoEngine::Framebuffer* framebuffer)
 {
 	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
-		.SetName("VertexBufferTriangle")
+		.SetName("GraphicsBufferTriangle_VBO")
 		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
 		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv");
 
@@ -252,7 +254,7 @@ void DestroyVertexBufferTriangle(const VertexBufferTriangleRenderPipeline& verte
 const QuadRenderPipeline SetupQuad(DingoEngine::Framebuffer* framebuffer)
 {
 	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
-		.SetName("VertexBufferTriangle")
+		.SetName("GraphicsBufferTriangle_IBO")
 		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
 		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv");
 
