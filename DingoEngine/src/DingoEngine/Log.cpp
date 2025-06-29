@@ -1,14 +1,35 @@
 #include "depch.h"
 #include "DingoEngine/Log.h"
 
+#include <spdlog/spdlog.h>
+#include <spdlog/fmt/ostr.h>
+
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
 namespace DingoEngine
 {
 
-	std::shared_ptr<spdlog::logger> Log::s_EngineLogger;
-	std::shared_ptr<spdlog::logger> Log::s_ClientLogger;
+	static std::shared_ptr<spdlog::logger> s_EngineLogger;
+	static std::shared_ptr<spdlog::logger> s_ClientLogger;
+
+	namespace Utils
+	{
+
+		static std::shared_ptr<spdlog::logger> GetLogger(Log::Type type)
+		{
+			switch (type)
+			{
+				case Log::Type::Engine: return s_EngineLogger;
+				case Log::Type::Client: return s_ClientLogger;
+				default: break;
+			}
+
+			DE_CORE_ASSERT(false, "Unknown Log Type");
+			return nullptr;
+		}
+
+	}
 
 	void Log::Initialize()
 	{
@@ -35,6 +56,54 @@ namespace DingoEngine
 		s_ClientLogger.reset();
 		s_EngineLogger.reset();
 		spdlog::drop_all();
+	}
+
+	void Log::PrintInternal(Log::Type type, Log::Level level, const std::string_view formatted)
+	{
+		auto logger = Utils::GetLogger(type);
+
+		switch (level)
+		{
+			case DingoEngine::Log::Level::Trace:
+				logger->trace(formatted);
+				break;
+			case DingoEngine::Log::Level::Info:
+				logger->info(formatted);
+				break;
+			case DingoEngine::Log::Level::Warn:
+				logger->warn(formatted);
+				break;
+			case DingoEngine::Log::Level::Error:
+				logger->error(formatted);
+				break;
+			case DingoEngine::Log::Level::Fatal:
+				logger->critical(formatted);
+				break;
+		}
+	}
+
+	void Log::PrintInternalTag(Log::Type type, Log::Level level, const std::string_view tag, const std::string_view formatted)
+	{
+		auto logger = Utils::GetLogger(type);
+
+		switch (level)
+		{
+			case DingoEngine::Log::Level::Trace:
+				logger->trace("[{}] {}", tag, formatted);
+				break;
+			case DingoEngine::Log::Level::Info:
+				logger->info("[{}] {}", tag, formatted);
+				break;
+			case DingoEngine::Log::Level::Warn:
+				logger->warn("[{}] {}", tag, formatted);
+				break;
+			case DingoEngine::Log::Level::Error:
+				logger->error("[{}] {}", tag, formatted);
+				break;
+			case DingoEngine::Log::Level::Fatal:
+				logger->critical("[{}] {}", tag, formatted);
+				break;
+		}
 	}
 
 }
