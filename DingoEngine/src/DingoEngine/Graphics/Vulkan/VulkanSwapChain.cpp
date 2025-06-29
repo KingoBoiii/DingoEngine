@@ -87,6 +87,12 @@ namespace DingoEngine
 
 	void VulkanSwapChain::Resize(int32_t width, int32_t height)
 	{
+		if (width == 0 || height == 0)
+		{
+			DE_CORE_WARN("Swap chain resize called with zero dimensions, ignoring.");
+			return;
+		}
+
 		m_Options.Width = width;
 		m_Options.Height = height;
 
@@ -142,32 +148,36 @@ namespace DingoEngine
 
 		graphicsContext.m_NvrhiDevice->executeCommandLists(nullptr, 0);
 
-		vk::SubmitInfo submitInfo = vk::SubmitInfo()
-			.setPWaitDstStageMask(&waitStageMask)
-			.setWaitSemaphoreCount(1)
-			.setPWaitSemaphores(&m_AcquireSemaphores[m_AcquireSemaphoreIndex])
-			.setSignalSemaphoreCount(1)
-			.setPSignalSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex]);
-
-
-		const vk::Result r = graphicsContext.m_GraphicsQueue.submit(1, &submitInfo, m_InFlightFences[m_PresentSemaphoreIndex]);
-		DE_CORE_ASSERT(r == vk::Result::eSuccess);
-
-		vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
-			.setWaitSemaphoreCount(1)
-			.setPWaitSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex])
-			.setSwapchainCount(1)
-			.setPSwapchains(&m_SwapChain)
-			.setPImageIndices(&m_SwapChainIndex);
-
-		const vk::Result result = graphicsContext.m_PresentQueue.presentKHR(&presentInfo);
-		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
-			DE_CORE_WARN("Swapchain is out of date, recreating it.");
-			RecreateSwapChain();
-			//return;
+			vk::SubmitInfo submitInfo = vk::SubmitInfo()
+				.setPWaitDstStageMask(&waitStageMask)
+				.setWaitSemaphoreCount(1)
+				.setPWaitSemaphores(&m_AcquireSemaphores[m_AcquireSemaphoreIndex])
+				.setSignalSemaphoreCount(1)
+				.setPSignalSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex]);
+
+
+			const vk::Result result = graphicsContext.m_GraphicsQueue.submit(1, &submitInfo, m_InFlightFences[m_PresentSemaphoreIndex]);
+			DE_CORE_ASSERT(result == vk::Result::eSuccess);
 		}
-		DE_CORE_ASSERT(result == vk::Result::eSuccess);
+
+		{
+			vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
+				.setWaitSemaphoreCount(1)
+				.setPWaitSemaphores(&m_PresentSemaphores[m_PresentSemaphoreIndex])
+				.setSwapchainCount(1)
+				.setPSwapchains(&m_SwapChain)
+				.setPImageIndices(&m_SwapChainIndex);
+
+			const vk::Result result = graphicsContext.m_PresentQueue.presentKHR(&presentInfo);
+			if (result == vk::Result::eErrorOutOfDateKHR)
+			{
+				DE_CORE_WARN("Swapchain is out of date, recreating it.");
+				RecreateSwapChain();
+				//return;
+			}
+			DE_CORE_ASSERT(result == vk::Result::eSuccess);
+		}
 
 		m_PresentSemaphoreIndex = (m_PresentSemaphoreIndex + 1) % m_PresentSemaphores.size();
 		m_AcquireSemaphoreIndex = (m_AcquireSemaphoreIndex + 1) % m_AcquireSemaphores.size();
