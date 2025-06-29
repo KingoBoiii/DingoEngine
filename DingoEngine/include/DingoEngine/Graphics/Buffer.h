@@ -25,4 +25,24 @@ namespace DingoEngine
 		friend class CommandList;
 	};
 
+	class IndexBuffer
+	{
+	public:
+		static IndexBuffer* Create(const uint16_t* indices, uint32_t count);
+
+	public:
+		IndexBuffer(const uint16_t* indices, uint32_t count);
+
+	public:
+		void Initialize();
+		void Destroy();
+
+	private:
+		nvrhi::BufferHandle m_BufferHandle;
+		const uint16_t* m_Indices = nullptr;
+		uint32_t m_Count = 0;
+
+		friend class CommandList;
+	};
+
 }

@@ -9,7 +9,8 @@
 #include <glm/ext/scalar_constants.hpp> // glm::pi
 
 #define RENDER_STATIC_TRIANGLE 0
-#define RENDER_VERTEX_BUFFER_TRIANGLE 1
+#define RENDER_VERTEX_BUFFER_TRIANGLE 0
+#define RENDER_QUAD 1
 
 glm::mat4 camera(float Translate, glm::vec2 const& Rotate)
 {
@@ -31,13 +32,15 @@ const StaticTriangleRenderPipeline SetupStaticTriangle(DingoEngine::Framebuffer*
 void DestroyStaticTriangle(const StaticTriangleRenderPipeline& staticTriangle);
 #endif // RENDER_STATIC_TRIANGLE
 
-#if RENDER_VERTEX_BUFFER_TRIANGLE
+#if RENDER_VERTEX_BUFFER_TRIANGLE | RENDER_QUAD
 struct Vertex
 {
 	glm::vec2 position;
 	glm::vec3 color;
 };
+#endif 
 
+#if RENDER_VERTEX_BUFFER_TRIANGLE
 const std::vector<Vertex> vertices = {
 	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -54,6 +57,29 @@ struct VertexBufferTriangleRenderPipeline
 const VertexBufferTriangleRenderPipeline SetupVertexBufferTriangle(DingoEngine::Framebuffer* framebuffer);
 void DestroyVertexBufferTriangle(const VertexBufferTriangleRenderPipeline& staticTriangle);
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
+
+#if RENDER_QUAD
+const std::vector<Vertex> vertices = {
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+const std::vector<uint16_t> indices = {
+	0, 1, 2, 2, 3, 0
+};
+
+struct QuadRenderPipeline
+{
+	DingoEngine::Shader* Shader = nullptr;
+	DingoEngine::Pipeline* Pipeline = nullptr;
+	DingoEngine::VertexBuffer* VertexBuffer = nullptr;
+	DingoEngine::IndexBuffer* IndexBuffer = nullptr;
+};
+const QuadRenderPipeline SetupQuad(DingoEngine::Framebuffer* framebuffer);
+void DestroyQuad(const QuadRenderPipeline& quadRenderPipeline);
+#endif // RENDER_QUAD
 
 int main()
 {
@@ -81,6 +107,10 @@ int main()
 	const VertexBufferTriangleRenderPipeline vertexBufferTriangleRenderPipeline = SetupVertexBufferTriangle(window->GetSwapChain()->GetFramebuffer(0));
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
 
+#if RENDER_QUAD
+	const QuadRenderPipeline quadRenderPipeline = SetupQuad(window->GetSwapChain()->GetCurrentFramebuffer());
+#endif // RENDER_QUAD
+
 	DingoEngine::CommandList* commandList = DingoEngine::CommandList::Create();
 	commandList->Initialize();
 
@@ -103,6 +133,12 @@ int main()
 		commandList->End();
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
 
+#if RENDER_QUAD
+		commandList->Begin(window->GetSwapChain()->GetCurrentFramebuffer(), quadRenderPipeline.Pipeline, quadRenderPipeline.VertexBuffer, quadRenderPipeline.IndexBuffer);
+		commandList->DrawIndexed(quadRenderPipeline.IndexBuffer);
+		commandList->End();
+#endif // RENDER_QUAD
+
 		renderer->EndFrame();
 		renderer->Present();
 		renderer->WaitAndClear();
@@ -117,6 +153,10 @@ int main()
 #if RENDER_VERTEX_BUFFER_TRIANGLE
 	DestroyVertexBufferTriangle(vertexBufferTriangleRenderPipeline);
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
+
+#if RENDER_QUAD
+	DestroyQuad(quadRenderPipeline);
+#endif // RENDER_QUAD
 
 	renderer->Destroy();
 	delete renderer;
@@ -169,8 +209,8 @@ const VertexBufferTriangleRenderPipeline SetupVertexBufferTriangle(DingoEngine::
 {
 	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
 		.SetName("VertexBufferTriangle")
-		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/vertex_buffer.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/vertex_buffer.frag.spv");
+		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
+		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv");
 
 	DingoEngine::Shader* shader = DingoEngine::Shader::Create(shaderParams);
 	shader->Initialize();
@@ -207,3 +247,54 @@ void DestroyVertexBufferTriangle(const VertexBufferTriangleRenderPipeline& verte
 	vertexBufferTriangleRenderPipeline.Shader->Destroy();
 }
 #endif // RENDER_VERTEX_BUFFER_TRIANGLE
+
+#if RENDER_QUAD
+const QuadRenderPipeline SetupQuad(DingoEngine::Framebuffer* framebuffer)
+{
+	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
+		.SetName("VertexBufferTriangle")
+		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
+		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv");
+
+	DingoEngine::Shader* shader = DingoEngine::Shader::Create(shaderParams);
+	shader->Initialize();
+
+	DingoEngine::VertexLayout vertexLayout = DingoEngine::VertexLayout()
+		.SetStride(sizeof(Vertex))
+		.AddAttribute("inPosition", nvrhi::Format::RG32_FLOAT, 0)
+		.AddAttribute("inColor", nvrhi::Format::RGB32_FLOAT, sizeof(glm::vec2));
+
+	DingoEngine::PipelineParams pipelineParams = DingoEngine::PipelineParams()
+		.SetShader(shader)
+		.SetVertexLayout(vertexLayout)
+		.SetFramebuffer(framebuffer)
+		.SetFillMode(DingoEngine::FillMode::Solid)
+		.SetCullMode(DingoEngine::CullMode::BackAndFront);
+
+	DingoEngine::Pipeline* pipeline = DingoEngine::Pipeline::Create(pipelineParams);
+	pipeline->Initialize();
+
+	DingoEngine::VertexBuffer* vertexBuffer = DingoEngine::VertexBuffer::Create(vertices.data(), sizeof(Vertex) * vertices.size());
+	vertexBuffer->Initialize();
+
+	DingoEngine::IndexBuffer* indexBuffer = DingoEngine::IndexBuffer::Create(indices.data(), indices.size());
+	indexBuffer->Initialize();
+
+	return QuadRenderPipeline{
+		.Shader = shader,
+		.Pipeline = pipeline,
+		.VertexBuffer = vertexBuffer,
+		.IndexBuffer = indexBuffer
+	};
+}
+
+void DestroyQuad(const QuadRenderPipeline& quadRenderPipeline)
+{
+	quadRenderPipeline.IndexBuffer->Destroy();
+	quadRenderPipeline.VertexBuffer->Destroy();
+	quadRenderPipeline.Pipeline->Destroy();
+	quadRenderPipeline.Shader->Destroy();
+}
+#endif
+
+
