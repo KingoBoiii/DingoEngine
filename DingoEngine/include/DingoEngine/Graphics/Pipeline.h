@@ -2,6 +2,7 @@
 #include "Shader.h"
 #include "Framebuffer.h"
 #include "Enums.h"
+#include "UniformBuffer.h"
 
 namespace DingoEngine
 {
@@ -38,6 +39,7 @@ namespace DingoEngine
 		FillMode FillMode = FillMode::Solid;
 		CullMode CullMode = CullMode::Back;
 		VertexLayout VertexLayout;
+		UniformBuffer* UniformBuffer = nullptr; 
 
 		PipelineParams& SetShader(DingoEngine::Shader* shader)
 		{
@@ -68,6 +70,12 @@ namespace DingoEngine
 			VertexLayout = vertexLayout;
 			return *this;
 		}
+
+		PipelineParams& SetUniformBuffer(DingoEngine::UniformBuffer* uniformBuffer)
+		{
+			UniformBuffer = uniformBuffer;
+			return *this;
+		}
 	};
 
 	class Pipeline
@@ -88,10 +96,13 @@ namespace DingoEngine
 
 	private:
 		void CreateInputLayout();
+		void CreateBindingLayoutAndBindingSet();
 
 	private:
 		PipelineParams m_Params;
 		nvrhi::InputLayoutHandle m_InputLayoutHandle;
+		nvrhi::BindingLayoutHandle m_BindingLayoutHandle;
+		nvrhi::BindingSetHandle m_BindingSetHandle;
 		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
 
 		friend class CommandList;

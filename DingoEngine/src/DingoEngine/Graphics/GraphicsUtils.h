@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Log.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
 
 #include <nvrhi/nvrhi.h>
 
@@ -14,16 +15,15 @@ namespace DingoEngine::Utils
 			return;
 		}
 
-		commandList->open();
+		//commandList->open();
 
 		commandList->writeBuffer(buffer, data, size, offset);
 
-		commandList->close();
-		GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+		//commandList->close();
 
-		GraphicsContext::GetDeviceHandle()->waitForIdle();
-
-		GraphicsContext::GetDeviceHandle()->runGarbageCollection();
+		//GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+		//GraphicsContext::GetDeviceHandle()->waitForIdle();
+		//GraphicsContext::GetDeviceHandle()->runGarbageCollection();
 	}
 
 }

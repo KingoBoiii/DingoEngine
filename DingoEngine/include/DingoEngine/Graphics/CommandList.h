@@ -2,6 +2,7 @@
 #include "Framebuffer.h"
 #include "Pipeline.h"
 #include "Buffer.h"
+#include "UniformBuffer.h"
 
 #include <nvrhi/nvrhi.h>
 
@@ -36,14 +37,11 @@ namespace DingoEngine
 		void End();
 
 		void Clear();
-		void Clear(Framebuffer* framebuffer);
 
 		void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
 		void Draw(Pipeline* pipeline, VertexBuffer* vertexBuffer);
-		void Draw(Framebuffer* framebuffer, Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
-		void Draw(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer);
-		void DrawIndexed(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer);
 		void DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer);
+		void DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer, UniformBuffer* uniformBuffer);
 
 	private:
 		CommandListParams m_Params;

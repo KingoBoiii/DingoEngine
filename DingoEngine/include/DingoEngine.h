@@ -14,3 +14,4 @@
 #include "DingoEngine/Graphics/CommandList.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Buffer.h"
+#include "DingoEngine/Graphics/UniformBuffer.h"

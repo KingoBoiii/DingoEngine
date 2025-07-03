@@ -33,7 +33,15 @@ namespace DingoEngine
 
 			nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
 
+			commandList->open();
+
 			Utils::WriteBuffer(commandList, m_BufferHandle, m_Data, m_Size);
+
+			commandList->close();
+
+			GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+			//GraphicsContext::GetDeviceHandle()->waitForIdle();
+			//GraphicsContext::GetDeviceHandle()->runGarbageCollection();
 		}
 	}
 
@@ -71,7 +79,15 @@ namespace DingoEngine
 
 			nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
 
+			commandList->open();
+
 			Utils::WriteBuffer(commandList, m_BufferHandle, m_Indices, m_Count * sizeof(uint16_t));
+
+			commandList->close();
+
+			GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+			//GraphicsContext::GetDeviceHandle()->waitForIdle();
+			//GraphicsContext::GetDeviceHandle()->runGarbageCollection();
 		}
 	}
 

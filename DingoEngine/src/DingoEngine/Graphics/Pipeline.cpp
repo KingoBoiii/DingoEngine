@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
+#include <nvrhi/utils.h>
+
 namespace DingoEngine
 {
 
@@ -55,13 +57,7 @@ namespace DingoEngine
 
 		CreateInputLayout();
 
-		//nvrhi::VertexAttributeDesc attributes[] = {
-		//	nvrhi::VertexAttributeDesc()
-		//		.setName("POSITION")
-		//		.setFormat(nvrhi::Format::RGB32_FLOAT)
-		//		.setOffset(0)
-		//		.setElementStride(3 * sizeof(float))
-		//};
+		CreateBindingLayoutAndBindingSet();
 
 		nvrhi::RasterState rasterState = nvrhi::RasterState()
 			.setCullMode(Utils::ConvertCullModeToNVRHI(m_Params.CullMode))
@@ -77,11 +73,26 @@ namespace DingoEngine
 			.setVertexShader(m_Params.Shader->m_ShaderHandles[ShaderType::Vertex])
 			.setPixelShader(m_Params.Shader->m_ShaderHandles[ShaderType::Pixel]);
 
+		if(m_BindingLayoutHandle)
+		{
+			graphicsPipelineDesc.addBindingLayout(m_BindingLayoutHandle);
+		}
+
 		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, m_Params.Framebuffer->m_FramebufferHandle);
 	}
 
 	void Pipeline::Destroy()
 	{
+		if (m_BindingSetHandle)
+		{
+			m_BindingSetHandle->Release();
+		}
+
+		if (m_BindingLayoutHandle)
+		{
+			m_BindingLayoutHandle->Release();
+		}
+
 		if (m_InputLayoutHandle)
 		{
 			m_InputLayoutHandle->Release();
@@ -120,6 +131,30 @@ namespace DingoEngine
 		}
 
 		m_InputLayoutHandle = device->createInputLayout(attributes.data(), attributes.size(), m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
+	}
+
+	void Pipeline::CreateBindingLayoutAndBindingSet()
+	{
+		if(m_Params.UniformBuffer == nullptr)
+		{
+			return; // No uniform buffer to create binding set
+		}
+
+		//nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
+		//	.setRegisterSpace(0) // set = 0
+		//	.setRegisterSpaceIsDescriptorSet(false)
+		//	.setVisibility(nvrhi::ShaderType::All)
+		//	.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0)
+		//		.setSize(m_Params.UniformBuffer->m_Size));
+
+		//m_BindingLayoutHandle = GraphicsContext::GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
+
+		nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc()
+			.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_Params.UniformBuffer->m_BufferHandle));
+
+		//m_BindingSetHandle = GraphicsContext::GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
+
+		bool success = nvrhi::utils::CreateBindingSetAndLayout(GraphicsContext::GetDeviceHandle(), nvrhi::ShaderType::All, 0, bindingSetDesc, m_BindingLayoutHandle, m_BindingSetHandle);
 	}
 
 }

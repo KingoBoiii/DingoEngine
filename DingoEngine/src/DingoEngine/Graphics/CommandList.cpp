@@ -5,6 +5,7 @@
 #include "DingoEngine/Core/Application.h"
 
 #include <nvrhi/utils.h> // for ClearColorAttachment
+#include "GraphicsUtils.h"
 
 namespace DingoEngine
 {
@@ -60,11 +61,6 @@ namespace DingoEngine
 		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, m_TargetFramebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
 	}
 
-	void CommandList::Clear(Framebuffer* framebuffer)
-	{
-		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, framebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
-	}
-
 	void CommandList::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
@@ -106,77 +102,6 @@ namespace DingoEngine
 		m_CommandListHandle->draw(drawArguments);
 	}
 
-	void CommandList::Draw(Framebuffer* framebuffer, Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
-	{
-		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
-		auto& graphicsState = nvrhi::GraphicsState()
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
-			.setFramebuffer(framebuffer->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(framebuffer->m_Viewport));
-
-		m_CommandListHandle->setGraphicsState(graphicsState);
-
-		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(vertexCount) // Number of vertices to draw
-			.setInstanceCount(instanceCount); // Number of instances to draw
-
-		m_CommandListHandle->draw(drawArguments);
-	}
-
-	void CommandList::Draw(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer)
-	{
-		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
-			.setBuffer(vertexBuffer->m_BufferHandle)
-			.setOffset(0)
-			.setSlot(0);
-
-		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
-		auto& graphicsState = nvrhi::GraphicsState()
-			.addVertexBuffer(vertexBufferBinding)
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
-			.setFramebuffer(framebuffer->m_FramebufferHandle)
-			.addVertexBuffer(vertexBufferBinding)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(framebuffer->m_Viewport));
-
-		m_CommandListHandle->setGraphicsState(graphicsState);
-
-		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(3) // Number of vertices to draw
-			.setInstanceCount(1); // Number of instances to draw
-
-		m_CommandListHandle->draw(drawArguments);
-	}
-
-	void CommandList::DrawIndexed(Framebuffer* framebuffer, Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer)
-	{
-		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
-			.setBuffer(vertexBuffer->m_BufferHandle)
-			.setOffset(0)
-			.setSlot(0);
-
-		const nvrhi::IndexBufferBinding indexBufferBinding = nvrhi::IndexBufferBinding()
-			.setBuffer(indexBuffer->m_BufferHandle)
-			.setOffset(0)
-			.setFormat(nvrhi::Format::R16_UINT); // Assuming 16-bit indices
-
-		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
-		auto& graphicsState = nvrhi::GraphicsState()
-			.addVertexBuffer(vertexBufferBinding)
-			.setIndexBuffer(indexBufferBinding)
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
-			.setFramebuffer(framebuffer->m_FramebufferHandle)
-			.addVertexBuffer(vertexBufferBinding)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(framebuffer->m_Viewport));
-
-		m_CommandListHandle->setGraphicsState(graphicsState);
-
-		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(indexBuffer->m_Count) // Number of vertices to draw
-			.setInstanceCount(1); // Number of instances to draw
-
-		m_CommandListHandle->drawIndexed(drawArguments);
-	}
-
 	void CommandList::DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer)
 	{
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
@@ -197,6 +122,48 @@ namespace DingoEngine
 			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
+
+		if (pipeline->m_BindingSetHandle)
+		{
+			graphicsState.addBindingSet(pipeline->m_BindingSetHandle);
+		}
+
+		m_CommandListHandle->setGraphicsState(graphicsState);
+
+		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
+			.setVertexCount(indexBuffer->m_Count) // Number of vertices to draw
+			.setInstanceCount(1); // Number of instances to draw
+
+		m_CommandListHandle->drawIndexed(drawArguments);
+	}
+
+	void CommandList::DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer, UniformBuffer* uniformBuffer)
+	{
+		Utils::WriteBuffer(m_CommandListHandle, uniformBuffer->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->m_Size);
+
+		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
+			.setBuffer(vertexBuffer->m_BufferHandle)
+			.setOffset(0)
+			.setSlot(0);
+
+		const nvrhi::IndexBufferBinding indexBufferBinding = nvrhi::IndexBufferBinding()
+			.setBuffer(indexBuffer->m_BufferHandle)
+			.setOffset(0)
+			.setFormat(nvrhi::Format::R16_UINT); // Assuming 16-bit indices
+
+		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
+		auto& graphicsState = nvrhi::GraphicsState()
+			.addVertexBuffer(vertexBufferBinding)
+			.setIndexBuffer(indexBufferBinding)
+			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
+			.addVertexBuffer(vertexBufferBinding)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
+
+		if (pipeline->m_BindingSetHandle)
+		{
+			graphicsState.addBindingSet(pipeline->m_BindingSetHandle);
+		}
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
