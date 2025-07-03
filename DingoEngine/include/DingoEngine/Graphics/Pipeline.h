@@ -32,6 +32,8 @@ namespace DingoEngine
 		}
 	};
 
+	class Pipeline;
+
 	struct PipelineParams
 	{
 		Shader* Shader = nullptr;
@@ -39,7 +41,7 @@ namespace DingoEngine
 		FillMode FillMode = FillMode::Solid;
 		CullMode CullMode = CullMode::Back;
 		VertexLayout VertexLayout;
-		UniformBuffer* UniformBuffer = nullptr; 
+		UniformBuffer* UniformBuffer = nullptr;
 
 		PipelineParams& SetShader(DingoEngine::Shader* shader)
 		{

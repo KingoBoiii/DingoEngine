@@ -11,16 +11,19 @@ namespace DingoEngine
 		static VertexBuffer* Create(const void* data, uint64_t size);
 
 	public:
-		VertexBuffer(const void* data, uint64_t size);
+		VertexBuffer(const void* data, uint64_t size, bool usingBuilderPattern = false);
 
 	public:
 		void Initialize();
 		void Destroy();
 
+		void Upload(const void* data, uint64_t size, uint64_t offset = 0ul) const;
+
 	private:
 		nvrhi::BufferHandle m_BufferHandle;
 		const void* m_Data = nullptr;
 		uint64_t m_Size = 0;
+		bool m_UsingBuilderPattern = false;
 
 		friend class CommandList;
 	};
