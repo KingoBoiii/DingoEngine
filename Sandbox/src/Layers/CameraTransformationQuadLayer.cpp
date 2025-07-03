@@ -80,7 +80,7 @@ void CameraTransformationQuadLayer::OnDetach()
 
 void CameraTransformationQuadLayer::OnUpdate()
 {
-	float aspectRatio = 1600.0f / 900.0f;
+	const float aspectRatio = DingoEngine::Application::Get().GetWindow().GetAspectRatio();
 	const glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f) * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -10.0f));
 	m_UniformBuffer->Upload(&projectionMatrix);
 

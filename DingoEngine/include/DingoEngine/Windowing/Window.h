@@ -68,6 +68,12 @@ namespace DingoEngine
 
 		bool IsRunning() const;
 
+		int32_t GetWidth() const { return m_Data.Width; }
+		int32_t GetHeight() const { return m_Data.Height; }
+		float GetAspectRatio() const
+		{
+			return static_cast<float>(m_Data.Width) / static_cast<float>(m_Data.Height); 
+		}
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 	private:
@@ -78,6 +84,12 @@ namespace DingoEngine
 		GLFWwindow* m_WindowHandle = nullptr;
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
+
+		struct WindowData
+		{
+			int32_t Width;
+			int32_t Height;
+		} m_Data;
 	};
 
 }
