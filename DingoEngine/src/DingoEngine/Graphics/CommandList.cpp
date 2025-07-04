@@ -5,7 +5,6 @@
 #include "DingoEngine/Core/Application.h"
 
 #include <nvrhi/utils.h> // for ClearColorAttachment
-#include "GraphicsUtils.h"
 
 namespace DingoEngine
 {
@@ -139,7 +138,7 @@ namespace DingoEngine
 
 	void CommandList::DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer, UniformBuffer* uniformBuffer)
 	{
-		Utils::WriteBuffer(m_CommandListHandle, uniformBuffer->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->m_Size);
+		m_CommandListHandle->writeBuffer(uniformBuffer->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->m_Size);
 
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
 			.setBuffer(vertexBuffer->m_BufferHandle)
