@@ -5,7 +5,7 @@ namespace DingoEngine
 {
 
 	// Usage:
-	// VertexBuffer vertexBuffer = VertexBufferBuilder()
+	// VertexBuffer* vertexBuffer = VertexBufferBuilder()
 	//	.SetSize(uint64_t)
 	//	.SetData(const void*)
 	//	.Create();

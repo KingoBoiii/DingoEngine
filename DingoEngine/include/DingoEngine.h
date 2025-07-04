@@ -7,7 +7,9 @@
 
 #include "DingoEngine/Windowing/Window.h"
 
-#include "DingoEngine/Graphics/Builders/VertexBufferBuilder.h"
+// ----------------------------------------------------------------------
+// Graphics
+// ----------------------------------------------------------------------
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/Shader.h"
@@ -17,3 +19,6 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Buffer.h"
 #include "DingoEngine/Graphics/UniformBuffer.h"
+
+#include "DingoEngine/Graphics/Builders/VertexBufferBuilder.h"
+#include "DingoEngine/Graphics/Builders/IndexBufferBuilder.h"

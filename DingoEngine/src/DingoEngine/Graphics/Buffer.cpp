@@ -65,14 +65,14 @@ namespace DingoEngine
 		return new IndexBuffer(indices, count);
 	}
 
-	IndexBuffer::IndexBuffer(const uint16_t* indices, uint32_t count)
-		: m_Indices(indices), m_Count(count)
+	IndexBuffer::IndexBuffer(const uint16_t* indices, uint32_t count, bool usingBuilderPattern)
+		: m_Indices(indices), m_Count(count), m_Size(count * sizeof(uint16_t)), m_UsingBuilderPattern(usingBuilderPattern)
 	{}
 
 	void IndexBuffer::Initialize()
 	{
 		nvrhi::BufferDesc bufferDesc = nvrhi::BufferDesc()
-			.setDebugName("VertexBuffer")
+			.setDebugName("IndexBuffer")
 			.setInitialState(nvrhi::ResourceStates::IndexBuffer)
 			.setKeepInitialState(true)
 			.setIsIndexBuffer(true)
@@ -80,21 +80,10 @@ namespace DingoEngine
 
 		m_BufferHandle = GraphicsContext::GetDeviceHandle()->createBuffer(bufferDesc);
 
+		if (m_Indices && !m_UsingBuilderPattern)
 		{
-			nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
-				.setQueueType(nvrhi::CommandQueue::Graphics);
-
-			nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
-
-			commandList->open();
-
-			Utils::WriteBuffer(commandList, m_BufferHandle, m_Indices, m_Count * sizeof(uint16_t));
-
-			commandList->close();
-
-			GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
-			//GraphicsContext::GetDeviceHandle()->waitForIdle();
-			//GraphicsContext::GetDeviceHandle()->runGarbageCollection();
+			DE_CORE_WARN_TAG("IndexBuffer", "[Deprecated]: You should use the IndexBufferBuilder pattern to create Index Buffers!");
+			Upload(m_Indices, m_Size);
 		}
 	}
 
@@ -104,6 +93,24 @@ namespace DingoEngine
 		{
 			m_BufferHandle->Release();
 		}
+	}
+
+	void IndexBuffer::Upload(const uint16_t* indices, uint64_t size, uint64_t offset) const
+	{
+		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
+			.setQueueType(nvrhi::CommandQueue::Graphics);
+
+		nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+
+		commandList->open();
+
+		Utils::WriteBuffer(commandList, m_BufferHandle, m_Indices, m_Count * sizeof(uint16_t));
+
+		commandList->close();
+
+		GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+		//GraphicsContext::GetDeviceHandle()->waitForIdle();
+		//GraphicsContext::GetDeviceHandle()->runGarbageCollection();
 	}
 
 }

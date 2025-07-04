@@ -61,14 +61,15 @@ void CameraTransformationQuadLayer::OnAttach()
 	m_Pipeline = DingoEngine::Pipeline::Create(pipelineParams);
 	m_Pipeline->Initialize();
 
-
 	m_VertexBuffer = DingoEngine::VertexBufferBuilder()
 		.SetSize(sizeof(Vertex) * vertices.size())
 		.SetData(vertices.data())
 		.Create();
 
-	m_IndexBuffer = DingoEngine::IndexBuffer::Create(indices.data(), indices.size());
-	m_IndexBuffer->Initialize();
+	m_IndexBuffer = DingoEngine::IndexBufferBuilder()
+		.SetCount(indices.size())
+		.SetIndices(indices.data())
+		.Create();
 }
 
 void CameraTransformationQuadLayer::OnDetach()
