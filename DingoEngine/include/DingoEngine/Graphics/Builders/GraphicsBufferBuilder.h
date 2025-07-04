@@ -53,7 +53,7 @@ namespace DingoEngine
 			return *this;
 		}
 
-		GraphicsBuffer* Create()
+		GraphicsBuffer* Create() const
 		{
 			GraphicsBuffer* buffer = GraphicsBuffer::Create(m_Params);
 			buffer->Initialize();

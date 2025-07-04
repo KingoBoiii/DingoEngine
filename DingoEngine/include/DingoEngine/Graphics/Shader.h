@@ -47,7 +47,7 @@ namespace DingoEngine
 		ShaderParams m_Params;
 		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;
 
-		friend class Pipeline;
+		friend class NvrhiPipeline;
 	};
 
 }

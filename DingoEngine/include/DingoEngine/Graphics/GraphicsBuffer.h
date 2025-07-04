@@ -77,6 +77,7 @@ namespace DingoEngine
 		virtual const GraphicsFormat GetFormat() const { return m_Params.Format; }
 		virtual const uint64_t GetByteSize() const { return m_Params.ByteSize; }
 		virtual const uint32_t GetIndexCount() const { return 0; }
+		virtual T* GetData() const { return m_Data; }
 
 		virtual const bool IsType(BufferType type) const { return m_Params.Type == type; }
 
@@ -88,9 +89,6 @@ namespace DingoEngine
 	protected:
 		GraphicsBufferParams m_Params;
 		T* m_Data = nullptr;
-
-		friend class CommandList;
-		friend class Pipeline;
 	};
 
 	class GraphicsBuffer : public GenericGraphicsBuffer<const void>

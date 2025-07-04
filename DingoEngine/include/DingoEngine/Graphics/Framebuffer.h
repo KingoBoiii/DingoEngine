@@ -49,7 +49,7 @@ namespace DingoEngine
 		nvrhi::FramebufferHandle m_FramebufferHandle;
 		nvrhi::Viewport m_Viewport;
 
-		friend class Pipeline;
+		friend class NvrhiPipeline;
 		friend class CommandList;
 	};
 

@@ -55,17 +55,15 @@ void CameraTransformationQuadLayer::OnAttach()
 		.AddAttribute("inPosition", nvrhi::Format::RG32_FLOAT, 0)
 		.AddAttribute("inColor", nvrhi::Format::RGB32_FLOAT, sizeof(glm::vec2));
 
-	DingoEngine::PipelineParams pipelineParams = DingoEngine::PipelineParams()
+	m_Pipeline = DingoEngine::PipelineBuilder()
+		.SetDebugName("Camera Transformation Pipeline")
 		.SetShader(m_Shader)
-		.SetVertexLayout(vertexLayout)
 		.SetFramebuffer(DingoEngine::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
 		.SetFillMode(DingoEngine::FillMode::Solid)
 		.SetCullMode(DingoEngine::CullMode::BackAndFront)
+		.SetVertexLayout(vertexLayout)
 		.SetUniformBuffer(m_UniformBuffer)
-		;
-
-	m_Pipeline = DingoEngine::Pipeline::Create(pipelineParams);
-	m_Pipeline->Initialize();
+		.Create();
 
 	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
 		.SetDebugName("Quad Vertex Buffer")

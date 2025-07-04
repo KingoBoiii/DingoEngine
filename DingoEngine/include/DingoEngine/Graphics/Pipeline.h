@@ -36,6 +36,7 @@ namespace DingoEngine
 
 	struct PipelineParams
 	{
+		std::string DebugName;
 		Shader* Shader = nullptr;
 		Framebuffer* Framebuffer = nullptr;
 		FillMode FillMode = FillMode::Solid;
@@ -87,27 +88,19 @@ namespace DingoEngine
 		static Pipeline* Create(const PipelineParams& params);
 
 	public:
-		Pipeline(const PipelineParams& params);
-		~Pipeline() = default;
+		Pipeline(const PipelineParams& params)
+			: m_Params(params)
+		{}
+		virtual ~Pipeline() = default;
 
 	public:
-		void Initialize();
-		void Destroy();
+		virtual void Initialize() = 0;
+		virtual void Destroy() = 0;
 
 		const PipelineParams& GetParams() const { return m_Params; }
 
-	private:
-		void CreateInputLayout();
-		void CreateBindingLayoutAndBindingSet();
-
-	private:
+	protected:
 		PipelineParams m_Params;
-		nvrhi::InputLayoutHandle m_InputLayoutHandle;
-		nvrhi::BindingLayoutHandle m_BindingLayoutHandle;
-		nvrhi::BindingSetHandle m_BindingSetHandle;
-		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
-
-		friend class CommandList;
 	};
 
 }

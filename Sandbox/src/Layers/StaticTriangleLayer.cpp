@@ -16,14 +16,13 @@ void StaticTriangleLayer::OnAttach()
 	m_Shader = DingoEngine::Shader::Create(shaderParams);
 	m_Shader->Initialize();
 
-	DingoEngine::PipelineParams pipelineParams = DingoEngine::PipelineParams()
+	m_Pipeline = DingoEngine::PipelineBuilder()
+		.SetDebugName("Static Triangle Pipeline")
 		.SetShader(m_Shader)
 		.SetFramebuffer(DingoEngine::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
 		.SetFillMode(DingoEngine::FillMode::Solid)
-		.SetCullMode(DingoEngine::CullMode::BackAndFront);
-
-	m_Pipeline = DingoEngine::Pipeline::Create(pipelineParams);
-	m_Pipeline->Initialize();
+		.SetCullMode(DingoEngine::CullMode::BackAndFront)
+		.Create();
 }
 
 void StaticTriangleLayer::OnDetach()

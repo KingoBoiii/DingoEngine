@@ -7,6 +7,7 @@
 #include <nvrhi/utils.h> // for ClearColorAttachment
 
 #include "NVRHI/NvrhiGraphicsBuffer.h"
+#include "NVRHI/NvrhiPipeline.h"
 
 namespace DingoEngine
 {
@@ -66,7 +67,7 @@ namespace DingoEngine
 	{
 		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
 		auto& graphicsState = nvrhi::GraphicsState()
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
 			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
 
@@ -92,7 +93,7 @@ namespace DingoEngine
 		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
 		auto& graphicsState = nvrhi::GraphicsState()
 			.addVertexBuffer(vertexBufferBinding)
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
 			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
@@ -128,14 +129,14 @@ namespace DingoEngine
 		auto& graphicsState = nvrhi::GraphicsState()
 			.addVertexBuffer(vertexBufferBinding)
 			.setIndexBuffer(indexBufferBinding)
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
 			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
 
-		if (pipeline->m_BindingSetHandle)
+		if (static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle)
 		{
-			graphicsState.addBindingSet(pipeline->m_BindingSetHandle);
+			graphicsState.addBindingSet(static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle);
 		}
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
@@ -158,7 +159,7 @@ namespace DingoEngine
 		DE_CORE_ASSERT(uniformBuffer, "Uniform buffer is null.");
 		DE_CORE_ASSERT(uniformBuffer->IsType(BufferType::UniformBuffer), "Uniform buffer, must be of type BufferType::UniformBuffer");
 
-		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(uniformBuffer)->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->GetByteSize());
+		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(uniformBuffer)->m_BufferHandle, uniformBuffer->GetData(), uniformBuffer->GetByteSize());
 
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
 			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(vertexBuffer)->m_BufferHandle)
@@ -174,14 +175,14 @@ namespace DingoEngine
 		auto& graphicsState = nvrhi::GraphicsState()
 			.addVertexBuffer(vertexBufferBinding)
 			.setIndexBuffer(indexBufferBinding)
-			.setPipeline(pipeline->m_GraphicsPipelineHandle)
+			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
 			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
 
-		if (pipeline->m_BindingSetHandle)
+		if (static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle)
 		{
-			graphicsState.addBindingSet(pipeline->m_BindingSetHandle);
+			graphicsState.addBindingSet(static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle);
 		}
 
 		m_CommandListHandle->setGraphicsState(graphicsState);

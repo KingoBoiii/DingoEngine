@@ -33,7 +33,7 @@ namespace DingoEngine
 		nvrhi::BufferHandle m_BufferHandle;
 
 		friend class CommandList;
-		friend class Pipeline;
+		friend class NvrhiPipeline;
 	};
 
 }
