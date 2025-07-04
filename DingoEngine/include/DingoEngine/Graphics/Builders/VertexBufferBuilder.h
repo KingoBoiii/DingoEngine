@@ -29,7 +29,7 @@ namespace DingoEngine
 
 		VertexBuffer* Create()
 		{
-			auto buffer = new VertexBuffer(m_Data, m_Size, true);
+			VertexBuffer* buffer = VertexBuffer::Create(m_Data, m_Size);
 			buffer->Initialize();
 
 			if (m_Data)

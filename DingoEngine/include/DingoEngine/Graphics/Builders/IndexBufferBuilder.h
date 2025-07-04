@@ -7,7 +7,7 @@ namespace DingoEngine
 	// Usage:
 	// IndexBuffer* indexBuffer = IndexBufferBuilder()
 	//	.SetCount(uint32_t)
-	//	.SetIndices(const void*)
+	//	.SetIndices(const uint16_t*)
 	//	.Create();
 	class IndexBufferBuilder
 	{
@@ -30,7 +30,7 @@ namespace DingoEngine
 
 		IndexBuffer* Create()
 		{
-			auto buffer = new IndexBuffer(m_Indices, m_Count, true);
+			IndexBuffer* buffer = IndexBuffer::Create(m_Indices, m_Count);
 			buffer->Initialize();
 
 			if (m_Indices)

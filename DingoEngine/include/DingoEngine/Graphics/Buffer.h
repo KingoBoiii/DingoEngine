@@ -11,7 +11,8 @@ namespace DingoEngine
 		static VertexBuffer* Create(const void* data, uint64_t size);
 
 	public:
-		VertexBuffer(const void* data, uint64_t size, bool usingBuilderPattern = false);
+		VertexBuffer() = delete;
+		~VertexBuffer() = default;
 
 	public:
 		void Initialize();
@@ -20,10 +21,14 @@ namespace DingoEngine
 		void Upload(const void* data, uint64_t size, uint64_t offset = 0ul) const;
 
 	private:
+		VertexBuffer(const void* data, uint64_t size)
+			: m_Data(data), m_Size(size)
+		{}
+
+	private:
 		nvrhi::BufferHandle m_BufferHandle;
 		const void* m_Data = nullptr;
 		uint64_t m_Size = 0;
-		bool m_UsingBuilderPattern = false;
 
 		friend class CommandList;
 	};
@@ -34,7 +39,8 @@ namespace DingoEngine
 		static IndexBuffer* Create(const uint16_t* indices, uint32_t count);
 
 	public:
-		IndexBuffer(const uint16_t* indices, uint32_t count, bool usingBuilderPattern = false);
+		IndexBuffer() = delete;
+		~IndexBuffer() = default;
 
 	public:
 		void Initialize();
@@ -43,11 +49,15 @@ namespace DingoEngine
 		void Upload(const uint16_t* indices, uint64_t size, uint64_t offset = 0ul) const;
 
 	private:
+		IndexBuffer(const uint16_t* indices, uint32_t count)
+			: m_Indices(indices), m_Count(count), m_Size(count * sizeof(uint16_t))
+		{}
+
+	private:
 		nvrhi::BufferHandle m_BufferHandle;
 		const uint16_t* m_Indices = nullptr;
 		uint32_t m_Count = 0;
 		uint64_t m_Size = 0;
-		bool m_UsingBuilderPattern = false;
 
 		friend class CommandList;
 	};
