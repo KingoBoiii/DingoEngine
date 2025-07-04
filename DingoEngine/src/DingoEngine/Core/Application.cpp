@@ -3,6 +3,8 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Layers/DefaultLayer.h"
 
+#include "DingoEngine/Graphics/GraphicsContext.h"
+
 namespace DingoEngine
 {
 
@@ -23,9 +25,6 @@ namespace DingoEngine
 		m_Window = new Window();
 		m_Window->Initialize();
 
-		m_Renderer = Renderer::Create(m_Window->GetSwapChain());
-		m_Renderer->Initialize();
-
 		OnInitialize();
 
 		if(m_LayerStack.Empty())
@@ -42,13 +41,6 @@ namespace DingoEngine
 
 		m_LayerStack.Clear();
 
-		if (m_Renderer)
-		{
-			m_Renderer->Destroy();
-			delete m_Renderer;
-			m_Renderer = nullptr;
-		}
-
 		if (m_Window)
 		{
 			m_Window->Shutdown();
@@ -59,19 +51,24 @@ namespace DingoEngine
 
 	void Application::Run()
 	{
+		SwapChain* swapChain = m_Window->GetSwapChain();
+		auto deviceHandle = GraphicsContext::GetDeviceHandle();
+
 		while (m_Window->IsRunning())
 		{
 			m_Window->Update();
 
-			m_Renderer->BeginFrame();
+			swapChain->AcquireNextImage();
+
 			for (Layer* layer : m_LayerStack)
 			{
 				layer->OnUpdate();
 			}
 
-			m_Renderer->EndFrame();
-			m_Renderer->Present();
-			m_Renderer->WaitAndClear();
+			swapChain->Present();
+
+			deviceHandle->waitForIdle();
+			deviceHandle->runGarbageCollection();
 		}
 	}
 

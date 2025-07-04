@@ -1,7 +1,6 @@
 #pragma once
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
-#include "DingoEngine/Graphics/Renderer.h"
 
 namespace DingoEngine
 {
@@ -36,7 +35,6 @@ namespace DingoEngine
 	private:
 		LayerStack m_LayerStack;
 		Window* m_Window = nullptr;
-		Renderer* m_Renderer = nullptr;
 
 	private:
 		inline static Application* s_Instance = nullptr;
