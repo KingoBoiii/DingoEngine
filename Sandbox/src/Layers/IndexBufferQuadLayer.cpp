@@ -27,13 +27,11 @@ void IndexBufferQuadLayer::OnAttach()
 	m_CommandList = DingoEngine::CommandList::Create(commandListParams);
 	m_CommandList->Initialize();
 
-	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
-		.SetName("GraphicsBufferTriangle_IBO")
+	m_Shader = DingoEngine::ShaderBuilder()
+		.SetName("Camera Transformation")
 		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv");
-
-	m_Shader = DingoEngine::Shader::Create(shaderParams);
-	m_Shader->Initialize();
+		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv")
+		.Create();
 
 	DingoEngine::VertexLayout vertexLayout = DingoEngine::VertexLayout()
 		.SetStride(sizeof(Vertex))

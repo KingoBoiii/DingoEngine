@@ -42,13 +42,11 @@ void CameraTransformationQuadLayer::OnAttach()
 		.SetDirectUpload(false)
 		.Create();
 
-	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
+	m_Shader = DingoEngine::ShaderBuilder()
 		.SetName("Camera Transformation")
 		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/camera_transformation.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/camera_transformation.frag.spv");
-
-	m_Shader = DingoEngine::Shader::Create(shaderParams);
-	m_Shader->Initialize();
+		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/camera_transformation.frag.spv")
+		.Create();
 
 	DingoEngine::VertexLayout vertexLayout = DingoEngine::VertexLayout()
 		.SetStride(sizeof(Vertex))
