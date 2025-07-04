@@ -1,6 +1,8 @@
 #pragma once
 #include "DingoEngine/Graphics/Pipeline.h"
 
+#include "NvrhiShader.h"
+
 #include <nvrhi/nvrhi.h>
 
 namespace DingoEngine
@@ -19,7 +21,7 @@ namespace DingoEngine
 		virtual void Destroy() override;
 
 	private:
-		void CreateInputLayout();
+		void CreateInputLayout(NvrhiShader* nvrhiShader);
 		void CreateBindingLayoutAndBindingSet();
 
 	private:

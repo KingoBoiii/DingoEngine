@@ -1,8 +1,7 @@
 #pragma once
 #include "Enums.h"
-#include <filesystem>
 
-#include <nvrhi/nvrhi.h>
+#include <filesystem>
 #include <unordered_map>
 
 namespace DingoEngine
@@ -33,19 +32,17 @@ namespace DingoEngine
 		static Shader* Create(const ShaderParams& params);
 
 	public:
-		Shader(const ShaderParams& params);
+		Shader(const ShaderParams& params)
+			: m_Params(params)
+		{}
 		~Shader() = default;
 
 	public:
-		void Initialize();
-		void Destroy();
+		virtual void Initialize() = 0;
+		virtual void Destroy() = 0;
 
-	private:
-		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary, const std::string& debugName = "Shader");
-
-	private:
+	protected:
 		ShaderParams m_Params;
-		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;
 
 		friend class NvrhiPipeline;
 	};

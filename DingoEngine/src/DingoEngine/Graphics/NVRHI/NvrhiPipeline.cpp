@@ -36,8 +36,9 @@ namespace DingoEngine
 	void NvrhiPipeline::Initialize()
 	{
 		const auto device = GraphicsContext::GetDeviceHandle();
+		const auto nvrhiShader = static_cast<NvrhiShader*>(m_Params.Shader);
 
-		CreateInputLayout();
+		CreateInputLayout(nvrhiShader);
 
 		CreateBindingLayoutAndBindingSet();
 
@@ -52,8 +53,8 @@ namespace DingoEngine
 			.setPrimType(nvrhi::PrimitiveType::TriangleList)
 			.setRenderState(renderState)
 			.setInputLayout(m_InputLayoutHandle)
-			.setVertexShader(m_Params.Shader->m_ShaderHandles[ShaderType::Vertex])
-			.setPixelShader(m_Params.Shader->m_ShaderHandles[ShaderType::Pixel]);
+			.setVertexShader(nvrhiShader->m_ShaderHandles[ShaderType::Vertex])
+			.setPixelShader(nvrhiShader->m_ShaderHandles[ShaderType::Pixel]);
 
 		if (m_BindingLayoutHandle)
 		{
@@ -86,13 +87,13 @@ namespace DingoEngine
 		}
 	}
 
-	void NvrhiPipeline::CreateInputLayout()
+	void NvrhiPipeline::CreateInputLayout(NvrhiShader* nvrhiShader)
 	{
 		const auto device = GraphicsContext::GetDeviceHandle();
 
 		if (m_Params.VertexLayout.Attributes.empty())
 		{
-			m_InputLayoutHandle = device->createInputLayout(nullptr, 0, m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
+			m_InputLayoutHandle = device->createInputLayout(nullptr, 0, nvrhiShader->m_ShaderHandles[ShaderType::Vertex]);
 			return; // No attributes to create input layout
 		}
 
@@ -112,7 +113,7 @@ namespace DingoEngine
 			//index++;
 		}
 
-		m_InputLayoutHandle = device->createInputLayout(attributes.data(), static_cast<uint32_t>(attributes.size()), m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
+		m_InputLayoutHandle = device->createInputLayout(attributes.data(), static_cast<uint32_t>(attributes.size()), nvrhiShader->m_ShaderHandles[ShaderType::Vertex]);
 	}
 
 	void NvrhiPipeline::CreateBindingLayoutAndBindingSet()
