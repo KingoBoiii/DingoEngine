@@ -16,7 +16,6 @@
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/CommandList.h"
-#include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Buffer.h"
 #include "DingoEngine/Graphics/UniformBuffer.h"
 
