@@ -1,6 +1,8 @@
 #pragma once
 #include <DingoEngine.h>
 
+#define USE_GRAPHICS_BUFFER 1
+
 class CameraTransformationQuadLayer : public DingoEngine::Layer
 {
 public:
@@ -16,7 +18,8 @@ private:
 	DingoEngine::CommandList* m_CommandList = nullptr;
 	DingoEngine::Shader* m_Shader = nullptr;
 	DingoEngine::Pipeline* m_Pipeline = nullptr;
-	DingoEngine::VertexBuffer* m_VertexBuffer = nullptr;
-	DingoEngine::IndexBuffer* m_IndexBuffer = nullptr;
-	DingoEngine::UniformBuffer* m_UniformBuffer = nullptr;
+	
+	DingoEngine::GraphicsBuffer* m_VertexBuffer = nullptr;
+	DingoEngine::GraphicsBuffer* m_IndexBuffer = nullptr;
+	DingoEngine::GraphicsBuffer* m_UniformBuffer = nullptr;
 };

@@ -1,8 +1,7 @@
 #pragma once
 #include "Framebuffer.h"
 #include "Pipeline.h"
-#include "Buffer.h"
-#include "UniformBuffer.h"
+#include "GraphicsBuffer.h"
 
 #include <nvrhi/nvrhi.h>
 
@@ -39,9 +38,9 @@ namespace DingoEngine
 		void Clear();
 
 		void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
-		void Draw(Pipeline* pipeline, VertexBuffer* vertexBuffer);
-		void DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer);
-		void DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer, UniformBuffer* uniformBuffer);
+		void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
+		void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer);
+		void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer);
 
 	private:
 		CommandListParams m_Params;

@@ -50,14 +50,20 @@ void IndexBufferQuadLayer::OnAttach()
 	m_Pipeline = DingoEngine::Pipeline::Create(pipelineParams);
 	m_Pipeline->Initialize();
 
-	m_VertexBuffer = DingoEngine::VertexBufferBuilder()
-		.SetSize(sizeof(Vertex) * vertices.size())
-		.SetData(vertices.data())
+	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
+		.SetDebugName("Quad Vertex Buffer")
+		.SetByteSize(sizeof(Vertex) * vertices.size())
+		.SetType(DingoEngine::BufferType::VertexBuffer)
+		.SetDirectUpload(true)
+		.SetInitialData(vertices.data())
 		.Create();
 
-	m_IndexBuffer = DingoEngine::IndexBufferBuilder()
-		.SetCount(indices.size())
-		.SetIndices(indices.data())
+	m_IndexBuffer = DingoEngine::GraphicsBufferBuilder()
+		.SetDebugName("Quad Index Buffer")
+		.SetByteSize(sizeof(uint16_t) * indices.size())
+		.SetType(DingoEngine::BufferType::IndexBuffer)
+		.SetDirectUpload(true)
+		.SetInitialData(indices.data())
 		.Create();
 }
 

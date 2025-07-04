@@ -45,9 +45,12 @@ void VertexBufferTriangleLayer::OnAttach()
 	m_Pipeline = DingoEngine::Pipeline::Create(pipelineParams);
 	m_Pipeline->Initialize();
 
-	m_VertexBuffer = DingoEngine::VertexBufferBuilder()
-		.SetSize(sizeof(Vertex) * vertices.size())
-		.SetData(vertices.data())
+	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
+		.SetDebugName("Quad Vertex Buffer")
+		.SetByteSize(sizeof(Vertex) * vertices.size())
+		.SetType(DingoEngine::BufferType::VertexBuffer)
+		.SetDirectUpload(true)
+		.SetInitialData(vertices.data())
 		.Create();
 }
 

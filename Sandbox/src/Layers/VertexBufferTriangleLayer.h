@@ -16,5 +16,6 @@ private:
 	DingoEngine::CommandList* m_CommandList = nullptr;
 	DingoEngine::Shader* m_Shader = nullptr;
 	DingoEngine::Pipeline* m_Pipeline = nullptr;
-	DingoEngine::VertexBuffer* m_VertexBuffer = nullptr;
+
+	DingoEngine::GraphicsBuffer* m_VertexBuffer = nullptr;
 };

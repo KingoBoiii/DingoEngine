@@ -77,8 +77,11 @@ namespace DingoEngine
 		m_CommandListHandle->draw(drawArguments);
 	}
 
-	void CommandList::Draw(Pipeline* pipeline, VertexBuffer* vertexBuffer)
+	void CommandList::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
+		DE_CORE_ASSERT(vertexBuffer, "Vertex buffer is null.");
+		DE_CORE_ASSERT(vertexBuffer->IsType(BufferType::VertexBuffer), "Vertex buffer, must be of type BufferType::VertexBuffer");
+
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
 			.setBuffer(vertexBuffer->m_BufferHandle)
 			.setOffset(0)
@@ -95,14 +98,20 @@ namespace DingoEngine
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(3) // Number of vertices to draw
-			.setInstanceCount(1); // Number of instances to draw
+			.setVertexCount(vertexCount) // Number of vertices to draw
+			.setInstanceCount(instanceCount); // Number of instances to draw
 
 		m_CommandListHandle->draw(drawArguments);
 	}
 
-	void CommandList::DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer)
+	void CommandList::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer)
 	{
+		DE_CORE_ASSERT(vertexBuffer, "Vertex buffer is null.");
+		DE_CORE_ASSERT(vertexBuffer->IsType(BufferType::VertexBuffer), "Vertex buffer, must be of type BufferType::VertexBuffer");
+
+		DE_CORE_ASSERT(indexBuffer, "Index buffer is null.");
+		DE_CORE_ASSERT(indexBuffer->IsType(BufferType::IndexBuffer), "Vertex buffer, must be of type BufferType::IndexBuffer");
+
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
 			.setBuffer(vertexBuffer->m_BufferHandle)
 			.setOffset(0)
@@ -130,15 +139,24 @@ namespace DingoEngine
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(indexBuffer->m_Count) // Number of vertices to draw
+			.setVertexCount(indexBuffer->GetByteSize() / sizeof(uint16_t)) // Number of vertices to draw
 			.setInstanceCount(1); // Number of instances to draw
 
 		m_CommandListHandle->drawIndexed(drawArguments);
 	}
 
-	void CommandList::DrawIndexed(Pipeline* pipeline, VertexBuffer* vertexBuffer, IndexBuffer* indexBuffer, UniformBuffer* uniformBuffer)
+	void CommandList::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer)
 	{
-		m_CommandListHandle->writeBuffer(uniformBuffer->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->m_Size);
+		DE_CORE_ASSERT(vertexBuffer, "Vertex buffer is null.");
+		DE_CORE_ASSERT(vertexBuffer->IsType(BufferType::VertexBuffer), "Vertex buffer, must be of type BufferType::VertexBuffer");
+
+		DE_CORE_ASSERT(indexBuffer, "Index buffer is null.");
+		DE_CORE_ASSERT(indexBuffer->IsType(BufferType::IndexBuffer), "Vertex buffer, must be of type BufferType::IndexBuffer");
+
+		DE_CORE_ASSERT(uniformBuffer, "Uniform buffer is null.");
+		DE_CORE_ASSERT(uniformBuffer->IsType(BufferType::UniformBuffer), "Uniform buffer, must be of type BufferType::UniformBuffer");
+
+		m_CommandListHandle->writeBuffer(uniformBuffer->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->GetByteSize());
 
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
 			.setBuffer(vertexBuffer->m_BufferHandle)
@@ -167,7 +185,7 @@ namespace DingoEngine
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(indexBuffer->m_Count) // Number of vertices to draw
+			.setVertexCount(indexBuffer->GetByteSize() / sizeof(uint16_t)) // Number of vertices to draw
 			.setInstanceCount(1); // Number of instances to draw
 
 		m_CommandListHandle->drawIndexed(drawArguments);

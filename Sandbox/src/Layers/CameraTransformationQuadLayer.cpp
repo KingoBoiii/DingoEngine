@@ -34,8 +34,13 @@ void CameraTransformationQuadLayer::OnAttach()
 	m_CommandList = DingoEngine::CommandList::Create(commandListParams);
 	m_CommandList->Initialize();
 
-	m_UniformBuffer = DingoEngine::UniformBuffer::Create(sizeof(CameraTransform));
-	m_UniformBuffer->Initialize();
+	m_UniformBuffer = DingoEngine::GraphicsBufferBuilder()
+		.SetDebugName("Camera Transform Buffer")
+		.SetByteSize(sizeof(CameraTransform))
+		.SetType(DingoEngine::BufferType::UniformBuffer)
+		.SetIsVolatile(true)
+		.SetDirectUpload(false)
+		.Create();
 
 	DingoEngine::ShaderParams shaderParams = DingoEngine::ShaderParams()
 		.SetName("Camera Transformation")
@@ -56,19 +61,26 @@ void CameraTransformationQuadLayer::OnAttach()
 		.SetFramebuffer(DingoEngine::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
 		.SetFillMode(DingoEngine::FillMode::Solid)
 		.SetCullMode(DingoEngine::CullMode::BackAndFront)
-		.SetUniformBuffer(m_UniformBuffer);
+		.SetUniformBuffer(m_UniformBuffer)
+		;
 
 	m_Pipeline = DingoEngine::Pipeline::Create(pipelineParams);
 	m_Pipeline->Initialize();
 
-	m_VertexBuffer = DingoEngine::VertexBufferBuilder()
-		.SetSize(sizeof(Vertex) * vertices.size())
-		.SetData(vertices.data())
+	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
+		.SetDebugName("Quad Vertex Buffer")
+		.SetByteSize(sizeof(Vertex) * vertices.size())
+		.SetType(DingoEngine::BufferType::VertexBuffer)
+		.SetDirectUpload(true)
+		.SetInitialData(vertices.data())
 		.Create();
 
-	m_IndexBuffer = DingoEngine::IndexBufferBuilder()
-		.SetCount(indices.size())
-		.SetIndices(indices.data())
+	m_IndexBuffer = DingoEngine::GraphicsBufferBuilder()
+		.SetDebugName("Quad Index Buffer")
+		.SetByteSize(sizeof(uint16_t) * indices.size())
+		.SetType(DingoEngine::BufferType::IndexBuffer)
+		.SetDirectUpload(true)
+		.SetInitialData(indices.data())
 		.Create();
 }
 
@@ -86,7 +98,7 @@ void CameraTransformationQuadLayer::OnUpdate()
 {
 	const float aspectRatio = DingoEngine::Application::Get().GetWindow().GetAspectRatio();
 	const glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f) * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -10.0f));
-	m_UniformBuffer->Upload(&projectionMatrix);
+	m_UniformBuffer->Upload(&projectionMatrix, sizeof(CameraTransform));
 
 	m_CommandList->Begin();
 	m_CommandList->Clear();

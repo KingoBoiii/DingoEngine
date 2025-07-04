@@ -2,7 +2,7 @@
 #include "Shader.h"
 #include "Framebuffer.h"
 #include "Enums.h"
-#include "UniformBuffer.h"
+#include "GraphicsBuffer.h"
 
 namespace DingoEngine
 {
@@ -41,7 +41,7 @@ namespace DingoEngine
 		FillMode FillMode = FillMode::Solid;
 		CullMode CullMode = CullMode::Back;
 		VertexLayout VertexLayout;
-		UniformBuffer* UniformBuffer = nullptr;
+		GraphicsBuffer* UniformBuffer = nullptr;
 
 		PipelineParams& SetShader(DingoEngine::Shader* shader)
 		{
@@ -73,7 +73,7 @@ namespace DingoEngine
 			return *this;
 		}
 
-		PipelineParams& SetUniformBuffer(DingoEngine::UniformBuffer* uniformBuffer)
+		PipelineParams& SetUniformBuffer(DingoEngine::GraphicsBuffer* uniformBuffer)
 		{
 			UniformBuffer = uniformBuffer;
 			return *this;
