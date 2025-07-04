@@ -2,7 +2,7 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
-#include <nvrhi/utils.h>
+#include "NVRHI/NvrhiGraphicsBuffer.h"
 
 namespace DingoEngine
 {
@@ -130,7 +130,7 @@ namespace DingoEngine
 			//index++;
 		}
 
-		m_InputLayoutHandle = device->createInputLayout(attributes.data(), attributes.size(), m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
+		m_InputLayoutHandle = device->createInputLayout(attributes.data(), static_cast<uint32_t>(attributes.size()), m_Params.Shader->m_ShaderHandles[ShaderType::Vertex]);
 	}
 
 	void Pipeline::CreateBindingLayoutAndBindingSet()
@@ -146,7 +146,7 @@ namespace DingoEngine
 			m_BindingLayoutHandle = GraphicsContext::GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
 
 			nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc()
-				.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_Params.UniformBuffer->m_BufferHandle));
+				.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, static_cast<NvrhiGraphicsBuffer*>(m_Params.UniformBuffer)->m_BufferHandle));
 
 			m_BindingSetHandle = GraphicsContext::GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
 		}

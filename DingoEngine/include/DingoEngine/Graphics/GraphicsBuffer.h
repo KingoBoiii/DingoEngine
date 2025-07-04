@@ -1,8 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/BufferType.h"
 
-#include <nvrhi/nvrhi.h>
-
 namespace DingoEngine
 {
 
@@ -73,11 +71,12 @@ namespace DingoEngine
 	public:
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
-		virtual void Upload(const void* data, uint64_t size, uint64_t offset = 0ul) = 0;
+		virtual void Upload(T* data, uint64_t size, uint64_t offset = 0ul) = 0;
 
 		virtual const BufferType GetType() const { return m_Params.Type; }
 		virtual const GraphicsFormat GetFormat() const { return m_Params.Format; }
 		virtual const uint64_t GetByteSize() const { return m_Params.ByteSize; }
+		virtual const uint32_t GetIndexCount() const { return 0; }
 
 		virtual const bool IsType(BufferType type) const { return m_Params.Type == type; }
 
@@ -88,7 +87,6 @@ namespace DingoEngine
 
 	protected:
 		GraphicsBufferParams m_Params;
-		nvrhi::BufferHandle m_BufferHandle;
 		T* m_Data = nullptr;
 
 		friend class CommandList;
@@ -100,23 +98,11 @@ namespace DingoEngine
 	public:
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
-	public:
-		virtual void Initialize() override;
-		virtual void Destroy() override;
-		virtual void Upload(const void* data, uint64_t size, uint64_t offset = 0ul) override;
-
-	private:
+	protected:
 		GraphicsBuffer(const GraphicsBufferParams& params)
 			: GenericGraphicsBuffer<const void>(params)
 		{}
-	};
-
-	class IndexBufferUint16 : public GenericGraphicsBuffer<const uint16_t>
-	{
-	};
-
-	class IndexBufferUint32 : public GenericGraphicsBuffer<const uint32_t>
-	{
+		virtual ~GraphicsBuffer() = default;
 	};
 
 }

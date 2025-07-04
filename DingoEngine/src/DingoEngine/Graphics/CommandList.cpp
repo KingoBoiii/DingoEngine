@@ -6,6 +6,8 @@
 
 #include <nvrhi/utils.h> // for ClearColorAttachment
 
+#include "NVRHI/NvrhiGraphicsBuffer.h"
+
 namespace DingoEngine
 {
 
@@ -83,7 +85,7 @@ namespace DingoEngine
 		DE_CORE_ASSERT(vertexBuffer->IsType(BufferType::VertexBuffer), "Vertex buffer, must be of type BufferType::VertexBuffer");
 
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
-			.setBuffer(vertexBuffer->m_BufferHandle)
+			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(vertexBuffer)->m_BufferHandle)
 			.setOffset(0)
 			.setSlot(0);
 
@@ -113,12 +115,12 @@ namespace DingoEngine
 		DE_CORE_ASSERT(indexBuffer->IsType(BufferType::IndexBuffer), "Vertex buffer, must be of type BufferType::IndexBuffer");
 
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
-			.setBuffer(vertexBuffer->m_BufferHandle)
+			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(vertexBuffer)->m_BufferHandle)
 			.setOffset(0)
 			.setSlot(0);
 
 		const nvrhi::IndexBufferBinding indexBufferBinding = nvrhi::IndexBufferBinding()
-			.setBuffer(indexBuffer->m_BufferHandle)
+			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(indexBuffer)->m_BufferHandle)
 			.setOffset(0)
 			.setFormat(nvrhi::Format::R16_UINT); // Assuming 16-bit indices
 
@@ -156,15 +158,15 @@ namespace DingoEngine
 		DE_CORE_ASSERT(uniformBuffer, "Uniform buffer is null.");
 		DE_CORE_ASSERT(uniformBuffer->IsType(BufferType::UniformBuffer), "Uniform buffer, must be of type BufferType::UniformBuffer");
 
-		m_CommandListHandle->writeBuffer(uniformBuffer->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->GetByteSize());
+		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(uniformBuffer)->m_BufferHandle, uniformBuffer->m_Data, uniformBuffer->GetByteSize());
 
 		const nvrhi::VertexBufferBinding vertexBufferBinding = nvrhi::VertexBufferBinding()
-			.setBuffer(vertexBuffer->m_BufferHandle)
+			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(vertexBuffer)->m_BufferHandle)
 			.setOffset(0)
 			.setSlot(0);
 
 		const nvrhi::IndexBufferBinding indexBufferBinding = nvrhi::IndexBufferBinding()
-			.setBuffer(indexBuffer->m_BufferHandle)
+			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(indexBuffer)->m_BufferHandle)
 			.setOffset(0)
 			.setFormat(nvrhi::Format::R16_UINT); // Assuming 16-bit indices
 
@@ -185,7 +187,7 @@ namespace DingoEngine
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
-			.setVertexCount(indexBuffer->GetByteSize() / sizeof(uint16_t)) // Number of vertices to draw
+			.setVertexCount(indexBuffer->GetIndexCount()) // Number of vertices to draw
 			.setInstanceCount(1); // Number of instances to draw
 
 		m_CommandListHandle->drawIndexed(drawArguments);
