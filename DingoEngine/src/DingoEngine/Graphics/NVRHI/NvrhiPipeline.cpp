@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "NvrhiPipeline.h"
 #include "NvrhiGraphicsBuffer.h"
+#include "NvrhiTexture.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
@@ -118,23 +119,34 @@ namespace DingoEngine
 
 	void NvrhiPipeline::CreateBindingLayoutAndBindingSet()
 	{
-		if (m_Params.UniformBuffer)
+		if (m_Params.UniformBuffer == nullptr && m_Params.Texture == nullptr)
 		{
-			nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
-				.setRegisterSpace(0) // set = 0
-				.setRegisterSpaceIsDescriptorSet(false)
-				.setVisibility(nvrhi::ShaderType::All) // Binding offset for the uniform buffer
-				.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0));
-
-			m_BindingLayoutHandle = GraphicsContext::GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
-
-			nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc()
-				.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, static_cast<NvrhiGraphicsBuffer*>(m_Params.UniformBuffer)->m_BufferHandle));
-
-			m_BindingSetHandle = GraphicsContext::GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
+			return;
 		}
 
-		//bool success = nvrhi::utils::CreateBindingSetAndLayout(GraphicsContext::GetDeviceHandle(), nvrhi::ShaderType::All, 0, bindingSetDesc, m_BindingLayoutHandle, m_BindingSetHandle);
+		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
+			.setRegisterSpace(0) // set = 0
+			.setRegisterSpaceIsDescriptorSet(false)
+			.setVisibility(nvrhi::ShaderType::All); // Binding offset for the uniform buffer
+
+		nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc();
+
+		if (m_Params.UniformBuffer)
+		{
+			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0));
+
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, static_cast<NvrhiGraphicsBuffer*>(m_Params.UniformBuffer)->m_BufferHandle));
+		}
+
+		if (m_Params.Texture)
+		{
+			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0));
+
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
+		}
+
+		m_BindingLayoutHandle = GraphicsContext::GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
+		m_BindingSetHandle = GraphicsContext::GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
 	}
 
 }

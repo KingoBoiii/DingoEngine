@@ -53,6 +53,12 @@ namespace DingoEngine
 			return *this;
 		}
 
+		PipelineBuilder& SetTexture(Texture* texture)
+		{
+			m_Params.Texture = texture;
+			return *this;
+		}
+
 		Pipeline* Create() const
 		{
 			Pipeline* pipeline = Pipeline::Create(m_Params);

@@ -3,6 +3,7 @@
 #include "Framebuffer.h"
 #include "Enums.h"
 #include "GraphicsBuffer.h"
+#include "Texture.h"
 
 namespace DingoEngine
 {
@@ -32,8 +33,6 @@ namespace DingoEngine
 		}
 	};
 
-	class Pipeline;
-
 	struct PipelineParams
 	{
 		std::string DebugName;
@@ -43,6 +42,7 @@ namespace DingoEngine
 		CullMode CullMode = CullMode::Back;
 		VertexLayout VertexLayout;
 		GraphicsBuffer* UniformBuffer = nullptr;
+		Texture* Texture = nullptr;
 
 		PipelineParams& SetShader(DingoEngine::Shader* shader)
 		{
@@ -77,6 +77,12 @@ namespace DingoEngine
 		PipelineParams& SetUniformBuffer(DingoEngine::GraphicsBuffer* uniformBuffer)
 		{
 			UniformBuffer = uniformBuffer;
+			return *this;
+		}
+
+		PipelineParams& SetTexture(DingoEngine::Texture* texture)
+		{
+			Texture = texture;
 			return *this;
 		}
 	};

@@ -32,17 +32,17 @@ int main()
 
 	DingoEngine::Log::Initialize();
 
-	DE_CORE_TRACE_TAG("TAG", "ENGINE {} {}", "TRACE", glm::vec2(69.0f, 420.0f));
-	DE_CORE_INFO_TAG("TAG", "ENGINE {}", "INFO");
-	DE_CORE_WARN_TAG("TAG", "ENGINE {}", "WARN");
-	DE_CORE_ERROR_TAG("TAG", "ENGINE {}", "ERROR");
-	DE_CORE_FATAL_TAG("TAG", "ENGINE {}", "FATAL");
+	//DE_CORE_TRACE_TAG("TAG", "ENGINE {} {}", "TRACE", glm::vec2(69.0f, 420.0f));
+	//DE_CORE_INFO_TAG("TAG", "ENGINE {}", "INFO");
+	//DE_CORE_WARN_TAG("TAG", "ENGINE {}", "WARN");
+	//DE_CORE_ERROR_TAG("TAG", "ENGINE {}", "ERROR");
+	//DE_CORE_FATAL_TAG("TAG", "ENGINE {}", "FATAL");
 
-	DE_TRACE_TAG("TAG", "TRACE");
-	DE_INFO_TAG("TAG", "INFO");
-	DE_WARN_TAG("TAG", "WARN");
-	DE_ERROR_TAG("TAG", "ERROR");
-	DE_FATAL_TAG("TAG", "FATAL");
+	//DE_TRACE_TAG("TAG", "TRACE");
+	//DE_INFO_TAG("TAG", "INFO");
+	//DE_WARN_TAG("TAG", "WARN");
+	//DE_ERROR_TAG("TAG", "ERROR");
+	//DE_FATAL_TAG("TAG", "FATAL");
 
 	DingoEngine::Application* app = DingoEngine::CreateApplication();
 	app->Run();

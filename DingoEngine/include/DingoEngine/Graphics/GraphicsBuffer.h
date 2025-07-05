@@ -1,18 +1,9 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/BufferType.h"
+#include "DingoEngine/Graphics/Enums/GraphicsFormat.h"
 
 namespace DingoEngine
 {
-
-	enum class GraphicsFormat
-	{
-		Unknown,
-
-		Uint16,
-		Uint32,
-
-		Count
-	};
 
 	struct GraphicsBufferParams
 	{
