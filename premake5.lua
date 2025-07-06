@@ -11,11 +11,19 @@ workspace "DingoEngine"
 
     defines {
 		"_CRT_SECURE_NO_WARNINGS",
-        "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1"
+        "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1", 
+        "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING"
 	}
 
-    filter "language:C++ or language:C"
-		architecture "x86_64"
+    filter "action:vs*"
+        --sanitize { "Address" }
+        --flags { "NoRuntimeChecks", "NoIncrementalLink" }
+
+        filter "language:C++ or language:C"
+		    architecture "x86_64"
+
+	    --filter "system:windows"
+		--    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
@@ -23,10 +31,10 @@ outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 VULKAN_SDK = os.getenv("VULKAN_SDK")
 
 IncludeDir = {}
-IncludeDir['spdlog'] = "%{wks.location}/DingoEngine/Vendor/spdlog/include";
+IncludeDir['spdlog'] = "%{wks.location}/DingoEngine/vendor/spdlog/include";
 IncludeDir['glfw'] = "%{wks.location}/DingoEngine/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/DingoEngine/vendor/nvrhi/include";
-IncludeDir['glm'] = "%{wks.location}/DingoEngine/Vendor/glm";
+IncludeDir['glm'] = "%{wks.location}/DingoEngine/vendor/glm";
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 
 LibraryDir = {}

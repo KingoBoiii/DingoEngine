@@ -38,8 +38,7 @@ project "DingoEngine"
 	}
 
 	defines {
-		"GLFW_INCLUDE_NONE",
-		"SPDLOG_USE_STD_FORMAT"
+		"GLFW_INCLUDE_NONE"
 	}
 
 	buildoptions {
