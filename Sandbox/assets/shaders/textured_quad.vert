@@ -14,6 +14,6 @@ layout(location = 1) out vec4 fragColor;
 
 void main() {
     gl_Position = ProjectionView * vec4(inPosition, 0.0, 1.0);
-    fragColor = texture(uTexture, inTexCoord) * vec4(inColor, 1.0);
+    fragColor = vec4(inTexCoord, 0.0, 1.0); // texture(uTexture, inTexCoord) * vec4(inColor, 1.0);
 
 }
