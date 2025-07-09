@@ -27,7 +27,8 @@ project "DingoEngine"
         "%{IncludeDir.glfw}",
         "%{IncludeDir.vulkan}",
         "%{IncludeDir.nvrhi}",
-        "%{IncludeDir.glm}"
+        "%{IncludeDir.glm}",
+        "%{IncludeDir.stb}"
 	}
 
 	links {

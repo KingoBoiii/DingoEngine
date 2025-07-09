@@ -127,7 +127,7 @@ namespace DingoEngine
 		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
 			.setRegisterSpace(0) // set = 0
 			.setRegisterSpaceIsDescriptorSet(false)
-			.setVisibility(nvrhi::ShaderType::All); // Binding offset for the uniform buffer
+			.setVisibility(nvrhi::ShaderType::All);
 
 		nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc();
 
@@ -140,13 +140,13 @@ namespace DingoEngine
 
 		if (m_Params.Texture)
 		{
-			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(0));
+			//bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(0));
 
-			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
+			//bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
 
-			//bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0));
+			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0));
 
-			//bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
 		}
 
 		m_BindingLayoutHandle = GraphicsContext::GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);

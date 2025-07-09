@@ -28,7 +28,7 @@ void TexturedQuadLayer::OnAttach()
 		.Create();
 
 	DingoEngine::TextureParams textureParams = {
-		.Format = DingoEngine::TextureFormat::RGB,
+		.Format = DingoEngine::TextureFormat::RGBA,
 		.Dimension = DingoEngine::TextureDimension::Texture2D,
 		.Width = 920,
 		.Height = 643
@@ -36,20 +36,7 @@ void TexturedQuadLayer::OnAttach()
 
 	m_Texture = DingoEngine::Texture::Create(textureParams);
 	m_Texture->Initialize();
-
-	{
-		std::ifstream file("assets/textures/dickbutt.png", std::ios::ate | std::ios::binary);
-
-		size_t fileSize = file.tellg();
-		std::vector<char> buffer(fileSize);
-
-		file.seekg(0);
-		file.read(buffer.data(), fileSize);
-
-		file.close();
-
-		m_Texture->Upload(buffer.data(), fileSize);
-	}
+	m_Texture->Upload("assets/textures/dickbutt.png");
 
 	m_Shader = DingoEngine::ShaderBuilder()
 		.SetName("Textured Quad")

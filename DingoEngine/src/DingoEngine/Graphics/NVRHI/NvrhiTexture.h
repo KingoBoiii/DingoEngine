@@ -18,10 +18,10 @@ namespace DingoEngine
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 		virtual void Upload(const void* data, uint64_t size) override;
+		virtual void Upload(const std::filesystem::path& filepath) override;
 
 	private:
 		nvrhi::TextureHandle m_Handle;
-		nvrhi::SamplerHandle m_SamplerHandle;
 
 		friend class NvrhiPipeline;
 	};

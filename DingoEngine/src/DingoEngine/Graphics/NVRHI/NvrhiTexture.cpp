@@ -3,8 +3,8 @@
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
-//#define STB_IMAGE_IMPLEMENTATION
-//#include <stb_image.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 namespace DingoEngine
 {
@@ -66,10 +66,6 @@ namespace DingoEngine
 			.setKeepInitialState(true);
 
 		m_Handle = GraphicsContext::GetDeviceHandle()->createTexture(textureDesc);
-
-		nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc();
-
-		m_SamplerHandle = GraphicsContext::GetDeviceHandle()->createSampler(samplerDesc);
 	}
 
 	void NvrhiTexture::Destroy()
@@ -82,22 +78,41 @@ namespace DingoEngine
 
 	void NvrhiTexture::Upload(const void* data, uint64_t size)
 	{
-		//int32_t width, height, channels;
-		//uint8_t* imageData = stbi_load("assets/textures/dickbutt.png", &width, &height, &channels, STBI_rgb_alpha);
-		//DE_CORE_ASSERT(imageData, "Failed to load texture");
+		DE_CORE_ASSERT(data);
 
-		//nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
-		//	.setQueueType(nvrhi::CommandQueue::Graphics);
+		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
+			.setQueueType(nvrhi::CommandQueue::Graphics);
 
-		//nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+		nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
 
-		//commandList->open();
+		commandList->open();
 
-		//commandList->writeTexture(m_Handle, 0, 0, imageData, width * channels, height * (width * channels));
+		commandList->writeTexture(m_Handle, 0, 0, data, size);
 
-		//commandList->close();
+		commandList->close();
 
-		//GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+		GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+	}
+
+	void NvrhiTexture::Upload(const std::filesystem::path& filepath)
+	{
+		int32_t width, height, channels;
+		stbi_set_flip_vertically_on_load(true);
+		uint8_t* data = stbi_load("assets/textures/dickbutt.png", &width, &height, &channels, STBI_rgb_alpha);
+		DE_CORE_ASSERT(data, "Failed to load texture");
+
+		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
+			.setQueueType(nvrhi::CommandQueue::Graphics);
+
+		nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+
+		commandList->open();
+
+		commandList->writeTexture(m_Handle, 0, 0, data, width * channels, width * height * channels);
+
+		commandList->close();
+
+		GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
 	}
 
 }
