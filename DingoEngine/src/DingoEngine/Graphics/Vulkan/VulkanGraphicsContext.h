@@ -77,6 +77,7 @@ namespace DingoEngine
 			// device
 			{
 				VK_KHR_MAINTENANCE1_EXTENSION_NAME,
+				VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 				VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME
 			},
 		};

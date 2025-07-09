@@ -404,8 +404,6 @@ namespace DingoEngine
 
 	void VulkanGraphicsContext::CreateDevice()
 	{
-		enabledExtensions.device.insert(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-
 		const vk::PhysicalDeviceProperties physicalDeviceProperties = m_VulkanPhysicalDevice.getProperties();
 		m_RendererString = std::string(physicalDeviceProperties.deviceName.data());
 
