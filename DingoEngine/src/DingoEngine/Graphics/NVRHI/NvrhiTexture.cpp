@@ -66,6 +66,10 @@ namespace DingoEngine
 			.setKeepInitialState(true);
 
 		m_Handle = GraphicsContext::GetDeviceHandle()->createTexture(textureDesc);
+
+		nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc();
+
+		m_SamplerHandle = GraphicsContext::GetDeviceHandle()->createSampler(samplerDesc);
 	}
 
 	void NvrhiTexture::Destroy()

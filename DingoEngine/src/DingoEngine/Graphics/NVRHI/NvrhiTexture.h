@@ -21,6 +21,7 @@ namespace DingoEngine
 
 	private:
 		nvrhi::TextureHandle m_Handle;
+		nvrhi::SamplerHandle m_SamplerHandle;
 
 		friend class NvrhiPipeline;
 	};
