@@ -2,23 +2,6 @@
 
 #include <glm/glm.hpp>
 
-struct Vertex
-{
-	glm::vec2 position;
-	glm::vec3 color;
-};
-
-const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
-};
-
-const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0
-};
-
 void IndexBufferQuadLayer::OnAttach()
 {
 	DingoEngine::CommandListParams commandListParams = DingoEngine::CommandListParams()
@@ -49,18 +32,18 @@ void IndexBufferQuadLayer::OnAttach()
 
 	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
 		.SetDebugName("Quad Vertex Buffer")
-		.SetByteSize(sizeof(Vertex) * vertices.size())
+		.SetByteSize(sizeof(Vertex) * m_Vertices.size())
 		.SetType(DingoEngine::BufferType::VertexBuffer)
 		.SetDirectUpload(true)
-		.SetInitialData(vertices.data())
+		.SetInitialData(m_Vertices.data())
 		.Create();
 
 	m_IndexBuffer = DingoEngine::GraphicsBufferBuilder()
 		.SetDebugName("Quad Index Buffer")
-		.SetByteSize(sizeof(uint16_t) * indices.size())
+		.SetByteSize(sizeof(uint16_t) * m_Indices.size())
 		.SetType(DingoEngine::BufferType::IndexBuffer)
 		.SetDirectUpload(true)
-		.SetInitialData(indices.data())
+		.SetInitialData(m_Indices.data())
 		.Create();
 }
 

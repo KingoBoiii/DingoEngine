@@ -1,7 +1,7 @@
 include "./vendor/premake/solution_items.lua"
 
 workspace "DingoEngine"
-    configurations { "Debug", "Release" }
+    configurations { "Debug", "Debug-ASan", "Release" }
     startproject "Sandbox"
     language "C++"
 	cppdialect "C++20"
@@ -21,6 +21,12 @@ workspace "DingoEngine"
 
         filter "language:C++ or language:C"
 		    architecture "x86_64"
+
+        filter "configurations:Debug-ASan"
+            symbols "On"
+            editandcontinue "Off"
+            buildoptions { "-fsanitize=address" }
+            linkoptions { "-fsanitize=address" }
 
 	    --filter "system:windows"
 		--    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }

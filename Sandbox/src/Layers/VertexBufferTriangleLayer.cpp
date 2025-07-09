@@ -2,18 +2,6 @@
 
 #include <glm/glm.hpp>
 
-struct Vertex
-{
-	glm::vec2 position;
-	glm::vec3 color;
-};
-
-const std::vector<Vertex> vertices = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-};
-
 void VertexBufferTriangleLayer::OnAttach()
 {
 	DingoEngine::CommandListParams commandListParams = DingoEngine::CommandListParams()
@@ -44,10 +32,10 @@ void VertexBufferTriangleLayer::OnAttach()
 
 	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
 		.SetDebugName("Quad Vertex Buffer")
-		.SetByteSize(sizeof(Vertex) * vertices.size())
+		.SetByteSize(sizeof(Vertex) * m_Vertices.size())
 		.SetType(DingoEngine::BufferType::VertexBuffer)
 		.SetDirectUpload(true)
-		.SetInitialData(vertices.data())
+		.SetInitialData(m_Vertices.data())
 		.Create();
 }
 

@@ -22,4 +22,22 @@ private:
 	DingoEngine::GraphicsBuffer* m_UniformBuffer = nullptr;
 
 	DingoEngine::Texture* m_Texture = nullptr;
+
+	struct Vertex
+	{
+		glm::vec2 position;
+		glm::vec3 color;
+		glm::vec2 texCoord;
+	};
+
+	const std::vector<Vertex> m_Vertices = {
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}, // Bottom-left
+	{{0.5f, -0.5f},  {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}}, // Bottom-right
+	{{0.5f, 0.5f},   {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}}, // Top-right
+	{{-0.5f, 0.5f},  {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}  // Top-left
+	};
+
+	const std::vector<uint16_t> m_Indices = {
+		0, 1, 2, 2, 3, 0
+	};
 };
