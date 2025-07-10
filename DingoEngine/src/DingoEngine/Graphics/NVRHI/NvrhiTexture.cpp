@@ -62,14 +62,30 @@ namespace DingoEngine
 			.setHeight(m_Params.Height)
 			.setFormat(Utils::GetTextureFormat(m_Params.Format))
 			.setDimension(Utils::GetTextureDimension(m_Params.Dimension))
+			.setDepth(1)
+			.setMipLevels(1)
+			.setArraySize(1)
 			.setInitialState(nvrhi::ResourceStates::ShaderResource)
 			.setKeepInitialState(true);
 
 		m_Handle = GraphicsContext::GetDeviceHandle()->createTexture(textureDesc);
+
+		//nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
+		//	.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge)
+		//	.setMinFilter(true)
+		//	.setMagFilter(true)
+		//	.setMipFilter(true);
+
+		//m_SamplerHandle = GraphicsContext::GetDeviceHandle()->createSampler(samplerDesc);
 	}
 
 	void NvrhiTexture::Destroy()
 	{
+		if (m_SamplerHandle)
+		{
+			m_SamplerHandle->Release();
+		}
+
 		if (m_Handle)
 		{
 			m_Handle->Release();
@@ -98,7 +114,7 @@ namespace DingoEngine
 	{
 		int32_t width, height, channels;
 		stbi_set_flip_vertically_on_load(true);
-		uint8_t* data = stbi_load("assets/textures/dickbutt.png", &width, &height, &channels, STBI_rgb_alpha);
+		uint8_t* data = stbi_load(filepath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
 		DE_CORE_ASSERT(data, "Failed to load texture");
 
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
@@ -107,6 +123,8 @@ namespace DingoEngine
 		nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
 
 		commandList->open();
+
+		channels = 4;
 
 		commandList->writeTexture(m_Handle, 0, 0, data, width * channels, width * height * channels);
 

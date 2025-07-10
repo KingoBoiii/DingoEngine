@@ -28,6 +28,7 @@ void TexturedQuadLayer::OnAttach()
 		.Create();
 
 	DingoEngine::TextureParams textureParams = {
+		.DebugName = "Dickbutt Texture",
 		.Format = DingoEngine::TextureFormat::RGBA,
 		.Dimension = DingoEngine::TextureDimension::Texture2D,
 		.Width = 920,

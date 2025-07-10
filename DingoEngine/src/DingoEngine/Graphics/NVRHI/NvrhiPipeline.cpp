@@ -134,18 +134,15 @@ namespace DingoEngine
 		if (m_Params.UniformBuffer)
 		{
 			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0));
-
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, static_cast<NvrhiGraphicsBuffer*>(m_Params.UniformBuffer)->m_BufferHandle));
 		}
 
 		if (m_Params.Texture)
 		{
 			//bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(0));
-
 			//bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
 
 			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0));
-
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
 		}
 
