@@ -47,9 +47,9 @@ void TexturedQuadLayer::OnAttach()
 
 	DingoEngine::VertexLayout vertexLayout = DingoEngine::VertexLayout()
 		.SetStride(sizeof(Vertex))
-		.AddAttribute("inPosition", nvrhi::Format::RG32_FLOAT, 0)
-		.AddAttribute("inColor", nvrhi::Format::RGB32_FLOAT, sizeof(glm::vec2))
-		.AddAttribute("inTexCoord", nvrhi::Format::RG32_FLOAT, sizeof(glm::vec2) + sizeof(glm::vec3));
+		.AddAttribute("inPosition", nvrhi::Format::RG32_FLOAT, offsetof(Vertex, position))
+		.AddAttribute("inColor", nvrhi::Format::RGB32_FLOAT, offsetof(Vertex, color))
+		.AddAttribute("inTexCoord", nvrhi::Format::RG32_FLOAT, offsetof(Vertex, texCoord));
 
 	m_Pipeline = DingoEngine::PipelineBuilder()
 		.SetDebugName("Textured Quad Pipeline")
