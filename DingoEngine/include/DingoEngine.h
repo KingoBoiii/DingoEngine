@@ -4,6 +4,7 @@
 
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Layer.h"
+#include "DingoEngine/Core/FileSystem.h"
 
 #include "DingoEngine/Windowing/Window.h"
 

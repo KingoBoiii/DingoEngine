@@ -1,10 +1,8 @@
 #include "depch.h"
 #include "NvrhiTexture.h"
 
+#include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
-
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 
 namespace DingoEngine
 {
@@ -112,9 +110,8 @@ namespace DingoEngine
 
 	void NvrhiTexture::Upload(const std::filesystem::path& filepath)
 	{
-		int32_t width, height, channels;
-		stbi_set_flip_vertically_on_load(true);
-		uint8_t* data = stbi_load(filepath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+		uint32_t width, height, channels;
+		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
 		DE_CORE_ASSERT(data, "Failed to load texture");
 
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()

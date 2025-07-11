@@ -17,7 +17,6 @@ namespace DingoEngine
 	class Texture
 	{
 	public:
-		static Texture* Create(const std::filesystem::path& filepath, const TextureParams& params);
 		static Texture* Create(const TextureParams& params);
 
 	public:

@@ -27,17 +27,21 @@ void TexturedQuadLayer::OnAttach()
 		.SetDirectUpload(false)
 		.Create();
 
+	uint32_t width, height, channels;
+	const uint8_t* textureData = DingoEngine::FileSystem::ReadImage("assets/textures/dickbutt_transparent.png", &width, &height, &channels, true, true);
+
 	DingoEngine::TextureParams textureParams = {
 		.DebugName = "Dickbutt Texture",
-		.Format = DingoEngine::TextureFormat::RGBA,
+		.Format = channels == 4 ? DingoEngine::TextureFormat::RGBA : DingoEngine::TextureFormat::RGB,
 		.Dimension = DingoEngine::TextureDimension::Texture2D,
-		.Width = 920,
-		.Height = 643
+		.Width = width,
+		.Height = height
 	};
 
 	m_Texture = DingoEngine::Texture::Create(textureParams);
 	m_Texture->Initialize();
-	m_Texture->Upload("assets/textures/dickbutt_transparent.png");
+	m_Texture->Upload(textureData, width * channels);
+	//m_Texture->Upload("assets/textures/dickbutt_transparent.png");
 
 	m_Shader = DingoEngine::ShaderBuilder()
 		.SetName("Textured Quad")

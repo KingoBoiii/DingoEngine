@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "NvrhiShader.h"
 
+#include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
 namespace DingoEngine
@@ -56,20 +57,8 @@ namespace DingoEngine
 			}
 		}
 
-		static std::string GetFileName(const std::filesystem::path& filepath)
-		{
-			const std::string& filepathString = filepath.string();
-
-			// Extract name from filepath
-			auto lastSlash = filepathString.find_last_of("/\\");
-			lastSlash = lastSlash == std::string::npos ? 0 : lastSlash + 1;
-			auto lastDot = filepathString.rfind('.');
-			auto count = lastDot == std::string::npos ? filepathString.size() - lastSlash : lastDot - lastSlash;
-			return filepathString.substr(lastSlash, count);
-		}
-
 	}
-	
+
 	void NvrhiShader::Initialize()
 	{
 		std::string name = m_Params.Name;
@@ -82,7 +71,7 @@ namespace DingoEngine
 		{
 			if (name.empty())
 			{
-				name = Utils::GetFileName(filePath);
+				name = FileSystem::GetFileName(filePath);
 			}
 
 			const std::vector<char> spvBinaries = Utils::ReadSpvFile(filePath.string());
@@ -90,7 +79,7 @@ namespace DingoEngine
 			DE_CORE_INFO("Shader handle created for {} ({}): {}", name, Utils::ConvertShaderTypeToString(shaderType), filePath.string());
 		}
 	}
-	
+
 	void NvrhiShader::Destroy()
 	{
 		m_ShaderHandles.clear();
