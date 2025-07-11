@@ -47,8 +47,12 @@ namespace DingoEngine
 			.setCullMode(Utils::ConvertCullModeToNVRHI(m_Params.CullMode))
 			.setFillMode(Utils::ConvertFillModeToNVRHI(m_Params.FillMode));
 
+		nvrhi::BlendState blendState = nvrhi::BlendState()
+			.enableAlphaToCoverage();
+
 		nvrhi::RenderState renderState = nvrhi::RenderState()
-			.setRasterState(rasterState);
+			.setRasterState(rasterState)
+			.setBlendState(blendState);
 
 		nvrhi::GraphicsPipelineDesc graphicsPipelineDesc = nvrhi::GraphicsPipelineDesc()
 			.setPrimType(nvrhi::PrimitiveType::TriangleList)
