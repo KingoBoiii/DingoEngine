@@ -37,7 +37,7 @@ void TexturedQuadLayer::OnAttach()
 
 	m_Texture = DingoEngine::Texture::Create(textureParams);
 	m_Texture->Initialize();
-	m_Texture->Upload("assets/textures/dickbutt.png");
+	m_Texture->Upload("assets/textures/dickbutt_transparent.png");
 
 	m_Shader = DingoEngine::ShaderBuilder()
 		.SetName("Textured Quad")
