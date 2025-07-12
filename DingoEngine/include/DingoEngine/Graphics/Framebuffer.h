@@ -51,6 +51,7 @@ namespace DingoEngine
 
 		friend class NvrhiPipeline;
 		friend class CommandList;
+		friend class ImGuiRenderer;
 	};
 
 }

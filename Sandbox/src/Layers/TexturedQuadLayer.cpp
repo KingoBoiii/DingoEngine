@@ -6,6 +6,8 @@
 
 #include <fstream>
 
+#include <imgui.h>
+
 struct CameraTransform
 {
 	glm::mat4 ProjectionView;
@@ -104,4 +106,9 @@ void TexturedQuadLayer::OnUpdate()
 	m_CommandList->Clear();
 	m_CommandList->DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer, m_UniformBuffer);
 	m_CommandList->End();
+}
+
+void TexturedQuadLayer::OnImGuiRender()
+{
+	ImGui::ShowDemoWindow();
 }

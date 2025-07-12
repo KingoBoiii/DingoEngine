@@ -26,6 +26,11 @@ namespace DingoEngine
 			return GetFramebuffer(m_SwapChainIndex);
 		}
 
+		virtual uint32_t GetCurrentBackBufferIndex() const override
+		{
+			return m_SwapChainIndex;
+		}
+
 	private:
 
 		void CreateWindowSurface();

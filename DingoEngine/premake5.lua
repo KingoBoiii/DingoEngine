@@ -28,14 +28,16 @@ project "DingoEngine"
         "%{IncludeDir.vulkan}",
         "%{IncludeDir.nvrhi}",
         "%{IncludeDir.glm}",
-        "%{IncludeDir.stb}"
+        "%{IncludeDir.stb}",
+		"%{IncludeDir.imgui}"
 	}
 
 	links {
 		"spdlog",
 		"glfw",
 		"%{Library.vulkan}",
-		"nvrhi"
+		"nvrhi",
+		"imgui"
 	}
 
 	defines {

@@ -35,7 +35,16 @@ namespace DingoEngine
 
 	void VulkanSwapChain::Initialize()
 	{
-		CreateWindowSurface();
+		if(m_Params.VulkanSurface == nullptr)
+		{
+			CreateWindowSurface();
+		}
+		else
+		{
+			m_WindowSurface = static_cast<vk::SurfaceKHR>(*m_Params.VulkanSurface);
+			DE_CORE_ASSERT(m_WindowSurface, "Vulkan surface must be valid.");
+		}
+
 		CreateSwapChain();
 		CreateFramebuffers();
 		CreateSynchronizationObjects();

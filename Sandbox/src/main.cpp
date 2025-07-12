@@ -3,6 +3,10 @@
 extern DingoEngine::Application* DingoEngine::CreateApplication()
 {
 	ApplicationParams params = ApplicationParams();
+	params.EnableImGui = true; // Enable ImGui for the sandbox application
+	params.ImGuiParams = {
+		.EnableDocking = true, // Enable docking by default
+	};
 
 	SandboxApplication* app = new SandboxApplication(params);
 	app->Initialize();

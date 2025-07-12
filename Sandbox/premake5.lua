@@ -15,6 +15,7 @@ project "Sandbox"
         "%{wks.location}/DingoEngine/include",
         "src",
         "%{IncludeDir.glm}",
+        "%{IncludeDir.imgui}",
 
         "%{IncludeDir.nvrhi}" -- TODO: Client apps should not depend on this...
     }

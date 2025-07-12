@@ -3,6 +3,11 @@
 
 struct GLFWwindow;
 
+namespace vk
+{
+	class SurfaceKHR;
+}
+
 namespace DingoEngine
 {
 
@@ -12,6 +17,8 @@ namespace DingoEngine
 		int32_t Width;
 		int32_t Height;
 		bool VSync = true;
+
+		vk::SurfaceKHR* VulkanSurface = nullptr; // Used for Vulkan (ImGui multiple viewports)
 
 		SwapChainParams SetNativeWindowHandle(GLFWwindow* handle)
 		{
@@ -30,7 +37,7 @@ namespace DingoEngine
 			Height = height;
 			return *this;
 		}
-		
+
 		SwapChainParams SetVSync(bool vsync)
 		{
 			VSync = vsync;
@@ -57,6 +64,7 @@ namespace DingoEngine
 
 		Framebuffer* GetFramebuffer(uint32_t index) const;
 		virtual Framebuffer* GetCurrentFramebuffer() const = 0;
+		virtual uint32_t GetCurrentBackBufferIndex() const = 0;
 
 	protected:
 		SwapChainParams m_Params;

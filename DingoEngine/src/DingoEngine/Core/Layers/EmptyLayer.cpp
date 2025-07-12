@@ -1,10 +1,10 @@
 #include "depch.h"
-#include "DefaultLayer.h"
+#include "EmptyLayer.h"
 
 namespace DingoEngine
 {
 
-	void DefaultLayer::OnAttach()
+	void EmptyLayer::OnAttach()
 	{
 		CommandListParams commandListParams = CommandListParams()
 			.SetTargetSwapChain(true);
@@ -13,12 +13,12 @@ namespace DingoEngine
 		m_CommandList->Initialize();
 	}
 
-	void DefaultLayer::OnDetach()
+	void EmptyLayer::OnDetach()
 	{
 		m_CommandList->Destroy();
 	}
 
-	void DefaultLayer::OnUpdate()
+	void EmptyLayer::OnUpdate()
 	{
 		m_CommandList->Begin();
 		m_CommandList->Clear();

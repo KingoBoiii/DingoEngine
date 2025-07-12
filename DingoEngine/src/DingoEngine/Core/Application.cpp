@@ -1,14 +1,16 @@
 #include "depch.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Layer.h"
-#include "DingoEngine/Core/Layers/DefaultLayer.h"
+#include "DingoEngine/Core/Layers/EmptyLayer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/ImGui/ImGuiLayer.h"
 
 namespace DingoEngine
 {
 
 	Application::Application(const ApplicationParams& params)
+		: m_Params(params)
 	{
 		s_Instance = this;
 	}
@@ -27,11 +29,20 @@ namespace DingoEngine
 
 		OnInitialize();
 
-		if(m_LayerStack.Empty())
+		if (m_LayerStack.Empty())
 		{
 			// If no layers are pushed, we can push a default layer
-			DE_CORE_ERROR("No layers pushed to the application. Pushing a default layer.");
-			PushLayer(new DefaultLayer());
+			DE_CORE_ERROR("No layers pushed to the application. Pushing an empty layer.");
+			PushLayer(new EmptyLayer());
+
+			m_Params.EnableImGui = false; // Disable ImGui if no layers are pushed
+			return;
+		}
+
+		if (m_Params.EnableImGui)
+		{
+			m_ImGuiLayer = new ImGuiLayer(m_Params.ImGuiParams);
+			PushOverlay(m_ImGuiLayer);
 		}
 	}
 
@@ -63,6 +74,16 @@ namespace DingoEngine
 			for (Layer* layer : m_LayerStack)
 			{
 				layer->OnUpdate();
+			}
+
+			if (m_Params.EnableImGui)
+			{
+				m_ImGuiLayer->Begin();
+				for (Layer* layer : m_LayerStack)
+				{
+					layer->OnImGuiRender();
+				}
+				m_ImGuiLayer->End();
 			}
 
 			swapChain->Present();

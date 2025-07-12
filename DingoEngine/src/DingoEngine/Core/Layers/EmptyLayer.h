@@ -5,11 +5,11 @@
 
 namespace DingoEngine
 {
-	class DefaultLayer : public Layer
+	class EmptyLayer : public Layer
 	{
 	public:
-		DefaultLayer() : Layer("Default Layer") {}
-		virtual ~DefaultLayer() = default;
+		EmptyLayer() : Layer("Empty Layer") {}
+		virtual ~EmptyLayer() = default;
 
 	public:
 		virtual void OnAttach() override;

@@ -25,6 +25,7 @@ namespace DingoEngine
 		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;
 
 		friend class NvrhiPipeline;
+		friend class ImGuiRenderer;
 	};
 
 }

@@ -30,6 +30,7 @@ namespace DingoEngine
 
 		nvrhi::vulkan::IDevice* GetNvrhiDevice() const { return m_NvrhiDevice; }
 		vk::Device GetDeviceHandle() const { return m_VulkanDevice; }
+		vk::Instance GetVulkanInstance() const { return m_VulkanInstance; }
 
 	private:
 		void CreateInstance();
@@ -107,6 +108,7 @@ namespace DingoEngine
 
 
 		friend class VulkanSwapChain;
+		friend class ImGuiLayer;
 	};
 
 }

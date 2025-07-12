@@ -90,6 +90,8 @@ namespace DingoEngine
 			int32_t Width;
 			int32_t Height;
 		} m_Data;
+
+		friend class ImGuiLayer;
 	};
 
 }
