@@ -134,6 +134,18 @@ namespace DingoEngine
 
 		m_Shader->Destroy();
 
+		if (m_ShaderAttribLayout)
+		{
+			m_ShaderAttribLayout->Release();
+		}
+
+		if (m_BindingLayout)
+		{
+			m_BindingLayout->Release();
+		}
+
+		m_BindingsCache.clear();
+
 		m_PipelineCache.clear();
 	}
 

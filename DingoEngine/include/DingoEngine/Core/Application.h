@@ -9,8 +9,7 @@ namespace DingoEngine
 
 	struct ApplicationParams
 	{
-		bool EnableImGui = false;
-		ImGuiParams ImGuiParams; // Parameters for ImGui configuration, only used if EnableImGui is true
+		ImGuiParams ImGui; // Parameters for ImGui configuration, only used if EnableImGui is true
 	};
 
 	class ImGuiLayer;
