@@ -10,3 +10,7 @@
 [submodule "DingoEngine/vendor/glm"]
 	path = DingoEngine/vendor/glm
 	url = https://github.com/KingoBoiii/glm.git
+[submodule "DingoEngine/vendor/imgui"]
+	path = DingoEngine/vendor/imgui
+	url = https://github.com/KingoBoiii/imgui.git
+	branch = docking
