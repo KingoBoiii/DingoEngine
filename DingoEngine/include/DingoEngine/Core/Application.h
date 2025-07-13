@@ -9,6 +9,8 @@ namespace DingoEngine
 
 	struct ApplicationParams
 	{
+		WindowParams Window; // Parameters for the application window
+
 		bool EnableImGui = true; // Whether to enable ImGui support
 		ImGuiParams ImGui; // Parameters for ImGui configuration, only used if EnableImGui is true
 	};

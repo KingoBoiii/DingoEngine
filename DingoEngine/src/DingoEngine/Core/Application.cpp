@@ -24,7 +24,9 @@ namespace DingoEngine
 
 	void Application::Initialize()
 	{
-		m_Window = new Window();
+		DE_CORE_ASSERT(s_Instance, "Application already initialized. Cannot initialize again.");
+
+		m_Window = new Window(m_Params.Window);
 		m_Window->Initialize();
 
 		OnInitialize();
