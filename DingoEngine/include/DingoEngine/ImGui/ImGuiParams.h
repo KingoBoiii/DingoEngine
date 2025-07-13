@@ -5,7 +5,7 @@ namespace DingoEngine
 
 	struct ImGuiParams
 	{
-		bool Enabled = false; // Enable ImGui
+		bool Enable = false; // Enable ImGui
 		bool EnableDocking = true; // Enable docking by default
 		bool EnableViewports = false; // Enable viewports by default
 		bool EnableKeyboardNavigation = true; // Enable keyboard navigation by default

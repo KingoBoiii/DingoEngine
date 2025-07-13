@@ -4,7 +4,7 @@ extern DingoEngine::Application* DingoEngine::CreateApplication()
 {
 	ApplicationParams params = ApplicationParams();
 	params.ImGui = {
-		.Enabled = true, // Enable ImGui
+		.Enable = true, // Enable ImGui
 		.EnableDocking = true, // Enable docking by default
 	};
 
