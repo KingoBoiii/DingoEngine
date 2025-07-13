@@ -9,6 +9,7 @@ namespace DingoEngine
 
 	struct ApplicationParams
 	{
+		bool EnableImGui = true; // Whether to enable ImGui support
 		ImGuiParams ImGui; // Parameters for ImGui configuration, only used if EnableImGui is true
 	};
 
@@ -47,6 +48,6 @@ namespace DingoEngine
 		inline static Application* s_Instance = nullptr;
 	};
 
-	Application* CreateApplication();
+	Application* CreateApplication(int argc, char** argv);
 
 }

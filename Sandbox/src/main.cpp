@@ -1,27 +1,16 @@
+#include <DingoEngine/EntryPoint.h>
+
 #include "SandboxApplication.h"
 
-extern DingoEngine::Application* DingoEngine::CreateApplication()
+DingoEngine::Application* DingoEngine::CreateApplication(int argc, char** argv)
 {
 	ApplicationParams params = ApplicationParams();
+	params.EnableImGui = true; // Enable ImGui by default
 	params.ImGui = {
-		.Enable = true, // Enable ImGui
 		.EnableDocking = true, // Enable docking by default
 	};
 
 	SandboxApplication* app = new SandboxApplication(params);
 	app->Initialize();
 	return app;
-}
-
-int main()
-{
-	DingoEngine::Log::Initialize();
-
-	DingoEngine::Application* app = DingoEngine::CreateApplication();
-	app->Run();
-	delete app;
-
-	DingoEngine::Log::Shutdown();
-
-	return 0;
 }
