@@ -16,6 +16,7 @@ DingoEngine::Application* DingoEngine::CreateApplication(int argc, char** argv)
 		.EnableImGui = true,						// Enable ImGui by default
 		.ImGui = {
 			.EnableDocking = true,					// Enable docking by default
+			.EnableViewports = false,				// Disable viewports by default
 		}
 	};
 
