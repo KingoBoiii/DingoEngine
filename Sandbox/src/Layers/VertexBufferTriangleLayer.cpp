@@ -4,36 +4,36 @@
 
 void VertexBufferTriangleLayer::OnAttach()
 {
-	DingoEngine::CommandListParams commandListParams = DingoEngine::CommandListParams()
+	Dingo::CommandListParams commandListParams = Dingo::CommandListParams()
 		.SetTargetSwapChain(true);
 
-	m_CommandList = DingoEngine::CommandList::Create(commandListParams);
+	m_CommandList = Dingo::CommandList::Create(commandListParams);
 	m_CommandList->Initialize();
 
-	m_Shader = DingoEngine::ShaderBuilder()
+	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Camera Transformation")
-		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv")
+		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
+		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv")
 		.Create();
 
-	DingoEngine::VertexLayout vertexLayout = DingoEngine::VertexLayout()
+	Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
 		.SetStride(sizeof(Vertex))
 		.AddAttribute("inPosition", nvrhi::Format::RG32_FLOAT, 0)
 		.AddAttribute("inColor", nvrhi::Format::RGB32_FLOAT, sizeof(glm::vec2));
 
-	m_Pipeline = DingoEngine::PipelineBuilder()
+	m_Pipeline = Dingo::PipelineBuilder()
 		.SetDebugName("Vertex Buffer Triangle Pipeline")
 		.SetShader(m_Shader)
-		.SetFramebuffer(DingoEngine::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
-		.SetFillMode(DingoEngine::FillMode::Solid)
-		.SetCullMode(DingoEngine::CullMode::BackAndFront)
+		.SetFramebuffer(Dingo::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
+		.SetFillMode(Dingo::FillMode::Solid)
+		.SetCullMode(Dingo::CullMode::BackAndFront)
 		.SetVertexLayout(vertexLayout)
 		.Create();
 
-	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
+	m_VertexBuffer = Dingo::GraphicsBufferBuilder()
 		.SetDebugName("Quad Vertex Buffer")
 		.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-		.SetType(DingoEngine::BufferType::VertexBuffer)
+		.SetType(Dingo::BufferType::VertexBuffer)
 		.SetDirectUpload(true)
 		.SetInitialData(m_Vertices.data())
 		.Create();

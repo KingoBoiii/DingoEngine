@@ -1,7 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Shader.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 	
 	class ShaderBuilder

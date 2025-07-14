@@ -15,71 +15,71 @@ struct CameraTransform
 
 void TexturedQuadLayer::OnAttach()
 {
-	DingoEngine::CommandListParams commandListParams = DingoEngine::CommandListParams()
+	Dingo::CommandListParams commandListParams = Dingo::CommandListParams()
 		.SetTargetSwapChain(true);
 
-	m_CommandList = DingoEngine::CommandList::Create(commandListParams);
+	m_CommandList = Dingo::CommandList::Create(commandListParams);
 	m_CommandList->Initialize();
 
-	m_UniformBuffer = DingoEngine::GraphicsBufferBuilder()
+	m_UniformBuffer = Dingo::GraphicsBufferBuilder()
 		.SetDebugName("Camera Transform Buffer")
 		.SetByteSize(sizeof(CameraTransform))
-		.SetType(DingoEngine::BufferType::UniformBuffer)
+		.SetType(Dingo::BufferType::UniformBuffer)
 		.SetIsVolatile(true)
 		.SetDirectUpload(false)
 		.Create();
 
 	uint32_t width, height, channels;
-	const uint8_t* textureData = DingoEngine::FileSystem::ReadImage("assets/textures/dickbutt_transparent.png", &width, &height, &channels, true, true);
+	const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/dickbutt_transparent.png", &width, &height, &channels, true, true);
 
-	DingoEngine::TextureParams textureParams = {
+	Dingo::TextureParams textureParams = {
 		.DebugName = "Dickbutt Texture",
-		.Format = channels == 4 ? DingoEngine::TextureFormat::RGBA : DingoEngine::TextureFormat::RGB,
-		.Dimension = DingoEngine::TextureDimension::Texture2D,
+		.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
+		.Dimension = Dingo::TextureDimension::Texture2D,
 		.Width = width,
 		.Height = height
 	};
 
-	m_Texture = DingoEngine::Texture::Create(textureParams);
+	m_Texture = Dingo::Texture::Create(textureParams);
 	m_Texture->Initialize();
 	m_Texture->Upload(textureData, width * channels);
 	//m_Texture->Upload("assets/textures/dickbutt_transparent.png");
 
-	m_Shader = DingoEngine::ShaderBuilder()
+	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Textured Quad")
-		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/textured_quad.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/textured_quad.frag.spv")
+		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/spv/textured_quad.vert.spv")
+		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/spv/textured_quad.frag.spv")
 		.Create();
 
-	DingoEngine::VertexLayout vertexLayout = DingoEngine::VertexLayout()
+	Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
 		.SetStride(sizeof(Vertex))
 		.AddAttribute("inPosition", nvrhi::Format::RG32_FLOAT, offsetof(Vertex, position))
 		.AddAttribute("inColor", nvrhi::Format::RGB32_FLOAT, offsetof(Vertex, color))
 		.AddAttribute("inTexCoord", nvrhi::Format::RG32_FLOAT, offsetof(Vertex, texCoord));
 
-	m_Pipeline = DingoEngine::PipelineBuilder()
+	m_Pipeline = Dingo::PipelineBuilder()
 		.SetDebugName("Textured Quad Pipeline")
 		.SetShader(m_Shader)
-		.SetFramebuffer(DingoEngine::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
-		.SetFillMode(DingoEngine::FillMode::Solid)
-		.SetCullMode(DingoEngine::CullMode::BackAndFront)
+		.SetFramebuffer(Dingo::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
+		.SetFillMode(Dingo::FillMode::Solid)
+		.SetCullMode(Dingo::CullMode::BackAndFront)
 		.SetVertexLayout(vertexLayout)
 		.SetUniformBuffer(m_UniformBuffer)
 		.SetTexture(m_Texture)
 		.Create();
 
-	m_VertexBuffer = DingoEngine::GraphicsBufferBuilder()
+	m_VertexBuffer = Dingo::GraphicsBufferBuilder()
 		.SetDebugName("Quad Vertex Buffer")
 		.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-		.SetType(DingoEngine::BufferType::VertexBuffer)
+		.SetType(Dingo::BufferType::VertexBuffer)
 		.SetDirectUpload(true)
 		.SetInitialData(m_Vertices.data())
 		.Create();
 
-	m_IndexBuffer = DingoEngine::GraphicsBufferBuilder()
+	m_IndexBuffer = Dingo::GraphicsBufferBuilder()
 		.SetDebugName("Quad Index Buffer")
 		.SetByteSize(sizeof(uint16_t) * m_Indices.size())
-		.SetType(DingoEngine::BufferType::IndexBuffer)
+		.SetType(Dingo::BufferType::IndexBuffer)
 		.SetDirectUpload(true)
 		.SetInitialData(m_Indices.data())
 		.Create();
@@ -98,7 +98,7 @@ void TexturedQuadLayer::OnDetach()
 
 void TexturedQuadLayer::OnUpdate()
 {
-	const float aspectRatio = DingoEngine::Application::Get().GetWindow().GetAspectRatio();
+	const float aspectRatio = Dingo::Application::Get().GetWindow().GetAspectRatio();
 	const glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f) * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -10.0f));
 	m_UniformBuffer->Upload(&projectionMatrix, sizeof(CameraTransform));
 

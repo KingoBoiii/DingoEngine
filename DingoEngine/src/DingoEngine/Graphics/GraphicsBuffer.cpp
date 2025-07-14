@@ -4,7 +4,7 @@
 
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	GraphicsBuffer* GraphicsBuffer::Create(const GraphicsBufferParams& params)

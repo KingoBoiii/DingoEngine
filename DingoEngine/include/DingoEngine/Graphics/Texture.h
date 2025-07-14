@@ -2,7 +2,7 @@
 #include "DingoEngine/Graphics/Enums/TextureFormat.h"
 #include "DingoEngine/Graphics/Enums/TextureDimension.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct TextureParams

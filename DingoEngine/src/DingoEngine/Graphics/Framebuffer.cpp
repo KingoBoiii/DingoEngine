@@ -4,7 +4,7 @@
 
 #include "Vulkan/VulkanFramebuffer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Framebuffer* Framebuffer::Create(nvrhi::ITexture* texture)

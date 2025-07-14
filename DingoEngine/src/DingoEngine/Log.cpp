@@ -7,7 +7,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	static std::shared_ptr<spdlog::logger> s_EngineLogger;
@@ -64,19 +64,19 @@ namespace DingoEngine
 
 		switch (level)
 		{
-			case DingoEngine::Log::Level::Trace:
+			case Dingo::Log::Level::Trace:
 				logger->trace(formatted);
 				break;
-			case DingoEngine::Log::Level::Info:
+			case Dingo::Log::Level::Info:
 				logger->info(formatted);
 				break;
-			case DingoEngine::Log::Level::Warn:
+			case Dingo::Log::Level::Warn:
 				logger->warn(formatted);
 				break;
-			case DingoEngine::Log::Level::Error:
+			case Dingo::Log::Level::Error:
 				logger->error(formatted);
 				break;
-			case DingoEngine::Log::Level::Fatal:
+			case Dingo::Log::Level::Fatal:
 				logger->critical(formatted);
 				break;
 		}
@@ -88,19 +88,19 @@ namespace DingoEngine
 
 		switch (level)
 		{
-			case DingoEngine::Log::Level::Trace:
+			case Dingo::Log::Level::Trace:
 				logger->trace("[{}] {}", tag, formatted);
 				break;
-			case DingoEngine::Log::Level::Info:
+			case Dingo::Log::Level::Info:
 				logger->info("[{}] {}", tag, formatted);
 				break;
-			case DingoEngine::Log::Level::Warn:
+			case Dingo::Log::Level::Warn:
 				logger->warn("[{}] {}", tag, formatted);
 				break;
-			case DingoEngine::Log::Level::Error:
+			case Dingo::Log::Level::Error:
 				logger->error("[{}] {}", tag, formatted);
 				break;
-			case DingoEngine::Log::Level::Fatal:
+			case Dingo::Log::Level::Fatal:
 				logger->critical("[{}] {}", tag, formatted);
 				break;
 		}

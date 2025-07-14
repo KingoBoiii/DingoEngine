@@ -1,6 +1,6 @@
 #pragma once
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct AllocationStats

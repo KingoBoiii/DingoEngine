@@ -1,7 +1,7 @@
 #pragma once
 #include <DingoEngine.h>
 
-class VertexBufferTriangleLayer : public DingoEngine::Layer
+class VertexBufferTriangleLayer : public Dingo::Layer
 {
 public:
 	VertexBufferTriangleLayer() : Layer("Vertex Buffer Triangle Layer") {}
@@ -13,11 +13,11 @@ public:
 	virtual void OnUpdate() override;
 
 private:
-	DingoEngine::CommandList* m_CommandList = nullptr;
-	DingoEngine::Shader* m_Shader = nullptr;
-	DingoEngine::Pipeline* m_Pipeline = nullptr;
+	Dingo::CommandList* m_CommandList = nullptr;
+	Dingo::Shader* m_Shader = nullptr;
+	Dingo::Pipeline* m_Pipeline = nullptr;
 
-	DingoEngine::GraphicsBuffer* m_VertexBuffer = nullptr;
+	Dingo::GraphicsBuffer* m_VertexBuffer = nullptr;
 
 	struct Vertex
 	{

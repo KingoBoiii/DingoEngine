@@ -4,7 +4,7 @@
 
 #include <nvrhi/vulkan.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	VulkanFramebuffer::VulkanFramebuffer(const FramebufferParams& params)

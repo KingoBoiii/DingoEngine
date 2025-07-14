@@ -3,10 +3,11 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 
+#include "DingoEngine/Graphics/AppRenderer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/ImGui/ImGuiLayer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Application::Application(const ApplicationParams& params)
@@ -28,6 +29,11 @@ namespace DingoEngine
 
 		m_Window = new Window(m_Params.Window);
 		m_Window->Initialize();
+
+		AppRenderer::Initialize(AppRendererParams{
+			// Pass any necessary parameters to the AppRenderer
+			.SwapChain = m_Window->GetSwapChain()
+		});
 
 		OnInitialize();
 
@@ -54,6 +60,8 @@ namespace DingoEngine
 
 		m_LayerStack.Clear();
 
+		AppRenderer::Shutdown();
+
 		if (m_Window)
 		{
 			m_Window->Shutdown();
@@ -65,13 +73,12 @@ namespace DingoEngine
 	void Application::Run()
 	{
 		SwapChain* swapChain = m_Window->GetSwapChain();
-		auto deviceHandle = GraphicsContext::GetDeviceHandle();
 
 		while (m_Window->IsRunning())
 		{
 			m_Window->Update();
 
-			swapChain->AcquireNextImage();
+			AppRenderer::BeginFrame();
 
 			for (Layer* layer : m_LayerStack)
 			{
@@ -88,10 +95,9 @@ namespace DingoEngine
 				m_ImGuiLayer->End();
 			}
 
-			swapChain->Present();
-
-			deviceHandle->waitForIdle();
-			deviceHandle->runGarbageCollection();
+			AppRenderer::EndFrame();
+			AppRenderer::Present();
+			AppRenderer::RunGarbageCollection();
 		}
 	}
 

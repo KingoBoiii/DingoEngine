@@ -1,10 +1,10 @@
 #pragma once
 #include <DingoEngine.h>
 
-class SandboxApplication : public DingoEngine::Application
+class SandboxApplication : public Dingo::Application
 {
 public:
-	SandboxApplication(const DingoEngine::ApplicationParams& params)
+	SandboxApplication(const Dingo::ApplicationParams& params)
 		: Application(params)
 	{
 	}

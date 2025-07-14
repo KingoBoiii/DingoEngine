@@ -4,7 +4,7 @@
 
 struct GLFWwindow;
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct WindowParams
@@ -34,7 +34,7 @@ namespace DingoEngine
 			return *this;
 		}
 
-		WindowParams SetGraphicsAPI(DingoEngine::GraphicsAPI graphicsAPI)
+		WindowParams SetGraphicsAPI(Dingo::GraphicsAPI graphicsAPI)
 		{
 			GraphicsAPI = graphicsAPI;
 			return *this;

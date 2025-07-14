@@ -3,7 +3,7 @@
 
 #include "DingoEngine/Graphics/CommandList.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 	class EmptyLayer : public Layer
 	{

@@ -5,7 +5,7 @@
 #include "NVRHI/NvrhiPipeline.h"
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Pipeline* Pipeline::Create(Shader* shader, Framebuffer* framebuffer)

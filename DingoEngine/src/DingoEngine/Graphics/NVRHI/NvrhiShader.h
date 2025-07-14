@@ -3,7 +3,7 @@
 
 #include <nvrhi/nvrhi.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class NvrhiShader : public Shader

@@ -2,20 +2,20 @@
 #include "DingoEngine/Core/Application.h"
 #include "Log.h"
 
-extern DingoEngine::Application* DingoEngine::CreateApplication(int argc, char** argv);
+extern Dingo::Application* Dingo::CreateApplication(int argc, char** argv);
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	int Main(int argc, char** argv)
 	{
-		DingoEngine::Log::Initialize();
+		Dingo::Log::Initialize();
 
-		DingoEngine::Application* app = DingoEngine::CreateApplication(argc, argv);
+		Dingo::Application* app = Dingo::CreateApplication(argc, argv);
 		app->Run();
 		delete app;
 
-		DingoEngine::Log::Shutdown();
+		Dingo::Log::Shutdown();
 
 		return EXIT_SUCCESS;
 	}
@@ -26,7 +26,7 @@ namespace DingoEngine
 
 int main(int argc, char** argv)
 {
-	return DingoEngine::Main(argc, argv);
+	return Dingo::Main(argc, argv);
 }
 
 

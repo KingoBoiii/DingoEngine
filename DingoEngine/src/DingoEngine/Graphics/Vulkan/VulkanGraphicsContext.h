@@ -7,7 +7,7 @@
 
 #define USE_NVRHI_VULKAN
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct QueueFamilyIndices

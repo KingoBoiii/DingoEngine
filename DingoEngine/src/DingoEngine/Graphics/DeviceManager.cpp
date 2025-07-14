@@ -74,7 +74,7 @@ freely, subject to the following restrictions:
 //#pragma comment(lib, "shcore.lib")
 #endif
 
-//using namespace DingoEngine;
+//using namespace Dingo;
 
 // The joystick interface in glfw is not per-window like the keys, mouse, etc. The joystick callbacks
 // don't take a window arg. So glfw's model is a global joystick shared by all windows. Hence, the equivalent 

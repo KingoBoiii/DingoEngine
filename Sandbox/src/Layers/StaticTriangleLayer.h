@@ -1,7 +1,7 @@
 #pragma once
 #include <DingoEngine.h>
 
-class StaticTriangleLayer : public DingoEngine::Layer
+class StaticTriangleLayer : public Dingo::Layer
 {
 public:
 	StaticTriangleLayer() : Layer("Static Triangle Layer") {}
@@ -13,7 +13,7 @@ public:
 	virtual void OnUpdate() override;
 	
 private:
-	DingoEngine::CommandList* m_CommandList = nullptr;
-	DingoEngine::Shader* m_Shader = nullptr;
-	DingoEngine::Pipeline* m_Pipeline = nullptr;
+	Dingo::CommandList* m_CommandList = nullptr;
+	Dingo::Shader* m_Shader = nullptr;
+	Dingo::Pipeline* m_Pipeline = nullptr;
 };

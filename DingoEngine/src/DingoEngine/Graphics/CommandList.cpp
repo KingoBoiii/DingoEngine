@@ -9,7 +9,7 @@
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 #include "NVRHI/NvrhiPipeline.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	CommandList* CommandList::Create(const CommandListParams& params)

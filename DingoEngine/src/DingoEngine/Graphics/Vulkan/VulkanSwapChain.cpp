@@ -6,7 +6,7 @@
 
 #undef max
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	namespace Utils

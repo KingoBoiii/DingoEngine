@@ -4,14 +4,14 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "Vulkan/VulkanSwapChain.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	SwapChain* SwapChain::Create(const SwapChainParams& params)
 	{
 		switch (GraphicsContext::GetApi())
 		{
-			case DingoEngine::GraphicsAPI::Vulkan: return new VulkanSwapChain(params);
+			case Dingo::GraphicsAPI::Vulkan: return new VulkanSwapChain(params);
 			default: break;
 		}
 

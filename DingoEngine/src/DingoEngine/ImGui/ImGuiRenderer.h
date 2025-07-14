@@ -6,7 +6,7 @@
 
 #include <nvrhi/nvrhi.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class SwapChain;

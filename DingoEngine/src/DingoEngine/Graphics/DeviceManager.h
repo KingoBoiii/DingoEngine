@@ -32,7 +32,7 @@
 #include <list>
 #include <functional>
 
-namespace DingoEngine
+namespace Dingo
 {
 	class Window;
 

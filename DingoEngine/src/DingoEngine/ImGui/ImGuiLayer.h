@@ -4,7 +4,7 @@
 
 #include "ImGuiRenderer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class ImGuiLayer : public Layer

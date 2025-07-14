@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class Log
@@ -43,35 +43,35 @@ namespace DingoEngine
 }
 
 // Core log macros
-#define DE_CORE_TRACE(...)				::DingoEngine::Log::Print(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Trace, __VA_ARGS__)
-#define DE_CORE_INFO(...)				::DingoEngine::Log::Print(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Info, __VA_ARGS__)
-#define DE_CORE_WARN(...)				::DingoEngine::Log::Print(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Warn, __VA_ARGS__)
-#define DE_CORE_ERROR(...)				::DingoEngine::Log::Print(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Error, __VA_ARGS__)
-#define DE_CORE_FATAL(...)				::DingoEngine::Log::Print(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Fatal, __VA_ARGS__)
+#define DE_CORE_TRACE(...)				::Dingo::Log::Print(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Trace, __VA_ARGS__)
+#define DE_CORE_INFO(...)				::Dingo::Log::Print(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Info, __VA_ARGS__)
+#define DE_CORE_WARN(...)				::Dingo::Log::Print(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Warn, __VA_ARGS__)
+#define DE_CORE_ERROR(...)				::Dingo::Log::Print(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Error, __VA_ARGS__)
+#define DE_CORE_FATAL(...)				::Dingo::Log::Print(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Fatal, __VA_ARGS__)
 
 // Client log macros
-#define DE_TRACE(...)					::DingoEngine::Log::Print(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Trace, __VA_ARGS__)
-#define DE_INFO(...)					::DingoEngine::Log::Print(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Info, __VA_ARGS__)
-#define DE_WARN(...)					::DingoEngine::Log::Print(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Warn, __VA_ARGS__)
-#define DE_ERROR(...)					::DingoEngine::Log::Print(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Error, __VA_ARGS__)
-#define DE_FATAL(...)					::DingoEngine::Log::Print(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Fatal, __VA_ARGS__)
+#define DE_TRACE(...)					::Dingo::Log::Print(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Trace, __VA_ARGS__)
+#define DE_INFO(...)					::Dingo::Log::Print(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Info, __VA_ARGS__)
+#define DE_WARN(...)					::Dingo::Log::Print(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Warn, __VA_ARGS__)
+#define DE_ERROR(...)					::Dingo::Log::Print(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Error, __VA_ARGS__)
+#define DE_FATAL(...)					::Dingo::Log::Print(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Fatal, __VA_ARGS__)
 
 
 // Engine log macros (tagged)
-#define DE_CORE_TRACE_TAG(tag, ...)		::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Trace, tag, __VA_ARGS__)
-#define DE_CORE_INFO_TAG(tag, ...)		::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Info, tag, __VA_ARGS__)
-#define DE_CORE_WARN_TAG(tag, ...)		::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Warn, tag, __VA_ARGS__)
-#define DE_CORE_ERROR_TAG(tag, ...)		::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Error, tag, __VA_ARGS__)
-#define DE_CORE_FATAL_TAG(tag, ...)		::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Engine, ::DingoEngine::Log::Level::Fatal, tag, __VA_ARGS__)
+#define DE_CORE_TRACE_TAG(tag, ...)		::Dingo::Log::PrintTag(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Trace, tag, __VA_ARGS__)
+#define DE_CORE_INFO_TAG(tag, ...)		::Dingo::Log::PrintTag(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Info, tag, __VA_ARGS__)
+#define DE_CORE_WARN_TAG(tag, ...)		::Dingo::Log::PrintTag(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Warn, tag, __VA_ARGS__)
+#define DE_CORE_ERROR_TAG(tag, ...)		::Dingo::Log::PrintTag(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Error, tag, __VA_ARGS__)
+#define DE_CORE_FATAL_TAG(tag, ...)		::Dingo::Log::PrintTag(::Dingo::Log::Type::Engine, ::Dingo::Log::Level::Fatal, tag, __VA_ARGS__)
 
 // Client log macros (tagged)
-#define DE_TRACE_TAG(tag, ...)			::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Trace, tag, __VA_ARGS__)
-#define DE_INFO_TAG(tag, ...)			::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Info, tag, __VA_ARGS__)
-#define DE_WARN_TAG(tag, ...)			::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Warn, tag, __VA_ARGS__)
-#define DE_ERROR_TAG(tag, ...)			::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Error, tag, __VA_ARGS__)
-#define DE_FATAL_TAG(tag, ...)			::DingoEngine::Log::PrintTag(::DingoEngine::Log::Type::Client, ::DingoEngine::Log::Level::Fatal, tag, __VA_ARGS__)
+#define DE_TRACE_TAG(tag, ...)			::Dingo::Log::PrintTag(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Trace, tag, __VA_ARGS__)
+#define DE_INFO_TAG(tag, ...)			::Dingo::Log::PrintTag(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Info, tag, __VA_ARGS__)
+#define DE_WARN_TAG(tag, ...)			::Dingo::Log::PrintTag(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Warn, tag, __VA_ARGS__)
+#define DE_ERROR_TAG(tag, ...)			::Dingo::Log::PrintTag(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Error, tag, __VA_ARGS__)
+#define DE_FATAL_TAG(tag, ...)			::Dingo::Log::PrintTag(::Dingo::Log::Type::Client, ::Dingo::Log::Level::Fatal, tag, __VA_ARGS__)
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	template<typename ...Args>

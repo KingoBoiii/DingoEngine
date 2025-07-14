@@ -1,7 +1,7 @@
 #pragma once
 #include <DingoEngine.h>
 
-class TexturedQuadLayer : public DingoEngine::Layer
+class TexturedQuadLayer : public Dingo::Layer
 {
 public:
 	TexturedQuadLayer() : Layer("Textured Quad Layer") {}
@@ -14,15 +14,15 @@ public:
 	virtual void OnImGuiRender() override;
 
 private:
-	DingoEngine::CommandList* m_CommandList = nullptr;
-	DingoEngine::Shader* m_Shader = nullptr;
-	DingoEngine::Pipeline* m_Pipeline = nullptr;
+	Dingo::CommandList* m_CommandList = nullptr;
+	Dingo::Shader* m_Shader = nullptr;
+	Dingo::Pipeline* m_Pipeline = nullptr;
 
-	DingoEngine::GraphicsBuffer* m_VertexBuffer = nullptr;
-	DingoEngine::GraphicsBuffer* m_IndexBuffer = nullptr;
-	DingoEngine::GraphicsBuffer* m_UniformBuffer = nullptr;
+	Dingo::GraphicsBuffer* m_VertexBuffer = nullptr;
+	Dingo::GraphicsBuffer* m_IndexBuffer = nullptr;
+	Dingo::GraphicsBuffer* m_UniformBuffer = nullptr;
 
-	DingoEngine::Texture* m_Texture = nullptr;
+	Dingo::Texture* m_Texture = nullptr;
 
 	struct Vertex
 	{

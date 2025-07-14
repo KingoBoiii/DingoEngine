@@ -2,7 +2,7 @@
 #include "DingoEngine/Core/Memory.h"
 
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	const AllocationStats& Memory::GetAllocationStats()

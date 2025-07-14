@@ -2,24 +2,24 @@
 
 void StaticTriangleLayer::OnAttach()
 {
-	DingoEngine::CommandListParams commandListParams = DingoEngine::CommandListParams()
+	Dingo::CommandListParams commandListParams = Dingo::CommandListParams()
 		.SetTargetSwapChain(true);
 
-	m_CommandList = DingoEngine::CommandList::Create(commandListParams);
+	m_CommandList = Dingo::CommandList::Create(commandListParams);
 	m_CommandList->Initialize();
 
-	m_Shader = DingoEngine::ShaderBuilder()
+	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Camera Transformation")
-		.AddShaderType(DingoEngine::ShaderType::Vertex, "assets/shaders/spv/static_triangle.vert.spv")
-		.AddShaderType(DingoEngine::ShaderType::Fragment, "assets/shaders/spv/static_triangle.frag.spv")
+		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/spv/static_triangle.vert.spv")
+		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/spv/static_triangle.frag.spv")
 		.Create();
 
-	m_Pipeline = DingoEngine::PipelineBuilder()
+	m_Pipeline = Dingo::PipelineBuilder()
 		.SetDebugName("Static Triangle Pipeline")
 		.SetShader(m_Shader)
-		.SetFramebuffer(DingoEngine::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
-		.SetFillMode(DingoEngine::FillMode::Solid)
-		.SetCullMode(DingoEngine::CullMode::BackAndFront)
+		.SetFramebuffer(Dingo::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
+		.SetFillMode(Dingo::FillMode::Solid)
+		.SetCullMode(Dingo::CullMode::BackAndFront)
 		.Create();
 }
 

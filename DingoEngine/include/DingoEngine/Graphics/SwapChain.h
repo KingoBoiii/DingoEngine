@@ -8,7 +8,7 @@ namespace vk
 	class SurfaceKHR;
 }
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct SwapChainParams

@@ -7,7 +7,7 @@
 
 #include <nvrhi/utils.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	namespace Utils
@@ -433,4 +433,4 @@ namespace DingoEngine
 		return binding;
 	}
 
-} // namespace DingoEngine
+} // namespace Dingo

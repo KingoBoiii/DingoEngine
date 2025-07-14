@@ -4,7 +4,7 @@
 
 #include <glfw/glfw3.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Window::Window(const WindowParams& params)

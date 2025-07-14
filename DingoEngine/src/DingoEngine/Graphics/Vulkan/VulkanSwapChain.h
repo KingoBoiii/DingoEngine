@@ -4,7 +4,7 @@
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class VulkanSwapChain : public SwapChain

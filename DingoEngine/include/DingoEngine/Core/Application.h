@@ -4,7 +4,7 @@
 
 #include "DingoEngine/ImGui/ImGuiParams.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct ApplicationParams

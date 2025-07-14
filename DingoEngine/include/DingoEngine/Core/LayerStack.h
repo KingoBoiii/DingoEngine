@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class Layer;

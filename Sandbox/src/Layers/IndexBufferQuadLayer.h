@@ -1,7 +1,7 @@
 #pragma once
 #include <DingoEngine.h>
 
-class IndexBufferQuadLayer : public DingoEngine::Layer
+class IndexBufferQuadLayer : public Dingo::Layer
 {
 public:
 	IndexBufferQuadLayer() : Layer("Index Buffer Quad Layer") {}
@@ -13,12 +13,12 @@ public:
 	virtual void OnUpdate() override;
 
 private:
-	DingoEngine::CommandList* m_CommandList = nullptr;
-	DingoEngine::Shader* m_Shader = nullptr;
-	DingoEngine::Pipeline* m_Pipeline = nullptr;
+	Dingo::CommandList* m_CommandList = nullptr;
+	Dingo::Shader* m_Shader = nullptr;
+	Dingo::Pipeline* m_Pipeline = nullptr;
 
-	DingoEngine::GraphicsBuffer* m_VertexBuffer = nullptr;
-	DingoEngine::GraphicsBuffer* m_IndexBuffer = nullptr;
+	Dingo::GraphicsBuffer* m_VertexBuffer = nullptr;
+	Dingo::GraphicsBuffer* m_IndexBuffer = nullptr;
 
 	struct Vertex
 	{

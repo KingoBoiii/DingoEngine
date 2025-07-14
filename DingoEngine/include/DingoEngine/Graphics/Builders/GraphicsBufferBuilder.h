@@ -1,7 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class GraphicsBufferBuilder

@@ -3,7 +3,7 @@
 
 #include "NVRHI/NvrhiTexture.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Texture* Texture::Create(const TextureParams& params)

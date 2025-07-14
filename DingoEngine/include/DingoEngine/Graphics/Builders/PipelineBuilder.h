@@ -1,7 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Pipeline.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class PipelineBuilder

@@ -2,7 +2,7 @@
 #include "DingoEngine/Graphics/Enums/BufferType.h"
 #include "DingoEngine/Graphics/Enums/GraphicsFormat.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct GraphicsBufferParams

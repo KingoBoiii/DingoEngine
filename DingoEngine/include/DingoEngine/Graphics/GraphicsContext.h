@@ -6,7 +6,7 @@
 
 struct GLFWwindow;
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class GraphicsContext

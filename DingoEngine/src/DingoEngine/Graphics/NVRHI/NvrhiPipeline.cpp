@@ -5,7 +5,7 @@
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	namespace Utils

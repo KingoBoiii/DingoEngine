@@ -3,14 +3,14 @@
 
 #include "Vulkan/VulkanGraphicsContext.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	GraphicsContext* GraphicsContext::Create(GraphicsAPI graphicsAPI)
 	{
 		switch (graphicsAPI)
 		{
-			case DingoEngine::GraphicsAPI::Vulkan: return new VulkanGraphicsContext();
+			case Dingo::GraphicsAPI::Vulkan: return new VulkanGraphicsContext();
 			default: break;
 		}
 		return nullptr;

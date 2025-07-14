@@ -2,7 +2,7 @@
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Core/Layer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	void LayerStack::Clear()

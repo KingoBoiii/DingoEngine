@@ -5,7 +5,7 @@
 
 #include <nvrhi/nvrhi.h>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct CommandListParams

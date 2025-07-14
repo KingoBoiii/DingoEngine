@@ -5,7 +5,7 @@
 #include "GraphicsBuffer.h"
 #include "Texture.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct VertexLayoutAttribute
@@ -44,43 +44,43 @@ namespace DingoEngine
 		GraphicsBuffer* UniformBuffer = nullptr;
 		Texture* Texture = nullptr;
 
-		PipelineParams& SetShader(DingoEngine::Shader* shader)
+		PipelineParams& SetShader(Dingo::Shader* shader)
 		{
 			Shader = shader;
 			return *this;
 		}
 
-		PipelineParams& SetFramebuffer(DingoEngine::Framebuffer* framebuffer)
+		PipelineParams& SetFramebuffer(Dingo::Framebuffer* framebuffer)
 		{
 			Framebuffer = framebuffer;
 			return *this;
 		}
 
-		PipelineParams& SetFillMode(DingoEngine::FillMode fillMode)
+		PipelineParams& SetFillMode(Dingo::FillMode fillMode)
 		{
 			FillMode = fillMode;
 			return *this;
 		}
 
-		PipelineParams& SetCullMode(DingoEngine::CullMode cullMode)
+		PipelineParams& SetCullMode(Dingo::CullMode cullMode)
 		{
 			CullMode = cullMode;
 			return *this;
 		}
 
-		PipelineParams& SetVertexLayout(const DingoEngine::VertexLayout& vertexLayout)
+		PipelineParams& SetVertexLayout(const Dingo::VertexLayout& vertexLayout)
 		{
 			VertexLayout = vertexLayout;
 			return *this;
 		}
 
-		PipelineParams& SetUniformBuffer(DingoEngine::GraphicsBuffer* uniformBuffer)
+		PipelineParams& SetUniformBuffer(Dingo::GraphicsBuffer* uniformBuffer)
 		{
 			UniformBuffer = uniformBuffer;
 			return *this;
 		}
 
-		PipelineParams& SetTexture(DingoEngine::Texture* texture)
+		PipelineParams& SetTexture(Dingo::Texture* texture)
 		{
 			Texture = texture;
 			return *this;

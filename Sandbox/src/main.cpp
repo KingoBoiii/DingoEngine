@@ -2,7 +2,7 @@
 
 #include "SandboxApplication.h"
 
-DingoEngine::Application* DingoEngine::CreateApplication(int argc, char** argv)
+Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 {
 	ApplicationParams params = ApplicationParams{
 		.Window = {

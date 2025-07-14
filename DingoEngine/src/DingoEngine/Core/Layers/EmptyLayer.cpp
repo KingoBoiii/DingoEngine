@@ -1,7 +1,7 @@
 #include "depch.h"
 #include "EmptyLayer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	void EmptyLayer::OnAttach()

@@ -1,7 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/Layer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Layer::Layer(const std::string& name)

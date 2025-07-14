@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <unordered_map>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	struct ShaderParams

@@ -1,7 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Framebuffer.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	class VulkanFramebuffer : public Framebuffer

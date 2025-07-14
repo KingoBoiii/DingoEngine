@@ -3,7 +3,7 @@
 
 #include "NVRHI/NvrhiShader.h"
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	Shader* Shader::Create(const std::string& vertexFilePath, const std::string& fragmentFilePath)

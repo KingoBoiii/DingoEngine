@@ -13,7 +13,7 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_glfw.cpp>
 
-namespace DingoEngine
+namespace Dingo
 {
 
 	void ImGuiLayer::OnAttach()
@@ -35,7 +35,7 @@ namespace DingoEngine
 		}
 		style.Colors[ImGuiCol_WindowBg] = ImVec4(0.15f, 0.15f, 0.15f, style.Colors[ImGuiCol_WindowBg].w);
 
-		bool result = ImGui_ImplGlfw_InitForVulkan(DingoEngine::Application::Get().GetWindow().m_WindowHandle, true);
+		bool result = ImGui_ImplGlfw_InitForVulkan(Dingo::Application::Get().GetWindow().m_WindowHandle, true);
 		if (!result)
 		{
 			DE_CORE_ERROR("Failed to initialize ImGui for GLFW");
@@ -196,4 +196,4 @@ namespace DingoEngine
 	}
 
 
-} // namespace DingoEngine
+} // namespace Dingo

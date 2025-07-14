@@ -4,7 +4,7 @@
 
 #include <nvrhi/nvrhi.h>
 
-namespace DingoEngine::Utils
+namespace Dingo::Utils
 {
 
 	static void WriteBuffer(nvrhi::CommandListHandle& commandList, nvrhi::BufferHandle buffer, const void* data, uint64_t size, uint64_t offset = 0ul)
