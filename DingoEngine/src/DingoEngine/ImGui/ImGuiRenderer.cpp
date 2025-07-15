@@ -133,8 +133,6 @@ namespace Dingo
 			m_IndexBuffer->Release();
 		}
 
-		m_Shader->Destroy();
-
 		if (m_ShaderAttribLayout)
 		{
 			m_ShaderAttribLayout->Release();
@@ -148,6 +146,8 @@ namespace Dingo
 		m_BindingsCache.clear();
 
 		m_PipelineCache.clear();
+
+		m_Shader->Destroy();
 	}
 
 	void ImGuiRenderer::UpdateFontTexture()
