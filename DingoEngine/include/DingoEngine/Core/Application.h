@@ -1,10 +1,12 @@
 #pragma once
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Graphics/GraphicsParams.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/SwapChain.h"
+#include "DingoEngine/Events/Event.h"
+#include "DingoEngine/Events/WindowEvents.h"
 
-#include "DingoEngine/Graphics/GraphicsParams.h"
 #include "DingoEngine/ImGui/ImGuiParams.h"
 
 namespace Dingo
@@ -30,6 +32,8 @@ namespace Dingo
 	public:
 		void Initialize();
 		void Destroy();
+
+		void OnEvent(Event& e);
 		void Run();
 
 		void PushLayer(Layer* layer);
@@ -48,12 +52,17 @@ namespace Dingo
 		virtual void OnDestroy() {}
 
 	private:
+		bool OnWindowCloseEvent(WindowCloseEvent& e);
+		bool OnWindowResizeEvent(WindowResizeEvent& e);
+
+	private:
 		ApplicationParams m_Params;
 		Window* m_Window = nullptr;
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
+		bool m_IsRunning = true;
 
 	private:
 		inline static Application* s_Instance = nullptr;

@@ -28,6 +28,7 @@ namespace Dingo
 		DE_CORE_ASSERT(s_Instance, "Application already initialized. Cannot initialize again.");
 
 		m_Window = new Window(m_Params.Window);
+		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 		m_Window->Initialize();
 
 		m_GraphicsContext = GraphicsContext::Create(m_Params.Graphics);
@@ -87,9 +88,17 @@ namespace Dingo
 		}
 	}
 
+	void Application::OnEvent(Event& e)
+	{
+		EventDispatcher dispatcher(e);
+
+		dispatcher.Dispatch<WindowCloseEvent>(DE_BIND_EVENT_FN(Application::OnWindowCloseEvent));
+		dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(Application::OnWindowResizeEvent));
+	}
+
 	void Application::Run()
 	{
-		while (m_Window->IsRunning())
+		while (m_IsRunning)
 		{
 			m_Window->Update();
 
@@ -126,6 +135,18 @@ namespace Dingo
 	{
 		m_LayerStack.PushOverlay(overlay);
 		overlay->OnAttach();
+	}
+
+	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)
+	{
+		m_IsRunning = false; // Stop the application loop
+		return true;
+	}
+
+	bool Application::OnWindowResizeEvent(WindowResizeEvent& e)
+	{
+		m_SwapChain->Resize(e.GetWidth(), e.GetHeight());
+		return true;
 	}
 
 }

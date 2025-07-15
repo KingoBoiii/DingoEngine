@@ -9,7 +9,6 @@ Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 			.Title = "DingoEngine Sandbox",
 			.Width = 1600,
 			.Height = 900,
-			.GraphicsAPI = GraphicsAPI::Vulkan,		// Default to Vulkan
 			.VSync = true,							// Enable VSync by default
 			.Resizable = true,						// Make the window resizable by default
 		},

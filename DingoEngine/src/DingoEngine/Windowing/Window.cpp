@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Events/WindowEvents.h"
 
 #include <glfw/glfw3.h>
 
@@ -25,7 +26,7 @@ namespace Dingo
 			glfwTerminate();
 		}
 
-		glfwSetWindowUserPointer(m_WindowHandle, this);
+		glfwSetWindowUserPointer(m_WindowHandle, &m_Data);
 
 		SetupGLFWCallbacks();
 	}
@@ -48,14 +49,20 @@ namespace Dingo
 
 	void Window::SetupGLFWCallbacks() const
 	{
+		glfwSetWindowCloseCallback(m_WindowHandle, [](GLFWwindow* window)
+		{
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+
+			WindowCloseEvent closeEvent;
+			windowData.EventCallback(closeEvent);
+		});
+
 		glfwSetWindowSizeCallback(m_WindowHandle, [](GLFWwindow* window, int width, int height)
 		{
-			Window& w = *((Window*)glfwGetWindowUserPointer(window));
-			w.m_Data.Width = width;
-			w.m_Data.Height = height;
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
 
-			// Priorite to resizing the swap chain
-			//w.m_SwapChain->Resize(width, height);
+			WindowResizeEvent resizeEvent(width, height);
+			windowData.EventCallback(resizeEvent);
 		});
 	}
 

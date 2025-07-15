@@ -1,5 +1,8 @@
 #pragma once
 #include "DingoEngine/Common.h"
+#include "DingoEngine/Events/Event.h"
+
+#include <functional>
 
 struct GLFWwindow;
 
@@ -11,7 +14,6 @@ namespace Dingo
 		std::string Title = "DingoEngine Application";
 		int32_t Width = 1600;
 		int32_t Height = 900;
-		GraphicsAPI GraphicsAPI = GraphicsAPI::Vulkan;
 		bool VSync = true;
 		bool Resizable = true;
 
@@ -33,12 +35,6 @@ namespace Dingo
 			return *this;
 		}
 
-		WindowParams SetGraphicsAPI(Dingo::GraphicsAPI graphicsAPI)
-		{
-			GraphicsAPI = graphicsAPI;
-			return *this;
-		}
-
 		WindowParams SetVSync(bool vsync)
 		{
 			VSync = vsync;
@@ -57,6 +53,9 @@ namespace Dingo
 	class Window
 	{
 	public:
+		using EventCallbackFn = std::function<void(Event&)>;
+
+	public:
 		Window(const WindowParams& params = {});
 		~Window() = default;
 	public:
@@ -66,6 +65,8 @@ namespace Dingo
 		void Update();
 
 		bool IsRunning() const;
+
+		void SetEventCallback(const EventCallbackFn& callback) { m_Data.EventCallback = callback; }
 
 		int32_t GetWidth() const { return m_Data.Width; }
 		int32_t GetHeight() const { return m_Data.Height; }
@@ -86,6 +87,7 @@ namespace Dingo
 		{
 			int32_t Width;
 			int32_t Height;
+			EventCallbackFn EventCallback;
 		} m_Data;
 
 		friend class ImGuiLayer;
