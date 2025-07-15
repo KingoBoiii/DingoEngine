@@ -144,8 +144,8 @@ namespace Dingo
 
 		if (m_Params.Texture)
 		{
-			//bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(0));
-			//bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
+			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(1));
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
 
 			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0));
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));

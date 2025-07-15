@@ -20,6 +20,8 @@ namespace Dingo
 		virtual void Upload(const void* data, uint64_t size) override;
 		virtual void Upload(const std::filesystem::path& filepath) override;
 
+		virtual void* GetTextureHandle() const override { return static_cast<void*>(m_Handle.Get()); }
+
 	private:
 		nvrhi::TextureHandle m_Handle;
 		nvrhi::SamplerHandle m_SamplerHandle;

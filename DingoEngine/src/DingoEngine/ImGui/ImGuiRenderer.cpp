@@ -133,17 +133,17 @@ namespace Dingo
 			m_IndexBuffer->Release();
 		}
 
-		if (m_ShaderAttribLayout)
-		{
-			m_ShaderAttribLayout->Release();
-		}
+		m_BindingsCache.clear();
 
 		if (m_BindingLayout)
 		{
 			m_BindingLayout->Release();
 		}
 
-		m_BindingsCache.clear();
+		if (m_ShaderAttribLayout)
+		{
+			m_ShaderAttribLayout->Release();
+		}
 
 		m_PipelineCache.clear();
 

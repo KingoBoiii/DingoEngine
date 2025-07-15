@@ -10,6 +10,8 @@ namespace Dingo
 		RGB,
 		RGBA,
 
+		RGBA8_UNORM,
+
 		Count
 	};
 

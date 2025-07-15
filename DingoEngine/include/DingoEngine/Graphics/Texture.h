@@ -5,13 +5,23 @@
 namespace Dingo
 {
 
+	enum class TextureWrapMode
+	{
+		Repeat,
+		MirroredRepeat,
+		ClampToEdge,
+		ClampToBorder,
+		MirrorClampToEdge
+	};
+
 	struct TextureParams
 	{
 		std::string DebugName;
-		TextureFormat Format = TextureFormat::Unknown;
-		TextureDimension Dimension = TextureDimension::Unknown;
 		uint32_t Width;
 		uint32_t Height;
+		TextureFormat Format = TextureFormat::Unknown;
+		TextureDimension Dimension = TextureDimension::Unknown;
+		TextureWrapMode WrapMode = TextureWrapMode::Repeat;
 	};
 
 	class Texture
@@ -30,6 +40,8 @@ namespace Dingo
 		virtual void Destroy() = 0;
 		virtual void Upload(const void* data, uint64_t size) = 0;
 		virtual void Upload(const std::filesystem::path& filepath) = 0;
+
+		virtual void* GetTextureHandle() const = 0;
 
 	protected:
 		TextureParams m_Params;

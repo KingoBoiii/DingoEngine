@@ -17,6 +17,8 @@ namespace Dingo
 			{
 				case TextureFormat::RGBA: return nvrhi::Format::RGBA8_UNORM;
 				case TextureFormat::RGB: return nvrhi::Format::RGBA8_UNORM;
+
+				case TextureFormat::RGBA8_UNORM: return nvrhi::Format::RGBA8_UNORM;
 				default: break;
 			}
 
@@ -36,12 +38,28 @@ namespace Dingo
 			return nvrhi::TextureDimension::Unknown;
 		}
 
+		static nvrhi::SamplerAddressMode GetSamplerAddressMode(const TextureWrapMode wrapMode)
+		{
+			switch (wrapMode)
+			{
+				case TextureWrapMode::Repeat: return nvrhi::SamplerAddressMode::Repeat;
+				case TextureWrapMode::MirroredRepeat: return nvrhi::SamplerAddressMode::MirroredRepeat;
+				case TextureWrapMode::ClampToEdge: return nvrhi::SamplerAddressMode::ClampToEdge;
+				case TextureWrapMode::ClampToBorder: return nvrhi::SamplerAddressMode::ClampToBorder;
+				case TextureWrapMode::MirrorClampToEdge: return nvrhi::SamplerAddressMode::MirrorClampToEdge;
+				default: break;
+			}
+			return nvrhi::SamplerAddressMode::ClampToEdge; // Default to ClampToEdge if unknown
+		}
+
 		static uint32_t GetImageFormatBPP(TextureFormat format)
 		{
 			switch (format)
 			{
 				case TextureFormat::RGB: return 3;
-				case TextureFormat::RGBA: return 4;
+				case TextureFormat::RGBA: 
+				case TextureFormat::RGBA8_UNORM: 
+					return 4;
 			}
 			return 0;
 		}
@@ -69,13 +87,13 @@ namespace Dingo
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
 
-		//nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
-		//	.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge)
-		//	.setMinFilter(true)
-		//	.setMagFilter(true)
-		//	.setMipFilter(true);
+		nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
+			.setAllAddressModes(Utils::GetSamplerAddressMode(m_Params.WrapMode))
+			.setMinFilter(true)
+			.setMagFilter(true)
+			.setMipFilter(true);
 
-		//m_SamplerHandle = GraphicsContext::GetDeviceHandle()->createSampler(samplerDesc);
+		m_SamplerHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createSampler(samplerDesc);
 	}
 
 	void NvrhiTexture::Destroy()
