@@ -69,7 +69,7 @@ namespace Dingo
 	{
 		ImGui::Render();
 
-		m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetWindow().GetSwapChain());
+		m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetSwapChain());
 
 		// Update and Render additional Platform Windows
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)

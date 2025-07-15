@@ -6,18 +6,18 @@
 namespace Dingo
 {
 
-	GraphicsContext* GraphicsContext::Create(GraphicsAPI graphicsAPI)
+	GraphicsContext* GraphicsContext::Create(const GraphicsParams& params)
 	{
-		switch (graphicsAPI)
+		switch (params.GraphicsAPI)
 		{
-			case Dingo::GraphicsAPI::Vulkan: return new VulkanGraphicsContext();
+			case GraphicsAPI::Vulkan: return new VulkanGraphicsContext(params);
 			default: break;
 		}
 		return nullptr;
 	}
 
-	GraphicsContext::GraphicsContext(GraphicsAPI graphicsAPI)
-		: m_GraphicsAPI(graphicsAPI)
+	GraphicsContext::GraphicsContext(const GraphicsParams& params)
+		: m_Params(params)
 	{
 		s_Instance = this;
 	}

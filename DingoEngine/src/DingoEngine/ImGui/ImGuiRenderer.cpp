@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/NVRHI/NvrhiShader.h"
 
 #include <nvrhi/utils.h>
+#include <DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h>
 
 namespace Dingo
 {
@@ -34,7 +35,7 @@ namespace Dingo
 
 	void ImGuiRenderer::Initialize()
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		ImGuiIO& io = ImGui::GetIO();
 
@@ -151,7 +152,7 @@ namespace Dingo
 
 	void ImGuiRenderer::UpdateFontTexture()
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		ImGuiIO& io = ImGui::GetIO();
 
@@ -189,7 +190,7 @@ namespace Dingo
 
 	bool ImGuiRenderer::Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer)
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		ImDrawData* drawData = viewport->DrawData;
 
@@ -315,7 +316,7 @@ namespace Dingo
 
 	bool ImGuiRenderer::ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer)
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		if (buffer == nullptr || size_t(buffer->getDesc().byteSize) < requiredSize)
 		{
@@ -344,7 +345,7 @@ namespace Dingo
 
 	bool ImGuiRenderer::UpdateGeometry(ImDrawData* drawData)
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		nvrhi::CommandListHandle commandList = device->createCommandList();
 
@@ -400,7 +401,7 @@ namespace Dingo
 		bool invalidate = !pipeline || swapchainPipelineCache.Framebuffers[currentFramebufferIndex] != targetFramebuffer;
 		if (invalidate)
 		{
-			nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 			pipeline = device->createGraphicsPipeline(m_BasePSODesc, targetFramebuffer);
 			swapchainPipelineCache.Pipelines[currentFramebufferIndex] = pipeline;
 			swapchainPipelineCache.Framebuffers[currentFramebufferIndex] = targetFramebuffer;
@@ -410,7 +411,7 @@ namespace Dingo
 
 	nvrhi::IBindingSet* ImGuiRenderer::GetBindingSet(nvrhi::ITexture* texture)
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().GetDeviceHandle();
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		auto iter = m_BindingsCache.find(texture);
 		if (iter != m_BindingsCache.end())

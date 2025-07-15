@@ -3,9 +3,9 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 
-#include "DingoEngine/Graphics/AppRenderer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/ImGui/ImGuiLayer.h"
+#include <DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h>
 
 namespace Dingo
 {
@@ -30,10 +30,15 @@ namespace Dingo
 		m_Window = new Window(m_Params.Window);
 		m_Window->Initialize();
 
-		AppRenderer::Initialize(AppRendererParams{
-			// Pass any necessary parameters to the AppRenderer
-			.SwapChain = m_Window->GetSwapChain()
-		});
+		m_GraphicsContext = GraphicsContext::Create(m_Params.Graphics);
+		m_GraphicsContext->Initialize();
+
+		m_SwapChain = SwapChain::Create(SwapChainParams()
+			.SetNativeWindowHandle(m_Window->GetNativeWindowHandle())
+			.SetWidth(m_Window->GetWidth())
+			.SetHeight(m_Window->GetHeight())
+			.SetVSync(m_Params.Window.VSync));
+		m_SwapChain->Initialize();
 
 		OnInitialize();
 
@@ -60,25 +65,35 @@ namespace Dingo
 
 		m_LayerStack.Clear();
 
-		AppRenderer::Shutdown();
-
 		if (m_Window)
 		{
 			m_Window->Shutdown();
 			delete m_Window;
 			m_Window = nullptr;
 		}
+
+		if (m_SwapChain)
+		{
+			m_SwapChain->Destroy();
+			delete m_SwapChain;
+			m_SwapChain = nullptr;
+		}
+
+		if (m_GraphicsContext)
+		{
+			m_GraphicsContext->Shutdown();
+			//delete m_GraphicsContext;
+			m_GraphicsContext = nullptr;
+		}
 	}
 
 	void Application::Run()
 	{
-		SwapChain* swapChain = m_Window->GetSwapChain();
-
 		while (m_Window->IsRunning())
 		{
 			m_Window->Update();
 
-			AppRenderer::BeginFrame();
+			m_SwapChain->AcquireNextImage();
 
 			for (Layer* layer : m_LayerStack)
 			{
@@ -95,9 +110,9 @@ namespace Dingo
 				m_ImGuiLayer->End();
 			}
 
-			AppRenderer::EndFrame();
-			AppRenderer::Present();
-			AppRenderer::RunGarbageCollection();
+			m_SwapChain->Present();
+
+			m_GraphicsContext->RunGarbageCollection();
 		}
 	}
 

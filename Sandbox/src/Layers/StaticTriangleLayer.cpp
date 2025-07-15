@@ -17,7 +17,7 @@ void StaticTriangleLayer::OnAttach()
 	m_Pipeline = Dingo::PipelineBuilder()
 		.SetDebugName("Static Triangle Pipeline")
 		.SetShader(m_Shader)
-		.SetFramebuffer(Dingo::Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer())
+		.SetFramebuffer(Dingo::Application::Get().GetSwapChain()->GetCurrentFramebuffer())
 		.SetFillMode(Dingo::FillMode::Solid)
 		.SetCullMode(Dingo::CullMode::BackAndFront)
 		.Create();

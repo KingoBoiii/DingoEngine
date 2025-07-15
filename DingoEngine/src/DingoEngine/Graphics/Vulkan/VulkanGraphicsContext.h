@@ -1,5 +1,5 @@
 #pragma once
-#include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h"
 
 #include <nvrhi/vulkan.h>
 #include <nvrhi/validation.h>
@@ -18,10 +18,10 @@ namespace Dingo
 		int32_t Present = -1;
 	};
 
-	class VulkanGraphicsContext : public GraphicsContext
+	class VulkanGraphicsContext : public NvrhiGraphicsContext
 	{
 	public:
-		VulkanGraphicsContext();
+		VulkanGraphicsContext(const GraphicsParams& params);
 		virtual ~VulkanGraphicsContext() = default;
 
 	public:

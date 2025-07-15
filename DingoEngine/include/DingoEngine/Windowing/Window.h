@@ -1,6 +1,5 @@
 #pragma once
 #include "DingoEngine/Common.h"
-#include "DingoEngine/Graphics/SwapChain.h"
 
 struct GLFWwindow;
 
@@ -74,7 +73,7 @@ namespace Dingo
 		{
 			return static_cast<float>(m_Data.Width) / static_cast<float>(m_Data.Height); 
 		}
-		SwapChain* GetSwapChain() const { return m_SwapChain; }
+		GLFWwindow* GetNativeWindowHandle() const { return m_WindowHandle; }
 
 	private:
 		void SetupGLFWCallbacks() const;
@@ -82,8 +81,6 @@ namespace Dingo
 	private:
 		WindowParams m_Params;
 		GLFWwindow* m_WindowHandle = nullptr;
-		GraphicsContext* m_GraphicsContext = nullptr;
-		SwapChain* m_SwapChain = nullptr;
 
 		struct WindowData
 		{

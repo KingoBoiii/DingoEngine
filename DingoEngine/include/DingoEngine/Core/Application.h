@@ -1,7 +1,10 @@
 #pragma once
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/SwapChain.h"
 
+#include "DingoEngine/Graphics/GraphicsParams.h"
 #include "DingoEngine/ImGui/ImGuiParams.h"
 
 namespace Dingo
@@ -9,10 +12,11 @@ namespace Dingo
 
 	struct ApplicationParams
 	{
-		WindowParams Window; // Parameters for the application window
+		WindowParams Window;		// Parameters for the application window
+		GraphicsParams Graphics;	// Parameters for the graphics context
 
-		bool EnableImGui = true; // Whether to enable ImGui support
-		ImGuiParams ImGui; // Parameters for ImGui configuration, only used if EnableImGui is true
+		bool EnableImGui = true;	// Whether to enable ImGui support
+		ImGuiParams ImGui;			// Parameters for ImGui configuration, only used if EnableImGui is true
 	};
 
 	class ImGuiLayer;
@@ -20,6 +24,7 @@ namespace Dingo
 	class Application
 	{
 	public:
+		Application() = delete;
 		virtual ~Application();
 
 	public:
@@ -30,8 +35,10 @@ namespace Dingo
 		void PushLayer(Layer* layer);
 		void PushOverlay(Layer* overlay);
 
-		Window& GetWindow() { return *m_Window; }
 		static Application& Get() { return *s_Instance; }
+		const Window& GetWindow() const { return *m_Window; }
+		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
+		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 	protected:
 		Application(const ApplicationParams& params = {});
@@ -42,8 +49,10 @@ namespace Dingo
 
 	private:
 		ApplicationParams m_Params;
-		LayerStack m_LayerStack;
 		Window* m_Window = nullptr;
+		GraphicsContext* m_GraphicsContext = nullptr;
+		SwapChain* m_SwapChain = nullptr;
+		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 
 	private:

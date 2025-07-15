@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "NvrhiGraphicsContext.h"
 
 namespace Dingo
 {
@@ -66,7 +67,7 @@ namespace Dingo
 			.setInitialState(nvrhi::ResourceStates::ShaderResource)
 			.setKeepInitialState(true);
 
-		m_Handle = GraphicsContext::GetDeviceHandle()->createTexture(textureDesc);
+		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
 
 		//nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
 		//	.setAllAddressModes(nvrhi::SamplerAddressMode::ClampToEdge)
@@ -97,7 +98,7 @@ namespace Dingo
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 			.setQueueType(nvrhi::CommandQueue::Graphics);
 
-		nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+		nvrhi::CommandListHandle commandList = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
 
 		commandList->open();
 
@@ -105,7 +106,7 @@ namespace Dingo
 
 		commandList->close();
 
-		GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
 	}
 
 	void NvrhiTexture::Upload(const std::filesystem::path& filepath)
@@ -117,7 +118,7 @@ namespace Dingo
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 			.setQueueType(nvrhi::CommandQueue::Graphics);
 
-		nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+		nvrhi::CommandListHandle commandList = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
 
 		commandList->open();
 
@@ -127,7 +128,7 @@ namespace Dingo
 
 		commandList->close();
 
-		GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
 	}
 
 }

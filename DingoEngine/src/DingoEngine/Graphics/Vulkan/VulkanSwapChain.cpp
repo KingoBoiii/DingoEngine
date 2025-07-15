@@ -35,7 +35,7 @@ namespace Dingo
 
 	void VulkanSwapChain::Initialize()
 	{
-		if(m_Params.VulkanSurface == nullptr)
+		if (m_Params.VulkanSurface == nullptr)
 		{
 			CreateWindowSurface();
 		}
@@ -295,7 +295,7 @@ namespace Dingo
 
 			m_SwapChainImages.push_back(SwapChainImage{
 				.image = image,
-				.rhiHandle = GraphicsContext::GetDeviceHandle()->createHandleForNativeTexture(nvrhi::ObjectTypes::VK_Image, nvrhi::Object(image), textureDesc)
+				.rhiHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createHandleForNativeTexture(nvrhi::ObjectTypes::VK_Image, nvrhi::Object(image), textureDesc)
 			});
 		}
 

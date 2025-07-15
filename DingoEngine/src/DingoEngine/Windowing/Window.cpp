@@ -25,17 +25,6 @@ namespace Dingo
 			glfwTerminate();
 		}
 
-		m_GraphicsContext = GraphicsContext::Create(m_Params.GraphicsAPI);
-		m_GraphicsContext->Initialize();
-
-		const SwapChainParams swapChainOptions = {
-			.NativeWindowHandle = m_WindowHandle,
-			.Width = m_Data.Width,
-			.Height = m_Data.Height
-		};
-		m_SwapChain = SwapChain::Create(swapChainOptions);
-		m_SwapChain->Initialize();
-
 		glfwSetWindowUserPointer(m_WindowHandle, this);
 
 		SetupGLFWCallbacks();
@@ -43,10 +32,6 @@ namespace Dingo
 
 	void Window::Shutdown()
 	{
-		m_SwapChain->Destroy();
-
-		m_GraphicsContext->Shutdown();
-
 		glfwDestroyWindow(m_WindowHandle);
 		glfwTerminate();
 	}
@@ -70,7 +55,7 @@ namespace Dingo
 			w.m_Data.Height = height;
 
 			// Priorite to resizing the swap chain
-			w.m_SwapChain->Resize(width, height);
+			//w.m_SwapChain->Resize(width, height);
 		});
 	}
 

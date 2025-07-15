@@ -1,8 +1,8 @@
 #pragma once
+#include "GraphicsParams.h"
 #include "DingoEngine/Common.h"
 
 #include <string>
-#include <nvrhi/nvrhi.h>
 
 struct GLFWwindow;
 
@@ -12,34 +12,27 @@ namespace Dingo
 	class GraphicsContext
 	{
 	public:
-		static GraphicsContext* Create(GraphicsAPI graphicsAPI);
+		static GraphicsContext* Create(const GraphicsParams& params);
 
 	public:
-		GraphicsContext(GraphicsAPI graphicsAPI);
+		GraphicsContext(const GraphicsParams& params);
 		virtual ~GraphicsContext();
 
 	public:
 		virtual void Initialize() = 0;
 		virtual void Shutdown() = 0;
 
-		static GraphicsAPI GetApi()
-		{
-			return s_Instance->m_GraphicsAPI;
-		}
+		virtual void RunGarbageCollection() const = 0;
 
-		static nvrhi::DeviceHandle GetDeviceHandle()
-		{
-			return s_Instance->m_DeviceHandle;
-		}
+		const GraphicsParams& GetParams() { return m_Params; }
+		const GraphicsParams& GetParams() const { return m_Params; }
+		static GraphicsContext& Get() { return *s_Instance; }
 
-		static GraphicsContext& Get()
-		{
-			return *s_Instance;
-		}
+		template<typename T>
+		T& As() { return static_cast<T&>(*this); }
 
 	protected:
-		nvrhi::DeviceHandle m_DeviceHandle;
-		GraphicsAPI m_GraphicsAPI;
+		GraphicsParams m_Params;
 
 	private:
 		inline static GraphicsContext* s_Instance = nullptr;

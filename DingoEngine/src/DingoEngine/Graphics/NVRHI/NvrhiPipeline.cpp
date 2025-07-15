@@ -4,6 +4,7 @@
 #include "NvrhiTexture.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "NvrhiGraphicsContext.h"
 
 namespace Dingo
 {
@@ -36,7 +37,7 @@ namespace Dingo
 
 	void NvrhiPipeline::Initialize()
 	{
-		const auto device = GraphicsContext::GetDeviceHandle();
+		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 		const auto nvrhiShader = static_cast<NvrhiShader*>(m_Params.Shader);
 
 		CreateInputLayout(nvrhiShader);
@@ -94,7 +95,7 @@ namespace Dingo
 
 	void NvrhiPipeline::CreateInputLayout(NvrhiShader* nvrhiShader)
 	{
-		const auto device = GraphicsContext::GetDeviceHandle();
+		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		if (m_Params.VertexLayout.Attributes.empty())
 		{
@@ -150,8 +151,8 @@ namespace Dingo
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
 		}
 
-		m_BindingLayoutHandle = GraphicsContext::GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
-		m_BindingSetHandle = GraphicsContext::GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
+		m_BindingLayoutHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
+		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
 	}
 
 }

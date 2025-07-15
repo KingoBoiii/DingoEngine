@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "NvrhiGraphicsContext.h"
 
 namespace Dingo
 {
@@ -92,7 +93,7 @@ namespace Dingo
 			.setShaderType(shaderType)
 			.setEntryName("main");
 
-		return GraphicsContext::GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size());
+		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size());
 	}
 
 }

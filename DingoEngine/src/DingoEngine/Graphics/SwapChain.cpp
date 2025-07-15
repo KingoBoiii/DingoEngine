@@ -9,9 +9,9 @@ namespace Dingo
 
 	SwapChain* SwapChain::Create(const SwapChainParams& params)
 	{
-		switch (GraphicsContext::GetApi())
+		switch (GraphicsContext::Get().GetParams().GraphicsAPI)
 		{
-			case Dingo::GraphicsAPI::Vulkan: return new VulkanSwapChain(params);
+			case GraphicsAPI::Vulkan: return new VulkanSwapChain(params);
 			default: break;
 		}
 

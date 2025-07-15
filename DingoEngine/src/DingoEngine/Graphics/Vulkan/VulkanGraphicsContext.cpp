@@ -60,8 +60,8 @@ namespace Dingo
 		return VK_FALSE;
 	}
 
-	VulkanGraphicsContext::VulkanGraphicsContext()
-		: GraphicsContext(GraphicsAPI::Vulkan)
+	VulkanGraphicsContext::VulkanGraphicsContext(const GraphicsParams& params)
+		: NvrhiGraphicsContext(params)
 	{}
 
 	void VulkanGraphicsContext::Initialize()

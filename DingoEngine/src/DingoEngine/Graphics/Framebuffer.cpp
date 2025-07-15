@@ -3,6 +3,7 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
 #include "Vulkan/VulkanFramebuffer.h"
+#include "NVRHI/NvrhiGraphicsContext.h"
 
 namespace Dingo
 {
@@ -17,7 +18,7 @@ namespace Dingo
 
 	Framebuffer* Framebuffer::Create(const FramebufferParams& params)
 	{
-		if (GraphicsContext::GetApi() == GraphicsAPI::Vulkan)
+		if (GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::Vulkan)
 		{
 			return new VulkanFramebuffer(params);
 		}
@@ -31,7 +32,7 @@ namespace Dingo
 
 	void Framebuffer::Initialize()
 	{
-		const auto device = GraphicsContext::GetDeviceHandle();
+		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 		const bool targetSwapChain = true;
 
 		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc()

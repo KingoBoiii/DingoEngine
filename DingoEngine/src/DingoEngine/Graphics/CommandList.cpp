@@ -6,6 +6,7 @@
 
 #include <nvrhi/utils.h> // for ClearColorAttachment
 
+#include "NVRHI/NvrhiGraphicsContext.h"
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 #include "NVRHI/NvrhiPipeline.h"
 
@@ -29,7 +30,7 @@ namespace Dingo
 			//.setEnableImmediateExecution(false) // Set to true for immediate execution, false for deferred execution
 			.setQueueType(nvrhi::CommandQueue::Graphics);
 
-		m_CommandListHandle = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+		m_CommandListHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
 	}
 
 	void CommandList::Destroy()
@@ -46,14 +47,14 @@ namespace Dingo
 
 		if (m_Params.TargetSwapChain)
 		{
-			m_TargetFramebuffer = Application::Get().GetWindow().GetSwapChain()->GetCurrentFramebuffer();
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
 		}
 	}
 
 	void CommandList::End()
 	{
 		m_CommandListHandle->close();
-		GraphicsContext::GetDeviceHandle()->executeCommandList(m_CommandListHandle);
+		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(m_CommandListHandle);
 
 		m_TargetFramebuffer = nullptr; // Reset target framebuffer after execution
 	}

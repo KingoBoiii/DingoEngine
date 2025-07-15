@@ -2,6 +2,7 @@
 #include "NvrhiGraphicsBuffer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "NvrhiGraphicsContext.h"
 
 namespace Dingo
 {
@@ -42,12 +43,12 @@ namespace Dingo
 			.setIsVolatile(m_Params.IsVolatile)
 			.setByteSize(m_Params.ByteSize);
 
-		if (GraphicsContext::GetApi() == GraphicsAPI::Vulkan && initialState == nvrhi::ResourceStates::ConstantBuffer)
+		if (GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::Vulkan && initialState == nvrhi::ResourceStates::ConstantBuffer)
 		{
 			bufferDesc.setMaxVersions(1); // number of automatic versions, only necessary on Vulkan
 		}
 
-		m_BufferHandle = GraphicsContext::GetDeviceHandle()->createBuffer(bufferDesc);
+		m_BufferHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBuffer(bufferDesc);
 	}
 
 	void NvrhiGraphicsBuffer::Destroy()
@@ -70,7 +71,7 @@ namespace Dingo
 			nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 				.setQueueType(nvrhi::CommandQueue::Graphics);
 
-			nvrhi::CommandListHandle commandList = GraphicsContext::GetDeviceHandle()->createCommandList(commandListParameters);
+			nvrhi::CommandListHandle commandList = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
 
 			commandList->open();
 
@@ -78,7 +79,7 @@ namespace Dingo
 
 			commandList->close();
 
-			GraphicsContext::GetDeviceHandle()->executeCommandList(commandList);
+			GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
 		}
 
 		m_Data = data;
