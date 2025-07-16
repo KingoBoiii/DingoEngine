@@ -34,10 +34,10 @@ void TexturedQuadLayer::OnAttach()
 
 	Dingo::TextureParams textureParams = {
 		.DebugName = "Dickbutt Texture",
+		.Width = width,
+		.Height = height,
 		.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
 		.Dimension = Dingo::TextureDimension::Texture2D,
-		.Width = width,
-		.Height = height
 	};
 
 	m_Texture = Dingo::Texture::Create(textureParams);
