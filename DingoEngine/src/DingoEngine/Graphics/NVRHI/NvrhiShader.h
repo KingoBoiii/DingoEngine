@@ -19,7 +19,7 @@ namespace Dingo
 		virtual void Destroy() override;
 
 	private:
-		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary, const std::string& debugName = "Shader");
+		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName = "Shader");
 
 	private:
 		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;

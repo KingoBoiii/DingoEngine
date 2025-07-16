@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/ShaderCompiler.h"
 #include "NvrhiGraphicsContext.h"
 
 namespace Dingo
@@ -24,6 +25,22 @@ namespace Dingo
 
 			file.close();
 
+			return buffer;
+		}
+
+		static std::string ReadFile(const std::filesystem::path& path)
+		{
+			std::ifstream file(path, std::ios::ate | std::ios::binary);
+			if (!file.is_open())
+			{
+				throw std::runtime_error("Failed to open file: " + path.string());
+			}
+
+			size_t fileSize = file.tellg();
+			std::string buffer(fileSize, '\0');
+			file.seekg(0);
+			file.read(buffer.data(), fileSize);
+			file.close();
 			return buffer;
 		}
 
@@ -61,23 +78,44 @@ namespace Dingo
 	}
 
 	void NvrhiShader::Initialize()
-	{
+	{	
 		std::string name = m_Params.Name;
 		if (name.empty())
 		{
 			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
 		}
 
-		for (const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
+		ShaderCompiler shaderCompiler;
+
+		for(const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
 		{
 			if (name.empty())
 			{
 				name = FileSystem::GetFileName(filePath);
 			}
 
-			const std::vector<char> spvBinaries = Utils::ReadSpvFile(filePath.string());
-			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), spvBinaries, name);
-			DE_CORE_INFO("Shader handle created for {} ({}): {}", name, Utils::ConvertShaderTypeToString(shaderType), filePath.string());
+			if (filePath.empty())
+			{
+				DE_CORE_ERROR("Shader file path is empty for shader type: {}", Utils::ConvertShaderTypeToString(shaderType));
+				continue; // Skip if the file path is empty
+			}
+
+			if (!std::filesystem::exists(filePath))
+			{
+				DE_CORE_ERROR("Shader file does not exist: {}", filePath.string());
+				continue; // Skip if the file does not exist
+			}
+
+			const std::string& source = Utils::ReadFile(filePath);
+
+			const std::vector<uint32_t>& binaries = shaderCompiler.CompileGLSL(shaderType, source, name);
+
+			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
+
+			DE_CORE_INFO("Shader handle created for {} ({}): {}", name, Utils::ConvertShaderTypeToString(shaderType), m_Params.ShaderFilePaths[shaderType].string());
+
+			// Reflect shader resources if needed
+			shaderCompiler.Reflect(shaderType, binaries);
 		}
 	}
 
@@ -86,14 +124,14 @@ namespace Dingo
 		m_ShaderHandles.clear();
 	}
 
-	nvrhi::ShaderHandle NvrhiShader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<char>& spvbinary, const std::string& debugName)
+	nvrhi::ShaderHandle NvrhiShader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName)
 	{
 		nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
 			.setDebugName(debugName)
 			.setShaderType(shaderType)
 			.setEntryName("main");
 
-		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size());
+		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size() * 4);
 	}
 
 }

@@ -3,6 +3,8 @@
 
 #include "NVRHI/NvrhiShader.h"
 
+#include "ShaderCompiler.h"
+
 namespace Dingo
 {
 

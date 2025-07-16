@@ -52,6 +52,13 @@ project "DingoEngine"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", }
 
+		links {
+			"%{Library.WinSock}",
+			"%{Library.WinMM}",
+			"%{Library.WinVersion}",
+			"%{Library.BCrypt}",
+		}
+
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
@@ -59,6 +66,18 @@ project "DingoEngine"
 		symbols "On"
 		defines { "DE_DEBUG" }
 
+		links {
+			"%{Library.ShaderC_Debug}",
+			"%{Library.SPIRV_Cross_Debug}",
+			"%{Library.SPIRV_Cross_GLSL_Debug}"
+		}
+
 	filter "configurations:Release"
 		optimize "On"
 		defines { "DE_RELEASE" }
+
+		links {
+			"%{Library.ShaderC_Release}",
+			"%{Library.SPIRV_Cross_Release}",
+			"%{Library.SPIRV_Cross_GLSL_Release}"
+		}
