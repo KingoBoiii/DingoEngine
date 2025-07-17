@@ -3,7 +3,7 @@
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec3 inColor;
 
-layout (std140, set = 0, binding = 256) uniform Camera {
+layout (std140, set = 0, binding = 0) uniform Camera {
 	mat4 ProjectionView;
 };
 

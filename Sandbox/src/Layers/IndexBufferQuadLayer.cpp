@@ -11,9 +11,9 @@ void IndexBufferQuadLayer::OnAttach()
 	m_CommandList->Initialize();
 
 	m_Shader = Dingo::ShaderBuilder()
-		.SetName("Camera Transformation")
-		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/spv/graphics_buffer.vert.spv")
-		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/spv/graphics_buffer.frag.spv")
+		.SetName("Graphics Buffer")
+		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/graphics_buffer.vert")
+		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/graphics_buffer.frag")
 		.Create();
 
 	Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()

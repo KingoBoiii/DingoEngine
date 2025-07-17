@@ -71,6 +71,8 @@ namespace Dingo
 
 		ShaderCompiler shaderCompiler;
 
+		std::unordered_map<ShaderType, std::string> sources;
+
 		if (m_Params.FilePath.empty())
 		{
 			for (const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
@@ -92,31 +94,22 @@ namespace Dingo
 					continue; // Skip if the file does not exist
 				}
 
-				const std::string& source = FileSystem::ReadTextFile(filePath);
+				sources[shaderType] = FileSystem::ReadTextFile(filePath);
+			}
+		}
+		else
+		{
+			name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
 
-				const std::vector<uint32_t>& binaries = shaderCompiler.CompileGLSL(shaderType, source, name);
-
-				m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
-
-				DE_CORE_INFO("Shader handle created for {} ({}): {}", name, Utils::ConvertShaderTypeToString(shaderType), m_Params.ShaderFilePaths[shaderType].string());
-
-				// Reflect shader resources if needed
-				shaderCompiler.Reflect(shaderType, binaries);
+			std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
+			if (source.empty())
+			{
+				DE_CORE_ERROR("Shader source is empty for file: {}", m_Params.FilePath.string());
+				return; // Skip initialization if the source is empty
 			}
 
-			return;
+			sources = PreProcess(source);
 		}
-
-		name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
-
-		std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
-		if (source.empty())
-		{
-			DE_CORE_ERROR("Shader source is empty for file: {}", m_Params.FilePath.string());
-			return; // Skip initialization if the source is empty
-		}
-
-		std::unordered_map<ShaderType, std::string> sources = PreProcess(source);
 
 		std::vector<ShaderReflection> reflections;
 		for (const auto& [shaderType, source] : sources)

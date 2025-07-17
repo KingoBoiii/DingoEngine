@@ -10,8 +10,8 @@ void StaticTriangleLayer::OnAttach()
 
 	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Camera Transformation")
-		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/spv/static_triangle.vert.spv")
-		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/spv/static_triangle.frag.spv")
+		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/static_triangle.vert")
+		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/static_triangle.frag")
 		.Create();
 
 	m_Pipeline = Dingo::PipelineBuilder()
