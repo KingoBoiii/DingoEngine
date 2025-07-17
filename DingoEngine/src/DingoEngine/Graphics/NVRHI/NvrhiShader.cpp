@@ -125,7 +125,7 @@ namespace Dingo
 
 			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
 
-			DE_CORE_INFO("Shader handle created for {} ({}): {}", name, Utils::ConvertShaderTypeToString(shaderType), m_Params.ShaderFilePaths[shaderType].string());
+			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
 
 			// Reflect shader resources if needed
 			const ShaderReflection& reflection = shaderCompiler.Reflect(shaderType, binaries);

@@ -26,7 +26,6 @@ namespace Dingo
 
 	private:
 		nvrhi::InputLayoutHandle m_InputLayoutHandle;
-		nvrhi::BindingLayoutHandle m_BindingLayoutHandle;
 		nvrhi::BindingSetHandle m_BindingSetHandle;
 		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
 

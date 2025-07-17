@@ -77,11 +77,6 @@ namespace Dingo
 			m_BindingSetHandle->Release();
 		}
 
-		if (m_BindingLayoutHandle)
-		{
-			m_BindingLayoutHandle->Release();
-		}
-
 		if (m_InputLayoutHandle)
 		{
 			m_InputLayoutHandle->Release();
