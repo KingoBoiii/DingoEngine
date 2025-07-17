@@ -192,6 +192,7 @@ namespace Dingo
 		}
 
 		nvrhi::VulkanBindingOffsets vulkanBindingOffsets = nvrhi::VulkanBindingOffsets()
+			.setSamplerOffset(0)
 			.setConstantBufferOffset(0);
 
 		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
@@ -223,6 +224,11 @@ namespace Dingo
 			}
 
 			for (const auto& sampledImage : shaderReflection.SampledImages)
+			{
+				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding));
+			}
+
+			for (const auto& sampledImage : shaderReflection.SeperateImages)
 			{
 				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding));
 			}
