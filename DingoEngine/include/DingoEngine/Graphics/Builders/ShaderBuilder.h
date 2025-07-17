@@ -16,6 +16,12 @@ namespace Dingo
 			return *this;
 		}
 
+		ShaderBuilder& SetFilePath(const std::filesystem::path& filepath)
+		{
+			m_Params.FilePath = filepath;
+			return *this;
+		}
+
 		ShaderBuilder& AddShaderType(ShaderType shaderType, const std::filesystem::path& filePath)
 		{
 			m_Params.ShaderFilePaths[shaderType] = filePath;

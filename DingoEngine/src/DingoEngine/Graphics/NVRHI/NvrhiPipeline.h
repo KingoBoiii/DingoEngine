@@ -22,7 +22,7 @@ namespace Dingo
 
 	private:
 		void CreateInputLayout(NvrhiShader* nvrhiShader);
-		void CreateBindingLayoutAndBindingSet();
+		void CreateBindingSet(nvrhi::BindingLayoutHandle bindingLayoutHandle);
 
 	private:
 		nvrhi::InputLayoutHandle m_InputLayoutHandle;

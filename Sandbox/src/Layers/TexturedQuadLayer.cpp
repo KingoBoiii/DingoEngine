@@ -47,6 +47,7 @@ void TexturedQuadLayer::OnAttach()
 
 	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Textured Quad")
+		.SetFilePath("assets/shaders/textured_quad.dshader")
 		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/textured_quad.vert")
 		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/textured_quad.frag")
 		//.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/spv/textured_quad.vert.spv")

@@ -6,6 +6,21 @@
 
 namespace Dingo
 {
+
+	std::string FileSystem::ReadTextFile(const std::filesystem::path& path)
+	{
+		std::ifstream file(path, std::ios::ate | std::ios::binary);
+		DE_CORE_ASSERT(file.is_open(), "Failed to open file: " + path.string());
+
+		size_t fileSize = file.tellg();
+		std::string buffer(fileSize, '\0');
+
+		file.seekg(0);
+		file.read(buffer.data(), fileSize);
+		file.close();
+
+		return buffer;
+	}
 	
 	const uint8_t* FileSystem::ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
 	{

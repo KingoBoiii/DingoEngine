@@ -42,7 +42,7 @@ namespace Dingo
 
 		CreateInputLayout(nvrhiShader);
 
-		CreateBindingLayoutAndBindingSet();
+		CreateBindingSet(nvrhiShader->m_BindingLayoutHandle);
 
 		nvrhi::RasterState rasterState = nvrhi::RasterState()
 			.setCullMode(Utils::ConvertCullModeToNVRHI(m_Params.CullMode))
@@ -62,9 +62,9 @@ namespace Dingo
 			.setVertexShader(nvrhiShader->m_ShaderHandles[ShaderType::Vertex])
 			.setPixelShader(nvrhiShader->m_ShaderHandles[ShaderType::Pixel]);
 
-		if (m_BindingLayoutHandle)
+		if (nvrhiShader->m_BindingLayoutHandle)
 		{
-			graphicsPipelineDesc.addBindingLayout(m_BindingLayoutHandle);
+			graphicsPipelineDesc.addBindingLayout(nvrhiShader->m_BindingLayoutHandle);
 		}
 
 		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, m_Params.Framebuffer->m_FramebufferHandle);
@@ -122,37 +122,28 @@ namespace Dingo
 		m_InputLayoutHandle = device->createInputLayout(attributes.data(), static_cast<uint32_t>(attributes.size()), nvrhiShader->m_ShaderHandles[ShaderType::Vertex]);
 	}
 
-	void NvrhiPipeline::CreateBindingLayoutAndBindingSet()
+	void NvrhiPipeline::CreateBindingSet(nvrhi::BindingLayoutHandle bindingLayoutHandle)
 	{
 		if (m_Params.UniformBuffer == nullptr && m_Params.Texture == nullptr)
 		{
 			return;
 		}
 
-		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
-			.setRegisterSpace(0) // set = 0
-			.setRegisterSpaceIsDescriptorSet(false)
-			.setVisibility(nvrhi::ShaderType::All);
-
 		nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc();
 
 		if (m_Params.UniformBuffer)
 		{
-			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0));
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, static_cast<NvrhiGraphicsBuffer*>(m_Params.UniformBuffer)->m_BufferHandle));
 		}
 
 		if (m_Params.Texture)
 		{
-			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(1));
-			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
+			//bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
 
-			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(0));
-			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
 		}
 
-		m_BindingLayoutHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
-		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(bindingSetDesc, m_BindingLayoutHandle);
+		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(bindingSetDesc, bindingLayoutHandle);
 	}
 
 }
