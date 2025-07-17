@@ -22,9 +22,9 @@ namespace Dingo
 			return *this;
 		}
 
-		ShaderBuilder& AddShaderType(ShaderType shaderType, const std::filesystem::path& filePath)
+		ShaderBuilder& SetSourceCode(const std::string& source)
 		{
-			m_Params.ShaderFilePaths[shaderType] = filePath;
+			m_Params.SourceCode = source;
 			return *this;
 		}
 

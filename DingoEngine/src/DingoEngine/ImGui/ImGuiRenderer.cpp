@@ -33,6 +33,59 @@ namespace Dingo
 
 	}
 
+	static std::string ImGuiShaderSourceCode = R"(
+#type vertex
+#version 450 core
+
+layout(location = 0) in vec2 a_Position;
+layout(location = 1) in vec2 a_TexCoord;
+layout(location = 2) in vec4 a_Color;
+
+layout (push_constant) uniform Uniforms
+{
+    vec2 Scale;
+    vec2 Translate;
+} u_Uniforms;
+
+struct VertexOutput
+{
+    vec4 Color;
+    vec2 TexCoord;
+};
+
+layout(location = 0) out VertexOutput Output;
+
+void main()
+{
+    gl_Position.xy = a_Position.xy * u_Uniforms.Scale + u_Uniforms.Translate;
+    gl_Position.y = -gl_Position.y;
+    gl_Position.zw = vec2(0, 1);
+
+    Output.Color = a_Color;
+    Output.TexCoord = a_TexCoord;
+}
+
+#type fragment
+#version 450 core
+
+struct VertexOutput
+{
+    vec4 Color;
+    vec2 TexCoord;
+};
+
+layout(location = 0) in VertexOutput Input;
+
+layout(location = 0) out vec4 o_Color;
+
+layout(binding = 0) uniform sampler2D u_Texture;
+
+void main()
+{
+    o_Color = texture(u_Texture, Input.TexCoord) * Input.Color;
+}
+	)";
+
 	void ImGuiRenderer::Initialize()
 	{
 		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
@@ -45,8 +98,7 @@ namespace Dingo
 
 		m_Shader = ShaderBuilder()
 			.SetName("ImGuiRenderer")
-			.AddShaderType(ShaderType::Vertex, "assets/shaders/spv/imgui.vert.spv")
-			.AddShaderType(ShaderType::Fragment, "assets/shaders/spv/imgui.frag.spv")
+			.SetSourceCode(ImGuiShaderSourceCode)
 			.Create();
 
 		// create attribute layout object

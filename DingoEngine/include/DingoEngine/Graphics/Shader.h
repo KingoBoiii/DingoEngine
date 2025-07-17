@@ -12,7 +12,7 @@ namespace Dingo
 		std::string Name;
 		std::string EntryPoint = "main"; // Default entry point for shaders
 		std::filesystem::path FilePath;
-		std::unordered_map<ShaderType, std::filesystem::path> ShaderFilePaths;
+		std::string SourceCode; // Optional source code for inline shaders
 
 		ShaderParams& SetName(const std::string& name)
 		{
@@ -31,18 +31,11 @@ namespace Dingo
 			FilePath = filepath;
 			return *this;
 		}
-
-		ShaderParams& AddShaderType(ShaderType shaderType, const std::filesystem::path& filePath)
-		{
-			ShaderFilePaths[shaderType] = filePath;
-			return *this;
-		}
 	};
 
 	class Shader
 	{
 	public:
-		static Shader* Create(const std::string& vertexFilePath, const std::string& fragmentFilePath);
 		static Shader* Create(const ShaderParams& params);
 
 	public:

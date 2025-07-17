@@ -27,8 +27,7 @@ void CameraTransformationQuadLayer::OnAttach()
 
 	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Camera Transformation")
-		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/camera_transformation.vert")
-		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/camera_transformation.frag")
+		.SetFilePath("assets/shaders/camera_transformation.dshader")
 		.Create();
 
 	Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()

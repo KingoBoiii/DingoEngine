@@ -12,8 +12,7 @@ void IndexBufferQuadLayer::OnAttach()
 
 	m_Shader = Dingo::ShaderBuilder()
 		.SetName("Graphics Buffer")
-		.AddShaderType(Dingo::ShaderType::Vertex, "assets/shaders/graphics_buffer.vert")
-		.AddShaderType(Dingo::ShaderType::Fragment, "assets/shaders/graphics_buffer.frag")
+		.SetFilePath("assets/shaders/graphics_buffer.dshader")
 		.Create();
 
 	Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()

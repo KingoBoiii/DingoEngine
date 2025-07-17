@@ -63,7 +63,7 @@ namespace Dingo
 
 	void NvrhiShader::Initialize()
 	{
-		std::string name = m_Params.Name;
+		std::string name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
 		if (name.empty())
 		{
 			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
@@ -75,32 +75,10 @@ namespace Dingo
 
 		if (m_Params.FilePath.empty())
 		{
-			for (const auto& [shaderType, filePath] : m_Params.ShaderFilePaths)
-			{
-				if (name.empty())
-				{
-					name = FileSystem::GetFileName(filePath);
-				}
-
-				if (filePath.empty())
-				{
-					DE_CORE_ERROR("Shader file path is empty for shader type: {}", Utils::ConvertShaderTypeToString(shaderType));
-					continue; // Skip if the file path is empty
-				}
-
-				if (!std::filesystem::exists(filePath))
-				{
-					DE_CORE_ERROR("Shader file does not exist: {}", filePath.string());
-					continue; // Skip if the file does not exist
-				}
-
-				sources[shaderType] = FileSystem::ReadTextFile(filePath);
-			}
+			sources = PreProcess(m_Params.SourceCode);
 		}
 		else
 		{
-			name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
-
 			std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
 			if (source.empty())
 			{
