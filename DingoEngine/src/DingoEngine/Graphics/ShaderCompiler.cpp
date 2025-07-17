@@ -51,6 +51,7 @@ namespace Dingo
 		shaderc::CompileOptions compileOptions;
 		compileOptions.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
 		compileOptions.SetOptimizationLevel(optimize ? shaderc_optimization_level_performance : shaderc_optimization_level_zero);
+		compileOptions.SetGenerateDebugInfo();
 
 		shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(source, Utils::ConvertShaderTypeToShaderC(shaderType), name.c_str(), entryPoint.c_str(), compileOptions);
 		if (result.GetCompilationStatus() != shaderc_compilation_status_success)
