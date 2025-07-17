@@ -22,7 +22,7 @@ void TexturedQuadLayer::OnAttach()
 	m_CommandList->Initialize();
 
 	m_UniformBuffer = Dingo::GraphicsBufferBuilder()
-		.SetDebugName("Camera Transform Buffer")
+		.SetDebugName("Textured Quad Uniform Buffer")
 		.SetByteSize(sizeof(CameraTransform))
 		.SetType(Dingo::BufferType::UniformBuffer)
 		.SetIsVolatile(true)
