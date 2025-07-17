@@ -11,6 +11,7 @@ namespace Dingo
 	{
 		std::string Name;
 		std::string EntryPoint = "main"; // Default entry point for shaders
+		bool Reflect = true; // Whether to reflect shader resources
 		std::filesystem::path FilePath;
 		std::string SourceCode; // Optional source code for inline shaders
 
@@ -23,6 +24,12 @@ namespace Dingo
 		ShaderParams& SetEntryPoint(const std::string& entryPoint)
 		{
 			EntryPoint = entryPoint;
+			return *this;
+		}
+
+		ShaderParams& SetReflect(bool reflect)
+		{
+			Reflect = reflect;
 			return *this;
 		}
 

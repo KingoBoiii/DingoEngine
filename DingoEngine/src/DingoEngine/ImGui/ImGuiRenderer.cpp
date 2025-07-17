@@ -78,11 +78,12 @@ layout(location = 0) in VertexOutput Input;
 
 layout(location = 0) out vec4 o_Color;
 
-layout(binding = 0) uniform sampler2D u_Texture;
+layout(binding = 0) uniform texture2D u_Texture;
+layout(binding = 1) uniform sampler u_TextureSampler;
 
 void main()
 {
-    o_Color = texture(u_Texture, Input.TexCoord) * Input.Color;
+    o_Color = texture(sampler2D(u_Texture, u_TextureSampler), Input.TexCoord) * Input.Color;
 }
 	)";
 
@@ -99,6 +100,7 @@ void main()
 		m_Shader = ShaderBuilder()
 			.SetName("ImGuiRenderer")
 			.SetSourceCode(ImGuiShaderSourceCode)
+			.SetReflect(false)
 			.Create();
 
 		// create attribute layout object
@@ -137,6 +139,7 @@ void main()
 
 		nvrhi::BindingLayoutDesc layoutDesc;
 		layoutDesc.visibility = nvrhi::ShaderType::All;
+		layoutDesc.bindingOffsets = { 0, 0, 0 };
 		layoutDesc.bindings = {
 			nvrhi::BindingLayoutItem::PushConstants(0, sizeof(glm::vec2) * 2),
 			nvrhi::BindingLayoutItem::Texture_SRV(0),

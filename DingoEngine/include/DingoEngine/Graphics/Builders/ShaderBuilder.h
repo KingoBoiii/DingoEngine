@@ -16,6 +16,18 @@ namespace Dingo
 			return *this;
 		}
 
+		ShaderBuilder& SetEntryPoint(const std::string& entryPoint)
+		{
+			m_Params.EntryPoint = entryPoint;
+			return *this;
+		}
+
+		ShaderBuilder& SetReflect(bool reflect)
+		{
+			m_Params.Reflect = reflect;
+			return *this;
+		}
+
 		ShaderBuilder& SetFilePath(const std::filesystem::path& filepath)
 		{
 			m_Params.FilePath = filepath;

@@ -98,11 +98,14 @@ namespace Dingo
 
 			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
 
-			// Reflect shader resources if needed
-			const ShaderReflection& reflection = shaderCompiler.Reflect(shaderType, binaries);
-			shaderCompiler.PrintReflection(shaderType, reflection);
+			if (m_Params.Reflect)
+			{
+				// Reflect shader resources if needed
+				const ShaderReflection& reflection = shaderCompiler.Reflect(shaderType, binaries);
+				shaderCompiler.PrintReflection(shaderType, reflection);
 
-			reflections.push_back(reflection);
+				reflections.push_back(reflection);
+			}
 		}
 
 		CreateBindingLayoutHandle(reflections);
@@ -163,6 +166,11 @@ namespace Dingo
 
 	void NvrhiShader::CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflections)
 	{
+		if (!m_Params.Reflect)
+		{
+			return;
+		}
+
 		if (reflections.empty())
 		{
 			DE_CORE_WARN("No resources found for shader");
