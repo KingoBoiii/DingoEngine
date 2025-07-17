@@ -45,10 +45,7 @@ void TexturedQuadLayer::OnAttach()
 	m_Texture->Upload(textureData, width * channels);
 	//m_Texture->Upload("assets/textures/dickbutt_transparent.png");
 
-	m_Shader = Dingo::ShaderBuilder()
-		.SetName("Textured Quad")
-		.SetFilePath("assets/shaders/textured_quad.dshader")
-		.Create();
+	m_Shader = Dingo::Shader::CreateFromFile("Textured Quad", "assets/shaders/textured_quad.dshader");
 
 	Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
 		.SetStride(sizeof(Vertex))

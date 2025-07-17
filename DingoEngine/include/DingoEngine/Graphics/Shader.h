@@ -38,11 +38,19 @@ namespace Dingo
 			FilePath = filepath;
 			return *this;
 		}
+
+		ShaderParams& SetSourceCode(const std::string& source)
+		{
+			SourceCode = source;
+			return *this;
+		}
 	};
 
 	class Shader
 	{
 	public:
+		static Shader* CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect = true);
+		static Shader* CreateFromSource(const std::string& name, const std::string& source, bool reflect = true);
 		static Shader* Create(const ShaderParams& params);
 
 	public:
