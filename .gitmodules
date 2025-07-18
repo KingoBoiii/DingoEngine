@@ -2,7 +2,7 @@
 	path = vendor/glfw
 	url = https://github.com/KingoBoiii/glfw.git
 [submodule "DingoEngine/vendor/nvrhi"]
-	path = DingoEngine/vendor/nvrhi
+	path = vendor/nvrhi
 	url = https://github.com/KingoBoiii/NVRHI.git
 [submodule "DingoEngine/vendor/spdlog"]
 	path = vendor/spdlog
