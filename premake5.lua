@@ -40,7 +40,7 @@ IncludeDir = {}
 IncludeDir['spdlog'] = "%{wks.location}/vendor/spdlog/include";
 IncludeDir['glfw'] = "%{wks.location}/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/DingoEngine/vendor/nvrhi/include";
-IncludeDir['glm'] = "%{wks.location}/DingoEngine/vendor/glm";
+IncludeDir['glm'] = "%{wks.location}/vendor/glm";
 IncludeDir['stb'] = "%{wks.location}/DingoEngine/vendor/stb/include";
 IncludeDir['imgui'] = "%{wks.location}/DingoEngine/vendor/imgui";
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
@@ -67,14 +67,14 @@ Library["WinVersion"] = "Version.lib"
 Library["BCrypt"] = "Bcrypt.lib"
 
 group "Engine"
-include "DingoEngine"
+    include "DingoEngine"
 group ""
 
 group "Dependencies"
     include "Vendor/spdlog"
     include "vendor/glfw"
     include "DingoEngine/vendor/nvrhi"
-    include "DingoEngine/vendor/imgui"
+    include "vendor/imgui"
 group ""
 
 include "Sandbox"
