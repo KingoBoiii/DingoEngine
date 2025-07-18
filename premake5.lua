@@ -37,7 +37,7 @@ outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 VULKAN_SDK = os.getenv("VULKAN_SDK")
 
 IncludeDir = {}
-IncludeDir['spdlog'] = "%{wks.location}/DingoEngine/vendor/spdlog/include";
+IncludeDir['spdlog'] = "%{wks.location}/vendor/spdlog/include";
 IncludeDir['glfw'] = "%{wks.location}/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/DingoEngine/vendor/nvrhi/include";
 IncludeDir['glm'] = "%{wks.location}/DingoEngine/vendor/glm";
@@ -71,7 +71,7 @@ include "DingoEngine"
 group ""
 
 group "Dependencies"
-    include "DingoEngine/Vendor/spdlog"
+    include "Vendor/spdlog"
     include "vendor/glfw"
     include "DingoEngine/vendor/nvrhi"
     include "DingoEngine/vendor/imgui"
