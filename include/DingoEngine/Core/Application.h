@@ -39,6 +39,8 @@ namespace Dingo
 		void PushLayer(Layer* layer);
 		void PushOverlay(Layer* overlay);
 
+		void Close();
+
 		static Application& Get() { return *s_Instance; }
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }

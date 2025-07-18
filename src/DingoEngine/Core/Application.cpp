@@ -137,6 +137,11 @@ namespace Dingo
 		overlay->OnAttach();
 	}
 
+	void Application::Close()
+	{
+		m_IsRunning = false;
+	}
+
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)
 	{
 		m_IsRunning = false; // Stop the application loop
