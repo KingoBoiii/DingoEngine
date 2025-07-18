@@ -42,7 +42,7 @@ IncludeDir['glfw'] = "%{wks.location}/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/vendor/nvrhi/include";
 IncludeDir['glm'] = "%{wks.location}/vendor/glm";
 IncludeDir['stb'] = "%{wks.location}/vendor/stb/include";
-IncludeDir['imgui'] = "%{wks.location}/DingoEngine/vendor/imgui";
+IncludeDir['imgui'] = "%{wks.location}/vendor/imgui";
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 
 LibraryDir = {}
@@ -74,7 +74,7 @@ group "Dependencies"
     include "Vendor/spdlog"
     include "vendor/glfw"
     include "vendor/nvrhi"
-    include "DingoEngine/vendor/imgui"
+    include "vendor/imgui"
 group ""
 
 include "Sandbox"
