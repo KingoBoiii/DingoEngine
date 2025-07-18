@@ -160,6 +160,8 @@ group "Engine"
 			}
 group ""
 
+include "test"
+
 group "Examples"
     include "examples/Sandbox"
 group ""
