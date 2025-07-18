@@ -66,9 +66,6 @@ Library["WinMM"] = "Winmm.lib"
 Library["WinVersion"] = "Version.lib"
 Library["BCrypt"] = "Bcrypt.lib"
 
-group "Engine"
-    include "DingoEngine"
-group ""
 
 group "Dependencies"
     include "Vendor/spdlog"
@@ -77,4 +74,10 @@ group "Dependencies"
     include "vendor/imgui"
 group ""
 
-include "Sandbox"
+group "Engine"
+    include "DingoEngine"
+group ""
+
+group "Examples"
+    include "examples/Sandbox"
+group ""
