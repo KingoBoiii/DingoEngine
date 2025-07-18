@@ -41,7 +41,7 @@ IncludeDir['spdlog'] = "%{wks.location}/vendor/spdlog/include";
 IncludeDir['glfw'] = "%{wks.location}/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/vendor/nvrhi/include";
 IncludeDir['glm'] = "%{wks.location}/vendor/glm";
-IncludeDir['stb'] = "%{wks.location}/DingoEngine/vendor/stb/include";
+IncludeDir['stb'] = "%{wks.location}/vendor/stb/include";
 IncludeDir['imgui'] = "%{wks.location}/DingoEngine/vendor/imgui";
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 
