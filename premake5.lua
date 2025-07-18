@@ -75,7 +75,8 @@ group "Dependencies"
 group ""
 
 group "Engine"
-    include "DingoEngine"
+    include "engine.lua"
+    --include "DingoEngine"
 group ""
 
 group "Examples"
