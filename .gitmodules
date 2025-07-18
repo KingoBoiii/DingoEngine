@@ -5,7 +5,7 @@
 	path = DingoEngine/vendor/nvrhi
 	url = https://github.com/KingoBoiii/NVRHI.git
 [submodule "DingoEngine/vendor/spdlog"]
-	path = DingoEngine/vendor/spdlog
+	path = vendor/spdlog
 	url = https://github.com/KingoBoiii/spdlog.git
 [submodule "DingoEngine/vendor/glm"]
 	path = DingoEngine/vendor/glm
