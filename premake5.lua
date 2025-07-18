@@ -38,7 +38,7 @@ VULKAN_SDK = os.getenv("VULKAN_SDK")
 
 IncludeDir = {}
 IncludeDir['spdlog'] = "%{wks.location}/DingoEngine/vendor/spdlog/include";
-IncludeDir['glfw'] = "%{wks.location}/DingoEngine/vendor/glfw/include";
+IncludeDir['glfw'] = "%{wks.location}/vendor/glfw/include";
 IncludeDir['nvrhi'] = "%{wks.location}/DingoEngine/vendor/nvrhi/include";
 IncludeDir['glm'] = "%{wks.location}/DingoEngine/vendor/glm";
 IncludeDir['stb'] = "%{wks.location}/DingoEngine/vendor/stb/include";
@@ -72,7 +72,7 @@ group ""
 
 group "Dependencies"
     include "DingoEngine/Vendor/spdlog"
-    include "DingoEngine/vendor/glfw"
+    include "vendor/glfw"
     include "DingoEngine/vendor/nvrhi"
     include "DingoEngine/vendor/imgui"
 group ""
