@@ -1,5 +1,5 @@
 [submodule "DingoEngine/vendor/glfw"]
-	path = DingoEngine/vendor/glfw
+	path = vendor/glfw
 	url = https://github.com/KingoBoiii/glfw.git
 [submodule "DingoEngine/vendor/nvrhi"]
 	path = DingoEngine/vendor/nvrhi
