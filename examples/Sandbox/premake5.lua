@@ -12,7 +12,7 @@ project "Sandbox"
 	}
 	
 	includedirs {
-        "%{wks.location}/DingoEngine/include",
+        "%{wks.location}/include",
         "src",
         "%{IncludeDir.glm}",
         "%{IncludeDir.imgui}",
