@@ -4,8 +4,8 @@ project "DingoEngine"
 	cppdialect "C++20"
 	staticruntime "off"
 
-    targetdir ("../bin/" .. outputdir .. "/%{prj.name}")
-	objdir ("../bin-int/" .. outputdir .. "/%{prj.name}")
+    targetdir ("%{wks.location}/build/bin/" .. outputdir .. "/%{prj.name}")
+	objdir ("%{wks.location}/build/bin-int/" .. outputdir .. "/%{prj.name}")
 
 	pchheader "depch.h"
 	pchsource "src/depch.cpp"
