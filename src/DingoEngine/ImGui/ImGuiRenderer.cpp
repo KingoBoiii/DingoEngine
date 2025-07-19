@@ -4,9 +4,10 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Graphics/NVRHI/NvrhiShader.h"
+#include "DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h"
+#include "DingoEngine/Graphics/NVRHI/NvrhiFramebuffer.h"
 
 #include <nvrhi/utils.h>
-#include <DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h>
 
 namespace Dingo
 {
@@ -366,7 +367,7 @@ void main()
 
 	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain)
 	{
-		return Render(viewport, GetOrCreatePipeline(swapchain), swapchain->GetCurrentFramebuffer()->m_FramebufferHandle);
+		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle);
 	}
 
 	bool ImGuiRenderer::ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer)
@@ -450,7 +451,7 @@ void main()
 		auto& swapchainPipelineCache = m_PipelineCache[swapchain];
 		DE_CORE_ASSERT(currentFramebufferIndex < swapchainPipelineCache.Pipelines.max_size());
 
-		nvrhi::FramebufferHandle targetFramebuffer = swapchain->GetCurrentFramebuffer()->m_FramebufferHandle;
+		nvrhi::FramebufferHandle targetFramebuffer = static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle;
 
 		nvrhi::GraphicsPipelineHandle pipeline = swapchainPipelineCache.Pipelines[currentFramebufferIndex];
 		bool invalidate = !pipeline || swapchainPipelineCache.Framebuffers[currentFramebufferIndex] != targetFramebuffer;

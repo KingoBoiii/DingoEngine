@@ -1,6 +1,8 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include "Tests/Test.h"
+
 namespace Dingo
 {
 
@@ -18,6 +20,7 @@ namespace Dingo
 		virtual void OnImGuiRender() override;
 
 	private:
+		Test* m_CurrentTest = nullptr;
 		CommandList* m_CommandList = nullptr;
 	};
 

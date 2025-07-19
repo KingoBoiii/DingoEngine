@@ -1,4 +1,5 @@
 #pragma once
+#include <DingoEngine.h>
 
 namespace Dingo
 {
@@ -14,6 +15,10 @@ namespace Dingo
 		virtual void Cleanup() = 0;
 
 		virtual void ImGuiRender() {}
+
+		virtual void Resize(uint32_t width, uint32_t height) {}
+
+		virtual Texture* GetResult() { return nullptr; }
 	};
 
 }

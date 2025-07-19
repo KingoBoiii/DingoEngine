@@ -26,15 +26,27 @@ namespace Dingo
 
 		m_CommandList = CommandList::Create(commandListParams);
 		m_CommandList->Initialize();
+
+		m_CurrentTest = new ClearColorTest();
+		m_CurrentTest->Initialize();
 	}
 
 	void TestLayer::OnDetach()
 	{
+		if (m_CurrentTest)
+		{
+			m_CurrentTest->Cleanup();
+			delete m_CurrentTest;
+			m_CurrentTest = nullptr;
+		}
+
 		m_CommandList->Destroy();
 	}
 
 	void TestLayer::OnUpdate()
 	{
+		m_CurrentTest->Update(0.0f); // Pass deltaTime as needed
+
 		m_CommandList->Begin();
 		m_CommandList->Clear();
 		m_CommandList->End();
@@ -158,11 +170,18 @@ namespace Dingo
 
 		ImGui::BeginChild("Tests", ImVec2(300, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
 		ImGui::Text("Tests Window");
+
 		ImGui::EndChild();
 
 		ImGui::SameLine();
+
 		ImGui::BeginChild("Viewport", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
-		ImGui::Text("Viewport Area");
+
+		auto viewport = ImGui::GetContentRegionAvail();
+		m_CurrentTest->Resize(static_cast<uint32_t>(viewport.x), static_cast<uint32_t>(viewport.y));
+
+		ImGui::Image(m_CurrentTest->GetResult()->GetTextureHandle(), viewport);
+
 		ImGui::EndChild();
 
 		ImGui::End();
