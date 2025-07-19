@@ -83,6 +83,7 @@ namespace Dingo
 			.setMipLevels(1)
 			.setArraySize(1)
 			.setInitialState(nvrhi::ResourceStates::ShaderResource)
+			.setIsRenderTarget(m_Params.IsRenderTarget)
 			.setKeepInitialState(true);
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);

@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Enums/TextureFormat.h"
 #include "DingoEngine/Graphics/Enums/TextureDimension.h"
 
+#include <filesystem>
+
 namespace Dingo
 {
 
@@ -22,6 +24,49 @@ namespace Dingo
 		TextureFormat Format = TextureFormat::Unknown;
 		TextureDimension Dimension = TextureDimension::Unknown;
 		TextureWrapMode WrapMode = TextureWrapMode::Repeat;
+		bool IsRenderTarget = false;
+
+		TextureParams& SetDebugName(const std::string& name)
+		{
+			DebugName = name;
+			return *this;
+		}
+
+		TextureParams& SetWidth(uint32_t width)
+		{
+			Width = width;
+			return *this;
+		}
+
+		TextureParams& SetHeight(uint32_t height)
+		{
+			Height = height;
+			return *this;
+		}
+
+		TextureParams& SetFormat(TextureFormat format)
+		{
+			Format = format;
+			return *this;
+		}
+
+		TextureParams& SetDimension(TextureDimension dimension)
+		{
+			Dimension = dimension;
+			return *this;
+		}
+
+		TextureParams& SetWrapMode(TextureWrapMode wrapMode)
+		{
+			WrapMode = wrapMode;
+			return *this;
+		}
+
+		TextureParams& SetIsRenderTarget(bool isRenderTarget)
+		{
+			IsRenderTarget = isRenderTarget;
+			return *this;
+		}
 	};
 
 	class Texture

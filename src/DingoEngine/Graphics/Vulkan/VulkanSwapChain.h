@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/SwapChain.h"
+#include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanFramebuffer.h"
 
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
