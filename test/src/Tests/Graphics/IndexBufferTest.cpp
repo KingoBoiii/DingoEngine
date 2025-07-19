@@ -1,9 +1,9 @@
-#include "VertexBufferTest.h"
+#include "IndexBufferTest.h"
 
 namespace Dingo
 {
 
-	void VertexBufferTest::InitializeGraphics()
+	void IndexBufferTest::InitializeGraphics()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -30,7 +30,7 @@ void main() {
 }
 )";
 
-		m_Shader = Shader::CreateFromSource("Vertex Buffer Shader", ShaderSource);
+		m_Shader = Shader::CreateFromSource("Index Buffer Shader", ShaderSource);
 
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(Vertex))
@@ -38,7 +38,7 @@ void main() {
 			.AddAttribute("inColor", Format::RGB32_FLOAT, sizeof(glm::vec2));
 
 		m_Pipeline = PipelineBuilder()
-			.SetDebugName("Vertex Buffer Pipeline")
+			.SetDebugName("Index Buffer Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Framebuffer)
 			.SetFillMode(FillMode::Solid)
@@ -53,18 +53,32 @@ void main() {
 			.SetDirectUpload(true)
 			.SetInitialData(m_Vertices.data())
 			.Create();
+
+		m_IndexBuffer = Dingo::GraphicsBufferBuilder()
+			.SetDebugName("Index Buffer")
+			.SetByteSize(sizeof(uint16_t) * m_Indices.size())
+			.SetType(BufferType::IndexBuffer)
+			.SetDirectUpload(true)
+			.SetInitialData(m_Indices.data())
+			.Create();
 	}
 
-	void VertexBufferTest::Update(float deltaTime)
+	void IndexBufferTest::Update(float deltaTime)
 	{
 		m_CommandList->Begin();
 		m_CommandList->Clear();
-		m_CommandList->Draw(m_Pipeline, m_VertexBuffer);
+		m_CommandList->DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
 		m_CommandList->End();
 	}
 
-	void VertexBufferTest::CleanupGraphics()
+	void IndexBufferTest::CleanupGraphics()
 	{
+		if (m_IndexBuffer)
+		{
+			m_IndexBuffer->Destroy();
+			m_IndexBuffer = nullptr;
+		}
+
 		if (m_VertexBuffer)
 		{
 			m_VertexBuffer->Destroy();

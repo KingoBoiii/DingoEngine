@@ -3,6 +3,7 @@
 #include "Tests/Graphics/ClearColorTest.h"
 #include "Tests/Graphics/StaticTriangleTest.h"
 #include "Tests/Graphics/VertexBufferTest.h"
+#include "Tests/Graphics/IndexBufferTest.h"
 
 #include <imgui.h>
 
@@ -21,6 +22,7 @@ namespace Dingo
 		m_Tests.push_back({ "Clear Color Test", []() { return new ClearColorTest(); } });
 		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
 		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
+		m_Tests.push_back({ "Index Buffer Test", []() { return new IndexBufferTest(); } });
 
 		m_CurrentTest = new ClearColorTest();
 		m_CurrentTest->Initialize();
@@ -147,8 +149,6 @@ namespace Dingo
 
 		// Tests Panel
 		ImGui::Begin("Tests", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-
-		ImGui::Text("Tests Window");
 
 		for (auto& test : m_Tests)
 		{
