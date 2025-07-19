@@ -4,18 +4,6 @@
 
 #include <imgui.h>
 
-static void HelpMarker(const char* desc)
-{
-	ImGui::TextDisabled("(?)");
-	if (ImGui::BeginItemTooltip())
-	{
-		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-		ImGui::TextUnformatted(desc);
-		ImGui::PopTextWrapPos();
-		ImGui::EndTooltip();
-	}
-}
-
 namespace Dingo
 {
 
@@ -131,60 +119,42 @@ namespace Dingo
 				ImGui::EndMenu();
 			}
 
-			if (ImGui::BeginMenu("Options"))
-			{
-				// Disabling fullscreen would allow the window to be moved to the front of other windows,
-				// which we can't undo at the moment without finer window depth/z control.
-				ImGui::MenuItem("Fullscreen", NULL, &opt_fullscreen);
-				ImGui::MenuItem("Padding", NULL, &opt_padding);
-				ImGui::Separator();
-
-				if (ImGui::MenuItem("Flag: NoDockingOverCentralNode", "", (dockspace_flags & ImGuiDockNodeFlags_NoDockingOverCentralNode) != 0)) { dockspace_flags ^= ImGuiDockNodeFlags_NoDockingOverCentralNode; }
-				if (ImGui::MenuItem("Flag: NoDockingSplit", "", (dockspace_flags & ImGuiDockNodeFlags_NoDockingSplit) != 0)) { dockspace_flags ^= ImGuiDockNodeFlags_NoDockingSplit; }
-				if (ImGui::MenuItem("Flag: NoUndocking", "", (dockspace_flags & ImGuiDockNodeFlags_NoUndocking) != 0)) { dockspace_flags ^= ImGuiDockNodeFlags_NoUndocking; }
-				if (ImGui::MenuItem("Flag: NoResize", "", (dockspace_flags & ImGuiDockNodeFlags_NoResize) != 0)) { dockspace_flags ^= ImGuiDockNodeFlags_NoResize; }
-				if (ImGui::MenuItem("Flag: AutoHideTabBar", "", (dockspace_flags & ImGuiDockNodeFlags_AutoHideTabBar) != 0)) { dockspace_flags ^= ImGuiDockNodeFlags_AutoHideTabBar; }
-				if (ImGui::MenuItem("Flag: PassthruCentralNode", "", (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode) != 0, opt_fullscreen)) { dockspace_flags ^= ImGuiDockNodeFlags_PassthruCentralNode; }
-				ImGui::EndMenu();
-			}
-			HelpMarker(
-				"When docking is enabled, you can ALWAYS dock MOST window into another! Try it now!" "\n"
-				"- Drag from window title bar or their tab to dock/undock." "\n"
-				"- Drag from window menu button (upper-left button) to undock an entire node (all windows)." "\n"
-				"- Hold SHIFT to disable docking (if io.ConfigDockingWithShift == false, default)" "\n"
-				"- Hold SHIFT to enable docking (if io.ConfigDockingWithShift == true)" "\n"
-				"This demo app has nothing to do with enabling docking!" "\n\n"
-				"This demo app only demonstrate the use of ImGui::DockSpace() which allows you to manually create a docking node _within_ another window." "\n\n"
-				"Read comments in ShowExampleAppDockSpace() for more details.");
-
 			ImGui::EndMenuBar();
 		}
 
 		ImGui::End();
 
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+		// Tests Panel
+		ImGui::Begin("Tests", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-		ImGui::Begin("MainWindow", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
-
-		ImGui::PopStyleVar(1);
-
-		ImGui::BeginChild("Tests", ImVec2(300, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
 		ImGui::Text("Tests Window");
+		// ... (your test list UI here)
 
-		ImGui::EndChild();
+		ImGui::End();
 
-		ImGui::SameLine();
+		// Properties Panel
+		ImGui::Begin("Properties", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-		ImGui::BeginChild("Viewport", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
+		ImGui::Text("Properties Panel");
+		if (m_CurrentTest)
+		{
+			m_CurrentTest->ImGuiRender();
+		}
+
+		ImGui::End();
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+		// Viewport Panel
+		ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
 		auto viewport = ImGui::GetContentRegionAvail();
 		m_CurrentTest->Resize(static_cast<uint32_t>(viewport.x), static_cast<uint32_t>(viewport.y));
-
 		ImGui::Image(m_CurrentTest->GetResult()->GetTextureHandle(), viewport);
 
-		ImGui::EndChild();
-
 		ImGui::End();
+
+		ImGui::PopStyleVar();
 
 		ImGui::ShowDemoWindow();
 
