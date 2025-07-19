@@ -98,11 +98,7 @@ void main()
 		io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;  // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
 		io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports;  // We can create multi-viewports on the Renderer side (optional)
 
-		m_Shader = ShaderBuilder()
-			.SetName("ImGuiRenderer")
-			.SetSourceCode(ImGuiShaderSourceCode)
-			.SetReflect(false)
-			.Create();
+		m_Shader = Shader::CreateFromSource("ImGuiRenderer", ImGuiShaderSourceCode, false);
 
 		// create attribute layout object
 		nvrhi::VertexAttributeDesc vertexAttribLayout[] = {
