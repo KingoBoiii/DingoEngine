@@ -5,6 +5,7 @@
 #include "Tests/Graphics/VertexBufferTest.h"
 #include "Tests/Graphics/IndexBufferTest.h"
 #include "Tests/Graphics/UniformBufferTest.h"
+#include "Tests/Graphics/TextureTest.h"
 
 #include <imgui.h>
 
@@ -25,6 +26,7 @@ namespace Dingo
 		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
 		m_Tests.push_back({ "Index Buffer Test", []() { return new IndexBufferTest(); } });
 		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
+		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
 
 		m_CurrentTest = new ClearColorTest();
 		m_CurrentTest->Initialize();

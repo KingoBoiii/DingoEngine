@@ -1,4 +1,4 @@
-#include "UniformBufferTest.h"
+#include "TextureTest.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -6,7 +6,7 @@
 namespace Dingo
 {
 
-	void UniformBufferTest::InitializeGraphics()
+	void TextureTest::InitializeGraphics()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -14,30 +14,37 @@ namespace Dingo
 
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec3 inColor;
+layout(location = 2) in vec2 inTexCoord;
 
 layout (std140, set = 0, binding = 0) uniform Camera {
 	mat4 ProjectionView;
 };
 
-layout(location = 1) out vec3 fragColor;
+layout(location = 0) out vec3 vColor;
+layout(location = 1) out vec2 vTexCoord;
 
 void main() {
     gl_Position = ProjectionView * vec4(inPosition, 0.0, 1.0);
-    fragColor = inColor;
+    vColor = inColor;
+    vTexCoord = inTexCoord;
 }
 
 #type fragment
 #version 450
 
 layout(location = 0) out vec4 outColor;
-layout(location = 1) in vec3 fragColor;
+
+layout(location = 0) in vec3 vColor;
+layout(location = 1) in vec2 vTexCoord;
+
+layout(set = 0, binding = 1) uniform texture2D uTexture;
+layout(set = 0, binding = 2) uniform sampler uTextureSampler;
 
 void main() {
-    outColor = vec4(fragColor, 1.0);
+    outColor = texture(sampler2D(uTexture, uTextureSampler), vTexCoord);
+    //outColor = texture(uTextureSampler, vTexCoord);
 }
 )";
-
-		m_Shader = Shader::CreateFromSource("Uniform Buffer Shader", ShaderSource);
 
 		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
 			.SetDebugName("Uniform Buffer")
@@ -47,25 +54,45 @@ void main() {
 			.SetDirectUpload(false)
 			.Create();
 
-		VertexLayout vertexLayout = VertexLayout()
-			.SetStride(sizeof(Vertex))
-			.AddAttribute("inPosition", Format::RG32_FLOAT, 0)
-			.AddAttribute("inColor", Format::RGB32_FLOAT, sizeof(glm::vec2));
+		uint32_t width, height, channels;
+		const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);
 
-		m_Pipeline = PipelineBuilder()
-			.SetDebugName("Uniform Buffer Pipeline")
+		Dingo::TextureParams textureParams = {
+			.DebugName = "Wooden Container",
+			.Width = width,
+			.Height = height,
+			.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
+			.Dimension = Dingo::TextureDimension::Texture2D,
+		};
+
+		m_Texture = Dingo::Texture::Create(textureParams);
+		m_Texture->Initialize();
+		m_Texture->Upload(textureData, width * channels);
+		//m_Texture->Upload("assets/textures/dickbutt_transparent.png");
+
+		m_Shader = Dingo::Shader::CreateFromSource("Texture Shader", ShaderSource);
+
+		Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
+			.SetStride(sizeof(Vertex))
+			.AddAttribute("inPosition", Format::RG32_FLOAT, offsetof(Vertex, position))
+			.AddAttribute("inColor", Format::RGB32_FLOAT, offsetof(Vertex, color))
+			.AddAttribute("inTexCoord", Format::RG32_FLOAT, offsetof(Vertex, texCoord));
+
+		m_Pipeline = Dingo::PipelineBuilder()
+			.SetDebugName("Texture Quad Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Framebuffer)
-			.SetFillMode(FillMode::Solid)
-			.SetCullMode(CullMode::BackAndFront)
+			.SetFillMode(Dingo::FillMode::Solid)
+			.SetCullMode(Dingo::CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
 			.SetUniformBuffer(m_UniformBuffer)
+			.SetTexture(m_Texture)
 			.Create();
 
-		m_VertexBuffer = GraphicsBufferBuilder()
+		m_VertexBuffer = Dingo::GraphicsBufferBuilder()
 			.SetDebugName("Vertex Buffer")
 			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-			.SetType(BufferType::VertexBuffer)
+			.SetType(Dingo::BufferType::VertexBuffer)
 			.SetDirectUpload(true)
 			.SetInitialData(m_Vertices.data())
 			.Create();
@@ -73,13 +100,13 @@ void main() {
 		m_IndexBuffer = Dingo::GraphicsBufferBuilder()
 			.SetDebugName("Index Buffer")
 			.SetByteSize(sizeof(uint16_t) * m_Indices.size())
-			.SetType(BufferType::IndexBuffer)
+			.SetType(Dingo::BufferType::IndexBuffer)
 			.SetDirectUpload(true)
 			.SetInitialData(m_Indices.data())
 			.Create();
 	}
 
-	void UniformBufferTest::Update(float deltaTime)
+	void TextureTest::Update(float deltaTime)
 	{
 		const glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), m_AspectRatio, 0.1f, 100.0f) * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f));
 		m_UniformBuffer->Upload(&projectionMatrix, sizeof(CameraTransform));
@@ -90,12 +117,18 @@ void main() {
 		m_CommandList->End();
 	}
 
-	void UniformBufferTest::CleanupGraphics()
+	void TextureTest::CleanupGraphics()
 	{
+		if (m_Texture)
+		{
+			m_Texture->Destroy();
+			m_Texture= nullptr;
+		}
+
 		if (m_UniformBuffer)
 		{
 			m_UniformBuffer->Destroy();
-			m_UniformBuffer= nullptr;
+			m_UniformBuffer = nullptr;
 		}
 
 		if (m_IndexBuffer)
