@@ -122,6 +122,12 @@ namespace Dingo
 			m_SwapChain->Present();
 
 			m_GraphicsContext->RunGarbageCollection();
+
+			// Execute any post-execution callbacks
+			for (const auto& callback : m_PostExecutionCallbacks)
+			{
+				callback();
+			}
 		}
 	}
 
