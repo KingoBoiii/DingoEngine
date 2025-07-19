@@ -9,7 +9,6 @@ namespace Dingo
 	class StaticTriangleTest : public GraphicsTest
 	{
 	public:
-		StaticTriangleTest() = default;
 		virtual ~StaticTriangleTest() = default;
 
 	public:

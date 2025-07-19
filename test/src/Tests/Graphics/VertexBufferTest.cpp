@@ -1,0 +1,87 @@
+#include "VertexBufferTest.h"
+
+namespace Dingo
+{
+
+	void VertexBufferTest::InitializeGraphics()
+	{
+		static const char* ShaderSource = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec2 inPosition;
+layout(location = 1) in vec3 inColor;
+
+layout(location = 1) out vec3 fragColor;
+
+void main() {
+    gl_Position = vec4(inPosition, 0.0, 1.0);
+    fragColor = inColor;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) out vec4 outColor;
+layout(location = 1) in vec3 fragColor;
+
+void main() {
+    outColor = vec4(fragColor, 1.0);
+}
+)";
+
+		m_Shader = Shader::CreateFromSource("Vertex Buffer Shader", ShaderSource);
+
+		Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
+			.SetStride(sizeof(Vertex))
+			.AddAttribute("inPosition", Format::RG32_FLOAT, 0)
+			.AddAttribute("inColor", Format::RGB32_FLOAT, sizeof(glm::vec2));
+
+		m_Pipeline = Dingo::PipelineBuilder()
+			.SetDebugName("Vertex Buffer Triangle Pipeline")
+			.SetShader(m_Shader)
+			.SetFramebuffer(m_Framebuffer)
+			.SetFillMode(Dingo::FillMode::Solid)
+			.SetCullMode(Dingo::CullMode::BackAndFront)
+			.SetVertexLayout(vertexLayout)
+			.Create();
+
+		m_VertexBuffer = Dingo::GraphicsBufferBuilder()
+			.SetDebugName("Quad Vertex Buffer")
+			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
+			.SetType(Dingo::BufferType::VertexBuffer)
+			.SetDirectUpload(true)
+			.SetInitialData(m_Vertices.data())
+			.Create();
+	}
+
+	void VertexBufferTest::Update(float deltaTime)
+	{
+		m_CommandList->Begin();
+		m_CommandList->Clear();
+		m_CommandList->Draw(m_Pipeline, m_VertexBuffer);
+		m_CommandList->End();
+	}
+
+	void VertexBufferTest::CleanupGraphics()
+	{
+		if (m_VertexBuffer)
+		{
+			m_VertexBuffer->Destroy();
+			m_VertexBuffer = nullptr;
+		}
+
+		if (m_Pipeline)
+		{
+			m_Pipeline->Destroy();
+			m_Pipeline = nullptr;
+		}
+
+		if (m_Shader)
+		{
+			m_Shader->Destroy();
+			m_Shader = nullptr;
+		}
+	}
+
+}

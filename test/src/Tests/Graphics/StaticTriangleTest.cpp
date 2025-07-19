@@ -3,7 +3,9 @@
 namespace Dingo
 {
 
-	static const char* s_StaticTriangleVertexShader = R"(
+	void StaticTriangleTest::InitializeGraphics()
+	{
+		static const char* ShaderSource = R"(
 #type vertex
 #version 450
 
@@ -37,9 +39,7 @@ void main() {
 }
 )";
 
-	void StaticTriangleTest::InitializeGraphics()
-	{
-		m_Shader = Shader::CreateFromSource("Static Triangle Shader", s_StaticTriangleVertexShader);
+		m_Shader = Shader::CreateFromSource("Static Triangle Shader", ShaderSource);
 
 		m_Pipeline = Dingo::PipelineBuilder()
 			.SetDebugName("Static Triangle Pipeline")

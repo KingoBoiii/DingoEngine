@@ -2,6 +2,7 @@
 
 #include "Tests/Graphics/ClearColorTest.h"
 #include "Tests/Graphics/StaticTriangleTest.h"
+#include "Tests/Graphics/VertexBufferTest.h"
 
 #include <imgui.h>
 
@@ -19,6 +20,7 @@ namespace Dingo
 		// Register tests
 		m_Tests.push_back({ "Clear Color Test", []() { return new ClearColorTest(); } });
 		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
+		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
 
 		m_CurrentTest = new ClearColorTest();
 		m_CurrentTest->Initialize();
@@ -161,8 +163,6 @@ namespace Dingo
 				m_CurrentTest->Initialize();
 			}
 		}
-
-		// ... (your test list UI here)
 
 		ImGui::End();
 
