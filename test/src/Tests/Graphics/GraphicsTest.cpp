@@ -13,6 +13,8 @@ namespace Dingo
 		.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 		m_Framebuffer->Initialize();
 
+		m_AspectRatio = static_cast<float>(m_Framebuffer->GetParams().Width) / static_cast<float>(m_Framebuffer->GetParams().Height);
+
 		CommandListParams commandListParams = CommandListParams()
 			.SetTargetFramebuffer(m_Framebuffer);
 
@@ -42,6 +44,8 @@ namespace Dingo
 			Application::Get().SubmitPostExecution([this, width, height]()
 			{
 				m_Framebuffer->Resize(width, height);
+
+				m_AspectRatio = static_cast<float>(width) / static_cast<float>(height);
 			});
 		}
 	}

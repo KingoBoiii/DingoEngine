@@ -19,6 +19,8 @@ namespace Dingo
 		virtual void CleanupGraphics() {}
 
 	protected:
+		float m_AspectRatio;
+
 		Framebuffer* m_Framebuffer = nullptr;
 		CommandList* m_CommandList = nullptr;
 	};
