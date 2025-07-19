@@ -112,7 +112,21 @@ namespace Dingo
 		{
 			if (ImGui::BeginMenu("File"))
 			{
-				if (ImGui::MenuItem("Close", NULL, false, p_open != NULL))
+				if (ImGui::MenuItem("Restart to Vulkan", NULL, false, false))
+				{
+				}
+
+				if (ImGui::MenuItem("Restart to DirectX 12", NULL, false, false))
+				{
+				}
+
+				if (ImGui::MenuItem("Restart to DirectX 11", NULL, false, false))
+				{
+				}
+
+				ImGui::Separator();
+
+				if (ImGui::MenuItem("Exit", NULL, false, p_open != NULL))
 				{
 					Application::Get().Close();
 				}
@@ -157,7 +171,6 @@ namespace Dingo
 		ImGui::PopStyleVar();
 
 		ImGui::ShowDemoWindow();
-
 	}
 
 }
