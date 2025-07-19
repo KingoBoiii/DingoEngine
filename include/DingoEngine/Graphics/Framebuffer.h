@@ -1,15 +1,27 @@
 #pragma once
-
-#include <nvrhi/nvrhi.h>
+#include "Enums/TextureFormat.h"
+#include "DingoEngine/Graphics/Texture.h"
 
 namespace Dingo
 {
 
+	struct FramebufferAttachment
+	{
+		TextureFormat Format = TextureFormat::Unknown;
+	};
+
 	struct FramebufferParams
 	{
+		std::string DebugName;
 		int32_t Width;
 		int32_t Height;
-		nvrhi::ITexture* Texture = nullptr;
+		std::vector<FramebufferAttachment> Attachments;
+
+		FramebufferParams& SetDebugName(const std::string& name)
+		{
+			DebugName = name;
+			return *this;
+		}
 
 		FramebufferParams& SetWidth(int32_t width)
 		{
@@ -23,9 +35,9 @@ namespace Dingo
 			return *this;
 		}
 
-		FramebufferParams& SetTexture(nvrhi::ITexture* texture)
+		FramebufferParams& AddAttachment(const FramebufferAttachment& attachment)
 		{
-			Texture = texture;
+			Attachments.push_back(attachment);
 			return *this;
 		}
 	};
@@ -33,7 +45,6 @@ namespace Dingo
 	class Framebuffer
 	{
 	public:
-		static Framebuffer* Create(nvrhi::ITexture* texture);
 		static Framebuffer* Create(const FramebufferParams& params);
 
 	public:
@@ -41,13 +52,17 @@ namespace Dingo
 		virtual ~Framebuffer() = default;
 
 	public:
-		virtual void Initialize();
-		virtual void Destroy();
+		virtual void Initialize() = 0;
+		virtual void Destroy() = 0;
+
+		virtual void Resize(uint32_t width, uint32_t height) = 0;
+
+		virtual Texture* GetAttachment(uint32_t index) const = 0;
+
+		const FramebufferParams& GetParams() const { return m_Params; }
 
 	protected:
 		FramebufferParams m_Params;
-		nvrhi::FramebufferHandle m_FramebufferHandle;
-		nvrhi::Viewport m_Viewport;
 
 		friend class NvrhiPipeline;
 		friend class CommandList;

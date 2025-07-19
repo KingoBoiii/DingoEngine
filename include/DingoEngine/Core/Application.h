@@ -39,6 +39,13 @@ namespace Dingo
 		void PushLayer(Layer* layer);
 		void PushOverlay(Layer* overlay);
 
+		void Close();
+
+		void SubmitPostExecution(const std::function<void()>& callback)
+		{
+			m_PostExecutionCallbacks.push_back(callback);
+		}
+
 		static Application& Get() { return *s_Instance; }
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
@@ -63,6 +70,8 @@ namespace Dingo
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_IsRunning = true;
+
+		std::vector<std::function<void()>> m_PostExecutionCallbacks;
 
 	private:
 		inline static Application* s_Instance = nullptr;

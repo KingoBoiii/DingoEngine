@@ -11,7 +11,7 @@ namespace Dingo
 	struct VertexLayoutAttribute
 	{
 		std::string Name;
-		nvrhi::Format Format;
+		Format Format;
 		uint32_t Offset = 0;
 	};
 
@@ -26,7 +26,7 @@ namespace Dingo
 			return *this;
 		}
 
-		VertexLayout& AddAttribute(const std::string& name, nvrhi::Format format, uint32_t offset)
+		VertexLayout& AddAttribute(const std::string& name, Format format, uint32_t offset)
 		{
 			Attributes.push_back({ name, format, offset });
 			return *this;

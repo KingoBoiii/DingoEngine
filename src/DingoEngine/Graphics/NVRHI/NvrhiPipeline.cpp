@@ -2,6 +2,7 @@
 #include "NvrhiPipeline.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiTexture.h"
+#include "NvrhiFramebuffer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "NvrhiGraphicsContext.h"
@@ -67,7 +68,7 @@ namespace Dingo
 			graphicsPipelineDesc.addBindingLayout(nvrhiShader->m_BindingLayoutHandle);
 		}
 
-		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, m_Params.Framebuffer->m_FramebufferHandle);
+		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle);
 	}
 
 	void NvrhiPipeline::Destroy()
@@ -105,7 +106,7 @@ namespace Dingo
 			nvrhi::VertexAttributeDesc vertexAttributeDesc = nvrhi::VertexAttributeDesc()
 				.setBufferIndex(index)
 				.setName(attribute.Name)
-				.setFormat(attribute.Format)
+				.setFormat((nvrhi::Format)attribute.Format)
 				.setOffset(attribute.Offset)
 				.setElementStride(m_Params.VertexLayout.Stride);
 

@@ -122,6 +122,13 @@ namespace Dingo
 			m_SwapChain->Present();
 
 			m_GraphicsContext->RunGarbageCollection();
+
+			// Execute any post-execution callbacks
+			for (const auto& callback : m_PostExecutionCallbacks)
+			{
+				callback();
+			}
+			m_PostExecutionCallbacks.clear();
 		}
 	}
 
@@ -135,6 +142,11 @@ namespace Dingo
 	{
 		m_LayerStack.PushOverlay(overlay);
 		overlay->OnAttach();
+	}
+
+	void Application::Close()
+	{
+		m_IsRunning = false;
 	}
 
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)

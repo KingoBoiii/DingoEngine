@@ -2,7 +2,7 @@ include "./vendor/premake/solution_items.lua"
 
 workspace "DingoEngine"
     configurations { "Debug", "Debug-ASan", "Release" }
-    startproject "Sandbox"
+    startproject "Dingo-TestFramework"
     language "C++"
 	cppdialect "C++20"
 	staticruntime "Off"
@@ -159,6 +159,8 @@ group "Engine"
 				"%{Library.SPIRV_Cross_GLSL_Release}"
 			}
 group ""
+
+include "test"
 
 group "Examples"
     include "examples/Sandbox"

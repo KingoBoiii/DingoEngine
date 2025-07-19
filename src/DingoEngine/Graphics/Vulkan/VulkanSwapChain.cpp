@@ -310,10 +310,9 @@ namespace Dingo
 		{
 			FramebufferParams framebufferParams = FramebufferParams()
 				.SetWidth(m_Params.Width)
-				.SetHeight(m_Params.Height)
-				.SetTexture(m_SwapChainImages[index].rhiHandle);
+				.SetHeight(m_Params.Height);
 
-			m_SwapChainFramebuffers[index] = Framebuffer::Create(framebufferParams);
+			m_SwapChainFramebuffers[index] = VulkanFramebuffer::Create(m_SwapChainImages[index].rhiHandle, framebufferParams);
 			m_SwapChainFramebuffers[index]->Initialize();
 		}
 	}

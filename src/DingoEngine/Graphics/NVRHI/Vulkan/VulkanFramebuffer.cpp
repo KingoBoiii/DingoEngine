@@ -1,28 +1,55 @@
 #include "depch.h"
 #include "VulkanFramebuffer.h"
-#include "VulkanGraphicsContext.h"
 
-#include <nvrhi/vulkan.h>
+#include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Vulkan/VulkanGraphicsContext.h"
 
 namespace Dingo
 {
 
-	VulkanFramebuffer::VulkanFramebuffer(const FramebufferParams& params)
-		: Framebuffer(params)
-	{}
+	VulkanFramebuffer* VulkanFramebuffer::Create(nvrhi::ITexture* texture, const FramebufferParams& params)
+	{
+		return new VulkanFramebuffer(texture, params);
+	}
 
 	void VulkanFramebuffer::Initialize()
 	{
 		// 1. Get the Vulkan image view and format from the nvrhi texture
-		auto textureViewObj = m_Params.Texture->getNativeView(nvrhi::ObjectTypes::VK_ImageView, m_Params.Texture->getDesc().format);
+		auto textureViewObj = m_Texture->getNativeView(nvrhi::ObjectTypes::VK_ImageView, m_Texture->getDesc().format);
 		VkImageView imageView = reinterpret_cast<VkImageView>(textureViewObj.pointer);
 
-		VkFormat colorFormat = static_cast<VkFormat>(m_Params.Texture->getDesc().format);
+		VkFormat colorFormat = static_cast<VkFormat>(m_Texture->getDesc().format);
 
-		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+		VulkanGraphicsContext& graphicsContext = GraphicsContext::Get().As<VulkanGraphicsContext>();
+
+		vk::RenderPass renderPass = CreateRenderPass();
+
+		vk::FramebufferCreateInfo framebufferCreateInfo = vk::FramebufferCreateInfo()
+			.setRenderPass(renderPass)
+			.setAttachmentCount(1)
+			.setPAttachments((vk::ImageView*)&imageView)
+			.setWidth(m_Texture->getDesc().width)
+			.setHeight(m_Texture->getDesc().height)
+			.setLayers(1);
+
+		//framebufferCreateInfo.pAttachments = &imageView;
+
+		vk::Framebuffer framebuffer = graphicsContext.GetDeviceHandle().createFramebuffer(framebufferCreateInfo);
+
+		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc()
+			.addColorAttachment(m_Texture);
+
+		m_FramebufferHandle = graphicsContext.GetNvrhiDevice()->createHandleForNativeFramebuffer(renderPass, framebuffer, framebufferDesc, true);
+
+		m_Viewport = nvrhi::Viewport(static_cast<float>(m_Params.Width), static_cast<float>(m_Params.Height));
+	}
+
+	vk::RenderPass VulkanFramebuffer::CreateRenderPass()
+	{
+		VulkanGraphicsContext& graphicsContext = GraphicsContext::Get().As<VulkanGraphicsContext>();
 
 		vk::AttachmentDescription attachmentDescription = vk::AttachmentDescription()
-			.setFormat(vk::Format(nvrhi::vulkan::convertFormat(m_Params.Texture->getDesc().format)))
+			.setFormat(vk::Format(nvrhi::vulkan::convertFormat(m_Texture->getDesc().format)))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eNone)
 			.setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -56,26 +83,7 @@ namespace Dingo
 			.setDependencyCount(1)
 			.setPDependencies(&subpassDependency);
 
-		vk::RenderPass renderPass = graphicsContext.GetDeviceHandle().createRenderPass(renderPassCreateInfo);
-
-		vk::FramebufferCreateInfo framebufferCreateInfo = vk::FramebufferCreateInfo()
-			.setRenderPass(renderPass)
-			.setAttachmentCount(1)
-			.setPAttachments((vk::ImageView*)&imageView)
-			.setWidth(m_Params.Texture->getDesc().width)
-			.setHeight(m_Params.Texture->getDesc().height)
-			.setLayers(1);
-
-		//framebufferCreateInfo.pAttachments = &imageView;
-
-		vk::Framebuffer framebuffer = graphicsContext.GetDeviceHandle().createFramebuffer(framebufferCreateInfo);
-
-		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc()
-			.addColorAttachment(m_Params.Texture);
-
-		m_FramebufferHandle = graphicsContext.GetNvrhiDevice()->createHandleForNativeFramebuffer(renderPass, framebuffer, framebufferDesc, true);
-
-		m_Viewport = nvrhi::Viewport(static_cast<float>(m_Params.Width), static_cast<float>(m_Params.Height));
+		return graphicsContext.GetDeviceHandle().createRenderPass(renderPassCreateInfo);
 	}
 
 }

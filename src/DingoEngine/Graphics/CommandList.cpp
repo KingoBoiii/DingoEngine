@@ -9,6 +9,7 @@
 #include "NVRHI/NvrhiGraphicsContext.h"
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 #include "NVRHI/NvrhiPipeline.h"
+#include "NVRHI/NvrhiFramebuffer.h"
 
 namespace Dingo
 {
@@ -24,7 +25,7 @@ namespace Dingo
 
 	void CommandList::Initialize()
 	{
-		DE_CORE_ASSERT(m_Params.TargetSwapChain, "CommandList must target a swap chain - does not support otherwise atm.");
+		DE_CORE_ASSERT(m_Params.TargetSwapChain || m_Params.TargetFramebuffer, "CommandList must target a swap chain - does not support otherwise atm.");
 
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 			//.setEnableImmediateExecution(false) // Set to true for immediate execution, false for deferred execution
@@ -49,6 +50,11 @@ namespace Dingo
 		{
 			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
 		}
+
+		if (m_Params.TargetFramebuffer)
+		{
+			m_TargetFramebuffer = m_Params.TargetFramebuffer;
+		}
 	}
 
 	void CommandList::End()
@@ -61,7 +67,12 @@ namespace Dingo
 
 	void CommandList::Clear()
 	{
-		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, m_TargetFramebuffer->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
+	}
+
+	void CommandList::Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor)
+	{
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
 	}
 
 	void CommandList::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
@@ -69,8 +80,8 @@ namespace Dingo
 		// Set the graphics state: pipeline, framebuffer, viewport, bindings.
 		auto& graphicsState = nvrhi::GraphicsState()
 			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
-			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_Viewport));
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
@@ -95,9 +106,9 @@ namespace Dingo
 		auto& graphicsState = nvrhi::GraphicsState()
 			.addVertexBuffer(vertexBufferBinding)
 			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
-			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_Viewport));
 
 		m_CommandListHandle->setGraphicsState(graphicsState);
 
@@ -131,9 +142,9 @@ namespace Dingo
 			.addVertexBuffer(vertexBufferBinding)
 			.setIndexBuffer(indexBufferBinding)
 			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
-			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_Viewport));
 
 		if (static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle)
 		{
@@ -177,9 +188,9 @@ namespace Dingo
 			.addVertexBuffer(vertexBufferBinding)
 			.setIndexBuffer(indexBufferBinding)
 			.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle)
-			.setFramebuffer(m_TargetFramebuffer->m_FramebufferHandle)
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle)
 			.addVertexBuffer(vertexBufferBinding)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(m_TargetFramebuffer->m_Viewport));
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_Viewport));
 
 		if (static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle)
 		{
