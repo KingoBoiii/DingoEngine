@@ -2,7 +2,7 @@ include "./vendor/premake/solution_items.lua"
 
 workspace "DingoEngine"
     configurations { "Debug", "Debug-ASan", "Release" }
-    startproject "Sandbox"
+    startproject "Dingo-TestFramework"
     language "C++"
 	cppdialect "C++20"
 	staticruntime "Off"
