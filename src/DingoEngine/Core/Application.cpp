@@ -128,6 +128,7 @@ namespace Dingo
 			{
 				callback();
 			}
+			m_PostExecutionCallbacks.clear();
 		}
 	}
 
