@@ -1,6 +1,7 @@
 #include "TestLayer.h"
 
-#include "Tests/ClearColorTest.h"
+#include "Tests/Graphics/ClearColorTest.h"
+#include "Tests/Graphics/StaticTriangleTest.h"
 
 #include <imgui.h>
 
@@ -14,6 +15,10 @@ namespace Dingo
 
 		m_CommandList = CommandList::Create(commandListParams);
 		m_CommandList->Initialize();
+
+		// Register tests
+		m_Tests.push_back({ "Clear Color Test", []() { return new ClearColorTest(); } });
+		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
 
 		m_CurrentTest = new ClearColorTest();
 		m_CurrentTest->Initialize();
@@ -142,6 +147,21 @@ namespace Dingo
 		ImGui::Begin("Tests", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
 		ImGui::Text("Tests Window");
+
+		for (auto& test : m_Tests)
+		{
+			if (ImGui::Selectable(test.first.c_str(), m_CurrentTest == test.second()))
+			{
+				if (m_CurrentTest)
+				{
+					m_CurrentTest->Cleanup();
+					delete m_CurrentTest;
+				}
+				m_CurrentTest = test.second();
+				m_CurrentTest->Initialize();
+			}
+		}
+
 		// ... (your test list UI here)
 
 		ImGui::End();

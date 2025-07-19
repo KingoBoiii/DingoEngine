@@ -1,32 +1,26 @@
 #pragma once
-#include "Test.h"
-
-#include <DingoEngine.h>
+#include "Tests/Test.h"
 
 namespace Dingo
 {
-	class ClearColorTest : public Test
+
+	class GraphicsTest : public Test
 	{
 	public:
-		ClearColorTest() = default;
-		virtual ~ClearColorTest() = default;
-
-	public:
 		virtual void Initialize() override;
-		virtual void Update(float deltaTime) override;
 		virtual void Cleanup() override;
-
-		virtual void ImGuiRender() override;
 
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
 		virtual Texture* GetResult() override { return m_Framebuffer->GetAttachment(0); }
 
-	private:
+	protected:
+		virtual void InitializeGraphics() {}
+		virtual void CleanupGraphics() {}
+
+	protected:
 		Framebuffer* m_Framebuffer = nullptr;
 		CommandList* m_CommandList = nullptr;
-
-		glm::vec3 m_ClearColor = glm::vec3(0.0f, 0.0f, 0.0f);
 	};
 
-} // namespace Dingo
+}
