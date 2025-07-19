@@ -10,7 +10,4 @@ namespace Dingo
 		PushLayer(new TestLayer());
 	}
 
-	void TestFrameworkApplication::OnDestroy()
-	{}
-
 }

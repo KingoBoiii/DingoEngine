@@ -14,7 +14,6 @@ namespace Dingo
 
 	protected:
 		virtual void OnInitialize() override;
-		virtual void OnDestroy() override;
 	};
 
 }
