@@ -1,5 +1,7 @@
 #include "ClearColorTest.h"
 
+#include <imgui.h>
+
 namespace Dingo
 {
 
@@ -22,7 +24,7 @@ namespace Dingo
 	void ClearColorTest::Update(float deltaTime)
 	{
 		m_CommandList->Begin();
-		m_CommandList->Clear();
+		m_CommandList->Clear(m_Framebuffer, 0, m_ClearColor);
 		m_CommandList->End();
 	}
 
@@ -35,6 +37,11 @@ namespace Dingo
 			m_Framebuffer->Destroy();
 			m_Framebuffer = nullptr;
 		}
+	}
+
+	void ClearColorTest::ImGuiRender()
+	{
+		ImGui::ColorEdit3("Clear Color", (float*)&m_ClearColor);
 	}
 
 	void ClearColorTest::Resize(uint32_t width, uint32_t height)
