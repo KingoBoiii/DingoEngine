@@ -40,7 +40,7 @@ void main() {
 		m_Pipeline = PipelineBuilder()
 			.SetDebugName("Vertex Buffer Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(m_Framebuffer)
+			.SetFramebuffer(m_Renderer->GetFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
@@ -57,10 +57,10 @@ void main() {
 
 	void VertexBufferTest::Update(float deltaTime)
 	{
-		m_CommandList->Begin();
-		m_CommandList->Clear();
-		m_CommandList->Draw(m_Pipeline, m_VertexBuffer);
-		m_CommandList->End();
+		m_Renderer->Begin();
+		m_Renderer->Clear(m_ClearColor);
+		m_Renderer->Draw(m_Pipeline, m_VertexBuffer);
+		m_Renderer->End();
 	}
 
 	void VertexBufferTest::CleanupGraphics()

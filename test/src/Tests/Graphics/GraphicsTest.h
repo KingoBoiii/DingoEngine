@@ -13,7 +13,7 @@ namespace Dingo
 
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
-		virtual Texture* GetResult() override { return m_Renderer ? m_Renderer->GetOutput() : m_Framebuffer->GetAttachment(0); }
+		virtual Texture* GetResult() override { return m_Renderer->GetOutput(); }
 
 	protected:
 		virtual void InitializeGraphics() {}
@@ -21,11 +21,9 @@ namespace Dingo
 
 	protected:
 		float m_AspectRatio;
+		glm::vec4 m_ClearColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
 		TestRenderer* m_Renderer = nullptr;
-
-		Framebuffer* m_Framebuffer = nullptr;
-		CommandList* m_CommandList = nullptr;
 	};
 
 }

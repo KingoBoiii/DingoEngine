@@ -16,8 +16,6 @@ namespace Dingo
 
 		virtual void ImGuiRender() override;
 		
-	private:
-		glm::vec4 m_ClearColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 	};
 
 } // namespace Dingo

@@ -25,6 +25,7 @@ namespace Dingo
 		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer) override;
 		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer) override;
 
+		Framebuffer* GetFramebuffer() const { return m_Framebuffer; }
 		virtual Texture* GetOutput() const override { return m_Framebuffer->GetAttachment(0); }
 
 	private:
