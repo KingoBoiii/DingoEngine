@@ -69,31 +69,26 @@ namespace Dingo
 			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
 		}
 
+		std::unordered_map<ShaderType, std::string> sources = GetShaderSources();
+		if (sources.empty())
+		{
+			DE_CORE_ERROR("No shader sources found. Cannot initialize shader.");
+			return; // No sources to compile
+		}
+
 		ShaderCompiler shaderCompiler;
 
-		std::unordered_map<ShaderType, std::string> sources;
-
-		if (m_Params.FilePath.empty())
+		std::unordered_map<ShaderType, std::vector<uint32_t>> spvBinaries = CompileOrGetShaderBinaries(sources, name, shaderCompiler);
+		if (spvBinaries.empty())
 		{
-			sources = PreProcess(m_Params.SourceCode);
-		}
-		else
-		{
-			std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
-			if (source.empty())
-			{
-				DE_CORE_ERROR("Shader source is empty for file: {}", m_Params.FilePath.string());
-				return; // Skip initialization if the source is empty
-			}
-
-			sources = PreProcess(source);
+			DE_CORE_ERROR("No shader binaries found. Cannot initialize shader.");
+			return; // No binaries to create shader handles
 		}
 
+		// Create shader handles for each shader type
 		std::vector<ShaderReflection> reflections;
-		for (const auto& [shaderType, source] : sources)
+		for (const auto& [shaderType, binaries] : spvBinaries)
 		{
-			const std::vector<uint32_t>& binaries = shaderCompiler.CompileGLSL(shaderType, source, name);
-
 			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
 
 			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
@@ -119,39 +114,6 @@ namespace Dingo
 		{
 			m_BindingLayoutHandle->Release();
 		}
-	}
-
-	std::unordered_map<ShaderType, std::string> NvrhiShader::PreProcess(const std::string& source)
-	{
-		std::unordered_map<ShaderType, std::string> sources;
-
-		const char* typeToken = "#type";
-		size_t typeTokenLength = strlen(typeToken);
-		size_t pos = source.find(typeToken, 0); //Start of shader type declaration line
-		while (pos != std::string::npos)
-		{
-			size_t eol = source.find_first_of("\r\n", pos); //End of shader type declaration line
-			DE_CORE_ASSERT(eol != std::string::npos, "Syntax error");
-			size_t begin = pos + typeTokenLength + 1; //Start of shader type name (after "#type " keyword)
-			std::string type = source.substr(begin, eol - begin);
-
-			if (ShaderTypeMap.find(type) == ShaderTypeMap.end())
-			{
-				DE_CORE_ERROR("Unknown shader type: {}", type);
-				DE_CORE_ASSERT(false, "Unknown shader type");
-				return {}; // Return empty map if unknown shader type
-			}
-
-			ShaderType shaderType = ShaderTypeMap[type];
-
-			size_t nextLinePos = source.find_first_not_of("\r\n", eol); //Start of shader code after shader type declaration line
-			DE_CORE_ASSERT(nextLinePos != std::string::npos, "Syntax error");
-			pos = source.find(typeToken, nextLinePos); //Start of next shader type declaration line
-
-			sources[shaderType] = (pos == std::string::npos) ? source.substr(nextLinePos) : source.substr(nextLinePos, pos - nextLinePos);
-		}
-
-		return sources;
 	}
 
 	nvrhi::ShaderHandle NvrhiShader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName)
@@ -221,6 +183,100 @@ namespace Dingo
 		}
 
 		m_BindingLayoutHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
+	}
+
+	std::unordered_map<ShaderType, std::vector<uint32_t>> NvrhiShader::CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, ShaderCompiler& compiler)
+	{
+		std::unordered_map<ShaderType, std::vector<uint32_t>> result;
+
+		for (const auto& [shaderType, source] : sources)
+		{
+			std::filesystem::path cachePath = std::filesystem::current_path() / ".cache" / "shaders";
+			if(!std::filesystem::exists(cachePath))
+			{
+				std::filesystem::create_directories(cachePath);
+			}
+			std::filesystem::path shaderCacheFilePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
+
+			if (std::filesystem::exists(shaderCacheFilePath))
+			{
+				std::ifstream in(shaderCacheFilePath, std::ios::in | std::ios::binary);
+				DE_CORE_ASSERT(in.is_open(), "Failed to open shader binary cache file: " + shaderCacheFilePath.string());
+
+				in.seekg(0, std::ios::end);
+				auto size = in.tellg();
+				in.seekg(0, std::ios::beg);
+
+				auto& data = result[shaderType];
+				data.resize(size / sizeof(uint32_t));
+				in.read((char*)data.data(), size);
+
+				continue;
+			}
+
+			result[shaderType] = compiler.CompileGLSL(shaderType, source, name);
+
+			std::ofstream out(shaderCacheFilePath, std::ios::out | std::ios::binary);
+			DE_CORE_ASSERT(out.is_open(), "Failed to create shader binary cache file: " + shaderCacheFilePath.string());
+
+			auto& data = result[shaderType];
+			out.write((char*)data.data(), data.size() * sizeof(uint32_t));
+			out.flush();
+			out.close();
+		}
+
+		return result;
+	}
+
+	std::unordered_map<ShaderType, std::string> NvrhiShader::GetShaderSources() const
+	{
+		if (m_Params.FilePath.empty())
+		{
+			// If the shader is created from source code, return the preprocessed sources
+			return PreProcess(m_Params.SourceCode);
+		}
+
+		DE_CORE_ASSERT(!m_Params.FilePath.empty(), "Shader file path is empty. Cannot read shader source.");
+		DE_CORE_ASSERT(std::filesystem::exists(m_Params.FilePath), "Shader file does not exist.");
+
+		std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
+
+		return PreProcess(source);
+	}
+
+	std::unordered_map<ShaderType, std::string> NvrhiShader::PreProcess(const std::string& source) const
+	{
+		DE_CORE_ASSERT(!source.empty(), "Shader source code is empty. Cannot preprocess shader sources.");
+
+		std::unordered_map<ShaderType, std::string> sources;
+
+		const char* typeToken = "#type";
+		size_t typeTokenLength = strlen(typeToken);
+		size_t pos = source.find(typeToken, 0); //Start of shader type declaration line
+		while (pos != std::string::npos)
+		{
+			size_t eol = source.find_first_of("\r\n", pos); //End of shader type declaration line
+			DE_CORE_ASSERT(eol != std::string::npos, "Syntax error");
+			size_t begin = pos + typeTokenLength + 1; //Start of shader type name (after "#type " keyword)
+			std::string type = source.substr(begin, eol - begin);
+
+			if (ShaderTypeMap.find(type) == ShaderTypeMap.end())
+			{
+				DE_CORE_ERROR("Unknown shader type: {}", type);
+				DE_CORE_ASSERT(false, "Unknown shader type");
+				return {}; // Return empty map if unknown shader type
+			}
+
+			ShaderType shaderType = ShaderTypeMap[type];
+
+			size_t nextLinePos = source.find_first_not_of("\r\n", eol); //Start of shader code after shader type declaration line
+			DE_CORE_ASSERT(nextLinePos != std::string::npos, "Syntax error");
+			pos = source.find(typeToken, nextLinePos); //Start of next shader type declaration line
+
+			sources[shaderType] = (pos == std::string::npos) ? source.substr(nextLinePos) : source.substr(nextLinePos, pos - nextLinePos);
+		}
+
+		return sources;
 	}
 
 }
