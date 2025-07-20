@@ -14,12 +14,6 @@ namespace Dingo
 
 	void TestLayer::OnAttach()
 	{
-		CommandListParams commandListParams = CommandListParams()
-			.SetTargetSwapChain(true);
-
-		m_CommandList = CommandList::Create(commandListParams);
-		m_CommandList->Initialize();
-
 		// Register tests
 		m_Tests.push_back({ "Clear Color Test", []() { return new ClearColorTest(); } });
 		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
@@ -40,17 +34,21 @@ namespace Dingo
 			delete m_CurrentTest;
 			m_CurrentTest = nullptr;
 		}
-
-		m_CommandList->Destroy();
 	}
 
 	void TestLayer::OnUpdate(float deltaTime)
 	{
-		m_CurrentTest->Update(deltaTime);
+		if (m_CurrentTest)
+		{
+			m_CurrentTest->Update(deltaTime);
+			return;
+		}
 
-		m_CommandList->Begin();
-		m_CommandList->Clear();
-		m_CommandList->End();
+		Dingo::IRenderer& appRenderer = Application::Get().GetAppRenderer();
+
+		appRenderer.Begin();
+		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });
+		appRenderer.End();
 	}
 
 	void TestLayer::OnImGuiRender()

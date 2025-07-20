@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/Test.h"
+#include "Graphics/TestRenderer.h"
 
 namespace Dingo
 {
@@ -12,7 +13,7 @@ namespace Dingo
 
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
-		virtual Texture* GetResult() override { return m_Framebuffer->GetAttachment(0); }
+		virtual Texture* GetResult() override { return m_Renderer->GetOutput(); }
 
 	protected:
 		virtual void InitializeGraphics() {}
@@ -20,9 +21,9 @@ namespace Dingo
 
 	protected:
 		float m_AspectRatio;
+		glm::vec4 m_ClearColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-		Framebuffer* m_Framebuffer = nullptr;
-		CommandList* m_CommandList = nullptr;
+		TestRenderer* m_Renderer = nullptr;
 	};
 
 }

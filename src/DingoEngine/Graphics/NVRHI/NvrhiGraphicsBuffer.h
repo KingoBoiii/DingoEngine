@@ -32,7 +32,7 @@ namespace Dingo
 	protected:
 		nvrhi::BufferHandle m_BufferHandle;
 
-		friend class CommandList;
+		friend class NvrhiCommandList;
 		friend class NvrhiPipeline;
 	};
 

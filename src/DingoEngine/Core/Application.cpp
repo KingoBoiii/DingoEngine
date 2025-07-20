@@ -3,6 +3,7 @@
 #include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
+#include "DingoEngine/Graphics/AppRenderer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/ImGui/ImGuiLayer.h"
@@ -10,7 +11,6 @@
 
 namespace Dingo
 {
-
 	Application::Application(const ApplicationParams& params)
 		: m_Params(params)
 	{
@@ -42,6 +42,9 @@ namespace Dingo
 			.SetVSync(m_Params.Window.VSync));
 		m_SwapChain->Initialize();
 
+		m_AppRenderer = new AppRenderer(m_SwapChain);
+		m_AppRenderer->Initialize();
+
 		OnInitialize();
 
 		if (m_LayerStack.Empty())
@@ -66,6 +69,13 @@ namespace Dingo
 		OnDestroy();
 
 		m_LayerStack.Clear();
+
+		if (m_AppRenderer)
+		{
+			m_AppRenderer->Shutdown();
+			delete m_AppRenderer;
+			m_AppRenderer = nullptr;
+		}
 
 		if (m_Window)
 		{
@@ -109,7 +119,7 @@ namespace Dingo
 
 			m_Window->Update();
 
-			m_SwapChain->AcquireNextImage();
+			m_AppRenderer->BeginFrame();
 
 			for (Layer* layer : m_LayerStack)
 			{
@@ -126,7 +136,7 @@ namespace Dingo
 				m_ImGuiLayer->End();
 			}
 
-			m_SwapChain->Present();
+			m_AppRenderer->EndFrame();
 
 			m_GraphicsContext->RunGarbageCollection();
 
@@ -154,6 +164,11 @@ namespace Dingo
 	void Application::Close()
 	{
 		m_IsRunning = false;
+	}
+
+	IRenderer& Application::GetAppRenderer() const
+	{
+		return *m_AppRenderer;
 	}
 
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)

@@ -29,7 +29,7 @@ namespace Dingo
 		nvrhi::BindingSetHandle m_BindingSetHandle;
 		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
 
-		friend class CommandList; // Allow CommandList to access private members
+		friend class NvrhiCommandList; // Allow CommandList to access private members
 	};
 
 }
