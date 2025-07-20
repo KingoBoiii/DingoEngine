@@ -50,9 +50,24 @@ namespace Dingo
 		m_CommandList->Clear(0, clearColor);
 	}
 
-	Texture* AppRenderer::GetOutput() const
+	void AppRenderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
-		return m_SwapChain->GetCurrentFramebuffer()->GetAttachment(0);
+		m_CommandList->Draw(pipeline, vertexCount, instanceCount);
+	}
+
+	void AppRenderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
+	{
+		m_CommandList->Draw(pipeline, vertexBuffer, vertexCount, instanceCount);
+	}
+
+	void AppRenderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer)
+	{
+		m_CommandList->DrawIndexed(pipeline, vertexBuffer, indexBuffer);
+	}
+
+	void AppRenderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer)
+	{
+		m_CommandList->DrawIndexed(pipeline, vertexBuffer, indexBuffer, uniformBuffer);
 	}
 
 }

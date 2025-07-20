@@ -20,6 +20,11 @@ namespace Dingo
 		virtual void Resize(uint32_t width, uint32_t height) override;
 		virtual void Clear(const glm::vec4& clearColor) override;
 
+		virtual void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1) override;
+		virtual void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount = 3, uint32_t instanceCount = 1) override;
+		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer) override;
+		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer) override;
+
 		virtual Texture* GetOutput() const override { return m_Framebuffer->GetAttachment(0); }
 
 	private:

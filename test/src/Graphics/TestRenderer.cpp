@@ -60,4 +60,24 @@ namespace Dingo
 		m_CommandList->Clear(0, clearColor);
 	}
 
+	void TestRenderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
+	{
+		m_CommandList->Draw(pipeline, vertexCount, instanceCount);
+	}
+
+	void TestRenderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
+	{
+		m_CommandList->Draw(pipeline, vertexBuffer, vertexCount, instanceCount);
+	}
+
+	void TestRenderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer)
+	{
+		m_CommandList->DrawIndexed(pipeline, vertexBuffer, indexBuffer);
+	}
+
+	void TestRenderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer)
+	{
+		m_CommandList->DrawIndexed(pipeline, vertexBuffer, indexBuffer, uniformBuffer);
+	}
+
 }
