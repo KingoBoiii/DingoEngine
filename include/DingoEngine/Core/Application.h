@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/GraphicsParams.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/SwapChain.h"
+#include "DingoEngine/Graphics/IRenderer.h"
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 
@@ -22,6 +23,7 @@ namespace Dingo
 	};
 
 	class ImGuiLayer;
+	class AppRenderer;
 
 	class Application
 	{
@@ -49,6 +51,7 @@ namespace Dingo
 		static Application& Get() { return *s_Instance; }
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
+		const IRenderer& GetAppRenderer() const;
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 	protected:
@@ -67,6 +70,7 @@ namespace Dingo
 		Window* m_Window = nullptr;
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
+		AppRenderer* m_AppRenderer = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_IsRunning = true;

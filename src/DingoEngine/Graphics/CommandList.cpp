@@ -70,6 +70,11 @@ namespace Dingo
 		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle, 0, nvrhi::Color(0.3f));
 	}
 
+	void CommandList::Clear(uint32_t attachmentIndex, const glm::vec3& clearColor)
+	{
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+	}
+
 	void CommandList::Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor)
 	{
 		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });

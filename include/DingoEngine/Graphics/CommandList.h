@@ -43,6 +43,7 @@ namespace Dingo
 		void End();
 
 		void Clear();
+		void Clear(uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f));
 		void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f));
 
 		void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);

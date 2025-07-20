@@ -7,14 +7,14 @@ namespace Dingo
 
 	void ClearColorTest::Update(float deltaTime)
 	{
-		m_CommandList->Begin();
-		m_CommandList->Clear(m_Framebuffer, 0, m_ClearColor);
-		m_CommandList->End();
+		m_Renderer->Begin();
+		m_Renderer->Clear(m_ClearColor);
+		m_Renderer->End();
 	}
 
 	void ClearColorTest::ImGuiRender()
 	{
-		ImGui::ColorEdit3("Clear Color", (float*)&m_ClearColor);
+		ImGui::ColorEdit4("Clear Color", (float*)&m_ClearColor);
 	}
 
 }
