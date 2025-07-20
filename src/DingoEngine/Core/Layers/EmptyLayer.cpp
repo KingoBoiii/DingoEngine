@@ -18,7 +18,7 @@ namespace Dingo
 		m_CommandList->Destroy();
 	}
 
-	void EmptyLayer::OnUpdate()
+	void EmptyLayer::OnUpdate(float deltaTime)
 	{
 		m_CommandList->Begin();
 		m_CommandList->Clear();

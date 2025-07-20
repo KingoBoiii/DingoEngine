@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 
@@ -98,15 +99,21 @@ namespace Dingo
 
 	void Application::Run()
 	{
+		Timer timer;
+
 		while (m_IsRunning)
 		{
+			float time = timer.Elapsed();
+			m_DeltaTime = time - m_LastFrameTime;
+			m_LastFrameTime = time;
+
 			m_Window->Update();
 
 			m_SwapChain->AcquireNextImage();
 
 			for (Layer* layer : m_LayerStack)
 			{
-				layer->OnUpdate();
+				layer->OnUpdate(m_DeltaTime);
 			}
 
 			if (m_Params.EnableImGui)
