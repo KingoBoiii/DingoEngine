@@ -3,7 +3,7 @@
 #include "ImGuiRenderer.h"
 
 #include "DingoEngine/Core/Application.h"
-#include "DingoEngine/Graphics/Vulkan/VulkanGraphicsContext.h"
+#include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h"
 
 #include <nvrhi/nvrhi.h>
 #include <vulkan/vulkan.hpp>
