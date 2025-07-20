@@ -1,28 +1,17 @@
 #include "depch.h"
 #include "EmptyLayer.h"
+#include "DingoEngine/Core/Application.h"
 
 namespace Dingo
 {
 
-	void EmptyLayer::OnAttach()
-	{
-		CommandListParams commandListParams = CommandListParams()
-			.SetTargetSwapChain(true);
-
-		m_CommandList = CommandList::Create(commandListParams);
-		m_CommandList->Initialize();
-	}
-
-	void EmptyLayer::OnDetach()
-	{
-		m_CommandList->Destroy();
-	}
-
 	void EmptyLayer::OnUpdate(float deltaTime)
 	{
-		m_CommandList->Begin();
-		m_CommandList->Clear();
-		m_CommandList->End();
+		IRenderer& appRenderer = Application::Get().GetAppRenderer();
+
+		appRenderer.Begin();
+		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });
+		appRenderer.End();
 	}
 
 }

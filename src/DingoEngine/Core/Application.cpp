@@ -166,7 +166,7 @@ namespace Dingo
 		m_IsRunning = false;
 	}
 
-	const IRenderer& Application::GetAppRenderer() const
+	IRenderer& Application::GetAppRenderer() const
 	{
 		return *m_AppRenderer;
 	}

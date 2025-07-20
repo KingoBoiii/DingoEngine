@@ -20,8 +20,6 @@ namespace Dingo
 		virtual void OnImGuiRender() override;
 
 	private:
-		CommandList* m_CommandList = nullptr;
-
 		std::vector<std::pair<std::string, std::function<Test*()>>> m_Tests;
 		Test* m_CurrentTest = nullptr;
 	};

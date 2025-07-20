@@ -3,7 +3,7 @@
 #include "Pipeline.h"
 #include "GraphicsBuffer.h"
 
-#include <nvrhi/nvrhi.h>
+#include <glm/glm.hpp>
 
 namespace Dingo
 {
@@ -32,30 +32,32 @@ namespace Dingo
 		static CommandList* Create(const CommandListParams& params = {});
 
 	public:
-		CommandList(const CommandListParams& params);
+		CommandList(const CommandListParams& params) 
+			: m_Params(params)
+		{}
 		~CommandList() = default;
 
 	public:
-		void Initialize();
-		void Destroy();
+		virtual void Initialize() = 0;
+		virtual void Destroy() = 0;
 
-		void Begin();
-		void End();
+		virtual void Begin() = 0;
+		virtual void End() = 0;
 
-		void Clear();
-		void Clear(uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f));
-		void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f));
+		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) = 0;
 
-		void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
-		void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
-		void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer);
-		void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer);
+		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 
-	private:
+		virtual void SetPipeline(Pipeline* pipeline) = 0;
+		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) = 0;
+		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) = 0;
+
+		virtual void Draw(uint32_t vertexCount, uint32_t instanceCount = 1) = 0;
+		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1) = 0;
+
+	protected:
 		CommandListParams m_Params;
 		Framebuffer* m_TargetFramebuffer = nullptr;
-
-		nvrhi::CommandListHandle m_CommandListHandle;
 	};
 
 }

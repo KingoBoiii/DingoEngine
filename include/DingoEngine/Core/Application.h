@@ -51,7 +51,7 @@ namespace Dingo
 		static Application& Get() { return *s_Instance; }
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
-		const IRenderer& GetAppRenderer() const;
+		IRenderer& GetAppRenderer() const;
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 	protected:

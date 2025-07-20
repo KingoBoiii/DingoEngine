@@ -31,7 +31,7 @@ namespace Dingo
 		std::vector<Texture*> m_Attachments;
 
 		friend class NvrhiPipeline; // Allow NvrhiPipeline to access private members
-		friend class CommandList; // Allow CommandList to access private members
+		friend class NvrhiCommandList; // Allow CommandList to access private members
 		friend class ImGuiRenderer; // Allow NvrhiGraphicsContext to access private members
 	};
 
