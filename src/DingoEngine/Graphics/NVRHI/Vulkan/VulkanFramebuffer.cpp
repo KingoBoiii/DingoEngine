@@ -2,7 +2,7 @@
 #include "VulkanFramebuffer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
-#include "DingoEngine/Graphics/Vulkan/VulkanGraphicsContext.h"
+#include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h"
 
 namespace Dingo
 {

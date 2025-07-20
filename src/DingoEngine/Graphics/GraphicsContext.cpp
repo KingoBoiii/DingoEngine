@@ -1,7 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
-#include "Vulkan/VulkanGraphicsContext.h"
+#include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h"
 
 namespace Dingo
 {

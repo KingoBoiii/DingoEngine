@@ -2,7 +2,7 @@
 #include "DingoEngine/Graphics/SwapChain.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
-#include "Vulkan/VulkanSwapChain.h"
+#include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanSwapChain.h"
 
 namespace Dingo
 {
