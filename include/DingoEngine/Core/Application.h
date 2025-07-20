@@ -70,6 +70,8 @@ namespace Dingo
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_IsRunning = true;
+		float m_LastFrameTime = 0.0f;
+		float m_DeltaTime = 0.0f;
 
 		std::vector<std::function<void()>> m_PostExecutionCallbacks;
 

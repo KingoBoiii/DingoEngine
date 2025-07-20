@@ -44,9 +44,9 @@ namespace Dingo
 		m_CommandList->Destroy();
 	}
 
-	void TestLayer::OnUpdate()
+	void TestLayer::OnUpdate(float deltaTime)
 	{
-		m_CurrentTest->Update(0.0f); // Pass deltaTime as needed
+		m_CurrentTest->Update(deltaTime);
 
 		m_CommandList->Begin();
 		m_CommandList->Clear();
