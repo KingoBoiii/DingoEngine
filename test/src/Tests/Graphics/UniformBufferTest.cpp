@@ -86,7 +86,8 @@ void main() {
 
 		m_Renderer->Begin();
 		m_Renderer->Clear(m_ClearColor);
-		m_Renderer->DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer, m_UniformBuffer);
+		m_Renderer->Upload(m_UniformBuffer);
+		m_Renderer->DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
 		m_Renderer->End();
 	}
 

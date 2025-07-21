@@ -23,6 +23,9 @@ namespace Dingo
 		virtual void Resize(uint32_t width, uint32_t height) = 0;
 		virtual void Clear(const glm::vec4& clearColor) = 0;
 
+		virtual void Upload(GraphicsBuffer* buffer) = 0;
+		virtual void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size) = 0;
+
 		virtual void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1) = 0;
 		virtual void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount = 3, uint32_t instanceCount = 1) = 0;
 		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer) = 0;

@@ -50,6 +50,16 @@ namespace Dingo
 		m_CommandList->Clear(m_SwapChain->GetCurrentFramebuffer(), 0, clearColor);
 	}
 
+	void AppRenderer::Upload(GraphicsBuffer* buffer)
+	{
+		m_CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
+	}
+
+	void AppRenderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size)
+	{
+		m_CommandList->UploadBuffer(buffer, data, size);
+	}
+
 	void AppRenderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		m_CommandList->SetPipeline(pipeline);
