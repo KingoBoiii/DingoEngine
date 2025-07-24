@@ -1,5 +1,9 @@
 #pragma once
 
+//#define ENABLE_MEMORY_TRACKING
+
+#ifdef ENABLE_MEMORY_TRACKING
+
 namespace Dingo
 {
 
@@ -30,3 +34,4 @@ void __CRTDECL operator delete[](void* memory);
 #else
 #endif
 
+#endif // ENABLE_MEMORY_TRACKING

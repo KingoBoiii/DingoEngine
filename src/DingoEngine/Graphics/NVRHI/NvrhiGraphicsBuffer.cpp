@@ -43,7 +43,7 @@ namespace Dingo
 			.setIsVolatile(m_Params.IsVolatile)
 			.setByteSize(m_Params.ByteSize);
 
-		if (GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::Vulkan && initialState == nvrhi::ResourceStates::ConstantBuffer)
+		if (GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::Vulkan && (bufferDesc.isConstantBuffer || bufferDesc.isVertexBuffer || bufferDesc.isIndexBuffer))
 		{
 			bufferDesc.setMaxVersions(1); // number of automatic versions, only necessary on Vulkan
 		}

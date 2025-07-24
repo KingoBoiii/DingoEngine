@@ -1,6 +1,8 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include "UI/TestViewportPanel.h"
+
 #include "Tests/Test.h"
 
 namespace Dingo
@@ -20,6 +22,8 @@ namespace Dingo
 		virtual void OnImGuiRender() override;
 
 	private:
+		TestViewportPanel m_TestViewportPanel;
+
 		std::vector<std::pair<std::string, std::function<Test*()>>> m_Tests;
 		Test* m_CurrentTest = nullptr;
 	};

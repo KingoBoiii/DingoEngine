@@ -14,6 +14,7 @@
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/IRenderer.h"
+#include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/Pipeline.h"
