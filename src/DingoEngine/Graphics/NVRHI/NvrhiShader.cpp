@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "NvrhiShader.h"
 
+#include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/ShaderCompiler.h"
@@ -191,11 +192,7 @@ namespace Dingo
 
 		for (const auto& [shaderType, source] : sources)
 		{
-			std::filesystem::path cachePath = std::filesystem::current_path() / ".cache" / "shaders";
-			if(!std::filesystem::exists(cachePath))
-			{
-				std::filesystem::create_directories(cachePath);
-			}
+			const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
 			std::filesystem::path shaderCacheFilePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
 
 			if (std::filesystem::exists(shaderCacheFilePath))

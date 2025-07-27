@@ -2,6 +2,7 @@
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
+#include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Graphics/AppRenderer.h"
 
@@ -27,6 +28,8 @@ namespace Dingo
 	void Application::Initialize()
 	{
 		DE_CORE_ASSERT(s_Instance, "Application already initialized. Cannot initialize again.");
+
+		CacheManager::Initialize();
 
 		m_Window = new Window(m_Params.Window);
 		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
@@ -107,6 +110,8 @@ namespace Dingo
 			//delete m_GraphicsContext;
 			m_GraphicsContext = nullptr;
 		}
+
+		CacheManager::Shutdown();
 	}
 
 	void Application::OnEvent(Event& e)
