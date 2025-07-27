@@ -5,6 +5,7 @@
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
+#include "DingoEngine/Graphics/RenderPass.h"
 
 #include <glm/glm.hpp>
 
@@ -99,6 +100,7 @@ namespace Dingo
 
 			Shader* Shader = nullptr;
 			Pipeline* Pipeline = nullptr;
+			RenderPass* RenderPass = nullptr;
 			GraphicsBuffer* VertexBuffer = nullptr;
 		} m_QuadPipeline;
 	};

@@ -27,6 +27,7 @@ namespace Dingo
 		nvrhi::SamplerHandle m_SamplerHandle;
 
 		friend class NvrhiPipeline;
+		friend class NvrhiRenderPass;
 	};
 
 }

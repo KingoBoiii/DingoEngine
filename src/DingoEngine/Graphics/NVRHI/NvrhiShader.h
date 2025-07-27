@@ -32,6 +32,7 @@ namespace Dingo
 		nvrhi::BindingLayoutHandle m_BindingLayoutHandle;
 
 		friend class NvrhiPipeline;
+		friend class NvrhiRenderPass;
 		friend class ImGuiRenderer;
 	};
 
