@@ -16,14 +16,18 @@ namespace Dingo
 		constexpr const char* Renderer2DQuadShader = R"(
 #type vertex
 #version 450
-layout(location = 0) in vec4 a_Position;
+layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec4 a_Color;
+
+layout (std140, binding = 0) uniform Camera {
+	mat4 ProjectionView;
+};
 
 layout(location = 0) out vec4 v_Color;
 
 void main()
 {
-	gl_Position = a_Position;
+	gl_Position = ProjectionView * vec4(a_Position, 1.0);
 	v_Color = a_Color;
 }
 
@@ -95,12 +99,26 @@ void main()
 
 		m_QuadVertexBufferBase = new QuadVertex[MAX_QUADS];
 
+		m_CameraUniformBuffer = GraphicsBufferBuilder()
+			.SetType(BufferType::UniformBuffer)
+			.SetDebugName("Renderer2DCameraUniformBuffer")
+			.SetByteSize(sizeof(CameraData))
+			.SetDirectUpload(false)
+			.SetIsVolatile(true)
+			.Create();
+
 		CreateQuadPipeline();
 	}
 
 	void Renderer2D::Shutdown()
 	{
 		DestroyQuadPipeline();
+
+		if (m_CameraUniformBuffer)
+		{
+			m_CameraUniformBuffer->Destroy();
+			m_CameraUniformBuffer = nullptr;
+		}
 
 		if (m_CommandList)
 		{
@@ -123,8 +141,10 @@ void main()
 		}
 	}
 
-	void Renderer2D::Begin2D()
+	void Renderer2D::Begin2D(const glm::mat4& projectionViewMatrix)
 	{
+		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
+
 		m_QuadIndexCount = 0;
 		m_QuadVertexBufferPtr = m_QuadVertexBufferBase;
 	}
@@ -142,6 +162,7 @@ void main()
 			m_CommandList->SetPipeline(m_QuadPipeline);
 			m_CommandList->SetIndexBuffer(m_QuadIndexBuffer);
 			m_CommandList->AddVertexBuffer(m_QuadVertexBuffer, 0, 0);
+			m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
 
 			m_CommandList->DrawIndexed(m_QuadIndexCount);
 		}
@@ -190,6 +211,8 @@ void main()
 			.SetFramebuffer(m_TargetFramebuffer)
 			.SetShader(m_QuadShader)
 			.SetVertexLayout(vertexLayout)
+			.SetCullMode(CullMode::BackAndFront)
+			.SetUniformBuffer(m_CameraUniformBuffer)
 			.Create();
 
 		m_QuadVertexBuffer = GraphicsBufferBuilder()

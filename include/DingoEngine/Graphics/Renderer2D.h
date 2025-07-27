@@ -30,7 +30,7 @@ namespace Dingo
 		void Shutdown();
 		void Resize(uint32_t width, uint32_t height);
 
-		void Begin2D();
+		void Begin2D(const glm::mat4& projectionViewMatrix);
 		void End2D();
 
 		void Clear(const glm::vec4& clearColor);
@@ -54,6 +54,13 @@ namespace Dingo
 		Renderer2DParams m_Params;
 		Framebuffer* m_TargetFramebuffer = nullptr;
 		CommandList* m_CommandList = nullptr;
+
+		struct CameraData
+		{
+			glm::mat4 ProjectionViewMatrix;
+		};
+		CameraData m_CameraData;
+		GraphicsBuffer* m_CameraUniformBuffer = nullptr;
 
 		glm::vec4 m_QuadVertexPositions[4] = {};
 
