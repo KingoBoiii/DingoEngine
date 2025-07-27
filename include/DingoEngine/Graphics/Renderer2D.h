@@ -35,9 +35,6 @@ namespace Dingo
 
 		void Clear(const glm::vec4& clearColor);
 
-		void Upload(GraphicsBuffer* buffer);
-		void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size);
-
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
 
 		Texture* GetOutput() const { return m_TargetFramebuffer->GetAttachment(0); }
@@ -59,7 +56,7 @@ namespace Dingo
 		{
 			glm::mat4 ProjectionViewMatrix;
 		};
-		CameraData m_CameraData;
+		CameraData m_CameraData = {};
 		GraphicsBuffer* m_CameraUniformBuffer = nullptr;
 
 		glm::vec4 m_QuadVertexPositions[4] = {};

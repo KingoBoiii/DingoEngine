@@ -177,12 +177,6 @@ void main()
 		m_Params.ClearColor = clearColor;
 	}
 
-	void Renderer2D::Upload(GraphicsBuffer* buffer)
-	{}
-
-	void Renderer2D::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size)
-	{}
-
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
 	{
 		constexpr size_t quadVertexCount = 4;
