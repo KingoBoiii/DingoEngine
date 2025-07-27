@@ -216,7 +216,6 @@ void main()
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
 			.SetCullMode(CullMode::BackAndFront)
-			.SetUniformBuffer(m_CameraUniformBuffer)
 			.Create();
 
 		m_QuadPipeline.VertexBuffer = GraphicsBufferBuilder()
