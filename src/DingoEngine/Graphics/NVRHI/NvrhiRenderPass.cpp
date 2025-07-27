@@ -11,6 +11,8 @@ namespace Dingo
 	void NvrhiRenderPass::Initialize()
 	{
 		DE_CORE_ASSERT(m_Params.Pipeline, "RenderPass must have a valid Pipeline set before initialization.");
+
+		m_BindingSetDesc = nvrhi::BindingSetDesc();
 	}
 
 	void NvrhiRenderPass::Destroy()
