@@ -125,6 +125,7 @@ void main()
 	{
 		m_CommandList->Begin();
 		m_CommandList->Clear(m_TargetFramebuffer, 0, m_Params.ClearColor);
+		m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
 
 		if (m_QuadPipeline.IndexCount)
 		{
@@ -135,7 +136,6 @@ void main()
 			m_CommandList->SetRenderPass(m_QuadPipeline.RenderPass);
 			m_CommandList->SetIndexBuffer(m_QuadIndexBuffer);
 			m_CommandList->AddVertexBuffer(m_QuadPipeline.VertexBuffer, 0, 0);
-			m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
 
 			m_CommandList->DrawIndexed(m_QuadPipeline.IndexCount);
 		}
@@ -264,6 +264,12 @@ void main()
 		{
 			m_QuadPipeline.Shader->Destroy();
 			m_QuadPipeline.Shader = nullptr;
+		}
+
+		if (m_QuadPipeline.RenderPass)
+		{
+			m_QuadPipeline.RenderPass->Destroy();
+			m_QuadPipeline.RenderPass = nullptr;
 		}
 	}
 
