@@ -11,10 +11,26 @@
 namespace Dingo
 {
 
+	struct Renderer2DCapabilities
+	{
+		uint32_t MaxQuads = 1000;					// Maximum number of quads that can be drawn in a single frame
+
+		constexpr uint32_t GetQuadVertexCount() const
+		{
+			return MaxQuads * 4;					// 4 vertices per quad
+		}
+
+		constexpr uint32_t GetQuadIndexCount() const
+		{
+			return MaxQuads * 6;					// 6 indices per quad (2 triangles)
+		}
+	};
+
 	struct Renderer2DParams
 	{
-		Framebuffer* TargetFramebuffer = nullptr; // nullptr = use swap chain
+		Framebuffer* TargetFramebuffer = nullptr;
 		glm::vec4 ClearColor = glm::vec4(1.0f);
+		Renderer2DCapabilities Capabilities = {};
 	};
 
 	class Renderer2D
@@ -30,8 +46,8 @@ namespace Dingo
 		void Shutdown();
 		void Resize(uint32_t width, uint32_t height);
 
-		void Begin2D(const glm::mat4& projectionViewMatrix);
-		void End2D();
+		void BeginScene(const glm::mat4& projectionViewMatrix);
+		void EndScene();
 
 		void Clear(const glm::vec4& clearColor);
 
@@ -44,13 +60,18 @@ namespace Dingo
 		}
 
 	private:
+		void CreateQuadIndexBuffer();
 		void CreateQuadPipeline();
 		void DestroyQuadPipeline();
 
-	protected:
+	private:
+		/**************************************************
+		***		GENERAL									***
+		**************************************************/
 		Renderer2DParams m_Params;
 		Framebuffer* m_TargetFramebuffer = nullptr;
 		CommandList* m_CommandList = nullptr;
+		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 
 		struct CameraData
 		{
@@ -61,20 +82,25 @@ namespace Dingo
 
 		glm::vec4 m_QuadVertexPositions[4] = {};
 
+		/**************************************************
+		***		QUAD									***
+		**************************************************/
 		struct QuadVertex
 		{
 			glm::vec3 Position;
 			glm::vec4 Color;
 		};
 
-		uint32_t m_QuadIndexCount = 0;
-		QuadVertex* m_QuadVertexBufferBase = nullptr;
-		QuadVertex* m_QuadVertexBufferPtr = nullptr;
+		struct QuadPipeline
+		{
+			uint32_t IndexCount = 0;
+			QuadVertex* VertexBufferBase = nullptr;
+			QuadVertex* VertexBufferPtr = nullptr;
 
-		Shader* m_QuadShader = nullptr;
-		Pipeline* m_QuadPipeline = nullptr;
-		GraphicsBuffer* m_QuadVertexBuffer = nullptr;
-		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
+			Shader* Shader = nullptr;
+			Pipeline* Pipeline = nullptr;
+			GraphicsBuffer* VertexBuffer = nullptr;
+		} m_QuadPipeline;
 	};
 
 } // namespace Dingo

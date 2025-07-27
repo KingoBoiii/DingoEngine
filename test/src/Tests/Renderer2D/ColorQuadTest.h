@@ -4,11 +4,11 @@
 namespace Dingo
 {
 
-	class QuadTest : public Test
+	class ColorQuadTest : public Test
 	{
 	public:
-		QuadTest() = default;
-		virtual ~QuadTest() = default;
+		ColorQuadTest() = default;
+		virtual ~ColorQuadTest() = default;
 
 	public:
 		virtual void Initialize() override;

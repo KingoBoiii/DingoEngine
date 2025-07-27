@@ -7,7 +7,7 @@
 #include "Tests/Graphics/UniformBufferTest.h"
 #include "Tests/Graphics/TextureTest.h"
 
-#include "Tests/Renderer2D/QuadTest.h"
+#include "Tests/Renderer2D/ColorQuadTest.h"
 
 #include <imgui.h>
 
@@ -24,7 +24,7 @@ namespace Dingo
 		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
 		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
 
-		m_Tests.push_back({ "Quad Test (R2D)", []() { return new QuadTest(); } });
+		m_Tests.push_back({ "Colored Quad Test (R2D)", []() { return new ColorQuadTest(); } });
 
 		m_CurrentTest = new ClearColorTest();
 		m_CurrentTest->Initialize();
