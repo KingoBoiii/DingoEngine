@@ -1,6 +1,27 @@
 #include <DingoEngine/EntryPoint.h>
 
-#include "TestFrameworkApplication.h"
+#include "TestLayer.h"
+
+namespace Dingo
+{
+
+	class TestFrameworkApplication : public Application
+	{
+	public:
+		TestFrameworkApplication(const Dingo::ApplicationParams& params)
+			: Application(params)
+		{}
+		virtual ~TestFrameworkApplication() = default;
+
+	protected:
+		virtual void OnInitialize() override
+		{
+			PushLayer(new TestLayer());
+		}
+	};
+
+}
+
 
 Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 {
