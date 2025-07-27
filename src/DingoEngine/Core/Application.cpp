@@ -45,6 +45,9 @@ namespace Dingo
 		m_AppRenderer = new AppRenderer(m_SwapChain);
 		m_AppRenderer->Initialize();
 
+		m_Renderer2D = new Renderer2D(Renderer2DParams{ .TargetFramebuffer = m_SwapChain->GetCurrentFramebuffer() });
+		m_Renderer2D->Initialize();
+
 		OnInitialize();
 
 		if (m_LayerStack.Empty())
@@ -75,6 +78,13 @@ namespace Dingo
 			m_AppRenderer->Shutdown();
 			delete m_AppRenderer;
 			m_AppRenderer = nullptr;
+		}
+
+		if (m_Renderer2D)
+		{
+			m_Renderer2D->Shutdown();
+			delete m_Renderer2D;
+			m_Renderer2D = nullptr;
 		}
 
 		if (m_Window)

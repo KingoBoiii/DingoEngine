@@ -7,6 +7,8 @@
 #include "Tests/Graphics/UniformBufferTest.h"
 #include "Tests/Graphics/TextureTest.h"
 
+#include "Tests/Renderer2D/ColorQuadTest.h"
+
 #include <imgui.h>
 
 namespace Dingo
@@ -21,6 +23,8 @@ namespace Dingo
 		m_Tests.push_back({ "Index Buffer Test", []() { return new IndexBufferTest(); } });
 		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
 		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
+
+		m_Tests.push_back({ "Colored Quad Test (R2D)", []() { return new ColorQuadTest(); } });
 
 		m_CurrentTest = new ClearColorTest();
 		m_CurrentTest->Initialize();
@@ -156,13 +160,16 @@ namespace Dingo
 		{
 			if (ImGui::Selectable(test.first.c_str(), m_CurrentTest == test.second()))
 			{
-				if (m_CurrentTest)
+				Application::Get().SubmitPostExecution([&]()
 				{
-					m_CurrentTest->Cleanup();
-					delete m_CurrentTest;
-				}
-				m_CurrentTest = test.second();
-				m_CurrentTest->Initialize();
+					if (m_CurrentTest)
+					{
+						m_CurrentTest->Cleanup();
+						delete m_CurrentTest;
+					}
+					m_CurrentTest = test.second();
+					m_CurrentTest->Initialize();
+				});
 			}
 		}
 
@@ -179,18 +186,8 @@ namespace Dingo
 
 		ImGui::End();
 
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-
-		// Viewport Panel
-		ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-
-		auto viewport = ImGui::GetContentRegionAvail();
-		m_CurrentTest->Resize(static_cast<uint32_t>(viewport.x), static_cast<uint32_t>(viewport.y));
-		ImGui::Image(m_CurrentTest->GetResult()->GetTextureHandle(), viewport);
-
-		ImGui::End();
-
-		ImGui::PopStyleVar();
+		m_TestViewportPanel.OnImGuiRender(m_CurrentTest->GetResult());
+		m_CurrentTest->Resize(m_TestViewportPanel.GetViewportSize().x, m_TestViewportPanel.GetViewportSize().y);
 
 		ImGui::ShowDemoWindow();
 	}

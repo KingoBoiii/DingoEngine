@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/Memory.h"
 
+#ifdef ENABLE_MEMORY_TRACKING
 
 namespace Dingo
 {
@@ -41,3 +42,7 @@ void operator delete[](void* memory)
 {
 	Free(memory);
 }
+
+#endif // ENABLE_MEMORY_TRACKING
+
+

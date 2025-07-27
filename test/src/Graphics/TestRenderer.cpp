@@ -60,6 +60,16 @@ namespace Dingo
 		m_CommandList->Clear(m_Framebuffer, 0, clearColor);
 	}
 
+	void TestRenderer::Upload(GraphicsBuffer* buffer)
+	{
+		m_CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
+	}
+
+	void TestRenderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size)
+	{
+		m_CommandList->UploadBuffer(buffer, data, size);
+	}
+
 	void TestRenderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		m_CommandList->SetPipeline(pipeline);
