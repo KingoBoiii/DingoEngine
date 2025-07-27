@@ -80,6 +80,13 @@ namespace Dingo
 			m_AppRenderer = nullptr;
 		}
 
+		if (m_Renderer2D)
+		{
+			m_Renderer2D->Shutdown();
+			//delete m_Renderer2D;
+			m_Renderer2D = nullptr;
+		}
+
 		if (m_Window)
 		{
 			m_Window->Shutdown();
