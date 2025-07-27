@@ -83,7 +83,7 @@ namespace Dingo
 		if (m_Renderer2D)
 		{
 			m_Renderer2D->Shutdown();
-			//delete m_Renderer2D;
+			delete m_Renderer2D;
 			m_Renderer2D = nullptr;
 		}
 
