@@ -131,7 +131,7 @@ void main()
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
 			m_CommandList->UploadBuffer(m_QuadPipeline.VertexBuffer, m_QuadPipeline.VertexBufferBase, dataSize);
 
-			m_CommandList->SetPipeline(m_QuadPipeline.Pipeline);
+			//m_CommandList->SetPipeline(m_QuadPipeline.Pipeline);
 			m_CommandList->SetRenderPass(m_QuadPipeline.RenderPass);
 			m_CommandList->SetIndexBuffer(m_QuadIndexBuffer);
 			m_CommandList->AddVertexBuffer(m_QuadPipeline.VertexBuffer, 0, 0);

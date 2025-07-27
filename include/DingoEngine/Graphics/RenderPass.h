@@ -38,6 +38,9 @@ namespace Dingo
 
 		virtual void Bake() = 0;
 
+		const RenderPassParams& GetParams() const { return m_Params; }
+		Pipeline* GetPipeline() const { return m_Params.Pipeline; }
+
 	protected:
 		RenderPassParams m_Params;
 	};
