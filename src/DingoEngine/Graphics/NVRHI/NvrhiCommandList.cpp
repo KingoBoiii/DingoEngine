@@ -74,9 +74,8 @@ namespace Dingo
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading buffer.");
 
 		DE_CORE_ASSERT(buffer, "Uniform buffer is null.");
-		DE_CORE_ASSERT(buffer->IsType(BufferType::UniformBuffer), "Uniform buffer, must be of type BufferType::UniformBuffer");
 
-		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, buffer->GetData(), buffer->GetByteSize());
+		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, data, size, offset);
 	}
 
 	void NvrhiCommandList::SetPipeline(Pipeline* pipeline)
