@@ -45,10 +45,10 @@ namespace Dingo
 			.SetVSync(m_Params.Window.VSync));
 		m_SwapChain->Initialize();
 
-		m_AppRenderer = new AppRenderer(m_SwapChain);
-		m_AppRenderer->Initialize();
+		m_Renderer = AppRenderer::Create(m_SwapChain);
+		m_Renderer->Initialize();
 
-		m_Renderer2D = new Renderer2D(Renderer2DParams{ .TargetFramebuffer = m_SwapChain->GetCurrentFramebuffer() });
+		m_Renderer2D = Renderer2D::Create(m_SwapChain->GetCurrentFramebuffer());
 		m_Renderer2D->Initialize();
 
 		OnInitialize();
@@ -76,11 +76,11 @@ namespace Dingo
 
 		m_LayerStack.Clear();
 
-		if (m_AppRenderer)
+		if (m_Renderer)
 		{
-			m_AppRenderer->Shutdown();
-			delete m_AppRenderer;
-			m_AppRenderer = nullptr;
+			m_Renderer->Shutdown();
+			delete m_Renderer;
+			m_Renderer = nullptr;
 		}
 
 		if (m_Renderer2D)
@@ -134,7 +134,7 @@ namespace Dingo
 
 			m_Window->Update();
 
-			m_AppRenderer->BeginFrame();
+			m_Renderer->BeginFrame();
 
 			for (Layer* layer : m_LayerStack)
 			{
@@ -151,7 +151,7 @@ namespace Dingo
 				m_ImGuiLayer->End();
 			}
 
-			m_AppRenderer->EndFrame();
+			m_Renderer->EndFrame();
 
 			m_GraphicsContext->RunGarbageCollection();
 
@@ -181,9 +181,9 @@ namespace Dingo
 		m_IsRunning = false;
 	}
 
-	IRenderer& Application::GetAppRenderer() const
+	Renderer& Application::GetRenderer() const
 	{
-		return *m_AppRenderer;
+		return *m_Renderer;
 	}
 
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)

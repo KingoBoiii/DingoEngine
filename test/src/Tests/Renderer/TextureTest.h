@@ -1,10 +1,10 @@
 #pragma once
-#include "GraphicsTest.h"
+#include "RendererTest.h"
 
 namespace Dingo
 {
 
-	class TextureTest : public GraphicsTest
+	class TextureTest : public RendererTest
 	{
 	public:
 		virtual ~TextureTest() = default;

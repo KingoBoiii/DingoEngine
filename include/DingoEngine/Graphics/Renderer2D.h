@@ -1,6 +1,5 @@
 #pragma once
-#include "DingoEngine/Graphics/Framebuffer.h"
-#include "DingoEngine/Graphics/CommandList.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Pipeline.h"
@@ -37,9 +36,15 @@ namespace Dingo
 	class Renderer2D
 	{
 	public:
-		Renderer2D(const Renderer2DParams& params)
-			: m_Params(params)
-		{}
+		static Renderer2D* Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities = {});
+		static Renderer2D* Create(const Renderer2DParams& params = {});
+
+	public:
+		Renderer2D() = delete;
+		Renderer2D(const Renderer2D&) = delete;
+		Renderer2D& operator=(const Renderer2D&) = delete;
+		Renderer2D(Renderer2D&&) = delete;
+		Renderer2D& operator=(Renderer2D&&) = delete;
 		virtual ~Renderer2D() = default;
 
 	public:
@@ -53,12 +58,18 @@ namespace Dingo
 		void Clear(const glm::vec4& clearColor);
 
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
+		void DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color);
 
-		Texture* GetOutput() const { return m_TargetFramebuffer->GetAttachment(0); }
+		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
 		glm::vec2 GetViewportSize() const
 		{
-			return glm::vec2(m_TargetFramebuffer->GetParams().Width, m_TargetFramebuffer->GetParams().Height);
+			return glm::vec2(m_Renderer->GetTargetFramebuffer()->GetParams().Width, m_Renderer->GetTargetFramebuffer()->GetParams().Height);
 		}
+
+	private:
+		Renderer2D(const Renderer2DParams& params)
+			: m_Params(params)
+		{}
 
 	private:
 		void CreateQuadIndexBuffer();
@@ -70,8 +81,7 @@ namespace Dingo
 		***		GENERAL									***
 		**************************************************/
 		Renderer2DParams m_Params;
-		Framebuffer* m_TargetFramebuffer = nullptr;
-		CommandList* m_CommandList = nullptr;
+		Renderer* m_Renderer = nullptr;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 
 		struct CameraData

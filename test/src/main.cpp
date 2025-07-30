@@ -27,9 +27,9 @@ Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 {
 	ApplicationParams params = ApplicationParams{
 		.Window = {
-			.Title = "Dingo Test Framework",
-			.Width = 1600,
-			.Height = 900,
+			.Title = "Dingo Test Framework",		// Window title
+			.Width = 1600,							// Window width
+			.Height = 900,							// Window height
 			.VSync = true,							// Enable VSync by default
 			.Resizable = true,						// Make the window resizable by default
 		},

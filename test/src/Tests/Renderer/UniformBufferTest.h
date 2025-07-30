@@ -1,10 +1,10 @@
 #pragma once
-#include "GraphicsTest.h"
+#include "RendererTest.h"
 
 namespace Dingo
 {
 
-	class UniformBufferTest : public GraphicsTest
+	class UniformBufferTest : public RendererTest
 	{
 	public:
 		virtual ~UniformBufferTest() = default;

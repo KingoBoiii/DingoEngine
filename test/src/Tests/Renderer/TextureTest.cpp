@@ -81,7 +81,7 @@ void main() {
 		m_Pipeline = Dingo::PipelineBuilder()
 			.SetDebugName("Texture Quad Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(m_Renderer->GetFramebuffer())
+			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetFillMode(Dingo::FillMode::Solid)
 			.SetCullMode(Dingo::CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)

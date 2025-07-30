@@ -104,6 +104,7 @@ namespace Dingo
 		virtual void Destroy() = 0;
 
 		const PipelineParams& GetParams() const { return m_Params; }
+		Framebuffer* GetTargetFramebuffer() const { return m_Params.Framebuffer; }
 
 	protected:
 		PipelineParams m_Params;

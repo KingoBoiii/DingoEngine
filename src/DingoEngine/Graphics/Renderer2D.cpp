@@ -1,6 +1,8 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 
+#include "DingoEngine/Core/Application.h"
+
 #include "DingoEngine/Graphics/Builders/PipelineBuilder.h"
 #include "DingoEngine/Graphics/Builders/GraphicsBufferBuilder.h"
 
@@ -45,24 +47,25 @@ void main()
 
 	}
 
+	Renderer2D* Renderer2D::Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities)
+	{
+		return new Renderer2D(Renderer2DParams{
+			.TargetFramebuffer = framebuffer,
+			.Capabilities = capabilities
+			});
+	}
+
+	Renderer2D* Renderer2D::Create(const Renderer2DParams& params)
+	{
+		return new Renderer2D(params);
+	}
+
 	void Renderer2D::Initialize()
 	{
-		m_TargetFramebuffer = m_Params.TargetFramebuffer;
-		if (m_TargetFramebuffer == nullptr)
-		{
-			m_TargetFramebuffer = Framebuffer::Create(FramebufferParams()
-				.SetDebugName("Renderer2DFramebuffer")
-				.SetWidth(800)
-				.SetHeight(600)
-				.AddAttachment({ TextureFormat::RGBA8_UNORM }));
-			m_TargetFramebuffer->Initialize();
-		}
-
-		CommandListParams commandListParams = CommandListParams()
-			.SetTargetFramebuffer(m_TargetFramebuffer);
-
-		m_CommandList = CommandList::Create(commandListParams);
-		m_CommandList->Initialize();
+		m_Renderer = Renderer::Create(RendererParams{
+			.TargetSwapChain = false,
+			.FramebufferName = "Renderer2DFramebuffer" });
+		m_Renderer->Initialize();
 
 		CreateQuadIndexBuffer();
 
@@ -92,30 +95,23 @@ void main()
 			m_CameraUniformBuffer = nullptr;
 		}
 
-		if (m_CommandList)
+		if (m_Renderer)
 		{
-			m_CommandList->Destroy();
-			m_CommandList = nullptr;
-		}
-
-		if (m_TargetFramebuffer != m_Params.TargetFramebuffer)
-		{
-			m_TargetFramebuffer->Destroy();
-			m_TargetFramebuffer = nullptr;
+			m_Renderer->Shutdown();
+			delete m_Renderer;
+			m_Renderer = nullptr;
 		}
 	}
 
 	void Renderer2D::Resize(uint32_t width, uint32_t height)
 	{
-		if (width != m_TargetFramebuffer->GetParams().Width || height != m_TargetFramebuffer->GetParams().Height)
-		{
-			m_TargetFramebuffer->Resize(width, height);
-		}
+		m_Renderer->Resize(width, height);
 	}
 
 	void Renderer2D::BeginScene(const glm::mat4& projectionViewMatrix)
 	{
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
+		m_CameraUniformBuffer->Upload(&m_CameraData, sizeof(CameraData));
 
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
@@ -123,24 +119,19 @@ void main()
 
 	void Renderer2D::EndScene()
 	{
-		m_CommandList->Begin();
-		m_CommandList->Clear(m_TargetFramebuffer, 0, m_Params.ClearColor);
-		m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
-
 		if (m_QuadPipeline.IndexCount)
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
-			m_CommandList->UploadBuffer(m_QuadPipeline.VertexBuffer, m_QuadPipeline.VertexBufferBase, dataSize);
+			m_QuadPipeline.VertexBuffer->Upload(m_QuadPipeline.VertexBufferBase, dataSize);
 
-			//m_CommandList->SetPipeline(m_QuadPipeline.Pipeline);
-			m_CommandList->SetRenderPass(m_QuadPipeline.RenderPass);
-			m_CommandList->SetIndexBuffer(m_QuadIndexBuffer);
-			m_CommandList->AddVertexBuffer(m_QuadPipeline.VertexBuffer, 0, 0);
+			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
 
-			m_CommandList->DrawIndexed(m_QuadPipeline.IndexCount);
+			m_Renderer->Clear(m_Params.ClearColor);
+
+			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_QuadPipeline.IndexCount);
+
+			m_Renderer->EndRenderPass();
 		}
-
-		m_CommandList->End();
 	}
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
@@ -149,6 +140,11 @@ void main()
 	}
 
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
+	{
+		DrawQuad(glm::vec3(position, 0.0f), size, color);
+	}
+
+	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
 	{
 		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
 		{
@@ -212,7 +208,7 @@ void main()
 
 		m_QuadPipeline.Pipeline = PipelineBuilder()
 			.SetDebugName("Renderer2DQuadPipeline")
-			.SetFramebuffer(m_TargetFramebuffer)
+			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
 			.SetCullMode(CullMode::BackAndFront)
@@ -222,6 +218,7 @@ void main()
 			.SetType(BufferType::VertexBuffer)
 			.SetDebugName("Renderer2DQuadVertexBuffer")
 			.SetByteSize(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount())
+			.SetDirectUpload(true)
 			.Create();
 
 		RenderPassParams renderPassParams = RenderPassParams()

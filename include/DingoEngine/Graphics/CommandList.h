@@ -42,7 +42,8 @@ namespace Dingo
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
 
-		virtual void Begin() = 0;
+		//virtual void Begin() = 0;
+		virtual void Begin(Framebuffer* framebuffer) = 0;
 		virtual void End() = 0;
 
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) = 0;

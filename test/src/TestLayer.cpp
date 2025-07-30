@@ -1,11 +1,10 @@
 #include "TestLayer.h"
 
-#include "Tests/Graphics/ClearColorTest.h"
-#include "Tests/Graphics/StaticTriangleTest.h"
-#include "Tests/Graphics/VertexBufferTest.h"
-#include "Tests/Graphics/IndexBufferTest.h"
-#include "Tests/Graphics/UniformBufferTest.h"
-#include "Tests/Graphics/TextureTest.h"
+#include "Tests/Renderer/StaticTriangleTest.h"
+#include "Tests/Renderer/VertexBufferTest.h"
+#include "Tests/Renderer/IndexBufferTest.h"
+#include "Tests/Renderer/UniformBufferTest.h"
+#include "Tests/Renderer/TextureTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 
@@ -17,7 +16,6 @@ namespace Dingo
 	void TestLayer::OnAttach()
 	{
 		// Register tests
-		m_Tests.push_back({ "Clear Color Test", []() { return new ClearColorTest(); } });
 		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
 		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
 		m_Tests.push_back({ "Index Buffer Test", []() { return new IndexBufferTest(); } });
@@ -26,7 +24,7 @@ namespace Dingo
 
 		m_Tests.push_back({ "Colored Quad Test (R2D)", []() { return new ColorQuadTest(); } });
 
-		m_CurrentTest = new ClearColorTest();
+		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
 	}
 
@@ -48,7 +46,7 @@ namespace Dingo
 			return;
 		}
 
-		Dingo::IRenderer& appRenderer = Application::Get().GetAppRenderer();
+		Dingo::Renderer& appRenderer = Application::Get().GetRenderer();
 
 		appRenderer.Begin();
 		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });

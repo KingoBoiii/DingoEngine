@@ -1,12 +1,10 @@
 #pragma once
-#include "GraphicsTest.h"
-
-#include <DingoEngine.h>
+#include "RendererTest.h"
 
 namespace Dingo
 {
 
-	class StaticTriangleTest : public GraphicsTest
+	class StaticTriangleTest : public RendererTest
 	{
 	public:
 		virtual ~StaticTriangleTest() = default;

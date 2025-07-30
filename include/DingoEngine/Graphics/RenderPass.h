@@ -40,6 +40,7 @@ namespace Dingo
 
 		const RenderPassParams& GetParams() const { return m_Params; }
 		Pipeline* GetPipeline() const { return m_Params.Pipeline; }
+		Framebuffer* GetTargetFramebuffer() const { return m_Params.Pipeline->GetTargetFramebuffer(); }
 
 	protected:
 		RenderPassParams m_Params;

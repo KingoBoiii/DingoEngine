@@ -55,7 +55,7 @@ void main() {
 		m_Pipeline = PipelineBuilder()
 			.SetDebugName("Uniform Buffer Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(m_Renderer->GetFramebuffer())
+			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)

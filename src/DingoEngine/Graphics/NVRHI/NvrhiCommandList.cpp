@@ -32,23 +32,13 @@ namespace Dingo
 		}
 	}
 
-	void NvrhiCommandList::Begin()
+	void NvrhiCommandList::Begin(Framebuffer* framebuffer)
 	{
 		m_CommandListHandle->open();
 
-		if (m_Params.TargetSwapChain)
-		{
-			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
-		}
-
-		if (m_Params.TargetFramebuffer)
-		{
-			m_TargetFramebuffer = m_Params.TargetFramebuffer;
-		}
-
 		m_GraphicsState = nvrhi::GraphicsState()
-			.setFramebuffer(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(m_TargetFramebuffer)->m_Viewport));
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
 
 		m_HasBegun = true;
 	}
