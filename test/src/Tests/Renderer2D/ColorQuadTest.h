@@ -1,28 +1,17 @@
 #pragma once
-#include "Tests/Test.h"
+#include "Renderer2DTest.h"
 
 namespace Dingo
 {
 
-	class ColorQuadTest : public Test
+	class ColorQuadTest : public Renderer2DTest
 	{
 	public:
 		ColorQuadTest() = default;
 		virtual ~ColorQuadTest() = default;
 
 	public:
-		virtual void Initialize() override;
 		virtual void Update(float deltaTime) override;
-		virtual void Cleanup() override;
-
-		virtual void ImGuiRender() override {}
-
-		virtual void Resize(uint32_t width, uint32_t height) override;
-
-		virtual Texture* GetResult() { return m_Renderer->GetOutput(); }
-
-	private:
-		Renderer2D* m_Renderer = nullptr;
 	};
 
 }

@@ -43,4 +43,9 @@ namespace Dingo
 		});
 	}
 
+	void GraphicsTest::ImGuiRender()
+	{
+		ClearColorTest::ImGuiRender();
+	}
+
 }
