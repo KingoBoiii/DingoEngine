@@ -128,6 +128,11 @@ void main()
 
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
 	{
+		DrawQuad(glm::vec3(position, 0.0f), size, color);
+	}
+
+	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
+	{
 		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
 		{
 			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");

@@ -54,6 +54,7 @@ namespace Dingo
 		void Clear(const glm::vec4& clearColor);
 
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
+		void DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color);
 
 		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
 		//Texture* GetOutput() const { return m_TargetFramebuffer->GetAttachment(0); }
