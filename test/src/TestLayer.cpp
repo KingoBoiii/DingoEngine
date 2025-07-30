@@ -1,10 +1,10 @@
 #include "TestLayer.h"
 
-#include "Tests/Graphics/StaticTriangleTest.h"
-#include "Tests/Graphics/VertexBufferTest.h"
-#include "Tests/Graphics/IndexBufferTest.h"
-#include "Tests/Graphics/UniformBufferTest.h"
-#include "Tests/Graphics/TextureTest.h"
+#include "Tests/Renderer/StaticTriangleTest.h"
+#include "Tests/Renderer/VertexBufferTest.h"
+#include "Tests/Renderer/IndexBufferTest.h"
+#include "Tests/Renderer/UniformBufferTest.h"
+#include "Tests/Renderer/TextureTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 
