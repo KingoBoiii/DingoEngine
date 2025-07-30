@@ -44,6 +44,10 @@ namespace Dingo
 		virtual void DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
 		virtual void DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer, uint32_t indexCount = 0);
 
+		/**************************************************
+		***		GENERAL									***
+		**************************************************/
+
 		virtual void Begin();
 		virtual void End();
 

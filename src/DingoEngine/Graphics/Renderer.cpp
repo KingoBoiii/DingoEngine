@@ -98,6 +98,10 @@ namespace Dingo
 		m_CommandList->DrawIndexed(indexCount, 1); // Assuming 16-bit indices
 	}
 
+	/**************************************************
+	***		GENERAL									***
+	**************************************************/
+
 	void Renderer::Begin()
 	{
 		m_CommandList->Begin(m_TargetFramebuffer);
