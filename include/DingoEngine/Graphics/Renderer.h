@@ -25,9 +25,11 @@ namespace Dingo
 		static Renderer* Create(const RendererParams& params);
 
 	public:
-		Renderer(const RendererParams& params)
-			: m_Params(params)
-		{}
+		Renderer() = delete;
+		Renderer(const Renderer&) = delete;
+		Renderer& operator=(const Renderer&) = delete;
+		Renderer(Renderer&&) = delete;
+		Renderer& operator=(Renderer&&) = delete;
 		virtual ~Renderer() = default;
 
 	public:
@@ -35,7 +37,7 @@ namespace Dingo
 		virtual void Shutdown();
 
 		/**************************************************
-		***		RENDER PASS								***
+		***		RENDER PASS	API							***
 		**************************************************/
 
 		virtual void BeginRenderPass(RenderPass* renderPass);
@@ -69,6 +71,11 @@ namespace Dingo
 
 		const RendererParams& GetParams() const { return m_Params; }
 		Texture* GetWhiteTexture() const { return m_StaticResources.WhiteTexture; }
+
+	protected:
+		Renderer(const RendererParams& params)
+			: m_Params(params)
+		{}
 
 	private:
 		RendererParams m_Params;
