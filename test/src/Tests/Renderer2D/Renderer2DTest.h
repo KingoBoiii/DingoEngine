@@ -26,7 +26,7 @@ namespace Dingo
 
 	protected:
 		Renderer2D* m_Renderer = nullptr;
-		float m_OrthographicSize = 1.0f;
+		float m_OrthographicSize = 5.0f;
 		float m_OrthographicNear = -1.0f;
 		float m_OrthographicFar = 1.0f;
 		glm::mat4 m_ProjectionViewMatrix = glm::mat4(1.0f);
