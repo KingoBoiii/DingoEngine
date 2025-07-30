@@ -95,7 +95,7 @@ namespace Dingo
 
 	void NvrhiCommandList::SetRenderPass(RenderPass* renderPass)
 	{
-		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting render pass.");
 		DE_CORE_ASSERT(renderPass, "Render Pass is null.");
 
 		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
