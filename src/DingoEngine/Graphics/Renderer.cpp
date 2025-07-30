@@ -129,10 +129,7 @@ namespace Dingo
 			return;
 		}
 
-		//Application::Get().SubmitPostExecution([this, width, height]()
-		//{
 		m_TargetFramebuffer->Resize(width, height);
-		//});
 	}
 
 	void Renderer::Clear(const glm::vec4& clearColor)

@@ -7,7 +7,7 @@ namespace Dingo
 
 	void Renderer2DTest::Initialize()
 	{
-		m_Renderer = new Renderer2D(Renderer2DParams{});
+		m_Renderer = Renderer2D::Create();
 		m_Renderer->Initialize();
 	}
 

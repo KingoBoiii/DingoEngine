@@ -47,6 +47,19 @@ void main()
 
 	}
 
+	Renderer2D* Renderer2D::Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities)
+	{
+		return new Renderer2D(Renderer2DParams{
+			.TargetFramebuffer = framebuffer,
+			.Capabilities = capabilities
+			});
+	}
+
+	Renderer2D* Renderer2D::Create(const Renderer2DParams& params)
+	{
+		return new Renderer2D(params);
+	}
+
 	void Renderer2D::Initialize()
 	{
 		m_Renderer = Renderer::Create(RendererParams{

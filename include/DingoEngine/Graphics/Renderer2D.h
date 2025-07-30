@@ -38,9 +38,15 @@ namespace Dingo
 	class Renderer2D
 	{
 	public:
-		Renderer2D(const Renderer2DParams& params)
-			: m_Params(params)
-		{}
+		static Renderer2D* Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities = {});
+		static Renderer2D* Create(const Renderer2DParams& params = {});
+
+	public:
+		Renderer2D() = delete;
+		Renderer2D(const Renderer2D&) = delete;
+		Renderer2D& operator=(const Renderer2D&) = delete;
+		Renderer2D(Renderer2D&&) = delete;
+		Renderer2D& operator=(Renderer2D&&) = delete;
 		virtual ~Renderer2D() = default;
 
 	public:
@@ -62,6 +68,11 @@ namespace Dingo
 		{
 			return glm::vec2(m_Renderer->GetTargetFramebuffer()->GetParams().Width, m_Renderer->GetTargetFramebuffer()->GetParams().Height);
 		}
+
+	private:
+		Renderer2D(const Renderer2DParams& params)
+			: m_Params(params)
+		{}
 
 	private:
 		void CreateQuadIndexBuffer();
