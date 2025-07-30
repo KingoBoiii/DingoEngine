@@ -7,11 +7,11 @@ namespace Dingo
 
 	void EmptyLayer::OnUpdate(float deltaTime)
 	{
-		IRenderer& appRenderer = Application::Get().GetAppRenderer();
+		Renderer& renderer = Application::Get().GetRenderer();
 
-		appRenderer.Begin();
-		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });
-		appRenderer.End();
+		renderer.Begin();
+		renderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });
+		renderer.End();
 	}
 
 }

@@ -6,7 +6,7 @@ namespace Dingo
 
 	void GraphicsTest::Initialize()
 	{
-		m_Renderer = new TestRenderer();
+		m_Renderer = Renderer::Create(RendererParams{ .TargetSwapChain = false });
 		m_Renderer->Initialize();
 
 		m_AspectRatio = 800.0f / 600.0f;

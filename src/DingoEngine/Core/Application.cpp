@@ -48,6 +48,9 @@ namespace Dingo
 		m_AppRenderer = new AppRenderer(m_SwapChain);
 		m_AppRenderer->Initialize();
 
+		m_Renderer = Renderer::Create(RendererParams{ .TargetSwapChain = true });
+		m_Renderer->Initialize();
+
 		m_Renderer2D = new Renderer2D(Renderer2DParams{ .TargetFramebuffer = m_SwapChain->GetCurrentFramebuffer() });
 		m_Renderer2D->Initialize();
 
@@ -81,6 +84,13 @@ namespace Dingo
 			m_AppRenderer->Shutdown();
 			delete m_AppRenderer;
 			m_AppRenderer = nullptr;
+		}
+
+		if (m_Renderer)
+		{
+			m_Renderer->Shutdown();
+			delete m_Renderer;
+			m_Renderer = nullptr;
 		}
 
 		if (m_Renderer2D)
@@ -181,7 +191,7 @@ namespace Dingo
 		m_IsRunning = false;
 	}
 
-	IRenderer& Application::GetAppRenderer() const
+	Renderer& Application::GetRenderer() const
 	{
 		return *m_AppRenderer;
 	}

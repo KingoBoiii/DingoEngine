@@ -48,7 +48,7 @@ namespace Dingo
 			return;
 		}
 
-		Dingo::IRenderer& appRenderer = Application::Get().GetAppRenderer();
+		Dingo::Renderer& appRenderer = Application::Get().GetRenderer();
 
 		appRenderer.Begin();
 		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });

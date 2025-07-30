@@ -1,6 +1,5 @@
 #pragma once
 #include "Tests/Test.h"
-#include "Graphics/TestRenderer.h"
 
 namespace Dingo
 {
@@ -23,7 +22,7 @@ namespace Dingo
 		float m_AspectRatio;
 		glm::vec4 m_ClearColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-		TestRenderer* m_Renderer = nullptr;
+		Renderer* m_Renderer = nullptr;
 	};
 
 }

@@ -4,7 +4,7 @@
 #include "DingoEngine/Graphics/GraphicsParams.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/SwapChain.h"
-#include "DingoEngine/Graphics/IRenderer.h"
+#include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
@@ -52,7 +52,7 @@ namespace Dingo
 		static Application& Get() { return *s_Instance; }
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
-		IRenderer& GetAppRenderer() const;
+		Renderer& GetRenderer() const;
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
@@ -73,6 +73,7 @@ namespace Dingo
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
 		AppRenderer* m_AppRenderer = nullptr;
+		Renderer* m_Renderer = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;

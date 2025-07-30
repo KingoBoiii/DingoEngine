@@ -1,6 +1,8 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 
+#include "DingoEngine/Core/Application.h"
+
 #include "DingoEngine/Graphics/Builders/PipelineBuilder.h"
 #include "DingoEngine/Graphics/Builders/GraphicsBufferBuilder.h"
 
@@ -123,7 +125,7 @@ void main()
 
 	void Renderer2D::EndScene()
 	{
-		m_CommandList->Begin();
+		m_CommandList->Begin(m_TargetFramebuffer);
 		m_CommandList->Clear(m_TargetFramebuffer, 0, m_Params.ClearColor);
 		m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
 
