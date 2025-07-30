@@ -125,16 +125,17 @@ void main()
 	{
 		m_CommandList->Begin();
 		m_CommandList->Clear(m_TargetFramebuffer, 0, m_Params.ClearColor);
+		m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
 
-		if(m_QuadPipeline.IndexCount)
+		if (m_QuadPipeline.IndexCount)
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
 			m_CommandList->UploadBuffer(m_QuadPipeline.VertexBuffer, m_QuadPipeline.VertexBufferBase, dataSize);
 
-			m_CommandList->SetPipeline(m_QuadPipeline.Pipeline);
+			//m_CommandList->SetPipeline(m_QuadPipeline.Pipeline);
+			m_CommandList->SetRenderPass(m_QuadPipeline.RenderPass);
 			m_CommandList->SetIndexBuffer(m_QuadIndexBuffer);
 			m_CommandList->AddVertexBuffer(m_QuadPipeline.VertexBuffer, 0, 0);
-			m_CommandList->UploadBuffer(m_CameraUniformBuffer, &m_CameraData, sizeof(CameraData));
 
 			m_CommandList->DrawIndexed(m_QuadPipeline.IndexCount);
 		}
@@ -149,7 +150,7 @@ void main()
 
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
 	{
-		if(m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
 		{
 			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
 			return;
@@ -215,7 +216,6 @@ void main()
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
 			.SetCullMode(CullMode::BackAndFront)
-			.SetUniformBuffer(m_CameraUniformBuffer)
 			.Create();
 
 		m_QuadPipeline.VertexBuffer = GraphicsBufferBuilder()
@@ -223,6 +223,14 @@ void main()
 			.SetDebugName("Renderer2DQuadVertexBuffer")
 			.SetByteSize(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount())
 			.Create();
+
+		RenderPassParams renderPassParams = RenderPassParams()
+			.SetPipeline(m_QuadPipeline.Pipeline);
+
+		m_QuadPipeline.RenderPass = RenderPass::Create(renderPassParams);
+		m_QuadPipeline.RenderPass->Initialize();
+		m_QuadPipeline.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		m_QuadPipeline.RenderPass->Bake();
 
 		m_QuadPipeline.VertexBufferBase = new QuadVertex[m_Params.Capabilities.GetQuadVertexCount()];
 	}
@@ -255,6 +263,12 @@ void main()
 		{
 			m_QuadPipeline.Shader->Destroy();
 			m_QuadPipeline.Shader = nullptr;
+		}
+
+		if (m_QuadPipeline.RenderPass)
+		{
+			m_QuadPipeline.RenderPass->Destroy();
+			m_QuadPipeline.RenderPass = nullptr;
 		}
 	}
 

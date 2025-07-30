@@ -30,6 +30,7 @@ namespace Dingo
 		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
 
 		friend class NvrhiCommandList; // Allow CommandList to access private members
+		friend class NvrhiRenderPass; // Allow RenderPass to access private members
 	};
 
 }

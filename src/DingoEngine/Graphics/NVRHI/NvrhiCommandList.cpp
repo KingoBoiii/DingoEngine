@@ -4,6 +4,7 @@
 #include "NvrhiPipeline.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiGraphicsContext.h"
+#include "NvrhiRenderPass.h"
 
 #include "DingoEngine/Core/Application.h"
 
@@ -89,6 +90,21 @@ namespace Dingo
 		if (static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle)
 		{
 			m_GraphicsState.addBindingSet(static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle);
+		}
+	}
+
+	void NvrhiCommandList::SetRenderPass(RenderPass* renderPass)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting render pass.");
+		DE_CORE_ASSERT(renderPass, "Render Pass is null.");
+
+		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
+
+		m_GraphicsState.setPipeline(static_cast<NvrhiPipeline*>(renderPass->GetPipeline())->m_GraphicsPipelineHandle);
+
+		if (nvrhiRenderPass->m_BindingSetHandle)
+		{
+			m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
 		}
 	}
 

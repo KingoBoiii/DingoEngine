@@ -2,6 +2,7 @@
 #include "Framebuffer.h"
 #include "Pipeline.h"
 #include "GraphicsBuffer.h"
+#include "RenderPass.h"
 
 #include <glm/glm.hpp>
 
@@ -49,6 +50,7 @@ namespace Dingo
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 
 		virtual void SetPipeline(Pipeline* pipeline) = 0;
+		virtual void SetRenderPass(RenderPass* renderPass) = 0;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) = 0;
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) = 0;
 
