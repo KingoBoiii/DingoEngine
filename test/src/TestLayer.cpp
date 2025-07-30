@@ -24,7 +24,7 @@ namespace Dingo
 
 		m_Tests.push_back({ "Colored Quad Test (R2D)", []() { return new ColorQuadTest(); } });
 
-		m_CurrentTest = new StaticTriangleTest();
+		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
 	}
 
