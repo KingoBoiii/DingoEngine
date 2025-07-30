@@ -72,8 +72,7 @@ namespace Dingo
 		Window* m_Window = nullptr;
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
-		AppRenderer* m_AppRenderer = nullptr;
-		Renderer* m_Renderer = nullptr;
+		AppRenderer* m_Renderer = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
