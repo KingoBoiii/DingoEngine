@@ -32,21 +32,6 @@ namespace Dingo
 		}
 	}
 
-	//void NvrhiCommandList::Begin()
-	//{
-	//	if (m_Params.TargetSwapChain)
-	//	{
-	//		m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
-	//	}
-
-	//	if (m_Params.TargetFramebuffer)
-	//	{
-	//		m_TargetFramebuffer = m_Params.TargetFramebuffer;
-	//	}
-
-	//	Begin(m_TargetFramebuffer);
-	//}
-
 	void NvrhiCommandList::Begin(Framebuffer* framebuffer)
 	{
 		m_CommandListHandle->open();

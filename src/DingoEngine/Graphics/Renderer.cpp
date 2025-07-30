@@ -43,7 +43,6 @@ namespace Dingo
 		if (m_TargetFramebuffer && !m_Params.TargetSwapChain)
 		{
 			m_TargetFramebuffer->Destroy();
-			//delete m_TargetFramebuffer;
 			m_TargetFramebuffer = nullptr;
 		}
 	}
