@@ -1,12 +1,12 @@
 #pragma once
-#include "Tests/ClearColorTest.h"
+#include "Tests/GraphicsTest.h"
 
 #include <glm/glm.hpp>
 
 namespace Dingo
 {
 
-	class Renderer2DTest : public ClearColorTest
+	class Renderer2DTest : public GraphicsTest
 	{
 	public:
 		Renderer2DTest() = default;
@@ -21,8 +21,15 @@ namespace Dingo
 
 		virtual Texture* GetResult() { return m_Renderer->GetOutput(); }
 
+	private:
+		void RecalculateProjectionViewMatrix();
+
 	protected:
 		Renderer2D* m_Renderer = nullptr;
+		float m_OrthographicSize = 1.0f;
+		float m_OrthographicNear = -1.0f;
+		float m_OrthographicFar = 1.0f;
+		glm::mat4 m_ProjectionViewMatrix = glm::mat4(1.0f);
 	};
 
 }

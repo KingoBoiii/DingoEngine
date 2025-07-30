@@ -1,20 +1,18 @@
-#include "GraphicsTest.h"
+#include "RendererTest.h"
 
 namespace Dingo
 {
 
 
-	void GraphicsTest::Initialize()
+	void RendererTest::Initialize()
 	{
 		m_Renderer = Renderer::Create(RendererParams{ .TargetSwapChain = false });
 		m_Renderer->Initialize();
 
-		m_AspectRatio = 800.0f / 600.0f;
-
 		InitializeGraphics();
 	}
 
-	void GraphicsTest::Cleanup()
+	void RendererTest::Cleanup()
 	{
 		CleanupGraphics();
 
@@ -26,10 +24,8 @@ namespace Dingo
 		}
 	}
 
-	void GraphicsTest::Resize(uint32_t width, uint32_t height)
+	void RendererTest::Resize(uint32_t width, uint32_t height)
 	{
-		auto d = m_Renderer->GetTargetFramebuffer();
-
 		if (width == m_Renderer->GetTargetFramebuffer()->GetParams().Width && height == m_Renderer->GetTargetFramebuffer()->GetParams().Height)
 		{
 			return;
@@ -41,11 +37,6 @@ namespace Dingo
 		{
 			m_Renderer->Resize(width, height);
 		});
-	}
-
-	void GraphicsTest::ImGuiRender()
-	{
-		ClearColorTest::ImGuiRender();
 	}
 
 }

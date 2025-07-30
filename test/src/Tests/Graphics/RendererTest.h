@@ -1,17 +1,15 @@
 #pragma once
-#include "Tests/ClearColorTest.h"
+#include "Tests/GraphicsTest.h"
 
 namespace Dingo
 {
 
-	class GraphicsTest : public ClearColorTest
+	class RendererTest : public GraphicsTest
 	{
 	public:
 		virtual void Initialize() override;
 		virtual void Cleanup() override;
 		virtual void Resize(uint32_t width, uint32_t height) override;
-
-		virtual void ImGuiRender() override;
 
 		virtual Texture* GetResult() override { return m_Renderer->GetOutput(); }
 
@@ -20,8 +18,6 @@ namespace Dingo
 		virtual void CleanupGraphics() {}
 
 	protected:
-		float m_AspectRatio;
-
 		Renderer* m_Renderer = nullptr;
 	};
 
