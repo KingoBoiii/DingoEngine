@@ -34,8 +34,15 @@ namespace Dingo
 		virtual void Initialize();
 		virtual void Shutdown();
 
+		/**************************************************
+		***		RENDER PASS								***
+		**************************************************/
+
 		virtual void BeginRenderPass(RenderPass* renderPass);
 		virtual void EndRenderPass();
+
+		virtual void DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+		virtual void DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer, uint32_t indexCount = 0);
 
 		virtual void Begin();
 		virtual void End();

@@ -41,7 +41,10 @@ namespace Dingo
 		{
 			Application::Get().SubmitPostExecution([this, width, height]()
 			{
-				m_Renderer->Resize(width, height);
+				if (m_Renderer)
+				{
+					m_Renderer->Resize(width, height);
+				}
 			});
 		}
 	}

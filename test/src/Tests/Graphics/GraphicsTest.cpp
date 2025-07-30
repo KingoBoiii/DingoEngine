@@ -28,8 +28,19 @@ namespace Dingo
 
 	void GraphicsTest::Resize(uint32_t width, uint32_t height)
 	{
+		auto d = m_Renderer->GetTargetFramebuffer();
+
+		if (width == m_Renderer->GetTargetFramebuffer()->GetParams().Width && height == m_Renderer->GetTargetFramebuffer()->GetParams().Height)
+		{
+			return;
+		}
+
 		m_AspectRatio = static_cast<float>(width) / static_cast<float>(height);
-		m_Renderer->Resize(width, height);
+
+		Application::Get().SubmitPostExecution([this, width, height]()
+		{
+			m_Renderer->Resize(width, height);
+		});
 	}
 
 }

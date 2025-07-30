@@ -48,6 +48,10 @@ namespace Dingo
 		}
 	}
 
+	/**************************************************
+	***		RENDER PASS								***
+	**************************************************/
+
 	void Renderer::BeginRenderPass(RenderPass* renderPass)
 	{
 		if (m_Params.TargetSwapChain)
@@ -66,8 +70,32 @@ namespace Dingo
 	void Renderer::EndRenderPass()
 	{
 		m_CommandList->End();
+	}
 
-		m_TargetFramebuffer = nullptr;
+	void Renderer::DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
+	{
+		if (indexCount == 0)
+		{
+			indexCount = indexBuffer->GetByteSize() / sizeof(uint16_t); // Assuming 16-bit indices
+		}
+
+		m_CommandList->AddVertexBuffer(vertexBuffer, 0);
+		m_CommandList->SetIndexBuffer(indexBuffer, 0);
+		m_CommandList->DrawIndexed(indexCount, 1); // Assuming 16-bit indices
+	}
+
+	void Renderer::DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer, uint32_t indexCount)
+	{
+		if (indexCount == 0)
+		{
+			indexCount = indexBuffer->GetByteSize() / sizeof(uint16_t); // Assuming 16-bit indices
+		}
+
+		m_CommandList->UploadBuffer(uniformBuffer, uniformBuffer->GetData(), uniformBuffer->GetByteSize());
+
+		m_CommandList->AddVertexBuffer(vertexBuffer, 0);
+		m_CommandList->SetIndexBuffer(indexBuffer, 0);
+		m_CommandList->DrawIndexed(indexCount, 1); // Assuming 16-bit indices
 	}
 
 	void Renderer::Begin()
@@ -97,10 +125,10 @@ namespace Dingo
 			return;
 		}
 
-		Application::Get().SubmitPostExecution([this, width, height]()
-		{
-			m_TargetFramebuffer->Resize(width, height);
-		});
+		//Application::Get().SubmitPostExecution([this, width, height]()
+		//{
+		m_TargetFramebuffer->Resize(width, height);
+		//});
 	}
 
 	void Renderer::Clear(const glm::vec4& clearColor)

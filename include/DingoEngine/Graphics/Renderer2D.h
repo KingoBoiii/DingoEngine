@@ -1,4 +1,5 @@
 #pragma once
+#include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/CommandList.h"
 
@@ -54,10 +55,11 @@ namespace Dingo
 
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
 
-		Texture* GetOutput() const { return m_TargetFramebuffer->GetAttachment(0); }
+		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
+		//Texture* GetOutput() const { return m_TargetFramebuffer->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{
-			return glm::vec2(m_TargetFramebuffer->GetParams().Width, m_TargetFramebuffer->GetParams().Height);
+			return glm::vec2(m_Renderer->GetTargetFramebuffer()->GetParams().Width, m_Renderer->GetTargetFramebuffer()->GetParams().Height);
 		}
 
 	private:
@@ -70,8 +72,9 @@ namespace Dingo
 		***		GENERAL									***
 		**************************************************/
 		Renderer2DParams m_Params;
-		Framebuffer* m_TargetFramebuffer = nullptr;
-		CommandList* m_CommandList = nullptr;
+		Renderer* m_Renderer = nullptr;
+		//Framebuffer* m_TargetFramebuffer = nullptr;
+		//CommandList* m_CommandList = nullptr;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 
 		struct CameraData
