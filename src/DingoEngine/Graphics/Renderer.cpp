@@ -6,6 +6,13 @@
 namespace Dingo
 {
 
+	struct StaticResources
+	{
+		Texture* WhiteTexture = nullptr;
+	};
+
+	static StaticResources* s_StaticResources = nullptr;
+
 	Renderer* Renderer::Create(const RendererParams& params)
 	{
 		return new Renderer(params);
@@ -180,6 +187,52 @@ namespace Dingo
 	Texture* Renderer::GetOutput() const
 	{
 		return m_TargetFramebuffer->GetAttachment(0);
+	}
+
+	/**************************************************
+	***		STATIC RESOURCES 						***
+	**************************************************/
+
+	Texture* Renderer::GetWhiteTexture()
+	{
+		return s_StaticResources->WhiteTexture;
+	}
+
+	void Renderer::InitializeStaticResources()
+	{
+		if (s_StaticResources)
+		{
+			return;
+		}
+
+		s_StaticResources = new StaticResources();
+
+		s_StaticResources->WhiteTexture = Texture::Create(TextureParams()
+			.SetDebugName("White Texture")
+			.SetWidth(1)
+			.SetHeight(1)
+			.SetFormat(TextureFormat::RGBA)
+			.SetDimension(TextureDimension::Texture2D));
+		s_StaticResources->WhiteTexture->Initialize();
+
+		uint32_t whiteTextureData = 0xffffffff;
+		s_StaticResources->WhiteTexture->Upload(&whiteTextureData, sizeof(uint32_t));
+	}
+
+	void Renderer::DestroyStaticResources()
+	{
+		if (!s_StaticResources)
+		{
+			return;
+		}
+
+		if (s_StaticResources->WhiteTexture)
+		{
+			s_StaticResources->WhiteTexture->Destroy();
+			s_StaticResources->WhiteTexture = nullptr;
+		}
+
+		delete s_StaticResources;
 	}
 
 }

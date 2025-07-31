@@ -3,6 +3,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#define USE_WHITE_TEXTURE 0
+
 namespace Dingo
 {
 
@@ -65,10 +67,14 @@ void main() {
 			.Dimension = Dingo::TextureDimension::Texture2D,
 		};
 
+#if USE_WHITE_TEXTURE
+		m_Texture = Dingo::Renderer::GetWhiteTexture();
+#else
 		m_Texture = Dingo::Texture::Create(textureParams);
 		m_Texture->Initialize();
 		m_Texture->Upload(textureData, width * channels);
 		//m_Texture->Upload("assets/textures/dickbutt_transparent.png");
+#endif
 
 		m_Shader = Dingo::Shader::CreateFromSource("Texture Shader", ShaderSource);
 
@@ -119,11 +125,13 @@ void main() {
 
 	void TextureTest::CleanupGraphics()
 	{
+#if !USE_WHITE_TEXTURE
 		if (m_Texture)
 		{
 			m_Texture->Destroy();
-			m_Texture= nullptr;
+			m_Texture = nullptr;
 		}
+#endif
 
 		if (m_UniformBuffer)
 		{
