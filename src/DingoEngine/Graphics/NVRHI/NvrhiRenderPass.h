@@ -20,7 +20,7 @@ namespace Dingo
 
 		virtual void SetUniformBuffer(uint32_t slot, GraphicsBuffer* buffer) override;
 
-		virtual void SetTexture(uint32_t slot, Texture* texture) override;
+		virtual void SetTexture(uint32_t slot, Texture* texture, uint32_t arrayElement = 0) override;
 
 		virtual void Bake() override;
 

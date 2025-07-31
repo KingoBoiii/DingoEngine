@@ -20,28 +20,45 @@ namespace Dingo
 #version 450
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec4 a_Color;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 3) in float a_TexIndex;
 
 layout (std140, binding = 0) uniform Camera {
 	mat4 ProjectionView;
 };
 
 layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec2 v_TexCoord;
+layout(location = 2) out flat float v_TexIndex;
 
 void main()
 {
 	gl_Position = ProjectionView * vec4(a_Position, 1.0);
 	v_Color = a_Color;
+	v_TexCoord = a_TexCoord;
+	v_TexIndex = a_TexIndex;
 }
 
 #type fragment
 #version 450
 layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec2 v_TexCoord;
+layout(location = 2) in flat float v_TexIndex;
 
 layout(location = 0) out vec4 o_Color;
 
+layout (set = 0, binding = 0) uniform texture2D u_Textures[32];
+layout (set = 0, binding = 1) uniform sampler u_Samplers[32];
+
 void main()
 {
-	o_Color = v_Color;
+	o_Color = texture(sampler2D(u_Textures[int(v_TexIndex)], u_Samplers[int(v_TexIndex)]), v_TexCoord);
+	// o_Color = v_Color;
+	
+	if (o_Color.a == 0.0)
+	{
+		discard; // Skip rendering if the color is fully transparent
+	}
 }
 		)";
 
@@ -81,6 +98,13 @@ void main()
 			.SetDirectUpload(false)
 			.SetIsVolatile(true)
 			.Create();
+
+		// Set all texture slots to 0
+		m_TextureSlots[0] = Renderer::GetWhiteTexture();
+		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
+		{
+			m_TextureSlots[i] = nullptr;
+		}
 
 		CreateQuadPipeline();
 	}
@@ -127,6 +151,17 @@ void main()
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
 
 			m_Renderer->Clear(m_Params.ClearColor);
+
+			for (uint32_t i = 0; i < m_TextureSlots.size(); i++)
+			{
+				if (m_TextureSlots[i])
+				{
+					m_QuadPipeline.RenderPass->SetTexture(0, m_TextureSlots[i], i);
+					continue;
+				}
+
+				m_QuadPipeline.RenderPass->SetTexture(0, m_TextureSlots[0], i);
+			}
 
 			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_QuadPipeline.IndexCount);
 

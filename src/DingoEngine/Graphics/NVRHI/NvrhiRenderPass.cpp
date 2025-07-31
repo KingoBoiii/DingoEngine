@@ -31,12 +31,12 @@ namespace Dingo
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(slot, static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle));
 	}
 
-	void NvrhiRenderPass::SetTexture(uint32_t slot, Texture* texture)
+	void NvrhiRenderPass::SetTexture(uint32_t slot, Texture* texture, uint32_t arrayElement)
 	{
 		DE_CORE_ASSERT(texture, "Texture must not be null.");
 
-		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle));
-		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot + 1, static_cast<NvrhiTexture*>(texture)->m_SamplerHandle));
+		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle).setArrayElement(arrayElement));
+		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot + 1, static_cast<NvrhiTexture*>(texture)->m_SamplerHandle).setArrayElement(arrayElement));
 	}
 
 	void NvrhiRenderPass::Bake()

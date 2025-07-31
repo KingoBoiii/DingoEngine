@@ -6,6 +6,8 @@
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/RenderPass.h"
 
+#include <array>
+
 #include <glm/glm.hpp>
 
 namespace Dingo
@@ -92,6 +94,10 @@ namespace Dingo
 		GraphicsBuffer* m_CameraUniformBuffer = nullptr;
 
 		glm::vec4 m_QuadVertexPositions[4] = {};
+
+		static const uint32_t MaxTextureSlots = 32;
+		std::array<Texture*, MaxTextureSlots> m_TextureSlots;
+		uint32_t m_TextureSlotIndex = 1; // 0 = white texture
 
 		/**************************************************
 		***		QUAD									***

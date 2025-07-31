@@ -117,7 +117,27 @@ namespace Dingo
 			uint32_t binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			uint32_t descriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 
-			reflection.SeperateSamplers.push_back({ name, descriptorSet, binding });
+			uint32_t dimension = 0;
+			switch (baseType.image.dim)
+			{
+				case spv::Dim::Dim1D:
+					dimension = 1;
+					break;
+				case spv::Dim::Dim2D:
+					dimension = 2;
+					break;
+				case spv::Dim::Dim3D:
+				case spv::Dim::DimCube:
+					dimension = 3;
+					break;
+			}
+			uint32_t arraySize = type.array.size() > 0 ? type.array[0] : 1;
+			if (arraySize == 0)
+			{
+				arraySize = 1;
+			}
+
+			reflection.SeperateSamplers.push_back({ name, descriptorSet, binding, dimension, arraySize });
 		}
 
 		for (const auto& resource : resources.sampled_images)
@@ -128,7 +148,27 @@ namespace Dingo
 			uint32_t binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			uint32_t descriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 
-			reflection.SampledImages.push_back({ name, descriptorSet, binding });
+			uint32_t dimension = 0;
+			switch (baseType.image.dim)
+			{
+				case spv::Dim::Dim1D:
+					dimension = 1;
+					break;
+				case spv::Dim::Dim2D:
+					dimension = 2;
+					break;
+				case spv::Dim::Dim3D:
+				case spv::Dim::DimCube:
+					dimension = 3;
+					break;
+			}
+			uint32_t arraySize = type.array.size() > 0 ? type.array[0] : 1;
+			if (arraySize == 0)
+			{
+				arraySize = 1;
+			}
+
+			reflection.SampledImages.push_back({ name, descriptorSet, binding, dimension, arraySize });
 		}
 
 		for (const auto& resource : resources.separate_images)
@@ -139,7 +179,27 @@ namespace Dingo
 			uint32_t binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			uint32_t descriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 
-			reflection.SeperateImages.push_back({ name, descriptorSet, binding });
+			uint32_t dimension = 0;
+			switch (baseType.image.dim)
+			{
+				case spv::Dim::Dim1D:
+					dimension = 1;
+					break;
+				case spv::Dim::Dim2D:
+					dimension = 2;
+					break;
+				case spv::Dim::Dim3D:
+				case spv::Dim::DimCube:
+					dimension = 3;
+					break;
+			}
+			uint32_t arraySize = type.array.size() > 0 ? type.array[0] : 1;
+			if (arraySize == 0)
+			{
+				arraySize = 1;
+			}
+
+			reflection.SeperateImages.push_back({ name, descriptorSet, binding, dimension, arraySize });
 		}
 
 		return reflection;
@@ -170,19 +230,22 @@ namespace Dingo
 		DE_CORE_TRACE("  {0} Seperate Samplers", reflection.SeperateSamplers.size());
 		for (const auto& seperateSampler : reflection.SeperateSamplers)
 		{
-			DE_CORE_TRACE("    {0} (Set={1}, Binding={2})", seperateSampler.Name, seperateSampler.DescriptorSet, seperateSampler.Binding);
+			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", seperateSampler.Name, seperateSampler.DescriptorSet, seperateSampler.Binding);
+			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", seperateSampler.Dimension, seperateSampler.ArraySize);
 		}
 
 		DE_CORE_TRACE("  {0} Sampled Images", reflection.SampledImages.size());
 		for (const auto& sampledImage : reflection.SampledImages)
 		{
-			DE_CORE_TRACE("    {0} (Set={1}, Binding={2})", sampledImage.Name, sampledImage.DescriptorSet, sampledImage.Binding);
+			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", sampledImage.Name, sampledImage.DescriptorSet, sampledImage.Binding);
+			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", sampledImage.Dimension, sampledImage.ArraySize);
 		}
 
 		DE_CORE_TRACE("  {0} Seperate Images", reflection.SeperateImages.size());
 		for (const auto& seperateImage : reflection.SeperateImages)
 		{
-			DE_CORE_TRACE("    {0} (Set={1}, Binding={2})", seperateImage.Name, seperateImage.DescriptorSet, seperateImage.Binding);
+			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", seperateImage.Name, seperateImage.DescriptorSet, seperateImage.Binding);
+			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", seperateImage.Dimension, seperateImage.ArraySize);
 		}
 		DE_CORE_TRACE("-------------------------------------------------------------");
 	}

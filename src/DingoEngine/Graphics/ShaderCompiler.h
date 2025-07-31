@@ -11,14 +11,20 @@ namespace Dingo
 		uint32_t Binding;
 	};
 
+	struct ShaderImageBinding : public ShaderResourceBinding
+	{
+		uint32_t Dimension;
+		uint32_t ArraySize;
+	};
+
 	struct ShaderReflection
 	{
 		std::vector<ShaderResourceBinding> UniformBuffers;
 		std::vector<ShaderResourceBinding> StorageBuffers;
 		std::vector<ShaderResourceBinding> PushConstantBuffers;
-		std::vector<ShaderResourceBinding> SeperateSamplers;
-		std::vector<ShaderResourceBinding> SampledImages;
-		std::vector<ShaderResourceBinding> SeperateImages;
+		std::vector<ShaderImageBinding> SeperateSamplers;
+		std::vector<ShaderImageBinding> SampledImages;
+		std::vector<ShaderImageBinding> SeperateImages;
 	};
 
 	class ShaderCompiler
