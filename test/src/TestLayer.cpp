@@ -7,6 +7,7 @@
 #include "Tests/Renderer/TextureTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
+#include "Tests/Renderer2D/TextureQuadTest.h"
 
 #include <imgui.h>
 
@@ -22,7 +23,8 @@ namespace Dingo
 		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
 		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
 
-		m_Tests.push_back({ "Colored Quad Test (R2D)", []() { return new ColorQuadTest(); } });
+		m_Tests.push_back({ "Color Quad Test (R2D)", []() { return new ColorQuadTest(); } });
+		m_Tests.push_back({ "Texture Quad Test (R2D)", []() { return new TextureQuadTest(); } });
 
 		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();

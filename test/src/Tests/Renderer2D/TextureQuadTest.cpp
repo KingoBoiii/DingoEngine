@@ -1,9 +1,9 @@
-#include "ColorQuadTest.h"
+#include "TextureQuadTest.h"
 
 namespace Dingo
 {
 
-	void ColorQuadTest::Update(float deltaTime)
+	void TextureQuadTest::Update(float deltaTime)
 	{
 		m_Renderer->BeginScene(m_ProjectionViewMatrix);
 		m_Renderer->Clear(m_ClearColor);
