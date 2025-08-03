@@ -47,12 +47,12 @@ layout(location = 2) in flat float v_TexIndex;
 
 layout(location = 0) out vec4 o_Color;
 
-layout (set = 0, binding = 0) uniform texture2D u_Textures[32];
-layout (set = 0, binding = 1) uniform sampler u_Samplers[32];
+layout (set = 0, binding = 1) uniform texture2D u_Textures[32];
+layout (set = 0, binding = 2) uniform sampler u_Sampler;
 
 void main()
 {
-	o_Color = texture(sampler2D(u_Textures[int(v_TexIndex)], u_Samplers[int(v_TexIndex)]), v_TexCoord);
+	o_Color = texture(sampler2D(u_Textures[int(v_TexIndex)], u_Sampler), v_TexCoord) * v_Color;
 	// o_Color = v_Color;
 	
 	if (o_Color.a == 0.0)
@@ -195,6 +195,8 @@ void main()
 		{
 			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
 			m_QuadPipeline.VertexBufferPtr->Color = color;
+			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPipeline.VertexBufferPtr->TexIndex = 0.0f;
 			m_QuadPipeline.VertexBufferPtr++;
 		}
 
@@ -239,7 +241,9 @@ void main()
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(QuadVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(QuadVertex, Position))
-			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(QuadVertex, Color));
+			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(QuadVertex, Color))
+			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(QuadVertex, TexCoord))
+			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
 		m_QuadPipeline.Pipeline = PipelineBuilder()
 			.SetDebugName("Renderer2DQuadPipeline")
@@ -262,6 +266,11 @@ void main()
 		m_QuadPipeline.RenderPass = RenderPass::Create(renderPassParams);
 		m_QuadPipeline.RenderPass->Initialize();
 		m_QuadPipeline.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetClampSampler());
+		for (uint32_t i = 0; i < MaxTextureSlots; i++)
+		{
+			m_QuadPipeline.RenderPass->SetTexture(1, Renderer::GetWhiteTexture(), i);
+		}
 		m_QuadPipeline.RenderPass->Bake();
 
 		m_QuadPipeline.VertexBufferBase = new QuadVertex[m_Params.Capabilities.GetQuadVertexCount()];

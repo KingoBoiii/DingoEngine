@@ -4,6 +4,7 @@
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiShader.h"
 #include "NvrhiTexture.h"
+#include "NvrhiSampler.h"
 
 namespace Dingo
 {
@@ -36,7 +37,16 @@ namespace Dingo
 		DE_CORE_ASSERT(texture, "Texture must not be null.");
 
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle).setArrayElement(arrayElement));
+#ifdef ENABLE_TEXTURE_SAMPLER
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot + 1, static_cast<NvrhiTexture*>(texture)->m_SamplerHandle).setArrayElement(arrayElement));
+#endif
+	}
+
+	void NvrhiRenderPass::SetSampler(uint32_t slot, Sampler* sampler)
+	{
+		DE_CORE_ASSERT(sampler, "Sampler must not be null.");
+
+		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot, static_cast<NvrhiSampler*>(sampler)->m_Handle));
 	}
 
 	void NvrhiRenderPass::Bake()

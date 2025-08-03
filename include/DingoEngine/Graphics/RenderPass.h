@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
+#include "DingoEngine/Graphics/Sampler.h"
 
 namespace Dingo
 {
@@ -35,6 +36,8 @@ namespace Dingo
 		virtual void SetUniformBuffer(uint32_t slot, GraphicsBuffer* buffer) = 0;
 
 		virtual void SetTexture(uint32_t slot, Texture* texture, uint32_t arrayElement = 0) = 0;
+
+		virtual void SetSampler(uint32_t slot, Sampler* sampler) = 0;
 
 		virtual void Bake() = 0;
 

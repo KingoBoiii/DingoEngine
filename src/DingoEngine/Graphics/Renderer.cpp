@@ -9,6 +9,8 @@ namespace Dingo
 	struct StaticResources
 	{
 		Texture* WhiteTexture = nullptr;
+		Sampler* ClampSampler = nullptr;
+		Sampler* PointSampler = nullptr;
 	};
 
 	static StaticResources* s_StaticResources = nullptr;
@@ -198,6 +200,16 @@ namespace Dingo
 		return s_StaticResources->WhiteTexture;
 	}
 
+	Sampler* Renderer::GetClampSampler()
+	{
+		return s_StaticResources->ClampSampler;
+	}
+
+	Sampler* Renderer::GetPointSampler()
+	{
+		return s_StaticResources->PointSampler;
+	}
+
 	void Renderer::InitializeStaticResources()
 	{
 		if (s_StaticResources)
@@ -217,6 +229,15 @@ namespace Dingo
 
 		uint32_t whiteTextureData = 0xffffffff;
 		s_StaticResources->WhiteTexture->Upload(&whiteTextureData, sizeof(uint32_t));
+
+		s_StaticResources->ClampSampler = Sampler::Create(SamplerParams());
+		s_StaticResources->ClampSampler->Initialize();
+
+		s_StaticResources->PointSampler = Sampler::Create(SamplerParams()
+			.SetMinFilter(false)
+			.SetMagFilter(false)
+			.SetMipFilter(false));
+		s_StaticResources->PointSampler->Initialize();
 	}
 
 	void Renderer::DestroyStaticResources()
@@ -230,6 +251,18 @@ namespace Dingo
 		{
 			s_StaticResources->WhiteTexture->Destroy();
 			s_StaticResources->WhiteTexture = nullptr;
+		}
+
+		if (s_StaticResources->ClampSampler)
+		{
+			s_StaticResources->ClampSampler->Destroy();
+			s_StaticResources->ClampSampler = nullptr;
+		}
+
+		if (s_StaticResources->PointSampler)
+		{
+			s_StaticResources->PointSampler->Destroy();
+			s_StaticResources->PointSampler = nullptr;
 		}
 
 		delete s_StaticResources;

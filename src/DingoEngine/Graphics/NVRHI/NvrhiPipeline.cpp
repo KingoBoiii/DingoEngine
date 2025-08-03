@@ -4,6 +4,9 @@
 #include "NvrhiTexture.h"
 #include "NvrhiFramebuffer.h"
 
+#include "DingoEngine/Graphics/Renderer.h"
+#include "NvrhiSampler.h"
+
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "NvrhiGraphicsContext.h"
 
@@ -135,7 +138,11 @@ namespace Dingo
 		if (m_Params.Texture)
 		{
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
+#ifdef ENABLE_TEXTURE_SAMPLER
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(2, static_cast<NvrhiTexture*>(m_Params.Texture)->m_SamplerHandle));
+#else
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(2, static_cast<NvrhiSampler*>(Renderer::GetClampSampler())->m_Handle));
+#endif
 		}
 
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(bindingSetDesc, bindingLayoutHandle);

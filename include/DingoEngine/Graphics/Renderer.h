@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/RenderPass.h"
+#include "DingoEngine/Graphics/Sampler.h"
 
 #include <glm/glm.hpp>
 
@@ -76,6 +77,8 @@ namespace Dingo
 		**************************************************/
 
 		static Texture* GetWhiteTexture();
+		static Sampler* GetClampSampler();
+		static Sampler* GetPointSampler();
 
 	protected:
 		Renderer(const RendererParams& params)

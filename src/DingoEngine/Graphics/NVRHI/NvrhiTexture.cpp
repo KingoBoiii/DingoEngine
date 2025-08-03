@@ -88,6 +88,7 @@ namespace Dingo
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
 
+#ifdef ENABLE_TEXTURE_SAMPLER
 		nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
 			.setAllAddressModes(Utils::GetSamplerAddressMode(m_Params.WrapMode))
 			.setMinFilter(true)
@@ -95,14 +96,17 @@ namespace Dingo
 			.setMipFilter(true);
 
 		m_SamplerHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createSampler(samplerDesc);
+#endif
 	}
 
 	void NvrhiTexture::Destroy()
 	{
+#ifdef ENABLE_TEXTURE_SAMPLER
 		if (m_SamplerHandle)
 		{
 			m_SamplerHandle->Release();
 		}
+#endif
 
 		if (m_Handle)
 		{

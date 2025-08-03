@@ -22,6 +22,8 @@ namespace Dingo
 
 		virtual void SetTexture(uint32_t slot, Texture* texture, uint32_t arrayElement = 0) override;
 
+		virtual void SetSampler(uint32_t slot, Sampler* sampler) override;
+
 		virtual void Bake() override;
 
 	private:

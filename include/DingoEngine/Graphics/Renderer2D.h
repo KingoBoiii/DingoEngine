@@ -94,9 +94,10 @@ namespace Dingo
 		GraphicsBuffer* m_CameraUniformBuffer = nullptr;
 
 		glm::vec4 m_QuadVertexPositions[4] = {};
+		glm::vec2 m_TextureCoords[4] = { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } };
 
 		static const uint32_t MaxTextureSlots = 32;
-		std::array<Texture*, MaxTextureSlots> m_TextureSlots;
+		std::array<Texture*, MaxTextureSlots> m_TextureSlots = {};
 		uint32_t m_TextureSlotIndex = 1; // 0 = white texture
 
 		/**************************************************
@@ -106,6 +107,8 @@ namespace Dingo
 		{
 			glm::vec3 Position;
 			glm::vec4 Color;
+			glm::vec2 TexCoord;
+			float TexIndex = 0.0f;
 		};
 
 		struct QuadPipeline
