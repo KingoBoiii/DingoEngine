@@ -9,7 +9,6 @@ namespace Dingo
 	class GraphicsTest : public Test
 	{
 	public:
-		GraphicsTest() = default;
 		virtual ~GraphicsTest() = default;
 
 	public:
