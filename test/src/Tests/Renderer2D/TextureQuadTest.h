@@ -11,7 +11,12 @@ namespace Dingo
 		virtual ~TextureQuadTest() = default;
 
 	public:
+		virtual void Initialize() override;
+		virtual void Cleanup() override;
 		virtual void Update(float deltaTime) override;
+
+	private:
+		Texture* m_Texture = nullptr;
 	};
 
 }

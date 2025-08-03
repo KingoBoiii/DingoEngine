@@ -62,6 +62,9 @@ namespace Dingo
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
 		void DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color);
 
+		void DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+		void DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+
 		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
 		glm::vec2 GetViewportSize() const
 		{
@@ -74,6 +77,8 @@ namespace Dingo
 		{}
 
 	private:
+		float GetTextureIndex(Texture* texture);
+
 		void CreateQuadIndexBuffer();
 		void CreateQuadPipeline();
 		void DestroyQuadPipeline();

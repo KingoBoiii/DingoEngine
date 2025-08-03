@@ -148,20 +148,21 @@ void main()
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
 			m_QuadPipeline.VertexBuffer->Upload(m_QuadPipeline.VertexBufferBase, dataSize);
 
-			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
-
-			m_Renderer->Clear(m_Params.ClearColor);
-
 			for (uint32_t i = 0; i < m_TextureSlots.size(); i++)
 			{
 				if (m_TextureSlots[i])
 				{
-					m_QuadPipeline.RenderPass->SetTexture(0, m_TextureSlots[i], i);
+					m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[i], i);
 					continue;
 				}
 
-				m_QuadPipeline.RenderPass->SetTexture(0, m_TextureSlots[0], i);
+				m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
 			}
+			m_QuadPipeline.RenderPass->Bake();
+
+			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
+
+			m_Renderer->Clear(m_Params.ClearColor);
 
 			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_QuadPipeline.IndexCount);
 
@@ -189,7 +190,7 @@ void main()
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), { position.x, position.y, 0.0f }) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
@@ -201,6 +202,62 @@ void main()
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+	}
+
+	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		DrawQuad(glm::vec3(position, 0.0f), size, texture, color);
+	}
+
+	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		{
+			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
+			return;
+		}
+
+		float textureIndex = GetTextureIndex(texture);
+
+		constexpr size_t quadVertexCount = 4;
+
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+
+		for (size_t i = 0; i < quadVertexCount; i++)
+		{
+			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPipeline.VertexBufferPtr->Color = color;
+			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPipeline.VertexBufferPtr->TexIndex = textureIndex;
+			m_QuadPipeline.VertexBufferPtr++;
+		}
+
+		m_QuadPipeline.IndexCount += 6;
+	}
+
+	float Renderer2D::GetTextureIndex(Texture* texture)
+	{
+		float textureIndex = 0.0f;
+		for (uint32_t i = 1; i < m_TextureSlotIndex; i++)
+		{
+			if (m_TextureSlots[i]->NativeEquals(texture))
+			{
+				textureIndex = (float)i;
+				break;
+			}
+		}
+
+		if (textureIndex == 0.0f)
+		{
+			//if (m_TextureSlotIndex >= MaxTextureSlots)
+			//	FlushAndReset();
+
+			textureIndex = (float)m_TextureSlotIndex;
+			m_TextureSlots[m_TextureSlotIndex] = texture;
+			m_TextureSlotIndex++;
+		}
+
+		return textureIndex;
 	}
 
 	void Renderer2D::CreateQuadIndexBuffer()

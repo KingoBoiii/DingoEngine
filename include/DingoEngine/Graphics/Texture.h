@@ -86,6 +86,8 @@ namespace Dingo
 		virtual void Upload(const void* data, uint64_t size) = 0;
 		virtual void Upload(const std::filesystem::path& filepath) = 0;
 
+		virtual bool NativeEquals(const Texture* other) const = 0;
+
 		virtual void* GetTextureHandle() const = 0;
 
 	protected:
