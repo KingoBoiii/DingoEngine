@@ -26,6 +26,7 @@ namespace Dingo
 
 		std::vector<std::pair<std::string, std::function<Test*()>>> m_Tests;
 		Test* m_CurrentTest = nullptr;
+		uint32_t m_CurrentTestIndex = 0;
 	};
 
 }

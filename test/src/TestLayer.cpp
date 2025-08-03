@@ -158,7 +158,7 @@ namespace Dingo
 
 		for (auto& test : m_Tests)
 		{
-			if (ImGui::Selectable(test.first.c_str(), m_CurrentTest == test.second()))
+			if (ImGui::Selectable(test.first.c_str(), m_CurrentTestIndex == &test - &m_Tests[0]))
 			{
 				Application::Get().SubmitPostExecution([&]()
 				{
@@ -169,6 +169,7 @@ namespace Dingo
 					}
 					m_CurrentTest = test.second();
 					m_CurrentTest->Initialize();
+					m_CurrentTestIndex = &test - &m_Tests[0];
 				});
 			}
 		}
