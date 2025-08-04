@@ -36,6 +36,22 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(texture, "Texture must not be null.");
 
+		// search if the texture is already in the binding set
+#if 0
+		for (auto& item : m_BindingSetDesc.bindings)
+		{
+			if (item.slot == slot && item.type == nvrhi::ResourceType::Texture_SRV)
+			{
+				// If the texture is already set, we can skip adding it again
+				if (item.resourceHandle == static_cast<NvrhiTexture*>(texture)->m_Handle)
+				{
+					//item.resourceHandle = static_cast<NvrhiTexture*>(texture)->m_Handle;
+					return;
+				}
+			}
+		}
+#endif
+
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle).setArrayElement(arrayElement));
 #ifdef ENABLE_TEXTURE_SAMPLER
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot + 1, static_cast<NvrhiTexture*>(texture)->m_SamplerHandle).setArrayElement(arrayElement));
