@@ -7,7 +7,9 @@ namespace Dingo
 	class ColorQuadTest : public Renderer2DTest
 	{
 	public:
-		ColorQuadTest() = default;
+		ColorQuadTest(Renderer2D* renderer) 
+			: Renderer2DTest(renderer)
+		{}
 		virtual ~ColorQuadTest() = default;
 
 	public:

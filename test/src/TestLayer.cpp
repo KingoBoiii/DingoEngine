@@ -16,6 +16,9 @@ namespace Dingo
 
 	void TestLayer::OnAttach()
 	{
+		m_Renderer2D = Renderer2D::Create();
+		m_Renderer2D->Initialize();
+
 		// Register tests
 		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
 		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
@@ -23,8 +26,8 @@ namespace Dingo
 		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
 		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
 
-		m_Tests.push_back({ "Color Quad Test (R2D)", []() { return new ColorQuadTest(); } });
-		m_Tests.push_back({ "Texture Quad Test (R2D)", []() { return new TextureQuadTest(); } });
+		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
 
 		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
@@ -37,6 +40,13 @@ namespace Dingo
 			m_CurrentTest->Cleanup();
 			delete m_CurrentTest;
 			m_CurrentTest = nullptr;
+		}
+
+		if (m_Renderer2D)
+		{
+			m_Renderer2D->Shutdown();
+			delete m_Renderer2D;
+			m_Renderer2D = nullptr;
 		}
 	}
 

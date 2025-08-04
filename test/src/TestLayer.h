@@ -24,6 +24,8 @@ namespace Dingo
 	private:
 		TestViewportPanel m_TestViewportPanel;
 
+		Renderer2D* m_Renderer2D = nullptr;
+
 		std::vector<std::pair<std::string, std::function<Test*()>>> m_Tests;
 		Test* m_CurrentTest = nullptr;
 		uint32_t m_CurrentTestIndex = 0;

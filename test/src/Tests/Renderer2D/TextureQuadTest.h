@@ -7,7 +7,9 @@ namespace Dingo
 	class TextureQuadTest : public Renderer2DTest
 	{
 	public:
-		TextureQuadTest() = default;
+		TextureQuadTest(Renderer2D* renderer)
+			: Renderer2DTest(renderer)
+		{}
 		virtual ~TextureQuadTest() = default;
 
 	public:
