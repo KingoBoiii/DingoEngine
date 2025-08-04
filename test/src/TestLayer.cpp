@@ -16,15 +16,18 @@ namespace Dingo
 
 	void TestLayer::OnAttach()
 	{
+		m_Renderer = Renderer::Create(RendererParams{ .TargetSwapChain = false });
+		m_Renderer->Initialize();
+
 		m_Renderer2D = Renderer2D::Create();
 		m_Renderer2D->Initialize();
 
 		// Register tests
-		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
-		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
-		m_Tests.push_back({ "Index Buffer Test", []() { return new IndexBufferTest(); } });
-		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
-		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
+		m_Tests.push_back({ "Static Triangle Test", [&]() { return new StaticTriangleTest(m_Renderer); } });
+		m_Tests.push_back({ "Vertex Buffer Test", [&]() { return new VertexBufferTest(m_Renderer); } });
+		m_Tests.push_back({ "Index Buffer Test", [&]() { return new IndexBufferTest(m_Renderer); } });
+		m_Tests.push_back({ "Uniform Buffer Test", [&]() { return new UniformBufferTest(m_Renderer); } });
+		m_Tests.push_back({ "Texture Test", [&]() { return new TextureTest(m_Renderer); } });
 
 		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
@@ -47,6 +50,13 @@ namespace Dingo
 			m_Renderer2D->Shutdown();
 			delete m_Renderer2D;
 			m_Renderer2D = nullptr;
+		}
+
+		if (m_Renderer)
+		{
+			m_Renderer->Shutdown();
+			delete m_Renderer;
+			m_Renderer = nullptr;
 		}
 	}
 

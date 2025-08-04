@@ -6,7 +6,7 @@
 namespace Dingo
 {
 
-	void UniformBufferTest::InitializeGraphics()
+	void UniformBufferTest::Initialize()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -91,7 +91,7 @@ void main() {
 		m_Renderer->End();
 	}
 
-	void UniformBufferTest::CleanupGraphics()
+	void UniformBufferTest::Cleanup()
 	{
 		if (m_UniformBuffer)
 		{

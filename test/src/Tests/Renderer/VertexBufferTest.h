@@ -7,12 +7,15 @@ namespace Dingo
 	class VertexBufferTest : public RendererTest
 	{
 	public:
+		VertexBufferTest(Renderer* renderer)
+			: RendererTest(renderer)
+		{}
 		virtual ~VertexBufferTest() = default;
 
 	public:
-		virtual void InitializeGraphics() override;
+		virtual void Initialize() override;
 		virtual void Update(float deltaTime) override;
-		virtual void CleanupGraphics() override;
+		virtual void Cleanup() override;
 
 	private:
 		Shader* m_Shader = nullptr;

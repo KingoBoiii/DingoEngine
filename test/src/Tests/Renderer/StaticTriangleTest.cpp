@@ -3,7 +3,7 @@
 namespace Dingo
 {
 
-	void StaticTriangleTest::InitializeGraphics()
+	void StaticTriangleTest::Initialize()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -58,7 +58,7 @@ void main() {
 		m_Renderer->End();
 	}
 
-	void StaticTriangleTest::CleanupGraphics()
+	void StaticTriangleTest::Cleanup()
 	{
 		if (m_Pipeline)
 		{

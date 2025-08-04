@@ -8,7 +8,7 @@
 namespace Dingo
 {
 
-	void TextureTest::InitializeGraphics()
+	void TextureTest::Initialize()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -123,7 +123,7 @@ void main() {
 		m_Renderer->End();
 	}
 
-	void TextureTest::CleanupGraphics()
+	void TextureTest::Cleanup()
 	{
 #if !USE_WHITE_TEXTURE
 		if (m_Texture)
