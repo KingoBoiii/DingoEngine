@@ -38,10 +38,8 @@ namespace Dingo
 	{
 		m_Renderer->BeginScene(m_ProjectionViewMatrix);
 		m_Renderer->Clear(m_ClearColor);
-		m_Renderer->DrawQuad({ -1.0f, 0.0f }, { 0.95f, 0.95f }, { 1.0f, 0.0f, 0.0f, 1.0f });
-		m_Renderer->DrawQuad({ 0.0f, 0.0f }, { 0.95f, 0.95f }, { 0.0f, 1.0f, 0.0f, 1.0f });
-		m_Renderer->DrawQuad({ 1.0f, 0.0f }, { 0.95f, 0.95f }, { 0.0f, 0.0f, 1.0f, 1.0f });
-		m_Renderer->DrawQuad({ 0.0f, 1.0f }, { 0.95f, 0.95f }, m_Texture);
+		m_Renderer->DrawQuad({ -1.55f, 0.0f }, { 2.0f, 2.0f }, glm::vec4(1.0f));
+		m_Renderer->DrawQuad({ 1.55f, 0.0f }, { 2.0f, 2.0f }, m_Texture);
 		m_Renderer->EndScene();
 	}
 
