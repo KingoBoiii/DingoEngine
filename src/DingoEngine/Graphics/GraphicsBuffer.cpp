@@ -27,7 +27,7 @@ namespace Dingo
 			.SetInitialData(data));
 	}
 
-	GraphicsBuffer* GraphicsBuffer::CreateUniformBuffer(uint64_t size, const void* data, const std::string& debugName)
+	GraphicsBuffer* GraphicsBuffer::CreateUniformBuffer(uint64_t size, const std::string& debugName)
 	{
 		return Create(GraphicsBufferParams()
 			.SetDebugName(debugName)
