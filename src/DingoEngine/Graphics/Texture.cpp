@@ -10,7 +10,7 @@ namespace Dingo
 	Texture* Texture::CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName)
 	{
 		uint32_t width, height, channels;
-		const uint8_t* data = FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);
+		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
 
 		return Create(TextureParams()
 			.SetDebugName(debugName)

@@ -7,39 +7,42 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		{
-			uint32_t width, height, channels;
-			const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);
+		//{
+		//	uint32_t width, height, channels;
+		//	const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);
 
-			Dingo::TextureParams textureParams = {
-				.DebugName = "Wooden Container",
-				.Width = width,
-				.Height = height,
-				.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
-				.Dimension = Dingo::TextureDimension::Texture2D,
-			};
+		//	Dingo::TextureParams textureParams = {
+		//		.DebugName = "Wooden Container",
+		//		.Width = width,
+		//		.Height = height,
+		//		.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
+		//		.Dimension = Dingo::TextureDimension::Texture2D,
+		//	};
 
-			m_Texture = Dingo::Texture::Create(textureParams);
-			m_Texture->Initialize();
-			m_Texture->Upload(textureData, width * channels);
-		}
+		//	m_Texture = Dingo::Texture::Create(textureParams);
+		//	m_Texture->Initialize();
+		//	m_Texture->Upload(textureData, width * channels);
+		//}
 
-		{
-			uint32_t width, height, channels;
-			const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/hd2.png", &width, &height, &channels, true, true);
+		m_Texture = Texture::CreateFromFile("assets/textures/container.jpg", "Wooden container");
+		m_HD2Texture = Texture::CreateFromFile("assets/textures/hd2.png", "HD2 Icon");
 
-			Dingo::TextureParams textureParams = {
-				.DebugName = "HD2 Icon",
-				.Width = width,
-				.Height = height,
-				.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
-				.Dimension = Dingo::TextureDimension::Texture2D,
-			};
+		//{
+		//	uint32_t width, height, channels;
+		//	const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/hd2.png", &width, &height, &channels, true, true);
 
-			m_HD2Texture = Dingo::Texture::Create(textureParams);
-			m_HD2Texture->Initialize();
-			m_HD2Texture->Upload(textureData, width * channels);
-		}
+		//	Dingo::TextureParams textureParams = {
+		//		.DebugName = "HD2 Icon",
+		//		.Width = width,
+		//		.Height = height,
+		//		.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
+		//		.Dimension = Dingo::TextureDimension::Texture2D,
+		//	};
+
+		//	m_HD2Texture = Dingo::Texture::Create(textureParams);
+		//	m_HD2Texture->Initialize();
+		//	m_HD2Texture->Upload(textureData, width * channels);
+		//}
 	}
 
 	void TextureQuadTest::Cleanup()
