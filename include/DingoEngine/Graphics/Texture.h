@@ -1,6 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/TextureFormat.h"
 #include "DingoEngine/Graphics/Enums/TextureDimension.h"
+#include "DingoEngine/Graphics/IBindableShaderResource.h"
 
 #include <filesystem>
 
@@ -69,7 +70,7 @@ namespace Dingo
 		}
 	};
 
-	class Texture
+	class Texture : public IBindableShaderResource
 	{
 	public:
 		static Texture* Create(const TextureParams& params);
@@ -85,6 +86,8 @@ namespace Dingo
 		virtual void Destroy() = 0;
 		virtual void Upload(const void* data, uint64_t size) = 0;
 		virtual void Upload(const std::filesystem::path& filepath) = 0;
+
+		virtual bool NativeEquals(const Texture* other) const = 0;
 
 		virtual void* GetTextureHandle() const = 0;
 

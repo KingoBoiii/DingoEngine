@@ -9,20 +9,11 @@ namespace Dingo
 
 	void Renderer2DTest::Initialize()
 	{
-		m_Renderer = Renderer2D::Create();
-		m_Renderer->Initialize();
-
 		RecalculateProjectionViewMatrix();
 	}
 
 	void Renderer2DTest::Cleanup()
 	{
-		if (m_Renderer)
-		{
-			m_Renderer->Shutdown();
-			delete m_Renderer;
-			m_Renderer = nullptr;
-		}
 	}
 
 	void Renderer2DTest::Resize(uint32_t width, uint32_t height)

@@ -9,7 +9,9 @@ namespace Dingo
 	class Renderer2DTest : public GraphicsTest
 	{
 	public:
-		Renderer2DTest() = default;
+		Renderer2DTest(Renderer2D* renderer) 
+			: m_Renderer(renderer)
+		{}
 		virtual ~Renderer2DTest() = default;
 
 	public:

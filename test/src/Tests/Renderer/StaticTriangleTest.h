@@ -7,12 +7,15 @@ namespace Dingo
 	class StaticTriangleTest : public RendererTest
 	{
 	public:
+		StaticTriangleTest(Renderer* renderer)
+			: RendererTest(renderer)
+		{}
 		virtual ~StaticTriangleTest() = default;
 
 	public:
-		virtual void InitializeGraphics() override;
+		virtual void Initialize() override;
 		virtual void Update(float deltaTime) override;
-		virtual void CleanupGraphics() override;
+		virtual void Cleanup() override;
 
 	private:
 		Shader* m_Shader = nullptr;

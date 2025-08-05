@@ -47,6 +47,7 @@ namespace Dingo
 
 		m_Renderer = AppRenderer::Create(m_SwapChain);
 		m_Renderer->Initialize();
+		Renderer::InitializeStaticResources();
 
 		m_Renderer2D = Renderer2D::Create(m_SwapChain->GetCurrentFramebuffer());
 		m_Renderer2D->Initialize();
@@ -76,6 +77,7 @@ namespace Dingo
 
 		m_LayerStack.Clear();
 
+		Renderer::DestroyStaticResources();
 		if (m_Renderer)
 		{
 			m_Renderer->Shutdown();

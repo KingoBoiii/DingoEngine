@@ -20,28 +20,44 @@ namespace Dingo
 #version 450
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec4 a_Color;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 3) in float a_TexIndex;
 
 layout (std140, binding = 0) uniform Camera {
 	mat4 ProjectionView;
 };
 
 layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec2 v_TexCoord;
+layout(location = 2) out flat float v_TexIndex;
 
 void main()
 {
 	gl_Position = ProjectionView * vec4(a_Position, 1.0);
 	v_Color = a_Color;
+	v_TexCoord = a_TexCoord;
+	v_TexIndex = a_TexIndex;
 }
 
 #type fragment
 #version 450
 layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec2 v_TexCoord;
+layout(location = 2) in flat float v_TexIndex;
 
 layout(location = 0) out vec4 o_Color;
 
+layout (set = 0, binding = 1) uniform texture2D u_Textures[32];
+layout (set = 0, binding = 2) uniform sampler u_Sampler;
+
 void main()
 {
-	o_Color = v_Color;
+	o_Color = texture(sampler2D(u_Textures[int(v_TexIndex)], u_Sampler), v_TexCoord) * v_Color;
+	
+	if (o_Color.a == 0.0)
+	{
+		discard; // Skip rendering if the color is fully transparent
+	}
 }
 		)";
 
@@ -82,6 +98,13 @@ void main()
 			.SetIsVolatile(true)
 			.Create();
 
+		// Set all texture slots to 0
+		m_TextureSlots[0] = Renderer::GetWhiteTexture();
+		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
+		{
+			m_TextureSlots[i] = nullptr;
+		}
+
 		CreateQuadPipeline();
 	}
 
@@ -115,6 +138,12 @@ void main()
 
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
+
+		m_TextureSlotIndex = 1; // Start from 1 since index 0 is reserved for the white texture
+		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
+		{
+			m_TextureSlots[i] = nullptr; // Reset texture slots
+		}
 	}
 
 	void Renderer2D::EndScene()
@@ -123,6 +152,18 @@ void main()
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
 			m_QuadPipeline.VertexBuffer->Upload(m_QuadPipeline.VertexBufferBase, dataSize);
+
+			for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
+			{
+				if (m_TextureSlots[i])
+				{
+					m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[i], i);
+					continue;
+				}
+
+				m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
+			}
+			m_QuadPipeline.RenderPass->Bake();
 
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
 
@@ -154,16 +195,74 @@ void main()
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), { position.x, position.y, 0.0f }) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
 			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
 			m_QuadPipeline.VertexBufferPtr->Color = color;
+			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPipeline.VertexBufferPtr->TexIndex = 0.0f;
 			m_QuadPipeline.VertexBufferPtr++;
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+	}
+
+	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		DrawQuad(glm::vec3(position, 0.0f), size, texture, color);
+	}
+
+	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		{
+			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
+			return;
+		}
+
+		float textureIndex = GetTextureIndex(texture);
+
+		constexpr size_t quadVertexCount = 4;
+
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+
+		for (size_t i = 0; i < quadVertexCount; i++)
+		{
+			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPipeline.VertexBufferPtr->Color = color;
+			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPipeline.VertexBufferPtr->TexIndex = textureIndex;
+			m_QuadPipeline.VertexBufferPtr++;
+		}
+
+		m_QuadPipeline.IndexCount += 6;
+	}
+
+	float Renderer2D::GetTextureIndex(Texture* texture)
+	{
+		float textureIndex = 0.0f;
+		for (uint32_t i = 1; i < m_TextureSlotIndex; i++)
+		{
+			if (m_TextureSlots[i]->NativeEquals(texture))
+			{
+				textureIndex = (float)i;
+				break;
+			}
+		}
+
+		if (textureIndex == 0.0f)
+		{
+			//if (m_TextureSlotIndex >= MaxTextureSlots)
+			//	FlushAndReset();
+
+			textureIndex = (float)m_TextureSlotIndex;
+			m_TextureSlots[m_TextureSlotIndex] = texture;
+			m_TextureSlotIndex++;
+		}
+
+		return textureIndex;
 	}
 
 	void Renderer2D::CreateQuadIndexBuffer()
@@ -204,7 +303,9 @@ void main()
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(QuadVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(QuadVertex, Position))
-			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(QuadVertex, Color));
+			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(QuadVertex, Color))
+			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(QuadVertex, TexCoord))
+			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
 		m_QuadPipeline.Pipeline = PipelineBuilder()
 			.SetDebugName("Renderer2DQuadPipeline")
@@ -227,6 +328,11 @@ void main()
 		m_QuadPipeline.RenderPass = RenderPass::Create(renderPassParams);
 		m_QuadPipeline.RenderPass->Initialize();
 		m_QuadPipeline.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetClampSampler());
+		for (uint32_t i = 0; i < MaxTextureSlots; i++)
+		{
+			m_QuadPipeline.RenderPass->SetTexture(1, Renderer::GetWhiteTexture(), i);
+		}
 		m_QuadPipeline.RenderPass->Bake();
 
 		m_QuadPipeline.VertexBufferBase = new QuadVertex[m_Params.Capabilities.GetQuadVertexCount()];

@@ -6,6 +6,8 @@
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/RenderPass.h"
 
+#include <array>
+
 #include <glm/glm.hpp>
 
 namespace Dingo
@@ -60,6 +62,9 @@ namespace Dingo
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
 		void DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color);
 
+		void DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+		void DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+
 		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
 		glm::vec2 GetViewportSize() const
 		{
@@ -72,6 +77,8 @@ namespace Dingo
 		{}
 
 	private:
+		float GetTextureIndex(Texture* texture);
+
 		void CreateQuadIndexBuffer();
 		void CreateQuadPipeline();
 		void DestroyQuadPipeline();
@@ -92,6 +99,11 @@ namespace Dingo
 		GraphicsBuffer* m_CameraUniformBuffer = nullptr;
 
 		glm::vec4 m_QuadVertexPositions[4] = {};
+		glm::vec2 m_TextureCoords[4] = { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } };
+
+		static const uint32_t MaxTextureSlots = 32;
+		std::array<Texture*, MaxTextureSlots> m_TextureSlots = {};
+		uint32_t m_TextureSlotIndex = 1; // 0 = white texture
 
 		/**************************************************
 		***		QUAD									***
@@ -100,6 +112,8 @@ namespace Dingo
 		{
 			glm::vec3 Position;
 			glm::vec4 Color;
+			glm::vec2 TexCoord;
+			float TexIndex = 0.0f;
 		};
 
 		struct QuadPipeline

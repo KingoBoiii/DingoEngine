@@ -87,23 +87,10 @@ namespace Dingo
 			.setKeepInitialState(true);
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
-
-		nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
-			.setAllAddressModes(Utils::GetSamplerAddressMode(m_Params.WrapMode))
-			.setMinFilter(true)
-			.setMagFilter(true)
-			.setMipFilter(true);
-
-		m_SamplerHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createSampler(samplerDesc);
 	}
 
 	void NvrhiTexture::Destroy()
 	{
-		if (m_SamplerHandle)
-		{
-			m_SamplerHandle->Release();
-		}
-
 		if (m_Handle)
 		{
 			m_Handle->Release();

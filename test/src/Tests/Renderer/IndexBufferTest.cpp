@@ -3,7 +3,7 @@
 namespace Dingo
 {
 
-	void IndexBufferTest::InitializeGraphics()
+	void IndexBufferTest::Initialize()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -71,7 +71,7 @@ void main() {
 		m_Renderer->End();
 	}
 
-	void IndexBufferTest::CleanupGraphics()
+	void IndexBufferTest::Cleanup()
 	{
 		if (m_IndexBuffer)
 		{

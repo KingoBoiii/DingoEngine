@@ -1,6 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/BufferType.h"
 #include "DingoEngine/Graphics/Enums/GraphicsFormat.h"
+#include "DingoEngine/Graphics/IBindableShaderResource.h"
 
 namespace Dingo
 {
@@ -82,7 +83,7 @@ namespace Dingo
 		T* m_Data = nullptr;
 	};
 
-	class GraphicsBuffer : public GenericGraphicsBuffer<const void>
+	class GraphicsBuffer : public GenericGraphicsBuffer<const void>, public IBindableShaderResource
 	{
 	public:
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);

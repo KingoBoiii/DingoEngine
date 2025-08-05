@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/RenderPass.h"
+#include "DingoEngine/Graphics/Sampler.h"
 
 #include <glm/glm.hpp>
 
@@ -70,22 +71,28 @@ namespace Dingo
 		virtual Texture* GetOutput() const;
 
 		const RendererParams& GetParams() const { return m_Params; }
-		Texture* GetWhiteTexture() const { return m_StaticResources.WhiteTexture; }
+
+		/**************************************************
+		***		STATIC RESOURCES 						***
+		**************************************************/
+
+		static Texture* GetWhiteTexture();
+		static Sampler* GetClampSampler();
+		static Sampler* GetPointSampler();
 
 	protected:
 		Renderer(const RendererParams& params)
 			: m_Params(params)
 		{}
 
+	public:
+		static void InitializeStaticResources();
+		static void DestroyStaticResources();
+
 	private:
 		RendererParams m_Params;
 		CommandList* m_CommandList = nullptr; // Command list for recording commands
 		Framebuffer* m_TargetFramebuffer = nullptr; // The framebuffer that the renderer will render to
-
-		struct StaticResources
-		{
-			Texture* WhiteTexture = nullptr; // A white texture for default rendering
-		} m_StaticResources;
 	};
 
 }

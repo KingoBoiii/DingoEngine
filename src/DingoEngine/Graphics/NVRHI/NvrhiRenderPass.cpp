@@ -4,6 +4,7 @@
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiShader.h"
 #include "NvrhiTexture.h"
+#include "NvrhiSampler.h"
 
 namespace Dingo
 {
@@ -29,20 +30,50 @@ namespace Dingo
 		DE_CORE_ASSERT(buffer->IsType(BufferType::UniformBuffer), "Graphics buffer, must be of type BufferType::UniformBuffer");
 
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(slot, static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle));
+		m_Valid = false;
 	}
 
-	void NvrhiRenderPass::SetTexture(uint32_t slot, Texture* texture)
+	void NvrhiRenderPass::SetTexture(uint32_t slot, Texture* texture, uint32_t arrayElement)
 	{
 		DE_CORE_ASSERT(texture, "Texture must not be null.");
 
-		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle));
-		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot + 1, static_cast<NvrhiTexture*>(texture)->m_SamplerHandle));
+		// search if the texture is already in the binding set
+		for (auto& item : m_BindingSetDesc.bindings)
+		{
+			if (item.slot == slot &&
+				item.type == nvrhi::ResourceType::Texture_SRV &&
+				item.arrayElement == arrayElement)
+			{
+				item.resourceHandle = static_cast<NvrhiTexture*>(texture)->m_Handle;
+				m_Valid = false;
+
+				return;
+			}
+		}
+
+		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle).setArrayElement(arrayElement));
+		m_Valid = false;
+	}
+
+	void NvrhiRenderPass::SetSampler(uint32_t slot, Sampler* sampler)
+	{
+		DE_CORE_ASSERT(sampler, "Sampler must not be null.");
+
+		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(slot, static_cast<NvrhiSampler*>(sampler)->m_Handle));
+		m_Valid = false;
 	}
 
 	void NvrhiRenderPass::Bake()
 	{
+		if (m_Valid)
+		{
+			return;
+		}
+
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(m_Params.Pipeline->GetParams().Shader)->m_BindingLayoutHandle);
 		DE_CORE_ASSERT(m_BindingSetHandle, "Failed to create BindingSetHandle in NvrhiRenderPass::Bake");
+
+		m_Valid = true;
 	}
 
 }

@@ -8,6 +8,7 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <array>
 #include <vector>
 #include <optional>
 #include <unordered_set>

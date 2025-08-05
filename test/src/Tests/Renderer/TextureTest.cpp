@@ -6,7 +6,7 @@
 namespace Dingo
 {
 
-	void TextureTest::InitializeGraphics()
+	void TextureTest::Initialize()
 	{
 		static const char* ShaderSource = R"(
 #type vertex
@@ -68,7 +68,6 @@ void main() {
 		m_Texture = Dingo::Texture::Create(textureParams);
 		m_Texture->Initialize();
 		m_Texture->Upload(textureData, width * channels);
-		//m_Texture->Upload("assets/textures/dickbutt_transparent.png");
 
 		m_Shader = Dingo::Shader::CreateFromSource("Texture Shader", ShaderSource);
 
@@ -117,12 +116,12 @@ void main() {
 		m_Renderer->End();
 	}
 
-	void TextureTest::CleanupGraphics()
+	void TextureTest::Cleanup()
 	{
 		if (m_Texture)
 		{
 			m_Texture->Destroy();
-			m_Texture= nullptr;
+			m_Texture = nullptr;
 		}
 
 		if (m_UniformBuffer)

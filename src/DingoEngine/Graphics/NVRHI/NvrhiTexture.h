@@ -3,6 +3,8 @@
 
 #include <nvrhi/nvrhi.h>
 
+//#define ENABLE_TEXTURE_SAMPLER
+
 namespace Dingo
 {
 
@@ -20,11 +22,22 @@ namespace Dingo
 		virtual void Upload(const void* data, uint64_t size) override;
 		virtual void Upload(const std::filesystem::path& filepath) override;
 
+		virtual bool NativeEquals(const Texture* other) const override
+		{
+			const NvrhiTexture* otherTexture = dynamic_cast<const NvrhiTexture*>(other);
+			if (!otherTexture)
+			{
+				return false;
+			}
+
+			return m_Handle == otherTexture->m_Handle;
+		}
+
 		virtual void* GetTextureHandle() const override { return static_cast<void*>(m_Handle.Get()); }
+		virtual const void* GetResourceHandle() const override { return GetTextureHandle(); }
 
 	private:
 		nvrhi::TextureHandle m_Handle;
-		nvrhi::SamplerHandle m_SamplerHandle;
 
 		friend class NvrhiPipeline;
 		friend class NvrhiRenderPass;

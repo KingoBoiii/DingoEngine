@@ -7,12 +7,15 @@ namespace Dingo
 	class IndexBufferTest : public RendererTest
 	{
 	public:
+		IndexBufferTest(Renderer* renderer)
+			: RendererTest(renderer)
+		{}
 		virtual ~IndexBufferTest() = default;
 
 	public:
-		virtual void InitializeGraphics() override;
+		virtual void Initialize() override;
 		virtual void Update(float deltaTime) override;
-		virtual void CleanupGraphics() override;
+		virtual void Cleanup() override;
 
 	private:
 		Shader* m_Shader = nullptr;

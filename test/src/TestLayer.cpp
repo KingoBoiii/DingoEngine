@@ -7,6 +7,7 @@
 #include "Tests/Renderer/TextureTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
+#include "Tests/Renderer2D/TextureQuadTest.h"
 
 #include <imgui.h>
 
@@ -15,14 +16,21 @@ namespace Dingo
 
 	void TestLayer::OnAttach()
 	{
-		// Register tests
-		m_Tests.push_back({ "Static Triangle Test", []() { return new StaticTriangleTest(); } });
-		m_Tests.push_back({ "Vertex Buffer Test", []() { return new VertexBufferTest(); } });
-		m_Tests.push_back({ "Index Buffer Test", []() { return new IndexBufferTest(); } });
-		m_Tests.push_back({ "Uniform Buffer Test", []() { return new UniformBufferTest(); } });
-		m_Tests.push_back({ "Texture Test", []() { return new TextureTest(); } });
+		m_Renderer = Renderer::Create(RendererParams{ .TargetSwapChain = false });
+		m_Renderer->Initialize();
 
-		m_Tests.push_back({ "Colored Quad Test (R2D)", []() { return new ColorQuadTest(); } });
+		m_Renderer2D = Renderer2D::Create();
+		m_Renderer2D->Initialize();
+
+		// Register tests
+		m_Tests.push_back({ "Static Triangle Test", [&]() { return new StaticTriangleTest(m_Renderer); } });
+		m_Tests.push_back({ "Vertex Buffer Test", [&]() { return new VertexBufferTest(m_Renderer); } });
+		m_Tests.push_back({ "Index Buffer Test", [&]() { return new IndexBufferTest(m_Renderer); } });
+		m_Tests.push_back({ "Uniform Buffer Test", [&]() { return new UniformBufferTest(m_Renderer); } });
+		m_Tests.push_back({ "Texture Test", [&]() { return new TextureTest(m_Renderer); } });
+
+		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
 
 		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
@@ -35,6 +43,20 @@ namespace Dingo
 			m_CurrentTest->Cleanup();
 			delete m_CurrentTest;
 			m_CurrentTest = nullptr;
+		}
+
+		if (m_Renderer2D)
+		{
+			m_Renderer2D->Shutdown();
+			delete m_Renderer2D;
+			m_Renderer2D = nullptr;
+		}
+
+		if (m_Renderer)
+		{
+			m_Renderer->Shutdown();
+			delete m_Renderer;
+			m_Renderer = nullptr;
 		}
 	}
 
@@ -156,7 +178,7 @@ namespace Dingo
 
 		for (auto& test : m_Tests)
 		{
-			if (ImGui::Selectable(test.first.c_str(), m_CurrentTest == test.second()))
+			if (ImGui::Selectable(test.first.c_str(), m_CurrentTestIndex == &test - &m_Tests[0]))
 			{
 				Application::Get().SubmitPostExecution([&]()
 				{
@@ -167,6 +189,7 @@ namespace Dingo
 					}
 					m_CurrentTest = test.second();
 					m_CurrentTest->Initialize();
+					m_CurrentTestIndex = &test - &m_Tests[0];
 				});
 			}
 		}

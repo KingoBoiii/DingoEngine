@@ -146,7 +146,7 @@ namespace Dingo
 
 		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
 			.setRegisterSpace(0) // set = 0
-			.setRegisterSpaceIsDescriptorSet(false)
+			.setRegisterSpaceIsDescriptorSet(true)
 			.setBindingOffsets(vulkanBindingOffsets)
 			.setVisibility(nvrhi::ShaderType::All);
 
@@ -167,19 +167,22 @@ namespace Dingo
 				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, 0)); // TODO: Handle size and offset for push constants
 			}
 
-			for (const auto& sampler : shaderReflection.SeperateSamplers)
+			for (const auto& sampler : shaderReflection.SeparateSamplers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding));
+				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
+					.setSize(sampler.ArraySize));
 			}
 
 			for (const auto& sampledImage : shaderReflection.SampledImages)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding));
+				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
+					.setSize(sampledImage.ArraySize));
 			}
 
-			for (const auto& sampledImage : shaderReflection.SeperateImages)
+			for (const auto& sampledImage : shaderReflection.SeparateImages)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding));
+				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
+					.setSize(sampledImage.ArraySize));
 			}
 		}
 
