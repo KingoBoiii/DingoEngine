@@ -98,12 +98,13 @@ namespace Dingo
 	};
 
 	/*
-			m_VertexBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
-			.SetDebugName("Vertex Buffer")
-			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-			.SetType(BufferType::VertexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Vertices.data()));
+		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
+			.SetDebugName("Uniform Buffer")
+			.SetByteSize(sizeof(CameraTransform))
+			.SetType(Dingo::BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.Create();
 	*/
 
 	class GraphicsBuffer : public GenericGraphicsBuffer<const void>, public IBindableShaderResource
@@ -111,6 +112,7 @@ namespace Dingo
 	public:
 		static GraphicsBuffer* CreateVertexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Vertex Buffer");
 		static GraphicsBuffer* CreateIndexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Index Buffer");
+		static GraphicsBuffer* CreateUniformBuffer(uint64_t size, const void* data = nullptr, const std::string& debugName = "Uniform Buffer");
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
 	protected:

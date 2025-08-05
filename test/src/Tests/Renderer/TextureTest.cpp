@@ -42,17 +42,10 @@ layout(set = 0, binding = 2) uniform sampler uTextureSampler;
 
 void main() {
     outColor = texture(sampler2D(uTexture, uTextureSampler), vTexCoord);
-    //outColor = texture(uTextureSampler, vTexCoord);
 }
 )";
 
-		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Uniform Buffer")
-			.SetByteSize(sizeof(CameraTransform))
-			.SetType(Dingo::BufferType::UniformBuffer)
-			.SetIsVolatile(true)
-			.SetDirectUpload(false)
-			.Create();
+		m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraTransform));
 
 		uint32_t width, height, channels;
 		const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);

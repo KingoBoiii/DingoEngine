@@ -39,13 +39,7 @@ void main() {
 
 		m_Shader = Shader::CreateFromSource("Uniform Buffer Shader", ShaderSource);
 
-		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Uniform Buffer")
-			.SetByteSize(sizeof(CameraTransform))
-			.SetType(Dingo::BufferType::UniformBuffer)
-			.SetIsVolatile(true)
-			.SetDirectUpload(false)
-			.Create();
+		m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraTransform));
 
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(Vertex))
