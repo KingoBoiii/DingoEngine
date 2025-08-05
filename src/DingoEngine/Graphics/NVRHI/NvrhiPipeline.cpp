@@ -52,8 +52,18 @@ namespace Dingo
 			.setCullMode(Utils::ConvertCullModeToNVRHI(m_Params.CullMode))
 			.setFillMode(Utils::ConvertFillModeToNVRHI(m_Params.FillMode));
 
+		nvrhi::BlendState::RenderTarget renderTarget = nvrhi::BlendState::RenderTarget()
+			.setBlendEnable(true)
+			.setColorWriteMask(nvrhi::ColorMask::All)
+			.setBlendOp(nvrhi::BlendOp::Add)
+			.setBlendOpAlpha(nvrhi::BlendOp::Add)
+			.setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+			.setSrcBlendAlpha(nvrhi::BlendFactor::One)
+			.setDestBlend(nvrhi::BlendFactor::OneMinusSrcAlpha)
+			.setDestBlendAlpha(nvrhi::BlendFactor::Zero);
+
 		nvrhi::BlendState blendState = nvrhi::BlendState()
-			.enableAlphaToCoverage();
+			.setRenderTarget(0, renderTarget);
 
 		nvrhi::RenderState renderState = nvrhi::RenderState()
 			.setRasterState(rasterState)
