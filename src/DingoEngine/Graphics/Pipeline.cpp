@@ -8,15 +8,6 @@
 namespace Dingo
 {
 
-	Pipeline* Pipeline::Create(Shader* shader, Framebuffer* framebuffer)
-	{
-		PipelineParams params = PipelineParams()
-			.SetShader(shader)
-			.SetFramebuffer(framebuffer);
-
-		return Create(params);
-	}
-
 	Pipeline* Pipeline::Create(const PipelineParams& params)
 	{
 		NvrhiPipeline* pipeline = new NvrhiPipeline(params);

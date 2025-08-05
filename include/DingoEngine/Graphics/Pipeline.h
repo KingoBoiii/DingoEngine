@@ -96,7 +96,6 @@ namespace Dingo
 	class Pipeline
 	{
 	public:
-		static Pipeline* Create(Shader* shader, Framebuffer* framebuffer);
 		static Pipeline* Create(const PipelineParams& params);
 
 	public:
