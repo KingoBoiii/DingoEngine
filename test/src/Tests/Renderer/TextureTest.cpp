@@ -47,24 +47,11 @@ void main() {
 
 		m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraTransform));
 
-		uint32_t width, height, channels;
-		const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);
+		m_Texture = Texture::CreateFromFile("assets/textures/container.jpg", "Wooden container");
 
-		Dingo::TextureParams textureParams = {
-			.DebugName = "Wooden Container",
-			.Width = width,
-			.Height = height,
-			.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
-			.Dimension = Dingo::TextureDimension::Texture2D,
-		};
+		m_Shader = Shader::CreateFromSource("Texture Shader", ShaderSource);
 
-		m_Texture = Dingo::Texture::Create(textureParams);
-		m_Texture->Initialize();
-		m_Texture->Upload(textureData, width * channels);
-
-		m_Shader = Dingo::Shader::CreateFromSource("Texture Shader", ShaderSource);
-
-		Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
+		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(Vertex))
 			.AddAttribute("inPosition", Format::RG32_FLOAT, offsetof(Vertex, position))
 			.AddAttribute("inColor", Format::RGB32_FLOAT, offsetof(Vertex, color))
@@ -74,8 +61,8 @@ void main() {
 			.SetDebugName("Texture Quad Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
-			.SetFillMode(Dingo::FillMode::Solid)
-			.SetCullMode(Dingo::CullMode::BackAndFront)
+			.SetFillMode(FillMode::Solid)
+			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
 			.SetUniformBuffer(m_UniformBuffer)
 			.SetTexture(m_Texture));

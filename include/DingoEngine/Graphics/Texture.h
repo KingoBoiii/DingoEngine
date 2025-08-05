@@ -27,6 +27,8 @@ namespace Dingo
 		TextureWrapMode WrapMode = TextureWrapMode::Repeat;
 		bool IsRenderTarget = false;
 
+		const void* InitialData = nullptr;
+
 		TextureParams& SetDebugName(const std::string& name)
 		{
 			DebugName = name;
@@ -68,11 +70,18 @@ namespace Dingo
 			IsRenderTarget = isRenderTarget;
 			return *this;
 		}
+
+		TextureParams& SetInitialData(const void* data)
+		{
+			InitialData = data;
+			return *this;
+		}
 	};
 
 	class Texture : public IBindableShaderResource
 	{
 	public:
+		static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
 		static Texture* Create(const TextureParams& params);
 
 	public:
