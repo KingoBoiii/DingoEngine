@@ -43,6 +43,8 @@ IncludeDir['nvrhi'] = "%{wks.location}/vendor/nvrhi/include";
 IncludeDir['glm'] = "%{wks.location}/vendor/glm";
 IncludeDir['stb'] = "%{wks.location}/vendor/stb/include";
 IncludeDir['imgui'] = "%{wks.location}/vendor/imgui";
+IncludeDir["msdfgen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdfgen"
+IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas-gen"
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 
 LibraryDir = {}
@@ -72,6 +74,7 @@ group "Dependencies"
     include "vendor/glfw"
     include "vendor/nvrhi"
     include "vendor/imgui"
+	include "vendor/msdf-atlas-gen"
 group ""
 
 group "Engine"
@@ -106,7 +109,9 @@ group "Engine"
 			"%{IncludeDir.nvrhi}",
 			"%{IncludeDir.glm}",
 			"%{IncludeDir.stb}",
-			"%{IncludeDir.imgui}"
+			"%{IncludeDir.imgui}",
+			"%{IncludeDir.msdfgen}",
+			"%{IncludeDir.msdf_atlas_gen}"
 		}
 
 		links {
