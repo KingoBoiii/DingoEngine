@@ -16,4 +16,4 @@
 	branch = docking
 [submodule "vendor/msdf-atlas-gen"]
 	path = vendor/msdf-atlas-gen
-	url = https://github.com/cpp-engine-forks/msdf-atlas-gen.git
+	url = https://github.com/KingoBoiii/msdf-atlas-gen.git
