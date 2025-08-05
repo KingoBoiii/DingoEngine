@@ -19,7 +19,9 @@ namespace Dingo
 
 	Pipeline* Pipeline::Create(const PipelineParams& params)
 	{
-		return new NvrhiPipeline(params);
+		NvrhiPipeline* pipeline = new NvrhiPipeline(params);
+		pipeline->Initialize();
+		return pipeline;
 	}
 
 }

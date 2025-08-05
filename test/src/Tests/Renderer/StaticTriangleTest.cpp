@@ -41,13 +41,12 @@ void main() {
 
 		m_Shader = Shader::CreateFromSource("Static Triangle Shader", ShaderSource);
 
-		m_Pipeline = Dingo::PipelineBuilder()
+		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Static Triangle Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetFillMode(Dingo::FillMode::Solid)
-			.SetCullMode(Dingo::CullMode::BackAndFront)
-			.Create();
+			.SetCullMode(Dingo::CullMode::BackAndFront));
 	}
 
 	void StaticTriangleTest::Update(float deltaTime)
