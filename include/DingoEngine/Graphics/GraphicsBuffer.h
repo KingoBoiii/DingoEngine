@@ -97,16 +97,6 @@ namespace Dingo
 		T* m_Data = nullptr;
 	};
 
-	/*
-		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Uniform Buffer")
-			.SetByteSize(sizeof(CameraTransform))
-			.SetType(Dingo::BufferType::UniformBuffer)
-			.SetIsVolatile(true)
-			.SetDirectUpload(false)
-			.Create();
-	*/
-
 	class GraphicsBuffer : public GenericGraphicsBuffer<const void>, public IBindableShaderResource
 	{
 	public:

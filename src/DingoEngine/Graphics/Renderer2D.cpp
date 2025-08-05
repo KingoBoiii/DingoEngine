@@ -90,13 +90,7 @@ void main()
 		m_QuadVertexPositions[2] = { 0.5f,  0.5f, 0.0f, 1.0f };
 		m_QuadVertexPositions[3] = { -0.5f,  0.5f, 0.0f, 1.0f };
 
-		m_CameraUniformBuffer = GraphicsBufferBuilder()
-			.SetType(BufferType::UniformBuffer)
-			.SetDebugName("Renderer2DCameraUniformBuffer")
-			.SetByteSize(sizeof(CameraData))
-			.SetDirectUpload(false)
-			.SetIsVolatile(true)
-			.Create();
+		m_CameraUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData));
 
 		// Set all texture slots to 0
 		m_TextureSlots[0] = Renderer::GetWhiteTexture();
