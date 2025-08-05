@@ -14,7 +14,3 @@
 	path = vendor/imgui
 	url = https://github.com/KingoBoiii/imgui.git
 	branch = docking
-[submodule "vendor/msdf-atlas-gen"]
-	path = vendor/msdf-atlas-gen
-	url = https://github.com/KingoBoiii/msdf-atlas-gen.git
-	branch = master
