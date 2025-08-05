@@ -53,7 +53,6 @@ layout (set = 0, binding = 2) uniform sampler u_Sampler;
 void main()
 {
 	o_Color = texture(sampler2D(u_Textures[int(v_TexIndex)], u_Sampler), v_TexCoord) * v_Color;
-	// o_Color = v_Color;
 	
 	if (o_Color.a == 0.0)
 	{
