@@ -219,16 +219,8 @@ namespace Dingo
 
 		s_StaticResources = new StaticResources();
 
-		s_StaticResources->WhiteTexture = Texture::Create(TextureParams()
-			.SetDebugName("White Texture")
-			.SetWidth(1)
-			.SetHeight(1)
-			.SetFormat(TextureFormat::RGBA)
-			.SetDimension(TextureDimension::Texture2D));
-		s_StaticResources->WhiteTexture->Initialize();
-
 		uint32_t whiteTextureData = 0xffffffff;
-		s_StaticResources->WhiteTexture->Upload(&whiteTextureData, sizeof(uint32_t));
+		s_StaticResources->WhiteTexture = Texture::CreateFromData(1, 1, &whiteTextureData, TextureFormat::RGBA, "White Texture");
 
 		s_StaticResources->ClampSampler = Sampler::Create(SamplerParams());
 		s_StaticResources->ClampSampler->Initialize();

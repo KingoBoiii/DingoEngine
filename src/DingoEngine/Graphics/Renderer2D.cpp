@@ -3,9 +3,6 @@
 
 #include "DingoEngine/Core/Application.h"
 
-#include "DingoEngine/Graphics/Builders/PipelineBuilder.h"
-#include "DingoEngine/Graphics/Builders/GraphicsBufferBuilder.h"
-
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -90,13 +87,7 @@ void main()
 		m_QuadVertexPositions[2] = { 0.5f,  0.5f, 0.0f, 1.0f };
 		m_QuadVertexPositions[3] = { -0.5f,  0.5f, 0.0f, 1.0f };
 
-		m_CameraUniformBuffer = GraphicsBufferBuilder()
-			.SetType(BufferType::UniformBuffer)
-			.SetDebugName("Renderer2DCameraUniformBuffer")
-			.SetByteSize(sizeof(CameraData))
-			.SetDirectUpload(false)
-			.SetIsVolatile(true)
-			.Create();
+		m_CameraUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData));
 
 		// Set all texture slots to 0
 		m_TextureSlots[0] = Renderer::GetWhiteTexture();
@@ -283,13 +274,7 @@ void main()
 			offset += 4;
 		}
 
-		m_QuadIndexBuffer = GraphicsBufferBuilder()
-			.SetType(BufferType::IndexBuffer)
-			.SetDebugName("Renderer2DQuadIndexBuffer")
-			.SetDirectUpload(true)
-			.SetByteSize(sizeof(uint16_t) * m_Params.Capabilities.GetQuadIndexCount())
-			.SetInitialData(quadIndices)
-			.Create();
+		m_QuadIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * m_Params.Capabilities.GetQuadIndexCount(), quadIndices, true, "Renderer2DQuadIndexBuffer");
 
 		delete[] quadIndices;
 	}
@@ -307,20 +292,14 @@ void main()
 			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(QuadVertex, TexCoord))
 			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
-		m_QuadPipeline.Pipeline = PipelineBuilder()
+		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DQuadPipeline")
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront)
-			.Create();
+			.SetCullMode(CullMode::BackAndFront));
 
-		m_QuadPipeline.VertexBuffer = GraphicsBufferBuilder()
-			.SetType(BufferType::VertexBuffer)
-			.SetDebugName("Renderer2DQuadVertexBuffer")
-			.SetByteSize(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount())
-			.SetDirectUpload(true)
-			.Create();
+		m_QuadPipeline.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DQuadVertexBuffer");
 
 		RenderPassParams renderPassParams = RenderPassParams()
 			.SetPipeline(m_QuadPipeline.Pipeline);

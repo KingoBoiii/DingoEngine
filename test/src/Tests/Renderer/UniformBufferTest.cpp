@@ -39,44 +39,25 @@ void main() {
 
 		m_Shader = Shader::CreateFromSource("Uniform Buffer Shader", ShaderSource);
 
-		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Uniform Buffer")
-			.SetByteSize(sizeof(CameraTransform))
-			.SetType(Dingo::BufferType::UniformBuffer)
-			.SetIsVolatile(true)
-			.SetDirectUpload(false)
-			.Create();
+		m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraTransform));
 
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(Vertex))
 			.AddAttribute("inPosition", Format::RG32_FLOAT, 0)
 			.AddAttribute("inColor", Format::RGB32_FLOAT, sizeof(glm::vec2));
 
-		m_Pipeline = PipelineBuilder()
+		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Uniform Buffer Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
-			.SetUniformBuffer(m_UniformBuffer)
-			.Create();
+			.SetUniformBuffer(m_UniformBuffer));
 
-		m_VertexBuffer = GraphicsBufferBuilder()
-			.SetDebugName("Vertex Buffer")
-			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-			.SetType(BufferType::VertexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Vertices.data())
-			.Create();
+		m_VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * m_Vertices.size(), m_Vertices.data());
 
-		m_IndexBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Index Buffer")
-			.SetByteSize(sizeof(uint16_t) * m_Indices.size())
-			.SetType(BufferType::IndexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Indices.data())
-			.Create();
+		m_IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * m_Indices.size(), m_Indices.data());
 	}
 
 	void UniformBufferTest::Update(float deltaTime)

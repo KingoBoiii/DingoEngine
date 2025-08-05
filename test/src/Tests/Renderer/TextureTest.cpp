@@ -42,67 +42,34 @@ layout(set = 0, binding = 2) uniform sampler uTextureSampler;
 
 void main() {
     outColor = texture(sampler2D(uTexture, uTextureSampler), vTexCoord);
-    //outColor = texture(uTextureSampler, vTexCoord);
 }
 )";
 
-		m_UniformBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Uniform Buffer")
-			.SetByteSize(sizeof(CameraTransform))
-			.SetType(Dingo::BufferType::UniformBuffer)
-			.SetIsVolatile(true)
-			.SetDirectUpload(false)
-			.Create();
+		m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraTransform));
 
-		uint32_t width, height, channels;
-		const uint8_t* textureData = Dingo::FileSystem::ReadImage("assets/textures/container.jpg", &width, &height, &channels, true, true);
+		m_Texture = Texture::CreateFromFile("assets/textures/container.jpg", "Wooden container");
 
-		Dingo::TextureParams textureParams = {
-			.DebugName = "Wooden Container",
-			.Width = width,
-			.Height = height,
-			.Format = channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB,
-			.Dimension = Dingo::TextureDimension::Texture2D,
-		};
+		m_Shader = Shader::CreateFromSource("Texture Shader", ShaderSource);
 
-		m_Texture = Dingo::Texture::Create(textureParams);
-		m_Texture->Initialize();
-		m_Texture->Upload(textureData, width * channels);
-
-		m_Shader = Dingo::Shader::CreateFromSource("Texture Shader", ShaderSource);
-
-		Dingo::VertexLayout vertexLayout = Dingo::VertexLayout()
+		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(Vertex))
 			.AddAttribute("inPosition", Format::RG32_FLOAT, offsetof(Vertex, position))
 			.AddAttribute("inColor", Format::RGB32_FLOAT, offsetof(Vertex, color))
 			.AddAttribute("inTexCoord", Format::RG32_FLOAT, offsetof(Vertex, texCoord));
 
-		m_Pipeline = Dingo::PipelineBuilder()
+		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Texture Quad Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
-			.SetFillMode(Dingo::FillMode::Solid)
-			.SetCullMode(Dingo::CullMode::BackAndFront)
+			.SetFillMode(FillMode::Solid)
+			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
 			.SetUniformBuffer(m_UniformBuffer)
-			.SetTexture(m_Texture)
-			.Create();
+			.SetTexture(m_Texture));
 
-		m_VertexBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Vertex Buffer")
-			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-			.SetType(Dingo::BufferType::VertexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Vertices.data())
-			.Create();
+		m_VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * m_Vertices.size(), m_Vertices.data());
 
-		m_IndexBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Index Buffer")
-			.SetByteSize(sizeof(uint16_t) * m_Indices.size())
-			.SetType(Dingo::BufferType::IndexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Indices.data())
-			.Create();
+		m_IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * m_Indices.size(), m_Indices.data());
 	}
 
 	void TextureTest::Update(float deltaTime)

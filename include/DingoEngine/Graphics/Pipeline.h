@@ -44,6 +44,12 @@ namespace Dingo
 		GraphicsBuffer* UniformBuffer = nullptr;
 		Texture* Texture = nullptr;
 
+		PipelineParams& SetDebugName(const std::string& debugName)
+		{
+			DebugName = debugName;
+			return *this;
+		}
+
 		PipelineParams& SetShader(Dingo::Shader* shader)
 		{
 			Shader = shader;
@@ -90,7 +96,6 @@ namespace Dingo
 	class Pipeline
 	{
 	public:
-		static Pipeline* Create(Shader* shader, Framebuffer* framebuffer);
 		static Pipeline* Create(const PipelineParams& params);
 
 	public:
