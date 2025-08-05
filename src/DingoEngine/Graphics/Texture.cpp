@@ -22,6 +22,18 @@ namespace Dingo
 			.SetInitialData(data));
 	}
 
+	Texture* Texture::CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format, const std::string& debugName)
+	{
+		return Create(TextureParams()
+			.SetDebugName(debugName)
+			.SetWidth(width)
+			.SetHeight(height)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetFormat(format)
+			.SetIsRenderTarget(false)
+			.SetInitialData(data));
+	}
+
 	Texture* Texture::Create(const TextureParams& params)
 	{
 		Texture* texture = new NvrhiTexture(params);

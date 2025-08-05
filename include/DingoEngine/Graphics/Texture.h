@@ -82,6 +82,7 @@ namespace Dingo
 	{
 	public:
 		static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
+		static Texture* CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format = TextureFormat::RGBA, const std::string& debugName = "Texture (Data)");
 		static Texture* Create(const TextureParams& params);
 
 	public:
