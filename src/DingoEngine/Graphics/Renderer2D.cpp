@@ -283,13 +283,7 @@ void main()
 			offset += 4;
 		}
 
-		m_QuadIndexBuffer = GraphicsBufferBuilder()
-			.SetType(BufferType::IndexBuffer)
-			.SetDebugName("Renderer2DQuadIndexBuffer")
-			.SetDirectUpload(true)
-			.SetByteSize(sizeof(uint16_t) * m_Params.Capabilities.GetQuadIndexCount())
-			.SetInitialData(quadIndices)
-			.Create();
+		m_QuadIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * m_Params.Capabilities.GetQuadIndexCount(), quadIndices, true, "Renderer2DQuadIndexBuffer");
 
 		delete[] quadIndices;
 	}
@@ -314,12 +308,7 @@ void main()
 			.SetVertexLayout(vertexLayout)
 			.SetCullMode(CullMode::BackAndFront));
 
-		m_QuadPipeline.VertexBuffer = GraphicsBufferBuilder()
-			.SetType(BufferType::VertexBuffer)
-			.SetDebugName("Renderer2DQuadVertexBuffer")
-			.SetByteSize(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount())
-			.SetDirectUpload(true)
-			.Create();
+		m_QuadPipeline.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DQuadVertexBuffer");
 
 		RenderPassParams renderPassParams = RenderPassParams()
 			.SetPipeline(m_QuadPipeline.Pipeline);
