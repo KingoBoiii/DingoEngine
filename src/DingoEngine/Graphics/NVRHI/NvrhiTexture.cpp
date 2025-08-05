@@ -19,6 +19,9 @@ namespace Dingo
 				case TextureFormat::RGB: return nvrhi::Format::RGBA8_UNORM;
 
 				case TextureFormat::RGBA8_UNORM: return nvrhi::Format::RGBA8_UNORM;
+
+				case TextureFormat::RGBA32F: return nvrhi::Format::RGBA32_FLOAT;
+
 				default: break;
 			}
 

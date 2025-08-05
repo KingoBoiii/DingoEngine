@@ -25,7 +25,7 @@ namespace Dingo
 
 		msdfgen::BitmapConstRef<T, N> bitmap = (msdfgen::BitmapConstRef<T, N>)generator.atlasStorage();
 
-		Texture* texture = Texture::CreateFromData(width, height, (void*)bitmap.pixels, TextureFormat::RGBA);
+		Texture* texture = Texture::CreateFromData(width, height, (void*)bitmap.pixels, TextureFormat::RGBA8_UNORM);
 		return texture;
 	}
 
