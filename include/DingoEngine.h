@@ -22,4 +22,3 @@
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
 
-#include "DingoEngine/Graphics/Builders/ShaderBuilder.h"
