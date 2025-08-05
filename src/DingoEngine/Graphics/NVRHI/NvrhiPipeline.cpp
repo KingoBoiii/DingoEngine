@@ -63,6 +63,7 @@ namespace Dingo
 			.setDestBlendAlpha(nvrhi::BlendFactor::Zero);
 
 		nvrhi::BlendState blendState = nvrhi::BlendState()
+			//.setAlphaToCoverageEnable(false);
 			.setRenderTarget(0, renderTarget);
 
 		nvrhi::RenderState renderState = nvrhi::RenderState()

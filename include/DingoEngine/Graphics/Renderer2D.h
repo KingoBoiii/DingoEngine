@@ -5,10 +5,13 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/RenderPass.h"
+#include "DingoEngine/Graphics/Font.h"
 
 #include <array>
 
 #include <glm/glm.hpp>
+
+#undef DrawText
 
 namespace Dingo
 {
@@ -65,6 +68,16 @@ namespace Dingo
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 		void DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 
+		struct TextParameters
+		{
+			glm::vec4 Color{ 1.0f };
+			float Kerning = 0.0f;
+			float LineSpacing = 0.0f;
+		};
+
+		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, const TextParameters& textParameters = {});
+		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, const TextParameters& textParameters = {});
+
 		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
 		glm::vec2 GetViewportSize() const
 		{
@@ -82,6 +95,9 @@ namespace Dingo
 		void CreateQuadIndexBuffer();
 		void CreateQuadPipeline();
 		void DestroyQuadPipeline();
+		
+		void CreateTextQuadRenderPass();
+		void DestroyTextQuadRenderPass();
 
 	private:
 		/**************************************************
@@ -127,6 +143,29 @@ namespace Dingo
 			RenderPass* RenderPass = nullptr;
 			GraphicsBuffer* VertexBuffer = nullptr;
 		} m_QuadPipeline;
+
+		/**************************************************
+		***		TEXT									***
+		**************************************************/
+		struct TextVertex
+		{
+			glm::vec3 Position;
+			glm::vec4 Color;
+			glm::vec2 TexCoord;
+		};
+
+		struct TextQuadRenderPass
+		{
+			uint32_t IndexCount = 0;
+			TextVertex* VertexBufferBase = nullptr;
+			TextVertex* VertexBufferPtr = nullptr;
+
+			Shader* Shader = nullptr;
+			Pipeline* Pipeline = nullptr;
+			RenderPass* RenderPass = nullptr;
+			GraphicsBuffer* VertexBuffer = nullptr;
+		} m_TextQuadRenderPass;
+		Texture* m_FontAtlasTexture = nullptr;
 	};
 
 } // namespace Dingo

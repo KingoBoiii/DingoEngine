@@ -115,26 +115,4 @@ namespace Dingo
 		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
 	}
 
-	void NvrhiTexture::Upload(const std::filesystem::path& filepath)
-	{
-		uint32_t width, height, channels;
-		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
-		DE_CORE_ASSERT(data, "Failed to load texture");
-
-		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
-			.setQueueType(nvrhi::CommandQueue::Graphics);
-
-		nvrhi::CommandListHandle commandList = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
-
-		commandList->open();
-
-		channels = 4;
-
-		commandList->writeTexture(m_Handle, 0, 0, data, width * channels, width * height * channels);
-
-		commandList->close();
-
-		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
-	}
-
 }
