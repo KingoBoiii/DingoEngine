@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/SamplerAddressMode.h"
+#include "DingoEngine/Graphics/IBindableShaderResource.h"
 
 namespace Dingo
 {
@@ -36,7 +37,7 @@ namespace Dingo
 		}
 	};
 
-	class Sampler
+	class Sampler : public IBindableShaderResource
 	{
 	public:
 		static Sampler* Create(const SamplerParams& params);

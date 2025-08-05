@@ -1,6 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/TextureFormat.h"
 #include "DingoEngine/Graphics/Enums/TextureDimension.h"
+#include "DingoEngine/Graphics/IBindableShaderResource.h"
 
 #include <filesystem>
 
@@ -69,7 +70,7 @@ namespace Dingo
 		}
 	};
 
-	class Texture
+	class Texture : public IBindableShaderResource
 	{
 	public:
 		static Texture* Create(const TextureParams& params);

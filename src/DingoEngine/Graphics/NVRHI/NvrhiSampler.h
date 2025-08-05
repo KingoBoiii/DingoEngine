@@ -18,6 +18,8 @@ namespace Dingo
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 
+		virtual const void* GetResourceHandle() const override { return static_cast<void*>(m_Handle.Get()); }
+
 	private:
 		nvrhi::SamplerHandle m_Handle;
 

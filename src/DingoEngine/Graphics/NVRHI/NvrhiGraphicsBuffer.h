@@ -29,6 +29,8 @@ namespace Dingo
 			return 0;
 		}
 
+		virtual const void* GetResourceHandle() const override { return m_BufferHandle; }
+
 	protected:
 		nvrhi::BufferHandle m_BufferHandle;
 

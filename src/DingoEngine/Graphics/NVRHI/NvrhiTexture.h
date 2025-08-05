@@ -34,6 +34,7 @@ namespace Dingo
 		}
 
 		virtual void* GetTextureHandle() const override { return static_cast<void*>(m_Handle.Get()); }
+		virtual const void* GetResourceHandle() const override { return GetTextureHandle(); }
 
 	private:
 		nvrhi::TextureHandle m_Handle;

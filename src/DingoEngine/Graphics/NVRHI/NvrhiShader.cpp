@@ -146,7 +146,7 @@ namespace Dingo
 
 		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
 			.setRegisterSpace(0) // set = 0
-			.setRegisterSpaceIsDescriptorSet(false)
+			.setRegisterSpaceIsDescriptorSet(true)
 			.setBindingOffsets(vulkanBindingOffsets)
 			.setVisibility(nvrhi::ShaderType::All);
 

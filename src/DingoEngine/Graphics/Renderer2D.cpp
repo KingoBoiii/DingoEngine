@@ -139,6 +139,12 @@ void main()
 
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
+
+		m_TextureSlotIndex = 1; // Start from 1 since index 0 is reserved for the white texture
+		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
+		{
+			m_TextureSlots[i] = nullptr; // Reset texture slots
+		}
 	}
 
 	void Renderer2D::EndScene()
@@ -148,7 +154,7 @@ void main()
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
 			m_QuadPipeline.VertexBuffer->Upload(m_QuadPipeline.VertexBufferBase, dataSize);
 
-			for (uint32_t i = 0; i < m_TextureSlots.size(); i++)
+			for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
 			{
 				if (m_TextureSlots[i])
 				{
@@ -156,7 +162,7 @@ void main()
 					continue;
 				}
 
-				m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
+				//m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
 			}
 			m_QuadPipeline.RenderPass->Bake();
 

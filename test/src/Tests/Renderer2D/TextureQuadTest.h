@@ -19,6 +19,7 @@ namespace Dingo
 
 	private:
 		Texture* m_Texture = nullptr;
+		Texture* m_HD2Texture = nullptr;
 	};
 
 }
