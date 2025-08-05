@@ -87,13 +87,7 @@ void main() {
 			.SetUniformBuffer(m_UniformBuffer)
 			.SetTexture(m_Texture));
 
-		m_VertexBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Vertex Buffer")
-			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
-			.SetType(Dingo::BufferType::VertexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Vertices.data())
-			.Create();
+		m_VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * m_Vertices.size(), m_Vertices.data());
 
 		m_IndexBuffer = Dingo::GraphicsBufferBuilder()
 			.SetDebugName("Index Buffer")

@@ -16,6 +16,8 @@ namespace Dingo
 		GraphicsFormat Format = GraphicsFormat::Unknown;
 		bool KeepInitialState = true;
 
+		const void* InitialData = nullptr; // Pointer to initial data, used for direct upload buffers
+
 		GraphicsBufferParams& SetDebugName(const std::string& debugName)
 		{
 			DebugName = debugName;
@@ -51,6 +53,18 @@ namespace Dingo
 			Format = format;
 			return *this;
 		}
+
+		GraphicsBufferParams& SetKeepInitialState(bool keepInitialState)
+		{
+			KeepInitialState = keepInitialState;
+			return *this;
+		}
+
+		GraphicsBufferParams& SetInitialData(const void* initialData)
+		{
+			InitialData = initialData;
+			return *this;
+		}
 	};
 
 	template<typename T>
@@ -83,9 +97,19 @@ namespace Dingo
 		T* m_Data = nullptr;
 	};
 
+	/*
+			m_VertexBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Vertex Buffer")
+			.SetByteSize(sizeof(Vertex) * m_Vertices.size())
+			.SetType(BufferType::VertexBuffer)
+			.SetDirectUpload(true)
+			.SetInitialData(m_Vertices.data()));
+	*/
+
 	class GraphicsBuffer : public GenericGraphicsBuffer<const void>, public IBindableShaderResource
 	{
 	public:
+		static GraphicsBuffer* CreateVertexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Vertex Buffer");
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
 	protected:
