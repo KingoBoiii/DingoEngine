@@ -77,7 +77,7 @@ void main() {
 			.AddAttribute("inColor", Format::RGB32_FLOAT, offsetof(Vertex, color))
 			.AddAttribute("inTexCoord", Format::RG32_FLOAT, offsetof(Vertex, texCoord));
 
-		m_Pipeline = Dingo::PipelineBuilder()
+		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Texture Quad Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
@@ -85,8 +85,7 @@ void main() {
 			.SetCullMode(Dingo::CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
 			.SetUniformBuffer(m_UniformBuffer)
-			.SetTexture(m_Texture)
-			.Create();
+			.SetTexture(m_Texture));
 
 		m_VertexBuffer = Dingo::GraphicsBufferBuilder()
 			.SetDebugName("Vertex Buffer")

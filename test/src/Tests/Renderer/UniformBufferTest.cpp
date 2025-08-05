@@ -52,15 +52,14 @@ void main() {
 			.AddAttribute("inPosition", Format::RG32_FLOAT, 0)
 			.AddAttribute("inColor", Format::RGB32_FLOAT, sizeof(glm::vec2));
 
-		m_Pipeline = PipelineBuilder()
+		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Uniform Buffer Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
-			.SetUniformBuffer(m_UniformBuffer)
-			.Create();
+			.SetUniformBuffer(m_UniformBuffer));
 
 		m_VertexBuffer = GraphicsBufferBuilder()
 			.SetDebugName("Vertex Buffer")
