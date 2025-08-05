@@ -74,7 +74,7 @@ group "Dependencies"
     include "vendor/glfw"
     include "vendor/nvrhi"
     include "vendor/imgui"
-	include "vendor/msdf-atlas-gen"
+	--include "vendor/msdf-atlas-gen"
 group ""
 
 group "Engine"
