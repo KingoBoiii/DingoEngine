@@ -74,7 +74,7 @@ group "Dependencies"
     include "vendor/glfw"
     include "vendor/nvrhi"
     include "vendor/imgui"
-	--include "vendor/msdf-atlas-gen"
+	include "vendor/msdf-atlas-gen"
 group ""
 
 group "Engine"
@@ -119,7 +119,8 @@ group "Engine"
 			"glfw",
 			"%{Library.vulkan}",
 			"nvrhi",
-			"imgui"
+			"imgui",
+			"msdf-atlas-gen"
 		}
 
 		defines {
