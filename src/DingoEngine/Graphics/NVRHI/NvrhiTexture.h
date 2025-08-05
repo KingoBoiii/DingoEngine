@@ -38,9 +38,6 @@ namespace Dingo
 
 	private:
 		nvrhi::TextureHandle m_Handle;
-#ifdef ENABLE_TEXTURE_SAMPLER
-		nvrhi::SamplerHandle m_SamplerHandle;
-#endif
 
 		friend class NvrhiPipeline;
 		friend class NvrhiRenderPass;
