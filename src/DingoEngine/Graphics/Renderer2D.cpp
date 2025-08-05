@@ -162,7 +162,7 @@ void main()
 					continue;
 				}
 
-				//m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
+				m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
 			}
 			m_QuadPipeline.RenderPass->Bake();
 
