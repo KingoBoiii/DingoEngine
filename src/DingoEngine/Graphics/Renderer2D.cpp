@@ -307,13 +307,12 @@ void main()
 			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(QuadVertex, TexCoord))
 			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
-		m_QuadPipeline.Pipeline = PipelineBuilder()
+		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DQuadPipeline")
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront)
-			.Create();
+			.SetCullMode(CullMode::BackAndFront));
 
 		m_QuadPipeline.VertexBuffer = GraphicsBufferBuilder()
 			.SetType(BufferType::VertexBuffer)
