@@ -110,6 +110,7 @@ namespace Dingo
 	{
 	public:
 		static GraphicsBuffer* CreateVertexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Vertex Buffer");
+		static GraphicsBuffer* CreateIndexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Index Buffer");
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
 	protected:

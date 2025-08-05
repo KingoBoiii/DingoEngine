@@ -89,13 +89,7 @@ void main() {
 
 		m_VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * m_Vertices.size(), m_Vertices.data());
 
-		m_IndexBuffer = Dingo::GraphicsBufferBuilder()
-			.SetDebugName("Index Buffer")
-			.SetByteSize(sizeof(uint16_t) * m_Indices.size())
-			.SetType(Dingo::BufferType::IndexBuffer)
-			.SetDirectUpload(true)
-			.SetInitialData(m_Indices.data())
-			.Create();
+		m_IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * m_Indices.size(), m_Indices.data());
 	}
 
 	void TextureTest::Update(float deltaTime)
