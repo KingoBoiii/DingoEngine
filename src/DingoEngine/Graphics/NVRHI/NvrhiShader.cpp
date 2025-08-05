@@ -167,7 +167,7 @@ namespace Dingo
 				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, 0)); // TODO: Handle size and offset for push constants
 			}
 
-			for (const auto& sampler : shaderReflection.SeperateSamplers)
+			for (const auto& sampler : shaderReflection.SeparateSamplers)
 			{
 				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
 					.setSize(sampler.ArraySize));
@@ -179,7 +179,7 @@ namespace Dingo
 					.setSize(sampledImage.ArraySize));
 			}
 
-			for (const auto& sampledImage : shaderReflection.SeperateImages)
+			for (const auto& sampledImage : shaderReflection.SeparateImages)
 			{
 				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
 					.setSize(sampledImage.ArraySize));

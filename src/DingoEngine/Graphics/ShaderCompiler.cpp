@@ -137,7 +137,7 @@ namespace Dingo
 				arraySize = 1;
 			}
 
-			reflection.SeperateSamplers.push_back({ name, descriptorSet, binding, dimension, arraySize });
+			reflection.SeparateSamplers.push_back({ name, descriptorSet, binding, dimension, arraySize });
 		}
 
 		for (const auto& resource : resources.sampled_images)
@@ -199,7 +199,7 @@ namespace Dingo
 				arraySize = 1;
 			}
 
-			reflection.SeperateImages.push_back({ name, descriptorSet, binding, dimension, arraySize });
+			reflection.SeparateImages.push_back({ name, descriptorSet, binding, dimension, arraySize });
 		}
 
 		return reflection;
@@ -227,11 +227,11 @@ namespace Dingo
 			DE_CORE_TRACE("    {0} (Set={1}, Binding={2})", pushConstant.Name, pushConstant.DescriptorSet, pushConstant.Binding);
 		}
 
-		DE_CORE_TRACE("  {0} Seperate Samplers", reflection.SeperateSamplers.size());
-		for (const auto& seperateSampler : reflection.SeperateSamplers)
+		DE_CORE_TRACE("  {0} Separate Samplers", reflection.SeparateSamplers.size());
+		for (const auto& separateSampler : reflection.SeparateSamplers)
 		{
-			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", seperateSampler.Name, seperateSampler.DescriptorSet, seperateSampler.Binding);
-			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", seperateSampler.Dimension, seperateSampler.ArraySize);
+			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", separateSampler.Name, separateSampler.DescriptorSet, separateSampler.Binding);
+			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", separateSampler.Dimension, separateSampler.ArraySize);
 		}
 
 		DE_CORE_TRACE("  {0} Sampled Images", reflection.SampledImages.size());
@@ -241,11 +241,11 @@ namespace Dingo
 			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", sampledImage.Dimension, sampledImage.ArraySize);
 		}
 
-		DE_CORE_TRACE("  {0} Seperate Images", reflection.SeperateImages.size());
-		for (const auto& seperateImage : reflection.SeperateImages)
+		DE_CORE_TRACE("  {0} Separate Images", reflection.SeparateImages.size());
+		for (const auto& separateImage : reflection.SeparateImages)
 		{
-			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", seperateImage.Name, seperateImage.DescriptorSet, seperateImage.Binding);
-			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", seperateImage.Dimension, seperateImage.ArraySize);
+			DE_CORE_TRACE("    {0}	(Set={1}, Binding={2})", separateImage.Name, separateImage.DescriptorSet, separateImage.Binding);
+			DE_CORE_TRACE("			(Dimension={0}, ArraySize={1})", separateImage.Dimension, separateImage.ArraySize);
 		}
 		DE_CORE_TRACE("-------------------------------------------------------------");
 	}

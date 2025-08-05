@@ -22,9 +22,9 @@ namespace Dingo
 		std::vector<ShaderResourceBinding> UniformBuffers;
 		std::vector<ShaderResourceBinding> StorageBuffers;
 		std::vector<ShaderResourceBinding> PushConstantBuffers;
-		std::vector<ShaderImageBinding> SeperateSamplers;
+		std::vector<ShaderImageBinding> SeparateSamplers;
 		std::vector<ShaderImageBinding> SampledImages;
-		std::vector<ShaderImageBinding> SeperateImages;
+		std::vector<ShaderImageBinding> SeparateImages;
 	};
 
 	class ShaderCompiler
