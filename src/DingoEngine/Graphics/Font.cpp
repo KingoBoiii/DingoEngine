@@ -116,12 +116,12 @@ namespace Dingo
 			uint64_t pixelDataSize = static_cast<uint64_t>(header.Width) * header.Height * 4; // Assuming RGBA8 format
 			std::vector<uint8_t> pixelData(pixelDataSize);
 			stream.read((char*)pixelData.data(), pixelDataSize);
-			//if (stream.gcount() != pixelDataSize)
-			//{
-			//	stream.close();
-			//	DE_CORE_ERROR_TAG("Font", "Failed to read pixel data from cached font atlas file: {}", filePath.string());
-			//	return;
-			//}
+			if (stream.gcount() != pixelDataSize)
+			{
+				stream.close();
+				DE_CORE_ERROR_TAG("Font", "Failed to read pixel data from cached font atlas file: {}", filePath.string());
+				return;
+			}
 
 			stream.close();
 
