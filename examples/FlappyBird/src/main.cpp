@@ -1,5 +1,7 @@
 #include <DingoEngine/EntryPoint.h>
 
+#include "GameLayer.h"
+
 namespace Dingo
 {
 
@@ -14,6 +16,7 @@ namespace Dingo
 	protected:
 		virtual void OnInitialize() override
 		{
+			PushLayer(new GameLayer());
 		}
 	};
 
