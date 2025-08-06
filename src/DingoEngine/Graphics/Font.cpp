@@ -110,13 +110,6 @@ namespace Dingo
 				return;
 			}
 
-			if (VERSION_VARIANT(header.Version) != 0 || VERSION_MAJOR(header.Version) != 1 || VERSION_MINOR(header.Version) != 0)
-			{
-				stream.close();
-				DE_CORE_ERROR_TAG("Font", "Cached font atlas version mismatch: expected 1.0.0, got {}.{}.{}", VERSION_MAJOR(header.Version), VERSION_MINOR(header.Version), VERSION_PATCH(header.Version));
-				return;
-			}
-
 			// read texture pixels from cache file
 			uint64_t pixelDataSize = static_cast<uint64_t>(header.Width) * header.Height * 4; // Assuming RGBA8 format
 			std::vector<uint8_t> pixelData(pixelDataSize);
