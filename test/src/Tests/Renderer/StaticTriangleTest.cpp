@@ -45,7 +45,6 @@ void main() {
 			.SetDebugName("Static Triangle Pipeline")
 			.SetShader(m_Shader)
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
-			.SetFillMode(Dingo::FillMode::Solid)
 			.SetCullMode(Dingo::CullMode::BackAndFront));
 	}
 

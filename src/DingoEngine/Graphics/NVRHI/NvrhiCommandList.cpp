@@ -82,11 +82,17 @@ namespace Dingo
 
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
 
-		m_GraphicsState.setPipeline(static_cast<NvrhiPipeline*>(pipeline)->m_GraphicsPipelineHandle);
+		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
 
-		if (static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle)
+		m_GraphicsState = nvrhi::GraphicsState()
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_FramebufferHandle)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_Viewport));
+
+		m_GraphicsState.setPipeline(nvrhiPipeline->m_GraphicsPipelineHandle);
+
+		if (nvrhiPipeline->m_BindingSetHandle)
 		{
-			m_GraphicsState.addBindingSet(static_cast<NvrhiPipeline*>(pipeline)->m_BindingSetHandle);
+			m_GraphicsState.addBindingSet(nvrhiPipeline->m_BindingSetHandle);
 		}
 	}
 
