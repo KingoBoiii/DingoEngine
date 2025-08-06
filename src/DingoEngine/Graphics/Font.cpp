@@ -22,12 +22,16 @@ namespace Dingo
 	namespace Utils
 	{
 
-		inline static void CacheFontAtlas(const std::string& name, float fontSize, FontAtlasHeader& header, const void* pixels)
+		inline static std::filesystem::path GetCacheFilePath(const std::string& name, float fontSize)
 		{
 			std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts\\atlas");
-
 			std::string filename = std::format("{0}-{1}.dfa", name, fontSize);
-			std::filesystem::path filePath = cachePath / filename;
+			return cachePath / filename;
+		}
+
+		inline static void CacheFontAtlas(const std::string& name, float fontSize, FontAtlasHeader& header, const void* pixels)
+		{
+			std::filesystem::path filePath = GetCacheFilePath(name, fontSize);
 
 			std::ofstream stream(filePath, std::ios::binary | std::ios::trunc);
 			if (!stream)
@@ -87,9 +91,7 @@ namespace Dingo
 		m_Name = m_Params.Name.empty() ? m_FilePath.stem().string() : m_Params.Name;
 
 		// first check if the font atlas is cached
-		std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts\\atlas");
-		std::string filename = std::format("{}-{}.dfa", m_Name, 0.0f);
-		std::filesystem::path filePath = cachePath / filename;
+		std::filesystem::path filePath = Utils::GetCacheFilePath(m_Name, 0.0f);
 		if (std::filesystem::exists(filePath))
 		{
 			DE_CORE_INFO("Loading cached font atlas from {}", filePath.string());
