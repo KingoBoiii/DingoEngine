@@ -13,7 +13,7 @@ namespace Dingo
 
 	public:
 		AppRenderer(SwapChain* swapChain)
-			: Renderer(RendererParams{ .TargetSwapChain = true }), m_SwapChain(swapChain)
+			: Renderer(RendererParams { .TargetFramebuffer = swapChain->GetCurrentFramebuffer() }), m_SwapChain(swapChain)
 		{}
 		virtual ~AppRenderer() = default;
 

@@ -37,8 +37,8 @@ namespace Dingo
 
 	void NvrhiFramebuffer::Resize(uint32_t width, uint32_t height)
 	{
-		m_Params.Width = width;
-		m_Params.Height = height;
+		m_Width = m_Params.Width = width;
+		m_Height = m_Params.Height = height;
 
 		for (auto& attachment : m_Attachments)
 		{

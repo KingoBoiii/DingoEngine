@@ -17,11 +17,14 @@ namespace Dingo
 
 	void TestLayer::OnAttach()
 	{
-		m_Renderer = Renderer::Create(RendererParams{ .TargetSwapChain = false });
-		m_Renderer->Initialize();
+		m_OutputFramebuffer = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("TestOutputFramebuffer")
+			.SetWidth(800)
+			.SetHeight(600)
+			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 
-		m_Renderer2D = Renderer2D::Create();
-		m_Renderer2D->Initialize();
+		m_Renderer = Renderer::Create(m_OutputFramebuffer);
+		m_Renderer2D = Renderer2D::Create(m_OutputFramebuffer);
 
 		// Register tests
 		m_Tests.push_back({ "Static Triangle Test", [&]() { return new StaticTriangleTest(m_Renderer); } });
@@ -59,6 +62,12 @@ namespace Dingo
 			m_Renderer->Shutdown();
 			delete m_Renderer;
 			m_Renderer = nullptr;
+		}
+
+		if (m_OutputFramebuffer)
+		{
+			m_OutputFramebuffer->Destroy();
+			m_OutputFramebuffer = nullptr;
 		}
 	}
 
@@ -209,8 +218,19 @@ namespace Dingo
 
 		ImGui::End();
 
-		m_TestViewportPanel.OnImGuiRender(m_CurrentTest->GetResult());
-		m_CurrentTest->Resize(m_TestViewportPanel.GetViewportSize().x, m_TestViewportPanel.GetViewportSize().y);
+		m_TestViewportPanel.OnImGuiRender(m_OutputFramebuffer->GetAttachment(0));
+
+		// handle resize
+		if (m_OutputFramebuffer->GetWidth() != m_TestViewportPanel.GetViewportSize().x ||
+		   m_OutputFramebuffer->GetHeight() != m_TestViewportPanel.GetViewportSize().y)
+		{
+			m_CurrentTest->Resize(m_TestViewportPanel.GetViewportSize().x, m_TestViewportPanel.GetViewportSize().y);
+
+			Application::Get().SubmitPostExecution([&]()
+			{
+				m_OutputFramebuffer->Resize(static_cast<uint32_t>(m_TestViewportPanel.GetViewportSize().x), static_cast<uint32_t>(m_TestViewportPanel.GetViewportSize().y));
+			});
+		}
 
 		ImGui::ShowDemoWindow();
 	}

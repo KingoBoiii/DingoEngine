@@ -6,7 +6,9 @@ namespace Dingo
 
 	AppRenderer* AppRenderer::Create(SwapChain* swapChain)
 	{
-		return new AppRenderer(swapChain);
+		AppRenderer* appRenderer = new AppRenderer(swapChain);
+		appRenderer->Initialize();
+		return appRenderer;
 	}
 
 	void AppRenderer::BeginFrame()

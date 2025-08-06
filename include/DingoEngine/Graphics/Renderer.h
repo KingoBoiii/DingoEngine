@@ -16,13 +16,13 @@ namespace Dingo
 
 	struct RendererParams
 	{
-		bool TargetSwapChain = false; // If true, the renderer will target the swap chain for rendering
-		std::string FramebufferName = "RendererFramebuffer"; // Name for the framebuffer if not targeting swap chain
+		Framebuffer* TargetFramebuffer = nullptr; // If not targeting swap chain, specify a framebuffer to target
 	};
 
 	class Renderer
 	{
 	public:
+		static Renderer* Create(Framebuffer* framebuffer);
 		static Renderer* Create(const RendererParams& params);
 
 	public:
@@ -60,7 +60,6 @@ namespace Dingo
 
 		virtual void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
 
-		virtual void Resize(uint32_t width, uint32_t height);
 		virtual void Clear(const glm::vec4& clearColor);
 
 		virtual void Upload(GraphicsBuffer* buffer);

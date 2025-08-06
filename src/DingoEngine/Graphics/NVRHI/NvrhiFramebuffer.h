@@ -19,12 +19,17 @@ namespace Dingo
 
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
+		virtual uint32_t GetWidth() const override { return m_Width; }
+		virtual uint32_t GetHeight() const override { return m_Height; }
 		virtual Texture* GetAttachment(uint32_t index) const override { return m_Attachments[index]; }
 
 	private:
 		void CreateAttachments(nvrhi::FramebufferDesc& framebufferDesc);
 
 	protected:
+		uint32_t m_Width = 0;
+		uint32_t m_Height = 0;
+
 		nvrhi::FramebufferHandle m_FramebufferHandle;
 		nvrhi::Viewport m_Viewport;
 

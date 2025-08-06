@@ -46,11 +46,9 @@ namespace Dingo
 		m_SwapChain->Initialize();
 
 		m_Renderer = AppRenderer::Create(m_SwapChain);
-		m_Renderer->Initialize();
 		Renderer::InitializeStaticResources();
 
-		m_Renderer2D = Renderer2D::Create(m_SwapChain->GetCurrentFramebuffer());
-		m_Renderer2D->Initialize();
+		m_Renderer2D = Renderer2D::Create(m_Renderer);
 
 		OnInitialize();
 

@@ -15,29 +15,29 @@ namespace Dingo
 
 	static StaticResources* s_StaticResources = nullptr;
 
+	Renderer* Renderer::Create(Framebuffer* framebuffer)
+	{
+		Renderer* renderer = new Renderer(RendererParams{ .TargetFramebuffer = framebuffer });
+		renderer->Initialize();
+		return renderer;
+	}
+
 	Renderer* Renderer::Create(const RendererParams& params)
 	{
-		return new Renderer(params);
+		Renderer* renderer = new Renderer(params);
+		renderer->Initialize();
+		return renderer;
 	}
 
 	void Renderer::Initialize()
 	{
-		if (!m_Params.TargetSwapChain)
+		m_TargetFramebuffer = m_Params.TargetFramebuffer;
+		if (m_TargetFramebuffer == nullptr)
 		{
-			m_TargetFramebuffer = Framebuffer::Create(FramebufferParams()
-				.SetDebugName(m_Params.FramebufferName)
-				.SetWidth(800)
-				.SetHeight(600)
-				.AddAttachment({ TextureFormat::RGBA8_UNORM }));
-			m_TargetFramebuffer->Initialize();
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
 		}
 
-		CommandListParams commandListParams = CommandListParams()
-			.SetTargetSwapChain(m_Params.TargetSwapChain)
-			.SetTargetFramebuffer(m_Params.TargetSwapChain ? nullptr : m_TargetFramebuffer);
-
-		m_CommandList = CommandList::Create(commandListParams);
-		m_CommandList->Initialize();
+		m_CommandList = CommandList::Create();
 	}
 
 	void Renderer::Shutdown()
@@ -46,12 +46,6 @@ namespace Dingo
 		{
 			m_CommandList->Destroy();
 			m_CommandList = nullptr;
-		}
-
-		if (m_TargetFramebuffer && !m_Params.TargetSwapChain)
-		{
-			m_TargetFramebuffer->Destroy();
-			m_TargetFramebuffer = nullptr;
 		}
 	}
 
@@ -67,8 +61,7 @@ namespace Dingo
 	}
 
 	void Renderer::EndRenderPass()
-	{
-	}
+	{}
 
 	/**************************************************
 	***		DRAW CALLS								***
@@ -115,21 +108,6 @@ namespace Dingo
 	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)
 	{
 		m_CommandList->Clear(framebuffer, 0, clearColor);
-	}
-
-	void Renderer::Resize(uint32_t width, uint32_t height)
-	{
-		if (m_Params.TargetSwapChain)
-		{
-			return;
-		}
-
-		if (width == m_TargetFramebuffer->GetParams().Width && height == m_TargetFramebuffer->GetParams().Height)
-		{
-			return;
-		}
-
-		m_TargetFramebuffer->Resize(width, height);
 	}
 
 	void Renderer::Clear(const glm::vec4& clearColor)
