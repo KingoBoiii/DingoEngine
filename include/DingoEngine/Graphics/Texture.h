@@ -98,6 +98,8 @@ namespace Dingo
 
 		virtual bool NativeEquals(const Texture* other) const = 0;
 
+		virtual uint32_t GetWidth() const { return m_Params.Width; }
+		virtual uint32_t GetHeight() const { return m_Params.Height; }
 		virtual void* GetTextureHandle() const = 0;
 
 	protected:

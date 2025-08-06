@@ -402,8 +402,8 @@ void main() {
 			quadMin += glm::vec2(x, y);
 			quadMax += glm::vec2(x, y);
 
-			float texelWidth = 1.0f / 512; // fontAtlas->GetWidth();
-			float texelHeight = 1.0f / 512; // fontAtlas->GetHeight();
+			float texelWidth = 1.0f / fontAtlas->GetWidth();
+			float texelHeight = 1.0f / fontAtlas->GetHeight();
 			texCoordMin *= glm::vec2(texelWidth, texelHeight);
 			texCoordMax *= glm::vec2(texelWidth, texelHeight);
 
