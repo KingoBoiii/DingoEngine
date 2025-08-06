@@ -499,7 +499,7 @@ void main() {
 			.SetStride(sizeof(QuadVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(QuadVertex, Position))
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(QuadVertex, Color))
-			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(QuadVertex, TexCoord))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(QuadVertex, TexCoord))
 			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
 		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
@@ -574,7 +574,7 @@ void main() {
 			.SetStride(sizeof(TextVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(TextVertex, Position))
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(TextVertex, Color))
-			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(TextVertex, TexCoord));
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(TextVertex, TexCoord));
 
 		m_TextQuadRenderPass.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DTextPipeline")
