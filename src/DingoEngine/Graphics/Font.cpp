@@ -15,8 +15,8 @@ namespace Dingo
 	struct FontAtlasHeader
 	{
 		uint32_t Version = DE_MAKE_VERSION(1, 0, 0);
-		uint32_t Width;
-		uint32_t Height;
+		uint32_t Width = 0;
+		uint32_t Height = 0;
 	};
 
 	namespace Utils
