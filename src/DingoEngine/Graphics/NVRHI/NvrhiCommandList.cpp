@@ -32,6 +32,8 @@ namespace Dingo
 
 	void NvrhiCommandList::Begin()
 	{
+		m_GraphicsState = nvrhi::GraphicsState();
+
 		m_CommandListHandle->open();
 
 		m_HasBegun = true;
@@ -61,6 +63,15 @@ namespace Dingo
 		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, data, size, offset);
 	}
 
+	void NvrhiCommandList::SetFramebuffer(Framebuffer* framebuffer)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
+		DE_CORE_ASSERT(framebuffer, "Framebuffer is null.");
+
+		m_GraphicsState.setFramebuffer(static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
+	}
+
 	void NvrhiCommandList::SetPipeline(Pipeline* pipeline)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
@@ -68,9 +79,7 @@ namespace Dingo
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
 
-		m_GraphicsState = nvrhi::GraphicsState()
-			.setFramebuffer(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_Viewport));
+		SetFramebuffer(nvrhiPipeline->GetTargetFramebuffer());
 
 		m_GraphicsState.setPipeline(nvrhiPipeline->m_GraphicsPipelineHandle);
 

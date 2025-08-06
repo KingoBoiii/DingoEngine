@@ -84,8 +84,8 @@ namespace Dingo
 		static Sampler* GetPointSampler();
 
 	protected:
-		Renderer(const RendererParams& params)
-			: m_Params(params)
+		Renderer(const RendererParams& params, bool targetSwapChain = false)
+			: m_Params(params), m_TargetSwapChain(targetSwapChain)
 		{}
 
 	public:
@@ -96,6 +96,7 @@ namespace Dingo
 		RendererParams m_Params;
 		CommandList* m_CommandList = nullptr; // Command list for recording commands
 		Framebuffer* m_TargetFramebuffer = nullptr; // The framebuffer that the renderer will render to
+		bool m_TargetSwapChain = false; // Whether the renderer targets the swap chain or a custom framebuffer
 	};
 
 }

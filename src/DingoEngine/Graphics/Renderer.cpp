@@ -58,6 +58,12 @@ namespace Dingo
 		// TODO: find out if Render Pass needs to be rebaked, before setting it
 
 		m_CommandList->SetRenderPass(renderPass);
+
+		if (m_TargetSwapChain)
+		{
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
+			m_CommandList->SetFramebuffer(m_TargetFramebuffer);
+		}
 	}
 
 	void Renderer::EndRenderPass()
@@ -112,6 +118,12 @@ namespace Dingo
 
 	void Renderer::Clear(const glm::vec4& clearColor)
 	{
+		if (m_TargetSwapChain)
+		{
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
+			m_CommandList->SetFramebuffer(m_TargetFramebuffer);
+		}
+
 		m_CommandList->Clear(m_TargetFramebuffer, 0, clearColor);
 	}
 
@@ -128,12 +140,26 @@ namespace Dingo
 	void Renderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		m_CommandList->SetPipeline(pipeline);
+
+		if (m_TargetSwapChain)
+		{
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
+			m_CommandList->SetFramebuffer(m_TargetFramebuffer);
+		}
+
 		m_CommandList->Draw(vertexCount, instanceCount);
 	}
 
 	void Renderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		m_CommandList->SetPipeline(pipeline);
+
+		if (m_TargetSwapChain)
+		{
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
+			m_CommandList->SetFramebuffer(m_TargetFramebuffer);
+		}
+
 		m_CommandList->AddVertexBuffer(vertexBuffer, 0);
 		m_CommandList->Draw(vertexCount, instanceCount);
 	}
@@ -141,6 +167,13 @@ namespace Dingo
 	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer)
 	{
 		m_CommandList->SetPipeline(pipeline);
+
+		if (m_TargetSwapChain)
+		{
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
+			m_CommandList->SetFramebuffer(m_TargetFramebuffer);
+		}
+
 		m_CommandList->AddVertexBuffer(vertexBuffer, 0);
 		m_CommandList->SetIndexBuffer(indexBuffer, 0);
 		m_CommandList->DrawIndexed(indexBuffer->GetByteSize() / sizeof(uint16_t), 1); // Assuming 16-bit indices
@@ -151,6 +184,13 @@ namespace Dingo
 		m_CommandList->UploadBuffer(uniformBuffer, uniformBuffer->GetData(), uniformBuffer->GetByteSize());
 
 		m_CommandList->SetPipeline(pipeline);
+
+		if (m_TargetSwapChain)
+		{
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
+			m_CommandList->SetFramebuffer(m_TargetFramebuffer);
+		}
+
 		m_CommandList->AddVertexBuffer(vertexBuffer, 0);
 		m_CommandList->SetIndexBuffer(indexBuffer, 0);
 		m_CommandList->DrawIndexed(indexBuffer->GetByteSize() / sizeof(uint16_t), 1); // Assuming 16-bit indices
