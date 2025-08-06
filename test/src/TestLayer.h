@@ -24,6 +24,7 @@ namespace Dingo
 	private:
 		TestViewportPanel m_TestViewportPanel;
 
+		Framebuffer* m_OutputFramebuffer = nullptr;
 		Renderer* m_Renderer = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
 

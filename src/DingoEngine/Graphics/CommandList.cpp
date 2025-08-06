@@ -8,7 +8,9 @@ namespace Dingo
 
 	CommandList* CommandList::Create(const CommandListParams& params)
 	{
-		return new NvrhiCommandList(params);
+		CommandList* commandList = new NvrhiCommandList(params);
+		commandList->Initialize();
+		return commandList;
 	}
 
 }

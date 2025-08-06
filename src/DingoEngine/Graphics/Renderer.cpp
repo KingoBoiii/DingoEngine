@@ -15,6 +15,11 @@ namespace Dingo
 
 	static StaticResources* s_StaticResources = nullptr;
 
+	Renderer* Renderer::Create(Framebuffer* framebuffer)
+	{
+		return new Renderer(RendererParams{ .TargetFramebuffer = framebuffer });
+	}
+
 	Renderer* Renderer::Create(const RendererParams& params)
 	{
 		return new Renderer(params);
@@ -22,22 +27,13 @@ namespace Dingo
 
 	void Renderer::Initialize()
 	{
-		if (!m_Params.TargetSwapChain)
+		m_TargetFramebuffer = m_Params.TargetFramebuffer;
+		if (m_TargetFramebuffer == nullptr)
 		{
-			m_TargetFramebuffer = Framebuffer::Create(FramebufferParams()
-				.SetDebugName(m_Params.FramebufferName)
-				.SetWidth(800)
-				.SetHeight(600)
-				.AddAttachment({ TextureFormat::RGBA8_UNORM }));
-			m_TargetFramebuffer->Initialize();
+			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
 		}
 
-		CommandListParams commandListParams = CommandListParams()
-			.SetTargetSwapChain(m_Params.TargetSwapChain)
-			.SetTargetFramebuffer(m_Params.TargetSwapChain ? nullptr : m_TargetFramebuffer);
-
-		m_CommandList = CommandList::Create(commandListParams);
-		m_CommandList->Initialize();
+		m_CommandList = CommandList::Create();
 	}
 
 	void Renderer::Shutdown()
@@ -46,12 +42,6 @@ namespace Dingo
 		{
 			m_CommandList->Destroy();
 			m_CommandList = nullptr;
-		}
-
-		if (m_TargetFramebuffer && !m_Params.TargetSwapChain)
-		{
-			m_TargetFramebuffer->Destroy();
-			m_TargetFramebuffer = nullptr;
 		}
 	}
 
@@ -67,8 +57,7 @@ namespace Dingo
 	}
 
 	void Renderer::EndRenderPass()
-	{
-	}
+	{}
 
 	/**************************************************
 	***		DRAW CALLS								***
@@ -119,10 +108,12 @@ namespace Dingo
 
 	void Renderer::Resize(uint32_t width, uint32_t height)
 	{
+#if 0
 		if (m_Params.TargetSwapChain)
 		{
 			return;
 		}
+#endif
 
 		if (width == m_TargetFramebuffer->GetParams().Width && height == m_TargetFramebuffer->GetParams().Height)
 		{

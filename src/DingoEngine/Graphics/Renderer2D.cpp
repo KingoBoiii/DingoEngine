@@ -141,9 +141,7 @@ void main() {
 
 	void Renderer2D::Initialize()
 	{
-		m_Renderer = Renderer::Create(RendererParams{
-			.TargetSwapChain = false,
-			.FramebufferName = "Renderer2DFramebuffer" });
+		m_Renderer = Renderer::Create(m_Params.TargetFramebuffer);
 		m_Renderer->Initialize();
 
 		CreateQuadIndexBuffer();

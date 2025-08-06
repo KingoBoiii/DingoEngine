@@ -11,11 +11,6 @@ namespace Dingo
 		}
 
 		m_AspectRatio = static_cast<float>(width) / static_cast<float>(height);
-
-		Application::Get().SubmitPostExecution([this, width, height]()
-		{
-			m_Renderer->Resize(width, height);
-		});
 	}
 
 }

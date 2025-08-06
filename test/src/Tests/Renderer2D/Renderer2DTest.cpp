@@ -26,11 +26,6 @@ namespace Dingo
 		m_AspectRatio = static_cast<float>(width) / static_cast<float>(height);
 
 		RecalculateProjectionViewMatrix();
-
-		Application::Get().SubmitPostExecution([this, width, height]()
-		{
-			m_Renderer->Resize(width, height);
-		});
 	}
 
 	void Renderer2DTest::ImGuiRender()

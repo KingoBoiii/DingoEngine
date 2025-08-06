@@ -15,8 +15,6 @@ namespace Dingo
 
 	void NvrhiCommandList::Initialize()
 	{
-		DE_CORE_ASSERT(m_Params.TargetSwapChain || m_Params.TargetFramebuffer, "CommandList must target a swap chain - does not support otherwise atm.");
-
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 			//.setEnableImmediateExecution(false) // Set to true for immediate execution, false for deferred execution
 			.setQueueType(nvrhi::CommandQueue::Graphics);
@@ -35,17 +33,6 @@ namespace Dingo
 	void NvrhiCommandList::Begin()
 	{
 		m_CommandListHandle->open();
-
-		m_HasBegun = true;
-	}
-
-	void NvrhiCommandList::Begin(Framebuffer* framebuffer)
-	{
-		m_CommandListHandle->open();
-
-		m_GraphicsState = nvrhi::GraphicsState()
-			.setFramebuffer(static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
 
 		m_HasBegun = true;
 	}
@@ -70,7 +57,6 @@ namespace Dingo
 	void NvrhiCommandList::UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading buffer.");
-
 		DE_CORE_ASSERT(buffer, "Uniform buffer is null.");
 
 		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, data, size, offset);
@@ -79,7 +65,6 @@ namespace Dingo
 	void NvrhiCommandList::SetPipeline(Pipeline* pipeline)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
-
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
@@ -102,13 +87,8 @@ namespace Dingo
 		DE_CORE_ASSERT(renderPass, "Render Pass is null.");
 
 		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
-		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(renderPass->GetPipeline());
 
-		m_GraphicsState = nvrhi::GraphicsState()
-			.setFramebuffer(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_FramebufferHandle)
-			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_Viewport));
-
-		m_GraphicsState.setPipeline(nvrhiPipeline->m_GraphicsPipelineHandle);
+		SetPipeline(renderPass->GetPipeline());
 
 		if (nvrhiRenderPass->m_BindingSetHandle)
 		{

@@ -16,13 +16,13 @@ namespace Dingo
 
 	struct RendererParams
 	{
-		bool TargetSwapChain = false; // If true, the renderer will target the swap chain for rendering
-		std::string FramebufferName = "RendererFramebuffer"; // Name for the framebuffer if not targeting swap chain
+		Framebuffer* TargetFramebuffer; // If not targeting swap chain, specify a framebuffer to target
 	};
 
 	class Renderer
 	{
 	public:
+		static Renderer* Create(Framebuffer* framebuffer);
 		static Renderer* Create(const RendererParams& params);
 
 	public:

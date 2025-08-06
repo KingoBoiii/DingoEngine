@@ -57,6 +57,8 @@ namespace Dingo
 
 		virtual void Resize(uint32_t width, uint32_t height) = 0;
 
+		virtual uint32_t GetWidth() const = 0;
+		virtual uint32_t GetHeight() const = 0;
 		virtual Texture* GetAttachment(uint32_t index) const = 0;
 
 		const FramebufferParams& GetParams() const { return m_Params; }
