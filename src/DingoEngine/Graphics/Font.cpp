@@ -44,7 +44,7 @@ namespace Dingo
 		}
 
 		template<typename T, typename S, int N, msdf_atlas::GeneratorFunction<S, N> GenFunc>
-		inline static Texture* CreateAndCacheAtlas(const std::string& fontName, float fontSize, const std::vector<msdf_atlas::GlyphGeometry>& glyphs, const msdf_atlas::FontGeometry& fontGeometry, uint32_t width, uint32_t height)
+		inline static Texture* CreateAndCacheAtlas(const std::string& fontName, float fontSize, const std::vector<msdf_atlas::GlyphGeometry>& glyphs, const msdf_atlas::FontGeometry& fontGeometry, uint32_t width, uint32_t height, const FontParams& params)
 		{
 			msdf_atlas::GeneratorAttributes attributes;
 			attributes.config.overlapSupport = true;
@@ -52,7 +52,7 @@ namespace Dingo
 
 			msdf_atlas::ImmediateAtlasGenerator<S, N, GenFunc, msdf_atlas::BitmapAtlasStorage<T, N>> generator(width, height);
 			generator.setAttributes(attributes);
-			generator.setThreadCount(8);
+			generator.setThreadCount(params.ThreadCount);
 			generator.generate(glyphs.data(), (int)glyphs.size());
 
 			msdfgen::BitmapConstRef<T, N> bitmap = (msdfgen::BitmapConstRef<T, N>)generator.atlasStorage();
@@ -127,7 +127,7 @@ namespace Dingo
 		}
 		else
 		{
-			m_AtlasTexture = Utils::CreateAndCacheAtlas<uint8_t, float, 4, msdf_atlas::mtsdfGenerator>(m_Name, 0.0f, m_Data->Glyphs, m_Data->FontGeometry, width, height);
+			m_AtlasTexture = Utils::CreateAndCacheAtlas<uint8_t, float, 4, msdf_atlas::mtsdfGenerator>(m_Name, 0.0f, m_Data->Glyphs, m_Data->FontGeometry, width, height, m_Params);
 		}
 	}
 
@@ -194,20 +194,18 @@ namespace Dingo
 #define DEFAULT_ANGLE_THRESHOLD 3.0
 #define LCG_MULTIPLIER 6364136223846793005ull
 #define LCG_INCREMENT 1442695040888963407ull
-#define THREAD_COUNT 8
 
 		// if MSDF || MTSDF 
 		// Edge coloring
 		uint64_t coloringSeed = 0;
-		bool expensiveColoring = false;
-		if (expensiveColoring)
+		if (m_Params.UseExpensiveEdgeColoring)
 		{
 			msdf_atlas::Workload([&glyphs = m_Data->Glyphs, &coloringSeed](int i, int threadNo) -> bool
 			{
 				unsigned long long glyphSeed = (LCG_MULTIPLIER * (coloringSeed ^ i) + LCG_INCREMENT) * !!coloringSeed;
 				glyphs[i].edgeColoring(msdfgen::edgeColoringInkTrap, DEFAULT_ANGLE_THRESHOLD, glyphSeed);
 				return true;
-			}, m_Data->Glyphs.size()).finish(THREAD_COUNT);
+			}, m_Data->Glyphs.size()).finish(m_Params.ThreadCount);
 		}
 		else
 		{
@@ -218,8 +216,6 @@ namespace Dingo
 				glyph.edgeColoring(msdfgen::edgeColoringInkTrap, DEFAULT_ANGLE_THRESHOLD, glyphSeed);
 			}
 		}
-
-		
 
 #if 0
 		msdfgen::Shape shape;
