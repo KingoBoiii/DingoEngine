@@ -236,7 +236,7 @@ void main() {
 			m_QuadPipeline.RenderPass->Bake();
 
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
-			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_QuadPipeline.IndexCount);
+			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
 
@@ -248,7 +248,7 @@ void main() {
 			m_TextQuadRenderPass.RenderPass->Bake();
 
 			m_Renderer->BeginRenderPass(m_TextQuadRenderPass.RenderPass);
-			m_Renderer->DrawIndexed(m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_TextQuadRenderPass.IndexCount);
+			m_Renderer->DrawIndexed(m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
 
