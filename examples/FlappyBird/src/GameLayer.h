@@ -1,6 +1,8 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include <glm/glm.hpp>
+
 namespace Dingo
 {
 
@@ -21,6 +23,12 @@ namespace Dingo
 #endif
 
 	private:
+		float m_OrthographicSize = 5.0f;
+		float m_OrthographicNear = -1.0f;
+		float m_OrthographicFar = 1.0f;
+		glm::mat4 m_ProjectionViewMatrix = glm::mat4(1.0f);
+
+		Texture* m_BackgroundTexture = nullptr;
 	};
 
 }
