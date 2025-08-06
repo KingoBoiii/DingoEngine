@@ -171,6 +171,12 @@ void main() {
 		DestroyTextQuadRenderPass();
 		DestroyQuadPipeline();
 
+		if (m_QuadIndexBuffer)
+		{
+			m_QuadIndexBuffer->Destroy();
+			m_QuadIndexBuffer = nullptr;
+		}
+
 		if (m_CameraUniformBuffer)
 		{
 			m_CameraUniformBuffer->Destroy();
@@ -539,12 +545,6 @@ void main() {
 		}
 		m_QuadPipeline.IndexCount = 0;
 
-		if (m_QuadIndexBuffer)
-		{
-			m_QuadIndexBuffer->Destroy();
-			m_QuadIndexBuffer = nullptr;
-		}
-
 		if (m_QuadPipeline.Pipeline)
 		{
 			m_QuadPipeline.Pipeline->Destroy();
@@ -607,12 +607,6 @@ void main() {
 			m_TextQuadRenderPass.VertexBufferPtr = nullptr;
 		}
 		m_TextQuadRenderPass.IndexCount = 0;
-
-		if (m_QuadIndexBuffer)
-		{
-			m_QuadIndexBuffer->Destroy();
-			m_QuadIndexBuffer = nullptr;
-		}
 
 		if (m_TextQuadRenderPass.Pipeline)
 		{
