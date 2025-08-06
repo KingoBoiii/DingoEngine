@@ -11,20 +11,6 @@ namespace Dingo
 
 	struct CommandListParams
 	{
-		bool TargetSwapChain = false; // If true, the command list will target the swap chain framebuffer
-		Framebuffer* TargetFramebuffer = nullptr; // If not targeting swap chain, specify a framebuffer to target
-
-		CommandListParams& SetTargetSwapChain(bool targetSwapChain)
-		{
-			TargetSwapChain = targetSwapChain;
-			return *this;
-		}
-
-		CommandListParams& SetTargetFramebuffer(Framebuffer* framebuffer)
-		{
-			TargetFramebuffer = framebuffer;
-			return *this;
-		}
 	};
 
 	class CommandList
@@ -59,7 +45,6 @@ namespace Dingo
 
 	protected:
 		CommandListParams m_Params;
-		Framebuffer* m_TargetFramebuffer = nullptr;
 	};
 
 }

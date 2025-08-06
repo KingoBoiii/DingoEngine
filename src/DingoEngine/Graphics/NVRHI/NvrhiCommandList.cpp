@@ -42,7 +42,6 @@ namespace Dingo
 		m_CommandListHandle->close();
 		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(m_CommandListHandle);
 
-		m_TargetFramebuffer = nullptr; // Reset target framebuffer after execution
 		m_HasBegun = false;
 	}
 
