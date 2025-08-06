@@ -11,7 +11,7 @@ namespace Dingo
 	{
 		std::string Name;
 		uint8_t ThreadCount = 8;
-		bool UseExpensiveEdgeColoring = false; // If true, uses edge coloring for MSDF & MTSDF generation
+		bool UseExpensiveEdgeColoring = false;
 	};
 
 	class Font
