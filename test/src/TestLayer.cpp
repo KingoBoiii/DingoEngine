@@ -22,7 +22,6 @@ namespace Dingo
 			.SetWidth(800)
 			.SetHeight(600)
 			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
-		m_OutputFramebuffer->Initialize();
 
 		m_Renderer = Renderer::Create(m_OutputFramebuffer);
 		m_Renderer2D = Renderer2D::Create(m_OutputFramebuffer);

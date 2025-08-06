@@ -8,7 +8,9 @@ namespace Dingo
 
 	Framebuffer* Framebuffer::Create(const FramebufferParams& params)
 	{
-		return new NvrhiFramebuffer(params);
+		Framebuffer* framebuffer = new NvrhiFramebuffer(params);
+		framebuffer->Initialize();
+		return framebuffer;
 	}
 
 	Framebuffer::Framebuffer(const FramebufferParams& params)
