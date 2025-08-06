@@ -17,12 +17,16 @@ namespace Dingo
 
 	Renderer* Renderer::Create(Framebuffer* framebuffer)
 	{
-		return new Renderer(RendererParams{ .TargetFramebuffer = framebuffer });
+		Renderer* renderer = new Renderer(RendererParams{ .TargetFramebuffer = framebuffer });
+		renderer->Initialize();
+		return renderer;
 	}
 
 	Renderer* Renderer::Create(const RendererParams& params)
 	{
-		return new Renderer(params);
+		Renderer* renderer = new Renderer(params);
+		renderer->Initialize();
+		return renderer;
 	}
 
 	void Renderer::Initialize()

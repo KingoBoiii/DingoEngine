@@ -25,10 +25,7 @@ namespace Dingo
 		m_OutputFramebuffer->Initialize();
 
 		m_Renderer = Renderer::Create(m_OutputFramebuffer);
-		m_Renderer->Initialize();
-
 		m_Renderer2D = Renderer2D::Create(m_OutputFramebuffer);
-		m_Renderer2D->Initialize();
 
 		// Register tests
 		m_Tests.push_back({ "Static Triangle Test", [&]() { return new StaticTriangleTest(m_Renderer); } });

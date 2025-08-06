@@ -41,6 +41,7 @@ namespace Dingo
 	class Renderer2D
 	{
 	public:
+		static Renderer2D* Create(Renderer* renderer, const Renderer2DCapabilities& capabilities = {});
 		static Renderer2D* Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities = {});
 		static Renderer2D* Create(const Renderer2DParams& params = {});
 
@@ -86,7 +87,11 @@ namespace Dingo
 
 	private:
 		Renderer2D(const Renderer2DParams& params)
-			: m_Params(params)
+			: m_Params(params), m_OwnsRenderer(true)
+		{}
+
+		Renderer2D(Renderer* renderer, const Renderer2DParams& params)
+			: m_Params(params), m_Renderer(renderer), m_OwnsRenderer(false)
 		{}
 
 	private:
@@ -105,6 +110,7 @@ namespace Dingo
 		**************************************************/
 		Renderer2DParams m_Params;
 		Renderer* m_Renderer = nullptr;
+		bool m_OwnsRenderer = true; // If true, Renderer2D will destroy the renderer on shutdown
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 
 		struct CameraData

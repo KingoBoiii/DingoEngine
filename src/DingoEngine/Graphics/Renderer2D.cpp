@@ -126,23 +126,39 @@ void main() {
 
 	}
 
+	Renderer2D* Renderer2D::Create(Renderer* renderer, const Renderer2DCapabilities& capabilities)
+	{
+		Renderer2D* renderer2D = new Renderer2D(renderer, Renderer2DParams{
+			.Capabilities = capabilities
+			});
+		renderer2D->Initialize();
+		return renderer2D;
+	}
+
 	Renderer2D* Renderer2D::Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities)
 	{
-		return new Renderer2D(Renderer2DParams{
+		Renderer2D* renderer2D = new Renderer2D(Renderer2DParams{
 			.TargetFramebuffer = framebuffer,
 			.Capabilities = capabilities
 			});
+		renderer2D->Initialize();
+		return renderer2D;
 	}
 
 	Renderer2D* Renderer2D::Create(const Renderer2DParams& params)
 	{
-		return new Renderer2D(params);
+		Renderer2D* renderer2D = new Renderer2D(params);
+		renderer2D->Initialize();
+		return renderer2D;
 	}
 
 	void Renderer2D::Initialize()
 	{
-		m_Renderer = Renderer::Create(m_Params.TargetFramebuffer);
-		m_Renderer->Initialize();
+		if (!m_Renderer)
+		{
+			m_Renderer = Renderer::Create(m_Params.TargetFramebuffer);
+			m_Renderer->Initialize();
+		}
 
 		CreateQuadIndexBuffer();
 
@@ -181,7 +197,7 @@ void main() {
 			m_CameraUniformBuffer = nullptr;
 		}
 
-		if (m_Renderer)
+		if (m_OwnsRenderer && m_Renderer)
 		{
 			m_Renderer->Shutdown();
 			delete m_Renderer;
