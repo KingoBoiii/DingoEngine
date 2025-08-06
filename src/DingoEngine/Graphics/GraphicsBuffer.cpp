@@ -27,14 +27,14 @@ namespace Dingo
 			.SetInitialData(data));
 	}
 
-	GraphicsBuffer* GraphicsBuffer::CreateUniformBuffer(uint64_t size, bool directUpload, const std::string& debugName)
+	GraphicsBuffer* GraphicsBuffer::CreateUniformBuffer(uint64_t size, const std::string& debugName)
 	{
 		return Create(GraphicsBufferParams()
 			.SetDebugName(debugName)
 			.SetByteSize(size)
 			.SetType(Dingo::BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(directUpload));
+			.SetDirectUpload(false));
 	}
 
 	GraphicsBuffer* GraphicsBuffer::Create(const GraphicsBufferParams& params)
