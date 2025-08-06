@@ -60,7 +60,6 @@ namespace Dingo
 
 		virtual void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
 
-		virtual void Resize(uint32_t width, uint32_t height);
 		virtual void Clear(const glm::vec4& clearColor);
 
 		virtual void Upload(GraphicsBuffer* buffer);

@@ -110,23 +110,6 @@ namespace Dingo
 		m_CommandList->Clear(framebuffer, 0, clearColor);
 	}
 
-	void Renderer::Resize(uint32_t width, uint32_t height)
-	{
-#if 0
-		if (m_Params.TargetSwapChain)
-		{
-			return;
-		}
-#endif
-
-		if (width == m_TargetFramebuffer->GetParams().Width && height == m_TargetFramebuffer->GetParams().Height)
-		{
-			return;
-		}
-
-		m_TargetFramebuffer->Resize(width, height);
-	}
-
 	void Renderer::Clear(const glm::vec4& clearColor)
 	{
 		m_CommandList->Clear(m_TargetFramebuffer, 0, clearColor);

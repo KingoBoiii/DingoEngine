@@ -205,11 +205,6 @@ void main() {
 		}
 	}
 
-	void Renderer2D::Resize(uint32_t width, uint32_t height)
-	{
-		m_Renderer->Resize(width, height);
-	}
-
 	void Renderer2D::BeginScene(const glm::mat4& projectionViewMatrix)
 	{
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
