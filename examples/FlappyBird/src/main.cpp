@@ -31,7 +31,7 @@ Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 			.Width = 1600,												// Window width
 			.Height = 900,												// Window height
 			.VSync = true,												// Enable VSync by default
-			.Resizable = true,											// Make the window resizable by default
+			.Resizable = false,											// Make the window resizable by default
 		},
 		.Graphics = {
 			.GraphicsAPI = GraphicsAPI::Vulkan,							// Default to Vulkan
