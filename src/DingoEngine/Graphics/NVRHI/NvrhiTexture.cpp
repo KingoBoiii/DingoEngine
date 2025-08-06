@@ -19,6 +19,9 @@ namespace Dingo
 				case TextureFormat::RGB: return nvrhi::Format::RGBA8_UNORM;
 
 				case TextureFormat::RGBA8_UNORM: return nvrhi::Format::RGBA8_UNORM;
+
+				case TextureFormat::RGBA32F: return nvrhi::Format::RGBA32_FLOAT;
+
 				default: break;
 			}
 
@@ -109,28 +112,6 @@ namespace Dingo
 		commandList->open();
 
 		commandList->writeTexture(m_Handle, 0, 0, data, size);
-
-		commandList->close();
-
-		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
-	}
-
-	void NvrhiTexture::Upload(const std::filesystem::path& filepath)
-	{
-		uint32_t width, height, channels;
-		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
-		DE_CORE_ASSERT(data, "Failed to load texture");
-
-		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
-			.setQueueType(nvrhi::CommandQueue::Graphics);
-
-		nvrhi::CommandListHandle commandList = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
-
-		commandList->open();
-
-		channels = 4;
-
-		commandList->writeTexture(m_Handle, 0, 0, data, width * channels, width * height * channels);
 
 		commandList->close();
 

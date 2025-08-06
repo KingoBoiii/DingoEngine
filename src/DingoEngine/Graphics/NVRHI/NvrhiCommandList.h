@@ -18,6 +18,7 @@ namespace Dingo
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 
+		virtual void Begin() override;
 		virtual void Begin(Framebuffer* framebuffer) override;
 		virtual void End() override;
 

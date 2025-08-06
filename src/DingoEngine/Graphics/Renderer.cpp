@@ -45,7 +45,6 @@ namespace Dingo
 		if (m_CommandList)
 		{
 			m_CommandList->Destroy();
-			delete m_CommandList;
 			m_CommandList = nullptr;
 		}
 
@@ -62,23 +61,18 @@ namespace Dingo
 
 	void Renderer::BeginRenderPass(RenderPass* renderPass)
 	{
-		if (m_Params.TargetSwapChain)
-		{
-			m_TargetFramebuffer = Application::Get().GetSwapChain()->GetCurrentFramebuffer();
-		}
-		else
-		{
-			m_TargetFramebuffer = renderPass->GetTargetFramebuffer();
-		}
+		// TODO: find out if Render Pass needs to be rebaked, before setting it
 
-		m_CommandList->Begin(m_TargetFramebuffer);
 		m_CommandList->SetRenderPass(renderPass);
 	}
 
 	void Renderer::EndRenderPass()
 	{
-		m_CommandList->End();
 	}
+
+	/**************************************************
+	***		DRAW CALLS								***
+	**************************************************/
 
 	void Renderer::DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
@@ -99,8 +93,6 @@ namespace Dingo
 			indexCount = indexBuffer->GetByteSize() / sizeof(uint16_t); // Assuming 16-bit indices
 		}
 
-		m_CommandList->UploadBuffer(uniformBuffer, uniformBuffer->GetData(), uniformBuffer->GetByteSize());
-
 		m_CommandList->AddVertexBuffer(vertexBuffer, 0);
 		m_CommandList->SetIndexBuffer(indexBuffer, 0);
 		m_CommandList->DrawIndexed(indexCount, 1); // Assuming 16-bit indices
@@ -112,7 +104,7 @@ namespace Dingo
 
 	void Renderer::Begin()
 	{
-		m_CommandList->Begin(m_TargetFramebuffer);
+		m_CommandList->Begin();
 	}
 
 	void Renderer::End()

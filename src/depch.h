@@ -19,5 +19,6 @@
 #include <string_view>
 #include <functional>
 
+#include "DingoEngine/Version.h"
 #include "DingoEngine/Assertion.h"
 

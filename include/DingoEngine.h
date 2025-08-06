@@ -21,4 +21,5 @@
 #include "DingoEngine/Graphics/CommandList.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
+#include "DingoEngine/Graphics/Font.h"
 

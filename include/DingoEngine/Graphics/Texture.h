@@ -95,10 +95,11 @@ namespace Dingo
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
 		virtual void Upload(const void* data, uint64_t size) = 0;
-		virtual void Upload(const std::filesystem::path& filepath) = 0;
 
 		virtual bool NativeEquals(const Texture* other) const = 0;
 
+		virtual uint32_t GetWidth() const { return m_Params.Width; }
+		virtual uint32_t GetHeight() const { return m_Params.Height; }
 		virtual void* GetTextureHandle() const = 0;
 
 	protected:

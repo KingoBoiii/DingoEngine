@@ -3,8 +3,6 @@
 
 #include <nvrhi/nvrhi.h>
 
-//#define ENABLE_TEXTURE_SAMPLER
-
 namespace Dingo
 {
 
@@ -20,7 +18,6 @@ namespace Dingo
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 		virtual void Upload(const void* data, uint64_t size) override;
-		virtual void Upload(const std::filesystem::path& filepath) override;
 
 		virtual bool NativeEquals(const Texture* other) const override
 		{

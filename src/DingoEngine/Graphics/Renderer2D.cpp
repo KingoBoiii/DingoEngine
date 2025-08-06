@@ -1,6 +1,8 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 
+#include "MSDFData.h"
+
 #include "DingoEngine/Core/Application.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -58,6 +60,70 @@ void main()
 }
 		)";
 
+		constexpr const char* Renderer2DTextShader = R"(
+#type vertex
+#version 450
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec4 a_Color;
+layout(location = 2) in vec2 a_TexCoord;
+
+layout (std140, binding = 0) uniform Camera {
+	mat4 ProjectionView;
+};
+
+layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec2 v_TexCoord;
+
+void main()
+{
+	gl_Position = ProjectionView * vec4(a_Position, 1.0);
+	v_Color = a_Color;
+	v_TexCoord = a_TexCoord;
+}
+
+#type fragment
+#version 450
+layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec2 v_TexCoord;
+
+layout(location = 0) out vec4 o_Color;
+
+layout (set = 0, binding = 1) uniform texture2D u_AtlasTexture;
+layout (set = 0, binding = 2) uniform sampler u_Sampler;
+
+float median(float r, float g, float b) {
+    return max(min(r, g), min(max(r, g), b));
+}
+
+/* For 2D
+float ScreenPxRange()
+{
+	float pixRange = 2.0f;
+	float geoSize = 72.0f;
+	return geoSize / 32.0f * pixRange;
+}
+*/
+
+float ScreenPxRange()
+{
+	float pxRange = 2.0f;
+    vec2 unitRange = vec2(pxRange) / vec2(textureSize(sampler2D(u_AtlasTexture, u_Sampler), 0));
+    vec2 screenTexSize = vec2(1.0) / fwidth(v_TexCoord);
+    return max(0.5 * dot(unitRange, screenTexSize), 1.0);
+}
+
+void main() {
+	vec4 bgColor = vec4(v_Color.rgb, 0.0);
+	vec4 fgColor = v_Color;
+
+	vec3 msd = texture(sampler2D(u_AtlasTexture, u_Sampler), v_TexCoord).rgb;
+    float sd = median(msd.r, msd.g, msd.b);
+    float screenPxDistance = ScreenPxRange() * (sd - 0.5f);
+    float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
+    o_Color = mix(bgColor, fgColor, opacity);
+}
+		)";
+
 	}
 
 	Renderer2D* Renderer2D::Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities)
@@ -97,11 +163,19 @@ void main()
 		}
 
 		CreateQuadPipeline();
+		CreateTextQuadRenderPass();
 	}
 
 	void Renderer2D::Shutdown()
 	{
+		DestroyTextQuadRenderPass();
 		DestroyQuadPipeline();
+
+		if (m_QuadIndexBuffer)
+		{
+			m_QuadIndexBuffer->Destroy();
+			m_QuadIndexBuffer = nullptr;
+		}
 
 		if (m_CameraUniformBuffer)
 		{
@@ -130,6 +204,9 @@ void main()
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
 
+		m_TextQuadRenderPass.IndexCount = 0;
+		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
+
 		m_TextureSlotIndex = 1; // Start from 1 since index 0 is reserved for the white texture
 		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
 		{
@@ -139,6 +216,14 @@ void main()
 
 	void Renderer2D::EndScene()
 	{
+		m_Renderer->Begin();
+		m_Renderer->Clear(m_Params.ClearColor);
+
+		if (m_CameraUniformBuffer)
+		{
+			m_Renderer->Upload(m_CameraUniformBuffer);
+		}
+
 		if (m_QuadPipeline.IndexCount)
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
@@ -157,13 +242,23 @@ void main()
 			m_QuadPipeline.RenderPass->Bake();
 
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
-
-			m_Renderer->Clear(m_Params.ClearColor);
-
-			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_QuadPipeline.IndexCount);
-
+			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
+
+		if (m_TextQuadRenderPass.IndexCount)
+		{
+			uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
+			m_TextQuadRenderPass.VertexBuffer->Upload(m_TextQuadRenderPass.VertexBufferBase, dataSize);
+			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
+			m_TextQuadRenderPass.RenderPass->Bake();
+
+			m_Renderer->BeginRenderPass(m_TextQuadRenderPass.RenderPass);
+			m_Renderer->DrawIndexed(m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
+			m_Renderer->EndRenderPass();
+		}
+
+		m_Renderer->End();
 	}
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
@@ -231,6 +326,127 @@ void main()
 		m_QuadPipeline.IndexCount += 6;
 	}
 
+	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, const TextParameters& textParameters)
+	{
+		DrawText(string, font, glm::vec3(position, 0.0f), textParameters);
+	}
+
+	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, const TextParameters& textParameters)
+	{
+		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
+		const auto& metrics = fontGeometry.getMetrics();
+		auto fontAtlas = font->GetAtlasTexture();
+
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+
+		m_FontAtlasTexture = fontAtlas;
+
+		double x = 0.0;
+		double fsScale = 1.0 / (metrics.ascenderY - metrics.descenderY);
+		double y = 0.0f; // -fsScale * metrics.ascenderY;
+		//double y = -fsScale * metrics.ascenderY;
+
+		//if(s_Renderer2DData.QuadIndexCount >= Renderer2DData::MaxIndices)
+		//{
+		//	NextBatch();
+		//}
+
+		float spaceGlyphAdvance = fontGeometry.getGlyph(' ')->getAdvance();
+
+		for (size_t i = 0; i < string.size(); i++)
+		{
+			char character = string[i];
+
+			if (character == '\n')
+			{
+				x = 0.0;
+				y -= fsScale * metrics.lineHeight + textParameters.LineSpacing;
+				continue;
+			}
+
+			if (character == ' ')
+			{
+				float advance = spaceGlyphAdvance;
+				if (i < string.size() - 1)
+				{
+					char nextCharacter = string[i + 1];
+					double dAdvance;
+					fontGeometry.getAdvance(dAdvance, character, nextCharacter);
+					advance = (float)dAdvance;
+				}
+				x += fsScale * advance + textParameters.Kerning;
+				continue;
+			}
+
+			if (character == '\t')
+			{
+				x += 4.0f * (fsScale * spaceGlyphAdvance + textParameters.Kerning);
+				continue;
+			}
+
+			auto glyph = fontGeometry.getGlyph(character);
+			if (!glyph)
+			{
+				glyph = fontGeometry.getGlyph('?');
+			}
+			if (!glyph)
+			{
+				return;
+			}
+
+			double al, ab, ar, at;
+			glyph->getQuadAtlasBounds(al, ab, ar, at);
+			glm::vec2 texCoordMin((float)al, (float)ab);
+			glm::vec2 texCoordMax((float)ar, (float)at);
+
+			double pl, pb, pr, pt;
+			glyph->getQuadPlaneBounds(pl, pb, pr, pt);
+			glm::vec2 quadMin((float)pl, (float)pb);
+			glm::vec2 quadMax((float)pr, (float)pt);
+
+			quadMin *= fsScale, quadMax *= fsScale;
+			quadMin += glm::vec2(x, y);
+			quadMax += glm::vec2(x, y);
+
+			float texelWidth = 1.0f / fontAtlas->GetWidth();
+			float texelHeight = 1.0f / fontAtlas->GetHeight();
+			texCoordMin *= glm::vec2(texelWidth, texelHeight);
+			texCoordMax *= glm::vec2(texelWidth, texelHeight);
+
+			// Render here!
+			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
+			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = texCoordMin;
+			m_TextQuadRenderPass.VertexBufferPtr++;
+
+			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin.x, quadMax.y, 0.0f, 1.0f);
+			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = { texCoordMin.x, texCoordMax.y };
+			m_TextQuadRenderPass.VertexBufferPtr++;
+
+			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax, 0.0f, 1.0f);
+			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = texCoordMax;
+			m_TextQuadRenderPass.VertexBufferPtr++;
+
+			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax.x, quadMin.y, 0.0f, 1.0f);
+			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = { texCoordMax.x, texCoordMin.y };
+			m_TextQuadRenderPass.VertexBufferPtr++;
+
+			m_TextQuadRenderPass.IndexCount += 6;
+
+			if (i < string.size() - 1)
+			{
+				double advance = glyph->getAdvance();
+				char nextCharacter = string[i + 1];
+				fontGeometry.getAdvance(advance, character, nextCharacter);
+
+				x += fsScale * advance + textParameters.Kerning;
+			}
+		}
+	}
+
 	float Renderer2D::GetTextureIndex(Texture* texture)
 	{
 		float textureIndex = 0.0f;
@@ -289,7 +505,7 @@ void main()
 			.SetStride(sizeof(QuadVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(QuadVertex, Position))
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(QuadVertex, Color))
-			.AddAttribute("a_TexCoord", Format::RGBA32_FLOAT, offsetof(QuadVertex, TexCoord))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(QuadVertex, TexCoord))
 			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
 		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
@@ -329,12 +545,6 @@ void main()
 		}
 		m_QuadPipeline.IndexCount = 0;
 
-		if (m_QuadIndexBuffer)
-		{
-			m_QuadIndexBuffer->Destroy();
-			m_QuadIndexBuffer = nullptr;
-		}
-
 		if (m_QuadPipeline.Pipeline)
 		{
 			m_QuadPipeline.Pipeline->Destroy();
@@ -351,6 +561,69 @@ void main()
 		{
 			m_QuadPipeline.RenderPass->Destroy();
 			m_QuadPipeline.RenderPass = nullptr;
+		}
+	}
+
+	void Renderer2D::CreateTextQuadRenderPass()
+	{
+		m_TextQuadRenderPass = TextQuadRenderPass();
+
+		m_TextQuadRenderPass.Shader = Shader::CreateFromSource("Renderer2DTextShader", Shaders::Renderer2DTextShader);
+
+		VertexLayout vertexLayout = VertexLayout()
+			.SetStride(sizeof(TextVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(TextVertex, Position))
+			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(TextVertex, Color))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(TextVertex, TexCoord));
+
+		m_TextQuadRenderPass.Pipeline = Pipeline::Create(PipelineParams()
+			.SetDebugName("Renderer2DTextPipeline")
+			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetShader(m_TextQuadRenderPass.Shader)
+			.SetVertexLayout(vertexLayout));
+
+		m_TextQuadRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DTextVertexBuffer");
+
+		RenderPassParams renderPassParams = RenderPassParams()
+			.SetPipeline(m_TextQuadRenderPass.Pipeline);
+
+		m_TextQuadRenderPass.RenderPass = RenderPass::Create(renderPassParams);
+		m_TextQuadRenderPass.RenderPass->Initialize();
+		m_TextQuadRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		m_TextQuadRenderPass.RenderPass->SetSampler(2, Renderer::GetClampSampler());
+		m_TextQuadRenderPass.RenderPass->Bake();
+
+		m_TextQuadRenderPass.VertexBufferBase = new TextVertex[m_Params.Capabilities.GetQuadVertexCount()];
+	}
+
+	void Renderer2D::DestroyTextQuadRenderPass()
+	{
+		if (m_TextQuadRenderPass.VertexBuffer)
+		{
+			m_TextQuadRenderPass.VertexBuffer->Destroy();
+			delete[] m_TextQuadRenderPass.VertexBufferBase;
+			m_TextQuadRenderPass.VertexBuffer = nullptr;
+			m_TextQuadRenderPass.VertexBufferBase = nullptr;
+			m_TextQuadRenderPass.VertexBufferPtr = nullptr;
+		}
+		m_TextQuadRenderPass.IndexCount = 0;
+
+		if (m_TextQuadRenderPass.Pipeline)
+		{
+			m_TextQuadRenderPass.Pipeline->Destroy();
+			m_TextQuadRenderPass.Pipeline = nullptr;
+		}
+
+		if (m_TextQuadRenderPass.Shader)
+		{
+			m_TextQuadRenderPass.Shader->Destroy();
+			m_TextQuadRenderPass.Shader = nullptr;
+		}
+
+		if (m_TextQuadRenderPass.RenderPass)
+		{
+			m_TextQuadRenderPass.RenderPass->Destroy();
+			m_TextQuadRenderPass.RenderPass = nullptr;
 		}
 	}
 
