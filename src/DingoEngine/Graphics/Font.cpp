@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Core/CacheManager.h"
 
 #undef INFINITE
 #define MSDFGEN_PUBLIC
@@ -8,39 +9,152 @@
 
 #include "MSDFData.h"
 
+#define MAKE_VERSION(major, minor, patch) ((((uint32_t)(major)) << 22U) | (((uint32_t)(minor)) << 12U) | ((uint32_t)(patch)))
+
+#define VERSION_VARIANT(version) ((uint32_t)(version) >> 29U)
+#define VERSION_MAJOR(version) (((uint32_t)(version) >> 22U) & 0x7FU)
+#define VERSION_MINOR(version) (((uint32_t)(version) >> 12U) & 0x3FFU)
+#define VERSION_PATCH(version) ((uint32_t)(version) & 0xFFFU)
+
 namespace Dingo
 {
 
-	template<typename T, typename S, int N, msdf_atlas::GeneratorFunction<S, N> GenFunc>
-	static Texture* CreateAndCacheAtlas(const std::string& fontName, float fontSize, const std::vector<msdf_atlas::GlyphGeometry>& glyphs, const msdf_atlas::FontGeometry& fontGeometry, uint32_t width, uint32_t height)
+	struct FontAtlasHeader
 	{
-		msdf_atlas::GeneratorAttributes attributes;
-		attributes.config.overlapSupport = true;
-		attributes.scanlinePass = true;
+		uint32_t Version = MAKE_VERSION(1, 0, 0);
+		uint32_t Width;
+		uint32_t Height;
+	};
 
-		msdf_atlas::ImmediateAtlasGenerator<S, N, GenFunc, msdf_atlas::BitmapAtlasStorage<T, N>> generator(width, height);
-		generator.setAttributes(attributes);
-		generator.setThreadCount(8);
-		generator.generate(glyphs.data(), (int)glyphs.size());
+	namespace Utils
+	{
 
-		msdfgen::BitmapConstRef<T, N> bitmap = (msdfgen::BitmapConstRef<T, N>)generator.atlasStorage();
+		inline static void CacheFontAtlas(const std::string& name, float fontSize, FontAtlasHeader& header, const void* pixels)
+		{
+			std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts\\atlas");
 
-		Texture* texture = Texture::CreateFromData(width, height, (void*)bitmap.pixels, TextureFormat::RGBA8_UNORM);
-		return texture;
+			std::string filename = std::format("{0}-{1}.dfa", name, fontSize);
+			std::filesystem::path filePath = cachePath / filename;
+
+			std::ofstream stream(filePath, std::ios::binary | std::ios::trunc);
+			if (!stream)
+			{
+				stream.close();
+				DE_CORE_ERROR_TAG("Font", "Failed to cache font atlas to {}", filePath.string());
+				return;
+			}
+
+			stream.write((const char*)&header, sizeof(FontAtlasHeader));
+			stream.write((const char*)pixels, static_cast<uint64_t>(header.Width) * header.Height * 4); // Assuming RGBA8 format
+
+			stream.close();
+		}
+
+		template<typename T, typename S, int N, msdf_atlas::GeneratorFunction<S, N> GenFunc>
+		inline static Texture* CreateAndCacheAtlas(const std::string& fontName, float fontSize, const std::vector<msdf_atlas::GlyphGeometry>& glyphs, const msdf_atlas::FontGeometry& fontGeometry, uint32_t width, uint32_t height)
+		{
+			msdf_atlas::GeneratorAttributes attributes;
+			attributes.config.overlapSupport = true;
+			attributes.scanlinePass = true;
+
+			msdf_atlas::ImmediateAtlasGenerator<S, N, GenFunc, msdf_atlas::BitmapAtlasStorage<T, N>> generator(width, height);
+			generator.setAttributes(attributes);
+			generator.setThreadCount(8);
+			generator.generate(glyphs.data(), (int)glyphs.size());
+
+			msdfgen::BitmapConstRef<T, N> bitmap = (msdfgen::BitmapConstRef<T, N>)generator.atlasStorage();
+
+			FontAtlasHeader header;
+			header.Width = width;
+			header.Height = height;
+			CacheFontAtlas(fontName, fontSize, header, bitmap.pixels);
+
+			Texture* texture = Texture::CreateFromData(width, height, (void*)bitmap.pixels, TextureFormat::RGBA8_UNORM);
+			return texture;
+		}
+
 	}
 
-	Font* Font::Create(const std::filesystem::path& filepath)
+	Font* Font::Create(const std::filesystem::path& filepath, const FontParams& params)
 	{
-		Font* font = new Font(filepath);
+		Font* font = new Font(filepath, params);
 		font->Initialize();
 		return font;
 	}
 
-	Font::Font(const std::filesystem::path& filepath)
-		: m_FilePath(filepath), m_Data(new MSDFData())
+	Font::Font(const std::filesystem::path& filepath, const FontParams& params)
+		: m_Params(params), m_FilePath(filepath), m_Data(new MSDFData())
 	{}
 
 	void Font::Initialize()
+	{
+		int32_t width, height;
+		InitializeFontData(width, height);
+
+		m_Name = m_Params.Name.empty() ? m_FilePath.stem().string() : m_Params.Name;
+
+		// first check if the font atlas is cached
+		std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts\\atlas");
+		std::string filename = std::format("{}-{}.dfa", m_Name, 0.0f);
+		std::filesystem::path filePath = cachePath / filename;
+		if (std::filesystem::exists(filePath))
+		{
+			DE_CORE_INFO("Loading cached font atlas from {}", filePath.string());
+			std::ifstream stream(filePath, std::ios::binary);
+			if (!stream)
+			{
+				stream.close();
+				DE_CORE_ERROR_TAG("Font", "Failed to open cached font atlas file: {}", filePath.string());
+				return;
+			}
+
+			FontAtlasHeader header;
+			stream.read((char*)&header, sizeof(FontAtlasHeader));
+			if (stream.gcount() != sizeof(FontAtlasHeader))
+			{
+				stream.close();
+				DE_CORE_ERROR_TAG("Font", "Failed to read font atlas header from file: {}", filePath.string());
+				return;
+			}
+
+			if (VERSION_VARIANT(header.Version) != 0 || VERSION_MAJOR(header.Version) != 1 || VERSION_MINOR(header.Version) != 0)
+			{
+				stream.close();
+				DE_CORE_ERROR_TAG("Font", "Cached font atlas version mismatch: expected 1.0.0, got {}.{}.{}", VERSION_MAJOR(header.Version), VERSION_MINOR(header.Version), VERSION_PATCH(header.Version));
+				return;
+			}
+
+			// read texture pixels from cache file
+			uint64_t pixelDataSize = static_cast<uint64_t>(header.Width) * header.Height * 4; // Assuming RGBA8 format
+			std::vector<uint8_t> pixelData(pixelDataSize);
+			stream.read((char*)pixelData.data(), pixelDataSize);
+			//if (stream.gcount() != pixelDataSize)
+			//{
+			//	stream.close();
+			//	DE_CORE_ERROR_TAG("Font", "Failed to read pixel data from cached font atlas file: {}", filePath.string());
+			//	return;
+			//}
+
+			stream.close();
+
+			m_AtlasTexture = Texture::CreateFromData(header.Width, header.Height, (void*)(pixelData.data()), TextureFormat::RGBA8_UNORM);
+		}
+		else
+		{
+			m_AtlasTexture = Utils::CreateAndCacheAtlas<uint8_t, float, 4, msdf_atlas::mtsdfGenerator>(m_Name, 0.0f, m_Data->Glyphs, m_Data->FontGeometry, width, height);
+		}
+	}
+
+	void Font::Destroy()
+	{
+		if (m_AtlasTexture)
+		{
+			m_AtlasTexture->Destroy();
+			m_AtlasTexture = nullptr;
+		}
+	}
+
+	void Font::InitializeFontData(int32_t& width, int32_t& height)
 	{
 		msdfgen::FreetypeHandle* ft = msdfgen::initializeFreetype();
 		DE_CORE_ASSERT(ft, "Failed to initialize FreeType");
@@ -88,7 +202,6 @@ namespace Dingo
 		int remaining = atlasPacker.pack(m_Data->Glyphs.data(), (int)m_Data->Glyphs.size());
 		DE_CORE_ASSERT(remaining == 0);
 
-		int width, height;
 		atlasPacker.getDimensions(width, height);
 		emSize = atlasPacker.getScale();
 
@@ -120,7 +233,7 @@ namespace Dingo
 			}
 		}
 
-		m_AtlasTexture = CreateAndCacheAtlas<uint8_t, float, 4, msdf_atlas::mtsdfGenerator>("Test", 0.0f, m_Data->Glyphs, m_Data->FontGeometry, width, height);
+		
 
 #if 0
 		msdfgen::Shape shape;
@@ -141,15 +254,6 @@ namespace Dingo
 		msdfgen::destroyFont(font);
 
 		msdfgen::deinitializeFreetype(ft);
-	}
-
-	void Font::Destroy()
-	{
-		if (m_AtlasTexture)
-		{
-			m_AtlasTexture->Destroy();
-			m_AtlasTexture = nullptr;
-		}
 	}
 
 }
