@@ -9,19 +9,12 @@
 
 #include "MSDFData.h"
 
-#define MAKE_VERSION(major, minor, patch) ((((uint32_t)(major)) << 22U) | (((uint32_t)(minor)) << 12U) | ((uint32_t)(patch)))
-
-#define VERSION_VARIANT(version) ((uint32_t)(version) >> 29U)
-#define VERSION_MAJOR(version) (((uint32_t)(version) >> 22U) & 0x7FU)
-#define VERSION_MINOR(version) (((uint32_t)(version) >> 12U) & 0x3FFU)
-#define VERSION_PATCH(version) ((uint32_t)(version) & 0xFFFU)
-
 namespace Dingo
 {
 
 	struct FontAtlasHeader
 	{
-		uint32_t Version = MAKE_VERSION(1, 0, 0);
+		uint32_t Version = DE_MAKE_VERSION(1, 0, 0);
 		uint32_t Width;
 		uint32_t Height;
 	};
