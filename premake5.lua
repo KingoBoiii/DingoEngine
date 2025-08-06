@@ -70,10 +70,10 @@ Library["BCrypt"] = "Bcrypt.lib"
 
 
 group "Dependencies"
-    include "Vendor/spdlog"
-    include "vendor/glfw"
-    include "vendor/nvrhi"
-    include "vendor/imgui"
+	include "Vendor/spdlog"
+	include "vendor/glfw"
+	include "vendor/nvrhi"
+	include "vendor/imgui"
 	include "vendor/msdf-atlas-gen"
 group ""
 
