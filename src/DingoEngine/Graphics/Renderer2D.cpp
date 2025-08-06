@@ -210,6 +210,14 @@ void main() {
 
 	void Renderer2D::EndScene()
 	{
+		m_Renderer->Begin();
+		m_Renderer->Clear(m_Params.ClearColor);
+
+		if (m_CameraUniformBuffer)
+		{
+			m_Renderer->Upload(m_CameraUniformBuffer);
+		}
+
 		if (m_QuadPipeline.IndexCount)
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
@@ -228,7 +236,6 @@ void main() {
 			m_QuadPipeline.RenderPass->Bake();
 
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
-			m_Renderer->Clear(m_Params.ClearColor);
 			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_QuadPipeline.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
@@ -241,10 +248,11 @@ void main() {
 			m_TextQuadRenderPass.RenderPass->Bake();
 
 			m_Renderer->BeginRenderPass(m_TextQuadRenderPass.RenderPass);
-			m_Renderer->Clear(m_Params.ClearColor);
 			m_Renderer->DrawIndexed(m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CameraUniformBuffer, m_TextQuadRenderPass.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
+
+		m_Renderer->End();
 	}
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
@@ -572,8 +580,7 @@ void main() {
 			.SetDebugName("Renderer2DTextPipeline")
 			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
 			.SetShader(m_TextQuadRenderPass.Shader)
-			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront));
+			.SetVertexLayout(vertexLayout));
 
 		m_TextQuadRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DTextVertexBuffer");
 

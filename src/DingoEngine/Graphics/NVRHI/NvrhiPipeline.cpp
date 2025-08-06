@@ -21,7 +21,7 @@ namespace Dingo
 			switch (fillMode)
 			{
 				case FillMode::Solid: return nvrhi::RasterFillMode::Solid;
-				case FillMode::Wireframe: return nvrhi::RasterFillMode::Wireframe;
+				case FillMode::Wireframe: return nvrhi::RasterFillMode::Line;
 				default: return nvrhi::RasterFillMode::Solid; // Default to solid if unknown
 			}
 		}
@@ -50,7 +50,8 @@ namespace Dingo
 
 		nvrhi::RasterState rasterState = nvrhi::RasterState()
 			.setCullMode(Utils::ConvertCullModeToNVRHI(m_Params.CullMode))
-			.setFillMode(Utils::ConvertFillModeToNVRHI(m_Params.FillMode));
+			.setFillMode(Utils::ConvertFillModeToNVRHI(m_Params.FillMode))
+			.setFrontCounterClockwise(m_Params.FrontCounterClockwise);
 
 		nvrhi::BlendState::RenderTarget renderTarget = nvrhi::BlendState::RenderTarget()
 			.setBlendEnable(true)
@@ -63,7 +64,7 @@ namespace Dingo
 			.setDestBlendAlpha(nvrhi::BlendFactor::Zero);
 
 		nvrhi::BlendState blendState = nvrhi::BlendState()
-			//.setAlphaToCoverageEnable(false);
+			.setAlphaToCoverageEnable(true)
 			.setRenderTarget(0, renderTarget);
 
 		nvrhi::RenderState renderState = nvrhi::RenderState()

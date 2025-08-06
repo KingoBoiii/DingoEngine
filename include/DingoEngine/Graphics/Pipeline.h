@@ -40,6 +40,7 @@ namespace Dingo
 		Framebuffer* Framebuffer = nullptr;
 		FillMode FillMode = FillMode::Solid;
 		CullMode CullMode = CullMode::Back;
+		bool FrontCounterClockwise = false;
 		VertexLayout VertexLayout;
 		GraphicsBuffer* UniformBuffer = nullptr;
 		Texture* Texture = nullptr;

@@ -32,6 +32,13 @@ namespace Dingo
 		}
 	}
 
+	void NvrhiCommandList::Begin()
+	{
+		m_CommandListHandle->open();
+
+		m_HasBegun = true;
+	}
+
 	void NvrhiCommandList::Begin(Framebuffer* framebuffer)
 	{
 		m_CommandListHandle->open();
@@ -89,8 +96,13 @@ namespace Dingo
 		DE_CORE_ASSERT(renderPass, "Render Pass is null.");
 
 		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
+		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(renderPass->GetPipeline());
 
-		m_GraphicsState.setPipeline(static_cast<NvrhiPipeline*>(renderPass->GetPipeline())->m_GraphicsPipelineHandle);
+		m_GraphicsState = nvrhi::GraphicsState()
+			.setFramebuffer(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_FramebufferHandle)
+			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(nvrhiPipeline->GetTargetFramebuffer())->m_Viewport));
+
+		m_GraphicsState.setPipeline(nvrhiPipeline->m_GraphicsPipelineHandle);
 
 		if (nvrhiRenderPass->m_BindingSetHandle)
 		{
