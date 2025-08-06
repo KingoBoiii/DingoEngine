@@ -16,7 +16,7 @@ namespace Dingo
 
 	struct RendererParams
 	{
-		Framebuffer* TargetFramebuffer; // If not targeting swap chain, specify a framebuffer to target
+		Framebuffer* TargetFramebuffer = nullptr; // If not targeting swap chain, specify a framebuffer to target
 	};
 
 	class Renderer
