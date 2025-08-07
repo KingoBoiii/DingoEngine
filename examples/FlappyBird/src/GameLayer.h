@@ -33,7 +33,11 @@ namespace Dingo
 		const float m_Gravity = -2.5f;
 		const float m_JumpVelocity = 1.5f;
 
+		float m_BackgroundOffset = 0.0f;
+		const float m_BackgroundScrollSpeed = 0.5f; // Adjust for desired speed
+
 		Texture* m_BackgroundTexture = nullptr;
+		Texture* m_GroundTexture = nullptr;
 		Texture* m_BirdTexture = nullptr;
 	};
 

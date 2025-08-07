@@ -2,6 +2,8 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cmath> // For std::fmod
+
 namespace Dingo
 {
 
@@ -17,10 +19,11 @@ namespace Dingo
 		m_ProjectionViewMatrix = glm::ortho(orthoLeft, orthoRight, orthoBottom, orthoTop, m_OrthographicNear, m_OrthographicFar);
 
 		m_BackgroundTexture = Texture::CreateFromFile("assets/sprites/background-day.png");
+		m_GroundTexture = Texture::CreateFromFile("assets/sprites/base.png");
 		m_BirdTexture = Texture::CreateFromFile("assets/sprites/yellowbird-midflap.png");
 
 		m_BirdY = 0.0f;
-		m_BirdVelocity = 0.0f; 
+		m_BirdVelocity = 0.0f;
 	}
 
 	void GameLayer::OnDetach()
@@ -29,6 +32,12 @@ namespace Dingo
 		{
 			delete m_BirdTexture;
 			m_BirdTexture = nullptr;
+		}
+
+		if (m_GroundTexture)
+		{
+			delete m_GroundTexture;
+			m_GroundTexture = nullptr;
 		}
 
 		if (m_BackgroundTexture)
@@ -40,39 +49,65 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
+		Renderer2D& renderer = Application::Get().GetRenderer2D();
+
 		float aspectRatio = (float)Application::Get().GetWindow().GetWidth() / (float)Application::Get().GetWindow().GetHeight();
 		//float sizeX = (float)Application::Get().GetWindow().GetWidth() / m_BackgroundTexture->GetWidth();
 		float width = m_OrthographicSize * aspectRatio;
 		float height = m_OrthographicSize;
+
+		// --- Parallax background update ---
+		m_BackgroundOffset -= m_BackgroundScrollSpeed * deltaTime;
+
+		// Calculate background quad width based on texture aspect ratio
+		float bgAspectRatio = (float)m_BackgroundTexture->GetWidth() / (float)m_BackgroundTexture->GetHeight();
+		float bgQuadWidth = height * bgAspectRatio;
+
+		// Wrap offset to tile seamlessly (handles both positive and negative)
+		m_BackgroundOffset = std::fmod(m_BackgroundOffset, bgQuadWidth);
+		if (m_BackgroundOffset < 0.0f)
+		{
+			m_BackgroundOffset += bgQuadWidth;
+		}
+
+		renderer.BeginScene(m_ProjectionViewMatrix);
+		renderer.Clear(glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
+
+		// Draw background as seamless tiles
+		for (float x = -width * 0.5f - bgQuadWidth; x < width * 0.5f + bgQuadWidth; x += bgQuadWidth)
+		{
+			renderer.DrawQuad(glm::vec2(x + m_BackgroundOffset, 0.0f), glm::vec2(bgQuadWidth, height), m_BackgroundTexture);
+		}
+
+		// --- Ground rendering ---
+		float groundHeight = 1.0f; // Adjust for desired ground height
+		float groundY = -height * 0.5f + groundHeight * 0.5f; // Position at bottom of screen
+		renderer.DrawQuad(glm::vec2(0.0f, groundY), glm::vec2(width, groundHeight), m_GroundTexture);
 
 		// --- Bird physics update ---
 		m_BirdVelocity += m_Gravity * deltaTime; // Apply gravity
 		m_BirdY += m_BirdVelocity * deltaTime;   // Update position
 
 		// Handle jump input (spacebar)
-		if (Input::IsKeyPressed(Key::Space) && m_BirdVelocity <= 0)
+		if (Input::IsKeyPressed(Key::Space))
 		{
 			m_BirdVelocity = m_JumpVelocity;
 		}
-
-		// Optional: Clamp bird to bottom of screen
-		float minY = -height * 0.5f + 0.25f; // Adjust for bird size
-		if (m_BirdY < minY)
-		{
-			m_BirdY = minY;
-			m_BirdVelocity = 0.0f;
-		}
-
-		Renderer2D& renderer = Application::Get().GetRenderer2D();
-
-		renderer.BeginScene(m_ProjectionViewMatrix);
-		renderer.Clear(glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
-		renderer.DrawQuad(glm::vec2(0.0f, 0.0f), glm::vec2(width, height), m_BackgroundTexture);
 
 		// Bird aspect ratio
 		float birdAspectRatio = (float)m_BirdTexture->GetWidth() / (float)m_BirdTexture->GetHeight();
 		float birdHeight = 0.5f; // desired height in world units
 		float birdWidth = birdHeight * birdAspectRatio;
+
+		// --- Ground collision detection ---
+		float groundTop = groundY + groundHeight * 0.5f;
+		float birdBottom = m_BirdY - birdHeight * 0.5f;
+
+		if (birdBottom <= groundTop)
+		{
+			m_BirdY = groundTop + birdHeight * 0.5f;
+			m_BirdVelocity = 0.0f;
+		}
 
 		renderer.DrawQuad(glm::vec2(0.0f, m_BirdY), glm::vec2(birdWidth, birdHeight), m_BirdTexture);
 
