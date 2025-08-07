@@ -123,17 +123,11 @@ namespace Dingo
 		{
 			// Top pipe: center at (pipe.x, topPipeCenterY)
 			float topPipeCenterY = pipe.gapY + m_PipeGapHeight * 0.5f + pipeHeight * 0.5f;
-			renderer.DrawQuad(
-				glm::vec2(pipe.x, topPipeCenterY),
-				glm::vec2(pipeWidth, pipeHeight),
-				m_PipeTexture);
+			renderer.DrawQuad(glm::vec2(pipe.x, topPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
 
 			// Bottom pipe: center at (pipe.x, bottomPipeCenterY)
 			float bottomPipeCenterY = pipe.gapY - m_PipeGapHeight * 0.5f - pipeHeight * 0.5f;
-			renderer.DrawQuad(
-				glm::vec2(pipe.x, bottomPipeCenterY),
-				glm::vec2(pipeWidth, pipeHeight),
-				m_PipeTexture);
+			renderer.DrawQuad(glm::vec2(pipe.x, bottomPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
 		}
 
 		// --- Bird physics update ---
