@@ -52,7 +52,6 @@ namespace Dingo
 		Renderer2D& renderer = Application::Get().GetRenderer2D();
 
 		float aspectRatio = (float)Application::Get().GetWindow().GetWidth() / (float)Application::Get().GetWindow().GetHeight();
-		//float sizeX = (float)Application::Get().GetWindow().GetWidth() / m_BackgroundTexture->GetWidth();
 		float width = m_OrthographicSize * aspectRatio;
 		float height = m_OrthographicSize;
 
