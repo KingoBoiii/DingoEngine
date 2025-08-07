@@ -3,8 +3,17 @@
 
 #include <glm/glm.hpp>
 
+#include <vector>
+
 namespace Dingo
 {
+
+	struct Pipe
+	{
+		float x;
+		float gapY;
+		float gapHeight;
+	};
 
 	class GameLayer : public Layer
 	{
@@ -36,8 +45,17 @@ namespace Dingo
 		float m_BackgroundOffset = 0.0f;
 		const float m_BackgroundScrollSpeed = 0.5f; // Adjust for desired speed
 
+		std::vector<Pipe> m_Pipes;
+		float m_PipeSpawnTimer = 0.0f;
+		const float m_PipeSpawnInterval = 2.0f; // seconds
+		const float m_PipeSpeed = 2.0f;         // units per second
+		const float m_PipeWidth = 0.7f;
+		const float m_PipeHeight = 6.0f;
+		const float m_PipeGapHeight = 2.0f;
+
 		Texture* m_BackgroundTexture = nullptr;
 		Texture* m_GroundTexture = nullptr;
+		Texture* m_PipeTexture = nullptr;
 		Texture* m_BirdTexture = nullptr;
 	};
 

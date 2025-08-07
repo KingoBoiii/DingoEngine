@@ -20,6 +20,7 @@ namespace Dingo
 
 		m_BackgroundTexture = Texture::CreateFromFile("assets/sprites/background-day.png");
 		m_GroundTexture = Texture::CreateFromFile("assets/sprites/base.png");
+		m_PipeTexture = Texture::CreateFromFile("assets/sprites/pipe-green.png");
 		m_BirdTexture = Texture::CreateFromFile("assets/sprites/yellowbird-midflap.png");
 
 		m_BirdY = 0.0f;
@@ -32,6 +33,12 @@ namespace Dingo
 		{
 			delete m_BirdTexture;
 			m_BirdTexture = nullptr;
+		}
+
+		if (m_PipeTexture)
+		{
+			delete m_PipeTexture;
+			m_PipeTexture = nullptr;
 		}
 
 		if (m_GroundTexture)
@@ -82,6 +89,52 @@ namespace Dingo
 		float groundHeight = 1.0f; // Adjust for desired ground height
 		float groundY = -height * 0.5f + groundHeight * 0.5f; // Position at bottom of screen
 		renderer.DrawQuad(glm::vec2(0.0f, groundY), glm::vec2(width, groundHeight), m_GroundTexture);
+
+		// --- Pipe logic ---
+		m_PipeSpawnTimer -= deltaTime;
+		if (m_PipeSpawnTimer <= 0.0f)
+		{
+			Pipe pipe;
+			pipe.x = width * 0.5f + m_PipeWidth; // spawn just off the right edge
+			pipe.gapHeight = m_PipeGapHeight;
+			// Randomize gapY within bounds
+			float minGapY = -height * 0.5f + pipe.gapHeight * 0.5f + 1.0f;
+			float maxGapY = height * 0.5f - pipe.gapHeight * 0.5f - 1.0f;
+			pipe.gapY = minGapY + static_cast<float>(rand()) / RAND_MAX * (maxGapY - minGapY);
+			m_Pipes.push_back(pipe);
+			m_PipeSpawnTimer = m_PipeSpawnInterval;
+		}
+
+		// Move pipes and remove off-screen
+		for (auto& pipe : m_Pipes)
+		{
+			pipe.x -= m_PipeSpeed * deltaTime;
+		}
+		while (!m_Pipes.empty() && m_Pipes.front().x < -width * 0.5f - m_PipeWidth)
+		{
+			m_Pipes.erase(m_Pipes.begin());
+		}
+
+		float pipeWidth = width * 0.1f;   // 10% of screen width
+		float pipeHeight = height * 0.75f; // 75% of screen height
+
+		// Render pipes
+		for (const auto& pipe : m_Pipes)
+		{
+			// Top pipe: center at (pipe.x, topPipeCenterY)
+			float topPipeCenterY = pipe.gapY + m_PipeGapHeight * 0.5f + pipeHeight * 0.5f;
+			renderer.DrawQuad(
+				glm::vec2(pipe.x, topPipeCenterY),
+				glm::vec2(pipeWidth, pipeHeight),
+				m_PipeTexture);
+
+			// Bottom pipe: center at (pipe.x, bottomPipeCenterY)
+			float bottomPipeCenterY = pipe.gapY - m_PipeGapHeight * 0.5f - pipeHeight * 0.5f;
+			renderer.DrawQuad(
+				glm::vec2(pipe.x, bottomPipeCenterY),
+				glm::vec2(pipeWidth, pipeHeight),
+				m_PipeTexture);
+		}
 
 		// --- Bird physics update ---
 		m_BirdVelocity += m_Gravity * deltaTime; // Apply gravity
