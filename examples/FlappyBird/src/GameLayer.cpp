@@ -37,7 +37,7 @@ namespace Dingo
 			m_Font->Destroy();
 			m_Font = nullptr;
 		}
-		
+
 		// Clean up textures
 		if (m_BirdTexture)
 		{
@@ -66,6 +66,11 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
+		if (Input::IsKeyPressed(Key::Escape))
+		{
+			Application::Get().Close();
+		}
+
 		Renderer2D& renderer = Application::Get().GetRenderer2D();
 
 		float aspectRatio = (float)Application::Get().GetWindow().GetWidth() / (float)Application::Get().GetWindow().GetHeight();
@@ -107,10 +112,13 @@ namespace Dingo
 			Pipe pipe;
 			pipe.x = width * 0.5f + m_PipeWidth; // spawn just off the right edge
 			pipe.gapHeight = m_PipeGapHeight;
-			// Randomize gapY within bounds
-			float minGapY = -height * 0.5f + pipe.gapHeight * 0.5f + 1.0f;
-			float maxGapY = height * 0.5f - pipe.gapHeight * 0.5f - 1.0f;
+
+			// Ensure the gap is always above the ground and below the top
+			float margin = 0.5f; // extra margin from ground and top
+			float minGapY = -height * 0.5f + groundHeight + pipe.gapHeight * 0.5f + margin;
+			float maxGapY = height * 0.5f - pipe.gapHeight * 0.5f - margin;
 			pipe.gapY = minGapY + static_cast<float>(rand()) / RAND_MAX * (maxGapY - minGapY);
+
 			m_Pipes.push_back(pipe);
 			m_PipeSpawnTimer = m_PipeSpawnInterval;
 		}
@@ -177,12 +185,10 @@ namespace Dingo
 			{
 				pipe.scored = true;
 				m_Score++;
-				DE_TRACE("Score: {}", m_Score);
 			}
 		}
 
-		std::string scoreText = "Score: " + std::to_string(m_Score);
-		renderer.DrawText(scoreText, m_Font, glm::vec2(-width * 0.5f + 0.1f, height * 0.5f - 0.1f));
+		renderer.DrawText(std::to_string(m_Score), m_Font, glm::vec2(0.0f, height * 0.5f - 0.8f));
 
 		renderer.EndScene();
 	}
