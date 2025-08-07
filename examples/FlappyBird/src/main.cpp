@@ -37,13 +37,7 @@ Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 			.GraphicsAPI = GraphicsAPI::Vulkan,							// Default to Vulkan
 			.FramesInFlight = 3,										// Number of frames in flight for Rendering
 		},
-#if DE_DEBUG
-		.EnableImGui = true,											// Enable ImGui by default
-		.ImGui = {
-			.EnableDocking = true,										// Enable docking by default
-			.EnableViewports = false,									// Disable viewports by default
-		}
-#endif
+		.EnableImGui = false,											// Disable ImGui
 	};
 
 	FlappyBirdApplication* app = new FlappyBirdApplication(params);
