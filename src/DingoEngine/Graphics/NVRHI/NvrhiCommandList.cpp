@@ -32,7 +32,7 @@ namespace Dingo
 
 	void NvrhiCommandList::Begin()
 	{
-		m_GraphicsState = nvrhi::GraphicsState();
+		//m_GraphicsState = nvrhi::GraphicsState();
 
 		m_CommandListHandle->open();
 
@@ -76,6 +76,8 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
+
+		m_GraphicsState = nvrhi::GraphicsState();
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
 

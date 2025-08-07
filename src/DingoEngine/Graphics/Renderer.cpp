@@ -67,7 +67,9 @@ namespace Dingo
 	}
 
 	void Renderer::EndRenderPass()
-	{}
+	{
+		
+	}
 
 	/**************************************************
 	***		DRAW CALLS								***

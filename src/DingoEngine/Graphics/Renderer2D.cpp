@@ -259,6 +259,7 @@ void main() {
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
 			m_TextQuadRenderPass.VertexBuffer->Upload(m_TextQuadRenderPass.VertexBufferBase, dataSize);
+
 			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
 			m_TextQuadRenderPass.RenderPass->Bake();
 
