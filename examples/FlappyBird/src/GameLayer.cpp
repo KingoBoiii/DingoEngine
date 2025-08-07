@@ -23,33 +23,43 @@ namespace Dingo
 		m_PipeTexture = Texture::CreateFromFile("assets/sprites/pipe-green.png");
 		m_BirdTexture = Texture::CreateFromFile("assets/sprites/yellowbird-midflap.png");
 
+		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+
 		m_BirdY = 0.0f;
 		m_BirdVelocity = 0.0f;
 	}
 
 	void GameLayer::OnDetach()
 	{
+		// Clean up font
+		if (m_Font)
+		{
+			m_Font->Destroy();
+			m_Font = nullptr;
+		}
+		
+		// Clean up textures
 		if (m_BirdTexture)
 		{
-			delete m_BirdTexture;
+			m_BirdTexture->Destroy();
 			m_BirdTexture = nullptr;
 		}
 
 		if (m_PipeTexture)
 		{
-			delete m_PipeTexture;
+			m_PipeTexture->Destroy();
 			m_PipeTexture = nullptr;
 		}
 
 		if (m_GroundTexture)
 		{
-			delete m_GroundTexture;
+			m_GroundTexture->Destroy();
 			m_GroundTexture = nullptr;
 		}
 
 		if (m_BackgroundTexture)
 		{
-			delete m_BackgroundTexture;
+			m_BackgroundTexture->Destroy();
 			m_BackgroundTexture = nullptr;
 		}
 	}
@@ -156,6 +166,23 @@ namespace Dingo
 		}
 
 		renderer.DrawQuad(glm::vec2(0.0f, m_BirdY), glm::vec2(birdWidth, birdHeight), m_BirdTexture);
+
+		// Bird's horizontal position (assuming center of screen)
+		float birdX = 0.0f;
+
+		// Scoring: when pipe passes bird and hasn't been scored yet
+		for (auto& pipe : m_Pipes)
+		{
+			if (!pipe.scored && pipe.x + pipeWidth * 0.5f < birdX - birdWidth * 0.5f)
+			{
+				pipe.scored = true;
+				m_Score++;
+				DE_TRACE("Score: {}", m_Score);
+			}
+		}
+
+		std::string scoreText = "Score: " + std::to_string(m_Score);
+		renderer.DrawText(scoreText, m_Font, glm::vec2(-width * 0.5f + 0.1f, height * 0.5f - 0.1f));
 
 		renderer.EndScene();
 	}

@@ -13,6 +13,7 @@ namespace Dingo
 		float x;
 		float gapY;
 		float gapHeight;
+		bool scored = false;
 	};
 
 	class GameLayer : public Layer
@@ -37,6 +38,8 @@ namespace Dingo
 		float m_OrthographicFar = 1.0f;
 		glm::mat4 m_ProjectionViewMatrix = glm::mat4(1.0f);
 
+		uint32_t m_Score = 0;
+
 		float m_BirdY = 0.0f;
 		float m_BirdVelocity = 0.0f;
 		const float m_Gravity = -2.5f;
@@ -57,6 +60,8 @@ namespace Dingo
 		Texture* m_GroundTexture = nullptr;
 		Texture* m_PipeTexture = nullptr;
 		Texture* m_BirdTexture = nullptr;
+
+		Font* m_Font = nullptr;
 	};
 
 }
