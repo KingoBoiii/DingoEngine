@@ -5,6 +5,8 @@
 
 #include <vector>
 
+#define BACKGROUND_SCROLLING_SPEED 0.5f
+
 namespace Dingo
 {
 
@@ -41,6 +43,13 @@ namespace Dingo
 		void UpdateGameStateDead(float deltaTime, Renderer2D& renderer);
 
 		void UpdateScrollingBackground(float deltaTime, Renderer2D& renderer);
+		void UpdatePipes(float deltaTime, Renderer2D& renderer);
+
+		void UpdateBird(float deltaTime);
+		void RenderBird(Renderer2D& renderer);
+
+		void UpdateGround(float deltaTime);
+		void RenderGround(Renderer2D& renderer);
 
 	private:
 		float m_OrthographicSize = 5.0f;
@@ -56,13 +65,17 @@ namespace Dingo
 
 		float m_BirdY = 0.0f;
 		float m_BirdVelocity = 0.0f;
+		float m_BirdWidth = 0.0f;
+		float m_BirdHeight = 0.0f;
 		const float m_Gravity = -2.5f;
 		const float m_JumpVelocity = 1.5f;
 
 		float m_BackgroundOffset = 0.0f;
-		const float m_BackgroundScrollSpeed = 0.5f; // Adjust for desired speed
+		float m_BackgroundScrollSpeed = 0.0f; // Adjust for desired speed
 
 		float m_GroundOffset = 0.0f;
+		float m_GroundY = 0.0f;
+		float m_GroundQuadWidth = 0.0f; // Width of the ground quad
 		const float m_GroundHeight = 1.0f; // Height of the ground in world units
 
 		std::vector<Pipe> m_Pipes;

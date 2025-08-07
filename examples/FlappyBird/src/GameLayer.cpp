@@ -27,8 +27,17 @@ namespace Dingo
 
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
-		m_BirdY = 0.0f;
+		// Ground aspect ratio
+		float groundAspectRatio = (float)m_GroundTexture->GetWidth() / (float)m_GroundTexture->GetHeight();
+		m_GroundQuadWidth = m_GroundHeight * groundAspectRatio;
+
+		m_BirdY = -0.88f;
 		m_BirdVelocity = 0.0f;
+
+		// Bird aspect ratio
+		float birdAspectRatio = (float)m_BirdTexture->GetWidth() / (float)m_BirdTexture->GetHeight();
+		m_BirdHeight = 0.45f; // desired height in world units
+		m_BirdWidth = m_BirdHeight * birdAspectRatio;
 	}
 
 	void GameLayer::OnDetach()
@@ -85,10 +94,15 @@ namespace Dingo
 		m_Width = m_OrthographicSize * m_AspectRatio;
 		m_Height = m_OrthographicSize;
 
+		m_GroundY = -m_Height * 0.5f + m_GroundHeight * 0.5f;
+
 		renderer.BeginScene(m_ProjectionViewMatrix);
 		renderer.Clear(glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
 
 		UpdateScrollingBackground(deltaTime, renderer);
+
+		RenderBird(renderer);
+		RenderGround(renderer);
 
 		switch(m_GameState)
 		{
@@ -103,6 +117,81 @@ namespace Dingo
 				break;
 		}
 
+		renderer.EndScene();
+	}
+
+	void GameLayer::UpdateGameStateMenu(float deltaTime, Renderer2D& renderer)
+	{
+		m_BackgroundScrollSpeed = 0.0f;
+
+		// draw flappy bird text in the top center of the screen
+		renderer.DrawText("Flappy Bird", m_Font, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
+
+		// draw instructions below the title
+		renderer.DrawText("Press space to flap", m_Font, glm::vec2(0.0f));
+
+		// --- Menu state rendering ---
+		float aspectRatio = (float)m_MenuTexture->GetWidth() / (float)m_MenuTexture->GetHeight();
+		float menuWidth = m_Height * aspectRatio; // Scale to fit height
+		renderer.DrawQuad(glm::vec2(0.0f, 0.0f), glm::vec2(menuWidth, m_Height), m_MenuTexture);
+	}
+
+	void GameLayer::UpdateGameStateGame(float deltaTime, Renderer2D& renderer)
+	{
+		m_BackgroundScrollSpeed = BACKGROUND_SCROLLING_SPEED;
+
+		UpdateBird(deltaTime);
+
+		UpdateGround(deltaTime);
+		UpdatePipes(deltaTime, renderer);
+
+		// Bird's horizontal position (assuming center of screen)
+		float birdX = 0.0f;
+
+		// Scoring: when pipe passes bird and hasn't been scored yet
+		for (auto& pipe : m_Pipes)
+		{
+			if (!pipe.scored && pipe.x + m_PipeWidth * 0.5f < birdX - m_BirdHeight * 0.5f)
+			{
+				pipe.scored = true;
+				m_Score++;
+				DE_CORE_INFO("Score: {}", m_Score);
+			}
+		}
+
+		renderer.DrawText(std::to_string(m_Score), m_Font, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
+	}
+
+	void GameLayer::UpdateGameStateDead(float deltaTime, Renderer2D& renderer)
+	{
+		m_BackgroundScrollSpeed = 0.0f;
+	}
+
+	void GameLayer::UpdateScrollingBackground(float deltaTime, Renderer2D & renderer)
+	{
+		// --- Parallax background update ---
+		m_BackgroundOffset -= m_BackgroundScrollSpeed * deltaTime;
+
+		// Calculate background quad width based on texture aspect ratio
+		float bgAspectRatio = (float)m_BackgroundTexture->GetWidth() / (float)m_BackgroundTexture->GetHeight();
+		float bgQuadWidth = m_Height * bgAspectRatio;
+
+		// Wrap offset to tile seamlessly (handles both positive and negative)
+		m_BackgroundOffset = std::fmod(m_BackgroundOffset, bgQuadWidth);
+		if (m_BackgroundOffset < 0.0f)
+		{
+			m_BackgroundOffset += bgQuadWidth;
+		}
+
+		// Draw background as seamless tiles
+		for (float x = -m_Width * 0.5f - bgQuadWidth; x < m_Width * 0.5f + bgQuadWidth; x += bgQuadWidth)
+		{
+			renderer.DrawQuad(glm::vec2(x + m_BackgroundOffset, 0.0f), glm::vec2(bgQuadWidth, m_Height), m_BackgroundTexture);
+		}
+	}
+
+	void GameLayer::UpdatePipes(float deltaTime, Renderer2D& renderer)
+	{
 		// --- Pipe logic ---
 		m_PipeSpawnTimer -= deltaTime;
 		if (m_PipeSpawnTimer <= 0.0f)
@@ -145,30 +234,10 @@ namespace Dingo
 			float bottomPipeCenterY = pipe.gapY - m_PipeGapHeight * 0.5f - pipeHeight * 0.5f;
 			renderer.DrawQuad(glm::vec2(pipe.x, bottomPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
 		}
+	}
 
-		// --- Ground rendering ---
-		float groundY = -m_Height * 0.5f + m_GroundHeight * 0.5f; // Position at bottom of screen
-
-		// --- Ground offset update ---
-		m_GroundOffset -= m_PipeSpeed * deltaTime;
-
-		// Calculate ground quad width based on texture aspect ratio
-		float groundAspectRatio = (float)m_GroundTexture->GetWidth() / (float)m_GroundTexture->GetHeight();
-		float groundQuadWidth = m_GroundHeight * groundAspectRatio;
-
-		// Wrap offset to tile seamlessly
-		m_GroundOffset = std::fmod(m_GroundOffset, groundQuadWidth);
-		if (m_GroundOffset < 0.0f)
-		{
-			m_GroundOffset += groundQuadWidth;
-		}
-
-		// Tile the ground texture horizontally, using ground offset
-		for (float x = -m_Width * 0.5f - groundQuadWidth; x < m_Width * 0.5f + groundQuadWidth; x += groundQuadWidth)
-		{
-			renderer.DrawQuad(glm::vec2(x + m_GroundOffset, groundY), glm::vec2(groundQuadWidth, m_GroundHeight), m_GroundTexture);
-		}
-
+	void GameLayer::UpdateBird(float deltaTime)
+	{
 		// --- Bird physics update ---
 		m_BirdVelocity += m_Gravity * deltaTime; // Apply gravity
 		m_BirdY += m_BirdVelocity * deltaTime;   // Update position
@@ -179,75 +248,42 @@ namespace Dingo
 			m_BirdVelocity = m_JumpVelocity;
 		}
 
-		// Bird aspect ratio
-		float birdAspectRatio = (float)m_BirdTexture->GetWidth() / (float)m_BirdTexture->GetHeight();
-		float birdHeight = 0.5f; // desired height in world units
-		float birdWidth = birdHeight * birdAspectRatio;
-
 		// --- Ground collision detection ---
-		float groundTop = groundY + m_GroundHeight * 0.5f;
-		float birdBottom = m_BirdY - birdHeight * 0.5f;
+		float groundTop = m_GroundY + m_GroundHeight * 0.5f;
+		float birdBottom = m_BirdY - m_BirdHeight * 0.5f;
 
 		if (birdBottom <= groundTop)
 		{
-			m_BirdY = groundTop + birdHeight * 0.5f;
+			m_BirdY = groundTop + m_BirdHeight * 0.5f;
 			m_BirdVelocity = 0.0f;
 		}
-
-		renderer.DrawQuad(glm::vec2(0.0f, m_BirdY), glm::vec2(birdWidth, birdHeight), m_BirdTexture);
-
-		// Bird's horizontal position (assuming center of screen)
-		float birdX = 0.0f;
-
-		// Scoring: when pipe passes bird and hasn't been scored yet
-		for (auto& pipe : m_Pipes)
-		{
-			if (!pipe.scored && pipe.x + pipeWidth * 0.5f < birdX - birdWidth * 0.5f)
-			{
-				pipe.scored = true;
-				m_Score++;
-			}
-		}
-
-		renderer.DrawText(std::to_string(m_Score), m_Font, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
-
-		renderer.EndScene();
 	}
 
-	void GameLayer::UpdateGameStateMenu(float deltaTime, Renderer2D& renderer)
+	void GameLayer::RenderBird(Renderer2D& renderer)
 	{
-		// --- Menu state rendering ---
-		float aspectRatio = (float)m_MenuTexture->GetWidth() / (float)m_MenuTexture->GetHeight();
-		float menuWidth = m_Height * aspectRatio; // Scale to fit height
-		renderer.DrawQuad(glm::vec2(0.0f, 0.0f), glm::vec2(menuWidth, m_Height), m_MenuTexture);
+		renderer.DrawQuad(glm::vec2(0.0f, m_BirdY), glm::vec2(m_BirdWidth, m_BirdHeight), m_BirdTexture);
 	}
 
-	void GameLayer::UpdateGameStateGame(float deltaTime, Renderer2D& renderer)
-	{}
-
-	void GameLayer::UpdateGameStateDead(float deltaTime, Renderer2D& renderer)
-	{}
-
-	void GameLayer::UpdateScrollingBackground(float deltaTime, Renderer2D & renderer)
+	void GameLayer::UpdateGround(float deltaTime)
 	{
-		// --- Parallax background update ---
-		m_BackgroundOffset -= m_BackgroundScrollSpeed * deltaTime;
+		m_GroundOffset -= m_PipeSpeed * deltaTime;
+	}
 
-		// Calculate background quad width based on texture aspect ratio
-		float bgAspectRatio = (float)m_BackgroundTexture->GetWidth() / (float)m_BackgroundTexture->GetHeight();
-		float bgQuadWidth = m_Height * bgAspectRatio;
+	void GameLayer::RenderGround(Renderer2D& renderer)
+	{
+		// --- Ground rendering ---
 
-		// Wrap offset to tile seamlessly (handles both positive and negative)
-		m_BackgroundOffset = std::fmod(m_BackgroundOffset, bgQuadWidth);
-		if (m_BackgroundOffset < 0.0f)
+		// Wrap offset to tile seamlessly
+		m_GroundOffset = std::fmod(m_GroundOffset, m_GroundQuadWidth);
+		if (m_GroundOffset < 0.0f)
 		{
-			m_BackgroundOffset += bgQuadWidth;
+			m_GroundOffset += m_GroundQuadWidth;
 		}
 
-		// Draw background as seamless tiles
-		for (float x = -m_Width * 0.5f - bgQuadWidth; x < m_Width * 0.5f + bgQuadWidth; x += bgQuadWidth)
+		// Tile the ground texture horizontally, using ground offset
+		for (float x = -m_Width * 0.5f - m_GroundQuadWidth; x < m_Width * 0.5f + m_GroundQuadWidth; x += m_GroundQuadWidth)
 		{
-			renderer.DrawQuad(glm::vec2(x + m_BackgroundOffset, 0.0f), glm::vec2(bgQuadWidth, m_Height), m_BackgroundTexture);
+			renderer.DrawQuad(glm::vec2(x + m_GroundOffset, m_GroundY), glm::vec2(m_GroundQuadWidth, m_GroundHeight), m_GroundTexture);
 		}
 	}
 
