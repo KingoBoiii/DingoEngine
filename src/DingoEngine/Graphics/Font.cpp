@@ -142,6 +142,96 @@ namespace Dingo
 		}
 	}
 
+	float Font::GetStringWidth(const std::string& string, float size) const
+	{
+		if (string.empty())
+		{
+			return 0.0f;
+		}
+
+		const auto& fontGeometry = m_Data->FontGeometry;
+		double fsScale = 1.0 / (fontGeometry.getMetrics().ascenderY - fontGeometry.getMetrics().descenderY);
+
+		double x = 0.0;
+		double y = 0.0;
+		float width = 0.0f;
+
+		for (size_t i = 0; i < string.size(); i++)
+		{
+			char character = string[i];
+			const msdf_atlas::GlyphGeometry* glyph = fontGeometry.getGlyph(character);
+			if (!glyph)
+			{
+				continue;
+			}
+
+			double pl, pb, pr, pt;
+			glyph->getQuadPlaneBounds(pl, pb, pr, pt);
+			glm::vec2 quadMin((float)pl, (float)pb);
+			glm::vec2 quadMax((float)pr, (float)pt);
+
+			quadMin *= fsScale, quadMax *= fsScale;
+			quadMin += glm::vec2(x, y);
+			quadMax += glm::vec2(x, y);
+
+			width += static_cast<float>(quadMax.x - quadMin.x) * size;
+
+			if (i < string.size() - 1)
+			{
+				char nextCharacter = string[i + 1];
+				fontGeometry.getAdvance(x, character, nextCharacter);
+			}
+		}
+
+		return static_cast<float>(width);
+	}
+
+	BoundingBox Font::GetBoundingBox(const std::string& string, float size) const
+	{
+		if (string.empty())
+		{
+			return BoundingBox();
+		}
+
+		BoundingBox result = BoundingBox();
+
+		const msdf_atlas::FontGeometry& fontGeometry = m_Data->FontGeometry;
+		double fsScale = 1.0 / (fontGeometry.getMetrics().ascenderY - fontGeometry.getMetrics().descenderY);
+
+		double x = 0.0;
+		double y = 0.0;
+		float width = 0.0f;
+
+		for (size_t i = 0; i < string.size(); i++)
+		{
+			char character = string[i];
+			const msdf_atlas::GlyphGeometry* glyph = fontGeometry.getGlyph(character);
+			if (!glyph)
+			{
+				continue;
+			}
+
+			double pl, pb, pr, pt;
+			glyph->getQuadPlaneBounds(pl, pb, pr, pt);
+			glm::vec2 quadMin((float)pl, (float)pb);
+			glm::vec2 quadMax((float)pr, (float)pt);
+
+			result.QuadMin *= fsScale, quadMax *= fsScale;
+			result.QuadMin += glm::vec2(x, y);
+			result.QuadMax += glm::vec2(x, y);
+
+			width += static_cast<float>(quadMax.x - quadMin.x) * size;
+
+			if (i < string.size() - 1)
+			{
+				char nextCharacter = string[i + 1];
+				fontGeometry.getAdvance(x, character, nextCharacter);
+			}
+		}
+
+		return result;
+	}
+
 	void Font::InitializeFontData(int32_t& width, int32_t& height)
 	{
 		msdfgen::FreetypeHandle* ft = msdfgen::initializeFreetype();

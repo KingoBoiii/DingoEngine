@@ -44,12 +44,15 @@ namespace Dingo
 
 		void UpdateScrollingBackground(float deltaTime, Renderer2D& renderer);
 		void UpdatePipes(float deltaTime, Renderer2D& renderer);
+		void RenderPipes(Renderer2D& renderer);
 
 		void UpdateBird(float deltaTime);
 		void RenderBird(Renderer2D& renderer);
 
 		void UpdateGround(float deltaTime);
 		void RenderGround(Renderer2D& renderer);
+
+		void RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset = glm::vec2(0.0f)) const;
 
 	private:
 		float m_OrthographicSize = 5.0f;

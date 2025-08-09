@@ -4,6 +4,9 @@
 
 #include <cmath> // For std::fmod
 
+#define DEFAULT_FONT_SIZE 0.5f
+#define DEFAULT_TITLE_FONT_SIZE 0.9f
+
 namespace Dingo
 {
 
@@ -102,9 +105,10 @@ namespace Dingo
 		UpdateScrollingBackground(deltaTime, renderer);
 
 		RenderBird(renderer);
+		RenderPipes(renderer);
 		RenderGround(renderer);
 
-		switch(m_GameState)
+		switch (m_GameState)
 		{
 			case GameState::Menu:
 				UpdateGameStateMenu(deltaTime, renderer);
@@ -122,18 +126,19 @@ namespace Dingo
 
 	void GameLayer::UpdateGameStateMenu(float deltaTime, Renderer2D& renderer)
 	{
+		if(Input::IsKeyPressed(Key::Space))
+		{
+			m_GameState = GameState::Game;
+			m_Score = 0; // Reset score when starting the game
+			m_Pipes.clear(); // Clear any existing pipes
+			m_BackgroundOffset = 0.0f; // Reset background offset
+			m_BirdY = 0;
+		}
+
 		m_BackgroundScrollSpeed = 0.0f;
 
-		// draw flappy bird text in the top center of the screen
-		renderer.DrawText("Flappy Bird", m_Font, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
-
-		// draw instructions below the title
-		renderer.DrawText("Press space to flap", m_Font, glm::vec2(0.0f));
-
-		// --- Menu state rendering ---
-		float aspectRatio = (float)m_MenuTexture->GetWidth() / (float)m_MenuTexture->GetHeight();
-		float menuWidth = m_Height * aspectRatio; // Scale to fit height
-		renderer.DrawQuad(glm::vec2(0.0f, 0.0f), glm::vec2(menuWidth, m_Height), m_MenuTexture);
+		RenderCenteredText(renderer, "Flappy Bird", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
+		RenderCenteredText(renderer, "Press space to flap", DEFAULT_FONT_SIZE);
 	}
 
 	void GameLayer::UpdateGameStateGame(float deltaTime, Renderer2D& renderer)
@@ -155,19 +160,59 @@ namespace Dingo
 			{
 				pipe.scored = true;
 				m_Score++;
-				DE_CORE_INFO("Score: {}", m_Score);
 			}
 		}
 
-		renderer.DrawText(std::to_string(m_Score), m_Font, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
+		// --- Collision detection with pipes ---
+		float birdLeft = birdX - m_BirdWidth * 0.5f;
+		float birdRight = birdX + m_BirdWidth * 0.5f;
+		float birdTop = m_BirdY + m_BirdHeight * 0.5f;
+		float birdBottom = m_BirdY - m_BirdHeight * 0.5f;
+
+		for (const auto& pipe : m_Pipes)
+		{
+			float pipeLeft = pipe.x - m_PipeWidth * 0.5f;
+			float pipeRight = pipe.x + m_PipeWidth * 0.5f;
+
+			float gapTop = pipe.gapY + m_PipeGapHeight * 0.5f;
+			float gapBottom = pipe.gapY - m_PipeGapHeight * 0.5f;
+
+			// Check horizontal overlap
+			bool overlapsX = birdRight > pipeLeft && birdLeft < pipeRight;
+
+			// Check vertical overlap with top pipe
+			bool hitsTopPipe = birdTop > gapTop;
+			// Check vertical overlap with bottom pipe
+			bool hitsBottomPipe = birdBottom < gapBottom;
+
+			if (overlapsX && (hitsTopPipe || hitsBottomPipe))
+			{
+				m_GameState = GameState::Dead;
+				break;
+			}
+		}
+
+		RenderCenteredText(renderer, std::to_string(m_Score), DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
 	}
 
 	void GameLayer::UpdateGameStateDead(float deltaTime, Renderer2D& renderer)
 	{
+		if (Input::IsKeyPressed(Key::Space))
+		{
+			m_GameState = GameState::Game;
+			m_Score = 0; // Reset score when starting the game
+			m_Pipes.clear(); // Clear any existing pipes
+			m_BackgroundOffset = 0.0f; // Reset background offset
+			m_BirdY = 0;
+		}
+
 		m_BackgroundScrollSpeed = 0.0f;
+
+		RenderCenteredText(renderer, "Game over", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
+		RenderCenteredText(renderer, "Press space to retry", DEFAULT_FONT_SIZE);
 	}
 
-	void GameLayer::UpdateScrollingBackground(float deltaTime, Renderer2D & renderer)
+	void GameLayer::UpdateScrollingBackground(float deltaTime, Renderer2D& renderer)
 	{
 		// --- Parallax background update ---
 		m_BackgroundOffset -= m_BackgroundScrollSpeed * deltaTime;
@@ -219,7 +264,10 @@ namespace Dingo
 		{
 			m_Pipes.erase(m_Pipes.begin());
 		}
+	}
 
+	void GameLayer::RenderPipes(Renderer2D& renderer)
+	{
 		float pipeWidth = m_Width * 0.1f;   // 10% of screen width
 		float pipeHeight = m_Height * 0.75f; // 75% of screen height
 
@@ -256,6 +304,7 @@ namespace Dingo
 		{
 			m_BirdY = groundTop + m_BirdHeight * 0.5f;
 			m_BirdVelocity = 0.0f;
+			m_GameState = GameState::Dead; // Switch to dead state if bird hits the ground
 		}
 	}
 
@@ -285,6 +334,13 @@ namespace Dingo
 		{
 			renderer.DrawQuad(glm::vec2(x + m_GroundOffset, m_GroundY), glm::vec2(m_GroundQuadWidth, m_GroundHeight), m_GroundTexture);
 		}
+	}
+
+	void GameLayer::RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset) const
+	{
+		float textWidth = m_Font->GetStringWidth(text, fontSize);
+
+		renderer.DrawText(text, m_Font, glm::vec2(-(textWidth * 0.5f) + offset.x, offset.y), fontSize);
 	}
 
 }

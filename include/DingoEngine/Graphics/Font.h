@@ -7,6 +7,12 @@ namespace Dingo
 
 	struct MSDFData;
 
+	struct BoundingBox
+	{
+		glm::vec2 QuadMin;
+		glm::vec2 QuadMax;
+	};
+
 	struct FontParams
 	{
 		std::string Name;
@@ -27,6 +33,8 @@ namespace Dingo
 		void Initialize();
 		void Destroy();
 
+		float GetStringWidth(const std::string& string, float size = 1.0f) const;
+		BoundingBox GetBoundingBox(const std::string& string, float size = 1.0f) const;
 		Texture* GetAtlasTexture() const { return m_AtlasTexture; }
 		const MSDFData* GetMSDFData() const { return m_Data; }
 

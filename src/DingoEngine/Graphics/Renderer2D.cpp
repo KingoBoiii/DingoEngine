@@ -336,18 +336,18 @@ void main() {
 		m_QuadPipeline.IndexCount += 6;
 	}
 
-	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, const TextParameters& textParameters)
+	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size, const TextParameters& textParameters)
 	{
-		DrawText(string, font, glm::vec3(position, 0.0f), textParameters);
+		DrawText(string, font, glm::vec3(position, 0.0f), size, textParameters);
 	}
 
-	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, const TextParameters& textParameters)
+	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size, const TextParameters& textParameters)
 	{
 		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), glm::vec3(size, size, 1.0f));
 
 		m_FontAtlasTexture = fontAtlas;
 
