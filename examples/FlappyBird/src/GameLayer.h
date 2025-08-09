@@ -52,7 +52,7 @@ namespace Dingo
 		void UpdateGround(float deltaTime);
 		void RenderGround(Renderer2D& renderer);
 
-		void RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset = glm::vec2(0.0f)) const;
+		void RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset = glm::vec2(0.0f), const glm::vec4& color = glm::vec4(1.0f)) const;
 
 	private:
 		float m_OrthographicSize = 5.0f;
@@ -87,7 +87,7 @@ namespace Dingo
 		const float m_PipeSpeed = 2.0f;         // units per second
 		const float m_PipeWidth = 0.7f;
 		const float m_PipeHeight = 6.0f;
-		const float m_PipeGapHeight = 2.0f;
+		const float m_PipeGapHeight = 1.5f;
 
 		Texture* m_MenuTexture = nullptr;
 

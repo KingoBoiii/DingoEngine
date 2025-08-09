@@ -207,8 +207,10 @@ namespace Dingo
 
 		m_BackgroundScrollSpeed = 0.0f;
 
-		RenderCenteredText(renderer, "Game over", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
-		RenderCenteredText(renderer, "Press space to retry", DEFAULT_FONT_SIZE);
+		RenderCenteredText(renderer, "Game over", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f), { 0.8f, 0.3f, 0.2f, 1.0f });
+		RenderCenteredText(renderer, "Nice try!", DEFAULT_FONT_SIZE);
+		RenderCenteredText(renderer, std::format("You scored '{}' points", m_Score), DEFAULT_FONT_SIZE, { 0.0f, -0.5f });
+		RenderCenteredText(renderer, "Press space to retry", DEFAULT_FONT_SIZE, { 0.0f, -2.0f });
 	}
 
 	void GameLayer::UpdateScrollingBackground(float deltaTime, Renderer2D& renderer)
@@ -335,11 +337,11 @@ namespace Dingo
 		}
 	}
 
-	void GameLayer::RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset) const
+	void GameLayer::RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset, const glm::vec4& color) const
 	{
 		float textWidth = m_Font->GetStringWidth(text, fontSize);
 
-		renderer.DrawText(text, m_Font, glm::vec2(-(textWidth * 0.5f) + offset.x, offset.y), fontSize);
+		renderer.DrawText(text, m_Font, glm::vec2(-(textWidth * 0.5f) + offset.x, offset.y), fontSize, { color });
 	}
 
 }
