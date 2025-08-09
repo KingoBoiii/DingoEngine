@@ -42,15 +42,14 @@ namespace Dingo
 		void UpdateGameStateGame(float deltaTime, Renderer2D& renderer);
 		void UpdateGameStateDead(float deltaTime, Renderer2D& renderer);
 
-		void UpdateScrollingBackground(float deltaTime, Renderer2D& renderer);
-		void UpdatePipes(float deltaTime, Renderer2D& renderer);
-		void RenderPipes(Renderer2D& renderer);
+		void UpdateBackground(float deltaTime);
+		void RenderBackground(Renderer2D& renderer);
 
 		void UpdateBird(float deltaTime);
 		void RenderBird(Renderer2D& renderer);
 
-		void UpdateGround(float deltaTime);
-		void RenderGround(Renderer2D& renderer);
+		void UpdateGroundAndPipes(float deltaTime);
+		void RenderGroundAndPipes(Renderer2D& renderer);
 
 		void RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset = glm::vec2(0.0f), const glm::vec4& color = glm::vec4(1.0f)) const;
 
@@ -74,7 +73,7 @@ namespace Dingo
 		const float m_JumpVelocity = 1.5f;
 
 		float m_BackgroundOffset = 0.0f;
-		float m_BackgroundScrollSpeed = 0.0f; // Adjust for desired speed
+		float m_BackgroundScrollSpeed = BACKGROUND_SCROLLING_SPEED; // Adjust for desired speed
 
 		float m_GroundOffset = 0.0f;
 		float m_GroundY = 0.0f;
@@ -88,8 +87,6 @@ namespace Dingo
 		const float m_PipeWidth = 0.7f;
 		const float m_PipeHeight = 6.0f;
 		const float m_PipeGapHeight = 1.5f;
-
-		Texture* m_MenuTexture = nullptr;
 
 		Texture* m_BackgroundTexture = nullptr;
 		Texture* m_GroundTexture = nullptr;

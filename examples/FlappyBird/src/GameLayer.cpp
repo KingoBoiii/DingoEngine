@@ -21,8 +21,6 @@ namespace Dingo
 
 		m_ProjectionViewMatrix = glm::ortho(orthoLeft, orthoRight, orthoBottom, orthoTop, m_OrthographicNear, m_OrthographicFar);
 
-		m_MenuTexture = Texture::CreateFromFile("assets/sprites/message.png");
-
 		m_BackgroundTexture = Texture::CreateFromFile("assets/sprites/background-day.png");
 		m_GroundTexture = Texture::CreateFromFile("assets/sprites/base.png");
 		m_PipeTexture = Texture::CreateFromFile("assets/sprites/pipe-green.png");
@@ -102,11 +100,9 @@ namespace Dingo
 		renderer.BeginScene(m_ProjectionViewMatrix);
 		renderer.Clear(glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
 
-		UpdateScrollingBackground(deltaTime, renderer);
-
+		RenderBackground(renderer);
 		RenderBird(renderer);
-		RenderPipes(renderer);
-		RenderGround(renderer);
+		RenderGroundAndPipes(renderer);
 
 		switch (m_GameState)
 		{
@@ -134,20 +130,15 @@ namespace Dingo
 			m_BackgroundOffset = 0.0f; // Reset background offset
 		}
 
-		m_BackgroundScrollSpeed = 0.0f;
-
 		RenderCenteredText(renderer, "Flappy Bird", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
 		RenderCenteredText(renderer, "Press space to flap", DEFAULT_FONT_SIZE);
 	}
 
 	void GameLayer::UpdateGameStateGame(float deltaTime, Renderer2D& renderer)
 	{
-		m_BackgroundScrollSpeed = BACKGROUND_SCROLLING_SPEED;
-
+		UpdateBackground(deltaTime);
 		UpdateBird(deltaTime);
-
-		UpdateGround(deltaTime);
-		UpdatePipes(deltaTime, renderer);
+		UpdateGroundAndPipes(deltaTime);
 
 		// Bird's horizontal position (assuming center of screen)
 		float birdX = 0.0f;
@@ -205,19 +196,20 @@ namespace Dingo
 			m_BirdY = 0;
 		}
 
-		m_BackgroundScrollSpeed = 0.0f;
-
 		RenderCenteredText(renderer, "Game over", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f), { 0.8f, 0.3f, 0.2f, 1.0f });
 		RenderCenteredText(renderer, "Nice try!", DEFAULT_FONT_SIZE);
 		RenderCenteredText(renderer, std::format("You scored '{}' points", m_Score), DEFAULT_FONT_SIZE, { 0.0f, -0.5f });
 		RenderCenteredText(renderer, "Press space to retry", DEFAULT_FONT_SIZE, { 0.0f, -2.0f });
 	}
 
-	void GameLayer::UpdateScrollingBackground(float deltaTime, Renderer2D& renderer)
+	void GameLayer::UpdateBackground(float deltaTime)
 	{
 		// --- Parallax background update ---
 		m_BackgroundOffset -= m_BackgroundScrollSpeed * deltaTime;
+	}
 
+	void GameLayer::RenderBackground(Renderer2D& renderer)
+	{
 		// Calculate background quad width based on texture aspect ratio
 		float bgAspectRatio = (float)m_BackgroundTexture->GetWidth() / (float)m_BackgroundTexture->GetHeight();
 		float bgQuadWidth = m_Height * bgAspectRatio;
@@ -233,55 +225,6 @@ namespace Dingo
 		for (float x = -m_Width * 0.5f - bgQuadWidth; x < m_Width * 0.5f + bgQuadWidth; x += bgQuadWidth)
 		{
 			renderer.DrawQuad(glm::vec2(x + m_BackgroundOffset, 0.0f), glm::vec2(bgQuadWidth, m_Height), m_BackgroundTexture);
-		}
-	}
-
-	void GameLayer::UpdatePipes(float deltaTime, Renderer2D& renderer)
-	{
-		// --- Pipe logic ---
-		m_PipeSpawnTimer -= deltaTime;
-		if (m_PipeSpawnTimer <= 0.0f)
-		{
-			Pipe pipe;
-			pipe.x = m_Width * 0.5f + m_PipeWidth; // spawn just off the right edge
-			pipe.gapHeight = m_PipeGapHeight;
-
-			// Ensure the gap is always above the ground and below the top
-			float margin = 0.5f; // extra margin from ground and top
-			float minGapY = -m_Height * 0.5f + m_GroundHeight + pipe.gapHeight * 0.5f + margin;
-			float maxGapY = m_Height * 0.5f - pipe.gapHeight * 0.5f - margin;
-			pipe.gapY = minGapY + static_cast<float>(rand()) / RAND_MAX * (maxGapY - minGapY);
-
-			m_Pipes.push_back(pipe);
-			m_PipeSpawnTimer = m_PipeSpawnInterval;
-		}
-
-		// Move pipes and remove off-screen
-		for (auto& pipe : m_Pipes)
-		{
-			pipe.x -= m_PipeSpeed * deltaTime;
-		}
-		while (!m_Pipes.empty() && m_Pipes.front().x < -m_Width * 0.5f - m_PipeWidth)
-		{
-			m_Pipes.erase(m_Pipes.begin());
-		}
-	}
-
-	void GameLayer::RenderPipes(Renderer2D& renderer)
-	{
-		float pipeWidth = m_Width * 0.1f;   // 10% of screen width
-		float pipeHeight = m_Height * 0.75f; // 75% of screen height
-
-		// Render pipes
-		for (const auto& pipe : m_Pipes)
-		{
-			// Top pipe: center at (pipe.x, topPipeCenterY)
-			float topPipeCenterY = pipe.gapY + m_PipeGapHeight * 0.5f + pipeHeight * 0.5f;
-			renderer.DrawQuad(glm::vec2(pipe.x, topPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
-
-			// Bottom pipe: center at (pipe.x, bottomPipeCenterY)
-			float bottomPipeCenterY = pipe.gapY - m_PipeGapHeight * 0.5f - pipeHeight * 0.5f;
-			renderer.DrawQuad(glm::vec2(pipe.x, bottomPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
 		}
 	}
 
@@ -314,13 +257,58 @@ namespace Dingo
 		renderer.DrawQuad(glm::vec2(0.0f, m_BirdY), glm::vec2(m_BirdWidth, m_BirdHeight), m_BirdTexture);
 	}
 
-	void GameLayer::UpdateGround(float deltaTime)
+	void GameLayer::UpdateGroundAndPipes(float deltaTime)
 	{
+		// --- Pipe logic ---
+		m_PipeSpawnTimer -= deltaTime;
+		if (m_PipeSpawnTimer <= 0.0f)
+		{
+			Pipe pipe;
+			pipe.x = m_Width * 0.5f + m_PipeWidth; // spawn just off the right edge
+			pipe.gapHeight = m_PipeGapHeight;
+
+			// Ensure the gap is always above the ground and below the top
+			float margin = 0.5f; // extra margin from ground and top
+			float minGapY = -m_Height * 0.5f + m_GroundHeight + pipe.gapHeight * 0.5f + margin;
+			float maxGapY = m_Height * 0.5f - pipe.gapHeight * 0.5f - margin;
+			pipe.gapY = minGapY + static_cast<float>(rand()) / RAND_MAX * (maxGapY - minGapY);
+
+			m_Pipes.push_back(pipe);
+			m_PipeSpawnTimer = m_PipeSpawnInterval;
+		}
+
+		// Move pipes and remove off-screen
+		for (auto& pipe : m_Pipes)
+		{
+			pipe.x -= m_PipeSpeed * deltaTime;
+		}
+		while (!m_Pipes.empty() && m_Pipes.front().x < -m_Width * 0.5f - m_PipeWidth)
+		{
+			m_Pipes.erase(m_Pipes.begin());
+		}
+
 		m_GroundOffset -= m_PipeSpeed * deltaTime;
 	}
 
-	void GameLayer::RenderGround(Renderer2D& renderer)
+	void GameLayer::RenderGroundAndPipes(Renderer2D& renderer)
 	{
+		// --- Pipe rendering ---
+
+		float pipeWidth = m_Width * 0.1f;   // 10% of screen width
+		float pipeHeight = m_Height * 0.75f; // 75% of screen height
+
+		// Render pipes
+		for (const auto& pipe : m_Pipes)
+		{
+			// Top pipe: center at (pipe.x, topPipeCenterY)
+			float topPipeCenterY = pipe.gapY + m_PipeGapHeight * 0.5f + pipeHeight * 0.5f;
+			renderer.DrawQuad(glm::vec2(pipe.x, topPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
+
+			// Bottom pipe: center at (pipe.x, bottomPipeCenterY)
+			float bottomPipeCenterY = pipe.gapY - m_PipeGapHeight * 0.5f - pipeHeight * 0.5f;
+			renderer.DrawQuad(glm::vec2(pipe.x, bottomPipeCenterY), glm::vec2(pipeWidth, pipeHeight), m_PipeTexture);
+		}
+
 		// --- Ground rendering ---
 
 		// Wrap offset to tile seamlessly
