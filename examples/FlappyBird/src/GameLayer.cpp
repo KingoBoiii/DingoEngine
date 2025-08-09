@@ -74,12 +74,6 @@ namespace Dingo
 			m_BackgroundTexture->Destroy();
 			m_BackgroundTexture = nullptr;
 		}
-
-		if (m_MenuTexture)
-		{
-			m_MenuTexture->Destroy();
-			m_MenuTexture = nullptr;
-		}
 	}
 
 	void GameLayer::OnUpdate(float deltaTime)
