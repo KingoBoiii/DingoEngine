@@ -533,7 +533,7 @@ void main() {
 		m_QuadPipeline.RenderPass = RenderPass::Create(renderPassParams);
 		m_QuadPipeline.RenderPass->Initialize();
 		m_QuadPipeline.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetClampSampler());
+		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetPointSampler());
 		for (uint32_t i = 0; i < MaxTextureSlots; i++)
 		{
 			m_QuadPipeline.RenderPass->SetTexture(1, Renderer::GetWhiteTexture(), i);
