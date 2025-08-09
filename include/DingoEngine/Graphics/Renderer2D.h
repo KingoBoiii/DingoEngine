@@ -68,6 +68,9 @@ namespace Dingo
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 		void DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 
+		void DrawRotatedQuad(const glm::vec2& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+		void DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+
 		struct TextParameters
 		{
 			glm::vec4 Color{ 1.0f };

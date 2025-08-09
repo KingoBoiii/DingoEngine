@@ -378,6 +378,39 @@ void main() {
 		m_QuadPipeline.IndexCount += 6;
 	}
 
+	void Renderer2D::DrawRotatedQuad(const glm::vec2& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		DrawRotatedQuad(glm::vec3(position, 0.0f), rotation, size, texture, color);
+	}
+
+	void Renderer2D::DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		{
+			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
+			return;
+		}
+
+		float textureIndex = GetTextureIndex(texture);
+
+		constexpr size_t quadVertexCount = 4;
+
+		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) 
+			* glm::rotate(glm::mat4(1.0f), glm::radians(rotation), { 0.0f, 0.0f, 1.0f }) 
+			* glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+
+		for (size_t i = 0; i < quadVertexCount; i++)
+		{
+			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPipeline.VertexBufferPtr->Color = color;
+			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPipeline.VertexBufferPtr->TexIndex = textureIndex;
+			m_QuadPipeline.VertexBufferPtr++;
+		}
+
+		m_QuadPipeline.IndexCount += 6;
+	}
+
 	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size, const TextParameters& textParameters)
 	{
 		DrawText(string, font, glm::vec3(position, 0.0f), size, textParameters);
