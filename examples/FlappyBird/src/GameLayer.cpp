@@ -132,7 +132,6 @@ namespace Dingo
 			m_Score = 0; // Reset score when starting the game
 			m_Pipes.clear(); // Clear any existing pipes
 			m_BackgroundOffset = 0.0f; // Reset background offset
-			m_BirdY = 0;
 		}
 
 		m_BackgroundScrollSpeed = 0.0f;
