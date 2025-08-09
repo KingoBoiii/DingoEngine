@@ -168,6 +168,28 @@ void main() {
 
 	}
 
+	namespace Utils
+	{
+
+		// Rotation and scaling are applied in the order: translate -> rotate -> scale
+		// This is the same order as glm::translate * glm::rotate * glm::scale
+		// Note: rotation is in degrees
+		inline static glm::mat4 CreateTransform(const glm::vec3& position, const glm::vec2& size, float rotation = 0.0f)
+		{
+			glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
+
+			if (rotation != 0.0f)
+			{
+				transform *= glm::rotate(glm::mat4(1.0f), glm::radians(rotation), { 0.0f, 0.0f, 1.0f });
+			}
+
+			transform *= glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+
+			return transform;
+		}
+
+	}
+
 	Renderer2D* Renderer2D::Create(Renderer* renderer, const Renderer2DCapabilities& capabilities)
 	{
 		Renderer2D* renderer2D = new Renderer2D(renderer, Renderer2DParams{
@@ -333,7 +355,7 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = Utils::CreateTransform(position, size);
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
@@ -364,7 +386,7 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = Utils::CreateTransform(position, size);
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
@@ -395,9 +417,7 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) 
-			* glm::rotate(glm::mat4(1.0f), glm::radians(rotation), { 0.0f, 0.0f, 1.0f }) 
-			* glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = Utils::CreateTransform(position, size, rotation);
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
@@ -422,7 +442,7 @@ void main() {
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), glm::vec3(size, size, 1.0f));
+		glm::mat4 transform = Utils::CreateTransform(position, glm::vec3(size, size, 1.0f));
 
 		m_FontAtlasTexture = fontAtlas;
 
