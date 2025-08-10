@@ -17,6 +17,7 @@ namespace Dingo
 		constexpr const char* Renderer2DQuadShader = R"(
 #type vertex
 #version 450
+
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec4 a_Color;
 layout(location = 2) in vec2 a_TexCoord;
@@ -40,6 +41,8 @@ void main()
 
 #type fragment
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
+
 layout(location = 0) in vec4 v_Color;
 layout(location = 1) in vec2 v_TexCoord;
 layout(location = 2) in flat float v_TexIndex;
@@ -51,8 +54,47 @@ layout (set = 0, binding = 2) uniform sampler u_Sampler;
 
 void main()
 {
-	o_Color = texture(sampler2D(u_Textures[int(v_TexIndex)], u_Sampler), v_TexCoord) * v_Color;
-	
+	//vec4 texColor = v_Color;
+	//
+	//switch(int(v_TexIndex))
+	//{
+	//	case  0: texColor *= texture(sampler2D(u_Textures[ 0], u_Sampler), v_TexCoord); break;
+	//	case  1: texColor *= texture(sampler2D(u_Textures[ 1], u_Sampler), v_TexCoord); break;
+	//	case  2: texColor *= texture(sampler2D(u_Textures[ 2], u_Sampler), v_TexCoord); break;
+	//	case  3: texColor *= texture(sampler2D(u_Textures[ 3], u_Sampler), v_TexCoord); break;
+	//	case  4: texColor *= texture(sampler2D(u_Textures[ 4], u_Sampler), v_TexCoord); break;
+	//	case  5: texColor *= texture(sampler2D(u_Textures[ 5], u_Sampler), v_TexCoord); break;
+	//	case  6: texColor *= texture(sampler2D(u_Textures[ 6], u_Sampler), v_TexCoord); break;
+	//	case  7: texColor *= texture(sampler2D(u_Textures[ 7], u_Sampler), v_TexCoord); break;
+	//	case  8: texColor *= texture(sampler2D(u_Textures[ 8], u_Sampler), v_TexCoord); break;
+	//	case  9: texColor *= texture(sampler2D(u_Textures[ 9], u_Sampler), v_TexCoord); break;
+	//	case 10: texColor *= texture(sampler2D(u_Textures[10], u_Sampler), v_TexCoord); break;
+	//	case 11: texColor *= texture(sampler2D(u_Textures[11], u_Sampler), v_TexCoord); break;
+	//	case 12: texColor *= texture(sampler2D(u_Textures[12], u_Sampler), v_TexCoord); break;
+	//	case 13: texColor *= texture(sampler2D(u_Textures[13], u_Sampler), v_TexCoord); break;
+	//	case 14: texColor *= texture(sampler2D(u_Textures[14], u_Sampler), v_TexCoord); break;
+	//	case 15: texColor *= texture(sampler2D(u_Textures[15], u_Sampler), v_TexCoord); break;
+	//	case 16: texColor *= texture(sampler2D(u_Textures[16], u_Sampler), v_TexCoord); break;
+	//	case 17: texColor *= texture(sampler2D(u_Textures[17], u_Sampler), v_TexCoord); break;
+	//	case 18: texColor *= texture(sampler2D(u_Textures[18], u_Sampler), v_TexCoord); break;
+	//	case 19: texColor *= texture(sampler2D(u_Textures[19], u_Sampler), v_TexCoord); break;
+	//	case 20: texColor *= texture(sampler2D(u_Textures[20], u_Sampler), v_TexCoord); break;
+	//	case 21: texColor *= texture(sampler2D(u_Textures[21], u_Sampler), v_TexCoord); break;
+	//	case 22: texColor *= texture(sampler2D(u_Textures[22], u_Sampler), v_TexCoord); break;
+	//	case 23: texColor *= texture(sampler2D(u_Textures[23], u_Sampler), v_TexCoord); break;
+	//	case 24: texColor *= texture(sampler2D(u_Textures[24], u_Sampler), v_TexCoord); break;
+	//	case 25: texColor *= texture(sampler2D(u_Textures[25], u_Sampler), v_TexCoord); break;
+	//	case 26: texColor *= texture(sampler2D(u_Textures[26], u_Sampler), v_TexCoord); break;
+	//	case 27: texColor *= texture(sampler2D(u_Textures[27], u_Sampler), v_TexCoord); break;
+	//	case 28: texColor *= texture(sampler2D(u_Textures[28], u_Sampler), v_TexCoord); break;
+	//	case 29: texColor *= texture(sampler2D(u_Textures[29], u_Sampler), v_TexCoord); break;
+	//	case 30: texColor *= texture(sampler2D(u_Textures[30], u_Sampler), v_TexCoord); break;
+	//	case 31: texColor *= texture(sampler2D(u_Textures[31], u_Sampler), v_TexCoord); break;
+	//}
+	//o_Color = texColor;
+
+	o_Color = texture(sampler2D(u_Textures[nonuniformEXT(int(v_TexIndex))], u_Sampler), v_TexCoord) * v_Color;
+
 	if (o_Color.a == 0.0)
 	{
 		discard; // Skip rendering if the color is fully transparent
@@ -123,6 +165,28 @@ void main() {
     o_Color = mix(bgColor, fgColor, opacity);
 }
 		)";
+
+	}
+
+	namespace Utils
+	{
+
+		// Rotation and scaling are applied in the order: translate -> rotate -> scale
+		// This is the same order as glm::translate * glm::rotate * glm::scale
+		// Note: rotation is in degrees
+		inline static glm::mat4 CreateTransform(const glm::vec3& position, const glm::vec2& size, float rotation = 0.0f)
+		{
+			glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
+
+			if (rotation != 0.0f)
+			{
+				transform *= glm::rotate(glm::mat4(1.0f), glm::radians(rotation), { 0.0f, 0.0f, 1.0f });
+			}
+
+			transform *= glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+
+			return transform;
+		}
 
 	}
 
@@ -259,6 +323,7 @@ void main() {
 		{
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
 			m_TextQuadRenderPass.VertexBuffer->Upload(m_TextQuadRenderPass.VertexBufferBase, dataSize);
+
 			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
 			m_TextQuadRenderPass.RenderPass->Bake();
 
@@ -290,7 +355,7 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = Utils::CreateTransform(position, size);
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
@@ -321,7 +386,7 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
+		glm::mat4 transform = Utils::CreateTransform(position, size);
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
@@ -335,18 +400,49 @@ void main() {
 		m_QuadPipeline.IndexCount += 6;
 	}
 
-	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, const TextParameters& textParameters)
+	void Renderer2D::DrawRotatedQuad(const glm::vec2& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
-		DrawText(string, font, glm::vec3(position, 0.0f), textParameters);
+		DrawRotatedQuad(glm::vec3(position, 0.0f), rotation, size, texture, color);
 	}
 
-	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, const TextParameters& textParameters)
+	void Renderer2D::DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
+	{
+		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		{
+			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
+			return;
+		}
+
+		float textureIndex = GetTextureIndex(texture);
+
+		constexpr size_t quadVertexCount = 4;
+
+		glm::mat4 transform = Utils::CreateTransform(position, size, rotation);
+
+		for (size_t i = 0; i < quadVertexCount; i++)
+		{
+			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPipeline.VertexBufferPtr->Color = color;
+			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPipeline.VertexBufferPtr->TexIndex = textureIndex;
+			m_QuadPipeline.VertexBufferPtr++;
+		}
+
+		m_QuadPipeline.IndexCount += 6;
+	}
+
+	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size, const TextParameters& textParameters)
+	{
+		DrawText(string, font, glm::vec3(position, 0.0f), size, textParameters);
+	}
+
+	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size, const TextParameters& textParameters)
 	{
 		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();
 
-		glm::mat4 transform = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+		glm::mat4 transform = Utils::CreateTransform(position, glm::vec2(size, size));
 
 		m_FontAtlasTexture = fontAtlas;
 
@@ -532,7 +628,7 @@ void main() {
 		m_QuadPipeline.RenderPass = RenderPass::Create(renderPassParams);
 		m_QuadPipeline.RenderPass->Initialize();
 		m_QuadPipeline.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetClampSampler());
+		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetPointSampler());
 		for (uint32_t i = 0; i < MaxTextureSlots; i++)
 		{
 			m_QuadPipeline.RenderPass->SetTexture(1, Renderer::GetWhiteTexture(), i);

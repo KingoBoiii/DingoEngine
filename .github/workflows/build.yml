@@ -1,0 +1,33 @@
+name: Build
+
+on: workflow_dispatch
+
+env:
+  SOLUTION_FILE_PATH: 'DingoEngine.sln'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [Windows, self-hosted]
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - uses: microsoft/setup-msbuild@v1.1
+      with:
+        msbuild-architecture: x64
+
+    - name: Build
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      # Add additional options to the MSBuild command line here (like platform or verbosity level).
+      # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
+      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
