@@ -442,7 +442,7 @@ void main() {
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();
 
-		glm::mat4 transform = Utils::CreateTransform(position, glm::vec3(size, size, 1.0f));
+		glm::mat4 transform = Utils::CreateTransform(position, glm::vec2(size, size));
 
 		m_FontAtlasTexture = fontAtlas;
 
