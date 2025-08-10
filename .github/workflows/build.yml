@@ -9,12 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  setup:
     runs-on: [Windows, self-hosted]
-    strategy:
-      fail-fast: false
-      matrix:
-        build-configuration: [Debug]
 
     steps:
     - uses: actions/checkout@v4
@@ -29,7 +25,16 @@ jobs:
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: ./Generate-Windows.bat
+    
         
+  build:
+    runs-on: [Windows, self-hosted]
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release]
+
+    steps:
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       # Add additional options to the MSBuild command line here (like platform or verbosity level).
