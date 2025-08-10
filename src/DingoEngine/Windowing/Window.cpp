@@ -8,6 +8,11 @@
 namespace Dingo
 {
 
+	static void GLFWErrorCallback(int error, const char* description)
+	{
+		DE_CORE_ERROR_TAG("GLFW", "GLFW Error ({0}): {1}", error, description);
+	}
+
 	Window::Window(const WindowParams& params)
 		: m_Params(params), m_Data({ .Width = m_Params.Width, .Height = m_Params.Height })
 	{}
@@ -15,6 +20,8 @@ namespace Dingo
 	void Window::Initialize()
 	{
 		DE_CORE_ASSERT(glfwInit(), "Failed to initialize GLFW library.");
+
+		glfwSetErrorCallback(GLFWErrorCallback);
 
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, m_Params.Resizable ? GLFW_TRUE : GLFW_FALSE);

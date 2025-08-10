@@ -45,11 +45,11 @@ jobs:
     steps:
       - name: Copy Assets
         run: | 
-          robocopy .\examples\FlappyBird\assets .\build\bin\Debug-windows-x86_64\FlappyBird\assets /e /z 
+          robocopy .\examples\FlappyBird\assets .\build\bin\Release-windows-x86_64\FlappyBird\assets /e /z 
           if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: flappy-bird-dev-release
-          path: .\build\bin\Debug-windows-x86_64\FlappyBird
+          name: flappy-bird-release
+          path: .\build\bin\Release-windows-x86_64\FlappyBird
