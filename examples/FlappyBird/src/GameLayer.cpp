@@ -150,7 +150,7 @@ namespace Dingo
 
 		RenderCenteredText(renderer, "Game over", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f), { 0.8f, 0.3f, 0.2f, 1.0f });
 		RenderCenteredText(renderer, "Nice try!", DEFAULT_FONT_SIZE);
-		RenderCenteredText(renderer, std::format("You scored '{}' points", m_Score), DEFAULT_FONT_SIZE, { 0.0f, -0.5f });
+		RenderCenteredText(renderer, std::format("You scored {} points", m_Score), DEFAULT_FONT_SIZE, { 0.0f, -0.5f });
 		RenderCenteredText(renderer, "Press space to retry", DEFAULT_FONT_SIZE, { 0.0f, -2.0f });
 	}
 
