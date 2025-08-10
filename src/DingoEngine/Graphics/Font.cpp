@@ -217,8 +217,17 @@ namespace Dingo
 			glm::vec2 quadMax((float)pr, (float)pt);
 
 			result.QuadMin *= fsScale, quadMax *= fsScale;
+#if 0
 			result.QuadMin += glm::vec2(x, y);
 			result.QuadMax += glm::vec2(x, y);
+#else
+			quadMin += glm::vec2(x, y);
+			quadMax += glm::vec2(x, y);
+			//result.QuadMin.x = std::min(result.QuadMin.x, quadMin.x);
+			//result.QuadMin.y = std::min(result.QuadMin.y, quadMin.y);
+			//result.QuadMax.x = std::max(result.QuadMax.x, quadMax.x);
+			//result.QuadMax.y = std::max(result.QuadMax.y, quadMax.y);
+#endif
 
 			width += static_cast<float>(quadMax.x - quadMin.x) * size;
 
