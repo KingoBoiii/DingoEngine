@@ -16,14 +16,6 @@ jobs:
       with:
         submodules: recursive
         lfs: true
-
-    - uses: microsoft/setup-msbuild@v1.1
-      with:
-        msbuild-architecture: x64
-
-    - name: Premake
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: ./Generate-Windows.bat
     
         
   build:
@@ -34,6 +26,14 @@ jobs:
       matrix:
         build-configuration: [Debug, Release]
     steps:
+    - uses: microsoft/setup-msbuild@v1.1
+      with:
+        msbuild-architecture: x64
+
+    - name: Premake
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: ./Generate-Windows.bat
+    
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       # Add additional options to the MSBuild command line here (like platform or verbosity level).
