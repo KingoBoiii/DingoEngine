@@ -28,6 +28,7 @@ jobs:
         
   build:
     runs-on: [Windows, self-hosted]
+    needs: [setup]
     strategy:
       fail-fast: false
       matrix:
