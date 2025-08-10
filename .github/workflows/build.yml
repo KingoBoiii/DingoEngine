@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build-configuration: [Debug, Release]
+        build-configuration: [Debug]
 
     steps:
     - uses: actions/checkout@v4
@@ -47,5 +47,5 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: flappy-bird-release
-          path: .\build\bin\Release-windows-x86_64\FlappyBird
+          name: flappy-bird-dev-release
+          path: .\build\bin\Debug-windows-x86_64\FlappyBird
