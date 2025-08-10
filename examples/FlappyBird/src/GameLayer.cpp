@@ -241,7 +241,6 @@ namespace Dingo
 
 		// --- Ground collision detection ---
 		float groundTop = m_GroundY + m_GroundHeight * 0.5f;
-		float birdBottom = m_BirdY - m_BirdHeight * 0.5f;
 
 		if (birdBottom <= groundTop)
 		{
