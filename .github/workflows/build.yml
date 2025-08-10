@@ -17,7 +17,6 @@ jobs:
         submodules: recursive
         lfs: true
     
-        
   build:
     runs-on: [Windows, self-hosted]
     needs: [setup]
@@ -40,7 +39,7 @@ jobs:
       # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
-  flappy-bird:
+  examples-flappy-bird:
     runs-on: [Windows, self-hosted]
     needs: [build]
     steps:
