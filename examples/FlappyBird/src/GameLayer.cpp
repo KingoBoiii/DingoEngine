@@ -94,10 +94,6 @@ namespace Dingo
 		renderer.BeginScene(m_ProjectionViewMatrix);
 		renderer.Clear(glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
 
-		RenderBackground(renderer);
-		RenderBird(renderer);
-		RenderGroundAndPipes(renderer);
-
 		switch (m_GameState)
 		{
 			case GameState::Menu:
@@ -110,6 +106,10 @@ namespace Dingo
 				UpdateGameStateDead(deltaTime, renderer);
 				break;
 		}
+
+		RenderBackground(renderer);
+		RenderBird(renderer);
+		RenderGroundAndPipes(renderer);
 
 		renderer.EndScene();
 	}
@@ -133,48 +133,6 @@ namespace Dingo
 		UpdateBackground(deltaTime);
 		UpdateBird(deltaTime);
 		UpdateGroundAndPipes(deltaTime);
-
-		// Bird's horizontal position (assuming center of screen)
-		float birdX = 0.0f;
-
-		// Scoring: when pipe passes bird and hasn't been scored yet
-		for (auto& pipe : m_Pipes)
-		{
-			if (!pipe.scored && pipe.x + m_PipeWidth * 0.5f < birdX - m_BirdHeight * 0.5f)
-			{
-				pipe.scored = true;
-				m_Score++;
-			}
-		}
-
-		// --- Collision detection with pipes ---
-		float birdLeft = birdX - m_BirdWidth * 0.5f;
-		float birdRight = birdX + m_BirdWidth * 0.5f;
-		float birdTop = m_BirdY + m_BirdHeight * 0.5f;
-		float birdBottom = m_BirdY - m_BirdHeight * 0.5f;
-
-		for (const auto& pipe : m_Pipes)
-		{
-			float pipeLeft = pipe.x - m_PipeWidth * 0.5f;
-			float pipeRight = pipe.x + m_PipeWidth * 0.5f;
-
-			float gapTop = pipe.gapY + m_PipeGapHeight * 0.5f;
-			float gapBottom = pipe.gapY - m_PipeGapHeight * 0.5f;
-
-			// Check horizontal overlap
-			bool overlapsX = birdRight > pipeLeft && birdLeft < pipeRight;
-
-			// Check vertical overlap with top pipe
-			bool hitsTopPipe = birdTop > gapTop;
-			// Check vertical overlap with bottom pipe
-			bool hitsBottomPipe = birdBottom < gapBottom;
-
-			if (overlapsX && (hitsTopPipe || hitsBottomPipe))
-			{
-				m_GameState = GameState::Dead;
-				break;
-			}
-		}
 
 		RenderCenteredText(renderer, std::to_string(m_Score), DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
 	}
@@ -224,6 +182,8 @@ namespace Dingo
 
 	void GameLayer::UpdateBird(float deltaTime)
 	{
+		HandleBirdCollision();
+
 		// --- Bird physics update ---
 		m_BirdVelocity += m_Gravity * deltaTime; // Apply gravity
 		m_BirdY += m_BirdVelocity * deltaTime;   // Update position
@@ -232,6 +192,51 @@ namespace Dingo
 		if (Input::IsKeyPressed(Key::Space))
 		{
 			m_BirdVelocity = m_JumpVelocity;
+		}
+	}
+
+	void GameLayer::HandleBirdCollision()
+	{
+		// Bird's horizontal position (assuming center of screen)
+		float birdX = 0.0f;
+
+		// Scoring: when pipe passes bird and hasn't been scored yet
+		for (auto& pipe : m_Pipes)
+		{
+			if (!pipe.scored && pipe.x + m_PipeWidth * 0.5f < birdX - m_BirdHeight * 0.5f)
+			{
+				pipe.scored = true;
+				m_Score++;
+			}
+		}
+
+		// --- Collision detection with pipes ---
+		float birdLeft = birdX - m_BirdWidth * 0.5f;
+		float birdRight = birdX + m_BirdWidth * 0.5f;
+		float birdTop = m_BirdY + m_BirdHeight * 0.5f;
+		float birdBottom = m_BirdY - m_BirdHeight * 0.5f;
+
+		for (const auto& pipe : m_Pipes)
+		{
+			float pipeLeft = pipe.x - m_PipeWidth * 0.5f;
+			float pipeRight = pipe.x + m_PipeWidth * 0.5f;
+
+			float gapTop = pipe.gapY + m_PipeGapHeight * 0.5f;
+			float gapBottom = pipe.gapY - m_PipeGapHeight * 0.5f;
+
+			// Check horizontal overlap
+			bool overlapsX = birdRight > pipeLeft && birdLeft < pipeRight;
+
+			// Check vertical overlap with top pipe
+			bool hitsTopPipe = birdTop > gapTop;
+			// Check vertical overlap with bottom pipe
+			bool hitsBottomPipe = birdBottom < gapBottom;
+
+			if (overlapsX && (hitsTopPipe || hitsBottomPipe))
+			{
+				m_GameState = GameState::Dead;
+				break;
+			}
 		}
 
 		// --- Ground collision detection ---

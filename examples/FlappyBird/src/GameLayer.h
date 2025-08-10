@@ -46,6 +46,7 @@ namespace Dingo
 		void RenderBackground(Renderer2D& renderer);
 
 		void UpdateBird(float deltaTime);
+		void HandleBirdCollision();
 		void RenderBird(Renderer2D& renderer);
 
 		void UpdateGroundAndPipes(float deltaTime);
