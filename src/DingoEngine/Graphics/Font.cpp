@@ -223,6 +223,7 @@ namespace Dingo
 #else
 			quadMin += glm::vec2(x, y);
 			quadMax += glm::vec2(x, y);
+			result.QuadMax = quadMax + glm::vec2(x, y);
 			//result.QuadMin.x = std::min(result.QuadMin.x, quadMin.x);
 			//result.QuadMin.y = std::min(result.QuadMin.y, quadMin.y);
 			//result.QuadMax.x = std::max(result.QuadMax.x, quadMax.x);
