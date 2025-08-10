@@ -35,3 +35,13 @@ jobs:
       # Add additional options to the MSBuild command line here (like platform or verbosity level).
       # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+
+  flappy-bird:
+    runs-on: [Windows, self-hosted]
+    needs: [build]
+
+    steps:
+      name: Copy Assets
+      run: robocopy .\examples\FlappyBird\assets .\build\bin\Release-windows-x86_64\FlappyBird\assets /e /z 
+
+      
