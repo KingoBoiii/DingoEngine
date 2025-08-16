@@ -9,9 +9,9 @@
 #define DE_DEBUG_BREAK __debugbreak()
 #endif
 
-//#ifdef DE_DEBUG
+#ifdef DE_DEBUG
 #define DE_ENABLE_ASSERTS
-//#endif
+#endif
 
 #ifdef DE_ENABLE_ASSERTS
 // Alteratively we could use the same "default" message for both "WITH_MSG" and "NO_MSG" and
