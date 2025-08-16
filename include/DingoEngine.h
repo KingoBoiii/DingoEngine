@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DingoEngine/Log.h"
+#include "DingoEngine/Memory.h"
 
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Layer.h"

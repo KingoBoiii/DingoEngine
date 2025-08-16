@@ -19,6 +19,7 @@
 #include <string_view>
 #include <functional>
 
+#include "DingoEngine/Memory.h"
 #include "DingoEngine/Version.h"
 #include "DingoEngine/Assertion.h"
 
