@@ -1,4 +1,5 @@
 #pragma once
+#include "DingoEngine/Memory.h"
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Graphics/GraphicsParams.h"
@@ -69,7 +70,7 @@ namespace Dingo
 
 	private:
 		ApplicationParams m_Params;
-		Window* m_Window = nullptr;
+		Unique<Window> m_Window;
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
 		AppRenderer* m_Renderer = nullptr;

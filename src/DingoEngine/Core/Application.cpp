@@ -31,7 +31,7 @@ namespace Dingo
 
 		CacheManager::Initialize();
 
-		m_Window = new Window(m_Params.Window);
+		m_Window = CreateUnique<Window>(m_Params.Window);
 		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 		m_Window->Initialize();
 
@@ -93,8 +93,6 @@ namespace Dingo
 		if (m_Window)
 		{
 			m_Window->Shutdown();
-			delete m_Window;
-			m_Window = nullptr;
 		}
 
 		if (m_SwapChain)
@@ -107,8 +105,6 @@ namespace Dingo
 		if (m_GraphicsContext)
 		{
 			m_GraphicsContext->Shutdown();
-			//delete m_GraphicsContext;
-			m_GraphicsContext = nullptr;
 		}
 
 		CacheManager::Shutdown();
