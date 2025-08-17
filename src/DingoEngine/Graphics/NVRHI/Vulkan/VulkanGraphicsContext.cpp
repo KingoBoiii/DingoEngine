@@ -157,10 +157,10 @@ namespace Dingo
 			return;
 		}
 
-		std::cout << "Enabled Vulkan instance extensions:" << std::endl;
+		DE_CORE_TRACE("Enabled Vulkan instance extensions ({}):", enabledExtensions.instance.size());
 		for (const auto& ext : enabledExtensions.instance)
 		{
-			std::cout << "    " << ext.c_str() << std::endl;;
+			DE_CORE_TRACE("    {}", ext.c_str());
 		}
 
 		std::unordered_set<std::string> requiredLayers = enabledExtensions.layers;
@@ -189,10 +189,10 @@ namespace Dingo
 			return;
 		}
 
-		std::cout << "Enabled Vulkan layers:" << std::endl;
+		DE_CORE_TRACE("Enabled Vulkan Layer(s) ({}):", enabledExtensions.layers.size());
 		for (const auto& layer : enabledExtensions.layers)
 		{
-			std::cout << "    " << layer.c_str() << std::endl;
+			DE_CORE_TRACE("    {}", layer.c_str());
 		}
 
 		auto instanceExtVec = Utils::stringSetToVector(enabledExtensions.instance);

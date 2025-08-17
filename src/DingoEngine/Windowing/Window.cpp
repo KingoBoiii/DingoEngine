@@ -19,7 +19,7 @@ namespace Dingo
 
 	void Window::Initialize()
 	{
-		DE_CORE_ASSERT(glfwInit(), "Failed to initialize GLFW library.");
+		DE_CORE_VERIFY(glfwInit(), "Failed to initialize GLFW library.");
 
 		glfwSetErrorCallback(GLFWErrorCallback);
 
@@ -27,7 +27,7 @@ namespace Dingo
 		glfwWindowHint(GLFW_RESIZABLE, m_Params.Resizable ? GLFW_TRUE : GLFW_FALSE);
 
 		m_WindowHandle = glfwCreateWindow(m_Data.Width, m_Data.Height, m_Params.Title.c_str(), nullptr, nullptr);
-		DE_CORE_ASSERT(m_WindowHandle, "Failed to create GLFW window.");
+		DE_CORE_VERIFY(m_WindowHandle, "Failed to create GLFW window.");
 		if (!m_WindowHandle)
 		{
 			glfwTerminate();
