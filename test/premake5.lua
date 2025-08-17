@@ -41,4 +41,5 @@ project "Dingo-TestFramework"
 		kind "WindowedApp"
 		optimize "On"
 		symbols "Off"
+		vectorextensions "AVX2"
 		defines { "DE_DISTRIBUTION" }
