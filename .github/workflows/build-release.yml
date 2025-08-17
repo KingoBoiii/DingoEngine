@@ -1,0 +1,71 @@
+name: Build release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+env:
+  SOLUTION_FILE_PATH: 'DingoEngine.sln'
+
+jobs:
+  setup:
+    runs-on: [Windows, self-hosted]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+  build:
+    runs-on: [Windows, self-hosted]
+    needs: [setup]
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
+    steps:
+    - uses: microsoft/setup-msbuild@v1.1
+      with:
+        msbuild-architecture: x64
+
+    - name: Premake
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: ./Generate-Windows.bat
+    
+    - name: Build
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+
+  dingo:
+    runs-on: [Windows, self-hosted]
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
+
+    steps:
+    - name: Copy include files
+      run: | 
+        robocopy .\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\include /e /z 
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Copy glm files (third-party)
+      run: | 
+        robocopy .\vendor\glm .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\glm /e /z 
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Copy imgui files (third-party)
+      run: | 
+        robocopy .\vendor\imgui .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\imgui imgui.h
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-${{matrix.build-configuration}}
+        path: .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine
