@@ -116,12 +116,13 @@ namespace Dingo
 
 	void GameLayer::UpdateGameStateMenu(float deltaTime, Renderer2D& renderer)
 	{
-		if(Input::IsKeyPressed(Key::Space))
+		if(Input::IsKeyDown(Key::Space))
 		{
 			m_GameState = GameState::Game;
 			m_Score = 0; // Reset score when starting the game
 			m_Pipes.clear(); // Clear any existing pipes
 			m_BackgroundOffset = 0.0f; // Reset background offset
+			m_BirdVelocity = m_JumpVelocity;
 		}
 
 		RenderCenteredText(renderer, "Flappy Bird", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f));
@@ -139,7 +140,7 @@ namespace Dingo
 
 	void GameLayer::UpdateGameStateDead(float deltaTime, Renderer2D& renderer)
 	{
-		if (Input::IsKeyPressed(Key::Space))
+		if (Input::IsKeyDown(Key::Space))
 		{
 			m_GameState = GameState::Game;
 			m_Score = 0; // Reset score when starting the game
@@ -189,7 +190,7 @@ namespace Dingo
 		m_BirdY += m_BirdVelocity * deltaTime;   // Update position
 
 		// Handle jump input (spacebar)
-		if (Input::IsKeyPressed(Key::Space))
+		if (Input::IsKeyDown(Key::Space))
 		{
 			m_BirdVelocity = m_JumpVelocity;
 		}

@@ -71,7 +71,7 @@ namespace Dingo
 		float m_BirdWidth = 0.0f;
 		float m_BirdHeight = 0.0f;
 		const float m_Gravity = -2.5f;
-		const float m_JumpVelocity = 1.5f;
+		const float m_JumpVelocity = 2.0f;
 
 		float m_BackgroundOffset = 0.0f;
 		float m_BackgroundScrollSpeed = BACKGROUND_SCROLLING_SPEED; // Adjust for desired speed
