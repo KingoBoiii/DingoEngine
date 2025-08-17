@@ -189,7 +189,7 @@ namespace Dingo
 			return;
 		}
 
-		DE_CORE_TRACE("Enabled Vulkan Layer ({}):", enabledExtensions.layers.size());
+		DE_CORE_TRACE("Enabled Vulkan Layer(s) ({}):", enabledExtensions.layers.size());
 		for (const auto& layer : enabledExtensions.layers)
 		{
 			DE_CORE_TRACE("    {}", layer.c_str());
