@@ -1,7 +1,7 @@
 include "./vendor/premake/solution_items.lua"
 
 workspace "DingoEngine"
-    configurations { "Debug", "Debug-ASan", "Release" }
+    configurations { "Debug", "Debug-ASan", "Release", "Distribution" }
     startproject "Dingo-TestFramework"
     language "C++"
 	cppdialect "C++20"
@@ -164,6 +164,17 @@ group "Engine"
 				"%{Library.SPIRV_Cross_Release}",
 				"%{Library.SPIRV_Cross_GLSL_Release}"
 			}
+
+		filter "configurations:Distribution"
+			optimize "On"
+			defines { "DE_DISTRIBUTION" }
+
+			links {
+				"%{Library.ShaderC_Release}",
+				"%{Library.SPIRV_Cross_Release}",
+				"%{Library.SPIRV_Cross_GLSL_Release}"
+			}
+
 group ""
 
 include "test"
