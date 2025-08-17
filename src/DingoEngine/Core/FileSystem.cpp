@@ -10,7 +10,11 @@ namespace Dingo
 	std::string FileSystem::ReadTextFile(const std::filesystem::path& path)
 	{
 		std::ifstream file(path, std::ios::ate | std::ios::binary);
-		DE_CORE_ASSERT(file.is_open(), "Failed to open file: " + path.string());
+		if (!file.is_open())
+		{
+			DE_CORE_ERROR("Failed to open file: {}", path.string());
+			return "";
+		}
 
 		size_t fileSize = file.tellg();
 		std::string buffer(fileSize, '\0');
