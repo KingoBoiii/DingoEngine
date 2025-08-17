@@ -9,6 +9,7 @@
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
 #include "Tests/Renderer2D/TextTest.h"
+#include "Tests/Renderer2D/CircleTest.h"
 
 #include <imgui.h>
 
@@ -36,6 +37,7 @@ namespace Dingo
 		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Text Test (R2D)", [&]() { return new TextTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Circle Test (R2D)", [&]() { return new CircleTest(m_Renderer2D); } });
 
 		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
