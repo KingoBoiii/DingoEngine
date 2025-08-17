@@ -269,12 +269,14 @@ void main() {
 		}
 
 		CreateQuadPipeline();
+		CreateCircleRenderPass();
 		CreateTextQuadRenderPass();
 	}
 
 	void Renderer2D::Shutdown()
 	{
 		DestroyTextQuadRenderPass();
+		DestroyCircleRenderPass();
 		DestroyQuadPipeline();
 
 		if (m_QuadIndexBuffer)
@@ -304,6 +306,9 @@ void main() {
 
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
+
+		m_CircleRenderPass.IndexCount = 0;
+		m_CircleRenderPass.VertexBufferPtr = m_CircleRenderPass.VertexBufferBase;
 
 		m_TextQuadRenderPass.IndexCount = 0;
 		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
@@ -344,6 +349,16 @@ void main() {
 
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
 			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
+			m_Renderer->EndRenderPass();
+		}
+
+		if (m_CircleRenderPass.IndexCount)
+		{
+			uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
+			m_CircleRenderPass.VertexBuffer->Upload(m_CircleRenderPass.VertexBufferBase, dataSize);
+
+			m_Renderer->BeginRenderPass(m_CircleRenderPass.RenderPass);
+			m_Renderer->DrawIndexed(m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
 
@@ -457,6 +472,25 @@ void main() {
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+	}
+
+	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
+	{
+		// TODO: implement for circles
+		// if (s_Data.QuadIndexCount >= Renderer2DData::MaxIndices)
+		// 	NextBatch();
+
+		for (size_t i = 0; i < 4; i++)
+		{
+			m_CircleRenderPass.VertexBufferPtr->WorldPosition = transform * m_QuadVertexPositions[i];
+			m_CircleRenderPass.VertexBufferPtr->LocalPosition = m_QuadVertexPositions[i] * 2.0f;
+			m_CircleRenderPass.VertexBufferPtr->Color = color;
+			m_CircleRenderPass.VertexBufferPtr->Thickness = thickness;
+			m_CircleRenderPass.VertexBufferPtr->Fade = fade;
+			m_CircleRenderPass.VertexBufferPtr++;
+		}
+
+		m_CircleRenderPass.IndexCount += 6;
 	}
 
 	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size, const TextParameters& textParameters)
@@ -628,6 +662,10 @@ void main() {
 		delete[] quadIndices;
 	}
 
+	/**************************************************
+	***		QUAD									***
+	**************************************************/
+
 	void Renderer2D::CreateQuadPipeline()
 	{
 		m_QuadPipeline = QuadPipeline();
@@ -696,6 +734,79 @@ void main() {
 			m_QuadPipeline.RenderPass = nullptr;
 		}
 	}
+
+	/**************************************************
+	***		CIRCLE									***
+	**************************************************/
+
+	void Renderer2D::CreateCircleRenderPass()
+	{
+		m_CircleRenderPass = CircleRenderPass();
+
+		m_CircleRenderPass.Shader = Shader::CreateFromSource("Renderer2DCircleShader", Shaders::Renderer2DCircleShader);
+
+		VertexLayout vertexLayout = VertexLayout()
+			.SetStride(sizeof(CircleVertex))
+			.AddAttribute("a_WorldPosition", Format::RGB32_FLOAT, offsetof(CircleVertex, WorldPosition))
+			.AddAttribute("a_LocalPosition", Format::RGB32_FLOAT, offsetof(CircleVertex, LocalPosition))
+			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(CircleVertex, Color))
+			.AddAttribute("a_Thickness", Format::R32_FLOAT, offsetof(CircleVertex, Thickness))
+			.AddAttribute("a_Fade", Format::R32_FLOAT, offsetof(CircleVertex, Fade));
+
+		m_CircleRenderPass.Pipeline = Pipeline::Create(PipelineParams()
+			.SetDebugName("Renderer2DCirclePipeline")
+			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetShader(m_CircleRenderPass.Shader)
+			.SetVertexLayout(vertexLayout)
+			.SetCullMode(CullMode::BackAndFront));
+
+		m_CircleRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DCircleVertexBuffer");
+
+		RenderPassParams renderPassParams = RenderPassParams()
+			.SetPipeline(m_CircleRenderPass.Pipeline);
+
+		m_CircleRenderPass.RenderPass = RenderPass::Create(renderPassParams);
+		m_CircleRenderPass.RenderPass->Initialize();
+		m_CircleRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		m_CircleRenderPass.RenderPass->Bake();
+
+		m_CircleRenderPass.VertexBufferBase = new CircleVertex[m_Params.Capabilities.GetQuadVertexCount()];
+	}
+
+	void Renderer2D::DestroyCircleRenderPass()
+	{
+		if (m_CircleRenderPass.VertexBuffer)
+		{
+			m_CircleRenderPass.VertexBuffer->Destroy();
+			delete[] m_CircleRenderPass.VertexBufferBase;
+			m_CircleRenderPass.VertexBuffer = nullptr;
+			m_CircleRenderPass.VertexBufferBase = nullptr;
+			m_CircleRenderPass.VertexBufferPtr = nullptr;
+		}
+		m_CircleRenderPass.IndexCount = 0;
+
+		if (m_CircleRenderPass.Pipeline)
+		{
+			m_CircleRenderPass.Pipeline->Destroy();
+			m_CircleRenderPass.Pipeline = nullptr;
+		}
+
+		if (m_CircleRenderPass.Shader)
+		{
+			m_CircleRenderPass.Shader->Destroy();
+			m_CircleRenderPass.Shader = nullptr;
+		}
+
+		if (m_CircleRenderPass.RenderPass)
+		{
+			m_CircleRenderPass.RenderPass->Destroy();
+			m_CircleRenderPass.RenderPass = nullptr;
+		}
+	}
+
+	/**************************************************
+	***		TEXT									***
+	**************************************************/
 
 	void Renderer2D::CreateTextQuadRenderPass()
 	{
