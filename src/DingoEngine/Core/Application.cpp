@@ -32,8 +32,8 @@ namespace Dingo
 		CacheManager::Initialize();
 
 		m_Window = new Window(m_Params.Window);
-		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 		m_Window->Initialize();
+		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 
 		m_GraphicsContext = GraphicsContext::Create(m_Params.Graphics);
 		m_GraphicsContext->Initialize();
