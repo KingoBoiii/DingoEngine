@@ -32,7 +32,6 @@ namespace Dingo
 		CacheManager::Initialize();
 
 		m_Window = new Window(m_Params.Window);
-		DE_CORE_VERIFY(!m_Window, "Failed to create Window.");
 		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 		m_Window->Initialize();
 
