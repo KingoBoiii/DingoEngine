@@ -11,12 +11,18 @@ namespace Dingo
 	{
 		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
 		s_PreviousKeyStates = s_CurrentKeyStates;
+		s_PreviousButtonStates = s_CurrentButtonStates;
 
-		// You may want to iterate over all possible KeyCodes, or just the ones you care about.
 		for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key)
 		{
 			int32_t state = glfwGetKey(window, key);
 			s_CurrentKeyStates[(KeyCode)key] = (state == GLFW_PRESS || state == GLFW_REPEAT);
+		}
+
+		for (int button = GLFW_MOUSE_BUTTON_1; button <= GLFW_MOUSE_BUTTON_LAST; ++button)
+		{
+			int32_t state = glfwGetMouseButton(window, button);
+			s_CurrentButtonStates[(MouseButton)button] = (state == GLFW_PRESS);
 		}
 	}
 	
@@ -32,6 +38,20 @@ namespace Dingo
 		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
 		int32_t state = glfwGetKey(window, static_cast<int32_t>(keycode));
 		return state == GLFW_PRESS || state == GLFW_REPEAT;
+	}
+
+	bool Input::IsMouseButtonDown(MouseButton button)
+	{
+		bool current = IsMouseButtonPressed(button);
+		bool previous = s_PreviousButtonStates[button];
+		return current && !previous;
+	}
+
+	bool Input::IsMouseButtonPressed(MouseButton button)
+	{
+		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
+		int32_t state = glfwGetMouseButton(window, static_cast<int32_t>(button));
+		return state == GLFW_PRESS;
 	}
 
 }
