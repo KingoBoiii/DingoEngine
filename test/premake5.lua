@@ -26,6 +26,13 @@ project "Dingo-TestFramework"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", }
 
+		-- Visual Studio build metadata
+		files {
+			"Hazel-Runtime.aps",
+			"Hazel-Runtime.rc",
+			"resource.h"
+		}
+
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
