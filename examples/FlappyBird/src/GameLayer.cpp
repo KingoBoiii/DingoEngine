@@ -147,6 +147,7 @@ namespace Dingo
 			m_Pipes.clear(); // Clear any existing pipes
 			m_BackgroundOffset = 0.0f; // Reset background offset
 			m_BirdY = 0;
+			m_BirdVelocity = m_JumpVelocity;
 		}
 
 		RenderCenteredText(renderer, "Game over", DEFAULT_TITLE_FONT_SIZE, glm::vec2(0.0f, m_Height * 0.5f - 0.8f), { 0.8f, 0.3f, 0.2f, 1.0f });
