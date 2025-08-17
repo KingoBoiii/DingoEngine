@@ -1,5 +1,5 @@
 #pragma once
-#include <cstdint>
+#include <iostream>
 
 namespace Dingo
 {
@@ -16,6 +16,12 @@ namespace Dingo
 		Right = Button1,
 		Middle = Button2
 	} Button;
+
+	inline std::ostream& operator<<(std::ostream& os, MouseButton button)
+	{
+		os << static_cast<int32_t>(button);
+		return os;
+	}
 
 }
 
