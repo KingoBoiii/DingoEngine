@@ -78,7 +78,7 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyPressed(Key::Escape))
+		if (Input::IsKeyDown(Key::Escape))
 		{
 			Application::Get().Close();
 		}
