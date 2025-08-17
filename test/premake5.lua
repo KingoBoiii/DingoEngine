@@ -26,6 +26,13 @@ project "Dingo-TestFramework"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", }
 
+		-- Visual Studio build metadata
+		files {
+			"Dingo-TestFramework.aps",
+			"Dingo-TestFramework.rc",
+			"resource.h"
+		}
+
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
@@ -41,4 +48,5 @@ project "Dingo-TestFramework"
 		kind "WindowedApp"
 		optimize "On"
 		symbols "Off"
+		vectorextensions "AVX2"
 		defines { "DE_DISTRIBUTION" }

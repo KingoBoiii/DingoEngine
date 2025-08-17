@@ -1,0 +1,62 @@
+name: Build master branch
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+env:
+  SOLUTION_FILE_PATH: 'DingoEngine.sln'
+
+jobs:
+  setup:
+    runs-on: [Windows, self-hosted]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+  build:
+    runs-on: [Windows, self-hosted]
+    needs: [setup]
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
+    steps:
+    - uses: microsoft/setup-msbuild@v1.1
+      with:
+        msbuild-architecture: x64
+
+    - name: Premake
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: ./Generate-Windows.bat
+    
+    - name: Build
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+
+  dingo-testframework:
+    runs-on: [Windows, self-hosted]
+    needs: [build]
+    steps:
+      - name: Copy Assets
+        run: | 
+          robocopy .\test\assets .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework\assets /e /z 
+          if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+      - name: Copy IMGUI file
+        run: | 
+          robocopy .\test .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework imgui.ini
+          if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dingo-testframework-distribution
+          path: .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework

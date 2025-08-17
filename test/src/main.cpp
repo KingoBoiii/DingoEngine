@@ -22,7 +22,6 @@ namespace Dingo
 
 }
 
-
 Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 {
 	ApplicationParams params = ApplicationParams{

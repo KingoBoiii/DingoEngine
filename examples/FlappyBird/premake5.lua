@@ -26,6 +26,13 @@ project "FlappyBird"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", }
 
+		-- Visual Studio build metadata
+		files {
+			"Dingo-FlappyBird.aps",
+			"Dingo-FlappyBird.rc",
+			"resource.h"
+		}
+
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
