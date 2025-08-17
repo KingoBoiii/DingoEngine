@@ -71,6 +71,8 @@ namespace Dingo
 		void DrawRotatedQuad(const glm::vec2& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 		void DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 
+		void DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness = 1.0f, float fade = 0.005f);
+
 		struct TextParameters
 		{
 			glm::vec4 Color{ 1.0f };
@@ -102,6 +104,9 @@ namespace Dingo
 		void CreateQuadIndexBuffer();
 		void CreateQuadPipeline();
 		void DestroyQuadPipeline();
+
+		void CreateCircleRenderPass();
+		void DestroyCircleRenderPass();
 		
 		void CreateTextQuadRenderPass();
 		void DestroyTextQuadRenderPass();
@@ -151,6 +156,30 @@ namespace Dingo
 			RenderPass* RenderPass = nullptr;
 			GraphicsBuffer* VertexBuffer = nullptr;
 		} m_QuadPipeline;
+
+		/**************************************************
+		***		CIRCLE									***
+		**************************************************/
+		struct CircleVertex
+		{
+			glm::vec3 WorldPosition;
+			glm::vec3 LocalPosition;
+			glm::vec4 Color;
+			float Thickness;
+			float Fade;
+		};
+
+		struct CircleRenderPass
+		{
+			uint32_t IndexCount = 0;
+			CircleVertex* VertexBufferBase = nullptr;
+			CircleVertex* VertexBufferPtr = nullptr;
+
+			Shader* Shader = nullptr;
+			Pipeline* Pipeline = nullptr;
+			RenderPass* RenderPass = nullptr;
+			GraphicsBuffer* VertexBuffer = nullptr;
+		} m_CircleRenderPass;
 
 		/**************************************************
 		***		TEXT									***

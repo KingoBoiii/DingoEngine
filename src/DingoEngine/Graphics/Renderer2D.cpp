@@ -54,45 +54,6 @@ layout (set = 0, binding = 2) uniform sampler u_Sampler;
 
 void main()
 {
-	//vec4 texColor = v_Color;
-	//
-	//switch(int(v_TexIndex))
-	//{
-	//	case  0: texColor *= texture(sampler2D(u_Textures[ 0], u_Sampler), v_TexCoord); break;
-	//	case  1: texColor *= texture(sampler2D(u_Textures[ 1], u_Sampler), v_TexCoord); break;
-	//	case  2: texColor *= texture(sampler2D(u_Textures[ 2], u_Sampler), v_TexCoord); break;
-	//	case  3: texColor *= texture(sampler2D(u_Textures[ 3], u_Sampler), v_TexCoord); break;
-	//	case  4: texColor *= texture(sampler2D(u_Textures[ 4], u_Sampler), v_TexCoord); break;
-	//	case  5: texColor *= texture(sampler2D(u_Textures[ 5], u_Sampler), v_TexCoord); break;
-	//	case  6: texColor *= texture(sampler2D(u_Textures[ 6], u_Sampler), v_TexCoord); break;
-	//	case  7: texColor *= texture(sampler2D(u_Textures[ 7], u_Sampler), v_TexCoord); break;
-	//	case  8: texColor *= texture(sampler2D(u_Textures[ 8], u_Sampler), v_TexCoord); break;
-	//	case  9: texColor *= texture(sampler2D(u_Textures[ 9], u_Sampler), v_TexCoord); break;
-	//	case 10: texColor *= texture(sampler2D(u_Textures[10], u_Sampler), v_TexCoord); break;
-	//	case 11: texColor *= texture(sampler2D(u_Textures[11], u_Sampler), v_TexCoord); break;
-	//	case 12: texColor *= texture(sampler2D(u_Textures[12], u_Sampler), v_TexCoord); break;
-	//	case 13: texColor *= texture(sampler2D(u_Textures[13], u_Sampler), v_TexCoord); break;
-	//	case 14: texColor *= texture(sampler2D(u_Textures[14], u_Sampler), v_TexCoord); break;
-	//	case 15: texColor *= texture(sampler2D(u_Textures[15], u_Sampler), v_TexCoord); break;
-	//	case 16: texColor *= texture(sampler2D(u_Textures[16], u_Sampler), v_TexCoord); break;
-	//	case 17: texColor *= texture(sampler2D(u_Textures[17], u_Sampler), v_TexCoord); break;
-	//	case 18: texColor *= texture(sampler2D(u_Textures[18], u_Sampler), v_TexCoord); break;
-	//	case 19: texColor *= texture(sampler2D(u_Textures[19], u_Sampler), v_TexCoord); break;
-	//	case 20: texColor *= texture(sampler2D(u_Textures[20], u_Sampler), v_TexCoord); break;
-	//	case 21: texColor *= texture(sampler2D(u_Textures[21], u_Sampler), v_TexCoord); break;
-	//	case 22: texColor *= texture(sampler2D(u_Textures[22], u_Sampler), v_TexCoord); break;
-	//	case 23: texColor *= texture(sampler2D(u_Textures[23], u_Sampler), v_TexCoord); break;
-	//	case 24: texColor *= texture(sampler2D(u_Textures[24], u_Sampler), v_TexCoord); break;
-	//	case 25: texColor *= texture(sampler2D(u_Textures[25], u_Sampler), v_TexCoord); break;
-	//	case 26: texColor *= texture(sampler2D(u_Textures[26], u_Sampler), v_TexCoord); break;
-	//	case 27: texColor *= texture(sampler2D(u_Textures[27], u_Sampler), v_TexCoord); break;
-	//	case 28: texColor *= texture(sampler2D(u_Textures[28], u_Sampler), v_TexCoord); break;
-	//	case 29: texColor *= texture(sampler2D(u_Textures[29], u_Sampler), v_TexCoord); break;
-	//	case 30: texColor *= texture(sampler2D(u_Textures[30], u_Sampler), v_TexCoord); break;
-	//	case 31: texColor *= texture(sampler2D(u_Textures[31], u_Sampler), v_TexCoord); break;
-	//}
-	//o_Color = texColor;
-
 	o_Color = texture(sampler2D(u_Textures[nonuniformEXT(int(v_TexIndex))], u_Sampler), v_TexCoord) * v_Color;
 
 	if (o_Color.a == 0.0)
@@ -101,6 +62,73 @@ void main()
 	}
 }
 		)";
+
+		constexpr const char* Renderer2DCircleShader = R"(
+#type vertex
+#version 450 core
+
+layout(location = 0) in vec3 a_WorldPosition;
+layout(location = 1) in vec3 a_LocalPosition;
+layout(location = 2) in vec4 a_Color;
+layout(location = 3) in float a_Thickness;
+layout(location = 4) in float a_Fade;
+
+layout (std140, binding = 0) uniform Camera {
+	mat4 ProjectionView;
+};
+
+struct VertexOutput
+{
+	vec3 LocalPosition;
+	vec4 Color;
+	float Thickness;
+	float Fade;
+};
+
+layout (location = 0) out VertexOutput Output;
+
+void main()
+{
+	Output.LocalPosition = a_LocalPosition;
+	Output.Color = a_Color;
+	Output.Thickness = a_Thickness;
+	Output.Fade = a_Fade;
+
+	gl_Position = ProjectionView * vec4(a_WorldPosition, 1.0);
+}
+
+#type fragment
+#version 450 core
+
+layout(location = 0) out vec4 o_Color;
+
+struct VertexOutput
+{
+	vec3 LocalPosition;
+	vec4 Color;
+	float Thickness;
+	float Fade;
+};
+
+layout (location = 0) in VertexOutput Input;
+
+void main()
+{
+    // Calculate distance and fill circle with white
+    float distance = 1.0 - length(Input.LocalPosition);
+    float circle = smoothstep(0.0, Input.Fade, distance);
+    circle *= smoothstep(Input.Thickness + Input.Fade, Input.Thickness, distance);
+
+	if (circle == 0.0) 
+	{
+		discard;
+	}
+
+    // Set output color
+    o_Color = Input.Color;
+	o_Color.a *= circle;
+}
+)";
 
 		constexpr const char* Renderer2DTextShader = R"(
 #type vertex
@@ -241,12 +269,14 @@ void main() {
 		}
 
 		CreateQuadPipeline();
+		CreateCircleRenderPass();
 		CreateTextQuadRenderPass();
 	}
 
 	void Renderer2D::Shutdown()
 	{
 		DestroyTextQuadRenderPass();
+		DestroyCircleRenderPass();
 		DestroyQuadPipeline();
 
 		if (m_QuadIndexBuffer)
@@ -276,6 +306,9 @@ void main() {
 
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
+
+		m_CircleRenderPass.IndexCount = 0;
+		m_CircleRenderPass.VertexBufferPtr = m_CircleRenderPass.VertexBufferBase;
 
 		m_TextQuadRenderPass.IndexCount = 0;
 		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
@@ -316,6 +349,16 @@ void main() {
 
 			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
 			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
+			m_Renderer->EndRenderPass();
+		}
+
+		if (m_CircleRenderPass.IndexCount)
+		{
+			uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
+			m_CircleRenderPass.VertexBuffer->Upload(m_CircleRenderPass.VertexBufferBase, dataSize);
+
+			m_Renderer->BeginRenderPass(m_CircleRenderPass.RenderPass);
+			m_Renderer->DrawIndexed(m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
 			m_Renderer->EndRenderPass();
 		}
 
@@ -429,6 +472,25 @@ void main() {
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+	}
+
+	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
+	{
+		// TODO: implement for circles
+		// if (s_Data.QuadIndexCount >= Renderer2DData::MaxIndices)
+		// 	NextBatch();
+
+		for (size_t i = 0; i < 4; i++)
+		{
+			m_CircleRenderPass.VertexBufferPtr->WorldPosition = transform * m_QuadVertexPositions[i];
+			m_CircleRenderPass.VertexBufferPtr->LocalPosition = m_QuadVertexPositions[i] * 2.0f;
+			m_CircleRenderPass.VertexBufferPtr->Color = color;
+			m_CircleRenderPass.VertexBufferPtr->Thickness = thickness;
+			m_CircleRenderPass.VertexBufferPtr->Fade = fade;
+			m_CircleRenderPass.VertexBufferPtr++;
+		}
+
+		m_CircleRenderPass.IndexCount += 6;
 	}
 
 	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size, const TextParameters& textParameters)
@@ -600,6 +662,10 @@ void main() {
 		delete[] quadIndices;
 	}
 
+	/**************************************************
+	***		QUAD									***
+	**************************************************/
+
 	void Renderer2D::CreateQuadPipeline()
 	{
 		m_QuadPipeline = QuadPipeline();
@@ -668,6 +734,79 @@ void main() {
 			m_QuadPipeline.RenderPass = nullptr;
 		}
 	}
+
+	/**************************************************
+	***		CIRCLE									***
+	**************************************************/
+
+	void Renderer2D::CreateCircleRenderPass()
+	{
+		m_CircleRenderPass = CircleRenderPass();
+
+		m_CircleRenderPass.Shader = Shader::CreateFromSource("Renderer2DCircleShader", Shaders::Renderer2DCircleShader);
+
+		VertexLayout vertexLayout = VertexLayout()
+			.SetStride(sizeof(CircleVertex))
+			.AddAttribute("a_WorldPosition", Format::RGB32_FLOAT, offsetof(CircleVertex, WorldPosition))
+			.AddAttribute("a_LocalPosition", Format::RGB32_FLOAT, offsetof(CircleVertex, LocalPosition))
+			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(CircleVertex, Color))
+			.AddAttribute("a_Thickness", Format::R32_FLOAT, offsetof(CircleVertex, Thickness))
+			.AddAttribute("a_Fade", Format::R32_FLOAT, offsetof(CircleVertex, Fade));
+
+		m_CircleRenderPass.Pipeline = Pipeline::Create(PipelineParams()
+			.SetDebugName("Renderer2DCirclePipeline")
+			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetShader(m_CircleRenderPass.Shader)
+			.SetVertexLayout(vertexLayout)
+			.SetCullMode(CullMode::BackAndFront));
+
+		m_CircleRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DCircleVertexBuffer");
+
+		RenderPassParams renderPassParams = RenderPassParams()
+			.SetPipeline(m_CircleRenderPass.Pipeline);
+
+		m_CircleRenderPass.RenderPass = RenderPass::Create(renderPassParams);
+		m_CircleRenderPass.RenderPass->Initialize();
+		m_CircleRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		m_CircleRenderPass.RenderPass->Bake();
+
+		m_CircleRenderPass.VertexBufferBase = new CircleVertex[m_Params.Capabilities.GetQuadVertexCount()];
+	}
+
+	void Renderer2D::DestroyCircleRenderPass()
+	{
+		if (m_CircleRenderPass.VertexBuffer)
+		{
+			m_CircleRenderPass.VertexBuffer->Destroy();
+			delete[] m_CircleRenderPass.VertexBufferBase;
+			m_CircleRenderPass.VertexBuffer = nullptr;
+			m_CircleRenderPass.VertexBufferBase = nullptr;
+			m_CircleRenderPass.VertexBufferPtr = nullptr;
+		}
+		m_CircleRenderPass.IndexCount = 0;
+
+		if (m_CircleRenderPass.Pipeline)
+		{
+			m_CircleRenderPass.Pipeline->Destroy();
+			m_CircleRenderPass.Pipeline = nullptr;
+		}
+
+		if (m_CircleRenderPass.Shader)
+		{
+			m_CircleRenderPass.Shader->Destroy();
+			m_CircleRenderPass.Shader = nullptr;
+		}
+
+		if (m_CircleRenderPass.RenderPass)
+		{
+			m_CircleRenderPass.RenderPass->Destroy();
+			m_CircleRenderPass.RenderPass = nullptr;
+		}
+	}
+
+	/**************************************************
+	***		TEXT									***
+	**************************************************/
 
 	void Renderer2D::CreateTextQuadRenderPass()
 	{
