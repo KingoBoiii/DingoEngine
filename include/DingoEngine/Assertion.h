@@ -13,20 +13,26 @@
 #define DE_ENABLE_ASSERTS
 #endif
 
+#define DE_ENABLE_VERIFY
+
 #ifdef DE_ENABLE_ASSERTS
-// Alteratively we could use the same "default" message for both "WITH_MSG" and "NO_MSG" and
-// provide support for custom formatting by concatenating the formatting string instead of having the format inside the default message
-#define DE_INTERNAL_ASSERT_IMPL(type, check, msg, ...) { if(!(check)) { DE##type##ERROR(msg, __VA_ARGS__); DE_DEBUG_BREAK; } }
-#define DE_INTERNAL_ASSERT_WITH_MSG(type, check, ...) DE_INTERNAL_ASSERT_IMPL(type, check, "Assertion failed: {0}", __VA_ARGS__)
-#define DE_INTERNAL_ASSERT_NO_MSG(type, check) DE_INTERNAL_ASSERT_IMPL(type, check, "Assertion '{0}' failed at {1}:{2}", DE_STRINGIFY_MACRO(check), std::filesystem::path(__FILE__).filename().string(), __LINE__)
+#define DE_CORE_ASSERT_MESSAGE_INTERNAL(...)  ::Dingo::Log::PrintAssertionMessage(::Dingo::Log::Type::Engine, "Assertion Failed" __VA_ARGS__)
+#define DE_ASSERT_MESSAGE_INTERNAL(...)  ::Dingo::Log::PrintAssertionMessage(::Dingo::Log::Type::Client, "Assertion Failed" __VA_ARGS__)
 
-#define DE_INTERNAL_ASSERT_GET_MACRO_NAME(arg1, arg2, macro, ...) macro
-#define DE_INTERNAL_ASSERT_GET_MACRO(...) DE_EXPAND_MACRO( DE_INTERNAL_ASSERT_GET_MACRO_NAME(__VA_ARGS__, DE_INTERNAL_ASSERT_WITH_MSG, DE_INTERNAL_ASSERT_NO_MSG) )
-
-#define DE_ASSERT(...) DE_EXPAND_MACRO(DE_INTERNAL_ASSERT_GET_MACRO(__VA_ARGS__)(_, __VA_ARGS__))
-#define DE_CORE_ASSERT(...) DE_EXPAND_MACRO(DE_INTERNAL_ASSERT_GET_MACRO(__VA_ARGS__)(_CORE_, __VA_ARGS__))
+#define DE_CORE_ASSERT(condition, ...) { if(!(condition)) { DE_CORE_ASSERT_MESSAGE_INTERNAL(__VA_ARGS__); DE_DEBUG_BREAK; } }
+#define DE_ASSERT(condition, ...) { if(!(condition)) { DE_ASSERT_MESSAGE_INTERNAL(__VA_ARGS__); DE_DEBUG_BREAK; } }
 #else
-#define DE_ASSERT(...)
-#define DE_CORE_ASSERT(...)
+#define DE_CORE_ASSERT(condition, ...)
+#define DE_ASSERT(condition, ...)
 #endif
 
+#ifdef DE_ENABLE_VERIFY
+#define DE_CORE_VERIFY_MESSAGE_INTERNAL(...)  ::Dingo::Log::PrintAssertionMessage(::Dingo::Log::Type::Engine, "Verify Failed" __VA_ARGS__)
+#define DE_VERIFY_MESSAGE_INTERNAL(...)  ::Dingo::Log::PrintAssertionMessage(::Dingo::Log::Type::Client, "Verify Failed" __VA_ARGS__)
+
+#define DE_CORE_VERIFY(condition, ...) { if(!(condition)) { DE_CORE_VERIFY_MESSAGE_INTERNAL(__VA_ARGS__); DE_DEBUG_BREAK; } }
+#define DE_VERIFY(condition, ...) { if(!(condition)) { DE_VERIFY_MESSAGE_INTERNAL(__VA_ARGS__); DE_DEBUG_BREAK; } }
+#else
+#define DE_CORE_VERIFY(condition, ...)
+#define DE_VERIFY(condition, ...)
+#endif

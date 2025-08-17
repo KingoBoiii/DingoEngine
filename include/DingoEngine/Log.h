@@ -4,6 +4,15 @@
 
 #include <glm/glm.hpp>
 
+#define DE_ASSERT_MESSAGE_BOX (!DE_RELEASE && DE_PLATFORM_WINDOWS)
+//#define DE_ASSERT_MESSAGE_BOX 0
+
+#if DE_ASSERT_MESSAGE_BOX
+#ifdef DE_PLATFORM_WINDOWS
+#include <Windows.h>
+#endif
+#endif
+
 namespace Dingo
 {
 
@@ -34,6 +43,15 @@ namespace Dingo
 
 		template<typename... Args>
 		static void PrintTag(Log::Type type, Log::Level level, std::string_view tag, std::format_string<Args...> format, Args&&... args);
+
+		/**************************************************
+		***		ASSERTION								***
+		**************************************************/
+
+		template<typename... Args>
+		static void PrintAssertionMessage(Log::Type type, std::string_view tag, std::format_string<Args...> format, Args&&... args);
+
+		static void PrintAssertionMessage(Log::Type type, std::string_view message);
 
 	private:
 		static void PrintInternal(Log::Type type, Log::Level level, const std::string_view formatted);
@@ -84,6 +102,28 @@ namespace Dingo
 	inline void Log::PrintTag(Log::Type type, Log::Level level, std::string_view tag, std::format_string<Args...> format, Args && ...args)
 	{
 		PrintInternalTag(type, level, tag, std::format(format, std::forward<Args>(args)...));
+	}
+
+	template<typename... Args>
+	void Log::PrintAssertionMessage(Log::Type type, std::string_view tag, std::format_string<Args...> format, Args&&... args)
+	{
+		auto formatted = std::format(format, std::forward<Args>(args)...);
+
+		PrintInternalTag(type, Log::Level::Fatal, tag, formatted);
+
+#if DE_ASSERT_MESSAGE_BOX
+		MessageBoxA(nullptr, formatted.data(), "Dingo Assert", MB_OK | MB_ICONERROR);
+#endif
+	}
+
+
+	inline void Log::PrintAssertionMessage(Log::Type type, std::string_view prefix)
+	{
+		PrintInternal(type, Log::Level::Fatal, std::format("Assertion failed: {0}", prefix));
+
+#if DE_ASSERT_MESSAGE_BOX
+		MessageBoxA(nullptr, "No message :(", "Dingo Assert", MB_OK | MB_ICONERROR);
+#endif
 	}
 
 }

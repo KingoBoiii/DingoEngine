@@ -28,8 +28,8 @@ workspace "DingoEngine"
             buildoptions { "-fsanitize=address" }
             linkoptions { "-fsanitize=address" }
 
-	    --filter "system:windows"
-		--    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
+	    filter "system:windows"
+		    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
