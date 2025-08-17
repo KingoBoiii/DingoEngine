@@ -22,12 +22,18 @@ namespace Dingo
 
 }
 
-#ifdef DE_PLATFORM_WINDOWS 
+#if DE_DISTRIBUTION && DE_PLATFORM_WINDOWS
+
+int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdshow)
+{
+	return Dingo::Main(__argc, __argv);
+}
+
+#else
 
 int main(int argc, char** argv)
 {
 	return Dingo::Main(argc, argv);
 }
-
 
 #endif // DE_PLATFORM_WINDOWS

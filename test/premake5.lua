@@ -36,3 +36,9 @@ project "Dingo-TestFramework"
 	filter "configurations:Release"
 		optimize "On"
 		defines { "DE_RELEASE" }
+
+	filter "configurations:Distribution"
+		kind "WindowedApp"
+		optimize "On"
+		symbols "Off"
+		defines { "DE_DISTRIBUTION" }

@@ -167,6 +167,7 @@ group "Engine"
 
 		filter "configurations:Distribution"
 			optimize "On"
+			symbols "Off"
 			defines { "DE_DISTRIBUTION" }
 
 			links {
