@@ -116,12 +116,12 @@ namespace Dingo
 	}
 
 
-	inline void Log::PrintAssertionMessage(Log::Type type, std::string_view prefix)
+	inline void Log::PrintAssertionMessage(Log::Type type, std::string_view message)
 	{
-		PrintInternal(type, Log::Level::Fatal, std::format("Assertion failed: {0}", prefix));
+		PrintInternal(type, Log::Level::Fatal, std::format("Assertion failed: {0}", message));
 
 #if DE_ASSERT_MESSAGE_BOX
-		MessageBoxA(nullptr, "No message :(", "Dingo Assert", MB_OK | MB_ICONERROR);
+		MessageBoxA(nullptr, "No message.\nCheck Dingo.log file", "Dingo Assert", MB_OK | MB_ICONERROR);
 #endif
 	}
 
