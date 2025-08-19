@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cmath> // For std::fmod
+#include <format>
 
 #define DEFAULT_FONT_SIZE 0.5f
 #define DEFAULT_TITLE_FONT_SIZE 0.9f
@@ -111,7 +112,7 @@ namespace Dingo
 		RenderBackground(renderer);
 		RenderBird(renderer);
 		RenderGroundAndPipes(renderer);
-		RenderExampleText(renderer);
+		RenderExampleText(deltaTime, renderer);
 
 		renderer.EndScene();
 	}
@@ -327,14 +328,15 @@ namespace Dingo
 		}
 	}
 
-	void GameLayer::RenderExampleText(Renderer2D& renderer)
+	void GameLayer::RenderExampleText(float deltaTime, Renderer2D& renderer)
 	{
 		constexpr float padding = 0.1f;
 		const float left = -m_Width * 0.5f;
 		const float bottom = -m_Height * 0.5f;
 		constexpr glm::vec4 color = { 0.99f, 0.99f, 0.99f, 1.0f };
 
-		renderer.DrawText("v1.0.0", m_Font, glm::vec2(left + padding, bottom + padding + 0.12f), SUB_TEXT_FONT_SIZE, { color });
+		renderer.DrawText("v1.0.0", m_Font, glm::vec2(left + padding, bottom + padding + 0.24f), SUB_TEXT_FONT_SIZE, { color });
+		renderer.DrawText(std::format("Frame time: {:.2f}ms ({:.0f} FPS)", deltaTime * 1000.0f, 1.0f / deltaTime), m_Font, glm::vec2(left + padding, bottom + padding + 0.12f), SUB_TEXT_FONT_SIZE, { color });
 		renderer.DrawText("Flappy Bird example game made with Dingo Game Engine.", m_Font, glm::vec2(left + padding, bottom + padding), SUB_TEXT_FONT_SIZE, { color });
 	}
 
