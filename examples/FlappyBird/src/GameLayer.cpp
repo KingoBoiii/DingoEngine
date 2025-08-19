@@ -6,6 +6,7 @@
 
 #define DEFAULT_FONT_SIZE 0.5f
 #define DEFAULT_TITLE_FONT_SIZE 0.9f
+#define SUB_TEXT_FONT_SIZE 0.1f
 
 namespace Dingo
 {
@@ -110,6 +111,7 @@ namespace Dingo
 		RenderBackground(renderer);
 		RenderBird(renderer);
 		RenderGroundAndPipes(renderer);
+		RenderExampleText(renderer);
 
 		renderer.EndScene();
 	}
@@ -323,6 +325,17 @@ namespace Dingo
 		{
 			renderer.DrawQuad(glm::vec2(x + m_GroundOffset, m_GroundY), glm::vec2(m_GroundQuadWidth, m_GroundHeight), m_GroundTexture);
 		}
+	}
+
+	void GameLayer::RenderExampleText(Renderer2D& renderer)
+	{
+		constexpr float padding = 0.1f;
+		const float left = -m_Width * 0.5f;
+		const float bottom = -m_Height * 0.5f;
+		constexpr glm::vec4 color = { 0.99f, 0.99f, 0.99f, 1.0f };
+
+		renderer.DrawText("v1.0.0", m_Font, glm::vec2(left + padding, bottom + padding + 0.12f), SUB_TEXT_FONT_SIZE, { color });
+		renderer.DrawText("Flappy Bird example game made with Dingo Game Engine.", m_Font, glm::vec2(left + padding, bottom + padding), SUB_TEXT_FONT_SIZE, { color });
 	}
 
 	void GameLayer::RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset, const glm::vec4& color) const
