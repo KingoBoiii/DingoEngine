@@ -12,18 +12,6 @@ namespace Dingo
 		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
 		s_PreviousKeyStates = s_CurrentKeyStates;
 		s_PreviousButtonStates = s_CurrentButtonStates;
-
-		for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key)
-		{
-			int32_t state = glfwGetKey(window, key);
-			s_CurrentKeyStates[(KeyCode)key] = (state == GLFW_PRESS || state == GLFW_REPEAT);
-		}
-
-		for (int button = GLFW_MOUSE_BUTTON_1; button <= GLFW_MOUSE_BUTTON_LAST; ++button)
-		{
-			int32_t state = glfwGetMouseButton(window, button);
-			s_CurrentButtonStates[(MouseButton)button] = (state == GLFW_PRESS);
-		}
 	}
 	
 	bool Input::IsKeyDown(KeyCode keycode)
@@ -52,6 +40,16 @@ namespace Dingo
 		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
 		int32_t state = glfwGetMouseButton(window, static_cast<int32_t>(button));
 		return state == GLFW_PRESS;
+	}
+
+	void Input::UpdateKeyStates(KeyCode key, int scancode, int action, int mods)
+	{
+		s_CurrentKeyStates[key] = (action == GLFW_PRESS || action == GLFW_REPEAT);
+	}
+
+	void Input::UpdateMouseButtonStates(MouseButton mouseButton, int action, int mods)
+	{
+		s_CurrentButtonStates[mouseButton] = (action == GLFW_PRESS);
 	}
 
 }

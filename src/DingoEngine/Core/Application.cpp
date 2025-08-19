@@ -133,9 +133,8 @@ namespace Dingo
 			m_DeltaTime = time - m_LastFrameTime;
 			m_LastFrameTime = time;
 
-			m_Window->Update();
-
 			Input::Update();
+			m_Window->Update();
 
 			m_Renderer->BeginFrame();
 

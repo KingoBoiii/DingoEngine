@@ -25,11 +25,17 @@ namespace Dingo
 		static bool IsMouseButtonPressed(MouseButton button);
 
 	private:
+		static void UpdateKeyStates(KeyCode key, int scancode, int action, int mods);
+		static void UpdateMouseButtonStates(MouseButton mouseButton, int action, int mods);
+
+	private:
 		inline static std::unordered_map<KeyCode, bool> s_CurrentKeyStates;
 		inline static std::unordered_map<KeyCode, bool> s_PreviousKeyStates;
 
 		inline static std::unordered_map<MouseButton, bool> s_CurrentButtonStates;
 		inline static std::unordered_map<MouseButton, bool> s_PreviousButtonStates;
+
+		friend class Window; // Allow Window to access private members for input updates
 	};
 
 }

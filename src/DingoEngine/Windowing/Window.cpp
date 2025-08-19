@@ -1,7 +1,11 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Core/Input.h"
+
 #include "DingoEngine/Events/WindowEvents.h"
+#include "DingoEngine/Events/KeyEvents.h"
+#include "DingoEngine/Events/MouseEvents.h"
 
 #include <glfw/glfw3.h>
 
@@ -70,6 +74,62 @@ namespace Dingo
 
 			WindowResizeEvent resizeEvent(width, height);
 			windowData.EventCallback(resizeEvent);
+		});
+
+		glfwSetKeyCallback(m_WindowHandle, [](GLFWwindow* window, int key, int scancode, int action, int mods)
+		{
+			KeyCode keyCode = static_cast<KeyCode>(key);
+
+			Input::UpdateKeyStates(keyCode, scancode, action, mods);
+
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+
+			switch (action)
+			{
+				case GLFW_PRESS:
+				{
+					KeyPressedEvent keyPressedEvent(keyCode, 0);
+					windowData.EventCallback(keyPressedEvent);
+					break;
+				}
+				case GLFW_RELEASE:
+				{
+					KeyReleasedEvent keyReleasedEvent(keyCode);
+					windowData.EventCallback(keyReleasedEvent);
+					break;
+				}
+				case GLFW_REPEAT:
+				{
+					KeyPressedEvent keyPressedRepeatEvent(keyCode, 1);
+					windowData.EventCallback(keyPressedRepeatEvent);
+					break;
+				}
+			}
+		});
+
+		glfwSetMouseButtonCallback(m_WindowHandle, [](GLFWwindow* window, int button, int action, int mods)
+		{
+			MouseButton mouseButton = static_cast<MouseButton>(button);
+
+			Input::UpdateMouseButtonStates(mouseButton, action, mods);
+
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+
+			switch (action)
+			{
+				case GLFW_PRESS:
+				{
+					MouseButtonPressedEvent mouseButtonPressedEvent(mouseButton);
+					windowData.EventCallback(mouseButtonPressedEvent);
+					break;
+				}
+				case GLFW_RELEASE:
+				{
+					MouseButtonReleasedEvent mouseButtonReleasedEvent(mouseButton);
+					windowData.EventCallback(mouseButtonReleasedEvent);
+					break;
+				}
+			}
 		});
 	}
 
