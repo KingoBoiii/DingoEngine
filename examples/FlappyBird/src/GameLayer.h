@@ -52,6 +52,8 @@ namespace Dingo
 		void UpdateGroundAndPipes(float deltaTime);
 		void RenderGroundAndPipes(Renderer2D& renderer);
 
+		void RenderExampleText(float deltaTime, Renderer2D& renderer);
+
 		void RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset = glm::vec2(0.0f), const glm::vec4& color = glm::vec4(1.0f)) const;
 
 	private:

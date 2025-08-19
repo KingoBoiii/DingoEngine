@@ -216,7 +216,7 @@ namespace Dingo
 			DE_CORE_ERROR("The Vulkan API version supported on the system ({}.{}.{}) is too low, at least {}.{}.{} is required.",
 				VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion),
 				VK_API_VERSION_MAJOR(minimumVulkanVersion), VK_API_VERSION_MINOR(minimumVulkanVersion), VK_API_VERSION_PATCH(minimumVulkanVersion));
-			DE_CORE_ASSERT(true);
+			DE_CORE_VERIFY(false);
 		}
 
 		vk::ApplicationInfo applicationInfo = vk::ApplicationInfo()
