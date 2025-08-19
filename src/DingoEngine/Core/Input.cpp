@@ -9,7 +9,6 @@ namespace Dingo
 
 	void Input::Update()
 	{
-		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
 		s_PreviousKeyStates = s_CurrentKeyStates;
 		s_PreviousButtonStates = s_CurrentButtonStates;
 	}
