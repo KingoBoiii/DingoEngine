@@ -2,6 +2,8 @@
 #include "KeyCodes.h"
 #include "MouseButtons.h"
 
+#include <unordered_map>
+
 namespace Dingo
 {
 	
