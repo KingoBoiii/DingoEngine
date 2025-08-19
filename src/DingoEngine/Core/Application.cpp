@@ -4,6 +4,7 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
+#include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Graphics/AppRenderer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -132,6 +133,7 @@ namespace Dingo
 			m_DeltaTime = time - m_LastFrameTime;
 			m_LastFrameTime = time;
 
+			Input::Update();
 			m_Window->Update();
 
 			m_Renderer->BeginFrame();
