@@ -106,7 +106,7 @@ jobs:
     - name: Build
       run: |
         config=$(echo "${{ matrix.build-configuration }}" | tr '[:upper:]' '[:lower:]')
-        make -j$(nproc) config=${config}_x86_64 DingoEngine Dingo-TestFramework
+        make -j$(nproc) config=${config} DingoEngine Dingo-TestFramework
       env:
         VULKAN_SDK: /usr
 
