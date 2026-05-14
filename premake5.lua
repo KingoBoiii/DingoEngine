@@ -7,7 +7,7 @@ workspace "DingoEngine"
 	cppdialect "C++20"
 	staticruntime "Off"
     solution_items { ".editorconfig" }
-    flags { "MultiProcessorCompile" }
+    flags { "multiprocessorcompile" }
 
     defines {
 		"_CRT_SECURE_NO_WARNINGS",
