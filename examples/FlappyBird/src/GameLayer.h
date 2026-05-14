@@ -56,6 +56,10 @@ namespace Dingo
 
 		void RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset = glm::vec2(0.0f), const glm::vec4& color = glm::vec4(1.0f)) const;
 
+		const uint32_t GetGameVersion() const {
+			return DE_MAKE_VERSION(1, 0, 0);
+		}
+
 	private:
 		float m_OrthographicSize = 5.0f;
 		float m_OrthographicNear = -1.0f;

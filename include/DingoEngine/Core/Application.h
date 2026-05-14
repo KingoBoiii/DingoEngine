@@ -1,4 +1,5 @@
 #pragma once
+#include "DingoEngine/Version.h"
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Graphics/GraphicsParams.h"
@@ -55,6 +56,10 @@ namespace Dingo
 		Renderer& GetRenderer() const;
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
+
+		const uint32_t GetEngineVersion() const {
+			return DE_MAKE_VERSION(0, 1, 0);
+		}
 
 	protected:
 		Application(const ApplicationParams& params = {});
