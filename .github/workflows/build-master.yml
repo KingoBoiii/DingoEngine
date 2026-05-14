@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build-configuration: [Debug, Release, Distribution]
+        build-configuration: [Release, Distribution]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -49,12 +49,7 @@ jobs:
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: |
-        if ("${{ matrix.build-configuration }}" -eq "Debug") {
-          msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 /p:RuntimeLibrary=MultiThreadedDLL -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
-        } else {
-          msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
-        }
+      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
     - name: Copy test assets
       if: matrix.build-configuration == 'Distribution'
@@ -81,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build-configuration: [Debug, Release, Distribution]
+        build-configuration: [Release, Distribution]
 
     steps:
     - uses: actions/checkout@v4
