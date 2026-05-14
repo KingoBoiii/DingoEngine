@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug FlappyBird",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/FlappyBird/FlappyBird.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/FlappyBird",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build FlappyBird Debug"
+        },
+        {
+            "name": "Debug Sandbox",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Sandbox/Sandbox.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Sandbox",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Debug"
+        }
+    ]
+}

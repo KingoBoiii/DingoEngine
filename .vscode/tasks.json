@@ -1,0 +1,73 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Generate Solution",
+            "type": "shell",
+            "command": "${workspaceFolder}/Generate-Windows.bat",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Debug",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/DingoEngine.slnx",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build Release",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/DingoEngine.slnx",
+                "/p:Configuration=Release",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build FlappyBird Debug",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/examples/FlappyBird/FlappyBird.vcxproj",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile"
+        }
+    ]
+}

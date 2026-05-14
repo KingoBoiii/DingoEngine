@@ -1,0 +1,34 @@
+{
+    "configurations": [
+        {
+            "name": "Win32 (Debug)",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/vendor/spdlog/include",
+                "${workspaceFolder}/vendor/glfw/include",
+                "${workspaceFolder}/vendor/nvrhi/include",
+                "${workspaceFolder}/vendor/glm",
+                "${workspaceFolder}/vendor/stb/include",
+                "${workspaceFolder}/vendor/imgui",
+                "${workspaceFolder}/vendor/msdf-atlas-gen/msdfgen",
+                "${workspaceFolder}/vendor/msdf-atlas-gen/msdf-atlas-gen",
+                "${env:VULKAN_SDK}/Include"
+            ],
+            "defines": [
+                "_CRT_SECURE_NO_WARNINGS",
+                "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1",
+                "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING",
+                "GLFW_INCLUDE_NONE",
+                "DE_PLATFORM_WINDOWS",
+                "DE_DEBUG"
+            ],
+            "windowsSdkVersion": "10.0.26100.0",
+            "compilerPath": "cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}
