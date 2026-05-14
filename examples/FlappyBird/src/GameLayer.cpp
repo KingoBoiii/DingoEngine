@@ -337,7 +337,7 @@ namespace Dingo
 
 		renderer.DrawText("v1.0.0", m_Font, glm::vec2(left + padding, bottom + padding + 0.24f), SUB_TEXT_FONT_SIZE, { color });
 		renderer.DrawText(std::format("Frame time: {:.2f}ms ({:.0f} FPS)", deltaTime * 1000.0f, 1.0f / deltaTime), m_Font, glm::vec2(left + padding, bottom + padding + 0.12f), SUB_TEXT_FONT_SIZE, { color });
-		renderer.DrawText("Flappy Bird example game made with Dingo Game Engine.", m_Font, glm::vec2(left + padding, bottom + padding), SUB_TEXT_FONT_SIZE, { color });
+		renderer.DrawText("Flappy Bird example game made with Dingo Engine (v0.1).", m_Font, glm::vec2(left + padding, bottom + padding), SUB_TEXT_FONT_SIZE, { color });
 	}
 
 	void GameLayer::RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset, const glm::vec4& color) const
