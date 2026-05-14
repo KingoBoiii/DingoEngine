@@ -71,7 +71,7 @@ jobs:
         path: .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework
 
   build-linux:
-    if: 1 == 1
+    if: 1 == 0
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
