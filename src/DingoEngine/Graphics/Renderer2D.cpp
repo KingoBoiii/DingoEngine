@@ -476,9 +476,11 @@ void main() {
 
 	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
 	{
-		// TODO: implement for circles
-		// if (s_Data.QuadIndexCount >= Renderer2DData::MaxIndices)
-		// 	NextBatch();
+		if (m_CircleRenderPass.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		{
+			DE_CORE_ERROR("Renderer2D: Circle index count exceeded the maximum limit.");
+			return;
+		}
 
 		for (size_t i = 0; i < 4; i++)
 		{

@@ -24,18 +24,6 @@
             "environment": [],
             "console": "internalConsole",
             "preLaunchTask": "Build TestFramework Debug"
-        },
-        {
-            "name": "Debug Sandbox",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Sandbox/Sandbox.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/examples/Sandbox",
-            "environment": [],
-            "console": "internalConsole",
-            "preLaunchTask": "Build Debug"
         }
     ]
 }

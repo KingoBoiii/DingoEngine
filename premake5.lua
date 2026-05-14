@@ -180,6 +180,5 @@ group ""
 include "test"
 
 group "Examples"
-    -- include "examples/Sandbox"
     include "examples/FlappyBird"
 group ""
