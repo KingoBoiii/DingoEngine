@@ -128,13 +128,10 @@ group "Engine"
 			"GLFW_INCLUDE_NONE"
 		}
 
-		buildoptions {
-			"/utf-8"
-		}
-
 		filter "system:windows"
 			systemversion "latest"
 			defines { "DE_PLATFORM_WINDOWS", }
+			buildoptions { "/utf-8" }
 
 			links {
 				"%{Library.WinSock}",
