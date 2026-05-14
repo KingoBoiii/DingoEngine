@@ -50,7 +50,7 @@ jobs:
         $ver = $tag.TrimStart('v')
         $parts = $ver.Split('.')
         $commits = git rev-list --count HEAD
-        echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+        echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
@@ -96,14 +96,14 @@ jobs:
       run: |
         $config = "${{ matrix.build-configuration }}"
         $srcDir = ".\build\bin\$config-windows-x86_64\DingoEngine"
-        $zipName = "DingoEngine-${{ github.ref_name }}-$config-windows-x86_64.zip"
+        $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-$config-windows-x86_64.zip"
         Compress-Archive -Path "$srcDir\*" -DestinationPath ".\$zipName" -Force
 
     - name: Upload to GitHub Release
       run: |
         $config = "${{ matrix.build-configuration }}"
-        $zipName = "DingoEngine-${{ github.ref_name }}-$config-windows-x86_64.zip"
-        gh release upload "${{ github.ref_name }}" "$zipName" --clobber
+        $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-$config-windows-x86_64.zip"
+        gh release upload "${{steps.version.outputs.VERSION}}" "$zipName" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -140,7 +140,13 @@ jobs:
       run: |
         $tag = "${{ github.ref_name }}"
         $ver = $tag.TrimStart('v')
-        echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+        $parts = $ver.Split('.')
+        $commits = git rev-list --count HEAD
+        echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
     - name: Copy assets
       run: |
@@ -149,11 +155,11 @@ jobs:
 
     - name: Create ZIP archive
       run: |
-        $zipName = "FlappyBird-${{ github.ref_name }}-windows-x86_64.zip"
+        $zipName = "FlappyBird-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
         Compress-Archive -Path ".\flappybird\*" -DestinationPath ".\$zipName" -Force
 
     - name: Upload to GitHub Release
-      run: gh release upload "${{ github.ref_name }}" "FlappyBird-${{ github.ref_name }}-windows-x86_64.zip" --clobber
+      run: gh release upload "${{steps.version.outputs.VERSION}}" "FlappyBird-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
