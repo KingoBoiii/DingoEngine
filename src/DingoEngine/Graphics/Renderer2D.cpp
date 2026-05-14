@@ -515,11 +515,6 @@ void main() {
 		double y = 0.0f; // -fsScale * metrics.ascenderY;
 		//double y = -fsScale * metrics.ascenderY;
 
-		//if(s_Renderer2DData.QuadIndexCount >= Renderer2DData::MaxIndices)
-		//{
-		//	NextBatch();
-		//}
-
 		float spaceGlyphAdvance = fontGeometry.getGlyph(' ')->getAdvance();
 
 		for (size_t i = 0; i < string.size(); i++)
@@ -582,7 +577,12 @@ void main() {
 			texCoordMin *= glm::vec2(texelWidth, texelHeight);
 			texCoordMax *= glm::vec2(texelWidth, texelHeight);
 
-			// Render here!
+			if (m_TextQuadRenderPass.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+			{
+				DE_CORE_ERROR("Renderer2D: Text quad index count exceeded the maximum limit.");
+				return;
+			}
+
 			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
 			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
 			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = texCoordMin;

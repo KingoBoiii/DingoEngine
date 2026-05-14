@@ -164,7 +164,7 @@ namespace Dingo
 
 			for (const auto& pushConstantBuffer : shaderReflection.PushConstantBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, 0)); // TODO: Handle size and offset for push constants
+				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, pushConstantBuffer.Size));
 			}
 
 			for (const auto& sampler : shaderReflection.SeparateSamplers)
