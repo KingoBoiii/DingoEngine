@@ -49,7 +49,7 @@ jobs:
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
     - name: Copy test assets
       if: matrix.build-configuration == 'Distribution'
