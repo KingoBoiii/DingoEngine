@@ -48,7 +48,6 @@ Open the generated `.sln` file in Visual Studio, set one of the example projects
 | Project | Description |
 |---|---|
 | `Dingo-FlappyBird` | Complete game — sprites, input, collision, audio, score rendering |
-| `Dingo-Sandbox` | Step-by-step graphics layers from a raw triangle up to a textured, camera-transformed quad |
 
 ## Project Structure
 
