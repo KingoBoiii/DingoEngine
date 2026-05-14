@@ -142,6 +142,7 @@ group "Engine"
 
 		filter "system:linux"
 			defines { "DE_PLATFORM_LINUX" }
+			buildoptions { "-Wno-changes-meaning" }
 
 		filter "configurations:Debug or configurations:Debug-AS"
 			symbols "On"
