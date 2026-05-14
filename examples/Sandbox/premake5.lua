@@ -15,9 +15,7 @@ project "Sandbox"
         "%{wks.location}/include",
         "src",
         "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}",
-
-        "%{IncludeDir.nvrhi}" -- TODO: Client apps should not depend on this...
+        "%{IncludeDir.imgui}"
     }
 
     links { 
