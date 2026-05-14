@@ -54,7 +54,7 @@ LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
 Library = {}
 Library['vulkan'] = "%{LibraryDir.vulkan}/vulkan-1.lib";
 
-Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_sharedd.lib"
+Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_shared.lib"
 Library["SPIRV_Cross_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-cored.lib"
 Library["SPIRV_Cross_GLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-glsld.lib"
 Library["SPIRV_Tools_Debug"] = "%{LibraryDir.vulkan}/SPIRV-Toolsd.lib"
