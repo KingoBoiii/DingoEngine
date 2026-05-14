@@ -43,6 +43,24 @@ jobs:
         Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-windows.zip" -OutFile premake5-windows.zip
         Expand-Archive -Path premake5-windows.zip -DestinationPath premake5-bin -Force
 
+    - name: Get version
+      id: version
+      run: |
+        $base = (Get-Content VERSION).Trim()
+        $parts = $base.Split('.')
+        $commits = git rev-list --count HEAD
+        echo "VERSION=$base.$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$commits" >> $env:GITHUB_OUTPUT
+
+    - name: Generate BuildInfo.h
+      run: |
+        $major = "${{steps.version.outputs.VERSION_MAJOR}}"
+        $minor = "${{steps.version.outputs.VERSION_MINOR}}"
+        $patch = "${{steps.version.outputs.VERSION_PATCH}}"
+        "#pragma once", "#define DE_ENGINE_VERSION_MAJOR $major", "#define DE_ENGINE_VERSION_MINOR $minor", "#define DE_ENGINE_VERSION_PATCH $patch" | Set-Content include/DingoEngine/BuildInfo.h -Encoding utf8
+
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: .\premake5-bin\premake5.exe vs2026
@@ -50,6 +68,14 @@ jobs:
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+
+    - name: Upload static library artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-engine-windows-${{matrix.build-configuration}}-${{steps.version.outputs.VERSION}}
+        path: |
+          build/bin/${{matrix.build-configuration}}-windows-x86_64/DingoEngine/DingoEngine.lib
+          include/
 
     - name: Copy test assets
       if: matrix.build-configuration == 'Distribution'

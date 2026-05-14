@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Version.h"
+#include "DingoEngine/BuildInfo.h"
 #include "DingoEngine/Core/LayerStack.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Graphics/GraphicsParams.h"
@@ -58,7 +59,7 @@ namespace Dingo
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 		const uint32_t GetEngineVersion() const {
-			return DE_MAKE_VERSION(0, 1, 0);
+			return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH);
 		}
 
 	protected:
