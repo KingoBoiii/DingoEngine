@@ -103,7 +103,7 @@ jobs:
       run: |
         $config = "${{ matrix.build-configuration }}"
         $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-$config-windows-x86_64.zip"
-        gh release upload "${{steps.version.outputs.VERSION}}" "$zipName" --clobber
+        gh release upload "${{ github.ref_name }}" "$zipName" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
