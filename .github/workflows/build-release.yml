@@ -48,7 +48,12 @@ jobs:
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+      run: |
+        if ("${{ matrix.build-configuration }}" -eq "Debug") {
+          msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 /p:RuntimeLibrary=MultiThreadedDLL -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+        } else {
+          msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+        }
 
     - name: Copy include files
       run: |
