@@ -34,7 +34,6 @@ src/DingoEngine/           Implementations
 vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen)
 examples/
   FlappyBird/              Complete game (Renderer2D, input, audio, collision)
-  Sandbox/                 Step-by-step graphics API tutorial layers
 ```
 
 ## Key architecture patterns
@@ -138,4 +137,3 @@ See [ROADMAP.md](ROADMAP.md) for planned milestones from v0.1 to v1.0.
 ## Examples as reference
 
 - **FlappyBird** (`examples/FlappyBird/`) — best end-to-end reference: sprites, input, state machine, collision, audio, score rendering
-- **Sandbox** (`examples/Sandbox/`) — progressive layers showing raw pipeline construction (triangle → VBO → IBO → textured quad → camera); useful when touching low-level graphics code
