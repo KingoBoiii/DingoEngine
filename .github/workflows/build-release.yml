@@ -10,6 +10,7 @@ permissions:
 
 env:
   SOLUTION_FILE_PATH: 'DingoEngine.sln'
+  PREMAKE_VERSION: 'v5.0.0-beta8'
 
 jobs:
   setup:
@@ -20,7 +21,7 @@ jobs:
         submodules: recursive
         lfs: true
 
-  build:
+  build-windows:
     runs-on: [Windows, self-hosted]
     needs: [setup]
     strategy:
@@ -32,23 +33,19 @@ jobs:
       with:
         msbuild-architecture: x64
 
+    - name: Install premake5
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-windows.zip" -OutFile premake5-windows.zip
+        Expand-Archive -Path premake5-windows.zip -DestinationPath premake5-bin -Force
+
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: ./Generate-Windows.bat
+      run: .\premake5-bin\premake5.exe vs2026
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
-  package:
-    runs-on: [Windows, self-hosted]
-    needs: [build]
-    strategy:
-      fail-fast: false
-      matrix:
-        build-configuration: [Debug, Release, Distribution]
-
-    steps:
     - name: Copy include files
       run: |
         robocopy .\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\include /e /z
@@ -84,3 +81,72 @@ jobs:
       with:
         name: dingo-${{matrix.build-configuration}}
         path: .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - name: Install Vulkan SDK
+      run: |
+        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+        sudo apt-get update
+        sudo apt-get install -y vulkan-sdk libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+
+    - name: Install premake5
+      run: |
+        wget -q https://github.com/premake/premake-core/releases/download/${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
+        tar -xzf premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
+        sudo mv premake5 /usr/local/bin/premake5
+
+    - name: Generate makefiles
+      run: premake5 gmake2
+      env:
+        VULKAN_SDK: /usr
+
+    - name: Build
+      run: |
+        config=$(echo "${{ matrix.build-configuration }}" | tr '[:upper:]' '[:lower:]')
+        make -j$(nproc) config=${config}_x86_64 DingoEngine
+      env:
+        VULKAN_SDK: /usr
+
+    - name: Copy include files
+      run: cp -r ./include ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/
+
+    - name: Copy glm files (third-party)
+      run: cp -r ./vendor/glm ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/
+
+    - name: Copy imgui header (third-party)
+      run: |
+        mkdir -p ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/imgui
+        cp ./vendor/imgui/imgui.h ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/imgui/
+
+    - name: Create tar archive
+      run: |
+        config="${{ matrix.build-configuration }}"
+        tar -czf "DingoEngine-${{ github.ref_name }}-$config-linux-x86_64.tar.gz" \
+          -C "./build/bin/$config-linux-x86_64/DingoEngine" .
+
+    - name: Upload to GitHub Release
+      run: |
+        config="${{ matrix.build-configuration }}"
+        gh release upload "${{ github.ref_name }}" \
+          "DingoEngine-${{ github.ref_name }}-$config-linux-x86_64.tar.gz" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-linux-${{ matrix.build-configuration }}
+        path: ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine
