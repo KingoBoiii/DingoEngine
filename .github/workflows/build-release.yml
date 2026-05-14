@@ -14,7 +14,7 @@ env:
 
 jobs:
   build-windows:
-    runs-on: [Windows, self-hosted]
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +28,14 @@ jobs:
     - uses: microsoft/setup-msbuild@v1.1
       with:
         msbuild-architecture: x64
+
+    - name: Install Vulkan SDK
+      run: |
+        $version = "1.4.313.0"
+        $installer = "VulkanSDK-$version-Installer.exe"
+        Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/$installer" -OutFile $installer
+        Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
+        echo "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
 
     - name: Install premake5
       run: |
