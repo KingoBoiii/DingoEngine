@@ -11,6 +11,7 @@ permissions:
 
 env:
   SOLUTION_FILE_PATH: 'DingoEngine.sln'
+  PREMAKE_VERSION: '5.0.0-beta8'
 
 jobs:
   setup:
@@ -21,7 +22,7 @@ jobs:
         submodules: recursive
         lfs: true
 
-  build:
+  build-windows:
     runs-on: [Windows, self-hosted]
     needs: [setup]
     strategy:
@@ -33,30 +34,93 @@ jobs:
       with:
         msbuild-architecture: x64
 
+    - name: Install premake5
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-windows.zip" -OutFile premake5-windows.zip
+        Expand-Archive -Path premake5-windows.zip -DestinationPath premake5-bin -Force
+
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: ./Generate-Windows.bat
-    
+      run: .\premake5-bin\premake5.exe vs2026
+
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
-  dingo-testframework:
-    runs-on: [Windows, self-hosted]
-    needs: [build]
+    - name: Copy test assets
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        robocopy .\test\assets .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework\assets /e /z
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Copy imgui.ini
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        robocopy .\test .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework imgui.ini
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Upload test framework artifacts
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-testframework-distribution
+        path: .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
+
     steps:
-      - name: Copy Assets
-        run: | 
-          robocopy .\test\assets .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework\assets /e /z 
-          if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
 
-      - name: Copy IMGUI file
-        run: | 
-          robocopy .\test .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework imgui.ini
-          if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+    - name: Install Vulkan SDK
+      run: |
+        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+        sudo apt-get update
+        sudo apt-get install -y vulkan-sdk libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dingo-testframework-distribution
-          path: .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework
+    - name: Install premake5
+      run: |
+        wget -q https://github.com/premake/premake-core/releases/download/v${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
+        tar -xzf premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
+        sudo mv premake5 /usr/local/bin/premake5
+
+    - name: Generate makefiles
+      run: premake5 gmake2
+      env:
+        VULKAN_SDK: /usr
+
+    - name: Build
+      run: |
+        config=$(echo "${{ matrix.build-configuration }}" | tr '[:upper:]' '[:lower:]')
+        make -j$(nproc) config=${config}_x86_64 DingoEngine Dingo-TestFramework
+      env:
+        VULKAN_SDK: /usr
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-linux-${{ matrix.build-configuration }}
+        path: ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine
+
+    - name: Copy test assets
+      if: matrix.build-configuration == 'Distribution'
+      run: cp -r ./test/assets ./build/bin/Distribution-linux-x86_64/Dingo-TestFramework/
+
+    - name: Copy imgui.ini
+      if: matrix.build-configuration == 'Distribution'
+      run: cp ./test/imgui.ini ./build/bin/Distribution-linux-x86_64/Dingo-TestFramework/
+
+    - name: Upload test framework artifacts
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-testframework-linux-distribution
+        path: ./build/bin/Distribution-linux-x86_64/Dingo-TestFramework
