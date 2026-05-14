@@ -14,22 +14,18 @@ env:
   PREMAKE_VERSION: '5.0.0-beta8'
 
 jobs:
-  setup:
+  build-windows:
     runs-on: [Windows, self-hosted]
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
 
-  build-windows:
-    runs-on: [Windows, self-hosted]
-    needs: [setup]
-    strategy:
-      fail-fast: false
-      matrix:
-        build-configuration: [Debug, Release, Distribution]
-    steps:
     - uses: microsoft/setup-msbuild@v1.1
       with:
         msbuild-architecture: x64
@@ -90,6 +86,7 @@ jobs:
       run: |
         wget -q https://github.com/premake/premake-core/releases/download/v${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
         tar -xzf premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
+        chmod +x premake5
         sudo mv premake5 /usr/local/bin/premake5
 
     - name: Generate makefiles
