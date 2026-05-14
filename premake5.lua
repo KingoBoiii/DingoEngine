@@ -6,6 +6,7 @@ workspace "DingoEngine"
     language "C++"
 	cppdialect "C++20"
 	staticruntime "Off"
+    architecture "x86_64"
     solution_items { ".editorconfig" }
     flags { "multiprocessorcompile" }
 

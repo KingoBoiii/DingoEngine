@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  SOLUTION_FILE_PATH: 'DingoEngine.sln'
+  SOLUTION_FILE_PATH: 'DingoEngine.slnx'
   PREMAKE_VERSION: 'v5.0.0-beta8'
 
 jobs:

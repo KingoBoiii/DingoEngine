@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  SOLUTION_FILE_PATH: 'DingoEngine.sln'
+  SOLUTION_FILE_PATH: 'DingoEngine.slnx'
   PREMAKE_VERSION: '5.0.0-beta8'
 
 jobs:
