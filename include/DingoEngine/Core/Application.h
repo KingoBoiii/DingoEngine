@@ -58,9 +58,8 @@ namespace Dingo
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
-		const uint32_t GetEngineVersion() const {
-			return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH);
-		}
+		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
+		const uint32_t GetEngineBuildNumber() const { return DE_ENGINE_VERSION_BUILD; }
 
 	protected:
 		Application(const ApplicationParams& params = {});

@@ -347,9 +347,10 @@ namespace Dingo
 		constexpr glm::vec4 color = { 0.99f, 0.99f, 0.99f, 1.0f };
 
 		const uint32_t engineVersion = Application::Get().GetEngineVersion();
+		const uint32_t engineBuild = Application::Get().GetEngineBuildNumber();
 		const uint32_t gameVersion = GetGameVersion();
 
-		const std::string engineVersionStr = Utils::GetVersionString(engineVersion);
+		const std::string engineVersionStr = std::format("{}.{}", Utils::GetVersionString(engineVersion), engineBuild);
 		const std::string gameVersionStr = Utils::GetVersionString(gameVersion);
 
 		renderer.DrawText(std::format("Flappy Bird ({})", gameVersionStr), m_Font, glm::vec2(left + padding, bottom + padding + 0.24f), SUB_TEXT_FONT_SIZE, { color });
