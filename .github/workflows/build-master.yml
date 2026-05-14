@@ -32,8 +32,8 @@ jobs:
 
     - name: Install Vulkan SDK
       run: |
-        $version = "1.4.313.0"
-        $installer = "VulkanSDK-$version-Installer.exe"
+        $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt").Content.Trim()
+        $installer = "vulkansdk-windows-X64-$version.exe"
         Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/$installer" -OutFile $installer
         Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
         echo "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
@@ -98,7 +98,7 @@ jobs:
         sudo mv premake5 /usr/local/bin/premake5
 
     - name: Generate makefiles
-      run: premake5 gmake2
+      run: premake5 gmake
       env:
         VULKAN_SDK: /usr
 

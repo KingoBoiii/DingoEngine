@@ -70,7 +70,7 @@ Library["BCrypt"] = "Bcrypt.lib"
 
 
 group "Dependencies"
-	include "Vendor/spdlog"
+	include "vendor/spdlog"
 	include "vendor/glfw"
 	include "vendor/nvrhi"
 	include "vendor/imgui"
