@@ -6,7 +6,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   SOLUTION_FILE_PATH: 'DingoEngine.sln'
@@ -35,12 +35,12 @@ jobs:
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: ./Generate-Windows.bat
-    
+
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
-  dingo:
+  package:
     runs-on: [Windows, self-hosted]
     needs: [build]
     strategy:
@@ -50,19 +50,34 @@ jobs:
 
     steps:
     - name: Copy include files
-      run: | 
-        robocopy .\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\include /e /z 
+      run: |
+        robocopy .\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\include /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Copy glm files (third-party)
-      run: | 
-        robocopy .\vendor\glm .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\glm /e /z 
+      run: |
+        robocopy .\vendor\glm .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\glm /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Copy imgui files (third-party)
-      run: | 
+      run: |
         robocopy .\vendor\imgui .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\imgui imgui.h
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Create ZIP archive
+      run: |
+        $config = "${{ matrix.build-configuration }}"
+        $srcDir = ".\build\bin\$config-windows-x86_64\DingoEngine"
+        $zipName = "DingoEngine-${{ github.ref_name }}-$config-windows-x86_64.zip"
+        Compress-Archive -Path "$srcDir\*" -DestinationPath ".\$zipName" -Force
+
+    - name: Upload to GitHub Release
+      run: |
+        $config = "${{ matrix.build-configuration }}"
+        $zipName = "DingoEngine-${{ github.ref_name }}-$config-windows-x86_64.zip"
+        gh release upload "${{ github.ref_name }}" "$zipName" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
