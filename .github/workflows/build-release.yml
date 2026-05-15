@@ -35,7 +35,7 @@ jobs:
         $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt").Content.Trim()
         $installer = "vulkansdk-windows-X64-$version.exe"
         Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/$installer" -OutFile $installer
-        Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
+        Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install com.lunarg.vulkan.debug" -Wait
         echo "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
 
     - name: Install premake5
@@ -70,12 +70,7 @@ jobs:
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: |
-        if ("${{ matrix.build-configuration }}" -eq "Debug") {
-          msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 /p:RuntimeLibrary=MultiThreadedDLL -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
-        } else {
-          msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
-        }
+      run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
     - name: Copy include files
       run: |
