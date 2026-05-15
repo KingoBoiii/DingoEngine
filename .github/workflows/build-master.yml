@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build-configuration: [Release, Distribution]
+        build-configuration: [Debug, Release, Distribution]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -36,7 +36,7 @@ jobs:
         $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt").Content.Trim()
         $installer = "vulkansdk-windows-X64-$version.exe"
         Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/$installer" -OutFile $installer
-        Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
+        Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install com.lunarg.vulkan.debug" -Wait
         echo "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
 
     - name: Install premake5
