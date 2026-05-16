@@ -74,15 +74,17 @@ namespace Dingo
 	{
 		OnDestroy();
 
-		m_LayerStack.Clear();
-
-		Renderer::DestroyStaticResources();
+		// Stop the render thread first so the GPU is idle before any resources are freed.
 		if (m_Renderer)
 		{
 			m_Renderer->Shutdown();
 			delete m_Renderer;
 			m_Renderer = nullptr;
 		}
+
+		m_LayerStack.Clear();
+
+		Renderer::DestroyStaticResources();
 
 		if (m_Renderer2D)
 		{
@@ -154,8 +156,6 @@ namespace Dingo
 			}
 
 			m_Renderer->EndFrame();
-
-			m_GraphicsContext->RunGarbageCollection();
 
 			// Execute any post-execution callbacks
 			for (const auto& callback : m_PostExecutionCallbacks)

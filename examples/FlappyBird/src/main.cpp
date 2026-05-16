@@ -34,7 +34,7 @@ Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
 			.Resizable = false,											// Make the window resizable by default
 		},
 		.Graphics = {
-			.GraphicsAPI = GraphicsAPI::Vulkan,							// Default to Vulkan
+			.GraphicsAPI = GraphicsAPI::DirectX11,							// Default to Vulkan
 			.FramesInFlight = 3,										// Number of frames in flight for Rendering
 		},
 		.EnableImGui = false,											// Disable ImGui

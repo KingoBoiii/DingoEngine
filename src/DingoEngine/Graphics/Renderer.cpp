@@ -108,9 +108,20 @@ namespace Dingo
 		m_CommandList->Begin();
 	}
 
+	void Renderer::Close()
+	{
+		m_CommandList->Close();
+	}
+
+	void Renderer::Execute()
+	{
+		m_CommandList->Execute();
+	}
+
 	void Renderer::End()
 	{
-		m_CommandList->End();
+		Close();
+		Execute();
 	}
 
 	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)

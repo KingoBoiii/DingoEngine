@@ -19,6 +19,8 @@ namespace Dingo
 		virtual void Destroy() override;
 
 		virtual void Begin() override;
+		virtual void Close() override;
+		virtual void Execute() override;
 		virtual void End() override;
 
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) override;

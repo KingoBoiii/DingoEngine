@@ -106,8 +106,6 @@ namespace Dingo
 	{
 		auto& ctx = GraphicsContext::Get().As<DirectX12GraphicsContext>();
 
-		ctx.GetDeviceHandle()->executeCommandLists(nullptr, 0);
-
 		UINT syncInterval = m_Params.VSync ? 1 : 0;
 		HRESULT hr = m_SwapChain->Present(syncInterval, 0);
 		DE_CORE_ASSERT(SUCCEEDED(hr), "D3D12 swap chain Present failed.");

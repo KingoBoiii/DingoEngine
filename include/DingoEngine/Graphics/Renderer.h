@@ -56,7 +56,9 @@ namespace Dingo
 		**************************************************/
 
 		virtual void Begin();
-		virtual void End();
+		virtual void Close();   // Seal the command list without submitting (main thread)
+		virtual void Execute(); // Submit a sealed command list to the GPU (render thread)
+		virtual void End();     // Close() + Execute() — default single-threaded behaviour
 
 		virtual void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
 

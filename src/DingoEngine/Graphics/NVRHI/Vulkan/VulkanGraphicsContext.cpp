@@ -490,7 +490,7 @@ namespace Dingo
 		auto vecDeviceExt = Utils::stringSetToVector(enabledExtensions.device);
 
 		nvrhi::vulkan::DeviceDesc deviceDesc;
-		// deviceDesc.errorCB = &DefaultMessageCallback::GetInstance();
+		deviceDesc.errorCB = &NvrhiMessageCallback::Get();
 		deviceDesc.instance = m_VulkanInstance;
 		deviceDesc.physicalDevice = m_VulkanPhysicalDevice;
 		deviceDesc.device = m_VulkanDevice;

@@ -39,12 +39,21 @@ namespace Dingo
 		m_HasBegun = true;
 	}
 
-	void NvrhiCommandList::End()
+	void NvrhiCommandList::Close()
 	{
 		m_CommandListHandle->close();
-		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(m_CommandListHandle);
-
 		m_HasBegun = false;
+	}
+
+	void NvrhiCommandList::Execute()
+	{
+		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(m_CommandListHandle);
+	}
+
+	void NvrhiCommandList::End()
+	{
+		Close();
+		Execute();
 	}
 
 	void NvrhiCommandList::Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor)
