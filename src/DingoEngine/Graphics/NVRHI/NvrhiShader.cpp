@@ -87,10 +87,35 @@ namespace Dingo
 		}
 
 		// Create shader handles for each shader type
+		const GraphicsAPI api = GraphicsContext::Get().GetParams().GraphicsAPI;
+		const bool needsDXBC = (api == GraphicsAPI::DirectX11 || api == GraphicsAPI::DirectX12);
+
 		std::vector<ShaderReflection> reflections;
 		for (const auto& [shaderType, binaries] : spvBinaries)
 		{
-			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
+			nvrhi::ShaderHandle handle;
+
+			if (needsDXBC)
+			{
+				// D3D12 needs SM 5.1 for NonUniformResourceIndex (nonuniformEXT); D3D11 uses SM 5.0
+				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
+				// D3D11/D3D12 requires DXBC bytecode — recompile from GLSL source via spirv-cross + D3DCompile
+				auto dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel);
+
+				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
+					.setDebugName(name)
+					.setShaderType(Utils::ConvertShaderTypeToNVRHI(shaderType))
+					.setEntryName("main");
+
+				handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()
+					->createShader(shaderDesc, dxbcBytecode.data(), dxbcBytecode.size());
+			}
+			else
+			{
+				handle = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
+			}
+
+			m_ShaderHandles[shaderType] = handle;
 
 			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
 

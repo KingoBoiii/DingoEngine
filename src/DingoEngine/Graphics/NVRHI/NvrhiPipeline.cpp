@@ -71,12 +71,18 @@ namespace Dingo
 			.setRasterState(rasterState)
 			.setBlendState(blendState);
 
+		const auto& vsHandle = nvrhiShader->m_ShaderHandles[ShaderType::Vertex];
+		const auto& psHandle = nvrhiShader->m_ShaderHandles[ShaderType::Pixel];
+		if (!vsHandle) DE_CORE_ERROR("Pipeline '{}': vertex shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
+		if (!psHandle) DE_CORE_ERROR("Pipeline '{}': pixel shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
+		DE_CORE_ASSERT(vsHandle && psHandle, "Shader compilation failed — see errors above.");
+
 		nvrhi::GraphicsPipelineDesc graphicsPipelineDesc = nvrhi::GraphicsPipelineDesc()
 			.setPrimType(nvrhi::PrimitiveType::TriangleList)
 			.setRenderState(renderState)
 			.setInputLayout(m_InputLayoutHandle)
-			.setVertexShader(nvrhiShader->m_ShaderHandles[ShaderType::Vertex])
-			.setPixelShader(nvrhiShader->m_ShaderHandles[ShaderType::Pixel]);
+			.setVertexShader(vsHandle)
+			.setPixelShader(psHandle);
 
 		if (nvrhiShader->m_BindingLayoutHandle)
 		{
@@ -84,6 +90,8 @@ namespace Dingo
 		}
 
 		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle);
+		if (!m_GraphicsPipelineHandle) DE_CORE_ERROR("Pipeline '{}': createGraphicsPipeline failed — check D3D12 debug output for root signature or PSO errors.", m_Params.DebugName);
+		DE_CORE_ASSERT(m_GraphicsPipelineHandle, "createGraphicsPipeline returned null — see errors above.");
 	}
 
 	void NvrhiPipeline::Destroy()

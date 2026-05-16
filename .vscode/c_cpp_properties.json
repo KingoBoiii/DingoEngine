@@ -13,13 +13,15 @@
                 "${workspaceFolder}/vendor/imgui",
                 "${workspaceFolder}/vendor/msdf-atlas-gen/msdfgen",
                 "${workspaceFolder}/vendor/msdf-atlas-gen/msdf-atlas-gen",
-                "${env:VULKAN_SDK}/Include"
+                "${env:VULKAN_SDK}/Include",
+                "${workspaceFolder}/vendor/nvrhi/thirdparty/DirectX-Headers/include"
             ],
             "defines": [
                 "_CRT_SECURE_NO_WARNINGS",
                 "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1",
                 "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING",
                 "GLFW_INCLUDE_NONE",
+                "GLFW_EXPOSE_NATIVE_WIN32",
                 "DE_PLATFORM_WINDOWS",
                 "DE_DEBUG"
             ],

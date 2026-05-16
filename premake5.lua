@@ -47,6 +47,7 @@ IncludeDir['imgui'] = "%{wks.location}/vendor/imgui";
 IncludeDir["msdfgen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdfgen"
 IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas-gen"
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
+IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -57,17 +58,24 @@ Library['vulkan'] = "%{LibraryDir.vulkan}/vulkan-1.lib";
 Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_sharedd.lib"
 Library["SPIRV_Cross_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-cored.lib"
 Library["SPIRV_Cross_GLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-glsld.lib"
+Library["SPIRV_Cross_HLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-hlsld.lib"
 Library["SPIRV_Tools_Debug"] = "%{LibraryDir.vulkan}/SPIRV-Toolsd.lib"
 
 Library["ShaderC_Release"] = "%{LibraryDir.vulkan}/shaderc_shared.lib"
 Library["SPIRV_Cross_Release"] = "%{LibraryDir.vulkan}/spirv-cross-core.lib"
 Library["SPIRV_Cross_GLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-glsl.lib"
+Library["SPIRV_Cross_HLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-hlsl.lib"
 
 -- Windows
 Library["WinSock"] = "Ws2_32.lib"
 Library["WinMM"] = "Winmm.lib"
 Library["WinVersion"] = "Version.lib"
 Library["BCrypt"] = "Bcrypt.lib"
+Library["D3D12"] = "d3d12.lib"
+Library["D3D11"] = "d3d11.lib"
+Library["DXGI"] = "dxgi.lib"
+Library["DXGUID"] = "dxguid.lib"
+Library["D3DCompiler"] = "d3dcompiler.lib"
 
 
 group "Dependencies"
@@ -101,8 +109,8 @@ group "Engine"
 			"src/**.cpp"
 		}
 	
-		includedirs { 
-			"include", 
+		includedirs {
+			"include",
 			"src",
 			"%{IncludeDir.spdlog}",
 			"%{IncludeDir.glfw}",
@@ -130,14 +138,23 @@ group "Engine"
 
 		filter "system:windows"
 			systemversion "latest"
-			defines { "DE_PLATFORM_WINDOWS", }
+			defines { "DE_PLATFORM_WINDOWS", "GLFW_EXPOSE_NATIVE_WIN32" }
 			buildoptions { "/utf-8" }
+
+			includedirs {
+				"%{IncludeDir.dx_headers}"
+			}
 
 			links {
 				"%{Library.WinSock}",
 				"%{Library.WinMM}",
 				"%{Library.WinVersion}",
 				"%{Library.BCrypt}",
+				"%{Library.D3D12}",
+				"%{Library.D3D11}",
+				"%{Library.DXGI}",
+				"%{Library.DXGUID}",
+				"%{Library.D3DCompiler}",
 			}
 
 		filter "system:linux"
@@ -151,7 +168,8 @@ group "Engine"
 			links {
 				"%{Library.ShaderC_Debug}",
 				"%{Library.SPIRV_Cross_Debug}",
-				"%{Library.SPIRV_Cross_GLSL_Debug}"
+				"%{Library.SPIRV_Cross_GLSL_Debug}",
+				"%{Library.SPIRV_Cross_HLSL_Debug}",
 			}
 
 		filter "configurations:Release"
@@ -161,7 +179,8 @@ group "Engine"
 			links {
 				"%{Library.ShaderC_Release}",
 				"%{Library.SPIRV_Cross_Release}",
-				"%{Library.SPIRV_Cross_GLSL_Release}"
+				"%{Library.SPIRV_Cross_GLSL_Release}",
+				"%{Library.SPIRV_Cross_HLSL_Release}",
 			}
 
 		filter "configurations:Distribution"
@@ -172,7 +191,8 @@ group "Engine"
 			links {
 				"%{Library.ShaderC_Release}",
 				"%{Library.SPIRV_Cross_Release}",
-				"%{Library.SPIRV_Cross_GLSL_Release}"
+				"%{Library.SPIRV_Cross_GLSL_Release}",
+				"%{Library.SPIRV_Cross_HLSL_Release}",
 			}
 
 group ""
