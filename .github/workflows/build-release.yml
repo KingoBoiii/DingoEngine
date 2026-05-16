@@ -123,6 +123,7 @@ jobs:
       with:
         lfs: true
         submodules: false
+        fetch-depth: 0
 
     - name: Download FlappyBird binary
       uses: actions/download-artifact@v4
