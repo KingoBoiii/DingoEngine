@@ -155,7 +155,7 @@ jobs:
         Compress-Archive -Path ".\flappybird\*" -DestinationPath ".\$zipName" -Force
 
     - name: Upload to GitHub Release
-      run: gh release upload "${{steps.version.outputs.VERSION}}" "FlappyBird-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
+      run: gh release upload "${{ github.ref_name }}" "FlappyBird-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
