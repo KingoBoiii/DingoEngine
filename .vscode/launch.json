@@ -6,7 +6,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/FlappyBird/FlappyBird.exe",
-            "args": ["--graphics=dx12"],
+            "args": ["--graphics=vulkan"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/examples/FlappyBird",
             "environment": [],
