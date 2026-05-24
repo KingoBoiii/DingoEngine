@@ -281,6 +281,7 @@ namespace Dingo
 		}
 
 		delete s_StaticResources;
+		s_StaticResources = nullptr;
 	}
 
 }

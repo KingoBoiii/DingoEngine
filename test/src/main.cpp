@@ -22,24 +22,36 @@ namespace Dingo
 
 }
 
-Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
+Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 {
+	GraphicsAPI graphicsAPI = GraphicsAPI::Vulkan;
+	if (Application::HasPendingRestart())
+	{
+		graphicsAPI = Application::ConsumePendingRestart();
+	}
+	else if (auto value = args.Get("graphics"))
+	{
+		if (*value == "dx12" || *value == "directx12")  graphicsAPI = GraphicsAPI::DirectX12;
+		else if (*value == "dx11" || *value == "directx11") graphicsAPI = GraphicsAPI::DirectX11;
+	}
+
 	ApplicationParams params = ApplicationParams{
+		.CommandLineArgs = args,
 		.Window = {
-			.Title = "Dingo Test Framework",		// Window title
-			.Width = 1600,							// Window width
-			.Height = 900,							// Window height
-			.VSync = true,							// Enable VSync by default
-			.Resizable = true,						// Make the window resizable by default
+			.Title = "Dingo Test Framework",
+			.Width = 1600,
+			.Height = 900,
+			.VSync = true,
+			.Resizable = true,
 		},
 		.Graphics = {
-			.GraphicsAPI = GraphicsAPI::Vulkan,		// Default to Vulkan
-			.FramesInFlight = 3,					// Number of frames in flight for Rendering
+			.GraphicsAPI = graphicsAPI,
+			.FramesInFlight = 3,
 		},
-		.EnableImGui = true,						// Enable ImGui by default
+		.EnableImGui = true,
 		.ImGui = {
-			.EnableDocking = true,					// Enable docking by default
-			.EnableViewports = false,				// Disable viewports by default
+			.EnableDocking = true,
+			.EnableViewports = false,
 		}
 	};
 

@@ -88,6 +88,7 @@ namespace Dingo
 		void PushOverlay(Layer* overlay);
 
 		void Close();
+		void RequestRestart(GraphicsAPI api);
 
 		void SubmitPostExecution(const std::function<void()>& callback)
 		{
@@ -95,6 +96,9 @@ namespace Dingo
 		}
 
 		static Application& Get() { return *s_Instance; }
+		static bool HasPendingRestart() { return s_PendingRestart; }
+		static GraphicsAPI ConsumePendingRestart();
+
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
@@ -133,6 +137,8 @@ namespace Dingo
 
 	private:
 		inline static Application* s_Instance = nullptr;
+		inline static bool s_PendingRestart = false;
+		inline static GraphicsAPI s_PendingRestartAPI = GraphicsAPI::Vulkan;
 	};
 
 	Application* CreateApplication(ApplicationCommandLineArgs args);

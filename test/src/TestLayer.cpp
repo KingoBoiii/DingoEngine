@@ -75,17 +75,18 @@ namespace Dingo
 
 	void TestLayer::OnUpdate(float deltaTime)
 	{
+		// The AppRenderer command list must be opened/closed every frame so the render
+		// thread can execute it without crashing. Do NOT clear the swapchain here —
+		// the render thread submits this AFTER ImGui already drew, so a clear would
+		// overwrite ImGui's output. ImGui owns the swapchain in this setup.
+		Dingo::Renderer& appRenderer = Application::Get().GetRenderer();
+		appRenderer.Begin();
+		appRenderer.End();
+
 		if (m_CurrentTest)
 		{
 			m_CurrentTest->Update(deltaTime);
-			return;
 		}
-
-		Dingo::Renderer& appRenderer = Application::Get().GetRenderer();
-
-		appRenderer.Begin();
-		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });
-		appRenderer.End();
 	}
 
 	void TestLayer::OnImGuiRender()
@@ -160,17 +161,16 @@ namespace Dingo
 		{
 			if (ImGui::BeginMenu("File"))
 			{
-				if (ImGui::MenuItem("Restart to Vulkan", NULL, false, false))
-				{
-				}
+				GraphicsAPI currentAPI = Application::Get().GetGraphicsContext().GetGraphicsAPI();
 
-				if (ImGui::MenuItem("Restart to DirectX 12", NULL, false, false))
-				{
-				}
+				if (ImGui::MenuItem("Restart to Vulkan", NULL, currentAPI == GraphicsAPI::Vulkan, currentAPI != GraphicsAPI::Vulkan))
+					Application::Get().RequestRestart(GraphicsAPI::Vulkan);
 
-				if (ImGui::MenuItem("Restart to DirectX 11", NULL, false, false))
-				{
-				}
+				if (ImGui::MenuItem("Restart to DirectX 12", NULL, currentAPI == GraphicsAPI::DirectX12, currentAPI != GraphicsAPI::DirectX12))
+					Application::Get().RequestRestart(GraphicsAPI::DirectX12);
+
+				if (ImGui::MenuItem("Restart to DirectX 11", NULL, currentAPI == GraphicsAPI::DirectX11, currentAPI != GraphicsAPI::DirectX11))
+					Application::Get().RequestRestart(GraphicsAPI::DirectX11);
 
 				ImGui::Separator();
 
@@ -212,7 +212,28 @@ namespace Dingo
 		// Properties Panel
 		ImGui::Begin("Properties", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-		ImGui::Text("Properties Panel");
+		const GraphicsContext& gfx = Application::Get().GetGraphicsContext();
+		const AdapterInfo& adapter = gfx.GetAdapterInfo();
+
+		const char* apiName = "Unknown";
+		switch (gfx.GetGraphicsAPI())
+		{
+			case GraphicsAPI::Vulkan:    apiName = "Vulkan";    break;
+			case GraphicsAPI::DirectX11: apiName = "DirectX 11"; break;
+			case GraphicsAPI::DirectX12: apiName = "DirectX 12"; break;
+			default: break;
+		}
+
+		if (ImGui::CollapsingHeader("GPU Info", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Text("API:    %s", apiName);
+			ImGui::Text("GPU:    %s", adapter.Name.c_str());
+			ImGui::Text("Vendor: %s", GraphicsContext::VendorName(adapter.VendorID).c_str());
+			ImGui::Text("VRAM:   %.0f MB", adapter.DedicatedVideoMemory / (1024.0 * 1024.0));
+		}
+
+		ImGui::Separator();
+
 		if (m_CurrentTest)
 		{
 			m_CurrentTest->ImGuiRender();

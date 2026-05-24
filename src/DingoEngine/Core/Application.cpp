@@ -110,7 +110,7 @@ namespace Dingo
 		if (m_GraphicsContext)
 		{
 			m_GraphicsContext->Shutdown();
-			//delete m_GraphicsContext;
+			delete m_GraphicsContext;
 			m_GraphicsContext = nullptr;
 		}
 
@@ -181,6 +181,19 @@ namespace Dingo
 	void Application::Close()
 	{
 		m_IsRunning = false;
+	}
+
+	void Application::RequestRestart(GraphicsAPI api)
+	{
+		s_PendingRestart = true;
+		s_PendingRestartAPI = api;
+		SubmitPostExecution([]() { Application::Get().Close(); });
+	}
+
+	GraphicsAPI Application::ConsumePendingRestart()
+	{
+		s_PendingRestart = false;
+		return s_PendingRestartAPI;
 	}
 
 	Renderer& Application::GetRenderer() const

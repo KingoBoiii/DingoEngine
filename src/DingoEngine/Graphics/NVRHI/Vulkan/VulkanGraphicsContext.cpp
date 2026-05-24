@@ -89,17 +89,12 @@ namespace Dingo
 	{
 		m_RendererString.clear();
 
-		//if (m_DeviceHandle)
-		//{
-		//	m_DeviceHandle->Release();
-		//	m_DeviceHandle = nullptr;
-		//}
-
-		if (m_NvrhiDevice)
+		if (m_DeviceHandle)
 		{
-			m_NvrhiDevice->Release();
-			m_NvrhiDevice = nullptr;
+			m_DeviceHandle->waitForIdle();
+			m_DeviceHandle = nullptr;
 		}
+		m_NvrhiDevice = nullptr;
 
 		if (m_VulkanDevice)
 		{
