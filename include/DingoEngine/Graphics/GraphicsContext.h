@@ -49,6 +49,8 @@ namespace Dingo
 		const AdapterInfo& GetAdapterInfo() const { return m_AdapterInfo; }
 		static GraphicsContext& Get() { return *s_Instance; }
 
+		static std::string VendorName(uint32_t vendorID);
+
 		template<typename T>
 		T& As() { return static_cast<T&>(*this); }
 
