@@ -19,3 +19,6 @@ namespace Dingo
 	};
 
 }
+
+#include "DingoEngine/Log.h"
+#include "DingoEngine/Assertion.h"
