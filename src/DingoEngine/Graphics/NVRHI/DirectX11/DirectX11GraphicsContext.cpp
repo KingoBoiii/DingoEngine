@@ -49,6 +49,12 @@ namespace Dingo
 			char name[128] = {};
 			WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, name, sizeof(name), nullptr, nullptr);
 			DE_CORE_INFO("DirectX 11: using adapter '{}'", name);
+
+			m_AdapterInfo.Name = name;
+			m_AdapterInfo.VendorID = desc.VendorId;
+			m_AdapterInfo.DeviceID = desc.DeviceId;
+			m_AdapterInfo.DedicatedVideoMemory = desc.DedicatedVideoMemory;
+			m_AdapterInfo.DeviceType = desc.DedicatedVideoMemory > 0 ? AdapterDeviceType::Discrete : AdapterDeviceType::Integrated;
 		}
 
 		IDXGIFactory* dxgiFactory = nullptr;

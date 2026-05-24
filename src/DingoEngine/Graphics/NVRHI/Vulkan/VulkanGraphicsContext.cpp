@@ -407,6 +407,24 @@ namespace Dingo
 		const vk::PhysicalDeviceProperties physicalDeviceProperties = m_VulkanPhysicalDevice.getProperties();
 		m_RendererString = std::string(physicalDeviceProperties.deviceName.data());
 
+		m_AdapterInfo.Name = m_RendererString;
+		m_AdapterInfo.VendorID = physicalDeviceProperties.vendorID;
+		m_AdapterInfo.DeviceID = physicalDeviceProperties.deviceID;
+		switch (physicalDeviceProperties.deviceType)
+		{
+			case vk::PhysicalDeviceType::eDiscreteGpu:   m_AdapterInfo.DeviceType = AdapterDeviceType::Discrete;   break;
+			case vk::PhysicalDeviceType::eIntegratedGpu: m_AdapterInfo.DeviceType = AdapterDeviceType::Integrated; break;
+			case vk::PhysicalDeviceType::eVirtualGpu:    m_AdapterInfo.DeviceType = AdapterDeviceType::Virtual;    break;
+			case vk::PhysicalDeviceType::eCpu:           m_AdapterInfo.DeviceType = AdapterDeviceType::Software;   break;
+			default:                                     m_AdapterInfo.DeviceType = AdapterDeviceType::Unknown;    break;
+		}
+		auto memProps = m_VulkanPhysicalDevice.getMemoryProperties();
+		for (uint32_t i = 0; i < memProps.memoryHeapCount; ++i)
+		{
+			if (memProps.memoryHeaps[i].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
+				m_AdapterInfo.DedicatedVideoMemory += memProps.memoryHeaps[i].size;
+		}
+
 		vk::PhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = vk::PhysicalDeviceBufferDeviceAddressFeatures();
 
 		std::unordered_set<int> uniqueQueueFamilies = {
