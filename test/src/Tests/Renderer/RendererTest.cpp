@@ -5,7 +5,8 @@ namespace Dingo
 
 	void RendererTest::Resize(uint32_t width, uint32_t height)
 	{
-		if (width == m_Renderer->GetTargetFramebuffer()->GetParams().Width && height == m_Renderer->GetTargetFramebuffer()->GetParams().Height)
+		if (width == Renderer::GetTargetFramebuffer()->GetParams().Width &&
+		    height == Renderer::GetTargetFramebuffer()->GetParams().Height)
 		{
 			return;
 		}

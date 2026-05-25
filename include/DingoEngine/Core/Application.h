@@ -69,7 +69,6 @@ namespace Dingo
 	};
 
 	class ImGuiLayer;
-	class AppRenderer;
 
 	class Application
 	{
@@ -102,7 +101,6 @@ namespace Dingo
 		const Window& GetWindow() const { return *m_Window; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
-		Renderer& GetRenderer() const;
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
@@ -125,7 +123,6 @@ namespace Dingo
 		Window* m_Window = nullptr;
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
-		AppRenderer* m_Renderer = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;

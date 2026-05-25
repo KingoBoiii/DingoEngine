@@ -24,15 +24,14 @@ namespace Dingo
 			.SetHeight(600)
 			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 
-		m_Renderer = Renderer::Create(m_OutputFramebuffer);
-		m_Renderer2D = Renderer2D::Create(m_OutputFramebuffer);
+		m_Renderer2D = Renderer2D::Create();
 
-		// Register tests
-		m_Tests.push_back({ "Static Triangle Test", [&]() { return new StaticTriangleTest(m_Renderer); } });
-		m_Tests.push_back({ "Vertex Buffer Test", [&]() { return new VertexBufferTest(m_Renderer); } });
-		m_Tests.push_back({ "Index Buffer Test", [&]() { return new IndexBufferTest(m_Renderer); } });
-		m_Tests.push_back({ "Uniform Buffer Test", [&]() { return new UniformBufferTest(m_Renderer); } });
-		m_Tests.push_back({ "Texture Test", [&]() { return new TextureTest(m_Renderer); } });
+		// TODO: Low-level Renderer tests need off-screen pass (deferred feature)
+		// m_Tests.push_back({ "Static Triangle Test", ... });
+		// m_Tests.push_back({ "Vertex Buffer Test",   ... });
+		// m_Tests.push_back({ "Index Buffer Test",    ... });
+		// m_Tests.push_back({ "Uniform Buffer Test",  ... });
+		// m_Tests.push_back({ "Texture Test",         ... });
 
 		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
@@ -59,13 +58,6 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		if (m_Renderer)
-		{
-			m_Renderer->Shutdown();
-			delete m_Renderer;
-			m_Renderer = nullptr;
-		}
-
 		if (m_OutputFramebuffer)
 		{
 			m_OutputFramebuffer->Destroy();
@@ -75,13 +67,8 @@ namespace Dingo
 
 	void TestLayer::OnUpdate(float deltaTime)
 	{
-		// The AppRenderer command list must be opened/closed every frame so the render
-		// thread can execute it without crashing. Do NOT clear the swapchain here —
-		// the render thread submits this AFTER ImGui already drew, so a clear would
-		// overwrite ImGui's output. ImGui owns the swapchain in this setup.
-		Dingo::Renderer& appRenderer = Application::Get().GetRenderer();
-		appRenderer.Begin();
-		appRenderer.End();
+		// The frame command list is managed by Renderer::BeginFrame/EndFrame.
+		// No work needed here — ImGui owns the swapchain clear in this setup.
 
 		if (m_CurrentTest)
 		{

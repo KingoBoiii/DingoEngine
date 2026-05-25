@@ -40,7 +40,7 @@ void main() {
 		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Index Buffer Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetTargetFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout));
@@ -52,10 +52,10 @@ void main() {
 
 	void IndexBufferTest::Update(float deltaTime)
 	{
-		m_Renderer->Begin();
-		m_Renderer->Clear(m_ClearColor);
-		m_Renderer->DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
-		m_Renderer->End();
+		Renderer::Begin();
+		Renderer::Clear(m_ClearColor);
+		Renderer::DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
+		Renderer::End();
 	}
 
 	void IndexBufferTest::Cleanup()

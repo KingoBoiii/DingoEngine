@@ -80,6 +80,12 @@ namespace Dingo
 		bool CheckBallBrickCollision(const Ball& ball, const Brick& brick) const;
 		void ResolveBallBrickCollision(Ball& ball, const Brick& brick);
 
+		void InitScene3D();
+		void ShutdownScene3D();
+		void BeginScene3D(const PerspectiveCamera& camera, const glm::vec4& clearColor);
+		void SubmitMesh(Mesh* mesh, const glm::mat4& transform, const glm::vec4& color);
+		void FlushScene3D();
+
 	private:
 		// Camera
 		PerspectiveCamera m_Camera;
@@ -93,6 +99,30 @@ namespace Dingo
 		// Meshes
 		Mesh* m_BoxMesh    = nullptr;
 		Mesh* m_SphereMesh = nullptr;
+
+		// 3D scene pipeline (owned by this layer)
+		struct MeshVertex { glm::vec3 Position; glm::vec4 Color; };
+		struct Scene3D
+		{
+			struct CameraUBOData { glm::mat4 ViewProjection; };
+			CameraUBOData CameraData = {};
+
+			GraphicsBuffer* CameraUBO    = nullptr;
+			Shader*         MeshShader   = nullptr;
+			Pipeline*       MeshPipeline = nullptr;
+			RenderPass*     MeshPass     = nullptr;
+
+			GraphicsBuffer* VertexBuffer     = nullptr;
+			GraphicsBuffer* IndexBuffer      = nullptr;
+			MeshVertex*     VertexBufferBase = nullptr;
+			MeshVertex*     VertexBufferPtr  = nullptr;
+			uint16_t*       IndexBufferBase  = nullptr;
+			uint16_t*       IndexBufferPtr   = nullptr;
+			uint32_t        IndexCount       = 0;
+			uint16_t        VertexOffset     = 0;
+
+			glm::vec4 ClearColor = { 0.1f, 0.1f, 0.15f, 1.0f };
+		} m_Scene3D;
 
 		// Scene bounds (XZ play field)
 		static constexpr float FieldHalfX   = 5.5f;   // side walls at ±FieldHalfX

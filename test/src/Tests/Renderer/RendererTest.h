@@ -4,21 +4,18 @@
 namespace Dingo
 {
 
+	// TODO: Off-screen framebuffer targeting is a deferred feature.
+	// These tests currently use the global swap-chain Renderer.
 	class RendererTest : public GraphicsTest
 	{
 	public:
-		RendererTest(Renderer* renderer)
-			: m_Renderer(renderer)
-		{}
+		RendererTest() = default;
 		virtual ~RendererTest() = default;
 
 	public:
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
-		virtual Texture* GetResult() override { return m_Renderer->GetOutput(); }
-
-	protected:
-		Renderer* m_Renderer = nullptr;
+		virtual Texture* GetResult() override { return Renderer::GetOutput(); }
 	};
 
 }

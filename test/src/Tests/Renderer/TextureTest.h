@@ -7,8 +7,7 @@ namespace Dingo
 	class TextureTest : public RendererTest
 	{
 	public:
-		TextureTest(Renderer* renderer)
-			: RendererTest(renderer)
+		TextureTest()
 		{}
 		virtual ~TextureTest() = default;
 

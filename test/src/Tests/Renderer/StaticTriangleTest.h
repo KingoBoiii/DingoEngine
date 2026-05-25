@@ -7,8 +7,7 @@ namespace Dingo
 	class StaticTriangleTest : public RendererTest
 	{
 	public:
-		StaticTriangleTest(Renderer* renderer)
-			: RendererTest(renderer)
+		StaticTriangleTest()
 		{}
 		virtual ~StaticTriangleTest() = default;
 

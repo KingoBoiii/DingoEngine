@@ -49,7 +49,7 @@ void main() {
 		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Uniform Buffer Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetTargetFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
@@ -65,11 +65,11 @@ void main() {
 		const glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), m_AspectRatio, 0.1f, 100.0f) * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f));
 		m_UniformBuffer->Upload(&projectionMatrix, sizeof(CameraTransform));
 
-		m_Renderer->Begin();
-		m_Renderer->Clear(m_ClearColor);
-		m_Renderer->Upload(m_UniformBuffer);
-		m_Renderer->DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
-		m_Renderer->End();
+		Renderer::Begin();
+		Renderer::Clear(m_ClearColor);
+		Renderer::Upload(m_UniformBuffer);
+		Renderer::DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
+		Renderer::End();
 	}
 
 	void UniformBufferTest::Cleanup()

@@ -6,6 +6,38 @@
 #include <cmath>
 #include <format>
 
+namespace
+{
+	constexpr const char* k_MeshShaderSource = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec4 a_Color;
+
+layout(std140, binding = 0) uniform CameraData { mat4 ViewProjection; };
+
+layout(location = 0) out vec4 v_Color;
+
+void main()
+{
+	gl_Position = ViewProjection * vec4(a_Position, 1.0);
+	v_Color = a_Color;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) in  vec4 v_Color;
+layout(location = 0) out vec4 o_Color;
+
+void main() { o_Color = v_Color; }
+)";
+
+	static constexpr uint32_t k_MaxVertices = 65536;
+	static constexpr uint32_t k_MaxIndices  = 65536;
+}
+
 namespace Dingo
 {
 
@@ -45,11 +77,14 @@ namespace Dingo
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 		UpdateOrthoProjection();
 
+		InitScene3D();
 		ResetGame();
 	}
 
 	void BreakoutLayer::OnDetach()
 	{
+		ShutdownScene3D();
+
 		delete m_Font;
 		m_Font = nullptr;
 
@@ -309,31 +344,132 @@ namespace Dingo
 	}
 
 	// -------------------------------------------------------
+	// 3D scene management
+	// -------------------------------------------------------
+
+	void BreakoutLayer::InitScene3D()
+	{
+		auto& s = m_Scene3D;
+
+		s.CameraUBO = GraphicsBuffer::CreateUniformBuffer(sizeof(Scene3D::CameraUBOData), "Breakout3D_CameraUBO");
+
+		s.VertexBuffer     = GraphicsBuffer::CreateVertexBuffer(sizeof(MeshVertex) * k_MaxVertices, nullptr, true, "Breakout3D_VB");
+		s.IndexBuffer      = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * k_MaxIndices, nullptr, true, "Breakout3D_IB");
+		s.VertexBufferBase = new MeshVertex[k_MaxVertices];
+		s.IndexBufferBase  = new uint16_t[k_MaxIndices];
+
+		s.MeshShader = Shader::CreateFromSource("Breakout3DMeshShader", k_MeshShaderSource);
+
+		VertexLayout layout = VertexLayout()
+			.SetStride(sizeof(MeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT,  offsetof(MeshVertex, Position))
+			.AddAttribute("a_Color",    Format::RGBA32_FLOAT, offsetof(MeshVertex, Color));
+
+		s.MeshPipeline = Pipeline::Create(PipelineParams()
+			.SetDebugName("Breakout3DMeshPipeline")
+			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+			.SetShader(s.MeshShader)
+			.SetVertexLayout(layout)
+			.SetCullMode(CullMode::None));
+
+		s.MeshPass = RenderPass::Create(RenderPassParams().SetPipeline(s.MeshPipeline));
+		s.MeshPass->Initialize();
+		s.MeshPass->SetUniformBuffer(0, s.CameraUBO);
+		s.MeshPass->Bake();
+	}
+
+	void BreakoutLayer::ShutdownScene3D()
+	{
+		auto& s = m_Scene3D;
+
+		delete[] s.VertexBufferBase;
+		delete[] s.IndexBufferBase;
+		s.VertexBufferBase = nullptr;
+		s.IndexBufferBase  = nullptr;
+
+		if (s.VertexBuffer) { s.VertexBuffer->Destroy(); s.VertexBuffer = nullptr; }
+		if (s.IndexBuffer)  { s.IndexBuffer->Destroy();  s.IndexBuffer  = nullptr; }
+		if (s.CameraUBO)    { s.CameraUBO->Destroy();    s.CameraUBO    = nullptr; }
+		if (s.MeshPass)     { s.MeshPass->Destroy();     s.MeshPass     = nullptr; }
+		if (s.MeshPipeline) { s.MeshPipeline->Destroy(); s.MeshPipeline = nullptr; }
+		if (s.MeshShader)   { s.MeshShader->Destroy();   s.MeshShader   = nullptr; }
+	}
+
+	void BreakoutLayer::BeginScene3D(const PerspectiveCamera& camera, const glm::vec4& clearColor)
+	{
+		auto& s = m_Scene3D;
+		s.ClearColor = clearColor;
+
+		s.CameraData.ViewProjection = camera.GetViewProjectionMatrix();
+		s.CameraUBO->Upload(&s.CameraData, sizeof(Scene3D::CameraUBOData));
+
+		s.VertexBufferPtr = s.VertexBufferBase;
+		s.IndexBufferPtr  = s.IndexBufferBase;
+		s.IndexCount      = 0;
+		s.VertexOffset    = 0;
+	}
+
+	void BreakoutLayer::SubmitMesh(Mesh* mesh, const glm::mat4& transform, const glm::vec4& color)
+	{
+		auto& s = m_Scene3D;
+		for (const auto& v : mesh->GetVertices())
+		{
+			s.VertexBufferPtr->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			s.VertexBufferPtr->Color    = color;
+			s.VertexBufferPtr++;
+		}
+		for (uint16_t idx : mesh->GetIndices())
+			*s.IndexBufferPtr++ = idx + s.VertexOffset;
+
+		s.VertexOffset += static_cast<uint16_t>(mesh->GetVertices().size());
+		s.IndexCount   += static_cast<uint32_t>(mesh->GetIndices().size());
+	}
+
+	void BreakoutLayer::FlushScene3D()
+	{
+		auto& s = m_Scene3D;
+
+		Renderer::Clear(s.ClearColor);
+
+		if (s.IndexCount == 0)
+			return;
+
+		uint32_t vertexDataSize = static_cast<uint32_t>(
+			reinterpret_cast<uint8_t*>(s.VertexBufferPtr) - reinterpret_cast<uint8_t*>(s.VertexBufferBase));
+
+		s.VertexBuffer->Upload(s.VertexBufferBase, vertexDataSize);
+		s.IndexBuffer->Upload(s.IndexBufferBase, s.IndexCount * sizeof(uint16_t));
+		Renderer::Upload(s.CameraUBO);
+
+		Renderer::BeginRenderPass(s.MeshPass);
+		Renderer::DrawIndexed(s.VertexBuffer, s.IndexBuffer, s.IndexCount);
+		Renderer::EndRenderPass();
+	}
+
+	// -------------------------------------------------------
 	// Rendering
 	// -------------------------------------------------------
 
 	void BreakoutLayer::RenderScene()
 	{
-		Renderer& renderer = Application::Get().GetRenderer();
-
-		renderer.BeginScene(m_Camera, { 0.04f, 0.04f, 0.10f, 1.0f });
+		BeginScene3D(m_Camera, { 0.04f, 0.04f, 0.10f, 1.0f });
 
 		// ── Floor (subtle dark slab) ──────────────────────────────
 		{
 			glm::mat4 t = glm::translate(glm::mat4(1.0f), { 0.0f, -0.15f, -1.5f });
 			t = glm::scale(t, { 12.0f, 0.1f, 15.0f });
-			renderer.DrawMesh(m_BoxMesh, t, { 0.08f, 0.08f, 0.12f, 1.0f });
+			SubmitMesh(m_BoxMesh, t, { 0.08f, 0.08f, 0.12f, 1.0f });
 		}
 
 		// ── Side walls ────────────────────────────────────────────
 		{
 			glm::mat4 tL = glm::translate(glm::mat4(1.0f), { -FieldHalfX - 0.25f, 0.5f, -1.5f });
 			tL = glm::scale(tL, { 0.5f, 1.0f, 14.0f });
-			renderer.DrawMesh(m_BoxMesh, tL, { 0.2f, 0.2f, 0.3f, 1.0f });
+			SubmitMesh(m_BoxMesh, tL, { 0.2f, 0.2f, 0.3f, 1.0f });
 
 			glm::mat4 tR = glm::translate(glm::mat4(1.0f), { FieldHalfX + 0.25f, 0.5f, -1.5f });
 			tR = glm::scale(tR, { 0.5f, 1.0f, 14.0f });
-			renderer.DrawMesh(m_BoxMesh, tR, { 0.2f, 0.2f, 0.3f, 1.0f });
+			SubmitMesh(m_BoxMesh, tR, { 0.2f, 0.2f, 0.3f, 1.0f });
 		}
 
 		// ── Bricks (back rows first for painter's algorithm) ──────
@@ -346,7 +482,7 @@ namespace Dingo
 
 				glm::mat4 t = glm::translate(glm::mat4(1.0f), brick.Position);
 				t = glm::scale(t, brick.Size);
-				renderer.DrawMesh(m_BoxMesh, t, brick.Color);
+				SubmitMesh(m_BoxMesh, t, brick.Color);
 			}
 		}
 
@@ -354,17 +490,17 @@ namespace Dingo
 		{
 			glm::mat4 t = glm::translate(glm::mat4(1.0f), m_Ball.Position);
 			t = glm::scale(t, glm::vec3(m_Ball.Radius * 2.0f));
-			renderer.DrawMesh(m_SphereMesh, t, { 1.0f, 0.75f, 0.15f, 1.0f });
+			SubmitMesh(m_SphereMesh, t, { 1.0f, 0.75f, 0.15f, 1.0f });
 		}
 
 		// ── Paddle (drawn last — closest to camera) ───────────────
 		{
 			glm::mat4 t = glm::translate(glm::mat4(1.0f), m_Paddle.Position);
 			t = glm::scale(t, m_Paddle.Size);
-			renderer.DrawMesh(m_BoxMesh, t, { 0.30f, 0.55f, 1.0f, 1.0f });
+			SubmitMesh(m_BoxMesh, t, { 0.30f, 0.55f, 1.0f, 1.0f });
 		}
 
-		renderer.EndScene();
+		FlushScene3D();
 	}
 
 	void BreakoutLayer::UpdateOrthoProjection()
