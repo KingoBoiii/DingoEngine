@@ -36,6 +36,9 @@ namespace Dingo
 		virtual void Draw(uint32_t vertexCount, uint32_t instanceCount = 1) override;
 		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1) override;
 
+	public:
+		nvrhi::ICommandList* GetNvrhiHandle() const { return m_CommandListHandle; }
+
 	private:
 		bool m_HasBegun = false; // Track if the command list has begun
 		nvrhi::GraphicsState m_GraphicsState;

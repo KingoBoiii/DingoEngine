@@ -63,6 +63,7 @@ namespace Dingo
 		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer);
 		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer);
 
+		static CommandList* GetCommandList();
 		static Framebuffer* GetTargetFramebuffer();
 		static Texture* GetOutput();
 

@@ -267,6 +267,11 @@ namespace Dingo
 		s_Data->CommandList->DrawIndexed(indexBuffer->GetByteSize() / sizeof(uint16_t), 1);
 	}
 
+	CommandList* Renderer::GetCommandList()
+	{
+		return s_Data->CommandList;
+	}
+
 	Framebuffer* Renderer::GetTargetFramebuffer()
 	{
 		return s_Data->TargetFramebuffer;

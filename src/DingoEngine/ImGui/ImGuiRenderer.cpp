@@ -126,7 +126,7 @@ void main()
 
 		auto depthStencilState = nvrhi::DepthStencilState()
 			.disableDepthTest()
-			.enableDepthWrite()
+			.disableDepthWrite()
 			.disableStencil()
 			.setDepthFunc(nvrhi::ComparisonFunc::Always);
 
@@ -218,23 +218,33 @@ void main()
 		io.Fonts->TexID = (ImTextureID)m_FontTexture.Get();
 	}
 
-	bool ImGuiRenderer::Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer)
+	bool ImGuiRenderer::Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer, nvrhi::ICommandList* sharedCmdList)
 	{
 		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		ImDrawData* drawData = viewport->DrawData;
 
-		nvrhi::CommandListHandle commandList = device->createCommandList();
+		// When a shared (already-open) command list is provided, record into it directly
+		// to preserve submission order. Otherwise create and manage our own.
+		bool ownsCommandList = (sharedCmdList == nullptr);
+		nvrhi::CommandListHandle ownedHandle;
+		nvrhi::ICommandList* commandList;
 
-		commandList->open();
-
-		// std::string markerName = std::format("ImGui (Viewport {})", viewport == ImGui::GetMainViewport() ? "Main" : std::to_string((uint64_t)viewport));
-		// m_CommandList->beginMarker(markerName.c_str());
-		//nvrhi::utils::ClearColorAttachment(commandList, framebuffer, 0, nvrhi::Color(1, 0, 1, 1));
+		if (ownsCommandList)
+		{
+			ownedHandle = device->createCommandList();
+			ownedHandle->open();
+			commandList = ownedHandle;
+		}
+		else
+		{
+			commandList = sharedCmdList;
+		}
 
 		if (!UpdateGeometry(drawData))
 		{
-			commandList->close();
+			if (ownsCommandList)
+				ownedHandle->close();
 			return false;
 		}
 
@@ -333,15 +343,18 @@ void main()
 			idxOffset += cmdList->IdxBuffer.Size;
 		}
 
-		commandList->close();
-		device->executeCommandList(commandList);
+		if (ownsCommandList)
+		{
+			ownedHandle->close();
+			device->executeCommandList(ownedHandle);
+		}
 
 		return true;
 	}
 
-	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain)
+	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList)
 	{
-		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle);
+		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle, sharedCmdList);
 	}
 
 	bool ImGuiRenderer::ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer)
@@ -452,7 +465,7 @@ void main()
 		nvrhi::BindingSetDesc desc;
 
 		desc.bindings = {
-			nvrhi::BindingSetItem::PushConstants(0, sizeof(float) * 2),
+			nvrhi::BindingSetItem::PushConstants(0, sizeof(glm::vec2) * 2),
 			nvrhi::BindingSetItem::Texture_SRV(0, texture),
 			nvrhi::BindingSetItem::Sampler(1, m_FontSampler)
 		};
