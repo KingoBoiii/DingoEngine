@@ -30,7 +30,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.Width = 1280,
 			.Height = 720,
 			.VSync = true,
-			.Resizable = true,
+			.Resizable = false,
 		},
 		.Graphics = {
 			.GraphicsAPI = Dingo::GraphicsAPI::Vulkan,
