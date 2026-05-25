@@ -100,11 +100,12 @@ void main()
 
 		m_Shader = Shader::CreateFromSource("ImGuiRenderer", ImGuiShaderSourceCode, false);
 
-		// create attribute layout object
+		// Semantic names must match what ShaderCompiler::CompileGLSLToHLSLBytecode emits:
+		// it remaps each vertex input to use the GLSL variable name as the HLSL semantic.
 		nvrhi::VertexAttributeDesc vertexAttribLayout[] = {
-			{ "POSITION", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,pos), sizeof(ImDrawVert), false },
-			{ "TEXCOORD", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,uv),  sizeof(ImDrawVert), false },
-			{ "COLOR",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
+			{ "a_Position", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,pos), sizeof(ImDrawVert), false },
+			{ "a_TexCoord", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,uv),  sizeof(ImDrawVert), false },
+			{ "a_Color",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
 		};
 
 		m_ShaderAttribLayout = device->createInputLayout(vertexAttribLayout, sizeof(vertexAttribLayout) / sizeof(vertexAttribLayout[0]), static_cast<NvrhiShader*>(m_Shader)->m_ShaderHandles[ShaderType::Vertex]);

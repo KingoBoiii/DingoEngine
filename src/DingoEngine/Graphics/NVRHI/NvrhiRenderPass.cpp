@@ -18,10 +18,7 @@ namespace Dingo
 
 	void NvrhiRenderPass::Destroy()
 	{
-		if (m_BindingSetHandle)
-		{
-			m_BindingSetHandle->Release();
-		}
+		m_BindingSetHandle = nullptr;
 	}
 
 	void NvrhiRenderPass::SetUniformBuffer(uint32_t slot, GraphicsBuffer* buffer)

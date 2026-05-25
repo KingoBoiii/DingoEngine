@@ -96,20 +96,9 @@ namespace Dingo
 
 	void NvrhiPipeline::Destroy()
 	{
-		if (m_BindingSetHandle)
-		{
-			m_BindingSetHandle->Release();
-		}
-
-		if (m_InputLayoutHandle)
-		{
-			m_InputLayoutHandle->Release();
-		}
-
-		if (m_GraphicsPipelineHandle)
-		{
-			m_GraphicsPipelineHandle->Release();
-		}
+		m_BindingSetHandle = nullptr;
+		m_InputLayoutHandle = nullptr;
+		m_GraphicsPipelineHandle = nullptr;
 	}
 
 	void NvrhiPipeline::CreateInputLayout(NvrhiShader* nvrhiShader)

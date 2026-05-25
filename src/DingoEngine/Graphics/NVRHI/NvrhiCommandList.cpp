@@ -24,10 +24,7 @@ namespace Dingo
 
 	void NvrhiCommandList::Destroy()
 	{
-		if (m_CommandListHandle)
-		{
-			m_CommandListHandle->Release();
-		}
+		m_CommandListHandle = nullptr;
 	}
 
 	void NvrhiCommandList::Begin()
@@ -89,6 +86,12 @@ namespace Dingo
 		m_GraphicsState = nvrhi::GraphicsState();
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
+
+		if (!nvrhiPipeline->m_GraphicsPipelineHandle)
+		{
+			DE_CORE_ERROR("SetPipeline: pipeline '{}' has a null graphics pipeline handle — shader/PSO creation failed. Draw call will be skipped.", nvrhiPipeline->GetParams().DebugName);
+			return;
+		}
 
 		SetFramebuffer(nvrhiPipeline->GetTargetFramebuffer());
 

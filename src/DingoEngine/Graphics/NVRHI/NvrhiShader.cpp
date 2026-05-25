@@ -135,11 +135,7 @@ namespace Dingo
 	void NvrhiShader::Destroy()
 	{
 		m_ShaderHandles.clear();
-
-		if (m_BindingLayoutHandle)
-		{
-			m_BindingLayoutHandle->Release();
-		}
+		m_BindingLayoutHandle = nullptr;
 	}
 
 	nvrhi::ShaderHandle NvrhiShader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName)

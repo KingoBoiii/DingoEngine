@@ -29,10 +29,7 @@ namespace Dingo
 		}
 		m_Attachments.clear();
 
-		if (m_FramebufferHandle)
-		{
-			m_FramebufferHandle->Release();
-		}
+		m_FramebufferHandle = nullptr;
 	}
 
 	void NvrhiFramebuffer::Resize(uint32_t width, uint32_t height)
