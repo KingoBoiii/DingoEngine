@@ -135,6 +135,7 @@ namespace Dingo
 		});
 	}
 
+#ifndef DE_DISTRIBUTION
 	void BreakoutLayer::OnImGuiRender()
 	{
 		ImGui::Begin("Breakout 3D");
@@ -167,6 +168,7 @@ namespace Dingo
 
 		ImGui::End();
 	}
+#endif
 
 	// -------------------------------------------------------
 	// Game logic
