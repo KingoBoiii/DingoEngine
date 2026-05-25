@@ -85,6 +85,7 @@ namespace Dingo
 	{
 		ShutdownScene3D();
 
+		m_Font->Destroy();
 		delete m_Font;
 		m_Font = nullptr;
 

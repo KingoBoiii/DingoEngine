@@ -166,41 +166,18 @@ void main()
 
 	void ImGuiRenderer::Shutdown()
 	{
-		if (m_FontTexture)
-		{
-			m_FontTexture->Release();
-		}
-
-		if (m_FontSampler)
-		{
-			m_FontSampler->Release();
-		}
-
-		if (m_VertexBuffer)
-		{
-			m_VertexBuffer->Release();
-		}
-
-		if (m_IndexBuffer)
-		{
-			m_IndexBuffer->Release();
-		}
-
+		m_FontTexture      = nullptr;
+		m_FontSampler      = nullptr;
+		m_VertexBuffer     = nullptr;
+		m_IndexBuffer      = nullptr;
 		m_BindingsCache.clear();
-
-		if (m_BindingLayout)
-		{
-			m_BindingLayout->Release();
-		}
-
-		if (m_ShaderAttribLayout)
-		{
-			m_ShaderAttribLayout->Release();
-		}
-
+		m_BindingLayout    = nullptr;
+		m_ShaderAttribLayout = nullptr;
 		m_PipelineCache.clear();
 
 		m_Shader->Destroy();
+		delete m_Shader;
+		m_Shader = nullptr;
 	}
 
 	void ImGuiRenderer::UpdateFontTexture()

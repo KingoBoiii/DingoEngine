@@ -51,6 +51,8 @@ namespace Dingo
 	void ImGuiLayer::OnDetach()
 	{
 		m_ImGuiRenderer->Shutdown();
+		delete m_ImGuiRenderer;
+		m_ImGuiRenderer = nullptr;
 
 		ImGui_ImplGlfw_Shutdown();
 
@@ -156,7 +158,11 @@ namespace Dingo
 	static void ImGuiRenderer_DestroyWindow(ImGuiViewport* viewport)
 	{
 		ImGuiViewportData* vd = (ImGuiViewportData*)viewport->RendererUserData;
-		delete vd;
+		if (vd)
+		{
+			vd->Renderer->Shutdown();
+			delete vd;
+		}
 		viewport->RendererUserData = nullptr;
 	}
 
