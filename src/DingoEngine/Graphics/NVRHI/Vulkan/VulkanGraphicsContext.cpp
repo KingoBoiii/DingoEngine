@@ -92,6 +92,7 @@ namespace Dingo
 		if (m_DeviceHandle)
 		{
 			m_DeviceHandle->waitForIdle();
+			m_DeviceHandle->runGarbageCollection();
 			m_DeviceHandle = nullptr;
 		}
 		m_NvrhiDevice = nullptr;
@@ -457,6 +458,9 @@ namespace Dingo
 			.setImageCubeArray(true)
 			.setDualSrcBlend(true);
 
+		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
+			.setShaderDemoteToHelperInvocation(true);
+
 		vk::PhysicalDeviceVulkan12Features vulkan12features = vk::PhysicalDeviceVulkan12Features()
 			.setDescriptorIndexing(true)
 			.setRuntimeDescriptorArray(true)
@@ -464,8 +468,8 @@ namespace Dingo
 			.setDescriptorBindingVariableDescriptorCount(true)
 			.setTimelineSemaphore(true)
 			.setShaderSampledImageArrayNonUniformIndexing(true)
-			.setBufferDeviceAddress(bufferDeviceAddressFeatures.bufferDeviceAddress);
-		//.setPNext(pNext);
+			.setBufferDeviceAddress(bufferDeviceAddressFeatures.bufferDeviceAddress)
+			.setPNext(&vulkan13features);
 
 		auto layerVec = Utils::stringSetToVector(enabledExtensions.layers);
 		auto extVec = Utils::stringSetToVector(enabledExtensions.device);

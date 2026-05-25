@@ -20,9 +20,10 @@ namespace Dingo
 		std::mutex               Mutex;
 		std::condition_variable  FrameReadyCV;
 		std::condition_variable  FrameConsumedCV;
-		bool HasFrame      = false;
-		bool FrameConsumed = true;
-		bool Running       = false;
+		bool HasFrame           = false;
+		bool FrameConsumed      = true;
+		bool Running            = false;
+		bool HasPendingFrame    = false;
 
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
@@ -71,6 +72,11 @@ namespace Dingo
 		if (s_Data->RenderThread.joinable())
 			s_Data->RenderThread.join();
 
+		// If the render thread exited before executing the last closed frame,
+		// submit it now to break the NVRHI CommandList <-> TrackedCommandBuffer cycle.
+		if (s_Data->HasPendingFrame)
+			Execute();
+
 		if (s_Data->CommandList)
 		{
 			s_Data->CommandList->Destroy();
@@ -102,7 +108,8 @@ namespace Dingo
 		Close();
 		{
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
-			s_Data->HasFrame = true;
+			s_Data->HasFrame         = true;
+			s_Data->HasPendingFrame  = true;
 		}
 		s_Data->FrameReadyCV.notify_one();
 	}
@@ -190,6 +197,7 @@ namespace Dingo
 
 	void Renderer::Execute()
 	{
+		s_Data->HasPendingFrame = false;
 		s_Data->CommandList->Execute();
 	}
 
