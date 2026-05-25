@@ -14,6 +14,18 @@
             "preLaunchTask": "Build FlappyBird Debug"
         },
         {
+            "name": "Debug Breakout 3D",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Breakout3D/Breakout3D.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Breakout3D",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Breakout3D Debug"
+        },
+        {
             "name": "Debug TestFramework",
             "type": "cppvsdbg",
             "request": "launch",

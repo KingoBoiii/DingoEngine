@@ -201,4 +201,5 @@ include "test"
 
 group "Examples"
     include "examples/FlappyBird"
+    include "examples/Breakout3D"
 group ""

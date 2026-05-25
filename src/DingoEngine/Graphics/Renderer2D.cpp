@@ -318,12 +318,16 @@ void main() {
 		{
 			m_TextureSlots[i] = nullptr; // Reset texture slots
 		}
+
 	}
 
 	void Renderer2D::EndScene()
 	{
-		m_Renderer->Begin();
-		m_Renderer->Clear(m_Params.ClearColor);
+		if (m_OwnsRenderer)
+		{
+			m_Renderer->Begin();
+			m_Renderer->Clear(m_Params.ClearColor);
+		}
 
 		if (m_CameraUniformBuffer)
 		{
@@ -375,12 +379,15 @@ void main() {
 			m_Renderer->EndRenderPass();
 		}
 
-		m_Renderer->End();
+		if (m_OwnsRenderer)
+			m_Renderer->End();
 	}
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
 	{
 		m_Params.ClearColor = clearColor;
+		if (!m_OwnsRenderer)
+			m_Renderer->Clear(clearColor);
 	}
 
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)

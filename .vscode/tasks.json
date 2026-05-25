@@ -86,6 +86,24 @@
                 "panel": "shared"
             },
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build Breakout3D Debug",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/examples/Breakout3D/Breakout3D.vcxproj",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile"
         }
     ]
 }

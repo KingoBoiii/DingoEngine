@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DingoEngine/Events/Event.h"
+
 namespace Dingo
 {
 
@@ -13,6 +15,7 @@ namespace Dingo
 		virtual void OnAttach() {}
 		virtual void OnDetach() {}
 		virtual void OnUpdate(float deltaTime) {}
+		virtual void OnEvent(Event& e) {}
 		virtual void OnImGuiRender() {} // EnableImGui must be enabled for this to be called
 
 	private:

@@ -14,6 +14,10 @@
 namespace Dingo
 {
 
+	class Mesh;
+	class PerspectiveCamera;
+	struct Renderer3DState;
+
 	struct RendererParams
 	{
 		Framebuffer* TargetFramebuffer = nullptr; // If not targeting swap chain, specify a framebuffer to target
@@ -78,6 +82,19 @@ namespace Dingo
 		const RendererParams& GetParams() const { return m_Params; }
 
 		/**************************************************
+		***		3D API									***
+		**************************************************/
+
+		// Begin a 3D scene. Must be paired with EndScene(). Clears to clearColor.
+		void BeginScene(const PerspectiveCamera& camera, const glm::vec4& clearColor = { 0.1f, 0.1f, 0.15f, 1.0f });
+
+		// Submit a mesh instance into the current 3D scene batch.
+		void DrawMesh(Mesh* mesh, const glm::mat4& transform, const glm::vec4& color = glm::vec4(1.0f));
+
+		// Flush and submit the 3D scene to the GPU.
+		void EndScene();
+
+		/**************************************************
 		***		STATIC RESOURCES 						***
 		**************************************************/
 
@@ -95,10 +112,15 @@ namespace Dingo
 		static void DestroyStaticResources();
 
 	private:
+		void InitializeMeshPipeline();
+		void ShutdownMeshPipeline();
+
+	private:
 		RendererParams m_Params;
-		CommandList* m_CommandList = nullptr; // Command list for recording commands
-		Framebuffer* m_TargetFramebuffer = nullptr; // The framebuffer that the renderer will render to
-		bool m_TargetSwapChain = false; // Whether the renderer targets the swap chain or a custom framebuffer
+		CommandList* m_CommandList = nullptr;
+		Framebuffer* m_TargetFramebuffer = nullptr;
+		bool m_TargetSwapChain = false;
+		Renderer3DState* m_3DState = nullptr;
 	};
 
 }

@@ -53,10 +53,18 @@ namespace Dingo
 		std::unique_lock<std::mutex> lock(m_Mutex);
 		m_FrameConsumedCV.wait(lock, [this] { return m_FrameConsumed; });
 		m_FrameConsumed = false;
+
+		// Open the command list once for the entire frame so multiple renderers
+		// (e.g. Renderer 3D + Renderer2D overlay) can record into the same list
+		// without reopening it (which would reset all previously recorded commands).
+		Begin();
 	}
 
 	void AppRenderer::EndFrame()
 	{
+		// Seal the command list before handing it to the render thread.
+		End(); // AppRenderer::End() == Close() only; Execute() happens on the render thread.
+
 		{
 			std::lock_guard<std::mutex> lock(m_Mutex);
 			m_HasFrame = true;

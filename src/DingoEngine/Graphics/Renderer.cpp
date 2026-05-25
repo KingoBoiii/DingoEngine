@@ -1,10 +1,86 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer.h"
-
+#include "DingoEngine/Graphics/Mesh.h"
+#include "DingoEngine/Graphics/Shader.h"
+#include "DingoEngine/Core/PerspectiveCamera.h"
 #include "DingoEngine/Core/Application.h"
+
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Dingo
 {
+
+	namespace Shaders3D
+	{
+
+		constexpr const char* MeshShader = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec4 a_Color;
+
+layout(std140, binding = 0) uniform CameraData {
+	mat4 ViewProjection;
+};
+
+layout(location = 0) out vec4 v_Color;
+
+void main()
+{
+	gl_Position = ViewProjection * vec4(a_Position, 1.0);
+	v_Color = a_Color;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+	o_Color = v_Color;
+}
+		)";
+
+	}
+
+	struct BatchMeshVertex
+	{
+		glm::vec3 Position;
+		glm::vec4 Color;
+	};
+
+	static constexpr uint32_t MaxMeshVerticesPerFrame = 65536;
+	static constexpr uint32_t MaxMeshIndicesPerFrame  = 65536;
+
+	struct Renderer3DState
+	{
+		struct CameraData
+		{
+			glm::mat4 ViewProjection;
+		};
+		CameraData CameraUniformData = {};
+		GraphicsBuffer* CameraUBO = nullptr;
+
+		Shader*     MeshShader     = nullptr;
+		Pipeline*   MeshPipeline   = nullptr;
+		RenderPass* MeshRenderPass = nullptr;
+
+		BatchMeshVertex* VertexBufferBase = nullptr;
+		BatchMeshVertex* VertexBufferPtr  = nullptr;
+		GraphicsBuffer*  VertexBuffer     = nullptr;
+
+		uint16_t*       IndexBufferBase = nullptr;
+		uint16_t*       IndexBufferPtr  = nullptr;
+		uint32_t        IndexCount      = 0;
+		uint16_t        VertexOffset    = 0;
+		GraphicsBuffer* IndexBuffer     = nullptr;
+
+		glm::vec4 ClearColor  = { 0.1f, 0.1f, 0.15f, 1.0f };
+		bool      Initialized = false;
+	};
 
 	struct StaticResources
 	{
@@ -38,10 +114,16 @@ namespace Dingo
 		}
 
 		m_CommandList = CommandList::Create();
+		m_3DState = new Renderer3DState();
 	}
 
 	void Renderer::Shutdown()
 	{
+		ShutdownMeshPipeline();
+
+		delete m_3DState;
+		m_3DState = nullptr;
+
 		if (m_CommandList)
 		{
 			m_CommandList->Destroy();
@@ -282,6 +364,147 @@ namespace Dingo
 
 		delete s_StaticResources;
 		s_StaticResources = nullptr;
+	}
+
+	/**************************************************
+	***		3D PIPELINE LIFECYCLE					***
+	**************************************************/
+
+	void Renderer::InitializeMeshPipeline()
+	{
+		auto& s = *m_3DState;
+
+		s.CameraUBO = GraphicsBuffer::CreateUniformBuffer(sizeof(Renderer3DState::CameraData), "Renderer3D_CameraUBO");
+
+		s.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(
+			sizeof(BatchMeshVertex) * MaxMeshVerticesPerFrame, nullptr, true, "Renderer3D_VertexBuffer");
+		s.IndexBuffer = GraphicsBuffer::CreateIndexBuffer(
+			sizeof(uint16_t) * MaxMeshIndicesPerFrame, nullptr, true, "Renderer3D_IndexBuffer");
+
+		s.VertexBufferBase = new BatchMeshVertex[MaxMeshVerticesPerFrame];
+		s.IndexBufferBase  = new uint16_t[MaxMeshIndicesPerFrame];
+
+		s.MeshShader = Shader::CreateFromSource("Renderer3DMeshShader", Shaders3D::MeshShader);
+
+		VertexLayout vertexLayout = VertexLayout()
+			.SetStride(sizeof(BatchMeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT,  offsetof(BatchMeshVertex, Position))
+			.AddAttribute("a_Color",    Format::RGBA32_FLOAT, offsetof(BatchMeshVertex, Color));
+
+		s.MeshPipeline = Pipeline::Create(PipelineParams()
+			.SetDebugName("Renderer3DMeshPipeline")
+			.SetFramebuffer(GetTargetFramebuffer())
+			.SetShader(s.MeshShader)
+			.SetVertexLayout(vertexLayout)
+			.SetCullMode(CullMode::None));
+
+		s.MeshRenderPass = RenderPass::Create(RenderPassParams().SetPipeline(s.MeshPipeline));
+		s.MeshRenderPass->Initialize();
+		s.MeshRenderPass->SetUniformBuffer(0, s.CameraUBO);
+		s.MeshRenderPass->Bake();
+
+		s.Initialized = true;
+	}
+
+	void Renderer::ShutdownMeshPipeline()
+	{
+		if (!m_3DState || !m_3DState->Initialized)
+			return;
+
+		auto& s = *m_3DState;
+
+		delete[] s.VertexBufferBase;
+		delete[] s.IndexBufferBase;
+		s.VertexBufferBase = nullptr;
+		s.IndexBufferBase  = nullptr;
+
+		if (s.VertexBuffer) { s.VertexBuffer->Destroy(); s.VertexBuffer = nullptr; }
+		if (s.IndexBuffer)  { s.IndexBuffer->Destroy();  s.IndexBuffer  = nullptr; }
+		if (s.CameraUBO)    { s.CameraUBO->Destroy();    s.CameraUBO    = nullptr; }
+
+		if (s.MeshRenderPass) { s.MeshRenderPass->Destroy(); s.MeshRenderPass = nullptr; }
+		if (s.MeshPipeline)   { s.MeshPipeline->Destroy();   s.MeshPipeline   = nullptr; }
+		if (s.MeshShader)     { s.MeshShader->Destroy();     s.MeshShader     = nullptr; }
+
+		s.Initialized = false;
+	}
+
+	/**************************************************
+	***		3D API									***
+	**************************************************/
+
+	void Renderer::BeginScene(const PerspectiveCamera& camera, const glm::vec4& clearColor)
+	{
+		if (!m_3DState->Initialized)
+			InitializeMeshPipeline();
+
+		auto& s = *m_3DState;
+		s.ClearColor = clearColor;
+		s.CameraUniformData.ViewProjection = camera.GetViewProjectionMatrix();
+		s.CameraUBO->Upload(&s.CameraUniformData, sizeof(Renderer3DState::CameraData));
+
+		s.VertexBufferPtr = s.VertexBufferBase;
+		s.IndexBufferPtr  = s.IndexBufferBase;
+		s.IndexCount      = 0;
+		s.VertexOffset    = 0;
+	}
+
+	void Renderer::DrawMesh(Mesh* mesh, const glm::mat4& transform, const glm::vec4& color)
+	{
+		DE_CORE_ASSERT(m_3DState && m_3DState->Initialized, "Call BeginScene before DrawMesh.");
+
+		auto& s = *m_3DState;
+		const auto& verts   = mesh->GetVertices();
+		const auto& indices = mesh->GetIndices();
+
+		DE_CORE_ASSERT(s.VertexOffset + verts.size()   <= MaxMeshVerticesPerFrame, "3D vertex buffer overflow");
+		DE_CORE_ASSERT(s.IndexCount   + indices.size() <= MaxMeshIndicesPerFrame,  "3D index buffer overflow");
+
+		for (const auto& v : verts)
+		{
+			s.VertexBufferPtr->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			s.VertexBufferPtr->Color    = color;
+			s.VertexBufferPtr++;
+		}
+
+		for (uint16_t idx : indices)
+		{
+			*s.IndexBufferPtr++ = idx + s.VertexOffset;
+		}
+
+		s.VertexOffset += static_cast<uint16_t>(verts.size());
+		s.IndexCount   += static_cast<uint32_t>(indices.size());
+	}
+
+	void Renderer::EndScene()
+	{
+		auto& s = *m_3DState;
+
+		// When targeting the swap chain the command list is already open for the
+		// entire frame (opened by AppRenderer::BeginFrame / closed by EndFrame).
+		// Only manage the scope ourselves for standalone (off-screen) renderers.
+		if (!m_TargetSwapChain)
+			Begin();
+
+		Clear(s.ClearColor);
+
+		if (s.IndexCount > 0)
+		{
+			uint32_t vertexDataSize = static_cast<uint32_t>(
+				reinterpret_cast<uint8_t*>(s.VertexBufferPtr) - reinterpret_cast<uint8_t*>(s.VertexBufferBase));
+
+			s.VertexBuffer->Upload(s.VertexBufferBase, vertexDataSize);
+			s.IndexBuffer->Upload(s.IndexBufferBase, s.IndexCount * sizeof(uint16_t));
+
+			Upload(s.CameraUBO);
+
+			BeginRenderPass(s.MeshRenderPass);
+			DrawIndexed(s.VertexBuffer, s.IndexBuffer, s.IndexCount);
+			EndRenderPass();
+		}
+
+		if (!m_TargetSwapChain)
+			End();
 	}
 
 }
