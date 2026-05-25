@@ -99,8 +99,30 @@ namespace Dingo
 			{
 				// D3D12 needs SM 5.1 for NonUniformResourceIndex (nonuniformEXT); D3D11 uses SM 5.0
 				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
-				// D3D11/D3D12 requires DXBC bytecode — recompile from GLSL source via spirv-cross + D3DCompile
-				auto dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel);
+
+				const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
+				std::filesystem::path dxbcCachePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
+
+				std::vector<uint8_t> dxbcBytecode;
+				if (std::filesystem::exists(dxbcCachePath))
+				{
+					std::ifstream in(dxbcCachePath, std::ios::in | std::ios::binary);
+					DE_CORE_ASSERT(in.is_open(), "Failed to open DXBC cache file: " + dxbcCachePath.string());
+					in.seekg(0, std::ios::end);
+					dxbcBytecode.resize(in.tellg());
+					in.seekg(0, std::ios::beg);
+					in.read((char*)dxbcBytecode.data(), dxbcBytecode.size());
+				}
+				else
+				{
+					dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel);
+
+					std::ofstream out(dxbcCachePath, std::ios::out | std::ios::binary);
+					DE_CORE_ASSERT(out.is_open(), "Failed to create DXBC cache file: " + dxbcCachePath.string());
+					out.write((char*)dxbcBytecode.data(), dxbcBytecode.size());
+					out.flush();
+					out.close();
+				}
 
 				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
 					.setDebugName(name)
