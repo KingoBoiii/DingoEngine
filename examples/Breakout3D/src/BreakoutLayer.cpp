@@ -354,8 +354,6 @@ namespace Dingo
 	{
 		auto& s = m_Scene3D;
 
-		s.CameraUBO = GraphicsBuffer::CreateUniformBuffer(sizeof(Scene3D::CameraUBOData), "Breakout3D_CameraUBO");
-
 		s.VertexBuffer     = GraphicsBuffer::CreateVertexBuffer(sizeof(MeshVertex) * k_MaxVertices, nullptr, true, "Breakout3D_VB");
 		s.IndexBuffer      = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * k_MaxIndices, nullptr, true, "Breakout3D_IB");
 		s.VertexBufferBase = new MeshVertex[k_MaxVertices];
@@ -363,22 +361,18 @@ namespace Dingo
 
 		s.MeshShader = Shader::CreateFromSource("Breakout3DMeshShader", k_MeshShaderSource);
 
-		VertexLayout layout = VertexLayout()
+		s.MeshLayout = VertexLayout()
 			.SetStride(sizeof(MeshVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT,  offsetof(MeshVertex, Position))
 			.AddAttribute("a_Color",    Format::RGBA32_FLOAT, offsetof(MeshVertex, Color));
 
-		s.MeshPipeline = Pipeline::Create(PipelineParams()
-			.SetDebugName("Breakout3DMeshPipeline")
-			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+		s.MeshMaterial = Material::Create(MaterialParams()
+			.SetDebugName("Breakout3D_Material")
 			.SetShader(s.MeshShader)
-			.SetVertexLayout(layout)
 			.SetCullMode(CullMode::None));
 
-		s.MeshPass = RenderPass::Create(RenderPassParams().SetPipeline(s.MeshPipeline));
-		s.MeshPass->Initialize();
-		s.MeshPass->SetUniformBuffer(0, s.CameraUBO);
-		s.MeshPass->Bake();
+		// Allocate the GPU uniform buffer by uploading the initial (zero) camera data.
+		s.MeshMaterial->SetUniform(s.CameraData);
 	}
 
 	void BreakoutLayer::ShutdownScene3D()
@@ -390,12 +384,10 @@ namespace Dingo
 		s.VertexBufferBase = nullptr;
 		s.IndexBufferBase  = nullptr;
 
-		if (s.VertexBuffer) { s.VertexBuffer->Destroy(); s.VertexBuffer = nullptr; }
-		if (s.IndexBuffer)  { s.IndexBuffer->Destroy();  s.IndexBuffer  = nullptr; }
-		if (s.CameraUBO)    { s.CameraUBO->Destroy();    s.CameraUBO    = nullptr; }
-		if (s.MeshPass)     { s.MeshPass->Destroy();     s.MeshPass     = nullptr; }
-		if (s.MeshPipeline) { s.MeshPipeline->Destroy(); s.MeshPipeline = nullptr; }
-		if (s.MeshShader)   { s.MeshShader->Destroy();   s.MeshShader   = nullptr; }
+		if (s.VertexBuffer)  { s.VertexBuffer->Destroy();  s.VertexBuffer  = nullptr; }
+		if (s.IndexBuffer)   { s.IndexBuffer->Destroy();   s.IndexBuffer   = nullptr; }
+		if (s.MeshMaterial)  { s.MeshMaterial->Destroy();  delete s.MeshMaterial; s.MeshMaterial = nullptr; }
+		if (s.MeshShader)    { s.MeshShader->Destroy();    s.MeshShader    = nullptr; }
 	}
 
 	void BreakoutLayer::BeginScene3D(const PerspectiveCamera& camera, const glm::vec4& clearColor)
@@ -404,7 +396,7 @@ namespace Dingo
 		s.ClearColor = clearColor;
 
 		s.CameraData.ViewProjection = camera.GetViewProjectionMatrix();
-		s.CameraUBO->Upload(&s.CameraData, sizeof(Scene3D::CameraUBOData));
+		s.MeshMaterial->SetUniform(s.CameraData);
 
 		s.VertexBufferPtr = s.VertexBufferBase;
 		s.IndexBufferPtr  = s.IndexBufferBase;
@@ -442,11 +434,8 @@ namespace Dingo
 
 		s.VertexBuffer->Upload(s.VertexBufferBase, vertexDataSize);
 		s.IndexBuffer->Upload(s.IndexBufferBase, s.IndexCount * sizeof(uint16_t));
-		Renderer::Upload(s.CameraUBO);
 
-		Renderer::BeginRenderPass(s.MeshPass);
-		Renderer::DrawIndexed(s.VertexBuffer, s.IndexBuffer, s.IndexCount);
-		Renderer::EndRenderPass();
+		Renderer::DrawIndexed(s.MeshMaterial, s.MeshLayout, s.VertexBuffer, s.IndexBuffer, s.IndexCount);
 	}
 
 	// -------------------------------------------------------

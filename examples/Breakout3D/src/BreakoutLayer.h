@@ -102,17 +102,16 @@ namespace Dingo
 		Mesh* m_BoxMesh    = nullptr;
 		Mesh* m_SphereMesh = nullptr;
 
-		// 3D scene pipeline (owned by this layer)
+		// 3D scene state (owned by this layer)
 		struct MeshVertex { glm::vec3 Position; glm::vec4 Color; };
 		struct Scene3D
 		{
 			struct CameraUBOData { glm::mat4 ViewProjection; };
 			CameraUBOData CameraData = {};
 
-			GraphicsBuffer* CameraUBO    = nullptr;
-			Shader*         MeshShader   = nullptr;
-			Pipeline*       MeshPipeline = nullptr;
-			RenderPass*     MeshPass     = nullptr;
+			Shader*       MeshShader    = nullptr;
+			Material*     MeshMaterial  = nullptr;
+			VertexLayout  MeshLayout;
 
 			GraphicsBuffer* VertexBuffer     = nullptr;
 			GraphicsBuffer* IndexBuffer      = nullptr;

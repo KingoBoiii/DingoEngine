@@ -74,10 +74,10 @@ namespace Dingo
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 
-		Texture* GetOutput() const { return Renderer::GetOutput(); }
+		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{
-			auto* fb = Renderer::GetTargetFramebuffer();
+			auto* fb = Renderer::GetSwapChainFramebuffer();
 			return glm::vec2(fb->GetParams().Width, fb->GetParams().Height);
 		}
 

@@ -319,9 +319,7 @@ void main() {
 			}
 			m_QuadPipeline.RenderPass->Bake();
 
-			Renderer::BeginRenderPass(m_QuadPipeline.RenderPass);
-			Renderer::DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
-			Renderer::EndRenderPass();
+			Renderer::DrawIndexed(m_QuadPipeline.RenderPass, m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
 		}
 
 		if (m_CircleRenderPass.IndexCount)
@@ -329,9 +327,7 @@ void main() {
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
 			m_CircleRenderPass.VertexBuffer->Upload(m_CircleRenderPass.VertexBufferBase, dataSize);
 
-			Renderer::BeginRenderPass(m_CircleRenderPass.RenderPass);
-			Renderer::DrawIndexed(m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
-			Renderer::EndRenderPass();
+			Renderer::DrawIndexed(m_CircleRenderPass.RenderPass, m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
 		}
 
 		if (m_TextQuadRenderPass.IndexCount)
@@ -342,9 +338,7 @@ void main() {
 			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
 			m_TextQuadRenderPass.RenderPass->Bake();
 
-			Renderer::BeginRenderPass(m_TextQuadRenderPass.RenderPass);
-			Renderer::DrawIndexed(m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
-			Renderer::EndRenderPass();
+			Renderer::DrawIndexed(m_TextQuadRenderPass.RenderPass, m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
 		}
 	}
 
@@ -654,7 +648,7 @@ void main() {
 
 		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DQuadPipeline")
-			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
 			.SetCullMode(CullMode::BackAndFront));
@@ -728,7 +722,7 @@ void main() {
 
 		m_CircleRenderPass.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DCirclePipeline")
-			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_CircleRenderPass.Shader)
 			.SetVertexLayout(vertexLayout)
 			.SetCullMode(CullMode::BackAndFront));
@@ -795,7 +789,7 @@ void main() {
 
 		m_TextQuadRenderPass.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DTextPipeline")
-			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_TextQuadRenderPass.Shader)
 			.SetVertexLayout(vertexLayout));
 

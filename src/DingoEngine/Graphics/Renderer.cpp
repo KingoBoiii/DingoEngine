@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 
@@ -12,18 +13,17 @@ namespace Dingo
 
 	struct RendererData
 	{
-		SwapChain*    SwapChain          = nullptr;
-		CommandList*  CommandList        = nullptr;
-		Framebuffer*  TargetFramebuffer  = nullptr;
+		SwapChain*   SwapChain   = nullptr;
+		CommandList* CommandList = nullptr;
 
-		std::thread              RenderThread;
-		std::mutex               Mutex;
-		std::condition_variable  FrameReadyCV;
-		std::condition_variable  FrameConsumedCV;
-		bool HasFrame           = false;
-		bool FrameConsumed      = true;
-		bool Running            = false;
-		bool HasPendingFrame    = false;
+		std::thread             RenderThread;
+		std::mutex              Mutex;
+		std::condition_variable FrameReadyCV;
+		std::condition_variable FrameConsumedCV;
+		bool HasFrame        = false;
+		bool FrameConsumed   = true;
+		bool Running         = false;
+		bool HasPendingFrame = false;
 
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
@@ -39,9 +39,8 @@ namespace Dingo
 	void Renderer::Initialize(SwapChain* swapChain)
 	{
 		s_Data = new RendererData();
-		s_Data->SwapChain         = swapChain;
-		s_Data->TargetFramebuffer = swapChain->GetCurrentFramebuffer();
-		s_Data->CommandList       = CommandList::Create();
+		s_Data->SwapChain   = swapChain;
+		s_Data->CommandList = CommandList::Create();
 
 		uint32_t whiteTextureData = 0xffffffff;
 		s_Data->WhiteTexture = Texture::CreateFromData(1, 1, &whiteTextureData, TextureFormat::RGBA, "White Texture");
@@ -56,7 +55,7 @@ namespace Dingo
 		s_Data->PointSampler->Initialize();
 
 		swapChain->AcquireNextImage();
-		s_Data->Running     = true;
+		s_Data->Running      = true;
 		s_Data->RenderThread = std::thread(&Renderer::RenderThreadLoop);
 	}
 
@@ -108,8 +107,8 @@ namespace Dingo
 		Close();
 		{
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
-			s_Data->HasFrame         = true;
-			s_Data->HasPendingFrame  = true;
+			s_Data->HasFrame        = true;
+			s_Data->HasPendingFrame = true;
 		}
 		s_Data->FrameReadyCV.notify_one();
 	}
@@ -143,46 +142,7 @@ namespace Dingo
 	}
 
 	/**************************************************
-	***		RENDER PASS								***
-	**************************************************/
-
-	void Renderer::BeginRenderPass(RenderPass* renderPass)
-	{
-		s_Data->TargetFramebuffer = s_Data->SwapChain->GetCurrentFramebuffer();
-		s_Data->CommandList->SetRenderPass(renderPass);
-		s_Data->CommandList->SetFramebuffer(s_Data->TargetFramebuffer);
-	}
-
-	void Renderer::EndRenderPass()
-	{
-	}
-
-	/**************************************************
-	***		DRAW CALLS								***
-	**************************************************/
-
-	void Renderer::DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
-	{
-		if (indexCount == 0)
-			indexCount = indexBuffer->GetByteSize() / sizeof(uint16_t);
-
-		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
-		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, 1);
-	}
-
-	void Renderer::DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer, uint32_t indexCount)
-	{
-		if (indexCount == 0)
-			indexCount = indexBuffer->GetByteSize() / sizeof(uint16_t);
-
-		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
-		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, 1);
-	}
-
-	/**************************************************
-	***		GENERAL									***
+	***		COMMAND LIST MANAGEMENT					***
 	**************************************************/
 
 	void Renderer::Begin()
@@ -201,23 +161,9 @@ namespace Dingo
 		s_Data->CommandList->Execute();
 	}
 
-	void Renderer::End()
-	{
-		Close();
-		Execute();
-	}
-
-	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)
-	{
-		s_Data->CommandList->Clear(framebuffer, 0, clearColor);
-	}
-
-	void Renderer::Clear(const glm::vec4& clearColor)
-	{
-		s_Data->TargetFramebuffer = s_Data->SwapChain->GetCurrentFramebuffer();
-		s_Data->CommandList->SetFramebuffer(s_Data->TargetFramebuffer);
-		s_Data->CommandList->Clear(s_Data->TargetFramebuffer, 0, clearColor);
-	}
+	/**************************************************
+	***		RESOURCE UPLOAD							***
+	**************************************************/
 
 	void Renderer::Upload(GraphicsBuffer* buffer)
 	{
@@ -229,61 +175,116 @@ namespace Dingo
 		s_Data->CommandList->UploadBuffer(buffer, data, size);
 	}
 
+	/**************************************************
+	***		CLEAR									***
+	**************************************************/
+
+	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)
+	{
+		s_Data->CommandList->Clear(framebuffer, 0, clearColor);
+	}
+
+	void Renderer::Clear(const glm::vec4& clearColor)
+	{
+		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		s_Data->CommandList->SetFramebuffer(target);
+		s_Data->CommandList->Clear(target, 0, clearColor);
+	}
+
+	/**************************************************
+	***		DRAW — explicit Pipeline				***
+	**************************************************/
+
 	void Renderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
+		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
 		s_Data->CommandList->SetPipeline(pipeline);
-		s_Data->TargetFramebuffer = s_Data->SwapChain->GetCurrentFramebuffer();
-		s_Data->CommandList->SetFramebuffer(s_Data->TargetFramebuffer);
+		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
 
 	void Renderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
+		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
 		s_Data->CommandList->SetPipeline(pipeline);
-		s_Data->TargetFramebuffer = s_Data->SwapChain->GetCurrentFramebuffer();
-		s_Data->CommandList->SetFramebuffer(s_Data->TargetFramebuffer);
+		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
 
-	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer)
+	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
+		if (indexCount == 0)
+			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+
+		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
 		s_Data->CommandList->SetPipeline(pipeline);
-		s_Data->TargetFramebuffer = s_Data->SwapChain->GetCurrentFramebuffer();
-		s_Data->CommandList->SetFramebuffer(s_Data->TargetFramebuffer);
+		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexBuffer->GetByteSize() / sizeof(uint16_t), 1);
+		s_Data->CommandList->DrawIndexed(indexCount, 1);
 	}
 
-	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer)
+	/**************************************************
+	***		DRAW — explicit RenderPass				***
+	**************************************************/
+
+	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		s_Data->CommandList->UploadBuffer(uniformBuffer, uniformBuffer->GetData(), uniformBuffer->GetByteSize());
-		s_Data->CommandList->SetPipeline(pipeline);
-		s_Data->TargetFramebuffer = s_Data->SwapChain->GetCurrentFramebuffer();
-		s_Data->CommandList->SetFramebuffer(s_Data->TargetFramebuffer);
+		if (indexCount == 0)
+			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+
+		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		s_Data->CommandList->SetRenderPass(renderPass);
+		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexBuffer->GetByteSize() / sizeof(uint16_t), 1);
+		s_Data->CommandList->DrawIndexed(indexCount, 1);
 	}
+
+	/**************************************************
+	***		DRAW — Material							***
+	**************************************************/
+
+	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
+	{
+		if (indexCount == 0)
+			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+
+		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+
+		// Upload uniform data to GPU if it changed since the last draw.
+		if (material->IsUniformDirty() && material->GetUniformBuffer())
+		{
+			const auto& cpu = material->GetUniformCPUData();
+			s_Data->CommandList->UploadBuffer(material->GetUniformBuffer(), cpu.data(), cpu.size());
+			material->ClearUniformDirty();
+		}
+
+		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);
+		s_Data->CommandList->SetRenderPass(renderPass);
+		s_Data->CommandList->SetFramebuffer(target);
+		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
+		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
+		s_Data->CommandList->DrawIndexed(indexCount, 1);
+	}
+
+	/**************************************************
+	***		QUERIES									***
+	**************************************************/
 
 	CommandList* Renderer::GetCommandList()
 	{
 		return s_Data->CommandList;
 	}
 
-	Framebuffer* Renderer::GetTargetFramebuffer()
+	Framebuffer* Renderer::GetSwapChainFramebuffer()
 	{
-		return s_Data->TargetFramebuffer;
-	}
-
-	Texture* Renderer::GetOutput()
-	{
-		return s_Data->TargetFramebuffer->GetAttachment(0);
+		return s_Data->SwapChain->GetCurrentFramebuffer();
 	}
 
 	/**************************************************
-	***		STATIC RESOURCES 						***
+	***		STATIC RESOURCES						***
 	**************************************************/
 
 	Texture* Renderer::GetWhiteTexture()
