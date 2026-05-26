@@ -55,13 +55,13 @@ LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
 Library = {}
 Library['vulkan'] = "%{LibraryDir.vulkan}/vulkan-1.lib";
 
-Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_sharedd.lib"
+Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_combinedd.lib" -- shaderc_sharedd
 Library["SPIRV_Cross_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-cored.lib"
 Library["SPIRV_Cross_GLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-glsld.lib"
 Library["SPIRV_Cross_HLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-hlsld.lib"
 Library["SPIRV_Tools_Debug"] = "%{LibraryDir.vulkan}/SPIRV-Toolsd.lib"
 
-Library["ShaderC_Release"] = "%{LibraryDir.vulkan}/shaderc_shared.lib"
+Library["ShaderC_Release"] = "%{LibraryDir.vulkan}/shaderc_combined.lib" -- shaderc_shared
 Library["SPIRV_Cross_Release"] = "%{LibraryDir.vulkan}/spirv-cross-core.lib"
 Library["SPIRV_Cross_GLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-glsl.lib"
 Library["SPIRV_Cross_HLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-hlsl.lib"
