@@ -78,7 +78,9 @@ namespace Dingo
 		}
 
 		CreateInstance();
+#ifndef DE_DISTRIBUTION
 		CreateDebugMessenger();
+#endif
 		PickPhysicalDevice();
 		FindQueueFamilies(m_VulkanPhysicalDevice);
 		CreateDevice();
@@ -119,8 +121,10 @@ namespace Dingo
 	void VulkanGraphicsContext::CreateInstance()
 	{
 		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#ifndef DE_DISTRIBUTION
 		enabledExtensions.instance.insert(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 		enabledExtensions.layers.insert("VK_LAYER_KHRONOS_validation");
+#endif
 
 		//PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader->getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
 		PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");

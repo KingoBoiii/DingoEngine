@@ -162,6 +162,7 @@ group "Engine"
 			buildoptions { "-Wno-changes-meaning" }
 
 		filter "configurations:Debug or configurations:Debug-AS"
+			runtime "Debug"
 			symbols "On"
 			defines { "DE_DEBUG" }
 
@@ -173,6 +174,7 @@ group "Engine"
 			}
 
 		filter "configurations:Release"
+			runtime "Release"
 			optimize "On"
 			defines { "DE_RELEASE" }
 
@@ -184,6 +186,7 @@ group "Engine"
 			}
 
 		filter "configurations:Distribution"
+			runtime "Release"
 			optimize "On"
 			symbols "Off"
 			defines { "DE_DISTRIBUTION" }

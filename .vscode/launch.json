@@ -18,7 +18,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Breakout3D/Breakout3D.exe",
-            "args": ["--graphics=dx11"],
+            "args": ["--graphics=dx12"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/examples/Breakout3D",
             "environment": [],
