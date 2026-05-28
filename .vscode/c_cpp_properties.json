@@ -14,7 +14,9 @@
                 "${workspaceFolder}/vendor/msdf-atlas-gen/msdfgen",
                 "${workspaceFolder}/vendor/msdf-atlas-gen/msdf-atlas-gen",
                 "${env:VULKAN_SDK}/Include",
-                "${workspaceFolder}/vendor/nvrhi/thirdparty/DirectX-Headers/include"
+                "${workspaceFolder}/vendor/nvrhi/thirdparty/DirectX-Headers/include",
+                "${workspaceFolder}/test/src",
+                "${workspaceFolder}/vendor/assimp/include"
             ],
             "defines": [
                 "_CRT_SECURE_NO_WARNINGS",

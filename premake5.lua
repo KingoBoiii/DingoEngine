@@ -181,7 +181,7 @@ group "Engine"
 			}
 
 			postbuildcommands {
-				"{COPY} %{wks.location}/vendor/assimp/bin/assimp-vc145-mtd.dll %{cfg.targetdir}"
+				"{COPY} %{wks.location}/vendor/assimp/bin/debug %{cfg.targetdir}"
 			}
 
 		filter "configurations:Release"
@@ -198,7 +198,7 @@ group "Engine"
 			}
 
 			postbuildcommands {
-				"{COPY} %{wks.location}/vendor/assimp/bin/assimp-vc145-mt.dll %{cfg.targetdir}"
+				"{COPY} %{wks.location}/vendor/assimp/bin/release %{cfg.targetdir}"
 			}
 
 		filter "configurations:Distribution"
@@ -216,7 +216,7 @@ group "Engine"
 			}
 
 			postbuildcommands {
-				"{COPY} %{wks.location}/vendor/assimp/bin/assimp-vc145-mt.dll %{cfg.targetdir}"
+				"{COPY} %{wks.location}/vendor/assimp/bin/release %{cfg.targetdir}"
 			}
 
 group ""
