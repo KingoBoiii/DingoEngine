@@ -48,12 +48,17 @@ IncludeDir["msdfgen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdfgen"
 IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas-gen"
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
+IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
+LibraryDir['assimp'] = "%{wks.location}/vendor/assimp/lib";
 
 Library = {}
 Library['vulkan'] = "%{LibraryDir.vulkan}/vulkan-1.lib";
+
+Library['assimp_Debug']   = "%{LibraryDir.assimp}/assimp-vc145-mtd.lib"
+Library['assimp_Release'] = "%{LibraryDir.assimp}/assimp-vc145-mt.lib"
 
 Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_combinedd.lib" -- shaderc_sharedd
 Library["SPIRV_Cross_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-cored.lib"
@@ -120,7 +125,8 @@ group "Engine"
 			"%{IncludeDir.stb}",
 			"%{IncludeDir.imgui}",
 			"%{IncludeDir.msdfgen}",
-			"%{IncludeDir.msdf_atlas_gen}"
+			"%{IncludeDir.msdf_atlas_gen}",
+			"%{IncludeDir.assimp}"
 		}
 
 		links {
@@ -171,6 +177,11 @@ group "Engine"
 				"%{Library.SPIRV_Cross_Debug}",
 				"%{Library.SPIRV_Cross_GLSL_Debug}",
 				"%{Library.SPIRV_Cross_HLSL_Debug}",
+				"%{Library.assimp_Debug}",
+			}
+
+			postbuildcommands {
+				"{COPY} %{wks.location}/vendor/assimp/bin/assimp-vc145-mtd.dll %{cfg.targetdir}"
 			}
 
 		filter "configurations:Release"
@@ -183,6 +194,11 @@ group "Engine"
 				"%{Library.SPIRV_Cross_Release}",
 				"%{Library.SPIRV_Cross_GLSL_Release}",
 				"%{Library.SPIRV_Cross_HLSL_Release}",
+				"%{Library.assimp_Release}",
+			}
+
+			postbuildcommands {
+				"{COPY} %{wks.location}/vendor/assimp/bin/assimp-vc145-mt.dll %{cfg.targetdir}"
 			}
 
 		filter "configurations:Distribution"
@@ -196,6 +212,11 @@ group "Engine"
 				"%{Library.SPIRV_Cross_Release}",
 				"%{Library.SPIRV_Cross_GLSL_Release}",
 				"%{Library.SPIRV_Cross_HLSL_Release}",
+				"%{Library.assimp_Release}",
+			}
+
+			postbuildcommands {
+				"{COPY} %{wks.location}/vendor/assimp/bin/assimp-vc145-mt.dll %{cfg.targetdir}"
 			}
 
 group ""
