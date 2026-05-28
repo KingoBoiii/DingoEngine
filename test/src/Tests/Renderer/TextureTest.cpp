@@ -60,7 +60,7 @@ void main() {
 		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Texture Quad Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
@@ -79,8 +79,8 @@ void main() {
 
 		Renderer::Begin();
 		Renderer::Clear(m_ClearColor);
-		Renderer::DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer, m_UniformBuffer);
-		Renderer::End();
+		Renderer::DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
+		Renderer::Close();
 	}
 
 	void TextureTest::Cleanup()

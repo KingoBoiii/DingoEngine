@@ -15,7 +15,7 @@ namespace Dingo
 	public:
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
-		virtual Texture* GetResult() override { return Renderer::GetOutput(); }
+		virtual Texture* GetResult() override { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 	};
 
 }

@@ -5,6 +5,8 @@
 #include "Tests/Renderer/IndexBufferTest.h"
 #include "Tests/Renderer/UniformBufferTest.h"
 #include "Tests/Renderer/TextureTest.h"
+#include "Tests/Renderer/Mesh3DTest.h"
+#include "Tests/Renderer/Model3DTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
@@ -37,6 +39,8 @@ namespace Dingo
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Text Test (R2D)", [&]() { return new TextTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Circle Test (R2D)", [&]() { return new CircleTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Mesh 3D Test", []() { return new Mesh3DTest(); } });
+		m_Tests.push_back({ "Model 3D Test", []() { return new Model3DTest(); } });
 
 		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
@@ -72,7 +76,9 @@ namespace Dingo
 
 		if (m_CurrentTest)
 		{
+			Renderer::SetRenderTarget(m_OutputFramebuffer);
 			m_CurrentTest->Update(deltaTime);
+			Renderer::ResetRenderTarget();
 		}
 	}
 
@@ -224,6 +230,7 @@ namespace Dingo
 		if (m_CurrentTest)
 		{
 			m_CurrentTest->ImGuiRender();
+			
 		}
 
 		ImGui::End();

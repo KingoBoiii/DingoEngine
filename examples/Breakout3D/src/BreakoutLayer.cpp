@@ -355,9 +355,9 @@ namespace Dingo
 		auto& s = m_Scene3D;
 
 		s.VertexBuffer     = GraphicsBuffer::CreateVertexBuffer(sizeof(MeshVertex) * k_MaxVertices, nullptr, true, "Breakout3D_VB");
-		s.IndexBuffer      = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * k_MaxIndices, nullptr, true, "Breakout3D_IB");
+		s.IndexBuffer      = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * k_MaxIndices, nullptr, true, "Breakout3D_IB", GraphicsFormat::Uint32);
 		s.VertexBufferBase = new MeshVertex[k_MaxVertices];
-		s.IndexBufferBase  = new uint16_t[k_MaxIndices];
+		s.IndexBufferBase  = new uint32_t[k_MaxIndices];
 
 		s.MeshShader = Shader::CreateFromSource("Breakout3DMeshShader", k_MeshShaderSource);
 
@@ -413,10 +413,10 @@ namespace Dingo
 			s.VertexBufferPtr->Color    = color;
 			s.VertexBufferPtr++;
 		}
-		for (uint16_t idx : mesh->GetIndices())
+		for (uint32_t idx : mesh->GetIndices())
 			*s.IndexBufferPtr++ = idx + s.VertexOffset;
 
-		s.VertexOffset += static_cast<uint16_t>(mesh->GetVertices().size());
+		s.VertexOffset += static_cast<uint32_t>(mesh->GetVertices().size());
 		s.IndexCount   += static_cast<uint32_t>(mesh->GetIndices().size());
 	}
 
@@ -433,7 +433,7 @@ namespace Dingo
 			reinterpret_cast<uint8_t*>(s.VertexBufferPtr) - reinterpret_cast<uint8_t*>(s.VertexBufferBase));
 
 		s.VertexBuffer->Upload(s.VertexBufferBase, vertexDataSize);
-		s.IndexBuffer->Upload(s.IndexBufferBase, s.IndexCount * sizeof(uint16_t));
+		s.IndexBuffer->Upload(s.IndexBufferBase, s.IndexCount * sizeof(uint32_t));
 
 		Renderer::DrawIndexed(s.MeshMaterial, s.MeshLayout, s.VertexBuffer, s.IndexBuffer, s.IndexCount);
 	}

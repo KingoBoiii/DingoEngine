@@ -117,10 +117,10 @@ namespace Dingo
 			GraphicsBuffer* IndexBuffer      = nullptr;
 			MeshVertex*     VertexBufferBase = nullptr;
 			MeshVertex*     VertexBufferPtr  = nullptr;
-			uint16_t*       IndexBufferBase  = nullptr;
-			uint16_t*       IndexBufferPtr   = nullptr;
+			uint32_t*       IndexBufferBase  = nullptr;
+			uint32_t*       IndexBufferPtr   = nullptr;
 			uint32_t        IndexCount       = 0;
-			uint16_t        VertexOffset     = 0;
+			uint32_t        VertexOffset     = 0;
 
 			glm::vec4 ClearColor = { 0.1f, 0.1f, 0.15f, 1.0f };
 		} m_Scene3D;

@@ -49,7 +49,7 @@ void main() {
 		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Uniform Buffer Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(Renderer::GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetFillMode(FillMode::Solid)
 			.SetCullMode(CullMode::BackAndFront)
 			.SetVertexLayout(vertexLayout)
@@ -69,7 +69,7 @@ void main() {
 		Renderer::Clear(m_ClearColor);
 		Renderer::Upload(m_UniformBuffer);
 		Renderer::DrawIndexed(m_Pipeline, m_VertexBuffer, m_IndexBuffer);
-		Renderer::End();
+		Renderer::Close();
 	}
 
 	void UniformBufferTest::Cleanup()
