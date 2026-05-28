@@ -140,16 +140,20 @@ namespace Dingo
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
 		renderPass->Initialize();
 
-		// Bind textures and samplers
+		// Bind textures and samplers.
+		// Binding layout convention: UBO occupies binding 0.
+		// Texture/sampler pairs are interleaved starting at binding 1:
+		//   texture[i] → binding 1 + i*2
+		//   sampler[i] → binding 2 + i*2
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{
 			if (m_Textures[i])
-				renderPass->SetTexture(i, m_Textures[i]);
+				renderPass->SetTexture(1 + i * 2, m_Textures[i]);
 		}
 		for (uint32_t i = 0; i < k_MaxSamplerSlots; ++i)
 		{
 			if (m_Samplers[i])
-				renderPass->SetSampler(i, m_Samplers[i]);
+				renderPass->SetSampler(2 + i * 2, m_Samplers[i]);
 		}
 
 		if (m_UniformBuffer)

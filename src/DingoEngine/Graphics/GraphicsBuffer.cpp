@@ -17,12 +17,13 @@ namespace Dingo
 			.SetInitialData(data));
 	}
 
-	GraphicsBuffer* GraphicsBuffer::CreateIndexBuffer(uint64_t size, const void* data, bool directUpload, const std::string& debugName)
+	GraphicsBuffer* GraphicsBuffer::CreateIndexBuffer(uint64_t size, const void* data, bool directUpload, const std::string& debugName, GraphicsFormat indexFormat)
 	{
 		return Create(GraphicsBufferParams()
 			.SetDebugName(debugName)
 			.SetByteSize(size)
 			.SetType(BufferType::IndexBuffer)
+			.SetFormat(indexFormat)
 			.SetDirectUpload(directUpload)
 			.SetInitialData(data));
 	}

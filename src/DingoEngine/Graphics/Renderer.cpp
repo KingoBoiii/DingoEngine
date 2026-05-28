@@ -13,8 +13,9 @@ namespace Dingo
 
 	struct RendererData
 	{
-		SwapChain*   SwapChain   = nullptr;
-		CommandList* CommandList = nullptr;
+		SwapChain*   SwapChain      = nullptr;
+		CommandList* CommandList    = nullptr;
+		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
 
 		std::thread             RenderThread;
 		std::mutex              Mutex;
@@ -162,6 +163,27 @@ namespace Dingo
 	}
 
 	/**************************************************
+	***		RENDER TARGET OVERRIDE					***
+	**************************************************/
+
+	Framebuffer* Renderer::GetCurrentTarget()
+	{
+		return s_Data->RenderTarget
+			? s_Data->RenderTarget
+			: s_Data->SwapChain->GetCurrentFramebuffer();
+	}
+
+	void Renderer::SetRenderTarget(Framebuffer* framebuffer)
+	{
+		s_Data->RenderTarget = framebuffer;
+	}
+
+	void Renderer::ResetRenderTarget()
+	{
+		s_Data->RenderTarget = nullptr;
+	}
+
+	/**************************************************
 	***		RESOURCE UPLOAD							***
 	**************************************************/
 
@@ -186,7 +208,7 @@ namespace Dingo
 
 	void Renderer::Clear(const glm::vec4& clearColor)
 	{
-		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		Framebuffer* target = GetCurrentTarget();
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->Clear(target, 0, clearColor);
 	}
@@ -197,7 +219,7 @@ namespace Dingo
 
 	void Renderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
-		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		Framebuffer* target = GetCurrentTarget();
 		s_Data->CommandList->SetPipeline(pipeline);
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
@@ -205,7 +227,7 @@ namespace Dingo
 
 	void Renderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
-		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		Framebuffer* target = GetCurrentTarget();
 		s_Data->CommandList->SetPipeline(pipeline);
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
@@ -217,7 +239,7 @@ namespace Dingo
 		if (indexCount == 0)
 			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
 
-		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		Framebuffer* target = GetCurrentTarget();
 		s_Data->CommandList->SetPipeline(pipeline);
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
@@ -234,7 +256,7 @@ namespace Dingo
 		if (indexCount == 0)
 			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
 
-		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		Framebuffer* target = GetCurrentTarget();
 		s_Data->CommandList->SetRenderPass(renderPass);
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
@@ -251,7 +273,7 @@ namespace Dingo
 		if (indexCount == 0)
 			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
 
-		Framebuffer* target = s_Data->SwapChain->GetCurrentFramebuffer();
+		Framebuffer* target = GetCurrentTarget();
 
 		// Upload uniform data to GPU if it changed since the last draw.
 		if (material->IsUniformDirty() && material->GetUniformBuffer())

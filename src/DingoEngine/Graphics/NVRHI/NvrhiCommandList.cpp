@@ -140,10 +140,14 @@ namespace Dingo
 		DE_CORE_ASSERT(indexBuffer, "Index buffer is null.");
 		DE_CORE_ASSERT(indexBuffer->IsType(BufferType::IndexBuffer), "Graphics buffer, must be of type BufferType::IndexBuffer");
 
+		const nvrhi::Format nvrhiFormat = (indexBuffer->GetFormat() == GraphicsFormat::Uint32)
+			? nvrhi::Format::R32_UINT
+			: nvrhi::Format::R16_UINT;
+
 		const nvrhi::IndexBufferBinding indexBufferBinding = nvrhi::IndexBufferBinding()
 			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(indexBuffer)->m_BufferHandle)
 			.setOffset(0)
-			.setFormat(nvrhi::Format::R16_UINT); // Assuming 16-bit indices
+			.setFormat(nvrhiFormat);
 
 		m_GraphicsState.setIndexBuffer(indexBufferBinding);
 	}

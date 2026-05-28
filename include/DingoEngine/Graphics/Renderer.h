@@ -85,6 +85,11 @@ namespace Dingo
 		***		QUERIES									***
 		**************************************************/
 
+		// Override the render target used by all no-arg draw/clear calls.
+		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain.
+		static void SetRenderTarget(Framebuffer* framebuffer);
+		static void ResetRenderTarget();
+
 		static CommandList*  GetCommandList();
 		static Framebuffer*  GetSwapChainFramebuffer();
 
@@ -98,6 +103,7 @@ namespace Dingo
 
 	private:
 		static void RenderThreadLoop();
+		static Framebuffer* GetCurrentTarget();
 
 		static struct RendererData* s_Data;
 	};
