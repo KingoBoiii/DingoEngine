@@ -58,7 +58,20 @@ namespace Dingo
 		DE_CORE_ASSERT(framebuffer, "Framebuffer is null.");
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before clearing framebuffer.");
 
-		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+		auto* nvrhiFB = static_cast<NvrhiFramebuffer*>(framebuffer);
+
+		// NVRHI's clearDepthStencilTexture omits the automatic barrier that clearTexture has,
+		// so the depth image never gets transitioned to TransferDstOptimal before the clear.
+		// Queue the transition here so the color clear's internal commitBarriers() carries both.
+		const bool hasDepth = nvrhiFB->m_DepthTextureHandle != nullptr &&
+		                      nvrhiFB->m_FramebufferHandle->getFramebufferInfo().depthFormat != nvrhi::Format::UNKNOWN;
+		if (hasDepth)
+			m_CommandListHandle->setTextureState(nvrhiFB->m_DepthTextureHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
+
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+
+		if (hasDepth)
+			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);
 	}
 
 	void NvrhiCommandList::UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)

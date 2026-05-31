@@ -67,9 +67,17 @@ namespace Dingo
 			.setAlphaToCoverageEnable(true)
 			.setRenderTarget(0, renderTarget);
 
+		const bool hasDepth = static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle->getFramebufferInfo().depthFormat != nvrhi::Format::UNKNOWN;
+
+		nvrhi::DepthStencilState depthStencilState = nvrhi::DepthStencilState()
+			.setDepthTestEnable(hasDepth)
+			.setDepthWriteEnable(hasDepth)
+			.setDepthFunc(hasDepth ? nvrhi::ComparisonFunc::Less : nvrhi::ComparisonFunc::Always);
+
 		nvrhi::RenderState renderState = nvrhi::RenderState()
 			.setRasterState(rasterState)
-			.setBlendState(blendState);
+			.setBlendState(blendState)
+			.setDepthStencilState(depthStencilState);
 
 		const auto& vsHandle = nvrhiShader->m_ShaderHandles[ShaderType::Vertex];
 		const auto& psHandle = nvrhiShader->m_ShaderHandles[ShaderType::Pixel];

@@ -16,6 +16,7 @@ namespace Dingo
 		int32_t Width;
 		int32_t Height;
 		std::vector<FramebufferAttachment> Attachments;
+		bool EnableDepth = false;
 
 		FramebufferParams& SetDebugName(const std::string& name)
 		{
@@ -38,6 +39,12 @@ namespace Dingo
 		FramebufferParams& AddAttachment(const FramebufferAttachment& attachment)
 		{
 			Attachments.push_back(attachment);
+			return *this;
+		}
+
+		FramebufferParams& SetEnableDepth(bool enable)
+		{
+			EnableDepth = enable;
 			return *this;
 		}
 	};

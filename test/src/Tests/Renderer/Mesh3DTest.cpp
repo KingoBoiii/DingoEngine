@@ -1,6 +1,7 @@
 #include "Mesh3DTest.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <algorithm>
 
@@ -74,7 +75,7 @@ namespace Dingo
 		m_Material = Material::Create(MaterialParams()
 			.SetDebugName("Mesh3D_Material")
 			.SetShader(m_Shader)
-			.SetCullMode(CullMode::None));
+			.SetCullMode(CullMode::Front));
 
 		m_Material->SetTexture(0, Renderer::GetWhiteTexture());
 		m_Material->SetSampler(0, Renderer::GetClampSampler());
@@ -97,7 +98,8 @@ namespace Dingo
 
 	void Mesh3DTest::Update(float deltaTime)
 	{
-		m_Rotation += deltaTime * 45.0f;
+		if (m_AutoRotate)
+			m_Rotation += deltaTime * m_RotationSpeed;
 
 		TransformUBO ubo;
 		ubo.ViewProjection = m_Camera.GetViewProjectionMatrix();
@@ -142,6 +144,25 @@ namespace Dingo
 
 		ImGui::Text("Vertices: %u  Indices: %u", m_IndexCount,
 			m_ShowSphere ? m_SphereMesh->GetVertexCount() : m_BoxMesh->GetVertexCount());
+
+		ImGui::Separator();
+		ImGui::Text("Camera");
+
+		glm::vec3 pos = m_Camera.GetPosition();
+		if (ImGui::DragFloat3("Position", glm::value_ptr(pos), 0.1f))
+			m_Camera.SetPosition(pos);
+
+		float fov = m_Camera.GetFOV();
+		if (ImGui::SliderFloat("FOV", &fov, 10.0f, 120.0f))
+			m_Camera.SetFOV(fov);
+
+		ImGui::Separator();
+		ImGui::Text("Rotation");
+
+		ImGui::Checkbox("Auto Rotate", &m_AutoRotate);
+		ImGui::SliderFloat("Speed", &m_RotationSpeed, -360.0f, 360.0f);
+		if (!m_AutoRotate)
+			ImGui::SliderFloat("Angle", &m_Rotation, 0.0f, 360.0f);
 	}
 
 }

@@ -1,6 +1,7 @@
 #include "Model3DTest.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 
 namespace
@@ -121,7 +122,8 @@ namespace Dingo
 
 	void Model3DTest::Update(float deltaTime)
 	{
-		m_Rotation += deltaTime * 30.0f;
+		if (m_AutoRotate)
+			m_Rotation += deltaTime * m_RotationSpeed;
 
 		Renderer::Clear(m_ClearColor);
 
@@ -185,6 +187,25 @@ namespace Dingo
 				sm.MeshData->GetIndexCount(),
 				sm.DiffuseTexture ? "yes" : "no");
 		}
+
+		ImGui::Separator();
+		ImGui::Text("Camera");
+
+		glm::vec3 pos = m_Camera.GetPosition();
+		if (ImGui::DragFloat3("Position", glm::value_ptr(pos), 0.1f))
+			m_Camera.SetPosition(pos);
+
+		float fov = m_Camera.GetFOV();
+		if (ImGui::SliderFloat("FOV", &fov, 10.0f, 120.0f))
+			m_Camera.SetFOV(fov);
+
+		ImGui::Separator();
+		ImGui::Text("Rotation");
+
+		ImGui::Checkbox("Auto Rotate", &m_AutoRotate);
+		ImGui::SliderFloat("Speed", &m_RotationSpeed, -360.0f, 360.0f);
+		if (!m_AutoRotate)
+			ImGui::SliderFloat("Angle", &m_Rotation, 0.0f, 360.0f);
 	}
 
 }

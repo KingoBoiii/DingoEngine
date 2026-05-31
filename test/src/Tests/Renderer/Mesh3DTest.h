@@ -38,7 +38,9 @@ namespace Dingo
 		bool  m_ShowSphere = false;
 
 		PerspectiveCamera m_Camera;
-		float m_Rotation = 0.0f;
+		float m_Rotation      = 0.0f;
+		float m_RotationSpeed = 45.0f;
+		bool  m_AutoRotate    = true;
 	};
 
 }

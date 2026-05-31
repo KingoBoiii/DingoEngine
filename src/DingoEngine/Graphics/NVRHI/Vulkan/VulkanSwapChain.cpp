@@ -310,7 +310,8 @@ namespace Dingo
 		{
 			FramebufferParams framebufferParams = FramebufferParams()
 				.SetWidth(m_Params.Width)
-				.SetHeight(m_Params.Height);
+				.SetHeight(m_Params.Height)
+				.SetEnableDepth(true);
 
 			m_SwapChainFramebuffers[index] = VulkanFramebuffer::Create(m_SwapChainImages[index].rhiHandle, framebufferParams);
 			m_SwapChainFramebuffers[index]->Initialize();

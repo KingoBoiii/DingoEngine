@@ -45,7 +45,9 @@ namespace Dingo
 		bool   m_LoadFailed = false;
 
 		PerspectiveCamera m_Camera;
-		float m_Rotation = 0.0f;
+		float m_Rotation      = 0.0f;
+		float m_RotationSpeed = 30.0f;
+		bool  m_AutoRotate    = true;
 
 		char m_PathBuf[512] = "assets/models/Duck/Duck.gltf";
 	};
