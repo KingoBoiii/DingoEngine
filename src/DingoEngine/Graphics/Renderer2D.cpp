@@ -651,7 +651,9 @@ void main() {
 			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront));
+			.SetCullMode(CullMode::BackAndFront)
+			.SetDepthTest(false)
+			.SetDepthWrite(false));
 
 		m_QuadPipeline.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DQuadVertexBuffer");
 
@@ -725,7 +727,9 @@ void main() {
 			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_CircleRenderPass.Shader)
 			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront));
+			.SetCullMode(CullMode::BackAndFront)
+			.SetDepthTest(false)
+			.SetDepthWrite(false));
 
 		m_CircleRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DCircleVertexBuffer");
 
@@ -791,7 +795,9 @@ void main() {
 			.SetDebugName("Renderer2DTextPipeline")
 			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_TextQuadRenderPass.Shader)
-			.SetVertexLayout(vertexLayout));
+			.SetVertexLayout(vertexLayout)
+			.SetDepthTest(false)
+			.SetDepthWrite(false));
 
 		m_TextQuadRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DTextVertexBuffer");
 

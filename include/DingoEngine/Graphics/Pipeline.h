@@ -41,6 +41,8 @@ namespace Dingo
 		FillMode FillMode = FillMode::Solid;
 		CullMode CullMode = CullMode::Back;
 		bool FrontCounterClockwise = false;
+		bool DepthTest = true;   // only takes effect if the target framebuffer has a depth attachment
+		bool DepthWrite = true;  // 2D/overlay pipelines should set both false (painter's order)
 		VertexLayout VertexLayout;
 		GraphicsBuffer* UniformBuffer = nullptr;
 		Texture* Texture = nullptr;
@@ -72,6 +74,18 @@ namespace Dingo
 		PipelineParams& SetCullMode(Dingo::CullMode cullMode)
 		{
 			CullMode = cullMode;
+			return *this;
+		}
+
+		PipelineParams& SetDepthTest(bool enabled)
+		{
+			DepthTest = enabled;
+			return *this;
+		}
+
+		PipelineParams& SetDepthWrite(bool enabled)
+		{
+			DepthWrite = enabled;
 			return *this;
 		}
 
