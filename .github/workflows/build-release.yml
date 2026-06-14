@@ -115,6 +115,13 @@ jobs:
         name: flappybird-binary-windows
         path: .\build\bin\Distribution-windows-x86_64\FlappyBird
 
+    - name: Upload Dungeon Crawler binary
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dungeoncrawler-binary-windows
+        path: .\build\bin\Distribution-windows-x86_64\DungeonCrawler
+
     - name: Upload Breakout 3D binary
       if: matrix.build-configuration == 'Distribution'
       uses: actions/upload-artifact@v4
@@ -171,6 +178,56 @@ jobs:
       with:
         name: flappybird-windows-distribution-${{steps.version.outputs.VERSION}}
         path: .\flappybird
+
+  example-game-dungeon-crawler:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+        submodules: false
+        fetch-depth: 0
+
+    - name: Download Dungeon Crawler binary
+      uses: actions/download-artifact@v4
+      with:
+        name: dungeoncrawler-binary-windows
+        path: .\dungeoncrawler
+
+    - name: Get version
+      id: version
+      run: |
+        $tag = "${{ github.ref_name }}"
+        $ver = $tag.TrimStart('v')
+        $parts = $ver.Split('.')
+        $commits = git rev-list --count HEAD
+        echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
+
+    - name: Copy assets
+      run: |
+        robocopy .\examples\DungeonCrawler\assets .\DungeonCrawler\assets /e /z
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Create ZIP archive
+      run: |
+        $zipName = "DungeonCrawler-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
+        Compress-Archive -Path ".\dungeoncrawler\*" -DestinationPath ".\$zipName" -Force
+
+    - name: Upload to GitHub Release
+      run: gh release upload "${{ github.ref_name }}" "DungeonCrawler-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dungeoncrawler-windows-distribution-${{steps.version.outputs.VERSION}}
+        path: .\dungeoncrawler
 
   example-game-breakout-3d:
     needs: build-windows
