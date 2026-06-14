@@ -85,9 +85,18 @@ namespace Dingo
 			.setAttachment(0)
 			.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
-		// LoadOp = eLoad so the render pass reads the value written by the explicit
-		// ClearDepthStencilAttachment call (which leaves the image in TransferDstOptimal).
-		// NVRHI always passes setClearValueCount(0), so eClear would use garbage values.
+		// loadOp = eLoad preserves the depth value written by the explicit ClearDepthStencilAttachment
+		// call in NvrhiCommandList::Clear (NVRHI begins the render pass with setClearValueCount(0),
+		// so eClear would read garbage).
+		//
+		// initialLayout must be eDepthStencilAttachmentOptimal: the depth texture is created with
+		// initialState = DepthWrite / keepInitialState (see Initialize()), and NVRHI's
+		// setResourceStatesForFramebuffer transitions it to DepthStencilAttachmentOptimal before
+		// every vkCmdBeginRenderPass. A hardcoded eTransferDstOptimal (left over from the transfer-
+		// based clear) is already stale by the time the pass begins, which trips
+		// VUID-vkCmdBeginRenderPass-initialLayout-00900 every frame — compounded across the
+		// Renderer2D quad/circle/text passes that reuse this render pass. The CopyDest -> DepthWrite
+		// transition NVRHI performs preserves the cleared contents, so eLoad still reads 1.0.
 		vk::AttachmentDescription depthAttachment = vk::AttachmentDescription()
 			.setFormat(vk::Format::eD32Sfloat)
 			.setSamples(vk::SampleCountFlagBits::e1)
@@ -95,7 +104,7 @@ namespace Dingo
 			.setStoreOp(vk::AttachmentStoreOp::eDontCare)
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-			.setInitialLayout(vk::ImageLayout::eTransferDstOptimal)
+			.setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
 			.setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
 		vk::AttachmentReference depthRef = vk::AttachmentReference()
