@@ -45,6 +45,7 @@ namespace Dingo
 		void UpdatePlayer(float dt);
 		void UpdateCombat(float dt);
 		void UpdateEnemies(float dt);
+		void UpdateLoot();
 
 		void RenderRoom(Renderer2D& r);
 		void RenderEntities(Renderer2D& r);
@@ -99,6 +100,12 @@ namespace Dingo
 		const float m_EnemySpeed = 2.3f;
 		const float m_EnemyAggroRange = 7.0f;
 		const float m_EnemyContactDamage = 12.0f;
+
+		// --- Loot ---
+		std::vector<glm::vec2> m_Loot;        // dropped gem positions (world space)
+		int m_LootCollected = 0;
+		const float m_LootHalf = 0.16f;
+		const float m_LootPickupDist = 0.6f;
 
 		// --- State ---
 		std::vector<Enemy> m_Enemies;

@@ -120,6 +120,9 @@ namespace Dingo
 			m_Enemies.push_back(e);
 		}
 
+		m_Loot.clear();
+		m_LootCollected = 0;
+
 		m_State = PlayState::Playing;
 	}
 
@@ -193,6 +196,7 @@ namespace Dingo
 			UpdatePlayer(deltaTime);
 			UpdateCombat(deltaTime);
 			UpdateEnemies(deltaTime);
+			UpdateLoot();
 
 			if (m_PlayerHealth <= 0.0f)
 			{
@@ -299,6 +303,7 @@ namespace Dingo
 					{
 						e.Health = 0.0f;
 						e.Alive = false;
+						m_Loot.push_back(e.Position); // drop loot where it died
 					}
 				}
 			}
@@ -327,6 +332,24 @@ namespace Dingo
 			{
 				m_PlayerHealth -= m_EnemyContactDamage;
 				m_PlayerInvuln = m_PlayerInvulnTime;
+			}
+		}
+	}
+
+	void GameLayer::UpdateLoot()
+	{
+		// Vacuum up any gem the player walks near (swap-and-pop while iterating).
+		for (size_t i = 0; i < m_Loot.size(); )
+		{
+			if (glm::length(m_Loot[i] - m_PlayerPos) <= m_LootPickupDist)
+			{
+				m_Loot[i] = m_Loot.back();
+				m_Loot.pop_back();
+				++m_LootCollected;
+			}
+			else
+			{
+				++i;
 			}
 		}
 	}
@@ -365,6 +388,14 @@ namespace Dingo
 
 	void GameLayer::RenderEntities(Renderer2D& r)
 	{
+		// Loot gems (gold coins) sit on the floor, beneath the actors.
+		for (const glm::vec2& gem : m_Loot)
+		{
+			const glm::mat4 t = glm::translate(glm::mat4(1.0f), glm::vec3(gem, 0.0f))
+			                  * glm::scale(glm::mat4(1.0f), glm::vec3(m_LootHalf * 2.0f));
+			r.DrawCircle(t, glm::vec4(1.0f, 0.84f, 0.22f, 1.0f), 1.0f, 0.05f);
+		}
+
 		for (const Enemy& e : m_Enemies)
 		{
 			if (!e.Alive) continue;
@@ -421,6 +452,8 @@ namespace Dingo
 		for (const Enemy& e : m_Enemies) if (e.Alive) ++alive;
 		r.DrawText(std::format("Enemies: {}", alive),
 		           m_Font, glm::vec2(left + pad, top - pad - 1.1f), 0.32f, { textColor });
+		r.DrawText(std::format("Loot: {}", m_LootCollected),
+		           m_Font, glm::vec2(left + pad, top - pad - 1.5f), 0.32f, { glm::vec4(1.0f, 0.84f, 0.22f, 1.0f) });
 
 		// Controls + perf (bottom).
 		r.DrawText("WASD move    SPACE attack    R restart    ESC quit",
@@ -436,8 +469,9 @@ namespace Dingo
 		}
 		else if (m_State == PlayState::Cleared)
 		{
-			DrawCenteredText(r, "ROOM CLEARED!", 1.4f, glm::vec2(0.0f, 0.6f), glm::vec4(1.0f, 0.85f, 0.30f, 1.0f));
-			DrawCenteredText(r, "Press R to play again", 0.6f, glm::vec2(0.0f, -0.4f), textColor);
+			DrawCenteredText(r, "ROOM CLEARED!", 1.4f, glm::vec2(0.0f, 0.7f), glm::vec4(1.0f, 0.85f, 0.30f, 1.0f));
+			DrawCenteredText(r, std::format("Loot collected: {}", m_LootCollected), 0.5f, glm::vec2(0.0f, -0.3f), glm::vec4(1.0f, 0.84f, 0.22f, 1.0f));
+			DrawCenteredText(r, "Press R to play again", 0.6f, glm::vec2(0.0f, -1.1f), textColor);
 		}
 	}
 
