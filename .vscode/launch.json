@@ -6,12 +6,36 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/FlappyBird/FlappyBird.exe",
-            "args": [],
+            "args": ["--graphics=vulkan"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/examples/FlappyBird",
             "environment": [],
             "console": "internalConsole",
             "preLaunchTask": "Build FlappyBird Debug"
+        },
+        {
+            "name": "Debug DungeonCrawler",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/DungeonCrawler/DungeonCrawler.exe",
+            "args": ["--graphics=dx11"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/DungeonCrawler",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build DungeonCrawler Debug"
+        },
+        {
+            "name": "Debug Breakout 3D",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Breakout3D/Breakout3D.exe",
+            "args": ["--graphics=dx12"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Breakout3D",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Breakout3D Debug"
         },
         {
             "name": "Debug TestFramework",

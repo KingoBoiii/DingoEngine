@@ -38,10 +38,7 @@ namespace Dingo
 
 	void NvrhiSampler::Destroy()
 	{
-		if (m_Handle)
-		{
-			m_Handle->Release();
-		}
+		m_Handle = nullptr;
 	}
 
 }

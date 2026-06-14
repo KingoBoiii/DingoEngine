@@ -7,8 +7,7 @@ namespace Dingo
 	class IndexBufferTest : public RendererTest
 	{
 	public:
-		IndexBufferTest(Renderer* renderer)
-			: RendererTest(renderer)
+		IndexBufferTest()
 		{}
 		virtual ~IndexBufferTest() = default;
 

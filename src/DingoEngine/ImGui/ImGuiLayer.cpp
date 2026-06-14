@@ -3,6 +3,9 @@
 #include "ImGuiRenderer.h"
 
 #include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/NVRHI/NvrhiCommandList.h"
 #include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h"
 
 #include <nvrhi/nvrhi.h>
@@ -35,7 +38,10 @@ namespace Dingo
 		}
 		style.Colors[ImGuiCol_WindowBg] = ImVec4(0.15f, 0.15f, 0.15f, style.Colors[ImGuiCol_WindowBg].w);
 
-		bool result = ImGui_ImplGlfw_InitForVulkan(Dingo::Application::Get().GetWindow().m_WindowHandle, true);
+		GLFWwindow* window = Dingo::Application::Get().GetWindow().m_WindowHandle;
+		bool result = (GraphicsContext::Get().GetGraphicsAPI() == GraphicsAPI::Vulkan)
+			? ImGui_ImplGlfw_InitForVulkan(window, true)
+			: ImGui_ImplGlfw_InitForOther(window, true);
 		if (!result)
 		{
 			DE_CORE_ERROR("Failed to initialize ImGui for GLFW");
@@ -51,6 +57,8 @@ namespace Dingo
 	void ImGuiLayer::OnDetach()
 	{
 		m_ImGuiRenderer->Shutdown();
+		delete m_ImGuiRenderer;
+		m_ImGuiRenderer = nullptr;
 
 		ImGui_ImplGlfw_Shutdown();
 
@@ -69,7 +77,8 @@ namespace Dingo
 	{
 		ImGui::Render();
 
-		m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetSwapChain());
+		nvrhi::ICommandList* mainCmdList = static_cast<NvrhiCommandList*>(Renderer::GetCommandList())->GetNvrhiHandle();
+		m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetSwapChain(), mainCmdList);
 
 		// Update and Render additional Platform Windows
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
@@ -130,20 +139,21 @@ namespace Dingo
 		ImGuiViewportData* data = IM_NEW(ImGuiViewportData)();
 		viewport->RendererUserData = data;
 
-		vk::Instance vInstance = static_cast<const VulkanGraphicsContext&>(GraphicsContext::Get()).GetVulkanInstance();
-
-		// Create surface
-		ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-		vk::SurfaceKHR surface;
-		VkResult err = (VkResult)platform_io.Platform_CreateVkSurface(viewport, *(ImU64*)&vInstance, nullptr, (ImU64*)&surface);
-		DE_CORE_ASSERT(err == VkResult::VK_SUCCESS);
-		ImGui_ImplGlfw_ViewportData* vd = (ImGui_ImplGlfw_ViewportData*)viewport->PlatformUserData;
-
 		SwapChainParams params = {
+			.NativeWindowHandle = (GLFWwindow*)viewport->PlatformHandle,
 			.Width = (int32_t)viewport->Size.x,
 			.Height = (int32_t)viewport->Size.y,
-			.VulkanSurface = &surface,
 		};
+
+		if (GraphicsContext::Get().GetGraphicsAPI() == GraphicsAPI::Vulkan)
+		{
+			vk::Instance vInstance = static_cast<const VulkanGraphicsContext&>(GraphicsContext::Get()).GetVulkanInstance();
+			ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+			vk::SurfaceKHR surface;
+			VkResult err = (VkResult)platform_io.Platform_CreateVkSurface(viewport, *(ImU64*)&vInstance, nullptr, (ImU64*)&surface);
+			DE_CORE_ASSERT(err == VkResult::VK_SUCCESS);
+			params.VulkanSurface = &surface;
+		}
 
 		data->SwapChain = SwapChain::Create(params);
 		data->SwapChain->Initialize();
@@ -156,7 +166,11 @@ namespace Dingo
 	static void ImGuiRenderer_DestroyWindow(ImGuiViewport* viewport)
 	{
 		ImGuiViewportData* vd = (ImGuiViewportData*)viewport->RendererUserData;
-		delete vd;
+		if (vd)
+		{
+			vd->Renderer->Shutdown();
+			delete vd;
+		}
 		viewport->RendererUserData = nullptr;
 	}
 
@@ -182,17 +196,19 @@ namespace Dingo
 
 	void ImGuiLayer::InitializePlatformInterface()
 	{
-		ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-		{
-			IM_ASSERT(platform_io.Platform_CreateVkSurface != NULL && "Platform needs to setup the CreateVkSurface handler.");
-		}
+		if (!(ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable))
+			return;
 
-		platform_io.Renderer_CreateWindow = ImGuiRenderer_CreateWindow;
+		ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+
+		if (GraphicsContext::Get().GetGraphicsAPI() == GraphicsAPI::Vulkan)
+			IM_ASSERT(platform_io.Platform_CreateVkSurface != NULL && "Platform needs to setup the CreateVkSurface handler.");
+
+		platform_io.Renderer_CreateWindow  = ImGuiRenderer_CreateWindow;
 		platform_io.Renderer_DestroyWindow = ImGuiRenderer_DestroyWindow;
 		platform_io.Renderer_SetWindowSize = ImGuiRenderer_SetWindowSize;
-		platform_io.Renderer_RenderWindow = ImGuiRenderer_RenderWindow;
-		platform_io.Renderer_SwapBuffers = ImGuiRenderer_SwapBuffers;
+		platform_io.Renderer_RenderWindow  = ImGuiRenderer_RenderWindow;
+		platform_io.Renderer_SwapBuffers   = ImGuiRenderer_SwapBuffers;
 	}
 
 

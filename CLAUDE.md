@@ -31,7 +31,7 @@ src/DingoEngine/           Implementations
     Vulkan/                VulkanGraphicsContext, VulkanSwapChain
     DirectX12/             DirectX12GraphicsContext (currently disabled)
 
-vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen)
+vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen). No changes can occur in vendor / submodules!
 examples/
   FlappyBird/              Complete game (Renderer2D, input, audio, collision)
 ```

@@ -20,5 +20,6 @@
 #include <functional>
 
 #include "DingoEngine/Version.h"
+#include "DingoEngine/Log.h"
 #include "DingoEngine/Assertion.h"
 

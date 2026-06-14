@@ -7,8 +7,18 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/KeyCodes.h"
+#include "DingoEngine/Core/PerspectiveCamera.h"
 
 #include "DingoEngine/Windowing/Window.h"
+
+// ----------------------------------------------------------------------
+// Events
+// ----------------------------------------------------------------------
+
+#include "DingoEngine/Events/Event.h"
+#include "DingoEngine/Events/WindowEvents.h"
+#include "DingoEngine/Events/KeyEvents.h"
 
 // ----------------------------------------------------------------------
 // Graphics
@@ -24,4 +34,7 @@
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Graphics/Mesh.h"
+#include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/Model.h"
 

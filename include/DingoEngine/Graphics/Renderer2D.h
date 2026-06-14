@@ -18,22 +18,14 @@ namespace Dingo
 
 	struct Renderer2DCapabilities
 	{
-		uint32_t MaxQuads = 1000;					// Maximum number of quads that can be drawn in a single frame
+		uint32_t MaxQuads = 1000;
 
-		constexpr uint32_t GetQuadVertexCount() const
-		{
-			return MaxQuads * 4;					// 4 vertices per quad
-		}
-
-		constexpr uint32_t GetQuadIndexCount() const
-		{
-			return MaxQuads * 6;					// 6 indices per quad (2 triangles)
-		}
+		constexpr uint32_t GetQuadVertexCount() const { return MaxQuads * 4; }
+		constexpr uint32_t GetQuadIndexCount()  const { return MaxQuads * 6; }
 	};
 
 	struct Renderer2DParams
 	{
-		Framebuffer* TargetFramebuffer = nullptr;
 		glm::vec4 ClearColor = glm::vec4(1.0f);
 		Renderer2DCapabilities Capabilities = {};
 	};
@@ -41,9 +33,8 @@ namespace Dingo
 	class Renderer2D
 	{
 	public:
-		static Renderer2D* Create(Renderer* renderer, const Renderer2DCapabilities& capabilities = {});
-		static Renderer2D* Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities = {});
-		static Renderer2D* Create(const Renderer2DParams& params = {});
+		static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
+		static Renderer2D* Create(const Renderer2DParams& params);
 
 	public:
 		Renderer2D() = delete;
@@ -83,20 +74,15 @@ namespace Dingo
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 
-		Texture* GetOutput() const { return m_Renderer->GetOutput(); }
+		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{
-			return glm::vec2(m_Renderer->GetTargetFramebuffer()->GetParams().Width, m_Renderer->GetTargetFramebuffer()->GetParams().Height);
+			auto* fb = Renderer::GetSwapChainFramebuffer();
+			return glm::vec2(fb->GetParams().Width, fb->GetParams().Height);
 		}
 
 	private:
-		Renderer2D(const Renderer2DParams& params)
-			: m_Params(params), m_OwnsRenderer(true)
-		{}
-
-		Renderer2D(Renderer* renderer, const Renderer2DParams& params)
-			: m_Params(params), m_Renderer(renderer), m_OwnsRenderer(false)
-		{}
+		Renderer2D(const Renderer2DParams& params) : m_Params(params) {}
 
 	private:
 		float GetTextureIndex(Texture* texture);
@@ -107,7 +93,7 @@ namespace Dingo
 
 		void CreateCircleRenderPass();
 		void DestroyCircleRenderPass();
-		
+
 		void CreateTextQuadRenderPass();
 		void DestroyTextQuadRenderPass();
 
@@ -116,8 +102,6 @@ namespace Dingo
 		***		GENERAL									***
 		**************************************************/
 		Renderer2DParams m_Params;
-		Renderer* m_Renderer = nullptr;
-		bool m_OwnsRenderer = true; // If true, Renderer2D will destroy the renderer on shutdown
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 
 		struct CameraData
@@ -132,7 +116,7 @@ namespace Dingo
 
 		static const uint32_t MaxTextureSlots = 32;
 		std::array<Texture*, MaxTextureSlots> m_TextureSlots = {};
-		uint32_t m_TextureSlotIndex = 1; // 0 = white texture
+		uint32_t m_TextureSlotIndex = 1;
 
 		/**************************************************
 		***		QUAD									***

@@ -7,8 +7,7 @@ namespace Dingo
 	class VertexBufferTest : public RendererTest
 	{
 	public:
-		VertexBufferTest(Renderer* renderer)
-			: RendererTest(renderer)
+		VertexBufferTest()
 		{}
 		virtual ~VertexBufferTest() = default;
 

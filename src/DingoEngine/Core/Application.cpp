@@ -5,7 +5,7 @@
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
-#include "DingoEngine/Graphics/AppRenderer.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/ImGui/ImGuiLayer.h"
@@ -46,10 +46,9 @@ namespace Dingo
 			.SetVSync(m_Params.Window.VSync));
 		m_SwapChain->Initialize();
 
-		m_Renderer = AppRenderer::Create(m_SwapChain);
-		Renderer::InitializeStaticResources();
+		Renderer::Initialize(m_SwapChain);
 
-		m_Renderer2D = Renderer2D::Create(m_Renderer);
+		m_Renderer2D = Renderer2D::Create();
 
 		OnInitialize();
 
@@ -74,15 +73,10 @@ namespace Dingo
 	{
 		OnDestroy();
 
-		m_LayerStack.Clear();
+		// Stop the render thread first so the GPU is idle before any resources are freed.
+		Renderer::Shutdown();
 
-		Renderer::DestroyStaticResources();
-		if (m_Renderer)
-		{
-			m_Renderer->Shutdown();
-			delete m_Renderer;
-			m_Renderer = nullptr;
-		}
+		m_LayerStack.Clear();
 
 		if (m_Renderer2D)
 		{
@@ -108,7 +102,7 @@ namespace Dingo
 		if (m_GraphicsContext)
 		{
 			m_GraphicsContext->Shutdown();
-			//delete m_GraphicsContext;
+			delete m_GraphicsContext;
 			m_GraphicsContext = nullptr;
 		}
 
@@ -121,6 +115,13 @@ namespace Dingo
 
 		dispatcher.Dispatch<WindowCloseEvent>(DE_BIND_EVENT_FN(Application::OnWindowCloseEvent));
 		dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(Application::OnWindowResizeEvent));
+
+		for (auto it = m_LayerStack.rbegin(); it != m_LayerStack.rend(); ++it)
+		{
+			if (e.Handled)
+				break;
+			(*it)->OnEvent(e);
+		}
 	}
 
 	void Application::Run()
@@ -136,7 +137,7 @@ namespace Dingo
 			Input::Update();
 			m_Window->Update();
 
-			m_Renderer->BeginFrame();
+			Renderer::BeginFrame();
 
 			for (Layer* layer : m_LayerStack)
 			{
@@ -153,9 +154,7 @@ namespace Dingo
 				m_ImGuiLayer->End();
 			}
 
-			m_Renderer->EndFrame();
-
-			m_GraphicsContext->RunGarbageCollection();
+			Renderer::EndFrame();
 
 			// Execute any post-execution callbacks
 			for (const auto& callback : m_PostExecutionCallbacks)
@@ -183,9 +182,17 @@ namespace Dingo
 		m_IsRunning = false;
 	}
 
-	Renderer& Application::GetRenderer() const
+	void Application::RequestRestart(GraphicsAPI api)
 	{
-		return *m_Renderer;
+		s_PendingRestart = true;
+		s_PendingRestartAPI = api;
+		SubmitPostExecution([]() { Application::Get().Close(); });
+	}
+
+	GraphicsAPI Application::ConsumePendingRestart()
+	{
+		s_PendingRestart = false;
+		return s_PendingRestartAPI;
 	}
 
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)

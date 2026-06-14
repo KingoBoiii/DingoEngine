@@ -64,19 +64,39 @@ namespace Dingo
 			.setDestBlendAlpha(nvrhi::BlendFactor::Zero);
 
 		nvrhi::BlendState blendState = nvrhi::BlendState()
-			.setAlphaToCoverageEnable(true)
+			.setAlphaToCoverageEnable(false)
 			.setRenderTarget(0, renderTarget);
+
+		// Depth only applies when the target framebuffer actually has a depth attachment.
+		// 2D/overlay pipelines opt out (DepthTest/DepthWrite = false) so same-z draws aren't
+		// rejected by the Less test — otherwise the first thing drawn at each pixel wins and
+		// everything behind it (the rest of the 2D scene) disappears.
+		const bool hasDepth = static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle->getFramebufferInfo().depthFormat != nvrhi::Format::UNKNOWN;
+		const bool depthTest = hasDepth && m_Params.DepthTest;
+		const bool depthWrite = hasDepth && m_Params.DepthWrite;
+
+		nvrhi::DepthStencilState depthStencilState = nvrhi::DepthStencilState()
+			.setDepthTestEnable(depthTest)
+			.setDepthWriteEnable(depthWrite)
+			.setDepthFunc(depthTest ? nvrhi::ComparisonFunc::Less : nvrhi::ComparisonFunc::Always);
 
 		nvrhi::RenderState renderState = nvrhi::RenderState()
 			.setRasterState(rasterState)
-			.setBlendState(blendState);
+			.setBlendState(blendState)
+			.setDepthStencilState(depthStencilState);
+
+		const auto& vsHandle = nvrhiShader->m_ShaderHandles[ShaderType::Vertex];
+		const auto& psHandle = nvrhiShader->m_ShaderHandles[ShaderType::Pixel];
+		if (!vsHandle) DE_CORE_ERROR("Pipeline '{}': vertex shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
+		if (!psHandle) DE_CORE_ERROR("Pipeline '{}': pixel shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
+		DE_CORE_ASSERT(vsHandle && psHandle, "Shader compilation failed — see errors above.");
 
 		nvrhi::GraphicsPipelineDesc graphicsPipelineDesc = nvrhi::GraphicsPipelineDesc()
 			.setPrimType(nvrhi::PrimitiveType::TriangleList)
 			.setRenderState(renderState)
 			.setInputLayout(m_InputLayoutHandle)
-			.setVertexShader(nvrhiShader->m_ShaderHandles[ShaderType::Vertex])
-			.setPixelShader(nvrhiShader->m_ShaderHandles[ShaderType::Pixel]);
+			.setVertexShader(vsHandle)
+			.setPixelShader(psHandle);
 
 		if (nvrhiShader->m_BindingLayoutHandle)
 		{
@@ -84,24 +104,15 @@ namespace Dingo
 		}
 
 		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle);
+		if (!m_GraphicsPipelineHandle) DE_CORE_ERROR("Pipeline '{}': createGraphicsPipeline failed — check D3D12 debug output for root signature or PSO errors.", m_Params.DebugName);
+		DE_CORE_ASSERT(m_GraphicsPipelineHandle, "createGraphicsPipeline returned null — see errors above.");
 	}
 
 	void NvrhiPipeline::Destroy()
 	{
-		if (m_BindingSetHandle)
-		{
-			m_BindingSetHandle->Release();
-		}
-
-		if (m_InputLayoutHandle)
-		{
-			m_InputLayoutHandle->Release();
-		}
-
-		if (m_GraphicsPipelineHandle)
-		{
-			m_GraphicsPipelineHandle->Release();
-		}
+		m_BindingSetHandle = nullptr;
+		m_InputLayoutHandle = nullptr;
+		m_GraphicsPipelineHandle = nullptr;
 	}
 
 	void NvrhiPipeline::CreateInputLayout(NvrhiShader* nvrhiShader)

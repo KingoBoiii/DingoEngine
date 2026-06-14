@@ -2,7 +2,7 @@
 #include "DingoEngine/Core/Application.h"
 #include "Log.h"
 
-extern Dingo::Application* Dingo::CreateApplication(int argc, char** argv);
+extern Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args);
 
 namespace Dingo
 {
@@ -11,9 +11,19 @@ namespace Dingo
 	{
 		Dingo::Log::Initialize();
 
-		Dingo::Application* app = Dingo::CreateApplication(argc, argv);
-		app->Run();
-		delete app;
+		Dingo::ApplicationCommandLineArgs args = { argc, argv };
+
+		do
+		{
+			Dingo::Application* app = Dingo::CreateApplication(args);
+			app->Run();
+			bool shouldRestart = Dingo::Application::HasPendingRestart();
+			delete app;
+
+			if (!shouldRestart)
+				break;
+		}
+		while (true);
 
 		Dingo::Log::Shutdown();
 

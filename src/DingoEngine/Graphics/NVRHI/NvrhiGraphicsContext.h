@@ -6,6 +6,18 @@
 namespace Dingo
 {
 
+	class NvrhiMessageCallback : public nvrhi::IMessageCallback
+	{
+	public:
+		static NvrhiMessageCallback& Get()
+		{
+			static NvrhiMessageCallback s_Instance;
+			return s_Instance;
+		}
+
+		virtual void message(nvrhi::MessageSeverity severity, const char* messageText) override;
+	};
+
 	class NvrhiGraphicsContext : public GraphicsContext
 	{
 	public:

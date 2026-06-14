@@ -24,10 +24,7 @@ namespace Dingo
 
 	void NvrhiCommandList::Destroy()
 	{
-		if (m_CommandListHandle)
-		{
-			m_CommandListHandle->Release();
-		}
+		m_CommandListHandle = nullptr;
 	}
 
 	void NvrhiCommandList::Begin()
@@ -39,12 +36,21 @@ namespace Dingo
 		m_HasBegun = true;
 	}
 
-	void NvrhiCommandList::End()
+	void NvrhiCommandList::Close()
 	{
 		m_CommandListHandle->close();
-		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(m_CommandListHandle);
-
 		m_HasBegun = false;
+	}
+
+	void NvrhiCommandList::Execute()
+	{
+		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(m_CommandListHandle);
+	}
+
+	void NvrhiCommandList::End()
+	{
+		Close();
+		Execute();
 	}
 
 	void NvrhiCommandList::Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor)
@@ -52,7 +58,20 @@ namespace Dingo
 		DE_CORE_ASSERT(framebuffer, "Framebuffer is null.");
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before clearing framebuffer.");
 
-		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+		auto* nvrhiFB = static_cast<NvrhiFramebuffer*>(framebuffer);
+
+		// NVRHI's clearDepthStencilTexture omits the automatic barrier that clearTexture has,
+		// so the depth image never gets transitioned to TransferDstOptimal before the clear.
+		// Queue the transition here so the color clear's internal commitBarriers() carries both.
+		const bool hasDepth = nvrhiFB->m_DepthTextureHandle != nullptr &&
+		                      nvrhiFB->m_FramebufferHandle->getFramebufferInfo().depthFormat != nvrhi::Format::UNKNOWN;
+		if (hasDepth)
+			m_CommandListHandle->setTextureState(nvrhiFB->m_DepthTextureHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
+
+		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+
+		if (hasDepth)
+			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);
 	}
 
 	void NvrhiCommandList::UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)
@@ -80,6 +99,12 @@ namespace Dingo
 		m_GraphicsState = nvrhi::GraphicsState();
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
+
+		if (!nvrhiPipeline->m_GraphicsPipelineHandle)
+		{
+			DE_CORE_ERROR("SetPipeline: pipeline '{}' has a null graphics pipeline handle — shader/PSO creation failed. Draw call will be skipped.", nvrhiPipeline->GetParams().DebugName);
+			return;
+		}
 
 		SetFramebuffer(nvrhiPipeline->GetTargetFramebuffer());
 
@@ -128,10 +153,14 @@ namespace Dingo
 		DE_CORE_ASSERT(indexBuffer, "Index buffer is null.");
 		DE_CORE_ASSERT(indexBuffer->IsType(BufferType::IndexBuffer), "Graphics buffer, must be of type BufferType::IndexBuffer");
 
+		const nvrhi::Format nvrhiFormat = (indexBuffer->GetFormat() == GraphicsFormat::Uint32)
+			? nvrhi::Format::R32_UINT
+			: nvrhi::Format::R16_UINT;
+
 		const nvrhi::IndexBufferBinding indexBufferBinding = nvrhi::IndexBufferBinding()
 			.setBuffer(static_cast<NvrhiGraphicsBuffer*>(indexBuffer)->m_BufferHandle)
 			.setOffset(0)
-			.setFormat(nvrhi::Format::R16_UINT); // Assuming 16-bit indices
+			.setFormat(nvrhiFormat);
 
 		m_GraphicsState.setIndexBuffer(indexBufferBinding);
 	}

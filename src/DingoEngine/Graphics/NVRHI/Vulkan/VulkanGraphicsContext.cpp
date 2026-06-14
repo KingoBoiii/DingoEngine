@@ -78,7 +78,9 @@ namespace Dingo
 		}
 
 		CreateInstance();
+#ifndef DE_DISTRIBUTION
 		CreateDebugMessenger();
+#endif
 		PickPhysicalDevice();
 		FindQueueFamilies(m_VulkanPhysicalDevice);
 		CreateDevice();
@@ -89,17 +91,13 @@ namespace Dingo
 	{
 		m_RendererString.clear();
 
-		//if (m_DeviceHandle)
-		//{
-		//	m_DeviceHandle->Release();
-		//	m_DeviceHandle = nullptr;
-		//}
-
-		if (m_NvrhiDevice)
+		if (m_DeviceHandle)
 		{
-			m_NvrhiDevice->Release();
-			m_NvrhiDevice = nullptr;
+			m_DeviceHandle->waitForIdle();
+			m_DeviceHandle->runGarbageCollection();
+			m_DeviceHandle = nullptr;
 		}
+		m_NvrhiDevice = nullptr;
 
 		if (m_VulkanDevice)
 		{
@@ -123,8 +121,10 @@ namespace Dingo
 	void VulkanGraphicsContext::CreateInstance()
 	{
 		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#ifndef DE_DISTRIBUTION
 		enabledExtensions.instance.insert(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 		enabledExtensions.layers.insert("VK_LAYER_KHRONOS_validation");
+#endif
 
 		//PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader->getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
 		PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
@@ -407,6 +407,24 @@ namespace Dingo
 		const vk::PhysicalDeviceProperties physicalDeviceProperties = m_VulkanPhysicalDevice.getProperties();
 		m_RendererString = std::string(physicalDeviceProperties.deviceName.data());
 
+		m_AdapterInfo.Name = m_RendererString;
+		m_AdapterInfo.VendorID = physicalDeviceProperties.vendorID;
+		m_AdapterInfo.DeviceID = physicalDeviceProperties.deviceID;
+		switch (physicalDeviceProperties.deviceType)
+		{
+			case vk::PhysicalDeviceType::eDiscreteGpu:   m_AdapterInfo.DeviceType = AdapterDeviceType::Discrete;   break;
+			case vk::PhysicalDeviceType::eIntegratedGpu: m_AdapterInfo.DeviceType = AdapterDeviceType::Integrated; break;
+			case vk::PhysicalDeviceType::eVirtualGpu:    m_AdapterInfo.DeviceType = AdapterDeviceType::Virtual;    break;
+			case vk::PhysicalDeviceType::eCpu:           m_AdapterInfo.DeviceType = AdapterDeviceType::Software;   break;
+			default:                                     m_AdapterInfo.DeviceType = AdapterDeviceType::Unknown;    break;
+		}
+		auto memProps = m_VulkanPhysicalDevice.getMemoryProperties();
+		for (uint32_t i = 0; i < memProps.memoryHeapCount; ++i)
+		{
+			if (memProps.memoryHeaps[i].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
+				m_AdapterInfo.DedicatedVideoMemory += memProps.memoryHeaps[i].size;
+		}
+
 		vk::PhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = vk::PhysicalDeviceBufferDeviceAddressFeatures();
 
 		std::unordered_set<int> uniqueQueueFamilies = {
@@ -444,6 +462,9 @@ namespace Dingo
 			.setImageCubeArray(true)
 			.setDualSrcBlend(true);
 
+		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
+			.setShaderDemoteToHelperInvocation(true);
+
 		vk::PhysicalDeviceVulkan12Features vulkan12features = vk::PhysicalDeviceVulkan12Features()
 			.setDescriptorIndexing(true)
 			.setRuntimeDescriptorArray(true)
@@ -451,8 +472,8 @@ namespace Dingo
 			.setDescriptorBindingVariableDescriptorCount(true)
 			.setTimelineSemaphore(true)
 			.setShaderSampledImageArrayNonUniformIndexing(true)
-			.setBufferDeviceAddress(bufferDeviceAddressFeatures.bufferDeviceAddress);
-		//.setPNext(pNext);
+			.setBufferDeviceAddress(bufferDeviceAddressFeatures.bufferDeviceAddress)
+			.setPNext(&vulkan13features);
 
 		auto layerVec = Utils::stringSetToVector(enabledExtensions.layers);
 		auto extVec = Utils::stringSetToVector(enabledExtensions.device);
@@ -490,7 +511,7 @@ namespace Dingo
 		auto vecDeviceExt = Utils::stringSetToVector(enabledExtensions.device);
 
 		nvrhi::vulkan::DeviceDesc deviceDesc;
-		// deviceDesc.errorCB = &DefaultMessageCallback::GetInstance();
+		deviceDesc.errorCB = &NvrhiMessageCallback::Get();
 		deviceDesc.instance = m_VulkanInstance;
 		deviceDesc.physicalDevice = m_VulkanPhysicalDevice;
 		deviceDesc.device = m_VulkanDevice;

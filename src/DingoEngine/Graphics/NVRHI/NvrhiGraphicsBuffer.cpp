@@ -53,10 +53,7 @@ namespace Dingo
 
 	void NvrhiGraphicsBuffer::Destroy()
 	{
-		if (m_BufferHandle)
-		{
-			m_BufferHandle->Release();
-		}
+		m_BufferHandle = nullptr;
 	}
 
 	void NvrhiGraphicsBuffer::Upload(const void* data, uint64_t size, uint64_t offset)

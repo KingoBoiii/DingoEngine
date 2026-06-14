@@ -23,21 +23,33 @@ namespace Dingo
 }
 
 
-Dingo::Application* Dingo::CreateApplication(int argc, char** argv)
+static Dingo::GraphicsAPI ParseGraphicsAPI(const Dingo::ApplicationCommandLineArgs& args)
+{
+	if (auto val = args.Get("graphics"))
+	{
+		if (*val == "vulkan")  return Dingo::GraphicsAPI::Vulkan;
+		if (*val == "dx11")    return Dingo::GraphicsAPI::DirectX11;
+		if (*val == "dx12")    return Dingo::GraphicsAPI::DirectX12;
+	}
+	return Dingo::GraphicsAPI::Vulkan;
+}
+
+Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args)
 {
 	ApplicationParams params = ApplicationParams{
+		.CommandLineArgs = args,
 		.Window = {
-			.Title = "[Example Game] Flappy Bird - Dingo Engine",		// Window title
-			.Width = 1600,												// Window width
-			.Height = 900,												// Window height
-			.VSync = true,												// Enable VSync by default
-			.Resizable = false,											// Make the window resizable by default
+			.Title = "[Example Game] Flappy Bird - Dingo Engine",
+			.Width = 1600,
+			.Height = 900,
+			.VSync = true,
+			.Resizable = false,
 		},
 		.Graphics = {
-			.GraphicsAPI = GraphicsAPI::Vulkan,							// Default to Vulkan
-			.FramesInFlight = 3,										// Number of frames in flight for Rendering
+			.GraphicsAPI = ParseGraphicsAPI(args),
+			.FramesInFlight = 3,
 		},
-		.EnableImGui = false,											// Disable ImGui
+		.EnableImGui = false,
 	};
 
 	FlappyBirdApplication* app = new FlappyBirdApplication(params);

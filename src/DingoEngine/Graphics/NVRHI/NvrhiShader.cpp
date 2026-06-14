@@ -87,10 +87,57 @@ namespace Dingo
 		}
 
 		// Create shader handles for each shader type
+		const GraphicsAPI api = GraphicsContext::Get().GetParams().GraphicsAPI;
+		const bool needsDXBC = (api == GraphicsAPI::DirectX11 || api == GraphicsAPI::DirectX12);
+
 		std::vector<ShaderReflection> reflections;
 		for (const auto& [shaderType, binaries] : spvBinaries)
 		{
-			m_ShaderHandles[shaderType] = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
+			nvrhi::ShaderHandle handle;
+
+			if (needsDXBC)
+			{
+				// D3D12 needs SM 5.1 for NonUniformResourceIndex (nonuniformEXT); D3D11 uses SM 5.0
+				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
+
+				const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
+				std::filesystem::path dxbcCachePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
+
+				std::vector<uint8_t> dxbcBytecode;
+				if (std::filesystem::exists(dxbcCachePath))
+				{
+					std::ifstream in(dxbcCachePath, std::ios::in | std::ios::binary);
+					DE_CORE_ASSERT(in.is_open(), "Failed to open DXBC cache file: " + dxbcCachePath.string());
+					in.seekg(0, std::ios::end);
+					dxbcBytecode.resize(in.tellg());
+					in.seekg(0, std::ios::beg);
+					in.read((char*)dxbcBytecode.data(), dxbcBytecode.size());
+				}
+				else
+				{
+					dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel);
+
+					std::ofstream out(dxbcCachePath, std::ios::out | std::ios::binary);
+					DE_CORE_ASSERT(out.is_open(), "Failed to create DXBC cache file: " + dxbcCachePath.string());
+					out.write((char*)dxbcBytecode.data(), dxbcBytecode.size());
+					out.flush();
+					out.close();
+				}
+
+				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
+					.setDebugName(name)
+					.setShaderType(Utils::ConvertShaderTypeToNVRHI(shaderType))
+					.setEntryName("main");
+
+				handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()
+					->createShader(shaderDesc, dxbcBytecode.data(), dxbcBytecode.size());
+			}
+			else
+			{
+				handle = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
+			}
+
+			m_ShaderHandles[shaderType] = handle;
 
 			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
 
@@ -110,11 +157,7 @@ namespace Dingo
 	void NvrhiShader::Destroy()
 	{
 		m_ShaderHandles.clear();
-
-		if (m_BindingLayoutHandle)
-		{
-			m_BindingLayoutHandle->Release();
-		}
+		m_BindingLayoutHandle = nullptr;
 	}
 
 	nvrhi::ShaderHandle NvrhiShader::CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName)

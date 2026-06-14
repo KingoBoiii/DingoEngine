@@ -218,21 +218,9 @@ void main() {
 
 	}
 
-	Renderer2D* Renderer2D::Create(Renderer* renderer, const Renderer2DCapabilities& capabilities)
+	Renderer2D* Renderer2D::Create(const Renderer2DCapabilities& capabilities)
 	{
-		Renderer2D* renderer2D = new Renderer2D(renderer, Renderer2DParams{
-			.Capabilities = capabilities
-			});
-		renderer2D->Initialize();
-		return renderer2D;
-	}
-
-	Renderer2D* Renderer2D::Create(Framebuffer* framebuffer, const Renderer2DCapabilities& capabilities)
-	{
-		Renderer2D* renderer2D = new Renderer2D(Renderer2DParams{
-			.TargetFramebuffer = framebuffer,
-			.Capabilities = capabilities
-			});
+		Renderer2D* renderer2D = new Renderer2D(Renderer2DParams{ .Capabilities = capabilities });
 		renderer2D->Initialize();
 		return renderer2D;
 	}
@@ -246,12 +234,6 @@ void main() {
 
 	void Renderer2D::Initialize()
 	{
-		if (!m_Renderer)
-		{
-			m_Renderer = Renderer::Create(m_Params.TargetFramebuffer);
-			m_Renderer->Initialize();
-		}
-
 		CreateQuadIndexBuffer();
 
 		m_QuadVertexPositions[0] = { -0.5f, -0.5f, 0.0f, 1.0f };
@@ -291,12 +273,6 @@ void main() {
 			m_CameraUniformBuffer = nullptr;
 		}
 
-		if (m_OwnsRenderer && m_Renderer)
-		{
-			m_Renderer->Shutdown();
-			delete m_Renderer;
-			m_Renderer = nullptr;
-		}
 	}
 
 	void Renderer2D::BeginScene(const glm::mat4& projectionViewMatrix)
@@ -318,17 +294,13 @@ void main() {
 		{
 			m_TextureSlots[i] = nullptr; // Reset texture slots
 		}
+
 	}
 
 	void Renderer2D::EndScene()
 	{
-		m_Renderer->Begin();
-		m_Renderer->Clear(m_Params.ClearColor);
-
 		if (m_CameraUniformBuffer)
-		{
-			m_Renderer->Upload(m_CameraUniformBuffer);
-		}
+			Renderer::Upload(m_CameraUniformBuffer);
 
 		if (m_QuadPipeline.IndexCount)
 		{
@@ -347,9 +319,7 @@ void main() {
 			}
 			m_QuadPipeline.RenderPass->Bake();
 
-			m_Renderer->BeginRenderPass(m_QuadPipeline.RenderPass);
-			m_Renderer->DrawIndexed(m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
-			m_Renderer->EndRenderPass();
+			Renderer::DrawIndexed(m_QuadPipeline.RenderPass, m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
 		}
 
 		if (m_CircleRenderPass.IndexCount)
@@ -357,9 +327,7 @@ void main() {
 			uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
 			m_CircleRenderPass.VertexBuffer->Upload(m_CircleRenderPass.VertexBufferBase, dataSize);
 
-			m_Renderer->BeginRenderPass(m_CircleRenderPass.RenderPass);
-			m_Renderer->DrawIndexed(m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
-			m_Renderer->EndRenderPass();
+			Renderer::DrawIndexed(m_CircleRenderPass.RenderPass, m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
 		}
 
 		if (m_TextQuadRenderPass.IndexCount)
@@ -370,17 +338,14 @@ void main() {
 			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
 			m_TextQuadRenderPass.RenderPass->Bake();
 
-			m_Renderer->BeginRenderPass(m_TextQuadRenderPass.RenderPass);
-			m_Renderer->DrawIndexed(m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
-			m_Renderer->EndRenderPass();
+			Renderer::DrawIndexed(m_TextQuadRenderPass.RenderPass, m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
 		}
-
-		m_Renderer->End();
 	}
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
 	{
 		m_Params.ClearColor = clearColor;
+		Renderer::Clear(clearColor);
 	}
 
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color)
@@ -683,10 +648,12 @@ void main() {
 
 		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DQuadPipeline")
-			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_QuadPipeline.Shader)
 			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront));
+			.SetCullMode(CullMode::BackAndFront)
+			.SetDepthTest(false)
+			.SetDepthWrite(false));
 
 		m_QuadPipeline.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DQuadVertexBuffer");
 
@@ -757,10 +724,12 @@ void main() {
 
 		m_CircleRenderPass.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DCirclePipeline")
-			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_CircleRenderPass.Shader)
 			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront));
+			.SetCullMode(CullMode::BackAndFront)
+			.SetDepthTest(false)
+			.SetDepthWrite(false));
 
 		m_CircleRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DCircleVertexBuffer");
 
@@ -824,9 +793,11 @@ void main() {
 
 		m_TextQuadRenderPass.Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Renderer2DTextPipeline")
-			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetShader(m_TextQuadRenderPass.Shader)
-			.SetVertexLayout(vertexLayout));
+			.SetVertexLayout(vertexLayout)
+			.SetDepthTest(false)
+			.SetDepthWrite(false));
 
 		m_TextQuadRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DTextVertexBuffer");
 

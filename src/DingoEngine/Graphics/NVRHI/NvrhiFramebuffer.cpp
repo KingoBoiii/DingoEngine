@@ -29,10 +29,8 @@ namespace Dingo
 		}
 		m_Attachments.clear();
 
-		if (m_FramebufferHandle)
-		{
-			m_FramebufferHandle->Release();
-		}
+		m_DepthTextureHandle = nullptr;
+		m_FramebufferHandle = nullptr;
 	}
 
 	void NvrhiFramebuffer::Resize(uint32_t width, uint32_t height)
@@ -49,10 +47,7 @@ namespace Dingo
 		}
 		m_Attachments.clear();
 
-		//if (m_FramebufferHandle)
-		//{
-		//	m_FramebufferHandle->Release();
-		//}
+		m_DepthTextureHandle = nullptr;
 
 		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc();
 
@@ -84,6 +79,24 @@ namespace Dingo
 			m_Attachments.push_back(texture);
 
 			index++;
+		}
+
+		if (m_Params.EnableDepth)
+		{
+			const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+
+			nvrhi::TextureDesc depthDesc = nvrhi::TextureDesc()
+				.setDebugName(m_Params.DebugName + " (Depth)")
+				.setWidth(m_Params.Width)
+				.setHeight(m_Params.Height)
+				.setFormat(nvrhi::Format::D32)
+				.setDimension(nvrhi::TextureDimension::Texture2D)
+				.setIsRenderTarget(true)
+				.setInitialState(nvrhi::ResourceStates::DepthWrite)
+				.setKeepInitialState(true);
+
+			m_DepthTextureHandle = device->createTexture(depthDesc);
+			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
 		}
 	}
 

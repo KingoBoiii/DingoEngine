@@ -100,11 +100,12 @@ void main()
 
 		m_Shader = Shader::CreateFromSource("ImGuiRenderer", ImGuiShaderSourceCode, false);
 
-		// create attribute layout object
+		// Semantic names must match what ShaderCompiler::CompileGLSLToHLSLBytecode emits:
+		// it remaps each vertex input to use the GLSL variable name as the HLSL semantic.
 		nvrhi::VertexAttributeDesc vertexAttribLayout[] = {
-			{ "POSITION", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,pos), sizeof(ImDrawVert), false },
-			{ "TEXCOORD", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,uv),  sizeof(ImDrawVert), false },
-			{ "COLOR",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
+			{ "a_Position", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,pos), sizeof(ImDrawVert), false },
+			{ "a_TexCoord", nvrhi::Format::RG32_FLOAT,  1, 0, offsetof(ImDrawVert,uv),  sizeof(ImDrawVert), false },
+			{ "a_Color",    nvrhi::Format::RGBA8_UNORM, 1, 0, offsetof(ImDrawVert,col), sizeof(ImDrawVert), false },
 		};
 
 		m_ShaderAttribLayout = device->createInputLayout(vertexAttribLayout, sizeof(vertexAttribLayout) / sizeof(vertexAttribLayout[0]), static_cast<NvrhiShader*>(m_Shader)->m_ShaderHandles[ShaderType::Vertex]);
@@ -125,7 +126,7 @@ void main()
 
 		auto depthStencilState = nvrhi::DepthStencilState()
 			.disableDepthTest()
-			.enableDepthWrite()
+			.disableDepthWrite()
 			.disableStencil()
 			.setDepthFunc(nvrhi::ComparisonFunc::Always);
 
@@ -165,41 +166,18 @@ void main()
 
 	void ImGuiRenderer::Shutdown()
 	{
-		if (m_FontTexture)
-		{
-			m_FontTexture->Release();
-		}
-
-		if (m_FontSampler)
-		{
-			m_FontSampler->Release();
-		}
-
-		if (m_VertexBuffer)
-		{
-			m_VertexBuffer->Release();
-		}
-
-		if (m_IndexBuffer)
-		{
-			m_IndexBuffer->Release();
-		}
-
+		m_FontTexture      = nullptr;
+		m_FontSampler      = nullptr;
+		m_VertexBuffer     = nullptr;
+		m_IndexBuffer      = nullptr;
 		m_BindingsCache.clear();
-
-		if (m_BindingLayout)
-		{
-			m_BindingLayout->Release();
-		}
-
-		if (m_ShaderAttribLayout)
-		{
-			m_ShaderAttribLayout->Release();
-		}
-
+		m_BindingLayout    = nullptr;
+		m_ShaderAttribLayout = nullptr;
 		m_PipelineCache.clear();
 
 		m_Shader->Destroy();
+		delete m_Shader;
+		m_Shader = nullptr;
 	}
 
 	void ImGuiRenderer::UpdateFontTexture()
@@ -240,23 +218,33 @@ void main()
 		io.Fonts->TexID = (ImTextureID)m_FontTexture.Get();
 	}
 
-	bool ImGuiRenderer::Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer)
+	bool ImGuiRenderer::Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer, nvrhi::ICommandList* sharedCmdList)
 	{
 		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
 		ImDrawData* drawData = viewport->DrawData;
 
-		nvrhi::CommandListHandle commandList = device->createCommandList();
+		// When a shared (already-open) command list is provided, record into it directly
+		// to preserve submission order. Otherwise create and manage our own.
+		bool ownsCommandList = (sharedCmdList == nullptr);
+		nvrhi::CommandListHandle ownedHandle;
+		nvrhi::ICommandList* commandList;
 
-		commandList->open();
-
-		// std::string markerName = std::format("ImGui (Viewport {})", viewport == ImGui::GetMainViewport() ? "Main" : std::to_string((uint64_t)viewport));
-		// m_CommandList->beginMarker(markerName.c_str());
-		//nvrhi::utils::ClearColorAttachment(commandList, framebuffer, 0, nvrhi::Color(1, 0, 1, 1));
+		if (ownsCommandList)
+		{
+			ownedHandle = device->createCommandList();
+			ownedHandle->open();
+			commandList = ownedHandle;
+		}
+		else
+		{
+			commandList = sharedCmdList;
+		}
 
 		if (!UpdateGeometry(drawData))
 		{
-			commandList->close();
+			if (ownsCommandList)
+				ownedHandle->close();
 			return false;
 		}
 
@@ -355,15 +343,18 @@ void main()
 			idxOffset += cmdList->IdxBuffer.Size;
 		}
 
-		commandList->close();
-		device->executeCommandList(commandList);
+		if (ownsCommandList)
+		{
+			ownedHandle->close();
+			device->executeCommandList(ownedHandle);
+		}
 
 		return true;
 	}
 
-	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain)
+	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList)
 	{
-		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle);
+		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle, sharedCmdList);
 	}
 
 	bool ImGuiRenderer::ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer)
@@ -474,7 +465,7 @@ void main()
 		nvrhi::BindingSetDesc desc;
 
 		desc.bindings = {
-			nvrhi::BindingSetItem::PushConstants(0, sizeof(float) * 2),
+			nvrhi::BindingSetItem::PushConstants(0, sizeof(glm::vec2) * 2),
 			nvrhi::BindingSetItem::Texture_SRV(0, texture),
 			nvrhi::BindingSetItem::Sampler(1, m_FontSampler)
 		};

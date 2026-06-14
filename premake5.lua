@@ -12,8 +12,9 @@ workspace "DingoEngine"
 
     defines {
 		"_CRT_SECURE_NO_WARNINGS",
-        "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1", 
-        "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING"
+        "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1",
+        "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING",
+        "GLM_FORCE_DEPTH_ZERO_TO_ONE"
 	}
 
     filter "action:vs*"
@@ -47,27 +48,40 @@ IncludeDir['imgui'] = "%{wks.location}/vendor/imgui";
 IncludeDir["msdfgen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdfgen"
 IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas-gen"
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
+IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
+IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
+LibraryDir['assimp'] = "%{wks.location}/vendor/assimp/lib";
 
 Library = {}
 Library['vulkan'] = "%{LibraryDir.vulkan}/vulkan-1.lib";
 
-Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_sharedd.lib"
+Library['assimp_Debug']   = "%{LibraryDir.assimp}/assimp-vc145-mtd.lib"
+Library['assimp_Release'] = "%{LibraryDir.assimp}/assimp-vc145-mt.lib"
+
+Library["ShaderC_Debug"] = "%{LibraryDir.vulkan}/shaderc_combinedd.lib" -- shaderc_sharedd
 Library["SPIRV_Cross_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-cored.lib"
 Library["SPIRV_Cross_GLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-glsld.lib"
+Library["SPIRV_Cross_HLSL_Debug"] = "%{LibraryDir.vulkan}/spirv-cross-hlsld.lib"
 Library["SPIRV_Tools_Debug"] = "%{LibraryDir.vulkan}/SPIRV-Toolsd.lib"
 
-Library["ShaderC_Release"] = "%{LibraryDir.vulkan}/shaderc_shared.lib"
+Library["ShaderC_Release"] = "%{LibraryDir.vulkan}/shaderc_combined.lib" -- shaderc_shared
 Library["SPIRV_Cross_Release"] = "%{LibraryDir.vulkan}/spirv-cross-core.lib"
 Library["SPIRV_Cross_GLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-glsl.lib"
+Library["SPIRV_Cross_HLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-hlsl.lib"
 
 -- Windows
 Library["WinSock"] = "Ws2_32.lib"
 Library["WinMM"] = "Winmm.lib"
 Library["WinVersion"] = "Version.lib"
 Library["BCrypt"] = "Bcrypt.lib"
+Library["D3D12"] = "d3d12.lib"
+Library["D3D11"] = "d3d11.lib"
+Library["DXGI"] = "dxgi.lib"
+Library["DXGUID"] = "dxguid.lib"
+Library["D3DCompiler"] = "d3dcompiler.lib"
 
 
 group "Dependencies"
@@ -101,8 +115,8 @@ group "Engine"
 			"src/**.cpp"
 		}
 	
-		includedirs { 
-			"include", 
+		includedirs {
+			"include",
 			"src",
 			"%{IncludeDir.spdlog}",
 			"%{IncludeDir.glfw}",
@@ -112,7 +126,8 @@ group "Engine"
 			"%{IncludeDir.stb}",
 			"%{IncludeDir.imgui}",
 			"%{IncludeDir.msdfgen}",
-			"%{IncludeDir.msdf_atlas_gen}"
+			"%{IncludeDir.msdf_atlas_gen}",
+			"%{IncludeDir.assimp}"
 		}
 
 		links {
@@ -130,14 +145,23 @@ group "Engine"
 
 		filter "system:windows"
 			systemversion "latest"
-			defines { "DE_PLATFORM_WINDOWS", }
+			defines { "DE_PLATFORM_WINDOWS", "GLFW_EXPOSE_NATIVE_WIN32" }
 			buildoptions { "/utf-8" }
+
+			includedirs {
+				"%{IncludeDir.dx_headers}"
+			}
 
 			links {
 				"%{Library.WinSock}",
 				"%{Library.WinMM}",
 				"%{Library.WinVersion}",
 				"%{Library.BCrypt}",
+				"%{Library.D3D12}",
+				"%{Library.D3D11}",
+				"%{Library.DXGI}",
+				"%{Library.DXGUID}",
+				"%{Library.D3DCompiler}",
 			}
 
 		filter "system:linux"
@@ -145,26 +169,41 @@ group "Engine"
 			buildoptions { "-Wno-changes-meaning" }
 
 		filter "configurations:Debug or configurations:Debug-AS"
+			runtime "Debug"
 			symbols "On"
 			defines { "DE_DEBUG" }
 
 			links {
 				"%{Library.ShaderC_Debug}",
 				"%{Library.SPIRV_Cross_Debug}",
-				"%{Library.SPIRV_Cross_GLSL_Debug}"
+				"%{Library.SPIRV_Cross_GLSL_Debug}",
+				"%{Library.SPIRV_Cross_HLSL_Debug}",
+				"%{Library.assimp_Debug}",
+			}
+
+			postbuildcommands {
+				"{COPY} %{wks.location}/vendor/assimp/bin/debug %{cfg.targetdir}"
 			}
 
 		filter "configurations:Release"
+			runtime "Release"
 			optimize "On"
 			defines { "DE_RELEASE" }
 
 			links {
 				"%{Library.ShaderC_Release}",
 				"%{Library.SPIRV_Cross_Release}",
-				"%{Library.SPIRV_Cross_GLSL_Release}"
+				"%{Library.SPIRV_Cross_GLSL_Release}",
+				"%{Library.SPIRV_Cross_HLSL_Release}",
+				"%{Library.assimp_Release}",
+			}
+
+			postbuildcommands {
+				"{COPY} %{wks.location}/vendor/assimp/bin/release %{cfg.targetdir}"
 			}
 
 		filter "configurations:Distribution"
+			runtime "Release"
 			optimize "On"
 			symbols "Off"
 			defines { "DE_DISTRIBUTION" }
@@ -172,7 +211,13 @@ group "Engine"
 			links {
 				"%{Library.ShaderC_Release}",
 				"%{Library.SPIRV_Cross_Release}",
-				"%{Library.SPIRV_Cross_GLSL_Release}"
+				"%{Library.SPIRV_Cross_GLSL_Release}",
+				"%{Library.SPIRV_Cross_HLSL_Release}",
+				"%{Library.assimp_Release}",
+			}
+
+			postbuildcommands {
+				"{COPY} %{wks.location}/vendor/assimp/bin/release %{cfg.targetdir}"
 			}
 
 group ""
@@ -181,4 +226,6 @@ include "test"
 
 group "Examples"
     include "examples/FlappyBird"
+    include "examples/Breakout3D"
+    include "examples/DungeonCrawler"
 group ""

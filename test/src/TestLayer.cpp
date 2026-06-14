@@ -5,6 +5,8 @@
 #include "Tests/Renderer/IndexBufferTest.h"
 #include "Tests/Renderer/UniformBufferTest.h"
 #include "Tests/Renderer/TextureTest.h"
+#include "Tests/Renderer/Mesh3DTest.h"
+#include "Tests/Renderer/Model3DTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
@@ -22,22 +24,24 @@ namespace Dingo
 			.SetDebugName("TestOutputFramebuffer")
 			.SetWidth(800)
 			.SetHeight(600)
+			.SetEnableDepth(true)
 			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 
-		m_Renderer = Renderer::Create(m_OutputFramebuffer);
-		m_Renderer2D = Renderer2D::Create(m_OutputFramebuffer);
+		m_Renderer2D = Renderer2D::Create();
 
-		// Register tests
-		m_Tests.push_back({ "Static Triangle Test", [&]() { return new StaticTriangleTest(m_Renderer); } });
-		m_Tests.push_back({ "Vertex Buffer Test", [&]() { return new VertexBufferTest(m_Renderer); } });
-		m_Tests.push_back({ "Index Buffer Test", [&]() { return new IndexBufferTest(m_Renderer); } });
-		m_Tests.push_back({ "Uniform Buffer Test", [&]() { return new UniformBufferTest(m_Renderer); } });
-		m_Tests.push_back({ "Texture Test", [&]() { return new TextureTest(m_Renderer); } });
+		// TODO: Low-level Renderer tests need off-screen pass (deferred feature)
+		// m_Tests.push_back({ "Static Triangle Test", ... });
+		// m_Tests.push_back({ "Vertex Buffer Test",   ... });
+		// m_Tests.push_back({ "Index Buffer Test",    ... });
+		// m_Tests.push_back({ "Uniform Buffer Test",  ... });
+		// m_Tests.push_back({ "Texture Test",         ... });
 
 		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Text Test (R2D)", [&]() { return new TextTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Circle Test (R2D)", [&]() { return new CircleTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Mesh 3D Test", []() { return new Mesh3DTest(); } });
+		m_Tests.push_back({ "Model 3D Test", []() { return new Model3DTest(); } });
 
 		m_CurrentTest = m_Tests[0].second();
 		m_CurrentTest->Initialize();
@@ -59,13 +63,6 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		if (m_Renderer)
-		{
-			m_Renderer->Shutdown();
-			delete m_Renderer;
-			m_Renderer = nullptr;
-		}
-
 		if (m_OutputFramebuffer)
 		{
 			m_OutputFramebuffer->Destroy();
@@ -75,17 +72,15 @@ namespace Dingo
 
 	void TestLayer::OnUpdate(float deltaTime)
 	{
+		// The frame command list is managed by Renderer::BeginFrame/EndFrame.
+		// No work needed here — ImGui owns the swapchain clear in this setup.
+
 		if (m_CurrentTest)
 		{
+			Renderer::SetRenderTarget(m_OutputFramebuffer);
 			m_CurrentTest->Update(deltaTime);
-			return;
+			Renderer::ResetRenderTarget();
 		}
-
-		Dingo::Renderer& appRenderer = Application::Get().GetRenderer();
-
-		appRenderer.Begin();
-		appRenderer.Clear({ 1.0f, 0.0f, 1.0f, 1.0f });
-		appRenderer.End();
 	}
 
 	void TestLayer::OnImGuiRender()
@@ -160,17 +155,16 @@ namespace Dingo
 		{
 			if (ImGui::BeginMenu("File"))
 			{
-				if (ImGui::MenuItem("Restart to Vulkan", NULL, false, false))
-				{
-				}
+				GraphicsAPI currentAPI = Application::Get().GetGraphicsContext().GetGraphicsAPI();
 
-				if (ImGui::MenuItem("Restart to DirectX 12", NULL, false, false))
-				{
-				}
+				if (ImGui::MenuItem("Restart to Vulkan", NULL, currentAPI == GraphicsAPI::Vulkan, currentAPI != GraphicsAPI::Vulkan))
+					Application::Get().RequestRestart(GraphicsAPI::Vulkan);
 
-				if (ImGui::MenuItem("Restart to DirectX 11", NULL, false, false))
-				{
-				}
+				if (ImGui::MenuItem("Restart to DirectX 12", NULL, currentAPI == GraphicsAPI::DirectX12, currentAPI != GraphicsAPI::DirectX12))
+					Application::Get().RequestRestart(GraphicsAPI::DirectX12);
+
+				if (ImGui::MenuItem("Restart to DirectX 11", NULL, currentAPI == GraphicsAPI::DirectX11, currentAPI != GraphicsAPI::DirectX11))
+					Application::Get().RequestRestart(GraphicsAPI::DirectX11);
 
 				ImGui::Separator();
 
@@ -212,10 +206,32 @@ namespace Dingo
 		// Properties Panel
 		ImGui::Begin("Properties", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-		ImGui::Text("Properties Panel");
+		const GraphicsContext& gfx = Application::Get().GetGraphicsContext();
+		const AdapterInfo& adapter = gfx.GetAdapterInfo();
+
+		const char* apiName = "Unknown";
+		switch (gfx.GetGraphicsAPI())
+		{
+			case GraphicsAPI::Vulkan:    apiName = "Vulkan";    break;
+			case GraphicsAPI::DirectX11: apiName = "DirectX 11"; break;
+			case GraphicsAPI::DirectX12: apiName = "DirectX 12"; break;
+			default: break;
+		}
+
+		if (ImGui::CollapsingHeader("GPU Info", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Text("API:    %s", apiName);
+			ImGui::Text("GPU:    %s", adapter.Name.c_str());
+			ImGui::Text("Vendor: %s", GraphicsContext::VendorName(adapter.VendorID).c_str());
+			ImGui::Text("VRAM:   %.0f MB", adapter.DedicatedVideoMemory / (1024.0 * 1024.0));
+		}
+
+		ImGui::Separator();
+
 		if (m_CurrentTest)
 		{
 			m_CurrentTest->ImGuiRender();
+			
 		}
 
 		ImGui::End();

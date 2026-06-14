@@ -94,10 +94,7 @@ namespace Dingo
 
 	void NvrhiTexture::Destroy()
 	{
-		if (m_Handle)
-		{
-			m_Handle->Release();
-		}
+		m_Handle = nullptr;
 	}
 
 	void NvrhiTexture::Upload(const void* data, uint64_t size)

@@ -29,7 +29,9 @@ namespace Dingo
 		virtual void Destroy() = 0;
 
 		virtual void Begin() = 0;
-		virtual void End() = 0;
+		virtual void Close() = 0;   // Seal the command list without submitting to the GPU
+		virtual void Execute() = 0; // Submit a sealed command list to the GPU
+		virtual void End() = 0;     // Close() + Execute() (convenience for single-threaded use)
 
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) = 0;
 

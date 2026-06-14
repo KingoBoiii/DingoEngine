@@ -2,101 +2,110 @@
 
 #include "DingoEngine/Graphics/CommandList.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
-
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/RenderPass.h"
 #include "DingoEngine/Graphics/Sampler.h"
+#include "DingoEngine/Graphics/Material.h"
 
 #include <glm/glm.hpp>
 
 namespace Dingo
 {
 
-	struct RendererParams
-	{
-		Framebuffer* TargetFramebuffer = nullptr; // If not targeting swap chain, specify a framebuffer to target
-	};
+	class SwapChain;
 
+	// Renderer is a stateless gateway: all draw calls require explicit
+	// resources (Pipeline or RenderPass, vertex/index buffers, etc.).
+	// No per-draw implicit state is stored between calls.
 	class Renderer
 	{
-	public:
-		static Renderer* Create(Framebuffer* framebuffer);
-		static Renderer* Create(const RendererParams& params);
-
 	public:
 		Renderer() = delete;
 		Renderer(const Renderer&) = delete;
 		Renderer& operator=(const Renderer&) = delete;
-		Renderer(Renderer&&) = delete;
-		Renderer& operator=(Renderer&&) = delete;
-		virtual ~Renderer() = default;
-
-	public:
-		virtual void Initialize();
-		virtual void Shutdown();
 
 		/**************************************************
-		***		RENDER PASS	API							***
+		***		LIFECYCLE								***
 		**************************************************/
 
-		virtual void BeginRenderPass(RenderPass* renderPass);
-		virtual void EndRenderPass();
+		static void Initialize(SwapChain* swapChain);
+		static void Shutdown();
+
+		static void BeginFrame();
+		static void EndFrame();
 
 		/**************************************************
-		***		DRAW CALLS								***
+		***		COMMAND LIST MANAGEMENT					***
 		**************************************************/
 
-		virtual void DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
-		virtual void DrawIndexed(GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer, uint32_t indexCount = 0);
+		static void Begin();
+		static void Close();
+		static void Execute();
 
 		/**************************************************
-		***		GENERAL									***
+		***		RESOURCE UPLOAD							***
 		**************************************************/
 
-		virtual void Begin();
-		virtual void End();
-
-		virtual void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
-
-		virtual void Clear(const glm::vec4& clearColor);
-
-		virtual void Upload(GraphicsBuffer* buffer);
-		virtual void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size);
-
-		virtual void Draw(Pipeline* pipeline, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
-		virtual void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount = 3, uint32_t instanceCount = 1);
-		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer);
-		virtual void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, GraphicsBuffer* uniformBuffer);
-
-		virtual Framebuffer* GetTargetFramebuffer() const { return m_TargetFramebuffer; }
-		virtual Texture* GetOutput() const;
-
-		const RendererParams& GetParams() const { return m_Params; }
+		static void Upload(GraphicsBuffer* buffer);
+		static void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size);
 
 		/**************************************************
-		***		STATIC RESOURCES 						***
+		***		CLEAR									***
+		**************************************************/
+
+		static void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
+		static void Clear(const glm::vec4& clearColor);
+
+		/**************************************************
+		***		DRAW — explicit Pipeline				***
+		**************************************************/
+
+		static void Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount = 1);
+		static void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount = 1);
+		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+
+		/**************************************************
+		***		DRAW — explicit RenderPass				***
+		**************************************************/
+
+		// Self-contained: sets render pass bindings + framebuffer, then draws.
+		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+
+		/**************************************************
+		***		DRAW — Material							***
+		**************************************************/
+
+		// Lazily creates (and caches) the pipeline + render pass for the given
+		// vertex layout, uploads dirty uniforms, then draws.
+		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+
+		/**************************************************
+		***		QUERIES									***
+		**************************************************/
+
+		// Override the render target used by all no-arg draw/clear calls.
+		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain.
+		static void SetRenderTarget(Framebuffer* framebuffer);
+		static void ResetRenderTarget();
+
+		static CommandList*  GetCommandList();
+		static Framebuffer*  GetSwapChainFramebuffer();
+
+		/**************************************************
+		***		STATIC RESOURCES						***
 		**************************************************/
 
 		static Texture* GetWhiteTexture();
 		static Sampler* GetClampSampler();
 		static Sampler* GetPointSampler();
 
-	protected:
-		Renderer(const RendererParams& params, bool targetSwapChain = false)
-			: m_Params(params), m_TargetSwapChain(targetSwapChain)
-		{}
-
-	public:
-		static void InitializeStaticResources();
-		static void DestroyStaticResources();
-
 	private:
-		RendererParams m_Params;
-		CommandList* m_CommandList = nullptr; // Command list for recording commands
-		Framebuffer* m_TargetFramebuffer = nullptr; // The framebuffer that the renderer will render to
-		bool m_TargetSwapChain = false; // Whether the renderer targets the swap chain or a custom framebuffer
+		static void RenderThreadLoop();
+		static Framebuffer* GetCurrentTarget();
+
+		static struct RendererData* s_Data;
 	};
 
 }

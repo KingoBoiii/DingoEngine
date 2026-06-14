@@ -21,8 +21,8 @@ namespace Dingo
 		void Shutdown();
 
 		void UpdateFontTexture();
-		bool Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer);
-		bool RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain);
+		bool Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer, nvrhi::ICommandList* sharedCmdList = nullptr);
+		bool RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList = nullptr);
 
 	private:
 		bool ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer);

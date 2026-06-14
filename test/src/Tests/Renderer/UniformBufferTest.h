@@ -7,8 +7,7 @@ namespace Dingo
 	class UniformBufferTest : public RendererTest
 	{
 	public:
-		UniformBufferTest(Renderer* renderer)
-			: RendererTest(renderer)
+		UniformBufferTest()
 		{}
 		virtual ~UniformBufferTest() = default;
 

@@ -44,16 +44,16 @@ void main() {
 		m_Pipeline = Pipeline::Create(PipelineParams()
 			.SetDebugName("Static Triangle Pipeline")
 			.SetShader(m_Shader)
-			.SetFramebuffer(m_Renderer->GetTargetFramebuffer())
+			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
 			.SetCullMode(Dingo::CullMode::BackAndFront));
 	}
 
 	void StaticTriangleTest::Update(float deltaTime)
 	{
-		m_Renderer->Begin();
-		m_Renderer->Clear(m_ClearColor);
-		m_Renderer->Draw(m_Pipeline);
-		m_Renderer->End();
+		Renderer::Begin();
+		Renderer::Clear(m_ClearColor);
+		Renderer::Draw(m_Pipeline, 3);
+		Renderer::Close();
 	}
 
 	void StaticTriangleTest::Cleanup()

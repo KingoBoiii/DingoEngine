@@ -34,6 +34,7 @@ namespace Dingo
 		nvrhi::Viewport m_Viewport;
 
 		std::vector<Texture*> m_Attachments;
+		nvrhi::TextureHandle m_DepthTextureHandle;
 
 		friend class NvrhiPipeline; // Allow NvrhiPipeline to access private members
 		friend class NvrhiCommandList; // Allow CommandList to access private members
