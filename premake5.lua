@@ -50,6 +50,7 @@ IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
 IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
+IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
