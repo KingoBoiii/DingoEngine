@@ -24,6 +24,7 @@ namespace Dingo
 			.SetDebugName("TestOutputFramebuffer")
 			.SetWidth(800)
 			.SetHeight(600)
+			.SetEnableDepth(true)
 			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 
 		m_Renderer2D = Renderer2D::Create();

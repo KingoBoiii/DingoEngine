@@ -64,7 +64,7 @@ namespace Dingo
 			.setDestBlendAlpha(nvrhi::BlendFactor::Zero);
 
 		nvrhi::BlendState blendState = nvrhi::BlendState()
-			.setAlphaToCoverageEnable(true)
+			.setAlphaToCoverageEnable(false)
 			.setRenderTarget(0, renderTarget);
 
 		const bool hasDepth = static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle->getFramebufferInfo().depthFormat != nvrhi::Format::UNKNOWN;

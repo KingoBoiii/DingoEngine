@@ -75,7 +75,7 @@ namespace Dingo
 		m_Material = Material::Create(MaterialParams()
 			.SetDebugName("Mesh3D_Material")
 			.SetShader(m_Shader)
-			.SetCullMode(CullMode::Front));
+			.SetCullMode(CullMode::Back));
 
 		m_Material->SetTexture(0, Renderer::GetWhiteTexture());
 		m_Material->SetSampler(0, Renderer::GetClampSampler());

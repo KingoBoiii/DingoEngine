@@ -99,7 +99,7 @@ namespace Dingo
 			gpu.Mat = Material::Create(MaterialParams()
 				.SetDebugName("Model3D_Mat")
 				.SetShader(m_Shader)
-				.SetCullMode(CullMode::None));
+				.SetCullMode(CullMode::Back));
 			gpu.Mat->SetTexture(0, diffuse);
 			gpu.Mat->SetSampler(0, Renderer::GetClampSampler());
 
