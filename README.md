@@ -11,6 +11,16 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **ImGui Integration** — Built-in debug/overlay UI layer with docking and viewport support
 - **Font Rendering** — MSDF atlas-based text rendering via `msdf-atlas-gen`
 - **Asset Utilities** — Texture, shader, and buffer creation with a fluent params/builder API
+- **Scenes & ECS** — EnTT-backed entity-component system with a `SceneManager` for multi-scene games
+
+## Documentation
+
+Usage guides for building games with the engine live in [docs/](docs/README.md):
+
+- [Getting Started](docs/getting-started.md) — prerequisites, linking the `.lib` + headers, and a minimal app
+- [Application & Layers](docs/application-and-layers.md) — entry point, lifecycle, input, events
+- [2D Rendering](docs/rendering-2d.md) — quads, circles, text, textures, fonts
+- [Scenes & ECS](docs/scenes-and-ecs.md) — entities, components, systems, and scene management
 
 ## Roadmap
 
@@ -41,13 +51,16 @@ Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This w
 
 **3. Build & run**
 
-Open the generated `.sln` file in Visual Studio, set one of the example projects (`Dingo-FlappyBird` or `Dingo-Sandbox`) as the startup project, and build.
+Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, or `SpaceInvaders`) as the startup project, and build.
 
 ## Examples
 
 | Project | Description |
 |---|---|
-| `Dingo-FlappyBird` | Complete game — sprites, input, collision, audio, score rendering |
+| `FlappyBird` | Complete 2D game — sprites, input, collision, audio, score rendering |
+| `Breakout3D` | 3D Breakout — perspective camera, mesh rendering, manual AABB collision |
+| `DungeonCrawler` | Top-down 2D slice — tile collision, chasing enemies, melee combat, loot |
+| `SpaceInvaders` | Scene/ECS showcase — EnTT entities and a multi-scene `SceneManager` |
 
 ## Project Structure
 
@@ -69,3 +82,4 @@ examples/               Example projects
 | [Dear ImGui](https://github.com/ocornut/imgui) | Debug UI |
 | [stb](https://github.com/nothings/stb) | Image loading |
 | [msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen) | Font SDF atlas generation |
+| [EnTT](https://github.com/skypjack/entt) | Entity-component system (scenes) |
