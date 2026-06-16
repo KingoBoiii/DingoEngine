@@ -16,7 +16,8 @@
                 "${env:VULKAN_SDK}/Include",
                 "${workspaceFolder}/vendor/nvrhi/thirdparty/DirectX-Headers/include",
                 "${workspaceFolder}/test/src",
-                "${workspaceFolder}/vendor/assimp/include"
+                "${workspaceFolder}/vendor/assimp/include",
+                "${workspaceFolder}/vendor/entt/include"
             ],
             "defines": [
                 "_CRT_SECURE_NO_WARNINGS",
@@ -29,6 +30,10 @@
             ],
             "windowsSdkVersion": "10.0.26100.0",
             "compilerPath": "cl.exe",
+            "compilerArgs": [
+                "/Zc:__cplusplus",
+                "/Zc:preprocessor"
+            ],
             "cStandard": "c17",
             "cppStandard": "c++20",
             "intelliSenseMode": "windows-msvc-x64"
