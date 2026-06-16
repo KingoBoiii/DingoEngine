@@ -1,15 +1,17 @@
 # Scenes & ECS
 
-Added in **v0.3**, the scene system lets you model game objects as **entities** made
-of small **components**, instead of bespoke classes. It is built on
-[EnTT](https://github.com/skypjack/entt). Game logic runs as **systems** — plain
-functions that query a scene for the entities they care about and update them.
+Added in **v0.3**, the scene system lets you model game objects as **entities** with
+small built-in **components** for data and rendering, and attach game logic as
+**behaviours** (`ScriptableEntity`). Internally it's backed by an entity-component
+system, but that backend is a private engine detail — **client code never includes
+or links the ECS library**, and no ECS types appear in the public API.
 
 The pieces:
 
-- **`Scene`** — owns a set of entities and knows how to render the renderable ones.
-- **`Entity`** — a lightweight handle for adding/reading components.
-- **Components** — plain data structs (the engine ships a handful; you add your own).
+- **`Scene`** — owns a set of entities + their behaviours, and renders the renderable ones.
+- **`Entity`** — a lightweight handle for adding/reading components and scripts.
+- **Components** — built-in data structs (Transform, Sprite, Circle, Text).
+- **`ScriptableEntity`** — base class for your per-entity game logic.
 - **`SceneManager`** — owns multiple named scenes and switches the active one.
 
 Everything is available through `<DingoEngine.h>`.
@@ -19,164 +21,142 @@ Everything is available through `<DingoEngine.h>`.
 ```cpp
 Scene scene("Game");
 
-Entity player = scene.CreateEntity("Player");          // auto-gets ID + Tag + Transform
+Entity player = scene.CreateEntity("Player");          // auto-gets a UUID + name + Transform
 player.GetComponent<TransformComponent>().Position = { 0.0f, -4.0f, 0.0f };
 player.GetComponent<TransformComponent>().Size     = { 1.5f, 0.6f };
-player.AddComponent<SpriteRendererComponent>(glm::vec4{ 0.3f, 0.9f, 0.4f, 1.0f });
+player.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ glm::vec4{ 0.3f, 0.9f, 0.4f, 1.0f } });
 ```
 
-Every entity created via `CreateEntity` automatically gets an `IDComponent`
-(a stable `UUID`), a `TagComponent` (its name), and a `TransformComponent`.
+Every entity created via `CreateEntity` automatically gets a stable `UUID`, a name
+(`TagComponent`), and a `TransformComponent`.
 
 ### Entity API
 
 | Call | Effect |
 |---|---|
-| `AddComponent<T>(args...)` | Construct and attach a `T`. Returns `T&` (or `void` for empty tag types). |
-| `AddOrReplaceComponent<T>(args...)` | Attach or overwrite. |
-| `GetComponent<T>()` | Reference to the entity's `T` (asserts it exists). |
+| `AddComponent<T>(value)` | Attach a built-in component `T`. Returns `T&`. |
+| `GetComponent<T>()` | Reference to the entity's `T`. |
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
-| `GetUUID()` / `GetName()` | The entity's id / tag. |
-| `operator bool()` | `false` for a null/default entity. |
+| `AddScript<T>(args...)` | Attach a behaviour (see below). |
+| `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
+| `GetUUID()` / `GetName()` | The entity's id / name. |
+| `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
+| `Destroy()` | Destroy this entity (and its behaviour). |
 
-An `Entity` is just `{ id, Scene* }` — cheap to copy and store.
+> The component methods support the **built-in component types** (below). To carry
+> game-specific data, put it in a `ScriptableEntity` subclass rather than defining new
+> component types — that's what keeps the ECS backend hidden.
 
 ## Built-in components
 
 | Component | Fields |
 |---|---|
-| `IDComponent` | `UUID ID` |
-| `TagComponent` | `std::string Tag` |
 | `TransformComponent` | `glm::vec3 Position` (center), `float Rotation` (degrees, +Z), `glm::vec2 Size`; `GetTransform()` → `mat4` |
 | `SpriteRendererComponent` | `glm::vec4 Color`, `Texture* Texture` (null ⇒ solid colour) |
 | `CircleRendererComponent` | `glm::vec4 Color`, `float Thickness`, `float Fade` |
 | `TextComponent` | `std::string Text`, `Font* Font`, `glm::vec4 Color`, `float Size`, `bool Centered` |
-
-`TransformComponent` mirrors the `Renderer2D` conventions: position is the entity's
-center, size is full extent, rotation is in degrees.
+| `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 
 ## Rendering a scene
 
-Give the scene a camera and a clear colour, then call `OnRender` inside your layer's
-update. `Scene::OnRender` wraps `BeginScene`/`EndScene` for you and draws every entity
-that has a `TransformComponent` plus a `SpriteRenderer`, `CircleRenderer`, or `Text`
-component:
+Give the scene a camera and clear colour, then call `OnRender` from your layer. It
+draws every entity that has a `TransformComponent` plus a `SpriteRenderer`,
+`CircleRenderer`, or `Text` component, wrapping `Renderer2D::BeginScene`/`EndScene`:
 
 ```cpp
 void GameLayer::OnAttach()
 {
-    m_Scene.SetViewProjection(BuildCamera());        // a glm::mat4, see 2D Rendering
+    m_Scene.SetViewProjection(BuildCamera());            // a glm::mat4, see 2D Rendering
     m_Scene.SetClearColor({ 0.02f, 0.02f, 0.06f, 1.0f });
 }
 
 void GameLayer::OnUpdate(float dt)
 {
-    // ...run systems that mutate components...
-    m_Scene.OnRender(Application::Get().GetRenderer2D());
+    m_Scene.OnUpdate(dt);                                  // runs all attached behaviours
+    m_Scene.OnRender(Application::Get().GetRenderer2D());  // draws the entities
 }
 ```
 
-That's the whole render path: add renderable components to entities, and the scene
-draws them.
+## Behaviours: `ScriptableEntity`
 
-## Defining your own components
-
-Components are just structs — no base class, no registration:
+Game logic lives in `ScriptableEntity` subclasses. Override the lifecycle hooks,
+keep game-specific state as members, and attach an instance to an entity:
 
 ```cpp
-struct VelocityComponent { glm::vec2 Velocity{ 0.0f }; };
-struct HealthComponent   { int Current = 100; int Max = 100; };
+class BulletScript : public ScriptableEntity
+{
+public:
+    BulletScript(glm::vec2 velocity) : m_Velocity(velocity) {}
 
-// "Tag" components carry no data and mark a category of entity:
-struct PlayerTag {};
-struct EnemyTag  {};
+protected:
+    void OnCreate() override {}                  // attached to an entity
+    void OnUpdate(float dt) override
+    {
+        auto& t = GetComponent<TransformComponent>();   // this entity's component
+        t.Position += glm::vec3(m_Velocity * dt, 0.0f);
+        if (t.Position.y > 12.0f)
+            GetEntity().Destroy();
+    }
+    void OnDestroy() override {}                  // entity destroyed / scene cleared
+
+private:
+    glm::vec2 m_Velocity;
+};
 ```
 
-Attach them like any other component:
+Attach and (optionally) keep the returned reference:
 
 ```cpp
 Entity bullet = scene.CreateEntity("Bullet");
-bullet.AddComponent<VelocityComponent>().Velocity = { 0.0f, 20.0f };
-bullet.AddComponent<PlayerTag>();
+bullet.GetComponent<TransformComponent>().Position = spawn;
+bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
+bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-> **Empty/tag components.** EnTT stores nothing for an empty struct, so
-> `AddComponent<PlayerTag>()` returns `void` (this is fine — the engine's
-> `AddComponent` is declared `decltype(auto)`). Use tags as **query filters** and with
-> `HasComponent<PlayerTag>()`; don't call `GetComponent<PlayerTag>()` on them.
+`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`. Inside a script you have:
 
-## Systems: querying entities
+- `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
+- `GetScene()` — the owning scene (to spawn or find other entities).
+- `GetComponent<T>()` / `HasComponent<T>()` — shorthand for your own entity's components.
 
-A "system" is just code that asks the scene for entities with a given set of
-components and acts on them. Use `Scene::GetAllEntitiesWith<...>()`, which returns an
-EnTT view you can iterate:
+### Finding other entities
+
+To act across entities (collisions, "all invaders", …), ask the scene for behaviours
+of a given type — this is the EnTT-free replacement for raw component views:
 
 ```cpp
-// Move every entity that has both a Transform and a Velocity.
-void MovementSystem(Scene& scene, float dt)
+for (InvaderScript* invader : GetScene().GetScriptsOfType<InvaderScript>())
 {
-    auto view = scene.GetAllEntitiesWith<TransformComponent, VelocityComponent>();
-    for (auto entity : view)
-    {
-        auto [transform, velocity] = view.get<TransformComponent, VelocityComponent>(entity);
-        transform.Position.x += velocity.Velocity.x * dt;
-        transform.Position.y += velocity.Velocity.y * dt;
-    }
+    auto& it = invader->GetEntity().GetComponent<TransformComponent>();
+    if (Overlaps(myBox, it)) { /* hit! */ }
 }
 ```
 
-For a single component, `view.get<T>(entity)` returns a `T&` directly. The view only
-visits entities that have *all* the listed components, so filtering by a tag is just
-adding it to the list: `GetAllEntitiesWith<EnemyTag, TransformComponent>()`.
+`Scene::ForEachEntity(callback)` visits every entity if you need a raw sweep.
 
-### Two gotchas worth internalizing
+### Lifetime: what the engine handles for you
 
-These come straight from EnTT's storage model and will bite you if ignored:
+- **Safe destruction during updates.** Calling `entity.Destroy()` — on yourself or
+  another entity — from within `OnUpdate` is safe; the engine **defers** the actual
+  removal to the end of the update pass. `OnDestroy` runs then.
+- **Spawning during updates.** Entities/scripts you create mid-update start running on
+  the **next** frame.
+- **One caveat — don't hold a component reference across a spawn.** `GetComponent<T>()`
+  returns a reference into internal storage; creating an entity or adding a component
+  can move that storage. Read the values you need into locals *before* spawning:
 
-**1. Don't hold a component reference across entity/component creation.** Creating an
-entity (or adding a component of the same type) can reallocate that component's
-storage and invalidate existing references. Read what you need into locals *before*
-creating:
-
-```cpp
-auto& t = player.GetComponent<TransformComponent>();
-const float spawnX = t.Position.x;          // copy out FIRST
-const float spawnY = t.Position.y + 1.0f;
-
-Entity bullet = scene.CreateEntity("Bullet"); // <-- may invalidate `t`
-auto& bt = bullet.GetComponent<TransformComponent>();
-bt.Position = { spawnX, spawnY, 0.0f };       // use the copies, not `t`
-```
-
-**2. Don't destroy entities while iterating a view.** Collect the entities to remove,
-then destroy them after the loop, guarding with `registry.valid()`:
-
-```cpp
-std::vector<entt::entity> toDestroy;
-auto& registry = scene.GetRegistry();
-
-auto view = scene.GetAllEntitiesWith<BulletTag, TransformComponent>();
-for (auto e : view)
-{
-    auto& t = view.get<TransformComponent>(e);
-    if (t.Position.y > topEdge)
-        toDestroy.push_back(e);               // defer, don't destroy here
-}
-
-for (auto e : toDestroy)
-    if (registry.valid(e))
-        scene.DestroyEntity(Entity{ e, &scene });
-```
-
-Other scene helpers: `DestroyEntity(entity)`, `Clear()` (remove all entities,
-keeping the scene), `GetEntityByUUID(uuid)`, and `GetRegistry()` for direct EnTT
-access when you need it.
+  ```cpp
+  auto& t = GetComponent<TransformComponent>();
+  const glm::vec3 muzzle = { t.Position.x, t.Position.y + 1.0f, 0.0f }; // copy FIRST
+  Entity b = GetScene().CreateEntity("Bullet");                        // may move `t`
+  b.GetComponent<TransformComponent>().Position = muzzle;              // use the copy
+  ```
 
 ## SceneManager: multiple scenes
 
-Real games have more than one screen. `SceneManager` owns named scenes and tracks
-which one is active, rendering only that one:
+`SceneManager` owns named scenes and tracks the active one, updating and rendering
+only that scene:
 
 ```cpp
 class GameLayer : public Layer
@@ -191,58 +171,53 @@ class GameLayer : public Layer
         m_Menu     = m_Scenes.CreateScene("Menu");      // first scene becomes active
         m_Game     = m_Scenes.CreateScene("Game");
         m_GameOver = m_Scenes.CreateScene("GameOver");
-
-        for (Scene* s : { m_Menu, m_Game, m_GameOver })
-        {
-            s->SetViewProjection(camera);
-            s->SetClearColor({ 0.02f, 0.02f, 0.06f, 1.0f });
-        }
-        BuildMenu();   // populate the menu scene with text entities
+        for (Scene* s : { m_Menu, m_Game, m_GameOver }) { s->SetViewProjection(cam); s->SetClearColor(bg); }
+        BuildMenu();
     }
 
     void OnUpdate(float dt) override
     {
         const std::string active = m_Scenes.GetActiveSceneName();
-
         if (active == "Menu")
         {
             if (Input::IsKeyDown(Key::Space)) { StartGame(); m_Scenes.SetActiveScene("Game"); }
         }
         else if (active == "Game")
         {
-            // run gameplay systems on m_Game ...
-            if (playerDied) m_Scenes.SetActiveScene("GameOver");
+            m_Scenes.OnUpdate(dt);                       // runs the active scene's scripts
+            if (m_State.GameOver) m_Scenes.SetActiveScene("GameOver");
         }
         else if (active == "GameOver")
         {
             if (Input::IsKeyDown(Key::Space)) m_Scenes.SetActiveScene("Menu");
         }
-
-        m_Scenes.OnRender(Application::Get().GetRenderer2D());   // draws the active scene
+        m_Scenes.OnRender(Application::Get().GetRenderer2D());
     }
 };
 ```
 
-`SceneManager` API: `CreateScene(name)`, `GetScene(name)`, `HasScene(name)`,
-`SetActiveScene(name)`, `GetActiveScene()`, `GetActiveSceneName()`, `OnRender(renderer)`,
-and `Clear()`. The manager owns the scenes and deletes them when destroyed.
+API: `CreateScene`, `GetScene`, `HasScene`, `SetActiveScene`, `GetActiveScene`,
+`GetActiveSceneName`, `OnUpdate`, `OnRender`, `Clear`. The manager owns the scenes.
 
 ## Worked example: Space Invaders
 
-The `examples/SpaceInvaders/` project is a complete game built entirely on this
-system and is the best reference:
+`examples/SpaceInvaders/` is a complete game built on this system and is the best
+reference. Its structure mirrors the design above:
 
 - **Three scenes** (`Menu`, `Game`, `GameOver`) swapped via `SceneManager`.
-- The player, every invader, every bullet/bomb, and every destructible shield block is
-  an **entity** in the `Game` scene.
-- Game-specific components (`PlayerTag`, `InvaderTag`, `BulletTag`, `ShieldTag`,
-  `VelocityComponent`) live in the example, not the engine.
-- Gameplay is a set of systems — player movement/firing, formation marching, invader
-  fire, projectile motion, AABB collisions, and a live HUD — each querying the scene
-  with `GetAllEntitiesWith<...>()`.
+- The player, every invader, every bullet/bomb, and every shield block is an
+  **entity** with built-in components (Transform + Sprite for rendering).
+- All logic is in **behaviours**: `PlayerScript` (input + firing), `ProjectileScript`
+  (movement + collision + scoring), `InvaderScript` (identity/points),
+  `ShieldScript` (destructible marker), and `FormationControllerScript` (marching,
+  bombing, waves). They find each other with `GetScriptsOfType<...>()`.
+- Shared game state (score, lives, wave) lives in a small `GameContext` the layer
+  owns and passes to the scripts; the `GameLayer` is a thin orchestrator that builds
+  the scenes, spawns the entities, updates the HUD, and switches scenes.
 
-Read `examples/SpaceInvaders/src/GameLayer.cpp` alongside this guide to see the
-patterns above (including both gotchas) applied in a real game.
+Read `examples/SpaceInvaders/src/GameScripts.cpp` and `GameLayer.cpp` alongside this
+guide to see the patterns (including the spawn caveat and `GetScriptsOfType`) applied
+in a real game.
 
 ---
 

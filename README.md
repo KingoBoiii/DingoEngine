@@ -11,7 +11,7 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **ImGui Integration** — Built-in debug/overlay UI layer with docking and viewport support
 - **Font Rendering** — MSDF atlas-based text rendering via `msdf-atlas-gen`
 - **Asset Utilities** — Texture, shader, and buffer creation with a fluent params/builder API
-- **Scenes & ECS** — EnTT-backed entity-component system with a `SceneManager` for multi-scene games
+- **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games (ECS backend kept internal)
 
 ## Documentation
 

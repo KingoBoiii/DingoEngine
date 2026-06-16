@@ -49,8 +49,7 @@ project "MyGame"
         "%{wks.location}/include",   -- DingoEngine public headers
         "src",
         "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}",
-        "%{IncludeDir.entt}"          -- required: the Scene/ECS headers use EnTT
+        "%{IncludeDir.imgui}"
     }
 
     links { "DingoEngine" }           -- pulls in every transitive dependency
@@ -109,7 +108,6 @@ include/                   # engine public headers  ← add as an include root
   DingoEngine/...
 glm/                       # GLM math headers       ← public dependency
 imgui/imgui.h              # Dear ImGui header (for OnImGuiRender)
-entt/                      # EnTT headers           ← public dependency (ECS)
 assimp-vc145-mt[d].dll     # model-loader runtime   ← copy next to your .exe
 ```
 
@@ -118,7 +116,7 @@ assimp-vc145-mt[d].dll     # model-loader runtime   ← copy next to your .exe
 | Setting | Value |
 |---|---|
 | C++ standard | C++20 (`/std:c++20`) |
-| Include dirs | `include`, `glm`, `imgui`, `entt` |
+| Include dirs | `include`, `glm`, `imgui` |
 | Defines | `DE_PLATFORM_WINDOWS`, `NOMINMAX`, `GLM_FORCE_DEPTH_ZERO_TO_ONE` |
 | Runtime library | **Must match the package config:** Debug → `/MDd`, Release/Distribution → `/MD` (the engine is built with the *dynamic* CRT). |
 | Link | `DingoEngine.lib` + the libraries below |
