@@ -33,6 +33,9 @@ namespace Dingo
 		Scene* GetActiveScene() const { return m_ActiveScene; }
 		const std::string& GetActiveSceneName() const { return m_ActiveSceneName; }
 
+		// Updates the active scene's behaviours (no-op if none is active).
+		void OnUpdate(float deltaTime);
+
 		// Renders the active scene (no-op if none is active).
 		void OnRender(Renderer2D& renderer);
 

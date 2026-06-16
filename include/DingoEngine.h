@@ -18,8 +18,9 @@
 // ----------------------------------------------------------------------
 
 #include "DingoEngine/Scene/Components.h"
-#include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/Entity.h"
+#include "DingoEngine/Scene/ScriptableEntity.h"
+#include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/SceneManager.h"
 
 // ----------------------------------------------------------------------

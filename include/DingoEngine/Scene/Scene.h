@@ -4,20 +4,22 @@
 
 #include <glm/glm.hpp>
 
+#include <functional>
 #include <string>
-#include <unordered_map>
-
-#include <entt/entt.hpp>
+#include <vector>
 
 namespace Dingo
 {
 
 	class Entity;
 	class Renderer2D;
+	class ScriptableEntity;
 
-	// A Scene owns a collection of entities (via an EnTT registry) and knows how
-	// to render the renderable ones through a Renderer2D. Game logic ("systems")
-	// runs externally by querying the scene with GetAllEntitiesWith<...>().
+	namespace Internal { struct SceneData; }
+
+	// A Scene owns a collection of entities and the behaviours attached to them,
+	// and knows how to render the renderable ones. The ECS backend (EnTT) is held
+	// behind an opaque pointer so it never appears in this public header.
 	class Scene
 	{
 	public:
@@ -30,21 +32,36 @@ namespace Dingo
 		Entity CreateEntity(const std::string& name = std::string());
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
 		void DestroyEntity(Entity entity);
+		bool IsValid(Entity entity) const;
 
-		// Destroys every entity in the scene (the Scene object itself stays valid).
+		// Destroys every entity (and its scripts) in the scene; the Scene stays usable.
 		void Clear();
 
-		// Renders all renderable entities. Wraps Renderer2D::BeginScene/EndScene
-		// using the scene's view-projection matrix and clears to its clear colour.
+		// Drives every attached ScriptableEntity's OnUpdate. Safe to create/destroy
+		// entities from within a script — destroys are deferred to the end of the pass.
+		void OnUpdate(float deltaTime);
+
+		// Draws all entities that have a Transform plus a Sprite/Circle/Text component,
+		// wrapping Renderer2D::BeginScene/EndScene with the scene's view-projection.
 		void OnRender(Renderer2D& renderer);
 
-		Entity GetEntityByUUID(UUID uuid);
+		void ForEachEntity(const std::function<void(Entity)>& fn);
 
-		template<typename... Components>
-		auto GetAllEntitiesWith()
+		// Returns every attached script that is (dynamically) a T. Handy for systems
+		// that need to find other entities by behaviour, e.g. all invaders.
+		template<typename T>
+		std::vector<T*> GetScriptsOfType()
 		{
-			return m_Registry.view<Components...>();
+			std::vector<T*> result;
+			ForEachScript([&result](ScriptableEntity* script)
+			{
+				if (T* typed = dynamic_cast<T*>(script))
+					result.push_back(typed);
+			});
+			return result;
 		}
+
+		Entity GetEntityByUUID(UUID uuid);
 
 		void SetViewProjection(const glm::mat4& viewProjection) { m_ViewProjection = viewProjection; }
 		const glm::mat4& GetViewProjection() const { return m_ViewProjection; }
@@ -52,12 +69,15 @@ namespace Dingo
 		void SetClearColor(const glm::vec4& clearColor) { m_ClearColor = clearColor; }
 		const glm::vec4& GetClearColor() const { return m_ClearColor; }
 
-		entt::registry& GetRegistry() { return m_Registry; }
 		const std::string& GetName() const { return m_Name; }
 
 	private:
-		entt::registry m_Registry;
-		std::unordered_map<UUID, entt::entity> m_EntityMap;
+		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
+		void DestroyEntityNow(std::uint32_t handle);
+		Entity Wrap(std::uint32_t handle);
+
+	private:
+		Internal::SceneData* m_Data = nullptr;
 
 		std::string m_Name;
 		glm::mat4 m_ViewProjection{ 1.0f };

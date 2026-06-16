@@ -55,6 +55,12 @@ namespace Dingo
 		return true;
 	}
 
+	void SceneManager::OnUpdate(float deltaTime)
+	{
+		if (m_ActiveScene)
+			m_ActiveScene->OnUpdate(deltaTime);
+	}
+
 	void SceneManager::OnRender(Renderer2D& renderer)
 	{
 		if (m_ActiveScene)

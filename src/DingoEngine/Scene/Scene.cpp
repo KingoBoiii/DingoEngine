@@ -1,22 +1,31 @@
 #include "depch.h"
 #include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/Entity.h"
+#include "DingoEngine/Scene/ScriptableEntity.h"
 #include "DingoEngine/Scene/Components.h"
 
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 
+#include "DingoEngine/Scene/SceneData.h"
+
 namespace Dingo
 {
 
 	Scene::Scene(const std::string& name)
-		: m_Name(name)
+		: m_Data(new Internal::SceneData()), m_Name(name)
 	{
 	}
 
 	Scene::~Scene()
 	{
-		m_Registry.clear();
+		Clear();
+		delete m_Data;
+	}
+
+	Entity Scene::Wrap(std::uint32_t handle)
+	{
+		return Entity(handle, this);
 	}
 
 	Entity Scene::CreateEntity(const std::string& name)
@@ -26,13 +35,13 @@ namespace Dingo
 
 	Entity Scene::CreateEntityWithUUID(UUID uuid, const std::string& name)
 	{
-		Entity entity = { m_Registry.create(), this };
-		entity.AddComponent<IDComponent>(uuid);
-		entity.AddComponent<TransformComponent>();
-		entity.AddComponent<TagComponent>(name.empty() ? "Entity" : name);
+		entt::entity handle = m_Data->Registry.create();
+		m_Data->Registry.emplace<IDComponent>(handle, uuid);
+		m_Data->Registry.emplace<TransformComponent>(handle);
+		m_Data->Registry.emplace<TagComponent>(handle, name.empty() ? std::string("Entity") : name);
 
-		m_EntityMap[uuid] = entity;
-		return entity;
+		m_Data->EntityMap[uuid] = handle;
+		return Wrap(static_cast<std::uint32_t>(handle));
 	}
 
 	void Scene::DestroyEntity(Entity entity)
@@ -40,23 +49,95 @@ namespace Dingo
 		if (!entity)
 			return;
 
-		m_EntityMap.erase(entity.GetUUID());
-		m_Registry.destroy(entity);
+		if (m_Data->Updating)
+		{
+			m_Data->PendingDestroy.push_back(static_cast<entt::entity>(entity.m_Handle));
+			return;
+		}
+
+		DestroyEntityNow(entity.m_Handle);
+	}
+
+	void Scene::DestroyEntityNow(std::uint32_t handle)
+	{
+		entt::entity e = static_cast<entt::entity>(handle);
+		if (!m_Data->Registry.valid(e))
+			return;
+
+		if (auto it = m_Data->Scripts.find(e); it != m_Data->Scripts.end())
+		{
+			it->second->OnDestroy();
+			m_Data->Scripts.erase(it);
+		}
+
+		if (m_Data->Registry.all_of<IDComponent>(e))
+			m_Data->EntityMap.erase(m_Data->Registry.get<IDComponent>(e).ID);
+
+		m_Data->Registry.destroy(e);
+	}
+
+	bool Scene::IsValid(Entity entity) const
+	{
+		return entity.m_Scene == this
+			&& m_Data->Registry.valid(static_cast<entt::entity>(entity.m_Handle));
 	}
 
 	void Scene::Clear()
 	{
-		m_Registry.clear();
-		m_EntityMap.clear();
+		for (auto& [handle, script] : m_Data->Scripts)
+			script->OnDestroy();
+
+		m_Data->Scripts.clear();
+		m_Data->Registry.clear();
+		m_Data->EntityMap.clear();
+		m_Data->PendingDestroy.clear();
 	}
 
 	Entity Scene::GetEntityByUUID(UUID uuid)
 	{
-		auto it = m_EntityMap.find(uuid);
-		if (it != m_EntityMap.end())
-			return { it->second, this };
+		auto it = m_Data->EntityMap.find(uuid);
+		if (it != m_Data->EntityMap.end())
+			return Wrap(static_cast<std::uint32_t>(it->second));
 
 		return {};
+	}
+
+	void Scene::OnUpdate(float deltaTime)
+	{
+		m_Data->Updating = true;
+
+		// Snapshot the current scripts so spawning new entities mid-update doesn't
+		// invalidate iteration (new scripts run next frame).
+		std::vector<entt::entity> handles;
+		handles.reserve(m_Data->Scripts.size());
+		for (auto& [handle, script] : m_Data->Scripts)
+			handles.push_back(handle);
+
+		for (entt::entity handle : handles)
+		{
+			auto it = m_Data->Scripts.find(handle);
+			if (it != m_Data->Scripts.end())
+				it->second->OnUpdate(deltaTime);
+		}
+
+		m_Data->Updating = false;
+
+		for (entt::entity handle : m_Data->PendingDestroy)
+			DestroyEntityNow(static_cast<std::uint32_t>(handle));
+		m_Data->PendingDestroy.clear();
+	}
+
+	void Scene::ForEachEntity(const std::function<void(Entity)>& fn)
+	{
+		auto view = m_Data->Registry.view<IDComponent>();
+		for (entt::entity handle : view)
+			fn(Wrap(static_cast<std::uint32_t>(handle)));
+	}
+
+	void Scene::ForEachScript(const std::function<void(ScriptableEntity*)>& fn)
+	{
+		for (auto& [handle, script] : m_Data->Scripts)
+			fn(script.get());
 	}
 
 	void Scene::OnRender(Renderer2D& renderer)
@@ -66,13 +147,10 @@ namespace Dingo
 
 		// Sprites (solid-colour or textured quads)
 		{
-			auto view = m_Registry.view<TransformComponent, SpriteRendererComponent>();
+			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
 			for (auto entity : view)
 			{
 				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(entity);
-
-				// A null texture maps to the engine white texture so the colour
-				// shows through — this keeps a single code path for both cases.
 				Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
 
 				if (transform.Rotation != 0.0f)
@@ -84,7 +162,7 @@ namespace Dingo
 
 		// Circles
 		{
-			auto view = m_Registry.view<TransformComponent, CircleRendererComponent>();
+			auto view = m_Data->Registry.view<TransformComponent, CircleRendererComponent>();
 			for (auto entity : view)
 			{
 				auto [transform, circle] = view.get<TransformComponent, CircleRendererComponent>(entity);
@@ -94,7 +172,7 @@ namespace Dingo
 
 		// Text
 		{
-			auto view = m_Registry.view<TransformComponent, TextComponent>();
+			auto view = m_Data->Registry.view<TransformComponent, TextComponent>();
 			for (auto entity : view)
 			{
 				auto [transform, text] = view.get<TransformComponent, TextComponent>(entity);
