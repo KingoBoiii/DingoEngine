@@ -82,6 +82,11 @@ jobs:
         robocopy .\vendor\glm .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\glm /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
+    - name: Copy entt files (third-party)
+      run: |
+        robocopy .\vendor\entt\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\entt /e /z
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
     - name: Copy imgui files (third-party)
       run: |
         robocopy .\vendor\imgui .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\imgui imgui.h
@@ -325,6 +330,9 @@ jobs:
 
     - name: Copy glm files (third-party)
       run: cp -r ./vendor/glm ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/
+
+    - name: Copy entt files (third-party)
+      run: cp -r ./vendor/entt/include ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/entt
 
     - name: Copy imgui header (third-party)
       run: |
