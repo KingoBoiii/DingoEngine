@@ -15,7 +15,8 @@ project "Breakout3D"
         "%{wks.location}/include",
         "src",
         "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}"
+        "%{IncludeDir.imgui}",
+        "%{IncludeDir.entt}"
     }
 
     links {

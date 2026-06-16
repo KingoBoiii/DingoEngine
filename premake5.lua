@@ -128,7 +128,8 @@ group "Engine"
 			"%{IncludeDir.imgui}",
 			"%{IncludeDir.msdfgen}",
 			"%{IncludeDir.msdf_atlas_gen}",
-			"%{IncludeDir.assimp}"
+			"%{IncludeDir.assimp}",
+			"%{IncludeDir.entt}"
 		}
 
 		links {
@@ -229,4 +230,5 @@ group "Examples"
     include "examples/FlappyBird"
     include "examples/Breakout3D"
     include "examples/DungeonCrawler"
+    include "examples/SpaceInvaders"
 group ""
