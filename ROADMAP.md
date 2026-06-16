@@ -27,7 +27,7 @@ Scene management and entity component system (ECS) using the EnTT library.
 ## v0.5 — Audio System
 Proper audio engine (OpenAL or miniaudio), `AudioSource` / `AudioListener` ECS components, and 3D positional audio. Replaces the hardcoded .ogg playback currently in the FlappyBird example.
 
-**Full game release**: *Tycoon* — a top-down building, management, and simulation game. Players construct and run their own business or settlement, managing resources, workers, and expansion. Draws on every system built so far: 3D rendering and model loading (v0.2), ECS entities for buildings, workers, and resources (v0.3), physics-driven collision (v0.4), and audio for ambience and feedback (v0.5). **Released on Itch.io.**
+**Full game release**: *Micro Roguelike* — a compact, real-time dungeon-crawling roguelike with procedurally generated levels, room-by-room combat, loot drops, and permadeath. A deliberately small-scope game that draws on every system built so far: 3D rendering and model loading for dungeons, enemies, and items (v0.2), ECS entities for the player, monsters, projectiles, and pickups (v0.3), physics-driven collision for movement, melee, and projectiles (v0.4), and audio for ambience and combat feedback (v0.5). **Released on Itch.io.**
 
 ## v0.6 — Asset Pipeline & Hot-Reload
 Centralized `AssetManager` with UUID-based handles, background/async loading, and hot-reload of shaders and textures during development.
@@ -42,12 +42,12 @@ C# scripting via Mono or .NET CoreCLR, or Lua. Allows game logic to live outside
 ## v0.8 — Networking & Multiplayer
 Multiplayer foundation: reliable transport layer (UDP or WebSocket-based), client-server architecture, lobby and session management, and networked ECS state synchronisation. Designed to be game-agnostic so any future project can opt into online co-op.
 
-**Example**: Extend the Tycoon game (v0.5) with 2–4 player online co-op using the new networking layer. Serves as the real-world stress test for the entire stack.
+**Example**: Extend *Micro Roguelike* (v0.5) with 2–4 player online co-op using the new networking layer. Serves as the real-world stress test for the entire stack.
 
 ## v0.9 — Advanced Rendering & Performance
 Shadows (cascaded shadow maps), a post-processing stack (bloom, tone mapping, SSAO/GTAO), a GPU particle system, and profiling integration (Optick or Tracy). Brings the visual and performance bar up to match the ambition of the v1.0 game.
 
-**Example**: Visual upgrades pass over the Tycoon game — dynamic shadow-casting lights, bloom on atmospheric effects, and particle-based worker/building VFX.
+**Example**: Visual upgrades pass over *Micro Roguelike* — dynamic shadow-casting lights, bloom on atmospheric effects, and particle-based combat and spell VFX.
 
 ## v1.0 — Stability & Polish
 Performance profiling (Optick or Tracy), full API documentation, cross-platform validation (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term maintainability.
