@@ -15,8 +15,7 @@ project "FlappyBird"
         "%{wks.location}/include",
         "src",
         "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}",
-        "%{IncludeDir.entt}"
+        "%{IncludeDir.imgui}"
     }
 
     links { 
