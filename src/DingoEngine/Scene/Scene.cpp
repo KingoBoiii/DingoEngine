@@ -9,6 +9,8 @@
 
 #include "DingoEngine/Scene/SceneData.h"
 
+#include <algorithm>
+
 namespace Dingo
 {
 
@@ -144,13 +146,27 @@ namespace Dingo
 	{
 		renderer.BeginScene(m_ViewProjection);
 		renderer.Clear(m_ClearColor);
+		RenderEntities(renderer);
+		renderer.EndScene();
+	}
 
-		// Sprites (solid-colour or textured quads)
+	void Scene::RenderEntities(Renderer2D& renderer)
+	{
+		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
+		// Position.z draws on top. stable_sort keeps creation order within a layer.
 		{
 			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
-			for (auto entity : view)
+			std::vector<entt::entity> sprites(view.begin(), view.end());
+			std::stable_sort(sprites.begin(), sprites.end(), [this](entt::entity a, entt::entity b)
 			{
-				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(entity);
+				return m_Data->Registry.get<TransformComponent>(a).Position.z
+				     < m_Data->Registry.get<TransformComponent>(b).Position.z;
+			});
+
+			for (entt::entity entity : sprites)
+			{
+				auto& transform = m_Data->Registry.get<TransformComponent>(entity);
+				auto& sprite = m_Data->Registry.get<SpriteRendererComponent>(entity);
 				Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
 
 				if (transform.Rotation != 0.0f)
@@ -186,8 +202,6 @@ namespace Dingo
 				renderer.DrawText(text.Text, text.Font, position, text.Size, { text.Color });
 			}
 		}
-
-		renderer.EndScene();
 	}
 
 }

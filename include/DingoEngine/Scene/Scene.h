@@ -45,6 +45,11 @@ namespace Dingo
 		// wrapping Renderer2D::BeginScene/EndScene with the scene's view-projection.
 		void OnRender(Renderer2D& renderer);
 
+		// Issues only the entity draw calls (no BeginScene/Clear/EndScene). Call it
+		// between your own Renderer2D::BeginScene/EndScene to compose the scene's
+		// entities with custom drawing (e.g. a HUD) in a single pass / camera.
+		void RenderEntities(Renderer2D& renderer);
+
 		void ForEachEntity(const std::function<void(Entity)>& fn);
 
 		// Returns every attached script that is (dynamically) a T. Handy for systems
