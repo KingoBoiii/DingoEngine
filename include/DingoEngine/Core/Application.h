@@ -63,6 +63,7 @@ namespace Dingo
 
 		WindowParams Window;		// Parameters for the application window
 		GraphicsParams Graphics;	// Parameters for the graphics context
+		Renderer2DParams Renderer2D;	// Parameters for the 2D renderer (e.g. per-batch quad capacity)
 
 		bool EnableImGui = true;	// Whether to enable ImGui support
 		ImGuiParams ImGui;			// Parameters for ImGui configuration, only used if EnableImGui is true

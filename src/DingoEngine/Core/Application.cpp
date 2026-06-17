@@ -48,7 +48,7 @@ namespace Dingo
 
 		Renderer::Initialize(m_SwapChain);
 
-		m_Renderer2D = Renderer2D::Create();
+		m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
 
 		OnInitialize();
 

@@ -128,13 +128,21 @@ float height = 1.0f;                       // desired height in world units
 r.DrawQuad(pos, { height * aspect, height }, tex);
 ```
 
-## Batching limits & tips
+## Batching & tips
 
-- The renderer batches up to **1000 quads** and uses **32 texture slots** per flush;
-  text and circles batch separately. For typical 2D games this is plenty — a full
-  screen of sprites is well under the limit.
-- Each unique texture consumes one of the 32 slots within a scene; reusing the same
-  texture is free. Solid-colour quads share a single built-in white texture.
+- Quads, circles, and text each batch separately and flush in `EndScene`. The
+  renderer **auto-batches**: `MaxQuads` (default **2000**) is the size of a *single*
+  batch, not a per-frame limit — when a batch fills up (or runs out of texture slots)
+  it is flushed automatically and a fresh one begins, so you can draw any number of
+  quads per frame and nothing is ever dropped.
+- Tune the batch size via `ApplicationParams::Renderer2D` — bigger batches mean fewer
+  draw calls but more memory per batch buffer:
+  ```cpp
+  params.Renderer2D.Capabilities.MaxQuads = 5000;
+  ```
+- Each batch has **32 texture slots**; introducing a 33rd texture forces a flush.
+  Reusing the same texture is free, and solid-colour quads share a single built-in
+  white texture.
 - Keep one `BeginScene`/`EndScene` per camera per frame. If you need a second pass
   with a different camera (e.g. a screen-space HUD), open a second block after the
   first.

@@ -24,10 +24,10 @@ namespace Dingo
 	struct DungeonParams
 	{
 		// NOTE on size: the GameLayer draws one quad entity per cell, so Width*Height
-		// quads land in the Renderer2D quad batch every frame. That batch is capped by
-		// Renderer2DCapabilities::MaxQuads (engine default 1000); quads past the cap are
-		// dropped (and logged). Keep Width*Height comfortably under 1000 to leave room
-		// for the HUD / health-bar / facing quads drawn on top. 38*24 = 912 fits.
+		// quads are submitted to Renderer2D every frame. The renderer auto-batches
+		// (Renderer2DCapabilities::MaxQuads is a per-batch size, default 2000; overflow
+		// just starts another batch — nothing is dropped), so this is a gameplay/perf
+		// choice, not an engine limit. 38*24 = 912 keeps the map readable on one screen.
 		int Width = 38;             // map size in tiles (border included)
 		int Height = 24;
 		int MaxRooms = 10;          // upper bound on rooms actually placed
@@ -50,13 +50,12 @@ namespace Dingo
 
 	inline GeneratedDungeon GenerateDungeon(DungeonParams params = {})
 	{
-		// --- Sanitize params so the distributions below are always valid, and so the
-		// one-quad-per-cell tiles can never exceed the Renderer2D quad batch. ---
+		// --- Sanitize params so the distributions below are always valid. ---
 		params.Width = std::clamp(params.Width, 12, 60);
 		params.Height = std::clamp(params.Height, 12, 40);
-		// One quad is drawn per cell, capped by Renderer2DCapabilities::MaxQuads (1000).
-		// Enforce the budget the doc-comment above describes: shrink to fit, leaving
-		// headroom for the HUD / overlay quads drawn on top.
+		// Keep the map to a sane on-screen size. Renderer2D auto-batches now, so this is
+		// a gameplay/readability bound (and keeps the draw-call count modest) rather than
+		// the hard engine cap it once worked around.
 		constexpr int kMaxCells = 950;
 		if (params.Width * params.Height > kMaxCells)
 			params.Height = kMaxCells / params.Width;
