@@ -234,6 +234,13 @@ void main() {
 
 	void Renderer2D::Initialize()
 	{
+		// A batch must hold at least one quad. A MaxQuads of 0 (e.g. supplied via
+		// ApplicationParams) would size the batch buffers to zero and overflow on the
+		// first Draw, so clamp it to a usable minimum.
+		DE_CORE_ASSERT(m_Params.Capabilities.MaxQuads >= 1, "Renderer2D: MaxQuads must be >= 1");
+		if (m_Params.Capabilities.MaxQuads < 1)
+			m_Params.Capabilities.MaxQuads = 1;
+
 		CreateQuadIndexBuffer();
 
 		m_QuadVertexPositions[0] = { -0.5f, -0.5f, 0.0f, 1.0f };
