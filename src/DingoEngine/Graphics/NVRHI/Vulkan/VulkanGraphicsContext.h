@@ -57,7 +57,6 @@ namespace Dingo
 
 		nvrhi::vulkan::IDevice* m_NvrhiDevice = nullptr;
 
-		bool m_SwapChainMutableFormatSupported = false;
 		bool m_BufferDeviceAddressSupported = false;
 
 		struct VulkanExtensionSet
@@ -101,8 +100,7 @@ namespace Dingo
 				VK_NV_MESH_SHADER_EXTENSION_NAME,
 				VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME,
 				VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-				VK_KHR_MAINTENANCE_4_EXTENSION_NAME,
-				VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME
+				VK_KHR_MAINTENANCE_4_EXTENSION_NAME
 			},
 		};
 

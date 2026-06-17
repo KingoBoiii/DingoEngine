@@ -324,6 +324,12 @@ namespace Dingo
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
+		// Contract: PickPhysicalDevice only ever selects a present-capable GPU (it skips devices whose
+		// Present index is -1 and aborts if none can present), so Present is valid here. The
+		// uint32_t(Present) uses below rely on that; assert it so a future change that allows
+		// render-only devices fails loudly instead of passing 0xFFFFFFFF queue families to Vulkan.
+		DE_CORE_ASSERT(graphicsContext.m_QueueFamilyIndices.Present != -1, "Swap chain requires a present-capable queue family (Present == -1).");
+
 		const vk::PhysicalDevice physicalDevice = graphicsContext.m_VulkanPhysicalDevice;
 
 		// A Vulkan surface is bound to one window, and its capabilities differ per display and

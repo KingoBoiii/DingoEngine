@@ -105,6 +105,13 @@ namespace Dingo
 		}
 
 		DE_CORE_VERIFY(devicePicked, "Failed to find a suitable Vulkan device that can present to the application window.");
+		if (!devicePicked)
+		{
+			// DE_CORE_VERIFY logs + debug-breaks but does not return (and is a no-op if verifies are
+			// compiled out), so stop here explicitly. Continuing would run CreateDevice() and the swap
+			// chain with default queue indices (Graphics/Present == -1 -> 0xFFFFFFFF queue families).
+			return;
+		}
 
 		CreateDevice();
 		CreateDeviceHandle();
@@ -227,7 +234,7 @@ namespace Dingo
 		if (res != vk::Result::eSuccess)
 		{
 			DE_CORE_ERROR("Call to vkEnumerateInstanceVersion failed, error code = {}", nvrhi::vulkan::resultToString(VkResult(res)));
-			DE_CORE_ASSERT(true);
+			DE_CORE_ASSERT(false, "Call to vkEnumerateInstanceVersion failed.");
 			return;
 		}
 
