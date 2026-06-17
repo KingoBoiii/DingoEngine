@@ -38,6 +38,18 @@
             "preLaunchTask": "Build Breakout3D Debug"
         },
         {
+            "name": "Debug Space Invaders",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/SpaceInvaders/SpaceInvaders.exe",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/SpaceInvaders",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Space Invaders Debug"
+        },
+        {
             "name": "Debug TestFramework",
             "type": "cppvsdbg",
             "request": "launch",

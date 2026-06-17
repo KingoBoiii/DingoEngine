@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/Font.h"
 
 #include <array>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -18,7 +19,11 @@ namespace Dingo
 
 	struct Renderer2DCapabilities
 	{
-		uint32_t MaxQuads = 1000;
+		// Maximum quads per *batch*. The renderer auto-flushes into a new batch
+		// when this is exceeded, so it is a draw-call/memory granularity knob, not
+		// a hard limit on quads per frame. Larger = fewer draw calls, more memory
+		// per batch buffer. Index values stay within MaxQuads*4 per batch.
+		uint32_t MaxQuads = 2000;
 
 		constexpr uint32_t GetQuadVertexCount() const { return MaxQuads * 4; }
 		constexpr uint32_t GetQuadIndexCount()  const { return MaxQuads * 6; }
@@ -87,6 +92,21 @@ namespace Dingo
 	private:
 		float GetTextureIndex(Texture* texture);
 
+		// Submits the currently-accumulated batch of each pass (upload + draw) and
+		// resets it so accumulation can continue into a fresh batch. No-op when the
+		// pass has nothing accumulated.
+		void FlushQuad();
+		void FlushCircle();
+		void FlushText();
+
+		void ResetQuadTextureSlots();
+
+		// Pooled per-batch GPU resources, created on demand and reused every frame.
+		RenderPass* CreateQuadRenderPass();
+		GraphicsBuffer* CreateQuadVertexBuffer();
+		GraphicsBuffer* CreateCircleVertexBuffer();
+		GraphicsBuffer* CreateTextVertexBuffer();
+
 		void CreateQuadIndexBuffer();
 		void CreateQuadPipeline();
 		void DestroyQuadPipeline();
@@ -137,8 +157,15 @@ namespace Dingo
 
 			Shader* Shader = nullptr;
 			Pipeline* Pipeline = nullptr;
-			RenderPass* RenderPass = nullptr;
-			GraphicsBuffer* VertexBuffer = nullptr;
+
+			// One (render pass, vertex buffer) per batch within a frame. Each batch
+			// needs its own RenderPass because it binds a different texture set and
+			// NVRHI binding sets are immutable once baked. Grown on demand, the pool
+			// is reused (re-baked / re-uploaded) every frame; BatchIndex is the next
+			// free slot for the frame in progress.
+			std::vector<RenderPass*> RenderPasses;
+			std::vector<GraphicsBuffer*> VertexBuffers;
+			uint32_t BatchIndex = 0;
 		} m_QuadPipeline;
 
 		/**************************************************
@@ -161,8 +188,11 @@ namespace Dingo
 
 			Shader* Shader = nullptr;
 			Pipeline* Pipeline = nullptr;
+			// Bindings are frame-constant (camera only), so a single render pass is
+			// baked once and shared by every batch; only the vertex buffers pool.
 			RenderPass* RenderPass = nullptr;
-			GraphicsBuffer* VertexBuffer = nullptr;
+			std::vector<GraphicsBuffer*> VertexBuffers;
+			uint32_t BatchIndex = 0;
 		} m_CircleRenderPass;
 
 		/**************************************************
@@ -183,8 +213,12 @@ namespace Dingo
 
 			Shader* Shader = nullptr;
 			Pipeline* Pipeline = nullptr;
+			// A single font atlas is used per frame, so one render pass is baked once
+			// per frame (on the first flush) and shared by every text batch; only the
+			// vertex buffers pool.
 			RenderPass* RenderPass = nullptr;
-			GraphicsBuffer* VertexBuffer = nullptr;
+			std::vector<GraphicsBuffer*> VertexBuffers;
+			uint32_t BatchIndex = 0;
 		} m_TextQuadRenderPass;
 		Texture* m_FontAtlasTexture = nullptr;
 	};

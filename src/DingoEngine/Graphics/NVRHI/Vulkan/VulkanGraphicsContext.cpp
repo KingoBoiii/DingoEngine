@@ -81,8 +81,38 @@ namespace Dingo
 #ifndef DE_DISTRIBUTION
 		CreateDebugMessenger();
 #endif
-		PickPhysicalDevice();
-		FindQueueFamilies(m_VulkanPhysicalDevice);
+
+		// Create a throwaway surface for the application's main window so device selection can
+		// verify which GPU/queue can actually present to the display the window lives on (the
+		// multi-GPU / hybrid-graphics case). The swap chain creates its own surface later; this
+		// one only informs selection and is destroyed immediately afterwards.
+		vk::SurfaceKHR probeSurface = nullptr;
+		if (m_Params.NativeWindowHandle)
+		{
+			const VkResult surfaceResult = glfwCreateWindowSurface(m_VulkanInstance, m_Params.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&probeSurface);
+			if (surfaceResult != VK_SUCCESS)
+			{
+				probeSurface = nullptr;
+				DE_CORE_WARN("Failed to create a probe surface for device selection (error {}); falling back to surface-independent present detection.", std::string(nvrhi::vulkan::resultToString(surfaceResult)));
+			}
+		}
+
+		const bool devicePicked = PickPhysicalDevice(probeSurface);
+
+		if (probeSurface)
+		{
+			m_VulkanInstance.destroySurfaceKHR(probeSurface);
+		}
+
+		DE_CORE_VERIFY(devicePicked, "Failed to find a suitable Vulkan device that can present to the application window.");
+		if (!devicePicked)
+		{
+			// DE_CORE_VERIFY logs + debug-breaks but does not return (and is a no-op if verifies are
+			// compiled out), so stop here explicitly. Continuing would run CreateDevice() and the swap
+			// chain with default queue indices (Graphics/Present == -1 -> 0xFFFFFFFF queue families).
+			return;
+		}
+
 		CreateDevice();
 		CreateDeviceHandle();
 	}
@@ -204,7 +234,7 @@ namespace Dingo
 		if (res != vk::Result::eSuccess)
 		{
 			DE_CORE_ERROR("Call to vkEnumerateInstanceVersion failed, error code = {}", nvrhi::vulkan::resultToString(VkResult(res)));
-			DE_CORE_ASSERT(true);
+			DE_CORE_ASSERT(false, "Call to vkEnumerateInstanceVersion failed.");
 			return;
 		}
 
@@ -252,32 +282,36 @@ namespace Dingo
 		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create debug report callback.");
 	}
 
-	bool VulkanGraphicsContext::PickPhysicalDevice()
+	bool VulkanGraphicsContext::PickPhysicalDevice(vk::SurfaceKHR surface)
 	{
-		std::vector<vk::PhysicalDevice> physicalDevices = m_VulkanInstance.enumeratePhysicalDevices();
-
-		int firstDevice = 0;
-		int lastDevice = int(physicalDevices.size()) - 1;
+		const std::vector<vk::PhysicalDevice> physicalDevices = m_VulkanInstance.enumeratePhysicalDevices();
 
 		// Start building an error message in case we cannot find a device.
 		std::stringstream errorStream;
 		errorStream << "Cannot find a Vulkan device that supports all the required extensions and properties.";
 
-		// build a list of GPUs
-		std::vector<vk::PhysicalDevice> discreteGPUs;
-		std::vector<vk::PhysicalDevice> otherGPUs;
-
-		for (int deviceIndex = firstDevice; deviceIndex <= lastDevice; ++deviceIndex)
+		struct Candidate
 		{
-			vk::PhysicalDevice const& dev = physicalDevices[deviceIndex];
-			vk::PhysicalDeviceProperties prop = dev.getProperties();
+			vk::PhysicalDevice device;
+			QueueFamilyIndices indices;
+		};
+
+		// Presentable candidates split by GPU type: prefer a discrete GPU, but fall back to an
+		// integrated/other GPU that can actually present to this window's display (the hybrid
+		// laptop case where the dGPU does not drive the panel the window is on).
+		std::vector<Candidate> discretePresentable;
+		std::vector<Candidate> otherPresentable;
+		bool haveUsableButNonPresentable = false;
+
+		for (const vk::PhysicalDevice& dev : physicalDevices)
+		{
+			const vk::PhysicalDeviceProperties prop = dev.getProperties();
 
 			errorStream << std::endl << prop.deviceName.data() << ":";
 
 			// check that all required device extensions are present
 			std::unordered_set<std::string> requiredExtensions = enabledExtensions.device;
-			auto deviceExtensions = dev.enumerateDeviceExtensionProperties();
-			for (const auto& ext : deviceExtensions)
+			for (const auto& ext : dev.enumerateDeviceExtensionProperties())
 			{
 				requiredExtensions.erase(std::string(ext.extensionName.data()));
 			}
@@ -294,7 +328,7 @@ namespace Dingo
 				deviceIsGood = false;
 			}
 
-			auto deviceFeatures = dev.getFeatures();
+			const vk::PhysicalDeviceFeatures deviceFeatures = dev.getFeatures();
 			if (!deviceFeatures.samplerAnisotropy)
 			{
 				// device is a toaster oven
@@ -307,99 +341,131 @@ namespace Dingo
 				deviceIsGood = false;
 			}
 
-			if (!FindQueueFamilies(dev))
+			// Fresh per-device queue families -- never reuse indices across devices.
+			QueueFamilyIndices indices;
+			if (!FindQueueFamilies(dev, surface, indices))
 			{
-				// device doesn't have all the queue families we need
-				errorStream << std::endl << "  - does not support the necessary queue types";
+				errorStream << std::endl << "  - does not provide a graphics queue";
 				deviceIsGood = false;
 			}
-
 
 			if (!deviceIsGood)
 				continue;
 
-			if (prop.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+			if (indices.Present == -1)
 			{
-				discreteGPUs.push_back(dev);
+				// Usable for rendering, but cannot present to the window's surface (likely a GPU
+				// that does not drive the display the window is on). Remember it only so we can
+				// emit a clear diagnostic if nothing can present.
+				errorStream << std::endl << "  - cannot present to the application window's surface";
+				haveUsableButNonPresentable = true;
+				continue;
+			}
+
+			if (prop.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+				discretePresentable.push_back({ dev, indices });
+			else
+				otherPresentable.push_back({ dev, indices });
+		}
+
+		const Candidate* chosen = nullptr;
+		const char* reason = nullptr;
+		if (!discretePresentable.empty())
+		{
+			chosen = &discretePresentable.front();
+			reason = "discrete GPU, can present to the window";
+		}
+		else if (!otherPresentable.empty())
+		{
+			chosen = &otherPresentable.front();
+			reason = "integrated/other GPU, can present to the window";
+		}
+
+		if (!chosen)
+		{
+			if (haveUsableButNonPresentable)
+			{
+				DE_CORE_ERROR("Found a usable Vulkan GPU, but none can present to the application window's surface. "
+					"This is the multi-GPU / hybrid-graphics case where the window is on a display driven by a different "
+					"adapter. Move the window to the primary display or update GPU drivers.\n{}", errorStream.str().c_str());
 			}
 			else
 			{
-				otherGPUs.push_back(dev);
+				DE_CORE_ERROR("{}", errorStream.str().c_str());
 			}
+			return false;
 		}
 
-		// pick the first discrete GPU if it exists, otherwise the first integrated GPU
-		if (!discreteGPUs.empty())
-		{
-			m_VulkanPhysicalDevice = discreteGPUs[0];
-			return true;
-		}
-
-		if (!otherGPUs.empty())
-		{
-			m_VulkanPhysicalDevice = otherGPUs[0];
-			return true;
-		}
-
-		return false;
+		m_VulkanPhysicalDevice = chosen->device;
+		m_QueueFamilyIndices = chosen->indices;
+		DE_CORE_TRACE("Selected Vulkan physical device: {} ({})", std::string(chosen->device.getProperties().deviceName.data()), reason);
+		return true;
 	}
 
-	bool VulkanGraphicsContext::FindQueueFamilies(vk::PhysicalDevice physicalDevice)
+	bool VulkanGraphicsContext::FindQueueFamilies(vk::PhysicalDevice physicalDevice, vk::SurfaceKHR surface, QueueFamilyIndices& outIndices) const
 	{
-		auto props = physicalDevice.getQueueFamilyProperties();
+		outIndices = QueueFamilyIndices{};
+
+		const std::vector<vk::QueueFamilyProperties> props = physicalDevice.getQueueFamilyProperties();
+
+		int32_t dedicatedTransfer = -1;
 
 		for (int i = 0; i < int(props.size()); i++)
 		{
-			const auto& queueFamily = props[i];
+			const vk::QueueFamilyProperties& queueFamily = props[i];
+			if (queueFamily.queueCount == 0)
+				continue;
 
-			if (m_QueueFamilyIndices.Graphics == -1)
+			if (outIndices.Graphics == -1 && (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
 			{
-				if (queueFamily.queueCount > 0 && (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
-				{
-					m_QueueFamilyIndices.Graphics = i;
-				}
+				outIndices.Graphics = i;
 			}
 
-			if (m_QueueFamilyIndices.Compute == -1)
+			if (outIndices.Compute == -1 &&
+				(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) &&
+				!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
 			{
-				if (queueFamily.queueCount > 0 &&
-					(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) &&
-					!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
-				{
-					m_QueueFamilyIndices.Compute = i;
-				}
+				outIndices.Compute = i;
 			}
 
-			if (m_QueueFamilyIndices.Transfer == -1)
+			if (dedicatedTransfer == -1 &&
+				(queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) &&
+				!(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) &&
+				!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
 			{
-				if (queueFamily.queueCount > 0 &&
-					(queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) &&
-					!(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) &&
-					!(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics))
-				{
-					m_QueueFamilyIndices.Transfer = i;
-				}
+				dedicatedTransfer = i;
 			}
 
-			if (m_QueueFamilyIndices.Present == -1)
+			if (outIndices.Present == -1)
 			{
-				if (queueFamily.queueCount > 0 &&
-					glfwGetPhysicalDevicePresentationSupport(m_VulkanInstance, physicalDevice, i))
+				// Prefer a true per-surface check so we only accept a queue that can present to
+				// THIS window's display. Fall back to the surface-independent GLFW query only when
+				// no surface is available (e.g. probe-surface creation failed).
+				bool presentSupported = false;
+				if (surface)
 				{
-					m_QueueFamilyIndices.Present = i;
+					presentSupported = physicalDevice.getSurfaceSupportKHR(uint32_t(i), surface) == VK_TRUE;
+				}
+				else
+				{
+					presentSupported = glfwGetPhysicalDevicePresentationSupport(m_VulkanInstance, physicalDevice, i) != 0;
+				}
+
+				if (presentSupported)
+				{
+					outIndices.Present = i;
 				}
 			}
 		}
 
-		//if (m_QueueFamilyIndices.Graphics == -1 ||
-		//	m_QueueFamilyIndices.Present == -1 && !m_DeviceParams.headlessDevice ||
-		//	(m_QueueFamilyIndices.Compute == -1 && m_DeviceParams.enableComputeQueue) ||
-		//	(m_QueueFamilyIndices.Transfer == -1 && m_DeviceParams.enableCopyQueue))
-		//{
-		//	return false;
-		//}
+		// Use a dedicated transfer-only family when one exists (better copy/DMA overlap); otherwise
+		// fall back to the graphics family. Integrated GPUs frequently expose no transfer-only
+		// family, so requiring one here would wrongly reject the very GPU that drives the panel.
+		outIndices.Transfer = (dedicatedTransfer != -1) ? dedicatedTransfer : outIndices.Graphics;
 
-		return true;
+		// A device is usable if it can render. Present capability is reported separately via
+		// outIndices.Present (may be -1) so the caller can prefer present-capable GPUs.
+		return outIndices.Graphics != -1;
 	}
 
 	void VulkanGraphicsContext::CreateDevice()
@@ -429,9 +495,12 @@ namespace Dingo
 
 		std::unordered_set<int> uniqueQueueFamilies = {
 			m_QueueFamilyIndices.Graphics,
-			m_QueueFamilyIndices.Transfer,
-			m_QueueFamilyIndices.Present
+			m_QueueFamilyIndices.Transfer
 		};
+		if (m_QueueFamilyIndices.Present != -1)
+		{
+			uniqueQueueFamilies.insert(m_QueueFamilyIndices.Present);
+		}
 
 		//if (!m_DeviceParams.headlessDevice)
 		//	uniqueQueueFamilies.insert(m_QueueFamilyIndices.Present);
@@ -492,12 +561,11 @@ namespace Dingo
 		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan device.");
 
 		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Graphics, 0, &m_GraphicsQueue);
-		//if (m_DeviceParams.enableComputeQueue)
-		//m_VulkanDevice.getQueue(m_QueueFamilyIndices.Compute, 0, &m_ComputeQueue);
-		//if (m_DeviceParams.enableCopyQueue)
 		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Transfer, 0, &m_TransferQueue);
-		//if (!m_DeviceParams.headlessDevice)
-		m_VulkanDevice.getQueue(m_QueueFamilyIndices.Present, 0, &m_PresentQueue);
+		if (m_QueueFamilyIndices.Present != -1)
+		{
+			m_VulkanDevice.getQueue(m_QueueFamilyIndices.Present, 0, &m_PresentQueue);
+		}
 
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanDevice);
 
@@ -510,7 +578,12 @@ namespace Dingo
 		auto vecLayers = Utils::stringSetToVector(enabledExtensions.layers);
 		auto vecDeviceExt = Utils::stringSetToVector(enabledExtensions.device);
 
-		nvrhi::vulkan::DeviceDesc deviceDesc;
+		// Value-initialize: the queue handles (graphicsQueue/transferQueue/computeQueue) are raw
+		// VkQueue with no default initializer in NVRHI's DeviceDesc. NVRHI treats a null queue as
+		// "unused" (if (desc.transferQueue) ...), so any queue we don't set below must read as null
+		// rather than indeterminate stack garbage -- e.g. transferQueue on GPUs without a dedicated
+		// transfer family, and computeQueue which this context never sets.
+		nvrhi::vulkan::DeviceDesc deviceDesc{};
 		deviceDesc.errorCB = &NvrhiMessageCallback::Get();
 		deviceDesc.instance = m_VulkanInstance;
 		deviceDesc.physicalDevice = m_VulkanPhysicalDevice;
@@ -522,7 +595,11 @@ namespace Dingo
 		//	deviceDesc.computeQueue = m_ComputeQueue;
 		//	deviceDesc.computeQueueIndex = m_QueueFamilyIndices.Compute;
 		//}
-		if (true)
+		// Only register a separate transfer queue with NVRHI when the device actually has a
+		// dedicated transfer family. When Transfer fell back to the graphics family (common on
+		// integrated GPUs), handing NVRHI the graphics queue as a distinct transfer queue is wrong.
+		const bool hasDedicatedTransferQueue = m_QueueFamilyIndices.Transfer != -1 && m_QueueFamilyIndices.Transfer != m_QueueFamilyIndices.Graphics;
+		if (hasDedicatedTransferQueue)
 		{
 			deviceDesc.transferQueue = m_TransferQueue;
 			deviceDesc.transferQueueIndex = m_QueueFamilyIndices.Transfer;

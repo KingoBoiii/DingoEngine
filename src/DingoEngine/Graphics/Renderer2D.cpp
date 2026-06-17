@@ -234,6 +234,13 @@ void main() {
 
 	void Renderer2D::Initialize()
 	{
+		// A batch must hold at least one quad. A MaxQuads of 0 (e.g. supplied via
+		// ApplicationParams) would size the batch buffers to zero and overflow on the
+		// first Draw, so clamp it to a usable minimum.
+		DE_CORE_ASSERT(m_Params.Capabilities.MaxQuads >= 1, "Renderer2D: MaxQuads must be >= 1");
+		if (m_Params.Capabilities.MaxQuads < 1)
+			m_Params.Capabilities.MaxQuads = 1;
+
 		CreateQuadIndexBuffer();
 
 		m_QuadVertexPositions[0] = { -0.5f, -0.5f, 0.0f, 1.0f };
@@ -280,66 +287,34 @@ void main() {
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
 		m_CameraUniformBuffer->Upload(&m_CameraData, sizeof(CameraData));
 
+		// Record the camera upload at the start of the scene so it precedes every
+		// draw. Batches can now be flushed mid-frame (inside Draw* calls), not only
+		// in EndScene, and each draw must observe the camera data.
+		Renderer::Upload(m_CameraUniformBuffer);
+
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
+		m_QuadPipeline.BatchIndex = 0;
 
 		m_CircleRenderPass.IndexCount = 0;
 		m_CircleRenderPass.VertexBufferPtr = m_CircleRenderPass.VertexBufferBase;
+		m_CircleRenderPass.BatchIndex = 0;
 
 		m_TextQuadRenderPass.IndexCount = 0;
 		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
+		m_TextQuadRenderPass.BatchIndex = 0;
 
-		m_TextureSlotIndex = 1; // Start from 1 since index 0 is reserved for the white texture
-		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
-		{
-			m_TextureSlots[i] = nullptr; // Reset texture slots
-		}
-
+		ResetQuadTextureSlots();
 	}
 
 	void Renderer2D::EndScene()
 	{
-		if (m_CameraUniformBuffer)
-			Renderer::Upload(m_CameraUniformBuffer);
-
-		if (m_QuadPipeline.IndexCount)
-		{
-			uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
-			m_QuadPipeline.VertexBuffer->Upload(m_QuadPipeline.VertexBufferBase, dataSize);
-
-			for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
-			{
-				if (m_TextureSlots[i])
-				{
-					m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[i], i);
-					continue;
-				}
-
-				m_QuadPipeline.RenderPass->SetTexture(1, m_TextureSlots[0], i);
-			}
-			m_QuadPipeline.RenderPass->Bake();
-
-			Renderer::DrawIndexed(m_QuadPipeline.RenderPass, m_QuadPipeline.VertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
-		}
-
-		if (m_CircleRenderPass.IndexCount)
-		{
-			uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
-			m_CircleRenderPass.VertexBuffer->Upload(m_CircleRenderPass.VertexBufferBase, dataSize);
-
-			Renderer::DrawIndexed(m_CircleRenderPass.RenderPass, m_CircleRenderPass.VertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
-		}
-
-		if (m_TextQuadRenderPass.IndexCount)
-		{
-			uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
-			m_TextQuadRenderPass.VertexBuffer->Upload(m_TextQuadRenderPass.VertexBufferBase, dataSize);
-
-			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
-			m_TextQuadRenderPass.RenderPass->Bake();
-
-			Renderer::DrawIndexed(m_TextQuadRenderPass.RenderPass, m_TextQuadRenderPass.VertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
-		}
+		// Submit whatever each pass has accumulated since its last flush. The bulk
+		// of the work for large scenes already happened in mid-frame flushes; these
+		// just drain the final partial batch (no-op when empty).
+		FlushQuad();
+		FlushCircle();
+		FlushText();
 	}
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
@@ -356,10 +331,7 @@ void main() {
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
 	{
 		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
-		{
-			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
-			return;
-		}
+			FlushQuad();
 
 		constexpr size_t quadVertexCount = 4;
 
@@ -385,10 +357,7 @@ void main() {
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
 		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
-		{
-			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
-			return;
-		}
+			FlushQuad();
 
 		float textureIndex = GetTextureIndex(texture);
 
@@ -416,10 +385,7 @@ void main() {
 	void Renderer2D::DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
 		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
-		{
-			DE_CORE_ERROR("Renderer2D: Quad index count exceeded the maximum limit.");
-			return;
-		}
+			FlushQuad();
 
 		float textureIndex = GetTextureIndex(texture);
 
@@ -442,10 +408,7 @@ void main() {
 	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
 	{
 		if (m_CircleRenderPass.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
-		{
-			DE_CORE_ERROR("Renderer2D: Circle index count exceeded the maximum limit.");
-			return;
-		}
+			FlushCircle();
 
 		for (size_t i = 0; i < 4; i++)
 		{
@@ -543,10 +506,7 @@ void main() {
 			texCoordMax *= glm::vec2(texelWidth, texelHeight);
 
 			if (m_TextQuadRenderPass.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
-			{
-				DE_CORE_ERROR("Renderer2D: Text quad index count exceeded the maximum limit.");
-				return;
-			}
+				FlushText();
 
 			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
 			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
@@ -583,34 +543,32 @@ void main() {
 
 	float Renderer2D::GetTextureIndex(Texture* texture)
 	{
-		float textureIndex = 0.0f;
 		for (uint32_t i = 1; i < m_TextureSlotIndex; i++)
 		{
 			if (m_TextureSlots[i]->NativeEquals(texture))
-			{
-				textureIndex = (float)i;
-				break;
-			}
+				return (float)i;
 		}
 
-		if (textureIndex == 0.0f)
-		{
-			//if (m_TextureSlotIndex >= MaxTextureSlots)
-			//	FlushAndReset();
+		// This batch has no free texture slot for a new texture — flush it (which
+		// resets the slots) and start the texture set over in a fresh batch.
+		if (m_TextureSlotIndex >= MaxTextureSlots)
+			FlushQuad();
 
-			textureIndex = (float)m_TextureSlotIndex;
-			m_TextureSlots[m_TextureSlotIndex] = texture;
-			m_TextureSlotIndex++;
-		}
-
+		float textureIndex = (float)m_TextureSlotIndex;
+		m_TextureSlots[m_TextureSlotIndex] = texture;
+		m_TextureSlotIndex++;
 		return textureIndex;
 	}
 
 	void Renderer2D::CreateQuadIndexBuffer()
 	{
-		uint16_t* quadIndices = new uint16_t[m_Params.Capabilities.GetQuadIndexCount()];
+		// 32-bit indices: a single static index buffer shared by every batch of all
+		// three passes. Index values are batch-local (0..MaxQuads*4), so uint32 is
+		// far more than needed, but it removes the old ~16k-quad uint16 ceiling and
+		// matches the engine's other uint32 index buffers (e.g. Breakout3D).
+		uint32_t* quadIndices = new uint32_t[m_Params.Capabilities.GetQuadIndexCount()];
 
-		uint16_t offset = 0;
+		uint32_t offset = 0;
 		for (uint32_t i = 0; i < m_Params.Capabilities.GetQuadIndexCount(); i += 6)
 		{
 			quadIndices[i + 0] = offset + 0;
@@ -624,7 +582,7 @@ void main() {
 			offset += 4;
 		}
 
-		m_QuadIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint16_t) * m_Params.Capabilities.GetQuadIndexCount(), quadIndices, true, "Renderer2DQuadIndexBuffer");
+		m_QuadIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * m_Params.Capabilities.GetQuadIndexCount(), quadIndices, true, "Renderer2DQuadIndexBuffer", GraphicsFormat::Uint32);
 
 		delete[] quadIndices;
 	}
@@ -655,35 +613,85 @@ void main() {
 			.SetDepthTest(false)
 			.SetDepthWrite(false));
 
-		m_QuadPipeline.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DQuadVertexBuffer");
-
-		RenderPassParams renderPassParams = RenderPassParams()
-			.SetPipeline(m_QuadPipeline.Pipeline);
-
-		m_QuadPipeline.RenderPass = RenderPass::Create(renderPassParams);
-		m_QuadPipeline.RenderPass->Initialize();
-		m_QuadPipeline.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		m_QuadPipeline.RenderPass->SetSampler(2, Renderer::GetPointSampler());
-		for (uint32_t i = 0; i < MaxTextureSlots; i++)
-		{
-			m_QuadPipeline.RenderPass->SetTexture(1, Renderer::GetWhiteTexture(), i);
-		}
-		m_QuadPipeline.RenderPass->Bake();
-
+		// Per-batch vertex buffers and render passes are created lazily in FlushQuad.
 		m_QuadPipeline.VertexBufferBase = new QuadVertex[m_Params.Capabilities.GetQuadVertexCount()];
+	}
+
+	RenderPass* Renderer2D::CreateQuadRenderPass()
+	{
+		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_QuadPipeline.Pipeline));
+		renderPass->Initialize();
+		renderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		renderPass->SetSampler(2, Renderer::GetPointSampler());
+		// The texture-slot array is bound and the binding set baked per batch in
+		// FlushQuad, because each batch carries a different set of textures.
+		return renderPass;
+	}
+
+	GraphicsBuffer* Renderer2D::CreateQuadVertexBuffer()
+	{
+		// DirectUpload = false: filled through Renderer::Upload (the deferred frame
+		// command list) so the write is ordered before the draw within that one list.
+		return GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, "Renderer2DQuadVertexBuffer");
+	}
+
+	void Renderer2D::ResetQuadTextureSlots()
+	{
+		m_TextureSlotIndex = 1; // index 0 is reserved for the white texture
+		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
+			m_TextureSlots[i] = nullptr;
+	}
+
+	void Renderer2D::FlushQuad()
+	{
+		if (m_QuadPipeline.IndexCount == 0)
+			return;
+
+		// Grow the pool on demand; entries persist and are reused (re-uploaded and
+		// re-baked) every frame. BatchIndex is this frame's next free slot.
+		if (m_QuadPipeline.BatchIndex >= m_QuadPipeline.VertexBuffers.size())
+		{
+			m_QuadPipeline.VertexBuffers.push_back(CreateQuadVertexBuffer());
+			m_QuadPipeline.RenderPasses.push_back(CreateQuadRenderPass());
+		}
+
+		GraphicsBuffer* vertexBuffer = m_QuadPipeline.VertexBuffers[m_QuadPipeline.BatchIndex];
+		RenderPass* renderPass = m_QuadPipeline.RenderPasses[m_QuadPipeline.BatchIndex];
+
+		uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
+		Renderer::Upload(vertexBuffer, m_QuadPipeline.VertexBufferBase, dataSize);
+
+		for (uint32_t i = 0; i < m_TextureSlots.size(); i++)
+		{
+			Texture* texture = m_TextureSlots[i] ? m_TextureSlots[i] : m_TextureSlots[0];
+			renderPass->SetTexture(1, texture, i);
+		}
+		renderPass->Bake();
+
+		Renderer::DrawIndexed(renderPass, vertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
+
+		// Begin a fresh batch.
+		m_QuadPipeline.BatchIndex++;
+		m_QuadPipeline.IndexCount = 0;
+		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
+		ResetQuadTextureSlots();
 	}
 
 	void Renderer2D::DestroyQuadPipeline()
 	{
-		if (m_QuadPipeline.VertexBuffer)
-		{
-			m_QuadPipeline.VertexBuffer->Destroy();
-			delete[] m_QuadPipeline.VertexBufferBase;
-			m_QuadPipeline.VertexBuffer = nullptr;
-			m_QuadPipeline.VertexBufferBase = nullptr;
-			m_QuadPipeline.VertexBufferPtr = nullptr;
-		}
+		for (GraphicsBuffer* vertexBuffer : m_QuadPipeline.VertexBuffers)
+			vertexBuffer->Destroy();
+		m_QuadPipeline.VertexBuffers.clear();
+
+		for (RenderPass* renderPass : m_QuadPipeline.RenderPasses)
+			renderPass->Destroy();
+		m_QuadPipeline.RenderPasses.clear();
+
+		delete[] m_QuadPipeline.VertexBufferBase;
+		m_QuadPipeline.VertexBufferBase = nullptr;
+		m_QuadPipeline.VertexBufferPtr = nullptr;
 		m_QuadPipeline.IndexCount = 0;
+		m_QuadPipeline.BatchIndex = 0;
 
 		if (m_QuadPipeline.Pipeline)
 		{
@@ -695,12 +703,6 @@ void main() {
 		{
 			m_QuadPipeline.Shader->Destroy();
 			m_QuadPipeline.Shader = nullptr;
-		}
-
-		if (m_QuadPipeline.RenderPass)
-		{
-			m_QuadPipeline.RenderPass->Destroy();
-			m_QuadPipeline.RenderPass = nullptr;
 		}
 	}
 
@@ -731,11 +733,11 @@ void main() {
 			.SetDepthTest(false)
 			.SetDepthWrite(false));
 
-		m_CircleRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DCircleVertexBuffer");
-
 		RenderPassParams renderPassParams = RenderPassParams()
 			.SetPipeline(m_CircleRenderPass.Pipeline);
 
+		// Bindings are camera-only and constant, so this single render pass is baked
+		// once here and shared by every circle batch.
 		m_CircleRenderPass.RenderPass = RenderPass::Create(renderPassParams);
 		m_CircleRenderPass.RenderPass->Initialize();
 		m_CircleRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
@@ -744,17 +746,42 @@ void main() {
 		m_CircleRenderPass.VertexBufferBase = new CircleVertex[m_Params.Capabilities.GetQuadVertexCount()];
 	}
 
+	GraphicsBuffer* Renderer2D::CreateCircleVertexBuffer()
+	{
+		return GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, "Renderer2DCircleVertexBuffer");
+	}
+
+	void Renderer2D::FlushCircle()
+	{
+		if (m_CircleRenderPass.IndexCount == 0)
+			return;
+
+		if (m_CircleRenderPass.BatchIndex >= m_CircleRenderPass.VertexBuffers.size())
+			m_CircleRenderPass.VertexBuffers.push_back(CreateCircleVertexBuffer());
+
+		GraphicsBuffer* vertexBuffer = m_CircleRenderPass.VertexBuffers[m_CircleRenderPass.BatchIndex];
+
+		uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
+		Renderer::Upload(vertexBuffer, m_CircleRenderPass.VertexBufferBase, dataSize);
+
+		Renderer::DrawIndexed(m_CircleRenderPass.RenderPass, vertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
+
+		m_CircleRenderPass.BatchIndex++;
+		m_CircleRenderPass.IndexCount = 0;
+		m_CircleRenderPass.VertexBufferPtr = m_CircleRenderPass.VertexBufferBase;
+	}
+
 	void Renderer2D::DestroyCircleRenderPass()
 	{
-		if (m_CircleRenderPass.VertexBuffer)
-		{
-			m_CircleRenderPass.VertexBuffer->Destroy();
-			delete[] m_CircleRenderPass.VertexBufferBase;
-			m_CircleRenderPass.VertexBuffer = nullptr;
-			m_CircleRenderPass.VertexBufferBase = nullptr;
-			m_CircleRenderPass.VertexBufferPtr = nullptr;
-		}
+		for (GraphicsBuffer* vertexBuffer : m_CircleRenderPass.VertexBuffers)
+			vertexBuffer->Destroy();
+		m_CircleRenderPass.VertexBuffers.clear();
+
+		delete[] m_CircleRenderPass.VertexBufferBase;
+		m_CircleRenderPass.VertexBufferBase = nullptr;
+		m_CircleRenderPass.VertexBufferPtr = nullptr;
 		m_CircleRenderPass.IndexCount = 0;
+		m_CircleRenderPass.BatchIndex = 0;
 
 		if (m_CircleRenderPass.Pipeline)
 		{
@@ -799,31 +826,64 @@ void main() {
 			.SetDepthTest(false)
 			.SetDepthWrite(false));
 
-		m_TextQuadRenderPass.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, true, "Renderer2DTextVertexBuffer");
-
 		RenderPassParams renderPassParams = RenderPassParams()
 			.SetPipeline(m_TextQuadRenderPass.Pipeline);
 
+		// One shared render pass; the font atlas is bound and the binding set baked
+		// per frame (on the first flush) in FlushText.
 		m_TextQuadRenderPass.RenderPass = RenderPass::Create(renderPassParams);
 		m_TextQuadRenderPass.RenderPass->Initialize();
 		m_TextQuadRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
 		m_TextQuadRenderPass.RenderPass->SetSampler(2, Renderer::GetClampSampler());
-		m_TextQuadRenderPass.RenderPass->Bake();
 
 		m_TextQuadRenderPass.VertexBufferBase = new TextVertex[m_Params.Capabilities.GetQuadVertexCount()];
 	}
 
+	GraphicsBuffer* Renderer2D::CreateTextVertexBuffer()
+	{
+		return GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, "Renderer2DTextVertexBuffer");
+	}
+
+	void Renderer2D::FlushText()
+	{
+		if (m_TextQuadRenderPass.IndexCount == 0)
+			return;
+
+		if (m_TextQuadRenderPass.BatchIndex >= m_TextQuadRenderPass.VertexBuffers.size())
+			m_TextQuadRenderPass.VertexBuffers.push_back(CreateTextVertexBuffer());
+
+		GraphicsBuffer* vertexBuffer = m_TextQuadRenderPass.VertexBuffers[m_TextQuadRenderPass.BatchIndex];
+
+		uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
+		Renderer::Upload(vertexBuffer, m_TextQuadRenderPass.VertexBufferBase, dataSize);
+
+		// All text in a frame shares one atlas, so bake the shared render pass once,
+		// on the first flush — re-baking it while earlier text draws in this frame
+		// still reference its binding set would invalidate them.
+		if (m_TextQuadRenderPass.BatchIndex == 0)
+		{
+			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
+			m_TextQuadRenderPass.RenderPass->Bake();
+		}
+
+		Renderer::DrawIndexed(m_TextQuadRenderPass.RenderPass, vertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
+
+		m_TextQuadRenderPass.BatchIndex++;
+		m_TextQuadRenderPass.IndexCount = 0;
+		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
+	}
+
 	void Renderer2D::DestroyTextQuadRenderPass()
 	{
-		if (m_TextQuadRenderPass.VertexBuffer)
-		{
-			m_TextQuadRenderPass.VertexBuffer->Destroy();
-			delete[] m_TextQuadRenderPass.VertexBufferBase;
-			m_TextQuadRenderPass.VertexBuffer = nullptr;
-			m_TextQuadRenderPass.VertexBufferBase = nullptr;
-			m_TextQuadRenderPass.VertexBufferPtr = nullptr;
-		}
+		for (GraphicsBuffer* vertexBuffer : m_TextQuadRenderPass.VertexBuffers)
+			vertexBuffer->Destroy();
+		m_TextQuadRenderPass.VertexBuffers.clear();
+
+		delete[] m_TextQuadRenderPass.VertexBufferBase;
+		m_TextQuadRenderPass.VertexBufferBase = nullptr;
+		m_TextQuadRenderPass.VertexBufferPtr = nullptr;
 		m_TextQuadRenderPass.IndexCount = 0;
+		m_TextQuadRenderPass.BatchIndex = 0;
 
 		if (m_TextQuadRenderPass.Pipeline)
 		{

@@ -50,6 +50,7 @@ IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas
 IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
 IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
+IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -127,7 +128,8 @@ group "Engine"
 			"%{IncludeDir.imgui}",
 			"%{IncludeDir.msdfgen}",
 			"%{IncludeDir.msdf_atlas_gen}",
-			"%{IncludeDir.assimp}"
+			"%{IncludeDir.assimp}",
+			"%{IncludeDir.entt}"
 		}
 
 		links {
@@ -228,4 +230,5 @@ group "Examples"
     include "examples/FlappyBird"
     include "examples/Breakout3D"
     include "examples/DungeonCrawler"
+    include "examples/SpaceInvaders"
 group ""

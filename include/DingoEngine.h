@@ -9,8 +9,19 @@
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/PerspectiveCamera.h"
+#include "DingoEngine/Core/UUID.h"
 
 #include "DingoEngine/Windowing/Window.h"
+
+// ----------------------------------------------------------------------
+// Scene / ECS
+// ----------------------------------------------------------------------
+
+#include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Entity.h"
+#include "DingoEngine/Scene/ScriptableEntity.h"
+#include "DingoEngine/Scene/Scene.h"
+#include "DingoEngine/Scene/SceneManager.h"
 
 // ----------------------------------------------------------------------
 // Events

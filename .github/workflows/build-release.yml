@@ -129,6 +129,13 @@ jobs:
         name: breakout3d-binary-windows
         path: .\build\bin\Distribution-windows-x86_64\Breakout3D
 
+    - name: Upload Space Invaders binary
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: space-invaders-binary-windows
+        path: .\build\bin\Distribution-windows-x86_64\SpaceInvaders
+
   example-game-flappy-bird:
     needs: build-windows
     runs-on: windows-latest
@@ -279,6 +286,55 @@ jobs:
         name: breakout3d-windows-distribution-${{steps.version.outputs.VERSION}}
         path: .\breakout3d
 
+  example-game-space-invaders:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+        submodules: false
+        fetch-depth: 0
+
+    - name: Download Space Invaders binary
+      uses: actions/download-artifact@v4
+      with:
+        name: space-invaders-binary-windows
+        path: .\space-invaders
+
+    - name: Get version
+      id: version
+      run: |
+        $tag = "${{ github.ref_name }}"
+        $ver = $tag.TrimStart('v')
+        $parts = $ver.Split('.')
+        $commits = git rev-list --count HEAD
+        echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
+
+    - name: Copy assets
+      run: |
+        robocopy .\examples\SpaceInvaders\assets .\space-invaders\assets /e /z
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Create ZIP archive
+      run: |
+        $zipName = "SpaceInvaders-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
+        Compress-Archive -Path ".\space-invaders\*" -DestinationPath ".\$zipName" -Force
+
+    - name: Upload to GitHub Release
+      run: gh release upload "${{ github.ref_name }}" "SpaceInvaders-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: space-invaders-windows-distribution-${{steps.version.outputs.VERSION}}
+        path: .\space-invaders
 
   build-linux:
     if: 1 == 0
