@@ -15,9 +15,11 @@ namespace Dingo
 	//
 	// The room tiles, the player, the enemies, and dropped loot are all entities
 	// with built-in components; their behaviour lives in ScriptableEntity scripts
-	// (see GameScripts.h). This layer is a thin orchestrator: it builds the room,
-	// spawns the actors, drives the follow-camera, and draws the HUD / feedback
-	// overlay on top of the rendered scene.
+	// (see GameScripts.h). This layer is a thin orchestrator: it generates a random
+	// dungeon (see DungeonGenerator.h), spawns the actors, drives the follow-camera,
+	// and draws the HUD / feedback overlay on top of the rendered scene.
+	//
+	// The dungeon is regenerated on every run, so each restart (R) is a fresh layout.
 	class GameLayer : public Layer
 	{
 	public:
@@ -31,8 +33,9 @@ namespace Dingo
 		virtual void OnUpdate(float deltaTime) override;
 
 	private:
-		void LoadRoom();   // parse the layout -> tile map + spawns + tile entities
-		void ResetGame();  // (re)spawn the player and enemies
+		void GenerateLevel(); // roll a new random dungeon -> tile map + spawns
+		void BuildTiles();    // (re)build the tile entities from the current map
+		void ResetGame();     // regenerate the dungeon, then (re)spawn player + enemies
 		void UpdateCamera();
 		int CountEnemies();
 		int CountLoot();
@@ -45,6 +48,11 @@ namespace Dingo
 		Scene m_Scene{ "Dungeon" };
 		Font* m_Font = nullptr;
 		GameContext m_Context;
+
+		// Tile entities for the current dungeon, torn down and rebuilt on each
+		// regeneration (BuildTiles).
+		std::vector<Entity> m_TileEntities;
+		unsigned int m_Seed = 0; // seed of the current dungeon (shown in the HUD)
 
 		// --- Follow camera ---
 		float m_HalfW = 0.0f;

@@ -1,6 +1,7 @@
 #include "GameLayer.h"
 #include "GameScripts.h"
 #include "GameTuning.h"
+#include "DungeonGenerator.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -11,33 +12,12 @@
 namespace Dingo
 {
 
-	// Hand-crafted room. '#' = wall, '.' = floor, 'P' = player spawn, 'E' = enemy spawn.
-	// Rows are normalized to equal width and sealed with a wall border at load time,
-	// so a small miscount here cannot break tile indexing or leave the room open.
-	static const char* s_RoomLayout[] = {
-		"########################",
-		"#..........E...........#",
-		"#..####.........####...#",
-		"#..#..............#....#",
-		"#..#....P.........#....#",
-		"#.................#....#",
-		"#....##......##........#",
-		"#....##......##....E...#",
-		"#.....................##",
-		"#..E....####...........#",
-		"#.......#..#...........#",
-		"#.......#..#....##.....#",
-		"#..............##......#",
-		"#..........E...........#",
-		"#......................#",
-		"########################",
-	};
-
 	void GameLayer::OnAttach()
 	{
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
-		LoadRoom();
+		// ResetGame() generates the first dungeon and builds its tiles; every restart
+		// rolls a fresh one.
 		ResetGame();
 	}
 
@@ -51,61 +31,41 @@ namespace Dingo
 	}
 
 	// ------------------------------------------------------------------------
-	// Room building
+	// Dungeon generation
 	// ------------------------------------------------------------------------
 
-	void GameLayer::LoadRoom()
+	void GameLayer::GenerateLevel()
 	{
-		m_Context.Map.clear();
+		// Roll a fresh random dungeon. The generator returns a '#'/'.' tile map plus
+		// tile-space spawn points; we hand the map to the context (collision reads it)
+		// and convert the spawns to world space via the same TileToWorld mapping the
+		// tiles use.
+		GeneratedDungeon dungeon = GenerateDungeon();
+		m_Seed = dungeon.Seed;
+
+		m_Context.Map = dungeon.Map;
+		m_Context.MapWidth = dungeon.Width;
+		m_Context.MapHeight = dungeon.Height;
+
+		m_PlayerSpawn = m_Context.TileToWorld(dungeon.PlayerSpawn.x, dungeon.PlayerSpawn.y);
+
 		m_EnemySpawns.clear();
+		m_EnemySpawns.reserve(dungeon.EnemySpawns.size());
+		for (const glm::ivec2& tile : dungeon.EnemySpawns)
+			m_EnemySpawns.push_back(m_Context.TileToWorld(tile.x, tile.y));
+	}
 
-		const size_t rows = sizeof(s_RoomLayout) / sizeof(s_RoomLayout[0]);
-		size_t width = 0;
-		for (size_t i = 0; i < rows; ++i)
-			width = std::max(width, std::string(s_RoomLayout[i]).size());
-
-		for (size_t i = 0; i < rows; ++i)
+	void GameLayer::BuildTiles()
+	{
+		// Tear down the previous dungeon's tiles, then build one entity per cell.
+		for (Entity& tile : m_TileEntities)
 		{
-			std::string row = s_RoomLayout[i];
-			row.resize(width, '.'); // pad short rows with floor
-			m_Context.Map.push_back(row);
+			if (tile.IsValid())
+				tile.Destroy();
 		}
+		m_TileEntities.clear();
+		m_TileEntities.reserve((size_t)m_Context.MapWidth * (size_t)m_Context.MapHeight);
 
-		m_Context.MapHeight = (int)m_Context.Map.size();
-		m_Context.MapWidth = (int)width;
-
-		// Seal the border so the room is always closed.
-		for (int c = 0; c < m_Context.MapWidth; ++c)
-		{
-			m_Context.Map[0][c] = '#';
-			m_Context.Map[m_Context.MapHeight - 1][c] = '#';
-		}
-		for (int r = 0; r < m_Context.MapHeight; ++r)
-		{
-			m_Context.Map[r][0] = '#';
-			m_Context.Map[r][m_Context.MapWidth - 1] = '#';
-		}
-
-		// Extract spawns, then turn the markers into plain floor.
-		for (int r = 0; r < m_Context.MapHeight; ++r)
-		{
-			for (int c = 0; c < m_Context.MapWidth; ++c)
-			{
-				char& cell = m_Context.Map[r][c];
-				if (cell == 'P')
-				{
-					m_PlayerSpawn = m_Context.TileToWorld(c, r);
-					cell = '.';
-				}
-				else if (cell == 'E')
-				{
-					m_EnemySpawns.push_back(m_Context.TileToWorld(c, r));
-					cell = '.';
-				}
-			}
-		}
-
-		// Build one entity per tile (static — created once).
 		for (int r = 0; r < m_Context.MapHeight; ++r)
 		{
 			for (int c = 0; c < m_Context.MapWidth; ++c)
@@ -121,13 +81,14 @@ namespace Dingo
 				transform.Position = glm::vec3(m_Context.TileToWorld(c, r), 0.0f);
 				transform.Size = glm::vec2(TILE_SIZE);
 				tile.AddComponent<SpriteRendererComponent>(color);
+				m_TileEntities.push_back(tile);
 			}
 		}
 	}
 
 	void GameLayer::ResetGame()
 	{
-		// Tiles persist; only the actors are torn down and respawned.
+		// Tear the actors down...
 		if (m_Context.Player.IsValid())
 			m_Context.Player.Destroy();
 		for (EnemyScript* enemy : m_Scene.GetScriptsOfType<EnemyScript>())
@@ -135,6 +96,11 @@ namespace Dingo
 		for (LootScript* loot : m_Scene.GetScriptsOfType<LootScript>())
 			loot->GetEntity().Destroy();
 
+		// ...roll a fresh dungeon and rebuild its tiles...
+		GenerateLevel();
+		BuildTiles();
+
+		// ...then reset state and spawn the actors into the new layout.
 		m_Context.PlayerHealth = PLAYER_MAX_HEALTH;
 		m_Context.LootCollected = 0;
 		m_Context.State = GameContext::GameState::Playing;
@@ -169,7 +135,8 @@ namespace Dingo
 				m_Context.State = GameContext::GameState::Cleared;
 			}
 		}
-		else if (Input::IsKeyDown(Key::R))
+		
+		if (Input::IsKeyDown(Key::R))
 		{
 			ResetGame();
 		}
@@ -278,8 +245,10 @@ namespace Dingo
 		           m_Font, glm::vec2(left + pad, top - pad - 1.1f), 0.32f, { COLOR_TEXT });
 		r.DrawText(std::format("Loot: {}", m_Context.LootCollected),
 		           m_Font, glm::vec2(left + pad, top - pad - 1.5f), 0.32f, { COLOR_LOOT });
+		r.DrawText(std::format("Seed: {}", m_Seed),
+		           m_Font, glm::vec2(left + pad, top - pad - 1.9f), 0.26f, { COLOR_TEXT_DIM });
 
-		r.DrawText("WASD move    SPACE attack    R restart    ESC quit",
+		r.DrawText("WASD move    SPACE attack    R new dungeon    ESC quit",
 		           m_Font, glm::vec2(left + pad, bottom + pad), 0.28f, { COLOR_TEXT_DIM });
 		r.DrawText(std::format("{:.0f} FPS", dt > 0.0f ? 1.0f / dt : 0.0f),
 		           m_Font, glm::vec2(right - 2.2f, bottom + pad), 0.28f, { COLOR_TEXT_DIM });
@@ -297,9 +266,9 @@ namespace Dingo
 		}
 		else if (m_Context.State == GameContext::GameState::Cleared)
 		{
-			DrawCenteredText(r, "ROOM CLEARED!", 1.4f, glm::vec2(0.0f, 0.7f), glm::vec4(1.0f, 0.85f, 0.30f, 1.0f));
+			DrawCenteredText(r, "DUNGEON CLEARED!", 1.4f, glm::vec2(0.0f, 0.7f), glm::vec4(1.0f, 0.85f, 0.30f, 1.0f));
 			DrawCenteredText(r, std::format("Loot collected: {}", m_Context.LootCollected), 0.5f, glm::vec2(0.0f, -0.3f), COLOR_LOOT);
-			DrawCenteredText(r, "Press R to play again", 0.6f, glm::vec2(0.0f, -1.1f), COLOR_TEXT);
+			DrawCenteredText(r, "Press R for a new dungeon", 0.6f, glm::vec2(0.0f, -1.1f), COLOR_TEXT);
 		}
 	}
 
