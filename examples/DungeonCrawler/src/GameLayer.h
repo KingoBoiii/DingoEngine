@@ -35,6 +35,7 @@ namespace Dingo
 		void ResetGame();  // (re)spawn the player and enemies
 		void UpdateCamera();
 		int CountEnemies();
+		int CountLoot();
 
 		void RenderOverlay(Renderer2D& r, float dt);
 		void DrawHealthBar(Renderer2D& r, const glm::vec2& center, float width, float frac, const glm::vec4& color, float height = 0.18f);

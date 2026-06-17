@@ -162,8 +162,10 @@ namespace Dingo
 				m_Context.PlayerHealth = 0.0f;
 				m_Context.State = GameContext::GameState::Dead;
 			}
-			else if (CountEnemies() == 0)
+			else if (CountEnemies() == 0 && CountLoot() == 0)
 			{
+				// Room is cleared once every enemy is dead AND every dropped gem has
+				// been picked up — so the last loot grab is what completes the room.
 				m_Context.State = GameContext::GameState::Cleared;
 			}
 		}
@@ -223,6 +225,11 @@ namespace Dingo
 		return (int)m_Scene.GetScriptsOfType<EnemyScript>().size();
 	}
 
+	int GameLayer::CountLoot()
+	{
+		return (int)m_Scene.GetScriptsOfType<LootScript>().size();
+	}
+
 	// ------------------------------------------------------------------------
 	// Overlay (feedback visuals + HUD) — drawn over the scene with the same camera
 	// ------------------------------------------------------------------------
@@ -276,6 +283,11 @@ namespace Dingo
 		           m_Font, glm::vec2(left + pad, bottom + pad), 0.28f, { COLOR_TEXT_DIM });
 		r.DrawText(std::format("{:.0f} FPS", dt > 0.0f ? 1.0f / dt : 0.0f),
 		           m_Font, glm::vec2(right - 2.2f, bottom + pad), 0.28f, { COLOR_TEXT_DIM });
+
+		// Once the room is enemy-free but loot still litters the floor, nudge the
+		// player toward the last gems (the room only clears once they're collected).
+		if (m_Context.State == GameContext::GameState::Playing && CountEnemies() == 0 && CountLoot() > 0)
+			DrawCenteredText(r, "Collect the remaining loot!", 0.5f, glm::vec2(0.0f, m_HalfH - 1.2f), COLOR_LOOT);
 
 		// State banners.
 		if (m_Context.State == GameContext::GameState::Dead)
