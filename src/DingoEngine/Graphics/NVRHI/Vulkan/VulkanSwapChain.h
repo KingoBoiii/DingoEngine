@@ -45,6 +45,9 @@ namespace Dingo
 		vk::SurfaceKHR m_WindowSurface = nullptr;
 		vk::SwapchainKHR m_SwapChain = nullptr;
 		vk::SurfaceFormatKHR m_SwapChainFormat;
+		nvrhi::Format m_SwapChainTextureFormat = nvrhi::Format::RGBA8_UNORM;
+		vk::Extent2D m_SwapChainExtent = {};
+		bool m_ImageAcquired = false;
 
 		std::vector<vk::Semaphore> m_AcquireSemaphores;
 		std::vector<vk::Semaphore> m_PresentSemaphores;
