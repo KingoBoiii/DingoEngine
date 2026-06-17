@@ -36,7 +36,9 @@ namespace Dingo
 		m_Window->Initialize();
 		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 
-		m_GraphicsContext = GraphicsContext::Create(m_Params.Graphics);
+		GraphicsParams graphicsParams = m_Params.Graphics;
+		graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
+		m_GraphicsContext = GraphicsContext::Create(graphicsParams);
 		m_GraphicsContext->Initialize();
 
 		m_SwapChain = SwapChain::Create(SwapChainParams()

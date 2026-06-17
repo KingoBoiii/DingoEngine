@@ -35,8 +35,8 @@ namespace Dingo
 	private:
 		void CreateInstance();
 		void CreateDebugMessenger();
-		bool PickPhysicalDevice();
-		bool FindQueueFamilies(vk::PhysicalDevice physicalDevice);
+		bool PickPhysicalDevice(vk::SurfaceKHR surface);
+		bool FindQueueFamilies(vk::PhysicalDevice physicalDevice, vk::SurfaceKHR surface, QueueFamilyIndices& outIndices) const;
 		void CreateDevice();
 		void CreateDeviceHandle();
 
