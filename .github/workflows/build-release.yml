@@ -82,11 +82,6 @@ jobs:
         robocopy .\vendor\glm .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\glm /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
-    - name: Copy imgui files (third-party)
-      run: |
-        robocopy .\vendor\imgui .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\imgui imgui.h
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
-
     - name: Create ZIP archive
       run: |
         $config = "${{ matrix.build-configuration }}"
@@ -381,11 +376,6 @@ jobs:
 
     - name: Copy glm files (third-party)
       run: cp -r ./vendor/glm ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/
-
-    - name: Copy imgui header (third-party)
-      run: |
-        mkdir -p ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/imgui
-        cp ./vendor/imgui/imgui.h ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/imgui/
 
     - name: Create tar archive
       run: |
