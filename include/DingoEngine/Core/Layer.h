@@ -16,7 +16,7 @@ namespace Dingo
 		virtual void OnDetach() {}
 		virtual void OnUpdate(float deltaTime) {}
 		virtual void OnEvent(Event& e) {}
-		virtual void OnUIRender() {} // EnableImGui must be enabled for this to be called
+		virtual void OnUIRender() {} // EnableUI must be enabled for this to be called
 
 	private:
 		std::string m_Name;

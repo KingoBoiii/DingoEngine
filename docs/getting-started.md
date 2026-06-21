@@ -213,7 +213,7 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
     params.Window.Title = "My First Dingo App";
     params.Window.Width = 1280;
     params.Window.Height = 720;
-    params.EnableImGui = false;
+    params.EnableUI = false;
 
     ExampleApp* app = new ExampleApp(params);
     app->Initialize();   // must be called before returning

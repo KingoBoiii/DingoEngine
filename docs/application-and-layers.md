@@ -45,7 +45,7 @@ ApplicationParams params{
         .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
         .FramesInFlight = 3,
     },
-    .EnableImGui = false,    // set true to get OnUIRender() callbacks
+    .EnableUI = false,    // set true to get OnUIRender() callbacks
 };
 ```
 
@@ -125,7 +125,7 @@ public:
     void OnDetach() override {}                 // removed / app shutting down
     void OnUpdate(float deltaTime) override {}  // once per frame
     void OnEvent(Event& e) override {}          // input/window events
-    void OnUIRender() override {}            // only if EnableImGui == true
+    void OnUIRender() override {}            // only if EnableUI == true
 };
 ```
 

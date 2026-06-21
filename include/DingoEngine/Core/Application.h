@@ -12,7 +12,7 @@
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 
-#include "DingoEngine/ImGui/ImGuiParams.h"
+#include "DingoEngine/UI/UIParams.h"
 
 #include <optional>
 #include <string_view>
@@ -65,8 +65,8 @@ namespace Dingo
 		GraphicsParams Graphics;	// Parameters for the graphics context
 		Renderer2DParams Renderer2D;	// Parameters for the 2D renderer (e.g. per-batch quad capacity)
 
-		bool EnableImGui = true;	// Whether to enable ImGui support
-		ImGuiParams ImGui;			// Parameters for ImGui configuration, only used if EnableImGui is true
+		bool EnableUI = true;	// Whether to enable the immediate-mode UI layer
+		UIParams UI;			// Parameters for UI configuration, only used if EnableUI is true
 	};
 
 	class ImGuiLayer;

@@ -10,7 +10,7 @@
 // src/DingoEngine/UI/<Backend>/ (e.g. src/DingoEngine/UI/ImGui/).
 //
 // Usage: call these only from Layer::OnUIRender(), i.e. between the engine's
-// UI new-frame and render. They require ApplicationParams::EnableImGui = true.
+// UI new-frame and render. They require ApplicationParams::EnableUI = true.
 
 namespace Dingo::UI
 {
