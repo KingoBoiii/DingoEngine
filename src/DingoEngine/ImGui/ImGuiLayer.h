@@ -1,6 +1,6 @@
 #pragma once
 #include "DingoEngine/Core/Layer.h"
-#include "DingoEngine/ImGui/ImGuiParams.h"
+#include "DingoEngine/UI/UIParams.h"
 
 #include "ImGuiRenderer.h"
 
@@ -10,7 +10,7 @@ namespace Dingo
 	class ImGuiLayer : public Layer
 	{
 	public:
-		ImGuiLayer(const ImGuiParams& params = {}) : Layer("ImGui Layer"), m_Params(params) {}
+		ImGuiLayer(const UIParams& params = {}) : Layer("ImGui Layer"), m_Params(params) {}
 		virtual ~ImGuiLayer() = default;
 
 	public:
@@ -25,7 +25,7 @@ namespace Dingo
 		void InitializePlatformInterface();
 
 	private:
-		ImGuiParams m_Params;
+		UIParams m_Params;
 		ImGuiRenderer* m_ImGuiRenderer = nullptr;
 	};
 

@@ -48,8 +48,8 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 			.GraphicsAPI = graphicsAPI,
 			.FramesInFlight = 3,
 		},
-		.EnableImGui = true,
-		.ImGui = {
+		.EnableUI = true,
+		.UI = {
 			.EnableDocking = true,
 			.EnableViewports = false,
 		}

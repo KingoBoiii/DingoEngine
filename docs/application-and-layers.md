@@ -45,7 +45,7 @@ ApplicationParams params{
         .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
         .FramesInFlight = 3,
     },
-    .EnableImGui = false,    // set true to get OnImGuiRender() callbacks
+    .EnableUI = false,    // set true to get OnUIRender() callbacks
 };
 ```
 
@@ -106,7 +106,7 @@ Once running, each frame the `Application`:
 2. Polls window events (which fan out through `OnEvent`).
 3. `Renderer::BeginFrame()`.
 4. Calls `OnUpdate(deltaTime)` on every layer, bottom to top.
-5. If ImGui is enabled, calls `OnImGuiRender()` on every layer.
+5. If ImGui is enabled, calls `OnUIRender()` on every layer.
 6. `Renderer::EndFrame()` — presents.
 
 `deltaTime` is seconds since the previous frame.
@@ -125,7 +125,7 @@ public:
     void OnDetach() override {}                 // removed / app shutting down
     void OnUpdate(float deltaTime) override {}  // once per frame
     void OnEvent(Event& e) override {}          // input/window events
-    void OnImGuiRender() override {}            // only if EnableImGui == true
+    void OnUIRender() override {}            // only if EnableUI == true
 };
 ```
 

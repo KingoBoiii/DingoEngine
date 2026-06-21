@@ -83,7 +83,7 @@ namespace Dingo
 		}
 	}
 
-	void TestLayer::OnImGuiRender()
+	void TestLayer::OnUIRender()
 	{
 		// READ THIS !!!
 		// TL;DR; this demo is more complicated than what most users you would normally use.
@@ -236,7 +236,7 @@ namespace Dingo
 
 		ImGui::End();
 
-		m_TestViewportPanel.OnImGuiRender(m_OutputFramebuffer->GetAttachment(0));
+		m_TestViewportPanel.OnUIRender(m_OutputFramebuffer->GetAttachment(0));
 
 		// handle resize
 		if (m_OutputFramebuffer->GetWidth() != m_TestViewportPanel.GetViewportSize().x ||

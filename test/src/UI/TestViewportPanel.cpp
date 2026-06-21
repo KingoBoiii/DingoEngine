@@ -5,7 +5,7 @@
 namespace Dingo
 {
 
-	void TestViewportPanel::OnImGuiRender(Texture* texture)
+	void TestViewportPanel::OnUIRender(Texture* texture)
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 

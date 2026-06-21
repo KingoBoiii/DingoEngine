@@ -107,7 +107,7 @@ include/                   # engine public headers  ← add as an include root
   DingoEngine.h            #   the umbrella header
   DingoEngine/...
 glm/                       # GLM math headers       ← public dependency
-imgui/imgui.h              # Dear ImGui header (for OnImGuiRender)
+imgui/imgui.h              # Dear ImGui header (optional; UI now via Dingo::UI — DingoEngine/UI/UI.h)
 assimp-vc145-mt[d].dll     # model-loader runtime   ← copy next to your .exe
 ```
 
@@ -213,7 +213,7 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
     params.Window.Title = "My First Dingo App";
     params.Window.Width = 1280;
     params.Window.Height = 720;
-    params.EnableImGui = false;
+    params.EnableUI = false;
 
     ExampleApp* app = new ExampleApp(params);
     app->Initialize();   // must be called before returning

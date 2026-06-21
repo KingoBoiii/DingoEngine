@@ -60,13 +60,13 @@ namespace Dingo
 			DE_CORE_ERROR("No layers pushed to the application. Pushing an empty layer.");
 			PushLayer(new EmptyLayer());
 
-			m_Params.EnableImGui = false; // Disable ImGui if no layers are pushed
+			m_Params.EnableUI = false; // Disable the UI layer if no layers are pushed
 			return;
 		}
 
-		if (m_Params.EnableImGui)
+		if (m_Params.EnableUI)
 		{
-			m_ImGuiLayer = new ImGuiLayer(m_Params.ImGui);
+			m_ImGuiLayer = new ImGuiLayer(m_Params.UI);
 			PushOverlay(m_ImGuiLayer);
 		}
 	}
@@ -146,12 +146,12 @@ namespace Dingo
 				layer->OnUpdate(m_DeltaTime);
 			}
 
-			if (m_Params.EnableImGui)
+			if (m_Params.EnableUI)
 			{
 				m_ImGuiLayer->Begin();
 				for (Layer* layer : m_LayerStack)
 				{
-					layer->OnImGuiRender();
+					layer->OnUIRender();
 				}
 				m_ImGuiLayer->End();
 			}

@@ -13,7 +13,7 @@ namespace Dingo
 		~TestViewportPanel() = default;
 
 	public:
-		void OnImGuiRender(Texture* texture);
+		void OnUIRender(Texture* texture);
 
 		const glm::vec2& GetViewportSize() const { return m_ViewportSize; }
 

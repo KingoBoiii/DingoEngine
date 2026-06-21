@@ -1,6 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Shader.h"
-#include "DingoEngine/ImGui/ImGuiParams.h"
+#include "DingoEngine/UI/UIParams.h"
 
 #include <imgui.h>
 

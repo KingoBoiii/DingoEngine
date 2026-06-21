@@ -3,7 +3,10 @@
 namespace Dingo
 {
 
-	struct ImGuiParams
+	// Configuration for the engine's immediate-mode UI layer (see DingoEngine/UI/UI.h).
+	// Backend-agnostic on the public surface; the active backend (Dear ImGui) maps these
+	// onto its own flags internally.
+	struct UIParams
 	{
 		bool EnableDocking = true; // Enable docking by default
 		bool EnableViewports = false; // Enable viewports by default
