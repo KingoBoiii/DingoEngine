@@ -47,7 +47,7 @@ class MyLayer : public Dingo::Layer {
     void OnAttach() override {}
     void OnDetach() override {}
     void OnUpdate(float deltaTime) override {}
-    void OnImGuiRender() override {}   // only if ImGui enabled
+    void OnUIRender() override {}   // only if ImGui enabled
 };
 ```
 

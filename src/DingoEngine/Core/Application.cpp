@@ -151,7 +151,7 @@ namespace Dingo
 				m_ImGuiLayer->Begin();
 				for (Layer* layer : m_LayerStack)
 				{
-					layer->OnImGuiRender();
+					layer->OnUIRender();
 				}
 				m_ImGuiLayer->End();
 			}

@@ -19,7 +19,7 @@ namespace Dingo
 		virtual void OnAttach() override;
 		virtual void OnDetach() override;
 		virtual void OnUpdate(float deltaTime) override;
-		virtual void OnImGuiRender() override;
+		virtual void OnUIRender() override;
 
 	private:
 		TestViewportPanel m_TestViewportPanel;

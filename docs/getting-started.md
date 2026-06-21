@@ -107,7 +107,7 @@ include/                   # engine public headers  ← add as an include root
   DingoEngine.h            #   the umbrella header
   DingoEngine/...
 glm/                       # GLM math headers       ← public dependency
-imgui/imgui.h              # Dear ImGui header (for OnImGuiRender)
+imgui/imgui.h              # Dear ImGui header (optional; UI now via Dingo::UI — DingoEngine/UI/UI.h)
 assimp-vc145-mt[d].dll     # model-loader runtime   ← copy next to your .exe
 ```
 

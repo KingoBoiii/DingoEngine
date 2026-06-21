@@ -9,7 +9,7 @@
 // or link the backend directly -- backend-specific code lives under
 // src/DingoEngine/UI/<Backend>/ (e.g. src/DingoEngine/UI/ImGui/).
 //
-// Usage: call these only from Layer::OnImGuiRender(), i.e. between the engine's
+// Usage: call these only from Layer::OnUIRender(), i.e. between the engine's
 // UI new-frame and render. They require ApplicationParams::EnableImGui = true.
 
 namespace Dingo::UI

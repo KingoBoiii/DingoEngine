@@ -136,7 +136,7 @@ namespace Dingo
 	}
 
 #ifndef DE_DISTRIBUTION
-	void BreakoutLayer::OnImGuiRender()
+	void BreakoutLayer::OnUIRender()
 	{
 		// Begin() returns false when the window is collapsed/clipped; skip the
 		// contents in that case, but End() must be called regardless.
