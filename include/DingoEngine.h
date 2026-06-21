@@ -49,3 +49,9 @@
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Model.h"
 
+// ----------------------------------------------------------------------
+// UI
+// ----------------------------------------------------------------------
+
+#include "DingoEngine/UI/UI.h"
+

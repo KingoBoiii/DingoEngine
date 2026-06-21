@@ -14,8 +14,7 @@ project "Breakout3D"
     includedirs {
         "%{wks.location}/include",
         "src",
-        "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}"
+        "%{IncludeDir.glm}"
     }
 
     links {
@@ -24,7 +23,7 @@ project "Breakout3D"
 
     filter "system:windows"
         systemversion "latest"
-        defines { "DE_PLATFORM_WINDOWS" }
+        defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
 
     filter "system:linux"
         defines { "DE_PLATFORM_LINUX" }

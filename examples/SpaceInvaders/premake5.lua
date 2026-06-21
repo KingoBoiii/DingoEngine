@@ -14,8 +14,7 @@ project "SpaceInvaders"
 	includedirs {
         "%{wks.location}/include",
         "src",
-        "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}"
+        "%{IncludeDir.glm}"
     }
 
     links {

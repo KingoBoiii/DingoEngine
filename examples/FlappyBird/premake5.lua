@@ -14,8 +14,7 @@ project "FlappyBird"
 	includedirs {
         "%{wks.location}/include",
         "src",
-        "%{IncludeDir.glm}",
-        "%{IncludeDir.imgui}"
+        "%{IncludeDir.glm}"
     }
 
     links { 
@@ -24,7 +23,7 @@ project "FlappyBird"
 
 	filter "system:windows"
 		systemversion "latest"
-		defines { "DE_PLATFORM_WINDOWS", }
+		defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
 
 		-- Visual Studio build metadata
 		files {

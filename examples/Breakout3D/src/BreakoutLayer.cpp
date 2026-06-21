@@ -1,6 +1,5 @@
 #include "BreakoutLayer.h"
 
-#include <imgui.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
@@ -139,35 +138,38 @@ namespace Dingo
 #ifndef DE_DISTRIBUTION
 	void BreakoutLayer::OnImGuiRender()
 	{
-		ImGui::Begin("Breakout 3D");
-
-		switch (m_State)
+		// Begin() returns false when the window is collapsed/clipped; skip the
+		// contents in that case, but End() must be called regardless.
+		if (UI::Begin("Breakout 3D"))
 		{
-			case BreakoutState::Menu:
-				ImGui::Text("Press SPACE to launch the ball");
-				break;
-			case BreakoutState::Playing:
-				ImGui::Text("Score: %d", m_Score);
-				ImGui::Text("Lives: %d", m_Lives);
-				ImGui::Text("Bricks left: %d",
-					static_cast<int>(std::count_if(m_Bricks.begin(), m_Bricks.end(),
-						[](const Brick& b) { return b.Alive; })));
-				ImGui::Separator();
-				ImGui::Text("A/D or Left/Right: move paddle");
-				break;
-			case BreakoutState::GameOver:
-				ImGui::TextColored({ 1,0.2f,0.2f,1 }, "GAME OVER");
-				ImGui::Text("Final score: %d", m_Score);
-				ImGui::Text("Press SPACE to restart");
-				break;
-			case BreakoutState::Win:
-				ImGui::TextColored({ 0.2f,1,0.2f,1 }, "YOU WIN!");
-				ImGui::Text("Final score: %d", m_Score);
-				ImGui::Text("Press SPACE to play again");
-				break;
+			switch (m_State)
+			{
+				case BreakoutState::Menu:
+					UI::Text("Press SPACE to launch the ball");
+					break;
+				case BreakoutState::Playing:
+					UI::Text("Score: %d", m_Score);
+					UI::Text("Lives: %d", m_Lives);
+					UI::Text("Bricks left: %d",
+						static_cast<int>(std::count_if(m_Bricks.begin(), m_Bricks.end(),
+							[](const Brick& b) { return b.Alive; })));
+					UI::Separator();
+					UI::Text("A/D or Left/Right: move paddle");
+					break;
+				case BreakoutState::GameOver:
+					UI::TextColored({ 1,0.2f,0.2f,1 }, "GAME OVER");
+					UI::Text("Final score: %d", m_Score);
+					UI::Text("Press SPACE to restart");
+					break;
+				case BreakoutState::Win:
+					UI::TextColored({ 0.2f,1,0.2f,1 }, "YOU WIN!");
+					UI::Text("Final score: %d", m_Score);
+					UI::Text("Press SPACE to play again");
+					break;
+			}
 		}
 
-		ImGui::End();
+		UI::End();
 	}
 #endif
 
