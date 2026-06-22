@@ -147,6 +147,18 @@ gameplay reactions are driven by observing the simulation — e.g. reading
 of the play area. The Angry Birds `PigScript` uses exactly this approach to decide
 when a pig has been knocked out.
 
+## Architecture
+
+The `Scene` doesn't call Box2D directly — it drives a backend-agnostic **`Physics2D`**
+interface (`include/DingoEngine/Physics/2D/Physics2D.h`). `Physics2D` owns the physics
+world plus its bodies and shapes, all addressed through opaque handles; Box2D is one
+implementation of it (`Box2DPhysics2D` — the only place `box2d.h` is included).
+
+The `Scene` is the glue: it builds bodies from your `RigidBody2DComponent` / collider
+components, steps the world each frame, and writes the simulated transforms back. For
+access beyond the entity-based helpers above, reach the live world directly via
+`Scene::GetPhysics2D()` (null until `OnPhysicsStart`).
+
 ## See also
 
 - [Scenes & ECS](scenes-and-ecs.md) — entities, components, and `ScriptableEntity`.

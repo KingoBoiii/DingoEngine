@@ -23,6 +23,7 @@ include/DingoEngine/       Public API headers
   Events/                  Event system (Window, Keyboard, Mouse)
   Windowing/               Window (GLFW-backed)
   ImGui/                   ImGuiLayer overlay
+  Physics/2D/              Physics2D interface + 2D physics types (Box2D-backed)
 
 src/DingoEngine/           Implementations
   Core/                    Application loop, layer management
@@ -30,6 +31,8 @@ src/DingoEngine/           Implementations
   Graphics/NVRHI/          NVRHI wrappers
     Vulkan/                VulkanGraphicsContext, VulkanSwapChain
     DirectX12/             DirectX12GraphicsContext (currently disabled)
+  Physics/2D/              Physics2D factory
+    Box2D/                 Box2DPhysics2D — the only box2d.h includer
 
 vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen, box2d, JoltPhysics). No changes can occur in vendor / submodules!
 examples/
@@ -129,19 +132,22 @@ Main loop per frame:
 | stb | Image loading (`stb_image`) |
 | msdf-atlas-gen | Font SDF atlas generation |
 | entt | Entity-component system backend (scenes) — hidden behind `Internal::SceneData` |
-| box2d | 2D rigid-body physics backend — hidden behind the `Scene` physics API |
+| box2d | 2D rigid-body physics backend — hidden behind the `Physics2D` interface |
 | JoltPhysics | 3D rigid-body physics backend — hidden behind `PhysicsWorld3D` |
 
 ## Scenes, ECS & physics
 
 - A `Scene` owns entities (EnTT) and, between `OnPhysicsStart()`/`OnPhysicsStop()`, a
-  Box2D world. **Neither EnTT nor Box2D appears in any public header** — both live only
-  in `src/.../SceneData.h` behind the opaque `Internal::SceneData*`.
+  `Physics2D` world (Box2D backend). **Neither EnTT nor Box2D appears in any public
+  header**: EnTT lives only in `src/.../SceneData.h` behind the opaque
+  `Internal::SceneData*`, and Box2D lives only in `src/.../Physics/2D/Box2D/` behind the
+  `Physics2D` interface. The `Scene` delegates all physics to the owned `Physics2D`
+  (exposed via `Scene::GetPhysics2D()`).
 - New built-in component types must be explicitly instantiated via the
   `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
-- Physics components hold the Box2D body/shape as an opaque `std::uint64_t` handle
-  (`b2StoreBodyId`/`b2StoreShapeId`). `Scene::OnUpdate` steps the world after the script
-  pass and writes simulated transforms back onto the `TransformComponent`s.
+- Physics components hold the simulated body/shape as an opaque `PhysicsBodyId2D` /
+  `PhysicsShapeId2D` handle. `Scene::OnUpdate` steps the `Physics2D` world after the
+  script pass and writes simulated transforms back onto the `TransformComponent`s.
 - **3D physics is separate**: a standalone `PhysicsWorld3D` (Jolt) under
   `include/DingoEngine/Physics/`, NOT wired into the ECS (the engine has no 3D scene yet).
   Jolt is confined to `src/.../Physics/` (`Physics3DData.h` PIMPL); bodies are opaque
