@@ -420,7 +420,17 @@ namespace Dingo
 			pullLength = MAX_PULL;
 		}
 
-		const glm::vec2 aimPosition = m_SlingPos + pull;
+		// Keep the pulled-back bird inside the play field. The slingshot sits close to
+		// the left containment wall and not far above the ground, so a full pull -
+		// especially down-left, which is exactly when the cursor leaves the window -
+		// would otherwise drag the bird past the wall or below the ground. The launched
+		// body (built from this transform) would then spawn inside static geometry and
+		// be blocked or flung off-world instead of into play. Velocity is still derived
+		// from the full pull below, so aim and power are unchanged; only the spawn
+		// position is bounded.
+		glm::vec2 aimPosition = m_SlingPos + pull;
+		aimPosition.x = std::clamp(aimPosition.x, -m_Context.HalfWidth + BIRD_RADIUS + 0.1f, m_Context.HalfWidth - BIRD_RADIUS - 0.1f);
+		aimPosition.y = std::max(aimPosition.y, GROUND_TOP_Y + BIRD_RADIUS + 0.1f);
 		m_Bird.GetComponent<TransformComponent>().Position = { aimPosition.x, aimPosition.y, 0.1f };
 
 		// Launch is opposite the pull; speed scales with how far it was pulled.
