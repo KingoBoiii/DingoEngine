@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -68,6 +69,37 @@ namespace Dingo
 
 		Entity GetEntityByUUID(UUID uuid);
 
+		// --- Physics (2D) -----------------------------------------------------
+
+		// Starts the 2D physics simulation. Creates the physics world from the
+		// current gravity and instantiates a simulation body (plus its box/circle
+		// collider shapes) for every entity that has a RigidBody2DComponent. After
+		// this, OnUpdate steps the world each frame and writes the simulated
+		// position/rotation back onto each TransformComponent.
+		void OnPhysicsStart();
+
+		// Tears down the physics world and clears the runtime handles on every
+		// rigid body / collider. Safe to call when physics isn't running.
+		void OnPhysicsStop();
+
+		bool IsPhysicsRunning() const;
+
+		// Instantiates a simulation body for a single entity created after
+		// OnPhysicsStart (e.g. a projectile spawned at runtime). No-op if physics
+		// isn't running or the entity has no RigidBody2DComponent.
+		void CreateRigidBody(Entity entity);
+
+		// Sets the world gravity. Takes effect immediately if physics is running.
+		void SetGravity(const glm::vec2& gravity);
+		const glm::vec2& GetGravity() const { return m_Gravity; }
+
+		// Rigid-body controls. Each is a no-op if the entity has no live body.
+		void SetLinearVelocity(Entity entity, const glm::vec2& velocity);
+		glm::vec2 GetLinearVelocity(Entity entity);
+		void ApplyLinearImpulse(Entity entity, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake = true);
+		void ApplyLinearImpulseToCenter(Entity entity, const glm::vec2& impulse, bool wake = true);
+		void ApplyForceToCenter(Entity entity, const glm::vec2& force, bool wake = true);
+
 		void SetViewProjection(const glm::mat4& viewProjection) { m_ViewProjection = viewProjection; }
 		const glm::mat4& GetViewProjection() const { return m_ViewProjection; }
 
@@ -81,12 +113,19 @@ namespace Dingo
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
 
+		// Creates the Box2D body + collider shapes for one entity handle. Box2D
+		// types stay out of this header by working through the opaque handle.
+		void CreatePhysicsBodyForEntity(std::uint32_t handle);
+		// Opaque runtime body handle for an entity (0 when it has none).
+		std::uint64_t GetRuntimeBody(Entity entity) const;
+
 	private:
 		Internal::SceneData* m_Data = nullptr;
 
 		std::string m_Name;
 		glm::mat4 m_ViewProjection{ 1.0f };
 		glm::vec4 m_ClearColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+		glm::vec2 m_Gravity{ 0.0f, -9.81f };
 
 		friend class Entity;
 		friend class SceneManager;

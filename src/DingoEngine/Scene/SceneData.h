@@ -7,6 +7,7 @@
 #include "DingoEngine/Core/UUID.h"
 
 #include <entt/entt.hpp>
+#include <box2d/box2d.h>
 
 #include <memory>
 #include <unordered_map>
@@ -33,6 +34,11 @@ namespace Dingo
 			// destroy its own (or another) entity mid-update.
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
+
+			// Physics (Box2D). Box2D, like EnTT, is named only inside the engine's
+			// src/ tree; the world id is valid only between OnPhysicsStart/Stop.
+			b2WorldId PhysicsWorld = b2_nullWorldId;
+			int PhysicsSubStepCount = 4;
 		};
 
 	}
