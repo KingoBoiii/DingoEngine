@@ -17,7 +17,8 @@
                 "${workspaceFolder}/vendor/nvrhi/thirdparty/DirectX-Headers/include",
                 "${workspaceFolder}/test/src",
                 "${workspaceFolder}/vendor/assimp/include",
-                "${workspaceFolder}/vendor/entt/include"
+                "${workspaceFolder}/vendor/entt/include",
+                "${workspaceFolder}/vendor/box2d/include"
             ],
             "defines": [
                 "_CRT_SECURE_NO_WARNINGS",
