@@ -92,6 +92,9 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(SpriteRendererComponent)
 	DE_INSTANTIATE_COMPONENT(CircleRendererComponent)
 	DE_INSTANTIATE_COMPONENT(TextComponent)
+	DE_INSTANTIATE_COMPONENT(RigidBody2DComponent)
+	DE_INSTANTIATE_COMPONENT(BoxCollider2DComponent)
+	DE_INSTANTIATE_COMPONENT(CircleCollider2DComponent)
 
 #undef DE_INSTANTIATE_COMPONENT
 
