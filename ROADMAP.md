@@ -12,17 +12,17 @@ Extended graphics and rendering pipeline across three fronts:
 - **3D rendering**: A `Renderer3D` API for drawing meshes with perspective cameras. Includes glTF/OBJ model loading, a material system, and basic lighting (Phong or PBR-ready).
 - **Rendering thread**: Rendering work is moved to a dedicated thread with a thread-safe command queue, decoupling game logic from GPU submission and enabling overlapped CPU/GPU work.
 
-**Example game**: Breakout 3D — a 3D take on the classic Breakout/Arkanoid. Showcases the perspective camera, 3D mesh rendering (bricks, ball, paddle), and manual AABB collision without requiring a physics engine.
+**Example game**: [Breakout 3D](examples/Breakout3D/) — a 3D take on the classic Breakout/Arkanoid. Showcases the perspective camera, 3D mesh rendering (bricks, ball, paddle), and manual AABB collision without requiring a physics engine.
 
 ## v0.3 — Scenes & ECS
 Scene management and entity component system (ECS) using the EnTT library.
 
-**Example game**: Space Invaders — a grid of invader entities, player bullets, and destructible shields, each represented as ECS entities. Multiple scenes (menu, game, game over) demonstrate the scene management system.
+**Example game**: [Space Invaders](examples/SpaceInvaders/) — a grid of invader entities, player bullets, and destructible shields, each represented as ECS entities. Multiple scenes (menu, game, game over) demonstrate the scene management system.
 
 ## v0.4 — Physics & Collision
 2D rigid body simulation, AABB/circle collision, and a physics world integrated into the ECS (e.g. `RigidBody2DComponent`, `BoxCollider2DComponent`). FlappyBird's manual collision logic can be replaced as a showcase.
 
-**Example game**: Angry Birds — slingshot projectiles, destructible block structures, and circle/box rigid bodies. Showcases the physics world and compound collision shapes in a physics-heavy scenario.
+**Example game**: [Angry Birds](examples/AngryBirds/) — slingshot projectiles, destructible block structures, and circle/box rigid bodies. Showcases the physics world and compound collision shapes in a physics-heavy scenario.
 
 ## v0.5 — Audio System
 Proper audio engine (OpenAL or miniaudio), `AudioSource` / `AudioListener` ECS components, and 3D positional audio. Replaces the hardcoded .ogg playback currently in the FlappyBird example.
