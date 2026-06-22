@@ -2,6 +2,8 @@
 #include "KeyCodes.h"
 #include "MouseButtons.h"
 
+#include <glm/glm.hpp>
+
 #include <unordered_map>
 
 namespace Dingo
@@ -25,6 +27,9 @@ namespace Dingo
 
 		static bool IsMouseButtonDown(MouseButton button);
 		static bool IsMouseButtonPressed(MouseButton button);
+
+		// Cursor position in window (screen) pixels, origin at the top-left, +Y down.
+		static glm::vec2 GetMousePosition();
 
 	private:
 		static void UpdateKeyStates(KeyCode key, int scancode, int action, int mods);
