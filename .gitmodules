@@ -17,3 +17,6 @@
 [submodule "vendor/msdf-atlas-gen"]
 	path = vendor/msdf-atlas-gen
 	url = https://github.com/KingoBoiii/msdf-atlas-gen.git
+[submodule "vendor/box2d"]
+	path = vendor/box2d
+	url = https://github.com/KingoBoiii/box2d.git
