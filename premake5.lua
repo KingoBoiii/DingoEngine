@@ -52,6 +52,7 @@ IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Head
 IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
 IncludeDir['box2d'] = "%{wks.location}/vendor/box2d/include";
+IncludeDir['jolt'] = "%{wks.location}/vendor/JoltPhysics";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -93,6 +94,7 @@ group "Dependencies"
 	include "vendor/imgui"
 	include "vendor/msdf-atlas-gen"
 	include "vendor/box2d"
+	include "vendor/JoltPhysics"
 group ""
 
 group "Engine"
@@ -132,7 +134,8 @@ group "Engine"
 			"%{IncludeDir.msdf_atlas_gen}",
 			"%{IncludeDir.assimp}",
 			"%{IncludeDir.entt}",
-			"%{IncludeDir.box2d}"
+			"%{IncludeDir.box2d}",
+			"%{IncludeDir.jolt}"
 		}
 
 		links {
@@ -142,7 +145,8 @@ group "Engine"
 			"nvrhi",
 			"imgui",
 			"msdf-atlas-gen",
-			"box2d"
+			"box2d",
+			"Jolt"
 		}
 
 		defines {
