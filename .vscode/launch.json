@@ -50,6 +50,18 @@
             "preLaunchTask": "Build Space Invaders Debug"
         },
         {
+            "name": "Debug Angry Birds",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/AngryBirds/AngryBirds.exe",
+            "args": ["--graphics=dx12"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/AngryBirds",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build AngryBirds Debug"
+        },
+        {
             "name": "Debug TestFramework",
             "type": "cppvsdbg",
             "request": "launch",
