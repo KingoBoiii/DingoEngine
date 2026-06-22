@@ -92,47 +92,7 @@ group "Dependencies"
 	include "vendor/nvrhi"
 	include "vendor/imgui"
 	include "vendor/msdf-atlas-gen"
-
-	-- Box2D ships CMake, not Premake, and the submodule working tree must stay
-	-- untouched, so its static-lib project is defined inline here. The library is
-	-- pure C (C17); only src/ + include/ are needed (extern/ is samples-only).
-	project "box2d"
-		kind "StaticLib"
-		language "C"
-		cdialect "C17"
-		staticruntime "off"
-		warnings "off"
-
-		targetdir ("%{wks.location}/build/bin/" .. outputdir .. "/%{prj.name}")
-		objdir ("%{wks.location}/build/bin-int/" .. outputdir .. "/%{prj.name}")
-
-		files {
-			"vendor/box2d/src/**.c",
-			"vendor/box2d/src/**.h",
-			"vendor/box2d/include/**.h"
-		}
-
-		includedirs {
-			"vendor/box2d/include",
-			"vendor/box2d/src"
-		}
-
-		defines { "_CRT_SECURE_NO_WARNINGS" }
-
-		filter "system:windows"
-			systemversion "latest"
-
-		filter "system:linux"
-			pic "On"
-			systemversion "latest"
-
-		filter "configurations:Debug or configurations:Debug-ASan"
-			runtime "Debug"
-			symbols "On"
-
-		filter "configurations:Release or configurations:Distribution"
-			runtime "Release"
-			optimize "On"
+	include "vendor/box2d"
 group ""
 
 group "Engine"

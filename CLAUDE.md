@@ -38,8 +38,8 @@ examples/
   AngryBirds/              2D physics showcase (v0.4) — slingshot, destructible towers, pigs
 ```
 
-Note: Box2D ships CMake rather than Premake, so its static-lib project is defined
-inline in the root `premake5.lua` (the submodule working tree is never modified).
+Note: upstream Box2D ships CMake rather than Premake, so the fork carries its own
+`premake5.lua` (like the other vendor forks), `include`d from the root workspace.
 
 ## Key architecture patterns
 
