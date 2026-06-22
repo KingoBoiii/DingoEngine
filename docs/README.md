@@ -3,10 +3,10 @@
 DingoEngine is a C++20 game engine with a Vulkan-backed rendering pipeline (via
 [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi)), a layered application
 architecture, a batched 2D renderer, a scene/entity-component system with a
-`ScriptableEntity` behaviour layer (v0.3), and — as of v0.4 — 2D rigid-body physics.
-(The ECS is [EnTT](https://github.com/skypjack/entt) and the physics is
-[Box2D](https://box2d.org/), but those are internal details — client code never
-includes or links either.)
+`ScriptableEntity` behaviour layer (v0.3), and — as of v0.4 — both 2D and 3D rigid-body
+physics. (The ECS is [EnTT](https://github.com/skypjack/entt), 2D physics is
+[Box2D](https://box2d.org/), and 3D physics is [Jolt](https://github.com/jrouwe/JoltPhysics),
+but those are internal details — client code never includes or links any of them.)
 
 These guides cover how to **use** the engine from your own game code, whether you
 link against a prebuilt release package (`.lib` + headers) or integrate the
@@ -21,6 +21,7 @@ engine from source.
 | [2D Rendering](rendering-2d.md) | `Renderer2D` (quads, circles, MSDF text), the camera/projection model, textures, and fonts. |
 | [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager` for multi-scene games. |
 | [2D Physics](physics-2d.md) | The v0.4 rigid-body system — `RigidBody2D`/`BoxCollider2D`/`CircleCollider2D` components, gravity, the physics lifecycle, and applying forces/impulses. |
+| [3D Physics](physics-3d.md) | The v0.4 standalone `PhysicsWorld3D` (Jolt-backed) — 3D rigid bodies with box/sphere colliders, stepping, and reading transforms to render. |
 
 ## A 30-second tour
 

@@ -31,11 +31,12 @@ src/DingoEngine/           Implementations
     Vulkan/                VulkanGraphicsContext, VulkanSwapChain
     DirectX12/             DirectX12GraphicsContext (currently disabled)
 
-vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen, box2d). No changes can occur in vendor / submodules!
+vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen, box2d, JoltPhysics). No changes can occur in vendor / submodules!
 examples/
   FlappyBird/              Complete game (Renderer2D, input, audio, collision)
   SpaceInvaders/           Scene/ECS showcase (v0.3)
   AngryBirds/              2D physics showcase (v0.4) — slingshot, destructible towers, pigs
+  Physics3D/              3D physics showcase (v0.4, Jolt) — knock down a box tower with spheres
 ```
 
 Note: upstream Box2D ships CMake rather than Premake, so the fork carries its own
@@ -129,6 +130,7 @@ Main loop per frame:
 | msdf-atlas-gen | Font SDF atlas generation |
 | entt | Entity-component system backend (scenes) — hidden behind `Internal::SceneData` |
 | box2d | 2D rigid-body physics backend — hidden behind the `Scene` physics API |
+| JoltPhysics | 3D rigid-body physics backend — hidden behind `PhysicsWorld3D` |
 
 ## Scenes, ECS & physics
 
@@ -140,6 +142,11 @@ Main loop per frame:
 - Physics components hold the Box2D body/shape as an opaque `std::uint64_t` handle
   (`b2StoreBodyId`/`b2StoreShapeId`). `Scene::OnUpdate` steps the world after the script
   pass and writes simulated transforms back onto the `TransformComponent`s.
+- **3D physics is separate**: a standalone `PhysicsWorld3D` (Jolt) under
+  `include/DingoEngine/Physics/`, NOT wired into the ECS (the engine has no 3D scene yet).
+  Jolt is confined to `src/.../Physics/` (`Physics3DData.h` PIMPL); bodies are opaque
+  `PhysicsBodyId3D` (a packed Jolt `BodyID`). You drive it directly and render from
+  `GetTransform`. Jolt's global init (allocator/Factory/RegisterTypes) is ref-counted across worlds.
 
 ## Graphics API notes
 

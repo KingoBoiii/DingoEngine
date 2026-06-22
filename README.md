@@ -13,6 +13,7 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **Asset Utilities** — Texture, shader, and buffer creation with a fluent params/builder API
 - **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games (ECS backend kept internal)
 - **2D Physics** — Box2D-backed rigid-body simulation wired into the ECS (`RigidBody2D` / `BoxCollider2D` / `CircleCollider2D` components, gravity, forces/impulses; physics backend kept internal)
+- **3D Physics** — Jolt-backed standalone `PhysicsWorld3D` (3D rigid bodies, box/sphere colliders, forces/impulses; physics backend kept internal)
 
 ## Documentation
 
@@ -23,6 +24,7 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [2D Rendering](docs/rendering-2d.md) — quads, circles, text, textures, fonts
 - [Scenes & ECS](docs/scenes-and-ecs.md) — entities, components, systems, and scene management
 - [2D Physics](docs/physics-2d.md) — rigid bodies, colliders, gravity, and forces/impulses
+- [3D Physics](docs/physics-3d.md) — the standalone Jolt-backed `PhysicsWorld3D`
 
 ## Roadmap
 
@@ -53,7 +55,7 @@ Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This w
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, or `AngryBirds`) as the startup project, and build.
+Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, or `Physics3D`) as the startup project, and build.
 
 ## Examples
 
@@ -64,6 +66,7 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `DungeonCrawler` | Top-down 2D slice — tile collision, chasing enemies, melee combat, loot |
 | `SpaceInvaders` | Scene/ECS showcase — EnTT entities and a multi-scene `SceneManager` |
 | `AngryBirds` | 2D physics showcase — slingshot launching, destructible block towers, and pig targets on the Box2D-backed physics world |
+| `Physics3D` | 3D physics showcase — knock down a tower of dynamic boxes by firing spheres on the Jolt-backed `PhysicsWorld3D` |
 
 ## Project Structure
 
@@ -87,3 +90,4 @@ examples/               Example projects
 | [msdf-atlas-gen](https://github.com/Chlumsky/msdf-atlas-gen) | Font SDF atlas generation |
 | [EnTT](https://github.com/skypjack/entt) | Entity-component system (scenes) |
 | [Box2D](https://github.com/erincatto/box2d) | 2D rigid-body physics simulation |
+| [Jolt Physics](https://github.com/jrouwe/JoltPhysics) | 3D rigid-body physics simulation |
