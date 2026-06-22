@@ -31,10 +31,15 @@ src/DingoEngine/           Implementations
     Vulkan/                VulkanGraphicsContext, VulkanSwapChain
     DirectX12/             DirectX12GraphicsContext (currently disabled)
 
-vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen). No changes can occur in vendor / submodules!
+vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen, box2d). No changes can occur in vendor / submodules!
 examples/
   FlappyBird/              Complete game (Renderer2D, input, audio, collision)
+  SpaceInvaders/           Scene/ECS showcase (v0.3)
+  AngryBirds/              2D physics showcase (v0.4) — slingshot, destructible towers, pigs
 ```
+
+Note: Box2D ships CMake rather than Premake, so its static-lib project is defined
+inline in the root `premake5.lua` (the submodule working tree is never modified).
 
 ## Key architecture patterns
 
@@ -122,6 +127,19 @@ Main loop per frame:
 | imgui | Debug/editor UI |
 | stb | Image loading (`stb_image`) |
 | msdf-atlas-gen | Font SDF atlas generation |
+| entt | Entity-component system backend (scenes) — hidden behind `Internal::SceneData` |
+| box2d | 2D rigid-body physics backend — hidden behind the `Scene` physics API |
+
+## Scenes, ECS & physics
+
+- A `Scene` owns entities (EnTT) and, between `OnPhysicsStart()`/`OnPhysicsStop()`, a
+  Box2D world. **Neither EnTT nor Box2D appears in any public header** — both live only
+  in `src/.../SceneData.h` behind the opaque `Internal::SceneData*`.
+- New built-in component types must be explicitly instantiated via the
+  `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
+- Physics components hold the Box2D body/shape as an opaque `std::uint64_t` handle
+  (`b2StoreBodyId`/`b2StoreShapeId`). `Scene::OnUpdate` steps the world after the script
+  pass and writes simulated transforms back onto the `TransformComponent`s.
 
 ## Graphics API notes
 
