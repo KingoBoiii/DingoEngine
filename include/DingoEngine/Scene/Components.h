@@ -3,6 +3,7 @@
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -95,19 +96,21 @@ namespace Dingo
 
 	// Physics -----------------------------------------------------------------
 
-	// A 2D rigid body. The simulating body lives in the Scene's physics world
-	// (Box2D, kept entirely inside the engine); RuntimeBody is an opaque handle to
-	// it, valid only while the scene's physics is running. No Box2D type ever
-	// appears in this public header.
+	// A 2D rigid body. The simulating body lives in the Scene's Physics2D world
+	// (a Box2D backend, kept entirely inside the engine); RuntimeBody is an opaque
+	// handle to it, valid only while the scene's physics is running. No backend
+	// type ever appears in this public header.
 	struct RigidBody2DComponent
 	{
-		enum class BodyType { Static = 0, Dynamic, Kinematic };
+		// Alias the backend-agnostic physics enum so existing references such as
+		// RigidBody2DComponent::BodyType::Dynamic keep working.
+		using BodyType = BodyType2D;
 
 		BodyType Type = BodyType::Static;
 		bool FixedRotation = false; // lock rotation about Z (e.g. a player character)
 
-		// Opaque Box2D body handle (a b2BodyId packed into 64 bits); 0 when none.
-		std::uint64_t RuntimeBody = 0;
+		// Opaque handle to the simulated body; 0 when none.
+		PhysicsBodyId2D RuntimeBody = 0;
 
 		RigidBody2DComponent() = default;
 		RigidBody2DComponent(const RigidBody2DComponent&) = default;
@@ -127,8 +130,8 @@ namespace Dingo
 		float Friction = 0.5f;
 		float Restitution = 0.0f;
 
-		// Opaque Box2D shape handle (a b2ShapeId packed into 64 bits); 0 when none.
-		std::uint64_t RuntimeShape = 0;
+		// Opaque handle to the simulated collision shape; 0 when none.
+		PhysicsShapeId2D RuntimeShape = 0;
 
 		BoxCollider2DComponent() = default;
 		BoxCollider2DComponent(const BoxCollider2DComponent&) = default;
@@ -145,7 +148,8 @@ namespace Dingo
 		float Friction = 0.5f;
 		float Restitution = 0.0f;
 
-		std::uint64_t RuntimeShape = 0;
+		// Opaque handle to the simulated collision shape; 0 when none.
+		PhysicsShapeId2D RuntimeShape = 0;
 
 		CircleCollider2DComponent() = default;
 		CircleCollider2DComponent(const CircleCollider2DComponent&) = default;

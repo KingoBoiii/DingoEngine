@@ -5,9 +5,9 @@
 // EnTT a private implementation detail of the engine.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Physics/2D/Physics2D.h"
 
 #include <entt/entt.hpp>
-#include <box2d/box2d.h>
 
 #include <memory>
 #include <unordered_map>
@@ -35,9 +35,9 @@ namespace Dingo
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
 
-			// Physics (Box2D). Box2D, like EnTT, is named only inside the engine's
-			// src/ tree; the world id is valid only between OnPhysicsStart/Stop.
-			b2WorldId PhysicsWorld = b2_nullWorldId;
+			// Physics (2D). The backend (Box2D) lives behind the Physics2D
+			// interface; this instance exists only between OnPhysicsStart/Stop.
+			std::unique_ptr<Physics2D> Physics;
 			int PhysicsSubStepCount = 4;
 		};
 

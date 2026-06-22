@@ -13,6 +13,7 @@ namespace Dingo
 {
 
 	class Entity;
+	class Physics2D;
 	class Renderer2D;
 	class ScriptableEntity;
 
@@ -83,6 +84,12 @@ namespace Dingo
 		void OnPhysicsStop();
 
 		bool IsPhysicsRunning() const;
+
+		// The underlying 2D physics world, for handle-based access beyond the
+		// entity-centric helpers below (e.g. ray casts, direct body control).
+		// Null until OnPhysicsStart and after OnPhysicsStop. The Scene owns it —
+		// the caller must not delete it.
+		Physics2D* GetPhysics2D() const;
 
 		// Instantiates a simulation body for a single entity created after
 		// OnPhysicsStart (e.g. a projectile spawned at runtime). No-op if physics
