@@ -62,6 +62,18 @@
             "preLaunchTask": "Build AngryBirds Debug"
         },
         {
+            "name": "Debug Physics 3D",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Physics3D/Physics3D.exe",
+            "args": ["--graphics=dx11"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Physics3D",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Physics3D Debug"
+        },
+        {
             "name": "Debug TestFramework",
             "type": "cppvsdbg",
             "request": "launch",
