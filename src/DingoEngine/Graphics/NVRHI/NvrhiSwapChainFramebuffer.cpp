@@ -42,6 +42,7 @@ namespace Dingo
 			depthDesc.isShaderResource = false;
 
 			m_DepthTextureHandle = device->createTexture(depthDesc);
+			DE_CORE_ASSERT(m_DepthTextureHandle, "Swap-chain depth texture creation failed; 3D depth test/write would be silently disabled on this back-end.");
 			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
 		}
 

@@ -100,6 +100,7 @@ namespace Dingo
 			depthDesc.isShaderResource = false;
 
 			m_DepthTextureHandle = device->createTexture(depthDesc);
+			DE_CORE_ASSERT(m_DepthTextureHandle, "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
 			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
 		}
 	}

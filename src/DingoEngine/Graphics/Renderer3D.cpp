@@ -143,6 +143,9 @@ namespace Dingo
 
 	void Renderer3D::EndScene()
 	{
+		if (!m_SceneActive)
+			return; // guard against EndScene() without BeginScene() (or a double call) re-drawing the prior batch
+
 		Flush();
 		m_SceneActive = false;
 	}
