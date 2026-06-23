@@ -83,9 +83,10 @@ namespace Dingo
 
 		InitScene3D();
 
-		PhysicsWorld3DParams params;
+		Physics3DParams params;
 		params.Gravity = GRAVITY;
-		m_World = PhysicsWorld3D::Create(params);
+		m_World = Physics3D::Create();
+		m_World->Initialize(params);
 
 		BuildScene();
 	}
@@ -94,7 +95,7 @@ namespace Dingo
 	{
 		if (m_World)
 		{
-			m_World->Destroy();
+			delete m_World;
 			m_World = nullptr;
 		}
 

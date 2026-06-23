@@ -9,7 +9,7 @@
 namespace Dingo
 {
 
-	// A 3D physics sandbox showcasing the engine's Jolt-backed PhysicsWorld3D.
+	// A 3D physics sandbox showcasing the engine's Jolt-backed Physics3D.
 	//
 	// The engine has no 3D scene/ECS yet, so (like Breakout3D) this layer owns a
 	// small mesh batcher and drives rendering itself: every frame it steps the
@@ -69,7 +69,7 @@ namespace Dingo
 		Mesh* m_BoxMesh = nullptr;
 		Mesh* m_SphereMesh = nullptr;
 
-		PhysicsWorld3D* m_World = nullptr;
+		Physics3D* m_World = nullptr;
 		std::vector<Body> m_Bodies;
 		int m_Shots = 0;
 		float m_LaunchX = 0.0f; // A/D shift the launch position

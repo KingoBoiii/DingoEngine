@@ -27,8 +27,8 @@
 // Physics (3D)
 // ----------------------------------------------------------------------
 
-#include "DingoEngine/Physics/PhysicsTypes3D.h"
-#include "DingoEngine/Physics/PhysicsWorld3D.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
+#include "DingoEngine/Physics/3D/Physics3D.h"
 
 // ----------------------------------------------------------------------
 // Events
