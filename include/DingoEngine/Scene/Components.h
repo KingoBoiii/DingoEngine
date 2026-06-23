@@ -113,6 +113,9 @@ namespace Dingo
 		bool FixedRotation = false; // lock rotation about Z (e.g. a player character)
 
 		// Opaque handle to the simulated body; 0 when none.
+		// NOTE: this is a live backend handle. Any future entity-duplicate / clone path
+		// MUST reset it to 0 on the copy — otherwise both entities alias (and
+		// DestroyEntity double-frees) the same physics body.
 		PhysicsBodyId2D RuntimeBody = 0;
 
 		RigidBody2DComponent() = default;
@@ -134,6 +137,8 @@ namespace Dingo
 		float Restitution = 0.0f;
 
 		// Opaque handle to the simulated collision shape; 0 when none.
+		// NOTE: live backend handle — a future entity-duplicate path MUST reset it to 0
+		// on the copy to avoid aliasing / double-freeing the same shape.
 		PhysicsShapeId2D RuntimeShape = 0;
 
 		BoxCollider2DComponent() = default;
@@ -152,6 +157,8 @@ namespace Dingo
 		float Restitution = 0.0f;
 
 		// Opaque handle to the simulated collision shape; 0 when none.
+		// NOTE: live backend handle — a future entity-duplicate path MUST reset it to 0
+		// on the copy to avoid aliasing / double-freeing the same shape.
 		PhysicsShapeId2D RuntimeShape = 0;
 
 		CircleCollider2DComponent() = default;
@@ -221,6 +228,9 @@ namespace Dingo
 		BodyType Type = BodyType::Static;
 
 		// Opaque handle to the simulated body; k_InvalidBody3D when none.
+		// NOTE: this is a live backend handle. Any future entity-duplicate / clone path
+		// MUST reset it to k_InvalidBody3D on the copy — otherwise both entities alias
+		// (and DestroyEntity double-frees) the same physics body.
 		PhysicsBodyId3D RuntimeBody = k_InvalidBody3D;
 
 		RigidBody3DComponent() = default;

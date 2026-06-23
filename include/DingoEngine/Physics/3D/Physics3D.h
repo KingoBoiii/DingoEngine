@@ -26,9 +26,10 @@ namespace Dingo
 	// Bodies are referred to through opaque PhysicsBodyId3D handles so no backend type
 	// leaks across the interface.
 	//
-	// Unlike the 2D Scene physics, this is NOT wired into the ECS: you drive it
-	// directly — create bodies, Step() each frame, then read each body's transform
-	// (GetTransform / GetPosition / GetRotation) to render it however you like.
+	// This can be driven directly — create bodies, Step() each frame, then read each
+	// body's transform (GetTransform / GetPosition / GetRotation) to render it however
+	// you like. As of v0.4.1 the Scene also wires it into the ECS via RigidBody3DComponent
+	// (see Scene::OnUpdate), reading each simulated body's transform back automatically.
 	class Physics3D
 	{
 	public:
