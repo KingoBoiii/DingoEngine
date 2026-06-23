@@ -9,6 +9,7 @@
 #include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
+#include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 
@@ -64,6 +65,7 @@ namespace Dingo
 		WindowParams Window;		// Parameters for the application window
 		GraphicsParams Graphics;	// Parameters for the graphics context
 		Renderer2DParams Renderer2D;	// Parameters for the 2D renderer (e.g. per-batch quad capacity)
+		Renderer3DParams Renderer3D;	// Parameters for the 3D renderer (lighting, mesh batch capacity)
 
 		bool EnableUI = true;	// Whether to enable the immediate-mode UI layer
 		UIParams UI;			// Parameters for UI configuration, only used if EnableUI is true
@@ -103,6 +105,7 @@ namespace Dingo
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
+		Renderer3D& GetRenderer3D() const { return *m_Renderer3D; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
@@ -125,6 +128,7 @@ namespace Dingo
 		GraphicsContext* m_GraphicsContext = nullptr;
 		SwapChain* m_SwapChain = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
+		Renderer3D* m_Renderer3D = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_IsRunning = true;

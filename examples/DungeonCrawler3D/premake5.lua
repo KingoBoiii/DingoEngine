@@ -1,4 +1,4 @@
-project "Physics3D"
+project "DungeonCrawler3D"
     kind "ConsoleApp"
 
     targetdir ("%{wks.location}/build/bin/" .. outputdir .. "/%{prj.name}")

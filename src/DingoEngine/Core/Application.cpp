@@ -51,6 +51,7 @@ namespace Dingo
 		Renderer::Initialize(m_SwapChain);
 
 		m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
+		m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
 
 		OnInitialize();
 
@@ -79,6 +80,13 @@ namespace Dingo
 		Renderer::Shutdown();
 
 		m_LayerStack.Clear();
+
+		if (m_Renderer3D)
+		{
+			m_Renderer3D->Shutdown();
+			delete m_Renderer3D;
+			m_Renderer3D = nullptr;
+		}
 
 		if (m_Renderer2D)
 		{

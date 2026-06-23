@@ -6,6 +6,7 @@
 
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
+#include "DingoEngine/Physics/3D/Physics3D.h"
 
 #include <entt/entt.hpp>
 
@@ -39,6 +40,12 @@ namespace Dingo
 			// interface; this instance exists only between OnPhysicsStart/Stop.
 			std::unique_ptr<Physics2D> Physics;
 			int PhysicsSubStepCount = 4;
+
+			// Physics (3D). The backend (Jolt) lives behind the Physics3D interface;
+			// created on OnPhysicsStart only if the scene has 3D rigid bodies, so a
+			// purely-2D scene never pays for a Jolt world (and vice versa).
+			std::unique_ptr<Physics3D> Physics3D;
+			int PhysicsCollisionSteps = 1;
 		};
 
 	}

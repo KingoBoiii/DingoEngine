@@ -94,8 +94,13 @@ namespace Dingo
 				.setIsRenderTarget(true)
 				.setInitialState(nvrhi::ResourceStates::DepthWrite)
 				.setKeepInitialState(true);
+			// Depth-only target: not sampled. D3D rejects SHADER_RESOURCE on a non-typeless
+			// depth format (D32), and isShaderResource defaults to true — set it off so this
+			// offscreen depth attachment is valid on the D3D back-ends too (no setter exists).
+			depthDesc.isShaderResource = false;
 
 			m_DepthTextureHandle = device->createTexture(depthDesc);
+			DE_CORE_ASSERT(m_DepthTextureHandle, "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
 			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
 		}
 	}

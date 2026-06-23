@@ -78,6 +78,58 @@ void GameLayer::OnUpdate(float dt)
 }
 ```
 
+## 3D entities (v0.4.1)
+
+The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity carries a
+`Transform3DComponent` (and, to be drawn, a `MeshRendererComponent`; to be simulated, a
+`RigidBody3DComponent` plus one collider). The 3D physics world is the Jolt-backed
+[`Physics3D`](physics-3d.md); meshes are drawn through the engine's `Renderer3D`.
+
+| Component | Fields |
+|---|---|
+| `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color` |
+| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), opaque `RuntimeBody` |
+| `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
+| `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
+
+> A 3D entity still receives the default 2D `TransformComponent` on creation; it simply goes
+> unused. The collider shape is **baked into the body at creation** (so a rigid-body entity
+> needs exactly one box/sphere collider), and collider sizes are fractions of `Transform3D.Scale`
+> — a unit-scaled entity with the default collider exactly fills its mesh.
+
+```cpp
+// A dynamic sphere on a static floor. Mesh* come from Renderer3D's built-in primitives.
+Renderer3D& r3d = Application::Get().GetRenderer3D();
+
+Entity ball = scene.CreateEntity("Ball");
+auto& t = ball.AddComponent<Transform3DComponent>();
+t.Position = { 0.0f, 5.0f, 0.0f };
+ball.AddComponent<MeshRendererComponent>(MeshRendererComponent(r3d.GetSphereMesh(), { 0.3f, 0.85f, 0.95f, 1.0f }));
+ball.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+ball.AddComponent<SphereCollider3DComponent>();
+
+scene.SetGravity(glm::vec3{ 0.0f, -9.81f, 0.0f });   // vec3 overload → the 3D world
+scene.OnPhysicsStart();                              // builds a 3D world only if 3D bodies exist
+```
+
+`Scene::OnUpdate(dt)` steps whichever physics world(s) are live and writes simulated transforms
+back (2D → `TransformComponent`, 3D → `Transform3DComponent`). Render the 3D entities with a
+perspective camera:
+
+```cpp
+PerspectiveCamera camera(50.0f, aspect, 0.1f, 500.0f);
+camera.SetPosition(focus + glm::vec3{ 0, 15, 11 });  // a follow camera, updated each frame
+camera.SetTarget(focus);
+
+scene.OnUpdate(dt);
+scene.OnRender3D(Application::Get().GetRenderer3D(), camera);  // clears + draws Transform3D+Mesh entities
+```
+
+Per-entity 3D controls live on `Scene` as `glm::vec3` overloads: `SetLinearVelocity` /
+`GetLinearVelocity3D`, `ApplyImpulse`, `ApplyForce`, and `GetPhysics3D()` for direct access.
+`examples/DungeonCrawler3D/` is a worked dungeon-crawler prototype built entirely on this path.
+
 ## Behaviours: `ScriptableEntity`
 
 Game logic lives in `ScriptableEntity` subclasses. Override the lifecycle hooks,

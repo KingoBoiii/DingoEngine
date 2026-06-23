@@ -178,11 +178,11 @@
             "problemMatcher": "$msCompile"
         },
         {
-            "label": "Build Physics3D Debug",
+            "label": "Build DungeonCrawler3D Debug",
             "type": "shell",
             "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
             "args": [
-                "${workspaceFolder}/examples/Physics3D/Physics3D.vcxproj",
+                "${workspaceFolder}/examples/DungeonCrawler3D/DungeonCrawler3D.vcxproj",
                 "/p:Configuration=Debug",
                 "/p:Platform=x64",
                 "/m",

@@ -1,22 +1,22 @@
 #include <DingoEngine/EntryPoint.h>
 
-#include "PhysicsLayer.h"
+#include "DungeonLayer.h"
 
 namespace Dingo
 {
 
-	class Physics3DApplication : public Application
+	class DungeonCrawler3DApplication : public Application
 	{
 	public:
-		Physics3DApplication(const Dingo::ApplicationParams& params)
+		DungeonCrawler3DApplication(const Dingo::ApplicationParams& params)
 			: Application(params)
 		{}
-		virtual ~Physics3DApplication() = default;
+		virtual ~DungeonCrawler3DApplication() = default;
 
 	protected:
 		virtual void OnInitialize() override
 		{
-			PushLayer(new PhysicsLayer());
+			PushLayer(new DungeonLayer());
 		}
 	};
 
@@ -39,7 +39,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 	ApplicationParams params = ApplicationParams{
 		.CommandLineArgs = args,
 		.Window = {
-			.Title = "[Example] 3D Physics (Jolt) - Dingo Engine",
+			.Title = "[Example] Dungeon Crawler 3D (Jolt + 3D Scene) - Dingo Engine",
 			.Width = 1600,
 			.Height = 900,
 			.VSync = true,
@@ -52,7 +52,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		.EnableUI = false,
 	};
 
-	Physics3DApplication* app = new Physics3DApplication(params);
+	DungeonCrawler3DApplication* app = new DungeonCrawler3DApplication(params);
 	app->Initialize();
 	return app;
 }

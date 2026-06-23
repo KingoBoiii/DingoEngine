@@ -6,9 +6,15 @@
 
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
+#include "DingoEngine/Graphics/Renderer3D.h"
+
+#include "DingoEngine/Core/PerspectiveCamera.h"
 
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
+#include "DingoEngine/Physics/3D/Physics3D.h"
+
+#include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
 
@@ -82,6 +88,12 @@ namespace Dingo
 		{
 			PhysicsBodyId2D runtimeBody = m_Data->Registry.get<RigidBody2DComponent>(e).RuntimeBody;
 			m_Data->Physics->DestroyBody(runtimeBody);
+		}
+
+		if (m_Data->Physics3D && m_Data->Physics3D->IsValid() && m_Data->Registry.all_of<RigidBody3DComponent>(e))
+		{
+			PhysicsBodyId3D runtimeBody = m_Data->Registry.get<RigidBody3DComponent>(e).RuntimeBody;
+			m_Data->Physics3D->DestroyBody(runtimeBody);
 		}
 
 		m_Data->Registry.destroy(e);
@@ -162,6 +174,30 @@ namespace Dingo
 				transform.Rotation = glm::degrees(angle);
 			}
 		}
+
+		// Same for the 3D world: step it, then write each body's simulated
+		// position/rotation back onto its Transform3DComponent.
+		if (m_Data->Physics3D && m_Data->Physics3D->IsValid())
+		{
+			m_Data->Physics3D->Step(deltaTime, m_Data->PhysicsCollisionSteps);
+
+			auto view = m_Data->Registry.view<RigidBody3DComponent, Transform3DComponent>();
+			for (entt::entity handle : view)
+			{
+				const RigidBody3DComponent& rigidBody = view.get<RigidBody3DComponent>(handle);
+				if (rigidBody.RuntimeBody == k_InvalidBody3D)
+					continue;
+
+				// Static bodies never move — skip the read-back so we don't churn over
+				// them or revert a runtime edit to a static entity's Transform3D.
+				if (rigidBody.Type == BodyType3D::Static)
+					continue;
+
+				Transform3DComponent& transform = view.get<Transform3DComponent>(handle);
+				transform.Position = m_Data->Physics3D->GetPosition(rigidBody.RuntimeBody);
+				transform.Rotation = m_Data->Physics3D->GetRotation(rigidBody.RuntimeBody);
+			}
+		}
 	}
 
 	void Scene::ForEachEntity(const std::function<void(Entity)>& fn)
@@ -239,6 +275,27 @@ namespace Dingo
 		}
 	}
 
+	void Scene::OnRender3D(Renderer3D& renderer, const PerspectiveCamera& camera)
+	{
+		renderer.BeginScene(camera);
+		renderer.Clear(m_ClearColor);
+		RenderEntities3D(renderer);
+		renderer.EndScene();
+	}
+
+	void Scene::RenderEntities3D(Renderer3D& renderer)
+	{
+		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
+		for (entt::entity entity : view)
+		{
+			auto [transform, mesh] = view.get<Transform3DComponent, MeshRendererComponent>(entity);
+			if (!mesh.Mesh)
+				continue;
+
+			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color);
+		}
+	}
+
 	// --- Physics (2D) -----------------------------------------------------------
 
 	void Scene::SetGravity(const glm::vec2& gravity)
@@ -248,39 +305,72 @@ namespace Dingo
 			m_Data->Physics->SetGravity(gravity);
 	}
 
+	void Scene::SetGravity(const glm::vec3& gravity)
+	{
+		m_Gravity3D = gravity;
+		if (m_Data->Physics3D && m_Data->Physics3D->IsValid())
+			m_Data->Physics3D->SetGravity(gravity);
+	}
+
 	void Scene::OnPhysicsStart()
 	{
-		if (m_Data->Physics && m_Data->Physics->IsValid())
-			return; // already running
+		// 2D world — created only if the scene actually has 2D rigid bodies.
+		auto rb2dView = m_Data->Registry.view<RigidBody2DComponent>();
+		if ((!m_Data->Physics || !m_Data->Physics->IsValid()) && rb2dView.begin() != rb2dView.end())
+		{
+			m_Data->Physics.reset(Physics2D::Create());
+			m_Data->Physics->Initialize(m_Gravity);
 
-		m_Data->Physics.reset(Physics2D::Create());
-		m_Data->Physics->Initialize(m_Gravity);
+			// Give every rigid-body entity a simulation body + collider shapes.
+			for (entt::entity handle : rb2dView)
+				CreatePhysicsBodyForEntity(static_cast<std::uint32_t>(handle));
+		}
 
-		// Give every rigid-body entity a simulation body + collider shapes.
-		for (entt::entity handle : m_Data->Registry.view<RigidBody2DComponent>())
-			CreatePhysicsBodyForEntity(static_cast<std::uint32_t>(handle));
+		// 3D world — created only if the scene has 3D rigid bodies, so a purely-2D
+		// scene never spins up a Jolt world (and vice versa).
+		auto rb3dView = m_Data->Registry.view<RigidBody3DComponent>();
+		if ((!m_Data->Physics3D || !m_Data->Physics3D->IsValid()) && rb3dView.begin() != rb3dView.end())
+		{
+			Physics3DParams params;
+			params.Gravity = m_Gravity3D;
+			m_Data->Physics3D.reset(Physics3D::Create());
+			m_Data->Physics3D->Initialize(params);
+
+			for (entt::entity handle : rb3dView)
+				CreatePhysicsBody3DForEntity(static_cast<std::uint32_t>(handle));
+		}
 	}
 
 	void Scene::OnPhysicsStop()
 	{
-		if (!m_Data->Physics || !m_Data->Physics->IsValid())
-			return;
+		if (m_Data->Physics && m_Data->Physics->IsValid())
+		{
+			m_Data->Physics->Shutdown(); // also destroys all bodies + shapes
+			m_Data->Physics.reset();
 
-		m_Data->Physics->Shutdown(); // also destroys all bodies + shapes
-		m_Data->Physics.reset();
+			// Clear the now-dangling runtime handles so a later restart is clean.
+			for (entt::entity handle : m_Data->Registry.view<RigidBody2DComponent>())
+				m_Data->Registry.get<RigidBody2DComponent>(handle).RuntimeBody = 0;
+			for (entt::entity handle : m_Data->Registry.view<BoxCollider2DComponent>())
+				m_Data->Registry.get<BoxCollider2DComponent>(handle).RuntimeShape = 0;
+			for (entt::entity handle : m_Data->Registry.view<CircleCollider2DComponent>())
+				m_Data->Registry.get<CircleCollider2DComponent>(handle).RuntimeShape = 0;
+		}
 
-		// Clear the now-dangling runtime handles so a later restart is clean.
-		for (entt::entity handle : m_Data->Registry.view<RigidBody2DComponent>())
-			m_Data->Registry.get<RigidBody2DComponent>(handle).RuntimeBody = 0;
-		for (entt::entity handle : m_Data->Registry.view<BoxCollider2DComponent>())
-			m_Data->Registry.get<BoxCollider2DComponent>(handle).RuntimeShape = 0;
-		for (entt::entity handle : m_Data->Registry.view<CircleCollider2DComponent>())
-			m_Data->Registry.get<CircleCollider2DComponent>(handle).RuntimeShape = 0;
+		if (m_Data->Physics3D && m_Data->Physics3D->IsValid())
+		{
+			m_Data->Physics3D->Shutdown(); // destroys all 3D bodies
+			m_Data->Physics3D.reset();
+
+			for (entt::entity handle : m_Data->Registry.view<RigidBody3DComponent>())
+				m_Data->Registry.get<RigidBody3DComponent>(handle).RuntimeBody = k_InvalidBody3D;
+		}
 	}
 
 	bool Scene::IsPhysicsRunning() const
 	{
-		return m_Data->Physics && m_Data->Physics->IsValid();
+		return (m_Data->Physics && m_Data->Physics->IsValid())
+			|| (m_Data->Physics3D && m_Data->Physics3D->IsValid());
 	}
 
 	Physics2D* Scene::GetPhysics2D() const
@@ -288,10 +378,20 @@ namespace Dingo
 		return m_Data->Physics.get();
 	}
 
+	Physics3D* Scene::GetPhysics3D() const
+	{
+		return m_Data->Physics3D.get();
+	}
+
 	void Scene::CreateRigidBody(Entity entity)
 	{
-		if (entity)
-			CreatePhysicsBodyForEntity(entity.m_Handle);
+		if (!entity)
+			return;
+
+		// Route by component: each helper no-ops if its world isn't live or the
+		// entity lacks the matching rigid-body component.
+		CreatePhysicsBodyForEntity(entity.m_Handle);
+		CreatePhysicsBody3DForEntity(entity.m_Handle);
 	}
 
 	void Scene::CreatePhysicsBodyForEntity(std::uint32_t handle)
@@ -356,6 +456,63 @@ namespace Dingo
 		return m_Data->Registry.get<RigidBody2DComponent>(e).RuntimeBody;
 	}
 
+	void Scene::CreatePhysicsBody3DForEntity(std::uint32_t handle)
+	{
+		if (!m_Data->Physics3D || !m_Data->Physics3D->IsValid())
+			return;
+
+		entt::entity e = static_cast<entt::entity>(handle);
+		if (!m_Data->Registry.all_of<RigidBody3DComponent, Transform3DComponent>(e))
+			return;
+
+		auto& rigidBody = m_Data->Registry.get<RigidBody3DComponent>(e);
+		if (rigidBody.RuntimeBody != k_InvalidBody3D)
+			return; // a body already exists for this entity — don't leak a second one
+
+		auto& transform = m_Data->Registry.get<Transform3DComponent>(e);
+
+		RigidBodyParams3D params;
+		params.Type = rigidBody.Type;
+		params.Position = transform.Position;
+		params.Rotation = transform.Rotation;
+
+		// The collider shape is baked into the body at creation. Collider sizes are
+		// fractions of the entity's full extent (Transform3D.Scale), so a unit-scaled
+		// entity with the default collider exactly fills its box.
+		if (m_Data->Registry.all_of<SphereCollider3DComponent>(e))
+		{
+			auto& collider = m_Data->Registry.get<SphereCollider3DComponent>(e);
+			params.Shape = ColliderShape3D::Sphere;
+			params.Radius = transform.Scale.x * collider.Radius;
+			params.Friction = collider.Friction;
+			params.Restitution = collider.Restitution;
+		}
+		else if (m_Data->Registry.all_of<BoxCollider3DComponent>(e))
+		{
+			auto& collider = m_Data->Registry.get<BoxCollider3DComponent>(e);
+			params.Shape = ColliderShape3D::Box;
+			params.HalfExtents = transform.Scale * collider.HalfExtents;
+			params.Friction = collider.Friction;
+			params.Restitution = collider.Restitution;
+		}
+		else
+		{
+			// No collider component: fall back to a box matching the transform.
+			params.Shape = ColliderShape3D::Box;
+			params.HalfExtents = transform.Scale * 0.5f;
+		}
+
+		rigidBody.RuntimeBody = m_Data->Physics3D->CreateBody(params);
+	}
+
+	std::uint32_t Scene::GetRuntimeBody3D(Entity entity) const
+	{
+		entt::entity e = static_cast<entt::entity>(entity.m_Handle);
+		if (!m_Data->Registry.valid(e) || !m_Data->Registry.all_of<RigidBody3DComponent>(e))
+			return k_InvalidBody3D;
+		return m_Data->Registry.get<RigidBody3DComponent>(e).RuntimeBody;
+	}
+
 	void Scene::SetLinearVelocity(Entity entity, const glm::vec2& velocity)
 	{
 		if (m_Data->Physics)
@@ -386,6 +543,34 @@ namespace Dingo
 	{
 		if (m_Data->Physics)
 			m_Data->Physics->ApplyForceToCenter(GetRuntimeBody(entity), force, wake);
+	}
+
+	// --- Physics (3D) -----------------------------------------------------------
+
+	void Scene::SetLinearVelocity(Entity entity, const glm::vec3& velocity)
+	{
+		if (m_Data->Physics3D)
+			m_Data->Physics3D->SetLinearVelocity(GetRuntimeBody3D(entity), velocity);
+	}
+
+	glm::vec3 Scene::GetLinearVelocity3D(Entity entity)
+	{
+		if (!m_Data->Physics3D)
+			return glm::vec3(0.0f);
+
+		return m_Data->Physics3D->GetLinearVelocity(GetRuntimeBody3D(entity));
+	}
+
+	void Scene::ApplyImpulse(Entity entity, const glm::vec3& impulse)
+	{
+		if (m_Data->Physics3D)
+			m_Data->Physics3D->ApplyImpulse(GetRuntimeBody3D(entity), impulse);
+	}
+
+	void Scene::ApplyForce(Entity entity, const glm::vec3& force)
+	{
+		if (m_Data->Physics3D)
+			m_Data->Physics3D->ApplyForce(GetRuntimeBody3D(entity), force);
 	}
 
 }
