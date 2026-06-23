@@ -21,7 +21,7 @@ engine from source.
 | [2D Rendering](rendering-2d.md) | `Renderer2D` (quads, circles, MSDF text), the camera/projection model, textures, and fonts. |
 | [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager` for multi-scene games. |
 | [2D Physics](physics-2d.md) | The v0.4 rigid-body system — `RigidBody2D`/`BoxCollider2D`/`CircleCollider2D` components, gravity, the physics lifecycle, and applying forces/impulses. |
-| [3D Physics](physics-3d.md) | The v0.4 standalone `PhysicsWorld3D` (Jolt-backed) — 3D rigid bodies with box/sphere colliders, stepping, and reading transforms to render. |
+| [3D Physics](physics-3d.md) | The v0.4 standalone `Physics3D` (Jolt-backed) — 3D rigid bodies with box/sphere colliders, stepping, and reading transforms to render. |
 
 ## A 30-second tour
 

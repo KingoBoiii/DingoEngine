@@ -3,14 +3,14 @@
 *(v0.4)*
 
 Alongside the 2D physics ([physics-2d.md](physics-2d.md)), DingoEngine provides a **3D
-rigid-body world**, `PhysicsWorld3D`, backed by [Jolt Physics](https://github.com/jrouwe/JoltPhysics).
+rigid-body world** behind the backend-agnostic **`Physics3D`** interface, backed by [Jolt Physics](https://github.com/jrouwe/JoltPhysics).
 As with EnTT and Box2D, the backend is an internal detail: **no Jolt type appears in any public
 header**, and your game never includes or links Jolt — bodies are referred to through opaque
 `PhysicsBodyId3D` handles.
 
 > **Standalone, not ECS-integrated (yet).** The 2D physics is wired into the `Scene`/ECS via
 > components. 3D is different: the engine has no 3D scene yet (3D rendering is done directly, as in
-> the Breakout3D example), so `PhysicsWorld3D` is a self-contained world you drive yourself —
+> the Breakout3D example), so `Physics3D` is a self-contained world you drive yourself —
 > create bodies, `Step()` each frame, then read each body's transform to render it however you like.
 > When an ECS-integrated 3D scene lands, this world will slot in behind it.
 
@@ -22,13 +22,14 @@ World units are metres (1 unit = 1 metre = 1 Jolt unit).
 #include <DingoEngine.h>
 using namespace Dingo;
 
-PhysicsWorld3DParams params;
+Physics3DParams params;
 params.Gravity = { 0.0f, -9.81f, 0.0f };
-PhysicsWorld3D* world = PhysicsWorld3D::Create(params);
+Physics3D* world = Physics3D::Create(); // selects the Jolt backend
+world->Initialize(params);              // brings the world live
 
 // ... create bodies, simulate ...
 
-world->Destroy(); // tears down the world (and Jolt itself once the last world is gone)
+delete world; // virtual dtor → Shutdown(); tears down the world (and Jolt itself once the last world is gone)
 ```
 
 ## Creating bodies
@@ -96,6 +97,17 @@ glm::vec3 v = world->GetLinearVelocity(id);
 world->ApplyImpulse(id, { 0.0f, 10.0f, 0.0f }); // instant change in momentum, at the center of mass
 world->ApplyForce(id, { 0.0f, 50.0f, 0.0f });   // continuous push (per step)
 ```
+
+## Architecture
+
+`Physics3D` (`include/DingoEngine/Physics/3D/Physics3D.h`) is a backend-agnostic interface —
+the 3D counterpart to `Physics2D`. It owns the physics world plus its bodies, all addressed
+through opaque `PhysicsBodyId3D` handles; Jolt is one implementation of it (`JoltPhysics3D`,
+under `src/DingoEngine/Physics/3D/JoltPhysics/` — the only place Jolt is included).
+`Physics3D::Create()` selects the backend, mirroring `Physics2D::Create` and `GraphicsContext::Create`.
+
+Jolt's process-global setup (allocator / `Factory` / `RegisterTypes`) is ref-counted across
+worlds, so it is initialised with the first world and torn down with the last.
 
 ## See also
 
