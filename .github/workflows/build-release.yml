@@ -138,12 +138,12 @@ jobs:
         name: angrybirds-binary-windows
         path: .\build\bin\Distribution-windows-x86_64\AngryBirds
 
-    - name: Upload Physics 3D binary
+    - name: Upload Dungeon Crawler 3D binary
       if: matrix.build-configuration == 'Distribution'
       uses: actions/upload-artifact@v4
       with:
-        name: physics3d-binary-windows
-        path: .\build\bin\Distribution-windows-x86_64\Physics3D
+        name: dungeoncrawler3d-binary-windows
+        path: .\build\bin\Distribution-windows-x86_64\DungeonCrawler3D
 
   example-game-flappy-bird:
     needs: build-windows
@@ -395,7 +395,7 @@ jobs:
         name: angrybirds-windows-distribution-${{steps.version.outputs.VERSION}}
         path: .\angrybirds
 
-  example-game-physics-3d:
+  example-game-dungeon-crawler-3d:
     needs: build-windows
     runs-on: windows-latest
     steps:
@@ -405,11 +405,11 @@ jobs:
         submodules: false
         fetch-depth: 0
 
-    - name: Download Physics 3D binary
+    - name: Download Dungeon Crawler 3D binary
       uses: actions/download-artifact@v4
       with:
-        name: physics3d-binary-windows
-        path: .\physics3d
+        name: dungeoncrawler3d-binary-windows
+        path: .\dungeoncrawler3d
 
     - name: Get version
       id: version
@@ -426,24 +426,24 @@ jobs:
 
     - name: Copy assets
       run: |
-        robocopy .\examples\Physics3D\assets .\physics3d\assets /e /z
+        robocopy .\examples\DungeonCrawler3D\assets .\dungeoncrawler3d\assets /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
       run: |
-        $zipName = "Physics3D-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
-        Compress-Archive -Path ".\physics3d\*" -DestinationPath ".\$zipName" -Force
+        $zipName = "DungeonCrawler3D-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
+        Compress-Archive -Path ".\dungeoncrawler3d\*" -DestinationPath ".\$zipName" -Force
 
     - name: Upload to GitHub Release
-      run: gh release upload "${{ github.ref_name }}" "Physics3D-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
+      run: gh release upload "${{ github.ref_name }}" "DungeonCrawler3D-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: physics3d-windows-distribution-${{steps.version.outputs.VERSION}}
-        path: .\physics3d
+        name: dungeoncrawler3d-windows-distribution-${{steps.version.outputs.VERSION}}
+        path: .\dungeoncrawler3d
 
   build-linux:
     if: 1 == 0

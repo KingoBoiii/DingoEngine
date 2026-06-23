@@ -62,16 +62,16 @@
             "preLaunchTask": "Build AngryBirds Debug"
         },
         {
-            "name": "Debug Physics 3D",
+            "name": "Debug Dungeon Crawler 3D",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Physics3D/Physics3D.exe",
-            "args": ["--graphics=dx11"],
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/DungeonCrawler3D/DungeonCrawler3D.exe",
+            "args": ["--graphics=dx12"],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/examples/Physics3D",
+            "cwd": "${workspaceFolder}/examples/DungeonCrawler3D",
             "environment": [],
             "console": "internalConsole",
-            "preLaunchTask": "Build Physics3D Debug"
+            "preLaunchTask": "Build DungeonCrawler3D Debug"
         },
         {
             "name": "Debug TestFramework",
