@@ -22,7 +22,7 @@ Scene management and entity component system (ECS) using the EnTT library.
 ## v0.4 — Physics & Collision
 2D rigid body simulation, AABB/circle collision, and a physics world integrated into the ECS (e.g. `RigidBody2DComponent`, `BoxCollider2DComponent`). FlappyBird's manual collision logic can be replaced as a showcase. A standalone, Jolt-backed `Physics3D` world (3D rigid bodies, box/sphere colliders, forces/impulses) also lands here, driven directly by the game for now — its ECS integration arrives in v0.5.
 
-**Example games**: [Angry Birds](examples/AngryBirds/) — slingshot projectiles, destructible block structures, and circle/box rigid bodies; showcases the 2D physics world and compound collision shapes in a physics-heavy scenario. [Physics3D](examples/Physics3D/) — knock down a tower of dynamic boxes by firing spheres, rendering each body at its simulated Jolt transform.
+**Example games**: [Angry Birds](examples/AngryBirds/) — slingshot projectiles, destructible block structures, and circle/box rigid bodies; showcases the 2D physics world and compound collision shapes in a physics-heavy scenario. [DungeonCrawler3D](examples/DungeonCrawler3D/) — began as a tower of dynamic boxes knocked down by firing spheres; in v0.4.1 it became the first ECS-integrated 3D scene (a dungeon-crawler prototype), rendering each body at its simulated Jolt transform.
 
 ## v0.5 — First Playable: 3D Dungeon Crawler (Singleplayer)
 The milestone where the engine's 3D pieces converge into an actual game. So far 3D rendering (v0.2) and the Jolt-backed `Physics3D` (v0.4) have lived *outside* the scene system — meshes are drawn and bodies stepped by hand (as in Breakout3D and Physics3D), while the ECS (v0.3) is 2D-only. v0.5 closes that gap on three fronts:

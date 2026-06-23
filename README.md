@@ -11,9 +11,9 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **ImGui Integration** — Built-in debug/overlay UI layer with docking and viewport support
 - **Font Rendering** — MSDF atlas-based text rendering via `msdf-atlas-gen`
 - **Asset Utilities** — Texture, shader, and buffer creation with a fluent params/builder API
-- **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games (ECS backend kept internal)
+- **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games; supports both 2D and 3D entities (ECS backend kept internal)
 - **2D Physics** — Box2D-backed rigid-body simulation wired into the ECS (`RigidBody2D` / `BoxCollider2D` / `CircleCollider2D` components, gravity, forces/impulses; physics backend kept internal)
-- **3D Physics** — Jolt-backed standalone `Physics3D` (3D rigid bodies, box/sphere colliders, forces/impulses; physics backend kept internal)
+- **3D Physics & Scene** — Jolt-backed `Physics3D`, usable standalone or wired into the ECS (`Transform3D` / `MeshRenderer` / `RigidBody3D` / `Box`+`SphereCollider3D` components), with 3D meshes drawn through `Renderer3D` and a perspective camera (physics backend kept internal)
 
 ## Documentation
 
@@ -24,7 +24,7 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [2D Rendering](docs/rendering-2d.md) — quads, circles, text, textures, fonts
 - [Scenes & ECS](docs/scenes-and-ecs.md) — entities, components, systems, and scene management
 - [2D Physics](docs/physics-2d.md) — rigid bodies, colliders, gravity, and forces/impulses
-- [3D Physics](docs/physics-3d.md) — the standalone Jolt-backed `Physics3D`
+- [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated
 
 ## Roadmap
 
@@ -55,7 +55,7 @@ Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This w
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, or `Physics3D`) as the startup project, and build.
+Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, or `DungeonCrawler3D`) as the startup project, and build.
 
 ## Examples
 
@@ -66,7 +66,7 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `DungeonCrawler` | Top-down 2D slice — tile collision, chasing enemies, melee combat, loot |
 | `SpaceInvaders` | Scene/ECS showcase — EnTT entities and a multi-scene `SceneManager` |
 | `AngryBirds` | 2D physics showcase — slingshot launching, destructible block towers, and pig targets on the Box2D-backed physics world |
-| `Physics3D` | 3D physics showcase — knock down a tower of dynamic boxes by firing spheres on the Jolt-backed `Physics3D` |
+| `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D` |
 
 ## Project Structure
 

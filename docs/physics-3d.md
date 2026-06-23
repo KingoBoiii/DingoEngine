@@ -8,11 +8,14 @@ As with EnTT and Box2D, the backend is an internal detail: **no Jolt type appear
 header**, and your game never includes or links Jolt — bodies are referred to through opaque
 `PhysicsBodyId3D` handles.
 
-> **Standalone, not ECS-integrated (yet).** The 2D physics is wired into the `Scene`/ECS via
-> components. 3D is different: the engine has no 3D scene yet (3D rendering is done directly, as in
-> the Breakout3D example), so `Physics3D` is a self-contained world you drive yourself —
-> create bodies, `Step()` each frame, then read each body's transform to render it however you like.
-> When an ECS-integrated 3D scene lands, this world will slot in behind it.
+> **Two ways to use it.** `Physics3D` is a self-contained world you can drive yourself —
+> create bodies, `Step()` each frame, then read each body's transform to render it however you
+> like (the lifecycle and API below). **As of v0.4.1 it is also wired into the `Scene`/ECS**,
+> exactly like the 2D world: add a `RigidBody3DComponent` plus a `BoxCollider3DComponent` or
+> `SphereCollider3DComponent` to a `Transform3DComponent` entity and the `Scene` builds the body,
+> steps the world, and writes the simulated transform back for you — see
+> [scenes-and-ecs.md](scenes-and-ecs.md). The standalone API documented here is unchanged and
+> still the right tool when you want a physics world without the ECS.
 
 World units are metres (1 unit = 1 metre = 1 Jolt unit).
 
@@ -112,5 +115,5 @@ worlds, so it is initialised with the first world and torn down with the last.
 ## See also
 
 - [2D Physics](physics-2d.md) — the Box2D-backed, ECS-integrated 2D system.
-- The **Physics3D** example (`examples/Physics3D/`) — a tower of boxes you knock down by firing
-  spheres, rendering each body at its simulated transform.
+- The **DungeonCrawler3D** example (`examples/DungeonCrawler3D/`) — a 3D dungeon-crawler prototype
+  driving this world through the ECS (the player, enemies, and walls are `RigidBody3D` entities).

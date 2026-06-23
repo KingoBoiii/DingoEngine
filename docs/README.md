@@ -19,9 +19,9 @@ engine from source.
 | [Getting Started](getting-started.md) | Prerequisites, what's in a release package, project setup (include dirs, link libraries, defines), and a minimal window app. |
 | [Application & Layers](application-and-layers.md) | The entry point, `Application` lifecycle, the `Layer` stack, input, and events. |
 | [2D Rendering](rendering-2d.md) | `Renderer2D` (quads, circles, MSDF text), the camera/projection model, textures, and fonts. |
-| [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager` for multi-scene games. |
+| [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager`; plus (v0.4.1) 3D entities — `Transform3D`/`MeshRenderer`/`RigidBody3D`/`Box`+`SphereCollider3D` drawn through `Renderer3D`. |
 | [2D Physics](physics-2d.md) | The v0.4 rigid-body system — `RigidBody2D`/`BoxCollider2D`/`CircleCollider2D` components, gravity, the physics lifecycle, and applying forces/impulses. |
-| [3D Physics](physics-3d.md) | The v0.4 standalone `Physics3D` (Jolt-backed) — 3D rigid bodies with box/sphere colliders, stepping, and reading transforms to render. |
+| [3D Physics](physics-3d.md) | The Jolt-backed `Physics3D` — 3D rigid bodies with box/sphere colliders; usable standalone, or (v0.4.1) wired into the `Scene`/ECS. |
 
 ## A 30-second tour
 
