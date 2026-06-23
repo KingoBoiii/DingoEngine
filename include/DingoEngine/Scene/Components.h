@@ -3,10 +3,13 @@
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
 #include <string>
@@ -153,6 +156,104 @@ namespace Dingo
 
 		CircleCollider2DComponent() = default;
 		CircleCollider2DComponent(const CircleCollider2DComponent&) = default;
+	};
+
+	// 3D spatial / rendering / physics ----------------------------------------
+	//
+	// These are the 3D counterparts to the 2D components above. A 3D entity uses a
+	// Transform3DComponent (the default TransformComponent it receives on creation
+	// is 2D and simply goes unused); it is rendered through Renderer3D when it also
+	// has a MeshRendererComponent, and simulated in the Scene's Physics3D world when
+	// it has a RigidBody3DComponent plus a box/sphere collider.
+
+	// 3D transform. Position is the entity center; Rotation is a quaternion; Scale
+	// is the full extent multiplier per axis. The Scene writes the simulated
+	// position/rotation back here each frame while 3D physics is running.
+	struct Transform3DComponent
+	{
+		glm::vec3 Position{ 0.0f };
+		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f }; // identity (w, x, y, z)
+		glm::vec3 Scale{ 1.0f };
+
+		Transform3DComponent() = default;
+		Transform3DComponent(const Transform3DComponent&) = default;
+		Transform3DComponent(const glm::vec3& position, const glm::vec3& scale = glm::vec3(1.0f))
+			: Position(position), Scale(scale) {}
+
+		glm::mat4 GetTransform() const
+		{
+			return glm::translate(glm::mat4(1.0f), Position)
+				* glm::mat4_cast(Rotation)
+				* glm::scale(glm::mat4(1.0f), Scale);
+		}
+
+		// Authoring convenience: set the rotation from XYZ Euler angles in degrees.
+		void SetRotationEuler(const glm::vec3& eulerDegrees)
+		{
+			Rotation = glm::quat(glm::radians(eulerDegrees));
+		}
+	};
+
+	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
+	// Color. The mesh is not owned by the component (the game/asset system owns it),
+	// exactly like SpriteRendererComponent's Texture.
+	struct MeshRendererComponent
+	{
+		Mesh* Mesh = nullptr;
+		glm::vec4 Color{ 1.0f };
+
+		MeshRendererComponent() = default;
+		MeshRendererComponent(const MeshRendererComponent&) = default;
+		MeshRendererComponent(Dingo::Mesh* mesh, const glm::vec4& color = glm::vec4(1.0f))
+			: Mesh(mesh), Color(color) {}
+	};
+
+	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden
+	// behind the Physics3D interface). RuntimeBody is an opaque handle, valid only
+	// while the scene's physics is running. Unlike the 2D collider components, the 3D
+	// collider shape is baked into the body when it is created, so a 3D rigid-body
+	// entity needs exactly one Box/SphereCollider3DComponent alongside this.
+	struct RigidBody3DComponent
+	{
+		// Alias the backend-agnostic enum so RigidBody3DComponent::BodyType::Dynamic works.
+		using BodyType = BodyType3D;
+
+		BodyType Type = BodyType::Static;
+
+		// Opaque handle to the simulated body; k_InvalidBody3D when none.
+		PhysicsBodyId3D RuntimeBody = k_InvalidBody3D;
+
+		RigidBody3DComponent() = default;
+		RigidBody3DComponent(const RigidBody3DComponent&) = default;
+		RigidBody3DComponent(BodyType type) : Type(type) {}
+	};
+
+	// A box collider for an entity with a RigidBody3DComponent. HalfExtents is a
+	// fraction of Transform3DComponent::Scale, so the default { 0.5, 0.5, 0.5 }
+	// exactly covers the entity's box. (Physics3D centers the shape on the body, so
+	// there is no per-collider offset — model offset with the Transform instead.)
+	struct BoxCollider3DComponent
+	{
+		glm::vec3 HalfExtents{ 0.5f };
+
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		BoxCollider3DComponent() = default;
+		BoxCollider3DComponent(const BoxCollider3DComponent&) = default;
+	};
+
+	// A sphere collider. Radius is a fraction of Transform3DComponent::Scale.x, so
+	// the default 0.5 inscribes a unit box.
+	struct SphereCollider3DComponent
+	{
+		float Radius = 0.5f;
+
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		SphereCollider3DComponent() = default;
+		SphereCollider3DComponent(const SphereCollider3DComponent&) = default;
 	};
 
 }
