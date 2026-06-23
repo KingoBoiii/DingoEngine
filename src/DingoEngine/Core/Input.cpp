@@ -41,6 +41,14 @@ namespace Dingo
 		return state == GLFW_PRESS;
 	}
 
+	glm::vec2 Input::GetMousePosition()
+	{
+		GLFWwindow* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindowHandle());
+		double x = 0.0, y = 0.0;
+		glfwGetCursorPos(window, &x, &y);
+		return { static_cast<float>(x), static_cast<float>(y) };
+	}
+
 	void Input::UpdateKeyStates(KeyCode key, int scancode, int action, int mods)
 	{
 		s_CurrentKeyStates[key] = (action == GLFW_PRESS || action == GLFW_REPEAT);

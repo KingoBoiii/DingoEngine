@@ -51,6 +51,8 @@ IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
 IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
 IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
+IncludeDir['box2d'] = "%{wks.location}/vendor/box2d/include";
+IncludeDir['jolt'] = "%{wks.location}/vendor/JoltPhysics";
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -91,6 +93,8 @@ group "Dependencies"
 	include "vendor/nvrhi"
 	include "vendor/imgui"
 	include "vendor/msdf-atlas-gen"
+	include "vendor/box2d"
+	include "vendor/JoltPhysics"
 group ""
 
 group "Engine"
@@ -129,7 +133,9 @@ group "Engine"
 			"%{IncludeDir.msdfgen}",
 			"%{IncludeDir.msdf_atlas_gen}",
 			"%{IncludeDir.assimp}",
-			"%{IncludeDir.entt}"
+			"%{IncludeDir.entt}",
+			"%{IncludeDir.box2d}",
+			"%{IncludeDir.jolt}"
 		}
 
 		links {
@@ -138,7 +144,9 @@ group "Engine"
 			"%{Library.vulkan}",
 			"nvrhi",
 			"imgui",
-			"msdf-atlas-gen"
+			"msdf-atlas-gen",
+			"box2d",
+			"Jolt"
 		}
 
 		defines {
@@ -231,4 +239,6 @@ group "Examples"
     include "examples/Breakout3D"
     include "examples/DungeonCrawler"
     include "examples/SpaceInvaders"
+    include "examples/AngryBirds"
+    include "examples/Physics3D"
 group ""

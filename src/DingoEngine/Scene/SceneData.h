@@ -5,6 +5,7 @@
 // EnTT a private implementation detail of the engine.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Physics/2D/Physics2D.h"
 
 #include <entt/entt.hpp>
 
@@ -33,6 +34,11 @@ namespace Dingo
 			// destroy its own (or another) entity mid-update.
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
+
+			// Physics (2D). The backend (Box2D) lives behind the Physics2D
+			// interface; this instance exists only between OnPhysicsStart/Stop.
+			std::unique_ptr<Physics2D> Physics;
+			int PhysicsSubStepCount = 4;
 		};
 
 	}

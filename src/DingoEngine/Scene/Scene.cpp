@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 
 #include "DingoEngine/Scene/SceneData.h"
+#include "DingoEngine/Physics/2D/Physics2D.h"
 
 #include <algorithm>
 
@@ -75,6 +76,14 @@ namespace Dingo
 		if (m_Data->Registry.all_of<IDComponent>(e))
 			m_Data->EntityMap.erase(m_Data->Registry.get<IDComponent>(e).ID);
 
+		// Release the physics body (and its shapes) if one was created, so it
+		// doesn't keep colliding in the world after its entity is gone.
+		if (m_Data->Physics && m_Data->Physics->IsValid() && m_Data->Registry.all_of<RigidBody2DComponent>(e))
+		{
+			PhysicsBodyId2D runtimeBody = m_Data->Registry.get<RigidBody2DComponent>(e).RuntimeBody;
+			m_Data->Physics->DestroyBody(runtimeBody);
+		}
+
 		m_Data->Registry.destroy(e);
 	}
 
@@ -86,6 +95,9 @@ namespace Dingo
 
 	void Scene::Clear()
 	{
+		// Drop the physics world first so its bodies don't outlive the entities.
+		OnPhysicsStop();
+
 		for (auto& [handle, script] : m_Data->Scripts)
 			script->OnDestroy();
 
@@ -127,6 +139,29 @@ namespace Dingo
 		for (entt::entity handle : m_Data->PendingDestroy)
 			DestroyEntityNow(static_cast<std::uint32_t>(handle));
 		m_Data->PendingDestroy.clear();
+
+		// Step physics after the script pass (scripts may have applied forces this
+		// frame), then write the simulated transforms back onto the entities.
+		if (m_Data->Physics && m_Data->Physics->IsValid())
+		{
+			m_Data->Physics->Step(deltaTime, m_Data->PhysicsSubStepCount);
+
+			auto view = m_Data->Registry.view<RigidBody2DComponent, TransformComponent>();
+			for (entt::entity handle : view)
+			{
+				const RigidBody2DComponent& rigidBody = view.get<RigidBody2DComponent>(handle);
+				if (rigidBody.RuntimeBody == 0)
+					continue;
+
+				glm::vec2 position = m_Data->Physics->GetPosition(rigidBody.RuntimeBody);
+				float angle = m_Data->Physics->GetAngle(rigidBody.RuntimeBody);
+
+				TransformComponent& transform = view.get<TransformComponent>(handle);
+				transform.Position.x = position.x;
+				transform.Position.y = position.y;
+				transform.Rotation = glm::degrees(angle);
+			}
+		}
 	}
 
 	void Scene::ForEachEntity(const std::function<void(Entity)>& fn)
@@ -202,6 +237,155 @@ namespace Dingo
 				renderer.DrawText(text.Text, text.Font, position, text.Size, { text.Color });
 			}
 		}
+	}
+
+	// --- Physics (2D) -----------------------------------------------------------
+
+	void Scene::SetGravity(const glm::vec2& gravity)
+	{
+		m_Gravity = gravity;
+		if (m_Data->Physics && m_Data->Physics->IsValid())
+			m_Data->Physics->SetGravity(gravity);
+	}
+
+	void Scene::OnPhysicsStart()
+	{
+		if (m_Data->Physics && m_Data->Physics->IsValid())
+			return; // already running
+
+		m_Data->Physics.reset(Physics2D::Create());
+		m_Data->Physics->Initialize(m_Gravity);
+
+		// Give every rigid-body entity a simulation body + collider shapes.
+		for (entt::entity handle : m_Data->Registry.view<RigidBody2DComponent>())
+			CreatePhysicsBodyForEntity(static_cast<std::uint32_t>(handle));
+	}
+
+	void Scene::OnPhysicsStop()
+	{
+		if (!m_Data->Physics || !m_Data->Physics->IsValid())
+			return;
+
+		m_Data->Physics->Shutdown(); // also destroys all bodies + shapes
+		m_Data->Physics.reset();
+
+		// Clear the now-dangling runtime handles so a later restart is clean.
+		for (entt::entity handle : m_Data->Registry.view<RigidBody2DComponent>())
+			m_Data->Registry.get<RigidBody2DComponent>(handle).RuntimeBody = 0;
+		for (entt::entity handle : m_Data->Registry.view<BoxCollider2DComponent>())
+			m_Data->Registry.get<BoxCollider2DComponent>(handle).RuntimeShape = 0;
+		for (entt::entity handle : m_Data->Registry.view<CircleCollider2DComponent>())
+			m_Data->Registry.get<CircleCollider2DComponent>(handle).RuntimeShape = 0;
+	}
+
+	bool Scene::IsPhysicsRunning() const
+	{
+		return m_Data->Physics && m_Data->Physics->IsValid();
+	}
+
+	Physics2D* Scene::GetPhysics2D() const
+	{
+		return m_Data->Physics.get();
+	}
+
+	void Scene::CreateRigidBody(Entity entity)
+	{
+		if (entity)
+			CreatePhysicsBodyForEntity(entity.m_Handle);
+	}
+
+	void Scene::CreatePhysicsBodyForEntity(std::uint32_t handle)
+	{
+		if (!m_Data->Physics || !m_Data->Physics->IsValid())
+			return;
+
+		entt::entity e = static_cast<entt::entity>(handle);
+		if (!m_Data->Registry.all_of<RigidBody2DComponent, TransformComponent>(e))
+			return;
+
+		auto& rigidBody = m_Data->Registry.get<RigidBody2DComponent>(e);
+		if (rigidBody.RuntimeBody != 0)
+			return; // a body already exists for this entity — don't leak a second one
+
+		auto& transform = m_Data->Registry.get<TransformComponent>(e);
+
+		RigidBodyParams2D bodyParams;
+		bodyParams.Type = rigidBody.Type;
+		bodyParams.Position = { transform.Position.x, transform.Position.y };
+		bodyParams.Rotation = glm::radians(transform.Rotation); // Transform stores degrees
+		bodyParams.FixedRotation = rigidBody.FixedRotation;
+
+		rigidBody.RuntimeBody = m_Data->Physics->CreateBody(bodyParams);
+
+		// Collider sizes are fractions of the entity's full extent (Transform.Size);
+		// resolve them to world units here, so { 0.5, 0.5 } / radius 0.5 fits the quad.
+		if (m_Data->Registry.all_of<BoxCollider2DComponent>(e))
+		{
+			auto& collider = m_Data->Registry.get<BoxCollider2DComponent>(e);
+
+			BoxShapeParams2D shapeParams;
+			shapeParams.HalfExtents = { transform.Size.x * collider.Size.x, transform.Size.y * collider.Size.y };
+			shapeParams.Center = { collider.Offset.x * transform.Size.x, collider.Offset.y * transform.Size.y };
+			shapeParams.Density = collider.Density;
+			shapeParams.Friction = collider.Friction;
+			shapeParams.Restitution = collider.Restitution;
+
+			collider.RuntimeShape = m_Data->Physics->AddBoxShape(rigidBody.RuntimeBody, shapeParams);
+		}
+
+		if (m_Data->Registry.all_of<CircleCollider2DComponent>(e))
+		{
+			auto& collider = m_Data->Registry.get<CircleCollider2DComponent>(e);
+
+			CircleShapeParams2D shapeParams;
+			shapeParams.Radius = transform.Size.x * collider.Radius;
+			shapeParams.Center = { collider.Offset.x * transform.Size.x, collider.Offset.y * transform.Size.y };
+			shapeParams.Density = collider.Density;
+			shapeParams.Friction = collider.Friction;
+			shapeParams.Restitution = collider.Restitution;
+
+			collider.RuntimeShape = m_Data->Physics->AddCircleShape(rigidBody.RuntimeBody, shapeParams);
+		}
+	}
+
+	std::uint64_t Scene::GetRuntimeBody(Entity entity) const
+	{
+		entt::entity e = static_cast<entt::entity>(entity.m_Handle);
+		if (!m_Data->Registry.valid(e) || !m_Data->Registry.all_of<RigidBody2DComponent>(e))
+			return 0;
+		return m_Data->Registry.get<RigidBody2DComponent>(e).RuntimeBody;
+	}
+
+	void Scene::SetLinearVelocity(Entity entity, const glm::vec2& velocity)
+	{
+		if (m_Data->Physics)
+			m_Data->Physics->SetLinearVelocity(GetRuntimeBody(entity), velocity);
+	}
+
+	glm::vec2 Scene::GetLinearVelocity(Entity entity)
+	{
+		if (!m_Data->Physics)
+			return glm::vec2(0.0f);
+
+		return m_Data->Physics->GetLinearVelocity(GetRuntimeBody(entity));
+	}
+
+	void Scene::ApplyLinearImpulse(Entity entity, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake)
+	{
+		if (m_Data->Physics)
+			m_Data->Physics->ApplyLinearImpulse(GetRuntimeBody(entity), impulse, worldPoint, wake);
+	}
+
+	void Scene::ApplyLinearImpulseToCenter(Entity entity, const glm::vec2& impulse, bool wake)
+	{
+		if (m_Data->Physics)
+			m_Data->Physics->ApplyLinearImpulseToCenter(GetRuntimeBody(entity), impulse, wake);
+	}
+
+	void Scene::ApplyForceToCenter(Entity entity, const glm::vec2& force, bool wake)
+	{
+		if (m_Data->Physics)
+			m_Data->Physics->ApplyForceToCenter(GetRuntimeBody(entity), force, wake);
 	}
 
 }

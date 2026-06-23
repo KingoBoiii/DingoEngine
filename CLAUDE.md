@@ -23,6 +23,8 @@ include/DingoEngine/       Public API headers
   Events/                  Event system (Window, Keyboard, Mouse)
   Windowing/               Window (GLFW-backed)
   ImGui/                   ImGuiLayer overlay
+  Physics/2D/              Physics2D interface + 2D physics types (Box2D-backed)
+  Physics/3D/              Physics3D interface + 3D physics types (Jolt-backed)
 
 src/DingoEngine/           Implementations
   Core/                    Application loop, layer management
@@ -30,11 +32,21 @@ src/DingoEngine/           Implementations
   Graphics/NVRHI/          NVRHI wrappers
     Vulkan/                VulkanGraphicsContext, VulkanSwapChain
     DirectX12/             DirectX12GraphicsContext (currently disabled)
+  Physics/2D/              Physics2D factory
+    Box2D/                 Box2DPhysics2D — the only box2d.h includer
+  Physics/3D/              Physics3D factory
+    JoltPhysics/           JoltPhysics3D — the only Jolt includer (+ JoltPhysics3DData PIMPL)
 
-vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen). No changes can occur in vendor / submodules!
+vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen, box2d, JoltPhysics). No changes can occur in vendor / submodules!
 examples/
   FlappyBird/              Complete game (Renderer2D, input, audio, collision)
+  SpaceInvaders/           Scene/ECS showcase (v0.3)
+  AngryBirds/              2D physics showcase (v0.4) — slingshot, destructible towers, pigs
+  Physics3D/              3D physics showcase (v0.4, Jolt) — knock down a box tower with spheres
 ```
+
+Note: upstream Box2D ships CMake rather than Premake, so the fork carries its own
+`premake5.lua` (like the other vendor forks), `include`d from the root workspace.
 
 ## Key architecture patterns
 
@@ -122,6 +134,29 @@ Main loop per frame:
 | imgui | Debug/editor UI |
 | stb | Image loading (`stb_image`) |
 | msdf-atlas-gen | Font SDF atlas generation |
+| entt | Entity-component system backend (scenes) — hidden behind `Internal::SceneData` |
+| box2d | 2D rigid-body physics backend — hidden behind the `Physics2D` interface |
+| JoltPhysics | 3D rigid-body physics backend — hidden behind the `Physics3D` interface |
+
+## Scenes, ECS & physics
+
+- A `Scene` owns entities (EnTT) and, between `OnPhysicsStart()`/`OnPhysicsStop()`, a
+  `Physics2D` world (Box2D backend). **Neither EnTT nor Box2D appears in any public
+  header**: EnTT lives only in `src/.../SceneData.h` behind the opaque
+  `Internal::SceneData*`, and Box2D lives only in `src/.../Physics/2D/Box2D/` behind the
+  `Physics2D` interface. The `Scene` delegates all physics to the owned `Physics2D`
+  (exposed via `Scene::GetPhysics2D()`).
+- New built-in component types must be explicitly instantiated via the
+  `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
+- Physics components hold the simulated body/shape as an opaque `PhysicsBodyId2D` /
+  `PhysicsShapeId2D` handle. `Scene::OnUpdate` steps the `Physics2D` world after the
+  script pass and writes simulated transforms back onto the `TransformComponent`s.
+- **3D physics is separate**: a standalone `Physics3D` interface (Jolt-backed) under
+  `include/DingoEngine/Physics/3D/`, NOT wired into the ECS (the engine has no 3D scene yet).
+  Jolt is confined to `src/.../Physics/3D/JoltPhysics/` (`JoltPhysics3D` + `JoltPhysics3DData.h`
+  PIMPL, selected by `Physics3D::Create()`); bodies are opaque `PhysicsBodyId3D` (a packed Jolt
+  `BodyID`). You drive it directly and render from `GetTransform`. Jolt's global init
+  (allocator/Factory/RegisterTypes) is ref-counted across worlds.
 
 ## Graphics API notes
 

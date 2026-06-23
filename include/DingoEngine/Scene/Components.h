@@ -3,10 +3,12 @@
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cstdint>
 #include <string>
 
 namespace Dingo
@@ -90,6 +92,67 @@ namespace Dingo
 
 		TextComponent() = default;
 		TextComponent(const TextComponent&) = default;
+	};
+
+	// Physics -----------------------------------------------------------------
+
+	// A 2D rigid body. The simulating body lives in the Scene's Physics2D world
+	// (a Box2D backend, kept entirely inside the engine); RuntimeBody is an opaque
+	// handle to it, valid only while the scene's physics is running. No backend
+	// type ever appears in this public header.
+	struct RigidBody2DComponent
+	{
+		// Alias the backend-agnostic physics enum so existing references such as
+		// RigidBody2DComponent::BodyType::Dynamic keep working.
+		using BodyType = BodyType2D;
+
+		BodyType Type = BodyType::Static;
+		bool FixedRotation = false; // lock rotation about Z (e.g. a player character)
+
+		// Opaque handle to the simulated body; 0 when none.
+		PhysicsBodyId2D RuntimeBody = 0;
+
+		RigidBody2DComponent() = default;
+		RigidBody2DComponent(const RigidBody2DComponent&) = default;
+		RigidBody2DComponent(BodyType type) : Type(type) {}
+	};
+
+	// A box collision shape for an entity that also has a RigidBody2DComponent.
+	// Size is the half-extent expressed as a fraction of TransformComponent::Size,
+	// so the default { 0.5, 0.5 } exactly covers the entity's quad. Offset is in
+	// the same fractional units, relative to the entity center.
+	struct BoxCollider2DComponent
+	{
+		glm::vec2 Offset{ 0.0f };
+		glm::vec2 Size{ 0.5f };
+
+		float Density = 1.0f;
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		// Opaque handle to the simulated collision shape; 0 when none.
+		PhysicsShapeId2D RuntimeShape = 0;
+
+		BoxCollider2DComponent() = default;
+		BoxCollider2DComponent(const BoxCollider2DComponent&) = default;
+	};
+
+	// A circle collision shape. Radius is a fraction of TransformComponent::Size.x,
+	// so the default 0.5 inscribes the entity's quad.
+	struct CircleCollider2DComponent
+	{
+		glm::vec2 Offset{ 0.0f };
+		float Radius = 0.5f;
+
+		float Density = 1.0f;
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		// Opaque handle to the simulated collision shape; 0 when none.
+		PhysicsShapeId2D RuntimeShape = 0;
+
+		CircleCollider2DComponent() = default;
+		CircleCollider2DComponent(const CircleCollider2DComponent&) = default;
 	};
 
 }
