@@ -377,7 +377,11 @@ namespace Dingo
 		hlslCompiler.set_hlsl_options(hlslOptions);
 
 		spirv_cross::CompilerGLSL::Options commonOptions;
-		commonOptions.vertex.fixup_clipspace = true;
+		// Do NOT fix up clip space: for the HLSL backend, fixup_clipspace rewrites GL-style
+		// [-w, w] depth to [0, w]. Our GLSL is compiled with GLM_FORCE_DEPTH_ZERO_TO_ONE, so the
+		// SPIR-V already emits [0, w] (Vulkan/D3D) depth — re-applying the conversion corrupts the
+		// depth values and breaks depth testing on D3D (2D is unaffected since it runs depth-less).
+		commonOptions.vertex.fixup_clipspace = false;
 		hlslCompiler.set_common_options(commonOptions);
 
 		// Remap vertex input semantics to use the original GLSL variable names.

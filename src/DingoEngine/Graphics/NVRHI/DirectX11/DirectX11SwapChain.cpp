@@ -112,7 +112,8 @@ namespace Dingo
 	{
 		FramebufferParams framebufferParams = FramebufferParams()
 			.SetWidth(m_Params.Width)
-			.SetHeight(m_Params.Height);
+			.SetHeight(m_Params.Height)
+			.SetEnableDepth(true); // match the Vulkan swap chain so 3D passes have depth
 
 		m_SwapChainFramebuffers.resize(1);
 		m_SwapChainFramebuffers[0] = NvrhiSwapChainFramebuffer::Create(m_BackBufferHandle, framebufferParams);
