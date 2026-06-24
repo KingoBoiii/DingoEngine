@@ -155,6 +155,15 @@ namespace Dingo
 		Renderer::Clear(clearColor);
 	}
 
+	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
+	{
+		m_Params.LightDirection = direction;
+		m_Params.Ambient = ambient;
+		m_CameraData.LightDirection = glm::vec4(direction, 0.0f);
+		m_CameraData.Ambient = glm::vec4(ambient, 0.0f, 0.0f, 0.0f);
+		m_Material->SetUniform(m_CameraData);
+	}
+
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color)
 	{
 		if (!m_SceneActive || !mesh)

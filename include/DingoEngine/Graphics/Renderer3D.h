@@ -43,9 +43,9 @@ namespace Dingo
 	// EndScene(). Depth testing is enabled (the swap-chain framebuffer carries a
 	// depth attachment), so meshes occlude correctly regardless of submission order.
 	//
-	// The Scene drives it for entities that have a Transform3D + MeshRenderer
-	// component (Scene::OnRender3D); games can also drive it directly for HUD-free
-	// 3D drawing the way Breakout3D / Physics3D used to roll their own batcher.
+	// The SceneRenderer drives it for entities that have a Transform3D + MeshRenderer
+	// component (via Scene::RenderEntities3D); games can also drive it directly for
+	// HUD-free 3D drawing the way Breakout3D rolls its own batcher.
 	//
 	// Note: a scene is a single batch. Submitting more than the configured capacity
 	// drops the overflow (with a warning) instead of flushing mid-frame, which would
@@ -78,6 +78,11 @@ namespace Dingo
 
 		// Clears the current render target's colour and depth.
 		void Clear(const glm::vec4& clearColor);
+
+		// Updates the directional light used by the mesh shader. Takes effect on the
+		// next BeginScene (which re-uploads the camera/light uniform). The SceneRenderer
+		// drives this from a DirectionalLightComponent.
+		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
 		// Appends a mesh, transformed into world space on the CPU and flat-shaded with
 		// the scene's directional light. No-op outside a Begin/EndScene pair.
