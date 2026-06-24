@@ -30,6 +30,7 @@ namespace Dingo
 	private:
 		void BuildMenuScene();
 		void BuildGameOverScene();
+		void SetupCamera(Scene* scene);
 
 		void StartGame();
 		void BuildHud();
@@ -48,7 +49,6 @@ namespace Dingo
 		Scene* m_GameScene = nullptr;
 		Scene* m_GameOverScene = nullptr;
 
-		glm::mat4 m_ViewProjection{ 1.0f };
 		GameContext m_Context;
 
 		// HUD entities, updated each frame from m_Context.

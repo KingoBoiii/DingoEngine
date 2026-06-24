@@ -29,7 +29,6 @@ namespace Dingo
 		const float aspect = (float)Application::Get().GetWindow().GetWidth() / (float)Application::Get().GetWindow().GetHeight();
 		m_Context.HalfHeight = ORTHO_HEIGHT * 0.5f;
 		m_Context.HalfWidth = m_Context.HalfHeight * aspect;
-		m_ViewProjection = glm::ortho(-m_Context.HalfWidth, m_Context.HalfWidth, -m_Context.HalfHeight, m_Context.HalfHeight, -1.0f, 1.0f);
 
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
@@ -38,10 +37,7 @@ namespace Dingo
 		m_GameOverScene = m_SceneManager.CreateScene("GameOver");
 
 		for (Scene* scene : { m_MenuScene, m_GameScene, m_GameOverScene })
-		{
-			scene->SetViewProjection(m_ViewProjection);
 			scene->SetClearColor(COLOR_BG);
-		}
 
 		BuildMenuScene();
 		BuildGameOverScene();
@@ -66,6 +62,11 @@ namespace Dingo
 
 		const std::string active = m_SceneManager.GetActiveSceneName();
 
+		// Drive the active scene's scripts every frame (Menu/GameOver have none, so this
+		// is a cheap no-op there). Done before the per-scene logic so UpdateHud and the
+		// game-over check below see this frame's script results.
+		m_SceneManager.OnUpdate(deltaTime);
+
 		if (active == "Menu")
 		{
 			if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter))
@@ -73,7 +74,6 @@ namespace Dingo
 		}
 		else if (active == "Game")
 		{
-			m_SceneManager.OnUpdate(deltaTime);   // drives the entity scripts
 			UpdateHud();
 
 			if (m_Context.GameOver)
@@ -85,16 +85,29 @@ namespace Dingo
 				m_SceneManager.SetActiveScene("Menu");
 		}
 
-		m_SceneManager.OnRender(Application::Get().GetRenderer2D());
+		m_SceneManager.OnRender();
 	}
 
 	// ----------------------------------------------------------------------
 	// Scene construction
 	// ----------------------------------------------------------------------
 
+	// Every scene needs a camera entity for the SceneRenderer. An origin orthographic
+	// camera of full height ORTHO_HEIGHT reproduces the centered playfield view. It's
+	// re-created after every Clear() (which destroys all entities, camera included).
+	void GameLayer::SetupCamera(Scene* scene)
+	{
+		Entity camera = scene->CreateEntity("Camera");
+		auto& cameraComponent = camera.AddComponent<CameraComponent>();
+		cameraComponent.Type = CameraComponent::ProjectionType::Orthographic;
+		cameraComponent.OrthographicSize = ORTHO_HEIGHT;
+		cameraComponent.Primary = true;
+	}
+
 	void GameLayer::BuildMenuScene()
 	{
 		m_MenuScene->Clear();
+		SetupCamera(m_MenuScene);
 
 		Entity title = m_MenuScene->CreateEntity("Title");
 		title.GetComponent<TransformComponent>().Position = { 0.0f, 4.0f, 0.0f };
@@ -116,6 +129,7 @@ namespace Dingo
 	void GameLayer::BuildGameOverScene()
 	{
 		m_GameOverScene->Clear();
+		SetupCamera(m_GameOverScene);
 
 		Entity title = m_GameOverScene->CreateEntity("GameOverTitle");
 		title.GetComponent<TransformComponent>().Position = { 0.0f, 3.5f, 0.0f };
@@ -138,6 +152,7 @@ namespace Dingo
 		m_Context.GameOver = false;
 
 		m_GameScene->Clear();
+		SetupCamera(m_GameScene);
 
 		BuildHud();
 		SpawnPlayer();
