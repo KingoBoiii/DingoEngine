@@ -8,11 +8,12 @@ or links the ECS library**, and no ECS types appear in the public API.
 
 The pieces:
 
-- **`Scene`** — owns a set of entities + their behaviours, and renders the renderable ones.
+- **`Scene`** — owns a set of entities + their behaviours, and an `OnStart`/`OnUpdate`/`OnStop` lifecycle.
 - **`Entity`** — a lightweight handle for adding/reading components and scripts.
-- **Components** — built-in data structs (Transform, Sprite, Circle, Text).
+- **Components** — built-in data structs (Transform, Sprite, Circle, Text, Camera, light).
 - **`ScriptableEntity`** — base class for your per-entity game logic.
-- **`SceneManager`** — owns multiple named scenes and switches the active one.
+- **`SceneManager`** — owns named scenes, drives their lifecycle, and updates/renders the active one.
+- **`SceneRenderer`** — renders a scene from its ECS camera + light components (engine-owned; `SceneManager::OnRender()` drives it).
 
 Everything is available through `<DingoEngine.h>`.
 
@@ -57,26 +58,44 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `CircleRendererComponent` | `glm::vec4 Color`, `float Thickness`, `float Fade` |
 | `TextComponent` | `std::string Text`, `Font* Font`, `glm::vec4 Color`, `float Size`, `bool Centered` |
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
+| `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
+| `DirectionalLightComponent` | `glm::vec3 Direction`, `float Ambient` — read by the `SceneRenderer` for the 3D pass |
 
 ## Rendering a scene
 
-Give the scene a camera and clear colour, then call `OnRender` from your layer. It
-draws every entity that has a `TransformComponent` plus a `SpriteRenderer`,
-`CircleRenderer`, or `Text` component, wrapping `Renderer2D::BeginScene`/`EndScene`:
+Rendering goes through a **camera entity** and the **`SceneManager`**. Give the scene a clear
+colour and a camera — an entity with a `CameraComponent` — then call `SceneManager::OnRender()`.
+It finds the primary camera, builds its view-projection (projection from the component; **view
+from the camera entity's transform**, so moving that entity pans/zooms the view) and draws every
+entity with a `TransformComponent` plus a `SpriteRenderer`, `CircleRenderer`, or `Text`
+component — all through the engine's `SceneRenderer`:
 
 ```cpp
 void GameLayer::OnAttach()
 {
-    m_Scene.SetViewProjection(BuildCamera());            // a glm::mat4, see 2D Rendering
-    m_Scene.SetClearColor({ 0.02f, 0.02f, 0.06f, 1.0f });
+    m_Game = m_Scenes.CreateScene("Game");
+    m_Game->SetClearColor({ 0.02f, 0.02f, 0.06f, 1.0f });
+
+    // An orthographic camera at the origin → a centered view, full height 20 world units.
+    Entity camera = m_Game->CreateEntity("Camera");
+    auto& cam = camera.AddComponent<CameraComponent>();
+    cam.Type = CameraComponent::ProjectionType::Orthographic;
+    cam.OrthographicSize = 20.0f;
+
+    m_Scenes.SetActiveScene("Game");   // starts the scene (see Lifecycle, under SceneManager)
 }
 
 void GameLayer::OnUpdate(float dt)
 {
-    m_Scene.OnUpdate(dt);                                  // runs all attached behaviours
-    m_Scene.OnRender(Application::Get().GetRenderer2D());  // draws the entities
+    m_Scenes.OnUpdate(dt);   // runs the active scene's behaviours + physics
+    m_Scenes.OnRender();     // draws it through its camera (no renderer argument)
 }
 ```
+
+> The viewport aspect is applied automatically, so a camera tracks window resizes with no
+> per-layer bookkeeping. For a **custom overlay** in the same view (e.g. a HUD over the
+> entities), wrap your own `Renderer2D::BeginScene`/`EndScene` around `Scene::RenderEntities`,
+> taking the matrix from `Scene::GetActiveCameraViewProjection(aspect)`.
 
 ## 3D entities (v0.4.1)
 
@@ -114,17 +133,46 @@ scene.OnPhysicsStart();                              // builds a 3D world only i
 ```
 
 `Scene::OnUpdate(dt)` steps whichever physics world(s) are live and writes simulated transforms
-back (2D → `TransformComponent`, 3D → `Transform3DComponent`). Render the 3D entities with a
-perspective camera:
+back (2D → `TransformComponent`, 3D → `Transform3DComponent`). A 3D scene renders through a
+**perspective camera entity** (plus an optional `DirectionalLightComponent`); the `SceneRenderer`
+picks the 3D pass from the camera's projection type. The camera's *view* comes from its
+`Transform3DComponent`, so a follow camera writes its position + a look-at orientation each frame
+(here `scene` is a `SceneManager`-owned `Scene*` and `scenes` the manager — see below):
 
 ```cpp
-PerspectiveCamera camera(50.0f, aspect, 0.1f, 500.0f);
-camera.SetPosition(focus + glm::vec3{ 0, 15, 11 });  // a follow camera, updated each frame
-camera.SetTarget(focus);
+Entity cam = scene->CreateEntity("Camera");
+auto& camera = cam.AddComponent<CameraComponent>();
+camera.Type = CameraComponent::ProjectionType::Perspective;
+camera.FOV = 50.0f;                       // PerspNear/PerspFar default to 0.1 / 1000
+cam.AddComponent<Transform3DComponent>();
+scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>(); // defaults match the built-in light
 
-scene.OnUpdate(dt);
-scene.OnRender3D(Application::Get().GetRenderer3D(), camera);  // clears + draws Transform3D+Mesh entities
+// Each frame — drive the camera transform (the view is inverse(translate(P) * rotate(R))):
+auto& t = cam.GetComponent<Transform3DComponent>();
+t.Position = eye;                                                  // e.g. focus + { 0, 15, 11 }
+t.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(eye, focus, { 0, 1, 0 })));
+
+scenes.OnUpdate(dt);
+scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the light
 ```
+
+### 2D UI over a 3D scene
+
+To draw a 2D HUD/UI over a 3D scene, give the scene a **second camera** with an orthographic
+`CameraComponent` alongside your `Text`/`Sprite`/`Circle` UI entities. The `SceneRenderer` draws
+the 3D world first, then the 2D entities as an overlay on top — no extra calls, and a scene with
+only one camera type renders just that pass:
+
+```cpp
+Entity ui = scene->CreateEntity("UICamera");
+auto& uiCam = ui.AddComponent<CameraComponent>();
+uiCam.Type = CameraComponent::ProjectionType::Orthographic;
+uiCam.OrthographicSize = 20.0f;             // screen-space UI height, in world units
+// ...add Text / Sprite entities for the HUD; they draw on top of the 3D world.
+```
+
+(Alternatively, keep the HUD out of the scene and draw it in your own `Renderer2D` pass — what
+`examples/DungeonCrawler3D/` does today via `RenderHud()`.)
 
 Per-entity 3D controls live on `Scene` as `glm::vec3` overloads: `SetLinearVelocity` /
 `GetLinearVelocity3D`, `ApplyImpulse`, `ApplyForce`, and `GetPhysics3D()` for direct access.
@@ -205,10 +253,16 @@ for (InvaderScript* invader : GetScene().GetScriptsOfType<InvaderScript>())
   b.GetComponent<TransformComponent>().Position = muzzle;              // use the copy
   ```
 
-## SceneManager: multiple scenes
+## SceneManager: multiple scenes & lifecycle
 
-`SceneManager` owns named scenes and tracks the active one, updating and rendering
-only that scene:
+`SceneManager` is the default way to work with scenes — it owns named scenes, drives their
+lifecycle, and updates + renders the active one. Each scene has an `OnStart` / `OnUpdate` /
+`OnStop` lifecycle: **`OnStart` brings the scene up (starts physics, `OnPhysicsStart`), `OnStop`
+tears it down (`OnPhysicsStop`)**, and `IsRunning()` reports the state.
+
+`SetActiveScene(name)` is the one call that drives transitions: it runs `OnStop` on the outgoing
+scene and `OnStart` on the incoming one. Re-activating the already-active scene is a no-op, and
+`CreateScene` no longer auto-activates — the first `SetActiveScene` is what starts a scene.
 
 ```cpp
 class GameLayer : public Layer
@@ -220,36 +274,36 @@ class GameLayer : public Layer
 
     void OnAttach() override
     {
-        m_Menu     = m_Scenes.CreateScene("Menu");      // first scene becomes active
+        m_Menu     = m_Scenes.CreateScene("Menu");
         m_Game     = m_Scenes.CreateScene("Game");
         m_GameOver = m_Scenes.CreateScene("GameOver");
-        for (Scene* s : { m_Menu, m_Game, m_GameOver }) { s->SetViewProjection(cam); s->SetClearColor(bg); }
+        for (Scene* s : { m_Menu, m_Game, m_GameOver }) { s->SetClearColor(bg); SetupCamera(s); }
         BuildMenu();
+        m_Scenes.SetActiveScene("Menu");                 // activates + starts the Menu scene
     }
 
     void OnUpdate(float dt) override
     {
+        m_Scenes.OnUpdate(dt);                           // always drive the active scene's scripts + physics
+
         const std::string active = m_Scenes.GetActiveSceneName();
-        if (active == "Menu")
-        {
-            if (Input::IsKeyDown(Key::Space)) { StartGame(); m_Scenes.SetActiveScene("Game"); }
-        }
-        else if (active == "Game")
-        {
-            m_Scenes.OnUpdate(dt);                       // runs the active scene's scripts
-            if (m_State.GameOver) m_Scenes.SetActiveScene("GameOver");
-        }
-        else if (active == "GameOver")
-        {
-            if (Input::IsKeyDown(Key::Space)) m_Scenes.SetActiveScene("Menu");
-        }
-        m_Scenes.OnRender(Application::Get().GetRenderer2D());
+        if (active == "Menu" && Input::IsKeyDown(Key::Space)) { BuildGame(); m_Scenes.SetActiveScene("Game"); }
+        else if (active == "Game" && m_State.GameOver)        m_Scenes.SetActiveScene("GameOver");
+        else if (active == "GameOver" && Input::IsKeyDown(Key::Space)) m_Scenes.SetActiveScene("Menu");
+
+        m_Scenes.OnRender();                             // SceneRenderer draws the active scene
     }
 };
 ```
 
+> `Scene::Clear()` destroys **every** entity — including the camera (and light) entity — so
+> recreate them wherever you rebuild a scene (a small `SetupCamera(scene)` helper called after each
+> `Clear()`). To **restart the active scene** (its own `SetActiveScene` is a no-op), drive the
+> lifecycle by hand: `scene->OnStop(); scene->Clear(); /* rebuild + SetupCamera */; scene->OnStart();`.
+
 API: `CreateScene`, `GetScene`, `HasScene`, `SetActiveScene`, `GetActiveScene`,
-`GetActiveSceneName`, `OnUpdate`, `OnRender`, `Clear`. The manager owns the scenes.
+`GetActiveSceneName`, `OnUpdate`, `OnRender` (no argument — uses the engine `SceneRenderer`),
+`Clear`. Scene lifecycle: `OnStart` / `OnStop` / `IsRunning`. The manager owns the scenes.
 
 ## Worked example: Space Invaders
 

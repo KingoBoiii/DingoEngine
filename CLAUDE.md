@@ -152,6 +152,21 @@ Main loop per frame:
   `src/.../Physics/2D/Box2D/` behind the `Physics2D` interface, and Jolt only in
   `src/.../Physics/3D/JoltPhysics/` behind `Physics3D`. The `Scene` delegates physics to
   the owned worlds (`Scene::GetPhysics2D()` / `Scene::GetPhysics3D()`).
+- **Scene lifecycle & rendering (v0.4.2).** `Scene::OnStart()`/`OnStop()` wrap
+  `OnPhysicsStart`/`OnPhysicsStop` (with `IsRunning()`); `Clear()` also stops the scene.
+  `SceneManager` is the default scene API — `SetActiveScene` runs `OnStop` on the outgoing
+  scene and `OnStart` on the incoming (no-op if already active), `CreateScene` no longer
+  auto-activates, and `OnUpdate`/`OnRender()` drive the active scene. `SceneManager::OnRender()`
+  delegates to the engine-owned **`SceneRenderer`** (`Application::GetSceneRenderer()`): it
+  reads the **primary `CameraComponent`** (projection from the component; view from the camera
+  entity's transform — ortho uses the 2D `TransformComponent`, perspective the
+  `Transform3DComponent`) plus a `DirectionalLightComponent`. A scene may hold **both** a
+  perspective (world) camera and an orthographic (UI) camera: the renderer draws the 3D world
+  pass, then the 2D entities as an overlay on top (one camera type → just that pass).
+  `Scene::OnRender`/`OnRender3D`/`SetViewProjection` are **gone**;
+  `Scene::RenderEntities`/`RenderEntities3D` stay public for custom passes, and
+  `Scene::GetActiveCameraViewProjection(aspect)` returns the active camera's VP for a matching
+  overlay pass.
 - New built-in component types must be explicitly instantiated via the
   `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
 - Physics components hold the simulated body/shape as an opaque handle (`PhysicsBodyId2D` /
@@ -167,8 +182,9 @@ Main loop per frame:
   ones — a scene pays only for the dimension it uses). The 3D collider shape is **baked
   into the body at creation** (Physics3D has no separate shape handles, no `SetPosition`,
   and no angular-velocity control). Jolt's global init (allocator/Factory/RegisterTypes)
-  is ref-counted across worlds. `Scene::OnRender3D(Renderer3D&, PerspectiveCamera&)` draws
-  every `Transform3D`+`MeshRenderer` entity.
+  is ref-counted across worlds. The `SceneRenderer` (v0.4.2) draws every
+  `Transform3D`+`MeshRenderer` entity (via `Scene::RenderEntities3D`), lit by a
+  `DirectionalLightComponent`.
 
 ## Graphics API notes
 
