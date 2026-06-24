@@ -82,25 +82,26 @@ namespace Dingo
 		const Window& window = Application::Get().GetWindow();
 		m_AspectRatio = static_cast<float>(window.GetWidth()) / static_cast<float>(window.GetHeight());
 
-		m_Camera = PerspectiveCamera(50.0f, m_AspectRatio, 0.1f, 500.0f);
-
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 		UpdateOrthoProjection();
 
-		m_Scene = std::make_unique<Scene>("Dungeon Crawler 3D");
+		m_Scene = m_SceneManager.CreateScene("Dungeon Crawler 3D");
 		m_Scene->SetClearColor({ 0.05f, 0.06f, 0.09f, 1.0f });
 		m_Scene->SetGravity(GRAVITY); // vec3 overload -> the 3D world
 
-		BuildDungeon();
-		m_Scene->OnPhysicsStart();
+		SetupSceneInfra();  // camera + directional-light entities
+		BuildDungeon();     // builds the RigidBody3D entities
+
+		// Activating the scene starts physics (OnStart -> OnPhysicsStart), now that the
+		// rigid bodies exist.
+		m_SceneManager.SetActiveScene("Dungeon Crawler 3D");
 		UpdateCamera();
 	}
 
 	void DungeonLayer::OnDetach()
 	{
-		// Meshes are owned by Renderer3D — do not delete them here.
-		m_Scene.reset();
-
+		// Meshes are owned by Renderer3D — do not delete them here. The scene is owned
+		// by m_SceneManager and torn down with it.
 		if (m_Font)
 		{
 			m_Font->Destroy();
@@ -125,7 +126,7 @@ namespace Dingo
 			UpdatePlayer(deltaTime);      // movement + attack input
 			UpdateEnemies(deltaTime);     // aggro steering + hit-flash
 
-			m_Scene->OnUpdate(deltaTime); // steps physics + writes transforms back
+			m_SceneManager.OnUpdate(deltaTime); // steps physics + writes transforms back
 
 			UpdateTreasures(deltaTime);   // spin / bob / collect (post-step positions)
 			UpdateAttackFx(deltaTime);    // grow / fade the swing ring
@@ -166,7 +167,7 @@ namespace Dingo
 
 		UpdateCamera();
 
-		m_Scene->OnRender3D(Application::Get().GetRenderer3D(), m_Camera);
+		m_SceneManager.OnRender();
 		RenderHud();
 	}
 
@@ -178,8 +179,7 @@ namespace Dingo
 			if (e.GetWidth() > 0 && e.GetHeight() > 0)
 			{
 				m_AspectRatio = static_cast<float>(e.GetWidth()) / static_cast<float>(e.GetHeight());
-				m_Camera.SetAspectRatio(m_AspectRatio);
-				UpdateOrthoProjection();
+				UpdateOrthoProjection(); // HUD ortho; the 3D camera takes aspect from the viewport
 			}
 			return false;
 		});
@@ -194,6 +194,24 @@ namespace Dingo
 		const float x = (col + 0.5f) * TILE - gridWidth * 0.5f;
 		const float z = (row + 0.5f) * TILE - gridDepth * 0.5f;
 		return { x, y, z };
+	}
+
+	void DungeonLayer::SetupSceneInfra()
+	{
+		// The perspective follow camera as an ECS entity: the SceneRenderer reads the
+		// projection from the CameraComponent and the view from this entity's
+		// Transform3D (positioned each frame by UpdateCamera).
+		m_CameraEntity = m_Scene->CreateEntity("Camera");
+		auto& camera = m_CameraEntity.AddComponent<CameraComponent>();
+		camera.Type = CameraComponent::ProjectionType::Perspective;
+		camera.FOV = 50.0f;
+		camera.PerspNear = 0.1f;
+		camera.PerspFar = 500.0f;
+		camera.Primary = true;
+		m_CameraEntity.AddComponent<Transform3DComponent>();
+
+		// A single directional light; defaults match the engine's built-in 3D light.
+		m_Scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
 	}
 
 	void DungeonLayer::BuildDungeon()
@@ -234,7 +252,8 @@ namespace Dingo
 
 	void DungeonLayer::Restart()
 	{
-		m_Scene->Clear(); // stops physics and destroys every entity (incl. the attack FX)
+		m_Scene->OnStop(); // stop physics
+		m_Scene->Clear();  // destroys every entity — including the camera, light, and attack FX
 		m_Treasures.clear();
 		m_Enemies.clear();
 		m_Player = {};
@@ -244,8 +263,9 @@ namespace Dingo
 		m_Invuln = 0.0f;
 		m_State = State::Playing;
 
+		SetupSceneInfra(); // re-create the camera + light Clear() just destroyed
 		BuildDungeon();
-		m_Scene->OnPhysicsStart();
+		m_Scene->OnStart(); // restart physics on the same scene (SetActiveScene would no-op)
 		UpdateCamera();
 	}
 
@@ -510,8 +530,20 @@ namespace Dingo
 			? m_Player.GetComponent<Transform3DComponent>().Position
 			: glm::vec3(0.0f);
 
-		m_Camera.SetPosition(focus + CAMERA_OFFSET);
-		m_Camera.SetTarget(focus + glm::vec3(0.0f, 0.5f, 0.0f));
+		const glm::vec3 eye = focus + CAMERA_OFFSET;
+		const glm::vec3 target = focus + glm::vec3(0.0f, 0.5f, 0.0f);
+
+		// The SceneRenderer derives a perspective camera's view as
+		// inverse(translate(P) * mat4_cast(R)), so set this entity's transform to the
+		// camera's world transform: position = eye, rotation = the orientation of
+		// inverse(lookAt(eye, target, up)). This reproduces the old PerspectiveCamera
+		// lookAt framing exactly (and avoids GLM's experimental quatLookAt).
+		if (m_CameraEntity.IsValid())
+		{
+			auto& transform = m_CameraEntity.GetComponent<Transform3DComponent>();
+			transform.Position = eye;
+			transform.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(eye, target, glm::vec3(0.0f, 1.0f, 0.0f))));
+		}
 	}
 
 	// --- HUD ------------------------------------------------------------------

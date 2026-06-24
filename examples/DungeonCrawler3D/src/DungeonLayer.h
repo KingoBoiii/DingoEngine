@@ -52,6 +52,7 @@ namespace Dingo
 		// Scene construction
 		void BuildDungeon();
 		void Restart();
+		void SetupSceneInfra(); // create the camera + directional-light entities
 		glm::vec3 CellToWorld(int col, int row, float y) const;
 
 		Entity SpawnFloor(float worldWidth, float worldDepth);
@@ -74,9 +75,10 @@ namespace Dingo
 		void DrawCenteredText(Renderer2D& renderer, const std::string& text, float size, float y, const glm::vec4& color);
 
 	private:
-		std::unique_ptr<Scene> m_Scene;
+		SceneManager m_SceneManager;
+		Scene* m_Scene = nullptr; // owned by m_SceneManager
 
-		PerspectiveCamera m_Camera;
+		Entity m_CameraEntity;    // perspective follow camera; transform set each frame
 		float m_AspectRatio = 16.0f / 9.0f;
 
 		// Borrowed from Renderer3D — unit box (1x1x1) and unit-diameter sphere.
