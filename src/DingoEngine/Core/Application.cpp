@@ -52,6 +52,7 @@ namespace Dingo
 
 		m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
 		m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
+		m_SceneRenderer = new SceneRenderer(*m_Renderer2D, *m_Renderer3D);
 
 		OnInitialize();
 
@@ -80,6 +81,13 @@ namespace Dingo
 		Renderer::Shutdown();
 
 		m_LayerStack.Clear();
+
+		// Delete the SceneRenderer before the renderers it references.
+		if (m_SceneRenderer)
+		{
+			delete m_SceneRenderer;
+			m_SceneRenderer = nullptr;
+		}
 
 		if (m_Renderer3D)
 		{

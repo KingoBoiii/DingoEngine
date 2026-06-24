@@ -10,6 +10,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Scene/SceneRenderer.h"
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 
@@ -106,6 +107,7 @@ namespace Dingo
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
 		Renderer3D& GetRenderer3D() const { return *m_Renderer3D; }
+		SceneRenderer& GetSceneRenderer() const { return *m_SceneRenderer; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 
 		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
@@ -129,6 +131,7 @@ namespace Dingo
 		SwapChain* m_SwapChain = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
 		Renderer3D* m_Renderer3D = nullptr;
+		SceneRenderer* m_SceneRenderer = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_IsRunning = true;
