@@ -40,7 +40,6 @@ namespace Dingo
 		const float aspect = (float)Application::Get().GetWindow().GetWidth() / (float)Application::Get().GetWindow().GetHeight();
 		m_Context.HalfHeight = ORTHO_HEIGHT * 0.5f;
 		m_Context.HalfWidth = m_Context.HalfHeight * aspect;
-		m_ViewProjection = glm::ortho(-m_Context.HalfWidth, m_Context.HalfWidth, -m_Context.HalfHeight, m_Context.HalfHeight, -1.0f, 1.0f);
 
 		m_SlingPos = { -m_Context.HalfWidth + SLING_INSET_X, GROUND_TOP_Y + SLING_HEIGHT };
 
@@ -51,15 +50,14 @@ namespace Dingo
 		m_GameOverScene = m_SceneManager.CreateScene("GameOver");
 
 		for (Scene* scene : { m_MenuScene, m_GameScene, m_GameOverScene })
-		{
-			scene->SetViewProjection(m_ViewProjection);
 			scene->SetClearColor(COLOR_SKY);
-		}
 
 		BuildMenuScene();
 
 		// GameOver scaffold — the result/score strings are filled in on the transition.
 		{
+			SetupCamera(m_GameOverScene);
+
 			Entity title = m_GameOverScene->CreateEntity("Title");
 			title.GetComponent<TransformComponent>().Position = { 0.0f, 3.0f, 0.0f };
 			m_ResultText = title;
@@ -111,20 +109,34 @@ namespace Dingo
 				m_SceneManager.SetActiveScene("Menu");
 		}
 
-		// The Game scene draws its own physics overlay; the others are plain.
+		// The Game scene draws its own slingshot/aim overlay in one custom pass; the
+		// others render through the SceneRenderer.
 		if (m_SceneManager.GetActiveSceneName() == "Game")
 			RenderGame();
 		else
-			m_SceneManager.OnRender(Application::Get().GetRenderer2D());
+			m_SceneManager.OnRender();
 	}
 
 	// ----------------------------------------------------------------------
 	// Menu + flow
 	// ----------------------------------------------------------------------
 
+	// Every scene needs a camera entity for the SceneRenderer. An origin orthographic
+	// camera of full height ORTHO_HEIGHT reproduces the centered view. Re-created after
+	// every Clear() (which destroys all entities, the camera included).
+	void GameLayer::SetupCamera(Scene* scene)
+	{
+		Entity camera = scene->CreateEntity("Camera");
+		auto& cameraComponent = camera.AddComponent<CameraComponent>();
+		cameraComponent.Type = CameraComponent::ProjectionType::Orthographic;
+		cameraComponent.OrthographicSize = ORTHO_HEIGHT;
+		cameraComponent.Primary = true;
+	}
+
 	void GameLayer::BuildMenuScene()
 	{
 		m_MenuScene->Clear();
+		SetupCamera(m_MenuScene);
 
 		Entity title = m_MenuScene->CreateEntity("Title");
 		title.GetComponent<TransformComponent>().Position = { 0.0f, 4.0f, 0.0f };
@@ -156,22 +168,31 @@ namespace Dingo
 		m_Context.PigsLeft = 0;
 		m_Context.Won = false;
 
-		m_GameScene->Clear();        // also stops the previous level's physics world
+		// StartLevel runs both on first entry (from the menu) and on a level-to-level
+		// advance while "Game" is already active. SetActiveScene is a no-op when the
+		// scene is already active, so on a replay we drive the lifecycle by hand.
+		const bool alreadyActive = (m_SceneManager.GetActiveSceneName() == "Game");
+		if (alreadyActive)
+			m_GameScene->OnStop();   // tear down the previous level's physics first
+
+		m_GameScene->Clear();        // destroys entities incl. the camera; also stops the scene
+		SetupCamera(m_GameScene);    // re-create the camera Clear() just destroyed
 		m_GameScene->SetGravity(GRAVITY);
 
 		SpawnGround();
 		SpawnStructure(level);       // increments m_Context.PigsLeft per pig
 		BuildHud();
 
-		// Build the physics world for the static + structure bodies now in the scene.
-		// The waiting bird is spawned afterwards and stays body-less until launched.
-		m_GameScene->OnPhysicsStart();
+		// Bring physics up now that the static + structure bodies exist. On first entry
+		// SetActiveScene fires OnStart; on a replay we stopped above, so start by hand.
+		if (alreadyActive)
+			m_GameScene->OnStart();
+		else
+			m_SceneManager.SetActiveScene("Game");
 
 		m_BirdInFlight = false;
 		m_Dragging = false;
-		SpawnWaitingBird();
-
-		m_SceneManager.SetActiveScene("Game");
+		SpawnWaitingBird();          // body-less until launched
 	}
 
 	void GameLayer::BuildHud()
@@ -343,7 +364,7 @@ namespace Dingo
 			HandleAiming();
 
 		// Steps the physics world and runs the pig behaviours (which pop on impact).
-		m_GameScene->OnUpdate(deltaTime);
+		m_SceneManager.OnUpdate(deltaTime);
 
 		// Level cleared?
 		if (m_Context.PigsLeft <= 0)
@@ -518,7 +539,10 @@ namespace Dingo
 	{
 		Renderer2D& renderer = Application::Get().GetRenderer2D();
 
-		renderer.BeginScene(m_ViewProjection);
+		const glm::vec2 viewport = renderer.GetViewportSize();
+		const float aspect = (viewport.y > 0.0f) ? viewport.x / viewport.y : 1.0f;
+
+		renderer.BeginScene(m_GameScene->GetActiveCameraViewProjection(aspect));
 		renderer.Clear(m_GameScene->GetClearColor());
 
 		// Slingshot post (drawn behind the bird/structure quads).

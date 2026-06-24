@@ -30,6 +30,7 @@ namespace Dingo
 	private:
 		// Scene construction / flow
 		void BuildMenuScene();
+		void SetupCamera(Scene* scene);
 		void StartGame();          // from the menu: reset score, load level 1
 		void StartLevel(int level);
 		void BuildHud();
@@ -62,7 +63,6 @@ namespace Dingo
 		Scene* m_GameScene = nullptr;
 		Scene* m_GameOverScene = nullptr;
 
-		glm::mat4 m_ViewProjection{ 1.0f };
 		GameContext m_Context;
 
 		glm::vec2 m_SlingPos{ 0.0f };
