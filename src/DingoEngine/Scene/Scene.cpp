@@ -8,8 +8,6 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 
-#include "DingoEngine/Core/PerspectiveCamera.h"
-
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
@@ -107,7 +105,10 @@ namespace Dingo
 
 	void Scene::Clear()
 	{
-		// Drop the physics world first so its bodies don't outlive the entities.
+		// Drop the physics world first so its bodies don't outlive the entities, and
+		// mark the scene stopped — otherwise a later OnStart() would early-return on a
+		// stale running flag and never rebuild physics.
+		m_IsRunning = false;
 		OnPhysicsStop();
 
 		for (auto& [handle, script] : m_Data->Scripts)
@@ -213,14 +214,6 @@ namespace Dingo
 			fn(script.get());
 	}
 
-	void Scene::OnRender(Renderer2D& renderer)
-	{
-		renderer.BeginScene(m_ViewProjection);
-		renderer.Clear(m_ClearColor);
-		RenderEntities(renderer);
-		renderer.EndScene();
-	}
-
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
 		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
@@ -275,14 +268,6 @@ namespace Dingo
 		}
 	}
 
-	void Scene::OnRender3D(Renderer3D& renderer, const PerspectiveCamera& camera)
-	{
-		renderer.BeginScene(camera);
-		renderer.Clear(m_ClearColor);
-		RenderEntities3D(renderer);
-		renderer.EndScene();
-	}
-
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
@@ -294,6 +279,78 @@ namespace Dingo
 
 			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color);
 		}
+	}
+
+	// --- Camera -----------------------------------------------------------------
+
+	bool Scene::GetPrimaryCameraEntity(Entity& out)
+	{
+		entt::entity first = entt::null;
+
+		auto view = m_Data->Registry.view<CameraComponent>();
+		for (entt::entity handle : view)
+		{
+			if (first == entt::null)
+				first = handle;
+
+			if (view.get<CameraComponent>(handle).Primary)
+			{
+				out = Wrap(static_cast<std::uint32_t>(handle));
+				return true;
+			}
+		}
+
+		if (first != entt::null)
+		{
+			out = Wrap(static_cast<std::uint32_t>(first));
+			return true;
+		}
+
+		return false;
+	}
+
+	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
+	{
+		if (!IsValid(cameraEntity))
+			return glm::mat4(1.0f);
+
+		entt::entity handle = static_cast<entt::entity>(cameraEntity.m_Handle);
+		if (!m_Data->Registry.all_of<CameraComponent>(handle))
+			return glm::mat4(1.0f);
+
+		const CameraComponent& camera = m_Data->Registry.get<CameraComponent>(handle);
+		const glm::mat4 projection = camera.GetProjection(aspect);
+
+		// The view is the inverse of the camera entity's world transform. A perspective
+		// camera reads its Transform3DComponent (position + orientation); an orthographic
+		// camera reads the 2D TransformComponent (every entity has one on creation).
+		glm::mat4 view(1.0f);
+		if (camera.Type == CameraComponent::ProjectionType::Perspective)
+		{
+			if (m_Data->Registry.all_of<Transform3DComponent>(handle))
+			{
+				const Transform3DComponent& transform = m_Data->Registry.get<Transform3DComponent>(handle);
+				view = glm::inverse(glm::translate(glm::mat4(1.0f), transform.Position) * glm::mat4_cast(transform.Rotation));
+			}
+		}
+		else
+		{
+			const TransformComponent& transform = m_Data->Registry.get<TransformComponent>(handle);
+			view = glm::inverse(
+				glm::translate(glm::mat4(1.0f), glm::vec3(transform.Position.x, transform.Position.y, 0.0f))
+				* glm::rotate(glm::mat4(1.0f), glm::radians(transform.Rotation), glm::vec3(0.0f, 0.0f, 1.0f)));
+		}
+
+		return projection * view;
+	}
+
+	glm::mat4 Scene::GetActiveCameraViewProjection(float aspect)
+	{
+		Entity cameraEntity;
+		if (!GetPrimaryCameraEntity(cameraEntity))
+			return glm::mat4(1.0f);
+
+		return GetCameraViewProjection(cameraEntity, aspect);
 	}
 
 	// --- Physics (2D) -----------------------------------------------------------
@@ -310,6 +367,24 @@ namespace Dingo
 		m_Gravity3D = gravity;
 		if (m_Data->Physics3D && m_Data->Physics3D->IsValid())
 			m_Data->Physics3D->SetGravity(gravity);
+	}
+
+	void Scene::OnStart()
+	{
+		if (m_IsRunning)
+			return;
+
+		m_IsRunning = true;
+		OnPhysicsStart();
+	}
+
+	void Scene::OnStop()
+	{
+		if (!m_IsRunning)
+			return;
+
+		m_IsRunning = false;
+		OnPhysicsStop();
 	}
 
 	void Scene::OnPhysicsStart()
