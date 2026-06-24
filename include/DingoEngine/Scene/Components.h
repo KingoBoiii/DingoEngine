@@ -97,6 +97,61 @@ namespace Dingo
 		TextComponent(const TextComponent&) = default;
 	};
 
+	// Camera ------------------------------------------------------------------
+
+	// The scene's camera, read by the SceneRenderer. The projection is computed
+	// from these fields (the viewport aspect is supplied by the renderer); the VIEW
+	// comes from the camera entity's transform — an Orthographic camera uses the
+	// entity's 2D TransformComponent, a Perspective camera its Transform3DComponent.
+	// Mark exactly one camera Primary per scene.
+	struct CameraComponent
+	{
+		enum class ProjectionType { Orthographic, Perspective };
+
+		ProjectionType Type = ProjectionType::Orthographic;
+
+		// Orthographic: full visible height in world units (width follows aspect).
+		float OrthographicSize = 10.0f;
+		float OrthoNear = -1.0f;
+		float OrthoFar = 1.0f;
+
+		// Perspective: vertical field of view in degrees.
+		float FOV = 45.0f;
+		float PerspNear = 0.1f;
+		float PerspFar = 1000.0f;
+
+		bool Primary = true;
+
+		CameraComponent() = default;
+		CameraComponent(const CameraComponent&) = default;
+
+		// Projection for the given viewport aspect (width / height). Uses the same glm
+		// calls as the rest of the engine, so the depth convention matches.
+		glm::mat4 GetProjection(float aspect) const
+		{
+			if (Type == ProjectionType::Perspective)
+				return glm::perspective(glm::radians(FOV), aspect, PerspNear, PerspFar);
+
+			const float halfHeight = OrthographicSize * 0.5f;
+			const float halfWidth = halfHeight * aspect;
+			return glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, OrthoNear, OrthoFar);
+		}
+	};
+
+	// Lighting ----------------------------------------------------------------
+
+	// A single directional light read by the SceneRenderer and fed to Renderer3D.
+	// Defaults match Renderer3D's built-in light, so a default-constructed one
+	// reproduces the engine's out-of-the-box 3D lighting.
+	struct DirectionalLightComponent
+	{
+		glm::vec3 Direction{ -0.4f, -1.0f, -0.35f }; // the way the light travels
+		float Ambient = 0.35f;                        // lifts unlit faces
+
+		DirectionalLightComponent() = default;
+		DirectionalLightComponent(const DirectionalLightComponent&) = default;
+	};
+
 	// Physics -----------------------------------------------------------------
 
 	// A 2D rigid body. The simulating body lives in the Scene's Physics2D world
