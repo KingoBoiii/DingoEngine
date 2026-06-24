@@ -36,6 +36,7 @@ namespace Dingo
 		void GenerateLevel(); // roll a new random dungeon -> tile map + spawns
 		void BuildTiles();    // (re)build the tile entities from the current map
 		void ResetGame();     // regenerate the dungeon, then (re)spawn player + enemies
+		void SetupCamera();   // create the follow-camera entity (survives ResetGame)
 		void UpdateCamera();
 		int CountEnemies();
 		int CountLoot();
@@ -45,7 +46,8 @@ namespace Dingo
 		void DrawCenteredText(Renderer2D& r, const std::string& text, float size, const glm::vec2& offset, const glm::vec4& color);
 
 	private:
-		Scene m_Scene{ "Dungeon" };
+		SceneManager m_SceneManager;
+		Scene* m_Scene = nullptr; // owned by m_SceneManager
 		Font* m_Font = nullptr;
 		GameContext m_Context;
 
@@ -58,7 +60,7 @@ namespace Dingo
 		float m_HalfW = 0.0f;
 		float m_HalfH = 0.0f;
 		glm::vec2 m_CameraPos{ 0.0f };
-		glm::mat4 m_WorldVP{ 1.0f };
+		Entity m_CameraEntity; // the follow camera; its transform is updated each frame
 
 		// --- Spawns (parsed from the room layout) ---
 		glm::vec2 m_PlayerSpawn{ 0.0f };
