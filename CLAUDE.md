@@ -194,6 +194,16 @@ Main loop per frame:
   is ref-counted across worlds. The `SceneRenderer` (v0.4.2) draws every
   `Transform3D`+`MeshRenderer` entity (via `Scene::RenderEntities3D`), lit by a
   `DirectionalLightComponent`.
+- **Per-mesh materials (v0.4.2).** `MeshRendererComponent::Material` is an optional `Material*`
+  (null = Renderer3D's built-in flat-lit default). Renderer3D **groups meshes by material** and
+  draws one batch per material from a pooled (vertex, index) buffer (no shared buffer is
+  re-uploaded mid-frame). Camera + light live in a shared **scene UBO** the renderer binds at
+  **binding 0** on every material (`Material::SetSceneUniformBuffer`), so a custom mesh shader's
+  convention is: **binding 0** = scene (`ViewProjection`+light), **binding 1** = the material's own
+  `SetUniform` params, **bindings 2+** = its textures/samplers. The scene UBO is volatile — written
+  via `Renderer::Upload` (command list) each `BeginScene`, not pre-uploaded. The binding set a
+  material binds must match what its shader reflects, so declare exactly the bindings you use.
+  `examples/DungeonCrawler3D/` showcases a custom unlit/glow treasure material.
 
 ## Graphics API notes
 

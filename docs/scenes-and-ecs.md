@@ -108,7 +108,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | Component | Fields |
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
-| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color` |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = built-in flat-lit) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), opaque `RuntimeBody` |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
@@ -178,6 +178,33 @@ uiCam.OrthographicSize = 20.0f;             // screen-space UI height, in world 
 Per-entity 3D controls live on `Scene` as `glm::vec3` overloads: `SetLinearVelocity` /
 `GetLinearVelocity3D`, `ApplyImpulse`, `ApplyForce`, and `GetPhysics3D()` for direct access.
 `examples/DungeonCrawler3D/` is a worked dungeon-crawler prototype built entirely on this path.
+
+### Custom materials (per-mesh shaders)
+
+By default meshes draw with Renderer3D's built-in flat directional-lit material. Assign a
+`Material*` to a `MeshRendererComponent` to give that mesh its own shader, uniforms, and
+textures. Renderer3D groups meshes by material and draws one batch per material.
+
+The binding convention a custom mesh shader follows:
+
+- **binding 0** — the engine **scene UBO** (`mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`),
+  bound on every material each frame. Declare it to position your vertices (and light, if you want it).
+- **binding 1** — your material's own uniforms (whatever you pass to `Material::SetUniform`). Omit it
+  if the material has no params.
+- **binding 2+** — the material's textures/samplers (`Material::SetTexture` / `SetSampler`).
+
+```cpp
+Shader* shader = Shader::CreateFromSource("Glow", glowSource);   // GLSL with the bindings above
+Material* glow = Material::Create(MaterialParams().SetShader(shader).SetCullMode(CullMode::None));
+glow->SetUniform(GlowParams{ ... });        // creates the binding-1 UBO
+
+entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color)).Material = glow;
+// ...each frame, update params as you like:
+glow->SetUniform(GlowParams{ pulsedIntensity });
+```
+
+`examples/DungeonCrawler3D/` shows this: the treasures use a custom unlit/glow material whose
+intensity is pulsed each frame (see `GameScripts.cpp`).
 
 ## Behaviours: `ScriptableEntity`
 
