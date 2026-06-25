@@ -50,13 +50,21 @@ namespace Dingo
 		if (target == m_ActiveScene)
 			return true; // already active — no lifecycle churn
 
-		// Stop the outgoing scene, then start the incoming one.
 		if (m_ActiveScene)
+		{
+			// Switching between scenes: stop the outgoing and start the incoming.
 			m_ActiveScene->OnStop();
-
-		m_ActiveScene = target;
-		m_ActiveSceneName = name;
-		m_ActiveScene->OnStart();
+			m_ActiveScene = target;
+			m_ActiveSceneName = name;
+			m_ActiveScene->OnStart();
+		}
+		else
+		{
+			// First activation just selects the scene; the host starts it explicitly
+			// (Scene::OnStart, typically as the last thing in Layer::OnAttach).
+			m_ActiveScene = target;
+			m_ActiveSceneName = name;
+		}
 		return true;
 	}
 
