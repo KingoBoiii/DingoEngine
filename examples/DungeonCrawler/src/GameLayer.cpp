@@ -18,17 +18,21 @@ namespace Dingo
 
 		m_Scene = m_SceneManager.CreateScene("Dungeon");
 		m_Scene->SetClearColor(COLOR_BG);
-		m_SceneManager.SetActiveScene("Dungeon"); // no physics -> OnStart just marks it running
+		m_SceneManager.SetActiveScene("Dungeon"); // selects the active scene
 		SetupCamera();
 
 		// ResetGame() generates the first dungeon and builds its tiles; every restart
 		// rolls a fresh one. (It uses targeted destroys, not Clear(), so the camera
 		// entity created above survives every restart.)
 		ResetGame();
+
+		m_Scene->OnStart(); // explicit start (no physics here -> just marks it running)
 	}
 
 	void GameLayer::OnDetach()
 	{
+		m_Scene->OnStop(); // explicit teardown
+
 		if (m_Font)
 		{
 			m_Font->Destroy();

@@ -17,6 +17,7 @@ namespace Dingo
 		virtual ~DungeonLayer() = default;
 
 		void OnAttach() override;
+		void OnDetach() override;
 		void OnUpdate(float deltaTime) override;
 
 	private:
