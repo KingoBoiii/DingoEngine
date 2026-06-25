@@ -8,6 +8,69 @@
 #include <cmath>
 #include <format>
 
+namespace
+{
+	// Unlit "glow" material for the treasures: tints the mesh's vertex colour toward a
+	// glow colour by a pulsing intensity. Showcases a custom per-mesh shader that reads
+	// the engine scene UBO at binding 0 (for the view-projection) plus its own material
+	// uniform at binding 1.
+	constexpr const char* k_GlowShaderSource = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec4 a_Color;
+
+layout(std140, binding = 0) uniform CameraData
+{
+	mat4 ViewProjection;
+	vec4 LightDirection;
+	vec4 Ambient;
+};
+
+layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec3 v_Normal;
+
+void main()
+{
+	gl_Position = ViewProjection * vec4(a_Position, 1.0);
+	v_Color = a_Color;
+	v_Normal = a_Normal;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec3 v_Normal;
+
+layout(std140, binding = 1) uniform GlowParams
+{
+	vec4 GlowColor; // rgb tint
+	vec4 Params;    // x = intensity
+};
+
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+	// Emissive tint toward GlowColor by the pulsing intensity, with a touch of facet
+	// shading from the normal (which also keeps the shared layout's normal consumed).
+	float facet = 0.8 + 0.2 * (normalize(v_Normal).y * 0.5 + 0.5);
+	vec3 color = mix(v_Color.rgb, GlowColor.rgb, clamp(Params.x, 0.0, 1.0)) * facet;
+	o_Color = vec4(color, v_Color.a);
+}
+)";
+
+	// CPU mirror of the binding-1 UBO above (std140: two vec4s).
+	struct GlowParams
+	{
+		glm::vec4 GlowColor{ 1.0f, 0.95f, 0.55f, 1.0f };
+		glm::vec4 Params{ 0.0f };
+	};
+}
+
 namespace Dingo
 {
 	// ======================================================================
@@ -23,6 +86,15 @@ namespace Dingo
 
 		GetScene().SetClearColor({ 0.05f, 0.06f, 0.09f, 1.0f });
 		GetScene().SetGravity(GRAVITY); // vec3 overload -> the 3D world
+
+		// Custom per-mesh material for the treasures (created before BuildDungeon spawns
+		// them). SetUniform now so the binding-1 UBO exists before the first draw.
+		m_GlowShader = Shader::CreateFromSource("TreasureGlowShader", k_GlowShaderSource);
+		m_GlowMaterial = Material::Create(MaterialParams()
+			.SetDebugName("TreasureGlow")
+			.SetShader(m_GlowShader)
+			.SetCullMode(CullMode::None));
+		m_GlowMaterial->SetUniform(GlowParams{});
 
 		SetupCameraAndLight();
 		BuildDungeon();
@@ -41,6 +113,14 @@ namespace Dingo
 
 		UpdateCamera();
 
+		// Pulse the shared treasure-glow material (a per-material uniform at binding 1).
+		if (m_GlowMaterial)
+		{
+			GlowParams params;
+			params.Params.x = 0.35f + 0.35f * std::sin(m_Context.ElapsedTime * 3.0f);
+			m_GlowMaterial->SetUniform(params);
+		}
+
 		if (m_Context.CurrentState != GameContext::State::Playing)
 			return;
 
@@ -52,6 +132,22 @@ namespace Dingo
 		else if (m_Context.TotalTreasure > 0 && m_Context.Collected >= m_Context.TotalTreasure)
 		{
 			m_Context.CurrentState = GameContext::State::Won;
+		}
+	}
+
+	void DungeonControllerScript::OnDestroy()
+	{
+		// The controller owns the treasures' glow material + shader (created in OnStart).
+		if (m_GlowMaterial)
+		{
+			m_GlowMaterial->Destroy();
+			delete m_GlowMaterial;
+			m_GlowMaterial = nullptr;
+		}
+		if (m_GlowShader)
+		{
+			m_GlowShader->Destroy();
+			m_GlowShader = nullptr;
 		}
 	}
 
@@ -173,7 +269,7 @@ namespace Dingo
 		transform.Position = position;
 		transform.Scale = glm::vec3(0.6f);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.BoxMesh, COLOR_TREASURE));
+		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.BoxMesh, COLOR_TREASURE)).Material = m_GlowMaterial;
 		entity.AddScript<TreasureScript>(&m_Context, phase);
 		return entity;
 	}

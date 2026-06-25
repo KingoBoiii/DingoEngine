@@ -19,6 +19,7 @@ namespace Dingo
 	protected:
 		void OnStart() override;
 		void OnUpdate(float deltaTime) override;
+		void OnDestroy() override;
 
 	private:
 		void BuildDungeon();
@@ -36,6 +37,11 @@ namespace Dingo
 		Entity m_CameraEntity;
 		int m_GridCols = 0;
 		int m_GridRows = 0;
+
+		// A custom unlit/glow material the treasures render with — shows off per-mesh
+		// materials (a custom shader + a per-material uniform, pulsed each frame).
+		Shader* m_GlowShader = nullptr;
+		Material* m_GlowMaterial = nullptr;
 	};
 
 	// Player orb: WASD movement, a radial melee swing (SPACE) with an expanding ground
