@@ -190,7 +190,8 @@ public:
     BulletScript(glm::vec2 velocity) : m_Velocity(velocity) {}
 
 protected:
-    void OnCreate() override {}                  // attached to an entity
+    void OnCreate() override {}                  // attached to an entity (AddScript)
+    void OnStart() override {}                   // scene started, before physics
     void OnUpdate(float dt) override
     {
         auto& t = GetComponent<TransformComponent>();   // this entity's component
@@ -219,6 +220,18 @@ bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 - `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
 - `GetScene()` — the owning scene (to spawn or find other entities).
 - `GetComponent<T>()` / `HasComponent<T>()` — shorthand for your own entity's components.
+
+The hooks fire in order: **`OnCreate`** when the script is attached, **`OnStart`** once when
+the scene starts (`Scene::OnStart`, *before* physics — or on the first `OnUpdate` for scripts
+spawned later), then **`OnUpdate`** every frame, and **`OnDestroy`** on removal.
+
+Because a script has full `GetScene()` access, this is enough to keep game *layers* tiny: a
+single **controller** script can build the whole world in `OnStart` (spawn the level, the
+player, enemies, the camera + light entities, the HUD) and run the game in `OnUpdate`, while
+per-entity scripts own their own behaviour. `OnStart` runs before physics, so rigid bodies the
+controller spawns are baked when the scene starts. `examples/DungeonCrawler3D/` is built this
+way — its layer only creates the scene, attaches one `DungeonControllerScript`, and drives
+update/render; everything else lives in scripts.
 
 ### Finding other entities
 

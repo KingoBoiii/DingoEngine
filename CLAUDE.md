@@ -167,6 +167,13 @@ Main loop per frame:
   `Scene::RenderEntities`/`RenderEntities3D` stay public for custom passes, and
   `Scene::GetActiveCameraViewProjection(aspect)` returns the active camera's VP for a matching
   overlay pass.
+- **`ScriptableEntity` lifecycle: `OnCreate` (attach) → `OnStart` → `OnUpdate` → `OnDestroy`.**
+  `OnStart` fires from `Scene::OnStart` *before* `OnPhysicsStart` (or on first `OnUpdate` for
+  scripts spawned later), so a **controller script** can build the whole world in `OnStart`
+  (spawn level/player/enemies/camera/light/HUD) and have its bodies baked. With full `GetScene()`
+  access this keeps game layers tiny — `examples/DungeonCrawler3D/` is the showcase: its layer
+  just creates the scene, attaches one `DungeonControllerScript`, and drives update/render; the
+  HUD is scene entities (Text/Sprite + an ortho UI camera) drawn via the 2D overlay.
 - New built-in component types must be explicitly instantiated via the
   `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
 - Physics components hold the simulated body/shape as an opaque handle (`PhysicsBodyId2D` /
