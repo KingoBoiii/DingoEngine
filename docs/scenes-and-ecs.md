@@ -82,7 +82,8 @@ void GameLayer::OnAttach()
     cam.Type = CameraComponent::ProjectionType::Orthographic;
     cam.OrthographicSize = 20.0f;
 
-    m_Scenes.SetActiveScene("Game");   // starts the scene (see Lifecycle, under SceneManager)
+    m_Scenes.SetActiveScene("Game");   // select the active scene...
+    m_Game->OnStart();                 // ...and start it (see Lifecycle, under SceneManager)
 }
 
 void GameLayer::OnUpdate(float dt)
@@ -273,9 +274,12 @@ lifecycle, and updates + renders the active one. Each scene has an `OnStart` / `
 `OnStop` lifecycle: **`OnStart` brings the scene up (starts physics, `OnPhysicsStart`), `OnStop`
 tears it down (`OnPhysicsStop`)**, and `IsRunning()` reports the state.
 
-`SetActiveScene(name)` is the one call that drives transitions: it runs `OnStop` on the outgoing
-scene and `OnStart` on the incoming one. Re-activating the already-active scene is a no-op, and
-`CreateScene` no longer auto-activates — the first `SetActiveScene` is what starts a scene.
+Lifecycle is **explicit**: you call `scene->OnStart()` (typically the last thing in `OnAttach`)
+and `scene->OnStop()` (in `OnDetach`). `SetActiveScene(name)` only *selects* the active scene on
+its **first** call — so your explicit `OnStart` is the real start. A later **switch** between
+scenes does run `OnStop` on the outgoing scene and `OnStart` on the incoming one, so multi-scene
+transitions stay one-liners. Re-activating the already-active scene is a no-op, and `CreateScene`
+never activates.
 
 ```cpp
 class GameLayer : public Layer
@@ -292,7 +296,14 @@ class GameLayer : public Layer
         m_GameOver = m_Scenes.CreateScene("GameOver");
         for (Scene* s : { m_Menu, m_Game, m_GameOver }) { s->SetClearColor(bg); SetupCamera(s); }
         BuildMenu();
-        m_Scenes.SetActiveScene("Menu");                 // activates + starts the Menu scene
+        m_Scenes.SetActiveScene("Menu");                 // selects the active scene...
+        m_Menu->OnStart();                               // ...you start it explicitly
+    }
+
+    void OnDetach() override
+    {
+        if (Scene* active = m_Scenes.GetActiveScene())
+            active->OnStop();                            // explicit teardown
     }
 
     void OnUpdate(float dt) override
@@ -300,6 +311,7 @@ class GameLayer : public Layer
         m_Scenes.OnUpdate(dt);                           // always drive the active scene's scripts + physics
 
         const std::string active = m_Scenes.GetActiveSceneName();
+        // Each switch auto-stops the outgoing scene and starts the incoming one.
         if (active == "Menu" && Input::IsKeyDown(Key::Space)) { BuildGame(); m_Scenes.SetActiveScene("Game"); }
         else if (active == "Game" && m_State.GameOver)        m_Scenes.SetActiveScene("GameOver");
         else if (active == "GameOver" && Input::IsKeyDown(Key::Space)) m_Scenes.SetActiveScene("Menu");

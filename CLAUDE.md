@@ -154,9 +154,11 @@ Main loop per frame:
   the owned worlds (`Scene::GetPhysics2D()` / `Scene::GetPhysics3D()`).
 - **Scene lifecycle & rendering (v0.4.2).** `Scene::OnStart()`/`OnStop()` wrap
   `OnPhysicsStart`/`OnPhysicsStop` (with `IsRunning()`); `Clear()` also stops the scene.
-  `SceneManager` is the default scene API — `SetActiveScene` runs `OnStop` on the outgoing
-  scene and `OnStart` on the incoming (no-op if already active), `CreateScene` no longer
-  auto-activates, and `OnUpdate`/`OnRender()` drive the active scene. `SceneManager::OnRender()`
+  `SceneManager` is the default scene API. Lifecycle is **explicit**: the host calls `OnStart`
+  (last in `OnAttach`) and `OnStop` (in `OnDetach`). The **first** `SetActiveScene` only selects
+  the scene; a later **switch** auto-runs `OnStop`(outgoing)+`OnStart`(incoming) so multi-scene
+  transitions stay one-liners. `CreateScene` never activates. `OnUpdate`/`OnRender()` drive the
+  active scene. `SceneManager::OnRender()`
   delegates to the engine-owned **`SceneRenderer`** (`Application::GetSceneRenderer()`): it
   reads the **primary `CameraComponent`** (projection from the component; view from the camera
   entity's transform — ortho uses the 2D `TransformComponent`, perspective the
