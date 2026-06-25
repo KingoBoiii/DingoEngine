@@ -302,7 +302,7 @@ namespace Dingo
 			if (!mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color);
+			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color, mesh.Material);
 		}
 	}
 

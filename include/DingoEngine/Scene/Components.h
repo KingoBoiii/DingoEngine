@@ -17,6 +17,8 @@
 namespace Dingo
 {
 
+	class Material; // referenced by MeshRendererComponent (pointer only)
+
 	// Identity ----------------------------------------------------------------
 
 	struct IDComponent
@@ -263,6 +265,11 @@ namespace Dingo
 	{
 		Mesh* Mesh = nullptr;
 		glm::vec4 Color{ 1.0f };
+
+		// Optional material (custom shader + uniforms + textures). Null draws with
+		// Renderer3D's built-in flat directional-lit material. The Color above is written
+		// into the vertex stream either way. Owned by the client, not the component.
+		Material* Material = nullptr;
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;
