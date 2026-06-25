@@ -565,8 +565,10 @@ namespace Dingo
 		m_BarBackground.GetComponent<TransformComponent>().Position = { barLeft + barW * 0.5f, barCenterY, 0.0f };
 		m_BarBackground.GetComponent<TransformComponent>().Size = { barW, barH };
 
+		// The fill sits a hair in front of the background (higher z) so the painter's
+		// sort always draws it on top — equal-z sprites are not ordered by creation.
 		auto& fillTransform = m_BarFill.GetComponent<TransformComponent>();
-		fillTransform.Position = { barLeft + barW * frac * 0.5f, barCenterY, 0.0f };
+		fillTransform.Position = { barLeft + barW * frac * 0.5f, barCenterY, 0.1f };
 		fillTransform.Size = { barW * frac, barH * 0.7f };
 		m_BarFill.GetComponent<SpriteRendererComponent>().Color = (frac < 0.33f) ? COLOR_HP_LOW : COLOR_HP;
 
