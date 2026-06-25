@@ -171,6 +171,8 @@ namespace Dingo
 
 	private:
 		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
+		// Fires OnStart on any script that has not started yet, marking it started.
+		void StartScripts();
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
 

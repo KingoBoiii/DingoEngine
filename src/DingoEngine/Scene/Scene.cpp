@@ -133,6 +133,10 @@ namespace Dingo
 	{
 		m_Data->Updating = true;
 
+		// Scripts attached since the scene started (e.g. spawned at runtime) get OnStart
+		// before their first OnUpdate.
+		StartScripts();
+
 		// Snapshot the current scripts so spawning new entities mid-update doesn't
 		// invalidate iteration (new scripts run next frame).
 		std::vector<entt::entity> handles;
@@ -212,6 +216,27 @@ namespace Dingo
 	{
 		for (auto& [handle, script] : m_Data->Scripts)
 			fn(script.get());
+	}
+
+	void Scene::StartScripts()
+	{
+		// Snapshot the not-yet-started handles, so an OnStart that spawns more scripts
+		// doesn't invalidate iteration (those run on a later StartScripts pass).
+		std::vector<entt::entity> handles;
+		handles.reserve(m_Data->Scripts.size());
+		for (auto& [handle, script] : m_Data->Scripts)
+			if (!script->m_Started)
+				handles.push_back(handle);
+
+		for (entt::entity handle : handles)
+		{
+			auto it = m_Data->Scripts.find(handle);
+			if (it == m_Data->Scripts.end() || it->second->m_Started)
+				continue;
+
+			it->second->m_Started = true; // set first so a re-entrant spawn can't double-fire
+			it->second->OnStart();
+		}
 	}
 
 	void Scene::RenderEntities(Renderer2D& renderer)
@@ -375,6 +400,10 @@ namespace Dingo
 			return;
 
 		m_IsRunning = true;
+
+		// Run script OnStart before physics so a controller script can build the world
+		// (spawn entities) and have OnPhysicsStart bake bodies for everything it created.
+		StartScripts();
 		OnPhysicsStart();
 	}
 
