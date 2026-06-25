@@ -57,6 +57,13 @@ namespace Dingo
 		template<typename T>
 		void SetUniform(const T& data) { SetUniformData(&data, sizeof(T)); }
 
+		// Binds a shared, engine-owned uniform buffer at binding 0 — the "scene" UBO
+		// (e.g. Renderer3D's camera + light data). When set, the material's own
+		// SetUniform data binds at binding 1 and textures/samplers shift to 2+. When
+		// null (the default), the material's own UBO stays at binding 0. Changing it
+		// invalidates the pipeline cache (bindings are baked into the render pass).
+		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
+
 		GraphicsBuffer*             GetUniformBuffer()  const { return m_UniformBuffer; }
 		const std::vector<uint8_t>& GetUniformCPUData() const { return m_UniformCPUData; }
 		bool                        IsUniformDirty()    const { return m_UniformDirty; }
@@ -89,6 +96,9 @@ namespace Dingo
 		std::vector<uint8_t> m_UniformCPUData;
 		GraphicsBuffer*      m_UniformBuffer = nullptr;
 		bool                 m_UniformDirty  = false;
+
+		// Shared scene UBO (binding 0), owned by the renderer — not destroyed here.
+		GraphicsBuffer*      m_SceneUniformBuffer = nullptr;
 
 		struct PipelineCacheEntry
 		{
