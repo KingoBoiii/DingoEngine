@@ -242,7 +242,8 @@ namespace Dingo
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
 		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
-		// Position.z draws on top. stable_sort keeps creation order within a layer.
+		// Position.z draws on top. Equal-z ties are NOT ordered by creation (the
+		// view order decides), so give overlapping UI elements distinct z values.
 		{
 			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
 			std::vector<entt::entity> sprites(view.begin(), view.end());
