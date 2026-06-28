@@ -2,6 +2,7 @@
 #include <DingoEngine.h>
 
 #include "GameTuning.h"
+#include "Character.h"
 
 // Shared game state, owned by the DungeonControllerScript and handed (by pointer) to
 // the per-entity scripts it spawns. This is the 3D crawler's equivalent of the 2D
@@ -26,6 +27,11 @@ namespace Dingo
 		// controller from Renderer3D so the scripts can spawn renderable entities.
 		Mesh* BoxMesh = nullptr;
 		Mesh* SphereMesh = nullptr;
+
+		// Low-poly character part meshes loaded from OBJ models (assets/models/parts/)
+		// by the controller; the player / enemy scripts assemble these into an animated
+		// Character rig.
+		CharacterMeshes CharParts;
 
 		// The player entity, so enemies / camera / attack FX find it without a search.
 		Entity Player;

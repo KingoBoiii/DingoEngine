@@ -84,6 +84,8 @@ namespace Dingo
 		m_Context.BoxMesh = renderer3D.GetBoxMesh();
 		m_Context.SphereMesh = renderer3D.GetSphereMesh();
 
+		LoadCharacterModels(); // hero / skeleton OBJs -> m_Context.HeroMesh / SkeletonMesh
+
 		GetScene().SetClearColor({ 0.05f, 0.06f, 0.09f, 1.0f });
 		GetScene().SetGravity(GRAVITY); // vec3 overload -> the 3D world
 
@@ -149,6 +151,37 @@ namespace Dingo
 			m_GlowShader->Destroy();
 			m_GlowShader = nullptr;
 		}
+
+		// The controller owns the character part models (loaded in OnStart).
+		for (Model*& model : m_PartModels)
+		{
+			if (model)
+			{
+				model->Destroy();
+				delete model;
+				model = nullptr;
+			}
+		}
+	}
+
+	void DungeonControllerScript::LoadCharacterModels()
+	{
+		// Per-part low-poly OBJs (see assets/models/generate_models.js), each a single
+		// sub-mesh. If a load fails we fall back to the unit box so the game still runs.
+		auto load = [&](int slot, const char* file) -> Mesh*
+		{
+			Model* model = Model::LoadFromFile(file);
+			m_PartModels[slot] = model;
+			if (model && model->GetSubMeshCount() > 0)
+				return model->GetSubMeshes()[0].MeshData;
+			return m_Context.BoxMesh;
+		};
+
+		m_Context.CharParts.Head = load(0, "assets/models/parts/head.obj");
+		m_Context.CharParts.Torso = load(1, "assets/models/parts/torso.obj");
+		m_Context.CharParts.Arm = load(2, "assets/models/parts/arm.obj");
+		m_Context.CharParts.Leg = load(3, "assets/models/parts/leg.obj");
+		m_Context.CharParts.Sword = load(4, "assets/models/parts/sword.obj");
 	}
 
 	glm::vec3 DungeonControllerScript::CellToWorld(int col, int row, float y) const
@@ -226,9 +259,10 @@ namespace Dingo
 		Entity entity = GetScene().CreateEntity("Player");
 		auto& transform = entity.AddComponent<Transform3DComponent>();
 		transform.Position = position;
-		transform.Scale = glm::vec3(1.0f); // unit sphere -> radius 0.5
+		transform.Scale = glm::vec3(1.0f);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_PLAYER));
+		// No MeshRenderer: the rigid body is an invisible sphere; PlayerScript spawns and
+		// drives a Character rig as the visible hero (its feet track this body).
 		entity.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
 
 		SphereCollider3DComponent collider;
@@ -248,7 +282,8 @@ namespace Dingo
 		transform.Position = position;
 		transform.Scale = glm::vec3(1.0f);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_ENEMY));
+		// No MeshRenderer: the invisible sphere body is the collider; EnemyScript drives a
+		// Character rig (the skeleton) that tracks it.
 		entity.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
 
 		SphereCollider3DComponent collider;
@@ -312,6 +347,26 @@ namespace Dingo
 	// PlayerScript — movement, melee, contact damage
 	// ======================================================================
 
+	void PlayerScript::OnStart()
+	{
+		m_Character.Create(GetScene(), m_Context->CharParts, COLOR_PLAYER, /*withSword*/ true);
+	}
+
+	void PlayerScript::OnDestroy()
+	{
+		m_Character.Destroy();
+	}
+
+	void PlayerScript::UpdateRig(float deltaTime, float walkSpeed01)
+	{
+		const glm::vec3 bodyPos = GetComponent<Transform3DComponent>().Position;
+		const glm::vec3 feet = { bodyPos.x, bodyPos.y - PLAYER_RADIUS, bodyPos.z };
+
+		// Flash toward the hurt colour while the i-frame window is active.
+		m_Character.SetFlash(COLOR_PLAYER_HURT, glm::clamp(m_Invuln / PLAYER_INVULN, 0.0f, 1.0f));
+		m_Character.Update(feet, m_Facing, walkSpeed01, deltaTime);
+	}
+
 	void PlayerScript::OnUpdate(float deltaTime)
 	{
 		if (m_AttackCooldown > 0.0f) m_AttackCooldown -= deltaTime;
@@ -322,12 +377,10 @@ namespace Dingo
 		if (!GetEntity().IsValid())
 			return;
 
-		// Hurt tint regardless of state.
-		GetComponent<MeshRendererComponent>().Color = (m_Invuln > 0.0f) ? COLOR_PLAYER_HURT : COLOR_PLAYER;
-
 		if (m_Context->CurrentState != GameContext::State::Playing)
 		{
 			GetScene().SetLinearVelocity(GetEntity(), glm::vec3(0.0f)); // freeze when won/lost
+			UpdateRig(deltaTime, 0.0f);
 			return;
 		}
 
@@ -345,6 +398,7 @@ namespace Dingo
 			move = glm::normalize(move);
 			velocity.x = move.x * PLAYER_SPEED;
 			velocity.z = move.z * PLAYER_SPEED;
+			m_Facing = std::atan2(move.x, move.z); // face the way we walk
 		}
 		else
 		{
@@ -355,6 +409,9 @@ namespace Dingo
 
 		if (Input::IsKeyDown(Key::Space) && m_AttackCooldown <= 0.0f)
 			Attack();
+
+		const float walkSpeed01 = glm::length(glm::vec2(velocity.x, velocity.z)) / PLAYER_SPEED;
+		UpdateRig(deltaTime, walkSpeed01);
 
 		// Enemy contact damage, gated by the invulnerability window.
 		if (m_Invuln <= 0.0f)
@@ -367,6 +424,7 @@ namespace Dingo
 				{
 					m_Context->PlayerHealth -= ENEMY_CONTACT_DAMAGE;
 					m_Invuln = PLAYER_INVULN;
+					m_Character.TriggerHit(); // flinch when taking contact damage
 					break;
 				}
 			}
@@ -376,6 +434,7 @@ namespace Dingo
 	void PlayerScript::Attack()
 	{
 		m_AttackCooldown = ATTACK_COOLDOWN;
+		m_Character.TriggerAttack(); // visible sword swing
 
 		const glm::vec3 playerPos = GetComponent<Transform3DComponent>().Position;
 
@@ -434,11 +493,22 @@ namespace Dingo
 	{
 		m_Health -= amount;
 		m_HitFlash = ENEMY_HIT_FLASH;
+		m_Character.TriggerHit(); // recoil/stagger on being struck
 		if (m_Health <= 0.0f)
 		{
 			m_Context->EnemiesSlain++;
 			GetEntity().Destroy(); // deferred to the end of the update pass
 		}
+	}
+
+	void EnemyScript::OnStart()
+	{
+		m_Character.Create(GetScene(), m_Context->CharParts, COLOR_ENEMY, /*withSword*/ false);
+	}
+
+	void EnemyScript::OnDestroy()
+	{
+		m_Character.Destroy();
 	}
 
 	void EnemyScript::OnUpdate(float deltaTime)
@@ -449,16 +519,23 @@ namespace Dingo
 		if (m_Health <= 0.0f)
 			return; // killed this frame; awaiting its deferred destroy
 
-		GetComponent<MeshRendererComponent>().Color = (m_HitFlash > 0.0f) ? COLOR_ENEMY_FLASH : COLOR_ENEMY;
+		const glm::vec3 enemyPos = GetComponent<Transform3DComponent>().Position;
+
+		auto driveRig = [&](float walkSpeed01)
+		{
+			const glm::vec3 feet = { enemyPos.x, enemyPos.y - PLAYER_RADIUS, enemyPos.z };
+			m_Character.SetFlash(COLOR_ENEMY_FLASH, glm::clamp(m_HitFlash / ENEMY_HIT_FLASH, 0.0f, 1.0f));
+			m_Character.Update(feet, m_Facing, walkSpeed01, deltaTime);
+		};
 
 		if (m_Context->CurrentState != GameContext::State::Playing || !m_Context->Player.IsValid())
 		{
 			GetScene().SetLinearVelocity(GetEntity(), glm::vec3(0.0f));
+			driveRig(0.0f);
 			return;
 		}
 
 		const glm::vec3 playerPos = m_Context->Player.GetComponent<Transform3DComponent>().Position;
-		const glm::vec3 enemyPos = GetComponent<Transform3DComponent>().Position;
 		glm::vec3 toPlayer = playerPos - enemyPos;
 		toPlayer.y = 0.0f;
 		const float dist = glm::length(toPlayer);
@@ -469,6 +546,7 @@ namespace Dingo
 			toPlayer /= dist;
 			velocity.x = toPlayer.x * ENEMY_SPEED;
 			velocity.z = toPlayer.z * ENEMY_SPEED;
+			m_Facing = std::atan2(toPlayer.x, toPlayer.z); // turn to face the player
 		}
 		else
 		{
@@ -476,6 +554,8 @@ namespace Dingo
 			velocity.z = 0.0f;
 		}
 		GetScene().SetLinearVelocity(GetEntity(), velocity);
+
+		driveRig(glm::length(glm::vec2(velocity.x, velocity.z)) / ENEMY_SPEED);
 	}
 
 	// ======================================================================

@@ -2,6 +2,7 @@
 #include <DingoEngine.h>
 
 #include "GameContext.h"
+#include "Character.h"
 
 #include <glm/glm.hpp>
 
@@ -22,6 +23,7 @@ namespace Dingo
 		void OnDestroy() override;
 
 	private:
+		void LoadCharacterModels();
 		void BuildDungeon();
 		glm::vec3 CellToWorld(int col, int row, float y) const;
 		Entity SpawnFloor(float worldWidth, float worldDepth);
@@ -42,6 +44,11 @@ namespace Dingo
 		// materials (a custom shader + a per-material uniform, pulsed each frame).
 		Shader* m_GlowShader = nullptr;
 		Material* m_GlowMaterial = nullptr;
+
+		// OBJ-loaded character part models (own the part meshes the Characters render).
+		// Destroyed in OnDestroy.
+		static constexpr int k_PartModelCount = 5;
+		Model* m_PartModels[k_PartModelCount] = {};
 	};
 
 	// Player orb: WASD movement, a radial melee swing (SPACE) with an expanding ground
@@ -52,11 +59,14 @@ namespace Dingo
 		PlayerScript(GameContext* context) : m_Context(context) {}
 
 	protected:
+		void OnStart() override;
 		void OnUpdate(float deltaTime) override;
+		void OnDestroy() override;
 
 	private:
 		void Attack();
 		void UpdateAttackFx(float deltaTime);
+		void UpdateRig(float deltaTime, float walkSpeed01);
 
 	private:
 		GameContext* m_Context = nullptr;
@@ -64,6 +74,9 @@ namespace Dingo
 		float m_AttackCooldown = 0.0f;
 		Entity m_AttackFx;          // expanding ring, briefly alive after a swing
 		float m_AttackFxTime = 0.0f;
+
+		Character m_Character;      // the visible hero; the rigid body is invisible
+		float m_Facing = 0.0f;      // yaw (radians), kept while idle
 	};
 
 	// Skeleton: chases the player within aggro range, flashes when hit, and despawns
@@ -76,12 +89,17 @@ namespace Dingo
 		void Damage(float amount);
 
 	protected:
+		void OnStart() override;
 		void OnUpdate(float deltaTime) override;
+		void OnDestroy() override;
 
 	private:
 		GameContext* m_Context = nullptr;
 		float m_Health = ENEMY_MAX_HEALTH;
 		float m_HitFlash = 0.0f;
+
+		Character m_Character;      // the visible skeleton; the rigid body is invisible
+		float m_Facing = 0.0f;      // yaw (radians), kept while idle
 	};
 
 	// Treasure: spins and bobs, and is collected by player proximity.
