@@ -34,12 +34,46 @@ A point release that pulls 3D *inside* the scene system, bringing the v0.2 3D re
 
 **Example game**: [DungeonCrawler3D](examples/DungeonCrawler3D/) — the old standalone `Physics3D` demo, rewritten as the **first ECS-integrated 3D scene** and renamed to match. The player, enemies, and walls are all `RigidBody3D` entities the scene simulates and renders; dungeons are **procedurally generated** (rooms + connecting corridors, `DungeonGenerator.h`), and a SPACE-triggered **radial melee swing** damages nearby enemies (60 HP each) while the player has a health bar (100 HP), contact damage, and brief post-hit invulnerability. It is the 3D sibling of the top-down [DungeonCrawler](examples/DungeonCrawler/) slice — and the seed the v0.5 game grows from.
 
-## v0.5 — First Playable: 3D Dungeon Crawler (Singleplayer)
-The milestone where the DungeonCrawler3D prototype becomes an actual, shippable game. **v0.4.1 already moved 3D rendering and the Jolt-backed `Physics3D` world into the scene/ECS**, so the world already renders and simulates through the scene. v0.5's engine work is two fronts — a **scene rework** that finally gives the engine a real renderer abstraction, and **audio** — plus the gameplay-grade physics that turns the prototype's hand-rolled combat into something worth shipping:
+## v0.4.2 — Scene lifecycle, SceneManager & the SceneRenderer
+A scene-system rework on two fronts, pulled forward from v0.5:
 
-- **Scene rework — a `SceneRenderer`**: today the *layer* drives rendering by hand — it picks `OnRender` vs `OnRender3D`, builds and passes the `PerspectiveCamera`, and lighting is baked into `Renderer3D`. v0.5 introduces a **`SceneRenderer`** that owns per-scene rendering behind a single `Render(scene)` call: it reads the active camera and lights from **ECS components** (a perspective `CameraComponent`, basic light component(s)) and dispatches to `Renderer2D` / `Renderer3D` itself, unifying the 2D and 3D entry points. Beyond tidying the layer, it's the seam the rest of the roadmap plugs into — v0.9's shadows, post-processing, and particles attach to its pass list rather than the raw renderers, and it composes with the v0.2 render thread and v0.6 hot-reload. It's the same "hide the backend behind an interface" move the engine already makes for the ECS, Box2D, and Jolt.
+- **Scene lifecycle & SceneManager-driven transitions.** `Scene` gains an explicit
+  `OnStart` / `OnUpdate` / `OnStop` lifecycle — `OnStart` brings up physics
+  (`OnPhysicsStart`), `OnStop` tears it down (`OnPhysicsStop`), and `IsRunning()` reports
+  the state. `SceneManager` becomes the default way to drive scenes: a single
+  `SetActiveScene` stops the outgoing scene and starts the incoming one, and the manager
+  is the single update + render entry point for the active scene (retiring the old "only
+  the Game scene got `OnUpdate`" footgun). `CreateScene` no longer auto-activates.
+- **A `SceneRenderer`.** Per-scene rendering moves behind one `Render(scene)` call
+  (driven by `SceneManager::OnRender()`), reading the active **camera** and **lights** from
+  ECS components — a unified `CameraComponent` (orthographic or perspective, its view taken
+  from the camera entity's transform) and a `DirectionalLightComponent` — and dispatching to
+  `Renderer2D` / `Renderer3D` itself, unifying the 2D and 3D entry points. It's the seam
+  later milestones (v0.9 shadows / post-processing / particles) plug into.
+
+**Examples**: all four scene-based examples — [Space Invaders](examples/SpaceInvaders/),
+[Angry Birds](examples/AngryBirds/), [DungeonCrawler](examples/DungeonCrawler/), and
+[DungeonCrawler3D](examples/DungeonCrawler3D/) — were migrated onto the lifecycle and the
+camera/light components as the showcase.
+
+Alongside the migration, [DungeonCrawler3D](examples/DungeonCrawler3D/) also gained an
+**animated low-poly character**. Its hero and skeletons are no longer rendered as spheres
+but as multi-part figures built from separate OBJ part meshes — head, torso, arms, legs,
+and a sword — loaded with the v0.2 model loader (`Model::LoadFromFile`) and assembled into
+a procedural rig: an idle/walk cycle (legs and arms swinging about their joints), an
+**attack swing** with anticipation → strike → recovery and a forward body lunge, a
+gripped sword that swings with the weapon arm, and a hit-reaction recoil. It is driven
+entirely from the example's `ScriptableEntity` scripts on top of the new `SceneRenderer`.
+Because the model loader bakes node transforms (no skinned/skeletal playback), the rig
+animates by transforming part *entities* each frame — a proper **skeletal-animation
+system** (skinned meshes, animation clips, a blend tree) remains future engine work,
+slated to land with the character fidelity push of v0.5+.
+
+## v0.5 — First Playable: 3D Dungeon Crawler (Singleplayer)
+The milestone where the DungeonCrawler3D prototype becomes an actual, shippable game. The engine foundation is now in place: v0.4.1 moved 3D rendering and the Jolt-backed `Physics3D` world into the scene/ECS, and **v0.4.2 landed the scene rework** — the `OnStart`/`OnUpdate`/`OnStop` lifecycle, `SceneManager`-driven transitions, and the `SceneRenderer` (camera + lights read from ECS components) — so the world already renders and simulates through the scene behind a real renderer abstraction. That leaves v0.5 to concentrate on the game itself, with two remaining pieces of supporting engine work:
+
 - **Audio**: the audio engine originally scoped for this milestone ships with the game — a proper backend (miniaudio or OpenAL), `AudioSource` / `AudioListener` ECS components, and 3D positional sound for footsteps, combat, and dungeon ambience, retiring the hardcoded `.ogg` playback in FlappyBird.
-- **Gameplay-grade physics** *(supporting)*: the prototype fakes combat and movement with distance checks and raw velocity. To make the slice genuinely playable, v0.5 promotes them to first-class physics — a reusable **character controller** for player and enemy movement (capsule collider plus ground/step handling), **ray and shape casts** for melee hits and line-of-sight, and the per-body **position / angular control** `Physics3D` still lacks. This is the depth behind v0.4.1's initial physics-in-the-ECS wiring.
+- **Gameplay-grade physics**: the prototype fakes combat and movement with distance checks and raw velocity. To make the slice genuinely playable, v0.5 promotes them to first-class physics — a reusable **character controller** for player and enemy movement (capsule collider plus ground/step handling), **ray and shape casts** for melee hits and line-of-sight, and the per-body **position / angular control** `Physics3D` still lacks. This is the depth behind v0.4.1's initial physics-in-the-ECS wiring.
 
 **Full game release**: *Dungeon Crawler* (singleplayer — first version) — a compact, atmospheric first-/third-person 3D dungeon crawler, and the 3D evolution of the top-down [DungeonCrawler](examples/DungeonCrawler/) slice. Deliberately a **vertical slice**, not content-complete: one biome, a handful of enemy types, procedurally assembled (or handcrafted) rooms and corridors, real-time melee/ranged combat, enemy AI (chase + simple pathfinding), loot drops with a small inventory, and light character progression — the full explore → fight → loot → descend loop. It exercises the whole stack: 3D rendering and model loading (v0.2) now driven through the new `SceneRenderer`, ECS entities for the player, monsters, projectiles, and pickups (v0.3, extended to 3D in v0.4.1), physics-driven movement and combat (v0.4, brought into the scene in v0.4.1 and made gameplay-grade here), and the new audio. It is the singleplayer foundation that v0.8 extends with co-op and v1.0 grows into the capstone. **Released on Itch.io, and Early Access on Steam.**
 

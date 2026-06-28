@@ -25,7 +25,15 @@ namespace Dingo
 		Scene& GetScene() const { return m_Entity.GetScene(); }
 
 	protected:
+		// Called immediately when the script is attached (AddScript).
 		virtual void OnCreate() {}
+
+		// Called once when the scene starts (Scene::OnStart) — for scripts present at
+		// start, this runs *before* physics, so it is the natural place to build the
+		// world / spawn entities. Scripts attached after the scene is running get
+		// OnStart on their first OnUpdate instead.
+		virtual void OnStart() {}
+
 		virtual void OnUpdate(float deltaTime) {}
 		virtual void OnDestroy() {}
 
@@ -37,6 +45,7 @@ namespace Dingo
 
 	private:
 		Entity m_Entity;
+		bool m_Started = false; // set by Scene once OnStart has run
 
 		friend class Entity;
 		friend class Scene;

@@ -17,7 +17,6 @@ namespace Dingo
 	class Physics3D;
 	class Renderer2D;
 	class Renderer3D;
-	class PerspectiveCamera;
 	class ScriptableEntity;
 
 	namespace Internal { struct SceneData; }
@@ -42,27 +41,54 @@ namespace Dingo
 		// Destroys every entity (and its scripts) in the scene; the Scene stays usable.
 		void Clear();
 
-		// Drives every attached ScriptableEntity's OnUpdate. Safe to create/destroy
-		// entities from within a script — destroys are deferred to the end of the pass.
+		// --- Lifecycle --------------------------------------------------------
+
+		// Brings the scene up: starts physics (OnPhysicsStart). Idempotent — a no-op if
+		// the scene is already running. SceneManager calls this when the scene becomes
+		// active; call it directly only for manual restart control.
+		void OnStart();
+
+		// Tears the scene down: stops physics (OnPhysicsStop). A no-op if not running.
+		// SceneManager calls this when the scene stops being active.
+		void OnStop();
+
+		// True between OnStart and OnStop. (Distinct from IsPhysicsRunning(), which is
+		// true only when a physics world actually exists — a physics-less scene can be
+		// running without one.)
+		bool IsRunning() const { return m_IsRunning; }
+
+		// Drives every attached ScriptableEntity's OnUpdate, then steps any live
+		// physics world(s) and writes the simulated transforms back. Safe to
+		// create/destroy entities from within a script — destroys are deferred to the
+		// end of the pass.
 		void OnUpdate(float deltaTime);
 
-		// Draws all entities that have a Transform plus a Sprite/Circle/Text component,
-		// wrapping Renderer2D::BeginScene/EndScene with the scene's view-projection.
-		void OnRender(Renderer2D& renderer);
-
-		// Issues only the entity draw calls (no BeginScene/Clear/EndScene). Call it
-		// between your own Renderer2D::BeginScene/EndScene to compose the scene's
-		// entities with custom drawing (e.g. a HUD) in a single pass / camera.
+		// Issues the 2D entity draw calls (no BeginScene/Clear/EndScene). The
+		// SceneRenderer wraps this; call it directly between your own
+		// Renderer2D::BeginScene/EndScene to compose the scene's entities with custom
+		// drawing (e.g. a HUD overlay) in a single pass / camera.
 		void RenderEntities(Renderer2D& renderer);
 
-		// Draws all entities that have a Transform3D plus a MeshRenderer component
-		// through the given Renderer3D, viewed from the perspective camera. Wraps
-		// Renderer3D::BeginScene/Clear/EndScene; clears to the scene's clear color.
-		void OnRender3D(Renderer3D& renderer, const PerspectiveCamera& camera);
-
-		// Issues only the 3D entity draw calls (no BeginScene/Clear/EndScene), for
-		// composing scene meshes with custom 3D drawing inside one Begin/EndScene.
+		// Issues the 3D entity draw calls (no BeginScene/Clear/EndScene). The
+		// SceneRenderer wraps this; call it directly to compose scene meshes with
+		// custom 3D drawing inside one Begin/EndScene.
 		void RenderEntities3D(Renderer3D& renderer);
+
+		// --- Camera -----------------------------------------------------------
+
+		// Finds the scene's active camera entity: the first CameraComponent marked
+		// Primary, or the first one if none is. Returns false (out unchanged) if the
+		// scene has no CameraComponent.
+		bool GetPrimaryCameraEntity(Entity& out);
+
+		// View-projection for a specific camera entity at the given viewport aspect
+		// (width / height): projection from its CameraComponent, view from its transform.
+		// Returns identity if the entity has no CameraComponent.
+		glm::mat4 GetCameraViewProjection(Entity camera, float aspect);
+
+		// The primary camera's view-projection. Returns identity if there is no camera.
+		// Lets a layer compose a custom overlay pass in the same view as the SceneRenderer.
+		glm::mat4 GetActiveCameraViewProjection(float aspect);
 
 		void ForEachEntity(const std::function<void(Entity)>& fn);
 
@@ -138,9 +164,6 @@ namespace Dingo
 		void ApplyImpulse(Entity entity, const glm::vec3& impulse);
 		void ApplyForce(Entity entity, const glm::vec3& force);
 
-		void SetViewProjection(const glm::mat4& viewProjection) { m_ViewProjection = viewProjection; }
-		const glm::mat4& GetViewProjection() const { return m_ViewProjection; }
-
 		void SetClearColor(const glm::vec4& clearColor) { m_ClearColor = clearColor; }
 		const glm::vec4& GetClearColor() const { return m_ClearColor; }
 
@@ -148,6 +171,8 @@ namespace Dingo
 
 	private:
 		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
+		// Fires OnStart on any script that has not started yet, marking it started.
+		void StartScripts();
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
 
@@ -167,7 +192,7 @@ namespace Dingo
 		Internal::SceneData* m_Data = nullptr;
 
 		std::string m_Name;
-		glm::mat4 m_ViewProjection{ 1.0f };
+		bool m_IsRunning = false;
 		glm::vec4 m_ClearColor{ 0.0f, 0.0f, 0.0f, 1.0f };
 		glm::vec2 m_Gravity{ 0.0f, -9.81f };
 		glm::vec3 m_Gravity3D{ 0.0f, -9.81f, 0.0f };

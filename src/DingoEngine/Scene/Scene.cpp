@@ -8,8 +8,6 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 
-#include "DingoEngine/Core/PerspectiveCamera.h"
-
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
@@ -107,7 +105,10 @@ namespace Dingo
 
 	void Scene::Clear()
 	{
-		// Drop the physics world first so its bodies don't outlive the entities.
+		// Drop the physics world first so its bodies don't outlive the entities, and
+		// mark the scene stopped — otherwise a later OnStart() would early-return on a
+		// stale running flag and never rebuild physics.
+		m_IsRunning = false;
 		OnPhysicsStop();
 
 		for (auto& [handle, script] : m_Data->Scripts)
@@ -131,6 +132,10 @@ namespace Dingo
 	void Scene::OnUpdate(float deltaTime)
 	{
 		m_Data->Updating = true;
+
+		// Scripts attached since the scene started (e.g. spawned at runtime) get OnStart
+		// before their first OnUpdate.
+		StartScripts();
 
 		// Snapshot the current scripts so spawning new entities mid-update doesn't
 		// invalidate iteration (new scripts run next frame).
@@ -213,18 +218,32 @@ namespace Dingo
 			fn(script.get());
 	}
 
-	void Scene::OnRender(Renderer2D& renderer)
+	void Scene::StartScripts()
 	{
-		renderer.BeginScene(m_ViewProjection);
-		renderer.Clear(m_ClearColor);
-		RenderEntities(renderer);
-		renderer.EndScene();
+		// Snapshot the not-yet-started handles, so an OnStart that spawns more scripts
+		// doesn't invalidate iteration (those run on a later StartScripts pass).
+		std::vector<entt::entity> handles;
+		handles.reserve(m_Data->Scripts.size());
+		for (auto& [handle, script] : m_Data->Scripts)
+			if (!script->m_Started)
+				handles.push_back(handle);
+
+		for (entt::entity handle : handles)
+		{
+			auto it = m_Data->Scripts.find(handle);
+			if (it == m_Data->Scripts.end() || it->second->m_Started)
+				continue;
+
+			it->second->m_Started = true; // set first so a re-entrant spawn can't double-fire
+			it->second->OnStart();
+		}
 	}
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
 		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
-		// Position.z draws on top. stable_sort keeps creation order within a layer.
+		// Position.z draws on top. Equal-z ties are NOT ordered by creation (the
+		// view order decides), so give overlapping UI elements distinct z values.
 		{
 			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
 			std::vector<entt::entity> sprites(view.begin(), view.end());
@@ -275,14 +294,6 @@ namespace Dingo
 		}
 	}
 
-	void Scene::OnRender3D(Renderer3D& renderer, const PerspectiveCamera& camera)
-	{
-		renderer.BeginScene(camera);
-		renderer.Clear(m_ClearColor);
-		RenderEntities3D(renderer);
-		renderer.EndScene();
-	}
-
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
@@ -292,8 +303,80 @@ namespace Dingo
 			if (!mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color);
+			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color, mesh.Material);
 		}
+	}
+
+	// --- Camera -----------------------------------------------------------------
+
+	bool Scene::GetPrimaryCameraEntity(Entity& out)
+	{
+		entt::entity first = entt::null;
+
+		auto view = m_Data->Registry.view<CameraComponent>();
+		for (entt::entity handle : view)
+		{
+			if (first == entt::null)
+				first = handle;
+
+			if (view.get<CameraComponent>(handle).Primary)
+			{
+				out = Wrap(static_cast<std::uint32_t>(handle));
+				return true;
+			}
+		}
+
+		if (first != entt::null)
+		{
+			out = Wrap(static_cast<std::uint32_t>(first));
+			return true;
+		}
+
+		return false;
+	}
+
+	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
+	{
+		if (!IsValid(cameraEntity))
+			return glm::mat4(1.0f);
+
+		entt::entity handle = static_cast<entt::entity>(cameraEntity.m_Handle);
+		if (!m_Data->Registry.all_of<CameraComponent>(handle))
+			return glm::mat4(1.0f);
+
+		const CameraComponent& camera = m_Data->Registry.get<CameraComponent>(handle);
+		const glm::mat4 projection = camera.GetProjection(aspect);
+
+		// The view is the inverse of the camera entity's world transform. A perspective
+		// camera reads its Transform3DComponent (position + orientation); an orthographic
+		// camera reads the 2D TransformComponent (every entity has one on creation).
+		glm::mat4 view(1.0f);
+		if (camera.Type == CameraComponent::ProjectionType::Perspective)
+		{
+			if (m_Data->Registry.all_of<Transform3DComponent>(handle))
+			{
+				const Transform3DComponent& transform = m_Data->Registry.get<Transform3DComponent>(handle);
+				view = glm::inverse(glm::translate(glm::mat4(1.0f), transform.Position) * glm::mat4_cast(transform.Rotation));
+			}
+		}
+		else
+		{
+			const TransformComponent& transform = m_Data->Registry.get<TransformComponent>(handle);
+			view = glm::inverse(
+				glm::translate(glm::mat4(1.0f), glm::vec3(transform.Position.x, transform.Position.y, 0.0f))
+				* glm::rotate(glm::mat4(1.0f), glm::radians(transform.Rotation), glm::vec3(0.0f, 0.0f, 1.0f)));
+		}
+
+		return projection * view;
+	}
+
+	glm::mat4 Scene::GetActiveCameraViewProjection(float aspect)
+	{
+		Entity cameraEntity;
+		if (!GetPrimaryCameraEntity(cameraEntity))
+			return glm::mat4(1.0f);
+
+		return GetCameraViewProjection(cameraEntity, aspect);
 	}
 
 	// --- Physics (2D) -----------------------------------------------------------
@@ -310,6 +393,28 @@ namespace Dingo
 		m_Gravity3D = gravity;
 		if (m_Data->Physics3D && m_Data->Physics3D->IsValid())
 			m_Data->Physics3D->SetGravity(gravity);
+	}
+
+	void Scene::OnStart()
+	{
+		if (m_IsRunning)
+			return;
+
+		m_IsRunning = true;
+
+		// Run script OnStart before physics so a controller script can build the world
+		// (spawn entities) and have OnPhysicsStart bake bodies for everything it created.
+		StartScripts();
+		OnPhysicsStart();
+	}
+
+	void Scene::OnStop()
+	{
+		if (!m_IsRunning)
+			return;
+
+		m_IsRunning = false;
+		OnPhysicsStop();
 	}
 
 	void Scene::OnPhysicsStart()

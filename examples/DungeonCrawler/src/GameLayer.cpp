@@ -16,13 +16,23 @@ namespace Dingo
 	{
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
+		m_Scene = m_SceneManager.CreateScene("Dungeon");
+		m_Scene->SetClearColor(COLOR_BG);
+		m_SceneManager.SetActiveScene("Dungeon"); // selects the active scene
+		SetupCamera();
+
 		// ResetGame() generates the first dungeon and builds its tiles; every restart
-		// rolls a fresh one.
+		// rolls a fresh one. (It uses targeted destroys, not Clear(), so the camera
+		// entity created above survives every restart.)
 		ResetGame();
+
+		m_Scene->OnStart(); // explicit start (no physics here -> just marks it running)
 	}
 
 	void GameLayer::OnDetach()
 	{
+		m_Scene->OnStop(); // explicit teardown
+
 		if (m_Font)
 		{
 			m_Font->Destroy();
@@ -76,7 +86,7 @@ namespace Dingo
 					? (checker ? COLOR_WALL_A : COLOR_WALL_B)
 					: (checker ? COLOR_FLOOR_A : COLOR_FLOOR_B);
 
-				Entity tile = m_Scene.CreateEntity(wall ? "Wall" : "Floor");
+				Entity tile = m_Scene->CreateEntity(wall ? "Wall" : "Floor");
 				auto& transform = tile.GetComponent<TransformComponent>();
 				transform.Position = glm::vec3(m_Context.TileToWorld(c, r), 0.0f);
 				transform.Size = glm::vec2(TILE_SIZE);
@@ -91,9 +101,9 @@ namespace Dingo
 		// Tear the actors down...
 		if (m_Context.Player.IsValid())
 			m_Context.Player.Destroy();
-		for (EnemyScript* enemy : m_Scene.GetScriptsOfType<EnemyScript>())
+		for (EnemyScript* enemy : m_Scene->GetScriptsOfType<EnemyScript>())
 			enemy->GetEntity().Destroy();
-		for (LootScript* loot : m_Scene.GetScriptsOfType<LootScript>())
+		for (LootScript* loot : m_Scene->GetScriptsOfType<LootScript>())
 			loot->GetEntity().Destroy();
 
 		// ...roll a fresh dungeon and rebuild its tiles...
@@ -105,9 +115,9 @@ namespace Dingo
 		m_Context.LootCollected = 0;
 		m_Context.State = GameContext::GameState::Playing;
 
-		SpawnPlayer(m_Scene, m_Context, m_PlayerSpawn);
+		SpawnPlayer(*m_Scene, m_Context, m_PlayerSpawn);
 		for (const glm::vec2& spawn : m_EnemySpawns)
-			SpawnEnemy(m_Scene, m_Context, spawn);
+			SpawnEnemy(*m_Scene, m_Context, spawn);
 	}
 
 	// ------------------------------------------------------------------------
@@ -121,7 +131,7 @@ namespace Dingo
 
 		if (m_Context.State == GameContext::GameState::Playing)
 		{
-			m_Scene.OnUpdate(deltaTime); // drives the player/enemy/loot scripts
+			m_Scene->OnUpdate(deltaTime); // drives the player/enemy/loot scripts
 
 			if (m_Context.PlayerHealth <= 0.0f)
 			{
@@ -146,11 +156,28 @@ namespace Dingo
 		// The world entities and the HUD/feedback overlay share the same camera, so
 		// they render in a single scene block (one BeginScene/EndScene).
 		Renderer2D& renderer = Application::Get().GetRenderer2D();
-		renderer.BeginScene(m_WorldVP);
+		const glm::vec2 viewport = renderer.GetViewportSize();
+		const float aspect = (viewport.y > 0.0f) ? viewport.x / viewport.y : 1.0f;
+		renderer.BeginScene(m_Scene->GetActiveCameraViewProjection(aspect));
 		renderer.Clear(COLOR_BG);
-		m_Scene.RenderEntities(renderer);
+		m_Scene->RenderEntities(renderer);
 		RenderOverlay(renderer, deltaTime);
 		renderer.EndScene();
+	}
+
+	void GameLayer::SetupCamera()
+	{
+		// An orthographic follow camera. The projection comes from OrthographicSize +
+		// viewport aspect; the view comes from this entity's transform, which
+		// UpdateCamera repositions each frame. Created once and kept across restarts
+		// (ResetGame uses targeted destroys, never Clear()).
+		m_CameraEntity = m_Scene->CreateEntity("Camera");
+		auto& camera = m_CameraEntity.AddComponent<CameraComponent>();
+		camera.Type = CameraComponent::ProjectionType::Orthographic;
+		camera.OrthographicSize = ORTHO_SIZE;
+		camera.OrthoNear = ORTHO_NEAR;
+		camera.OrthoFar = ORTHO_FAR;
+		camera.Primary = true;
 	}
 
 	void GameLayer::UpdateCamera()
@@ -182,19 +209,20 @@ namespace Dingo
 
 		m_CameraPos = target;
 
-		const glm::mat4 projection = glm::ortho(-m_HalfW, m_HalfW, -m_HalfH, m_HalfH, ORTHO_NEAR, ORTHO_FAR);
-		const glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(-m_CameraPos.x, -m_CameraPos.y, 0.0f));
-		m_WorldVP = projection * view;
+		// Drive the camera entity's transform; GetActiveCameraViewProjection turns it
+		// into the same view the old m_WorldVP encoded (ortho * translate(-cameraPos)).
+		if (m_CameraEntity.IsValid())
+			m_CameraEntity.GetComponent<TransformComponent>().Position = glm::vec3(m_CameraPos, 0.0f);
 	}
 
 	int GameLayer::CountEnemies()
 	{
-		return (int)m_Scene.GetScriptsOfType<EnemyScript>().size();
+		return (int)m_Scene->GetScriptsOfType<EnemyScript>().size();
 	}
 
 	int GameLayer::CountLoot()
 	{
-		return (int)m_Scene.GetScriptsOfType<LootScript>().size();
+		return (int)m_Scene->GetScriptsOfType<LootScript>().size();
 	}
 
 	// ------------------------------------------------------------------------
@@ -223,7 +251,7 @@ namespace Dingo
 		}
 
 		// Enemy health bars, above damaged enemies.
-		for (EnemyScript* enemy : m_Scene.GetScriptsOfType<EnemyScript>())
+		for (EnemyScript* enemy : m_Scene->GetScriptsOfType<EnemyScript>())
 		{
 			if (enemy->Health() >= enemy->MaxHealth())
 				continue;

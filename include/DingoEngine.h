@@ -22,6 +22,7 @@
 #include "DingoEngine/Scene/ScriptableEntity.h"
 #include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/SceneManager.h"
+#include "DingoEngine/Scene/SceneRenderer.h"
 
 // ----------------------------------------------------------------------
 // Physics (3D)

@@ -152,6 +152,30 @@ Main loop per frame:
   `src/.../Physics/2D/Box2D/` behind the `Physics2D` interface, and Jolt only in
   `src/.../Physics/3D/JoltPhysics/` behind `Physics3D`. The `Scene` delegates physics to
   the owned worlds (`Scene::GetPhysics2D()` / `Scene::GetPhysics3D()`).
+- **Scene lifecycle & rendering (v0.4.2).** `Scene::OnStart()`/`OnStop()` wrap
+  `OnPhysicsStart`/`OnPhysicsStop` (with `IsRunning()`); `Clear()` also stops the scene.
+  `SceneManager` is the default scene API. Lifecycle is **explicit**: the host calls `OnStart`
+  (last in `OnAttach`) and `OnStop` (in `OnDetach`). The **first** `SetActiveScene` only selects
+  the scene; a later **switch** auto-runs `OnStop`(outgoing)+`OnStart`(incoming) so multi-scene
+  transitions stay one-liners. `CreateScene` never activates. `OnUpdate`/`OnRender()` drive the
+  active scene. `SceneManager::OnRender()`
+  delegates to the engine-owned **`SceneRenderer`** (`Application::GetSceneRenderer()`): it
+  reads the **primary `CameraComponent`** (projection from the component; view from the camera
+  entity's transform — ortho uses the 2D `TransformComponent`, perspective the
+  `Transform3DComponent`) plus a `DirectionalLightComponent`. A scene may hold **both** a
+  perspective (world) camera and an orthographic (UI) camera: the renderer draws the 3D world
+  pass, then the 2D entities as an overlay on top (one camera type → just that pass).
+  `Scene::OnRender`/`OnRender3D`/`SetViewProjection` are **gone**;
+  `Scene::RenderEntities`/`RenderEntities3D` stay public for custom passes, and
+  `Scene::GetActiveCameraViewProjection(aspect)` returns the active camera's VP for a matching
+  overlay pass.
+- **`ScriptableEntity` lifecycle: `OnCreate` (attach) → `OnStart` → `OnUpdate` → `OnDestroy`.**
+  `OnStart` fires from `Scene::OnStart` *before* `OnPhysicsStart` (or on first `OnUpdate` for
+  scripts spawned later), so a **controller script** can build the whole world in `OnStart`
+  (spawn level/player/enemies/camera/light/HUD) and have its bodies baked. With full `GetScene()`
+  access this keeps game layers tiny — `examples/DungeonCrawler3D/` is the showcase: its layer
+  just creates the scene, attaches one `DungeonControllerScript`, and drives update/render; the
+  HUD is scene entities (Text/Sprite + an ortho UI camera) drawn via the 2D overlay.
 - New built-in component types must be explicitly instantiated via the
   `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
 - Physics components hold the simulated body/shape as an opaque handle (`PhysicsBodyId2D` /
@@ -167,8 +191,19 @@ Main loop per frame:
   ones — a scene pays only for the dimension it uses). The 3D collider shape is **baked
   into the body at creation** (Physics3D has no separate shape handles, no `SetPosition`,
   and no angular-velocity control). Jolt's global init (allocator/Factory/RegisterTypes)
-  is ref-counted across worlds. `Scene::OnRender3D(Renderer3D&, PerspectiveCamera&)` draws
-  every `Transform3D`+`MeshRenderer` entity.
+  is ref-counted across worlds. The `SceneRenderer` (v0.4.2) draws every
+  `Transform3D`+`MeshRenderer` entity (via `Scene::RenderEntities3D`), lit by a
+  `DirectionalLightComponent`.
+- **Per-mesh materials (v0.4.2).** `MeshRendererComponent::Material` is an optional `Material*`
+  (null = Renderer3D's built-in flat-lit default). Renderer3D **groups meshes by material** and
+  draws one batch per material from a pooled (vertex, index) buffer (no shared buffer is
+  re-uploaded mid-frame). Camera + light live in a shared **scene UBO** the renderer binds at
+  **binding 0** on every material (`Material::SetSceneUniformBuffer`), so a custom mesh shader's
+  convention is: **binding 0** = scene (`ViewProjection`+light), **binding 1** = the material's own
+  `SetUniform` params, **bindings 2+** = its textures/samplers. The scene UBO is volatile — written
+  via `Renderer::Upload` (command list) each `BeginScene`, not pre-uploaded. The binding set a
+  material binds must match what its shader reflects, so declare exactly the bindings you use.
+  `examples/DungeonCrawler3D/` showcases a custom unlit/glow treasure material.
 
 ## Graphics API notes
 

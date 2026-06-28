@@ -30,16 +30,32 @@ project "DungeonCrawler3D"
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
+	-- This example loads OBJ character models via Model::LoadFromFile (Assimp), so the
+	-- exe imports the Assimp DLL and needs it copied next to the binary at runtime.
+	-- (%{wks.location} resolves empty inside this included project's postbuild scope, so
+	-- the source dir is baked to an absolute path here at generation time instead.)
+	local assimpDebugBin   = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/debug")
+	local assimpReleaseBin = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/release")
+
 	filter "configurations:Debug or configurations:Debug-AS"
 		symbols "On"
 		defines { "DE_DEBUG" }
+		postbuildcommands {
+			'{COPY} "' .. assimpDebugBin .. '" "%{cfg.targetdir}"'
+		}
 
 	filter "configurations:Release"
 		optimize "On"
 		defines { "DE_RELEASE" }
+		postbuildcommands {
+			'{COPY} "' .. assimpReleaseBin .. '" "%{cfg.targetdir}"'
+		}
 
 	filter "configurations:Distribution"
 		kind "WindowedApp"
 		optimize "On"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
+		postbuildcommands {
+			'{COPY} "' .. assimpReleaseBin .. '" "%{cfg.targetdir}"'
+		}

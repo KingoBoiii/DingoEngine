@@ -70,14 +70,6 @@ namespace Dingo
 
 	void Renderer3D::Initialize()
 	{
-		const Renderer3DCapabilities& caps = m_Params.Capabilities;
-
-		m_VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, true, "Renderer3D_VB");
-		m_IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, true, "Renderer3D_IB", GraphicsFormat::Uint32);
-
-		m_VertexBase = new Vertex[caps.MaxVertices];
-		m_IndexBase = new uint32_t[caps.MaxIndices];
-
 		m_Shader = Shader::CreateFromSource("Renderer3DMeshShader", k_MeshShaderSource);
 
 		m_Layout = VertexLayout()
@@ -96,9 +88,14 @@ namespace Dingo
 			// still resolves occlusion correctly.
 			.SetCullMode(CullMode::None));
 
+		// Camera + light live in a shared scene UBO (binding 0) bound on every material,
+		// rather than baked into the default material — so custom materials receive the
+		// camera/light too. Uploaded each BeginScene.
 		m_CameraData.LightDirection = glm::vec4(m_Params.LightDirection, 0.0f);
 		m_CameraData.Ambient = glm::vec4(m_Params.Ambient, 0.0f, 0.0f, 0.0f);
-		m_Material->SetUniform(m_CameraData);
+		// Volatile constant buffer — written into the frame's command list each
+		// BeginScene (via Renderer::Upload), not pre-uploaded here.
+		m_SceneUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData), "Renderer3D_SceneUBO");
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
@@ -107,18 +104,20 @@ namespace Dingo
 
 	void Renderer3D::Shutdown()
 	{
-		delete[] m_VertexBase;
-		delete[] m_IndexBase;
-		m_VertexBase = nullptr;
-		m_IndexBase = nullptr;
+		for (GraphicsBuffer* buffer : m_BatchVertexBuffers)
+			if (buffer) buffer->Destroy();
+		for (GraphicsBuffer* buffer : m_BatchIndexBuffers)
+			if (buffer) buffer->Destroy();
+		m_BatchVertexBuffers.clear();
+		m_BatchIndexBuffers.clear();
+		m_Batches.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
 		m_BoxMesh = nullptr;
 		m_SphereMesh = nullptr;
 
-		if (m_VertexBuffer) { m_VertexBuffer->Destroy(); m_VertexBuffer = nullptr; }
-		if (m_IndexBuffer) { m_IndexBuffer->Destroy(); m_IndexBuffer = nullptr; }
+		if (m_SceneUniformBuffer) { m_SceneUniformBuffer->Destroy(); m_SceneUniformBuffer = nullptr; }
 		if (m_Material) { m_Material->Destroy(); delete m_Material; m_Material = nullptr; }
 		if (m_Shader) { m_Shader->Destroy(); m_Shader = nullptr; }
 	}
@@ -131,23 +130,56 @@ namespace Dingo
 	void Renderer3D::BeginScene(const glm::mat4& viewProjection)
 	{
 		m_CameraData.ViewProjection = viewProjection;
-		m_Material->SetUniform(m_CameraData);
+		// Write the volatile scene UBO into this frame's command list, before any draw
+		// binds it (CommandList::UploadBuffer, the same path material UBOs use).
+		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 
-		m_VertexPtr = m_VertexBase;
-		m_IndexPtr = m_IndexBase;
-		m_IndexCount = 0;
-		m_VertexOffset = 0;
+		// Reset the per-material batches, keeping their storage for reuse.
+		for (auto& [material, batch] : m_Batches)
+		{
+			batch.Vertices.clear();
+			batch.Indices.clear();
+			batch.OverflowWarned = false;
+		}
 		m_SceneActive = true;
-		m_OverflowWarned = false; // re-arm the one-shot overflow warning for this scene
 	}
 
 	void Renderer3D::EndScene()
 	{
 		if (!m_SceneActive)
-			return; // guard against EndScene() without BeginScene() (or a double call) re-drawing the prior batch
+			return; // guard against EndScene() without BeginScene() (or a double call)
 
-		Flush();
 		m_SceneActive = false;
+
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		uint32_t batchIndex = 0;
+
+		// One indexed draw per material, each from its own pooled (vertex, index) buffer
+		// so no shared buffer is re-uploaded between draws.
+		for (auto& [material, batch] : m_Batches)
+		{
+			if (batch.Indices.empty())
+				continue;
+
+			// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
+			if (batchIndex >= m_BatchVertexBuffers.size())
+			{
+				m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, true, "Renderer3D_BatchVB"));
+				m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, true, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+			}
+
+			GraphicsBuffer* vertexBuffer = m_BatchVertexBuffers[batchIndex];
+			GraphicsBuffer* indexBuffer = m_BatchIndexBuffers[batchIndex];
+
+			vertexBuffer->Upload(batch.Vertices.data(), static_cast<uint32_t>(batch.Vertices.size() * sizeof(Vertex)));
+			indexBuffer->Upload(batch.Indices.data(), static_cast<uint32_t>(batch.Indices.size() * sizeof(uint32_t)));
+
+			// Bind the shared camera/light UBO at binding 0 for this material, then draw.
+			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
+			Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(batch.Indices.size()));
+
+			++batchIndex;
+		}
 	}
 
 	void Renderer3D::Clear(const glm::vec4& clearColor)
@@ -155,24 +187,33 @@ namespace Dingo
 		Renderer::Clear(clearColor);
 	}
 
-	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color)
+	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
+	{
+		m_Params.LightDirection = direction;
+		m_Params.Ambient = ambient;
+		m_CameraData.LightDirection = glm::vec4(direction, 0.0f);
+		m_CameraData.Ambient = glm::vec4(ambient, 0.0f, 0.0f, 0.0f);
+		// Uploaded to the scene UBO in BeginScene (called next by the SceneRenderer).
+	}
+
+	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material)
 	{
 		if (!m_SceneActive || !mesh)
 			return;
 
+		MeshBatch& batch = m_Batches[material ? material : m_Material];
+
 		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();
 
-		const uint32_t usedVertices = static_cast<uint32_t>(m_VertexPtr - m_VertexBase);
-		const uint32_t usedIndices = m_IndexCount;
-		if (usedVertices + vertices.size() > m_Params.Capabilities.MaxVertices ||
-			usedIndices + indices.size() > m_Params.Capabilities.MaxIndices)
+		if (batch.Vertices.size() + vertices.size() > m_Params.Capabilities.MaxVertices ||
+			batch.Indices.size() + indices.size() > m_Params.Capabilities.MaxIndices)
 		{
-			if (!m_OverflowWarned)
+			if (!batch.OverflowWarned)
 			{
-				DE_CORE_WARN("Renderer3D batch capacity exceeded ({} verts / {} indices); dropping further meshes this scene. Raise Renderer3DCapabilities.",
+				DE_CORE_WARN("Renderer3D batch capacity exceeded for a material ({} verts / {} indices); dropping further meshes this scene. Raise Renderer3DCapabilities.",
 					m_Params.Capabilities.MaxVertices, m_Params.Capabilities.MaxIndices);
-				m_OverflowWarned = true;
+				batch.OverflowWarned = true;
 			}
 			return;
 		}
@@ -180,20 +221,19 @@ namespace Dingo
 		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
 		// doesn't skew them; positions just use the model matrix.
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+		const uint32_t vertexOffset = static_cast<uint32_t>(batch.Vertices.size());
 
 		for (const MeshVertex& v : vertices)
 		{
-			m_VertexPtr->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
-			m_VertexPtr->Normal = normalMatrix * v.Normal;
-			m_VertexPtr->Color = color;
-			m_VertexPtr++;
+			Vertex vertex;
+			vertex.Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			vertex.Normal = normalMatrix * v.Normal;
+			vertex.Color = color;
+			batch.Vertices.push_back(vertex);
 		}
 
 		for (uint32_t index : indices)
-			*m_IndexPtr++ = index + m_VertexOffset;
-
-		m_VertexOffset += static_cast<uint32_t>(vertices.size());
-		m_IndexCount += static_cast<uint32_t>(indices.size());
+			batch.Indices.push_back(index + vertexOffset);
 	}
 
 	void Renderer3D::DrawBox(const glm::mat4& transform, const glm::vec4& color)
@@ -204,20 +244,6 @@ namespace Dingo
 	void Renderer3D::DrawSphere(const glm::mat4& transform, const glm::vec4& color)
 	{
 		SubmitMesh(m_SphereMesh, transform, color);
-	}
-
-	void Renderer3D::Flush()
-	{
-		if (m_IndexCount == 0)
-			return;
-
-		const uint32_t vertexDataSize = static_cast<uint32_t>(
-			reinterpret_cast<uint8_t*>(m_VertexPtr) - reinterpret_cast<uint8_t*>(m_VertexBase));
-
-		m_VertexBuffer->Upload(m_VertexBase, vertexDataSize);
-		m_IndexBuffer->Upload(m_IndexBase, m_IndexCount * sizeof(uint32_t));
-
-		Renderer::DrawIndexed(m_Material, m_Layout, m_VertexBuffer, m_IndexBuffer, m_IndexCount);
 	}
 
 }

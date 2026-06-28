@@ -117,6 +117,16 @@ namespace Dingo
 		}
 	}
 
+	void Material::SetSceneUniformBuffer(GraphicsBuffer* buffer)
+	{
+		if (m_SceneUniformBuffer == buffer)
+			return;
+
+		// The scene UBO is bound into the baked render pass, so a change must rebuild it.
+		m_SceneUniformBuffer = buffer;
+		InvalidatePipelineCache();
+	}
+
 	/**************************************************
 	***		PIPELINE CACHE								***
 	**************************************************/
@@ -140,24 +150,29 @@ namespace Dingo
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
 		renderPass->Initialize();
 
-		// Bind textures and samplers.
-		// Binding layout convention: UBO occupies binding 0.
-		// Texture/sampler pairs are interleaved starting at binding 1:
-		//   texture[i] → binding 1 + i*2
-		//   sampler[i] → binding 2 + i*2
+		// Binding convention:
+		//   binding 0 = scene UBO (engine-provided camera/light) when SetSceneUniformBuffer is used
+		//   binding 1 = the material's own uniform params (binding 0 when there is no scene UBO)
+		//   textures/samplers follow, interleaved: texture[i] -> base + i*2, sampler[i] -> base+1 + i*2
+		const uint32_t materialUboSlot = m_SceneUniformBuffer ? 1u : 0u;
+		const uint32_t textureBase     = m_SceneUniformBuffer ? 2u : 1u;
+
+		if (m_SceneUniformBuffer)
+			renderPass->SetUniformBuffer(0, m_SceneUniformBuffer);
+
+		if (m_UniformBuffer)
+			renderPass->SetUniformBuffer(materialUboSlot, m_UniformBuffer);
+
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{
 			if (m_Textures[i])
-				renderPass->SetTexture(1 + i * 2, m_Textures[i]);
+				renderPass->SetTexture(textureBase + i * 2, m_Textures[i]);
 		}
 		for (uint32_t i = 0; i < k_MaxSamplerSlots; ++i)
 		{
 			if (m_Samplers[i])
-				renderPass->SetSampler(2 + i * 2, m_Samplers[i]);
+				renderPass->SetSampler(textureBase + 1 + i * 2, m_Samplers[i]);
 		}
-
-		if (m_UniformBuffer)
-			renderPass->SetUniformBuffer(0, m_UniformBuffer);
 
 		renderPass->Bake();
 

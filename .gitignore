@@ -92,6 +92,8 @@ StyleCopReport.xml
 *.ilk
 *.meta
 *.obj
+# ...but keep Wavefront OBJ model assets (the *.obj rule above targets C++ objects).
+!**/assets/models/**/*.obj
 *.iobj
 *.pch
 *.pdb

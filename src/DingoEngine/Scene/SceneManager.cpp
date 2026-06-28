@@ -1,6 +1,9 @@
 #include "depch.h"
 #include "DingoEngine/Scene/SceneManager.h"
 #include "DingoEngine/Scene/Scene.h"
+#include "DingoEngine/Scene/SceneRenderer.h"
+
+#include "DingoEngine/Core/Application.h"
 
 namespace Dingo
 {
@@ -20,13 +23,6 @@ namespace Dingo
 
 		Scene* scene = new Scene(name);
 		m_Scenes[name] = scene;
-
-		if (!m_ActiveScene)
-		{
-			m_ActiveScene = scene;
-			m_ActiveSceneName = name;
-		}
-
 		return scene;
 	}
 
@@ -50,8 +46,25 @@ namespace Dingo
 			return false;
 		}
 
-		m_ActiveScene = it->second;
-		m_ActiveSceneName = name;
+		Scene* target = it->second;
+		if (target == m_ActiveScene)
+			return true; // already active — no lifecycle churn
+
+		if (m_ActiveScene)
+		{
+			// Switching between scenes: stop the outgoing and start the incoming.
+			m_ActiveScene->OnStop();
+			m_ActiveScene = target;
+			m_ActiveSceneName = name;
+			m_ActiveScene->OnStart();
+		}
+		else
+		{
+			// First activation just selects the scene; the host starts it explicitly
+			// (Scene::OnStart, typically as the last thing in Layer::OnAttach).
+			m_ActiveScene = target;
+			m_ActiveSceneName = name;
+		}
 		return true;
 	}
 
@@ -61,10 +74,10 @@ namespace Dingo
 			m_ActiveScene->OnUpdate(deltaTime);
 	}
 
-	void SceneManager::OnRender(Renderer2D& renderer)
+	void SceneManager::OnRender()
 	{
 		if (m_ActiveScene)
-			m_ActiveScene->OnRender(renderer);
+			Application::Get().GetSceneRenderer().Render(*m_ActiveScene);
 	}
 
 	void SceneManager::Clear()
