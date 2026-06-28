@@ -56,6 +56,19 @@ A scene-system rework on two fronts, pulled forward from v0.5:
 [DungeonCrawler3D](examples/DungeonCrawler3D/) — were migrated onto the lifecycle and the
 camera/light components as the showcase.
 
+Alongside the migration, [DungeonCrawler3D](examples/DungeonCrawler3D/) also gained an
+**animated low-poly character**. Its hero and skeletons are no longer rendered as spheres
+but as multi-part figures built from separate OBJ part meshes — head, torso, arms, legs,
+and a sword — loaded with the v0.2 model loader (`Model::LoadFromFile`) and assembled into
+a procedural rig: an idle/walk cycle (legs and arms swinging about their joints), an
+**attack swing** with anticipation → strike → recovery and a forward body lunge, a
+gripped sword that swings with the weapon arm, and a hit-reaction recoil. It is driven
+entirely from the example's `ScriptableEntity` scripts on top of the new `SceneRenderer`.
+Because the model loader bakes node transforms (no skinned/skeletal playback), the rig
+animates by transforming part *entities* each frame — a proper **skeletal-animation
+system** (skinned meshes, animation clips, a blend tree) remains future engine work,
+slated to land with the character fidelity push of v0.5+.
+
 ## v0.5 — First Playable: 3D Dungeon Crawler (Singleplayer)
 The milestone where the DungeonCrawler3D prototype becomes an actual, shippable game. The engine foundation is now in place: v0.4.1 moved 3D rendering and the Jolt-backed `Physics3D` world into the scene/ECS, and **v0.4.2 landed the scene rework** — the `OnStart`/`OnUpdate`/`OnStop` lifecycle, `SceneManager`-driven transitions, and the `SceneRenderer` (camera + lights read from ECS components) — so the world already renders and simulates through the scene behind a real renderer abstraction. That leaves v0.5 to concentrate on the game itself, with two remaining pieces of supporting engine work:
 
