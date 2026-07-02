@@ -5,6 +5,8 @@
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
+#include "DingoEngine/Core/KeyCodes.h"
+#include "DingoEngine/UI/DebugPanels.h"
 #include "DingoEngine/Graphics/Renderer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -66,11 +68,18 @@ namespace Dingo
 			return;
 		}
 
-		if (m_Params.EnableUI)
+		// Bring up the ImGui backend if the game wants UI, or if the engine's built-in
+		// debug overlays are enabled -- so the renderer-stats window works even in
+		// projects that use no UI of their own, in every build config (Distribution too).
+		bool enableImGui = m_Params.EnableUI || m_Params.EnableDebugOverlays;
+		if (enableImGui)
 		{
 			m_ImGuiLayer = new ImGuiLayer(m_Params.UI);
 			PushOverlay(m_ImGuiLayer);
 		}
+
+		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
+			DE_CORE_INFO("Debug overlays enabled - press F3 for the renderer-stats window.");
 	}
 
 	void Application::Destroy()
@@ -162,13 +171,21 @@ namespace Dingo
 				layer->OnUpdate(m_DeltaTime);
 			}
 
-			if (m_Params.EnableUI)
+			if (m_ImGuiLayer)
 			{
 				m_ImGuiLayer->Begin();
-				for (Layer* layer : m_LayerStack)
+
+				if (m_Params.EnableUI)
 				{
-					layer->OnUIRender();
+					for (Layer* layer : m_LayerStack)
+					{
+						layer->OnUIRender();
+					}
 				}
+
+				if (m_Params.EnableDebugOverlays)
+					RenderDebugOverlays();
+
 				m_ImGuiLayer->End();
 			}
 
@@ -181,6 +198,17 @@ namespace Dingo
 			}
 			m_PostExecutionCallbacks.clear();
 		}
+	}
+
+	void Application::RenderDebugOverlays()
+	{
+		// F3 toggles the built-in renderer-stats window. Input::IsKeyDown is edge-triggered
+		// ("just pressed"), so this flips once per press, not every frame it's held.
+		if (Input::IsKeyDown(Key::F3))
+			m_ShowRendererStats = !m_ShowRendererStats;
+
+		if (m_ShowRendererStats)
+			UI::RendererStatsWindow(&m_ShowRendererStats);
 	}
 
 	void Application::PushLayer(Layer* layer)

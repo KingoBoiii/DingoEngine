@@ -25,6 +25,13 @@ namespace Dingo
 		// warning) rather than triggering a mid-frame flush — see SubmitMesh.
 		uint32_t MaxVertices = 65536;
 		uint32_t MaxIndices = 98304;
+
+		// When true, exceeding a batch's capacity trips an assert instead of the default
+		// warn-once-and-drop. Opt-in (default off) so a deliberate vertex-budget "safety
+		// valve" — dropping far-away meshes — can still ship, while development can catch
+		// unexpected overflow hard. Asserts are compiled out in release, where this falls
+		// back to warn-and-drop regardless.
+		bool AssertOnOverflow = false;
 	};
 
 	struct Renderer3DParams
@@ -101,11 +108,25 @@ namespace Dingo
 		Mesh* GetBoxMesh() const { return m_BoxMesh; }
 		Mesh* GetSphereMesh() const { return m_SphereMesh; }
 
+		// Per-scene render statistics: reset each BeginScene, complete after EndScene.
+		struct Statistics
+		{
+			uint32_t DrawCalls = 0;       // one indexed draw per non-empty material batch
+			uint32_t SubmittedMeshes = 0; // meshes accepted into a batch this scene
+			uint32_t DroppedMeshes = 0;   // meshes dropped due to batch capacity overflow
+			uint32_t VertexCount = 0;     // vertices batched this scene
+			uint32_t IndexCount = 0;      // indices batched this scene
+		};
+
+		const Statistics& GetStatistics() const { return m_Statistics; }
+		const Renderer3DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
+
 	private:
 		Renderer3D(const Renderer3DParams& params) : m_Params(params) {}
 
 	private:
 		Renderer3DParams m_Params;
+		Statistics m_Statistics;
 
 		struct Vertex
 		{

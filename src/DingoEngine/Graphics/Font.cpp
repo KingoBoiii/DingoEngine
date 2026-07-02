@@ -75,7 +75,11 @@ namespace Dingo
 	Font* Font::Create(const std::filesystem::path& filepath, const FontParams& params)
 	{
 		Font* font = new Font(filepath, params);
-		font->Initialize();
+		if (!font->Initialize())
+		{
+			delete font;
+			return nullptr;
+		}
 		return font;
 	}
 
@@ -90,10 +94,15 @@ namespace Dingo
 		Destroy();
 	}
 
-	void Font::Initialize()
+	bool Font::Initialize()
 	{
-		int32_t width, height;
-		InitializeFontData(width, height);
+		int32_t width = 0, height = 0;
+		if (!InitializeFontData(width, height))
+		{
+			// Font data failed to load (e.g. missing/invalid font file) - do not touch
+			// width/height or proceed to atlas generation, both are meaningless here.
+			return false;
+		}
 
 		m_Name = m_Params.Name.empty() ? m_FilePath.stem().string() : m_Params.Name;
 
@@ -107,7 +116,7 @@ namespace Dingo
 			{
 				stream.close();
 				DE_CORE_ERROR_TAG("Font", "Failed to open cached font atlas file: {}", filePath.string());
-				return;
+				return false;
 			}
 
 			FontAtlasHeader header;
@@ -116,7 +125,7 @@ namespace Dingo
 			{
 				stream.close();
 				DE_CORE_ERROR_TAG("Font", "Failed to read font atlas header from file: {}", filePath.string());
-				return;
+				return false;
 			}
 
 			// read texture pixels from cache file
@@ -127,7 +136,7 @@ namespace Dingo
 			{
 				stream.close();
 				DE_CORE_ERROR_TAG("Font", "Failed to read pixel data from cached font atlas file: {}", filePath.string());
-				return;
+				return false;
 			}
 
 			stream.close();
@@ -138,6 +147,8 @@ namespace Dingo
 		{
 			m_AtlasTexture = Utils::CreateAndCacheAtlas<uint8_t, float, 4, msdf_atlas::mtsdfGenerator>(m_Name, 0.0f, m_Data->Glyphs, m_Data->FontGeometry, width, height, m_Params);
 		}
+
+		return m_AtlasTexture != nullptr;
 	}
 
 	void Font::Destroy()
@@ -254,7 +265,7 @@ namespace Dingo
 		return result;
 	}
 
-	void Font::InitializeFontData(int32_t& width, int32_t& height)
+	bool Font::InitializeFontData(int32_t& width, int32_t& height)
 	{
 		msdfgen::FreetypeHandle* ft = msdfgen::initializeFreetype();
 		DE_CORE_ASSERT(ft, "Failed to initialize FreeType");
@@ -264,7 +275,8 @@ namespace Dingo
 		if (!font)
 		{
 			DE_CORE_ERROR("Failed to load font: {}", fileString);
-			return;
+			msdfgen::deinitializeFreetype(ft);
+			return false;
 		}
 
 		struct CharsetRange
@@ -350,6 +362,13 @@ namespace Dingo
 		msdfgen::destroyFont(font);
 
 		msdfgen::deinitializeFreetype(ft);
+
+		return true;
+	}
+
+	bool Font::IsValid() const
+	{
+		return m_AtlasTexture != nullptr && m_Data != nullptr && !m_Data->Glyphs.empty();
 	}
 
 }

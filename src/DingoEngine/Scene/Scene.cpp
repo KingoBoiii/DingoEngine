@@ -51,6 +51,74 @@ namespace Dingo
 		return Wrap(static_cast<std::uint32_t>(handle));
 	}
 
+	namespace
+	{
+		// Copies component T from src to dst when the source has it. Used only by
+		// DuplicateEntity below — keep that function's component list in sync with
+		// Components.h (a new component type must be added there to be cloned).
+		template<typename T>
+		void CopyComponentIfExists(entt::registry& registry, entt::entity dst, entt::entity src)
+		{
+			if (registry.all_of<T>(src))
+				registry.emplace_or_replace<T>(dst, registry.get<T>(src));
+		}
+	}
+
+	Entity Scene::DuplicateEntity(Entity source)
+	{
+		if (!IsValid(source))
+			return {};
+
+		entt::entity src = static_cast<entt::entity>(source.m_Handle);
+		entt::registry& registry = m_Data->Registry;
+
+		// New entity with its own fresh UUID, seeded with the source's name.
+		const std::string name = registry.all_of<TagComponent>(src)
+			? registry.get<TagComponent>(src).Tag
+			: std::string();
+		Entity clone = CreateEntity(name);
+		entt::entity dst = static_cast<entt::entity>(clone.m_Handle);
+
+		// Copy every built-in component present on the source EXCEPT identity (the clone
+		// keeps its fresh UUID) and the tag (already seeded above). The default
+		// Transform/2D components CreateEntity added are overwritten via emplace_or_replace.
+		//
+		// MAINTENANCE: a new component type in Components.h must be added to this list to
+		// be duplicated — and, if it carries a live backend handle, reset below too.
+		CopyComponentIfExists<TransformComponent>(registry, dst, src);
+		CopyComponentIfExists<SpriteRendererComponent>(registry, dst, src);
+		CopyComponentIfExists<CircleRendererComponent>(registry, dst, src);
+		CopyComponentIfExists<TextComponent>(registry, dst, src);
+		CopyComponentIfExists<CameraComponent>(registry, dst, src);
+		CopyComponentIfExists<DirectionalLightComponent>(registry, dst, src);
+		CopyComponentIfExists<RigidBody2DComponent>(registry, dst, src);
+		CopyComponentIfExists<BoxCollider2DComponent>(registry, dst, src);
+		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
+		CopyComponentIfExists<Transform3DComponent>(registry, dst, src);
+		CopyComponentIfExists<MeshRendererComponent>(registry, dst, src);
+		CopyComponentIfExists<RigidBody3DComponent>(registry, dst, src);
+		CopyComponentIfExists<BoxCollider3DComponent>(registry, dst, src);
+		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
+
+		// Reset the copied live physics handles so the clone never aliases — and
+		// DestroyEntity never double-frees — the source's body/shapes (see Components.h).
+		if (registry.all_of<RigidBody2DComponent>(dst))
+			registry.get<RigidBody2DComponent>(dst).RuntimeBody = 0;
+		if (registry.all_of<BoxCollider2DComponent>(dst))
+			registry.get<BoxCollider2DComponent>(dst).RuntimeShape = 0;
+		if (registry.all_of<CircleCollider2DComponent>(dst))
+			registry.get<CircleCollider2DComponent>(dst).RuntimeShape = 0;
+		if (registry.all_of<RigidBody3DComponent>(dst))
+			registry.get<RigidBody3DComponent>(dst).RuntimeBody = k_InvalidBody3D;
+
+		// If the world is already simulating, give the clone its own body now (mirrors a
+		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
+		if (IsPhysicsRunning())
+			CreateRigidBody(clone);
+
+		return clone;
+	}
+
 	void Scene::DestroyEntity(Entity entity)
 	{
 		if (!entity)
@@ -300,7 +368,7 @@ namespace Dingo
 		for (entt::entity entity : view)
 		{
 			auto [transform, mesh] = view.get<Transform3DComponent, MeshRendererComponent>(entity);
-			if (!mesh.Mesh)
+			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
 			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color, mesh.Material);

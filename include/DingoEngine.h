@@ -63,4 +63,5 @@
 // ----------------------------------------------------------------------
 
 #include "DingoEngine/UI/UI.h"
+#include "DingoEngine/UI/DebugPanels.h"
 
