@@ -27,7 +27,8 @@ namespace Dingo
 
 	public:
 		Font(const std::filesystem::path& filepath, const FontParams& params);
-		~Font() = default;
+		// Defined in Font.cpp (where MSDFData is complete) so m_Data is deleted correctly.
+		~Font();
 
 	public:
 		void Initialize();

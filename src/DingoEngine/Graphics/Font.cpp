@@ -83,6 +83,13 @@ namespace Dingo
 		: m_Params(params), m_FilePath(filepath), m_Data(new MSDFData())
 	{}
 
+	Font::~Font()
+	{
+		// Route through Destroy() so the delete-without-Destroy path (e.g. Create() failure)
+		// still releases m_Data and the atlas.
+		Destroy();
+	}
+
 	void Font::Initialize()
 	{
 		int32_t width, height;
@@ -140,6 +147,11 @@ namespace Dingo
 			m_AtlasTexture->Destroy();
 			m_AtlasTexture = nullptr;
 		}
+
+		// Owned MSDFData; freed here (not just in ~Font) so it's released even when callers
+		// only call Destroy() without deleting. Idempotent: delete nullptr + re-null is safe.
+		delete m_Data;
+		m_Data = nullptr;
 	}
 
 	float Font::GetStringWidth(const std::string& string, float size) const
