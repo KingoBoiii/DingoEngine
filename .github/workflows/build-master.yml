@@ -29,13 +29,29 @@ jobs:
       with:
         msbuild-architecture: x64
 
-    - name: Install Vulkan SDK
+    - name: Get Vulkan SDK version
+      id: vulkan
       run: |
         $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt").Content.Trim()
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+
+    - name: Cache Vulkan SDK
+      id: cache-vulkan
+      uses: actions/cache@v4
+      with:
+        path: C:\VulkanSDK\${{ steps.vulkan.outputs.version }}
+        key: vulkan-sdk-windows-${{ steps.vulkan.outputs.version }}-debug
+
+    - name: Install Vulkan SDK
+      if: steps.cache-vulkan.outputs.cache-hit != 'true'
+      run: |
+        $version = "${{ steps.vulkan.outputs.version }}"
         $installer = "vulkansdk-windows-X64-$version.exe"
         Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/$installer" -OutFile $installer
         Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install com.lunarg.vulkan.debug" -Wait
-        echo "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
+
+    - name: Set VULKAN_SDK environment variable
+      run: echo "VULKAN_SDK=C:\VulkanSDK\${{ steps.vulkan.outputs.version }}" >> $env:GITHUB_ENV
 
     - name: Install premake5
       run: |

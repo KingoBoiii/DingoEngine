@@ -23,15 +23,20 @@ namespace Dingo
 	class Font
 	{
 	public:
+		// Returns nullptr on failure (error is logged). Caller owns the returned Font.
 		static Font* Create(const std::filesystem::path& filepath, const FontParams& params = {});
 
 	public:
 		Font(const std::filesystem::path& filepath, const FontParams& params);
-		~Font() = default;
+		// Defined in Font.cpp (where MSDFData is complete) so m_Data is deleted correctly.
+		~Font();
 
 	public:
-		void Initialize();
+		bool Initialize();
 		void Destroy();
+
+		// True if the font loaded successfully and has a usable atlas + glyph geometry.
+		bool IsValid() const;
 
 		float GetStringWidth(const std::string& string, float size = 1.0f) const;
 		BoundingBox GetBoundingBox(const std::string& string, float size = 1.0f) const;
@@ -39,7 +44,7 @@ namespace Dingo
 		const MSDFData* GetMSDFData() const { return m_Data; }
 
 	private:
-		void InitializeFontData(int32_t& width, int32_t& height);
+		bool InitializeFontData(int32_t& width, int32_t& height);
 
 	private:
 		FontParams m_Params;

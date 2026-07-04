@@ -10,6 +10,11 @@ workspace "DingoEngine"
     solution_items { ".editorconfig" }
     flags { "multiprocessorcompile" }
 
+    -- C7: embed debug info in the objects instead of external vc*.pdb files,
+    -- so the merged distributable DingoEngine.lib is debuggable on its own.
+    -- Trade-off: no Edit-and-Continue.
+    debugformat "c7"
+
     defines {
 		"_CRT_SECURE_NO_WARNINGS",
         "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1",
@@ -34,6 +39,29 @@ workspace "DingoEngine"
 		    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
+
+-- Every in-tree vendor static lib that gets merged into the distributable
+-- DingoEngine.lib (see the lib.exe post-build step on the DingoEngine project).
+-- Anchored on $(ProjectDir) (= repo root for DingoEngine) instead of
+-- $(SolutionDir), which is undefined when a .vcxproj is built standalone.
+local function vendorLib(rel, name)
+    return '"$(ProjectDir)vendor/' .. rel .. '/bin/' .. outputdir .. '/' .. name .. '/' .. name .. '.lib"'
+end
+
+BundledVendorLibs = table.concat({
+    vendorLib("spdlog", "spdlog"),
+    vendorLib("glfw", "GLFW"),
+    vendorLib("nvrhi", "NVRHI"),
+    vendorLib("nvrhi", "NVRHI-Vulkan"),
+    vendorLib("nvrhi", "NVRHI-D3D11"),
+    vendorLib("nvrhi", "NVRHI-D3D12"),
+    vendorLib("imgui", "ImGui"),
+    vendorLib("msdf-atlas-gen", "msdf-atlas-gen"),
+    vendorLib("msdf-atlas-gen/msdfgen", "msdfgen"),
+    vendorLib("msdf-atlas-gen/msdfgen/freetype", "freetype"),
+    vendorLib("box2d", "box2d"),
+    vendorLib("JoltPhysics", "Jolt"),
+}, " ")
 
 -- Grab Vulkan SDK path
 VULKAN_SDK = os.getenv("VULKAN_SDK")
@@ -172,6 +200,17 @@ group "Engine"
 				"%{Library.DXGI}",
 				"%{Library.DXGUID}",
 				"%{Library.D3DCompiler}",
+			}
+
+			-- Merge the engine + every in-tree vendor static lib into one
+			-- self-contained DingoEngine.lib under build/dist. lib.exe is
+			-- resolved via MSBuild so this also works outside a VS dev shell.
+			-- /IGNORE:4006: the NVRHI sub-libs share identical objects
+			-- (validation-device.obj, dxgi-format.obj); duplicates are benign.
+			postbuildcommands {
+				'{MKDIR} "$(ProjectDir)build/dist/' .. outputdir .. '"',
+				'"$(VCToolsInstallDir)bin\\Hostx64\\x64\\lib.exe" /NOLOGO /IGNORE:4006 /OUT:"$(ProjectDir)build/dist/'
+					.. outputdir .. '/DingoEngine.lib" "$(TargetPath)" ' .. BundledVendorLibs,
 			}
 
 		filter "system:linux"

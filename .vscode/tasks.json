@@ -52,6 +52,24 @@
             "problemMatcher": "$msCompile"
         },
         {
+            "label": "Build Distribution",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/DingoEngine.slnx",
+                "/p:Configuration=Distribution",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
             "label": "Build TestFramework Debug",
             "type": "shell",
             "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",

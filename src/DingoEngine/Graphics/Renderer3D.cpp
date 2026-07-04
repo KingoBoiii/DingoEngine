@@ -134,6 +134,8 @@ namespace Dingo
 		// binds it (CommandList::UploadBuffer, the same path material UBOs use).
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 
+		m_Statistics = {};
+
 		// Reset the per-material batches, keeping their storage for reuse.
 		for (auto& [material, batch] : m_Batches)
 		{
@@ -177,6 +179,7 @@ namespace Dingo
 			// Bind the shared camera/light UBO at binding 0 for this material, then draw.
 			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 			Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(batch.Indices.size()));
+			++m_Statistics.DrawCalls;
 
 			++batchIndex;
 		}
@@ -209,12 +212,20 @@ namespace Dingo
 		if (batch.Vertices.size() + vertices.size() > m_Params.Capabilities.MaxVertices ||
 			batch.Indices.size() + indices.size() > m_Params.Capabilities.MaxIndices)
 		{
+			// Opt-in hard-fail so a blown vertex budget can't ship silently (see
+			// Renderer3DCapabilities::AssertOnOverflow). Compiled out in release, where this
+			// falls through to the warn-once-and-drop below. DE_CORE_ASSERT takes a plain
+			// message (not a format string) — the vert/index counts are in the warn below.
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D batch capacity exceeded and AssertOnOverflow is set. Raise Renderer3DCapabilities or submit fewer meshes.");
+
 			if (!batch.OverflowWarned)
 			{
 				DE_CORE_WARN("Renderer3D batch capacity exceeded for a material ({} verts / {} indices); dropping further meshes this scene. Raise Renderer3DCapabilities.",
 					m_Params.Capabilities.MaxVertices, m_Params.Capabilities.MaxIndices);
 				batch.OverflowWarned = true;
 			}
+			++m_Statistics.DroppedMeshes;
 			return;
 		}
 
@@ -234,6 +245,10 @@ namespace Dingo
 
 		for (uint32_t index : indices)
 			batch.Indices.push_back(index + vertexOffset);
+
+		++m_Statistics.SubmittedMeshes;
+		m_Statistics.VertexCount += static_cast<uint32_t>(vertices.size());
+		m_Statistics.IndexCount += static_cast<uint32_t>(indices.size());
 	}
 
 	void Renderer3D::DrawBox(const glm::mat4& transform, const glm::vec4& color)

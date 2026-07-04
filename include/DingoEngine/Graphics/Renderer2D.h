@@ -79,6 +79,23 @@ namespace Dingo
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 
+		// Per-scene render statistics: reset each BeginScene, complete after EndScene
+		// (they reflect the most recent BeginScene/EndScene pass, not a whole frame).
+		struct Statistics
+		{
+			uint32_t DrawCalls = 0;     // batches actually flushed (quad + circle + text)
+			uint32_t QuadCount = 0;     // quads submitted (incl. rotated / textured)
+			uint32_t CircleCount = 0;
+			uint32_t TextQuadCount = 0; // glyph quads
+
+			uint32_t GetTotalQuads() const { return QuadCount + CircleCount + TextQuadCount; }
+			uint32_t GetVertexCount() const { return GetTotalQuads() * 4; }
+			uint32_t GetIndexCount() const { return GetTotalQuads() * 6; }
+		};
+
+		const Statistics& GetStatistics() const { return m_Statistics; }
+		const Renderer2DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
+
 		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{
@@ -122,6 +139,7 @@ namespace Dingo
 		***		GENERAL									***
 		**************************************************/
 		Renderer2DParams m_Params;
+		Statistics m_Statistics;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 
 		struct CameraData

@@ -38,6 +38,13 @@ namespace Dingo
 		void DestroyEntity(Entity entity);
 		bool IsValid(Entity entity) const;
 
+		// Deep-copies `source` and its built-in components into a new entity (with a fresh
+		// UUID) and returns it. Live physics handles are reset on the copy so the clone
+		// never aliases the source's body/shapes; if physics is running the clone gets its
+		// own body. Attached scripts are NOT cloned. Returns an invalid Entity if `source`
+		// is invalid.
+		Entity DuplicateEntity(Entity source);
+
 		// Destroys every entity (and its scripts) in the scene; the Scene stays usable.
 		void Clear();
 

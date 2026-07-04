@@ -292,6 +292,8 @@ void main() {
 		// in EndScene, and each draw must observe the camera data.
 		Renderer::Upload(m_CameraUniformBuffer);
 
+		m_Statistics = {};
+
 		m_QuadPipeline.IndexCount = 0;
 		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
 		m_QuadPipeline.BatchIndex = 0;
@@ -347,6 +349,7 @@ void main() {
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+		++m_Statistics.QuadCount;
 	}
 
 	void Renderer2D::DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
@@ -375,6 +378,7 @@ void main() {
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+		++m_Statistics.QuadCount;
 	}
 
 	void Renderer2D::DrawRotatedQuad(const glm::vec2& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
@@ -403,6 +407,7 @@ void main() {
 		}
 
 		m_QuadPipeline.IndexCount += 6;
+		++m_Statistics.QuadCount;
 	}
 
 	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
@@ -421,6 +426,7 @@ void main() {
 		}
 
 		m_CircleRenderPass.IndexCount += 6;
+		++m_Statistics.CircleCount;
 	}
 
 	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size, const TextParameters& textParameters)
@@ -529,6 +535,7 @@ void main() {
 			m_TextQuadRenderPass.VertexBufferPtr++;
 
 			m_TextQuadRenderPass.IndexCount += 6;
+			++m_Statistics.TextQuadCount;
 
 			if (i < string.size() - 1)
 			{
@@ -669,6 +676,7 @@ void main() {
 		renderPass->Bake();
 
 		Renderer::DrawIndexed(renderPass, vertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
+		++m_Statistics.DrawCalls;
 
 		// Begin a fresh batch.
 		m_QuadPipeline.BatchIndex++;
@@ -765,6 +773,7 @@ void main() {
 		Renderer::Upload(vertexBuffer, m_CircleRenderPass.VertexBufferBase, dataSize);
 
 		Renderer::DrawIndexed(m_CircleRenderPass.RenderPass, vertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
+		++m_Statistics.DrawCalls;
 
 		m_CircleRenderPass.BatchIndex++;
 		m_CircleRenderPass.IndexCount = 0;
@@ -867,6 +876,7 @@ void main() {
 		}
 
 		Renderer::DrawIndexed(m_TextQuadRenderPass.RenderPass, vertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
+		++m_Statistics.DrawCalls;
 
 		m_TextQuadRenderPass.BatchIndex++;
 		m_TextQuadRenderPass.IndexCount = 0;

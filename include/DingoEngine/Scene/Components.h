@@ -266,6 +266,10 @@ namespace Dingo
 		Mesh* Mesh = nullptr;
 		glm::vec4 Color{ 1.0f };
 
+		// When false, the SceneRenderer skips this entity — cheap per-entity culling that
+		// replaces the old "set Mesh = nullptr and restore it later" juggling. Visible by default.
+		bool Visible = true;
+
 		// Optional material (custom shader + uniforms + textures). Null draws with
 		// Renderer3D's built-in flat directional-lit material. The Color above is written
 		// into the vertex stream either way. Owned by the client, not the component.
