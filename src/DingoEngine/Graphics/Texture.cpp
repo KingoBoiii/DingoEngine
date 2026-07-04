@@ -9,10 +9,12 @@ namespace Dingo
 	
 	Texture* Texture::CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName)
 	{
-		uint32_t width, height, channels;
+		uint32_t width = 0, height = 0, channels = 0;
 		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
 
-		return Create(TextureParams()
+		// Upload() copies the pixels synchronously during Create(), so the CPU-side
+		// buffer can (and must) be released here — it used to leak per load.
+		Texture* texture = Create(TextureParams()
 			.SetDebugName(debugName)
 			.SetWidth(width)
 			.SetHeight(height)
@@ -20,6 +22,9 @@ namespace Dingo
 			.SetFormat(channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB)
 			.SetIsRenderTarget(false)
 			.SetInitialData(data));
+		FileSystem::FreeImage(data);
+
+		return texture;
 	}
 
 	Texture* Texture::CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format, const std::string& debugName)
