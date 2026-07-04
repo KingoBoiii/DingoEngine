@@ -21,43 +21,16 @@ namespace Dingo
 	{
 		// A scene can carry a perspective (world) camera and/or an orthographic (UI)
 		// camera: the 3D world is drawn first, then the 2D entities as an overlay on
-		// top. For each projection type prefer a camera marked Primary, else the first
-		// of that type. The first directional light is collected in the same pass.
+		// top. Cameras and the light are found via narrow component views — a full
+		// ForEachEntity scan here cost hundreds of lookups per frame in big scenes.
 		Entity perspectiveCamera, orthographicCamera;
 		bool hasPerspective = false, hasOrthographic = false;
-		bool perspectivePrimary = false, orthographicPrimary = false;
+		scene.GetRenderCameras(perspectiveCamera, hasPerspective, orthographicCamera, hasOrthographic);
 
 		DirectionalLightComponent light;
-		bool foundLight = false;
-
-		scene.ForEachEntity([&](Entity entity)
-		{
-			if (entity.HasComponent<CameraComponent>())
-			{
-				const CameraComponent& camera = entity.GetComponent<CameraComponent>();
-				if (camera.Type == CameraComponent::ProjectionType::Perspective)
-				{
-					if (!hasPerspective || (camera.Primary && !perspectivePrimary))
-					{
-						perspectiveCamera = entity;
-						hasPerspective = true;
-						perspectivePrimary = camera.Primary;
-					}
-				}
-				else if (!hasOrthographic || (camera.Primary && !orthographicPrimary))
-				{
-					orthographicCamera = entity;
-					hasOrthographic = true;
-					orthographicPrimary = camera.Primary;
-				}
-			}
-
-			if (!foundLight && entity.HasComponent<DirectionalLightComponent>())
-			{
-				light = entity.GetComponent<DirectionalLightComponent>();
-				foundLight = true;
-			}
-		});
+		Entity lightEntity;
+		if (scene.GetFirstDirectionalLightEntity(lightEntity))
+			light = lightEntity.GetComponent<DirectionalLightComponent>();
 
 		if (!hasPerspective && !hasOrthographic)
 		{

@@ -90,6 +90,14 @@ namespace Dingo
 		// scene has no CameraComponent.
 		bool GetPrimaryCameraEntity(Entity& out);
 
+		// Finds the render cameras per projection type in one narrow pass (Primary
+		// preferred, else first of that type). Each out entity is set only when the
+		// matching has-flag is true. Iterates only camera entities, not the whole scene.
+		void GetRenderCameras(Entity& outPerspective, bool& outHasPerspective, Entity& outOrthographic, bool& outHasOrthographic);
+
+		// First entity carrying a DirectionalLightComponent; false if none.
+		bool GetFirstDirectionalLightEntity(Entity& out);
+
 		// View-projection for a specific camera entity at the given viewport aspect
 		// (width / height): projection from its CameraComponent, view from its transform.
 		// Returns identity if the entity has no CameraComponent.

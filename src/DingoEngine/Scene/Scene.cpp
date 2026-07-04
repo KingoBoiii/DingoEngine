@@ -512,6 +512,45 @@ namespace Dingo
 		return false;
 	}
 
+	void Scene::GetRenderCameras(Entity& outPerspective, bool& outHasPerspective, Entity& outOrthographic, bool& outHasOrthographic)
+	{
+		outHasPerspective = false;
+		outHasOrthographic = false;
+		bool perspectivePrimary = false, orthographicPrimary = false;
+
+		auto view = m_Data->Registry.view<CameraComponent>();
+		for (entt::entity handle : view)
+		{
+			const CameraComponent& camera = view.get<CameraComponent>(handle);
+			if (camera.Type == CameraComponent::ProjectionType::Perspective)
+			{
+				if (!outHasPerspective || (camera.Primary && !perspectivePrimary))
+				{
+					outPerspective = Wrap(static_cast<std::uint32_t>(handle));
+					outHasPerspective = true;
+					perspectivePrimary = camera.Primary;
+				}
+			}
+			else if (!outHasOrthographic || (camera.Primary && !orthographicPrimary))
+			{
+				outOrthographic = Wrap(static_cast<std::uint32_t>(handle));
+				outHasOrthographic = true;
+				orthographicPrimary = camera.Primary;
+			}
+		}
+	}
+
+	bool Scene::GetFirstDirectionalLightEntity(Entity& out)
+	{
+		for (entt::entity handle : m_Data->Registry.view<DirectionalLightComponent>())
+		{
+			out = Wrap(static_cast<std::uint32_t>(handle));
+			return true;
+		}
+
+		return false;
+	}
+
 	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
 	{
 		if (!IsValid(cameraEntity))
