@@ -34,6 +34,8 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(texture, "Texture must not be null.");
 
+		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
+
 		// search if the texture is already in the binding set
 		for (auto& item : m_BindingSetDesc.bindings)
 		{
@@ -41,14 +43,20 @@ namespace Dingo
 				item.type == nvrhi::ResourceType::Texture_SRV &&
 				item.arrayElement == arrayElement)
 			{
-				item.resourceHandle = static_cast<NvrhiTexture*>(texture)->m_Handle;
-				m_Valid = false;
+				// Only invalidate on a real change — Renderer2D re-sets all 32 slots
+				// every flush, and an unconditional invalidate forced a fresh
+				// createBindingSet per batch per frame.
+				if (item.resourceHandle != handle)
+				{
+					item.resourceHandle = handle;
+					m_Valid = false;
+				}
 
 				return;
 			}
 		}
 
-		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, static_cast<NvrhiTexture*>(texture)->m_Handle).setArrayElement(arrayElement));
+		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, handle).setArrayElement(arrayElement));
 		m_Valid = false;
 	}
 
