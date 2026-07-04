@@ -26,7 +26,7 @@ namespace Dingo
 
 	private:
 		bool ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer);
-		bool UpdateGeometry(ImDrawData* drawData);
+		bool UpdateGeometry(ImDrawData* drawData, nvrhi::ICommandList* commandList);
 
 		nvrhi::GraphicsPipelineHandle GetOrCreatePipeline(SwapChain* swapchain);
 		nvrhi::IBindingSet* GetBindingSet(nvrhi::ITexture* texture);
