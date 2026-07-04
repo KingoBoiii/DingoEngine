@@ -40,22 +40,39 @@ namespace Dingo
 		logSinks[0]->set_pattern("%^[%T] %n: %v%$");
 		logSinks[1]->set_pattern("[%T] [%l] %n: %v");
 
+		// flush_on(trace) forced a synchronous file flush on EVERY log call — a
+		// guaranteed I/O stall if anything ever logs per frame. Warnings and above
+		// still flush immediately (crash diagnosis); lower levels rely on spdlog's
+		// buffering and the flush in Shutdown.
 		s_EngineLogger = std::make_shared<spdlog::logger>("Dingo", begin(logSinks), end(logSinks));
 		spdlog::register_logger(s_EngineLogger);
 		s_EngineLogger->set_level(spdlog::level::trace);
-		s_EngineLogger->flush_on(spdlog::level::trace);
+		s_EngineLogger->flush_on(spdlog::level::warn);
 
 		s_ClientLogger = std::make_shared<spdlog::logger>("Game", begin(logSinks), end(logSinks));
 		spdlog::register_logger(s_ClientLogger);
 		s_ClientLogger->set_level(spdlog::level::trace);
-		s_ClientLogger->flush_on(spdlog::level::trace);
+		s_ClientLogger->flush_on(spdlog::level::warn);
 	}
 
 	void Log::Shutdown()
 	{
+		if (s_EngineLogger) s_EngineLogger->flush();
+		if (s_ClientLogger) s_ClientLogger->flush();
 		s_ClientLogger.reset();
 		s_EngineLogger.reset();
 		spdlog::drop_all();
+	}
+
+	bool Log::ShouldLog(Log::Type type, Log::Level level)
+	{
+		static constexpr spdlog::level::level_enum s_LevelMap[] = {
+			spdlog::level::trace, spdlog::level::info, spdlog::level::warn,
+			spdlog::level::err, spdlog::level::critical,
+		};
+
+		auto logger = Utils::GetLogger(type);
+		return logger && logger->should_log(s_LevelMap[static_cast<uint8_t>(level)]);
 	}
 
 	void Log::PrintInternal(Log::Type type, Log::Level level, const std::string_view formatted)

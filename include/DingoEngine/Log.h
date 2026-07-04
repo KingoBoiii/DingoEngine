@@ -37,6 +37,10 @@ namespace Dingo
 		static void Initialize();
 		static void Shutdown();
 
+		// True if a message at this level would actually be emitted. Print/PrintTag
+		// check it before formatting, so a raised log level skips std::format cost.
+		static bool ShouldLog(Log::Type type, Log::Level level);
+
 		template<typename... Args>
 		static void Print(Log::Type type, Log::Level level, std::format_string<Args...> format, Args&&... args);
 
@@ -94,12 +98,18 @@ namespace Dingo
 	template<typename ...Args>
 	inline void Log::Print(Log::Type type, Log::Level level, std::format_string<Args...> format, Args && ...args)
 	{
+		if (!ShouldLog(type, level))
+			return;
+
 		PrintInternal(type, level, std::format(format, std::forward<Args>(args)...));
 	}
 
 	template<typename ...Args>
 	inline void Log::PrintTag(Log::Type type, Log::Level level, std::string_view tag, std::format_string<Args...> format, Args && ...args)
 	{
+		if (!ShouldLog(type, level))
+			return;
+
 		PrintInternalTag(type, level, tag, std::format(format, std::forward<Args>(args)...));
 	}
 
