@@ -8,6 +8,7 @@
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/UI/DebugPanels.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Audio/AudioEngine.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/ImGui/ImGuiLayer.h"
@@ -56,6 +57,11 @@ namespace Dingo
 		m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
 		m_SceneRenderer = new SceneRenderer(*m_Renderer2D, *m_Renderer3D);
 
+		// Audio is independent of the graphics/window stack (miniaudio owns its own
+		// device thread); bring it up here so it's live before OnInitialize().
+		m_AudioEngine = AudioEngine::Create();
+		m_AudioEngine->Initialize();
+
 		OnInitialize();
 
 		if (m_LayerStack.Empty())
@@ -79,7 +85,7 @@ namespace Dingo
 		}
 
 		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
-			DE_CORE_INFO("Debug overlays enabled - press F3 for the renderer-stats window.");
+			DE_CORE_INFO("Debug overlays enabled - press F3 for engine stats, F4 for renderer stats.");
 	}
 
 	void Application::Destroy()
@@ -90,6 +96,15 @@ namespace Dingo
 		Renderer::Shutdown();
 
 		m_LayerStack.Clear();
+
+		// Tear down audio after the layers (so their destructors can still stop sounds)
+		// but independently of the graphics stack.
+		if (m_AudioEngine)
+		{
+			m_AudioEngine->Shutdown();
+			delete m_AudioEngine;
+			m_AudioEngine = nullptr;
+		}
 
 		// Delete the SceneRenderer before the renderers it references.
 		if (m_SceneRenderer)
@@ -164,6 +179,9 @@ namespace Dingo
 			Input::Update();
 			m_Window->Update();
 
+			if (m_AudioEngine)
+				m_AudioEngine->Update(); // reap finished one-shots
+
 			Renderer::BeginFrame();
 
 			for (Layer* layer : m_LayerStack)
@@ -202,11 +220,16 @@ namespace Dingo
 
 	void Application::RenderDebugOverlays()
 	{
-		// F3 toggles the built-in renderer-stats window. Input::IsKeyDown is edge-triggered
-		// ("just pressed"), so this flips once per press, not every frame it's held.
+		// F3 toggles the built-in engine-stats window, F4 the renderer-stats window.
+		// Input::IsKeyDown is edge-triggered ("just pressed"), so each flips once per
+		// press, not every frame it's held.
 		if (Input::IsKeyDown(Key::F3))
+			m_ShowEngineStats = !m_ShowEngineStats;
+		if (Input::IsKeyDown(Key::F4))
 			m_ShowRendererStats = !m_ShowRendererStats;
 
+		if (m_ShowEngineStats)
+			UI::EngineStatsWindow(&m_ShowEngineStats);
 		if (m_ShowRendererStats)
 			UI::RendererStatsWindow(&m_ShowRendererStats);
 	}

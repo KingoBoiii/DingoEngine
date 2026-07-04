@@ -144,6 +144,16 @@ namespace Dingo
 		};
 		CameraData m_CameraData = {};
 
+		// std140: two vec4s. Binding-1 uniform for the built-in default material only
+		// (Material::SetUniform); custom materials bring their own layout. Mirrors
+		// MaterialParams::EmissiveColor/EmissiveStrength — refreshed from m_Material's
+		// current params each BeginScene.
+		struct MaterialData
+		{
+			glm::vec4 EmissiveColor{ 0.0f };    // rgb = color
+			glm::vec4 EmissiveStrength{ 0.0f }; // x = strength
+		};
+
 		Shader* m_Shader = nullptr;
 		Material* m_Material = nullptr; // built-in flat-lit default material
 		VertexLayout m_Layout;

@@ -9,6 +9,7 @@
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/PerspectiveCamera.h"
+#include "DingoEngine/Core/Ray.h"
 #include "DingoEngine/Core/UUID.h"
 
 #include "DingoEngine/Windowing/Window.h"
@@ -29,6 +30,7 @@
 // ----------------------------------------------------------------------
 
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
+#include "DingoEngine/Physics/3D/CharacterController3D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
 
 // ----------------------------------------------------------------------
@@ -64,4 +66,11 @@
 
 #include "DingoEngine/UI/UI.h"
 #include "DingoEngine/UI/DebugPanels.h"
+
+// ----------------------------------------------------------------------
+// Audio
+// ----------------------------------------------------------------------
+
+#include "DingoEngine/Audio/AudioTypes.h"
+#include "DingoEngine/Audio/AudioEngine.h"
 

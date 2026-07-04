@@ -24,4 +24,40 @@ namespace Dingo::UI
 	// clicked -- pass the address of your own visibility bool to make it toggleable.
 	void RendererStatsWindow(bool* open = nullptr);
 
+	// ----------------------------------------------------------------------
+	// EngineStatsWindow sections
+	// ----------------------------------------------------------------------
+	//
+	// Each function below draws one logical section's widgets (a heading plus its
+	// rows) into whatever ImGui window is currently open -- it does not Begin/End a
+	// window of its own. Call one from Layer::OnUIRender() (requires
+	// ApplicationParams::EnableUI) to embed that section into your own debug window,
+	// or use EngineStatsWindow() below to get all of them composed into one.
+
+	// Engine version (major.minor.patch) and build number, from Version.h/BuildInfo.h.
+	void EngineInfoSection();
+
+	// Active graphics API and, when available, the adapter (GPU) name, vendor, and
+	// dedicated video memory. Reads Application::GetGraphicsContext().
+	void GraphicsInfoSection();
+
+	// Window client size. Reads Application::GetWindow().
+	void WindowInfoSection();
+
+	// Compact FPS + frame-time line, from ImGui's own frame timing (io.Framerate).
+	// Deliberately no rolling graph here -- that's RendererStatsWindow's job; this is
+	// a one-line summary so it doesn't duplicate that window's content.
+	void FrameTimingSection();
+
+	// Audio engine status: validity and master volume, plus the active sound count
+	// when the backend exposes one. Reads Application::GetAudioEngine().
+	void AudioStatsSection();
+
+	// A window composing every section above: engine info, graphics, window, frame
+	// timing, and audio. Read-only -- no editing widgets.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	void EngineStatsWindow(bool* open = nullptr);
+
 }

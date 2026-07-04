@@ -34,10 +34,23 @@ namespace Dingo
 		glm::quat GetRotation(PhysicsBodyId3D body) const override;
 		glm::mat4 GetTransform(PhysicsBodyId3D body) const override;
 
+		void SetPosition(PhysicsBodyId3D body, const glm::vec3& position) override;
+		void SetRotation(PhysicsBodyId3D body, const glm::quat& rotation) override;
+		void SetPositionAndRotation(PhysicsBodyId3D body, const glm::vec3& position, const glm::quat& rotation) override;
+		void MoveKinematic(PhysicsBodyId3D body, const glm::vec3& targetPosition, const glm::quat& targetRotation, float deltaTime) override;
+
 		void SetLinearVelocity(PhysicsBodyId3D body, const glm::vec3& velocity) override;
 		glm::vec3 GetLinearVelocity(PhysicsBodyId3D body) const override;
+		void SetAngularVelocity(PhysicsBodyId3D body, const glm::vec3& angularVelocity) override;
+		glm::vec3 GetAngularVelocity(PhysicsBodyId3D body) const override;
 		void ApplyImpulse(PhysicsBodyId3D body, const glm::vec3& impulse) override;
 		void ApplyForce(PhysicsBodyId3D body, const glm::vec3& force) override;
+
+		bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit) const override;
+		bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit) const override;
+		bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out) const override;
+
+		std::unique_ptr<CharacterController3D> CreateCharacterController(const CharacterControllerParams3D& params) override;
 
 	private:
 		Internal::JoltPhysics3DData* m_Data = nullptr;

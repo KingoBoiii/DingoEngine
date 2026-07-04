@@ -45,6 +45,14 @@ layout(location = 1) in vec4 v_Color;
 layout(location = 2) in vec3 v_LightDir;
 layout(location = 3) in float v_Ambient;
 
+// Material params (binding 1, following the scene UBO at binding 0). Only the built-in
+// default material binds this — custom materials supply their own uniforms/layout.
+layout(std140, binding = 1) uniform MaterialData
+{
+	vec4 EmissiveColor;    // rgb = color, a unused (padding)
+	vec4 EmissiveStrength; // x = strength, yzw unused (padding)
+};
+
 layout(location = 0) out vec4 o_Color;
 
 void main()
@@ -53,7 +61,9 @@ void main()
 	vec3 toLight = normalize(-v_LightDir);
 	float diffuse = max(dot(normal, toLight), 0.0);
 	float lighting = v_Ambient + (1.0 - v_Ambient) * diffuse;
-	o_Color = vec4(v_Color.rgb * lighting, v_Color.a);
+	vec3 finalColor = v_Color.rgb * lighting;
+	finalColor += EmissiveColor.rgb * EmissiveStrength.x;
+	o_Color = vec4(finalColor, v_Color.a);
 }
 )";
 }
@@ -87,6 +97,10 @@ namespace Dingo
 			// what the Breakout3D / Physics3D mesh batchers did too); depth testing
 			// still resolves occlusion correctly.
 			.SetCullMode(CullMode::None));
+		// SetUniform now so the binding-1 UBO exists before the first draw (same reasoning
+		// as the DungeonCrawler3D glow material). Default params are black/0, matching the
+		// shader's additive no-op, so this doesn't change existing default-material output.
+		m_Material->SetUniform(MaterialData{});
 
 		// Camera + light live in a shared scene UBO (binding 0) bound on every material,
 		// rather than baked into the default material — so custom materials receive the
@@ -133,6 +147,13 @@ namespace Dingo
 		// Write the volatile scene UBO into this frame's command list, before any draw
 		// binds it (CommandList::UploadBuffer, the same path material UBOs use).
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+
+		// Refresh the default material's binding-1 UBO from its current emissive params,
+		// in case SetEmissiveColor/SetEmissiveStrength changed since the last frame.
+		MaterialData materialData;
+		materialData.EmissiveColor = glm::vec4(m_Material->GetEmissiveColor(), 0.0f);
+		materialData.EmissiveStrength = glm::vec4(m_Material->GetEmissiveStrength(), 0.0f, 0.0f, 0.0f);
+		m_Material->SetUniform(materialData);
 
 		m_Statistics = {};
 

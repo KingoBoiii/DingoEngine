@@ -4,6 +4,8 @@
 #include "DingoEngine/Graphics/Sampler.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 
+#include <glm/glm.hpp>
+
 #include <unordered_map>
 #include <vector>
 
@@ -18,11 +20,21 @@ namespace Dingo
 		FillMode    FillMode               = FillMode::Solid;
 		bool        FrontCounterClockwise  = false;
 
+		// Additive glow, independent of any light. Default black/0 so existing materials
+		// (and the built-in default) render identically to before this was added.
+		// NOTE: emissive is per-MATERIAL, not per-mesh. Every mesh drawn with the built-in
+		// default material (MeshRendererComponent::Material == nullptr) shares Renderer3D's
+		// single default-material value — give an entity its own Material for a per-mesh glow.
+		glm::vec3   EmissiveColor          = { 0.0f, 0.0f, 0.0f };
+		float       EmissiveStrength       = 0.0f;
+
 		MaterialParams& SetDebugName(const std::string& name)             { DebugName = name; return *this; }
 		MaterialParams& SetShader(Dingo::Shader* shader)                  { Shader = shader; return *this; }
 		MaterialParams& SetCullMode(Dingo::CullMode mode)                 { CullMode = mode; return *this; }
 		MaterialParams& SetFillMode(Dingo::FillMode mode)                 { FillMode = mode; return *this; }
 		MaterialParams& SetFrontCounterClockwise(bool v)                  { FrontCounterClockwise = v; return *this; }
+		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
+		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 	};
 
 	// Material owns the pipeline cache and resource bindings for a shader.
@@ -81,6 +93,14 @@ namespace Dingo
 
 		Shader*               GetShader() const { return m_Params.Shader; }
 		const MaterialParams& GetParams() const { return m_Params; }
+
+		// Emissive is runtime-tweakable (unlike CullMode/FillMode, which are baked into the
+		// cached pipeline) — it only ever feeds uniform data, so changing it does not
+		// invalidate the pipeline cache.
+		const glm::vec3& GetEmissiveColor()    const { return m_Params.EmissiveColor; }
+		float             GetEmissiveStrength() const { return m_Params.EmissiveStrength; }
+		void SetEmissiveColor(const glm::vec3& color)  { m_Params.EmissiveColor = color; }
+		void SetEmissiveStrength(float strength)       { m_Params.EmissiveStrength = strength; }
 
 	private:
 		void InvalidatePipelineCache();

@@ -63,8 +63,11 @@ namespace Dingo
 		const std::string active = m_SceneManager.GetActiveSceneName();
 
 		// Drive the active scene's scripts every frame (Menu/GameOver have none, so this
-		// is a cheap no-op there). Done before the per-scene logic so UpdateHud and the
-		// game-over check below see this frame's script results.
+		// is a cheap no-op there). Done before the per-scene logic so UpdateHud below sees
+		// this frame's script results. A script that detects game-over this frame (see
+		// FormationControllerScript/ProjectileScript in GameScripts.cpp) requests the
+		// Game -> GameOver switch itself via ScriptableEntity::RequestSceneTransition, so
+		// this call may also perform that transition before returning.
 		m_SceneManager.OnUpdate(deltaTime);
 
 		if (active == "Menu")
@@ -77,7 +80,7 @@ namespace Dingo
 			UpdateHud();
 
 			if (m_Context.GameOver)
-				EndGame();
+				OnGameOver();
 		}
 		else if (active == "GameOver")
 		{
@@ -250,12 +253,14 @@ namespace Dingo
 		}
 	}
 
-	void GameLayer::EndGame()
+	// The Game -> GameOver scene switch itself is requested by the script that detected
+	// the game-over condition (RequestSceneTransition), not here. By the time this runs,
+	// the SceneManager has typically already made the switch this same frame; all that's
+	// left for the layer to do is stamp the final score onto the GameOver scene's text.
+	void GameLayer::OnGameOver()
 	{
 		if (m_GameOverScoreText.IsValid())
 			m_GameOverScoreText.GetComponent<TextComponent>().Text = std::format("SCORE {}", m_Context.Score);
-
-		m_SceneManager.SetActiveScene("GameOver");
 	}
 
 }

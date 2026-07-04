@@ -11,6 +11,10 @@
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
+#include "DingoEngine/Physics/3D/CharacterController3D.h"
+
+#include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Audio/AudioEngine.h"
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -99,9 +103,13 @@ namespace Dingo
 		CopyComponentIfExists<RigidBody3DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
+		CopyComponentIfExists<CapsuleCollider3DComponent>(registry, dst, src);
+		CopyComponentIfExists<CharacterController3DComponent>(registry, dst, src);
+		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
+		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
 
 		// Reset the copied live physics handles so the clone never aliases — and
-		// DestroyEntity never double-frees — the source's body/shapes (see Components.h).
+		// DestroyEntity never double-frees — the source's body/shapes/controller (see Components.h).
 		if (registry.all_of<RigidBody2DComponent>(dst))
 			registry.get<RigidBody2DComponent>(dst).RuntimeBody = 0;
 		if (registry.all_of<BoxCollider2DComponent>(dst))
@@ -110,6 +118,10 @@ namespace Dingo
 			registry.get<CircleCollider2DComponent>(dst).RuntimeShape = 0;
 		if (registry.all_of<RigidBody3DComponent>(dst))
 			registry.get<RigidBody3DComponent>(dst).RuntimeBody = k_InvalidBody3D;
+		if (registry.all_of<CharacterController3DComponent>(dst))
+			registry.get<CharacterController3DComponent>(dst).RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex;
+		if (registry.all_of<AudioSourceComponent>(dst))
+			registry.get<AudioSourceComponent>(dst).RuntimeSound = k_InvalidSound;
 
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
@@ -162,6 +174,24 @@ namespace Dingo
 			m_Data->Physics3D->DestroyBody(runtimeBody);
 		}
 
+		// Free the entity's character controller (its slot stays but goes null so other
+		// entities' stored indices remain valid).
+		if (m_Data->Registry.all_of<CharacterController3DComponent>(e))
+		{
+			std::uint32_t index = m_Data->Registry.get<CharacterController3DComponent>(e).RuntimeController;
+			if (index != CharacterController3DComponent::k_InvalidControllerIndex && index < m_Data->CharacterControllers.size())
+				m_Data->CharacterControllers[index].reset();
+		}
+
+		// Stop the entity's live sound so it doesn't keep playing after its entity
+		// (and transform) is gone.
+		if (m_Data->Registry.all_of<AudioSourceComponent>(e))
+		{
+			AudioSoundId sound = m_Data->Registry.get<AudioSourceComponent>(e).RuntimeSound;
+			if (sound != k_InvalidSound)
+				Application::Get().GetAudioEngine().Stop(sound);
+		}
+
 		m_Data->Registry.destroy(e);
 	}
 
@@ -179,6 +209,10 @@ namespace Dingo
 		m_IsRunning = false;
 		OnPhysicsStop();
 
+		// Looping sounds are never self-reaping, so dropping the registry without
+		// stopping them would leave them playing with no handle left to stop.
+		StopAudioSources();
+
 		for (auto& [handle, script] : m_Data->Scripts)
 			script->OnDestroy();
 
@@ -186,6 +220,8 @@ namespace Dingo
 		m_Data->Registry.clear();
 		m_Data->EntityMap.clear();
 		m_Data->PendingDestroy.clear();
+
+		ClearPendingSceneTransition();
 	}
 
 	Entity Scene::GetEntityByUUID(UUID uuid)
@@ -269,6 +305,79 @@ namespace Dingo
 				Transform3DComponent& transform = view.get<Transform3DComponent>(handle);
 				transform.Position = m_Data->Physics3D->GetPosition(rigidBody.RuntimeBody);
 				transform.Rotation = m_Data->Physics3D->GetRotation(rigidBody.RuntimeBody);
+			}
+
+			// Character controllers: update each (scripts set its velocity in their
+			// OnUpdate above), then write the swept position/rotation back onto the
+			// entity's Transform3D. Their capsule "feet" position is the transform origin.
+			auto ccView = m_Data->Registry.view<CharacterController3DComponent, Transform3DComponent>();
+			for (entt::entity handle : ccView)
+			{
+				const CharacterController3DComponent& cc = ccView.get<CharacterController3DComponent>(handle);
+				if (cc.RuntimeController == CharacterController3DComponent::k_InvalidControllerIndex
+					|| cc.RuntimeController >= m_Data->CharacterControllers.size())
+					continue;
+
+				CharacterController3D* controller = m_Data->CharacterControllers[cc.RuntimeController].get();
+				if (!controller)
+					continue;
+
+				controller->Update(deltaTime);
+
+				Transform3DComponent& transform = ccView.get<Transform3DComponent>(handle);
+				transform.Position = controller->GetPosition();
+				transform.Rotation = controller->GetRotation();
+			}
+		}
+
+		// Audio: transforms are final for the frame now (physics + controller
+		// write-back above already happened), so sync every spatialized source's
+		// position and the listener before anything renders or is heard this frame.
+		{
+			AudioEngine& audio = Application::Get().GetAudioEngine();
+
+			auto sourceView = m_Data->Registry.view<AudioSourceComponent>();
+			for (entt::entity handle : sourceView)
+			{
+				AudioSourceComponent& source = sourceView.get<AudioSourceComponent>(handle);
+				if (!source.Spatialized || source.RuntimeSound == k_InvalidSound)
+					continue;
+
+				audio.SetPosition(source.RuntimeSound, GetAudioPosition(static_cast<std::uint32_t>(handle)));
+			}
+
+			// Primary listener search mirrors GetPrimaryCameraEntity: first Primary wins,
+			// else the first listener found. If the scene has none, leave the engine's
+			// listener as it was (no implicit reset to origin).
+			entt::entity listenerHandle = entt::null;
+			auto listenerView = m_Data->Registry.view<AudioListenerComponent>();
+			for (entt::entity handle : listenerView)
+			{
+				if (listenerHandle == entt::null)
+					listenerHandle = handle;
+
+				if (listenerView.get<AudioListenerComponent>(handle).Primary)
+				{
+					listenerHandle = handle;
+					break;
+				}
+			}
+
+			if (listenerHandle != entt::null)
+			{
+				audio.SetListenerPosition(GetAudioPosition(static_cast<std::uint32_t>(listenerHandle)));
+
+				// Orientation only comes from a 3D transform (same convention as the
+				// perspective camera view in GetCameraViewProjection: the entity's local
+				// -Z is forward, +Y is up). A 2D listener has no rotation to derive this
+				// from, so it keeps whatever orientation the engine already has.
+				if (m_Data->Registry.all_of<Transform3DComponent>(listenerHandle))
+				{
+					const glm::quat& rotation = m_Data->Registry.get<Transform3DComponent>(listenerHandle).Rotation;
+					glm::vec3 forward = rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+					glm::vec3 up = rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+					audio.SetListenerOrientation(forward, up);
+				}
 			}
 		}
 	}
@@ -447,6 +556,47 @@ namespace Dingo
 		return GetCameraViewProjection(cameraEntity, aspect);
 	}
 
+	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
+	{
+		// Same "prefer Primary, else first" search SceneRenderer uses, narrowed to
+		// perspective cameras — unprojecting through an orthographic camera's parallel
+		// projection would not produce a meaningful converging ray.
+		entt::entity perspectiveHandle = entt::null;
+
+		auto view = m_Data->Registry.view<CameraComponent>();
+		for (entt::entity handle : view)
+		{
+			const CameraComponent& camera = view.get<CameraComponent>(handle);
+			if (camera.Type != CameraComponent::ProjectionType::Perspective)
+				continue;
+
+			if (perspectiveHandle == entt::null)
+				perspectiveHandle = handle;
+
+			if (camera.Primary)
+			{
+				perspectiveHandle = handle;
+				break;
+			}
+		}
+
+		if (perspectiveHandle == entt::null || viewportSize.y <= 0.0f)
+			return Ray();
+
+		const float aspect = viewportSize.x / viewportSize.y;
+		const CameraComponent& camera = m_Data->Registry.get<CameraComponent>(perspectiveHandle);
+		const glm::mat4 projection = camera.GetProjection(aspect);
+
+		glm::mat4 cameraView(1.0f);
+		if (m_Data->Registry.all_of<Transform3DComponent>(perspectiveHandle))
+		{
+			const Transform3DComponent& transform = m_Data->Registry.get<Transform3DComponent>(perspectiveHandle);
+			cameraView = glm::inverse(glm::translate(glm::mat4(1.0f), transform.Position) * glm::mat4_cast(transform.Rotation));
+		}
+
+		return Dingo::ScreenPointToRay(screenPos, viewportSize, cameraView, projection);
+	}
+
 	// --- Physics (2D) -----------------------------------------------------------
 
 	void Scene::SetGravity(const glm::vec2& gravity)
@@ -470,10 +620,24 @@ namespace Dingo
 
 		m_IsRunning = true;
 
+		// Discard any transition requested before this run (or left over from a
+		// previous run) so a stale request can't fire the instant this scene reactivates.
+		ClearPendingSceneTransition();
+
 		// Run script OnStart before physics so a controller script can build the world
 		// (spawn entities) and have OnPhysicsStart bake bodies for everything it created.
 		StartScripts();
 		OnPhysicsStart();
+
+		// Start every PlayOnStart source now that scripts have had a chance to set up
+		// (and, for a spatialized source, after any script-driven initial placement).
+		auto sourceView = m_Data->Registry.view<AudioSourceComponent>();
+		for (entt::entity handle : sourceView)
+		{
+			AudioSourceComponent& source = sourceView.get<AudioSourceComponent>(handle);
+			if (source.PlayOnStart && source.Clip)
+				PlayAudioSource(Wrap(static_cast<std::uint32_t>(handle)));
+		}
 	}
 
 	void Scene::OnStop()
@@ -483,6 +647,28 @@ namespace Dingo
 
 		m_IsRunning = false;
 		OnPhysicsStop();
+
+		// Stop every source's live sound so the scene never leaks playing audio past
+		// its own teardown (e.g. into whatever scene the SceneManager switches to).
+		StopAudioSources();
+
+		// Drop any request left pending when this scene stopped being active, so it
+		// can't be replayed the next time this scene starts.
+		ClearPendingSceneTransition();
+	}
+
+	void Scene::StopAudioSources()
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		for (entt::entity handle : m_Data->Registry.view<AudioSourceComponent>())
+		{
+			AudioSourceComponent& source = m_Data->Registry.get<AudioSourceComponent>(handle);
+			if (source.RuntimeSound != k_InvalidSound)
+			{
+				audio.Stop(source.RuntimeSound);
+				source.RuntimeSound = k_InvalidSound;
+			}
+		}
 	}
 
 	void Scene::OnPhysicsStart()
@@ -499,10 +685,12 @@ namespace Dingo
 				CreatePhysicsBodyForEntity(static_cast<std::uint32_t>(handle));
 		}
 
-		// 3D world — created only if the scene has 3D rigid bodies, so a purely-2D
-		// scene never spins up a Jolt world (and vice versa).
+		// 3D world — created if the scene has 3D rigid bodies OR character controllers,
+		// so a purely-2D scene never spins up a Jolt world (and vice versa).
 		auto rb3dView = m_Data->Registry.view<RigidBody3DComponent>();
-		if ((!m_Data->Physics3D || !m_Data->Physics3D->IsValid()) && rb3dView.begin() != rb3dView.end())
+		auto cc3dView = m_Data->Registry.view<CharacterController3DComponent>();
+		const bool needs3D = rb3dView.begin() != rb3dView.end() || cc3dView.begin() != cc3dView.end();
+		if ((!m_Data->Physics3D || !m_Data->Physics3D->IsValid()) && needs3D)
 		{
 			Physics3DParams params;
 			params.Gravity = m_Gravity3D;
@@ -511,6 +699,9 @@ namespace Dingo
 
 			for (entt::entity handle : rb3dView)
 				CreatePhysicsBody3DForEntity(static_cast<std::uint32_t>(handle));
+
+			for (entt::entity handle : cc3dView)
+				CreateCharacterControllerForEntity(static_cast<std::uint32_t>(handle));
 		}
 	}
 
@@ -532,6 +723,11 @@ namespace Dingo
 
 		if (m_Data->Physics3D && m_Data->Physics3D->IsValid())
 		{
+			// Character controllers hold the world, so tear them down BEFORE the Physics3D.
+			m_Data->CharacterControllers.clear();
+			for (entt::entity handle : m_Data->Registry.view<CharacterController3DComponent>())
+				m_Data->Registry.get<CharacterController3DComponent>(handle).RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex;
+
 			m_Data->Physics3D->Shutdown(); // destroys all 3D bodies
 			m_Data->Physics3D.reset();
 
@@ -562,9 +758,10 @@ namespace Dingo
 			return;
 
 		// Route by component: each helper no-ops if its world isn't live or the
-		// entity lacks the matching rigid-body component.
+		// entity lacks the matching rigid-body / controller component.
 		CreatePhysicsBodyForEntity(entity.m_Handle);
 		CreatePhysicsBody3DForEntity(entity.m_Handle);
+		CreateCharacterControllerForEntity(entity.m_Handle);
 	}
 
 	void Scene::CreatePhysicsBodyForEntity(std::uint32_t handle)
@@ -660,6 +857,15 @@ namespace Dingo
 			params.Friction = collider.Friction;
 			params.Restitution = collider.Restitution;
 		}
+		else if (m_Data->Registry.all_of<CapsuleCollider3DComponent>(e))
+		{
+			auto& collider = m_Data->Registry.get<CapsuleCollider3DComponent>(e);
+			params.Shape = ColliderShape3D::Capsule;
+			params.Radius = transform.Scale.x * collider.Radius;
+			params.HalfHeight = transform.Scale.y * collider.HalfHeight;
+			params.Friction = collider.Friction;
+			params.Restitution = collider.Restitution;
+		}
 		else if (m_Data->Registry.all_of<BoxCollider3DComponent>(e))
 		{
 			auto& collider = m_Data->Registry.get<BoxCollider3DComponent>(e);
@@ -684,6 +890,107 @@ namespace Dingo
 		if (!m_Data->Registry.valid(e) || !m_Data->Registry.all_of<RigidBody3DComponent>(e))
 			return k_InvalidBody3D;
 		return m_Data->Registry.get<RigidBody3DComponent>(e).RuntimeBody;
+	}
+
+	void Scene::CreateCharacterControllerForEntity(std::uint32_t handle)
+	{
+		if (!m_Data->Physics3D || !m_Data->Physics3D->IsValid())
+			return;
+
+		entt::entity e = static_cast<entt::entity>(handle);
+		if (!m_Data->Registry.all_of<CharacterController3DComponent, Transform3DComponent>(e))
+			return;
+
+		auto& cc = m_Data->Registry.get<CharacterController3DComponent>(e);
+		if (cc.RuntimeController != CharacterController3DComponent::k_InvalidControllerIndex)
+			return; // already created — don't leak a second controller
+
+		auto& transform = m_Data->Registry.get<Transform3DComponent>(e);
+
+		CharacterControllerParams3D params;
+		params.Radius = cc.Radius;
+		params.Height = cc.Height;
+		params.StepHeight = cc.StepHeight;
+		params.MaxSlopeAngle = cc.MaxSlopeAngle;
+		params.Position = transform.Position;
+		params.Rotation = transform.Rotation;
+
+		std::unique_ptr<CharacterController3D> controller = m_Data->Physics3D->CreateCharacterController(params);
+		if (!controller)
+			return;
+
+		m_Data->CharacterControllers.push_back(std::move(controller));
+		cc.RuntimeController = static_cast<std::uint32_t>(m_Data->CharacterControllers.size() - 1);
+	}
+
+	CharacterController3D* Scene::GetCharacterController(Entity entity) const
+	{
+		entt::entity e = static_cast<entt::entity>(entity.m_Handle);
+		if (!m_Data->Registry.valid(e) || !m_Data->Registry.all_of<CharacterController3DComponent>(e))
+			return nullptr;
+
+		std::uint32_t index = m_Data->Registry.get<CharacterController3DComponent>(e).RuntimeController;
+		if (index == CharacterController3DComponent::k_InvalidControllerIndex || index >= m_Data->CharacterControllers.size())
+			return nullptr;
+
+		return m_Data->CharacterControllers[index].get();
+	}
+
+	// --- Audio --------------------------------------------------------------
+
+	glm::vec3 Scene::GetAudioPosition(std::uint32_t handle) const
+	{
+		entt::entity e = static_cast<entt::entity>(handle);
+		if (m_Data->Registry.all_of<Transform3DComponent>(e))
+			return m_Data->Registry.get<Transform3DComponent>(e).Position;
+
+		const TransformComponent& transform = m_Data->Registry.get<TransformComponent>(e);
+		return glm::vec3(transform.Position.x, transform.Position.y, 0.0f);
+	}
+
+	void Scene::PlayAudioSource(Entity entity)
+	{
+		if (!IsValid(entity))
+			return;
+
+		entt::entity e = static_cast<entt::entity>(entity.m_Handle);
+		if (!m_Data->Registry.all_of<AudioSourceComponent>(e))
+			return;
+
+		AudioSourceComponent& source = m_Data->Registry.get<AudioSourceComponent>(e);
+		if (!source.Clip)
+			return;
+
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		if (source.RuntimeSound != k_InvalidSound)
+			audio.Stop(source.RuntimeSound);
+
+		SoundPlayParams params;
+		params.Volume = source.Volume;
+		params.Pitch = source.Pitch;
+		params.Looping = source.Looping;
+		params.Spatialized = source.Spatialized;
+		if (source.Spatialized)
+			params.Position = GetAudioPosition(entity.m_Handle);
+
+		source.RuntimeSound = audio.Play(source.Clip, params);
+	}
+
+	void Scene::StopAudioSource(Entity entity)
+	{
+		if (!IsValid(entity))
+			return;
+
+		entt::entity e = static_cast<entt::entity>(entity.m_Handle);
+		if (!m_Data->Registry.all_of<AudioSourceComponent>(e))
+			return;
+
+		AudioSourceComponent& source = m_Data->Registry.get<AudioSourceComponent>(e);
+		if (source.RuntimeSound == k_InvalidSound)
+			return;
+
+		Application::Get().GetAudioEngine().Stop(source.RuntimeSound);
+		source.RuntimeSound = k_InvalidSound;
 	}
 
 	void Scene::SetLinearVelocity(Entity entity, const glm::vec2& velocity)
