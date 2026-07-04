@@ -86,6 +86,11 @@ jobs:
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
+    # Ship the self-contained lib (engine + all vendor libs merged by the
+    # lib.exe post-build step) instead of the engine-only lib.
+    - name: Use merged self-contained lib
+      run: Copy-Item ".\build\dist\${{matrix.build-configuration}}-windows-x86_64\DingoEngine.lib" ".\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\DingoEngine.lib" -Force
+
     - name: Upload static library artifact
       uses: actions/upload-artifact@v4
       with:
