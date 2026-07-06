@@ -70,8 +70,23 @@ namespace Dingo
 
 	void SceneManager::OnUpdate(float deltaTime)
 	{
-		if (m_ActiveScene)
-			m_ActiveScene->OnUpdate(deltaTime);
+		if (!m_ActiveScene)
+			return;
+
+		m_ActiveScene->OnUpdate(deltaTime);
+
+		// A script may have called Scene::RequestSceneTransition this frame. Drain it
+		// here (once per frame, after the scene it belongs to has updated) so a script
+		// can trigger a Menu -> Game -> GameOver style switch without reaching this
+		// SceneManager directly. SetActiveScene's OnStart clears the request on the
+		// (now active) target scene, so no separate clear is needed for that side; the
+		// outgoing scene's OnStop clears its own in case it wasn't consumed for some reason.
+		if (m_ActiveScene->HasPendingSceneTransition())
+		{
+			const std::string requested = m_ActiveScene->GetPendingSceneTransition();
+			m_ActiveScene->ClearPendingSceneTransition();
+			SetActiveScene(requested);
+		}
 	}
 
 	void SceneManager::OnRender()

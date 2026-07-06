@@ -115,7 +115,10 @@ namespace Dingo
 			{
 				m_Context->Lives--;
 				if (m_Context->Lives <= 0)
+				{
 					m_Context->GameOver = true;
+					RequestSceneTransition("GameOver");
+				}
 
 				GetEntity().Destroy();
 				return;
@@ -213,8 +216,11 @@ namespace Dingo
 			lowestY -= INVADER_DROP;
 		}
 
-		if (lowestY <= INVASION_Y)
+		if (lowestY <= INVASION_Y && !m_Context->GameOver)
+		{
 			m_Context->GameOver = true;
+			RequestSceneTransition("GameOver");
+		}
 
 		// Periodically drop a bomb from the lowest invader in a random column.
 		m_FireTimer -= deltaTime;

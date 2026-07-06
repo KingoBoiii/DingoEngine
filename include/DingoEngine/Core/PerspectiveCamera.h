@@ -1,4 +1,6 @@
 #pragma once
+#include "DingoEngine/Core/Ray.h"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -33,6 +35,14 @@ namespace Dingo
 		const glm::mat4& GetViewMatrix() const { return m_ViewMatrix; }
 		const glm::mat4& GetProjectionMatrix() const { return m_ProjectionMatrix; }
 		const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjectionMatrix; }
+
+		// Unprojects a screen/client pixel position (origin top-left, +Y down, matching
+		// Input::GetMousePosition()) into a world-space ray through this camera. viewportSize
+		// is the pixel size of the surface screenPos was sampled against (e.g. the window size).
+		Ray ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize) const
+		{
+			return Dingo::ScreenPointToRay(screenPos, viewportSize, m_ViewMatrix, m_ProjectionMatrix);
+		}
 
 	private:
 		void RecalculateView()

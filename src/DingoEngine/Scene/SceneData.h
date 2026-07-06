@@ -42,10 +42,16 @@ namespace Dingo
 			int PhysicsSubStepCount = 4;
 
 			// Physics (3D). The backend (Jolt) lives behind the Physics3D interface;
-			// created on OnPhysicsStart only if the scene has 3D rigid bodies, so a
-			// purely-2D scene never pays for a Jolt world (and vice versa).
+			// created on OnPhysicsStart only if the scene has 3D rigid bodies OR character
+			// controllers, so a purely-2D scene never pays for a Jolt world (and vice versa).
 			std::unique_ptr<Physics3D> Physics3D;
 			int PhysicsCollisionSteps = 1;
+
+			// Character controllers owned by the Scene, one per CharacterController3DComponent.
+			// The component's RuntimeController field indexes into this vector; slots are
+			// never reused (a destroyed controller leaves a null hole) so indices stay stable
+			// for the world's lifetime. Cleared in OnPhysicsStop with the Physics3D world.
+			std::vector<std::unique_ptr<CharacterController3D>> CharacterControllers;
 		};
 
 	}

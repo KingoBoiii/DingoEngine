@@ -241,7 +241,7 @@ void main()
 			commandList = sharedCmdList;
 		}
 
-		if (!UpdateGeometry(drawData))
+		if (!UpdateGeometry(drawData, commandList))
 		{
 			if (ownsCommandList)
 				ownedHandle->close();
@@ -386,13 +386,13 @@ void main()
 		return true;
 	}
 
-	bool ImGuiRenderer::UpdateGeometry(ImDrawData* drawData)
+	bool ImGuiRenderer::UpdateGeometry(ImDrawData* drawData, nvrhi::ICommandList* commandList)
 	{
-		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-
-		nvrhi::CommandListHandle commandList = device->createCommandList();
-
-		commandList->open();
+		// Nothing to draw this frame; the buffers keep last frame's (unused) contents.
+		if (drawData->TotalVtxCount == 0 || drawData->TotalIdxCount == 0)
+		{
+			return true;
+		}
 
 		// create/resize vertex and index buffers if needed
 		if (!ReallocateBuffer(m_VertexBuffer, drawData->TotalVtxCount * sizeof(ImDrawVert), (drawData->TotalVtxCount + 5000) * sizeof(ImDrawVert), false))
@@ -405,8 +405,8 @@ void main()
 			return false;
 		}
 
-		m_VertexBufferData.resize(m_VertexBuffer->getDesc().byteSize / sizeof(ImDrawVert));
-		m_IndexBufferData.resize(m_IndexBuffer->getDesc().byteSize / sizeof(ImDrawIdx));
+		m_VertexBufferData.resize(drawData->TotalVtxCount);
+		m_IndexBufferData.resize(drawData->TotalIdxCount);
 
 		// copy and convert all vertices into a single contiguous buffer
 		ImDrawVert* vtxDst = &m_VertexBufferData[0];
@@ -423,11 +423,11 @@ void main()
 			idxDst += cmdList->IdxBuffer.Size;
 		}
 
-		commandList->writeBuffer(m_VertexBuffer, &m_VertexBufferData[0], m_VertexBuffer->getDesc().byteSize);
-		commandList->writeBuffer(m_IndexBuffer, &m_IndexBufferData[0], m_IndexBuffer->getDesc().byteSize);
-
-		commandList->close();
-		device->executeCommandList(commandList);
+		// Record into the caller's (already open) command list — this used to create,
+		// execute and throw away a dedicated list per frame, and uploaded the buffers'
+		// full capacity instead of the bytes actually used.
+		commandList->writeBuffer(m_VertexBuffer, &m_VertexBufferData[0], drawData->TotalVtxCount * sizeof(ImDrawVert));
+		commandList->writeBuffer(m_IndexBuffer, &m_IndexBufferData[0], drawData->TotalIdxCount * sizeof(ImDrawIdx));
 
 		return true;
 	}

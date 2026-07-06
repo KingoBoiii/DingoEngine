@@ -39,7 +39,7 @@ namespace Dingo
 		void SpawnShieldBunker(const glm::vec2& center);
 
 		void UpdateHud();
-		void EndGame();
+		void OnGameOver();
 
 	private:
 		Font* m_Font = nullptr;

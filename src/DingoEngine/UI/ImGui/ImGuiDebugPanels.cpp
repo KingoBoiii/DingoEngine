@@ -5,6 +5,11 @@
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Windowing/Window.h"
+#include "DingoEngine/Audio/AudioEngine.h"
+#include "DingoEngine/Version.h"
+#include "DingoEngine/BuildInfo.h"
 
 #include <imgui.h>
 
@@ -29,6 +34,15 @@ namespace Dingo::UI
 			ImGui::TextUnformatted(label);
 			ImGui::SameLine(140.0f);
 			ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay.c_str());
+		}
+
+		// "X.X FPS   X.XX ms/frame" from ImGui's own frame timing, shared by
+		// FrameTimingSection and RendererStatsWindow's performance block.
+		void FpsLine()
+		{
+			const ImGuiIO& io = ImGui::GetIO();
+			const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
+			ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
 		}
 	}
 
@@ -58,7 +72,7 @@ namespace Dingo::UI
 
 		ImGui::TextUnformatted("Performance");
 		ImGui::Separator();
-		ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
+		FpsLine();
 
 		const std::string overlay = std::format("avg {:.2f} ms", average);
 		// Fixed 0..33.34 ms axis: the top of the graph is the 30 FPS line, so it reads
@@ -97,6 +111,96 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		BudgetBar("Vertices", stats3D.VertexCount, caps3D.MaxVertices);
 		BudgetBar("Indices", stats3D.IndexCount, caps3D.MaxIndices);
+
+		ImGui::End();
+	}
+
+	void EngineInfoSection()
+	{
+		const uint32_t version = Application::Get().GetEngineVersion();
+
+		ImGui::TextUnformatted("Engine");
+		ImGui::Separator();
+		ImGui::Text("Version : %u.%u.%u  (build %u)",
+			DE_VERSION_MAJOR(version), DE_VERSION_MINOR(version), DE_VERSION_PATCH(version),
+			Application::Get().GetEngineBuildNumber());
+	}
+
+	void GraphicsInfoSection()
+	{
+		const GraphicsContext& context = Application::Get().GetGraphicsContext();
+		const AdapterInfo& adapter = context.GetAdapterInfo();
+
+		ImGui::TextUnformatted("Graphics");
+		ImGui::Separator();
+
+		const char* apiName = "Unknown";
+		switch (context.GetGraphicsAPI())
+		{
+			case GraphicsAPI::Headless:   apiName = "Headless";  break;
+			case GraphicsAPI::Vulkan:     apiName = "Vulkan";    break;
+			case GraphicsAPI::DirectX11:  apiName = "DirectX11"; break;
+			case GraphicsAPI::DirectX12:  apiName = "DirectX12"; break;
+		}
+		ImGui::Text("API     : %s", apiName);
+
+		if (!adapter.Name.empty())
+		{
+			ImGui::Text("Adapter : %s", adapter.Name.c_str());
+			ImGui::Text("Vendor  : %s", GraphicsContext::VendorName(adapter.VendorID).c_str());
+			if (adapter.DedicatedVideoMemory > 0)
+				ImGui::Text("VRAM    : %.1f MB", static_cast<double>(adapter.DedicatedVideoMemory) / (1024.0 * 1024.0));
+		}
+	}
+
+	void WindowInfoSection()
+	{
+		const Window& window = Application::Get().GetWindow();
+
+		ImGui::TextUnformatted("Window");
+		ImGui::Separator();
+		ImGui::Text("Size : %d x %d", window.GetWidth(), window.GetHeight());
+	}
+
+	void FrameTimingSection()
+	{
+		ImGui::TextUnformatted("Frame Timing");
+		ImGui::Separator();
+		FpsLine();
+	}
+
+	void AudioStatsSection()
+	{
+		const AudioEngine& audio = Application::Get().GetAudioEngine();
+
+		ImGui::TextUnformatted("Audio");
+		ImGui::Separator();
+		ImGui::Text("Status        : %s", audio.IsValid() ? "Valid" : "Invalid");
+		ImGui::Text("Master volume : %.2f", audio.GetMasterVolume());
+		ImGui::Text("Active sounds : %u", audio.GetActiveSoundCount());
+	}
+
+	void EngineStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Engine Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		EngineInfoSection();
+
+		ImGui::Spacing();
+		GraphicsInfoSection();
+
+		ImGui::Spacing();
+		WindowInfoSection();
+
+		ImGui::Spacing();
+		FrameTimingSection();
+
+		ImGui::Spacing();
+		AudioStatsSection();
 
 		ImGui::End();
 	}

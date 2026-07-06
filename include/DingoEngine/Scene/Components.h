@@ -6,12 +6,15 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
+#include "DingoEngine/Audio/AudioTypes.h"
+#include "DingoEngine/Audio/AudioEngine.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace Dingo
@@ -256,6 +259,10 @@ namespace Dingo
 		{
 			Rotation = glm::quat(glm::radians(eulerDegrees));
 		}
+
+		// Engine-wide camera/listener convention: local -Z is forward, +Y is up.
+		glm::vec3 Forward() const { return Rotation * glm::vec3(0.0f, 0.0f, -1.0f); }
+		glm::vec3 Up() const { return Rotation * glm::vec3(0.0f, 1.0f, 0.0f); }
 	};
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
@@ -330,6 +337,92 @@ namespace Dingo
 
 		SphereCollider3DComponent() = default;
 		SphereCollider3DComponent(const SphereCollider3DComponent&) = default;
+	};
+
+	// A capsule collider for an entity with a RigidBody3DComponent. The capsule stands
+	// on the +Y axis. Radius is a fraction of Transform3DComponent::Scale.x and
+	// HalfHeight (half the cylinder section between the caps) is a fraction of
+	// Transform3DComponent::Scale.y, so on a unit-scaled entity the defaults give a
+	// 1-unit-tall capsule of radius 0.5.
+	struct CapsuleCollider3DComponent
+	{
+		float Radius = 0.5f;
+		float HalfHeight = 0.5f;
+
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		CapsuleCollider3DComponent() = default;
+		CapsuleCollider3DComponent(const CapsuleCollider3DComponent&) = default;
+	};
+
+	// A kinematic character controller for player/enemy movement, wrapping Jolt's
+	// CharacterVirtual behind the Scene's Physics3D. The Scene creates the controller
+	// at OnPhysicsStart from the params below (positioned at the entity's Transform3D),
+	// steps it each physics update, and writes its position back onto the
+	// Transform3DComponent. Scripts steer it via Scene::GetCharacterController(entity)
+	// (set velocity, read IsGrounded, etc.). An entity should have EITHER this OR a
+	// RigidBody3DComponent, not both.
+	struct CharacterController3DComponent
+	{
+		float Radius = 0.3f;         // capsule radius
+		float Height = 1.8f;         // full standing height
+		float StepHeight = 0.3f;     // max stair step-up height
+		float MaxSlopeAngle = 45.0f; // steepest walkable slope, degrees
+
+		// Opaque handle to the runtime CharacterController3D the Scene owns; k_InvalidControllerIndex
+		// when none. Not a physics-body handle — this indexes the Scene's controller store.
+		// NOTE: like the rigid-body handles this is live runtime state. A duplicate / clone
+		// MUST reset it to k_InvalidControllerIndex on the copy so the clone gets its own
+		// controller and never aliases (or double-frees) the source's.
+		static constexpr std::uint32_t k_InvalidControllerIndex = 0xFFFFFFFFu;
+		std::uint32_t RuntimeController = k_InvalidControllerIndex;
+
+		CharacterController3DComponent() = default;
+		CharacterController3DComponent(const CharacterController3DComponent&) = default;
+	};
+
+	// Audio ---------------------------------------------------------------------
+
+	// A sound emitter attached to an entity. Clip is a shareable decoded-audio
+	// template loaded via Application::Get().GetAudioEngine().LoadClip() — the
+	// component does not own decoding, only a reference, exactly like
+	// MeshRendererComponent's Mesh. When Spatialized is true the Scene keeps the
+	// live sound's position in sync with the entity's transform every frame
+	// (Transform3DComponent if present, else the 2D TransformComponent at z = 0).
+	struct AudioSourceComponent
+	{
+		std::shared_ptr<AudioClip> Clip;
+
+		float Volume = 1.0f;
+		float Pitch = 1.0f;
+		bool Looping = false;
+		bool Spatialized = true;
+		bool PlayOnStart = false;
+
+		// Opaque handle to the live sound instance; k_InvalidSound when none is
+		// playing. Engine-managed, like RigidBody3DComponent's RuntimeBody — do not
+		// set this directly. A duplicate / clone path MUST reset it to k_InvalidSound
+		// on the copy so the clone doesn't alias (or stop) the source's sound.
+		AudioSoundId RuntimeSound = k_InvalidSound;
+
+		AudioSourceComponent() = default;
+		AudioSourceComponent(const AudioSourceComponent&) = default;
+	};
+
+	// Marks an entity as the scene's audio listener (ears for spatialized sound).
+	// Mirrors CameraComponent::Primary: the Scene uses the first Primary listener
+	// it finds, or the first listener at all if none is marked Primary. Position
+	// comes from the entity's transform; orientation only if it has a
+	// Transform3DComponent (a 2D listener stays at the engine's default
+	// orientation). If a scene has no listener entity, the AudioEngine's listener
+	// is left untouched.
+	struct AudioListenerComponent
+	{
+		bool Primary = true;
+
+		AudioListenerComponent() = default;
+		AudioListenerComponent(const AudioListenerComponent&) = default;
 	};
 
 }

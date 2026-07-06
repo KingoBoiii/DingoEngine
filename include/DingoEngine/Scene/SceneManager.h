@@ -38,7 +38,11 @@ namespace Dingo
 		Scene* GetActiveScene() const { return m_ActiveScene; }
 		const std::string& GetActiveSceneName() const { return m_ActiveSceneName; }
 
-		// Updates the active scene's behaviours + physics (no-op if none is active).
+		// Updates the active scene's behaviours + physics (no-op if none is active), then
+		// checks whether that update requested a scene transition (Scene::RequestSceneTransition,
+		// e.g. from a ScriptableEntity) and, if so, performs the normal SetActiveScene
+		// switch and clears the request. This is how a script switches scenes without
+		// reaching the SceneManager directly.
 		void OnUpdate(float deltaTime);
 
 		// Renders the active scene through the engine's SceneRenderer, reading its

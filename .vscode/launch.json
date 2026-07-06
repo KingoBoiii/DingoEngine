@@ -74,6 +74,18 @@
             "preLaunchTask": "Build DungeonCrawler3D Debug"
         },
         {
+            "name": "Debug EchoVault",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/EchoVault/EchoVault.exe",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/EchoVault",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build EchoVault Debug"
+        },
+        {
             "name": "Debug TestFramework",
             "type": "cppvsdbg",
             "request": "launch",

@@ -81,6 +81,7 @@ IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
 IncludeDir['box2d'] = "%{wks.location}/vendor/box2d/include";
 IncludeDir['jolt'] = "%{wks.location}/vendor/JoltPhysics";
+IncludeDir['miniaudio'] = "%{wks.location}/vendor/miniaudio"; -- header-only (miniaudio.h + stb_vorbis.c), engine-only
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -163,7 +164,8 @@ group "Engine"
 			"%{IncludeDir.assimp}",
 			"%{IncludeDir.entt}",
 			"%{IncludeDir.box2d}",
-			"%{IncludeDir.jolt}"
+			"%{IncludeDir.jolt}",
+			"%{IncludeDir.miniaudio}"
 		}
 
 		links {
@@ -280,4 +282,5 @@ group "Examples"
     include "examples/SpaceInvaders"
     include "examples/AngryBirds"
     include "examples/DungeonCrawler3D"
+    include "examples/EchoVault"
 group ""

@@ -1,11 +1,10 @@
 #pragma once
 
 #include "DingoEngine/Scene/Entity.h"
+#include "DingoEngine/Scene/Scene.h"
 
 namespace Dingo
 {
-
-	class Scene;
 
 	// Base class for entity behaviours. Subclass it, override the lifecycle hooks,
 	// and attach an instance with entity.AddScript<MyScript>(). The owning Scene
@@ -42,6 +41,13 @@ namespace Dingo
 
 		template<typename T>
 		bool HasComponent() const { return m_Entity.HasComponent<T>(); }
+
+		// Requests that the SceneManager switch its active scene to `name` once this
+		// scene finishes updating this frame. Forwards to Scene::RequestSceneTransition —
+		// see there for the exact timing and last-write-wins semantics. This is the
+		// intended way for a script to drive a Menu -> Game -> GameOver style switch
+		// without reaching the SceneManager itself.
+		void RequestSceneTransition(const std::string& name) { GetScene().RequestSceneTransition(name); }
 
 	private:
 		Entity m_Entity;

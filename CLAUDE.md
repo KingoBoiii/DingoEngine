@@ -2,226 +2,97 @@
 
 ## What this project is
 
-DingoEngine is a C++20 game engine built around a graphics abstraction layer (NVRHI) that targets Vulkan (primary) and DirectX12 (disabled by default). It follows a layered architecture where user code lives in `Layer` subclasses pushed onto an `Application`-owned `LayerStack`.
+DingoEngine is a C++20 game engine built on a graphics abstraction layer (NVRHI) targeting Vulkan (primary), DirectX 11, and DirectX 12. User code lives in `Layer` subclasses pushed onto an `Application`-owned `LayerStack`; games are usually thin layers driving Scene/ECS scripts.
 
 ## Build system
 
-- **Tool**: Premake5 (`premake5.lua` at root)
-- **Generate**: `Generate-Windows.bat` → targets Visual Studio 2026
-- **Configs**: `Debug`, `Debug-ASan`, `Release`, `Distribution`
-- **Output**: DingoEngine builds as a static lib; examples build as executables
-- **Requires**: Vulkan SDK (env var `VULKAN_SDK` must be set)
-- **PCH**: `depch.h` / `depch.cpp`
+- **Tool**: Premake5. Regenerate with `./vendor/premake/bin/premake5.exe vs2026` from the repo root (do NOT use `Generate-Windows.bat` from a non-interactive shell — it ends in `PAUSE`).
+- **Build**: MSBuild on `DingoEngine.slnx` (or a single example's `.vcxproj`), `/p:Configuration=Debug /p:Platform=x64`. Configs: `Debug`, `Debug-ASan`, `Release`, `Distribution`. Requires the `VULKAN_SDK` env var.
+- **Output**: engine = static lib; examples = executables. Run examples with cwd = the example's source dir so relative `assets/...` paths resolve.
+- **PCH**: `depch.h` / `depch.cpp`.
 
 ## Project structure
 
 ```
-include/DingoEngine/       Public API headers
-  Core/                    Application, LayerStack, Input, Timer
-  Graphics/                Renderer, Renderer2D, Renderer3D, Shader, Texture, Framebuffer, Pipeline, Mesh
-  Graphics/Enums/          GraphicsFormat, BufferType, TextureFormat, etc.
-  Events/                  Event system (Window, Keyboard, Mouse)
-  Windowing/               Window (GLFW-backed)
-  ImGui/                   ImGuiLayer overlay
-  Physics/2D/              Physics2D interface + 2D physics types (Box2D-backed)
-  Physics/3D/              Physics3D interface + 3D physics types (Jolt-backed)
-
-src/DingoEngine/           Implementations
-  Core/                    Application loop, layer management
-  Graphics/                Renderer, Renderer2D, Renderer3D, font, shader, texture, mesh
-  Graphics/NVRHI/          NVRHI wrappers
-    Vulkan/                VulkanGraphicsContext, VulkanSwapChain
-    DirectX12/             DirectX12GraphicsContext (currently disabled)
-  Physics/2D/              Physics2D factory
-    Box2D/                 Box2DPhysics2D — the only box2d.h includer
-  Physics/3D/              Physics3D factory
-    JoltPhysics/           JoltPhysics3D — the only Jolt includer (+ JoltPhysics3DData PIMPL)
-
-vendor/                    Third-party submodules (glfw, glm, spdlog, nvrhi, imgui, stb, msdf-atlas-gen, box2d, JoltPhysics). No changes can occur in vendor / submodules!
-examples/
-  FlappyBird/              Complete game (Renderer2D, input, audio, collision)
-  SpaceInvaders/           Scene/ECS showcase (v0.3)
-  AngryBirds/              2D physics showcase (v0.4) — slingshot, destructible towers, pigs
-  DungeonCrawler3D/        3D dungeon-crawler prototype (v0.4.1) — first ECS-integrated 3D
-                          scene: procedurally generated dungeons (rooms+corridors,
-                          DungeonGenerator.h), walls/floor/player/enemies as RigidBody3D
-                          entities, SPACE melee combat (enemy health + player health bar),
-                          treasures, follow camera, drawn via Renderer3D. Runs on Vulkan,
-                          D3D11 and D3D12. (Renamed from the v0.4 "Physics3D" box-tower demo.)
+include/DingoEngine/       Public API headers (Core, Graphics, Events, Windowing,
+                           Physics/2D, Physics/3D, Scene, UI, Audio)
+src/DingoEngine/           Implementations, incl. backend-only code:
+  Graphics/NVRHI/          NVRHI wrappers (Vulkan/, DirectX11/, DirectX12/)
+  Physics/2D/Box2D/        the only box2d.h includer
+  Physics/3D/JoltPhysics/  the only Jolt includer
+  Scene/SceneData.h        the only EnTT includer (PIMPL)
+vendor/                    Third-party submodules — NEVER modify vendor code
+examples/                  FlappyBird, Breakout3D, SpaceInvaders (Scene/ECS showcase),
+                           AngryBirds (2D physics), DungeonCrawler (top-down 2D slice),
+                           DungeonCrawler3D (flagship: ECS-integrated 3D, procedural
+                           dungeons, script-driven, custom materials)
 ```
 
-Note: upstream Box2D ships CMake rather than Premake, so the fork carries its own
-`premake5.lua` (like the other vendor forks), `include`d from the root workspace.
+Vendor forks that upstream as CMake (e.g. box2d) carry their own `premake5.lua`, `include`d from the root workspace.
 
-## Key architecture patterns
-
-### Entry point
-User implements `CreateApplication()` which is called from `EntryPoint.h`'s `main()`. Return a heap-allocated `Application*`.
-
-### Layer system
-```cpp
-class MyLayer : public Dingo::Layer {
-    void OnAttach() override {}
-    void OnDetach() override {}
-    void OnUpdate(float deltaTime) override {}
-    void OnUIRender() override {}   // only if ImGui enabled
-};
-```
-
-### Params / builder pattern
-All major resource types are constructed via `*Params` structs with a fluent setter API, then passed to a static `Create()` factory:
-```cpp
-auto tex = Texture::Create(TextureParams().SetWidth(512).SetHeight(512)...);
-auto shader = Shader::Create(ShaderParams().SetFilePath("assets/shader.glsl"));
-```
-
-### Bindable resources
-`Texture`, `GraphicsBuffer`, and `Sampler` implement `IBindableShaderResource`, making them slot-bindable in a `RenderPass`.
-
-### Event system
-Type-safe dispatcher; layers receive an `Event&` and dispatch by type:
-```cpp
-EventDispatcher dispatcher(event);
-dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(OnResize));
-```
-
-## Naming conventions
+## Code conventions
 
 | Thing | Convention |
 |---|---|
-| Namespace | `Dingo` (everything lives here) |
-| Private/protected members | `m_VariableName` |
-| Static members | `s_StaticName` |
-| Constants / macros | `UPPER_SNAKE_CASE` |
-| Platform-specific classes | `Vulkan*`, `DirectX12*`, `Win*` |
-| NVRHI wrappers | `Nvrhi*` |
-| Getters | `Get*()` and `As<T>()` |
-| Log macros (engine) | `DE_CORE_INFO`, `DE_CORE_WARN`, `DE_CORE_ERROR`, `DE_CORE_ASSERT` |
-| Log macros (client) | `DE_INFO`, `DE_WARN`, `DE_ERROR`, `DE_ASSERT` |
-| Event binding | `DE_BIND_EVENT_FN(fn)` |
-| Bit flag helper | `BIT(x)` |
+| Namespace | `Dingo` (everything) |
+| Members | `m_Name` (instance), `s_Name` (static), `UPPER_SNAKE_CASE` constants/macros |
+| Backend classes | `Vulkan*`, `DirectX12*`, `Nvrhi*`, `Win*` |
+| Log macros | engine `DE_CORE_INFO/WARN/ERROR/ASSERT`; client `DE_INFO/...` |
+| Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `BIT(x)` |
 
-## Application lifecycle (what happens inside `Application::Run()`)
+- `DE_CORE_ASSERT(cond, msg)` takes a **plain string only** — NOT `std::format` args (adjacent-literal pasting; format args fail to compile). `DE_CORE_WARN/ERROR` do take format args.
+- On-screen text must be **pure ASCII**: the MSDF atlas covers U+0020–U+00FF and rendering is byte-wise (no UTF-8 decode) — an em-dash renders as garbage.
 
-1. `Log::Initialize()`
-2. `CacheManager::Initialize()`
-3. `Window::Initialize()` — GLFW, event callbacks
-4. `GraphicsContext::Initialize()` — GPU device (Vulkan or D3D12)
-5. `SwapChain::Initialize()`
-6. `AppRenderer::Create()` + `Renderer::InitializeStaticResources()` (white texture, samplers)
-7. `Renderer2D::Create()` — batch renderer
-8. User's `OnInitialize()` — custom layer push
-9. *(if enabled)* `ImGuiLayer` setup
+## Comments — keep them to a minimum
 
-Main loop per frame:
-- `Input::Update()` — snapshot current vs previous key/mouse state
-- `Window::Update()` — poll GLFW events
-- `Renderer::BeginFrame()`
-- `layer->OnUpdate(deltaTime)` for each layer
-- ImGui render pass (if enabled)
-- `Renderer::EndFrame()` → present
+Do not write code comments unless absolutely necessary. A comment must earn its place by stating a load-bearing "why" — a constraint, invariant, or non-obvious consequence the code cannot express itself. Never narrate what the next line does, never leave change-tracking or review commentary ("added X", "fixed Y"), and apply the same restraint to scripts, YAML, shaders, and example code. When in doubt, leave it out.
 
-## Renderer2D capabilities
+## Key patterns
 
-- Batched quads: up to 1 000 per flush, 32 texture slots
-- Circles: `DrawCircle(transform, color, thickness, fade)`
-- Text: `DrawString(text, font, transform, color)` — MSDF atlas-based
-- Fonts use `msdf-atlas-gen` with 8 worker threads by default
+- **Entry point**: implement `CreateApplication()` returning a heap-allocated `Application*`; `EntryPoint.h` owns `main()`.
+- **Layers**: override `OnAttach/OnDetach/OnUpdate(dt)/OnUIRender` (UI only if ImGui enabled).
+- **Params/builder**: resources are built from fluent `*Params` structs passed to static `Create()` factories: `Texture::Create(TextureParams().SetWidth(512)...)`.
+- **Bindables**: `Texture`, `GraphicsBuffer`, `Sampler` implement `IBindableShaderResource` for slot binding in a `RenderPass`.
+- **Events**: `EventDispatcher dispatcher(event); dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(OnResize));`
+- **Backend hiding** (hard requirement): EnTT, Box2D, Jolt, ImGui, miniaudio, NVRHI must never appear in a public header. Public APIs use abstract classes + static `Create()` + opaque handles (see `Physics3D`). GLM in public headers is fine.
+
+## Scenes, ECS & physics
+
+- `Scene` owns entities (EnTT, PIMPL'd) and lazily-created per-dimension physics worlds: `Physics2D` (Box2D) / `Physics3D` (Jolt), reached via `Scene::GetPhysics2D()/GetPhysics3D()`. A scene only pays for the dimension it uses.
+- **Lifecycle**: `OnStart` → `OnUpdate` → `OnStop`, `IsRunning()`; `Clear()` also stops. `SceneManager` is the default driver: first `SetActiveScene` selects, later switches auto-run `OnStop`(out)+`OnStart`(in); `CreateScene` never activates. Scripts can request a switch via `RequestSceneTransition(name)` (drained by `SceneManager::OnUpdate` after the active scene updates).
+- **Rendering**: `SceneManager::OnRender()` → engine-owned `SceneRenderer`, which reads the primary `CameraComponent` (ortho view from 2D `TransformComponent`, perspective from `Transform3DComponent`) + `DirectionalLightComponent`, draws the 3D pass then 2D as overlay. `Scene::RenderEntities/RenderEntities3D` stay public for custom passes.
+- **Scripts**: `ScriptableEntity` — `OnCreate` → `OnStart` (before physics bake) → `OnUpdate` → `OnDestroy`. A controller script can build the whole world in `OnStart`; keeps game layers tiny (DungeonCrawler3D is the showcase).
+- **Components**: 3D mirrors 2D — `Transform3DComponent` (pos, quat, scale), `MeshRendererComponent` (`Mesh*` + color + optional `Material*`), `RigidBody3DComponent`, `Box/Sphere/CapsuleCollider3DComponent` (collider size = fraction of transform scale). New built-in components must be registered via `DE_INSTANTIATE_COMPONENT` in `src/.../Entity.cpp` or clients can't use them.
+- **Handles & the copy landmine**: physics components hold opaque runtime handles (`PhysicsBodyId2D/3D`; 3D's "none" sentinel is `k_InvalidBody3D` = 0xFFFFFFFF, **not 0**). Copies/clones must reset live handles to the sentinel — `Scene::DuplicateEntity` owns this; keep it covering every handle-carrying component.
+- `Scene::OnUpdate` runs scripts, steps live worlds, writes simulated transforms back (2D → `TransformComponent`, 3D → `Transform3DComponent`).
+- Shape is baked into the body at creation (no separate 3D shape handles). Camera picking: `Scene::ScreenPointToRay(screenPos, viewportSize)` + `Ray::IntersectGroundPlane` (perspective cameras only).
+
+## Rendering notes
+
+- Shaders are authored as GLSL, compiled to SPIR-V (ShaderC) and cross-compiled to HLSL/DXBC for D3D. `GLM_FORCE_DEPTH_ZERO_TO_ONE` is workspace-global: SPIR-V already emits [0,1] depth — never enable SPIRV-Cross `fixup_clipspace`. Depth targets must set `isShaderResource = false`.
+- **Shader disk cache is keyed by shader NAME, not source** (`examples/<Name>/.cache/shaders/`). After editing inline shader source, delete the cache or you'll run stale bytecode.
+- **Renderer2D**: auto-batching quads/circles/MSDF text; default 2000 quads per batch, overflow flushes (configurable via `ApplicationParams`).
+- **Renderer3D**: CPU-transforms every submitted vertex every frame; `MaxVertices` (default 64k, configurable) **silently drops** overflow beyond a one-time WARN. `MeshRendererComponent.Mesh = nullptr` works as per-entity culling. Batches are grouped per `Material*` (null = built-in default).
+- Custom material shader binding convention: **0** = scene UBO (ViewProjection + light, volatile, written each `BeginScene`), **1** = the material's own `SetUniform` params, **2+** = textures/samplers, interleaved. The binding set must match shader reflection exactly.
+- Prefer `RGBA8_UNORM` for standard color textures.
 
 ## Third-party vendors
 
 | Vendor | Role |
 |---|---|
-| glfw | Windowing + input polling |
-| glm | Math (vec, mat, quat) |
-| spdlog | Logging back-end |
-| nvrhi | Graphics API abstraction (Vulkan / D3D12) |
-| imgui | Debug/editor UI |
-| stb | Image loading (`stb_image`) |
-| msdf-atlas-gen | Font SDF atlas generation |
-| entt | Entity-component system backend (scenes) — hidden behind `Internal::SceneData` |
-| box2d | 2D rigid-body physics backend — hidden behind the `Physics2D` interface |
-| JoltPhysics | 3D rigid-body physics backend — hidden behind the `Physics3D` interface |
+| glfw / glm / spdlog / stb | Windowing+input, math, logging, image loading |
+| nvrhi | Graphics API abstraction (Vulkan / D3D11 / D3D12) |
+| imgui | Debug UI (behind `Dingo::UI` facade + `Layer::OnUIRender`) |
+| msdf-atlas-gen | Font MSDF atlas generation |
+| assimp | Model loading (`Model::LoadFromFile` — static meshes only, no skinning) |
+| entt / box2d / JoltPhysics | ECS / 2D physics / 3D physics backends (all hidden) |
+| miniaudio | Audio backend (hidden behind the `Audio` interface; v0.5) |
 
-## Scenes, ECS & physics
+## Failure contracts
 
-- A `Scene` owns entities (EnTT) and, between `OnPhysicsStart()`/`OnPhysicsStop()`, a
-  `Physics2D` world (Box2D backend) and/or a `Physics3D` world (Jolt backend). **None of
-  EnTT, Box2D or Jolt appears in any public header**: EnTT lives only in
-  `src/.../SceneData.h` behind the opaque `Internal::SceneData*`, Box2D only in
-  `src/.../Physics/2D/Box2D/` behind the `Physics2D` interface, and Jolt only in
-  `src/.../Physics/3D/JoltPhysics/` behind `Physics3D`. The `Scene` delegates physics to
-  the owned worlds (`Scene::GetPhysics2D()` / `Scene::GetPhysics3D()`).
-- **Scene lifecycle & rendering (v0.4.2).** `Scene::OnStart()`/`OnStop()` wrap
-  `OnPhysicsStart`/`OnPhysicsStop` (with `IsRunning()`); `Clear()` also stops the scene.
-  `SceneManager` is the default scene API. Lifecycle is **explicit**: the host calls `OnStart`
-  (last in `OnAttach`) and `OnStop` (in `OnDetach`). The **first** `SetActiveScene` only selects
-  the scene; a later **switch** auto-runs `OnStop`(outgoing)+`OnStart`(incoming) so multi-scene
-  transitions stay one-liners. `CreateScene` never activates. `OnUpdate`/`OnRender()` drive the
-  active scene. `SceneManager::OnRender()`
-  delegates to the engine-owned **`SceneRenderer`** (`Application::GetSceneRenderer()`): it
-  reads the **primary `CameraComponent`** (projection from the component; view from the camera
-  entity's transform — ortho uses the 2D `TransformComponent`, perspective the
-  `Transform3DComponent`) plus a `DirectionalLightComponent`. A scene may hold **both** a
-  perspective (world) camera and an orthographic (UI) camera: the renderer draws the 3D world
-  pass, then the 2D entities as an overlay on top (one camera type → just that pass).
-  `Scene::OnRender`/`OnRender3D`/`SetViewProjection` are **gone**;
-  `Scene::RenderEntities`/`RenderEntities3D` stay public for custom passes, and
-  `Scene::GetActiveCameraViewProjection(aspect)` returns the active camera's VP for a matching
-  overlay pass.
-- **`ScriptableEntity` lifecycle: `OnCreate` (attach) → `OnStart` → `OnUpdate` → `OnDestroy`.**
-  `OnStart` fires from `Scene::OnStart` *before* `OnPhysicsStart` (or on first `OnUpdate` for
-  scripts spawned later), so a **controller script** can build the whole world in `OnStart`
-  (spawn level/player/enemies/camera/light/HUD) and have its bodies baked. With full `GetScene()`
-  access this keeps game layers tiny — `examples/DungeonCrawler3D/` is the showcase: its layer
-  just creates the scene, attaches one `DungeonControllerScript`, and drives update/render; the
-  HUD is scene entities (Text/Sprite + an ortho UI camera) drawn via the 2D overlay.
-- New built-in component types must be explicitly instantiated via the
-  `DE_INSTANTIATE_COMPONENT` macro in `src/.../Entity.cpp`, or client code can't use them.
-- Physics components hold the simulated body/shape as an opaque handle (`PhysicsBodyId2D` /
-  `PhysicsShapeId2D` for 2D; `PhysicsBodyId3D` for 3D — note **3D's "none" sentinel is
-  `k_InvalidBody3D` (0xFFFFFFFF), not 0**). `Scene::OnUpdate` steps each live world after
-  the script pass and writes simulated transforms back: 2D onto `TransformComponent`, 3D
-  onto `Transform3DComponent`.
-- **3D is now ECS-integrated (v0.4.1).** Mirroring the 2D side: `Transform3DComponent`
-  (vec3 position, quat rotation, vec3 scale), `MeshRendererComponent` (a `Mesh*` + color,
-  drawn through the engine's `Renderer3D`), `RigidBody3DComponent`, and
-  `BoxCollider3DComponent` / `SphereCollider3DComponent`. `OnPhysicsStart` creates a 3D
-  world only if the scene has `RigidBody3DComponent`s (and a 2D world only if it has 2D
-  ones — a scene pays only for the dimension it uses). The 3D collider shape is **baked
-  into the body at creation** (Physics3D has no separate shape handles, no `SetPosition`,
-  and no angular-velocity control). Jolt's global init (allocator/Factory/RegisterTypes)
-  is ref-counted across worlds. The `SceneRenderer` (v0.4.2) draws every
-  `Transform3D`+`MeshRenderer` entity (via `Scene::RenderEntities3D`), lit by a
-  `DirectionalLightComponent`.
-- **Per-mesh materials (v0.4.2).** `MeshRendererComponent::Material` is an optional `Material*`
-  (null = Renderer3D's built-in flat-lit default). Renderer3D **groups meshes by material** and
-  draws one batch per material from a pooled (vertex, index) buffer (no shared buffer is
-  re-uploaded mid-frame). Camera + light live in a shared **scene UBO** the renderer binds at
-  **binding 0** on every material (`Material::SetSceneUniformBuffer`), so a custom mesh shader's
-  convention is: **binding 0** = scene (`ViewProjection`+light), **binding 1** = the material's own
-  `SetUniform` params, **bindings 2+** = its textures/samplers. The scene UBO is volatile — written
-  via `Renderer::Upload` (command list) each `BeginScene`, not pre-uploaded. The binding set a
-  material binds must match what its shader reflects, so declare exactly the bindings you use.
-  `examples/DungeonCrawler3D/` showcases a custom unlit/glow treasure material.
-
-## Graphics API notes
-
-- Vulkan is the primary back-end; **DirectX 11 and DirectX 12 are also functional** (selected via
-  `--graphics=dx11` / `dx12`), including 3D rendering. Picked through `GraphicsAPI` in `GraphicsParams`.
-- Shaders authored as GLSL: compiled to SPIR-V with ShaderC (Vulkan) and cross-compiled GLSL→HLSL→DXBC
-  via SPIRV-Cross + D3DCompile for the D3D back-ends. Note: GLSL is built with `GLM_FORCE_DEPTH_ZERO_TO_ONE`,
-  so SPIR-V already emits `[0,w]` depth — the HLSL path must NOT set SPIRV-Cross `fixup_clipspace`
-  (that would re-convert and corrupt depth). Depth targets must set `isShaderResource = false` (D3D
-  rejects a shader-resource view on a non-typeless D32 depth format with `E_INVALIDARG`).
-- Shaders are reflected with SPIRV-Cross
-- Vulkan validation layers are enabled when NVRHI validation is on
-- `GraphicsFormat` has 80+ variants (colour, depth, BC compressed); prefer `RGBA8_UNORM` for standard colour textures
+- `Model::LoadFromFile` and `Font::Create` return `nullptr` on failure — asset paths are cwd-relative, so a wrong working directory fails loudly, not with a broken object.
+- Physics per-body calls are no-ops (getters return identity) on invalid/stale handles.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned milestones from v0.1 to v1.0.
-
-## Examples as reference
-
-- **FlappyBird** (`examples/FlappyBird/`) — best end-to-end reference: sprites, input, state machine, collision, audio, score rendering
+See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). In progress on branch `v0.5.0`: audio engine (miniaudio backend + `AudioSource`/`AudioListener` components + 3D positional), gameplay-grade physics (capsule character controller, kinematic position control, ray/shape casts), emissive materials, script scene-transitions, `ScreenPointToRay` — showcased by the new `examples/EchoVault`.

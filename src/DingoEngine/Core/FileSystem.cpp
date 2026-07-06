@@ -50,6 +50,11 @@ namespace Dingo
 		return data;
 	}
 
+	void FileSystem::FreeImage(const uint8_t* data)
+	{
+		stbi_image_free(const_cast<uint8_t*>(data));
+	}
+
 	std::string FileSystem::GetFileName(const std::filesystem::path& filepath)
 	{
 		const std::string& filepathString = filepath.string();

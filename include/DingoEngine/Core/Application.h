@@ -71,15 +71,17 @@ namespace Dingo
 		bool EnableUI = true;	// Whether to enable the immediate-mode UI layer
 		UIParams UI;			// Parameters for UI configuration, only used if EnableUI is true
 
-		// Built-in developer overlays (e.g. the renderer-stats window, toggled with F3).
-		// Independent of EnableUI: the engine brings up the UI backend for these even if
-		// the game uses no UI of its own. Honoured in every build config, Distribution
-		// included -- set false to strip the overlay (and, when EnableUI is also false,
-		// the ImGui backend) from a shipping build.
+		// Built-in developer overlays (the engine-stats window, toggled with F3; the
+		// renderer-stats window, toggled with F4). Independent of EnableUI: the engine
+		// brings up the UI backend for these even if the game uses no UI of its own.
+		// Honoured in every build config, Distribution included -- set false to strip
+		// the overlay (and, when EnableUI is also false, the ImGui backend) from a
+		// shipping build.
 		bool EnableDebugOverlays = true;
 	};
 
 	class ImGuiLayer;
+	class AudioEngine;
 
 	class Application
 	{
@@ -106,6 +108,9 @@ namespace Dingo
 		}
 
 		static Application& Get() { return *s_Instance; }
+		// False before construction and after teardown completes — check it from code
+		// that can run outside the application's lifetime (e.g. static-lifetime scenes).
+		static bool HasInstance() { return s_Instance != nullptr; }
 		static bool HasPendingRestart() { return s_PendingRestart; }
 		static GraphicsAPI ConsumePendingRestart();
 
@@ -116,6 +121,7 @@ namespace Dingo
 		Renderer3D& GetRenderer3D() const { return *m_Renderer3D; }
 		SceneRenderer& GetSceneRenderer() const { return *m_SceneRenderer; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
+		AudioEngine& GetAudioEngine() const { return *m_AudioEngine; }
 
 		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
 		const uint32_t GetEngineBuildNumber() const { return DE_ENGINE_VERSION_BUILD; }
@@ -131,8 +137,9 @@ namespace Dingo
 		bool OnWindowCloseEvent(WindowCloseEvent& e);
 		bool OnWindowResizeEvent(WindowResizeEvent& e);
 
-		// Renders the engine's built-in developer overlays (renderer stats, F3-toggled)
-		// inside the ImGui frame. Gated at runtime by ApplicationParams::EnableDebugOverlays.
+		// Renders the engine's built-in developer overlays (engine stats F3-toggled,
+		// renderer stats F4-toggled) inside the ImGui frame. Gated at runtime by
+		// ApplicationParams::EnableDebugOverlays.
 		void RenderDebugOverlays();
 
 	private:
@@ -143,9 +150,11 @@ namespace Dingo
 		Renderer2D* m_Renderer2D = nullptr;
 		Renderer3D* m_Renderer3D = nullptr;
 		SceneRenderer* m_SceneRenderer = nullptr;
+		AudioEngine* m_AudioEngine = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
-		bool m_ShowRendererStats = false; // built-in renderer-stats overlay visibility (F3)
+		bool m_ShowEngineStats = false; // built-in engine-stats overlay visibility (F3)
+		bool m_ShowRendererStats = false; // built-in renderer-stats overlay visibility (F4)
 		bool m_IsRunning = true;
 		float m_LastFrameTime = 0.0f;
 		float m_DeltaTime = 0.0f;

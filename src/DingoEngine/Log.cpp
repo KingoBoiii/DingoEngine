@@ -29,6 +29,19 @@ namespace Dingo
 			return nullptr;
 		}
 
+		static spdlog::level::level_enum ToSpdlogLevel(Log::Level level)
+		{
+			switch (level)
+			{
+				case Log::Level::Trace:    return spdlog::level::trace;
+				case Log::Level::Info:     return spdlog::level::info;
+				case Log::Level::Warn:     return spdlog::level::warn;
+				case Log::Level::Error:    return spdlog::level::err;
+				case Log::Level::Fatal:    return spdlog::level::critical;
+			}
+			return spdlog::level::trace;
+		}
+
 	}
 
 	void Log::Initialize()
@@ -40,70 +53,46 @@ namespace Dingo
 		logSinks[0]->set_pattern("%^[%T] %n: %v%$");
 		logSinks[1]->set_pattern("[%T] [%l] %n: %v");
 
+		// flush_on(trace) forced a synchronous file flush on EVERY log call — a
+		// guaranteed I/O stall if anything ever logs per frame. Warnings and above
+		// still flush immediately (crash diagnosis); lower levels rely on spdlog's
+		// buffering and the flush in Shutdown.
 		s_EngineLogger = std::make_shared<spdlog::logger>("Dingo", begin(logSinks), end(logSinks));
 		spdlog::register_logger(s_EngineLogger);
 		s_EngineLogger->set_level(spdlog::level::trace);
-		s_EngineLogger->flush_on(spdlog::level::trace);
+		s_EngineLogger->flush_on(spdlog::level::warn);
 
 		s_ClientLogger = std::make_shared<spdlog::logger>("Game", begin(logSinks), end(logSinks));
 		spdlog::register_logger(s_ClientLogger);
 		s_ClientLogger->set_level(spdlog::level::trace);
-		s_ClientLogger->flush_on(spdlog::level::trace);
+		s_ClientLogger->flush_on(spdlog::level::warn);
 	}
 
 	void Log::Shutdown()
 	{
+		if (s_EngineLogger) s_EngineLogger->flush();
+		if (s_ClientLogger) s_ClientLogger->flush();
 		s_ClientLogger.reset();
 		s_EngineLogger.reset();
 		spdlog::drop_all();
 	}
 
+	bool Log::ShouldLog(Log::Type type, Log::Level level)
+	{
+		auto logger = Utils::GetLogger(type);
+		return logger && logger->should_log(Utils::ToSpdlogLevel(level));
+	}
+
 	void Log::PrintInternal(Log::Type type, Log::Level level, const std::string_view formatted)
 	{
 		auto logger = Utils::GetLogger(type);
-
-		switch (level)
-		{
-			case Dingo::Log::Level::Trace:
-				logger->trace(formatted);
-				break;
-			case Dingo::Log::Level::Info:
-				logger->info(formatted);
-				break;
-			case Dingo::Log::Level::Warn:
-				logger->warn(formatted);
-				break;
-			case Dingo::Log::Level::Error:
-				logger->error(formatted);
-				break;
-			case Dingo::Log::Level::Fatal:
-				logger->critical(formatted);
-				break;
-		}
+		logger->log(Utils::ToSpdlogLevel(level), formatted);
 	}
 
 	void Log::PrintInternalTag(Log::Type type, Log::Level level, const std::string_view tag, const std::string_view formatted)
 	{
 		auto logger = Utils::GetLogger(type);
-
-		switch (level)
-		{
-			case Dingo::Log::Level::Trace:
-				logger->trace("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Info:
-				logger->info("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Warn:
-				logger->warn("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Error:
-				logger->error("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Fatal:
-				logger->critical("[{}] {}", tag, formatted);
-				break;
-		}
+		logger->log(Utils::ToSpdlogLevel(level), "[{}] {}", tag, formatted);
 	}
 
 }
