@@ -5,9 +5,9 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 ## Features
 
 - **Rendering** — Vulkan-backed graphics pipeline via NVRHI; batched 2D renderer (quads, circles, MSDF text)
-- **Windowing & Input** — GLFW window management with a frame-accurate keyboard/mouse input system
+- **Windowing & Input** — GLFW window management with a frame-coherent keyboard/mouse/gamepad input system (edge + held queries, mouse scroll/delta, up to 16 controllers with deadzone-filtered sticks)
 - **Layer System** — Stack-based middleware architecture for organizing application logic
-- **Event System** — Type-safe, decoupled event dispatcher (window, keyboard, mouse)
+- **Event System** — Type-safe, decoupled event dispatcher (window, keyboard, mouse, gamepad)
 - **ImGui Integration** — Built-in debug/overlay UI layer with docking and viewport support
 - **Font Rendering** — MSDF atlas-based text rendering via `msdf-atlas-gen`
 - **Asset Utilities** — Texture, shader, and buffer creation with a fluent params/builder API
