@@ -31,6 +31,9 @@ namespace Dingo
 
 	namespace
 	{
+		using Internal::ToJolt;
+		using Internal::ToGlm;
+
 		// Route Jolt's internal trace/assert output to the engine log so misuse is
 		// visible instead of silently aborting.
 		void JoltTrace(const char* format, ...)
@@ -63,10 +66,6 @@ namespace Dingo
 			return JPH::EMotionType::Static;
 		}
 
-		inline JPH::Vec3 ToJolt(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
-		inline glm::vec3 ToGlm(JPH::Vec3Arg v) { return { v.GetX(), v.GetY(), v.GetZ() }; }
-		inline JPH::Quat ToJolt(const glm::quat& q) { return JPH::Quat(q.x, q.y, q.z, q.w); } // Jolt is (x, y, z, w)
-		inline glm::quat ToGlm(JPH::QuatArg q) { return glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ()); } // glm is (w, x, y, z)
 		inline JPH::BodyID ToBodyId(PhysicsBodyId3D body) { return JPH::BodyID(body); }
 
 		// Jolt's allocator/factory/type registration is process-global; ref-count it
@@ -274,13 +273,16 @@ namespace Dingo
 	{
 		if (!m_Data || body == k_InvalidBody3D || deltaTime <= 0.0f)
 			return;
-		// Jolt's MoveKinematic on a non-kinematic body misbehaves instead of no-oping.
 		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+#if !DE_RELEASE
+		// Jolt's MoveKinematic on a non-kinematic body misbehaves instead of no-oping.
+		// Guard is compiled out in Release: it costs a body lookup on every call.
 		if (bodyInterface.GetMotionType(ToBodyId(body)) != JPH::EMotionType::Kinematic)
 		{
 			DE_CORE_WARN("MoveKinematic called on non-kinematic body {}; ignored.", body);
 			return;
 		}
+#endif
 		bodyInterface.MoveKinematic(ToBodyId(body), ToJolt(targetPosition), ToJolt(targetRotation), deltaTime);
 	}
 

@@ -23,11 +23,20 @@
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include <algorithm>
 #include <thread>
 
 namespace Dingo::Internal
 {
+
+	// Shared by JoltPhysics3D.cpp and JoltCharacterController3D.cpp.
+	inline JPH::Vec3 ToJolt(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
+	inline glm::vec3 ToGlm(JPH::Vec3Arg v) { return { v.GetX(), v.GetY(), v.GetZ() }; }
+	inline JPH::Quat ToJolt(const glm::quat& q) { return JPH::Quat(q.x, q.y, q.z, q.w); } // Jolt is (x, y, z, w)
+	inline glm::quat ToGlm(JPH::QuatArg q) { return glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ()); } // glm is (w, x, y, z)
 
 	// Two object layers: static (non-moving) and dynamic/kinematic (moving). This is
 	// the standard minimal Jolt setup from its HelloWorld sample.

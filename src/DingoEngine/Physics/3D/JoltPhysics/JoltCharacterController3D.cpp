@@ -13,14 +13,6 @@
 namespace Dingo::Internal
 {
 
-	namespace
-	{
-		inline JPH::Vec3 ToJolt(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
-		inline glm::vec3 ToGlm(JPH::Vec3Arg v) { return { v.GetX(), v.GetY(), v.GetZ() }; }
-		inline JPH::Quat ToJolt(const glm::quat& q) { return JPH::Quat(q.x, q.y, q.z, q.w); }
-		inline glm::quat ToGlm(JPH::QuatArg q) { return glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ()); }
-	}
-
 	JoltCharacterController3D::JoltCharacterController3D(JoltPhysics3DData* world, const CharacterControllerParams3D& params)
 		: m_World(world), m_Up(ToJolt(glm::normalize(params.Up))), m_StepHeight(params.StepHeight)
 	{

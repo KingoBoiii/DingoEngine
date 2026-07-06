@@ -88,7 +88,7 @@ namespace Dingo
 		// Transform/2D components CreateEntity added are overwritten via emplace_or_replace.
 		//
 		// MAINTENANCE: a new component type in Components.h must be added to this list to
-		// be duplicated — and, if it carries a live backend handle, reset below too.
+		// be duplicated — and, if it carries a live backend handle, to ResetRuntimeHandles too.
 		CopyComponentIfExists<TransformComponent>(registry, dst, src);
 		CopyComponentIfExists<SpriteRendererComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleRendererComponent>(registry, dst, src);
@@ -110,18 +110,7 @@ namespace Dingo
 
 		// Reset the copied live physics handles so the clone never aliases — and
 		// DestroyEntity never double-frees — the source's body/shapes/controller (see Components.h).
-		if (registry.all_of<RigidBody2DComponent>(dst))
-			registry.get<RigidBody2DComponent>(dst).RuntimeBody = 0;
-		if (registry.all_of<BoxCollider2DComponent>(dst))
-			registry.get<BoxCollider2DComponent>(dst).RuntimeShape = 0;
-		if (registry.all_of<CircleCollider2DComponent>(dst))
-			registry.get<CircleCollider2DComponent>(dst).RuntimeShape = 0;
-		if (registry.all_of<RigidBody3DComponent>(dst))
-			registry.get<RigidBody3DComponent>(dst).RuntimeBody = k_InvalidBody3D;
-		if (registry.all_of<CharacterController3DComponent>(dst))
-			registry.get<CharacterController3DComponent>(dst).RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex;
-		if (registry.all_of<AudioSourceComponent>(dst))
-			registry.get<AudioSourceComponent>(dst).RuntimeSound = k_InvalidSound;
+		ResetRuntimeHandles(static_cast<std::uint32_t>(dst));
 
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
@@ -129,6 +118,26 @@ namespace Dingo
 			CreateRigidBody(clone);
 
 		return clone;
+	}
+
+	// MAINTENANCE: new handle-carrying components join here.
+	void Scene::ResetRuntimeHandles(std::uint32_t handle)
+	{
+		entt::entity e = static_cast<entt::entity>(handle);
+		entt::registry& registry = m_Data->Registry;
+
+		if (registry.all_of<RigidBody2DComponent>(e))
+			registry.get<RigidBody2DComponent>(e).RuntimeBody = 0;
+		if (registry.all_of<BoxCollider2DComponent>(e))
+			registry.get<BoxCollider2DComponent>(e).RuntimeShape = 0;
+		if (registry.all_of<CircleCollider2DComponent>(e))
+			registry.get<CircleCollider2DComponent>(e).RuntimeShape = 0;
+		if (registry.all_of<RigidBody3DComponent>(e))
+			registry.get<RigidBody3DComponent>(e).RuntimeBody = k_InvalidBody3D;
+		if (registry.all_of<CharacterController3DComponent>(e))
+			registry.get<CharacterController3DComponent>(e).RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex;
+		if (registry.all_of<AudioSourceComponent>(e))
+			registry.get<AudioSourceComponent>(e).RuntimeSound = k_InvalidSound;
 	}
 
 	void Scene::DestroyEntity(Entity entity)
@@ -185,12 +194,7 @@ namespace Dingo
 
 		// Stop the entity's live sound so it doesn't keep playing after its entity
 		// (and transform) is gone.
-		if (m_Data->Registry.all_of<AudioSourceComponent>(e))
-		{
-			AudioSoundId sound = m_Data->Registry.get<AudioSourceComponent>(e).RuntimeSound;
-			if (sound != k_InvalidSound)
-				Application::Get().GetAudioEngine().Stop(sound);
-		}
+		StopAudioSource(Wrap(handle));
 
 		m_Data->Registry.destroy(e);
 	}
@@ -365,18 +369,21 @@ namespace Dingo
 
 			if (listenerHandle != entt::null)
 			{
-				audio.SetListenerPosition(GetAudioPosition(static_cast<std::uint32_t>(listenerHandle)));
-
-				// Orientation only comes from a 3D transform (same convention as the
-				// perspective camera view in GetCameraViewProjection: the entity's local
-				// -Z is forward, +Y is up). A 2D listener has no rotation to derive this
-				// from, so it keeps whatever orientation the engine already has.
-				if (m_Data->Registry.all_of<Transform3DComponent>(listenerHandle))
+				// Single lookup serves both position and orientation below.
+				if (const Transform3DComponent* transform3D = m_Data->Registry.try_get<Transform3DComponent>(listenerHandle))
 				{
-					const glm::quat& rotation = m_Data->Registry.get<Transform3DComponent>(listenerHandle).Rotation;
-					glm::vec3 forward = rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-					glm::vec3 up = rotation * glm::vec3(0.0f, 1.0f, 0.0f);
-					audio.SetListenerOrientation(forward, up);
+					audio.SetListenerPosition(transform3D->Position);
+
+					// Orientation only comes from a 3D transform (same convention as the
+					// perspective camera view in GetCameraViewProjection: the entity's local
+					// -Z is forward, +Y is up). A 2D listener has no rotation to derive this
+					// from, so it keeps whatever orientation the engine already has.
+					audio.SetListenerOrientation(transform3D->Forward(), transform3D->Up());
+				}
+				else
+				{
+					const TransformComponent& transform = m_Data->Registry.get<TransformComponent>(listenerHandle);
+					audio.SetListenerPosition(glm::vec3(transform.Position.x, transform.Position.y, 0.0f));
 				}
 			}
 		}
@@ -597,30 +604,16 @@ namespace Dingo
 
 	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
 	{
-		// Same "prefer Primary, else first" search SceneRenderer uses, narrowed to
-		// perspective cameras — unprojecting through an orthographic camera's parallel
-		// projection would not produce a meaningful converging ray.
-		entt::entity perspectiveHandle = entt::null;
+		Entity perspective, orthographic;
+		bool hasPerspective = false, hasOrthographic = false;
+		GetRenderCameras(perspective, hasPerspective, orthographic, hasOrthographic);
 
-		auto view = m_Data->Registry.view<CameraComponent>();
-		for (entt::entity handle : view)
-		{
-			const CameraComponent& camera = view.get<CameraComponent>(handle);
-			if (camera.Type != CameraComponent::ProjectionType::Perspective)
-				continue;
-
-			if (perspectiveHandle == entt::null)
-				perspectiveHandle = handle;
-
-			if (camera.Primary)
-			{
-				perspectiveHandle = handle;
-				break;
-			}
-		}
-
-		if (perspectiveHandle == entt::null || viewportSize.y <= 0.0f)
+		// Unprojecting through an orthographic camera's parallel projection would not
+		// produce a meaningful converging ray, so only a perspective camera qualifies.
+		if (!hasPerspective || viewportSize.y <= 0.0f)
 			return Ray();
+
+		entt::entity perspectiveHandle = static_cast<entt::entity>(perspective.m_Handle);
 
 		const float aspect = viewportSize.x / viewportSize.y;
 		const CameraComponent& camera = m_Data->Registry.get<CameraComponent>(perspectiveHandle);
@@ -985,8 +978,8 @@ namespace Dingo
 	glm::vec3 Scene::GetAudioPosition(std::uint32_t handle) const
 	{
 		entt::entity e = static_cast<entt::entity>(handle);
-		if (m_Data->Registry.all_of<Transform3DComponent>(e))
-			return m_Data->Registry.get<Transform3DComponent>(e).Position;
+		if (const Transform3DComponent* transform3D = m_Data->Registry.try_get<Transform3DComponent>(e))
+			return transform3D->Position;
 
 		const TransformComponent& transform = m_Data->Registry.get<TransformComponent>(e);
 		return glm::vec3(transform.Position.x, transform.Position.y, 0.0f);

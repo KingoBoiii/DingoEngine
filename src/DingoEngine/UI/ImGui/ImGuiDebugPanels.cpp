@@ -35,6 +35,15 @@ namespace Dingo::UI
 			ImGui::SameLine(140.0f);
 			ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay.c_str());
 		}
+
+		// "X.X FPS   X.XX ms/frame" from ImGui's own frame timing, shared by
+		// FrameTimingSection and RendererStatsWindow's performance block.
+		void FpsLine()
+		{
+			const ImGuiIO& io = ImGui::GetIO();
+			const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
+			ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
+		}
 	}
 
 	void RendererStatsWindow(bool* open)
@@ -63,7 +72,7 @@ namespace Dingo::UI
 
 		ImGui::TextUnformatted("Performance");
 		ImGui::Separator();
-		ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
+		FpsLine();
 
 		const std::string overlay = std::format("avg {:.2f} ms", average);
 		// Fixed 0..33.34 ms axis: the top of the graph is the 30 FPS line, so it reads
@@ -155,12 +164,9 @@ namespace Dingo::UI
 
 	void FrameTimingSection()
 	{
-		const ImGuiIO& io = ImGui::GetIO();
-		const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
-
 		ImGui::TextUnformatted("Frame Timing");
 		ImGui::Separator();
-		ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
+		FpsLine();
 	}
 
 	void AudioStatsSection()

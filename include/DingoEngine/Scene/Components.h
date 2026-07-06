@@ -259,6 +259,10 @@ namespace Dingo
 		{
 			Rotation = glm::quat(glm::radians(eulerDegrees));
 		}
+
+		// Engine-wide camera/listener convention: local -Z is forward, +Y is up.
+		glm::vec3 Forward() const { return Rotation * glm::vec3(0.0f, 0.0f, -1.0f); }
+		glm::vec3 Up() const { return Rotation * glm::vec3(0.0f, 1.0f, 0.0f); }
 	};
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by

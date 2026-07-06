@@ -148,8 +148,10 @@ namespace Dingo
 		// binds it (CommandList::UploadBuffer, the same path material UBOs use).
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 
-		// Refresh the default material's binding-1 UBO from its current emissive params,
-		// in case SetEmissiveColor/SetEmissiveStrength changed since the last frame.
+		// The default material's binding-1 UBO is a VOLATILE constant buffer: NVRHI
+		// requires a write into every frame that binds it, so this upload must be
+		// unconditional — do NOT dirty-gate it (skipping the write on unchanged frames
+		// floods "binding volatile constant buffer before writing" errors).
 		MaterialData materialData;
 		materialData.EmissiveColor = glm::vec4(m_Material->GetEmissiveColor(), 0.0f);
 		materialData.EmissiveStrength = glm::vec4(m_Material->GetEmissiveStrength(), 0.0f, 0.0f, 0.0f);

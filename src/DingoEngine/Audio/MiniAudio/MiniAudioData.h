@@ -26,12 +26,12 @@ namespace Dingo::Internal
 	// still points at this index won't match and control the newer occupant. The 16-bit
 	// counter wraps after 65536 recycles of ONE slot, so a handle held across that many
 	// replays could alias — accepted; widen AudioSoundId's packing if it ever matters.
+	// Liveness is Sound != nullptr — there is no separate Active flag to keep in sync.
 	struct SoundSlot
 	{
-		ma_sound* Sound = nullptr;              // heap ma_sound, owned by this slot while Active
+		ma_sound* Sound = nullptr;              // heap ma_sound, owned by this slot while live
 		std::shared_ptr<AudioClip> Clip;        // keeps the clip's decoded data alive while playing
 		std::uint16_t Generation = 0;
-		bool Active = false;
 	};
 
 	struct MiniAudioData

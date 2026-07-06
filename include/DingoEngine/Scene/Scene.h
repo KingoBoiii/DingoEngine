@@ -227,11 +227,11 @@ namespace Dingo
 		// active scene) once per frame, right after OnUpdate, and clears it whether or
 		// not it acts on it. Cleared on OnStart so a stale request from a previous run
 		// can never fire when the scene is reactivated later.
-		void RequestSceneTransition(const std::string& name) { m_PendingTransition = name; m_HasPendingTransition = true; }
+		void RequestSceneTransition(const std::string& name) { m_PendingTransition = name; }
 
-		bool HasPendingSceneTransition() const { return m_HasPendingTransition; }
+		bool HasPendingSceneTransition() const { return !m_PendingTransition.empty(); }
 		const std::string& GetPendingSceneTransition() const { return m_PendingTransition; }
-		void ClearPendingSceneTransition() { m_HasPendingTransition = false; m_PendingTransition.clear(); }
+		void ClearPendingSceneTransition() { m_PendingTransition.clear(); }
 
 	private:
 		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
@@ -256,6 +256,11 @@ namespace Dingo
 		// No-op if the 3D world isn't live or the entity has no CharacterController3DComponent.
 		void CreateCharacterControllerForEntity(std::uint32_t handle);
 
+		// Resets every live backend handle on an entity to its "none" sentinel, without
+		// touching the backend itself. Used by DuplicateEntity so a clone never aliases
+		// the source's body/shape/controller/sound.
+		void ResetRuntimeHandles(std::uint32_t handle);
+
 		// World-space position for an entity, used to seed/update a spatialized
 		// AudioSourceComponent: Transform3DComponent if present, else the 2D
 		// TransformComponent's Position at z = 0. Every entity has a TransformComponent,
@@ -276,7 +281,6 @@ namespace Dingo
 		glm::vec3 m_Gravity3D{ 0.0f, -9.81f, 0.0f };
 
 		std::string m_PendingTransition;
-		bool m_HasPendingTransition = false;
 
 		friend class Entity;
 		friend class SceneManager;

@@ -29,6 +29,19 @@ namespace Dingo
 			return nullptr;
 		}
 
+		static spdlog::level::level_enum ToSpdlogLevel(Log::Level level)
+		{
+			switch (level)
+			{
+				case Log::Level::Trace:    return spdlog::level::trace;
+				case Log::Level::Info:     return spdlog::level::info;
+				case Log::Level::Warn:     return spdlog::level::warn;
+				case Log::Level::Error:    return spdlog::level::err;
+				case Log::Level::Fatal:    return spdlog::level::critical;
+			}
+			return spdlog::level::trace;
+		}
+
 	}
 
 	void Log::Initialize()
@@ -66,61 +79,20 @@ namespace Dingo
 
 	bool Log::ShouldLog(Log::Type type, Log::Level level)
 	{
-		static constexpr spdlog::level::level_enum s_LevelMap[] = {
-			spdlog::level::trace, spdlog::level::info, spdlog::level::warn,
-			spdlog::level::err, spdlog::level::critical,
-		};
-
 		auto logger = Utils::GetLogger(type);
-		return logger && logger->should_log(s_LevelMap[static_cast<uint8_t>(level)]);
+		return logger && logger->should_log(Utils::ToSpdlogLevel(level));
 	}
 
 	void Log::PrintInternal(Log::Type type, Log::Level level, const std::string_view formatted)
 	{
 		auto logger = Utils::GetLogger(type);
-
-		switch (level)
-		{
-			case Dingo::Log::Level::Trace:
-				logger->trace(formatted);
-				break;
-			case Dingo::Log::Level::Info:
-				logger->info(formatted);
-				break;
-			case Dingo::Log::Level::Warn:
-				logger->warn(formatted);
-				break;
-			case Dingo::Log::Level::Error:
-				logger->error(formatted);
-				break;
-			case Dingo::Log::Level::Fatal:
-				logger->critical(formatted);
-				break;
-		}
+		logger->log(Utils::ToSpdlogLevel(level), formatted);
 	}
 
 	void Log::PrintInternalTag(Log::Type type, Log::Level level, const std::string_view tag, const std::string_view formatted)
 	{
 		auto logger = Utils::GetLogger(type);
-
-		switch (level)
-		{
-			case Dingo::Log::Level::Trace:
-				logger->trace("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Info:
-				logger->info("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Warn:
-				logger->warn("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Error:
-				logger->error("[{}] {}", tag, formatted);
-				break;
-			case Dingo::Log::Level::Fatal:
-				logger->critical("[{}] {}", tag, formatted);
-				break;
-		}
+		logger->log(Utils::ToSpdlogLevel(level), "[{}] {}", tag, formatted);
 	}
 
 }

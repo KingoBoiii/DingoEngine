@@ -20,9 +20,10 @@ namespace Dingo
 	namespace
 	{
 		// AudioSoundId layout: high 16 bits = generation, low 16 bits = slot index.
-		// A handle is only valid if the slot is Active AND its generation still matches,
-		// so a stale handle (its sound finished/was reaped) can never control the newer
-		// sound that reused the slot. This mirrors Jolt's index+sequence body ids.
+		// A handle is only valid if the slot is live (Sound != nullptr) AND its generation
+		// still matches, so a stale handle (its sound finished/was reaped) can never
+		// control the newer sound that reused the slot. This mirrors Jolt's index+sequence
+		// body ids.
 		constexpr std::uint32_t k_IndexBits = 16;
 		constexpr std::uint32_t k_IndexMask = (1u << k_IndexBits) - 1u;
 
@@ -83,17 +84,12 @@ namespace Dingo
 		if (!m_Data)
 			return;
 
-		// Uninit every live sound before the engine so its mixer graph is clean.
+		// Uninit every live sound before the engine so its mixer graph is clean. The
+		// generation bump ReleaseSlot does is harmless here — the engine is going away.
 		for (Internal::SoundSlot& slot : m_Data->Slots)
 		{
-			if (slot.Active && slot.Sound)
-			{
-				ma_sound_uninit(slot.Sound);
-				delete slot.Sound;
-			}
-			slot.Sound = nullptr;
-			slot.Active = false;
-			slot.Clip.reset(); // release our reference; clip frees its template on last ref
+			if (slot.Sound)
+				ReleaseSlot(slot);
 		}
 		m_Data->Slots.clear();
 
@@ -119,18 +115,11 @@ namespace Dingo
 		// until the owner explicitly Stop()s them.
 		for (Internal::SoundSlot& slot : m_Data->Slots)
 		{
-			if (!slot.Active || !slot.Sound)
+			if (!slot.Sound)
 				continue;
 
 			if (ma_sound_at_end(slot.Sound))
-			{
-				ma_sound_uninit(slot.Sound);
-				delete slot.Sound;
-				slot.Sound = nullptr;
-				slot.Clip.reset();
-				slot.Active = false;
-				++slot.Generation;
-			}
+				ReleaseSlot(slot);
 		}
 	}
 
@@ -166,7 +155,7 @@ namespace Dingo
 	{
 		for (std::uint32_t i = 0; i < data.Slots.size(); ++i)
 		{
-			if (!data.Slots[i].Active)
+			if (!data.Slots[i].Sound)
 				return i;
 		}
 		data.Slots.emplace_back();
@@ -207,7 +196,6 @@ namespace Dingo
 		Internal::SoundSlot& slot = data.Slots[index];
 		slot.Sound = sound;
 		slot.Clip = clip; // keep the decoded data alive for this instance's lifetime
-		slot.Active = true;
 
 		ma_sound_start(sound);
 		return MakeId(index, slot.Generation);
@@ -240,83 +228,81 @@ namespace Dingo
 		StartInstance(*m_Data, clip, params);
 	}
 
-	// Resolves a handle to its live ma_sound, or nullptr if the handle is invalid/stale.
-	static ma_sound* Resolve(Internal::MiniAudioData* data, AudioSoundId id)
+	Internal::SoundSlot* MiniAudioEngine::ResolveSlot(AudioSoundId id) const
 	{
-		if (!data || id == k_InvalidSound)
+		if (!m_Data || id == k_InvalidSound)
 			return nullptr;
 
 		const std::uint32_t index = IndexOf(id);
-		if (index >= data->Slots.size())
+		if (index >= m_Data->Slots.size())
 			return nullptr;
-
-		Internal::SoundSlot& slot = data->Slots[index];
-		if (!slot.Active || slot.Generation != GenerationOf(id))
-			return nullptr;
-
-		return slot.Sound;
-	}
-
-	void MiniAudioEngine::Stop(AudioSoundId sound)
-	{
-		const std::uint32_t index = IndexOf(sound);
-		if (!m_Data || index >= m_Data->Slots.size())
-			return;
 
 		Internal::SoundSlot& slot = m_Data->Slots[index];
-		if (!slot.Active || slot.Generation != GenerationOf(sound) || !slot.Sound)
-			return;
+		if (!slot.Sound || slot.Generation != GenerationOf(id))
+			return nullptr;
 
-		// Full stop: tear the instance down and recycle the slot (bump generation so the
-		// handle goes stale). ma_sound_stop alone would only pause; Stop() is terminal.
+		return &slot;
+	}
+
+	// Tears down a live slot's ma_sound and bumps its generation so any handle pointing
+	// at it goes stale, ready for AcquireSlot to reuse.
+	void MiniAudioEngine::ReleaseSlot(Internal::SoundSlot& slot)
+	{
 		ma_sound_uninit(slot.Sound);
 		delete slot.Sound;
 		slot.Sound = nullptr;
 		slot.Clip.reset();
-		slot.Active = false;
 		++slot.Generation;
+	}
+
+	void MiniAudioEngine::Stop(AudioSoundId sound)
+	{
+		// Full stop: tear the instance down and recycle the slot. ma_sound_stop alone
+		// would only pause; Stop() is terminal.
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ReleaseSlot(*slot);
 	}
 
 	void MiniAudioEngine::Pause(AudioSoundId sound)
 	{
-		if (ma_sound* s = Resolve(m_Data, sound))
-			ma_sound_stop(s); // keeps the playback cursor; Resume() continues from here
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ma_sound_stop(slot->Sound); // keeps the playback cursor; Resume() continues from here
 	}
 
 	void MiniAudioEngine::Resume(AudioSoundId sound)
 	{
-		if (ma_sound* s = Resolve(m_Data, sound))
-			ma_sound_start(s);
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ma_sound_start(slot->Sound);
 	}
 
 	bool MiniAudioEngine::IsPlaying(AudioSoundId sound) const
 	{
-		ma_sound* s = Resolve(m_Data, sound);
-		return s ? ma_sound_is_playing(s) == MA_TRUE : false;
+		Internal::SoundSlot* slot = ResolveSlot(sound);
+		return slot ? ma_sound_is_playing(slot->Sound) == MA_TRUE : false;
 	}
 
 	void MiniAudioEngine::SetVolume(AudioSoundId sound, float volume)
 	{
-		if (ma_sound* s = Resolve(m_Data, sound))
-			ma_sound_set_volume(s, volume);
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ma_sound_set_volume(slot->Sound, volume);
 	}
 
 	void MiniAudioEngine::SetPitch(AudioSoundId sound, float pitch)
 	{
-		if (ma_sound* s = Resolve(m_Data, sound))
-			ma_sound_set_pitch(s, pitch);
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ma_sound_set_pitch(slot->Sound, pitch);
 	}
 
 	void MiniAudioEngine::SetLooping(AudioSoundId sound, bool looping)
 	{
-		if (ma_sound* s = Resolve(m_Data, sound))
-			ma_sound_set_looping(s, looping ? MA_TRUE : MA_FALSE);
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ma_sound_set_looping(slot->Sound, looping ? MA_TRUE : MA_FALSE);
 	}
 
 	void MiniAudioEngine::SetPosition(AudioSoundId sound, const glm::vec3& position)
 	{
-		if (ma_sound* s = Resolve(m_Data, sound))
-			ma_sound_set_position(s, position.x, position.y, position.z);
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ma_sound_set_position(slot->Sound, position.x, position.y, position.z);
 	}
 
 	void MiniAudioEngine::SetMasterVolume(float volume)
@@ -340,7 +326,7 @@ namespace Dingo
 		std::uint32_t count = 0;
 		for (const Internal::SoundSlot& slot : m_Data->Slots)
 		{
-			if (slot.Active)
+			if (slot.Sound)
 				++count;
 		}
 		return count;

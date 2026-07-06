@@ -5,7 +5,7 @@
 namespace Dingo
 {
 
-	namespace Internal { struct MiniAudioData; }
+	namespace Internal { struct MiniAudioData; struct SoundSlot; }
 
 	// miniaudio implementation of the AudioEngine interface. miniaudio is fully hidden
 	// behind an opaque pointer (Internal::MiniAudioData) — no miniaudio type appears in
@@ -44,6 +44,14 @@ namespace Dingo
 
 		void SetListenerPosition(const glm::vec3& position) override;
 		void SetListenerOrientation(const glm::vec3& forward, const glm::vec3& up) override;
+
+	private:
+		// Resolves a handle to its live slot, or nullptr if the handle is invalid/stale.
+		Internal::SoundSlot* ResolveSlot(AudioSoundId id) const;
+
+		// Tears down a live slot's ma_sound and bumps its generation so any handle
+		// pointing at it goes stale. Shared by Stop(), the Update() reap, and Shutdown().
+		void ReleaseSlot(Internal::SoundSlot& slot);
 
 	private:
 		Internal::MiniAudioData* m_Data = nullptr;
