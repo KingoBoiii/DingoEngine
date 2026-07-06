@@ -108,6 +108,9 @@ namespace Dingo
 		}
 
 		static Application& Get() { return *s_Instance; }
+		// False before construction and after teardown completes — check it from code
+		// that can run outside the application's lifetime (e.g. static-lifetime scenes).
+		static bool HasInstance() { return s_Instance != nullptr; }
 		static bool HasPendingRestart() { return s_PendingRestart; }
 		static GraphicsAPI ConsumePendingRestart();
 

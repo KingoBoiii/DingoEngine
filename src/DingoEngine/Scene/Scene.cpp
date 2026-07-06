@@ -698,6 +698,11 @@ namespace Dingo
 
 	void Scene::StopAudioSources()
 	{
+		// Reachable from ~Scene (via Clear) — a static-lifetime scene can be destroyed
+		// after the Application is gone, when there is no engine left to stop.
+		if (!Application::HasInstance())
+			return;
+
 		AudioEngine& audio = Application::Get().GetAudioEngine();
 		for (entt::entity handle : m_Data->Registry.view<AudioSourceComponent>())
 		{

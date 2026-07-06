@@ -24,9 +24,12 @@ namespace Dingo
 
 	Application::~Application()
 	{
-		s_Instance = nullptr;
-
+		// Destroy() tears down the layers, whose scenes reach back through
+		// Application::Get() (e.g. to stop their sounds) — the instance must stay
+		// valid until teardown has finished.
 		Destroy();
+
+		s_Instance = nullptr;
 	}
 
 	void Application::Initialize()
