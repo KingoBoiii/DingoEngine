@@ -39,6 +39,29 @@ namespace Dingo
 		RightTrigger = 5
 	};
 
+	// Hardware family, detected from the USB vendor id (name-based fallback).
+	// Third-party pads that imitate neither report Unknown.
+	enum class GamepadType : uint8_t
+	{
+		Unknown = 0,
+		Xbox,
+		PlayStation,
+		Nintendo,
+		Steam
+	};
+
+	inline std::ostream& operator<<(std::ostream& os, GamepadType type)
+	{
+		switch (type)
+		{
+			case GamepadType::Xbox:        return os << "Xbox";
+			case GamepadType::PlayStation: return os << "PlayStation";
+			case GamepadType::Nintendo:    return os << "Nintendo";
+			case GamepadType::Steam:       return os << "Steam";
+			default:                       return os << "Unknown";
+		}
+	}
+
 	inline constexpr uint32_t GamepadButtonCount = 15;
 	inline constexpr uint32_t GamepadAxisCount = 6;
 	inline constexpr uint32_t MaxGamepads = 16;

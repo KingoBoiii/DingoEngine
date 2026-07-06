@@ -40,21 +40,19 @@ namespace Dingo
 		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
-		// A script requests Menu->Game / Game->Win via RequestSceneTransition; the manager
-		// performs the switch inside OnUpdate. Rebuild the Game scene just before it is
-		// activated (Menu->Game or Win->...->Game) so every run starts from a fresh course.
-		if (Scene* activeScene = m_SceneManager.GetActiveScene())
-		{
-			if (activeScene->HasPendingSceneTransition()
-				&& activeScene->GetPendingSceneTransition() == "Game"
-				&& !m_GameScene->IsRunning())
-			{
-				RebuildGameScene();
-			}
-		}
+		Scene* activeBefore = m_SceneManager.GetActiveScene();
 
 		m_SceneManager.OnUpdate(deltaTime); // scripts + physics (+ any requested transition)
 		m_SceneManager.OnRender();          // 3D world + 2D HUD overlay
+
+		// The manager performs a requested transition inside its OnUpdate, in the same
+		// frame it was requested — a pending request is never observable out here. So
+		// rebuild the Game scene the moment we leave it (Game->Win): OnStop has already
+		// destroyed its physics world, and reusing the stale scene would dangle every
+		// script-cached handle and replay an already-collected course. Clearing now means
+		// the next Menu->Game activation starts from a fresh course.
+		if (activeBefore == m_GameScene && m_SceneManager.GetActiveScene() != m_GameScene)
+			RebuildGameScene();
 	}
 
 }

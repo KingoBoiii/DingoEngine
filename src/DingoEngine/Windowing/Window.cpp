@@ -19,7 +19,9 @@ namespace Dingo
 	}
 
 	// The joystick callback is global (not tied to a window), so the primary
-	// window's event sink is stashed here for it.
+	// window's event sink is stashed here for it. Assumes a single Window whose
+	// Shutdown() runs before destruction (a second Window would clobber this,
+	// and skipping Shutdown() would leave GLFW a dangling callback).
 	static const Window::EventCallbackFn* s_JoystickEventCallback = nullptr;
 
 	Window::Window(const WindowParams& params)

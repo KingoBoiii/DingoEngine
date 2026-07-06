@@ -3,7 +3,10 @@
 
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <array>
+#include <cctype>
+#include <cstring>
 
 namespace Dingo
 {
@@ -37,6 +40,7 @@ namespace Dingo
 		std::array<GamepadState, MaxGamepads> s_CurrentGamepads{};
 		std::array<GamepadState, MaxGamepads> s_PreviousGamepads{};
 		std::array<std::string, MaxGamepads> s_GamepadNames{};
+		std::array<GamepadType, MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
 
 		bool ValidKey(KeyCode keycode) { return static_cast<size_t>(keycode) < MaxKeys; }
@@ -59,6 +63,35 @@ namespace Dingo
 				return glm::vec2(0.0f);
 			const float rescaled = std::min((length - deadzone) / (1.0f - deadzone), 1.0f);
 			return (stick / length) * rescaled;
+		}
+
+		GamepadType ClassifyGamepad(int jid, const std::string& name)
+		{
+			// SDL-style GUID: hex string, bytes 4-5 = USB vendor id, little-endian.
+			const char* guid = glfwGetJoystickGUID(jid);
+			if (guid && std::strlen(guid) >= 12)
+			{
+				const std::string vendor(guid + 8, guid + 12);
+				if (vendor == "5e04") return GamepadType::Xbox;        // Microsoft 0x045e
+				if (vendor == "4c05") return GamepadType::PlayStation; // Sony      0x054c
+				if (vendor == "7e05") return GamepadType::Nintendo;    // Nintendo  0x057e
+				if (vendor == "de28") return GamepadType::Steam;       // Valve     0x28de
+			}
+
+			std::string lower = name;
+			std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			if (lower.find("xbox") != std::string::npos || lower.find("x-box") != std::string::npos || lower.find("360") != std::string::npos)
+				return GamepadType::Xbox;
+			if (lower.find("playstation") != std::string::npos || lower.find("dualshock") != std::string::npos
+				|| lower.find("dualsense") != std::string::npos || lower.find("sony") != std::string::npos
+				|| lower.find("ps3") != std::string::npos || lower.find("ps4") != std::string::npos || lower.find("ps5") != std::string::npos)
+				return GamepadType::PlayStation;
+			if (lower.find("nintendo") != std::string::npos || lower.find("switch") != std::string::npos || lower.find("joy-con") != std::string::npos)
+				return GamepadType::Nintendo;
+			if (lower.find("steam") != std::string::npos)
+				return GamepadType::Steam;
+
+			return GamepadType::Unknown;
 		}
 	}
 
@@ -85,6 +118,7 @@ namespace Dingo
 			{
 				const char* name = glfwGetGamepadName(jid);
 				s_GamepadNames[jid] = name ? name : "Unknown Gamepad";
+				s_GamepadTypes[jid] = ClassifyGamepad(jid, s_GamepadNames[jid]);
 			}
 
 			state.Connected = true;
@@ -161,6 +195,13 @@ namespace Dingo
 		if (!IsGamepadConnected(gamepad))
 			return s_Empty;
 		return s_GamepadNames[gamepad];
+	}
+
+	GamepadType Input::GetGamepadType(uint32_t gamepad)
+	{
+		if (!IsGamepadConnected(gamepad))
+			return GamepadType::Unknown;
+		return s_GamepadTypes[gamepad];
 	}
 
 	bool Input::IsGamepadButtonPressed(GamepadButton button, uint32_t gamepad)

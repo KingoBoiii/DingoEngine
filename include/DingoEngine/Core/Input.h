@@ -53,6 +53,8 @@ namespace Dingo
 
 		static bool IsGamepadConnected(uint32_t gamepad = 0);
 		static const std::string& GetGamepadName(uint32_t gamepad = 0);
+		// Xbox / PlayStation / Nintendo / Steam, for e.g. button-prompt glyphs.
+		static GamepadType GetGamepadType(uint32_t gamepad = 0);
 
 		static bool IsGamepadButtonPressed(GamepadButton button, uint32_t gamepad = 0);
 		static bool IsGamepadButtonDown(GamepadButton button, uint32_t gamepad = 0);
