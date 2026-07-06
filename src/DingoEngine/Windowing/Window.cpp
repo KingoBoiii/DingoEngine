@@ -6,6 +6,7 @@
 #include "DingoEngine/Events/WindowEvents.h"
 #include "DingoEngine/Events/KeyEvents.h"
 #include "DingoEngine/Events/MouseEvents.h"
+#include "DingoEngine/Events/GamepadEvents.h"
 
 #include <glfw/glfw3.h>
 
@@ -16,6 +17,10 @@ namespace Dingo
 	{
 		DE_CORE_ERROR_TAG("GLFW", "GLFW Error ({0}): {1}", error, description);
 	}
+
+	// The joystick callback is global (not tied to a window), so the primary
+	// window's event sink is stashed here for it.
+	static const Window::EventCallbackFn* s_JoystickEventCallback = nullptr;
 
 	Window::Window(const WindowParams& params)
 		: m_Params(params), m_Data({ .Width = m_Params.Width, .Height = m_Params.Height })
@@ -39,11 +44,18 @@ namespace Dingo
 
 		glfwSetWindowUserPointer(m_WindowHandle, &m_Data);
 
+		double cursorX = 0.0, cursorY = 0.0;
+		glfwGetCursorPos(m_WindowHandle, &cursorX, &cursorY);
+		Input::SeedMousePosition(static_cast<float>(cursorX), static_cast<float>(cursorY));
+
 		SetupGLFWCallbacks();
 	}
 
 	void Window::Shutdown()
 	{
+		glfwSetJoystickCallback(nullptr);
+		s_JoystickEventCallback = nullptr;
+
 		glfwDestroyWindow(m_WindowHandle);
 		glfwTerminate();
 	}
@@ -78,9 +90,12 @@ namespace Dingo
 
 		glfwSetKeyCallback(m_WindowHandle, [](GLFWwindow* window, int key, int scancode, int action, int mods)
 		{
+			if (key < 0 || key > GLFW_KEY_LAST) // GLFW_KEY_UNKNOWN
+				return;
+
 			KeyCode keyCode = static_cast<KeyCode>(key);
 
-			Input::UpdateKeyStates(keyCode, scancode, action, mods);
+			Input::UpdateKeyState(keyCode, action != GLFW_RELEASE);
 
 			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
 
@@ -111,7 +126,7 @@ namespace Dingo
 		{
 			MouseButton mouseButton = static_cast<MouseButton>(button);
 
-			Input::UpdateMouseButtonStates(mouseButton, action, mods);
+			Input::UpdateMouseButtonState(mouseButton, action == GLFW_PRESS);
 
 			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
 
@@ -129,6 +144,44 @@ namespace Dingo
 					windowData.EventCallback(mouseButtonReleasedEvent);
 					break;
 				}
+			}
+		});
+
+		glfwSetCursorPosCallback(m_WindowHandle, [](GLFWwindow* window, double x, double y)
+		{
+			Input::UpdateMousePosition(static_cast<float>(x), static_cast<float>(y));
+
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+
+			MouseMovedEvent mouseMovedEvent(static_cast<float>(x), static_cast<float>(y));
+			windowData.EventCallback(mouseMovedEvent);
+		});
+
+		glfwSetScrollCallback(m_WindowHandle, [](GLFWwindow* window, double xOffset, double yOffset)
+		{
+			Input::AccumulateMouseScroll(static_cast<float>(xOffset), static_cast<float>(yOffset));
+
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+
+			MouseScrolledEvent mouseScrolledEvent(static_cast<float>(xOffset), static_cast<float>(yOffset));
+			windowData.EventCallback(mouseScrolledEvent);
+		});
+
+		s_JoystickEventCallback = &m_Data.EventCallback;
+		glfwSetJoystickCallback([](int jid, int event)
+		{
+			if (!s_JoystickEventCallback || !(*s_JoystickEventCallback))
+				return;
+
+			if (event == GLFW_CONNECTED && glfwJoystickIsGamepad(jid))
+			{
+				GamepadConnectedEvent connectedEvent(static_cast<uint32_t>(jid));
+				(*s_JoystickEventCallback)(connectedEvent);
+			}
+			else if (event == GLFW_DISCONNECTED)
+			{
+				GamepadDisconnectedEvent disconnectedEvent(static_cast<uint32_t>(jid));
+				(*s_JoystickEventCallback)(disconnectedEvent);
 			}
 		});
 	}

@@ -89,14 +89,14 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
+		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
 		const std::string active = m_SceneManager.GetActiveSceneName();
 
 		if (active == "Menu")
 		{
-			if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter) || Input::IsMouseButtonDown(MouseButton::Left))
+			if (Input::IsKeyPressed(Key::Space) || Input::IsKeyPressed(Key::Enter) || Input::IsMouseButtonPressed(MouseButton::Left))
 				StartGame();
 		}
 		else if (active == "Game")
@@ -105,7 +105,7 @@ namespace Dingo
 		}
 		else if (active == "GameOver")
 		{
-			if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter) || Input::IsMouseButtonDown(MouseButton::Left))
+			if (Input::IsKeyPressed(Key::Space) || Input::IsKeyPressed(Key::Enter) || Input::IsMouseButtonPressed(MouseButton::Left))
 				m_SceneManager.SetActiveScene("Menu");
 		}
 
@@ -423,7 +423,7 @@ namespace Dingo
 		const glm::vec2 mouse = ScreenToWorld(Input::GetMousePosition());
 
 		// A drag begins only if the press starts on/near the resting bird.
-		if (!m_Dragging && Input::IsMouseButtonDown(MouseButton::Left))
+		if (!m_Dragging && Input::IsMouseButtonPressed(MouseButton::Left))
 		{
 			if (glm::distance(mouse, m_SlingPos) <= GRAB_RADIUS)
 				m_Dragging = true;
@@ -459,7 +459,7 @@ namespace Dingo
 		m_LaunchVelocity = (pullLength > 0.0001f) ? (-pull / pullLength) * speed : glm::vec2(0.0f);
 
 		// Release the button to fire. A tiny pull just cancels and resets the bird.
-		if (!Input::IsMouseButtonPressed(MouseButton::Left))
+		if (!Input::IsMouseButtonDown(MouseButton::Left))
 		{
 			if (pullLength >= PULL_DEADZONE)
 			{

@@ -23,10 +23,10 @@ namespace Dingo
 
 	void DungeonLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
+		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
-		if (Input::IsKeyDown(Key::R))
+		if (Input::IsKeyPressed(Key::R))
 			RestartScene();
 
 		m_SceneManager.OnUpdate(deltaTime); // scripts + physics

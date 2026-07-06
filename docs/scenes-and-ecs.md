@@ -339,9 +339,9 @@ class GameLayer : public Layer
 
         const std::string active = m_Scenes.GetActiveSceneName();
         // Each switch auto-stops the outgoing scene and starts the incoming one.
-        if (active == "Menu" && Input::IsKeyDown(Key::Space)) { BuildGame(); m_Scenes.SetActiveScene("Game"); }
+        if (active == "Menu" && Input::IsKeyPressed(Key::Space)) { BuildGame(); m_Scenes.SetActiveScene("Game"); }
         else if (active == "Game" && m_State.GameOver)        m_Scenes.SetActiveScene("GameOver");
-        else if (active == "GameOver" && Input::IsKeyDown(Key::Space)) m_Scenes.SetActiveScene("Menu");
+        else if (active == "GameOver" && Input::IsKeyPressed(Key::Space)) m_Scenes.SetActiveScene("Menu");
 
         m_Scenes.OnRender();                             // SceneRenderer draws the active scene
     }

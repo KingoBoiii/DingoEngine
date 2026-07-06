@@ -462,16 +462,20 @@ namespace Dingo
 
 		const bool grounded = controller->IsGrounded();
 
-		// Horizontal input.
+		// Horizontal input: keyboard, d-pad, or analog left stick.
 		glm::vec3 move(0.0f);
-		if (Input::IsKeyPressed(Key::W) || Input::IsKeyPressed(Key::Up))    move.z -= 1.0f;
-		if (Input::IsKeyPressed(Key::S) || Input::IsKeyPressed(Key::Down))  move.z += 1.0f;
-		if (Input::IsKeyPressed(Key::A) || Input::IsKeyPressed(Key::Left))  move.x -= 1.0f;
-		if (Input::IsKeyPressed(Key::D) || Input::IsKeyPressed(Key::Right)) move.x += 1.0f;
+		if (Input::IsKeyDown(Key::W) || Input::IsKeyDown(Key::Up)    || Input::IsGamepadButtonDown(GamepadButton::DPadUp))    move.z -= 1.0f;
+		if (Input::IsKeyDown(Key::S) || Input::IsKeyDown(Key::Down)  || Input::IsGamepadButtonDown(GamepadButton::DPadDown))  move.z += 1.0f;
+		if (Input::IsKeyDown(Key::A) || Input::IsKeyDown(Key::Left)  || Input::IsGamepadButtonDown(GamepadButton::DPadLeft))  move.x -= 1.0f;
+		if (Input::IsKeyDown(Key::D) || Input::IsKeyDown(Key::Right) || Input::IsGamepadButtonDown(GamepadButton::DPadRight)) move.x += 1.0f;
 
-		glm::vec3 horizontal(0.0f);
-		if (glm::length(move) > 0.0f)
-			horizontal = glm::normalize(move) * PLAYER_SPEED;
+		const glm::vec2 stick = Input::GetGamepadLeftStick(); // +Y = down = toward the camera = +Z
+		move.x += stick.x;
+		move.z += stick.y;
+
+		if (glm::length(move) > 1.0f)
+			move = glm::normalize(move);
+		glm::vec3 horizontal = move * PLAYER_SPEED; // stick magnitude scales walk speed
 
 		// Ride moving platforms: add the ground's velocity while standing on it.
 		if (grounded)
@@ -488,7 +492,7 @@ namespace Dingo
 			m_VerticalVelocity += GRAVITY.y * deltaTime;
 
 		// Jump on the grounded rising edge.
-		if (grounded && Input::IsKeyDown(Key::Space))
+		if (grounded && (Input::IsKeyPressed(Key::Space) || Input::IsGamepadButtonPressed(GamepadButton::A)))
 		{
 			m_VerticalVelocity = JUMP_SPEED;
 			if (m_Context->JumpClip)
@@ -768,7 +772,7 @@ namespace Dingo
 		};
 
 		makeText("Title", 1.2f, { 0.55f, 0.9f, 0.98f, 1.0f }, { 0.0f, 3.0f, 0.0f }, "ECHOVAULT");
-		makeText("Prompt", 0.6f, COLOR_TEXT, { 0.0f, 0.3f, 0.0f }, "Press SPACE to begin");
+		makeText("Prompt", 0.6f, COLOR_TEXT, { 0.0f, 0.3f, 0.0f }, "Press SPACE or (A) to begin");
 		makeText("Blurb", 0.4f, COLOR_TEXT_DIM, { 0.0f, -1.4f, 0.0f },
 			"Cross the floating vault by ear - collect every chiming orb to win");
 		makeText("Footer", 0.34f, { 0.5f, 0.52f, 0.62f, 1.0f }, { 0.0f, -4.6f, 0.0f },
@@ -777,7 +781,8 @@ namespace Dingo
 
 	void MenuControllerScript::OnUpdate(float)
 	{
-		if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter))
+		if (Input::IsKeyPressed(Key::Space) || Input::IsKeyPressed(Key::Enter)
+			|| Input::IsGamepadButtonPressed(GamepadButton::A) || Input::IsGamepadButtonPressed(GamepadButton::Start))
 			RequestSceneTransition("Game");
 	}
 
@@ -810,7 +815,7 @@ namespace Dingo
 
 		makeText("WinTitle", 1.2f, COLOR_GOAL, { 0.0f, 2.5f, 0.0f }, "VAULT CLEARED!");
 		makeText("WinSub", 0.55f, COLOR_TEXT, { 0.0f, 0.0f, 0.0f }, "Every orb collected.");
-		makeText("WinPrompt", 0.42f, COLOR_TEXT_DIM, { 0.0f, -2.0f, 0.0f }, "Press SPACE to return to the menu");
+		makeText("WinPrompt", 0.42f, COLOR_TEXT_DIM, { 0.0f, -2.0f, 0.0f }, "Press SPACE or (A) to return to the menu");
 
 		// Win fanfare (2D one-shot).
 		std::shared_ptr<AudioClip> winClip = Application::Get().GetAudioEngine().LoadClip("assets/audio/win.wav");
@@ -822,7 +827,8 @@ namespace Dingo
 
 	void WinControllerScript::OnUpdate(float)
 	{
-		if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter))
+		if (Input::IsKeyPressed(Key::Space) || Input::IsKeyPressed(Key::Enter)
+			|| Input::IsGamepadButtonPressed(GamepadButton::A) || Input::IsGamepadButtonPressed(GamepadButton::Start))
 			RequestSceneTransition("Menu");
 	}
 

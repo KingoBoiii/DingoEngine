@@ -224,11 +224,9 @@ namespace Dingo
 	void Application::RenderDebugOverlays()
 	{
 		// F3 toggles the built-in engine-stats window, F4 the renderer-stats window.
-		// Input::IsKeyDown is edge-triggered ("just pressed"), so each flips once per
-		// press, not every frame it's held.
-		if (Input::IsKeyDown(Key::F3))
+		if (Input::IsKeyPressed(Key::F3))
 			m_ShowEngineStats = !m_ShowEngineStats;
-		if (Input::IsKeyDown(Key::F4))
+		if (Input::IsKeyPressed(Key::F4))
 			m_ShowRendererStats = !m_ShowRendererStats;
 
 		if (m_ShowEngineStats)

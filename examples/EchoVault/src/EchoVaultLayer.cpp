@@ -37,7 +37,7 @@ namespace Dingo
 
 	void EchoVaultLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
+		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
 		// A script requests Menu->Game / Game->Win via RequestSceneTransition; the manager

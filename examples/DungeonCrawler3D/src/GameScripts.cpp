@@ -387,10 +387,10 @@ namespace Dingo
 		// Movement: set horizontal velocity directly (crisp control); keep the vertical
 		// component so gravity holds the orb on the floor.
 		glm::vec3 move(0.0f);
-		if (Input::IsKeyPressed(Key::W) || Input::IsKeyPressed(Key::Up))    move.z -= 1.0f;
-		if (Input::IsKeyPressed(Key::S) || Input::IsKeyPressed(Key::Down))  move.z += 1.0f;
-		if (Input::IsKeyPressed(Key::A) || Input::IsKeyPressed(Key::Left))  move.x -= 1.0f;
-		if (Input::IsKeyPressed(Key::D) || Input::IsKeyPressed(Key::Right)) move.x += 1.0f;
+		if (Input::IsKeyDown(Key::W) || Input::IsKeyDown(Key::Up))    move.z -= 1.0f;
+		if (Input::IsKeyDown(Key::S) || Input::IsKeyDown(Key::Down))  move.z += 1.0f;
+		if (Input::IsKeyDown(Key::A) || Input::IsKeyDown(Key::Left))  move.x -= 1.0f;
+		if (Input::IsKeyDown(Key::D) || Input::IsKeyDown(Key::Right)) move.x += 1.0f;
 
 		glm::vec3 velocity = GetScene().GetLinearVelocity3D(GetEntity());
 		if (glm::length(move) > 0.0f)
@@ -407,7 +407,7 @@ namespace Dingo
 		}
 		GetScene().SetLinearVelocity(GetEntity(), velocity);
 
-		if (Input::IsKeyDown(Key::Space) && m_AttackCooldown <= 0.0f)
+		if (Input::IsKeyPressed(Key::Space) && m_AttackCooldown <= 0.0f)
 			Attack();
 
 		const float walkSpeed01 = glm::length(glm::vec2(velocity.x, velocity.z)) / PLAYER_SPEED;

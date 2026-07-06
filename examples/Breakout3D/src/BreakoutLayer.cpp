@@ -218,9 +218,9 @@ namespace Dingo
 		// ── Paddle movement ──────────────────────────────────────
 		const float paddleHalfX = m_Paddle.Size.x * 0.5f;
 
-		if (Input::IsKeyPressed(Key::A) || Input::IsKeyPressed(Key::Left))
+		if (Input::IsKeyDown(Key::A) || Input::IsKeyDown(Key::Left))
 			m_Paddle.Position.x -= m_Paddle.Speed * dt;
-		if (Input::IsKeyPressed(Key::D) || Input::IsKeyPressed(Key::Right))
+		if (Input::IsKeyDown(Key::D) || Input::IsKeyDown(Key::Right))
 			m_Paddle.Position.x += m_Paddle.Speed * dt;
 
 		m_Paddle.Position.x = std::clamp(m_Paddle.Position.x,

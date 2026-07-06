@@ -181,7 +181,7 @@ public:
 
     void OnUpdate(float deltaTime) override
     {
-        if (Input::IsKeyDown(Key::Escape))
+        if (Input::IsKeyPressed(Key::Escape))
             Application::Get().Close();
 
         Renderer2D& r = Application::Get().GetRenderer2D();
