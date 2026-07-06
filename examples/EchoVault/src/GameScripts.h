@@ -4,6 +4,7 @@
 #include "GameContext.h"
 
 #include <glm/glm.hpp>
+#include <optional>
 #include <vector>
 
 // All of EchoVault's gameplay lives in these ScriptableEntity behaviours. The layer only
@@ -11,6 +12,19 @@
 // builds its scene's world and the per-entity scripts drive everything from there.
 namespace Dingo
 {
+	// Segment-patrol state shared by kinematic ping-pong movers (moving platforms, sentries).
+	// Owns only the position math; callers derive facing/rotation themselves if they need it.
+	struct PingPongPath
+	{
+		glm::vec3 A{ 0.0f };
+		glm::vec3 B{ 0.0f };
+		float Speed = 1.0f;
+		float T = 0.0f;   // 0..1 along A->B
+		int Dir = 1;      // +1 A->B, -1 B->A
+
+		glm::vec3 Advance(float deltaTime);
+	};
+
 	// ======================================================================
 	// Game scene
 	// ======================================================================
@@ -69,10 +83,10 @@ namespace Dingo
 
 	private:
 		GameContext* m_Context = nullptr;
+		CharacterController3D* m_Controller = nullptr;
 		float m_VerticalVelocity = 0.0f;  // integrated separately; controller Y is authoritative when grounded
 		float m_FootstepTimer = 0.0f;
-		glm::vec3 m_PendingKnockback{ 0.0f };
-		bool m_HasKnockback = false;
+		std::optional<glm::vec3> m_PendingKnockback;
 	};
 
 	// Kinematic moving platform: ping-pongs between A and B via Physics3D::MoveKinematic,
@@ -81,18 +95,14 @@ namespace Dingo
 	{
 	public:
 		MovingPlatformScript(GameContext* context, const glm::vec3& a, const glm::vec3& b, float speed)
-			: m_Context(context), m_A(a), m_B(b), m_Speed(speed) {}
+			: m_Context(context), m_Path{ a, b, speed } {}
 
 	protected:
 		void OnUpdate(float deltaTime) override;
 
 	private:
 		GameContext* m_Context = nullptr;
-		glm::vec3 m_A{ 0.0f };
-		glm::vec3 m_B{ 0.0f };
-		float m_Speed = 1.0f;
-		float m_T = 0.0f;       // 0..1 along A->B
-		int m_Dir = 1;         // +1 A->B, -1 B->A
+		PingPongPath m_Path;
 	};
 
 	// Collectible orb: spins/bobs, chimes with a looping spatialized AudioSource so you can
@@ -119,7 +129,7 @@ namespace Dingo
 	{
 	public:
 		SentryScript(GameContext* context, const glm::vec3& a, const glm::vec3& b, float speed)
-			: m_Context(context), m_A(a), m_B(b), m_Speed(speed) {}
+			: m_Context(context), m_Path{ a, b, speed } {}
 
 	protected:
 		void OnStart() override;
@@ -130,11 +140,7 @@ namespace Dingo
 
 	private:
 		GameContext* m_Context = nullptr;
-		glm::vec3 m_A{ 0.0f };
-		glm::vec3 m_B{ 0.0f };
-		float m_Speed = 1.0f;
-		float m_T = 0.0f;
-		int m_Dir = 1;
+		PingPongPath m_Path;
 		float m_Cooldown = 0.0f;
 		glm::vec3 m_Facing{ 0.0f, 0.0f, 1.0f };
 	};
@@ -158,10 +164,14 @@ namespace Dingo
 		Font* m_Font = nullptr;
 		float m_OrthoSize = 11.0f;
 		float m_Alert = 0.0f;
+		bool m_AlertActive = false;
 
 		Entity m_OrbText;
 		Entity m_HintText;
 		Entity m_AlertText;
+
+		int m_LastCollected = -1;
+		int m_LastTotalOrbs = -1;
 	};
 
 	// ======================================================================

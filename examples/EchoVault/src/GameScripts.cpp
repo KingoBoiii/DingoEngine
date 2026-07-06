@@ -77,10 +77,60 @@ void main()
 	{
 		return glm::angleAxis(yawRadians, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
+
+	constexpr const char* k_UiFontPath = "assets/fonts/arialbd.ttf";
+	constexpr float k_MenuOrthoSize = 11.0f;
+
+	// Shared UI glue for the Menu/Win/Hud overlay scripts: font load, text entity creation
+	// and the orthographic overlay camera all follow the same pattern in each of them.
+	Font* LoadUiFont(const char* who)
+	{
+		Font* font = Font::Create(k_UiFontPath);
+		if (!font)
+			DE_ERROR("EchoVault: failed to load {} font '{}'", who, k_UiFontPath);
+		return font;
+	}
+
+	Entity MakeText(Scene& scene, Font* font, const char* name, float size, const glm::vec4& color, bool centered)
+	{
+		Entity entity = scene.CreateEntity(name);
+		auto& text = entity.AddComponent<TextComponent>();
+		text.Font = font;
+		text.Size = size;
+		text.Color = color;
+		text.Centered = centered;
+		return entity;
+	}
+
+	Entity MakeOverlayCamera(Scene& scene, const char* name, float orthoSize)
+	{
+		Entity entity = scene.CreateEntity(name);
+		auto& camera = entity.AddComponent<CameraComponent>();
+		camera.Type = CameraComponent::ProjectionType::Orthographic;
+		camera.OrthographicSize = orthoSize;
+		camera.Primary = true;
+		return entity;
+	}
 }
 
 namespace Dingo
 {
+	// ======================================================================
+	// PingPongPath
+	// ======================================================================
+
+	glm::vec3 PingPongPath::Advance(float deltaTime)
+	{
+		const float length = glm::length(B - A);
+		if (length > 0.0001f)
+		{
+			T += Dir * (Speed / length) * deltaTime;
+			if (T >= 1.0f) { T = 1.0f; Dir = -1; }
+			else if (T <= 0.0f) { T = 0.0f; Dir = 1; }
+		}
+		return glm::mix(A, B, T);
+	}
+
 	// ======================================================================
 	// CourseControllerScript
 	// ======================================================================
@@ -391,12 +441,13 @@ namespace Dingo
 	void PlayerScript::ApplyKnockback(const glm::vec3& horizontalDir)
 	{
 		m_PendingKnockback = horizontalDir;
-		m_HasKnockback = true;
 	}
 
 	void PlayerScript::OnUpdate(float deltaTime)
 	{
-		CharacterController3D* controller = GetScene().GetCharacterController(GetEntity());
+		if (!m_Controller)
+			m_Controller = GetScene().GetCharacterController(GetEntity());
+		CharacterController3D* controller = m_Controller;
 		if (!controller)
 			return;
 
@@ -445,11 +496,11 @@ namespace Dingo
 		}
 
 		// Knockback overrides horizontal this frame (applied by a sentry).
-		if (m_HasKnockback)
+		if (m_PendingKnockback.has_value())
 		{
-			horizontal = m_PendingKnockback * SENTRY_KNOCKBACK;
+			horizontal = m_PendingKnockback.value() * SENTRY_KNOCKBACK;
 			m_VerticalVelocity = SENTRY_KNOCK_UP;
-			m_HasKnockback = false;
+			m_PendingKnockback.reset();
 		}
 
 		glm::vec3 velocity = horizontal;
@@ -498,16 +549,7 @@ namespace Dingo
 		if (bodyId == k_InvalidBody3D)
 			return;
 
-		// Advance the ping-pong parameter at a constant world speed.
-		const float length = glm::length(m_B - m_A);
-		if (length > 0.0001f)
-		{
-			m_T += m_Dir * (m_Speed / length) * deltaTime;
-			if (m_T >= 1.0f) { m_T = 1.0f; m_Dir = -1; }
-			else if (m_T <= 0.0f) { m_T = 0.0f; m_Dir = 1; }
-		}
-
-		const glm::vec3 target = glm::mix(m_A, m_B, m_T);
+		const glm::vec3 target = m_Path.Advance(deltaTime);
 
 		// MoveKinematic drives the body with a velocity that reaches the target in one step,
 		// so resting bodies (and the character controller's ground query) are carried along.
@@ -538,7 +580,8 @@ namespace Dingo
 		const float dx = playerPos.x - orbPos.x;
 		const float dy = playerPos.y - orbPos.y;
 		const float dz = playerPos.z - orbPos.z;
-		if (std::sqrt(dx * dx + dy * dy + dz * dz) < ORB_COLLECT_RADIUS)
+		constexpr float k_CollectRadiusSq = ORB_COLLECT_RADIUS * ORB_COLLECT_RADIUS;
+		if (dx * dx + dy * dy + dz * dz < k_CollectRadiusSq)
 		{
 			m_Context->Collected++;
 			if (m_Context->PickupClip)
@@ -554,7 +597,7 @@ namespace Dingo
 
 	void SentryScript::OnStart()
 	{
-		m_Facing = glm::normalize(m_B - m_A);
+		m_Facing = glm::normalize(m_Path.B - m_Path.A);
 		if (glm::length(m_Facing) < 0.0001f)
 			m_Facing = { 0.0f, 0.0f, 1.0f };
 	}
@@ -591,14 +634,10 @@ namespace Dingo
 		// Patrol (kinematic ping-pong).
 		if (physics && bodyId != k_InvalidBody3D && deltaTime > 0.0f)
 		{
-			const float length = glm::length(m_B - m_A);
-			if (length > 0.0001f)
-			{
-				m_T += m_Dir * (m_Speed / length) * deltaTime;
-				if (m_T >= 1.0f) { m_T = 1.0f; m_Dir = -1; m_Facing = glm::normalize(m_A - m_B); }
-				else if (m_T <= 0.0f) { m_T = 0.0f; m_Dir = 1; m_Facing = glm::normalize(m_B - m_A); }
-			}
-			const glm::vec3 target = glm::mix(m_A, m_B, m_T);
+			const int dirBefore = m_Path.Dir;
+			const glm::vec3 target = m_Path.Advance(deltaTime);
+			if (m_Path.Dir != dirBefore)
+				m_Facing = (m_Path.Dir < 0) ? glm::normalize(m_Path.A - m_Path.B) : glm::normalize(m_Path.B - m_Path.A);
 			physics->MoveKinematic(bodyId, target, YawQuat(std::atan2(m_Facing.x, m_Facing.z)), deltaTime);
 		}
 
@@ -649,31 +688,14 @@ namespace Dingo
 
 	void HudScript::OnStart()
 	{
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
-		if (!m_Font)
-			DE_ERROR("EchoVault: failed to load HUD font 'assets/fonts/arialbd.ttf'");
+		m_Font = LoadUiFont("HUD");
 
 		Scene& scene = GetScene();
+		MakeOverlayCamera(scene, "UICamera", m_OrthoSize);
 
-		auto& camera = scene.CreateEntity("UICamera").AddComponent<CameraComponent>();
-		camera.Type = CameraComponent::ProjectionType::Orthographic;
-		camera.OrthographicSize = m_OrthoSize;
-		camera.Primary = true;
-
-		auto makeText = [&](const char* name, float size, const glm::vec4& color, bool centered) -> Entity
-		{
-			Entity entity = scene.CreateEntity(name);
-			auto& text = entity.AddComponent<TextComponent>();
-			text.Font = m_Font;
-			text.Size = size;
-			text.Color = color;
-			text.Centered = centered;
-			return entity;
-		};
-
-		m_OrbText   = makeText("HudOrbs", 0.6f, COLOR_ORB, false);
-		m_HintText  = makeText("HudHint", 0.4f, COLOR_TEXT_DIM, true);
-		m_AlertText = makeText("HudAlert", 0.7f, COLOR_SENTRY, true);
+		m_OrbText   = MakeText(scene, m_Font, "HudOrbs", 0.6f, COLOR_ORB, false);
+		m_HintText  = MakeText(scene, m_Font, "HudHint", 0.4f, COLOR_TEXT_DIM, true);
+		m_AlertText = MakeText(scene, m_Font, "HudAlert", 0.7f, COLOR_SENTRY, true);
 
 		m_HintText.GetComponent<TextComponent>().Text =
 			"WASD move   SPACE jump   listen for the chimes   avoid the red sentries";
@@ -691,7 +713,12 @@ namespace Dingo
 		const float pad = 0.45f;
 
 		m_OrbText.GetComponent<TransformComponent>().Position = { -halfW + pad, halfH - 0.95f, 0.0f };
-		m_OrbText.GetComponent<TextComponent>().Text = std::format("ORBS  {}/{}", m_Context->Collected, m_Context->TotalOrbs);
+		if (m_Context->Collected != m_LastCollected || m_Context->TotalOrbs != m_LastTotalOrbs)
+		{
+			m_OrbText.GetComponent<TextComponent>().Text = std::format("ORBS  {}/{}", m_Context->Collected, m_Context->TotalOrbs);
+			m_LastCollected = m_Context->Collected;
+			m_LastTotalOrbs = m_Context->TotalOrbs;
+		}
 
 		m_HintText.GetComponent<TransformComponent>().Position = { 0.0f, -halfH + 0.45f, 0.0f };
 
@@ -699,12 +726,17 @@ namespace Dingo
 		m_AlertText.GetComponent<TransformComponent>().Position = { 0.0f, 0.6f, 0.0f };
 		if (m_Alert > 0.0f)
 		{
-			alert.Text = "SPOTTED!";
+			if (!m_AlertActive)
+			{
+				alert.Text = "SPOTTED!";
+				m_AlertActive = true;
+			}
 			alert.Color = { COLOR_SENTRY.r, COLOR_SENTRY.g, COLOR_SENTRY.b, std::min(1.0f, m_Alert) };
 		}
-		else
+		else if (m_AlertActive)
 		{
 			alert.Text.clear();
+			m_AlertActive = false;
 		}
 	}
 
@@ -723,26 +755,15 @@ namespace Dingo
 
 	void MenuControllerScript::OnStart()
 	{
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
-		if (!m_Font)
-			DE_ERROR("EchoVault: failed to load menu font 'assets/fonts/arialbd.ttf'");
+		m_Font = LoadUiFont("menu");
 
 		Scene& scene = GetScene();
-
-		auto& camera = scene.CreateEntity("MenuCamera").AddComponent<CameraComponent>();
-		camera.Type = CameraComponent::ProjectionType::Orthographic;
-		camera.OrthographicSize = 11.0f;
-		camera.Primary = true;
+		MakeOverlayCamera(scene, "MenuCamera", k_MenuOrthoSize);
 
 		auto makeText = [&](const char* name, float size, const glm::vec4& color, const glm::vec3& pos, const char* str)
 		{
-			Entity entity = scene.CreateEntity(name);
-			auto& text = entity.AddComponent<TextComponent>();
-			text.Font = m_Font;
-			text.Size = size;
-			text.Color = color;
-			text.Centered = true;
-			text.Text = str;
+			Entity entity = MakeText(scene, m_Font, name, size, color, true);
+			entity.GetComponent<TextComponent>().Text = str;
 			entity.GetComponent<TransformComponent>().Position = pos;
 		};
 
@@ -775,26 +796,15 @@ namespace Dingo
 
 	void WinControllerScript::OnStart()
 	{
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
-		if (!m_Font)
-			DE_ERROR("EchoVault: failed to load win font 'assets/fonts/arialbd.ttf'");
+		m_Font = LoadUiFont("win");
 
 		Scene& scene = GetScene();
-
-		auto& camera = scene.CreateEntity("WinCamera").AddComponent<CameraComponent>();
-		camera.Type = CameraComponent::ProjectionType::Orthographic;
-		camera.OrthographicSize = 11.0f;
-		camera.Primary = true;
+		MakeOverlayCamera(scene, "WinCamera", k_MenuOrthoSize);
 
 		auto makeText = [&](const char* name, float size, const glm::vec4& color, const glm::vec3& pos, const char* str)
 		{
-			Entity entity = scene.CreateEntity(name);
-			auto& text = entity.AddComponent<TextComponent>();
-			text.Font = m_Font;
-			text.Size = size;
-			text.Color = color;
-			text.Centered = true;
-			text.Text = str;
+			Entity entity = MakeText(scene, m_Font, name, size, color, true);
+			entity.GetComponent<TextComponent>().Text = str;
 			entity.GetComponent<TransformComponent>().Position = pos;
 		};
 
