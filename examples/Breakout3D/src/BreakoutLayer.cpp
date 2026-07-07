@@ -118,6 +118,11 @@ namespace Dingo
 		});
 		dispatcher.Dispatch<KeyPressedEvent>([this](KeyPressedEvent& e)
 		{
+			if (e.GetKeyCode() == Key::F11)
+			{
+				Application::Get().GetWindow().ToggleFullscreen();
+				return true;
+			}
 			if (e.GetKeyCode() == Key::Space)
 			{
 				if ((m_State == BreakoutState::Menu || m_State == BreakoutState::Playing) && !m_Ball.Launched)
@@ -155,6 +160,7 @@ namespace Dingo
 							[](const Brick& b) { return b.Alive; })));
 					UI::Separator();
 					UI::Text("A/D or Left/Right: move paddle");
+					UI::Text("F11: toggle fullscreen");
 					break;
 				case BreakoutState::GameOver:
 					UI::TextColored({ 1,0.2f,0.2f,1 }, "GAME OVER");
