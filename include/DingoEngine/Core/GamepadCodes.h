@@ -50,16 +50,21 @@ namespace Dingo
 		Steam
 	};
 
-	inline std::ostream& operator<<(std::ostream& os, GamepadType type)
+	inline const char* ToString(GamepadType type)
 	{
 		switch (type)
 		{
-			case GamepadType::Xbox:        return os << "Xbox";
-			case GamepadType::PlayStation: return os << "PlayStation";
-			case GamepadType::Nintendo:    return os << "Nintendo";
-			case GamepadType::Steam:       return os << "Steam";
-			default:                       return os << "Unknown";
+			case GamepadType::Xbox:        return "Xbox";
+			case GamepadType::PlayStation: return "PlayStation";
+			case GamepadType::Nintendo:    return "Nintendo";
+			case GamepadType::Steam:       return "Steam";
+			default:                       return "Unknown";
 		}
+	}
+
+	inline std::ostream& operator<<(std::ostream& os, GamepadType type)
+	{
+		return os << ToString(type);
 	}
 
 	inline constexpr uint32_t GamepadButtonCount = 15;

@@ -82,6 +82,11 @@ namespace Dingo
 		static void AccumulateMouseScroll(float xOffset, float yOffset);
 		static void SeedMousePosition(float x, float y);
 
+		// Called from the GLFW joystick callback so type/name are already
+		// classified when the connect/disconnect event reaches client code.
+		static GamepadType RegisterGamepadConnection(uint32_t gamepad, std::string& outName);
+		static GamepadType UnregisterGamepadConnection(uint32_t gamepad, std::string& outName);
+
 	private:
 		friend class Application; // drives Update() once per frame
 		friend class Window;      // feeds callback state

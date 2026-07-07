@@ -177,12 +177,18 @@ namespace Dingo
 
 			if (event == GLFW_CONNECTED && glfwJoystickIsGamepad(jid))
 			{
-				GamepadConnectedEvent connectedEvent(static_cast<uint32_t>(jid));
+				std::string name;
+				const GamepadType type = Input::RegisterGamepadConnection(static_cast<uint32_t>(jid), name);
+
+				GamepadConnectedEvent connectedEvent(static_cast<uint32_t>(jid), type, name);
 				(*s_JoystickEventCallback)(connectedEvent);
 			}
-			else if (event == GLFW_DISCONNECTED)
+			else if (event == GLFW_DISCONNECTED && Input::IsGamepadConnected(static_cast<uint32_t>(jid)))
 			{
-				GamepadDisconnectedEvent disconnectedEvent(static_cast<uint32_t>(jid));
+				std::string name;
+				const GamepadType type = Input::UnregisterGamepadConnection(static_cast<uint32_t>(jid), name);
+
+				GamepadDisconnectedEvent disconnectedEvent(static_cast<uint32_t>(jid), type, name);
 				(*s_JoystickEventCallback)(disconnectedEvent);
 			}
 		});

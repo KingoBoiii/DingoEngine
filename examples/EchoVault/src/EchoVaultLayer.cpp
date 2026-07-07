@@ -37,6 +37,17 @@ namespace Dingo
 
 	void EchoVaultLayer::OnUpdate(float deltaTime)
 	{
+		// Connect events only fire for post-startup changes; report pads present at launch once.
+		if (!m_LoggedStartupGamepads)
+		{
+			m_LoggedStartupGamepads = true;
+			for (uint32_t pad = 0; pad < MaxGamepads; pad++)
+			{
+				if (Input::IsGamepadConnected(pad))
+					DE_INFO("Gamepad already connected in slot {}: {} ('{}')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad));
+			}
+		}
+
 		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
@@ -53,6 +64,25 @@ namespace Dingo
 		// the next Menu->Game activation starts from a fresh course.
 		if (activeBefore == m_GameScene && m_SceneManager.GetActiveScene() != m_GameScene)
 			RebuildGameScene();
+	}
+
+	void EchoVaultLayer::OnEvent(Event& event)
+	{
+		EventDispatcher dispatcher(event);
+		dispatcher.Dispatch<GamepadConnectedEvent>(DE_BIND_EVENT_FN(EchoVaultLayer::OnGamepadConnected));
+		dispatcher.Dispatch<GamepadDisconnectedEvent>(DE_BIND_EVENT_FN(EchoVaultLayer::OnGamepadDisconnected));
+	}
+
+	bool EchoVaultLayer::OnGamepadConnected(GamepadConnectedEvent& event)
+	{
+		DE_INFO("Gamepad connected in slot {}: {} ('{}')", event.GetGamepadId(), ToString(event.GetGamepadType()), event.GetGamepadName());
+		return false;
+	}
+
+	bool EchoVaultLayer::OnGamepadDisconnected(GamepadDisconnectedEvent& event)
+	{
+		DE_INFO("Gamepad disconnected from slot {}: {} ('{}')", event.GetGamepadId(), ToString(event.GetGamepadType()), event.GetGamepadName());
+		return false;
 	}
 
 }

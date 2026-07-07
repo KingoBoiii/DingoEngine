@@ -264,6 +264,31 @@ namespace Dingo
 		return s_GamepadDeadzone;
 	}
 
+	GamepadType Input::RegisterGamepadConnection(uint32_t gamepad, std::string& outName)
+	{
+		if (!ValidGamepad(gamepad))
+			return GamepadType::Unknown;
+
+		const char* name = glfwGetGamepadName(gamepad);
+		s_GamepadNames[gamepad] = name ? name : "Unknown Gamepad";
+		s_GamepadTypes[gamepad] = ClassifyGamepad(gamepad, s_GamepadNames[gamepad]);
+		s_CurrentGamepads[gamepad].Connected = true; // buttons/axes follow on the next Update()
+
+		outName = s_GamepadNames[gamepad];
+		return s_GamepadTypes[gamepad];
+	}
+
+	GamepadType Input::UnregisterGamepadConnection(uint32_t gamepad, std::string& outName)
+	{
+		if (!ValidGamepad(gamepad))
+			return GamepadType::Unknown;
+
+		outName = s_GamepadNames[gamepad];
+		const GamepadType type = s_GamepadTypes[gamepad];
+		s_CurrentGamepads[gamepad] = GamepadState{};
+		return type;
+	}
+
 	void Input::UpdateKeyState(KeyCode key, bool pressed)
 	{
 		if (ValidKey(key))

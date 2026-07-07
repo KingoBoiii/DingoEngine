@@ -204,12 +204,14 @@ if (Input::IsGamepadConnected())
   does not. `GetGamepadLeftStick/RightStick` return a deadzone-filtered
   `glm::vec2`.
 - Connection changes arrive as `GamepadConnectedEvent` /
-  `GamepadDisconnectedEvent` (see Events below). These fire only for changes
-  after startup — a pad already plugged in at launch produces no event, so
-  check `IsGamepadConnected` for the initial state. `GetGamepadName` and
-  `GetGamepadType` (`Xbox` / `PlayStation` / `Nintendo` / `Steam` / `Unknown`,
-  detected from the USB vendor id with a name fallback) identify the device,
-  e.g. for button-prompt glyphs.
+  `GamepadDisconnectedEvent` (see Events below), which carry the slot id plus
+  the detected `GetGamepadType()` and `GetGamepadName()` — ready to use inside
+  the handler. These fire only for changes after startup — a pad already
+  plugged in at launch produces no event, so check `IsGamepadConnected` for
+  the initial state. The same `Input::GetGamepadName`/`GetGamepadType`
+  (`Xbox` / `PlayStation` / `Nintendo` / `Steam` / `Unknown`, detected from
+  the USB vendor id with a name fallback) cover polling, e.g. for
+  button-prompt glyphs.
 
 ## Events
 
