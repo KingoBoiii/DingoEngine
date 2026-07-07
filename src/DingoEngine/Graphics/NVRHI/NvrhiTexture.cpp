@@ -97,6 +97,19 @@ namespace Dingo
 		m_Handle = nullptr;
 	}
 
+	void NvrhiTexture::Reinitialize(const TextureParams& params)
+	{
+		m_Params = params;
+		m_Handle = nullptr; // NVRHI frees the old texture once in-flight frames release it
+		Initialize();
+
+		if (m_Params.InitialData)
+		{
+			Upload(m_Params.InitialData, Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width));
+			m_Params.InitialData = nullptr; // the caller's buffer is not retained
+		}
+	}
+
 	void NvrhiTexture::Upload(const void* data, uint64_t size)
 	{
 		DE_CORE_ASSERT(data);

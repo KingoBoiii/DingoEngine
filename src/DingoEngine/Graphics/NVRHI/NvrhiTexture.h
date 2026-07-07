@@ -18,6 +18,7 @@ namespace Dingo
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 		virtual void Upload(const void* data, uint64_t size) override;
+		virtual void Reinitialize(const TextureParams& params) override;
 
 		virtual bool NativeEquals(const Texture* other) const override
 		{

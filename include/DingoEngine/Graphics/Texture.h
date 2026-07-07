@@ -81,6 +81,7 @@ namespace Dingo
 	class Texture : public IBindableShaderResource
 	{
 	public:
+		// Returns nullptr on failure (error is logged). Caller owns the returned Texture.
 		static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
 		static Texture* CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format = TextureFormat::RGBA, const std::string& debugName = "Texture (Data)");
 		static Texture* Create(const TextureParams& params);
@@ -96,10 +97,17 @@ namespace Dingo
 		virtual void Destroy() = 0;
 		virtual void Upload(const void* data, uint64_t size) = 0;
 
+		// Recreates the GPU texture in place from new params (uploading InitialData if
+		// set), so existing Texture* references survive a content change - the backbone
+		// of hot-reload. Binding caches keyed via NativeEquals re-bake naturally; the
+		// old GPU texture is freed by the graphics backend once in-flight frames drop it.
+		virtual void Reinitialize(const TextureParams& params) = 0;
+
 		virtual bool NativeEquals(const Texture* other) const = 0;
 
 		virtual uint32_t GetWidth() const { return m_Params.Width; }
 		virtual uint32_t GetHeight() const { return m_Params.Height; }
+		const TextureParams& GetParams() const { return m_Params; }
 		virtual void* GetTextureHandle() const = 0;
 
 	protected:
