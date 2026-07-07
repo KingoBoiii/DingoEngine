@@ -22,6 +22,7 @@ engine from source.
 | [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager`; plus (v0.4.1) 3D entities — `Transform3D`/`MeshRenderer`/`RigidBody3D`/`Box`+`SphereCollider3D` drawn through `Renderer3D`. |
 | [2D Physics](physics-2d.md) | The v0.4 rigid-body system — `RigidBody2D`/`BoxCollider2D`/`CircleCollider2D` components, gravity, the physics lifecycle, and applying forces/impulses. |
 | [3D Physics](physics-3d.md) | The Jolt-backed `Physics3D` — 3D rigid bodies with box/sphere colliders; usable standalone, or (v0.4.1) wired into the `Scene`/ECS. |
+| [Asset Pipeline](asset-pipeline.md) | The v0.6 `AssetManager` — UUID asset handles, path dedup, background/async loading, and hot-reload of shaders and textures. |
 
 ## A 30-second tour
 
@@ -75,4 +76,6 @@ See [Getting Started](getting-started.md) for the full setup, then
 - World units, not pixels: positions and sizes you pass to `Renderer2D` are in the
   coordinate space defined by your camera matrix. A quad's *position is its center*.
 - Resources (`Texture`, `Font`) are created with `Create*()` factories that return
-  raw pointers; you own them and call `Destroy()` when done.
+  raw pointers; you own them and call `Destroy()` when done. As of v0.6 the
+  preferred route for file-backed assets is the [AssetManager](asset-pipeline.md),
+  which owns what it loads and hands out stable handles instead.

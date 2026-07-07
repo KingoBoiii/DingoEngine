@@ -15,7 +15,7 @@ DingoEngine is a C++20 game engine built on a graphics abstraction layer (NVRHI)
 
 ```
 include/DingoEngine/       Public API headers (Core, Graphics, Events, Windowing,
-                           Physics/2D, Physics/3D, Scene, UI, Audio)
+                           Physics/2D, Physics/3D, Scene, UI, Audio, Asset)
 src/DingoEngine/           Implementations, incl. backend-only code:
   Graphics/NVRHI/          NVRHI wrappers (Vulkan/, DirectX11/, DirectX12/)
   Physics/2D/Box2D/        the only box2d.h includer
@@ -53,6 +53,7 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 - **Layers**: override `OnAttach/OnDetach/OnUpdate(dt)/OnUIRender` (UI only if ImGui enabled).
 - **Input** (reworked v0.5.1): frame-coherent snapshot with standard semantics — `Is...Pressed` = edge ("just pressed"), `Is...Down` = held, plus `Released`/`Up` — uniform across keys, mouse buttons, and gamepad buttons (pre-0.5.1 code had `Pressed`/`Down` inverted). Gamepads: `GamepadButton`/`GamepadAxis` codes, `GetGamepadLeftStick/RightStick` (deadzone-filtered), triggers remapped to [0,1], up to 16 pads, `GamepadConnected/DisconnectedEvent`. Mouse adds `GetMouseDelta`/`GetMouseScrollDelta` + `MouseMoved/MouseScrolledEvent`.
 - **Params/builder**: resources are built from fluent `*Params` structs passed to static `Create()` factories: `Texture::Create(TextureParams().SetWidth(512)...)`.
+- **Assets** (v0.6): `Application::Get().GetAssetManager()` — UUID `AssetHandle`s, path dedup against a configurable asset root (`ApplicationParams.Assets`), `Load`/`LoadAsync` (textures+audio decode on a worker thread, GPU publish in the main-thread pump; shader/model/font async requests amortize one-per-frame on the main thread), typed `Get*` returning nullptr until `Ready`, failure keeps the registration (`State == Failed`). Opt-in hot-reload polls timestamps and reloads textures/shaders IN PLACE: `Texture::Reinitialize` swaps contents inside the same object; `Shader::Reload` recompiles past the name-keyed disk cache, bumps `GetGeneration()`, and pipelines/render passes lazily rebuild at bind time (`NvrhiCommandList::SetPipeline`/`SetRenderPass`). A shader compile error during reload keeps the old program (no assert). The manager OWNS what it loads — never `Destroy()`/`delete` a managed asset; raw factories remain for unmanaged resources. See docs/asset-pipeline.md.
 - **Bindables**: `Texture`, `GraphicsBuffer`, `Sampler` implement `IBindableShaderResource` for slot binding in a `RenderPass`.
 - **Events**: `EventDispatcher dispatcher(event); dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(OnResize));`
 - **Backend hiding** (hard requirement): EnTT, Box2D, Jolt, ImGui, miniaudio, NVRHI must never appear in a public header. Public APIs use abstract classes + static `Create()` + opaque handles (see `Physics3D`). GLM in public headers is fine.
@@ -91,9 +92,9 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 
 ## Failure contracts
 
-- `Model::LoadFromFile` and `Font::Create` return `nullptr` on failure — asset paths are cwd-relative, so a wrong working directory fails loudly, not with a broken object.
+- `Model::LoadFromFile`, `Font::Create` and (v0.6) `Texture::CreateFromFile` return `nullptr` on failure — asset paths are cwd-relative, so a wrong working directory fails loudly, not with a broken object. The `AssetManager` layers its own contract on top: failed loads stay registered with `State == Failed` and `Get*` returns nullptr.
 - Physics per-body calls are no-ops (getters return identity) on invalid/stale handles.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). v0.5.0 (merged) landed the audio engine (miniaudio backend + `AudioSource`/`AudioListener` + 3D positional) and gameplay-grade physics (capsule character controller, ray/shape casts) showcased by `examples/EchoVault`. In progress on branch `v0.5.1`: the input rework + gamepad support described under Key patterns.
+See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). v0.5.1 (merged) landed the input rework + gamepad support described under Key patterns. In progress on branch `v0.6.0`: the asset pipeline (`AssetManager` + async loading + hot-reload) described under Key patterns, showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`test/`, `--test=asset`).
