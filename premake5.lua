@@ -276,6 +276,7 @@ group ""
 include "test"
 
 group "Examples"
+    include "examples/ArenaShooter"
     include "examples/FlappyBird"
     include "examples/Breakout3D"
     include "examples/DungeonCrawler"
