@@ -36,6 +36,11 @@ namespace Dingo
 		static void BeginFrame();
 		static void EndFrame();
 
+		// Thread-safe: records the new size and returns. The swap chain is recreated on the
+		// render thread at the next safe point (after Present, before the next image acquire) --
+		// resizing it here would race the frame currently in flight.
+		static void QueueResize(int32_t width, int32_t height);
+
 		/**************************************************
 		***		COMMAND LIST MANAGEMENT					***
 		**************************************************/
