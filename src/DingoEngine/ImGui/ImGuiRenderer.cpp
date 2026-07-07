@@ -438,16 +438,22 @@ void main()
 		auto& swapchainPipelineCache = m_PipelineCache[swapchain];
 		DE_CORE_ASSERT(currentFramebufferIndex < swapchainPipelineCache.Pipelines.max_size());
 
-		nvrhi::FramebufferHandle targetFramebuffer = static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle;
+		// The swap chain's framebuffers are recreated on every resize; drop the pipelines
+		// built against the previous generation. Never store the framebuffer handle itself
+		// (see SwapchainPipelineCache).
+		if (swapchainPipelineCache.ResizeGeneration != swapchain->GetResizeGeneration())
+		{
+			swapchainPipelineCache.Pipelines = {};
+			swapchainPipelineCache.ResizeGeneration = swapchain->GetResizeGeneration();
+		}
 
 		nvrhi::GraphicsPipelineHandle pipeline = swapchainPipelineCache.Pipelines[currentFramebufferIndex];
-		bool invalidate = !pipeline || swapchainPipelineCache.Framebuffers[currentFramebufferIndex] != targetFramebuffer;
-		if (invalidate)
+		if (!pipeline)
 		{
+			nvrhi::IFramebuffer* targetFramebuffer = static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle;
 			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 			pipeline = device->createGraphicsPipeline(m_BasePSODesc, targetFramebuffer);
 			swapchainPipelineCache.Pipelines[currentFramebufferIndex] = pipeline;
-			swapchainPipelineCache.Framebuffers[currentFramebufferIndex] = targetFramebuffer;
 		}
 		return pipeline;
 	}
