@@ -14,11 +14,14 @@
 namespace Dingo::UI
 {
 
-	// A window showing frame timing (FPS + a rolling frame-time graph) and the most
-	// recent scene's Renderer2D and Renderer3D statistics: draw calls, primitive
-	// counts, meshes submitted/dropped, and the 3D vertex/index budget usage. Reads
-	// the engine's active renderers (Application::GetRenderer2D/3D), so no arguments
-	// are needed.
+	// Frame timing (FPS + a rolling frame-time graph) and the most recent scene's
+	// Renderer2D and Renderer3D statistics: draw calls, primitive counts, meshes
+	// submitted/dropped, and the 3D vertex/index budget usage. Reads the engine's
+	// active renderers (Application::GetRenderer2D/3D), so no arguments are needed.
+	// Section-style: draws into the currently open window (see the note below).
+	void RendererStatsSection();
+
+	// RendererStatsSection in a window of its own.
 	//
 	// When 'open' is non-null a close button is shown and *open is set to false when
 	// clicked -- pass the address of your own visibility bool to make it toggleable.
@@ -82,5 +85,29 @@ namespace Dingo::UI
 	// When 'open' is non-null a close button is shown and *open is set to false when
 	// clicked -- pass the address of your own visibility bool to make it toggleable.
 	void InputStatsWindow(bool* open = nullptr);
+
+	// ----------------------------------------------------------------------
+	// The combined debug window
+	// ----------------------------------------------------------------------
+
+	enum class DebugTab
+	{
+		None = 0,
+		Engine,
+		Renderer,
+		Input
+	};
+
+	// Everything above composed into one tabbed "Debug" window (Engine / Renderer /
+	// Input). This is what the engine's built-in overlays show (F3/F4/F5 select the
+	// matching tab; the same key again closes the window).
+	//
+	// 'select' forces that tab active this frame (DebugTab::None leaves the user's
+	// choice alone). Returns the tab currently shown so callers can implement
+	// toggle-on-same-key behaviour.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	DebugTab DebugWindow(bool* open = nullptr, DebugTab select = DebugTab::None);
 
 }

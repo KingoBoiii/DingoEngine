@@ -47,15 +47,8 @@ namespace Dingo::UI
 		}
 	}
 
-	void RendererStatsWindow(bool* open)
+	void RendererStatsSection()
 	{
-		// Begin() returns false when collapsed/clipped; skip the body but still End().
-		if (!ImGui::Begin("Renderer Stats", open))
-		{
-			ImGui::End();
-			return;
-		}
-
 		// ---- Performance (from ImGui's own frame timing) --------------------
 		const ImGuiIO& io = ImGui::GetIO();
 		const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
@@ -112,6 +105,18 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		BudgetBar("Vertices", stats3D.VertexCount, caps3D.MaxVertices);
 		BudgetBar("Indices", stats3D.IndexCount, caps3D.MaxIndices);
+	}
+
+	void RendererStatsWindow(bool* open)
+	{
+		// Begin() returns false when collapsed/clipped; skip the body but still End().
+		if (!ImGui::Begin("Renderer Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		RendererStatsSection();
 
 		ImGui::End();
 	}
@@ -312,6 +317,65 @@ namespace Dingo::UI
 		GamepadInputSection();
 
 		ImGui::End();
+	}
+
+	DebugTab DebugWindow(bool* open, DebugTab select)
+	{
+		DebugTab active = DebugTab::None;
+
+		ImGui::SetNextWindowSize(ImVec2(440.0f, 520.0f), ImGuiCond_FirstUseEver);
+		if (!ImGui::Begin("Debug", open))
+		{
+			ImGui::End();
+			return active;
+		}
+
+		if (ImGui::BeginTabBar("##DebugTabs"))
+		{
+			auto tab = [&](const char* label, DebugTab id, auto&& content)
+			{
+				const ImGuiTabItemFlags flags = (select == id) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				if (!ImGui::BeginTabItem(label, nullptr, flags))
+					return;
+
+				active = id;
+				ImGui::Spacing();
+				content();
+				ImGui::EndTabItem();
+			};
+
+			tab("Engine", DebugTab::Engine, []
+			{
+				EngineInfoSection();
+				ImGui::Spacing();
+				GraphicsInfoSection();
+				ImGui::Spacing();
+				WindowInfoSection();
+				ImGui::Spacing();
+				FrameTimingSection();
+				ImGui::Spacing();
+				AudioStatsSection();
+			});
+
+			tab("Renderer", DebugTab::Renderer, []
+			{
+				RendererStatsSection();
+			});
+
+			tab("Input", DebugTab::Input, []
+			{
+				MouseInputSection();
+				ImGui::Spacing();
+				KeyboardInputSection();
+				ImGui::Spacing();
+				GamepadInputSection();
+			});
+
+			ImGui::EndTabBar();
+		}
+
+		ImGui::End();
+		return active;
 	}
 
 }
