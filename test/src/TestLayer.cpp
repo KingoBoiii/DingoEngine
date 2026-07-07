@@ -13,6 +13,8 @@
 #include "Tests/Renderer2D/TextTest.h"
 #include "Tests/Renderer2D/CircleTest.h"
 
+#include "Tests/Asset/AssetManagerTest.h"
+
 #include <imgui.h>
 
 namespace Dingo
@@ -42,8 +44,26 @@ namespace Dingo
 		m_Tests.push_back({ "Circle Test (R2D)", [&]() { return new CircleTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh 3D Test", []() { return new Mesh3DTest(); } });
 		m_Tests.push_back({ "Model 3D Test", []() { return new Model3DTest(); } });
+		m_Tests.push_back({ "Asset Manager Test", [&]() { return new AssetManagerTest(m_Renderer2D); } });
 
-		m_CurrentTest = m_Tests[0].second();
+		// --test=<name substring, case-insensitive> starts on that test.
+		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))
+		{
+			std::string needle(*requested);
+			std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			for (uint32_t i = 0; i < m_Tests.size(); i++)
+			{
+				std::string name = m_Tests[i].first;
+				std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+				if (!needle.empty() && name.find(needle) != std::string::npos)
+				{
+					m_CurrentTestIndex = i;
+					break;
+				}
+			}
+		}
+
+		m_CurrentTest = m_Tests[m_CurrentTestIndex].second();
 		m_CurrentTest->Initialize();
 	}
 
