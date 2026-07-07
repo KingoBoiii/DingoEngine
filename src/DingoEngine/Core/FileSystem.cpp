@@ -4,6 +4,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <mutex>
+
 namespace Dingo
 {
 
@@ -28,6 +30,11 @@ namespace Dingo
 	
 	const uint8_t* FileSystem::ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
 	{
+		// stbi_set_flip_vertically_on_load writes stb-global state and this runs on both
+		// the main thread and the asset loader thread; serialize the whole decode.
+		static std::mutex s_StbMutex;
+		std::scoped_lock lock(s_StbMutex);
+
 		stbi_set_flip_vertically_on_load(flipVertically);
 
 		int32_t widthTemp, heightTemp, channelsTemp;
