@@ -38,6 +38,8 @@ namespace Dingo
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;
+		// SetPipeline/SetRenderPass reset the graphics state to the pipeline and its bindings.
+		// Neither binds a framebuffer -- follow with SetFramebuffer() before drawing.
 		virtual void SetPipeline(Pipeline* pipeline) = 0;
 		virtual void SetRenderPass(RenderPass* renderPass) = 0;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) = 0;

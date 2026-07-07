@@ -106,8 +106,9 @@ namespace Dingo
 			return;
 		}
 
-		SetFramebuffer(nvrhiPipeline->GetTargetFramebuffer());
-
+		// Deliberately no SetFramebuffer(pipeline->GetTargetFramebuffer()) here: that pointer
+		// is the framebuffer the pipeline was CREATED against, and for swap-chain pipelines it
+		// dies on every resize. Callers must SetFramebuffer() with the current target after this.
 		m_GraphicsState.setPipeline(nvrhiPipeline->m_GraphicsPipelineHandle);
 
 		if (nvrhiPipeline->m_BindingSetHandle)
