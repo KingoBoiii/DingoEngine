@@ -155,6 +155,7 @@ namespace Dingo
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_ShowEngineStats = false; // built-in engine-stats overlay visibility (F3)
 		bool m_ShowRendererStats = false; // built-in renderer-stats overlay visibility (F4)
+		bool m_ShowInputStats = false; // built-in input-stats overlay visibility (F5)
 		bool m_IsRunning = true;
 		float m_LastFrameTime = 0.0f;
 		float m_DeltaTime = 0.0f;

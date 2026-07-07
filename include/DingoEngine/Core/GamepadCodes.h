@@ -50,6 +50,29 @@ namespace Dingo
 		Steam
 	};
 
+	inline const char* ToString(GamepadButton button)
+	{
+		switch (button)
+		{
+			case GamepadButton::A:           return "A";
+			case GamepadButton::B:           return "B";
+			case GamepadButton::X:           return "X";
+			case GamepadButton::Y:           return "Y";
+			case GamepadButton::LeftBumper:  return "LeftBumper";
+			case GamepadButton::RightBumper: return "RightBumper";
+			case GamepadButton::Back:        return "Back";
+			case GamepadButton::Start:       return "Start";
+			case GamepadButton::Guide:       return "Guide";
+			case GamepadButton::LeftThumb:   return "LeftThumb";
+			case GamepadButton::RightThumb:  return "RightThumb";
+			case GamepadButton::DPadUp:      return "DPadUp";
+			case GamepadButton::DPadRight:   return "DPadRight";
+			case GamepadButton::DPadDown:    return "DPadDown";
+			case GamepadButton::DPadLeft:    return "DPadLeft";
+			default:                         return "Unknown";
+		}
+	}
+
 	inline const char* ToString(GamepadType type)
 	{
 		switch (type)

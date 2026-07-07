@@ -1,6 +1,7 @@
 #pragma once
 #include <ostream>
 #include <cstdint>
+#include <string>
 
 namespace Dingo
 {
@@ -139,6 +140,64 @@ namespace Dingo
 		RightSuper = 347,
 		Menu = 348
 	} Key;
+
+	inline std::string ToString(KeyCode keyCode)
+	{
+		const uint16_t value = static_cast<uint16_t>(keyCode);
+
+		// GLFW printable keys use their ASCII value directly.
+		if (value > static_cast<uint16_t>(KeyCode::Space) && value <= static_cast<uint16_t>(KeyCode::GraveAccent))
+			return std::string(1, static_cast<char>(value));
+
+		if (value >= static_cast<uint16_t>(KeyCode::F1) && value <= static_cast<uint16_t>(KeyCode::F25))
+			return "F" + std::to_string(value - static_cast<uint16_t>(KeyCode::F1) + 1);
+
+		if (value >= static_cast<uint16_t>(KeyCode::KP0) && value <= static_cast<uint16_t>(KeyCode::KP9))
+			return "Keypad " + std::to_string(value - static_cast<uint16_t>(KeyCode::KP0));
+
+		switch (keyCode)
+		{
+			case KeyCode::Space:        return "Space";
+			case KeyCode::World1:       return "World1";
+			case KeyCode::World2:       return "World2";
+			case KeyCode::Escape:       return "Escape";
+			case KeyCode::Enter:        return "Enter";
+			case KeyCode::Tab:          return "Tab";
+			case KeyCode::Backspace:    return "Backspace";
+			case KeyCode::Insert:       return "Insert";
+			case KeyCode::Delete:       return "Delete";
+			case KeyCode::Right:        return "Right";
+			case KeyCode::Left:         return "Left";
+			case KeyCode::Down:         return "Down";
+			case KeyCode::Up:           return "Up";
+			case KeyCode::PageUp:       return "PageUp";
+			case KeyCode::PageDown:     return "PageDown";
+			case KeyCode::Home:         return "Home";
+			case KeyCode::End:          return "End";
+			case KeyCode::CapsLock:     return "CapsLock";
+			case KeyCode::ScrollLock:   return "ScrollLock";
+			case KeyCode::NumLock:      return "NumLock";
+			case KeyCode::PrintScreen:  return "PrintScreen";
+			case KeyCode::Pause:        return "Pause";
+			case KeyCode::KPDecimal:    return "Keypad .";
+			case KeyCode::KPDivide:     return "Keypad /";
+			case KeyCode::KPMultiply:   return "Keypad *";
+			case KeyCode::KPSubtract:   return "Keypad -";
+			case KeyCode::KPAdd:        return "Keypad +";
+			case KeyCode::KPEnter:      return "Keypad Enter";
+			case KeyCode::KPEqual:      return "Keypad =";
+			case KeyCode::LeftShift:    return "LeftShift";
+			case KeyCode::LeftControl:  return "LeftControl";
+			case KeyCode::LeftAlt:      return "LeftAlt";
+			case KeyCode::LeftSuper:    return "LeftSuper";
+			case KeyCode::RightShift:   return "RightShift";
+			case KeyCode::RightControl: return "RightControl";
+			case KeyCode::RightAlt:     return "RightAlt";
+			case KeyCode::RightSuper:   return "RightSuper";
+			case KeyCode::Menu:         return "Menu";
+			default:                    return std::to_string(value);
+		}
+	}
 
 	inline std::ostream& operator<<(std::ostream& os, KeyCode keyCode)
 	{

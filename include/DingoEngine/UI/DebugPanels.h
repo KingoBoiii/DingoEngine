@@ -60,4 +60,27 @@ namespace Dingo::UI
 	// clicked -- pass the address of your own visibility bool to make it toggleable.
 	void EngineStatsWindow(bool* open = nullptr);
 
+	// ----------------------------------------------------------------------
+	// InputStatsWindow sections
+	// ----------------------------------------------------------------------
+	//
+	// Live views of the Input snapshot; same embedding rules as the sections above.
+
+	// Cursor position, per-frame delta, scroll delta, and held mouse buttons.
+	void MouseInputSection();
+
+	// Every currently held key by name.
+	void KeyboardInputSection();
+
+	// One block per connected gamepad: slot, type, device name, held buttons, stick
+	// and trigger values (deadzone-filtered vs raw), plus a live deadzone slider
+	// (the panel's only editing widget -- it calls Input::SetGamepadDeadzone).
+	void GamepadInputSection();
+
+	// A window composing the three input sections above.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	void InputStatsWindow(bool* open = nullptr);
+
 }

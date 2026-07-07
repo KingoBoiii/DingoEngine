@@ -88,7 +88,7 @@ namespace Dingo
 		}
 
 		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
-			DE_CORE_INFO("Debug overlays enabled - press F3 for engine stats, F4 for renderer stats.");
+			DE_CORE_INFO("Debug overlays enabled - press F3 for engine stats, F4 for renderer stats, F5 for input stats.");
 	}
 
 	void Application::Destroy()
@@ -223,16 +223,21 @@ namespace Dingo
 
 	void Application::RenderDebugOverlays()
 	{
-		// F3 toggles the built-in engine-stats window, F4 the renderer-stats window.
+		// F3 toggles the built-in engine-stats window, F4 the renderer-stats window,
+		// F5 the input-stats window.
 		if (Input::IsKeyPressed(Key::F3))
 			m_ShowEngineStats = !m_ShowEngineStats;
 		if (Input::IsKeyPressed(Key::F4))
 			m_ShowRendererStats = !m_ShowRendererStats;
+		if (Input::IsKeyPressed(Key::F5))
+			m_ShowInputStats = !m_ShowInputStats;
 
 		if (m_ShowEngineStats)
 			UI::EngineStatsWindow(&m_ShowEngineStats);
 		if (m_ShowRendererStats)
 			UI::RendererStatsWindow(&m_ShowRendererStats);
+		if (m_ShowInputStats)
+			UI::InputStatsWindow(&m_ShowInputStats);
 	}
 
 	void Application::PushLayer(Layer* layer)
