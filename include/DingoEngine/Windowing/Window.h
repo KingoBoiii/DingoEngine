@@ -16,6 +16,9 @@ namespace Dingo
 		int32_t Height = 900;
 		bool VSync = true;
 		bool Resizable = true;
+		// Start in borderless fullscreen at the monitor's desktop resolution.
+		// Width/Height are kept as the windowed size to restore to.
+		bool Fullscreen = false;
 
 		WindowParams SetTitle(const std::string& title)
 		{
@@ -46,6 +49,12 @@ namespace Dingo
 			Resizable = resizable;
 			return *this;
 		}
+
+		WindowParams SetFullscreen(bool fullscreen)
+		{
+			Fullscreen = fullscreen;
+			return *this;
+		}
 	};
 
 	class GraphicsContext;
@@ -68,6 +77,12 @@ namespace Dingo
 
 		void SetEventCallback(const EventCallbackFn& callback) { m_Data.EventCallback = callback; }
 
+		// Borderless fullscreen at the desktop resolution of the monitor the window is on.
+		// The swap chain follows via the normal resize event; safe to call from event handlers.
+		void SetFullscreen(bool fullscreen);
+		void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
+		bool IsFullscreen() const;
+
 		int32_t GetWidth() const { return m_Data.Width; }
 		int32_t GetHeight() const { return m_Data.Height; }
 		float GetAspectRatio() const
@@ -82,6 +97,12 @@ namespace Dingo
 	private:
 		WindowParams m_Params;
 		GLFWwindow* m_WindowHandle = nullptr;
+
+		// Windowed geometry to restore when leaving fullscreen.
+		int32_t m_WindowedPosX = 0;
+		int32_t m_WindowedPosY = 0;
+		int32_t m_WindowedWidth = 0;
+		int32_t m_WindowedHeight = 0;
 
 		struct WindowData
 		{
