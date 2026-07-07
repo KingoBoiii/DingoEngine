@@ -35,11 +35,12 @@ recreates it. Return a heap-allocated `Application*`; the engine deletes it.
 ApplicationParams params{
     .CommandLineArgs = args,
     .Window = {
-        .Title     = "My Game",
-        .Width     = 1600,
-        .Height    = 900,
-        .VSync     = true,
-        .Resizable = false,
+        .Title      = "My Game",
+        .Width      = 1600,
+        .Height     = 900,
+        .VSync      = true,
+        .Resizable  = true,       // live window resizing works on every back-end
+        .Fullscreen = false,      // start in borderless fullscreen at desktop resolution
     },
     .Graphics = {
         .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
@@ -48,6 +49,22 @@ ApplicationParams params{
     .EnableUI = false,    // set true to get OnUIRender() callbacks
 };
 ```
+
+### Fullscreen
+
+Besides `WindowParams::Fullscreen` for starting fullscreen, the mode can be switched
+at runtime (borderless fullscreen at the desktop resolution of the monitor the window
+is on; the windowed position/size is restored when leaving):
+
+```cpp
+Application::Get().GetWindow().ToggleFullscreen();   // e.g. bound to F11
+Application::Get().GetWindow().SetFullscreen(true);  // or explicitly
+bool fs = Application::Get().GetWindow().IsFullscreen();
+```
+
+The swap chain follows automatically via the normal resize path, on every graphics
+back-end. `WindowResizeEvent` is forwarded to layers, so cameras can update their
+aspect ratio there.
 
 ### Command-line arguments
 
