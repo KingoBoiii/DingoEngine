@@ -26,7 +26,3 @@ namespace Dingo
 
 }
 
-// Mouse
-#define DE_MOUSE_BUTTON_LEFT    ::Dingo::Button::Left
-#define DE_MOUSE_BUTTON_RIGHT   ::Dingo::Button::Right
-#define DE_MOUSE_BUTTON_MIDDLE  ::Dingo::Button::Middle

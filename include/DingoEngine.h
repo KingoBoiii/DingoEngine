@@ -40,6 +40,8 @@
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 #include "DingoEngine/Events/KeyEvents.h"
+#include "DingoEngine/Events/MouseEvents.h"
+#include "DingoEngine/Events/GamepadEvents.h"
 
 // ----------------------------------------------------------------------
 // Graphics

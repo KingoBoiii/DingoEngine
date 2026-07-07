@@ -47,9 +47,13 @@ namespace Dingo
 		nvrhi::TextureHandle m_FontTexture;
 		nvrhi::SamplerHandle m_FontSampler;
 
+		// Keyed by the swap chain's resize generation, NOT by framebuffer handle: caching a
+		// FramebufferHandle would keep a back-buffer reference alive across resizes, which
+		// makes IDXGISwapChain::ResizeBuffers fail on D3D11/D3D12. Pipelines are safe to
+		// cache (they reference only state objects/shaders, never framebuffer attachments).
 		struct SwapchainPipelineCache
 		{
-			std::array<nvrhi::FramebufferHandle, 3> Framebuffers;
+			uint64_t ResizeGeneration = ~0ull;
 			std::array<nvrhi::GraphicsPipelineHandle, 3> Pipelines;
 		};
 

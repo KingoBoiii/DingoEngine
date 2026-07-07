@@ -88,7 +88,7 @@ namespace Dingo
 		}
 
 		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
-			DE_CORE_INFO("Debug overlays enabled - press F3 for engine stats, F4 for renderer stats.");
+			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer) or F5 (input) to open its tabs.");
 	}
 
 	void Application::Destroy()
@@ -223,18 +223,38 @@ namespace Dingo
 
 	void Application::RenderDebugOverlays()
 	{
-		// F3 toggles the built-in engine-stats window, F4 the renderer-stats window.
-		// Input::IsKeyDown is edge-triggered ("just pressed"), so each flips once per
-		// press, not every frame it's held.
-		if (Input::IsKeyDown(Key::F3))
-			m_ShowEngineStats = !m_ShowEngineStats;
-		if (Input::IsKeyDown(Key::F4))
-			m_ShowRendererStats = !m_ShowRendererStats;
+		// One tabbed debug window: F3 = Engine, F4 = Renderer, F5 = Input. A key opens
+		// the window on its tab (or switches to it); the active tab's key closes it.
+		UI::DebugTab request = UI::DebugTab::None;
+		if (Input::IsKeyPressed(Key::F3))
+			request = UI::DebugTab::Engine;
+		if (Input::IsKeyPressed(Key::F4))
+			request = UI::DebugTab::Renderer;
+		if (Input::IsKeyPressed(Key::F5))
+			request = UI::DebugTab::Input;
 
-		if (m_ShowEngineStats)
-			UI::EngineStatsWindow(&m_ShowEngineStats);
-		if (m_ShowRendererStats)
-			UI::RendererStatsWindow(&m_ShowRendererStats);
+		if (request != UI::DebugTab::None)
+		{
+			if (m_ShowDebugWindow && m_ActiveDebugTab == request)
+			{
+				m_ShowDebugWindow = false;
+				m_PendingDebugTab = UI::DebugTab::None;
+			}
+			else
+			{
+				m_ShowDebugWindow = true;
+				m_PendingDebugTab = request;
+			}
+		}
+
+		if (m_ShowDebugWindow)
+		{
+			// Keep requesting the pending tab until the window reports it active --
+			// ImGui applies a programmatic tab selection one frame late.
+			m_ActiveDebugTab = UI::DebugWindow(&m_ShowDebugWindow, m_PendingDebugTab);
+			if (m_ActiveDebugTab == m_PendingDebugTab)
+				m_PendingDebugTab = UI::DebugTab::None;
+		}
 	}
 
 	void Application::PushLayer(Layer* layer)
@@ -275,8 +295,10 @@ namespace Dingo
 
 	bool Application::OnWindowResizeEvent(WindowResizeEvent& e)
 	{
-		m_SwapChain->Resize(e.GetWidth(), e.GetHeight());
-		return true;
+		// This runs on the main thread while the render thread may be presenting; the
+		// actual swap-chain recreation happens on the render thread at a safe point.
+		Renderer::QueueResize(e.GetWidth(), e.GetHeight());
+		return false; // let layers react to the new size too
 	}
 
 }

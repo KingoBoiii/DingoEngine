@@ -126,7 +126,7 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
+		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
 		if (m_Context.State == GameContext::GameState::Playing)
@@ -146,7 +146,7 @@ namespace Dingo
 			}
 		}
 		
-		if (Input::IsKeyDown(Key::R))
+		if (Input::IsKeyPressed(Key::R))
 		{
 			ResetGame();
 		}

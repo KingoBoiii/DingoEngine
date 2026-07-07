@@ -1,6 +1,7 @@
 #pragma once
 #include <ostream>
 #include <cstdint>
+#include <string>
 
 namespace Dingo
 {
@@ -140,6 +141,64 @@ namespace Dingo
 		Menu = 348
 	} Key;
 
+	inline std::string ToString(KeyCode keyCode)
+	{
+		const uint16_t value = static_cast<uint16_t>(keyCode);
+
+		// GLFW printable keys use their ASCII value directly.
+		if (value > static_cast<uint16_t>(KeyCode::Space) && value <= static_cast<uint16_t>(KeyCode::GraveAccent))
+			return std::string(1, static_cast<char>(value));
+
+		if (value >= static_cast<uint16_t>(KeyCode::F1) && value <= static_cast<uint16_t>(KeyCode::F25))
+			return "F" + std::to_string(value - static_cast<uint16_t>(KeyCode::F1) + 1);
+
+		if (value >= static_cast<uint16_t>(KeyCode::KP0) && value <= static_cast<uint16_t>(KeyCode::KP9))
+			return "Keypad " + std::to_string(value - static_cast<uint16_t>(KeyCode::KP0));
+
+		switch (keyCode)
+		{
+			case KeyCode::Space:        return "Space";
+			case KeyCode::World1:       return "World1";
+			case KeyCode::World2:       return "World2";
+			case KeyCode::Escape:       return "Escape";
+			case KeyCode::Enter:        return "Enter";
+			case KeyCode::Tab:          return "Tab";
+			case KeyCode::Backspace:    return "Backspace";
+			case KeyCode::Insert:       return "Insert";
+			case KeyCode::Delete:       return "Delete";
+			case KeyCode::Right:        return "Right";
+			case KeyCode::Left:         return "Left";
+			case KeyCode::Down:         return "Down";
+			case KeyCode::Up:           return "Up";
+			case KeyCode::PageUp:       return "PageUp";
+			case KeyCode::PageDown:     return "PageDown";
+			case KeyCode::Home:         return "Home";
+			case KeyCode::End:          return "End";
+			case KeyCode::CapsLock:     return "CapsLock";
+			case KeyCode::ScrollLock:   return "ScrollLock";
+			case KeyCode::NumLock:      return "NumLock";
+			case KeyCode::PrintScreen:  return "PrintScreen";
+			case KeyCode::Pause:        return "Pause";
+			case KeyCode::KPDecimal:    return "Keypad .";
+			case KeyCode::KPDivide:     return "Keypad /";
+			case KeyCode::KPMultiply:   return "Keypad *";
+			case KeyCode::KPSubtract:   return "Keypad -";
+			case KeyCode::KPAdd:        return "Keypad +";
+			case KeyCode::KPEnter:      return "Keypad Enter";
+			case KeyCode::KPEqual:      return "Keypad =";
+			case KeyCode::LeftShift:    return "LeftShift";
+			case KeyCode::LeftControl:  return "LeftControl";
+			case KeyCode::LeftAlt:      return "LeftAlt";
+			case KeyCode::LeftSuper:    return "LeftSuper";
+			case KeyCode::RightShift:   return "RightShift";
+			case KeyCode::RightControl: return "RightControl";
+			case KeyCode::RightAlt:     return "RightAlt";
+			case KeyCode::RightSuper:   return "RightSuper";
+			case KeyCode::Menu:         return "Menu";
+			default:                    return std::to_string(value);
+		}
+	}
+
 	inline std::ostream& operator<<(std::ostream& os, KeyCode keyCode)
 	{
 		os << static_cast<int32_t>(keyCode);
@@ -148,130 +207,3 @@ namespace Dingo
 
 }
 
-
-// From glfw3.h
-#define AT_KEY_SPACE           ::Dingo::Key::Space
-#define AT_KEY_APOSTROPHE      ::Dingo::Key::Apostrophe    /* ' */
-#define AT_KEY_COMMA           ::Dingo::Key::Comma         /* , */
-#define AT_KEY_MINUS           ::Dingo::Key::Minus         /* - */
-#define AT_KEY_PERIOD          ::Dingo::Key::Period        /* . */
-#define AT_KEY_SLASH           ::Dingo::Key::Slash         /* / */
-#define AT_KEY_0               ::Dingo::Key::D0
-#define AT_KEY_1               ::Dingo::Key::D1
-#define AT_KEY_2               ::Dingo::Key::D2
-#define AT_KEY_3               ::Dingo::Key::D3
-#define AT_KEY_4               ::Dingo::Key::D4
-#define AT_KEY_5               ::Dingo::Key::D5
-#define AT_KEY_6               ::Dingo::Key::D6
-#define AT_KEY_7               ::Dingo::Key::D7
-#define AT_KEY_8               ::Dingo::Key::D8
-#define AT_KEY_9               ::Dingo::Key::D9
-#define AT_KEY_SEMICOLON       ::Dingo::Key::Semicolon     /* ; */
-#define AT_KEY_EQUAL           ::Dingo::Key::Equal         /* = */
-#define AT_KEY_A               ::Dingo::Key::A
-#define AT_KEY_B               ::Dingo::Key::B
-#define AT_KEY_C               ::Dingo::Key::C
-#define AT_KEY_D               ::Dingo::Key::D
-#define AT_KEY_E               ::Dingo::Key::E
-#define AT_KEY_F               ::Dingo::Key::F
-#define AT_KEY_G               ::Dingo::Key::G
-#define AT_KEY_H               ::Dingo::Key::H
-#define AT_KEY_I               ::Dingo::Key::I
-#define AT_KEY_J               ::Dingo::Key::J
-#define AT_KEY_K               ::Dingo::Key::K
-#define AT_KEY_L               ::Dingo::Key::L
-#define AT_KEY_M               ::Dingo::Key::M
-#define AT_KEY_N               ::Dingo::Key::N
-#define AT_KEY_O               ::Dingo::Key::O
-#define AT_KEY_P               ::Dingo::Key::P
-#define AT_KEY_Q               ::Dingo::Key::Q
-#define AT_KEY_R               ::Dingo::Key::R
-#define AT_KEY_S               ::Dingo::Key::S
-#define AT_KEY_T               ::Dingo::Key::T
-#define AT_KEY_U               ::Dingo::Key::U
-#define AT_KEY_V               ::Dingo::Key::V
-#define AT_KEY_W               ::Dingo::Key::W
-#define AT_KEY_X               ::Dingo::Key::X
-#define AT_KEY_Y               ::Dingo::Key::Y
-#define AT_KEY_Z               ::Dingo::Key::Z
-#define AT_KEY_LEFT_BRACKET    ::Dingo::Key::LeftBracket   /* [ */
-#define AT_KEY_BACKSLASH       ::Dingo::Key::Backslash     /* \ */
-#define AT_KEY_RIGHT_BRACKET   ::Dingo::Key::RightBracket  /* ] */
-#define AT_KEY_GRAVE_ACCENT    ::Dingo::Key::GraveAccent   /* ` */
-#define AT_KEY_WORLD_1         ::Dingo::Key::World1        /* non-US #1 */
-#define AT_KEY_WORLD_2         ::Dingo::Key::World2        /* non-US #2 */
-
-/* Function keys */
-#define AT_KEY_ESCAPE          ::Dingo::Key::Escape
-#define AT_KEY_ENTER           ::Dingo::Key::Enter
-#define AT_KEY_TAB             ::Dingo::Key::Tab
-#define AT_KEY_BACKSPACE       ::Dingo::Key::Backspace
-#define AT_KEY_INSERT          ::Dingo::Key::Insert
-#define AT_KEY_DELETE          ::Dingo::Key::Delete
-#define AT_KEY_RIGHT           ::Dingo::Key::Right
-#define AT_KEY_LEFT            ::Dingo::Key::Left
-#define AT_KEY_DOWN            ::Dingo::Key::Down
-#define AT_KEY_UP              ::Dingo::Key::Up
-#define AT_KEY_PAGE_UP         ::Dingo::Key::PageUp
-#define AT_KEY_PAGE_DOWN       ::Dingo::Key::PageDown
-#define AT_KEY_HOME            ::Dingo::Key::Home
-#define AT_KEY_END             ::Dingo::Key::End
-#define AT_KEY_CAPS_LOCK       ::Dingo::Key::CapsLock
-#define AT_KEY_SCROLL_LOCK     ::Dingo::Key::ScrollLock
-#define AT_KEY_NUM_LOCK        ::Dingo::Key::NumLock
-#define AT_KEY_PRINT_SCREEN    ::Dingo::Key::PrintScreen
-#define AT_KEY_PAUSE           ::Dingo::Key::Pause
-#define AT_KEY_F1              ::Dingo::Key::F1
-#define AT_KEY_F2              ::Dingo::Key::F2
-#define AT_KEY_F3              ::Dingo::Key::F3
-#define AT_KEY_F4              ::Dingo::Key::F4
-#define AT_KEY_F5              ::Dingo::Key::F5
-#define AT_KEY_F6              ::Dingo::Key::F6
-#define AT_KEY_F7              ::Dingo::Key::F7
-#define AT_KEY_F8              ::Dingo::Key::F8
-#define AT_KEY_F9              ::Dingo::Key::F9
-#define AT_KEY_F10             ::Dingo::Key::F10
-#define AT_KEY_F11             ::Dingo::Key::F11
-#define AT_KEY_F12             ::Dingo::Key::F12
-#define AT_KEY_F13             ::Dingo::Key::F13
-#define AT_KEY_F14             ::Dingo::Key::F14
-#define AT_KEY_F15             ::Dingo::Key::F15
-#define AT_KEY_F16             ::Dingo::Key::F16
-#define AT_KEY_F17             ::Dingo::Key::F17
-#define AT_KEY_F18             ::Dingo::Key::F18
-#define AT_KEY_F19             ::Dingo::Key::F19
-#define AT_KEY_F20             ::Dingo::Key::F20
-#define AT_KEY_F21             ::Dingo::Key::F21
-#define AT_KEY_F22             ::Dingo::Key::F22
-#define AT_KEY_F23             ::Dingo::Key::F23
-#define AT_KEY_F24             ::Dingo::Key::F24
-#define AT_KEY_F25             ::Dingo::Key::F25
-
-/* Keypad */
-#define AT_KEY_KP_0            ::Dingo::Key::KP0
-#define AT_KEY_KP_1            ::Dingo::Key::KP1
-#define AT_KEY_KP_2            ::Dingo::Key::KP2
-#define AT_KEY_KP_3            ::Dingo::Key::KP3
-#define AT_KEY_KP_4            ::Dingo::Key::KP4
-#define AT_KEY_KP_5            ::Dingo::Key::KP5
-#define AT_KEY_KP_6            ::Dingo::Key::KP6
-#define AT_KEY_KP_7            ::Dingo::Key::KP7
-#define AT_KEY_KP_8            ::Dingo::Key::KP8
-#define AT_KEY_KP_9            ::Dingo::Key::KP9
-#define AT_KEY_KP_DECIMAL      ::Dingo::Key::KPDecimal
-#define AT_KEY_KP_DIVIDE       ::Dingo::Key::KPDivide
-#define AT_KEY_KP_MULTIPLY     ::Dingo::Key::KPMultiply
-#define AT_KEY_KP_SUBTRACT     ::Dingo::Key::KPSubtract
-#define AT_KEY_KP_ADD          ::Dingo::Key::KPAdd
-#define AT_KEY_KP_ENTER        ::Dingo::Key::KPEnter
-#define AT_KEY_KP_EQUAL        ::Dingo::Key::KPEqual
-
-#define AT_KEY_LEFT_SHIFT      ::Dingo::Key::LeftShift
-#define AT_KEY_LEFT_CONTROL    ::Dingo::Key::LeftControl
-#define AT_KEY_LEFT_ALT        ::Dingo::Key::LeftAlt
-#define AT_KEY_LEFT_SUPER      ::Dingo::Key::LeftSuper
-#define AT_KEY_RIGHT_SHIFT     ::Dingo::Key::RightShift
-#define AT_KEY_RIGHT_CONTROL   ::Dingo::Key::RightControl
-#define AT_KEY_RIGHT_ALT       ::Dingo::Key::RightAlt
-#define AT_KEY_RIGHT_SUPER     ::Dingo::Key::RightSuper
-#define AT_KEY_MENU            ::Dingo::Key::Menu

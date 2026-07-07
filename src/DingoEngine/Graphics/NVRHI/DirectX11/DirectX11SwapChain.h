@@ -33,6 +33,7 @@ namespace Dingo
 
 	private:
 		void CreateSwapChainAndBuffer();
+		void AcquireBackBuffer();
 		void CreateFramebuffer();
 		void DestroyBufferAndFramebuffer();
 

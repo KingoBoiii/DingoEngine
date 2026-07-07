@@ -26,6 +26,12 @@ namespace Dingo
 		bool Running         = false;
 		bool HasPendingFrame = false;
 
+		// Written by the main thread (resize events), consumed by the render thread
+		// between Present and the next AcquireNextImage. Guarded by Mutex.
+		bool    HasPendingResize    = false;
+		int32_t PendingResizeWidth  = 0;
+		int32_t PendingResizeHeight = 0;
+
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
 		Sampler* PointSampler = nullptr;
@@ -114,6 +120,19 @@ namespace Dingo
 		s_Data->FrameReadyCV.notify_one();
 	}
 
+	void Renderer::QueueResize(int32_t width, int32_t height)
+	{
+		// A (0,0) size means the window is minimized -- nothing to recreate; the swap chain
+		// keeps skipping presents until a real size arrives.
+		if (!s_Data || width <= 0 || height <= 0)
+			return;
+
+		std::lock_guard<std::mutex> lock(s_Data->Mutex);
+		s_Data->HasPendingResize    = true;
+		s_Data->PendingResizeWidth  = width;
+		s_Data->PendingResizeHeight = height;
+	}
+
 	void Renderer::RenderThreadLoop()
 	{
 		while (true)
@@ -132,6 +151,24 @@ namespace Dingo
 			Execute();
 			s_Data->SwapChain->Present();
 			GraphicsContext::Get().RunGarbageCollection();
+
+			// Apply a queued resize here: the presented frame is complete and no image is
+			// acquired yet, so the swap chain (and its framebuffers, which the main thread
+			// records against) can be recreated without racing either thread.
+			{
+				bool    resize = false;
+				int32_t width = 0, height = 0;
+				{
+					std::lock_guard<std::mutex> lock(s_Data->Mutex);
+					resize = s_Data->HasPendingResize;
+					width  = s_Data->PendingResizeWidth;
+					height = s_Data->PendingResizeHeight;
+					s_Data->HasPendingResize = false;
+				}
+				if (resize)
+					s_Data->SwapChain->Resize(width, height);
+			}
+
 			s_Data->SwapChain->AcquireNextImage();
 
 			{

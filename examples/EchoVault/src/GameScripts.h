@@ -83,7 +83,6 @@ namespace Dingo
 
 	private:
 		GameContext* m_Context = nullptr;
-		CharacterController3D* m_Controller = nullptr;
 		float m_VerticalVelocity = 0.0f;  // integrated separately; controller Y is authoritative when grounded
 		float m_FootstepTimer = 0.0f;
 		std::optional<glm::vec3> m_PendingKnockback;
@@ -178,7 +177,8 @@ namespace Dingo
 	// Menu + Win scenes
 	// ======================================================================
 
-	// Menu: builds title/prompt text and, on SPACE/ENTER, requests the Game transition.
+	// Menu: builds title/prompt text and, on SPACE/ENTER or gamepad A/Start, requests the
+	// Game transition. The prompt adapts to the connected controller family.
 	class MenuControllerScript : public ScriptableEntity
 	{
 	protected:
@@ -188,10 +188,11 @@ namespace Dingo
 
 	private:
 		Font* m_Font = nullptr;
+		Entity m_Prompt;
 	};
 
 	// Win: builds the victory text, plays a win fanfare on start, and returns to the Menu
-	// on SPACE/ENTER.
+	// on SPACE/ENTER or gamepad A/Start.
 	class WinControllerScript : public ScriptableEntity
 	{
 	protected:
@@ -201,5 +202,6 @@ namespace Dingo
 
 	private:
 		Font* m_Font = nullptr;
+		Entity m_Prompt;
 	};
 }

@@ -35,11 +35,12 @@ recreates it. Return a heap-allocated `Application*`; the engine deletes it.
 ApplicationParams params{
     .CommandLineArgs = args,
     .Window = {
-        .Title     = "My Game",
-        .Width     = 1600,
-        .Height    = 900,
-        .VSync     = true,
-        .Resizable = false,
+        .Title      = "My Game",
+        .Width      = 1600,
+        .Height     = 900,
+        .VSync      = true,
+        .Resizable  = true,       // live window resizing works on every back-end
+        .Fullscreen = false,      // start in borderless fullscreen at desktop resolution
     },
     .Graphics = {
         .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
@@ -48,6 +49,22 @@ ApplicationParams params{
     .EnableUI = false,    // set true to get OnUIRender() callbacks
 };
 ```
+
+### Fullscreen
+
+Besides `WindowParams::Fullscreen` for starting fullscreen, the mode can be switched
+at runtime (borderless fullscreen at the desktop resolution of the monitor the window
+is on; the windowed position/size is restored when leaving):
+
+```cpp
+Application::Get().GetWindow().ToggleFullscreen();   // e.g. bound to F11
+Application::Get().GetWindow().SetFullscreen(true);  // or explicitly
+bool fs = Application::Get().GetWindow().IsFullscreen();
+```
+
+The swap chain follows automatically via the normal resize path, on every graphics
+back-end. `WindowResizeEvent` is forwarded to layers, so cameras can update their
+aspect ratio there.
 
 ### Command-line arguments
 
@@ -136,29 +153,36 @@ separating, say, gameplay from a debug HUD.
 
 Poll input anywhere (typically in `OnUpdate`) via the static `Input` class.
 
-> **Important — the naming is the opposite of most engines:**
->
-> | Function | Meaning |
-> |---|---|
-> | `Input::IsKeyDown(key)` | **Edge-triggered** — true only on the frame the key is *first* pressed ("just pressed"). |
-> | `Input::IsKeyPressed(key)` | **Held** — true every frame the key is down. |
->
-> Use `IsKeyPressed` for continuous actions (movement) and `IsKeyDown` for one-shot
-> actions (jump, shoot, confirm). The same split applies to
-> `IsMouseButtonDown` (edge) vs. `IsMouseButtonPressed` (held).
+All state is a frame-coherent snapshot taken once per frame. The naming follows
+the common convention and applies uniformly to keys, mouse buttons and gamepad
+buttons (reworked in v0.5.1 — earlier versions had `Pressed`/`Down` swapped):
+
+| Function | Meaning |
+|---|---|
+| `Is...Pressed(x)` | **Edge** — true only on the frame it became pressed ("just pressed"). |
+| `Is...Down(x)` | **Held** — true every frame it is down. |
+| `Is...Released(x)` | **Edge** — true only on the frame it was let go. |
+| `Is...Up(x)` | Not held. |
+
+Use `Down` for continuous actions (movement) and `Pressed` for one-shot actions
+(jump, shoot, confirm).
+
+Mouse extras: `GetMousePosition()` (window pixels, top-left origin, +Y down),
+`GetMouseDelta()` (movement since last frame) and `GetMouseScrollDelta()`
+(wheel movement this frame, +Y = up).
 
 ```cpp
 void OnUpdate(float dt) override
 {
     // Held: move while the key is down.
-    if (Input::IsKeyPressed(Key::A) || Input::IsKeyPressed(Key::Left))  m_X -= speed * dt;
-    if (Input::IsKeyPressed(Key::D) || Input::IsKeyPressed(Key::Right)) m_X += speed * dt;
+    if (Input::IsKeyDown(Key::A) || Input::IsKeyDown(Key::Left))  m_X -= speed * dt;
+    if (Input::IsKeyDown(Key::D) || Input::IsKeyDown(Key::Right)) m_X += speed * dt;
 
     // Edge: fire once per press.
-    if (Input::IsKeyDown(Key::Space))
+    if (Input::IsKeyPressed(Key::Space))
         Fire();
 
-    if (Input::IsMouseButtonDown(Button::Left))
+    if (Input::IsMouseButtonPressed(Button::Left))
         Click();
 }
 ```
@@ -166,6 +190,45 @@ void OnUpdate(float dt) override
 Key codes live in `Key::` (`Key::Space`, `Key::Escape`, `Key::A`–`Key::Z`,
 `Key::Left/Right/Up/Down`, `Key::Enter`, …) and mouse buttons in `Button::`
 (`Button::Left`, `Button::Right`, `Button::Middle`).
+
+### Gamepads (v0.5.1)
+
+Controllers are polled every frame; any device GLFW recognises as a gamepad
+(XInput pads, DualShock/DualSense, most USB/Bluetooth pads) works out of the
+box. Up to 16 pads are tracked; every call takes an optional gamepad index
+defaulting to `0` (the first pad).
+
+```cpp
+if (Input::IsGamepadConnected())
+{
+    glm::vec2 stick = Input::GetGamepadLeftStick();   // radial deadzone, +Y down
+    m_Velocity = glm::vec3(stick.x, 0.0f, stick.y) * speed;
+
+    if (Input::IsGamepadButtonPressed(GamepadButton::A))
+        Jump();
+
+    float aim = Input::GetGamepadAxis(GamepadAxis::RightTrigger); // 0..1
+}
+```
+
+- Buttons (`GamepadButton::`): `A/B/X/Y` (with `Cross/Circle/Square/Triangle`
+  aliases), `LeftBumper/RightBumper`, `Back/Start/Guide`,
+  `LeftThumb/RightThumb`, `DPadUp/Down/Left/Right` — same
+  `Pressed/Down/Released` split as keys.
+- Axes (`GamepadAxis::`): `LeftX/LeftY/RightX/RightY` in [-1, 1] and
+  `LeftTrigger/RightTrigger` remapped to [0, 1]. `GetGamepadAxis` applies the
+  deadzone (default 0.15, tune via `SetGamepadDeadzone`); `GetGamepadAxisRaw`
+  does not. `GetGamepadLeftStick/RightStick` return a deadzone-filtered
+  `glm::vec2`.
+- Connection changes arrive as `GamepadConnectedEvent` /
+  `GamepadDisconnectedEvent` (see Events below), which carry the slot id plus
+  the detected `GetGamepadType()` and `GetGamepadName()` — ready to use inside
+  the handler. These fire only for changes after startup — a pad already
+  plugged in at launch produces no event, so check `IsGamepadConnected` for
+  the initial state. The same `Input::GetGamepadName`/`GetGamepadType`
+  (`Xbox` / `PlayStation` / `Nintendo` / `Steam` / `Unknown`, detected from
+  the USB vendor id with a name fallback) cover polling, e.g. for
+  button-prompt glyphs.
 
 ## Events
 

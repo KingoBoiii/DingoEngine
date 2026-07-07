@@ -77,6 +77,15 @@ The engine foundation is now in place: v0.4.1 moved 3D rendering and the Jolt-ba
 
 **Example game**: *EchoVault* — a compact 3D course of floating platforms and vaults built specifically to exercise the two new systems together: capsule character-controller movement (slopes, stairs, moving **kinematic platforms** that carry the player), ray/shape-cast gameplay (a patrolling sentry with line-of-sight detection, hit checks), and 3D positional audio you navigate *by* (chiming collectibles, humming platforms, ambient loops, footsteps). The full dungeon-crawler **game** originally slotted here is developed in its own project on prebuilt engine releases — the engine repo ships the example, the game ships on its own schedule.
 
+## v0.5.1 — Input Rework & Gamepad Support
+A point release that replaces the input layer wholesale. The old `Input` mixed live GLFW polling with callback state and had `IsKeyDown`/`IsKeyPressed` semantics **inverted** relative to every other engine — a long-standing footgun.
+
+- **Reworked input core**: a frame-coherent snapshot with the conventional naming — `Is...Pressed` (edge), `Is...Down` (held), plus new `Is...Released` / `Is...Up` — applied uniformly to keys, mouse buttons, and gamepad buttons. All examples and the built-in `F3`/`F4` overlay toggles migrated.
+- **Mouse upgrades**: scroll wheel (`GetMouseScrollDelta`) and per-frame cursor movement (`GetMouseDelta`), with new `MouseMovedEvent` / `MouseScrolledEvent` layer events.
+- **Gamepad support**: up to 16 controllers via GLFW's gamepad-mapping database — `GamepadButton` / `GamepadAxis` codes (Xbox naming with PlayStation aliases), edge/held button queries, deadzone-filtered axes and stick vectors (configurable radial deadzone, triggers remapped to [0, 1]), and `GamepadConnectedEvent` / `GamepadDisconnectedEvent`.
+
+**Example**: *EchoVault* gains full controller play — analog left-stick / d-pad movement, `(A)` to jump and confirm menus.
+
 ## v0.6 — Asset Pipeline & Hot-Reload
 Centralized `AssetManager` with UUID-based handles, background/async loading, and hot-reload of shaders and textures during development.
 

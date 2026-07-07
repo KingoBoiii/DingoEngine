@@ -19,15 +19,19 @@ namespace Dingo
 		void OnAttach() override;
 		void OnDetach() override;
 		void OnUpdate(float deltaTime) override;
+		void OnEvent(Event& event) override;
 
 	private:
 		void RebuildGameScene();
+		bool OnGamepadConnected(GamepadConnectedEvent& event);
+		bool OnGamepadDisconnected(GamepadDisconnectedEvent& event);
 
 	private:
 		SceneManager m_SceneManager;
 		Scene* m_MenuScene = nullptr;
 		Scene* m_GameScene = nullptr;
 		Scene* m_WinScene = nullptr;
+		bool m_LoggedStartupGamepads = false;
 	};
 
 }

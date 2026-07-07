@@ -13,7 +13,9 @@ namespace Dingo
 		None = 0,
 		WindowClose, WindowResize,
 		KeyPressed, KeyReleased,
-		MouseButtonPressed, MouseButtonReleased
+		MouseButtonPressed, MouseButtonReleased,
+		MouseMoved, MouseScrolled,
+		GamepadConnected, GamepadDisconnected
 	};
 
 	enum EventCategory
@@ -24,7 +26,8 @@ namespace Dingo
 		EventCategoryInput			= BIT(2),
 		EventCategoryKeyboard		= BIT(3),
 		EventCategoryMouse			= BIT(4),
-		EventCategoryMouseButton	= BIT(5)
+		EventCategoryMouseButton	= BIT(5),
+		EventCategoryGamepad		= BIT(6)
 	};
 
 #define EVENT_CLASS_TYPE(type) static EventType GetStaticType() { return EventType::type; }\

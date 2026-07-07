@@ -91,7 +91,7 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
+		if (Input::IsKeyPressed(Key::Escape))
 		{
 			Application::Get().Close();
 		}
@@ -130,7 +130,7 @@ namespace Dingo
 
 	void GameLayer::UpdateGameStateMenu(float deltaTime, Renderer2D& renderer)
 	{
-		if(Input::IsKeyDown(Key::Space))
+		if(Input::IsKeyPressed(Key::Space))
 		{
 			m_GameState = GameState::Game;
 			m_Score = 0; // Reset score when starting the game
@@ -154,7 +154,7 @@ namespace Dingo
 
 	void GameLayer::UpdateGameStateDead(float deltaTime, Renderer2D& renderer)
 	{
-		if (Input::IsKeyDown(Key::Space))
+		if (Input::IsKeyPressed(Key::Space))
 		{
 			m_GameState = GameState::Game;
 			m_Score = 0; // Reset score when starting the game
@@ -205,7 +205,7 @@ namespace Dingo
 		m_BirdY += m_BirdVelocity * deltaTime;   // Update position
 
 		// Handle jump input (spacebar)
-		if (Input::IsKeyDown(Key::Space))
+		if (Input::IsKeyPressed(Key::Space))
 		{
 			m_BirdVelocity = m_JumpVelocity;
 		}

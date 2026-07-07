@@ -51,6 +51,7 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 
 - **Entry point**: implement `CreateApplication()` returning a heap-allocated `Application*`; `EntryPoint.h` owns `main()`.
 - **Layers**: override `OnAttach/OnDetach/OnUpdate(dt)/OnUIRender` (UI only if ImGui enabled).
+- **Input** (reworked v0.5.1): frame-coherent snapshot with standard semantics — `Is...Pressed` = edge ("just pressed"), `Is...Down` = held, plus `Released`/`Up` — uniform across keys, mouse buttons, and gamepad buttons (pre-0.5.1 code had `Pressed`/`Down` inverted). Gamepads: `GamepadButton`/`GamepadAxis` codes, `GetGamepadLeftStick/RightStick` (deadzone-filtered), triggers remapped to [0,1], up to 16 pads, `GamepadConnected/DisconnectedEvent`. Mouse adds `GetMouseDelta`/`GetMouseScrollDelta` + `MouseMoved/MouseScrolledEvent`.
 - **Params/builder**: resources are built from fluent `*Params` structs passed to static `Create()` factories: `Texture::Create(TextureParams().SetWidth(512)...)`.
 - **Bindables**: `Texture`, `GraphicsBuffer`, `Sampler` implement `IBindableShaderResource` for slot binding in a `RenderPass`.
 - **Events**: `EventDispatcher dispatcher(event); dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(OnResize));`
@@ -95,4 +96,4 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). In progress on branch `v0.5.0`: audio engine (miniaudio backend + `AudioSource`/`AudioListener` components + 3D positional), gameplay-grade physics (capsule character controller, kinematic position control, ray/shape casts), emissive materials, script scene-transitions, `ScreenPointToRay` — showcased by the new `examples/EchoVault`.
+See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). v0.5.0 (merged) landed the audio engine (miniaudio backend + `AudioSource`/`AudioListener` + 3D positional) and gameplay-grade physics (capsule character controller, ray/shape casts) showcased by `examples/EchoVault`. In progress on branch `v0.5.1`: the input rework + gamepad support described under Key patterns.

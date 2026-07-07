@@ -37,24 +37,52 @@ namespace Dingo
 
 	void EchoVaultLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
-			Application::Get().Close();
-
-		// A script requests Menu->Game / Game->Win via RequestSceneTransition; the manager
-		// performs the switch inside OnUpdate. Rebuild the Game scene just before it is
-		// activated (Menu->Game or Win->...->Game) so every run starts from a fresh course.
-		if (Scene* activeScene = m_SceneManager.GetActiveScene())
+		// Connect events only fire for post-startup changes; report pads present at launch once.
+		if (!m_LoggedStartupGamepads)
 		{
-			if (activeScene->HasPendingSceneTransition()
-				&& activeScene->GetPendingSceneTransition() == "Game"
-				&& !m_GameScene->IsRunning())
+			m_LoggedStartupGamepads = true;
+			for (uint32_t pad = 0; pad < MaxGamepads; pad++)
 			{
-				RebuildGameScene();
+				if (Input::IsGamepadConnected(pad))
+					DE_INFO("Gamepad already connected in slot {}: {} ('{}')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad));
 			}
 		}
 
+		if (Input::IsKeyPressed(Key::Escape))
+			Application::Get().Close();
+
+		Scene* activeBefore = m_SceneManager.GetActiveScene();
+
 		m_SceneManager.OnUpdate(deltaTime); // scripts + physics (+ any requested transition)
 		m_SceneManager.OnRender();          // 3D world + 2D HUD overlay
+
+		// The manager performs a requested transition inside its OnUpdate, in the same
+		// frame it was requested — a pending request is never observable out here. So
+		// rebuild the Game scene the moment we leave it (Game->Win): OnStop has already
+		// destroyed its physics world, and reusing the stale scene would dangle every
+		// script-cached handle and replay an already-collected course. Clearing now means
+		// the next Menu->Game activation starts from a fresh course.
+		if (activeBefore == m_GameScene && m_SceneManager.GetActiveScene() != m_GameScene)
+			RebuildGameScene();
+	}
+
+	void EchoVaultLayer::OnEvent(Event& event)
+	{
+		EventDispatcher dispatcher(event);
+		dispatcher.Dispatch<GamepadConnectedEvent>(DE_BIND_EVENT_FN(EchoVaultLayer::OnGamepadConnected));
+		dispatcher.Dispatch<GamepadDisconnectedEvent>(DE_BIND_EVENT_FN(EchoVaultLayer::OnGamepadDisconnected));
+	}
+
+	bool EchoVaultLayer::OnGamepadConnected(GamepadConnectedEvent& event)
+	{
+		DE_INFO("Gamepad connected in slot {}: {} ('{}')", event.GetGamepadId(), ToString(event.GetGamepadType()), event.GetGamepadName());
+		return false;
+	}
+
+	bool EchoVaultLayer::OnGamepadDisconnected(GamepadDisconnectedEvent& event)
+	{
+		DE_INFO("Gamepad disconnected from slot {}: {} ('{}')", event.GetGamepadId(), ToString(event.GetGamepadType()), event.GetGamepadName());
+		return false;
 	}
 
 }

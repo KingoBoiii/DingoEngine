@@ -131,8 +131,8 @@ namespace Dingo
 	void PlayerScript::OnUpdate(float deltaTime)
 	{
 		float direction = 0.0f;
-		if (Input::IsKeyPressed(Key::A) || Input::IsKeyPressed(Key::Left))  direction -= 1.0f;
-		if (Input::IsKeyPressed(Key::D) || Input::IsKeyPressed(Key::Right)) direction += 1.0f;
+		if (Input::IsKeyDown(Key::A) || Input::IsKeyDown(Key::Left))  direction -= 1.0f;
+		if (Input::IsKeyDown(Key::D) || Input::IsKeyDown(Key::Right)) direction += 1.0f;
 
 		float spawnX = 0.0f;
 		float spawnY = 0.0f;
@@ -149,7 +149,7 @@ namespace Dingo
 		if (m_FireCooldown > 0.0f)
 			m_FireCooldown -= deltaTime;
 
-		if (Input::IsKeyDown(Key::Space) && m_FireCooldown <= 0.0f)
+		if (Input::IsKeyPressed(Key::Space) && m_FireCooldown <= 0.0f)
 		{
 			// Classic rule: only one player bullet in flight at a time.
 			int playerBullets = 0;

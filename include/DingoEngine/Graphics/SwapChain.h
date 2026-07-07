@@ -66,9 +66,16 @@ namespace Dingo
 		virtual Framebuffer* GetCurrentFramebuffer() const = 0;
 		virtual uint32_t GetCurrentBackBufferIndex() const = 0;
 
+		// Bumped every time the swap chain (and thus its framebuffers) is recreated.
+		// Anything caching objects derived from a swap-chain framebuffer must compare
+		// generations instead of holding references: on D3D11/D3D12, a stale reference
+		// to a back buffer makes ResizeBuffers fail.
+		uint64_t GetResizeGeneration() const { return m_ResizeGeneration; }
+
 	protected:
 		SwapChainParams m_Params;
 		std::vector<Framebuffer*> m_SwapChainFramebuffers;
+		uint64_t m_ResizeGeneration = 0;
 	};
 
 }

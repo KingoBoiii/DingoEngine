@@ -118,6 +118,11 @@ namespace Dingo
 		});
 		dispatcher.Dispatch<KeyPressedEvent>([this](KeyPressedEvent& e)
 		{
+			if (e.GetKeyCode() == Key::F11)
+			{
+				Application::Get().GetWindow().ToggleFullscreen();
+				return true;
+			}
 			if (e.GetKeyCode() == Key::Space)
 			{
 				if ((m_State == BreakoutState::Menu || m_State == BreakoutState::Playing) && !m_Ball.Launched)
@@ -155,6 +160,7 @@ namespace Dingo
 							[](const Brick& b) { return b.Alive; })));
 					UI::Separator();
 					UI::Text("A/D or Left/Right: move paddle");
+					UI::Text("F11: toggle fullscreen");
 					break;
 				case BreakoutState::GameOver:
 					UI::TextColored({ 1,0.2f,0.2f,1 }, "GAME OVER");
@@ -218,9 +224,9 @@ namespace Dingo
 		// ── Paddle movement ──────────────────────────────────────
 		const float paddleHalfX = m_Paddle.Size.x * 0.5f;
 
-		if (Input::IsKeyPressed(Key::A) || Input::IsKeyPressed(Key::Left))
+		if (Input::IsKeyDown(Key::A) || Input::IsKeyDown(Key::Left))
 			m_Paddle.Position.x -= m_Paddle.Speed * dt;
-		if (Input::IsKeyPressed(Key::D) || Input::IsKeyPressed(Key::Right))
+		if (Input::IsKeyDown(Key::D) || Input::IsKeyDown(Key::Right))
 			m_Paddle.Position.x += m_Paddle.Speed * dt;
 
 		m_Paddle.Position.x = std::clamp(m_Paddle.Position.x,

@@ -9,8 +9,48 @@
 #include "DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h"
 #include "DingoEngine/Graphics/NVRHI/NvrhiSwapChainFramebuffer.h"
 
+#include <dxgidebug.h>
+
 namespace Dingo
 {
+
+	namespace Utils
+	{
+
+		// Debug-layer diagnostics for ResizeBuffers failures: the DXGI info queue names the
+		// object still holding a back-buffer reference. No-ops outside Debug (no debug layer).
+		static void DumpDebugLayerMessages()
+		{
+			using PFN_DXGIGetDebugInterface = HRESULT(WINAPI*)(REFIID, void**);
+			HMODULE dxgidebug = LoadLibraryA("dxgidebug.dll");
+			if (!dxgidebug)
+				return;
+
+			auto getDebugInterface = (PFN_DXGIGetDebugInterface)GetProcAddress(dxgidebug, "DXGIGetDebugInterface");
+			IDXGIInfoQueue* infoQueue = nullptr;
+			if (getDebugInterface && SUCCEEDED(getDebugInterface(IID_PPV_ARGS(&infoQueue))))
+			{
+				const UINT64 count = infoQueue->GetNumStoredMessages(DXGI_DEBUG_ALL);
+				for (UINT64 i = 0; i < count; i++)
+				{
+					SIZE_T length = 0;
+					infoQueue->GetMessage(DXGI_DEBUG_ALL, i, nullptr, &length);
+					std::vector<char> buffer(length);
+					auto* message = reinterpret_cast<DXGI_INFO_QUEUE_MESSAGE*>(buffer.data());
+					if (SUCCEEDED(infoQueue->GetMessage(DXGI_DEBUG_ALL, i, message, &length)))
+					{
+						// DescriptionByteLength counts the trailing NUL.
+						const size_t descLength = message->DescriptionByteLength > 0 ? message->DescriptionByteLength - 1 : 0;
+						DE_CORE_ERROR("[DebugLayer] {}", std::string_view(message->pDescription, descLength));
+					}
+				}
+				infoQueue->Release();
+			}
+
+			FreeLibrary(dxgidebug);
+		}
+
+	}
 
 	DirectX11SwapChain::DirectX11SwapChain(const SwapChainParams& params)
 		: SwapChain(params)
@@ -42,11 +82,29 @@ namespace Dingo
 		m_Params.Width = width;
 		m_Params.Height = height;
 
+		auto& ctx = GraphicsContext::Get().As<DirectX11GraphicsContext>();
+
 		DestroyBufferAndFramebuffer();
 
+		// ResizeBuffers fails with DXGI_ERROR_INVALID_CALL while ANY reference to a back
+		// buffer is still alive. Dropping our handles above is not enough: NVRHI keeps
+		// deferred references for in-flight work, and the immediate context may still have
+		// the back buffer bound as a render target. Idle the device, clear bound state and
+		// collect the deferred references before resizing.
+		ctx.GetDeviceHandle()->waitForIdle();
+		ctx.GetD3D11DeviceContext()->ClearState();
+		ctx.GetDeviceHandle()->runGarbageCollection();
+
 		HRESULT hr = m_SwapChain->ResizeBuffers(2, (UINT)width, (UINT)height, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
+		if (FAILED(hr))
+		{
+			DE_CORE_ERROR("ResizeBuffers({}x{}) failed, hr=0x{:08X}", width, height, (uint32_t)hr);
+			Utils::DumpDebugLayerMessages();
+		}
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to resize D3D11 swap chain buffers.");
 
+		m_ResizeGeneration++;
+		AcquireBackBuffer();
 		CreateFramebuffer();
 	}
 
@@ -86,10 +144,18 @@ namespace Dingo
 		);
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to create DXGI swap chain for D3D11.");
 
-		// Disable Alt+Enter fullscreen
+		// Disable DXGI's own Alt+Enter exclusive fullscreen; the engine offers borderless
+		// fullscreen through Window::SetFullscreen instead, uniformly across back-ends.
 		ctx.GetDXGIFactory()->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
 
-		hr = m_SwapChain->GetBuffer(0, IID_PPV_ARGS(&m_BackBuffer));
+		AcquireBackBuffer();
+	}
+
+	void DirectX11SwapChain::AcquireBackBuffer()
+	{
+		auto& ctx = GraphicsContext::Get().As<DirectX11GraphicsContext>();
+
+		HRESULT hr = m_SwapChain->GetBuffer(0, IID_PPV_ARGS(&m_BackBuffer));
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to get D3D11 swap chain back buffer.");
 
 		nvrhi::TextureDesc textureDesc;

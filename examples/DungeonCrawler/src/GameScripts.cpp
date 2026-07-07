@@ -56,10 +56,10 @@ namespace Dingo
 	void PlayerScript::OnUpdate(float deltaTime)
 	{
 		glm::vec2 direction(0.0f);
-		if (Input::IsKeyPressed(Key::W)) direction.y += 1.0f;
-		if (Input::IsKeyPressed(Key::S)) direction.y -= 1.0f;
-		if (Input::IsKeyPressed(Key::A)) direction.x -= 1.0f;
-		if (Input::IsKeyPressed(Key::D)) direction.x += 1.0f;
+		if (Input::IsKeyDown(Key::W)) direction.y += 1.0f;
+		if (Input::IsKeyDown(Key::S)) direction.y -= 1.0f;
+		if (Input::IsKeyDown(Key::A)) direction.x -= 1.0f;
+		if (Input::IsKeyDown(Key::D)) direction.x += 1.0f;
 
 		// Move (and capture our position for the checks below, since spawning loot
 		// during the attack can invalidate the transform reference).
@@ -82,7 +82,7 @@ namespace Dingo
 		if (m_AttackCooldown > 0.0f) m_AttackCooldown -= deltaTime;
 
 		// Radial melee: hit every enemy within range.
-		if (Input::IsKeyDown(Key::Space) && m_AttackCooldown <= 0.0f)
+		if (Input::IsKeyPressed(Key::Space) && m_AttackCooldown <= 0.0f)
 		{
 			m_AttackTimer = PLAYER_ATTACK_ACTIVE;
 			m_AttackCooldown = PLAYER_ATTACK_COOLDOWN;

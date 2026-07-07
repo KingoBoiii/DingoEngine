@@ -41,7 +41,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.Width = 1280,
 			.Height = 720,
 			.VSync = true,
-			.Resizable = false,
+			.Resizable = true,
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),

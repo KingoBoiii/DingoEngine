@@ -3,6 +3,7 @@
 #include "DingoEngine/UI/DebugPanels.h"
 
 #include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -46,15 +47,8 @@ namespace Dingo::UI
 		}
 	}
 
-	void RendererStatsWindow(bool* open)
+	void RendererStatsSection()
 	{
-		// Begin() returns false when collapsed/clipped; skip the body but still End().
-		if (!ImGui::Begin("Renderer Stats", open))
-		{
-			ImGui::End();
-			return;
-		}
-
 		// ---- Performance (from ImGui's own frame timing) --------------------
 		const ImGuiIO& io = ImGui::GetIO();
 		const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
@@ -111,6 +105,18 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		BudgetBar("Vertices", stats3D.VertexCount, caps3D.MaxVertices);
 		BudgetBar("Indices", stats3D.IndexCount, caps3D.MaxIndices);
+	}
+
+	void RendererStatsWindow(bool* open)
+	{
+		// Begin() returns false when collapsed/clipped; skip the body but still End().
+		if (!ImGui::Begin("Renderer Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		RendererStatsSection();
 
 		ImGui::End();
 	}
@@ -203,6 +209,173 @@ namespace Dingo::UI
 		AudioStatsSection();
 
 		ImGui::End();
+	}
+
+	void MouseInputSection()
+	{
+		const glm::vec2 position = Input::GetMousePosition();
+		const glm::vec2 delta = Input::GetMouseDelta();
+		const glm::vec2 scroll = Input::GetMouseScrollDelta();
+
+		ImGui::TextUnformatted("Mouse");
+		ImGui::Separator();
+		ImGui::Text("Position : %.0f, %.0f", position.x, position.y);
+		ImGui::Text("Delta    : %+.1f, %+.1f", delta.x, delta.y);
+		ImGui::Text("Scroll   : %+.1f, %+.1f", scroll.x, scroll.y);
+
+		std::string held;
+		static constexpr const char* s_ButtonNames[] = { "Left", "Right", "Middle", "Button3", "Button4", "Button5" };
+		for (int i = 0; i < IM_ARRAYSIZE(s_ButtonNames); i++)
+		{
+			if (!Input::IsMouseButtonDown(static_cast<MouseButton>(i)))
+				continue;
+			if (!held.empty())
+				held += ", ";
+			held += s_ButtonNames[i];
+		}
+		ImGui::Text("Buttons  : %s", held.empty() ? "-" : held.c_str());
+	}
+
+	void KeyboardInputSection()
+	{
+		ImGui::TextUnformatted("Keyboard");
+		ImGui::Separator();
+
+		std::string held;
+		for (uint16_t code = static_cast<uint16_t>(KeyCode::Space); code <= static_cast<uint16_t>(KeyCode::Menu); code++)
+		{
+			if (!Input::IsKeyDown(static_cast<KeyCode>(code)))
+				continue;
+			if (!held.empty())
+				held += ", ";
+			held += ToString(static_cast<KeyCode>(code));
+		}
+		ImGui::Text("Held : %s", held.empty() ? "-" : held.c_str());
+	}
+
+	void GamepadInputSection()
+	{
+		ImGui::TextUnformatted("Gamepads");
+		ImGui::Separator();
+
+		float deadzone = Input::GetGamepadDeadzone();
+		if (ImGui::SliderFloat("Deadzone", &deadzone, 0.0f, 0.95f, "%.2f"))
+			Input::SetGamepadDeadzone(deadzone);
+
+		bool any = false;
+		for (uint32_t pad = 0; pad < MaxGamepads; pad++)
+		{
+			if (!Input::IsGamepadConnected(pad))
+				continue;
+			any = true;
+
+			ImGui::Spacing();
+			ImGui::Text("Slot %u : %s ('%s')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad).c_str());
+
+			std::string held;
+			for (uint8_t button = 0; button < GamepadButtonCount; button++)
+			{
+				if (!Input::IsGamepadButtonDown(static_cast<GamepadButton>(button), pad))
+					continue;
+				if (!held.empty())
+					held += ", ";
+				held += ToString(static_cast<GamepadButton>(button));
+			}
+			ImGui::Text("Buttons : %s", held.empty() ? "-" : held.c_str());
+
+			const glm::vec2 left = Input::GetGamepadLeftStick(pad);
+			const glm::vec2 right = Input::GetGamepadRightStick(pad);
+			ImGui::Text("Left stick  : %+.2f, %+.2f   (raw %+.2f, %+.2f)", left.x, left.y,
+				Input::GetGamepadAxisRaw(GamepadAxis::LeftX, pad), Input::GetGamepadAxisRaw(GamepadAxis::LeftY, pad));
+			ImGui::Text("Right stick : %+.2f, %+.2f   (raw %+.2f, %+.2f)", right.x, right.y,
+				Input::GetGamepadAxisRaw(GamepadAxis::RightX, pad), Input::GetGamepadAxisRaw(GamepadAxis::RightY, pad));
+
+			// Triggers as 0..1 usage bars (the remapped, deadzone-filtered values).
+			ImGui::ProgressBar(Input::GetGamepadAxis(GamepadAxis::LeftTrigger, pad), ImVec2(120.0f, 0.0f), "LT");
+			ImGui::SameLine();
+			ImGui::ProgressBar(Input::GetGamepadAxis(GamepadAxis::RightTrigger, pad), ImVec2(120.0f, 0.0f), "RT");
+		}
+
+		if (!any)
+			ImGui::TextUnformatted("No gamepads connected.");
+	}
+
+	void InputStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Input Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		MouseInputSection();
+
+		ImGui::Spacing();
+		KeyboardInputSection();
+
+		ImGui::Spacing();
+		GamepadInputSection();
+
+		ImGui::End();
+	}
+
+	DebugTab DebugWindow(bool* open, DebugTab select)
+	{
+		DebugTab active = DebugTab::None;
+
+		ImGui::SetNextWindowSize(ImVec2(440.0f, 520.0f), ImGuiCond_FirstUseEver);
+		if (!ImGui::Begin("Debug", open))
+		{
+			ImGui::End();
+			return active;
+		}
+
+		if (ImGui::BeginTabBar("##DebugTabs"))
+		{
+			auto tab = [&](const char* label, DebugTab id, auto&& content)
+			{
+				const ImGuiTabItemFlags flags = (select == id) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				if (!ImGui::BeginTabItem(label, nullptr, flags))
+					return;
+
+				active = id;
+				ImGui::Spacing();
+				content();
+				ImGui::EndTabItem();
+			};
+
+			tab("Engine", DebugTab::Engine, []
+			{
+				EngineInfoSection();
+				ImGui::Spacing();
+				GraphicsInfoSection();
+				ImGui::Spacing();
+				WindowInfoSection();
+				ImGui::Spacing();
+				FrameTimingSection();
+				ImGui::Spacing();
+				AudioStatsSection();
+			});
+
+			tab("Renderer", DebugTab::Renderer, []
+			{
+				RendererStatsSection();
+			});
+
+			tab("Input", DebugTab::Input, []
+			{
+				MouseInputSection();
+				ImGui::Spacing();
+				KeyboardInputSection();
+				ImGui::Spacing();
+				GamepadInputSection();
+			});
+
+			ImGui::EndTabBar();
+		}
+
+		ImGui::End();
+		return active;
 	}
 
 }

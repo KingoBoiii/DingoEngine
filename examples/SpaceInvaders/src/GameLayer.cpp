@@ -57,7 +57,7 @@ namespace Dingo
 
 	void GameLayer::OnUpdate(float deltaTime)
 	{
-		if (Input::IsKeyDown(Key::Escape))
+		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 
 		const std::string active = m_SceneManager.GetActiveSceneName();
@@ -72,7 +72,7 @@ namespace Dingo
 
 		if (active == "Menu")
 		{
-			if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter))
+			if (Input::IsKeyPressed(Key::Space) || Input::IsKeyPressed(Key::Enter))
 				StartGame();
 		}
 		else if (active == "Game")
@@ -84,7 +84,7 @@ namespace Dingo
 		}
 		else if (active == "GameOver")
 		{
-			if (Input::IsKeyDown(Key::Space) || Input::IsKeyDown(Key::Enter))
+			if (Input::IsKeyPressed(Key::Space) || Input::IsKeyPressed(Key::Enter))
 				m_SceneManager.SetActiveScene("Menu");
 		}
 

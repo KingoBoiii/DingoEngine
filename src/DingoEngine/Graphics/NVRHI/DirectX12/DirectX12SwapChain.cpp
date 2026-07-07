@@ -80,6 +80,12 @@ namespace Dingo
 
 		DestroyBuffersAndFramebuffers();
 
+		// The present-fence wait above only covers OUR submissions; NVRHI still holds
+		// deferred references to the back buffers for command lists it tracked. ResizeBuffers
+		// fails while any such reference is alive, so idle NVRHI's queues and collect them.
+		ctx.GetDeviceHandle()->waitForIdle();
+		ctx.GetDeviceHandle()->runGarbageCollection();
+
 		HRESULT hr = m_SwapChain->ResizeBuffers(k_BufferCount, (UINT)width, (UINT)height, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to resize D3D12 swap chain buffers.");
 
@@ -87,6 +93,8 @@ namespace Dingo
 		m_FenceValues.fill(0);
 		m_NextFenceValue = 1;
 
+		m_ResizeGeneration++;
+		AcquireBackBuffers();
 		CreateFramebuffers();
 	}
 
@@ -141,7 +149,8 @@ namespace Dingo
 		);
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to create DXGI swap chain for D3D12.");
 
-		// Disable Alt+Enter fullscreen
+		// Disable DXGI's own Alt+Enter exclusive fullscreen; the engine offers borderless
+		// fullscreen through Window::SetFullscreen instead, uniformly across back-ends.
 		ctx.GetDXGIFactory()->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
 
 		hr = swapChain1->QueryInterface(IID_PPV_ARGS(&m_SwapChain));
@@ -150,10 +159,17 @@ namespace Dingo
 
 		m_CurrentBackBufferIndex = m_SwapChain->GetCurrentBackBufferIndex();
 
+		AcquireBackBuffers();
+	}
+
+	void DirectX12SwapChain::AcquireBackBuffers()
+	{
+		auto& ctx = GraphicsContext::Get().As<DirectX12GraphicsContext>();
+
 		// Acquire each back buffer and wrap it in an NVRHI texture handle
 		for (uint32_t i = 0; i < k_BufferCount; ++i)
 		{
-			hr = m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&m_BackBuffers[i].resource));
+			HRESULT hr = m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&m_BackBuffers[i].resource));
 			DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to get D3D12 swap chain buffer.");
 
 			nvrhi::TextureDesc textureDesc;
