@@ -487,9 +487,13 @@ namespace Dingo
 			graphicsContext.m_VulkanDevice.waitIdle();
 		}
 
-		for (size_t index = 0; index < m_SwapChainImages.size(); index++)
+		for (Framebuffer* framebuffer : m_SwapChainFramebuffers)
 		{
-			m_SwapChainFramebuffers[index]->Destroy();
+			if (framebuffer)
+			{
+				framebuffer->Destroy();
+				delete framebuffer;
+			}
 		}
 		m_SwapChainFramebuffers.clear();
 
@@ -521,6 +525,8 @@ namespace Dingo
 
 		CreateSwapChain();
 		CreateFramebuffers();
+
+		m_ResizeGeneration++;
 	}
 
 }
