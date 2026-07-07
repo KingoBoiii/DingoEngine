@@ -106,6 +106,8 @@ namespace Dingo
 		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle);
 		if (!m_GraphicsPipelineHandle) DE_CORE_ERROR("Pipeline '{}': createGraphicsPipeline failed — check D3D12 debug output for root signature or PSO errors.", m_Params.DebugName);
 		DE_CORE_ASSERT(m_GraphicsPipelineHandle, "createGraphicsPipeline returned null — see errors above.");
+
+		m_BuiltShaderGeneration = m_Params.Shader->GetGeneration();
 	}
 
 	void NvrhiPipeline::Destroy()

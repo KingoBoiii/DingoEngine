@@ -32,6 +32,9 @@ namespace Dingo
 
 		nvrhi::BindingSetDesc m_BindingSetDesc;
 		nvrhi::BindingSetHandle m_BindingSetHandle;
+		// Shader generation the binding set was baked against; a hot-reload replaces
+		// the shader's binding layout, so a mismatch forces a re-bake at bind time.
+		uint32_t m_BuiltShaderGeneration = 0;
 
 		friend class NvrhiCommandList; // Allow CommandList to access private members
 	};

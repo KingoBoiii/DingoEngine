@@ -75,9 +75,11 @@ namespace Dingo
 			return;
 		}
 
-		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(m_Params.Pipeline->GetParams().Shader)->m_BindingLayoutHandle);
+		Shader* shader = m_Params.Pipeline->GetParams().Shader;
+		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
 		DE_CORE_ASSERT(m_BindingSetHandle, "Failed to create BindingSetHandle in NvrhiRenderPass::Bake");
 
+		m_BuiltShaderGeneration = shader->GetGeneration();
 		m_Valid = true;
 	}
 
