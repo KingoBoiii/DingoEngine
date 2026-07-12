@@ -44,6 +44,77 @@ namespace Dingo
 			}
 		}
 
+		// Bytecode cache files start with this header, binding the cached bytecode to
+		// the exact source it was compiled from - stale caches (edited inline shaders,
+		// offline file edits, toolchain changes) are detected and recompiled instead of
+		// silently served. Header-less files from older engine versions fail the magic
+		// check and recompile the same way.
+		struct ShaderCacheHeader
+		{
+			uint32_t Magic = 0;
+			uint32_t FormatVersion = 0;
+			uint64_t SourceHash = 0;
+		};
+
+		static constexpr uint32_t k_ShaderCacheMagic = 0x43485344; // "DSHC"
+		// Bump when compiler options or the shader toolchain change in a way that
+		// invalidates previously cached bytecode.
+		static constexpr uint32_t k_ShaderCacheFormatVersion = 1;
+
+		static uint64_t HashFNV1a(std::string_view data, uint64_t hash = 14695981039346656037ull)
+		{
+			for (const unsigned char c : data)
+			{
+				hash ^= c;
+				hash *= 1099511628211ull;
+			}
+			return hash;
+		}
+
+		static uint64_t ComputeShaderCacheHash(const std::string& source, const std::string& entryPoint, uint32_t shaderModel = 0)
+		{
+			uint64_t hash = HashFNV1a(source);
+			hash = HashFNV1a(entryPoint, hash);
+			hash = HashFNV1a(std::string_view(reinterpret_cast<const char*>(&shaderModel), sizeof(shaderModel)), hash);
+			return hash;
+		}
+
+		static std::string MakeShaderCacheBlob(uint64_t sourceHash, const void* bytecode, size_t size)
+		{
+			ShaderCacheHeader header;
+			header.Magic = k_ShaderCacheMagic;
+			header.FormatVersion = k_ShaderCacheFormatVersion;
+			header.SourceHash = sourceHash;
+
+			std::string blob(sizeof(header) + size, '\0');
+			std::memcpy(blob.data(), &header, sizeof(header));
+			std::memcpy(blob.data() + sizeof(header), bytecode, size);
+			return blob;
+		}
+
+		// False when missing, unreadable, from an older format, or compiled from
+		// different source - the caller recompiles, exactly as if the file were absent.
+		static bool ReadShaderCache(const std::filesystem::path& path, uint64_t expectedHash, std::vector<uint8_t>& outBytecode)
+		{
+			std::error_code ec;
+			const uintmax_t fileSize = std::filesystem::file_size(path, ec);
+			if (ec || fileSize < sizeof(ShaderCacheHeader))
+				return false;
+
+			std::ifstream in(path, std::ios::in | std::ios::binary);
+			if (!in.is_open())
+				return false;
+
+			ShaderCacheHeader header;
+			in.read(reinterpret_cast<char*>(&header), sizeof(header));
+			if (!in || header.Magic != k_ShaderCacheMagic || header.FormatVersion != k_ShaderCacheFormatVersion || header.SourceHash != expectedHash)
+				return false;
+
+			outBytecode.resize(static_cast<size_t>(fileSize) - sizeof(ShaderCacheHeader));
+			in.read(reinterpret_cast<char*>(outBytecode.data()), outBytecode.size());
+			return static_cast<bool>(in);
+		}
+
 	}
 
 	static std::unordered_map<std::string, ShaderType> ShaderTypeMap = {
@@ -64,6 +135,30 @@ namespace Dingo
 
 	void NvrhiShader::Initialize()
 	{
+		Build(false, false);
+	}
+
+	bool NvrhiShader::Reload()
+	{
+		if (m_Params.FilePath.empty())
+		{
+			DE_CORE_WARN("Shader '{}' was not created from a file - cannot hot-reload.", m_Params.Name);
+			return false;
+		}
+
+		if (!Build(true, true))
+		{
+			DE_CORE_ERROR("Shader '{}' reload failed - keeping the previous program.", m_Params.Name);
+			return false;
+		}
+
+		m_Generation++;
+		DE_CORE_INFO("Shader '{}' reloaded (generation {}).", m_Params.Name, m_Generation);
+		return true;
+	}
+
+	bool NvrhiShader::Build(bool forceCompile, bool tolerateErrors)
+	{
 		std::string name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
 		if (name.empty())
 		{
@@ -74,22 +169,26 @@ namespace Dingo
 		if (sources.empty())
 		{
 			DE_CORE_ERROR("No shader sources found. Cannot initialize shader.");
-			return; // No sources to compile
+			return false; // No sources to compile
 		}
 
 		ShaderCompiler shaderCompiler;
 
-		std::unordered_map<ShaderType, std::vector<uint32_t>> spvBinaries = CompileOrGetShaderBinaries(sources, name, shaderCompiler);
+		std::vector<std::pair<std::filesystem::path, std::string>> pendingCacheWrites;
+		std::unordered_map<ShaderType, std::vector<uint32_t>> spvBinaries = CompileOrGetShaderBinaries(sources, name, shaderCompiler, forceCompile, tolerateErrors, pendingCacheWrites);
 		if (spvBinaries.empty())
 		{
 			DE_CORE_ERROR("No shader binaries found. Cannot initialize shader.");
-			return; // No binaries to create shader handles
+			return false; // No binaries to create shader handles
 		}
 
 		// Create shader handles for each shader type
 		const GraphicsAPI api = GraphicsContext::Get().GetParams().GraphicsAPI;
 		const bool needsDXBC = (api == GraphicsAPI::DirectX11 || api == GraphicsAPI::DirectX12);
 
+		// Build into locals and commit at the end, so a failed (re)build never leaves
+		// the shader half-replaced - the previous program keeps running.
+		std::unordered_map<ShaderType, nvrhi::ShaderHandle> newHandles;
 		std::vector<ShaderReflection> reflections;
 		for (const auto& [shaderType, binaries] : spvBinaries)
 		{
@@ -103,25 +202,19 @@ namespace Dingo
 				const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
 				std::filesystem::path dxbcCachePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
 
-				std::vector<uint8_t> dxbcBytecode;
-				if (std::filesystem::exists(dxbcCachePath))
-				{
-					std::ifstream in(dxbcCachePath, std::ios::in | std::ios::binary);
-					DE_CORE_ASSERT(in.is_open(), "Failed to open DXBC cache file: " + dxbcCachePath.string());
-					in.seekg(0, std::ios::end);
-					dxbcBytecode.resize(in.tellg());
-					in.seekg(0, std::ios::beg);
-					in.read((char*)dxbcBytecode.data(), dxbcBytecode.size());
-				}
-				else
-				{
-					dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel);
+				const uint64_t dxbcHash = Utils::ComputeShaderCacheHash(sources.at(shaderType), m_Params.EntryPoint, shaderModel);
 
-					std::ofstream out(dxbcCachePath, std::ios::out | std::ios::binary);
-					DE_CORE_ASSERT(out.is_open(), "Failed to create DXBC cache file: " + dxbcCachePath.string());
-					out.write((char*)dxbcBytecode.data(), dxbcBytecode.size());
-					out.flush();
-					out.close();
+				std::vector<uint8_t> dxbcBytecode;
+				if (forceCompile || !Utils::ReadShaderCache(dxbcCachePath, dxbcHash, dxbcBytecode))
+				{
+					if (!forceCompile && std::filesystem::exists(dxbcCachePath))
+						DE_CORE_INFO("DXBC cache for {} ({}) is stale or outdated - recompiling.", name, Utils::ConvertShaderTypeToString(shaderType));
+
+					dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel, !tolerateErrors);
+					if (dxbcBytecode.empty())
+						return false;
+
+					pendingCacheWrites.emplace_back(dxbcCachePath, Utils::MakeShaderCacheBlob(dxbcHash, dxbcBytecode.data(), dxbcBytecode.size()));
 				}
 
 				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
@@ -137,7 +230,13 @@ namespace Dingo
 				handle = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), binaries, name);
 			}
 
-			m_ShaderHandles[shaderType] = handle;
+			if (!handle)
+			{
+				DE_CORE_ERROR("Failed to create shader handle for {} ({}).", name, Utils::ConvertShaderTypeToString(shaderType));
+				return false;
+			}
+
+			newHandles[shaderType] = handle;
 
 			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
 
@@ -151,7 +250,19 @@ namespace Dingo
 			}
 		}
 
-		CreateBindingLayoutHandle(reflections);
+		m_ShaderHandles = std::move(newHandles);
+		m_BindingLayoutHandle = CreateBindingLayoutHandle(reflections);
+
+		// Cache files are written only once the WHOLE build succeeded, so a failed
+		// stage can't leave mixed old/new bytecode on disk across stages or targets.
+		for (const auto& [path, bytes] : pendingCacheWrites)
+		{
+			std::ofstream out(path, std::ios::out | std::ios::binary);
+			DE_CORE_ASSERT(out.is_open(), "Failed to create shader cache file: " + path.string());
+			out.write(bytes.data(), bytes.size());
+		}
+
+		return true;
 	}
 
 	void NvrhiShader::Destroy()
@@ -170,17 +281,17 @@ namespace Dingo
 		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size() * 4);
 	}
 
-	void NvrhiShader::CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflections)
+	nvrhi::BindingLayoutHandle NvrhiShader::CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflections)
 	{
 		if (!m_Params.Reflect)
 		{
-			return;
+			return nullptr;
 		}
 
 		if (reflections.empty())
 		{
 			DE_CORE_WARN("No resources found for shader");
-			return; // No resources to create binding set
+			return nullptr; // No resources to create binding set
 		}
 
 		nvrhi::VulkanBindingOffsets vulkanBindingOffsets = nvrhi::VulkanBindingOffsets()
@@ -229,10 +340,10 @@ namespace Dingo
 			}
 		}
 
-		m_BindingLayoutHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
+		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
 	}
 
-	std::unordered_map<ShaderType, std::vector<uint32_t>> NvrhiShader::CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, ShaderCompiler& compiler)
+	std::unordered_map<ShaderType, std::vector<uint32_t>> NvrhiShader::CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, ShaderCompiler& compiler, bool forceCompile, bool tolerateErrors, std::vector<std::pair<std::filesystem::path, std::string>>& pendingCacheWrites)
 	{
 		std::unordered_map<ShaderType, std::vector<uint32_t>> result;
 
@@ -241,31 +352,29 @@ namespace Dingo
 			const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
 			std::filesystem::path shaderCacheFilePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
 
-			if (std::filesystem::exists(shaderCacheFilePath))
+			const uint64_t sourceHash = Utils::ComputeShaderCacheHash(source, m_Params.EntryPoint);
+
+			if (!forceCompile)
 			{
-				std::ifstream in(shaderCacheFilePath, std::ios::in | std::ios::binary);
-				DE_CORE_ASSERT(in.is_open(), "Failed to open shader binary cache file: " + shaderCacheFilePath.string());
+				std::vector<uint8_t> cached;
+				if (Utils::ReadShaderCache(shaderCacheFilePath, sourceHash, cached))
+				{
+					auto& data = result[shaderType];
+					data.resize(cached.size() / sizeof(uint32_t));
+					std::memcpy(data.data(), cached.data(), data.size() * sizeof(uint32_t));
+					continue;
+				}
 
-				in.seekg(0, std::ios::end);
-				auto size = in.tellg();
-				in.seekg(0, std::ios::beg);
-
-				auto& data = result[shaderType];
-				data.resize(size / sizeof(uint32_t));
-				in.read((char*)data.data(), size);
-
-				continue;
+				if (std::filesystem::exists(shaderCacheFilePath))
+					DE_CORE_INFO("Shader cache for {} ({}) is stale or outdated - recompiling.", name, Utils::ConvertShaderTypeToString(shaderType));
 			}
 
-			result[shaderType] = compiler.CompileGLSL(shaderType, source, name);
+			std::vector<uint32_t> binaries = compiler.CompileGLSL(shaderType, source, name, "main", true, !tolerateErrors);
+			if (binaries.empty())
+				return {}; // abort the whole build - a partial result must not be committed or cached
 
-			std::ofstream out(shaderCacheFilePath, std::ios::out | std::ios::binary);
-			DE_CORE_ASSERT(out.is_open(), "Failed to create shader binary cache file: " + shaderCacheFilePath.string());
-
-			auto& data = result[shaderType];
-			out.write((char*)data.data(), data.size() * sizeof(uint32_t));
-			out.flush();
-			out.close();
+			pendingCacheWrites.emplace_back(shaderCacheFilePath, Utils::MakeShaderCacheBlob(sourceHash, binaries.data(), binaries.size() * sizeof(uint32_t)));
+			result[shaderType] = std::move(binaries);
 		}
 
 		return result;
@@ -279,10 +388,20 @@ namespace Dingo
 			return PreProcess(m_Params.SourceCode);
 		}
 
-		DE_CORE_ASSERT(!m_Params.FilePath.empty(), "Shader file path is empty. Cannot read shader source.");
-		DE_CORE_ASSERT(std::filesystem::exists(m_Params.FilePath), "Shader file does not exist.");
+		// Soft failures (build aborts, previous program stays): hot-reload can race an
+		// editor save that briefly removes/truncates the file.
+		if (!std::filesystem::exists(m_Params.FilePath))
+		{
+			DE_CORE_ERROR("Shader file does not exist: '{}'.", m_Params.FilePath.string());
+			return {};
+		}
 
 		std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
+		if (source.empty())
+		{
+			DE_CORE_ERROR("Shader file is empty or unreadable: '{}'.", m_Params.FilePath.string());
+			return {};
+		}
 
 		return PreProcess(source);
 	}

@@ -11,6 +11,7 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Scene/SceneRenderer.h"
+#include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 
@@ -68,6 +69,7 @@ namespace Dingo
 		GraphicsParams Graphics;	// Parameters for the graphics context
 		Renderer2DParams Renderer2D;	// Parameters for the 2D renderer (e.g. per-batch quad capacity)
 		Renderer3DParams Renderer3D;	// Parameters for the 3D renderer (lighting, mesh batch capacity)
+		AssetManagerParams Assets;		// Parameters for the asset manager (asset root directory)
 
 		bool EnableUI = true;	// Whether to enable the immediate-mode UI layer
 		UIParams UI;			// Parameters for UI configuration, only used if EnableUI is true
@@ -124,6 +126,7 @@ namespace Dingo
 		SceneRenderer& GetSceneRenderer() const { return *m_SceneRenderer; }
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 		AudioEngine& GetAudioEngine() const { return *m_AudioEngine; }
+		AssetManager& GetAssetManager() const { return *m_AssetManager; }
 
 		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
 		const uint32_t GetEngineBuildNumber() const { return DE_ENGINE_VERSION_BUILD; }
@@ -153,6 +156,7 @@ namespace Dingo
 		Renderer3D* m_Renderer3D = nullptr;
 		SceneRenderer* m_SceneRenderer = nullptr;
 		AudioEngine* m_AudioEngine = nullptr;
+		AssetManager* m_AssetManager = nullptr;
 		LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_ShowDebugWindow = false; // built-in tabbed debug window (F3/F4/F5 select a tab)

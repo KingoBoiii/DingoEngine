@@ -65,6 +65,11 @@ namespace Dingo
 		m_AudioEngine = AudioEngine::Create();
 		m_AudioEngine->Initialize();
 
+		// After audio (clips load through it), before OnInitialize() so layers can load
+		// assets from OnAttach.
+		m_AssetManager = new AssetManager(m_Params.Assets, m_AudioEngine);
+		m_AssetManager->Initialize();
+
 		OnInitialize();
 
 		if (m_LayerStack.Empty())
@@ -99,6 +104,15 @@ namespace Dingo
 		Renderer::Shutdown();
 
 		m_LayerStack.Clear();
+
+		// Free managed assets after the layers that borrow them, but before the audio
+		// engine: AudioClips must not outlive the engine that decoded them.
+		if (m_AssetManager)
+		{
+			m_AssetManager->Shutdown();
+			delete m_AssetManager;
+			m_AssetManager = nullptr;
+		}
 
 		// Tear down audio after the layers (so their destructors can still stop sounds)
 		// but independently of the graphics stack.
@@ -186,6 +200,12 @@ namespace Dingo
 				m_AudioEngine->Update(); // reap finished one-shots
 
 			Renderer::BeginFrame();
+
+			// After BeginFrame: the render thread is parked until EndFrame, so the GPU
+			// work in here (texture uploads, shader recompiles) can't race its
+			// garbage-collection/present pass on the NVRHI device.
+			if (m_AssetManager)
+				m_AssetManager->Update(m_DeltaTime); // finalize async loads, poll hot-reload
 
 			for (Layer* layer : m_LayerStack)
 			{

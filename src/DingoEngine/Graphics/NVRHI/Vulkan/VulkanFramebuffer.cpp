@@ -117,28 +117,15 @@ namespace Dingo
 			.setPColorAttachments(&colorRef)
 			.setPDepthStencilAttachment(m_Params.EnableDepth ? &depthRef : nullptr);
 
-		// Source: any prior writes (color output + depth clear via transfer)
-		// Destination: color and depth/stencil attachment usage in the subpass
-		vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		vk::AccessFlags        srcAccess = vk::AccessFlagBits::eNone;
-		vk::AccessFlags        dstAccess = vk::AccessFlagBits::eColorAttachmentWrite;
-		if (m_Params.EnableDepth)
-		{
-			srcStage  |= vk::PipelineStageFlagBits::eTransfer;
-			dstStage  |= vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
-			srcAccess |= vk::AccessFlagBits::eTransferWrite;
-			dstAccess |= vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-		}
-
-		vk::SubpassDependency subpassDependency = vk::SubpassDependency()
-			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-			.setDstSubpass(0)
-			.setSrcStageMask(srcStage)
-			.setDstStageMask(dstStage)
-			.setSrcAccessMask(srcAccess)
-			.setDstAccessMask(dstAccess);
-
+		// No subpass dependencies — deliberately. NVRHI's own render passes (offscreen
+		// framebuffers via createFramebuffer) have zero, and Vulkan render-pass compatibility
+		// includes dependencyCount, so an explicit dependency here makes pipelines created
+		// against the swapchain framebuffer incompatible with offscreen framebuffers at draw
+		// time (VUID-vkCmdDrawIndexed-renderPass-02684). Synchronization doesn't need it:
+		// NVRHI issues explicit barriers before vkCmdBeginRenderPass (Present -> RenderTarget
+		// for the color image, CopyDest -> DepthWrite after the transfer-based depth clear),
+		// and the swapchain acquire semaphore is waited at TOP_OF_PIPE, blocking the whole
+		// submission.
 		std::vector<vk::AttachmentDescription> allAttachments = { colorAttachment };
 		if (m_Params.EnableDepth)
 			allAttachments.push_back(depthAttachment);
@@ -148,8 +135,8 @@ namespace Dingo
 			.setPAttachments(allAttachments.data())
 			.setSubpassCount(1)
 			.setPSubpasses(&subpassDescription)
-			.setDependencyCount(1)
-			.setPDependencies(&subpassDependency);
+			.setDependencyCount(0)
+			.setPDependencies(nullptr);
 
 		return graphicsContext.GetDeviceHandle().createRenderPass(renderPassCreateInfo);
 	}

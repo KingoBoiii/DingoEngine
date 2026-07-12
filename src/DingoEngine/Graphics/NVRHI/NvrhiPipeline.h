@@ -28,6 +28,9 @@ namespace Dingo
 		nvrhi::InputLayoutHandle m_InputLayoutHandle;
 		nvrhi::BindingSetHandle m_BindingSetHandle;
 		nvrhi::GraphicsPipelineHandle m_GraphicsPipelineHandle;
+		// Shader generation this PSO was built from; a mismatch at bind time means the
+		// shader was hot-reloaded and the pipeline is lazily rebuilt.
+		uint32_t m_BuiltShaderGeneration = 0;
 
 		friend class NvrhiCommandList; // Allow CommandList to access private members
 		friend class NvrhiRenderPass; // Allow RenderPass to access private members

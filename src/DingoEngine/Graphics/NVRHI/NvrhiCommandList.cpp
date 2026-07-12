@@ -100,6 +100,14 @@ namespace Dingo
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
 
+		// Lazily rebuild PSOs whose shader was hot-reloaded since they were created.
+		Shader* shader = nvrhiPipeline->GetParams().Shader;
+		if (shader && shader->GetGeneration() != nvrhiPipeline->m_BuiltShaderGeneration)
+		{
+			nvrhiPipeline->Destroy();
+			nvrhiPipeline->Initialize();
+		}
+
 		if (!nvrhiPipeline->m_GraphicsPipelineHandle)
 		{
 			DE_CORE_ERROR("SetPipeline: pipeline '{}' has a null graphics pipeline handle — shader/PSO creation failed. Draw call will be skipped.", nvrhiPipeline->GetParams().DebugName);
@@ -125,6 +133,15 @@ namespace Dingo
 		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
 
 		SetPipeline(renderPass->GetPipeline());
+
+		// A hot-reloaded shader replaced its binding layout - the baked binding set
+		// belongs to the old layout and must be re-baked before it is bound.
+		Shader* shader = renderPass->GetPipeline()->GetParams().Shader;
+		if (shader && shader->GetGeneration() != nvrhiRenderPass->m_BuiltShaderGeneration)
+		{
+			nvrhiRenderPass->m_Valid = false;
+			nvrhiRenderPass->Bake();
+		}
 
 		if (nvrhiRenderPass->m_BindingSetHandle)
 		{

@@ -15,7 +15,7 @@ DingoEngine is a C++20 game engine built on a graphics abstraction layer (NVRHI)
 
 ```
 include/DingoEngine/       Public API headers (Core, Graphics, Events, Windowing,
-                           Physics/2D, Physics/3D, Scene, UI, Audio)
+                           Physics/2D, Physics/3D, Scene, UI, Audio, Asset)
 src/DingoEngine/           Implementations, incl. backend-only code:
   Graphics/NVRHI/          NVRHI wrappers (Vulkan/, DirectX11/, DirectX12/)
   Physics/2D/Box2D/        the only box2d.h includer
@@ -53,6 +53,7 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 - **Layers**: override `OnAttach/OnDetach/OnUpdate(dt)/OnUIRender` (UI only if ImGui enabled).
 - **Input** (reworked v0.5.1): frame-coherent snapshot with standard semantics — `Is...Pressed` = edge ("just pressed"), `Is...Down` = held, plus `Released`/`Up` — uniform across keys, mouse buttons, and gamepad buttons (pre-0.5.1 code had `Pressed`/`Down` inverted). Gamepads: `GamepadButton`/`GamepadAxis` codes, `GetGamepadLeftStick/RightStick` (deadzone-filtered), triggers remapped to [0,1], up to 16 pads, `GamepadConnected/DisconnectedEvent`. Mouse adds `GetMouseDelta`/`GetMouseScrollDelta` + `MouseMoved/MouseScrolledEvent`.
 - **Params/builder**: resources are built from fluent `*Params` structs passed to static `Create()` factories: `Texture::Create(TextureParams().SetWidth(512)...)`.
+- **Assets** (v0.6): `Application::Get().GetAssetManager()` — UUID `AssetHandle`s, path dedup against a configurable asset root (`ApplicationParams.Assets`), `Load`/`LoadAsync` (textures+audio decode on a worker thread, GPU publish in the main-thread pump; shader/model/font async requests amortize one-per-frame on the main thread), typed `Get*` returning nullptr until `Ready`, failure keeps the registration (`State == Failed`). Opt-in hot-reload polls timestamps and reloads textures/shaders IN PLACE: `Texture::Reinitialize` swaps contents inside the same object; `Shader::Reload` recompiles past the name-keyed disk cache, bumps `GetGeneration()`, and pipelines/render passes lazily rebuild at bind time (`NvrhiCommandList::SetPipeline`/`SetRenderPass`). A shader compile error during reload keeps the old program (no assert). The manager OWNS what it loads — never `Destroy()`/`delete` a managed asset; raw factories remain for unmanaged resources. See docs/asset-pipeline.md.
 - **Bindables**: `Texture`, `GraphicsBuffer`, `Sampler` implement `IBindableShaderResource` for slot binding in a `RenderPass`.
 - **Events**: `EventDispatcher dispatcher(event); dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(OnResize));`
 - **Backend hiding** (hard requirement): EnTT, Box2D, Jolt, ImGui, miniaudio, NVRHI must never appear in a public header. Public APIs use abstract classes + static `Create()` + opaque handles (see `Physics3D`). GLM in public headers is fine.
@@ -71,7 +72,7 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 ## Rendering notes
 
 - Shaders are authored as GLSL, compiled to SPIR-V (ShaderC) and cross-compiled to HLSL/DXBC for D3D. `GLM_FORCE_DEPTH_ZERO_TO_ONE` is workspace-global: SPIR-V already emits [0,1] depth — never enable SPIRV-Cross `fixup_clipspace`. Depth targets must set `isShaderResource = false`.
-- **Shader disk cache is keyed by shader NAME, not source** (`examples/<Name>/.cache/shaders/`). After editing inline shader source, delete the cache or you'll run stale bytecode.
+- **Shader disk cache** (`examples/<Name>/.cache/shaders/`) is validated at load: each `.spv`/`.dxbc` carries a header with a source hash (+ entry point/shader model) and a format version, so edited inline or file shaders recompile automatically — no manual cache clearing. Bump `k_ShaderCacheFormatVersion` in `NvrhiShader.cpp` when compile options or the shader toolchain change.
 - **Renderer2D**: auto-batching quads/circles/MSDF text; default 2000 quads per batch, overflow flushes (configurable via `ApplicationParams`).
 - **Renderer3D**: CPU-transforms every submitted vertex every frame; `MaxVertices` (default 64k, configurable) **silently drops** overflow beyond a one-time WARN. `MeshRendererComponent.Mesh = nullptr` works as per-entity culling. Batches are grouped per `Material*` (null = built-in default).
 - Custom material shader binding convention: **0** = scene UBO (ViewProjection + light, volatile, written each `BeginScene`), **1** = the material's own `SetUniform` params, **2+** = textures/samplers, interleaved. The binding set must match shader reflection exactly.
@@ -91,9 +92,9 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 
 ## Failure contracts
 
-- `Model::LoadFromFile` and `Font::Create` return `nullptr` on failure — asset paths are cwd-relative, so a wrong working directory fails loudly, not with a broken object.
+- `Model::LoadFromFile`, `Font::Create` and (v0.6) `Texture::CreateFromFile` return `nullptr` on failure — asset paths are cwd-relative, so a wrong working directory fails loudly, not with a broken object. The `AssetManager` layers its own contract on top: failed loads stay registered with `State == Failed` and `Get*` returns nullptr.
 - Physics per-body calls are no-ops (getters return identity) on invalid/stale handles.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). v0.5.0 (merged) landed the audio engine (miniaudio backend + `AudioSource`/`AudioListener` + 3D positional) and gameplay-grade physics (capsule character controller, ray/shape casts) showcased by `examples/EchoVault`. In progress on branch `v0.5.1`: the input rework + gamepad support described under Key patterns.
+See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). v0.5.1 (merged) landed the input rework + gamepad support described under Key patterns. In progress on branch `v0.6.0`: the asset pipeline (`AssetManager` + async loading + hot-reload) described under Key patterns, showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`test/`, `--test=asset`).
