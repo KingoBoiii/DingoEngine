@@ -74,7 +74,6 @@ poll interval (0.5s) with no restart.
 3. The new artwork swaps in immediately; existing `Texture*` pointers stay valid
    (the manager reinitializes the GPU texture in place).
 
-> Engine gotcha: the compiled shader bytecode cache is keyed by name. If you edit
-> `background.glsl` while the game is **not** running, delete
-> `examples/ArenaShooter/.cache/shaders/` before the next launch, or you will run
-> stale bytecode. Runtime hot-reload handles this correctly on its own.
+> Offline edits (while the game is not running) are fine too: the shader bytecode
+> cache is validated against a hash of the source at startup, so a changed
+> `background.glsl` recompiles automatically on the next launch.

@@ -44,6 +44,77 @@ namespace Dingo
 			}
 		}
 
+		// Bytecode cache files start with this header, binding the cached bytecode to
+		// the exact source it was compiled from - stale caches (edited inline shaders,
+		// offline file edits, toolchain changes) are detected and recompiled instead of
+		// silently served. Header-less files from older engine versions fail the magic
+		// check and recompile the same way.
+		struct ShaderCacheHeader
+		{
+			uint32_t Magic = 0;
+			uint32_t FormatVersion = 0;
+			uint64_t SourceHash = 0;
+		};
+
+		static constexpr uint32_t k_ShaderCacheMagic = 0x43485344; // "DSHC"
+		// Bump when compiler options or the shader toolchain change in a way that
+		// invalidates previously cached bytecode.
+		static constexpr uint32_t k_ShaderCacheFormatVersion = 1;
+
+		static uint64_t HashFNV1a(std::string_view data, uint64_t hash = 14695981039346656037ull)
+		{
+			for (const unsigned char c : data)
+			{
+				hash ^= c;
+				hash *= 1099511628211ull;
+			}
+			return hash;
+		}
+
+		static uint64_t ComputeShaderCacheHash(const std::string& source, const std::string& entryPoint, uint32_t shaderModel = 0)
+		{
+			uint64_t hash = HashFNV1a(source);
+			hash = HashFNV1a(entryPoint, hash);
+			hash = HashFNV1a(std::string_view(reinterpret_cast<const char*>(&shaderModel), sizeof(shaderModel)), hash);
+			return hash;
+		}
+
+		static std::string MakeShaderCacheBlob(uint64_t sourceHash, const void* bytecode, size_t size)
+		{
+			ShaderCacheHeader header;
+			header.Magic = k_ShaderCacheMagic;
+			header.FormatVersion = k_ShaderCacheFormatVersion;
+			header.SourceHash = sourceHash;
+
+			std::string blob(sizeof(header) + size, '\0');
+			std::memcpy(blob.data(), &header, sizeof(header));
+			std::memcpy(blob.data() + sizeof(header), bytecode, size);
+			return blob;
+		}
+
+		// False when missing, unreadable, from an older format, or compiled from
+		// different source - the caller recompiles, exactly as if the file were absent.
+		static bool ReadShaderCache(const std::filesystem::path& path, uint64_t expectedHash, std::vector<uint8_t>& outBytecode)
+		{
+			std::error_code ec;
+			const uintmax_t fileSize = std::filesystem::file_size(path, ec);
+			if (ec || fileSize < sizeof(ShaderCacheHeader))
+				return false;
+
+			std::ifstream in(path, std::ios::in | std::ios::binary);
+			if (!in.is_open())
+				return false;
+
+			ShaderCacheHeader header;
+			in.read(reinterpret_cast<char*>(&header), sizeof(header));
+			if (!in || header.Magic != k_ShaderCacheMagic || header.FormatVersion != k_ShaderCacheFormatVersion || header.SourceHash != expectedHash)
+				return false;
+
+			outBytecode.resize(static_cast<size_t>(fileSize) - sizeof(ShaderCacheHeader));
+			in.read(reinterpret_cast<char*>(outBytecode.data()), outBytecode.size());
+			return static_cast<bool>(in);
+		}
+
 	}
 
 	static std::unordered_map<std::string, ShaderType> ShaderTypeMap = {
@@ -131,23 +202,19 @@ namespace Dingo
 				const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
 				std::filesystem::path dxbcCachePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
 
+				const uint64_t dxbcHash = Utils::ComputeShaderCacheHash(sources.at(shaderType), m_Params.EntryPoint, shaderModel);
+
 				std::vector<uint8_t> dxbcBytecode;
-				if (!forceCompile && std::filesystem::exists(dxbcCachePath))
+				if (forceCompile || !Utils::ReadShaderCache(dxbcCachePath, dxbcHash, dxbcBytecode))
 				{
-					std::ifstream in(dxbcCachePath, std::ios::in | std::ios::binary);
-					DE_CORE_ASSERT(in.is_open(), "Failed to open DXBC cache file: " + dxbcCachePath.string());
-					in.seekg(0, std::ios::end);
-					dxbcBytecode.resize(in.tellg());
-					in.seekg(0, std::ios::beg);
-					in.read((char*)dxbcBytecode.data(), dxbcBytecode.size());
-				}
-				else
-				{
+					if (!forceCompile && std::filesystem::exists(dxbcCachePath))
+						DE_CORE_INFO("DXBC cache for {} ({}) is stale or outdated - recompiling.", name, Utils::ConvertShaderTypeToString(shaderType));
+
 					dxbcBytecode = shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel, !tolerateErrors);
 					if (dxbcBytecode.empty())
 						return false;
 
-					pendingCacheWrites.emplace_back(dxbcCachePath, std::string((const char*)dxbcBytecode.data(), dxbcBytecode.size()));
+					pendingCacheWrites.emplace_back(dxbcCachePath, Utils::MakeShaderCacheBlob(dxbcHash, dxbcBytecode.data(), dxbcBytecode.size()));
 				}
 
 				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
@@ -285,27 +352,28 @@ namespace Dingo
 			const std::filesystem::path& cachePath = CacheManager::GetCacheDirectory("shaders");
 			std::filesystem::path shaderCacheFilePath = cachePath / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
 
-			if (!forceCompile && std::filesystem::exists(shaderCacheFilePath))
+			const uint64_t sourceHash = Utils::ComputeShaderCacheHash(source, m_Params.EntryPoint);
+
+			if (!forceCompile)
 			{
-				std::ifstream in(shaderCacheFilePath, std::ios::in | std::ios::binary);
-				DE_CORE_ASSERT(in.is_open(), "Failed to open shader binary cache file: " + shaderCacheFilePath.string());
+				std::vector<uint8_t> cached;
+				if (Utils::ReadShaderCache(shaderCacheFilePath, sourceHash, cached))
+				{
+					auto& data = result[shaderType];
+					data.resize(cached.size() / sizeof(uint32_t));
+					std::memcpy(data.data(), cached.data(), data.size() * sizeof(uint32_t));
+					continue;
+				}
 
-				in.seekg(0, std::ios::end);
-				auto size = in.tellg();
-				in.seekg(0, std::ios::beg);
-
-				auto& data = result[shaderType];
-				data.resize(size / sizeof(uint32_t));
-				in.read((char*)data.data(), size);
-
-				continue;
+				if (std::filesystem::exists(shaderCacheFilePath))
+					DE_CORE_INFO("Shader cache for {} ({}) is stale or outdated - recompiling.", name, Utils::ConvertShaderTypeToString(shaderType));
 			}
 
 			std::vector<uint32_t> binaries = compiler.CompileGLSL(shaderType, source, name, "main", true, !tolerateErrors);
 			if (binaries.empty())
 				return {}; // abort the whole build - a partial result must not be committed or cached
 
-			pendingCacheWrites.emplace_back(shaderCacheFilePath, std::string((const char*)binaries.data(), binaries.size() * sizeof(uint32_t)));
+			pendingCacheWrites.emplace_back(shaderCacheFilePath, Utils::MakeShaderCacheBlob(sourceHash, binaries.data(), binaries.size() * sizeof(uint32_t)));
 			result[shaderType] = std::move(binaries);
 		}
 

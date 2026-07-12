@@ -72,7 +72,7 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 ## Rendering notes
 
 - Shaders are authored as GLSL, compiled to SPIR-V (ShaderC) and cross-compiled to HLSL/DXBC for D3D. `GLM_FORCE_DEPTH_ZERO_TO_ONE` is workspace-global: SPIR-V already emits [0,1] depth — never enable SPIRV-Cross `fixup_clipspace`. Depth targets must set `isShaderResource = false`.
-- **Shader disk cache is keyed by shader NAME, not source** (`examples/<Name>/.cache/shaders/`). After editing inline shader source, delete the cache or you'll run stale bytecode.
+- **Shader disk cache** (`examples/<Name>/.cache/shaders/`) is validated at load: each `.spv`/`.dxbc` carries a header with a source hash (+ entry point/shader model) and a format version, so edited inline or file shaders recompile automatically — no manual cache clearing. Bump `k_ShaderCacheFormatVersion` in `NvrhiShader.cpp` when compile options or the shader toolchain change.
 - **Renderer2D**: auto-batching quads/circles/MSDF text; default 2000 quads per batch, overflow flushes (configurable via `ApplicationParams`).
 - **Renderer3D**: CPU-transforms every submitted vertex every frame; `MaxVertices` (default 64k, configurable) **silently drops** overflow beyond a one-time WARN. `MeshRendererComponent.Mesh = nullptr` works as per-entity culling. Batches are grouped per `Material*` (null = built-in default).
 - Custom material shader binding convention: **0** = scene UBO (ViewProjection + light, volatile, written each `BeginScene`), **1** = the material's own `SetUniform` params, **2+** = textures/samplers, interleaved. The binding set must match shader reflection exactly.
