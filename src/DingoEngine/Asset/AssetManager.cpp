@@ -197,8 +197,65 @@ namespace Dingo
 			return false;
 		}
 
-		UnloadInternal(it->second);
-		return LoadInternal(it->second);
+		AssetMetadata& metadata = it->second;
+
+		// Prefer the in-place path so a reload behaves like hot-reload does: the loaded
+		// object is refreshed rather than replaced, and pointers already handed out stay
+		// valid. Only the destroy-and-recreate fallback below invalidates them.
+		if (metadata.State == AssetState::Ready && ReloadInPlace(metadata))
+			return true;
+
+		UnloadInternal(metadata);
+		return LoadInternal(metadata);
+	}
+
+	bool AssetManager::ReloadInPlace(AssetMetadata& metadata)
+	{
+		switch (metadata.Type)
+		{
+			case AssetType::Texture2D:
+			{
+				auto it = m_Textures.find(metadata.Handle);
+				if (it == m_Textures.end())
+					return false;
+
+				const std::filesystem::path absolutePath = ResolvePath(metadata.FilePath);
+				uint32_t width = 0, height = 0, channels = 0;
+				const uint8_t* pixels = FileSystem::ReadImage(absolutePath, &width, &height, &channels, true, true);
+				if (!pixels)
+				{
+					// Keep serving the currently loaded image, as a failed hot-reload does.
+					DE_CORE_ERROR("AssetManager: reload failed for Texture2D '{}' - keeping the loaded version.", metadata.FilePath.generic_string());
+					return true;
+				}
+
+				it->second->Reinitialize(TextureParams()
+					.SetDebugName(metadata.FilePath.generic_string())
+					.SetWidth(width)
+					.SetHeight(height)
+					.SetDimension(TextureDimension::Texture2D)
+					.SetFormat(TextureFormat::RGBA)
+					.SetIsRenderTarget(false)
+					.SetInitialData(pixels));
+				FileSystem::FreeImage(pixels);
+
+				Utils::StampWriteTime(metadata, absolutePath);
+				return true;
+			}
+			case AssetType::Shader:
+			{
+				auto it = m_Shaders.find(metadata.Handle);
+				if (it == m_Shaders.end())
+					return false;
+
+				// Reload() keeps the previous program on a compile error.
+				it->second->Reload();
+				Utils::StampWriteTime(metadata, ResolvePath(metadata.FilePath));
+				return true;
+			}
+			default:
+				return false; // models, fonts and audio clips have no in-place refresh
+		}
 	}
 
 	void AssetManager::Unload(AssetHandle handle)
@@ -274,6 +331,26 @@ namespace Dingo
 		// operator/ discards the left side for absolute right-hand paths, so absolute
 		// asset paths pass through unchanged.
 		return (m_RootDirectory / path).lexically_normal();
+	}
+
+	void AssetManager::SetHotReloadEnabled(bool enable)
+	{
+		if (m_Params.EnableHotReload == enable)
+			return;
+
+		m_Params.EnableHotReload = enable;
+		m_HotReloadTimer = 0.0f;
+
+		if (!enable)
+			return;
+
+		// Re-stamp what is loaded: edits made while watching was off must not be
+		// reported as changes the moment it is switched back on.
+		for (auto& [handle, metadata] : m_Registry)
+		{
+			if (metadata.State == AssetState::Ready)
+				Utils::StampWriteTime(metadata, ResolvePath(metadata.FilePath));
+		}
 	}
 
 	uint32_t AssetManager::GetLoadedCount() const

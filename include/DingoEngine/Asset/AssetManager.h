@@ -105,6 +105,11 @@ namespace Dingo
 
 		// Synchronously (re)loads an already-registered asset. Returns true when the
 		// asset is Ready afterwards.
+		//
+		// Loaded textures and shaders are refreshed IN PLACE (as hot-reload does), so
+		// pointers already handed out stay valid and a failed reload keeps serving the
+		// previously loaded version. Every other type is destroyed and recreated, which
+		// invalidates borrowed pointers - re-Get after reloading those.
 		bool Reload(AssetHandle handle);
 
 		// Frees the loaded object but keeps the registration (State -> Unloaded).
@@ -151,6 +156,16 @@ namespace Dingo
 		const std::filesystem::path& GetRootDirectory() const { return m_RootDirectory; }
 		std::filesystem::path ResolvePath(const std::filesystem::path& path) const;
 
+		// Every registration, for tooling (the built-in Assets debug panel walks this).
+		// Handles stay valid across loads, so entries can be acted on while iterating a
+		// copy of the keys.
+		const std::unordered_map<AssetHandle, AssetMetadata>& GetRegistry() const { return m_Registry; }
+
+		bool IsHotReloadEnabled() const { return m_Params.EnableHotReload; }
+		// Toggleable at runtime so a debug panel can turn watching on for a session
+		// without a rebuild. Enabling re-arms the poll timer.
+		void SetHotReloadEnabled(bool enable);
+
 		uint32_t GetRegisteredCount() const { return static_cast<uint32_t>(m_Registry.size()); }
 		uint32_t GetLoadedCount() const;
 		// Async loads still in flight (queued, decoding, or awaiting finalize).
@@ -187,6 +202,9 @@ namespace Dingo
 		};
 
 		bool LoadInternal(AssetMetadata& metadata);
+		// Refreshes a loaded asset's contents without replacing the object. False when
+		// the type has no in-place path (the caller then destroys and recreates).
+		bool ReloadInPlace(AssetMetadata& metadata);
 		void UnloadInternal(const AssetMetadata& metadata);
 		void WorkerLoop();
 		void FinalizeResult(AsyncResult& result);
