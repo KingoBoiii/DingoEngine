@@ -36,7 +36,7 @@ project "Dingo-TestFramework"
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
-	filter "configurations:Debug or configurations:Debug-AS"
+	filter "configurations:Debug or configurations:Debug-ASan"
 		symbols "On"
 		defines { "DE_DEBUG" }
 

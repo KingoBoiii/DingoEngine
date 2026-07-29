@@ -238,7 +238,7 @@ group "Engine"
 			defines { "DE_PLATFORM_LINUX" }
 			buildoptions { "-Wno-changes-meaning" }
 
-		filter "configurations:Debug or configurations:Debug-AS"
+		filter "configurations:Debug or configurations:Debug-ASan"
 			runtime "Debug"
 			symbols "On"
 			defines { "DE_DEBUG" }
