@@ -126,7 +126,15 @@ namespace Dingo
 
 		Shader* shader = m_Params.Pipeline->GetParams().Shader;
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
-		DE_CORE_ASSERT(m_BindingSetHandle, "Failed to create BindingSetHandle in NvrhiRenderPass::Bake");
+
+		if (!m_BindingSetHandle && !m_BindingSetDesc.bindings.empty())
+		{
+			// Stay invalid rather than latching a null binding set for the rest of the run:
+			// the usual cause is a desc that no longer matches the shader's binding layout,
+			// which the owner can still fix by re-setting its bindings.
+			DE_CORE_ERROR("RenderPass::Bake: createBindingSet failed for shader '{}' — the binding set does not match the shader's binding layout.", shader->GetParams().Name);
+			return;
+		}
 
 		m_BuiltShaderGeneration = shader->GetGeneration();
 		m_Valid = true;

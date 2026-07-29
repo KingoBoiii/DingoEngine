@@ -126,6 +126,10 @@ namespace Dingo
 			RenderPass* RenderPass = nullptr;
 		};
 		std::unordered_map<size_t, PipelineCacheEntry> m_PipelineCache;
+
+		// Shader generation the cached passes laid out their bindings for; a hot-reload can
+		// change the binding layout, so a mismatch drops the whole cache.
+		uint32_t m_BuiltShaderGeneration = 0;
 	};
 
 }

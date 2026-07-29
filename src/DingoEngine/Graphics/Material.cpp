@@ -133,6 +133,17 @@ namespace Dingo
 
 	RenderPass* Material::GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer)
 	{
+		// A hot-reloaded shader can have a different binding layout, and a cached pass only
+		// knows the bindings this function set the first time. Re-baking the old desc
+		// against the new layout writes descriptors NVRHI cannot validate, so throw the
+		// cache away instead and let the bindings be laid out again from scratch.
+		const uint32_t shaderGeneration = m_Params.Shader ? m_Params.Shader->GetGeneration() : 0;
+		if (shaderGeneration != m_BuiltShaderGeneration)
+		{
+			InvalidatePipelineCache();
+			m_BuiltShaderGeneration = shaderGeneration;
+		}
+
 		const size_t key = MakeCacheKey(layout, framebuffer);
 
 		auto it = m_PipelineCache.find(key);

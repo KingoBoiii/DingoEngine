@@ -163,10 +163,14 @@ namespace Dingo
 			nvrhiRenderPass->Bake();
 		}
 
-		if (nvrhiRenderPass->m_BindingSetHandle)
+		if (!nvrhiRenderPass->m_BindingSetHandle)
 		{
-			m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
+			// A pass with nothing to bind is legitimate; one whose bake failed is not, and
+			// drawing it would sample whatever the layout expects from unwritten descriptors.
+			return nvrhiRenderPass->m_BindingSetDesc.bindings.empty();
 		}
+
+		m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
 
 		return true;
 	}
