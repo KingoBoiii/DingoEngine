@@ -562,7 +562,10 @@ void main() {
 
 		for (uint32_t i = 1; i < m_TextureSlotIndex; i++)
 		{
-			if (m_TextureSlots[i]->NativeEquals(texture))
+			// Pointer identity first: games reuse Texture* objects, so this settles nearly
+			// every lookup without NativeEquals, which is a virtual call wrapping a
+			// dynamic_cast and runs once per occupied slot for every textured quad.
+			if (m_TextureSlots[i] == texture || m_TextureSlots[i]->NativeEquals(texture))
 				return (float)i;
 		}
 

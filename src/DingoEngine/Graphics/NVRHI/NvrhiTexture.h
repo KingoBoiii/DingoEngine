@@ -22,13 +22,11 @@ namespace Dingo
 
 		virtual bool NativeEquals(const Texture* other) const override
 		{
-			const NvrhiTexture* otherTexture = dynamic_cast<const NvrhiTexture*>(other);
-			if (!otherTexture)
-			{
-				return false;
-			}
-
-			return m_Handle == otherTexture->m_Handle;
+			// Compared through the native handle rather than a dynamic_cast to NvrhiTexture:
+			// this runs once per occupied texture slot for every textured quad, and RTTI
+			// traversal there cost ~20-50 ns a pop. Two textures from different backends
+			// cannot share a native pointer, so the cast bought no safety.
+			return other && GetTextureHandle() == other->GetTextureHandle();
 		}
 
 		virtual void* GetTextureHandle() const override { return static_cast<void*>(m_Handle.Get()); }
