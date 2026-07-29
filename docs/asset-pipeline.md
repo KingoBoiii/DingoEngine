@@ -127,6 +127,26 @@ Hot-reload is a development feature: it costs a timestamp poll every
 `HotReloadInterval` seconds — leave `EnableHotReload = false` in shipping
 builds.
 
+`AssetManager::Reload(handle)` applies the same in-place refresh for textures and
+shaders, so you can force a reload from your own code (or the debug panel below)
+without invalidating anything. Every other type is destroyed and recreated by
+`Reload`, which *does* invalidate borrowed pointers.
+
+## The Assets debug panel
+
+Press **F6** for the Assets tab of the engine's built-in Debug window (or embed
+`UI::AssetSummarySection()` / `UI::AssetRegistrySection()` in your own window —
+see [DebugPanels.h](../include/DingoEngine/UI/DebugPanels.h)). It shows the asset
+root, live registered/loaded/in-flight counts with a load-progress bar, per-type
+and per-state breakdowns, and every registration in a filterable table with its
+state, type and source path.
+
+It is also a control surface: toggle hot-reload for the session, press **Reload**
+on any row (in place for textures and shaders, so it is safe while the game is
+running), or retry everything that failed. There is deliberately no Unload
+button — unloading frees the object while game code may still hold the pointer it
+was handed.
+
 ## API summary
 
 | Call | Effect |
@@ -134,8 +154,8 @@ builds.
 | `Import(path)` | Register only (no load). `k_InvalidAsset` for unknown extensions. |
 | `Load(path)` | Register + load now. |
 | `LoadAsync(path)` | Register + load in the background. |
-| `Reload(handle)` | Synchronous reload of a registered asset. |
-| `Unload(handle)` | Free the object, keep the registration. |
+| `Reload(handle)` | Synchronous reload. Textures and shaders refresh **in place** (pointers stay valid); other types are recreated. |
+| `Unload(handle)` | Free the object, keep the registration. Invalidates borrowed pointers. |
 | `Remove(handle)` | Free + forget. |
 | `GetTexture/GetShader/GetModel/GetFont/GetAudioClip(handle)` | Typed access; `nullptr`/empty until `Ready`. |
 | `Get<T>(handle)` | Template form of the above (not for `AudioClip`). |
