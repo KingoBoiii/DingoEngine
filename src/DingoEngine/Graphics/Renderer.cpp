@@ -342,6 +342,11 @@ namespace Dingo
 		return s_Data->SwapChain->GetCurrentFramebuffer();
 	}
 
+	bool Renderer::IsSwapChainFramebuffer(const Framebuffer* framebuffer)
+	{
+		return framebuffer && s_Data->SwapChain && s_Data->SwapChain->OwnsFramebuffer(framebuffer);
+	}
+
 	/**************************************************
 	***		STATIC RESOURCES						***
 	**************************************************/

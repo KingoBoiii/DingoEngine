@@ -98,6 +98,11 @@ namespace Dingo
 		static CommandList*  GetCommandList();
 		static Framebuffer*  GetSwapChainFramebuffer();
 
+		// True while `framebuffer` is one the swap chain currently owns. Those are freed
+		// and recreated on every resize, so anything holding one must re-resolve rather
+		// than dereference what it captured.
+		static bool IsSwapChainFramebuffer(const Framebuffer* framebuffer);
+
 		/**************************************************
 		***		STATIC RESOURCES						***
 		**************************************************/

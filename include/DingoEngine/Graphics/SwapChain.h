@@ -66,6 +66,10 @@ namespace Dingo
 		virtual Framebuffer* GetCurrentFramebuffer() const = 0;
 		virtual uint32_t GetCurrentBackBufferIndex() const = 0;
 
+		// Whether this swap chain currently owns `framebuffer`. Pointer identity only —
+		// safe to ask with a pointer that may already have been freed by a resize.
+		bool OwnsFramebuffer(const Framebuffer* framebuffer) const;
+
 		// Bumped every time the swap chain (and thus its framebuffers) is recreated.
 		// Anything caching objects derived from a swap-chain framebuffer must compare
 		// generations instead of holding references: on D3D11/D3D12, a stale reference

@@ -41,6 +41,16 @@ namespace Dingo
 
 	void NvrhiPipeline::Initialize()
 	{
+		// The framebuffer in m_Params is only guaranteed live on the first build (Create
+		// initializes immediately): the swap chain deletes and recreates its framebuffers
+		// on every resize. A rebuild after one — a hot-reloaded shader bumping the
+		// generation — must re-resolve the current target, not dereference the freed
+		// pointer it captured. Non-swap-chain targets are the caller's to keep alive.
+		if (m_TargetsSwapChain)
+			m_Params.Framebuffer = Renderer::GetSwapChainFramebuffer();
+		else
+			m_TargetsSwapChain = Renderer::IsSwapChainFramebuffer(m_Params.Framebuffer);
+
 		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 		const auto nvrhiShader = static_cast<NvrhiShader*>(m_Params.Shader);
 
