@@ -28,8 +28,8 @@ namespace Dingo
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) override;
 
 		virtual void SetFramebuffer(Framebuffer* framebuffer) override;
-		virtual void SetPipeline(Pipeline* pipeline) override;
-		virtual void SetRenderPass(RenderPass* renderPass) override;
+		virtual bool SetPipeline(Pipeline* pipeline) override;
+		virtual bool SetRenderPass(RenderPass* renderPass) override;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) override;
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) override;
 

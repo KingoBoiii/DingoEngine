@@ -257,7 +257,9 @@ namespace Dingo
 	void Renderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetPipeline(pipeline);
+		if (!s_Data->CommandList->SetPipeline(pipeline))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
@@ -265,7 +267,9 @@ namespace Dingo
 	void Renderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetPipeline(pipeline);
+		if (!s_Data->CommandList->SetPipeline(pipeline))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
@@ -277,7 +281,9 @@ namespace Dingo
 			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
 
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetPipeline(pipeline);
+		if (!s_Data->CommandList->SetPipeline(pipeline))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
@@ -294,7 +300,9 @@ namespace Dingo
 			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
 
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetRenderPass(renderPass);
+		if (!s_Data->CommandList->SetRenderPass(renderPass))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
@@ -321,7 +329,9 @@ namespace Dingo
 		}
 
 		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);
-		s_Data->CommandList->SetRenderPass(renderPass);
+		if (!s_Data->CommandList->SetRenderPass(renderPass))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);

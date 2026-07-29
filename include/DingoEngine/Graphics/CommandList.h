@@ -40,8 +40,11 @@ namespace Dingo
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;
 		// SetPipeline/SetRenderPass reset the graphics state to the pipeline and its bindings.
 		// Neither binds a framebuffer -- follow with SetFramebuffer() before drawing.
-		virtual void SetPipeline(Pipeline* pipeline) = 0;
-		virtual void SetRenderPass(RenderPass* renderPass) = 0;
+		// Both return false when the pipeline could not be built (a failed shader compile,
+		// including one from a hot-reload): the state is left empty and the caller must skip
+		// the draw. Draw/DrawIndexed also refuse to submit without a pipeline.
+		virtual bool SetPipeline(Pipeline* pipeline) = 0;
+		virtual bool SetRenderPass(RenderPass* renderPass) = 0;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) = 0;
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) = 0;
 

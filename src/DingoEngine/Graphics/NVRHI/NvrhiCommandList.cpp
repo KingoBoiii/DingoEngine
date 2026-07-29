@@ -91,12 +91,15 @@ namespace Dingo
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
 	}
 
-	void NvrhiCommandList::SetPipeline(Pipeline* pipeline)
+	bool NvrhiCommandList::SetPipeline(Pipeline* pipeline)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
 
 		m_GraphicsState = nvrhi::GraphicsState();
+
+		if (!pipeline)
+			return false;
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
 
@@ -111,7 +114,7 @@ namespace Dingo
 		if (!nvrhiPipeline->m_GraphicsPipelineHandle)
 		{
 			DE_CORE_ERROR("SetPipeline: pipeline '{}' has a null graphics pipeline handle — shader/PSO creation failed. Draw call will be skipped.", nvrhiPipeline->GetParams().DebugName);
-			return;
+			return false;
 		}
 
 		// Deliberately no SetFramebuffer(pipeline->GetTargetFramebuffer()) here: that pointer
@@ -123,16 +126,22 @@ namespace Dingo
 		{
 			m_GraphicsState.addBindingSet(nvrhiPipeline->m_BindingSetHandle);
 		}
+
+		return true;
 	}
 
-	void NvrhiCommandList::SetRenderPass(RenderPass* renderPass)
+	bool NvrhiCommandList::SetRenderPass(RenderPass* renderPass)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting render pass.");
 		DE_CORE_ASSERT(renderPass, "Render Pass is null.");
 
+		if (!renderPass)
+			return false;
+
 		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
 
-		SetPipeline(renderPass->GetPipeline());
+		if (!SetPipeline(renderPass->GetPipeline()))
+			return false;
 
 		// A hot-reloaded shader replaced its binding layout - the baked binding set
 		// belongs to the old layout and must be re-baked before it is bound.
@@ -147,6 +156,8 @@ namespace Dingo
 		{
 			m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
 		}
+
+		return true;
 	}
 
 	void NvrhiCommandList::AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot, uint64_t offset)
@@ -187,6 +198,11 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before drawing.");
 
+		// The backends dereference the pipeline unchecked, so an unset one is an access
+		// violation rather than a dropped draw. SetPipeline already logged the reason.
+		if (!m_GraphicsState.pipeline)
+			return;
+
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
@@ -199,6 +215,9 @@ namespace Dingo
 	void NvrhiCommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before drawing.");
+
+		if (!m_GraphicsState.pipeline)
+			return;
 
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
