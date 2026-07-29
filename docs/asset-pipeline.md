@@ -142,10 +142,12 @@ and per-state breakdowns, and every registration in a filterable table with its
 state, type and source path.
 
 It is also a control surface: toggle hot-reload for the session, press **Reload**
-on any row (in place for textures and shaders, so it is safe while the game is
-running), or retry everything that failed. There is deliberately no Unload
-button — unloading frees the object while game code may still hold the pointer it
-was handed.
+on a texture or shader row (in place, so it is safe while the game is running),
+or retry everything that failed. **Reload** is disabled for models, fonts and
+audio clips - reloading those destroys and recreates the object, which would
+invalidate pointers game code is holding - and **"Reload all loaded"** skips
+them for the same reason. There is deliberately no Unload button — unloading
+frees the object while game code may still hold the pointer it was handed.
 
 ## API summary
 

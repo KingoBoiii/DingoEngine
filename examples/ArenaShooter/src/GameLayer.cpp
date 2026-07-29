@@ -132,10 +132,11 @@ namespace Dingo
 		m_PlayerTexture = assets.GetTexture(m_PlayerTexHandle);
 		m_EnemyTexture = assets.GetTexture(m_EnemyTexHandle);
 		m_BulletTexture = assets.GetTexture(m_BulletTexHandle);
-		m_Font = assets.GetFont(m_FontHandle);
 		m_BackgroundShader = assets.GetShader(m_ShaderHandle);
 
-		if (!m_PlayerTexture || !m_EnemyTexture || !m_BulletTexture || !m_Font || !m_BackgroundShader)
+		// Font is re-fetched at point of use (see RenderHUD/DrawCenteredText) instead of
+		// cached here: Reload() on a Font destroys and recreates it, unlike Texture/Shader.
+		if (!m_PlayerTexture || !m_EnemyTexture || !m_BulletTexture || !assets.GetFont(m_FontHandle) || !m_BackgroundShader)
 			DE_WARN("Arena Shooter: one or more assets failed to load; check the asset root.");
 
 		if (m_BackgroundShader)
@@ -390,24 +391,26 @@ namespace Dingo
 
 	void GameLayer::RenderHUD(Renderer2D& renderer)
 	{
-		if (!m_Font)
+		Font* font = Application::Get().GetAssetManager().GetFont(m_FontHandle);
+		if (!font)
 			return;
 
 		constexpr glm::vec4 color = { 0.95f, 0.97f, 1.0f, 1.0f };
-		renderer.DrawText(std::format("SCORE {}", m_Score), m_Font, glm::vec2(24.0f, m_Height - 48.0f), 34.0f, { color });
-		renderer.DrawText(std::format("WAVE {}", m_Wave), m_Font, glm::vec2(24.0f, m_Height - 90.0f), 34.0f, { color });
+		renderer.DrawText(std::format("SCORE {}", m_Score), font, glm::vec2(24.0f, m_Height - 48.0f), 34.0f, { color });
+		renderer.DrawText(std::format("WAVE {}", m_Wave), font, glm::vec2(24.0f, m_Height - 90.0f), 34.0f, { color });
 
 		const std::string lives = std::format("LIVES {}", std::max(0, m_Lives));
-		const float w = m_Font->GetStringWidth(lives, 34.0f);
-		renderer.DrawText(lives, m_Font, glm::vec2(m_Width - w - 24.0f, m_Height - 48.0f), 34.0f, { glm::vec4(1.0f, 0.6f, 0.55f, 1.0f) });
+		const float w = font->GetStringWidth(lives, 34.0f);
+		renderer.DrawText(lives, font, glm::vec2(m_Width - w - 24.0f, m_Height - 48.0f), 34.0f, { glm::vec4(1.0f, 0.6f, 0.55f, 1.0f) });
 	}
 
 	void GameLayer::DrawCenteredText(Renderer2D& renderer, const std::string& text, float size, const glm::vec2& offset, const glm::vec4& color)
 	{
-		if (!m_Font)
+		Font* font = Application::Get().GetAssetManager().GetFont(m_FontHandle);
+		if (!font)
 			return;
-		const float w = m_Font->GetStringWidth(text, size);
-		renderer.DrawText(text, m_Font, glm::vec2(m_Width * 0.5f - w * 0.5f + offset.x, m_Height * 0.5f + offset.y), size, { color });
+		const float w = font->GetStringWidth(text, size);
+		renderer.DrawText(text, font, glm::vec2(m_Width * 0.5f - w * 0.5f + offset.x, m_Height * 0.5f + offset.y), size, { color });
 	}
 
 	glm::vec2 GameLayer::GetAimDirection() const

@@ -92,7 +92,6 @@ namespace Dingo
 		Texture* m_PlayerTexture = nullptr;
 		Texture* m_EnemyTexture = nullptr;
 		Texture* m_BulletTexture = nullptr;
-		Font* m_Font = nullptr;
 
 		Pipeline* m_BackgroundPipeline = nullptr;
 		Shader* m_BackgroundShader = nullptr;

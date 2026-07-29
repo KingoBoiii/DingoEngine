@@ -442,17 +442,21 @@ namespace Dingo::UI
 				ImGui::TableSetColumnIndex(3);
 				const bool isLoaded = metadata.State == AssetState::Ready;
 				const bool inFlight = metadata.State == AssetState::Queued || metadata.State == AssetState::Loading;
+				// Reload destroys and recreates any type SupportsInPlaceReload rejects, which
+				// would invalidate pointers games hold - do not offer it for those.
+				const bool reloadBlocked = isLoaded && !AssetManager::SupportsInPlaceReload(metadata.Type);
 
 				// No Unload button on purpose: unloading frees the object, and games
-				// legitimately cache the pointers they were handed. Reload refreshes
-				// textures and shaders in place, so it is safe to press at any time.
-				ImGui::BeginDisabled(inFlight);
+				// legitimately cache the pointers they were handed.
+				ImGui::BeginDisabled(inFlight || reloadBlocked);
 				if (ImGui::SmallButton(isLoaded ? "Reload" : "Load"))
 				{
 					action = isLoaded ? Action::Reload : Action::Load;
 					target = metadata.Handle;
 				}
 				ImGui::EndDisabled();
+				if (reloadBlocked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", AssetTypeToString(metadata.Type));
 
 				ImGui::PopID();
 			}
@@ -464,7 +468,7 @@ namespace Dingo::UI
 		{
 			for (const AssetMetadata& metadata : entries)
 			{
-				if (metadata.State == AssetState::Ready)
+				if (metadata.State == AssetState::Ready && AssetManager::SupportsInPlaceReload(metadata.Type))
 					assets.Reload(metadata.Handle);
 			}
 		}

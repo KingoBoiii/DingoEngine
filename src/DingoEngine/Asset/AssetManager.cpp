@@ -209,6 +209,19 @@ namespace Dingo
 		return LoadInternal(metadata);
 	}
 
+	bool AssetManager::SupportsInPlaceReload(AssetType type)
+	{
+		// Mirrors the cases ReloadInPlace below implements - keep the two in sync.
+		switch (type)
+		{
+			case AssetType::Texture2D:
+			case AssetType::Shader:
+				return true;
+			default:
+				return false;
+		}
+	}
+
 	bool AssetManager::ReloadInPlace(AssetMetadata& metadata)
 	{
 		switch (metadata.Type)
@@ -254,6 +267,10 @@ namespace Dingo
 				return true;
 			}
 			default:
+				// Reaching here for a type SupportsInPlaceReload says yes to would make
+				// Reload() silently fall back to destroy-and-recreate - assert instead of
+				// drifting quietly.
+				DE_CORE_ASSERT(!SupportsInPlaceReload(metadata.Type), "AssetManager: SupportsInPlaceReload and ReloadInPlace have drifted apart");
 				return false; // models, fonts and audio clips have no in-place refresh
 		}
 	}

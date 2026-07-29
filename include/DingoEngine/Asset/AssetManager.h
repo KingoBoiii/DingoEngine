@@ -109,7 +109,9 @@ namespace Dingo
 		// Loaded textures and shaders are refreshed IN PLACE (as hot-reload does), so
 		// pointers already handed out stay valid and a failed reload keeps serving the
 		// previously loaded version. Every other type is destroyed and recreated, which
-		// invalidates borrowed pointers - re-Get after reloading those.
+		// invalidates borrowed pointers - re-Get after reloading those. Check
+		// SupportsInPlaceReload(type) first if you need to know which applies without
+		// calling this.
 		bool Reload(AssetHandle handle);
 
 		// Frees the loaded object but keeps the registration (State -> Unloaded).
@@ -152,6 +154,12 @@ namespace Dingo
 		const AssetMetadata* GetMetadata(AssetHandle handle) const;
 		// k_InvalidAsset if the path was never imported.
 		AssetHandle FindByPath(const std::filesystem::path& path) const;
+
+		// True for exactly the types ReloadInPlace can refresh without destroying the
+		// loaded object (Texture2D and Shader today). Tooling that offers a Reload
+		// action - such as the debug panel - should check this first: Reload() on any
+		// other type destroys and recreates the object, invalidating borrowed pointers.
+		static bool SupportsInPlaceReload(AssetType type);
 
 		const std::filesystem::path& GetRootDirectory() const { return m_RootDirectory; }
 		std::filesystem::path ResolvePath(const std::filesystem::path& path) const;
@@ -203,7 +211,8 @@ namespace Dingo
 
 		bool LoadInternal(AssetMetadata& metadata);
 		// Refreshes a loaded asset's contents without replacing the object. False when
-		// the type has no in-place path (the caller then destroys and recreates).
+		// the type has no in-place path (the caller then destroys and recreates). Must
+		// return true for exactly the types SupportsInPlaceReload (public) says yes to.
 		bool ReloadInPlace(AssetMetadata& metadata);
 		void UnloadInternal(const AssetMetadata& metadata);
 		void WorkerLoop();
