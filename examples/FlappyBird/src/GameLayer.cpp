@@ -21,6 +21,22 @@ namespace Dingo
 			return std::format("v{}.{}.{}", major, minor, patch);
 		}
 
+		// Falls back to a blank 1x1 texture on load failure so callers can always
+		// dereference the result (e.g. GetWidth() for aspect-ratio math). Deliberately
+		// its own texture rather than Renderer::GetWhiteTexture(): the layer then owns
+		// everything it holds and OnDetach can destroy it without asking the renderer,
+		// which is already shut down by the time layers are detached.
+		static Texture* LoadTextureOrFallback(const std::filesystem::path& path) {
+			if (Texture* texture = Texture::CreateFromFile(path))
+			{
+				return texture;
+			}
+
+			DE_ERROR("Flappy Bird: failed to load texture '{}'; using a blank one.", path.string());
+			uint32_t whitePixel = 0xffffffff;
+			return Texture::CreateFromData(1, 1, &whitePixel, TextureFormat::RGBA, "Flappy Bird Fallback");
+		}
+
 	}
 
 	void GameLayer::OnAttach()
@@ -34,12 +50,16 @@ namespace Dingo
 
 		m_ProjectionViewMatrix = glm::ortho(orthoLeft, orthoRight, orthoBottom, orthoTop, m_OrthographicNear, m_OrthographicFar);
 
-		m_BackgroundTexture = Texture::CreateFromFile("assets/sprites/background-day.png");
-		m_GroundTexture = Texture::CreateFromFile("assets/sprites/base.png");
-		m_PipeTexture = Texture::CreateFromFile("assets/sprites/pipe-green.png");
-		m_BirdTexture = Texture::CreateFromFile("assets/sprites/yellowbird-midflap.png");
+		m_BackgroundTexture = Utils::LoadTextureOrFallback("assets/sprites/background-day.png");
+		m_GroundTexture = Utils::LoadTextureOrFallback("assets/sprites/base.png");
+		m_PipeTexture = Utils::LoadTextureOrFallback("assets/sprites/pipe-green.png");
+		m_BirdTexture = Utils::LoadTextureOrFallback("assets/sprites/yellowbird-midflap.png");
 
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		if (!m_Font)
+		{
+			DE_ERROR("Flappy Bird: failed to load font 'assets/fonts/arialbd.ttf'; on-screen text will not be rendered.");
+		}
 
 		// Ground aspect ratio
 		float groundAspectRatio = (float)m_GroundTexture->GetWidth() / (float)m_GroundTexture->GetHeight();
@@ -341,6 +361,12 @@ namespace Dingo
 
 	void GameLayer::RenderExampleText(float deltaTime, Renderer2D& renderer)
 	{
+		// No fallback font exists; skip the footer text rather than deref a null m_Font.
+		if (!m_Font)
+		{
+			return;
+		}
+
 		constexpr float padding = 0.1f;
 		const float left = -m_Width * 0.5f;
 		const float bottom = -m_Height * 0.5f;
@@ -360,6 +386,12 @@ namespace Dingo
 
 	void GameLayer::RenderCenteredText(Renderer2D& renderer, const std::string& text, float fontSize, const glm::vec2& offset, const glm::vec4& color) const
 	{
+		// No fallback font exists; skip text rendering rather than deref a null m_Font.
+		if (!m_Font)
+		{
+			return;
+		}
+
 		float textWidth = m_Font->GetStringWidth(text, fontSize);
 
 		renderer.DrawText(text, m_Font, glm::vec2(-(textWidth * 0.5f) + offset.x, offset.y), fontSize, { color });
