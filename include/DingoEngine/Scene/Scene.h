@@ -237,6 +237,11 @@ namespace Dingo
 		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
 		// Fires OnStart on any script that has not started yet, marking it started.
 		void StartScripts();
+		// Unregisters the entity's script and then fires its OnDestroy. Detaching first
+		// is what makes a DestroyEntity() call from inside OnDestroy safe: the script is
+		// no longer reachable, so it can neither fire twice nor be erased from under an
+		// in-flight iteration. No-op when the entity has no script.
+		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
 

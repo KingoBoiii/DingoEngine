@@ -154,17 +154,25 @@ namespace Dingo
 		DestroyEntityNow(entity.m_Handle);
 	}
 
+	void Scene::DetachScript(std::uint32_t handle)
+	{
+		auto it = m_Data->Scripts.find(static_cast<entt::entity>(handle));
+		if (it == m_Data->Scripts.end())
+			return;
+
+		std::unique_ptr<ScriptableEntity> script = std::move(it->second);
+		m_Data->Scripts.erase(it);
+
+		script->OnDestroy();
+	}
+
 	void Scene::DestroyEntityNow(std::uint32_t handle)
 	{
 		entt::entity e = static_cast<entt::entity>(handle);
 		if (!m_Data->Registry.valid(e))
 			return;
 
-		if (auto it = m_Data->Scripts.find(e); it != m_Data->Scripts.end())
-		{
-			it->second->OnDestroy();
-			m_Data->Scripts.erase(it);
-		}
+		DetachScript(handle);
 
 		if (m_Data->Registry.all_of<IDComponent>(e))
 			m_Data->EntityMap.erase(m_Data->Registry.get<IDComponent>(e).ID);
@@ -217,8 +225,15 @@ namespace Dingo
 		// stopping them would leave them playing with no handle left to stop.
 		StopAudioSources();
 
+		// Snapshot the handles: OnDestroy runs with Updating == false, so a DestroyEntity()
+		// from inside it takes the immediate path and erases from the map being walked.
+		std::vector<entt::entity> handles;
+		handles.reserve(m_Data->Scripts.size());
 		for (auto& [handle, script] : m_Data->Scripts)
-			script->OnDestroy();
+			handles.push_back(handle);
+
+		for (entt::entity handle : handles)
+			DetachScript(static_cast<std::uint32_t>(handle));
 
 		m_Data->Scripts.clear();
 		m_Data->Registry.clear();
@@ -398,8 +413,19 @@ namespace Dingo
 
 	void Scene::ForEachScript(const std::function<void(ScriptableEntity*)>& fn)
 	{
+		// Snapshot for the same reason StartScripts and OnUpdate do: fn is client code and
+		// may spawn or destroy entities, either of which rehashes the map.
+		std::vector<entt::entity> handles;
+		handles.reserve(m_Data->Scripts.size());
 		for (auto& [handle, script] : m_Data->Scripts)
-			fn(script.get());
+			handles.push_back(handle);
+
+		for (entt::entity handle : handles)
+		{
+			auto it = m_Data->Scripts.find(handle);
+			if (it != m_Data->Scripts.end())
+				fn(it->second.get());
+		}
 	}
 
 	void Scene::StartScripts()
