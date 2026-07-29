@@ -103,9 +103,15 @@ namespace Dingo
 
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
 
-		// Lazily rebuild PSOs whose shader was hot-reloaded since they were created.
+		// Lazily rebuild PSOs whose shader — or whose bound texture — was hot-reloaded
+		// since they were created. The texture check matters because the PSO's binding set
+		// holds the native handle, which Reinitialize replaces.
 		Shader* shader = nvrhiPipeline->GetParams().Shader;
-		if (shader && shader->GetGeneration() != nvrhiPipeline->m_BuiltShaderGeneration)
+		Texture* texture = nvrhiPipeline->GetParams().Texture;
+		const bool shaderReloaded = shader && shader->GetGeneration() != nvrhiPipeline->m_BuiltShaderGeneration;
+		const bool textureReloaded = texture && texture->GetGeneration() != nvrhiPipeline->m_BuiltTextureGeneration;
+
+		if (shaderReloaded || textureReloaded)
 		{
 			nvrhiPipeline->Destroy();
 			nvrhiPipeline->Initialize();
@@ -144,9 +150,14 @@ namespace Dingo
 			return false;
 
 		// A hot-reloaded shader replaced its binding layout - the baked binding set
-		// belongs to the old layout and must be re-baked before it is bound.
+		// belongs to the old layout and must be re-baked before it is bound. A reloaded
+		// texture is a new native handle, which owners that bake once (Material) never
+		// re-set themselves.
 		Shader* shader = renderPass->GetPipeline()->GetParams().Shader;
-		if (shader && shader->GetGeneration() != nvrhiRenderPass->m_BuiltShaderGeneration)
+		const bool shaderReloaded = shader && shader->GetGeneration() != nvrhiRenderPass->m_BuiltShaderGeneration;
+		const bool texturesReloaded = nvrhiRenderPass->RefreshReloadedTextures();
+
+		if (shaderReloaded || texturesReloaded)
 		{
 			nvrhiRenderPass->m_Valid = false;
 			nvrhiRenderPass->Bake();

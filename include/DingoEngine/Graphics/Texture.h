@@ -99,11 +99,19 @@ namespace Dingo
 
 		// Recreates the GPU texture in place from new params (uploading InitialData if
 		// set), so existing Texture* references survive a content change - the backbone
-		// of hot-reload. Binding caches keyed via NativeEquals re-bake naturally; the
-		// old GPU texture is freed by the graphics backend once in-flight frames drop it.
+		// of hot-reload. Bumps GetGeneration(); the old GPU texture is freed by the
+		// graphics backend once in-flight frames drop it.
 		virtual void Reinitialize(const TextureParams& params) = 0;
 
 		virtual bool NativeEquals(const Texture* other) const = 0;
+
+		// Bumped by every Reinitialize. Owners that cache a binding set built from this
+		// texture's native handle (Material's per-framebuffer render passes) compare it at
+		// bind time and re-bake on a mismatch: the handle is a *new* object after a
+		// reload, so a cache that only re-bakes on demand would sample - and keep alive -
+		// the original forever. Renderer2D needs no such check because it re-sets every
+		// slot each flush.
+		uint32_t GetGeneration() const { return m_Generation; }
 
 		virtual uint32_t GetWidth() const { return m_Params.Width; }
 		virtual uint32_t GetHeight() const { return m_Params.Height; }
@@ -112,6 +120,7 @@ namespace Dingo
 
 	protected:
 		TextureParams m_Params;
+		uint32_t m_Generation = 0;
 	};
 
 }

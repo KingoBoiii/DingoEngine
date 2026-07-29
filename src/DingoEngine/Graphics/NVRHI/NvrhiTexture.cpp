@@ -103,6 +103,9 @@ namespace Dingo
 		m_Handle = nullptr; // NVRHI frees the old texture once in-flight frames release it
 		Initialize();
 
+		// Initialize() produced a different nvrhi::ITexture — tell cached binding sets.
+		++m_Generation;
+
 		if (m_Params.InitialData)
 		{
 			Upload(m_Params.InitialData, Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width));

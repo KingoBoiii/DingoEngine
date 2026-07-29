@@ -36,6 +36,8 @@ namespace Dingo
 
 		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
 
+		RecordTextureBinding(slot, texture, arrayElement);
+
 		// search if the texture is already in the binding set
 		for (auto& item : m_BindingSetDesc.bindings)
 		{
@@ -58,6 +60,53 @@ namespace Dingo
 
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, handle).setArrayElement(arrayElement));
 		m_Valid = false;
+	}
+
+	void NvrhiRenderPass::RecordTextureBinding(uint32_t slot, Texture* texture, uint32_t arrayElement)
+	{
+		for (TextureBinding& binding : m_TextureBindings)
+		{
+			if (binding.Slot == slot && binding.ArrayElement == arrayElement)
+			{
+				binding.Texture = texture;
+				binding.Generation = texture->GetGeneration();
+				return;
+			}
+		}
+
+		m_TextureBindings.push_back({ slot, arrayElement, texture, texture->GetGeneration() });
+	}
+
+	bool NvrhiRenderPass::RefreshReloadedTextures()
+	{
+		bool changed = false;
+
+		for (TextureBinding& binding : m_TextureBindings)
+		{
+			if (binding.Texture->GetGeneration() == binding.Generation)
+				continue;
+
+			nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(binding.Texture)->m_Handle;
+
+			for (auto& item : m_BindingSetDesc.bindings)
+			{
+				if (item.slot == binding.Slot &&
+					item.type == nvrhi::ResourceType::Texture_SRV &&
+					item.arrayElement == binding.ArrayElement)
+				{
+					item.resourceHandle = handle;
+					break;
+				}
+			}
+
+			binding.Generation = binding.Texture->GetGeneration();
+			changed = true;
+		}
+
+		if (changed)
+			m_Valid = false;
+
+		return changed;
 	}
 
 	void NvrhiRenderPass::SetSampler(uint32_t slot, Sampler* sampler)

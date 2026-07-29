@@ -118,6 +118,7 @@ namespace Dingo
 		DE_CORE_ASSERT(m_GraphicsPipelineHandle, "createGraphicsPipeline returned null — see errors above.");
 
 		m_BuiltShaderGeneration = m_Params.Shader->GetGeneration();
+		m_BuiltTextureGeneration = m_Params.Texture ? m_Params.Texture->GetGeneration() : 0;
 	}
 
 	void NvrhiPipeline::Destroy()
