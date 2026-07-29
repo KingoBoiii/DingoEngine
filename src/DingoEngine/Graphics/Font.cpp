@@ -167,46 +167,67 @@ namespace Dingo
 
 	float Font::GetStringWidth(const std::string& string, float size) const
 	{
-		if (string.empty())
+		if (string.empty() || !IsValid())
 		{
 			return 0.0f;
 		}
 
-		const auto& fontGeometry = m_Data->FontGeometry;
-		double fsScale = 1.0 / (fontGeometry.getMetrics().ascenderY - fontGeometry.getMetrics().descenderY);
+		const msdf_atlas::FontGeometry& fontGeometry = m_Data->FontGeometry;
+		const msdfgen::FontMetrics& metrics = fontGeometry.getMetrics();
+		const double fsScale = 1.0 / (metrics.ascenderY - metrics.descenderY);
+
+		const msdf_atlas::GlyphGeometry* spaceGlyph = fontGeometry.getGlyph(' ');
+		const double spaceAdvance = spaceGlyph ? spaceGlyph->getAdvance() : 0.0;
 
 		double x = 0.0;
-		double y = 0.0;
-		float width = 0.0f;
+		double widestLine = 0.0;
 
 		for (size_t i = 0; i < string.size(); i++)
 		{
-			char character = string[i];
+			const char character = string[i];
+
+			if (character == '\n')
+			{
+				if (x > widestLine)
+					widestLine = x;
+
+				x = 0.0;
+				continue;
+			}
+
+			if (character == '\t')
+			{
+				x += 4.0 * fsScale * spaceAdvance;
+				continue;
+			}
+
 			const msdf_atlas::GlyphGeometry* glyph = fontGeometry.getGlyph(character);
+			if (!glyph)
+			{
+				glyph = fontGeometry.getGlyph('?');
+			}
 			if (!glyph)
 			{
 				continue;
 			}
 
-			double pl, pb, pr, pt;
-			glyph->getQuadPlaneBounds(pl, pb, pr, pt);
-			glm::vec2 quadMin((float)pl, (float)pb);
-			glm::vec2 quadMax((float)pr, (float)pt);
-
-			quadMin *= fsScale, quadMax *= fsScale;
-			quadMin += glm::vec2(x, y);
-			quadMax += glm::vec2(x, y);
-
-			width += static_cast<float>(quadMax.x - quadMin.x) * size;
-
-			if (i < string.size() - 1)
+			// Pen advance, not ink width — a space has an advance but no plane bounds.
+			// getAdvance() is an out-param that *replaces* the value, so seed it with the
+			// glyph's own advance and only let the kerned pair overwrite it when there is
+			// a next character.
+			double advance = glyph->getAdvance();
+			if (i + 1 < string.size())
 			{
-				char nextCharacter = string[i + 1];
-				fontGeometry.getAdvance(x, character, nextCharacter);
+				fontGeometry.getAdvance(advance, character, string[i + 1]);
 			}
+
+			x += fsScale * advance;
 		}
 
-		return static_cast<float>(width);
+		if (x > widestLine)
+			widestLine = x;
+
+		return static_cast<float>(widestLine * size);
 	}
 
 	BoundingBox Font::GetBoundingBox(const std::string& string, float size) const
