@@ -187,17 +187,20 @@ namespace Dingo
 				continue;
 
 			// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
+			// DirectUpload = false: the writes go into the frame's command list (as
+			// Renderer2D's batches do) instead of each spinning up a throwaway command list
+			// and its own queue submit — that was 2 submits per material per frame.
 			if (batchIndex >= m_BatchVertexBuffers.size())
 			{
-				m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, true, "Renderer3D_BatchVB"));
-				m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, true, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+				m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
+				m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
 			}
 
 			GraphicsBuffer* vertexBuffer = m_BatchVertexBuffers[batchIndex];
 			GraphicsBuffer* indexBuffer = m_BatchIndexBuffers[batchIndex];
 
-			vertexBuffer->Upload(batch.Vertices.data(), static_cast<uint32_t>(batch.Vertices.size() * sizeof(Vertex)));
-			indexBuffer->Upload(batch.Indices.data(), static_cast<uint32_t>(batch.Indices.size() * sizeof(uint32_t)));
+			Renderer::Upload(vertexBuffer, batch.Vertices.data(), static_cast<uint32_t>(batch.Vertices.size() * sizeof(Vertex)));
+			Renderer::Upload(indexBuffer, batch.Indices.data(), static_cast<uint32_t>(batch.Indices.size() * sizeof(uint32_t)));
 
 			// Bind the shared camera/light UBO at binding 0 for this material, then draw.
 			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
