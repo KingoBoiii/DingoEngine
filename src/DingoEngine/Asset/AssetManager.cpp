@@ -535,7 +535,13 @@ namespace Dingo
 	{
 		for (auto& [handle, metadata] : m_Registry)
 		{
-			if (metadata.State != AssetState::Ready)
+			// Failed is watched as well as Ready: a first-load failure keeps its
+			// registration precisely so fixing the file recovers it. Its write time was
+			// never stamped, so the first poll fires immediately - and a file that is still
+			// broken gets one attempt per edit, not one per poll, because the stamp below
+			// lands whether or not the reload succeeds.
+			const bool recovering = metadata.State == AssetState::Failed;
+			if (metadata.State != AssetState::Ready && !recovering)
 				continue;
 			if (metadata.Type != AssetType::Texture2D && metadata.Type != AssetType::Shader)
 				continue;
@@ -546,7 +552,11 @@ namespace Dingo
 				continue;
 
 			metadata.LastWriteTime = writeTime;
-			DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", metadata.FilePath.generic_string());
+
+			if (recovering)
+				DE_CORE_INFO("AssetManager: retrying failed {} '{}' - the file changed on disk.", AssetTypeToString(metadata.Type), metadata.FilePath.generic_string());
+			else
+				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", metadata.FilePath.generic_string());
 
 			if (metadata.Type == AssetType::Texture2D)
 			{
@@ -554,11 +564,15 @@ namespace Dingo
 				++m_PendingCount;
 				QueueDecodeJob(metadata);
 			}
+			else if (auto it = m_Shaders.find(handle); it != m_Shaders.end())
+			{
+				it->second->Reload(); // keeps the previous program on compile failure
+			}
 			else
 			{
-				auto it = m_Shaders.find(handle);
-				if (it != m_Shaders.end())
-					it->second->Reload(); // keeps the previous program on compile failure
+				// Nothing to reload in place: a shader that failed its first load was
+				// destroyed rather than kept as an invalid object.
+				LoadInternal(metadata);
 			}
 		}
 	}
