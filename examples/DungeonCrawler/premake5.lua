@@ -43,3 +43,5 @@ project "DungeonCrawler"
 		optimize "On"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
+
+	copyAssimpRuntime()

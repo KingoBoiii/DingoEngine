@@ -43,3 +43,5 @@ project "AngryBirds"
 		optimize "On"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
+
+	copyAssimpRuntime()

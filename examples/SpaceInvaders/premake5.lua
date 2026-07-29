@@ -43,3 +43,5 @@ project "SpaceInvaders"
 		optimize "On"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
+
+	copyAssimpRuntime()

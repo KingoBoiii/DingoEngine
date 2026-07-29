@@ -41,3 +41,5 @@ project "Breakout3D"
         optimize "On"
         symbols "Off"
         defines { "DE_DISTRIBUTION" }
+
+    copyAssimpRuntime()

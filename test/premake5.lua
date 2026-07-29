@@ -40,17 +40,9 @@ project "Dingo-TestFramework"
 		symbols "On"
 		defines { "DE_DEBUG" }
 
-		postbuildcommands {
-			"{COPY} ../vendor/assimp/bin/debug %{cfg.targetdir}"
-		}
-
 	filter "configurations:Release"
 		optimize "On"
 		defines { "DE_RELEASE" }
-
-		postbuildcommands {
-			"{COPY} ../vendor/assimp/bin/release %{cfg.targetdir}"
-		}
 
 	filter "configurations:Distribution"
 		kind "WindowedApp"
@@ -59,6 +51,4 @@ project "Dingo-TestFramework"
 		vectorextensions "AVX2"
 		defines { "DE_DISTRIBUTION" }
 
-		postbuildcommands {
-			"{COPY} ../vendor/assimp/bin/release %{cfg.targetdir}"
-		}
+	copyAssimpRuntime()

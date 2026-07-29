@@ -48,3 +48,5 @@ project "FlappyBird"
 		optimize "On"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
+
+	copyAssimpRuntime()
