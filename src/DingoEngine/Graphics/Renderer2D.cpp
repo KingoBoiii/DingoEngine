@@ -442,6 +442,11 @@ void main() {
 
 		glm::mat4 transform = Utils::CreateTransform(position, glm::vec2(size, size));
 
+		// A batch samples one atlas, and the glyph UVs are atlas-relative: switching font
+		// mid-batch would draw the earlier string's glyphs out of this font's atlas.
+		if (m_FontAtlasTexture && m_FontAtlasTexture != fontAtlas)
+			FlushText();
+
 		m_FontAtlasTexture = fontAtlas;
 
 		double x = 0.0;
@@ -840,17 +845,18 @@ void main() {
 			.SetDepthTest(false)
 			.SetDepthWrite(false));
 
-		RenderPassParams renderPassParams = RenderPassParams()
-			.SetPipeline(m_TextQuadRenderPass.Pipeline);
-
-		// One shared render pass; the font atlas is bound and the binding set baked
-		// per frame (on the first flush) in FlushText.
-		m_TextQuadRenderPass.RenderPass = RenderPass::Create(renderPassParams);
-		m_TextQuadRenderPass.RenderPass->Initialize();
-		m_TextQuadRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		m_TextQuadRenderPass.RenderPass->SetSampler(2, Renderer::GetClampSampler());
-
+		// Per-batch vertex buffers and render passes are created lazily in FlushText.
 		m_TextQuadRenderPass.VertexBufferBase = new TextVertex[m_Params.Capabilities.GetQuadVertexCount()];
+	}
+
+	RenderPass* Renderer2D::CreateTextRenderPass()
+	{
+		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_TextQuadRenderPass.Pipeline));
+		renderPass->Initialize();
+		renderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
+		renderPass->SetSampler(2, Renderer::GetClampSampler());
+		// The font atlas is bound and the binding set baked per batch in FlushText.
+		return renderPass;
 	}
 
 	GraphicsBuffer* Renderer2D::CreateTextVertexBuffer()
@@ -864,23 +870,21 @@ void main() {
 			return;
 
 		if (m_TextQuadRenderPass.BatchIndex >= m_TextQuadRenderPass.VertexBuffers.size())
+		{
 			m_TextQuadRenderPass.VertexBuffers.push_back(CreateTextVertexBuffer());
+			m_TextQuadRenderPass.RenderPasses.push_back(CreateTextRenderPass());
+		}
 
 		GraphicsBuffer* vertexBuffer = m_TextQuadRenderPass.VertexBuffers[m_TextQuadRenderPass.BatchIndex];
+		RenderPass* renderPass = m_TextQuadRenderPass.RenderPasses[m_TextQuadRenderPass.BatchIndex];
 
 		uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
 		Renderer::Upload(vertexBuffer, m_TextQuadRenderPass.VertexBufferBase, dataSize);
 
-		// All text in a frame shares one atlas, so bake the shared render pass once,
-		// on the first flush — re-baking it while earlier text draws in this frame
-		// still reference its binding set would invalidate them.
-		if (m_TextQuadRenderPass.BatchIndex == 0)
-		{
-			m_TextQuadRenderPass.RenderPass->SetTexture(1, m_FontAtlasTexture);
-			m_TextQuadRenderPass.RenderPass->Bake();
-		}
+		renderPass->SetTexture(1, m_FontAtlasTexture);
+		renderPass->Bake();
 
-		Renderer::DrawIndexed(m_TextQuadRenderPass.RenderPass, vertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
+		Renderer::DrawIndexed(renderPass, vertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
 		++m_Statistics.DrawCalls;
 
 		m_TextQuadRenderPass.BatchIndex++;
@@ -893,6 +897,10 @@ void main() {
 		for (GraphicsBuffer* vertexBuffer : m_TextQuadRenderPass.VertexBuffers)
 			vertexBuffer->Destroy();
 		m_TextQuadRenderPass.VertexBuffers.clear();
+
+		for (RenderPass* renderPass : m_TextQuadRenderPass.RenderPasses)
+			renderPass->Destroy();
+		m_TextQuadRenderPass.RenderPasses.clear();
 
 		delete[] m_TextQuadRenderPass.VertexBufferBase;
 		m_TextQuadRenderPass.VertexBufferBase = nullptr;
@@ -910,12 +918,6 @@ void main() {
 		{
 			m_TextQuadRenderPass.Shader->Destroy();
 			m_TextQuadRenderPass.Shader = nullptr;
-		}
-
-		if (m_TextQuadRenderPass.RenderPass)
-		{
-			m_TextQuadRenderPass.RenderPass->Destroy();
-			m_TextQuadRenderPass.RenderPass = nullptr;
 		}
 	}
 

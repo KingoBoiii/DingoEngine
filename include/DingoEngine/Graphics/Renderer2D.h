@@ -120,6 +120,7 @@ namespace Dingo
 
 		// Pooled per-batch GPU resources, created on demand and reused every frame.
 		RenderPass* CreateQuadRenderPass();
+		RenderPass* CreateTextRenderPass();
 		GraphicsBuffer* CreateQuadVertexBuffer();
 		GraphicsBuffer* CreateCircleVertexBuffer();
 		GraphicsBuffer* CreateTextVertexBuffer();
@@ -231,10 +232,11 @@ namespace Dingo
 
 			Shader* Shader = nullptr;
 			Pipeline* Pipeline = nullptr;
-			// A single font atlas is used per frame, so one render pass is baked once
-			// per frame (on the first flush) and shared by every text batch; only the
-			// vertex buffers pool.
-			RenderPass* RenderPass = nullptr;
+
+			// One (render pass, vertex buffer) per batch, like the quad pass: a batch
+			// samples exactly one font atlas, and DrawText closes the batch in progress
+			// when the font changes, so consecutive batches can hold different atlases.
+			std::vector<RenderPass*> RenderPasses;
 			std::vector<GraphicsBuffer*> VertexBuffers;
 			uint32_t BatchIndex = 0;
 		} m_TextQuadRenderPass;
