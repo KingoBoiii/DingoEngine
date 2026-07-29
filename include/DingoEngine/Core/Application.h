@@ -75,7 +75,7 @@ namespace Dingo
 		UIParams UI;			// Parameters for UI configuration, only used if EnableUI is true
 
 		// The built-in tabbed Debug window (F3 = engine tab, F4 = renderer tab,
-		// F5 = input tab; the active tab's key closes it). Independent of EnableUI:
+		// F5 = input tab, F6 = assets tab; the active tab's key closes it). Independent of EnableUI:
 		// the engine brings up the UI backend for it even if the game uses no UI of
 		// its own. Honoured in every build config, Distribution included -- set false
 		// to strip the overlay (and, when EnableUI is also false, the ImGui backend)

@@ -87,6 +87,29 @@ namespace Dingo::UI
 	void InputStatsWindow(bool* open = nullptr);
 
 	// ----------------------------------------------------------------------
+	// AssetStatsWindow sections
+	// ----------------------------------------------------------------------
+
+	// The AssetManager's asset root, live counts (registered / loaded / in-flight),
+	// a load-progress bar, and per-type and per-state breakdowns. Reads
+	// Application::GetAssetManager().
+	void AssetSummarySection();
+
+	// Every registered asset in a table -- state, type, source path -- with per-row
+	// Load / Reload buttons and a hot-reload toggle. One of the few panels with editing
+	// widgets: it drives the manager (AssetManager::Reload / LoadAsync and
+	// SetHotReloadEnabled), so treat it as a development tool. Deliberately offers no
+	// Unload: that frees the object, and game code legitimately caches the pointers it
+	// was handed -- Reload refreshes textures and shaders in place instead.
+	void AssetRegistrySection();
+
+	// A window composing the two asset sections above.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	void AssetStatsWindow(bool* open = nullptr);
+
+	// ----------------------------------------------------------------------
 	// The combined debug window
 	// ----------------------------------------------------------------------
 
@@ -95,12 +118,13 @@ namespace Dingo::UI
 		None = 0,
 		Engine,
 		Renderer,
-		Input
+		Input,
+		Assets
 	};
 
 	// Everything above composed into one tabbed "Debug" window (Engine / Renderer /
-	// Input). This is what the engine's built-in overlays show (F3/F4/F5 select the
-	// matching tab; the same key again closes the window).
+	// Input / Assets). This is what the engine's built-in overlays show (F3/F4/F5/F6
+	// select the matching tab; the same key again closes the window).
 	//
 	// 'select' forces that tab active this frame (DebugTab::None leaves the user's
 	// choice alone). Returns the tab currently shown so callers can implement

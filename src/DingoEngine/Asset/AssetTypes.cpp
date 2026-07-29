@@ -21,6 +21,19 @@ namespace Dingo
 		return "Unknown";
 	}
 
+	const char* AssetStateToString(AssetState state)
+	{
+		switch (state)
+		{
+			case AssetState::Unloaded: return "Unloaded";
+			case AssetState::Queued:   return "Queued";
+			case AssetState::Loading:  return "Loading";
+			case AssetState::Ready:    return "Ready";
+			case AssetState::Failed:   return "Failed";
+		}
+		return "Unknown";
+	}
+
 	AssetType AssetTypeFromExtension(const std::filesystem::path& extension)
 	{
 		std::string ext = extension.string();

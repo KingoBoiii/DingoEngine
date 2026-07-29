@@ -36,6 +36,7 @@ namespace Dingo
 	};
 
 	const char* AssetTypeToString(AssetType type);
+	const char* AssetStateToString(AssetState state);
 
 	// Infers the asset type from a file extension (".png" -> Texture2D, ".glsl" -> Shader,
 	// ".obj"/".gltf" -> Model, ".ttf" -> Font, ".wav"/".ogg" -> AudioClip). Case-insensitive.

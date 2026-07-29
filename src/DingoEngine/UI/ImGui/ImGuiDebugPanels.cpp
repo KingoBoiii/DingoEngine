@@ -9,12 +9,15 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Audio/AudioEngine.h"
+#include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Version.h"
 #include "DingoEngine/BuildInfo.h"
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <format>
+#include <vector>
 
 // ImGui-backed implementation of the engine's renderer debug panels
 // (DingoEngine/UI/DebugPanels.h). Like ImGuiUI.cpp, this is one of the only
@@ -44,6 +47,35 @@ namespace Dingo::UI
 			const ImGuiIO& io = ImGui::GetIO();
 			const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
 			ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
+		}
+
+		ImVec4 AssetStateColor(AssetState state)
+		{
+			switch (state)
+			{
+				case AssetState::Ready:   return ImVec4(0.35f, 0.85f, 0.40f, 1.0f);
+				case AssetState::Queued:
+				case AssetState::Loading: return ImVec4(0.95f, 0.80f, 0.30f, 1.0f);
+				case AssetState::Failed:  return ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+				case AssetState::Unloaded:
+				default:                  return ImVec4(0.60f, 0.60f, 0.60f, 1.0f);
+			}
+		}
+
+		// Registry snapshot ordered by path: the registry is an unordered_map, so
+		// iterating it directly would reshuffle rows between frames.
+		std::vector<AssetMetadata> SortedRegistry(const AssetManager& assets)
+		{
+			std::vector<AssetMetadata> entries;
+			entries.reserve(assets.GetRegistry().size());
+			for (const auto& [handle, metadata] : assets.GetRegistry())
+				entries.push_back(metadata);
+
+			std::sort(entries.begin(), entries.end(), [](const AssetMetadata& a, const AssetMetadata& b)
+			{
+				return a.FilePath.generic_string() < b.FilePath.generic_string();
+			});
+			return entries;
 		}
 	}
 
@@ -300,6 +332,181 @@ namespace Dingo::UI
 			ImGui::TextUnformatted("No gamepads connected.");
 	}
 
+	void AssetSummarySection()
+	{
+		const AssetManager& assets = Application::Get().GetAssetManager();
+
+		const uint32_t registered = assets.GetRegisteredCount();
+		const uint32_t loaded = assets.GetLoadedCount();
+		const uint32_t pending = assets.GetPendingCount();
+
+		ImGui::TextUnformatted("Assets");
+		ImGui::Separator();
+		// Wrapped: absolute asset roots are long enough to clip in a narrow window.
+		ImGui::TextWrapped("Root : %s", assets.GetRootDirectory().string().c_str());
+		ImGui::Text("Registered : %u    Loaded : %u    In flight : %u", registered, loaded, pending);
+
+		const float fraction = registered > 0 ? static_cast<float>(loaded) / static_cast<float>(registered) : 0.0f;
+		const std::string overlay = pending > 0
+			? std::format("loading... {} / {}", loaded, registered)
+			: std::format("{} / {}", loaded, registered);
+		ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay.c_str());
+
+		uint32_t perType[6] = {};
+		uint32_t perState[5] = {};
+		for (const auto& [handle, metadata] : assets.GetRegistry())
+		{
+			perType[static_cast<size_t>(metadata.Type)]++;
+			perState[static_cast<size_t>(metadata.State)]++;
+		}
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("By type");
+		ImGui::Separator();
+		for (size_t type = 1; type < IM_ARRAYSIZE(perType); type++)
+		{
+			if (perType[type] == 0)
+				continue;
+			ImGui::Text("%-10s : %u", AssetTypeToString(static_cast<AssetType>(type)), perType[type]);
+		}
+		if (registered == 0)
+			ImGui::TextUnformatted("No assets registered.");
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("By state");
+		ImGui::Separator();
+		for (size_t state = 0; state < IM_ARRAYSIZE(perState); state++)
+		{
+			if (perState[state] == 0)
+				continue;
+			const AssetState value = static_cast<AssetState>(state);
+			ImGui::TextColored(AssetStateColor(value), "%-10s : %u", AssetStateToString(value), perState[state]);
+		}
+	}
+
+	void AssetRegistrySection()
+	{
+		AssetManager& assets = Application::Get().GetAssetManager();
+
+		ImGui::TextUnformatted("Registry");
+		ImGui::Separator();
+
+		bool hotReload = assets.IsHotReloadEnabled();
+		if (ImGui::Checkbox("Hot-reload textures & shaders", &hotReload))
+			assets.SetHotReloadEnabled(hotReload);
+
+		static char s_Filter[128] = "";
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputTextWithHint("##assetfilter", "filter by path...", s_Filter, IM_ARRAYSIZE(s_Filter));
+
+		// Buttons act on the manager, which mutates the registry - collect the request
+		// and apply it after the table is closed.
+		enum class Action { None, Load, Reload };
+		Action action = Action::None;
+		AssetHandle target = k_InvalidAsset;
+
+		const std::vector<AssetMetadata> entries = SortedRegistry(assets);
+
+		if (ImGui::BeginTable("##assettable", 4,
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+			ImVec2(0.0f, 240.0f)))
+		{
+			ImGui::TableSetupScrollFreeze(0, 1);
+			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 62.0f);
+			ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 74.0f);
+			ImGui::TableSetupColumn("Path");
+			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 118.0f);
+			ImGui::TableHeadersRow();
+
+			for (const AssetMetadata& metadata : entries)
+			{
+				const std::string path = metadata.FilePath.generic_string();
+				if (s_Filter[0] != '\0' && path.find(s_Filter) == std::string::npos)
+					continue;
+
+				ImGui::PushID(static_cast<int>(static_cast<uint64_t>(metadata.Handle) & 0x7FFFFFFF));
+				ImGui::TableNextRow();
+
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextColored(AssetStateColor(metadata.State), "%s", AssetStateToString(metadata.State));
+
+				ImGui::TableSetColumnIndex(1);
+				ImGui::TextUnformatted(AssetTypeToString(metadata.Type));
+
+				ImGui::TableSetColumnIndex(2);
+				ImGui::TextUnformatted(path.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("handle %llu\n%s", static_cast<unsigned long long>(static_cast<uint64_t>(metadata.Handle)),
+						assets.ResolvePath(metadata.FilePath).string().c_str());
+
+				ImGui::TableSetColumnIndex(3);
+				const bool isLoaded = metadata.State == AssetState::Ready;
+				const bool inFlight = metadata.State == AssetState::Queued || metadata.State == AssetState::Loading;
+
+				// No Unload button on purpose: unloading frees the object, and games
+				// legitimately cache the pointers they were handed. Reload refreshes
+				// textures and shaders in place, so it is safe to press at any time.
+				ImGui::BeginDisabled(inFlight);
+				if (ImGui::SmallButton(isLoaded ? "Reload" : "Load"))
+				{
+					action = isLoaded ? Action::Reload : Action::Load;
+					target = metadata.Handle;
+				}
+				ImGui::EndDisabled();
+
+				ImGui::PopID();
+			}
+
+			ImGui::EndTable();
+		}
+
+		if (ImGui::Button("Reload all loaded"))
+		{
+			for (const AssetMetadata& metadata : entries)
+			{
+				if (metadata.State == AssetState::Ready)
+					assets.Reload(metadata.Handle);
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Retry failed"))
+		{
+			for (const AssetMetadata& metadata : entries)
+			{
+				if (metadata.State == AssetState::Unloaded || metadata.State == AssetState::Failed)
+					assets.LoadAsync(metadata.FilePath);
+			}
+		}
+
+		switch (action)
+		{
+			case Action::Reload: assets.Reload(target); break;
+			case Action::Load:
+			{
+				if (const AssetMetadata* metadata = assets.GetMetadata(target))
+					assets.LoadAsync(metadata->FilePath);
+				break;
+			}
+			case Action::None: break;
+		}
+	}
+
+	void AssetStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Asset Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		AssetSummarySection();
+
+		ImGui::Spacing();
+		AssetRegistrySection();
+
+		ImGui::End();
+	}
+
 	void InputStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Input Stats", open))
@@ -323,7 +530,7 @@ namespace Dingo::UI
 	{
 		DebugTab active = DebugTab::None;
 
-		ImGui::SetNextWindowSize(ImVec2(440.0f, 520.0f), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(560.0f, 560.0f), ImGuiCond_FirstUseEver);
 		if (!ImGui::Begin("Debug", open))
 		{
 			ImGui::End();
@@ -369,6 +576,13 @@ namespace Dingo::UI
 				KeyboardInputSection();
 				ImGui::Spacing();
 				GamepadInputSection();
+			});
+
+			tab("Assets", DebugTab::Assets, []
+			{
+				AssetSummarySection();
+				ImGui::Spacing();
+				AssetRegistrySection();
 			});
 
 			ImGui::EndTabBar();
