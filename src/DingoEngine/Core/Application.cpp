@@ -100,10 +100,16 @@ namespace Dingo
 	{
 		OnDestroy();
 
-		// Stop the render thread first so the GPU is idle before any resources are freed.
+		// Park the render thread first so the GPU is idle before any resources are freed.
 		Renderer::Shutdown();
 
+		// Detach layers while the renderer can still answer queries: OnDetach is where a
+		// layer frees its GPU resources, and doing that legitimately involves asking for
+		// the white texture, a sampler or the current framebuffer.
 		m_LayerStack.Clear();
+
+		// Only now drop the renderer's own resources and state.
+		Renderer::Destroy();
 
 		// Free managed assets after the layers that borrow them, but before the audio
 		// engine: AudioClips must not outlive the engine that decoded them.

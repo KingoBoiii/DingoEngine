@@ -68,6 +68,9 @@ namespace Dingo
 
 	void Renderer::Shutdown()
 	{
+		if (!s_Data)
+			return;
+
 		{
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
 			s_Data->Running  = false;
@@ -88,6 +91,12 @@ namespace Dingo
 			s_Data->CommandList->Destroy();
 			s_Data->CommandList = nullptr;
 		}
+	}
+
+	void Renderer::Destroy()
+	{
+		if (!s_Data)
+			return;
 
 		if (s_Data->WhiteTexture) { s_Data->WhiteTexture->Destroy(); s_Data->WhiteTexture = nullptr; }
 		if (s_Data->ClampSampler) { s_Data->ClampSampler->Destroy(); s_Data->ClampSampler = nullptr; }
@@ -344,17 +353,19 @@ namespace Dingo
 
 	CommandList* Renderer::GetCommandList()
 	{
-		return s_Data->CommandList;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->CommandList : nullptr;
 	}
 
 	Framebuffer* Renderer::GetSwapChainFramebuffer()
 	{
-		return s_Data->SwapChain->GetCurrentFramebuffer();
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->SwapChain->GetCurrentFramebuffer() : nullptr;
 	}
 
 	bool Renderer::IsSwapChainFramebuffer(const Framebuffer* framebuffer)
 	{
-		return framebuffer && s_Data->SwapChain && s_Data->SwapChain->OwnsFramebuffer(framebuffer);
+		return s_Data && framebuffer && s_Data->SwapChain && s_Data->SwapChain->OwnsFramebuffer(framebuffer);
 	}
 
 	/**************************************************
@@ -363,17 +374,20 @@ namespace Dingo
 
 	Texture* Renderer::GetWhiteTexture()
 	{
-		return s_Data->WhiteTexture;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->WhiteTexture : nullptr;
 	}
 
 	Sampler* Renderer::GetClampSampler()
 	{
-		return s_Data->ClampSampler;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->ClampSampler : nullptr;
 	}
 
 	Sampler* Renderer::GetPointSampler()
 	{
-		return s_Data->PointSampler;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->PointSampler : nullptr;
 	}
 
 }

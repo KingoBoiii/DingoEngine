@@ -31,7 +31,18 @@ namespace Dingo
 		**************************************************/
 
 		static void Initialize(SwapChain* swapChain);
+
+		// Parks the render thread, submits any frame still in flight and drops the frame
+		// command list, so the GPU is idle and nothing the renderer recorded still
+		// references a resource. Queries and the shared static resources below stay valid
+		// afterwards — Layer::OnDetach runs between this and Destroy(), and freeing GPU
+		// resources there is exactly what it is for.
 		static void Shutdown();
+
+		// Frees the renderer's own static resources and internal state. Every query below
+		// asserts and returns null after this point, so it must come after the layer stack
+		// has been detached.
+		static void Destroy();
 
 		static void BeginFrame();
 		static void EndFrame();
