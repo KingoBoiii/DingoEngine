@@ -550,6 +550,11 @@ void main() {
 
 	float Renderer2D::GetTextureIndex(Texture* texture)
 	{
+		// A null texture must never land in m_TextureSlots: every occupied slot is
+		// deref'd unchecked below on the next call. Route it to the white texture instead.
+		if (!texture)
+			return 0.0f;
+
 		for (uint32_t i = 1; i < m_TextureSlotIndex; i++)
 		{
 			if (m_TextureSlots[i]->NativeEquals(texture))

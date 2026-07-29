@@ -314,10 +314,12 @@ namespace Dingo
 		m_WaveBannerTimer = std::max(0.0f, m_WaveBannerTimer - deltaTime);
 
 		for (const auto& bullet : m_Bullets)
-			renderer.DrawQuad(bullet.Position, glm::vec2(BULLET_SPRITE_SIZE), m_BulletTexture);
+			if (m_BulletTexture)
+				renderer.DrawQuad(bullet.Position, glm::vec2(BULLET_SPRITE_SIZE), m_BulletTexture);
 
 		for (const auto& enemy : m_Enemies)
-			renderer.DrawQuad(enemy.Position, glm::vec2(ENEMY_SPRITE_SIZE), m_EnemyTexture);
+			if (m_EnemyTexture)
+				renderer.DrawQuad(enemy.Position, glm::vec2(ENEMY_SPRITE_SIZE), m_EnemyTexture);
 
 		for (const auto& explosion : m_Explosions)
 		{
