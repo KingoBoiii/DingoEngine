@@ -250,23 +250,22 @@ void main() {
 
 		m_CameraUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData));
 
-		// Set all texture slots to 0
 		m_TextureSlots[0] = Renderer::GetWhiteTexture();
 		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
 		{
 			m_TextureSlots[i] = nullptr;
 		}
 
-		CreateQuadPipeline();
-		CreateCircleRenderPass();
-		CreateTextQuadRenderPass();
+		CreateQuadPass();
+		CreateCirclePass();
+		CreateTextPass();
 	}
 
 	void Renderer2D::Shutdown()
 	{
-		DestroyTextQuadRenderPass();
-		DestroyCircleRenderPass();
-		DestroyQuadPipeline();
+		m_TextPass.Destroy();
+		m_CirclePass.Destroy();
+		m_QuadPass.Destroy();
 
 		if (m_QuadIndexBuffer)
 		{
@@ -294,17 +293,9 @@ void main() {
 
 		m_Statistics = {};
 
-		m_QuadPipeline.IndexCount = 0;
-		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
-		m_QuadPipeline.BatchIndex = 0;
-
-		m_CircleRenderPass.IndexCount = 0;
-		m_CircleRenderPass.VertexBufferPtr = m_CircleRenderPass.VertexBufferBase;
-		m_CircleRenderPass.BatchIndex = 0;
-
-		m_TextQuadRenderPass.IndexCount = 0;
-		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
-		m_TextQuadRenderPass.BatchIndex = 0;
+		m_QuadPass.Reset();
+		m_CirclePass.Reset();
+		m_TextPass.Reset();
 
 		ResetQuadTextureSlots();
 	}
@@ -332,7 +323,7 @@ void main() {
 
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
 	{
-		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
 		constexpr size_t quadVertexCount = 4;
@@ -341,14 +332,14 @@ void main() {
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
-			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
-			m_QuadPipeline.VertexBufferPtr->Color = color;
-			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
-			m_QuadPipeline.VertexBufferPtr->TexIndex = 0.0f;
-			m_QuadPipeline.VertexBufferPtr++;
+			m_QuadPass.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPass.VertexBufferPtr->Color = color;
+			m_QuadPass.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPass.VertexBufferPtr->TexIndex = 0.0f;
+			m_QuadPass.VertexBufferPtr++;
 		}
 
-		m_QuadPipeline.IndexCount += 6;
+		m_QuadPass.IndexCount += 6;
 		++m_Statistics.QuadCount;
 	}
 
@@ -359,7 +350,7 @@ void main() {
 
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
-		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
 		float textureIndex = GetTextureIndex(texture);
@@ -370,14 +361,14 @@ void main() {
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
-			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
-			m_QuadPipeline.VertexBufferPtr->Color = color;
-			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
-			m_QuadPipeline.VertexBufferPtr->TexIndex = textureIndex;
-			m_QuadPipeline.VertexBufferPtr++;
+			m_QuadPass.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPass.VertexBufferPtr->Color = color;
+			m_QuadPass.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPass.VertexBufferPtr->TexIndex = textureIndex;
+			m_QuadPass.VertexBufferPtr++;
 		}
 
-		m_QuadPipeline.IndexCount += 6;
+		m_QuadPass.IndexCount += 6;
 		++m_Statistics.QuadCount;
 	}
 
@@ -388,7 +379,7 @@ void main() {
 
 	void Renderer2D::DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
-		if (m_QuadPipeline.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
 		float textureIndex = GetTextureIndex(texture);
@@ -399,33 +390,33 @@ void main() {
 
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
-			m_QuadPipeline.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
-			m_QuadPipeline.VertexBufferPtr->Color = color;
-			m_QuadPipeline.VertexBufferPtr->TexCoord = m_TextureCoords[i];
-			m_QuadPipeline.VertexBufferPtr->TexIndex = textureIndex;
-			m_QuadPipeline.VertexBufferPtr++;
+			m_QuadPass.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPass.VertexBufferPtr->Color = color;
+			m_QuadPass.VertexBufferPtr->TexCoord = m_TextureCoords[i];
+			m_QuadPass.VertexBufferPtr->TexIndex = textureIndex;
+			m_QuadPass.VertexBufferPtr++;
 		}
 
-		m_QuadPipeline.IndexCount += 6;
+		m_QuadPass.IndexCount += 6;
 		++m_Statistics.QuadCount;
 	}
 
 	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
 	{
-		if (m_CircleRenderPass.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+		if (!m_CirclePass.HasRoomForQuad())
 			FlushCircle();
 
 		for (size_t i = 0; i < 4; i++)
 		{
-			m_CircleRenderPass.VertexBufferPtr->WorldPosition = transform * m_QuadVertexPositions[i];
-			m_CircleRenderPass.VertexBufferPtr->LocalPosition = m_QuadVertexPositions[i] * 2.0f;
-			m_CircleRenderPass.VertexBufferPtr->Color = color;
-			m_CircleRenderPass.VertexBufferPtr->Thickness = thickness;
-			m_CircleRenderPass.VertexBufferPtr->Fade = fade;
-			m_CircleRenderPass.VertexBufferPtr++;
+			m_CirclePass.VertexBufferPtr->WorldPosition = transform * m_QuadVertexPositions[i];
+			m_CirclePass.VertexBufferPtr->LocalPosition = m_QuadVertexPositions[i] * 2.0f;
+			m_CirclePass.VertexBufferPtr->Color = color;
+			m_CirclePass.VertexBufferPtr->Thickness = thickness;
+			m_CirclePass.VertexBufferPtr->Fade = fade;
+			m_CirclePass.VertexBufferPtr++;
 		}
 
-		m_CircleRenderPass.IndexCount += 6;
+		m_CirclePass.IndexCount += 6;
 		++m_Statistics.CircleCount;
 	}
 
@@ -516,30 +507,30 @@ void main() {
 			texCoordMin *= glm::vec2(texelWidth, texelHeight);
 			texCoordMax *= glm::vec2(texelWidth, texelHeight);
 
-			if (m_TextQuadRenderPass.IndexCount + 6 > m_Params.Capabilities.GetQuadIndexCount())
+			if (!m_TextPass.HasRoomForQuad())
 				FlushText();
 
-			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
-			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = texCoordMin;
-			m_TextQuadRenderPass.VertexBufferPtr++;
+			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
+			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextPass.VertexBufferPtr->TexCoord = texCoordMin;
+			m_TextPass.VertexBufferPtr++;
 
-			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin.x, quadMax.y, 0.0f, 1.0f);
-			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = { texCoordMin.x, texCoordMax.y };
-			m_TextQuadRenderPass.VertexBufferPtr++;
+			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin.x, quadMax.y, 0.0f, 1.0f);
+			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextPass.VertexBufferPtr->TexCoord = { texCoordMin.x, texCoordMax.y };
+			m_TextPass.VertexBufferPtr++;
 
-			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax, 0.0f, 1.0f);
-			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = texCoordMax;
-			m_TextQuadRenderPass.VertexBufferPtr++;
+			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax, 0.0f, 1.0f);
+			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextPass.VertexBufferPtr->TexCoord = texCoordMax;
+			m_TextPass.VertexBufferPtr++;
 
-			m_TextQuadRenderPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax.x, quadMin.y, 0.0f, 1.0f);
-			m_TextQuadRenderPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextQuadRenderPass.VertexBufferPtr->TexCoord = { texCoordMax.x, texCoordMin.y };
-			m_TextQuadRenderPass.VertexBufferPtr++;
+			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax.x, quadMin.y, 0.0f, 1.0f);
+			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+			m_TextPass.VertexBufferPtr->TexCoord = { texCoordMax.x, texCoordMin.y };
+			m_TextPass.VertexBufferPtr++;
 
-			m_TextQuadRenderPass.IndexCount += 6;
+			m_TextPass.IndexCount += 6;
 			++m_Statistics.TextQuadCount;
 
 			if (i < string.size() - 1)
@@ -611,12 +602,8 @@ void main() {
 	***		QUAD									***
 	**************************************************/
 
-	void Renderer2D::CreateQuadPipeline()
+	void Renderer2D::CreateQuadPass()
 	{
-		m_QuadPipeline = QuadPipeline();
-
-		m_QuadPipeline.Shader = Shader::CreateFromSource("Renderer2DQuadShader", Shaders::Renderer2DQuadShader);
-
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(QuadVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(QuadVertex, Position))
@@ -624,35 +611,15 @@ void main() {
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(QuadVertex, TexCoord))
 			.AddAttribute("a_TexIndex", Format::R32_FLOAT, offsetof(QuadVertex, TexIndex));
 
-		m_QuadPipeline.Pipeline = Pipeline::Create(PipelineParams()
-			.SetDebugName("Renderer2DQuadPipeline")
-			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
-			.SetShader(m_QuadPipeline.Shader)
-			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront)
-			.SetDepthTest(false)
-			.SetDepthWrite(false));
-
-		// Per-batch vertex buffers and render passes are created lazily in FlushQuad.
-		m_QuadPipeline.VertexBufferBase = new QuadVertex[m_Params.Capabilities.GetQuadVertexCount()];
-	}
-
-	RenderPass* Renderer2D::CreateQuadRenderPass()
-	{
-		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_QuadPipeline.Pipeline));
-		renderPass->Initialize();
-		renderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		renderPass->SetSampler(2, Renderer::GetPointSampler());
-		// The texture-slot array is bound and the binding set baked per batch in
-		// FlushQuad, because each batch carries a different set of textures.
-		return renderPass;
-	}
-
-	GraphicsBuffer* Renderer2D::CreateQuadVertexBuffer()
-	{
-		// DirectUpload = false: filled through Renderer::Upload (the deferred frame
-		// command list) so the write is ordered before the draw within that one list.
-		return GraphicsBuffer::CreateVertexBuffer(sizeof(QuadVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, "Renderer2DQuadVertexBuffer");
+		m_QuadPass.Initialize(BatchPassParams{
+			.Name = "Renderer2DQuad",
+			.ShaderSource = Shaders::Renderer2DQuadShader,
+			.VertexLayout = vertexLayout,
+			.CullMode = CullMode::BackAndFront,
+			.Capabilities = m_Params.Capabilities,
+			.CameraUniformBuffer = m_CameraUniformBuffer,
+			.IndexBuffer = m_QuadIndexBuffer,
+			.BatchSampler = Renderer::GetPointSampler() });
 	}
 
 	void Renderer2D::ResetQuadTextureSlots()
@@ -664,79 +631,30 @@ void main() {
 
 	void Renderer2D::FlushQuad()
 	{
-		if (m_QuadPipeline.IndexCount == 0)
+		const bool flushed = m_QuadPass.Flush([this](RenderPass* renderPass)
+		{
+			// The shader samples a fixed 32-element array, so every slot must resolve to
+			// a real texture — the ones this batch never claimed included.
+			for (uint32_t i = 0; i < m_TextureSlots.size(); i++)
+			{
+				Texture* texture = m_TextureSlots[i] ? m_TextureSlots[i] : m_TextureSlots[0];
+				renderPass->SetTexture(k_TextureBinding, texture, i);
+			}
+		});
+
+		if (!flushed)
 			return;
 
-		// Grow the pool on demand; entries persist and are reused (re-uploaded and
-		// re-baked) every frame. BatchIndex is this frame's next free slot.
-		if (m_QuadPipeline.BatchIndex >= m_QuadPipeline.VertexBuffers.size())
-		{
-			m_QuadPipeline.VertexBuffers.push_back(CreateQuadVertexBuffer());
-			m_QuadPipeline.RenderPasses.push_back(CreateQuadRenderPass());
-		}
-
-		GraphicsBuffer* vertexBuffer = m_QuadPipeline.VertexBuffers[m_QuadPipeline.BatchIndex];
-		RenderPass* renderPass = m_QuadPipeline.RenderPasses[m_QuadPipeline.BatchIndex];
-
-		uint32_t dataSize = (uint32_t)((uint8_t*)m_QuadPipeline.VertexBufferPtr - (uint8_t*)m_QuadPipeline.VertexBufferBase);
-		Renderer::Upload(vertexBuffer, m_QuadPipeline.VertexBufferBase, dataSize);
-
-		for (uint32_t i = 0; i < m_TextureSlots.size(); i++)
-		{
-			Texture* texture = m_TextureSlots[i] ? m_TextureSlots[i] : m_TextureSlots[0];
-			renderPass->SetTexture(1, texture, i);
-		}
-		renderPass->Bake();
-
-		Renderer::DrawIndexed(renderPass, vertexBuffer, m_QuadIndexBuffer, m_QuadPipeline.IndexCount);
 		++m_Statistics.DrawCalls;
-
-		// Begin a fresh batch.
-		m_QuadPipeline.BatchIndex++;
-		m_QuadPipeline.IndexCount = 0;
-		m_QuadPipeline.VertexBufferPtr = m_QuadPipeline.VertexBufferBase;
 		ResetQuadTextureSlots();
-	}
-
-	void Renderer2D::DestroyQuadPipeline()
-	{
-		for (GraphicsBuffer* vertexBuffer : m_QuadPipeline.VertexBuffers)
-			vertexBuffer->Destroy();
-		m_QuadPipeline.VertexBuffers.clear();
-
-		for (RenderPass* renderPass : m_QuadPipeline.RenderPasses)
-			renderPass->Destroy();
-		m_QuadPipeline.RenderPasses.clear();
-
-		delete[] m_QuadPipeline.VertexBufferBase;
-		m_QuadPipeline.VertexBufferBase = nullptr;
-		m_QuadPipeline.VertexBufferPtr = nullptr;
-		m_QuadPipeline.IndexCount = 0;
-		m_QuadPipeline.BatchIndex = 0;
-
-		if (m_QuadPipeline.Pipeline)
-		{
-			m_QuadPipeline.Pipeline->Destroy();
-			m_QuadPipeline.Pipeline = nullptr;
-		}
-
-		if (m_QuadPipeline.Shader)
-		{
-			m_QuadPipeline.Shader->Destroy();
-			m_QuadPipeline.Shader = nullptr;
-		}
 	}
 
 	/**************************************************
 	***		CIRCLE									***
 	**************************************************/
 
-	void Renderer2D::CreateCircleRenderPass()
+	void Renderer2D::CreateCirclePass()
 	{
-		m_CircleRenderPass = CircleRenderPass();
-
-		m_CircleRenderPass.Shader = Shader::CreateFromSource("Renderer2DCircleShader", Shaders::Renderer2DCircleShader);
-
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(CircleVertex))
 			.AddAttribute("a_WorldPosition", Format::RGB32_FLOAT, offsetof(CircleVertex, WorldPosition))
@@ -745,183 +663,53 @@ void main() {
 			.AddAttribute("a_Thickness", Format::R32_FLOAT, offsetof(CircleVertex, Thickness))
 			.AddAttribute("a_Fade", Format::R32_FLOAT, offsetof(CircleVertex, Fade));
 
-		m_CircleRenderPass.Pipeline = Pipeline::Create(PipelineParams()
-			.SetDebugName("Renderer2DCirclePipeline")
-			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
-			.SetShader(m_CircleRenderPass.Shader)
-			.SetVertexLayout(vertexLayout)
-			.SetCullMode(CullMode::BackAndFront)
-			.SetDepthTest(false)
-			.SetDepthWrite(false));
-
-		RenderPassParams renderPassParams = RenderPassParams()
-			.SetPipeline(m_CircleRenderPass.Pipeline);
-
-		// Bindings are camera-only and constant, so this single render pass is baked
-		// once here and shared by every circle batch.
-		m_CircleRenderPass.RenderPass = RenderPass::Create(renderPassParams);
-		m_CircleRenderPass.RenderPass->Initialize();
-		m_CircleRenderPass.RenderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		m_CircleRenderPass.RenderPass->Bake();
-
-		m_CircleRenderPass.VertexBufferBase = new CircleVertex[m_Params.Capabilities.GetQuadVertexCount()];
-	}
-
-	GraphicsBuffer* Renderer2D::CreateCircleVertexBuffer()
-	{
-		return GraphicsBuffer::CreateVertexBuffer(sizeof(CircleVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, "Renderer2DCircleVertexBuffer");
+		m_CirclePass.Initialize(BatchPassParams{
+			.Name = "Renderer2DCircle",
+			.ShaderSource = Shaders::Renderer2DCircleShader,
+			.VertexLayout = vertexLayout,
+			.CullMode = CullMode::BackAndFront,
+			.Capabilities = m_Params.Capabilities,
+			.CameraUniformBuffer = m_CameraUniformBuffer,
+			.IndexBuffer = m_QuadIndexBuffer });
 	}
 
 	void Renderer2D::FlushCircle()
 	{
-		if (m_CircleRenderPass.IndexCount == 0)
-			return;
-
-		if (m_CircleRenderPass.BatchIndex >= m_CircleRenderPass.VertexBuffers.size())
-			m_CircleRenderPass.VertexBuffers.push_back(CreateCircleVertexBuffer());
-
-		GraphicsBuffer* vertexBuffer = m_CircleRenderPass.VertexBuffers[m_CircleRenderPass.BatchIndex];
-
-		uint32_t dataSize = (uint32_t)((uint8_t*)m_CircleRenderPass.VertexBufferPtr - (uint8_t*)m_CircleRenderPass.VertexBufferBase);
-		Renderer::Upload(vertexBuffer, m_CircleRenderPass.VertexBufferBase, dataSize);
-
-		Renderer::DrawIndexed(m_CircleRenderPass.RenderPass, vertexBuffer, m_QuadIndexBuffer, m_CircleRenderPass.IndexCount);
-		++m_Statistics.DrawCalls;
-
-		m_CircleRenderPass.BatchIndex++;
-		m_CircleRenderPass.IndexCount = 0;
-		m_CircleRenderPass.VertexBufferPtr = m_CircleRenderPass.VertexBufferBase;
-	}
-
-	void Renderer2D::DestroyCircleRenderPass()
-	{
-		for (GraphicsBuffer* vertexBuffer : m_CircleRenderPass.VertexBuffers)
-			vertexBuffer->Destroy();
-		m_CircleRenderPass.VertexBuffers.clear();
-
-		delete[] m_CircleRenderPass.VertexBufferBase;
-		m_CircleRenderPass.VertexBufferBase = nullptr;
-		m_CircleRenderPass.VertexBufferPtr = nullptr;
-		m_CircleRenderPass.IndexCount = 0;
-		m_CircleRenderPass.BatchIndex = 0;
-
-		if (m_CircleRenderPass.Pipeline)
-		{
-			m_CircleRenderPass.Pipeline->Destroy();
-			m_CircleRenderPass.Pipeline = nullptr;
-		}
-
-		if (m_CircleRenderPass.Shader)
-		{
-			m_CircleRenderPass.Shader->Destroy();
-			m_CircleRenderPass.Shader = nullptr;
-		}
-
-		if (m_CircleRenderPass.RenderPass)
-		{
-			m_CircleRenderPass.RenderPass->Destroy();
-			m_CircleRenderPass.RenderPass = nullptr;
-		}
+		if (m_CirclePass.Flush())
+			++m_Statistics.DrawCalls;
 	}
 
 	/**************************************************
 	***		TEXT									***
 	**************************************************/
 
-	void Renderer2D::CreateTextQuadRenderPass()
+	void Renderer2D::CreateTextPass()
 	{
-		m_TextQuadRenderPass = TextQuadRenderPass();
-
-		m_TextQuadRenderPass.Shader = Shader::CreateFromSource("Renderer2DTextShader", Shaders::Renderer2DTextShader);
-
 		VertexLayout vertexLayout = VertexLayout()
 			.SetStride(sizeof(TextVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(TextVertex, Position))
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(TextVertex, Color))
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(TextVertex, TexCoord));
 
-		m_TextQuadRenderPass.Pipeline = Pipeline::Create(PipelineParams()
-			.SetDebugName("Renderer2DTextPipeline")
-			.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
-			.SetShader(m_TextQuadRenderPass.Shader)
-			.SetVertexLayout(vertexLayout)
-			.SetDepthTest(false)
-			.SetDepthWrite(false));
-
-		// Per-batch vertex buffers and render passes are created lazily in FlushText.
-		m_TextQuadRenderPass.VertexBufferBase = new TextVertex[m_Params.Capabilities.GetQuadVertexCount()];
-	}
-
-	RenderPass* Renderer2D::CreateTextRenderPass()
-	{
-		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_TextQuadRenderPass.Pipeline));
-		renderPass->Initialize();
-		renderPass->SetUniformBuffer(0, m_CameraUniformBuffer);
-		renderPass->SetSampler(2, Renderer::GetClampSampler());
-		// The font atlas is bound and the binding set baked per batch in FlushText.
-		return renderPass;
-	}
-
-	GraphicsBuffer* Renderer2D::CreateTextVertexBuffer()
-	{
-		return GraphicsBuffer::CreateVertexBuffer(sizeof(TextVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, "Renderer2DTextVertexBuffer");
+		m_TextPass.Initialize(BatchPassParams{
+			.Name = "Renderer2DText",
+			.ShaderSource = Shaders::Renderer2DTextShader,
+			.VertexLayout = vertexLayout,
+			.Capabilities = m_Params.Capabilities,
+			.CameraUniformBuffer = m_CameraUniformBuffer,
+			.IndexBuffer = m_QuadIndexBuffer,
+			.BatchSampler = Renderer::GetClampSampler() });
 	}
 
 	void Renderer2D::FlushText()
 	{
-		if (m_TextQuadRenderPass.IndexCount == 0)
-			return;
-
-		if (m_TextQuadRenderPass.BatchIndex >= m_TextQuadRenderPass.VertexBuffers.size())
+		const bool flushed = m_TextPass.Flush([this](RenderPass* renderPass)
 		{
-			m_TextQuadRenderPass.VertexBuffers.push_back(CreateTextVertexBuffer());
-			m_TextQuadRenderPass.RenderPasses.push_back(CreateTextRenderPass());
-		}
+			renderPass->SetTexture(k_TextureBinding, m_FontAtlasTexture);
+		});
 
-		GraphicsBuffer* vertexBuffer = m_TextQuadRenderPass.VertexBuffers[m_TextQuadRenderPass.BatchIndex];
-		RenderPass* renderPass = m_TextQuadRenderPass.RenderPasses[m_TextQuadRenderPass.BatchIndex];
-
-		uint32_t dataSize = (uint32_t)((uint8_t*)m_TextQuadRenderPass.VertexBufferPtr - (uint8_t*)m_TextQuadRenderPass.VertexBufferBase);
-		Renderer::Upload(vertexBuffer, m_TextQuadRenderPass.VertexBufferBase, dataSize);
-
-		renderPass->SetTexture(1, m_FontAtlasTexture);
-		renderPass->Bake();
-
-		Renderer::DrawIndexed(renderPass, vertexBuffer, m_QuadIndexBuffer, m_TextQuadRenderPass.IndexCount);
-		++m_Statistics.DrawCalls;
-
-		m_TextQuadRenderPass.BatchIndex++;
-		m_TextQuadRenderPass.IndexCount = 0;
-		m_TextQuadRenderPass.VertexBufferPtr = m_TextQuadRenderPass.VertexBufferBase;
-	}
-
-	void Renderer2D::DestroyTextQuadRenderPass()
-	{
-		for (GraphicsBuffer* vertexBuffer : m_TextQuadRenderPass.VertexBuffers)
-			vertexBuffer->Destroy();
-		m_TextQuadRenderPass.VertexBuffers.clear();
-
-		for (RenderPass* renderPass : m_TextQuadRenderPass.RenderPasses)
-			renderPass->Destroy();
-		m_TextQuadRenderPass.RenderPasses.clear();
-
-		delete[] m_TextQuadRenderPass.VertexBufferBase;
-		m_TextQuadRenderPass.VertexBufferBase = nullptr;
-		m_TextQuadRenderPass.VertexBufferPtr = nullptr;
-		m_TextQuadRenderPass.IndexCount = 0;
-		m_TextQuadRenderPass.BatchIndex = 0;
-
-		if (m_TextQuadRenderPass.Pipeline)
-		{
-			m_TextQuadRenderPass.Pipeline->Destroy();
-			m_TextQuadRenderPass.Pipeline = nullptr;
-		}
-
-		if (m_TextQuadRenderPass.Shader)
-		{
-			m_TextQuadRenderPass.Shader->Destroy();
-			m_TextQuadRenderPass.Shader = nullptr;
-		}
+		if (flushed)
+			++m_Statistics.DrawCalls;
 	}
 
 

@@ -118,22 +118,169 @@ namespace Dingo
 
 		void ResetQuadTextureSlots();
 
-		// Pooled per-batch GPU resources, created on demand and reused every frame.
-		RenderPass* CreateQuadRenderPass();
-		RenderPass* CreateTextRenderPass();
-		GraphicsBuffer* CreateQuadVertexBuffer();
-		GraphicsBuffer* CreateCircleVertexBuffer();
-		GraphicsBuffer* CreateTextVertexBuffer();
-
 		void CreateQuadIndexBuffer();
-		void CreateQuadPipeline();
-		void DestroyQuadPipeline();
+		void CreateQuadPass();
+		void CreateCirclePass();
+		void CreateTextPass();
 
-		void CreateCircleRenderPass();
-		void DestroyCircleRenderPass();
+	private:
+		// Binding slots for the Renderer2D shaders. All three declare the camera; only the
+		// quad and text shaders declare the texture and sampler.
+		static constexpr uint32_t k_CameraBinding = 0;
+		static constexpr uint32_t k_TextureBinding = 1;
+		static constexpr uint32_t k_SamplerBinding = 2;
 
-		void CreateTextQuadRenderPass();
-		void DestroyTextQuadRenderPass();
+		struct BatchPassParams
+		{
+			std::string Name;
+			const char* ShaderSource = nullptr;
+			VertexLayout VertexLayout;
+			CullMode CullMode = CullMode::Back;
+			Renderer2DCapabilities Capabilities;
+			GraphicsBuffer* CameraUniformBuffer = nullptr;
+			GraphicsBuffer* IndexBuffer = nullptr;
+			// Null binds no sampler: a shader that declares none (circles) rejects the
+			// binding set if one is in the desc.
+			Sampler* BatchSampler = nullptr;
+		};
+
+		// One auto-batching pass. Vertices accumulate into VertexBufferBase; each flush
+		// claims the next (vertex buffer, render pass) pair from a pool grown on demand
+		// and reused every frame.
+		//
+		// Every batch owns its render pass and re-binds + re-bakes at flush, including
+		// passes whose bindings never vary: an NVRHI binding set is immutable once baked,
+		// so one pass shared across batches draws them all with the last batch's
+		// resources — which is how a second font in a frame rendered from the first
+		// font's atlas.
+		template<typename TVertex>
+		struct BatchPass
+		{
+			BatchPass() = default;
+
+			// Owns raw shader/pipeline/render-pass/buffer pointers that Destroy() releases,
+			// so a copy would double-release and a move would leave a live husk.
+			BatchPass(const BatchPass&) = delete;
+			BatchPass& operator=(const BatchPass&) = delete;
+
+			uint32_t IndexCount = 0;
+			TVertex* VertexBufferBase = nullptr;
+			TVertex* VertexBufferPtr = nullptr;
+
+			void Initialize(const BatchPassParams& params)
+			{
+				m_Params = params;
+
+				m_Shader = Shader::CreateFromSource(m_Params.Name + "Shader", m_Params.ShaderSource);
+
+				m_Pipeline = Pipeline::Create(PipelineParams()
+					.SetDebugName(m_Params.Name + "Pipeline")
+					.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
+					.SetShader(m_Shader)
+					.SetVertexLayout(m_Params.VertexLayout)
+					.SetCullMode(m_Params.CullMode)
+					.SetDepthTest(false)
+					.SetDepthWrite(false));
+
+				VertexBufferBase = new TVertex[m_Params.Capabilities.GetQuadVertexCount()];
+				VertexBufferPtr = VertexBufferBase;
+			}
+
+			void Destroy()
+			{
+				for (GraphicsBuffer* vertexBuffer : m_VertexBuffers)
+					vertexBuffer->Destroy();
+				m_VertexBuffers.clear();
+
+				for (RenderPass* renderPass : m_RenderPasses)
+					renderPass->Destroy();
+				m_RenderPasses.clear();
+
+				delete[] VertexBufferBase;
+				VertexBufferBase = nullptr;
+				VertexBufferPtr = nullptr;
+				IndexCount = 0;
+				m_BatchIndex = 0;
+
+				if (m_Pipeline)
+				{
+					m_Pipeline->Destroy();
+					m_Pipeline = nullptr;
+				}
+
+				if (m_Shader)
+				{
+					m_Shader->Destroy();
+					m_Shader = nullptr;
+				}
+			}
+
+			void Reset()
+			{
+				IndexCount = 0;
+				VertexBufferPtr = VertexBufferBase;
+				m_BatchIndex = 0;
+			}
+
+			bool HasRoomForQuad() const { return IndexCount + 6 <= m_Params.Capabilities.GetQuadIndexCount(); }
+
+			// bindBatch receives this batch's render pass to bind whatever varies per
+			// batch. Returns false when there was nothing accumulated to submit.
+			template<typename TBindBatch>
+			bool Flush(TBindBatch&& bindBatch)
+			{
+				if (IndexCount == 0)
+					return false;
+
+				if (m_BatchIndex >= m_VertexBuffers.size())
+				{
+					// DirectUpload = false: filled through Renderer::Upload (the deferred frame
+					// command list) so the write is ordered before the draw within that one list.
+					m_VertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(TVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, m_Params.Name + "VertexBuffer"));
+					m_RenderPasses.push_back(CreateRenderPass());
+				}
+
+				GraphicsBuffer* vertexBuffer = m_VertexBuffers[m_BatchIndex];
+				RenderPass* renderPass = m_RenderPasses[m_BatchIndex];
+
+				uint32_t dataSize = (uint32_t)((uint8_t*)VertexBufferPtr - (uint8_t*)VertexBufferBase);
+				Renderer::Upload(vertexBuffer, VertexBufferBase, dataSize);
+
+				bindBatch(renderPass);
+				renderPass->Bake();
+
+				Renderer::DrawIndexed(renderPass, vertexBuffer, m_Params.IndexBuffer, IndexCount);
+
+				m_BatchIndex++;
+				IndexCount = 0;
+				VertexBufferPtr = VertexBufferBase;
+				return true;
+			}
+
+			bool Flush() { return Flush([](RenderPass*) {}); }
+
+		private:
+			RenderPass* CreateRenderPass()
+			{
+				RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_Pipeline));
+				renderPass->Initialize();
+				renderPass->SetUniformBuffer(k_CameraBinding, m_Params.CameraUniformBuffer);
+
+				if (m_Params.BatchSampler)
+					renderPass->SetSampler(k_SamplerBinding, m_Params.BatchSampler);
+
+				return renderPass;
+			}
+
+		private:
+			BatchPassParams m_Params;
+			Shader* m_Shader = nullptr;
+			Pipeline* m_Pipeline = nullptr;
+
+			std::vector<RenderPass*> m_RenderPasses;
+			std::vector<GraphicsBuffer*> m_VertexBuffers;
+			uint32_t m_BatchIndex = 0;
+		};
 
 	private:
 		/**************************************************
@@ -158,7 +305,7 @@ namespace Dingo
 		uint32_t m_TextureSlotIndex = 1;
 
 		/**************************************************
-		***		QUAD									***
+		***		PASSES									***
 		**************************************************/
 		struct QuadVertex
 		{
@@ -168,28 +315,6 @@ namespace Dingo
 			float TexIndex = 0.0f;
 		};
 
-		struct QuadPipeline
-		{
-			uint32_t IndexCount = 0;
-			QuadVertex* VertexBufferBase = nullptr;
-			QuadVertex* VertexBufferPtr = nullptr;
-
-			Shader* Shader = nullptr;
-			Pipeline* Pipeline = nullptr;
-
-			// One (render pass, vertex buffer) per batch within a frame. Each batch
-			// needs its own RenderPass because it binds a different texture set and
-			// NVRHI binding sets are immutable once baked. Grown on demand, the pool
-			// is reused (re-baked / re-uploaded) every frame; BatchIndex is the next
-			// free slot for the frame in progress.
-			std::vector<RenderPass*> RenderPasses;
-			std::vector<GraphicsBuffer*> VertexBuffers;
-			uint32_t BatchIndex = 0;
-		} m_QuadPipeline;
-
-		/**************************************************
-		***		CIRCLE									***
-		**************************************************/
 		struct CircleVertex
 		{
 			glm::vec3 WorldPosition;
@@ -199,24 +324,6 @@ namespace Dingo
 			float Fade;
 		};
 
-		struct CircleRenderPass
-		{
-			uint32_t IndexCount = 0;
-			CircleVertex* VertexBufferBase = nullptr;
-			CircleVertex* VertexBufferPtr = nullptr;
-
-			Shader* Shader = nullptr;
-			Pipeline* Pipeline = nullptr;
-			// Bindings are frame-constant (camera only), so a single render pass is
-			// baked once and shared by every batch; only the vertex buffers pool.
-			RenderPass* RenderPass = nullptr;
-			std::vector<GraphicsBuffer*> VertexBuffers;
-			uint32_t BatchIndex = 0;
-		} m_CircleRenderPass;
-
-		/**************************************************
-		***		TEXT									***
-		**************************************************/
 		struct TextVertex
 		{
 			glm::vec3 Position;
@@ -224,22 +331,12 @@ namespace Dingo
 			glm::vec2 TexCoord;
 		};
 
-		struct TextQuadRenderPass
-		{
-			uint32_t IndexCount = 0;
-			TextVertex* VertexBufferBase = nullptr;
-			TextVertex* VertexBufferPtr = nullptr;
+		BatchPass<QuadVertex> m_QuadPass;
+		BatchPass<CircleVertex> m_CirclePass;
+		BatchPass<TextVertex> m_TextPass;
 
-			Shader* Shader = nullptr;
-			Pipeline* Pipeline = nullptr;
-
-			// One (render pass, vertex buffer) per batch, like the quad pass: a batch
-			// samples exactly one font atlas, and DrawText closes the batch in progress
-			// when the font changes, so consecutive batches can hold different atlases.
-			std::vector<RenderPass*> RenderPasses;
-			std::vector<GraphicsBuffer*> VertexBuffers;
-			uint32_t BatchIndex = 0;
-		} m_TextQuadRenderPass;
+		// The atlas the text batch in progress samples. DrawText closes that batch when
+		// the font changes, so consecutive batches can hold different atlases.
 		Texture* m_FontAtlasTexture = nullptr;
 	};
 
