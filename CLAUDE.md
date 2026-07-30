@@ -7,8 +7,11 @@ DingoEngine is a C++20 game engine built on a graphics abstraction layer (NVRHI)
 ## Build system
 
 - **Tool**: Premake5. Regenerate with `./vendor/premake/bin/premake5.exe vs2026` from the repo root (do NOT use `Generate-Windows.bat` from a non-interactive shell — it ends in `PAUSE`).
-- **Build**: MSBuild on `DingoEngine.slnx` (or a single example's `.vcxproj`), `/p:Configuration=Debug /p:Platform=x64`. Configs: `Debug`, `Debug-ASan`, `Release`, `Distribution`. Requires the `VULKAN_SDK` env var.
+- **Build**: MSBuild on `DingoEngine.slnx` (or a single example's `.vcxproj`), `/p:Configuration=Debug /p:Platform=x64`. Configs: `Debug`, `Debug-ASan`, `Release`, `Distribution`. Requires the `VULKAN_SDK` env var. Workspace `startproject` is `Dingo-TestFramework`.
 - **Output**: engine = static lib; examples = executables. Run examples with cwd = the example's source dir so relative `assets/...` paths resolve.
+- **New executable checklist**: any project linking the engine must call `copyAssimpRuntime()` (shared helper in the root `premake5.lua`) from its own `premake5.lua`, or it dies with `STATUS_DLL_NOT_FOUND` (`0xC0000135`) before `main`. Also add it to `.github/workflows` release packaging and the `.vscode` build/launch entries.
+- **Debug-ASan** is not built by CI and does not link as configured: the Vulkan SDK prebuilts are non-ASan, so it additionally needs `_DISABLE_STRING_ANNOTATION` / `_DISABLE_VECTOR_ANNOTATION` (absent from premake today), plus the ASan runtime DLL beside the exe — a second cause of `0xC0000135`.
+- **Version**: `VERSION` holds `major.minor`; CI appends the commit count and overwrites `include/DingoEngine/BuildInfo.h` (`DE_ENGINE_VERSION_*`, read by `Application::GetEngineVersion/GetEngineBuildNumber`). The checked-in `BuildInfo.h` is a `0.1.0` placeholder and `VERSION` trails the release branch — neither is a reliable "what am I on" source; the branch/tag is.
 - **PCH**: `depch.h` / `depch.cpp`.
 
 ## Project structure
@@ -24,11 +27,21 @@ src/DingoEngine/           Implementations, incl. backend-only code:
 vendor/                    Third-party submodules — NEVER modify vendor code
 examples/                  FlappyBird, Breakout3D, SpaceInvaders (Scene/ECS showcase),
                            AngryBirds (2D physics), DungeonCrawler (top-down 2D slice),
-                           DungeonCrawler3D (flagship: ECS-integrated 3D, procedural
-                           dungeons, script-driven, custom materials)
+                           DungeonCrawler3D (ECS-integrated 3D, procedural dungeons,
+                           script-driven, custom materials), EchoVault (v0.5 showcase:
+                           character controller, casts, 3D positional audio, gamepad),
+                           ArenaShooter (v0.6 showcase: AssetManager, async load,
+                           hot-reload)
+test/                      Dingo-TestFramework — interactive graphics/renderer/asset
+                           tests, one per feature under src/Tests/
+docs/                      Per-feature docs (see Docs & reviews)
 ```
 
 Vendor forks that upstream as CMake (e.g. box2d) carry their own `premake5.lua`, `include`d from the root workspace.
+
+The test framework takes `--test=<name substring>` (case-insensitive) to boot straight into one case — `--test=asset`, `--test=Text` — otherwise it starts on the first.
+
+`src/DingoEngine/Graphics/DeviceManager.{h,cpp}` are dead: both bodies sit inside `#if 0` (~1.7k lines). Don't read them for how the device is set up — that lives in `Graphics/NVRHI/`.
 
 ## Code conventions
 
@@ -51,9 +64,12 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 
 - **Entry point**: implement `CreateApplication()` returning a heap-allocated `Application*`; `EntryPoint.h` owns `main()`.
 - **Layers**: override `OnAttach/OnDetach/OnUpdate(dt)/OnUIRender` (UI only if ImGui enabled).
+- **Teardown** (gotcha): an `Application::OnDestroy()` override **never runs** — `Destroy()` is called from `~Application()`, where virtual dispatch has already stripped the derived class. Put app teardown in `Layer::OnDetach`, which the engine deliberately runs while the renderer is still answerable: `Renderer::Shutdown()` parks the render thread → layers detach → `Renderer::Destroy()`. So `OnDetach` may still ask for the white texture, a sampler or the swap-chain framebuffer. Managed assets are freed after the layers that borrow them, and audio after that (an `AudioClip` must not outlive the engine that decoded it).
+- **Debug window**: one tabbed ImGui window, on unless `ApplicationParams.EnableDebugOverlays = false` (it forces the ImGui backend up even in a UI-less Distribution build). **F3** = Engine, **F4** = Renderer, **F5** = Input, **F6** = Assets.
 - **Input** (reworked v0.5.1): frame-coherent snapshot with standard semantics — `Is...Pressed` = edge ("just pressed"), `Is...Down` = held, plus `Released`/`Up` — uniform across keys, mouse buttons, and gamepad buttons (pre-0.5.1 code had `Pressed`/`Down` inverted). Gamepads: `GamepadButton`/`GamepadAxis` codes, `GetGamepadLeftStick/RightStick` (deadzone-filtered), triggers remapped to [0,1], up to 16 pads, `GamepadConnected/DisconnectedEvent`. Mouse adds `GetMouseDelta`/`GetMouseScrollDelta` + `MouseMoved/MouseScrolledEvent`.
 - **Params/builder**: resources are built from fluent `*Params` structs passed to static `Create()` factories: `Texture::Create(TextureParams().SetWidth(512)...)`.
-- **Assets** (v0.6): `Application::Get().GetAssetManager()` — UUID `AssetHandle`s, path dedup against a configurable asset root (`ApplicationParams.Assets`), `Load`/`LoadAsync` (textures+audio decode on a worker thread, GPU publish in the main-thread pump; shader/model/font async requests amortize one-per-frame on the main thread), typed `Get*` returning nullptr until `Ready`, failure keeps the registration (`State == Failed`). Opt-in hot-reload polls timestamps and reloads textures/shaders IN PLACE: `Texture::Reinitialize` swaps contents inside the same object; `Shader::Reload` recompiles past the name-keyed disk cache, bumps `GetGeneration()`, and pipelines/render passes lazily rebuild at bind time (`NvrhiCommandList::SetPipeline`/`SetRenderPass`). A shader compile error during reload keeps the old program (no assert). `AssetManager::Reload` uses the same in-place path for textures/shaders (other types are recreated, invalidating pointers); `Unload` always frees the object, so it invalidates pointers games cache — that's why the debug panel offers Reload but no Unload. The manager OWNS what it loads — never `Destroy()`/`delete` a managed asset; raw factories remain for unmanaged resources. Debug UI: **F6** = Assets tab (`UI::AssetSummarySection`/`AssetRegistrySection`). See docs/asset-pipeline.md.
+- **Assets** (v0.6): `Application::Get().GetAssetManager()` — UUID `AssetHandle`s, path dedup against a configurable asset root (`ApplicationParams.Assets`), `Load`/`LoadAsync` (textures+audio decode on a worker thread, GPU publish in the main-thread pump; shader/model/font async requests amortize one-per-frame on the main thread), typed `Get*` returning nullptr until `Ready`, failure keeps the registration (`State == Failed`). Opt-in hot-reload polls timestamps and reloads textures/shaders IN PLACE: `Texture::Reinitialize` swaps contents inside the same object; `Shader::Reload` recompiles past the name-keyed disk cache, bumps `GetGeneration()`, and pipelines/render passes lazily rebuild at bind time (`NvrhiCommandList::SetPipeline`/`SetRenderPass`). A shader compile error during reload keeps the old program (no assert). `AssetManager::Reload` uses the same in-place path for textures/shaders (other types are recreated, invalidating pointers); `Unload` always frees the object, so it invalidates pointers games cache — that's why the debug panel offers Reload but no Unload. The manager OWNS what it loads — never `Destroy()`/`delete` a managed asset; raw factories remain for unmanaged resources. The F6 tab is built from `UI::AssetSummarySection`/`AssetRegistrySection`. See docs/asset-pipeline.md.
+- **Audio** (v0.5): `Application::Get().GetAudioEngine()` — `LoadClip` once, then `Play` (returns an `AudioSoundId` for Stop/Pause/volume/pitch/loop/position) or `PlayOneShot` (fire-and-forget) per instance. Positional audio via the `glm::vec3` overloads + `SetListenerPosition`. In the ECS: `AudioSourceComponent` / `AudioListenerComponent`.
 - **Bindables**: `Texture`, `GraphicsBuffer`, `Sampler` implement `IBindableShaderResource` for slot binding in a `RenderPass`.
 - **Events**: `EventDispatcher dispatcher(event); dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(OnResize));`
 - **Backend hiding** (hard requirement): EnTT, Box2D, Jolt, ImGui, miniaudio, NVRHI must never appear in a public header. Public APIs use abstract classes + static `Create()` + opaque handles (see `Physics3D`). GLM in public headers is fine.
@@ -63,9 +79,10 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 - `Scene` owns entities (EnTT, PIMPL'd) and lazily-created per-dimension physics worlds: `Physics2D` (Box2D) / `Physics3D` (Jolt), reached via `Scene::GetPhysics2D()/GetPhysics3D()`. A scene only pays for the dimension it uses.
 - **Lifecycle**: `OnStart` → `OnUpdate` → `OnStop`, `IsRunning()`; `Clear()` also stops. `SceneManager` is the default driver: first `SetActiveScene` selects, later switches auto-run `OnStop`(out)+`OnStart`(in); `CreateScene` never activates. Scripts can request a switch via `RequestSceneTransition(name)` (drained by `SceneManager::OnUpdate` after the active scene updates).
 - **Rendering**: `SceneManager::OnRender()` → engine-owned `SceneRenderer`, which reads the primary `CameraComponent` (ortho view from 2D `TransformComponent`, perspective from `Transform3DComponent`) + `DirectionalLightComponent`, draws the 3D pass then 2D as overlay. `Scene::RenderEntities/RenderEntities3D` stay public for custom passes.
-- **Scripts**: `ScriptableEntity` — `OnCreate` → `OnStart` (before physics bake) → `OnUpdate` → `OnDestroy`. A controller script can build the whole world in `OnStart`; keeps game layers tiny (DungeonCrawler3D is the showcase).
+- **Scripts**: `ScriptableEntity` — `OnCreate` → `OnStart` (before physics bake) → `OnUpdate` → `OnDestroy`. A controller script can build the whole world in `OnStart`; keeps game layers tiny (DungeonCrawler3D is the showcase). Calling `DestroyEntity` from inside a script's `OnDestroy` is safe: `DetachScript` unregisters the script *before* running `OnDestroy`, and `Clear`/`StartScripts`/`OnUpdate`/`ForEachScript` all walk handle snapshots rather than the live script map.
 - **Components**: 3D mirrors 2D — `Transform3DComponent` (pos, quat, scale), `MeshRendererComponent` (`Mesh*` + color + optional `Material*`), `RigidBody3DComponent`, `Box/Sphere/CapsuleCollider3DComponent` (collider size = fraction of transform scale). New built-in components must be registered via `DE_INSTANTIATE_COMPONENT` in `src/.../Entity.cpp` or clients can't use them.
-- **Handles & the copy landmine**: physics components hold opaque runtime handles (`PhysicsBodyId2D/3D`; 3D's "none" sentinel is `k_InvalidBody3D` = 0xFFFFFFFF, **not 0**). Copies/clones must reset live handles to the sentinel — `Scene::DuplicateEntity` owns this; keep it covering every handle-carrying component.
+- **Character controllers**: `CharacterController3DComponent` — `Scene::OnUpdate` calls `controller->Update(dt)` itself, so a script only *sets* velocity/direction; never step it by hand. Controllers are rebuilt on `OnStart`, so scripts must not cache a `CharacterController3D*` across an `OnStop`/`OnStart` cycle (use-after-free).
+- **Handles & the copy landmine**: physics components hold opaque runtime handles (`PhysicsBodyId2D/3D`; 3D's "none" sentinel is `k_InvalidBody3D` = 0xFFFFFFFF, **not 0**), and `CharacterController3DComponent` an index (`k_InvalidControllerIndex`). Copies/clones must reset live handles to their sentinel — `Scene::DuplicateEntity` owns this; keep it covering every handle-carrying component.
 - `Scene::OnUpdate` runs scripts, steps live worlds, writes simulated transforms back (2D → `TransformComponent`, 3D → `Transform3DComponent`).
 - Shape is baked into the body at creation (no separate 3D shape handles). Camera picking: `Scene::ScreenPointToRay(screenPos, viewportSize)` + `Ray::IntersectGroundPlane` (perspective cameras only).
 
@@ -95,6 +112,15 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 - `Model::LoadFromFile`, `Font::Create` and (v0.6) `Texture::CreateFromFile` return `nullptr` on failure — asset paths are cwd-relative, so a wrong working directory fails loudly, not with a broken object. The `AssetManager` layers its own contract on top: failed loads stay registered with `State == Failed` and `Get*` returns nullptr.
 - Physics per-body calls are no-ops (getters return identity) on invalid/stale handles.
 
+## Docs & reviews
+
+- `docs/` — `getting-started`, `application-and-layers`, `scenes-and-ecs`, `rendering-2d`, `physics-2d`, `physics-3d`, `asset-pipeline`. Keep the relevant one in step when changing a public API.
+- `.claude/reviews/` — dated code-review reports, findings keyed `B*`/`O*`/`R*` with a per-finding fix status. The current one is `2026-07-29-v0.6.0-review.md`: every Critical and High item is fixed, one commit each, recorded with how it was verified. Medium and below are being worked through, so take the *fix-status section*, not the summary sentence, as the state — and confirm against `git log` before believing either. Read it before touching the asset/hot-reload path; it also records why a passing "before" run in an A/B repro is suspect.
+
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog). v0.5.1 (merged) landed the input rework + gamepad support described under Key patterns. In progress on branch `v0.6.0`: the asset pipeline (`AssetManager` + async loading + hot-reload) described under Key patterns, showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`test/`, `--test=asset`).
+See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog).
+
+- **v0.5.1** (merged): input rework + gamepad support.
+- **v0.6.0** (branch `v0.6.0`, feature-complete, not yet merged): the asset pipeline described under Key patterns — `AssetManager`, async loading, in-place texture/shader hot-reload, source-hash-validated shader cache, the F6 Assets panel — showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`--test=asset`), then a full review pass (see above).
+- **Next**: v0.7 scripting.
