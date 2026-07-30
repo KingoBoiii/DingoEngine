@@ -27,7 +27,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <functional>
 #include <thread>
+#include <unordered_map>
 
 namespace Dingo::Internal
 {
@@ -109,6 +112,39 @@ namespace Dingo::Internal
 	// Holds the whole Jolt world for one JoltPhysics3D. Declaration order matters:
 	// the layer interfaces are referenced by PhysicsSystem, so PhysicsSystem is the
 	// last member (destroyed first).
+	// Identifies a collision shape by the values it is built from, so bodies with
+	// identical colliders can share one immutable JPH::Shape. Only the fields the
+	// matching shape type reads are non-zero, so a box and a sphere never collide here.
+	struct ShapeKey
+	{
+		int Type = 0;
+		float A = 0.0f;
+		float B = 0.0f;
+		float C = 0.0f;
+
+		bool operator==(const ShapeKey& other) const
+		{
+			return Type == other.Type && A == other.A && B == other.B && C == other.C;
+		}
+	};
+
+	struct ShapeKeyHash
+	{
+		std::size_t operator()(const ShapeKey& key) const
+		{
+			auto mix = [](std::size_t seed, std::size_t value)
+			{
+				return seed ^ (value + 0x9e3779b9ull + (seed << 6) + (seed >> 2));
+			};
+
+			std::size_t seed = std::hash<int>{}(key.Type);
+			seed = mix(seed, std::hash<float>{}(key.A));
+			seed = mix(seed, std::hash<float>{}(key.B));
+			seed = mix(seed, std::hash<float>{}(key.C));
+			return seed;
+		}
+	};
+
 	struct JoltPhysics3DData
 	{
 		BPLayerInterfaceImpl BroadPhaseLayerInterface;
@@ -118,6 +154,12 @@ namespace Dingo::Internal
 		JPH::TempAllocatorImpl TempAllocator;
 		JPH::JobSystemThreadPool JobSystem;
 		JPH::PhysicsSystem PhysicsSystem;
+
+		// Shapes are immutable once built and reference-counted, which is exactly what
+		// JPH::ShapeRefC is for: a baked dungeon with thousands of identical wall colliders
+		// otherwise allocates a separate shape (and its own cache line) for every one.
+		// Dropped with the world, so no shape outlives the bodies referencing it.
+		std::unordered_map<ShapeKey, JPH::ShapeRefC, ShapeKeyHash> ShapeCache;
 
 		explicit JoltPhysics3DData(JPH::uint maxBodies)
 			: TempAllocator(32 * 1024 * 1024) // per-Update working memory; must cover the limits below
