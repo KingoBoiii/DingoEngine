@@ -34,7 +34,9 @@ namespace Dingo
 
 	void Application::Initialize()
 	{
-		DE_CORE_ASSERT(s_Instance, "Application already initialized. Cannot initialize again.");
+		// s_Instance is set unconditionally by the constructor, so it can't detect a
+		// second Initialize() call; m_Window is null until this function creates it.
+		DE_CORE_ASSERT(!m_Window, "Application already initialized. Cannot initialize again.");
 
 		CacheManager::Initialize();
 
@@ -65,6 +67,11 @@ namespace Dingo
 		m_AudioEngine = AudioEngine::Create();
 		m_AudioEngine->Initialize();
 
+		// After audio (clips load through it), before OnInitialize() so layers can load
+		// assets from OnAttach.
+		m_AssetManager = new AssetManager(m_Params.Assets, m_AudioEngine);
+		m_AssetManager->Initialize();
+
 		OnInitialize();
 
 		if (m_LayerStack.Empty())
@@ -88,17 +95,32 @@ namespace Dingo
 		}
 
 		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
-			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer) or F5 (input) to open its tabs.");
+			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer), F5 (input) or F6 (assets) to open its tabs.");
 	}
 
 	void Application::Destroy()
 	{
 		OnDestroy();
 
-		// Stop the render thread first so the GPU is idle before any resources are freed.
+		// Park the render thread first so the GPU is idle before any resources are freed.
 		Renderer::Shutdown();
 
+		// Detach layers while the renderer can still answer queries: OnDetach is where a
+		// layer frees its GPU resources, and doing that legitimately involves asking for
+		// the white texture, a sampler or the current framebuffer.
 		m_LayerStack.Clear();
+
+		// Only now drop the renderer's own resources and state.
+		Renderer::Destroy();
+
+		// Free managed assets after the layers that borrow them, but before the audio
+		// engine: AudioClips must not outlive the engine that decoded them.
+		if (m_AssetManager)
+		{
+			m_AssetManager->Shutdown();
+			delete m_AssetManager;
+			m_AssetManager = nullptr;
+		}
 
 		// Tear down audio after the layers (so their destructors can still stop sounds)
 		// but independently of the graphics stack.
@@ -187,6 +209,12 @@ namespace Dingo
 
 			Renderer::BeginFrame();
 
+			// After BeginFrame: the render thread is parked until EndFrame, so the GPU
+			// work in here (texture uploads, shader recompiles) can't race its
+			// garbage-collection/present pass on the NVRHI device.
+			if (m_AssetManager)
+				m_AssetManager->Update(m_DeltaTime); // finalize async loads, poll hot-reload
+
 			for (Layer* layer : m_LayerStack)
 			{
 				layer->OnUpdate(m_DeltaTime);
@@ -212,19 +240,24 @@ namespace Dingo
 
 			Renderer::EndFrame();
 
-			// Execute any post-execution callbacks
-			for (const auto& callback : m_PostExecutionCallbacks)
+			// Drain into a local: a callback is free to SubmitPostExecution (RequestRestart
+			// already is one), which would push into the vector being iterated - dangling the
+			// iterator on a reallocation - and the clear() would then drop the new entry
+			// anyway. Whatever a callback submits runs on the next frame instead.
+			m_DrainingPostExecution.swap(m_PostExecutionCallbacks);
+			for (const auto& callback : m_DrainingPostExecution)
 			{
 				callback();
 			}
-			m_PostExecutionCallbacks.clear();
+			m_DrainingPostExecution.clear();
 		}
 	}
 
 	void Application::RenderDebugOverlays()
 	{
-		// One tabbed debug window: F3 = Engine, F4 = Renderer, F5 = Input. A key opens
-		// the window on its tab (or switches to it); the active tab's key closes it.
+		// One tabbed debug window: F3 = Engine, F4 = Renderer, F5 = Input, F6 = Assets.
+		// A key opens the window on its tab (or switches to it); the active tab's key
+		// closes it.
 		UI::DebugTab request = UI::DebugTab::None;
 		if (Input::IsKeyPressed(Key::F3))
 			request = UI::DebugTab::Engine;
@@ -232,6 +265,8 @@ namespace Dingo
 			request = UI::DebugTab::Renderer;
 		if (Input::IsKeyPressed(Key::F5))
 			request = UI::DebugTab::Input;
+		if (Input::IsKeyPressed(Key::F6))
+			request = UI::DebugTab::Assets;
 
 		if (request != UI::DebugTab::None)
 		{

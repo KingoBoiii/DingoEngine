@@ -9,12 +9,16 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Audio/AudioEngine.h"
+#include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Version.h"
 #include "DingoEngine/BuildInfo.h"
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <array>
 #include <format>
+#include <vector>
 
 // ImGui-backed implementation of the engine's renderer debug panels
 // (DingoEngine/UI/DebugPanels.h). Like ImGuiUI.cpp, this is one of the only
@@ -44,6 +48,65 @@ namespace Dingo::UI
 			const ImGuiIO& io = ImGui::GetIO();
 			const float frameMs = 1000.0f / (io.Framerate > 0.0f ? io.Framerate : 1.0f);
 			ImGui::Text("%.1f FPS   %.2f ms/frame", io.Framerate, frameMs);
+		}
+
+		ImVec4 AssetStateColor(AssetState state)
+		{
+			switch (state)
+			{
+				case AssetState::Ready:     return ImVec4(0.35f, 0.85f, 0.40f, 1.0f);
+				case AssetState::Queued:
+				case AssetState::Loading:
+				case AssetState::Reloading: return ImVec4(0.95f, 0.80f, 0.30f, 1.0f);
+				case AssetState::Failed:    return ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+				case AssetState::Unloaded:
+				default:                    return ImVec4(0.60f, 0.60f, 0.60f, 1.0f);
+			}
+		}
+
+		// Registry snapshot ordered by path: the registry is an unordered_map, so
+		// iterating it directly would reshuffle rows between frames.
+		// Caches handles, not AssetMetadata pointers: Remove() erases from the registry
+		// map, which invalidates that element's address, so resolving fresh via
+		// GetMetadata() at point of use is what makes an erased handle merely fail to
+		// resolve instead of reading freed memory.
+		//
+		// Rebuilds when stale, where stale = registered count changed OR some
+		// previously-cached handle no longer resolves. The second half is load-bearing:
+		// a same-frame-gap Remove(h)+Import(p) nets no count change, so the count check
+		// alone would miss it, leaving both the dead handle AND the new import invisible
+		// until some later change happened to move the count. Checking every cached
+		// handle resolves costs one GetMetadata hash lookup per entry every frame (no
+		// allocation) but not the O(n log n) collect-and-sort, which only runs when
+		// something actually changed - that's the trade this cache exists to make.
+		// What this does NOT catch: an asset's path changing without its handle
+		// changing, which the current Import/Remove API has no way to do anyway.
+		const std::vector<AssetHandle>& SortedRegistry(const AssetManager& assets)
+		{
+			static std::vector<AssetHandle> s_Sorted;
+			static uint32_t s_LastCount = 0;
+
+			const uint32_t count = assets.GetRegisteredCount();
+			const bool stale = count != s_LastCount || std::any_of(s_Sorted.begin(), s_Sorted.end(),
+				[&assets](AssetHandle handle) { return assets.GetMetadata(handle) == nullptr; });
+
+			if (stale)
+			{
+				s_Sorted.clear();
+				s_Sorted.reserve(count);
+				for (const auto& [handle, metadata] : assets.GetRegistry())
+					s_Sorted.push_back(handle);
+
+				std::sort(s_Sorted.begin(), s_Sorted.end(), [&assets](AssetHandle a, AssetHandle b)
+				{
+					// Both handles were just read from this registry, so they always resolve.
+					return assets.GetMetadata(a)->FilePath.native() < assets.GetMetadata(b)->FilePath.native();
+				});
+
+				s_LastCount = count;
+			}
+
+			return s_Sorted;
 		}
 	}
 
@@ -300,6 +363,197 @@ namespace Dingo::UI
 			ImGui::TextUnformatted("No gamepads connected.");
 	}
 
+	void AssetSummarySection()
+	{
+		const AssetManager& assets = Application::Get().GetAssetManager();
+
+		const uint32_t registered = assets.GetRegisteredCount();
+		const uint32_t loaded = assets.GetLoadedCount();
+		const uint32_t pending = assets.GetPendingCount();
+
+		ImGui::TextUnformatted("Assets");
+		ImGui::Separator();
+		// Wrapped: absolute asset roots are long enough to clip in a narrow window.
+		ImGui::TextWrapped("Root : %s", assets.GetRootDirectory().string().c_str());
+		ImGui::Text("Registered : %u    Loaded : %u    In flight : %u", registered, loaded, pending);
+
+		const float fraction = registered > 0 ? static_cast<float>(loaded) / static_cast<float>(registered) : 0.0f;
+		const std::string overlay = pending > 0
+			? std::format("loading... {} / {}", loaded, registered)
+			: std::format("{} / {}", loaded, registered);
+		ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay.c_str());
+
+		std::array<uint32_t, static_cast<size_t>(AssetType::Count)> perType{};
+		std::array<uint32_t, static_cast<size_t>(AssetState::Count)> perState{};
+		for (const auto& [handle, metadata] : assets.GetRegistry())
+		{
+			perType[static_cast<size_t>(metadata.Type)]++;
+			perState[static_cast<size_t>(metadata.State)]++;
+		}
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("By type");
+		ImGui::Separator();
+		for (size_t type = 1; type < perType.size(); type++)
+		{
+			if (perType[type] == 0)
+				continue;
+			ImGui::Text("%-10s : %u", AssetTypeToString(static_cast<AssetType>(type)), perType[type]);
+		}
+		if (registered == 0)
+			ImGui::TextUnformatted("No assets registered.");
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("By state");
+		ImGui::Separator();
+		for (size_t state = 0; state < perState.size(); state++)
+		{
+			if (perState[state] == 0)
+				continue;
+			const AssetState value = static_cast<AssetState>(state);
+			ImGui::TextColored(AssetStateColor(value), "%-10s : %u", AssetStateToString(value), perState[state]);
+		}
+	}
+
+	void AssetRegistrySection()
+	{
+		AssetManager& assets = Application::Get().GetAssetManager();
+
+		ImGui::TextUnformatted("Registry");
+		ImGui::Separator();
+
+		bool hotReload = assets.IsHotReloadEnabled();
+		if (ImGui::Checkbox("Hot-reload textures & shaders", &hotReload))
+			assets.SetHotReloadEnabled(hotReload);
+
+		static char s_Filter[128] = "";
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputTextWithHint("##assetfilter", "filter by path...", s_Filter, IM_ARRAYSIZE(s_Filter));
+
+		// Buttons act on the manager, which mutates the registry - collect the request
+		// and apply it after the table is closed.
+		enum class Action { None, Load, Reload };
+		Action action = Action::None;
+		AssetHandle target = k_InvalidAsset;
+
+		const std::vector<AssetHandle>& entries = SortedRegistry(assets);
+
+		if (ImGui::BeginTable("##assettable", 4,
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+			ImVec2(0.0f, 240.0f)))
+		{
+			ImGui::TableSetupScrollFreeze(0, 1);
+			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 62.0f);
+			ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 74.0f);
+			ImGui::TableSetupColumn("Path");
+			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 118.0f);
+			ImGui::TableHeadersRow();
+
+			for (const AssetHandle handle : entries)
+			{
+				const AssetMetadata* metadata = assets.GetMetadata(handle);
+				if (!metadata)
+					continue; // removed since the snapshot was built - skip rather than show stale data
+
+				const std::string path = metadata->FilePath.generic_string();
+				if (s_Filter[0] != '\0' && path.find(s_Filter) == std::string::npos)
+					continue;
+
+				ImGui::PushID(static_cast<int>(static_cast<uint64_t>(handle) & 0x7FFFFFFF));
+				ImGui::TableNextRow();
+
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextColored(AssetStateColor(metadata->State), "%s", AssetStateToString(metadata->State));
+
+				ImGui::TableSetColumnIndex(1);
+				ImGui::TextUnformatted(AssetTypeToString(metadata->Type));
+
+				ImGui::TableSetColumnIndex(2);
+				ImGui::TextUnformatted(path.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("handle %llu\n%s", static_cast<unsigned long long>(static_cast<uint64_t>(handle)),
+						assets.ResolvePath(metadata->FilePath).string().c_str());
+
+				ImGui::TableSetColumnIndex(3);
+				// Reloading keeps the object alive and usable (that's the point of an
+				// in-place hot-reload) with a new version decoding in the background, so it
+				// counts as loaded for the button label and as in-flight for disabling it.
+				const bool isLoaded = metadata->State == AssetState::Ready || metadata->State == AssetState::Reloading;
+				const bool inFlight = metadata->State == AssetState::Queued || metadata->State == AssetState::Loading
+					|| metadata->State == AssetState::Reloading;
+				// Reload destroys and recreates any type SupportsInPlaceReload rejects, which
+				// would invalidate pointers games hold - do not offer it for those.
+				const bool reloadBlocked = isLoaded && !AssetManager::SupportsInPlaceReload(metadata->Type);
+
+				// No Unload button on purpose: unloading frees the object, and games
+				// legitimately cache the pointers they were handed.
+				ImGui::BeginDisabled(inFlight || reloadBlocked);
+				if (ImGui::SmallButton(isLoaded ? "Reload" : "Load"))
+				{
+					action = isLoaded ? Action::Reload : Action::Load;
+					target = handle;
+				}
+				ImGui::EndDisabled();
+				if (reloadBlocked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", AssetTypeToString(metadata->Type));
+
+				ImGui::PopID();
+			}
+
+			ImGui::EndTable();
+		}
+
+		if (ImGui::Button("Reload all loaded"))
+		{
+			for (const AssetHandle handle : entries)
+			{
+				const AssetMetadata* metadata = assets.GetMetadata(handle);
+				// Ready only, deliberately excluding Reloading: it already has a reload in
+				// flight, so re-triggering one here would just queue a redundant decode.
+				if (metadata && metadata->State == AssetState::Ready && AssetManager::SupportsInPlaceReload(metadata->Type))
+					assets.Reload(handle);
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Retry failed"))
+		{
+			for (const AssetHandle handle : entries)
+			{
+				const AssetMetadata* metadata = assets.GetMetadata(handle);
+				if (metadata && (metadata->State == AssetState::Unloaded || metadata->State == AssetState::Failed))
+					assets.LoadAsync(metadata->FilePath);
+			}
+		}
+
+		switch (action)
+		{
+			case Action::Reload: assets.Reload(target); break;
+			case Action::Load:
+			{
+				if (const AssetMetadata* metadata = assets.GetMetadata(target))
+					assets.LoadAsync(metadata->FilePath);
+				break;
+			}
+			case Action::None: break;
+		}
+	}
+
+	void AssetStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Asset Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		AssetSummarySection();
+
+		ImGui::Spacing();
+		AssetRegistrySection();
+
+		ImGui::End();
+	}
+
 	void InputStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Input Stats", open))
@@ -323,7 +577,7 @@ namespace Dingo::UI
 	{
 		DebugTab active = DebugTab::None;
 
-		ImGui::SetNextWindowSize(ImVec2(440.0f, 520.0f), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(560.0f, 560.0f), ImGuiCond_FirstUseEver);
 		if (!ImGui::Begin("Debug", open))
 		{
 			ImGui::End();
@@ -369,6 +623,13 @@ namespace Dingo::UI
 				KeyboardInputSection();
 				ImGui::Spacing();
 				GamepadInputSection();
+			});
+
+			tab("Assets", DebugTab::Assets, []
+			{
+				AssetSummarySection();
+				ImGui::Spacing();
+				AssetRegistrySection();
 			});
 
 			ImGui::EndTabBar();

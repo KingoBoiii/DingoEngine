@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 namespace Dingo
 {
@@ -46,15 +47,15 @@ namespace Dingo
 		: m_Params(params)
 	{}
 
+	Material::~Material()
+	{
+		Destroy();
+	}
+
 	void Material::Destroy()
 	{
 		InvalidatePipelineCache();
-
-		if (m_UniformBuffer)
-		{
-			m_UniformBuffer->Destroy();
-			m_UniformBuffer = nullptr;
-		}
+		DestroyAndDelete(m_UniformBuffer);
 	}
 
 	/**************************************************
@@ -102,11 +103,7 @@ namespace Dingo
 		// bind the fresh buffer object.
 		if (!m_UniformBuffer || m_UniformBuffer->GetByteSize() < size)
 		{
-			if (m_UniformBuffer)
-			{
-				m_UniformBuffer->Destroy();
-				m_UniformBuffer = nullptr;
-			}
+			DestroyAndDelete(m_UniformBuffer);
 
 			const std::string name = m_Params.DebugName.empty()
 				? "MaterialUBO"
@@ -133,6 +130,29 @@ namespace Dingo
 
 	RenderPass* Material::GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer)
 	{
+		// A hot-reloaded shader can have a different binding layout, and a cached pass only
+		// knows the bindings this function set the first time. Re-baking the old desc
+		// against the new layout writes descriptors NVRHI cannot validate, so throw the
+		// cache away instead and let the bindings be laid out again from scratch.
+		const uint32_t shaderGeneration = m_Params.Shader ? m_Params.Shader->GetGeneration() : 0;
+		if (shaderGeneration != m_BuiltShaderGeneration)
+		{
+			InvalidatePipelineCache();
+			m_BuiltShaderGeneration = shaderGeneration;
+		}
+
+		// The framebuffer in the key is usually the rotating swap-chain one, whose objects
+		// are freed and reallocated on every resize. Without eviction the cache grew by a
+		// pipeline + render pass per material per resize, and a reused address could even
+		// return an entry built against a destroyed framebuffer. Drop it on a generation
+		// change, as ImGuiRenderer's pipeline cache does.
+		const uint64_t resizeGeneration = Renderer::GetSwapChainResizeGeneration();
+		if (resizeGeneration != m_BuiltResizeGeneration)
+		{
+			InvalidatePipelineCache();
+			m_BuiltResizeGeneration = resizeGeneration;
+		}
+
 		const size_t key = MakeCacheKey(layout, framebuffer);
 
 		auto it = m_PipelineCache.find(key);
@@ -182,10 +202,11 @@ namespace Dingo
 
 	void Material::InvalidatePipelineCache()
 	{
+		// Nothing outlives the call: GetOrCreateRenderPass' result is used within one draw.
 		for (auto& [key, entry] : m_PipelineCache)
 		{
-			if (entry.RenderPass) entry.RenderPass->Destroy();
-			if (entry.Pipeline)   entry.Pipeline->Destroy();
+			DestroyAndDelete(entry.RenderPass);
+			DestroyAndDelete(entry.Pipeline);
 		}
 		m_PipelineCache.clear();
 	}

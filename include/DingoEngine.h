@@ -76,3 +76,11 @@
 #include "DingoEngine/Audio/AudioTypes.h"
 #include "DingoEngine/Audio/AudioEngine.h"
 
+// ----------------------------------------------------------------------
+// Assets
+// ----------------------------------------------------------------------
+
+#include "DingoEngine/Asset/AssetTypes.h"
+#include "DingoEngine/Asset/AssetMetadata.h"
+#include "DingoEngine/Asset/AssetManager.h"
+

@@ -41,6 +41,16 @@ namespace Dingo
 
 	void NvrhiPipeline::Initialize()
 	{
+		// The framebuffer in m_Params is only guaranteed live on the first build (Create
+		// initializes immediately): the swap chain deletes and recreates its framebuffers
+		// on every resize. A rebuild after one — a hot-reloaded shader bumping the
+		// generation — must re-resolve the current target, not dereference the freed
+		// pointer it captured. Non-swap-chain targets are the caller's to keep alive.
+		if (m_TargetsSwapChain)
+			m_Params.Framebuffer = Renderer::GetSwapChainFramebuffer();
+		else
+			m_TargetsSwapChain = Renderer::IsSwapChainFramebuffer(m_Params.Framebuffer);
+
 		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 		const auto nvrhiShader = static_cast<NvrhiShader*>(m_Params.Shader);
 
@@ -106,6 +116,9 @@ namespace Dingo
 		m_GraphicsPipelineHandle = device->createGraphicsPipeline(graphicsPipelineDesc, static_cast<NvrhiFramebuffer*>(m_Params.Framebuffer)->m_FramebufferHandle);
 		if (!m_GraphicsPipelineHandle) DE_CORE_ERROR("Pipeline '{}': createGraphicsPipeline failed — check D3D12 debug output for root signature or PSO errors.", m_Params.DebugName);
 		DE_CORE_ASSERT(m_GraphicsPipelineHandle, "createGraphicsPipeline returned null — see errors above.");
+
+		m_BuiltShaderGeneration = m_Params.Shader->GetGeneration();
+		m_BuiltTextureGeneration = m_Params.Texture ? m_Params.Texture->GetGeneration() : 0;
 	}
 
 	void NvrhiPipeline::Destroy()

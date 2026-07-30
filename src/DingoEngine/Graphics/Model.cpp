@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Log.h"
 
 #include <assimp/Importer.hpp>
@@ -17,7 +18,13 @@ namespace Dingo
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_PreTransformVertices;
 
-	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const std::filesystem::path& modelDir)
+	// Textures loaded so far for the model being loaded, keyed on the resolved path. Without
+	// it a shared atlas is decoded AND uploaded once per submesh, each with its own command
+	// list and queue submit, plus three filesystem probes. Load-scoped: the Model owns the
+	// results, and managed models get the AssetManager's own dedup on top.
+	using TextureCache = std::unordered_map<std::string, Texture*>;
+
+	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
 		if (aiMat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
 			return nullptr;
@@ -32,26 +39,38 @@ namespace Dingo
 
 		std::filesystem::path texPath = rawPath;
 
-		auto tryLoad = [&](const std::filesystem::path& p) -> Texture*
-		{
-			if (std::filesystem::exists(p))
-				return Texture::CreateFromFile(p);
-			return nullptr;
-		};
-
-		Texture* tex = nullptr;
+		std::filesystem::path candidates[3];
+		uint32_t candidateCount = 0;
 		if (texPath.is_absolute())
-			tex = tryLoad(texPath);
-		if (!tex)
-			tex = tryLoad(modelDir / texPath);
-		if (!tex)
-			tex = tryLoad(modelDir / texPath.filename());
+			candidates[candidateCount++] = texPath;
+		candidates[candidateCount++] = modelDir / texPath;
+		candidates[candidateCount++] = modelDir / texPath.filename();
 
-		return tex;
+		for (uint32_t i = 0; i < candidateCount; ++i)
+		{
+			const std::string key = candidates[i].generic_string();
+
+			auto it = textureCache.find(key);
+			if (it != textureCache.end())
+				return it->second;
+
+			if (!std::filesystem::exists(candidates[i]))
+				continue;
+
+			Texture* texture = Texture::CreateFromFile(candidates[i]);
+			if (!texture)
+				continue;
+
+			textureCache[key] = texture;
+			return texture;
+		}
+
+		return nullptr;
 	}
 
 	static SubMesh ProcessMesh(aiMesh* mesh, const aiScene* scene,
-	                           const std::filesystem::path& modelDir)
+	                           const std::filesystem::path& modelDir,
+	                           TextureCache& textureCache)
 	{
 		std::vector<MeshVertex> vertices;
 		vertices.reserve(mesh->mNumVertices);
@@ -90,7 +109,7 @@ namespace Dingo
 		submesh.Mat = Material::Create(MaterialParams()
 			.SetDebugName(mesh->mName.C_Str()));
 
-		Texture* diffuse = LoadDiffuseTexture(aiMat, modelDir);
+		Texture* diffuse = LoadDiffuseTexture(aiMat, modelDir, textureCache);
 		if (diffuse)
 		{
 			submesh.DiffuseTexture = diffuse;
@@ -102,15 +121,16 @@ namespace Dingo
 
 	static void TraverseNode(aiNode* node, const aiScene* scene,
 	                         const std::filesystem::path& modelDir,
+	                         TextureCache& textureCache,
 	                         std::vector<SubMesh>& outSubMeshes)
 	{
 		for (uint32_t i = 0; i < node->mNumMeshes; ++i)
 		{
 			aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-			outSubMeshes.push_back(ProcessMesh(mesh, scene, modelDir));
+			outSubMeshes.push_back(ProcessMesh(mesh, scene, modelDir, textureCache));
 		}
 		for (uint32_t i = 0; i < node->mNumChildren; ++i)
-			TraverseNode(node->mChildren[i], scene, modelDir, outSubMeshes);
+			TraverseNode(node->mChildren[i], scene, modelDir, textureCache, outSubMeshes);
 	}
 
 	Model* Model::LoadFromFile(const std::filesystem::path& filepath)
@@ -126,8 +146,20 @@ namespace Dingo
 
 		Model* model = new Model();
 		std::filesystem::path modelDir = filepath.parent_path();
-		TraverseNode(scene->mRootNode, scene, modelDir, model->m_SubMeshes);
+
+		TextureCache textureCache;
+		TraverseNode(scene->mRootNode, scene, modelDir, textureCache, model->m_SubMeshes);
+
+		model->m_Textures.reserve(textureCache.size());
+		for (const auto& [path, texture] : textureCache)
+			model->m_Textures.push_back(texture);
+
 		return model;
+	}
+
+	Model::~Model()
+	{
+		Destroy();
 	}
 
 	void Model::Destroy()
@@ -135,18 +167,13 @@ namespace Dingo
 		for (auto& sm : m_SubMeshes)
 		{
 			delete sm.MeshData;
-			if (sm.DiffuseTexture)
-			{
-				sm.DiffuseTexture->Destroy();
-				delete sm.DiffuseTexture;
-			}
-			if (sm.Mat)
-			{
-				sm.Mat->Destroy();
-				delete sm.Mat;
-			}
+			DestroyAndDelete(sm.Mat);
 		}
 		m_SubMeshes.clear();
+
+		for (Texture*& texture : m_Textures)
+			DestroyAndDelete(texture);
+		m_Textures.clear();
 	}
 
 }

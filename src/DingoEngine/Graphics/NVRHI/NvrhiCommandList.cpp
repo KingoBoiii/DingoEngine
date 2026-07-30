@@ -5,6 +5,7 @@
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiRenderPass.h"
+#include "NvrhiTexture.h"
 
 #include "DingoEngine/Core/Application.h"
 
@@ -82,6 +83,14 @@ namespace Dingo
 		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, data, size, offset);
 	}
 
+	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading a texture.");
+		DE_CORE_ASSERT(texture, "Texture is null.");
+
+		m_CommandListHandle->writeTexture(static_cast<NvrhiTexture*>(texture)->m_Handle, 0, 0, data, rowPitch);
+	}
+
 	void NvrhiCommandList::SetFramebuffer(Framebuffer* framebuffer)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
@@ -91,19 +100,36 @@ namespace Dingo
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
 	}
 
-	void NvrhiCommandList::SetPipeline(Pipeline* pipeline)
+	bool NvrhiCommandList::SetPipeline(Pipeline* pipeline)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
 
 		m_GraphicsState = nvrhi::GraphicsState();
 
+		if (!pipeline)
+			return false;
+
 		NvrhiPipeline* nvrhiPipeline = static_cast<NvrhiPipeline*>(pipeline);
+
+		// Lazily rebuild PSOs whose shader — or whose bound texture — was hot-reloaded
+		// since they were created. The texture check matters because the PSO's binding set
+		// holds the native handle, which Reinitialize replaces.
+		Shader* shader = nvrhiPipeline->GetParams().Shader;
+		Texture* texture = nvrhiPipeline->GetParams().Texture;
+		const bool shaderReloaded = shader && shader->GetGeneration() != nvrhiPipeline->m_BuiltShaderGeneration;
+		const bool textureReloaded = texture && texture->GetGeneration() != nvrhiPipeline->m_BuiltTextureGeneration;
+
+		if (shaderReloaded || textureReloaded)
+		{
+			nvrhiPipeline->Destroy();
+			nvrhiPipeline->Initialize();
+		}
 
 		if (!nvrhiPipeline->m_GraphicsPipelineHandle)
 		{
 			DE_CORE_ERROR("SetPipeline: pipeline '{}' has a null graphics pipeline handle — shader/PSO creation failed. Draw call will be skipped.", nvrhiPipeline->GetParams().DebugName);
-			return;
+			return false;
 		}
 
 		// Deliberately no SetFramebuffer(pipeline->GetTargetFramebuffer()) here: that pointer
@@ -115,21 +141,47 @@ namespace Dingo
 		{
 			m_GraphicsState.addBindingSet(nvrhiPipeline->m_BindingSetHandle);
 		}
+
+		return true;
 	}
 
-	void NvrhiCommandList::SetRenderPass(RenderPass* renderPass)
+	bool NvrhiCommandList::SetRenderPass(RenderPass* renderPass)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting render pass.");
 		DE_CORE_ASSERT(renderPass, "Render Pass is null.");
 
+		if (!renderPass)
+			return false;
+
 		NvrhiRenderPass* nvrhiRenderPass = static_cast<NvrhiRenderPass*>(renderPass);
 
-		SetPipeline(renderPass->GetPipeline());
+		if (!SetPipeline(renderPass->GetPipeline()))
+			return false;
 
-		if (nvrhiRenderPass->m_BindingSetHandle)
+		// A hot-reloaded shader replaced its binding layout - the baked binding set
+		// belongs to the old layout and must be re-baked before it is bound. A reloaded
+		// texture is a new native handle, which owners that bake once (Material) never
+		// re-set themselves.
+		Shader* shader = renderPass->GetPipeline()->GetParams().Shader;
+		const bool shaderReloaded = shader && shader->GetGeneration() != nvrhiRenderPass->m_BuiltShaderGeneration;
+		const bool texturesReloaded = nvrhiRenderPass->RefreshReloadedTextures();
+
+		if (shaderReloaded || texturesReloaded)
 		{
-			m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
+			nvrhiRenderPass->m_Valid = false;
+			nvrhiRenderPass->Bake();
 		}
+
+		if (!nvrhiRenderPass->m_BindingSetHandle)
+		{
+			// A pass with nothing to bind is legitimate; one whose bake failed is not, and
+			// drawing it would sample whatever the layout expects from unwritten descriptors.
+			return nvrhiRenderPass->m_BindingSetDesc.bindings.empty();
+		}
+
+		m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
+
+		return true;
 	}
 
 	void NvrhiCommandList::AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot, uint64_t offset)
@@ -170,6 +222,11 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before drawing.");
 
+		// The backends dereference the pipeline unchecked, so an unset one is an access
+		// violation rather than a dropped draw. SetPipeline already logged the reason.
+		if (!m_GraphicsState.pipeline)
+			return;
+
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
@@ -182,6 +239,9 @@ namespace Dingo
 	void NvrhiCommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before drawing.");
+
+		if (!m_GraphicsState.pipeline)
+			return;
 
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 

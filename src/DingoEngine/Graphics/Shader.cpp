@@ -11,9 +11,11 @@ namespace Dingo
 
 	Shader* Shader::CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect)
 	{
+		// Keep the path (instead of eagerly reading the source) so the shader can
+		// re-read the file on hot-reload.
 		return Create(ShaderParams()
 			.SetName(name)
-			.SetSourceCode(FileSystem::ReadTextFile(filepath))
+			.SetFilePath(filepath)
 			.SetReflect(reflect));
 	}
 

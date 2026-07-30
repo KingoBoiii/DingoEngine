@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Renderer.h"
 #include "NvrhiGraphicsContext.h"
 
 namespace Dingo
@@ -97,10 +98,40 @@ namespace Dingo
 		m_Handle = nullptr;
 	}
 
+	void NvrhiTexture::Reinitialize(const TextureParams& params)
+	{
+		m_Params = params;
+		m_Handle = nullptr; // NVRHI frees the old texture once in-flight frames release it
+		Initialize();
+
+		// Initialize() produced a different nvrhi::ITexture — tell cached binding sets.
+		++m_Generation;
+
+		if (m_Params.InitialData)
+		{
+			Upload(m_Params.InitialData, Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width));
+			m_Params.InitialData = nullptr; // the caller's buffer is not retained
+		}
+	}
+
 	void NvrhiTexture::Upload(const void* data, uint64_t size)
 	{
 		DE_CORE_ASSERT(data);
 
+		// Join the frame's command list whenever one is open. A list of our own would be
+		// wrong mid-frame on D3D11: NVRHI's open() and close() each call ClearState() on the
+		// immediate context, unbinding the render target that the frame's list still believes
+		// is set, and it does not re-bind because its own graphics state looks unchanged.
+		// The async asset pump runs before any layer draws so it never noticed, but the
+		// Assets panel's Reload button runs after every layer has recorded its draws.
+		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		{
+			frameList->UploadTexture(this, data, size);
+			return;
+		}
+
+		// Outside a frame (asset loads during OnAttach, the white texture during
+		// Renderer::Initialize) there is no list to join, so open a short-lived one.
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 			.setQueueType(nvrhi::CommandQueue::Graphics);
 

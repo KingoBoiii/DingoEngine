@@ -48,6 +48,9 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 			.GraphicsAPI = graphicsAPI,
 			.FramesInFlight = 3,
 		},
+		.Assets = {
+			.EnableHotReload = true,
+		},
 		.EnableUI = true,
 		.UI = {
 			.EnableDocking = true,

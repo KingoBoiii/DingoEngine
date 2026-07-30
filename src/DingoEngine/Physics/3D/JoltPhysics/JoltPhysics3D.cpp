@@ -125,12 +125,30 @@ namespace Dingo
 		return m_Data != nullptr;
 	}
 
-	PhysicsBodyId3D JoltPhysics3D::CreateBody(const RigidBodyParams3D& params)
+	// File-local rather than a member: JoltPhysics3D.h deliberately names no JPH type.
+	static JPH::ShapeRefC GetOrCreateShape(Internal::JoltPhysics3DData& data, const RigidBodyParams3D& params)
 	{
-		if (!m_Data)
-			return k_InvalidBody3D;
+		Internal::ShapeKey key;
+		key.Type = static_cast<int>(params.Shape);
+		switch (params.Shape)
+		{
+			case ColliderShape3D::Sphere:
+				key.A = params.Radius;
+				break;
+			case ColliderShape3D::Capsule:
+				key.A = params.HalfHeight;
+				key.B = params.Radius;
+				break;
+			default:
+				key.A = params.HalfExtents.x;
+				key.B = params.HalfExtents.y;
+				key.C = params.HalfExtents.z;
+				break;
+		}
 
-		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		auto existing = data.ShapeCache.find(key);
+		if (existing != data.ShapeCache.end())
+			return existing->second;
 
 		JPH::ShapeRefC shape;
 		switch (params.Shape)
@@ -139,6 +157,21 @@ namespace Dingo
 			case ColliderShape3D::Capsule: shape = new JPH::CapsuleShape(params.HalfHeight, params.Radius); break; // (halfHeightOfCylinder, radius)
 			default:                       shape = new JPH::BoxShape(ToJolt(params.HalfExtents)); break;
 		}
+
+		data.ShapeCache.emplace(key, shape);
+		return shape;
+	}
+
+	PhysicsBodyId3D JoltPhysics3D::CreateBody(const RigidBodyParams3D& params)
+	{
+		if (!m_Data)
+			return k_InvalidBody3D;
+
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+
+		const JPH::ShapeRefC shape = GetOrCreateShape(*m_Data, params);
+		if (!shape)
+			return k_InvalidBody3D;
 
 		const bool isStatic = params.Type == BodyType3D::Static;
 		const JPH::ObjectLayer layer = isStatic ? Internal::Layers::NON_MOVING : Internal::Layers::MOVING;
@@ -336,6 +369,7 @@ namespace Dingo
 			return false;
 
 		JPH::SphereShape sphere(radius);
+		sphere.SetEmbedded(); // stack-allocated: don't let a Ref taken to it free it
 		const JPH::RMat44 start = JPH::RMat44::sTranslation(JPH::RVec3(center.x, center.y, center.z));
 		const JPH::Vec3 displacement = ToJolt(direction * maxDistance);
 		const JPH::RShapeCast shapeCast(&sphere, JPH::Vec3::sReplicate(1.0f), start, displacement);
@@ -361,6 +395,7 @@ namespace Dingo
 			return false;
 
 		JPH::SphereShape sphere(radius);
+		sphere.SetEmbedded(); // stack-allocated: don't let a Ref taken to it free it
 		const JPH::RMat44 transform = JPH::RMat44::sTranslation(JPH::RVec3(center.x, center.y, center.z));
 
 		JPH::CollideShapeSettings settings;

@@ -57,14 +57,32 @@ namespace Dingo
 		Shader(const ShaderParams& params)
 			: m_Params(params)
 		{}
-		~Shader() = default;
+		virtual ~Shader() = default;
 
 	public:
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
 
+		// True when Initialize() actually produced a usable program - Create() never
+		// returns nullptr, so this is how a failed load is detected (mirrors Font).
+		virtual bool IsValid() const = 0;
+
+		// Recompiles a file-backed shader from its source on disk, bypassing the
+		// bytecode disk cache (and rewriting it). On success the generation is bumped
+		// and pipelines built from this shader lazily rebuild on their next bind. On
+		// compile failure the previous program keeps running and this returns false.
+		// Inline-source shaders cannot reload (returns false).
+		virtual bool Reload() = 0;
+
+		// Incremented on every successful Reload(). Anything that baked this shader's
+		// bytecode or binding layout must rebuild when its recorded generation differs.
+		uint32_t GetGeneration() const { return m_Generation; }
+
+		const ShaderParams& GetParams() const { return m_Params; }
+
 	protected:
 		ShaderParams m_Params;
+		uint32_t m_Generation = 0;
 
 		friend class NvrhiPipeline;
 	};

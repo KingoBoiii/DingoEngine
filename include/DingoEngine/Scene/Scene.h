@@ -21,7 +21,7 @@ namespace Dingo
 	class Renderer3D;
 	class ScriptableEntity;
 
-	namespace Internal { struct SceneData; }
+	namespace Internal { struct SceneData; class ScriptSystem; }
 
 	// A Scene owns a collection of entities and the behaviours attached to them,
 	// and knows how to render the renderable ones. The ECS backend (EnTT) is held
@@ -120,16 +120,43 @@ namespace Dingo
 
 		// Returns every attached script that is (dynamically) a T. Handy for systems
 		// that need to find other entities by behaviour, e.g. all invaders.
+		//
+		// Every call allocates a vector and dynamic_casts every attached script, so calling
+		// it per frame — and especially from inside a per-entity OnUpdate, which makes it
+		// O(N^2) — should use the overload below with a vector the caller keeps.
 		template<typename T>
 		std::vector<T*> GetScriptsOfType()
 		{
 			std::vector<T*> result;
-			ForEachScript([&result](ScriptableEntity* script)
+			GetScriptsOfType(result);
+			return result;
+		}
+
+		// Fills `out` (cleared first) rather than returning a fresh vector, so a caller that
+		// holds onto one pays no allocation after its first call.
+		template<typename T>
+		void GetScriptsOfType(std::vector<T*>& out)
+		{
+			out.clear();
+			ForEachScript([&out](ScriptableEntity* script)
 			{
 				if (T* typed = dynamic_cast<T*>(script))
-					result.push_back(typed);
+					out.push_back(typed);
 			});
-			return result;
+		}
+
+		// How many attached scripts are (dynamically) a T, without building a list — for
+		// callers that only wanted GetScriptsOfType<T>().size().
+		template<typename T>
+		std::size_t CountScriptsOfType()
+		{
+			std::size_t count = 0;
+			ForEachScript([&count](ScriptableEntity* script)
+			{
+				if (dynamic_cast<T*>(script))
+					++count;
+			});
+			return count;
 		}
 
 		Entity GetEntityByUUID(UUID uuid);
@@ -237,39 +264,23 @@ namespace Dingo
 		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
 		// Fires OnStart on any script that has not started yet, marking it started.
 		void StartScripts();
+		// Unregisters the entity's script and then fires its OnDestroy. Detaching first
+		// is what makes a DestroyEntity() call from inside OnDestroy safe: the script is
+		// no longer reachable, so it can neither fire twice nor be erased from under an
+		// in-flight iteration. No-op when the entity has no script.
+		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
 
-		// Creates the Box2D body + collider shapes for one entity handle. Box2D
-		// types stay out of this header by working through the opaque handle.
-		void CreatePhysicsBodyForEntity(std::uint32_t handle);
-		// Opaque runtime body handle for an entity (0 when it has none).
+		// Opaque runtime body handles for an entity (0 / k_InvalidBody3D when it has
+		// none). The backend types stay out of this header by working through them.
 		std::uint64_t GetRuntimeBody(Entity entity) const;
-
-		// Creates the Jolt body (collider baked in) for one entity handle. Jolt
-		// types stay out of this header by working through the opaque handle.
-		void CreatePhysicsBody3DForEntity(std::uint32_t handle);
-		// Opaque 3D runtime body handle for an entity (k_InvalidBody3D when none).
 		std::uint32_t GetRuntimeBody3D(Entity entity) const;
-
-		// Creates the character controller for one entity handle (at its Transform3D).
-		// No-op if the 3D world isn't live or the entity has no CharacterController3DComponent.
-		void CreateCharacterControllerForEntity(std::uint32_t handle);
 
 		// Resets every live backend handle on an entity to its "none" sentinel, without
 		// touching the backend itself. Used by DuplicateEntity so a clone never aliases
 		// the source's body/shape/controller/sound.
 		void ResetRuntimeHandles(std::uint32_t handle);
-
-		// World-space position for an entity, used to seed/update a spatialized
-		// AudioSourceComponent: Transform3DComponent if present, else the 2D
-		// TransformComponent's Position at z = 0. Every entity has a TransformComponent,
-		// so this always returns something.
-		glm::vec3 GetAudioPosition(std::uint32_t handle) const;
-
-		// Stops every AudioSourceComponent's live sound and resets the handles.
-		// Shared by OnStop() and Clear() — both must not leak playing audio.
-		void StopAudioSources();
 
 	private:
 		Internal::SceneData* m_Data = nullptr;

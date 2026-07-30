@@ -67,7 +67,7 @@ namespace Dingo
 
 	}
 
-	std::vector<uint32_t> ShaderCompiler::CompileGLSL(ShaderType shaderType, const std::string& source, const std::string& name, const std::string& entryPoint, bool optimize)
+	std::vector<uint32_t> ShaderCompiler::CompileGLSL(ShaderType shaderType, const std::string& source, const std::string& name, const std::string& entryPoint, bool optimize, bool assertOnFailure)
 	{
 		shaderc::Compiler compiler;
 		shaderc::CompileOptions compileOptions;
@@ -79,7 +79,11 @@ namespace Dingo
 		if (result.GetCompilationStatus() != shaderc_compilation_status_success)
 		{
 			DE_CORE_ERROR("Shader compilation failed: {}", result.GetErrorMessage());
-			DE_CORE_ASSERT(false);
+			if (assertOnFailure)
+			{
+				DE_CORE_ASSERT(false);
+			}
+			return {};
 		}
 
 		return std::vector<uint32_t>(result.begin(), result.end());
@@ -359,7 +363,7 @@ namespace Dingo
 	}
 #endif
 
-	std::vector<uint8_t> ShaderCompiler::CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel)
+	std::vector<uint8_t> ShaderCompiler::CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel, bool assertOnFailure)
 	{
 #ifdef DE_PLATFORM_WINDOWS
 		// SM 5.0 (DX11) has no NonUniformResourceIndex — strip the nonuniformEXT wrapper so
@@ -367,7 +371,9 @@ namespace Dingo
 		const std::string& processedSource = (shaderModel < 51) ? StripNonUniformQualifier(source) : source;
 
 		// Step 1: GLSL → SPIR-V (use zero optimization to improve HLSL translation quality)
-		auto spirv = CompileGLSL(shaderType, processedSource, name, "main", false);
+		auto spirv = CompileGLSL(shaderType, processedSource, name, "main", false, assertOnFailure);
+		if (spirv.empty())
+			return {};
 
 		// Step 2: SPIR-V → HLSL via spirv-cross
 		spirv_cross::CompilerHLSL hlslCompiler(spirv);
@@ -405,7 +411,10 @@ namespace Dingo
 		catch (const spirv_cross::CompilerError& e)
 		{
 			DE_CORE_ERROR("spirv-cross HLSL compilation failed for '{}': {}", name, e.what());
-			DE_CORE_ASSERT(false, "spirv-cross failed to translate SPIR-V to HLSL.");
+			if (assertOnFailure)
+			{
+				DE_CORE_ASSERT(false, "spirv-cross failed to translate SPIR-V to HLSL.");
+			}
 			return {};
 		}
 
@@ -443,7 +452,10 @@ namespace Dingo
 				errorBlob->Release();
 			}
 			DE_CORE_ERROR("Generated HLSL source for '{}':\n{}", name, hlslSource);
-			DE_CORE_ASSERT(false, "HLSL shader compilation failed.");
+			if (assertOnFailure)
+			{
+				DE_CORE_ASSERT(false, "HLSL shader compilation failed.");
+			}
 			return {};
 		}
 

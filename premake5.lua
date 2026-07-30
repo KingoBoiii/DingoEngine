@@ -63,6 +63,25 @@ BundledVendorLibs = table.concat({
     vendorLib("JoltPhysics", "Jolt"),
 }, " ")
 
+-- Every exe that links the engine also loads Assimp's DLLs (and their zlib /
+-- pugixml / poly2tri deps) at startup, so they have to sit next to the binary or
+-- it dies with STATUS_DLL_NOT_FOUND before main. Call this once per project;
+-- it appends the per-configuration copy step and clears the filter again.
+-- The source dir is baked to an absolute path at generation time because
+-- %{wks.location} expands to empty inside an included project's postbuild scope.
+function copyAssimpRuntime()
+    local debugBin   = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/debug")
+    local releaseBin = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/release")
+
+    filter "configurations:Debug or configurations:Debug-ASan"
+        postbuildcommands { '{COPY} "' .. debugBin .. '" "%{cfg.targetdir}"' }
+
+    filter "configurations:Release or configurations:Distribution"
+        postbuildcommands { '{COPY} "' .. releaseBin .. '" "%{cfg.targetdir}"' }
+
+    filter {}
+end
+
 -- Grab Vulkan SDK path
 VULKAN_SDK = os.getenv("VULKAN_SDK")
 
@@ -219,7 +238,7 @@ group "Engine"
 			defines { "DE_PLATFORM_LINUX" }
 			buildoptions { "-Wno-changes-meaning" }
 
-		filter "configurations:Debug or configurations:Debug-AS"
+		filter "configurations:Debug or configurations:Debug-ASan"
 			runtime "Debug"
 			symbols "On"
 			defines { "DE_DEBUG" }
@@ -230,10 +249,6 @@ group "Engine"
 				"%{Library.SPIRV_Cross_GLSL_Debug}",
 				"%{Library.SPIRV_Cross_HLSL_Debug}",
 				"%{Library.assimp_Debug}",
-			}
-
-			postbuildcommands {
-				"{COPY} %{wks.location}/vendor/assimp/bin/debug %{cfg.targetdir}"
 			}
 
 		filter "configurations:Release"
@@ -247,10 +262,6 @@ group "Engine"
 				"%{Library.SPIRV_Cross_GLSL_Release}",
 				"%{Library.SPIRV_Cross_HLSL_Release}",
 				"%{Library.assimp_Release}",
-			}
-
-			postbuildcommands {
-				"{COPY} %{wks.location}/vendor/assimp/bin/release %{cfg.targetdir}"
 			}
 
 		filter "configurations:Distribution"
@@ -267,15 +278,16 @@ group "Engine"
 				"%{Library.assimp_Release}",
 			}
 
-			postbuildcommands {
-				"{COPY} %{wks.location}/vendor/assimp/bin/release %{cfg.targetdir}"
-			}
+		-- The release ZIP is packed from this target dir, so consumers of the
+		-- prebuilt lib get the Assimp DLLs from here too.
+		copyAssimpRuntime()
 
 group ""
 
 include "test"
 
 group "Examples"
+    include "examples/ArenaShooter"
     include "examples/FlappyBird"
     include "examples/Breakout3D"
     include "examples/DungeonCrawler"

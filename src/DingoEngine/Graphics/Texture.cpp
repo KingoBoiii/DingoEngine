@@ -11,6 +11,8 @@ namespace Dingo
 	{
 		uint32_t width = 0, height = 0, channels = 0;
 		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
+		if (!data)
+			return nullptr;
 
 		// Upload() copies the pixels synchronously during Create(), so the CPU-side
 		// buffer can (and must) be released here — it used to leak per load.

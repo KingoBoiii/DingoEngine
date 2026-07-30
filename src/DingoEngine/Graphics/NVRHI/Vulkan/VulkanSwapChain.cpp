@@ -308,6 +308,17 @@ namespace Dingo
 		return m_SwapChainFramebuffers[index];
 	}
 
+	bool SwapChain::OwnsFramebuffer(const Framebuffer* framebuffer) const
+	{
+		for (const Framebuffer* swapChainFramebuffer : m_SwapChainFramebuffers)
+		{
+			if (swapChainFramebuffer == framebuffer)
+				return true;
+		}
+
+		return false;
+	}
+
 	void VulkanSwapChain::CreateWindowSurface()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();

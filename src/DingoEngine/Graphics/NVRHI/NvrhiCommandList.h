@@ -23,13 +23,16 @@ namespace Dingo
 		virtual void Execute() override;
 		virtual void End() override;
 
+		virtual bool IsRecording() const override { return m_HasBegun; }
+
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) override;
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) override;
+		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) override;
 
 		virtual void SetFramebuffer(Framebuffer* framebuffer) override;
-		virtual void SetPipeline(Pipeline* pipeline) override;
-		virtual void SetRenderPass(RenderPass* renderPass) override;
+		virtual bool SetPipeline(Pipeline* pipeline) override;
+		virtual bool SetRenderPass(RenderPass* renderPass) override;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) override;
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) override;
 

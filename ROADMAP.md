@@ -87,9 +87,13 @@ A point release that replaces the input layer wholesale. The old `Input` mixed l
 **Example**: *EchoVault* gains full controller play — analog left-stick / d-pad movement, `(A)` to jump and confirm menus.
 
 ## v0.6 — Asset Pipeline & Hot-Reload
-Centralized `AssetManager` with UUID-based handles, background/async loading, and hot-reload of shaders and textures during development.
+The centralized **`AssetManager`** — the engine-owned registry and owner of file-backed assets, configured via `ApplicationParams::Assets` and documented in [docs/asset-pipeline.md](docs/asset-pipeline.md):
 
-**Example game**: Top-down shooter — a wave-based arena shooter with many sprites, particle-like effects, and shader variants. Hot-reloading shaders and swapping textures at runtime serve as the primary development showcase.
+- **UUID handles & path dedup**: every asset path (relative to a configurable **asset root**, retiring the cwd-relative asset trap) maps to a stable 64-bit `AssetHandle`; loading the same file twice returns the same handle and the same object instead of re-reading the file and re-creating GPU resources. Typed access (`GetTexture` / `GetShader` / `GetModel` / `GetFont` / `GetAudioClip`, or `Get<T>`), a `Ready`/`Failed` state machine, and a failure contract that keeps failed loads registered so a later reload can recover. `Texture::CreateFromFile` was aligned with the Model/Font nullptr-on-failure contract along the way.
+- **Background loading**: `LoadAsync` decodes textures and audio clips on a loader thread and finalizes GPU uploads on the main thread inside the engine's per-frame pump; shader/model/font requests fall back to amortized main-thread loads (one per frame) so a loading screen keeps animating. `GetPendingCount()` drives progress bars.
+- **Hot-reload** (dev-only, opt-in): loaded textures and shaders are timestamp-watched and reloaded **in place** — textures swap contents inside the same `Texture` object (any dimensions), and shaders recompile from source past the bytecode disk cache, bump a generation counter, and every `Pipeline`/`RenderPass` built from them lazily rebuilds at bind time. A shader compile error keeps the previous program running instead of crashing the app.
+
+**Example game**: [ArenaShooter](examples/ArenaShooter/) — a wave-based top-down arena shooter that async-loads every asset behind a progress bar, plays all its audio through manager handles, and renders its animated background with a file-based shader: edit the shader or a sprite PNG while the game runs and watch it update live. The engine test app also gained an interactive **Asset Manager Test** (`test/`, run with `--test=asset`) covering dedup, typed access, the failure contract, and both async paths.
 
 ## v0.7 — Scripting
 C# scripting via Mono or .NET CoreCLR, or Lua. Allows game logic to live outside the engine binary and be iterated on without recompiling.

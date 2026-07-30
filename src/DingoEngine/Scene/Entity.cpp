@@ -66,16 +66,12 @@ namespace Dingo
 
 	void Entity::AttachScript(ScriptableEntity* instance)
 	{
-		instance->m_Entity = *this;
-		m_Scene->m_Data->Scripts[static_cast<entt::entity>(m_Handle)].reset(instance);
-		instance->OnCreate();
+		m_Scene->m_Data->Scripts.Attach(static_cast<entt::entity>(m_Handle), instance, *this);
 	}
 
 	ScriptableEntity* Entity::GetScriptInstance()
 	{
-		auto& scripts = m_Scene->m_Data->Scripts;
-		auto it = scripts.find(static_cast<entt::entity>(m_Handle));
-		return it != scripts.end() ? it->second.get() : nullptr;
+		return m_Scene->m_Data->Scripts.Find(static_cast<entt::entity>(m_Handle));
 	}
 
 	// --- Explicit instantiations for the built-in component types ---------------

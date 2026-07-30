@@ -28,7 +28,7 @@ project "Breakout3D"
     filter "system:linux"
         defines { "DE_PLATFORM_LINUX" }
 
-    filter "configurations:Debug or configurations:Debug-AS"
+    filter "configurations:Debug or configurations:Debug-ASan"
         symbols "On"
         defines { "DE_DEBUG" }
 
@@ -41,3 +41,5 @@ project "Breakout3D"
         optimize "On"
         symbols "Off"
         defines { "DE_DISTRIBUTION" }
+
+    copyAssimpRuntime()

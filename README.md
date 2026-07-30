@@ -55,7 +55,7 @@ Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This w
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, or `DungeonCrawler3D`) as the startup project, and build.
+Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, or `ArenaShooter`) as the startup project, and build.
 
 ## Examples
 
@@ -67,6 +67,8 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `SpaceInvaders` | Scene/ECS showcase — EnTT entities and a multi-scene `SceneManager` |
 | `AngryBirds` | 2D physics showcase — slingshot launching, destructible block towers, and pig targets on the Box2D-backed physics world |
 | `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D` |
+| `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play |
+| `ArenaShooter` | v0.6 showcase — wave-based top-down shooter driven entirely by the **`AssetManager`**: async loading behind a progress bar, all sprites/audio/fonts via UUID handles, and **live hot-reload** (edit `assets/shaders/background.glsl` or a sprite PNG while it runs) |
 
 ## Project Structure
 

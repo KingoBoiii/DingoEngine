@@ -168,8 +168,15 @@ namespace Dingo
 			std::vector<Vertex> Vertices;
 			std::vector<uint32_t> Indices;
 			bool OverflowWarned = false;
+			bool Enqueued = false; // already in m_DrawOrder for the scene in progress
 		};
 		std::unordered_map<Material*, MeshBatch> m_Batches;
+
+		// Materials in the order they were first submitted to this scene. Draw order has to
+		// come from here, not from the map: unordered_map iteration follows pointer hashing,
+		// so the same scene would submit its materials in a different order between runs —
+		// invisible for depth-tested opaques, but not for anything blended.
+		std::vector<Material*> m_DrawOrder;
 
 		// Pooled GPU buffers — one (vertex, index) pair per material batch drawn in a
 		// frame, grown on demand and reused. Each batch gets its own buffer, so no shared

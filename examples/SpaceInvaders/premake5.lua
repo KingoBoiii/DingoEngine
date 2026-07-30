@@ -30,7 +30,7 @@ project "SpaceInvaders"
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
-	filter "configurations:Debug or configurations:Debug-AS"
+	filter "configurations:Debug or configurations:Debug-ASan"
 		symbols "On"
 		defines { "DE_DEBUG" }
 
@@ -43,3 +43,5 @@ project "SpaceInvaders"
 		optimize "On"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
+
+	copyAssimpRuntime()

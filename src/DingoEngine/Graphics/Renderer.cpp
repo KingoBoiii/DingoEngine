@@ -11,6 +11,21 @@
 namespace Dingo
 {
 
+	namespace
+	{
+		// Resolves the "whole buffer" default. The stride has to come from the buffer's own
+		// format: assuming uint16 on a uint32 index buffer asks for twice the indices that
+		// exist. Unknown falls back to uint16, which is what CreateIndexBuffer defaults to.
+		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount)
+		{
+			if (indexCount != 0)
+				return indexCount;
+
+			const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
+			return static_cast<uint32_t>(indexBuffer->GetByteSize() / stride);
+		}
+	}
+
 	struct RendererData
 	{
 		SwapChain*   SwapChain      = nullptr;
@@ -68,6 +83,9 @@ namespace Dingo
 
 	void Renderer::Shutdown()
 	{
+		if (!s_Data)
+			return;
+
 		{
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
 			s_Data->Running  = false;
@@ -83,15 +101,17 @@ namespace Dingo
 		if (s_Data->HasPendingFrame)
 			Execute();
 
-		if (s_Data->CommandList)
-		{
-			s_Data->CommandList->Destroy();
-			s_Data->CommandList = nullptr;
-		}
+		DestroyAndDelete(s_Data->CommandList);
+	}
 
-		if (s_Data->WhiteTexture) { s_Data->WhiteTexture->Destroy(); s_Data->WhiteTexture = nullptr; }
-		if (s_Data->ClampSampler) { s_Data->ClampSampler->Destroy(); s_Data->ClampSampler = nullptr; }
-		if (s_Data->PointSampler) { s_Data->PointSampler->Destroy(); s_Data->PointSampler = nullptr; }
+	void Renderer::Destroy()
+	{
+		if (!s_Data)
+			return;
+
+		DestroyAndDelete(s_Data->WhiteTexture);
+		DestroyAndDelete(s_Data->ClampSampler);
+		DestroyAndDelete(s_Data->PointSampler);
 
 		delete s_Data;
 		s_Data = nullptr;
@@ -257,7 +277,9 @@ namespace Dingo
 	void Renderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetPipeline(pipeline);
+		if (!s_Data->CommandList->SetPipeline(pipeline))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
@@ -265,7 +287,9 @@ namespace Dingo
 	void Renderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetPipeline(pipeline);
+		if (!s_Data->CommandList->SetPipeline(pipeline))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
@@ -273,11 +297,12 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		if (indexCount == 0)
-			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetPipeline(pipeline);
+		if (!s_Data->CommandList->SetPipeline(pipeline))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
@@ -290,11 +315,12 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		if (indexCount == 0)
-			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
-		s_Data->CommandList->SetRenderPass(renderPass);
+		if (!s_Data->CommandList->SetRenderPass(renderPass))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
@@ -307,8 +333,7 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		if (indexCount == 0)
-			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
 
@@ -321,7 +346,9 @@ namespace Dingo
 		}
 
 		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);
-		s_Data->CommandList->SetRenderPass(renderPass);
+		if (!s_Data->CommandList->SetRenderPass(renderPass))
+			return;
+
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
@@ -334,12 +361,32 @@ namespace Dingo
 
 	CommandList* Renderer::GetCommandList()
 	{
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->CommandList : nullptr;
+	}
+
+	CommandList* Renderer::TryGetRecordingCommandList()
+	{
+		if (!s_Data || !s_Data->CommandList || !s_Data->CommandList->IsRecording())
+			return nullptr;
+
 		return s_Data->CommandList;
 	}
 
 	Framebuffer* Renderer::GetSwapChainFramebuffer()
 	{
-		return s_Data->SwapChain->GetCurrentFramebuffer();
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->SwapChain->GetCurrentFramebuffer() : nullptr;
+	}
+
+	bool Renderer::IsSwapChainFramebuffer(const Framebuffer* framebuffer)
+	{
+		return s_Data && framebuffer && s_Data->SwapChain && s_Data->SwapChain->OwnsFramebuffer(framebuffer);
+	}
+
+	uint64_t Renderer::GetSwapChainResizeGeneration()
+	{
+		return (s_Data && s_Data->SwapChain) ? s_Data->SwapChain->GetResizeGeneration() : 0;
 	}
 
 	/**************************************************
@@ -348,17 +395,20 @@ namespace Dingo
 
 	Texture* Renderer::GetWhiteTexture()
 	{
-		return s_Data->WhiteTexture;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->WhiteTexture : nullptr;
 	}
 
 	Sampler* Renderer::GetClampSampler()
 	{
-		return s_Data->ClampSampler;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->ClampSampler : nullptr;
 	}
 
 	Sampler* Renderer::GetPointSampler()
 	{
-		return s_Data->PointSampler;
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data ? s_Data->PointSampler : nullptr;
 	}
 
 }
