@@ -135,6 +135,7 @@ namespace Dingo
 		metadata.Handle = AssetHandle();
 		metadata.Type = type;
 		metadata.FilePath = std::filesystem::path(key);
+		metadata.AbsolutePath = ResolvePath(metadata.FilePath);
 		metadata.State = AssetState::Unloaded;
 
 		const AssetHandle handle = metadata.Handle;
@@ -173,7 +174,7 @@ namespace Dingo
 		{
 			// Stamp at queue time, not at finalize: an edit landing while the decode is
 			// in flight then still differs from the stamp and the next poll catches it.
-			Utils::StampWriteTime(metadata, ResolvePath(metadata.FilePath));
+			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
 			metadata.State = AssetState::Loading;
 			++m_PendingCount;
 			QueueDecodeJob(metadata);
@@ -232,7 +233,7 @@ namespace Dingo
 				if (it == m_Textures.end())
 					return false;
 
-				const std::filesystem::path absolutePath = ResolvePath(metadata.FilePath);
+				const std::filesystem::path& absolutePath = metadata.AbsolutePath;
 				uint32_t width = 0, height = 0, channels = 0;
 				const uint8_t* pixels = FileSystem::ReadImage(absolutePath, &width, &height, &channels, true, true);
 				if (!pixels)
@@ -263,7 +264,7 @@ namespace Dingo
 
 				// Reload() keeps the previous program on a compile error.
 				it->second->Reload();
-				Utils::StampWriteTime(metadata, ResolvePath(metadata.FilePath));
+				Utils::StampWriteTime(metadata, metadata.AbsolutePath);
 				return true;
 			}
 			default:
@@ -366,7 +367,7 @@ namespace Dingo
 		for (auto& [handle, metadata] : m_Registry)
 		{
 			if (metadata.State == AssetState::Ready)
-				Utils::StampWriteTime(metadata, ResolvePath(metadata.FilePath));
+				Utils::StampWriteTime(metadata, metadata.AbsolutePath);
 		}
 	}
 
@@ -539,7 +540,7 @@ namespace Dingo
 		AsyncJob job;
 		job.Handle = metadata.Handle;
 		job.Type = metadata.Type;
-		job.AbsolutePath = ResolvePath(metadata.FilePath);
+		job.AbsolutePath = metadata.AbsolutePath;
 		job.DebugName = metadata.FilePath.generic_string();
 		{
 			std::scoped_lock lock(m_JobMutex);
@@ -550,8 +551,35 @@ namespace Dingo
 
 	void AssetManager::PollHotReload()
 	{
-		for (auto& [handle, metadata] : m_Registry)
+		// Collect the watchable handles once per pass instead of walking the whole registry
+		// every tick. Handles are stable, so an entry removed mid-pass just misses its turn.
+		if (m_WatchCursor >= m_WatchList.size())
 		{
+			m_WatchList.clear();
+			for (const auto& [handle, metadata] : m_Registry)
+			{
+				if (metadata.Type == AssetType::Texture2D || metadata.Type == AssetType::Shader)
+					m_WatchList.push_back(handle);
+			}
+			m_WatchCursor = 0;
+		}
+
+		// Cap the stat() calls a single poll can make. A project with fewer watched assets
+		// than the cap still gets its whole list checked every tick, so nothing about
+		// detection latency changes there; only projects big enough for the syscalls to cost
+		// real frame time spread the work out, and they spread it in proportion. This also
+		// bounds the cost when HotReloadInterval is 0, which polls every frame.
+		const std::size_t passEnd = std::min(m_WatchList.size(), m_WatchCursor + k_MaxWatchChecksPerPoll);
+
+		for (; m_WatchCursor < passEnd; ++m_WatchCursor)
+		{
+			auto entry = m_Registry.find(m_WatchList[m_WatchCursor]);
+			if (entry == m_Registry.end())
+				continue;
+
+			const AssetHandle handle = entry->first;
+			AssetMetadata& metadata = entry->second;
+
 			// Failed is watched as well as Ready: a first-load failure keeps its
 			// registration precisely so fixing the file recovers it. Its write time was
 			// never stamped, so the first poll fires immediately - and a file that is still
@@ -560,11 +588,9 @@ namespace Dingo
 			const bool recovering = metadata.State == AssetState::Failed;
 			if (metadata.State != AssetState::Ready && !recovering)
 				continue;
-			if (metadata.Type != AssetType::Texture2D && metadata.Type != AssetType::Shader)
-				continue;
 
 			std::error_code ec;
-			const auto writeTime = std::filesystem::last_write_time(ResolvePath(metadata.FilePath), ec);
+			const auto writeTime = std::filesystem::last_write_time(metadata.AbsolutePath, ec);
 			if (ec || writeTime == metadata.LastWriteTime)
 			{
 				metadata.PendingWriteTime = {};
@@ -612,7 +638,7 @@ namespace Dingo
 
 	bool AssetManager::LoadInternal(AssetMetadata& metadata)
 	{
-		const std::filesystem::path absolutePath = ResolvePath(metadata.FilePath);
+		const std::filesystem::path& absolutePath = metadata.AbsolutePath;
 		const std::string name = Utils::SanitizeAssetName(metadata.FilePath);
 
 		switch (metadata.Type)

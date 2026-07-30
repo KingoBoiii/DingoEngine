@@ -250,6 +250,12 @@ namespace Dingo
 		std::mutex m_AudioLoadMutex;
 		std::atomic<uint32_t> m_PendingCount = 0;
 		float m_HotReloadTimer = 0.0f;
+
+		// Round-robin state for PollHotReload: the watchable handles for the pass in
+		// progress, and how far through them the last poll got.
+		static constexpr std::size_t k_MaxWatchChecksPerPoll = 64;
+		std::vector<AssetHandle> m_WatchList;
+		std::size_t m_WatchCursor = 0;
 	};
 
 }
