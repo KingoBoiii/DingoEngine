@@ -23,7 +23,9 @@ src/DingoEngine/           Implementations, incl. backend-only code:
   Graphics/NVRHI/          NVRHI wrappers (Vulkan/, DirectX11/, DirectX12/)
   Physics/2D/Box2D/        the only box2d.h includer
   Physics/3D/JoltPhysics/  the only Jolt includer
-  Scene/SceneData.h        the only EnTT includer (PIMPL)
+  Scene/SceneData.h        the scene PIMPL; EnTT stays inside src/Scene/
+  Scene/Systems/           ScriptSystem, PhysicsSync, AudioSync, CameraUtils —
+                           the systems Scene delegates to (engine-internal)
 vendor/                    Third-party submodules — NEVER modify vendor code
 examples/                  FlappyBird, Breakout3D, SpaceInvaders (Scene/ECS showcase),
                            AngryBirds (2D physics), DungeonCrawler (top-down 2D slice),
@@ -41,7 +43,7 @@ Vendor forks that upstream as CMake (e.g. box2d) carry their own `premake5.lua`,
 
 The test framework takes `--test=<name substring>` (case-insensitive) to boot straight into one case — `--test=asset`, `--test=Text` — otherwise it starts on the first.
 
-`src/DingoEngine/Graphics/DeviceManager.{h,cpp}` are dead: both bodies sit inside `#if 0` (~1.7k lines). Don't read them for how the device is set up — that lives in `Graphics/NVRHI/`.
+Device and adapter selection lives in `Graphics/NVRHI/` (`VulkanGraphicsContext.cpp` for Vulkan).
 
 ## Code conventions
 
