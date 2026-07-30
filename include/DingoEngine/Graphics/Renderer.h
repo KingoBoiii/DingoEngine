@@ -107,6 +107,12 @@ namespace Dingo
 		static void ResetRenderTarget();
 
 		static CommandList*  GetCommandList();
+
+		// The frame command list only while it is open, else null — and null rather than an
+		// assert before Initialize() or after Destroy(). For resource writes that want to
+		// join the frame instead of opening a list of their own, but must also work when
+		// called outside one (asset loads during OnAttach, say).
+		static CommandList* TryGetRecordingCommandList();
 		static Framebuffer*  GetSwapChainFramebuffer();
 
 		// True while `framebuffer` is one the swap chain currently owns. Those are freed

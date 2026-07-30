@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Renderer.h"
 #include "NvrhiGraphicsContext.h"
 
 namespace Dingo
@@ -117,6 +118,20 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(data);
 
+		// Join the frame's command list whenever one is open. A list of our own would be
+		// wrong mid-frame on D3D11: NVRHI's open() and close() each call ClearState() on the
+		// immediate context, unbinding the render target that the frame's list still believes
+		// is set, and it does not re-bind because its own graphics state looks unchanged.
+		// The async asset pump runs before any layer draws so it never noticed, but the
+		// Assets panel's Reload button runs after every layer has recorded its draws.
+		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		{
+			frameList->UploadTexture(this, data, size);
+			return;
+		}
+
+		// Outside a frame (asset loads during OnAttach, the white texture during
+		// Renderer::Initialize) there is no list to join, so open a short-lived one.
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 			.setQueueType(nvrhi::CommandQueue::Graphics);
 

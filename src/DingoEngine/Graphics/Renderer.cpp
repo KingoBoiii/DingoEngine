@@ -357,6 +357,14 @@ namespace Dingo
 		return s_Data ? s_Data->CommandList : nullptr;
 	}
 
+	CommandList* Renderer::TryGetRecordingCommandList()
+	{
+		if (!s_Data || !s_Data->CommandList || !s_Data->CommandList->IsRecording())
+			return nullptr;
+
+		return s_Data->CommandList;
+	}
+
 	Framebuffer* Renderer::GetSwapChainFramebuffer()
 	{
 		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");

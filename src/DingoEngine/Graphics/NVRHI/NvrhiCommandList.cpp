@@ -5,6 +5,7 @@
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiRenderPass.h"
+#include "NvrhiTexture.h"
 
 #include "DingoEngine/Core/Application.h"
 
@@ -80,6 +81,14 @@ namespace Dingo
 		DE_CORE_ASSERT(buffer, "Uniform buffer is null.");
 
 		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, data, size, offset);
+	}
+
+	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading a texture.");
+		DE_CORE_ASSERT(texture, "Texture is null.");
+
+		m_CommandListHandle->writeTexture(static_cast<NvrhiTexture*>(texture)->m_Handle, 0, 0, data, rowPitch);
 	}
 
 	void NvrhiCommandList::SetFramebuffer(Framebuffer* framebuffer)

@@ -37,6 +37,7 @@ namespace Dingo
 
 		friend class NvrhiPipeline;
 		friend class NvrhiRenderPass;
+		friend class NvrhiCommandList;
 	};
 
 }
