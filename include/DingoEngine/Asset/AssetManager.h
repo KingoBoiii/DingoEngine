@@ -2,17 +2,11 @@
 #include "DingoEngine/Asset/AssetTypes.h"
 #include "DingoEngine/Asset/AssetMetadata.h"
 
-#include <atomic>
-#include <condition_variable>
-#include <deque>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <mutex>
-#include <string>
-#include <thread>
 #include <type_traits>
 #include <unordered_map>
-#include <vector>
 
 namespace Dingo
 {
@@ -23,6 +17,8 @@ namespace Dingo
 	class Font;
 	class AudioClip;
 	class AudioEngine;
+
+	namespace Internal { struct AssetManagerData; }
 
 	struct AssetManagerParams
 	{
@@ -62,7 +58,10 @@ namespace Dingo
 	// Central registry and owner of file-backed assets. Assets are identified by a
 	// stable AssetHandle (UUID) and deduplicated by path: loading the same file twice
 	// returns the same handle and the same loaded object, instead of re-reading the
-	// file and re-creating GPU resources like the raw Create factories do.
+	// file and re-creating GPU resources like the raw Create factories do. Paths are
+	// deduplicated by their normalized spelling, so an absolute path under the asset
+	// root, its relative form and (on Windows) any capitalization of either all name
+	// the same registration.
 	//
 	// The manager owns every object it loads and frees them all at Shutdown() — game
 	// code holds handles (or borrowed pointers) and never deletes managed assets.
@@ -72,6 +71,13 @@ namespace Dingo
 	// Load failures keep the asset registered with State == Failed (Get returns
 	// nullptr) so a later Reload — or hot-reload, once the file is fixed — can recover
 	// without re-registering.
+	//
+	// Threading: every member is main-thread-only (the thread driving Application::Run,
+	// where Update() finalizes background loads), with GetPendingCount() and
+	// GetReloadingCount() the only exceptions — both read an atomic. Loads decode on an
+	// internal worker thread, but that thread never touches the registry or a managed
+	// object, so calling e.g. GetTexture() from a job thread races the finalize pump's
+	// map insertions.
 	class AssetManager
 	{
 	public:
@@ -91,9 +97,10 @@ namespace Dingo
 		// for unrecognized extensions.
 		AssetHandle Import(const std::filesystem::path& path);
 
-		// Import + synchronous load. Returns the handle even if loading fails (the
-		// registration stays, State == Failed). Does not block on an asset already
-		// loading in the background - poll IsReady() for those.
+		// Import + synchronous load: the asset is Ready when the call returns, unless
+		// loading fails (the registration stays, State == Failed) or a background load of
+		// the same path is already in flight — this does not block on those, so poll
+		// IsReady() when mixing Load and LoadAsync for one asset.
 		AssetHandle Load(const std::filesystem::path& path);
 
 		// Import + background load: returns immediately, Get returns nullptr until the
@@ -112,6 +119,13 @@ namespace Dingo
 		// invalidates borrowed pointers - re-Get after reloading those. Check
 		// SupportsInPlaceReload(type) first if you need to know which applies without
 		// calling this.
+		//
+		// A no-op while a load or reload of the same asset is already in flight: the
+		// pending pass publishes the file as it stands on disk anyway, and cancelling it
+		// would throw away a finished decode for nothing. It returns IsReady(handle) in that
+		// case, so false there means "not loaded yet", not "the reload failed" — and with
+		// hot-reload off nothing re-polls afterwards, so an edit made *during* that first load
+		// is not picked up. Re-Reload once the asset is Ready if that matters.
 		bool Reload(AssetHandle handle);
 
 		// Frees the loaded object but keeps the registration (State -> Unloaded).
@@ -123,7 +137,10 @@ namespace Dingo
 
 		// --- Access ---------------------------------------------------------
 
-		// nullptr unless the asset is Ready and of the requested type.
+		// The loaded object of the requested type, or nullptr while the asset has none:
+		// never loaded, still loading, failed, or unloaded. An in-place reload
+		// (State == Reloading) keeps returning the live pointer — the object is refreshed,
+		// never replaced, so a hot-reload never takes an asset away mid-frame.
 		Texture* GetTexture(AssetHandle handle) const;
 		Shader* GetShader(AssetHandle handle) const;
 		Model* GetModel(AssetHandle handle) const;
@@ -147,7 +164,13 @@ namespace Dingo
 
 		// --- Queries ----------------------------------------------------------
 
-		bool IsReady(AssetHandle handle) const { return GetState(handle) == AssetState::Ready; }
+		// True once the asset is usable — including while an in-place reload is in flight,
+		// where the previously loaded object keeps serving until the new one is published.
+		bool IsReady(AssetHandle handle) const
+		{
+			const AssetState state = GetState(handle);
+			return state == AssetState::Ready || state == AssetState::Reloading;
+		}
 		// AssetState::Unloaded for unknown handles.
 		AssetState GetState(AssetHandle handle) const;
 		// nullptr for unknown handles.
@@ -161,23 +184,31 @@ namespace Dingo
 		// other type destroys and recreates the object, invalidating borrowed pointers.
 		static bool SupportsInPlaceReload(AssetType type);
 
-		const std::filesystem::path& GetRootDirectory() const { return m_RootDirectory; }
+		const std::filesystem::path& GetRootDirectory() const;
 		std::filesystem::path ResolvePath(const std::filesystem::path& path) const;
 
 		// Every registration, for tooling (the built-in Assets debug panel walks this).
 		// Handles stay valid across loads, so entries can be acted on while iterating a
 		// copy of the keys.
-		const std::unordered_map<AssetHandle, AssetMetadata>& GetRegistry() const { return m_Registry; }
+		const std::unordered_map<AssetHandle, AssetMetadata>& GetRegistry() const;
 
-		bool IsHotReloadEnabled() const { return m_Params.EnableHotReload; }
+		bool IsHotReloadEnabled() const;
 		// Toggleable at runtime so a debug panel can turn watching on for a session
 		// without a rebuild. Enabling re-arms the poll timer.
 		void SetHotReloadEnabled(bool enable);
 
-		uint32_t GetRegisteredCount() const { return static_cast<uint32_t>(m_Registry.size()); }
+		uint32_t GetRegisteredCount() const;
 		uint32_t GetLoadedCount() const;
-		// Async loads still in flight (queued, decoding, or awaiting finalize).
-		uint32_t GetPendingCount() const { return m_PendingCount.load(); }
+		// LoadAsync requests still in flight (queued, decoding, or awaiting finalize).
+		// Hot-reloads are deliberately excluded so a mid-game reload cannot stall a
+		// loading screen gating on this. The one hole that leaves: a LoadAsync for a Failed
+		// asset whose hot-reload retry is already in flight early-returns, so that asset is
+		// counted by GetReloadingCount() and this can read 0 while it still has no object.
+		// Pair the gate with IsReady() if failed assets can be retried mid-load.
+		uint32_t GetPendingCount() const;
+		// Hot-reload requests still in flight, including retries of a Failed asset. One that
+		// still has a loaded object (State == Reloading) keeps serving it throughout.
+		uint32_t GetReloadingCount() const;
 
 		// Per-frame pump, driven by Application::Run — finalizes background loads and
 		// polls hot-reload watches.
@@ -187,84 +218,10 @@ namespace Dingo
 		template<typename>
 		static inline constexpr bool k_AlwaysFalseAsset = false;
 
-		// The worker thread only ever sees these two structs - it never touches the
-		// registry or the asset maps, so all registry state stays main-thread-owned.
-		struct AsyncJob
-		{
-			AssetHandle Handle = k_InvalidAsset;
-			AssetType Type = AssetType::None;
-			std::filesystem::path AbsolutePath;
-			std::string DebugName;
-		};
-
-		struct AsyncResult
-		{
-			AssetHandle Handle = k_InvalidAsset;
-			AssetType Type = AssetType::None;
-			bool Success = false;
-			const uint8_t* Pixels = nullptr; // decoded texture payload (stbi buffer)
-			uint32_t Width = 0;
-			uint32_t Height = 0;
-			uint32_t Channels = 0;
-			std::shared_ptr<AudioClip> Clip; // decoded audio payload
-			std::string DebugName;
-		};
-
-		// One row per AssetType, defined in AssetManager.cpp: everything type-specific
-		// about loading, refreshing, unloading and background decoding lives there, so a
-		// new asset type is a new row rather than a new case in every switch.
-		struct AssetTypePolicy;
-		static const AssetTypePolicy& PolicyFor(AssetType type);
-
-		bool LoadInternal(AssetMetadata& metadata);
-		// Refreshes a loaded asset's contents without replacing the object. False when
-		// the type has no in-place path (the caller then destroys and recreates), which
-		// is the same policy slot SupportsInPlaceReload reports.
-		bool ReloadInPlace(AssetMetadata& metadata);
-		void UnloadInternal(const AssetMetadata& metadata);
-		void WorkerLoop();
-		void FinalizeResult(AsyncResult& result);
-		void QueueDecodeJob(const AssetMetadata& metadata);
-		void PollHotReload();
-		// The canonical registry/lookup key for a path.
-		static std::string NormalizePathKey(const std::filesystem::path& path);
-
-	private:
-		AssetManagerParams m_Params;
-		std::filesystem::path m_RootDirectory;
-		AudioEngine* m_AudioEngine = nullptr;
-
-		std::unordered_map<AssetHandle, AssetMetadata> m_Registry;
-		std::unordered_map<std::string, AssetHandle> m_PathLookup;
-
-		std::unordered_map<AssetHandle, Texture*> m_Textures;
-		std::unordered_map<AssetHandle, Shader*> m_Shaders;
-		std::unordered_map<AssetHandle, Model*> m_Models;
-		std::unordered_map<AssetHandle, Font*> m_Fonts;
-		std::unordered_map<AssetHandle, std::shared_ptr<AudioClip>> m_AudioClips;
-
-		std::thread m_Worker;
-		std::mutex m_JobMutex;
-		std::condition_variable m_JobCV;
-		std::deque<AsyncJob> m_Jobs;     // guarded by m_JobMutex
-		bool m_StopWorker = false;       // guarded by m_JobMutex
-		std::mutex m_ResultMutex;
-		std::vector<AsyncResult> m_Results; // guarded by m_ResultMutex
-		// Async requests for types whose loaders create GPU resources internally
-		// (Shader/Model/Font) - drained one per Update() on the main thread.
-		std::deque<AssetHandle> m_MainThreadQueue;
-		// No mutex around LoadClip: ma_engine owns a resource manager whose job queue is
-		// multi-producer/multi-consumer, and node attachment is spinlock-guarded, so
-		// miniaudio supports initializing sounds from several threads at once. Serializing
-		// it here only made a sync Load block the main thread on the worker's decode.
-		std::atomic<uint32_t> m_PendingCount = 0;
-		float m_HotReloadTimer = 0.0f;
-
-		// Round-robin state for PollHotReload: the watchable handles for the pass in
-		// progress, and how far through them the last poll got.
-		static constexpr std::size_t k_MaxWatchChecksPerPoll = 64;
-		std::vector<AssetHandle> m_WatchList;
-		std::size_t m_WatchCursor = 0;
+		// Threading, containers and the per-type load policy live in
+		// src/DingoEngine/Asset/AssetManagerData.h, so client code neither compiles them
+		// nor rebuilds when they change.
+		std::unique_ptr<Internal::AssetManagerData> m_Data;
 	};
 
 }

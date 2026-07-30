@@ -29,6 +29,8 @@ namespace Dingo
 		Check(assets.Load("textures/container.jpg") == m_SyncTexture, "re-Load dedups to the same handle");
 		Check(assets.Get<Texture>(m_SyncTexture) == assets.GetTexture(m_SyncTexture), "Get<Texture> matches GetTexture");
 		Check(assets.FindByPath("textures/container.jpg") == m_SyncTexture, "FindByPath resolves the handle");
+		Check(assets.FindByPath("Textures/Container.JPG") == m_SyncTexture, "FindByPath ignores path casing");
+		Check(assets.FindByPath(assets.ResolvePath("textures/container.jpg")) == m_SyncTexture, "FindByPath folds an absolute path under the root");
 		Check(assets.GetShader(m_SyncTexture) == nullptr, "typed Get of the wrong type returns nullptr");
 
 		m_SyncShader = assets.Load("shaders/asset_test.glsl");
@@ -49,6 +51,15 @@ namespace Dingo
 			&& IsValidAssetHandle(m_AsyncFont) && IsValidAssetHandle(m_AsyncClip),
 			"LoadAsync returns valid handles");
 		Check(assets.GetPendingCount() > 0, "LoadAsync reports pending work");
+
+		// Nothing has pumped Update() yet, so the async texture is still decoding: Reload must
+		// leave the request alone rather than cancel it and discard the finished decode.
+		const uint32_t pendingBeforeReload = assets.GetPendingCount();
+		const bool reloadedInFlight = assets.Reload(m_AsyncTexture);
+		Check(reloadedInFlight == assets.IsReady(m_AsyncTexture)
+			&& assets.GetState(m_AsyncTexture) == AssetState::Loading
+			&& assets.GetPendingCount() == pendingBeforeReload,
+			"Reload on an in-flight async load is a no-op");
 	}
 
 	void AssetManagerTest::Update(float deltaTime)

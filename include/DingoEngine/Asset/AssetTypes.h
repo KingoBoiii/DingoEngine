@@ -36,7 +36,18 @@ namespace Dingo
 		Queued,			// waiting for a background loader
 		Loading,		// being decoded on a worker thread
 		Ready,			// loaded and usable
-		Failed			// last load attempt failed (error is logged); a reload can recover
+		Failed,			// last load attempt failed (error is logged); a reload can recover
+
+		// Loaded and usable, with a newer version decoding in the background. The object is
+		// refreshed in place when that lands, so borrowed pointers stay valid and IsReady()
+		// stays true - a hot-reload must never make a sprite blink out. Appended rather than
+		// placed in lifecycle order so the states above keep the values tooling indexes
+		// per-state tables with.
+		Reloading,
+
+		// Not a state: the enumerator count, so a per-state array cannot silently overflow
+		// when a state is added.
+		Count
 	};
 
 	const char* AssetTypeToString(AssetType type);

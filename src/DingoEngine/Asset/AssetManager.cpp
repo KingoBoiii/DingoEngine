@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Asset/AssetManager.h"
 
+#include "DingoEngine/Asset/AssetManagerData.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
@@ -8,8 +9,15 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Audio/AudioEngine.h"
 
+#include <algorithm>
+#include <cctype>
+
 namespace Dingo
 {
+
+	using Internal::AssetManagerData;
+	using Internal::AsyncJob;
+	using Internal::AsyncResult;
 
 	namespace Utils
 	{
@@ -25,6 +33,33 @@ namespace Dingo
 					c = '_';
 			}
 			return name;
+		}
+
+		// NTFS is case-insensitive: without folding, "Textures/Player.png" and
+		// "textures/player.png" would each get their own handle, GPU texture and hot-reload
+		// watch for one file, and FindByPath would miss. Elsewhere the two are genuinely
+		// different files.
+		static std::string FoldPathCase(std::string key)
+		{
+#ifdef DE_PLATFORM_WINDOWS
+			std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+#endif
+			return key;
+		}
+
+		static bool PathPrefixMatches(std::string_view path, std::string_view prefix)
+		{
+			if (path.size() <= prefix.size() || prefix.empty())
+				return false;
+			if (path[prefix.size()] != '/')
+				return false;
+
+			const std::string_view head = path.substr(0, prefix.size());
+#ifdef DE_PLATFORM_WINDOWS
+			return std::equal(head.begin(), head.end(), prefix.begin(), [](unsigned char l, unsigned char r) { return std::tolower(l) == std::tolower(r); });
+#else
+			return head == prefix;
+#endif
 		}
 
 		static void StampWriteTime(AssetMetadata& metadata, const std::filesystem::path& absolutePath)
@@ -86,28 +121,28 @@ namespace Dingo
 	// the answer "this type does not do that": no Load, no in-place refresh, no worker
 	// decode. SupportsInPlaceReload is read straight off ReloadInPlace, so the public
 	// promise and the implementation cannot drift apart.
-	struct AssetManager::AssetTypePolicy
+	struct AssetTypePolicy
 	{
 		AssetType Type = AssetType::None;
 
 		// Creates the object and stores it; the caller owns stamping and the state flip.
-		bool (*Load)(AssetManager&, const AssetMetadata&) = nullptr;
+		bool (*Load)(AssetManagerData&, const AssetMetadata&) = nullptr;
 		// Refreshes the loaded object's contents without replacing it, so pointers already
 		// handed out stay valid. Null for types that can only be destroyed and recreated.
-		RefreshResult (*ReloadInPlace)(AssetManager&, const AssetMetadata&) = nullptr;
-		void (*Unload)(AssetManager&, AssetHandle) = nullptr;
-		bool (*IsLoaded)(const AssetManager&, AssetHandle) = nullptr;
-		// Decode runs on the loader thread and must touch nothing on the manager beyond
-		// the audio engine pointer, which is fixed for its lifetime - all registry and
-		// asset-map state stays main-thread-owned. Publish applies the payload in the
-		// main-thread pump. Both null for types that load synchronously.
-		void (*Decode)(AssetManager&, const AsyncJob&, AsyncResult&) = nullptr;
-		void (*Publish)(AssetManager&, AsyncResult&) = nullptr;
+		RefreshResult (*ReloadInPlace)(AssetManagerData&, const AssetMetadata&) = nullptr;
+		void (*Unload)(AssetManagerData&, AssetHandle) = nullptr;
+		bool (*IsLoaded)(const AssetManagerData&, AssetHandle) = nullptr;
+		// Decode runs on the loader thread and must touch nothing beyond the audio engine
+		// pointer, which is fixed for the manager's lifetime - all registry and asset-map
+		// state stays main-thread-owned. Publish applies the payload in the main-thread
+		// pump. Both null for types that load synchronously.
+		void (*Decode)(AssetManagerData&, const AsyncJob&, AsyncResult&) = nullptr;
+		void (*Publish)(AssetManagerData&, AsyncResult&) = nullptr;
 
 		bool HotReloadWatched = false;
 	};
 
-	const AssetManager::AssetTypePolicy& AssetManager::PolicyFor(AssetType type)
+	static const AssetTypePolicy& PolicyFor(AssetType type)
 	{
 		// Indexed by AssetType, so row 0 is None: every slot null, which is the same
 		// "nothing to do" path the per-type switches used to reach via `default`.
@@ -118,19 +153,19 @@ namespace Dingo
 			},
 			{
 				.Type = AssetType::Texture2D,
-				.Load = [](AssetManager& self, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
 					Texture* texture = Texture::CreateFromFile(metadata.AbsolutePath, metadata.FilePath.generic_string());
 					if (!texture)
 						return false;
 
-					self.m_Textures[metadata.Handle] = texture;
+					data.Textures[metadata.Handle] = texture;
 					return true;
 				},
-				.ReloadInPlace = [](AssetManager& self, const AssetMetadata& metadata) -> RefreshResult
+				.ReloadInPlace = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
 				{
-					auto it = self.m_Textures.find(metadata.Handle);
-					if (it == self.m_Textures.end())
+					auto it = data.Textures.find(metadata.Handle);
+					if (it == data.Textures.end())
 						return RefreshResult::NotLoaded;
 
 					uint32_t width = 0, height = 0, channels = 0;
@@ -146,9 +181,9 @@ namespace Dingo
 					FileSystem::FreeImage(pixels);
 					return RefreshResult::Refreshed;
 				},
-				.Unload = [](AssetManager& self, AssetHandle handle) { Utils::DestroyFrom(self.m_Textures, handle); },
-				.IsLoaded = [](const AssetManager& self, AssetHandle handle) -> bool { return self.m_Textures.contains(handle); },
-				.Decode = [](AssetManager&, const AsyncJob& job, AsyncResult& result)
+				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Textures, handle); },
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Textures.contains(handle); },
+				.Decode = [](AssetManagerData&, const AsyncJob& job, AsyncResult& result)
 				{
 					uint32_t width = 0, height = 0, channels = 0;
 					result.Pixels = FileSystem::ReadImage(job.AbsolutePath, &width, &height, &channels, true, true);
@@ -157,12 +192,12 @@ namespace Dingo
 					result.Channels = channels;
 					result.Success = result.Pixels != nullptr;
 				},
-				.Publish = [](AssetManager& self, AsyncResult& result)
+				.Publish = [](AssetManagerData& data, AsyncResult& result)
 				{
 					const TextureParams textureParams = Utils::MakeTextureParams(result.DebugName, result.Width, result.Height, result.Channels, result.Pixels);
 
-					auto existing = self.m_Textures.find(result.Handle);
-					if (existing != self.m_Textures.end())
+					auto existing = data.Textures.find(result.Handle);
+					if (existing != data.Textures.end())
 					{
 						// Hot-reload: swap the contents inside the same object so every
 						// Texture* held by game code keeps working.
@@ -170,14 +205,14 @@ namespace Dingo
 					}
 					else
 					{
-						self.m_Textures[result.Handle] = Texture::Create(textureParams);
+						data.Textures[result.Handle] = Texture::Create(textureParams);
 					}
 				},
 				.HotReloadWatched = true
 			},
 			{
 				.Type = AssetType::Shader,
-				.Load = [](AssetManager& self, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
 					// Shader::Create never returns nullptr - a failed compile/read yields an
 					// object with no program, detected via IsValid().
@@ -191,39 +226,39 @@ namespace Dingo
 					if (!shader)
 						return false;
 
-					self.m_Shaders[metadata.Handle] = shader;
+					data.Shaders[metadata.Handle] = shader;
 					return true;
 				},
-				.ReloadInPlace = [](AssetManager& self, const AssetMetadata& metadata) -> RefreshResult
+				.ReloadInPlace = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
 				{
-					auto it = self.m_Shaders.find(metadata.Handle);
-					if (it == self.m_Shaders.end())
+					auto it = data.Shaders.find(metadata.Handle);
+					if (it == data.Shaders.end())
 						return RefreshResult::NotLoaded;
 
 					it->second->Reload(); // keeps the previous program on a compile error
 					return RefreshResult::Refreshed;
 				},
-				.Unload = [](AssetManager& self, AssetHandle handle) { Utils::DestroyFrom(self.m_Shaders, handle); },
-				.IsLoaded = [](const AssetManager& self, AssetHandle handle) -> bool { return self.m_Shaders.contains(handle); },
+				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Shaders, handle); },
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Shaders.contains(handle); },
 				.HotReloadWatched = true
 			},
 			{
 				.Type = AssetType::Model,
-				.Load = [](AssetManager& self, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
 					Model* model = Model::LoadFromFile(metadata.AbsolutePath);
 					if (!model)
 						return false;
 
-					self.m_Models[metadata.Handle] = model;
+					data.Models[metadata.Handle] = model;
 					return true;
 				},
-				.Unload = [](AssetManager& self, AssetHandle handle) { Utils::DestroyFrom(self.m_Models, handle); },
-				.IsLoaded = [](const AssetManager& self, AssetHandle handle) -> bool { return self.m_Models.contains(handle); }
+				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Models, handle); },
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Models.contains(handle); }
 			},
 			{
 				.Type = AssetType::Font,
-				.Load = [](AssetManager& self, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
 					FontParams fontParams;
 					fontParams.Name = Utils::SanitizeAssetName(metadata.FilePath);
@@ -232,34 +267,34 @@ namespace Dingo
 					if (!font)
 						return false;
 
-					self.m_Fonts[metadata.Handle] = font;
+					data.Fonts[metadata.Handle] = font;
 					return true;
 				},
-				.Unload = [](AssetManager& self, AssetHandle handle) { Utils::DestroyFrom(self.m_Fonts, handle); },
-				.IsLoaded = [](const AssetManager& self, AssetHandle handle) -> bool { return self.m_Fonts.contains(handle); }
+				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Fonts, handle); },
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Fonts.contains(handle); }
 			},
 			{
 				.Type = AssetType::AudioClip,
-				.Load = [](AssetManager& self, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
-					DE_CORE_ASSERT(self.m_AudioEngine, "AssetManager has no audio engine - cannot load audio clips");
-					std::shared_ptr<AudioClip> clip = self.m_AudioEngine->LoadClip(metadata.AbsolutePath);
+					DE_CORE_ASSERT(data.Audio, "AssetManager has no audio engine - cannot load audio clips");
+					std::shared_ptr<AudioClip> clip = data.Audio->LoadClip(metadata.AbsolutePath);
 					if (!clip)
 						return false;
 
-					self.m_AudioClips[metadata.Handle] = std::move(clip);
+					data.AudioClips[metadata.Handle] = std::move(clip);
 					return true;
 				},
-				.Unload = [](AssetManager& self, AssetHandle handle) { self.m_AudioClips.erase(handle); },
-				.IsLoaded = [](const AssetManager& self, AssetHandle handle) -> bool { return self.m_AudioClips.contains(handle); },
-				.Decode = [](AssetManager& self, const AsyncJob& job, AsyncResult& result)
+				.Unload = [](AssetManagerData& data, AssetHandle handle) { data.AudioClips.erase(handle); },
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.AudioClips.contains(handle); },
+				.Decode = [](AssetManagerData& data, const AsyncJob& job, AsyncResult& result)
 				{
-					result.Clip = self.m_AudioEngine->LoadClip(job.AbsolutePath);
+					result.Clip = data.Audio->LoadClip(job.AbsolutePath);
 					result.Success = result.Clip != nullptr;
 				},
-				.Publish = [](AssetManager& self, AsyncResult& result)
+				.Publish = [](AssetManagerData& data, AsyncResult& result)
 				{
-					self.m_AudioClips[result.Handle] = std::move(result.Clip);
+					data.AudioClips[result.Handle] = std::move(result.Clip);
 				}
 			}
 		};
@@ -277,167 +312,52 @@ namespace Dingo
 		return s_Policies[index];
 	}
 
-	AssetManager::AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine)
-		: m_Params(params), m_AudioEngine(audioEngine)
-	{}
-
-	AssetManager::~AssetManager()
+	// The relative path a registration is stored under, with its original casing kept for
+	// display and for the shader/font cache names. An absolute path under the asset root is
+	// folded back to its relative spelling so both spellings share one registration.
+	static std::filesystem::path NormalizeRelativePath(const AssetManagerData& data, const std::filesystem::path& path)
 	{
-		Shutdown();
+		std::string generic = path.lexically_normal().generic_string();
+		const std::string root = data.RootDirectory.generic_string();
+
+		if (Utils::PathPrefixMatches(generic, root))
+			generic.erase(0, root.size() + 1);
+
+		return std::filesystem::path(generic);
 	}
 
-	void AssetManager::Initialize()
+	// The canonical registry/lookup key for a path: the relative form above, case-folded on
+	// filesystems that ignore case.
+	static std::string NormalizePathKey(const AssetManagerData& data, const std::filesystem::path& path)
 	{
-		m_RootDirectory = std::filesystem::absolute(m_Params.RootDirectory).lexically_normal();
-
-		if (!std::filesystem::exists(m_RootDirectory))
-			DE_CORE_WARN("AssetManager: asset root '{}' does not exist - loads will fail until it does.", m_RootDirectory.string());
-		else
-			DE_CORE_INFO("AssetManager: asset root '{}'.", m_RootDirectory.string());
-
-		m_Worker = std::thread(&AssetManager::WorkerLoop, this);
+		return Utils::FoldPathCase(NormalizeRelativePath(data, path).generic_string());
 	}
 
-	void AssetManager::Shutdown()
+	static bool LoadInternal(AssetManagerData& data, AssetMetadata& metadata)
 	{
-		if (m_Worker.joinable())
+		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
+		if (policy.Load && (*policy.Load)(data, metadata))
 		{
-			{
-				std::scoped_lock lock(m_JobMutex);
-				m_StopWorker = true;
-				m_Jobs.clear();
-			}
-			m_JobCV.notify_one();
-			m_Worker.join();
-			m_StopWorker = false;
-		}
-
-		// Free payloads that completed but were never finalized.
-		for (AsyncResult& result : m_Results)
-		{
-			if (result.Pixels)
-				FileSystem::FreeImage(result.Pixels);
-		}
-		m_Results.clear();
-		m_MainThreadQueue.clear();
-		m_PendingCount = 0;
-
-		Utils::DestroyAll(m_Textures);
-		Utils::DestroyAll(m_Shaders);
-		Utils::DestroyAll(m_Models);
-		Utils::DestroyAll(m_Fonts);
-		m_AudioClips.clear();
-
-		m_Registry.clear();
-		m_PathLookup.clear();
-	}
-
-	AssetHandle AssetManager::Import(const std::filesystem::path& path)
-	{
-		const std::string key = NormalizePathKey(path);
-
-		auto existing = m_PathLookup.find(key);
-		if (existing != m_PathLookup.end())
-			return existing->second;
-
-		const AssetType type = AssetTypeFromExtension(path.extension());
-		if (type == AssetType::None)
-		{
-			DE_CORE_ERROR("AssetManager: cannot import '{}' - unrecognized extension '{}'.", path.string(), path.extension().string());
-			return k_InvalidAsset;
-		}
-
-		AssetMetadata metadata;
-		metadata.Handle = AssetHandle();
-		metadata.Type = type;
-		metadata.FilePath = std::filesystem::path(key);
-		metadata.AbsolutePath = ResolvePath(metadata.FilePath);
-		metadata.State = AssetState::Unloaded;
-
-		const AssetHandle handle = metadata.Handle;
-		m_Registry[handle] = std::move(metadata);
-		m_PathLookup[key] = handle;
-
-		return handle;
-	}
-
-	AssetHandle AssetManager::Load(const std::filesystem::path& path)
-	{
-		const AssetHandle handle = Import(path);
-		if (!IsValidAssetHandle(handle))
-			return k_InvalidAsset;
-
-		AssetMetadata& metadata = m_Registry.at(handle);
-		// Unloaded/Failed only: an asset already Ready needs nothing, and one in
-		// flight on the loader thread (Queued/Loading) will publish via Update().
-		if (metadata.State == AssetState::Unloaded || metadata.State == AssetState::Failed)
-			LoadInternal(metadata);
-
-		return handle;
-	}
-
-	AssetHandle AssetManager::LoadAsync(const std::filesystem::path& path)
-	{
-		const AssetHandle handle = Import(path);
-		if (!IsValidAssetHandle(handle))
-			return k_InvalidAsset;
-
-		AssetMetadata& metadata = m_Registry.at(handle);
-		if (metadata.State != AssetState::Unloaded && metadata.State != AssetState::Failed)
-			return handle;
-
-		if (PolicyFor(metadata.Type).Decode)
-		{
-			// Stamp at queue time, not at finalize: an edit landing while the decode is
-			// in flight then still differs from the stamp and the next poll catches it.
 			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
-			metadata.State = AssetState::Loading;
-			++m_PendingCount;
-			QueueDecodeJob(metadata);
-		}
-		else
-		{
-			metadata.State = AssetState::Queued;
-			++m_PendingCount;
-			m_MainThreadQueue.push_back(handle);
-		}
-
-		return handle;
-	}
-
-	bool AssetManager::Reload(AssetHandle handle)
-	{
-		auto it = m_Registry.find(handle);
-		if (it == m_Registry.end())
-		{
-			DE_CORE_WARN("AssetManager: Reload on unknown handle {}.", static_cast<uint64_t>(handle));
-			return false;
-		}
-
-		AssetMetadata& metadata = it->second;
-
-		// Prefer the in-place path so a reload behaves like hot-reload does: the loaded
-		// object is refreshed rather than replaced, and pointers already handed out stay
-		// valid. Only the destroy-and-recreate fallback below invalidates them.
-		if (metadata.State == AssetState::Ready && ReloadInPlace(metadata))
+			metadata.State = AssetState::Ready;
 			return true;
+		}
 
-		UnloadInternal(metadata);
-		return LoadInternal(metadata);
+		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", AssetTypeToString(metadata.Type), metadata.AbsolutePath.string());
+		metadata.State = AssetState::Failed;
+		return false;
 	}
 
-	bool AssetManager::SupportsInPlaceReload(AssetType type)
-	{
-		return PolicyFor(type).ReloadInPlace != nullptr;
-	}
-
-	bool AssetManager::ReloadInPlace(AssetMetadata& metadata)
+	// Refreshes a loaded asset's contents without replacing the object. False when the type
+	// has no in-place path (the caller then destroys and recreates), which is the same policy
+	// slot SupportsInPlaceReload reports.
+	static bool ReloadInPlace(AssetManagerData& data, AssetMetadata& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		if (!policy.ReloadInPlace)
 			return false;
 
-		const RefreshResult result = (*policy.ReloadInPlace)(*this, metadata);
+		const RefreshResult result = (*policy.ReloadInPlace)(data, metadata);
 		if (result == RefreshResult::NotLoaded)
 			return false;
 
@@ -447,159 +367,50 @@ namespace Dingo
 		return true;
 	}
 
-	void AssetManager::Unload(AssetHandle handle)
+	static void UnloadInternal(AssetManagerData& data, const AssetMetadata& metadata)
 	{
-		auto it = m_Registry.find(handle);
-		if (it == m_Registry.end())
-			return;
+		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
+		if (policy.Unload)
+			(*policy.Unload)(data, metadata.Handle);
 
-		UnloadInternal(it->second);
+		data.Registry.at(metadata.Handle).State = AssetState::Unloaded;
 	}
 
-	void AssetManager::Remove(AssetHandle handle)
+	static void QueueDecodeJob(AssetManagerData& data, const AssetMetadata& metadata, bool isReload)
 	{
-		auto it = m_Registry.find(handle);
-		if (it == m_Registry.end())
-			return;
-
-		UnloadInternal(it->second);
-		m_PathLookup.erase(it->second.FilePath.generic_string());
-		m_Registry.erase(it);
-	}
-
-	Texture* AssetManager::GetTexture(AssetHandle handle) const
-	{
-		auto it = m_Textures.find(handle);
-		return it != m_Textures.end() ? it->second : nullptr;
-	}
-
-	Shader* AssetManager::GetShader(AssetHandle handle) const
-	{
-		auto it = m_Shaders.find(handle);
-		return it != m_Shaders.end() ? it->second : nullptr;
-	}
-
-	Model* AssetManager::GetModel(AssetHandle handle) const
-	{
-		auto it = m_Models.find(handle);
-		return it != m_Models.end() ? it->second : nullptr;
-	}
-
-	Font* AssetManager::GetFont(AssetHandle handle) const
-	{
-		auto it = m_Fonts.find(handle);
-		return it != m_Fonts.end() ? it->second : nullptr;
-	}
-
-	std::shared_ptr<AudioClip> AssetManager::GetAudioClip(AssetHandle handle) const
-	{
-		auto it = m_AudioClips.find(handle);
-		return it != m_AudioClips.end() ? it->second : nullptr;
-	}
-
-	AssetState AssetManager::GetState(AssetHandle handle) const
-	{
-		auto it = m_Registry.find(handle);
-		return it != m_Registry.end() ? it->second.State : AssetState::Unloaded;
-	}
-
-	const AssetMetadata* AssetManager::GetMetadata(AssetHandle handle) const
-	{
-		auto it = m_Registry.find(handle);
-		return it != m_Registry.end() ? &it->second : nullptr;
-	}
-
-	AssetHandle AssetManager::FindByPath(const std::filesystem::path& path) const
-	{
-		auto it = m_PathLookup.find(NormalizePathKey(path));
-		return it != m_PathLookup.end() ? it->second : k_InvalidAsset;
-	}
-
-	std::filesystem::path AssetManager::ResolvePath(const std::filesystem::path& path) const
-	{
-		// operator/ discards the left side for absolute right-hand paths, so absolute
-		// asset paths pass through unchanged.
-		return (m_RootDirectory / path).lexically_normal();
-	}
-
-	void AssetManager::SetHotReloadEnabled(bool enable)
-	{
-		if (m_Params.EnableHotReload == enable)
-			return;
-
-		m_Params.EnableHotReload = enable;
-		m_HotReloadTimer = 0.0f;
-
-		if (!enable)
-			return;
-
-		// Re-stamp what is loaded: edits made while watching was off must not be
-		// reported as changes the moment it is switched back on.
-		for (auto& [handle, metadata] : m_Registry)
+		AsyncJob job;
+		job.Handle = metadata.Handle;
+		job.Type = metadata.Type;
+		job.AbsolutePath = metadata.AbsolutePath;
+		job.DebugName = metadata.FilePath.generic_string();
+		job.IsReload = isReload;
 		{
-			if (metadata.State == AssetState::Ready)
-				Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+			std::scoped_lock lock(data.JobMutex);
+			data.Jobs.push_back(std::move(job));
 		}
+		data.JobCV.notify_one();
 	}
 
-	uint32_t AssetManager::GetLoadedCount() const
-	{
-		return static_cast<uint32_t>(m_Textures.size() + m_Shaders.size() + m_Models.size() + m_Fonts.size() + m_AudioClips.size());
-	}
-
-	void AssetManager::Update(float deltaTime)
-	{
-		if (m_Params.EnableHotReload)
-		{
-			m_HotReloadTimer += deltaTime;
-			if (m_HotReloadTimer >= m_Params.HotReloadInterval)
-			{
-				m_HotReloadTimer = 0.0f;
-				PollHotReload();
-			}
-		}
-
-		// One main-thread fallback load per frame keeps loading-screen frames responsive.
-		if (!m_MainThreadQueue.empty())
-		{
-			const AssetHandle handle = m_MainThreadQueue.front();
-			m_MainThreadQueue.pop_front();
-
-			auto it = m_Registry.find(handle);
-			// Anything but Queued means the request was satisfied or cancelled meanwhile.
-			if (it != m_Registry.end() && it->second.State == AssetState::Queued)
-				LoadInternal(it->second);
-			--m_PendingCount;
-		}
-
-		std::vector<AsyncResult> results;
-		{
-			std::scoped_lock lock(m_ResultMutex);
-			results.swap(m_Results);
-		}
-		for (AsyncResult& result : results)
-			FinalizeResult(result);
-	}
-
-	void AssetManager::WorkerLoop()
+	static void WorkerLoop(AssetManagerData& data)
 	{
 		for (;;)
 		{
 			AsyncJob job;
 			{
-				std::unique_lock lock(m_JobMutex);
-				m_JobCV.wait(lock, [this] { return m_StopWorker || !m_Jobs.empty(); });
-				if (m_StopWorker)
+				std::unique_lock lock(data.JobMutex);
+				data.JobCV.wait(lock, [&data] { return data.StopWorker || !data.Jobs.empty(); });
+				if (data.StopWorker)
 					return;
 
-				job = std::move(m_Jobs.front());
-				m_Jobs.pop_front();
+				job = std::move(data.Jobs.front());
+				data.Jobs.pop_front();
 			}
 
 			AsyncResult result;
 			result.Handle = job.Handle;
 			result.Type = job.Type;
 			result.DebugName = std::move(job.DebugName);
+			result.IsReload = job.IsReload;
 
 			// An exception escaping a thread function is a hard process kill, with no log line
 			// and no chance to mark the asset Failed. The decoders reach std::filesystem
@@ -608,7 +419,7 @@ namespace Dingo
 			try
 			{
 				if (const AssetTypePolicy& policy = PolicyFor(job.Type); policy.Decode)
-					(*policy.Decode)(*this, job, result);
+					(*policy.Decode)(data, job, result);
 			}
 			catch (const std::exception& e)
 			{
@@ -622,68 +433,60 @@ namespace Dingo
 			}
 
 			{
-				std::scoped_lock lock(m_ResultMutex);
-				m_Results.push_back(std::move(result));
+				std::scoped_lock lock(data.ResultMutex);
+				data.Results.push_back(std::move(result));
 			}
 		}
 	}
 
-	void AssetManager::FinalizeResult(AsyncResult& result)
+	static void FinalizeResult(AssetManagerData& data, AsyncResult& result)
 	{
-		auto it = m_Registry.find(result.Handle);
-		// Only publish if the request is still wanted - Unload/Remove/Reload during the
-		// background decode leaves the state != Loading and the payload is discarded.
-		const bool stillWanted = it != m_Registry.end() && it->second.State == AssetState::Loading;
+		auto it = data.Registry.find(result.Handle);
+		// Only publish if the request is still wanted - Unload/Remove during the background
+		// decode leaves a state that is neither, and the payload is discarded.
+		const bool stillWanted = it != data.Registry.end()
+			&& (it->second.State == AssetState::Loading || it->second.State == AssetState::Reloading);
 		const AssetTypePolicy& policy = PolicyFor(result.Type);
 
-		if (stillWanted && result.Success)
+		// Publish is what turns a payload into a loaded object, so a policy row carrying a
+		// Decode without one has nowhere to put the result: count that as a failed load rather
+		// than leaving the asset in flight forever with its counter already released.
+		const bool published = stillWanted && result.Success && policy.Publish;
+		if (published)
 		{
-			if (policy.Publish)
-			{
-				(*policy.Publish)(*this, result);
-				it->second.State = AssetState::Ready;
-			}
+			(*policy.Publish)(data, result);
+			it->second.State = AssetState::Ready;
 		}
 		else if (stillWanted)
 		{
 			DE_CORE_ERROR("AssetManager: async load failed for {} '{}'.", AssetTypeToString(result.Type), result.DebugName);
 			// A failed hot-reload keeps serving the still-loaded previous version.
-			const bool hasLoadedObject = policy.IsLoaded && (*policy.IsLoaded)(*this, result.Handle);
+			const bool hasLoadedObject = policy.IsLoaded && (*policy.IsLoaded)(data, result.Handle);
 			it->second.State = hasLoadedObject ? AssetState::Ready : AssetState::Failed;
 		}
 
 		if (result.Pixels)
 			FileSystem::FreeImage(result.Pixels);
-		--m_PendingCount;
+
+		if (result.IsReload)
+			--data.ReloadCount;
+		else
+			--data.PendingCount;
 	}
 
-	void AssetManager::QueueDecodeJob(const AssetMetadata& metadata)
-	{
-		AsyncJob job;
-		job.Handle = metadata.Handle;
-		job.Type = metadata.Type;
-		job.AbsolutePath = metadata.AbsolutePath;
-		job.DebugName = metadata.FilePath.generic_string();
-		{
-			std::scoped_lock lock(m_JobMutex);
-			m_Jobs.push_back(std::move(job));
-		}
-		m_JobCV.notify_one();
-	}
-
-	void AssetManager::PollHotReload()
+	static void PollHotReload(AssetManagerData& data)
 	{
 		// Collect the watchable handles once per pass instead of walking the whole registry
 		// every tick. Handles are stable, so an entry removed mid-pass just misses its turn.
-		if (m_WatchCursor >= m_WatchList.size())
+		if (data.WatchCursor >= data.WatchList.size())
 		{
-			m_WatchList.clear();
-			for (const auto& [handle, metadata] : m_Registry)
+			data.WatchList.clear();
+			for (const auto& [handle, metadata] : data.Registry)
 			{
 				if (PolicyFor(metadata.Type).HotReloadWatched)
-					m_WatchList.push_back(handle);
+					data.WatchList.push_back(handle);
 			}
-			m_WatchCursor = 0;
+			data.WatchCursor = 0;
 		}
 
 		// Cap the stat() calls a single poll can make. A project with fewer watched assets
@@ -691,12 +494,13 @@ namespace Dingo
 		// detection latency changes there; only projects big enough for the syscalls to cost
 		// real frame time spread the work out, and they spread it in proportion. This also
 		// bounds the cost when HotReloadInterval is 0, which polls every frame.
-		const std::size_t passEnd = std::min(m_WatchList.size(), m_WatchCursor + k_MaxWatchChecksPerPoll);
+		static constexpr std::size_t k_MaxWatchChecksPerPoll = 64;
+		const std::size_t passEnd = std::min(data.WatchList.size(), data.WatchCursor + k_MaxWatchChecksPerPoll);
 
-		for (; m_WatchCursor < passEnd; ++m_WatchCursor)
+		for (; data.WatchCursor < passEnd; ++data.WatchCursor)
 		{
-			auto entry = m_Registry.find(m_WatchList[m_WatchCursor]);
-			if (entry == m_Registry.end())
+			auto entry = data.Registry.find(data.WatchList[data.WatchCursor]);
+			if (entry == data.Registry.end())
 				continue;
 
 			AssetMetadata& metadata = entry->second;
@@ -705,7 +509,8 @@ namespace Dingo
 			// registration precisely so fixing the file recovers it. Its write time was
 			// never stamped, so the first poll fires immediately - and a file that is still
 			// broken gets one attempt per edit, not one per poll, because the stamp below
-			// lands whether or not the reload succeeds.
+			// lands whether or not the reload succeeds. Anything else (including an asset
+			// with a reload already in flight) is skipped.
 			const bool recovering = metadata.State == AssetState::Failed;
 			if (metadata.State != AssetState::Ready && !recovering)
 				continue;
@@ -741,50 +546,381 @@ namespace Dingo
 			const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 			if (policy.Decode)
 			{
-				metadata.State = AssetState::Loading;
-				++m_PendingCount;
-				QueueDecodeJob(metadata);
+				// Reloading, not Loading, whenever there is still an object to serve: IsReady()
+				// stays true and Get* keeps handing out the same pointer while the new version
+				// decodes, which is the whole promise of an in-place reload. A recovering Failed
+				// asset has nothing to serve, so it is a plain Loading.
+				const bool hasLoadedObject = policy.IsLoaded && (*policy.IsLoaded)(data, metadata.Handle);
+				metadata.State = hasLoadedObject ? AssetState::Reloading : AssetState::Loading;
+				++data.ReloadCount;
+				QueueDecodeJob(data, metadata, true);
 				continue;
 			}
 
 			// The stamp above is already committed, so the refresh must not stamp again.
-			const RefreshResult refreshed = policy.ReloadInPlace ? (*policy.ReloadInPlace)(*this, metadata) : RefreshResult::NotLoaded;
+			const RefreshResult refreshed = policy.ReloadInPlace ? (*policy.ReloadInPlace)(data, metadata) : RefreshResult::NotLoaded;
 			if (refreshed == RefreshResult::NotLoaded)
 			{
 				// Nothing to reload in place: a shader that failed its first load was
 				// destroyed rather than kept as an invalid object.
-				LoadInternal(metadata);
+				LoadInternal(data, metadata);
 			}
 		}
 	}
 
-	bool AssetManager::LoadInternal(AssetMetadata& metadata)
+	AssetManager::AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine)
+		: m_Data(std::make_unique<AssetManagerData>())
 	{
-		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
-		if (policy.Load && (*policy.Load)(*this, metadata))
+		m_Data->Params = params;
+		m_Data->Audio = audioEngine;
+	}
+
+	AssetManager::~AssetManager()
+	{
+		Shutdown();
+	}
+
+	void AssetManager::Initialize()
+	{
+		AssetManagerData& data = *m_Data;
+
+		// lexically_normal keeps a trailing separator ("assets/" stays "assets/"), which would
+		// push every prefix test against the root off by one character and silently defeat the
+		// absolute-to-relative folding in NormalizeRelativePath. Strip it once, here, so every
+		// consumer of RootDirectory sees a single spelling.
+		std::filesystem::path root = std::filesystem::absolute(data.Params.RootDirectory).lexically_normal();
+		if (!root.has_filename() && root.parent_path() != root)
+			root = root.parent_path();
+		data.RootDirectory = std::move(root);
+
+		if (!std::filesystem::exists(data.RootDirectory))
+			DE_CORE_WARN("AssetManager: asset root '{}' does not exist - loads will fail until it does.", data.RootDirectory.string());
+		else
+			DE_CORE_INFO("AssetManager: asset root '{}'.", data.RootDirectory.string());
+
+		data.Worker = std::thread(WorkerLoop, std::ref(data));
+	}
+
+	void AssetManager::Shutdown()
+	{
+		AssetManagerData& data = *m_Data;
+
+		if (data.Worker.joinable())
 		{
-			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
-			metadata.State = AssetState::Ready;
-			return true;
+			{
+				std::scoped_lock lock(data.JobMutex);
+				data.StopWorker = true;
+				data.Jobs.clear();
+			}
+			data.JobCV.notify_one();
+			data.Worker.join();
+			data.StopWorker = false;
 		}
 
-		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", AssetTypeToString(metadata.Type), metadata.AbsolutePath.string());
-		metadata.State = AssetState::Failed;
-		return false;
+		// Free payloads that completed but were never finalized.
+		for (AsyncResult& result : data.Results)
+		{
+			if (result.Pixels)
+				FileSystem::FreeImage(result.Pixels);
+		}
+		data.Results.clear();
+		data.MainThreadQueue.clear();
+		data.PendingCount = 0;
+		data.ReloadCount = 0;
+
+		Utils::DestroyAll(data.Textures);
+		Utils::DestroyAll(data.Shaders);
+		Utils::DestroyAll(data.Models);
+		Utils::DestroyAll(data.Fonts);
+		data.AudioClips.clear();
+
+		data.Registry.clear();
+		data.PathLookup.clear();
 	}
 
-	void AssetManager::UnloadInternal(const AssetMetadata& metadata)
+	AssetHandle AssetManager::Import(const std::filesystem::path& path)
 	{
-		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
-		if (policy.Unload)
-			(*policy.Unload)(*this, metadata.Handle);
+		AssetManagerData& data = *m_Data;
+		const std::string key = NormalizePathKey(data, path);
 
-		m_Registry.at(metadata.Handle).State = AssetState::Unloaded;
+		auto existing = data.PathLookup.find(key);
+		if (existing != data.PathLookup.end())
+			return existing->second;
+
+		const AssetType type = AssetTypeFromExtension(path.extension());
+		if (type == AssetType::None)
+		{
+			DE_CORE_ERROR("AssetManager: cannot import '{}' - unrecognized extension '{}'.", path.string(), path.extension().string());
+			return k_InvalidAsset;
+		}
+
+		AssetMetadata metadata;
+		metadata.Handle = AssetHandle();
+		// A UUID collision is astronomically unlikely, but it would silently overwrite a live
+		// registration - and re-rolling costs one lookup, once, at import time.
+		while (!IsValidAssetHandle(metadata.Handle) || data.Registry.contains(metadata.Handle))
+			metadata.Handle = AssetHandle();
+
+		metadata.Type = type;
+		metadata.FilePath = NormalizeRelativePath(data, path);
+		metadata.AbsolutePath = ResolvePath(metadata.FilePath);
+		metadata.State = AssetState::Unloaded;
+
+		const AssetHandle handle = metadata.Handle;
+		data.Registry[handle] = std::move(metadata);
+		data.PathLookup[key] = handle;
+
+		return handle;
 	}
 
-	std::string AssetManager::NormalizePathKey(const std::filesystem::path& path)
+	AssetHandle AssetManager::Load(const std::filesystem::path& path)
 	{
-		return path.lexically_normal().generic_string();
+		const AssetHandle handle = Import(path);
+		if (!IsValidAssetHandle(handle))
+			return k_InvalidAsset;
+
+		AssetMetadata& metadata = m_Data->Registry.at(handle);
+		// Unloaded/Failed only: an asset already Ready needs nothing, and one in
+		// flight on the loader thread (Queued/Loading/Reloading) will publish via Update().
+		if (metadata.State == AssetState::Unloaded || metadata.State == AssetState::Failed)
+			LoadInternal(*m_Data, metadata);
+
+		return handle;
+	}
+
+	AssetHandle AssetManager::LoadAsync(const std::filesystem::path& path)
+	{
+		const AssetHandle handle = Import(path);
+		if (!IsValidAssetHandle(handle))
+			return k_InvalidAsset;
+
+		AssetManagerData& data = *m_Data;
+		AssetMetadata& metadata = data.Registry.at(handle);
+		if (metadata.State != AssetState::Unloaded && metadata.State != AssetState::Failed)
+			return handle;
+
+		if (PolicyFor(metadata.Type).Decode)
+		{
+			// Stamp at queue time, not at finalize: an edit landing while the decode is
+			// in flight then still differs from the stamp and the next poll catches it.
+			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+			metadata.State = AssetState::Loading;
+			++data.PendingCount;
+			QueueDecodeJob(data, metadata, false);
+		}
+		else
+		{
+			metadata.State = AssetState::Queued;
+			++data.PendingCount;
+			data.MainThreadQueue.push_back(handle);
+		}
+
+		return handle;
+	}
+
+	bool AssetManager::Reload(AssetHandle handle)
+	{
+		AssetManagerData& data = *m_Data;
+		auto it = data.Registry.find(handle);
+		if (it == data.Registry.end())
+		{
+			DE_CORE_WARN("AssetManager: Reload on unknown handle {}.", static_cast<uint64_t>(handle));
+			return false;
+		}
+
+		AssetMetadata& metadata = it->second;
+
+		// A load is already in flight. Unloading and loading synchronously here would leave
+		// the in-flight request unwanted, so its finished decode would be thrown away - and
+		// it publishes the file as it stands on disk anyway, which is what a reload wants.
+		if (metadata.State == AssetState::Queued || metadata.State == AssetState::Loading || metadata.State == AssetState::Reloading)
+		{
+			DE_CORE_WARN("AssetManager: Reload ignored for '{}' - a load is already in flight.", metadata.FilePath.generic_string());
+			return IsReady(handle);
+		}
+
+		// Prefer the in-place path so a reload behaves like hot-reload does: the loaded
+		// object is refreshed rather than replaced, and pointers already handed out stay
+		// valid. Only the destroy-and-recreate fallback below invalidates them.
+		if (metadata.State == AssetState::Ready && ReloadInPlace(data, metadata))
+			return true;
+
+		UnloadInternal(data, metadata);
+		return LoadInternal(data, metadata);
+	}
+
+	bool AssetManager::SupportsInPlaceReload(AssetType type)
+	{
+		return PolicyFor(type).ReloadInPlace != nullptr;
+	}
+
+	void AssetManager::Unload(AssetHandle handle)
+	{
+		auto it = m_Data->Registry.find(handle);
+		if (it == m_Data->Registry.end())
+			return;
+
+		UnloadInternal(*m_Data, it->second);
+	}
+
+	void AssetManager::Remove(AssetHandle handle)
+	{
+		AssetManagerData& data = *m_Data;
+		auto it = data.Registry.find(handle);
+		if (it == data.Registry.end())
+			return;
+
+		UnloadInternal(data, it->second);
+		data.PathLookup.erase(NormalizePathKey(data, it->second.FilePath));
+		data.Registry.erase(it);
+	}
+
+	Texture* AssetManager::GetTexture(AssetHandle handle) const
+	{
+		auto it = m_Data->Textures.find(handle);
+		return it != m_Data->Textures.end() ? it->second : nullptr;
+	}
+
+	Shader* AssetManager::GetShader(AssetHandle handle) const
+	{
+		auto it = m_Data->Shaders.find(handle);
+		return it != m_Data->Shaders.end() ? it->second : nullptr;
+	}
+
+	Model* AssetManager::GetModel(AssetHandle handle) const
+	{
+		auto it = m_Data->Models.find(handle);
+		return it != m_Data->Models.end() ? it->second : nullptr;
+	}
+
+	Font* AssetManager::GetFont(AssetHandle handle) const
+	{
+		auto it = m_Data->Fonts.find(handle);
+		return it != m_Data->Fonts.end() ? it->second : nullptr;
+	}
+
+	std::shared_ptr<AudioClip> AssetManager::GetAudioClip(AssetHandle handle) const
+	{
+		auto it = m_Data->AudioClips.find(handle);
+		return it != m_Data->AudioClips.end() ? it->second : nullptr;
+	}
+
+	AssetState AssetManager::GetState(AssetHandle handle) const
+	{
+		auto it = m_Data->Registry.find(handle);
+		return it != m_Data->Registry.end() ? it->second.State : AssetState::Unloaded;
+	}
+
+	const AssetMetadata* AssetManager::GetMetadata(AssetHandle handle) const
+	{
+		auto it = m_Data->Registry.find(handle);
+		return it != m_Data->Registry.end() ? &it->second : nullptr;
+	}
+
+	AssetHandle AssetManager::FindByPath(const std::filesystem::path& path) const
+	{
+		auto it = m_Data->PathLookup.find(NormalizePathKey(*m_Data, path));
+		return it != m_Data->PathLookup.end() ? it->second : k_InvalidAsset;
+	}
+
+	const std::filesystem::path& AssetManager::GetRootDirectory() const
+	{
+		return m_Data->RootDirectory;
+	}
+
+	std::filesystem::path AssetManager::ResolvePath(const std::filesystem::path& path) const
+	{
+		// operator/ discards the left side for absolute right-hand paths, so absolute
+		// asset paths pass through unchanged.
+		return (m_Data->RootDirectory / path).lexically_normal();
+	}
+
+	const std::unordered_map<AssetHandle, AssetMetadata>& AssetManager::GetRegistry() const
+	{
+		return m_Data->Registry;
+	}
+
+	bool AssetManager::IsHotReloadEnabled() const
+	{
+		return m_Data->Params.EnableHotReload;
+	}
+
+	void AssetManager::SetHotReloadEnabled(bool enable)
+	{
+		AssetManagerData& data = *m_Data;
+		if (data.Params.EnableHotReload == enable)
+			return;
+
+		data.Params.EnableHotReload = enable;
+		data.HotReloadTimer = 0.0f;
+
+		if (!enable)
+			return;
+
+		// Re-stamp what is loaded: edits made while watching was off must not be
+		// reported as changes the moment it is switched back on.
+		for (auto& [handle, metadata] : data.Registry)
+		{
+			if (metadata.State == AssetState::Ready)
+				Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+		}
+	}
+
+	uint32_t AssetManager::GetRegisteredCount() const
+	{
+		return static_cast<uint32_t>(m_Data->Registry.size());
+	}
+
+	uint32_t AssetManager::GetLoadedCount() const
+	{
+		const AssetManagerData& data = *m_Data;
+		return static_cast<uint32_t>(data.Textures.size() + data.Shaders.size() + data.Models.size() + data.Fonts.size() + data.AudioClips.size());
+	}
+
+	uint32_t AssetManager::GetPendingCount() const
+	{
+		return m_Data->PendingCount.load();
+	}
+
+	uint32_t AssetManager::GetReloadingCount() const
+	{
+		return m_Data->ReloadCount.load();
+	}
+
+	void AssetManager::Update(float deltaTime)
+	{
+		AssetManagerData& data = *m_Data;
+
+		if (data.Params.EnableHotReload)
+		{
+			data.HotReloadTimer += deltaTime;
+			if (data.HotReloadTimer >= data.Params.HotReloadInterval)
+			{
+				data.HotReloadTimer = 0.0f;
+				PollHotReload(data);
+			}
+		}
+
+		// One main-thread fallback load per frame keeps loading-screen frames responsive.
+		if (!data.MainThreadQueue.empty())
+		{
+			const AssetHandle handle = data.MainThreadQueue.front();
+			data.MainThreadQueue.pop_front();
+
+			auto it = data.Registry.find(handle);
+			// Anything but Queued means the request was satisfied or cancelled meanwhile.
+			if (it != data.Registry.end() && it->second.State == AssetState::Queued)
+				LoadInternal(data, it->second);
+			--data.PendingCount;
+		}
+
+		std::vector<AsyncResult> results;
+		{
+			std::scoped_lock lock(data.ResultMutex);
+			results.swap(data.Results);
+		}
+		for (AsyncResult& result : results)
+			FinalizeResult(data, result);
 	}
 
 }
