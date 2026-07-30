@@ -429,26 +429,43 @@ namespace Dingo
 			result.Type = job.Type;
 			result.DebugName = std::move(job.DebugName);
 
-			switch (job.Type)
+			// An exception escaping a thread function is a hard process kill, with no log line
+			// and no chance to mark the asset Failed. The decoders below reach std::filesystem
+			// (miniaudio uses the throwing `exists` overload), which throws for a path the OS
+			// rejects — a bad character or one over MAX_PATH. Route it back as a normal failure.
+			try
 			{
-				case AssetType::Texture2D:
+				switch (job.Type)
 				{
-					uint32_t width = 0, height = 0, channels = 0;
-					result.Pixels = FileSystem::ReadImage(job.AbsolutePath, &width, &height, &channels, true, true);
-					result.Width = width;
-					result.Height = height;
-					result.Success = result.Pixels != nullptr;
-					break;
+					case AssetType::Texture2D:
+					{
+						uint32_t width = 0, height = 0, channels = 0;
+						result.Pixels = FileSystem::ReadImage(job.AbsolutePath, &width, &height, &channels, true, true);
+						result.Width = width;
+						result.Height = height;
+						result.Success = result.Pixels != nullptr;
+						break;
+					}
+					case AssetType::AudioClip:
+					{
+						std::scoped_lock audioLock(m_AudioLoadMutex);
+						result.Clip = m_AudioEngine->LoadClip(job.AbsolutePath);
+						result.Success = result.Clip != nullptr;
+						break;
+					}
+					default:
+						break;
 				}
-				case AssetType::AudioClip:
-				{
-					std::scoped_lock audioLock(m_AudioLoadMutex);
-					result.Clip = m_AudioEngine->LoadClip(job.AbsolutePath);
-					result.Success = result.Clip != nullptr;
-					break;
-				}
-				default:
-					break;
+			}
+			catch (const std::exception& e)
+			{
+				result.Success = false;
+				DE_CORE_ERROR("AssetManager: worker threw while decoding '{}': {}", result.DebugName, e.what());
+			}
+			catch (...)
+			{
+				result.Success = false;
+				DE_CORE_ERROR("AssetManager: worker threw a non-std exception while decoding '{}'.", result.DebugName);
 			}
 
 			{
