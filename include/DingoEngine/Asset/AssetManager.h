@@ -205,14 +205,21 @@ namespace Dingo
 			const uint8_t* Pixels = nullptr; // decoded texture payload (stbi buffer)
 			uint32_t Width = 0;
 			uint32_t Height = 0;
+			uint32_t Channels = 0;
 			std::shared_ptr<AudioClip> Clip; // decoded audio payload
 			std::string DebugName;
 		};
 
+		// One row per AssetType, defined in AssetManager.cpp: everything type-specific
+		// about loading, refreshing, unloading and background decoding lives there, so a
+		// new asset type is a new row rather than a new case in every switch.
+		struct AssetTypePolicy;
+		static const AssetTypePolicy& PolicyFor(AssetType type);
+
 		bool LoadInternal(AssetMetadata& metadata);
 		// Refreshes a loaded asset's contents without replacing the object. False when
-		// the type has no in-place path (the caller then destroys and recreates). Must
-		// return true for exactly the types SupportsInPlaceReload (public) says yes to.
+		// the type has no in-place path (the caller then destroys and recreates), which
+		// is the same policy slot SupportsInPlaceReload reports.
 		bool ReloadInPlace(AssetMetadata& metadata);
 		void UnloadInternal(const AssetMetadata& metadata);
 		void WorkerLoop();

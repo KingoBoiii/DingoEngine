@@ -23,7 +23,11 @@ namespace Dingo
 		Shader,
 		Model,
 		Font,
-		AudioClip
+		AudioClip,
+
+		// Not a type: the enumerator count, so a per-type table can static_assert that it
+		// has a row for every type rather than silently serving the None row for a new one.
+		Count
 	};
 
 	enum class AssetState : uint8_t
