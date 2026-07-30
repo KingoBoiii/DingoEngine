@@ -456,17 +456,23 @@ namespace Dingo
 		// view order decides), so give overlapping UI elements distinct z values.
 		{
 			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
-			std::vector<entt::entity> sprites(view.begin(), view.end());
-			std::stable_sort(sprites.begin(), sprites.end(), [this](entt::entity a, entt::entity b)
+
+			// Sort keys, not handles: the comparator used to re-fetch TransformComponent
+			// through the registry for BOTH operands on every comparison. The buffer is a
+			// member so a steady-state frame does no allocation at all.
+			std::vector<std::pair<float, entt::entity>>& sprites = m_Data->SpriteSortBuffer;
+			sprites.clear();
+			for (entt::entity entity : view)
+				sprites.emplace_back(view.get<TransformComponent>(entity).Position.z, entity);
+
+			std::stable_sort(sprites.begin(), sprites.end(), [](const auto& a, const auto& b)
 			{
-				return m_Data->Registry.get<TransformComponent>(a).Position.z
-				     < m_Data->Registry.get<TransformComponent>(b).Position.z;
+				return a.first < b.first;
 			});
 
-			for (entt::entity entity : sprites)
+			for (const auto& [z, entity] : sprites)
 			{
-				auto& transform = m_Data->Registry.get<TransformComponent>(entity);
-				auto& sprite = m_Data->Registry.get<SpriteRendererComponent>(entity);
+				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(entity);
 				Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
 
 				if (transform.Rotation != 0.0f)

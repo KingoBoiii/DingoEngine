@@ -47,6 +47,10 @@ namespace Dingo
 			std::unique_ptr<Physics3D> Physics3D;
 			int PhysicsCollisionSteps = 1;
 
+			// Reused every frame by the sprite z-sort in RenderEntities: clear() keeps the
+			// capacity, so a steady-state frame allocates nothing to sort.
+			std::vector<std::pair<float, entt::entity>> SpriteSortBuffer;
+
 			// Character controllers owned by the Scene, one per CharacterController3DComponent.
 			// The component's RuntimeController field indexes into this vector; slots are
 			// never reused (a destroyed controller leaves a null hole) so indices stay stable
