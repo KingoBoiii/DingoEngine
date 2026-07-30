@@ -120,6 +120,11 @@ namespace Dingo
 		// than dereference what it captured.
 		static bool IsSwapChainFramebuffer(const Framebuffer* framebuffer);
 
+		// Bumped every time the swap chain recreates its framebuffers. Anything that caches
+		// objects built against one must compare this rather than trusting the pointer,
+		// which the allocator is free to hand back for a different framebuffer.
+		static uint64_t GetSwapChainResizeGeneration();
+
 		/**************************************************
 		***		STATIC RESOURCES						***
 		**************************************************/

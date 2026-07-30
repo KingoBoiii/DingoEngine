@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 namespace Dingo
 {
@@ -144,6 +145,18 @@ namespace Dingo
 			m_BuiltShaderGeneration = shaderGeneration;
 		}
 
+		// The framebuffer in the key is usually the rotating swap-chain one, whose objects
+		// are freed and reallocated on every resize. Without eviction the cache grew by a
+		// pipeline + render pass per material per resize, and a reused address could even
+		// return an entry built against a destroyed framebuffer. Drop it on a generation
+		// change, as ImGuiRenderer's pipeline cache does.
+		const uint64_t resizeGeneration = Renderer::GetSwapChainResizeGeneration();
+		if (resizeGeneration != m_BuiltResizeGeneration)
+		{
+			InvalidatePipelineCache();
+			m_BuiltResizeGeneration = resizeGeneration;
+		}
+
 		const size_t key = MakeCacheKey(layout, framebuffer);
 
 		auto it = m_PipelineCache.find(key);
@@ -193,10 +206,23 @@ namespace Dingo
 
 	void Material::InvalidatePipelineCache()
 	{
+		// Destroy releases only the GPU handles, so the wrapper objects have to be deleted
+		// too - this runs on every resize now, and leaking one pair per material per resize
+		// would just be a smaller version of the leak the eviction is here to stop. Nothing
+		// outlives the call: GetOrCreateRenderPass' result is used within one draw.
 		for (auto& [key, entry] : m_PipelineCache)
 		{
-			if (entry.RenderPass) entry.RenderPass->Destroy();
-			if (entry.Pipeline)   entry.Pipeline->Destroy();
+			if (entry.RenderPass)
+			{
+				entry.RenderPass->Destroy();
+				delete entry.RenderPass;
+			}
+
+			if (entry.Pipeline)
+			{
+				entry.Pipeline->Destroy();
+				delete entry.Pipeline;
+			}
 		}
 		m_PipelineCache.clear();
 	}

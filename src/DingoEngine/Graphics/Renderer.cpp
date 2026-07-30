@@ -376,6 +376,11 @@ namespace Dingo
 		return s_Data && framebuffer && s_Data->SwapChain && s_Data->SwapChain->OwnsFramebuffer(framebuffer);
 	}
 
+	uint64_t Renderer::GetSwapChainResizeGeneration()
+	{
+		return (s_Data && s_Data->SwapChain) ? s_Data->SwapChain->GetResizeGeneration() : 0;
+	}
+
 	/**************************************************
 	***		STATIC RESOURCES						***
 	**************************************************/

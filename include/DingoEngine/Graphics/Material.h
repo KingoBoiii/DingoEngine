@@ -128,8 +128,11 @@ namespace Dingo
 		std::unordered_map<size_t, PipelineCacheEntry> m_PipelineCache;
 
 		// Shader generation the cached passes laid out their bindings for; a hot-reload can
-		// change the binding layout, so a mismatch drops the whole cache.
+		// change the binding layout, so a mismatch drops the whole cache. Likewise the swap
+		// chain generation the cache keys were built against — a resize frees the
+		// framebuffers those keys name.
 		uint32_t m_BuiltShaderGeneration = 0;
+		uint64_t m_BuiltResizeGeneration = 0;
 	};
 
 }
