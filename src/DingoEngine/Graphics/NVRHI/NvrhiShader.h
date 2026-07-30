@@ -31,9 +31,17 @@ namespace Dingo
 		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName = "Shader");
 		nvrhi::BindingLayoutHandle CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflection);
 
+		// A stage's compiled SPIR-V plus the hash of (source, entryPoint) it was compiled from -
+		// retained so the D3D cache key can be derived without re-hashing the source text.
+		struct CompiledStage
+		{
+			std::vector<uint32_t> Binaries;
+			uint64_t SourceHash = 0;
+		};
+
 		// Freshly-compiled bytecode is appended to pendingCacheWrites instead of hitting
 		// disk here, so a failed multi-stage build never leaves mixed old/new cache files.
-		std::unordered_map<ShaderType, std::vector<uint32_t>> CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, ShaderCompiler& compiler, bool forceCompile, bool tolerateErrors, std::vector<std::pair<std::filesystem::path, std::string>>& pendingCacheWrites);
+		std::unordered_map<ShaderType, CompiledStage> CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, const std::filesystem::path& cacheDir, ShaderCompiler& compiler, bool forceCompile, bool tolerateErrors, std::vector<std::pair<std::filesystem::path, std::string>>& pendingCacheWrites);
 		std::unordered_map<ShaderType, std::string> GetShaderSources() const;
 		std::unordered_map<ShaderType, std::string> PreProcess(const std::string& source) const;
 
