@@ -11,6 +11,21 @@
 namespace Dingo
 {
 
+	namespace
+	{
+		// Resolves the "whole buffer" default. The stride has to come from the buffer's own
+		// format: assuming uint16 on a uint32 index buffer asks for twice the indices that
+		// exist. Unknown falls back to uint16, which is what CreateIndexBuffer defaults to.
+		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount)
+		{
+			if (indexCount != 0)
+				return indexCount;
+
+			const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
+			return static_cast<uint32_t>(indexBuffer->GetByteSize() / stride);
+		}
+	}
+
 	struct RendererData
 	{
 		SwapChain*   SwapChain      = nullptr;
@@ -86,11 +101,7 @@ namespace Dingo
 		if (s_Data->HasPendingFrame)
 			Execute();
 
-		if (s_Data->CommandList)
-		{
-			s_Data->CommandList->Destroy();
-			s_Data->CommandList = nullptr;
-		}
+		DestroyAndDelete(s_Data->CommandList);
 	}
 
 	void Renderer::Destroy()
@@ -98,9 +109,9 @@ namespace Dingo
 		if (!s_Data)
 			return;
 
-		if (s_Data->WhiteTexture) { s_Data->WhiteTexture->Destroy(); s_Data->WhiteTexture = nullptr; }
-		if (s_Data->ClampSampler) { s_Data->ClampSampler->Destroy(); s_Data->ClampSampler = nullptr; }
-		if (s_Data->PointSampler) { s_Data->PointSampler->Destroy(); s_Data->PointSampler = nullptr; }
+		DestroyAndDelete(s_Data->WhiteTexture);
+		DestroyAndDelete(s_Data->ClampSampler);
+		DestroyAndDelete(s_Data->PointSampler);
 
 		delete s_Data;
 		s_Data = nullptr;
@@ -286,8 +297,7 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		if (indexCount == 0)
-			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
 		if (!s_Data->CommandList->SetPipeline(pipeline))
@@ -305,8 +315,7 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		if (indexCount == 0)
-			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
 		if (!s_Data->CommandList->SetRenderPass(renderPass))
@@ -324,8 +333,7 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
-		if (indexCount == 0)
-			indexCount = static_cast<uint32_t>(indexBuffer->GetByteSize() / sizeof(uint16_t));
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
 

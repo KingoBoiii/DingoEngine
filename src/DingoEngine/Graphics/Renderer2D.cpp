@@ -204,16 +204,29 @@ void main() {
 		// Note: rotation is in degrees
 		inline static glm::mat4 CreateTransform(const glm::vec3& position, const glm::vec2& size, float rotation = 0.0f)
 		{
-			glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
-
-			if (rotation != 0.0f)
+			if (rotation == 0.0f)
 			{
-				transform *= glm::rotate(glm::mat4(1.0f), glm::radians(rotation), { 0.0f, 0.0f, 1.0f });
+				// translate * scale written out — the general path builds three matrices and
+				// multiplies them for what is a diagonal plus a translation column.
+				glm::mat4 transform(1.0f);
+				transform[0][0] = size.x;
+				transform[1][1] = size.y;
+				transform[3] = glm::vec4(position, 1.0f);
+				return transform;
 			}
 
+			glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
+			transform *= glm::rotate(glm::mat4(1.0f), glm::radians(rotation), { 0.0f, 0.0f, 1.0f });
 			transform *= glm::scale(glm::mat4(1.0f), { size.x, size.y, 1.0f });
 
 			return transform;
+		}
+
+		// An unrotated quad corner is just position + size * corner, so the axis-aligned
+		// DrawQuad paths need neither the 4x4 nor a mat4 * vec4 per vertex.
+		inline static glm::vec3 QuadCorner(const glm::vec3& position, const glm::vec2& size, const glm::vec4& corner)
+		{
+			return glm::vec3(position.x + size.x * corner.x, position.y + size.y * corner.y, position.z);
 		}
 
 	}
@@ -267,18 +280,8 @@ void main() {
 		m_CirclePass.Destroy();
 		m_QuadPass.Destroy();
 
-		if (m_QuadIndexBuffer)
-		{
-			m_QuadIndexBuffer->Destroy();
-			m_QuadIndexBuffer = nullptr;
-		}
-
-		if (m_CameraUniformBuffer)
-		{
-			m_CameraUniformBuffer->Destroy();
-			m_CameraUniformBuffer = nullptr;
-		}
-
+		DestroyAndDelete(m_QuadIndexBuffer);
+		DestroyAndDelete(m_CameraUniformBuffer);
 	}
 
 	void Renderer2D::BeginScene(const glm::mat4& projectionViewMatrix)
@@ -328,11 +331,9 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = Utils::CreateTransform(position, size);
-
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
-			m_QuadPass.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPass.VertexBufferPtr->Position = Utils::QuadCorner(position, size, m_QuadVertexPositions[i]);
 			m_QuadPass.VertexBufferPtr->Color = color;
 			m_QuadPass.VertexBufferPtr->TexCoord = m_TextureCoords[i];
 			m_QuadPass.VertexBufferPtr->TexIndex = 0.0f;
@@ -357,11 +358,9 @@ void main() {
 
 		constexpr size_t quadVertexCount = 4;
 
-		glm::mat4 transform = Utils::CreateTransform(position, size);
-
 		for (size_t i = 0; i < quadVertexCount; i++)
 		{
-			m_QuadPass.VertexBufferPtr->Position = transform * m_QuadVertexPositions[i];
+			m_QuadPass.VertexBufferPtr->Position = Utils::QuadCorner(position, size, m_QuadVertexPositions[i]);
 			m_QuadPass.VertexBufferPtr->Color = color;
 			m_QuadPass.VertexBufferPtr->TexCoord = m_TextureCoords[i];
 			m_QuadPass.VertexBufferPtr->TexIndex = textureIndex;
@@ -431,8 +430,6 @@ void main() {
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();
 
-		glm::mat4 transform = Utils::CreateTransform(position, glm::vec2(size, size));
-
 		// A batch samples one atlas, and the glyph UVs are atlas-relative: switching font
 		// mid-batch would draw the earlier string's glyphs out of this font's atlas.
 		if (m_FontAtlasTexture && m_FontAtlasTexture != fontAtlas)
@@ -440,12 +437,36 @@ void main() {
 
 		m_FontAtlasTexture = fontAtlas;
 
+		// Centering shifts the emitted quads once the width is known, so they all have to
+		// still be in the batch when the string ends: reserve the room up front (one quad
+		// per character is a safe over-estimate). A string too long for an empty batch
+		// cannot avoid a mid-string flush, so that case pays for a measuring walk instead.
+		glm::vec3 origin = position;
+		bool shiftAfterEmit = false;
+		if (textParameters.Centered)
+		{
+			if (!m_TextPass.HasRoomForQuads(string.size()))
+				FlushText();
+
+			shiftAfterEmit = m_TextPass.HasRoomForQuads(string.size());
+			if (!shiftAfterEmit)
+				origin.x -= font->GetStringWidth(string, size, textParameters.Kerning) * 0.5f;
+		}
+
+		glm::mat4 transform = Utils::CreateTransform(origin, glm::vec2(size, size));
+
+		TextVertex* const firstVertex = m_TextPass.VertexBufferPtr;
+		double widestLine = 0.0;
+
 		double x = 0.0;
 		double fsScale = 1.0 / (metrics.ascenderY - metrics.descenderY);
 		double y = 0.0f; // -fsScale * metrics.ascenderY;
 		//double y = -fsScale * metrics.ascenderY;
 
-		float spaceGlyphAdvance = fontGeometry.getGlyph(' ')->getAdvance();
+		// A charset without a space is degenerate but must not crash: GetStringWidth guards
+		// the same lookup, and the two have to stay measurable against each other.
+		auto spaceGlyph = fontGeometry.getGlyph(' ');
+		float spaceGlyphAdvance = spaceGlyph ? (float)spaceGlyph->getAdvance() : 0.0f;
 
 		for (size_t i = 0; i < string.size(); i++)
 		{
@@ -453,6 +474,9 @@ void main() {
 
 			if (character == '\n')
 			{
+				if (x > widestLine)
+					widestLine = x;
+
 				x = 0.0;
 				y -= fsScale * metrics.lineHeight + textParameters.LineSpacing;
 				continue;
@@ -485,7 +509,7 @@ void main() {
 			}
 			if (!glyph)
 			{
-				return;
+				break;
 			}
 
 			double al, ab, ar, at;
@@ -533,14 +557,25 @@ void main() {
 			m_TextPass.IndexCount += 6;
 			++m_Statistics.TextQuadCount;
 
+			// Advance past the last glyph too, so the pen ends on the line's full width —
+			// what GetStringWidth reports, and what centering below has to agree with.
+			double advance = glyph->getAdvance();
 			if (i < string.size() - 1)
-			{
-				double advance = glyph->getAdvance();
-				char nextCharacter = string[i + 1];
-				fontGeometry.getAdvance(advance, character, nextCharacter);
+				fontGeometry.getAdvance(advance, character, string[i + 1]);
 
-				x += fsScale * advance + textParameters.Kerning;
-			}
+			x += fsScale * advance + textParameters.Kerning;
+		}
+
+		if (x > widestLine)
+			widestLine = x;
+
+		if (shiftAfterEmit)
+		{
+			// The text transform is translate + scale only, so centering is a plain offset
+			// on the world-space x of every quad this string emitted.
+			const float offsetX = -static_cast<float>(widestLine) * size * 0.5f;
+			for (TextVertex* vertex = firstVertex; vertex != m_TextPass.VertexBufferPtr; ++vertex)
+				vertex->Position.x += offsetX;
 		}
 	}
 

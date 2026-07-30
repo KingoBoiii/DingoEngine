@@ -71,6 +71,18 @@ namespace Dingo
 	{
 		VulkanGraphicsContext& graphicsContext = GraphicsContext::Get().As<VulkanGraphicsContext>();
 
+		// initialLayout must name the layout the image is actually in, for the same reason the
+		// depth attachment below does: eUndefined lets the implementation discard the contents
+		// at every vkCmdBeginRenderPass, and loadOp = eNone (preserve) cannot undo that. The
+		// colour clear runs OUTSIDE the pass (ClearColorAttachment -> vkCmdClearColorImage), and
+		// NVRHI re-begins the pass mid-frame whenever it has a barrier to commit, so a discard
+		// would drop both the clear and everything drawn before that point.
+		//
+		// eColorAttachmentOptimal is what the image is in by then: the swap-chain texture is
+		// tracked as Present with keepInitialState, and setResourceStatesForFramebuffer
+		// transitions the colour attachment to RenderTarget and commits the barrier before the
+		// pass begins — nothing moves it while the pass is open. initialLayout is not part of
+		// Vulkan render-pass compatibility, so this cannot affect pipeline compatibility.
 		vk::AttachmentDescription colorAttachment = vk::AttachmentDescription()
 			.setFormat(vk::Format(nvrhi::vulkan::convertFormat(m_Texture->getDesc().format)))
 			.setSamples(vk::SampleCountFlagBits::e1)
@@ -78,7 +90,7 @@ namespace Dingo
 			.setStoreOp(vk::AttachmentStoreOp::eStore)
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-			.setInitialLayout(vk::ImageLayout::eUndefined)
+			.setInitialLayout(vk::ImageLayout::eColorAttachmentOptimal)
 			.setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
 		vk::AttachmentReference colorRef = vk::AttachmentReference()

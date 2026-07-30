@@ -16,6 +16,32 @@ namespace Dingo
 
 	class SwapChain;
 
+	// Ownership rule for every graphics resource: the factories hand out a raw `new`, and
+	// Destroy() only releases the GPU handle — the host object is still the owner's. Every
+	// owner pairs the two through this, so the pairing is not re-decided per site.
+	template<typename T>
+	void DestroyAndDelete(T*& resource)
+	{
+		if (!resource)
+			return;
+
+		resource->Destroy();
+		delete resource;
+		resource = nullptr;
+	}
+
+	// GraphicsBuffer's destructor is protected (only its factories construct one), so the
+	// wrapper has to be deleted through the public polymorphic base it shares.
+	inline void DestroyAndDelete(GraphicsBuffer*& buffer)
+	{
+		if (!buffer)
+			return;
+
+		buffer->Destroy();
+		delete static_cast<GenericGraphicsBuffer<const void>*>(buffer);
+		buffer = nullptr;
+	}
+
 	// Renderer is a stateless gateway: all draw calls require explicit
 	// resources (Pipeline or RenderPass, vertex/index buffers, etc.).
 	// No per-draw implicit state is stored between calls.
@@ -80,6 +106,9 @@ namespace Dingo
 
 		static void Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount = 1);
 		static void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount = 1);
+
+		// indexCount = 0 means "the whole index buffer", sized from the buffer's own
+		// GraphicsFormat (Uint16/Uint32).
 		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
 
 		/**************************************************

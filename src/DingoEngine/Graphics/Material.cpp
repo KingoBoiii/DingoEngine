@@ -47,15 +47,15 @@ namespace Dingo
 		: m_Params(params)
 	{}
 
+	Material::~Material()
+	{
+		Destroy();
+	}
+
 	void Material::Destroy()
 	{
 		InvalidatePipelineCache();
-
-		if (m_UniformBuffer)
-		{
-			m_UniformBuffer->Destroy();
-			m_UniformBuffer = nullptr;
-		}
+		DestroyAndDelete(m_UniformBuffer);
 	}
 
 	/**************************************************
@@ -103,11 +103,7 @@ namespace Dingo
 		// bind the fresh buffer object.
 		if (!m_UniformBuffer || m_UniformBuffer->GetByteSize() < size)
 		{
-			if (m_UniformBuffer)
-			{
-				m_UniformBuffer->Destroy();
-				m_UniformBuffer = nullptr;
-			}
+			DestroyAndDelete(m_UniformBuffer);
 
 			const std::string name = m_Params.DebugName.empty()
 				? "MaterialUBO"
@@ -206,23 +202,11 @@ namespace Dingo
 
 	void Material::InvalidatePipelineCache()
 	{
-		// Destroy releases only the GPU handles, so the wrapper objects have to be deleted
-		// too - this runs on every resize now, and leaking one pair per material per resize
-		// would just be a smaller version of the leak the eviction is here to stop. Nothing
-		// outlives the call: GetOrCreateRenderPass' result is used within one draw.
+		// Nothing outlives the call: GetOrCreateRenderPass' result is used within one draw.
 		for (auto& [key, entry] : m_PipelineCache)
 		{
-			if (entry.RenderPass)
-			{
-				entry.RenderPass->Destroy();
-				delete entry.RenderPass;
-			}
-
-			if (entry.Pipeline)
-			{
-				entry.Pipeline->Destroy();
-				delete entry.Pipeline;
-			}
+			DestroyAndDelete(entry.RenderPass);
+			DestroyAndDelete(entry.Pipeline);
 		}
 		m_PipelineCache.clear();
 	}

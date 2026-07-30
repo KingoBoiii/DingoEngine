@@ -14,6 +14,13 @@ namespace Dingo
 		DE_CORE_ASSERT(m_Params.Pipeline, "RenderPass must have a valid Pipeline set before initialization.");
 
 		m_BindingSetDesc = nvrhi::BindingSetDesc();
+
+		// Every TextureBinding holds an index into the desc that was just emptied. Clearing
+		// these with it is what keeps that index meaningful — the linear scan this replaced
+		// re-derived the index each time and so could not go stale.
+		m_TextureBindings.clear();
+		m_TextureBindingIndices.clear();
+		m_Valid = false;
 	}
 
 	void NvrhiRenderPass::Destroy()
@@ -36,45 +43,31 @@ namespace Dingo
 
 		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
 
-		RecordTextureBinding(slot, texture, arrayElement);
-
-		// search if the texture is already in the binding set
-		for (auto& item : m_BindingSetDesc.bindings)
+		auto it = m_TextureBindingIndices.find(MakeTextureKey(slot, arrayElement));
+		if (it != m_TextureBindingIndices.end())
 		{
-			if (item.slot == slot &&
-				item.type == nvrhi::ResourceType::Texture_SRV &&
-				item.arrayElement == arrayElement)
-			{
-				// Only invalidate on a real change — Renderer2D re-sets all 32 slots
-				// every flush, and an unconditional invalidate forced a fresh
-				// createBindingSet per batch per frame.
-				if (item.resourceHandle != handle)
-				{
-					item.resourceHandle = handle;
-					m_Valid = false;
-				}
+			TextureBinding& binding = m_TextureBindings[it->second];
+			binding.Texture = texture;
+			binding.Generation = texture->GetGeneration();
 
-				return;
+			// Only invalidate on a real change — Renderer2D re-sets all 32 slots
+			// every flush, and an unconditional invalidate forced a fresh
+			// createBindingSet per batch per frame.
+			nvrhi::BindingSetItem& item = m_BindingSetDesc.bindings[binding.ItemIndex];
+			if (item.resourceHandle != handle)
+			{
+				item.resourceHandle = handle;
+				m_Valid = false;
 			}
+
+			return;
 		}
 
 		m_BindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(slot, handle).setArrayElement(arrayElement));
+
+		m_TextureBindingIndices[MakeTextureKey(slot, arrayElement)] = m_TextureBindings.size();
+		m_TextureBindings.push_back({ slot, arrayElement, texture, texture->GetGeneration(), m_BindingSetDesc.bindings.size() - 1 });
 		m_Valid = false;
-	}
-
-	void NvrhiRenderPass::RecordTextureBinding(uint32_t slot, Texture* texture, uint32_t arrayElement)
-	{
-		for (TextureBinding& binding : m_TextureBindings)
-		{
-			if (binding.Slot == slot && binding.ArrayElement == arrayElement)
-			{
-				binding.Texture = texture;
-				binding.Generation = texture->GetGeneration();
-				return;
-			}
-		}
-
-		m_TextureBindings.push_back({ slot, arrayElement, texture, texture->GetGeneration() });
 	}
 
 	bool NvrhiRenderPass::RefreshReloadedTextures()
@@ -86,19 +79,7 @@ namespace Dingo
 			if (binding.Texture->GetGeneration() == binding.Generation)
 				continue;
 
-			nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(binding.Texture)->m_Handle;
-
-			for (auto& item : m_BindingSetDesc.bindings)
-			{
-				if (item.slot == binding.Slot &&
-					item.type == nvrhi::ResourceType::Texture_SRV &&
-					item.arrayElement == binding.ArrayElement)
-				{
-					item.resourceHandle = handle;
-					break;
-				}
-			}
-
+			m_BindingSetDesc.bindings[binding.ItemIndex].resourceHandle = static_cast<NvrhiTexture*>(binding.Texture)->m_Handle;
 			binding.Generation = binding.Texture->GetGeneration();
 			changed = true;
 		}

@@ -47,7 +47,9 @@ namespace Dingo
 
 	public:
 		Material(const MaterialParams& params);
-		~Material() = default;
+		// Routes through Destroy() so `delete material` without a prior Destroy() still
+		// frees the pipeline cache and the uniform buffer. Both are idempotent.
+		~Material();
 
 		void Destroy();
 

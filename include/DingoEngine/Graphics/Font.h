@@ -7,12 +7,6 @@ namespace Dingo
 
 	struct MSDFData;
 
-	struct BoundingBox
-	{
-		glm::vec2 QuadMin;
-		glm::vec2 QuadMax;
-	};
-
 	struct FontParams
 	{
 		std::string Name;
@@ -38,13 +32,17 @@ namespace Dingo
 		// True if the font loaded successfully and has a usable atlas + glyph geometry.
 		bool IsValid() const;
 
-		float GetStringWidth(const std::string& string, float size = 1.0f) const;
-		BoundingBox GetBoundingBox(const std::string& string, float size = 1.0f) const;
+		// Width of the widest line, in the same units Renderer2D::DrawText lays glyphs out in.
+		// `kerning` must match TextParameters::Kerning, which the pen adds per character —
+		// leave it at 0 and the two disagree by one Kerning per character.
+		float GetStringWidth(const std::string& string, float size = 1.0f, float kerning = 0.0f) const;
 		Texture* GetAtlasTexture() const { return m_AtlasTexture; }
 		const MSDFData* GetMSDFData() const { return m_Data; }
 
 	private:
-		bool InitializeFontData(int32_t& width, int32_t& height);
+		// `fontData` is borrowed by FreeType for the duration of the call, so the caller's
+		// buffer must outlive it.
+		bool InitializeFontData(const uint8_t* fontData, size_t fontDataSize, int32_t& width, int32_t& height);
 
 	private:
 		FontParams m_Params;

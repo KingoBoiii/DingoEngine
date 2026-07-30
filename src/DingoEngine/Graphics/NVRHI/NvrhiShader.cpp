@@ -79,9 +79,47 @@ namespace Dingo
 		// Base hash shared by every cached artifact compiled from the same (source, entryPoint)
 		// pair; DeriveShaderCacheHash extends it per target so the source text - the expensive
 		// part to hash - is hashed once even though SPIR-V and DXBC each need their own key.
+		//
+		// This covers the top-level source only. It cannot see an #include, and neither can
+		// the hot-reload poll, which stats one file - so editing an included file would serve
+		// stale bytecode. A non-issue purely because ShaderCompiler registers no includer
+		// (includes fail to compile today); registering one has to bring both along.
 		static uint64_t ComputeShaderSourceHash(const std::string& source, const std::string& entryPoint)
 		{
 			return HashFNV1a(entryPoint, HashFNV1a(source));
+		}
+
+		// Cache file names have to be one filesystem-safe path component: a shader named after
+		// its file ("ui/panel.glsl") would otherwise write into a directory that does not
+		// exist. Substitution is lossy, though - "A B" and "A_B" both become "A_B" - so a
+		// rewritten stem is no longer a key and needs a hash of what it was rewritten from.
+		// Only a stem that survived unchanged AND names no file identifies its shader on its
+		// own; everything else carries a disambiguator.
+		static std::string MakeCacheStem(const std::string& name, const std::filesystem::path& filePath)
+		{
+			std::string stem;
+			stem.reserve(name.size());
+
+			bool rewritten = false;
+			for (const char c : name)
+			{
+				const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
+				stem.push_back(safe ? c : '_');
+				rewritten = rewritten || !safe;
+			}
+
+			// The file is the shader's identity: two CreateFromFile calls sharing a name would
+			// otherwise each fail the other's source hash and overwrite it on every build.
+			if (!filePath.empty())
+			{
+				const std::string pathKey = filePath.generic_string();
+				return stem + std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(pathKey)));
+			}
+
+			if (rewritten)
+				return stem + std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(name)));
+
+			return stem;
 		}
 
 		static uint64_t DeriveShaderCacheHash(uint64_t sourceHash, uint32_t shaderModel)
@@ -261,6 +299,7 @@ namespace Dingo
 
 		ShaderCompiler shaderCompiler;
 		const std::filesystem::path cacheDir = CacheManager::GetCacheDirectory("shaders");
+		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath);
 
 		std::vector<std::pair<std::filesystem::path, std::string>> pendingCacheWrites;
 		std::unordered_map<ShaderType, CompiledStage> spvStages = CompileOrGetShaderBinaries(sources, name, cacheDir, shaderCompiler, forceCompile, tolerateErrors, pendingCacheWrites);
@@ -287,7 +326,7 @@ namespace Dingo
 				// D3D12 needs SM 5.1 for NonUniformResourceIndex (nonuniformEXT); D3D11 uses SM 5.0
 				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
 
-				std::filesystem::path dxbcCachePath = cacheDir / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
+				std::filesystem::path dxbcCachePath = cacheDir / (cacheStem + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
 				const uint64_t dxbcHash = Utils::DeriveShaderCacheHash(stage.SourceHash, shaderModel);
 
 				// CompileGLSLToHLSLBytecode recompiles GLSL -> SPIR-V at zero optimization (better
@@ -424,10 +463,11 @@ namespace Dingo
 	std::unordered_map<ShaderType, NvrhiShader::CompiledStage> NvrhiShader::CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, const std::filesystem::path& cacheDir, ShaderCompiler& compiler, bool forceCompile, bool tolerateErrors, std::vector<std::pair<std::filesystem::path, std::string>>& pendingCacheWrites)
 	{
 		std::unordered_map<ShaderType, CompiledStage> result;
+		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath);
 
 		for (const auto& [shaderType, source] : sources)
 		{
-			std::filesystem::path shaderCacheFilePath = cacheDir / (name + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
+			std::filesystem::path shaderCacheFilePath = cacheDir / (cacheStem + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
 			const uint64_t sourceHash = Utils::ComputeShaderSourceHash(source, m_Params.EntryPoint);
 			const uint64_t spvHash = Utils::DeriveShaderCacheHash(sourceHash, 0);
 

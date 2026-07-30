@@ -118,22 +118,23 @@ namespace Dingo
 
 	void Renderer3D::Shutdown()
 	{
-		for (GraphicsBuffer* buffer : m_BatchVertexBuffers)
-			if (buffer) buffer->Destroy();
-		for (GraphicsBuffer* buffer : m_BatchIndexBuffers)
-			if (buffer) buffer->Destroy();
+		for (GraphicsBuffer*& buffer : m_BatchVertexBuffers)
+			DestroyAndDelete(buffer);
+		for (GraphicsBuffer*& buffer : m_BatchIndexBuffers)
+			DestroyAndDelete(buffer);
 		m_BatchVertexBuffers.clear();
 		m_BatchIndexBuffers.clear();
 		m_Batches.clear();
+		m_DrawOrder.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
 		m_BoxMesh = nullptr;
 		m_SphereMesh = nullptr;
 
-		if (m_SceneUniformBuffer) { m_SceneUniformBuffer->Destroy(); m_SceneUniformBuffer = nullptr; }
-		if (m_Material) { m_Material->Destroy(); delete m_Material; m_Material = nullptr; }
-		if (m_Shader) { m_Shader->Destroy(); m_Shader = nullptr; }
+		DestroyAndDelete(m_SceneUniformBuffer);
+		DestroyAndDelete(m_Material);
+		DestroyAndDelete(m_Shader);
 	}
 
 	void Renderer3D::BeginScene(const PerspectiveCamera& camera)
@@ -165,7 +166,9 @@ namespace Dingo
 			batch.Vertices.clear();
 			batch.Indices.clear();
 			batch.OverflowWarned = false;
+			batch.Enqueued = false;
 		}
+		m_DrawOrder.clear();
 		m_SceneActive = true;
 	}
 
@@ -181,8 +184,9 @@ namespace Dingo
 
 		// One indexed draw per material, each from its own pooled (vertex, index) buffer
 		// so no shared buffer is re-uploaded between draws.
-		for (auto& [material, batch] : m_Batches)
+		for (Material* material : m_DrawOrder)
 		{
+			MeshBatch& batch = m_Batches[material];
 			if (batch.Indices.empty())
 				continue;
 
@@ -230,7 +234,13 @@ namespace Dingo
 		if (!m_SceneActive || !mesh)
 			return;
 
-		MeshBatch& batch = m_Batches[material ? material : m_Material];
+		Material* batchMaterial = material ? material : m_Material;
+		MeshBatch& batch = m_Batches[batchMaterial];
+		if (!batch.Enqueued)
+		{
+			batch.Enqueued = true;
+			m_DrawOrder.push_back(batchMaterial);
+		}
 
 		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();

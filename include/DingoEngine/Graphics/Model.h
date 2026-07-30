@@ -13,6 +13,8 @@ namespace Dingo
 	{
 		Mesh*     MeshData       = nullptr;
 		Material* Mat            = nullptr;
+		// Borrowed, not owned: submeshes sharing one image share one Texture, which the
+		// Model owns and frees in Destroy().
 		Texture*  DiffuseTexture = nullptr;
 	};
 
@@ -24,6 +26,9 @@ namespace Dingo
 
 	public:
 		Model() = default;
+		// Routes through Destroy() so `delete model` without a prior Destroy() still frees
+		// the submeshes, materials and textures. Both are idempotent.
+		~Model();
 
 		void Destroy();
 
@@ -32,6 +37,8 @@ namespace Dingo
 
 	private:
 		std::vector<SubMesh> m_SubMeshes;
+		// Deduplicated diffuse textures, one entry per distinct image file.
+		std::vector<Texture*> m_Textures;
 	};
 
 }

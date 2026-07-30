@@ -74,6 +74,13 @@ namespace Dingo
 			glm::vec4 Color{ 1.0f };
 			float Kerning = 0.0f;
 			float LineSpacing = 0.0f;
+
+			// Horizontally center the string on position.x instead of starting there. The
+			// width is taken from the pen while the glyphs are emitted and the quads are
+			// shifted afterwards, so this costs one walk of the string where
+			// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
+			// block on their widest line, matching what GetStringWidth() reports.
+			bool Centered = false;
 		};
 
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
@@ -188,12 +195,12 @@ namespace Dingo
 
 			void Destroy()
 			{
-				for (GraphicsBuffer* vertexBuffer : m_VertexBuffers)
-					vertexBuffer->Destroy();
+				for (GraphicsBuffer*& vertexBuffer : m_VertexBuffers)
+					DestroyAndDelete(vertexBuffer);
 				m_VertexBuffers.clear();
 
-				for (RenderPass* renderPass : m_RenderPasses)
-					renderPass->Destroy();
+				for (RenderPass*& renderPass : m_RenderPasses)
+					DestroyAndDelete(renderPass);
 				m_RenderPasses.clear();
 
 				delete[] VertexBufferBase;
@@ -202,17 +209,8 @@ namespace Dingo
 				IndexCount = 0;
 				m_BatchIndex = 0;
 
-				if (m_Pipeline)
-				{
-					m_Pipeline->Destroy();
-					m_Pipeline = nullptr;
-				}
-
-				if (m_Shader)
-				{
-					m_Shader->Destroy();
-					m_Shader = nullptr;
-				}
+				DestroyAndDelete(m_Pipeline);
+				DestroyAndDelete(m_Shader);
 			}
 
 			void Reset()
@@ -223,6 +221,7 @@ namespace Dingo
 			}
 
 			bool HasRoomForQuad() const { return IndexCount + 6 <= m_Params.Capabilities.GetQuadIndexCount(); }
+			bool HasRoomForQuads(size_t quadCount) const { return IndexCount + quadCount * 6ull <= m_Params.Capabilities.GetQuadIndexCount(); }
 
 			// bindBatch receives this batch's render pass to bind whatever varies per
 			// batch. Returns false when there was nothing accumulated to submit.
