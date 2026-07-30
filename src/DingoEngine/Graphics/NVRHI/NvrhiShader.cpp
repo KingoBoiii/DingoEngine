@@ -54,12 +54,17 @@ namespace Dingo
 			uint32_t Magic = 0;
 			uint32_t FormatVersion = 0;
 			uint64_t SourceHash = 0;
+			// Size and content hash of the bytecode that follows. None of the fields above
+			// change when a file is truncated, so without these a short file with an intact
+			// header validates cleanly and feeds partial bytecode to the driver.
+			uint64_t PayloadSize = 0;
+			uint64_t PayloadHash = 0;
 		};
 
 		static constexpr uint32_t k_ShaderCacheMagic = 0x43485344; // "DSHC"
 		// Bump when compiler options or the shader toolchain change in a way that
 		// invalidates previously cached bytecode.
-		static constexpr uint32_t k_ShaderCacheFormatVersion = 1;
+		static constexpr uint32_t k_ShaderCacheFormatVersion = 2;
 
 		static uint64_t HashFNV1a(std::string_view data, uint64_t hash = 14695981039346656037ull)
 		{
@@ -85,6 +90,8 @@ namespace Dingo
 			header.Magic = k_ShaderCacheMagic;
 			header.FormatVersion = k_ShaderCacheFormatVersion;
 			header.SourceHash = sourceHash;
+			header.PayloadSize = size;
+			header.PayloadHash = HashFNV1a(std::string_view(static_cast<const char*>(bytecode), size));
 
 			std::string blob(sizeof(header) + size, '\0');
 			std::memcpy(blob.data(), &header, sizeof(header));
@@ -92,8 +99,8 @@ namespace Dingo
 			return blob;
 		}
 
-		// False when missing, unreadable, from an older format, or compiled from
-		// different source - the caller recompiles, exactly as if the file were absent.
+		// False when missing, unreadable, from an older format, compiled from different
+		// source, or damaged - the caller recompiles, exactly as if the file were absent.
 		static bool ReadShaderCache(const std::filesystem::path& path, uint64_t expectedHash, std::vector<uint8_t>& outBytecode)
 		{
 			std::error_code ec;
@@ -110,9 +117,56 @@ namespace Dingo
 			if (!in || header.Magic != k_ShaderCacheMagic || header.FormatVersion != k_ShaderCacheFormatVersion || header.SourceHash != expectedHash)
 				return false;
 
-			outBytecode.resize(static_cast<size_t>(fileSize) - sizeof(ShaderCacheHeader));
+			// Size the payload from the header, not the file, and demand they agree: sizing
+			// from the file is what let a truncated cache through.
+			if (fileSize - sizeof(ShaderCacheHeader) != header.PayloadSize)
+				return false;
+
+			outBytecode.resize(static_cast<size_t>(header.PayloadSize));
 			in.read(reinterpret_cast<char*>(outBytecode.data()), outBytecode.size());
-			return static_cast<bool>(in);
+			if (!in)
+				return false;
+
+			const uint64_t payloadHash = HashFNV1a(std::string_view(reinterpret_cast<const char*>(outBytecode.data()), outBytecode.size()));
+			return payloadHash == header.PayloadHash;
+		}
+
+		// Writes via a sibling temp file and renames it into place, so a crash or a full
+		// disk mid-write leaves either the previous cache or nothing - never a half-written
+		// file where the next launch would read it. A failure here only costs a recompile,
+		// so it warns rather than asserting (which is compiled out in Release anyway).
+		static void WriteShaderCache(const std::filesystem::path& path, const std::string& blob)
+		{
+			std::filesystem::path tempPath = path;
+			tempPath += ".tmp";
+
+			{
+				std::ofstream out(tempPath, std::ios::out | std::ios::binary | std::ios::trunc);
+				if (!out.is_open())
+				{
+					DE_CORE_WARN("Could not open shader cache file '{}' for writing - the shader will recompile next launch.", tempPath.string());
+					return;
+				}
+
+				out.write(blob.data(), blob.size());
+				out.close();
+
+				if (!out)
+				{
+					DE_CORE_WARN("Could not write shader cache file '{}' - the shader will recompile next launch.", tempPath.string());
+					std::error_code removeEc;
+					std::filesystem::remove(tempPath, removeEc);
+					return;
+				}
+			}
+
+			std::error_code ec;
+			std::filesystem::rename(tempPath, path, ec);
+			if (ec)
+			{
+				DE_CORE_WARN("Could not replace shader cache file '{}': {}", path.string(), ec.message());
+				std::filesystem::remove(tempPath, ec);
+			}
 		}
 
 	}
@@ -256,11 +310,7 @@ namespace Dingo
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.
 		for (const auto& [path, bytes] : pendingCacheWrites)
-		{
-			std::ofstream out(path, std::ios::out | std::ios::binary);
-			DE_CORE_ASSERT(out.is_open(), "Failed to create shader cache file: " + path.string());
-			out.write(bytes.data(), bytes.size());
-		}
+			Utils::WriteShaderCache(path, bytes);
 
 		return true;
 	}
