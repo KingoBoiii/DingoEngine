@@ -120,16 +120,43 @@ namespace Dingo
 
 		// Returns every attached script that is (dynamically) a T. Handy for systems
 		// that need to find other entities by behaviour, e.g. all invaders.
+		//
+		// Every call allocates a vector and dynamic_casts every attached script, so calling
+		// it per frame — and especially from inside a per-entity OnUpdate, which makes it
+		// O(N^2) — should use the overload below with a vector the caller keeps.
 		template<typename T>
 		std::vector<T*> GetScriptsOfType()
 		{
 			std::vector<T*> result;
-			ForEachScript([&result](ScriptableEntity* script)
+			GetScriptsOfType(result);
+			return result;
+		}
+
+		// Fills `out` (cleared first) rather than returning a fresh vector, so a caller that
+		// holds onto one pays no allocation after its first call.
+		template<typename T>
+		void GetScriptsOfType(std::vector<T*>& out)
+		{
+			out.clear();
+			ForEachScript([&out](ScriptableEntity* script)
 			{
 				if (T* typed = dynamic_cast<T*>(script))
-					result.push_back(typed);
+					out.push_back(typed);
 			});
-			return result;
+		}
+
+		// How many attached scripts are (dynamically) a T, without building a list — for
+		// callers that only wanted GetScriptsOfType<T>().size().
+		template<typename T>
+		std::size_t CountScriptsOfType()
+		{
+			std::size_t count = 0;
+			ForEachScript([&count](ScriptableEntity* script)
+			{
+				if (dynamic_cast<T*>(script))
+					++count;
+			});
+			return count;
 		}
 
 		Entity GetEntityByUUID(UUID uuid);

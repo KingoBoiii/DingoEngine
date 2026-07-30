@@ -217,12 +217,12 @@ namespace Dingo
 
 	int GameLayer::CountEnemies()
 	{
-		return (int)m_Scene->GetScriptsOfType<EnemyScript>().size();
+		return (int)m_Scene->CountScriptsOfType<EnemyScript>();
 	}
 
 	int GameLayer::CountLoot()
 	{
-		return (int)m_Scene->GetScriptsOfType<LootScript>().size();
+		return (int)m_Scene->CountScriptsOfType<LootScript>();
 	}
 
 	// ------------------------------------------------------------------------

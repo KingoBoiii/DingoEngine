@@ -13,6 +13,9 @@
 namespace Dingo
 {
 
+	class EnemyScript;
+	class LootScript;
+
 	// Player ship: movement (with tile collision), facing, a radial melee attack,
 	// taking contact damage with an invulnerability window, and loot pickup.
 	class PlayerScript : public ScriptableEntity
@@ -33,6 +36,10 @@ namespace Dingo
 		float m_Invuln = 0.0f;
 		float m_AttackTimer = 0.0f;
 		float m_AttackCooldown = 0.0f;
+		// Kept across frames so the per-frame behaviour queries below reuse the capacity
+		// instead of allocating a vector each time — see Scene::GetScriptsOfType.
+		std::vector<EnemyScript*> m_NearbyEnemies;
+		std::vector<LootScript*> m_NearbyLoot;
 	};
 
 	// Enemy: chases the player (with tile collision) when in aggro range. Takes

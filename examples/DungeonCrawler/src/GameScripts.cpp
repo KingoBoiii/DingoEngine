@@ -87,7 +87,8 @@ namespace Dingo
 			m_AttackTimer = PLAYER_ATTACK_ACTIVE;
 			m_AttackCooldown = PLAYER_ATTACK_COOLDOWN;
 
-			for (EnemyScript* enemy : GetScene().GetScriptsOfType<EnemyScript>())
+			GetScene().GetScriptsOfType(m_NearbyEnemies);
+			for (EnemyScript* enemy : m_NearbyEnemies)
 			{
 				const glm::vec2 enemyPos = glm::vec2(enemy->GetEntity().GetComponent<TransformComponent>().Position);
 				if (glm::length(enemyPos - playerPos) <= PLAYER_ATTACK_RANGE + ENEMY_HALF)
@@ -99,7 +100,8 @@ namespace Dingo
 		if (m_Invuln <= 0.0f)
 		{
 			const float touch = ENEMY_HALF + PLAYER_HALF;
-			for (EnemyScript* enemy : GetScene().GetScriptsOfType<EnemyScript>())
+			GetScene().GetScriptsOfType(m_NearbyEnemies);
+			for (EnemyScript* enemy : m_NearbyEnemies)
 			{
 				if (enemy->Health() <= 0.0f)
 					continue;
@@ -116,7 +118,8 @@ namespace Dingo
 		}
 
 		// Vacuum up nearby loot.
-		for (LootScript* loot : GetScene().GetScriptsOfType<LootScript>())
+		GetScene().GetScriptsOfType(m_NearbyLoot);
+		for (LootScript* loot : m_NearbyLoot)
 		{
 			const glm::vec2 lootPos = glm::vec2(loot->GetEntity().GetComponent<TransformComponent>().Position);
 			if (glm::length(lootPos - playerPos) <= LOOT_PICKUP_DIST)
