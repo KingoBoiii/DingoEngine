@@ -68,6 +68,7 @@ namespace Dingo
 	{
 		instance->m_Entity = *this;
 		m_Scene->m_Data->Scripts[static_cast<entt::entity>(m_Handle)].reset(instance);
+		m_Scene->m_Data->HasUnstartedScripts = true; // lets StartScripts skip idle frames
 		instance->OnCreate();
 	}
 

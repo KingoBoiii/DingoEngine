@@ -261,9 +261,10 @@ namespace Dingo
 		StartScripts();
 
 		// Snapshot the current scripts so spawning new entities mid-update doesn't
-		// invalidate iteration (new scripts run next frame).
-		std::vector<entt::entity> handles;
-		handles.reserve(m_Data->Scripts.size());
+		// invalidate iteration (new scripts run next frame). Reused buffer: clear() keeps
+		// the capacity, so this costs no allocation once the scene is up.
+		std::vector<entt::entity>& handles = m_Data->ScriptUpdateBuffer;
+		handles.clear();
 		for (auto& [handle, script] : m_Data->Scripts)
 			handles.push_back(handle);
 
@@ -430,10 +431,20 @@ namespace Dingo
 
 	void Scene::StartScripts()
 	{
+		// Called every frame from OnUpdate, but only ever has work right after a script is
+		// attached. Without this the walk (and its allocation) ran on every steady-state
+		// frame just to find nothing. AttachScript is the only thing that adds to the map.
+		if (!m_Data->HasUnstartedScripts)
+			return;
+
+		// Cleared before the pass, not after: an OnStart that attaches more scripts sets it
+		// again, and those run on a later pass since this snapshot cannot see them.
+		m_Data->HasUnstartedScripts = false;
+
 		// Snapshot the not-yet-started handles, so an OnStart that spawns more scripts
 		// doesn't invalidate iteration (those run on a later StartScripts pass).
-		std::vector<entt::entity> handles;
-		handles.reserve(m_Data->Scripts.size());
+		std::vector<entt::entity>& handles = m_Data->ScriptStartBuffer;
+		handles.clear();
 		for (auto& [handle, script] : m_Data->Scripts)
 			if (!script->m_Started)
 				handles.push_back(handle);

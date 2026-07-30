@@ -30,6 +30,16 @@ namespace Dingo
 			// Behaviours attached to entities, keyed by entity handle.
 			std::unordered_map<entt::entity, std::unique_ptr<ScriptableEntity>> Scripts;
 
+			// Set by Entity::AttachScript (the only thing that adds to Scripts) and cleared
+			// by StartScripts, so the per-frame OnStart pass can skip the walk entirely once
+			// everything has started.
+			bool HasUnstartedScripts = false;
+
+			// Reused handle snapshots for the OnStart and OnUpdate passes. Separate buffers
+			// because StartScripts runs inside OnUpdate.
+			std::vector<entt::entity> ScriptStartBuffer;
+			std::vector<entt::entity> ScriptUpdateBuffer;
+
 			// Deferred-destruction support: while scripts are updating we queue
 			// destroys and apply them after the update pass, so a script can safely
 			// destroy its own (or another) entity mid-update.
