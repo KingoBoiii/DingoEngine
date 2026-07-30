@@ -2,6 +2,8 @@
 
 #include "GameLayer.h"
 
+#include <format>
+
 namespace Dingo
 {
 
@@ -35,10 +37,12 @@ static Dingo::GraphicsAPI ParseGraphicsAPI(const Dingo::ApplicationCommandLineAr
 
 Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args)
 {
+	const uint32_t gameVersion = GameLayer::GetGameVersion();
 	ApplicationParams params = ApplicationParams{
 		.CommandLineArgs = args,
 		.Window = {
-			.Title = "[Example Game] Arena Shooter - Dingo Engine",
+			.Title = std::format("[Example Game] Arena Shooter - Dingo Engine (v{}.{}.{})",
+				DE_VERSION_MAJOR(gameVersion), DE_VERSION_MINOR(gameVersion), DE_VERSION_PATCH(gameVersion)),
 			.Width = 1600,
 			.Height = 900,
 			.VSync = true,

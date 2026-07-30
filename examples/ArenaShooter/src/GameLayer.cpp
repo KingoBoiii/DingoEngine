@@ -27,6 +27,7 @@ namespace Dingo
 
 		constexpr float INVULNERABILITY_TIME = 1.5f;
 		constexpr float ARENA_MARGIN = 30.0f;
+		constexpr float EXPLOSION_LIFETIME = 0.35f;
 
 		// std140 uniform block feeding assets/shaders/background.glsl.
 		struct BackgroundUniform
@@ -57,7 +58,12 @@ namespace Dingo
 		m_HitClip = assets.LoadAsync("audio/hit.wav");
 		m_WaveClip = assets.LoadAsync("audio/wave.wav");
 
-		m_TotalAssets = 9;
+		for (AssetHandle handle : { m_PlayerTexHandle, m_EnemyTexHandle, m_BulletTexHandle, m_ShaderHandle,
+				m_FontHandle, m_ShootClip, m_DeathClip, m_HitClip, m_WaveClip })
+		{
+			if (handle != k_InvalidAsset)
+				++m_TotalAssets;
+		}
 
 		DE_INFO("Arena Shooter: queued {} assets for async loading.", m_TotalAssets);
 	}
@@ -183,8 +189,37 @@ namespace Dingo
 
 	void GameLayer::UpdatePlaying(float deltaTime, Renderer2D& renderer)
 	{
-		AudioEngine& audio = Application::Get().GetAudioEngine();
+		const glm::vec2 aim = GetAimDirection();
 
+		UpdatePlayerMovement(deltaTime);
+		UpdateBullets(deltaTime, aim);
+		UpdateEnemies(deltaTime);
+		UpdateBulletEnemyCollisions();
+		UpdatePlayerEnemyCollisions(deltaTime);
+
+		for (auto& explosion : m_Explosions)
+			explosion.Timer += deltaTime;
+
+		std::erase_if(m_Bullets, [](const Bullet& b) {
+			return b.Life <= 0.0f;
+		});
+		std::erase_if(m_Enemies, [](const Enemy& e) {
+			return e.Health <= 0.0f;
+		});
+		std::erase_if(m_Explosions, [](const Explosion& e) {
+			return e.Timer >= EXPLOSION_LIFETIME;
+		});
+
+		if (m_EnemiesToSpawn == 0 && m_Enemies.empty())
+			StartNextWave();
+
+		m_WaveBannerTimer = std::max(0.0f, m_WaveBannerTimer - deltaTime);
+
+		RenderPlaying(renderer, aim);
+	}
+
+	void GameLayer::UpdatePlayerMovement(float deltaTime)
+	{
 		glm::vec2 move(0.0f);
 		if (Input::IsKeyDown(Key::A)) move.x -= 1.0f;
 		if (Input::IsKeyDown(Key::D)) move.x += 1.0f;
@@ -201,8 +236,11 @@ namespace Dingo
 		m_PlayerPosition += move * PLAYER_SPEED * deltaTime;
 		m_PlayerPosition.x = std::clamp(m_PlayerPosition.x, ARENA_MARGIN, m_Width - ARENA_MARGIN);
 		m_PlayerPosition.y = std::clamp(m_PlayerPosition.y, ARENA_MARGIN, m_Height - ARENA_MARGIN);
+	}
 
-		const glm::vec2 aim = GetAimDirection();
+	void GameLayer::UpdateBullets(float deltaTime, const glm::vec2& aim)
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
 
 		m_FireCooldown -= deltaTime;
 		const bool firing = Input::IsMouseButtonDown(MouseButton::Left)
@@ -223,7 +261,10 @@ namespace Dingo
 			bullet.Position += bullet.Velocity * deltaTime;
 			bullet.Life -= deltaTime;
 		}
+	}
 
+	void GameLayer::UpdateEnemies(float deltaTime)
+	{
 		m_SpawnTimer -= deltaTime;
 		if (m_EnemiesToSpawn > 0 && m_SpawnTimer <= 0.0f)
 		{
@@ -249,6 +290,11 @@ namespace Dingo
 			if (len > 0.001f)
 				enemy.Position += (dir / len) * enemy.Speed * deltaTime;
 		}
+	}
+
+	void GameLayer::UpdateBulletEnemyCollisions()
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
 
 		for (auto& bullet : m_Bullets)
 		{
@@ -274,46 +320,35 @@ namespace Dingo
 				}
 			}
 		}
+	}
 
+	void GameLayer::UpdatePlayerEnemyCollisions(float deltaTime)
+	{
 		m_InvulnerabilityTimer = std::max(0.0f, m_InvulnerabilityTimer - deltaTime);
-		if (m_InvulnerabilityTimer <= 0.0f)
+		if (m_InvulnerabilityTimer > 0.0f)
+			return;
+
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		for (auto& enemy : m_Enemies)
 		{
-			for (auto& enemy : m_Enemies)
+			if (enemy.Health <= 0.0f)
+				continue;
+			const float r = ENEMY_RADIUS + PLAYER_HIT_RADIUS;
+			if (glm::dot(m_PlayerPosition - enemy.Position, m_PlayerPosition - enemy.Position) <= r * r)
 			{
-				if (enemy.Health <= 0.0f)
-					continue;
-				const float r = ENEMY_RADIUS + PLAYER_HIT_RADIUS;
-				if (glm::dot(m_PlayerPosition - enemy.Position, m_PlayerPosition - enemy.Position) <= r * r)
-				{
-					--m_Lives;
-					m_InvulnerabilityTimer = INVULNERABILITY_TIME;
-					if (m_HitClip != k_InvalidAsset)
-						audio.PlayOneShot(Application::Get().GetAssetManager().GetAudioClip(m_HitClip), 0.7f);
-					if (m_Lives <= 0)
-						m_GameState = GameState::GameOver;
-					break;
-				}
+				--m_Lives;
+				m_InvulnerabilityTimer = INVULNERABILITY_TIME;
+				if (m_HitClip != k_InvalidAsset)
+					audio.PlayOneShot(Application::Get().GetAssetManager().GetAudioClip(m_HitClip), 0.7f);
+				if (m_Lives <= 0)
+					m_GameState = GameState::GameOver;
+				break;
 			}
 		}
+	}
 
-		for (auto& explosion : m_Explosions)
-			explosion.Timer += deltaTime;
-
-		std::erase_if(m_Bullets, [](const Bullet& b) {
-			return b.Life <= 0.0f;
-		});
-		std::erase_if(m_Enemies, [](const Enemy& e) {
-			return e.Health <= 0.0f;
-		});
-		std::erase_if(m_Explosions, [](const Explosion& e) {
-			return e.Timer >= 0.35f;
-		});
-
-		if (m_EnemiesToSpawn == 0 && m_Enemies.empty())
-			StartNextWave();
-
-		m_WaveBannerTimer = std::max(0.0f, m_WaveBannerTimer - deltaTime);
-
+	void GameLayer::RenderPlaying(Renderer2D& renderer, const glm::vec2& aim)
+	{
 		for (const auto& bullet : m_Bullets)
 			if (m_BulletTexture)
 				renderer.DrawQuad(bullet.Position, glm::vec2(BULLET_SPRITE_SIZE), m_BulletTexture);
@@ -324,14 +359,14 @@ namespace Dingo
 
 		for (const auto& explosion : m_Explosions)
 		{
-			const float t = explosion.Timer / 0.35f;
+			const float t = explosion.Timer / EXPLOSION_LIFETIME;
 			const float size = explosion.Size * (0.6f + t * 1.6f);
 			renderer.DrawQuad(explosion.Position, glm::vec2(size), glm::vec4(1.0f, 0.8f, 0.3f, 1.0f - t));
 		}
 
 		const bool flicker = m_InvulnerabilityTimer > 0.0f && (std::fmod(m_Time, 0.16f) < 0.08f);
 		if (m_PlayerTexture && !flicker)
-			renderer.DrawRotatedQuad(m_PlayerPosition, std::atan2(aim.y, aim.x) * 57.2957795f - 90.0f, glm::vec2(PLAYER_SPRITE_SIZE), m_PlayerTexture);
+			renderer.DrawRotatedQuad(m_PlayerPosition, glm::degrees(std::atan2(aim.y, aim.x)) - 90.0f, glm::vec2(PLAYER_SPRITE_SIZE), m_PlayerTexture);
 
 		RenderHUD(renderer);
 

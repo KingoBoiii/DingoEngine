@@ -50,6 +50,8 @@ namespace Dingo
 		virtual void OnDetach() override;
 		virtual void OnUpdate(float deltaTime) override;
 
+		static constexpr uint32_t GetGameVersion() { return DE_MAKE_VERSION(1, 0, 0); }
+
 	private:
 		void UpdateLoading(Renderer2D& renderer);
 		void OnAssetsReady();
@@ -57,6 +59,13 @@ namespace Dingo
 		void UpdateReady(float deltaTime, Renderer2D& renderer);
 		void UpdatePlaying(float deltaTime, Renderer2D& renderer);
 		void UpdateGameOver(float deltaTime, Renderer2D& renderer);
+
+		void UpdatePlayerMovement(float deltaTime);
+		void UpdateBullets(float deltaTime, const glm::vec2& aim);
+		void UpdateEnemies(float deltaTime);
+		void UpdateBulletEnemyCollisions();
+		void UpdatePlayerEnemyCollisions(float deltaTime);
+		void RenderPlaying(Renderer2D& renderer, const glm::vec2& aim);
 
 		void StartGame();
 		void StartNextWave();
@@ -67,8 +76,6 @@ namespace Dingo
 
 		glm::vec2 GetAimDirection() const;
 		bool WantsStart() const;
-
-		const uint32_t GetGameVersion() const { return DE_MAKE_VERSION(1, 0, 0); }
 
 	private:
 		GameState m_GameState = GameState::Loading;
