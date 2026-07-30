@@ -566,8 +566,24 @@ namespace Dingo
 			std::error_code ec;
 			const auto writeTime = std::filesystem::last_write_time(ResolvePath(metadata.FilePath), ec);
 			if (ec || writeTime == metadata.LastWriteTime)
+			{
+				metadata.PendingWriteTime = {};
 				continue;
+			}
 
+			// Wait for the timestamp to repeat before believing the write finished. An editor
+			// that truncates and then writes can be caught mid-save, and Windows resolves
+			// mtime to one ~15.6 ms clock tick, so the partial file and the final file can
+			// carry the SAME timestamp - reload the partial one and no later poll ever sees a
+			// difference again, losing the edit until the next save. A file still being
+			// written keeps moving its timestamp and simply waits here.
+			if (metadata.PendingWriteTime != writeTime)
+			{
+				metadata.PendingWriteTime = writeTime;
+				continue;
+			}
+
+			metadata.PendingWriteTime = {};
 			metadata.LastWriteTime = writeTime;
 
 			if (recovering)

@@ -16,6 +16,9 @@ namespace Dingo
 		AssetState State = AssetState::Unloaded;
 		// Source-file timestamp at load; the hot-reload poll compares against it.
 		std::filesystem::file_time_type LastWriteTime{};
+		// A changed timestamp the poll has seen once but not yet acted on. It must repeat on
+		// the next poll before the write counts as finished — see PollHotReload.
+		std::filesystem::file_time_type PendingWriteTime{};
 	};
 
 }
