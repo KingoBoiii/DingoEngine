@@ -369,6 +369,7 @@ namespace Dingo
 			return false;
 
 		JPH::SphereShape sphere(radius);
+		sphere.SetEmbedded(); // stack-allocated: don't let a Ref taken to it free it
 		const JPH::RMat44 start = JPH::RMat44::sTranslation(JPH::RVec3(center.x, center.y, center.z));
 		const JPH::Vec3 displacement = ToJolt(direction * maxDistance);
 		const JPH::RShapeCast shapeCast(&sphere, JPH::Vec3::sReplicate(1.0f), start, displacement);
@@ -394,6 +395,7 @@ namespace Dingo
 			return false;
 
 		JPH::SphereShape sphere(radius);
+		sphere.SetEmbedded(); // stack-allocated: don't let a Ref taken to it free it
 		const JPH::RMat44 transform = JPH::RMat44::sTranslation(JPH::RVec3(center.x, center.y, center.z));
 
 		JPH::CollideShapeSettings settings;

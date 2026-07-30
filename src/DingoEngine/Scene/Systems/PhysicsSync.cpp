@@ -83,6 +83,11 @@ namespace Dingo
 					if (rigidBody.RuntimeBody == 0)
 						continue;
 
+					// Static bodies never move — skip the read-back so we don't churn over
+					// them or revert a runtime edit to a static entity's Transform.
+					if (rigidBody.Type == BodyType2D::Static)
+						continue;
+
 					glm::vec2 position = m_Physics2D->GetPosition(rigidBody.RuntimeBody);
 					float angle = m_Physics2D->GetAngle(rigidBody.RuntimeBody);
 

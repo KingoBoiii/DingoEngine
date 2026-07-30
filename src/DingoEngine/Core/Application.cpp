@@ -34,7 +34,9 @@ namespace Dingo
 
 	void Application::Initialize()
 	{
-		DE_CORE_ASSERT(s_Instance, "Application already initialized. Cannot initialize again.");
+		// s_Instance is set unconditionally by the constructor, so it can't detect a
+		// second Initialize() call; m_Window is null until this function creates it.
+		DE_CORE_ASSERT(!m_Window, "Application already initialized. Cannot initialize again.");
 
 		CacheManager::Initialize();
 

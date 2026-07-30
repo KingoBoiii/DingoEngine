@@ -296,11 +296,7 @@ namespace Dingo
 				if (!text.Font || text.Text.empty())
 					continue;
 
-				glm::vec3 position = transform.Position;
-				if (text.Centered)
-					position.x -= text.Font->GetStringWidth(text.Text, text.Size) * 0.5f;
-
-				renderer.DrawText(text.Text, text.Font, position, text.Size, { text.Color });
+				renderer.DrawText(text.Text, text.Font, transform.Position, text.Size, { .Color = text.Color, .Centered = text.Centered });
 			}
 		}
 	}

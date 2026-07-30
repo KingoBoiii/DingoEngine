@@ -46,6 +46,8 @@ namespace Dingo
 		bool ValidKey(KeyCode keycode) { return static_cast<size_t>(keycode) < MaxKeys; }
 		bool ValidMouseButton(MouseButton button) { return static_cast<size_t>(button) < MaxMouseButtons; }
 		bool ValidGamepad(uint32_t gamepad) { return gamepad < MaxGamepads; }
+		bool ValidGamepadButton(GamepadButton button) { return static_cast<size_t>(button) < GamepadButtonCount; }
+		bool ValidGamepadAxis(GamepadAxis axis) { return static_cast<size_t>(axis) < GamepadAxisCount; }
 
 		float ApplyDeadzone(float value, float deadzone)
 		{
@@ -206,7 +208,7 @@ namespace Dingo
 
 	bool Input::IsGamepadButtonPressed(GamepadButton button, uint32_t gamepad)
 	{
-		if (!ValidGamepad(gamepad))
+		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
 			return false;
 		const size_t index = static_cast<size_t>(button);
 		return s_CurrentGamepads[gamepad].Buttons[index] && !s_PreviousGamepads[gamepad].Buttons[index];
@@ -214,14 +216,14 @@ namespace Dingo
 
 	bool Input::IsGamepadButtonDown(GamepadButton button, uint32_t gamepad)
 	{
-		if (!ValidGamepad(gamepad))
+		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
 			return false;
 		return s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)];
 	}
 
 	bool Input::IsGamepadButtonReleased(GamepadButton button, uint32_t gamepad)
 	{
-		if (!ValidGamepad(gamepad))
+		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
 			return false;
 		const size_t index = static_cast<size_t>(button);
 		return !s_CurrentGamepads[gamepad].Buttons[index] && s_PreviousGamepads[gamepad].Buttons[index];
@@ -237,7 +239,7 @@ namespace Dingo
 
 	float Input::GetGamepadAxisRaw(GamepadAxis axis, uint32_t gamepad)
 	{
-		if (!ValidGamepad(gamepad))
+		if (!ValidGamepad(gamepad) || !ValidGamepadAxis(axis))
 			return 0.0f;
 		return s_CurrentGamepads[gamepad].Axes[static_cast<size_t>(axis)];
 	}

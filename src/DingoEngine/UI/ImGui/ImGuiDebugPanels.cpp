@@ -16,6 +16,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <vector>
 
@@ -53,29 +54,59 @@ namespace Dingo::UI
 		{
 			switch (state)
 			{
-				case AssetState::Ready:   return ImVec4(0.35f, 0.85f, 0.40f, 1.0f);
+				case AssetState::Ready:     return ImVec4(0.35f, 0.85f, 0.40f, 1.0f);
 				case AssetState::Queued:
-				case AssetState::Loading: return ImVec4(0.95f, 0.80f, 0.30f, 1.0f);
-				case AssetState::Failed:  return ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
+				case AssetState::Loading:
+				case AssetState::Reloading: return ImVec4(0.95f, 0.80f, 0.30f, 1.0f);
+				case AssetState::Failed:    return ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
 				case AssetState::Unloaded:
-				default:                  return ImVec4(0.60f, 0.60f, 0.60f, 1.0f);
+				default:                    return ImVec4(0.60f, 0.60f, 0.60f, 1.0f);
 			}
 		}
 
 		// Registry snapshot ordered by path: the registry is an unordered_map, so
 		// iterating it directly would reshuffle rows between frames.
-		std::vector<AssetMetadata> SortedRegistry(const AssetManager& assets)
+		// Caches handles, not AssetMetadata pointers: Remove() erases from the registry
+		// map, which invalidates that element's address, so resolving fresh via
+		// GetMetadata() at point of use is what makes an erased handle merely fail to
+		// resolve instead of reading freed memory.
+		//
+		// Rebuilds when stale, where stale = registered count changed OR some
+		// previously-cached handle no longer resolves. The second half is load-bearing:
+		// a same-frame-gap Remove(h)+Import(p) nets no count change, so the count check
+		// alone would miss it, leaving both the dead handle AND the new import invisible
+		// until some later change happened to move the count. Checking every cached
+		// handle resolves costs one GetMetadata hash lookup per entry every frame (no
+		// allocation) but not the O(n log n) collect-and-sort, which only runs when
+		// something actually changed - that's the trade this cache exists to make.
+		// What this does NOT catch: an asset's path changing without its handle
+		// changing, which the current Import/Remove API has no way to do anyway.
+		const std::vector<AssetHandle>& SortedRegistry(const AssetManager& assets)
 		{
-			std::vector<AssetMetadata> entries;
-			entries.reserve(assets.GetRegistry().size());
-			for (const auto& [handle, metadata] : assets.GetRegistry())
-				entries.push_back(metadata);
+			static std::vector<AssetHandle> s_Sorted;
+			static uint32_t s_LastCount = 0;
 
-			std::sort(entries.begin(), entries.end(), [](const AssetMetadata& a, const AssetMetadata& b)
+			const uint32_t count = assets.GetRegisteredCount();
+			const bool stale = count != s_LastCount || std::any_of(s_Sorted.begin(), s_Sorted.end(),
+				[&assets](AssetHandle handle) { return assets.GetMetadata(handle) == nullptr; });
+
+			if (stale)
 			{
-				return a.FilePath.generic_string() < b.FilePath.generic_string();
-			});
-			return entries;
+				s_Sorted.clear();
+				s_Sorted.reserve(count);
+				for (const auto& [handle, metadata] : assets.GetRegistry())
+					s_Sorted.push_back(handle);
+
+				std::sort(s_Sorted.begin(), s_Sorted.end(), [&assets](AssetHandle a, AssetHandle b)
+				{
+					// Both handles were just read from this registry, so they always resolve.
+					return assets.GetMetadata(a)->FilePath.native() < assets.GetMetadata(b)->FilePath.native();
+				});
+
+				s_LastCount = count;
+			}
+
+			return s_Sorted;
 		}
 	}
 
@@ -352,8 +383,8 @@ namespace Dingo::UI
 			: std::format("{} / {}", loaded, registered);
 		ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay.c_str());
 
-		uint32_t perType[6] = {};
-		uint32_t perState[5] = {};
+		std::array<uint32_t, static_cast<size_t>(AssetType::Count)> perType{};
+		std::array<uint32_t, static_cast<size_t>(AssetState::Count)> perState{};
 		for (const auto& [handle, metadata] : assets.GetRegistry())
 		{
 			perType[static_cast<size_t>(metadata.Type)]++;
@@ -363,7 +394,7 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		ImGui::TextUnformatted("By type");
 		ImGui::Separator();
-		for (size_t type = 1; type < IM_ARRAYSIZE(perType); type++)
+		for (size_t type = 1; type < perType.size(); type++)
 		{
 			if (perType[type] == 0)
 				continue;
@@ -375,7 +406,7 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		ImGui::TextUnformatted("By state");
 		ImGui::Separator();
-		for (size_t state = 0; state < IM_ARRAYSIZE(perState); state++)
+		for (size_t state = 0; state < perState.size(); state++)
 		{
 			if (perState[state] == 0)
 				continue;
@@ -405,7 +436,7 @@ namespace Dingo::UI
 		Action action = Action::None;
 		AssetHandle target = k_InvalidAsset;
 
-		const std::vector<AssetMetadata> entries = SortedRegistry(assets);
+		const std::vector<AssetHandle>& entries = SortedRegistry(assets);
 
 		if (ImGui::BeginTable("##assettable", 4,
 			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
@@ -418,33 +449,41 @@ namespace Dingo::UI
 			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 118.0f);
 			ImGui::TableHeadersRow();
 
-			for (const AssetMetadata& metadata : entries)
+			for (const AssetHandle handle : entries)
 			{
-				const std::string path = metadata.FilePath.generic_string();
+				const AssetMetadata* metadata = assets.GetMetadata(handle);
+				if (!metadata)
+					continue; // removed since the snapshot was built - skip rather than show stale data
+
+				const std::string path = metadata->FilePath.generic_string();
 				if (s_Filter[0] != '\0' && path.find(s_Filter) == std::string::npos)
 					continue;
 
-				ImGui::PushID(static_cast<int>(static_cast<uint64_t>(metadata.Handle) & 0x7FFFFFFF));
+				ImGui::PushID(static_cast<int>(static_cast<uint64_t>(handle) & 0x7FFFFFFF));
 				ImGui::TableNextRow();
 
 				ImGui::TableSetColumnIndex(0);
-				ImGui::TextColored(AssetStateColor(metadata.State), "%s", AssetStateToString(metadata.State));
+				ImGui::TextColored(AssetStateColor(metadata->State), "%s", AssetStateToString(metadata->State));
 
 				ImGui::TableSetColumnIndex(1);
-				ImGui::TextUnformatted(AssetTypeToString(metadata.Type));
+				ImGui::TextUnformatted(AssetTypeToString(metadata->Type));
 
 				ImGui::TableSetColumnIndex(2);
 				ImGui::TextUnformatted(path.c_str());
 				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("handle %llu\n%s", static_cast<unsigned long long>(static_cast<uint64_t>(metadata.Handle)),
-						assets.ResolvePath(metadata.FilePath).string().c_str());
+					ImGui::SetTooltip("handle %llu\n%s", static_cast<unsigned long long>(static_cast<uint64_t>(handle)),
+						assets.ResolvePath(metadata->FilePath).string().c_str());
 
 				ImGui::TableSetColumnIndex(3);
-				const bool isLoaded = metadata.State == AssetState::Ready;
-				const bool inFlight = metadata.State == AssetState::Queued || metadata.State == AssetState::Loading;
+				// Reloading keeps the object alive and usable (that's the point of an
+				// in-place hot-reload) with a new version decoding in the background, so it
+				// counts as loaded for the button label and as in-flight for disabling it.
+				const bool isLoaded = metadata->State == AssetState::Ready || metadata->State == AssetState::Reloading;
+				const bool inFlight = metadata->State == AssetState::Queued || metadata->State == AssetState::Loading
+					|| metadata->State == AssetState::Reloading;
 				// Reload destroys and recreates any type SupportsInPlaceReload rejects, which
 				// would invalidate pointers games hold - do not offer it for those.
-				const bool reloadBlocked = isLoaded && !AssetManager::SupportsInPlaceReload(metadata.Type);
+				const bool reloadBlocked = isLoaded && !AssetManager::SupportsInPlaceReload(metadata->Type);
 
 				// No Unload button on purpose: unloading frees the object, and games
 				// legitimately cache the pointers they were handed.
@@ -452,11 +491,11 @@ namespace Dingo::UI
 				if (ImGui::SmallButton(isLoaded ? "Reload" : "Load"))
 				{
 					action = isLoaded ? Action::Reload : Action::Load;
-					target = metadata.Handle;
+					target = handle;
 				}
 				ImGui::EndDisabled();
 				if (reloadBlocked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", AssetTypeToString(metadata.Type));
+					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", AssetTypeToString(metadata->Type));
 
 				ImGui::PopID();
 			}
@@ -466,19 +505,23 @@ namespace Dingo::UI
 
 		if (ImGui::Button("Reload all loaded"))
 		{
-			for (const AssetMetadata& metadata : entries)
+			for (const AssetHandle handle : entries)
 			{
-				if (metadata.State == AssetState::Ready && AssetManager::SupportsInPlaceReload(metadata.Type))
-					assets.Reload(metadata.Handle);
+				const AssetMetadata* metadata = assets.GetMetadata(handle);
+				// Ready only, deliberately excluding Reloading: it already has a reload in
+				// flight, so re-triggering one here would just queue a redundant decode.
+				if (metadata && metadata->State == AssetState::Ready && AssetManager::SupportsInPlaceReload(metadata->Type))
+					assets.Reload(handle);
 			}
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Retry failed"))
 		{
-			for (const AssetMetadata& metadata : entries)
+			for (const AssetHandle handle : entries)
 			{
-				if (metadata.State == AssetState::Unloaded || metadata.State == AssetState::Failed)
-					assets.LoadAsync(metadata.FilePath);
+				const AssetMetadata* metadata = assets.GetMetadata(handle);
+				if (metadata && (metadata->State == AssetState::Unloaded || metadata->State == AssetState::Failed))
+					assets.LoadAsync(metadata->FilePath);
 			}
 		}
 
