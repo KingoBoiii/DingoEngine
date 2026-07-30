@@ -21,7 +21,7 @@ namespace Dingo
 	class Renderer3D;
 	class ScriptableEntity;
 
-	namespace Internal { struct SceneData; }
+	namespace Internal { struct SceneData; class ScriptSystem; }
 
 	// A Scene owns a collection of entities and the behaviours attached to them,
 	// and knows how to render the renderable ones. The ECS backend (EnTT) is held
@@ -272,36 +272,15 @@ namespace Dingo
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
 
-		// Creates the Box2D body + collider shapes for one entity handle. Box2D
-		// types stay out of this header by working through the opaque handle.
-		void CreatePhysicsBodyForEntity(std::uint32_t handle);
-		// Opaque runtime body handle for an entity (0 when it has none).
+		// Opaque runtime body handles for an entity (0 / k_InvalidBody3D when it has
+		// none). The backend types stay out of this header by working through them.
 		std::uint64_t GetRuntimeBody(Entity entity) const;
-
-		// Creates the Jolt body (collider baked in) for one entity handle. Jolt
-		// types stay out of this header by working through the opaque handle.
-		void CreatePhysicsBody3DForEntity(std::uint32_t handle);
-		// Opaque 3D runtime body handle for an entity (k_InvalidBody3D when none).
 		std::uint32_t GetRuntimeBody3D(Entity entity) const;
-
-		// Creates the character controller for one entity handle (at its Transform3D).
-		// No-op if the 3D world isn't live or the entity has no CharacterController3DComponent.
-		void CreateCharacterControllerForEntity(std::uint32_t handle);
 
 		// Resets every live backend handle on an entity to its "none" sentinel, without
 		// touching the backend itself. Used by DuplicateEntity so a clone never aliases
 		// the source's body/shape/controller/sound.
 		void ResetRuntimeHandles(std::uint32_t handle);
-
-		// World-space position for an entity, used to seed/update a spatialized
-		// AudioSourceComponent: Transform3DComponent if present, else the 2D
-		// TransformComponent's Position at z = 0. Every entity has a TransformComponent,
-		// so this always returns something.
-		glm::vec3 GetAudioPosition(std::uint32_t handle) const;
-
-		// Stops every AudioSourceComponent's live sound and resets the handles.
-		// Shared by OnStop() and Clear() — both must not leak playing audio.
-		void StopAudioSources();
 
 	private:
 		Internal::SceneData* m_Data = nullptr;

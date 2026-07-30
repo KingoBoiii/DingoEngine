@@ -51,10 +51,11 @@ namespace Dingo
 
 	private:
 		Entity m_Entity;
-		bool m_Started = false; // set by Scene once OnStart has run
+		bool m_Started = false; // set by the scene's script system once OnStart has run
 
 		friend class Entity;
 		friend class Scene;
+		friend class Internal::ScriptSystem;
 	};
 
 }
