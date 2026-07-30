@@ -246,8 +246,10 @@ namespace Dingo
 		// Async requests for types whose loaders create GPU resources internally
 		// (Shader/Model/Font) - drained one per Update() on the main thread.
 		std::deque<AssetHandle> m_MainThreadQueue;
-		// LoadClip is never issued from two threads at once (worker vs. a sync Load).
-		std::mutex m_AudioLoadMutex;
+		// No mutex around LoadClip: ma_engine owns a resource manager whose job queue is
+		// multi-producer/multi-consumer, and node attachment is spinlock-guarded, so
+		// miniaudio supports initializing sounds from several threads at once. Serializing
+		// it here only made a sync Load block the main thread on the worker's decode.
 		std::atomic<uint32_t> m_PendingCount = 0;
 		float m_HotReloadTimer = 0.0f;
 

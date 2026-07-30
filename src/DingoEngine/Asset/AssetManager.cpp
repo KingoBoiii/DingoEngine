@@ -449,7 +449,6 @@ namespace Dingo
 					}
 					case AssetType::AudioClip:
 					{
-						std::scoped_lock audioLock(m_AudioLoadMutex);
 						result.Clip = m_AudioEngine->LoadClip(job.AbsolutePath);
 						result.Success = result.Clip != nullptr;
 						break;
@@ -701,7 +700,6 @@ namespace Dingo
 			case AssetType::AudioClip:
 			{
 				DE_CORE_ASSERT(m_AudioEngine, "AssetManager has no audio engine - cannot load audio clips");
-				std::scoped_lock audioLock(m_AudioLoadMutex); // vs. the worker's LoadClip
 				if (std::shared_ptr<AudioClip> clip = m_AudioEngine->LoadClip(absolutePath))
 				{
 					m_AudioClips[metadata.Handle] = std::move(clip);
