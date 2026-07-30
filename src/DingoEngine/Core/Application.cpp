@@ -238,12 +238,16 @@ namespace Dingo
 
 			Renderer::EndFrame();
 
-			// Execute any post-execution callbacks
-			for (const auto& callback : m_PostExecutionCallbacks)
+			// Drain into a local: a callback is free to SubmitPostExecution (RequestRestart
+			// already is one), which would push into the vector being iterated - dangling the
+			// iterator on a reallocation - and the clear() would then drop the new entry
+			// anyway. Whatever a callback submits runs on the next frame instead.
+			m_DrainingPostExecution.swap(m_PostExecutionCallbacks);
+			for (const auto& callback : m_DrainingPostExecution)
 			{
 				callback();
 			}
-			m_PostExecutionCallbacks.clear();
+			m_DrainingPostExecution.clear();
 		}
 	}
 

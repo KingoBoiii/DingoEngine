@@ -167,6 +167,9 @@ namespace Dingo
 		float m_DeltaTime = 0.0f;
 
 		std::vector<std::function<void()>> m_PostExecutionCallbacks;
+		// The batch currently being drained, kept as a member so the swap reuses its
+		// capacity instead of allocating a vector per frame.
+		std::vector<std::function<void()>> m_DrainingPostExecution;
 
 	private:
 		inline static Application* s_Instance = nullptr;
