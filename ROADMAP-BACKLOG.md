@@ -50,13 +50,21 @@ The 12 items fall into three buckets against the existing milestone plan:
 - **#6** ray/shape casts → *ROADMAP.md:76* ("ray and shape casts for melee hits and line-of-sight").
 
 **Already deferred** (leave parked):
-- **#4b** full skeletal animation → *ROADMAP.md:67–70* ("proper skeletal-animation system … slated to land with the character fidelity push of v0.5+").
-- **#1 "bloom later"** → *ROADMAP.md:96* (v0.9 Advanced Rendering: shadows, bloom, tone mapping).
+- **#1 "bloom later"** → v0.9 Advanced Rendering: shadows, bloom, tone mapping.
+
+**Now scheduled** (were deferred or homeless when this doc was written):
+- **#4a** parent-child transforms **and #4b** full skeletal animation are both **v0.8 — Animation &
+  Character Fidelity**. v0.4.2's "slated to land with the character fidelity push of v0.5+" note
+  finally has a real milestone behind it, and the v0.8 section is explicit that #4a ships as the
+  independently-useful half.
+- **#2b** frustum/distance culling, **#3** static batching/instancing and **#12** material sharing are
+  **v1.0 — Stability, Performance & Polish**. v0.9 shed its "& Performance" half to become purely
+  visual, so the throughput work landed in v1.0 rather than staying "v0.9-adjacent".
 
 **Net-new / unscheduled** — the real contribution of this doc, these have no home yet:
-**#2** culling + `Visible`, **#3** static batching/instancing, **#4a** parent-child transforms,
-**#8** Font contract, **#9** Platform/IO, **#10** UI layer, **#11** clone/prefab, **#12** material
-sharing + UTF-8.
+**#8** Font contract, **#9** Platform/IO, **#10** UI layer, **#11** clone/prefab, and #12's **UTF-8
+decode** sub-item. (#8, #9, #11 and #2a's `Visible` bool all shipped in **v0.4.3** — see the status
+note in §1; the genuinely homeless one is **#10**, the game-facing UI layer.)
 
 > ✅ **Adopted: #1 point lights is now the v0.7 milestone.** This doc's headline recommendation —
 > that the single biggest game pain (~330–380 lines of CPU torch-faking) had no home on the roadmap —
@@ -74,7 +82,7 @@ sharing + UTF-8.
 | 1 | Point lights + emissive | 1a emissive **M** · 1b point lights **L** | ~330–380 lines (~40% of `GameController.cpp`) of torch-faking | 1a **landed v0.5** · 1b **= v0.7** (bloom=v0.9) |
 | 2 | Culling + `Visible` flag | 2a `Visible` **S** · 2b frustum **M–L** · 2c overflow assert **S** | ~50 lines mesh-nulling + restore arrays (2 systems) | unscheduled |
 | 3 | Static batching / instancing | **L–XL** | the `VIS_CULL_RADIUS` vertex-budget workaround | unscheduled |
-| 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | **4b=v0.5+**; 4a unscheduled |
+| 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | **both = v0.8** |
 | 5 | Physics3D kinematic + char controller | **M–L** | raw-velocity movement; unblocks warp/checkpoint/respawn | **v0.5-committed** |
 | 6 | `ScreenPointToRay` / ground raycast | **S–M** | `MouseGroundPoint` hand-inverted VP (37 lines) | **v0.5-committed** |
 | 7 | Script-accessible scene transitions | **S–M** | `GameSession::SceneRequest` + `main.cpp` pump (~40 lines) | **landed v0.5** |
@@ -134,7 +142,7 @@ latent bugs. Ship as a **v0.4.3** cleanup point-release.
   Deletes the remaining **~250–300 lines** of `TorchPoolLight` / `UpdateTorches` lighting /
   per-frame albedo rewrites on walls/floors/props/treasure. Do **after #1a** (reuse the shader work).
 
-### Wave 4 — Rendering scale · **L–XL** · when perf bites (v0.9-adjacent)
+### Wave 4 — Rendering scale · **L–XL** · when perf bites — **now v1.0**
 Design #3 and #2b **together** — they're one story (the cull-radius layer is a vertex-budget valve).
 - **#3 Static batching / instancing** — persistent/pre-baked buffers for never-moving walls & floor
   slabs, or instance identical variants (the `instanceCount` plumbing already exists at
@@ -144,13 +152,14 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
   fragment the single-batch fast path. Couple with the #1/#3 shader churn. Sub-item **UTF-8 decode**
   (**S**) lifts the ASCII-only text constraint — low priority; the game just stays ASCII today.
 
-### Wave 5 — Character fidelity · v0.5+
+### Wave 5 — Character fidelity — **now v0.8**
 - **#4a Parent-child transforms** (**M–L**) — a `Parent` component + a transform-propagation pass.
   Collapses most of `CharacterRig::Update` (76 lines of per-part world math) and the
   `export_chars.py` pivot reverse-engineering. Independent ECS feature — **pull earlier** if rig
   pain is acute; it does not need the skeletal work.
 - **#4b Skeletal animation** (**XL**) — skinned meshes, clips, blend tree; requires reworking the
-  static-only `Model::LoadFromFile`. Already parked at v0.5+; pairs with the v0.6 asset pipeline.
+  static-only `Model::LoadFromFile`. Scheduled as **v0.8**; pairs with the v0.6 asset pipeline, which
+  is what makes the loader rework affordable (rigs become `AssetManager`-owned assets).
 
 ---
 
@@ -162,8 +171,8 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
 | **v0.5 supporting** | #6, #5 (both committed) + #7 + #1a | Makes the v0.5 game buildable without the worst hacks |
 | **v0.7 Lighting & Shading** | #1b point lights (+ spot, light colour/intensity, specular) | Biggest deletion; **now on the roadmap** — took over the v0.7 slot when scripting became a module |
 | **v0.6-adjacent** | #8 asset-root story folds into `AssetManager`; #9 fits too | Asset pipeline is the natural home |
-| **Rendering-scale** (~v0.9) | #3, #2b, #12 | v0.9 is Advanced Rendering & Performance |
-| **v0.5+ fidelity** | #4a (pull earlier if needed), then #4b | Character-fidelity push |
+| **v1.0 Stability, Performance & Polish** | #3, #2b, #12 | v0.9 became purely visual (shadows/post/VFX), so the throughput work moved to v1.0 — where there is finally a full frame to measure |
+| **v0.8 Animation & Character Fidelity** | #4a (the independently-useful half), then #4b | Character-fidelity push; honours v0.4.2's unkept "v0.5+" promise |
 
 ---
 

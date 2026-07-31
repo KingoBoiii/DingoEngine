@@ -67,7 +67,7 @@ entirely from the example's `ScriptableEntity` scripts on top of the new `SceneR
 Because the model loader bakes node transforms (no skinned/skeletal playback), the rig
 animates by transforming part *entities* each frame — a proper **skeletal-animation
 system** (skinned meshes, animation clips, a blend tree) remains future engine work,
-slated to land with the character fidelity push of v0.5+.
+and is scheduled as the character-fidelity milestone **v0.8** (below).
 
 ## v0.5 — Audio & Gameplay-Grade Physics
 The engine foundation is now in place: v0.4.1 moved 3D rendering and the Jolt-backed `Physics3D` world into the scene/ECS, and **v0.4.2 landed the scene rework** — the `OnStart`/`OnUpdate`/`OnStop` lifecycle, `SceneManager`-driven transitions, and the `SceneRenderer` (camera + lights read from ECS components) — so the world already renders and simulates through the scene behind a real renderer abstraction. v0.5 delivers the two remaining pieces of gameplay-supporting engine work:
@@ -132,20 +132,89 @@ shape casts); braziers with emissive cores are both the checkpoints and the only
 Snuffing your lantern hides you and blinds you at once. It stresses the light budget honestly —
 many small static flames, a handful of moving ones — and it is *played* rather than looked at.
 
-## v0.8 — Networking & Multiplayer
-Multiplayer foundation: reliable transport layer (UDP or WebSocket-based), client-server architecture, lobby and session management, and networked ECS state synchronisation. Designed to be game-agnostic so any future project can opt into online co-op.
+## v0.8 — Animation & Character Fidelity
+This one is a debt the roadmap has carried since v0.4.2. That milestone gave DungeonCrawler3D's hero
+a body instead of a sphere, and admitted in the same breath that a real skeletal-animation system
+"remains future engine work, slated to land with the character fidelity push of v0.5+" — a promise
+v0.5, v0.5.1, v0.6 and v0.7 have all walked past. In the meantime the workaround hardened into the
+house style: `Model` loads flat submeshes with baked node transforms and **no bone data at all**, and
+entities have **no parent-child relationship**, so every animated character in every project is a
+*pile of entities* — seven part-entities for the DungeonCrawler3D hero, 13–24 per character in the
+external dungeon crawler — each part's world transform recomputed by hand in game code every frame,
+against pivot offsets reverse-engineered out of the model exporter. v0.8 ends that.
 
-**Example**: Extend the *Dungeon Crawler* (v0.5) with 2–4 player online co-op using the new networking layer. Serves as the real-world stress test for the entire stack.
+- **Transform hierarchy**: a parent/child relationship between entities plus a propagation pass, so a
+  child transform is finally *relative*. This is the half that pays off immediately and entirely
+  independently of skinning — it deletes the per-part world math games write today (~76 lines in one
+  rig alone) and the exporter pivot arithmetic feeding it. Attach points — a sword in a hand, a light
+  on a lantern, a turret on a hull — become parenting instead of per-frame bookkeeping.
+- **Skinned meshes**: the model loader reworked past static-only — bone hierarchies, vertex weights
+  and inverse-bind matrices read from glTF/FBX, with skinning done on the GPU via a joint-matrix
+  palette. This is the loader change v0.6 makes affordable rather than painful: rigs become
+  `AssetManager`-owned, UUID-handled, hot-reloadable assets like everything else, instead of a
+  directory of part OBJs and a generator script.
+- **Clips, blending & animation events**: animation clips as assets, an `AnimatorComponent` that
+  plays, loops and cross-fades them, and enough of a blend tree for what games actually need — idle
+  ↔ walk ↔ run driven by a speed parameter, an upper-body action layered over locomotion, and a
+  one-shot that returns to whatever was playing underneath. Plus **events on the timeline** (footstep
+  here, hitbox live from here to here), so a swing's damage window comes from the animation instead of
+  a hand-tuned timer that drifts every time the art changes.
 
-## v0.9 — Advanced Rendering & Performance
-Shadows (cascaded shadow maps), a post-processing stack (bloom, tone mapping, SSAO/GTAO), a GPU particle system, and profiling integration (Optick or Tracy). Brings the visual and performance bar up to match the ambition of the v1.0 game.
+**Example game**: *Marionette* — a close-quarters duel against an escalating opponent, built so that
+no combat timing lives in game code at all. Reach and hit windows come from timeline events on the
+clips; telegraphs and recoveries are cross-fades long enough to read and react to; locomotion blends
+on one speed parameter while a parry layers over the top; and the same clips retarget across three
+fighters of different proportions. If the animation is wrong the fight is wrong — which is precisely
+the pressure this milestone needs to be tested under.
 
-**Example**: Visual upgrades pass over the *Dungeon Crawler* — dynamic shadow-casting lights, bloom on atmospheric effects, and particle-based combat and spell VFX.
+## v0.9 — Shadows, Post-processing & VFX
+The visual milestone — and the first one that inherits its dependencies instead of inventing them.
+v0.7 gives it lights worth casting shadows from, v0.5's emissive channel and v0.7's light budget give
+bloom something bright to bleed, and v0.8 gives it animation timelines to hang effects on. It stays
+deliberately about **what the frame looks like**; the renderer throughput work that the old
+"& Performance" title implied — and never actually scheduled — moves to v1.0.
 
-## v1.0 — Stability & Polish
-Performance profiling (Optick or Tracy), full API documentation, cross-platform validation (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term maintainability.
+- **Shadows**: cascaded shadow maps for the directional light, plus shadow casting for a bounded
+  subset of v0.7's point/spot budget (omnidirectional shadows are the expensive kind, so the cap *is*
+  the design). This is also where lighting stops being decoration: in a game built on light,
+  occlusion is gameplay.
+- **A post-processing stack**: bloom, tone mapping and SSAO/GTAO, run as a real chain over the scene
+  target rather than as one-off effects. Tone mapping isn't cosmetic here — the moment v0.7 lets N
+  lights sum past 1.0 the choice is mapping that range or clipping it, and today the engine clips.
+- **GPU particles**: an emitter/particle system on the GPU, driven from ECS components, with spawn
+  hooks on v0.8's animation timeline so a spell's burst comes from the clip instead of a timer.
+- **Profiling integration** (Optick or Tracy), so each new pass can be measured as it lands rather
+  than audited afterwards.
 
-**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels, with online co-op built-in from launch on the v0.8 networking layer. The combination of real-time combat, procedural or handcrafted levels, and networked play makes this the capstone stress test for the engine: hot-loaded assets (v0.6), a fully lit world (v0.7), advanced visuals (v0.9), and networked state sync (v0.8). **Released on Itch.io, with Steam as a stretch goal.**
+**Example**: a visual *and gameplay* upgrade pass over *Candlewick* (v0.7) — the same keep, now with
+shadow-casting lanterns, so geometry throws shadows you can hide in and a warden's vision cone is
+broken by cover; braziers bloom and their flames become particles. Adding shadows to a stealth game
+about light doesn't merely make it prettier, it changes what the player can *do* — the honest test of
+whether the feature is real. *Marionette* (v0.8) takes the particle half, with impact and footfall
+VFX fired straight from animation events.
+
+## v1.0 — Stability, Performance & Polish
+Performance profiling (Optick or Tracy), full API documentation, cross-platform validation
+(Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term
+maintainability. It also takes on the **renderer throughput work** that has been implied since v0.9
+was called "Advanced Rendering & Performance" but was never scheduled anywhere:
+
+- **The vertex budget**: `Renderer3D` CPU-transforms *every submitted vertex, every frame*
+  (`Renderer3D.cpp:276`), so the vertex count simply **is** the frame budget, and overflowing
+  `MaxVertices` drops geometry. Persistent/static batching for never-moving geometry and **GPU
+  instancing** for repeated meshes retire that. The draw-call plumbing already exists —
+  `CommandList::Draw` takes an `instanceCount`, hardcoded to 1 — so the missing piece is persistent
+  buffers, not the API.
+- **Culling**: frustum and distance culling, so what gets submitted is bounded by what's *visible*
+  rather than by what exists. Games do this by hand today, nulling a mesh per entity.
+- **Material sharing**: a shared-material path so the first custom material in a scene doesn't
+  fragment the single-batch fast path.
+
+Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
+finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
+instead of a moving target.
+
+**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels. The combination of real-time combat and procedural or handcrafted levels makes this the capstone stress test for the engine: hot-loaded assets (v0.6), a fully lit world (v0.7), animated characters (v0.8), and advanced visuals (v0.9). Online co-op is **no longer part of the 1.0 launch** — it follows as a post-release update once the networking module lands. **Released on Itch.io, with Steam as a stretch goal.**
 
 ---
 
@@ -161,3 +230,11 @@ every game to carry their dependencies.
   enough dependency to be worth opting into. It targets whichever release is current when it lands,
   and brings its showcase with it: **Tower Defense**, with tower placement, targeting and enemy
   pathfinding written entirely in script.
+- **Networking & multiplayer** *(formerly v0.8)* — a reliable transport layer (UDP or WebSocket-based),
+  client-server architecture, lobby and session management, and replicated ECS state, kept
+  game-agnostic so any project can opt into online co-op. It leaves the version train for a different
+  reason than scripting: not because it is small, but because **every single-player game would
+  otherwise pay for it**, and because the engine reaching 1.0 should mean "stable, documented and
+  complete" rather than "still waiting on a transport layer". Replicated state *does* need seams inside
+  the scene, so the v1.0 API pass should leave those hooks intact rather than paper over them. It ships
+  with the showcase it always had: **2–4 player online co-op** retrofitted onto an existing example.
