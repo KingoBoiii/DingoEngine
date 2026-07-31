@@ -25,6 +25,7 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [Scenes & ECS](docs/scenes-and-ecs.md) — entities, components, systems, and scene management
 - [2D Physics](docs/physics-2d.md) — rigid bodies, colliders, gravity, and forces/impulses
 - [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated
+- [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
 
 ## Roadmap
 
