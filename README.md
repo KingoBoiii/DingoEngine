@@ -28,7 +28,27 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full milestone plan (v0.1 → v1.0).
+Currently at **v0.6.0**. Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1) and what each
+example is built to demonstrate.
+
+| Version | Milestone | Example game | Status |
+|---|---|---|---|
+| v0.1 | Core Foundation — windowing, input, basic rendering pipeline | `FlappyBird` | shipped |
+| v0.2 | Extended Rendering Pipeline — D3D11/D3D12 back-ends, `Renderer3D`, render thread | `Breakout3D` | shipped |
+| v0.3 | Scenes & ECS | `SpaceInvaders` | shipped |
+| v0.4 | Physics & Collision — Box2D 2D and Jolt 3D, then 3D inside the ECS | `AngryBirds`, `DungeonCrawler3D` | shipped |
+| v0.5 | Audio & Gameplay-Grade Physics — miniaudio, character controller, ray/shape casts | `EchoVault` | shipped |
+| v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
+| **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | *Candlewick* | next |
+| v0.8 | Animation & Character Fidelity — transform hierarchy, skinned meshes, clips, blending | *Marionette* | planned |
+| v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
+| v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
+
+**Shipped out of band**: **scripting** (C# or Lua) and **networking/multiplayer** are optional
+**modules** layered onto a released engine rather than numbered milestones — neither blocks the
+version train, and no single-player game carries a transport layer it never uses. Online co-op is
+therefore not part of the 1.0 launch.
 
 ## Getting Started
 
