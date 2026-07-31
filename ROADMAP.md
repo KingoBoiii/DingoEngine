@@ -75,7 +75,7 @@ The engine foundation is now in place: v0.4.1 moved 3D rendering and the Jolt-ba
 - **Audio**: a proper audio engine — a real backend (miniaudio), `AudioSource` / `AudioListener` ECS components, and 3D positional sound for footsteps, combat, and ambience. (The engine had no audio at all before this milestone.)
 - **Gameplay-grade physics**: the DungeonCrawler3D prototype fakes combat and movement with distance checks and raw velocity. v0.5 promotes them to first-class physics — a reusable **character controller** for player and enemy movement (capsule collider plus ground/step handling), **ray and shape casts** for melee hits and line-of-sight, and the per-body **position / angular control** `Physics3D` previously lacked. This is the depth behind v0.4.1's initial physics-in-the-ECS wiring. Rounding it out from the same wave: `ScreenPointToRay` + ground-plane picking, script-requested scene transitions, and an emissive material channel.
 
-**Example game**: *EchoVault* — a compact 3D course of floating platforms and vaults built specifically to exercise the two new systems together: capsule character-controller movement (slopes, stairs, moving **kinematic platforms** that carry the player), ray/shape-cast gameplay (a patrolling sentry with line-of-sight detection, hit checks), and 3D positional audio you navigate *by* (chiming collectibles, humming platforms, ambient loops, footsteps). The full dungeon-crawler **game** originally slotted here is developed in its own project on prebuilt engine releases — the engine repo ships the example, the game ships on its own schedule.
+**Example game**: [EchoVault](examples/EchoVault/) — a compact 3D course of floating platforms and vaults built specifically to exercise the two new systems together: capsule character-controller movement (slopes, stairs, moving **kinematic platforms** that carry the player), ray/shape-cast gameplay (a patrolling sentry with line-of-sight detection, hit checks), and 3D positional audio you navigate *by* (chiming collectibles, humming platforms, ambient loops, footsteps). The full dungeon-crawler **game** originally slotted here is developed in its own project on prebuilt engine releases — the engine repo ships the example, the game ships on its own schedule.
 
 ## v0.5.1 — Input Rework & Gamepad Support
 A point release that replaces the input layer wholesale. The old `Input` mixed live GLFW polling with callback state and had `IsKeyDown`/`IsKeyPressed` semantics **inverted** relative to every other engine — a long-standing footgun.
@@ -84,7 +84,7 @@ A point release that replaces the input layer wholesale. The old `Input` mixed l
 - **Mouse upgrades**: scroll wheel (`GetMouseScrollDelta`) and per-frame cursor movement (`GetMouseDelta`), with new `MouseMovedEvent` / `MouseScrolledEvent` layer events.
 - **Gamepad support**: up to 16 controllers via GLFW's gamepad-mapping database — `GamepadButton` / `GamepadAxis` codes (Xbox naming with PlayStation aliases), edge/held button queries, deadzone-filtered axes and stick vectors (configurable radial deadzone, triggers remapped to [0, 1]), and `GamepadConnectedEvent` / `GamepadDisconnectedEvent`.
 
-**Example**: *EchoVault* gains full controller play — analog left-stick / d-pad movement, `(A)` to jump and confirm menus.
+**Example**: [EchoVault](examples/EchoVault/) gains full controller play — analog left-stick / d-pad movement, `(A)` to jump and confirm menus.
 
 ## v0.6 — Asset Pipeline & Hot-Reload
 The centralized **`AssetManager`** — the engine-owned registry and owner of file-backed assets, configured via `ApplicationParams::Assets` and documented in [docs/asset-pipeline.md](docs/asset-pipeline.md):
@@ -95,10 +95,42 @@ The centralized **`AssetManager`** — the engine-owned registry and owner of fi
 
 **Example game**: [ArenaShooter](examples/ArenaShooter/) — a wave-based top-down arena shooter that async-loads every asset behind a progress bar, plays all its audio through manager handles, and renders its animated background with a file-based shader: edit the shader or a sprite PNG while the game runs and watch it update live. The engine test app also gained an interactive **Asset Manager Test** (`test/`, run with `--test=asset`) covering dedup, typed access, the failure contract, and both async paths.
 
-## v0.7 — Scripting
-C# scripting via Mono or .NET CoreCLR, or Lua. Allows game logic to live outside the engine binary and be iterated on without recompiling.
+## v0.7 — Lighting & Shading
+v0.6 made assets first-class; v0.7 does the same for **light**. Everything the engine has ever
+rendered has been lit by exactly one directional light: `DirectionalLightComponent` carries a
+direction and an ambient scalar — no colour, no intensity — the `SceneRenderer` takes the
+*first one it finds* in the scene, and it reaches the mesh shader as a single `vec4` in the scene
+UBO. A game that wants a torch, a lamp, or a muzzle flash has no choice but to fake it on the CPU:
+the external dungeon crawler spends roughly 40% of its game controller re-tinting wall, floor and
+prop albedo every frame to imitate torch pools, and eventually had to hand-write its own per-pixel
+lighting shader to escape that. This milestone retires that entire category of workaround — and
+gives v0.9's shadow maps and bloom a real light abstraction to attach to instead of inventing one
+late.
 
-**Example game**: Tower Defense — towers and enemies with fully scriptable placement, targeting, and pathfinding behavior in C#/Lua. Demonstrates live logic iteration without engine recompilation.
+- **Real light types**: a `PointLightComponent` (position from the entity's transform, plus colour,
+  intensity and range with distance attenuation) and a `SpotLightComponent` (direction with
+  inner/outer cone falloff). `DirectionalLightComponent` gains the **colour and intensity it never
+  had** and stops being implicitly one-per-scene.
+- **A capped forward multi-light path**: the `SceneRenderer` gathers lights each frame and selects
+  the N most relevant (nearest / brightest, with off-screen lights culled) into a light array in the
+  scene UBO at binding 0, and the lit shader loops them per pixel. A fixed budget deliberately keeps
+  v0.4.2's per-material batching and binding layout intact — no deferred pass, no G-buffer. When the
+  budget overflows, selection is documented and warned about rather than silently different frame to
+  frame.
+- **A shading pass worth lighting**: the current shader is pure Lambert plus an ambient lift, so
+  extra lights would have nothing to catch — a specular/roughness term lands with them, and the v0.5
+  emissive channel becomes the natural companion to a co-located point light ("this object *is* the
+  light source"). The lit shader also **moves out of the `Renderer3D.cpp` string literal** onto v0.6's
+  file-backed shader path, so it hot-reloads: light falloff and specular response become things you
+  tune with the game running.
+
+**Example game**: *Candlewick* — a stealth crawl through a dark keep, built so that every light in
+the scene is a gameplay object rather than set dressing. The player carries one lantern whose radius
+*is* a burning resource; wardens patrol with their own moving point lights and see through
+spot-light vision cones (the cone drawn and the detection tested from the same data, reusing v0.5's
+shape casts); braziers with emissive cores are both the checkpoints and the only way to see a room.
+Snuffing your lantern hides you and blinds you at once. It stresses the light budget honestly —
+many small static flames, a handful of moving ones — and it is *played* rather than looked at.
 
 ## v0.8 — Networking & Multiplayer
 Multiplayer foundation: reliable transport layer (UDP or WebSocket-based), client-server architecture, lobby and session management, and networked ECS state synchronisation. Designed to be game-agnostic so any future project can opt into online co-op.
@@ -113,4 +145,19 @@ Shadows (cascaded shadow maps), a post-processing stack (bloom, tone mapping, SS
 ## v1.0 — Stability & Polish
 Performance profiling (Optick or Tracy), full API documentation, cross-platform validation (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term maintainability.
 
-**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels, with online co-op built-in from launch on the v0.8 networking layer. The combination of real-time combat, procedural or handcrafted levels, and networked play makes this the capstone stress test for the engine: scripted game logic (v0.7), hot-loaded assets (v0.6), advanced visuals (v0.9), and networked state sync (v0.8). **Released on Itch.io, with Steam as a stretch goal.**
+**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels, with online co-op built-in from launch on the v0.8 networking layer. The combination of real-time combat, procedural or handcrafted levels, and networked play makes this the capstone stress test for the engine: hot-loaded assets (v0.6), a fully lit world (v0.7), advanced visuals (v0.9), and networked state sync (v0.8). **Released on Itch.io, with Steam as a stretch goal.**
+
+---
+
+## Modules — shipped out of band
+Not every system earns a slot in the version train. Some ship as optional **modules**: separately
+versioned add-ons that layer onto a released engine, so they neither block a milestone nor force
+every game to carry their dependencies.
+
+- **Scripting** *(formerly v0.7)* — C# via .NET CoreCLR or Mono, or Lua: game logic living outside
+  the engine binary and iterated on without recompiling. It moved out of the sequence because it is
+  **additive to the existing `ScriptableEntity` model rather than a prerequisite for anything after
+  it** — nothing in v0.8–v1.0 depends on a hosted runtime — and because embedding one is a large
+  enough dependency to be worth opting into. It targets whichever release is current when it lands,
+  and brings its showcase with it: **Tower Defense**, with tower placement, targeting and enemy
+  pathfinding written entirely in script.

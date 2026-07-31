@@ -54,14 +54,16 @@ The 12 items fall into three buckets against the existing milestone plan:
 - **#1 "bloom later"** → *ROADMAP.md:96* (v0.9 Advanced Rendering: shadows, bloom, tone mapping).
 
 **Net-new / unscheduled** — the real contribution of this doc, these have no home yet:
-**#1** point lights + emissive, **#2** culling + `Visible`, **#3** static batching/instancing, **#4a**
-parent-child transforms, **#7** script scene-transitions, **#8** Font contract, **#9** Platform/IO,
-**#10** UI layer, **#11** clone/prefab, **#12** material sharing + UTF-8.
+**#2** culling + `Visible`, **#3** static batching/instancing, **#4a** parent-child transforms,
+**#8** Font contract, **#9** Platform/IO, **#10** UI layer, **#11** clone/prefab, **#12** material
+sharing + UTF-8.
 
-> ⚠️ **The single biggest game pain — #1 point lights (~330–380 lines of CPU torch-faking) — is
-> NOT on the engine roadmap.** Recommend adding an explicit **Lighting** milestone (point lights +
-> emissive) landing *with or just before* the v0.5 game, so the game can delete the torch hack;
-> bloom then follows naturally in v0.9.
+> ✅ **Adopted: #1 point lights is now the v0.7 milestone.** This doc's headline recommendation —
+> that the single biggest game pain (~330–380 lines of CPU torch-faking) had no home on the roadmap —
+> was taken up when scripting moved out of the v0.7 slot to an out-of-band module. *ROADMAP.md* v0.7
+> is now **Lighting & Shading**: point + spot lights on a capped forward N-light budget, colour and
+> intensity on the directional light, a specular term, and the lit shader moved onto the
+> hot-reloadable file path. #1a emissive already landed in **v0.5**; bloom still follows in v0.9.
 
 ---
 
@@ -69,13 +71,13 @@ parent-child transforms, **#7** script scene-transitions, **#8** Font contract, 
 
 | # | Item | Effort | Deletes in Gloomdelve | ROADMAP status |
 |---|---|---|---|---|
-| 1 | Point lights + emissive | 1a emissive **M** · 1b point lights **L** | ~330–380 lines (~40% of `GameController.cpp`) of torch-faking | **unscheduled** (bloom=v0.9) |
+| 1 | Point lights + emissive | 1a emissive **M** · 1b point lights **L** | ~330–380 lines (~40% of `GameController.cpp`) of torch-faking | 1a **landed v0.5** · 1b **= v0.7** (bloom=v0.9) |
 | 2 | Culling + `Visible` flag | 2a `Visible` **S** · 2b frustum **M–L** · 2c overflow assert **S** | ~50 lines mesh-nulling + restore arrays (2 systems) | unscheduled |
 | 3 | Static batching / instancing | **L–XL** | the `VIS_CULL_RADIUS` vertex-budget workaround | unscheduled |
 | 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | **4b=v0.5+**; 4a unscheduled |
 | 5 | Physics3D kinematic + char controller | **M–L** | raw-velocity movement; unblocks warp/checkpoint/respawn | **v0.5-committed** |
 | 6 | `ScreenPointToRay` / ground raycast | **S–M** | `MouseGroundPoint` hand-inverted VP (37 lines) | **v0.5-committed** |
-| 7 | Script-accessible scene transitions | **S–M** | `GameSession::SceneRequest` + `main.cpp` pump (~40 lines) | unscheduled (≈v0.7) |
+| 7 | Script-accessible scene transitions | **S–M** | `GameSession::SceneRequest` + `main.cpp` pump (~40 lines) | **landed v0.5** |
 | 8 | `Font::Create` failure contract | **S** | de-risks CWD trap; game's dead nullptr-guard becomes real | unscheduled (asset-root≈v0.6) |
 | 9 | Platform/IO helpers | **S** | `SaveGame.cpp` `getenv`/`#ifdef` + non-atomic write (~15 lines) | unscheduled |
 | 10 | Game-facing UI layer | **M–L** | hand-rolled hit-testing across ~4 files | unscheduled |
@@ -125,7 +127,7 @@ latent bugs. Ship as a **v0.4.3** cleanup point-release.
   unused `CharacterVirtual`. v0.5-committed. Replaces wholesale-velocity movement and enables
   checkpoints/teleporters/respawn. Depends on the capsule shape; benefits from #6.
 
-### Wave 3 — The Lighting milestone · **L** · the biggest single win (currently unscheduled)
+### Wave 3 — The Lighting milestone · **L** · the biggest single win — **now v0.7**
 - **#1b Point lights** — a capped forward **N-light** budget: a `PointLightComponent`, collect the
   N nearest in `SceneRenderer`, pass an array through the scene UBO (binding 0, the layout reworked
   in v0.4.2), loop with distance attenuation in the fragment shader. No shadows (that's v0.9).
@@ -158,7 +160,7 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
 |---|---|---|
 | **v0.4.3** (cleanup) | Wave 0: #8, #11, #2a, #2c, #9 | All **S**, no deps; ships fast, deletes the ugliest game code + closes 2 latent bugs |
 | **v0.5 supporting** | #6, #5 (both committed) + #7 + #1a | Makes the v0.5 game buildable without the worst hacks |
-| **Lighting** (propose ~v0.5.x) | #1b point lights | Biggest deletion; **add to the roadmap** — it isn't there |
+| **v0.7 Lighting & Shading** | #1b point lights (+ spot, light colour/intensity, specular) | Biggest deletion; **now on the roadmap** — took over the v0.7 slot when scripting became a module |
 | **v0.6-adjacent** | #8 asset-root story folds into `AssetManager`; #9 fits too | Asset pipeline is the natural home |
 | **Rendering-scale** (~v0.9) | #3, #2b, #12 | v0.9 is Advanced Rendering & Performance |
 | **v0.5+ fidelity** | #4a (pull earlier if needed), then #4b | Character-fidelity push |
@@ -208,7 +210,8 @@ Things the verification pass changed or sharpened vs. the original 12-item write
 - **#8 is worse than "silent nullptr."** `Font::Create` returns a **broken object with uninitialized
   `width/height`** (latent UB), and the game already carries a **dead** `if (!s_Font)` guard for a
   null the engine never returns. Also `Model::LoadFromFile` *does* return nullptr — **align the two**.
-- **#1 (point lights) is not on the engine roadmap** — the biggest single win is unscheduled. Add it.
+- **#1 (point lights) was not on the engine roadmap** — the biggest single win was unscheduled.
+  ✅ Resolved: it is now **v0.7 Lighting & Shading**.
 - **#5 and #6 are already v0.5-committed** — treat them as *game-side adoption of planned engine
   work*, not net-new backlog.
 - **Instancing has a foothold** — `CommandList` already exposes `instanceCount`, lowering #3's floor

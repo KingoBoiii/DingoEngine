@@ -126,5 +126,5 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog).
 
 - **v0.5.1** (merged): input rework + gamepad support.
-- **v0.6.0** (branch `v0.6.0`, feature-complete, not yet merged): the asset pipeline described under Key patterns — `AssetManager`, async loading, in-place texture/shader hot-reload, source-hash-validated shader cache, the F6 Assets panel — showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`--test=asset`), then a full review pass (see above).
-- **Next**: v0.7 scripting.
+- **v0.6.0** (merged, `86abb61`): the asset pipeline described under Key patterns — `AssetManager`, async loading, in-place texture/shader hot-reload, source-hash-validated shader cache, the F6 Assets panel — showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`--test=asset`), then a full review pass (see above).
+- **Next**: v0.7 **lighting & shading** — point/spot lights on a capped forward N-light budget, colour + intensity on the directional light, a specular term, and the lit shader moved out of the `Renderer3D.cpp` string literal onto the hot-reloadable file path. Scripting is no longer v0.7; it ships as an out-of-band module (see the Modules section of the roadmap).
