@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <thread>
 #include <unordered_map>
@@ -160,6 +161,13 @@ namespace Dingo::Internal
 		// otherwise allocates a separate shape (and its own cache line) for every one.
 		// Dropped with the world, so no shape outlives the bodies referencing it.
 		std::unordered_map<ShapeKey, JPH::ShapeRefC, ShapeKeyHash> ShapeCache;
+
+		// Unscaled mesh / hull shapes keyed by Mesh::GetId(); each body wraps the shared
+		// shape in its own ScaledShape. Entries only the cache still holds are pruned
+		// whenever a new one is built, so a scene that streams meshes in and out does
+		// not keep every triangle it ever baked.
+		std::unordered_map<std::uint64_t, JPH::ShapeRefC> MeshShapeCache;
+		std::unordered_map<std::uint64_t, JPH::ShapeRefC> ConvexHullShapeCache;
 
 		explicit JoltPhysics3DData(JPH::uint maxBodies)
 			: TempAllocator(32 * 1024 * 1024) // per-Update working memory; must cover the limits below
