@@ -10,8 +10,9 @@ for things that are **wrong or surprising in code that already ships**.
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
 - **IDs are never reused.** A fixed entry is deleted rather than renumbered, so gaps are expected:
-  fixed in v0.6.2 were K2 and K3 (text could not draw its Latin-1 glyphs and had no UTF-8 decode) and
-  K6 (the `.cache` directory followed the working directory).
+  fixed in v0.6.2 were K1 (`Application::OnDestroy` never reached a derived override), K2 and K3
+  (text could not draw its Latin-1 glyphs and had no UTF-8 decode) and K6 (the `.cache` directory
+  followed the working directory).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
@@ -21,7 +22,6 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 
 | # | Issue | Kind | Area |
 |---|---|---|---|
-| [K1](#k1) | `Application::OnDestroy()` never runs for a derived override | Defect · Latent | Core |
 | [K4](#k4) | A default-constructed `AssetHandle` passes `IsValidAssetHandle` | Defect | Asset |
 | [K5](#k5) | The `Debug-ASan` configuration does not link | Defect | Build |
 | [K7](#k7) | `Font::Create` ignores the asset root that `AssetManager` honours | Limitation | Asset |
@@ -31,23 +31,6 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
 
 ---
-
-## K1 — `Application::OnDestroy()` never runs for a derived override {#k1}
-
-**Defect · Latent** — `include/DingoEngine/Core/Application.h:139`, `src/DingoEngine/Core/Application.cpp:30,103`
-
-`Application` publishes `virtual void OnDestroy() {}` as an overridable teardown hook. The only caller
-is `Application::Destroy()` (`:103`), and the only caller of *that* is `~Application()` (`:30`). By the
-time a base destructor runs, the derived object no longer exists, so the virtual dispatches to
-`Application::OnDestroy` — the empty base version. A subclass override is silently dead code.
-
-Nothing in the tree overrides it today (the `OnDestroy` overrides in the examples are
-`ScriptableEntity::OnDestroy`, a different class, which works fine), so this is a trap for the next
-person rather than an active bug — it masks leaks and skipped shutdown work only on clean exits.
-
-**Workaround**: put application teardown in `Layer::OnDetach`, which runs while the GPU is idle and
-before device teardown. **Fix**: either call `Destroy()` from the run loop before the destructor, or
-remove the hook so the header stops advertising it.
 
 ## K4 — A default-constructed `AssetHandle` passes `IsValidAssetHandle` {#k4}
 

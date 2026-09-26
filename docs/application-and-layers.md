@@ -99,7 +99,7 @@ public:
         PushLayer(new GameLayer());
     }
 
-    void OnDestroy() override {}   // optional cleanup
+    void OnDestroy() override {}   // once, when Run() returns - layers and renderer still live
 };
 ```
 

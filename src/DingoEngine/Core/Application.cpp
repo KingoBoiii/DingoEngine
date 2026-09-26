@@ -100,8 +100,6 @@ namespace Dingo
 
 	void Application::Destroy()
 	{
-		OnDestroy();
-
 		// Park the render thread first so the GPU is idle before any resources are freed.
 		Renderer::Shutdown();
 
@@ -251,6 +249,10 @@ namespace Dingo
 			}
 			m_DrainingPostExecution.clear();
 		}
+
+		// Here rather than in Destroy(): that runs from ~Application, where the derived
+		// class is already gone and the call would reach only the empty base hook.
+		OnDestroy();
 	}
 
 	void Application::RenderDebugOverlays()
