@@ -42,8 +42,9 @@ params.Assets.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or(
 ```
 
 `Platform::GetExecutablePath()` and `GetExecutableDirectory()` are also available.
-Note that `Font::Create` and the shader `.cache` still resolve against the working
-directory ([K6/K7](../KNOWN-BUGS.md)).
+Note that `Font::Create` still resolves against the working directory
+([K7](../KNOWN-BUGS.md)). The shader and font-atlas `.cache` lives beside the executable (v0.6.2),
+or under `Platform::GetUserDataDir("DingoEngine")/cache/<exe name>` when that directory is read-only.
 
 Access it anywhere:
 

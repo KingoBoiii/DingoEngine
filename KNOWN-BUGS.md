@@ -10,7 +10,8 @@ for things that are **wrong or surprising in code that already ships**.
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
 - **IDs are never reused.** A fixed entry is deleted rather than renumbered, so gaps are expected:
-  K2 and K3 (text could not draw its Latin-1 glyphs and had no UTF-8 decode) were fixed in v0.6.2.
+  fixed in v0.6.2 were K2 and K3 (text could not draw its Latin-1 glyphs and had no UTF-8 decode) and
+  K6 (the `.cache` directory followed the working directory).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
@@ -23,7 +24,6 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K1](#k1) | `Application::OnDestroy()` never runs for a derived override | Defect · Latent | Core |
 | [K4](#k4) | A default-constructed `AssetHandle` passes `IsValidAssetHandle` | Defect | Asset |
 | [K5](#k5) | The `Debug-ASan` configuration does not link | Defect | Build |
-| [K6](#k6) | `.cache` is resolved against the *working directory* | Limitation | Core |
 | [K7](#k7) | `Font::Create` ignores the asset root that `AssetManager` honours | Limitation | Asset |
 | [K8](#k8) | Physics component copy constructors alias a live body handle | Defect · Latent | Scene |
 | [K9](#k9) | `Renderer3D` drops geometry on batch overflow in shipping builds | Limitation | Rendering |
@@ -79,23 +79,6 @@ with `0xC0000135` (the same failure mode as a missing assimp DLL).
 
 **Fix**: add both defines to the `Debug-ASan` filter, and copy the ASan runtime alongside the other
 post-build DLL copies.
-
-## K6 — `.cache` is resolved against the working directory {#k6}
-
-**Limitation** — `src/DingoEngine/Core/CacheManager.cpp:24`
-
-`return std::filesystem::current_path() / ".cache";` — the shader-bytecode and font-atlas caches live
-relative to wherever the process was launched from, not next to the executable or in user data. Two
-consequences:
-
-- Launching the same build from a different directory rebuilds every shader and atlas from scratch,
-  which reads as a mysterious first-run stall.
-- A read-only or shared install directory can never populate the cache, so it pays full compile cost
-  **every** launch.
-
-v0.6 retired the equivalent trap for *assets* by introducing a configurable asset root; the cache
-directory was not moved with it. **Fix**: resolve the cache under the executable directory, or under
-`Platform::GetUserDataDir()` (which exists as of v0.4.3).
 
 ## K7 — `Font::Create` ignores the asset root that `AssetManager` honours {#k7}
 
