@@ -285,6 +285,7 @@ namespace Dingo
 			params.Type = rigidBody.Type;
 			params.Position = transform.Position;
 			params.Rotation = transform.Rotation;
+			params.ContinuousCollision = rigidBody.ContinuousCollision;
 
 			// The collider shape is baked into the body at creation. Collider sizes are
 			// fractions of the entity's full extent (Transform3D.Scale), so a unit-scaled
@@ -311,6 +312,23 @@ namespace Dingo
 				auto& collider = registry.get<BoxCollider3DComponent>(handle);
 				params.Shape = ColliderShape3D::Box;
 				params.HalfExtents = transform.Scale * collider.HalfExtents;
+				params.Friction = collider.Friction;
+				params.Restitution = collider.Restitution;
+			}
+			else if (registry.all_of<MeshCollider3DComponent>(handle))
+			{
+				auto& collider = registry.get<MeshCollider3DComponent>(handle);
+				params.Shape = collider.Convex ? ColliderShape3D::ConvexHull : ColliderShape3D::Mesh;
+				params.Mesh = collider.Mesh;
+				if (!params.Mesh && registry.all_of<MeshRendererComponent>(handle))
+					params.Mesh = registry.get<MeshRendererComponent>(handle).Mesh;
+				if (!params.Mesh)
+				{
+					const std::string name = registry.all_of<TagComponent>(handle) ? registry.get<TagComponent>(handle).Tag : std::string();
+					DE_CORE_ERROR("MeshCollider3DComponent on '{}' has no Mesh and no MeshRendererComponent::Mesh to fall back on; no body created", name);
+					return;
+				}
+				params.MeshScale = transform.Scale;
 				params.Friction = collider.Friction;
 				params.Restitution = collider.Restitution;
 			}

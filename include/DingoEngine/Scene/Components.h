@@ -232,7 +232,7 @@ namespace Dingo
 	// Transform3DComponent (the default TransformComponent it receives on creation
 	// is 2D and simply goes unused); it is rendered through Renderer3D when it also
 	// has a MeshRendererComponent, and simulated in the Scene's Physics3D world when
-	// it has a RigidBody3DComponent plus a box/sphere collider.
+	// it has a RigidBody3DComponent plus a collider.
 
 	// 3D transform. Position is the entity center; Rotation is a quaternion; Scale
 	// is the full extent multiplier per axis. The Scene writes the simulated
@@ -293,7 +293,7 @@ namespace Dingo
 	// behind the Physics3D interface). RuntimeBody is an opaque handle, valid only
 	// while the scene's physics is running. Unlike the 2D collider components, the 3D
 	// collider shape is baked into the body when it is created, so a 3D rigid-body
-	// entity needs exactly one Box/SphereCollider3DComponent alongside this.
+	// entity needs exactly one Box/Sphere/Capsule/MeshCollider3DComponent alongside this.
 	struct RigidBody3DComponent
 	{
 		// Alias the backend-agnostic enum so RigidBody3DComponent::BodyType::Dynamic works.
@@ -306,6 +306,10 @@ namespace Dingo
 		// MUST reset it to k_InvalidBody3D on the copy — otherwise both entities alias
 		// (and DestroyEntity double-frees) the same physics body.
 		PhysicsBodyId3D RuntimeBody = k_InvalidBody3D;
+
+		// See RigidBodyParams3D::ContinuousCollision: turn on for fast bodies that must not
+		// tunnel through MeshCollider3DComponent geometry.
+		bool ContinuousCollision = false;
 
 		RigidBody3DComponent() = default;
 		RigidBody3DComponent(const RigidBody3DComponent&) = default;
@@ -355,6 +359,28 @@ namespace Dingo
 
 		CapsuleCollider3DComponent() = default;
 		CapsuleCollider3DComponent(const CapsuleCollider3DComponent&) = default;
+	};
+
+	// A collider shaped like a Mesh, for an entity with a RigidBody3DComponent. The mesh
+	// is scaled by Transform3DComponent::Scale exactly as MeshRendererComponent draws it,
+	// so the collider matches what is on screen. A null Mesh uses the entity's
+	// MeshRendererComponent::Mesh. Not owned, and only read when the body is built.
+	//
+	// Convex = false collides against the triangles themselves, for level geometry:
+	// Static or Kinematic bodies only. Convex = true uses the convex hull of the vertices
+	// and works for any body type; a Dynamic body always gets the hull.
+	struct MeshCollider3DComponent
+	{
+		Dingo::Mesh* Mesh = nullptr;
+		bool Convex = false;
+
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		MeshCollider3DComponent() = default;
+		MeshCollider3DComponent(const MeshCollider3DComponent&) = default;
+		MeshCollider3DComponent(Dingo::Mesh* mesh, bool convex = false)
+			: Mesh(mesh), Convex(convex) {}
 	};
 
 	// A kinematic character controller for player/enemy movement, wrapping Jolt's

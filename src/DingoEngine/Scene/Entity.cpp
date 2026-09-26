@@ -98,6 +98,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(BoxCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(SphereCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(CapsuleCollider3DComponent)
+	DE_INSTANTIATE_COMPONENT(MeshCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(CharacterController3DComponent)
 	DE_INSTANTIATE_COMPONENT(DirectionalLightComponent)
 	DE_INSTANTIATE_COMPONENT(AudioSourceComponent)
