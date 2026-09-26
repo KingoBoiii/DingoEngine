@@ -109,14 +109,17 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
 | `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = built-in flat-lit) |
-| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), opaque `RuntimeBody` |
+| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2), opaque `RuntimeBody` |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
+| `CapsuleCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `float HalfHeight` (fraction of `Scale.y`), `Friction`, `Restitution` |
+| `MeshCollider3DComponent` (v0.6.2) | `Mesh* Mesh` (not owned; null = the entity's `MeshRendererComponent::Mesh`), `bool Convex`, `Friction`, `Restitution` — scaled by the full `Scale`, see [Mesh colliders](physics-3d.md#mesh-colliders-v062) |
 
 > A 3D entity still receives the default 2D `TransformComponent` on creation; it simply goes
 > unused. The collider shape is **baked into the body at creation** (so a rigid-body entity
-> needs exactly one box/sphere collider), and collider sizes are fractions of `Transform3D.Scale`
-> — a unit-scaled entity with the default collider exactly fills its mesh.
+> needs exactly one collider), and primitive collider sizes are fractions of `Transform3D.Scale`
+> — a unit-scaled entity with the default collider exactly fills its mesh. A mesh collider
+> instead takes the mesh at the entity's full `Scale`, exactly as `MeshRendererComponent` draws it.
 
 ```cpp
 // A dynamic sphere on a static floor. Mesh* come from Renderer3D's built-in primitives.

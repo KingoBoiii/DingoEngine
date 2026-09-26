@@ -167,10 +167,10 @@ namespace Dingo
 		// entity has a RigidBody2DComponent, and a 3D world (from the 3D gravity) if
 		// any has a RigidBody3DComponent — a scene pays only for the dimension it
 		// uses. Each rigid-body entity gets a simulation body (2D bodies also get
-		// their box/circle collider shapes; 3D bodies bake the box/sphere collider in
-		// at creation). After this, OnUpdate steps the live world(s) each frame and
-		// writes the simulated transforms back: 2D onto TransformComponent, 3D onto
-		// Transform3DComponent.
+		// their box/circle collider shapes; 3D bodies bake their box/sphere/capsule/
+		// mesh collider in at creation). After this, OnUpdate steps the live world(s)
+		// each frame and writes the simulated transforms back: 2D onto
+		// TransformComponent, 3D onto Transform3DComponent.
 		void OnPhysicsStart();
 
 		// Tears down both physics worlds and clears the runtime handles on every

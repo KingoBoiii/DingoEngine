@@ -25,7 +25,8 @@ namespace Dingo
 		// Every asset path resolves against this root. A relative root is resolved
 		// against the working directory once at Initialize(), so a game can anchor
 		// assets to e.g. the executable's directory instead of depending on where it
-		// was launched from (the classic cwd-relative asset trap).
+		// was launched from (the classic cwd-relative asset trap). For a packaged
+		// build, set this via Platform::FindDirectoryUpward("assets").
 		std::filesystem::path RootDirectory = "assets";
 
 		// Watches loaded textures and shaders for on-disk changes and reloads them in

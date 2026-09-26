@@ -83,6 +83,8 @@ namespace Dingo
 			bool Centered = false;
 		};
 
+		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes
+		// Latin-1, the printable General Punctuation and the euro sign; anything else draws '?'.
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 

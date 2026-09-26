@@ -71,7 +71,7 @@ namespace Dingo
 			std::unique_ptr<Physics3D> m_Physics3D;
 
 			int m_SubStepCount = 4;
-			int m_CollisionSteps = 1;
+			static constexpr int k_MaxCollisionSteps = 4;
 
 			// One per CharacterController3DComponent. The component's RuntimeController
 			// field indexes into this vector; slots are never reused (a destroyed

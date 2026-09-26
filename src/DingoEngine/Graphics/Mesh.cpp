@@ -2,10 +2,17 @@
 #include "DingoEngine/Graphics/Mesh.h"
 
 #include <glm/gtc/constants.hpp>
+#include <atomic>
 #include <cmath>
 
 namespace Dingo
 {
+
+	std::uint64_t Mesh::AllocateId()
+	{
+		static std::atomic<std::uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
 
 	Mesh* Mesh::Create(const std::vector<MeshVertex>& vertices, const std::vector<uint32_t>& indices)
 	{

@@ -24,13 +24,13 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [2D Rendering](docs/rendering-2d.md) — quads, circles, text, textures, fonts
 - [Scenes & ECS](docs/scenes-and-ecs.md) — entities, components, systems, and scene management
 - [2D Physics](docs/physics-2d.md) — rigid bodies, colliders, gravity, and forces/impulses
-- [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated
+- [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated, including mesh colliders
 - [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
 
 ## Roadmap
 
-Currently at **v0.6.1**. Every milestone ships with an example game that exercises it — see
-[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1) and what each
+Currently at **v0.6.2**. Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1, v0.6.2) and what each
 example is built to demonstrate.
 
 | Version | Milestone | Example game | Status |

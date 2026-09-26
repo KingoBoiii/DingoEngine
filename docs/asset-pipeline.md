@@ -30,6 +30,22 @@ game can anchor it to the executable's directory (or a CLI argument) instead of
 depending on where it was launched from — the classic cwd-relative asset trap.
 If the root does not exist at startup, a warning is logged immediately.
 
+To anchor to the executable (v0.6.2), `Platform::FindDirectoryUpward` searches the
+exe's directory and up to 8 parents. The same line works for a packaged build
+(`assets/` beside the exe) and a dev build (exe under `build/bin/<Config>/`), and it
+works no matter which directory Steam or a shortcut launches the game from:
+
+```cpp
+#include <DingoEngine/Core/Platform.h>
+
+params.Assets.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or("assets"));
+```
+
+`Platform::GetExecutablePath()` and `GetExecutableDirectory()` are also available.
+Note that `Font::Create` still resolves against the working directory
+([K7](../KNOWN-BUGS.md)). The shader and font-atlas `.cache` lives beside the executable (v0.6.2),
+or under `Platform::GetUserDataDir("DingoEngine")/cache/<exe name>` when that directory is read-only.
+
 Access it anywhere:
 
 ```cpp

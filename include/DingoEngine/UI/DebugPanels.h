@@ -72,6 +72,9 @@ namespace Dingo::UI
 	// Cursor position, per-frame delta, scroll delta, and held mouse buttons.
 	void MouseInputSection();
 
+	// Cursor mode, window focus, raw motion, and the (possibly suppressed) mouse delta.
+	void CursorInputSection();
+
 	// Every currently held key by name.
 	void KeyboardInputSection();
 

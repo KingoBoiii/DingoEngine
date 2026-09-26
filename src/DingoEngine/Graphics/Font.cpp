@@ -9,6 +9,7 @@
 #include <FontGeometry.h>
 
 #include "MSDFData.h"
+#include "Utf8.h"
 
 namespace Dingo
 {
@@ -37,7 +38,7 @@ namespace Dingo
 		static constexpr uint32_t k_FontAtlasCacheMagic = 0x46414344; // "DCAF"
 		// Bump when the charset, the packer settings, the generator or this header change in a
 		// way that invalidates previously cached pixels.
-		static constexpr uint32_t k_FontAtlasCacheFormatVersion = 2;
+		static constexpr uint32_t k_FontAtlasCacheFormatVersion = 3;
 
 		inline static uint64_t HashFNV1a(const void* data, size_t size, uint64_t hash = 14695981039346656037ull)
 		{
@@ -270,9 +271,14 @@ namespace Dingo
 		double x = 0.0;
 		double widestLine = 0.0;
 
-		for (size_t i = 0; i < string.size(); i++)
+		const std::string_view text = string;
+		size_t index = 0;
+		while (index < text.size())
 		{
-			const char character = string[i];
+			const uint32_t character = Internal::DecodeUtf8(text, index);
+			size_t lookahead = index;
+			const bool hasNext = lookahead < text.size();
+			const uint32_t nextCharacter = hasNext ? Internal::DecodeUtf8(text, lookahead) : 0;
 
 			if (character == '\n')
 			{
@@ -304,9 +310,9 @@ namespace Dingo
 			// glyph's own advance and only let the kerned pair overwrite it when there is
 			// a next character.
 			double advance = glyph->getAdvance();
-			if (i + 1 < string.size())
+			if (hasNext)
 			{
-				fontGeometry.getAdvance(advance, character, string[i + 1]);
+				fontGeometry.getAdvance(advance, character, nextCharacter);
 			}
 
 			x += fsScale * advance + kerning;
@@ -338,9 +344,14 @@ namespace Dingo
 			uint32_t Begin, End;
 		};
 
-		// From imgui_draw.cpp
+		// Latin-1, the printable General Punctuation (dashes, curly quotes, bullet, ellipsis,
+		// primes, guillemets) and the euro sign; text outside them draws as '?'. Changing this
+		// must bump k_FontAtlasCacheFormatVersion.
 		static const CharsetRange charsetRange[] = {
-			{ 0x0020, 0x00FF }
+			{ 0x0020, 0x00FF },
+			{ 0x2010, 0x2027 },
+			{ 0x2030, 0x205E },
+			{ 0x20AC, 0x20AC },
 		};
 
 		msdf_atlas::Charset charset;

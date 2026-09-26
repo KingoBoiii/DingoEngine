@@ -11,7 +11,7 @@ namespace Dingo
 	enum class EventType
 	{
 		None = 0,
-		WindowClose, WindowResize,
+		WindowClose, WindowResize, WindowFocus,
 		KeyPressed, KeyReleased,
 		MouseButtonPressed, MouseButtonReleased,
 		MouseMoved, MouseScrolled,

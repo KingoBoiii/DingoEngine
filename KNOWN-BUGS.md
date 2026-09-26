@@ -9,6 +9,10 @@ for things that are **wrong or surprising in code that already ships**.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
+- **IDs are never reused.** A fixed entry is deleted rather than renumbered, so gaps are expected:
+  fixed in v0.6.2 were K1 (`Application::OnDestroy` never reached a derived override), K2 and K3
+  (text could not draw its Latin-1 glyphs and had no UTF-8 decode) and K6 (the `.cache` directory
+  followed the working directory).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
@@ -18,65 +22,15 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 
 | # | Issue | Kind | Area |
 |---|---|---|---|
-| [K1](#k1) | `Application::OnDestroy()` never runs for a derived override | Defect · Latent | Core |
-| [K2](#k2) | Text rendering cannot address bytes `0x80`–`0xFF` of its own atlas | Defect | Text |
-| [K3](#k3) | Text rendering has no UTF-8 decode | Limitation | Text |
 | [K4](#k4) | A default-constructed `AssetHandle` passes `IsValidAssetHandle` | Defect | Asset |
 | [K5](#k5) | The `Debug-ASan` configuration does not link | Defect | Build |
-| [K6](#k6) | `.cache` is resolved against the *working directory* | Limitation | Core |
 | [K7](#k7) | `Font::Create` ignores the asset root that `AssetManager` honours | Limitation | Asset |
-| [K8](#k8) | Physics component copy constructors alias a live body handle | Defect · Latent | Scene |
+| [K8](#k8) | Assigning one entity's physics component onto another's aliases its handle | Defect · Latent | Scene |
 | [K9](#k9) | `Renderer3D` drops geometry on batch overflow in shipping builds | Limitation | Rendering |
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
 
 ---
-
-## K1 — `Application::OnDestroy()` never runs for a derived override {#k1}
-
-**Defect · Latent** — `include/DingoEngine/Core/Application.h:139`, `src/DingoEngine/Core/Application.cpp:30,103`
-
-`Application` publishes `virtual void OnDestroy() {}` as an overridable teardown hook. The only caller
-is `Application::Destroy()` (`:103`), and the only caller of *that* is `~Application()` (`:30`). By the
-time a base destructor runs, the derived object no longer exists, so the virtual dispatches to
-`Application::OnDestroy` — the empty base version. A subclass override is silently dead code.
-
-Nothing in the tree overrides it today (the `OnDestroy` overrides in the examples are
-`ScriptableEntity::OnDestroy`, a different class, which works fine), so this is a trap for the next
-person rather than an active bug — it masks leaks and skipped shutdown work only on clean exits.
-
-**Workaround**: put application teardown in `Layer::OnDetach`, which runs while the GPU is idle and
-before device teardown. **Fix**: either call `Destroy()` from the run loop before the destructor, or
-remove the hook so the header stops advertising it.
-
-## K2 — Text rendering cannot address bytes `0x80`–`0xFF` of its own atlas {#k2}
-
-**Defect** — `src/DingoEngine/Graphics/Renderer2D.cpp:473`, `src/DingoEngine/Graphics/Font.cpp:342-343`
-
-The MSDF atlas is deliberately baked over `U+0020`–`U+00FF`, so the whole Latin-1 supplement — `é`,
-`ü`, `£`, `°` — has glyphs. But the text renderer walks the string as `char character = string[i]`,
-and `char` is **signed** on MSVC. Any byte from `0x80` up is negative, and converting it to msdfgen's
-`unicode_t` (an unsigned 32-bit codepoint) wraps it to a huge value, so the glyph lookup misses.
-
-The result: the engine pays to bake 128 glyphs it can never draw, and the charset range in `Font.cpp`
-overstates what actually renders.
-
-**Fix**: read the byte as `unsigned char` (or `uint8_t`) before widening. One-line change at the three
-places in `DrawText` that touch `string[i]`.
-
-## K3 — Text rendering has no UTF-8 decode {#k3}
-
-**Limitation** — `src/DingoEngine/Graphics/Renderer2D.cpp:471-473`
-
-`DrawText` iterates *bytes*, not codepoints. A multi-byte UTF-8 sequence is therefore drawn as two or
-three separate garbage glyphs. Combined with [K2](#k2), the practical constraint is that on-screen
-strings must be **pure ASCII** — an em-dash (`—`, `U+2014`) in a `TextComponent` renders as `???`.
-
-This is undocumented discipline rather than an enforced rule: nothing asserts on it, and the engine's
-own examples happen to comply. Note that source comments and the OS window title are unaffected.
-
-**Fix**: decode UTF-8 to codepoints in the `DrawText` loop, and widen the atlas charset past `0x00FF`
-for anything beyond Latin-1. Do [K2](#k2) first — it is the cheaper half and unblocks Latin-1 alone.
 
 ## K4 — A default-constructed `AssetHandle` passes `IsValidAssetHandle` {#k4}
 
@@ -109,23 +63,6 @@ with `0xC0000135` (the same failure mode as a missing assimp DLL).
 **Fix**: add both defines to the `Debug-ASan` filter, and copy the ASan runtime alongside the other
 post-build DLL copies.
 
-## K6 — `.cache` is resolved against the working directory {#k6}
-
-**Limitation** — `src/DingoEngine/Core/CacheManager.cpp:24`
-
-`return std::filesystem::current_path() / ".cache";` — the shader-bytecode and font-atlas caches live
-relative to wherever the process was launched from, not next to the executable or in user data. Two
-consequences:
-
-- Launching the same build from a different directory rebuilds every shader and atlas from scratch,
-  which reads as a mysterious first-run stall.
-- A read-only or shared install directory can never populate the cache, so it pays full compile cost
-  **every** launch.
-
-v0.6 retired the equivalent trap for *assets* by introducing a configurable asset root; the cache
-directory was not moved with it. **Fix**: resolve the cache under the executable directory, or under
-`Platform::GetUserDataDir()` (which exists as of v0.4.3).
-
 ## K7 — `Font::Create` ignores the asset root that `AssetManager` honours {#k7}
 
 **Limitation** — `src/DingoEngine/Graphics/Font.cpp:185,196-197`
@@ -139,22 +76,26 @@ no crash.
 **Fix**: route `Font::Create` through the same path resolution, or document the split explicitly in
 [docs/asset-pipeline.md](docs/asset-pipeline.md) and steer games to the manager.
 
-## K8 — Physics component copy constructors alias a live body handle {#k8}
+## K8 — Assigning one entity's physics component onto another's aliases its handle {#k8}
 
-**Defect · Latent** — `include/DingoEngine/Scene/Components.h:179-182,204-205,224-225,307`
+**Defect · Latent** — `include/DingoEngine/Scene/Components.h` (every component with a `Runtime*` handle)
 
-`RigidBody2DComponent`, `BoxCollider2DComponent`, `CircleCollider2DComponent` and
-`RigidBody3DComponent` all declare `(const T&) = default`, which copies the live `RuntimeBody` /
-`RuntimeShape` handle into the copy. Two components then name one Box2D/Jolt body, and whichever is
-destroyed second double-frees it.
+Six components carry a live runtime handle: `RigidBody2DComponent`, `BoxCollider2DComponent`,
+`CircleCollider2DComponent`, `RigidBody3DComponent`, `CharacterController3DComponent` and
+`AudioSourceComponent`. Since v0.6.2 `Entity::AddComponent` clears the handles of whatever it adds, so
+copying a component onto another entity — `b.AddComponent(a.GetComponent<RigidBody3DComponent>())` —
+is safe, as is `Scene::DuplicateEntity`.
 
-`Scene::DuplicateEntity` handles this correctly — `src/DingoEngine/Scene/Scene.cpp:124-130` resets each
-handle to its sentinel (`0` for 2D, `k_InvalidBody3D` for 3D) — so the supported clone path is safe.
-The exposure is hand-rolled copying, e.g. `auto rb = a.GetComponent<RigidBody2DComponent>();
-b.AddComponent(rb);`, which compiles and looks reasonable.
+Assigning onto a component that is already live still copies the handle:
+`b.GetComponent<RigidBody3DComponent>() = a.GetComponent<RigidBody3DComponent>();` makes B drive A's
+body and orphans B's own, and whichever entity is destroyed second frees A's body twice.
 
-**Fix**: give the four components copy constructors that reset the handle instead of defaulting it, so
-correctness stops depending on every call site remembering.
+The reset can't move into the components' copy constructor or assignment: EnTT relocates components
+by copy and move when its storage compacts, and those must carry the handle, or every live entity loses
+its body the first time another entity is destroyed.
+
+**Workaround**: copy the settings field by field. **Fix**: split the handle out of the settings (an
+engine-owned runtime component beside the user-facing one), so assigning settings can never touch it.
 
 ## K9 — `Renderer3D` drops geometry on batch overflow in shipping builds {#k9}
 

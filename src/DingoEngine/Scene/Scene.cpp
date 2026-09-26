@@ -98,6 +98,7 @@ namespace Dingo
 		CopyComponentIfExists<BoxCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<CapsuleCollider3DComponent>(registry, dst, src);
+		CopyComponentIfExists<MeshCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<CharacterController3DComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);

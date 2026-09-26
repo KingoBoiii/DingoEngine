@@ -136,6 +136,8 @@ namespace Dingo
 
 	protected:
 		virtual void OnInitialize() {}
+		// Runs once when Run() returns, before teardown: layers, renderer, audio and assets
+		// are all still live.
 		virtual void OnDestroy() {}
 
 	private:

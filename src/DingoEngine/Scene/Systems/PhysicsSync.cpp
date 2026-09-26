@@ -3,6 +3,9 @@
 
 #include "DingoEngine/Scene/Components.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace Dingo
 {
 
@@ -101,7 +104,12 @@ namespace Dingo
 			if (!m_Physics3D || !m_Physics3D->IsValid())
 				return;
 
-			m_Physics3D->Step(deltaTime, m_CollisionSteps);
+			// One collision step per 1/60 s, as Jolt recommends: a single step over a 30 fps frame
+			// lets a falling body cross a mesh collider's zero-thickness triangles. The 0.1
+			// tolerance keeps 60 Hz frame jitter at one step; the cap stops a stall from
+			// snowballing into ever-longer frames.
+			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
+			m_Physics3D->Step(deltaTime, collisionSteps);
 
 			auto view = registry.view<RigidBody3DComponent, Transform3DComponent>();
 			for (entt::entity handle : view)
@@ -285,6 +293,7 @@ namespace Dingo
 			params.Type = rigidBody.Type;
 			params.Position = transform.Position;
 			params.Rotation = transform.Rotation;
+			params.ContinuousCollision = rigidBody.ContinuousCollision;
 
 			// The collider shape is baked into the body at creation. Collider sizes are
 			// fractions of the entity's full extent (Transform3D.Scale), so a unit-scaled
@@ -311,6 +320,23 @@ namespace Dingo
 				auto& collider = registry.get<BoxCollider3DComponent>(handle);
 				params.Shape = ColliderShape3D::Box;
 				params.HalfExtents = transform.Scale * collider.HalfExtents;
+				params.Friction = collider.Friction;
+				params.Restitution = collider.Restitution;
+			}
+			else if (registry.all_of<MeshCollider3DComponent>(handle))
+			{
+				auto& collider = registry.get<MeshCollider3DComponent>(handle);
+				params.Shape = collider.Convex ? ColliderShape3D::ConvexHull : ColliderShape3D::Mesh;
+				params.Mesh = collider.Mesh;
+				if (!params.Mesh && registry.all_of<MeshRendererComponent>(handle))
+					params.Mesh = registry.get<MeshRendererComponent>(handle).Mesh;
+				if (!params.Mesh)
+				{
+					const std::string name = registry.all_of<TagComponent>(handle) ? registry.get<TagComponent>(handle).Tag : std::string();
+					DE_CORE_ERROR("MeshCollider3DComponent on '{}' has no Mesh and no MeshRendererComponent::Mesh to fall back on; no body created", name);
+					return;
+				}
+				params.MeshScale = transform.Scale;
 				params.Friction = collider.Friction;
 				params.Restitution = collider.Restitution;
 			}
