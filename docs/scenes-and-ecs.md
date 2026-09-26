@@ -191,7 +191,24 @@ The binding convention a custom mesh shader follows:
   bound on every material each frame. Declare it to position your vertices (and light, if you want it).
 - **binding 1** — your material's own uniforms (whatever you pass to `Material::SetUniform`). Omit it
   if the material has no params.
-- **binding 2+** — the material's textures/samplers (`Material::SetTexture` / `SetSampler`).
+- **binding 2+** — the material's textures/samplers (`Material::SetTexture` / `SetSampler`),
+  interleaved: texture slot *i* at `2 + 2i`, sampler slot *i* at `3 + 2i`.
+
+Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching),
+as `a_Position` (location 0), `a_Normal` (1), `a_Color` (2 — the component's `Color`) and
+`a_TexCoord` (3 — the mesh's UVs, since v0.6.1). Use exactly these names: D3D11/D3D12 match vertex
+inputs by name, Vulkan by location. To texture a mesh, sample a bound texture with `a_TexCoord`:
+
+```glsl
+layout(location = 3) in vec2 a_TexCoord;                      // vertex stage; pass it on
+layout(set = 0, binding = 2) uniform texture2D u_Albedo;      // Material::SetTexture(0, ...)
+layout(set = 0, binding = 3) uniform sampler   u_Sampler;     // Material::SetSampler(0, ...)
+// fragment: vec4 albedo = texture(sampler2D(u_Albedo, u_Sampler), v_TexCoord) * v_Color;
+```
+
+Every binding the shader declares must be bound before the first draw (the pipeline bakes them):
+call `SetTexture`/`SetSampler` when creating the material — `Renderer::GetWhiteTexture()` and
+`Renderer::GetClampSampler()` are good defaults for an untextured variant.
 
 ```cpp
 Shader* shader = Shader::CreateFromSource("Glow", glowSource);   // GLSL with the bindings above
