@@ -101,8 +101,9 @@ float w = font->GetStringWidth(text, size);
 r.DrawText(text, font, { centerX - w * 0.5f, y }, size, { .Color = color });
 ```
 
-`Font::GetStringWidth(text, size)` and `Font::GetBoundingBox(text, size)` let you
-measure and lay out text. Call `font->Destroy()` in `OnDetach`.
+`Font::GetStringWidth(text, size, kerning)` returns the width of the widest line, in the units
+`DrawText` lays glyphs out in — pass the same `Kerning` you draw with. `TextParameters::Centered`
+centers a string in one pass without measuring it first. Call `font->Destroy()` in `OnDetach`.
 
 **Encoding (v0.6.2).** Strings are UTF-8. The atlas bakes Latin-1 (`U+0020`–`U+00FF`), the
 printable General Punctuation (dashes, curly quotes, bullet, ellipsis, primes, guillemets) and

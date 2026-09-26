@@ -121,9 +121,10 @@ crate.AddComponent<MeshCollider3DComponent>(MeshCollider3DComponent(crateMesh, t
 - **Thin geometry needs `ContinuousCollision` for fast bodies.** A triangle has no thickness, so a
   body that moves farther than its own radius in one step passes straight through it — a fast
   projectile, even at 60 fps. (A `Scene` already takes one collision step per 1/60 s, so ordinary
-  falls stay safe at low frame rates; a standalone world must pass `collisionSteps` itself.) Set `RigidBodyParams3D::ContinuousCollision`
-  (ECS: `RigidBody3DComponent::ContinuousCollision`) on such bodies and they are swept along their
-  motion each step; the cast only runs on steps where the body is actually that fast.
+  falls stay safe at low frame rates; a standalone world must pass `collisionSteps` itself.) Set
+  `RigidBodyParams3D::ContinuousCollision` (ECS: `RigidBody3DComponent::ContinuousCollision`) on such
+  bodies and they are swept along their motion each step; the cast only runs on steps where the body
+  is actually that fast.
 - **Hulls are capped at 256 vertices**; a larger hull is simplified to fit.
 - **Failures** — a null mesh, a non-triangle index count, an index out of range, a zero scale axis,
   degenerate geometry — log an error and `CreateBody` returns `k_InvalidBody3D`. In the ECS the
