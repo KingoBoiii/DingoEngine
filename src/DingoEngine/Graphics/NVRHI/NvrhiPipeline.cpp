@@ -10,6 +10,8 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "NvrhiGraphicsContext.h"
 
+#include <algorithm>
+
 namespace Dingo
 {
 
@@ -154,7 +156,19 @@ namespace Dingo
 			//index++;
 		}
 
-		m_InputLayoutHandle = device->createInputLayout(attributes.data(), static_cast<uint32_t>(attributes.size()), nvrhiShader->m_ShaderHandles[ShaderType::Vertex]);
+		// Vulkan warns about every attribute the vertex shader doesn't read (e.g. a custom
+		// Renderer3D shader ignoring a_TexCoord). NVRHI assigns Vulkan locations by attribute
+		// order, so only TRAILING unread attributes can go. D3D keeps them all: it tolerates
+		// extras, and its shaders come from unoptimized SPIR-V that may still declare them.
+		uint32_t count = static_cast<uint32_t>(attributes.size());
+		if (GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::Vulkan && nvrhiShader->m_VertexInputsReflected)
+		{
+			const std::vector<uint32_t>& read = nvrhiShader->m_VertexInputLocations;
+			while (count > 0 && std::find(read.begin(), read.end(), count - 1) == read.end())
+				--count;
+		}
+
+		m_InputLayoutHandle = device->createInputLayout(attributes.data(), count, nvrhiShader->m_ShaderHandles[ShaderType::Vertex]);
 	}
 
 	void NvrhiPipeline::CreateBindingSet(nvrhi::BindingLayoutHandle bindingLayoutHandle)
