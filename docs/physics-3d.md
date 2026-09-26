@@ -120,7 +120,8 @@ crate.AddComponent<MeshCollider3DComponent>(MeshCollider3DComponent(crateMesh, t
   winding looks right but lets bodies fall through from outside.
 - **Thin geometry needs `ContinuousCollision` for fast bodies.** A triangle has no thickness, so a
   body that moves farther than its own radius in one step passes straight through it — a fast
-  projectile even at 60 fps, a long fall at 30 fps. Set `RigidBodyParams3D::ContinuousCollision`
+  projectile, even at 60 fps. (A `Scene` already takes one collision step per 1/60 s, so ordinary
+  falls stay safe at low frame rates; a standalone world must pass `collisionSteps` itself.) Set `RigidBodyParams3D::ContinuousCollision`
   (ECS: `RigidBody3DComponent::ContinuousCollision`) on such bodies and they are swept along their
   motion each step; the cast only runs on steps where the body is actually that fast.
 - **Hulls are capped at 256 vertices**; a larger hull is simplified to fit.
@@ -146,7 +147,8 @@ for (PhysicsBodyId3D id : myBodies)
 
 `GetTransform` returns translation × rotation (no scale — you know each body's size, since you
 created it). `GetPosition` / `GetRotation` are available individually. For large frame times, pass
-more `collisionSteps` to `Step` (Jolt recommends one step per 1/60 s, rounded up).
+more `collisionSteps` to `Step` (Jolt recommends one step per 1/60 s, rounded up). A `Scene` does
+this for you since v0.6.2, up to 4 steps a frame.
 
 ## Controlling bodies
 

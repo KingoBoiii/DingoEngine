@@ -3,6 +3,9 @@
 
 #include "DingoEngine/Scene/Components.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace Dingo
 {
 
@@ -101,7 +104,12 @@ namespace Dingo
 			if (!m_Physics3D || !m_Physics3D->IsValid())
 				return;
 
-			m_Physics3D->Step(deltaTime, m_CollisionSteps);
+			// One collision step per 1/60 s, as Jolt recommends: a single step over a 30 fps frame
+			// lets a falling body cross a mesh collider's zero-thickness triangles. The 0.1
+			// tolerance keeps 60 Hz frame jitter at one step; the cap stops a stall from
+			// snowballing into ever-longer frames.
+			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
+			m_Physics3D->Step(deltaTime, collisionSteps);
 
 			auto view = registry.view<RigidBody3DComponent, Transform3DComponent>();
 			for (entt::entity handle : view)
