@@ -24,6 +24,8 @@ namespace Dingo
 
 		// --- Components (built-in component types only) ---
 
+		// The added component's runtime handles (physics body/shape, controller, sound) always
+		// start at their "none" sentinel, so a component copied from another entity is safe to add.
 		template<typename T>
 		T& AddComponent(const T& component = T{});
 

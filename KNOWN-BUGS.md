@@ -25,7 +25,7 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K4](#k4) | A default-constructed `AssetHandle` passes `IsValidAssetHandle` | Defect | Asset |
 | [K5](#k5) | The `Debug-ASan` configuration does not link | Defect | Build |
 | [K7](#k7) | `Font::Create` ignores the asset root that `AssetManager` honours | Limitation | Asset |
-| [K8](#k8) | Physics component copy constructors alias a live body handle | Defect · Latent | Scene |
+| [K8](#k8) | Assigning one entity's physics component onto another's aliases its handle | Defect · Latent | Scene |
 | [K9](#k9) | `Renderer3D` drops geometry on batch overflow in shipping builds | Limitation | Rendering |
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
@@ -93,22 +93,26 @@ no crash.
 **Fix**: route `Font::Create` through the same path resolution, or document the split explicitly in
 [docs/asset-pipeline.md](docs/asset-pipeline.md) and steer games to the manager.
 
-## K8 — Physics component copy constructors alias a live body handle {#k8}
+## K8 — Assigning one entity's physics component onto another's aliases its handle {#k8}
 
-**Defect · Latent** — `include/DingoEngine/Scene/Components.h:179-182,204-205,224-225,307`
+**Defect · Latent** — `include/DingoEngine/Scene/Components.h` (every component with a `Runtime*` handle)
 
-`RigidBody2DComponent`, `BoxCollider2DComponent`, `CircleCollider2DComponent` and
-`RigidBody3DComponent` all declare `(const T&) = default`, which copies the live `RuntimeBody` /
-`RuntimeShape` handle into the copy. Two components then name one Box2D/Jolt body, and whichever is
-destroyed second double-frees it.
+Six components carry a live runtime handle: `RigidBody2DComponent`, `BoxCollider2DComponent`,
+`CircleCollider2DComponent`, `RigidBody3DComponent`, `CharacterController3DComponent` and
+`AudioSourceComponent`. Since v0.6.2 `Entity::AddComponent` clears the handles of whatever it adds, so
+copying a component onto another entity — `b.AddComponent(a.GetComponent<RigidBody3DComponent>())` —
+is safe, as is `Scene::DuplicateEntity`.
 
-`Scene::DuplicateEntity` handles this correctly — `src/DingoEngine/Scene/Scene.cpp:124-130` resets each
-handle to its sentinel (`0` for 2D, `k_InvalidBody3D` for 3D) — so the supported clone path is safe.
-The exposure is hand-rolled copying, e.g. `auto rb = a.GetComponent<RigidBody2DComponent>();
-b.AddComponent(rb);`, which compiles and looks reasonable.
+Assigning onto a component that is already live still copies the handle:
+`b.GetComponent<RigidBody3DComponent>() = a.GetComponent<RigidBody3DComponent>();` makes B drive A's
+body and orphans B's own, and whichever entity is destroyed second frees A's body twice.
 
-**Fix**: give the four components copy constructors that reset the handle instead of defaulting it, so
-correctness stops depending on every call site remembering.
+The reset can't move into the components' copy constructor or assignment: EnTT relocates components
+by copy and move when its storage compacts, and those must carry the handle, or every live entity loses
+its body the first time another entity is destroyed.
+
+**Workaround**: copy the settings field by field. **Fix**: split the handle out of the settings (an
+engine-owned runtime component beside the user-facing one), so assigning settings can never touch it.
 
 ## K9 — `Renderer3D` drops geometry on batch overflow in shipping builds {#k9}
 
