@@ -2,10 +2,13 @@
 #include "KeyCodes.h"
 #include "MouseButtons.h"
 #include "GamepadCodes.h"
+#include "CursorMode.h"
 
 #include <glm/glm.hpp>
 
 #include <string>
+
+struct GLFWwindow;
 
 namespace Dingo
 {
@@ -38,11 +41,31 @@ namespace Dingo
 		static bool IsMouseButtonUp(MouseButton button);
 
 		// Cursor position in window (screen) pixels, origin at the top-left, +Y down.
+		// While Locked it is an unbounded virtual position; unlocking restores the
+		// cursor to where it was locked.
 		static glm::vec2 GetMousePosition();
 		// Cursor movement since last frame, in window pixels.
 		static glm::vec2 GetMouseDelta();
 		// Scroll wheel movement this frame; +Y = scroll up, X = horizontal scroll.
 		static glm::vec2 GetMouseScrollDelta();
+
+		/**************************************************
+		***		CURSOR									***
+		**************************************************/
+
+		// GetMouseDelta() reads zero for 2 frames after a mode change or a refocus while
+		// Locked, so capturing the cursor never kicks the camera. While Locked, the OS
+		// frees the cursor on focus loss and re-locks it on refocus; the mode itself never
+		// changes on its own, so a game that pauses on focus loss should set Normal itself.
+		// A graphics-API restart resets the mode to Normal.
+		static void SetCursorMode(CursorMode mode);
+		static CursorMode GetCursorMode();
+
+		// Raw motion skips OS pointer acceleration. Applies only while Locked, where
+		// supported. Enabled by default.
+		static void SetRawMouseMotion(bool enabled);
+		static bool IsRawMouseMotionEnabled();
+		static bool IsRawMouseMotionSupported();
 
 		/**************************************************
 		***		GAMEPAD									***
@@ -73,6 +96,15 @@ namespace Dingo
 		static void SetGamepadDeadzone(float deadzone);
 		static float GetGamepadDeadzone();
 
+		/**************************************************
+		***		ANY										***
+		**************************************************/
+
+		static bool IsAnyKeyPressed();
+		static bool IsAnyKeyDown();
+		static bool IsAnyMouseButtonPressed();
+		static bool IsAnyMouseButtonDown();
+
 	private:
 		static void Update();
 
@@ -81,6 +113,10 @@ namespace Dingo
 		static void UpdateMousePosition(float x, float y);
 		static void AccumulateMouseScroll(float xOffset, float yOffset);
 		static void SeedMousePosition(float x, float y);
+
+		// Applies the stored cursor mode, so SetCursorMode works before the window exists.
+		static void AttachWindow(GLFWwindow* window);
+		static void OnWindowFocusChanged(bool focused);
 
 		// Called from the GLFW joystick callback so type/name are already
 		// classified when the connect/disconnect event reaches client code.

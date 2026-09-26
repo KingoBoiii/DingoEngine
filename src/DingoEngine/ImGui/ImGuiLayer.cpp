@@ -3,6 +3,7 @@
 #include "ImGuiRenderer.h"
 
 #include "DingoEngine/Core/Application.h"
+#include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/NVRHI/NvrhiCommandList.h"
@@ -68,6 +69,19 @@ namespace Dingo
 	void ImGuiLayer::Begin()
 	{
 		m_ImGuiRenderer->UpdateFontTexture();
+
+		// The GLFW backend resets GLFW_CURSOR_HIDDEN to NORMAL every frame, and while
+		// Locked it feeds ImGui the invisible virtual cursor, so clicks would hit widgets.
+		ImGuiIO& io = ImGui::GetIO();
+		const CursorMode cursorMode = Input::GetCursorMode();
+		if (cursorMode == CursorMode::Normal)
+			io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+		else
+			io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+		if (cursorMode == CursorMode::Locked)
+			io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+		else
+			io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
 
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();

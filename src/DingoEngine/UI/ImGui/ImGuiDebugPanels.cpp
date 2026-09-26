@@ -299,6 +299,28 @@ namespace Dingo::UI
 		ImGui::Text("Buttons  : %s", held.empty() ? "-" : held.c_str());
 	}
 
+	void CursorInputSection()
+	{
+		const char* modeName = "Normal";
+		switch (Input::GetCursorMode())
+		{
+			case CursorMode::Normal: modeName = "Normal"; break;
+			case CursorMode::Hidden: modeName = "Hidden"; break;
+			case CursorMode::Locked: modeName = "Locked"; break;
+		}
+
+		const glm::vec2 delta = Input::GetMouseDelta();
+
+		ImGui::TextUnformatted("Cursor");
+		ImGui::Separator();
+		ImGui::Text("Mode        : %s", modeName);
+		ImGui::Text("Focused     : %s", Application::Get().GetWindow().IsFocused() ? "yes" : "no");
+		ImGui::Text("Raw motion  : %s  (supported: %s)",
+			Input::IsRawMouseMotionEnabled() ? "enabled" : "disabled",
+			Input::IsRawMouseMotionSupported() ? "yes" : "no");
+		ImGui::Text("Delta       : %+.1f, %+.1f", delta.x, delta.y);
+	}
+
 	void KeyboardInputSection()
 	{
 		ImGui::TextUnformatted("Keyboard");
@@ -565,6 +587,9 @@ namespace Dingo::UI
 		MouseInputSection();
 
 		ImGui::Spacing();
+		CursorInputSection();
+
+		ImGui::Spacing();
 		KeyboardInputSection();
 
 		ImGui::Spacing();
@@ -619,6 +644,8 @@ namespace Dingo::UI
 			tab("Input", DebugTab::Input, []
 			{
 				MouseInputSection();
+				ImGui::Spacing();
+				CursorInputSection();
 				ImGui::Spacing();
 				KeyboardInputSection();
 				ImGui::Spacing();

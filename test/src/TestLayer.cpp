@@ -15,6 +15,8 @@
 
 #include "Tests/Asset/AssetManagerTest.h"
 
+#include "Tests/Input/CursorTest.h"
+
 #include <imgui.h>
 
 namespace Dingo
@@ -45,6 +47,7 @@ namespace Dingo
 		m_Tests.push_back({ "Mesh 3D Test", []() { return new Mesh3DTest(); } });
 		m_Tests.push_back({ "Model 3D Test", []() { return new Model3DTest(); } });
 		m_Tests.push_back({ "Asset Manager Test", [&]() { return new AssetManagerTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))
