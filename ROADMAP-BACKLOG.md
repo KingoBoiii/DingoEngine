@@ -90,7 +90,7 @@ note in §1; the genuinely homeless one is **#10**, the game-facing UI layer.)
 | 9 | Platform/IO helpers | **S** | `SaveGame.cpp` `getenv`/`#ifdef` + non-atomic write (~15 lines) | unscheduled |
 | 10 | Game-facing UI layer | **M–L** | hand-rolled hit-testing across ~4 files | unscheduled |
 | 11 | Clone/prefab that resets handles | **S–M** | closes documented double-free; net-new capability | unscheduled |
-| 12 | Material sharing + UTF-8 text | material **M** · UTF-8 **S** | batch fragmentation once custom materials appear; ASCII-only constraint | unscheduled |
+| 12 | Material sharing + UTF-8 text | material **M** · UTF-8 **S** | batch fragmentation once custom materials appear; ASCII-only constraint | UTF-8 **landed v0.6.2**; material sharing v1.0 |
 
 ---
 
@@ -150,7 +150,7 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
 - **#2b Frustum/distance culling** — narrows the submitted set; complements #3.
 - **#12 Material sharing/cache** — a shared-material pattern so the first custom material doesn't
   fragment the single-batch fast path. Couple with the #1/#3 shader churn. Sub-item **UTF-8 decode**
-  (**S**) lifts the ASCII-only text constraint — low priority; the game just stays ASCII today.
+  (**S**) lifts the ASCII-only text constraint — **landed in v0.6.2**.
 
 ### Wave 5 — Character fidelity — **now v0.8**
 - **#4a Parent-child transforms** (**M–L**) — a `Parent` component + a transform-propagation pass.

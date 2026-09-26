@@ -104,6 +104,13 @@ r.DrawText(text, font, { centerX - w * 0.5f, y }, size, { .Color = color });
 `Font::GetStringWidth(text, size)` and `Font::GetBoundingBox(text, size)` let you
 measure and lay out text. Call `font->Destroy()` in `OnDetach`.
 
+**Encoding (v0.6.2).** Strings are UTF-8. The atlas bakes Latin-1 (`U+0020`–`U+00FF`), the
+printable General Punctuation (dashes, curly quotes, bullet, ellipsis, primes, guillemets) and
+the euro sign; any other codepoint draws as `?`. A byte that is not valid UTF-8 reads as Latin-1,
+so Latin-1-encoded text still draws. Only the engine itself compiles with MSVC's `/utf-8`: add it
+to your game project too (`buildoptions { "/utf-8" }`), or write non-ASCII literals as escapes
+(`"Caf\xC3\xA9"`), otherwise MSVC reads the source through the system code page.
+
 ## Textures
 
 ```cpp

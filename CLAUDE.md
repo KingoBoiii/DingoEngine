@@ -58,7 +58,7 @@ Device and adapter selection lives in `Graphics/NVRHI/` (`VulkanGraphicsContext.
 | Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `BIT(x)` |
 
 - `DE_CORE_ASSERT(cond, msg)` takes a **plain string only** — NOT `std::format` args (adjacent-literal pasting; format args fail to compile). `DE_CORE_WARN/ERROR` do take format args.
-- On-screen text must be **pure ASCII**: the MSDF atlas covers U+0020–U+00FF and rendering is byte-wise (no UTF-8 decode) — an em-dash renders as garbage.
+- On-screen text is **UTF-8** (v0.6.2): `DrawText`/`GetStringWidth` share the decoder in `src/DingoEngine/Graphics/Utf8.h`, and invalid bytes read as Latin-1. The MSDF atlas bakes Latin-1, printable General Punctuation (U+2010–U+2027, U+2030–U+205E) and U+20AC; anything else draws `?`. Changing the charset must bump `k_FontAtlasCacheFormatVersion` in `Font.cpp`. Only the engine project builds with `/utf-8`, so non-ASCII literals in the test app/examples are hex-escaped.
 
 ## Comments — keep them to a minimum
 

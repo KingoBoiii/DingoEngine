@@ -9,6 +9,8 @@ for things that are **wrong or surprising in code that already ships**.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
+- **IDs are never reused.** A fixed entry is deleted rather than renumbered, so gaps are expected:
+  K2 and K3 (text could not draw its Latin-1 glyphs and had no UTF-8 decode) were fixed in v0.6.2.
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
@@ -19,8 +21,6 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | # | Issue | Kind | Area |
 |---|---|---|---|
 | [K1](#k1) | `Application::OnDestroy()` never runs for a derived override | Defect · Latent | Core |
-| [K2](#k2) | Text rendering cannot address bytes `0x80`–`0xFF` of its own atlas | Defect | Text |
-| [K3](#k3) | Text rendering has no UTF-8 decode | Limitation | Text |
 | [K4](#k4) | A default-constructed `AssetHandle` passes `IsValidAssetHandle` | Defect | Asset |
 | [K5](#k5) | The `Debug-ASan` configuration does not link | Defect | Build |
 | [K6](#k6) | `.cache` is resolved against the *working directory* | Limitation | Core |
@@ -48,35 +48,6 @@ person rather than an active bug — it masks leaks and skipped shutdown work on
 **Workaround**: put application teardown in `Layer::OnDetach`, which runs while the GPU is idle and
 before device teardown. **Fix**: either call `Destroy()` from the run loop before the destructor, or
 remove the hook so the header stops advertising it.
-
-## K2 — Text rendering cannot address bytes `0x80`–`0xFF` of its own atlas {#k2}
-
-**Defect** — `src/DingoEngine/Graphics/Renderer2D.cpp:473`, `src/DingoEngine/Graphics/Font.cpp:342-343`
-
-The MSDF atlas is deliberately baked over `U+0020`–`U+00FF`, so the whole Latin-1 supplement — `é`,
-`ü`, `£`, `°` — has glyphs. But the text renderer walks the string as `char character = string[i]`,
-and `char` is **signed** on MSVC. Any byte from `0x80` up is negative, and converting it to msdfgen's
-`unicode_t` (an unsigned 32-bit codepoint) wraps it to a huge value, so the glyph lookup misses.
-
-The result: the engine pays to bake 128 glyphs it can never draw, and the charset range in `Font.cpp`
-overstates what actually renders.
-
-**Fix**: read the byte as `unsigned char` (or `uint8_t`) before widening. One-line change at the three
-places in `DrawText` that touch `string[i]`.
-
-## K3 — Text rendering has no UTF-8 decode {#k3}
-
-**Limitation** — `src/DingoEngine/Graphics/Renderer2D.cpp:471-473`
-
-`DrawText` iterates *bytes*, not codepoints. A multi-byte UTF-8 sequence is therefore drawn as two or
-three separate garbage glyphs. Combined with [K2](#k2), the practical constraint is that on-screen
-strings must be **pure ASCII** — an em-dash (`—`, `U+2014`) in a `TextComponent` renders as `???`.
-
-This is undocumented discipline rather than an enforced rule: nothing asserts on it, and the engine's
-own examples happen to comply. Note that source comments and the OS window title are unaffected.
-
-**Fix**: decode UTF-8 to codepoints in the `DrawText` loop, and widen the atlas charset past `0x00FF`
-for anything beyond Latin-1. Do [K2](#k2) first — it is the cheaper half and unblocks Latin-1 alone.
 
 ## K4 — A default-constructed `AssetHandle` passes `IsValidAssetHandle` {#k4}
 
