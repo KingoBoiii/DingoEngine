@@ -95,6 +95,11 @@ The centralized **`AssetManager`** — the engine-owned registry and owner of fi
 
 **Example game**: [ArenaShooter](examples/ArenaShooter/) — a wave-based top-down arena shooter that async-loads every asset behind a progress bar, plays all its audio through manager handles, and renders its animated background with a file-based shader: edit the shader or a sprite PNG while the game runs and watch it update live. The engine test app also gained an interactive **Asset Manager Test** (`test/`, run with `--test=asset`) covering dedup, typed access, the failure contract, and both async paths.
 
+## v0.6.1 — Textured Meshes in Renderer3D
+A point release. `Renderer3D` used to write only position, normal and colour into its batch, so a mesh's UVs never reached the GPU and every ECS mesh drew as one flat colour even with a textured `Material`. The batch vertex now carries the mesh's **`a_TexCoord` at location 3**, so a custom material can bind a texture (binding 2+) and sample it — e.g. an asset kit's shared colour atlas. The built-in default material is unchanged, and existing custom shaders keep working without edits: on Vulkan a pipeline now drops trailing vertex attributes its shader doesn't read (reflected from the SPIR-V, so no "attribute not consumed" validation warning), and D3D ignores them.
+
+**Example**: [Gloomdelve](https://github.com/KingoBoiii/Gloomdelve) renders the Kenney Graveyard Kit with its colormap through its night-lighting material.
+
 ## v0.7 — Lighting & Shading
 v0.6 made assets first-class; v0.7 does the same for **light**. Everything the engine has ever
 rendered has been lit by exactly one directional light: `DirectionalLightComponent` carries a

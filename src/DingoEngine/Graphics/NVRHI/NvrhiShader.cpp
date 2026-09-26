@@ -317,6 +317,8 @@ namespace Dingo
 		// the shader half-replaced - the previous program keeps running.
 		std::unordered_map<ShaderType, nvrhi::ShaderHandle> newHandles;
 		std::vector<ShaderReflection> reflections;
+		std::vector<uint32_t> vertexInputLocations;
+		bool vertexInputsReflected = false;
 		for (const auto& [shaderType, stage] : spvStages)
 		{
 			nvrhi::ShaderHandle handle;
@@ -367,12 +369,20 @@ namespace Dingo
 				const ShaderReflection& reflection = shaderCompiler.Reflect(shaderType, stage.Binaries);
 				shaderCompiler.PrintReflection(shaderType, reflection);
 
+				if (shaderType == ShaderType::Vertex)
+				{
+					vertexInputLocations = reflection.StageInputLocations;
+					vertexInputsReflected = true;
+				}
+
 				reflections.push_back(reflection);
 			}
 		}
 
 		m_ShaderHandles = std::move(newHandles);
 		m_BindingLayoutHandle = CreateBindingLayoutHandle(reflections);
+		m_VertexInputLocations = std::move(vertexInputLocations);
+		m_VertexInputsReflected = vertexInputsReflected;
 
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.

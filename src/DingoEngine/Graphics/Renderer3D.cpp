@@ -86,7 +86,8 @@ namespace Dingo
 			.SetStride(sizeof(Vertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(Vertex, Position))
 			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(Vertex, Normal))
-			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(Vertex, Color));
+			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(Vertex, Color))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(Vertex, TexCoord));
 
 		m_Material = Material::Create(MaterialParams()
 			.SetDebugName("Renderer3D_Material")
@@ -276,6 +277,7 @@ namespace Dingo
 			vertex.Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
 			vertex.Normal = normalMatrix * v.Normal;
 			vertex.Color = color;
+			vertex.TexCoord = v.TexCoord;
 			batch.Vertices.push_back(vertex);
 		}
 

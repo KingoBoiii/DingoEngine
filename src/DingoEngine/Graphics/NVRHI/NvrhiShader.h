@@ -49,6 +49,11 @@ namespace Dingo
 		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;
 		nvrhi::BindingLayoutHandle m_BindingLayoutHandle;
 
+		// Vertex input locations the vertex stage actually reads, reflected from the same
+		// optimized SPIR-V Vulkan runs (unread inputs are stripped). Only valid when reflected.
+		std::vector<uint32_t> m_VertexInputLocations;
+		bool m_VertexInputsReflected = false;
+
 		friend class NvrhiPipeline;
 		friend class NvrhiRenderPass;
 		friend class ImGuiRenderer;

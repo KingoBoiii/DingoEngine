@@ -30,6 +30,7 @@ namespace Dingo
 		std::vector<ShaderImageBinding> SeparateSamplers;
 		std::vector<ShaderImageBinding> SampledImages;
 		std::vector<ShaderImageBinding> SeparateImages;
+		std::vector<uint32_t> StageInputLocations;
 	};
 
 	class ShaderCompiler

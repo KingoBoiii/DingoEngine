@@ -96,6 +96,9 @@ namespace Dingo
 		spirv_cross::Compiler compiler(binaries);
 		spirv_cross::ShaderResources resources = compiler.get_shader_resources();
 
+		for (const auto& input : resources.stage_inputs)
+			reflection.StageInputLocations.push_back(compiler.get_decoration(input.id, spv::DecorationLocation));
+
 		for (const auto& resource : resources.uniform_buffers)
 		{
 			const auto& name = resource.name;
