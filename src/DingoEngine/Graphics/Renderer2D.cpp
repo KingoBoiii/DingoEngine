@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 
 #include "MSDFData.h"
+#include "Utf8.h"
 
 #include "DingoEngine/Core/Application.h"
 
@@ -468,9 +469,14 @@ void main() {
 		auto spaceGlyph = fontGeometry.getGlyph(' ');
 		float spaceGlyphAdvance = spaceGlyph ? (float)spaceGlyph->getAdvance() : 0.0f;
 
-		for (size_t i = 0; i < string.size(); i++)
+		const std::string_view text = string;
+		size_t index = 0;
+		while (index < text.size())
 		{
-			char character = string[i];
+			const uint32_t character = Internal::DecodeUtf8(text, index);
+			size_t lookahead = index;
+			const bool hasNext = lookahead < text.size();
+			const uint32_t nextCharacter = hasNext ? Internal::DecodeUtf8(text, lookahead) : 0;
 
 			if (character == '\n')
 			{
@@ -484,14 +490,10 @@ void main() {
 
 			if (character == ' ')
 			{
-				float advance = spaceGlyphAdvance;
-				if (i < string.size() - 1)
-				{
-					char nextCharacter = string[i + 1];
-					double dAdvance;
-					fontGeometry.getAdvance(dAdvance, character, nextCharacter);
-					advance = (float)dAdvance;
-				}
+				// getAdvance leaves its out-param untouched when either glyph is missing.
+				double advance = spaceGlyphAdvance;
+				if (hasNext)
+					fontGeometry.getAdvance(advance, character, nextCharacter);
 				x += fsScale * advance + textParameters.Kerning;
 				continue;
 			}
@@ -560,8 +562,8 @@ void main() {
 			// Advance past the last glyph too, so the pen ends on the line's full width —
 			// what GetStringWidth reports, and what centering below has to agree with.
 			double advance = glyph->getAdvance();
-			if (i < string.size() - 1)
-				fontGeometry.getAdvance(advance, character, string[i + 1]);
+			if (hasNext)
+				fontGeometry.getAdvance(advance, character, nextCharacter);
 
 			x += fsScale * advance + textParameters.Kerning;
 		}
