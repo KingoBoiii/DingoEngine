@@ -94,7 +94,10 @@ namespace Dingo
 				params.Looping = source.Looping;
 				params.Spatialized = source.Spatialized;
 				if (source.Spatialized)
+				{
 					params.Position = PositionOf(registry, handle);
+					params.Attenuation = source.Attenuation;
+				}
 
 				source.RuntimeSound = audio.Play(source.Clip, params);
 			}

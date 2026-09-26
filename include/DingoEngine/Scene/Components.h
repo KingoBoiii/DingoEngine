@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace Dingo
@@ -398,6 +399,9 @@ namespace Dingo
 		float Pitch = 1.0f;
 		bool Looping = false;
 		bool Spatialized = true;
+		// nullopt = use the engine's current default (AudioEngine::GetDefaultAttenuation).
+		// Ignored when Spatialized is false.
+		std::optional<SoundAttenuation> Attenuation;
 		bool PlayOnStart = false;
 
 		// Opaque handle to the live sound instance; k_InvalidSound when none is

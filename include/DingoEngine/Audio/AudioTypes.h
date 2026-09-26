@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <limits>
+#include <optional>
 
 namespace Dingo
 {
@@ -16,6 +18,26 @@ namespace Dingo
 	using AudioSoundId = std::uint32_t;
 	inline constexpr AudioSoundId k_InvalidSound = 0xFFFFFFFFu;
 
+	enum class AudioAttenuationModel : std::uint8_t
+	{
+		None,
+		Inverse,     // 1/distance, clamped
+		Linear,      // reaches MinGain at MaxDistance when Rolloff == 1; needs a finite MaxDistance
+		Exponential,
+	};
+
+	// Distance falloff for a spatialized sound. The defaults are the backend's own, so a
+	// sound that never sets one sounds exactly as it did before v0.6.2.
+	struct SoundAttenuation
+	{
+		AudioAttenuationModel Model = AudioAttenuationModel::Inverse;
+		float MinDistance = 1.0f;                              // full volume inside this radius
+		float MaxDistance = (std::numeric_limits<float>::max)(); // parenthesized: <Windows.h> max macro
+		float Rolloff = 1.0f;
+		float MinGain = 0.0f; // floor, e.g. 0.3 keeps distant sounds audible
+		float MaxGain = 1.0f;
+	};
+
 	// Describes how a sound should play. Position is only honoured when Spatialized is
 	// true; otherwise the sound plays as a non-positional 2D sound (UI, music, etc.).
 	struct SoundPlayParams
@@ -26,6 +48,10 @@ namespace Dingo
 
 		bool Spatialized = false;      // true = 3D positional audio via the listener
 		glm::vec3 Position{ 0.0f };    // world-space source position (Spatialized only)
+
+		// Per-sound attenuation override; nullopt = use the engine's current default
+		// (AudioEngine::GetDefaultAttenuation). Ignored when Spatialized is false.
+		std::optional<SoundAttenuation> Attenuation;
 
 		SoundPlayParams() = default;
 	};
