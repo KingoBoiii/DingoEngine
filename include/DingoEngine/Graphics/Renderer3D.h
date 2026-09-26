@@ -96,8 +96,10 @@ namespace Dingo
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
 		// Appends a mesh to the batch for the given material (null => the built-in
-		// flat-lit default), transformed into world space on the CPU. The per-vertex
-		// color is written into the vertex stream. No-op outside a Begin/EndScene pair.
+		// flat-lit default), transformed into world space on the CPU. The vertex stream is
+		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
+		// (3, the mesh's UVs, for custom materials that sample a texture). No-op outside a
+		// Begin/EndScene pair.
 		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr);
 
 		// Convenience primitives drawn with the renderer's built-in unit meshes
@@ -133,6 +135,7 @@ namespace Dingo
 			glm::vec3 Position;
 			glm::vec3 Normal;
 			glm::vec4 Color;
+			glm::vec2 TexCoord;
 		};
 
 		// std140: a mat4 followed by two vec4s.
