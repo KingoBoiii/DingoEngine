@@ -191,6 +191,50 @@ Key codes live in `Key::` (`Key::Space`, `Key::Escape`, `Key::A`–`Key::Z`,
 `Key::Left/Right/Up/Down`, `Key::Enter`, …) and mouse buttons in `Button::`
 (`Button::Left`, `Button::Right`, `Button::Middle`).
 
+For "press any key" screens, or to notice that the player switched from a gamepad back
+to keyboard and mouse, use `IsAnyKeyPressed()` / `IsAnyKeyDown()` /
+`IsAnyMouseButtonPressed()` / `IsAnyMouseButtonDown()` (v0.6.2).
+
+### Cursor modes (v0.6.2)
+
+`Input::SetCursorMode` controls the cursor for the whole window:
+
+| Mode | Behaviour |
+|---|---|
+| `CursorMode::Normal` | Visible and free (default). |
+| `CursorMode::Hidden` | Invisible over the window, still free to leave it. For a custom crosshair or gamepad play. |
+| `CursorMode::Locked` | Invisible and confined, with unbounded motion. For mouse-look: read `GetMouseDelta()`. |
+
+```cpp
+void Capture() { Input::SetCursorMode(CursorMode::Locked); }
+void Release() { Input::SetCursorMode(CursorMode::Normal); }
+
+void OnUpdate(float dt) override
+{
+    if (Input::GetCursorMode() == CursorMode::Locked)
+    {
+        const glm::vec2 look = Input::GetMouseDelta() * m_Sensitivity;
+        m_Yaw -= look.x;
+        m_Pitch = glm::clamp(m_Pitch - look.y, -89.0f, 89.0f);
+    }
+}
+```
+
+- Changing the mode moves the cursor, so `GetMouseDelta()` reads zero for the next
+  2 frames (also after a Locked window regains focus). Capturing never kicks the
+  camera, and you don't need to skip frames yourself.
+- While `Locked`, ImGui ignores the mouse, so the invisible cursor can't click debug
+  widgets. `GetMousePosition()` is an unbounded virtual position until you unlock.
+- While `Locked`, raw mouse motion (no OS pointer acceleration) is on wherever the
+  platform supports it. Toggle it with `SetRawMouseMotion(bool)`, and query it with
+  `IsRawMouseMotionSupported()`.
+- On alt-tab the OS frees the cursor, and it is locked again when the window
+  regains focus. The mode itself never changes on its own. If your game pauses on
+  focus loss, handle `WindowFocusEvent` (see [Events](#events)) and set `Normal`
+  there, or the pause menu comes back with a locked cursor.
+- The debug window's **F5** Input tab shows the current mode, focus and raw-motion
+  state. The test app's **Cursor Test** (`--test=Cursor`) lets you try all three.
+
 ### Gamepads (v0.5.1)
 
 Controllers are polled every frame; any device GLFW recognises as a gamepad
@@ -259,8 +303,24 @@ bool OnKeyPressed(KeyPressedEvent& e)
 ```
 
 `DE_BIND_EVENT_FN(fn)` wraps a member function as the callback. Event types include
-`WindowCloseEvent`, `WindowResizeEvent`, `KeyPressedEvent`, `KeyReleasedEvent`,
-`MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`.
+`WindowCloseEvent`, `WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
+`KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`.
+
+`WindowFocusEvent::IsFocused()` tells you whether the window gained or lost focus, which
+is the natural place to auto-pause and release a locked cursor. To poll instead, use
+`Application::Get().GetWindow().IsFocused()`.
+
+```cpp
+bool OnFocus(WindowFocusEvent& e)
+{
+    if (!e.IsFocused() && m_State == State::Playing)
+    {
+        Input::SetCursorMode(CursorMode::Normal);
+        Pause();
+    }
+    return false;
+}
+```
 
 > For most gameplay, polling with `Input` is simpler than handling key events. Reach
 > for events when you need the exact press/release moment, repeat counts

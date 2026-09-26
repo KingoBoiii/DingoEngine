@@ -100,6 +100,16 @@ A point release. `Renderer3D` used to write only position, normal and colour int
 
 **Example**: [Gloomdelve](https://github.com/KingoBoiii/Gloomdelve) renders the Kenney Graveyard Kit with its colormap through its night-lighting material.
 
+## v0.6.2 — Game-Workaround Cleanup
+A point release that turns the workarounds the shipped games wrote around missing engine API into engine API:
+- **Cursor modes**: `Input::SetCursorMode(CursorMode::Normal | Hidden | Locked)`, with raw mouse motion while Locked (`SetRawMouseMotion`, `IsRawMouseMotionSupported`). This replaces the hand-declared `extern "C" glfwSetInputMode` in Gloomdelve and DingoCraft. `GetMouseDelta()` reads zero for 2 frames after a mode change or refocus, so the games' "skip the jump" counters go away. ImGui no longer resets a Hidden cursor.
+- **Window focus**: `WindowFocusEvent` and `Window::IsFocused()` replace polling `GLFW_FOCUSED` for auto-pause on alt-tab.
+- **Any input**: `Input::IsAnyKeyPressed/Down` and `IsAnyMouseButtonPressed/Down` replace loops over hardcoded GLFW key ranges.
+- **Executable-relative paths**: `Platform::GetExecutablePath/GetExecutableDirectory` and `FindDirectoryUpward("assets")` replace three games' own `GetModuleFileNameW` + parent-walk asset lookup.
+- **3D audio attenuation**: `SoundAttenuation` (model None / Inverse / Linear / Exponential, min/max distance, rolloff, min/max gain) per sound via `SoundPlayParams::Attenuation`, on live sounds via `AudioEngine::SetAttenuation`, and as the engine-wide default via `SetDefaultAttenuation` (which the positional `PlayOneShot` also uses). `AudioSourceComponent` gains the same optional field. Defaults are unchanged. This replaces Gloomdelve's trick of placing every voice 1 m from the listener and fading it by hand.
+
+**Test**: the test app's new **Cursor Test** (`--test=Cursor`) and the F5 Input tab's Cursor section.
+
 ## v0.7 — Lighting & Shading
 v0.6 made assets first-class; v0.7 does the same for **light**. Everything the engine has ever
 rendered has been lit by exactly one directional light: `DirectionalLightComponent` carries a
