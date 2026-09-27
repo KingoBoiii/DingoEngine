@@ -203,7 +203,9 @@ if (Physics3D* physics = GetScene().GetPhysics3D(); physics && body != k_Invalid
 
 By default meshes draw with Renderer3D's built-in flat directional-lit material. Assign a
 `Material*` to a `MeshRendererComponent` to give that mesh its own shader, uniforms, and
-textures. Renderer3D groups meshes by material and draws one batch per material.
+textures. Renderer3D groups meshes by material and draws each material as one batch, or
+several once it outgrows `Renderer3DCapabilities` (v0.6.3 — before that the overflow was
+dropped).
 
 The binding convention a custom mesh shader follows:
 

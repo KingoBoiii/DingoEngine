@@ -7,6 +7,7 @@
 #include "Tests/Renderer/TextureTest.h"
 #include "Tests/Renderer/Mesh3DTest.h"
 #include "Tests/Renderer/Model3DTest.h"
+#include "Tests/Renderer/Renderer3DBatchTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
@@ -48,6 +49,7 @@ namespace Dingo
 		m_Tests.push_back({ "Circle Test (R2D)", [&]() { return new CircleTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh 3D Test", []() { return new Mesh3DTest(); } });
 		m_Tests.push_back({ "Model 3D Test", []() { return new Model3DTest(); } });
+		m_Tests.push_back({ "Renderer3D Batch Test", []() { return new Renderer3DBatchTest(); } });
 		m_Tests.push_back({ "Asset Manager Test", [&]() { return new AssetManagerTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh Collider Test", []() { return new MeshColliderTest(); } });

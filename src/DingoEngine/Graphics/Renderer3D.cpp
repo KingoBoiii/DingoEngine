@@ -161,13 +161,18 @@ namespace Dingo
 
 		m_Statistics = {};
 
-		// Reset the per-material batches, keeping their storage for reuse.
-		for (auto& [material, batch] : m_Batches)
+		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
+		// just last scene's: SubmitMesh takes a spare chunk before growing.
+		for (auto& [material, matBatch] : m_Batches)
 		{
-			batch.Vertices.clear();
-			batch.Indices.clear();
-			batch.OverflowWarned = false;
-			batch.Enqueued = false;
+			for (MeshChunk& chunk : matBatch.Chunks)
+			{
+				chunk.Vertices.clear();
+				chunk.Indices.clear();
+			}
+			matBatch.ChunksInUse = 0;
+			matBatch.OverflowWarned = false;
+			matBatch.Enqueued = false;
 		}
 		m_DrawOrder.clear();
 		m_SceneActive = true;
@@ -183,36 +188,40 @@ namespace Dingo
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
 
-		// One indexed draw per material, each from its own pooled (vertex, index) buffer
-		// so no shared buffer is re-uploaded between draws.
+		// One indexed draw per batch, each from its own pooled (vertex, index) buffer so no
+		// shared buffer is re-uploaded between draws.
 		for (Material* material : m_DrawOrder)
 		{
-			MeshBatch& batch = m_Batches[material];
-			if (batch.Indices.empty())
-				continue;
-
-			// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
-			// DirectUpload = false: the writes go into the frame's command list (as
-			// Renderer2D's batches do) instead of each spinning up a throwaway command list
-			// and its own queue submit — that was 2 submits per material per frame.
-			if (batchIndex >= m_BatchVertexBuffers.size())
+			MaterialBatch& matBatch = m_Batches[material];
+			for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
 			{
-				m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
-				m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+				MeshChunk& chunk = matBatch.Chunks[chunkIndex];
+				if (chunk.Indices.empty())
+					continue;
+
+				// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
+				// DirectUpload = false: the writes go into the frame's command list (as
+				// Renderer2D's batches do) instead of each spinning up a throwaway command list
+				// and its own queue submit.
+				if (batchIndex >= m_BatchVertexBuffers.size())
+				{
+					m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
+					m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+				}
+
+				GraphicsBuffer* vertexBuffer = m_BatchVertexBuffers[batchIndex];
+				GraphicsBuffer* indexBuffer = m_BatchIndexBuffers[batchIndex];
+
+				Renderer::Upload(vertexBuffer, chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
+				Renderer::Upload(indexBuffer, chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+
+				// Bind the shared camera/light UBO at binding 0 for this material, then draw.
+				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
+				Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(chunk.Indices.size()));
+				++m_Statistics.DrawCalls;
+
+				++batchIndex;
 			}
-
-			GraphicsBuffer* vertexBuffer = m_BatchVertexBuffers[batchIndex];
-			GraphicsBuffer* indexBuffer = m_BatchIndexBuffers[batchIndex];
-
-			Renderer::Upload(vertexBuffer, batch.Vertices.data(), static_cast<uint32_t>(batch.Vertices.size() * sizeof(Vertex)));
-			Renderer::Upload(indexBuffer, batch.Indices.data(), static_cast<uint32_t>(batch.Indices.size() * sizeof(uint32_t)));
-
-			// Bind the shared camera/light UBO at binding 0 for this material, then draw.
-			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-			Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(batch.Indices.size()));
-			++m_Statistics.DrawCalls;
-
-			++batchIndex;
 		}
 	}
 
@@ -236,40 +245,56 @@ namespace Dingo
 			return;
 
 		Material* batchMaterial = material ? material : m_Material;
-		MeshBatch& batch = m_Batches[batchMaterial];
-		if (!batch.Enqueued)
+		MaterialBatch& matBatch = m_Batches[batchMaterial];
+		if (!matBatch.Enqueued)
 		{
-			batch.Enqueued = true;
+			matBatch.Enqueued = true;
 			m_DrawOrder.push_back(batchMaterial);
 		}
 
 		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 
-		if (batch.Vertices.size() + vertices.size() > m_Params.Capabilities.MaxVertices ||
-			batch.Indices.size() + indices.size() > m_Params.Capabilities.MaxIndices)
+		// A mesh bigger than an empty batch fits no batch at all, so spilling cannot help.
+		if (vertices.size() > caps.MaxVertices || indices.size() > caps.MaxIndices)
 		{
-			// Opt-in hard-fail so a blown vertex budget can't ship silently (see
-			// Renderer3DCapabilities::AssertOnOverflow). Compiled out in release, where this
-			// falls through to the warn-once-and-drop below. DE_CORE_ASSERT takes a plain
-			// message (not a format string) — the vert/index counts are in the warn below.
-			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
-				"Renderer3D batch capacity exceeded and AssertOnOverflow is set. Raise Renderer3DCapabilities or submit fewer meshes.");
+			// DE_CORE_ASSERT takes a plain message, not a format string — the vert/index
+			// counts are in the warn below.
+			DE_CORE_ASSERT(!caps.AssertOnOverflow,
+				"Renderer3D mesh exceeds a single batch's capacity and AssertOnOverflow is set. Raise Renderer3DCapabilities or submit a smaller mesh.");
 
-			if (!batch.OverflowWarned)
+			if (!matBatch.OverflowWarned)
 			{
-				DE_CORE_WARN("Renderer3D batch capacity exceeded for a material ({} verts / {} indices); dropping further meshes this scene. Raise Renderer3DCapabilities.",
-					m_Params.Capabilities.MaxVertices, m_Params.Capabilities.MaxIndices);
-				batch.OverflowWarned = true;
+				DE_CORE_WARN("Renderer3D mesh exceeds a single batch's capacity ({} verts / {} indices); dropping this mesh. Raise Renderer3DCapabilities.MaxVertices/MaxIndices.",
+					caps.MaxVertices, caps.MaxIndices);
+				matBatch.OverflowWarned = true;
 			}
 			++m_Statistics.DroppedMeshes;
 			return;
 		}
 
+		if (matBatch.ChunksInUse == 0)
+		{
+			if (matBatch.Chunks.empty())
+				matBatch.Chunks.emplace_back();
+			matBatch.ChunksInUse = 1;
+		}
+
+		MeshChunk* chunk = &matBatch.Chunks[matBatch.ChunksInUse - 1];
+		if (chunk->Vertices.size() + vertices.size() > caps.MaxVertices ||
+			chunk->Indices.size() + indices.size() > caps.MaxIndices)
+		{
+			if (matBatch.ChunksInUse == matBatch.Chunks.size())
+				matBatch.Chunks.emplace_back();
+			chunk = &matBatch.Chunks[matBatch.ChunksInUse];
+			++matBatch.ChunksInUse;
+		}
+
 		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
 		// doesn't skew them; positions just use the model matrix.
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
-		const uint32_t vertexOffset = static_cast<uint32_t>(batch.Vertices.size());
+		const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
 
 		for (const MeshVertex& v : vertices)
 		{
@@ -278,11 +303,11 @@ namespace Dingo
 			vertex.Normal = normalMatrix * v.Normal;
 			vertex.Color = color;
 			vertex.TexCoord = v.TexCoord;
-			batch.Vertices.push_back(vertex);
+			chunk->Vertices.push_back(vertex);
 		}
 
 		for (uint32_t index : indices)
-			batch.Indices.push_back(index + vertexOffset);
+			chunk->Indices.push_back(index + vertexOffset);
 
 		++m_Statistics.SubmittedMeshes;
 		m_Statistics.VertexCount += static_cast<uint32_t>(vertices.size());
