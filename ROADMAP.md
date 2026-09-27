@@ -112,6 +112,17 @@ A point release that turns the workarounds the shipped games wrote around missin
 
 **Test**: the test app's new **Cursor Test** (`--test=Cursor`) and the F5 Input tab's Cursor section, its **Mesh Collider Test** (`--test=collider`) — a triangle-mesh terrain bowl with a kinematic mesh lift rising through it, pelted with convex-hull pebbles, spheres and boxes, checking that the terrain answers ray casts at its true height and that nothing sinks through it, and UTF-8 lines in the **Text Test** (`--test=Text`).
 
+## v0.6.3 — Known-Bug Sweep
+A point release that closes every open entry in [KNOWN-BUGS.md](KNOWN-BUGS.md) except the two deliberate deferrals: K10 (GLM in public headers, waiting for the next API break) and K11 (moving a live device to another GPU).
+- **Null asset handles** (K4): a default-constructed `UUID` — and so `AssetHandle` — is now 0, which is `k_InvalidAsset`; fresh ids come from `UUID::Generate()`. The default constructor used to roll a random value, so an unset handle member passed `IsValidAssetHandle` and then resolved to nothing.
+- **Debug-ASan builds** (K5): the configuration links (the STL's container annotations now agree with the Vulkan SDK's non-ASan prebuilts) and every executable gets the ASan runtime DLL beside it.
+- **One meaning for a relative path** (K7): the raw file factories (`Font::Create`, `Texture::CreateFromFile`, `Model::LoadFromFile`, `Shader::CreateFromFile`, `AudioEngine::LoadClip`) look a relative path up under the asset root first, as the `AssetManager` does, and fall back to the working directory, so existing `"assets/..."` calls load the same files as before.
+- **Runtime handles out of the components** (K8): an entity's live physics body, 2D shapes, character controller and sound are engine-owned instead of fields on its public components, so assigning one entity's `RigidBody3DComponent` onto another's can no longer make both drive one body. **Breaking**: `RuntimeBody`, `RuntimeShape`, `RuntimeController`, `RuntimeSound` and `CharacterController3DComponent::k_InvalidControllerIndex` are gone; read the handles with `Scene::GetRuntimeBody2D/3D(entity)` and `Scene::GetRuntimeSound(entity)`.
+- **No dropped meshes** (K9): a material that outgrows a `Renderer3D` batch spills into another draw call instead of losing the rest of the scene in a shipping build. Only a single mesh bigger than a whole batch is still dropped.
+- **Swap-chain attachments** (K12 + K13): the depth attachment is stored and the colour attachment loaded, so both survive NVRHI's mid-frame render-pass restarts by the spec rather than by driver goodwill — RenderDoc replays a 3D scene correctly again — and a GPU without `VK_KHR_load_store_op_none` is no longer rejected at device selection.
+
+**Test**: the test app's new **Renderer3D Batch Test** (`--test=batch`), an assignment-aliasing check in the **Mesh Collider Test**, and a raw `Font::Create` root-relative path check in the **Asset Manager Test**.
+
 ## v0.7 — Lighting & Shading
 v0.6 made assets first-class; v0.7 does the same for **light**. Everything the engine has ever
 rendered has been lit by exactly one directional light: `DirectionalLightComponent` carries a

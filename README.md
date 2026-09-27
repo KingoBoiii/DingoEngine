@@ -29,8 +29,8 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 
 ## Roadmap
 
-Currently at **v0.6.2**. Every milestone ships with an example game that exercises it — see
-[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1, v0.6.2) and what each
+Currently at **v0.6.3**. Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3) and what each
 example is built to demonstrate.
 
 | Version | Milestone | Example game | Status |
