@@ -69,6 +69,8 @@ namespace Dingo
 
 		// Loads and fully decodes a clip (.wav / .ogg). Returns nullptr on failure
 		// (error is logged) — never a broken object, matching Model::LoadFromFile.
+		// A relative filepath is looked up under the asset root first, then the working
+		// directory.
 		virtual std::shared_ptr<AudioClip> LoadClip(const std::filesystem::path& filepath) = 0;
 
 		// --- Playback ---------------------------------------------------------

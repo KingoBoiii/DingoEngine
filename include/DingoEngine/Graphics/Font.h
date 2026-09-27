@@ -18,6 +18,8 @@ namespace Dingo
 	{
 	public:
 		// Returns nullptr on failure (error is logged). Caller owns the returned Font.
+		// A relative filepath is looked up under the asset root first, then the working
+		// directory.
 		static Font* Create(const std::filesystem::path& filepath, const FontParams& params = {});
 
 	public:

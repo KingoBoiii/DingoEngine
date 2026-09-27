@@ -43,6 +43,11 @@ namespace Dingo
 
 		Check(!IsValidAssetHandle(assets.Import("data/unknown.xyz")), "unknown extension refuses Import");
 
+		// fonts/arial.ttf exists under the asset root but not under the working directory.
+		Font* rawFont = Font::Create("fonts/arial.ttf");
+		Check(rawFont != nullptr && rawFont->IsValid(), "raw Font::Create resolves a root-relative path like the manager");
+		DestroyAndDelete(rawFont);
+
 		m_AsyncTexture = assets.LoadAsync("textures/hd2.png");
 		m_AsyncModel = assets.LoadAsync("models/Duck/Duck.gltf");
 		m_AsyncFont = assets.LoadAsync("fonts/arial.ttf");

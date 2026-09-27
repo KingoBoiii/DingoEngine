@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Audio/MiniAudio/MiniAudioEngine.h"
+#include "DingoEngine/Asset/AssetPath.h"
 
 // All miniaudio usage is confined to this .cpp (+ the engine-internal MiniAudioData.h).
 #include "DingoEngine/Audio/MiniAudio/MiniAudioData.h"
@@ -151,9 +152,11 @@ namespace Dingo
 		if (!m_Data)
 			return nullptr;
 
-		if (!std::filesystem::exists(filepath))
+		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
+
+		if (!std::filesystem::exists(resolvedPath))
 		{
-			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", filepath.string());
+			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", resolvedPath.string());
 			return nullptr;
 		}
 
@@ -161,11 +164,11 @@ namespace Dingo
 
 		// MA_SOUND_FLAG_DECODE: fully decode into memory now (so ma_sound_init_copy can
 		// clone the decoded data buffer). No STREAM flag — streams can't be copied.
-		const ma_result result = ma_sound_init_from_file(m_Data->Engine, filepath.string().c_str(),
+		const ma_result result = ma_sound_init_from_file(m_Data->Engine, resolvedPath.string().c_str(),
 			MA_SOUND_FLAG_DECODE, nullptr, nullptr, clip->Template());
 		if (result != MA_SUCCESS)
 		{
-			DE_CORE_ERROR("AudioEngine::LoadClip failed for '{}' ({})", filepath.string(), (int)result);
+			DE_CORE_ERROR("AudioEngine::LoadClip failed for '{}' ({})", resolvedPath.string(), (int)result);
 			return nullptr; // clip's dtor won't uninit (m_Loaded still false)
 		}
 

@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Asset/AssetPath.h"
 
 #undef INFINITE
 #define MSDFGEN_PUBLIC
@@ -185,7 +186,7 @@ namespace Dingo
 
 	Font* Font::Create(const std::filesystem::path& filepath, const FontParams& params)
 	{
-		Font* font = new Font(filepath, params);
+		Font* font = new Font(Internal::ResolveRawAssetPath(filepath), params);
 		if (!font->Initialize())
 		{
 			delete font;
