@@ -102,7 +102,9 @@ namespace Dingo
 
 		// loadOp = eLoad preserves the depth value written by the explicit ClearDepthStencilAttachment
 		// call in NvrhiCommandList::Clear (NVRHI begins the render pass with setClearValueCount(0),
-		// so eClear would read garbage).
+		// so eClear would read garbage). storeOp = eStore for the same many-instances reason as the
+		// colour attachment: Renderer3D uploads each batch just before drawing it, which restarts
+		// the pass, and eDontCare lets the driver discard the depth every later batch tests against.
 		//
 		// initialLayout must be eDepthStencilAttachmentOptimal: the depth texture is created with
 		// initialState = DepthWrite / keepInitialState (see Initialize()), and NVRHI's
@@ -116,7 +118,7 @@ namespace Dingo
 			.setFormat(vk::Format::eD32Sfloat)
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eLoad)
-			.setStoreOp(vk::AttachmentStoreOp::eDontCare)
+			.setStoreOp(vk::AttachmentStoreOp::eStore)
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 			.setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)
