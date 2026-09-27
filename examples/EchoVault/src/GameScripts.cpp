@@ -755,11 +755,7 @@ namespace Dingo
 
 	void HudScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ======================================================================
@@ -804,11 +800,7 @@ namespace Dingo
 
 	void MenuControllerScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ======================================================================
@@ -857,10 +849,6 @@ namespace Dingo
 
 	void WinControllerScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 }

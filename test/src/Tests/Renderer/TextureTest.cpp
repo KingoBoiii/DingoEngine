@@ -85,11 +85,7 @@ void main() {
 
 	void TextureTest::Cleanup()
 	{
-		if (m_Texture)
-		{
-			m_Texture->Destroy();
-			m_Texture = nullptr;
-		}
+		DestroyAndDelete(m_Texture);
 
 		if (m_UniformBuffer)
 		{

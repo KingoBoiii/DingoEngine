@@ -689,10 +689,6 @@ namespace Dingo
 
 	void HudScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 }

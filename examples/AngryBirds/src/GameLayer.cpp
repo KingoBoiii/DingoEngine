@@ -80,11 +80,7 @@ namespace Dingo
 	{
 		// Scenes are owned by m_SceneManager and destroyed with it (which stops their
 		// physics worlds via Scene::Clear).
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	void GameLayer::OnUpdate(float deltaTime)

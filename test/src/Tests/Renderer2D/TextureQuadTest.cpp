@@ -13,17 +13,8 @@ namespace Dingo
 
 	void TextureQuadTest::Cleanup()
 	{
-		if (m_Texture)
-		{
-			m_Texture->Destroy();
-			m_Texture = nullptr;
-		}
-
-		if (m_HD2Texture)
-		{
-			m_HD2Texture->Destroy();
-			m_HD2Texture = nullptr;
-		}
+		DestroyAndDelete(m_Texture);
+		DestroyAndDelete(m_HD2Texture);
 
 		Renderer2DTest::Cleanup();
 	}

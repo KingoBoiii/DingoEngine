@@ -48,11 +48,7 @@ namespace Dingo
 	void GameLayer::OnDetach()
 	{
 		// Scenes are owned by m_SceneManager and destroyed with it.
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	void GameLayer::OnUpdate(float deltaTime)
