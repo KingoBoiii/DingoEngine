@@ -29,6 +29,8 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K9](#k9) | `Renderer3D` drops geometry on batch overflow in shipping builds | Limitation | Rendering |
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
+| [K12](#k12) | The swap-chain depth buffer is discarded at the end of every render pass | Defect | Vulkan |
+| [K13](#k13) | The swap-chain colour attachment is `LOAD_OP_NONE`, but later passes blend over it | Defect | Vulkan |
 
 ---
 
@@ -142,6 +144,47 @@ Resolution, DPI and colour-space changes on the same GPU *are* handled (the swap
 
 **Fix**: recreate the device and all GPU resources on adapter change — expensive, and rare enough in
 practice that logging may remain the right answer.
+
+## K12 — The swap-chain depth buffer is discarded at the end of every render pass {#k12}
+
+**Defect** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanFramebuffer.cpp:112-120`
+
+*Found against `VERSION` 0.6.2 on 2026-09-27, while debugging Gloomdelve.*
+
+The swap-chain framebuffer's depth attachment loads with `eLoad` but stores with `eDontCare`, which
+tells the driver it may throw the depth away when the render-pass instance ends. A frame is many
+instances, not one: NVRHI ends the pass on every buffer write (`vendor/nvrhi/src/vulkan/vulkan-buffer.cpp:444`)
+and begins a new one at the next draw (`vendor/nvrhi/src/vulkan/vulkan-graphics.cpp:645-647`), and
+`Renderer3D::EndScene` uploads each material's batch just before drawing it (`Renderer3D.cpp:207-212`).
+So every material after the first depth-tests against depth the spec calls undefined — including the
+1.0 clear written by `NvrhiCommandList::Clear` (`NvrhiCommandList.cpp:75`).
+
+Desktop drivers keep the data anyway, so games render correctly today (seen on an AMD RX 7900 XTX).
+RenderDoc does not: its replay honours the discard, so a capture of any 3D scene replays wrong — pixel
+history shows world draws rejected against a depth of 0 while the live frame drew them. The spec allows
+a driver to do the same live.
+
+**Fix**: `storeOp = eStore` on the depth attachment. The comment above it already relies on the cleared
+depth surviving into later passes; this makes the store side say so.
+
+## K13 — The swap-chain colour attachment is `LOAD_OP_NONE`, but later passes blend over it {#k13}
+
+**Defect** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanFramebuffer.cpp:86-94`, `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h:81`
+
+*Found against `VERSION` 0.6.2 on 2026-09-27, while debugging Gloomdelve.*
+
+The colour attachment loads with `eNone`, which the comment at `:74-79` treats as "preserve". The spec
+says otherwise: with `LOAD_OP_NONE` the previous contents are **undefined inside the render pass**, and
+no read access is declared. The engine reads them in every pass after the first: all pipelines alpha-blend
+(`NvrhiPipeline.cpp:68-76`), so each fragment reads the destination, and the whole Renderer2D HUD is drawn
+in fresh render-pass instances over the finished 3D world (the same restart path as [K12](#k12)).
+
+No visible artefact on the drivers tested (AMD RX 7900 XTX), and the validation layer stays silent. It is
+still undefined behaviour sitting under every HUD in every game.
+
+**Fix**: `loadOp = eLoad` — what "keep the world under the HUD" actually needs, at no cost on desktop GPUs.
+It is the only use of `VK_KHR_load_store_op_none`, so the extension can then drop out of the *required*
+device list (`VulkanGraphicsContext.h:81`), where today it fails device selection on any GPU that lacks it.
 
 ---
 
