@@ -59,7 +59,10 @@ path is first registered. Handles are stable for the lifetime of the manager
 and survive unload/reload cycles (including hot-reload), so game code can hold
 handles instead of tracking raw pointers.
 
-- `k_InvalidAsset` is the null handle; test with `IsValidAssetHandle(h)`.
+- `k_InvalidAsset` is the null handle; test with `IsValidAssetHandle(h)`. A
+  default-constructed `AssetHandle` is `k_InvalidAsset` (v0.6.3 — before that it was
+  a random value that passed the check), so an unset member reads as "no asset".
+  `UUID::Generate()` makes a fresh id; `UUID()` is 0.
 - The same path always maps to the same handle: loading
   `"sprites/player.png"` twice returns the same handle *and the same loaded
   object* — no duplicate file reads, no duplicate GPU textures.

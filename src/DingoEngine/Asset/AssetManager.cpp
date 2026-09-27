@@ -655,11 +655,11 @@ namespace Dingo
 		}
 
 		AssetMetadata metadata;
-		metadata.Handle = AssetHandle();
+		metadata.Handle = AssetHandle::Generate();
 		// A UUID collision is astronomically unlikely, but it would silently overwrite a live
 		// registration - and re-rolling costs one lookup, once, at import time.
-		while (!IsValidAssetHandle(metadata.Handle) || data.Registry.contains(metadata.Handle))
-			metadata.Handle = AssetHandle();
+		while (data.Registry.contains(metadata.Handle))
+			metadata.Handle = AssetHandle::Generate();
 
 		metadata.Type = type;
 		metadata.FilePath = NormalizeRelativePath(data, path);
