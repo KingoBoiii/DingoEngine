@@ -155,8 +155,9 @@ r.DrawQuad(pos, { height * aspect, height }, tex);
   with a different camera (e.g. a screen-space HUD), open a second block after the
   first.
 
-`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`, and
-`r.GetOutput()` returns the rendered colour texture if you need it.
+`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
+`r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,
+whose image is not a `Texture` you can sample (before v0.6.3 the call read out of bounds).
 
 ---
 
