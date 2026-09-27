@@ -109,7 +109,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
 | `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = built-in flat-lit) |
-| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2), opaque `RuntimeBody` |
+| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
 | `CapsuleCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `float HalfHeight` (fraction of `Scale.y`), `Friction`, `Restitution` |
@@ -180,6 +180,23 @@ uiCam.OrthographicSize = 20.0f;             // screen-space UI height, in world 
 
 Per-entity 3D controls live on `Scene` as `glm::vec3` overloads: `SetLinearVelocity` /
 `GetLinearVelocity3D`, `ApplyImpulse`, `ApplyForce`, and `GetPhysics3D()` for direct access.
+Direct `Physics3D` calls (`MoveKinematic`, `IsBodyValid`, matching a ray-cast hit's `Body`) take
+the entity's body handle from `Scene::GetRuntimeBody3D(entity)` — `k_InvalidBody3D` while it has
+no live body. `GetRuntimeBody2D` and `GetRuntimeSound` (an `AudioSourceComponent`'s playing
+sound) work the same way.
+
+The components hold settings only. The engine keeps each entity's live body, character
+controller and sound itself, so copying or assigning a component between entities
+(`b.GetComponent<RigidBody3DComponent>() = a.GetComponent<RigidBody3DComponent>()`,
+`Scene::DuplicateEntity`) never makes two entities share one.
+
+```cpp
+// Inside a ScriptableEntity: drive a kinematic platform along a path.
+const PhysicsBodyId3D body = GetScene().GetRuntimeBody3D(GetEntity());
+if (Physics3D* physics = GetScene().GetPhysics3D(); physics && body != k_InvalidBody3D)
+    physics->MoveKinematic(body, target, rotation, deltaTime);
+```
+
 `examples/DungeonCrawler3D/` is a worked dungeon-crawler prototype built entirely on this path.
 
 ### Custom materials (per-mesh shaders)

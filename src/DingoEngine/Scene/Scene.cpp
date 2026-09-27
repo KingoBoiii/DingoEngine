@@ -80,9 +80,11 @@ namespace Dingo
 		// Copy every built-in component present on the source EXCEPT identity (the clone
 		// keeps its fresh UUID) and the tag (already seeded above). The default
 		// Transform/2D components CreateEntity added are overwritten via emplace_or_replace.
+		// The engine's runtime components (RuntimeComponents.h) are deliberately absent, so
+		// the clone never shares the source's body, controller or sound.
 		//
 		// MAINTENANCE: a new component type in Components.h must be added to this list to
-		// be duplicated — and, if it carries a live backend handle, to ResetRuntimeHandles too.
+		// be duplicated.
 		CopyComponentIfExists<TransformComponent>(registry, dst, src);
 		CopyComponentIfExists<SpriteRendererComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleRendererComponent>(registry, dst, src);
@@ -103,36 +105,12 @@ namespace Dingo
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
 
-		// Reset the copied live physics handles so the clone never aliases — and
-		// DestroyEntity never double-frees — the source's body/shapes/controller (see Components.h).
-		ResetRuntimeHandles(static_cast<std::uint32_t>(dst));
-
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
 		if (IsPhysicsRunning())
 			CreateRigidBody(clone);
 
 		return clone;
-	}
-
-	// MAINTENANCE: new handle-carrying components join here.
-	void Scene::ResetRuntimeHandles(std::uint32_t handle)
-	{
-		entt::entity e = static_cast<entt::entity>(handle);
-		entt::registry& registry = m_Data->Registry;
-
-		if (registry.all_of<RigidBody2DComponent>(e))
-			registry.get<RigidBody2DComponent>(e).RuntimeBody = 0;
-		if (registry.all_of<BoxCollider2DComponent>(e))
-			registry.get<BoxCollider2DComponent>(e).RuntimeShape = 0;
-		if (registry.all_of<CircleCollider2DComponent>(e))
-			registry.get<CircleCollider2DComponent>(e).RuntimeShape = 0;
-		if (registry.all_of<RigidBody3DComponent>(e))
-			registry.get<RigidBody3DComponent>(e).RuntimeBody = k_InvalidBody3D;
-		if (registry.all_of<CharacterController3DComponent>(e))
-			registry.get<CharacterController3DComponent>(e).RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex;
-		if (registry.all_of<AudioSourceComponent>(e))
-			registry.get<AudioSourceComponent>(e).RuntimeSound = k_InvalidSound;
 	}
 
 	void Scene::DestroyEntity(Entity entity)
@@ -465,23 +443,32 @@ namespace Dingo
 
 	CharacterController3D* Scene::GetCharacterController(Entity entity) const
 	{
+		if (!IsValid(entity))
+			return nullptr;
+
 		return m_Data->Physics.GetController(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 
-	std::uint64_t Scene::GetRuntimeBody(Entity entity) const
+	PhysicsBodyId2D Scene::GetRuntimeBody2D(Entity entity) const
 	{
+		if (!IsValid(entity))
+			return 0;
+
 		return m_Data->Physics.RuntimeBody2D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 
-	std::uint32_t Scene::GetRuntimeBody3D(Entity entity) const
+	PhysicsBodyId3D Scene::GetRuntimeBody3D(Entity entity) const
 	{
+		if (!IsValid(entity))
+			return k_InvalidBody3D;
+
 		return m_Data->Physics.RuntimeBody3D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 
 	void Scene::SetLinearVelocity(Entity entity, const glm::vec2& velocity)
 	{
 		if (Physics2D* physics = m_Data->Physics.Get2D())
-			physics->SetLinearVelocity(GetRuntimeBody(entity), velocity);
+			physics->SetLinearVelocity(GetRuntimeBody2D(entity), velocity);
 	}
 
 	glm::vec2 Scene::GetLinearVelocity(Entity entity)
@@ -490,25 +477,25 @@ namespace Dingo
 		if (!physics)
 			return glm::vec2(0.0f);
 
-		return physics->GetLinearVelocity(GetRuntimeBody(entity));
+		return physics->GetLinearVelocity(GetRuntimeBody2D(entity));
 	}
 
 	void Scene::ApplyLinearImpulse(Entity entity, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake)
 	{
 		if (Physics2D* physics = m_Data->Physics.Get2D())
-			physics->ApplyLinearImpulse(GetRuntimeBody(entity), impulse, worldPoint, wake);
+			physics->ApplyLinearImpulse(GetRuntimeBody2D(entity), impulse, worldPoint, wake);
 	}
 
 	void Scene::ApplyLinearImpulseToCenter(Entity entity, const glm::vec2& impulse, bool wake)
 	{
 		if (Physics2D* physics = m_Data->Physics.Get2D())
-			physics->ApplyLinearImpulseToCenter(GetRuntimeBody(entity), impulse, wake);
+			physics->ApplyLinearImpulseToCenter(GetRuntimeBody2D(entity), impulse, wake);
 	}
 
 	void Scene::ApplyForceToCenter(Entity entity, const glm::vec2& force, bool wake)
 	{
 		if (Physics2D* physics = m_Data->Physics.Get2D())
-			physics->ApplyForceToCenter(GetRuntimeBody(entity), force, wake);
+			physics->ApplyForceToCenter(GetRuntimeBody2D(entity), force, wake);
 	}
 
 	void Scene::SetLinearVelocity(Entity entity, const glm::vec3& velocity)
@@ -554,6 +541,14 @@ namespace Dingo
 			return;
 
 		Internal::AudioSync::StopSource(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
+	}
+
+	AudioSoundId Scene::GetRuntimeSound(Entity entity) const
+	{
+		if (!IsValid(entity))
+			return k_InvalidSound;
+
+		return Internal::AudioSync::RuntimeSound(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 
 }

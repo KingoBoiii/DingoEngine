@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
 #include <algorithm>
 #include <cmath>
@@ -48,28 +49,18 @@ namespace Dingo
 			{
 				m_Physics2D->Shutdown(); // also destroys all bodies + shapes
 				m_Physics2D.reset();
-
-				// Clear the now-dangling runtime handles so a later restart is clean.
-				for (entt::entity handle : registry.view<RigidBody2DComponent>())
-					registry.get<RigidBody2DComponent>(handle).RuntimeBody = 0;
-				for (entt::entity handle : registry.view<BoxCollider2DComponent>())
-					registry.get<BoxCollider2DComponent>(handle).RuntimeShape = 0;
-				for (entt::entity handle : registry.view<CircleCollider2DComponent>())
-					registry.get<CircleCollider2DComponent>(handle).RuntimeShape = 0;
+				registry.clear<RigidBody2DRuntime>();
 			}
 
 			if (m_Physics3D && m_Physics3D->IsValid())
 			{
 				// Character controllers hold the world, so tear them down BEFORE the Physics3D.
 				m_Controllers.clear();
-				for (entt::entity handle : registry.view<CharacterController3DComponent>())
-					registry.get<CharacterController3DComponent>(handle).RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex;
+				registry.clear<CharacterController3DRuntime>();
 
 				m_Physics3D->Shutdown(); // destroys all 3D bodies
 				m_Physics3D.reset();
-
-				for (entt::entity handle : registry.view<RigidBody3DComponent>())
-					registry.get<RigidBody3DComponent>(handle).RuntimeBody = k_InvalidBody3D;
+				registry.clear<RigidBody3DRuntime>();
 			}
 		}
 
@@ -79,20 +70,17 @@ namespace Dingo
 			{
 				m_Physics2D->Step(deltaTime, m_SubStepCount);
 
-				auto view = registry.view<RigidBody2DComponent, TransformComponent>();
+				auto view = registry.view<RigidBody2DRuntime, RigidBody2DComponent, TransformComponent>();
 				for (entt::entity handle : view)
 				{
-					const RigidBody2DComponent& rigidBody = view.get<RigidBody2DComponent>(handle);
-					if (rigidBody.RuntimeBody == 0)
-						continue;
-
 					// Static bodies never move — skip the read-back so we don't churn over
 					// them or revert a runtime edit to a static entity's Transform.
-					if (rigidBody.Type == BodyType2D::Static)
+					if (view.get<RigidBody2DComponent>(handle).Type == BodyType2D::Static)
 						continue;
 
-					glm::vec2 position = m_Physics2D->GetPosition(rigidBody.RuntimeBody);
-					float angle = m_Physics2D->GetAngle(rigidBody.RuntimeBody);
+					const PhysicsBodyId2D body = view.get<RigidBody2DRuntime>(handle).Body;
+					glm::vec2 position = m_Physics2D->GetPosition(body);
+					float angle = m_Physics2D->GetAngle(body);
 
 					TransformComponent& transform = view.get<TransformComponent>(handle);
 					transform.Position.x = position.x;
@@ -111,38 +99,27 @@ namespace Dingo
 			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
 			m_Physics3D->Step(deltaTime, collisionSteps);
 
-			auto view = registry.view<RigidBody3DComponent, Transform3DComponent>();
+			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, Transform3DComponent>();
 			for (entt::entity handle : view)
 			{
-				const RigidBody3DComponent& rigidBody = view.get<RigidBody3DComponent>(handle);
-				if (rigidBody.RuntimeBody == k_InvalidBody3D)
-					continue;
-
 				// Static bodies never move — skip the read-back so we don't churn over
 				// them or revert a runtime edit to a static entity's Transform3D.
-				if (rigidBody.Type == BodyType3D::Static)
+				if (view.get<RigidBody3DComponent>(handle).Type == BodyType3D::Static)
 					continue;
 
+				const PhysicsBodyId3D body = view.get<RigidBody3DRuntime>(handle).Body;
 				Transform3DComponent& transform = view.get<Transform3DComponent>(handle);
-				transform.Position = m_Physics3D->GetPosition(rigidBody.RuntimeBody);
-				transform.Rotation = m_Physics3D->GetRotation(rigidBody.RuntimeBody);
+				transform.Position = m_Physics3D->GetPosition(body);
+				transform.Rotation = m_Physics3D->GetRotation(body);
 			}
 
 			// Character controllers: update each (scripts set its velocity in their
 			// OnUpdate), then write the swept position/rotation back onto the entity's
 			// Transform3D. Their capsule "feet" position is the transform origin.
-			auto ccView = registry.view<CharacterController3DComponent, Transform3DComponent>();
+			auto ccView = registry.view<CharacterController3DRuntime, CharacterController3DComponent, Transform3DComponent>();
 			for (entt::entity handle : ccView)
 			{
-				const CharacterController3DComponent& cc = ccView.get<CharacterController3DComponent>(handle);
-				if (cc.RuntimeController == CharacterController3DComponent::k_InvalidControllerIndex
-					|| cc.RuntimeController >= m_Controllers.size())
-					continue;
-
-				CharacterController3D* controller = m_Controllers[cc.RuntimeController].get();
-				if (!controller)
-					continue;
-
+				CharacterController3D* controller = m_Controllers[ccView.get<CharacterController3DRuntime>(handle).Index].get();
 				controller->Update(deltaTime);
 
 				Transform3DComponent& transform = ccView.get<Transform3DComponent>(handle);
@@ -160,19 +137,23 @@ namespace Dingo
 
 		void PhysicsSync::DestroyBodiesForEntity(entt::registry& registry, entt::entity handle)
 		{
-			if (m_Physics2D && m_Physics2D->IsValid() && registry.all_of<RigidBody2DComponent>(handle))
-				m_Physics2D->DestroyBody(registry.get<RigidBody2DComponent>(handle).RuntimeBody);
-
-			if (m_Physics3D && m_Physics3D->IsValid() && registry.all_of<RigidBody3DComponent>(handle))
-				m_Physics3D->DestroyBody(registry.get<RigidBody3DComponent>(handle).RuntimeBody);
-
-			// Free the entity's character controller (its slot stays but goes null so other
-			// entities' stored indices remain valid).
-			if (registry.all_of<CharacterController3DComponent>(handle))
+			if (const RigidBody2DRuntime* runtime = registry.try_get<RigidBody2DRuntime>(handle))
 			{
-				std::uint32_t index = registry.get<CharacterController3DComponent>(handle).RuntimeController;
-				if (index != CharacterController3DComponent::k_InvalidControllerIndex && index < m_Controllers.size())
-					m_Controllers[index].reset();
+				m_Physics2D->DestroyBody(runtime->Body);
+				registry.remove<RigidBody2DRuntime>(handle);
+			}
+
+			if (const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(handle))
+			{
+				m_Physics3D->DestroyBody(runtime->Body);
+				registry.remove<RigidBody3DRuntime>(handle);
+			}
+
+			// The slot stays, null, so other entities' indices remain valid.
+			if (const CharacterController3DRuntime* runtime = registry.try_get<CharacterController3DRuntime>(handle))
+			{
+				m_Controllers[runtime->Index].reset();
+				registry.remove<CharacterController3DRuntime>(handle);
 			}
 		}
 
@@ -196,30 +177,29 @@ namespace Dingo
 
 		CharacterController3D* PhysicsSync::GetController(const entt::registry& registry, entt::entity handle) const
 		{
-			if (!registry.valid(handle) || !registry.all_of<CharacterController3DComponent>(handle))
+			if (!registry.valid(handle))
 				return nullptr;
 
-			std::uint32_t index = registry.get<CharacterController3DComponent>(handle).RuntimeController;
-			if (index == CharacterController3DComponent::k_InvalidControllerIndex || index >= m_Controllers.size())
-				return nullptr;
-
-			return m_Controllers[index].get();
+			const CharacterController3DRuntime* runtime = registry.try_get<CharacterController3DRuntime>(handle);
+			return runtime ? m_Controllers[runtime->Index].get() : nullptr;
 		}
 
 		PhysicsBodyId2D PhysicsSync::RuntimeBody2D(const entt::registry& registry, entt::entity handle) const
 		{
-			if (!registry.valid(handle) || !registry.all_of<RigidBody2DComponent>(handle))
+			if (!registry.valid(handle))
 				return 0;
 
-			return registry.get<RigidBody2DComponent>(handle).RuntimeBody;
+			const RigidBody2DRuntime* runtime = registry.try_get<RigidBody2DRuntime>(handle);
+			return runtime ? runtime->Body : 0;
 		}
 
 		PhysicsBodyId3D PhysicsSync::RuntimeBody3D(const entt::registry& registry, entt::entity handle) const
 		{
-			if (!registry.valid(handle) || !registry.all_of<RigidBody3DComponent>(handle))
+			if (!registry.valid(handle))
 				return k_InvalidBody3D;
 
-			return registry.get<RigidBody3DComponent>(handle).RuntimeBody;
+			const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(handle);
+			return runtime ? runtime->Body : k_InvalidBody3D;
 		}
 
 		void PhysicsSync::CreateBody2D(entt::registry& registry, entt::entity handle)
@@ -230,11 +210,11 @@ namespace Dingo
 			if (!registry.all_of<RigidBody2DComponent, TransformComponent>(handle))
 				return;
 
-			auto& rigidBody = registry.get<RigidBody2DComponent>(handle);
-			if (rigidBody.RuntimeBody != 0)
+			if (registry.all_of<RigidBody2DRuntime>(handle))
 				return; // a body already exists for this entity — don't leak a second one
 
-			auto& transform = registry.get<TransformComponent>(handle);
+			const auto& rigidBody = registry.get<RigidBody2DComponent>(handle);
+			const auto& transform = registry.get<TransformComponent>(handle);
 
 			RigidBodyParams2D bodyParams;
 			bodyParams.Type = rigidBody.Type;
@@ -242,13 +222,18 @@ namespace Dingo
 			bodyParams.Rotation = glm::radians(transform.Rotation); // Transform stores degrees
 			bodyParams.FixedRotation = rigidBody.FixedRotation;
 
-			rigidBody.RuntimeBody = m_Physics2D->CreateBody(bodyParams);
+			const PhysicsBodyId2D body = m_Physics2D->CreateBody(bodyParams);
+			if (body == 0)
+				return;
+
+			RigidBody2DRuntime& runtime = registry.emplace<RigidBody2DRuntime>(handle);
+			runtime.Body = body;
 
 			// Collider sizes are fractions of the entity's full extent (Transform.Size);
 			// resolve them to world units here, so { 0.5, 0.5 } / radius 0.5 fits the quad.
 			if (registry.all_of<BoxCollider2DComponent>(handle))
 			{
-				auto& collider = registry.get<BoxCollider2DComponent>(handle);
+				const auto& collider = registry.get<BoxCollider2DComponent>(handle);
 
 				BoxShapeParams2D shapeParams;
 				shapeParams.HalfExtents = { transform.Size.x * collider.Size.x, transform.Size.y * collider.Size.y };
@@ -257,12 +242,12 @@ namespace Dingo
 				shapeParams.Friction = collider.Friction;
 				shapeParams.Restitution = collider.Restitution;
 
-				collider.RuntimeShape = m_Physics2D->AddBoxShape(rigidBody.RuntimeBody, shapeParams);
+				runtime.BoxShape = m_Physics2D->AddBoxShape(body, shapeParams);
 			}
 
 			if (registry.all_of<CircleCollider2DComponent>(handle))
 			{
-				auto& collider = registry.get<CircleCollider2DComponent>(handle);
+				const auto& collider = registry.get<CircleCollider2DComponent>(handle);
 
 				CircleShapeParams2D shapeParams;
 				shapeParams.Radius = transform.Size.x * collider.Radius;
@@ -271,7 +256,7 @@ namespace Dingo
 				shapeParams.Friction = collider.Friction;
 				shapeParams.Restitution = collider.Restitution;
 
-				collider.RuntimeShape = m_Physics2D->AddCircleShape(rigidBody.RuntimeBody, shapeParams);
+				runtime.CircleShape = m_Physics2D->AddCircleShape(body, shapeParams);
 			}
 		}
 
@@ -283,11 +268,11 @@ namespace Dingo
 			if (!registry.all_of<RigidBody3DComponent, Transform3DComponent>(handle))
 				return;
 
-			auto& rigidBody = registry.get<RigidBody3DComponent>(handle);
-			if (rigidBody.RuntimeBody != k_InvalidBody3D)
+			if (registry.all_of<RigidBody3DRuntime>(handle))
 				return; // a body already exists for this entity — don't leak a second one
 
-			auto& transform = registry.get<Transform3DComponent>(handle);
+			const auto& rigidBody = registry.get<RigidBody3DComponent>(handle);
+			const auto& transform = registry.get<Transform3DComponent>(handle);
 
 			RigidBodyParams3D params;
 			params.Type = rigidBody.Type;
@@ -347,7 +332,9 @@ namespace Dingo
 				params.HalfExtents = transform.Scale * 0.5f;
 			}
 
-			rigidBody.RuntimeBody = m_Physics3D->CreateBody(params);
+			const PhysicsBodyId3D body = m_Physics3D->CreateBody(params);
+			if (body != k_InvalidBody3D)
+				registry.emplace<RigidBody3DRuntime>(handle).Body = body;
 		}
 
 		void PhysicsSync::CreateController(entt::registry& registry, entt::entity handle)
@@ -358,11 +345,11 @@ namespace Dingo
 			if (!registry.all_of<CharacterController3DComponent, Transform3DComponent>(handle))
 				return;
 
-			auto& cc = registry.get<CharacterController3DComponent>(handle);
-			if (cc.RuntimeController != CharacterController3DComponent::k_InvalidControllerIndex)
+			if (registry.all_of<CharacterController3DRuntime>(handle))
 				return; // already created — don't leak a second controller
 
-			auto& transform = registry.get<Transform3DComponent>(handle);
+			const auto& cc = registry.get<CharacterController3DComponent>(handle);
+			const auto& transform = registry.get<Transform3DComponent>(handle);
 
 			CharacterControllerParams3D params;
 			params.Radius = cc.Radius;
@@ -377,7 +364,7 @@ namespace Dingo
 				return;
 
 			m_Controllers.push_back(std::move(controller));
-			cc.RuntimeController = static_cast<std::uint32_t>(m_Controllers.size() - 1);
+			registry.emplace<CharacterController3DRuntime>(handle).Index = static_cast<std::uint32_t>(m_Controllers.size() - 1);
 		}
 
 	}

@@ -558,7 +558,7 @@ namespace Dingo
 		if (!physics)
 			return;
 
-		const std::uint32_t bodyId = GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D bodyId = GetScene().GetRuntimeBody3D(GetEntity());
 		if (bodyId == k_InvalidBody3D)
 			return;
 
@@ -642,7 +642,7 @@ namespace Dingo
 			m_Cooldown -= deltaTime;
 
 		Physics3D* physics = GetScene().GetPhysics3D();
-		const std::uint32_t bodyId = GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D bodyId = GetScene().GetRuntimeBody3D(GetEntity());
 
 		// Patrol (kinematic ping-pong).
 		if (physics && bodyId != k_InvalidBody3D && deltaTime > 0.0f)

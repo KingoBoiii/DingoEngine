@@ -3,6 +3,8 @@
 // Engine-internal: drives the AudioEngine from the scene's audio components.
 // Lives under src/ so EnTT stays a private implementation detail.
 
+#include "DingoEngine/Audio/AudioTypes.h"
+
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
@@ -36,6 +38,9 @@ namespace Dingo
 			// self-reaping, so dropping entities without this leaves them playing with no
 			// handle left to stop.
 			void StopAllSources(entt::registry& registry);
+
+			// The entity's live sound handle, or k_InvalidSound when it has none.
+			AudioSoundId RuntimeSound(const entt::registry& registry, entt::entity handle);
 
 		}
 
