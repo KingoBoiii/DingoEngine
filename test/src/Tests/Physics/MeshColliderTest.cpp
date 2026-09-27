@@ -112,9 +112,9 @@ namespace Dingo
 		m_Scene->OnStart();
 
 		Physics3D* physics = m_Scene->GetPhysics3D();
-		const PhysicsBodyId3D terrainBody = m_Terrain.GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D terrainBody = m_Scene->GetRuntimeBody3D(m_Terrain);
 		Check(physics && physics->IsBodyValid(terrainBody), "static triangle-mesh terrain built from its MeshRenderer mesh");
-		Check(physics && physics->IsBodyValid(m_Lift.GetComponent<RigidBody3DComponent>().RuntimeBody), "kinematic triangle-mesh lift built");
+		Check(physics && physics->IsBodyValid(m_Scene->GetRuntimeBody3D(m_Lift)), "kinematic triangle-mesh lift built");
 
 		bool raysOnSurface = physics != nullptr;
 		for (const glm::vec2 point : { glm::vec2(2.0f, -3.0f), glm::vec2(-4.5f, 1.5f), glm::vec2(5.5f, 5.0f) })
@@ -127,6 +127,23 @@ namespace Dingo
 				&& hit.Normal.y > 0.0f;
 		}
 		Check(raysOnSurface, "ray casts land on the terrain's vertices with upward normals");
+
+		Entity aliasA = m_Scene->CreateEntity("Alias A");
+		aliasA.AddComponent<Transform3DComponent>(Transform3DComponent({ -40.0f, -40.0f, 0.0f }));
+		aliasA.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Kinematic));
+		Entity aliasB = m_Scene->CreateEntity("Alias B");
+		aliasB.AddComponent<Transform3DComponent>(Transform3DComponent({ 40.0f, -40.0f, 0.0f }));
+		aliasB.AddComponent<RigidBody3DComponent>();
+		m_Scene->CreateRigidBody(aliasA);
+		m_Scene->CreateRigidBody(aliasB);
+
+		aliasB.GetComponent<RigidBody3DComponent>() = aliasA.GetComponent<RigidBody3DComponent>();
+		const PhysicsBodyId3D aliasBodyA = m_Scene->GetRuntimeBody3D(aliasA);
+		const PhysicsBodyId3D aliasBodyB = m_Scene->GetRuntimeBody3D(aliasB);
+		const bool ownBodies = physics && aliasBodyA != aliasBodyB && physics->IsBodyValid(aliasBodyA) && physics->IsBodyValid(aliasBodyB);
+		m_Scene->DestroyEntity(aliasA);
+		Check(ownBodies && physics->IsBodyValid(aliasBodyB), "assigning a live RigidBody3DComponent onto another entity leaves each its own body");
+		m_Scene->DestroyEntity(aliasB);
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 200.0f);
 	}
@@ -172,7 +189,7 @@ namespace Dingo
 		if (pebble && !m_PebbleChecked)
 		{
 			m_PebbleChecked = true;
-			Check(m_Scene->GetPhysics3D()->IsBodyValid(body.GetComponent<RigidBody3DComponent>().RuntimeBody),
+			Check(m_Scene->GetPhysics3D()->IsBodyValid(m_Scene->GetRuntimeBody3D(body)),
 				"dynamic convex-hull pebble built from its MeshRenderer mesh at a non-uniform scale");
 		}
 	}
@@ -185,7 +202,7 @@ namespace Dingo
 		const float phase = 2.0f * glm::pi<float>() * m_LiftTime / k_LiftPeriod;
 		const float height = k_LiftBottom + 0.5f * k_LiftTravel * (1.0f - std::cos(phase));
 
-		m_Scene->GetPhysics3D()->MoveKinematic(m_Lift.GetComponent<RigidBody3DComponent>().RuntimeBody,
+		m_Scene->GetPhysics3D()->MoveKinematic(m_Scene->GetRuntimeBody3D(m_Lift),
 			{ 0.0f, height, 0.0f }, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), deltaTime);
 	}
 

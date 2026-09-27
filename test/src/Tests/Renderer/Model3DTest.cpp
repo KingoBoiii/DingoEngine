@@ -111,13 +111,13 @@ namespace Dingo
 	{
 		for (auto& gsm : m_GpuSubMeshes)
 		{
-			if (gsm.Mat) { gsm.Mat->Destroy(); delete gsm.Mat; }
-			if (gsm.VB)  { gsm.VB->Destroy(); }
-			if (gsm.IB)  { gsm.IB->Destroy(); }
+			DestroyAndDelete(gsm.Mat);
+			DestroyAndDelete(gsm.VB);
+			DestroyAndDelete(gsm.IB);
 		}
 		m_GpuSubMeshes.clear();
 
-		if (m_Model) { m_Model->Destroy(); delete m_Model; m_Model = nullptr; }
+		DestroyAndDelete(m_Model);
 	}
 
 	void Model3DTest::Update(float deltaTime)
@@ -145,7 +145,7 @@ namespace Dingo
 	{
 		UnloadModel();
 
-		if (m_Shader) { m_Shader->Destroy(); m_Shader = nullptr; }
+		DestroyAndDelete(m_Shader);
 	}
 
 	void Model3DTest::Resize(uint32_t width, uint32_t height)

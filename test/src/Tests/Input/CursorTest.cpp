@@ -82,11 +82,7 @@ namespace Dingo
 		// Leaving the cursor Locked would strand the test picker's own UI.
 		Input::SetCursorMode(CursorMode::Normal);
 
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 
 		Renderer2DTest::Cleanup();
 	}

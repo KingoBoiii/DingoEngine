@@ -4,15 +4,20 @@ Open defects and sharp edges in DingoEngine. Companion to [ROADMAP.md](ROADMAP.m
 next) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (missing capabilities, ranked). This file is only
 for things that are **wrong or surprising in code that already ships**.
 
-- **Verified against `VERSION` 0.6.0 on 2026-07-31.** Every entry below carries a `file:line` anchor
+- **Verified against `VERSION` 0.6.3 on 2026-09-27.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
+  Both remaining entries are deliberate deferrals, not oversights.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
 - **IDs are never reused.** A fixed entry is deleted rather than renumbered, so gaps are expected:
   fixed in v0.6.2 were K1 (`Application::OnDestroy` never reached a derived override), K2 and K3
   (text could not draw its Latin-1 glyphs and had no UTF-8 decode) and K6 (the `.cache` directory
-  followed the working directory).
+  followed the working directory). Fixed in v0.6.3 were K4 (a default `AssetHandle` passed
+  `IsValidAssetHandle`), K5 (`Debug-ASan` did not link), K7 (`Font::Create` ignored the asset root),
+  K8 (assigning a physics component aliased its handle), K9 (`Renderer3D` dropped batch overflow),
+  K12 (the swap-chain depth was discarded between render-pass instances) and K13 (the swap-chain
+  colour attachment used `LOAD_OP_NONE`).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
@@ -22,99 +27,10 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 
 | # | Issue | Kind | Area |
 |---|---|---|---|
-| [K4](#k4) | A default-constructed `AssetHandle` passes `IsValidAssetHandle` | Defect | Asset |
-| [K5](#k5) | The `Debug-ASan` configuration does not link | Defect | Build |
-| [K7](#k7) | `Font::Create` ignores the asset root that `AssetManager` honours | Limitation | Asset |
-| [K8](#k8) | Assigning one entity's physics component onto another's aliases its handle | Defect · Latent | Scene |
-| [K9](#k9) | `Renderer3D` drops geometry on batch overflow in shipping builds | Limitation | Rendering |
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
-| [K12](#k12) | The swap-chain depth buffer is discarded at the end of every render pass | Defect | Vulkan |
-| [K13](#k13) | The swap-chain colour attachment is `LOAD_OP_NONE`, but later passes blend over it | Defect | Vulkan |
 
 ---
-
-## K4 — A default-constructed `AssetHandle` passes `IsValidAssetHandle` {#k4}
-
-**Defect** — `src/DingoEngine/Core/UUID.cpp:13-16`, `include/DingoEngine/Asset/AssetTypes.h:15-17`
-
-`AssetHandle` is a `UUID`, and `UUID::UUID()` **generates a fresh random 64-bit value**. The asset
-layer meanwhile defines `k_InvalidAsset = AssetHandle(0)` and `IsValidAssetHandle(h)` as
-`(uint64_t)h != 0`. The two disagree: a default-constructed handle — an uninitialised struct member, a
-`resize()`d vector slot — is a random non-zero value that **reports itself valid** and then resolves to
-nothing.
-
-This is worse than a null-check that fails, because the guard reads as if it works. A caller doing the
-right thing (`if (IsValidAssetHandle(m_Handle))`) gets a false positive.
-
-**Fix**: give handles a null default (`AssetHandle` defaulting to 0, with random generation moved to an
-explicit `UUID::Generate()`), so "default-constructed" and "invalid" mean the same thing.
-
-## K5 — The `Debug-ASan` configuration does not link {#k5}
-
-**Defect** — `premake5.lua:32-36`
-
-The `Debug-ASan` configuration adds `-fsanitize=address` to both build and link options, but never
-defines `_DISABLE_STRING_ANNOTATION` / `_DISABLE_VECTOR_ANNOTATION` (absent repo-wide). Without them,
-MSVC's annotated STL containers don't link against the **non-ASan** Vulkan SDK prebuilts the engine
-links, so the configuration fails at link time and cannot be used.
-
-Even once it links, the ASan runtime DLL must reach the output directory or the app dies at startup
-with `0xC0000135` (the same failure mode as a missing assimp DLL).
-
-**Fix**: add both defines to the `Debug-ASan` filter, and copy the ASan runtime alongside the other
-post-build DLL copies.
-
-## K7 — `Font::Create` ignores the asset root that `AssetManager` honours {#k7}
-
-**Limitation** — `src/DingoEngine/Graphics/Font.cpp:185,196-197`
-
-`Font::Create` stores the path it is handed verbatim, so it is interpreted relative to the working
-directory. `AssetManager::GetFont` resolves against the configured **asset root**. Both are public and
-supported, and they disagree about what a relative path means — so moving a font load from one API to
-the other silently changes which file (if any) is found, and a wrong cwd loses all on-screen text with
-no crash.
-
-**Fix**: route `Font::Create` through the same path resolution, or document the split explicitly in
-[docs/asset-pipeline.md](docs/asset-pipeline.md) and steer games to the manager.
-
-## K8 — Assigning one entity's physics component onto another's aliases its handle {#k8}
-
-**Defect · Latent** — `include/DingoEngine/Scene/Components.h` (every component with a `Runtime*` handle)
-
-Six components carry a live runtime handle: `RigidBody2DComponent`, `BoxCollider2DComponent`,
-`CircleCollider2DComponent`, `RigidBody3DComponent`, `CharacterController3DComponent` and
-`AudioSourceComponent`. Since v0.6.2 `Entity::AddComponent` clears the handles of whatever it adds, so
-copying a component onto another entity — `b.AddComponent(a.GetComponent<RigidBody3DComponent>())` —
-is safe, as is `Scene::DuplicateEntity`.
-
-Assigning onto a component that is already live still copies the handle:
-`b.GetComponent<RigidBody3DComponent>() = a.GetComponent<RigidBody3DComponent>();` makes B drive A's
-body and orphans B's own, and whichever entity is destroyed second frees A's body twice.
-
-The reset can't move into the components' copy constructor or assignment: EnTT relocates components
-by copy and move when its storage compacts, and those must carry the handle, or every live entity loses
-its body the first time another entity is destroyed.
-
-**Workaround**: copy the settings field by field. **Fix**: split the handle out of the settings (an
-engine-owned runtime component beside the user-facing one), so assigning settings can never touch it.
-
-## K9 — `Renderer3D` drops geometry on batch overflow in shipping builds {#k9}
-
-**Limitation** — `include/DingoEngine/Graphics/Renderer3D.h:34`, `src/DingoEngine/Graphics/Renderer3D.cpp:248-265`
-
-When a material's batch exceeds `MaxVertices` / `MaxIndices` (65,536 by default), the remaining meshes
-for that material are **discarded for the rest of the scene**. There is a hard-fail path, but
-`AssertOnOverflow` defaults to `false` *and* asserts compile out of Release and Distribution, so a
-shipping build warns once, increments `Statistics::DroppedMeshes`, and carries on rendering an
-incomplete world.
-
-Mitigations that do exist: the warn-once log, the counter, and the F4 renderer panel surfacing
-`Dropped : N` with a hint. None are visible in a Distribution build with the overlay off.
-
-**Fix (game-side, today)**: raise the caps via `ApplicationParams.Renderer3D`, and set
-`AssertOnOverflow` in Debug. **Fix (engine)**: auto-flush the batch on overflow the way `Renderer2D`
-does, rather than dropping — see [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) #3.
 
 ## K10 — GLM is the one third-party dependency that leaks into public headers {#k10}
 
@@ -144,47 +60,6 @@ Resolution, DPI and colour-space changes on the same GPU *are* handled (the swap
 
 **Fix**: recreate the device and all GPU resources on adapter change — expensive, and rare enough in
 practice that logging may remain the right answer.
-
-## K12 — The swap-chain depth buffer is discarded at the end of every render pass {#k12}
-
-**Defect** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanFramebuffer.cpp:112-120`
-
-*Found against `VERSION` 0.6.2 on 2026-09-27, while debugging Gloomdelve.*
-
-The swap-chain framebuffer's depth attachment loads with `eLoad` but stores with `eDontCare`, which
-tells the driver it may throw the depth away when the render-pass instance ends. A frame is many
-instances, not one: NVRHI ends the pass on every buffer write (`vendor/nvrhi/src/vulkan/vulkan-buffer.cpp:444`)
-and begins a new one at the next draw (`vendor/nvrhi/src/vulkan/vulkan-graphics.cpp:645-647`), and
-`Renderer3D::EndScene` uploads each material's batch just before drawing it (`Renderer3D.cpp:207-212`).
-So every material after the first depth-tests against depth the spec calls undefined — including the
-1.0 clear written by `NvrhiCommandList::Clear` (`NvrhiCommandList.cpp:75`).
-
-Desktop drivers keep the data anyway, so games render correctly today (seen on an AMD RX 7900 XTX).
-RenderDoc does not: its replay honours the discard, so a capture of any 3D scene replays wrong — pixel
-history shows world draws rejected against a depth of 0 while the live frame drew them. The spec allows
-a driver to do the same live.
-
-**Fix**: `storeOp = eStore` on the depth attachment. The comment above it already relies on the cleared
-depth surviving into later passes; this makes the store side say so.
-
-## K13 — The swap-chain colour attachment is `LOAD_OP_NONE`, but later passes blend over it {#k13}
-
-**Defect** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanFramebuffer.cpp:86-94`, `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h:81`
-
-*Found against `VERSION` 0.6.2 on 2026-09-27, while debugging Gloomdelve.*
-
-The colour attachment loads with `eNone`, which the comment at `:74-79` treats as "preserve". The spec
-says otherwise: with `LOAD_OP_NONE` the previous contents are **undefined inside the render pass**, and
-no read access is declared. The engine reads them in every pass after the first: all pipelines alpha-blend
-(`NvrhiPipeline.cpp:68-76`), so each fragment reads the destination, and the whole Renderer2D HUD is drawn
-in fresh render-pass instances over the finished 3D world (the same restart path as [K12](#k12)).
-
-No visible artefact on the drivers tested (AMD RX 7900 XTX), and the validation layer stays silent. It is
-still undefined behaviour sitting under every HUD in every game.
-
-**Fix**: `loadOp = eLoad` — what "keep the world under the HUD" actually needs, at no cost on desktop GPUs.
-It is the only use of `VK_KHR_load_store_op_none`, so the extension can then drop out of the *required*
-device list (`VulkanGraphicsContext.h:81`), where today it fails device selection on any GPU that lacks it.
 
 ---
 

@@ -82,6 +82,8 @@ namespace Dingo
 	{
 	public:
 		// Returns nullptr on failure (error is logged). Caller owns the returned Texture.
+		// A relative filepath is looked up under the asset root first, then the working
+		// directory.
 		static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
 		static Texture* CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format = TextureFormat::RGBA, const std::string& debugName = "Texture (Data)");
 		static Texture* Create(const TextureParams& params);

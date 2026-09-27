@@ -157,11 +157,11 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D  (most recent scene)");
 		ImGui::Separator();
-		ImGui::Text("Draw calls : %u   (one per material)", stats3D.DrawCalls);
+		ImGui::Text("Draw calls : %u   (one or more per material)", stats3D.DrawCalls);
 		ImGui::Text("Meshes     : %u submitted", stats3D.SubmittedMeshes);
 		if (stats3D.DroppedMeshes > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-				"Dropped    : %u  (raise Renderer3D MaxVertices/MaxIndices)", stats3D.DroppedMeshes);
+				"Dropped    : %u  (a mesh exceeds Renderer3D MaxVertices/MaxIndices on its own)", stats3D.DroppedMeshes);
 		else
 			ImGui::Text("Dropped    : 0");
 

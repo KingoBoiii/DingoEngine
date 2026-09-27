@@ -19,18 +19,16 @@ namespace Dingo
 
 	struct Renderer3DCapabilities
 	{
-		// Capacity of the single per-scene batch. A box is 24 verts / 36 indices and
-		// a default sphere ~289 verts / 1536 indices, so the defaults comfortably hold
-		// a few thousand primitives. Submissions past capacity are dropped (with a
-		// warning) rather than triggering a mid-frame flush — see SubmitMesh.
+		// Capacity of one batch, i.e. one indexed draw. A box is 24 verts / 36 indices and
+		// a default sphere ~289 verts / 1536 indices. A material that outgrows a batch
+		// spills into another one; only a single mesh too large for an empty batch is
+		// dropped, with a warning.
 		uint32_t MaxVertices = 65536;
 		uint32_t MaxIndices = 98304;
 
-		// When true, exceeding a batch's capacity trips an assert instead of the default
-		// warn-once-and-drop. Opt-in (default off) so a deliberate vertex-budget "safety
-		// valve" — dropping far-away meshes — can still ship, while development can catch
-		// unexpected overflow hard. Asserts are compiled out in release, where this falls
-		// back to warn-and-drop regardless.
+		// When true, a mesh too large for an empty batch trips an assert instead of the
+		// default warn-once-and-drop. Asserts are compiled out in release, where it warns
+		// and drops regardless.
 		bool AssertOnOverflow = false;
 	};
 
@@ -49,7 +47,7 @@ namespace Dingo
 	//
 	// Between BeginScene()/EndScene() it groups submitted meshes BY MATERIAL,
 	// transforming each into a per-material vertex/index batch on the CPU, then issues
-	// one indexed draw per material on EndScene() (each from its own pooled buffer).
+	// one indexed draw per batch on EndScene() (each from its own pooled buffer).
 	// Meshes with no explicit material use the built-in flat directional-lit default.
 	// Depth testing is enabled (the swap-chain carries a depth attachment), so meshes
 	// occlude correctly regardless of submission order.
@@ -59,9 +57,9 @@ namespace Dingo
 	// bind at 1 and its textures at 2+. The SceneRenderer drives this for
 	// Transform3D + MeshRenderer entities (via Scene::RenderEntities3D).
 	//
-	// Note: each material's batch is capped at the configured capacity; submissions past
-	// it are dropped (with a warning) rather than re-uploading a buffer mid-frame. Raise
-	// Capabilities for very dense scenes.
+	// Note: each batch is capped at the configured capacity. A material that outgrows one
+	// spills into another batch — one more draw call — so raise Capabilities to cut draw
+	// calls in very dense scenes.
 	class Renderer3D
 	{
 	public:
@@ -113,9 +111,9 @@ namespace Dingo
 		// Per-scene render statistics: reset each BeginScene, complete after EndScene.
 		struct Statistics
 		{
-			uint32_t DrawCalls = 0;       // one indexed draw per non-empty material batch
+			uint32_t DrawCalls = 0;       // one indexed draw per non-empty batch; a material may take several
 			uint32_t SubmittedMeshes = 0; // meshes accepted into a batch this scene
-			uint32_t DroppedMeshes = 0;   // meshes dropped due to batch capacity overflow
+			uint32_t DroppedMeshes = 0;   // meshes too large for an empty batch
 			uint32_t VertexCount = 0;     // vertices batched this scene
 			uint32_t IndexCount = 0;      // indices batched this scene
 		};
@@ -165,15 +163,23 @@ namespace Dingo
 		// material the renderer draws (Material::SetSceneUniformBuffer).
 		GraphicsBuffer* m_SceneUniformBuffer = nullptr;
 
-		// One CPU batch per material, accumulated during the scene and drawn on EndScene.
-		struct MeshBatch
+		// One batch: capped at the capabilities, drawn with one indexed draw.
+		struct MeshChunk
 		{
 			std::vector<Vertex> Vertices;
 			std::vector<uint32_t> Indices;
+		};
+
+		// Chunks past ChunksInUse are storage kept from a busier scene, so a steady frame
+		// doesn't reallocate.
+		struct MaterialBatch
+		{
+			std::vector<MeshChunk> Chunks;
+			uint32_t ChunksInUse = 0;
 			bool OverflowWarned = false;
 			bool Enqueued = false; // already in m_DrawOrder for the scene in progress
 		};
-		std::unordered_map<Material*, MeshBatch> m_Batches;
+		std::unordered_map<Material*, MaterialBatch> m_Batches;
 
 		// Materials in the order they were first submitted to this scene. Draw order has to
 		// come from here, not from the map: unordered_map iteration follows pointer hashing,
@@ -181,9 +187,9 @@ namespace Dingo
 		// invisible for depth-tested opaques, but not for anything blended.
 		std::vector<Material*> m_DrawOrder;
 
-		// Pooled GPU buffers — one (vertex, index) pair per material batch drawn in a
-		// frame, grown on demand and reused. Each batch gets its own buffer, so no shared
-		// buffer is re-uploaded mid-frame.
+		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
+		// on demand and reused. Each batch gets its own buffer, so no shared buffer is
+		// re-uploaded mid-frame.
 		std::vector<GraphicsBuffer*> m_BatchVertexBuffers;
 		std::vector<GraphicsBuffer*> m_BatchIndexBuffers;
 

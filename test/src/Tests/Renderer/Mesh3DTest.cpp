@@ -117,10 +117,10 @@ namespace Dingo
 		m_BoxMesh    = nullptr;
 		m_SphereMesh = nullptr;
 
-		if (m_Material) { m_Material->Destroy(); delete m_Material; m_Material = nullptr; }
-		if (m_Shader)   { m_Shader->Destroy();                       m_Shader   = nullptr; }
-		if (m_VB)       { m_VB->Destroy();                           m_VB       = nullptr; }
-		if (m_IB)       { m_IB->Destroy();                           m_IB       = nullptr; }
+		DestroyAndDelete(m_Material);
+		DestroyAndDelete(m_Shader);
+		DestroyAndDelete(m_VB);
+		DestroyAndDelete(m_IB);
 	}
 
 	void Mesh3DTest::Resize(uint32_t width, uint32_t height)

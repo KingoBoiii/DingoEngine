@@ -29,8 +29,8 @@ namespace Dingo
 			// just the dimension it uses. Bakes a body for every qualifying entity.
 			void Start(entt::registry& registry, const glm::vec2& gravity2D, const glm::vec3& gravity3D);
 
-			// Tears both worlds down and resets every runtime handle in the registry to
-			// its "none" sentinel, so a later Start is clean.
+			// Tears both worlds down and drops every entity's runtime body/controller
+			// component with them, so a later Start is clean.
 			void Stop(entt::registry& registry);
 
 			// Steps each live world and writes the simulated transforms back: 2D onto
@@ -41,8 +41,8 @@ namespace Dingo
 			// Each route no-ops if its world isn't live or the component is absent.
 			void CreateBodiesForEntity(entt::registry& registry, entt::entity handle);
 
-			// Releases the entity's body/shapes and frees its controller slot, so nothing
-			// keeps colliding after the entity is gone.
+			// Releases the body/shapes and controller the entity owns — even if its settings
+			// component has since been removed — so nothing keeps colliding after it is gone.
 			void DestroyBodiesForEntity(entt::registry& registry, entt::entity handle);
 
 			bool IsRunning() const;
@@ -73,10 +73,9 @@ namespace Dingo
 			int m_SubStepCount = 4;
 			static constexpr int k_MaxCollisionSteps = 4;
 
-			// One per CharacterController3DComponent. The component's RuntimeController
-			// field indexes into this vector; slots are never reused (a destroyed
-			// controller leaves a null hole) so indices stay stable for the world's
-			// lifetime. Cleared in Stop with the 3D world.
+			// One per CharacterController3DComponent, indexed by CharacterController3DRuntime.
+			// Slots are never reused (a destroyed controller leaves a null hole) so indices
+			// stay stable for the world's lifetime. Cleared in Stop with the 3D world.
 			std::vector<std::unique_ptr<CharacterController3D>> m_Controllers;
 		};
 

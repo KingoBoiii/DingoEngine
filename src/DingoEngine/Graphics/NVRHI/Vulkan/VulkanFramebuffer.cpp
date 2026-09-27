@@ -71,12 +71,15 @@ namespace Dingo
 	{
 		VulkanGraphicsContext& graphicsContext = GraphicsContext::Get().As<VulkanGraphicsContext>();
 
-		// initialLayout must name the layout the image is actually in, for the same reason the
-		// depth attachment below does: eUndefined lets the implementation discard the contents
-		// at every vkCmdBeginRenderPass, and loadOp = eNone (preserve) cannot undo that. The
-		// colour clear runs OUTSIDE the pass (ClearColorAttachment -> vkCmdClearColorImage), and
-		// NVRHI re-begins the pass mid-frame whenever it has a barrier to commit, so a discard
-		// would drop both the clear and everything drawn before that point.
+		// A frame is many instances of this pass, not one: the colour clear runs OUTSIDE it
+		// (ClearColorAttachment -> vkCmdClearColorImage), and NVRHI ends the pass on every
+		// buffer write and re-begins it at the next draw, so the Renderer2D HUD is drawn in
+		// fresh instances over the finished 3D world. Every instance must therefore see what the
+		// previous one left. loadOp = eLoad is what declares that: eNone leaves the contents
+		// undefined inside the pass, and every pipeline alpha-blends, so each fragment reads
+		// them. initialLayout must name the layout the image is actually in, for the same
+		// reason: eUndefined lets the implementation discard the contents at every
+		// vkCmdBeginRenderPass.
 		//
 		// eColorAttachmentOptimal is what the image is in by then: the swap-chain texture is
 		// tracked as Present with keepInitialState, and setResourceStatesForFramebuffer
@@ -86,7 +89,7 @@ namespace Dingo
 		vk::AttachmentDescription colorAttachment = vk::AttachmentDescription()
 			.setFormat(vk::Format(nvrhi::vulkan::convertFormat(m_Texture->getDesc().format)))
 			.setSamples(vk::SampleCountFlagBits::e1)
-			.setLoadOp(vk::AttachmentLoadOp::eNone)
+			.setLoadOp(vk::AttachmentLoadOp::eLoad)
 			.setStoreOp(vk::AttachmentStoreOp::eStore)
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
@@ -99,7 +102,9 @@ namespace Dingo
 
 		// loadOp = eLoad preserves the depth value written by the explicit ClearDepthStencilAttachment
 		// call in NvrhiCommandList::Clear (NVRHI begins the render pass with setClearValueCount(0),
-		// so eClear would read garbage).
+		// so eClear would read garbage). storeOp = eStore for the same many-instances reason as the
+		// colour attachment: Renderer3D uploads each batch just before drawing it, which restarts
+		// the pass, and eDontCare lets the driver discard the depth every later batch tests against.
 		//
 		// initialLayout must be eDepthStencilAttachmentOptimal: the depth texture is created with
 		// initialState = DepthWrite / keepInitialState (see Initialize()), and NVRHI's
@@ -113,7 +118,7 @@ namespace Dingo
 			.setFormat(vk::Format::eD32Sfloat)
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(vk::AttachmentLoadOp::eLoad)
-			.setStoreOp(vk::AttachmentStoreOp::eDontCare)
+			.setStoreOp(vk::AttachmentStoreOp::eStore)
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 			.setInitialLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal)

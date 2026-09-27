@@ -42,8 +42,13 @@ params.Assets.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or(
 ```
 
 `Platform::GetExecutablePath()` and `GetExecutableDirectory()` are also available.
-Note that `Font::Create` still resolves against the working directory
-([K7](../KNOWN-BUGS.md)). The shader and font-atlas `.cache` lives beside the executable (v0.6.2),
+A path given to the manager (`Load`/`LoadAsync`/`Import`) is always root-relative. The
+raw factories (`Font::Create`, `Texture::CreateFromFile`, `Model::LoadFromFile`,
+`Shader::CreateFromFile`, `AudioEngine::LoadClip`) look a relative path up under the
+same root first (v0.6.3), falling back to the working directory only if no such file
+exists there — a fallback for code written before the root existed, not a second meaning
+for the path. So `Font::Create("fonts/x.ttf")` and `assets.Load("fonts/x.ttf")` open the
+same file. The shader and font-atlas `.cache` lives beside the executable (v0.6.2),
 or under `Platform::GetUserDataDir("DingoEngine")/cache/<exe name>` when that directory is read-only.
 
 Access it anywhere:
@@ -59,7 +64,10 @@ path is first registered. Handles are stable for the lifetime of the manager
 and survive unload/reload cycles (including hot-reload), so game code can hold
 handles instead of tracking raw pointers.
 
-- `k_InvalidAsset` is the null handle; test with `IsValidAssetHandle(h)`.
+- `k_InvalidAsset` is the null handle; test with `IsValidAssetHandle(h)`. A
+  default-constructed `AssetHandle` is `k_InvalidAsset` (v0.6.3 — before that it was
+  a random value that passed the check), so an unset member reads as "no asset".
+  `UUID::Generate()` makes a fresh id; `UUID()` is 0.
 - The same path always maps to the same handle: loading
   `"sprites/player.png"` twice returns the same handle *and the same loaded
   object* — no duplicate file reads, no duplicate GPU textures.

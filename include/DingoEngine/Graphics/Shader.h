@@ -49,6 +49,8 @@ namespace Dingo
 	class Shader
 	{
 	public:
+		// A relative filepath is looked up under the asset root first, then the working
+		// directory.
 		static Shader* CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect = true);
 		static Shader* CreateFromSource(const std::string& name, const std::string& source, bool reflect = true);
 		static Shader* Create(const ShaderParams& params);

@@ -2,6 +2,7 @@
 #include "DingoEngine/Asset/AssetManager.h"
 
 #include "DingoEngine/Asset/AssetManagerData.h"
+#include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
@@ -18,6 +19,33 @@ namespace Dingo
 	using Internal::AssetManagerData;
 	using Internal::AsyncJob;
 	using Internal::AsyncResult;
+
+	// A copy rather than a route through Application::GetAssetManager(), which dereferences a
+	// pointer that is still null while the Application constructor runs. Written on the main
+	// thread only; the loader thread calls the raw factories with absolute paths, which
+	// ResolveRawAssetPath returns before reading this.
+	static std::filesystem::path s_RawAssetRoot;
+
+	namespace Internal
+	{
+
+		std::filesystem::path ResolveRawAssetPath(const std::filesystem::path& path)
+		{
+			if (path.empty() || path.is_absolute())
+				return path;
+
+			if (s_RawAssetRoot.empty())
+				return path;
+
+			std::error_code ec;
+			const std::filesystem::path candidate = (s_RawAssetRoot / path).lexically_normal();
+			if (std::filesystem::exists(candidate, ec) && !ec)
+				return candidate;
+
+			return path;
+		}
+
+	}
 
 	namespace Utils
 	{
@@ -598,6 +626,8 @@ namespace Dingo
 		else
 			DE_CORE_INFO("AssetManager: asset root '{}'.", data.RootDirectory.string());
 
+		s_RawAssetRoot = data.RootDirectory;
+
 		data.Worker = std::thread(WorkerLoop, std::ref(data));
 	}
 
@@ -616,6 +646,8 @@ namespace Dingo
 			data.Worker.join();
 			data.StopWorker = false;
 		}
+
+		s_RawAssetRoot.clear();
 
 		// Free payloads that completed but were never finalized.
 		for (AsyncResult& result : data.Results)
@@ -655,11 +687,11 @@ namespace Dingo
 		}
 
 		AssetMetadata metadata;
-		metadata.Handle = AssetHandle();
+		metadata.Handle = AssetHandle::Generate();
 		// A UUID collision is astronomically unlikely, but it would silently overwrite a live
 		// registration - and re-rolling costs one lookup, once, at import time.
-		while (!IsValidAssetHandle(metadata.Handle) || data.Registry.contains(metadata.Handle))
-			metadata.Handle = AssetHandle();
+		while (data.Registry.contains(metadata.Handle))
+			metadata.Handle = AssetHandle::Generate();
 
 		metadata.Type = type;
 		metadata.FilePath = NormalizeRelativePath(data, path);

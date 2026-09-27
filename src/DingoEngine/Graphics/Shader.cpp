@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Shader.h"
+#include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 
 #include "NVRHI/NvrhiShader.h"
@@ -29,7 +30,10 @@ namespace Dingo
 
 	Shader* Shader::Create(const ShaderParams& params)
 	{
-		Shader* shader = new NvrhiShader(params);
+		ShaderParams resolvedParams = params;
+		resolvedParams.FilePath = Internal::ResolveRawAssetPath(params.FilePath);
+
+		Shader* shader = new NvrhiShader(resolvedParams);
 		shader->Initialize();
 		return shader;
 	}

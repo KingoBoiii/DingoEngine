@@ -10,7 +10,8 @@ your `TransformComponent`s.
 The simulation backend is [Box2D](https://box2d.org/) (v3), but — exactly like the
 EnTT-based ECS — it is an internal detail: **no Box2D type appears in any public
 header**, and your game never includes or links Box2D. Bodies and shapes are
-referred to through opaque handles stored on the components.
+referred to through opaque handles the engine keeps for each entity;
+`Scene::GetRuntimeBody2D(entity)` returns the body's handle (0 while it has none).
 
 > World units are metres. Because the physics world shares the coordinate space of
 > your orthographic camera, 1 world unit = 1 metre = 1 Box2D unit. Tune sizes,

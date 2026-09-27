@@ -2,6 +2,7 @@
 #include "NvrhiFramebuffer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h"
 
 namespace Dingo
@@ -20,13 +21,8 @@ namespace Dingo
 
 	void NvrhiFramebuffer::Destroy()
 	{
-		for(auto& attachment : m_Attachments)
-		{
-			if (attachment)
-			{
-				attachment->Destroy();
-			}
-		}
+		for (Texture*& attachment : m_Attachments)
+			DestroyAndDelete(attachment);
 		m_Attachments.clear();
 
 		m_DepthTextureHandle = nullptr;
@@ -38,13 +34,8 @@ namespace Dingo
 		m_Width = m_Params.Width = width;
 		m_Height = m_Params.Height = height;
 
-		for (auto& attachment : m_Attachments)
-		{
-			if (attachment)
-			{
-				attachment->Destroy();
-			}
-		}
+		for (Texture*& attachment : m_Attachments)
+			DestroyAndDelete(attachment);
 		m_Attachments.clear();
 
 		m_DepthTextureHandle = nullptr;

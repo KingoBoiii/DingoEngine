@@ -85,41 +85,12 @@ void main() {
 
 	void TextureTest::Cleanup()
 	{
-		if (m_Texture)
-		{
-			m_Texture->Destroy();
-			m_Texture = nullptr;
-		}
-
-		if (m_UniformBuffer)
-		{
-			m_UniformBuffer->Destroy();
-			m_UniformBuffer = nullptr;
-		}
-
-		if (m_IndexBuffer)
-		{
-			m_IndexBuffer->Destroy();
-			m_IndexBuffer = nullptr;
-		}
-
-		if (m_VertexBuffer)
-		{
-			m_VertexBuffer->Destroy();
-			m_VertexBuffer = nullptr;
-		}
-
-		if (m_Pipeline)
-		{
-			m_Pipeline->Destroy();
-			m_Pipeline = nullptr;
-		}
-
-		if (m_Shader)
-		{
-			m_Shader->Destroy();
-			m_Shader = nullptr;
-		}
+		DestroyAndDelete(m_Texture);
+		DestroyAndDelete(m_UniformBuffer);
+		DestroyAndDelete(m_IndexBuffer);
+		DestroyAndDelete(m_VertexBuffer);
+		DestroyAndDelete(m_Pipeline);
+		DestroyAndDelete(m_Shader);
 	}
 
 }

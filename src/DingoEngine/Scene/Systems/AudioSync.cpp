@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Systems/AudioSync.h"
 
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Audio/AudioEngine.h"
 
@@ -27,14 +28,13 @@ namespace Dingo
 			{
 				AudioEngine& audio = Application::Get().GetAudioEngine();
 
-				auto sourceView = registry.view<AudioSourceComponent>();
+				auto sourceView = registry.view<AudioSourceRuntime, AudioSourceComponent>();
 				for (entt::entity handle : sourceView)
 				{
-					AudioSourceComponent& source = sourceView.get<AudioSourceComponent>(handle);
-					if (!source.Spatialized || source.RuntimeSound == k_InvalidSound)
+					if (!sourceView.get<AudioSourceComponent>(handle).Spatialized)
 						continue;
 
-					audio.SetPosition(source.RuntimeSound, PositionOf(registry, handle));
+					audio.SetPosition(sourceView.get<AudioSourceRuntime>(handle).Sound, PositionOf(registry, handle));
 				}
 
 				// Primary listener search mirrors CameraUtils::FindPrimaryCamera: first
@@ -80,13 +80,13 @@ namespace Dingo
 				if (!registry.all_of<AudioSourceComponent>(handle))
 					return;
 
-				AudioSourceComponent& source = registry.get<AudioSourceComponent>(handle);
+				const AudioSourceComponent& source = registry.get<AudioSourceComponent>(handle);
 				if (!source.Clip)
 					return;
 
 				AudioEngine& audio = Application::Get().GetAudioEngine();
-				if (source.RuntimeSound != k_InvalidSound)
-					audio.Stop(source.RuntimeSound);
+				if (const AudioSourceRuntime* runtime = registry.try_get<AudioSourceRuntime>(handle))
+					audio.Stop(runtime->Sound);
 
 				SoundPlayParams params;
 				params.Volume = source.Volume;
@@ -99,39 +99,46 @@ namespace Dingo
 					params.Attenuation = source.Attenuation;
 				}
 
-				source.RuntimeSound = audio.Play(source.Clip, params);
+				const AudioSoundId sound = audio.Play(source.Clip, params);
+				if (sound != k_InvalidSound)
+					registry.emplace_or_replace<AudioSourceRuntime>(handle).Sound = sound;
+				else
+					registry.remove<AudioSourceRuntime>(handle);
 			}
 
 			void StopSource(entt::registry& registry, entt::entity handle)
 			{
-				if (!registry.all_of<AudioSourceComponent>(handle))
+				const AudioSourceRuntime* runtime = registry.try_get<AudioSourceRuntime>(handle);
+				if (!runtime)
 					return;
 
-				AudioSourceComponent& source = registry.get<AudioSourceComponent>(handle);
-				if (source.RuntimeSound == k_InvalidSound)
-					return;
-
-				Application::Get().GetAudioEngine().Stop(source.RuntimeSound);
-				source.RuntimeSound = k_InvalidSound;
+				Application::Get().GetAudioEngine().Stop(runtime->Sound);
+				registry.remove<AudioSourceRuntime>(handle);
 			}
 
 			void StopAllSources(entt::registry& registry)
 			{
 				// Reachable from ~Scene (via Clear) — a static-lifetime scene can be destroyed
 				// after the Application is gone, when there is no engine left to stop.
-				if (!Application::HasInstance())
-					return;
-
-				AudioEngine& audio = Application::Get().GetAudioEngine();
-				for (entt::entity handle : registry.view<AudioSourceComponent>())
+				if (Application::HasInstance())
 				{
-					AudioSourceComponent& source = registry.get<AudioSourceComponent>(handle);
-					if (source.RuntimeSound != k_InvalidSound)
+					AudioEngine& audio = Application::Get().GetAudioEngine();
+					registry.view<AudioSourceRuntime>().each([&audio](const AudioSourceRuntime& runtime)
 					{
-						audio.Stop(source.RuntimeSound);
-						source.RuntimeSound = k_InvalidSound;
-					}
+						audio.Stop(runtime.Sound);
+					});
 				}
+
+				registry.clear<AudioSourceRuntime>();
+			}
+
+			AudioSoundId RuntimeSound(const entt::registry& registry, entt::entity handle)
+			{
+				if (!registry.valid(handle))
+					return k_InvalidSound;
+
+				const AudioSourceRuntime* runtime = registry.try_get<AudioSourceRuntime>(handle);
+				return runtime ? runtime->Sound : k_InvalidSound;
 			}
 
 		}

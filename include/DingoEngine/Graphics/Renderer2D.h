@@ -105,6 +105,7 @@ namespace Dingo
 		const Statistics& GetStatistics() const { return m_Statistics; }
 		const Renderer2DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
 
+		// Always nullptr today: Renderer2D draws into the swap chain, whose image is not a Texture.
 		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{

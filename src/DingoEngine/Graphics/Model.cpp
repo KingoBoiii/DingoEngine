@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Log.h"
 
 #include <assimp/Importer.hpp>
@@ -135,17 +136,21 @@ namespace Dingo
 
 	Model* Model::LoadFromFile(const std::filesystem::path& filepath)
 	{
+		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
+
 		Assimp::Importer importer;
-		const aiScene* scene = importer.ReadFile(filepath.string(), k_ImportFlags);
+		const aiScene* scene = importer.ReadFile(resolvedPath.string(), k_ImportFlags);
 
 		if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !scene->mRootNode)
 		{
-			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': {}", filepath.string(), importer.GetErrorString());
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': {}", resolvedPath.string(), importer.GetErrorString());
 			return nullptr;
 		}
 
 		Model* model = new Model();
-		std::filesystem::path modelDir = filepath.parent_path();
+		// Absolute, so the material textures found beside the model are not resolved a second
+		// time against the asset root by Texture::CreateFromFile.
+		std::filesystem::path modelDir = std::filesystem::absolute(resolvedPath).parent_path();
 
 		TextureCache textureCache;
 		TraverseNode(scene->mRootNode, scene, modelDir, textureCache, model->m_SubMeshes);

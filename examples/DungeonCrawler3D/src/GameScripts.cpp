@@ -140,28 +140,12 @@ namespace Dingo
 	void DungeonControllerScript::OnDestroy()
 	{
 		// The controller owns the treasures' glow material + shader (created in OnStart).
-		if (m_GlowMaterial)
-		{
-			m_GlowMaterial->Destroy();
-			delete m_GlowMaterial;
-			m_GlowMaterial = nullptr;
-		}
-		if (m_GlowShader)
-		{
-			m_GlowShader->Destroy();
-			m_GlowShader = nullptr;
-		}
+		DestroyAndDelete(m_GlowMaterial);
+		DestroyAndDelete(m_GlowShader);
 
 		// The controller owns the character part models (loaded in OnStart).
 		for (Model*& model : m_PartModels)
-		{
-			if (model)
-			{
-				model->Destroy();
-				delete model;
-				model = nullptr;
-			}
-		}
+			DestroyAndDelete(model);
 	}
 
 	void DungeonControllerScript::LoadCharacterModels()
@@ -689,10 +673,6 @@ namespace Dingo
 
 	void HudScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 }

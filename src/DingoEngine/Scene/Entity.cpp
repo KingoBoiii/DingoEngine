@@ -12,29 +12,10 @@ namespace Dingo
 	// in the (EnTT-free) header and explicitly instantiated below for the built-in
 	// component types, so client translation units never need EnTT.
 
-	namespace
-	{
-		template<typename T>
-		void ClearRuntimeHandles(T&) {}
-
-		void ClearRuntimeHandles(RigidBody2DComponent& component) { component.RuntimeBody = 0; }
-		void ClearRuntimeHandles(BoxCollider2DComponent& component) { component.RuntimeShape = 0; }
-		void ClearRuntimeHandles(CircleCollider2DComponent& component) { component.RuntimeShape = 0; }
-		void ClearRuntimeHandles(RigidBody3DComponent& component) { component.RuntimeBody = k_InvalidBody3D; }
-		void ClearRuntimeHandles(CharacterController3DComponent& component) { component.RuntimeController = CharacterController3DComponent::k_InvalidControllerIndex; }
-		void ClearRuntimeHandles(AudioSourceComponent& component) { component.RuntimeSound = k_InvalidSound; }
-	}
-
-	// A component copied off a live entity still names that entity's body, shape, controller
-	// or sound; added as-is, both entities would drive one object and the second destroy would
-	// free it twice. The components themselves stay plain values because EnTT relocates them
-	// by copy/move, which must carry the handle along.
 	template<typename T>
 	T& Entity::AddComponent(const T& component)
 	{
-		T& added = m_Scene->m_Data->Registry.emplace<T>(static_cast<entt::entity>(m_Handle), component);
-		ClearRuntimeHandles(added);
-		return added;
+		return m_Scene->m_Data->Registry.emplace<T>(static_cast<entt::entity>(m_Handle), component);
 	}
 
 	template<typename T>

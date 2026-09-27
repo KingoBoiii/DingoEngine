@@ -2,6 +2,9 @@
 
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Core/Ray.h"
+#include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
+#include "DingoEngine/Audio/AudioTypes.h"
 
 #include <glm/glm.hpp>
 
@@ -41,10 +44,9 @@ namespace Dingo
 		bool IsValid(Entity entity) const;
 
 		// Deep-copies `source` and its built-in components into a new entity (with a fresh
-		// UUID) and returns it. Live physics handles are reset on the copy so the clone
-		// never aliases the source's body/shapes; if physics is running the clone gets its
-		// own body. Attached scripts are NOT cloned. Returns an invalid Entity if `source`
-		// is invalid.
+		// UUID) and returns it. The clone never shares the source's physics body, character
+		// controller or sound; if physics is running it gets its own body. Attached scripts
+		// are NOT cloned. Returns an invalid Entity if `source` is invalid.
 		Entity DuplicateEntity(Entity source);
 
 		// Destroys every entity (and its scripts) in the scene; the Scene stays usable.
@@ -173,8 +175,8 @@ namespace Dingo
 		// TransformComponent, 3D onto Transform3DComponent.
 		void OnPhysicsStart();
 
-		// Tears down both physics worlds and clears the runtime handles on every
-		// rigid body / collider. Safe to call when physics isn't running.
+		// Tears down both physics worlds, and with them every entity's runtime body and
+		// character controller. Safe to call when physics isn't running.
 		void OnPhysicsStop();
 
 		// True while either the 2D or the 3D world is live.
@@ -197,6 +199,11 @@ namespace Dingo
 		// OnPhysicsStart and after OnPhysicsStop, or if the entity has no controller. The
 		// Scene owns it — don't delete it.
 		CharacterController3D* GetCharacterController(Entity entity) const;
+
+		// The entity's simulated body, for the handle-based Physics2D/Physics3D calls (ray-cast
+		// hits, MoveKinematic, IsBodyValid). 0 / k_InvalidBody3D while it has no live body.
+		PhysicsBodyId2D GetRuntimeBody2D(Entity entity) const;
+		PhysicsBodyId3D GetRuntimeBody3D(Entity entity) const;
 
 		// Instantiates a simulation body for a single entity created after
 		// OnPhysicsStart (e.g. a projectile or enemy spawned at runtime). Routes to
@@ -234,10 +241,14 @@ namespace Dingo
 		// (e.g. entity.GetComponent<AudioSourceComponent>() then Scene::PlayAudioSource).
 		void PlayAudioSource(Entity entity);
 
-		// Stops an entity's currently-playing sound (if any) and resets its
-		// RuntimeSound to k_InvalidSound. No-op if the entity has no
-		// AudioSourceComponent or nothing is playing.
+		// Stops an entity's currently-playing sound, after which GetRuntimeSound returns
+		// k_InvalidSound. No-op if nothing is playing.
 		void StopAudioSource(Entity entity);
+
+		// The sound the entity's AudioSourceComponent last started, for AudioEngine calls such
+		// as a volume fade; k_InvalidSound if none was started or it was stopped. One that ended
+		// by itself keeps its stale handle, so use AudioEngine::IsPlaying to ask if it still plays.
+		AudioSoundId GetRuntimeSound(Entity entity) const;
 
 		void SetClearColor(const glm::vec4& clearColor) { m_ClearColor = clearColor; }
 		const glm::vec4& GetClearColor() const { return m_ClearColor; }
@@ -271,16 +282,6 @@ namespace Dingo
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
 		Entity Wrap(std::uint32_t handle);
-
-		// Opaque runtime body handles for an entity (0 / k_InvalidBody3D when it has
-		// none). The backend types stay out of this header by working through them.
-		std::uint64_t GetRuntimeBody(Entity entity) const;
-		std::uint32_t GetRuntimeBody3D(Entity entity) const;
-
-		// Resets every live backend handle on an entity to its "none" sentinel, without
-		// touching the backend itself. Used by DuplicateEntity so a clone never aliases
-		// the source's body/shape/controller/sound.
-		void ResetRuntimeHandles(std::uint32_t handle);
 
 	private:
 		Internal::SceneData* m_Data = nullptr;

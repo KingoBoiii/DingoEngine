@@ -19,7 +19,7 @@ the Gloomdelve dungeon crawler on prebuilt DingoEngine **v0.4.2**, prioritized b
 | Subsystem | Confirmed fact | Anchor |
 |---|---|---|
 | Renderer3D | CPU-transforms **every vertex every frame**; no per-instance model matrix | `Renderer3D.cpp:221` |
-| Renderer3D | `MaxVertices=65536`; overflow = **silent drop + one-time WARN** (no assert, no auto-flush) | `Renderer3D.cpp:209`, `.h:26` |
+| Renderer3D | `MaxVertices=65536`; overflow = **silent drop + one-time WARN** (no assert, no auto-flush) — **v0.6.3: overflow spills into another batch** | `Renderer3D.cpp:209`, `.h:26` |
 | Renderer3D | **No GPU instancing / static batching** — batch cleared & re-uploaded each frame | `Renderer3D.cpp:138,174` |
 | Renderer3D | `CommandList::DrawIndexed` takes `instanceCount` but it's hardcoded to `1` | `Renderer.cpp:291`, `CommandList.h:46` |
 | Renderer3D | **No frustum/distance culling** anywhere; every mesh submitted unconditionally | `Scene.cpp:297` |

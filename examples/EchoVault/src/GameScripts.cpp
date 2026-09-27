@@ -433,9 +433,9 @@ namespace Dingo
 
 	void CourseControllerScript::OnDestroy()
 	{
-		if (m_OrbMaterial)       { m_OrbMaterial->Destroy();       delete m_OrbMaterial;       m_OrbMaterial = nullptr; }
-		if (m_SentryEyeMaterial) { m_SentryEyeMaterial->Destroy(); delete m_SentryEyeMaterial; m_SentryEyeMaterial = nullptr; }
-		if (m_EmissiveShader)    { m_EmissiveShader->Destroy();    m_EmissiveShader = nullptr; }
+		DestroyAndDelete(m_OrbMaterial);
+		DestroyAndDelete(m_SentryEyeMaterial);
+		DestroyAndDelete(m_EmissiveShader);
 	}
 
 	// ======================================================================
@@ -558,7 +558,7 @@ namespace Dingo
 		if (!physics)
 			return;
 
-		const std::uint32_t bodyId = GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D bodyId = GetScene().GetRuntimeBody3D(GetEntity());
 		if (bodyId == k_InvalidBody3D)
 			return;
 
@@ -642,7 +642,7 @@ namespace Dingo
 			m_Cooldown -= deltaTime;
 
 		Physics3D* physics = GetScene().GetPhysics3D();
-		const std::uint32_t bodyId = GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D bodyId = GetScene().GetRuntimeBody3D(GetEntity());
 
 		// Patrol (kinematic ping-pong).
 		if (physics && bodyId != k_InvalidBody3D && deltaTime > 0.0f)
@@ -755,11 +755,7 @@ namespace Dingo
 
 	void HudScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ======================================================================
@@ -804,11 +800,7 @@ namespace Dingo
 
 	void MenuControllerScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ======================================================================
@@ -857,10 +849,6 @@ namespace Dingo
 
 	void WinControllerScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 }

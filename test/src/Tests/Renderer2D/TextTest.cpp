@@ -10,11 +10,7 @@ namespace Dingo
 
 	void TextTest::Cleanup()
 	{
-		if (m_ArialFont)
-		{
-			m_ArialFont->Destroy();
-			m_ArialFont = nullptr;
-		}
+		DestroyAndDelete(m_ArialFont);
 	}
 
 	void TextTest::Update(float deltaTime)
