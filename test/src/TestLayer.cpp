@@ -91,11 +91,7 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		if (m_OutputFramebuffer)
-		{
-			m_OutputFramebuffer->Destroy();
-			m_OutputFramebuffer = nullptr;
-		}
+		DestroyAndDelete(m_OutputFramebuffer);
 	}
 
 	void TestLayer::OnUpdate(float deltaTime)

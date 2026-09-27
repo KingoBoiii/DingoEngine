@@ -433,9 +433,9 @@ namespace Dingo
 
 	void CourseControllerScript::OnDestroy()
 	{
-		if (m_OrbMaterial)       { m_OrbMaterial->Destroy();       delete m_OrbMaterial;       m_OrbMaterial = nullptr; }
-		if (m_SentryEyeMaterial) { m_SentryEyeMaterial->Destroy(); delete m_SentryEyeMaterial; m_SentryEyeMaterial = nullptr; }
-		if (m_EmissiveShader)    { m_EmissiveShader->Destroy();    m_EmissiveShader = nullptr; }
+		DestroyAndDelete(m_OrbMaterial);
+		DestroyAndDelete(m_SentryEyeMaterial);
+		DestroyAndDelete(m_EmissiveShader);
 	}
 
 	// ======================================================================

@@ -70,10 +70,10 @@ namespace Dingo
 
 	void GameLayer::OnDetach()
 	{
-		if (m_BackgroundPipeline) { m_BackgroundPipeline->Destroy(); m_BackgroundPipeline = nullptr; }
-		if (m_BackgroundVertexBuffer) { m_BackgroundVertexBuffer->Destroy(); m_BackgroundVertexBuffer = nullptr; }
-		if (m_BackgroundIndexBuffer) { m_BackgroundIndexBuffer->Destroy(); m_BackgroundIndexBuffer = nullptr; }
-		if (m_BackgroundUniformBuffer) { m_BackgroundUniformBuffer->Destroy(); m_BackgroundUniformBuffer = nullptr; }
+		DestroyAndDelete(m_BackgroundPipeline);
+		DestroyAndDelete(m_BackgroundVertexBuffer);
+		DestroyAndDelete(m_BackgroundIndexBuffer);
+		DestroyAndDelete(m_BackgroundUniformBuffer);
 	}
 
 	void GameLayer::OnUpdate(float deltaTime)
