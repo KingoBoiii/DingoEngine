@@ -149,6 +149,8 @@ namespace Dingo
 		// ApplicationParams::EnableDebugOverlays.
 		void RenderDebugOverlays();
 
+		void RunPostExecutionCallbacks();
+
 	private:
 		ApplicationParams m_Params;
 		Window* m_Window = nullptr;
@@ -165,6 +167,7 @@ namespace Dingo
 		UI::DebugTab m_ActiveDebugTab = UI::DebugTab::None;
 		UI::DebugTab m_PendingDebugTab = UI::DebugTab::None; // tab selection requested but not yet applied
 		bool m_IsRunning = true;
+		bool m_Minimized = false;
 		float m_LastFrameTime = 0.0f;
 		float m_DeltaTime = 0.0f;
 

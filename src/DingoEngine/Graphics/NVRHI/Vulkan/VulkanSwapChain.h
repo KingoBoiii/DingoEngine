@@ -40,7 +40,7 @@ namespace Dingo
 		void CreateSynchronizationObjects();
 		void DestroySwapChain();
 
-		void RecreateSwapChain();
+		bool RecreateSwapChain();
 	private:
 		vk::SurfaceKHR m_WindowSurface = nullptr;
 		vk::SwapchainKHR m_SwapChain = nullptr;

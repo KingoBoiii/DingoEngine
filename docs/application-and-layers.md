@@ -128,6 +128,11 @@ Once running, each frame the `Application`:
 
 `deltaTime` is seconds since the previous frame.
 
+While the window is minimized (a `WindowResizeEvent` with a zero width or height), steps 3–6
+are skipped: layers receive events but no `OnUpdate`/`OnUIRender`, `AssetManager` async loads
+and hot-reload wait for the restore, and the loop sleeps on window events instead of spinning.
+The time spent minimized is not folded into the first `deltaTime` after restore.
+
 ## Layers
 
 A `Layer` is where your code lives. Subclass it and override the hooks you need:

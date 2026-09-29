@@ -91,6 +91,11 @@ namespace Dingo
 		glfwPollEvents();
 	}
 
+	void Window::WaitEvents(double timeoutSeconds)
+	{
+		glfwWaitEventsTimeout(timeoutSeconds);
+	}
+
 	bool Window::IsRunning() const
 	{
 		return glfwWindowShouldClose(m_WindowHandle) == GLFW_FALSE;

@@ -72,6 +72,7 @@ namespace Dingo
 		void Shutdown();
 
 		void Update();
+		void WaitEvents(double timeoutSeconds);
 
 		bool IsRunning() const;
 

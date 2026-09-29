@@ -199,11 +199,29 @@ namespace Dingo
 			m_DeltaTime = time - m_LastFrameTime;
 			m_LastFrameTime = time;
 
-			Input::Update();
-			m_Window->Update();
+			// A minimized window has a (0,0) surface, so there is no swap-chain image to render
+			// into: sleep on events instead of spinning. Input is only snapshotted around frames
+			// that render, so the releases of the minimizing poll and the presses of the
+			// restoring one keep their edges.
+			if (m_Minimized)
+			{
+				m_Window->WaitEvents(0.1);
+			}
+			else
+			{
+				Input::Update();
+				m_Window->Update();
+			}
 
 			if (m_AudioEngine)
 				m_AudioEngine->Update(); // reap finished one-shots
+
+			if (m_Minimized)
+			{
+				m_LastFrameTime = timer.Elapsed(); // the time spent minimized is not a frame delta
+				RunPostExecutionCallbacks();
+				continue;
+			}
 
 			Renderer::BeginFrame();
 
@@ -238,21 +256,26 @@ namespace Dingo
 
 			Renderer::EndFrame();
 
-			// Drain into a local: a callback is free to SubmitPostExecution (RequestRestart
-			// already is one), which would push into the vector being iterated - dangling the
-			// iterator on a reallocation - and the clear() would then drop the new entry
-			// anyway. Whatever a callback submits runs on the next frame instead.
-			m_DrainingPostExecution.swap(m_PostExecutionCallbacks);
-			for (const auto& callback : m_DrainingPostExecution)
-			{
-				callback();
-			}
-			m_DrainingPostExecution.clear();
+			RunPostExecutionCallbacks();
 		}
 
 		// Here rather than in Destroy(): that runs from ~Application, where the derived
 		// class is already gone and the call would reach only the empty base hook.
 		OnDestroy();
+	}
+
+	void Application::RunPostExecutionCallbacks()
+	{
+		// Drain into a local: a callback is free to SubmitPostExecution (RequestRestart
+		// already is one), which would push into the vector being iterated - dangling the
+		// iterator on a reallocation - and the clear() would then drop the new entry
+		// anyway. Whatever a callback submits runs on the next frame instead.
+		m_DrainingPostExecution.swap(m_PostExecutionCallbacks);
+		for (const auto& callback : m_DrainingPostExecution)
+		{
+			callback();
+		}
+		m_DrainingPostExecution.clear();
 	}
 
 	void Application::RenderDebugOverlays()
@@ -334,6 +357,7 @@ namespace Dingo
 	{
 		// This runs on the main thread while the render thread may be presenting; the
 		// actual swap-chain recreation happens on the render thread at a safe point.
+		m_Minimized = e.GetWidth() == 0 || e.GetHeight() == 0;
 		Renderer::QueueResize(e.GetWidth(), e.GetHeight());
 		return false; // let layers react to the new size too
 	}
