@@ -6,7 +6,7 @@ for things that are **wrong or surprising in code that already ships**.
 
 - **Verified against `VERSION` 0.6.3 on 2026-09-27.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
-  Both remaining entries are deliberate deferrals, not oversights.
+  K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -29,6 +29,7 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 |---|---|---|---|
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
+| [K14](#k14) | The test framework crashes when its window is minimized | Defect | Test app |
 
 ---
 
@@ -60,6 +61,26 @@ Resolution, DPI and colour-space changes on the same GPU *are* handled (the swap
 
 **Fix**: recreate the device and all GPU resources on adapter change — expensive, and rare enough in
 practice that logging may remain the right answer.
+
+## K14 — The test framework crashes when its window is minimized {#k14}
+
+**Defect** — `test/src/TestLayer.cpp:266-275`, `test/src/UI/TestViewportPanel.cpp:15-16`
+
+ImGui's GLFW backend reads the window size fresh in `NewFrame`, so a minimize that lands between a
+frame's event poll and its ImGui frame gives ImGui a 0×0 display for that one frame — before
+`Application` has seen the 0×0 `WindowResizeEvent` that makes it skip frames. The docked Viewport
+panel's `GetContentRegionAvail()` then comes back negative (`-8×19` on a 1600×900 window), and
+`TestLayer` passes it straight to `Test::Resize(uint32_t, uint32_t)` and to a post-execution
+`Framebuffer::Resize` through `static_cast<uint32_t>`. The framebuffer asks Vulkan for a
+4294967288-wide image, the validation layer rejects it (`maxFramebufferWidth` is 16384), and the
+process dies.
+
+Engine-independent: it reproduces identically with and without the minimized-window frame skip, and a
+minimize almost always lands mid-frame. Seen only in the test app so far — FlappyBird minimizes
+cleanly, and `SceneRenderer` already guards a zero height.
+
+**Fix**: skip the resize while either viewport dimension is ≤ 0. A guard in `TestLayer` doing exactly
+that was verified to make minimize/restore clean.
 
 ---
 
