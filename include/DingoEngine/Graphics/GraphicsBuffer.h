@@ -11,6 +11,7 @@ namespace Dingo
 		std::string DebugName;
 		uint64_t ByteSize = 0;
 		bool IsVolatile = false;
+		uint32_t MaxWritesPerFrame = 8; // Volatile buffers: uploads per frame before Vulkan drops one
 		bool DirectUpload = false;
 		BufferType Type = BufferType::Unknown;
 		GraphicsFormat Format = GraphicsFormat::Unknown;
@@ -33,6 +34,12 @@ namespace Dingo
 		GraphicsBufferParams& SetIsVolatile(bool isVolatile)
 		{
 			IsVolatile = isVolatile;
+			return *this;
+		}
+
+		GraphicsBufferParams& SetMaxWritesPerFrame(uint32_t maxWritesPerFrame)
+		{
+			MaxWritesPerFrame = maxWritesPerFrame;
 			return *this;
 		}
 
