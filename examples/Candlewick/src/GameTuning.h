@@ -22,6 +22,7 @@ namespace Dingo
 	inline constexpr float HUD_OIL_HINT_SIZE   = 0.32f;
 	inline constexpr float HUD_OIL_HINT_DROP   = 0.78f;
 	inline constexpr float HUD_OIL_FILL_LIFT   = 0.1f;
+	inline constexpr float HUD_FADE_MARGIN     = 1.0f;
 
 	// --- Camera (three-quarter view, fixed yaw) --------------------------------
 	inline constexpr float CAMERA_FOV          = 50.0f;
@@ -69,6 +70,69 @@ namespace Dingo
 	inline constexpr float LANTERN_FLICKER_DEPTH = 0.4f;
 	inline constexpr float LANTERN_EMISSIVE_MIN  = 0.4f;
 	inline constexpr float LANTERN_EMISSIVE_MAX  = 1.1f;
+
+	// --- Wardens --------------------------------------------------------------------
+	inline constexpr float WARDEN_PATROL_SPEED      = 1.6f;
+	inline constexpr float WARDEN_INVESTIGATE_SPEED = 2.4f;
+	inline constexpr float WARDEN_TURN_SPEED        = 4.0f;
+	inline constexpr float WARDEN_WAYPOINT_PAUSE    = 0.8f;
+	inline constexpr float WARDEN_LOOK_TIME         = 3.0f;
+	inline constexpr float WARDEN_LOOK_SWEEP_DEG    = 60.0f;
+	inline constexpr float WARDEN_PATH_CLEARANCE    = 0.3f;
+	inline constexpr float WARDEN_INVESTIGATE_STOP  = 1.0f;
+	inline constexpr float WARDEN_YIELD_DISTANCE    = 0.9f;
+	inline constexpr float WARDEN_YIELD_AHEAD       = 0.5f;
+
+	inline constexpr float WARDEN_EYE_HEIGHT        = 1.7f;
+	inline constexpr float WARDEN_EYE_FORWARD       = 0.25f;
+	inline constexpr float WARDEN_EYE_PITCH_DEG     = 25.0f;
+	inline constexpr float WARDEN_EYE_RANGE         = 8.0f;
+	inline constexpr float WARDEN_EYE_RANGE_MARGIN  = 0.5f;
+	inline constexpr float WARDEN_EYE_RANGE_GROWTH  = 6.0f;
+	inline constexpr float WARDEN_EYE_INNER_DEG     = 14.0f;
+	inline constexpr float WARDEN_EYE_OUTER_DEG     = 24.0f;
+	inline constexpr float WARDEN_EYE_INTENSITY     = 1.4f;
+	inline constexpr glm::vec3 WARDEN_LIGHT_COLOR   = { 0.7f, 0.8f, 1.0f };
+
+	inline constexpr float WARDEN_LAMP_RANGE        = 3.5f;
+	inline constexpr float WARDEN_LAMP_INTENSITY    = 0.9f;
+	inline constexpr glm::vec3 WARDEN_LAMP_OFFSET   = { 0.42f, 1.0f, -0.16f };
+	inline constexpr float WARDEN_LAMP_EMISSIVE     = 1.0f;
+	inline constexpr float WARDEN_MARKER_HEIGHT     = 2.2f;
+	inline constexpr float WARDEN_MARKER_SIZE       = 0.18f;
+	inline constexpr float WARDEN_MARKER_EMISSIVE   = 1.2f;
+
+	// --- Detection ------------------------------------------------------------------
+	// The feet sample's weight where the eye's pool on the floor fades below 3/255 of added light
+	// (6.4 m along the axis at range 8), so standing in the visible pool is being seen.
+	inline constexpr float SEEN_WEIGHT              = 0.1f;
+	inline constexpr float SAMPLE_FEET              = 0.1f;
+	inline constexpr float SAMPLE_CHEST             = 1.0f;
+	inline constexpr float SAMPLE_HEAD              = 1.6f;
+	inline constexpr float SIGHT_SLACK              = PLAYER_RADIUS;
+	inline constexpr float SUSPICION_CONE_BASE      = 0.6f;
+	inline constexpr float SUSPICION_CONE_SCALE     = 1.2f;
+	inline constexpr float SUSPICION_BEACON_RATE    = 0.5f;
+	inline constexpr float SUSPICION_DECAY          = 0.25f;
+	inline constexpr float SUSPICION_INVESTIGATE    = 0.4f;
+	inline constexpr float SUSPICION_ALERT          = 0.75f;
+	inline constexpr float SUSPICION_TOUCH          = 0.6f;
+	inline constexpr float TOUCH_DISTANCE           = 0.8f;
+	inline constexpr float BEACON_LANTERN_SCALE     = 1.6f;
+	inline constexpr float BEACON_FLAME_RANGE       = 6.0f;
+	inline constexpr float BEACON_FIELD_DEG         = 120.0f;
+	inline constexpr float BEACON_FLAME_WEIGHT      = 0.25f;
+	inline constexpr float CAUGHT_FADE_TIME         = 1.0f;
+	inline constexpr float RESPAWN_FADE_TIME        = 0.5f;
+	inline constexpr float RESPAWN_MIN_OIL          = 50.0f;
+
+	// --- Detection debug view (--debug-cone) ----------------------------------------
+	inline constexpr uint32_t DEBUG_CONE_SEGMENTS   = 24;
+	inline constexpr float DEBUG_DOT_SPACING        = 0.25f;
+	inline constexpr float DEBUG_DOT_SIZE           = 0.07f;
+	inline constexpr float DEBUG_DOT_LIFT           = 0.012f;
+	inline constexpr float DEBUG_SAMPLE_SIZE        = 0.12f;
+	inline constexpr float DEBUG_SAMPLE_OFFSET      = 0.4f;
 
 	// --- Light LOD (decorative flames only) ------------------------------------------
 	inline constexpr int   LIGHT_LOD_HEADROOM    = 2;
@@ -133,6 +197,23 @@ namespace Dingo
 	inline constexpr float OIL_EMISSIVE        = 0.4f;
 	inline constexpr float OIL_ROUGHNESS       = 0.4f;
 	inline constexpr float OIL_SPECULAR        = 0.08f;
+
+	inline constexpr glm::vec4 COLOR_ARMOUR        = { 0.36f, 0.4f, 0.48f, 1.0f };
+	inline constexpr glm::vec3 ARMOUR_EMISSIVE_COLOR = { 0.45f, 0.55f, 0.8f };
+	inline constexpr float ARMOUR_EMISSIVE         = 0.09f;
+	inline constexpr float ARMOUR_ROUGHNESS        = 0.45f;
+	inline constexpr float ARMOUR_SPECULAR         = 0.1f;
+	inline constexpr glm::vec3 MARKER_CALM_COLOR       = { 0.35f, 0.6f, 1.0f };
+	inline constexpr glm::vec3 MARKER_SUSPICIOUS_COLOR = { 1.0f, 0.72f, 0.18f };
+	inline constexpr glm::vec3 MARKER_ALERT_COLOR      = { 1.0f, 0.16f, 0.1f };
+	inline constexpr glm::vec4 COLOR_DEBUG_BASE    = { 0.0f, 0.0f, 0.0f, 1.0f };
+	inline constexpr glm::vec3 DEBUG_CONE_COLOR    = { 0.3f, 0.95f, 1.0f };
+	inline constexpr glm::vec3 DEBUG_DOT_COLOR     = { 0.35f, 1.0f, 0.3f };
+	inline constexpr glm::vec3 DEBUG_SEEN_COLOR    = { 1.0f, 0.15f, 0.1f };
+	inline constexpr glm::vec3 DEBUG_UNSEEN_COLOR  = { 0.6f, 0.6f, 0.65f };
+
+	inline constexpr glm::vec4 COLOR_FADE          = { 0.0f, 0.0f, 0.0f, 1.0f };
+	inline constexpr float HUD_FADE_Z              = 0.5f;
 
 	inline constexpr glm::vec4 COLOR_METER_BG      = { 0.07f, 0.06f, 0.06f, 0.88f };
 	inline constexpr glm::vec4 COLOR_METER_LIT     = { 1.0f, 0.7f, 0.26f, 1.0f };

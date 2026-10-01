@@ -29,6 +29,11 @@ namespace Dingo
 		// Takes effect on the next Update, so a lock set by a later subsystem trails by one frame.
 		void SetMovementLocked(bool locked) { m_MovementLocked = locked; }
 
+		// Locks movement and stops the controller now, for a subsystem that runs after Update.
+		void Halt();
+
+		void Teleport(const glm::vec3& feet);
+
 	private:
 		void PlaceVisuals(const glm::vec3& feet);
 

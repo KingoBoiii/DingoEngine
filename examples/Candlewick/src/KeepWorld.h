@@ -11,10 +11,13 @@
 namespace Dingo
 {
 
+	enum class FlameKind { Sconce, Candle };
+
 	struct DecorFlame
 	{
 		Entity Light;
 		Entity Core;
+		FlameKind Kind = FlameKind::Candle;
 		int Room = -1;
 		float BaseIntensity = 0.0f;
 	};

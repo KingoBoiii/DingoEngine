@@ -44,6 +44,18 @@ namespace
 		{ 61, 4, 4, 2 },
 	};
 
+	// The Hall loop circles its central pillars; the Gallery pair start at opposite ends and pass side
+	// by side mid-gallery; the Chapel loop crosses in front of the altar.
+	const WardenRoute k_WardenRouteDefs[] =
+	{
+		{ 1, { { 21, 4 }, { 27, 4 }, { 27, 9 }, { 21, 9 } } },
+		{ 2, { { 38, 6 }, { 51, 6 }, { 51, 7 }, { 38, 7 } } },
+		{ 2, { { 57, 7 }, { 44, 7 }, { 44, 6 }, { 57, 6 } } },
+		{ 3, { { 69, 3 }, { 73, 3 }, { 73, 10 }, { 69, 10 } } },
+	};
+
+	constexpr glm::ivec2 k_Steps[] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+
 	bool MarkerTypeOf(char c, MarkerType& type)
 	{
 		switch (c)
@@ -133,11 +145,107 @@ namespace Dingo
 			if (!m_Rooms[i].Rect.Contains(m_Rooms[i].Spawn) || At(m_Rooms[i].Spawn) != static_cast<char>('1' + i))
 				DE_ERROR("Candlewick: room {} ('{}') has no spawn tile inside its rectangle", i + 1, m_Rooms[i].Name);
 		}
+
+		m_WardenRoutes.assign(std::begin(k_WardenRouteDefs), std::end(k_WardenRouteDefs));
+		ValidateRoutes();
+	}
+
+	void KeepMap::ValidateRoutes() const
+	{
+		for (size_t i = 0; i < m_WardenRoutes.size(); ++i)
+		{
+			const WardenRoute& route = m_WardenRoutes[i];
+			for (size_t w = 0; w < route.Waypoints.size(); ++w)
+			{
+				const glm::ivec2& from = route.Waypoints[w];
+				const glm::ivec2& to = route.Waypoints[(w + 1) % route.Waypoints.size()];
+				if (RoomOf(from) != route.Room)
+					DE_ERROR("Candlewick: warden {} waypoint ({}, {}) is outside its room", i + 1, from.x, from.y);
+				if (FindPath(from, to, route.Room).empty())
+					DE_ERROR("Candlewick: warden {} has no path from ({}, {}) to ({}, {})", i + 1, from.x, from.y, to.x, to.y);
+			}
+		}
 	}
 
 	bool KeepMap::InBounds(const glm::ivec2& tile) const
 	{
 		return tile.x >= 0 && tile.y >= 0 && tile.x < m_Width && tile.y < m_Height;
+	}
+
+	bool KeepMap::IsPatrolFloor(const glm::ivec2& tile, int room) const
+	{
+		return IsWalkable(tile) && At(tile) != 'c' && (room < 0 || RoomOf(tile) == room);
+	}
+
+	std::vector<glm::ivec2> KeepMap::FindPath(const glm::ivec2& from, const glm::ivec2& to, int room) const
+	{
+		return FindPathToNearest(from, { to }, room);
+	}
+
+	std::optional<glm::ivec2> KeepMap::FindNearestRoomTile(const glm::ivec2& tile, int room) const
+	{
+		std::optional<glm::ivec2> nearest;
+		int nearestDistance = 0;
+		for (int row = 0; row < m_Height; ++row)
+		{
+			for (int col = 0; col < m_Width; ++col)
+			{
+				const glm::ivec2 candidate(col, row);
+				if (!IsPatrolFloor(candidate, room))
+					continue;
+
+				const glm::ivec2 offset = candidate - tile;
+				const int distance = offset.x * offset.x + offset.y * offset.y;
+				if (!nearest || distance < nearestDistance)
+				{
+					nearest = candidate;
+					nearestDistance = distance;
+				}
+			}
+		}
+		return nearest;
+	}
+
+	std::vector<glm::ivec2> KeepMap::FindPathToNearest(const glm::ivec2& from, const std::vector<glm::ivec2>& goals, int room) const
+	{
+		if (!IsPatrolFloor(from, room))
+			return {};
+
+		std::vector<bool> isGoal(m_Tiles.size(), false);
+		for (const glm::ivec2& goal : goals)
+		{
+			if (IsPatrolFloor(goal, room))
+				isGoal[IndexOf(goal)] = true;
+		}
+
+		std::vector<int> parent(m_Tiles.size(), -1);
+		std::vector<bool> visited(m_Tiles.size(), false);
+		std::vector<glm::ivec2> frontier = { from };
+		visited[IndexOf(from)] = true;
+
+		for (size_t head = 0; head < frontier.size(); ++head)
+		{
+			const glm::ivec2 tile = frontier[head];
+			if (isGoal[IndexOf(tile)])
+			{
+				std::vector<glm::ivec2> path;
+				for (int index = static_cast<int>(IndexOf(tile)); index >= 0; index = parent[index])
+					path.emplace_back(index % m_Width, index / m_Width);
+				std::reverse(path.begin(), path.end());
+				return path;
+			}
+
+			for (const glm::ivec2& step : k_Steps)
+			{
+				const glm::ivec2 next = tile + step;
+				if (!IsPatrolFloor(next, room) || visited[IndexOf(next)])
+					continue;
+				visited[IndexOf(next)] = true;
+				parent[IndexOf(next)] = static_cast<int>(IndexOf(tile));
+				frontier.push_back(next);
+			}
+		}
+		return {};
 	}
 
 	char KeepMap::At(const glm::ivec2& tile) const

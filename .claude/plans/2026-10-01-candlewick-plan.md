@@ -232,6 +232,10 @@ Every phase's before/after and pixel checks need reproducible frames:
 | `--no-light-lod` | engine-only light selection |
 | `--debug-cone` | wireframe cones (a procedural cone mesh per warden, `FillMode::Wireframe`) and the three samples coloured by weight |
 | `--light-budget=<1-32>` | *(C3)* lowers `MaxLocalLights`, to stress the light LOD |
+| `--spawn=<col>,<row>` | *(C4)* the player's start tile (falls back to the room spawn on a bad or blocked tile) |
+| `--no-range-clamp` | *(C4)* the wardens' eyes keep their full range, to show the leak through walls |
+
+`--freeze` also stops catches (suspicion and markers still update), so frozen captures stay stable.
 
 ---
 
@@ -469,3 +473,34 @@ Docs (C6):
   vs 12). With the headroom set to 0 the walks at budgets 8, 12 and 32 still log none, so the
   accounting is exact. Gallery overview F4: 30/32 drawn, 0 dropped with LOD; 32/32, 3 dropped
   without.
+
+*C4 (wardens and detection):*
+
+- Routes (tile loops in `KeepMap.cpp`, expanded by BFS and reduced to corners): Hall
+  (21,4)→(27,4)→(27,9)→(21,9) round the central pillars; Gallery A (38,6)→(51,6)→(51,7)→(38,7) and
+  B (57,7)→(44,7)→(44,6)→(57,6), passing side by side; Chapel (69,3)→(73,3)→(73,10)→(69,10) in
+  front of the altar. Paths avoid candle tiles (wardens have no collider) and never leave the
+  warden's room: a sighting outside it resolves to the nearest in-room tile, and an investigating
+  warden stops 1 m short of its goal. A warden yields to a lower-index one 0.9 m ahead.
+- Eye as built: 1.7 m high, 0.25 m in front of the helm, 25° down, 14°/24°, intensity 1.4, range
+  min(8, level-ray hit + 0.5), shrinking at once and growing at 6 m/s so its range sphere never
+  jumps into view. Lamp: 3.5 m, 0.9.
+- `SEEN_WEIGHT` = 0.1 (0.05 overshot the visible pool by about 0.46 m). Measured in the Hall with
+  the eye on minus off: the pool adds ≥ 3/255 from 1.60 to 6.40 m along the axis; the footprint
+  dots run 1.625 to 6.375 m. The edges agree within 0.025 m.
+- **Design change from §2.3:** the beacon can only make a warden investigate; it is capped at the
+  alert threshold, so only the cone drawn on the floor can catch. Candles don't make the player
+  "lit" (the Gallery would be lit everywhere and snuffing would mean nothing there); sconces count
+  at their base strength and braziers while lit, never through the light LOD's state, so
+  `--no-light-lod` and `--light-budget` don't change gameplay. Rates: cone 0.6 + 1.2·w, beacon
+  0.5 (field 120°), decay 0.25; a cone catch takes about 1.1 s with the suspicious marker visible
+  on the way.
+- Caught: movement halts that frame, 1 s fade, respawn at the last room's spawn with at least
+  50 oil (C5 replaces both with the checkpoint), wardens reset.
+- Found and fixed in the engine as its own commit (`764a09c`): Vulkan never enabled
+  `fillModeNonSolid`, so `FillMode::Wireframe` (the debug cone) logged a validation error.
+- Verified: snuffed in the candle-lit Gallery lane, facing a warden 3.5 m away outside its cone,
+  suspicion stays 0 for 629 frames; lit, the warden holds at 0.75 for 6 s without a catch. Default,
+  `--no-light-lod` and `--light-budget=12` give the same suspicion trace (0.4 at 0.81 s, 0.75 at
+  1.50 s). Through-wall: a player behind a pillar inside leaked light stays at 0. No budget WARN on
+  Gallery walks.

@@ -43,6 +43,30 @@ namespace
 			DE_WARN("Candlewick: ignoring --{}={} (expected no value, 1/true/on or 0/false/off)", name, *value);
 	}
 
+	bool ParseCoordinate(std::string_view text, int& out)
+	{
+		const char* end = text.data() + text.size();
+		const auto [ptr, error] = std::from_chars(text.data(), end, out);
+		return error == std::errc{} && ptr == end && out >= 0;
+	}
+
+	void ParseTile(const ApplicationCommandLineArgs& args, std::string_view name, std::optional<glm::ivec2>& out)
+	{
+		const std::optional<std::string_view> value = args.Get(name);
+		if (!value)
+			return;
+
+		const size_t comma = value->find(',');
+		glm::ivec2 tile(0);
+		if (comma == std::string_view::npos || !ParseCoordinate(value->substr(0, comma), tile.x) || !ParseCoordinate(value->substr(comma + 1), tile.y))
+		{
+			DE_WARN("Candlewick: ignoring --{}={} (expected <col>,<row>)", name, *value);
+			return;
+		}
+
+		out = tile;
+	}
+
 	LaunchOptions Parse(const ApplicationCommandLineArgs& args)
 	{
 		LaunchOptions options;
@@ -52,6 +76,8 @@ namespace
 		ParseFlag(args, "overview", options.Overview);
 		ParseFlag(args, "no-light-lod", options.NoLightLod);
 		ParseFlag(args, "debug-cone", options.DebugCone);
+		ParseFlag(args, "no-range-clamp", options.NoRangeClamp);
+		ParseTile(args, "spawn", options.Spawn);
 		return options;
 	}
 }

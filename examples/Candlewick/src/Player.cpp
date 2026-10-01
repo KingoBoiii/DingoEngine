@@ -1,4 +1,5 @@
 #include "Player.h"
+#include "GameMath.h"
 #include "GameTuning.h"
 #include "KeepMap.h"
 
@@ -20,18 +21,6 @@ namespace
 	constexpr float k_VisorForward = 0.17f;
 	constexpr float k_VisorLift = 0.02f;
 	constexpr float k_FacingThreshold = 0.1f;
-
-	constexpr float k_Pi = 3.14159265f;
-
-	float ApproachAngle(float current, float target, float maxStep)
-	{
-		float delta = std::fmod(target - current, 2.0f * k_Pi);
-		if (delta > k_Pi)
-			delta -= 2.0f * k_Pi;
-		else if (delta < -k_Pi)
-			delta += 2.0f * k_Pi;
-		return current + std::clamp(delta, -maxStep, maxStep);
-	}
 
 	Entity SpawnVisual(Scene& scene, const char* name, Mesh* mesh, const glm::vec3& size, const glm::vec4& color, Material* material)
 	{
@@ -131,6 +120,27 @@ namespace Dingo
 			m_Yaw = ApproachAngle(m_Yaw, std::atan2(move.x, move.z), PLAYER_TURN_SPEED * deltaTime);
 
 		PlaceVisuals(controller->GetPosition());
+	}
+
+	void Player::Halt()
+	{
+		m_MovementLocked = true;
+		if (CharacterController3D* controller = m_Scene.GetCharacterController(m_Entity))
+			controller->SetLinearVelocity(glm::vec3(0.0f, m_VerticalVelocity, 0.0f));
+	}
+
+	void Player::Teleport(const glm::vec3& feet)
+	{
+		if (CharacterController3D* controller = m_Scene.GetCharacterController(m_Entity))
+		{
+			controller->SetPosition(feet);
+			controller->SetLinearVelocity(glm::vec3(0.0f));
+		}
+
+		// The Scene writes the controller back only after its step; later subsystems this frame read the transform.
+		m_Entity.GetComponent<Transform3DComponent>().Position = feet;
+		m_VerticalVelocity = 0.0f;
+		PlaceVisuals(feet);
 	}
 
 	void Player::PlaceVisuals(const glm::vec3& feet)

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
+#include <optional>
+
 namespace Dingo
 {
 
@@ -11,6 +15,8 @@ namespace Dingo
 		int Oil = -1;            // -1 = not given
 		bool NoLightLod = false;
 		bool DebugCone = false;
+		bool NoRangeClamp = false;
+		std::optional<glm::ivec2> Spawn; // --spawn=<col>,<row>: the player's start tile
 	};
 
 	// Parsed on first use, so it must not be called before the Application exists.

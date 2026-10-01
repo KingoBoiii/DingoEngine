@@ -45,6 +45,9 @@ namespace Dingo
 		m_LanternState = Overlay::MakeText(scene, m_Font, "LanternState", HUD_OIL_STATE_SIZE, COLOR_TEXT, false);
 		m_KeyHint = Overlay::MakeText(scene, m_Font, "LanternHint", HUD_OIL_HINT_SIZE, COLOR_TEXT_DIM, false);
 
+		m_Fade = scene.CreateEntity("Fade");
+		m_Fade.AddComponent<SpriteRendererComponent>().Color = glm::vec4(glm::vec3(COLOR_FADE), 0.0f);
+
 		SetRoom(startRoom);
 		Update(lantern);
 	}
@@ -63,12 +66,21 @@ namespace Dingo
 		m_RoomLabel.GetComponent<TextComponent>().Text = m_Map.GetRooms()[room].Name;
 	}
 
+	void Hud::SetFade(float amount)
+	{
+		m_Fade.GetComponent<SpriteRendererComponent>().Color.a = COLOR_FADE.a * std::clamp(amount, 0.0f, 1.0f);
+	}
+
 	void Hud::Update(const Lantern& lantern)
 	{
 		const glm::vec2 viewport = Application::Get().GetRenderer2D().GetViewportSize();
 		const float aspect = (viewport.y > 0.0f) ? viewport.x / viewport.y : 1.0f;
 		const float halfH = HUD_ORTHO_SIZE * 0.5f;
 		const float halfW = halfH * aspect;
+
+		auto& fade = m_Fade.GetComponent<TransformComponent>();
+		fade.Position = { 0.0f, 0.0f, HUD_FADE_Z };
+		fade.Size = { 2.0f * halfW + HUD_FADE_MARGIN, 2.0f * halfH + HUD_FADE_MARGIN };
 
 		m_RoomLabel.GetComponent<TransformComponent>().Position = { -halfW + HUD_PADDING, halfH - HUD_ROOM_LABEL_DROP, 0.0f };
 

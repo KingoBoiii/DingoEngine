@@ -18,11 +18,14 @@ namespace Dingo
 
 		// Corridors (-1) keep the last room's name.
 		void SetRoom(int room);
+		// 0 = clear, 1 = black. Covers the world and the meter; text stays on top.
+		void SetFade(float amount);
 		void Update(const Lantern& lantern);
 
 	private:
 		const KeepMap& m_Map;
 		Font* m_Font = nullptr;
+		Entity m_Fade;
 		Entity m_RoomLabel;
 		Entity m_OilBackground;
 		Entity m_OilFill;
