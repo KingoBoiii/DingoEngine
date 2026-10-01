@@ -85,6 +85,11 @@ namespace Dingo
 		// custom 3D drawing inside one Begin/EndScene.
 		void RenderEntities3D(Renderer3D& renderer);
 
+		// Submits the scene's light components to the renderer (no BeginScene/EndScene), for
+		// custom 3D passes the same way as RenderEntities3D. A scene without a single light
+		// component gets a default DirectionalLightComponent.
+		void SubmitLights(Renderer3D& renderer);
+
 		// --- Camera -----------------------------------------------------------
 
 		// Finds the scene's active camera entity: the first CameraComponent marked

@@ -145,17 +145,73 @@ namespace Dingo
 	};
 
 	// Lighting ----------------------------------------------------------------
+	//
+	// The SceneRenderer submits these to Renderer3D every frame (Scene::SubmitLights); see
+	// Graphics/Light.h for falloff and the per-scene light budget. A scene without a single light
+	// component is lit by a default DirectionalLightComponent, so a 3D scene never renders black
+	// by accident. Any light component, even a disabled one, turns that default off. Point and
+	// spot lights take their position, and a spot its aim, from the entity's
+	// Transform3DComponent, and are ignored without one.
 
-	// A single directional light read by the SceneRenderer and fed to Renderer3D.
-	// Defaults match Renderer3D's built-in light, so a default-constructed one
-	// reproduces the engine's out-of-the-box 3D lighting.
+	// A sun-like light. The defaults reproduce the engine's original lighting.
 	struct DirectionalLightComponent
 	{
 		glm::vec3 Direction{ -0.4f, -1.0f, -0.35f }; // the way the light travels
-		float Ambient = 0.35f;                        // lifts unlit faces
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		// The engine's original single knob: white ambient this light adds to the scene, with
+		// the light itself scaled by (1 - Ambient), so a face turned squarely to it is exactly
+		// Intensity bright. Every DirectionalLightComponent adds its own. Set it to 0 to light
+		// the scene with AmbientLightComponent instead and get Intensity unscaled.
+		float Ambient = 0.35f;
 
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
+	};
+
+	// Light that reaches every face equally. Every ambient source in a scene adds up.
+	struct AmbientLightComponent
+	{
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 0.1f;
+
+		AmbientLightComponent() = default;
+		AmbientLightComponent(const AmbientLightComponent&) = default;
+		AmbientLightComponent(const glm::vec3& color, float intensity)
+			: Color(color), Intensity(intensity) {}
+	};
+
+	// Light from the entity's position in every direction, reaching zero at Range.
+	struct PointLightComponent
+	{
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		float Range = 10.0f;
+		bool Enabled = true;
+
+		PointLightComponent() = default;
+		PointLightComponent(const PointLightComponent&) = default;
+		PointLightComponent(const glm::vec3& color, float intensity, float range)
+			: Color(color), Intensity(intensity), Range(range) {}
+	};
+
+	// A cone of light from the entity's position, reaching zero at Range. Direction is in the
+	// entity's local space, so rotating the entity aims the cone; by default it points along the
+	// entity's forward axis.
+	struct SpotLightComponent
+	{
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		float Range = 10.0f;
+		float InnerConeAngle = 20.0f; // degrees from the axis at full strength
+		float OuterConeAngle = 30.0f; // degrees from the axis where it reaches zero
+		glm::vec3 Direction{ 0.0f, 0.0f, -1.0f };
+		bool Enabled = true;
+
+		SpotLightComponent() = default;
+		SpotLightComponent(const SpotLightComponent&) = default;
+		SpotLightComponent(const glm::vec3& color, float intensity, float range)
+			: Color(color), Intensity(intensity), Range(range) {}
 	};
 
 	// Physics -----------------------------------------------------------------

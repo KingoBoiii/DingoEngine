@@ -11,6 +11,7 @@
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
+#include "DingoEngine/Scene/Systems/LightSystem.h"
 
 #include <algorithm>
 
@@ -91,6 +92,9 @@ namespace Dingo
 		CopyComponentIfExists<TextComponent>(registry, dst, src);
 		CopyComponentIfExists<CameraComponent>(registry, dst, src);
 		CopyComponentIfExists<DirectionalLightComponent>(registry, dst, src);
+		CopyComponentIfExists<AmbientLightComponent>(registry, dst, src);
+		CopyComponentIfExists<PointLightComponent>(registry, dst, src);
+		CopyComponentIfExists<SpotLightComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody2DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
@@ -291,6 +295,11 @@ namespace Dingo
 
 			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color, mesh.Material);
 		}
+	}
+
+	void Scene::SubmitLights(Renderer3D& renderer)
+	{
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer);
 	}
 
 	// --- Camera -----------------------------------------------------------------
