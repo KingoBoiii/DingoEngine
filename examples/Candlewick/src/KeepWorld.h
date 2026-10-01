@@ -1,0 +1,110 @@
+#pragma once
+#include "KeepMap.h"
+
+#include <DingoEngine.h>
+
+#include <glm/glm.hpp>
+
+#include <optional>
+#include <vector>
+
+namespace Dingo
+{
+
+	struct DecorFlame
+	{
+		Entity Light;
+		Entity Core;
+		int Room = -1;
+		float BaseIntensity = 0.0f;
+	};
+
+	struct BrazierSpot
+	{
+		Entity Light;
+		Entity Core;
+		int Room = -1;
+		glm::ivec2 Tile{ 0 };
+		bool IsAltar = false;
+	};
+
+	struct FlaskSpot
+	{
+		glm::ivec2 Tile{ 0 };
+		int Room = -1;
+		glm::vec3 Position{ 0.0f };
+	};
+
+	// Builds the level from the map and owns every material and mesh it creates.
+	class KeepWorld
+	{
+	public:
+		KeepWorld(Scene& scene, const KeepMap& map);
+		~KeepWorld();
+
+		KeepWorld(const KeepWorld&) = delete;
+		KeepWorld& operator=(const KeepWorld&) = delete;
+
+		const std::vector<DecorFlame>& GetFlames() const { return m_Flames; }
+		const std::vector<BrazierSpot>& GetBraziers() const { return m_Braziers; }
+		const std::vector<FlaskSpot>& GetFlaskSpots() const { return m_FlaskSpots; }
+
+		// Hides the wall rectangles (with their caps and mounted sconces) that sit between the eye and the target.
+		void UpdateCutaway(const glm::vec3& eye, const glm::vec3& target);
+
+		// Hides every wall rectangle on the row just south of the room, for a fixed camera that looks over it.
+		void HideSouthWalls(const TileRect& room);
+
+	private:
+		struct WallRect
+		{
+			Entity Wall;
+			Entity Cap;
+			std::vector<Entity> Mounted;
+			TileRect Tiles;
+			glm::vec3 Min{ 0.0f };
+			glm::vec3 Max{ 0.0f };
+			bool Hidden = false;
+		};
+
+		void CreateMaterials();
+		void SpawnAmbient();
+		void BuildFloors();
+		void BuildWalls();
+		void BuildMarkers();
+
+		Entity SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material);
+		Entity SpawnDecor(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material);
+		Entity SpawnGlow(const char* name, const glm::vec3& center, float diameter);
+		Entity SpawnPointLight(const char* name, const glm::vec3& position, float intensity, float range);
+
+		void SpawnFloor(const TileRect& rect);
+		void SpawnWallRect(const TileRect& rect);
+		void SetWallHidden(WallRect& wall, bool hidden);
+		BrazierSpot SpawnBrazier(const KeepMarker& marker);
+		std::optional<DecorFlame> SpawnSconce(const KeepMarker& marker);
+		DecorFlame SpawnCandle(const KeepMarker& marker);
+
+	private:
+		Scene& m_Scene;
+		const KeepMap& m_Map;
+
+		Mesh* m_BoxMesh = nullptr;
+		Mesh* m_FlameMesh = nullptr;
+
+		Material* m_StoneMaterial = nullptr;
+		Material* m_CapMaterial = nullptr;
+		Material* m_FloorMaterial = nullptr;
+		Material* m_BrassMaterial = nullptr;
+		Material* m_WaxMaterial = nullptr;
+		Material* m_FlameMaterial = nullptr;
+
+		std::vector<WallRect> m_Walls;
+		std::vector<int> m_WallOfTile;
+
+		std::vector<DecorFlame> m_Flames;
+		std::vector<BrazierSpot> m_Braziers;
+		std::vector<FlaskSpot> m_FlaskSpots;
+	};
+
+}

@@ -409,3 +409,37 @@ Docs (C6):
   makes the rejection check FAIL, and dropping the square on falloff fails five others. The default,
   lights, overbudget, materials, both entities modes and the batch test are 0 px different from
   the build before C1.
+
+*C2 (the keep):*
+
+- The keep is one 79×14 ASCII grid in `KeepMap.cpp` (north = top row = −Z): Gatehouse, Great
+  Hall, Gallery, Chapel, joined by three 4-tile corridors, plus three Gallery alcoves. Rooms and
+  corridors are rects in code; alcove tiles inherit the room they open off. All 597 floor tiles
+  are reachable from spawn 1. Digits `1`–`4` are the per-room spawns.
+- `KeepWorld` builds it: 72 wall boxes (greedy rectangles, capped at 4×4 tiles so the cutaway
+  stays local), each with a thin cap slab whose faint cold emissive outlines the layout in the dark,
+  plus 10 floor slabs. 49 flame lights: 12 sconces and 32 candles (decorative, the LOD's pool),
+  4 braziers and the altar, all lit in C2 (C5 makes the braziers unlit at start).
+- Decor has no collider. Brazier stacks and the altar do, so they are cover below about 1 m (C4).
+- The cutaway is needed: without it a player at a south wall is fully hidden. It hides any wall
+  rect (cap and mounted sconce parts too, never lights) that the segment from the eye to the
+  player's feet + 0.2 m crosses. In `--overview` it hides the room's south wall instead.
+- The player has a faint cloak emissive and a skin-tone face so it reads in the dark and shows
+  its facing. Flame cores, brass and wax have faint emissives too: a light directly above never
+  reaches a vertical face.
+- Flame cores use a game-owned 6×8 sphere: the engine's 16×16 sphere put 49 cores at 77 % of
+  one batch's index cap. Gallery overview: 23,388 indices and 8,536 vertices, down from 84,972 and
+  19,898; 8 draw calls.
+- The Gallery overview has 34 lights in view against the budget of 32 (two dropped) before the
+  lantern and wardens exist; a Hall sconce reaches its left edge. The follow camera sees far fewer.
+- Moved to later phases from the C2 review:
+  - C3: the light LOD changes only `PointLightComponent` intensity/`Enabled`, never flame cores
+    (emissive cores cost no light budget), so it cannot fight the cutaway over core visibility.
+    `DecorFlame::BaseIntensity` holds the unscaled value. The player needs a movement lock for
+    the 0.8 s strike.
+  - C4: the eye's range-clamp ray must be cast horizontally along the facing at eye height. A ray
+    along the 25°-down axis from 1.7 m always hits the floor slab at about 4 m. `IsWalkable` is
+    false on `B`/`A` tiles.
+  - C5: brazier cores need a dark "unlit" material and a lit one (cores share one flame material
+    today); `KeepWorld`'s brazier list is in raster order, so index it by `Room`, not position.
+    The player needs a teleport for respawns.
