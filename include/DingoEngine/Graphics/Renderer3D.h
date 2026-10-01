@@ -105,10 +105,12 @@ namespace Dingo
 		// Up to k_MaxDirectionalLights directional lights count; further ones are dropped with a
 		// warning. Point and spot lights share the MaxLocalLights budget (see
 		// Renderer3DCapabilities). SetAmbientLight replaces the scene's ambient, which is black
-		// otherwise.
-		void SubmitLight(const DirectionalLight& light);
-		void SubmitLight(const PointLight& light);
-		void SubmitLight(const SpotLight& light);
+		// otherwise. SubmitLight returns false for a light it ignores (non-finite, or a point or spot
+		// light without positive intensity and range) or drops (a fifth directional light, or one
+		// past the pending-light cap).
+		bool SubmitLight(const DirectionalLight& light);
+		bool SubmitLight(const PointLight& light);
+		bool SubmitLight(const SpotLight& light);
 		void SetAmbientLight(const glm::vec3& color, float intensity);
 
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).

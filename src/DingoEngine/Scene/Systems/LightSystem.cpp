@@ -41,15 +41,15 @@ namespace Dingo::Internal::LightSystem
 	{
 		bool hasLight = false;
 		glm::vec3 ambient(0.0f);
-		uint32_t directionalCount = 0;
 
 		// A legacy Ambient keeps the engine's original formula, ambient + (1 - ambient) * N.L, so a
-		// scene tuned before Intensity existed looks the same. Only lights Renderer3D can use add
-		// their ambient.
+		// scene tuned before Intensity existed looks the same. Only lights Renderer3D accepted add
+		// their ambient, and a non-finite one is skipped: one NaN term would make the summed ambient
+		// NaN, which SetAmbientLight rejects, losing every other source with it.
 		auto submitDirectional = [&](const DirectionalLightComponent& light)
 		{
-			renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f) });
-			if (directionalCount++ < Renderer3D::k_MaxDirectionalLights)
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f) });
+			if (accepted && std::isfinite(light.Ambient))
 				ambient += glm::vec3(light.Ambient);
 		};
 
@@ -63,7 +63,9 @@ namespace Dingo::Internal::LightSystem
 		{
 			hasLight = true;
 			const AmbientLightComponent& light = registry.get<const AmbientLightComponent>(entity);
-			ambient += light.Color * light.Intensity;
+			const glm::vec3 contribution = light.Color * light.Intensity;
+			if (std::isfinite(contribution.x) && std::isfinite(contribution.y) && std::isfinite(contribution.z))
+				ambient += contribution;
 		}
 
 		for (entt::entity entity : InEntityOrder<PointLightComponent>(registry))

@@ -337,11 +337,11 @@ namespace Dingo
 		Renderer::Clear(clearColor);
 	}
 
-	void Renderer3D::SubmitLight(const DirectionalLight& light)
+	bool Renderer3D::SubmitLight(const DirectionalLight& light)
 	{
 		m_SceneLightSubmitted = true;
 		if (!IsFinite(light.Direction) || !IsFinite(light.Color * light.Intensity))
-			return;
+			return false;
 
 		int& count = m_CameraData.LightCounts.x;
 		if (count >= static_cast<int>(k_MaxDirectionalLights))
@@ -355,39 +355,41 @@ namespace Dingo
 				m_DirectionalOverflowWarned = true;
 			}
 			++m_DroppedLights;
-			return;
+			return false;
 		}
 
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
 		++count;
+		return true;
 	}
 
-	void Renderer3D::SubmitLight(const PointLight& light)
+	bool Renderer3D::SubmitLight(const PointLight& light)
 	{
 		m_SceneLightSubmitted = true;
 		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range))
-			return;
+			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
-			return;
+			return false;
 
 		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
 		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, 0.0f);
 		candidate->Data.SpotDirection = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		return true;
 	}
 
-	void Renderer3D::SubmitLight(const SpotLight& light)
+	bool Renderer3D::SubmitLight(const SpotLight& light)
 	{
 		m_SceneLightSubmitted = true;
 		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range) || !IsFinite(light.Direction) ||
 			!std::isfinite(light.InnerConeAngle) || !std::isfinite(light.OuterConeAngle))
-			return;
+			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
-			return;
+			return false;
 
 		// The cone factor is saturate(cos(angle) * scale + offset): 1 at the inner angle, 0 at the
 		// outer one. Below about 1 degree the cosines are too close in float to reach 1.
@@ -403,6 +405,7 @@ namespace Dingo
 		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, coneScale);
 		candidate->Data.SpotDirection = glm::vec4(direction, -cosOuter * coneScale);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		return true;
 	}
 
 	Renderer3D::LocalLightCandidate* Renderer3D::AddLocalLight()

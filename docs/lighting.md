@@ -129,8 +129,9 @@ frame, and always calls `SetAmbientLight` with the summed ambient, black if ther
 single knob. It adds white ambient and scales the light by `(1 - Ambient)`, which is exactly the
 old `ambient + (1 - ambient) * N.L` for any `Ambient`. A face squarely turned to the light is
 `Ambient + Intensity * (1 - Ambient)` bright, exactly 1 at the default `Intensity`. Set `Ambient`
-to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only the first four
-directional components add their ambient.
+to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only the directional
+components the renderer accepts (the first four valid ones) add their ambient, and a non-finite
+`Ambient` or ambient intensity is skipped rather than blanking every other ambient source.
 
 ## The light budget
 
