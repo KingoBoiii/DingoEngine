@@ -1,6 +1,7 @@
 #include "LightingTest.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <imgui.h>
 
 #include <cmath>
@@ -32,6 +33,10 @@ namespace
 
 	constexpr int k_OverBudgetColumns = 16;
 	constexpr int k_OverBudgetRows = 4;
+
+	// Turned back out of each spot entity's local direction, so the entity path aims exactly like
+	// the direct one while still going through LightSystem's Rotation * Direction.
+	const glm::quat k_SpotEntityRotation = glm::angleAxis(glm::radians(35.0f), glm::normalize(glm::vec3(1.0f, 0.5f, 0.0f)));
 
 	constexpr glm::vec4 k_RowColor{ 0.70f, 0.12f, 0.10f, 1.0f };
 	constexpr glm::vec3 k_LampPosition{ 0.0f, 4.0f, 4.0f };
@@ -107,7 +112,12 @@ namespace Dingo
 		const Lighting lighting = DescribeLighting();
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
-		renderer.BeginScene(m_Camera);
+		// The entity path begins the scene the way SceneRenderer does, from the view-projection
+		// alone, so the camera position the renderer rebuilds from it is covered too.
+		if (m_UseEntities && m_Mode != Mode::Materials)
+			renderer.BeginScene(m_Camera.GetViewProjectionMatrix());
+		else
+			renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
 
 		if (m_Mode == Mode::Materials)
@@ -347,11 +357,13 @@ namespace Dingo
 		for (const SpotLight& light : lighting.SpotLights)
 		{
 			Entity entity = m_LightEntities[next++];
-			entity.GetComponent<Transform3DComponent>().Position = light.Position;
+			Transform3DComponent& transform = entity.GetComponent<Transform3DComponent>();
+			transform.Position = light.Position;
+			transform.Rotation = k_SpotEntityRotation;
 
 			SpotLightComponent& spot = entity.GetComponent<SpotLightComponent>();
 			spot = SpotLightComponent(light.Color, light.Intensity, light.Range);
-			spot.Direction = light.Direction; // the entity is unrotated, so local is world
+			spot.Direction = glm::inverse(k_SpotEntityRotation) * light.Direction;
 			spot.InnerConeAngle = light.InnerConeAngle;
 			spot.OuterConeAngle = light.OuterConeAngle;
 		}

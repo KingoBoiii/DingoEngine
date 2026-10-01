@@ -11,10 +11,10 @@ namespace Dingo
 	// fixed and nothing moves unless Animate is on, so frames are repeatable; start a mode with
 	// --lighting=default|lights|overbudget|materials. The same lights go either straight to
 	// Renderer3D or, with "Lights as entities" (--entities), through light components and
-	// Scene::SubmitLights, and both paths should draw the same frame. The materials mode shows lit
-	// materials instead: a row of spheres from smooth to rough, a glowing lamp with a light inside
-	// it and a crate whose texture loads asynchronously, so it reaches a material that has already
-	// drawn, with Specular (--specular=off) switching the highlights off.
+	// Scene::SubmitLights, and both paths draw the same frame to within float rounding. The
+	// materials mode shows lit materials instead: a row of spheres from smooth to rough, a glowing
+	// lamp with a light inside it and a crate whose texture loads asynchronously, so it reaches a
+	// material that has already drawn, with Specular (--specular=off) switching the highlights off.
 	class LightingTest : public GraphicsTest
 	{
 	public:
