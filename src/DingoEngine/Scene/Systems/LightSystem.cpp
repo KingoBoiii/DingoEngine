@@ -22,6 +22,19 @@ namespace Dingo::Internal::LightSystem
 			}
 			return transform;
 		}
+
+		// EnTT views run newest first and reshuffle on removal. Entity order is roughly creation order
+		// and survives another light's removal, so a scene's sun outranks the lights added after it.
+		template<typename Component>
+		const std::vector<entt::entity>& InEntityOrder(const entt::registry& registry)
+		{
+			static std::vector<entt::entity> s_Entities;
+			s_Entities.clear();
+			for (entt::entity entity : registry.view<const Component>())
+				s_Entities.push_back(entity);
+			std::sort(s_Entities.begin(), s_Entities.end(), [](entt::entity a, entt::entity b) { return entt::to_entity(a) < entt::to_entity(b); });
+			return s_Entities;
+		}
 	}
 
 	void SubmitLights(const entt::registry& registry, Renderer3D& renderer)
@@ -40,20 +53,22 @@ namespace Dingo::Internal::LightSystem
 				ambient += glm::vec3(light.Ambient);
 		};
 
-		for (auto [entity, light] : registry.view<const DirectionalLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<DirectionalLightComponent>(registry))
 		{
 			hasLight = true;
-			submitDirectional(light);
+			submitDirectional(registry.get<const DirectionalLightComponent>(entity));
 		}
 
-		for (auto [entity, light] : registry.view<const AmbientLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<AmbientLightComponent>(registry))
 		{
 			hasLight = true;
+			const AmbientLightComponent& light = registry.get<const AmbientLightComponent>(entity);
 			ambient += light.Color * light.Intensity;
 		}
 
-		for (auto [entity, light] : registry.view<const PointLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<PointLightComponent>(registry))
 		{
+			const PointLightComponent& light = registry.get<const PointLightComponent>(entity);
 			const Transform3DComponent* transform = PlaceLight(registry, entity);
 			if (!transform)
 				continue;
@@ -63,8 +78,9 @@ namespace Dingo::Internal::LightSystem
 				renderer.SubmitLight(PointLight{ transform->Position, light.Color, light.Intensity, light.Range });
 		}
 
-		for (auto [entity, light] : registry.view<const SpotLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<SpotLightComponent>(registry))
 		{
+			const SpotLightComponent& light = registry.get<const SpotLightComponent>(entity);
 			const Transform3DComponent* transform = PlaceLight(registry, entity);
 			if (!transform)
 				continue;

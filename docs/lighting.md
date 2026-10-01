@@ -135,7 +135,10 @@ directional components add their ambient.
 ## The light budget
 
 Directional lights are not culled or ranked: the first four in submission order are used, and
-further ones are dropped. Point and spot lights share one budget.
+further ones are dropped. Light components are submitted in entity order, which is roughly the
+order their entities were created and doesn't change when another light is removed.
+
+Point and spot lights share one budget.
 `Renderer3DCapabilities::MaxLocalLights` defaults to 32 and is capped at
 `Renderer3D::k_MaxLocalLights` (also 32), so the setting can only lower it.
 `Renderer3D::GetLocalLightBudget()` returns the value in force.

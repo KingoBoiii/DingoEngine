@@ -202,7 +202,7 @@ Things to know:
 - **Ambient is always set.** `Scene::SubmitLights` sets the scene's ambient every frame, even to
   black. A scene whose lights are all switched off therefore goes dark, and a scene lit only by
   point lights has no sun and no ambient until you add an `AmbientLightComponent`.
-- **Directional lights add up**, up to four, and so does each one's legacy `Ambient`. Set
+- **Directional lights add up**, up to four (the first created), and so does each one's legacy `Ambient`. Set
   `Ambient` to 0 to light the scene with `AmbientLightComponent` instead.
 - **Custom passes.** Lights are scene-scoped, so a custom 3D pass on the shared renderer calls
   `scene.SubmitLights(renderer)` between its `BeginScene` and `EndScene`, the same way it calls
