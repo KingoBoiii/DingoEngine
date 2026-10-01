@@ -49,7 +49,8 @@ namespace Dingo
 
 	// 2D-oriented transform. Position is the center of the entity (matching the
 	// Renderer2D quad convention); Size is the full extent in world units; Rotation
-	// is in degrees about the +Z axis.
+	// is in degrees about the +Z axis. Position and Rotation are relative to the
+	// entity's parent when it has one (Entity::SetParent); Size never is.
 	struct TransformComponent
 	{
 		glm::vec3 Position{ 0.0f };
@@ -152,8 +153,8 @@ namespace Dingo
 	// Graphics/Light.h for falloff and the per-scene light budget. A scene without a single light
 	// component is lit by a default DirectionalLightComponent, so a 3D scene never renders black
 	// by accident. Any light component, even a disabled one, turns that default off. Point and
-	// spot lights take their position, and a spot its aim, from the entity's
-	// Transform3DComponent, and are ignored without one.
+	// spot lights take their position, and a spot its aim, from the entity's world transform
+	// (its Transform3DComponent through any parents), and are ignored without one.
 
 	// A sun-like light. The defaults reproduce the engine's original lighting.
 	struct DirectionalLightComponent
@@ -198,7 +199,8 @@ namespace Dingo
 			: Color(color), Intensity(intensity), Range(range) {}
 
 		// The light Scene::SubmitLights draws for this component, placed at the transform's
-		// position. Enabled is not consulted.
+		// position. Enabled is not consulted. The transform is in world space: under a parent, pass
+		// the entity's GetWorldPosition/GetWorldRotation rather than its local component.
 		PointLight ToLight(const Transform3DComponent& transform) const;
 	};
 
@@ -221,7 +223,8 @@ namespace Dingo
 			: Color(color), Intensity(intensity), Range(range) {}
 
 		// The light Scene::SubmitLights draws for this component: the transform's position, aimed
-		// along Rotation * Direction. Enabled is not consulted.
+		// along Rotation * Direction. Enabled is not consulted. The transform is in world space, as
+		// for PointLightComponent::ToLight.
 		SpotLight ToLight(const Transform3DComponent& transform) const;
 	};
 
@@ -286,8 +289,10 @@ namespace Dingo
 	// it has a RigidBody3DComponent plus a collider.
 
 	// 3D transform. Position is the entity center; Rotation is a quaternion; Scale
-	// is the full extent multiplier per axis. The Scene writes the simulated
-	// position/rotation back here each frame while 3D physics is running.
+	// is the full extent multiplier per axis. All three are relative to the entity's parent
+	// when it has one (Entity::SetParent); Entity::GetWorldTransform gives the world values.
+	// The Scene writes the simulated position/rotation back here each frame while 3D
+	// physics is running.
 	struct Transform3DComponent
 	{
 		glm::vec3 Position{ 0.0f };
@@ -373,7 +378,7 @@ namespace Dingo
 	};
 
 	// A box collider for an entity with a RigidBody3DComponent. HalfExtents is a
-	// fraction of Transform3DComponent::Scale, so the default { 0.5, 0.5, 0.5 }
+	// fraction of the entity's world scale, so the default { 0.5, 0.5, 0.5 }
 	// exactly covers the entity's box. (Physics3D centers the shape on the body, so
 	// there is no per-collider offset — model offset with the Transform instead.)
 	struct BoxCollider3DComponent
@@ -387,7 +392,7 @@ namespace Dingo
 		BoxCollider3DComponent(const BoxCollider3DComponent&) = default;
 	};
 
-	// A sphere collider. Radius is a fraction of Transform3DComponent::Scale.x, so
+	// A sphere collider. Radius is a fraction of the entity's world scale x, so
 	// the default 0.5 inscribes a unit box.
 	struct SphereCollider3DComponent
 	{
@@ -401,9 +406,9 @@ namespace Dingo
 	};
 
 	// A capsule collider for an entity with a RigidBody3DComponent. The capsule stands
-	// on the +Y axis. Radius is a fraction of Transform3DComponent::Scale.x and
+	// on the +Y axis. Radius is a fraction of the entity's world scale x and
 	// HalfHeight (half the cylinder section between the caps) is a fraction of
-	// Transform3DComponent::Scale.y, so on a unit-scaled entity the defaults give a
+	// its world scale y, so on a unit-scaled entity the defaults give a
 	// 1-unit-tall capsule of radius 0.5.
 	struct CapsuleCollider3DComponent
 	{
@@ -418,7 +423,7 @@ namespace Dingo
 	};
 
 	// A collider shaped like a Mesh, for an entity with a RigidBody3DComponent. The mesh
-	// is scaled by Transform3DComponent::Scale exactly as MeshRendererComponent draws it,
+	// is scaled by the entity's world scale exactly as MeshRendererComponent draws it,
 	// so the collider matches what is on screen. A null Mesh uses the entity's
 	// MeshRendererComponent::Mesh. Not owned, and only read when the body is built.
 	//
@@ -464,7 +469,7 @@ namespace Dingo
 	// component does not own decoding, only a reference, exactly like
 	// MeshRendererComponent's Mesh. When Spatialized is true the Scene keeps the
 	// live sound's position in sync with the entity's transform every frame
-	// (Transform3DComponent if present, else the 2D TransformComponent at z = 0).
+	// (its world position if it has a Transform3DComponent, else the 2D TransformComponent at z = 0).
 	struct AudioSourceComponent
 	{
 		std::shared_ptr<AudioClip> Clip;

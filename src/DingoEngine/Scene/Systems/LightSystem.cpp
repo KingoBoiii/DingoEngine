@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
 #include "DingoEngine/Graphics/Renderer3D.h"
 
@@ -35,10 +36,20 @@ namespace Dingo::Internal::LightSystem
 			std::sort(s_Entities.begin(), s_Entities.end(), [](entt::entity a, entt::entity b) { return entt::to_entity(a) < entt::to_entity(b); });
 			return s_Entities;
 		}
+
+		// ToLight reads a world-space transform; under a parent the component holds a local one.
+		Transform3DComponent WorldTransform(entt::entity entity, HierarchySystem::WorldMemo& memo)
+		{
+			Transform3DComponent world;
+			world.Position = memo.Position(entity);
+			world.Rotation = memo.Rotation(entity);
+			return world;
+		}
 	}
 
-	void SubmitLights(const entt::registry& registry, Renderer3D& renderer)
+	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
 	{
+		memo.Begin(registry);
 		bool hasLight = false;
 		glm::vec3 ambient(0.0f);
 
@@ -77,7 +88,7 @@ namespace Dingo::Internal::LightSystem
 
 			hasLight = true;
 			if (light.Enabled)
-				renderer.SubmitLight(light.ToLight(*transform));
+				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
 		}
 
 		for (entt::entity entity : InEntityOrder<SpotLightComponent>(registry))
@@ -89,7 +100,7 @@ namespace Dingo::Internal::LightSystem
 
 			hasLight = true;
 			if (light.Enabled)
-				renderer.SubmitLight(light.ToLight(*transform));
+				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
 		}
 
 		if (!hasLight)

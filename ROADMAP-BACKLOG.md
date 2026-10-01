@@ -53,10 +53,10 @@ The 12 items fall into three buckets against the existing milestone plan:
 - **#1 "bloom later"** → v0.9 Advanced Rendering: shadows, bloom, tone mapping.
 
 **Now scheduled** (were deferred or homeless when this doc was written):
-- **#4a** parent-child transforms **and #4b** full skeletal animation are both **v0.8 — Animation &
-  Character Fidelity**. v0.4.2's "slated to land with the character fidelity push of v0.5+" note
-  finally has a real milestone behind it, and the v0.8 section is explicit that #4a ships as the
-  independently-useful half.
+- **#4a** parent-child transforms **shipped as v0.7.1**, pulled forward from v0.8 as the
+  independently-useful half. **#4b** full skeletal animation stays **v0.8 — Animation & Character
+  Fidelity**, so v0.4.2's "slated to land with the character fidelity push of v0.5+" note finally
+  has a real milestone behind it.
 - **#2b** frustum/distance culling, **#3** static batching/instancing and **#12** material sharing are
   **v1.0 — Stability, Performance & Polish**. v0.9 shed its "& Performance" half to become purely
   visual, so the throughput work landed in v1.0 rather than staying "v0.9-adjacent".
@@ -82,7 +82,7 @@ note in §1; the genuinely homeless one is **#10**, the game-facing UI layer.)
 | 1 | Point lights + emissive | 1a emissive **M** · 1b point lights **L** | ~330–380 lines (~40% of `GameController.cpp`) of torch-faking | 1a **landed v0.5** · 1b **= v0.7** (bloom=v0.9) |
 | 2 | Culling + `Visible` flag | 2a `Visible` **S** · 2b frustum **M–L** · 2c overflow assert **S** | ~50 lines mesh-nulling + restore arrays (2 systems) | unscheduled |
 | 3 | Static batching / instancing | **L–XL** | the `VIS_CULL_RADIUS` vertex-budget workaround | unscheduled |
-| 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | **both = v0.8** |
+| 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | 4a **landed v0.7.1** · 4b **= v0.8** |
 | 5 | Physics3D kinematic + char controller | **M–L** | raw-velocity movement; unblocks warp/checkpoint/respawn | **v0.5-committed** |
 | 6 | `ScreenPointToRay` / ground raycast | **S–M** | `MouseGroundPoint` hand-inverted VP (37 lines) | **v0.5-committed** |
 | 7 | Script-accessible scene transitions | **S–M** | `GameSession::SceneRequest` + `main.cpp` pump (~40 lines) | **landed v0.5** |
@@ -152,11 +152,12 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
   fragment the single-batch fast path. Couple with the #1/#3 shader churn. Sub-item **UTF-8 decode**
   (**S**) lifts the ASCII-only text constraint — **landed in v0.6.2**.
 
-### Wave 5 — Character fidelity — **now v0.8**
-- **#4a Parent-child transforms** (**M–L**) — a `Parent` component + a transform-propagation pass.
-  Collapses most of `CharacterRig::Update` (76 lines of per-part world math) and the
-  `export_chars.py` pivot reverse-engineering. Independent ECS feature — **pull earlier** if rig
-  pain is acute; it does not need the skeletal work.
+### Wave 5 — Character fidelity — **v0.7.1 + v0.8**
+- **#4a Parent-child transforms** (**M–L**) — **landed v0.7.1**, pulled earlier as this item
+  suggested: `Entity::SetParent` and world transforms computed through the parent chain (once per
+  pass for the engine's readers). Collapses most of `CharacterRig::Update` (76 lines of per-part
+  world math) and the `export_chars.py` pivot reverse-engineering; DungeonCrawler3D's character rig
+  already lost its per-part world maths. It did not need the skeletal work.
 - **#4b Skeletal animation** (**XL**) — skinned meshes, clips, blend tree; requires reworking the
   static-only `Model::LoadFromFile`. Scheduled as **v0.8**; pairs with the v0.6 asset pipeline, which
   is what makes the loader rework affordable (rigs become `AssetManager`-owned assets).
@@ -172,7 +173,8 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
 | **v0.7 Lighting & Shading** | #1b point lights (+ spot, light colour/intensity, specular) | Biggest deletion; **now on the roadmap** — took over the v0.7 slot when scripting became a module |
 | **v0.6-adjacent** | #8 asset-root story folds into `AssetManager`; #9 fits too | Asset pipeline is the natural home |
 | **v1.0 Stability, Performance & Polish** | #3, #2b, #12 | v0.9 became purely visual (shadows/post/VFX), so the throughput work moved to v1.0 — where there is finally a full frame to measure |
-| **v0.8 Animation & Character Fidelity** | #4a (the independently-useful half), then #4b | Character-fidelity push; honours v0.4.2's unkept "v0.5+" promise |
+| **v0.7.1 Transform Hierarchy** | #4a | The independently-useful half, pulled forward from v0.8 |
+| **v0.8 Animation & Character Fidelity** | #4b | Character-fidelity push; honours v0.4.2's unkept "v0.5+" promise |
 
 ---
 

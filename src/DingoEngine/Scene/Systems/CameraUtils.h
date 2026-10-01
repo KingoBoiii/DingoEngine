@@ -27,6 +27,10 @@ namespace Dingo
 
 			bool FindFirstDirectionalLight(const entt::registry& registry, entt::entity& out);
 
+			// inverse(translate(world position) x rotate(world rotation)) of a perspective camera
+			// entity; scale is ignored. Identity without a Transform3DComponent.
+			glm::mat4 PerspectiveView(const entt::registry& registry, entt::entity camera);
+
 			// Projection from the entity's CameraComponent, view from its transform.
 			// Identity when the entity carries no CameraComponent.
 			glm::mat4 ViewProjection(const entt::registry& registry, entt::entity camera, float aspect);

@@ -38,6 +38,8 @@ namespace Dingo
 
 		void SetLinearVelocity(PhysicsBodyId2D body, const glm::vec2& velocity) override;
 		glm::vec2 GetLinearVelocity(PhysicsBodyId2D body) const override;
+		float GetAngularVelocity(PhysicsBodyId2D body) const override;
+		void MoveKinematic(PhysicsBodyId2D body, const glm::vec2& targetPosition, float targetAngle, float deltaTime) override;
 		void ApplyLinearImpulse(PhysicsBodyId2D body, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake) override;
 		void ApplyLinearImpulseToCenter(PhysicsBodyId2D body, const glm::vec2& impulse, bool wake) override;
 		void ApplyForceToCenter(PhysicsBodyId2D body, const glm::vec2& force, bool wake) override;

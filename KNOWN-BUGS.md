@@ -4,12 +4,12 @@ Open defects and sharp edges in DingoEngine. Companion to [ROADMAP.md](ROADMAP.m
 next) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (missing capabilities, ranked). This file is only
 for things that are **wrong or surprising in code that already ships**.
 
-- **Verified against `VERSION` 0.7.0 on 2026-10-01.** Every entry below carries a `file:line` anchor
+- **Verified against `VERSION` 0.7.1 on 2026-10-01.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
   K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29;
   K16 and K17 are the two limits v0.7's lighting ships with, K18 a defect found reviewing its
   lit materials that predates it, and K19 one found reviewing Candlewick, all added on 2026-10-01.
-  v0.7 closed no entry.
+  v0.7 closed no entry; v0.7.1 closed none either and only moved K14's `TestLayer.cpp` lines.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -72,7 +72,7 @@ practice that logging may remain the right answer.
 
 ## K14 — The test framework crashes when its window is minimized {#k14}
 
-**Defect** — `test/src/TestLayer.cpp:268-277`, `test/src/UI/TestViewportPanel.cpp:15-16`
+**Defect** — `test/src/TestLayer.cpp:271-280`, `test/src/UI/TestViewportPanel.cpp:15-16`
 
 ImGui's GLFW backend reads the window size fresh in `NewFrame`, so a minimize that lands between a
 frame's event poll and its ImGui frame gives ImGui a 0×0 display for that one frame — before
@@ -169,8 +169,8 @@ have `NvrhiPipeline` fall back to `Solid` with a one-time warning when it is mis
 
 ## Not tracked here
 
-- **Missing capabilities** (no transform hierarchy, no skeletal animation, no runtime UI layer, no mesh
-  culling or instancing) are features, not bugs — they live in
+- **Missing capabilities** (no skeletal animation, no runtime UI layer, no mesh culling or
+  instancing) are features, not bugs — they live in
   [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md), ranked and dependency-sequenced, and most are now scheduled
   in [ROADMAP.md](ROADMAP.md) at v0.8–v1.0.
 - **Closed findings** stay in their dated review under `.claude/reviews/`, each with the commit that

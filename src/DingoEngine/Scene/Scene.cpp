@@ -11,6 +11,7 @@
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 
 #include <algorithm>
@@ -68,6 +69,11 @@ namespace Dingo
 		if (!IsValid(source))
 			return {};
 
+		return DuplicateSubtree(source, source.GetParent());
+	}
+
+	Entity Scene::DuplicateSubtree(Entity source, Entity parent)
+	{
 		entt::entity src = static_cast<entt::entity>(source.m_Handle);
 		entt::registry& registry = m_Data->Registry;
 
@@ -109,10 +115,17 @@ namespace Dingo
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
 
+		// Linked before the body is built, which reads the world transform.
+		if (parent)
+			Internal::HierarchySystem::Link(registry, dst, static_cast<entt::entity>(parent.m_Handle));
+
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
 		if (IsPhysicsRunning())
 			CreateRigidBody(clone);
+
+		for (Entity child : source.GetChildren())
+			DuplicateSubtree(child, clone);
 
 		return clone;
 	}
@@ -142,7 +155,28 @@ namespace Dingo
 		if (!m_Data->Registry.valid(e))
 			return;
 
+		// False once a script's OnDestroy has destroyed this entity along the way.
+		auto destroyChildren = [this, e]()
+		{
+			while (const Internal::HierarchyComponent* node = m_Data->Registry.try_get<Internal::HierarchyComponent>(e))
+			{
+				if (node->FirstChild == entt::null)
+					break;
+
+				DestroyEntityNow(static_cast<std::uint32_t>(node->FirstChild));
+				if (!m_Data->Registry.valid(e))
+					return false;
+			}
+			return true;
+		};
+
+		// Children go first, and again after this entity's own OnDestroy, which may have given it new ones.
+		if (!destroyChildren())
+			return;
+
 		DetachScript(handle);
+		if (!m_Data->Registry.valid(e) || !destroyChildren())
+			return;
 
 		if (m_Data->Registry.all_of<IDComponent>(e))
 			m_Data->EntityMap.erase(m_Data->Registry.get<IDComponent>(e).ID);
@@ -153,6 +187,7 @@ namespace Dingo
 		// (and transform) is gone.
 		Internal::AudioSync::StopSource(m_Data->Registry, e);
 
+		Internal::HierarchySystem::Unlink(m_Data->Registry, e);
 		m_Data->Registry.destroy(e);
 	}
 
@@ -213,7 +248,7 @@ namespace Dingo
 		// Transforms are final for the frame now (physics + controller write-back
 		// already happened), so sync every spatialized source's position and the
 		// listener before anything renders or is heard this frame.
-		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry);
+		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
 	}
 
 	void Scene::ForEachEntity(const std::function<void(Entity)>& fn)
@@ -235,34 +270,43 @@ namespace Dingo
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
+		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
+		memo.Begin(m_Data->Registry);
+
 		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
-		// Position.z draws on top. Equal-z ties are NOT ordered by creation (the
-		// view order decides), so give overlapping UI elements distinct z values.
+		// world z draws on top, and at equal z a parent draws before its children. Other
+		// equal-z ties are NOT ordered by creation (the view order decides), so give
+		// overlapping UI elements distinct z values.
 		{
 			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
 
-			// Sort keys, not handles: the comparator used to re-fetch TransformComponent
-			// through the registry for BOTH operands on every comparison. The buffer is a
-			// member so a steady-state frame does no allocation at all.
-			std::vector<std::pair<float, entt::entity>>& sprites = m_Data->SpriteSortBuffer;
+			// The world pose is resolved once per sprite and kept with its sort key, so neither the
+			// sort nor the draw goes back to the registry. The buffer is a member so a steady-state
+			// frame does no allocation at all.
+			std::vector<Internal::SceneData::SpriteDraw>& sprites = m_Data->SpriteSortBuffer;
 			sprites.clear();
 			for (entt::entity entity : view)
-				sprites.emplace_back(view.get<TransformComponent>(entity).Position.z, entity);
+			{
+				Internal::SceneData::SpriteDraw& draw = sprites.emplace_back();
+				draw.Entity = entity;
+				memo.Pose2D(entity, view.get<TransformComponent>(entity), draw.Position, draw.Rotation);
+				draw.Depth = memo.Depth(entity);
+			}
 
 			std::stable_sort(sprites.begin(), sprites.end(), [](const auto& a, const auto& b)
 			{
-				return a.first < b.first;
+				return a.Position.z != b.Position.z ? a.Position.z < b.Position.z : a.Depth < b.Depth;
 			});
 
-			for (const auto& [z, entity] : sprites)
+			for (const Internal::SceneData::SpriteDraw& draw : sprites)
 			{
-				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(entity);
+				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(draw.Entity);
 				Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
 
-				if (transform.Rotation != 0.0f)
-					renderer.DrawRotatedQuad(transform.Position, transform.Rotation, transform.Size, texture, sprite.Color);
+				if (draw.Rotation != 0.0f)
+					renderer.DrawRotatedQuad(draw.Position, draw.Rotation, transform.Size, texture, sprite.Color);
 				else
-					renderer.DrawQuad(transform.Position, transform.Size, texture, sprite.Color);
+					renderer.DrawQuad(draw.Position, transform.Size, texture, sprite.Color);
 			}
 		}
 
@@ -272,7 +316,7 @@ namespace Dingo
 			for (auto entity : view)
 			{
 				auto [transform, circle] = view.get<TransformComponent, CircleRendererComponent>(entity);
-				renderer.DrawCircle(transform.GetTransform(), circle.Color, circle.Thickness, circle.Fade);
+				renderer.DrawCircle(memo.Transform2D(entity, transform), circle.Color, circle.Thickness, circle.Fade);
 			}
 		}
 
@@ -285,13 +329,19 @@ namespace Dingo
 				if (!text.Font || text.Text.empty())
 					continue;
 
-				renderer.DrawText(text.Text, text.Font, transform.Position, text.Size, { .Color = text.Color, .Centered = text.Centered });
+				glm::vec3 position;
+				float rotation;
+				memo.Pose2D(entity, transform, position, rotation);
+				renderer.DrawText(text.Text, text.Font, position, text.Size, { .Color = text.Color, .Centered = text.Centered });
 			}
 		}
 	}
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
+		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
+		memo.Begin(m_Data->Registry);
+
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
 		for (entt::entity entity : view)
 		{
@@ -299,13 +349,13 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color, mesh.Material);
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material);
 		}
 	}
 
 	void Scene::SubmitLights(Renderer3D& renderer)
 	{
-		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer);
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo);
 	}
 
 	// --- Camera -----------------------------------------------------------------

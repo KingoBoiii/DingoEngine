@@ -33,9 +33,10 @@ stays off until a material asks for it.
 
 - A scene's lights add up, and so do its ambient components (the direct API has one ambient,
   which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)).
-- **Components:** point and spot lights take their position from the entity's `Transform3DComponent`
-  and are ignored without one, with a one-time warning. A spot's `Direction` is in the entity's local space (default
-  (0, 0, -1)) and is turned by the transform's `Rotation`; scale has no effect.
+- **Components:** point and spot lights take their position from the entity's world transform (its
+  `Transform3DComponent`, through any parents) and are ignored without one, with a one-time
+  warning. A spot's `Direction` is in the entity's local space (default (0, 0, -1)) and is turned by
+  its world rotation; scale has no effect.
 - **Direct API:** `SpotLight::Direction` is a world direction and defaults to (0, -1, 0).
 
 ## Lights on entities
@@ -225,7 +226,9 @@ is the cone the player sees.
 
 `PointLightComponent::ToLight(transform)` and `SpotLightComponent::ToLight(transform)` build the
 light `Scene::SubmitLights` draws for a component: the transform's position and, for a spot,
-`Rotation * Direction`. They do not look at `Enabled`; check it yourself.
+`Rotation * Direction`. They do not look at `Enabled`; check it yourself. The transform is read as
+world space. For a light under a [parent](scenes-and-ecs.md#parenting-v071), pass one built from
+`GetWorldPosition()` and `GetWorldRotation()`, not the entity's local `Transform3DComponent`.
 
 ```cpp
 bool SeesPoint(Entity warden, const glm::vec3& point)

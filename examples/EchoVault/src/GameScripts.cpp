@@ -234,19 +234,21 @@ namespace Dingo
 		Entity entity = GetScene().CreateEntity("Sentry");
 		auto& transform = entity.AddComponent<Transform3DComponent>();
 		transform.Position = a;
-		transform.Scale = { 0.9f, 1.6f, 0.9f };
+		transform.Scale = SENTRY_SCALE;
 
 		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.BoxMesh, COLOR_SENTRY));
 		entity.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Kinematic));
 		entity.AddComponent<BoxCollider3DComponent>();
 		entity.AddComponent<PointLightComponent>(PointLightComponent(glm::vec3(COLOR_SENTRY_EYE), SENTRY_LIGHT_INTENSITY, SENTRY_LIGHT_RANGE));
 
-		// A glowing "eye" child (separate entity) that renders emissive in front of the sentry.
+		// A glowing eye on the sentry's front face (+Z, the way it patrols). Its local values are
+		// in the sentry's scaled space, so they are divided by that scale to keep the eye round.
 		Entity eye = GetScene().CreateEntity("SentryEye");
 		auto& eyeTransform = eye.AddComponent<Transform3DComponent>();
-		eyeTransform.Position = a + glm::vec3(0.0f, 0.4f, 0.0f);
-		eyeTransform.Scale = glm::vec3(0.35f);
+		eyeTransform.Position = SENTRY_EYE_OFFSET / SENTRY_SCALE;
+		eyeTransform.Scale = glm::vec3(SENTRY_EYE_SIZE) / SENTRY_SCALE;
 		eye.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_SENTRY_EYE)).Material = m_SentryEyeMaterial;
+		eye.SetParent(entity, false);
 
 		entity.AddScript<SentryScript>(&m_Context, a, b, speed);
 		return entity;
@@ -550,6 +552,8 @@ namespace Dingo
 		m_Facing = glm::normalize(m_Path.B - m_Path.A);
 		if (glm::length(m_Facing) < 0.0001f)
 			m_Facing = { 0.0f, 0.0f, 1.0f };
+
+		m_Eye = GetEntity().FindChild("SentryEye", false);
 	}
 
 	bool SentryScript::HasLineOfSight(const glm::vec3& eye, const glm::vec3& target) const
@@ -596,8 +600,9 @@ namespace Dingo
 		if (!m_Context->Player.IsValid() || m_Cooldown > 0.0f)
 			return;
 
-		const glm::vec3 sentryPos = GetComponent<Transform3DComponent>().Position;
-		const glm::vec3 eye = sentryPos + glm::vec3(0.0f, 0.4f, 0.0f);
+		const Transform3DComponent& sentry = GetComponent<Transform3DComponent>();
+		const glm::vec3 sentryPos = sentry.Position;
+		const glm::vec3 eye = m_Eye.IsValid() ? m_Eye.GetWorldPosition() : sentryPos + sentry.Rotation * SENTRY_EYE_OFFSET;
 		const glm::vec3 playerPos = m_Context->Player.GetComponent<Transform3DComponent>().Position;
 		const glm::vec3 playerCenter = playerPos + glm::vec3(0.0f, PLAYER_HEIGHT * 0.5f, 0.0f);
 

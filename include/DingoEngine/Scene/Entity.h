@@ -3,10 +3,16 @@
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Scene/Components.h"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace Dingo
 {
@@ -61,6 +67,48 @@ namespace Dingo
 			return GetScript<T>() != nullptr;
 		}
 
+		// --- Hierarchy ---
+		//
+		// A child's Transform3DComponent and TransformComponent are local to its parent. 3D: world =
+		// parentWorld x local. 2D: the position turns with the parent's rotation, z and rotation add,
+		// and Size is not inherited. A parent counts as identity in a dimension it has no transform
+		// for. A root's local is its world, so nothing changes for an entity that never gets a parent.
+		// Destroying or duplicating an entity takes its whole subtree with it.
+
+		// Makes this entity the last child of `parent`, or changes nothing if `parent` already is its
+		// parent; a null Entity detaches it. With keepWorldTransform the local transform is rewritten
+		// so the entity stays where it is in the world: the Transform3DComponent if it has one, else
+		// the TransformComponent (and then its 3D descendants move, with a warning). Without it the
+		// old local values now apply relative to the new parent. A parent in another scene, or one
+		// that would create a cycle, logs an error and changes nothing.
+		void SetParent(Entity parent, bool keepWorldTransform = true);
+		void RemoveParent(bool keepWorldTransform = true);
+		Entity GetParent() const; // null for a root
+
+		std::uint32_t GetChildCount() const;
+		// In insertion order, over a snapshot: fn may reparent or destroy children.
+		void ForEachChild(const std::function<void(Entity)>& fn) const;
+		std::vector<Entity> GetChildren() const;
+		// The first descendant with this name, nearest first; null if none.
+		Entity FindChild(std::string_view name, bool recursive = true) const;
+
+		// The 3D world transform, computed on demand from the parent chain and never cached, so it is
+		// always current. An entity without a Transform3DComponent (a grouping node) inherits its
+		// parent's. A null entity gives identity.
+		glm::mat4 GetWorldTransform() const;
+		glm::vec3 GetWorldPosition() const;
+		glm::quat GetWorldRotation() const;
+		glm::vec3 GetWorldScale() const;
+		// Writes the local value that produces this world value. No-ops without a Transform3DComponent.
+		void SetWorldPosition(const glm::vec3& position);
+		void SetWorldRotation(const glm::quat& rotation);
+
+		// The 2D world pose from the TransformComponent chain: position with z, rotation in degrees.
+		glm::vec3 GetWorldPosition2D() const;
+		float GetWorldRotation2D() const;
+		void SetWorldPosition2D(const glm::vec3& position);
+		void SetWorldRotation2D(float degrees);
+
 		// --- Identity / lifetime ---
 
 		UUID GetUUID() const;
@@ -68,6 +116,7 @@ namespace Dingo
 		Scene& GetScene() const;
 
 		bool IsValid() const;
+		// Destroys this entity and its descendants (see Scene::DestroyEntity).
 		void Destroy();
 
 		explicit operator bool() const { return IsValid(); }
