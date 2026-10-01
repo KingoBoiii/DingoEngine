@@ -57,8 +57,6 @@ namespace Dingo
 		GameContext m_Context;
 		Entity m_CameraEntity;
 
-		// Custom emissive shader + the materials orbs / sentry eyes render with.
-		Shader* m_EmissiveShader = nullptr;
 		Material* m_OrbMaterial = nullptr;
 		Material* m_SentryEyeMaterial = nullptr;
 
