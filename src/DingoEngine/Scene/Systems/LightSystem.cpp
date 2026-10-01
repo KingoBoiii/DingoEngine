@@ -7,6 +7,23 @@
 namespace Dingo::Internal::LightSystem
 {
 
+	namespace
+	{
+		// A light that can't be placed is skipped without switching the default light off: counting
+		// it would leave a scene whose only light lacks a transform lit by nothing at all.
+		const Transform3DComponent* PlaceLight(const entt::registry& registry, entt::entity entity)
+		{
+			const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
+			static bool s_Warned = false;
+			if (!transform && !s_Warned)
+			{
+				DE_CORE_WARN("A point or spot light component sits on an entity without a Transform3DComponent, so it can't be placed and is ignored. Add a Transform3DComponent to light the scene from it.");
+				s_Warned = true;
+			}
+			return transform;
+		}
+	}
+
 	void SubmitLights(const entt::registry& registry, Renderer3D& renderer)
 	{
 		bool hasLight = false;
@@ -37,17 +54,23 @@ namespace Dingo::Internal::LightSystem
 
 		for (auto [entity, light] : registry.view<const PointLightComponent>().each())
 		{
+			const Transform3DComponent* transform = PlaceLight(registry, entity);
+			if (!transform)
+				continue;
+
 			hasLight = true;
-			const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
-			if (light.Enabled && transform)
+			if (light.Enabled)
 				renderer.SubmitLight(PointLight{ transform->Position, light.Color, light.Intensity, light.Range });
 		}
 
 		for (auto [entity, light] : registry.view<const SpotLightComponent>().each())
 		{
+			const Transform3DComponent* transform = PlaceLight(registry, entity);
+			if (!transform)
+				continue;
+
 			hasLight = true;
-			const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
-			if (!light.Enabled || !transform)
+			if (!light.Enabled)
 				continue;
 
 			SpotLight spot;
