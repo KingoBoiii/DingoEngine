@@ -529,7 +529,8 @@ namespace Dingo
 			.setTextureCompressionBC(true)
 			.setGeometryShader(true)
 			.setImageCubeArray(true)
-			.setDualSrcBlend(true);
+			.setDualSrcBlend(true)
+			.setFillModeNonSolid(m_VulkanPhysicalDevice.getFeatures().fillModeNonSolid);
 
 		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
 			.setShaderDemoteToHelperInvocation(true);
