@@ -167,7 +167,6 @@ namespace Dingo
 				chunk.Indices.clear();
 			}
 			matBatch.ChunksInUse = 0;
-			matBatch.OverflowWarned = false;
 			matBatch.Enqueued = false;
 		}
 		m_DrawOrder.clear();
@@ -260,11 +259,11 @@ namespace Dingo
 			DE_CORE_ASSERT(!caps.AssertOnOverflow,
 				"Renderer3D mesh exceeds a single batch's capacity and AssertOnOverflow is set. Raise Renderer3DCapabilities or submit a smaller mesh.");
 
-			if (!matBatch.OverflowWarned)
+			if (!m_MeshOverflowWarned)
 			{
 				DE_CORE_WARN("Renderer3D mesh exceeds a single batch's capacity ({} verts / {} indices); dropping this mesh. Raise Renderer3DCapabilities.MaxVertices/MaxIndices.",
 					caps.MaxVertices, caps.MaxIndices);
-				matBatch.OverflowWarned = true;
+				m_MeshOverflowWarned = true;
 			}
 			++m_Statistics.DroppedMeshes;
 			return;

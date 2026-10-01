@@ -176,7 +176,6 @@ namespace Dingo
 		{
 			std::vector<MeshChunk> Chunks;
 			uint32_t ChunksInUse = 0;
-			bool OverflowWarned = false;
 			bool Enqueued = false; // already in m_DrawOrder for the scene in progress
 		};
 		std::unordered_map<Material*, MaterialBatch> m_Batches;
@@ -197,6 +196,7 @@ namespace Dingo
 		Mesh* m_SphereMesh = nullptr;
 
 		bool m_SceneActive = false;
+		bool m_MeshOverflowWarned = false;
 	};
 
 }
