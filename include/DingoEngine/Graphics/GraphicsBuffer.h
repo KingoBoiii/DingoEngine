@@ -112,11 +112,20 @@ namespace Dingo
 		static GraphicsBuffer* CreateUniformBuffer(uint64_t size, const std::string& debugName = "Uniform Buffer");
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
+		// Never reused, unlike the buffer's address, so a cache keyed on it cannot hand a freed
+		// buffer's bindings to a new buffer allocated at the same address.
+		uint64_t GetId() const { return m_Id; }
+
 	protected:
 		GraphicsBuffer(const GraphicsBufferParams& params)
 			: GenericGraphicsBuffer<const void>(params)
 		{}
 		virtual ~GraphicsBuffer() = default;
+
+	private:
+		static uint64_t AllocateId();
+
+		uint64_t m_Id = AllocateId();
 	};
 
 }

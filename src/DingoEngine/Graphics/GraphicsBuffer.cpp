@@ -4,8 +4,16 @@
 
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 
+#include <atomic>
+
 namespace Dingo
 {
+
+	uint64_t GraphicsBuffer::AllocateId()
+	{
+		static std::atomic<uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
 
 	GraphicsBuffer* GraphicsBuffer::CreateVertexBuffer(uint64_t size, const void* data, bool directUpload, const std::string& debugName)
 	{

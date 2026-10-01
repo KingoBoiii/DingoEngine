@@ -88,8 +88,8 @@ namespace Dingo
 		// Binds a shared, engine-owned uniform buffer at binding 0 — the "scene" UBO
 		// (e.g. Renderer3D's camera + light data). When set, the material's own
 		// SetUniform data binds at binding 1 and textures/samplers shift to 2+. When
-		// null (the default), the material's own UBO stays at binding 0. Changing it
-		// invalidates the pipeline cache (bindings are baked into the render pass).
+		// null (the default), the material's own UBO stays at binding 0. Render passes are
+		// cached per scene buffer, so a material drawn by several renderers keeps one for each.
 		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
 
 		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
