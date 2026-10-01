@@ -16,6 +16,8 @@ namespace Dingo
 
 		void PhysicsSync::Start(entt::registry& registry, const glm::vec2& gravity2D, const glm::vec3& gravity3D)
 		{
+			m_Memo.Begin(registry);
+
 			auto rb2dView = registry.view<RigidBody2DComponent>();
 			if ((!m_Physics2D || !m_Physics2D->IsValid()) && rb2dView.begin() != rb2dView.end())
 			{
@@ -23,7 +25,7 @@ namespace Dingo
 				m_Physics2D->Initialize(gravity2D);
 
 				for (entt::entity handle : rb2dView)
-					CreateBody2D(registry, handle);
+					CreateBody2D(registry, handle, &m_Memo);
 			}
 
 			auto rb3dView = registry.view<RigidBody3DComponent>();
@@ -37,10 +39,10 @@ namespace Dingo
 				m_Physics3D->Initialize(params);
 
 				for (entt::entity handle : rb3dView)
-					CreateBody3D(registry, handle);
+					CreateBody3D(registry, handle, &m_Memo);
 
 				for (entt::entity handle : cc3dView)
-					CreateController(registry, handle);
+					CreateController(registry, handle, &m_Memo);
 			}
 		}
 
@@ -177,6 +179,7 @@ namespace Dingo
 				return a.Depth < b.Depth;
 			});
 
+			BeginPrediction(registry);
 			for (const KinematicChild& child : m_KinematicChildren)
 			{
 				glm::vec3 position;
@@ -189,7 +192,26 @@ namespace Dingo
 			}
 		}
 
-		bool PhysicsSync::PredictedPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation) const
+		void PhysicsSync::BeginPrediction(const entt::registry& registry)
+		{
+			m_Memo.Begin(registry);
+			if (++m_PredictionPass == 0)
+			{
+				for (PredictedEntry& entry : m_Predicted)
+					entry.Pass = 0;
+				m_PredictionPass = 1;
+			}
+		}
+
+		PhysicsSync::PredictedEntry& PhysicsSync::Predicted(entt::entity handle)
+		{
+			const std::size_t index = static_cast<std::size_t>(entt::to_entity(handle));
+			if (index >= m_Predicted.size())
+				m_Predicted.resize(index + 1);
+			return m_Predicted[index];
+		}
+
+		bool PhysicsSync::PredictedPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation)
 		{
 			const RigidBody2DRuntime* body = registry.try_get<RigidBody2DRuntime>(handle);
 			const RigidBody2DComponent* rigidBody = registry.try_get<RigidBody2DComponent>(handle);
@@ -197,7 +219,7 @@ namespace Dingo
 				return false;
 
 			float unusedRotation;
-			HierarchySystem::WorldPose2D(registry, handle, position, unusedRotation);
+			m_Memo.Pose2D(handle, position, unusedRotation);
 			const glm::vec2 xy = m_Physics2D->GetPosition(body->Body) + m_Physics2D->GetLinearVelocity(body->Body) * deltaTime;
 			position = { xy.x, xy.y, position.z };
 			rotation = glm::degrees(m_Physics2D->GetAngle(body->Body) + m_Physics2D->GetAngularVelocity(body->Body) * deltaTime);
@@ -211,8 +233,21 @@ namespace Dingo
 			m_PredictionChain.clear();
 			for (entt::entity e = handle; e != entt::null; e = HierarchySystem::GetParent(registry, e))
 			{
-				if (PredictedPose2D(registry, e, deltaTime, position, rotation))
+				const PredictedEntry& known = Predicted(e);
+				if (known.Pass == m_PredictionPass)
+				{
+					position = known.Position;
+					rotation = known.Rotation;
 					break;
+				}
+				if (PredictedPose2D(registry, e, deltaTime, position, rotation))
+				{
+					PredictedEntry& entry = Predicted(e);
+					entry.Position = position;
+					entry.Rotation = rotation;
+					entry.Pass = m_PredictionPass;
+					break;
+				}
 				m_PredictionChain.push_back(e);
 			}
 
@@ -220,6 +255,11 @@ namespace Dingo
 			{
 				if (const TransformComponent* local = registry.try_get<TransformComponent>(*it))
 					HierarchySystem::Compose2D(position, rotation, *local);
+
+				PredictedEntry& entry = Predicted(*it);
+				entry.Position = position;
+				entry.Rotation = rotation;
+				entry.Pass = m_PredictionPass;
 			}
 		}
 
@@ -228,8 +268,9 @@ namespace Dingo
 			if (m_ChildWriteBacks2D.empty())
 				return;
 
+			m_Memo.Begin(registry);
 			for (ChildWriteBack2D& writeBack : m_ChildWriteBacks2D)
-				writeBack.Depth = HierarchySystem::Depth(registry, writeBack.Handle);
+				writeBack.Depth = m_Memo.Depth(writeBack.Handle);
 
 			std::stable_sort(m_ChildWriteBacks2D.begin(), m_ChildWriteBacks2D.end(), [](const ChildWriteBack2D& a, const ChildWriteBack2D& b)
 			{
@@ -240,8 +281,8 @@ namespace Dingo
 			{
 				if (TransformComponent* transform = registry.try_get<TransformComponent>(writeBack.Handle))
 				{
-					HierarchySystem::SetWorldXY2D(registry, writeBack.Handle, *transform, writeBack.Position);
-					HierarchySystem::SetWorldRotation2D(registry, writeBack.Handle, *transform, glm::degrees(writeBack.Angle));
+					m_Memo.SetWorldXY2D(writeBack.Handle, *transform, writeBack.Position);
+					m_Memo.SetWorldRotation2D(writeBack.Handle, *transform, glm::degrees(writeBack.Angle));
 				}
 			}
 		}
@@ -263,6 +304,7 @@ namespace Dingo
 				return a.Depth < b.Depth;
 			});
 
+			BeginPrediction(registry);
 			for (const KinematicChild& child : m_KinematicChildren)
 			{
 				const glm::mat4 world = PredictedWorldTransform(registry, HierarchySystem::GetParent(registry, child.Handle), deltaTime)
@@ -275,7 +317,7 @@ namespace Dingo
 			}
 		}
 
-		bool PhysicsSync::PredictedPose(const entt::registry& registry, entt::entity handle, float deltaTime, glm::mat4& world) const
+		bool PhysicsSync::PredictedPose(const entt::registry& registry, entt::entity handle, float deltaTime, glm::mat4& world)
 		{
 			glm::vec3 position;
 			glm::quat rotation;
@@ -306,25 +348,43 @@ namespace Dingo
 				return false;
 			}
 
-			world = glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), HierarchySystem::WorldScale(registry, handle));
+			world = glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), m_Memo.Scale(handle));
 			return true;
 		}
 
 		glm::mat4 PhysicsSync::PredictedWorldTransform(const entt::registry& registry, entt::entity handle, float deltaTime)
 		{
-			// Climbs to the nearest ancestor whose pose physics decides this step, then composes the
-			// plain locals below it root-first, the same order HierarchySystem::WorldTransform uses.
+			// Climbs to an ancestor already predicted this pass, or the nearest one whose pose physics
+			// decides this step, then composes the plain locals below it root-first, the same order
+			// HierarchySystem::WorldTransform uses; every entity on the way is kept for its other
+			// descendants.
 			glm::mat4 world(1.0f);
 			m_PredictionChain.clear();
 			for (entt::entity e = handle; e != entt::null; e = HierarchySystem::GetParent(registry, e))
 			{
-				if (PredictedPose(registry, e, deltaTime, world))
+				const PredictedEntry& known = Predicted(e);
+				if (known.Pass == m_PredictionPass)
+				{
+					world = known.World;
 					break;
+				}
+				if (PredictedPose(registry, e, deltaTime, world))
+				{
+					PredictedEntry& entry = Predicted(e);
+					entry.World = world;
+					entry.Pass = m_PredictionPass;
+					break;
+				}
 				m_PredictionChain.push_back(e);
 			}
 
 			for (auto it = m_PredictionChain.rbegin(); it != m_PredictionChain.rend(); ++it)
+			{
 				world = world * HierarchySystem::LocalTransform(registry, *it);
+				PredictedEntry& entry = Predicted(*it);
+				entry.World = world;
+				entry.Pass = m_PredictionPass;
+			}
 
 			return world;
 		}
@@ -336,8 +396,9 @@ namespace Dingo
 
 			// Shallowest first: a simulated child's local is solved against its parent's world, which
 			// must already hold this step's result when the parent is simulated too.
+			m_Memo.Begin(registry);
 			for (ChildWriteBack& writeBack : m_ChildWriteBacks)
-				writeBack.Depth = HierarchySystem::Depth(registry, writeBack.Handle);
+				writeBack.Depth = m_Memo.Depth(writeBack.Handle);
 
 			std::stable_sort(m_ChildWriteBacks.begin(), m_ChildWriteBacks.end(), [](const ChildWriteBack& a, const ChildWriteBack& b)
 			{
@@ -347,8 +408,8 @@ namespace Dingo
 			for (const ChildWriteBack& writeBack : m_ChildWriteBacks)
 			{
 				Transform3DComponent& transform = registry.get<Transform3DComponent>(writeBack.Handle);
-				HierarchySystem::SetWorldPosition(registry, writeBack.Handle, transform, writeBack.Position);
-				HierarchySystem::SetWorldRotation(registry, writeBack.Handle, transform, writeBack.Rotation);
+				m_Memo.SetWorldPosition(writeBack.Handle, transform, writeBack.Position);
+				m_Memo.SetWorldRotation(writeBack.Handle, transform, writeBack.Rotation);
 			}
 		}
 
@@ -426,7 +487,7 @@ namespace Dingo
 			return runtime ? runtime->Body : k_InvalidBody3D;
 		}
 
-		void PhysicsSync::CreateBody2D(entt::registry& registry, entt::entity handle)
+		void PhysicsSync::CreateBody2D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo)
 		{
 			if (!m_Physics2D || !m_Physics2D->IsValid())
 				return;
@@ -442,7 +503,10 @@ namespace Dingo
 
 			glm::vec3 position;
 			float rotation;
-			HierarchySystem::WorldPose2D(registry, handle, transform, position, rotation);
+			if (memo)
+				memo->Pose2D(handle, transform, position, rotation);
+			else
+				HierarchySystem::WorldPose2D(registry, handle, transform, position, rotation);
 
 			RigidBodyParams2D bodyParams;
 			bodyParams.Type = rigidBody.Type;
@@ -488,7 +552,7 @@ namespace Dingo
 			}
 		}
 
-		void PhysicsSync::CreateBody3D(entt::registry& registry, entt::entity handle)
+		void PhysicsSync::CreateBody3D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo)
 		{
 			if (!m_Physics3D || !m_Physics3D->IsValid())
 				return;
@@ -503,7 +567,11 @@ namespace Dingo
 
 			glm::vec3 scale;
 			RigidBodyParams3D params;
-			HierarchySystem::WorldPose(registry, handle, registry.get<Transform3DComponent>(handle), params.Position, params.Rotation, scale);
+			const Transform3DComponent& transform = registry.get<Transform3DComponent>(handle);
+			if (memo)
+				memo->Pose(handle, transform, params.Position, params.Rotation, scale);
+			else
+				HierarchySystem::WorldPose(registry, handle, transform, params.Position, params.Rotation, scale);
 			params.Type = rigidBody.Type;
 			params.ContinuousCollision = rigidBody.ContinuousCollision;
 
@@ -566,7 +634,7 @@ namespace Dingo
 				registry.emplace<RigidBody3DRuntime>(handle).Body = body;
 		}
 
-		void PhysicsSync::CreateController(entt::registry& registry, entt::entity handle)
+		void PhysicsSync::CreateController(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo)
 		{
 			if (!m_Physics3D || !m_Physics3D->IsValid())
 				return;
@@ -585,7 +653,11 @@ namespace Dingo
 			params.Height = cc.Height;
 			params.StepHeight = cc.StepHeight;
 			params.MaxSlopeAngle = cc.MaxSlopeAngle;
-			HierarchySystem::WorldPose(registry, handle, registry.get<Transform3DComponent>(handle), params.Position, params.Rotation, scale);
+			const Transform3DComponent& transform = registry.get<Transform3DComponent>(handle);
+			if (memo)
+				memo->Pose(handle, transform, params.Position, params.Rotation, scale);
+			else
+				HierarchySystem::WorldPose(registry, handle, transform, params.Position, params.Rotation, scale);
 
 			std::unique_ptr<CharacterController3D> controller = m_Physics3D->CreateCharacterController(params);
 			if (!controller)

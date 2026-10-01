@@ -5,6 +5,7 @@
 // EnTT a private implementation detail of the engine.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
 
@@ -46,6 +47,9 @@ namespace Dingo
 				entt::entity Entity;
 			};
 			std::vector<SpriteDraw> SpriteSortBuffer;
+
+			// Scratch for the per-entity readers (rendering, lights, audio); reset by each pass.
+			HierarchySystem::WorldMemo Memo;
 		};
 
 	}

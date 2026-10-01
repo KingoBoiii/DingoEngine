@@ -37,12 +37,6 @@ namespace Dingo
 
 			}
 
-			bool AnyLinks(const entt::registry& registry)
-			{
-				const auto* storage = registry.storage<HierarchyComponent>();
-				return storage && !storage->empty();
-			}
-
 			entt::entity GetParent(const entt::registry& registry, entt::entity handle)
 			{
 				const HierarchyComponent* node = registry.try_get<HierarchyComponent>(handle);
@@ -393,6 +387,301 @@ namespace Dingo
 				const glm::vec2 xy = Rotate2D(glm::vec2(position) - glm::vec2(parentPosition), -parentRotation);
 				local.Position = { xy.x, xy.y, position.z - parentPosition.z };
 				local.Rotation = rotation - parentRotation;
+			}
+
+			void WorldMemo::Begin(const entt::registry& registry)
+			{
+				m_Transforms3D = registry.storage<Transform3DComponent>();
+				m_Transforms2D = registry.storage<TransformComponent>();
+				m_Links = registry.storage<HierarchyComponent>();
+				if (m_Links && m_Links->empty())
+					m_Links = nullptr;
+
+				if (++m_Pass == 0)
+				{
+					for (Entry3D& entry : m_World3D)
+						entry.Pass = 0;
+					for (Entry2D& entry : m_World2D)
+						entry.Pass = 0;
+					m_Pass = 1;
+				}
+
+				if (!m_Links)
+					return;
+
+				const std::size_t entities = registry.storage<entt::entity>()->size();
+				if (m_World3D.size() < entities)
+				{
+					m_World3D.resize(entities);
+					m_World2D.resize(entities);
+				}
+			}
+
+			entt::entity WorldMemo::ParentOf(entt::entity handle) const
+			{
+				return m_Links && m_Links->contains(handle) ? m_Links->get(handle).Parent : entt::null;
+			}
+
+			bool WorldMemo::HasParent(entt::entity handle) const
+			{
+				return ParentOf(handle) != entt::null;
+			}
+
+			std::uint32_t WorldMemo::Depth(entt::entity handle) const
+			{
+				std::uint32_t depth = 0;
+				for (entt::entity e = ParentOf(handle); e != entt::null; e = ParentOf(e))
+					depth++;
+				return depth;
+			}
+
+			std::size_t WorldMemo::Slot(entt::entity handle)
+			{
+				const std::size_t index = static_cast<std::size_t>(entt::to_entity(handle));
+				if (index >= m_World3D.size())
+				{
+					m_World3D.resize(index + 1);
+					m_World2D.resize(index + 1);
+				}
+				return index;
+			}
+
+			glm::mat4 WorldMemo::LocalOf(entt::entity handle) const
+			{
+				return m_Transforms3D && m_Transforms3D->contains(handle) ? m_Transforms3D->get(handle).GetTransform() : glm::mat4(1.0f);
+			}
+
+			void WorldMemo::Forget(entt::entity handle)
+			{
+				const std::size_t index = static_cast<std::size_t>(entt::to_entity(handle));
+				if (index < m_World3D.size())
+				{
+					m_World3D[index].Pass = 0;
+					m_World2D[index].Pass = 0;
+				}
+			}
+
+			const glm::mat4& WorldMemo::World(entt::entity handle)
+			{
+				// Climb to the nearest entity already resolved this pass (or past the root), then
+				// compose back down, storing every entity on the way for its other descendants.
+				m_Chain.clear();
+				std::size_t resolved = static_cast<std::size_t>(-1);
+				for (entt::entity e = handle; e != entt::null; e = ParentOf(e))
+				{
+					const std::size_t slot = Slot(e);
+					if (m_World3D[slot].Pass == m_Pass)
+					{
+						resolved = slot;
+						break;
+					}
+					m_Chain.push_back(e);
+				}
+
+				for (auto it = m_Chain.rbegin(); it != m_Chain.rend(); ++it)
+				{
+					Entry3D& entry = m_World3D[Slot(*it)];
+					entry.World = resolved == static_cast<std::size_t>(-1) ? LocalOf(*it) : m_World3D[resolved].World * LocalOf(*it);
+					entry.Pass = m_Pass;
+					resolved = Slot(*it);
+				}
+
+				return m_World3D[resolved].World;
+			}
+
+			glm::mat4 WorldMemo::Transform(entt::entity handle, const Transform3DComponent& local)
+			{
+				const HierarchyComponent* links = m_Links && m_Links->contains(handle) ? &m_Links->get(handle) : nullptr;
+				if (!links || links->Parent == entt::null)
+					return local.GetTransform();
+
+				// Only a parent's world is read again this pass, so a leaf skips the store.
+				if (links->FirstChild != entt::null)
+					return World(handle);
+				return World(links->Parent) * local.GetTransform();
+			}
+
+			glm::vec3 WorldMemo::Position(entt::entity handle)
+			{
+				if (!HasParent(handle))
+					return m_Transforms3D && m_Transforms3D->contains(handle) ? m_Transforms3D->get(handle).Position : glm::vec3(0.0f);
+				return glm::vec3(World(handle)[3]);
+			}
+
+			glm::quat WorldMemo::Rotation(entt::entity handle)
+			{
+				if (!HasParent(handle))
+					return m_Transforms3D && m_Transforms3D->contains(handle) ? m_Transforms3D->get(handle).Rotation : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+				glm::vec3 position, scale;
+				glm::quat rotation;
+				Decompose(World(handle), position, rotation, scale);
+				return rotation;
+			}
+
+			glm::vec3 WorldMemo::Scale(entt::entity handle)
+			{
+				if (!HasParent(handle))
+					return m_Transforms3D && m_Transforms3D->contains(handle) ? m_Transforms3D->get(handle).Scale : glm::vec3(1.0f);
+
+				glm::vec3 position, scale;
+				glm::quat rotation;
+				Decompose(World(handle), position, rotation, scale);
+				return scale;
+			}
+
+			void WorldMemo::Pose(entt::entity handle, const Transform3DComponent& local, glm::vec3& position, glm::quat& rotation, glm::vec3& scale)
+			{
+				if (!HasParent(handle))
+				{
+					position = local.Position;
+					rotation = local.Rotation;
+					scale = local.Scale;
+					return;
+				}
+
+				Decompose(World(handle), position, rotation, scale);
+			}
+
+			void WorldMemo::World2D(entt::entity handle, glm::vec3& position, float& rotation)
+			{
+				m_Chain.clear();
+				std::size_t resolved = static_cast<std::size_t>(-1);
+				for (entt::entity e = handle; e != entt::null; e = ParentOf(e))
+				{
+					const std::size_t slot = Slot(e);
+					if (m_World2D[slot].Pass == m_Pass)
+					{
+						resolved = slot;
+						break;
+					}
+					m_Chain.push_back(e);
+				}
+
+				if (resolved != static_cast<std::size_t>(-1))
+				{
+					position = m_World2D[resolved].Position;
+					rotation = m_World2D[resolved].Rotation;
+				}
+
+				for (auto it = m_Chain.rbegin(); it != m_Chain.rend(); ++it)
+				{
+					const TransformComponent* local = m_Transforms2D && m_Transforms2D->contains(*it) ? &m_Transforms2D->get(*it) : nullptr;
+					if (it == m_Chain.rbegin() && resolved == static_cast<std::size_t>(-1))
+					{
+						position = local ? local->Position : glm::vec3(0.0f);
+						rotation = local ? local->Rotation : 0.0f;
+					}
+					else if (local)
+					{
+						Compose2D(position, rotation, *local);
+					}
+
+					Entry2D& entry = m_World2D[Slot(*it)];
+					entry.Position = position;
+					entry.Rotation = rotation;
+					entry.Pass = m_Pass;
+				}
+			}
+
+			void WorldMemo::Pose2D(entt::entity handle, const TransformComponent& local, glm::vec3& position, float& rotation)
+			{
+				const entt::entity parent = ParentOf(handle);
+				if (parent == entt::null)
+				{
+					position = local.Position;
+					rotation = local.Rotation;
+					return;
+				}
+
+				World2D(parent, position, rotation);
+				Compose2D(position, rotation, local);
+			}
+
+			void WorldMemo::Pose2D(entt::entity handle, glm::vec3& position, float& rotation)
+			{
+				const TransformComponent* local = m_Transforms2D && m_Transforms2D->contains(handle) ? &m_Transforms2D->get(handle) : nullptr;
+				const TransformComponent identity;
+				Pose2D(handle, local ? *local : identity, position, rotation);
+			}
+
+			glm::mat4 WorldMemo::Transform2D(entt::entity handle, const TransformComponent& local)
+			{
+				if (!HasParent(handle))
+					return local.GetTransform();
+
+				TransformComponent world(local);
+				Pose2D(handle, local, world.Position, world.Rotation);
+				return world.GetTransform();
+			}
+
+			void WorldMemo::SetWorldPosition(entt::entity handle, Transform3DComponent& local, const glm::vec3& position)
+			{
+				const entt::entity parent = ParentOf(handle);
+				if (parent == entt::null)
+				{
+					local.Position = position;
+				}
+				else
+				{
+					glm::mat4 inverseParent;
+					if (TryInverse(World(parent), inverseParent))
+						local.Position = glm::vec3(inverseParent * glm::vec4(position, 1.0f));
+				}
+				Forget(handle);
+			}
+
+			void WorldMemo::SetWorldRotation(entt::entity handle, Transform3DComponent& local, const glm::quat& rotation)
+			{
+				const entt::entity parent = ParentOf(handle);
+				if (parent == entt::null)
+				{
+					local.Rotation = rotation;
+				}
+				else
+				{
+					glm::mat4 inverseParent;
+					if (TryInverse(World(parent), inverseParent))
+						local.Rotation = glm::normalize(glm::inverse(Rotation(parent)) * rotation);
+				}
+				Forget(handle);
+			}
+
+			void WorldMemo::SetWorldXY2D(entt::entity handle, TransformComponent& local, const glm::vec2& position)
+			{
+				const entt::entity parent = ParentOf(handle);
+				if (parent == entt::null)
+				{
+					local.Position.x = position.x;
+					local.Position.y = position.y;
+				}
+				else
+				{
+					glm::vec3 parentPosition;
+					float parentRotation;
+					World2D(parent, parentPosition, parentRotation);
+					const glm::vec2 xy = Rotate2D(position - glm::vec2(parentPosition), -parentRotation);
+					local.Position.x = xy.x;
+					local.Position.y = xy.y;
+				}
+				Forget(handle);
+			}
+
+			void WorldMemo::SetWorldRotation2D(entt::entity handle, TransformComponent& local, float rotation)
+			{
+				const entt::entity parent = ParentOf(handle);
+				if (parent == entt::null)
+				{
+					local.Rotation = rotation;
+				}
+				else
+				{
+					glm::vec3 parentPosition;
+					float parentRotation;
+					World2D(parent, parentPosition, parentRotation);
+					local.Rotation = rotation - parentRotation;
+				}
+				Forget(handle);
 			}
 
 		}

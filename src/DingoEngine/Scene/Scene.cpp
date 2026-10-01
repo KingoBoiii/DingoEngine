@@ -248,7 +248,7 @@ namespace Dingo
 		// Transforms are final for the frame now (physics + controller write-back
 		// already happened), so sync every spatialized source's position and the
 		// listener before anything renders or is heard this frame.
-		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry);
+		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
 	}
 
 	void Scene::ForEachEntity(const std::function<void(Entity)>& fn)
@@ -270,7 +270,8 @@ namespace Dingo
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
-		const bool anyLinks = Internal::HierarchySystem::AnyLinks(m_Data->Registry);
+		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
+		memo.Begin(m_Data->Registry);
 
 		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
 		// world z draws on top, and at equal z a parent draws before its children. Other
@@ -288,18 +289,8 @@ namespace Dingo
 			{
 				Internal::SceneData::SpriteDraw& draw = sprites.emplace_back();
 				draw.Entity = entity;
-				const TransformComponent& transform = view.get<TransformComponent>(entity);
-				if (anyLinks)
-				{
-					Internal::HierarchySystem::WorldPose2D(m_Data->Registry, entity, transform, draw.Position, draw.Rotation);
-					draw.Depth = Internal::HierarchySystem::Depth(m_Data->Registry, entity);
-				}
-				else
-				{
-					draw.Position = transform.Position;
-					draw.Rotation = transform.Rotation;
-					draw.Depth = 0;
-				}
+				memo.Pose2D(entity, view.get<TransformComponent>(entity), draw.Position, draw.Rotation);
+				draw.Depth = memo.Depth(entity);
 			}
 
 			std::stable_sort(sprites.begin(), sprites.end(), [](const auto& a, const auto& b)
@@ -325,8 +316,7 @@ namespace Dingo
 			for (auto entity : view)
 			{
 				auto [transform, circle] = view.get<TransformComponent, CircleRendererComponent>(entity);
-				const glm::mat4 world = anyLinks ? Internal::HierarchySystem::WorldTransform2D(m_Data->Registry, entity, transform) : transform.GetTransform();
-				renderer.DrawCircle(world, circle.Color, circle.Thickness, circle.Fade);
+				renderer.DrawCircle(memo.Transform2D(entity, transform), circle.Color, circle.Thickness, circle.Fade);
 			}
 		}
 
@@ -339,10 +329,9 @@ namespace Dingo
 				if (!text.Font || text.Text.empty())
 					continue;
 
-				glm::vec3 position = transform.Position;
+				glm::vec3 position;
 				float rotation;
-				if (anyLinks)
-					Internal::HierarchySystem::WorldPose2D(m_Data->Registry, entity, transform, position, rotation);
+				memo.Pose2D(entity, transform, position, rotation);
 				renderer.DrawText(text.Text, text.Font, position, text.Size, { .Color = text.Color, .Centered = text.Centered });
 			}
 		}
@@ -350,7 +339,9 @@ namespace Dingo
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
-		const bool anyLinks = Internal::HierarchySystem::AnyLinks(m_Data->Registry);
+		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
+		memo.Begin(m_Data->Registry);
+
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
 		for (entt::entity entity : view)
 		{
@@ -358,14 +349,13 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			const glm::mat4 world = anyLinks ? Internal::HierarchySystem::WorldTransform(m_Data->Registry, entity, transform) : transform.GetTransform();
-			renderer.SubmitMesh(mesh.Mesh, world, mesh.Color, mesh.Material);
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material);
 		}
 	}
 
 	void Scene::SubmitLights(Renderer3D& renderer)
 	{
-		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer);
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo);
 	}
 
 	// --- Camera -----------------------------------------------------------------

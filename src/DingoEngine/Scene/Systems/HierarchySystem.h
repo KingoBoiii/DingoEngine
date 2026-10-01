@@ -3,17 +3,17 @@
 // Engine-internal: parent-child links between a scene's entities and the world transforms they
 // produce. Lives under src/ so EnTT stays a private implementation detail.
 
+#include "DingoEngine/Scene/Components.h"
+
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <vector>
 
 namespace Dingo
 {
-
-	struct TransformComponent;
-	struct Transform3DComponent;
 
 	namespace Internal
 	{
@@ -33,9 +33,6 @@ namespace Dingo
 
 		namespace HierarchySystem
 		{
-
-			// False while no entity has ever been linked, so a per-entity reader can skip the lookups.
-			bool AnyLinks(const entt::registry& registry);
 
 			entt::entity GetParent(const entt::registry& registry, entt::entity handle);
 			// Number of ancestors: 0 for a root.
@@ -96,6 +93,68 @@ namespace Dingo
 			void SetWorldXY2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, const glm::vec2& position);
 			void SetWorldRotation2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, float rotation);
 			void SetLocal2DFromWorld(TransformComponent& local, const glm::vec3& parentPosition, float parentRotation, const glm::vec3& position, float rotation);
+
+			// World transforms for a pass that reads many entities. Each linked entity's world is
+			// worked out at most once per pass, root-first, and its children start from it instead of
+			// walking the chain again. Begin() opens a pass and forgets every earlier result, so
+			// nothing outlives the pass that computed it. Every result is bit-identical to the matching
+			// on-demand function above (the same operations in the same order).
+			class WorldMemo
+			{
+			public:
+				void Begin(const entt::registry& registry);
+
+				bool HasParent(entt::entity handle) const;
+				std::uint32_t Depth(entt::entity handle) const;
+
+				glm::mat4 Transform(entt::entity handle, const Transform3DComponent& local); // WorldTransform; `local` is the entity's own
+				const glm::mat4& World(entt::entity handle);                                 // WorldTransform, no local
+				glm::vec3 Position(entt::entity handle);                                     // WorldPosition
+				glm::quat Rotation(entt::entity handle);                                     // WorldRotation
+				glm::vec3 Scale(entt::entity handle);                                        // WorldScale
+				void Pose(entt::entity handle, const Transform3DComponent& local, glm::vec3& position, glm::quat& rotation, glm::vec3& scale);
+
+				void Pose2D(entt::entity handle, const TransformComponent& local, glm::vec3& position, float& rotation);
+				void Pose2D(entt::entity handle, glm::vec3& position, float& rotation);
+				glm::mat4 Transform2D(entt::entity handle, const TransformComponent& local); // WorldTransform2D
+
+				// The on-demand setters, reading the parent's world from this pass. Only the entity's own
+				// results are forgotten, not its descendants', so within one pass write parents before
+				// reading their descendants (write-back goes shallowest first for this reason).
+				void SetWorldPosition(entt::entity handle, Transform3DComponent& local, const glm::vec3& position);
+				void SetWorldRotation(entt::entity handle, Transform3DComponent& local, const glm::quat& rotation);
+				void SetWorldXY2D(entt::entity handle, TransformComponent& local, const glm::vec2& position);
+				void SetWorldRotation2D(entt::entity handle, TransformComponent& local, float rotation);
+
+			private:
+				struct Entry3D
+				{
+					glm::mat4 World;
+					std::uint32_t Pass = 0;
+				};
+
+				struct Entry2D
+				{
+					glm::vec3 Position;
+					float Rotation;
+					std::uint32_t Pass = 0;
+				};
+
+				entt::entity ParentOf(entt::entity handle) const;
+				std::size_t Slot(entt::entity handle);
+				glm::mat4 LocalOf(entt::entity handle) const;
+				void World2D(entt::entity handle, glm::vec3& position, float& rotation);
+				void Forget(entt::entity handle);
+
+			private:
+				const entt::storage_for_t<HierarchyComponent>* m_Links = nullptr;
+				const entt::storage_for_t<Transform3DComponent>* m_Transforms3D = nullptr;
+				const entt::storage_for_t<TransformComponent>* m_Transforms2D = nullptr;
+				std::vector<Entry3D> m_World3D;
+				std::vector<Entry2D> m_World2D;
+				std::vector<entt::entity> m_Chain;
+				std::uint32_t m_Pass = 0;
+			};
 
 		}
 

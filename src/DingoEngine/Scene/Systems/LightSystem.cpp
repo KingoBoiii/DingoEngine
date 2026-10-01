@@ -8,8 +8,9 @@
 namespace Dingo::Internal::LightSystem
 {
 
-	void SubmitLights(const entt::registry& registry, Renderer3D& renderer)
+	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
 	{
+		memo.Begin(registry);
 		bool hasLight = false;
 		glm::vec3 ambient(0.0f);
 		uint32_t directionalCount = 0;
@@ -40,7 +41,7 @@ namespace Dingo::Internal::LightSystem
 		{
 			hasLight = true;
 			if (light.Enabled && registry.all_of<Transform3DComponent>(entity))
-				renderer.SubmitLight(PointLight{ HierarchySystem::WorldPosition(registry, entity), light.Color, light.Intensity, light.Range });
+				renderer.SubmitLight(PointLight{ memo.Position(entity), light.Color, light.Intensity, light.Range });
 		}
 
 		for (auto [entity, light] : registry.view<const SpotLightComponent>().each())
@@ -50,8 +51,8 @@ namespace Dingo::Internal::LightSystem
 				continue;
 
 			SpotLight spot;
-			spot.Position = HierarchySystem::WorldPosition(registry, entity);
-			spot.Direction = HierarchySystem::WorldRotation(registry, entity) * light.Direction;
+			spot.Position = memo.Position(entity);
+			spot.Direction = memo.Rotation(entity) * light.Direction;
 			spot.Color = light.Color;
 			spot.Intensity = light.Intensity;
 			spot.Range = light.Range;

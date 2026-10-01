@@ -38,6 +38,10 @@ namespace Dingo
 	inline constexpr float SENTRY_EMISSIVE        = 1.6f;
 	inline constexpr float SENTRY_LIGHT_INTENSITY = 1.8f;
 	inline constexpr float SENTRY_LIGHT_RANGE     = 5.0f;
+	inline constexpr glm::vec3 SENTRY_SCALE       = { 0.9f, 1.6f, 0.9f };
+	// World units from the sentry's centre: just proud of its front face (half depth 0.45).
+	inline constexpr glm::vec3 SENTRY_EYE_OFFSET  = { 0.0f, 0.4f, 0.5f };
+	inline constexpr float SENTRY_EYE_SIZE        = 0.35f;
 
 	// --- Course geometry --------------------------------------------------------
 	inline constexpr float PLATFORM_THICKNESS = 0.6f;

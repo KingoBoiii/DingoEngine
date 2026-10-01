@@ -5,6 +5,8 @@
 
 #include "DingoEngine/Audio/AudioTypes.h"
 
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
+
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
@@ -24,7 +26,7 @@ namespace Dingo
 			// Pushes every spatialized source's position and the primary listener's
 			// position/orientation to the engine. Call once per frame, after transforms
 			// are final.
-			void SyncListenerAndSources(entt::registry& registry);
+			void SyncListenerAndSources(entt::registry& registry, HierarchySystem::WorldMemo& memo);
 
 			// (Re)starts the entity's source from its component params. Stops whatever it
 			// was already playing first. No-op without an AudioSourceComponent or Clip.

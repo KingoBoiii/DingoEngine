@@ -140,6 +140,7 @@ namespace Dingo
 		PingPongPath m_Path;
 		float m_Cooldown = 0.0f;
 		glm::vec3 m_Facing{ 0.0f, 0.0f, 1.0f };
+		Entity m_Eye;
 	};
 
 	// HUD: a 2D orthographic overlay (orb counter, hints, alert flash) drawn on top of the

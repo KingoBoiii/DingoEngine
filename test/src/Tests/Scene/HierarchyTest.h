@@ -51,7 +51,12 @@ namespace Dingo
 		// The muzzle's world position from the test's own arithmetic, not the engine's.
 		glm::vec2 ExpectedMuzzlePosition() const;
 
-		enum class View { Scene3D, Scene2D, Probe2D };
+		// The 10k-entity timing case (HierarchyTestStress.cpp): the same depth-4 forest of meshes,
+		// parented with spinning parents, or flattened into roots at the same world transforms.
+		void BuildStressScene(bool parented);
+		void UpdateStress(float deltaTime);
+
+		enum class View { Scene3D, Scene2D, Probe2D, Stress, StressFlat };
 
 	private:
 		struct CheckResult
@@ -131,6 +136,18 @@ namespace Dingo
 		glm::vec3 m_LastPaddle2DPosition{ 0.0f };
 		glm::vec3 m_LastPlatform2DPosition{ 0.0f };
 		float m_MaxFaller2DGap = 0.0f;
+
+		Scene* m_StressScene = nullptr;
+		std::vector<Entity> m_StressSpinners;
+		uint32_t m_StressEntityCount = 0;
+		float  m_StressTime = 0.0f;
+		uint32_t m_StressFrames = 0;
+		double m_StressFrameMs = 0.0;
+		double m_StressUpdateMs = 0.0;
+		double m_StressRenderMs = 0.0;
+		double m_StressEndSceneMs = 0.0;
+		uint32_t m_StressDroppedMeshes = 0;
+		std::string m_StressResult;
 
 		PerspectiveCamera m_Camera;
 		float m_OrbitAngle = 25.0f;

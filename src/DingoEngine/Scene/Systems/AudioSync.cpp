@@ -27,9 +27,24 @@ namespace Dingo
 				return glm::vec3(position.x, position.y, 0.0f);
 			}
 
-			void SyncListenerAndSources(entt::registry& registry)
+			namespace
+			{
+				glm::vec3 PositionOf(const entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo& memo)
+				{
+					if (registry.all_of<Transform3DComponent>(handle))
+						return memo.Position(handle);
+
+					glm::vec3 position;
+					float rotation;
+					memo.Pose2D(handle, position, rotation);
+					return glm::vec3(position.x, position.y, 0.0f);
+				}
+			}
+
+			void SyncListenerAndSources(entt::registry& registry, HierarchySystem::WorldMemo& memo)
 			{
 				AudioEngine& audio = Application::Get().GetAudioEngine();
+				memo.Begin(registry);
 
 				auto sourceView = registry.view<AudioSourceRuntime, AudioSourceComponent>();
 				for (entt::entity handle : sourceView)
@@ -37,7 +52,7 @@ namespace Dingo
 					if (!sourceView.get<AudioSourceComponent>(handle).Spatialized)
 						continue;
 
-					audio.SetPosition(sourceView.get<AudioSourceRuntime>(handle).Sound, PositionOf(registry, handle));
+					audio.SetPosition(sourceView.get<AudioSourceRuntime>(handle).Sound, PositionOf(registry, handle, memo));
 				}
 
 				// Primary listener search mirrors CameraUtils::FindPrimaryCamera: first
@@ -62,18 +77,18 @@ namespace Dingo
 
 				if (registry.all_of<Transform3DComponent>(listenerHandle))
 				{
-					audio.SetListenerPosition(HierarchySystem::WorldPosition(registry, listenerHandle));
+					audio.SetListenerPosition(memo.Position(listenerHandle));
 
 					// Orientation only comes from a 3D transform (same convention as the
 					// perspective camera view in CameraUtils::ViewProjection: the entity's local
 					// -Z is forward, +Y is up). A 2D listener has no rotation to derive this
 					// from, so it keeps whatever orientation the engine already has.
-					const glm::quat rotation = HierarchySystem::WorldRotation(registry, listenerHandle);
+					const glm::quat rotation = memo.Rotation(listenerHandle);
 					audio.SetListenerOrientation(rotation * glm::vec3(0.0f, 0.0f, -1.0f), rotation * glm::vec3(0.0f, 1.0f, 0.0f));
 				}
 				else
 				{
-					audio.SetListenerPosition(PositionOf(registry, listenerHandle));
+					audio.SetListenerPosition(PositionOf(registry, listenerHandle, memo));
 				}
 			}
 

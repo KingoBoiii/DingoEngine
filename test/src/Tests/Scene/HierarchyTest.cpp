@@ -149,14 +149,20 @@ namespace Dingo
 		m_Paddle2DTravel = 0.0f;
 		m_MaxFaller2DGap = 0.0f;
 
-		// --hierarchy=2d shows the 2D section, --hierarchy=probe2d frames the muzzle sprite at the centre.
+		// --hierarchy=2d shows the 2D section, --hierarchy=probe2d frames the muzzle sprite at the
+		// centre, --hierarchy=stress / stressflat time 10k entities parented / flat.
 		if (auto view = Application::Get().GetCommandLineArgs().Get("hierarchy"))
-			m_View = *view == "2d" ? View::Scene2D : *view == "probe2d" ? View::Probe2D : View::Scene3D;
+		{
+			m_View = *view == "2d" ? View::Scene2D : *view == "probe2d" ? View::Probe2D
+				: *view == "stress" ? View::Stress : *view == "stressflat" ? View::StressFlat : View::Scene3D;
+		}
 
 		RunStructuralChecks();
 		RunStructuralChecks2D();
 		BuildScene();
 		BuildScene2D();
+		if (m_View == View::Stress || m_View == View::StressFlat)
+			BuildStressScene(m_View == View::Stress);
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 200.0f);
 	}
@@ -692,6 +698,12 @@ namespace Dingo
 			RunLightProbe();
 		}
 
+		if (m_StressScene)
+		{
+			UpdateStress(deltaTime);
+			return;
+		}
+
 		Animate(step);
 		Animate2D(step);
 		m_Scene->OnUpdate(step);
@@ -737,6 +749,14 @@ namespace Dingo
 		m_Scene2D = nullptr;
 		DestroyAndDelete(m_Font);
 		m_Fallers2D.clear();
+		delete m_StressScene;
+		m_StressScene = nullptr;
+		m_StressSpinners.clear();
+		m_StressTime = 0.0f;
+		m_StressFrames = 0;
+		m_StressFrameMs = m_StressUpdateMs = m_StressRenderMs = m_StressEndSceneMs = 0.0;
+		m_StressDroppedMeshes = 0;
+		m_StressResult.clear();
 
 		delete m_HullMesh;
 		delete m_TurretMesh;
@@ -773,13 +793,20 @@ namespace Dingo
 		if (!m_AutoOrbit)
 			ImGui::SliderFloat("Orbit", &m_OrbitAngle, 0.0f, 360.0f);
 
-		int view = static_cast<int>(m_View);
-		ImGui::RadioButton("3D", &view, static_cast<int>(View::Scene3D));
-		ImGui::SameLine();
-		ImGui::RadioButton("2D", &view, static_cast<int>(View::Scene2D));
-		ImGui::SameLine();
-		ImGui::RadioButton("2D probe", &view, static_cast<int>(View::Probe2D));
-		m_View = static_cast<View>(view);
+		if (m_StressScene)
+		{
+			ImGui::TextWrapped("Stress: %s", m_StressResult.empty() ? "measuring..." : m_StressResult.c_str());
+		}
+		else
+		{
+			int view = static_cast<int>(m_View);
+			ImGui::RadioButton("3D", &view, static_cast<int>(View::Scene3D));
+			ImGui::SameLine();
+			ImGui::RadioButton("2D", &view, static_cast<int>(View::Scene2D));
+			ImGui::SameLine();
+			ImGui::RadioButton("2D probe", &view, static_cast<int>(View::Probe2D));
+			m_View = static_cast<View>(view);
+		}
 		if (m_View == View::Probe2D)
 			ImGui::TextWrapped("The magenta muzzle must sit in the centre: the view is placed by the test's own arithmetic.");
 
@@ -789,7 +816,7 @@ namespace Dingo
 			const ImVec4 color = check.Passed ? ImVec4(0.3f, 0.9f, 0.3f, 1.0f) : ImVec4(0.95f, 0.3f, 0.3f, 1.0f);
 			ImGui::TextColored(color, "%s %s", check.Passed ? "[PASS]" : "[FAIL]", check.Name.c_str());
 		}
-		if (!m_PhysicsChecksDone)
+		if (!m_PhysicsChecksDone && !m_StressScene)
 			ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "[....] physics checks run after %.0f s of animation", k_PhysicsCheckSeconds);
 	}
 

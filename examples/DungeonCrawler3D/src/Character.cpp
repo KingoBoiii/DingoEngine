@@ -60,6 +60,15 @@ namespace
 		while (a < -glm::pi<float>()) a += twoPi;
 		return a;
 	}
+
+	Dingo::Entity MakeNode(Dingo::Scene& scene, const char* name, Dingo::Entity parent, const glm::vec3& offset)
+	{
+		Dingo::Entity entity = scene.CreateEntity(name);
+		entity.AddComponent<Dingo::Transform3DComponent>(Dingo::Transform3DComponent(offset));
+		if (parent)
+			entity.SetParent(parent, false);
+		return entity;
+	}
 }
 
 namespace Dingo
@@ -69,38 +78,32 @@ namespace Dingo
 		if (m_Created)
 			return;
 
-		m_HasSword = withSword;
+		m_Root = MakeNode(scene, "Char_Root", {}, glm::vec3(0.0f));
+		m_Joints[HipL] = MakeNode(scene, "Char_HipL", m_Root, { -LEG_X, HIP_Y, 0.0f });
+		m_Joints[HipR] = MakeNode(scene, "Char_HipR", m_Root, { LEG_X, HIP_Y, 0.0f });
+		m_Joints[ShoulderL] = MakeNode(scene, "Char_ShoulderL", m_Root, { -ARM_X, SHOULDER_Y, 0.0f });
+		m_Joints[ShoulderR] = MakeNode(scene, "Char_ShoulderR", m_Root, { ARM_X, SHOULDER_Y, 0.0f });
 
-		auto setup = [&](Part part, Mesh* mesh, const glm::vec3& center, const glm::vec3& pivot,
-			const glm::vec4& col, const char* name)
+		auto part = [&](Part id, Mesh* mesh, Entity parent, const glm::vec3& offset, const glm::vec4& tint, const char* name)
 		{
-			Bone& bone = m_Bones[part];
-			bone.entity = scene.CreateEntity(name);
-			bone.entity.AddComponent<Transform3DComponent>();
-			bone.entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, col));
-			bone.restCenter = center;
-			bone.pivot = pivot;
-			bone.baseColor = col;
-			bone.jointRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+			m_Parts[id] = MakeNode(scene, name, parent, offset);
+			m_Parts[id].AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, tint));
+			m_BaseColors[id] = tint;
 		};
 
-		// Rigid parts: pivot == restCenter (no joint swing).
-		setup(Head, meshes.Head, { 0.0f, HEAD_Y, 0.0f }, { 0.0f, HEAD_Y, 0.0f }, color, "Char_Head");
-		setup(Torso, meshes.Torso, { 0.0f, TORSO_Y, 0.0f }, { 0.0f, TORSO_Y, 0.0f }, color, "Char_Torso");
+		part(Head, meshes.Head, m_Root, { 0.0f, HEAD_Y, 0.0f }, color, "Char_Head");
+		part(Torso, meshes.Torso, m_Root, { 0.0f, TORSO_Y, 0.0f }, color, "Char_Torso");
+		part(LegL, meshes.Leg, m_Joints[HipL], { 0.0f, LEG_ORIGIN_Y - HIP_Y, 0.0f }, color, "Char_LegL");
+		part(LegR, meshes.Leg, m_Joints[HipR], { 0.0f, LEG_ORIGIN_Y - HIP_Y, 0.0f }, color, "Char_LegR");
+		part(ArmL, meshes.Arm, m_Joints[ShoulderL], { 0.0f, ARM_ORIGIN_Y - SHOULDER_Y, 0.0f }, color, "Char_ArmL");
+		part(ArmR, meshes.Arm, m_Joints[ShoulderR], { 0.0f, ARM_ORIGIN_Y - SHOULDER_Y, 0.0f }, color, "Char_ArmR");
 
-		// Legs pivot about the hips, arms about the shoulders.
-		setup(LegL, meshes.Leg, { -LEG_X, LEG_ORIGIN_Y, 0.0f }, { -LEG_X, HIP_Y, 0.0f }, color, "Char_LegL");
-		setup(LegR, meshes.Leg, { LEG_X, LEG_ORIGIN_Y, 0.0f }, { LEG_X, HIP_Y, 0.0f }, color, "Char_LegR");
-		setup(ArmL, meshes.Arm, { -ARM_X, ARM_ORIGIN_Y, 0.0f }, { -ARM_X, SHOULDER_Y, 0.0f }, color, "Char_ArmL");
-		setup(ArmR, meshes.Arm, { ARM_X, ARM_ORIGIN_Y, 0.0f }, { ARM_X, SHOULDER_Y, 0.0f }, color, "Char_ArmR");
-
-		if (m_HasSword && meshes.Sword)
+		if (withSword && meshes.Sword)
 		{
-			// Grip at the right hand (so it shares the arm's swing about the shoulder),
-			// with a fixed grip tilt so the blade angles out of the fist instead of lying
-			// flat against the arm.
-			setup(Sword, meshes.Sword, { ARM_X, HAND_Y, 0.0f }, { ARM_X, SHOULDER_Y, 0.0f }, STEEL, "Char_Sword");
-			m_Bones[Sword].meshRot = glm::angleAxis(SWORD_GRIP_TILT, X_AXIS);
+			// Grip at the right hand, under the shoulder joint so it swings with the arm, with a
+			// fixed grip tilt so the blade angles out of the fist instead of lying flat against it.
+			part(Sword, meshes.Sword, m_Joints[ShoulderR], { 0.0f, HAND_Y - SHOULDER_Y, 0.0f }, STEEL, "Char_Sword");
+			m_Parts[Sword].GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(SWORD_GRIP_TILT, X_AXIS);
 		}
 
 		m_Created = true;
@@ -111,12 +114,14 @@ namespace Dingo
 		if (!m_Created)
 			return;
 
-		for (int i = 0; i < PartCount; ++i)
-		{
-			if (m_Bones[i].entity.IsValid())
-				m_Bones[i].entity.Destroy();
-			m_Bones[i].entity = {};
-		}
+		if (m_Root.IsValid())
+			m_Root.Destroy();
+
+		m_Root = {};
+		for (Entity& joint : m_Joints)
+			joint = {};
+		for (Entity& part : m_Parts)
+			part = {};
 		m_Created = false;
 	}
 
@@ -136,25 +141,9 @@ namespace Dingo
 		m_HitTime = HIT_DUR;
 	}
 
-	void Character::PlaceBone(Bone& bone, const glm::vec3& feet, const glm::quat& yaw, float bobY)
-	{
-		if (!bone.entity.IsValid())
-			return;
-
-		const glm::vec3 local = bone.pivot + bone.jointRot * (bone.restCenter - bone.pivot);
-		const glm::vec3 worldPos = feet + glm::vec3(0.0f, bobY, 0.0f) + yaw * local;
-
-		Transform3DComponent& transform = bone.entity.GetComponent<Transform3DComponent>();
-		transform.Position = worldPos;
-		transform.Rotation = yaw * bone.jointRot * bone.meshRot;
-
-		bone.entity.GetComponent<MeshRendererComponent>().Color =
-			glm::mix(bone.baseColor, m_FlashColor, m_FlashAmount);
-	}
-
 	void Character::Update(const glm::vec3& feetPosition, float targetYaw, float walkSpeed01, float deltaTime)
 	{
-		if (!m_Created)
+		if (!m_Created || !m_Root.IsValid())
 			return;
 
 		walkSpeed01 = glm::clamp(walkSpeed01, 0.0f, 1.0f);
@@ -172,12 +161,7 @@ namespace Dingo
 
 		// Gait: legs swing opposite each other; the free (left) arm counter-swings, while
 		// the weapon (right) arm holds a steady ready pose and only sways a little.
-		m_Bones[LegL].jointRot = glm::angleAxis(s * legAmp, X_AXIS);
-		m_Bones[LegR].jointRot = glm::angleAxis(-s * legAmp, X_AXIS);
-		m_Bones[ArmL].jointRot = glm::angleAxis(-s * armAmp, X_AXIS);
-		m_Bones[ArmR].jointRot = glm::angleAxis(ARM_R_HOLD + s * armAmp * ARM_R_SWAY, X_AXIS);
-		m_Bones[Head].jointRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-		m_Bones[Torso].jointRot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+		float rightArm = ARM_R_HOLD + s * armAmp * ARM_R_SWAY;
 
 		// Attack: wind the weapon arm up over the shoulder, snap it down/forward, then
 		// recover to the ready pose — a three-phase chop instead of one even sweep.
@@ -187,46 +171,50 @@ namespace Dingo
 			m_AttackTime = std::max(0.0f, m_AttackTime - deltaTime);
 			const float p = 1.0f - (m_AttackTime / ATTACK_DUR); // 0 -> 1
 
-			float chop;
 			if (p < ANTIC_END)
 			{
 				const float u = p / ANTIC_END;
-				chop = glm::mix(ARM_R_HOLD, RAISE_ANGLE, glm::smoothstep(0.0f, 1.0f, u));
+				rightArm = glm::mix(ARM_R_HOLD, RAISE_ANGLE, glm::smoothstep(0.0f, 1.0f, u));
 			}
 			else if (p < STRIKE_END)
 			{
 				const float u = (p - ANTIC_END) / (STRIKE_END - ANTIC_END);
-				chop = glm::mix(RAISE_ANGLE, STRIKE_ANGLE, glm::smoothstep(0.0f, 1.0f, u));
+				rightArm = glm::mix(RAISE_ANGLE, STRIKE_ANGLE, glm::smoothstep(0.0f, 1.0f, u));
 			}
 			else
 			{
 				const float u = (p - STRIKE_END) / (1.0f - STRIKE_END);
-				chop = glm::mix(STRIKE_ANGLE, ARM_R_HOLD, glm::smoothstep(0.0f, 1.0f, u));
+				rightArm = glm::mix(STRIKE_ANGLE, ARM_R_HOLD, glm::smoothstep(0.0f, 1.0f, u));
 			}
-			m_Bones[ArmR].jointRot = glm::angleAxis(chop, X_AXIS);
 
 			// Body leans forward into the swing, peaking around the strike.
 			attackLean = ATTACK_LUNGE * std::sin(p * glm::pi<float>());
 		}
 
-		// The sword always tracks the right arm (rests with it, swings with the chop).
-		if (m_HasSword)
-			m_Bones[Sword].jointRot = m_Bones[ArmR].jointRot;
+		m_Joints[HipL].GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(s * legAmp, X_AXIS);
+		m_Joints[HipR].GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(-s * legAmp, X_AXIS);
+		m_Joints[ShoulderL].GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(-s * armAmp, X_AXIS);
+		m_Joints[ShoulderR].GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(rightArm, X_AXIS);
 
 		// A little vertical bounce: a step bob while walking, a gentle breath while idle.
 		const float walkBob = 0.030f * walkSpeed01 * std::abs(std::sin(m_WalkPhase));
 		const float idleBob = 0.010f * (1.0f - walkSpeed01) * std::sin(m_WalkPhase * 0.5f);
-		const float bob = walkBob + idleBob;
 
 		// Hit reaction: the whole body recoils backward about the feet, decaying fast.
 		if (m_HitTime > 0.0f)
 			m_HitTime = std::max(0.0f, m_HitTime - deltaTime);
 		const float hitLean = HIT_LEAN * (m_HitTime / HIT_DUR); // peak -> 0 over the window
 
-		// Root orientation = facing, then the body lean (attack lunge forward + hit recoil
-		// backward) in the character's local frame.
-		const glm::quat root = glm::angleAxis(m_Yaw, Y_AXIS) * glm::angleAxis(attackLean + hitLean, X_AXIS);
+		// The root stands at the feet: facing, then the body lean (attack lunge forward + hit
+		// recoil backward) in the character's local frame.
+		Transform3DComponent& root = m_Root.GetComponent<Transform3DComponent>();
+		root.Position = feetPosition + glm::vec3(0.0f, walkBob + idleBob, 0.0f);
+		root.Rotation = glm::angleAxis(m_Yaw, Y_AXIS) * glm::angleAxis(attackLean + hitLean, X_AXIS);
+
 		for (int i = 0; i < PartCount; ++i)
-			PlaceBone(m_Bones[i], feetPosition, root, bob);
+		{
+			if (m_Parts[i].IsValid())
+				m_Parts[i].GetComponent<MeshRendererComponent>().Color = glm::mix(m_BaseColors[i], m_FlashColor, m_FlashAmount);
+		}
 	}
 }
