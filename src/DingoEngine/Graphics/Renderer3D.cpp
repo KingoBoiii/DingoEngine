@@ -86,6 +86,21 @@ namespace
 	{
 		return intensity > 0.0f && range > 0.0f && IsFinite(position) && IsFinite(color * intensity);
 	}
+
+	bool BindsPastSlotZero(const Dingo::Material& material)
+	{
+		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
+		{
+			if (material.GetTexture(slot))
+				return true;
+		}
+		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
+		{
+			if (material.GetSampler(slot))
+				return true;
+		}
+		return false;
+	}
 }
 
 namespace Dingo
@@ -210,7 +225,16 @@ namespace Dingo
 		for (Material* material : m_DrawOrder)
 		{
 			if (material->GetShader() == m_Shader)
+			{
+				if (!m_LitSlotsWarned && BindsPastSlotZero(*material))
+				{
+					const std::string& name = material->GetParams().DebugName;
+					DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; its draws are invalid until that slot is cleared.",
+						name.empty() ? "<unnamed>" : name.c_str());
+					m_LitSlotsWarned = true;
+				}
 				PrepareLitMaterial(material);
+			}
 
 			MaterialBatch& matBatch = m_Batches[material];
 			for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)

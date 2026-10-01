@@ -63,6 +63,9 @@ namespace Dingo
 
 		// ── Resource bindings ─────────────────────────────────────────────────
 
+		static constexpr uint32_t k_MaxTextureSlots = 16;
+		static constexpr uint32_t k_MaxSamplerSlots = 16;
+
 		// A change rebuilds the material's cached pipelines at its next draw, so avoid swapping a
 		// slot every frame. Changes are detected by pointer: when a slot's texture is freed, clear
 		// the slot before putting a new texture in it, which may reuse the freed address.
@@ -125,8 +128,6 @@ namespace Dingo
 	private:
 		MaterialParams m_Params;
 
-		static constexpr uint32_t k_MaxTextureSlots = 16;
-		static constexpr uint32_t k_MaxSamplerSlots = 16;
 		Texture* m_Textures[k_MaxTextureSlots] = {};
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
 

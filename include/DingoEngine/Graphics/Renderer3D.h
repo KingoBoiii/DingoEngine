@@ -133,9 +133,11 @@ namespace Dingo
 		// A material lit like the default one but with its own emissive, Roughness and Specular
 		// (see MaterialParams) and an optional albedo texture in texture slot 0, multiplied by
 		// the mesh colour; an empty slot 0 draws white, and an empty sampler slot 0 uses the clamp
-		// sampler. Shader and CullMode are set for you: lit materials draw both faces, because
-		// front-face winding differs between the Vulkan and D3D back-ends. The caller owns the
-		// material and must delete it before the renderer shuts down.
+		// sampler. Slot 0 is the only one the lit shader has: a texture or sampler in any other
+		// slot is an error the renderer warns about once. Shader and CullMode are set for you:
+		// lit materials draw both faces, because front-face winding differs between the Vulkan
+		// and D3D back-ends. The caller owns the material and must delete it before the renderer
+		// shuts down.
 		Material* CreateLitMaterial(MaterialParams params) const;
 
 		// The material meshes with no material of their own are drawn with, for changing their
@@ -230,6 +232,7 @@ namespace Dingo
 		bool m_DirectionalOverflowWarned = false;
 		bool m_LocalOverflowWarned = false;
 		bool m_PendingOverflowWarned = false;
+		bool m_LitSlotsWarned = false;
 
 		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
 		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.
