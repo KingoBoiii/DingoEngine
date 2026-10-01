@@ -156,11 +156,14 @@ namespace Dingo
 			uint32_t DirectionalLights = 0; // directional lights the scene was lit by, the default light included
 			uint32_t LocalLights = 0;       // point and spot lights the scene was lit by
 			uint32_t CulledLights = 0;      // point and spot lights whose range can't reach anything in view
-			uint32_t DroppedLights = 0;     // lights submitted past the budget
+			uint32_t DroppedLights = 0;     // directional lights past k_MaxDirectionalLights, point and spot lights past the budget
 		};
 
 		const Statistics& GetStatistics() const { return m_Statistics; }
 		const Renderer3DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
+
+		// Point and spot lights a scene can draw: Capabilities.MaxLocalLights, capped at k_MaxLocalLights.
+		uint32_t GetLocalLightBudget() const;
 
 	private:
 		Renderer3D(const Renderer3DParams& params) : m_Params(params) {}

@@ -30,7 +30,7 @@ namespace Dingo::UI
 	namespace
 	{
 		// "label  [=====      ] used / capacity" — a labelled usage bar for a
-		// per-scene budget (the 3D vertex/index caps). ImGui tints the fill.
+		// per-scene budget. ImGui tints the fill.
 		void BudgetBar(const char* label, uint32_t used, uint32_t capacity)
 		{
 			const float fraction = capacity > 0 ? static_cast<float>(used) / static_cast<float>(capacity) : 0.0f;
@@ -168,6 +168,18 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		BudgetBar("Vertices", stats3D.VertexCount, caps3D.MaxVertices);
 		BudgetBar("Indices", stats3D.IndexCount, caps3D.MaxIndices);
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D lights  (most recent scene)");
+		ImGui::Separator();
+		ImGui::Text("Directional: %u / %u", stats3D.DirectionalLights, Renderer3D::k_MaxDirectionalLights);
+		BudgetBar("Point/spot", stats3D.LocalLights, renderer3D.GetLocalLightBudget());
+		ImGui::Text("Out of view: %u  (range can't reach the screen)", stats3D.CulledLights);
+		if (stats3D.DroppedLights > 0)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+				"Dropped    : %u  (past a light limit; the log says which)", stats3D.DroppedLights);
+		else
+			ImGui::Text("Dropped    : 0");
 	}
 
 	void RendererStatsWindow(bool* open)

@@ -424,6 +424,11 @@ namespace Dingo
 			m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
 	}
 
+	uint32_t Renderer3D::GetLocalLightBudget() const
+	{
+		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
+	}
+
 	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
 	{
 		m_Params.LightDirection = direction;
@@ -467,7 +472,7 @@ namespace Dingo
 		}
 
 		const uint32_t visibleCount = static_cast<uint32_t>(m_VisibleLocalLights.size());
-		const uint32_t budget = std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
+		const uint32_t budget = GetLocalLightBudget();
 		uint32_t localCount = visibleCount;
 		if (visibleCount > budget)
 		{
