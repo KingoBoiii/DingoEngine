@@ -268,8 +268,10 @@ namespace Dingo
 			uint32_t ChunksInUse = 0;
 			bool OverflowWarned = false;
 			bool Enqueued = false; // already in m_DrawOrder for the scene in progress
+			uint32_t IdleScenes = 0;
 		};
 		std::unordered_map<Material*, MaterialBatch> m_Batches;
+		static constexpr uint32_t k_MaxIdleBatchScenes = 300;
 
 		// Materials in the order they were first submitted to this scene. Draw order has to
 		// come from here, not from the map: unordered_map iteration follows pointer hashing,

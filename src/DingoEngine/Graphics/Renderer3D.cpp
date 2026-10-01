@@ -200,9 +200,19 @@ namespace Dingo
 		m_Statistics = {};
 
 		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
-		// just last scene's: SubmitMesh takes a spare chunk before growing.
-		for (auto& [material, matBatch] : m_Batches)
+		// just last scene's: SubmitMesh takes a spare chunk before growing. Nothing tells the
+		// renderer when a material is deleted, so a batch that has sat unused for a while is
+		// released instead, or a deleted material's storage would be held forever.
+		for (auto it = m_Batches.begin(); it != m_Batches.end();)
 		{
+			MaterialBatch& matBatch = it->second;
+			matBatch.IdleScenes = matBatch.Enqueued ? 0 : matBatch.IdleScenes + 1;
+			if (matBatch.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				it = m_Batches.erase(it);
+				continue;
+			}
+
 			for (MeshChunk& chunk : matBatch.Chunks)
 			{
 				chunk.Vertices.clear();
@@ -211,6 +221,7 @@ namespace Dingo
 			matBatch.ChunksInUse = 0;
 			matBatch.OverflowWarned = false;
 			matBatch.Enqueued = false;
+			++it;
 		}
 		m_DrawOrder.clear();
 		m_SceneActive = true;
