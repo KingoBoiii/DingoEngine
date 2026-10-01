@@ -14,6 +14,7 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games; supports both 2D and 3D entities (ECS backend kept internal)
 - **2D Physics** — Box2D-backed rigid-body simulation wired into the ECS (`RigidBody2D` / `BoxCollider2D` / `CircleCollider2D` components, gravity, forces/impulses; physics backend kept internal)
 - **3D Physics & Scene** — Jolt-backed `Physics3D`, usable standalone or wired into the ECS (`Transform3D` / `MeshRenderer` / `RigidBody3D` / `Box`+`SphereCollider3D` components), with 3D meshes drawn through `Renderer3D` and a perspective camera (physics backend kept internal)
+- **3D Lighting** — forward-lit `Renderer3D` with coloured directional, point and spot lights (up to 32 point/spot lights per scene, the most relevant picked each frame), ambient light, Blinn-Phong specular, and lit materials with emissive and an albedo texture. Lights are ECS components (`PointLight` / `SpotLight` / `AmbientLight` / `DirectionalLight`), and the lit shader hot-reloads in Debug builds when asset hot-reload is enabled
 
 ## Documentation
 
@@ -26,10 +27,11 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [2D Physics](docs/physics-2d.md) — rigid bodies, colliders, gravity, and forces/impulses
 - [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated, including mesh colliders
 - [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
+- [Lighting](docs/lighting.md) — directional, point and spot lights, the light budget, specular, and lit materials
 
 ## Roadmap
 
-Currently at **v0.6.3**. Every milestone ships with an example game that exercises it — see
+Currently at **v0.7.0**: the lighting engine work is done, its review and example game are in progress. Every milestone ships with an example game that exercises it — see
 [ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3) and what each
 example is built to demonstrate.
 
@@ -41,7 +43,7 @@ example is built to demonstrate.
 | v0.4 | Physics & Collision — Box2D 2D and Jolt 3D, then 3D inside the ECS | `AngryBirds`, `DungeonCrawler3D` | shipped |
 | v0.5 | Audio & Gameplay-Grade Physics — miniaudio, character controller, ray/shape casts | `EchoVault` | shipped |
 | v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
-| **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | *Candlewick* | next |
+| **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | *Candlewick* | engine done, example in progress |
 | v0.8 | Animation & Character Fidelity — transform hierarchy, skinned meshes, clips, blending | *Marionette* | planned |
 | v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
@@ -87,8 +89,8 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `DungeonCrawler` | Top-down 2D slice — tile collision, chasing enemies, melee combat, loot |
 | `SpaceInvaders` | Scene/ECS showcase — EnTT entities and a multi-scene `SceneManager` |
 | `AngryBirds` | 2D physics showcase — slingshot launching, destructible block towers, and pig targets on the Box2D-backed physics world |
-| `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D` |
-| `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play |
+| `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D`; run with `--night` for a dark dungeon lit by a lantern and point-lit treasure |
+| `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play; since v0.7 its orbs and sentries are lit emissive materials that carry point lights |
 | `ArenaShooter` | v0.6 showcase — wave-based top-down shooter driven entirely by the **`AssetManager`**: async loading behind a progress bar, all sprites/audio/fonts via UUID handles, and **live hot-reload** (edit `assets/shaders/background.glsl` or a sprite PNG while it runs) |
 
 ## Project Structure
