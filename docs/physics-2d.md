@@ -98,7 +98,8 @@ scene.OnPhysicsStop();
 `Scene::OnUpdate` runs your `ScriptableEntity` behaviours first (so a script can
 apply forces this frame), then steps the world and copies each body's position and
 rotation onto its `TransformComponent`. Rendering afterwards just draws the synced
-transforms — no extra work needed.
+transforms — no extra work needed. A frame longer than 4/60 s is cut to that for scripts and
+physics alike, so a stall runs the scene slow instead of tunnelling bodies.
 
 Destroying an entity (`Entity::Destroy()` / `Scene::DestroyEntity`) automatically
 releases its physics body and shapes.

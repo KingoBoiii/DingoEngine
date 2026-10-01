@@ -27,6 +27,11 @@ namespace Dingo
 			}
 		}
 
+		// NVRHI's Vulkan backend gives each write of a volatile buffer its own version, recycled only once
+		// it has seen the GPU finish with it; with none free the write is dropped. Up to four frames can look
+		// unfinished: the swap chain's three fence slots, plus NVRHI only polling completion in garbage collection.
+		constexpr uint32_t k_VolatileFramesPending = 4;
+
 	}
 
 	void NvrhiGraphicsBuffer::Initialize()
@@ -43,10 +48,10 @@ namespace Dingo
 			.setIsVolatile(m_Params.IsVolatile)
 			.setByteSize(m_Params.ByteSize);
 
-		if (GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::Vulkan && (bufferDesc.isConstantBuffer || bufferDesc.isVertexBuffer || bufferDesc.isIndexBuffer))
+		if (bufferDesc.isVolatile)
 		{
-			bufferDesc.setMaxVersions(1); // number of automatic versions, only necessary on Vulkan
-		}
+			DE_CORE_ASSERT(m_Params.MaxWritesPerFrame > 0, "A volatile buffer needs MaxWritesPerFrame > 0.");
+			bufferDesc.setMaxVersions(m_Params.MaxWritesPerFrame * Utils::k_VolatileFramesPending);		}
 
 		m_BufferHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBuffer(bufferDesc);
 	}

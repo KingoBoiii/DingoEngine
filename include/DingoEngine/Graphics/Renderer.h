@@ -123,7 +123,7 @@ namespace Dingo
 		**************************************************/
 
 		// Lazily creates (and caches) the pipeline + render pass for the given
-		// vertex layout, uploads dirty uniforms, then draws.
+		// vertex layout, uploads the uniforms (once per frame and after each SetUniform), then draws.
 		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
 
 		/**************************************************

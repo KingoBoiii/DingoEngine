@@ -31,6 +31,7 @@ namespace Dingo
 		SwapChain*   SwapChain      = nullptr;
 		CommandList* CommandList    = nullptr;
 		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
+		uint64_t     FrameIndex     = 0;       // bumped per command-list Begin, so never 0 while recording
 
 		std::thread             RenderThread;
 		std::mutex              Mutex;
@@ -205,6 +206,7 @@ namespace Dingo
 
 	void Renderer::Begin()
 	{
+		++s_Data->FrameIndex;
 		s_Data->CommandList->Begin();
 	}
 
@@ -337,12 +339,12 @@ namespace Dingo
 
 		Framebuffer* target = GetCurrentTarget();
 
-		// Upload uniform data to GPU if it changed since the last draw.
-		if (material->IsUniformDirty() && material->GetUniformBuffer())
+		// The UBO is volatile: it must be written into every frame that binds it, not only when it changed.
+		if (material->GetUniformBuffer() && material->NeedsUniformUpload(s_Data->FrameIndex))
 		{
 			const auto& cpu = material->GetUniformCPUData();
 			s_Data->CommandList->UploadBuffer(material->GetUniformBuffer(), cpu.data(), cpu.size());
-			material->ClearUniformDirty();
+			material->MarkUniformUploaded(s_Data->FrameIndex);
 		}
 
 		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);

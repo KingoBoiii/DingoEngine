@@ -17,7 +17,8 @@ for things that are **wrong or surprising in code that already ships**.
   `IsValidAssetHandle`), K5 (`Debug-ASan` did not link), K7 (`Font::Create` ignored the asset root),
   K8 (assigning a physics component aliased its handle), K9 (`Renderer3D` dropped batch overflow),
   K12 (the swap-chain depth was discarded between render-pass instances) and K13 (the swap-chain
-  colour attachment used `LOAD_OP_NONE`).
+  colour attachment used `LOAD_OP_NONE`). Fixed since v0.6.3: K15 (a long frame dropped 3D bodies
+  through their colliders).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
