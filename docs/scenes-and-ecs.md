@@ -61,8 +61,8 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
 | `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)) — a sun |
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
-| `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled` — light in every direction from the entity's `Transform3DComponent` position |
-| `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled` — a cone of light from the entity's `Transform3DComponent` |
+| `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled` — light in every direction from the entity's `Transform3DComponent` position; `ToLight(transform)` → the `PointLight` it draws as |
+| `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled` — a cone of light from the entity's `Transform3DComponent`; `ToLight(transform)` → the world-space `SpotLight` it draws as |
 
 The four light components are read by the `SceneRenderer` for the 3D pass — see [Lights](#lights-v07).
 

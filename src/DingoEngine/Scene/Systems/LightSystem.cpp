@@ -77,7 +77,7 @@ namespace Dingo::Internal::LightSystem
 
 			hasLight = true;
 			if (light.Enabled)
-				renderer.SubmitLight(PointLight{ transform->Position, light.Color, light.Intensity, light.Range });
+				renderer.SubmitLight(light.ToLight(*transform));
 		}
 
 		for (entt::entity entity : InEntityOrder<SpotLightComponent>(registry))
@@ -88,18 +88,8 @@ namespace Dingo::Internal::LightSystem
 				continue;
 
 			hasLight = true;
-			if (!light.Enabled)
-				continue;
-
-			SpotLight spot;
-			spot.Position = transform->Position;
-			spot.Direction = transform->Rotation * light.Direction;
-			spot.Color = light.Color;
-			spot.Intensity = light.Intensity;
-			spot.Range = light.Range;
-			spot.InnerConeAngle = light.InnerConeAngle;
-			spot.OuterConeAngle = light.OuterConeAngle;
-			renderer.SubmitLight(spot);
+			if (light.Enabled)
+				renderer.SubmitLight(light.ToLight(*transform));
 		}
 
 		if (!hasLight)

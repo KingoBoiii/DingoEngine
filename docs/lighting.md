@@ -203,6 +203,39 @@ cone    = saturate((cos θ - cos Outer) / (cos Inner - cos Outer))²   // spot o
   angle, then squared like the falloff. Equal angles give a nearly hard edge.
 - Directional lights have neither term.
 
+## Gameplay queries
+
+`GetLightAttenuation(light, point)` (`Graphics/Light.h`, for a `PointLight` or a `SpotLight`)
+returns the weight the lit shader gives that light at a world point, from 0 to 1: `falloff` for a
+point light and `falloff * cone` for a spot, each exactly as defined above (both already squared,
+so 0.5625 at half range on a spot's axis). It sets the cone up with the renderer's own code (the
+angle clamps, the direction normalised, a zero direction pointing down), so the cone a game tests
+is the cone the player sees.
+
+- It leaves out the surface's `N.L` and the light's `Color` and `Intensity`: it says how much of
+  the light reaches the point, not how bright a surface there looks.
+- It ignores occlusion. Light passes through walls (no shadows until v0.9), so pair it with a
+  raycast when walls should block.
+- It knows nothing about this frame's budget. A light dropped past `MaxLocalLights`, or refused
+  because too many were submitted, is not drawn, yet still has a weight. A game whose rules depend
+  on a light being seen should keep that light within the budget.
+- A light `SubmitLight` ignores weighs 0 everywhere: `Intensity` or `Range` not above zero, or a
+  non-finite position, colour × intensity, direction or cone angle. An infinite `Range` is
+  accepted, and then the falloff is 1 everywhere.
+
+`PointLightComponent::ToLight(transform)` and `SpotLightComponent::ToLight(transform)` build the
+light `Scene::SubmitLights` draws for a component: the transform's position and, for a spot,
+`Rotation * Direction`. They do not look at `Enabled`; check it yourself.
+
+```cpp
+bool SeesPoint(Entity warden, const glm::vec3& point)
+{
+    const SpotLightComponent& eye = warden.GetComponent<SpotLightComponent>();
+    const SpotLight eyeLight = eye.ToLight(warden.GetComponent<Transform3DComponent>());
+    return eye.Enabled && GetLightAttenuation(eyeLight, point) >= 0.2f;
+}
+```
+
 ## Lit materials
 
 Meshes with no material, and every material from `Renderer3D::CreateLitMaterial`, use the lit

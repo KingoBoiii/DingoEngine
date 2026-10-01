@@ -390,3 +390,22 @@ Docs (C6):
 - Verified: Debug and Distribution build, and so does the whole solution in Debug. Title → Keep →
   Title → Keep rebuilds an identical frame (0 px). Distribution's frame equals Debug's (0 px). Bad
   flag values warn and keep the defaults.
+
+*C1 (engine helper):*
+
+- `GetLightAttenuation(PointLight|SpotLight, point)` in `Light.h`, implemented in
+  `src/DingoEngine/Graphics/Light.cpp`. `ToLight(const Transform3DComponent&)` on the point and spot
+  components is inline in `Components.h`, after `Transform3DComponent` (which is forward-declared
+  above the light components).
+- The shared C++ math is `src/DingoEngine/Graphics/LightMath.h` (`Internal::IsUsableLight`,
+  `Internal::GetLightCone`). The §1 and §4 anchors `Renderer3D.cpp:404-416` and
+  `LightSystem.cpp:95-96` now point at `GetLightCone` and at `ToLight`. Both `SubmitLight` overloads
+  share a private `SubmitLocalLight` template.
+- A spot never weighs exactly 1: on its axis the weight is falloff², and at the light's own
+  position the shader normalises a zero vector. The checks test 0.5625 at half range instead.
+- The helper doesn't know the frame's budget. A light dropped past `MaxLocalLights` still has a
+  weight, which is why D4 keeps gameplay lights out of the LOD pool. Documented in `docs/lighting.md`.
+- Verified: 23 Lighting Test checks PASS (13 existing + 10 new). Disabling the usable-light guard
+  makes the rejection check FAIL, and dropping the square on falloff fails five others. The default,
+  lights, overbudget, materials, both entities modes and the batch test are 0 px different from
+  the build before C1.
