@@ -253,12 +253,18 @@ namespace Dingo
 		{
 			if (IsLitShader(material->GetShader()))
 			{
-				if (!m_LitSlotsWarned && BindsPastSlotZero(*material))
+				// The binding set would name bindings the shader's layout lacks, which Vulkan does
+				// not reject: drawing it is undefined behaviour, so the material is skipped.
+				if (BindsPastSlotZero(*material))
 				{
-					const std::string& name = material->GetParams().DebugName;
-					DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; its draws are invalid until that slot is cleared.",
-						name.empty() ? "<unnamed>" : name.c_str());
-					m_LitSlotsWarned = true;
+					if (!m_LitSlotsWarned)
+					{
+						const std::string& name = material->GetParams().DebugName;
+						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+							name.empty() ? "<unnamed>" : name.c_str());
+						m_LitSlotsWarned = true;
+					}
+					continue;
 				}
 				PrepareLitMaterial(material);
 			}

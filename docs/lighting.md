@@ -229,7 +229,7 @@ delete lamp;
   skipped entirely.
 - **Albedo texture:** `material->SetTexture(0, texture)` and `SetSampler(0, sampler)` multiply into
   the mesh colour. Slot 0 is the only slot the lit shader has: a texture or sampler in another slot
-  is an error the renderer warns about once. An empty slot 0 draws white with the clamp sampler.
+  keeps the material from being drawn, with a one-time warning. An empty slot 0 draws white with the clamp sampler.
 - **Transparency** comes from the mesh colour's alpha, never the texture's. A lit draw below
   alpha 1 blends, but lit draws are not sorted and still write depth.
 - **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you,
