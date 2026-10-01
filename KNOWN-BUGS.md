@@ -93,5 +93,6 @@ that was verified to make minimize/restore clean.
 - **Closed findings** stay in their dated review under `.claude/reviews/`, each with the commit that
   fixed it and how it was verified. Don't re-file them here.
 - **Behaviour that surprises but is correct**: the emissive term lives in the engine's built-in lit
-  shader (`Renderer3D.cpp:65`), so a material with a *custom* shader gets no emissive unless its own
-  shader implements it. Working as designed, but routinely mistaken for a broken material.
+  shader (`src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl`), so a material with a *custom*
+  shader gets no emissive unless its own shader implements it. Working as designed, but routinely
+  mistaken for a broken material.

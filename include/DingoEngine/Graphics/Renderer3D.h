@@ -71,7 +71,7 @@ namespace Dingo
 		Renderer3D& operator=(const Renderer3D&) = delete;
 		Renderer3D(Renderer3D&&) = delete;
 		Renderer3D& operator=(Renderer3D&&) = delete;
-		~Renderer3D() = default;
+		~Renderer3D();
 
 	public:
 		void Initialize();
