@@ -59,7 +59,12 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `TextComponent` | `std::string Text`, `Font* Font`, `glm::vec4 Color`, `float Size`, `bool Centered` |
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
-| `DirectionalLightComponent` | `glm::vec3 Direction`, `float Ambient` — read by the `SceneRenderer` for the 3D pass |
+| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)) — a sun |
+| `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
+| `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled` — light in every direction from the entity's `Transform3DComponent` position |
+| `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled` — a cone of light from the entity's `Transform3DComponent` |
+
+The four light components are read by the `SceneRenderer` for the 3D pass — see [Lights](#lights-v07).
 
 ## Rendering a scene
 
@@ -108,7 +113,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | Component | Fields |
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
-| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = built-in flat-lit) |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
@@ -138,10 +143,10 @@ scene.OnPhysicsStart();                              // builds a 3D world only i
 
 `Scene::OnUpdate(dt)` steps whichever physics world(s) are live and writes simulated transforms
 back (2D → `TransformComponent`, 3D → `Transform3DComponent`). A 3D scene renders through a
-**perspective camera entity** (plus an optional `DirectionalLightComponent`); the `SceneRenderer`
-picks the 3D pass from the camera's projection type. The camera's *view* comes from its
-`Transform3DComponent`, so a follow camera writes its position + a look-at orientation each frame
-(here `scene` is a `SceneManager`-owned `Scene*` and `scenes` the manager — see below):
+**perspective camera entity** (plus the light entities described [below](#lights-v07)); the
+`SceneRenderer` picks the 3D pass from the camera's projection type. The camera's *view* comes
+from its `Transform3DComponent`, so a follow camera writes its position + a look-at orientation
+each frame (here `scene` is a `SceneManager`-owned `Scene*` and `scenes` the manager — see below):
 
 ```cpp
 Entity cam = scene->CreateEntity("Camera");
@@ -157,8 +162,54 @@ t.Position = eye;                                                  // e.g. focus
 t.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(eye, focus, { 0, 1, 0 })));
 
 scenes.OnUpdate(dt);
-scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the light
+scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the scene's lights
 ```
+
+### Lights (v0.7)
+
+A 3D scene is lit by light **entities**. Each frame the `SceneRenderer` calls `Scene::SubmitLights`,
+which hands every light component to `Renderer3D` before the meshes are drawn, so there is
+nothing to wire up beyond adding the entities. What each light takes from the entity:
+
+- **Directional and ambient lights** ignore the transform. A directional light's `Direction` is in
+  world space.
+- **Point and spot lights** take their position from `Transform3DComponent::Position`, and a spot
+  light aims by rotating its local `Direction` with `Transform3DComponent::Rotation`. Scale is
+  ignored. An entity without a `Transform3DComponent` is skipped.
+- **`Enabled = false`** on a point or spot light switches it off without losing its settings, so
+  game code never has to stash an old `Intensity`.
+
+```cpp
+// A lantern. Move its Transform3DComponent each frame and the light follows.
+Entity lantern = scene->CreateEntity("Lantern");
+lantern.AddComponent<Transform3DComponent>().Position = { 2.0f, 1.5f, -3.0f };
+lantern.AddComponent<PointLightComponent>(PointLightComponent({ 1.0f, 0.7f, 0.3f }, 2.0f, 8.0f)); // colour, intensity, range
+
+// With a light in the scene there is no default sun, so a faint ambient keeps the rest from going black.
+scene->CreateEntity("Ambient").AddComponent<AmbientLightComponent>(AmbientLightComponent({ 0.4f, 0.5f, 0.8f }, 0.05f));
+```
+
+There is no parent-child transform yet, so a lantern that follows a character is a separate
+entity that you move by hand, a little outside the character's mesh. A light inside a closed mesh
+lights none of it, because every face points away from the light.
+
+Things to know:
+
+- **The default light.** A scene with no light component at all is lit by a default
+  `DirectionalLightComponent`, so a 3D scene is never black by accident. Any light component turns
+  that default off, even a disabled one or one on an entity with no `Transform3DComponent`.
+- **Ambient is always set.** `Scene::SubmitLights` sets the scene's ambient every frame, even to
+  black. A scene whose lights are all switched off therefore goes dark, and a scene lit only by
+  point lights has no sun and no ambient until you add an `AmbientLightComponent`.
+- **Directional lights add up**, up to four, and so does each one's legacy `Ambient`. Set
+  `Ambient` to 0 to light the scene with `AmbientLightComponent` instead.
+- **Custom passes.** Lights are scene-scoped, so a custom 3D pass on the shared renderer calls
+  `scene.SubmitLights(renderer)` between its `BeginScene` and `EndScene`, the same way it calls
+  `RenderEntities3D`. Without it the pass gets `Renderer3DParams`' default light, not the scene's
+  sun. Both changed in v0.7; see [Migrating from v0.6](lighting.md#migrating-from-v06).
+- **Limits.** A scene is lit by at most four directional lights and 32 point and spot lights.
+  Falloff, how lights are chosen past the limit, lit materials with specular and emissive, and
+  hot-reloading the lit shader are covered in [Lighting](lighting.md).
 
 ### 2D UI over a 3D scene
 
@@ -201,20 +252,68 @@ if (Physics3D* physics = GetScene().GetPhysics3D(); physics && body != k_Invalid
 
 ### Custom materials (per-mesh shaders)
 
-By default meshes draw with Renderer3D's built-in flat directional-lit material. Assign a
-`Material*` to a `MeshRendererComponent` to give that mesh its own shader, uniforms, and
-textures. Renderer3D groups meshes by material and draws each material as one batch, or
-several once it outgrows `Renderer3DCapabilities` (v0.6.3 — before that the overflow was
-dropped).
+By default meshes draw with Renderer3D's built-in lit material, which responds to the scene's
+[lights](#lights-v07). Assign a `Material*` to a `MeshRendererComponent` to give that mesh its own
+shader, uniforms, and textures. Renderer3D groups meshes by material and draws each material as
+one batch, or several once it outgrows `Renderer3DCapabilities` (v0.6.3 — before that the
+overflow was dropped).
+
+If all you want is emissive, specular or an albedo texture on top of the engine's lighting, make
+the material with `Renderer3D::CreateLitMaterial` instead of writing a shader — see
+[Lighting](lighting.md).
 
 The binding convention a custom mesh shader follows:
 
-- **binding 0** — the engine **scene UBO** (`mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`),
-  bound on every material each frame. Declare it to position your vertices (and light, if you want it).
+- **binding 0** — the engine **scene UBO**, bound on every material each frame. Declare it to
+  position your vertices (and light, if you want it). It begins with a frozen 96-byte prefix,
+  `mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`, and the camera position and the full
+  light block are appended after it (below). A shader may declare a block shorter than the
+  buffer, so one that declares only the prefix — as every custom shader written before v0.7 does —
+  compiles and renders as it did.
 - **binding 1** — your material's own uniforms (whatever you pass to `Material::SetUniform`). Omit it
   if the material has no params.
 - **binding 2+** — the material's textures/samplers (`Material::SetTexture` / `SetSampler`),
   interleaved: texture slot *i* at `2 + 2i`, sampler slot *i* at `3 + 2i`.
+
+The whole of binding 0, as the engine's own lit shader declares it:
+
+```glsl
+struct DirectionalLight
+{
+    vec4 Direction;       // xyz = the way the light travels
+    vec4 Color;           // rgb = colour × intensity
+};
+
+struct LocalLight         // a point or spot light; a point light has cone scale 0 and offset 1
+{
+    vec4 PositionRange;   // xyz = world position, w = range
+    vec4 Color;           // rgb = colour × intensity, w = cone scale
+    vec4 SpotDirection;   // xyz = the way the cone points, w = cone offset
+};
+
+layout(std140, binding = 0) uniform CameraData
+{
+    mat4  ViewProjection;     // these three are the frozen prefix
+    vec4  LightDirection;
+    vec4  Ambient;
+    vec4  CameraPosition;     // w = 1: world position; w = 0: orthographic, xyz = towards the camera
+    vec4  AmbientColor;       // rgb = colour × intensity
+    ivec4 LightCounts;        // x = directional lights in use, y = point and spot lights in use
+    DirectionalLight DirectionalLights[4];
+    LocalLight       LocalLights[32];
+};
+```
+
+The prefix is frozen: later versions only append to the block. It carries one directional light and
+no colour or intensity. `LightDirection` is the first directional light's direction, or the default
+light's when the scene has none, and `Ambient.x` is the scene's ambient as a single value (the
+strongest channel of the ambient colour). A shader that lights itself with the old
+`Ambient.x + (1 - Ambient.x) * max(dot(N, -normalize(LightDirection.xyz)), 0)`
+therefore still draws a sun in a scene that has none, which the engine's own lit shader does not.
+Declare the full block and loop over `LightCounts` to light a material the way the engine does;
+[Lighting](lighting.md) has the
+falloff and cone formulas, and `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl` is the
+reference loop.
 
 Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching),
 as `a_Position` (location 0), `a_Normal` (1), `a_Color` (2 — the component's `Color`) and

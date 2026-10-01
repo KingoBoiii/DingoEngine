@@ -23,6 +23,7 @@ engine from source.
 | [2D Physics](physics-2d.md) | The v0.4 rigid-body system — `RigidBody2D`/`BoxCollider2D`/`CircleCollider2D` components, gravity, the physics lifecycle, and applying forces/impulses. |
 | [3D Physics](physics-3d.md) | The Jolt-backed `Physics3D` — 3D rigid bodies with box/sphere/capsule colliders and (v0.6.2) triangle-mesh and convex-hull colliders; usable standalone, or (v0.4.1) wired into the `Scene`/ECS. |
 | [Asset Pipeline](asset-pipeline.md) | The v0.6 `AssetManager` — UUID asset handles, path dedup, background/async loading, and hot-reload of shaders and textures. |
+| [Lighting & Shading](lighting.md) | The v0.7 lighting system — directional, point, spot and ambient lights (as components or through `Renderer3D`), the per-scene light budget, falloff, lit materials with specular and emissive, the scene uniform block for custom shaders, and hot-reloading the lit shader. |
 
 ## A 30-second tour
 

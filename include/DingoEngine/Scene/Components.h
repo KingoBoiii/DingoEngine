@@ -160,9 +160,10 @@ namespace Dingo
 		glm::vec3 Color{ 1.0f };
 		float Intensity = 1.0f;
 		// The engine's original single knob: white ambient this light adds to the scene, with
-		// the light itself scaled by (1 - Ambient), so a face turned squarely to it is exactly
-		// Intensity bright. Every DirectionalLightComponent adds its own. Set it to 0 to light
-		// the scene with AmbientLightComponent instead and get Intensity unscaled.
+		// the light itself scaled by (1 - Ambient), so a face turned squarely to it gets
+		// Ambient + Intensity * (1 - Ambient): full brightness at Intensity 1. Every
+		// DirectionalLightComponent adds its own. Set it to 0 to light the scene with
+		// AmbientLightComponent instead and get Intensity unscaled.
 		float Ambient = 0.35f;
 
 		DirectionalLightComponent() = default;
@@ -319,7 +320,7 @@ namespace Dingo
 		bool Visible = true;
 
 		// Optional material (custom shader + uniforms + textures). Null draws with
-		// Renderer3D's built-in flat directional-lit material. The Color above is written
+		// Renderer3D's built-in lit material. The Color above is written
 		// into the vertex stream either way. Owned by the client, not the component.
 		Material* Material = nullptr;
 

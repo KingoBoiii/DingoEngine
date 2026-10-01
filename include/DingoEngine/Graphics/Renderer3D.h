@@ -52,19 +52,20 @@ namespace Dingo
 		Renderer3DCapabilities Capabilities = {};
 	};
 
-	// A batched, directional-lit mesh renderer — the 3D sibling of Renderer2D.
+	// A batched, forward-lit mesh renderer — the 3D sibling of Renderer2D.
 	//
 	// Between BeginScene()/EndScene() it groups submitted meshes BY MATERIAL,
 	// transforming each into a per-material vertex/index batch on the CPU, then issues
 	// one indexed draw per batch on EndScene() (each from its own pooled buffer).
-	// Meshes with no explicit material use the built-in flat directional-lit default.
+	// Meshes with no explicit material use the built-in lit default material.
 	// Depth testing is enabled (the swap-chain carries a depth attachment), so meshes
 	// occlude correctly regardless of submission order.
 	//
-	// Camera + light live in a shared "scene" uniform buffer bound at binding 0 on
+	// Camera + lights live in a shared "scene" uniform buffer bound at binding 0 on
 	// every material (Material::SetSceneUniformBuffer); a custom material's own uniforms
 	// bind at 1 and its textures at 2+. The SceneRenderer drives this for
-	// Transform3D + MeshRenderer entities (via Scene::RenderEntities3D).
+	// Transform3D + MeshRenderer entities (via Scene::SubmitLights and
+	// Scene::RenderEntities3D).
 	//
 	// Note: each batch is capped at the configured capacity. A material that outgrows one
 	// spills into another batch — one more draw call — so raise Capabilities to cut draw
@@ -116,7 +117,7 @@ namespace Dingo
 		static constexpr uint32_t k_MaxLocalLights = 32;
 
 		// Appends a mesh to the batch for the given material (null => the built-in
-		// flat-lit default), transformed into world space on the CPU. The vertex stream is
+		// lit default), transformed into world space on the CPU. The vertex stream is
 		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
 		// (3, the mesh's UVs, for custom materials that sample a texture). No-op outside a
 		// Begin/EndScene pair.
@@ -249,7 +250,7 @@ namespace Dingo
 		void PrepareLitMaterial(Material* material) const;
 
 		Shader* m_Shader = nullptr;
-		Material* m_Material = nullptr; // built-in flat-lit default material
+		Material* m_Material = nullptr; // built-in lit default material
 		VertexLayout m_Layout;
 
 		// Camera + lights, uploaded each EndScene and bound at binding 0 on every material the
