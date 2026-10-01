@@ -87,6 +87,15 @@ namespace
 		return intensity > 0.0f && range > 0.0f && IsFinite(position) && IsFinite(color * intensity);
 	}
 
+	// A lit material is known by its shader, and the renderer that draws it need not be the one that
+	// created it.
+	std::vector<const Dingo::Shader*> s_LitShaders;
+
+	bool IsLitShader(const Dingo::Shader* shader)
+	{
+		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
+	}
+
 	bool BindsPastSlotZero(const Dingo::Material& material)
 	{
 		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
@@ -115,12 +124,14 @@ namespace Dingo
 
 	Renderer3D::~Renderer3D()
 	{
+		std::erase(s_LitShaders, m_Shader);
 		Internal::UnwatchUnmanagedShader(m_Shader);
 	}
 
 	void Renderer3D::Initialize()
 	{
 		m_Shader = CreateLitShader();
+		s_LitShaders.push_back(m_Shader);
 		Internal::WatchUnmanagedShader(m_Shader);
 
 		m_Layout = VertexLayout()
@@ -161,6 +172,7 @@ namespace Dingo
 
 		DestroyAndDelete(m_SceneUniformBuffer);
 		DestroyAndDelete(m_Material);
+		std::erase(s_LitShaders, m_Shader);
 		Internal::UnwatchUnmanagedShader(m_Shader);
 		DestroyAndDelete(m_Shader);
 	}
@@ -224,7 +236,7 @@ namespace Dingo
 		// shared buffer is re-uploaded between draws.
 		for (Material* material : m_DrawOrder)
 		{
-			if (material->GetShader() == m_Shader)
+			if (IsLitShader(material->GetShader()))
 			{
 				if (!m_LitSlotsWarned && BindsPastSlotZero(*material))
 				{
