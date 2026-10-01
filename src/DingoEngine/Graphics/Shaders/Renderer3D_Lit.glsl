@@ -98,7 +98,7 @@ float Highlight(vec3 normal, vec3 toLight, vec3 toCamera, float shininess)
 void main()
 {
 	vec3 normal = normalize(v_Normal);
-	vec4 albedo = v_Color * texture(sampler2D(u_Albedo, u_AlbedoSampler), v_TexCoord);
+	vec3 albedo = v_Color.rgb * texture(sampler2D(u_Albedo, u_AlbedoSampler), v_TexCoord).rgb;
 
 	// Skipped entirely without specular, so non-shiny materials compute exactly what they did
 	// before the term existed.
@@ -138,7 +138,9 @@ void main()
 			specular += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone) * Highlight(normal, toLight, toCamera, shininess);
 	}
 
-	vec3 finalColor = albedo.rgb * lighting + specular * Surface.z;
+	vec3 finalColor = albedo * lighting + specular * Surface.z;
 	finalColor += EmissiveColor.rgb * Surface.x;
-	o_Color = vec4(finalColor, albedo.a);
+	// Lit draws are unsorted and write depth, so only the mesh colour, never an albedo map, makes
+	// them see-through.
+	o_Color = vec4(finalColor, v_Color.a);
 }
