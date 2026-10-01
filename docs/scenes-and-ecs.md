@@ -238,7 +238,7 @@ Material* glow = Material::Create(MaterialParams().SetShader(shader).SetCullMode
 glow->SetUniform(GlowParams{ ... });        // creates the binding-1 UBO
 
 entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color)).Material = glow;
-// ...each frame, update params as you like:
+// ...whenever the params change (the renderer re-uploads them every frame itself):
 glow->SetUniform(GlowParams{ pulsedIntensity });
 ```
 

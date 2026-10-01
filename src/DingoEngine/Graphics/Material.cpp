@@ -96,7 +96,7 @@ namespace Dingo
 			static_cast<const uint8_t*>(data),
 			static_cast<const uint8_t*>(data) + size);
 
-		m_UniformDirty = true;
+		m_UniformUploadFrame = 0;
 
 		// Recreate the GPU buffer if it doesn't exist or is too small.
 		// This also invalidates the pipeline cache so new render passes will
