@@ -1,0 +1,199 @@
+#include "LightingTest.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <imgui.h>
+
+#include <cmath>
+
+namespace
+{
+	constexpr glm::vec4 k_FloorColor{ 0.72f, 0.72f, 0.70f, 1.0f };
+	constexpr glm::vec4 k_PillarColor{ 0.82f, 0.80f, 0.76f, 1.0f };
+	constexpr glm::vec4 k_SphereColor{ 0.86f, 0.86f, 0.90f, 1.0f };
+
+	constexpr float k_PillarXs[] = { -6.0f, -2.0f, 2.0f, 6.0f };
+	constexpr float k_PillarZs[] = { -3.0f, 3.0f };
+	constexpr float k_SphereXs[] = { -4.0f, 0.0f, 4.0f };
+
+	struct ColoredPoint
+	{
+		glm::vec3 Position;
+		glm::vec3 Color;
+	};
+
+	constexpr ColoredPoint k_PointLights[] = {
+		{ { -4.0f, 1.0f, -3.0f }, { 1.00f, 0.55f, 0.20f } },
+		{ {  0.0f, 1.0f, -3.0f }, { 0.25f, 0.55f, 1.00f } },
+		{ {  4.0f, 1.0f, -3.0f }, { 0.30f, 1.00f, 0.40f } },
+		{ { -4.0f, 1.0f,  3.0f }, { 1.00f, 0.25f, 0.65f } },
+		{ {  0.0f, 1.0f,  3.0f }, { 1.00f, 0.85f, 0.45f } },
+		{ {  4.0f, 1.0f,  3.0f }, { 0.55f, 0.35f, 1.00f } },
+	};
+
+	constexpr int k_OverBudgetColumns = 16;
+	constexpr int k_OverBudgetRows = 4;
+
+	glm::mat4 BoxTransform(const glm::vec3& center, const glm::vec3& size)
+	{
+		return glm::scale(glm::translate(glm::mat4(1.0f), center), size);
+	}
+
+	// A fully saturated hue around the colour wheel, t in [0, 1).
+	glm::vec3 Hue(float t)
+	{
+		const glm::vec3 channels = glm::abs(glm::fract(glm::vec3(t) + glm::vec3(1.0f, 2.0f / 3.0f, 1.0f / 3.0f)) * 6.0f - 3.0f);
+		return glm::clamp(channels - 1.0f, 0.0f, 1.0f);
+	}
+}
+
+namespace Dingo
+{
+
+	void LightingTest::Initialize()
+	{
+		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 100.0f);
+		m_Camera.SetPosition({ 0.0f, 9.0f, 13.0f });
+		m_Camera.SetTarget({ 0.0f, 0.0f, 0.0f });
+
+		if (auto mode = Application::Get().GetCommandLineArgs().Get("lighting"))
+		{
+			if (*mode == "default")
+				m_Mode = Mode::DefaultLight;
+			else if (*mode == "lights")
+				m_Mode = Mode::PointAndSpot;
+			else if (*mode == "overbudget")
+				m_Mode = Mode::OverBudget;
+			else
+				DE_WARN("Lighting Test: unknown --lighting={}; use default, lights or overbudget.", *mode);
+		}
+	}
+
+	void LightingTest::Update(float deltaTime)
+	{
+		if (m_Animate)
+			m_Time += deltaTime;
+
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		renderer.BeginScene(m_Camera);
+		renderer.Clear(m_ClearColor);
+		SubmitLights(renderer);
+		DrawScene(renderer);
+		renderer.EndScene();
+	}
+
+	void LightingTest::SubmitLights(Renderer3D& renderer) const
+	{
+		switch (m_Mode)
+		{
+			case Mode::DefaultLight:
+				break;
+
+			case Mode::PointAndSpot:
+			{
+				renderer.SetAmbientLight({ 0.5f, 0.6f, 0.9f }, 0.06f);
+
+				for (int i = 0; i < static_cast<int>(std::size(k_PointLights)); i++)
+				{
+					const float phase = m_Time * 1.5f + static_cast<float>(i);
+					PointLight light;
+					light.Position = k_PointLights[i].Position + 0.8f * glm::vec3(std::cos(phase), 0.0f, std::sin(phase)) * (m_Animate ? 1.0f : 0.0f);
+					light.Color = k_PointLights[i].Color;
+					light.Intensity = 1.6f;
+					light.Range = 4.5f;
+					renderer.SubmitLight(light);
+				}
+
+				const float sweep = m_Animate ? 0.35f * std::sin(m_Time) : 0.0f;
+				for (float x : { -4.0f, 4.0f })
+				{
+					SpotLight spot;
+					spot.Position = { x, 7.0f, 0.0f };
+					spot.Direction = { sweep, -1.0f, 0.0f };
+					spot.Color = x < 0.0f ? glm::vec3(1.0f, 0.9f, 0.75f) : glm::vec3(0.75f, 0.85f, 1.0f);
+					spot.Intensity = 1.8f;
+					spot.Range = 12.0f;
+					spot.InnerConeAngle = 12.0f;
+					spot.OuterConeAngle = 20.0f;
+					renderer.SubmitLight(spot);
+				}
+				break;
+			}
+
+			case Mode::OverBudget:
+			{
+				renderer.SetAmbientLight({ 0.5f, 0.6f, 0.9f }, 0.04f);
+
+				for (int row = 0; row < k_OverBudgetRows; row++)
+				{
+					for (int column = 0; column < k_OverBudgetColumns; column++)
+					{
+						const int index = row * k_OverBudgetColumns + column;
+						PointLight light;
+						light.Position = { -9.0f + 1.2f * static_cast<float>(column), 0.4f, -3.75f + 2.5f * static_cast<float>(row) };
+						light.Color = Hue(static_cast<float>(index) / static_cast<float>(k_OverBudgetColumns * k_OverBudgetRows));
+						light.Intensity = 1.5f;
+						light.Range = 1.6f;
+						renderer.SubmitLight(light);
+					}
+				}
+
+				// Bright but out of view, behind the camera and far to the sides: they must not
+				// take budget slots from the lights on screen.
+				for (const glm::vec3& position : { glm::vec3(0.0f, 9.0f, 18.0f), glm::vec3(-40.0f, 0.4f, 0.0f), glm::vec3(40.0f, 0.4f, 0.0f) })
+				{
+					PointLight light;
+					light.Position = position;
+					light.Intensity = 10.0f;
+					light.Range = 1.6f;
+					renderer.SubmitLight(light);
+				}
+				break;
+			}
+		}
+	}
+
+	void LightingTest::DrawScene(Renderer3D& renderer) const
+	{
+		renderer.DrawBox(BoxTransform({ 0.0f, -0.1f, 0.0f }, { 20.0f, 0.2f, 12.0f }), k_FloorColor);
+
+		for (float x : k_PillarXs)
+		{
+			for (float z : k_PillarZs)
+				renderer.DrawBox(BoxTransform({ x, 1.2f, z }, { 0.8f, 2.4f, 0.8f }), k_PillarColor);
+		}
+
+		for (float x : k_SphereXs)
+			renderer.DrawSphere(BoxTransform({ x, 0.6f, 0.0f }, glm::vec3(1.2f)), k_SphereColor);
+	}
+
+	void LightingTest::Cleanup()
+	{
+	}
+
+	void LightingTest::Resize(uint32_t width, uint32_t height)
+	{
+		m_AspectRatio = static_cast<float>(width) / static_cast<float>(height);
+		m_Camera.SetAspectRatio(m_AspectRatio);
+	}
+
+	void LightingTest::ImGuiRender()
+	{
+		int mode = static_cast<int>(m_Mode);
+		ImGui::RadioButton("Default light", &mode, static_cast<int>(Mode::DefaultLight));
+		ImGui::RadioButton("Point and spot lights", &mode, static_cast<int>(Mode::PointAndSpot));
+		ImGui::RadioButton("More lights than the budget", &mode, static_cast<int>(Mode::OverBudget));
+		m_Mode = static_cast<Mode>(mode);
+		ImGui::Checkbox("Animate", &m_Animate);
+
+		ImGui::Separator();
+		const Renderer3D::Statistics& stats = Application::Get().GetRenderer3D().GetStatistics();
+		ImGui::Text("Directional lights : %u", stats.DirectionalLights);
+		ImGui::Text("Point/spot lights  : %u", stats.LocalLights);
+		ImGui::Text("Out of view        : %u", stats.CulledLights);
+		ImGui::Text("Over budget        : %u", stats.DroppedLights);
+
+		ImGui::Separator();
+		GraphicsTest::ImGuiRender();
+	}
+
+}
