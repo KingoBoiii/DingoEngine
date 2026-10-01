@@ -30,8 +30,9 @@ namespace Dingo
 
 		// Point and spot lights drawn per scene, at most Renderer3D::k_MaxLocalLights. Lights
 		// whose range can't reach anything in view are skipped first. Past the budget the
-		// brightest as seen from the camera are kept and the rest dropped with a warning; ties
-		// keep the earlier-submitted light, so a still scene picks the same lights every frame.
+		// brightest as seen from the camera are kept and the rest dropped with a warning; ties go
+		// to the light the camera is nearer to relative to its range, then to the earlier-submitted
+		// one, so a still scene picks the same lights every frame.
 		uint32_t MaxLocalLights = 32;
 
 		// When true, a mesh too large for an empty batch, or a light past the light budget,
@@ -203,6 +204,7 @@ namespace Dingo
 			LocalLightData Data;
 			float Brightness = 0.0f; // strongest colour channel × intensity
 			float Score = 0.0f;
+			float Nearness = 0.0f; // camera distance / range
 		};
 
 		// std140, mirrored by CameraData in Renderer3D_Lit.glsl. The first three members are a

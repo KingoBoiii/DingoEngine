@@ -155,8 +155,9 @@ At each `EndScene`:
    camera is outside the light's range (0 when inside it). The strongest channel is used, not
    luminance, so a saturated blue light ranks the same as a green one of equal intensity. With an
    orthographic view-projection the camera has no position, so distance does not count.
-4. Ties go to the earlier-submitted light, so a still scene submitting lights in a stable order
-   picks the same lights every frame and never flickers.
+4. Every light whose range holds the camera scores the same, so ties go to the light the camera
+   is nearer to relative to its range, then to the earlier-submitted one. A still scene submitting
+   lights in a stable order picks the same lights every frame and never flickers.
 
 Overflow logs one warning per renderer, not one per frame. `AssertOnOverflow = true` makes it an
 assert instead (also for directional overflow and a mesh too big for a batch). Asserts compile out

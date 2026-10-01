@@ -463,9 +463,12 @@ namespace Dingo
 				continue;
 
 			// How bright the light looks from the camera: full strength while the camera is inside
-			// its range, then falling with the distance from the range's edge.
-			const float gap = camera.w > 0.0f ? std::max(glm::distance(glm::vec3(camera), position) - range, 0.0f) : 0.0f;
+			// its range, then falling with the distance from the range's edge. Every light whose
+			// range holds the camera scores the same, so Nearness breaks those ties.
+			const float distance = camera.w > 0.0f ? glm::distance(glm::vec3(camera), position) : 0.0f;
+			const float gap = std::max(distance - range, 0.0f);
 			candidate.Score = candidate.Brightness / (1.0f + gap * gap);
+			candidate.Nearness = distance / range;
 			m_VisibleLocalLights.push_back(index);
 		}
 
@@ -480,9 +483,13 @@ namespace Dingo
 			std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
 				[this](uint32_t a, uint32_t b)
 				{
-					const float scoreA = m_LocalLights[a].Score;
-					const float scoreB = m_LocalLights[b].Score;
-					return scoreA != scoreB ? scoreA > scoreB : a < b;
+					const LocalLightCandidate& lightA = m_LocalLights[a];
+					const LocalLightCandidate& lightB = m_LocalLights[b];
+					if (lightA.Score != lightB.Score)
+						return lightA.Score > lightB.Score;
+					if (lightA.Nearness != lightB.Nearness)
+						return lightA.Nearness < lightB.Nearness;
+					return a < b;
 				});
 
 			if (!m_LocalOverflowWarned)
