@@ -6,7 +6,7 @@ for things that are **wrong or surprising in code that already ships**.
 
 - **Verified against `VERSION` 0.6.3 on 2026-09-27.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
-  K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29.
+  K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29; K15 on 2026-10-01.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -30,6 +30,7 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
 | [K14](#k14) | The test framework crashes when its window is minimized | Defect | Test app |
+| [K15](#k15) | A long frame drops 3D bodies through their colliders | Defect | Physics |
 
 ---
 
@@ -81,6 +82,26 @@ cleanly, and `SceneRenderer` already guards a zero height.
 
 **Fix**: skip the resize while either viewport dimension is ≤ 0. A guard in `TestLayer` doing exactly
 that was verified to make minimize/restore clean.
+
+## K15 — A long frame drops 3D bodies through their colliders {#k15}
+
+**Defect** — `src/DingoEngine/Core/Application.cpp:199`, `src/DingoEngine/Scene/Systems/PhysicsSync.cpp:99-100`
+
+`Application` hands every layer the raw wall-clock delta, and `PhysicsSync` simulates all of it while
+capping the collision steps at `k_MaxCollisionSteps` (4). Any frame longer than 4/60 s is therefore
+integrated in sub-steps longer than 1/60 s, and a stall of a second or more moves a falling body
+metres per sub-step — straight through a box collider.
+
+It shows up as a rendering bug. DungeonCrawler3D on a cold shader cache (a fresh build directory)
+renders only the HUD and a few characters, with no walls, floor or treasures. Shader compilation makes
+frame 2 last 1.34 s, and the player's 0.5-radius sphere falls from y = 0.55 to y = −19 in that one
+step, through the 1 m floor, and keeps falling; the follow camera goes down with it. With a warm cache
+frame 2 takes 0.057 s and the player stays at y = 0.50. Measured with a temporary log on Vulkan. Nothing
+here is backend-specific: a breakpoint, a window drag or a synchronous load stalls a frame the same way.
+
+**Fix**: cap the delta fed to physics — e.g. at `k_MaxCollisionSteps / 60` s, dropping the excess
+time, the usual maximum-frame-time guard — or clamp `m_DeltaTime` in `Application` for all game logic.
+Per-body `ContinuousCollision` only works around it for the bodies that opt in.
 
 ---
 
