@@ -33,6 +33,10 @@ namespace
 	constexpr int k_OverBudgetColumns = 16;
 	constexpr int k_OverBudgetRows = 4;
 
+	constexpr glm::vec4 k_RowColor{ 0.70f, 0.12f, 0.10f, 1.0f };
+	constexpr glm::vec3 k_LampPosition{ 0.0f, 4.0f, 4.0f };
+	constexpr glm::vec3 k_LampColor{ 1.0f, 0.85f, 0.6f };
+
 	glm::mat4 BoxTransform(const glm::vec3& center, const glm::vec3& size)
 	{
 		return glm::scale(glm::translate(glm::mat4(1.0f), center), size);
@@ -64,12 +68,36 @@ namespace Dingo
 				m_Mode = Mode::PointAndSpot;
 			else if (*mode == "overbudget")
 				m_Mode = Mode::OverBudget;
+			else if (*mode == "materials")
+				m_Mode = Mode::Materials;
 			else
-				DE_WARN("Lighting Test: unknown --lighting={}; use default, lights or overbudget.", *mode);
+				DE_WARN("Lighting Test: unknown --lighting={}; use default, lights, overbudget or materials.", *mode);
 		}
 		m_UseEntities = args.Get("entities").has_value();
+		if (auto specular = args.Get("specular"))
+			m_Specular = *specular != "off";
 
 		BuildScene();
+
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		for (int i = 0; i < k_RoughnessSteps; i++)
+		{
+			const float roughness = static_cast<float>(i) / static_cast<float>(k_RoughnessSteps - 1);
+			m_RowMaterials[i] = renderer.CreateLitMaterial(MaterialParams()
+				.SetDebugName("LightingTest_Roughness")
+				.SetRoughness(roughness));
+		}
+
+		m_LampMaterial = renderer.CreateLitMaterial(MaterialParams()
+			.SetDebugName("LightingTest_Lamp")
+			.SetEmissiveColor(k_LampColor)
+			.SetEmissiveStrength(1.5f));
+
+		m_CrateMaterial = renderer.CreateLitMaterial(MaterialParams()
+			.SetDebugName("LightingTest_Crate")
+			.SetRoughness(0.4f));
+		AssetManager& assets = Application::Get().GetAssetManager();
+		m_CrateMaterial->SetTexture(0, assets.GetTexture(assets.Load("textures/container.jpg")));
 	}
 
 	void LightingTest::Update(float deltaTime)
@@ -83,7 +111,12 @@ namespace Dingo
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
 
-		if (m_UseEntities)
+		if (m_Mode == Mode::Materials)
+		{
+			SubmitLights(renderer, lighting);
+			DrawMaterialsScene(renderer);
+		}
+		else if (m_UseEntities)
 		{
 			if (!m_LightEntitiesBuilt || m_LightEntitiesMode != m_Mode)
 				BuildLightEntities(lighting);
@@ -175,6 +208,22 @@ namespace Dingo
 				}
 				break;
 			}
+
+			case Mode::Materials:
+			{
+				lighting.UsesDefaultLight = false;
+				lighting.AmbientColor = { 0.5f, 0.6f, 0.9f };
+				lighting.AmbientIntensity = 0.06f;
+				lighting.DirectionalLights.push_back(DirectionalLight{ { 0.3f, -1.0f, -0.5f }, { 0.6f, 0.7f, 1.0f }, 0.25f });
+
+				PointLight lamp;
+				lamp.Position = k_LampPosition;
+				lamp.Color = k_LampColor;
+				lamp.Intensity = 1.6f;
+				lamp.Range = 16.0f;
+				lighting.PointLights.push_back(lamp);
+				break;
+			}
 		}
 
 		return lighting;
@@ -186,6 +235,8 @@ namespace Dingo
 			return;
 
 		renderer.SetAmbientLight(lighting.AmbientColor, lighting.AmbientIntensity);
+		for (const DirectionalLight& light : lighting.DirectionalLights)
+			renderer.SubmitLight(light);
 		for (const PointLight& light : lighting.PointLights)
 			renderer.SubmitLight(light);
 		for (const SpotLight& light : lighting.SpotLights)
@@ -204,6 +255,23 @@ namespace Dingo
 
 		for (float x : k_SphereXs)
 			renderer.DrawSphere(BoxTransform({ x, 0.6f, 0.0f }, glm::vec3(1.2f)), k_SphereColor);
+	}
+
+	void LightingTest::DrawMaterialsScene(Renderer3D& renderer)
+	{
+		renderer.DrawBox(BoxTransform({ 0.0f, -0.1f, 0.0f }, { 20.0f, 0.2f, 12.0f }), k_FloorColor);
+
+		for (int i = 0; i < k_RoughnessSteps; i++)
+		{
+			m_RowMaterials[i]->SetSpecular(m_Specular ? 0.6f : 0.0f);
+			const float x = -6.0f + 3.0f * static_cast<float>(i);
+			renderer.SubmitMesh(renderer.GetSphereMesh(), BoxTransform({ x, 0.9f, 0.0f }, glm::vec3(1.8f)), k_RowColor, m_RowMaterials[i]);
+		}
+
+		renderer.SubmitMesh(renderer.GetSphereMesh(), BoxTransform(k_LampPosition, glm::vec3(0.5f)), glm::vec4(1.0f), m_LampMaterial);
+
+		m_CrateMaterial->SetSpecular(m_Specular ? 0.35f : 0.0f);
+		renderer.SubmitMesh(renderer.GetBoxMesh(), BoxTransform({ 0.0f, 1.0f, -3.5f }, glm::vec3(2.0f)), glm::vec4(1.0f), m_CrateMaterial);
 	}
 
 	void LightingTest::BuildScene()
@@ -290,6 +358,16 @@ namespace Dingo
 
 	void LightingTest::Cleanup()
 	{
+		for (Material*& material : m_RowMaterials)
+		{
+			delete material;
+			material = nullptr;
+		}
+		delete m_LampMaterial;
+		delete m_CrateMaterial;
+		m_LampMaterial = nullptr;
+		m_CrateMaterial = nullptr;
+
 		m_LightEntities.clear();
 		m_LightEntitiesBuilt = false;
 		delete m_Scene;
@@ -308,9 +386,13 @@ namespace Dingo
 		ImGui::RadioButton("Default light", &mode, static_cast<int>(Mode::DefaultLight));
 		ImGui::RadioButton("Point and spot lights", &mode, static_cast<int>(Mode::PointAndSpot));
 		ImGui::RadioButton("More lights than the budget", &mode, static_cast<int>(Mode::OverBudget));
+		ImGui::RadioButton("Materials", &mode, static_cast<int>(Mode::Materials));
 		m_Mode = static_cast<Mode>(mode);
 		ImGui::Checkbox("Animate", &m_Animate);
-		ImGui::Checkbox("Lights as entities", &m_UseEntities);
+		if (m_Mode == Mode::Materials)
+			ImGui::Checkbox("Specular", &m_Specular);
+		else
+			ImGui::Checkbox("Lights as entities", &m_UseEntities);
 
 		ImGui::Separator();
 		const Renderer3D::Statistics& stats = Application::Get().GetRenderer3D().GetStatistics();
