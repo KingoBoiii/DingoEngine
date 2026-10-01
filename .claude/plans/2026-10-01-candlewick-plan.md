@@ -370,3 +370,23 @@ Docs (C6):
 - A scene-transition callback on `SceneManager` (EchoVault and Candlewick both diff the active scene).
 - Already scheduled: transform hierarchy (v0.8) deletes the warden and lantern sync code; shadows
   (v0.9) stop the leaks through walls, and bloom/tone mapping lift the clipping.
+
+---
+
+## 11. As built
+
+*C0 (scaffold):*
+
+- Beyond §3.1: `Overlay.{h,cpp}` (font, overlay camera, text, confirm prompt) and
+  `TitleScreen.{h,cpp}` (the Title and End scripts). Scene names and the HUD's ortho size live in
+  `GameTuning.h`.
+- A scene's scripts start once per attachment, not on every activation. Title and End are built
+  once; only the Keep is rebuilt when it is left. An End fanfare needs its own trigger (C5).
+- The look so far: a brazier light 0.5 m above the core leaves the stand's sides black (they face
+  away from it), and wall tops read as black. C2's room pass owns both.
+- From the C0 review, moved to C2: spawn helpers must return the light and core entities (light
+  LOD, flicker and checkpoints need them), and decor must not get a collider (a sconce bracket
+  would block a warden's line of sight). Moved to C5: Esc pauses instead of leaving the keep.
+- Verified: Debug and Distribution build, and so does the whole solution in Debug. Title → Keep →
+  Title → Keep rebuilds an identical frame (0 px). Distribution's frame equals Debug's (0 px). Bad
+  flag values warn and keep the defaults.
