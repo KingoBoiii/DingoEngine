@@ -92,10 +92,10 @@ namespace Dingo
 		// invalidates the pipeline cache (bindings are baked into the render pass).
 		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
 
-		GraphicsBuffer*             GetUniformBuffer()  const { return m_UniformBuffer; }
-		const std::vector<uint8_t>& GetUniformCPUData() const { return m_UniformCPUData; }
-		bool                        IsUniformDirty()    const { return m_UniformDirty; }
-		void                        ClearUniformDirty()       { m_UniformDirty = false; }
+		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
+		const std::vector<uint8_t>& GetUniformCPUData()                      const { return m_UniformCPUData; }
+		bool                        NeedsUniformUpload(uint64_t frameIndex)  const { return m_UniformUploadFrame != frameIndex; }
+		void                        MarkUniformUploaded(uint64_t frameIndex)       { m_UniformUploadFrame = frameIndex; }
 
 		// ── Pipeline cache ────────────────────────────────────────────────────
 
@@ -132,8 +132,8 @@ namespace Dingo
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
 
 		std::vector<uint8_t> m_UniformCPUData;
-		GraphicsBuffer*      m_UniformBuffer = nullptr;
-		bool                 m_UniformDirty  = false;
+		GraphicsBuffer*      m_UniformBuffer      = nullptr;
+		uint64_t             m_UniformUploadFrame = 0; // 0 = not uploaded since the last SetUniformData
 
 		// Shared scene UBO (binding 0), owned by the renderer — not destroyed here.
 		GraphicsBuffer*      m_SceneUniformBuffer = nullptr;

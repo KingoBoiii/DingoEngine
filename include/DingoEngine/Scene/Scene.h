@@ -71,7 +71,8 @@ namespace Dingo
 		// Drives every attached ScriptableEntity's OnUpdate, then steps any live
 		// physics world(s) and writes the simulated transforms back. Safe to
 		// create/destroy entities from within a script — destroys are deferred to the
-		// end of the pass.
+		// end of the pass. deltaTime is capped at 4/60 s for scripts and physics alike,
+		// so a stall runs the scene slow instead of tunnelling bodies through colliders.
 		void OnUpdate(float deltaTime);
 
 		// Issues the 2D entity draw calls (no BeginScene/Clear/EndScene). The

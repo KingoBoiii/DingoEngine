@@ -149,7 +149,9 @@ for (PhysicsBodyId3D id : myBodies)
 `GetTransform` returns translation × rotation (no scale — you know each body's size, since you
 created it). `GetPosition` / `GetRotation` are available individually. For large frame times, pass
 more `collisionSteps` to `Step` (Jolt recommends one step per 1/60 s, rounded up). A `Scene` does
-this for you since v0.6.2, up to 4 steps a frame.
+this for you since v0.6.2, up to 4 steps a frame. It also caps a frame at 4/60 s, for its scripts
+and physics alike: a longer frame (a stall, a breakpoint) runs the scene slow instead of pushing
+bodies through their colliders.
 
 ## Controlling bodies
 

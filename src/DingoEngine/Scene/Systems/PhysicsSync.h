@@ -24,6 +24,9 @@ namespace Dingo
 		class PhysicsSync
 		{
 		public:
+			static constexpr int k_MaxCollisionSteps = 4;
+			static constexpr float k_MaxStepTime = k_MaxCollisionSteps / 60.0f;
+
 			// Creates a 2D world only if the registry has 2D rigid bodies, and a 3D world
 			// only if it has 3D rigid bodies or character controllers, so a scene pays for
 			// just the dimension it uses. Bakes a body for every qualifying entity.
@@ -71,7 +74,6 @@ namespace Dingo
 			std::unique_ptr<Physics3D> m_Physics3D;
 
 			int m_SubStepCount = 4;
-			static constexpr int k_MaxCollisionSteps = 4;
 
 			// One per CharacterController3DComponent, indexed by CharacterController3DRuntime.
 			// Slots are never reused (a destroyed controller leaves a null hole) so indices

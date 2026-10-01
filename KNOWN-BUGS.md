@@ -7,8 +7,8 @@ for things that are **wrong or surprising in code that already ships**.
 - **Verified against `VERSION` 0.7.0 on 2026-10-01.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
   K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29;
-  K16 and K17 are the two limits v0.7's lighting ships with, and K18 a defect found reviewing its lit materials that
-  predates it, all added on 2026-10-01. v0.7 closed no entry.
+  K16 and K17 are the two limits v0.7's lighting ships with, and K18 a defect found reviewing its
+  lit materials that predates it, all added on 2026-10-01. v0.7 closed no entry.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -19,7 +19,8 @@ for things that are **wrong or surprising in code that already ships**.
   `IsValidAssetHandle`), K5 (`Debug-ASan` did not link), K7 (`Font::Create` ignored the asset root),
   K8 (assigning a physics component aliased its handle), K9 (`Renderer3D` dropped batch overflow),
   K12 (the swap-chain depth was discarded between render-pass instances) and K13 (the swap-chain
-  colour attachment used `LOAD_OP_NONE`).
+  colour attachment used `LOAD_OP_NONE`). Fixed since v0.6.3: K15 (a long frame dropped 3D bodies
+  through their colliders).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.

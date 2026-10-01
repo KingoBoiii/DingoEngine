@@ -219,7 +219,6 @@ namespace Dingo
 				chunk.Indices.clear();
 			}
 			matBatch.ChunksInUse = 0;
-			matBatch.OverflowWarned = false;
 			matBatch.Enqueued = false;
 			++it;
 		}
@@ -314,9 +313,8 @@ namespace Dingo
 		if (!material->GetSampler(0))
 			material->SetSampler(0, Renderer::GetClampSampler());
 
-		// Binding 1 is a VOLATILE constant buffer: NVRHI requires a write in every frame that
-		// binds it, so this must not be dirty-gated (skipping it floods "binding volatile constant
-		// buffer before writing" errors).
+		// Rebuilt every scene: SetRoughness and the other surface setters only change the
+		// material's params, never its uniform data.
 		LitMaterialData data;
 		const glm::vec3& emissiveColor = material->GetEmissiveColor();
 		data.EmissiveColor = glm::vec4(IsFinite(emissiveColor) ? emissiveColor : glm::vec3(0.0f), 0.0f);
@@ -533,11 +531,11 @@ namespace Dingo
 			DE_CORE_ASSERT(!caps.AssertOnOverflow,
 				"Renderer3D mesh exceeds a single batch's capacity and AssertOnOverflow is set. Raise Renderer3DCapabilities or submit a smaller mesh.");
 
-			if (!matBatch.OverflowWarned)
+			if (!m_MeshOverflowWarned)
 			{
 				DE_CORE_WARN("Renderer3D mesh exceeds a single batch's capacity ({} verts / {} indices); dropping this mesh. Raise Renderer3DCapabilities.MaxVertices/MaxIndices.",
 					caps.MaxVertices, caps.MaxIndices);
-				matBatch.OverflowWarned = true;
+				m_MeshOverflowWarned = true;
 			}
 			++m_Statistics.DroppedMeshes;
 			return;

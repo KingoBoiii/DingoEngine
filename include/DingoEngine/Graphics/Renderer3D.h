@@ -270,7 +270,6 @@ namespace Dingo
 		{
 			std::vector<MeshChunk> Chunks;
 			uint32_t ChunksInUse = 0;
-			bool OverflowWarned = false;
 			bool Enqueued = false; // already in m_DrawOrder for the scene in progress
 			uint32_t IdleScenes = 0;
 		};
@@ -293,6 +292,7 @@ namespace Dingo
 		Mesh* m_SphereMesh = nullptr;
 
 		bool m_SceneActive = false;
+		bool m_MeshOverflowWarned = false;
 	};
 
 }
