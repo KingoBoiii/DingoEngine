@@ -18,20 +18,20 @@ namespace
 	// Near/Far only matter to PlayAt; Caught and Win are always played 2D.
 	constexpr SfxDef k_Sfx[] =
 	{
-		{ "assets/audio/footstep.wav",    AUDIO_FOOTSTEP_VOLUME,    AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
-		{ "assets/audio/warden_step.wav", AUDIO_WARDEN_STEP_VOLUME, AUDIO_WARDEN_NEAR,  AUDIO_WARDEN_FAR },
-		{ "assets/audio/strike.wav",      AUDIO_STRIKE_VOLUME,      AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
-		{ "assets/audio/snuff.wav",       AUDIO_SNUFF_VOLUME,       AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
-		{ "assets/audio/flask.wav",       AUDIO_FLASK_VOLUME,       AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
-		{ "assets/audio/alert.wav",       AUDIO_ALERT_VOLUME,       AUDIO_ALERT_NEAR,   AUDIO_ALERT_FAR },
-		{ "assets/audio/caught.wav",      AUDIO_CAUGHT_VOLUME,      0.0f,               0.0f },
-		{ "assets/audio/ignite.wav",      AUDIO_IGNITE_VOLUME,      AUDIO_IGNITE_NEAR,  AUDIO_IGNITE_FAR },
-		{ "assets/audio/win.wav",         AUDIO_WIN_VOLUME,         0.0f,               0.0f },
+		{ "audio/footstep.wav",    AUDIO_FOOTSTEP_VOLUME,    AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
+		{ "audio/warden_step.wav", AUDIO_WARDEN_STEP_VOLUME, AUDIO_WARDEN_NEAR,  AUDIO_WARDEN_FAR },
+		{ "audio/strike.wav",      AUDIO_STRIKE_VOLUME,      AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
+		{ "audio/snuff.wav",       AUDIO_SNUFF_VOLUME,       AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
+		{ "audio/flask.wav",       AUDIO_FLASK_VOLUME,       AUDIO_STEP_NEAR,    AUDIO_STEP_FAR },
+		{ "audio/alert.wav",       AUDIO_ALERT_VOLUME,       AUDIO_ALERT_NEAR,   AUDIO_ALERT_FAR },
+		{ "audio/caught.wav",      AUDIO_CAUGHT_VOLUME,      0.0f,               0.0f },
+		{ "audio/ignite.wav",      AUDIO_IGNITE_VOLUME,      AUDIO_IGNITE_NEAR,  AUDIO_IGNITE_FAR },
+		{ "audio/win.wav",         AUDIO_WIN_VOLUME,         0.0f,               0.0f },
 	};
 	static_assert(std::size(k_Sfx) == static_cast<size_t>(Sfx::Count));
 
-	constexpr const char* k_CracklePath = "assets/audio/crackle_loop.wav";
-	constexpr const char* k_DronePath = "assets/audio/ambient_drone.wav";
+	constexpr const char* k_CracklePath = "audio/crackle_loop.wav";
+	constexpr const char* k_DronePath = "audio/ambient_drone.wav";
 
 	SoundAttenuation Falloff(float full, float silent)
 	{

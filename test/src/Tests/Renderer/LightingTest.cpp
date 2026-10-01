@@ -377,6 +377,57 @@ namespace Dingo
 				builtPoint.Intensity == pointComponent.Intensity && builtPoint.Range == pointComponent.Range,
 				"PointLightComponent::ToLight: the transform's position, the rest copied");
 		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const SpotLight spot = SpotLightAt({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 4.0f);
+			const auto sameWeights = [&](const SpotLight& a, const SpotLight& b, std::initializer_list<float> degrees)
+			{
+				for (const float angle : degrees)
+				{
+					const glm::vec3 sample = OffDownwardAxis(spot.Position, angle, 2.0f);
+					if (GetLightAttenuation(a, sample) != GetLightAttenuation(b, sample))
+						return false;
+				}
+				return true;
+			};
+
+			SpotLight outer179 = spot;
+			outer179.OuterConeAngle = 179.0f;
+			SpotLight outer200 = spot;
+			outer200.OuterConeAngle = 200.0f;
+			SpotLight outer1 = spot;
+			outer1.OuterConeAngle = 1.0f;
+			SpotLight outerTiny = spot;
+			outerTiny.OuterConeAngle = 0.2f;
+			SpotLight innerPastOuter = spot;
+			innerPastOuter.InnerConeAngle = 40.0f;
+			SpotLight innerEqualsOuter = spot;
+			innerEqualsOuter.InnerConeAngle = spot.OuterConeAngle;
+
+			const float wideSide = GetLightAttenuation(outer179, OffDownwardAxis(spot.Position, 90.0f, 2.0f));
+			const float hardInside = GetLightAttenuation(innerPastOuter, OffDownwardAxis(spot.Position, 29.0f, 2.0f));
+			const float hardOutside = GetLightAttenuation(innerPastOuter, OffDownwardAxis(spot.Position, 31.0f, 2.0f));
+			Check(sameWeights(outer200, outer179, { 0.0f, 25.0f, 90.0f, 170.0f, 178.5f }) && wideSide > 0.0f &&
+				sameWeights(outerTiny, outer1, { 0.0f, 0.5f, 2.0f }) &&
+				sameWeights(innerPastOuter, innerEqualsOuter, { 0.0f, 10.0f, 29.0f, 31.0f, 90.0f }) && hardInside > 0.0f && hardOutside == 0.0f,
+				std::format("the cone angles are clamped as SubmitLight clamps them: an outer angle of 200 acts as 179 (the side weighs {:.6f}), 0.2 as 1, and an inner angle past the outer acts as equal to it, a hard edge at 30 degrees ({:.6f} inside, {} outside)",
+					wideSide, hardInside, hardOutside));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const float infinity = std::numeric_limits<float>::infinity();
+			const PointLight point = PointLightAt({ 1.0f, 2.0f, 3.0f }, infinity);
+			const SpotLight spot = SpotLightAt({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, infinity);
+			const float pointNear = GetLightAttenuation(point, point.Position + glm::vec3(1.0f, 0.0f, 0.0f));
+			const float pointFar = GetLightAttenuation(point, point.Position + glm::vec3(0.0f, 0.0f, 1.0e6f));
+			const float spotNear = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 0.0f, 2.0f));
+			const float spotFar = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 0.0f, 1.0e6f));
+			Check(IsNear(pointNear, 1.0f) && IsNear(pointFar, 1.0f) && IsNear(spotNear, 1.0f) && IsNear(spotFar, 1.0f),
+				std::format("a light with an infinite Range has falloff 1 at any finite distance (point {:.6f} at 1 m and {:.6f} at 1000 km, spot on its axis {:.6f} and {:.6f})",
+					pointNear, pointFar, spotNear, spotFar));
+		});
 	}
 
 	void LightingTest::RunNextCheckStep()

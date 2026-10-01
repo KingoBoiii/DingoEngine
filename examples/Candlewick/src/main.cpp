@@ -1,6 +1,8 @@
 #include <DingoEngine/EntryPoint.h>
+#include <DingoEngine/Core/Platform.h>
 
 #include "CandlewickLayer.h"
+#include "GameTuning.h"
 
 #include <charconv>
 #include <optional>
@@ -38,6 +40,18 @@ static Dingo::GraphicsAPI ParseGraphicsAPI(const Dingo::ApplicationCommandLineAr
 	return Dingo::GraphicsAPI::Vulkan;
 }
 
+static bool ParseVSync(const Dingo::ApplicationCommandLineArgs& args)
+{
+	if (const std::optional<std::string_view> value = args.Get("vsync"))
+	{
+		if (*value == "off" || *value == "0" || *value == "false")
+			return false;
+		if (!value->empty() && *value != "on" && *value != "1" && *value != "true")
+			DE_WARN("Candlewick: ignoring --vsync={} (expected on/1/true or off/0/false)", *value);
+	}
+	return true;
+}
+
 static uint32_t ParseLightBudget(const Dingo::ApplicationCommandLineArgs& args)
 {
 	const uint32_t fallback = Dingo::Renderer3DCapabilities{}.MaxLocalLights;
@@ -48,9 +62,10 @@ static uint32_t ParseLightBudget(const Dingo::ApplicationCommandLineArgs& args)
 	uint32_t parsed = 0;
 	const char* end = value->data() + value->size();
 	const auto [ptr, error] = std::from_chars(value->data(), end, parsed);
-	if (error != std::errc{} || ptr != end || parsed < 1 || parsed > Dingo::Renderer3D::k_MaxLocalLights)
+	if (error != std::errc{} || ptr != end || parsed < static_cast<uint32_t>(Dingo::LIGHT_BUDGET_MIN) || parsed > Dingo::Renderer3D::k_MaxLocalLights)
 	{
-		DE_WARN("Candlewick: ignoring --light-budget={} (expected 1 to {})", *value, Dingo::Renderer3D::k_MaxLocalLights);
+		DE_WARN("Candlewick: ignoring --light-budget={} (expected {} to {}: the {} gameplay lights plus the light LOD's headroom must always fit)", *value,
+			Dingo::LIGHT_BUDGET_MIN, Dingo::Renderer3D::k_MaxLocalLights, Dingo::GAMEPLAY_LIGHTS_MAX);
 		return fallback;
 	}
 	return parsed;
@@ -64,13 +79,15 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.Title = "[Example] Candlewick (Point + Spot Lighting) - Dingo Engine",
 			.Width = 1600,
 			.Height = 900,
-			.VSync = true,
+			.VSync = ParseVSync(args),
 			.Resizable = false,
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
 			.FramesInFlight = 3,
 		},
+		.Assets = AssetManagerParams()
+			.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or("assets")),
 		.EnableUI = false,
 	};
 	params.Renderer3D.Capabilities.MaxLocalLights = ParseLightBudget(args);

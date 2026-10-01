@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string_view>
 
 namespace
@@ -57,6 +58,25 @@ namespace
 	constexpr glm::ivec2 k_Steps[] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
 
 	constexpr glm::ivec2 k_CheckpointOffsets[] = { { 0, 1 }, { 1, 0 }, { -1, 0 }, { 0, -1 }, { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } };
+
+	// The eye Wardens::Reset leaves a warden with, but at full range: walls are not known here.
+	SpotLight RouteStartEye(const KeepMap& map, const std::vector<glm::ivec2>& lane)
+	{
+		glm::vec3 ahead(0.0f, 0.0f, -1.0f);
+		if (lane.size() > 1)
+			ahead = glm::vec3(static_cast<float>(lane[1].x - lane[0].x), 0.0f, static_cast<float>(lane[1].y - lane[0].y));
+
+		const float pitch = glm::radians(WARDEN_EYE_PITCH_DEG);
+		SpotLight eye;
+		eye.Position = map.TileCenter(lane.front()) + glm::vec3(0.0f, WARDEN_EYE_HEIGHT, 0.0f) + ahead * WARDEN_EYE_FORWARD;
+		eye.Direction = glm::vec3(ahead.x * std::cos(pitch), -std::sin(pitch), ahead.z * std::cos(pitch));
+		eye.Color = WARDEN_LIGHT_COLOR;
+		eye.Intensity = WARDEN_EYE_INTENSITY;
+		eye.Range = WARDEN_EYE_RANGE;
+		eye.InnerConeAngle = WARDEN_EYE_INNER_DEG;
+		eye.OuterConeAngle = WARDEN_EYE_OUTER_DEG;
+		return eye;
+	}
 
 	bool MarkerTypeOf(char c, MarkerType& type)
 	{
@@ -149,7 +169,26 @@ namespace Dingo
 		}
 
 		m_WardenRoutes.assign(std::begin(k_WardenRouteDefs), std::end(k_WardenRouteDefs));
+		BuildRouteLanes();
 		ValidateRoutes();
+		ValidateMap();
+	}
+
+	void KeepMap::BuildRouteLanes()
+	{
+		for (const WardenRoute& route : m_WardenRoutes)
+		{
+			std::vector<glm::ivec2> lane;
+			for (size_t w = 0; w < route.Waypoints.size(); ++w)
+			{
+				const std::vector<glm::ivec2> leg = FindPath(route.Waypoints[w], route.Waypoints[(w + 1) % route.Waypoints.size()], route.Room);
+				if (leg.size() > 1)
+					lane.insert(lane.end(), leg.begin(), leg.end() - 1);
+			}
+			if (lane.empty() && !route.Waypoints.empty())
+				lane.push_back(route.Waypoints.front());
+			m_RouteLanes.push_back(std::move(lane));
+		}
 	}
 
 	void KeepMap::ValidateRoutes() const
@@ -167,6 +206,90 @@ namespace Dingo
 					DE_ERROR("Candlewick: warden {} has no path from ({}, {}) to ({}, {})", i + 1, from.x, from.y, to.x, to.y);
 			}
 		}
+	}
+
+	void KeepMap::ValidateMap() const
+	{
+		if (m_Rooms.empty())
+			return;
+
+		std::vector<bool> reached(m_Tiles.size(), false);
+		std::vector<glm::ivec2> frontier;
+		const glm::ivec2 start = m_Rooms.front().Spawn;
+		if (IsWalkable(start))
+		{
+			reached[IndexOf(start)] = true;
+			frontier.push_back(start);
+		}
+		for (size_t head = 0; head < frontier.size(); ++head)
+		{
+			for (const glm::ivec2& step : k_Steps)
+			{
+				const glm::ivec2 next = frontier[head] + step;
+				if (!InBounds(next) || !IsWalkable(next) || reached[IndexOf(next)])
+					continue;
+				reached[IndexOf(next)] = true;
+				frontier.push_back(next);
+			}
+		}
+
+		const auto isReached = [&](const glm::ivec2& tile) { return InBounds(tile) && reached[IndexOf(tile)]; };
+		const auto isReachedBeside = [&](const glm::ivec2& tile)
+		{
+			return std::any_of(std::begin(k_CheckpointOffsets), std::end(k_CheckpointOffsets), [&](const glm::ivec2& offset) { return isReached(tile + offset); });
+		};
+
+		for (const MarkerType type : { MarkerType::Brazier, MarkerType::Altar })
+		{
+			const char* name = type == MarkerType::Altar ? "altar" : "brazier";
+			for (const KeepMarker& marker : GetMarkers(type))
+			{
+				if (!isReachedBeside(marker.Tile))
+					DE_WARN("Candlewick: the {} at ({}, {}) cannot be reached from the first spawn", name, marker.Tile.x, marker.Tile.y);
+				if (type != MarkerType::Brazier)
+					continue;
+
+				const glm::ivec2 checkpoint = FindCheckpointTile(marker.Tile);
+				if (!isReached(checkpoint))
+					DE_WARN("Candlewick: the checkpoint ({}, {}) of the brazier at ({}, {}) cannot be reached from the first spawn", checkpoint.x, checkpoint.y, marker.Tile.x, marker.Tile.y);
+				if (GetLaneDistance(checkpoint) == 0.0f)
+					DE_WARN("Candlewick: the checkpoint ({}, {}) of the brazier at ({}, {}) lies on a patrol lane", checkpoint.x, checkpoint.y, marker.Tile.x, marker.Tile.y);
+				else if (IsSeenAtRouteStart(checkpoint))
+					DE_WARN("Candlewick: the checkpoint ({}, {}) of the brazier at ({}, {}) is inside a warden's cone when its route starts over", checkpoint.x, checkpoint.y, marker.Tile.x, marker.Tile.y);
+			}
+		}
+	}
+
+	float KeepMap::GetLaneDistance(const glm::ivec2& tile) const
+	{
+		int nearest = std::numeric_limits<int>::max();
+		for (const std::vector<glm::ivec2>& lane : m_RouteLanes)
+		{
+			for (const glm::ivec2& laneTile : lane)
+			{
+				const glm::ivec2 offset = tile - laneTile;
+				nearest = std::min(nearest, offset.x * offset.x + offset.y * offset.y);
+			}
+		}
+		return nearest == std::numeric_limits<int>::max() ? std::numeric_limits<float>::max() : std::sqrt(static_cast<float>(nearest));
+	}
+
+	bool KeepMap::IsSeenAtRouteStart(const glm::ivec2& tile) const
+	{
+		const glm::vec3 center = TileCenter(tile);
+		for (const std::vector<glm::ivec2>& lane : m_RouteLanes)
+		{
+			if (lane.empty())
+				continue;
+
+			const SpotLight eye = RouteStartEye(*this, lane);
+			for (const float height : { SAMPLE_FEET, SAMPLE_CHEST, SAMPLE_HEAD })
+			{
+				if (GetLightAttenuation(eye, center + glm::vec3(0.0f, height, 0.0f)) >= SEEN_WEIGHT)
+					return true;
+			}
+		}
+		return false;
 	}
 
 	bool KeepMap::InBounds(const glm::ivec2& tile) const
@@ -253,12 +376,25 @@ namespace Dingo
 	glm::ivec2 KeepMap::FindCheckpointTile(const glm::ivec2& brazier) const
 	{
 		const int room = RoomOf(brazier);
+		std::optional<glm::ivec2> best;
+		bool bestSeen = true;
+		float bestClearance = 0.0f;
 		for (const glm::ivec2& offset : k_CheckpointOffsets)
 		{
-			if (IsPatrolFloor(brazier + offset, room))
-				return brazier + offset;
+			const glm::ivec2 tile = brazier + offset;
+			if (!IsPatrolFloor(tile, room))
+				continue;
+
+			const bool seen = IsSeenAtRouteStart(tile);
+			const float clearance = GetLaneDistance(tile);
+			if (!best || (bestSeen && !seen) || (seen == bestSeen && clearance > bestClearance))
+			{
+				best = tile;
+				bestSeen = seen;
+				bestClearance = clearance;
+			}
 		}
-		return FindNearestRoomTile(brazier, room).value_or(brazier);
+		return best ? *best : FindNearestRoomTile(brazier, room).value_or(brazier);
 	}
 
 	char KeepMap::At(const glm::ivec2& tile) const

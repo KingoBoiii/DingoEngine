@@ -30,6 +30,7 @@ namespace
 
 	constexpr float k_PathSampleStep = 0.1f;
 	constexpr float k_ArrivalEpsilon = 1e-3f;
+	constexpr float k_FacingEpsilon = 1e-3f;
 	constexpr float k_InvSqrtTwo = 0.70710678f;
 
 	const char* StateName(Wardens::State state)
@@ -197,6 +198,7 @@ namespace Dingo
 		eye.InnerConeAngle = WARDEN_EYE_INNER_DEG;
 		eye.OuterConeAngle = WARDEN_EYE_OUTER_DEG;
 		eye.Direction = glm::vec3(0.0f, 0.0f, -1.0f);
+		eye.Enabled = false;
 
 		warden.Marker = m_Scene.CreateEntity("WardenMarker");
 		warden.Marker.AddComponent<Transform3DComponent>().Scale = glm::vec3(WARDEN_MARKER_SIZE);
@@ -210,24 +212,27 @@ namespace Dingo
 	void Wardens::Reset()
 	{
 		for (Warden& warden : m_Wardens)
-		{
-			warden.Feet = warden.Loop.front().Position;
-			warden.Next = warden.Loop.size() > 1 ? 1 : 0;
-			const glm::vec3 ahead = warden.Loop[warden.Next].Position - warden.Feet;
-			warden.Yaw = glm::dot(ahead, ahead) > 0.0f ? YawOf(ahead) : 0.0f;
-			warden.Mode = State::Patrol;
-			warden.Pause = 0.0f;
-			warden.Path.clear();
-			warden.PathNext = 0;
-			warden.Looking = false;
-			warden.Suspicion = 0.0f;
-			warden.Request.reset();
-			warden.StepDistance = 0.0f;
+			ResetWarden(warden);
+	}
 
-			Place(warden);
-			ClampRange(warden, 0.0f, true);
-			UpdateMarker(warden);
-		}
+	void Wardens::ResetWarden(Warden& warden)
+	{
+		warden.Feet = warden.Loop.front().Position;
+		warden.Next = warden.Loop.size() > 1 ? 1 : 0;
+		const glm::vec3 ahead = warden.Loop[warden.Next].Position - warden.Feet;
+		warden.Yaw = glm::dot(ahead, ahead) > 0.0f ? YawOf(ahead) : 0.0f;
+		warden.Mode = State::Patrol;
+		warden.Pause = 0.0f;
+		warden.Path.clear();
+		warden.PathNext = 0;
+		warden.Looking = false;
+		warden.Suspicion = 0.0f;
+		warden.Request.reset();
+		warden.StepDistance = 0.0f;
+
+		Place(warden);
+		ClampRange(warden, 0.0f, true);
+		UpdateMarker(warden);
 	}
 
 	glm::vec3 Wardens::GetForward(size_t index) const
@@ -235,12 +240,12 @@ namespace Dingo
 		return YawRotation(m_Wardens[index].Yaw) * glm::vec3(0.0f, 0.0f, -1.0f);
 	}
 
-	void Wardens::SetSuspicion(size_t index, float suspicion, const std::optional<glm::ivec2>& lastSeen)
+	void Wardens::SetSuspicion(size_t index, float suspicion, const std::optional<glm::vec3>& sighting)
 	{
 		Warden& warden = m_Wardens[index];
 		warden.Suspicion = suspicion;
-		if (lastSeen)
-			warden.Request = lastSeen;
+		if (sighting)
+			warden.Request = sighting;
 		UpdateMarker(warden);
 	}
 
@@ -275,7 +280,8 @@ namespace Dingo
 		{
 			DE_INFO("Candlewick: warden {} ({}) {} -> {}: sighting ({}, {}), goal ({}, {})", index + 1, m_Map.GetRooms()[warden.Room].Name,
 				StateName(warden.Mode), StateName(state), warden.Target.x, warden.Target.y, warden.Goal.x, warden.Goal.y);
-			m_Audio.PlayAt(Sfx::Alert, warden.Feet + glm::vec3(0.0f, WARDEN_EYE_HEIGHT, 0.0f));
+			if (warden.Mode == State::Patrol)
+				m_Audio.PlayAt(Sfx::Alert, warden.Feet + glm::vec3(0.0f, WARDEN_EYE_HEIGHT, 0.0f));
 		}
 		else
 			DE_INFO("Candlewick: warden {} ({}) {} -> {}", index + 1, m_Map.GetRooms()[warden.Room].Name, StateName(warden.Mode), StateName(state));
@@ -284,8 +290,20 @@ namespace Dingo
 
 	void Wardens::Think(Warden& warden, size_t index, float deltaTime)
 	{
-		if (warden.Request && (warden.Mode != State::Investigate || *warden.Request != warden.Target))
-			BeginInvestigate(warden, index, *warden.Request);
+		if (warden.Request)
+		{
+			const glm::ivec2 tile = m_Map.TileOf(*warden.Request);
+			warden.Sighting = *warden.Request;
+			if (warden.Mode != State::Investigate || tile != warden.Target)
+			{
+				BeginInvestigate(warden, index, tile);
+			}
+			else if (warden.Looking)
+			{
+				warden.LookTime = 0.0f;
+				FaceSighting(warden);
+			}
+		}
 
 		switch (warden.Mode)
 		{
@@ -298,17 +316,19 @@ namespace Dingo
 			{
 				const bool close = glm::length(Flat(m_Map.TileCenter(warden.Goal) - warden.Feet)) <= WARDEN_INVESTIGATE_STOP;
 				if (close || FollowPath(warden, WARDEN_INVESTIGATE_SPEED, deltaTime))
-				{
-					warden.Looking = true;
-					warden.LookTime = 0.0f;
-					warden.LookYaw = warden.Yaw;
-				}
+					BeginLook(warden);
+				break;
+			}
+
+			if (warden.LookTime <= 0.0f && std::abs(GameMath::WrapAngle(warden.LookYaw - warden.Yaw)) > k_FacingEpsilon)
+			{
+				warden.Yaw = GameMath::ApproachAngle(warden.Yaw, warden.LookYaw, WARDEN_TURN_SPEED * deltaTime);
 				break;
 			}
 
 			warden.LookTime += deltaTime;
-			warden.Yaw = ApproachAngle(warden.Yaw,
-				warden.LookYaw + glm::radians(WARDEN_LOOK_SWEEP_DEG) * std::sin(2.0f * PI * warden.LookTime / WARDEN_LOOK_TIME),
+			warden.Yaw = GameMath::ApproachAngle(warden.Yaw,
+				warden.LookYaw + glm::radians(WARDEN_LOOK_SWEEP_DEG) * std::sin(2.0f * GameMath::PI * warden.LookTime / WARDEN_LOOK_TIME),
 				WARDEN_TURN_SPEED * deltaTime);
 			if (warden.LookTime >= WARDEN_LOOK_TIME)
 				BeginReturn(warden, index);
@@ -332,7 +352,7 @@ namespace Dingo
 			warden.Pause -= deltaTime;
 			const glm::vec3 ahead = Flat(warden.Loop[warden.Next].Position - warden.Feet);
 			if (glm::dot(ahead, ahead) > k_ArrivalEpsilon * k_ArrivalEpsilon)
-				warden.Yaw = ApproachAngle(warden.Yaw, YawOf(ahead), WARDEN_TURN_SPEED * deltaTime);
+				warden.Yaw = GameMath::ApproachAngle(warden.Yaw, YawOf(ahead), WARDEN_TURN_SPEED * deltaTime);
 			return;
 		}
 
@@ -381,16 +401,28 @@ namespace Dingo
 		SetState(warden, index, State::Investigate);
 	}
 
+	void Wardens::BeginLook(Warden& warden)
+	{
+		warden.Looking = true;
+		warden.LookTime = 0.0f;
+		warden.LookYaw = warden.Yaw;
+		FaceSighting(warden);
+	}
+
+	void Wardens::FaceSighting(Warden& warden)
+	{
+		const glm::vec3 toSighting = Flat(warden.Sighting - warden.Feet);
+		if (glm::dot(toSighting, toSighting) > k_ArrivalEpsilon * k_ArrivalEpsilon)
+			warden.LookYaw = YawOf(toSighting);
+	}
+
 	void Wardens::BeginReturn(Warden& warden, size_t index)
 	{
 		const std::vector<glm::ivec2> tiles = m_Map.FindPathToNearest(m_Map.TileOf(warden.Feet), warden.LoopTiles, warden.Room);
 		if (tiles.empty())
 		{
 			DE_WARN("Candlewick: warden {} has no way back to its route; it starts the route over", index + 1);
-			warden.Feet = warden.Loop.front().Position;
-			warden.Next = warden.Loop.size() > 1 ? 1 : 0;
-			warden.Looking = false;
-			SetState(warden, index, State::Patrol);
+			ResetWarden(warden);
 			return;
 		}
 
@@ -423,7 +455,7 @@ namespace Dingo
 
 		const glm::vec3 direction = offset / distance;
 		const float desired = YawOf(direction);
-		warden.Yaw = ApproachAngle(warden.Yaw, desired, WARDEN_TURN_SPEED * timeLeft);
+		warden.Yaw = GameMath::ApproachAngle(warden.Yaw, desired, WARDEN_TURN_SPEED * timeLeft);
 
 		if (IsBlockedAhead(warden, direction))
 		{
@@ -432,7 +464,7 @@ namespace Dingo
 		}
 
 		// Slows into sharp turns instead of sliding sideways.
-		const float step = speed * std::max(0.0f, std::cos(WrapAngle(desired - warden.Yaw))) * timeLeft;
+		const float step = speed * std::max(0.0f, std::cos(GameMath::WrapAngle(desired - warden.Yaw))) * timeLeft;
 		if (step >= distance)
 		{
 			warden.Feet = glm::vec3(target.x, warden.Feet.y, target.z);
@@ -542,6 +574,12 @@ namespace Dingo
 
 		auto& eye = warden.Eye.GetComponent<SpotLightComponent>();
 		eye.Range = (snap || target <= eye.Range) ? target : std::min(target, eye.Range + WARDEN_EYE_RANGE_GROWTH * deltaTime);
+
+		if (!warden.Armed && (physics || !m_RangeClamp))
+		{
+			warden.Armed = true;
+			eye.Enabled = true;
+		}
 	}
 
 	void Wardens::UpdateMarker(Warden& warden)

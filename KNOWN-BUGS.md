@@ -7,8 +7,9 @@ for things that are **wrong or surprising in code that already ships**.
 - **Verified against `VERSION` 0.7.0 on 2026-10-01.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
   K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29;
-  K16 and K17 are the two limits v0.7's lighting ships with, and K18 a defect found reviewing its
-  lit materials that predates it, all added on 2026-10-01. v0.7 closed no entry.
+  K16 and K17 are the two limits v0.7's lighting ships with, K18 a defect found reviewing its
+  lit materials that predates it, and K19 one found reviewing Candlewick, all added on 2026-10-01.
+  v0.7 closed no entry.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -36,6 +37,7 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K16](#k16) | Point and spot lights pop in and out at the light-budget edge | Limitation | Renderer3D |
 | [K17](#k17) | Overlapping bright lights clip to white until tone mapping lands | Limitation | Renderer3D |
 | [K18](#k18) | A texture created at a freed texture's address is not noticed by a material | Defect | Graphics |
+| [K19](#k19) | A wireframe material on a GPU without `fillModeNonSolid` builds a line-mode pipeline the device never enabled | Defect | Vulkan |
 
 ---
 
@@ -142,6 +144,26 @@ Not new in v0.7: it was deferred, as pre-existing, from the review of v0.7's lit
 (documented on `Material::SetTexture`): clear the slot with `SetTexture(slot, nullptr)` before setting
 the new texture, which drops the cached passes. **Fix**: draw every texture's generation from one global
 counter (or give each a unique id) and compare that instead of the pointer.
+
+## K19 — A wireframe material on a GPU without `fillModeNonSolid` builds a line-mode pipeline the device never enabled {#k19}
+
+**Defect** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.cpp:533`,
+`src/DingoEngine/Graphics/Material.cpp:172`, `src/DingoEngine/Graphics/NVRHI/NvrhiPipeline.cpp:26`
+
+The Vulkan device requests `fillModeNonSolid` only where the GPU reports it, which is right, but nothing
+downstream knows whether it did. `Material` still passes `FillMode::Wireframe` to its pipeline, and
+`NvrhiPipeline` maps it to `RasterFillMode::Line` (`VK_POLYGON_MODE_LINE`), which
+VUID-VkPipelineRasterizationStateCreateInfo-polygonMode-01507 forbids without the feature. With the
+validation layers on, that is an error per pipeline; without them the driver decides: it may draw filled,
+draw lines, or crash.
+
+Every desktop GPU that passes the engine's unconditional device features (geometry and tessellation
+shaders, BC compression) also reports `fillModeNonSolid`, so in practice only a wireframe material on
+unusual hardware is exposed (Candlewick's `--debug-cone` is the only one in-tree). D3D11 and D3D12 have no
+such requirement. Found reviewing Candlewick; the fix that enabled the feature (`764a09c`) is not at fault.
+
+**Fix**: record the capability on the graphics context (say `GraphicsContext::SupportsWireframe()`), and
+have `NvrhiPipeline` fall back to `Solid` with a one-time warning when it is missing.
 
 ---
 

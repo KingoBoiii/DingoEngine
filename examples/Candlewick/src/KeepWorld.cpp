@@ -397,7 +397,6 @@ namespace Dingo
 		flame.Core = SpawnGlow("SconceCore", base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
 		flame.Light = SpawnPointLight("SconceLight", base + inward * k_SconceLightOffset + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), SCONCE_LIGHT_INTENSITY, SCONCE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Sconce;
-		flame.Room = marker.Room;
 		flame.BaseIntensity = SCONCE_LIGHT_INTENSITY;
 
 		const int wallRect = m_WallOfTile[static_cast<size_t>(marker.Tile.y + wallStep->y) * m_Map.GetWidth() + marker.Tile.x + wallStep->x];
@@ -419,7 +418,6 @@ namespace Dingo
 		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter, m_FlameMaterial, COLOR_EMBER);
 		flame.Light = SpawnPointLight("CandleLight", flameCenter + glm::vec3(0.0f, k_CandleLightRise, 0.0f), CANDLE_LIGHT_INTENSITY, CANDLE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Candle;
-		flame.Room = marker.Room;
 		flame.BaseIntensity = CANDLE_LIGHT_INTENSITY;
 		return flame;
 	}
@@ -427,8 +425,6 @@ namespace Dingo
 	FlaskSpot KeepWorld::SpawnFlask(const KeepMarker& marker)
 	{
 		FlaskSpot flask;
-		flask.Tile = marker.Tile;
-		flask.Room = marker.Room;
 		flask.Position = m_Map.TileCenter(marker.Tile);
 
 		Entity body = m_Scene.CreateEntity("FlaskBody");

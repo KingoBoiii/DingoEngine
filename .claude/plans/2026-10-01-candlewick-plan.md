@@ -4,8 +4,8 @@ Drafted 2026-10-01 on branch `claude/v0-7-lighting-planning-cad5a1` @ `1ac5ee3` 
 Every `file:line` below was read on that date. Scope source: `ROADMAP.md:138-144` and §6 of
 `.claude/plans/2026-09-26-v0.7-lighting-plan.md`.
 
-**Status**: decisions D1–D4 (§9) settled 2026-10-01, each on the recommended option. Building
-starts only after the user's go-ahead.
+**Status**: built, C0–C6, 2026-10-01 (decisions D1–D4 in §9 settled on the recommended options).
+§11 "As built" overrides the design sections where they differ. Merge and release are next.
 
 ---
 
@@ -235,6 +235,7 @@ Every phase's before/after and pixel checks need reproducible frames:
 | `--spawn=<col>,<row>` | *(C4)* the player's start tile (falls back to the room spawn on a bad or blocked tile) |
 | `--no-range-clamp` | *(C4)* the wardens' eyes keep their full range, to show the leak through walls |
 | `--all-lit` | *(C5)* every brazier but the altar starts lit |
+| `--vsync=off` | *(C6)* uncapped frame rate, for frame-time measurements |
 
 `--freeze` also stops catches (suspicion and markers still update), so frozen captures stay stable.
 
@@ -494,7 +495,7 @@ Docs (C6):
   "lit" (the Gallery would be lit everywhere and snuffing would mean nothing there); sconces count
   at their base strength and braziers while lit, never through the light LOD's state, so
   `--no-light-lod` and `--light-budget` don't change gameplay. Rates: cone 0.6 + 1.2·w, beacon
-  0.5 (field 120°), decay 0.25; a cone catch takes about 1.1 s with the suspicious marker visible
+  0.5 (field 120°), decay 0.25, touch (closer than 0.8 m) holds at 0.6 or more; a cone catch takes about 1.1 s with the suspicious marker visible
   on the way.
 - Caught: movement halts that frame, 1 s fade, respawn at the last room's spawn with at least
   50 oil (C5 replaces both with the checkpoint), wardens reset.
@@ -527,3 +528,38 @@ Docs (C6):
 - Pause: Esc / pad Start toggles; subsystems don't update, the player halts, master volume is
   muted and restored. Pad B or Enter leaves to the Title from the pause (Start can't do both).
 - Not verified here: pad hardware (no pad on this machine) and listening to the audio.
+
+*C6 (review fixes, from `.claude/reviews/2026-10-01-candlewick-review.md`):*
+
+- Wardens: a sighting is the player's position. A warden that starts to look (or already stands within
+  `WARDEN_INVESTIGATE_STOP`) turns to face it first and centres the ±60° sweep on that bearing; a repeat
+  sighting of the same tile resets the look timer; the alert sting plays only on Patrol → Investigate.
+  Each eye's light stays off until its first range clamp with physics running (the first frame no longer
+  shines through walls).
+- Respawn: the checkpoint tile is the brazier neighbour no route-start cone covers and farthest from every
+  patrol lane (the Gallery's is (48,4)), and detection is skipped for `RESPAWN_GRACE_TIME` = 2.5 s.
+- A lit brazier refills the lantern to full (and relights it) on the same hold, with no checkpoint change,
+  so running out of oil and flasks is no longer a dead end; the prompt says "Out of oil - find a flask or a
+  lit brazier" when a strike is impossible.
+- `--light-budget` is 16 to 32: 14 gameplay lights (lantern, four braziers, the altar, four wardens' lamp
+  and eye) plus the LOD's headroom of 2. The LOD warns once when the gameplay lights in view exceed its
+  capacity, and the layer warns once if `DroppedLights` is non-zero with the LOD on.
+- Asset root: `Platform::FindDirectoryUpward("assets").value_or("assets")`, with root-relative paths, so the
+  packaged zip works from any folder. `KeepMap::ValidateMap` warns about unreachable braziers, the altar or
+  checkpoints and about a checkpoint on a lane or inside a route-start cone. `PI`, `WrapAngle` and
+  `ApproachAngle` moved to `Dingo::GameMath`.
+- Not fixed, by design: B8 (a double Esc quits), B9 (the checkpoint is the last brazier lit), O2 (the
+  `--debug-cone` rebuild). B4 is filed as K19. The Lighting Test gained two checks (angle clamps, infinite
+  `Range`).
+- Verified by run: no map-validation warnings; the Gallery brazier saves checkpoint (48,4); touching
+  a warden from behind gives one Investigate, the warden turns and catches, and the respawn is unseen
+  for 2.5 s; at oil 0 a lit brazier refills to 100 and relights; `--light-budget=12` is refused and
+  16 with every brazier lit logs no LOD or dropped-light warning; the Lighting Test passes 25 of 25.
+  Not run: B7's first frame.
+- Backends (every brazier lit, each room from above): DX11 and DX12 differ from Vulkan by 2–7 px at
+  1/255. Frame time, VSync off (`--vsync=off`), 1600×900: Release 1.8–2.1 ms in every room and the
+  Gallery's worst case; Debug 13–14 ms, spent CPU-transforming all ~330 meshes every frame (no culling
+  until v1.0). Going from 7 to 30 lights moves Release by under 0.1 ms. 15 draw calls, ~33k indices.
+- Docs: README (status, version row, examples), ROADMAP v0.7 (the game as built, gameplay queries,
+  the Vulkan fix, the tie-break wording), CLAUDE.md (examples, the v0.7 bullet, the current reviews),
+  `docs/lighting.md` (Candlewick as the worked example and its light budgeting), KNOWN-BUGS K19.

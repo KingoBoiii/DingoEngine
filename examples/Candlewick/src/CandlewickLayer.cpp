@@ -20,8 +20,8 @@ namespace Dingo
 		RebuildEndScene();
 		RebuildKeepScene();
 
-		m_SceneManager.SetActiveScene(GetLaunchOptions().Room > 0 ? SCENE_KEEP : SCENE_TITLE); // first activation only selects
-		m_SceneManager.GetActiveScene()->OnStart();                                    // host starts it explicitly
+		m_SceneManager.SetActiveScene(GetLaunchOptions().Room > 0 ? SCENE_KEEP : SCENE_TITLE);
+		m_SceneManager.GetActiveScene()->OnStart();
 	}
 
 	void CandlewickLayer::OnDetach()
@@ -60,6 +60,21 @@ namespace Dingo
 			RebuildKeepScene();
 		else if (activeBefore == m_EndScene && activeAfter != m_EndScene)
 			RebuildEndScene();
+
+		CheckDroppedLights(activeAfter);
+	}
+
+	void CandlewickLayer::CheckDroppedLights(const Scene* active)
+	{
+		if (m_DroppedLightsWarned || active != m_KeepScene || GetLaunchOptions().NoLightLod)
+			return;
+
+		const uint32_t dropped = Application::Get().GetRenderer3D().GetStatistics().DroppedLights;
+		if (dropped > 0)
+		{
+			m_DroppedLightsWarned = true;
+			DE_WARN("Candlewick: the renderer dropped {} light(s) with the light LOD on; the LOD's copy of its culling has drifted from the engine's, so a drawn cone may not be a tested one", dropped);
+		}
 	}
 
 }

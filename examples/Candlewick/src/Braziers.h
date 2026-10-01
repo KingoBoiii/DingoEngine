@@ -19,8 +19,9 @@ namespace Dingo
 	class LightLod;
 	class Player;
 
-	// Lighting the keep's braziers: the hold that kindles one, the checkpoint it saves, and the
-	// flicker of everything that burns. Every brazier starts dark except the Gatehouse's.
+	// Lighting the keep's braziers: the hold that kindles one, the checkpoint it saves, the same hold
+	// at a lit one to refill the lantern, and the flicker of everything that burns. Every brazier
+	// starts dark except the Gatehouse's.
 	class Braziers
 	{
 	public:
@@ -30,6 +31,12 @@ namespace Dingo
 			float Oil = 0.0f;
 		};
 
+		struct Outcome
+		{
+			std::optional<size_t> Lit;
+			bool Refuelled = false;
+		};
+
 		// The first checkpoint is the Gatehouse brazier's, or `startTile` when a debug flag moved the start.
 		Braziers(Scene& scene, const KeepMap& map, KeepWorld& world, LightLod& lightLod, GameAudio& audio, float startOil,
 			const std::optional<glm::ivec2>& startTile, bool flicker, bool allLit);
@@ -37,9 +44,10 @@ namespace Dingo
 		Braziers(const Braziers&) = delete;
 		Braziers& operator=(const Braziers&) = delete;
 
-		// Returns the brazier lit this frame, if the player finished a hold. Flicker runs regardless of
-		// `canLight`, which the caller clears while the player is caught or the run is won.
-		std::optional<size_t> Update(float deltaTime, const Player& player, Lantern& lantern, bool canLight);
+		// Reports what a finished hold did this frame: the brazier it lit, or a refill at a lit one that
+		// leaves the checkpoint alone. Flicker runs regardless of `canLight`, which the caller clears
+		// while the player is caught or the run is won.
+		Outcome Update(float deltaTime, const Player& player, Lantern& lantern, bool canLight);
 
 		const Checkpoint& GetCheckpoint() const { return m_Checkpoint; }
 

@@ -125,7 +125,7 @@ namespace Dingo
 		controller->SetLinearVelocity(velocity);
 
 		if (glm::length(move) > k_FacingThreshold)
-			m_Yaw = ApproachAngle(m_Yaw, std::atan2(move.x, move.z), PLAYER_TURN_SPEED * deltaTime);
+			m_Yaw = GameMath::ApproachAngle(m_Yaw, std::atan2(move.x, move.z), PLAYER_TURN_SPEED * deltaTime);
 
 		PlaceVisuals(controller->GetPosition());
 	}

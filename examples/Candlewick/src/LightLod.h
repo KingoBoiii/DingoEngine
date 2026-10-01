@@ -43,6 +43,7 @@ namespace Dingo
 		std::vector<size_t> m_Order;
 		bool m_Enabled = true;
 		bool m_Primed = false;
+		bool m_OverCapacityWarned = false;
 	};
 
 }

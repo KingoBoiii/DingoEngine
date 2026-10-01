@@ -47,6 +47,7 @@ namespace Dingo
 		bool m_Overview = false;
 		bool m_Paused = false;
 		float m_CaughtTime = -1.0f;
+		float m_Grace = 0.0f;
 		float m_WinTime = -1.0f;
 		float m_Fade = 0.0f;
 		float m_Seconds = 0.0f;

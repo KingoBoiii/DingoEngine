@@ -113,6 +113,17 @@ namespace Dingo
 		m_Oil = std::clamp(oil, 0.0f, OIL_MAX);
 	}
 
+	void Lantern::Refill()
+	{
+		m_Oil = OIL_MAX;
+		if (m_State == State::Snuffed)
+		{
+			m_State = State::Lit;
+			DE_INFO("Candlewick: lantern lit (oil {:.1f})", m_Oil);
+		}
+		Apply();
+	}
+
 	void Lantern::Update(float deltaTime, Player& player)
 	{
 		m_Clock += deltaTime;

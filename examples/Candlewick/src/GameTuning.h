@@ -38,12 +38,21 @@ namespace Dingo
 	inline constexpr float HUD_PAUSE_HINT_SIZE = 0.42f;
 	inline constexpr float HUD_PAUSE_HINT_DROP = 0.3f;
 
+	inline constexpr float TITLE_HEADING_SIZE  = 1.5f;
+	inline constexpr float TITLE_HEADING_Y     = 2.4f;
+	inline constexpr float TITLE_TAGLINE_SIZE  = 0.42f;
+	inline constexpr float TITLE_TAGLINE_Y     = 0.5f;
+	inline constexpr float TITLE_PROMPT_SIZE   = 0.5f;
+	inline constexpr float TITLE_PROMPT_Y      = -2.2f;
 	inline constexpr float TITLE_CONTROLS_SIZE = 0.34f;
 	inline constexpr float TITLE_CONTROLS_Y    = -3.7f;
+	inline constexpr float END_HEADING_SIZE    = 1.2f;
+	inline constexpr float END_HEADING_Y       = 1.8f;
 	inline constexpr float END_TIME_SIZE       = 0.7f;
 	inline constexpr float END_TIME_Y          = 0.4f;
 	inline constexpr float END_CATCHES_SIZE    = 0.48f;
 	inline constexpr float END_CATCHES_Y       = -0.55f;
+	inline constexpr float END_PROMPT_SIZE     = 0.45f;
 	inline constexpr float END_PROMPT_Y        = -2.6f;
 
 	// --- Camera (three-quarter view, fixed yaw) --------------------------------
@@ -146,6 +155,7 @@ namespace Dingo
 	inline constexpr float BEACON_FLAME_WEIGHT      = 0.25f;
 	inline constexpr float CAUGHT_FADE_TIME         = 1.0f;
 	inline constexpr float RESPAWN_FADE_TIME        = 0.5f;
+	inline constexpr float RESPAWN_GRACE_TIME       = 2.5f;
 
 	// --- Detection debug view (--debug-cone) ----------------------------------------
 	inline constexpr uint32_t DEBUG_CONE_SEGMENTS   = 24;
@@ -160,6 +170,10 @@ namespace Dingo
 	inline constexpr float LIGHT_LOD_STICKINESS  = 0.6f;
 	inline constexpr float LIGHT_LOD_FADE_TIME   = 0.3f;
 	inline constexpr float LIGHT_LOD_VIEW_MARGIN = 2.0f;
+
+	// The lantern, four braziers and the altar, and four wardens' lamp and eye: every gameplay light that can burn at once.
+	inline constexpr int   GAMEPLAY_LIGHTS_MAX   = 1 + 5 + 4 * 2;
+	inline constexpr int   LIGHT_BUDGET_MIN      = GAMEPLAY_LIGHTS_MAX + LIGHT_LOD_HEADROOM;
 
 	// --- Ambient: the keep has no sun ------------------------------------------
 	inline constexpr glm::vec3 AMBIENT_COLOR   = { 0.55f, 0.6f, 1.0f };

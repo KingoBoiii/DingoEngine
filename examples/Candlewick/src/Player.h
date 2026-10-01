@@ -20,7 +20,6 @@ namespace Dingo
 
 		void Update(float deltaTime);
 
-		Entity GetEntity() const { return m_Entity; }
 		glm::vec3 GetPosition() const;
 
 		// Walking this frame: steering, unlocked, on the ground and carried forward by the last step,

@@ -3,6 +3,6 @@
 namespace Dingo
 {
 
-	enum class BrazierPrompt { None, Light, LightAltar, NeedLantern };
+	enum class BrazierPrompt { None, Light, LightAltar, Refuel, NeedLantern, NoOil };
 
 }

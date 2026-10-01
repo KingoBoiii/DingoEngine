@@ -135,6 +135,13 @@ namespace Dingo
 		const Load gameplay = CountGameplayLights(m_Gameplay, planes);
 		const int slots = std::max(0, capacity - gameplay.Planned);
 
+		if (!m_OverCapacityWarned && gameplay.Exact > capacity)
+		{
+			m_OverCapacityWarned = true;
+			DE_WARN("Candlewick: {} gameplay lights are in view but the light LOD's capacity is {} (budget {} less {} headroom); "
+				"the renderer may drop a warden's eye, so the cone drawn and the cone tested can differ", gameplay.Exact, capacity, budget, LIGHT_LOD_HEADROOM);
+		}
+
 		m_Order.clear();
 		for (size_t i = 0; i < m_Flames.size(); ++i)
 		{

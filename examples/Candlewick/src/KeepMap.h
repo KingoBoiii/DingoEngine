@@ -81,7 +81,8 @@ namespace Dingo
 		// The patrol floor tile of `room` closest to `tile` as the crow flies, for a spot outside it.
 		std::optional<glm::ivec2> FindNearestRoomTile(const glm::ivec2& tile, int room) const;
 
-		// Where a player lands after a brazier's checkpoint: a free tile beside it, the camera's side first.
+		// Where a player lands after a brazier's checkpoint: the free tile beside it that no warden's cone
+		// covers when its route starts over, and farthest from every patrol lane (ties go to the camera's side).
 		glm::ivec2 FindCheckpointTile(const glm::ivec2& brazier) const;
 
 		glm::vec3 TileCenter(const glm::ivec2& tile) const;
@@ -97,7 +98,11 @@ namespace Dingo
 
 	private:
 		bool InBounds(const glm::ivec2& tile) const;
+		void BuildRouteLanes();
 		void ValidateRoutes() const;
+		void ValidateMap() const;
+		float GetLaneDistance(const glm::ivec2& tile) const;
+		bool IsSeenAtRouteStart(const glm::ivec2& tile) const;
 		size_t IndexOf(const glm::ivec2& tile) const { return static_cast<size_t>(tile.y) * m_Width + tile.x; }
 
 	private:
@@ -110,6 +115,7 @@ namespace Dingo
 		std::vector<TileRect> m_Corridors;
 		std::array<std::vector<KeepMarker>, static_cast<size_t>(MarkerType::Count)> m_Markers;
 		std::vector<WardenRoute> m_WardenRoutes;
+		std::vector<std::vector<glm::ivec2>> m_RouteLanes;
 	};
 
 }

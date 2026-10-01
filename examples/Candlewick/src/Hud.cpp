@@ -19,11 +19,11 @@ namespace
 		return std::string("Q / ") + Overlay::PadLabel(GamepadButton::X) + "  snuff / relight";
 	}
 
-	std::string LightPrompt(const char* target)
+	std::string HoldPrompt(const char* action)
 	{
 		if (!Input::IsGamepadConnected())
-			return std::string("Hold E to light the ") + target;
-		return std::string("Hold E / ") + Overlay::PadLabel(GamepadButton::A) + " to light the " + target;
+			return std::string("Hold E to ") + action;
+		return std::string("Hold E / ") + Overlay::PadLabel(GamepadButton::A) + " to " + action;
 	}
 
 	std::string PauseHint()
@@ -56,8 +56,9 @@ namespace Dingo
 	Hud::Hud(Scene& scene, const KeepMap& map, const Lantern& lantern, int startRoom)
 		: m_Map(map)
 		, m_SnuffHint(&SnuffHint)
-		, m_LightBrazierPrompt([] { return LightPrompt("brazier"); })
-		, m_LightAltarPrompt([] { return LightPrompt("altar"); })
+		, m_LightBrazierPrompt([] { return HoldPrompt("light the brazier"); })
+		, m_LightAltarPrompt([] { return HoldPrompt("light the altar"); })
+		, m_RefuelPrompt([] { return HoldPrompt("refill the lantern"); })
 		, m_PauseHintText(&PauseHint)
 	{
 		m_Font = Overlay::LoadFont("HUD");
@@ -191,14 +192,18 @@ namespace Dingo
 		SetText(m_KeyHint, m_SnuffHint.Get(), COLOR_TEXT_DIM);
 
 		const bool prompting = !m_Paused && m_PromptKind != BrazierPrompt::None;
-		const bool holding = prompting && m_PromptKind != BrazierPrompt::NeedLantern;
+		const bool holding = prompting && m_PromptKind != BrazierPrompt::NeedLantern && m_PromptKind != BrazierPrompt::NoOil;
 		m_Prompt.GetComponent<TransformComponent>().Position = { 0.0f, -halfH + HUD_PROMPT_RISE, 0.0f };
 		if (!prompting)
 			SetText(m_Prompt, "", COLOR_TEXT);
-		else if (holding)
-			SetText(m_Prompt, m_PromptKind == BrazierPrompt::LightAltar ? m_LightAltarPrompt.Get() : m_LightBrazierPrompt.Get(), COLOR_TEXT);
-		else
+		else if (m_PromptKind == BrazierPrompt::NeedLantern)
 			SetText(m_Prompt, "Relight your lantern first", COLOR_TEXT_DIM);
+		else if (m_PromptKind == BrazierPrompt::NoOil)
+			SetText(m_Prompt, "Out of oil - find a flask or a lit brazier", COLOR_TEXT_ALERT);
+		else if (m_PromptKind == BrazierPrompt::Refuel)
+			SetText(m_Prompt, m_RefuelPrompt.Get(), COLOR_TEXT);
+		else
+			SetText(m_Prompt, m_PromptKind == BrazierPrompt::LightAltar ? m_LightAltarPrompt.Get() : m_LightBrazierPrompt.Get(), COLOR_TEXT);
 
 		const float progressFillMax = HUD_PROGRESS_WIDTH - 2.0f * HUD_PROGRESS_INSET;
 		const float progressWidth = progressFillMax * m_Progress;

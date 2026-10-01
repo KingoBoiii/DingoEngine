@@ -30,7 +30,7 @@ namespace
 		vertices.push_back({ { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f } });
 		for (uint32_t i = 0; i < segments; ++i)
 		{
-			const float angle = 2.0f * PI * static_cast<float>(i) / static_cast<float>(segments);
+			const float angle = 2.0f * GameMath::PI * static_cast<float>(i) / static_cast<float>(segments);
 			const glm::vec3 point(ringRadius * std::cos(angle), ringRadius * std::sin(angle), ringDepth);
 			vertices.push_back({ point, point, { 0.0f, 0.0f } });
 		}
@@ -58,8 +58,8 @@ namespace
 namespace Dingo
 {
 
-	Detection::Detection(Scene& scene, const KeepMap& map, const KeepWorld& world, size_t wardenCount, bool debugView, bool canCatch)
-		: m_Scene(scene), m_Map(map), m_CanCatch(canCatch), m_DebugView(debugView)
+	Detection::Detection(Scene& scene, const KeepWorld& world, size_t wardenCount, bool debugView, bool canCatch)
+		: m_Scene(scene), m_CanCatch(canCatch), m_DebugView(debugView)
 	{
 		for (const DecorFlame& flame : world.GetFlames())
 		{
@@ -138,7 +138,6 @@ namespace Dingo
 		for (size_t s = 0; s < k_SampleCount; ++s)
 			samples[s] = feet + glm::vec3(0.0f, k_SampleHeights[s], 0.0f);
 		const glm::vec3& chest = samples[k_ChestSample];
-		const glm::ivec2 playerTile = m_Map.TileOf(feet);
 
 		// A bigger flame is seen from further: the lantern's reach scales the notice range, and
 		// standing in a brazier's or sconce's light sets a floor under it.
@@ -197,7 +196,7 @@ namespace Dingo
 			suspicion = std::clamp(suspicion, 0.0f, 1.0f);
 
 			const bool perceived = coneSeen || beacon || touching;
-			wardens.SetSuspicion(i, suspicion, perceived && suspicion >= SUSPICION_INVESTIGATE ? std::optional<glm::ivec2>(playerTile) : std::nullopt);
+			wardens.SetSuspicion(i, suspicion, perceived && suspicion >= SUSPICION_INVESTIGATE ? std::optional<glm::vec3>(feet) : std::nullopt);
 			if (m_CanCatch && suspicion >= 1.0f && !caught)
 				caught = i;
 		}

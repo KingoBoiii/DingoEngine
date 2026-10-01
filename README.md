@@ -31,7 +31,7 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 
 ## Roadmap
 
-Currently at **v0.7.0**: the lighting engine work is done, its review and example game are in progress. Every milestone ships with an example game that exercises it — see
+Currently at **v0.7.0**: the lighting engine work and its example game, *Candlewick*, are done; the release is pending. Every milestone ships with an example game that exercises it — see
 [ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3) and what each
 example is built to demonstrate.
 
@@ -43,7 +43,7 @@ example is built to demonstrate.
 | v0.4 | Physics & Collision — Box2D 2D and Jolt 3D, then 3D inside the ECS | `AngryBirds`, `DungeonCrawler3D` | shipped |
 | v0.5 | Audio & Gameplay-Grade Physics — miniaudio, character controller, ray/shape casts | `EchoVault` | shipped |
 | v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
-| **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | *Candlewick* | engine done, example in progress |
+| **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | `Candlewick` | done, release pending |
 | v0.8 | Animation & Character Fidelity — transform hierarchy, skinned meshes, clips, blending | *Marionette* | planned |
 | v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
@@ -78,7 +78,7 @@ Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This w
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, or `ArenaShooter`) as the startup project, and build.
+Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, `ArenaShooter`, or `Candlewick`) as the startup project, and build.
 
 ## Examples
 
@@ -92,6 +92,7 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D`; run with `--night` for a dark dungeon lit by a lantern and point-lit treasure |
 | `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play; since v0.7 its orbs and sentries are lit emissive materials that carry point lights |
 | `ArenaShooter` | v0.6 showcase — wave-based top-down shooter driven entirely by the **`AssetManager`**: async loading behind a progress bar, all sprites/audio/fonts via UUID handles, and **live hot-reload** (edit `assets/shaders/background.glsl` or a sprite PNG while it runs) |
+| `Candlewick` | v0.7 showcase — a stealth crawl through a dark keep where every light is a gameplay object: the lantern you carry is a **point light whose radius is your oil**, **wardens** carry point lights and see through **spot-light vision cones** tested with the renderer's own light query (`GetLightAttenuation`), so the cone drawn on the floor is the cone that catches you, a **game-side light budget** keeps the decorative flames and the gameplay lights inside the engine's 32, and **lit emissive braziers** (hold to light) are the checkpoints; light the Chapel altar to win. Move with WASD / arrows / left stick, snuff or relight the lantern with Q / (X), hold E / (A) beside a brazier, pause with Esc / Start; synthesised 3D positional audio, full gamepad play, and `--debug-cone` to draw what the wardens test |
 
 ## Project Structure
 

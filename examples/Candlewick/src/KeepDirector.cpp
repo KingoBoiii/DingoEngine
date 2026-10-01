@@ -65,7 +65,7 @@ namespace Dingo
 		m_Camera = std::make_unique<CameraRig>(scene, m_Player->GetPosition(), m_Overview ? std::optional<TileRect>(room.Rect) : std::nullopt);
 		m_Lantern = std::make_unique<Lantern>(scene, *m_Player, m_World->GetBrassMaterial(), *m_Audio, startOil, !options.Freeze);
 		m_Wardens = std::make_unique<Wardens>(scene, m_Map, *m_Audio, options.Freeze, !options.NoRangeClamp);
-		m_Detection = std::make_unique<Detection>(scene, m_Map, *m_World, m_Wardens->GetCount(), options.DebugCone, !options.Freeze);
+		m_Detection = std::make_unique<Detection>(scene, *m_World, m_Wardens->GetCount(), options.DebugCone, !options.Freeze);
 
 		m_LightLod = std::make_unique<LightLod>(m_World->GetFlames(), !options.NoLightLod);
 		m_LightLod->AddGameplayLight(m_Lantern->GetLight());
@@ -134,12 +134,17 @@ namespace Dingo
 		}
 
 		const bool canLight = m_CaughtTime < 0.0f && m_WinTime < 0.0f;
-		if (const std::optional<size_t> lit = m_Braziers->Update(deltaTime, *m_Player, *m_Lantern, canLight))
+		const Braziers::Outcome braziers = m_Braziers->Update(deltaTime, *m_Player, *m_Lantern, canLight);
+		if (braziers.Lit)
 		{
-			if (m_World->GetBraziers()[*lit].IsAltar)
+			if (m_World->GetBraziers()[*braziers.Lit].IsAltar)
 				BeginWin();
 			else
 				m_Hud->ShowToast("Checkpoint");
+		}
+		else if (braziers.Refuelled)
+		{
+			m_Hud->ShowToast("Lantern refilled");
 		}
 
 		m_Camera->Update(respawned ? 0.0f : deltaTime, m_Player->GetPosition());
@@ -182,6 +187,13 @@ namespace Dingo
 		if (m_CaughtTime < 0.0f)
 		{
 			m_Fade = std::max(0.0f, m_Fade - deltaTime / RESPAWN_FADE_TIME);
+			if (m_Grace > 0.0f)
+			{
+				m_Grace = std::max(0.0f, m_Grace - deltaTime);
+				m_Detection->UpdateDebugView(*m_Wardens, *m_Player);
+				return false;
+			}
+
 			if (const std::optional<size_t> warden = m_Detection->Update(deltaTime, *m_Wardens, *m_Player, *m_Lantern))
 			{
 				m_CaughtTime = 0.0f;
@@ -209,7 +221,8 @@ namespace Dingo
 		m_Detection->UpdateDebugView(*m_Wardens, *m_Player);
 		m_Lantern->SetOil(checkpoint.Oil);
 		m_CaughtTime = -1.0f;
-		DE_INFO("Candlewick: respawned at the checkpoint ({}, {}) with oil {:.0f}", checkpoint.Tile.x, checkpoint.Tile.y, m_Lantern->GetOil());
+		m_Grace = RESPAWN_GRACE_TIME;
+		DE_INFO("Candlewick: respawned at the checkpoint ({}, {}) with oil {:.0f}, unseen for {:.1f} s", checkpoint.Tile.x, checkpoint.Tile.y, m_Lantern->GetOil(), m_Grace);
 		return true;
 	}
 

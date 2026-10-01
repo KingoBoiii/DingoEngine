@@ -49,10 +49,10 @@ namespace Dingo
 		Scene& scene = GetScene();
 		Overlay::MakeCamera(scene, "TitleCamera", HUD_ORTHO_SIZE);
 
-		AddLine(scene, m_Font, "Title", 1.5f, COLOR_TITLE, { 0.0f, 2.4f, 0.0f }, "CANDLEWICK");
-		AddLine(scene, m_Font, "Tagline", 0.42f, COLOR_TEXT_DIM, { 0.0f, 0.5f, 0.0f },
+		AddLine(scene, m_Font, "Title", TITLE_HEADING_SIZE, COLOR_TITLE, { 0.0f, TITLE_HEADING_Y, 0.0f }, "CANDLEWICK");
+		AddLine(scene, m_Font, "Tagline", TITLE_TAGLINE_SIZE, COLOR_TEXT_DIM, { 0.0f, TITLE_TAGLINE_Y, 0.0f },
 			"A lantern, a keep, and the wardens who hunt by light.");
-		m_Prompt = AddLine(scene, m_Font, "Prompt", 0.5f, COLOR_TEXT, { 0.0f, -2.2f, 0.0f }, m_PromptText.Get());
+		m_Prompt = AddLine(scene, m_Font, "Prompt", TITLE_PROMPT_SIZE, COLOR_TEXT, { 0.0f, TITLE_PROMPT_Y, 0.0f }, m_PromptText.Get());
 		m_Controls = AddLine(scene, m_Font, "Controls", TITLE_CONTROLS_SIZE, COLOR_TEXT_DIM, { 0.0f, TITLE_CONTROLS_Y, 0.0f }, m_ControlsText.Get());
 	}
 
@@ -79,10 +79,10 @@ namespace Dingo
 		Scene& scene = GetScene();
 		Overlay::MakeCamera(scene, "EndCamera", HUD_ORTHO_SIZE);
 
-		AddLine(scene, m_Font, "EndTitle", 1.2f, COLOR_TITLE, { 0.0f, 1.8f, 0.0f }, "The altar burns.");
+		AddLine(scene, m_Font, "EndTitle", END_HEADING_SIZE, COLOR_TITLE, { 0.0f, END_HEADING_Y, 0.0f }, "The altar burns.");
 		AddLine(scene, m_Font, "EndTime", END_TIME_SIZE, COLOR_TEXT, { 0.0f, END_TIME_Y, 0.0f }, TimeLine(m_Result->Seconds));
 		AddLine(scene, m_Font, "EndCatches", END_CATCHES_SIZE, COLOR_TEXT_DIM, { 0.0f, END_CATCHES_Y, 0.0f }, CatchesLine(m_Result->Catches));
-		m_Prompt = AddLine(scene, m_Font, "EndPrompt", 0.45f, COLOR_TEXT, { 0.0f, END_PROMPT_Y, 0.0f }, m_PromptText.Get());
+		m_Prompt = AddLine(scene, m_Font, "EndPrompt", END_PROMPT_SIZE, COLOR_TEXT, { 0.0f, END_PROMPT_Y, 0.0f }, m_PromptText.Get());
 	}
 
 	void EndControllerScript::OnUpdate(float)

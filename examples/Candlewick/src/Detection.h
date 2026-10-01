@@ -1,6 +1,4 @@
 #pragma once
-#include "KeepMap.h"
-
 #include <DingoEngine.h>
 
 #include <glm/glm.hpp>
@@ -21,13 +19,14 @@ namespace Dingo
 	// Turns what each warden sees into its suspicion. The cone test is the renderer's own weight for
 	// the warden's eye light (GetLightAttenuation on the same component the frame draws), so the
 	// pool on the floor is where a warden sees you; a ray then keeps walls honest. Only the cone can
-	// take suspicion to 1: the beacon (a lit player is noticed from further off) stops at alert.
+	// take suspicion to 1: the beacon (a lit player is noticed from further off) stops at alert, and
+	// touching a warden (within TOUCH_DISTANCE, since wardens have no collider) holds it at 0.6 or more.
 	class Detection
 	{
 	public:
 		static constexpr size_t k_SampleCount = 3;
 
-		Detection(Scene& scene, const KeepMap& map, const KeepWorld& world, size_t wardenCount, bool debugView, bool canCatch);
+		Detection(Scene& scene, const KeepWorld& world, size_t wardenCount, bool debugView, bool canCatch);
 		~Detection();
 
 		Detection(const Detection&) = delete;
@@ -69,7 +68,6 @@ namespace Dingo
 
 	private:
 		Scene& m_Scene;
-		const KeepMap& m_Map;
 		std::vector<Sconce> m_Sconces;
 		std::vector<Entity> m_Braziers;
 		bool m_CanCatch = true;

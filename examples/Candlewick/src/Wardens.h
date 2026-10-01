@@ -40,8 +40,9 @@ namespace Dingo
 		int GetRoom(size_t index) const { return m_Wardens[index].Room; }
 		float GetSuspicion(size_t index) const { return m_Wardens[index].Suspicion; }
 
-		// Detection's verdict for this frame. A last-seen tile sends the warden to look there.
-		void SetSuspicion(size_t index, float suspicion, const std::optional<glm::ivec2>& lastSeen);
+		// Detection's verdict for this frame. A sighting (where the player was perceived) sends the warden to
+		// look there, facing it.
+		void SetSuspicion(size_t index, float suspicion, const std::optional<glm::vec3>& sighting);
 
 	private:
 		struct LoopPoint
@@ -80,8 +81,10 @@ namespace Dingo
 			float LookYaw = 0.0f;
 
 			float Suspicion = 0.0f;
-			std::optional<glm::ivec2> Request;
+			std::optional<glm::vec3> Request;
+			glm::vec3 Sighting{ 0.0f };
 			int MarkerLevel = -1;
+			bool Armed = false;
 			float StepDistance = 0.0f;
 
 			std::vector<Part> Parts;
@@ -94,9 +97,12 @@ namespace Dingo
 		void Spawn(Warden& warden, size_t index);
 		void AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material);
 
+		void ResetWarden(Warden& warden);
 		void Think(Warden& warden, size_t index, float deltaTime);
 		void Patrol(Warden& warden, float deltaTime);
 		void BeginInvestigate(Warden& warden, size_t index, const glm::ivec2& tile);
+		void BeginLook(Warden& warden);
+		void FaceSighting(Warden& warden);
 		void BeginReturn(Warden& warden, size_t index);
 		bool FollowPath(Warden& warden, float speed, float deltaTime);
 		// Spends part of `timeLeft` getting to `target` and leaves what it did not need.

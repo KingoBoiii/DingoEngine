@@ -56,6 +56,7 @@ namespace Dingo
 		Overlay::PadText m_SnuffHint;
 		Overlay::PadText m_LightBrazierPrompt;
 		Overlay::PadText m_LightAltarPrompt;
+		Overlay::PadText m_RefuelPrompt;
 		Overlay::PadText m_PauseHintText;
 	};
 

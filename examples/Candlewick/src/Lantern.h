@@ -30,6 +30,9 @@ namespace Dingo
 		void AddOil(float amount);
 		void SetOil(float oil);
 
+		// Full oil, and a snuffed lantern burns again without a strike.
+		void Refill();
+
 		Entity GetLight() const { return m_Light; }
 		State GetState() const { return m_State; }
 		float GetOil() const { return m_Oil; }

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace Dingo
+namespace Dingo::GameMath
 {
 
 	inline constexpr float PI = 3.14159265f;

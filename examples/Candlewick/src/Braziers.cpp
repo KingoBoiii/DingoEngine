@@ -80,12 +80,14 @@ namespace Dingo
 		m_LightLod.AddGameplayLight(spot.Light);
 	}
 
-	std::optional<size_t> Braziers::Update(float deltaTime, const Player& player, Lantern& lantern, bool canLight)
+	Braziers::Outcome Braziers::Update(float deltaTime, const Player& player, Lantern& lantern, bool canLight)
 	{
 		if (m_Flicker)
 			m_Clock += deltaTime;
 
 		const std::vector<BrazierSpot>& spots = m_World.GetBraziers();
+		const Lantern::State lanternState = lantern.GetState();
+		const bool wantsOil = lantern.GetOil() < OIL_MAX || lanternState == Lantern::State::Snuffed;
 
 		std::optional<size_t> target;
 		if (canLight)
@@ -94,7 +96,7 @@ namespace Dingo
 			float nearest = BRAZIER_REACH;
 			for (size_t i = 0; i < spots.size(); ++i)
 			{
-				if (m_Lit[i])
+				if (m_Lit[i] && !wantsOil)
 					continue;
 
 				const glm::vec3 center = m_Map.TileCenter(spots[i].Tile);
@@ -115,18 +117,18 @@ namespace Dingo
 		m_Target = target;
 		m_Prompt = BrazierPrompt::None;
 
-		std::optional<size_t> litNow;
-		const Lantern::State lanternState = lantern.GetState();
-		if (!target || lanternState != Lantern::State::Lit)
+		Outcome outcome;
+		const bool refuel = target && m_Lit[*target];
+		if (!target || (!refuel && lanternState != Lantern::State::Lit))
 		{
 			m_Holding = false;
 			m_Progress = 0.0f;
 			if (target && lanternState == Lantern::State::Snuffed)
-				m_Prompt = BrazierPrompt::NeedLantern;
+				m_Prompt = lantern.CanRelight() ? BrazierPrompt::NeedLantern : BrazierPrompt::NoOil;
 		}
 		else
 		{
-			m_Prompt = spots[*target].IsAltar ? BrazierPrompt::LightAltar : BrazierPrompt::Light;
+			m_Prompt = refuel ? BrazierPrompt::Refuel : spots[*target].IsAltar ? BrazierPrompt::LightAltar : BrazierPrompt::Light;
 
 			// A hold begins on the press, so a key already down when a brazier comes into reach lights nothing.
 			if (Input::IsKeyPressed(Key::E) || Input::IsGamepadButtonPressed(GamepadButton::A))
@@ -138,25 +140,35 @@ namespace Dingo
 			if (m_Progress >= 1.0f)
 			{
 				const BrazierSpot& spot = spots[*target];
-				Light(*target);
-				lantern.AddOil(OIL_MAX);
-
-				Entity core = spot.Core;
-				m_Audio.PlayAt(Sfx::Ignite, core.GetComponent<Transform3DComponent>().Position);
-
-				if (spot.IsAltar)
+				if (refuel)
 				{
-					DE_INFO("Candlewick: the altar is lit");
+					lantern.Refill();
+					m_Audio.PlayAt(Sfx::Flask, player.GetPosition());
+					outcome.Refuelled = true;
+					DE_INFO("Candlewick: refilled the lantern at the brazier in {} (oil {:.0f})", m_Map.GetRooms()[spot.Room].Name, lantern.GetOil());
 				}
 				else
 				{
-					m_Checkpoint.Tile = m_Map.FindCheckpointTile(spot.Tile);
-					m_Checkpoint.Oil = lantern.GetOil();
-					DE_INFO("Candlewick: lit the brazier in {}; checkpoint ({}, {}) with oil {:.0f}", m_Map.GetRooms()[spot.Room].Name,
-						m_Checkpoint.Tile.x, m_Checkpoint.Tile.y, m_Checkpoint.Oil);
+					Light(*target);
+					lantern.AddOil(OIL_MAX);
+
+					Entity core = spot.Core;
+					m_Audio.PlayAt(Sfx::Ignite, core.GetComponent<Transform3DComponent>().Position);
+
+					if (spot.IsAltar)
+					{
+						DE_INFO("Candlewick: the altar is lit");
+					}
+					else
+					{
+						m_Checkpoint.Tile = m_Map.FindCheckpointTile(spot.Tile);
+						m_Checkpoint.Oil = lantern.GetOil();
+						DE_INFO("Candlewick: lit the brazier in {}; checkpoint ({}, {}) with oil {:.0f}", m_Map.GetRooms()[spot.Room].Name,
+							m_Checkpoint.Tile.x, m_Checkpoint.Tile.y, m_Checkpoint.Oil);
+					}
+					outcome.Lit = target;
 				}
 
-				litNow = target;
 				m_Target.reset();
 				m_Progress = 0.0f;
 				m_Holding = false;
@@ -165,7 +177,7 @@ namespace Dingo
 		}
 
 		Flicker();
-		return litNow;
+		return outcome;
 	}
 
 	void Braziers::Flicker()

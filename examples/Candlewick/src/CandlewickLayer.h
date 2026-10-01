@@ -19,6 +19,7 @@ namespace Dingo
 	private:
 		void RebuildKeepScene();
 		void RebuildEndScene();
+		void CheckDroppedLights(const Scene* active);
 
 	private:
 		RunResult m_Result;
@@ -26,6 +27,7 @@ namespace Dingo
 		Scene* m_TitleScene = nullptr;
 		Scene* m_KeepScene = nullptr;
 		Scene* m_EndScene = nullptr;
+		bool m_DroppedLightsWarned = false;
 	};
 
 }

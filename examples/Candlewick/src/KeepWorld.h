@@ -18,7 +18,6 @@ namespace Dingo
 		Entity Light;
 		Entity Core;
 		FlameKind Kind = FlameKind::Candle;
-		int Room = -1;
 		float BaseIntensity = 0.0f;
 	};
 
@@ -33,8 +32,6 @@ namespace Dingo
 
 	struct FlaskSpot
 	{
-		glm::ivec2 Tile{ 0 };
-		int Room = -1;
 		glm::vec3 Position{ 0.0f };
 		std::vector<Entity> Parts;
 		bool Collected = false;
@@ -52,7 +49,6 @@ namespace Dingo
 
 		const std::vector<DecorFlame>& GetFlames() const { return m_Flames; }
 		const std::vector<BrazierSpot>& GetBraziers() const { return m_Braziers; }
-		const std::vector<FlaskSpot>& GetFlaskSpots() const { return m_FlaskSpots; }
 		Material* GetBrassMaterial() const { return m_BrassMaterial; }
 
 		// Braziers are built dark: their light off and their cores on the ash material. Lighting one
