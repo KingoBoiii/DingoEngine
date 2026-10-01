@@ -2,7 +2,10 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 
+#include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+
+#include <array>
 
 namespace
 {
@@ -36,6 +39,52 @@ namespace
 
 		const float length = glm::length(glm::vec3(eye));
 		return length > 0.0f ? glm::vec4(-glm::vec3(eye) / length, 0.0f) : glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+	}
+
+	using FrustumPlanes = std::array<glm::vec4, 6>;
+
+	// Gribb-Hartmann, for clip-space depth in [0, 1] (GLM_FORCE_DEPTH_ZERO_TO_ONE). Each plane's
+	// normal points into the frustum.
+	FrustumPlanes ExtractFrustumPlanes(const glm::mat4& viewProjection)
+	{
+		const glm::vec4 x = glm::row(viewProjection, 0);
+		const glm::vec4 y = glm::row(viewProjection, 1);
+		const glm::vec4 z = glm::row(viewProjection, 2);
+		const glm::vec4 w = glm::row(viewProjection, 3);
+
+		FrustumPlanes planes = { w + x, w - x, w + y, w - y, z, w - z };
+		for (glm::vec4& plane : planes)
+			plane /= glm::length(glm::vec3(plane));
+		return planes;
+	}
+
+	bool SphereTouchesFrustum(const FrustumPlanes& planes, const glm::vec3& center, float radius)
+	{
+		for (const glm::vec4& plane : planes)
+		{
+			if (glm::dot(glm::vec3(plane), center) + plane.w < -radius)
+				return false;
+		}
+		return true;
+	}
+
+	// By the strongest channel, not luminance: a pure blue light is as strong as a pure green one
+	// of the same intensity, so which of them a budget keeps comes down to distance.
+	float Strength(const glm::vec3& color)
+	{
+		return std::max({ color.r, color.g, color.b });
+	}
+
+	bool IsFinite(const glm::vec3& value)
+	{
+		return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+	}
+
+	// One NaN light would turn every lit pixel's sum to NaN, so the comparisons are written to
+	// reject NaN too.
+	bool IsUsableLocalLight(const glm::vec3& position, const glm::vec3& color, float intensity, float range)
+	{
+		return intensity > 0.0f && range > 0.0f && IsFinite(position) && IsFinite(color * intensity);
 	}
 }
 
@@ -170,6 +219,7 @@ namespace Dingo
 
 		m_CameraData.AmbientColor = glm::vec4(0.0f);
 		m_CameraData.LightCounts = glm::ivec4(0);
+		m_LocalLights.clear();
 		m_SceneLightSubmitted = false;
 		m_DroppedLights = 0;
 
@@ -221,6 +271,8 @@ namespace Dingo
 	void Renderer3D::SubmitLight(const DirectionalLight& light)
 	{
 		m_SceneLightSubmitted = true;
+		if (!IsFinite(light.Direction) || !IsFinite(light.Color * light.Intensity))
+			return;
 
 		int& count = m_CameraData.LightCounts.x;
 		if (count >= static_cast<int>(k_MaxDirectionalLights))
@@ -228,10 +280,10 @@ namespace Dingo
 			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
 				"Renderer3D: more directional lights than k_MaxDirectionalLights and AssertOnOverflow is set.");
 
-			if (!m_LightOverflowWarned)
+			if (!m_DirectionalOverflowWarned)
 			{
 				DE_CORE_WARN("Renderer3D: a scene submitted more than {} directional lights; the extra ones are dropped.", k_MaxDirectionalLights);
-				m_LightOverflowWarned = true;
+				m_DirectionalOverflowWarned = true;
 			}
 			++m_DroppedLights;
 			return;
@@ -241,10 +293,70 @@ namespace Dingo
 		++count;
 	}
 
+	void Renderer3D::SubmitLight(const PointLight& light)
+	{
+		m_SceneLightSubmitted = true;
+		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range))
+			return;
+
+		LocalLightCandidate* candidate = AddLocalLight();
+		if (!candidate)
+			return;
+
+		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
+		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, 0.0f);
+		candidate->Data.SpotDirection = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+		candidate->Brightness = Strength(light.Color) * light.Intensity;
+	}
+
+	void Renderer3D::SubmitLight(const SpotLight& light)
+	{
+		m_SceneLightSubmitted = true;
+		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range) || !IsFinite(light.Direction) ||
+			!std::isfinite(light.InnerConeAngle) || !std::isfinite(light.OuterConeAngle))
+			return;
+
+		LocalLightCandidate* candidate = AddLocalLight();
+		if (!candidate)
+			return;
+
+		// The cone factor is saturate(cos(angle) * scale + offset): 1 at the inner angle, 0 at the
+		// outer one. Below about 1 degree the cosines are too close in float to reach 1.
+		const float outerAngle = glm::clamp(light.OuterConeAngle, 1.0f, 179.0f);
+		const float innerAngle = glm::clamp(light.InnerConeAngle, 0.0f, outerAngle);
+		const float cosOuter = std::cos(glm::radians(outerAngle));
+		const float coneScale = 1.0f / std::max(std::cos(glm::radians(innerAngle)) - cosOuter, 1e-4f);
+
+		const float length = glm::length(light.Direction);
+		const glm::vec3 direction = length > 0.0f ? light.Direction / length : glm::vec3(0.0f, -1.0f, 0.0f);
+
+		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
+		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, coneScale);
+		candidate->Data.SpotDirection = glm::vec4(direction, -cosOuter * coneScale);
+		candidate->Brightness = Strength(light.Color) * light.Intensity;
+	}
+
+	Renderer3D::LocalLightCandidate* Renderer3D::AddLocalLight()
+	{
+		// Pending lights only clear at EndScene, so code that submits lights every frame but never
+		// ends a scene would otherwise grow this without bound.
+		if (m_LocalLights.size() >= k_MaxPendingLocalLights)
+		{
+			if (!m_PendingOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} point and spot lights are waiting for an EndScene; further ones are ignored.", k_MaxPendingLocalLights);
+				m_PendingOverflowWarned = true;
+			}
+			return nullptr;
+		}
+		return &m_LocalLights.emplace_back();
+	}
+
 	void Renderer3D::SetAmbientLight(const glm::vec3& color, float intensity)
 	{
 		m_SceneLightSubmitted = true;
-		m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
+		if (IsFinite(color * intensity))
+			m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
 	}
 
 	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
@@ -270,7 +382,59 @@ namespace Dingo
 		const glm::vec4& ambientColor = m_CameraData.AmbientColor;
 		m_CameraData.Ambient = glm::vec4(std::max({ ambientColor.r, ambientColor.g, ambientColor.b }), 0.0f, 0.0f, 0.0f);
 
+		const FrustumPlanes planes = ExtractFrustumPlanes(m_CameraData.ViewProjection);
+		const glm::vec4& camera = m_CameraData.CameraPosition;
+
+		m_VisibleLocalLights.clear();
+		for (uint32_t index = 0; index < m_LocalLights.size(); ++index)
+		{
+			LocalLightCandidate& candidate = m_LocalLights[index];
+			const glm::vec3 position = glm::vec3(candidate.Data.PositionRange);
+			const float range = candidate.Data.PositionRange.w;
+			if (!SphereTouchesFrustum(planes, position, range))
+				continue;
+
+			// How bright the light looks from the camera: full strength while the camera is inside
+			// its range, then falling with the distance from the range's edge.
+			const float gap = camera.w > 0.0f ? std::max(glm::distance(glm::vec3(camera), position) - range, 0.0f) : 0.0f;
+			candidate.Score = candidate.Brightness / (1.0f + gap * gap);
+			m_VisibleLocalLights.push_back(index);
+		}
+
+		const uint32_t visibleCount = static_cast<uint32_t>(m_VisibleLocalLights.size());
+		const uint32_t budget = std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
+		uint32_t localCount = visibleCount;
+		if (visibleCount > budget)
+		{
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D: more point and spot lights in view than MaxLocalLights and AssertOnOverflow is set.");
+
+			std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
+				[this](uint32_t a, uint32_t b)
+				{
+					const float scoreA = m_LocalLights[a].Score;
+					const float scoreB = m_LocalLights[b].Score;
+					return scoreA != scoreB ? scoreA > scoreB : a < b;
+				});
+
+			if (!m_LocalOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} point and spot lights reach the view but MaxLocalLights is {}; the dimmest are dropped. Raise Renderer3DCapabilities.MaxLocalLights (at most {}) or use fewer lights.",
+					visibleCount, budget, k_MaxLocalLights);
+				m_LocalOverflowWarned = true;
+			}
+
+			m_DroppedLights += visibleCount - budget;
+			localCount = budget;
+		}
+
+		for (uint32_t slot = 0; slot < localCount; ++slot)
+			m_CameraData.LocalLights[slot] = m_LocalLights[m_VisibleLocalLights[slot]].Data;
+		m_CameraData.LightCounts.y = static_cast<int>(localCount);
+
 		m_Statistics.DirectionalLights = static_cast<uint32_t>(directionalCount);
+		m_Statistics.LocalLights = localCount;
+		m_Statistics.CulledLights = static_cast<uint32_t>(m_LocalLights.size()) - visibleCount;
 		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 

@@ -28,6 +28,12 @@ namespace Dingo
 		uint32_t MaxVertices = 65536;
 		uint32_t MaxIndices = 98304;
 
+		// Point and spot lights drawn per scene, at most Renderer3D::k_MaxLocalLights. Lights
+		// whose range can't reach anything in view are skipped first. Past the budget the
+		// brightest as seen from the camera are kept and the rest dropped with a warning; ties
+		// keep the earlier-submitted light, so a still scene picks the same lights every frame.
+		uint32_t MaxLocalLights = 32;
+
 		// When true, a mesh too large for an empty batch, or a light past the light budget,
 		// trips an assert instead of the default warn-once-and-drop. Asserts are compiled out in
 		// release, where it warns and drops regardless.
@@ -95,14 +101,19 @@ namespace Dingo
 		// EndScene - before or after BeginScene - light the next EndScene, which then clears
 		// them. A scene that submits no light and no ambient is lit by the default light instead.
 		// Up to k_MaxDirectionalLights directional lights count; further ones are dropped with a
-		// warning. SetAmbientLight replaces the scene's ambient, which is black otherwise.
+		// warning. Point and spot lights share the MaxLocalLights budget (see
+		// Renderer3DCapabilities). SetAmbientLight replaces the scene's ambient, which is black
+		// otherwise.
 		void SubmitLight(const DirectionalLight& light);
+		void SubmitLight(const PointLight& light);
+		void SubmitLight(const SpotLight& light);
 		void SetAmbientLight(const glm::vec3& color, float intensity);
 
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
 		static constexpr uint32_t k_MaxDirectionalLights = 4;
+		static constexpr uint32_t k_MaxLocalLights = 32;
 
 		// Appends a mesh to the batch for the given material (null => the built-in
 		// flat-lit default), transformed into world space on the CPU. The vertex stream is
@@ -128,6 +139,8 @@ namespace Dingo
 			uint32_t VertexCount = 0;     // vertices batched this scene
 			uint32_t IndexCount = 0;      // indices batched this scene
 			uint32_t DirectionalLights = 0; // directional lights the scene was lit by, the default light included
+			uint32_t LocalLights = 0;       // point and spot lights the scene was lit by
+			uint32_t CulledLights = 0;      // point and spot lights whose range can't reach anything in view
 			uint32_t DroppedLights = 0;     // lights submitted past the budget
 		};
 
@@ -158,6 +171,21 @@ namespace Dingo
 			glm::vec4 Color{ 0.0f }; // rgb = colour × intensity
 		};
 
+		// A point light is a spot light whose cone factor is always 1: scale 0, offset 1.
+		struct LocalLightData
+		{
+			glm::vec4 PositionRange{ 0.0f }; // xyz = world position, w = range
+			glm::vec4 Color{ 0.0f };         // rgb = colour × intensity, w = cone scale
+			glm::vec4 SpotDirection{ 0.0f }; // xyz = the way the cone points, w = cone offset
+		};
+
+		struct LocalLightCandidate
+		{
+			LocalLightData Data;
+			float Brightness = 0.0f; // strongest colour channel × intensity
+			float Score = 0.0f;
+		};
+
 		// std140, mirrored by CameraData in Renderer3D_Lit.glsl. The first three members are a
 		// frozen prefix that custom material shaders declare on their own: only ever append.
 		struct CameraData
@@ -167,19 +195,29 @@ namespace Dingo
 			glm::vec4 Ambient{ 0.0f };        // x = the scene's ambient as one value
 			glm::vec4 CameraPosition{ 0.0f }; // w = 1: world position; w = 0: orthographic, xyz = towards the camera
 			glm::vec4 AmbientColor{ 0.0f };   // rgb = colour × intensity
-			glm::ivec4 LightCounts{ 0 };      // x = directional lights
+			glm::ivec4 LightCounts{ 0 };      // x = directional lights, y = point and spot lights
 			DirectionalLightData DirectionalLights[k_MaxDirectionalLights];
+			LocalLightData LocalLights[k_MaxLocalLights];
 		};
 		static_assert(offsetof(CameraData, LightDirection) == 64 && offsetof(CameraData, Ambient) == 80,
 			"the frozen prefix custom materials declare must not move");
 		static_assert(offsetof(CameraData, CameraPosition) == 96 && offsetof(CameraData, AmbientColor) == 112 &&
 			offsetof(CameraData, LightCounts) == 128 && offsetof(CameraData, DirectionalLights) == 144 &&
-			sizeof(DirectionalLightData) == 32 && sizeof(CameraData) == 144 + k_MaxDirectionalLights * 32,
+			sizeof(DirectionalLightData) == 32 && offsetof(CameraData, LocalLights) == 144 + k_MaxDirectionalLights * 32 &&
+			sizeof(LocalLightData) == 48 && sizeof(CameraData) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48,
 			"CameraData must match the std140 block in Renderer3D_Lit.glsl");
 		CameraData m_CameraData = {};
+
+		LocalLightCandidate* AddLocalLight();
+		static constexpr uint32_t k_MaxPendingLocalLights = 8192;
+
+		std::vector<LocalLightCandidate> m_LocalLights;
+		std::vector<uint32_t> m_VisibleLocalLights;
 		bool m_SceneLightSubmitted = false;
 		uint32_t m_DroppedLights = 0;
-		bool m_LightOverflowWarned = false;
+		bool m_DirectionalOverflowWarned = false;
+		bool m_LocalOverflowWarned = false;
+		bool m_PendingOverflowWarned = false;
 
 		// std140: two vec4s. Binding-1 uniform for the built-in default material only
 		// (Material::SetUniform); custom materials bring their own layout. Mirrors
