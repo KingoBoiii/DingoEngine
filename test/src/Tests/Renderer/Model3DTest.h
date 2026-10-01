@@ -25,6 +25,7 @@ namespace Dingo
 	private:
 		void LoadModel(const std::string& path);
 		void UnloadModel();
+		void FitCamera();
 
 	private:
 		struct TransformUBO { glm::mat4 ViewProjection; glm::mat4 Model; };
@@ -45,6 +46,7 @@ namespace Dingo
 		bool   m_LoadFailed = false;
 
 		PerspectiveCamera m_Camera;
+		glm::vec3 m_Pivot{ 0.0f };
 		float m_Rotation      = 0.0f;
 		float m_RotationSpeed = 30.0f;
 		bool  m_AutoRotate    = true;

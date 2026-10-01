@@ -97,6 +97,15 @@ Asset types are inferred from the file extension:
 | `Font` | `.ttf` `.otf` |
 | `AudioClip` | `.wav` `.ogg` `.mp3` |
 
+A model whose meshes have bones loads its skeleton, skin weights and animation
+clips: `Model::IsSkinned()`, `GetSkeleton()`, `GetAnimation(i)` and
+`FindAnimation(name)`. A file with clips but no meshes is a clip library, so
+several characters can share one set of animations. Each skinned `Mesh` keeps its
+rest pose in `GetVertices()`, so physics and `Renderer3D::SubmitMesh` see the
+character standing in that pose. A model without bones loads exactly as before:
+every mesh is pre-transformed into model space, and any clips it has are dropped
+with a warning.
+
 `Load` is synchronous with one caveat: if the same path already has a
 `LoadAsync` in flight it does **not** block on it — the call returns the handle
 and the background pass publishes as usual, so poll `IsReady(handle)` when you

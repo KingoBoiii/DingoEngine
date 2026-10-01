@@ -8,6 +8,8 @@
 namespace Dingo
 {
 
+	static_assert(sizeof(SkinnedMeshVertex) == 56, "SkinnedMeshVertex is uploaded as-is as a vertex stream");
+
 	std::uint64_t Mesh::AllocateId()
 	{
 		static std::atomic<std::uint64_t> s_NextId{ 1 };
@@ -19,6 +21,17 @@ namespace Dingo
 		Mesh* mesh = new Mesh();
 		mesh->m_Vertices = vertices;
 		mesh->m_Indices = indices;
+		return mesh;
+	}
+
+	Mesh* Mesh::CreateSkinned(std::vector<MeshVertex> restVertices, std::vector<SkinnedMeshVertex> skinVertices, std::vector<uint32_t> indices)
+	{
+		DE_CORE_ASSERT(restVertices.size() == skinVertices.size(), "Mesh::CreateSkinned needs one skin vertex per rest vertex");
+
+		Mesh* mesh = new Mesh();
+		mesh->m_Vertices     = std::move(restVertices);
+		mesh->m_Indices      = std::move(indices);
+		mesh->m_SkinVertices = std::move(skinVertices);
 		return mesh;
 	}
 
