@@ -105,7 +105,8 @@ Lighting is rebuilt for every scene. Whatever you have submitted since the last 
 or after `BeginScene`, lights the next `EndScene`, which then clears it. So "set the light, then
 `BeginScene`" works, and a second scene in the same frame starts with no lights. Until an
 `EndScene` runs, at most 8192 point and spot lights can wait; further ones are ignored with a
-warning.
+warning. One renderer can run up to `Renderer3D::k_MaxScenesPerFrame` (32) scenes a frame: on Vulkan
+its scene buffer has room for that many writes, and later scenes would draw with stale lighting.
 
 **Direct API.** A scene that submits no light and no ambient is lit by the default light from
 `Renderer3DParams`: `LightDirection` (-0.4, -1, -0.35) and `Ambient` 0.35. It is emitted as a white

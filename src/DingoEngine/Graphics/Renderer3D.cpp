@@ -6,6 +6,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <array>
+#include <cstring>
 
 namespace
 {
@@ -148,11 +149,15 @@ namespace Dingo
 
 		m_Material = CreateLitMaterial(MaterialParams().SetDebugName("Renderer3D_Material"));
 
-		// Camera + lights live in a shared scene UBO (binding 0) bound on every material,
-		// rather than baked into the default material — so custom materials receive them too.
-		// Volatile constant buffer — written into the frame's command list each EndScene (via
-		// Renderer::Upload), not pre-uploaded here.
-		m_SceneUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData), "Renderer3D_SceneUBO");
+		// Every EndScene writes it, and on Vulkan a volatile buffer only has room for the writes of
+		// MaxWritesPerFrame scenes a frame before later ones are dropped.
+		m_SceneUniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_SceneUBO")
+			.SetByteSize(sizeof(CameraData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
@@ -329,6 +334,12 @@ namespace Dingo
 			glm::clamp(FiniteOr(material->GetRoughness(), 0.5f), 0.0f, 1.0f),
 			std::max(FiniteOr(material->GetSpecular(), 0.0f), 0.0f),
 			0.0f);
+
+		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
+		// frame, so a material drawn in several scenes of a frame only rewrites what changed.
+		const std::vector<uint8_t>& current = material->GetUniformCPUData();
+		if (current.size() == sizeof(data) && std::memcmp(current.data(), &data, sizeof(data)) == 0)
+			return;
 		material->SetUniform(data);
 	}
 

@@ -119,6 +119,10 @@ namespace Dingo
 		static constexpr uint32_t k_MaxDirectionalLights = 4;
 		static constexpr uint32_t k_MaxLocalLights = 32;
 
+		// Scenes a renderer can run in one frame. On Vulkan each EndScene writes the volatile scene
+		// buffer, which has room for this many writes a frame; later scenes draw with stale lighting.
+		static constexpr uint32_t k_MaxScenesPerFrame = 32;
+
 		// Appends a mesh to the batch for the given material (null => the built-in
 		// lit default), transformed into world space on the CPU. The vertex stream is
 		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
