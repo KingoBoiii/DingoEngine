@@ -431,38 +431,54 @@ namespace Dingo
 			.setBindingOffsets(vulkanBindingOffsets)
 			.setVisibility(nvrhi::ShaderType::All);
 
+		// A resource several stages declare (Renderer3D's scene UBO) is reflected once per
+		// stage, but a layout may name each binding only once; the item is visible to every
+		// stage anyway, so it keeps the largest array size any stage declared.
+		auto addItem = [&bindingLayoutDesc](const nvrhi::BindingLayoutItem& item)
+		{
+			for (nvrhi::BindingLayoutItem& existing : bindingLayoutDesc.bindings)
+			{
+				if (existing.type == item.type && existing.slot == item.slot)
+				{
+					existing.size = std::max<uint16_t>(existing.size, item.size);
+					return;
+				}
+			}
+			bindingLayoutDesc.addItem(item);
+		};
+
 		for (const auto& shaderReflection : reflections)
 		{
 			for (const auto& uniformBuffer : shaderReflection.UniformBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(uniformBuffer.Binding));
+				addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(uniformBuffer.Binding));
 			}
 
 			for (const auto& storageBuffer : shaderReflection.StorageBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
+				addItem(nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
 			}
 
 			for (const auto& pushConstantBuffer : shaderReflection.PushConstantBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, pushConstantBuffer.Size));
+				addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, pushConstantBuffer.Size));
 			}
 
 			for (const auto& sampler : shaderReflection.SeparateSamplers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
+				addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
 					.setSize(sampler.ArraySize));
 			}
 
 			for (const auto& sampledImage : shaderReflection.SampledImages)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
+				addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
 					.setSize(sampledImage.ArraySize));
 			}
 
 			for (const auto& sampledImage : shaderReflection.SeparateImages)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
+				addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
 					.setSize(sampledImage.ArraySize));
 			}
 		}
