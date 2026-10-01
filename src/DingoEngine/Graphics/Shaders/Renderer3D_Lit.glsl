@@ -10,6 +10,7 @@
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec3 a_Normal;
 layout(location = 2) in vec4 a_Color;
+layout(location = 3) in vec2 a_TexCoord;
 
 layout(std140, binding = 0) uniform CameraData
 {
@@ -19,6 +20,7 @@ layout(std140, binding = 0) uniform CameraData
 layout(location = 0) out vec3 v_Normal;
 layout(location = 1) out vec4 v_Color;
 layout(location = 2) out vec3 v_WorldPosition;
+layout(location = 3) out vec2 v_TexCoord;
 
 void main()
 {
@@ -26,6 +28,7 @@ void main()
 	v_Normal        = a_Normal;
 	v_Color         = a_Color;
 	v_WorldPosition = a_Position;
+	v_TexCoord      = a_TexCoord;
 }
 
 #type fragment
@@ -34,6 +37,7 @@ void main()
 layout(location = 0) in vec3 v_Normal;
 layout(location = 1) in vec4 v_Color;
 layout(location = 2) in vec3 v_WorldPosition;
+layout(location = 3) in vec2 v_TexCoord;
 
 const int MAX_DIRECTIONAL_LIGHTS = 4;
 const int MAX_LOCAL_LIGHTS = 32;
@@ -64,26 +68,55 @@ layout(std140, binding = 0) uniform CameraData
 	LocalLight LocalLights[MAX_LOCAL_LIGHTS];
 };
 
-// Material params (binding 1, following the scene UBO at binding 0). Only the built-in
-// default material binds this — custom materials supply their own uniforms/layout.
+// Mirrors Renderer3D::LitMaterialData, written for every lit material each EndScene.
 layout(std140, binding = 1) uniform MaterialData
 {
-	vec4 EmissiveColor;    // rgb = color, a unused (padding)
-	vec4 EmissiveStrength; // x = strength, yzw unused (padding)
+	vec4 EmissiveColor; // rgb = colour
+	vec4 Surface;       // x = emissive strength, y = roughness, z = specular strength
 };
 
+layout(binding = 2) uniform texture2D u_Albedo;
+layout(binding = 3) uniform sampler u_AlbedoSampler;
+
 layout(location = 0) out vec4 o_Color;
+
+const float PI = 3.14159265;
+
+// Normalised Blinn-Phong: a rough surface spreads the highlight wide and dim, a smooth one keeps
+// it small and bright, for the same light.
+float Highlight(vec3 normal, vec3 toLight, vec3 toCamera, float shininess)
+{
+	vec3 halfway = toLight + toCamera;
+	float lengthSquared = dot(halfway, halfway);
+	if (lengthSquared < 1e-8)
+		return 0.0;
+
+	float nDotH = max(dot(normal, halfway * inversesqrt(lengthSquared)), 0.0);
+	return (shininess + 8.0) / (8.0 * PI) * pow(nDotH, shininess);
+}
 
 void main()
 {
 	vec3 normal = normalize(v_Normal);
+	vec4 albedo = v_Color * texture(sampler2D(u_Albedo, u_AlbedoSampler), v_TexCoord);
+
+	// Skipped entirely without specular, so non-shiny materials compute exactly what they did
+	// before the term existed.
+	bool shiny = Surface.z > 0.0;
+	float shininess = exp2(10.0 * (1.0 - Surface.y) + 1.0);
+	vec3 toCamera = CameraPosition.w > 0.5 ? normalize(CameraPosition.xyz - v_WorldPosition) : CameraPosition.xyz;
 
 	vec3 lighting = AmbientColor.rgb;
+	vec3 specular = vec3(0.0);
+
 	int directionalCount = min(LightCounts.x, MAX_DIRECTIONAL_LIGHTS);
 	for (int i = 0; i < directionalCount; ++i)
 	{
 		vec3 toLight = normalize(-DirectionalLights[i].Direction.xyz);
-		lighting += DirectionalLights[i].Color.rgb * max(dot(normal, toLight), 0.0);
+		float nDotL = max(dot(normal, toLight), 0.0);
+		lighting += DirectionalLights[i].Color.rgb * nDotL;
+		if (shiny && nDotL > 0.0)
+			specular += DirectionalLights[i].Color.rgb * nDotL * Highlight(normal, toLight, toCamera, shininess);
 	}
 
 	int localCount = min(LightCounts.y, MAX_LOCAL_LIGHTS);
@@ -99,10 +132,13 @@ void main()
 		toLight *= inversesqrt(max(distanceSquared, 1e-8));
 		float falloff = 1.0 - distanceSquared / rangeSquared;
 		float cone = clamp(dot(-toLight, light.SpotDirection.xyz) * light.Color.w + light.SpotDirection.w, 0.0, 1.0);
-		lighting += light.Color.rgb * max(dot(normal, toLight), 0.0) * (falloff * falloff) * (cone * cone);
+		float nDotL = max(dot(normal, toLight), 0.0);
+		lighting += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone);
+		if (shiny && nDotL > 0.0)
+			specular += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone) * Highlight(normal, toLight, toCamera, shininess);
 	}
 
-	vec3 finalColor = v_Color.rgb * lighting;
-	finalColor += EmissiveColor.rgb * EmissiveStrength.x;
-	o_Color = vec4(finalColor, v_Color.a);
+	vec3 finalColor = albedo.rgb * lighting + specular * Surface.z;
+	finalColor += EmissiveColor.rgb * Surface.x;
+	o_Color = vec4(finalColor, albedo.a);
 }

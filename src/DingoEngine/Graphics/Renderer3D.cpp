@@ -115,19 +115,7 @@ namespace Dingo
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(Vertex, Color))
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(Vertex, TexCoord));
 
-		m_Material = Material::Create(MaterialParams()
-			.SetDebugName("Renderer3D_Material")
-			.SetShader(m_Shader)
-			// No back-face culling: front-face winding differs between the Vulkan and
-			// D3D back-ends, so culling that looks right on one culls the visible faces
-			// on the other. Disabling it keeps the renderer backend-agnostic (this is
-			// what the Breakout3D / Physics3D mesh batchers did too); depth testing
-			// still resolves occlusion correctly.
-			.SetCullMode(CullMode::None));
-		// SetUniform now so the binding-1 UBO exists before the first draw (same reasoning
-		// as the DungeonCrawler3D glow material). Default params are black/0, matching the
-		// shader's additive no-op, so this doesn't change existing default-material output.
-		m_Material->SetUniform(MaterialData{});
+		m_Material = CreateLitMaterial(MaterialParams().SetDebugName("Renderer3D_Material"));
 
 		// Camera + lights live in a shared scene UBO (binding 0) bound on every material,
 		// rather than baked into the default material — so custom materials receive them too.
@@ -177,15 +165,6 @@ namespace Dingo
 		m_CameraData.ViewProjection = viewProjection;
 		m_CameraData.CameraPosition = cameraPosition;
 
-		// The default material's binding-1 UBO is a VOLATILE constant buffer: NVRHI
-		// requires a write into every frame that binds it, so this upload must be
-		// unconditional — do NOT dirty-gate it (skipping the write on unchanged frames
-		// floods "binding volatile constant buffer before writing" errors).
-		MaterialData materialData;
-		materialData.EmissiveColor = glm::vec4(m_Material->GetEmissiveColor(), 0.0f);
-		materialData.EmissiveStrength = glm::vec4(m_Material->GetEmissiveStrength(), 0.0f, 0.0f, 0.0f);
-		m_Material->SetUniform(materialData);
-
 		m_Statistics = {};
 
 		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
@@ -230,6 +209,9 @@ namespace Dingo
 		// shared buffer is re-uploaded between draws.
 		for (Material* material : m_DrawOrder)
 		{
+			if (material->GetShader() == m_Shader)
+				PrepareLitMaterial(material);
+
 			MaterialBatch& matBatch = m_Batches[material];
 			for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
 			{
@@ -261,6 +243,32 @@ namespace Dingo
 				++batchIndex;
 			}
 		}
+	}
+
+	Material* Renderer3D::CreateLitMaterial(MaterialParams params) const
+	{
+		params.SetShader(m_Shader).SetCullMode(CullMode::None);
+		Material* material = Material::Create(params);
+		PrepareLitMaterial(material);
+		return material;
+	}
+
+	void Renderer3D::PrepareLitMaterial(Material* material) const
+	{
+		// The lit shader always samples an albedo texture, and a material's binding set has to
+		// match the shader's exactly.
+		if (!material->GetTexture(0))
+			material->SetTexture(0, Renderer::GetWhiteTexture());
+		if (!material->GetSampler(0))
+			material->SetSampler(0, Renderer::GetClampSampler());
+
+		// Binding 1 is a VOLATILE constant buffer: NVRHI requires a write in every frame that
+		// binds it, so this must not be dirty-gated (skipping it floods "binding volatile constant
+		// buffer before writing" errors).
+		LitMaterialData data;
+		data.EmissiveColor = glm::vec4(material->GetEmissiveColor(), 0.0f);
+		data.Surface = glm::vec4(material->GetEmissiveStrength(), glm::clamp(material->GetRoughness(), 0.0f, 1.0f), std::max(material->GetSpecular(), 0.0f), 0.0f);
+		material->SetUniform(data);
 	}
 
 	void Renderer3D::Clear(const glm::vec4& clearColor)

@@ -130,6 +130,18 @@ namespace Dingo
 		Mesh* GetBoxMesh() const { return m_BoxMesh; }
 		Mesh* GetSphereMesh() const { return m_SphereMesh; }
 
+		// A material lit like the default one but with its own emissive, Roughness and Specular
+		// (see MaterialParams) and an optional albedo texture in texture slot 0, multiplied by
+		// the mesh colour; an empty slot 0 draws white, and an empty sampler slot 0 uses the clamp
+		// sampler. Shader and CullMode are set for you: lit materials draw both faces, because
+		// front-face winding differs between the Vulkan and D3D back-ends. The caller owns the
+		// material and must delete it before the renderer shuts down.
+		Material* CreateLitMaterial(MaterialParams params) const;
+
+		// The material meshes with no material of their own are drawn with, for changing their
+		// shared emissive, Roughness or Specular.
+		Material* GetDefaultMaterial() const { return m_Material; }
+
 		// Per-scene render statistics: reset each BeginScene, complete after EndScene.
 		struct Statistics
 		{
@@ -219,15 +231,15 @@ namespace Dingo
 		bool m_LocalOverflowWarned = false;
 		bool m_PendingOverflowWarned = false;
 
-		// std140: two vec4s. Binding-1 uniform for the built-in default material only
-		// (Material::SetUniform); custom materials bring their own layout. Mirrors
-		// MaterialParams::EmissiveColor/EmissiveStrength — refreshed from m_Material's
-		// current params each BeginScene.
-		struct MaterialData
+		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
+		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.
+		struct LitMaterialData
 		{
-			glm::vec4 EmissiveColor{ 0.0f };    // rgb = color
-			glm::vec4 EmissiveStrength{ 0.0f }; // x = strength
+			glm::vec4 EmissiveColor{ 0.0f }; // rgb = colour
+			glm::vec4 Surface{ 0.0f };       // x = emissive strength, y = roughness, z = specular
 		};
+
+		void PrepareLitMaterial(Material* material) const;
 
 		Shader* m_Shader = nullptr;
 		Material* m_Material = nullptr; // built-in flat-lit default material
