@@ -31,8 +31,8 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 
 ## Roadmap
 
-Currently at **v0.7.0**: the lighting engine work is done, its review and example game are in progress. Every milestone ships with an example game that exercises it — see
-[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3) and what each
+Currently at **v0.7.1**: v0.7's lighting engine work is done and its example game is in progress, and v0.7.1 adds the transform hierarchy. Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1) and what each
 example is built to demonstrate.
 
 | Version | Milestone | Example game | Status |
@@ -44,7 +44,8 @@ example is built to demonstrate.
 | v0.5 | Audio & Gameplay-Grade Physics — miniaudio, character controller, ray/shape casts | `EchoVault` | shipped |
 | v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
 | **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | *Candlewick* | engine done, example in progress |
-| v0.8 | Animation & Character Fidelity — transform hierarchy, skinned meshes, clips, blending | *Marionette* | planned |
+| v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
+| v0.8 | Animation & Character Fidelity — skinned meshes, clips, blending | *Marionette* | planned |
 | v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
 

@@ -98,7 +98,7 @@ scene.OnPhysicsStop();
 `Scene::OnUpdate` runs your `ScriptableEntity` behaviours first (so a script can
 apply forces this frame), then steps the world and copies each body's position and
 rotation onto its `TransformComponent` (as a local value under a parent, see
-[Bodies under a parent](#bodies-under-a-parent-v08)). Rendering afterwards just draws the synced
+[Bodies under a parent](#bodies-under-a-parent-v071)). Rendering afterwards just draws the synced
 transforms — no extra work needed. A frame longer than 4/60 s is cut to that for scripts and
 physics alike, so a stall runs the scene slow instead of tunnelling bodies.
 
@@ -146,9 +146,9 @@ world: `scene.GetPhysics2D()->MoveKinematic(scene.GetRuntimeBody2D(entity), posi
 deltaTime)` sets the velocity that reaches the target in one step, so it carries and pushes the
 bodies it meets. `GetAngularVelocity` reads a body's spin in radians per second.
 
-## Bodies under a parent (v0.8)
+## Bodies under a parent (v0.7.1)
 
-A body on a child entity ([Parenting](scenes-and-ecs.md#parenting-v08)) is built from the
+A body on a child entity ([Parenting](scenes-and-ecs.md#parenting-v071)) is built from the
 entity's **world** position and rotation. Collider sizes still come from the entity's own `Size`,
 which is never inherited.
 

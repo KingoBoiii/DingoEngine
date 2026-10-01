@@ -44,11 +44,11 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `GetUUID()` / `GetName()` | The entity's id / name. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
 | `Destroy()` | Destroy this entity, its behaviour and its children. |
-| `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.8) | Attach to / detach from a parent (see [Parenting](#parenting-v08)). |
-| `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.8) | Walk the hierarchy. |
-| `GetWorldTransform()` / `GetWorldPosition()` / `GetWorldRotation()` / `GetWorldScale()` (v0.8) | The 3D transform in world space, through every parent. |
-| `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.8) | Write the 3D local value that gives this world value. |
-| `GetWorldPosition2D()` / `SetWorldPosition2D(p)` / `GetWorldRotation2D()` / `SetWorldRotation2D(degrees)` (v0.8) | The same for the 2D `TransformComponent`: position with z, rotation in degrees. |
+| `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.7.1) | Attach to / detach from a parent (see [Parenting](#parenting-v071)). |
+| `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.7.1) | Walk the hierarchy. |
+| `GetWorldTransform()` / `GetWorldPosition()` / `GetWorldRotation()` / `GetWorldScale()` (v0.7.1) | The 3D transform in world space, through every parent. |
+| `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.7.1) | Write the 3D local value that gives this world value. |
+| `GetWorldPosition2D()` / `SetWorldPosition2D(p)` / `GetWorldRotation2D()` / `SetWorldRotation2D(degrees)` (v0.7.1) | The same for the 2D `TransformComponent`: position with z, rotation in degrees. |
 
 > The component methods support the **built-in component types** (below). To carry
 > game-specific data, put it in a `ScriptableEntity` subclass rather than defining new
@@ -170,7 +170,7 @@ scenes.OnUpdate(dt);
 scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the scene's lights
 ```
 
-### Parenting (v0.8)
+### Parenting (v0.7.1)
 
 `child.SetParent(parent)` makes the child's transforms **local to its parent**. In 3D its world
 transform is the parent's world `Transform3DComponent` × its own. In 2D its `TransformComponent`
@@ -234,7 +234,7 @@ float aim = turret2D.GetWorldRotation2D();      // the hull's rotation + the tur
 
 **Physics under a parent.** A body is built from the entity's world transform, with 3D collider
 sizes taken from its world scale. The rules below are the 3D ones; 2D bodies follow the same rules
-([Bodies under a parent](physics-2d.md#bodies-under-a-parent-v08)).
+([Bodies under a parent](physics-2d.md#bodies-under-a-parent-v071)).
 
 | Body | Rule |
 |---|---|
@@ -261,7 +261,7 @@ nothing to wire up beyond adding the entities. What each light takes from the en
 - **Directional and ambient lights** ignore the transform. A directional light's `Direction` is in
   world space.
 - **Point and spot lights** take their position from the entity's world position (its
-  `Transform3DComponent`, through any [parents](#parenting-v08)), and a spot light aims by rotating
+  `Transform3DComponent`, through any [parents](#parenting-v071)), and a spot light aims by rotating
   its local `Direction` with the world rotation. Scale is ignored. An entity without a
   `Transform3DComponent` is skipped, with a one-time warning.
 - **`Enabled = false`** on a point or spot light switches it off without losing its settings, so

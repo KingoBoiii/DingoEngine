@@ -145,22 +145,40 @@ many small static flames, a handful of moving ones — and it is *played* rather
 
 **Test**: the test app's new **Lighting Test** (`--test=light`), the first test of `Renderer3D`'s lighting. Its modes (`--lighting=default|lights|overbudget|materials`) cover the default light, orbiting point and spot lights, more lights than the budget, and lit materials — a roughness row, an emissive lamp holding a point light, a textured crate. `--entities` drives the same lights through ECS components and `--specular=off` gives a before/after on one frame. [DungeonCrawler3D](examples/DungeonCrawler3D/) gains an opt-in `--night` (a dim moon, a lantern above the hero, a point light per treasure) and `--seed=<n>`; its default look is unchanged.
 
+## v0.7.1 — Transform Hierarchy
+A point release that ships the first half of v0.8 early. Parent-child transforms pay off
+immediately and need no skinning, as v0.8's own text said: they delete the per-part world maths
+games write by hand and turn attach points into parenting. So they ship now, and v0.8 keeps
+skinning, clips, blending and events.
+- **Parenting** (3D and 2D): `Entity::SetParent(parent, keepWorldTransform = true)`, `RemoveParent`, `GetParent`, `GetChildCount`, `ForEachChild`, `GetChildren` and `FindChild(name, recursive)`. `Transform3DComponent` and `TransformComponent` become local to the parent. 3D reads and writes world values with `GetWorldTransform/Position/Rotation/Scale` and `SetWorldPosition/Rotation`. 2D has `GetWorldPosition2D/SetWorldPosition2D/GetWorldRotation2D/SetWorldRotation2D`: a 2D child's position turns with its parent's rotation, z and rotation add, and `Size` is not inherited. Cycles and parents in another scene are refused with an error. A root keeps its component's own values, so a scene without parents renders exactly as before.
+- **Lifetime**: destroying an entity destroys its subtree, and duplicating one duplicates its subtree with the links.
+- **Every reader on world values**: 3D meshes, 2D sprites, circles and text (at equal z a parent draws before its children), point and spot lights, the camera and audio sources and listeners all use world transforms.
+- **Physics**:
+  - Bodies are built from the world pose and world scale.
+  - Dynamic and character-controller children are simulated in world space and write back the local transform that reproduces it.
+  - Kinematic children follow their parent: they are moved before each step to where the parent will be after it.
+  - Static children are placed once.
+  - 2D does the same through the new `Physics2D::MoveKinematic` and `GetAngularVelocity`.
+- **Cheap worlds**: every pass over many entities (rendering, lights, audio, the physics bake, write-back and kinematic follow) works out each world transform once, parents first, and keeps nothing past the pass. In a 10,110-entity stress scene, `RenderEntities3D` on a parented scene costs 1.04x the flat one in Release (1.57x before). A flat scene costs what it did on v0.7, within measurement noise.
+- **DungeonCrawler3D's characters are parented rigs**: a root at the feet, a joint per hip and shoulder, and each part (and the sword) under its joint. The per-part world maths is gone, and the parts land where the old maths put them.
+- **EchoVault's sentry eye** rides its sentry, and line of sight now starts at the eye. The old ray started inside the sentry's own box and was always blocked, so sentries never saw the player. They now detect the player.
+
+**Test**: the test app's new **Hierarchy Test** (`--test=hierarchy`), 41 checks covering the API, reparenting, destroy and duplicate, world readers and the physics rules in 3D and 2D. Its modes are `--hierarchy=2d`, `probe2d` (a 2D draw-position probe), `stress` and `stressflat` (the 10k-entity timing pair).
+
+**Known limit**: bodies in one hierarchy are not filtered against each other, so a parent's and a child's colliders can collide. The filter is due with v0.8's joint sockets.
+
 ## v0.8 — Animation & Character Fidelity
 This one is a debt the roadmap has carried since v0.4.2. That milestone gave DungeonCrawler3D's hero
 a body instead of a sphere, and admitted in the same breath that a real skeletal-animation system
 "remains future engine work, slated to land with the character fidelity push of v0.5+" — a promise
 v0.5, v0.5.1, v0.6 and v0.7 have all walked past. In the meantime the workaround hardened into the
-house style: `Model` loads flat submeshes with baked node transforms and **no bone data at all**, and
-entities have **no parent-child relationship**, so every animated character in every project is a
-*pile of entities* — seven part-entities for the DungeonCrawler3D hero, 13–24 per character in the
-external dungeon crawler — each part's world transform recomputed by hand in game code every frame,
-against pivot offsets reverse-engineered out of the model exporter. v0.8 ends that.
+house style: `Model` loads flat submeshes with baked node transforms and **no bone data at all**, so
+every animated character in every project is a *pile of entities* — seven part-entities for the
+DungeonCrawler3D hero, 13–24 per character in the external dungeon crawler — posed part by part in
+game code every frame, against pivot offsets reverse-engineered out of the model exporter. v0.7.1
+gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays real animation.
 
-- **Transform hierarchy**: a parent/child relationship between entities plus a propagation pass, so a
-  child transform is finally *relative*. This is the half that pays off immediately and entirely
-  independently of skinning — it deletes the per-part world math games write today (~76 lines in one
-  rig alone) and the exporter pivot arithmetic feeding it. Attach points — a sword in a hand, a light
-  on a lantern, a turret on a hull — become parenting instead of per-frame bookkeeping.
+- **Transform hierarchy**: shipped early as [v0.7.1](#v071--transform-hierarchy).
 - **Skinned meshes**: the model loader reworked past static-only — bone hierarchies, vertex weights
   and inverse-bind matrices read from glTF/FBX, with skinning done on the GPU via a joint-matrix
   palette. This is the loader change v0.6 makes affordable rather than painful: rigs become
