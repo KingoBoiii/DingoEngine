@@ -27,8 +27,8 @@ namespace Dingo
 		// lit material for its own glow or shine.
 		//
 		// Emissive is additive glow, independent of any light. Specular is the strength of the
-		// highlight (0, the default, is none, so existing materials look as before) and Roughness
-		// its spread, from 0 (small and sharp) to 1 (wide and soft).
+		// highlight (0, the default, is none) and Roughness its spread, from 0 (small and sharp)
+		// to 1 (wide and soft).
 		glm::vec3   EmissiveColor          = { 0.0f, 0.0f, 0.0f };
 		float       EmissiveStrength       = 0.0f;
 		float       Roughness              = 0.5f;

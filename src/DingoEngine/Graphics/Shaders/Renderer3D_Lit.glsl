@@ -82,8 +82,8 @@ layout(location = 0) out vec4 o_Color;
 
 const float PI = 3.14159265;
 
-// Normalised Blinn-Phong: a rough surface spreads the highlight wide and dim, a smooth one keeps
-// it small and bright, for the same light.
+// Normalised Blinn-Phong: the (n + 8) / 8pi factor keeps a highlight's energy the same as roughness
+// changes its size.
 float Highlight(vec3 normal, vec3 toLight, vec3 toCamera, float shininess)
 {
 	vec3 halfway = toLight + toCamera;
@@ -100,8 +100,6 @@ void main()
 	vec3 normal = normalize(v_Normal);
 	vec3 albedo = v_Color.rgb * texture(sampler2D(u_Albedo, u_AlbedoSampler), v_TexCoord).rgb;
 
-	// Skipped entirely without specular, so non-shiny materials compute exactly what they did
-	// before the term existed.
 	bool shiny = Surface.z > 0.0;
 	float shininess = exp2(10.0 * (1.0 - Surface.y) + 1.0);
 	vec3 toCamera = CameraPosition.w > 0.5 ? normalize(CameraPosition.xyz - v_WorldPosition) : CameraPosition.xyz;
