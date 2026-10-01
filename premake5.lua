@@ -172,12 +172,14 @@ group "Engine"
 			"src/**.h",
 			"src/**.c",
 			"src/**.hpp",
-			"src/**.cpp"
+			"src/**.cpp",
+			"src/**/Shaders/*.glsl"
 		}
-	
+
 		includedirs {
 			"include",
 			"src",
+			"%{cfg.objdir}/Embedded",
 			"%{IncludeDir.spdlog}",
 			"%{IncludeDir.glfw}",
 			"%{IncludeDir.vulkan}",
@@ -208,6 +210,21 @@ group "Engine"
 		defines {
 			"GLFW_INCLUDE_NONE"
 		}
+
+		filter "files:src/**/Shaders/*.glsl"
+			buildmessage "Embedding %{file.name}"
+			buildcommands {
+				'"' .. _PREMAKE_COMMAND .. '" --file="' .. path.join(_MAIN_SCRIPT_DIR, "scripts/embed.lua")
+					.. '" --input="%{file.abspath}" --output="%{cfg.objdir}/Embedded/%{file.name}.inl" embed'
+			}
+			buildinputs { path.join(_MAIN_SCRIPT_DIR, "scripts/embed.lua") }
+			buildoutputs { "%{cfg.objdir}/Embedded/%{file.name}.inl" }
+
+		-- Debug loads engine shaders from the source tree so they hot-reload. Release and
+		-- Distribution always run the embedded copy: they are what gets published, so they must
+		-- neither carry a build-machine path nor pick up a source file the C++ wasn't built against.
+		filter "configurations:Debug or configurations:Debug-ASan"
+			defines { 'DE_ENGINE_SHADER_DIR="' .. path.join(_MAIN_SCRIPT_DIR, "src/DingoEngine/Graphics/Shaders") .. '"' }
 
 		filter "system:windows"
 			systemversion "latest"
