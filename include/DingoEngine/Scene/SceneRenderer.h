@@ -8,8 +8,8 @@ namespace Dingo
 	class Renderer3D;
 
 	// Renders a Scene by reading its primary CameraComponent (projection) and that
-	// camera entity's transform (view), plus an optional DirectionalLightComponent,
-	// then dispatching the 2D or 3D pass to Renderer2D / Renderer3D. Holds non-owning
+	// camera entity's transform (view), submitting the scene's light components for a 3D
+	// pass, then dispatching the 2D or 3D pass to Renderer2D / Renderer3D. Holds non-owning
 	// references to the engine renderers (owned by Application). This is the single
 	// per-scene render entry point — SceneManager::OnRender() delegates here.
 	class SceneRenderer

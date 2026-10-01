@@ -20,13 +20,19 @@ namespace Dingo
 		FillMode    FillMode               = FillMode::Solid;
 		bool        FrontCounterClockwise  = false;
 
-		// Additive glow, independent of any light. Default black/0 so existing materials
-		// (and the built-in default) render identically to before this was added.
-		// NOTE: emissive is per-MATERIAL, not per-mesh. Every mesh drawn with the built-in
-		// default material (MeshRendererComponent::Material == nullptr) shares Renderer3D's
-		// single default-material value — give an entity its own Material for a per-mesh glow.
+		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
+		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
+		// They are per-MATERIAL, not per-mesh: every mesh drawn with the default material
+		// (MeshRendererComponent::Material == nullptr) shares one value, so give an entity its own
+		// lit material for its own glow or shine.
+		//
+		// Emissive is additive glow, independent of any light. Specular is the strength of the
+		// highlight (0, the default, is none) and Roughness its spread, from 0 (small and sharp)
+		// to 1 (wide and soft).
 		glm::vec3   EmissiveColor          = { 0.0f, 0.0f, 0.0f };
 		float       EmissiveStrength       = 0.0f;
+		float       Roughness              = 0.5f;
+		float       Specular               = 0.0f;
 
 		MaterialParams& SetDebugName(const std::string& name)             { DebugName = name; return *this; }
 		MaterialParams& SetShader(Dingo::Shader* shader)                  { Shader = shader; return *this; }
@@ -35,6 +41,8 @@ namespace Dingo
 		MaterialParams& SetFrontCounterClockwise(bool v)                  { FrontCounterClockwise = v; return *this; }
 		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
+		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }
+		MaterialParams& SetSpecular(float specular)                       { Specular = specular; return *this; }
 	};
 
 	// Material owns the pipeline cache and resource bindings for a shader.
@@ -55,6 +63,12 @@ namespace Dingo
 
 		// ── Resource bindings ─────────────────────────────────────────────────
 
+		static constexpr uint32_t k_MaxTextureSlots = 16;
+		static constexpr uint32_t k_MaxSamplerSlots = 16;
+
+		// A change rebuilds the material's cached pipelines at its next draw, so avoid swapping a
+		// slot every frame. Changes are detected by pointer: when a slot's texture is freed, clear
+		// the slot before putting a new texture in it, which may reuse the freed address.
 		void SetTexture(uint32_t slot, Texture* texture);
 		void SetSampler(uint32_t slot, Sampler* sampler);
 
@@ -74,8 +88,8 @@ namespace Dingo
 		// Binds a shared, engine-owned uniform buffer at binding 0 — the "scene" UBO
 		// (e.g. Renderer3D's camera + light data). When set, the material's own
 		// SetUniform data binds at binding 1 and textures/samplers shift to 2+. When
-		// null (the default), the material's own UBO stays at binding 0. Changing it
-		// invalidates the pipeline cache (bindings are baked into the render pass).
+		// null (the default), the material's own UBO stays at binding 0. Render passes are
+		// cached per scene buffer, so a material drawn by several renderers keeps one for each.
 		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
 
 		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
@@ -96,13 +110,17 @@ namespace Dingo
 		Shader*               GetShader() const { return m_Params.Shader; }
 		const MaterialParams& GetParams() const { return m_Params; }
 
-		// Emissive is runtime-tweakable (unlike CullMode/FillMode, which are baked into the
-		// cached pipeline) — it only ever feeds uniform data, so changing it does not
-		// invalidate the pipeline cache.
+		// The surface settings are runtime-tweakable (unlike CullMode/FillMode, which are baked
+		// into the cached pipeline) — they only ever feed uniform data, so changing them does
+		// not invalidate the pipeline cache.
 		const glm::vec3& GetEmissiveColor()    const { return m_Params.EmissiveColor; }
 		float             GetEmissiveStrength() const { return m_Params.EmissiveStrength; }
+		float             GetRoughness()        const { return m_Params.Roughness; }
+		float             GetSpecular()         const { return m_Params.Specular; }
 		void SetEmissiveColor(const glm::vec3& color)  { m_Params.EmissiveColor = color; }
 		void SetEmissiveStrength(float strength)       { m_Params.EmissiveStrength = strength; }
+		void SetRoughness(float roughness)             { m_Params.Roughness = roughness; }
+		void SetSpecular(float specular)               { m_Params.Specular = specular; }
 
 	private:
 		void InvalidatePipelineCache();
@@ -110,8 +128,6 @@ namespace Dingo
 	private:
 		MaterialParams m_Params;
 
-		static constexpr uint32_t k_MaxTextureSlots = 16;
-		static constexpr uint32_t k_MaxSamplerSlots = 16;
 		Texture* m_Textures[k_MaxTextureSlots] = {};
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
 

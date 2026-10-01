@@ -171,6 +171,13 @@ never makes a sprite blink out for a few frames.
 Only file-backed shaders can hot-reload (`Shader::CreateFromSource` inline
 shaders have no file to watch). Models, fonts and audio clips are not watched.
 
+The one shader the manager watches without owning it is the engine's own lit 3D shader,
+`Renderer3D_Lit.glsl`. In a Debug build of the engine made from source it loads from that file
+rather than the copy compiled into the library, so the same poll recompiles it when you save, with
+the same keep-the-old-program-on-error rule. It is not a registered asset: it has no row in the
+Assets tab and no handle. Release and Distribution builds always run the embedded copy, and so
+does a Debug build whose source file isn't on disk. See [Lighting](lighting.md).
+
 Hot-reload is a development feature: it costs a timestamp poll every
 `HotReloadInterval` seconds — leave `EnableHotReload = false` in shipping
 builds.

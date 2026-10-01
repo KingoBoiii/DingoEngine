@@ -21,16 +21,11 @@ namespace Dingo
 	{
 		// A scene can carry a perspective (world) camera and/or an orthographic (UI)
 		// camera: the 3D world is drawn first, then the 2D entities as an overlay on
-		// top. Cameras and the light are found via narrow component views — a full
-		// ForEachEntity scan here cost hundreds of lookups per frame in big scenes.
+		// top. Cameras are found via narrow component views — a full ForEachEntity scan
+		// here cost hundreds of lookups per frame in big scenes.
 		Entity perspectiveCamera, orthographicCamera;
 		bool hasPerspective = false, hasOrthographic = false;
 		scene.GetRenderCameras(perspectiveCamera, hasPerspective, orthographicCamera, hasOrthographic);
-
-		DirectionalLightComponent light;
-		Entity lightEntity;
-		if (scene.GetFirstDirectionalLightEntity(lightEntity))
-			light = lightEntity.GetComponent<DirectionalLightComponent>();
 
 		if (!hasPerspective && !hasOrthographic)
 		{
@@ -48,15 +43,14 @@ namespace Dingo
 		const float aspect = (viewportSize.y > 0.0f) ? viewportSize.x / viewportSize.y : 1.0f;
 		const glm::vec4 clearColor = scene.GetClearColor();
 
-		// 3D world pass — clears colour + depth to the scene's clear colour. The light
-		// falls back to defaults when the scene has none, so lighting is deterministic
-		// per scene (and a previous scene's light doesn't bleed in).
+		// 3D world pass — clears colour + depth to the scene's clear colour. Lighting comes
+		// entirely from this scene's light components (a default light when it has none), so a
+		// previous scene's light never bleeds in.
 		if (hasPerspective)
 		{
-			m_Renderer3D->SetDirectionalLight(light.Direction, light.Ambient);
-
 			m_Renderer3D->BeginScene(scene.GetCameraViewProjection(perspectiveCamera, aspect));
 			m_Renderer3D->Clear(clearColor);
+			scene.SubmitLights(*m_Renderer3D);
 			scene.RenderEntities3D(*m_Renderer3D);
 			m_Renderer3D->EndScene();
 		}

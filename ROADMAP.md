@@ -125,41 +125,47 @@ A point release that closes every open entry in [KNOWN-BUGS.md](KNOWN-BUGS.md) e
 **Test**: the test app's new **Renderer3D Batch Test** (`--test=batch`), an assignment-aliasing check in the **Mesh Collider Test**, and a raw `Font::Create` root-relative path check in the **Asset Manager Test**.
 
 ## v0.7 — Lighting & Shading
-v0.6 made assets first-class; v0.7 does the same for **light**. Everything the engine has ever
-rendered has been lit by exactly one directional light: `DirectionalLightComponent` carries a
-direction and an ambient scalar — no colour, no intensity — the `SceneRenderer` takes the
-*first one it finds* in the scene, and it reaches the mesh shader as a single `vec4` in the scene
-UBO. A game that wants a torch, a lamp, or a muzzle flash has no choice but to fake it on the CPU:
-the external dungeon crawler spends roughly 40% of its game controller re-tinting wall, floor and
-prop albedo every frame to imitate torch pools, and eventually had to hand-write its own per-pixel
-lighting shader to escape that. This milestone retires that entire category of workaround — and
-gives v0.9's shadow maps and bloom a real light abstraction to attach to instead of inventing one
-late.
+v0.6 made assets first-class; v0.7 does the same for **light**. Every 3D scene the engine had rendered was lit by exactly one directional light with no colour and no intensity, so a game that wanted a torch, a lamp or a muzzle flash had to fake it on the CPU: the external dungeon crawler spent roughly 40% of its game controller re-tinting wall, floor and prop albedo every frame to imitate torch pools, and eventually hand-wrote its own per-pixel lighting shader to escape that. The engine work below retires that category of workaround and gives v0.9's shadow maps and bloom a real light abstraction to attach to instead of inventing one late. The engine work has been through a review pass, and it and the *Candlewick* example game below are complete as v0.7.0 (on its branch, not yet merged or tagged).
 
-- **Real light types**: a `PointLightComponent` (position from the entity's transform, plus colour,
-  intensity and range with distance attenuation) and a `SpotLightComponent` (direction with
-  inner/outer cone falloff). `DirectionalLightComponent` gains the **colour and intensity it never
-  had** and stops being implicitly one-per-scene.
-- **A capped forward multi-light path**: the `SceneRenderer` gathers lights each frame and selects
-  the N most relevant (nearest / brightest, with off-screen lights culled) into a light array in the
-  scene UBO at binding 0, and the lit shader loops them per pixel. A fixed budget deliberately keeps
-  v0.4.2's per-material batching and binding layout intact — no deferred pass, no G-buffer. When the
-  budget overflows, selection is documented and warned about rather than silently different frame to
-  frame.
-- **A shading pass worth lighting**: the current shader is pure Lambert plus an ambient lift, so
-  extra lights would have nothing to catch — a specular/roughness term lands with them, and the v0.5
-  emissive channel becomes the natural companion to a co-located point light ("this object *is* the
-  light source"). The lit shader also **moves out of the `Renderer3D.cpp` string literal** onto v0.6's
-  file-backed shader path, so it hot-reloads: light falloff and specular response become things you
-  tune with the game running.
+- **Real light types**: `Renderer3D::SubmitLight` takes a `DirectionalLight` (colour and intensity; up to 4 per scene), a `PointLight` or a `SpotLight` (position, colour, intensity and range, plus a direction and an inner/outer cone angle for the spot), and `SetAmbientLight(colour, intensity)` sets a coloured ambient. The types live in `Graphics/Light.h`. Point and spot lights fall off smoothly from their intensity at the light to exactly zero at `Range`, as `(1 - (d / Range)²)²`. Lighting is scene-scoped: whatever is submitted lights the next `EndScene`, which then clears it. A scene that submits no light and no ambient is lit by the `Renderer3DParams` default light, which reproduces the pre-v0.7 image pixel for pixel.
+- **A capped forward multi-light path**: point and spot lights share one budget of 32 (`Renderer3DCapabilities::MaxLocalLights`, read back with `GetLocalLightBudget()`). `EndScene` culls the lights whose range sphere is outside the view frustum, ranks the rest by brightness as seen from the camera and keeps the top N; ties go to the light the camera is nearer to relative to its range, then to the earlier submission, so a still scene picks the same lights every frame, and an overflow warns once and counts in `Statistics::DroppedLights`. The lights ride at the end of the scene UBO at binding 0, behind a frozen 96-byte prefix (`ViewProjection`, `LightDirection`, `Ambient`), so every existing custom material compiles and renders unchanged. v0.4.2's per-material batching is intact: no deferred pass, no G-buffer.
+- **Light components**: `PointLightComponent` and `SpotLightComponent` (position, and the spot's aim, from the entity's `Transform3DComponent`; `Enabled` snuffs one without losing its settings) and `AmbientLightComponent`. `DirectionalLightComponent` gains the colour and intensity it never had and stops being one-per-scene. The `SceneRenderer` submits all of them through the new `Scene::SubmitLights`, which is public for custom 3D passes. A scene with no light component at all still gets a default directional light, so a 3D scene never renders black by accident.
+- **A shading pass worth lighting**: normalised Blinn-Phong specular per light, shaped by two new `MaterialParams`, `Roughness` and `Specular` (0 by default, so existing materials render as before). `Renderer3D::CreateLitMaterial` makes a material that uses the lit shader with its own emissive, roughness and specular and an albedo texture in slot 0. Per-object glow therefore no longer needs a custom shader: the v0.5 emissive channel, which only the one shared default material ever received, now works on any lit material, and pairs with a co-located point light ("this object *is* the light source"). `Material::SetTexture` / `SetSampler` now rebind when a slot changes, so a texture that arrives after the first draw (a `LoadAsync` result) shows up.
+- **The lit shader is a file**: it moved out of the `Renderer3D.cpp` string literal into `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl`. The build embeds it into `DingoEngine.lib` (`scripts/embed.lua`, run as a premake custom build rule), so a game ships no engine files; Debug builds load the source file instead and, with asset hot-reload enabled, reload it on the `AssetManager`'s poll, so light falloff and specular response become things you tune with the game running.
+- **Light stats**: the F4 Renderer tab shows the directional lights in use out of 4, a bar of point and spot lights against the budget, how many were out of view and how many were dropped.
+- **Gameplay queries** (added with the example game): `GetLightAttenuation(light, point)` (`Graphics/Light.h`) returns the weight the lit shader gives a `PointLight` or `SpotLight` at a world point, the falloff times the cone for a spot, both already squared. `PointLightComponent::ToLight(transform)` and `SpotLightComponent::ToLight(transform)` build the light the `SceneRenderer` submits for a component. They run on the renderer's own angle clamps and cone set-up (`Graphics/LightMath.h`), so a game tests exactly the cone it draws, instead of copying a formula that can drift from a hot-reloaded shader. The weight leaves out `N·L`, colour, intensity, occlusion and the frame's budget; see [docs/lighting.md](docs/lighting.md#gameplay-queries).
+- **Vulkan wireframe fix**: `FillMode::Wireframe` has always been in `MaterialParams`, but the Vulkan device never requested `fillModeNonSolid`, so the first wireframe material (Candlewick's `--debug-cone`) logged a validation error. The feature is now requested whenever the GPU supports it; a wireframe material on a GPU without it is filed as K19 in [KNOWN-BUGS.md](KNOWN-BUGS.md).
+- **Migration**: no API breaks, but two behaviours change. Several `DirectionalLightComponent`s now all light the scene (up to 4, each adding its own legacy `Ambient`), where before only the first counted; and 3D drawn on the shared renderer outside the `SceneRenderer`, without `Scene::SubmitLights`, is lit by the `Renderer3DParams` default light instead of the last scene's sun. The frozen scene-UBO prefix still carries only the first directional light, so a custom shader that wants the rest reads the full block. Two limits are filed in [KNOWN-BUGS.md](KNOWN-BUGS.md): lights can pop at the budget edge (K16), and bright overlapping lights clip until v0.9's tone mapping (K17).
 
-**Example game**: *Candlewick* — a stealth crawl through a dark keep, built so that every light in
-the scene is a gameplay object rather than set dressing. The player carries one lantern whose radius
-*is* a burning resource; wardens patrol with their own moving point lights and see through
-spot-light vision cones (the cone drawn and the detection tested from the same data, reusing v0.5's
-shape casts); braziers with emissive cores are both the checkpoints and the only way to see a room.
-Snuffing your lantern hides you and blinds you at once. It stresses the light budget honestly —
-many small static flames, a handful of moving ones — and it is *played* rather than looked at.
+**Example game**: [Candlewick](examples/Candlewick/) — a stealth crawl through a dark keep of four rooms
+(the Gatehouse, the Great Hall, the Gallery and the Chapel), built so that every light in the scene is a
+gameplay object rather than set dressing. The player carries one lantern whose radius *is* a burning
+resource: it burns 1 oil a second, its range shrinks from 7 m to 2.5 m as the oil runs down, and flasks
+and lit braziers refill it. Four wardens patrol with a lamp (a point light) and an eye (a spot light)
+each, and see through that spot-light cone: the engine's `GetLightAttenuation` weighs the cone at three
+points on the player, behind a line-of-sight ray (v0.5's ray casts), so the cone drawn on the floor is
+the cone that catches you, and each eye's range is clamped to the wall it faces so a cone never reaches
+through one. The lantern is the other half: a lit lantern (or standing in a sconce's or brazier's light)
+makes a warden notice you from further away and walk over to investigate, but only the cone catches.
+Snuffing the lantern with Q hides you from that and blinds you at once. Braziers with emissive cores
+start cold, apart from the Gatehouse's: hold E (or A on a pad) for a second beside one with the lantern
+lit and it kindles, becomes the room's main light, refills the lantern and saves your checkpoint. The
+same hold at a lit brazier refills the lantern again (and relights it), which is the way out once the
+oil and the flasks are gone.
+Lighting the Chapel altar wins, and the End screen shows the time and how often you were caught. All
+sound is synthesised by a script and positional (a crackling brazier, footsteps, a warden's alert), and
+every control has a gamepad binding.
+
+It stresses the light budget honestly — 58 local lights (49 static flames, the lantern, eight warden
+lights) against the budget of 32 — and stays inside it on purpose: a game-side light LOD counts the
+gameplay lights in view with the engine's own frustum test and fades decorative flames in and out to
+fit, so the engine never has to drop a warden's cone while it still sees you. Launch
+flags make each claim checkable: `--debug-cone` draws the tested cones and the sample points,
+`--no-light-lod` shows the engine's own selection, `--light-budget=<16-32>` lowers the budget (16 is the 14 gameplay lights plus the LOD's headroom), and
+`--room=1..4`, `--freeze`, `--overview`, `--oil=<0-100>` and `--spawn=<col>,<row>` make a frame
+reproducible. It is *played* rather than looked at.
+
+**Test**: the test app's new **Lighting Test** (`--test=light`), the first test of `Renderer3D`'s lighting. Its modes (`--lighting=default|lights|overbudget|materials`) cover the default light, orbiting point and spot lights, more lights than the budget, and lit materials — a roughness row, an emissive lamp holding a point light, a textured crate. `--entities` drives the same lights through ECS components and `--specular=off` gives a before/after on one frame. It also lists PASS/FAIL checks, among them the `GetLightAttenuation` weights. [DungeonCrawler3D](examples/DungeonCrawler3D/) gains an opt-in `--night` (a dim moon, a lantern above the hero, a point light per treasure) and `--seed=<n>`; its default look is unchanged.
 
 ## v0.8 — Animation & Character Fidelity
 This one is a debt the roadmap has carried since v0.4.2. That milestone gave DungeonCrawler3D's hero
@@ -208,8 +214,9 @@ deliberately about **what the frame looks like**; the renderer throughput work t
   the design). This is also where lighting stops being decoration: in a game built on light,
   occlusion is gameplay.
 - **A post-processing stack**: bloom, tone mapping and SSAO/GTAO, run as a real chain over the scene
-  target rather than as one-off effects. Tone mapping isn't cosmetic here — the moment v0.7 lets N
-  lights sum past 1.0 the choice is mapping that range or clipping it, and today the engine clips.
+  target rather than as one-off effects. Tone mapping isn't cosmetic here — v0.7 lets N lights sum
+  past 1.0, so the choice is mapping that range or clipping it, and today the engine clips
+  (KNOWN-BUGS K17).
 - **GPU particles**: an emitter/particle system on the GPU, driven from ECS components, with spawn
   hooks on v0.8's animation timeline so a spell's burst comes from the clip instead of a timer.
 - **Profiling integration** (Optick or Tracy), so each new pass can be measured as it lands rather
@@ -235,9 +242,11 @@ was called "Advanced Rendering & Performance" but was never scheduled anywhere:
   `CommandList::Draw` takes an `instanceCount`, hardcoded to 1 — so the missing piece is persistent
   buffers, not the API.
 - **Culling**: frustum and distance culling, so what gets submitted is bounded by what's *visible*
-  rather than by what exists. Games do this by hand today, nulling a mesh per entity.
+  rather than by what exists. v0.7 already culls *lights* by frustum; meshes are still submitted
+  whether or not they are visible, and games cull them by hand today, with `MeshRendererComponent::Visible`.
 - **Material sharing**: a shared-material path so the first custom material in a scene doesn't
-  fragment the single-batch fast path.
+  fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
+  costing a material each: v0.7's lit materials are per-material, not per-mesh.
 
 Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —

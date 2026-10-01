@@ -16,8 +16,9 @@ namespace Dingo::UI
 
 	// Frame timing (FPS + a rolling frame-time graph) and the most recent scene's
 	// Renderer2D and Renderer3D statistics: draw calls, primitive counts, meshes
-	// submitted/dropped, and the 3D vertex/index budget usage. Reads the engine's
-	// active renderers (Application::GetRenderer2D/3D), so no arguments are needed.
+	// submitted/dropped, the 3D vertex/index budget usage, and the lights in use against
+	// their budget (out of view, dropped). Reads the engine's active renderers
+	// (Application::GetRenderer2D/3D), so no arguments are needed.
 	// Section-style: draws into the currently open window (see the note below).
 	void RendererStatsSection();
 

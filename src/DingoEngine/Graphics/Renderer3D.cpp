@@ -1,71 +1,111 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Asset/UnmanagedShaderWatch.h"
+#include "DingoEngine/Graphics/LightMath.h"
 
+#include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+
+#include <array>
+#include <cstring>
 
 namespace
 {
-	// Flat-shaded mesh shader with a single directional light. Vertices arrive in
-	// world space (the renderer transforms them on the CPU while batching), so the
-	// vertex stage only applies the camera and forwards the lit inputs.
-	constexpr const char* k_MeshShaderSource = R"(
-#type vertex
-#version 450
+#include "Renderer3D_Lit.glsl.inl"
 
-layout(location = 0) in vec3 a_Position;
-layout(location = 1) in vec3 a_Normal;
-layout(location = 2) in vec4 a_Color;
+	constexpr const char* k_LitShaderName = "Renderer3DMeshShader";
 
-layout(std140, binding = 0) uniform CameraData
-{
-	mat4 ViewProjection;
-	vec4 LightDirection; // xyz = direction the light travels
-	vec4 Ambient;        // x = ambient strength
-};
+	// The source file when this build can see it, so the AssetManager can hot-reload it;
+	// otherwise the copy compiled into the library.
+	Dingo::Shader* CreateLitShader()
+	{
+#ifdef DE_ENGINE_SHADER_DIR
+		const std::filesystem::path sourcePath = std::filesystem::path(u8"" DE_ENGINE_SHADER_DIR) / "Renderer3D_Lit.glsl";
+		std::error_code ec;
+		if (std::filesystem::exists(sourcePath, ec))
+			return Dingo::Shader::CreateFromFile(k_LitShaderName, sourcePath);
+#endif
+		const std::string source(reinterpret_cast<const char*>(k_Renderer3D_Lit_glsl), sizeof(k_Renderer3D_Lit_glsl));
+		return Dingo::Shader::CreateFromSource(k_LitShaderName, source);
+	}
 
-layout(location = 0) out vec3 v_Normal;
-layout(location = 1) out vec4 v_Color;
-layout(location = 2) out vec3 v_LightDir;
-layout(location = 3) out float v_Ambient;
+	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
+	// inverse image of that direction. An orthographic camera sits at infinity: w is 0 there,
+	// and the result is the direction towards it. A singular matrix gives an arbitrary result.
+	glm::vec4 CameraPositionFromViewProjection(const glm::mat4& viewProjection)
+	{
+		const glm::vec4 eye = glm::inverse(viewProjection) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+		if (std::abs(eye.w) > 1e-6f)
+			return glm::vec4(glm::vec3(eye) / eye.w, 1.0f);
 
-void main()
-{
-	gl_Position = ViewProjection * vec4(a_Position, 1.0);
-	v_Normal    = a_Normal;
-	v_Color     = a_Color;
-	v_LightDir  = LightDirection.xyz;
-	v_Ambient   = Ambient.x;
-}
+		const float length = glm::length(glm::vec3(eye));
+		return length > 0.0f ? glm::vec4(-glm::vec3(eye) / length, 0.0f) : glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+	}
 
-#type fragment
-#version 450
+	using FrustumPlanes = std::array<glm::vec4, 6>;
 
-layout(location = 0) in vec3 v_Normal;
-layout(location = 1) in vec4 v_Color;
-layout(location = 2) in vec3 v_LightDir;
-layout(location = 3) in float v_Ambient;
+	// Gribb-Hartmann, for clip-space depth in [0, 1] (GLM_FORCE_DEPTH_ZERO_TO_ONE). Each plane's
+	// normal points into the frustum.
+	FrustumPlanes ExtractFrustumPlanes(const glm::mat4& viewProjection)
+	{
+		const glm::vec4 x = glm::row(viewProjection, 0);
+		const glm::vec4 y = glm::row(viewProjection, 1);
+		const glm::vec4 z = glm::row(viewProjection, 2);
+		const glm::vec4 w = glm::row(viewProjection, 3);
 
-// Material params (binding 1, following the scene UBO at binding 0). Only the built-in
-// default material binds this — custom materials supply their own uniforms/layout.
-layout(std140, binding = 1) uniform MaterialData
-{
-	vec4 EmissiveColor;    // rgb = color, a unused (padding)
-	vec4 EmissiveStrength; // x = strength, yzw unused (padding)
-};
+		FrustumPlanes planes = { w + x, w - x, w + y, w - y, z, w - z };
+		for (glm::vec4& plane : planes)
+			plane /= glm::length(glm::vec3(plane));
+		return planes;
+	}
 
-layout(location = 0) out vec4 o_Color;
+	bool SphereTouchesFrustum(const FrustumPlanes& planes, const glm::vec3& center, float radius)
+	{
+		for (const glm::vec4& plane : planes)
+		{
+			if (glm::dot(glm::vec3(plane), center) + plane.w < -radius)
+				return false;
+		}
+		return true;
+	}
 
-void main()
-{
-	vec3 normal = normalize(v_Normal);
-	vec3 toLight = normalize(-v_LightDir);
-	float diffuse = max(dot(normal, toLight), 0.0);
-	float lighting = v_Ambient + (1.0 - v_Ambient) * diffuse;
-	vec3 finalColor = v_Color.rgb * lighting;
-	finalColor += EmissiveColor.rgb * EmissiveStrength.x;
-	o_Color = vec4(finalColor, v_Color.a);
-}
-)";
+	// By the strongest channel, not luminance: a pure blue light is as strong as a pure green one
+	// of the same intensity, so which of them a budget keeps comes down to distance.
+	float Strength(const glm::vec3& color)
+	{
+		return std::max({ color.r, color.g, color.b });
+	}
+
+	using Dingo::Internal::IsFinite;
+
+	float FiniteOr(float value, float fallback)
+	{
+		return std::isfinite(value) ? value : fallback;
+	}
+
+	// A lit material is known by its shader, and the renderer that draws it need not be the one that
+	// created it.
+	std::vector<const Dingo::Shader*> s_LitShaders;
+
+	bool IsLitShader(const Dingo::Shader* shader)
+	{
+		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
+	}
+
+	bool BindsPastSlotZero(const Dingo::Material& material)
+	{
+		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
+		{
+			if (material.GetTexture(slot))
+				return true;
+		}
+		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
+		{
+			if (material.GetSampler(slot))
+				return true;
+		}
+		return false;
+	}
 }
 
 namespace Dingo
@@ -78,9 +118,17 @@ namespace Dingo
 		return renderer;
 	}
 
+	Renderer3D::~Renderer3D()
+	{
+		std::erase(s_LitShaders, m_Shader);
+		Internal::UnwatchUnmanagedShader(m_Shader);
+	}
+
 	void Renderer3D::Initialize()
 	{
-		m_Shader = Shader::CreateFromSource("Renderer3DMeshShader", k_MeshShaderSource);
+		m_Shader = CreateLitShader();
+		s_LitShaders.push_back(m_Shader);
+		Internal::WatchUnmanagedShader(m_Shader);
 
 		m_Layout = VertexLayout()
 			.SetStride(sizeof(Vertex))
@@ -89,28 +137,17 @@ namespace Dingo
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(Vertex, Color))
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(Vertex, TexCoord));
 
-		m_Material = Material::Create(MaterialParams()
-			.SetDebugName("Renderer3D_Material")
-			.SetShader(m_Shader)
-			// No back-face culling: front-face winding differs between the Vulkan and
-			// D3D back-ends, so culling that looks right on one culls the visible faces
-			// on the other. Disabling it keeps the renderer backend-agnostic (this is
-			// what the Breakout3D / Physics3D mesh batchers did too); depth testing
-			// still resolves occlusion correctly.
-			.SetCullMode(CullMode::None));
-		// SetUniform now so the binding-1 UBO exists before the first draw (same reasoning
-		// as the DungeonCrawler3D glow material). Default params are black/0, matching the
-		// shader's additive no-op, so this doesn't change existing default-material output.
-		m_Material->SetUniform(MaterialData{});
+		m_Material = CreateLitMaterial(MaterialParams().SetDebugName("Renderer3D_Material"));
 
-		// Camera + light live in a shared scene UBO (binding 0) bound on every material,
-		// rather than baked into the default material — so custom materials receive the
-		// camera/light too. Uploaded each BeginScene.
-		m_CameraData.LightDirection = glm::vec4(m_Params.LightDirection, 0.0f);
-		m_CameraData.Ambient = glm::vec4(m_Params.Ambient, 0.0f, 0.0f, 0.0f);
-		// Volatile constant buffer — written into the frame's command list each
-		// BeginScene (via Renderer::Upload), not pre-uploaded here.
-		m_SceneUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData), "Renderer3D_SceneUBO");
+		// Every EndScene writes it, and on Vulkan a volatile buffer only has room for the writes of
+		// MaxWritesPerFrame scenes a frame before later ones are dropped.
+		m_SceneUniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_SceneUBO")
+			.SetByteSize(sizeof(CameraData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
@@ -135,32 +172,42 @@ namespace Dingo
 
 		DestroyAndDelete(m_SceneUniformBuffer);
 		DestroyAndDelete(m_Material);
+		std::erase(s_LitShaders, m_Shader);
+		Internal::UnwatchUnmanagedShader(m_Shader);
 		DestroyAndDelete(m_Shader);
 	}
 
 	void Renderer3D::BeginScene(const PerspectiveCamera& camera)
 	{
-		BeginScene(camera.GetViewProjectionMatrix());
+		BeginSceneInternal(camera.GetViewProjectionMatrix(), glm::vec4(camera.GetPosition(), 1.0f));
 	}
 
 	void Renderer3D::BeginScene(const glm::mat4& viewProjection)
 	{
-		m_CameraData.ViewProjection = viewProjection;
-		// Write the volatile scene UBO into this frame's command list, before any draw
-		// binds it (CommandList::UploadBuffer, the same path material UBOs use).
-		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+		BeginSceneInternal(viewProjection, CameraPositionFromViewProjection(viewProjection));
+	}
 
-		MaterialData materialData;
-		materialData.EmissiveColor = glm::vec4(m_Material->GetEmissiveColor(), 0.0f);
-		materialData.EmissiveStrength = glm::vec4(m_Material->GetEmissiveStrength(), 0.0f, 0.0f, 0.0f);
-		m_Material->SetUniform(materialData);
+	void Renderer3D::BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition)
+	{
+		m_CameraData.ViewProjection = viewProjection;
+		m_CameraData.CameraPosition = cameraPosition;
 
 		m_Statistics = {};
 
 		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
-		// just last scene's: SubmitMesh takes a spare chunk before growing.
-		for (auto& [material, matBatch] : m_Batches)
+		// just last scene's: SubmitMesh takes a spare chunk before growing. Nothing tells the
+		// renderer when a material is deleted, so a batch that has sat unused for a while is
+		// released instead, or a deleted material's storage would be held forever.
+		for (auto it = m_Batches.begin(); it != m_Batches.end();)
 		{
+			MaterialBatch& matBatch = it->second;
+			matBatch.IdleScenes = matBatch.Enqueued ? 0 : matBatch.IdleScenes + 1;
+			if (matBatch.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				it = m_Batches.erase(it);
+				continue;
+			}
+
 			for (MeshChunk& chunk : matBatch.Chunks)
 			{
 				chunk.Vertices.clear();
@@ -168,6 +215,7 @@ namespace Dingo
 			}
 			matBatch.ChunksInUse = 0;
 			matBatch.Enqueued = false;
+			++it;
 		}
 		m_DrawOrder.clear();
 		m_SceneActive = true;
@@ -180,6 +228,17 @@ namespace Dingo
 
 		m_SceneActive = false;
 
+		// Written into this frame's command list ahead of every draw that binds it
+		// (CommandList::UploadBuffer, the same path material UBOs use).
+		ResolveSceneLights();
+		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+
+		m_CameraData.AmbientColor = glm::vec4(0.0f);
+		m_CameraData.LightCounts = glm::ivec4(0);
+		m_LocalLights.clear();
+		m_SceneLightSubmitted = false;
+		m_DroppedLights = 0;
+
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
 
@@ -187,6 +246,24 @@ namespace Dingo
 		// shared buffer is re-uploaded between draws.
 		for (Material* material : m_DrawOrder)
 		{
+			if (IsLitShader(material->GetShader()))
+			{
+				// The binding set would name bindings the shader's layout lacks, which Vulkan does
+				// not reject: drawing it is undefined behaviour, so the material is skipped.
+				if (BindsPastSlotZero(*material))
+				{
+					if (!m_LitSlotsWarned)
+					{
+						const std::string& name = material->GetParams().DebugName;
+						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+							name.empty() ? "<unnamed>" : name.c_str());
+						m_LitSlotsWarned = true;
+					}
+					continue;
+				}
+				PrepareLitMaterial(material);
+			}
+
 			MaterialBatch& matBatch = m_Batches[material];
 			for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
 			{
@@ -220,18 +297,214 @@ namespace Dingo
 		}
 	}
 
+	Material* Renderer3D::CreateLitMaterial(MaterialParams params) const
+	{
+		params.SetShader(m_Shader).SetCullMode(CullMode::None);
+		Material* material = Material::Create(params);
+		PrepareLitMaterial(material);
+		return material;
+	}
+
+	void Renderer3D::PrepareLitMaterial(Material* material) const
+	{
+		// The lit shader always samples an albedo texture, and a material's binding set has to
+		// match the shader's exactly.
+		if (!material->GetTexture(0))
+			material->SetTexture(0, Renderer::GetWhiteTexture());
+		if (!material->GetSampler(0))
+			material->SetSampler(0, Renderer::GetClampSampler());
+
+		// Rebuilt every scene: SetRoughness and the other surface setters only change the
+		// material's params, never its uniform data.
+		LitMaterialData data;
+		const glm::vec3& emissiveColor = material->GetEmissiveColor();
+		data.EmissiveColor = glm::vec4(IsFinite(emissiveColor) ? emissiveColor : glm::vec3(0.0f), 0.0f);
+		data.Surface = glm::vec4(
+			FiniteOr(material->GetEmissiveStrength(), 0.0f),
+			glm::clamp(FiniteOr(material->GetRoughness(), 0.5f), 0.0f, 1.0f),
+			std::max(FiniteOr(material->GetSpecular(), 0.0f), 0.0f),
+			0.0f);
+
+		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
+		// frame, so a material drawn in several scenes of a frame only rewrites what changed.
+		const std::vector<uint8_t>& current = material->GetUniformCPUData();
+		if (current.size() == sizeof(data) && std::memcmp(current.data(), &data, sizeof(data)) == 0)
+			return;
+		material->SetUniform(data);
+	}
+
 	void Renderer3D::Clear(const glm::vec4& clearColor)
 	{
 		Renderer::Clear(clearColor);
+	}
+
+	bool Renderer3D::SubmitLight(const DirectionalLight& light)
+	{
+		m_SceneLightSubmitted = true;
+		if (!IsFinite(light.Direction) || !IsFinite(light.Color * light.Intensity))
+			return false;
+
+		int& count = m_CameraData.LightCounts.x;
+		if (count >= static_cast<int>(k_MaxDirectionalLights))
+		{
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D: more directional lights than k_MaxDirectionalLights and AssertOnOverflow is set.");
+
+			if (!m_DirectionalOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a scene submitted more than {} directional lights; the extra ones are dropped.", k_MaxDirectionalLights);
+				m_DirectionalOverflowWarned = true;
+			}
+			++m_DroppedLights;
+			return false;
+		}
+
+		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
+		++count;
+		return true;
+	}
+
+	template<typename LightType>
+	bool Renderer3D::SubmitLocalLight(const LightType& light)
+	{
+		m_SceneLightSubmitted = true;
+		if (!Internal::IsUsableLight(light))
+			return false;
+
+		LocalLightCandidate* candidate = AddLocalLight();
+		if (!candidate)
+			return false;
+
+		const Internal::LightCone cone = Internal::GetLightCone(light);
+		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
+		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, cone.Scale);
+		candidate->Data.SpotDirection = glm::vec4(cone.Axis, cone.Offset);
+		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		return true;
+	}
+
+	bool Renderer3D::SubmitLight(const PointLight& light)
+	{
+		return SubmitLocalLight(light);
+	}
+
+	bool Renderer3D::SubmitLight(const SpotLight& light)
+	{
+		return SubmitLocalLight(light);
+	}
+
+	Renderer3D::LocalLightCandidate* Renderer3D::AddLocalLight()
+	{
+		// Pending lights only clear at EndScene, so code that submits lights every frame but never
+		// ends a scene would otherwise grow this without bound.
+		if (m_LocalLights.size() >= k_MaxPendingLocalLights)
+		{
+			if (!m_PendingOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} point and spot lights are waiting for an EndScene; further ones are ignored.", k_MaxPendingLocalLights);
+				m_PendingOverflowWarned = true;
+			}
+			return nullptr;
+		}
+		return &m_LocalLights.emplace_back();
+	}
+
+	void Renderer3D::SetAmbientLight(const glm::vec3& color, float intensity)
+	{
+		m_SceneLightSubmitted = true;
+		if (IsFinite(color * intensity))
+			m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
+	}
+
+	uint32_t Renderer3D::GetLocalLightBudget() const
+	{
+		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
 	}
 
 	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
 	{
 		m_Params.LightDirection = direction;
 		m_Params.Ambient = ambient;
-		m_CameraData.LightDirection = glm::vec4(direction, 0.0f);
-		m_CameraData.Ambient = glm::vec4(ambient, 0.0f, 0.0f, 0.0f);
-		// Uploaded to the scene UBO in BeginScene (called next by the SceneRenderer).
+	}
+
+	void Renderer3D::ResolveSceneLights()
+	{
+		if (!m_SceneLightSubmitted)
+		{
+			// The default light's ambient + (1 - ambient) * N·L, as one white light over a white
+			// ambient.
+			const float ambient = m_Params.Ambient;
+			m_CameraData.AmbientColor = glm::vec4(glm::vec3(ambient), 0.0f);
+			m_CameraData.DirectionalLights[0] = { glm::vec4(m_Params.LightDirection, 0.0f), glm::vec4(glm::vec3(1.0f - ambient), 0.0f) };
+			m_CameraData.LightCounts.x = 1;
+		}
+
+		const int directionalCount = m_CameraData.LightCounts.x;
+		m_CameraData.LightDirection = directionalCount > 0 ? m_CameraData.DirectionalLights[0].Direction : glm::vec4(m_Params.LightDirection, 0.0f);
+		const glm::vec4& ambientColor = m_CameraData.AmbientColor;
+		m_CameraData.Ambient = glm::vec4(std::max({ ambientColor.r, ambientColor.g, ambientColor.b }), 0.0f, 0.0f, 0.0f);
+
+		const FrustumPlanes planes = ExtractFrustumPlanes(m_CameraData.ViewProjection);
+		const glm::vec4& camera = m_CameraData.CameraPosition;
+
+		m_VisibleLocalLights.clear();
+		for (uint32_t index = 0; index < m_LocalLights.size(); ++index)
+		{
+			LocalLightCandidate& candidate = m_LocalLights[index];
+			const glm::vec3 position = glm::vec3(candidate.Data.PositionRange);
+			const float range = candidate.Data.PositionRange.w;
+			if (!SphereTouchesFrustum(planes, position, range))
+				continue;
+
+			// How bright the light looks from the camera: full strength while the camera is inside
+			// its range, then falling with the distance from the range's edge. Every light whose
+			// range holds the camera scores the same, so Nearness breaks those ties.
+			const float distance = camera.w > 0.0f ? glm::distance(glm::vec3(camera), position) : 0.0f;
+			const float gap = std::max(distance - range, 0.0f);
+			candidate.Score = candidate.Brightness / (1.0f + gap * gap);
+			candidate.Nearness = distance / range;
+			m_VisibleLocalLights.push_back(index);
+		}
+
+		const uint32_t visibleCount = static_cast<uint32_t>(m_VisibleLocalLights.size());
+		const uint32_t budget = GetLocalLightBudget();
+		uint32_t localCount = visibleCount;
+		if (visibleCount > budget)
+		{
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D: more point and spot lights in view than MaxLocalLights and AssertOnOverflow is set.");
+
+			std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
+				[this](uint32_t a, uint32_t b)
+				{
+					const LocalLightCandidate& lightA = m_LocalLights[a];
+					const LocalLightCandidate& lightB = m_LocalLights[b];
+					if (lightA.Score != lightB.Score)
+						return lightA.Score > lightB.Score;
+					if (lightA.Nearness != lightB.Nearness)
+						return lightA.Nearness < lightB.Nearness;
+					return a < b;
+				});
+
+			if (!m_LocalOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} point and spot lights reach the view but MaxLocalLights is {}; the dimmest are dropped. Raise Renderer3DCapabilities.MaxLocalLights (at most {}) or use fewer lights.",
+					visibleCount, budget, k_MaxLocalLights);
+				m_LocalOverflowWarned = true;
+			}
+
+			m_DroppedLights += visibleCount - budget;
+			localCount = budget;
+		}
+
+		for (uint32_t slot = 0; slot < localCount; ++slot)
+			m_CameraData.LocalLights[slot] = m_LocalLights[m_VisibleLocalLights[slot]].Data;
+		m_CameraData.LightCounts.y = static_cast<int>(localCount);
+
+		m_Statistics.DirectionalLights = static_cast<uint32_t>(directionalCount);
+		m_Statistics.LocalLights = localCount;
+		m_Statistics.CulledLights = static_cast<uint32_t>(m_LocalLights.size()) - visibleCount;
+		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material)

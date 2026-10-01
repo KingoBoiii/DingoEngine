@@ -101,6 +101,9 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(MeshCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(CharacterController3DComponent)
 	DE_INSTANTIATE_COMPONENT(DirectionalLightComponent)
+	DE_INSTANTIATE_COMPONENT(AmbientLightComponent)
+	DE_INSTANTIATE_COMPONENT(PointLightComponent)
+	DE_INSTANTIATE_COMPONENT(SpotLightComponent)
 	DE_INSTANTIATE_COMPONENT(AudioSourceComponent)
 	DE_INSTANTIATE_COMPONENT(AudioListenerComponent)
 

@@ -22,9 +22,9 @@ the Gloomdelve dungeon crawler on prebuilt DingoEngine **v0.4.2**, prioritized b
 | Renderer3D | `MaxVertices=65536`; overflow = **silent drop + one-time WARN** (no assert, no auto-flush) — **v0.6.3: overflow spills into another batch** | `Renderer3D.cpp:209`, `.h:26` |
 | Renderer3D | **No GPU instancing / static batching** — batch cleared & re-uploaded each frame | `Renderer3D.cpp:138,174` |
 | Renderer3D | `CommandList::DrawIndexed` takes `instanceCount` but it's hardcoded to `1` | `Renderer.cpp:291`, `CommandList.h:46` |
-| Renderer3D | **No frustum/distance culling** anywhere; every mesh submitted unconditionally | `Scene.cpp:297` |
-| Lighting | **Directional only, one per scene** (first found wins); no point/spot lights exist | `SceneRenderer.cpp:55`, `Components.h:148` |
-| Lighting | **No emissive channel** in Material or the lit shader | `Material.h:13`, `Renderer3D.cpp:11` |
+| Renderer3D | **No frustum/distance culling** anywhere; every mesh submitted unconditionally — **v0.7: point and spot lights are frustum-culled; meshes still are not** | `Scene.cpp:297` |
+| Lighting | **Directional only, one per scene** (first found wins); no point/spot lights exist — **v0.7: up to 4 directional lights plus 32 point/spot lights in view, as components or `Renderer3D::SubmitLight`** | `SceneRenderer.cpp:55`, `Components.h:148` |
+| Lighting | **No emissive channel** in Material or the lit shader — **v0.7: emissive, specular and an albedo map on any `CreateLitMaterial` material** | `Material.h:13`, `Renderer3D.cpp:11` |
 | MeshRenderer | **No `Visible`/`Enabled` bool** — only `Mesh`/`Color`/`Material`; cull = null the `Mesh` | `Components.h:264,303` |
 | Materials | Per-`Material*` batching; **`nullptr` → shared built-in default batch** (first custom material fragments batches) | `Renderer3D.cpp:204` |
 | Materials | UBO layout: scene@0 / material@1 / textures+samplers interleaved from 2 | `Material.cpp:153` |

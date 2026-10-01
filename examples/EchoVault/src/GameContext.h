@@ -21,6 +21,7 @@ namespace Dingo
 		int Collected = 0;
 		int TotalOrbs = 0;
 		float ElapsedTime = 0.0f;
+		float GlowPulse = 1.0f;
 
 		// Decoded audio clips (owned here; shared into AudioSourceComponents and one-shots).
 		std::shared_ptr<AudioClip> OrbClip;

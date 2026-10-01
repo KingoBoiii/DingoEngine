@@ -13,11 +13,12 @@ namespace Dingo
 			seed ^= value + 0x9e3779b9ull + (seed << 6) + (seed >> 2);
 		}
 
-		// Produce a cache key from a vertex layout and a framebuffer pointer.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer)
+		// Produce a cache key from a vertex layout, a framebuffer pointer and the scene buffer.
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer)
 		{
 			size_t seed = 0;
 			HashCombine(seed, reinterpret_cast<uintptr_t>(framebuffer));
+			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(layout.Stride));
 			HashCombine(seed, layout.Attributes.size());
 			for (const auto& attr : layout.Attributes)
@@ -65,13 +66,21 @@ namespace Dingo
 	void Material::SetTexture(uint32_t slot, Texture* texture)
 	{
 		DE_CORE_ASSERT(slot < k_MaxTextureSlots, "Texture slot out of range");
+		if (m_Textures[slot] == texture)
+			return;
+
 		m_Textures[slot] = texture;
+		InvalidatePipelineCache();
 	}
 
 	void Material::SetSampler(uint32_t slot, Sampler* sampler)
 	{
 		DE_CORE_ASSERT(slot < k_MaxSamplerSlots, "Sampler slot out of range");
+		if (m_Samplers[slot] == sampler)
+			return;
+
 		m_Samplers[slot] = sampler;
+		InvalidatePipelineCache();
 	}
 
 	Texture* Material::GetTexture(uint32_t slot) const
@@ -116,12 +125,7 @@ namespace Dingo
 
 	void Material::SetSceneUniformBuffer(GraphicsBuffer* buffer)
 	{
-		if (m_SceneUniformBuffer == buffer)
-			return;
-
-		// The scene UBO is bound into the baked render pass, so a change must rebuild it.
 		m_SceneUniformBuffer = buffer;
-		InvalidatePipelineCache();
 	}
 
 	/**************************************************
@@ -153,7 +157,7 @@ namespace Dingo
 			m_BuiltResizeGeneration = resizeGeneration;
 		}
 
-		const size_t key = MakeCacheKey(layout, framebuffer);
+		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
