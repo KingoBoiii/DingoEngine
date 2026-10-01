@@ -270,10 +270,9 @@ namespace Dingo
 		m_Camera.SetTarget({ 0.0f, 1.0f, 0.0f });
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
-		DirectionalLightComponent light;
-		renderer.SetDirectionalLight(light.Direction, light.Ambient);
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
+		m_Scene->SubmitLights(renderer);
 		m_Scene->RenderEntities3D(renderer);
 		renderer.EndScene();
 	}
