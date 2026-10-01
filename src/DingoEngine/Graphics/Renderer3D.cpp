@@ -23,6 +23,20 @@ namespace
 		const std::string source(reinterpret_cast<const char*>(k_Renderer3D_Lit_glsl), sizeof(k_Renderer3D_Lit_glsl));
 		return Dingo::Shader::CreateFromSource(k_LitShaderName, source);
 	}
+
+	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
+	// inverse image of that direction. An orthographic camera sits at infinity: w is 0 there,
+	// and the result is the direction towards it. A singular matrix yields an arbitrary direction
+	// rather than NaNs.
+	glm::vec4 CameraPositionFromViewProjection(const glm::mat4& viewProjection)
+	{
+		const glm::vec4 eye = glm::inverse(viewProjection) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+		if (std::abs(eye.w) > 1e-6f)
+			return glm::vec4(glm::vec3(eye) / eye.w, 1.0f);
+
+		const float length = glm::length(glm::vec3(eye));
+		return length > 0.0f ? glm::vec4(-glm::vec3(eye) / length, 0.0f) : glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+	}
 }
 
 namespace Dingo
@@ -66,13 +80,10 @@ namespace Dingo
 		// shader's additive no-op, so this doesn't change existing default-material output.
 		m_Material->SetUniform(MaterialData{});
 
-		// Camera + light live in a shared scene UBO (binding 0) bound on every material,
-		// rather than baked into the default material — so custom materials receive the
-		// camera/light too. Uploaded each BeginScene.
-		m_CameraData.LightDirection = glm::vec4(m_Params.LightDirection, 0.0f);
-		m_CameraData.Ambient = glm::vec4(m_Params.Ambient, 0.0f, 0.0f, 0.0f);
-		// Volatile constant buffer — written into the frame's command list each
-		// BeginScene (via Renderer::Upload), not pre-uploaded here.
+		// Camera + lights live in a shared scene UBO (binding 0) bound on every material,
+		// rather than baked into the default material — so custom materials receive them too.
+		// Volatile constant buffer — written into the frame's command list each EndScene (via
+		// Renderer::Upload), not pre-uploaded here.
 		m_SceneUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData), "Renderer3D_SceneUBO");
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
@@ -104,15 +115,18 @@ namespace Dingo
 
 	void Renderer3D::BeginScene(const PerspectiveCamera& camera)
 	{
-		BeginScene(camera.GetViewProjectionMatrix());
+		BeginSceneInternal(camera.GetViewProjectionMatrix(), glm::vec4(camera.GetPosition(), 1.0f));
 	}
 
 	void Renderer3D::BeginScene(const glm::mat4& viewProjection)
 	{
+		BeginSceneInternal(viewProjection, CameraPositionFromViewProjection(viewProjection));
+	}
+
+	void Renderer3D::BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition)
+	{
 		m_CameraData.ViewProjection = viewProjection;
-		// Write the volatile scene UBO into this frame's command list, before any draw
-		// binds it (CommandList::UploadBuffer, the same path material UBOs use).
-		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+		m_CameraData.CameraPosition = cameraPosition;
 
 		// The default material's binding-1 UBO is a VOLATILE constant buffer: NVRHI
 		// requires a write into every frame that binds it, so this upload must be
@@ -148,6 +162,16 @@ namespace Dingo
 			return; // guard against EndScene() without BeginScene() (or a double call)
 
 		m_SceneActive = false;
+
+		// Written into this frame's command list ahead of every draw that binds it
+		// (CommandList::UploadBuffer, the same path material UBOs use).
+		ResolveSceneLights();
+		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+
+		m_CameraData.AmbientColor = glm::vec4(0.0f);
+		m_CameraData.LightCounts = glm::ivec4(0);
+		m_SceneLightSubmitted = false;
+		m_DroppedLights = 0;
 
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
@@ -194,13 +218,60 @@ namespace Dingo
 		Renderer::Clear(clearColor);
 	}
 
+	void Renderer3D::SubmitLight(const DirectionalLight& light)
+	{
+		m_SceneLightSubmitted = true;
+
+		int& count = m_CameraData.LightCounts.x;
+		if (count >= static_cast<int>(k_MaxDirectionalLights))
+		{
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D: more directional lights than k_MaxDirectionalLights and AssertOnOverflow is set.");
+
+			if (!m_LightOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a scene submitted more than {} directional lights; the extra ones are dropped.", k_MaxDirectionalLights);
+				m_LightOverflowWarned = true;
+			}
+			++m_DroppedLights;
+			return;
+		}
+
+		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
+		++count;
+	}
+
+	void Renderer3D::SetAmbientLight(const glm::vec3& color, float intensity)
+	{
+		m_SceneLightSubmitted = true;
+		m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
+	}
+
 	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
 	{
 		m_Params.LightDirection = direction;
 		m_Params.Ambient = ambient;
-		m_CameraData.LightDirection = glm::vec4(direction, 0.0f);
-		m_CameraData.Ambient = glm::vec4(ambient, 0.0f, 0.0f, 0.0f);
-		// Uploaded to the scene UBO in BeginScene (called next by the SceneRenderer).
+	}
+
+	void Renderer3D::ResolveSceneLights()
+	{
+		if (!m_SceneLightSubmitted)
+		{
+			// The default light's ambient + (1 - ambient) * N·L, as one white light over a white
+			// ambient.
+			const float ambient = m_Params.Ambient;
+			m_CameraData.AmbientColor = glm::vec4(glm::vec3(ambient), 0.0f);
+			m_CameraData.DirectionalLights[0] = { glm::vec4(m_Params.LightDirection, 0.0f), glm::vec4(glm::vec3(1.0f - ambient), 0.0f) };
+			m_CameraData.LightCounts.x = 1;
+		}
+
+		const int directionalCount = m_CameraData.LightCounts.x;
+		m_CameraData.LightDirection = directionalCount > 0 ? m_CameraData.DirectionalLights[0].Direction : glm::vec4(m_Params.LightDirection, 0.0f);
+		const glm::vec4& ambientColor = m_CameraData.AmbientColor;
+		m_CameraData.Ambient = glm::vec4(std::max({ ambientColor.r, ambientColor.g, ambientColor.b }), 0.0f, 0.0f, 0.0f);
+
+		m_Statistics.DirectionalLights = static_cast<uint32_t>(directionalCount);
+		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material)

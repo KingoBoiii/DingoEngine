@@ -4,12 +4,14 @@
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
+#include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/Pipeline.h"
 
 #include "DingoEngine/Core/PerspectiveCamera.h"
 
 #include <glm/glm.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -26,17 +28,18 @@ namespace Dingo
 		uint32_t MaxVertices = 65536;
 		uint32_t MaxIndices = 98304;
 
-		// When true, a mesh too large for an empty batch trips an assert instead of the
-		// default warn-once-and-drop. Asserts are compiled out in release, where it warns
-		// and drops regardless.
+		// When true, a mesh too large for an empty batch, or a light past the light budget,
+		// trips an assert instead of the default warn-once-and-drop. Asserts are compiled out in
+		// release, where it warns and drops regardless.
 		bool AssertOnOverflow = false;
 	};
 
 	struct Renderer3DParams
 	{
-		// One directional light, baked into the mesh shader. Direction points *from*
-		// the light (i.e. the way the light travels); Ambient lifts the unlit faces so
-		// nothing is fully black.
+		// The default light: what a scene that submits no light and no ambient of its own is lit
+		// by, so code written before scene lighting existed keeps its look. Direction is the way
+		// the light travels; Ambient lifts every face, and lit faces get the remaining
+		// (1 - Ambient) scaled by how squarely they face the light.
 		glm::vec3 LightDirection = { -0.4f, -1.0f, -0.35f };
 		float Ambient = 0.35f;
 
@@ -88,10 +91,18 @@ namespace Dingo
 		// Clears the current render target's colour and depth.
 		void Clear(const glm::vec4& clearColor);
 
-		// Updates the directional light used by the mesh shader. Takes effect on the
-		// next BeginScene (which re-uploads the camera/light uniform). The SceneRenderer
-		// drives this from a DirectionalLightComponent.
+		// Scene lighting is rebuilt for every scene: lights and ambient submitted since the last
+		// EndScene - before or after BeginScene - light the next EndScene, which then clears
+		// them. A scene that submits no light and no ambient is lit by the default light instead.
+		// Up to k_MaxDirectionalLights directional lights count; further ones are dropped with a
+		// warning. SetAmbientLight replaces the scene's ambient, which is black otherwise.
+		void SubmitLight(const DirectionalLight& light);
+		void SetAmbientLight(const glm::vec3& color, float intensity);
+
+		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
+
+		static constexpr uint32_t k_MaxDirectionalLights = 4;
 
 		// Appends a mesh to the batch for the given material (null => the built-in
 		// flat-lit default), transformed into world space on the CPU. The vertex stream is
@@ -116,6 +127,8 @@ namespace Dingo
 			uint32_t DroppedMeshes = 0;   // meshes too large for an empty batch
 			uint32_t VertexCount = 0;     // vertices batched this scene
 			uint32_t IndexCount = 0;      // indices batched this scene
+			uint32_t DirectionalLights = 0; // directional lights the scene was lit by, the default light included
+			uint32_t DroppedLights = 0;     // lights submitted past the budget
 		};
 
 		const Statistics& GetStatistics() const { return m_Statistics; }
@@ -123,6 +136,9 @@ namespace Dingo
 
 	private:
 		Renderer3D(const Renderer3DParams& params) : m_Params(params) {}
+
+		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
+		void ResolveSceneLights();
 
 	private:
 		Renderer3DParams m_Params;
@@ -136,14 +152,34 @@ namespace Dingo
 			glm::vec2 TexCoord;
 		};
 
-		// std140: a mat4 followed by two vec4s.
+		struct DirectionalLightData
+		{
+			glm::vec4 Direction{ 0.0f };
+			glm::vec4 Color{ 0.0f }; // rgb = colour × intensity
+		};
+
+		// std140, mirrored by CameraData in Renderer3D_Lit.glsl. The first three members are a
+		// frozen prefix that custom material shaders declare on their own: only ever append.
 		struct CameraData
 		{
 			glm::mat4 ViewProjection{ 1.0f };
-			glm::vec4 LightDirection{ 0.0f }; // xyz = direction
-			glm::vec4 Ambient{ 0.0f };        // x = ambient strength
+			glm::vec4 LightDirection{ 0.0f }; // the first directional light's direction, or the default light's
+			glm::vec4 Ambient{ 0.0f };        // x = the scene's ambient as one value
+			glm::vec4 CameraPosition{ 0.0f }; // w = 1: world position; w = 0: orthographic, xyz = towards the camera
+			glm::vec4 AmbientColor{ 0.0f };   // rgb = colour × intensity
+			glm::ivec4 LightCounts{ 0 };      // x = directional lights
+			DirectionalLightData DirectionalLights[k_MaxDirectionalLights];
 		};
+		static_assert(offsetof(CameraData, LightDirection) == 64 && offsetof(CameraData, Ambient) == 80,
+			"the frozen prefix custom materials declare must not move");
+		static_assert(offsetof(CameraData, CameraPosition) == 96 && offsetof(CameraData, AmbientColor) == 112 &&
+			offsetof(CameraData, LightCounts) == 128 && offsetof(CameraData, DirectionalLights) == 144 &&
+			sizeof(DirectionalLightData) == 32 && sizeof(CameraData) == 144 + k_MaxDirectionalLights * 32,
+			"CameraData must match the std140 block in Renderer3D_Lit.glsl");
 		CameraData m_CameraData = {};
+		bool m_SceneLightSubmitted = false;
+		uint32_t m_DroppedLights = 0;
+		bool m_LightOverflowWarned = false;
 
 		// std140: two vec4s. Binding-1 uniform for the built-in default material only
 		// (Material::SetUniform); custom materials bring their own layout. Mirrors
@@ -159,8 +195,8 @@ namespace Dingo
 		Material* m_Material = nullptr; // built-in flat-lit default material
 		VertexLayout m_Layout;
 
-		// Camera + light, uploaded once per BeginScene and bound at binding 0 on every
-		// material the renderer draws (Material::SetSceneUniformBuffer).
+		// Camera + lights, uploaded each EndScene and bound at binding 0 on every material the
+		// renderer draws (Material::SetSceneUniformBuffer).
 		GraphicsBuffer* m_SceneUniformBuffer = nullptr;
 
 		// One batch: capped at the capabilities, drawn with one indexed draw.
