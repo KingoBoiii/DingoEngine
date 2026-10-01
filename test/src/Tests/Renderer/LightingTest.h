@@ -13,7 +13,8 @@ namespace Dingo
 	// Renderer3D or, with "Lights as entities" (--entities), through light components and
 	// Scene::SubmitLights, and both paths should draw the same frame. The materials mode shows lit
 	// materials instead: a row of spheres from smooth to rough, a glowing lamp with a light inside
-	// it and a textured crate, with Specular (--specular=off) switching the highlights off.
+	// it and a crate whose texture loads asynchronously, so it reaches a material that has already
+	// drawn, with Specular (--specular=off) switching the highlights off.
 	class LightingTest : public GraphicsTest
 	{
 	public:
@@ -65,6 +66,7 @@ namespace Dingo
 		Material* m_RowMaterials[k_RoughnessSteps] = {};
 		Material* m_LampMaterial = nullptr;
 		Material* m_CrateMaterial = nullptr;
+		AssetHandle m_CrateTexture;
 		bool m_Specular = true;
 
 		bool m_UseEntities = false;

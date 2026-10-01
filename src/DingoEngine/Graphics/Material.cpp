@@ -65,13 +65,21 @@ namespace Dingo
 	void Material::SetTexture(uint32_t slot, Texture* texture)
 	{
 		DE_CORE_ASSERT(slot < k_MaxTextureSlots, "Texture slot out of range");
+		if (m_Textures[slot] == texture)
+			return;
+
 		m_Textures[slot] = texture;
+		InvalidatePipelineCache();
 	}
 
 	void Material::SetSampler(uint32_t slot, Sampler* sampler)
 	{
 		DE_CORE_ASSERT(slot < k_MaxSamplerSlots, "Sampler slot out of range");
+		if (m_Samplers[slot] == sampler)
+			return;
+
 		m_Samplers[slot] = sampler;
+		InvalidatePipelineCache();
 	}
 
 	Texture* Material::GetTexture(uint32_t slot) const

@@ -96,8 +96,7 @@ namespace Dingo
 		m_CrateMaterial = renderer.CreateLitMaterial(MaterialParams()
 			.SetDebugName("LightingTest_Crate")
 			.SetRoughness(0.4f));
-		AssetManager& assets = Application::Get().GetAssetManager();
-		m_CrateMaterial->SetTexture(0, assets.GetTexture(assets.Load("textures/container.jpg")));
+		m_CrateTexture = Application::Get().GetAssetManager().LoadAsync("textures/container.jpg");
 	}
 
 	void LightingTest::Update(float deltaTime)
@@ -270,6 +269,8 @@ namespace Dingo
 
 		renderer.SubmitMesh(renderer.GetSphereMesh(), BoxTransform(k_LampPosition, glm::vec3(0.5f)), glm::vec4(1.0f), m_LampMaterial);
 
+		if (Texture* crateTexture = Application::Get().GetAssetManager().GetTexture(m_CrateTexture))
+			m_CrateMaterial->SetTexture(0, crateTexture);
 		m_CrateMaterial->SetSpecular(m_Specular ? 0.35f : 0.0f);
 		renderer.SubmitMesh(renderer.GetBoxMesh(), BoxTransform({ 0.0f, 1.0f, -3.5f }, glm::vec3(2.0f)), glm::vec4(1.0f), m_CrateMaterial);
 	}
