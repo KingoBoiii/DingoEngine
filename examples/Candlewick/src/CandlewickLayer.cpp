@@ -17,7 +17,7 @@ namespace Dingo
 			scene->SetClearColor(COLOR_BG);
 
 		m_TitleScene->CreateEntity("TitleController").AddScript<TitleControllerScript>();
-		m_EndScene->CreateEntity("EndController").AddScript<EndControllerScript>();
+		RebuildEndScene();
 		RebuildKeepScene();
 
 		m_SceneManager.SetActiveScene(GetLaunchOptions().Room > 0 ? SCENE_KEEP : SCENE_TITLE); // first activation only selects
@@ -33,21 +33,33 @@ namespace Dingo
 	void CandlewickLayer::RebuildKeepScene()
 	{
 		m_KeepScene->Clear();
-		m_KeepScene->CreateEntity("KeepDirector").AddScript<KeepDirectorScript>();
+		m_KeepScene->CreateEntity("KeepDirector").AddScript<KeepDirectorScript>(&m_Result);
+	}
+
+	void CandlewickLayer::RebuildEndScene()
+	{
+		m_EndScene->Clear();
+		m_EndScene->CreateEntity("EndController").AddScript<EndControllerScript>(&m_Result);
 	}
 
 	void CandlewickLayer::OnUpdate(float deltaTime)
 	{
+		m_Result.FrameSeconds = deltaTime;
+
 		Scene* activeBefore = m_SceneManager.GetActiveScene();
 
 		m_SceneManager.OnUpdate(deltaTime);
 		m_SceneManager.OnRender();
 
-		// The manager switches scenes inside its own OnUpdate, so leaving the Keep only shows
-		// as a before/after difference. Its physics world is already gone; rebuild now so the
-		// next entry starts fresh instead of with handles cached against the old world.
-		if (activeBefore == m_KeepScene && m_SceneManager.GetActiveScene() != m_KeepScene)
+		// The manager switches scenes inside its own OnUpdate, so leaving a scene only shows as a
+		// before/after difference. The Keep's physics world is already gone; rebuild it now so the
+		// next entry starts fresh instead of with handles cached against the old world. The End
+		// scene's script starts only once per attachment, so it is rebuilt to read the next result.
+		const Scene* activeAfter = m_SceneManager.GetActiveScene();
+		if (activeBefore == m_KeepScene && activeAfter != m_KeepScene)
 			RebuildKeepScene();
+		else if (activeBefore == m_EndScene && activeAfter != m_EndScene)
+			RebuildEndScene();
 	}
 
 }

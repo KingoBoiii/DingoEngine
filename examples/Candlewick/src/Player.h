@@ -23,6 +23,10 @@ namespace Dingo
 		Entity GetEntity() const { return m_Entity; }
 		glm::vec3 GetPosition() const;
 
+		// Walking this frame: steering, unlocked, on the ground and carried forward by the last step,
+		// so pushing against a wall is not walking.
+		bool IsMoving() const { return m_Moving; }
+
 		// The way the body faces: local +Z is forward.
 		glm::quat GetFacing() const;
 
@@ -48,9 +52,11 @@ namespace Dingo
 		Material* m_CloakMaterial = nullptr;
 		Material* m_FaceMaterial = nullptr;
 
+		glm::vec3 m_LastFeet{ 0.0f };
 		float m_VerticalVelocity = 0.0f;
 		float m_Yaw = 0.0f;
 		bool m_MovementLocked = false;
+		bool m_Moving = false;
 	};
 
 }

@@ -10,6 +10,7 @@
 namespace Dingo
 {
 
+	class GameAudio;
 	class Player;
 
 	// The player's light: its radius is the oil it has left. Update runs after Player, so the
@@ -19,7 +20,7 @@ namespace Dingo
 	public:
 		enum class State { Lit, Snuffed, Striking };
 
-		Lantern(Scene& scene, const Player& player, Material* frameMaterial, float startOil, bool burns);
+		Lantern(Scene& scene, const Player& player, Material* frameMaterial, GameAudio& audio, float startOil, bool burns);
 		~Lantern();
 
 		Lantern(const Lantern&) = delete;
@@ -27,6 +28,7 @@ namespace Dingo
 
 		void Update(float deltaTime, Player& player);
 		void AddOil(float amount);
+		void SetOil(float oil);
 
 		Entity GetLight() const { return m_Light; }
 		State GetState() const { return m_State; }
@@ -53,6 +55,7 @@ namespace Dingo
 
 	private:
 		Scene& m_Scene;
+		GameAudio& m_Audio;
 		Entity m_Light;
 		std::vector<Part> m_Parts;
 

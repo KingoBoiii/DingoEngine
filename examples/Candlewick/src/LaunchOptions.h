@@ -16,6 +16,7 @@ namespace Dingo
 		bool NoLightLod = false;
 		bool DebugCone = false;
 		bool NoRangeClamp = false;
+		bool AllLit = false;     // every brazier but the altar starts lit
 		std::optional<glm::ivec2> Spawn; // --spawn=<col>,<row>: the player's start tile
 	};
 

@@ -23,6 +23,28 @@ namespace Dingo
 	inline constexpr float HUD_OIL_HINT_DROP   = 0.78f;
 	inline constexpr float HUD_OIL_FILL_LIFT   = 0.1f;
 	inline constexpr float HUD_FADE_MARGIN     = 1.0f;
+	inline constexpr float HUD_PROMPT_SIZE     = 0.5f;
+	inline constexpr float HUD_PROMPT_RISE     = 2.3f;
+	inline constexpr float HUD_PROGRESS_WIDTH  = 3.6f;
+	inline constexpr float HUD_PROGRESS_HEIGHT = 0.3f;
+	inline constexpr float HUD_PROGRESS_INSET  = 0.05f;
+	inline constexpr float HUD_PROGRESS_RISE   = 1.65f;
+	inline constexpr float HUD_TOAST_SIZE      = 0.75f;
+	inline constexpr float HUD_TOAST_DROP      = 1.3f;
+	inline constexpr float HUD_TOAST_FADE_TIME = 0.5f;
+	inline constexpr float HUD_PAUSE_Z         = 0.45f;
+	inline constexpr float HUD_PAUSE_TITLE_SIZE = 1.2f;
+	inline constexpr float HUD_PAUSE_TITLE_RISE = 0.9f;
+	inline constexpr float HUD_PAUSE_HINT_SIZE = 0.42f;
+	inline constexpr float HUD_PAUSE_HINT_DROP = 0.3f;
+
+	inline constexpr float TITLE_CONTROLS_SIZE = 0.34f;
+	inline constexpr float TITLE_CONTROLS_Y    = -3.7f;
+	inline constexpr float END_TIME_SIZE       = 0.7f;
+	inline constexpr float END_TIME_Y          = 0.4f;
+	inline constexpr float END_CATCHES_SIZE    = 0.48f;
+	inline constexpr float END_CATCHES_Y       = -0.55f;
+	inline constexpr float END_PROMPT_Y        = -2.6f;
 
 	// --- Camera (three-quarter view, fixed yaw) --------------------------------
 	inline constexpr float CAMERA_FOV          = 50.0f;
@@ -124,7 +146,6 @@ namespace Dingo
 	inline constexpr float BEACON_FLAME_WEIGHT      = 0.25f;
 	inline constexpr float CAUGHT_FADE_TIME         = 1.0f;
 	inline constexpr float RESPAWN_FADE_TIME        = 0.5f;
-	inline constexpr float RESPAWN_MIN_OIL          = 50.0f;
 
 	// --- Detection debug view (--debug-cone) ----------------------------------------
 	inline constexpr uint32_t DEBUG_CONE_SEGMENTS   = 24;
@@ -163,12 +184,65 @@ namespace Dingo
 	inline constexpr uint32_t FLAME_MESH_RINGS     = 6;
 	inline constexpr uint32_t FLAME_MESH_SEGMENTS  = 8;
 
+	// --- Braziers: checkpoints and the win -----------------------------------------
+	inline constexpr float BRAZIER_REACH           = 1.5f;
+	inline constexpr float BRAZIER_LIGHT_TIME      = 1.0f;
+	inline constexpr float CHECKPOINT_TOAST_TIME   = 2.0f;
+	inline constexpr float WIN_LINGER_TIME         = 1.2f;
+	inline constexpr float WIN_FADE_TIME           = 1.4f;
+	inline constexpr float CHECKPOINT_OIL_MARGIN   = 2.0f;
+	inline constexpr float CHECKPOINT_MIN_OIL      = OIL_RELIGHT_COST + CHECKPOINT_OIL_MARGIN;
+
+	// Unrelated sine rates keep a flame from visibly repeating; a phase of its own keeps neighbours out of step.
+	inline constexpr float FLICKER_RATE_A          = 9.0f;
+	inline constexpr float FLICKER_RATE_B          = 14.3f;
+	inline constexpr float FLICKER_RATE_B_PHASE    = 1.7f;
+	inline constexpr float BRAZIER_FLICKER_DEPTH   = 0.08f;
+	inline constexpr float BRAZIER_FLICKER_PHASE   = 1.9f;
+	inline constexpr float DECOR_FLICKER_DEPTH     = 0.05f;
+	inline constexpr float DECOR_FLICKER_PHASE     = 2.4f;
+	inline constexpr float CORE_FLICKER_DEPTH      = 0.1f;
+
+	// --- Audio -----------------------------------------------------------------------
+	inline constexpr float FOOTSTEP_INTERVAL       = 0.4f;
+	inline constexpr float FOOTSTEP_MIN_SPEED      = 0.5f;
+	inline constexpr float WARDEN_STEP_DISTANCE    = 0.7f;
+	inline constexpr float LISTENER_HEIGHT         = 1.0f;
+
+	inline constexpr float AUDIO_DRONE_VOLUME      = 0.45f;
+	inline constexpr float AUDIO_CRACKLE_VOLUME    = 0.7f;
+	inline constexpr float AUDIO_FOOTSTEP_VOLUME   = 0.7f;
+	inline constexpr float AUDIO_WARDEN_STEP_VOLUME = 0.4f;
+	inline constexpr float AUDIO_STRIKE_VOLUME     = 0.8f;
+	inline constexpr float AUDIO_SNUFF_VOLUME      = 0.8f;
+	inline constexpr float AUDIO_FLASK_VOLUME      = 0.9f;
+	inline constexpr float AUDIO_ALERT_VOLUME      = 0.9f;
+	inline constexpr float AUDIO_CAUGHT_VOLUME     = 1.0f;
+	inline constexpr float AUDIO_IGNITE_VOLUME     = 0.9f;
+	inline constexpr float AUDIO_WIN_VOLUME        = 1.0f;
+
+	// Far is where a sound is silent, so GameAudio::PlayAt can skip an emitter already past it without losing anything audible.
+	inline constexpr float AUDIO_CRACKLE_NEAR      = 1.5f;
+	inline constexpr float AUDIO_CRACKLE_FAR       = 12.0f;
+	inline constexpr float AUDIO_STEP_NEAR         = 1.5f;
+	inline constexpr float AUDIO_STEP_FAR          = 10.0f;
+	inline constexpr float AUDIO_WARDEN_NEAR       = 2.0f;
+	inline constexpr float AUDIO_WARDEN_FAR        = 14.0f;
+	inline constexpr float AUDIO_ALERT_NEAR        = 3.0f;
+	inline constexpr float AUDIO_ALERT_FAR         = 20.0f;
+	inline constexpr float AUDIO_IGNITE_NEAR       = 3.0f;
+	inline constexpr float AUDIO_IGNITE_FAR        = 18.0f;
+
 	// --- Colors ---------------------------------------------------------------------
 	inline constexpr glm::vec4 COLOR_BG        = { 0.012f, 0.014f, 0.025f, 1.0f };
 	inline constexpr glm::vec4 COLOR_STONE     = { 0.34f, 0.32f, 0.33f, 1.0f };
 	inline constexpr glm::vec4 COLOR_FLOOR     = { 0.3f, 0.28f, 0.29f, 1.0f };
 	inline constexpr glm::vec4 COLOR_BRASS     = { 0.72f, 0.55f, 0.24f, 1.0f };
 	inline constexpr glm::vec4 COLOR_EMBER     = { 0.12f, 0.07f, 0.03f, 1.0f };
+	inline constexpr glm::vec4 COLOR_ASH       = { 0.07f, 0.065f, 0.065f, 1.0f };
+	inline constexpr glm::vec3 ASH_EMISSIVE_COLOR = { 1.0f, 0.45f, 0.15f };
+	inline constexpr float ASH_EMISSIVE        = 0.04f;
+	inline constexpr float ASH_ROUGHNESS       = 0.95f;
 	inline constexpr glm::vec4 COLOR_WAX       = { 0.82f, 0.76f, 0.62f, 1.0f };
 	inline constexpr float WAX_EMISSIVE        = 0.16f;
 	inline constexpr float STONE_ROUGHNESS     = 0.9f;
@@ -219,6 +293,7 @@ namespace Dingo
 	inline constexpr glm::vec4 COLOR_METER_LIT     = { 1.0f, 0.7f, 0.26f, 1.0f };
 	inline constexpr glm::vec4 COLOR_METER_SNUFFED = { 0.42f, 0.42f, 0.46f, 1.0f };
 	inline constexpr glm::vec4 COLOR_TEXT_ALERT    = { 0.95f, 0.42f, 0.32f, 1.0f };
+	inline constexpr glm::vec4 COLOR_PAUSE_DIM     = { 0.0f, 0.0f, 0.0f, 0.62f };
 
 	inline constexpr glm::vec4 COLOR_TITLE     = { 1.0f, 0.74f, 0.42f, 1.0f };
 	inline constexpr glm::vec4 COLOR_TEXT      = { 0.92f, 0.9f, 0.84f, 1.0f };

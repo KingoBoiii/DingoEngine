@@ -1,4 +1,6 @@
 #pragma once
+#include "RunResult.h"
+
 #include <DingoEngine.h>
 
 namespace Dingo
@@ -16,8 +18,10 @@ namespace Dingo
 
 	private:
 		void RebuildKeepScene();
+		void RebuildEndScene();
 
 	private:
+		RunResult m_Result;
 		SceneManager m_SceneManager;
 		Scene* m_TitleScene = nullptr;
 		Scene* m_KeepScene = nullptr;

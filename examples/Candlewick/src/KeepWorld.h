@@ -55,6 +55,10 @@ namespace Dingo
 		const std::vector<FlaskSpot>& GetFlaskSpots() const { return m_FlaskSpots; }
 		Material* GetBrassMaterial() const { return m_BrassMaterial; }
 
+		// Braziers are built dark: their light off and their cores on the ash material. Lighting one
+		// swaps its core to the flame material that every decorative flame also shares.
+		Material* GetFlameMaterial() const { return m_FlameMaterial; }
+
 		size_t CollectFlasks(const glm::vec3& feet, size_t maxCount);
 
 		// Hides the wall rectangles (with their caps and mounted sconces) that sit between the eye and the target.
@@ -83,7 +87,7 @@ namespace Dingo
 
 		Entity SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material);
 		Entity SpawnDecor(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material);
-		Entity SpawnGlow(const char* name, const glm::vec3& center, float diameter);
+		Entity SpawnGlow(const char* name, const glm::vec3& center, float diameter, Material* material, const glm::vec4& color);
 		Entity SpawnPointLight(const char* name, const glm::vec3& position, float intensity, float range);
 
 		void SpawnFloor(const TileRect& rect);
@@ -107,6 +111,7 @@ namespace Dingo
 		Material* m_BrassMaterial = nullptr;
 		Material* m_WaxMaterial = nullptr;
 		Material* m_FlameMaterial = nullptr;
+		Material* m_AshMaterial = nullptr;
 		Material* m_FlaskMaterial = nullptr;
 
 		std::vector<WallRect> m_Walls;

@@ -65,6 +65,7 @@ namespace Dingo
 		m_Head = SpawnVisual(scene, "PlayerHead", renderer3D.GetSphereMesh(), glm::vec3(k_HeadDiameter), COLOR_CLOAK, m_CloakMaterial);
 		m_Visor = SpawnVisual(scene, "PlayerVisor", renderer3D.GetBoxMesh(), k_VisorSize, COLOR_SKIN, m_FaceMaterial);
 
+		m_LastFeet = feet;
 		PlaceVisuals(feet);
 	}
 
@@ -92,6 +93,11 @@ namespace Dingo
 		if (!controller)
 			return;
 
+		// The controller reports the velocity it was given, not the one it achieved, so the step is measured.
+		const glm::vec3 feet = controller->GetPosition();
+		const float speed = deltaTime > 0.0f ? glm::length(glm::vec2(feet.x - m_LastFeet.x, feet.z - m_LastFeet.z)) / deltaTime : 0.0f;
+		m_LastFeet = feet;
+
 		glm::vec3 move(0.0f);
 		if (Input::IsKeyDown(Key::W) || Input::IsKeyDown(Key::Up)    || Input::IsGamepadButtonDown(GamepadButton::DPadUp))    move.z -= 1.0f;
 		if (Input::IsKeyDown(Key::S) || Input::IsKeyDown(Key::Down)  || Input::IsGamepadButtonDown(GamepadButton::DPadDown))  move.z += 1.0f;
@@ -106,6 +112,8 @@ namespace Dingo
 			move = glm::vec3(0.0f);
 		else if (glm::length(move) > 1.0f)
 			move = glm::normalize(move);
+
+		m_Moving = glm::length(move) > k_FacingThreshold && controller->IsGrounded() && speed > FOOTSTEP_MIN_SPEED;
 
 		if (controller->IsGrounded() && m_VerticalVelocity <= 0.0f)
 			m_VerticalVelocity = 0.0f;
@@ -125,6 +133,7 @@ namespace Dingo
 	void Player::Halt()
 	{
 		m_MovementLocked = true;
+		m_Moving = false;
 		if (CharacterController3D* controller = m_Scene.GetCharacterController(m_Entity))
 			controller->SetLinearVelocity(glm::vec3(0.0f, m_VerticalVelocity, 0.0f));
 	}
@@ -140,6 +149,7 @@ namespace Dingo
 		// The Scene writes the controller back only after its step; later subsystems this frame read the transform.
 		m_Entity.GetComponent<Transform3DComponent>().Position = feet;
 		m_VerticalVelocity = 0.0f;
+		m_LastFeet = feet;
 		PlaceVisuals(feet);
 	}
 

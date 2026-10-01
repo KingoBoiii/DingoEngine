@@ -11,6 +11,8 @@
 namespace Dingo
 {
 
+	class GameAudio;
+
 	// The keep's guards. Each is a body, a lamp and an eye (a spot light) kept in step by game code,
 	// with no collider, so rays never start inside one and one never shoves the player.
 	class Wardens
@@ -18,7 +20,7 @@ namespace Dingo
 	public:
 		enum class State { Patrol, Investigate, Return };
 
-		Wardens(Scene& scene, const KeepMap& map, bool frozen, bool rangeClamp);
+		Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool rangeClamp);
 		~Wardens();
 
 		Wardens(const Wardens&) = delete;
@@ -80,6 +82,7 @@ namespace Dingo
 			float Suspicion = 0.0f;
 			std::optional<glm::ivec2> Request;
 			int MarkerLevel = -1;
+			float StepDistance = 0.0f;
 
 			std::vector<Part> Parts;
 			Entity Lamp;
@@ -111,6 +114,7 @@ namespace Dingo
 	private:
 		Scene& m_Scene;
 		const KeepMap& m_Map;
+		GameAudio& m_Audio;
 		bool m_Frozen = false;
 		bool m_RangeClamp = true;
 

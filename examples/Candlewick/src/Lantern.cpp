@@ -1,4 +1,5 @@
 #include "Lantern.h"
+#include "Audio.h"
 #include "GameTuning.h"
 #include "Player.h"
 
@@ -53,8 +54,8 @@ namespace
 namespace Dingo
 {
 
-	Lantern::Lantern(Scene& scene, const Player& player, Material* frameMaterial, float startOil, bool burns)
-		: m_Scene(scene), m_Oil(std::clamp(startOil, 0.0f, OIL_MAX)), m_Burns(burns)
+	Lantern::Lantern(Scene& scene, const Player& player, Material* frameMaterial, GameAudio& audio, float startOil, bool burns)
+		: m_Scene(scene), m_Audio(audio), m_Oil(std::clamp(startOil, 0.0f, OIL_MAX)), m_Burns(burns)
 	{
 		m_GlassMaterial = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams()
 			.SetDebugName("LanternGlass")
@@ -107,6 +108,11 @@ namespace Dingo
 		m_Oil = std::clamp(m_Oil + amount, 0.0f, OIL_MAX);
 	}
 
+	void Lantern::SetOil(float oil)
+	{
+		m_Oil = std::clamp(oil, 0.0f, OIL_MAX);
+	}
+
 	void Lantern::Update(float deltaTime, Player& player)
 	{
 		m_Clock += deltaTime;
@@ -149,6 +155,12 @@ namespace Dingo
 		{
 			const char* name = m_State == State::Lit ? "lit" : m_State == State::Striking ? "striking" : IsOutOfOil() ? "out of oil" : "snuffed";
 			DE_INFO("Candlewick: lantern {} (oil {:.1f})", name, m_Oil);
+
+			const glm::vec3 position = m_Light.GetComponent<Transform3DComponent>().Position;
+			if (m_State == State::Snuffed)
+				m_Audio.PlayAt(Sfx::Snuff, position);
+			else if (m_State == State::Striking)
+				m_Audio.PlayAt(Sfx::Strike, position);
 		}
 
 		player.SetMovementLocked(m_State == State::Striking);

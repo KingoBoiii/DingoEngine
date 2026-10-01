@@ -56,6 +56,8 @@ namespace
 
 	constexpr glm::ivec2 k_Steps[] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
 
+	constexpr glm::ivec2 k_CheckpointOffsets[] = { { 0, 1 }, { 1, 0 }, { -1, 0 }, { 0, -1 }, { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } };
+
 	bool MarkerTypeOf(char c, MarkerType& type)
 	{
 		switch (c)
@@ -246,6 +248,17 @@ namespace Dingo
 			}
 		}
 		return {};
+	}
+
+	glm::ivec2 KeepMap::FindCheckpointTile(const glm::ivec2& brazier) const
+	{
+		const int room = RoomOf(brazier);
+		for (const glm::ivec2& offset : k_CheckpointOffsets)
+		{
+			if (IsPatrolFloor(brazier + offset, room))
+				return brazier + offset;
+		}
+		return FindNearestRoomTile(brazier, room).value_or(brazier);
 	}
 
 	char KeepMap::At(const glm::ivec2& tile) const

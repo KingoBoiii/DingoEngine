@@ -234,6 +234,7 @@ Every phase's before/after and pixel checks need reproducible frames:
 | `--light-budget=<1-32>` | *(C3)* lowers `MaxLocalLights`, to stress the light LOD |
 | `--spawn=<col>,<row>` | *(C4)* the player's start tile (falls back to the room spawn on a bad or blocked tile) |
 | `--no-range-clamp` | *(C4)* the wardens' eyes keep their full range, to show the leak through walls |
+| `--all-lit` | *(C5)* every brazier but the altar starts lit |
 
 `--freeze` also stops catches (suspicion and markers still update), so frozen captures stay stable.
 
@@ -504,3 +505,25 @@ Docs (C6):
   `--no-light-lod` and `--light-budget=12` give the same suspicion trace (0.4 at 0.81 s, 0.75 at
   1.50 s). Through-wall: a player behind a pillar inside leaked light stays at 0. No budget WARN on
   Gallery walks.
+
+*C5 (braziers, the win, audio, pause):*
+
+- Braziers start cold (light off, an ash core material) except the Gatehouse's. In reach (1.5 m)
+  with the lantern lit, a press of E / A then a 1 s hold lights one: light on, core → the shared
+  flame material, a spatial crackle loop, oil to 100, `LightLod::AddGameplayLight`, a "Checkpoint"
+  toast. The checkpoint is a patrol-floor tile beside the brazier plus the oil then (never below
+  what a relight needs). With `--room > 1` or `--spawn` the first checkpoint is the start tile.
+- Flicker: lit braziers ±8 %, decorative flames ±5 % through `SetFlicker`, the flame material's
+  emissive ±10 %; off under `--freeze`. Gameplay never reads intensity, so flicker can't change it.
+- Caught → respawn at the checkpoint with its oil, wardens reset, the catch counted. Lighting the
+  altar wins: a 1.2 s linger, a 1.4 s fade, then End with the time and the catches. The End
+  scene is rebuilt each time it is left (like the Keep) and reads a layer-owned `RunResult`, since
+  a scene's scripts start only once per attachment.
+- Audio: `scripts/generate_audio.ps1` synthesises 11 clips (381 KB, 22050 Hz mono, fixed seed):
+  crackle loop, drone loop, footstep, warden step, strike, snuff, flask, alert, caught, ignite, win.
+  Positional sounds use linear falloff (crackle 12 m, steps 10 m, wardens 14 m); the listener
+  follows the player, not the camera. The drone's `AudioSoundId` is kept and stopped when the
+  Keep goes (EchoVault's leak avoided).
+- Pause: Esc / pad Start toggles; subsystems don't update, the player halts, master volume is
+  muted and restored. Pad B or Enter leaves to the Title from the pause (Start can't do both).
+- Not verified here: pad hardware (no pad on this machine) and listening to the audio.

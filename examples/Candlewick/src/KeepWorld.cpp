@@ -160,6 +160,7 @@ namespace Dingo
 		DestroyAndDelete(m_BrassMaterial);
 		DestroyAndDelete(m_WaxMaterial);
 		DestroyAndDelete(m_FlameMaterial);
+		DestroyAndDelete(m_AshMaterial);
 		DestroyAndDelete(m_FlaskMaterial);
 		delete m_FlameMesh;
 	}
@@ -200,6 +201,12 @@ namespace Dingo
 			.SetEmissiveColor(FLAME_COLOR)
 			.SetEmissiveStrength(FLAME_EMISSIVE));
 
+		m_AshMaterial = renderer3D.CreateLitMaterial(MaterialParams()
+			.SetDebugName("KeepAshCore")
+			.SetRoughness(ASH_ROUGHNESS)
+			.SetEmissiveColor(ASH_EMISSIVE_COLOR)
+			.SetEmissiveStrength(ASH_EMISSIVE));
+
 		m_FlaskMaterial = renderer3D.CreateLitMaterial(MaterialParams()
 			.SetDebugName("KeepFlask")
 			.SetRoughness(OIL_ROUGHNESS)
@@ -234,14 +241,14 @@ namespace Dingo
 		return entity;
 	}
 
-	Entity KeepWorld::SpawnGlow(const char* name, const glm::vec3& center, float diameter)
+	Entity KeepWorld::SpawnGlow(const char* name, const glm::vec3& center, float diameter, Material* material, const glm::vec4& color)
 	{
 		Entity entity = m_Scene.CreateEntity(name);
 		auto& transform = entity.AddComponent<Transform3DComponent>();
 		transform.Position = center;
 		transform.Scale = glm::vec3(diameter);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, COLOR_EMBER)).Material = m_FlameMaterial;
+		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, color)).Material = material;
 		return entity;
 	}
 
@@ -359,8 +366,9 @@ namespace Dingo
 		const glm::vec3 core = floor + glm::vec3(0.0f, bowlTop + style.CoreRise, 0.0f);
 
 		BrazierSpot spot;
-		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter);
+		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter, m_AshMaterial, COLOR_ASH);
 		spot.Light = SpawnPointLight(isAltar ? "AltarLight" : "BrazierLight", core + glm::vec3(0.0f, style.LightRise, 0.0f), style.LightIntensity, style.LightRange);
+		spot.Light.GetComponent<PointLightComponent>().Enabled = false;
 		spot.Room = marker.Room;
 		spot.Tile = marker.Tile;
 		spot.IsAltar = isAltar;
@@ -386,7 +394,7 @@ namespace Dingo
 			{ k_SconceCupWidth, k_SconceCupHeight, k_SconceCupWidth }, COLOR_BRASS, m_BrassMaterial);
 
 		DecorFlame flame;
-		flame.Core = SpawnGlow("SconceCore", base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), k_SconceFlameDiameter);
+		flame.Core = SpawnGlow("SconceCore", base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
 		flame.Light = SpawnPointLight("SconceLight", base + inward * k_SconceLightOffset + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), SCONCE_LIGHT_INTENSITY, SCONCE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Sconce;
 		flame.Room = marker.Room;
@@ -408,7 +416,7 @@ namespace Dingo
 		const glm::vec3 flameCenter = floor + glm::vec3(0.0f, k_CandleHeight + k_CandleFlameDiameter * 0.4f, 0.0f);
 
 		DecorFlame flame;
-		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter);
+		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter, m_FlameMaterial, COLOR_EMBER);
 		flame.Light = SpawnPointLight("CandleLight", flameCenter + glm::vec3(0.0f, k_CandleLightRise, 0.0f), CANDLE_LIGHT_INTENSITY, CANDLE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Candle;
 		flame.Room = marker.Room;

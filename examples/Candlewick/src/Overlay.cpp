@@ -37,12 +37,48 @@ namespace Dingo::Overlay
 		return entity;
 	}
 
+	const char* PadLabel(GamepadButton button)
+	{
+		const bool playStation = Input::GetGamepadType() == GamepadType::PlayStation;
+		switch (button)
+		{
+		case GamepadButton::A: return playStation ? "(X)" : "(A)";
+		case GamepadButton::B: return playStation ? "(Circle)" : "(B)";
+		case GamepadButton::X: return playStation ? "(Square)" : "(X)";
+		case GamepadButton::Y: return playStation ? "(Triangle)" : "(Y)";
+		case GamepadButton::Start: return playStation ? "(Options)" : "(Start)";
+		default: return "";
+		}
+	}
+
 	std::string ConfirmPrompt(const char* action)
 	{
 		if (!Input::IsGamepadConnected())
 			return std::string("Press Space to ") + action;
-		const char* glyph = Input::GetGamepadType() == GamepadType::PlayStation ? "(X)" : "(A)";
-		return std::string("Press Space or ") + glyph + " to " + action;
+		return std::string("Press Space or ") + PadLabel(GamepadButton::A) + " to " + action;
+	}
+
+	std::string ControlsSummary()
+	{
+		if (!Input::IsGamepadConnected())
+			return "Move  WASD     Snuff  Q     Light a brazier  hold E     Pause  Esc";
+		return std::string("Move  WASD / stick     Snuff  Q / ") + PadLabel(GamepadButton::X)
+			+ "     Light a brazier  hold E / " + PadLabel(GamepadButton::A)
+			+ "     Pause  Esc / " + PadLabel(GamepadButton::Start);
+	}
+
+	const std::string& PadText::Get()
+	{
+		const bool connected = Input::IsGamepadConnected();
+		const GamepadType type = connected ? Input::GetGamepadType() : GamepadType::Unknown;
+		if (!m_Built || connected != m_Connected || type != m_Type)
+		{
+			m_Text = m_Build();
+			m_Connected = connected;
+			m_Type = type;
+			m_Built = true;
+		}
+		return m_Text;
 	}
 
 	bool ConfirmPressed()

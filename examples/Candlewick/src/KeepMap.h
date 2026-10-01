@@ -81,6 +81,9 @@ namespace Dingo
 		// The patrol floor tile of `room` closest to `tile` as the crow flies, for a spot outside it.
 		std::optional<glm::ivec2> FindNearestRoomTile(const glm::ivec2& tile, int room) const;
 
+		// Where a player lands after a brazier's checkpoint: a free tile beside it, the camera's side first.
+		glm::ivec2 FindCheckpointTile(const glm::ivec2& brazier) const;
+
 		glm::vec3 TileCenter(const glm::ivec2& tile) const;
 		glm::ivec2 TileOf(const glm::vec3& worldPosition) const;
 

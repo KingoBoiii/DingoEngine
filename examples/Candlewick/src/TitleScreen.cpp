@@ -2,6 +2,8 @@
 #include "GameTuning.h"
 #include "Overlay.h"
 
+#include <format>
+
 namespace
 {
 	using namespace Dingo;
@@ -14,12 +16,26 @@ namespace
 		return entity;
 	}
 
-	void RefreshPrompt(Entity& prompt, const char* action)
+	void SetLineText(Entity& line, const std::string& text)
 	{
-		const std::string text = Overlay::ConfirmPrompt(action);
-		auto& promptText = prompt.GetComponent<TextComponent>();
-		if (promptText.Text != text)
-			promptText.Text = text;
+		auto& lineText = line.GetComponent<TextComponent>();
+		if (lineText.Text != text)
+			lineText.Text = text;
+	}
+
+	std::string TimeLine(float seconds)
+	{
+		const int total = static_cast<int>(seconds);
+		return std::format("Time  {}:{:02}", total / 60, total % 60);
+	}
+
+	std::string CatchesLine(int catches)
+	{
+		if (catches <= 0)
+			return "Never caught";
+		if (catches == 1)
+			return "Caught once";
+		return std::format("Caught {} times", catches);
 	}
 }
 
@@ -36,12 +52,14 @@ namespace Dingo
 		AddLine(scene, m_Font, "Title", 1.5f, COLOR_TITLE, { 0.0f, 2.4f, 0.0f }, "CANDLEWICK");
 		AddLine(scene, m_Font, "Tagline", 0.42f, COLOR_TEXT_DIM, { 0.0f, 0.5f, 0.0f },
 			"A lantern, a keep, and the wardens who hunt by light.");
-		m_Prompt = AddLine(scene, m_Font, "Prompt", 0.5f, COLOR_TEXT, { 0.0f, -2.2f, 0.0f }, Overlay::ConfirmPrompt("enter"));
+		m_Prompt = AddLine(scene, m_Font, "Prompt", 0.5f, COLOR_TEXT, { 0.0f, -2.2f, 0.0f }, m_PromptText.Get());
+		m_Controls = AddLine(scene, m_Font, "Controls", TITLE_CONTROLS_SIZE, COLOR_TEXT_DIM, { 0.0f, TITLE_CONTROLS_Y, 0.0f }, m_ControlsText.Get());
 	}
 
 	void TitleControllerScript::OnUpdate(float)
 	{
-		RefreshPrompt(m_Prompt, "enter");
+		SetLineText(m_Prompt, m_PromptText.Get());
+		SetLineText(m_Controls, m_ControlsText.Get());
 
 		if (Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
@@ -62,12 +80,14 @@ namespace Dingo
 		Overlay::MakeCamera(scene, "EndCamera", HUD_ORTHO_SIZE);
 
 		AddLine(scene, m_Font, "EndTitle", 1.2f, COLOR_TITLE, { 0.0f, 1.8f, 0.0f }, "The altar burns.");
-		m_Prompt = AddLine(scene, m_Font, "EndPrompt", 0.45f, COLOR_TEXT, { 0.0f, -1.2f, 0.0f }, Overlay::ConfirmPrompt("return to the title"));
+		AddLine(scene, m_Font, "EndTime", END_TIME_SIZE, COLOR_TEXT, { 0.0f, END_TIME_Y, 0.0f }, TimeLine(m_Result->Seconds));
+		AddLine(scene, m_Font, "EndCatches", END_CATCHES_SIZE, COLOR_TEXT_DIM, { 0.0f, END_CATCHES_Y, 0.0f }, CatchesLine(m_Result->Catches));
+		m_Prompt = AddLine(scene, m_Font, "EndPrompt", 0.45f, COLOR_TEXT, { 0.0f, END_PROMPT_Y, 0.0f }, m_PromptText.Get());
 	}
 
 	void EndControllerScript::OnUpdate(float)
 	{
-		RefreshPrompt(m_Prompt, "return to the title");
+		SetLineText(m_Prompt, m_PromptText.Get());
 
 		if (Input::IsKeyPressed(Key::Escape) || Overlay::ConfirmPressed())
 			RequestSceneTransition(SCENE_TITLE);

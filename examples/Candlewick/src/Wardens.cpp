@@ -1,4 +1,5 @@
 #include "Wardens.h"
+#include "Audio.h"
 #include "GameMath.h"
 #include "GameTuning.h"
 
@@ -62,8 +63,8 @@ namespace
 namespace Dingo
 {
 
-	Wardens::Wardens(Scene& scene, const KeepMap& map, bool frozen, bool rangeClamp)
-		: m_Scene(scene), m_Map(map), m_Frozen(frozen), m_RangeClamp(rangeClamp)
+	Wardens::Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool rangeClamp)
+		: m_Scene(scene), m_Map(map), m_Audio(audio), m_Frozen(frozen), m_RangeClamp(rangeClamp)
 	{
 		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
 
@@ -221,6 +222,7 @@ namespace Dingo
 			warden.Looking = false;
 			warden.Suspicion = 0.0f;
 			warden.Request.reset();
+			warden.StepDistance = 0.0f;
 
 			Place(warden);
 			ClampRange(warden, 0.0f, true);
@@ -247,9 +249,17 @@ namespace Dingo
 		for (size_t i = 0; i < m_Wardens.size(); ++i)
 		{
 			Warden& warden = m_Wardens[i];
+			const glm::vec3 before = warden.Feet;
 			if (!m_Frozen)
 				Think(warden, i, deltaTime);
 			warden.Request.reset();
+
+			warden.StepDistance += glm::length(Flat(warden.Feet - before));
+			if (warden.StepDistance >= WARDEN_STEP_DISTANCE)
+			{
+				warden.StepDistance = 0.0f;
+				m_Audio.PlayAt(Sfx::WardenStep, warden.Feet);
+			}
 
 			Place(warden);
 			ClampRange(warden, deltaTime, false);
@@ -262,8 +272,11 @@ namespace Dingo
 			return;
 
 		if (state == State::Investigate)
+		{
 			DE_INFO("Candlewick: warden {} ({}) {} -> {}: sighting ({}, {}), goal ({}, {})", index + 1, m_Map.GetRooms()[warden.Room].Name,
 				StateName(warden.Mode), StateName(state), warden.Target.x, warden.Target.y, warden.Goal.x, warden.Goal.y);
+			m_Audio.PlayAt(Sfx::Alert, warden.Feet + glm::vec3(0.0f, WARDEN_EYE_HEIGHT, 0.0f));
+		}
 		else
 			DE_INFO("Candlewick: warden {} ({}) {} -> {}", index + 1, m_Map.GetRooms()[warden.Room].Name, StateName(warden.Mode), StateName(state));
 		warden.Mode = state;
