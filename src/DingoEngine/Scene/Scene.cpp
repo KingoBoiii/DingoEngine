@@ -188,6 +188,12 @@ namespace Dingo
 
 	void Scene::OnUpdate(float deltaTime)
 	{
+		// A stall (a cold shader compile, a breakpoint) is not simulated in one go: a longer step
+		// tunnels bodies through their colliders. Scripts get the same capped delta so their
+		// kinematic moves and controller velocities match what physics simulates; the scene
+		// runs slow through the stall instead.
+		deltaTime = std::min(deltaTime, Internal::PhysicsSync::k_MaxStepTime);
+
 		m_Data->Updating = true;
 		m_Data->Scripts.Update(deltaTime);
 		m_Data->Updating = false;

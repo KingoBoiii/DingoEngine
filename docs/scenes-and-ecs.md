@@ -282,7 +282,9 @@ bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
 bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`. Inside a script you have:
+`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`. It caps `dt` at 4/60 s, for scripts and
+physics alike, so a stall (a cold shader compile, a breakpoint) runs the scene slow instead of letting
+bodies tunnel through their colliders. Inside a script you have:
 
 - `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
 - `GetScene()` — the owning scene (to spawn or find other entities).
