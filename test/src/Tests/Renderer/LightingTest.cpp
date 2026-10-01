@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include <cmath>
+#include <format>
 
 namespace
 {
@@ -58,6 +59,205 @@ namespace
 namespace Dingo
 {
 
+	namespace
+	{
+		// Fixed, so what is culled doesn't depend on the window.
+		glm::mat4 CheckViewProjection()
+		{
+			return glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 0.1f, 100.0f) *
+				glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		}
+
+		PointLight PointLightAt(const glm::vec3& position, float range, float intensity = 1.0f)
+		{
+			PointLight light;
+			light.Position = position;
+			light.Range = range;
+			light.Intensity = intensity;
+			return light;
+		}
+
+		template<typename Submit>
+		Renderer3D::Statistics RenderCheckScene(Renderer3D& renderer, Submit&& submit)
+		{
+			renderer.BeginScene(CheckViewProjection());
+			submit();
+			renderer.EndScene();
+			return renderer.GetStatistics();
+		}
+
+		template<typename Populate>
+		Renderer3D::Statistics RenderCheckEntities(Renderer3D& renderer, Populate&& populate)
+		{
+			Scene scene("Lighting Check");
+			populate(scene);
+			return RenderCheckScene(renderer, [&] { scene.SubmitLights(renderer); });
+		}
+
+		Entity AddPointLightEntity(Scene& scene, const glm::vec3& position, float range)
+		{
+			Entity entity = scene.CreateEntity("Point Light");
+			entity.AddComponent<Transform3DComponent>().Position = position;
+			entity.AddComponent<PointLightComponent>(PointLightComponent(glm::vec3(1.0f), 1.0f, range));
+			return entity;
+		}
+
+		std::string Counts(const Renderer3D::Statistics& stats)
+		{
+			return std::format("directional {}, local {}, culled {}, dropped {}",
+				stats.DirectionalLights, stats.LocalLights, stats.CulledLights, stats.DroppedLights);
+		}
+	}
+
+	void LightingTest::Check(bool condition, const std::string& name)
+	{
+		m_Checks.push_back({ name, condition });
+		if (condition)
+			DE_INFO("[PASS] {}", name);
+		else
+			DE_ERROR("[FAIL] {}", name);
+	}
+
+	void LightingTest::BuildCheckSteps()
+	{
+		m_CheckSteps.clear();
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [] {});
+			Check(stats.DirectionalLights == 1 && stats.LocalLights == 0,
+				std::format("no light submitted: the default light is used ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [this] { m_CheckRenderer->SetAmbientLight(glm::vec3(0.0f), 0.0f); });
+			Check(stats.DirectionalLights == 0,
+				std::format("ambient alone: the default light is switched off ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [this]
+			{
+				m_CheckRenderer->SubmitLight(PointLightAt({ 0.0f, 0.0f, -10.0f }, 5.0f, 0.0f));
+			});
+			Check(stats.LocalLights == 0 && stats.CulledLights == 0 && stats.DirectionalLights == 0,
+				std::format("an unusable point light is ignored, yet still switches the default light off ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [this]
+			{
+				const DirectionalLight light{};
+				for (int i = 0; i < 5; i++)
+					m_CheckRenderer->SubmitLight(light);
+			});
+			Check(stats.DirectionalLights == 4 && stats.DroppedLights == 1,
+				std::format("five directional lights: four are used, one is dropped ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			Renderer3DParams params;
+			params.Capabilities.MaxLocalLights = 100;
+			Renderer3D* renderer = Renderer3D::Create(params);
+			const uint32_t budget = renderer->GetLocalLightBudget();
+			renderer->Shutdown();
+			delete renderer;
+			Check(budget == 32, std::format("MaxLocalLights above the limit: the light budget is capped at 32 (budget {})", budget));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_BudgetCheckRenderer, [this]
+			{
+				for (int x = -3; x <= 2; x++)
+					m_BudgetCheckRenderer->SubmitLight(PointLightAt({ static_cast<float>(x), 0.0f, -10.0f }, 1.0f));
+				for (int x : { -1, 1 })
+					m_BudgetCheckRenderer->SubmitLight(PointLightAt({ static_cast<float>(x), 0.0f, 10.0f }, 1.0f));
+			});
+			Check(stats.LocalLights == 4 && stats.CulledLights == 2 && stats.DroppedLights == 2,
+				std::format("6 point lights in view and 2 behind the camera, budget 4: 4 used, 2 culled, 2 dropped ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			m_CheckRenderer->SubmitLight(PointLightAt({ 0.0f, 0.0f, -10.0f }, 5.0f));
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [] {});
+			Check(stats.LocalLights == 1,
+				std::format("a light submitted before BeginScene lights that scene ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [] {});
+			Check(stats.DirectionalLights == 1 && stats.LocalLights == 0,
+				std::format("lights don't carry over: the next empty scene is back on the default light ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				scene.CreateEntity("Empty");
+			});
+			Check(stats.DirectionalLights == 1,
+				std::format("scene without light components: the default light is used ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				Entity light = AddPointLightEntity(scene, { 0.0f, 0.0f, -10.0f }, 5.0f);
+				light.GetComponent<PointLightComponent>().Enabled = false;
+			});
+			Check(stats.DirectionalLights == 0 && stats.LocalLights == 0,
+				std::format("disabled point light: not drawn, yet still switches the default light off ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				Entity light = scene.CreateEntity("Unplaced Light");
+				light.AddComponent<PointLightComponent>();
+			});
+			Check(stats.DirectionalLights == 1 && stats.LocalLights == 0,
+				std::format("point light without a Transform3DComponent: ignored, and the default light stays on ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				for (int i = 0; i < 2; i++)
+					scene.CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+			});
+			Check(stats.DirectionalLights == 2,
+				std::format("two directional light components: both are used ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				Entity light = AddPointLightEntity(scene, { 0.0f, 0.0f, -10.0f }, 5.0f);
+				scene.DuplicateEntity(light);
+			});
+			Check(stats.LocalLights == 2,
+				std::format("a duplicated point light entity is a second light ({})", Counts(stats)));
+		});
+	}
+
+	void LightingTest::RunNextCheckStep()
+	{
+		if (m_NextCheckStep < m_CheckSteps.size())
+			m_CheckSteps[m_NextCheckStep++]();
+	}
+
 	void LightingTest::Initialize()
 	{
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 100.0f);
@@ -102,6 +302,14 @@ namespace Dingo
 			.SetDebugName("LightingTest_Crate")
 			.SetRoughness(0.4f));
 		m_CrateTexture = Application::Get().GetAssetManager().LoadAsync("textures/container.jpg");
+
+		m_Checks.clear();
+		m_NextCheckStep = 0;
+		Renderer3DParams budgetParams;
+		budgetParams.Capabilities.MaxLocalLights = 4;
+		m_CheckRenderer = Renderer3D::Create();
+		m_BudgetCheckRenderer = Renderer3D::Create(budgetParams);
+		BuildCheckSteps();
 	}
 
 	void LightingTest::Update(float deltaTime)
@@ -141,6 +349,8 @@ namespace Dingo
 		}
 
 		renderer.EndScene();
+
+		RunNextCheckStep();
 	}
 
 	LightingTest::Lighting LightingTest::DescribeLighting() const
@@ -385,6 +595,17 @@ namespace Dingo
 		m_LightEntitiesBuilt = false;
 		delete m_Scene;
 		m_Scene = nullptr;
+
+		m_CheckSteps.clear();
+		for (Renderer3D** renderer : { &m_CheckRenderer, &m_BudgetCheckRenderer })
+		{
+			if (*renderer)
+			{
+				(*renderer)->Shutdown();
+				delete *renderer;
+				*renderer = nullptr;
+			}
+		}
 	}
 
 	void LightingTest::Resize(uint32_t width, uint32_t height)
@@ -416,6 +637,22 @@ namespace Dingo
 
 		ImGui::Separator();
 		GraphicsTest::ImGuiRender();
+
+		ImGui::Separator();
+		ImGui::Text("Checks");
+		int failed = 0;
+		for (const CheckResult& check : m_Checks)
+		{
+			failed += check.Passed ? 0 : 1;
+			ImGui::TextColored(check.Passed ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(0.9f, 0.3f, 0.3f, 1.0f),
+				"[%s] %s", check.Passed ? "PASS" : "FAIL", check.Name.c_str());
+		}
+		if (m_NextCheckStep < m_CheckSteps.size())
+			ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "running... (%d of %d)", static_cast<int>(m_NextCheckStep), static_cast<int>(m_CheckSteps.size()));
+		else if (failed == 0)
+			ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "all %d checks passed", static_cast<int>(m_Checks.size()));
+		else
+			ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "%d of %d checks failed", failed, static_cast<int>(m_Checks.size()));
 	}
 
 }
