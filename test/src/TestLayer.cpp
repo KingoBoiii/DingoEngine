@@ -21,6 +21,8 @@
 
 #include "Tests/Physics/MeshColliderTest.h"
 
+#include "Tests/Scene/HierarchyTest.h"
+
 #include <imgui.h>
 
 namespace Dingo
@@ -55,6 +57,7 @@ namespace Dingo
 		m_Tests.push_back({ "Asset Manager Test", [&]() { return new AssetManagerTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh Collider Test", []() { return new MeshColliderTest(); } });
+		m_Tests.push_back({ "Hierarchy Test", []() { return new HierarchyTest(); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))

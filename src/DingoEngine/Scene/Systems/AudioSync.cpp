@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Systems/AudioSync.h"
 
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -17,8 +18,8 @@ namespace Dingo
 
 			glm::vec3 PositionOf(const entt::registry& registry, entt::entity handle)
 			{
-				if (const Transform3DComponent* transform3D = registry.try_get<Transform3DComponent>(handle))
-					return transform3D->Position;
+				if (registry.all_of<Transform3DComponent>(handle))
+					return HierarchySystem::WorldPosition(registry, handle);
 
 				const TransformComponent& transform = registry.get<TransformComponent>(handle);
 				return glm::vec3(transform.Position.x, transform.Position.y, 0.0f);
@@ -57,16 +58,16 @@ namespace Dingo
 				if (listenerHandle == entt::null)
 					return;
 
-				// Single lookup serves both position and orientation below.
-				if (const Transform3DComponent* transform3D = registry.try_get<Transform3DComponent>(listenerHandle))
+				if (registry.all_of<Transform3DComponent>(listenerHandle))
 				{
-					audio.SetListenerPosition(transform3D->Position);
+					audio.SetListenerPosition(HierarchySystem::WorldPosition(registry, listenerHandle));
 
 					// Orientation only comes from a 3D transform (same convention as the
 					// perspective camera view in CameraUtils::ViewProjection: the entity's local
 					// -Z is forward, +Y is up). A 2D listener has no rotation to derive this
 					// from, so it keeps whatever orientation the engine already has.
-					audio.SetListenerOrientation(transform3D->Forward(), transform3D->Up());
+					const glm::quat rotation = HierarchySystem::WorldRotation(registry, listenerHandle);
+					audio.SetListenerOrientation(rotation * glm::vec3(0.0f, 0.0f, -1.0f), rotation * glm::vec3(0.0f, 1.0f, 0.0f));
 				}
 				else
 				{

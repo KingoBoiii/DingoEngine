@@ -40,13 +40,16 @@ namespace Dingo
 
 		Entity CreateEntity(const std::string& name = std::string());
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
+		// Destroys the entity and every descendant, children first, so a child's OnDestroy still
+		// sees its parent. Called from a script, the whole subtree waits for the end of the pass.
 		void DestroyEntity(Entity entity);
 		bool IsValid(Entity entity) const;
 
-		// Deep-copies `source` and its built-in components into a new entity (with a fresh
-		// UUID) and returns it. The clone never shares the source's physics body, character
-		// controller or sound; if physics is running it gets its own body. Attached scripts
-		// are NOT cloned. Returns an invalid Entity if `source` is invalid.
+		// Deep-copies `source`, its built-in components and its whole subtree into new entities
+		// (with fresh UUIDs) and returns the copy of `source`, which gets the same parent. A clone
+		// never shares a physics body, character controller or sound; if physics is running it
+		// gets its own body. Attached scripts are NOT cloned. Returns an invalid Entity if
+		// `source` is invalid.
 		Entity DuplicateEntity(Entity source);
 
 		// Destroys every entity (and its scripts) in the scene; the Scene stays usable.
@@ -287,6 +290,7 @@ namespace Dingo
 		// in-flight iteration. No-op when the entity has no script.
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
+		Entity DuplicateSubtree(Entity source, Entity parent);
 		Entity Wrap(std::uint32_t handle);
 
 	private:

@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
 #include <algorithm>
@@ -97,17 +98,29 @@ namespace Dingo
 			// tolerance keeps 60 Hz frame jitter at one step. Scene::OnUpdate caps the delta at
 			// k_MaxStepTime, so a stall never stretches a step past 1/60 s.
 			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
+
+			DriveKinematicChildren(registry, deltaTime);
 			m_Physics3D->Step(deltaTime, collisionSteps);
+
+			m_ChildWriteBacks.clear();
 
 			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, Transform3DComponent>();
 			for (entt::entity handle : view)
 			{
 				// Static bodies never move — skip the read-back so we don't churn over
 				// them or revert a runtime edit to a static entity's Transform3D.
-				if (view.get<RigidBody3DComponent>(handle).Type == BodyType3D::Static)
+				const BodyType3D type = view.get<RigidBody3DComponent>(handle).Type;
+				if (type == BodyType3D::Static)
 					continue;
 
 				const PhysicsBodyId3D body = view.get<RigidBody3DRuntime>(handle).Body;
+				if (HierarchySystem::GetParent(registry, handle) != entt::null)
+				{
+					if (type != BodyType3D::Kinematic)
+						m_ChildWriteBacks.push_back({ handle, 0, m_Physics3D->GetPosition(body), m_Physics3D->GetRotation(body) });
+					continue;
+				}
+
 				Transform3DComponent& transform = view.get<Transform3DComponent>(handle);
 				transform.Position = m_Physics3D->GetPosition(body);
 				transform.Rotation = m_Physics3D->GetRotation(body);
@@ -122,9 +135,123 @@ namespace Dingo
 				CharacterController3D* controller = m_Controllers[ccView.get<CharacterController3DRuntime>(handle).Index].get();
 				controller->Update(deltaTime);
 
+				if (HierarchySystem::GetParent(registry, handle) != entt::null)
+				{
+					m_ChildWriteBacks.push_back({ handle, 0, controller->GetPosition(), controller->GetRotation() });
+					continue;
+				}
+
 				Transform3DComponent& transform = ccView.get<Transform3DComponent>(handle);
 				transform.Position = controller->GetPosition();
 				transform.Rotation = controller->GetRotation();
+			}
+
+			WriteBackChildren(registry);
+		}
+
+		void PhysicsSync::DriveKinematicChildren(entt::registry& registry, float deltaTime)
+		{
+			m_KinematicChildren.clear();
+			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, HierarchyComponent>();
+			for (entt::entity handle : view)
+			{
+				if (view.get<RigidBody3DComponent>(handle).Type == BodyType3D::Kinematic && view.get<HierarchyComponent>(handle).Parent != entt::null)
+					m_KinematicChildren.push_back({ handle, HierarchySystem::Depth(registry, handle) });
+			}
+
+			// Shallowest first: a kinematic parent's MoveKinematic sets the velocity its children are
+			// predicted from.
+			std::stable_sort(m_KinematicChildren.begin(), m_KinematicChildren.end(), [](const KinematicChild& a, const KinematicChild& b)
+			{
+				return a.Depth < b.Depth;
+			});
+
+			for (const KinematicChild& child : m_KinematicChildren)
+			{
+				const glm::mat4 world = PredictedWorldTransform(registry, HierarchySystem::GetParent(registry, child.Handle), deltaTime)
+					* HierarchySystem::LocalTransform(registry, child.Handle);
+
+				glm::vec3 position, scale;
+				glm::quat rotation;
+				HierarchySystem::Decompose(world, position, rotation, scale);
+				m_Physics3D->MoveKinematic(registry.get<RigidBody3DRuntime>(child.Handle).Body, position, rotation, deltaTime);
+			}
+		}
+
+		bool PhysicsSync::PredictedPose(const entt::registry& registry, entt::entity handle, float deltaTime, glm::mat4& world) const
+		{
+			glm::vec3 position;
+			glm::quat rotation;
+
+			const RigidBody3DRuntime* body = registry.try_get<RigidBody3DRuntime>(handle);
+			const RigidBody3DComponent* rigidBody = registry.try_get<RigidBody3DComponent>(handle);
+			const CharacterController3DRuntime* controllerSlot = registry.try_get<CharacterController3DRuntime>(handle);
+			const CharacterController3D* controller = controllerSlot ? m_Controllers[controllerSlot->Index].get() : nullptr;
+
+			if (body && rigidBody && rigidBody->Type != BodyType3D::Static)
+			{
+				// The same integration Jolt applies over the step: exact for a MoveKinematic'd body,
+				// and blind to this step's contacts and gravity for a dynamic one.
+				position = m_Physics3D->GetPosition(body->Body) + m_Physics3D->GetLinearVelocity(body->Body) * deltaTime;
+				rotation = m_Physics3D->GetRotation(body->Body);
+				const glm::vec3 angularStep = m_Physics3D->GetAngularVelocity(body->Body) * deltaTime;
+				const float angle = glm::length(angularStep);
+				if (angle > 1e-6f)
+					rotation = glm::normalize(glm::angleAxis(angle, angularStep / angle) * rotation);
+			}
+			else if (controller)
+			{
+				position = controller->GetPosition() + controller->GetLinearVelocity() * deltaTime;
+				rotation = controller->GetRotation();
+			}
+			else
+			{
+				return false;
+			}
+
+			world = glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), HierarchySystem::WorldScale(registry, handle));
+			return true;
+		}
+
+		glm::mat4 PhysicsSync::PredictedWorldTransform(const entt::registry& registry, entt::entity handle, float deltaTime)
+		{
+			// Climbs to the nearest ancestor whose pose physics decides this step, then composes the
+			// plain locals below it root-first, the same order HierarchySystem::WorldTransform uses.
+			glm::mat4 world(1.0f);
+			m_PredictionChain.clear();
+			for (entt::entity e = handle; e != entt::null; e = HierarchySystem::GetParent(registry, e))
+			{
+				if (PredictedPose(registry, e, deltaTime, world))
+					break;
+				m_PredictionChain.push_back(e);
+			}
+
+			for (auto it = m_PredictionChain.rbegin(); it != m_PredictionChain.rend(); ++it)
+				world = world * HierarchySystem::LocalTransform(registry, *it);
+
+			return world;
+		}
+
+		void PhysicsSync::WriteBackChildren(entt::registry& registry)
+		{
+			if (m_ChildWriteBacks.empty())
+				return;
+
+			// Shallowest first: a simulated child's local is solved against its parent's world, which
+			// must already hold this step's result when the parent is simulated too.
+			for (ChildWriteBack& writeBack : m_ChildWriteBacks)
+				writeBack.Depth = HierarchySystem::Depth(registry, writeBack.Handle);
+
+			std::stable_sort(m_ChildWriteBacks.begin(), m_ChildWriteBacks.end(), [](const ChildWriteBack& a, const ChildWriteBack& b)
+			{
+				return a.Depth < b.Depth;
+			});
+
+			for (const ChildWriteBack& writeBack : m_ChildWriteBacks)
+			{
+				Transform3DComponent& transform = registry.get<Transform3DComponent>(writeBack.Handle);
+				HierarchySystem::SetWorldPosition(registry, writeBack.Handle, transform, writeBack.Position);
+				HierarchySystem::SetWorldRotation(registry, writeBack.Handle, transform, writeBack.Rotation);
 			}
 		}
 
@@ -272,22 +399,23 @@ namespace Dingo
 				return; // a body already exists for this entity — don't leak a second one
 
 			const auto& rigidBody = registry.get<RigidBody3DComponent>(handle);
-			const auto& transform = registry.get<Transform3DComponent>(handle);
 
+			glm::vec3 scale;
 			RigidBodyParams3D params;
+			HierarchySystem::WorldPose(registry, handle, registry.get<Transform3DComponent>(handle), params.Position, params.Rotation, scale);
 			params.Type = rigidBody.Type;
-			params.Position = transform.Position;
-			params.Rotation = transform.Rotation;
 			params.ContinuousCollision = rigidBody.ContinuousCollision;
 
 			// The collider shape is baked into the body at creation. Collider sizes are
-			// fractions of the entity's full extent (Transform3D.Scale), so a unit-scaled
-			// entity with the default collider exactly fills its box.
+			// fractions of the entity's full extent (its world scale), so a unit-scaled
+			// entity with the default collider exactly fills its box. A mirrored axis keeps a
+			// primitive's size positive; only the mesh collider takes the sign.
+			const glm::vec3 size = glm::abs(scale);
 			if (registry.all_of<SphereCollider3DComponent>(handle))
 			{
 				auto& collider = registry.get<SphereCollider3DComponent>(handle);
 				params.Shape = ColliderShape3D::Sphere;
-				params.Radius = transform.Scale.x * collider.Radius;
+				params.Radius = size.x * collider.Radius;
 				params.Friction = collider.Friction;
 				params.Restitution = collider.Restitution;
 			}
@@ -295,8 +423,8 @@ namespace Dingo
 			{
 				auto& collider = registry.get<CapsuleCollider3DComponent>(handle);
 				params.Shape = ColliderShape3D::Capsule;
-				params.Radius = transform.Scale.x * collider.Radius;
-				params.HalfHeight = transform.Scale.y * collider.HalfHeight;
+				params.Radius = size.x * collider.Radius;
+				params.HalfHeight = size.y * collider.HalfHeight;
 				params.Friction = collider.Friction;
 				params.Restitution = collider.Restitution;
 			}
@@ -304,7 +432,7 @@ namespace Dingo
 			{
 				auto& collider = registry.get<BoxCollider3DComponent>(handle);
 				params.Shape = ColliderShape3D::Box;
-				params.HalfExtents = transform.Scale * collider.HalfExtents;
+				params.HalfExtents = size * collider.HalfExtents;
 				params.Friction = collider.Friction;
 				params.Restitution = collider.Restitution;
 			}
@@ -321,7 +449,7 @@ namespace Dingo
 					DE_CORE_ERROR("MeshCollider3DComponent on '{}' has no Mesh and no MeshRendererComponent::Mesh to fall back on; no body created", name);
 					return;
 				}
-				params.MeshScale = transform.Scale;
+				params.MeshScale = scale;
 				params.Friction = collider.Friction;
 				params.Restitution = collider.Restitution;
 			}
@@ -329,7 +457,7 @@ namespace Dingo
 			{
 				// No collider component: fall back to a box matching the transform.
 				params.Shape = ColliderShape3D::Box;
-				params.HalfExtents = transform.Scale * 0.5f;
+				params.HalfExtents = size * 0.5f;
 			}
 
 			const PhysicsBodyId3D body = m_Physics3D->CreateBody(params);
@@ -349,15 +477,14 @@ namespace Dingo
 				return; // already created — don't leak a second controller
 
 			const auto& cc = registry.get<CharacterController3DComponent>(handle);
-			const auto& transform = registry.get<Transform3DComponent>(handle);
 
+			glm::vec3 scale;
 			CharacterControllerParams3D params;
 			params.Radius = cc.Radius;
 			params.Height = cc.Height;
 			params.StepHeight = cc.StepHeight;
 			params.MaxSlopeAngle = cc.MaxSlopeAngle;
-			params.Position = transform.Position;
-			params.Rotation = transform.Rotation;
+			HierarchySystem::WorldPose(registry, handle, registry.get<Transform3DComponent>(handle), params.Position, params.Rotation, scale);
 
 			std::unique_ptr<CharacterController3D> controller = m_Physics3D->CreateCharacterController(params);
 			if (!controller)

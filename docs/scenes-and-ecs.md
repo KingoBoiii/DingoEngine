@@ -43,7 +43,11 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
 | `GetUUID()` / `GetName()` | The entity's id / name. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
-| `Destroy()` | Destroy this entity (and its behaviour). |
+| `Destroy()` | Destroy this entity, its behaviour and its children. |
+| `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.8) | Attach to / detach from a parent (see [Parenting](#parenting-v08)). |
+| `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.8) | Walk the hierarchy. |
+| `GetWorldTransform()` / `GetWorldPosition()` / `GetWorldRotation()` / `GetWorldScale()` (v0.8) | The 3D transform in world space, through every parent. |
+| `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.8) | Write the local value that gives this world value. |
 
 > The component methods support the **built-in component types** (below). To carry
 > game-specific data, put it in a `ScriptableEntity` subclass rather than defining new
@@ -165,6 +169,64 @@ scenes.OnUpdate(dt);
 scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the scene's lights
 ```
 
+### Parenting (v0.8)
+
+`child.SetParent(parent)` makes the child's `Transform3DComponent` **local to its parent**: its world
+transform is the parent's world transform × its own. A root's local transform *is* its world
+transform, so a scene without parents behaves exactly as before.
+
+```cpp
+Entity turret = scene->CreateEntity("Turret");
+turret.AddComponent<Transform3DComponent>().Position = { 0.0f, 0.7f, 0.0f };
+turret.AddComponent<MeshRendererComponent>(MeshRendererComponent(turretMesh));
+turret.SetParent(hull, false);    // keep the local values: 0.7 above the hull, wherever it drives
+
+glm::vec3 muzzle = barrel.GetWorldPosition();   // barrel -> turret -> hull
+```
+
+- **`keepWorldTransform`.** By default `SetParent` leaves the entity where it is in the world and
+  rewrites its local transform; `false` keeps the local values, so the entity jumps to its place
+  under the new parent. An entity without a `Transform3DComponent` has no local transform to
+  rewrite, so its 3D descendants do move, and the engine warns. A null `Entity` detaches it, like
+  `RemoveParent`; setting the parent it already has changes nothing. A parent in another scene,
+  or one that would make a cycle, logs an error and changes nothing. Children keep the order they
+  were added in.
+- **World values are computed on every call** from the parent chain and never cached, so they are
+  never stale. `SetWorldPosition`/`SetWorldRotation` write the local value that produces them.
+- **Shear.** A rotated child under a non-uniformly scaled parent is sheared, which position,
+  rotation and scale can't express: `GetWorldRotation`/`GetWorldScale` and `keepWorldTransform`
+  approximate it. Where that matters, keep a parent's scale uniform and put its scaled mesh on a
+  child of its own. Under a parent with a zero scale on some axis there is no local position that
+  gives a chosen world position, so `keepWorldTransform`, `SetWorldPosition` and the physics
+  write-back leave the local transform as it was.
+- A parent without a `Transform3DComponent` counts as identity. Parenting moves 3D transforms only;
+  a 2D `TransformComponent` is not affected yet.
+- **Subtrees.** `DestroyEntity` destroys the whole subtree, children first, so a child's `OnDestroy`
+  still sees its parent; called from a script, the subtree waits for the end of the pass like any
+  other destroy. `DuplicateEntity` copies the subtree and gives the copy the source's parent.
+- **Readers.** Rendering, point and spot lights (position and aim), the camera view,
+  `ScreenPointToRay` and 3D audio (sources and the listener) all use world values.
+  `MeshRendererComponent::Visible` is not inherited.
+
+**Physics under a parent.** A body is built from the entity's world transform, with collider sizes
+taken from its world scale.
+
+| Body | Rule |
+|---|---|
+| Dynamic | Simulated in world space. The engine writes back the local transform that puts it where physics did, so moving the parent doesn't drag it. Nested dynamic bodies are written back parents first. |
+| Kinematic with a parent | Driven (`MoveKinematic`) every step to where its world transform will be at the end of that step, so it follows its parent. When an ancestor has a moving body of its own, the engine predicts that ancestor's end-of-step pose from its velocity: exact for a kinematic ancestor, close for a dynamic one or a character controller (this step's contacts and gravity aren't known yet). A kinematic root is still yours to move. |
+| Static | Its collider is placed once and stays put; its mesh still follows the parent, so don't parent static bodies to anything that moves. |
+| Character controller | Placed from its world transform and written back like a dynamic body. Keep controllers on roots. |
+
+**Bodies in one hierarchy collide like any others.** Nothing filters a child against its parent, so
+a kinematic child that overlaps its parent's body, or the character controller it hangs off, pushes
+it. Keep a child's collider clear of its ancestors' colliders.
+
+Parent an entity before its body is built (before `OnStart`, or before `CreateRigidBody` for a
+runtime spawn). `SetParent(parent, false)` on an entity that already has a body doesn't teleport
+the body: a dynamic one stays where it is, a kinematic one sweeps to its new place in one step and
+a static one stays put.
+
 ### Lights (v0.7)
 
 A 3D scene is lit by light **entities**. Each frame the `SceneRenderer` calls `Scene::SubmitLights`,
@@ -173,9 +235,10 @@ nothing to wire up beyond adding the entities. What each light takes from the en
 
 - **Directional and ambient lights** ignore the transform. A directional light's `Direction` is in
   world space.
-- **Point and spot lights** take their position from `Transform3DComponent::Position`, and a spot
-  light aims by rotating its local `Direction` with `Transform3DComponent::Rotation`. Scale is
-  ignored. An entity without a `Transform3DComponent` is skipped.
+- **Point and spot lights** take their position from the entity's world position (its
+  `Transform3DComponent`, through any [parents](#parenting-v08)), and a spot light aims by rotating
+  its local `Direction` with the world rotation. Scale is ignored. An entity without a
+  `Transform3DComponent` is skipped.
 - **`Enabled = false`** on a point or spot light switches it off without losing its settings, so
   game code never has to stash an old `Intensity`.
 
@@ -189,9 +252,9 @@ lantern.AddComponent<PointLightComponent>(PointLightComponent({ 1.0f, 0.7f, 0.3f
 scene->CreateEntity("Ambient").AddComponent<AmbientLightComponent>(AmbientLightComponent({ 0.4f, 0.5f, 0.8f }, 0.05f));
 ```
 
-There is no parent-child transform yet, so a lantern that follows a character is a separate
-entity that you move by hand, a little outside the character's mesh. A light inside a closed mesh
-lights none of it, because every face points away from the light.
+A light on a child entity follows its parent, so a lantern can hang off a character. Keep it a
+little outside the character's mesh: a light inside a closed mesh lights none of it, because every
+face points away from the light.
 
 Things to know:
 
@@ -420,7 +483,8 @@ for (InvaderScript* invader : GetScene().GetScriptsOfType<InvaderScript>())
 
 - **Safe destruction during updates.** Calling `entity.Destroy()` — on yourself or
   another entity — from within `OnUpdate` is safe; the engine **defers** the actual
-  removal to the end of the update pass. `OnDestroy` runs then.
+  removal to the end of the update pass. `OnDestroy` runs then. Destroying a parent destroys
+  its children too, children first.
 - **Spawning during updates.** Entities/scripts you create mid-update start running on
   the **next** frame.
 - **One caveat — don't hold a component reference across a spawn.** `GetComponent<T>()`

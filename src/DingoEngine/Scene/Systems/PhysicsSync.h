@@ -10,6 +10,7 @@
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -37,7 +38,9 @@ namespace Dingo
 			void Stop(entt::registry& registry);
 
 			// Steps each live world and writes the simulated transforms back: 2D onto
-			// TransformComponent, 3D (and character controllers) onto Transform3DComponent.
+			// TransformComponent, 3D (and character controllers) onto Transform3DComponent. A 3D
+			// child stores the local transform that reproduces its simulated world pose, except a
+			// kinematic child, which is driven before the step to where its parent will be after it.
 			void Step(entt::registry& registry, float deltaTime);
 
 			// Instantiates whatever body/controller the entity's components call for.
@@ -66,8 +69,29 @@ namespace Dingo
 			void CreateBody2D(entt::registry& registry, entt::entity handle);
 			void CreateBody3D(entt::registry& registry, entt::entity handle);
 			void CreateController(entt::registry& registry, entt::entity handle);
+			void WriteBackChildren(entt::registry& registry);
+			void DriveKinematicChildren(entt::registry& registry, float deltaTime);
+			// The world transform `handle` will have after this step: the end-of-step pose of its
+			// nearest ancestor (itself included) with a moving body or a controller, times the
+			// locals below it.
+			glm::mat4 PredictedWorldTransform(const entt::registry& registry, entt::entity handle, float deltaTime);
+			bool PredictedPose(const entt::registry& registry, entt::entity handle, float deltaTime, glm::mat4& world) const;
 
 		private:
+			struct ChildWriteBack
+			{
+				entt::entity Handle;
+				std::uint32_t Depth;
+				glm::vec3 Position;
+				glm::quat Rotation;
+			};
+
+			struct KinematicChild
+			{
+				entt::entity Handle;
+				std::uint32_t Depth;
+			};
+
 			// The backends (Box2D / Jolt) live behind the Physics2D / Physics3D
 			// interfaces; these exist only between Start and Stop.
 			std::unique_ptr<Physics2D> m_Physics2D;
@@ -79,6 +103,10 @@ namespace Dingo
 			// Slots are never reused (a destroyed controller leaves a null hole) so indices
 			// stay stable for the world's lifetime. Cleared in Stop with the 3D world.
 			std::vector<std::unique_ptr<CharacterController3D>> m_Controllers;
+
+			std::vector<ChildWriteBack> m_ChildWriteBacks;
+			std::vector<KinematicChild> m_KinematicChildren;
+			std::vector<entt::entity> m_PredictionChain;
 		};
 
 	}

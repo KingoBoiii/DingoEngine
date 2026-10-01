@@ -11,6 +11,7 @@
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 
 #include <algorithm>
@@ -68,6 +69,11 @@ namespace Dingo
 		if (!IsValid(source))
 			return {};
 
+		return DuplicateSubtree(source, source.GetParent());
+	}
+
+	Entity Scene::DuplicateSubtree(Entity source, Entity parent)
+	{
 		entt::entity src = static_cast<entt::entity>(source.m_Handle);
 		entt::registry& registry = m_Data->Registry;
 
@@ -109,10 +115,17 @@ namespace Dingo
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
 
+		// Linked before the body is built, which reads the world transform.
+		if (parent)
+			Internal::HierarchySystem::Link(registry, dst, static_cast<entt::entity>(parent.m_Handle));
+
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
 		if (IsPhysicsRunning())
 			CreateRigidBody(clone);
+
+		for (Entity child : source.GetChildren())
+			DuplicateSubtree(child, clone);
 
 		return clone;
 	}
@@ -142,7 +155,28 @@ namespace Dingo
 		if (!m_Data->Registry.valid(e))
 			return;
 
+		// False once a script's OnDestroy has destroyed this entity along the way.
+		auto destroyChildren = [this, e]()
+		{
+			while (const Internal::HierarchyComponent* node = m_Data->Registry.try_get<Internal::HierarchyComponent>(e))
+			{
+				if (node->FirstChild == entt::null)
+					break;
+
+				DestroyEntityNow(static_cast<std::uint32_t>(node->FirstChild));
+				if (!m_Data->Registry.valid(e))
+					return false;
+			}
+			return true;
+		};
+
+		// Children go first, and again after this entity's own OnDestroy, which may have given it new ones.
+		if (!destroyChildren())
+			return;
+
 		DetachScript(handle);
+		if (!m_Data->Registry.valid(e) || !destroyChildren())
+			return;
 
 		if (m_Data->Registry.all_of<IDComponent>(e))
 			m_Data->EntityMap.erase(m_Data->Registry.get<IDComponent>(e).ID);
@@ -153,6 +187,7 @@ namespace Dingo
 		// (and transform) is gone.
 		Internal::AudioSync::StopSource(m_Data->Registry, e);
 
+		Internal::HierarchySystem::Unlink(m_Data->Registry, e);
 		m_Data->Registry.destroy(e);
 	}
 
@@ -299,7 +334,7 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, transform.GetTransform(), mesh.Color, mesh.Material);
+			renderer.SubmitMesh(mesh.Mesh, Internal::HierarchySystem::WorldTransform(m_Data->Registry, entity, transform), mesh.Color, mesh.Material);
 		}
 	}
 

@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
 #include "DingoEngine/Graphics/Renderer3D.h"
 
@@ -38,21 +39,19 @@ namespace Dingo::Internal::LightSystem
 		for (auto [entity, light] : registry.view<const PointLightComponent>().each())
 		{
 			hasLight = true;
-			const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
-			if (light.Enabled && transform)
-				renderer.SubmitLight(PointLight{ transform->Position, light.Color, light.Intensity, light.Range });
+			if (light.Enabled && registry.all_of<Transform3DComponent>(entity))
+				renderer.SubmitLight(PointLight{ HierarchySystem::WorldPosition(registry, entity), light.Color, light.Intensity, light.Range });
 		}
 
 		for (auto [entity, light] : registry.view<const SpotLightComponent>().each())
 		{
 			hasLight = true;
-			const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
-			if (!light.Enabled || !transform)
+			if (!light.Enabled || !registry.all_of<Transform3DComponent>(entity))
 				continue;
 
 			SpotLight spot;
-			spot.Position = transform->Position;
-			spot.Direction = transform->Rotation * light.Direction;
+			spot.Position = HierarchySystem::WorldPosition(registry, entity);
+			spot.Direction = HierarchySystem::WorldRotation(registry, entity) * light.Direction;
 			spot.Color = light.Color;
 			spot.Intensity = light.Intensity;
 			spot.Range = light.Range;

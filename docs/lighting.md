@@ -33,9 +33,10 @@ stays off until a material asks for it.
 
 - A scene's lights add up, and so do its ambient components (the direct API has one ambient,
   which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)).
-- **Components:** point and spot lights take their position from the entity's `Transform3DComponent`
-  and are ignored without one. A spot's `Direction` is in the entity's local space (default
-  (0, 0, -1)) and is turned by the transform's `Rotation`; scale has no effect.
+- **Components:** point and spot lights take their position from the entity's world transform (its
+  `Transform3DComponent`, through any parents) and are ignored without one. A spot's `Direction`
+  is in the entity's local space (default (0, 0, -1)) and is turned by its world rotation; scale
+  has no effect.
 - **Direct API:** `SpotLight::Direction` is a world direction and defaults to (0, -1, 0).
 
 ## Lights on entities

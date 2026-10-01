@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
 
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -79,6 +80,15 @@ namespace Dingo
 				return false;
 			}
 
+			glm::mat4 PerspectiveView(const entt::registry& registry, entt::entity camera)
+			{
+				if (!registry.all_of<Transform3DComponent>(camera))
+					return glm::mat4(1.0f);
+
+				return glm::inverse(glm::translate(glm::mat4(1.0f), HierarchySystem::WorldPosition(registry, camera))
+					* glm::mat4_cast(HierarchySystem::WorldRotation(registry, camera)));
+			}
+
 			glm::mat4 ViewProjection(const entt::registry& registry, entt::entity camera, float aspect)
 			{
 				if (!registry.valid(camera) || !registry.all_of<CameraComponent>(camera))
@@ -93,11 +103,7 @@ namespace Dingo
 				glm::mat4 view(1.0f);
 				if (cameraComponent.Type == CameraComponent::ProjectionType::Perspective)
 				{
-					if (registry.all_of<Transform3DComponent>(camera))
-					{
-						const Transform3DComponent& transform = registry.get<Transform3DComponent>(camera);
-						view = glm::inverse(glm::translate(glm::mat4(1.0f), transform.Position) * glm::mat4_cast(transform.Rotation));
-					}
+					view = PerspectiveView(registry, camera);
 				}
 				else
 				{
@@ -125,14 +131,7 @@ namespace Dingo
 				const CameraComponent& camera = registry.get<CameraComponent>(perspective);
 				const glm::mat4 projection = camera.GetProjection(aspect);
 
-				glm::mat4 cameraView(1.0f);
-				if (registry.all_of<Transform3DComponent>(perspective))
-				{
-					const Transform3DComponent& transform = registry.get<Transform3DComponent>(perspective);
-					cameraView = glm::inverse(glm::translate(glm::mat4(1.0f), transform.Position) * glm::mat4_cast(transform.Rotation));
-				}
-
-				return Dingo::ScreenPointToRay(screenPos, viewportSize, cameraView, projection);
+				return Dingo::ScreenPointToRay(screenPos, viewportSize, PerspectiveView(registry, perspective), projection);
 			}
 
 		}
