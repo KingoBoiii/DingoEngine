@@ -34,9 +34,9 @@ stays off until a material asks for it.
 - A scene's lights add up, and so do its ambient components (the direct API has one ambient,
   which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)).
 - **Components:** point and spot lights take their position from the entity's world transform (its
-  `Transform3DComponent`, through any parents) and are ignored without one. A spot's `Direction`
-  is in the entity's local space (default (0, 0, -1)) and is turned by its world rotation; scale
-  has no effect.
+  `Transform3DComponent`, through any parents) and are ignored without one, with a one-time
+  warning. A spot's `Direction` is in the entity's local space (default (0, 0, -1)) and is turned by
+  its world rotation; scale has no effect.
 - **Direct API:** `SpotLight::Direction` is a world direction and defaults to (0, -1, 0).
 
 ## Lights on entities
@@ -106,7 +106,8 @@ Lighting is rebuilt for every scene. Whatever you have submitted since the last 
 or after `BeginScene`, lights the next `EndScene`, which then clears it. So "set the light, then
 `BeginScene`" works, and a second scene in the same frame starts with no lights. Until an
 `EndScene` runs, at most 8192 point and spot lights can wait; further ones are ignored with a
-warning.
+warning. One renderer can run up to `Renderer3D::k_MaxScenesPerFrame` (32) scenes a frame: on Vulkan
+its scene buffer has room for that many writes, and later scenes would draw with stale lighting.
 
 **Direct API.** A scene that submits no light and no ambient is lit by the default light from
 `Renderer3DParams`: `LightDirection` (-0.4, -1, -0.35) and `Ambient` 0.35. It is emitted as a white
@@ -121,21 +122,26 @@ frame, and always calls `SetAmbientLight` with the summed ambient, black if ther
 
 - A registry with **no light component at all** gets a default `DirectionalLightComponent`, so a
   3D scene never renders black by accident.
-- Any light component of any kind turns that default off, even a disabled one or a point light
-  with no `Transform3DComponent`. A scene whose lights are all switched off therefore goes dark.
+- Any light component turns that default off, even a disabled one, except a point or spot light
+  with no `Transform3DComponent`, which can't be placed. A scene whose lights are all switched off
+  therefore goes dark.
   It does not fall back to the renderer's default light, which the `SceneRenderer` never touches.
 
 **Legacy `Ambient`.** `DirectionalLightComponent::Ambient` (default 0.35) is the engine's original
 single knob. It adds white ambient and scales the light by `(1 - Ambient)`, which is exactly the
 old `ambient + (1 - ambient) * N.L` for any `Ambient`. A face squarely turned to the light is
 `Ambient + Intensity * (1 - Ambient)` bright, exactly 1 at the default `Intensity`. Set `Ambient`
-to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only the first four
-directional components add their ambient.
+to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only the directional
+components the renderer accepts (the first four valid ones) add their ambient, and a non-finite
+`Ambient` or ambient intensity is skipped rather than blanking every other ambient source.
 
 ## The light budget
 
 Directional lights are not culled or ranked: the first four in submission order are used, and
-further ones are dropped. Point and spot lights share one budget.
+further ones are dropped. Light components are submitted in entity order, which is roughly the
+order their entities were created and doesn't change when another light is removed.
+
+Point and spot lights share one budget.
 `Renderer3DCapabilities::MaxLocalLights` defaults to 32 and is capped at
 `Renderer3D::k_MaxLocalLights` (also 32), so the setting can only lower it.
 `Renderer3D::GetLocalLightBudget()` returns the value in force.
@@ -156,8 +162,9 @@ At each `EndScene`:
    camera is outside the light's range (0 when inside it). The strongest channel is used, not
    luminance, so a saturated blue light ranks the same as a green one of equal intensity. With an
    orthographic view-projection the camera has no position, so distance does not count.
-4. Ties go to the earlier-submitted light, so a still scene submitting lights in a stable order
-   picks the same lights every frame and never flickers.
+4. Every light whose range holds the camera scores the same, so ties go to the light the camera
+   is nearer to relative to its range, then to the earlier-submitted one. A still scene submitting
+   lights in a stable order picks the same lights every frame and never flickers.
 
 Overflow logs one warning per renderer, not one per frame. `AssertOnOverflow = true` makes it an
 assert instead (also for directional overflow and a mesh too big for a batch). Asserts compile out
@@ -228,7 +235,7 @@ delete lamp;
   skipped entirely.
 - **Albedo texture:** `material->SetTexture(0, texture)` and `SetSampler(0, sampler)` multiply into
   the mesh colour. Slot 0 is the only slot the lit shader has: a texture or sampler in another slot
-  is an error the renderer warns about once. An empty slot 0 draws white with the clamp sampler.
+  keeps the material from being drawn, with a one-time warning. An empty slot 0 draws white with the clamp sampler.
 - **Transparency** comes from the mesh colour's alpha, never the texture's. A lit draw below
   alpha 1 blends, but lit draws are not sorted and still write depth.
 - **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you,
@@ -291,7 +298,8 @@ and a copy of it is embedded in the engine library at build time.
   hot-reload ([Asset Pipeline](asset-pipeline.md#hot-reload-shaders--textures)). A compile error at
   startup is fatal in these builds, as for any shader.
 - **Release and Distribution** builds always use the embedded copy, so they carry no build-machine
-  path, and a prebuilt package needs no shader file beside it.
+  path, and a prebuilt package needs no shader file beside it. A prebuilt Debug lib carries the
+  path it was built from, and uses its embedded copy wherever that path doesn't exist.
 - The source path is fixed when the project files are generated. If the file is not there, such as
   after moving the checkout, the embedded copy is used without a message.
 - **Gotcha:** a Debug executable reads the file at startup, not the copy it was built with, so an

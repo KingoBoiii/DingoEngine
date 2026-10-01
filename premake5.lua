@@ -221,8 +221,9 @@ group "Engine"
 			buildoutputs { "%{cfg.objdir}/Embedded/%{file.name}.inl" }
 
 		-- Debug loads engine shaders from the source tree so they hot-reload. Release and
-		-- Distribution always run the embedded copy: they are what gets published, so they must
-		-- neither carry a build-machine path nor pick up a source file the C++ wasn't built against.
+		-- Distribution always run the embedded copy, so they never carry a build-machine path or pick
+		-- up a source file the C++ wasn't built against. A published Debug lib still carries the
+		-- builder's path, which falls back to the embedded copy wherever that path doesn't exist.
 		filter "configurations:Debug or configurations:Debug-ASan"
 			defines { 'DE_ENGINE_SHADER_DIR="' .. path.join(_MAIN_SCRIPT_DIR, "src/DingoEngine/Graphics/Shaders") .. '"' }
 

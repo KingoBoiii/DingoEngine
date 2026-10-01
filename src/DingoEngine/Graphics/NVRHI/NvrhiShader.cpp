@@ -534,9 +534,15 @@ namespace Dingo
 		return PreProcess(source);
 	}
 
+	// Malformed source logs an error and yields no sources rather than asserting: Build treats that as
+	// a failed build, so a hot-reload of a half-saved file keeps the previous program.
 	std::unordered_map<ShaderType, std::string> NvrhiShader::PreProcess(const std::string& source) const
 	{
-		DE_CORE_ASSERT(!source.empty(), "Shader source code is empty. Cannot preprocess shader sources.");
+		if (source.empty())
+		{
+			DE_CORE_ERROR("Shader '{}': the source is empty.", m_Params.Name);
+			return {};
+		}
 
 		std::unordered_map<ShaderType, std::string> sources;
 
@@ -546,21 +552,28 @@ namespace Dingo
 		while (pos != std::string::npos)
 		{
 			size_t eol = source.find_first_of("\r\n", pos); //End of shader type declaration line
-			DE_CORE_ASSERT(eol != std::string::npos, "Syntax error");
+			if (eol == std::string::npos)
+			{
+				DE_CORE_ERROR("Shader '{}': a '#type' line has no code after it.", m_Params.Name);
+				return {};
+			}
 			size_t begin = pos + typeTokenLength + 1; //Start of shader type name (after "#type " keyword)
-			std::string type = source.substr(begin, eol - begin);
+			std::string type = begin < eol ? source.substr(begin, eol - begin) : std::string();
 
 			if (ShaderTypeMap.find(type) == ShaderTypeMap.end())
 			{
-				DE_CORE_ERROR("Unknown shader type: {}", type);
-				DE_CORE_ASSERT(false, "Unknown shader type");
-				return {}; // Return empty map if unknown shader type
+				DE_CORE_ERROR("Shader '{}': unknown shader type '{}' after '#type'.", m_Params.Name, type);
+				return {};
 			}
 
 			ShaderType shaderType = ShaderTypeMap[type];
 
 			size_t nextLinePos = source.find_first_not_of("\r\n", eol); //Start of shader code after shader type declaration line
-			DE_CORE_ASSERT(nextLinePos != std::string::npos, "Syntax error");
+			if (nextLinePos == std::string::npos)
+			{
+				DE_CORE_ERROR("Shader '{}': the '#type {}' section is empty.", m_Params.Name, type);
+				return {};
+			}
 			pos = source.find(typeToken, nextLinePos); //Start of next shader type declaration line
 
 			sources[shaderType] = (pos == std::string::npos) ? source.substr(nextLinePos) : source.substr(nextLinePos, pos - nextLinePos);

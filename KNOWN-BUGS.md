@@ -90,12 +90,12 @@ that was verified to make minimize/restore clean.
 
 ## K16 — Point and spot lights pop in and out at the light-budget edge {#k16}
 
-**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:455-499`
+**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:475-523`
 
 When more point and spot lights reach the view than `Renderer3DCapabilities::MaxLocalLights` (32 by
 default, and at most 32), `EndScene` keeps the brightest as seen from the camera and drops the rest. The
-choice is deterministic — ties go to the earlier-submitted light, so a still scene picks the same lights
-every frame — but it is a hard cut: as the camera moves, a light that crosses the budget edge appears or
+choice is deterministic — ties go to the light the camera is nearer to relative to its range, then
+to the earlier-submitted one, so a still scene picks the same lights every frame — but it is a hard cut: as the camera moves, a light that crosses the budget edge appears or
 vanishes at full strength instead of fading. The first overflow logs one warning per renderer lifetime;
 `Statistics::DroppedLights` and the F4 Renderer tab show how many were dropped in the latest scene.
 

@@ -14,7 +14,7 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games; supports both 2D and 3D entities (ECS backend kept internal)
 - **2D Physics** — Box2D-backed rigid-body simulation wired into the ECS (`RigidBody2D` / `BoxCollider2D` / `CircleCollider2D` components, gravity, forces/impulses; physics backend kept internal)
 - **3D Physics & Scene** — Jolt-backed `Physics3D`, usable standalone or wired into the ECS (`Transform3D` / `MeshRenderer` / `RigidBody3D` / `Box`+`SphereCollider3D` components), with 3D meshes drawn through `Renderer3D` and a perspective camera (physics backend kept internal)
-- **3D Lighting** — forward-lit `Renderer3D` with coloured directional, point and spot lights (up to 32 point/spot lights per scene, the most relevant picked each frame), ambient light, Blinn-Phong specular, and lit materials with emissive and an albedo texture. Lights are ECS components (`PointLight` / `SpotLight` / `AmbientLight` / `DirectionalLight`), and the lit shader hot-reloads in Debug builds when asset hot-reload is enabled
+- **3D Lighting** — forward-lit `Renderer3D` with coloured directional, point and spot lights (up to 32 point/spot lights per scene, the most relevant picked each frame), ambient light, Blinn-Phong specular, and lit materials with emissive and an albedo texture. Lights are ECS components (`PointLightComponent` / `SpotLightComponent` / `AmbientLightComponent` / `DirectionalLightComponent`), and the lit shader hot-reloads in Debug builds when asset hot-reload is enabled
 
 ## Documentation
 

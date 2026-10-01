@@ -143,7 +143,7 @@ shape casts); braziers with emissive cores are both the checkpoints and the only
 Snuffing your lantern hides you and blinds you at once. It stresses the light budget honestly —
 many small static flames, a handful of moving ones — and it is *played* rather than looked at.
 
-**Test**: the test app's new **Lighting Test** (`--test=light`), the first test to drive `Renderer3D` itself. Its modes (`--lighting=default|lights|overbudget|materials`) cover the default light, orbiting point and spot lights, more lights than the budget, and lit materials — a roughness row, an emissive lamp holding a point light, a textured crate. `--entities` drives the same lights through ECS components and `--specular=off` gives a before/after on one frame. [DungeonCrawler3D](examples/DungeonCrawler3D/) gains an opt-in `--night` (a dim moon, a lantern above the hero, a point light per treasure) and `--seed=<n>`; its default look is unchanged.
+**Test**: the test app's new **Lighting Test** (`--test=light`), the first test of `Renderer3D`'s lighting. Its modes (`--lighting=default|lights|overbudget|materials`) cover the default light, orbiting point and spot lights, more lights than the budget, and lit materials — a roughness row, an emissive lamp holding a point light, a textured crate. `--entities` drives the same lights through ECS components and `--specular=off` gives a before/after on one frame. [DungeonCrawler3D](examples/DungeonCrawler3D/) gains an opt-in `--night` (a dim moon, a lantern above the hero, a point light per treasure) and `--seed=<n>`; its default look is unchanged.
 
 ## v0.8 — Animation & Character Fidelity
 This one is a debt the roadmap has carried since v0.4.2. That milestone gave DungeonCrawler3D's hero

@@ -30,8 +30,9 @@ namespace Dingo
 
 		// Point and spot lights drawn per scene, at most Renderer3D::k_MaxLocalLights. Lights
 		// whose range can't reach anything in view are skipped first. Past the budget the
-		// brightest as seen from the camera are kept and the rest dropped with a warning; ties
-		// keep the earlier-submitted light, so a still scene picks the same lights every frame.
+		// brightest as seen from the camera are kept and the rest dropped with a warning; ties go
+		// to the light the camera is nearer to relative to its range, then to the earlier-submitted
+		// one, so a still scene picks the same lights every frame.
 		uint32_t MaxLocalLights = 32;
 
 		// When true, a mesh too large for an empty batch, or a light past the light budget,
@@ -104,10 +105,12 @@ namespace Dingo
 		// Up to k_MaxDirectionalLights directional lights count; further ones are dropped with a
 		// warning. Point and spot lights share the MaxLocalLights budget (see
 		// Renderer3DCapabilities). SetAmbientLight replaces the scene's ambient, which is black
-		// otherwise.
-		void SubmitLight(const DirectionalLight& light);
-		void SubmitLight(const PointLight& light);
-		void SubmitLight(const SpotLight& light);
+		// otherwise. SubmitLight returns false for a light it ignores (non-finite, or a point or spot
+		// light without positive intensity and range) or drops (a fifth directional light, or one
+		// past the pending-light cap).
+		bool SubmitLight(const DirectionalLight& light);
+		bool SubmitLight(const PointLight& light);
+		bool SubmitLight(const SpotLight& light);
 		void SetAmbientLight(const glm::vec3& color, float intensity);
 
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
@@ -115,6 +118,10 @@ namespace Dingo
 
 		static constexpr uint32_t k_MaxDirectionalLights = 4;
 		static constexpr uint32_t k_MaxLocalLights = 32;
+
+		// Scenes a renderer can run in one frame. On Vulkan each EndScene writes the volatile scene
+		// buffer, which has room for this many writes a frame; later scenes draw with stale lighting.
+		static constexpr uint32_t k_MaxScenesPerFrame = 32;
 
 		// Appends a mesh to the batch for the given material (null => the built-in
 		// lit default), transformed into world space on the CPU. The vertex stream is
@@ -135,11 +142,11 @@ namespace Dingo
 		// (see MaterialParams) and an optional albedo texture in texture slot 0, whose colour
 		// multiplies the mesh colour; transparency comes from the mesh colour's alpha alone. An
 		// empty slot 0 draws white, and an empty sampler slot 0 uses the clamp sampler. Slot 0 is
-		// the only one the lit shader has: a texture or sampler in any other slot is an error the
-		// renderer warns about once. Shader and CullMode are set for you: lit materials draw both
-		// faces, because front-face winding differs between the Vulkan and D3D back-ends. Any
-		// Renderer3D can draw it; the caller owns it and must delete it before the renderer that
-		// created it shuts down.
+		// the only one the lit shader has: with a texture or sampler in any other slot the material
+		// is not drawn, and the renderer warns once. Shader and CullMode are set for you: lit
+		// materials draw both faces, because front-face winding differs between the Vulkan and D3D
+		// back-ends. Any Renderer3D can draw it; the caller owns it and must delete it before the
+		// renderer that created it shuts down.
 		Material* CreateLitMaterial(MaterialParams params) const;
 
 		// The material meshes with no material of their own are drawn with, for changing their
@@ -203,6 +210,7 @@ namespace Dingo
 			LocalLightData Data;
 			float Brightness = 0.0f; // strongest colour channel × intensity
 			float Score = 0.0f;
+			float Nearness = 0.0f; // camera distance / range
 		};
 
 		// std140, mirrored by CameraData in Renderer3D_Lit.glsl. The first three members are a

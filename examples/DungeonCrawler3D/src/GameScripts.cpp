@@ -205,8 +205,8 @@ namespace Dingo
 
 	void DungeonControllerScript::BuildDungeon()
 	{
-		// Fresh procedural layout every build (Seed 0 => random). Rooms + corridors,
-		// guaranteed connected — see DungeonGenerator.h.
+		// A fresh procedural layout every build unless --seed fixes the first one (Seed 0 => random).
+		// Rooms + corridors, guaranteed connected — see DungeonGenerator.h.
 		DungeonParams params;
 		params.Seed = TakeSeedArgument();
 		const GeneratedDungeon dungeon = GenerateDungeon(params);

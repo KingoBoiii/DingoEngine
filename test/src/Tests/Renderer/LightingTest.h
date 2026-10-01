@@ -1,6 +1,9 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
 
+#include <cstddef>
+#include <functional>
+#include <string>
 #include <vector>
 
 namespace Dingo
@@ -11,10 +14,13 @@ namespace Dingo
 	// fixed and nothing moves unless Animate is on, so frames are repeatable; start a mode with
 	// --lighting=default|lights|overbudget|materials. The same lights go either straight to
 	// Renderer3D or, with "Lights as entities" (--entities), through light components and
-	// Scene::SubmitLights, and both paths should draw the same frame. The materials mode shows lit
-	// materials instead: a row of spheres from smooth to rough, a glowing lamp with a light inside
-	// it and a crate whose texture loads asynchronously, so it reaches a material that has already
-	// drawn, with Specular (--specular=off) switching the highlights off.
+	// Scene::SubmitLights, and both paths draw the same frame to within float rounding. The
+	// materials mode shows lit materials instead: a row of spheres from smooth to rough, a glowing
+	// lamp with a light inside it and a crate whose texture loads asynchronously, so it reaches a
+	// material that has already drawn, with Specular (--specular=off) switching the highlights off.
+	// On every start it also runs PASS/FAIL checks of the light bookkeeping (counts, culling, the
+	// budget, the default light) on private Renderer3Ds, one scene per frame and apart from the
+	// modes above.
 	class LightingTest : public GraphicsTest
 	{
 	public:
@@ -56,6 +62,10 @@ namespace Dingo
 		void BuildLightEntities(const Lighting& lighting);
 		void UpdateLightEntities(const Lighting& lighting);
 
+		void Check(bool condition, const std::string& name);
+		void BuildCheckSteps();
+		void RunNextCheckStep();
+
 	private:
 		PerspectiveCamera m_Camera;
 		Mode m_Mode = Mode::PointAndSpot;
@@ -74,6 +84,20 @@ namespace Dingo
 		Mode m_LightEntitiesMode = Mode::DefaultLight;
 		bool m_LightEntitiesBuilt = false;
 		std::vector<Entity> m_LightEntities;
+
+		struct CheckResult
+		{
+			std::string Name;
+			bool Passed;
+		};
+		std::vector<CheckResult> m_Checks;
+
+		// Each EndScene writes the renderer's volatile scene buffer and Vulkan only allows a few
+		// writes per frame, so a frame runs one step and a step renders one scene.
+		std::vector<std::function<void()>> m_CheckSteps;
+		size_t m_NextCheckStep = 0;
+		Renderer3D* m_CheckRenderer = nullptr;
+		Renderer3D* m_BudgetCheckRenderer = nullptr;
 	};
 
 }

@@ -8,46 +8,89 @@
 namespace Dingo::Internal::LightSystem
 {
 
+	namespace
+	{
+		// A light that can't be placed is skipped without switching the default light off: counting
+		// it would leave a scene whose only light lacks a transform lit by nothing at all.
+		const Transform3DComponent* PlaceLight(const entt::registry& registry, entt::entity entity)
+		{
+			const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
+			static bool s_Warned = false;
+			if (!transform && !s_Warned)
+			{
+				DE_CORE_WARN("A point or spot light component sits on an entity without a Transform3DComponent, so it can't be placed and is ignored. Add a Transform3DComponent to light the scene from it.");
+				s_Warned = true;
+			}
+			return transform;
+		}
+
+		// EnTT views run newest first and reshuffle on removal. Entity order is roughly creation order
+		// and survives another light's removal, so a scene's sun outranks the lights added after it.
+		template<typename Component>
+		const std::vector<entt::entity>& InEntityOrder(const entt::registry& registry)
+		{
+			static std::vector<entt::entity> s_Entities;
+			s_Entities.clear();
+			for (entt::entity entity : registry.view<const Component>())
+				s_Entities.push_back(entity);
+			std::sort(s_Entities.begin(), s_Entities.end(), [](entt::entity a, entt::entity b) { return entt::to_entity(a) < entt::to_entity(b); });
+			return s_Entities;
+		}
+	}
+
 	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
 	{
 		memo.Begin(registry);
 		bool hasLight = false;
 		glm::vec3 ambient(0.0f);
-		uint32_t directionalCount = 0;
 
 		// A legacy Ambient keeps the engine's original formula, ambient + (1 - ambient) * N.L, so a
-		// scene tuned before Intensity existed looks the same. Only lights Renderer3D can use add
-		// their ambient.
+		// scene tuned before Intensity existed looks the same. Only lights Renderer3D accepted add
+		// their ambient, and a non-finite one is skipped: one NaN term would make the summed ambient
+		// NaN, which SetAmbientLight rejects, losing every other source with it.
 		auto submitDirectional = [&](const DirectionalLightComponent& light)
 		{
-			renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f) });
-			if (directionalCount++ < Renderer3D::k_MaxDirectionalLights)
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f) });
+			if (accepted && std::isfinite(light.Ambient))
 				ambient += glm::vec3(light.Ambient);
 		};
 
-		for (auto [entity, light] : registry.view<const DirectionalLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<DirectionalLightComponent>(registry))
 		{
 			hasLight = true;
-			submitDirectional(light);
+			submitDirectional(registry.get<const DirectionalLightComponent>(entity));
 		}
 
-		for (auto [entity, light] : registry.view<const AmbientLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<AmbientLightComponent>(registry))
 		{
 			hasLight = true;
-			ambient += light.Color * light.Intensity;
+			const AmbientLightComponent& light = registry.get<const AmbientLightComponent>(entity);
+			const glm::vec3 contribution = light.Color * light.Intensity;
+			if (std::isfinite(contribution.x) && std::isfinite(contribution.y) && std::isfinite(contribution.z))
+				ambient += contribution;
 		}
 
-		for (auto [entity, light] : registry.view<const PointLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<PointLightComponent>(registry))
 		{
+			const PointLightComponent& light = registry.get<const PointLightComponent>(entity);
+			const Transform3DComponent* transform = PlaceLight(registry, entity);
+			if (!transform)
+				continue;
+
 			hasLight = true;
-			if (light.Enabled && registry.all_of<Transform3DComponent>(entity))
+			if (light.Enabled)
 				renderer.SubmitLight(PointLight{ memo.Position(entity), light.Color, light.Intensity, light.Range });
 		}
 
-		for (auto [entity, light] : registry.view<const SpotLightComponent>().each())
+		for (entt::entity entity : InEntityOrder<SpotLightComponent>(registry))
 		{
+			const SpotLightComponent& light = registry.get<const SpotLightComponent>(entity);
+			const Transform3DComponent* transform = PlaceLight(registry, entity);
+			if (!transform)
+				continue;
+
 			hasLight = true;
-			if (!light.Enabled || !registry.all_of<Transform3DComponent>(entity))
+			if (!light.Enabled)
 				continue;
 
 			SpotLight spot;

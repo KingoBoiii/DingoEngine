@@ -6,6 +6,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <array>
+#include <cstring>
 
 namespace
 {
@@ -29,8 +30,7 @@ namespace
 
 	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
 	// inverse image of that direction. An orthographic camera sits at infinity: w is 0 there,
-	// and the result is the direction towards it. A singular matrix yields an arbitrary direction
-	// rather than NaNs.
+	// and the result is the direction towards it. A singular matrix gives an arbitrary result.
 	glm::vec4 CameraPositionFromViewProjection(const glm::mat4& viewProjection)
 	{
 		const glm::vec4 eye = glm::inverse(viewProjection) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
@@ -148,11 +148,15 @@ namespace Dingo
 
 		m_Material = CreateLitMaterial(MaterialParams().SetDebugName("Renderer3D_Material"));
 
-		// Camera + lights live in a shared scene UBO (binding 0) bound on every material,
-		// rather than baked into the default material — so custom materials receive them too.
-		// Volatile constant buffer — written into the frame's command list each EndScene (via
-		// Renderer::Upload), not pre-uploaded here.
-		m_SceneUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData), "Renderer3D_SceneUBO");
+		// Every EndScene writes it, and on Vulkan a volatile buffer only has room for the writes of
+		// MaxWritesPerFrame scenes a frame before later ones are dropped.
+		m_SceneUniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_SceneUBO")
+			.SetByteSize(sizeof(CameraData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
@@ -253,12 +257,18 @@ namespace Dingo
 		{
 			if (IsLitShader(material->GetShader()))
 			{
-				if (!m_LitSlotsWarned && BindsPastSlotZero(*material))
+				// The binding set would name bindings the shader's layout lacks, which Vulkan does
+				// not reject: drawing it is undefined behaviour, so the material is skipped.
+				if (BindsPastSlotZero(*material))
 				{
-					const std::string& name = material->GetParams().DebugName;
-					DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; its draws are invalid until that slot is cleared.",
-						name.empty() ? "<unnamed>" : name.c_str());
-					m_LitSlotsWarned = true;
+					if (!m_LitSlotsWarned)
+					{
+						const std::string& name = material->GetParams().DebugName;
+						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+							name.empty() ? "<unnamed>" : name.c_str());
+						m_LitSlotsWarned = true;
+					}
+					continue;
 				}
 				PrepareLitMaterial(material);
 			}
@@ -323,6 +333,12 @@ namespace Dingo
 			glm::clamp(FiniteOr(material->GetRoughness(), 0.5f), 0.0f, 1.0f),
 			std::max(FiniteOr(material->GetSpecular(), 0.0f), 0.0f),
 			0.0f);
+
+		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
+		// frame, so a material drawn in several scenes of a frame only rewrites what changed.
+		const std::vector<uint8_t>& current = material->GetUniformCPUData();
+		if (current.size() == sizeof(data) && std::memcmp(current.data(), &data, sizeof(data)) == 0)
+			return;
 		material->SetUniform(data);
 	}
 
@@ -331,11 +347,11 @@ namespace Dingo
 		Renderer::Clear(clearColor);
 	}
 
-	void Renderer3D::SubmitLight(const DirectionalLight& light)
+	bool Renderer3D::SubmitLight(const DirectionalLight& light)
 	{
 		m_SceneLightSubmitted = true;
 		if (!IsFinite(light.Direction) || !IsFinite(light.Color * light.Intensity))
-			return;
+			return false;
 
 		int& count = m_CameraData.LightCounts.x;
 		if (count >= static_cast<int>(k_MaxDirectionalLights))
@@ -349,39 +365,41 @@ namespace Dingo
 				m_DirectionalOverflowWarned = true;
 			}
 			++m_DroppedLights;
-			return;
+			return false;
 		}
 
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
 		++count;
+		return true;
 	}
 
-	void Renderer3D::SubmitLight(const PointLight& light)
+	bool Renderer3D::SubmitLight(const PointLight& light)
 	{
 		m_SceneLightSubmitted = true;
 		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range))
-			return;
+			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
-			return;
+			return false;
 
 		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
 		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, 0.0f);
 		candidate->Data.SpotDirection = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		return true;
 	}
 
-	void Renderer3D::SubmitLight(const SpotLight& light)
+	bool Renderer3D::SubmitLight(const SpotLight& light)
 	{
 		m_SceneLightSubmitted = true;
 		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range) || !IsFinite(light.Direction) ||
 			!std::isfinite(light.InnerConeAngle) || !std::isfinite(light.OuterConeAngle))
-			return;
+			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
-			return;
+			return false;
 
 		// The cone factor is saturate(cos(angle) * scale + offset): 1 at the inner angle, 0 at the
 		// outer one. Below about 1 degree the cosines are too close in float to reach 1.
@@ -397,6 +415,7 @@ namespace Dingo
 		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, coneScale);
 		candidate->Data.SpotDirection = glm::vec4(direction, -cosOuter * coneScale);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		return true;
 	}
 
 	Renderer3D::LocalLightCandidate* Renderer3D::AddLocalLight()
@@ -463,9 +482,12 @@ namespace Dingo
 				continue;
 
 			// How bright the light looks from the camera: full strength while the camera is inside
-			// its range, then falling with the distance from the range's edge.
-			const float gap = camera.w > 0.0f ? std::max(glm::distance(glm::vec3(camera), position) - range, 0.0f) : 0.0f;
+			// its range, then falling with the distance from the range's edge. Every light whose
+			// range holds the camera scores the same, so Nearness breaks those ties.
+			const float distance = camera.w > 0.0f ? glm::distance(glm::vec3(camera), position) : 0.0f;
+			const float gap = std::max(distance - range, 0.0f);
 			candidate.Score = candidate.Brightness / (1.0f + gap * gap);
+			candidate.Nearness = distance / range;
 			m_VisibleLocalLights.push_back(index);
 		}
 
@@ -480,9 +502,13 @@ namespace Dingo
 			std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
 				[this](uint32_t a, uint32_t b)
 				{
-					const float scoreA = m_LocalLights[a].Score;
-					const float scoreB = m_LocalLights[b].Score;
-					return scoreA != scoreB ? scoreA > scoreB : a < b;
+					const LocalLightCandidate& lightA = m_LocalLights[a];
+					const LocalLightCandidate& lightB = m_LocalLights[b];
+					if (lightA.Score != lightB.Score)
+						return lightA.Score > lightB.Score;
+					if (lightA.Nearness != lightB.Nearness)
+						return lightA.Nearness < lightB.Nearness;
+					return a < b;
 				});
 
 			if (!m_LocalOverflowWarned)

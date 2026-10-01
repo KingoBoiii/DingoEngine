@@ -263,7 +263,7 @@ nothing to wire up beyond adding the entities. What each light takes from the en
 - **Point and spot lights** take their position from the entity's world position (its
   `Transform3DComponent`, through any [parents](#parenting-v08)), and a spot light aims by rotating
   its local `Direction` with the world rotation. Scale is ignored. An entity without a
-  `Transform3DComponent` is skipped.
+  `Transform3DComponent` is skipped, with a one-time warning.
 - **`Enabled = false`** on a point or spot light switches it off without losing its settings, so
   game code never has to stash an old `Intensity`.
 
@@ -285,11 +285,12 @@ Things to know:
 
 - **The default light.** A scene with no light component at all is lit by a default
   `DirectionalLightComponent`, so a 3D scene is never black by accident. Any light component turns
-  that default off, even a disabled one or one on an entity with no `Transform3DComponent`.
+  that default off, even a disabled one, except a point or spot light with no
+  `Transform3DComponent`.
 - **Ambient is always set.** `Scene::SubmitLights` sets the scene's ambient every frame, even to
   black. A scene whose lights are all switched off therefore goes dark, and a scene lit only by
   point lights has no sun and no ambient until you add an `AmbientLightComponent`.
-- **Directional lights add up**, up to four, and so does each one's legacy `Ambient`. Set
+- **Directional lights add up**, up to four (the first created), and so does each one's legacy `Ambient`. Set
   `Ambient` to 0 to light the scene with `AmbientLightComponent` instead.
 - **Custom passes.** Lights are scene-scoped, so a custom 3D pass on the shared renderer calls
   `scene.SubmitLights(renderer)` between its `BeginScene` and `EndScene`, the same way it calls
