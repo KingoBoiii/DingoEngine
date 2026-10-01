@@ -107,10 +107,12 @@ namespace Dingo
 				}
 				else
 				{
-					const TransformComponent& transform = registry.get<TransformComponent>(camera);
+					glm::vec3 position;
+					float rotation;
+					HierarchySystem::WorldPose2D(registry, camera, position, rotation);
 					view = glm::inverse(
-						glm::translate(glm::mat4(1.0f), glm::vec3(transform.Position.x, transform.Position.y, 0.0f))
-						* glm::rotate(glm::mat4(1.0f), glm::radians(transform.Rotation), glm::vec3(0.0f, 0.0f, 1.0f)));
+						glm::translate(glm::mat4(1.0f), glm::vec3(position.x, position.y, 0.0f))
+						* glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(0.0f, 0.0f, 1.0f)));
 				}
 
 				return projection * view;

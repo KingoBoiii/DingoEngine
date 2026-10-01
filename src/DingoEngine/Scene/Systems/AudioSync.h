@@ -17,9 +17,8 @@ namespace Dingo
 		namespace AudioSync
 		{
 
-			// World-space position for a source: its Transform3DComponent's world position, else the
-			// 2D TransformComponent's Position at z = 0. Every entity has a TransformComponent,
-			// so this always returns something.
+			// World-space position for a source: its Transform3DComponent's world position, else its
+			// 2D world position at z = 0.
 			glm::vec3 PositionOf(const entt::registry& registry, entt::entity handle);
 
 			// Pushes every spatialized source's position and the primary listener's

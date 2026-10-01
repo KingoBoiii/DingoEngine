@@ -69,25 +69,38 @@ namespace Dingo
 		{
 			if (m_Physics2D && m_Physics2D->IsValid())
 			{
+				DriveKinematicChildren2D(registry, deltaTime);
 				m_Physics2D->Step(deltaTime, m_SubStepCount);
+
+				m_ChildWriteBacks2D.clear();
 
 				auto view = registry.view<RigidBody2DRuntime, RigidBody2DComponent, TransformComponent>();
 				for (entt::entity handle : view)
 				{
 					// Static bodies never move — skip the read-back so we don't churn over
 					// them or revert a runtime edit to a static entity's Transform.
-					if (view.get<RigidBody2DComponent>(handle).Type == BodyType2D::Static)
+					const BodyType2D type = view.get<RigidBody2DComponent>(handle).Type;
+					if (type == BodyType2D::Static)
 						continue;
 
 					const PhysicsBodyId2D body = view.get<RigidBody2DRuntime>(handle).Body;
 					glm::vec2 position = m_Physics2D->GetPosition(body);
 					float angle = m_Physics2D->GetAngle(body);
 
+					if (HierarchySystem::GetParent(registry, handle) != entt::null)
+					{
+						if (type != BodyType2D::Kinematic)
+							m_ChildWriteBacks2D.push_back({ handle, 0, position, angle });
+						continue;
+					}
+
 					TransformComponent& transform = view.get<TransformComponent>(handle);
 					transform.Position.x = position.x;
 					transform.Position.y = position.y;
 					transform.Rotation = glm::degrees(angle);
 				}
+
+				WriteBackChildren2D(registry);
 			}
 
 			if (!m_Physics3D || !m_Physics3D->IsValid())
@@ -147,6 +160,90 @@ namespace Dingo
 			}
 
 			WriteBackChildren(registry);
+		}
+
+		void PhysicsSync::DriveKinematicChildren2D(entt::registry& registry, float deltaTime)
+		{
+			m_KinematicChildren.clear();
+			auto view = registry.view<RigidBody2DRuntime, RigidBody2DComponent, HierarchyComponent>();
+			for (entt::entity handle : view)
+			{
+				if (view.get<RigidBody2DComponent>(handle).Type == BodyType2D::Kinematic && view.get<HierarchyComponent>(handle).Parent != entt::null)
+					m_KinematicChildren.push_back({ handle, HierarchySystem::Depth(registry, handle) });
+			}
+
+			std::stable_sort(m_KinematicChildren.begin(), m_KinematicChildren.end(), [](const KinematicChild& a, const KinematicChild& b)
+			{
+				return a.Depth < b.Depth;
+			});
+
+			for (const KinematicChild& child : m_KinematicChildren)
+			{
+				glm::vec3 position;
+				float rotation;
+				PredictedWorldPose2D(registry, HierarchySystem::GetParent(registry, child.Handle), deltaTime, position, rotation);
+				if (const TransformComponent* local = registry.try_get<TransformComponent>(child.Handle))
+					HierarchySystem::Compose2D(position, rotation, *local);
+
+				m_Physics2D->MoveKinematic(registry.get<RigidBody2DRuntime>(child.Handle).Body, glm::vec2(position), glm::radians(rotation), deltaTime);
+			}
+		}
+
+		bool PhysicsSync::PredictedPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation) const
+		{
+			const RigidBody2DRuntime* body = registry.try_get<RigidBody2DRuntime>(handle);
+			const RigidBody2DComponent* rigidBody = registry.try_get<RigidBody2DComponent>(handle);
+			if (!body || !rigidBody || rigidBody->Type == BodyType2D::Static)
+				return false;
+
+			float unusedRotation;
+			HierarchySystem::WorldPose2D(registry, handle, position, unusedRotation);
+			const glm::vec2 xy = m_Physics2D->GetPosition(body->Body) + m_Physics2D->GetLinearVelocity(body->Body) * deltaTime;
+			position = { xy.x, xy.y, position.z };
+			rotation = glm::degrees(m_Physics2D->GetAngle(body->Body) + m_Physics2D->GetAngularVelocity(body->Body) * deltaTime);
+			return true;
+		}
+
+		void PhysicsSync::PredictedWorldPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation)
+		{
+			position = glm::vec3(0.0f);
+			rotation = 0.0f;
+			m_PredictionChain.clear();
+			for (entt::entity e = handle; e != entt::null; e = HierarchySystem::GetParent(registry, e))
+			{
+				if (PredictedPose2D(registry, e, deltaTime, position, rotation))
+					break;
+				m_PredictionChain.push_back(e);
+			}
+
+			for (auto it = m_PredictionChain.rbegin(); it != m_PredictionChain.rend(); ++it)
+			{
+				if (const TransformComponent* local = registry.try_get<TransformComponent>(*it))
+					HierarchySystem::Compose2D(position, rotation, *local);
+			}
+		}
+
+		void PhysicsSync::WriteBackChildren2D(entt::registry& registry)
+		{
+			if (m_ChildWriteBacks2D.empty())
+				return;
+
+			for (ChildWriteBack2D& writeBack : m_ChildWriteBacks2D)
+				writeBack.Depth = HierarchySystem::Depth(registry, writeBack.Handle);
+
+			std::stable_sort(m_ChildWriteBacks2D.begin(), m_ChildWriteBacks2D.end(), [](const ChildWriteBack2D& a, const ChildWriteBack2D& b)
+			{
+				return a.Depth < b.Depth;
+			});
+
+			for (const ChildWriteBack2D& writeBack : m_ChildWriteBacks2D)
+			{
+				if (TransformComponent* transform = registry.try_get<TransformComponent>(writeBack.Handle))
+				{
+					HierarchySystem::SetWorldXY2D(registry, writeBack.Handle, *transform, writeBack.Position);
+					HierarchySystem::SetWorldRotation2D(registry, writeBack.Handle, *transform, glm::degrees(writeBack.Angle));
+				}
+			}
 		}
 
 		void PhysicsSync::DriveKinematicChildren(entt::registry& registry, float deltaTime)
@@ -343,10 +440,14 @@ namespace Dingo
 			const auto& rigidBody = registry.get<RigidBody2DComponent>(handle);
 			const auto& transform = registry.get<TransformComponent>(handle);
 
+			glm::vec3 position;
+			float rotation;
+			HierarchySystem::WorldPose2D(registry, handle, transform, position, rotation);
+
 			RigidBodyParams2D bodyParams;
 			bodyParams.Type = rigidBody.Type;
-			bodyParams.Position = { transform.Position.x, transform.Position.y };
-			bodyParams.Rotation = glm::radians(transform.Rotation); // Transform stores degrees
+			bodyParams.Position = { position.x, position.y };
+			bodyParams.Rotation = glm::radians(rotation); // Transform stores degrees
 			bodyParams.FixedRotation = rigidBody.FixedRotation;
 
 			const PhysicsBodyId2D body = m_Physics2D->CreateBody(bodyParams);

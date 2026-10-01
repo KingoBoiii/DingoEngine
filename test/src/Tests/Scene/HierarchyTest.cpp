@@ -134,13 +134,29 @@ namespace Dingo
 		m_PaddleTravel = 0.0f;
 		m_MaxRiderGap = 0.0f;
 		m_MaxRiderAngleGap = 0.0f;
-		m_MaxPlatformStep = 0.0f;
+		m_PlatformTravel = 0.0f;
 		m_MaxFallerGap = 0.0f;
 		m_MaxWalkerGap = 0.0f;
 		m_WalkerCarrierTravel = 0.0f;
 
+		m_MaxCrate2DGap = 0.0f;
+		m_Carrier2DTravel = 0.0f;
+		m_MaxPaddle2DGap = 0.0f;
+		m_MaxPaddle2DAngleGap = 0.0f;
+		m_MaxRider2DGap = 0.0f;
+		m_MaxRider2DAngleGap = 0.0f;
+		m_Platform2DTravel = 0.0f;
+		m_Paddle2DTravel = 0.0f;
+		m_MaxFaller2DGap = 0.0f;
+
+		// --hierarchy=2d shows the 2D section, --hierarchy=probe2d frames the muzzle sprite at the centre.
+		if (auto view = Application::Get().GetCommandLineArgs().Get("hierarchy"))
+			m_View = *view == "2d" ? View::Scene2D : *view == "probe2d" ? View::Probe2D : View::Scene3D;
+
 		RunStructuralChecks();
+		RunStructuralChecks2D();
 		BuildScene();
+		BuildScene2D();
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 200.0f);
 	}
@@ -214,6 +230,12 @@ namespace Dingo
 			folder.SetParent(shelf);
 			Check(Near(item.GetWorldPosition(), { 1.0f, 5.0f, 0.0f }),
 				"keepWorldTransform on a parent without a Transform3DComponent moves its 3D children (one warning logged)");
+
+			shelf.GetComponent<Transform3DComponent>().Position = { 2.0f, 6.0f, -1.0f };
+			folder.SetWorldPosition({ 9.0f, 9.0f, 9.0f });
+			Check(folder.GetWorldPosition() == glm::vec3(2.0f, 6.0f, -1.0f) && Near(item.GetWorldPosition(), { 3.0f, 6.0f, -1.0f })
+				&& folder.GetComponent<TransformComponent>().Position == glm::vec3(0.0f),
+				"a grouping node without a Transform3DComponent reports its moving parent's 3D world and ignores world writes");
 		}
 
 		{
@@ -620,7 +642,7 @@ namespace Dingo
 		m_MaxRiderGap = (std::max)(m_MaxRiderGap, glm::length(m_Rider.GetWorldPosition() - physics->GetPosition(riderBody)));
 		m_MaxRiderAngleGap = (std::max)(m_MaxRiderAngleGap, glm::degrees(2.0f * std::acos(riderCosHalfAngle)));
 		const glm::vec3 platformPosition = m_Platform.GetWorldPosition();
-		m_MaxPlatformStep = (std::max)(m_MaxPlatformStep, glm::length(platformPosition - m_LastPlatformPosition));
+		m_PlatformTravel += glm::length(platformPosition - m_LastPlatformPosition);
 		m_LastPlatformPosition = platformPosition;
 
 		for (Entity faller : m_Fallers)
@@ -643,9 +665,9 @@ namespace Dingo
 				m_MaxCrateBodyGap, crateDrift, carrierTravel));
 		Check(m_MaxPaddleBodyGap < 1e-3f && m_MaxPaddleAngleGap < 0.1f && m_PaddleTravel > 1.0f,
 			std::format("a kinematic child follows its parent (gap {:.1e}, {:.3f} deg over {:.1f} units)", m_MaxPaddleBodyGap, m_MaxPaddleAngleGap, m_PaddleTravel));
-		Check(m_MaxRiderGap < 1e-3f && m_MaxRiderAngleGap < 0.1f && m_MaxPlatformStep > 0.02f,
-			std::format("a kinematic child of a MoveKinematic'd parent keeps up within the step (gap {:.1e}, {:.3f} deg; the parent moved up to {:.3f} per step)",
-				m_MaxRiderGap, m_MaxRiderAngleGap, m_MaxPlatformStep));
+		Check(m_MaxRiderGap < 1e-3f && m_MaxRiderAngleGap < 0.1f && m_PlatformTravel > 1.0f,
+			std::format("a kinematic child of a MoveKinematic'd parent keeps up within the step (gap {:.1e}, {:.3f} deg; the parent travelled {:.1f})",
+				m_MaxRiderGap, m_MaxRiderAngleGap, m_PlatformTravel));
 
 		float lowest = 1e9f;
 		for (Entity faller : m_Fallers)
@@ -671,16 +693,26 @@ namespace Dingo
 		}
 
 		Animate(step);
+		Animate2D(step);
 		m_Scene->OnUpdate(step);
+		m_Scene2D->OnUpdate(step);
 
 		if (!m_PhysicsChecksDone)
 		{
 			TrackPhysics();
+			TrackPhysics2D();
 			if (m_Time >= k_PhysicsCheckSeconds)
 			{
 				m_PhysicsChecksDone = true;
 				RunPhysicsChecks();
+				RunPhysicsChecks2D();
 			}
+		}
+
+		if (m_View != View::Scene3D)
+		{
+			Render2D();
+			return;
 		}
 
 		if (m_AutoOrbit)
@@ -701,6 +733,10 @@ namespace Dingo
 	{
 		delete m_Scene;
 		m_Scene = nullptr;
+		delete m_Scene2D;
+		m_Scene2D = nullptr;
+		DestroyAndDelete(m_Font);
+		m_Fallers2D.clear();
 
 		delete m_HullMesh;
 		delete m_TurretMesh;
@@ -736,6 +772,16 @@ namespace Dingo
 		ImGui::Checkbox("Auto Orbit", &m_AutoOrbit);
 		if (!m_AutoOrbit)
 			ImGui::SliderFloat("Orbit", &m_OrbitAngle, 0.0f, 360.0f);
+
+		int view = static_cast<int>(m_View);
+		ImGui::RadioButton("3D", &view, static_cast<int>(View::Scene3D));
+		ImGui::SameLine();
+		ImGui::RadioButton("2D", &view, static_cast<int>(View::Scene2D));
+		ImGui::SameLine();
+		ImGui::RadioButton("2D probe", &view, static_cast<int>(View::Probe2D));
+		m_View = static_cast<View>(view);
+		if (m_View == View::Probe2D)
+			ImGui::TextWrapped("The magenta muzzle must sit in the centre: the view is placed by the test's own arithmetic.");
 
 		ImGui::Separator();
 		for (const CheckResult& check : m_Checks)

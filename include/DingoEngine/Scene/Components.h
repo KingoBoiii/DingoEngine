@@ -47,7 +47,8 @@ namespace Dingo
 
 	// 2D-oriented transform. Position is the center of the entity (matching the
 	// Renderer2D quad convention); Size is the full extent in world units; Rotation
-	// is in degrees about the +Z axis.
+	// is in degrees about the +Z axis. Position and Rotation are relative to the
+	// entity's parent when it has one (Entity::SetParent); Size never is.
 	struct TransformComponent
 	{
 		glm::vec3 Position{ 0.0f };

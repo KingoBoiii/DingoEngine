@@ -9,7 +9,9 @@
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
 
 #include <entt/entt.hpp>
+#include <glm/glm.hpp>
 
+#include <cstdint>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -36,7 +38,14 @@ namespace Dingo
 
 			// Reused every frame by the sprite z-sort in RenderEntities: clear() keeps the
 			// capacity, so a steady-state frame allocates nothing to sort.
-			std::vector<std::pair<float, entt::entity>> SpriteSortBuffer;
+			struct SpriteDraw
+			{
+				glm::vec3 Position; // world; z is the sort key, then Depth
+				float Rotation;
+				std::uint32_t Depth;
+				entt::entity Entity;
+			};
+			std::vector<SpriteDraw> SpriteSortBuffer;
 		};
 
 	}

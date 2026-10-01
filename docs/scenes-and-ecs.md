@@ -47,7 +47,8 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.8) | Attach to / detach from a parent (see [Parenting](#parenting-v08)). |
 | `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.8) | Walk the hierarchy. |
 | `GetWorldTransform()` / `GetWorldPosition()` / `GetWorldRotation()` / `GetWorldScale()` (v0.8) | The 3D transform in world space, through every parent. |
-| `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.8) | Write the local value that gives this world value. |
+| `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.8) | Write the 3D local value that gives this world value. |
+| `GetWorldPosition2D()` / `SetWorldPosition2D(p)` / `GetWorldRotation2D()` / `SetWorldRotation2D(degrees)` (v0.8) | The same for the 2D `TransformComponent`: position with z, rotation in degrees. |
 
 > The component methods support the **built-in component types** (below). To carry
 > game-specific data, put it in a `ScriptableEntity` subclass rather than defining new
@@ -171,9 +172,12 @@ scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entiti
 
 ### Parenting (v0.8)
 
-`child.SetParent(parent)` makes the child's `Transform3DComponent` **local to its parent**: its world
-transform is the parent's world transform × its own. A root's local transform *is* its world
-transform, so a scene without parents behaves exactly as before.
+`child.SetParent(parent)` makes the child's transforms **local to its parent**. In 3D its world
+transform is the parent's world `Transform3DComponent` × its own. In 2D its `TransformComponent`
+position turns with the parent's world rotation and is added to the parent's world position; z
+and `Rotation` add; `Size` is **not** inherited, because it is a dimension rather than a scale. A
+root's local transform *is* its world transform, so a scene without parents behaves exactly as
+before.
 
 ```cpp
 Entity turret = scene->CreateEntity("Turret");
@@ -182,34 +186,55 @@ turret.AddComponent<MeshRendererComponent>(MeshRendererComponent(turretMesh));
 turret.SetParent(hull, false);    // keep the local values: 0.7 above the hull, wherever it drives
 
 glm::vec3 muzzle = barrel.GetWorldPosition();   // barrel -> turret -> hull
+
+// 2D: a turret sprite that turns with its hull sprite.
+Entity hull2D = scene->CreateEntity("Hull");
+hull2D.GetComponent<TransformComponent>().Size = { 4.0f, 1.6f };
+hull2D.AddComponent<SpriteRendererComponent>(SpriteRendererComponent({ 0.3f, 0.5f, 0.3f, 1.0f }));
+
+Entity turret2D = scene->CreateEntity("Turret");
+turret2D.GetComponent<TransformComponent>().Position = { 0.0f, 0.9f, 0.1f };   // z 0.1 above the hull
+turret2D.AddComponent<SpriteRendererComponent>(SpriteRendererComponent({ 0.4f, 0.6f, 0.4f, 1.0f }));
+turret2D.SetParent(hull2D, false);
+float aim = turret2D.GetWorldRotation2D();      // the hull's rotation + the turret's
 ```
 
 - **`keepWorldTransform`.** By default `SetParent` leaves the entity where it is in the world and
-  rewrites its local transform; `false` keeps the local values, so the entity jumps to its place
-  under the new parent. An entity without a `Transform3DComponent` has no local transform to
-  rewrite, so its 3D descendants do move, and the engine warns. A null `Entity` detaches it, like
+  rewrites its local transform: the `Transform3DComponent` of a 3D entity, the `TransformComponent`
+  of any other. `false` keeps the local values, so the entity jumps to its place under the new
+  parent. An entity without a `Transform3DComponent` has no 3D local transform to rewrite, so its
+  3D descendants do move, and the engine warns. A null `Entity` detaches it, like
   `RemoveParent`; setting the parent it already has changes nothing. A parent in another scene,
   or one that would make a cycle, logs an error and changes nothing. Children keep the order they
   were added in.
 - **World values are computed on every call** from the parent chain and never cached, so they are
   never stale. `SetWorldPosition`/`SetWorldRotation` write the local value that produces them.
+  The unsuffixed `GetWorld*`/`SetWorld*` calls are 3D: an entity without a
+  `Transform3DComponent` (a grouping node) reports its parent's 3D world and ignores the setters.
+  2D has its own calls, `GetWorldPosition2D`/`SetWorldPosition2D` (with z) and
+  `GetWorldRotation2D`/`SetWorldRotation2D` (degrees).
 - **Shear.** A rotated child under a non-uniformly scaled parent is sheared, which position,
   rotation and scale can't express: `GetWorldRotation`/`GetWorldScale` and `keepWorldTransform`
   approximate it. Where that matters, keep a parent's scale uniform and put its scaled mesh on a
   child of its own. Under a parent with a zero scale on some axis there is no local position that
   gives a chosen world position, so `keepWorldTransform`, `SetWorldPosition` and the physics
   write-back leave the local transform as it was.
-- A parent without a `Transform3DComponent` counts as identity. Parenting moves 3D transforms only;
-  a 2D `TransformComponent` is not affected yet.
+- **Mixed trees.** 2D and 3D transforms don't convert into each other: a parent counts as identity
+  in a dimension it has no transform for. A 3D entity under a 2D sprite ignores the sprite's
+  `TransformComponent`, and a sprite under a 3D entity ignores its `Transform3DComponent` (the 3D
+  entity's own `TransformComponent` is still composed, but a 3D entity leaves it at the origin).
 - **Subtrees.** `DestroyEntity` destroys the whole subtree, children first, so a child's `OnDestroy`
   still sees its parent; called from a script, the subtree waits for the end of the pass like any
   other destroy. `DuplicateEntity` copies the subtree and gives the copy the source's parent.
-- **Readers.** Rendering, point and spot lights (position and aim), the camera view,
-  `ScreenPointToRay` and 3D audio (sources and the listener) all use world values.
+- **Readers.** Mesh rendering, sprites, circles and text, point and spot lights (position and
+  aim), both camera types, `ScreenPointToRay` and audio (sources and the listener) all use world
+  values. Sprites sort by world z, and a child at the same world z as its parent draws on top of
+  it. Text ignores rotation, as it always has.
   `MeshRendererComponent::Visible` is not inherited.
 
-**Physics under a parent.** A body is built from the entity's world transform, with collider sizes
-taken from its world scale.
+**Physics under a parent.** A body is built from the entity's world transform, with 3D collider
+sizes taken from its world scale. The rules below are the 3D ones; 2D bodies follow the same rules
+([Bodies under a parent](physics-2d.md#bodies-under-a-parent-v08)).
 
 | Body | Rule |
 |---|---|

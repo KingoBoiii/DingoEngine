@@ -26,7 +26,13 @@ namespace Dingo
 
 		void Reparent(entt::registry& registry, entt::entity child, entt::entity parent, bool keepWorldTransform)
 		{
+			// Only a 2D entity keeps its 2D world: a 3D entity's TransformComponent is unused and keeps its local values.
+			const bool is3D = registry.all_of<Transform3DComponent>(child);
 			const glm::mat4 world = keepWorldTransform ? Internal::HierarchySystem::WorldTransform(registry, child) : glm::mat4(1.0f);
+			glm::vec3 position2D(0.0f);
+			float rotation2D = 0.0f;
+			if (keepWorldTransform && !is3D)
+				Internal::HierarchySystem::WorldPose2D(registry, child, position2D, rotation2D);
 
 			if (parent == entt::null)
 				Internal::HierarchySystem::Unlink(registry, child);
@@ -35,6 +41,15 @@ namespace Dingo
 
 			if (!keepWorldTransform)
 				return;
+
+			TransformComponent* local2D = is3D ? nullptr : registry.try_get<TransformComponent>(child);
+			if (local2D)
+			{
+				glm::vec3 parentPosition;
+				float parentRotation;
+				Internal::HierarchySystem::ParentWorldPose2D(registry, child, parentPosition, parentRotation);
+				Internal::HierarchySystem::SetLocal2DFromWorld(*local2D, parentPosition, parentRotation, position2D, rotation2D);
+			}
 
 			if (Transform3DComponent* local = registry.try_get<Transform3DComponent>(child))
 			{
@@ -259,6 +274,28 @@ namespace Dingo
 		return Internal::HierarchySystem::WorldScale(m_Scene->m_Data->Registry, static_cast<entt::entity>(m_Handle));
 	}
 
+	glm::vec3 Entity::GetWorldPosition2D() const
+	{
+		if (!IsValid())
+			return glm::vec3(0.0f);
+
+		glm::vec3 position;
+		float rotation;
+		Internal::HierarchySystem::WorldPose2D(m_Scene->m_Data->Registry, static_cast<entt::entity>(m_Handle), position, rotation);
+		return position;
+	}
+
+	float Entity::GetWorldRotation2D() const
+	{
+		if (!IsValid())
+			return 0.0f;
+
+		glm::vec3 position;
+		float rotation;
+		Internal::HierarchySystem::WorldPose2D(m_Scene->m_Data->Registry, static_cast<entt::entity>(m_Handle), position, rotation);
+		return rotation;
+	}
+
 	void Entity::SetWorldPosition(const glm::vec3& position)
 	{
 		if (!IsValid())
@@ -279,6 +316,28 @@ namespace Dingo
 		const entt::entity self = static_cast<entt::entity>(m_Handle);
 		if (Transform3DComponent* local = registry.try_get<Transform3DComponent>(self))
 			Internal::HierarchySystem::SetWorldRotation(registry, self, *local, rotation);
+	}
+
+	void Entity::SetWorldPosition2D(const glm::vec3& position)
+	{
+		if (!IsValid())
+			return;
+
+		entt::registry& registry = m_Scene->m_Data->Registry;
+		const entt::entity self = static_cast<entt::entity>(m_Handle);
+		if (TransformComponent* local = registry.try_get<TransformComponent>(self))
+			Internal::HierarchySystem::SetWorldPosition2D(registry, self, *local, position);
+	}
+
+	void Entity::SetWorldRotation2D(float degrees)
+	{
+		if (!IsValid())
+			return;
+
+		entt::registry& registry = m_Scene->m_Data->Registry;
+		const entt::entity self = static_cast<entt::entity>(m_Handle);
+		if (TransformComponent* local = registry.try_get<TransformComponent>(self))
+			Internal::HierarchySystem::SetWorldRotation2D(registry, self, *local, degrees);
 	}
 
 	void Entity::AttachScript(ScriptableEntity* instance)

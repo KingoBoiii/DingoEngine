@@ -38,8 +38,8 @@ namespace Dingo
 			void Stop(entt::registry& registry);
 
 			// Steps each live world and writes the simulated transforms back: 2D onto
-			// TransformComponent, 3D (and character controllers) onto Transform3DComponent. A 3D
-			// child stores the local transform that reproduces its simulated world pose, except a
+			// TransformComponent, 3D (and character controllers) onto Transform3DComponent. A child
+			// stores the local transform that reproduces its simulated world pose, except a
 			// kinematic child, which is driven before the step to where its parent will be after it.
 			void Step(entt::registry& registry, float deltaTime);
 
@@ -70,7 +70,11 @@ namespace Dingo
 			void CreateBody3D(entt::registry& registry, entt::entity handle);
 			void CreateController(entt::registry& registry, entt::entity handle);
 			void WriteBackChildren(entt::registry& registry);
+			void WriteBackChildren2D(entt::registry& registry);
 			void DriveKinematicChildren(entt::registry& registry, float deltaTime);
+			void DriveKinematicChildren2D(entt::registry& registry, float deltaTime);
+			void PredictedWorldPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation);
+			bool PredictedPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation) const;
 			// The world transform `handle` will have after this step: the end-of-step pose of its
 			// nearest ancestor (itself included) with a moving body or a controller, times the
 			// locals below it.
@@ -84,6 +88,14 @@ namespace Dingo
 				std::uint32_t Depth;
 				glm::vec3 Position;
 				glm::quat Rotation;
+			};
+
+			struct ChildWriteBack2D
+			{
+				entt::entity Handle;
+				std::uint32_t Depth;
+				glm::vec2 Position;
+				float Angle; // radians
 			};
 
 			struct KinematicChild
@@ -105,6 +117,7 @@ namespace Dingo
 			std::vector<std::unique_ptr<CharacterController3D>> m_Controllers;
 
 			std::vector<ChildWriteBack> m_ChildWriteBacks;
+			std::vector<ChildWriteBack2D> m_ChildWriteBacks2D;
 			std::vector<KinematicChild> m_KinematicChildren;
 			std::vector<entt::entity> m_PredictionChain;
 		};

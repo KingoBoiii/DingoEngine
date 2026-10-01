@@ -270,34 +270,52 @@ namespace Dingo
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
+		const bool anyLinks = Internal::HierarchySystem::AnyLinks(m_Data->Registry);
+
 		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
-		// Position.z draws on top. Equal-z ties are NOT ordered by creation (the
-		// view order decides), so give overlapping UI elements distinct z values.
+		// world z draws on top, and at equal z a parent draws before its children. Other
+		// equal-z ties are NOT ordered by creation (the view order decides), so give
+		// overlapping UI elements distinct z values.
 		{
 			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
 
-			// Sort keys, not handles: the comparator used to re-fetch TransformComponent
-			// through the registry for BOTH operands on every comparison. The buffer is a
-			// member so a steady-state frame does no allocation at all.
-			std::vector<std::pair<float, entt::entity>>& sprites = m_Data->SpriteSortBuffer;
+			// The world pose is resolved once per sprite and kept with its sort key, so neither the
+			// sort nor the draw goes back to the registry. The buffer is a member so a steady-state
+			// frame does no allocation at all.
+			std::vector<Internal::SceneData::SpriteDraw>& sprites = m_Data->SpriteSortBuffer;
 			sprites.clear();
 			for (entt::entity entity : view)
-				sprites.emplace_back(view.get<TransformComponent>(entity).Position.z, entity);
+			{
+				Internal::SceneData::SpriteDraw& draw = sprites.emplace_back();
+				draw.Entity = entity;
+				const TransformComponent& transform = view.get<TransformComponent>(entity);
+				if (anyLinks)
+				{
+					Internal::HierarchySystem::WorldPose2D(m_Data->Registry, entity, transform, draw.Position, draw.Rotation);
+					draw.Depth = Internal::HierarchySystem::Depth(m_Data->Registry, entity);
+				}
+				else
+				{
+					draw.Position = transform.Position;
+					draw.Rotation = transform.Rotation;
+					draw.Depth = 0;
+				}
+			}
 
 			std::stable_sort(sprites.begin(), sprites.end(), [](const auto& a, const auto& b)
 			{
-				return a.first < b.first;
+				return a.Position.z != b.Position.z ? a.Position.z < b.Position.z : a.Depth < b.Depth;
 			});
 
-			for (const auto& [z, entity] : sprites)
+			for (const Internal::SceneData::SpriteDraw& draw : sprites)
 			{
-				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(entity);
+				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(draw.Entity);
 				Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
 
-				if (transform.Rotation != 0.0f)
-					renderer.DrawRotatedQuad(transform.Position, transform.Rotation, transform.Size, texture, sprite.Color);
+				if (draw.Rotation != 0.0f)
+					renderer.DrawRotatedQuad(draw.Position, draw.Rotation, transform.Size, texture, sprite.Color);
 				else
-					renderer.DrawQuad(transform.Position, transform.Size, texture, sprite.Color);
+					renderer.DrawQuad(draw.Position, transform.Size, texture, sprite.Color);
 			}
 		}
 
@@ -307,7 +325,8 @@ namespace Dingo
 			for (auto entity : view)
 			{
 				auto [transform, circle] = view.get<TransformComponent, CircleRendererComponent>(entity);
-				renderer.DrawCircle(transform.GetTransform(), circle.Color, circle.Thickness, circle.Fade);
+				const glm::mat4 world = anyLinks ? Internal::HierarchySystem::WorldTransform2D(m_Data->Registry, entity, transform) : transform.GetTransform();
+				renderer.DrawCircle(world, circle.Color, circle.Thickness, circle.Fade);
 			}
 		}
 
@@ -320,13 +339,18 @@ namespace Dingo
 				if (!text.Font || text.Text.empty())
 					continue;
 
-				renderer.DrawText(text.Text, text.Font, transform.Position, text.Size, { .Color = text.Color, .Centered = text.Centered });
+				glm::vec3 position = transform.Position;
+				float rotation;
+				if (anyLinks)
+					Internal::HierarchySystem::WorldPose2D(m_Data->Registry, entity, transform, position, rotation);
+				renderer.DrawText(text.Text, text.Font, position, text.Size, { .Color = text.Color, .Centered = text.Centered });
 			}
 		}
 	}
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
+		const bool anyLinks = Internal::HierarchySystem::AnyLinks(m_Data->Registry);
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
 		for (entt::entity entity : view)
 		{
@@ -334,7 +358,8 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, Internal::HierarchySystem::WorldTransform(m_Data->Registry, entity, transform), mesh.Color, mesh.Material);
+			const glm::mat4 world = anyLinks ? Internal::HierarchySystem::WorldTransform(m_Data->Registry, entity, transform) : transform.GetTransform();
+			renderer.SubmitMesh(mesh.Mesh, world, mesh.Color, mesh.Material);
 		}
 	}
 

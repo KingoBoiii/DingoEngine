@@ -21,8 +21,10 @@ namespace Dingo
 				if (registry.all_of<Transform3DComponent>(handle))
 					return HierarchySystem::WorldPosition(registry, handle);
 
-				const TransformComponent& transform = registry.get<TransformComponent>(handle);
-				return glm::vec3(transform.Position.x, transform.Position.y, 0.0f);
+				glm::vec3 position;
+				float rotation;
+				HierarchySystem::WorldPose2D(registry, handle, position, rotation);
+				return glm::vec3(position.x, position.y, 0.0f);
 			}
 
 			void SyncListenerAndSources(entt::registry& registry)
@@ -71,8 +73,7 @@ namespace Dingo
 				}
 				else
 				{
-					const TransformComponent& transform = registry.get<TransformComponent>(listenerHandle);
-					audio.SetListenerPosition(glm::vec3(transform.Position.x, transform.Position.y, 0.0f));
+					audio.SetListenerPosition(PositionOf(registry, listenerHandle));
 				}
 			}
 

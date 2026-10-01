@@ -12,6 +12,7 @@
 namespace Dingo
 {
 
+	struct TransformComponent;
 	struct Transform3DComponent;
 
 	namespace Internal
@@ -32,6 +33,9 @@ namespace Dingo
 
 		namespace HierarchySystem
 		{
+
+			// False while no entity has ever been linked, so a per-entity reader can skip the lookups.
+			bool AnyLinks(const entt::registry& registry);
 
 			entt::entity GetParent(const entt::registry& registry, entt::entity handle);
 			// Number of ancestors: 0 for a root.
@@ -73,6 +77,25 @@ namespace Dingo
 			void SetLocalFromWorld(Transform3DComponent& local, const glm::mat4& parentWorld, const glm::mat4& world);
 
 			void Decompose(const glm::mat4& matrix, glm::vec3& translation, glm::quat& rotation, glm::vec3& scale);
+
+			// 2D chain, over TransformComponent: a child's position turns with its parent's rotation,
+			// z and rotation (degrees) add, and Size is not inherited. An entity without a
+			// TransformComponent counts as identity; a root returns its component's values untouched.
+			void WorldPose2D(const entt::registry& registry, entt::entity handle, glm::vec3& position, float& rotation);
+			void WorldPose2D(const entt::registry& registry, entt::entity handle, const TransformComponent& local, glm::vec3& position, float& rotation);
+			void ParentWorldPose2D(const entt::registry& registry, entt::entity handle, glm::vec3& position, float& rotation);
+			// Applies `local` under the 2D pose in position/rotation.
+			void Compose2D(glm::vec3& position, float& rotation, const TransformComponent& local);
+			// The world pose with the entity's own Size, as TransformComponent::GetTransform builds it;
+			// exactly local.GetTransform() for a root.
+			glm::mat4 WorldTransform2D(const entt::registry& registry, entt::entity handle, const TransformComponent& local);
+
+			// Write the local value that gives this 2D world value; a root takes it as it is.
+			// SetWorldXY2D leaves the local z alone.
+			void SetWorldPosition2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, const glm::vec3& position);
+			void SetWorldXY2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, const glm::vec2& position);
+			void SetWorldRotation2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, float rotation);
+			void SetLocal2DFromWorld(TransformComponent& local, const glm::vec3& parentPosition, float parentRotation, const glm::vec3& position, float rotation);
 
 		}
 

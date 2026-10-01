@@ -37,6 +37,12 @@ namespace Dingo
 
 			}
 
+			bool AnyLinks(const entt::registry& registry)
+			{
+				const auto* storage = registry.storage<HierarchyComponent>();
+				return storage && !storage->empty();
+			}
+
 			entt::entity GetParent(const entt::registry& registry, entt::entity handle)
 			{
 				const HierarchyComponent* node = registry.try_get<HierarchyComponent>(handle);
@@ -259,6 +265,134 @@ namespace Dingo
 				const glm::vec3 z = glm::cross(x, y);
 
 				rotation = glm::normalize(glm::quat_cast(glm::mat3(x, y, z)));
+			}
+
+			namespace
+			{
+
+				glm::vec2 Rotate2D(const glm::vec2& v, float degrees)
+				{
+					const float radians = glm::radians(degrees);
+					const float c = std::cos(radians);
+					const float s = std::sin(radians);
+					return { c * v.x - s * v.y, s * v.x + c * v.y };
+				}
+
+			}
+
+			void Compose2D(glm::vec3& position, float& rotation, const TransformComponent& local)
+			{
+				const glm::vec2 offset = Rotate2D(glm::vec2(local.Position), rotation);
+				position = { position.x + offset.x, position.y + offset.y, position.z + local.Position.z };
+				rotation += local.Rotation;
+			}
+
+			void WorldPose2D(const entt::registry& registry, entt::entity handle, glm::vec3& position, float& rotation)
+			{
+				const TransformComponent* local = registry.try_get<TransformComponent>(handle);
+				const TransformComponent identity;
+				WorldPose2D(registry, handle, local ? *local : identity, position, rotation);
+			}
+
+			void WorldPose2D(const entt::registry& registry, entt::entity handle, const TransformComponent& local, glm::vec3& position, float& rotation)
+			{
+				if (GetParent(registry, handle) == entt::null)
+				{
+					position = local.Position;
+					rotation = local.Rotation;
+					return;
+				}
+
+				ParentWorldPose2D(registry, handle, position, rotation);
+				Compose2D(position, rotation, local);
+			}
+
+			void ParentWorldPose2D(const entt::registry& registry, entt::entity handle, glm::vec3& position, float& rotation)
+			{
+				position = glm::vec3(0.0f);
+				rotation = 0.0f;
+
+				thread_local std::vector<entt::entity> chain;
+				chain.clear();
+				for (entt::entity e = GetParent(registry, handle); e != entt::null; e = GetParent(registry, e))
+					chain.push_back(e);
+
+				for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+				{
+					const TransformComponent* ancestor = registry.try_get<TransformComponent>(*it);
+					if (it == chain.rbegin())
+					{
+						position = ancestor ? ancestor->Position : glm::vec3(0.0f);
+						rotation = ancestor ? ancestor->Rotation : 0.0f;
+					}
+					else if (ancestor)
+					{
+						Compose2D(position, rotation, *ancestor);
+					}
+				}
+			}
+
+			glm::mat4 WorldTransform2D(const entt::registry& registry, entt::entity handle, const TransformComponent& local)
+			{
+				if (GetParent(registry, handle) == entt::null)
+					return local.GetTransform();
+
+				TransformComponent world(local);
+				WorldPose2D(registry, handle, local, world.Position, world.Rotation);
+				return world.GetTransform();
+			}
+
+			void SetWorldPosition2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, const glm::vec3& position)
+			{
+				if (GetParent(registry, handle) == entt::null)
+				{
+					local.Position = position;
+					return;
+				}
+
+				glm::vec3 parentPosition;
+				float parentRotation;
+				ParentWorldPose2D(registry, handle, parentPosition, parentRotation);
+				const glm::vec2 xy = Rotate2D(glm::vec2(position) - glm::vec2(parentPosition), -parentRotation);
+				local.Position = { xy.x, xy.y, position.z - parentPosition.z };
+			}
+
+			void SetWorldXY2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, const glm::vec2& position)
+			{
+				if (GetParent(registry, handle) == entt::null)
+				{
+					local.Position.x = position.x;
+					local.Position.y = position.y;
+					return;
+				}
+
+				glm::vec3 parentPosition;
+				float parentRotation;
+				ParentWorldPose2D(registry, handle, parentPosition, parentRotation);
+				const glm::vec2 xy = Rotate2D(position - glm::vec2(parentPosition), -parentRotation);
+				local.Position.x = xy.x;
+				local.Position.y = xy.y;
+			}
+
+			void SetWorldRotation2D(const entt::registry& registry, entt::entity handle, TransformComponent& local, float rotation)
+			{
+				if (GetParent(registry, handle) == entt::null)
+				{
+					local.Rotation = rotation;
+					return;
+				}
+
+				glm::vec3 parentPosition;
+				float parentRotation;
+				ParentWorldPose2D(registry, handle, parentPosition, parentRotation);
+				local.Rotation = rotation - parentRotation;
+			}
+
+			void SetLocal2DFromWorld(TransformComponent& local, const glm::vec3& parentPosition, float parentRotation, const glm::vec3& position, float rotation)
+			{
+				const glm::vec2 xy = Rotate2D(glm::vec2(position) - glm::vec2(parentPosition), -parentRotation);
+				local.Position = { xy.x, xy.y, position.z - parentPosition.z };
+				local.Rotation = rotation - parentRotation;
 			}
 
 		}
