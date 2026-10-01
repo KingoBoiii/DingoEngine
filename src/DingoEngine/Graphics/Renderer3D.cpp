@@ -30,8 +30,7 @@ namespace
 
 	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
 	// inverse image of that direction. An orthographic camera sits at infinity: w is 0 there,
-	// and the result is the direction towards it. A singular matrix yields an arbitrary direction
-	// rather than NaNs.
+	// and the result is the direction towards it. A singular matrix gives an arbitrary result.
 	glm::vec4 CameraPositionFromViewProjection(const glm::mat4& viewProjection)
 	{
 		const glm::vec4 eye = glm::inverse(viewProjection) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);

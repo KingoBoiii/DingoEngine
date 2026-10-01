@@ -297,7 +297,8 @@ and a copy of it is embedded in the engine library at build time.
   hot-reload ([Asset Pipeline](asset-pipeline.md#hot-reload-shaders--textures)). A compile error at
   startup is fatal in these builds, as for any shader.
 - **Release and Distribution** builds always use the embedded copy, so they carry no build-machine
-  path, and a prebuilt package needs no shader file beside it.
+  path, and a prebuilt package needs no shader file beside it. A prebuilt Debug lib carries the
+  path it was built from, and uses its embedded copy wherever that path doesn't exist.
 - The source path is fixed when the project files are generated. If the file is not there, such as
   after moving the checkout, the embedded copy is used without a message.
 - **Gotcha:** a Debug executable reads the file at startup, not the copy it was built with, so an

@@ -90,7 +90,7 @@ that was verified to make minimize/restore clean.
 
 ## K16 — Point and spot lights pop in and out at the light-budget edge {#k16}
 
-**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:455-499`
+**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:475-523`
 
 When more point and spot lights reach the view than `Renderer3DCapabilities::MaxLocalLights` (32 by
 default, and at most 32), `EndScene` keeps the brightest as seen from the camera and drops the rest. The
