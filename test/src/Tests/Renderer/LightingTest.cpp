@@ -55,7 +55,8 @@ namespace Dingo
 		m_Camera.SetPosition({ 0.0f, 9.0f, 13.0f });
 		m_Camera.SetTarget({ 0.0f, 0.0f, 0.0f });
 
-		if (auto mode = Application::Get().GetCommandLineArgs().Get("lighting"))
+		const ApplicationCommandLineArgs& args = Application::Get().GetCommandLineArgs();
+		if (auto mode = args.Get("lighting"))
 		{
 			if (*mode == "default")
 				m_Mode = Mode::DefaultLight;
@@ -66,6 +67,9 @@ namespace Dingo
 			else
 				DE_WARN("Lighting Test: unknown --lighting={}; use default, lights or overbudget.", *mode);
 		}
+		m_UseEntities = args.Get("entities").has_value();
+
+		BuildScene();
 	}
 
 	void LightingTest::Update(float deltaTime)
@@ -73,16 +77,34 @@ namespace Dingo
 		if (m_Animate)
 			m_Time += deltaTime;
 
+		const Lighting lighting = DescribeLighting();
+
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
-		SubmitLights(renderer);
-		DrawScene(renderer);
+
+		if (m_UseEntities)
+		{
+			if (!m_LightEntitiesBuilt || m_LightEntitiesMode != m_Mode)
+				BuildLightEntities(lighting);
+			UpdateLightEntities(lighting);
+
+			m_Scene->SubmitLights(renderer);
+			m_Scene->RenderEntities3D(renderer);
+		}
+		else
+		{
+			SubmitLights(renderer, lighting);
+			DrawScene(renderer);
+		}
+
 		renderer.EndScene();
 	}
 
-	void LightingTest::SubmitLights(Renderer3D& renderer) const
+	LightingTest::Lighting LightingTest::DescribeLighting() const
 	{
+		Lighting lighting;
+
 		switch (m_Mode)
 		{
 			case Mode::DefaultLight:
@@ -90,7 +112,9 @@ namespace Dingo
 
 			case Mode::PointAndSpot:
 			{
-				renderer.SetAmbientLight({ 0.5f, 0.6f, 0.9f }, 0.06f);
+				lighting.UsesDefaultLight = false;
+				lighting.AmbientColor = { 0.5f, 0.6f, 0.9f };
+				lighting.AmbientIntensity = 0.06f;
 
 				for (int i = 0; i < static_cast<int>(std::size(k_PointLights)); i++)
 				{
@@ -100,7 +124,7 @@ namespace Dingo
 					light.Color = k_PointLights[i].Color;
 					light.Intensity = 1.6f;
 					light.Range = 4.5f;
-					renderer.SubmitLight(light);
+					lighting.PointLights.push_back(light);
 				}
 
 				const float sweep = m_Animate ? 0.35f * std::sin(m_Time) : 0.0f;
@@ -114,14 +138,16 @@ namespace Dingo
 					spot.Range = 12.0f;
 					spot.InnerConeAngle = 12.0f;
 					spot.OuterConeAngle = 20.0f;
-					renderer.SubmitLight(spot);
+					lighting.SpotLights.push_back(spot);
 				}
 				break;
 			}
 
 			case Mode::OverBudget:
 			{
-				renderer.SetAmbientLight({ 0.5f, 0.6f, 0.9f }, 0.04f);
+				lighting.UsesDefaultLight = false;
+				lighting.AmbientColor = { 0.5f, 0.6f, 0.9f };
+				lighting.AmbientIntensity = 0.04f;
 
 				for (int row = 0; row < k_OverBudgetRows; row++)
 				{
@@ -133,7 +159,7 @@ namespace Dingo
 						light.Color = Hue(static_cast<float>(index) / static_cast<float>(k_OverBudgetColumns * k_OverBudgetRows));
 						light.Intensity = 1.5f;
 						light.Range = 1.6f;
-						renderer.SubmitLight(light);
+						lighting.PointLights.push_back(light);
 					}
 				}
 
@@ -145,11 +171,25 @@ namespace Dingo
 					light.Position = position;
 					light.Intensity = 10.0f;
 					light.Range = 1.6f;
-					renderer.SubmitLight(light);
+					lighting.PointLights.push_back(light);
 				}
 				break;
 			}
 		}
+
+		return lighting;
+	}
+
+	void LightingTest::SubmitLights(Renderer3D& renderer, const Lighting& lighting) const
+	{
+		if (lighting.UsesDefaultLight)
+			return;
+
+		renderer.SetAmbientLight(lighting.AmbientColor, lighting.AmbientIntensity);
+		for (const PointLight& light : lighting.PointLights)
+			renderer.SubmitLight(light);
+		for (const SpotLight& light : lighting.SpotLights)
+			renderer.SubmitLight(light);
 	}
 
 	void LightingTest::DrawScene(Renderer3D& renderer) const
@@ -166,8 +206,94 @@ namespace Dingo
 			renderer.DrawSphere(BoxTransform({ x, 0.6f, 0.0f }, glm::vec3(1.2f)), k_SphereColor);
 	}
 
+	void LightingTest::BuildScene()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		m_Scene = new Scene("Lighting Test");
+
+		auto addMesh = [this](const char* name, Mesh* mesh, const glm::vec3& position, const glm::vec3& scale, const glm::vec4& color)
+		{
+			Entity entity = m_Scene->CreateEntity(name);
+			auto& transform = entity.AddComponent<Transform3DComponent>();
+			transform.Position = position;
+			transform.Scale = scale;
+			entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color));
+		};
+
+		addMesh("Floor", renderer.GetBoxMesh(), { 0.0f, -0.1f, 0.0f }, { 20.0f, 0.2f, 12.0f }, k_FloorColor);
+		for (float x : k_PillarXs)
+		{
+			for (float z : k_PillarZs)
+				addMesh("Pillar", renderer.GetBoxMesh(), { x, 1.2f, z }, { 0.8f, 2.4f, 0.8f }, k_PillarColor);
+		}
+		for (float x : k_SphereXs)
+			addMesh("Sphere", renderer.GetSphereMesh(), { x, 0.6f, 0.0f }, glm::vec3(1.2f), k_SphereColor);
+	}
+
+	void LightingTest::BuildLightEntities(const Lighting& lighting)
+	{
+		for (Entity entity : m_LightEntities)
+			m_Scene->DestroyEntity(entity);
+		m_LightEntities.clear();
+
+		m_LightEntitiesMode = m_Mode;
+		m_LightEntitiesBuilt = true;
+
+		// No light entity at all leaves the scene on its default light.
+		if (lighting.UsesDefaultLight)
+			return;
+
+		Entity ambient = m_Scene->CreateEntity("Ambient");
+		ambient.AddComponent<AmbientLightComponent>(AmbientLightComponent(lighting.AmbientColor, lighting.AmbientIntensity));
+		m_LightEntities.push_back(ambient);
+
+		for (size_t i = 0; i < lighting.PointLights.size(); i++)
+		{
+			Entity entity = m_Scene->CreateEntity("Point Light");
+			entity.AddComponent<Transform3DComponent>();
+			entity.AddComponent<PointLightComponent>();
+			m_LightEntities.push_back(entity);
+		}
+		for (size_t i = 0; i < lighting.SpotLights.size(); i++)
+		{
+			Entity entity = m_Scene->CreateEntity("Spot Light");
+			entity.AddComponent<Transform3DComponent>();
+			entity.AddComponent<SpotLightComponent>();
+			m_LightEntities.push_back(entity);
+		}
+	}
+
+	void LightingTest::UpdateLightEntities(const Lighting& lighting)
+	{
+		if (lighting.UsesDefaultLight)
+			return;
+
+		size_t next = 1; // after the ambient entity
+		for (const PointLight& light : lighting.PointLights)
+		{
+			Entity entity = m_LightEntities[next++];
+			entity.GetComponent<Transform3DComponent>().Position = light.Position;
+			entity.GetComponent<PointLightComponent>() = PointLightComponent(light.Color, light.Intensity, light.Range);
+		}
+		for (const SpotLight& light : lighting.SpotLights)
+		{
+			Entity entity = m_LightEntities[next++];
+			entity.GetComponent<Transform3DComponent>().Position = light.Position;
+
+			SpotLightComponent& spot = entity.GetComponent<SpotLightComponent>();
+			spot = SpotLightComponent(light.Color, light.Intensity, light.Range);
+			spot.Direction = light.Direction; // the entity is unrotated, so local is world
+			spot.InnerConeAngle = light.InnerConeAngle;
+			spot.OuterConeAngle = light.OuterConeAngle;
+		}
+	}
+
 	void LightingTest::Cleanup()
 	{
+		m_LightEntities.clear();
+		m_LightEntitiesBuilt = false;
+		delete m_Scene;
+		m_Scene = nullptr;
 	}
 
 	void LightingTest::Resize(uint32_t width, uint32_t height)
@@ -184,6 +310,7 @@ namespace Dingo
 		ImGui::RadioButton("More lights than the budget", &mode, static_cast<int>(Mode::OverBudget));
 		m_Mode = static_cast<Mode>(mode);
 		ImGui::Checkbox("Animate", &m_Animate);
+		ImGui::Checkbox("Lights as entities", &m_UseEntities);
 
 		ImGui::Separator();
 		const Renderer3D::Statistics& stats = Application::Get().GetRenderer3D().GetStatistics();
