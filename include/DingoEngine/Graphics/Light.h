@@ -40,4 +40,13 @@ namespace Dingo
 		float OuterConeAngle = 30.0f;
 	};
 
+	// The weight Renderer3D's lit shader gives the light at `point`, from 0 to 1, for gameplay
+	// tests such as "is the player inside that cone": falloff^2 for a point light and
+	// falloff^2 * cone^2 for a spot, where falloff = 1 - d^2 / Range^2 (0 from Range on) and the
+	// cone is set up exactly as SubmitLight sets it up. It leaves out the surface's N.L, Color,
+	// Intensity, any occlusion (there are no shadows) and the frame's light budget, and is 0 for a
+	// light SubmitLight rejects as unusable.
+	float GetLightAttenuation(const PointLight& light, const glm::vec3& point);
+	float GetLightAttenuation(const SpotLight& light, const glm::vec3& point);
+
 }

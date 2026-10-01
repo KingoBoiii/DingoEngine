@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
+#include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -22,6 +23,7 @@ namespace Dingo
 {
 
 	class Material; // referenced by MeshRendererComponent (pointer only)
+	struct Transform3DComponent; // the light components' ToLight, defined after it
 
 	// Identity ----------------------------------------------------------------
 
@@ -195,6 +197,11 @@ namespace Dingo
 		PointLightComponent(const PointLightComponent&) = default;
 		PointLightComponent(const glm::vec3& color, float intensity, float range)
 			: Color(color), Intensity(intensity), Range(range) {}
+
+		// The light Scene::SubmitLights draws for this component, placed at the transform's
+		// position. Enabled is not consulted. The transform is in world space: under a parent, pass
+		// the entity's GetWorldPosition/GetWorldRotation rather than its local component.
+		PointLight ToLight(const Transform3DComponent& transform) const;
 	};
 
 	// A cone of light from the entity's position, reaching zero at Range. Direction is in the
@@ -214,6 +221,11 @@ namespace Dingo
 		SpotLightComponent(const SpotLightComponent&) = default;
 		SpotLightComponent(const glm::vec3& color, float intensity, float range)
 			: Color(color), Intensity(intensity), Range(range) {}
+
+		// The light Scene::SubmitLights draws for this component: the transform's position, aimed
+		// along Rotation * Direction. Enabled is not consulted. The transform is in world space, as
+		// for PointLightComponent::ToLight.
+		SpotLight ToLight(const Transform3DComponent& transform) const;
 	};
 
 	// Physics -----------------------------------------------------------------
@@ -309,6 +321,17 @@ namespace Dingo
 		glm::vec3 Forward() const { return Rotation * glm::vec3(0.0f, 0.0f, -1.0f); }
 		glm::vec3 Up() const { return Rotation * glm::vec3(0.0f, 1.0f, 0.0f); }
 	};
+
+	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
+	{
+		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range };
+	}
+
+	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
+	{
+		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
+			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle };
+	}
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
 	// Color. The mesh is not owned by the component (the game/asset system owns it),

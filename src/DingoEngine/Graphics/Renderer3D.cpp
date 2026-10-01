@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
+#include "DingoEngine/Graphics/LightMath.h"
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -75,21 +76,11 @@ namespace
 		return std::max({ color.r, color.g, color.b });
 	}
 
-	bool IsFinite(const glm::vec3& value)
-	{
-		return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-	}
+	using Dingo::Internal::IsFinite;
 
 	float FiniteOr(float value, float fallback)
 	{
 		return std::isfinite(value) ? value : fallback;
-	}
-
-	// One NaN light would turn every lit pixel's sum to NaN, so the comparisons are written to
-	// reject NaN too.
-	bool IsUsableLocalLight(const glm::vec3& position, const glm::vec3& color, float intensity, float range)
-	{
-		return intensity > 0.0f && range > 0.0f && IsFinite(position) && IsFinite(color * intensity);
 	}
 
 	// A lit material is known by its shader, and the renderer that draws it need not be the one that
@@ -373,49 +364,33 @@ namespace Dingo
 		return true;
 	}
 
-	bool Renderer3D::SubmitLight(const PointLight& light)
+	template<typename LightType>
+	bool Renderer3D::SubmitLocalLight(const LightType& light)
 	{
 		m_SceneLightSubmitted = true;
-		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range))
+		if (!Internal::IsUsableLight(light))
 			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
 			return false;
 
+		const Internal::LightCone cone = Internal::GetLightCone(light);
 		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
-		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, 0.0f);
-		candidate->Data.SpotDirection = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, cone.Scale);
+		candidate->Data.SpotDirection = glm::vec4(cone.Axis, cone.Offset);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
 		return true;
 	}
 
+	bool Renderer3D::SubmitLight(const PointLight& light)
+	{
+		return SubmitLocalLight(light);
+	}
+
 	bool Renderer3D::SubmitLight(const SpotLight& light)
 	{
-		m_SceneLightSubmitted = true;
-		if (!IsUsableLocalLight(light.Position, light.Color, light.Intensity, light.Range) || !IsFinite(light.Direction) ||
-			!std::isfinite(light.InnerConeAngle) || !std::isfinite(light.OuterConeAngle))
-			return false;
-
-		LocalLightCandidate* candidate = AddLocalLight();
-		if (!candidate)
-			return false;
-
-		// The cone factor is saturate(cos(angle) * scale + offset): 1 at the inner angle, 0 at the
-		// outer one. Below about 1 degree the cosines are too close in float to reach 1.
-		const float outerAngle = glm::clamp(light.OuterConeAngle, 1.0f, 179.0f);
-		const float innerAngle = glm::clamp(light.InnerConeAngle, 0.0f, outerAngle);
-		const float cosOuter = std::cos(glm::radians(outerAngle));
-		const float coneScale = 1.0f / std::max(std::cos(glm::radians(innerAngle)) - cosOuter, 1e-4f);
-
-		const float length = glm::length(light.Direction);
-		const glm::vec3 direction = length > 0.0f ? light.Direction / length : glm::vec3(0.0f, -1.0f, 0.0f);
-
-		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
-		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, coneScale);
-		candidate->Data.SpotDirection = glm::vec4(direction, -cosOuter * coneScale);
-		candidate->Brightness = Strength(light.Color) * light.Intensity;
-		return true;
+		return SubmitLocalLight(light);
 	}
 
 	Renderer3D::LocalLightCandidate* Renderer3D::AddLocalLight()

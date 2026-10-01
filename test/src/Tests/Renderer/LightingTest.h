@@ -20,7 +20,7 @@ namespace Dingo
 	// material that has already drawn, with Specular (--specular=off) switching the highlights off.
 	// On every start it also runs PASS/FAIL checks of the light bookkeeping (counts, culling, the
 	// budget, the default light) on private Renderer3Ds, one scene per frame and apart from the
-	// modes above.
+	// modes above, then checks GetLightAttenuation and the light components' ToLight.
 	class LightingTest : public GraphicsTest
 	{
 	public:

@@ -4,8 +4,13 @@
 #include <glm/gtc/quaternion.hpp>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -75,6 +80,34 @@ namespace Dingo
 			light.Range = range;
 			light.Intensity = intensity;
 			return light;
+		}
+
+		SpotLight SpotLightAt(const glm::vec3& position, const glm::vec3& direction, float range)
+		{
+			SpotLight light;
+			light.Position = position;
+			light.Direction = direction;
+			light.Range = range;
+			light.InnerConeAngle = 20.0f;
+			light.OuterConeAngle = 30.0f;
+			return light;
+		}
+
+		// A point `distance` from a downward spot at `position`, `degrees` off its axis.
+		glm::vec3 OffDownwardAxis(const glm::vec3& position, float degrees, float distance)
+		{
+			const float angle = glm::radians(degrees);
+			return position + distance * glm::vec3(std::sin(angle), -std::cos(angle), 0.0f);
+		}
+
+		bool IsNear(float a, float b)
+		{
+			return std::abs(a - b) <= 1e-5f;
+		}
+
+		bool IsNear(const glm::vec3& a, const glm::vec3& b)
+		{
+			return IsNear(a.x, b.x) && IsNear(a.y, b.y) && IsNear(a.z, b.z);
 		}
 
 		template<typename Submit>
@@ -249,6 +282,151 @@ namespace Dingo
 			});
 			Check(stats.LocalLights == 2,
 				std::format("a duplicated point light entity is a second light ({})", Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const PointLight point = PointLightAt({ 1.0f, 2.0f, 3.0f }, 4.0f);
+			const float centre = GetLightAttenuation(point, point.Position);
+			const float halfRange = GetLightAttenuation(point, point.Position + glm::vec3(2.0f, 0.0f, 0.0f));
+			const float atRange = GetLightAttenuation(point, point.Position + glm::vec3(0.0f, 0.0f, 4.0f));
+			const float beyond = GetLightAttenuation(point, point.Position + glm::vec3(0.0f, -4.5f, 0.0f));
+			Check(IsNear(centre, 1.0f), std::format("point light attenuation is 1 at its centre ({:.6f})", centre));
+			Check(IsNear(halfRange, 0.5625f), std::format("point light attenuation is 0.5625 at half its range ({:.6f})", halfRange));
+			Check(atRange == 0.0f && beyond == 0.0f,
+				std::format("point light attenuation is exactly 0 at its range and beyond ({}, {})", atRange, beyond));
+
+			const SpotLight spot = SpotLightAt({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 4.0f);
+			const float onAxis = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 0.0f, 2.0f));
+			const float insideInner = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 10.0f, 2.0f));
+			Check(IsNear(onAxis, 0.5625f) && IsNear(insideInner, 0.5625f),
+				std::format("spot light attenuation is 0.5625 at half its range on its axis and 10 degrees off it, inside the inner cone ({:.6f}, {:.6f})", onAxis, insideInner));
+
+			const double cosInner = std::cos(glm::radians(20.0));
+			const double cosOuter = std::cos(glm::radians(30.0));
+			const double cone = (std::cos(glm::radians(25.0)) - cosOuter) / (cosInner - cosOuter);
+			const float expected = static_cast<float>(0.75 * 0.75 * cone * cone);
+			const float between = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 25.0f, 2.0f));
+			Check(IsNear(between, expected),
+				std::format("spot light attenuation 25 degrees off its axis, between the 20 and 30 degree cones, is falloff^2 * cone^2 ({:.6f}, expected {:.6f})", between, expected));
+
+			const float atOuter = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 30.0f, 2.0f));
+			const float pastOuter = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 31.0f, 2.0f));
+			const float side = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 90.0f, 2.0f));
+			const float behind = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 180.0f, 2.0f));
+			Check(IsNear(atOuter, 0.0f) && pastOuter == 0.0f && side == 0.0f && behind == 0.0f,
+				std::format("spot light attenuation is 0 at its outer angle and past it ({}, {}, {}, {})", atOuter, pastOuter, side, behind));
+
+			const float nan = std::numeric_limits<float>::quiet_NaN();
+			const glm::vec3 spotSample = OffDownwardAxis(spot.Position, 0.0f, 2.0f);
+			std::vector<std::pair<const char*, float>> rejected;
+			const auto rejectBoth = [&](const char* what, auto&& spoil)
+			{
+				PointLight badPoint = point;
+				SpotLight badSpot = spot;
+				spoil(badPoint, badSpot);
+				rejected.emplace_back(what, (std::max)(GetLightAttenuation(badPoint, point.Position), GetLightAttenuation(badSpot, spotSample)));
+			};
+			rejectBoth("Intensity 0", [](PointLight& p, SpotLight& s) { p.Intensity = 0.0f; s.Intensity = 0.0f; });
+			rejectBoth("Range 0", [](PointLight& p, SpotLight& s) { p.Range = 0.0f; s.Range = 0.0f; });
+			rejectBoth("Range -1", [](PointLight& p, SpotLight& s) { p.Range = -1.0f; s.Range = -1.0f; });
+			rejectBoth("NaN position", [nan](PointLight& p, SpotLight& s) { p.Position.x = nan; s.Position.x = nan; });
+			rejectBoth("Color x Intensity overflows", [](PointLight& p, SpotLight& s) { p.Color = glm::vec3(1e30f); p.Intensity = 1e10f; s.Color = glm::vec3(1e30f); s.Intensity = 1e10f; });
+			SpotLight nanCone = spot;
+			nanCone.OuterConeAngle = nan;
+			rejected.emplace_back("NaN cone angle", GetLightAttenuation(nanCone, spotSample));
+
+			bool allZero = true;
+			std::string values;
+			for (const auto& [what, value] : rejected)
+			{
+				allZero = allZero && value == 0.0f;
+				values += std::format("{}{} {}", values.empty() ? "" : ", ", what, value);
+			}
+			Check(allZero, std::format("a light SubmitLight rejects has attenuation 0 ({})", values));
+
+			const SpotLight aimless = SpotLightAt(spot.Position, glm::vec3(0.0f), spot.Range);
+			bool sameAsDown = true;
+			for (float degrees : { 0.0f, 25.0f, 90.0f, 180.0f })
+			{
+				const glm::vec3 sample = OffDownwardAxis(spot.Position, degrees, 2.0f);
+				sameAsDown = sameAsDown && GetLightAttenuation(aimless, sample) == GetLightAttenuation(spot, sample);
+			}
+			const float aimlessOnAxis = GetLightAttenuation(aimless, OffDownwardAxis(spot.Position, 0.0f, 2.0f));
+			Check(sameAsDown && IsNear(aimlessOnAxis, 0.5625f),
+				std::format("a spot light with a zero-length direction points down (0, -1, 0) (on the axis: {:.6f})", aimlessOnAxis));
+
+			Transform3DComponent transform(glm::vec3(1.0f, 2.0f, 3.0f));
+			transform.Rotation = glm::angleAxis(glm::radians(40.0f), glm::normalize(glm::vec3(1.0f, 1.0f, 0.0f)));
+			SpotLightComponent component({ 1.0f, 0.5f, 0.25f }, 2.0f, 7.0f);
+			component.Direction = { 0.0f, -0.6f, -0.8f };
+			component.InnerConeAngle = 15.0f;
+			component.OuterConeAngle = 25.0f;
+			const SpotLight built = component.ToLight(transform);
+			const glm::vec3 worldDirection = transform.Rotation * component.Direction;
+			const float alongAxis = GetLightAttenuation(built, transform.Position + worldDirection * 3.5f);
+			Check(IsNear(built.Direction, worldDirection) && built.Position == transform.Position && built.Color == component.Color &&
+				built.Intensity == component.Intensity && built.Range == component.Range &&
+				built.InnerConeAngle == component.InnerConeAngle && built.OuterConeAngle == component.OuterConeAngle && IsNear(alongAxis, 0.5625f),
+				std::format("SpotLightComponent::ToLight on a rotated transform: its position, Rotation * Direction ({:.4f}, {:.4f}, {:.4f}), the rest copied (on the axis at half range: {:.6f})",
+					built.Direction.x, built.Direction.y, built.Direction.z, alongAxis));
+
+			const PointLightComponent pointComponent({ 0.2f, 0.4f, 0.6f }, 1.5f, 6.0f);
+			const PointLight builtPoint = pointComponent.ToLight(transform);
+			Check(builtPoint.Position == transform.Position && builtPoint.Color == pointComponent.Color &&
+				builtPoint.Intensity == pointComponent.Intensity && builtPoint.Range == pointComponent.Range,
+				"PointLightComponent::ToLight: the transform's position, the rest copied");
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const SpotLight spot = SpotLightAt({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 4.0f);
+			const auto sameWeights = [&](const SpotLight& a, const SpotLight& b, std::initializer_list<float> degrees)
+			{
+				for (const float angle : degrees)
+				{
+					const glm::vec3 sample = OffDownwardAxis(spot.Position, angle, 2.0f);
+					if (GetLightAttenuation(a, sample) != GetLightAttenuation(b, sample))
+						return false;
+				}
+				return true;
+			};
+
+			SpotLight outer179 = spot;
+			outer179.OuterConeAngle = 179.0f;
+			SpotLight outer200 = spot;
+			outer200.OuterConeAngle = 200.0f;
+			SpotLight outer1 = spot;
+			outer1.OuterConeAngle = 1.0f;
+			SpotLight outerTiny = spot;
+			outerTiny.OuterConeAngle = 0.2f;
+			SpotLight innerPastOuter = spot;
+			innerPastOuter.InnerConeAngle = 40.0f;
+			SpotLight innerEqualsOuter = spot;
+			innerEqualsOuter.InnerConeAngle = spot.OuterConeAngle;
+
+			const float wideSide = GetLightAttenuation(outer179, OffDownwardAxis(spot.Position, 90.0f, 2.0f));
+			const float hardInside = GetLightAttenuation(innerPastOuter, OffDownwardAxis(spot.Position, 29.0f, 2.0f));
+			const float hardOutside = GetLightAttenuation(innerPastOuter, OffDownwardAxis(spot.Position, 31.0f, 2.0f));
+			Check(sameWeights(outer200, outer179, { 0.0f, 25.0f, 90.0f, 170.0f, 178.5f }) && wideSide > 0.0f &&
+				sameWeights(outerTiny, outer1, { 0.0f, 0.5f, 2.0f }) &&
+				sameWeights(innerPastOuter, innerEqualsOuter, { 0.0f, 10.0f, 29.0f, 31.0f, 90.0f }) && hardInside > 0.0f && hardOutside == 0.0f,
+				std::format("the cone angles are clamped as SubmitLight clamps them: an outer angle of 200 acts as 179 (the side weighs {:.6f}), 0.2 as 1, and an inner angle past the outer acts as equal to it, a hard edge at 30 degrees ({:.6f} inside, {} outside)",
+					wideSide, hardInside, hardOutside));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const float infinity = std::numeric_limits<float>::infinity();
+			const PointLight point = PointLightAt({ 1.0f, 2.0f, 3.0f }, infinity);
+			const SpotLight spot = SpotLightAt({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, infinity);
+			const float pointNear = GetLightAttenuation(point, point.Position + glm::vec3(1.0f, 0.0f, 0.0f));
+			const float pointFar = GetLightAttenuation(point, point.Position + glm::vec3(0.0f, 0.0f, 1.0e6f));
+			const float spotNear = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 0.0f, 2.0f));
+			const float spotFar = GetLightAttenuation(spot, OffDownwardAxis(spot.Position, 0.0f, 1.0e6f));
+			Check(IsNear(pointNear, 1.0f) && IsNear(pointFar, 1.0f) && IsNear(spotNear, 1.0f) && IsNear(spotFar, 1.0f),
+				std::format("a light with an infinite Range has falloff 1 at any finite distance (point {:.6f} at 1 m and {:.6f} at 1000 km, spot on its axis {:.6f} and {:.6f})",
+					pointNear, pointFar, spotNear, spotFar));
 		});
 	}
 

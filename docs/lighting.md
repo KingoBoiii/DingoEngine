@@ -185,7 +185,7 @@ both kinds; the log says which. `UI::RendererStatsSection()` embeds it in your o
 
 **Known limitation.** The cut-off is hard: when a light's rank crosses the budget edge, as the
 camera moves, it switches on or off within one frame. Keep ranges short so that few lights overlap
-on screen.
+on screen, or fade your own lights to fit, as [Candlewick does](#gameplay-queries).
 
 ## Falloff and cones
 
@@ -203,6 +203,67 @@ cone    = saturate((cos θ - cos Outer) / (cos Inner - cos Outer))²   // spot o
   is 1 inside `InnerConeAngle` and fades to 0 at `OuterConeAngle`: linear in the cosine of the
   angle, then squared like the falloff. Equal angles give a nearly hard edge.
 - Directional lights have neither term.
+
+## Gameplay queries
+
+`GetLightAttenuation(light, point)` (`Graphics/Light.h`, for a `PointLight` or a `SpotLight`)
+returns the weight the lit shader gives that light at a world point, from 0 to 1: `falloff` for a
+point light and `falloff * cone` for a spot, each exactly as defined above (both already squared,
+so 0.5625 at half range on a spot's axis). It sets the cone up with the renderer's own code (the
+angle clamps, the direction normalised, a zero direction pointing down), so the cone a game tests
+is the cone the player sees.
+
+- It leaves out the surface's `N.L` and the light's `Color` and `Intensity`: it says how much of
+  the light reaches the point, not how bright a surface there looks.
+- It ignores occlusion. Light passes through walls (no shadows until v0.9), so pair it with a
+  raycast when walls should block.
+- It knows nothing about this frame's budget. A light dropped past `MaxLocalLights`, or refused
+  because too many were submitted, is not drawn, yet still has a weight. A game whose rules depend
+  on a light being seen should keep that light within the budget.
+- A light `SubmitLight` ignores weighs 0 everywhere: `Intensity` or `Range` not above zero, or a
+  non-finite position, colour × intensity, direction or cone angle. An infinite `Range` is
+  accepted, and then the falloff is 1 everywhere.
+
+`PointLightComponent::ToLight(transform)` and `SpotLightComponent::ToLight(transform)` build the
+light `Scene::SubmitLights` draws for a component: the transform's position and, for a spot,
+`Rotation * Direction`. They do not look at `Enabled`; check it yourself. The transform is read as
+world space. For a light under a [parent](scenes-and-ecs.md#parenting-v071), pass one built from
+`GetWorldPosition()` and `GetWorldRotation()`, not the entity's local `Transform3DComponent`.
+
+```cpp
+bool SeesPoint(Entity warden, const glm::vec3& point)
+{
+    const SpotLightComponent& eye = warden.GetComponent<SpotLightComponent>();
+    const SpotLight eyeLight = eye.ToLight(warden.GetComponent<Transform3DComponent>());
+    return eye.Enabled && GetLightAttenuation(eyeLight, point) >= 0.2f;
+}
+```
+
+`examples/Candlewick/src/Detection.cpp` is the full worked example. A warden's eye is a
+`SpotLightComponent`, and every frame the game builds its light with `ToLight` and weighs it at three
+points on the player: feet (0.1 m), chest (1.0 m) and head (1.6 m). A sample counts as seen when its
+weight is at least 0.1, which is where the lit pool on the floor fades out of sight, and a ray from the
+eye towards it hits nothing more than 0.3 m short of it (the player is a character controller, so no
+ray ever hits the player itself). The eye's `Range` is also clamped every frame to the wall it faces,
+found with a level ray from the eye, so neither the drawn cone nor its weight reaches through that
+wall. The cone the player sees lit on the floor is therefore the cone that catches them.
+
+**Keeping gameplay lights inside the budget.** The weight ignores the frame's budget, so a game
+whose rules read a light should not leave the choice of which lights are drawn to the engine's
+ranking. Candlewick's `LightLod` (`examples/Candlewick/src/LightLod.cpp`) splits its lights in two. The
+gameplay lights (the lantern, every warden's lamp and eye, lit braziers) are never touched. The
+decorative flames (sconces and candles) are the pool it manages. Each frame it counts the gameplay
+lights that are on and inside the view frustum, with the same plane extraction and sphere test
+`Renderer3D` culls with, and gives the flames the slots left under `GetLocalLightBudget()` minus two
+spare. Flames are ranked by distance to the camera's focus, with a small bonus for one already lit so
+the cut-off does not flicker. The ones that do not fit fade their `Intensity` to 0 over 0.3 s and are
+then disabled, and a flame fades in only when there is room, starting just before it enters the view.
+If the exact in-view count is still over, the lowest-ranked flames in view drop at once. So the
+engine's own selection never has to drop a gameplay light, and the flames that go do so by fading, not
+by popping at the budget edge. The cost is a copy of the engine's cull test in game code, which has to
+change if the engine's does, so the game warns once if the renderer ever drops a light with the LOD on.
+`--no-light-lod` turns the LOD off to show the engine's own selection, and `--light-budget` stops at 16,
+the 14 gameplay lights that can burn at once plus the two spare.
 
 ## Lit materials
 
@@ -350,3 +411,7 @@ own, since submitting any light or ambient switches the default off.
   and `--specular=off`.
 - **DungeonCrawler3D** with `--night` (`examples/DungeonCrawler3D/`): a dim moon, a lantern that
   follows the hero, and a point light on each treasure.
+- **Candlewick** (`examples/Candlewick/`): the reference for lights that are gameplay. A lantern whose
+  range is its oil, wardens whose spot-light cones are tested with `GetLightAttenuation`, a game-side
+  light LOD, and lit emissive braziers as checkpoints. `--debug-cone` draws the tested cones and
+  `--no-light-lod` shows the engine's own selection.

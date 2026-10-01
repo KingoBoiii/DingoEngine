@@ -36,6 +36,15 @@ namespace Dingo::Internal::LightSystem
 			std::sort(s_Entities.begin(), s_Entities.end(), [](entt::entity a, entt::entity b) { return entt::to_entity(a) < entt::to_entity(b); });
 			return s_Entities;
 		}
+
+		// ToLight reads a world-space transform; under a parent the component holds a local one.
+		Transform3DComponent WorldTransform(entt::entity entity, HierarchySystem::WorldMemo& memo)
+		{
+			Transform3DComponent world;
+			world.Position = memo.Position(entity);
+			world.Rotation = memo.Rotation(entity);
+			return world;
+		}
 	}
 
 	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
@@ -79,7 +88,7 @@ namespace Dingo::Internal::LightSystem
 
 			hasLight = true;
 			if (light.Enabled)
-				renderer.SubmitLight(PointLight{ memo.Position(entity), light.Color, light.Intensity, light.Range });
+				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
 		}
 
 		for (entt::entity entity : InEntityOrder<SpotLightComponent>(registry))
@@ -90,18 +99,8 @@ namespace Dingo::Internal::LightSystem
 				continue;
 
 			hasLight = true;
-			if (!light.Enabled)
-				continue;
-
-			SpotLight spot;
-			spot.Position = memo.Position(entity);
-			spot.Direction = memo.Rotation(entity) * light.Direction;
-			spot.Color = light.Color;
-			spot.Intensity = light.Intensity;
-			spot.Range = light.Range;
-			spot.InnerConeAngle = light.InnerConeAngle;
-			spot.OuterConeAngle = light.OuterConeAngle;
-			renderer.SubmitLight(spot);
+			if (light.Enabled)
+				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
 		}
 
 		if (!hasLight)

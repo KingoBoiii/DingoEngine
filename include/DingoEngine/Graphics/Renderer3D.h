@@ -236,6 +236,8 @@ namespace Dingo
 		CameraData m_CameraData = {};
 
 		LocalLightCandidate* AddLocalLight();
+		template<typename LightType>
+		bool SubmitLocalLight(const LightType& light);
 		static constexpr uint32_t k_MaxPendingLocalLights = 8192;
 
 		std::vector<LocalLightCandidate> m_LocalLights;
