@@ -80,6 +80,11 @@ namespace
 		return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 	}
 
+	float FiniteOr(float value, float fallback)
+	{
+		return std::isfinite(value) ? value : fallback;
+	}
+
 	// One NaN light would turn every lit pixel's sum to NaN, so the comparisons are written to
 	// reject NaN too.
 	bool IsUsableLocalLight(const glm::vec3& position, const glm::vec3& color, float intensity, float range)
@@ -302,8 +307,13 @@ namespace Dingo
 		// binds it, so this must not be dirty-gated (skipping it floods "binding volatile constant
 		// buffer before writing" errors).
 		LitMaterialData data;
-		data.EmissiveColor = glm::vec4(material->GetEmissiveColor(), 0.0f);
-		data.Surface = glm::vec4(material->GetEmissiveStrength(), glm::clamp(material->GetRoughness(), 0.0f, 1.0f), std::max(material->GetSpecular(), 0.0f), 0.0f);
+		const glm::vec3& emissiveColor = material->GetEmissiveColor();
+		data.EmissiveColor = glm::vec4(IsFinite(emissiveColor) ? emissiveColor : glm::vec3(0.0f), 0.0f);
+		data.Surface = glm::vec4(
+			FiniteOr(material->GetEmissiveStrength(), 0.0f),
+			glm::clamp(FiniteOr(material->GetRoughness(), 0.5f), 0.0f, 1.0f),
+			std::max(FiniteOr(material->GetSpecular(), 0.0f), 0.0f),
+			0.0f);
 		material->SetUniform(data);
 	}
 
