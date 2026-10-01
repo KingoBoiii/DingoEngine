@@ -91,6 +91,11 @@ namespace Dingo
 		return entity.GetComponent<Transform3DComponent>().Position;
 	}
 
+	glm::quat Player::GetFacing() const
+	{
+		return glm::angleAxis(m_Yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+
 	void Player::Update(float deltaTime)
 	{
 		// The controller dies with the physics world on every OnStop, so it is looked up each frame.
@@ -108,7 +113,9 @@ namespace Dingo
 		move.x += stick.x;
 		move.z += stick.y;
 
-		if (glm::length(move) > 1.0f)
+		if (m_MovementLocked)
+			move = glm::vec3(0.0f);
+		else if (glm::length(move) > 1.0f)
 			move = glm::normalize(move);
 
 		if (controller->IsGrounded() && m_VerticalVelocity <= 0.0f)
@@ -128,7 +135,7 @@ namespace Dingo
 
 	void Player::PlaceVisuals(const glm::vec3& feet)
 	{
-		const glm::quat facing = glm::angleAxis(m_Yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+		const glm::quat facing = GetFacing();
 
 		auto& body = m_Body.GetComponent<Transform3DComponent>();
 		body.Position = feet + glm::vec3(0.0f, k_BodyHeight * 0.5f, 0.0f);

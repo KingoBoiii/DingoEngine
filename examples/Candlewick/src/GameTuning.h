@@ -13,6 +13,15 @@ namespace Dingo
 	inline constexpr float HUD_PADDING         = 0.45f;
 	inline constexpr float HUD_ROOM_LABEL_SIZE = 0.55f;
 	inline constexpr float HUD_ROOM_LABEL_DROP = 0.95f;
+	inline constexpr float HUD_OIL_BAR_WIDTH   = 4.5f;
+	inline constexpr float HUD_OIL_BAR_HEIGHT  = 0.46f;
+	inline constexpr float HUD_OIL_BAR_INSET   = 0.07f;
+	inline constexpr float HUD_OIL_BAR_RISE    = 1.1f;
+	inline constexpr float HUD_OIL_STATE_SIZE  = 0.44f;
+	inline constexpr float HUD_OIL_STATE_RISE  = 0.42f;
+	inline constexpr float HUD_OIL_HINT_SIZE   = 0.32f;
+	inline constexpr float HUD_OIL_HINT_DROP   = 0.78f;
+	inline constexpr float HUD_OIL_FILL_LIFT   = 0.1f;
 
 	// --- Camera (three-quarter view, fixed yaw) --------------------------------
 	inline constexpr float CAMERA_FOV          = 50.0f;
@@ -44,6 +53,28 @@ namespace Dingo
 	inline constexpr float PLAYER_SPAWN_LIFT   = 0.05f;
 	inline constexpr float PLAYER_TURN_SPEED   = 14.0f;
 	inline constexpr float GRAVITY_Y           = -18.0f;
+
+	// --- Lantern --------------------------------------------------------------------
+	inline constexpr float OIL_MAX               = 100.0f;
+	inline constexpr float OIL_BURN_PER_SECOND   = 1.0f;
+	inline constexpr float OIL_RELIGHT_COST      = 3.0f;
+	inline constexpr float OIL_PER_FLASK         = 35.0f;
+	inline constexpr float FLASK_PICKUP_RADIUS   = 1.0f;
+	inline constexpr float LANTERN_STRIKE_TIME   = 0.8f;
+	inline constexpr float LANTERN_RANGE_MIN     = 2.5f;
+	inline constexpr float LANTERN_RANGE_MAX     = 7.0f;
+	inline constexpr float LANTERN_INTENSITY     = 2.0f;
+	inline constexpr glm::vec3 LANTERN_COLOR     = { 1.0f, 0.72f, 0.42f };
+	inline constexpr float LANTERN_FLICKER_OIL   = 5.0f;
+	inline constexpr float LANTERN_FLICKER_DEPTH = 0.4f;
+	inline constexpr float LANTERN_EMISSIVE_MIN  = 0.4f;
+	inline constexpr float LANTERN_EMISSIVE_MAX  = 1.1f;
+
+	// --- Light LOD (decorative flames only) ------------------------------------------
+	inline constexpr int   LIGHT_LOD_HEADROOM    = 2;
+	inline constexpr float LIGHT_LOD_STICKINESS  = 0.6f;
+	inline constexpr float LIGHT_LOD_FADE_TIME   = 0.3f;
+	inline constexpr float LIGHT_LOD_VIEW_MARGIN = 2.0f;
 
 	// --- Ambient: the keep has no sun ------------------------------------------
 	inline constexpr glm::vec3 AMBIENT_COLOR   = { 0.55f, 0.6f, 1.0f };
@@ -94,6 +125,19 @@ namespace Dingo
 	inline constexpr glm::vec4 COLOR_SKIN      = { 0.82f, 0.66f, 0.54f, 1.0f };
 	inline constexpr float FACE_EMISSIVE       = 0.22f;
 	inline constexpr float FACE_ROUGHNESS      = 0.9f;
+
+	inline constexpr glm::vec4 COLOR_GLASS     = { 1.0f, 0.82f, 0.55f, 1.0f };
+	inline constexpr float GLASS_ROUGHNESS     = 0.2f;
+	inline constexpr glm::vec4 COLOR_OIL       = { 0.95f, 0.72f, 0.2f, 1.0f };
+	inline constexpr glm::vec3 OIL_EMISSIVE_COLOR = { 1.0f, 0.78f, 0.3f };
+	inline constexpr float OIL_EMISSIVE        = 0.4f;
+	inline constexpr float OIL_ROUGHNESS       = 0.4f;
+	inline constexpr float OIL_SPECULAR        = 0.08f;
+
+	inline constexpr glm::vec4 COLOR_METER_BG      = { 0.07f, 0.06f, 0.06f, 0.88f };
+	inline constexpr glm::vec4 COLOR_METER_LIT     = { 1.0f, 0.7f, 0.26f, 1.0f };
+	inline constexpr glm::vec4 COLOR_METER_SNUFFED = { 0.42f, 0.42f, 0.46f, 1.0f };
+	inline constexpr glm::vec4 COLOR_TEXT_ALERT    = { 0.95f, 0.42f, 0.32f, 1.0f };
 
 	inline constexpr glm::vec4 COLOR_TITLE     = { 1.0f, 0.74f, 0.42f, 1.0f };
 	inline constexpr glm::vec4 COLOR_TEXT      = { 0.92f, 0.9f, 0.84f, 1.0f };

@@ -2,6 +2,11 @@
 
 #include "CandlewickLayer.h"
 
+#include <charconv>
+#include <optional>
+#include <string_view>
+#include <system_error>
+
 namespace Dingo
 {
 
@@ -33,6 +38,24 @@ static Dingo::GraphicsAPI ParseGraphicsAPI(const Dingo::ApplicationCommandLineAr
 	return Dingo::GraphicsAPI::Vulkan;
 }
 
+static uint32_t ParseLightBudget(const Dingo::ApplicationCommandLineArgs& args)
+{
+	const uint32_t fallback = Dingo::Renderer3DCapabilities{}.MaxLocalLights;
+	const std::optional<std::string_view> value = args.Get("light-budget");
+	if (!value)
+		return fallback;
+
+	uint32_t parsed = 0;
+	const char* end = value->data() + value->size();
+	const auto [ptr, error] = std::from_chars(value->data(), end, parsed);
+	if (error != std::errc{} || ptr != end || parsed < 1 || parsed > Dingo::Renderer3D::k_MaxLocalLights)
+	{
+		DE_WARN("Candlewick: ignoring --light-budget={} (expected 1 to {})", *value, Dingo::Renderer3D::k_MaxLocalLights);
+		return fallback;
+	}
+	return parsed;
+}
+
 Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args)
 {
 	ApplicationParams params = ApplicationParams{
@@ -50,6 +73,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.EnableUI = false,
 	};
+	params.Renderer3D.Capabilities.MaxLocalLights = ParseLightBudget(args);
 
 	CandlewickApplication* app = new CandlewickApplication(params);
 	app->Initialize();

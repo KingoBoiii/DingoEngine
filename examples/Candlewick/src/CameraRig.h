@@ -20,11 +20,16 @@ namespace Dingo
 		void Update(float deltaTime, const glm::vec3& playerFeet);
 
 		const glm::vec3& GetEye() const { return m_Eye; }
+		const glm::vec3& GetFocus() const { return m_Focus; }
+
+		// The exact matrix the SceneRenderer hands Renderer3D this frame, as of the last Update.
+		glm::mat4 GetViewProjection() const;
 
 	private:
 		void Apply(const glm::vec3& focus, float distance);
 
 	private:
+		Scene& m_Scene;
 		Entity m_Entity;
 		std::optional<TileRect> m_OverviewRoom;
 

@@ -41,6 +41,12 @@ namespace
 	constexpr float k_SconceBracketDrop = 0.1f;
 	constexpr float k_SconceFlameRise = 0.06f;
 
+	constexpr glm::vec3 k_FlaskBodySize = { 0.24f, 0.2f, 0.24f };
+	constexpr glm::vec3 k_FlaskNeckSize = { 0.07f, 0.12f, 0.07f };
+	constexpr glm::vec3 k_FlaskCorkSize = { 0.09f, 0.04f, 0.09f };
+	constexpr float k_FlaskNeckCenter = 0.25f;
+	constexpr float k_FlaskCorkCenter = 0.33f;
+
 	constexpr float k_UnitSphereRadius = 0.5f;
 
 	std::vector<TileRect> GreedyRects(std::vector<bool> open, int width, int height, int maxSide)
@@ -154,6 +160,7 @@ namespace Dingo
 		DestroyAndDelete(m_BrassMaterial);
 		DestroyAndDelete(m_WaxMaterial);
 		DestroyAndDelete(m_FlameMaterial);
+		DestroyAndDelete(m_FlaskMaterial);
 		delete m_FlameMesh;
 	}
 
@@ -192,6 +199,13 @@ namespace Dingo
 			.SetDebugName("KeepFlameCore")
 			.SetEmissiveColor(FLAME_COLOR)
 			.SetEmissiveStrength(FLAME_EMISSIVE));
+
+		m_FlaskMaterial = renderer3D.CreateLitMaterial(MaterialParams()
+			.SetDebugName("KeepFlask")
+			.SetRoughness(OIL_ROUGHNESS)
+			.SetSpecular(OIL_SPECULAR)
+			.SetEmissiveColor(OIL_EMISSIVE_COLOR)
+			.SetEmissiveStrength(OIL_EMISSIVE));
 	}
 
 	void KeepWorld::SpawnAmbient()
@@ -323,7 +337,7 @@ namespace Dingo
 			m_Flames.push_back(SpawnCandle(marker));
 
 		for (const KeepMarker& marker : m_Map.GetMarkers(MarkerType::Flask))
-			m_FlaskSpots.push_back({ marker.Tile, marker.Room, m_Map.TileCenter(marker.Tile) });
+			m_FlaskSpots.push_back(SpawnFlask(marker));
 	}
 
 	BrazierSpot KeepWorld::SpawnBrazier(const KeepMarker& marker)
@@ -398,6 +412,48 @@ namespace Dingo
 		flame.Room = marker.Room;
 		flame.BaseIntensity = CANDLE_LIGHT_INTENSITY;
 		return flame;
+	}
+
+	FlaskSpot KeepWorld::SpawnFlask(const KeepMarker& marker)
+	{
+		FlaskSpot flask;
+		flask.Tile = marker.Tile;
+		flask.Room = marker.Room;
+		flask.Position = m_Map.TileCenter(marker.Tile);
+
+		Entity body = m_Scene.CreateEntity("FlaskBody");
+		auto& bodyTransform = body.AddComponent<Transform3DComponent>();
+		bodyTransform.Position = flask.Position + glm::vec3(0.0f, k_FlaskBodySize.y * 0.5f, 0.0f);
+		bodyTransform.Scale = k_FlaskBodySize;
+		body.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, COLOR_OIL)).Material = m_FlaskMaterial;
+
+		flask.Parts.push_back(body);
+		flask.Parts.push_back(SpawnDecor("FlaskNeck", flask.Position + glm::vec3(0.0f, k_FlaskNeckCenter, 0.0f), k_FlaskNeckSize, COLOR_OIL, m_FlaskMaterial));
+		flask.Parts.push_back(SpawnDecor("FlaskCork", flask.Position + glm::vec3(0.0f, k_FlaskCorkCenter, 0.0f), k_FlaskCorkSize, COLOR_BRASS, m_BrassMaterial));
+		return flask;
+	}
+
+	size_t KeepWorld::CollectFlasks(const glm::vec3& feet, size_t maxCount)
+	{
+		size_t collected = 0;
+		for (FlaskSpot& flask : m_FlaskSpots)
+		{
+			if (collected >= maxCount)
+				break;
+			if (flask.Collected)
+				continue;
+
+			const glm::vec2 offset(flask.Position.x - feet.x, flask.Position.z - feet.z);
+			if (glm::dot(offset, offset) > FLASK_PICKUP_RADIUS * FLASK_PICKUP_RADIUS)
+				continue;
+
+			flask.Collected = true;
+			for (Entity part : flask.Parts)
+				part.Destroy();
+			flask.Parts.clear();
+			++collected;
+		}
+		return collected;
 	}
 
 	void KeepWorld::SetWallHidden(WallRect& wall, bool hidden)

@@ -231,6 +231,7 @@ Every phase's before/after and pixel checks need reproducible frames:
 | `--oil=<0-100>` | starting oil |
 | `--no-light-lod` | engine-only light selection |
 | `--debug-cone` | wireframe cones (a procedural cone mesh per warden, `FillMode::Wireframe`) and the three samples coloured by weight |
+| `--light-budget=<1-32>` | *(C3)* lowers `MaxLocalLights`, to stress the light LOD |
 
 ---
 
@@ -443,3 +444,28 @@ Docs (C6):
   - C5: brazier cores need a dark "unlit" material and a lit one (cores share one flame material
     today); `KeepWorld`'s brazier list is in raster order, so index it by `Room`, not position.
     The player needs a teleport for respawns.
+
+*C3 (lantern and light LOD):*
+
+- Lantern intensity is 2.0, not 1.3: at hand height 1.3 didn't read. Relighting needs oil > 3,
+  so a strike never yields a dead flame; between 0 and 3 the HUD says "Too little oil to strike".
+  A Q/X pressed during the strike is queued. The last 5 oil flicker.
+- The hand position swings (side → front-left → front, then shortens) by horizontal rays from the
+  controller axis, so the light never sits inside a wall; frame, glass and light move together.
+- Flasks: 6, no light or collider, +35 oil, and left in place while they would be wasted
+  (oil > 65).
+- **Light LOD as built** (replaces §3.5's rank hysteresis, which cancelled the headroom):
+  capacity = budget − 2. Each frame the gameplay lights that are on and inside the engine's own
+  frustum test (`CameraRig::GetViewProjection`, the matrix Renderer3D culls with) are counted;
+  flames get the remaining slots, ranked by distance to the camera focus with an index tiebreak
+  and a 0.6 m stickiness bonus for lit flames. A flame fades in only when there is room (planned
+  with a 2 m inflated sphere so it fades before entering view); if the exact in-view load is still
+  over capacity, the lowest-ranked in-view flames snap to 0. Out-of-view flames stay at full
+  weight. Gameplay lights register with `LightLod::AddGameplayLight` (point or spot); C5's flicker
+  goes through `SetFlicker`.
+- Update order: Esc → Player → flasks → Lantern → (C4) → (C5) → Camera → LightLod → cutaway → Hud.
+- Verified: a Gallery walk (both legs, snuff and relight on each) logs no budget WARN at the
+  default budget and at `--light-budget=12`; the same walk with `--no-light-lod` does (23 lights
+  vs 12). With the headroom set to 0 the walks at budgets 8, 12 and 32 still log none, so the
+  accounting is exact. Gallery overview F4: 30/32 drawn, 0 dropped with LOD; 32/32, 3 dropped
+  without.

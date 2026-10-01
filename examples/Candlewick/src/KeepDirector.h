@@ -11,6 +11,8 @@ namespace Dingo
 	class CameraRig;
 	class Hud;
 	class KeepWorld;
+	class Lantern;
+	class LightLod;
 	class Player;
 
 	class KeepDirectorScript : public ScriptableEntity
@@ -31,6 +33,8 @@ namespace Dingo
 		std::unique_ptr<KeepWorld> m_World;
 		std::unique_ptr<Player> m_Player;
 		std::unique_ptr<CameraRig> m_Camera;
+		std::unique_ptr<Lantern> m_Lantern;
+		std::unique_ptr<LightLod> m_LightLod;
 		std::unique_ptr<Hud> m_Hud;
 	};
 

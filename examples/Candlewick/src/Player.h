@@ -2,6 +2,7 @@
 #include <DingoEngine.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace Dingo
 {
@@ -22,6 +23,12 @@ namespace Dingo
 		Entity GetEntity() const { return m_Entity; }
 		glm::vec3 GetPosition() const;
 
+		// The way the body faces: local +Z is forward.
+		glm::quat GetFacing() const;
+
+		// Takes effect on the next Update, so a lock set by a later subsystem trails by one frame.
+		void SetMovementLocked(bool locked) { m_MovementLocked = locked; }
+
 	private:
 		void PlaceVisuals(const glm::vec3& feet);
 
@@ -38,6 +45,7 @@ namespace Dingo
 
 		float m_VerticalVelocity = 0.0f;
 		float m_Yaw = 0.0f;
+		bool m_MovementLocked = false;
 	};
 
 }

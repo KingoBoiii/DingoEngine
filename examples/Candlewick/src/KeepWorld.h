@@ -33,6 +33,8 @@ namespace Dingo
 		glm::ivec2 Tile{ 0 };
 		int Room = -1;
 		glm::vec3 Position{ 0.0f };
+		std::vector<Entity> Parts;
+		bool Collected = false;
 	};
 
 	// Builds the level from the map and owns every material and mesh it creates.
@@ -48,6 +50,9 @@ namespace Dingo
 		const std::vector<DecorFlame>& GetFlames() const { return m_Flames; }
 		const std::vector<BrazierSpot>& GetBraziers() const { return m_Braziers; }
 		const std::vector<FlaskSpot>& GetFlaskSpots() const { return m_FlaskSpots; }
+		Material* GetBrassMaterial() const { return m_BrassMaterial; }
+
+		size_t CollectFlasks(const glm::vec3& feet, size_t maxCount);
 
 		// Hides the wall rectangles (with their caps and mounted sconces) that sit between the eye and the target.
 		void UpdateCutaway(const glm::vec3& eye, const glm::vec3& target);
@@ -84,6 +89,7 @@ namespace Dingo
 		BrazierSpot SpawnBrazier(const KeepMarker& marker);
 		std::optional<DecorFlame> SpawnSconce(const KeepMarker& marker);
 		DecorFlame SpawnCandle(const KeepMarker& marker);
+		FlaskSpot SpawnFlask(const KeepMarker& marker);
 
 	private:
 		Scene& m_Scene;
@@ -98,6 +104,7 @@ namespace Dingo
 		Material* m_BrassMaterial = nullptr;
 		Material* m_WaxMaterial = nullptr;
 		Material* m_FlameMaterial = nullptr;
+		Material* m_FlaskMaterial = nullptr;
 
 		std::vector<WallRect> m_Walls;
 		std::vector<int> m_WallOfTile;

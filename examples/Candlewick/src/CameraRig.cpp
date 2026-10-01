@@ -31,7 +31,7 @@ namespace
 	float ViewportAspect()
 	{
 		const glm::vec2 viewport = Application::Get().GetRenderer2D().GetViewportSize();
-		return viewport.y > 0.0f ? viewport.x / viewport.y : 16.0f / 9.0f;
+		return viewport.y > 0.0f ? viewport.x / viewport.y : 1.0f;
 	}
 
 	float FitDistance(const TileRect& room, float aspect)
@@ -78,7 +78,7 @@ namespace Dingo
 {
 
 	CameraRig::CameraRig(Scene& scene, const glm::vec3& focus, const std::optional<TileRect>& overviewRoom)
-		: m_OverviewRoom(overviewRoom)
+		: m_Scene(scene), m_OverviewRoom(overviewRoom)
 	{
 		m_Entity = scene.CreateEntity("Camera");
 		auto& camera = m_Entity.AddComponent<CameraComponent>();
@@ -113,11 +113,19 @@ namespace Dingo
 
 	void CameraRig::Apply(const glm::vec3& focus, float distance)
 	{
+		m_Focus = focus;
 		m_Eye = focus + ViewDirection() * distance;
+
+		const glm::mat4 view = glm::lookAt(m_Eye, focus, glm::vec3(0.0f, 1.0f, 0.0f));
 
 		auto& transform = m_Entity.GetComponent<Transform3DComponent>();
 		transform.Position = m_Eye;
-		transform.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(m_Eye, focus, glm::vec3(0.0f, 1.0f, 0.0f))));
+		transform.Rotation = glm::quat_cast(glm::inverse(view));
+	}
+
+	glm::mat4 CameraRig::GetViewProjection() const
+	{
+		return m_Scene.GetCameraViewProjection(m_Entity, ViewportAspect());
 	}
 
 }
