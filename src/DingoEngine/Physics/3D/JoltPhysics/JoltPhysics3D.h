@@ -46,6 +46,9 @@ namespace Dingo
 		void ApplyImpulse(PhysicsBodyId3D body, const glm::vec3& impulse) override;
 		void ApplyForce(PhysicsBodyId3D body, const glm::vec3& force) override;
 
+		void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore) override;
+		bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const override;
+
 		bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit) const override;
 		bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit) const override;
 		bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out) const override;

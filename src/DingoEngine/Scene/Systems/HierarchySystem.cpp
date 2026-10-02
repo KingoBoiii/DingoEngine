@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/AnimationSystem.h"
 
 #include <cmath>
 #include <vector>
@@ -35,6 +36,22 @@ namespace Dingo
 					return true;
 				}
 
+				// Identity while the parent's model has no such joint, so the child sits at its origin.
+				glm::mat4 SocketFrame(const entt::registry& registry, entt::entity parent, const SocketComponent& socket)
+				{
+					glm::mat4 frame(1.0f);
+					AnimationSystem::JointFrame(registry, parent, socket.Joint, frame);
+					return frame;
+				}
+
+				glm::quat FrameRotation(const glm::mat4& frame)
+				{
+					glm::vec3 position, scale;
+					glm::quat rotation;
+					Decompose(frame, position, rotation, scale);
+					return rotation;
+				}
+
 			}
 
 			entt::entity GetParent(const entt::registry& registry, entt::entity handle)
@@ -55,6 +72,36 @@ namespace Dingo
 			{
 				const Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle);
 				return transform ? transform->GetTransform() : glm::mat4(1.0f);
+			}
+
+			glm::mat4 LinkTransform(const entt::registry& registry, entt::entity handle)
+			{
+				const SocketComponent* socket = registry.try_get<SocketComponent>(handle);
+				const entt::entity parent = socket ? GetParent(registry, handle) : entt::null;
+				if (parent == entt::null)
+					return LocalTransform(registry, handle);
+
+				return SocketFrame(registry, parent, *socket) * LocalTransform(registry, handle);
+			}
+
+			void SetSocket(entt::registry& registry, entt::entity child, std::string_view joint)
+			{
+				if (joint.empty())
+				{
+					registry.remove<SocketComponent>(child);
+					return;
+				}
+
+				// Copied before the registry is touched: `joint` may view a socket in the very storage
+				// that replacing or growing would overwrite.
+				std::string name(joint);
+				registry.emplace_or_replace<SocketComponent>(child, SocketComponent{ std::move(name) });
+			}
+
+			std::string_view GetSocket(const entt::registry& registry, entt::entity child)
+			{
+				const SocketComponent* socket = registry.try_get<SocketComponent>(child);
+				return socket ? std::string_view(socket->Joint) : std::string_view();
 			}
 
 			bool IsSelfOrAncestor(const entt::registry& registry, entt::entity candidate, entt::entity handle)
@@ -133,7 +180,7 @@ namespace Dingo
 
 				glm::mat4 world = LocalTransform(registry, chain.back());
 				for (auto it = chain.rbegin() + 1; it != chain.rend(); ++it)
-					world = world * LocalTransform(registry, *it);
+					world = world * LinkTransform(registry, *it);
 
 				return world;
 			}
@@ -144,13 +191,21 @@ namespace Dingo
 				if (parent == entt::null)
 					return local.GetTransform();
 
-				return WorldTransform(registry, parent) * local.GetTransform();
+				const SocketComponent* socket = registry.try_get<SocketComponent>(handle);
+				if (!socket)
+					return WorldTransform(registry, parent) * local.GetTransform();
+
+				return WorldTransform(registry, parent) * (SocketFrame(registry, parent, *socket) * local.GetTransform());
 			}
 
 			glm::mat4 ParentWorldTransform(const entt::registry& registry, entt::entity handle)
 			{
 				const entt::entity parent = GetParent(registry, handle);
-				return parent != entt::null ? WorldTransform(registry, parent) : glm::mat4(1.0f);
+				if (parent == entt::null)
+					return glm::mat4(1.0f);
+
+				const SocketComponent* socket = registry.try_get<SocketComponent>(handle);
+				return socket ? WorldTransform(registry, parent) * SocketFrame(registry, parent, *socket) : WorldTransform(registry, parent);
 			}
 
 			void WorldPose(const entt::registry& registry, entt::entity handle, const Transform3DComponent& local,
@@ -216,7 +271,7 @@ namespace Dingo
 				}
 
 				glm::mat4 inverseParent;
-				if (TryInverse(WorldTransform(registry, parent), inverseParent))
+				if (TryInverse(ParentWorldTransform(registry, handle), inverseParent))
 					local.Position = glm::vec3(inverseParent * glm::vec4(position, 1.0f));
 			}
 
@@ -229,9 +284,13 @@ namespace Dingo
 					return;
 				}
 
+				const glm::mat4 parentFrame = ParentWorldTransform(registry, handle);
 				glm::mat4 inverseParent;
-				if (TryInverse(WorldTransform(registry, parent), inverseParent))
-					local.Rotation = glm::normalize(glm::inverse(WorldRotation(registry, parent)) * rotation);
+				if (!TryInverse(parentFrame, inverseParent))
+					return;
+
+				const glm::quat parentRotation = registry.try_get<SocketComponent>(handle) ? FrameRotation(parentFrame) : WorldRotation(registry, parent);
+				local.Rotation = glm::normalize(glm::inverse(parentRotation) * rotation);
 			}
 
 			void SetLocalFromWorld(Transform3DComponent& local, const glm::mat4& parentWorld, const glm::mat4& world)
@@ -391,11 +450,15 @@ namespace Dingo
 
 			void WorldMemo::Begin(const entt::registry& registry)
 			{
+				m_Registry = &registry;
 				m_Transforms3D = registry.storage<Transform3DComponent>();
 				m_Transforms2D = registry.storage<TransformComponent>();
 				m_Links = registry.storage<HierarchyComponent>();
 				if (m_Links && m_Links->empty())
 					m_Links = nullptr;
+				m_Sockets = registry.storage<SocketComponent>();
+				if (m_Sockets && m_Sockets->empty())
+					m_Sockets = nullptr;
 
 				if (++m_Pass == 0)
 				{
@@ -451,6 +514,23 @@ namespace Dingo
 				return m_Transforms3D && m_Transforms3D->contains(handle) ? m_Transforms3D->get(handle).GetTransform() : glm::mat4(1.0f);
 			}
 
+			glm::mat4 WorldMemo::LinkOf(entt::entity handle, const glm::mat4& local) const
+			{
+				if (!m_Sockets || !m_Sockets->contains(handle))
+					return local;
+
+				const entt::entity parent = ParentOf(handle);
+				return parent == entt::null ? local : SocketFrame(*m_Registry, parent, m_Sockets->get(handle)) * local;
+			}
+
+			glm::mat4 WorldMemo::ParentFrame(entt::entity handle, entt::entity parent)
+			{
+				if (!m_Sockets || !m_Sockets->contains(handle))
+					return World(parent);
+
+				return World(parent) * SocketFrame(*m_Registry, parent, m_Sockets->get(handle));
+			}
+
 			void WorldMemo::Forget(entt::entity handle)
 			{
 				const std::size_t index = static_cast<std::size_t>(entt::to_entity(handle));
@@ -481,7 +561,12 @@ namespace Dingo
 				for (auto it = m_Chain.rbegin(); it != m_Chain.rend(); ++it)
 				{
 					Entry3D& entry = m_World3D[Slot(*it)];
-					entry.World = resolved == static_cast<std::size_t>(-1) ? LocalOf(*it) : m_World3D[resolved].World * LocalOf(*it);
+					if (resolved == static_cast<std::size_t>(-1))
+						entry.World = LocalOf(*it);
+					else if (m_Sockets)
+						entry.World = m_World3D[resolved].World * LinkOf(*it, LocalOf(*it));
+					else
+						entry.World = m_World3D[resolved].World * LocalOf(*it);
 					entry.Pass = m_Pass;
 					resolved = Slot(*it);
 				}
@@ -498,6 +583,8 @@ namespace Dingo
 				// Only a parent's world is read again this pass, so a leaf skips the store.
 				if (links->FirstChild != entt::null)
 					return World(handle);
+				if (m_Sockets)
+					return World(links->Parent) * LinkOf(handle, local.GetTransform());
 				return World(links->Parent) * local.GetTransform();
 			}
 
@@ -625,7 +712,7 @@ namespace Dingo
 				else
 				{
 					glm::mat4 inverseParent;
-					if (TryInverse(World(parent), inverseParent))
+					if (TryInverse(ParentFrame(handle, parent), inverseParent))
 						local.Position = glm::vec3(inverseParent * glm::vec4(position, 1.0f));
 				}
 				Forget(handle);
@@ -640,9 +727,13 @@ namespace Dingo
 				}
 				else
 				{
+					const glm::mat4 parentFrame = ParentFrame(handle, parent);
 					glm::mat4 inverseParent;
-					if (TryInverse(World(parent), inverseParent))
-						local.Rotation = glm::normalize(glm::inverse(Rotation(parent)) * rotation);
+					if (TryInverse(parentFrame, inverseParent))
+					{
+						const glm::quat parentRotation = m_Sockets && m_Sockets->contains(handle) ? FrameRotation(parentFrame) : Rotation(parent);
+						local.Rotation = glm::normalize(glm::inverse(parentRotation) * rotation);
+					}
 				}
 				Forget(handle);
 			}

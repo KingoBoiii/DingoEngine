@@ -101,6 +101,16 @@ namespace Dingo
 		virtual void ApplyImpulse(PhysicsBodyId3D body, const glm::vec3& impulse) = 0; // at center of mass
 		virtual void ApplyForce(PhysicsBodyId3D body, const glm::vec3& force) = 0;     // at center of mass
 
+		// --- Collision filtering ----------------------------------------------
+
+		// Stops contacts between two bodies (ignore = false restores them); every other pair
+		// is untouched, and scene queries still hit both. Symmetric, dropped when either body
+		// is destroyed, and a change wakes both so it holds from the next Step. A Scene owns
+		// the pairs between a kinematic child and its ancestors' bodies: it applies them on
+		// every step and withdraws them when the child leaves. No-op on an invalid/stale handle.
+		virtual void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore = true) = 0;
+		virtual bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const = 0;
+
 		// --- Scene queries ----------------------------------------------------
 
 		// Casts a ray and reports the closest body it hits within maxDistance. Returns

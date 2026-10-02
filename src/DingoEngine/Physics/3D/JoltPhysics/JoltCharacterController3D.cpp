@@ -13,6 +13,23 @@
 namespace Dingo::Internal
 {
 
+	namespace
+	{
+		class IgnoredBodyFilter final : public JPH::BodyFilter
+		{
+		public:
+			explicit IgnoredBodyFilter(const std::vector<JPH::BodyID>& bodies) : m_Bodies(bodies) {}
+
+			virtual bool ShouldCollide(const JPH::BodyID& inBodyID) const override
+			{
+				return std::find(m_Bodies.begin(), m_Bodies.end(), inBodyID) == m_Bodies.end();
+			}
+
+		private:
+			const std::vector<JPH::BodyID>& m_Bodies;
+		};
+	}
+
 	JoltCharacterController3D::JoltCharacterController3D(JoltPhysics3DData* world, const CharacterControllerParams3D& params)
 		: m_World(world), m_Up(ToJolt(glm::normalize(params.Up))), m_StepHeight(params.StepHeight)
 	{
@@ -90,10 +107,43 @@ namespace Dingo::Internal
 
 		const JPH::Vec3 gravity = m_World->PhysicsSystem.GetGravity();
 
+		// A destroyed body's id comes back once its slot's 8-bit sequence number wraps.
+		if (!m_IgnoredBodies.empty())
+		{
+			const JPH::BodyInterface& bodies = m_World->PhysicsSystem.GetBodyInterface();
+			std::erase_if(m_IgnoredBodies, [&bodies](const JPH::BodyID& id) { return !bodies.IsAdded(id); });
+		}
+
+		// Any other CharacterVirtual call that queries the world (RefreshContacts, SetShape) needs it too.
+		const IgnoredBodyFilter bodyFilter(m_IgnoredBodies);
 		m_Character->ExtendedUpdate(deltaTime, gravity, updateSettings,
 			m_World->PhysicsSystem.GetDefaultBroadPhaseLayerFilter(Layers::MOVING),
 			m_World->PhysicsSystem.GetDefaultLayerFilter(Layers::MOVING),
-			JPH::BodyFilter{}, JPH::ShapeFilter{}, m_World->TempAllocator);
+			bodyFilter, JPH::ShapeFilter{}, m_World->TempAllocator);
+	}
+
+	void JoltCharacterController3D::IgnoreBody(PhysicsBodyId3D body, bool ignore)
+	{
+		if (body == k_InvalidBody3D)
+			return;
+
+		const JPH::BodyID id(body);
+		auto it = std::find(m_IgnoredBodies.begin(), m_IgnoredBodies.end(), id);
+		if (!ignore)
+		{
+			if (it != m_IgnoredBodies.end())
+				m_IgnoredBodies.erase(it);
+			return;
+		}
+
+		if (it == m_IgnoredBodies.end() && m_World->PhysicsSystem.GetBodyInterface().IsAdded(id))
+			m_IgnoredBodies.push_back(id);
+	}
+
+	bool JoltCharacterController3D::IsBodyIgnored(PhysicsBodyId3D body) const
+	{
+		return body != k_InvalidBody3D
+			&& std::find(m_IgnoredBodies.begin(), m_IgnoredBodies.end(), JPH::BodyID(body)) != m_IgnoredBodies.end();
 	}
 
 	bool JoltCharacterController3D::IsGrounded() const

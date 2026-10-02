@@ -86,6 +86,11 @@ namespace Dingo
 			// Opens a kinematic-follow pass, forgetting every earlier prediction.
 			void BeginPrediction(const entt::registry& registry);
 
+			// A kinematic child would shove its own ancestors: its body ignores every ancestor's body,
+			// and every ancestor's controller ignores it. Recomputed each step and diffed against the
+			// last one, so reparenting, detaching and bodies coming and going all settle before the step.
+			void SyncAncestorFilters(entt::registry& registry);
+
 		private:
 			struct ChildWriteBack
 			{
@@ -140,6 +145,13 @@ namespace Dingo
 			std::vector<PredictedEntry> m_Predicted; // indexed by entity
 			std::uint32_t m_PredictionPass = 0;
 			HierarchySystem::WorldMemo m_Memo;
+
+			// Applied last step, sorted: (child body << 32 | ancestor body) and (controller slot << 32 |
+			// child body). The Wanted vectors are this step's scratch.
+			std::vector<std::uint64_t> m_IgnoredPairs;
+			std::vector<std::uint64_t> m_IgnoredControllerBodies;
+			std::vector<std::uint64_t> m_WantedPairs;
+			std::vector<std::uint64_t> m_WantedControllerBodies;
 		};
 
 	}

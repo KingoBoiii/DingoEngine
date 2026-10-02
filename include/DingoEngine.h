@@ -62,6 +62,7 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/Animator.h"
 
 // ----------------------------------------------------------------------
 // UI

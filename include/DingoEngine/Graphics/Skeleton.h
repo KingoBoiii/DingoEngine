@@ -41,6 +41,13 @@ namespace Dingo
 	public:
 		// Joints must be ordered parents first: every Parent is -1 or a smaller index.
 		Skeleton(std::vector<Joint> joints, const glm::mat4& rootTransform, uint32_t skinJointCount);
+		// Copies would share an id.
+		Skeleton(const Skeleton&) = delete;
+		Skeleton& operator=(const Skeleton&) = delete;
+
+		// Never reused, so an animator bound to a freed skeleton can tell that a new one at the same
+		// address is not the same.
+		uint64_t GetId() const { return m_Id; }
 
 		uint32_t                  GetJointCount() const { return static_cast<uint32_t>(m_Joints.size()); }
 		const std::vector<Joint>& GetJoints()     const { return m_Joints; }
@@ -67,18 +74,24 @@ namespace Dingo
 
 		// The palette of the rest pose, for drawing a skinned mesh nothing animates.
 		const std::vector<glm::mat4>& GetRestPalette() const { return m_RestPalette; }
+		// ComputeGlobalTransforms of every joint's RestPose.
+		const std::vector<glm::mat4>& GetRestGlobalTransforms() const { return m_RestGlobals; }
 
 	private:
+		static uint64_t AllocateId();
+
 		struct NameHash
 		{
 			using is_transparent = void;
 			size_t operator()(std::string_view name) const { return std::hash<std::string_view>{}(name); }
 		};
 
+		uint64_t m_Id = AllocateId();
 		std::vector<Joint> m_Joints;
 		std::unordered_map<std::string, int32_t, NameHash, std::equal_to<>> m_JointIndices;
 		glm::mat4 m_RootTransform{ 1.0f };
 		uint32_t  m_SkinJointCount = 0;
+		std::vector<glm::mat4> m_RestGlobals;
 		std::vector<glm::mat4> m_RestPalette;
 	};
 

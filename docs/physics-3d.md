@@ -166,6 +166,37 @@ world->ApplyImpulse(id, { 0.0f, 10.0f, 0.0f }); // instant change in momentum, a
 world->ApplyForce(id, { 0.0f, 50.0f, 0.0f });   // continuous push (per step)
 ```
 
+## Ignoring collisions (v0.8)
+
+Two bodies can be told to pass through each other, and a character controller to pass through a
+body, without touching any other pair:
+
+```cpp
+world->IgnoreCollision(swordId, ownerId);        // symmetric: (ownerId, swordId) is the same pair
+world->IsCollisionIgnored(ownerId, swordId);     // true
+world->IgnoreCollision(swordId, ownerId, false); // collide again
+
+controller->IgnoreBody(shieldId);                // the capsule neither stops on nor is pushed out of it
+controller->IsBodyIgnored(shieldId);             // true
+```
+
+- Only contacts are affected: `RayCast`, `ShapeCastSphere` and `OverlapSphere` still report both
+  bodies.
+- A pair is dropped when either body is destroyed. Changing one wakes both bodies, so it holds from
+  the next `Step` even if they were asleep.
+- Both are no-ops on an invalid or stale handle, like the other per-body calls.
+
+**In a `Scene` this is automatic for parented kinematic bodies.** A kinematic body whose entity has
+a parent — a hitbox socketed to a hand, a shield on a character — ignores the bodies of all its
+ancestors (not just its parent), and the character controller of any ancestor ignores it, so it
+can't shove the body it hangs off or push its own controller out of its capsule. Nothing else
+changes: dynamic and static children, siblings, and unrelated bodies keep colliding, so a dynamic
+crate on a parented carrier still rests on it, and 2D physics has no such filter. The scene works
+the pairs out at the start of every physics step, so reparenting, `RemoveParent`, a body created or
+destroyed at runtime all take effect on the next step; until the first step after `OnStart`
+nothing is ignored yet. The scene owns these pairs: calling `IgnoreCollision` on one by hand is
+undone on the next step.
+
 ## Architecture
 
 `Physics3D` (`include/DingoEngine/Physics/3D/Physics3D.h`) is a backend-agnostic interface —
@@ -184,3 +215,5 @@ worlds, so it is initialised with the first world and torn down with the last.
   driving this world through the ECS (the player, enemies, and walls are `RigidBody3D` entities).
 - The test app's **Mesh Collider Test** (`test/`, run with `--test=collider`) — a triangle-mesh
   terrain bowl, a kinematic mesh lift, and convex-hull pebbles, with pass/fail checks.
+- The test app's **Hierarchy Test** (`--test=hierarchy`) — bodies under parents, including the
+  checks for the ancestor filter above.

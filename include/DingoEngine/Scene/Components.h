@@ -375,6 +375,23 @@ namespace Dingo
 			: Model(model), Color(color) {}
 	};
 
+	// Settings for the entity's Animator, which poses its SkinnedMeshRendererComponent::Model;
+	// Scene::GetAnimator returns it for playing clips from a script. Scene::OnUpdate advances it
+	// after the scripts and before physics, by deltaTime x Speed while Enabled.
+	struct AnimatorComponent
+	{
+		// Played, looping, when the animator is created (or its model changes) if PlayOnStart is set.
+		std::string DefaultClip;
+		bool PlayOnStart = true;
+		float Speed = 1.0f;
+		// False holds the current pose.
+		bool Enabled = true;
+
+		AnimatorComponent() = default;
+		AnimatorComponent(const AnimatorComponent&) = default;
+		AnimatorComponent(std::string defaultClip) : DefaultClip(std::move(defaultClip)) {}
+	};
+
 	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden
 	// behind the Physics3D interface). Scene::GetRuntimeBody3D returns an opaque handle
 	// to it while the scene's physics is running. Unlike the 2D collider components, the 3D

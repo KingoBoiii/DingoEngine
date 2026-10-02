@@ -10,6 +10,8 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace Dingo
@@ -31,6 +33,14 @@ namespace Dingo
 			std::uint32_t ChildCount = 0;
 		};
 
+		// On a child parented to a joint of its parent's skinned model, whose local transform is then
+		// relative to that joint's frame. Kept off HierarchyComponent so a scene without sockets pays
+		// one empty-pool check.
+		struct SocketComponent
+		{
+			std::string Joint;
+		};
+
 		namespace HierarchySystem
 		{
 
@@ -46,13 +56,22 @@ namespace Dingo
 			void Link(entt::registry& registry, entt::entity child, entt::entity parent);
 			void Unlink(entt::registry& registry, entt::entity child);
 
+			// An empty joint removes the socket. Link and Unlink leave it alone.
+			void SetSocket(entt::registry& registry, entt::entity child, std::string_view joint);
+			std::string_view GetSocket(const entt::registry& registry, entt::entity child);
+
 			// Identity without a Transform3DComponent.
 			glm::mat4 LocalTransform(const entt::registry& registry, entt::entity handle);
+			// What composes onto the parent's world: the local transform, behind the joint frame on a
+			// socket. A root's is its local transform.
+			glm::mat4 LinkTransform(const entt::registry& registry, entt::entity handle);
 
 			// parentWorld x local, where an entity without a Transform3DComponent counts as identity.
 			// A root returns exactly local.GetTransform(), so a flat scene draws what it always did.
 			glm::mat4 WorldTransform(const entt::registry& registry, entt::entity handle);
 			glm::mat4 WorldTransform(const entt::registry& registry, entt::entity handle, const Transform3DComponent& local);
+			// The world frame the local transform is relative to: the parent's world, times the joint
+			// frame on a socket; identity for a root.
 			glm::mat4 ParentWorldTransform(const entt::registry& registry, entt::entity handle);
 
 			// World position, rotation and scale. A root returns its component's own values untouched;
@@ -143,11 +162,15 @@ namespace Dingo
 				entt::entity ParentOf(entt::entity handle) const;
 				std::size_t Slot(entt::entity handle);
 				glm::mat4 LocalOf(entt::entity handle) const;
+				glm::mat4 LinkOf(entt::entity handle, const glm::mat4& local) const;
+				glm::mat4 ParentFrame(entt::entity handle, entt::entity parent);
 				void World2D(entt::entity handle, glm::vec3& position, float& rotation);
 				void Forget(entt::entity handle);
 
 			private:
+				const entt::registry* m_Registry = nullptr;
 				const entt::storage_for_t<HierarchyComponent>* m_Links = nullptr;
+				const entt::storage_for_t<SocketComponent>* m_Sockets = nullptr;
 				const entt::storage_for_t<Transform3DComponent>* m_Transforms3D = nullptr;
 				const entt::storage_for_t<TransformComponent>* m_Transforms2D = nullptr;
 				std::vector<Entry3D> m_World3D;

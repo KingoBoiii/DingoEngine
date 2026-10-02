@@ -40,6 +40,21 @@ namespace
 		return entity;
 	}
 
+	Entity MakeBox(Scene& scene, const std::string& name, const glm::vec3& position, const glm::vec3& scale, BodyType3D type)
+	{
+		Entity entity = MakeEntity(scene, name, position, glm::vec3(0.0f), scale);
+		entity.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(type));
+		entity.AddComponent<BoxCollider3DComponent>();
+		return entity;
+	}
+
+	// One second in fixed 1/60 s steps, so the filter checks don't depend on the frame rate.
+	void StepOneSecond(Scene& scene)
+	{
+		for (int i = 0; i < 60; i++)
+			scene.OnUpdate(1.0f / 60.0f);
+	}
+
 	// "name>parent name", in the order OnDestroy ran.
 	class DestroyRecorder : public ScriptableEntity
 	{
@@ -158,6 +173,7 @@ namespace Dingo
 		}
 
 		RunStructuralChecks();
+		RunCollisionFilterChecks();
 		RunStructuralChecks2D();
 		BuildScene();
 		BuildScene2D();
@@ -408,6 +424,107 @@ namespace Dingo
 				&& Near(ray.Origin, position + forward * camera.PerspNear, 1e-2f) && !Near(position, { 0.0f, 1.0f, 5.0f }, 0.5f),
 				"a camera on a child views and picks from its world transform");
 		}
+	}
+
+	void HierarchyTest::RunCollisionFilterChecks()
+	{
+		bool reportedWhileParented = false;
+		bool clearedAfterDetach = false;
+
+		{
+			// A blade socketed to a hand, overlapping the body the hand hangs off.
+			Scene scene("Ancestor Filter");
+			Entity floor = MakeBox(scene, "Floor", { 0.0f, -0.5f, 0.0f }, { 8.0f, 1.0f, 8.0f }, BodyType3D::Static);
+			Entity body = MakeBox(scene, "Body", { 0.0f, 0.5f, 0.0f }, glm::vec3(1.0f), BodyType3D::Dynamic);
+			Entity hand = MakeEntity(scene, "Hand", { 0.5f, 0.0f, 0.0f }, glm::vec3(0.0f), glm::vec3(1.0f));
+			hand.SetParent(body, false);
+			Entity blade = MakeBox(scene, "Blade", { 0.1f, 0.0f, 0.0f }, { 0.6f, 0.2f, 0.2f }, BodyType3D::Kinematic);
+			blade.SetParent(hand, false);
+			scene.OnStart();
+
+			Physics3D* physics = scene.GetPhysics3D();
+			if (!physics)
+			{
+				Check(false, "the collision-filter scene has a 3D world");
+				return;
+			}
+
+			const PhysicsBodyId3D bodyId = scene.GetRuntimeBody3D(body);
+			const PhysicsBodyId3D bladeId = scene.GetRuntimeBody3D(blade);
+			const glm::vec3 start = physics->GetPosition(bodyId);
+			StepOneSecond(scene);
+			const float moved = glm::length(physics->GetPosition(bodyId) - start);
+			reportedWhileParented = physics->IsCollisionIgnored(bladeId, bodyId) && physics->IsCollisionIgnored(bodyId, bladeId)
+				&& !physics->IsCollisionIgnored(bladeId, scene.GetRuntimeBody3D(floor));
+			Check(moved < 1e-3f, std::format("a kinematic child doesn't shove the dynamic body it hangs off, resting on the floor (moved {:.1e})", moved));
+
+			blade.RemoveParent();
+			const glm::vec3 detached = physics->GetPosition(bodyId);
+			StepOneSecond(scene);
+			const float pushed = glm::length(physics->GetPosition(bodyId) - detached);
+			clearedAfterDetach = !physics->IsCollisionIgnored(bladeId, bodyId);
+			Check(pushed > 0.05f, std::format("after RemoveParent the kinematic box pushes its former ancestor's body again (moved {:.2f})", pushed));
+		}
+
+		{
+			// No floor and no velocity: only the shield's overlap could move the controller.
+			Scene scene("Controller Filter");
+			Entity walker = MakeEntity(scene, "Walker", { 0.0f, 2.0f, 0.0f }, glm::vec3(0.0f), glm::vec3(1.0f));
+			walker.AddComponent<CharacterController3DComponent>();
+			Entity shield = MakeBox(scene, "Shield", { 0.4f, 0.9f, 0.0f }, glm::vec3(0.4f), BodyType3D::Kinematic);
+			shield.SetParent(walker, false);
+			scene.OnStart();
+
+			CharacterController3D* controller = scene.GetCharacterController(walker);
+			if (!controller)
+			{
+				Check(false, "the collision-filter scene has a character controller");
+				return;
+			}
+
+			const PhysicsBodyId3D shieldId = scene.GetRuntimeBody3D(shield);
+			const glm::vec3 start = controller->GetPosition();
+			StepOneSecond(scene);
+			const float moved = glm::length(controller->GetPosition() - start);
+			reportedWhileParented = reportedWhileParented && controller->IsBodyIgnored(shieldId);
+			Check(moved < 1e-3f, std::format("a kinematic child doesn't shove its character-controller parent (moved {:.1e})", moved));
+
+			shield.RemoveParent();
+			const glm::vec3 detached = controller->GetPosition();
+			StepOneSecond(scene);
+			const float pushed = glm::length(controller->GetPosition() - detached);
+			clearedAfterDetach = clearedAfterDetach && !controller->IsBodyIgnored(shieldId);
+			Check(pushed > 0.05f, std::format("after RemoveParent the character controller is pushed out of its former kinematic child (moved {:.2f})", pushed));
+		}
+
+		{
+			// The crate shares the blade's parent but is not its ancestor, so the blade still pushes it.
+			Scene scene("Sibling Filter");
+			MakeBox(scene, "Floor", { 0.0f, -0.5f, 0.0f }, { 8.0f, 1.0f, 8.0f }, BodyType3D::Static);
+			Entity rack = MakeEntity(scene, "Rack", glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(1.0f));
+			Entity crate = MakeBox(scene, "Crate", { 0.0f, 0.5f, 0.0f }, glm::vec3(1.0f), BodyType3D::Dynamic);
+			crate.SetParent(rack, false);
+			Entity blade = MakeBox(scene, "Blade", { 0.6f, 0.5f, 0.0f }, { 0.6f, 0.2f, 0.2f }, BodyType3D::Kinematic);
+			blade.SetParent(rack, false);
+			scene.OnStart();
+
+			Physics3D* physics = scene.GetPhysics3D();
+			if (!physics)
+			{
+				Check(false, "the collision-filter scene has a 3D world");
+				return;
+			}
+
+			const PhysicsBodyId3D crateId = scene.GetRuntimeBody3D(crate);
+			const glm::vec3 start = physics->GetPosition(crateId);
+			StepOneSecond(scene);
+			const float pushed = glm::length(physics->GetPosition(crateId) - start);
+			Check(pushed > 0.05f && !physics->IsCollisionIgnored(scene.GetRuntimeBody3D(blade), crateId),
+				std::format("a kinematic child still pushes a dynamic sibling, which is not its ancestor (moved {:.2f})", pushed));
+		}
+
+		Check(reportedWhileParented && clearedAfterDetach,
+			"IsCollisionIgnored and IsBodyIgnored report a kinematic child's ancestor pairs while it is parented, and not after RemoveParent");
 	}
 
 	void HierarchyTest::BuildScene()

@@ -54,7 +54,15 @@ namespace Dingo
 		// nullptr when the clip doesn't animate that joint.
 		const AnimationChannel* FindChannel(std::string_view jointName) const;
 
+		// Never reused, so a cache keyed on it can't mistake a new clip at a freed one's address
+		// for the old one.
+		uint64_t GetId() const { return m_Id; }
+
 	private:
+		static uint64_t AllocateId();
+
+	private:
+		uint64_t                      m_Id = AllocateId();
 		std::string                   m_Name;
 		float                         m_Duration = 0.0f;
 		std::vector<AnimationChannel> m_Channels;

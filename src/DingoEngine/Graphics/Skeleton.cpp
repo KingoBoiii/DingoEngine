@@ -4,12 +4,27 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <atomic>
+
 namespace Dingo
 {
 
+	uint64_t Skeleton::AllocateId()
+	{
+		static std::atomic<uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
+
 	glm::mat4 JointPose::ToMatrix() const
 	{
-		return glm::translate(glm::mat4(1.0f), Translation) * glm::mat4_cast(Rotation) * glm::scale(glm::mat4(1.0f), Scale);
+		// translate x rotate x scale without the two 4x4 products: the same values, since every term
+		// those products add is a zero or a multiply by one.
+		glm::mat4 matrix = glm::mat4_cast(Rotation);
+		matrix[0] *= Scale.x;
+		matrix[1] *= Scale.y;
+		matrix[2] *= Scale.z;
+		matrix[3] = glm::vec4(Translation, 1.0f);
+		return matrix;
 	}
 
 	Skeleton::Skeleton(std::vector<Joint> joints, const glm::mat4& rootTransform, uint32_t skinJointCount)
@@ -28,11 +43,11 @@ namespace Dingo
 		for (const Joint& joint : m_Joints)
 			restPoses.push_back(joint.RestPose);
 
-		std::vector<glm::mat4> restGlobals(m_Joints.size());
-		ComputeGlobalTransforms(restPoses, restGlobals);
+		m_RestGlobals.resize(m_Joints.size());
+		ComputeGlobalTransforms(restPoses, m_RestGlobals);
 
 		m_RestPalette.resize(m_SkinJointCount);
-		ComputeSkinningPalette(restGlobals, m_RestPalette);
+		ComputeSkinningPalette(m_RestGlobals, m_RestPalette);
 	}
 
 	int32_t Skeleton::FindJoint(std::string_view name) const
@@ -56,6 +71,14 @@ namespace Dingo
 	void Skeleton::ComputeSkinningPalette(std::span<const glm::mat4> globals, std::span<glm::mat4> outPalette) const
 	{
 		DE_CORE_ASSERT(globals.size() >= m_SkinJointCount && outPalette.size() >= m_SkinJointCount, "Skeleton::ComputeSkinningPalette needs a global and an output per skin joint");
+
+		// Most files have no transform above the skeleton; multiplying by identity changes nothing.
+		if (m_RootTransform == glm::mat4(1.0f))
+		{
+			for (uint32_t i = 0; i < m_SkinJointCount; ++i)
+				outPalette[i] = globals[i] * m_Joints[i].InverseBind;
+			return;
+		}
 
 		for (uint32_t i = 0; i < m_SkinJointCount; ++i)
 			outPalette[i] = m_RootTransform * globals[i] * m_Joints[i].InverseBind;

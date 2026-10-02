@@ -45,6 +45,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
 | `Destroy()` | Destroy this entity, its behaviour and its children. |
 | `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.7.1) | Attach to / detach from a parent (see [Parenting](#parenting-v071)). |
+| `SetParent(parent, "joint", keepWorldTransform = true)` / `GetParentJoint()` (v0.8) | Attach to a joint of the parent's skinned model, so the entity follows it as the model animates (see [Joints as parents](#joints-as-parents-v08)). |
 | `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.7.1) | Walk the hierarchy. |
 | `GetWorldTransform()` / `GetWorldPosition()` / `GetWorldRotation()` / `GetWorldScale()` (v0.7.1) | The 3D transform in world space, through every parent. |
 | `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.7.1) | Write the 3D local value that gives this world value. |
@@ -120,6 +121,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
 | `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material) |
 | `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`. Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
+| `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
@@ -244,9 +246,13 @@ sizes taken from its world scale. The rules below are the 3D ones; 2D bodies fol
 | Static | Its collider is placed once and stays put; its mesh still follows the parent, so don't parent static bodies to anything that moves. |
 | Character controller | Placed from its world transform and written back like a dynamic body. Keep controllers on roots. |
 
-**Bodies in one hierarchy collide like any others.** Nothing filters a child against its parent, so
-a kinematic child that overlaps its parent's body, or the character controller it hangs off, pushes
-it. Keep a child's collider clear of its ancestors' colliders.
+**A kinematic child ignores its ancestors** (v0.8). Its body doesn't collide with any ancestor's
+body, and an ancestor's character controller passes through it, so a hitbox on a character's hand
+never shoves the character carrying it. Nothing else is filtered: dynamic and static children,
+siblings and unrelated bodies collide as before (a dynamic crate still rides its carrier), and 2D
+physics has no such rule. The pairs are worked out at the start of every physics step, so a
+`SetParent` or `RemoveParent` takes effect on the next one; `Physics3D::IsCollisionIgnored` and
+`CharacterController3D::IsBodyIgnored` report them.
 
 Parent an entity before its body is built (before `OnStart`, or before `CreateRigidBody` for a
 runtime spawn). `SetParent(parent, false)` on an entity that already has a body doesn't teleport
@@ -305,8 +311,8 @@ Things to know:
 
 A model with bones (see [the asset pipeline](asset-pipeline.md)) draws through a
 `SkinnedMeshRendererComponent`. Its skinned submeshes are skinned on the GPU: one draw each, after
-the static batches, posed by the skeleton's rest pose until the animator (later in v0.8) poses them.
-Submeshes without a skin draw like a `MeshRendererComponent`.
+the static batches, posed by the entity's [animator](#animating-a-model-v08), or by the skeleton's
+rest pose without one. Submeshes without a skin draw like a `MeshRendererComponent`.
 
 ```cpp
 Model* fox = Model::LoadFromFile("models/Fox/Fox.gltf");
@@ -331,8 +337,63 @@ entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(f
 - **Draw order.** Skinned meshes draw after every static mesh, so a see-through static mesh in front
   of a character hides it instead of blending over it.
 - **Drawing yourself.** `Renderer3D::SubmitSkinnedMesh(mesh, transform, palette, color, material)`
-  takes a joint palette: `Skeleton::GetRestPalette()`, or one built from your own joint poses with
-  `Skeleton::ComputeGlobalTransforms` and `ComputeSkinningPalette`.
+  takes a joint palette: an `Animator`'s `GetSkinningPalette()`, `Skeleton::GetRestPalette()`, or
+  one built from your own joint poses with `Skeleton::ComputeGlobalTransforms` and
+  `ComputeSkinningPalette`.
+
+### Animating a model (v0.8)
+
+An `AnimatorComponent` next to the `SkinnedMeshRendererComponent` gives the entity an `Animator`,
+which plays the model's clips and poses it. `Scene::OnUpdate` advances it by `dt × Speed`, after
+the scripts and before physics.
+
+```cpp
+fox.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));   // plays, looping, from the start
+
+// In a script:
+Animator* animator = GetScene().GetAnimator(GetEntity());
+animator->Play(model->FindAnimation("Run"), 0.25f);                   // cross-fade over 0.25 s
+animator->Play(AnimationState::Clip(jump).SetLoop(false).SetSpeed(1.5f));
+if (animator->IsFinished())
+    animator->Play(model->FindAnimation("Survey"), 0.2f);
+```
+
+- **`Play(state, fadeSeconds)`** fades the new state in over whatever shows now; 0 cuts to it. A
+  `Play` in the middle of a fade blends on from the mix, so nothing pops. Playing the state that
+  already plays changes nothing, even once a clip that doesn't loop has finished, so a script can
+  call it every frame; `SetTime(0)` restarts it.
+  `Stop(fade)` fades back to the rest pose. A null clip is the rest pose.
+- **Reading it.** `GetCurrentClip`, `GetTime`, `GetNormalizedTime`, `IsFinished` (a clip that
+  doesn't loop holds its last frame), `IsFading`. `GetLocalPoses`, `GetGlobalTransforms` and
+  `GetJointTransform(joint)` give the pose; `Skeleton::FindJoint` turns a name into an index.
+- **Lifetime.** The animator is made on the first `GetAnimator` or update, and `GetAnimator` returns
+  null without an `AnimatorComponent` or a model with a skeleton. It survives `OnStop`/`OnStart`,
+  is freed with the entity or the component, and starts again from `DefaultClip` if the model
+  changes. `Enabled = false` holds the pose. `DuplicateEntity` copies the component; the copy's
+  animator starts from the beginning.
+- **Clips from another model** play by joint name. When the clip was loaded with another skeleton
+  (a second character, a clip-only file), it is retargeted: rotations come from the clip, the
+  root-most animated joint (usually the hips) takes the clip's motion scaled by the ratio of the two
+  rigs' rest offsets of that joint from its parent (so a centimetre rig drives one in metres), and
+  every other joint keeps this rig's own lengths. The rigs need the same joint
+  names and rest orientations. Joints the clip doesn't name stay at rest.
+- **Without a scene**, `Animator` works on any `Skeleton`: `Update(dt)`, then pass
+  `GetSkinningPalette()` to `SubmitSkinnedMesh`.
+
+### Joints as parents (v0.8)
+
+`child.SetParent(character, "b_RightHand", keepWorldTransform)` attaches the child to a joint of the
+character's skinned model. Its world transform is then the character's world × the joint's frame
+× its own local transform, from this frame's pose, so a sword follows the hand through every
+swing. Everything that reads world values (rendering, lights, audio, physics) follows the joint.
+
+- The joint passes on its position and rotation, not its scale, so an FBX model's centimetre scale
+  doesn't shrink what it holds. The character entity's own scale still applies, as with any parent.
+- `GetParentJoint()` names the joint; `SetParent(parent)` without one moves the child back to the
+  parent's origin. Naming a joint the model doesn't have warns, and the child sits on the model's
+  origin until the model has it; without an animator the joint stays at its rest pose.
+- A kinematic body on a joint is driven to this frame's pose before physics steps, so a hitbox
+  follows the animation.
 
 ### 2D UI over a 3D scene
 
@@ -504,9 +565,9 @@ bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
 bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`. It caps `dt` at 4/60 s, for scripts and
-physics alike, so a stall (a cold shader compile, a breakpoint) runs the scene slow instead of letting
-bodies tunnel through their colliders. Inside a script you have:
+`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`, then the animators, then physics. It caps
+`dt` at 4/60 s for all three, so a stall (a cold shader compile, a breakpoint) runs the scene slow
+instead of letting bodies tunnel through their colliders. Inside a script you have:
 
 - `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
 - `GetScene()` — the owning scene (to spawn or find other entities).
