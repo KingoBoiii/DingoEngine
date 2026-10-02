@@ -22,6 +22,17 @@ namespace Dingo
 			DE_CORE_ASSERT(m_Joints[i].Parent < i, "Skeleton joints must be ordered parents first");
 			m_JointIndices.try_emplace(m_Joints[i].Name, i);
 		}
+
+		std::vector<JointPose> restPoses;
+		restPoses.reserve(m_Joints.size());
+		for (const Joint& joint : m_Joints)
+			restPoses.push_back(joint.RestPose);
+
+		std::vector<glm::mat4> restGlobals(m_Joints.size());
+		ComputeGlobalTransforms(restPoses, restGlobals);
+
+		m_RestPalette.resize(m_SkinJointCount);
+		ComputeSkinningPalette(restGlobals, m_RestPalette);
 	}
 
 	int32_t Skeleton::FindJoint(std::string_view name) const
@@ -40,6 +51,14 @@ namespace Dingo
 			const int32_t parent = m_Joints[i].Parent;
 			outGlobals[i] = parent < 0 ? local : outGlobals[parent] * local;
 		}
+	}
+
+	void Skeleton::ComputeSkinningPalette(std::span<const glm::mat4> globals, std::span<glm::mat4> outPalette) const
+	{
+		DE_CORE_ASSERT(globals.size() >= m_SkinJointCount && outPalette.size() >= m_SkinJointCount, "Skeleton::ComputeSkinningPalette needs a global and an output per skin joint");
+
+		for (uint32_t i = 0; i < m_SkinJointCount; ++i)
+			outPalette[i] = m_RootTransform * globals[i] * m_Joints[i].InverseBind;
 	}
 
 }

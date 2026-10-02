@@ -23,6 +23,7 @@ namespace Dingo
 {
 
 	class Material; // referenced by MeshRendererComponent (pointer only)
+	class Model;    // referenced by SkinnedMeshRendererComponent (pointer only)
 	struct Transform3DComponent; // the light components' ToLight, defined after it
 
 	// Identity ----------------------------------------------------------------
@@ -354,6 +355,24 @@ namespace Dingo
 		MeshRendererComponent(const MeshRendererComponent&) = default;
 		MeshRendererComponent(Dingo::Mesh* mesh, const glm::vec4& color = glm::vec4(1.0f))
 			: Mesh(mesh), Color(color) {}
+	};
+
+	// Draws every submesh of a Model at the entity's world transform: skinned submeshes on the GPU
+	// (Renderer3D::SubmitSkinnedMesh) in the skeleton's rest pose, the rest like a
+	// MeshRendererComponent. The Model is not owned by the component. Material works as on
+	// MeshRendererComponent and applies to every submesh; the submeshes' own diffuse textures are
+	// not used.
+	struct SkinnedMeshRendererComponent
+	{
+		Dingo::Model* Model = nullptr;
+		glm::vec4 Color{ 1.0f };
+		Dingo::Material* Material = nullptr;
+		bool Visible = true;
+
+		SkinnedMeshRendererComponent() = default;
+		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;
+		SkinnedMeshRendererComponent(Dingo::Model* model, const glm::vec4& color = glm::vec4(1.0f))
+			: Model(model), Color(color) {}
 	};
 
 	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden

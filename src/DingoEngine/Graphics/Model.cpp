@@ -194,6 +194,15 @@ namespace Dingo
 		return glm::transpose(SafeInverse(glm::mat3(m), singular));
 	}
 
+	// The cofactor matrix is the inverse transpose times the determinant: Renderer3D_Lit.glsl skins
+	// normals with it, so this must stay the same formula.
+	static glm::vec3 CofactorNormal(const glm::mat3& m, const glm::vec3& normal)
+	{
+		const glm::mat3 cofactor(glm::cross(m[1], m[2]), glm::cross(m[2], m[0]), glm::cross(m[0], m[1]));
+		const float handedness = glm::dot(m[0], cofactor[0]) < 0.0f ? -1.0f : 1.0f;
+		return cofactor * normal * handedness;
+	}
+
 	static glm::vec3 SafeNormalize(const glm::vec3& v)
 	{
 		const float length = glm::length(v);
@@ -319,7 +328,6 @@ namespace Dingo
 		std::unordered_map<const aiNode*, int32_t> JointOfNode;
 		std::vector<glm::mat4>                     InverseBinds;
 		std::vector<glm::mat4>                     RestPalette;
-		std::vector<glm::mat3>                     RestPaletteNormals;
 		std::vector<glm::mat4>                     MeshToSkin;
 		std::vector<int32_t>                       MeshFirstJoint;
 		bool                                       Singular = false;
@@ -429,19 +437,13 @@ namespace Dingo
 			skinned.Joints   = influences[i].Joints;
 			skinned.Weights  = influences[i].Weights;
 
-			glm::vec3 restPosition(0.0f);
-			glm::vec3 restNormal(0.0f);
+			// The same blend the skinned vertex stage does, so the rest pose matches a skinned draw of it.
+			glm::mat4 blended(0.0f);
 			for (int k = 0; k < 4; ++k)
-			{
-				const float weight = skinned.Weights[k];
-				if (weight <= 0.0f)
-					continue;
-				const uint16_t joint = skinned.Joints[k];
-				restPosition += weight * glm::vec3(skin.RestPalette[joint] * glm::vec4(skinned.Position, 1.0f));
-				restNormal   += weight * (skin.RestPaletteNormals[joint] * skinned.Normal);
-			}
+				blended += skinned.Weights[k] * skin.RestPalette[skinned.Joints[k]];
 
-			restVertices[i] = { restPosition, SafeNormalize(restNormal), texCoord };
+			const glm::vec3 restPosition = glm::vec3(blended * glm::vec4(skinned.Position, 1.0f));
+			restVertices[i] = { restPosition, SafeNormalize(CofactorNormal(glm::mat3(blended), skinned.Normal)), texCoord };
 		}
 
 		SubMesh submesh;
@@ -756,15 +758,13 @@ namespace Dingo
 		ComputeInverseBinds(scene, jointByName, hasInverseBind, skin, modelName);
 
 		skin.RestPalette.resize(jointCount);
-		skin.RestPaletteNormals.resize(jointCount);
 		for (uint32_t j = 0; j < jointCount; ++j)
 		{
 			if (!hasInverseBind[j])
 				skin.InverseBinds[j] = SafeInverse(rootTransform * restGlobals[j], skin.Singular);
 			joints[j].InverseBind = skin.InverseBinds[j];
 
-			skin.RestPalette[j]        = rootTransform * restGlobals[j] * skin.InverseBinds[j];
-			skin.RestPaletteNormals[j] = NormalMatrix(skin.RestPalette[j], skin.Singular);
+			skin.RestPalette[j] = rootTransform * restGlobals[j] * skin.InverseBinds[j];
 		}
 
 		out.Skel = std::make_unique<Skeleton>(std::move(joints), rootTransform, skinJointCount);

@@ -1,16 +1,12 @@
-// Vertices arrive in world space (Renderer3D transforms them on the CPU while batching), so the
-// vertex stage only applies the camera.
+// Static vertices arrive in world space (Renderer3D transforms them on the CPU while batching), so
+// that vertex stage only applies the camera. With DE_SKINNED the GPU skins each vertex with the
+// joint palette in SkinData, one draw per mesh; the fragment stage is shared.
 //
 // CameraData mirrors Renderer3D::CameraData. Its first three members are a frozen prefix that
 // custom material shaders declare on their own, so members are only ever appended.
 
 #type vertex
 #version 450
-
-layout(location = 0) in vec3 a_Position;
-layout(location = 1) in vec3 a_Normal;
-layout(location = 2) in vec4 a_Color;
-layout(location = 3) in vec2 a_TexCoord;
 
 layout(std140, binding = 0) uniform CameraData
 {
@@ -22,6 +18,53 @@ layout(location = 1) out vec4 v_Color;
 layout(location = 2) out vec3 v_WorldPosition;
 layout(location = 3) out vec2 v_TexCoord;
 
+#ifdef DE_SKINNED
+
+const int MAX_JOINTS = 128;
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 3) in uvec4 a_Joints;
+layout(location = 4) in vec4 a_Weights;
+
+// Mirrors Renderer3D::SkinData. Found by its name, so a custom skinned shader may put it at any
+// binding the material's own uniforms and textures leave free, up to 13.
+layout(std140, binding = 4) uniform SkinData
+{
+	mat4 Model;
+	mat4 NormalMatrix;
+	vec4 Color;
+	mat4 Joints[MAX_JOINTS];
+};
+
+void main()
+{
+	mat4 skin = a_Weights.x * Joints[a_Joints.x] + a_Weights.y * Joints[a_Joints.y]
+	          + a_Weights.z * Joints[a_Joints.z] + a_Weights.w * Joints[a_Joints.w];
+	vec4 worldPosition = Model * (skin * vec4(a_Position, 1.0));
+
+	// The cofactor matrix is the inverse transpose scaled by the determinant, so a squashed or
+	// stretched joint keeps normals perpendicular without inverting a matrix per vertex. The model
+	// loader poses rest normals the same way.
+	mat3 m = mat3(skin);
+	mat3 cofactor = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1]));
+	float handedness = dot(m[0], cofactor[0]) < 0.0 ? -1.0 : 1.0;
+
+	gl_Position     = ViewProjection * worldPosition;
+	v_Normal        = mat3(NormalMatrix) * (cofactor * a_Normal * handedness);
+	v_Color         = Color;
+	v_WorldPosition = worldPosition.xyz;
+	v_TexCoord      = a_TexCoord;
+}
+
+#else
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec4 a_Color;
+layout(location = 3) in vec2 a_TexCoord;
+
 void main()
 {
 	gl_Position     = ViewProjection * vec4(a_Position, 1.0);
@@ -30,6 +73,8 @@ void main()
 	v_WorldPosition = a_Position;
 	v_TexCoord      = a_TexCoord;
 }
+
+#endif
 
 #type fragment
 #version 450

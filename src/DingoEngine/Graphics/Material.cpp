@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Renderer.h"
 
+#include <atomic>
+
 namespace Dingo
 {
 
@@ -13,12 +15,13 @@ namespace Dingo
 			seed ^= value + 0x9e3779b9ull + (seed << 6) + (seed >> 2);
 		}
 
-		// Produce a cache key from a vertex layout, a framebuffer pointer and the scene buffer.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer)
+		// Produce a cache key from a vertex layout, a framebuffer pointer and the shared buffers.
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer)
 		{
 			size_t seed = 0;
 			HashCombine(seed, reinterpret_cast<uintptr_t>(framebuffer));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
+			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(layout.Stride));
 			HashCombine(seed, layout.Attributes.size());
 			for (const auto& attr : layout.Attributes)
@@ -48,6 +51,12 @@ namespace Dingo
 		: m_Params(params)
 	{}
 
+	uint64_t Material::AllocateId()
+	{
+		static std::atomic<uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
+
 	Material::~Material()
 	{
 		Destroy();
@@ -70,6 +79,7 @@ namespace Dingo
 			return;
 
 		m_Textures[slot] = texture;
+		++m_BindingRevision;
 		InvalidatePipelineCache();
 	}
 
@@ -80,6 +90,7 @@ namespace Dingo
 			return;
 
 		m_Samplers[slot] = sampler;
+		++m_BindingRevision;
 		InvalidatePipelineCache();
 	}
 
@@ -128,6 +139,11 @@ namespace Dingo
 		m_SceneUniformBuffer = buffer;
 	}
 
+	void Material::SetSkinUniformBuffer(GraphicsBuffer* buffer)
+	{
+		m_SkinUniformBuffer = buffer;
+	}
+
 	/**************************************************
 	***		PIPELINE CACHE								***
 	**************************************************/
@@ -157,7 +173,7 @@ namespace Dingo
 			m_BuiltResizeGeneration = resizeGeneration;
 		}
 
-		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer);
+		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -186,6 +202,10 @@ namespace Dingo
 
 		if (m_UniformBuffer)
 			renderPass->SetUniformBuffer(materialUboSlot, m_UniformBuffer);
+
+		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(k_SkinDataBlockName) : -1;
+		if (skinBinding >= 0)
+			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinBinding), m_SkinUniformBuffer);
 
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{

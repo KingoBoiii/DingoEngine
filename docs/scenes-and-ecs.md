@@ -119,6 +119,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
 | `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material) |
+| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`. Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
@@ -299,6 +300,39 @@ Things to know:
 - **Limits.** A scene is lit by at most four directional lights and 32 point and spot lights.
   Falloff, how lights are chosen past the limit, lit materials with specular and emissive, and
   hot-reloading the lit shader are covered in [Lighting](lighting.md).
+
+### Skinned models (v0.8)
+
+A model with bones (see [the asset pipeline](asset-pipeline.md)) draws through a
+`SkinnedMeshRendererComponent`. Its skinned submeshes are skinned on the GPU: one draw each, after
+the static batches, posed by the skeleton's rest pose until the animator (later in v0.8) poses them.
+Submeshes without a skin draw like a `MeshRendererComponent`.
+
+```cpp
+Model* fox = Model::LoadFromFile("models/Fox/Fox.gltf");
+Material* fur = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("Fox"));
+fur->SetTexture(0, fox->GetSubMeshes()[0].DiffuseTexture);
+
+Entity entity = scene.CreateEntity("Fox");
+entity.AddComponent<Transform3DComponent>(Transform3DComponent({ 0, 0, 0 }, glm::vec3(0.02f)));
+entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(fox)).Material = fur;
+```
+
+- **Materials.** A lit material, or none, draws through a skinned copy the renderer keeps for it,
+  so emissive, specular and the albedo texture work as on static meshes. A custom shader must
+  declare the `SkinData` uniform block (copy it, and the `DE_SKINNED` vertex inputs, from
+  `Renderer3D_Lit.glsl`) at a binding of 13 or below that its own uniforms and textures leave
+  free. Without one, the mesh draws with the default lit material and a warning.
+- **Limits.** A draw skins with at most 128 joints (`Renderer3D::k_MaxSkinJoints`); a mesh that uses
+  more draws its rest pose without skinning. A renderer draws at most
+  `Renderer3DCapabilities::MaxSkinnedInstances` (64, at most 256) skinned models a frame, across
+  all its scenes; a model's submeshes count once. Later ones are skipped whole, with a warning, and
+  counted in `Statistics::DroppedSkinnedDraws`.
+- **Draw order.** Skinned meshes draw after every static mesh, so a see-through static mesh in front
+  of a character hides it instead of blending over it.
+- **Drawing yourself.** `Renderer3D::SubmitSkinnedMesh(mesh, transform, palette, color, material)`
+  takes a joint palette: `Skeleton::GetRestPalette()`, or one built from your own joint poses with
+  `Skeleton::ComputeGlobalTransforms` and `ComputeSkinningPalette`.
 
 ### 2D UI over a 3D scene
 

@@ -28,6 +28,16 @@ namespace Dingo
 			.SetReflect(reflect));
 	}
 
+	int32_t Shader::FindUniformBufferBinding(std::string_view blockName) const
+	{
+		for (const auto& [name, binding] : m_UniformBufferBindings)
+		{
+			if (name == blockName)
+				return static_cast<int32_t>(binding);
+		}
+		return -1;
+	}
+
 	Shader* Shader::Create(const ShaderParams& params)
 	{
 		ShaderParams resolvedParams = params;

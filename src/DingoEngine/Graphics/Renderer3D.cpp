@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
+#include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -14,19 +15,24 @@ namespace
 #include "Renderer3D_Lit.glsl.inl"
 
 	constexpr const char* k_LitShaderName = "Renderer3DMeshShader";
+	constexpr const char* k_SkinnedLitShaderName = "Renderer3DSkinnedMeshShader";
 
 	// The source file when this build can see it, so the AssetManager can hot-reload it;
 	// otherwise the copy compiled into the library.
-	Dingo::Shader* CreateLitShader()
+	Dingo::Shader* CreateLitShader(const char* name, bool skinned)
 	{
+		Dingo::ShaderParams params = Dingo::ShaderParams().SetName(name);
+		if (skinned)
+			params.AddDefine("DE_SKINNED");
+
 #ifdef DE_ENGINE_SHADER_DIR
 		const std::filesystem::path sourcePath = std::filesystem::path(u8"" DE_ENGINE_SHADER_DIR) / "Renderer3D_Lit.glsl";
 		std::error_code ec;
 		if (std::filesystem::exists(sourcePath, ec))
-			return Dingo::Shader::CreateFromFile(k_LitShaderName, sourcePath);
+			return Dingo::Shader::Create(params.SetFilePath(sourcePath));
 #endif
 		const std::string source(reinterpret_cast<const char*>(k_Renderer3D_Lit_glsl), sizeof(k_Renderer3D_Lit_glsl));
-		return Dingo::Shader::CreateFromSource(k_LitShaderName, source);
+		return Dingo::Shader::Create(params.SetSourceCode(source));
 	}
 
 	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
@@ -122,13 +128,22 @@ namespace Dingo
 	{
 		std::erase(s_LitShaders, m_Shader);
 		Internal::UnwatchUnmanagedShader(m_Shader);
+		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 	}
 
 	void Renderer3D::Initialize()
 	{
-		m_Shader = CreateLitShader();
+		m_Shader = CreateLitShader(k_LitShaderName, false);
 		s_LitShaders.push_back(m_Shader);
 		Internal::WatchUnmanagedShader(m_Shader);
+
+		m_SkinnedLayout = VertexLayout()
+			.SetStride(sizeof(SkinnedMeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(SkinnedMeshVertex, Position))
+			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(SkinnedMeshVertex, Normal))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(SkinnedMeshVertex, TexCoord))
+			.AddAttribute("a_Joints", Format::RGBA16_UINT, offsetof(SkinnedMeshVertex, Joints))
+			.AddAttribute("a_Weights", Format::RGBA32_FLOAT, offsetof(SkinnedMeshVertex, Weights));
 
 		m_Layout = VertexLayout()
 			.SetStride(sizeof(Vertex))
@@ -169,6 +184,16 @@ namespace Dingo
 		delete m_SphereMesh;
 		m_BoxMesh = nullptr;
 		m_SphereMesh = nullptr;
+
+		for (auto& [id, entry] : m_SkinnedTwins)
+			DestroyAndDelete(entry.Twin);
+		m_SkinnedTwins.clear();
+		m_SkinnedSubmissions.clear();
+		m_SkinnedInstances.clear();
+		m_SkinnedJoints.clear();
+		DestroyAndDelete(m_SkinBuffer);
+		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
+		DestroyAndDelete(m_SkinnedShader);
 
 		DestroyAndDelete(m_SceneUniformBuffer);
 		DestroyAndDelete(m_Material);
@@ -218,6 +243,24 @@ namespace Dingo
 			++it;
 		}
 		m_DrawOrder.clear();
+
+		for (auto it = m_SkinnedTwins.begin(); it != m_SkinnedTwins.end();)
+		{
+			SkinnedTwin& entry = it->second;
+			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
+			entry.Used = false;
+			if (entry.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				DestroyAndDelete(entry.Twin);
+				it = m_SkinnedTwins.erase(it);
+				continue;
+			}
+			++it;
+		}
+		m_SkinnedSubmissions.clear();
+		m_SkinnedInstances.clear();
+		m_SkinnedJoints.clear();
+
 		m_SceneActive = true;
 	}
 
@@ -287,14 +330,259 @@ namespace Dingo
 				Renderer::Upload(vertexBuffer, chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
 				Renderer::Upload(indexBuffer, chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
 
-				// Bind the shared camera/light UBO at binding 0 for this material, then draw.
+				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
+				// material also drawn skinned would otherwise keep a skin buffer this renderer may free.
 				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
+				material->SetSkinUniformBuffer(nullptr);
 				Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(chunk.Indices.size()));
 				++m_Statistics.DrawCalls;
 
 				++batchIndex;
 			}
 		}
+
+		DrawSkinnedSubmissions();
+	}
+
+	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material)
+	{
+		if (!m_SceneActive || !mesh)
+			return;
+
+		const uint32_t jointCount = mesh->GetSkinJointCount();
+		const char* fallbackReason = (!mesh->HasSkin() || mesh->GetIndices().empty()) ? "" :
+			jointCount > k_MaxSkinJoints ? "uses more joints than one draw can skin" :
+			joints.size() < jointCount ? "was given fewer joints than it uses" : nullptr;
+		if (fallbackReason)
+		{
+			if (*fallbackReason && !m_SkinFallbackWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a skinned mesh {} ({} joints, {} passed, at most {} a draw); it is drawn in its rest pose without skinning.",
+					fallbackReason, jointCount, joints.size(), k_MaxSkinJoints);
+				m_SkinFallbackWarned = true;
+			}
+
+			// A skinned shader can't draw the static vertex stream.
+			const Shader* shader = material ? material->GetShader() : nullptr;
+			const bool skinnedOnly = shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
+			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material);
+			return;
+		}
+
+		bool shared = false;
+		if (!m_SkinnedInstances.empty())
+		{
+			const SkinnedInstance& last = m_SkinnedInstances.back();
+			const uint32_t overlap = std::min(last.JointCount, jointCount);
+			shared = last.Source == joints.data() && last.Transform == transform && last.Color == color &&
+				std::memcmp(m_SkinnedJoints.data() + last.FirstJoint, joints.data(), overlap * sizeof(glm::mat4)) == 0;
+		}
+		if (!shared)
+		{
+			SkinnedInstance& instance = m_SkinnedInstances.emplace_back();
+			instance.Source = joints.data();
+			instance.Transform = transform;
+			instance.Color = color;
+			instance.FirstJoint = static_cast<uint32_t>(m_SkinnedJoints.size());
+		}
+
+		// The instance is the last one added, so its joints end the arena and can grow in place.
+		SkinnedInstance& instance = m_SkinnedInstances.back();
+		if (jointCount > instance.JointCount)
+		{
+			m_SkinnedJoints.insert(m_SkinnedJoints.end(), joints.begin() + instance.JointCount, joints.begin() + jointCount);
+			instance.JointCount = jointCount;
+		}
+
+		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1) });
+	}
+
+	uint32_t Renderer3D::GetSkinnedInstanceBudget() const
+	{
+		return std::clamp(m_Params.Capabilities.MaxSkinnedInstances, 1u, k_MaxSkinnedInstancesLimit);
+	}
+
+	void Renderer3D::EnsureSkinningResources()
+	{
+		if (m_SkinnedShader)
+			return;
+
+		m_SkinnedShader = CreateLitShader(k_SkinnedLitShaderName, true);
+		Internal::WatchUnmanagedShader(m_SkinnedShader);
+
+		m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_SkinUBO")
+			.SetByteSize(sizeof(SkinData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(GetSkinnedInstanceBudget()));
+
+		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
+	}
+
+	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
+	{
+		Material* requested = material ? material : m_Material;
+		if (IsLitShader(requested->GetShader()))
+			return GetSkinnedTwin(requested);
+
+		// The binding must not collide with the scene and material blocks or with a texture or
+		// sampler the material binds, or its binding set fails and the mesh silently vanishes.
+		const Shader* shader = requested->GetShader();
+		const int32_t binding = shader ? shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) : -1;
+		bool usable = binding >= 2 && binding <= static_cast<int32_t>(k_MaxSkinDataBinding);
+		if (usable)
+		{
+			const uint32_t slot = static_cast<uint32_t>(binding - 2) / 2;
+			const bool samplerBinding = (binding - 2) % 2 == 1;
+			usable = samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
+		}
+		if (usable)
+			return requested;
+
+		if (!m_SkinMaterialWarned)
+		{
+			const std::string& name = requested->GetParams().DebugName;
+			DE_CORE_WARN("Renderer3D: material '{}' has no SkinData uniform block at a free binding from 2 to {}, so skinned meshes drawn with it use the default lit material.",
+				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinDataBinding);
+			m_SkinMaterialWarned = true;
+		}
+		return GetSkinnedTwin(m_Material);
+	}
+
+	Material* Renderer3D::GetSkinnedTwin(Material* source)
+	{
+		SkinnedTwin& entry = m_SkinnedTwins[source->GetId()];
+		if (!entry.Twin)
+		{
+			MaterialParams twinParams = source->GetParams();
+			twinParams.SetDebugName(twinParams.DebugName + "_Skinned").SetShader(m_SkinnedShader).SetCullMode(CullMode::None);
+			entry.Twin = Material::Create(twinParams);
+		}
+		entry.Used = true;
+
+		Material* twin = entry.Twin;
+		if (entry.SourceRevision != source->GetBindingRevision())
+		{
+			// The source may have cleared a slot and refilled it with a texture at the freed one's
+			// address. Clearing the twin's slot first makes it rebind instead of keeping the old one.
+			twin->SetTexture(0, nullptr);
+			twin->SetSampler(0, nullptr);
+			entry.SourceRevision = source->GetBindingRevision();
+		}
+
+		// A slot's pointer changing rebuilds the twin's pipelines, so an empty source slot maps to
+		// the same default PrepareLitMaterial would put there.
+		twin->SetTexture(0, source->GetTexture(0) ? source->GetTexture(0) : Renderer::GetWhiteTexture());
+		twin->SetSampler(0, source->GetSampler(0) ? source->GetSampler(0) : Renderer::GetClampSampler());
+		twin->SetEmissiveColor(source->GetEmissiveColor());
+		twin->SetEmissiveStrength(source->GetEmissiveStrength());
+		twin->SetRoughness(source->GetRoughness());
+		twin->SetSpecular(source->GetSpecular());
+		PrepareLitMaterial(twin);
+		return twin;
+	}
+
+	void Renderer3D::DrawSkinnedSubmissions()
+	{
+		if (m_SkinnedSubmissions.empty())
+			return;
+
+		EnsureSkinningResources();
+
+		// The skin buffer's writes are a per-frame budget, shared by every scene in the frame.
+		const uint64_t frameIndex = Renderer::GetFrameIndex();
+		if (frameIndex != m_SkinnedFrameIndex)
+		{
+			m_SkinnedFrameIndex = frameIndex;
+			m_SkinnedInstancesThisFrame = 0;
+		}
+
+		const uint32_t budget = GetSkinnedInstanceBudget();
+		uint32_t uploadedInstance = ~0u;
+		bool instanceDropped = false;
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			// An instance is drawn whole or not at all, so a character never loses some of its parts.
+			if (submission.Instance != uploadedInstance)
+			{
+				uploadedInstance = submission.Instance;
+				instanceDropped = m_SkinnedInstancesThisFrame >= budget;
+				if (instanceDropped)
+				{
+					DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+						"Renderer3D: more skinned instances in a frame than MaxSkinnedInstances and AssertOnOverflow is set.");
+
+					if (!m_SkinnedBudgetWarned)
+					{
+						DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
+							budget, k_MaxSkinnedInstancesLimit);
+						m_SkinnedBudgetWarned = true;
+					}
+				}
+				else
+				{
+					const SkinnedInstance& instance = m_SkinnedInstances[submission.Instance];
+					m_SkinData.Model = instance.Transform;
+					m_SkinData.NormalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(instance.Transform)));
+					m_SkinData.Color = instance.Color;
+					std::copy_n(m_SkinnedJoints.begin() + instance.FirstJoint, instance.JointCount, m_SkinData.Joints);
+					const uint64_t uploadSize = m_FullSkinUploads ? sizeof(SkinData) : offsetof(SkinData, Joints) + instance.JointCount * sizeof(glm::mat4);
+					Renderer::Upload(m_SkinBuffer, &m_SkinData, uploadSize);
+
+					++m_SkinnedInstancesThisFrame;
+					++m_Statistics.SkinnedInstances;
+					m_Statistics.SkinnedJoints += instance.JointCount;
+				}
+			}
+
+			if (instanceDropped)
+			{
+				++m_Statistics.DroppedSkinnedDraws;
+				continue;
+			}
+
+			// The same rule as the static path, so a material draws the same way skinned or not.
+			Material* requested = submission.Material ? submission.Material : m_Material;
+			if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
+			{
+				if (!m_LitSlotsWarned)
+				{
+					const std::string& name = requested->GetParams().DebugName;
+					DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+						name.empty() ? "<unnamed>" : name.c_str());
+					m_LitSlotsWarned = true;
+				}
+				continue;
+			}
+
+			Material* material = ResolveSkinnedMaterial(submission.Material);
+			const Mesh* mesh = submission.Mesh;
+			if (!mesh->m_SkinVertexBuffer)
+			{
+				const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
+				const std::vector<uint32_t>& indices = mesh->GetIndices();
+				mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
+				mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
+				Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
+				Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
+			}
+
+			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
+			material->SetSkinUniformBuffer(m_SkinBuffer);
+			Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
+
+			++m_Statistics.DrawCalls;
+			++m_Statistics.SkinnedDraws;
+			++m_Statistics.SubmittedMeshes;
+			m_Statistics.VertexCount += mesh->GetVertexCount();
+			m_Statistics.IndexCount += mesh->GetIndexCount();
+		}
+
+		m_SkinnedSubmissions.clear();
+		m_SkinnedInstances.clear();
+		m_SkinnedJoints.clear();
 	}
 
 	Material* Renderer3D::CreateLitMaterial(MaterialParams params) const

@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Model.h"
 
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
@@ -106,6 +107,7 @@ namespace Dingo
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<Transform3DComponent>(registry, dst, src);
 		CopyComponentIfExists<MeshRendererComponent>(registry, dst, src);
+		CopyComponentIfExists<SkinnedMeshRendererComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody3DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
@@ -350,6 +352,24 @@ namespace Dingo
 				continue;
 
 			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material);
+		}
+
+		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
+		for (entt::entity entity : skinnedView)
+		{
+			auto [transform, skinned] = skinnedView.get<Transform3DComponent, SkinnedMeshRendererComponent>(entity);
+			if (!skinned.Visible || !skinned.Model)
+				continue;
+
+			const glm::mat4 world = memo.Transform(entity, transform);
+			const Skeleton* skeleton = skinned.Model->GetSkeleton();
+			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
+			{
+				if (skeleton && submesh.MeshData->HasSkin())
+					renderer.SubmitSkinnedMesh(submesh.MeshData, world, skeleton->GetRestPalette(), skinned.Color, skinned.Material);
+				else
+					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material);
+			}
 		}
 	}
 

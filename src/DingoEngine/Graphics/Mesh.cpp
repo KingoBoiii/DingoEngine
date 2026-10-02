@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Mesh.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 #include <glm/gtc/constants.hpp>
 #include <atomic>
@@ -9,6 +10,12 @@ namespace Dingo
 {
 
 	static_assert(sizeof(SkinnedMeshVertex) == 56, "SkinnedMeshVertex is uploaded as-is as a vertex stream");
+
+	Mesh::~Mesh()
+	{
+		DestroyAndDelete(m_SkinVertexBuffer);
+		DestroyAndDelete(m_SkinIndexBuffer);
+	}
 
 	std::uint64_t Mesh::AllocateId()
 	{
@@ -32,6 +39,11 @@ namespace Dingo
 		mesh->m_Vertices     = std::move(restVertices);
 		mesh->m_Indices      = std::move(indices);
 		mesh->m_SkinVertices = std::move(skinVertices);
+		for (const SkinnedMeshVertex& vertex : mesh->m_SkinVertices)
+		{
+			for (int k = 0; k < 4; ++k)
+				mesh->m_SkinJointCount = std::max<uint32_t>(mesh->m_SkinJointCount, vertex.Joints[k] + 1u);
+		}
 		return mesh;
 	}
 

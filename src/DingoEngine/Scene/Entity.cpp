@@ -370,6 +370,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(CircleCollider2DComponent)
 	DE_INSTANTIATE_COMPONENT(Transform3DComponent)
 	DE_INSTANTIATE_COMPONENT(MeshRendererComponent)
+	DE_INSTANTIATE_COMPONENT(SkinnedMeshRendererComponent)
 	DE_INSTANTIATE_COMPONENT(RigidBody3DComponent)
 	DE_INSTANTIATE_COMPONENT(BoxCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(SphereCollider3DComponent)

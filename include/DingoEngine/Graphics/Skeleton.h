@@ -61,6 +61,13 @@ namespace Dingo
 		// transform, in one forward pass.
 		void ComputeGlobalTransforms(std::span<const JointPose> localPoses, std::span<glm::mat4> outGlobals) const;
 
+		// What a skinned draw uploads, one matrix per skin joint: RootTransform * global *
+		// InverseBind, taking a skin vertex to model space.
+		void ComputeSkinningPalette(std::span<const glm::mat4> globals, std::span<glm::mat4> outPalette) const;
+
+		// The palette of the rest pose, for drawing a skinned mesh nothing animates.
+		const std::vector<glm::mat4>& GetRestPalette() const { return m_RestPalette; }
+
 	private:
 		struct NameHash
 		{
@@ -72,6 +79,7 @@ namespace Dingo
 		std::unordered_map<std::string, int32_t, NameHash, std::equal_to<>> m_JointIndices;
 		glm::mat4 m_RootTransform{ 1.0f };
 		uint32_t  m_SkinJointCount = 0;
+		std::vector<glm::mat4> m_RestPalette;
 	};
 
 }

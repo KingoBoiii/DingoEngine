@@ -7,6 +7,8 @@
 namespace Dingo
 {
 
+	class GraphicsBuffer;
+
 	struct MeshVertex
 	{
 		glm::vec3 Position;
@@ -39,6 +41,9 @@ namespace Dingo
 
 	public:
 		Mesh() = default;
+		~Mesh();
+		Mesh(const Mesh&) = delete;
+		Mesh& operator=(const Mesh&) = delete;
 
 		const std::vector<MeshVertex>& GetVertices() const { return m_Vertices; }
 		const std::vector<uint32_t>& GetIndices() const { return m_Indices; }
@@ -47,6 +52,8 @@ namespace Dingo
 
 		bool HasSkin() const { return !m_SkinVertices.empty(); }
 		const std::vector<SkinnedMeshVertex>& GetSkinVertices() const { return m_SkinVertices; }
+		// One past the highest joint a skin vertex names: the palette entries a skinned draw needs.
+		uint32_t GetSkinJointCount() const { return m_SkinJointCount; }
 
 		// Never reused, unlike the Mesh's address, so a cache keyed on it cannot hand a
 		// freed mesh's data to a new mesh allocated at the same address.
@@ -59,7 +66,14 @@ namespace Dingo
 		std::vector<MeshVertex> m_Vertices;
 		std::vector<uint32_t> m_Indices;
 		std::vector<SkinnedMeshVertex> m_SkinVertices;
+		uint32_t m_SkinJointCount = 0;
 		std::uint64_t m_Id = AllocateId();
+
+		// GPU copies of the skin, made by Renderer3D on the first skinned draw.
+		mutable GraphicsBuffer* m_SkinVertexBuffer = nullptr;
+		mutable GraphicsBuffer* m_SkinIndexBuffer  = nullptr;
+
+		friend class Renderer3D;
 	};
 
 }
