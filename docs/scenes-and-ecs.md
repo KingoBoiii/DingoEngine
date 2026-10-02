@@ -356,6 +356,13 @@ animator->Play(model->FindAnimation("Run"), 0.25f);                   // cross-f
 animator->Play(AnimationState::Clip(jump).SetLoop(false).SetSpeed(1.5f));
 if (animator->IsFinished())
     animator->Play(model->FindAnimation("Survey"), 0.2f);
+
+// Locomotion from one parameter, a wave on the upper body, a slash that returns to it.
+animator->Play(AnimationState::Blend1D("Speed", { { 0.0f, idle }, { 1.5f, walk }, { 4.0f, run } }), 0.2f);
+animator->SetFloat("Speed", glm::length(velocity));
+animator->SetLayer(1, AnimationLayer().SetMask("b_Spine01_02"));
+animator->Play(wave, 0.15f, /*layer*/ 1);
+animator->PlayOneShot(slash, 0.1f, 0.2f);
 ```
 
 - **`Play(state, fadeSeconds)`** fades the new state in over whatever shows now; 0 cuts to it. A
@@ -364,8 +371,25 @@ if (animator->IsFinished())
   call it every frame; `SetTime(0)` restarts it.
   `Stop(fade)` fades back to the rest pose. A null clip is the rest pose.
 - **Reading it.** `GetCurrentClip`, `GetTime`, `GetNormalizedTime`, `IsFinished` (a clip that
-  doesn't loop holds its last frame), `IsFading`. `GetLocalPoses`, `GetGlobalTransforms` and
-  `GetJointTransform(joint)` give the pose; `Skeleton::FindJoint` turns a name into an index.
+  doesn't loop holds its last frame), `IsFading`; each takes a layer, 0 by default.
+  `GetLocalPoses`, `GetGlobalTransforms` and `GetJointTransform(joint)` give the pose;
+  `Skeleton::FindJoint` turns a name into an index.
+- **Blending by a parameter.** `AnimationState::Blend1D("Speed", { {0, idle}, {1.5f, walk}, {4,
+  run} })` blends the two clips around the value of `SetFloat("Speed", v)`, and past either end
+  plays the end clip. The clips run in step: each at the same fraction of its own cycle, advanced
+  at the blended cycle length, so a walk turning into a run never puts a foot down twice. Changing
+  the parameter needs no `Play`; `GetCurrentClip` reports the clip with the larger share.
+- **Layers.** `SetLayer(1, AnimationLayer().SetMask("b_Spine01_02").Exclude("b_Neck_04"))` adds a
+  layer that overrides only the joints under its mask, on top of layer 0, at its weight
+  (`SetWeight`, or `SetLayerWeight` to fade the whole layer). `Play(state, fade, layer)` plays on
+  it, fading in over the pose below; joints its clip doesn't animate keep that pose, and `Stop(fade,
+  layer)` lets the layers below show again. Layers are applied in index order; additive layers
+  aren't supported.
+- **One-shots.** `PlayOneShot(clip, fadeIn, fadeOut, layer)` plays a clip once over what the layer
+  plays and fades back to it as the clip ends. The interrupted state's time keeps running, so a
+  walk resumes in step, and a script that plays that state every frame doesn't cut the one-shot
+  short. Another one-shot restarts it; a `Play` of anything else on that layer cancels the way back.
+  `IsOneShotPlaying(layer)` stays true until the fade back starts.
 - **Lifetime.** The animator is made on the first `GetAnimator` or update, and `GetAnimator` returns
   null without an `AnimatorComponent` or a model with a skeleton. It survives `OnStop`/`OnStart`,
   is freed with the entity or the component, and starts again from `DefaultClip` if the model

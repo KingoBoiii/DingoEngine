@@ -17,6 +17,8 @@ namespace
 
 	constexpr const char* k_FoxPath = "assets/models/Fox/Fox.gltf";
 	constexpr const char* k_HatJoint = "b_Head_05";
+	constexpr const char* k_UpperBody = "b_Spine01_02";
+	constexpr const char* k_SpeedParameter = "Speed";
 	constexpr float k_FoxLength = 1.6f;
 	constexpr float k_CrowdSpacing = 2.2f;
 	constexpr float k_WarmupSeconds = 2.0f;
@@ -123,9 +125,10 @@ namespace Dingo
 			if (auto mode = args.Get("anim"))
 			{
 				m_Mode = *mode == "bindstatic" ? Mode::BindStatic : *mode == "pose" ? Mode::Pose
-					: *mode == "clip" ? Mode::Clip : *mode == "crowd" ? Mode::Crowd : Mode::Bind;
+					: *mode == "clip" ? Mode::Clip : *mode == "blend" ? Mode::Blend : *mode == "layers" ? Mode::Layers
+					: *mode == "crowd" ? Mode::Crowd : Mode::Bind;
 				if (m_Mode == Mode::Bind && *mode != "bind")
-					DE_WARN("Animation Test: unknown --anim={}; showing bind. Use bind, bindstatic, pose, clip or crowd.", *mode);
+					DE_WARN("Animation Test: unknown --anim={}; showing bind. Use bind, bindstatic, pose, clip, blend, layers or crowd.", *mode);
 			}
 			if (auto count = args.Get("anim-count"); count && !count->empty())
 				m_CrowdCount = static_cast<uint32_t>((std::max)(1l, std::strtol(std::string(*count).c_str(), nullptr, 10)));
@@ -134,6 +137,10 @@ namespace Dingo
 				m_ClipName = std::string(*clip);
 			if (auto time = args.Get("anim-time"); time && !time->empty())
 				m_FreezeTime = (std::max)(0.0f, std::strtof(std::string(*time).c_str(), nullptr));
+			if (auto phase = args.Get("anim-phase"); phase && !phase->empty())
+				m_FreezePhase = std::clamp(std::strtof(std::string(*phase).c_str(), nullptr), 0.0f, 1.0f);
+			if (auto speed = args.Get("anim-speed"); speed && !speed->empty())
+				m_BlendSpeed = std::strtof(std::string(*speed).c_str(), nullptr);
 		}
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.05f, 200.0f);
@@ -161,6 +168,7 @@ namespace Dingo
 		m_FoxRadius = 0.5f * glm::length(extent) * m_FoxScale;
 
 		RunAnimatorChecks();
+		RunBlendChecks();
 		RunSceneChecks();
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -364,6 +372,181 @@ namespace Dingo
 		}
 	}
 
+	void AnimationTest::RunBlendChecks()
+	{
+		const Skeleton& skeleton = *m_Fox->GetSkeleton();
+		const AnimationClip* survey = m_Fox->FindAnimation("Survey");
+		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+		const AnimationClip* run = m_Fox->FindAnimation("Run");
+		const int32_t upperBody = skeleton.FindJoint(k_UpperBody);
+		const int32_t neck = skeleton.FindJoint("b_Neck_04");
+		if (!survey || !walk || !run || upperBody == Skeleton::k_InvalidJoint || neck == Skeleton::k_InvalidJoint)
+			return;
+
+		const AnimationState locomotion = AnimationState::Blend1D(k_SpeedParameter, { { 4.0f, run }, { 0.0f, survey }, { 1.5f, walk } });
+		const float walkLength = walk->GetDuration();
+		const float runLength = run->GetDuration();
+
+		auto blendAt = [&](float speed, float phase)
+		{
+			Animator animator(&skeleton);
+			animator.SetFloat(k_SpeedParameter, speed);
+			animator.Play(locomotion);
+			animator.SetNormalizedTime(phase);
+			animator.Update(0.0f);
+			return std::vector<JointPose>(animator.GetLocalPoses().begin(), animator.GetLocalPoses().end());
+		};
+
+		{
+			const float onWalk = PoseGap(blendAt(1.5f, 0.4f), PoseAt(skeleton, walk, 0.4f * walkLength));
+			std::vector<JointPose> expected = PoseAt(skeleton, walk, 0.4f * walkLength);
+			Blend(expected, PoseAt(skeleton, run, 0.4f * runLength), 0.5f);
+			const float halfway = PoseGap(blendAt(2.75f, 0.4f), expected);
+			const float below = PoseGap(blendAt(-1.0f, 0.4f), PoseAt(skeleton, survey, 0.4f * survey->GetDuration()));
+			const float above = PoseGap(blendAt(9.0f, 0.4f), PoseAt(skeleton, run, 0.4f * runLength));
+			Check(onWalk < 1e-6f && halfway < 1e-6f && below < 1e-6f && above < 1e-6f,
+				std::format("Blend1D on Speed: Walk at 1.5, half Walk and half Run at the same phase at 2.75, the end clips past either end ({:.1e}, {:.1e}, {:.1e}, {:.1e})", onWalk, halfway, below, above));
+		}
+		{
+			Animator animator(&skeleton);
+			animator.SetFloat(k_SpeedParameter, 2.75f);
+			animator.Play(locomotion);
+			const float cycle = 0.5f * (walkLength + runLength);
+			animator.Update(0.25f * cycle);
+			Check(std::abs(animator.GetNormalizedTime() - 0.25f) < 1e-5f && std::abs(animator.GetTime() - 0.25f * cycle) < 1e-5f && animator.GetFloat(k_SpeedParameter) == 2.75f && animator.GetFloat("Unset") == 0.0f,
+				std::format("the 50/50 blend runs at the mean of the two cycles ({:.3f} s), both clips at the same fraction", cycle));
+		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(locomotion);
+			float worstStep = 0.0f;
+			std::vector<glm::vec3> previous, positions(skeleton.GetJointCount());
+			for (int step = 0; step <= 400; ++step)
+			{
+				animator.SetFloat(k_SpeedParameter, 0.01f * static_cast<float>(step));
+				animator.SetNormalizedTime(0.3f);
+				animator.Update(0.0f);
+				for (uint32_t joint = 0; joint < skeleton.GetJointCount(); ++joint)
+				{
+					positions[joint] = glm::vec3(animator.GetJointTransform(joint)[3]);
+					if (!previous.empty())
+						worstStep = (std::max)(worstStep, glm::length(positions[joint] - previous[joint]));
+				}
+				previous = positions;
+			}
+			Check(worstStep < 1.5f, std::format("sweeping Speed from 0 to 4 in steps of 0.01 never moves a joint more than {:.2f} of ~150 units in a step", worstStep));
+		}
+
+		auto walkWithLayer = [&](const AnimationLayer& layer, const AnimationClip* clip)
+		{
+			Animator animator(&skeleton);
+			animator.Play(walk);
+			animator.SetLayer(1, layer);
+			animator.Play(clip, 0.0f, 1);
+			animator.SetTime(0.3f);
+			animator.SetTime(0.3f, 1);
+			animator.Update(0.0f);
+			return std::vector<JointPose>(animator.GetLocalPoses().begin(), animator.GetLocalPoses().end());
+		};
+		auto insideMask = [&](int32_t joint, int32_t root)
+		{
+			for (int32_t j = joint; j >= 0; j = skeleton.GetJoint(j).Parent)
+			{
+				if (j == root)
+					return true;
+			}
+			return false;
+		};
+		{
+			const std::vector<JointPose> walkOnly = PoseAt(skeleton, walk, 0.3f);
+			const std::vector<JointPose> surveyOnly = PoseAt(skeleton, survey, 0.3f);
+			const std::vector<JointPose> full = walkWithLayer(AnimationLayer().SetMask(k_UpperBody), survey);
+			const std::vector<JointPose> half = walkWithLayer(AnimationLayer().SetMask(k_UpperBody).SetWeight(0.5f), survey);
+			const std::vector<JointPose> noNeck = walkWithLayer(AnimationLayer().SetMask(k_UpperBody).Exclude("b_Neck_04"), survey);
+
+			float outside = 0.0f, inside = 0.0f, halfway = 0.0f, excluded = 0.0f;
+			uint32_t insideCount = 0;
+			for (uint32_t joint = 0; joint < skeleton.GetJointCount(); ++joint)
+			{
+				const std::span<const JointPose> one(&full[joint], 1);
+				if (!insideMask(static_cast<int32_t>(joint), upperBody))
+				{
+					outside = (std::max)(outside, PoseGap(one, std::span<const JointPose>(&walkOnly[joint], 1)));
+					continue;
+				}
+
+				insideCount++;
+				inside = (std::max)(inside, PoseGap(one, std::span<const JointPose>(&surveyOnly[joint], 1)));
+				std::vector<JointPose> expected{ walkOnly[joint] };
+				Blend(expected, { surveyOnly[joint] }, 0.5f);
+				halfway = (std::max)(halfway, PoseGap(std::span<const JointPose>(&half[joint], 1), expected));
+				const bool underNeck = insideMask(static_cast<int32_t>(joint), neck);
+				excluded = (std::max)(excluded, PoseGap(std::span<const JointPose>(&noNeck[joint], 1), std::span<const JointPose>(underNeck ? &walkOnly[joint] : &surveyOnly[joint], 1)));
+			}
+			Check(insideCount > 0 && outside == 0.0f && inside < 1e-6f && halfway < 1e-6f && excluded < 1e-6f,
+				std::format("an upper-body layer from {} plays Survey on its {} joints over Walk, leaves the rest alone, goes halfway at weight 0.5 and skips an excluded neck", k_UpperBody, insideCount));
+
+			// Survey animates every joint in the mask, so a clip of the head alone shows whether the
+			// layer's other joints keep Walk rather than snapping to the rest pose.
+			const int32_t head = skeleton.FindJoint(k_HatJoint);
+			const AnimationChannel* headChannel = survey->FindChannel(k_HatJoint);
+			if (head != Skeleton::k_InvalidJoint && headChannel)
+			{
+				const AnimationClip headOnly("Survey head", survey->GetDuration(), { *headChannel }, survey->GetSourceSkeleton());
+				const std::vector<JointPose> headLayer = walkWithLayer(AnimationLayer().SetMask(k_UpperBody), &headOnly);
+				float kept = 0.0f;
+				for (uint32_t joint = 0; joint < skeleton.GetJointCount(); ++joint)
+				{
+					if (static_cast<int32_t>(joint) != head)
+						kept = (std::max)(kept, PoseGap(std::span<const JointPose>(&headLayer[joint], 1), std::span<const JointPose>(&walkOnly[joint], 1)));
+				}
+				const float headGap = QuatGap(headLayer[head].Rotation, surveyOnly[head].Rotation);
+				Check(kept == 0.0f && headGap < 1e-6f, "a layer clip that animates only the head turns the head and leaves the rest of its mask on Walk");
+			}
+		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(walk);
+			animator.SetLayer(1, AnimationLayer().SetMask(k_UpperBody));
+			animator.Update(0.2f);
+			animator.Play(survey, 0.4f, 1);
+			animator.Update(0.0f);
+			const float start = PoseGap(animator.GetLocalPoses(), PoseAt(skeleton, walk, 0.2f));
+			animator.Update(0.4f);
+			const bool fadedIn = !animator.IsFading(1) && animator.GetCurrentClip(1) == survey;
+			animator.Stop(0.2f, 1);
+			animator.Update(0.2f);
+			const float end = PoseGap(animator.GetLocalPoses(), PoseAt(skeleton, walk, 0.8f));
+			Check(start < 1e-6f && fadedIn && end < 1e-4f,
+				std::format("a layer fades in over the pose below and Stop fades it back out ({:.1e}, {:.1e})", start, end));
+		}
+		{
+			// The way a script drives it: Walk played every frame, the one-shot once.
+			Animator animator(&skeleton);
+			animator.Play(walk);
+			animator.Update(0.1f);
+			animator.PlayOneShot(run, 0.1f, 0.2f);
+			bool runShowed = false;
+			for (int step = 0; step < 26; ++step)
+			{
+				animator.Play(walk);
+				animator.Update(0.05f);
+				if (step == 3)
+					runShowed = animator.GetCurrentClip() == run && !animator.IsFading() && animator.IsOneShotPlaying();
+			}
+			const float walkTime = std::fmod(0.1f + 26 * 0.05f, walkLength);
+			const float back = PoseGap(animator.GetLocalPoses(), PoseAt(skeleton, walk, walkTime));
+			Check(runShowed && animator.GetCurrentClip() == walk && !animator.IsFading() && !animator.IsOneShotPlaying() && back < 1e-3f,
+				std::format("a one-shot Run plays over Walk (played every frame) and fades back to it, Walk having run on in step ({:.1e})", back));
+
+			animator.PlayOneShot(run, 0.1f, 0.2f);
+			animator.Play(survey, 0.1f);
+			for (int step = 0; step < 30; ++step)
+				animator.Update(0.05f);
+			Check(animator.GetCurrentClip() == survey, "a Play during a one-shot cancels its return");
+		}
+	}
+
 	void AnimationTest::RunSceneChecks()
 	{
 		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
@@ -456,8 +639,10 @@ namespace Dingo
 		floor.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer.GetBoxMesh(), { 0.42f, 0.46f, 0.40f, 1.0f }));
 
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-		const std::string clipName = m_Mode == Mode::Clip && m_ClipName.empty() ? std::string("Walk") : m_ClipName;
-		const bool animate = (m_Mode == Mode::Clip || (m_Mode == Mode::Crowd && !m_CrowdStatic)) && !clipName.empty();
+		const std::string clipName = (m_Mode == Mode::Clip || m_Mode == Mode::Layers) && m_ClipName.empty() ? std::string("Walk")
+			: m_Mode == Mode::Blend ? std::string() : m_ClipName;
+		const bool animate = m_Mode == Mode::Blend || ((m_Mode == Mode::Clip || m_Mode == Mode::Layers || (m_Mode == Mode::Crowd && !m_CrowdStatic)) && !clipName.empty());
+		m_AnimatedFox = {};
 		std::vector<Entity> animated;
 		const uint32_t count = m_Mode == Mode::Crowd ? m_CrowdCount : (m_Mode == Mode::Pose ? 0u : 1u);
 		const uint32_t columns = (std::max)(1u, static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<float>(count)))));
@@ -498,7 +683,30 @@ namespace Dingo
 			if (!animator)
 				continue;
 
-			if (m_Mode == Mode::Clip && m_FreezeTime >= 0.0f)
+			m_AnimatedFox = animated[i];
+			if (m_Mode == Mode::Blend)
+			{
+				animator->SetFloat(k_SpeedParameter, m_BlendSpeed);
+				animator->Play(AnimationState::Blend1D(k_SpeedParameter,
+					{ { 0.0f, m_Fox->FindAnimation("Survey") }, { 1.5f, m_Fox->FindAnimation("Walk") }, { 4.0f, m_Fox->FindAnimation("Run") } }));
+				if (m_FreezePhase >= 0.0f)
+				{
+					animator->SetNormalizedTime(m_FreezePhase);
+					animated[i].GetComponent<AnimatorComponent>().Enabled = false;
+				}
+			}
+			else if (m_Mode == Mode::Layers)
+			{
+				animator->SetLayer(1, AnimationLayer().SetMask(k_UpperBody).SetWeight(m_LayerWeight));
+				animator->Play(m_Fox->FindAnimation("Survey"), 0.0f, 1);
+				if (m_FreezeTime >= 0.0f)
+				{
+					animator->SetTime(m_FreezeTime);
+					animator->SetTime(m_FreezeTime, 1);
+					animated[i].GetComponent<AnimatorComponent>().Enabled = false;
+				}
+			}
+			else if (m_Mode == Mode::Clip && m_FreezeTime >= 0.0f)
 			{
 				animator->SetTime(m_FreezeTime);
 				animated[i].GetComponent<AnimatorComponent>().Enabled = false;
@@ -581,6 +789,12 @@ namespace Dingo
 			case Mode::Pose:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the posed Fox is one skinned draw of 24 joints");
 				break;
+			case Mode::Blend:
+				Check(stats.SkinnedDraws == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the blended Fox is one skinned draw of 24 joints");
+				break;
+			case Mode::Layers:
+				Check(stats.SkinnedDraws == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the layered Fox is one skinned draw of 24 joints");
+				break;
 			case Mode::Clip:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedInstances == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the animated Fox is one skinned draw of 24 joints");
 				break;
@@ -626,6 +840,16 @@ namespace Dingo
 		{
 			renderer.EndScene();
 			return;
+		}
+
+		if (Animator* animator = (m_Mode == Mode::Blend || m_Mode == Mode::Layers) && m_AnimatedFox ? m_Scene->GetAnimator(m_AnimatedFox) : nullptr)
+		{
+			animator->SetFloat(k_SpeedParameter, m_BlendSpeed);
+			if (m_Mode == Mode::Layers)
+				animator->SetLayerWeight(1, m_LayerWeight);
+			// A frozen Fox isn't advanced, so the sliders still show at once.
+			if (!m_AnimatedFox.GetComponent<AnimatorComponent>().Enabled)
+				animator->Update(0.0f);
 		}
 
 		const Clock::time_point updateStart = Clock::now();
@@ -678,6 +902,10 @@ namespace Dingo
 		ImGui::SameLine();
 		ImGui::RadioButton("Clip", &mode, static_cast<int>(Mode::Clip));
 		ImGui::SameLine();
+		ImGui::RadioButton("Blend", &mode, static_cast<int>(Mode::Blend));
+		ImGui::SameLine();
+		ImGui::RadioButton("Layers", &mode, static_cast<int>(Mode::Layers));
+		ImGui::SameLine();
 		ImGui::RadioButton("Crowd", &mode, static_cast<int>(Mode::Crowd));
 		if (mode != static_cast<int>(m_Mode))
 		{
@@ -691,6 +919,15 @@ namespace Dingo
 			m_LastStats.SkinnedDraws, m_LastStats.SkinnedInstances, m_LastStats.DroppedSkinnedDraws, m_LastStats.SkinnedJoints, m_LastStats.DrawCalls);
 		if (m_Mode == Mode::Crowd)
 			ImGui::TextWrapped("Timing: %s", m_TimingResult.empty() ? "measuring..." : m_TimingResult.c_str());
+		if (m_Mode == Mode::Blend)
+			ImGui::SliderFloat("Speed (Survey 0, Walk 1.5, Run 4)", &m_BlendSpeed, 0.0f, 4.0f);
+		if (m_Mode == Mode::Layers)
+		{
+			ImGui::SliderFloat("Upper-body Survey weight", &m_LayerWeight, 0.0f, 1.0f);
+			Animator* animator = m_Scene && m_AnimatedFox ? m_Scene->GetAnimator(m_AnimatedFox) : nullptr;
+			if (animator && ImGui::Button("One-shot Run"))
+				animator->PlayOneShot(m_Fox->FindAnimation("Run"), 0.15f, 0.25f);
+		}
 
 		ImGui::Separator();
 		for (const CheckResult& check : m_Checks)

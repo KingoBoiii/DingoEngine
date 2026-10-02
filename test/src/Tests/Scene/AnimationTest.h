@@ -15,10 +15,12 @@ namespace Dingo
 	// with a box on its head joint, and a crowd for the skinned-draw budget and timing. Check
 	// results show in the Properties panel and the log.
 	//
-	// --anim=bind|bindstatic|pose|clip|crowd, --anim-clip=Survey|Walk|Run (clip: default Walk;
-	// crowd: animates every fox, out of step), --anim-time=S (clip: freeze at S seconds),
-	// --anim-count=N (crowd size, default 64), --anim-static (draw the crowd through
-	// MeshRendererComponent instead). Time the crowd with the test app's --no-vsync.
+	// --anim=bind|bindstatic|pose|clip|blend|layers|crowd, --anim-clip=Survey|Walk|Run (clip:
+	// default Walk; crowd: animates every fox, out of step), --anim-time=S (clip, layers: freeze at
+	// S seconds), --anim-speed=X (blend: the Speed parameter, Survey at 0, Walk at 1.5, Run at 4),
+	// --anim-phase=F (blend: freeze at that fraction of the cycle), --anim-count=N (crowd size,
+	// default 64), --anim-static (draw the crowd through MeshRendererComponent instead). Time the
+	// crowd with the test app's --no-vsync.
 	class AnimationTest : public GraphicsTest
 	{
 	public:
@@ -35,11 +37,12 @@ namespace Dingo
 		Texture* GetResult() override { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 
 	private:
-		enum class Mode { Bind, BindStatic, Pose, Clip, Crowd };
+		enum class Mode { Bind, BindStatic, Pose, Clip, Blend, Layers, Crowd };
 
 		void Check(bool condition, const std::string& name);
 		void RunLoadChecks();
 		void RunAnimatorChecks();
+		void RunBlendChecks();
 		void RunSceneChecks();
 		void RunDrawChecks(const Renderer3D::Statistics& stats);
 		void BuildScene();
@@ -64,6 +67,10 @@ namespace Dingo
 		bool        m_CrowdStatic = false;
 		std::string m_ClipName;
 		float       m_FreezeTime = -1.0f;
+		float       m_FreezePhase = -1.0f;
+		float       m_BlendSpeed = 1.5f;
+		float       m_LayerWeight = 1.0f;
+		Entity      m_AnimatedFox;
 
 		float     m_FoxScale = 1.0f;
 		glm::vec3 m_FoxOffset{ 0.0f };
