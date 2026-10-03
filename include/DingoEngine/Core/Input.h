@@ -107,6 +107,8 @@ namespace Dingo
 
 	private:
 		static void Update();
+		// Before the first update after a pause, in place of Update.
+		static void Resume();
 
 		static void UpdateKeyState(KeyCode key, bool pressed);
 		static void UpdateMouseButtonState(MouseButton button, bool pressed);

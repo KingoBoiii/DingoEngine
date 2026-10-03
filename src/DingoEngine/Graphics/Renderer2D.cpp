@@ -287,6 +287,10 @@ void main() {
 
 	void Renderer2D::BeginScene(const glm::mat4& projectionViewMatrix)
 	{
+		m_SceneSkipped = Renderer::IsFrameSkipped();
+		if (m_SceneSkipped)
+			return;
+
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
 		m_CameraUniformBuffer->Upload(&m_CameraData, sizeof(CameraData));
 
@@ -306,6 +310,9 @@ void main() {
 
 	void Renderer2D::EndScene()
 	{
+		if (m_SceneSkipped)
+			return;
+
 		// Submit whatever each pass has accumulated since its last flush. The bulk
 		// of the work for large scenes already happened in mid-frame flushes; these
 		// just drain the final partial batch (no-op when empty).
@@ -327,6 +334,9 @@ void main() {
 
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
@@ -352,6 +362,9 @@ void main() {
 
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
@@ -379,6 +392,9 @@ void main() {
 
 	void Renderer2D::DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
@@ -403,6 +419,9 @@ void main() {
 
 	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_CirclePass.HasRoomForQuad())
 			FlushCircle();
 
@@ -427,6 +446,9 @@ void main() {
 
 	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size, const TextParameters& textParameters)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();

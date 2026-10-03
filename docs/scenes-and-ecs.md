@@ -104,6 +104,10 @@ void GameLayer::OnUpdate(float dt)
 }
 ```
 
+> In the background the app pauses, or with `ApplicationParams::UpdateInBackground` keeps calling
+> `OnUpdate()`; a minimized window's `OnRender()` then draws nothing (see
+> [In the background](application-and-layers.md#in-the-background)).
+>
 > The viewport aspect is applied automatically, so a camera tracks window resizes with no
 > per-layer bookkeeping. For a **custom overlay** in the same view (e.g. a HUD over the
 > entities), wrap your own `Renderer2D::BeginScene`/`EndScene` around `Scene::RenderEntities`,

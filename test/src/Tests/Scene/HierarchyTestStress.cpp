@@ -124,7 +124,7 @@ namespace Dingo
 		const Clock::time_point endSceneEnd = Clock::now();
 		m_StressDroppedMeshes = (std::max)(m_StressDroppedMeshes, renderer.GetStatistics().DroppedMeshes);
 
-		if (m_StressTime < k_WarmupSeconds || m_StressFrames >= k_MeasuredFrames)
+		if (m_StressTime < k_WarmupSeconds || m_StressFrames >= k_MeasuredFrames || Renderer::IsFrameSkipped())
 			return;
 
 		m_StressFrameMs += deltaTime * 1000.0;

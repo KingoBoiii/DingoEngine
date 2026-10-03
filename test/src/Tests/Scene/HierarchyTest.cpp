@@ -809,7 +809,7 @@ namespace Dingo
 	{
 		const float step = (std::min)(deltaTime, 1.0f / 30.0f);
 
-		if (!m_LightProbeDone)
+		if (!m_LightProbeDone && !Renderer::IsFrameSkipped())
 		{
 			m_LightProbeDone = true;
 			RunLightProbe();

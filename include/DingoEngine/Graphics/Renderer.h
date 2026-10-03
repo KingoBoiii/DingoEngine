@@ -73,6 +73,16 @@ namespace Dingo
 		static void BeginFrame();
 		static void EndFrame();
 
+		// Stands in for BeginFrame/EndFrame in a frame that renders nothing (Application skips
+		// frames while the window is minimized): it waits for the render thread to finish the
+		// frame in flight, as BeginFrame does, but opens no command list. Until the next
+		// BeginFrame, the Upload, Clear, Draw and DrawIndexed calls below are no-ops, and so are
+		// Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not
+		// redone later: data written once belongs in a DirectUpload buffer. Code that records into
+		// GetCommandList() itself, or calls Begin/Close/Execute, must check IsFrameSkipped() first.
+		static void SkipFrame();
+		static bool IsFrameSkipped();
+
 		// Thread-safe: records the new size and returns. The swap chain is recreated on the
 		// render thread at the next safe point (after Present, before the next image acquire) --
 		// resizing it here would race the frame currently in flight.
