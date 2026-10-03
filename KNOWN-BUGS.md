@@ -4,12 +4,12 @@ Open defects and sharp edges in DingoEngine. Companion to [ROADMAP.md](ROADMAP.m
 next) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (missing capabilities, ranked). This file is only
 for things that are **wrong or surprising in code that already ships**.
 
-- **Verified against `VERSION` 0.7.1 on 2026-10-01.** Every entry below carries a `file:line` anchor
+- **Verified against `VERSION` 0.7.2 on 2026-10-02.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
-  K10 and K11 are deliberate deferrals, not oversights; K14 was added, and anchored, on 2026-09-29;
-  K16 and K17 are the two limits v0.7's lighting ships with, K18 a defect found reviewing its
-  lit materials that predates it, and K19 one found reviewing Candlewick, all added on 2026-10-01.
-  v0.7 closed no entry; v0.7.1 closed none either and only moved K14's `TestLayer.cpp` lines.
+  K10 and K11 are deliberate deferrals, not oversights; K16 and K17 are the two limits v0.7's
+  lighting ships with, K18 a defect found reviewing its lit materials that predates it, and K19 one
+  found reviewing Candlewick, all added on 2026-10-01. v0.7 and v0.7.1 closed no entry; v0.7.2
+  closed K14 and K20, moved K16's `Renderer3D.cpp` lines, and added K21, found reviewing it.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -20,8 +20,11 @@ for things that are **wrong or surprising in code that already ships**.
   `IsValidAssetHandle`), K5 (`Debug-ASan` did not link), K7 (`Font::Create` ignored the asset root),
   K8 (assigning a physics component aliased its handle), K9 (`Renderer3D` dropped batch overflow),
   K12 (the swap-chain depth was discarded between render-pass instances) and K13 (the swap-chain
-  colour attachment used `LOAD_OP_NONE`). Fixed since v0.6.3: K15 (a long frame dropped 3D bodies
-  through their colliders).
+  colour attachment used `LOAD_OP_NONE`). Fixed in v0.7.0: K15 (a long frame dropped 3D bodies
+  through their colliders). Fixed in v0.7.2: K14 (the test framework crashed when its window was
+  minimized) and K20 (from v0.7.0 a minimized window skipped every layer's `OnUpdate` with no way
+  to opt out, so games that pump a network or a simulation there froze; found bumping Headstone to
+  v0.7.1, filed and fixed together by `ApplicationParams::UpdateInBackground`).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.
@@ -33,11 +36,11 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 |---|---|---|---|
 | [K10](#k10) | GLM is the one third-party dependency that leaks into public headers | Limitation | API |
 | [K11](#k11) | Dragging a window to a display driven by another GPU is not handled | Limitation | Vulkan |
-| [K14](#k14) | The test framework crashes when its window is minimized | Defect | Test app |
 | [K16](#k16) | Point and spot lights pop in and out at the light-budget edge | Limitation | Renderer3D |
 | [K17](#k17) | Overlapping bright lights clip to white until tone mapping lands | Limitation | Renderer3D |
 | [K18](#k18) | A texture created at a freed texture's address is not noticed by a material | Defect | Graphics |
 | [K19](#k19) | A wireframe material on a GPU without `fillModeNonSolid` builds a line-mode pipeline the device never enabled | Defect | Vulkan |
+| [K21](#k21) | The first Vulkan frame after startup, or after a minimized stretch, is not ordered after its image acquire | Latent | Vulkan |
 
 ---
 
@@ -70,29 +73,9 @@ Resolution, DPI and colour-space changes on the same GPU *are* handled (the swap
 **Fix**: recreate the device and all GPU resources on adapter change — expensive, and rare enough in
 practice that logging may remain the right answer.
 
-## K14 — The test framework crashes when its window is minimized {#k14}
-
-**Defect** — `test/src/TestLayer.cpp:271-280`, `test/src/UI/TestViewportPanel.cpp:15-16`
-
-ImGui's GLFW backend reads the window size fresh in `NewFrame`, so a minimize that lands between a
-frame's event poll and its ImGui frame gives ImGui a 0×0 display for that one frame — before
-`Application` has seen the 0×0 `WindowResizeEvent` that makes it skip frames. The docked Viewport
-panel's `GetContentRegionAvail()` then comes back negative (`-8×19` on a 1600×900 window), and
-`TestLayer` passes it straight to `Test::Resize(uint32_t, uint32_t)` and to a post-execution
-`Framebuffer::Resize` through `static_cast<uint32_t>`. The framebuffer asks Vulkan for a
-4294967288-wide image, the validation layer rejects it (`maxFramebufferWidth` is 16384), and the
-process dies.
-
-Engine-independent: it reproduces identically with and without the minimized-window frame skip, and a
-minimize almost always lands mid-frame. Seen only in the test app so far — FlappyBird minimizes
-cleanly, and `SceneRenderer` already guards a zero height.
-
-**Fix**: skip the resize while either viewport dimension is ≤ 0. A guard in `TestLayer` doing exactly
-that was verified to make minimize/restore clean.
-
 ## K16 — Point and spot lights pop in and out at the light-budget edge {#k16}
 
-**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:475-523`
+**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:482-511`
 
 When more point and spot lights reach the view than `Renderer3DCapabilities::MaxLocalLights` (32 by
 default, and at most 32), `EndScene` keeps the brightest as seen from the camera and drops the rest. The
@@ -164,6 +147,32 @@ such requirement. Found reviewing Candlewick; the fix that enabled the feature (
 
 **Fix**: record the capability on the graphics context (say `GraphicsContext::SupportsWireframe()`), and
 have `NvrhiPipeline` fall back to `Solid` with a one-time warning when it is missing.
+
+## K21 — The first Vulkan frame after startup, or after a minimized stretch, is not ordered after its image acquire {#k21}
+
+**Latent** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanSwapChain.cpp:232`,
+`src/DingoEngine/Graphics/NVRHI/NvrhiTexture.cpp:138-146`, `src/DingoEngine/Graphics/NVRHI/NvrhiGraphicsBuffer.cpp:76-84`,
+`src/DingoEngine/Graphics/Renderer.cpp:210-213`
+
+`AcquireNextImage` queues its semaphore wait on the graphics queue as soon as the image is acquired,
+and NVRHI attaches a queued wait to the next submission from any command list. Between the render
+thread's acquire and the next frame's `Execute`, the main thread can submit a list of its own: a
+texture, or a `DirectUpload` buffer, written outside a frame. That happens for every asset loaded in
+`OnAttach`, before the first frame, and since v0.7.2 for async asset loads and textures created in
+`OnUpdate` while a minimized app keeps updating (`UpdateInBackground`). That submission takes the wait, so the frame that draws
+into the image is not ordered after the acquire.
+
+A second gap shares the cause. When the acquire fails because the window was minimized (a (0,0)
+surface), the first frame after the restore records into the old swap chain's image at the stale
+index and executes before the queued resize recreates the swap chain. Its present is skipped.
+
+Harmless in practice: the image was acquired long before it is drawn, and the default validation
+layers report nothing. Synchronization validation would flag it. Found reviewing v0.7.2; both gaps
+predate it.
+
+**Fix**: keep the acquired semaphore pending in the swap chain and queue its wait just before the
+frame's `Execute` on the render thread. On a restore, apply the pending resize and acquire before the
+first frame records.
 
 ---
 
