@@ -336,8 +336,9 @@ namespace Dingo
 
 		Layer& layer = EnsureLayer(layerIndex);
 
-		// A script that plays its locomotion every frame would otherwise cut every one-shot short.
-		if (layer.OneShotPending && layer.Resume.State == state)
+		// A script that plays its locomotion every frame would otherwise cut every one-shot short. Stop
+		// still cancels one that interrupted nothing, whose way back is the same transparent state.
+		if (layer.OneShotPending && layer.Resume.State == state && !IsTransparent(state))
 			return;
 		layer.OneShotPending = false;
 

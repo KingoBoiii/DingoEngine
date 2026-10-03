@@ -133,6 +133,7 @@ namespace Dingo
 		void Play(const AnimationState& state, float fadeSeconds = 0.0f, uint32_t layer = 0);
 		void Play(const AnimationClip* clip, float fadeSeconds = 0.0f, uint32_t layer = 0) { Play(AnimationState::Clip(clip), fadeSeconds, layer); }
 		// Fades to what shows without the layer: the rest pose on layer 0, the layers below on others.
+		// Cancels a one-shot's way back.
 		void Stop(float fadeSeconds = 0.0f, uint32_t layer = 0) { Play(AnimationState::Clip(nullptr), fadeSeconds, layer); }
 		// Plays `clip` once over what the layer plays now, then fades back to it over fadeOut,
 		// ending as the clip does. What it interrupted keeps its time running meanwhile, so a walk

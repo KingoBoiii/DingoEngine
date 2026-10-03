@@ -732,6 +732,14 @@ namespace Dingo
 				animator.Update(0.05f);
 			Check(animator.GetCurrentClip() == survey, "a Play during a one-shot cancels its return");
 		}
+		{
+			Animator animator(&skeleton);
+			animator.SetLayer(1, AnimationLayer().SetMask(k_UpperBody));
+			animator.PlayOneShot(run, 0.1f, 0.2f, 1);
+			animator.Update(0.1f);
+			animator.Stop(0.1f, 1);
+			Check(!animator.IsOneShotPlaying(1) && !animator.GetCurrentClip(1), "Stop cancels a one-shot on a layer that was empty");
+		}
 
 		{
 			Animator animator(&skeleton);

@@ -531,7 +531,7 @@ if (animator->IsOneShotPlaying())
 - `IsOneShotPlaying(layer)` is true from the call until the fade back starts.
 - **A script that plays the interrupted state every frame does not cut the one-shot short.** A `Play`
   of that same state is a no-op while the one-shot is pending. A `Play` of anything else **cancels the
-  way back**: the new state simply plays.
+  way back**: the new state simply plays. `Stop` always cancels it, even over a layer that was empty.
 - Another `PlayOneShot` restarts it and keeps the first's way back. A null clip does nothing.
 - A one-shot does not loop, so its [events](#events) catch up from its start.
 
