@@ -23,6 +23,8 @@
 
 #include "Tests/Scene/HierarchyTest.h"
 
+#include "Tests/Core/BackgroundTest.h"
+
 #include <imgui.h>
 
 namespace Dingo
@@ -58,6 +60,7 @@ namespace Dingo
 		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh Collider Test", []() { return new MeshColliderTest(); } });
 		m_Tests.push_back({ "Hierarchy Test", [&]() { return new HierarchyTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))
@@ -110,6 +113,12 @@ namespace Dingo
 			m_CurrentTest->Update(deltaTime);
 			Renderer::ResetRenderTarget();
 		}
+	}
+
+	void TestLayer::OnEvent(Event& e)
+	{
+		if (m_CurrentTest)
+			m_CurrentTest->OnEvent(e);
 	}
 
 	void TestLayer::OnUIRender()
