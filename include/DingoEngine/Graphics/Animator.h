@@ -143,7 +143,8 @@ namespace Dingo
 		// True from PlayOneShot until the layer starts fading back, fadeOut before the clip ends.
 		bool IsOneShotPlaying(uint32_t layer = 0) const;
 
-		// Layer 0 is always the whole body at full weight; index 0 is ignored here.
+		// Layer 0 is always the whole body at full weight; index 0 is ignored here. An animator has at
+		// most 32 layers: a larger index, here or in Play, is ignored with a warning.
 		void            SetLayer(uint32_t index, const AnimationLayer& layer);
 		void            SetLayerWeight(uint32_t index, float weight);
 		uint32_t        GetLayerCount() const { return static_cast<uint32_t>(m_Layers.size()); }
@@ -289,6 +290,7 @@ namespace Dingo
 		};
 
 		Layer& EnsureLayer(uint32_t index);
+		bool   LayerAllowed(uint32_t index) const;
 		void   ResolveMask(Layer& layer);
 		void   Push(Layer& layer, PlayingState state, float fadeSeconds, std::span<const JointPose> current);
 		// What the layer shows now, for freezing it.
@@ -319,6 +321,8 @@ namespace Dingo
 	private:
 		// Beyond this many states fading at once on a layer, the mix so far is frozen into one pose.
 		static constexpr size_t k_MaxStates = 4;
+		// A layer index past this (a -1 passed by mistake) is ignored rather than made.
+		static constexpr uint32_t k_MaxLayers = 32;
 
 		struct NameHash
 		{

@@ -245,9 +245,23 @@ namespace Dingo
 		}
 	}
 
+	bool Animator::LayerAllowed(uint32_t index) const
+	{
+		if (index < k_MaxLayers)
+			return true;
+
+		static bool s_Warned = false;
+		if (!s_Warned)
+		{
+			DE_CORE_WARN("Animator: layer {} is past the {} an animator can have, so the call is ignored", index, k_MaxLayers);
+			s_Warned = true;
+		}
+		return false;
+	}
+
 	void Animator::SetLayer(uint32_t index, const AnimationLayer& settings)
 	{
-		if (index == 0)
+		if (index == 0 || !LayerAllowed(index))
 			return;
 
 		Layer& layer = EnsureLayer(index);
@@ -258,7 +272,7 @@ namespace Dingo
 
 	void Animator::SetLayerWeight(uint32_t index, float weight)
 	{
-		if (index != 0)
+		if (index != 0 && LayerAllowed(index))
 			EnsureLayer(index).Settings.SetWeight(weight);
 	}
 
@@ -331,7 +345,7 @@ namespace Dingo
 
 	void Animator::Play(const AnimationState& state, float fadeSeconds, uint32_t layerIndex)
 	{
-		if (!m_Skeleton)
+		if (!m_Skeleton || !LayerAllowed(layerIndex))
 			return;
 
 		Layer& layer = EnsureLayer(layerIndex);
@@ -370,7 +384,7 @@ namespace Dingo
 
 	void Animator::PlayOneShot(const AnimationClip* clip, float fadeIn, float fadeOut, uint32_t layerIndex)
 	{
-		if (!m_Skeleton || !clip)
+		if (!m_Skeleton || !clip || !LayerAllowed(layerIndex))
 			return;
 
 		Layer& layer = EnsureLayer(layerIndex);

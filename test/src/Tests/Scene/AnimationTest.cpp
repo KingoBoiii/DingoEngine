@@ -740,6 +740,16 @@ namespace Dingo
 			animator.Stop(0.1f, 1);
 			Check(!animator.IsOneShotPlaying(1) && !animator.GetCurrentClip(1), "Stop cancels a one-shot on a layer that was empty");
 		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(walk);
+			animator.SetLayer((std::numeric_limits<uint32_t>::max)(), AnimationLayer());
+			animator.SetLayerWeight(1000000000u, 0.5f);
+			animator.Play(run, 0.0f, (std::numeric_limits<uint32_t>::max)());
+			animator.PlayOneShot(run, 0.1f, 0.2f, 4000000000u);
+			animator.Update(0.1f);
+			Check(animator.GetLayerCount() == 1 && animator.GetCurrentClip() == walk, "a layer index past the 32 an animator can have is ignored, not made");
+		}
 
 		{
 			Animator animator(&skeleton);
