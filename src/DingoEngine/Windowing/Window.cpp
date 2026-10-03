@@ -93,7 +93,11 @@ namespace Dingo
 
 	void Window::WaitEvents(double timeoutSeconds)
 	{
-		glfwWaitEventsTimeout(timeoutSeconds);
+		// GLFW asserts on a negative timeout.
+		if (timeoutSeconds > 0.0)
+			glfwWaitEventsTimeout(timeoutSeconds);
+		else
+			glfwPollEvents();
 	}
 
 	bool Window::IsRunning() const

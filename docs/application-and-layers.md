@@ -64,7 +64,8 @@ bool fs = Application::Get().GetWindow().IsFullscreen();
 
 The swap chain follows automatically via the normal resize path, on every graphics
 back-end. `WindowResizeEvent` is forwarded to layers, so cameras can update their
-aspect ratio there.
+aspect ratio there. Fullscreen is exclusive, so an alt-tab minimizes the window: see
+[In the background](#in-the-background).
 
 ### Command-line arguments
 
@@ -112,6 +113,8 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 | `GetWindow()` | Window info — `GetWidth()`, `GetHeight()`. |
 | `GetSwapChain()` | The active swap chain. |
 | `Close()` | Request shutdown after the current frame. |
+| `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
+| `SetUpdateInBackground(bool)` / `GetUpdateInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
 | `RequestRestart(GraphicsAPI)` | Tear down and recreate the app on a different back-end. |
 | `GetEngineVersion()` / `GetEngineBuildNumber()` | Packed engine version (decode with `DE_VERSION_MAJOR/MINOR/PATCH`). |
 
@@ -128,10 +131,39 @@ Once running, each frame the `Application`:
 
 `deltaTime` is seconds since the previous frame.
 
-While the window is minimized (a `WindowResizeEvent` with a zero width or height), steps 3–6
-are skipped: layers receive events but no `OnUpdate`/`OnUIRender`, `AssetManager` async loads
-and hot-reload wait for the restore, and the loop sleeps on window events instead of spinning.
-The time spent minimized is not folded into the first `deltaTime` after restore.
+#### In the background
+
+The window is in the background while it is minimized (a `WindowResizeEvent` with a zero width or
+height; an alt-tab out of exclusive fullscreen minimizes it too) or unfocused. What happens then is
+set by `ApplicationParams::UpdateInBackground`, which `Application::SetUpdateInBackground` changes
+at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never while unfocused):
+
+- **Off (the default): the app pauses.** No `OnUpdate`, no `OnUIRender`, nothing renders, and
+  `AssetManager` loads and hot-reload wait; an unfocused window keeps showing its last frame. The
+  loop sleeps on window events, the paused time is left out of the `deltaTime`s after it, and audio
+  keeps playing. The first frame runs even without focus, so a window that opens unfocused is not
+  left blank.
+- **On: layers keep updating**, for a game that must not stop there, such as one that pumps a
+  network or a simulation in `OnUpdate`. They get the real `deltaTime`, and `AssetManager` carries
+  on. An unfocused window renders as usual. A minimized one has no swap-chain image to render into,
+  so its frames update but render nothing:
+  - The loop waits on window events between updates instead of spinning, aiming at 60 a second;
+    with Windows' default 15.6 ms timer it gets about 35.
+  - Step 3 becomes `Renderer::SkipFrame()`, and steps 5–6 are skipped: no `OnUIRender`, no debug
+    window.
+  - `Renderer` uploads, clears and draws, `Renderer2D` and `Renderer3D` scenes and
+    `SceneRenderer::Render` are no-ops, so a layer that renders inside `OnUpdate` needs no guard of
+    its own. A dropped `Renderer::Upload` is not redone after the restore, so data written once
+    belongs in a `DirectUpload` buffer. Code that records into `Renderer::GetCommandList()` itself,
+    or calls `Renderer::Begin`/`Close`/`Execute`, must check `Renderer::IsFrameSkipped()` first.
+  - `Window::GetWidth()`/`GetHeight()` read 0, so an aspect ratio worked out from them every frame
+    divides by zero. Keep the last one while `Application::IsMinimized()`, or use
+    `Renderer2D::GetViewportSize()`, which keeps the swap chain's size.
+  - The restore logs how many updates ran meanwhile.
+
+Either way, every key and button edge reaches exactly one `OnUpdate`. After a pause, the first
+`OnUpdate` sees what changed during it, gamepads included; the scroll and cursor motion an inactive
+window collected meanwhile are dropped.
 
 ## Layers
 

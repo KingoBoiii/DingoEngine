@@ -21,7 +21,8 @@ namespace Dingo
 		SceneRenderer& operator=(const SceneRenderer&) = delete;
 
 		// Renders the scene's renderable entities through its primary camera, clearing
-		// to the scene's clear color. No-op (warns once) if the scene has no camera.
+		// to the scene's clear color. No-op (warns once) if the scene has no camera, and a
+		// silent no-op while Renderer::IsFrameSkipped() (a minimized window).
 		void Render(Scene& scene);
 
 	private:

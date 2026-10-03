@@ -89,7 +89,8 @@ namespace Dingo
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 
 		// Per-scene render statistics: reset each BeginScene, complete after EndScene
-		// (they reflect the most recent BeginScene/EndScene pass, not a whole frame).
+		// (they reflect the most recent BeginScene/EndScene pass, not a whole frame). A scene begun
+		// while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
 			uint32_t DrawCalls = 0;     // batches actually flushed (quad + circle + text)
@@ -291,6 +292,7 @@ namespace Dingo
 		Renderer2DParams m_Params;
 		Statistics m_Statistics;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
+		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
 
 		struct CameraData
 		{

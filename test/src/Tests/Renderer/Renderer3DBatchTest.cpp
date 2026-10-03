@@ -72,7 +72,7 @@ namespace Dingo
 
 		m_BatchRenderer->EndScene();
 
-		if (!m_ChecksDone)
+		if (!m_ChecksDone && !Renderer::IsFrameSkipped())
 		{
 			m_ChecksDone = true;
 			RunChecks();

@@ -16,6 +16,12 @@
 
 namespace Dingo
 {
+	namespace
+	{
+		constexpr float k_MinimizedUpdateInterval = 1.0f / 60.0f;
+		constexpr float k_PausedWaitTimeout = 0.1f;
+	}
+
 	Application::Application(const ApplicationParams& params)
 		: m_Params(params)
 	{
@@ -43,6 +49,7 @@ namespace Dingo
 		m_Window = new Window(m_Params.Window);
 		m_Window->Initialize();
 		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
+		m_Focused = m_Window->IsFocused();
 
 		GraphicsParams graphicsParams = m_Params.Graphics;
 		graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
@@ -180,6 +187,7 @@ namespace Dingo
 
 		dispatcher.Dispatch<WindowCloseEvent>(DE_BIND_EVENT_FN(Application::OnWindowCloseEvent));
 		dispatcher.Dispatch<WindowResizeEvent>(DE_BIND_EVENT_FN(Application::OnWindowResizeEvent));
+		dispatcher.Dispatch<WindowFocusEvent>(DE_BIND_EVENT_FN(Application::OnWindowFocusEvent));
 
 		for (auto it = m_LayerStack.rbegin(); it != m_LayerStack.rend(); ++it)
 		{
@@ -192,6 +200,17 @@ namespace Dingo
 	void Application::Run()
 	{
 		Timer timer;
+		float lastWaitEnd = 0.0f;
+		bool snapshotInput = true;
+		bool renderedOnce = false;
+		uint32_t minimizedUpdates = 0;
+		float minimizedTime = 0.0f;
+
+		// The first frame renders even without focus, so a window that opens unfocused isn't blank.
+		const auto shouldUpdate = [&]()
+		{
+			return (!renderedOnce && !m_Minimized) || m_Params.UpdateInBackground || (!m_Minimized && m_Focused);
+		};
 
 		while (m_IsRunning)
 		{
@@ -199,34 +218,61 @@ namespace Dingo
 			m_DeltaTime = time - m_LastFrameTime;
 			m_LastFrameTime = time;
 
-			// A minimized window has a (0,0) surface, so there is no swap-chain image to render
-			// into: sleep on events instead of spinning. Input is only snapshotted around frames
-			// that render, so the releases of the minimizing poll and the presses of the
-			// restoring one keep their edges.
-			if (m_Minimized)
+			const bool resuming = !snapshotInput;
+
+			// Snapshotted once after each round of OnUpdate, before the next poll, so every edge
+			// reaches exactly one OnUpdate: the first one after a pause sees what changed during it.
+			if (snapshotInput)
+				Input::Update();
+
+			if (!shouldUpdate())
 			{
-				m_Window->WaitEvents(0.1);
+				m_Window->WaitEvents(k_PausedWaitTimeout);
+			}
+			else if (m_Minimized)
+			{
+				// No swap-chain image to render into: pace the updates instead of spinning, often
+				// enough that a game's networking keeps answering.
+				m_Window->WaitEvents(k_MinimizedUpdateInterval - (timer.Elapsed() - lastWaitEnd));
+				lastWaitEnd = timer.Elapsed();
 			}
 			else
 			{
-				Input::Update();
 				m_Window->Update();
 			}
 
 			if (m_AudioEngine)
 				m_AudioEngine->Update(); // reap finished one-shots
 
-			if (m_Minimized)
+			snapshotInput = shouldUpdate();
+			if (!snapshotInput)
 			{
-				m_LastFrameTime = timer.Elapsed(); // the time spent minimized is not a frame delta
+				m_LastFrameTime = timer.Elapsed(); // a paused stretch is not a frame delta
 				RunPostExecutionCallbacks();
 				continue;
 			}
 
-			Renderer::BeginFrame();
+			if (resuming)
+			{
+				m_LastFrameTime = timer.Elapsed(); // nor is the wait for the event that ended it
+				Input::Resume();
+			}
 
-			// After BeginFrame: the render thread is parked until EndFrame, so the GPU
-			// work in here (texture uploads, shader recompiles) can't race its
+			const bool render = !m_Minimized;
+			if (render)
+				Renderer::BeginFrame();
+			else
+				Renderer::SkipFrame();
+
+			if (render && minimizedUpdates > 0)
+			{
+				DE_CORE_INFO("Window restored: layers updated {} times over {:.1f} s while it was minimized.", minimizedUpdates, minimizedTime);
+				minimizedUpdates = 0;
+				minimizedTime = 0.0f;
+			}
+
+			// After BeginFrame or SkipFrame: the render thread is parked until the next EndFrame,
+			// so the GPU work in here (texture uploads, shader recompiles) can't race its
 			// garbage-collection/present pass on the NVRHI device.
 			if (m_AssetManager)
 				m_AssetManager->Update(m_DeltaTime); // finalize async loads, poll hot-reload
@@ -236,25 +282,34 @@ namespace Dingo
 				layer->OnUpdate(m_DeltaTime);
 			}
 
-			if (m_ImGuiLayer)
+			if (render)
 			{
-				m_ImGuiLayer->Begin();
-
-				if (m_Params.EnableUI)
+				if (m_ImGuiLayer)
 				{
-					for (Layer* layer : m_LayerStack)
+					m_ImGuiLayer->Begin();
+
+					if (m_Params.EnableUI)
 					{
-						layer->OnUIRender();
+						for (Layer* layer : m_LayerStack)
+						{
+							layer->OnUIRender();
+						}
 					}
+
+					if (m_Params.EnableDebugOverlays)
+						RenderDebugOverlays();
+
+					m_ImGuiLayer->End();
 				}
 
-				if (m_Params.EnableDebugOverlays)
-					RenderDebugOverlays();
-
-				m_ImGuiLayer->End();
+				Renderer::EndFrame();
+				renderedOnce = true;
 			}
-
-			Renderer::EndFrame();
+			else
+			{
+				++minimizedUpdates;
+				minimizedTime += m_DeltaTime;
+			}
 
 			RunPostExecutionCallbacks();
 		}
@@ -360,6 +415,12 @@ namespace Dingo
 		m_Minimized = e.GetWidth() == 0 || e.GetHeight() == 0;
 		Renderer::QueueResize(e.GetWidth(), e.GetHeight());
 		return false; // let layers react to the new size too
+	}
+
+	bool Application::OnWindowFocusEvent(WindowFocusEvent& e)
+	{
+		m_Focused = e.IsFocused();
+		return false;
 	}
 
 }

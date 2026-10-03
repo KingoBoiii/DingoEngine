@@ -141,6 +141,34 @@ namespace Dingo
 				s_MousePosition = s_PreviousMousePosition = glm::vec2(static_cast<float>(x), static_cast<float>(y));
 			}
 		}
+
+		void PollGamepads()
+		{
+			for (uint32_t jid = 0; jid < MaxGamepads; jid++)
+			{
+				GamepadState& state = s_CurrentGamepads[jid];
+
+				GLFWgamepadstate glfwState;
+				if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
+				{
+					state = GamepadState{};
+					continue;
+				}
+
+				if (!state.Connected)
+				{
+					const char* name = glfwGetGamepadName(jid);
+					s_GamepadNames[jid] = name ? name : "Unknown Gamepad";
+					s_GamepadTypes[jid] = ClassifyGamepad(jid, s_GamepadNames[jid]);
+				}
+
+				state.Connected = true;
+				for (size_t i = 0; i < GamepadButtonCount; i++)
+					state.Buttons[i] = glfwState.buttons[i] == GLFW_PRESS;
+				for (size_t i = 0; i < GamepadAxisCount; i++)
+					state.Axes[i] = glfwState.axes[i];
+			}
+		}
 	}
 
 	void Input::Update()
@@ -155,30 +183,17 @@ namespace Dingo
 			s_MouseDeltaSuppressFrames--;
 
 		s_PreviousGamepads = s_CurrentGamepads;
-		for (uint32_t jid = 0; jid < MaxGamepads; jid++)
-		{
-			GamepadState& state = s_CurrentGamepads[jid];
+		PollGamepads();
+	}
 
-			GLFWgamepadstate glfwState;
-			if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
-			{
-				state = GamepadState{};
-				continue;
-			}
-
-			if (!state.Connected)
-			{
-				const char* name = glfwGetGamepadName(jid);
-				s_GamepadNames[jid] = name ? name : "Unknown Gamepad";
-				s_GamepadTypes[jid] = ClassifyGamepad(jid, s_GamepadNames[jid]);
-			}
-
-			state.Connected = true;
-			for (size_t i = 0; i < GamepadButtonCount; i++)
-				state.Buttons[i] = glfwState.buttons[i] == GLFW_PRESS;
-			for (size_t i = 0; i < GamepadAxisCount; i++)
-				state.Axes[i] = glfwState.axes[i];
-		}
+	void Input::Resume()
+	{
+		// The snapshot from before the pause stays as the previous frame, so the first update after
+		// it sees what changed meanwhile. Gamepads are polled, not fed by events, so refresh them;
+		// the scroll and cursor motion an inactive window collected while paused are dropped.
+		PollGamepads();
+		s_MouseScrollDelta = glm::vec2(0.0f);
+		s_PreviousMousePosition = s_MousePosition;
 	}
 
 	bool Input::IsKeyPressed(KeyCode keycode)

@@ -55,7 +55,8 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 		.UI = {
 			.EnableDocking = true,
 			.EnableViewports = false,
-		}
+		},
+		.UpdateInBackground = true,
 	};
 
 	TestFrameworkApplication* app = new TestFrameworkApplication(params);

@@ -432,6 +432,10 @@ namespace Dingo
 
 	void LightingTest::RunNextCheckStep()
 	{
+		// A skipped frame (minimized window) draws nothing and leaves the statistics as they were.
+		if (Renderer::IsFrameSkipped())
+			return;
+
 		if (m_NextCheckStep < m_CheckSteps.size())
 			m_CheckSteps[m_NextCheckStep++]();
 	}
