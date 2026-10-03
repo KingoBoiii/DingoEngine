@@ -1757,7 +1757,8 @@ namespace Dingo
 	void AnimationTest::Update(float deltaTime)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
-		if (!m_SkinnedMaterialChecked && m_Scene)
+		// Its skinned draw would take one of the crowd's MaxSkinnedInstances.
+		if (!m_SkinnedMaterialChecked && m_Scene && m_Mode != Mode::Crowd)
 			RunSkinnedMaterialCheck(renderer);
 
 		renderer.BeginScene(m_Camera);
