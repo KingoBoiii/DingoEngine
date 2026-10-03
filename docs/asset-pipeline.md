@@ -104,13 +104,14 @@ several characters can share one set of animations. Each skinned `Mesh` keeps it
 rest pose in `GetVertices()`, so physics and `Renderer3D::SubmitMesh` see the
 character standing in that pose. A model without bones loads exactly as before:
 every mesh is pre-transformed into model space, and any clips it has are dropped
-with a warning.
+with a warning. Drawing and animating skinned models is covered in
+[Animation & Skinned Models](animation.md).
 
 A model with clips also reads a text file of clip events beside it, named after it
 (`Fox.gltf` → `Fox.events`) if there is one: one event per line, `<clip> <seconds>
 <event>` or `<clip> <begin>..<end> <event>`, `#` for comments. A line that doesn't
 parse or names a missing clip warns with its line number. See
-[Animation events](scenes-and-ecs.md#animation-events-v08).
+[Animation events](animation.md#events).
 
 `Load` is synchronous with one caveat: if the same path already has a
 `LoadAsync` in flight it does **not** block on it — the call returns the handle

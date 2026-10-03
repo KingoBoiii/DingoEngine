@@ -358,10 +358,10 @@ namespace Dingo
 	};
 
 	// Draws every submesh of a Model at the entity's world transform: skinned submeshes on the GPU
-	// (Renderer3D::SubmitSkinnedMesh) in the skeleton's rest pose, the rest like a
-	// MeshRendererComponent. The Model is not owned by the component. Material works as on
-	// MeshRendererComponent and applies to every submesh; the submeshes' own diffuse textures are
-	// not used.
+	// (Renderer3D::SubmitSkinnedMesh) posed by the entity's AnimatorComponent, or in the skeleton's
+	// rest pose without one, the rest like a MeshRendererComponent. The Model is not owned by the
+	// component. Material works as on MeshRendererComponent and applies to every submesh; the
+	// submeshes' own diffuse textures are not used.
 	struct SkinnedMeshRendererComponent
 	{
 		Dingo::Model* Model = nullptr;

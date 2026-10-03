@@ -28,10 +28,11 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated, including mesh colliders
 - [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
 - [Lighting](docs/lighting.md) — directional, point and spot lights, the light budget, specular, and lit materials
+- [Animation](docs/animation.md) — skinned models, the animator, blending and layers, timeline events, joint sockets, and model hot-reload
 
 ## Roadmap
 
-Currently at **v0.7.2**: v0.7's lighting engine work and its example game, *Candlewick*, shipped as v0.7.0, v0.7.1 added the transform hierarchy, and v0.7.2 lets a game choose to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
+Currently at **v0.8.0**, in progress: the animation engine work (skinned models, an animator with blending, layers and timeline events, joint sockets, and in-place model hot-reload) is done, and its example game, *Marionette*, comes next. Before it, v0.7.0 shipped the lighting engine and *Candlewick*, v0.7.1 the transform hierarchy, and v0.7.2 a choice to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
 [ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1–v0.7.2) and what each
 example is built to demonstrate.
 
@@ -45,7 +46,7 @@ example is built to demonstrate.
 | v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
 | v0.7 | Lighting & Shading — point/spot lights on a capped forward multi-light path, specular | `Candlewick` | shipped |
 | v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
-| v0.8 | Animation & Character Fidelity — skinned meshes, clips, blending | *Marionette* | planned |
+| **v0.8** | **Animation & Character Fidelity** — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | *Marionette* | engine done, game next |
 | v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
 

@@ -314,9 +314,10 @@ Things to know:
 ### Skinned models (v0.8)
 
 A model with bones (see [the asset pipeline](asset-pipeline.md)) draws through a
-`SkinnedMeshRendererComponent`. Its skinned submeshes are skinned on the GPU: one draw each, after
-the static batches, posed by the entity's [animator](#animating-a-model-v08), or by the skeleton's
-rest pose without one. Submeshes without a skin draw like a `MeshRendererComponent`.
+`SkinnedMeshRendererComponent` on an entity that also has a `Transform3DComponent`. Its skinned
+submeshes are skinned on the GPU, one draw each, posed by the entity's [animator](#animating-a-model-v08)
+or, without one, by the skeleton's rest pose. Submeshes without a skin draw like a
+`MeshRendererComponent`, and the component's `Material` applies to every submesh.
 
 ```cpp
 Model* fox = Model::LoadFromFile("models/Fox/Fox.gltf");
@@ -328,103 +329,38 @@ entity.AddComponent<Transform3DComponent>(Transform3DComponent({ 0, 0, 0 }, glm:
 entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(fox)).Material = fur;
 ```
 
-- **Materials.** A lit material, or none, draws through a skinned copy the renderer keeps for it,
-  so emissive, specular and the albedo texture work as on static meshes. A custom shader must
-  declare the `SkinData` uniform block (copy it, and the `DE_SKINNED` vertex inputs, from
-  `Renderer3D_Lit.glsl`) at a binding of 13 or below that its own uniforms and textures leave
-  free. Without one, the mesh draws with the default lit material and a warning.
-- **Limits.** A draw skins with at most 128 joints (`Renderer3D::k_MaxSkinJoints`); a mesh that uses
-  more draws its rest pose without skinning. A renderer draws at most
-  `Renderer3DCapabilities::MaxSkinnedInstances` (64, at most 256) skinned models a frame, across
-  all its scenes; a model's submeshes count once. Later ones are skipped whole, with a warning, and
-  counted in `Statistics::DroppedSkinnedDraws`.
-- **Draw order.** Skinned meshes draw after every static mesh, so a see-through static mesh in front
-  of a character hides it instead of blending over it.
-- **Drawing yourself.** `Renderer3D::SubmitSkinnedMesh(mesh, transform, palette, color, material)`
-  takes a joint palette: an `Animator`'s `GetSkinningPalette()`, `Skeleton::GetRestPalette()`, or
-  one built from your own joint poses with `Skeleton::ComputeGlobalTransforms` and
-  `ComputeSkinningPalette`.
+Loading skinned models, the per-frame instance budget and the 128-joint cap, draw order, custom
+skinned shaders and drawing without a scene are in [Animation](animation.md#loading-skinned-models).
 
 ### Animating a model (v0.8)
 
 An `AnimatorComponent` next to the `SkinnedMeshRendererComponent` gives the entity an `Animator`,
-which plays the model's clips and poses it. `Scene::OnUpdate` advances it by `dt × Speed`, after
-the scripts and before physics.
+which plays the model's clips and poses it. `Scene::OnUpdate` advances it by `dt × Speed`, after the
+scripts and before physics.
 
 ```cpp
-fox.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));   // plays, looping, from the start
+entity.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));   // plays, looping, from the start
 
 // In a script:
 Animator* animator = GetScene().GetAnimator(GetEntity());
-animator->Play(model->FindAnimation("Run"), 0.25f);                   // cross-fade over 0.25 s
-animator->Play(AnimationState::Clip(jump).SetLoop(false).SetSpeed(1.5f));
-if (animator->IsFinished())
-    animator->Play(model->FindAnimation("Survey"), 0.2f);
-
-// Locomotion from one parameter, a wave on the upper body, a slash that returns to it.
-animator->Play(AnimationState::Blend1D("Speed", { { 0.0f, idle }, { 1.5f, walk }, { 4.0f, run } }), 0.2f);
-animator->SetFloat("Speed", glm::length(velocity));
-animator->SetLayer(1, AnimationLayer().SetMask("b_Spine01_02"));
-animator->Play(wave, 0.15f, /*layer*/ 1);
-animator->PlayOneShot(slash, 0.1f, 0.2f);
+animator->Play(fox->FindAnimation("Run"), 0.25f);                      // cross-fade over 0.25 s
 ```
 
-- **`Play(state, fadeSeconds)`** fades the new state in over whatever shows now; 0 cuts to it. A
-  `Play` in the middle of a fade blends on from the mix, so nothing pops. Playing the state that
-  already plays changes nothing, even once a clip that doesn't loop has finished, so a script can
-  call it every frame; `SetTime(0)` restarts it.
-  `Stop(fade)` fades back to the rest pose. A null clip is the rest pose.
-- **Reading it.** `GetCurrentClip`, `GetTime`, `GetNormalizedTime`, `IsFinished` (a clip that
-  doesn't loop holds its last frame), `IsFading`; each takes a layer, 0 by default.
-  `GetLocalPoses`, `GetGlobalTransforms` and `GetJointTransform(joint)` give the pose;
-  `Skeleton::FindJoint` turns a name into an index.
-- **Blending by a parameter.** `AnimationState::Blend1D("Speed", { {0, idle}, {1.5f, walk}, {4,
-  run} })` blends the two clips around the value of `SetFloat("Speed", v)`, and past either end
-  plays the end clip. The clips run in step: each at the same fraction of its own cycle, advanced
-  at the blended cycle length, so a walk turning into a run never puts a foot down twice. Changing
-  the parameter needs no `Play`; `GetCurrentClip` reports the clip with the larger share.
-- **Layers.** `SetLayer(1, AnimationLayer().SetMask("b_Spine01_02").Exclude("b_Neck_04"))` adds a
-  layer that overrides only the joints under its mask, on top of layer 0, at its weight
-  (`SetWeight`, or `SetLayerWeight` to fade the whole layer). `Play(state, fade, layer)` plays on
-  it, fading in over the pose below; joints its clip doesn't animate keep that pose, and `Stop(fade,
-  layer)` lets the layers below show again. Layers are applied in index order; additive layers
-  aren't supported.
-- **One-shots.** `PlayOneShot(clip, fadeIn, fadeOut, layer)` plays a clip once over what the layer
-  plays and fades back to it as the clip ends. The interrupted state's time keeps running, so a
-  walk resumes in step, and a script that plays that state every frame doesn't cut the one-shot
-  short. Another one-shot restarts it; a `Play` of anything else on that layer cancels the way back.
-  `IsOneShotPlaying(layer)` stays true until the fade back starts.
-- **Lifetime.** The animator is made on the first `GetAnimator` or update, and `GetAnimator` returns
-  null without an `AnimatorComponent` or a model with a skeleton. It survives `OnStop`/`OnStart`,
-  is freed with the entity or the component, and starts again from `DefaultClip` if the model
-  changes. `Enabled = false` holds the pose. `DuplicateEntity` copies the component; the copy's
-  animator starts from the beginning.
-- **Clips from another model** play by joint name. When the clip was loaded with another skeleton
-  (a second character, a clip-only file), it is retargeted: rotations come from the clip, the
-  root-most animated joint (usually the hips) takes the clip's motion scaled by the ratio of the two
-  rigs' rest offsets of that joint from its parent (so a centimetre rig drives one in metres), and
-  every other joint keeps this rig's own lengths. The rigs need the same joint
-  names and rest orientations. Joints the clip doesn't name stay at rest.
-- **Without a scene**, `Animator` works on any `Skeleton`: `Update(dt)`, then pass
-  `GetSkinningPalette()` to `SubmitSkinnedMesh`.
+- **`Scene::GetAnimator(entity)`** creates the animator on first use and returns null without an
+  `AnimatorComponent` or a model with a skeleton. It survives `OnStop`/`OnStart`, is freed with the
+  entity or the component, and starts again from `DefaultClip` if the model changes. `Enabled = false`
+  holds the pose. `DuplicateEntity` copies the component; the copy's animator starts from the beginning.
+- **Playing, blending and the rest** are the animator's own API, which works without a scene too:
+  `Play`/`Stop` and their fades, `Blend1D`, layers, one-shots, retargeting clips from another model.
+  See [Animation](animation.md#the-animator) and [Blending](animation.md#blending).
 
 ### Animation events (v0.8)
 
-A clip carries named marks on its timeline: an instant (a footstep) or a range (a sword's hitbox,
-open from its start to its end). Add them in code, or in a text file beside the model, named after
-it, which `Model::LoadFromFile` reads by itself (`Fox.gltf` → `Fox.events`; `Model::LoadEvents`
-reads any other file):
-
-```
-# clip    time         event
-Walk      0.287        step_fl
-Walk      0.602        step_fr
-Slash     0.32..0.48   hitbox
-```
+A clip carries named marks on its timeline (an instant, or a range such as a sword's hitbox), added in
+code or read from a `.events` file beside the model. A script on the entity receives them as the
+animator crosses each one:
 
 ```cpp
-model->FindAnimation("Slash")->AddEventRange(0.32f, 0.48f, "hitbox");
-
 class Fighter : public ScriptableEntity
 {
     void OnAnimationEvent(const AnimationEvent& event) override
@@ -435,44 +371,20 @@ class Fighter : public ScriptableEntity
 };
 ```
 
-- **When one fires.** As playback crosses its time in an `Update`, a loop's wrap included (a step
-  longer than the clip counts every mark it passed); a state's very start counts on its first
-  update. Each event comes once: `OnAnimationEvent` on the entity's script after every script's
-  `OnUpdate` and before physics (a `DestroyEntity` there waits for the end of the pass; a script
-  spawned this frame hears its entity's first events next frame, once it has started), and in
-  `Animator::GetEventsThisFrame()` / `ForEachEventThisFrame` until the next update.
-- **Which clip fires.** Only each layer's dominant contribution: the clip with the larger share of a
-  blend, an incoming state once its fade passes halfway, a one-shot until it starts fading back. So
-  a walk and a run blended 50/50 never double a footstep (author both gaits' footsteps at the same
-  fraction of their cycles), and a swing cancelled before it showed never opens its hitbox. A clip
-  that doesn't loop catches up from its start when it takes over, so a one-shot's fade-in doesn't
-  swallow its first marks; a looping clip doesn't, so a cross-fade never repeats footsteps. A layer
-  above 0 fires only at weight 0.5 or more.
-- **Ranges** close early when their clip stops being dominant, so a cancelled swing still closes its
-  hitbox; `IsEventActive("hitbox")` is true between the two. A range of zero length opens and
-  closes in one go. Played backwards, a range opens at its end. A seek (`SetTime`) closes the
-  layer's open ranges and counts the new time as a start, so `SetTime(0)` replays a swing in full;
-  seeking into the middle of a range opens nothing. `Evaluate()` poses the animator after a seek
-  without firing anything. A range that opened always gets its `RangeEnd`: when the clip's events
-  change while it is open (`ClearEvents`, or a model reload that drops or renames it), it ends at
-  the next `Update`.
-- **Names** stay valid for the life of the program: an `AnimationEvent::Name` you keep outlives the
-  clip's events changing and a model reload.
+`OnAnimationEvent` runs once per event, after every script's `OnUpdate` and before physics. A
+`DestroyEntity` there waits for the end of the pass, and a script spawned this frame hears its
+entity's first events next frame, once it has started. Authoring, the `.events` format, which clip
+fires in a blend and how ranges close are in [Animation](animation.md#events).
 
 ### Joints as parents (v0.8)
 
 `child.SetParent(character, "b_RightHand", keepWorldTransform)` attaches the child to a joint of the
-character's skinned model. Its world transform is then the character's world × the joint's frame
-× its own local transform, from this frame's pose, so a sword follows the hand through every
-swing. Everything that reads world values (rendering, lights, audio, physics) follows the joint.
-
-- The joint passes on its position and rotation, not its scale, so an FBX model's centimetre scale
-  doesn't shrink what it holds. The character entity's own scale still applies, as with any parent.
-- `GetParentJoint()` names the joint; `SetParent(parent)` without one moves the child back to the
-  parent's origin. Naming a joint the model doesn't have warns, and the child sits on the model's
-  origin until the model has it; without an animator the joint stays at its rest pose.
-- A kinematic body on a joint is driven to this frame's pose before physics steps, so a hitbox
-  follows the animation.
+character's skinned model. Its world transform is then the character's world × the joint's frame ×
+its own local transform, from this frame's pose, so a sword follows the hand through every swing.
+Everything that reads world values (rendering, lights, audio, physics) follows the joint, and
+`GetParentJoint()` names it. A kinematic body on a joint is driven to this frame's pose before
+physics steps, so a hitbox follows the animation, and it ignores its ancestors' bodies (see the rule
+above). The scale strip, unknown joint names and the rest are in [Animation](animation.md#sockets).
 
 ### 2D UI over a 3D scene
 

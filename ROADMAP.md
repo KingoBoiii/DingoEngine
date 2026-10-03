@@ -187,7 +187,7 @@ skinning, clips, blending and events.
 
 **Test**: the test app's new **Hierarchy Test** (`--test=hierarchy`), 41 checks covering the API, reparenting, destroy and duplicate, world readers and the physics rules in 3D and 2D. Its modes are `--hierarchy=2d`, `probe2d` (a 2D draw-position probe), `stress` and `stressflat` (the 10k-entity timing pair).
 
-**Known limit**: bodies in one hierarchy are not filtered against each other, so a parent's and a child's colliders can collide. The filter is due with v0.8's joint sockets.
+**Known limit**: bodies in one hierarchy are not filtered against each other, so a parent's and a child's colliders can collide. Narrowed in v0.8: a kinematic child now ignores its ancestors' bodies; dynamic and static children still collide with them.
 
 ## v0.7.2 — Updating in the Background
 A point release for a v0.7.0 regression, found while bumping the co-op game *Headstone* to v0.7.1.
@@ -229,6 +229,20 @@ gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays 
   one-shot that returns to whatever was playing underneath. Plus **events on the timeline** (footstep
   here, hitbox live from here to here), so a swing's damage window comes from the animation instead of
   a hand-tuned timer that drifts every time the art changes.
+
+**Status**: the engine work is done (P4–P10 of `.claude/plans/2026-10-01-v0.8-animation-plan.md`,
+2026-10-03); *Marionette* comes next, and the release waits for it. Built so far:
+- **Skinned models**: `Model::LoadFromFile` reads skeletons, skin weights and clips from glTF and FBX, including clip libraries (clips without meshes). Static models load exactly as before.
+- **GPU skinning** on Vulkan, D3D11 and D3D12: `SkinnedMeshRendererComponent`, or `Renderer3D::SubmitSkinnedMesh` outside a scene. A model's joint palette uploads once a frame, for up to 64 models by default (256 at most), at up to 128 joints a draw. A custom shader can skin through `DE_SKINNED` and a `SkinData` block.
+- **The animator**: cross-fades, `Blend1D` on a float parameter with the clips kept in step, masked layers (an upper body over locomotion), one-shots that return to what they interrupted, and retargeting by joint name. It runs standalone or as an `AnimatorComponent`.
+- **Timeline events**: instants and ranges, written in code or in a `.events` file beside the model, delivered to `ScriptableEntity::OnAnimationEvent` or polled. Only the clip a layer shows fires, so a blend never doubles a footstep.
+- **Joint sockets**: `SetParent(character, "b_RightHand")` hangs a sword on a hand. A kinematic child now ignores its ancestors' bodies, which narrows v0.7.1's known limit.
+- **Model hot-reload in place**: a saved model, or its `.events` file, reloads into the same objects, so the game's pointers stay valid.
+- **Debugging**: the **F7** Animation tab (every animator's layers and states, the last 20 events), skinning stats in **F4**, and a skeleton overlay in the test app.
+
+**Test**: the test app's **Animation Test** (`--test=anim`): 67 checks (68 with `--anim-skeleton`) across loading, skinning, the animator, blending, events, sockets and hot-reload, on all three backends. Its modes are `--anim=bind|bindstatic|pose|clip|blend|layers|events|crowd`, with `--anim-skeleton` and `--anim-reload`. Guide: [docs/animation.md](docs/animation.md).
+
+**Not in v0.8**: root motion, IK, additive layers and state machines as assets, and skinned shadows (v0.9).
 
 **Example game**: *Marionette* — a close-quarters duel against an escalating opponent, built so that
 no combat timing lives in game code at all. Reach and hit windows come from timeline events on the
