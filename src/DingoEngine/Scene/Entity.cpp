@@ -170,8 +170,12 @@ namespace Dingo
 		{
 			const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(newParent);
 			const Skeleton* skeleton = skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
-			if (skeleton && skeleton->FindJoint(joint) == Skeleton::k_InvalidJoint)
+			if (!skeleton)
+				DE_CORE_WARN("SetParent: '{}' has no skinned model yet, so '{}' follows its origin until one with a joint '{}' is set", parent.GetName(), GetName(), joint);
+			else if (skeleton->FindJoint(joint) == Skeleton::k_InvalidJoint)
 				DE_CORE_WARN("SetParent: '{}' has no joint '{}', so '{}' follows its origin", parent.GetName(), joint, GetName());
+			if (!registry.all_of<Transform3DComponent>(self))
+				DE_CORE_WARN("SetParent: '{}' has no Transform3DComponent, and only 3D follows a joint, so joint '{}' is ignored", GetName(), joint);
 		}
 
 		Reparent(registry, self, newParent, joint, keepWorldTransform);

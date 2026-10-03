@@ -1404,6 +1404,23 @@ namespace Dingo
 		const glm::vec3 strayExpected(fox.GetWorldTransform() * glm::vec4(0.5f, 0.0f, 0.0f, 1.0f));
 		Check(glm::length(stray.GetWorldPosition() - strayExpected) < 1e-5f, "a joint the model lacks warns and leaves the child on the model's origin");
 
+		{
+			Entity holder = scene.CreateEntity("Holder");
+			holder.AddComponent<Transform3DComponent>(Transform3DComponent({ -2.0f, 0.0f, 0.0f }, glm::vec3(m_FoxScale)));
+			Entity early = scene.CreateEntity("Early");
+			early.AddComponent<Transform3DComponent>();
+			early.SetParent(holder, k_HatJoint, false);
+			const bool atOrigin = glm::length(early.GetWorldPosition() - holder.GetWorldPosition()) < 1e-5f;
+			holder.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			const Skeleton& skeleton = *m_Fox->GetSkeleton();
+			const glm::vec3 joint(holder.GetWorldTransform() * (skeleton.GetRootTransform() * skeleton.GetRestGlobalTransforms()[head])[3]);
+
+			Entity flat = scene.CreateEntity("Flat");
+			flat.SetParent(fox, k_HatJoint, false);
+			Check(atOrigin && glm::length(early.GetWorldPosition() - joint) < 1e-4f,
+				"a joint named before the parent has a model warns, follows the origin, then the joint once the model is set");
+		}
+
 		fox.RemoveComponent<AnimatorComponent>();
 		const bool freed = scene.GetAnimator(fox) == nullptr;
 		fox.AddComponent<AnimatorComponent>(AnimatorComponent("Run"));
