@@ -239,6 +239,9 @@ namespace Dingo
 			bool           Fresh = true;
 			bool           Wrapped = false;
 			bool           Led = false;
+			// Where a state that doesn't loop catches up from when it first leads: its start, or the
+			// time of its latest seek.
+			float          CatchUpFrom = 0.0f;
 			// A one-shot's way back, which takes the events over the moment it starts.
 			bool           Returning = false;
 		};

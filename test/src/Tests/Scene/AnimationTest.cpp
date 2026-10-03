@@ -950,6 +950,22 @@ namespace Dingo
 		}
 		{
 			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
+			slash.AddEvent(0.12f, "whoosh");
+			slash.AddEventRange(0.32f, 0.48f, "hitbox");
+			Animator seeked(&skeleton);
+			seeked.Play(AnimationState::Clip(&slash).SetLoop(false));
+			seeked.SetTime(0.4f);
+			seeked.Update(0.05f);
+			const bool fromSeek = seeked.GetEventsThisFrame().empty() && !seeked.IsEventActive("hitbox");
+
+			Animator reversed(&skeleton);
+			reversed.Play(AnimationState::Clip(&slash).SetLoop(false));
+			reversed.Update(-0.05f);
+			Check(fromSeek && reversed.GetEventsThisFrame().empty(),
+				std::format("a swing seeked to 0.4 s before it ever played fires nothing behind it, and one stepped backwards from its start fires nothing ({} events)", reversed.GetEventsThisFrame().size()));
+		}
+		{
+			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
 			slash.AddEventRange(0.32f, 0.48f, "hitbox");
 			Animator animator(&skeleton);
 			animator.Play(AnimationState::Clip(&slash).SetLoop(false));

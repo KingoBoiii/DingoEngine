@@ -298,6 +298,7 @@ namespace Dingo
 		}
 		if (state.IsBlend() && state.GetSpeed() < 0.0f)
 			playing.Time = 1.0f;
+		playing.CatchUpFrom = playing.Time;
 
 		playing.Cursors.assign(CursorCount(state), 0);
 		return playing;
@@ -497,6 +498,7 @@ namespace Dingo
 		Layer& layer = m_Layers[layerIndex];
 		PlayingState& current = layer.States.back();
 		current.Fresh = true;
+		current.CatchUpFrom = current.Time;
 		if (layer.EventSerial == current.Serial)
 			layer.CloseRangesOnUpdate = true;
 	}
@@ -762,7 +764,7 @@ namespace Dingo
 		// doesn't, or a cross-fade would replay footsteps the outgoing clip already fired.
 		if (!dominant->Led && !dominant->State.IsLooping())
 		{
-			from = forward ? 0.0f : clip->GetDuration();
+			from = dominant->CatchUpFrom * timeScale;
 			inclusive = true;
 		}
 		dominant->Led = true;
