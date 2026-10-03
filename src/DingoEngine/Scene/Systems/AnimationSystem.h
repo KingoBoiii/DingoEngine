@@ -55,8 +55,9 @@ namespace Dingo
 				size_t RecentCount = 0;
 			};
 
-			// Registers the hook that frees an animator with its AnimatorComponent.
-			void Connect(entt::registry& registry);
+			// Registers the hook that frees an animator with its AnimatorComponent, queuing the RangeEnd
+			// of its open ranges into scratch for the entity's script.
+			void Connect(entt::registry& registry, EventScratch& scratch);
 
 			// The animate pass: gives every AnimatorComponent on a skinned model its animator (playing
 			// DefaultClip when PlayOnStart is set), rebinds one whose model changed, and advances the

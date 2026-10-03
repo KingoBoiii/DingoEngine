@@ -897,6 +897,17 @@ namespace Dingo
 		return false;
 	}
 
+	std::vector<AnimationEvent> Animator::GetOpenRangeEnds() const
+	{
+		std::vector<AnimationEvent> ends;
+		for (uint32_t i = 0; i < m_Layers.size(); ++i)
+		{
+			for (const OpenRange& range : m_Layers[i].OpenRanges)
+				ends.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, i });
+		}
+		return ends;
+	}
+
 	void Animator::Evaluate()
 	{
 		if (!m_Skeleton)

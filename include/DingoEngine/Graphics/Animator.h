@@ -194,6 +194,9 @@ namespace Dingo
 		void ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const;
 		// A range event that has begun and not yet ended, on any layer.
 		bool IsEventActive(std::string_view name) const;
+		// The RangeEnd of every range open on any layer: what an owner dropping this animator mid-range
+		// delivers in its place, as a scene does when its AnimatorComponent is removed.
+		std::vector<AnimationEvent> GetOpenRangeEnds() const;
 
 		// One per skeleton joint; the rest pose until the first Update.
 		std::span<const JointPose> GetLocalPoses()       const { return m_LocalPoses; }

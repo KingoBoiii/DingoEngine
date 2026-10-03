@@ -669,6 +669,8 @@ A range that opened gets its `RangeEnd`:
 - **Early**, when its clip stops being dominant (a cancelled swing still closes its hitbox).
 - When the clip's events change under it (`ClearEvents`, or a [model reload](#hot-reload) that drops
   or renames it): it ends at the next `Update`, with the name it began with.
+- When the entity's `AnimatorComponent` is removed: its script hears the `RangeEnd` in the next
+  animate pass (`Animator::GetOpenRangeEnds` gives the same events to code that drops an animator).
 
 `IsEventActive("hitbox")` is true between the begin and the end. A range of zero length opens and
 closes in one go. The one exception is binding the animator to another skeleton (`SetSkeleton`, which

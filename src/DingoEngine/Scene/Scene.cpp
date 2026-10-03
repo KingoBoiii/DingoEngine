@@ -25,7 +25,7 @@ namespace Dingo
 	Scene::Scene(const std::string& name)
 		: m_Data(new Internal::SceneData()), m_Name(name)
 	{
-		Internal::AnimationSystem::Connect(m_Data->Registry);
+		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
 

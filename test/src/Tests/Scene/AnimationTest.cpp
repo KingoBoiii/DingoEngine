@@ -1438,6 +1438,24 @@ namespace Dingo
 				std::format("a body on a joint is built at DefaultClip's first frame, not the rest pose (off by {:.1e})", gap));
 			baked.OnStop();
 		}
+		{
+			Scene ranged("Animation checks: removal");
+			Entity surveyor = ranged.CreateEntity("Fox");
+			surveyor.AddComponent<Transform3DComponent>();
+			surveyor.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			surveyor.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));
+			int lookEnds = 0;
+			surveyor.AddScript<EventListener>([&](Entity, const AnimationEvent& event) { lookEnds += event.Name == "look" && event.Type == AnimationEventType::RangeEnd; });
+			ranged.OnStart();
+			for (int frame = 0; frame < 60; ++frame)
+				ranged.OnUpdate(1.0f / 60.0f);
+			const Animator* looking = ranged.GetAnimator(surveyor);
+			const bool open = looking && looking->IsEventActive("look");
+			surveyor.RemoveComponent<AnimatorComponent>();
+			ranged.OnUpdate(1.0f / 60.0f);
+			Check(open && lookEnds == 1, "removing an AnimatorComponent mid-range sends the entity's script that range's RangeEnd");
+			ranged.OnStop();
+		}
 	}
 
 	void AnimationTest::BuildScene()

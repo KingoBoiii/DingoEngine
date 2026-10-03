@@ -24,8 +24,14 @@ namespace Dingo
 			namespace
 			{
 
-				void DropRuntime(entt::registry& registry, entt::entity handle)
+				// A script left on the entity hears its open ranges end, in the next animate pass.
+				void DropRuntime(EventScratch& scratch, entt::registry& registry, entt::entity handle)
 				{
+					if (const AnimatorRuntime* runtime = registry.try_get<AnimatorRuntime>(handle); runtime && runtime->Instance)
+					{
+						for (const AnimationEvent& end : runtime->Instance->GetOpenRangeEnds())
+							scratch.Waiting.emplace_back(handle, end);
+					}
 					registry.remove<AnimatorRuntime>(handle);
 				}
 
@@ -111,12 +117,12 @@ namespace Dingo
 
 			}
 
-			void Connect(entt::registry& registry)
+			void Connect(entt::registry& registry, EventScratch& scratch)
 			{
 				// The hook runs while destroy and clear walk the registry's pools, where creating the
 				// runtime pool on first use would invalidate that walk.
 				registry.storage<AnimatorRuntime>();
-				registry.on_destroy<AnimatorComponent>().connect<&DropRuntime>();
+				registry.on_destroy<AnimatorComponent>().connect<&DropRuntime>(scratch);
 			}
 
 			void Update(entt::registry& registry, ScriptSystem& scripts, EventScratch& scratch, float deltaTime)
