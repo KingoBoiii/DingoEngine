@@ -84,6 +84,19 @@ namespace Dingo
 			}
 		}
 
+		void ScriptSystem::DeliverAnimationEvent(entt::entity handle, const AnimationEvent& event)
+		{
+			auto it = m_Scripts.find(handle);
+			if (it != m_Scripts.end() && it->second->m_Started)
+				it->second->OnAnimationEvent(event);
+		}
+
+		bool ScriptSystem::IsStarted(entt::entity handle) const
+		{
+			auto it = m_Scripts.find(handle);
+			return it != m_Scripts.end() && it->second->m_Started;
+		}
+
 		void ScriptSystem::ForEach(const std::function<void(ScriptableEntity*)>& fn) const
 		{
 			// Local snapshot, not a member buffer: fn is client code and may spawn or

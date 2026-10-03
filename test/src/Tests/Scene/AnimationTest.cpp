@@ -85,6 +85,45 @@ namespace
 		}
 	}
 
+	class EventListener : public ScriptableEntity
+	{
+	public:
+		explicit EventListener(std::function<void(Entity, const AnimationEvent&)> onEvent) : m_OnEvent(std::move(onEvent)) {}
+
+	protected:
+		void OnAnimationEvent(const AnimationEvent& event) override { m_OnEvent(GetEntity(), event); }
+
+	private:
+		std::function<void(Entity, const AnimationEvent&)> m_OnEvent;
+	};
+
+	class UpdateHook : public ScriptableEntity
+	{
+	public:
+		explicit UpdateHook(std::function<void(float)> onUpdate) : m_OnUpdate(std::move(onUpdate)) {}
+
+	protected:
+		void OnUpdate(float deltaTime) override { m_OnUpdate(deltaTime); }
+
+	private:
+		std::function<void(float)> m_OnUpdate;
+	};
+
+	int CountEvents(std::span<const AnimationEvent> events, std::string_view name, AnimationEventType type)
+	{
+		return static_cast<int>(std::count_if(events.begin(), events.end(), [&](const AnimationEvent& event) { return event.Name == name && event.Type == type; }));
+	}
+
+	// The foot each of Fox.events' step events marks.
+	const char* StepJoint(std::string_view event)
+	{
+		if (event == "step_fl") return "b_LeftHand_011";
+		if (event == "step_fr") return "b_RightHand_08";
+		if (event == "step_bl") return "b_LeftFoot01_017";
+		if (event == "step_br") return "b_RightFoot01_021";
+		return nullptr;
+	}
+
 	// A joint transform without its scale: what a child on that joint hangs from.
 	glm::mat4 SocketFrame(const glm::mat4& joint)
 	{
@@ -116,6 +155,8 @@ namespace Dingo
 		m_Time = 0.0f;
 		m_TimedFrames = 0;
 		m_FrameMs = m_UpdateMs = m_RenderMs = m_EndSceneMs = 0.0;
+		m_EventLog.clear();
+		m_Footprints.clear();
 		m_TimingResult.clear();
 
 		if (!m_ArgsRead)
@@ -126,9 +167,9 @@ namespace Dingo
 			{
 				m_Mode = *mode == "bindstatic" ? Mode::BindStatic : *mode == "pose" ? Mode::Pose
 					: *mode == "clip" ? Mode::Clip : *mode == "blend" ? Mode::Blend : *mode == "layers" ? Mode::Layers
-					: *mode == "crowd" ? Mode::Crowd : Mode::Bind;
+					: *mode == "events" ? Mode::Events : *mode == "crowd" ? Mode::Crowd : Mode::Bind;
 				if (m_Mode == Mode::Bind && *mode != "bind")
-					DE_WARN("Animation Test: unknown --anim={}; showing bind. Use bind, bindstatic, pose, clip, blend, layers or crowd.", *mode);
+					DE_WARN("Animation Test: unknown --anim={}; showing bind. Use bind, bindstatic, pose, clip, blend, layers, events or crowd.", *mode);
 			}
 			if (auto count = args.Get("anim-count"); count && !count->empty())
 				m_CrowdCount = static_cast<uint32_t>((std::max)(1l, std::strtol(std::string(*count).c_str(), nullptr, 10)));
@@ -169,6 +210,7 @@ namespace Dingo
 
 		RunAnimatorChecks();
 		RunBlendChecks();
+		RunEventChecks();
 		RunSceneChecks();
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -547,6 +589,285 @@ namespace Dingo
 		}
 	}
 
+	void AnimationTest::RunEventChecks()
+	{
+		const Skeleton& skeleton = *m_Fox->GetSkeleton();
+		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+		const AnimationClip* run = m_Fox->FindAnimation("Run");
+		const AnimationClip* survey = m_Fox->FindAnimation("Survey");
+		if (!walk || !run || !survey)
+			return;
+
+		auto steps = [](const AnimationClip& clip)
+		{
+			return std::count_if(clip.GetEvents().begin(), clip.GetEvents().end(), [](const AnimationClipEvent& event) { return !event.Range && StepJoint(event.Name); });
+		};
+		Check(steps(*walk) == 4 && steps(*run) == 4 && survey->GetEvents().size() == 1 && survey->GetEvents()[0].Range && survey->GetEvents()[0].Name == "look",
+			"Fox.events beside the model gives Walk and Run four footfalls each and Survey a range");
+
+		// Clips of events alone: no channels, so they pose the rest pose.
+		AnimationClip loop("Loop", 1.0f, {}, &skeleton);
+		loop.AddEvent(0.55f, "mid");
+		loop.AddEventRange(0.25f, 0.45f, "window");
+		loop.AddEvent(0.0f, "start");
+		AnimationClip other("Other", 1.0f, {}, &skeleton);
+
+		{
+			Animator animator(&skeleton);
+			animator.Play(&loop);
+			int starts = 0, mids = 0, opens = 0, closes = 0;
+			bool openAt03 = false, shutAt05 = false;
+			for (int step = 0; step <= 26; ++step)
+			{
+				animator.Update(step == 0 ? 0.0f : 0.1f);
+				const std::span<const AnimationEvent> events = animator.GetEventsThisFrame();
+				starts += CountEvents(events, "start", AnimationEventType::Instant);
+				mids += CountEvents(events, "mid", AnimationEventType::Instant);
+				opens += CountEvents(events, "window", AnimationEventType::RangeBegin);
+				closes += CountEvents(events, "window", AnimationEventType::RangeEnd);
+				if (step == 3)
+					openAt03 = animator.IsEventActive("window");
+				if (step == 5)
+					shutAt05 = !animator.IsEventActive("window");
+			}
+			Check(starts == 3 && mids == 3 && opens == 3 && closes == 3 && openAt03 && shutAt05,
+				std::format("over 2.6 loops a clip fires its start (on the first Update too), an instant and a range once per loop ({}, {}, {}/{})", starts, mids, opens, closes));
+		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(&loop);
+			animator.Update(0.0f);
+			animator.Update(0.3f);
+			const bool open = animator.IsEventActive("window");
+			animator.Play(&other, 0.2f);
+			animator.Update(0.05f);
+			const bool stillOpen = animator.IsEventActive("window");
+			animator.Update(0.06f);
+			const bool closedEarly = !animator.IsEventActive("window") && CountEvents(animator.GetEventsThisFrame(), "window", AnimationEventType::RangeEnd) == 1;
+			Check(open && stillOpen && closedEarly, "a range stays open while its clip leads a cross-fade and closes the moment the incoming clip passes half, before its own end");
+		}
+		{
+			AnimationClip swing("Swing", 1.0f, {}, &skeleton);
+			swing.AddEventRange(0.6f, 0.95f, "hitbox");
+			Animator animator(&skeleton);
+			animator.Play(&other);
+			animator.Update(0.0f);
+			animator.PlayOneShot(&swing, 0.1f, 0.2f);
+			int openedAt = -1, closedAt = -1;
+			for (int step = 0; step < 24; ++step)
+			{
+				animator.Update(0.05f);
+				if (CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeBegin))
+					openedAt = step;
+				if (CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeEnd))
+					closedAt = step;
+			}
+			// Steps of 0.05 s: the range opens at 0.6 s (step 11, or 12 as the sum rounds); its own
+			// end, 0.95 s, would be step 18.
+			Check(openedAt >= 11 && openedAt <= 12 && closedAt > openedAt && closedAt < 18,
+				std::format("a one-shot's hitbox opens at 0.6 s and closes as the one-shot starts fading back (step {}), not at its own end", closedAt));
+
+			AnimationClip early("Early", 1.0f, {}, &skeleton);
+			early.AddEventRange(0.0f, 0.3f, "hitbox");
+			Animator cancelled(&skeleton);
+			cancelled.Play(&other);
+			cancelled.Update(0.0f);
+			cancelled.PlayOneShot(&early, 0.5f, 0.2f);
+			int opened = 0;
+			cancelled.Update(0.1f);
+			opened += CountEvents(cancelled.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeBegin);
+			cancelled.Play(&loop, 0.1f);
+			for (int step = 0; step < 10; ++step)
+			{
+				cancelled.Update(0.05f);
+				opened += CountEvents(cancelled.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeBegin);
+			}
+			Check(opened == 0, "a swing cancelled before it was half faded in never opens its hitbox");
+		}
+		{
+			// Two gaits authored in step: a footfall at a quarter and three quarters of each cycle.
+			AnimationClip slow("Slow", 0.7f, {}, &skeleton);
+			slow.AddEvent(0.175f, "step");
+			slow.AddEvent(0.525f, "step");
+			AnimationClip fast("Fast", 1.1f, {}, &skeleton);
+			fast.AddEvent(0.275f, "step");
+			fast.AddEvent(0.825f, "step");
+
+			Animator animator(&skeleton);
+			animator.SetFloat(k_SpeedParameter, 1.5f);
+			animator.Play(AnimationState::Blend1D(k_SpeedParameter, { { 1.5f, &slow }, { 4.0f, &fast } }));
+			animator.Update(0.0f);
+			int fired = 0, expected = 0;
+			for (int frame = 0; frame < 600; ++frame)
+			{
+				animator.SetFloat(k_SpeedParameter, 1.5f + 2.5f * static_cast<float>(frame) / 599.0f);
+				const float before = animator.GetNormalizedTime();
+				animator.Update(1.0f / 60.0f);
+				const float after = animator.GetNormalizedTime();
+				for (float footfall : { 0.25f, 0.75f })
+					expected += after >= before ? (footfall > before && footfall <= after) : (footfall > before || footfall <= after);
+				fired += CountEvents(animator.GetEventsThisFrame(), "step", AnimationEventType::Instant);
+			}
+			Check(expected > 10 && fired == expected,
+				std::format("a Speed sweep from one gait to the other over 10 s fires every footfall exactly once ({} of {})", fired, expected));
+		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(AnimationState::Clip(&loop).SetSpeed(-1.0f));
+			animator.Update(0.0f);
+			const bool quietStart = animator.GetEventsThisFrame().empty();
+			animator.Update(0.6f);
+			const bool open = animator.IsEventActive("window");
+			animator.Update(0.2f);
+			Check(quietStart && open && !animator.IsEventActive("window"),
+				"played backwards, a range opens at its end and closes at its start, and Update(0) at the start fires nothing");
+		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(&loop);
+			animator.Update(0.0f);
+			animator.Update(0.1f);
+			animator.Update(1.2f);
+			const std::span<const AnimationEvent> events = animator.GetEventsThisFrame();
+			Check(CountEvents(events, "mid", AnimationEventType::Instant) == 1 && CountEvents(events, "start", AnimationEventType::Instant) == 1
+				&& CountEvents(events, "window", AnimationEventType::RangeBegin) == 2 && animator.IsEventActive("window"),
+				"a step longer than the loop fires what it passed on the way round, and the window it ends in is open");
+		}
+		{
+			AnimationClip blink("Blink", 1.0f, {}, &skeleton);
+			blink.AddEventRange(0.5f, 0.5f, "blink");
+			Animator animator(&skeleton);
+			animator.Play(&blink);
+			animator.Update(0.0f);
+			animator.Update(0.6f);
+			const std::span<const AnimationEvent> events = animator.GetEventsThisFrame();
+			const bool ordered = events.size() == 2 && events[0].Type == AnimationEventType::RangeBegin && events[1].Type == AnimationEventType::RangeEnd;
+			Check(ordered && !animator.IsEventActive("blink"), "a range of zero length opens and closes as playback crosses it");
+		}
+		{
+			AnimationClip shot("Shot", 0.5f, {}, &skeleton);
+			shot.AddEvent(0.0f, "whoosh");
+			shot.AddEvent(0.5f, "done");
+			Animator animator(&skeleton);
+			animator.Play(&other);
+			animator.Update(0.0f);
+			animator.PlayOneShot(&shot, 0.1f, 0.0f);
+			int whoosh = 0, done = 0;
+			for (int step = 0; step < 20; ++step)
+			{
+				animator.Update(0.05f);
+				whoosh += CountEvents(animator.GetEventsThisFrame(), "whoosh", AnimationEventType::Instant);
+				done += CountEvents(animator.GetEventsThisFrame(), "done", AnimationEventType::Instant);
+			}
+			Check(whoosh == 1 && done == 1, "a one-shot fires its first mark though it faded in, and its last though it cuts straight back");
+		}
+		{
+			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
+			slash.AddEventRange(0.32f, 0.48f, "hitbox");
+			Animator animator(&skeleton);
+			animator.Play(AnimationState::Clip(&slash).SetLoop(false));
+			animator.Update(0.4f);
+			const bool open = animator.IsEventActive("hitbox");
+			animator.SetTime(0.0f);
+			animator.Update(0.1f);
+			const bool closedBySeek = !animator.IsEventActive("hitbox") && CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeEnd) == 1;
+			animator.Update(0.3f);
+			Check(open && closedBySeek && animator.IsEventActive("hitbox"), "SetTime(0) mid-swing closes the hitbox, and the replay opens it again");
+		}
+		{
+			Animator animator(&skeleton);
+			animator.Play(&other);
+			animator.SetLayer(1, AnimationLayer().SetWeight(0.3f));
+			animator.Play(&loop, 0.0f, 1);
+			animator.Update(0.0f);
+			animator.Update(0.6f);
+			const bool quietBelowHalf = animator.GetEventsThisFrame().empty();
+			animator.SetLayerWeight(1, 1.0f);
+			animator.Update(0.6f);
+			Check(quietBelowHalf && CountEvents(animator.GetEventsThisFrame(), "start", AnimationEventType::Instant) == 1 && animator.GetEventsThisFrame()[0].Layer == 1,
+				"a layer above 0 fires nothing below weight 0.5 and its own events at full weight");
+		}
+		{
+			Scene scene("Event checks");
+			Entity fox = scene.CreateEntity("Fox");
+			fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(m_FoxScale)));
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+			Entity target = scene.CreateEntity("Target");
+
+			int heard = 0;
+			bool validInside = false;
+			fox.AddScript<EventListener>([&](Entity, const AnimationEvent&)
+			{
+				heard++;
+				if (target.IsValid())
+				{
+					scene.DestroyEntity(target);
+					validInside = target.IsValid();
+				}
+			});
+			scene.OnStart();
+
+			Animator reference(&skeleton);
+			reference.Play(walk);
+			int expected = 0;
+			for (int frame = 0; frame < 60; ++frame)
+			{
+				scene.OnUpdate(1.0f / 60.0f);
+				reference.Update(1.0f / 60.0f);
+				expected += static_cast<int>(reference.GetEventsThisFrame().size());
+			}
+			Check(expected > 0 && heard == expected && validInside && !target.IsValid(),
+				std::format("a script hears each of Walk's {} footfalls in a second, and a DestroyEntity from OnAnimationEvent waits for the end of the pass", heard));
+		}
+		if (Model* roaring = Model::LoadFromFile(k_FoxPath))
+		{
+			// A clip whose first mark is its very start, on an entity spawned by a script mid-frame:
+			// its script only starts next frame, and must still hear it.
+			roaring->FindAnimation("Walk")->AddEvent(0.0f, "roar");
+			Scene scene("Spawn checks");
+			int roars = 0;
+			bool spawned = false;
+			Entity spawner = scene.CreateEntity("Spawner");
+			spawner.AddScript<UpdateHook>([&](float)
+			{
+				if (spawned)
+					return;
+				spawned = true;
+				Entity fox = scene.CreateEntity("Spawned Fox");
+				fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(m_FoxScale)));
+				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(roaring));
+				fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+				fox.AddScript<EventListener>([&](Entity, const AnimationEvent& event) { roars += event.Name == "roar"; });
+			});
+			scene.OnStart();
+			for (int frame = 0; frame < 5; ++frame)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(spawned && roars == 1, "an entity a script spawns mid-frame hears its clip's first mark once its script has started");
+			scene.Clear();
+			DestroyAndDelete(roaring);
+		}
+	}
+
+	void AnimationTest::RecordEvent(Entity fox, const AnimationEvent& event)
+	{
+		m_EventLog.push_back({ event.Clip ? event.Clip->GetName() : std::string(), std::string(event.Name), event.Type, event.Time, m_Time });
+		if (m_EventLog.size() > 16)
+			m_EventLog.erase(m_EventLog.begin());
+
+		const char* joint = event.Type == AnimationEventType::Instant ? StepJoint(event.Name) : nullptr;
+		Animator* animator = joint ? m_Scene->GetAnimator(fox) : nullptr;
+		const int32_t index = animator ? m_Fox->GetSkeleton()->FindJoint(joint) : Skeleton::k_InvalidJoint;
+		if (index == Skeleton::k_InvalidJoint)
+			return;
+
+		glm::vec3 foot(fox.GetWorldTransform() * animator->GetJointTransform(index)[3]);
+		foot.y = 0.003f;
+		m_Footprints.push_back(foot);
+		if (m_Footprints.size() > 48)
+			m_Footprints.erase(m_Footprints.begin());
+	}
+
 	void AnimationTest::RunSceneChecks()
 	{
 		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
@@ -640,8 +961,8 @@ namespace Dingo
 
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
 		const std::string clipName = (m_Mode == Mode::Clip || m_Mode == Mode::Layers) && m_ClipName.empty() ? std::string("Walk")
-			: m_Mode == Mode::Blend ? std::string() : m_ClipName;
-		const bool animate = m_Mode == Mode::Blend || ((m_Mode == Mode::Clip || m_Mode == Mode::Layers || (m_Mode == Mode::Crowd && !m_CrowdStatic)) && !clipName.empty());
+			: m_Mode == Mode::Blend || m_Mode == Mode::Events ? std::string() : m_ClipName;
+		const bool animate = m_Mode == Mode::Blend || m_Mode == Mode::Events || ((m_Mode == Mode::Clip || m_Mode == Mode::Layers || (m_Mode == Mode::Crowd && !m_CrowdStatic)) && !clipName.empty());
 		m_AnimatedFox = {};
 		std::vector<Entity> animated;
 		const uint32_t count = m_Mode == Mode::Crowd ? m_CrowdCount : (m_Mode == Mode::Pose ? 0u : 1u);
@@ -684,11 +1005,13 @@ namespace Dingo
 				continue;
 
 			m_AnimatedFox = animated[i];
-			if (m_Mode == Mode::Blend)
+			if (m_Mode == Mode::Blend || m_Mode == Mode::Events)
 			{
 				animator->SetFloat(k_SpeedParameter, m_BlendSpeed);
 				animator->Play(AnimationState::Blend1D(k_SpeedParameter,
 					{ { 0.0f, m_Fox->FindAnimation("Survey") }, { 1.5f, m_Fox->FindAnimation("Walk") }, { 4.0f, m_Fox->FindAnimation("Run") } }));
+				if (m_Mode == Mode::Events)
+					animated[i].AddScript<EventListener>([this](Entity fox, const AnimationEvent& event) { RecordEvent(fox, event); });
 				if (m_FreezePhase >= 0.0f)
 				{
 					animator->SetNormalizedTime(m_FreezePhase);
@@ -795,6 +1118,9 @@ namespace Dingo
 			case Mode::Layers:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the layered Fox is one skinned draw of 24 joints");
 				break;
+			case Mode::Events:
+				Check(stats.SkinnedDraws == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the stepping Fox is one skinned draw of 24 joints");
+				break;
 			case Mode::Clip:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedInstances == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the animated Fox is one skinned draw of 24 joints");
 				break;
@@ -842,7 +1168,7 @@ namespace Dingo
 			return;
 		}
 
-		if (Animator* animator = (m_Mode == Mode::Blend || m_Mode == Mode::Layers) && m_AnimatedFox ? m_Scene->GetAnimator(m_AnimatedFox) : nullptr)
+		if (Animator* animator = (m_Mode == Mode::Blend || m_Mode == Mode::Layers || m_Mode == Mode::Events) && m_AnimatedFox ? m_Scene->GetAnimator(m_AnimatedFox) : nullptr)
 		{
 			animator->SetFloat(k_SpeedParameter, m_BlendSpeed);
 			if (m_Mode == Mode::Layers)
@@ -861,6 +1187,8 @@ namespace Dingo
 		m_Scene->RenderEntities3D(renderer);
 		if (m_Mode == Mode::Pose)
 			SubmitPosedFox(renderer);
+		for (const glm::vec3& footprint : m_Footprints)
+			renderer.SubmitMesh(renderer.GetBoxMesh(), glm::translate(glm::mat4(1.0f), footprint) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f, 0.004f, 0.07f)), { 0.12f, 0.09f, 0.07f, 1.0f });
 		const Clock::time_point endSceneStart = Clock::now();
 		renderer.EndScene();
 		const Clock::time_point endSceneEnd = Clock::now();
@@ -906,6 +1234,8 @@ namespace Dingo
 		ImGui::SameLine();
 		ImGui::RadioButton("Layers", &mode, static_cast<int>(Mode::Layers));
 		ImGui::SameLine();
+		ImGui::RadioButton("Events", &mode, static_cast<int>(Mode::Events));
+		ImGui::SameLine();
 		ImGui::RadioButton("Crowd", &mode, static_cast<int>(Mode::Crowd));
 		if (mode != static_cast<int>(m_Mode))
 		{
@@ -919,8 +1249,17 @@ namespace Dingo
 			m_LastStats.SkinnedDraws, m_LastStats.SkinnedInstances, m_LastStats.DroppedSkinnedDraws, m_LastStats.SkinnedJoints, m_LastStats.DrawCalls);
 		if (m_Mode == Mode::Crowd)
 			ImGui::TextWrapped("Timing: %s", m_TimingResult.empty() ? "measuring..." : m_TimingResult.c_str());
-		if (m_Mode == Mode::Blend)
+		if (m_Mode == Mode::Blend || m_Mode == Mode::Events)
 			ImGui::SliderFloat("Speed (Survey 0, Walk 1.5, Run 4)", &m_BlendSpeed, 0.0f, 4.0f);
+		if (m_Mode == Mode::Events)
+		{
+			ImGui::Text("Event log (newest last)");
+			for (const LoggedEvent& event : m_EventLog)
+			{
+				const char* type = event.Type == AnimationEventType::RangeBegin ? "begin" : event.Type == AnimationEventType::RangeEnd ? "end" : "";
+				ImGui::Text("%7.2f s  %-6s %-8s %s @ %.3f", event.At, event.Clip.c_str(), event.Name.c_str(), type, event.Time);
+			}
+		}
 		if (m_Mode == Mode::Layers)
 		{
 			ImGui::SliderFloat("Upper-body Survey weight", &m_LayerWeight, 0.0f, 1.0f);

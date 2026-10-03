@@ -1,0 +1,13 @@
+# Clip events for Fox.gltf, read by Model::LoadFromFile.
+# Footfalls are each foot at its lowest point in the clip; "look" spans the middle of Survey, to
+# show a range.
+# clip    time          event
+Walk      0.287         step_fl
+Walk      0.297         step_br
+Walk      0.602         step_fr
+Walk      0.648         step_bl
+Run       0.058         step_bl
+Run       0.151         step_br
+Run       0.562         step_fr
+Run       0.712         step_fl
+Survey    0.90..2.50    look

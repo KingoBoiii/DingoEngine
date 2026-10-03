@@ -156,11 +156,16 @@ namespace Dingo
 		m_Globals = m_Skeleton ? m_Skeleton->GetRestGlobalTransforms() : std::vector<glm::mat4>();
 		m_Palette = m_Skeleton ? m_Skeleton->GetRestPalette() : std::vector<glm::mat4>();
 
+		m_Events.clear();
 		for (Layer& layer : m_Layers)
 		{
 			layer.States.clear();
 			layer.FrozenPose.clear();
 			layer.OneShotPending = false;
+			layer.OpenRanges.clear();
+			layer.CloseRangesOnUpdate = false;
+			layer.EventSerial = 0;
+			layer.EventClip = nullptr;
 			layer.Pose = m_RestPoses;
 			if (m_Skeleton)
 				ResolveMask(layer);
@@ -254,6 +259,9 @@ namespace Dingo
 	{
 		PlayingState playing;
 		playing.State = state;
+		playing.Serial = m_NextSerial++;
+		if (m_NextSerial == 0)
+			m_NextSerial = 1;
 		playing.Direction = state.GetSpeed() < 0.0f ? -1.0f : 1.0f;
 
 		size_t cursors = 0;
@@ -445,12 +453,16 @@ namespace Dingo
 		if (!current.State.IsBlend())
 		{
 			current.Time = Wrap(current, seconds);
+			MarkSeek(layer);
 			return;
 		}
 
 		const float duration = Duration(current.State);
 		if (duration > 0.0f)
+		{
 			current.Time = Wrap(current, seconds / duration);
+			MarkSeek(layer);
+		}
 	}
 
 	void Animator::SetNormalizedTime(float fraction, uint32_t layer)
@@ -460,6 +472,16 @@ namespace Dingo
 
 		PlayingState& current = m_Layers[layer].States.back();
 		current.Time = Wrap(current, current.State.IsBlend() ? fraction : fraction * ClipDuration(current.State.GetClip()));
+		MarkSeek(layer);
+	}
+
+	void Animator::MarkSeek(uint32_t layerIndex)
+	{
+		Layer& layer = m_Layers[layerIndex];
+		PlayingState& current = layer.States.back();
+		current.Fresh = true;
+		if (layer.EventSerial == current.Serial)
+			layer.CloseRangesOnUpdate = true;
 	}
 
 	bool Animator::IsFinished(uint32_t layer) const
@@ -497,23 +519,36 @@ namespace Dingo
 
 	void Animator::Advance(PlayingState& state, float deltaTime) const
 	{
+		state.PreviousTime = state.Time;
+		state.Wrapped = false;
 		if (state.Frozen || IsTransparent(state.State))
 			return;
 
+		// A zero step leaves the time alone: wrapping a reversed state's start (its duration) to 0
+		// would read as a full lap backwards.
 		const float step = deltaTime * state.State.GetSpeed();
-		if (step != 0.0f)
-			state.Direction = step < 0.0f ? -1.0f : 1.0f;
-
-		if (!state.State.IsBlend())
-		{
-			state.Time = Wrap(state, state.Time + step);
+		if (step == 0.0f)
 			return;
-		}
+		state.Direction = step < 0.0f ? -1.0f : 1.0f;
 
 		// A blend's clips share one phase, which moves at the blended cycle length.
-		const float cycle = Duration(state.State);
-		if (cycle > 0.0f)
-			state.Time = Wrap(state, state.Time + step / cycle);
+		float length = 1.0f;
+		float target = 0.0f;
+		if (!state.State.IsBlend())
+		{
+			length = ClipDuration(state.State.GetClip());
+			target = state.Time + step;
+		}
+		else
+		{
+			const float cycle = Duration(state.State);
+			if (!(cycle > 0.0f))
+				return;
+			target = state.Time + step / cycle;
+		}
+
+		state.Wrapped = state.State.IsLooping() && length > 0.0f && (target >= length || target < 0.0f);
+		state.Time = Wrap(state, target);
 	}
 
 	void Animator::Update(float deltaTime)
@@ -521,6 +556,7 @@ namespace Dingo
 		if (!m_Skeleton)
 			return;
 
+		m_Events.clear();
 		for (size_t i = 0; i < m_Layers.size(); ++i)
 		{
 			Layer& layer = m_Layers[i];
@@ -533,9 +569,11 @@ namespace Dingo
 			if (layer.OneShotPending && layer.States.empty())
 				layer.OneShotPending = false;
 
+			bool returning = false;
 			if (layer.OneShotPending)
 			{
 				Advance(layer.Resume, deltaTime);
+				layer.Resume.Fresh = false;
 
 				const PlayingState& top = layer.States.back();
 				const bool oneShotOnTop = !top.Frozen && !top.State.IsBlend() && top.State.GetClip() == layer.OneShotClip && !top.State.IsLooping();
@@ -543,9 +581,18 @@ namespace Dingo
 				if (!oneShotOnTop || remaining <= layer.OneShotFadeOut)
 				{
 					layer.OneShotPending = false;
-					if (oneShotOnTop)
-						Push(layer, layer.Resume, layer.OneShotFadeOut, FreezeSource(i));
+					returning = oneShotOnTop;
 				}
+			}
+
+			// The one-shot's marks up to this moment fire before the way back takes the events over.
+			CollectEvents(static_cast<uint32_t>(i), layer);
+			if (returning)
+			{
+				PlayingState resume = layer.Resume;
+				resume.Returning = true;
+				Push(layer, std::move(resume), layer.OneShotFadeOut, FreezeSource(i));
+				CollectEvents(static_cast<uint32_t>(i), layer);
 			}
 
 			// Whatever lies under the newest state that has fully faded in no longer shows.
@@ -557,13 +604,210 @@ namespace Dingo
 					break;
 				}
 			}
+
+			for (PlayingState& state : layer.States)
+				state.Fresh = false;
 		}
 
 		Evaluate();
 	}
 
+	Animator::PlayingState* Animator::Dominant(Layer& layer) const
+	{
+		if (layer.States.empty())
+			return nullptr;
+		if (layer.States.back().Returning)
+			return &layer.States.back();
+
+		// A state's share of the fold is its weight times what every state above leaves through.
+		// Visited newest first, so a tie goes to the incoming state.
+		PlayingState* dominant = nullptr;
+		float largest = -1.0f;
+		float through = 1.0f;
+		for (size_t i = layer.States.size(); i-- > 0;)
+		{
+			const float weight = i == 0 ? 1.0f : FadeWeight(layer.States[i]);
+			const float share = weight * through;
+			if (share > largest)
+			{
+				dominant = &layer.States[i];
+				largest = share;
+			}
+			through *= 1.0f - weight;
+			if (!(through > 0.0f))
+				break;
+		}
+		return dominant;
+	}
+
+	void Animator::CollectEvents(uint32_t layerIndex, Layer& layer)
+	{
+		if (layer.CloseRangesOnUpdate)
+		{
+			CloseRanges(layerIndex, layer);
+			layer.CloseRangesOnUpdate = false;
+		}
+
+		PlayingState* dominant = layerIndex == 0 || layer.Settings.GetWeight() >= 0.5f ? Dominant(layer) : nullptr;
+
+		const AnimationClip* clip = nullptr;
+		float timeScale = 1.0f;
+		if (dominant && !dominant->Frozen)
+		{
+			if (!dominant->State.IsBlend())
+			{
+				clip = dominant->State.GetClip();
+			}
+			else
+			{
+				const BlendSpot spot = Locate(dominant->State);
+				clip = dominant->State.GetPoints()[spot.T >= 0.5f ? spot.Lower + 1 : spot.Lower].Clip;
+				timeScale = ClipDuration(clip);
+			}
+		}
+
+		const uint32_t serial = clip ? dominant->Serial : 0;
+		if (serial != layer.EventSerial || clip != layer.EventClip)
+		{
+			CloseRanges(layerIndex, layer);
+			layer.EventSerial = serial;
+			layer.EventClip = clip;
+		}
+
+		if (!clip)
+			return;
+
+		const bool forward = dominant->Direction >= 0.0f;
+		float from = dominant->PreviousTime * timeScale;
+		bool inclusive = dominant->Fresh;
+		// A one-shot that faded in catches up on the marks it crossed before it took over; a loop
+		// doesn't, or a cross-fade would replay footsteps the outgoing clip already fired.
+		if (!dominant->Led && !dominant->State.IsLooping())
+		{
+			from = forward ? 0.0f : clip->GetDuration();
+			inclusive = true;
+		}
+		dominant->Led = true;
+
+		if (!clip->GetEventMarks().empty())
+			FireMarks(layerIndex, layer, *clip, from, dominant->Time * timeScale, inclusive, forward, dominant->Wrapped);
+	}
+
+	void Animator::FireMarks(uint32_t layerIndex, Layer& layer, const AnimationClip& clip, float from, float to, bool inclusive, bool forward, bool wrapped)
+	{
+		const std::vector<AnimationClip::EventMark>& marks = clip.GetEventMarks();
+		const float duration = clip.GetDuration();
+
+		// (lo, hi] in order, or [lo, hi] when lo itself counts.
+		auto ascending = [&](float lo, float hi, bool fromLo)
+		{
+			for (const AnimationClip::EventMark& mark : marks)
+			{
+				if ((fromLo ? mark.Time >= lo : mark.Time > lo) && mark.Time <= hi)
+					Fire(layerIndex, layer, clip, mark, true);
+			}
+		};
+		// [lo, hi) in reverse, or [lo, hi] when hi itself counts.
+		auto descending = [&](float lo, float hi, bool fromHi)
+		{
+			for (size_t i = marks.size(); i-- > 0;)
+			{
+				if (marks[i].Time >= lo && (fromHi ? marks[i].Time <= hi : marks[i].Time < hi))
+					Fire(layerIndex, layer, clip, marks[i], false);
+			}
+		};
+
+		// A wrap is a lap through the clip's end, even when the step went a full lap or more and
+		// came back past where it started.
+		if (forward)
+		{
+			if (!wrapped)
+			{
+				ascending(from, to, inclusive);
+			}
+			else
+			{
+				ascending(from, duration, inclusive);
+				ascending(0.0f, to, true);
+			}
+		}
+		else
+		{
+			if (!wrapped)
+			{
+				descending(to, from, inclusive);
+			}
+			else
+			{
+				descending(0.0f, from, inclusive);
+				descending(to, duration, true);
+			}
+		}
+	}
+
+	void Animator::Fire(uint32_t layerIndex, Layer& layer, const AnimationClip& clip, const AnimationClip::EventMark& mark, bool forward)
+	{
+		// Played backwards, a range is entered at its end and left at its start.
+		AnimationEventType type = mark.Type;
+		if (!forward && type != AnimationEventType::Instant)
+			type = type == AnimationEventType::RangeBegin ? AnimationEventType::RangeEnd : AnimationEventType::RangeBegin;
+
+		const AnimationClipEvent& event = clip.GetEvents()[mark.Event];
+		const auto open = std::find_if(layer.OpenRanges.begin(), layer.OpenRanges.end(), [&](const OpenRange& range)
+		{
+			return range.Clip == &clip && range.Event == mark.Event;
+		});
+		if (type == AnimationEventType::RangeBegin)
+		{
+			if (open != layer.OpenRanges.end())
+				return;
+			layer.OpenRanges.push_back({ &clip, mark.Event, event.Name });
+		}
+		else if (type == AnimationEventType::RangeEnd)
+		{
+			if (open == layer.OpenRanges.end())
+				return;
+			layer.OpenRanges.erase(open);
+		}
+
+		m_Events.push_back({ event.Name, mark.Time, type, &clip, layerIndex });
+	}
+
+	void Animator::CloseRanges(uint32_t layerIndex, Layer& layer)
+	{
+		for (const OpenRange& range : layer.OpenRanges)
+		{
+			const std::vector<AnimationClipEvent>& events = range.Clip->GetEvents();
+			if (range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name)
+				m_Events.push_back({ events[range.Event].Name, events[range.Event].EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
+		}
+		layer.OpenRanges.clear();
+	}
+
+	void Animator::ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const
+	{
+		for (const AnimationEvent& event : m_Events)
+			fn(event);
+	}
+
+	bool Animator::IsEventActive(std::string_view name) const
+	{
+		for (const Layer& layer : m_Layers)
+		{
+			for (const OpenRange& range : layer.OpenRanges)
+			{
+				if (range.Name == name)
+					return true;
+			}
+		}
+		return false;
+	}
+
 	void Animator::Evaluate()
 	{
+		if (!m_Skeleton)
+			return;
+
 		EvaluateLayer(m_Layers.front(), m_RestPoses, m_LocalPoses);
 		m_UpperLayersApplied = false;
 

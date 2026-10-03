@@ -106,6 +106,12 @@ character standing in that pose. A model without bones loads exactly as before:
 every mesh is pre-transformed into model space, and any clips it has are dropped
 with a warning.
 
+A model with clips also reads a text file of clip events beside it, named after it
+(`Fox.gltf` → `Fox.events`) if there is one: one event per line, `<clip> <seconds>
+<event>` or `<clip> <begin>..<end> <event>`, `#` for comments. A line that doesn't
+parse or names a missing clip warns with its line number. See
+[Animation events](scenes-and-ecs.md#animation-events-v08).
+
 `Load` is synchronous with one caveat: if the same path already has a
 `LoadAsync` in flight it does **not** block on it — the call returns the handle
 and the background pass publishes as usual, so poll `IsReady(handle)` when you

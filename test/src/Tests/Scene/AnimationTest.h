@@ -15,7 +15,10 @@ namespace Dingo
 	// with a box on its head joint, and a crowd for the skinned-draw budget and timing. Check
 	// results show in the Properties panel and the log.
 	//
-	// --anim=bind|bindstatic|pose|clip|blend|layers|crowd, --anim-clip=Survey|Walk|Run (clip:
+	// --anim=events walks the Fox through the Speed blend and drops a footprint under each foot
+	// as its step event (Fox.events) fires, with an event log in the Properties panel.
+	//
+	// --anim=bind|bindstatic|pose|clip|blend|layers|events|crowd, --anim-clip=Survey|Walk|Run (clip:
 	// default Walk; crowd: animates every fox, out of step), --anim-time=S (clip, layers: freeze at
 	// S seconds), --anim-speed=X (blend: the Speed parameter, Survey at 0, Walk at 1.5, Run at 4),
 	// --anim-phase=F (blend: freeze at that fraction of the cycle), --anim-count=N (crowd size,
@@ -37,12 +40,14 @@ namespace Dingo
 		Texture* GetResult() override { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 
 	private:
-		enum class Mode { Bind, BindStatic, Pose, Clip, Blend, Layers, Crowd };
+		enum class Mode { Bind, BindStatic, Pose, Clip, Blend, Layers, Events, Crowd };
 
 		void Check(bool condition, const std::string& name);
 		void RunLoadChecks();
 		void RunAnimatorChecks();
 		void RunBlendChecks();
+		void RunEventChecks();
+		void RecordEvent(Entity fox, const AnimationEvent& event);
 		void RunSceneChecks();
 		void RunDrawChecks(const Renderer3D::Statistics& stats);
 		void BuildScene();
@@ -79,6 +84,17 @@ namespace Dingo
 
 		std::vector<glm::mat4> m_PosePalette;
 		glm::mat4 m_PoseTransform{ 1.0f };
+
+		struct LoggedEvent
+		{
+			std::string Clip;
+			std::string Name;
+			AnimationEventType Type;
+			float Time;
+			float At;
+		};
+		std::vector<LoggedEvent> m_EventLog;
+		std::vector<glm::vec3> m_Footprints;
 
 		bool m_ArgsRead = false;
 		bool m_DrawChecksDone = false;

@@ -404,6 +404,53 @@ animator->PlayOneShot(slash, 0.1f, 0.2f);
 - **Without a scene**, `Animator` works on any `Skeleton`: `Update(dt)`, then pass
   `GetSkinningPalette()` to `SubmitSkinnedMesh`.
 
+### Animation events (v0.8)
+
+A clip carries named marks on its timeline: an instant (a footstep) or a range (a sword's hitbox,
+open from its start to its end). Add them in code, or in a text file beside the model, named after
+it, which `Model::LoadFromFile` reads by itself (`Fox.gltf` → `Fox.events`; `Model::LoadEvents`
+reads any other file):
+
+```
+# clip    time         event
+Walk      0.287        step_fl
+Walk      0.602        step_fr
+Slash     0.32..0.48   hitbox
+```
+
+```cpp
+model->FindAnimation("Slash")->AddEventRange(0.32f, 0.48f, "hitbox");
+
+class Fighter : public ScriptableEntity
+{
+    void OnAnimationEvent(const AnimationEvent& event) override
+    {
+        if (event.Name == "hitbox" && event.Type == AnimationEventType::RangeBegin)
+            m_Swinging = true;            // or poll GetScene().GetAnimator(GetEntity())->IsEventActive("hitbox")
+    }
+};
+```
+
+- **When one fires.** As playback crosses its time in an `Update`, a loop's wrap included (a step
+  longer than the clip counts every mark it passed); a state's very start counts on its first
+  update. Each event comes once: `OnAnimationEvent` on the entity's script after every script's
+  `OnUpdate` and before physics (a `DestroyEntity` there waits for the end of the pass; a script
+  spawned this frame hears its entity's first events next frame, once it has started), and in
+  `Animator::GetEventsThisFrame()` / `ForEachEventThisFrame` until the next update.
+- **Which clip fires.** Only each layer's dominant contribution: the clip with the larger share of a
+  blend, an incoming state once its fade passes halfway, a one-shot until it starts fading back. So
+  a walk and a run blended 50/50 never double a footstep (author both gaits' footsteps at the same
+  fraction of their cycles), and a swing cancelled before it showed never opens its hitbox. A clip
+  that doesn't loop catches up from its start when it takes over, so a one-shot's fade-in doesn't
+  swallow its first marks; a looping clip doesn't, so a cross-fade never repeats footsteps. A layer
+  above 0 fires only at weight 0.5 or more.
+- **Ranges** close early when their clip stops being dominant, so a cancelled swing still closes its
+  hitbox; `IsEventActive("hitbox")` is true between the two. A range of zero length opens and
+  closes in one go. Played backwards, a range opens at its end. A seek (`SetTime`) closes the
+  layer's open ranges and counts the new time as a start, so `SetTime(0)` replays a swing in full;
+  seeking into the middle of a range opens nothing. `Evaluate()` poses the animator after a seek
+  without firing anything.
+
 ### Joints as parents (v0.8)
 
 `child.SetParent(character, "b_RightHand", keepWorldTransform)` attaches the child to a joint of the
@@ -589,7 +636,8 @@ bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
 bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`, then the animators, then physics. It caps
+`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`, then the animators (and their events'
+`OnAnimationEvent`), then physics. It caps
 `dt` at 4/60 s for all three, so a stall (a cold shader compile, a breakpoint) runs the scene slow
 instead of letting bodies tunnel through their colliders. Inside a script you have:
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Skeleton.h"
+#include "DingoEngine/Graphics/AnimationClip.h"
 
 #include <glm/glm.hpp>
 
@@ -14,7 +15,17 @@
 namespace Dingo
 {
 
-	class AnimationClip;
+	// One crossing of a clip event's mark, as Animator::GetEventsThisFrame reports it.
+	struct AnimationEvent
+	{
+		// Points into the clip's AnimationClip::GetEvents().
+		std::string_view Name;
+		// Where the mark sits on the clip, in seconds.
+		float Time = 0.0f;
+		AnimationEventType Type = AnimationEventType::Instant;
+		const AnimationClip* Clip = nullptr;
+		uint32_t Layer = 0;
+	};
 
 	struct BlendPoint
 	{
@@ -133,15 +144,37 @@ namespace Dingo
 		const AnimationClip* GetCurrentClip(uint32_t layer = 0) const;
 		float GetTime(uint32_t layer = 0) const;           // seconds into the current clip or blend cycle
 		float GetNormalizedTime(uint32_t layer = 0) const; // 0 to 1 through it
-		// Seek the current state; the pose follows on the next Update (Update(0) re-evaluates).
+		// Seek the current state; the pose follows on the next Update or Evaluate.
 		void SetTime(float seconds, uint32_t layer = 0);
 		void SetNormalizedTime(float fraction, uint32_t layer = 0);
 		// A state that doesn't loop has reached its end, or its start when time last ran backwards.
 		bool IsFinished(uint32_t layer = 0) const;
 		bool IsFading(uint32_t layer = 0) const;
 
-		// Advances every playing state by deltaTime and evaluates the pose.
+		// Advances every playing state by deltaTime, evaluates the pose and collects the events.
 		void Update(float deltaTime);
+		// Recomputes the pose from where the states stand, without moving time or firing events
+		// (after a SetTime, say).
+		void Evaluate();
+
+		// The clip events the last Update crossed, layer by layer, each in playback order. Only a
+		// layer's dominant contribution fires them: the clip with the larger share of a blend, an
+		// incoming state once its fade weight passes 0.5, a one-shot until it starts fading back;
+		// a layer above 0 fires only at weight 0.5 or more. So walk and run blended 50/50 never
+		// double a footstep, and a swing cancelled before it showed never opens its hitbox.
+		//
+		// A mark fires when playback crosses it, after the previous Update's time and up to this
+		// one's, a loop's wrap included; a state's start counts on its first Update. A clip that
+		// doesn't loop (a one-shot) also catches up from its start when it takes over, so a fade-in
+		// doesn't swallow its first marks; a looping one doesn't, so a cross-fade never repeats
+		// footsteps. A range ends early when its clip stops being dominant, so a cancelled swing
+		// still closes its hitbox. A seek (SetTime) ends the layer's open ranges and counts its new
+		// time as a start; an end without its start fires nothing.
+		std::span<const AnimationEvent> GetEventsThisFrame() const { return m_Events; }
+		// fn must not Update this animator.
+		void ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const;
+		// A range event that has begun and not yet ended, on any layer.
+		bool IsEventActive(std::string_view name) const;
 
 		// One per skeleton joint; the rest pose until the first Update.
 		std::span<const JointPose> GetLocalPoses()       const { return m_LocalPoses; }
@@ -182,6 +215,25 @@ namespace Dingo
 			bool           Frozen = false;
 			// Three key cursors (translation, rotation, scale) per channel of each clip in turn.
 			std::vector<uint32_t> Cursors;
+			// For events: which state this is, where its time stood before the last Update, whether
+			// that Update was its first or followed a seek (its time then counts as crossed),
+			// whether it wrapped its loop, and whether it has led the layer's events yet.
+			uint32_t       Serial = 0;
+			float          PreviousTime = 0.0f;
+			bool           Fresh = true;
+			bool           Wrapped = false;
+			bool           Led = false;
+			// A one-shot's way back, which takes the events over the moment it starts.
+			bool           Returning = false;
+		};
+
+		// The name is kept to tell whether the clip's events changed under the range (a reload), in
+		// which case it closes without a RangeEnd.
+		struct OpenRange
+		{
+			const AnimationClip* Clip = nullptr;
+			uint32_t Event = 0;
+			std::string Name;
 		};
 
 		struct Layer
@@ -197,6 +249,12 @@ namespace Dingo
 			const AnimationClip* OneShotClip = nullptr;
 			float OneShotFadeOut = 0.0f;
 			PlayingState Resume;
+			// The dominant contribution events came from in the last Update, and its open ranges.
+			uint32_t EventSerial = 0;
+			const AnimationClip* EventClip = nullptr;
+			std::vector<OpenRange> OpenRanges;
+			// Set by a seek of the leading state: its open ranges end at the next Update.
+			bool CloseRangesOnUpdate = false;
 		};
 
 		// Where a blend stands for the current parameter: points[Lower], and points[Lower + 1] at
@@ -217,8 +275,14 @@ namespace Dingo
 		void   EvaluateLayer(Layer& layer, std::span<const JointPose> underneath, std::span<JointPose> out);
 		void   Sample(const Layer& layer, PlayingState& state, std::span<const JointPose> underneath, std::span<JointPose> out);
 		void   SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out);
-		void   Evaluate();
 		void   ResetToRest();
+		void   MarkSeek(uint32_t layer);
+
+		void   CollectEvents(uint32_t layerIndex, Layer& layer);
+		void   FireMarks(uint32_t layerIndex, Layer& layer, const AnimationClip& clip, float from, float to, bool inclusive, bool forward, bool wrapped);
+		void   Fire(uint32_t layerIndex, Layer& layer, const AnimationClip& clip, const AnimationClip::EventMark& mark, bool forward);
+		void   CloseRanges(uint32_t layerIndex, Layer& layer);
+		PlayingState* Dominant(Layer& layer) const;
 
 		const ClipBinding& Bind(const AnimationClip& clip);
 		BlendSpot Locate(const AnimationState& state) const;
@@ -251,6 +315,9 @@ namespace Dingo
 		std::vector<JointPose> m_BlendScratch;
 		std::vector<glm::mat4> m_Globals;
 		std::vector<glm::mat4> m_Palette;
+
+		std::vector<AnimationEvent> m_Events;
+		uint32_t m_NextSerial = 1;
 	};
 
 }

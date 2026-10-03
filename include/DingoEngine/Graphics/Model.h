@@ -52,6 +52,13 @@ namespace Dingo
 		AnimationClip* GetAnimation(uint32_t index) const;
 		AnimationClip* FindAnimation(std::string_view name) const;
 
+		// Adds clip events from a text file, one per line: `<clip> <seconds> <event>` for an instant,
+		// `<clip> <begin>..<end> <event>` for a range; `#` starts a comment, and a name with spaces
+		// goes in double quotes. A line that doesn't parse, or names a clip the model lacks, warns
+		// with its number and is skipped. False when the file can't be read. LoadFromFile reads
+		// `<model stem>.events` beside a model with clips by itself.
+		bool LoadEvents(const std::filesystem::path& filepath);
+
 	private:
 		std::vector<SubMesh> m_SubMeshes;
 		// Deduplicated diffuse textures, one entry per distinct image file.

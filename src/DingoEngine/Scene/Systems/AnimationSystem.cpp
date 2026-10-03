@@ -6,6 +6,7 @@
 #include "DingoEngine/Scene/Components.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
+#include "DingoEngine/Scene/Systems/ScriptSystem.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -69,8 +70,10 @@ namespace Dingo
 						}
 					}
 
-					// Shows DefaultClip's first frame even while Enabled is false.
-					runtime->Instance->Update(0.0f);
+					// Posed now, so a disabled animator and a body baked on one of its joints before the
+					// first update see DefaultClip's first frame; no events, so that update still fires
+					// the clip's start.
+					runtime->Instance->Evaluate();
 					return *runtime->Instance;
 				}
 
@@ -84,8 +87,18 @@ namespace Dingo
 				registry.on_destroy<AnimatorComponent>().connect<&DropRuntime>();
 			}
 
-			void Update(entt::registry& registry, float deltaTime)
+			void Update(entt::registry& registry, ScriptSystem& scripts, EventScratch& scratch, float deltaTime)
 			{
+				// Every event is copied out before any is delivered: a handler may update, rebind or
+				// free any animator, its own included.
+				scratch.Deliveries.clear();
+				for (const std::pair<entt::entity, AnimationEvent>& waiting : scratch.Waiting)
+				{
+					if (registry.valid(waiting.first) && scripts.Find(waiting.first))
+						scratch.Deliveries.push_back(waiting);
+				}
+				scratch.Waiting.clear();
+
 				auto view = registry.view<AnimatorComponent, SkinnedMeshRendererComponent>();
 				for (entt::entity handle : view)
 				{
@@ -95,8 +108,29 @@ namespace Dingo
 
 					Animator& animator = EnsureAnimator(registry, handle, *model);
 					const AnimatorComponent& settings = view.get<AnimatorComponent>(handle);
-					if (settings.Enabled)
-						animator.Update(deltaTime * settings.Speed);
+					if (!settings.Enabled)
+						continue;
+
+					animator.Update(deltaTime * settings.Speed);
+					if (animator.GetEventsThisFrame().empty() || !scripts.Find(handle))
+						continue;
+
+					// A script spawned this frame starts before its first OnUpdate, next frame; its
+					// animator's first events wait for it there.
+					std::vector<std::pair<entt::entity, AnimationEvent>>& queue = scripts.IsStarted(handle) ? scratch.Deliveries : scratch.Waiting;
+					for (const AnimationEvent& event : animator.GetEventsThisFrame())
+						queue.emplace_back(handle, event);
+				}
+
+				// A handler may replace a script with one that hasn't started; its events wait for it.
+				for (const std::pair<entt::entity, AnimationEvent>& delivery : scratch.Deliveries)
+				{
+					if (!registry.valid(delivery.first))
+						continue;
+					if (scripts.IsStarted(delivery.first))
+						scripts.DeliverAnimationEvent(delivery.first, delivery.second);
+					else if (scripts.Find(delivery.first))
+						scratch.Waiting.push_back(delivery);
 				}
 			}
 

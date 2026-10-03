@@ -250,7 +250,14 @@ namespace Dingo
 			DestroyEntityNow(static_cast<std::uint32_t>(handle));
 		m_Data->PendingDestroy.clear();
 
-		Internal::AnimationSystem::Update(m_Data->Registry, deltaTime);
+		// Animation events reach scripts here, so their destroys wait as theirs do in OnUpdate.
+		m_Data->Updating = true;
+		Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
+		m_Data->Updating = false;
+
+		for (entt::entity handle : m_Data->PendingDestroy)
+			DestroyEntityNow(static_cast<std::uint32_t>(handle));
+		m_Data->PendingDestroy.clear();
 
 		// Step physics after the script pass (scripts may have applied forces this
 		// frame), then write the simulated transforms back onto the entities.

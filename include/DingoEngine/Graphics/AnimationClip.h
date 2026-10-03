@@ -39,8 +39,35 @@ namespace Dingo
 		AnimationTrack<glm::vec3> Scale;
 	};
 
+	enum class AnimationEventType : uint8_t
+	{
+		Instant,
+		RangeBegin,
+		RangeEnd
+	};
+
+	// A named moment on a clip's timeline (a footstep), or a named stretch of it (a sword's hitbox).
+	struct AnimationClipEvent
+	{
+		std::string Name;
+		float Time = 0.0f;    // seconds; a range's start
+		float EndTime = 0.0f; // a range's end; Time for an instant
+		bool  Range = false;
+	};
+
 	class AnimationClip
 	{
+	public:
+		// Every instant, range start and range end, by time; at one time an end comes before an
+		// instant and an instant before a start, and a range of zero length opens and closes among
+		// the instants. What an Animator walks as playback crosses them.
+		struct EventMark
+		{
+			float Time = 0.0f;
+			uint32_t Event = 0; // index into GetEvents()
+			AnimationEventType Type = AnimationEventType::Instant;
+		};
+
 	public:
 		AnimationClip(std::string name, float duration, std::vector<AnimationChannel> channels, const Skeleton* sourceSkeleton);
 
@@ -58,8 +85,19 @@ namespace Dingo
 		// for the old one.
 		uint64_t GetId() const { return m_Id; }
 
+		// Times are in seconds into the clip; an event outside [0, duration] never fires, and a range
+		// can't wrap past the clip's end (an end before the begin is swapped). An Animator reports
+		// them as its playback crosses them (Animator::GetEventsThisFrame). Event names an Animator
+		// hands out point into this list, so they stay valid until it next changes.
+		void AddEvent(float time, std::string name);
+		void AddEventRange(float begin, float end, std::string name);
+		void ClearEvents();
+		const std::vector<AnimationClipEvent>& GetEvents()     const { return m_Events; }
+		const std::vector<EventMark>&          GetEventMarks() const { return m_EventMarks; }
+
 	private:
 		static uint64_t AllocateId();
+		void RebuildEventMarks();
 
 	private:
 		uint64_t                      m_Id = AllocateId();
@@ -67,6 +105,8 @@ namespace Dingo
 		float                         m_Duration = 0.0f;
 		std::vector<AnimationChannel> m_Channels;
 		const Skeleton*               m_SourceSkeleton = nullptr;
+		std::vector<AnimationClipEvent> m_Events;
+		std::vector<EventMark>          m_EventMarks;
 	};
 
 }

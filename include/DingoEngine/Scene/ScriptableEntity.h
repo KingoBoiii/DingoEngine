@@ -6,6 +6,8 @@
 namespace Dingo
 {
 
+	struct AnimationEvent;
+
 	// Base class for entity behaviours. Subclass it, override the lifecycle hooks,
 	// and attach an instance with entity.AddScript<MyScript>(). The owning Scene
 	// drives the hooks; game-specific state lives as members of your subclass.
@@ -35,6 +37,11 @@ namespace Dingo
 
 		virtual void OnUpdate(float deltaTime) {}
 		virtual void OnDestroy() {}
+
+		// Each event the entity's animator fired this frame (Animator::GetEventsThisFrame), in
+		// order, after every script's OnUpdate and before physics. A DestroyEntity from here waits
+		// for the end of the pass, like one from OnUpdate.
+		virtual void OnAnimationEvent(const AnimationEvent& event) {}
 
 		template<typename T>
 		T& GetComponent() { return m_Entity.GetComponent<T>(); }

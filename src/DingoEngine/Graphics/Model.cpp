@@ -12,8 +12,11 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <limits>
 
 namespace Dingo
@@ -843,6 +846,15 @@ namespace Dingo
 		for (const auto& [path, texture] : textureCache)
 			model->m_Textures.push_back(texture);
 
+		if (!model->m_Animations.empty())
+		{
+			std::filesystem::path events = resolvedPath;
+			events.replace_extension(".events");
+			std::error_code error;
+			if (std::filesystem::exists(events, error))
+				model->LoadEvents(events);
+		}
+
 		return model;
 	}
 
@@ -881,6 +893,118 @@ namespace Dingo
 				return clip.get();
 		}
 		return nullptr;
+	}
+
+	namespace
+	{
+
+		// Splits on whitespace up to a `#`; a double-quoted token may hold spaces. False on an
+		// unclosed quote.
+		bool TokenizeEventLine(std::string_view line, std::vector<std::string>& tokens)
+		{
+			tokens.clear();
+			size_t i = 0;
+			while (i < line.size())
+			{
+				if (std::isspace(static_cast<unsigned char>(line[i])))
+				{
+					i++;
+					continue;
+				}
+				if (line[i] == '#')
+					break;
+
+				if (line[i] == '"')
+				{
+					const size_t close = line.find('"', i + 1);
+					if (close == std::string_view::npos)
+						return false;
+					tokens.emplace_back(line.substr(i + 1, close - i - 1));
+					i = close + 1;
+					continue;
+				}
+
+				const size_t start = i;
+				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
+					i++;
+				tokens.emplace_back(line.substr(start, i - start));
+			}
+			return true;
+		}
+
+		bool ParseSeconds(std::string_view text, float& value)
+		{
+			const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+			return error == std::errc() && end == text.data() + text.size() && std::isfinite(value);
+		}
+
+	}
+
+	bool Model::LoadEvents(const std::filesystem::path& filepath)
+	{
+		std::ifstream file(filepath);
+		if (!file)
+		{
+			DE_CORE_ERROR("Model::LoadEvents: can't read '{}'", filepath.string());
+			return false;
+		}
+
+		const std::string fileName = filepath.filename().string();
+		std::string line;
+		std::vector<std::string> tokens;
+		for (uint32_t number = 1; std::getline(file, line); ++number)
+		{
+			if (number == 1 && line.starts_with("\xEF\xBB\xBF"))
+				line.erase(0, 3);
+
+			if (!TokenizeEventLine(line, tokens))
+			{
+				DE_CORE_WARN("{} line {}: an unclosed quote; line skipped", fileName, number);
+				continue;
+			}
+			if (tokens.empty())
+				continue;
+			if (tokens.size() != 3)
+			{
+				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event>` or `<clip> <begin>..<end> <event>`; line skipped", fileName, number);
+				continue;
+			}
+
+			AnimationClip* clip = FindAnimation(tokens[0]);
+			if (!clip)
+			{
+				DE_CORE_WARN("{} line {}: the model has no clip '{}'; line skipped", fileName, number, tokens[0]);
+				continue;
+			}
+
+			const std::string_view time = tokens[1];
+			const size_t dots = time.find("..");
+			float begin = 0.0f;
+			float end = 0.0f;
+			const bool parsed = dots == std::string_view::npos
+				? ParseSeconds(time, begin)
+				: ParseSeconds(time.substr(0, dots), begin) && ParseSeconds(time.substr(dots + 2), end);
+			if (!parsed)
+			{
+				DE_CORE_WARN("{} line {}: '{}' isn't a time in seconds or a <begin>..<end> range; line skipped", fileName, number, tokens[1]);
+				continue;
+			}
+
+			if (dots != std::string_view::npos && end < begin)
+			{
+				DE_CORE_WARN("{} line {}: the range '{}' ends before it begins (a range can't wrap past the clip's end); line skipped", fileName, number, tokens[1]);
+				continue;
+			}
+
+			if (begin < 0.0f || begin > clip->GetDuration() || (dots != std::string_view::npos && end > clip->GetDuration()))
+				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, tokens[1], tokens[0], clip->GetDuration());
+
+			if (dots == std::string_view::npos)
+				clip->AddEvent(begin, std::move(tokens[2]));
+			else
+				clip->AddEventRange(begin, end, std::move(tokens[2]));
+		}
+		return true;
 	}
 
 }
