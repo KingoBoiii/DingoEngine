@@ -32,7 +32,9 @@ namespace Dingo
 			{
 				std::string Scene;
 				std::string Entity;
-				const Animator* Instance = nullptr; // valid until the scene next updates or changes
+				// Null when the animator isn't bound to the entity's current model. Valid until the scene
+				// next updates or changes.
+				const Animator* Instance = nullptr;
 				std::string Model;
 				bool Enabled = true;
 				float Speed = 1.0f;

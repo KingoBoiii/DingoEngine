@@ -666,9 +666,14 @@ namespace Dingo::UI
 		for (size_t index = 0; index < s_Animators.size(); ++index)
 		{
 			const Internal::AnimationDebug::AnimatorRow& row = s_Animators[index];
-			const Animator& animator = *row.Instance;
-
 			std::string label = std::format("{}  ({}{}{})", row.Entity, row.Scene, row.Model.empty() ? "" : ", ", row.Model);
+			if (!row.Instance)
+			{
+				ImGui::TextDisabled("%s  not bound: no skinned model, or not updated since it changed", label.c_str());
+				continue;
+			}
+
+			const Animator& animator = *row.Instance;
 			if (!row.Enabled)
 				label += "  disabled";
 			if (row.Speed != 1.0f)

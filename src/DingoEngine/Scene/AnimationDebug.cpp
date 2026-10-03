@@ -64,11 +64,14 @@ namespace Dingo
 						AnimatorRow& row = out.emplace_back();
 						row.Scene = scene->GetName();
 						row.Entity = EntityName(registry, handle);
-						row.Instance = runtime.Instance.get();
 						row.Enabled = settings.Enabled;
 						row.Speed = settings.Speed;
 
+						// An animator whose model went away keeps that model's clip pointers, which may be freed.
 						const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
+						const Skeleton* skeleton = skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
+						if (skeleton && runtime.SkeletonId == skeleton->GetId())
+							row.Instance = runtime.Instance.get();
 						if (skinned && skinned->Model)
 							row.Model = skinned->Model->GetFilePath().filename().string();
 					}
