@@ -267,11 +267,13 @@ namespace Dingo
 
 		m_TestViewportPanel.OnUIRender(m_OutputFramebuffer->GetAttachment(0));
 
-		// handle resize
-		if (m_OutputFramebuffer->GetWidth() != m_TestViewportPanel.GetViewportSize().x ||
-		   m_OutputFramebuffer->GetHeight() != m_TestViewportPanel.GetViewportSize().y)
+		// handle resize. ImGui reads the window size itself, so the frame a minimize lands in can
+		// give the panel a negative size before Application has seen the zero-sized resize.
+		const glm::vec2& viewportSize = m_TestViewportPanel.GetViewportSize();
+		if (viewportSize.x > 0.0f && viewportSize.y > 0.0f &&
+		   (m_OutputFramebuffer->GetWidth() != viewportSize.x || m_OutputFramebuffer->GetHeight() != viewportSize.y))
 		{
-			m_CurrentTest->Resize(m_TestViewportPanel.GetViewportSize().x, m_TestViewportPanel.GetViewportSize().y);
+			m_CurrentTest->Resize(viewportSize.x, viewportSize.y);
 
 			Application::Get().SubmitPostExecution([&]()
 			{
