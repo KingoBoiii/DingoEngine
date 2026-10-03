@@ -937,6 +937,18 @@ namespace Dingo
 			Check(whoosh == 1 && done == 1, "a one-shot fires its first mark though it faded in, and its last though it cuts straight back");
 		}
 		{
+			// Short enough to start back in its first frame, while Walk still leads.
+			AnimationClip flinch("Flinch", 0.2f, {}, &skeleton);
+			Animator animator(&skeleton);
+			animator.Play(walk);
+			animator.SetTime(0.28f);
+			animator.Update(0.0f);
+			animator.PlayOneShot(&flinch, 0.1f, 0.2f);
+			animator.Update(1.0f / 60.0f);
+			const int steps = CountEvents(animator.GetEventsThisFrame(), "step_fl", AnimationEventType::Instant);
+			Check(steps == 1, std::format("a one-shot that starts back before it leads doesn't fire Walk's footfall again ({} step_fl)", steps));
+		}
+		{
 			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
 			slash.AddEventRange(0.32f, 0.48f, "hitbox");
 			Animator animator(&skeleton);

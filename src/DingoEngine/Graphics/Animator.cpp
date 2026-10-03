@@ -647,6 +647,13 @@ namespace Dingo
 			{
 				PlayingState resume = layer.Resume;
 				resume.Returning = true;
+				// The interrupted state already led this frame (the one-shot was still fading in), so its
+				// copy goes on from there instead of firing the same marks again.
+				if (layer.EventSerial == resume.Serial)
+				{
+					resume.PreviousTime = resume.Time;
+					resume.Wrapped = false;
+				}
 				Push(layer, std::move(resume), layer.OneShotFadeOut, FreezeSource(i));
 				CollectEvents(static_cast<uint32_t>(i), layer);
 			}
@@ -759,6 +766,8 @@ namespace Dingo
 			inclusive = true;
 		}
 		dominant->Led = true;
+		if (layer.OneShotPending && layer.Resume.Serial == dominant->Serial)
+			layer.Resume.Led = true;
 
 		if (!clip->GetEventMarks().empty())
 			FireMarks(layerIndex, layer, *clip, from, dominant->Time * timeScale, inclusive, forward, dominant->Wrapped);
