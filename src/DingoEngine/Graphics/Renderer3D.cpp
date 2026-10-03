@@ -189,6 +189,11 @@ namespace Dingo
 
 	void Renderer3D::BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition)
 	{
+		m_SceneActive = true;
+		m_SceneSkipped = Renderer::IsFrameSkipped();
+		if (m_SceneSkipped)
+			return;
+
 		m_CameraData.ViewProjection = viewProjection;
 		m_CameraData.CameraPosition = cameraPosition;
 
@@ -218,7 +223,6 @@ namespace Dingo
 			++it;
 		}
 		m_DrawOrder.clear();
-		m_SceneActive = true;
 	}
 
 	void Renderer3D::EndScene()
@@ -227,17 +231,17 @@ namespace Dingo
 			return; // guard against EndScene() without BeginScene() (or a double call)
 
 		m_SceneActive = false;
+		if (m_SceneSkipped)
+		{
+			ClearSceneLights();
+			return;
+		}
 
 		// Written into this frame's command list ahead of every draw that binds it
 		// (CommandList::UploadBuffer, the same path material UBOs use).
 		ResolveSceneLights();
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
-
-		m_CameraData.AmbientColor = glm::vec4(0.0f);
-		m_CameraData.LightCounts = glm::ivec4(0);
-		m_LocalLights.clear();
-		m_SceneLightSubmitted = false;
-		m_DroppedLights = 0;
+		ClearSceneLights();
 
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
@@ -427,6 +431,15 @@ namespace Dingo
 		m_Params.Ambient = ambient;
 	}
 
+	void Renderer3D::ClearSceneLights()
+	{
+		m_CameraData.AmbientColor = glm::vec4(0.0f);
+		m_CameraData.LightCounts = glm::ivec4(0);
+		m_LocalLights.clear();
+		m_SceneLightSubmitted = false;
+		m_DroppedLights = 0;
+	}
+
 	void Renderer3D::ResolveSceneLights()
 	{
 		if (!m_SceneLightSubmitted)
@@ -509,7 +522,7 @@ namespace Dingo
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material)
 	{
-		if (!m_SceneActive || !mesh)
+		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
 
 		Material* batchMaterial = material ? material : m_Material;

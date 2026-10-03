@@ -81,6 +81,13 @@ namespace Dingo
 		// to strip the overlay (and, when EnableUI is also false, the ImGui backend)
 		// from a shipping build.
 		bool EnableDebugOverlays = true;
+
+		// Keep calling OnUpdate while the window is minimized or unfocused, for a game that must
+		// not stop there (networking, a simulation). Otherwise the app pauses: no OnUpdate and no
+		// rendering, the paused time is left out of the deltas, and audio keeps playing. A
+		// minimized window renders nothing either way. Changeable at runtime, from the main
+		// thread, with Application::SetUpdateInBackground.
+		bool UpdateInBackground = false;
 	};
 
 	class ImGuiLayer;
@@ -119,6 +126,13 @@ namespace Dingo
 
 		Window& GetWindow() { return *m_Window; }
 		const Window& GetWindow() const { return *m_Window; }
+
+		// From a zero-sized WindowResizeEvent until the next real size. Nothing renders meanwhile
+		// (Renderer::SkipFrame) and Window::GetWidth/GetHeight read 0.
+		bool IsMinimized() const { return m_Minimized; }
+
+		void SetUpdateInBackground(bool updateInBackground) { m_Params.UpdateInBackground = updateInBackground; }
+		bool GetUpdateInBackground() const { return m_Params.UpdateInBackground; }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
@@ -143,6 +157,7 @@ namespace Dingo
 	private:
 		bool OnWindowCloseEvent(WindowCloseEvent& e);
 		bool OnWindowResizeEvent(WindowResizeEvent& e);
+		bool OnWindowFocusEvent(WindowFocusEvent& e);
 
 		// Renders the engine's built-in tabbed Debug window (F3/F4/F5 select its
 		// tabs) inside the ImGui frame. Gated at runtime by
@@ -168,6 +183,7 @@ namespace Dingo
 		UI::DebugTab m_PendingDebugTab = UI::DebugTab::None; // tab selection requested but not yet applied
 		bool m_IsRunning = true;
 		bool m_Minimized = false;
+		bool m_Focused = true;
 		float m_LastFrameTime = 0.0f;
 		float m_DeltaTime = 0.0f;
 

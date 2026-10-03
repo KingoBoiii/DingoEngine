@@ -23,6 +23,10 @@ Do one `BeginScene`/`EndScene` pair per frame for a given camera. Each pair rese
 and then flushes the quad, circle, and text batches, so you can freely mix all three
 kinds of draw call inside one block.
 
+A minimized app that keeps updating (`ApplicationParams::UpdateInBackground`) skips rendering, and
+a block begun then draws nothing (`Renderer::IsFrameSkipped()`), so drawing from `OnUpdate` needs
+no guard. See [In the background](application-and-layers.md#in-the-background).
+
 ### The camera
 
 There is no camera *class* for 2D — you pass a matrix, which keeps the model simple

@@ -153,7 +153,8 @@ namespace Dingo
 		// shared emissive, Roughness or Specular.
 		Material* GetDefaultMaterial() const { return m_Material; }
 
-		// Per-scene render statistics: reset each BeginScene, complete after EndScene.
+		// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
+		// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
 			uint32_t DrawCalls = 0;       // one indexed draw per non-empty batch; a material may take several
@@ -178,6 +179,7 @@ namespace Dingo
 
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
+		void ClearSceneLights();
 
 	private:
 		Renderer3DParams m_Params;
@@ -302,6 +304,7 @@ namespace Dingo
 		Mesh* m_SphereMesh = nullptr;
 
 		bool m_SceneActive = false;
+		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: submits nothing, and EndScene only clears the lights
 		bool m_MeshOverflowWarned = false;
 	};
 
