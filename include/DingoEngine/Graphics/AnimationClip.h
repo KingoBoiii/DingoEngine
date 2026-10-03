@@ -66,6 +66,9 @@ namespace Dingo
 			float Time = 0.0f;
 			uint32_t Event = 0; // index into GetEvents()
 			AnimationEventType Type = AnimationEventType::Instant;
+			// The event's name, kept for the life of the program, so a name an Animator hands out
+			// outlives a change to this list or a reload of the model.
+			std::string_view Name;
 		};
 
 	public:
@@ -87,20 +90,32 @@ namespace Dingo
 
 		// Times are in seconds into the clip; an event outside [0, duration] never fires, and a range
 		// can't wrap past the clip's end (an end before the begin is swapped). An Animator reports
-		// them as its playback crosses them (Animator::GetEventsThisFrame). Event names an Animator
-		// hands out point into this list, so they stay valid until it next changes.
+		// them as its playback crosses them (Animator::GetEventsThisFrame). A model reload replaces
+		// them with the file's and its .events sidecar's, so events added here must be added again
+		// (Model::GetGeneration tells when).
 		void AddEvent(float time, std::string name);
 		void AddEventRange(float begin, float end, std::string name);
 		void ClearEvents();
 		const std::vector<AnimationClipEvent>& GetEvents()     const { return m_Events; }
 		const std::vector<EventMark>&          GetEventMarks() const { return m_EventMarks; }
+		// Changes whenever the event list does, never back to an earlier value; an Animator then
+		// checks the ranges it holds open on the clip.
+		uint64_t GetEventRevision() const { return m_EventRevision; }
 
 	private:
 		static uint64_t AllocateId();
 		void RebuildEventMarks();
 
+		// A model reload: the source's keys and events under this clip's name, and a new id.
+		void Reinitialize(AnimationClip& source, const Skeleton* sourceSkeleton);
+		// A clip the reloaded file no longer has: zero length, no keys, no events.
+		void Clear();
+
+		friend class Model;
+
 	private:
 		uint64_t                      m_Id = AllocateId();
+		uint64_t                      m_EventRevision = AllocateId();
 		std::string                   m_Name;
 		float                         m_Duration = 0.0f;
 		std::vector<AnimationChannel> m_Channels;

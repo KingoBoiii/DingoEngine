@@ -457,7 +457,7 @@ namespace Dingo::UI
 		ImGui::Separator();
 
 		bool hotReload = assets.IsHotReloadEnabled();
-		if (ImGui::Checkbox("Hot-reload textures & shaders", &hotReload))
+		if (ImGui::Checkbox("Hot-reload changed files", &hotReload))
 			assets.SetHotReloadEnabled(hotReload);
 
 		static char s_Filter[128] = "";

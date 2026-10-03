@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 
@@ -124,6 +127,50 @@ namespace
 		return nullptr;
 	}
 
+	std::string ReadText(const std::filesystem::path& path)
+	{
+		std::ifstream file(path, std::ios::binary);
+		return { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+	}
+
+	bool WriteText(const std::filesystem::path& path, std::string_view text)
+	{
+		std::ofstream file(path, std::ios::binary | std::ios::trunc);
+		file.write(text.data(), static_cast<std::streamsize>(text.size()));
+		return static_cast<bool>(file);
+	}
+
+	std::string Replace(std::string text, std::string_view from, std::string_view to)
+	{
+		for (size_t at = text.find(from); at != std::string::npos; at = text.find(from, at + to.size()))
+			text.replace(at, from.size(), to);
+		return text;
+	}
+
+	// The clip object called Walk gets Run's keys, as if an artist had re-exported it.
+	std::string SwapWalkAndRun(std::string gltf)
+	{
+		gltf = Replace(std::move(gltf), "\"name\": \"Walk\"", "\"name\": \"@swap@\"");
+		gltf = Replace(std::move(gltf), "\"name\": \"Run\"", "\"name\": \"Walk\"");
+		return Replace(std::move(gltf), "\"name\": \"@swap@\"", "\"name\": \"Run\"");
+	}
+
+	// The reload checks edit a copy, never the test's own Fox. Empty when the copy fails.
+	std::filesystem::path CopyFox(std::string_view folder)
+	{
+		const std::filesystem::path source = std::filesystem::path(k_FoxPath).parent_path();
+		const std::filesystem::path target = std::filesystem::temp_directory_path() / "DingoAnimationTest" / folder;
+		std::error_code error;
+		std::filesystem::remove_all(target, error);
+		std::filesystem::create_directories(target, error);
+		for (const char* file : { "Fox.gltf", "Fox.bin", "Texture.png", "Fox.events" })
+		{
+			if (!std::filesystem::copy_file(source / file, target / file, std::filesystem::copy_options::overwrite_existing, error))
+				return {};
+		}
+		return target / "Fox.gltf";
+	}
+
 	// A joint transform without its scale: what a child on that joint hangs from.
 	glm::mat4 SocketFrame(const glm::mat4& joint)
 	{
@@ -182,11 +229,28 @@ namespace Dingo
 				m_FreezePhase = std::clamp(std::strtof(std::string(*phase).c_str(), nullptr), 0.0f, 1.0f);
 			if (auto speed = args.Get("anim-speed"); speed && !speed->empty())
 				m_BlendSpeed = std::strtof(std::string(*speed).c_str(), nullptr);
+			m_LiveReload = args.Get("anim-reload").has_value();
 		}
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.05f, 200.0f);
 
-		m_Fox = Model::LoadFromFile(k_FoxPath);
+		m_ReloadStep = 0;
+		if (m_LiveReload && m_Mode == Mode::Clip)
+		{
+			AssetManager& assets = Application::Get().GetAssetManager();
+			const std::filesystem::path path = CopyFox("live");
+			m_FoxAsset = path.empty() ? k_InvalidAsset : assets.Load(path);
+			m_Fox = assets.GetModel(m_FoxAsset);
+			if (m_FoxAsset != k_InvalidAsset)
+			{
+				m_HotReloadWas = assets.IsHotReloadEnabled();
+				assets.SetHotReloadEnabled(true);
+			}
+		}
+		else
+		{
+			m_Fox = Model::LoadFromFile(k_FoxPath);
+		}
 		RunLoadChecks();
 		if (!m_Fox || !FindSkinnedSubMesh(*m_Fox))
 			return;
@@ -212,6 +276,15 @@ namespace Dingo
 		RunBlendChecks();
 		RunEventChecks();
 		RunSceneChecks();
+		RunReloadChecks();
+
+		m_RunPose.clear();
+		if (const AnimationClip* run = m_FoxAsset != k_InvalidAsset ? m_Fox->FindAnimation("Run") : nullptr)
+		{
+			m_RunDuration = run->GetDuration();
+			if (m_FreezeTime >= 0.0f)
+				m_RunPose = PoseAt(*m_Fox->GetSkeleton(), run, m_FreezeTime);
+		}
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		m_FoxMaterial = renderer.CreateLitMaterial(MaterialParams().SetDebugName("Fox"));
@@ -849,6 +922,232 @@ namespace Dingo
 		}
 	}
 
+	void AnimationTest::RunReloadChecks()
+	{
+		const std::filesystem::path path = CopyFox("checks");
+		Model* model = path.empty() ? nullptr : Model::LoadFromFile(path);
+		AnimationClip* walk = model ? model->FindAnimation("Walk") : nullptr;
+		const AnimationClip* survey = model ? model->FindAnimation("Survey") : nullptr;
+		const SubMesh* skinned = model ? FindSkinnedSubMesh(*model) : nullptr;
+		if (!walk || !survey || !skinned || !skinned->DiffuseTexture)
+		{
+			Check(false, "a copy of the Fox loads for the reload checks");
+			DestroyAndDelete(model);
+			std::error_code error;
+			if (!path.empty())
+				std::filesystem::remove_all(path.parent_path(), error);
+			return;
+		}
+
+		const std::string original = ReadText(path);
+		const std::filesystem::path eventsPath = std::filesystem::path(path).replace_extension(".events");
+		const Skeleton* skeleton = model->GetSkeleton();
+		Mesh* mesh = skinned->MeshData;
+		Texture* diffuse = skinned->DiffuseTexture;
+		const uint64_t meshId = mesh->GetId();
+		const uint64_t walkId = walk->GetId();
+		const uint64_t skeletonId = skeleton->GetId();
+		const uint32_t textureGeneration = diffuse->GetGeneration();
+
+		Animator animator(skeleton);
+		animator.Play(walk);
+		animator.SetTime(0.25f);
+		animator.Update(0.05f);
+		const std::string_view heldName = animator.GetEventsThisFrame().empty() ? std::string_view() : animator.GetEventsThisFrame().front().Name;
+
+		const bool reloaded = model->Reload();
+		const SubMesh* after = FindSkinnedSubMesh(*model);
+		Check(reloaded && model->GetGeneration() == 1 && model->FindAnimation("Walk") == walk && model->GetSkeleton() == skeleton
+			&& skeleton->GetId() == skeletonId && after && after->MeshData == mesh && after->DiffuseTexture == diffuse,
+			"Model::Reload keeps the model's clips, skeleton, meshes and textures where they were");
+		const bool imageKept = diffuse->GetGeneration() == textureGeneration;
+		const std::filesystem::path image = path.parent_path() / "Texture.png";
+		WriteText(image, ReadText(image));
+		const bool imageSaved = model->Reload();
+		Check(mesh->GetId() != meshId && walk->GetId() != walkId && imageKept && imageSaved && diffuse->GetGeneration() != textureGeneration,
+			"and gives the meshes and clips new ids, re-reading the texture in place only once its image is saved again");
+		Check(heldName == "step_fl", "an event name read before a reload still reads the same after it");
+
+		const AnimationClip* foxRun = m_Fox->FindAnimation("Run");
+		const std::vector<JointPose> runPose = PoseAt(*m_Fox->GetSkeleton(), foxRun, 0.5f);
+		animator.SetTime(0.5f);
+		// Run, past the end of Walk's shorter loop, which Run takes.
+		AnimationClip* run = model->FindAnimation("Run");
+		Animator looping(skeleton);
+		looping.Play(run);
+		looping.SetTime(1.05f);
+		looping.Update(0.0f);
+		WriteText(path, SwapWalkAndRun(original));
+		const bool swapped = model->Reload();
+		animator.Update(0.0f);
+		const float swapGap = PoseGap(animator.GetLocalPoses(), runPose);
+		Check(swapped && animator.GetCurrentClip() == walk && walk->GetDuration() == foxRun->GetDuration() && swapGap < 1e-5f,
+			std::format("a re-export that gives Walk Run's keys plays them through the same clip, in an animator that kept playing (gap {:.1e})", swapGap));
+
+		looping.Update(0.05f);
+		const float carriedOn = run ? std::fmod(1.05f, run->GetDuration()) + 0.05f : 0.0f;
+		Check(run && run->GetDuration() < 1.05f && looping.GetEventsThisFrame().empty() && std::abs(looping.GetTime() - carriedOn) < 1e-4f,
+			std::format("a reload that shortens a playing loop goes on from the same point of the new loop ({:.3f} s) instead of firing every mark from its start at once", looping.GetTime()));
+
+		WriteText(eventsPath, "Walk 0.1 reload_mark\n");
+		const bool eventsReloaded = model->Reload();
+		animator.SetTime(0.0f);
+		animator.Update(0.15f);
+		Check(eventsReloaded && walk->GetEvents().size() == 1 && CountEvents(animator.GetEventsThisFrame(), "reload_mark", AnimationEventType::Instant) == 1,
+			"the .events file reloads with its model: a new mark fires and the old ones are gone");
+
+		Animator looking(skeleton);
+		WriteText(eventsPath, "Survey 0.90..2.50 look\n");
+		model->ReloadEvents();
+		looking.Play(survey);
+		looking.SetTime(0.85f);
+		looking.Update(0.1f);
+		const bool opened = looking.IsEventActive("look");
+		const uint64_t meshBefore = mesh->GetId();
+		const uint32_t generationBefore = model->GetGeneration();
+		WriteText(eventsPath, "Survey 0.90..2.50 gaze\n");
+		const bool renamedEvents = model->ReloadEvents();
+		looking.Update(0.05f);
+		const int lookEnds = CountEvents(looking.GetEventsThisFrame(), "look", AnimationEventType::RangeEnd);
+		const bool lookClosed = !looking.IsEventActive("look");
+		int gazeEvents = 0;
+		for (int i = 0; i < 40; ++i)
+		{
+			looking.Update(0.05f);
+			gazeEvents += CountEvents(looking.GetEventsThisFrame(), "gaze", AnimationEventType::RangeBegin) + CountEvents(looking.GetEventsThisFrame(), "gaze", AnimationEventType::RangeEnd);
+		}
+		Check(opened && renamedEvents && mesh->GetId() == meshBefore && model->GetGeneration() == generationBefore + 1,
+			"ReloadEvents replaces the clips' events and leaves the meshes alone");
+		Check(lookEnds == 1 && lookClosed && gazeEvents == 0,
+			std::format("a range open when the .events file renames it ends with its RangeEnd at once, and the new name's end fires nothing without its begin ({} ends, {} gaze)", lookEnds, gazeEvents));
+
+		DE_INFO("Animation Test: the next Model::LoadFromFile error is expected");
+		WriteText(path, "{ not a glTF");
+		const uint32_t generation = model->GetGeneration();
+		const std::vector<JointPose> held(animator.GetLocalPoses().begin(), animator.GetLocalPoses().end());
+		const bool broken = model->Reload();
+		animator.Update(0.0f);
+		Check(!broken && model->GetGeneration() == generation && walk->GetDuration() == foxRun->GetDuration() && PoseGap(animator.GetLocalPoses(), held) == 0.0f,
+			"a file that no longer loads leaves the model as it was, and Reload returns false");
+
+		// b_Tail02_013's rest offset, doubled.
+		WriteText(path, Replace(original, "12.411918640136719", "24.823837280273438"));
+		const int32_t tail = skeleton->FindJoint("b_Tail02_013");
+		const uint32_t revision = skeleton->GetRevision();
+		const std::vector<MeshVertex> restVertices = mesh->GetVertices();
+		animator.Stop();
+		const bool moved = model->Reload();
+		animator.Update(0.0f);
+		const float restGap = glm::length(animator.GetLocalPoses()[tail].Translation - glm::vec3(24.823837f, 0.0f, 0.0f));
+		const bool verticesMoved = mesh->GetVertices().size() == restVertices.size() && !std::equal(restVertices.begin(), restVertices.end(), mesh->GetVertices().begin(),
+			[](const MeshVertex& a, const MeshVertex& b) { return a.Position == b.Position; });
+		Check(moved && model->GetSkeleton() == skeleton && skeleton->GetRevision() != revision && restGap < 1e-4f && verticesMoved,
+			std::format("a moved joint keeps the skeleton and reaches an animator's rest pose and the mesh's rest vertices (off by {:.1e})", restGap));
+
+		{
+			WriteText(path, original);
+			model->Reload();
+
+			Scene scene("Reload checks");
+			Entity fox = scene.CreateEntity("Fox");
+			fox.AddComponent<Transform3DComponent>();
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(model));
+			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+			scene.OnStart();
+			scene.OnUpdate(0.05f);
+			Animator* playing = scene.GetAnimator(fox);
+			if (playing)
+				playing->Play(survey);
+			scene.OnUpdate(0.05f);
+
+			const float before = playing ? playing->GetTime() : 0.0f;
+			model->Reload();
+			scene.OnUpdate(0.05f);
+			Check(playing && scene.GetAnimator(fox) == playing && playing->GetCurrentClip() == survey && std::abs(playing->GetTime() - before - 0.05f) < 1e-5f,
+				"a scene's animator keeps its clip and time through a reload that keeps the joints");
+
+			WriteText(path, Replace(original, "\"name\": \"b_Tail03_014\"", "\"name\": \"b_Tail03_014x\""));
+			const bool renamed = model->Reload();
+			const std::vector<JointPose> resting(animator.GetLocalPoses().begin(), animator.GetLocalPoses().end());
+			animator.Play(walk);
+			animator.Update(0.1f);
+			scene.OnUpdate(0.05f);
+			Animator* restarted = scene.GetAnimator(fox);
+			Check(renamed && model->GetSkeleton() != skeleton && animator.GetSkeleton() == skeleton && PoseGap(animator.GetLocalPoses(), resting) > 0.01f
+				&& restarted && restarted->GetSkeleton() == model->GetSkeleton() && restarted->GetCurrentClip() == walk,
+				"a renamed joint brings a new skeleton: an animator on the old one still runs, and a scene's starts over on the new one with its DefaultClip");
+			scene.OnStop();
+		}
+		DestroyAndDelete(model);
+
+		AssetManager& assets = Application::Get().GetAssetManager();
+		WriteText(path, original);
+		const AssetHandle handle = assets.Load(path);
+		Model* managed = assets.GetModel(handle);
+		const bool managedReload = managed && assets.Reload(handle);
+		Check(AssetManager::SupportsInPlaceReload(AssetType::Model) && managedReload && assets.GetModel(handle) == managed && managed->GetGeneration() == 1,
+			"AssetManager::Reload refreshes a model in place, so GetModel keeps handing out the same pointer");
+		assets.Remove(handle);
+
+		std::error_code error;
+		std::filesystem::remove_all(path.parent_path(), error);
+	}
+
+	void AnimationTest::UpdateLiveReload()
+	{
+		if (m_FoxAsset == k_InvalidAsset || !m_Fox || m_ReloadStep >= 3)
+			return;
+
+		const std::filesystem::path& path = m_Fox->GetFilePath();
+		const std::filesystem::path eventsPath = std::filesystem::path(path).replace_extension(".events");
+		if (m_ReloadStep == 0)
+		{
+			if (m_Time < 1.0f)
+				return;
+			WriteText(path, SwapWalkAndRun(ReadText(path)));
+		}
+		else if (m_Fox->GetGeneration() == m_ReloadGeneration)
+		{
+			if (m_Time - m_ReloadStart < 6.0f)
+				return;
+			Check(false, m_ReloadStep == 1 ? "hot-reload picks up the edited Fox within 6 s" : "hot-reload picks up the edited Fox.events within 6 s");
+			m_ReloadStep = 3;
+			return;
+		}
+		else if (m_ReloadStep == 1)
+		{
+			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+			const bool swapped = walk && walk->GetDuration() == m_RunDuration;
+			const float seconds = m_Time - m_ReloadStart;
+			if (m_RunPose.empty())
+			{
+				Check(swapped, std::format("hot-reload swapped the edited Fox in place {:.1f} s after the save", seconds));
+			}
+			else
+			{
+				// GetAnimator poses a paused animator for the reload at once.
+				const Animator* animator = m_AnimatedFox ? m_Scene->GetAnimator(m_AnimatedFox) : nullptr;
+				const float gap = animator ? PoseGap(animator->GetLocalPoses(), m_RunPose) : 1.0f;
+				Check(swapped && gap < 1e-5f, std::format("hot-reload swapped the edited Fox in place {:.1f} s after the save, and the paused Fox shows Run's keys (gap {:.1e})", seconds, gap));
+			}
+			const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
+			m_ReloadMeshId = skinned ? skinned->MeshData->GetId() : 0;
+			WriteText(eventsPath, ReadText(eventsPath) + "Walk 0.5 live_mark\n");
+		}
+		else
+		{
+			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+			const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
+			const bool marked = walk && std::any_of(walk->GetEvents().begin(), walk->GetEvents().end(), [](const AnimationClipEvent& event) { return event.Name == "live_mark"; });
+			Check(marked && skinned && skinned->MeshData->GetId() == m_ReloadMeshId,
+				std::format("saving only Fox.events hot-reloads its events {:.1f} s later, with the new mark, and leaves the meshes alone", m_Time - m_ReloadStart));
+		}
+
+		m_ReloadGeneration = m_Fox->GetGeneration();
+		m_ReloadStart = m_Time;
+		++m_ReloadStep;
+	}
+
 	void AnimationTest::RecordEvent(Entity fox, const AnimationEvent& event)
 	{
 		m_EventLog.push_back({ event.Clip ? event.Clip->GetName() : std::string(), std::string(event.Name), event.Type, event.Time, m_Time });
@@ -1178,6 +1477,8 @@ namespace Dingo
 				animator->Update(0.0f);
 		}
 
+		UpdateLiveReload();
+
 		const Clock::time_point updateStart = Clock::now();
 		m_Scene->OnUpdate((std::min)(deltaTime, 1.0f / 30.0f));
 		const Clock::time_point updateEnd = Clock::now();
@@ -1206,6 +1507,19 @@ namespace Dingo
 	{
 		DestroyScene();
 		DestroyAndDelete(m_FoxMaterial);
+		if (m_FoxAsset != k_InvalidAsset)
+		{
+			const std::filesystem::path folder = m_Fox ? m_Fox->GetFilePath().parent_path() : std::filesystem::path();
+			AssetManager& assets = Application::Get().GetAssetManager();
+			assets.Remove(m_FoxAsset);
+			assets.SetHotReloadEnabled(m_HotReloadWas);
+			m_FoxAsset = k_InvalidAsset;
+			m_Fox = nullptr;
+
+			std::error_code error;
+			if (!folder.empty())
+				std::filesystem::remove_all(folder, error);
+		}
 		DestroyAndDelete(m_Fox);
 		m_PosePalette.clear();
 	}

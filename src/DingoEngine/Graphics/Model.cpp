@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Asset/AssetPath.h"
+#include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Log.h"
 
 #include <assimp/Importer.hpp>
@@ -41,7 +42,49 @@ namespace Dingo
 	// it a shared atlas is decoded AND uploaded once per submesh, each with its own command
 	// list and queue submit, plus three filesystem probes. Load-scoped: the Model owns the
 	// results, and managed models get the AssetManager's own dedup on top.
-	using TextureCache = std::unordered_map<std::string, Texture*>;
+	struct CachedTexture
+	{
+		Texture* Image = nullptr;
+		std::filesystem::file_time_type WriteTime{};
+		bool Borrowed = false;
+	};
+
+	struct TextureCache
+	{
+		std::unordered_map<std::string, CachedTexture> Loaded;
+		// A reloading model's textures by path: reused when the file still uses them, so a material
+		// a game built from one keeps working.
+		std::unordered_map<std::string, CachedTexture> Reusable;
+	};
+
+	static std::filesystem::file_time_type WriteTimeOf(const std::filesystem::path& path)
+	{
+		std::error_code error;
+		const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
+		return error ? std::filesystem::file_time_type{} : time;
+	}
+
+	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path)
+	{
+		uint32_t width = 0, height = 0, channels = 0;
+		const uint8_t* data = FileSystem::ReadImage(path, &width, &height, &channels, true, true);
+		if (!data)
+		{
+			DE_CORE_WARN("Model: couldn't read '{}' again, so its texture keeps the old image", path.generic_string());
+			return false;
+		}
+
+		texture.Reinitialize(TextureParams()
+			.SetDebugName("Texture (File)")
+			.SetWidth(width)
+			.SetHeight(height)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+			.SetIsRenderTarget(false)
+			.SetInitialData(data));
+		FileSystem::FreeImage(data);
+		return true;
+	}
 
 	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
@@ -69,19 +112,33 @@ namespace Dingo
 		{
 			const std::string key = candidates[i].generic_string();
 
-			auto it = textureCache.find(key);
-			if (it != textureCache.end())
-				return it->second;
+			auto it = textureCache.Loaded.find(key);
+			if (it != textureCache.Loaded.end())
+				return it->second.Image;
 
 			if (!std::filesystem::exists(candidates[i]))
 				continue;
 
-			Texture* texture = Texture::CreateFromFile(candidates[i]);
-			if (!texture)
+			CachedTexture texture;
+			const std::filesystem::file_time_type writeTime = WriteTimeOf(candidates[i]);
+			if (auto reusable = textureCache.Reusable.find(key); reusable != textureCache.Reusable.end())
+			{
+				texture = reusable->second;
+				texture.Borrowed = true;
+				textureCache.Reusable.erase(reusable);
+				if (writeTime != texture.WriteTime && RefreshTexture(*texture.Image, candidates[i]))
+					texture.WriteTime = writeTime;
+			}
+			else
+			{
+				texture.Image = Texture::CreateFromFile(candidates[i]);
+				texture.WriteTime = writeTime;
+			}
+			if (!texture.Image)
 				continue;
 
-			textureCache[key] = texture;
-			return texture;
+			textureCache.Loaded[key] = texture;
+			return texture.Image;
 		}
 
 		return nullptr;
@@ -784,6 +841,11 @@ namespace Dingo
 
 	Model* Model::LoadFromFile(const std::filesystem::path& filepath)
 	{
+		return Load(filepath, nullptr);
+	}
+
+	Model* Model::Load(const std::filesystem::path& filepath, Model* refresh)
+	{
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
 		// Read once without post-processing to see whether the file is skinned, then apply
@@ -825,11 +887,17 @@ namespace Dingo
 			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh.", modelName, scene->mNumAnimations);
 
 		Model* model = new Model();
+		model->m_FilePath = std::filesystem::absolute(resolvedPath);
 		// Absolute, so the material textures found beside the model are not resolved a second
 		// time against the asset root by Texture::CreateFromFile.
-		std::filesystem::path modelDir = std::filesystem::absolute(resolvedPath).parent_path();
+		std::filesystem::path modelDir = model->m_FilePath.parent_path();
 
 		TextureCache textureCache;
+		if (refresh)
+		{
+			for (const ModelTexture& texture : refresh->m_Textures)
+				textureCache.Reusable.try_emplace(texture.Path, CachedTexture{ texture.Image, texture.WriteTime });
+		}
 		if (skinned)
 		{
 			SkinnedImport skinnedImport = ImportSkinned(scene, modelName, modelDir, textureCache);
@@ -842,9 +910,9 @@ namespace Dingo
 			TraverseNode(scene->mRootNode, scene, modelDir, textureCache, model->m_SubMeshes);
 		}
 
-		model->m_Textures.reserve(textureCache.size());
-		for (const auto& [path, texture] : textureCache)
-			model->m_Textures.push_back(texture);
+		model->m_Textures.reserve(textureCache.Loaded.size());
+		for (const auto& [path, texture] : textureCache.Loaded)
+			model->m_Textures.push_back({ path, texture.Image, texture.WriteTime, texture.Borrowed });
 
 		if (!model->m_Animations.empty())
 		{
@@ -872,12 +940,163 @@ namespace Dingo
 		}
 		m_SubMeshes.clear();
 
-		for (Texture*& texture : m_Textures)
-			DestroyAndDelete(texture);
+		for (ModelTexture& texture : m_Textures)
+		{
+			if (!texture.Borrowed)
+				DestroyAndDelete(texture.Image);
+		}
 		m_Textures.clear();
 
 		m_Animations.clear();
 		m_Skeleton.reset();
+		m_RetiredSkeletons.clear();
+	}
+
+	bool Model::Reload()
+	{
+		if (m_FilePath.empty())
+		{
+			DE_CORE_WARN("Model::Reload: the model wasn't loaded from a file");
+			return false;
+		}
+
+		std::unique_ptr<Model> fresh(Load(m_FilePath, this));
+		if (!fresh)
+			return false;
+
+		Adopt(*fresh);
+		++m_Generation;
+		return true;
+	}
+
+	bool Model::ReloadEvents()
+	{
+		if (m_FilePath.empty())
+		{
+			DE_CORE_WARN("Model::ReloadEvents: the model wasn't loaded from a file");
+			return false;
+		}
+
+		std::filesystem::path events = m_FilePath;
+		events.replace_extension(".events");
+		std::error_code error;
+		const bool exists = !m_Animations.empty() && std::filesystem::exists(events, error);
+		if (exists && !std::ifstream(events).is_open())
+		{
+			DE_CORE_WARN("Model '{}': couldn't read '{}', so the clips keep their events", m_FilePath.filename().string(), events.filename().string());
+			return false;
+		}
+
+		for (const std::unique_ptr<AnimationClip>& clip : m_Animations)
+			clip->ClearEvents();
+		if (exists)
+			LoadEvents(events);
+		++m_Generation;
+		return true;
+	}
+
+	namespace
+	{
+
+		bool SameJoints(const Skeleton& a, const Skeleton& b)
+		{
+			if (a.GetJointCount() != b.GetJointCount() || a.GetSkinJointCount() != b.GetSkinJointCount())
+				return false;
+
+			for (uint32_t i = 0; i < a.GetJointCount(); ++i)
+			{
+				if (a.GetJoint(i).Name != b.GetJoint(i).Name || a.GetJoint(i).Parent != b.GetJoint(i).Parent)
+					return false;
+			}
+			return true;
+		}
+
+	}
+
+	void Model::Adopt(Model& fresh)
+	{
+		if (m_Skeleton && fresh.m_Skeleton && SameJoints(*m_Skeleton, *fresh.m_Skeleton))
+		{
+			m_Skeleton->Reinitialize(*fresh.m_Skeleton);
+		}
+		else
+		{
+			if (m_Skeleton)
+			{
+				DE_CORE_WARN("Model '{}': the reload changed the skeleton's joints, so animators on it start over", m_FilePath.filename().string());
+				m_RetiredSkeletons.push_back(std::move(m_Skeleton));
+			}
+			m_Skeleton = std::move(fresh.m_Skeleton);
+		}
+		const Skeleton* skeleton = m_Skeleton.get();
+
+		// The n-th clip of a name takes the n-th of that name in the file: Mixamo calls every clip
+		// "mixamo.com".
+		const size_t clipCount = m_Animations.size();
+		std::vector<bool> matched(clipCount, false);
+		for (std::unique_ptr<AnimationClip>& clip : fresh.m_Animations)
+		{
+			size_t match = 0;
+			while (match < clipCount && (matched[match] || m_Animations[match]->GetName() != clip->GetName()))
+				++match;
+
+			if (match < clipCount)
+			{
+				matched[match] = true;
+				m_Animations[match]->Reinitialize(*clip, skeleton);
+			}
+			else
+			{
+				clip->m_SourceSkeleton = skeleton;
+				m_Animations.push_back(std::move(clip));
+			}
+		}
+		for (size_t i = 0; i < clipCount; ++i)
+		{
+			if (!matched[i])
+			{
+				m_Animations[i]->Clear();
+				m_Animations[i]->m_SourceSkeleton = skeleton;
+			}
+		}
+		fresh.m_Animations.clear();
+
+		const size_t meshCount = m_SubMeshes.size();
+		for (size_t i = 0; i < fresh.m_SubMeshes.size(); ++i)
+		{
+			SubMesh& incoming = fresh.m_SubMeshes[i];
+			if (i >= meshCount)
+			{
+				m_SubMeshes.push_back(incoming);
+				continue;
+			}
+
+			SubMesh& current = m_SubMeshes[i];
+			current.MeshData->Reinitialize(*incoming.MeshData);
+			current.Mat->SetTexture(0, incoming.DiffuseTexture);
+			current.DiffuseTexture = incoming.DiffuseTexture;
+			delete incoming.MeshData;
+			DestroyAndDelete(incoming.Mat);
+		}
+		for (size_t i = fresh.m_SubMeshes.size(); i < meshCount; ++i)
+		{
+			m_SubMeshes[i].MeshData->Clear();
+			m_SubMeshes[i].Mat->SetTexture(0, nullptr);
+			m_SubMeshes[i].DiffuseTexture = nullptr;
+		}
+		fresh.m_SubMeshes.clear();
+
+		// One the file stopped using is kept: a game's own material may still draw with it.
+		for (ModelTexture& texture : fresh.m_Textures)
+			texture.Borrowed = false;
+		for (ModelTexture& texture : m_Textures)
+		{
+			const bool reused = std::any_of(fresh.m_Textures.begin(), fresh.m_Textures.end(), [&](const ModelTexture& other) { return other.Image == texture.Image; });
+			if (!reused)
+				fresh.m_Textures.push_back(std::move(texture));
+		}
+		m_Textures = std::move(fresh.m_Textures);
+		fresh.m_Textures.clear();
 	}
 
 	AnimationClip* Model::GetAnimation(uint32_t index) const

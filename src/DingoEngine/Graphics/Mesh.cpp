@@ -23,6 +23,23 @@ namespace Dingo
 		return s_NextId.fetch_add(1, std::memory_order_relaxed);
 	}
 
+	void Mesh::Reinitialize(Mesh& source)
+	{
+		m_Vertices = std::move(source.m_Vertices);
+		m_Indices = std::move(source.m_Indices);
+		m_SkinVertices = std::move(source.m_SkinVertices);
+		m_SkinJointCount = source.m_SkinJointCount;
+		m_Id = AllocateId();
+		DestroyAndDelete(m_SkinVertexBuffer);
+		DestroyAndDelete(m_SkinIndexBuffer);
+	}
+
+	void Mesh::Clear()
+	{
+		Mesh empty;
+		Reinitialize(empty);
+	}
+
 	Mesh* Mesh::Create(const std::vector<MeshVertex>& vertices, const std::vector<uint32_t>& indices)
 	{
 		Mesh* mesh = new Mesh();

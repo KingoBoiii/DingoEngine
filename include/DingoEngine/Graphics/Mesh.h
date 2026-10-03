@@ -62,6 +62,13 @@ namespace Dingo
 	private:
 		static std::uint64_t AllocateId();
 
+		// A model reload: the source's vertices, a new id (Jolt caches shapes by it) and no GPU copy,
+		// so the next skinned draw uploads the new skin.
+		void Reinitialize(Mesh& source);
+		void Clear();
+
+		friend class Model;
+
 	private:
 		std::vector<MeshVertex> m_Vertices;
 		std::vector<uint32_t> m_Indices;

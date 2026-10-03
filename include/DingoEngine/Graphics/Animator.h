@@ -18,7 +18,8 @@ namespace Dingo
 	// One crossing of a clip event's mark, as Animator::GetEventsThisFrame reports it.
 	struct AnimationEvent
 	{
-		// Points into the clip's AnimationClip::GetEvents().
+		// Kept for the life of the program, so it outlives the clip's events changing or its model
+		// reloading.
 		std::string_view Name;
 		// Where the mark sits on the clip, in seconds.
 		float Time = 0.0f;
@@ -227,13 +228,14 @@ namespace Dingo
 			bool           Returning = false;
 		};
 
-		// The name is kept to tell whether the clip's events changed under the range (a reload), in
-		// which case it closes without a RangeEnd.
+		// Name and end are kept so the range still closes with its RangeEnd after the clip's events
+		// changed under it (a reload) and the event is gone.
 		struct OpenRange
 		{
 			const AnimationClip* Clip = nullptr;
 			uint32_t Event = 0;
-			std::string Name;
+			std::string_view Name;
+			float EndTime = 0.0f;
 		};
 
 		struct Layer
@@ -252,6 +254,7 @@ namespace Dingo
 			// The dominant contribution events came from in the last Update, and its open ranges.
 			uint32_t EventSerial = 0;
 			const AnimationClip* EventClip = nullptr;
+			uint64_t EventRevision = 0;
 			std::vector<OpenRange> OpenRanges;
 			// Set by a seek of the leading state: its open ranges end at the next Update.
 			bool CloseRangesOnUpdate = false;
@@ -276,6 +279,8 @@ namespace Dingo
 		void   Sample(const Layer& layer, PlayingState& state, std::span<const JointPose> underneath, std::span<JointPose> out);
 		void   SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out);
 		void   ResetToRest();
+		// Takes up a model reload's new rest pose for the same joints.
+		void   SyncSkeleton();
 		void   MarkSeek(uint32_t layer);
 
 		void   CollectEvents(uint32_t layerIndex, Layer& layer);
@@ -302,6 +307,7 @@ namespace Dingo
 		};
 
 		const Skeleton* m_Skeleton = nullptr;
+		uint32_t m_SkeletonRevision = 0;
 		std::vector<Layer> m_Layers;
 		std::unordered_map<std::string, float, NameHash, std::equal_to<>> m_Parameters;
 		std::unordered_map<uint64_t, ClipBinding> m_Bindings; // by AnimationClip::GetId()

@@ -94,6 +94,15 @@ namespace Dingo
 			return !state.GetClip() && !state.IsBlend();
 		}
 
+		// Three key cursors (translation, rotation, scale) per channel of each clip in the state.
+		size_t CursorCount(const AnimationState& state)
+		{
+			size_t count = state.GetClip() ? state.GetClip()->GetChannels().size() * 3 : 0;
+			for (const BlendPoint& point : state.GetPoints())
+				count += point.Clip ? point.Clip->GetChannels().size() * 3 : 0;
+			return count;
+		}
+
 	}
 
 	AnimationState AnimationState::Clip(const AnimationClip* clip)
@@ -143,6 +152,7 @@ namespace Dingo
 	void Animator::ResetToRest()
 	{
 		m_RestPoses.clear();
+		m_SkeletonRevision = m_Skeleton ? m_Skeleton->GetRevision() : 0;
 		if (m_Skeleton)
 		{
 			for (const Joint& joint : m_Skeleton->GetJoints())
@@ -170,6 +180,18 @@ namespace Dingo
 			if (m_Skeleton)
 				ResolveMask(layer);
 		}
+	}
+
+	void Animator::SyncSkeleton()
+	{
+		if (m_Skeleton->GetRevision() == m_SkeletonRevision)
+			return;
+
+		// Retargeting offsets come from the rest pose, so every binding is made again.
+		m_SkeletonRevision = m_Skeleton->GetRevision();
+		m_Bindings.clear();
+		for (uint32_t i = 0; i < m_RestPoses.size(); ++i)
+			m_RestPoses[i] = m_Skeleton->GetJoint(i).RestPose;
 	}
 
 	Animator::Layer& Animator::EnsureLayer(uint32_t index)
@@ -264,25 +286,20 @@ namespace Dingo
 			m_NextSerial = 1;
 		playing.Direction = state.GetSpeed() < 0.0f ? -1.0f : 1.0f;
 
-		size_t cursors = 0;
 		if (const AnimationClip* clip = state.GetClip())
 		{
 			Bind(*clip);
-			cursors = clip->GetChannels().size() * 3;
 			playing.Time = state.GetSpeed() < 0.0f ? clip->GetDuration() : 0.0f;
 		}
 		for (const BlendPoint& point : state.GetPoints())
 		{
 			if (point.Clip)
-			{
 				Bind(*point.Clip);
-				cursors += point.Clip->GetChannels().size() * 3;
-			}
 		}
 		if (state.IsBlend() && state.GetSpeed() < 0.0f)
 			playing.Time = 1.0f;
 
-		playing.Cursors.assign(cursors, 0);
+		playing.Cursors.assign(CursorCount(state), 0);
 		return playing;
 	}
 
@@ -519,6 +536,11 @@ namespace Dingo
 
 	void Animator::Advance(PlayingState& state, float deltaTime) const
 	{
+		// A reload shortened the clip under the state: it goes on from the same point of the new loop
+		// instead of lapping through every mark in one step.
+		if (!state.State.IsBlend() && state.Time > ClipDuration(state.State.GetClip()))
+			state.Time = Wrap(state, state.Time);
+
 		state.PreviousTime = state.Time;
 		state.Wrapped = false;
 		if (state.Frozen || IsTransparent(state.State))
@@ -556,6 +578,7 @@ namespace Dingo
 		if (!m_Skeleton)
 			return;
 
+		SyncSkeleton();
 		m_Events.clear();
 		for (size_t i = 0; i < m_Layers.size(); ++i)
 		{
@@ -672,10 +695,25 @@ namespace Dingo
 			CloseRanges(layerIndex, layer);
 			layer.EventSerial = serial;
 			layer.EventClip = clip;
+			layer.EventRevision = clip ? clip->GetEventRevision() : 0;
 		}
 
 		if (!clip)
 			return;
+
+		// The clip's events changed under it (a reload, ClearEvents): a range whose event is gone ends now.
+		if (clip->GetEventRevision() != layer.EventRevision)
+		{
+			layer.EventRevision = clip->GetEventRevision();
+			const std::vector<AnimationClipEvent>& events = clip->GetEvents();
+			std::erase_if(layer.OpenRanges, [&](const OpenRange& range)
+			{
+				const bool kept = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name;
+				if (!kept)
+					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
+				return !kept;
+			});
+		}
 
 		const bool forward = dominant->Direction >= 0.0f;
 		float from = dominant->PreviousTime * timeScale;
@@ -752,16 +790,17 @@ namespace Dingo
 		if (!forward && type != AnimationEventType::Instant)
 			type = type == AnimationEventType::RangeBegin ? AnimationEventType::RangeEnd : AnimationEventType::RangeBegin;
 
-		const AnimationClipEvent& event = clip.GetEvents()[mark.Event];
+		// Names are interned, so the same name is the same pointer.
 		const auto open = std::find_if(layer.OpenRanges.begin(), layer.OpenRanges.end(), [&](const OpenRange& range)
 		{
-			return range.Clip == &clip && range.Event == mark.Event;
+			return range.Clip == &clip && range.Event == mark.Event && range.Name.data() == mark.Name.data();
 		});
 		if (type == AnimationEventType::RangeBegin)
 		{
 			if (open != layer.OpenRanges.end())
 				return;
-			layer.OpenRanges.push_back({ &clip, mark.Event, event.Name });
+			const AnimationClipEvent& event = clip.GetEvents()[mark.Event];
+			layer.OpenRanges.push_back({ &clip, mark.Event, mark.Name, forward ? event.EndTime : event.Time });
 		}
 		else if (type == AnimationEventType::RangeEnd)
 		{
@@ -770,17 +809,13 @@ namespace Dingo
 			layer.OpenRanges.erase(open);
 		}
 
-		m_Events.push_back({ event.Name, mark.Time, type, &clip, layerIndex });
+		m_Events.push_back({ mark.Name, mark.Time, type, &clip, layerIndex });
 	}
 
 	void Animator::CloseRanges(uint32_t layerIndex, Layer& layer)
 	{
 		for (const OpenRange& range : layer.OpenRanges)
-		{
-			const std::vector<AnimationClipEvent>& events = range.Clip->GetEvents();
-			if (range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name)
-				m_Events.push_back({ events[range.Event].Name, events[range.Event].EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
-		}
+			m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
 		layer.OpenRanges.clear();
 	}
 
@@ -808,6 +843,7 @@ namespace Dingo
 		if (!m_Skeleton)
 			return;
 
+		SyncSkeleton();
 		EvaluateLayer(m_Layers.front(), m_RestPoses, m_LocalPoses);
 		m_UpperLayersApplied = false;
 
@@ -866,6 +902,11 @@ namespace Dingo
 		// Joints the clip leaves alone keep the pose from below.
 		std::copy(underneath.begin(), underneath.end(), out.begin());
 
+		// A model reload can change a playing clip's channels. Cursors are only search hints.
+		const size_t cursorCount = CursorCount(state.State);
+		if (state.Cursors.size() != cursorCount)
+			state.Cursors.assign(cursorCount, 0);
+
 		if (!state.State.IsBlend())
 		{
 			if (const AnimationClip* clip = state.State.GetClip())
@@ -895,7 +936,7 @@ namespace Dingo
 
 	void Animator::SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out)
 	{
-		const ClipBinding& clipBinding = m_Bindings.find(clip.GetId())->second;
+		const ClipBinding& clipBinding = Bind(clip);
 		const std::vector<AnimationChannel>& channels = clip.GetChannels();
 		for (size_t c = 0; c < channels.size(); ++c)
 		{

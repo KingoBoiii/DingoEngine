@@ -104,7 +104,7 @@ namespace Dingo::UI
 	// widgets: it drives the manager (AssetManager::Reload / LoadAsync and
 	// SetHotReloadEnabled), so treat it as a development tool. Deliberately offers no
 	// Unload: that frees the object, and game code legitimately caches the pointers it
-	// was handed -- Reload refreshes textures and shaders in place instead.
+	// was handed -- Reload refreshes textures, shaders and models in place instead.
 	void AssetRegistrySection();
 
 	// A window composing the two asset sections above.

@@ -51,9 +51,17 @@ namespace Dingo
 
 					const Skeleton& skeleton = *model.GetSkeleton();
 					if (runtime->SkeletonId == skeleton.GetId())
+					{
+						if (runtime->ModelGeneration != model.GetGeneration())
+						{
+							runtime->ModelGeneration = model.GetGeneration();
+							runtime->Instance->Evaluate();
+						}
 						return *runtime->Instance;
+					}
 
 					runtime->SkeletonId = skeleton.GetId();
+					runtime->ModelGeneration = model.GetGeneration();
 					runtime->Instance->SetSkeleton(&skeleton);
 
 					const AnimatorComponent& settings = registry.get<AnimatorComponent>(handle);

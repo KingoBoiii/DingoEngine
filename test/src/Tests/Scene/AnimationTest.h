@@ -24,6 +24,9 @@ namespace Dingo
 	// --anim-phase=F (blend: freeze at that fraction of the cycle), --anim-count=N (crowd size,
 	// default 64), --anim-static (draw the crowd through MeshRendererComponent instead). Time the
 	// crowd with the test app's --no-vsync.
+	//
+	// --anim=clip --anim-reload plays a managed copy of the Fox with hot-reload on, and edits it on
+	// disk: after 1 s Walk and Run trade names, then Fox.events gains a mark. Each reload is a check.
 	class AnimationTest : public GraphicsTest
 	{
 	public:
@@ -49,6 +52,8 @@ namespace Dingo
 		void RunEventChecks();
 		void RecordEvent(Entity fox, const AnimationEvent& event);
 		void RunSceneChecks();
+		void RunReloadChecks();
+		void UpdateLiveReload();
 		void RunDrawChecks(const Renderer3D::Statistics& stats);
 		void BuildScene();
 		void DestroyScene();
@@ -95,6 +100,17 @@ namespace Dingo
 		};
 		std::vector<LoggedEvent> m_EventLog;
 		std::vector<glm::vec3> m_Footprints;
+
+		// --anim-reload: the Fox is a managed copy, edited on disk while it plays.
+		bool        m_LiveReload = false;
+		AssetHandle m_FoxAsset = k_InvalidAsset;
+		bool        m_HotReloadWas = false;
+		uint32_t    m_ReloadStep = 0;
+		uint32_t    m_ReloadGeneration = 0;
+		float       m_ReloadStart = 0.0f;
+		float       m_RunDuration = 0.0f;
+		uint64_t    m_ReloadMeshId = 0;
+		std::vector<JointPose> m_RunPose;
 
 		bool m_ArgsRead = false;
 		bool m_DrawChecksDone = false;

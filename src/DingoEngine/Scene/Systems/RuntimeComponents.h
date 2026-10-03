@@ -54,6 +54,8 @@ namespace Dingo
 			// Skeleton::GetId() of the model it was bound for, so a swapped or reloaded model rebinds
 			// even at a freed one's address; 0 = none.
 			uint64_t SkeletonId = 0;
+			// Model::GetGeneration() it last posed for, so a paused animator shows a reload's keys.
+			uint32_t ModelGeneration = 0;
 		};
 
 	}

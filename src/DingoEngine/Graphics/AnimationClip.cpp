@@ -3,9 +3,36 @@
 
 #include <algorithm>
 #include <atomic>
+#include <mutex>
+#include <unordered_set>
 
 namespace Dingo
 {
+
+	namespace
+	{
+
+		struct NameHash
+		{
+			using is_transparent = void;
+			size_t operator()(std::string_view name) const { return std::hash<std::string_view>{}(name); }
+		};
+
+		// Never freed: events copied out of an Animator (a scene holds some for a frame) and events
+		// from before a reload keep naming them.
+		std::string_view InternEventName(std::string_view name)
+		{
+			static std::mutex s_Mutex;
+			static auto* s_Names = new std::unordered_set<std::string, NameHash, std::equal_to<>>();
+
+			std::lock_guard lock(s_Mutex);
+			auto it = s_Names->find(name);
+			if (it == s_Names->end())
+				it = s_Names->emplace(name).first;
+			return *it;
+		}
+
+	}
 
 	uint64_t AnimationClip::AllocateId()
 	{
@@ -36,21 +63,43 @@ namespace Dingo
 	{
 		m_Events.clear();
 		m_EventMarks.clear();
+		m_EventRevision = AllocateId();
+	}
+
+	void AnimationClip::Reinitialize(AnimationClip& source, const Skeleton* sourceSkeleton)
+	{
+		m_Id = AllocateId();
+		m_Duration = source.m_Duration;
+		m_Channels = std::move(source.m_Channels);
+		m_SourceSkeleton = sourceSkeleton;
+		m_Events = std::move(source.m_Events);
+		m_EventMarks = std::move(source.m_EventMarks);
+		m_EventRevision = AllocateId();
+	}
+
+	void AnimationClip::Clear()
+	{
+		m_Id = AllocateId();
+		m_Duration = 0.0f;
+		m_Channels.clear();
+		ClearEvents();
 	}
 
 	void AnimationClip::RebuildEventMarks()
 	{
 		m_EventMarks.clear();
+		m_EventRevision = AllocateId();
 		for (uint32_t i = 0; i < m_Events.size(); ++i)
 		{
 			const AnimationClipEvent& event = m_Events[i];
+			const std::string_view name = InternEventName(event.Name);
 			if (!event.Range)
 			{
-				m_EventMarks.push_back({ event.Time, i, AnimationEventType::Instant });
+				m_EventMarks.push_back({ event.Time, i, AnimationEventType::Instant, name });
 				continue;
 			}
-			m_EventMarks.push_back({ event.Time, i, AnimationEventType::RangeBegin });
-			m_EventMarks.push_back({ event.EndTime, i, AnimationEventType::RangeEnd });
+			m_EventMarks.push_back({ event.Time, i, AnimationEventType::RangeBegin, name });
+			m_EventMarks.push_back({ event.EndTime, i, AnimationEventType::RangeEnd, name });
 		}
 
 		// A range of zero length sits with the instants, its start before its end.

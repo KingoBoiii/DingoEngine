@@ -48,6 +48,10 @@ namespace Dingo
 		// Never reused, so an animator bound to a freed skeleton can tell that a new one at the same
 		// address is not the same.
 		uint64_t GetId() const { return m_Id; }
+		// Bumped by every model reload that keeps the joints (names and parents), which may bring new
+		// rest poses and inverse binds; the id stays, so animators keep playing and pick them up at
+		// their next update.
+		uint32_t GetRevision() const { return m_Revision; }
 
 		uint32_t                  GetJointCount() const { return static_cast<uint32_t>(m_Joints.size()); }
 		const std::vector<Joint>& GetJoints()     const { return m_Joints; }
@@ -80,6 +84,11 @@ namespace Dingo
 	private:
 		static uint64_t AllocateId();
 
+		// Takes the source's joints, which must match these by name and parent.
+		void Reinitialize(Skeleton& source);
+
+		friend class Model;
+
 		struct NameHash
 		{
 			using is_transparent = void;
@@ -87,6 +96,7 @@ namespace Dingo
 		};
 
 		uint64_t m_Id = AllocateId();
+		uint32_t m_Revision = 0;
 		std::vector<Joint> m_Joints;
 		std::unordered_map<std::string, int32_t, NameHash, std::equal_to<>> m_JointIndices;
 		glm::mat4 m_RootTransform{ 1.0f };

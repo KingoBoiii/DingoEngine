@@ -50,6 +50,17 @@ namespace Dingo
 		ComputeSkinningPalette(m_RestGlobals, m_RestPalette);
 	}
 
+	void Skeleton::Reinitialize(Skeleton& source)
+	{
+		m_Joints = std::move(source.m_Joints);
+		m_JointIndices = std::move(source.m_JointIndices);
+		m_RootTransform = source.m_RootTransform;
+		m_SkinJointCount = source.m_SkinJointCount;
+		m_RestGlobals = std::move(source.m_RestGlobals);
+		m_RestPalette = std::move(source.m_RestPalette);
+		++m_Revision;
+	}
+
 	int32_t Skeleton::FindJoint(std::string_view name) const
 	{
 		auto it = m_JointIndices.find(name);

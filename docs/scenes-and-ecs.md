@@ -449,7 +449,11 @@ class Fighter : public ScriptableEntity
   closes in one go. Played backwards, a range opens at its end. A seek (`SetTime`) closes the
   layer's open ranges and counts the new time as a start, so `SetTime(0)` replays a swing in full;
   seeking into the middle of a range opens nothing. `Evaluate()` poses the animator after a seek
-  without firing anything.
+  without firing anything. A range that opened always gets its `RangeEnd`: when the clip's events
+  change while it is open (`ClearEvents`, or a model reload that drops or renames it), it ends at
+  the next `Update`.
+- **Names** stay valid for the life of the program: an `AnimationEvent::Name` you keep outlives the
+  clip's events changing and a model reload.
 
 ### Joints as parents (v0.8)
 
