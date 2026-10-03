@@ -31,6 +31,58 @@ namespace
 	constexpr float k_HatSize = 10.0f;
 	const glm::vec3 k_HatOffset{ 2.0f, 20.0f, 0.0f };
 
+	// A custom skinned shader, as docs/animation.md describes one.
+	constexpr const char* k_GhostShader = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 3) in uvec4 a_Joints;
+layout(location = 4) in vec4 a_Weights;
+
+layout(std140, binding = 0) uniform CameraData
+{
+    mat4 ViewProjection;
+    vec4 LightDirection;
+    vec4 Ambient;
+};
+
+layout(std140, binding = 2) uniform SkinData
+{
+    mat4 Model;
+    mat4 NormalMatrix;
+    vec4 Color;
+    mat4 Joints[128];
+};
+
+layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec3 v_Normal;
+layout(location = 2) out vec2 v_TexCoord;
+
+void main()
+{
+    mat4 skin = a_Weights.x * Joints[a_Joints.x] + a_Weights.y * Joints[a_Joints.y]
+              + a_Weights.z * Joints[a_Joints.z] + a_Weights.w * Joints[a_Joints.w];
+    gl_Position = ViewProjection * Model * skin * vec4(a_Position, 1.0);
+    v_Color = Color;
+    v_Normal = mat3(NormalMatrix) * a_Normal;
+    v_TexCoord = a_TexCoord;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+    o_Color = v_Color;
+}
+)";
+
 	double Milliseconds(Clock::time_point from, Clock::time_point to)
 	{
 		return std::chrono::duration<double, std::milli>(to - from).count();
@@ -217,6 +269,7 @@ namespace Dingo
 	{
 		m_Checks.clear();
 		m_DrawChecksDone = false;
+		m_SkinnedMaterialChecked = false;
 		m_Time = 0.0f;
 		m_TimedFrames = 0;
 		m_FrameMs = m_UpdateMs = m_RenderMs = m_EndSceneMs = 0.0;
@@ -1548,9 +1601,35 @@ namespace Dingo
 		DE_INFO("[Anim] {}", m_TimingResult);
 	}
 
+	void AnimationTest::RunSkinnedMaterialCheck(Renderer3D& renderer)
+	{
+		m_SkinnedMaterialChecked = true;
+		const SubMesh* skinned = m_Fox ? FindSkinnedSubMesh(*m_Fox) : nullptr;
+		m_GhostShader = Shader::Create(ShaderParams().SetName("AnimationTestGhost").SetSourceCode(k_GhostShader).AddDefine("DE_SKINNED"));
+		if (!skinned || !m_GhostShader || !m_GhostShader->IsValid())
+		{
+			Check(false, "the custom skinned shader compiles");
+			return;
+		}
+		m_Ghost = Material::Create(MaterialParams().SetShader(m_GhostShader).SetCullMode(CullMode::None).SetDebugName("Ghost"));
+
+		// Its own scene, which the frame's scene clears away.
+		renderer.BeginScene(m_Camera);
+		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_Ghost);
+		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), m_Fox->GetSkeleton()->GetRestPalette(), glm::vec4(1.0f), m_Ghost);
+		renderer.EndScene();
+
+		const Renderer3D::Statistics& stats = renderer.GetStatistics();
+		Check(stats.SkinnedDraws == 1 && stats.SubmittedMeshes == 2 && stats.DrawCalls == 2,
+			"a custom skinned material skins the Fox, and a static box given it draws with the default material instead of a pipeline its vertex stage can't take");
+	}
+
 	void AnimationTest::Update(float deltaTime)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		if (!m_SkinnedMaterialChecked && m_Scene)
+			RunSkinnedMaterialCheck(renderer);
+
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
 		if (!m_Scene)
@@ -1601,6 +1680,8 @@ namespace Dingo
 	{
 		DestroyScene();
 		DestroyAndDelete(m_FoxMaterial);
+		DestroyAndDelete(m_Ghost);
+		DestroyAndDelete(m_GhostShader);
 		if (m_FoxAsset != k_InvalidAsset)
 		{
 			const std::filesystem::path folder = m_Fox ? m_Fox->GetFilePath().parent_path() : std::filesystem::path();

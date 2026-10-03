@@ -811,12 +811,32 @@ namespace Dingo
 			return;
 
 		Material* batchMaterial = material ? material : m_Material;
-		MaterialBatch& matBatch = m_Batches[batchMaterial];
-		if (!matBatch.Enqueued)
+		MaterialBatch* batch = &m_Batches[batchMaterial];
+		if (!batch->Enqueued)
 		{
-			matBatch.Enqueued = true;
-			m_DrawOrder.push_back(batchMaterial);
+			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
+			const Shader* shader = batchMaterial->GetShader();
+			batch->Enqueued = true;
+			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
+			if (!batch->SkinnedOnly)
+				m_DrawOrder.push_back(batchMaterial);
+			else if (!m_SkinnedOnlyWarned)
+			{
+				const std::string& name = batchMaterial->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: material '{}' has a skinned shader, so the static meshes given it draw with the default material.", name.empty() ? "<unnamed>" : name.c_str());
+				m_SkinnedOnlyWarned = true;
+			}
 		}
+		if (batch->SkinnedOnly)
+		{
+			batch = &m_Batches[m_Material];
+			if (!batch->Enqueued)
+			{
+				batch->Enqueued = true;
+				m_DrawOrder.push_back(m_Material);
+			}
+		}
+		MaterialBatch& matBatch = *batch;
 
 		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();

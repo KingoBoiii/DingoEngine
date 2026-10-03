@@ -62,6 +62,7 @@ namespace Dingo
 		void DestroyScene();
 		void SubmitPosedFox(Renderer3D& renderer);
 		void SubmitSkeleton(Renderer3D& renderer);
+		void RunSkinnedMaterialCheck(Renderer3D& renderer);
 		bool SkeletonShown() const { return m_ShowSkeleton && m_Mode != Mode::Crowd && m_Mode != Mode::Pose; }
 		void TrackTiming(float deltaTime, double updateMs, double renderMs, double endSceneMs);
 
@@ -75,6 +76,9 @@ namespace Dingo
 
 		Model*    m_Fox = nullptr;
 		Material* m_FoxMaterial = nullptr;
+		Shader*   m_GhostShader = nullptr;
+		Material* m_Ghost = nullptr;
+		bool      m_SkinnedMaterialChecked = false;
 		Scene*    m_Scene = nullptr;
 
 		Mode        m_Mode = Mode::Bind;

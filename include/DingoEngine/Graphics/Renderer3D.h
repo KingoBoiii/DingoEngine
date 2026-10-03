@@ -323,7 +323,9 @@ namespace Dingo
 		{
 			std::vector<MeshChunk> Chunks;
 			uint32_t ChunksInUse = 0;
-			bool Enqueued = false; // already in m_DrawOrder for the scene in progress
+			bool Enqueued = false; // checked and, unless SkinnedOnly, in m_DrawOrder for the scene in progress
+			// Its shader skins (has a SkinData block), so its meshes draw with the default material instead.
+			bool SkinnedOnly = false;
 			uint32_t IdleScenes = 0;
 		};
 		std::unordered_map<Material*, MaterialBatch> m_Batches;
@@ -411,6 +413,7 @@ namespace Dingo
 		uint32_t m_SkinnedInstancesThisFrame = 0;
 		bool m_SkinnedBudgetWarned = false;
 		bool m_SkinFallbackWarned = false;
+		bool m_SkinnedOnlyWarned = false;
 		bool m_SkinMaterialWarned = false;
 	};
 
