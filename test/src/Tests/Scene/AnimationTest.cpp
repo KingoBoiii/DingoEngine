@@ -728,9 +728,12 @@ namespace Dingo
 
 			animator.PlayOneShot(run, 0.1f, 0.2f);
 			animator.Play(survey, 0.1f);
+			const bool cancelledAtOnce = !animator.IsOneShotPlaying();
+			// Walk is the state the one-shot would have returned to: a pending return would swallow it.
+			animator.Play(walk, 0.1f);
 			for (int step = 0; step < 30; ++step)
 				animator.Update(0.05f);
-			Check(animator.GetCurrentClip() == survey, "a Play during a one-shot cancels its return");
+			Check(cancelledAtOnce && animator.GetCurrentClip() == walk, "a Play during a one-shot cancels its return at once, so the interrupted clip plays again in the same frame");
 		}
 		{
 			Animator animator(&skeleton);
@@ -1129,7 +1132,10 @@ namespace Dingo
 		const bool imageSaved = model->Reload();
 		Check(mesh->GetId() != meshId && walk->GetId() != walkId && imageKept && imageSaved && diffuse->GetGeneration() != textureGeneration,
 			"and gives the meshes and clips new ids, re-reading the texture in place only once its image is saved again");
-		Check(heldName == "step_fl", "an event name read before a reload still reads the same after it");
+		animator.SetTime(0.25f);
+		animator.Update(0.05f);
+		const std::string_view freshName = animator.GetEventsThisFrame().empty() ? std::string_view() : animator.GetEventsThisFrame().front().Name;
+		Check(heldName == "step_fl" && heldName.data() == freshName.data(), "an event name read before a reload still reads the same after it: one interned string");
 
 		const AnimationClip* foxRun = m_Fox->FindAnimation("Run");
 		const std::vector<JointPose> runPose = PoseAt(*m_Fox->GetSkeleton(), foxRun, 0.5f);
