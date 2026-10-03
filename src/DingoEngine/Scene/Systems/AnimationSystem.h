@@ -67,6 +67,12 @@ namespace Dingo
 			// Created on first use; nullptr without an AnimatorComponent and a skinned model.
 			Animator* GetAnimator(entt::registry& registry, entt::entity handle);
 
+			// Make the animators bodies may hang from before they are built, so a body on a joint
+			// starts at DefaultClip's first frame rather than the rest pose: every entity's, and the
+			// entity's ancestors' for a body built at runtime.
+			void EnsureAnimators(entt::registry& registry);
+			void EnsureAncestorAnimators(entt::registry& registry, entt::entity handle);
+
 			// The palette to draw `skeleton` with: the entity's animator's while it is bound to that
 			// skeleton, else the rest palette.
 			std::span<const glm::mat4> Palette(const entt::registry& registry, entt::entity handle, const Skeleton& skeleton);

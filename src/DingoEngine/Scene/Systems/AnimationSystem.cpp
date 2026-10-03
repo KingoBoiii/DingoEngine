@@ -179,6 +179,23 @@ namespace Dingo
 				return &EnsureAnimator(registry, handle, *skinned->Model);
 			}
 
+			void EnsureAnimators(entt::registry& registry)
+			{
+				auto view = registry.view<AnimatorComponent, SkinnedMeshRendererComponent>();
+				for (entt::entity handle : view)
+				{
+					const Model* model = view.get<SkinnedMeshRendererComponent>(handle).Model;
+					if (model && model->GetSkeleton())
+						EnsureAnimator(registry, handle, *model);
+				}
+			}
+
+			void EnsureAncestorAnimators(entt::registry& registry, entt::entity handle)
+			{
+				for (entt::entity parent = HierarchySystem::GetParent(registry, handle); parent != entt::null; parent = HierarchySystem::GetParent(registry, parent))
+					GetAnimator(registry, parent);
+			}
+
 			std::span<const glm::mat4> Palette(const entt::registry& registry, entt::entity handle, const Skeleton& skeleton)
 			{
 				const Animator* animator = BoundAnimator(registry, handle, skeleton);

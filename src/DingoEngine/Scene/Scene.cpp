@@ -523,6 +523,7 @@ namespace Dingo
 
 	void Scene::OnPhysicsStart()
 	{
+		Internal::AnimationSystem::EnsureAnimators(m_Data->Registry);
 		m_Data->Physics.Start(m_Data->Registry, m_Gravity, m_Gravity3D);
 	}
 
@@ -551,6 +552,7 @@ namespace Dingo
 		if (!entity)
 			return;
 
+		Internal::AnimationSystem::EnsureAncestorAnimators(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 		m_Data->Physics.CreateBodiesForEntity(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 

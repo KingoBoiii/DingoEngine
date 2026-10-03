@@ -1385,6 +1385,34 @@ namespace Dingo
 		Animator* fresh = scene.GetAnimator(fox);
 		Check(freed && fresh && fresh->GetCurrentClip() == run && fresh->GetTime() == 0.0f,
 			"removing the AnimatorComponent frees its animator, and a new one starts on its own DefaultClip");
+
+		{
+			// Nothing asks for the animator before the bodies are built.
+			Scene baked("Animation checks: bake");
+			Entity walker = baked.CreateEntity("Fox");
+			walker.AddComponent<Transform3DComponent>(Transform3DComponent({ 2.0f, 0.0f, -1.0f }, glm::vec3(m_FoxScale)));
+			walker.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			walker.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+			Entity guard = baked.CreateEntity("Guard");
+			guard.AddComponent<Transform3DComponent>(Transform3DComponent(k_HatOffset, glm::vec3(k_HatSize)));
+			guard.AddComponent<RigidBody3DComponent>().Type = BodyType3D::Kinematic;
+			guard.SetParent(walker, k_HatJoint, false);
+			baked.OnStart();
+
+			Animator firstFrame(m_Fox->GetSkeleton());
+			firstFrame.Play(walk);
+			firstFrame.Evaluate();
+			const glm::mat4 guardLocal = guard.GetComponent<Transform3DComponent>().GetTransform();
+			const Skeleton& skeleton = *m_Fox->GetSkeleton();
+			const glm::vec3 walking(walker.GetWorldTransform() * SocketFrame(firstFrame.GetJointTransform(head)) * guardLocal[3]);
+			const glm::vec3 resting(walker.GetWorldTransform() * SocketFrame(skeleton.GetRootTransform() * skeleton.GetRestGlobalTransforms()[head]) * guardLocal[3]);
+			Physics3D* physics = baked.GetPhysics3D();
+			const glm::vec3 body = physics ? physics->GetPosition(baked.GetRuntimeBody3D(guard)) : glm::vec3(1e9f);
+			const float gap = glm::length(body - walking);
+			Check(gap < 1e-4f && glm::length(walking - resting) > 1e-3f,
+				std::format("a body on a joint is built at DefaultClip's first frame, not the rest pose (off by {:.1e})", gap));
+			baked.OnStop();
+		}
 	}
 
 	void AnimationTest::BuildScene()
