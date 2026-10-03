@@ -534,6 +534,10 @@ if (animator->IsOneShotPlaying())
   way back**: the new state simply plays. `Stop` always cancels it, even over a layer that was empty.
 - Another `PlayOneShot` restarts it and keeps the first's way back. A null clip does nothing.
 - A one-shot does not loop, so its [events](#events) catch up from its start.
+- **Marks near the end do not fire.** The way back takes the events over when it starts, `fadeOut`
+  seconds before the clip ends, so a `done` mark in that last stretch is lost. Put end marks before
+  `duration − fadeOut`, or pass a `fadeOut` of 0. A one-shot shorter than `fadeOut` plus half its
+  `fadeIn` never leads, so none of its marks fire.
 
 ## Events
 
@@ -647,13 +651,15 @@ What that guarantees:
 ### Crossing rules
 
 - A mark fires when playback crosses it, after the previous update's time and up to this one's. A
-  loop's wrap counts: a step longer than the clip fires what it passed on the way round, but no more
-  than one lap's worth, however many laps it made (a scene caps its step at 4/60 s). A state's start
-  counts on its first `Update`, so a mark at time 0 fires; a mark at a one-shot's very end fires too.
+  loop's wrap counts: a step that wraps fires from the old time to the clip's end, then from its
+  start to the new time. A step of more than one lap fires a mark at most twice (a scene caps its
+  step at 4/60 s). A state's start counts on its first `Update`, so a mark at time 0 fires. A mark
+  at a one-shot's very end fires when its `fadeOut` is 0 ([One-shots](#one-shots)).
 - Played backwards, a range opens at its end and closes at its start.
-- A seek (`SetTime`, `SetNormalizedTime`) closes the layer's open ranges at the next `Update` and
-  counts the new time as a start, so `SetTime(0)` replays a swing in full. Seeking into the middle of
-  a range opens nothing. `Evaluate()` poses the animator after a seek without firing anything.
+- A seek (`SetTime`, `SetNormalizedTime`) counts the new time as a start, so `SetTime(0)` replays a
+  swing in full, and seeking into the middle of a range opens nothing. When the seeked state is the
+  one firing the layer's events, its open ranges close at the next `Update`. `Evaluate()` poses the
+  animator after a seek without firing anything.
 
 ### Ranges
 

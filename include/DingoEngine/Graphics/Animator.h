@@ -185,8 +185,9 @@ namespace Dingo
 		// doesn't loop (a one-shot) also catches up from its start when it takes over, so a fade-in
 		// doesn't swallow its first marks; a looping one doesn't, so a cross-fade never repeats
 		// footsteps. A range ends early when its clip stops being dominant, so a cancelled swing
-		// still closes its hitbox. A seek (SetTime) ends the layer's open ranges and counts its new
-		// time as a start; an end without its start fires nothing.
+		// still closes its hitbox. A seek (SetTime) counts its new time as a start, and ends the open
+		// ranges when the seeked state leads; an end without its start fires nothing. A one-shot's
+		// marks in its last fadeOut seconds don't fire: its way back has taken the events over.
 		std::span<const AnimationEvent> GetEventsThisFrame() const { return m_Events; }
 		// fn must not Update this animator.
 		void ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const;
