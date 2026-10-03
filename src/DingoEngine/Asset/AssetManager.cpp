@@ -460,6 +460,7 @@ namespace Dingo
 		watch.Path = (*policy.Companion)(metadata);
 		watch.LastWriteTime = Utils::ReadWriteTime(watch.Path);
 		watch.PendingWriteTime = {};
+		watch.Pending = false;
 	}
 
 	static bool CompanionChanged(AssetManagerData& data, AssetHandle handle)
@@ -468,9 +469,25 @@ namespace Dingo
 		if (it == data.Companions.end())
 			return false;
 
-		// A missing file reads as the epoch, so adding or deleting one counts as a change.
+		// A missing file reads as the epoch, so adding or deleting one counts as a change. Like any other,
+		// it must be seen twice: an editor that saves by delete and rename is caught in the gap.
 		CompanionWatch& watch = it->second;
-		return Utils::ConsumeSettledStamp(Utils::ReadWriteTime(watch.Path), watch.LastWriteTime, watch.PendingWriteTime);
+		const std::filesystem::file_time_type writeTime = Utils::ReadWriteTime(watch.Path);
+		if (writeTime == watch.LastWriteTime)
+		{
+			watch.Pending = false;
+			return false;
+		}
+		if (!watch.Pending || watch.PendingWriteTime != writeTime)
+		{
+			watch.Pending = true;
+			watch.PendingWriteTime = writeTime;
+			return false;
+		}
+
+		watch.Pending = false;
+		watch.LastWriteTime = writeTime;
+		return true;
 	}
 
 	static bool LoadInternal(AssetManagerData& data, AssetMetadata& metadata)

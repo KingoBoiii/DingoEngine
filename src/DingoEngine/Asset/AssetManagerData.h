@@ -66,6 +66,8 @@ namespace Dingo
 			std::filesystem::path Path;
 			std::filesystem::file_time_type LastWriteTime{};
 			std::filesystem::file_time_type PendingWriteTime{};
+			// Separate from PendingWriteTime because a missing file reads as the epoch, the same as "none".
+			bool Pending = false;
 		};
 
 		struct AssetManagerData
