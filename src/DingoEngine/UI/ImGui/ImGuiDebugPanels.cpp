@@ -10,6 +10,8 @@
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Audio/AudioEngine.h"
 #include "DingoEngine/Asset/AssetManager.h"
+#include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Scene/AnimationDebug.h"
 #include "DingoEngine/Version.h"
 #include "DingoEngine/BuildInfo.h"
 
@@ -30,7 +32,7 @@ namespace Dingo::UI
 	namespace
 	{
 		// "label  [=====      ] used / capacity" — a labelled usage bar for a
-		// per-scene budget. ImGui tints the fill.
+		// budget. ImGui tints the fill.
 		void BudgetBar(const char* label, uint32_t used, uint32_t capacity)
 		{
 			const float fraction = capacity > 0 ? static_cast<float>(used) / static_cast<float>(capacity) : 0.0f;
@@ -108,6 +110,51 @@ namespace Dingo::UI
 
 			return s_Sorted;
 		}
+
+		constexpr size_t k_MaxAnimatorsShown = 16;
+
+		const char* ClipName(const AnimationClip& clip)
+		{
+			return clip.GetName().empty() ? "(unnamed)" : clip.GetName().c_str();
+		}
+
+		std::string StateLabel(const Animator& animator, const AnimatorStateInfo& state, uint32_t layer)
+		{
+			std::string label;
+			if (state.Frozen)
+			{
+				label = "(frozen)";
+			}
+			else if (state.Blend)
+			{
+				label = std::format("Blend1D {} = {:.2f}", state.Parameter, animator.GetFloat(state.Parameter));
+				if (state.Clip)
+					label += std::format("  [{}]", ClipName(*state.Clip));
+			}
+			else if (state.Clip)
+			{
+				label = ClipName(*state.Clip);
+			}
+			else
+			{
+				label = layer == 0 ? "(rest pose)" : "(below)";
+			}
+
+			if (!state.Looping)
+				label += "  (once)";
+			return label;
+		}
+
+		const char* EventTypeName(AnimationEventType type)
+		{
+			switch (type)
+			{
+				case AnimationEventType::RangeBegin: return "begin";
+				case AnimationEventType::RangeEnd:   return "end";
+				case AnimationEventType::Instant:
+				default:                             return "instant";
+			}
+		}
 	}
 
 	void RendererStatsSection()
@@ -178,6 +225,18 @@ namespace Dingo::UI
 		if (stats3D.DroppedLights > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
 				"Dropped    : %u  (past a light limit; the log says which)", stats3D.DroppedLights);
+		else
+			ImGui::Text("Dropped    : 0");
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");
+		ImGui::Separator();
+		ImGui::Text("Skinned draws: %u  (also counted in draw calls)", stats3D.SkinnedDraws);
+		BudgetBar("Instances", stats3D.SkinnedInstances, renderer3D.GetSkinnedInstanceBudget());
+		ImGui::Text("Joints     : %u uploaded", stats3D.SkinnedJoints);
+		if (stats3D.DroppedSkinnedDraws > 0)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances; warned once)", stats3D.DroppedSkinnedDraws);
 		else
 			ImGui::Text("Dropped    : 0");
 	}
@@ -588,6 +647,148 @@ namespace Dingo::UI
 		ImGui::End();
 	}
 
+	void AnimationSection()
+	{
+		static std::vector<Internal::AnimationDebug::AnimatorRow> s_Animators;
+		static std::vector<Internal::AnimationDebug::EventRow> s_Events;
+		Internal::AnimationDebug::CollectAnimators(s_Animators);
+		Internal::AnimationDebug::CollectRecentEvents(s_Events, Internal::AnimationDebug::k_RecentEvents);
+
+		ImGui::TextUnformatted(std::format("Animators ({})", s_Animators.size()).c_str());
+		ImGui::Separator();
+		if (s_Animators.empty())
+			ImGui::TextDisabled("No scene has an AnimatorComponent with a skinned model.");
+
+		// A crowd scrolls in its own region, so the events below stay in view.
+		const bool scroll = s_Animators.size() > k_MaxAnimatorsShown;
+		if (scroll)
+			ImGui::BeginChild("##animators", ImVec2(0.0f, 320.0f), ImGuiChildFlags_Borders);
+		for (size_t index = 0; index < s_Animators.size(); ++index)
+		{
+			const Internal::AnimationDebug::AnimatorRow& row = s_Animators[index];
+			const Animator& animator = *row.Instance;
+
+			std::string label = std::format("{}  ({}{}{})", row.Entity, row.Scene, row.Model.empty() ? "" : ", ", row.Model);
+			if (!row.Enabled)
+				label += "  disabled";
+			if (row.Speed != 1.0f)
+				label += std::format("  speed {:.2f}", row.Speed);
+			label += "###animator";
+
+			ImGui::PushID(static_cast<int>(index));
+			if (ImGui::TreeNodeEx(label.c_str(), s_Animators.size() == 1 ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
+			{
+				for (uint32_t layer = 0; layer < animator.GetLayerCount(); ++layer)
+				{
+					const AnimationLayer& settings = animator.GetLayer(layer);
+					const std::string& mask = settings.GetMaskRoot();
+
+					std::string line = std::format("Layer {}  weight {:.2f}  ", layer, settings.GetWeight());
+					line += mask.empty() ? "whole body" : "mask " + mask;
+					if (animator.IsOneShotPlaying(layer))
+						line += "  one-shot";
+					ImGui::TextUnformatted(line.c_str());
+
+					const std::vector<AnimatorStateInfo> states = animator.GetStates(layer);
+					if (states.empty())
+					{
+						ImGui::TextDisabled(layer == 0 ? "  nothing playing: the rest pose" : "  nothing playing: the layers below show");
+						continue;
+					}
+
+					ImGui::PushID(static_cast<int>(layer));
+					if (ImGui::BeginTable("##states", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+					{
+						ImGui::TableSetupColumn("State");
+						ImGui::TableSetupColumn("Fade", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+						ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+						ImGui::TableHeadersRow();
+
+						for (const AnimatorStateInfo& state : states)
+						{
+							ImGui::TableNextRow();
+
+							ImGui::TableSetColumnIndex(0);
+							ImGui::TextUnformatted(StateLabel(animator, state, layer).c_str());
+
+							ImGui::TableSetColumnIndex(1);
+							ImGui::ProgressBar(state.Weight, ImVec2(-1.0f, 0.0f), std::format("{:.2f}", state.Weight).c_str());
+
+							ImGui::TableSetColumnIndex(2);
+							if (state.Blend)
+								ImGui::ProgressBar(state.NormalizedTime, ImVec2(-1.0f, 0.0f), std::format("phase {:.2f}", state.NormalizedTime).c_str());
+							else if (state.Clip && !state.Frozen)
+								ImGui::ProgressBar(state.NormalizedTime, ImVec2(-1.0f, 0.0f), std::format("{:.2f} / {:.2f}s", state.Time, state.Clip->GetDuration()).c_str());
+							else
+								ImGui::TextDisabled("-");
+						}
+
+						ImGui::EndTable();
+					}
+					ImGui::PopID();
+				}
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+
+		if (scroll)
+			ImGui::EndChild();
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Recent events");
+		ImGui::Separator();
+		if (s_Events.empty())
+		{
+			ImGui::TextDisabled("No animation events yet.");
+			return;
+		}
+
+		if (ImGui::BeginTable("##animevents", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Entity");
+			ImGui::TableSetupColumn("Clip");
+			ImGui::TableSetupColumn("Event");
+			ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+			ImGui::TableSetupColumn("Layer", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+			ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+			ImGui::TableHeadersRow();
+
+			for (auto it = s_Events.rbegin(); it != s_Events.rend(); ++it)
+			{
+				ImGui::TableNextRow();
+
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextUnformatted(it->Entity.c_str());
+				ImGui::TableSetColumnIndex(1);
+				ImGui::TextUnformatted(it->Clip.c_str());
+				ImGui::TableSetColumnIndex(2);
+				ImGui::TextUnformatted(it->Name.data(), it->Name.data() + it->Name.size());
+				ImGui::TableSetColumnIndex(3);
+				ImGui::TextUnformatted(EventTypeName(it->Type));
+				ImGui::TableSetColumnIndex(4);
+				ImGui::Text("%u", it->Layer);
+				ImGui::TableSetColumnIndex(5);
+				ImGui::Text("@%.3f", it->Time);
+			}
+
+			ImGui::EndTable();
+		}
+	}
+
+	void AnimationStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Animation Stats", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		AnimationSection();
+
+		ImGui::End();
+	}
+
 	void InputStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Input Stats", open))
@@ -670,6 +871,8 @@ namespace Dingo::UI
 				ImGui::Spacing();
 				AssetRegistrySection();
 			});
+
+			tab("Animation", DebugTab::Animation, [] { AnimationSection(); });
 
 			ImGui::EndTabBar();
 		}

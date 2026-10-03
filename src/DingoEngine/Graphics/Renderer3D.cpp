@@ -576,8 +576,6 @@ namespace Dingo
 			++m_Statistics.DrawCalls;
 			++m_Statistics.SkinnedDraws;
 			++m_Statistics.SubmittedMeshes;
-			m_Statistics.VertexCount += mesh->GetVertexCount();
-			m_Statistics.IndexCount += mesh->GetIndexCount();
 		}
 
 		m_SkinnedSubmissions.clear();

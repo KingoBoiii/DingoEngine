@@ -171,6 +171,24 @@ namespace
 		return target / "Fox.gltf";
 	}
 
+	// The unit box stretched from one point to another, `thickness` across.
+	glm::mat4 BoneBox(const glm::vec3& from, const glm::vec3& to, float thickness)
+	{
+		const glm::vec3 axis = to - from;
+		const float length = glm::length(axis);
+		const glm::vec3 y = length > 1e-6f ? axis / length : glm::vec3(0.0f, 1.0f, 0.0f);
+		const glm::vec3 helper = std::abs(y.z) < 0.9f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+		const glm::vec3 x = glm::normalize(glm::cross(helper, y));
+		const glm::vec3 z = glm::cross(x, y);
+
+		glm::mat4 box(1.0f);
+		box[0] = glm::vec4(x * thickness, 0.0f);
+		box[1] = glm::vec4(y * length, 0.0f);
+		box[2] = glm::vec4(z * thickness, 0.0f);
+		box[3] = glm::vec4(0.5f * (from + to), 1.0f);
+		return box;
+	}
+
 	// A joint transform without its scale: what a child on that joint hangs from.
 	glm::mat4 SocketFrame(const glm::mat4& joint)
 	{
@@ -230,6 +248,7 @@ namespace Dingo
 			if (auto speed = args.Get("anim-speed"); speed && !speed->empty())
 				m_BlendSpeed = std::strtof(std::string(*speed).c_str(), nullptr);
 			m_LiveReload = args.Get("anim-reload").has_value();
+			m_ShowSkeleton = args.Get("anim-skeleton").has_value();
 		}
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.05f, 200.0f);
@@ -659,6 +678,36 @@ namespace Dingo
 			for (int step = 0; step < 30; ++step)
 				animator.Update(0.05f);
 			Check(animator.GetCurrentClip() == survey, "a Play during a one-shot cancels its return");
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.Play(walk);
+			animator.Update(0.1f);
+			animator.Play(run, 0.4f);
+			animator.Update(0.2f);
+			const std::vector<AnimatorStateInfo> fading = animator.GetStates();
+			const bool crossFade = fading.size() == 2 && fading[0].Clip == walk && fading[1].Clip == run && fading[0].Weight == 1.0f
+				&& std::abs(fading[1].Weight - 0.5f) < 1e-5f && std::abs(fading[1].NormalizedTime - 0.2f / run->GetDuration()) < 1e-5f;
+
+			Check(crossFade && animator.GetStates(3).empty(), "GetStates reports a cross-fade as both clips, the incoming one at its fade weight and time");
+
+			animator.Play(locomotion);
+			animator.SetFloat(k_SpeedParameter, 2.0f);
+			animator.Update(0.1f);
+			const std::vector<AnimatorStateInfo> walking = animator.GetStates();
+			animator.SetFloat(k_SpeedParameter, 3.5f);
+			const std::vector<AnimatorStateInfo> running = animator.GetStates();
+			const bool blend = walking.size() == 1 && walking[0].Blend && walking[0].Parameter == k_SpeedParameter && walking[0].Clip == walk
+				&& walking[0].Weight == 1.0f && walking[0].NormalizedTime == walking[0].Time && walking[0].Time > 0.0f
+				&& running.size() == 1 && running[0].Clip == run;
+			Check(blend, "GetStates reports a blend by its parameter and heavier clip (Walk at Speed 2, Run at 3.5) and its shared phase");
+
+			for (int i = 0; i < 5; ++i)
+				animator.Play(i % 2 == 0 ? walk : run, 1.0f);
+			const std::vector<AnimatorStateInfo> crowded = animator.GetStates();
+			Check(!crowded.empty() && crowded.front().Frozen && !crowded.front().Clip && crowded.size() <= 4,
+				std::format("past four states GetStates shows the held mix first ({} states)", crowded.size()));
 		}
 	}
 
@@ -1276,10 +1325,14 @@ namespace Dingo
 			fox.AddComponent<Transform3DComponent>(Transform3DComponent(m_FoxOffset + glm::vec3(x, 0.0f, z), glm::vec3(m_FoxScale)));
 
 			const bool drawStatic = m_Mode == Mode::BindStatic || (m_Mode == Mode::Crowd && m_CrowdStatic);
+			// The overlay's bones draw first, in the batches, so a see-through skin shows them.
+			const glm::vec4 skin(1.0f, 1.0f, 1.0f, SkeletonShown() ? 0.35f : 1.0f);
 			if (drawStatic)
-				fox.AddComponent<MeshRendererComponent>(MeshRendererComponent(skinned->MeshData)).Material = m_FoxMaterial;
+				fox.AddComponent<MeshRendererComponent>(MeshRendererComponent(skinned->MeshData, skin)).Material = m_FoxMaterial;
 			else
-				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox)).Material = m_FoxMaterial;
+				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox, skin)).Material = m_FoxMaterial;
+			if (m_Mode != Mode::Crowd)
+				m_Foxes.push_back(fox);
 
 			if (animate)
 			{
@@ -1387,8 +1440,39 @@ namespace Dingo
 
 	void AnimationTest::DestroyScene()
 	{
+		m_Foxes.clear();
 		delete m_Scene;
 		m_Scene = nullptr;
+	}
+
+	void AnimationTest::SubmitSkeleton(Renderer3D& renderer)
+	{
+		m_SkeletonBoxes = 0;
+		const Skeleton& skeleton = *m_Fox->GetSkeleton();
+		const float thickness = 0.012f;
+		std::vector<glm::vec3> joints(skeleton.GetJointCount());
+		for (Entity fox : m_Foxes)
+		{
+			const Animator* animator = m_Scene->GetAnimator(fox);
+			const glm::mat4 world = fox.GetWorldTransform();
+			for (uint32_t i = 0; i < skeleton.GetJointCount(); ++i)
+			{
+				const glm::mat4 joint = animator ? animator->GetJointTransform(static_cast<int32_t>(i)) : skeleton.GetRootTransform() * skeleton.GetRestGlobalTransforms()[i];
+				joints[i] = glm::vec3(world * joint[3]);
+			}
+
+			for (uint32_t i = 0; i < skeleton.GetJointCount(); ++i)
+			{
+				const int32_t parent = skeleton.GetJoint(i).Parent;
+				if (parent >= 0)
+				{
+					renderer.SubmitMesh(renderer.GetBoxMesh(), BoneBox(joints[parent], joints[i], thickness), { 0.95f, 0.9f, 0.3f, 1.0f });
+					++m_SkeletonBoxes;
+				}
+				renderer.SubmitMesh(renderer.GetBoxMesh(), glm::translate(glm::mat4(1.0f), joints[i]) * glm::scale(glm::mat4(1.0f), glm::vec3(2.5f * thickness)), { 1.0f, 0.4f, 0.2f, 1.0f });
+				++m_SkeletonBoxes;
+			}
+		}
 	}
 
 	void AnimationTest::SubmitPosedFox(Renderer3D& renderer)
@@ -1422,6 +1506,14 @@ namespace Dingo
 				break;
 			case Mode::Clip:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedInstances == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the animated Fox is one skinned draw of 24 joints");
+				if (SkeletonShown())
+				{
+					// The floor, the hat and the Fox, then a box per joint and per bone.
+					const Skeleton& skeleton = *m_Fox->GetSkeleton();
+					const uint32_t bones = static_cast<uint32_t>(std::count_if(skeleton.GetJoints().begin(), skeleton.GetJoints().end(), [](const Joint& joint) { return joint.Parent >= 0; }));
+					Check(m_SkeletonBoxes == skeleton.GetJointCount() + bones && stats.SubmittedMeshes == 3 + m_SkeletonBoxes,
+						std::format("the skeleton overlay draws the Fox's {} joints and {} bones", skeleton.GetJointCount(), bones));
+				}
 				break;
 			case Mode::Crowd:
 				if (m_CrowdStatic)
@@ -1488,6 +1580,8 @@ namespace Dingo
 		m_Scene->RenderEntities3D(renderer);
 		if (m_Mode == Mode::Pose)
 			SubmitPosedFox(renderer);
+		if (SkeletonShown())
+			SubmitSkeleton(renderer);
 		for (const glm::vec3& footprint : m_Footprints)
 			renderer.SubmitMesh(renderer.GetBoxMesh(), glm::translate(glm::mat4(1.0f), footprint) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f, 0.004f, 0.07f)), { 0.12f, 0.09f, 0.07f, 1.0f });
 		const Clock::time_point endSceneStart = Clock::now();
@@ -1559,6 +1653,12 @@ namespace Dingo
 			return;
 		}
 
+		if (m_Mode != Mode::Crowd && m_Mode != Mode::Pose && ImGui::Checkbox("Skeleton", &m_ShowSkeleton))
+		{
+			Cleanup();
+			Initialize();
+			return;
+		}
 		ImGui::Text("Skinned draws %u, instances %u, dropped %u, joints %u, draw calls %u",
 			m_LastStats.SkinnedDraws, m_LastStats.SkinnedInstances, m_LastStats.DroppedSkinnedDraws, m_LastStats.SkinnedJoints, m_LastStats.DrawCalls);
 		if (m_Mode == Mode::Crowd)

@@ -202,7 +202,7 @@ namespace Dingo
 			uint32_t LocalLights = 0;       // point and spot lights the scene was lit by
 			uint32_t CulledLights = 0;      // point and spot lights whose range can't reach anything in view
 			uint32_t DroppedLights = 0;     // directional lights past k_MaxDirectionalLights, point and spot lights past the budget
-			uint32_t SkinnedDraws = 0;        // skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes
+			uint32_t SkinnedDraws = 0;        // skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes; not batched, so not in VertexCount/IndexCount
 			uint32_t SkinnedInstances = 0;    // joint palettes uploaded; a model's submeshes share one
 			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame
 			uint32_t SkinnedJoints = 0;       // joint matrices uploaded

@@ -27,6 +27,9 @@ namespace Dingo
 	//
 	// --anim=clip --anim-reload plays a managed copy of the Fox with hot-reload on, and edits it on
 	// disk: after 1 s Walk and Run trade names, then Fox.events gains a mark. Each reload is a check.
+	//
+	// --anim-skeleton (or the checkbox) draws every bone and joint as boxes inside a see-through
+	// Fox. F7 opens the engine's Animation tab on the same animators.
 	class AnimationTest : public GraphicsTest
 	{
 	public:
@@ -58,6 +61,8 @@ namespace Dingo
 		void BuildScene();
 		void DestroyScene();
 		void SubmitPosedFox(Renderer3D& renderer);
+		void SubmitSkeleton(Renderer3D& renderer);
+		bool SkeletonShown() const { return m_ShowSkeleton && m_Mode != Mode::Crowd && m_Mode != Mode::Pose; }
 		void TrackTiming(float deltaTime, double updateMs, double renderMs, double endSceneMs);
 
 	private:
@@ -81,6 +86,9 @@ namespace Dingo
 		float       m_BlendSpeed = 1.5f;
 		float       m_LayerWeight = 1.0f;
 		Entity      m_AnimatedFox;
+		std::vector<Entity> m_Foxes; // all but a crowd's, for the skeleton overlay
+		bool        m_ShowSkeleton = false;
+		uint32_t    m_SkeletonBoxes = 0;
 
 		float     m_FoxScale = 1.0f;
 		glm::vec3 m_FoxOffset{ 0.0f };

@@ -95,7 +95,7 @@ namespace Dingo
 		}
 
 		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
-			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer), F5 (input) or F6 (assets) to open its tabs.");
+			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer), F5 (input), F6 (assets) or F7 (animation) to open its tabs.");
 	}
 
 	void Application::Destroy()
@@ -280,7 +280,8 @@ namespace Dingo
 
 	void Application::RenderDebugOverlays()
 	{
-		// One tabbed debug window: F3 = Engine, F4 = Renderer, F5 = Input, F6 = Assets.
+		// One tabbed debug window: F3 = Engine, F4 = Renderer, F5 = Input, F6 = Assets,
+		// F7 = Animation.
 		// A key opens the window on its tab (or switches to it); the active tab's key
 		// closes it.
 		UI::DebugTab request = UI::DebugTab::None;
@@ -292,6 +293,8 @@ namespace Dingo
 			request = UI::DebugTab::Input;
 		if (Input::IsKeyPressed(Key::F6))
 			request = UI::DebugTab::Assets;
+		if (Input::IsKeyPressed(Key::F7))
+			request = UI::DebugTab::Animation;
 
 		if (request != UI::DebugTab::None)
 		{

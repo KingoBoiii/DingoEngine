@@ -10,6 +10,8 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
+
 namespace Dingo
 {
 
@@ -85,6 +87,28 @@ namespace Dingo
 					return *runtime->Instance;
 				}
 
+				void RecordEvents(EventScratch& scratch, entt::entity handle, std::span<const AnimationEvent> events)
+				{
+					static uint64_t s_Sequence = 0;
+					for (const AnimationEvent& event : events)
+					{
+						EventScratch::RecentEvent& slot = scratch.Recent[scratch.RecentNext];
+						scratch.RecentNext = (scratch.RecentNext + 1) % EventScratch::k_RecentEvents;
+						scratch.RecentCount = std::min(scratch.RecentCount + 1, EventScratch::k_RecentEvents);
+
+						slot.Entity = handle;
+						if (event.Clip)
+							slot.Clip.assign(event.Clip->GetName());
+						else
+							slot.Clip.clear();
+						slot.Name = event.Name;
+						slot.Type = event.Type;
+						slot.Time = event.Time;
+						slot.Layer = event.Layer;
+						slot.Sequence = ++s_Sequence;
+					}
+				}
+
 			}
 
 			void Connect(entt::registry& registry)
@@ -120,6 +144,7 @@ namespace Dingo
 						continue;
 
 					animator.Update(deltaTime * settings.Speed);
+					RecordEvents(scratch, handle, animator.GetEventsThisFrame());
 					if (animator.GetEventsThisFrame().empty() || !scripts.Find(handle))
 						continue;
 

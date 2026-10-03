@@ -16,8 +16,8 @@ namespace Dingo::UI
 
 	// Frame timing (FPS + a rolling frame-time graph) and the most recent scene's
 	// Renderer2D and Renderer3D statistics: draw calls, primitive counts, meshes
-	// submitted/dropped, the 3D vertex/index budget usage, and the lights in use against
-	// their budget (out of view, dropped). Reads the engine's active renderers
+	// submitted/dropped, the 3D vertex/index budget usage, the lights in use against
+	// their budget (out of view, dropped) and the skinned meshes drawn. Reads the engine's active renderers
 	// (Application::GetRenderer2D/3D), so no arguments are needed.
 	// Section-style: draws into the currently open window (see the note below).
 	void RendererStatsSection();
@@ -114,6 +114,21 @@ namespace Dingo::UI
 	void AssetStatsWindow(bool* open = nullptr);
 
 	// ----------------------------------------------------------------------
+	// AnimationStatsWindow section
+	// ----------------------------------------------------------------------
+
+	// Every live scene's animators -- layers, the states each is mixing with their fade
+	// weights and times, blend parameters -- and the last 20 animation events they fired.
+	// Reads the engine's scenes, so no arguments are needed.
+	void AnimationSection();
+
+	// AnimationSection in a window of its own.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	void AnimationStatsWindow(bool* open = nullptr);
+
+	// ----------------------------------------------------------------------
 	// The combined debug window
 	// ----------------------------------------------------------------------
 
@@ -123,12 +138,13 @@ namespace Dingo::UI
 		Engine,
 		Renderer,
 		Input,
-		Assets
+		Assets,
+		Animation
 	};
 
 	// Everything above composed into one tabbed "Debug" window (Engine / Renderer /
-	// Input / Assets). This is what the engine's built-in overlays show (F3/F4/F5/F6
-	// select the matching tab; the same key again closes the window).
+	// Input / Assets / Animation). This is what the engine's built-in overlays show
+	// (F3/F4/F5/F6/F7 select the matching tab; the same key again closes the window).
 	//
 	// 'select' forces that tab active this frame (DebugTab::None leaves the user's
 	// choice alone). Returns the tab currently shown so callers can implement

@@ -9,6 +9,7 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/Model.h"
 
+#include "DingoEngine/Scene/AnimationDebug.h"
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
@@ -25,10 +26,12 @@ namespace Dingo
 		: m_Data(new Internal::SceneData()), m_Name(name)
 	{
 		Internal::AnimationSystem::Connect(m_Data->Registry);
+		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
 
 	Scene::~Scene()
 	{
+		Internal::AnimationDebug::UnregisterScene(this);
 		Clear();
 		delete m_Data;
 	}

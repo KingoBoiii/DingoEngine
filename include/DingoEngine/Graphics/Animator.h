@@ -28,6 +28,19 @@ namespace Dingo
 		uint32_t Layer = 0;
 	};
 
+	// One state a layer is mixing, as Animator::GetStates reports it.
+	struct AnimatorStateInfo
+	{
+		const AnimationClip* Clip = nullptr; // a blend: the clip with the larger share; null for a frozen state or one that shows what lies below
+		std::string_view Parameter;          // a blend's parameter, valid until the animator next changes; empty for a clip
+		bool  Blend = false;
+		bool  Frozen = false;                // the held mix that replaces states past the cap of four
+		bool  Looping = true;
+		float Weight = 1.0f;                 // how far it has faded in, 0 to 1
+		float Time = 0.0f;                   // seconds into the clip, or a blend's phase from 0 to 1
+		float NormalizedTime = 0.0f;         // 0 to 1 through the clip or cycle
+	};
+
 	struct BlendPoint
 	{
 		float Value = 0.0f;
@@ -151,6 +164,8 @@ namespace Dingo
 		// A state that doesn't loop has reached its end, or its start when time last ran backwards.
 		bool IsFinished(uint32_t layer = 0) const;
 		bool IsFading(uint32_t layer = 0) const;
+		// What the layer is mixing, oldest first, for tooling such as the F7 tab.
+		std::vector<AnimatorStateInfo> GetStates(uint32_t layer = 0) const;
 
 		// Advances every playing state by deltaTime, evaluates the pose and collects the events.
 		void Update(float deltaTime);

@@ -4,11 +4,15 @@
 // and for children parented to a joint. Lives under src/ so EnTT stays private.
 
 #include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Scene/AnimationDebug.h"
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
+#include <array>
+#include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -26,11 +30,29 @@ namespace Dingo
 		{
 
 			// The animate pass's event queues, reused from frame to frame. Waiting holds events for
-			// scripts that hadn't started yet, delivered once they have.
+			// scripts that hadn't started yet, delivered once they have. Recent is a ring of the last
+			// k_RecentEvents events across the scene's animators, scripted or not, for the F7 tab.
 			struct EventScratch
 			{
+				struct RecentEvent
+				{
+					entt::entity Entity = entt::null;
+					std::string Clip; // copied: the clip may be freed before the tab reads it
+					std::string_view Name; // AnimationEvent::Name is interned, valid for the program's life
+					AnimationEventType Type = AnimationEventType::Instant;
+					float Time = 0.0f;
+					uint32_t Layer = 0;
+					uint64_t Sequence = 0; // engine-wide order, so rings of several scenes merge
+				};
+
+				static constexpr size_t k_RecentEvents = AnimationDebug::k_RecentEvents;
+
 				std::vector<std::pair<entt::entity, AnimationEvent>> Deliveries;
 				std::vector<std::pair<entt::entity, AnimationEvent>> Waiting;
+
+				std::array<RecentEvent, k_RecentEvents> Recent;
+				size_t RecentNext = 0;
+				size_t RecentCount = 0;
 			};
 
 			// Registers the hook that frees an animator with its AnimatorComponent.

@@ -516,6 +516,39 @@ namespace Dingo
 		return layer < m_Layers.size() && m_Layers[layer].States.size() > 1;
 	}
 
+	std::vector<AnimatorStateInfo> Animator::GetStates(uint32_t layer) const
+	{
+		std::vector<AnimatorStateInfo> states;
+		if (layer >= m_Layers.size())
+			return states;
+
+		states.reserve(m_Layers[layer].States.size());
+		for (const PlayingState& state : m_Layers[layer].States)
+		{
+			AnimatorStateInfo info;
+			info.Blend = state.State.IsBlend();
+			info.Frozen = state.Frozen;
+			info.Looping = state.State.IsLooping();
+			info.Weight = FadeWeight(state);
+			info.Time = state.Time;
+			if (!info.Blend)
+			{
+				info.Clip = state.State.GetClip();
+				const float duration = ClipDuration(info.Clip);
+				info.NormalizedTime = duration > 0.0f ? state.Time / duration : 0.0f;
+			}
+			else
+			{
+				const BlendSpot spot = Locate(state.State);
+				info.Clip = state.State.GetPoints()[spot.T >= 0.5f ? spot.Lower + 1 : spot.Lower].Clip;
+				info.Parameter = state.State.GetParameter();
+				info.NormalizedTime = state.Time;
+			}
+			states.push_back(info);
+		}
+		return states;
+	}
+
 	float Animator::FadeWeight(const PlayingState& state) const
 	{
 		return state.FadeDuration > 0.0f ? std::min(state.FadeElapsed / state.FadeDuration, 1.0f) : 1.0f;
