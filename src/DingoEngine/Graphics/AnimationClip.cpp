@@ -43,6 +43,24 @@ namespace Dingo
 	AnimationClip::AnimationClip(std::string name, float duration, std::vector<AnimationChannel> channels, const Skeleton* sourceSkeleton)
 		: m_Name(std::move(name)), m_Duration(duration), m_Channels(std::move(channels)), m_SourceSkeleton(sourceSkeleton)
 	{
+		// Sampling reads one value per time, so a track built by hand with more of either would read past
+		// its end.
+		bool trimmed = false;
+		auto fit = [&](auto& track)
+		{
+			const size_t count = (std::min)(track.Times.size(), track.Values.size());
+			trimmed |= track.Times.size() != count || track.Values.size() != count;
+			track.Times.resize(count);
+			track.Values.resize(count);
+		};
+		for (AnimationChannel& channel : m_Channels)
+		{
+			fit(channel.Translation);
+			fit(channel.Rotation);
+			fit(channel.Scale);
+		}
+		if (trimmed)
+			DE_CORE_WARN("AnimationClip '{}': a track has more times than values or more values than times; the extra ones are dropped", m_Name);
 	}
 
 	void AnimationClip::AddEvent(float time, std::string name)

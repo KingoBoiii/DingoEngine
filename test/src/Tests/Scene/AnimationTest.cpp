@@ -799,6 +799,21 @@ namespace Dingo
 			"Fox.events beside the model gives Walk and Run four footfalls each and Survey a range");
 
 		// Clips of events alone: no channels, so they pose the rest pose.
+		{
+			AnimationChannel head;
+			head.JointName = k_HatJoint;
+			head.Rotation.Times = { 0.0f, 0.5f, 1.0f };
+			head.Rotation.Values = { glm::quat(1.0f, 0.0f, 0.0f, 0.0f), Turn(40.0f, { 0.0f, 1.0f, 0.0f }) };
+			AnimationClip ragged("Ragged", 1.0f, { head }, &skeleton);
+			Animator animator(&skeleton);
+			animator.Play(&ragged);
+			animator.SetTime(0.9f);
+			animator.Update(0.0f);
+			const glm::quat pose = animator.GetLocalPoses()[skeleton.FindJoint(k_HatJoint)].Rotation;
+			Check(ragged.GetChannels()[0].Rotation.Times.size() == 2 && std::isfinite(pose.w),
+				"a hand-built track with more times than values is trimmed rather than read past its end");
+		}
+
 		AnimationClip loop("Loop", 1.0f, {}, &skeleton);
 		loop.AddEvent(0.55f, "mid");
 		loop.AddEventRange(0.25f, 0.45f, "window");
