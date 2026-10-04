@@ -1,6 +1,11 @@
 #include "GameAssets.h"
 #include "GameTuning.h"
 
+namespace
+{
+	constexpr const char* k_FootstepPath = "audio/footstep.wav";
+}
+
 namespace Dingo
 {
 
@@ -32,6 +37,12 @@ namespace Dingo
 			m_Libraries.push_back(LoadModel(library.Path));
 
 		m_Clips = ResolveClips(m_Libraries);
+
+		m_Footstep = Application::Get().GetAudioEngine().LoadClip(k_FootstepPath);
+		if (!m_Footstep)
+		{
+			DE_ERROR("Marionette: failed to load audio clip '{}'", k_FootstepPath);
+		}
 	}
 
 	GameAssets::~GameAssets()

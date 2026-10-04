@@ -1,4 +1,5 @@
 #include "Checks.h"
+#include "CheckReport.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
 #include "Moveset.h"
@@ -11,31 +12,6 @@
 namespace
 {
 	using namespace Dingo;
-
-	class Report
-	{
-	public:
-		void Check(bool passed, const std::string& name)
-		{
-			if (passed)
-			{
-				++m_Passed;
-				DE_INFO("[PASS] {}", name);
-			}
-			else
-			{
-				++m_Failed;
-				DE_ERROR("[FAIL] {}", name);
-			}
-		}
-
-		int GetPassed() const { return m_Passed; }
-		int GetFailed() const { return m_Failed; }
-
-	private:
-		int m_Passed = 0;
-		int m_Failed = 0;
-	};
 
 	struct PoseDiff
 	{
@@ -85,7 +61,7 @@ namespace
 		return joined;
 	}
 
-	void CheckAssets(Report& report, const GameAssets& assets)
+	void CheckAssets(CheckReport& report, const GameAssets& assets)
 	{
 		std::vector<std::string> failed;
 		for (const FighterDef& fighter : GetFighterDefs())
@@ -133,7 +109,7 @@ namespace
 		report.Check(failed.empty(), std::format("every fighter has its texture on a lit material{}{}", failed.empty() ? "" : "; not: ", Join(failed)));
 	}
 
-	void CheckClips(Report& report, const GameAssets& assets)
+	void CheckClips(CheckReport& report, const GameAssets& assets)
 	{
 		const ClipSet& clips = assets.GetClips();
 		report.Check(clips.GetMissing().empty() && !clips.GetEntries().empty(),
@@ -141,7 +117,7 @@ namespace
 				clips.GetMissing().empty() ? "" : "; missing: ", Join(clips.GetMissing())));
 	}
 
-	void CheckFighter(Report& report, const GameAssets& assets, const FighterDef& fighter)
+	void CheckFighter(CheckReport& report, const GameAssets& assets, const FighterDef& fighter)
 	{
 		const Model* model = assets.GetCharacter(fighter);
 		const Skeleton* skeleton = model ? model->GetSkeleton() : nullptr;
@@ -252,7 +228,7 @@ namespace Dingo
 
 	bool RunAssetChecks(const GameAssets& assets)
 	{
-		Report report;
+		CheckReport report;
 		CheckAssets(report, assets);
 		CheckClips(report, assets);
 		for (const FighterDef& fighter : GetFighterDefs())

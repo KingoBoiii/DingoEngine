@@ -32,9 +32,17 @@ namespace Dingo
 		inline constexpr const char* BLOCK_RIPOSTE   = "Melee_Block_Attack";
 	}
 
+	namespace Events
+	{
+		inline constexpr const char* STEP_LEFT       = "step_l";
+		inline constexpr const char* STEP_RIGHT      = "step_r";
+	}
+
 	namespace Joints
 	{
 		inline constexpr const char* HIPS            = "hips";
+		inline constexpr const char* FOOT_LEFT       = "foot.l";
+		inline constexpr const char* FOOT_RIGHT      = "foot.r";
 		inline constexpr const char* HAND_RIGHT      = "handslot.r";
 		inline constexpr const char* HAND_LEFT       = "handslot.l";
 	}
@@ -70,6 +78,8 @@ namespace Dingo
 	};
 
 	std::span<const FighterDef> GetFighterDefs();
+	const FighterDef& GetPlayerDef();
+	const FighterDef& GetOpponentDef(int bout);
 	std::span<const LibraryDef> GetLibraryDefs();
 
 	std::vector<std::string_view> GetUsedClipNames();

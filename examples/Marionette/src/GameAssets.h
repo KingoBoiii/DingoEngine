@@ -3,6 +3,7 @@
 
 #include <DingoEngine.h>
 
+#include <memory>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -32,6 +33,7 @@ namespace Dingo
 		std::span<Model* const> GetLibraries() const { return m_Libraries; }
 		const ClipSet& GetClips() const { return m_Clips; }
 		const AnimationClip* GetClip(std::string_view name) const { return m_Clips.Find(name); }
+		const std::shared_ptr<AudioClip>& GetFootstep() const { return m_Footstep; }
 
 	private:
 		Model* LoadModel(const char* path);
@@ -43,6 +45,7 @@ namespace Dingo
 		std::unordered_map<std::string, Material*> m_Materials;
 		std::vector<Model*> m_Libraries;
 		ClipSet m_Clips;
+		std::shared_ptr<AudioClip> m_Footstep;
 	};
 
 }

@@ -21,7 +21,10 @@ namespace Dingo
 
 		m_Assets = std::make_unique<GameAssets>();
 		if (options.Check)
+		{
 			RunAssetChecks(*m_Assets);
+			RunMovementChecks(*m_Assets);
+		}
 
 		m_TitleScene = m_SceneManager.CreateScene(SCENE_TITLE);
 		m_ArenaScene = m_SceneManager.CreateScene(SCENE_ARENA);

@@ -68,6 +68,17 @@ namespace Dingo
 		return k_Libraries;
 	}
 
+	const FighterDef& GetPlayerDef()
+	{
+		return k_Fighters[static_cast<size_t>(FighterId::Knight)];
+	}
+
+	const FighterDef& GetOpponentDef(int bout)
+	{
+		constexpr std::array<FighterId, 3> order = { FighterId::Minion, FighterId::Barbarian, FighterId::Warrior };
+		return k_Fighters[static_cast<size_t>(order[static_cast<size_t>(std::clamp(bout, 1, 3) - 1)])];
+	}
+
 	std::vector<std::string_view> GetUsedClipNames()
 	{
 		std::vector<std::string_view> names;

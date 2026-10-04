@@ -6,6 +6,8 @@
 namespace Dingo
 {
 
+	float GetArenaApothem();
+
 	class ArenaWorld
 	{
 	public:

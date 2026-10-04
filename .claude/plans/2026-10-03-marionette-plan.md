@@ -6,7 +6,7 @@ P4–P12 done). Every `file:line` below was read on that date. Scope source: §6
 
 **Status**: planned. D1–D4 settled by the user on 2026-10-04 on the recommended options; D5 is
 proposed. A fresh Sonnet review (2026-10-04) found 2 High, 6 Medium and 4 Low in the animation
-mechanics, all folded in (§12). M0 (asset intake) and M1 (scaffold) are done (§11); M2 is next.
+mechanics, all folded in (§12). M0 (asset intake), M1 (scaffold) and M2 (movement) are done (§11); M3 is next.
 
 ---
 
@@ -91,7 +91,7 @@ game while it runs (P9 hot-reload).
 | `combo` | range | A light input inside it chains to the next light attack |
 | `iframes` | range | Dodge invulnerability |
 | `parry` | range | At the start of the block raise (`Melee_Block`, t ≈ 0): a hit landing inside it is parried |
-| `step` | instant | Footfalls → positional footstep sounds |
+| `step_l`, `step_r` | instant | Footfalls → positional footstep sounds; walk and run share one phase per foot (the engine fires only the blend's heavier side) |
 
 Every window in a one-shot must end before `duration − fadeOut`, or it never fires (§1). `Moveset`
 holds each move's fade-out, and `Combat` warns at load about any event that ends later.
@@ -467,6 +467,32 @@ into the repo yet; M1 copies the files listed under "Repo footprint".
   `--lineup` (M2), `--autoplay`, `--debug-hitbox`, `--seed` (M3) and bouts 2–3 (M4) parse but do
   nothing yet. The End key jumps to the End scene in Debug builds only.
 - The checks are read from the log; a failing `--check` doesn't change the exit code.
+
+
+**M2** (2026-10-04), built by a Sonnet implementer, reviewed by a fresh Sonnet reviewer, fixed:
+
+- A bout holds the player (Knight) and one opponent (`--bout=1..3`; the opponent only idles and
+  faces the player until M4). Each fighter has a `CharacterController3DComponent`, a `Brain`
+  (`PlayerBrain`, or `DriveBrain` for `--drive=ramp|circle|strafe|wall`) writing a `FighterIntent`,
+  and `Locomotion` states: the `Move` blend (`Idle_A` 0, `Walking_A` 0.86, `Running_A` 3.25 m/s,
+  derived from the clips' ankle travel during stance) and idle-to-clip blends for
+  `Walking_Backwards` and `Running_Strafe_Left/Right` (the strafes travel ±60° from facing, so the
+  body yaws up to 35° to match). Zones Forward/Strafe/Backward by travel direction against facing
+  with 10° hysteresis; `SwitchZone` aligns the new clip's step marks with the old one's at the frame
+  the new state takes over the events. Facing: the opponent between 7 m (enter) and 8 m (leave),
+  else the move direction, at 540°/s. Separation removes the closing speed between the fighters.
+- `Move` follows the speed the controller actually achieved, so a fighter at a wall stops its feet;
+  it falls at most 22 /s, so a sudden stop eases over ~0.15 s instead of snapping the pose.
+- Footsteps: walk and run share one phase per foot (run touchdown − 0.03 cycle: the run sounds
+  24 ms early, the walk 76–81 ms late), per the engine's "same fraction" rule; zone clips keep
+  their touchdowns. The first version used true touchdowns and a game-side filter, which hid a
+  doubled step and could lose one on a run-to-walk handover; both are gone.
+- Checks: 44 (17 asset + 27 movement): speeds, directions, sweeps up/down/up-down-up, 32 zone-switch
+  runs, the first step after 96 switches, a second-difference foot-pop test that must also catch a
+  synthetic 10 cm pop, and `--drive=wall` (Move 0.00, no step in the last second). Drives at fixed
+  60 Hz: circle 187 and strafe 147 steps, strictly alternating while moving.
+- Known: a zone switch at an arbitrary phase can still drop or double a step about 0.3% of the time
+  (offline model; a cross-fade isn't phase-locked), so the checks pick phases away from frame ties.
 
 ---
 

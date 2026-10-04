@@ -1,0 +1,7 @@
+# clip                  time     event
+Walking_Backwards       0.717    step_l
+Walking_Backwards       0.183    step_r
+Running_Strafe_Left     0.108    step_l
+Running_Strafe_Left     0.525    step_r
+Running_Strafe_Right    0.121    step_l
+Running_Strafe_Right    0.504    step_r

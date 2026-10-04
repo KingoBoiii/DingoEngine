@@ -12,11 +12,6 @@ namespace
 	constexpr float k_SideAngle = 2.0f * std::numbers::pi_v<float> / ARENA_SIDES;
 	constexpr float k_HalfSideAngle = 0.5f * k_SideAngle;
 
-	float Apothem()
-	{
-		return ARENA_RADIUS * std::cos(k_HalfSideAngle);
-	}
-
 	glm::quat Yaw(float radians)
 	{
 		return glm::angleAxis(radians, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -25,6 +20,11 @@ namespace
 
 namespace Dingo
 {
+
+	float GetArenaApothem()
+	{
+		return ARENA_RADIUS * std::cos(k_HalfSideAngle);
+	}
 
 	ArenaWorld::ArenaWorld(Scene& scene)
 		: m_Scene(scene)
@@ -73,7 +73,7 @@ namespace Dingo
 		for (int i = 0; i < ARENA_SIDES; ++i)
 		{
 			const float angle = k_SideAngle * (static_cast<float>(i) + 0.5f);
-			const float rim = (Apothem() + ARENA_WALL_THICKNESS) / std::cos(k_HalfSideAngle);
+			const float rim = (GetArenaApothem() + ARENA_WALL_THICKNESS) / std::cos(k_HalfSideAngle);
 			for (const float y : { 0.0f, ARENA_WALL_HEIGHT })
 				points.emplace_back(std::cos(angle) * rim, y, std::sin(angle) * rim);
 		}
@@ -97,7 +97,7 @@ namespace Dingo
 	void ArenaWorld::BuildFloor()
 	{
 		// Six strips whose short ends are opposite sides of the polygon cover all of it.
-		const float apothem = Apothem();
+		const float apothem = GetArenaApothem();
 		const float strip = 2.0f * apothem * std::tan(k_HalfSideAngle);
 		for (int i = 0; i < ARENA_SIDES / 2; ++i)
 		{
@@ -108,7 +108,7 @@ namespace Dingo
 
 	void ArenaWorld::BuildWalls()
 	{
-		const float apothem = Apothem();
+		const float apothem = GetArenaApothem();
 		const float length = 2.0f * (apothem + ARENA_WALL_THICKNESS) * std::tan(k_HalfSideAngle);
 		const float distance = apothem + ARENA_WALL_THICKNESS * 0.5f;
 		for (int i = 0; i < ARENA_SIDES; ++i)
