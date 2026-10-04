@@ -15,19 +15,22 @@ namespace Dingo
 
 	inline constexpr float HUD_ORTHO_SIZE      = 11.0f;
 	inline constexpr float TITLE_HEADING_SIZE  = 1.9f;
-	inline constexpr float TITLE_HEADING_Y     = 1.2f;
+	inline constexpr float TITLE_HEADING_Y     = 3.1f;
 	inline constexpr float TITLE_PROMPT_SIZE   = 0.5f;
-	inline constexpr float TITLE_PROMPT_Y      = -2.4f;
+	inline constexpr float TITLE_PROMPT_Y      = -4.6f;
 	inline constexpr float END_HEADING_SIZE    = 1.5f;
-	inline constexpr float END_HEADING_Y       = 1.2f;
+	inline constexpr float END_HEADING_Y       = 4.5f;
 	inline constexpr float END_PROMPT_SIZE     = 0.5f;
-	inline constexpr float END_PROMPT_Y        = -2.4f;
-	inline constexpr float END_SUBTITLE_SIZE   = 0.6f;
-	inline constexpr float END_SUBTITLE_Y      = 0.05f;
-	inline constexpr float END_STATS_SIZE      = 0.45f;
-	inline constexpr float END_STATS_Y         = -0.9f;
+	inline constexpr float END_PROMPT_Y        = -4.8f;
+	inline constexpr float END_SUBTITLE_SIZE   = 0.55f;
+	inline constexpr float END_SUBTITLE_Y      = 3.35f;
+	inline constexpr float END_STATS_SIZE      = 0.42f;
+	inline constexpr float END_STATS_Y         = 2.75f;
 	// The last blows of a win are still being pressed; the screen waits them out.
 	inline constexpr float END_INPUT_DELAY     = 1.0f;
+	// What --end shows for the run's result.
+	inline constexpr float END_DEMO_SECONDS    = 312.0f;
+	inline constexpr int   END_DEMO_RETRIES    = 2;
 
 	// --- Camera --------------------------------------------------------------------
 	inline constexpr float CAMERA_FOV           = 40.0f;
@@ -76,6 +79,17 @@ namespace Dingo
 	inline constexpr float LINEUP_FIT_HEIGHT    = 1.9f;
 	inline constexpr float LINEUP_LOOK_HEIGHT   = 0.7f;
 	inline constexpr float FREEZE_POSE_TIME     = 0.5f;
+	// Where the middle of the row stands on the title screen, in normalized device y: below the middle, under the name.
+	inline constexpr float TITLE_LINEUP_CENTER_NDC = -0.32f;
+
+	// --- End screen: the Knight taunting in front of the camera ---------------------
+	inline constexpr float VICTORY_PITCH_DEG    = 9.0f;
+	inline constexpr float VICTORY_LOOK_HEIGHT  = 0.95f;
+	inline constexpr float VICTORY_CENTER_NDC   = -0.35f;
+	// The frame reaches this far under the floor, which keeps the Knight's feet clear of the prompt at the bottom.
+	inline constexpr float VICTORY_FIT_FLOOR    = 0.3f;
+	inline constexpr float VICTORY_FIT_HALF_WIDTH = 1.3f;
+	inline constexpr float VICTORY_FIT_HEIGHT   = 3.4f;
 
 	// --- Fighters ------------------------------------------------------------------
 	inline constexpr float FIGHTER_ROUGHNESS    = 0.85f;
@@ -155,7 +169,10 @@ namespace Dingo
 	inline constexpr float ATTACK_FADE_OUT      = 0.2f;
 	inline constexpr float DODGE_FADE_IN        = FRAME_SECONDS;
 	inline constexpr float DODGE_FADE_OUT       = 0.08f;
+	// A short fade-in also gives the capsule time to pay what the interrupted move still owed the pose (MoveTravel).
+	inline constexpr float HIT_REACT_FADE_IN    = 0.05f;
 	inline constexpr float HIT_REACT_FADE_OUT   = 0.1f;
+	inline constexpr float STAGGER_FADE_IN      = 0.05f;
 	inline constexpr float STAGGER_FADE_OUT     = 0.15f;
 	inline constexpr float BLOCK_RAISE_FADE     = FRAME_SECONDS;
 	inline constexpr float BLOCK_LOWER_FADE     = 0.1f;
@@ -222,6 +239,12 @@ namespace Dingo
 	inline constexpr float AUDIO_BLOCK_VOLUME   = 0.85f;
 	inline constexpr float AUDIO_PARRY_VOLUME   = 0.9f;
 	inline constexpr float AUDIO_DODGE_VOLUME   = 0.5f;
+	inline constexpr float AUDIO_STING_VOLUME   = 0.8f;
+	// The brazier crackle loops at each of the four braziers; a little pitch apart keeps them from phasing as one.
+	inline constexpr float AUDIO_CRACKLE_VOLUME = 0.4f;
+	inline constexpr float AUDIO_CRACKLE_NEAR   = 3.0f;
+	inline constexpr float AUDIO_CRACKLE_FAR    = 20.0f;
+	inline constexpr float AUDIO_CRACKLE_PITCH_STEP = 0.03f;
 
 	// --- Controls ------------------------------------------------------------------
 	inline constexpr KeyCode KEY_MOVE_FORWARD   = KeyCode::W;
@@ -247,6 +270,21 @@ namespace Dingo
 	inline constexpr float ARENA_CAMERA_MIN_DISTANCE = 6.5f;
 	inline constexpr float ARENA_CAMERA_MAX_DISTANCE = 24.0f;
 	inline constexpr float ARENA_CAMERA_SMOOTHING = 5.0f;
+	// The frame keeps these above a fighter's head (a raised weapon) and under its feet, between the controls hint
+	// at the bottom and the HUD bars at the top.
+	inline constexpr float ARENA_CAMERA_HEAD_MARGIN = 0.35f;
+	inline constexpr float ARENA_CAMERA_FEET_MARGIN = 0.1f;
+	inline constexpr float ARENA_CAMERA_BOTTOM_NDC = -0.85f;
+	inline constexpr float ARENA_CAMERA_TOP_PADDING = 0.04f;
+	inline constexpr int   ARENA_CAMERA_CENTER_PASSES = 3;
+
+	// --- Arena camera: what stands between it and the fighters ----------------------
+	// A brazier or wall piece whose box, widened by the radius, a line to a fighter's feet, chest or head crosses is
+	// hidden until the line has been clear for the delay. The line stops short of the fighter by the pad.
+	inline constexpr float OCCLUSION_VIEW_RADIUS = 0.3f;
+	inline constexpr float OCCLUSION_END_PAD    = 0.5f;
+	inline constexpr float OCCLUSION_RESTORE_DELAY = 0.35f;
+	inline constexpr std::array<float, 3> OCCLUSION_SAMPLE_FRACTIONS = { 0.0f, 0.5f, 1.0f };
 
 	// --- Scripted drive (--drive) --------------------------------------------------
 	inline constexpr float DRIVE_RAMP_SECONDS   = 4.0f;
@@ -363,6 +401,18 @@ namespace Dingo
 	inline constexpr float CHECK_BLOCK_HIT_AFTER = 0.5f;
 	inline constexpr float CHECK_RIPOSTE_HOLD   = 0.4f;
 	inline constexpr float CHECK_RETURN_WATCH   = 1.0f;
+	// The most the hips' step may change from one frame to the next once a dodge is cut at mid-dash, with no extra
+	// distance so that only the pose and the carry are measured. Measured by --check: a carried cut 0.031 m at most
+	// on the four dodges, an uncarried one 0.121 m at least.
+	inline constexpr float CHECK_CARRY_JERK_MAX = 0.08f;
+	inline constexpr int   CHECK_CARRY_FRAMES   = 12;
+	inline constexpr float CHECK_TRAVEL_TOLERANCE = 1.0e-4f;
+	inline constexpr float CHECK_TRAVEL_SCALE   = 1.25f;
+	// Paying a carry that long leaves enough of it in flight for a second move to cut in on top of it.
+	inline constexpr float CHECK_TRAVEL_SPREAD  = 0.2f;
+	inline constexpr int   CHECK_TRAVEL_SPREAD_STEPS = 6;
+	// A dodge cut at mid-dash owes at least this much, or the Fighter-level check would pass on nothing.
+	inline constexpr float CHECK_FIGHTER_CARRY_MIN = 0.1f;
 	inline constexpr int   CHECK_RAISE_FINISH_STEPS = 200;
 	inline constexpr int   CHECK_ONE_SHOT_STEPS = 400;
 	inline constexpr float CHECK_BLADE_MIN_LENGTH = 0.5f;
@@ -373,6 +423,15 @@ namespace Dingo
 	inline constexpr float CHECK_POSE_HOLD_TOLERANCE = 1e-4f;
 	inline constexpr float BREAK_HITBOX_MARGIN  = 0.06f;
 	inline constexpr float BREAK_HITBOX_LENGTH  = 0.1f;
+
+	// --- Live edit (--live-edit-demo) ----------------------------------------------
+	// Scene seconds until the copy's hitbox range moves, and how far later it moves to (less if the one-shot would
+	// return before it ends; the edit is skipped below the minimum).
+	inline constexpr float LIVE_EDIT_DELAY      = 10.0f;
+	inline constexpr float LIVE_EDIT_SHIFT      = 0.25f;
+	inline constexpr float LIVE_EDIT_MIN_SHIFT  = 0.1f;
+	// Real seconds after the write in which the game must be seen to reload.
+	inline constexpr float LIVE_EDIT_RELOAD_TIMEOUT = 5.0f;
 
 	// Scene::OnUpdate caps its delta at 4/60 s, so a longer fixed step would be silently shortened.
 	inline constexpr float FIXED_DT_MAX         = 4.0f / 60.0f;
@@ -385,6 +444,8 @@ namespace Dingo
 	inline constexpr float BOUT_FIGHT_BANNER_SECONDS = 1.0f;
 	inline constexpr float BOUT_KO_SECONDS      = 3.0f;
 	inline constexpr float BOUT_KO_TAUNT_DELAY  = 0.9f;
+	// The victory or defeat sting follows the K.O. thud this long after it.
+	inline constexpr float BOUT_KO_STING_DELAY  = 0.8f;
 	// The winner taunts once calm, or this long after the K.O. whatever it is doing.
 	inline constexpr float BOUT_KO_TAUNT_FORCE  = 1.8f;
 	inline constexpr float TAUNT_FADE_IN        = 0.1f;

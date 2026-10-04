@@ -7,6 +7,7 @@ namespace Dingo
 {
 
 	class Fighter;
+	class GameAudio;
 
 	enum class BoutPhase : uint8_t
 	{
@@ -36,11 +37,12 @@ namespace Dingo
 	};
 
 	// The bout's phases, on the scene's clock: an intro nobody can act in, the fight, and the knockout where
-	// the winner taunts over the loser. The director feeds the brains only while AcceptsInput().
+	// the winner taunts over the loser. The director feeds the brains only while AcceptsInput(). With `audio`, the
+	// K.O. sounds a sting, and a moment later the victory or the defeat one.
 	class BoutFlow
 	{
 	public:
-		explicit BoutFlow(const BoutRules& rules);
+		explicit BoutFlow(const BoutRules& rules, const GameAudio* audio = nullptr);
 
 		void Begin(Fighter& opponent);
 		void Update(float deltaTime, Fighter& player, Fighter& opponent);
@@ -60,11 +62,13 @@ namespace Dingo
 
 	private:
 		BoutRules m_Rules;
+		const GameAudio* m_Audio;
 		BoutPhase m_Phase = BoutPhase::Intro;
 		BoutWinner m_Winner = BoutWinner::None;
 		float m_PhaseTime = 0.0f;
 		float m_FightTime = 0.0f;
 		bool m_Taunted = false;
+		bool m_Stung = false;
 		bool m_TimedOut = false;
 		bool m_Finished = false;
 	};

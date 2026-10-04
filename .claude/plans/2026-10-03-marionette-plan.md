@@ -6,7 +6,7 @@ P4–P12 done). Every `file:line` below was read on that date. Scope source: §6
 
 **Status**: planned. D1–D4 settled by the user on 2026-10-04 on the recommended options; D5 is
 proposed. A fresh Sonnet review (2026-10-04) found 2 High, 6 Medium and 4 Low in the animation
-mechanics, all folded in (§12). M0–M4 (assets, scaffold, movement, combat, AI and bouts) are done (§11); M5 is next.
+mechanics, all folded in (§12). M0–M5 (assets, scaffold, movement, combat, AI and bouts, polish) are done (§11); M6 is next.
 
 ---
 
@@ -556,6 +556,35 @@ into the repo yet; M1 copies the files listed under "Repo footprint".
   between the camera and the fighters; the unpaid-travel carry (M3). For M6 tuning: the Veteran
   barely lands a hit on a tier-3 player, so bouts 1 and 2 feel alike for it.
 - Not verifiable by the main session: "a person can beat all three on keyboard and on a pad".
+
+
+**M5** (2026-10-04), built by a Sonnet implementer, reviewed by a fresh Sonnet reviewer, fixed:
+
+- Live editing: `GameAssets::PollEventChanges` watches each library clip's `GetEventRevision()`; a
+  change re-runs `ValidateMoveset`, invalidates the `ReachTable`, clears the AI's perception and
+  plan, and re-evaluates frozen poses (`[Reload] ...` log). `--live-edit-demo` copies `assets/` to
+  `%TEMP%/MarionetteLiveEdit/assets` (absolute, no links, neither path inside the other), plays
+  from it with hot-reload on, and after 10 s rewrites the copy's slash `hitbox` 0.37..0.47 →
+  0.62..0.72 (temp file + rename; a 5 s reload timeout logs an error). Verified: the reload lands
+  0.56 s after the write, and a frozen `--debug-hitbox` pose at 0.42 s turns from red to grey
+  (1,534 px, all on the sword's spheres).
+- Camera: `FollowCamera::Fit` fits feet and head + margin into the band below the HUD;
+  `ArenaWorld::UpdateOcclusion` hides a brazier or wall piece on a camera→fighter segment (its
+  light stays on) and restores it 0.35 s after the line clears. Non-finite framing is skipped.
+- `MoveTravel` carries a move's unpaid travel into the next state's fade-in on chains, interrupts
+  (hit, stagger, death, taunt) and moves started during a fade-out; HitReact and Stagger fade in
+  over 0.05 s. Checks: a dodge cut at mid-dash (no extra distance) jerks at most 0.031 m carried
+  against ≥ 0.121 m uncarried (limit 0.08); distance conservation at three release points; a real
+  `Fighter` banks the carry when hit.
+- Audio: K.O., win and lose stings; a crackle loop per brazier (stopped with the world); muted in
+  tournaments. `Showcase`: the title (four fighters idling) and the End scene (the Knight taunting;
+  `--end` opens it with demo values); every scene is rebuilt on leaving.
+- Verified: 105 checks (17 asset, 27 movement, 50 combat, 11 AI), the duel PASSes, tournaments
+  unchanged (tier 3 beats tiers 1 and 2 10/10). The main session loosened the victory framing
+  (the heading overlapped the Knight).
+- Left: a full model reload mid-move keeps that move's return step and a skeleton-id change resets
+  the animator's layers (rare, dev-time only); the carry after hit-stop is paid over the 0.05 s
+  fade, a quick but continuous slide.
 
 ---
 

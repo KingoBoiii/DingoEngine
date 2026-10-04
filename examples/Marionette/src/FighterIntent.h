@@ -26,6 +26,8 @@ namespace Dingo
 	public:
 		virtual ~Brain() = default;
 		virtual FighterIntent Think(float deltaTime, const Fighter& self, const Fighter& opponent) = 0;
+		// A clip's events were replaced while the bout ran, so whatever the brain remembers of them is stale.
+		virtual void OnEventsChanged() {}
 	};
 
 }

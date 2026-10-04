@@ -25,11 +25,13 @@ namespace Dingo
 		bool Lineup = false;      // the four-fighter lineup instead of a bout
 		bool Freeze = false;
 		bool Overview = false;
+		bool End = false;         // starts on the End scene as after a win, for captures
 		bool Check = false;
 		bool Autoplay = false;    // the player's brain is a tier 3 AI; AI vs AI
 		bool DebugHitbox = false; // draws the hit and hurt spheres
 		bool BreakHitbox = false; // moves every hitbox into the tail of its one-shot, where it never fires
 		bool HotReload = false;
+		bool LiveEditDemo = false; // reads a copy of the assets and edits a hitbox range in it after LIVE_EDIT_DELAY; implies HotReload
 		DriveMode Drive = DriveMode::None; // scripted player input, for captures and logs
 		float Move = -1.0f;       // with Freeze: the player's Move parameter; negative = idle
 		float Phase = -1.0f;      // with Freeze: the locomotion's phase, 0..1; negative = the idle pose of the lineup

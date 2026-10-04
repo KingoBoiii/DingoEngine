@@ -1,10 +1,12 @@
 #include "Checks.h"
 #include "CheckReport.h"
 #include "Combat.h"
+#include "Fighter.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
 #include "HitGeometry.h"
 #include "Locomotion.h"
+#include "MoveTravel.h"
 #include "Moveset.h"
 
 #include <algorithm>
@@ -12,6 +14,7 @@
 #include <cmath>
 #include <format>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -374,7 +377,7 @@ namespace
 			const bool attacking = animator.GetCurrentClip(0) == attack;
 			const int opened = tally.HitboxBegin;
 
-			animator.PlayOneShot(react, 0.0f, HIT_REACT_FADE_OUT, 0);
+			animator.PlayOneShot(react, HIT_REACT_FADE_IN, HIT_REACT_FADE_OUT, 0);
 			bool backToAttack = false;
 			for (int i = 0; i < CHECK_ONE_SHOT_STEPS; ++i)
 			{
@@ -390,7 +393,7 @@ namespace
 					&& tally.HitboxBegin == opened && tally.HitboxEnd == opened && !animator.IsEventActive(Events::HITBOX),
 				std::format("a {} one-shot over {} {} returns to {} and never to the attack; its hitbox {} (opened {}, closed {})",
 					Clips::HIT_REACT, GetPlayerDef().LightChain[0], inside ? "inside its hitbox" : "during its windup", Clips::IDLE,
-					inside ? "closes at once and stays shut" : "never opens", tally.HitboxBegin, tally.HitboxEnd));
+					inside ? "closes within its fade-in and stays shut" : "never opens", tally.HitboxBegin, tally.HitboxEnd));
 		}
 	}
 
@@ -473,6 +476,337 @@ namespace
 			std::format("{} played on layer {} returns to {} (and layer 0 keeps its own clip meanwhile)", Clips::BLOCK_HIT, BLOCK_LAYER, Clips::BLOCKING));
 	}
 
+	constexpr float k_Unmeasured = std::numeric_limits<float>::max();
+	constexpr float k_ProbeDamage = 1.0f;
+
+	struct CarryRun
+	{
+		float MaxJerk = 0.0f;
+		float Owed = 0.0f;
+		float Unpaid = 0.0f;
+		bool Ran = false;
+	};
+
+	// A dodge cut by a hit at the middle of its dash, in the order a fighter does it: the capsule pays its share,
+	// the combat pass interrupts, the animator updates. It owes no extra distance, so the pose and the carry alone
+	// move the hips. Follows the hips' position in the world (the capsule plus the pose) from the frame of the hit
+	// on and reports the largest change in its step from one frame to the next: a pop shows as a step that reverses
+	// at once, while the dodge's own speed does not. `carry` false is the control, with nothing owed and the
+	// reaction cutting in at once. MoveTravel is driven by hand here; Fighter's use of it is CheckFighterCarry's.
+	CarryRun RunCarry(const Skeleton& skeleton, const LocomotionStates& states, const AnimationClip& dodge, const AnimationClip& react, bool carry)
+	{
+		CarryRun run;
+		const int32_t hips = skeleton.FindJoint(Joints::HIPS);
+		const std::optional<ClipRange> dash = FindRange(dodge, Events::DASH);
+		if (hips == Skeleton::k_InvalidJoint || !dash)
+			return run;
+
+		const float fadeIn = carry ? HIT_REACT_FADE_IN : 0.0f;
+		const float cutAt = 0.5f * (dash->Begin + dash->End);
+		Animator animator = MakeAnimator(skeleton, states, 0.0f);
+		MoveTravel travel;
+		animator.PlayOneShot(&dodge, DODGE_FADE_IN, DODGE_FADE_OUT, 0);
+		travel.Begin(&skeleton, dodge, 1.0f, DODGE_FADE_OUT, 0.0f);
+
+		glm::vec2 capsule(0.0f);
+		glm::vec2 previous(0.0f);
+		glm::vec2 lastStep(0.0f);
+		bool cut = false;
+		int framesAfterCut = 0;
+		for (int i = 0; i < CHECK_ONE_SHOT_STEPS && framesAfterCut < CHECK_CARRY_FRAMES; ++i)
+		{
+			capsule += travel.Step(CHECK_ANIMATOR_STEP);
+			if (!cut && animator.GetTime(0) >= cutAt)
+			{
+				cut = true;
+				if (carry)
+				{
+					travel.Release(animator.GetTime(0), fadeIn);
+					run.Owed = glm::length(travel.GetCarry());
+					capsule += travel.Step(CHECK_ANIMATOR_STEP);
+				}
+				else
+				{
+					travel = MoveTravel();
+				}
+				animator.PlayOneShot(&react, fadeIn, HIT_REACT_FADE_OUT, 0);
+			}
+			animator.Update(CHECK_ANIMATOR_STEP);
+
+			const glm::vec4 hip = animator.GetJointTransform(hips)[3];
+			const glm::vec2 world = capsule + glm::vec2(hip.x, hip.z);
+			const glm::vec2 step = world - previous;
+			if (cut)
+			{
+				run.MaxJerk = std::max(run.MaxJerk, glm::length(step - lastStep));
+				++framesAfterCut;
+			}
+			lastStep = step;
+			previous = world;
+		}
+		run.Unpaid = glm::length(travel.GetCarry());
+		run.Ran = cut;
+		return run;
+	}
+
+	void CheckTravelCarry(CheckReport& report, const Skeleton& skeleton, const LocomotionStates& states, const GameAssets& assets)
+	{
+		const AnimationClip* react = assets.GetClip(Clips::HIT_REACT);
+		bool carried = react != nullptr;
+		bool detected = react != nullptr;
+		float worst = 0.0f;
+		float weakestControl = k_Unmeasured;
+		float owedLeast = k_Unmeasured;
+		for (const char* name : { Clips::DODGE_FORWARD, Clips::DODGE_BACKWARD, Clips::DODGE_LEFT, Clips::DODGE_RIGHT })
+		{
+			const AnimationClip* dodge = assets.GetClip(name);
+			if (!dodge || !react)
+			{
+				carried = false;
+				continue;
+			}
+
+			const CarryRun with = RunCarry(skeleton, states, *dodge, *react, true);
+			const CarryRun without = RunCarry(skeleton, states, *dodge, *react, false);
+			DE_INFO("[INFO] {:<16} cut at mid-dash owes {:.3f} m: the hips' step changes by at most {:.3f} m carried, {:.3f} m without the carry",
+				name, with.Owed, with.MaxJerk, without.MaxJerk);
+			carried = carried && with.Ran && with.MaxJerk <= CHECK_CARRY_JERK_MAX && with.Unpaid < CHECK_GEOMETRY_TOLERANCE;
+			detected = detected && without.Ran && without.MaxJerk > CHECK_CARRY_JERK_MAX;
+			worst = std::max(worst, with.MaxJerk);
+			weakestControl = std::min(weakestControl, without.MaxJerk);
+			owedLeast = std::min(owedLeast, with.Owed);
+		}
+		report.Check(carried && detected,
+			std::format("a dodge cut by a hit at mid-dash keeps the hips continuous: their step changes by at most {:.3f} m from one frame to the next over the {} frames after it (limit {:.2f} m) "
+				"and the {:.2f} m or more it owed is paid in full; without the carry, with the reaction cutting in at once, it changes by at least {:.3f} m, so the check sees a snap",
+				worst, CHECK_CARRY_FRAMES, CHECK_CARRY_JERK_MAX, owedLeast, weakestControl));
+	}
+
+	struct TravelErrors
+	{
+		float Owed = 0.0f;
+		float Paid = 0.0f;
+	};
+
+	glm::vec2 PayFor(MoveTravel& travel, int steps)
+	{
+		glm::vec2 paid(0.0f);
+		for (int i = 0; i < steps; ++i)
+			paid += travel.Step(CHECK_ANIMATOR_STEP);
+		return paid;
+	}
+
+	int StepsFor(float seconds)
+	{
+		return std::max(1, static_cast<int>(std::lround(seconds / CHECK_ANIMATOR_STEP)));
+	}
+
+	// Starts `next` on `travel`, which holds a carry that HIT_REACT_FADE_IN pays off, and steps past it. `own` is what
+	// the same steps pay on a travel that owes nothing, so the difference is the carry.
+	glm::vec2 PayNext(MoveTravel& travel, const Skeleton& skeleton, const AnimationClip& next, glm::vec2& own)
+	{
+		MoveTravel alone;
+		for (MoveTravel* target : { &travel, &alone })
+			target->Begin(&skeleton, next, CHECK_TRAVEL_SCALE, DODGE_FADE_OUT, DODGE_EXTRA_DISTANCE);
+
+		const int steps = StepsFor(HIT_REACT_FADE_IN) + 1;
+		own = PayFor(alone, steps);
+		return PayFor(travel, steps);
+	}
+
+	std::optional<TravelErrors> ProbeBeforeReturn(const Skeleton& skeleton, const AnimationClip& dodge, const AnimationClip& next)
+	{
+		const std::optional<ClipRange> dash = FindRange(dodge, Events::DASH);
+		if (!dash || !(dash->End > dash->Begin))
+			return std::nullopt;
+
+		MoveTravel travel;
+		travel.Begin(&skeleton, dodge, CHECK_TRAVEL_SCALE, DODGE_FADE_OUT, DODGE_EXTRA_DISTANCE);
+		const glm::vec2 paidBefore = PayFor(travel, StepsFor(0.5f * (dash->Begin + dash->End)));
+		const float elapsed = travel.GetClock();
+		if (elapsed >= dodge.GetDuration() - DODGE_FADE_OUT || !(glm::length(travel.GetDashStep()) > CHECK_TRAVEL_TOLERANCE))
+			return std::nullopt;
+
+		TravelErrors errors;
+		const float covered = std::clamp((elapsed - dash->Begin) / (dash->End - dash->Begin), 0.0f, 1.0f);
+		const float dashError = glm::length(paidBefore - travel.GetDashStep() * covered);
+
+		const glm::vec2 owed = PoseHipsTravel(skeleton, dodge, 0.0f, elapsed) * CHECK_TRAVEL_SCALE;
+		travel.Release(elapsed, HIT_REACT_FADE_IN);
+		const glm::vec2 carry = travel.GetCarry();
+		errors.Owed = glm::length(carry - owed);
+
+		glm::vec2 own;
+		const glm::vec2 paid = PayNext(travel, skeleton, next, own);
+		errors.Paid = std::max(dashError, glm::length(paid - (own + carry)) + glm::length(travel.GetCarry()));
+		return errors;
+	}
+
+	std::optional<TravelErrors> ProbeInReturn(const Skeleton& skeleton, const AnimationClip& dodge, const AnimationClip& next)
+	{
+		const float returnBegin = std::max(dodge.GetDuration() - DODGE_FADE_OUT, 0.0f);
+		MoveTravel travel;
+		travel.Begin(&skeleton, dodge, CHECK_TRAVEL_SCALE, DODGE_FADE_OUT, DODGE_EXTRA_DISTANCE);
+		const glm::vec2 paidBefore = PayFor(travel, StepsFor(returnBegin + 0.5f * DODGE_FADE_OUT));
+		const float elapsed = travel.GetClock();
+		const float fraction = (elapsed - returnBegin) / DODGE_FADE_OUT;
+		if (!(fraction > 0.0f && fraction < 1.0f) || !(glm::length(travel.GetReturnStep()) > CHECK_TRAVEL_TOLERANCE))
+			return std::nullopt;
+
+		TravelErrors errors;
+		const glm::vec2 whole = travel.GetDashStep() + travel.GetReturnStep();
+		travel.Release(elapsed, HIT_REACT_FADE_IN);
+		const glm::vec2 carry = travel.GetCarry();
+		errors.Owed = glm::length(carry - travel.GetReturnStep() * (1.0f - fraction));
+
+		glm::vec2 own;
+		const glm::vec2 paid = PayNext(travel, skeleton, next, own);
+		errors.Paid = std::max(glm::length(paidBefore + carry - whole), glm::length(paid - (own + carry)) + glm::length(travel.GetCarry()));
+		return errors;
+	}
+
+	std::optional<TravelErrors> ProbeChained(const Skeleton& skeleton, const AnimationClip& dodge, const MoveDef& move, const AnimationClip& attack, const AnimationClip& next)
+	{
+		const std::optional<ClipRange> dash = FindRange(dodge, Events::DASH);
+		if (!dash)
+			return std::nullopt;
+
+		MoveTravel travel;
+		travel.Begin(&skeleton, dodge, CHECK_TRAVEL_SCALE, DODGE_FADE_OUT, DODGE_EXTRA_DISTANCE);
+		PayFor(travel, StepsFor(0.5f * (dash->Begin + dash->End)));
+		travel.Release(travel.GetClock(), CHECK_TRAVEL_SPREAD);
+		const glm::vec2 first = travel.GetCarry();
+		glm::vec2 paid = PayFor(travel, 1);
+
+		travel.Begin(&skeleton, attack, CHECK_TRAVEL_SCALE, move.FadeOut, 0.0f);
+		paid += PayFor(travel, CHECK_TRAVEL_SPREAD_STEPS);
+		const glm::vec2 inFlight = travel.GetCarry();
+		const float elapsed = travel.GetClock();
+		if (!(glm::length(inFlight) > CHECK_TRAVEL_TOLERANCE) || elapsed >= attack.GetDuration() - move.FadeOut)
+			return std::nullopt;
+
+		TravelErrors errors;
+		const glm::vec2 attackPose = PoseHipsTravel(skeleton, attack, 0.0f, elapsed) * CHECK_TRAVEL_SCALE;
+		travel.Release(elapsed, HIT_REACT_FADE_IN);
+		errors.Owed = glm::length(travel.GetCarry() - (inFlight + attackPose));
+
+		glm::vec2 own;
+		paid += PayNext(travel, skeleton, next, own);
+		errors.Paid = glm::length(paid - (first + attackPose + own)) + glm::length(travel.GetCarry());
+		return errors;
+	}
+
+	void CheckTravelConservation(CheckReport& report, const Skeleton& skeleton, const GameAssets& assets)
+	{
+		const MoveDef* move = FindMove(GetPlayerDef().LightChain[0]);
+		const AnimationClip* attack = move ? assets.GetClip(move->Clip) : nullptr;
+		const AnimationClip* next = assets.GetClip(Clips::DODGE_FORWARD);
+
+		std::array<bool, 3> ran = { attack && next, attack && next, attack && next };
+		std::array<TravelErrors, 3> worst;
+		for (const char* name : { Clips::DODGE_FORWARD, Clips::DODGE_BACKWARD, Clips::DODGE_LEFT, Clips::DODGE_RIGHT })
+		{
+			const AnimationClip* dodge = assets.GetClip(name);
+			if (!dodge || !attack || !next)
+			{
+				ran = { false, false, false };
+				break;
+			}
+
+			const std::array<std::optional<TravelErrors>, 3> probes = { ProbeBeforeReturn(skeleton, *dodge, *next), ProbeInReturn(skeleton, *dodge, *next),
+				ProbeChained(skeleton, *dodge, *move, *attack, *next) };
+			for (size_t i = 0; i < probes.size(); ++i)
+			{
+				ran[i] = ran[i] && probes[i].has_value();
+				if (probes[i])
+				{
+					worst[i].Owed = std::max(worst[i].Owed, probes[i]->Owed);
+					worst[i].Paid = std::max(worst[i].Paid, probes[i]->Paid);
+				}
+			}
+		}
+
+		const std::array<const char*, 3> subjects = {
+			"a dodge released at mid-dash owes the pose travel so far, has paid its dash share as it went, and the next move pays the carry on top of its own",
+			"a dodge released inside its return owes the rest of the return, so what it paid plus the carry is the dash share plus the whole return, and the next move pays the carry on top of its own",
+			"a move released while an earlier carry is still in flight owes what was left plus its own pose travel, and the whole chain pays the sum once"
+		};
+		for (size_t i = 0; i < subjects.size(); ++i)
+		{
+			report.Check(ran[i] && worst[i].Owed <= CHECK_TRAVEL_TOLERANCE && worst[i].Paid <= CHECK_TRAVEL_TOLERANCE,
+				std::format("MoveTravel: {} (worst error {:.1e} m owed, {:.1e} m paid, on the four dodges at scale {:.2f})", subjects[i], worst[i].Owed, worst[i].Paid, CHECK_TRAVEL_SCALE));
+		}
+	}
+
+	void StepFighter(Fighter& fighter, const FighterDef& def)
+	{
+		fighter.Update(CHECK_ANIMATOR_STEP, nullptr);
+		if (Animator* animator = fighter.GetAnimator())
+			animator->Update(CHECK_ANIMATOR_STEP * def.Pace);
+	}
+
+	void CheckFighterCarry(CheckReport& report, const GameAssets& assets, const Skeleton* skeleton)
+	{
+		struct Interruption
+		{
+			void (*Apply)(Fighter&);
+			FighterState State;
+		};
+		const Interruption interruptions[] = {
+			{ [](Fighter& fighter) { fighter.TakeHit(k_ProbeDamage); }, FighterState::HitReact },
+			{ [](Fighter& fighter) { fighter.Stagger(); }, FighterState::Stagger }
+		};
+
+		const FighterDef& def = GetPlayerDef();
+		const GameAudio audio{ GameSounds() };
+		Scene scene("Marionette carry check");
+		const double now = 0.0;
+		const FighterContext context{ scene, assets, audio, now };
+		FighterSpawn spawn;
+		spawn.Controlled = false;
+
+		bool banked = skeleton != nullptr;
+		float worst = 0.0f;
+		float least = k_Unmeasured;
+		for (const Interruption& interruption : interruptions)
+		{
+			Fighter fighter(context, def, spawn);
+			fighter.StartLocomotion(0.0f);
+			FighterIntent dodge;
+			dodge.Dodge = true;
+			fighter.SetIntent(dodge);
+			StepFighter(fighter, def);
+			fighter.SetIntent(FighterIntent());
+
+			const AnimationClip* clip = fighter.GetLayerClip(0);
+			const std::optional<ClipRange> dash = clip ? FindRange(*clip, Events::DASH) : std::nullopt;
+			if (!skeleton || !dash || fighter.GetState() != FighterState::Dodge)
+			{
+				banked = false;
+				continue;
+			}
+
+			const float cutAt = 0.5f * (dash->Begin + dash->End);
+			for (int i = 0; i < CHECK_ONE_SHOT_STEPS && fighter.GetLayerTime(0) < cutAt; ++i)
+				StepFighter(fighter, def);
+
+			// Apply never runs here, so none of the carry is paid yet and all of it shows.
+			const float clipTime = fighter.GetLayerTime(0);
+			const glm::vec2 before = fighter.GetTravelCarry();
+			interruption.Apply(fighter);
+			const glm::vec2 owed = PoseHipsTravel(*skeleton, *clip, 0.0f, std::min(clipTime, clip->GetDuration() - DODGE_FADE_OUT)) * def.Scale;
+			const float error = glm::length(fighter.GetTravelCarry() - owed);
+
+			banked = banked && fighter.GetState() == interruption.State && glm::length(before) <= CHECK_TRAVEL_TOLERANCE && glm::length(owed) >= CHECK_FIGHTER_CARRY_MIN
+				&& error <= CHECK_TRAVEL_TOLERANCE;
+			worst = std::max(worst, error);
+			least = std::min(least, glm::length(owed));
+		}
+		report.Check(banked,
+			std::format("a Fighter dodging at mid-dash that takes a hit or is staggered banks the {:.2f} m or more of pose travel it owed as its carry (worst error {:.1e} m, none before) and takes the reaction's state",
+				least, worst));
+	}
+
 	void CheckGeometry(CheckReport& report, const GameAssets& assets)
 	{
 		const glm::vec3 a(-1.0f, 0.0f, 0.0f);
@@ -533,6 +867,9 @@ namespace Dingo
 			CheckDeath(report, *skeleton, states, assets);
 			CheckRiposte(report, *skeleton, states, assets);
 			CheckBlockHit(report, *skeleton, states, assets);
+			CheckTravelCarry(report, *skeleton, states, assets);
+			CheckTravelConservation(report, *skeleton, assets);
+			CheckFighterCarry(report, assets, knightSkeleton);
 		}
 
 		if (report.GetFailed() == 0)

@@ -9,6 +9,7 @@ namespace Dingo
 {
 
 	class GameAssets;
+	class LiveEditDemo;
 	class ReachTable;
 
 	class MarionetteLayer : public Layer
@@ -22,6 +23,8 @@ namespace Dingo
 		void OnUpdate(float deltaTime) override;
 
 	private:
+		void PollEventReload();
+		void RebuildTitleScene();
 		void RebuildArenaScene();
 		void RebuildEndScene();
 		void RestartArena();
@@ -29,6 +32,7 @@ namespace Dingo
 	private:
 		std::unique_ptr<GameAssets> m_Assets;
 		std::unique_ptr<ReachTable> m_Reach;
+		std::unique_ptr<LiveEditDemo> m_LiveEdit;
 		// Before the scenes, which hold pointers to it.
 		MatchState m_Match;
 		SceneManager m_SceneManager;

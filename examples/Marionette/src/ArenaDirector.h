@@ -23,6 +23,7 @@ namespace Dingo
 	class HitDebugView;
 	class Hud;
 	class ReachTable;
+	class Showcase;
 	struct FighterContext;
 	struct MatchState;
 
@@ -40,9 +41,9 @@ namespace Dingo
 		void OnDestroy() override;
 
 	private:
-		void BuildLineup(const FighterContext& context, const LaunchOptions& options);
 		void BuildBout(const FighterContext& context, const LaunchOptions& options);
 		void UpdateBout(float deltaTime);
+		void OnEventsChanged();
 		void FinishBout();
 		void FinishTournament();
 		void LogDrive(float deltaTime);
@@ -53,6 +54,7 @@ namespace Dingo
 		const ReachTable* m_Reach = nullptr;
 		MatchState* m_Match = nullptr;
 		double m_Time = 0.0;
+		std::unique_ptr<Showcase> m_Showcase;
 		std::unique_ptr<ArenaWorld> m_World;
 		std::unique_ptr<GameAudio> m_Audio;
 		std::unique_ptr<HitDebugView> m_DebugView;
@@ -71,6 +73,8 @@ namespace Dingo
 		bool m_Tournament = false;
 		int m_BoutNumber = 1;
 		uint32_t m_Seed = 1;
+		// The clips' events as they stood when this bout last looked; a hot-reload moves it on.
+		uint32_t m_EventGeneration = 0;
 		DriveMode m_Drive = DriveMode::None;
 		float m_LogTimer = 0.0f;
 		float m_WallPressed = 0.0f;

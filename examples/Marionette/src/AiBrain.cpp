@@ -79,6 +79,15 @@ namespace Dingo
 		return Decide(deltaTime, MakeAiView(self), MakeAiView(opponent));
 	}
 
+	// The snapshots hold seconds to a hitbox read from the old windows, and a plan was made on them.
+	void AiBrain::OnEventsChanged()
+	{
+		m_Perception.Clear();
+		m_Plan = Plan();
+		m_PlanAge = 0.0f;
+		m_LingerTimer = 0.0f;
+	}
+
 	void AiBrain::Begin(const AiView& self)
 	{
 		m_Started = true;

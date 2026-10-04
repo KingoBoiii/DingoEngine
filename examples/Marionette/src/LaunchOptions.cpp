@@ -143,11 +143,15 @@ namespace
 		ParseFlag(args, "lineup", options.Lineup);
 		ParseFlag(args, "freeze", options.Freeze);
 		ParseFlag(args, "overview", options.Overview);
+		ParseFlag(args, "end", options.End);
 		ParseFlag(args, "check", options.Check);
 		ParseFlag(args, "autoplay", options.Autoplay);
 		ParseFlag(args, "debug-hitbox", options.DebugHitbox);
 		ParseFlag(args, "break-hitbox", options.BreakHitbox);
 		ParseFlag(args, "hot-reload", options.HotReload);
+		ParseFlag(args, "live-edit-demo", options.LiveEditDemo);
+		if (options.LiveEditDemo)
+			options.HotReload = true;
 		ParseDrive(args, options.Drive);
 		ParseInt(args, "tournament", 0, TOURNAMENT_MAX, options.Tournament);
 		if (options.Tournament > 0)

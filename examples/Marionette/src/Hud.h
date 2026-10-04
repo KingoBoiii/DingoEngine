@@ -10,6 +10,10 @@ namespace Dingo
 	class BoutFlow;
 	class Fighter;
 
+	// Where the lowest thing in the HUD's top band, the health bars, ends on the screen, in normalized device y (1 is
+	// the top edge). The arena camera keeps the fighters below it.
+	float GetHudBottomNdc();
+
 	// Health bars, the bout banner and the controls hint, drawn through a second, orthographic camera in
 	// the arena scene over the 3D world.
 	class Hud

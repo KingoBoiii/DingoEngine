@@ -14,6 +14,18 @@ namespace
 	constexpr const char* k_BlockPath = "audio/block.wav";
 	constexpr const char* k_ParryPath = "audio/parry.wav";
 	constexpr const char* k_DodgePath = "audio/dodge.wav";
+	constexpr const char* k_KoPath = "audio/ko.wav";
+	constexpr const char* k_WinPath = "audio/win.wav";
+	constexpr const char* k_LosePath = "audio/lose.wav";
+	constexpr const char* k_CracklePath = "audio/brazier.wav";
+
+	bool SameEvents(const std::vector<Dingo::AnimationClipEvent>& a, const std::vector<Dingo::AnimationClipEvent>& b)
+	{
+		return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](const Dingo::AnimationClipEvent& x, const Dingo::AnimationClipEvent& y)
+		{
+			return x.Name == y.Name && x.Time == y.Time && x.EndTime == y.EndTime && x.Range == y.Range;
+		});
+	}
 }
 
 namespace Dingo
@@ -50,6 +62,7 @@ namespace Dingo
 		if (GetLaunchOptions().BreakHitbox)
 			BreakHitboxes();
 		ValidateMoveset(m_Clips);
+		WatchEvents();
 
 		m_Sounds.Footstep = LoadSound(k_FootstepPath);
 		m_Sounds.Swing = LoadSound(k_SwingPath);
@@ -57,6 +70,10 @@ namespace Dingo
 		m_Sounds.Block = LoadSound(k_BlockPath);
 		m_Sounds.Parry = LoadSound(k_ParryPath);
 		m_Sounds.Dodge = LoadSound(k_DodgePath);
+		m_Sounds.Ko = LoadSound(k_KoPath);
+		m_Sounds.Win = LoadSound(k_WinPath);
+		m_Sounds.Lose = LoadSound(k_LosePath);
+		m_Sounds.Crackle = LoadSound(k_CracklePath);
 	}
 
 	std::shared_ptr<AudioClip> GameAssets::LoadSound(const char* path)
@@ -77,6 +94,57 @@ namespace Dingo
 				return clip;
 		}
 		return nullptr;
+	}
+
+	void GameAssets::WatchEvents()
+	{
+		m_Watches.assign(m_Libraries.size(), {});
+		for (size_t i = 0; i < m_Libraries.size(); ++i)
+		{
+			const Model* library = m_Libraries[i];
+			for (uint32_t k = 0; library && k < library->GetAnimationCount(); ++k)
+			{
+				const AnimationClip* clip = library->GetAnimation(k);
+				m_Watches[i].push_back({ clip->GetEventRevision(), clip->GetEvents() });
+			}
+		}
+	}
+
+	std::vector<EventChange> GameAssets::PollEventChanges()
+	{
+		std::vector<EventChange> changes;
+		for (size_t i = 0; i < m_Libraries.size(); ++i)
+		{
+			const Model* library = m_Libraries[i];
+			if (!library)
+				continue;
+
+			const uint32_t count = library->GetAnimationCount();
+			std::vector<ClipWatch>& watches = m_Watches[i];
+			watches.resize(count);
+
+			bool moved = false;
+			int differing = 0;
+			for (uint32_t k = 0; k < count; ++k)
+			{
+				const AnimationClip* clip = library->GetAnimation(k);
+				ClipWatch& watch = watches[k];
+				if (clip->GetEventRevision() == watch.Revision)
+					continue;
+
+				moved = true;
+				differing += SameEvents(clip->GetEvents(), watch.Events) ? 0 : 1;
+				watch.Revision = clip->GetEventRevision();
+				watch.Events = clip->GetEvents();
+			}
+
+			if (moved)
+				changes.push_back({ library->GetFilePath().stem().string() + ".events", differing });
+		}
+
+		if (!changes.empty())
+			++m_EventGeneration;
+		return changes;
 	}
 
 	void GameAssets::BreakHitboxes()

@@ -1,4 +1,5 @@
 #include "BoutFlow.h"
+#include "Audio.h"
 #include "Fighter.h"
 
 namespace
@@ -26,8 +27,8 @@ namespace Dingo
 		}
 	}
 
-	BoutFlow::BoutFlow(const BoutRules& rules)
-		: m_Rules(rules)
+	BoutFlow::BoutFlow(const BoutRules& rules, const GameAudio* audio)
+		: m_Rules(rules), m_Audio(audio)
 	{}
 
 	void BoutFlow::Begin(Fighter& opponent)
@@ -80,12 +81,21 @@ namespace Dingo
 		else
 			m_Winner = IsDown(player) ? BoutWinner::Opponent : BoutWinner::Player;
 
+		if (m_Audio)
+			m_Audio->PlaySting(Sting::Ko);
+
 		if (!(m_Rules.KnockoutSeconds > 0.0f))
 			m_Finished = true;
 	}
 
 	void BoutFlow::UpdateKnockout(Fighter& player, Fighter& opponent)
 	{
+		if (m_Audio && !m_Stung && m_PhaseTime >= BOUT_KO_STING_DELAY)
+		{
+			m_Audio->PlaySting(m_Winner == BoutWinner::Player ? Sting::Win : Sting::Lose);
+			m_Stung = true;
+		}
+
 		const bool hasWinner = m_Winner == BoutWinner::Player || m_Winner == BoutWinner::Opponent;
 		if (m_Rules.Taunts && hasWinner && !m_Taunted && m_PhaseTime >= BOUT_KO_TAUNT_DELAY)
 		{

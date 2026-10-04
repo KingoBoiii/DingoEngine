@@ -38,6 +38,9 @@ namespace Dingo
 
 		void Log(const FighterDef& attacker, const FighterDef& target) const;
 
+		// Forgets every row, so the next question re-reads the clips' events: after a hot-reload.
+		void Invalidate();
+
 	private:
 		struct Sweep
 		{

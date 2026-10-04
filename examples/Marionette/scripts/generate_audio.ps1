@@ -59,6 +59,14 @@ function Invoke-LowPass {
     for ($i = 0; $i -lt $Buf.Length; $i++) { $y += $Coef * ($Buf[$i] - $y); $Buf[$i] = [float]$y }
 }
 
+# The same filter run twice around the buffer, so its end flows into its start.
+function Invoke-CircularLowPass {
+    param([float[]]$Buf, [double]$Coef)
+    $y = 0.0
+    for ($i = 0; $i -lt $Buf.Length; $i++) { $y += $Coef * ($Buf[$i] - $y) }
+    for ($i = 0; $i -lt $Buf.Length; $i++) { $y += $Coef * ($Buf[$i] - $y); $Buf[$i] = [float]$y }
+}
+
 function Invoke-HighPass {
     param([float[]]$Buf, [double]$Coef)
     $y = 0.0
@@ -83,17 +91,18 @@ function Set-Edges {
 }
 
 function Add-Into {
-    param([float[]]$Dst, [float[]]$Src, [double]$Start = 0.0, [double]$Gain = 1.0)
+    param([float[]]$Dst, [float[]]$Src, [double]$Start = 0.0, [double]$Gain = 1.0, [bool]$Wrap = $false)
     $offset = [int]($Start * $rate)
     for ($i = 0; $i -lt $Src.Length; $i++) {
         $j = $offset + $i
-        if ($j -ge $Dst.Length) { break }
+        if ($j -ge $Dst.Length) { if ($Wrap) { $j = $j % $Dst.Length } else { break } }
         $Dst[$j] += [float]($Src[$i] * $Gain)
     }
 }
 
+# A decaying sine, optionally with a few harmonics (amplitudes for harmonics 2, 3, ...).
 function Add-Tone {
-    param([float[]]$Dst, [double]$Freq, [double]$Start, [double]$Seconds, [double]$Amp, [double]$Decay, [double]$Attack = 0.003)
+    param([float[]]$Dst, [double]$Freq, [double]$Start, [double]$Seconds, [double]$Amp, [double]$Decay, [double]$Attack = 0.003, [double[]]$Harmonics = @())
     $offset = [int]($Start * $rate)
     $count = [int]($Seconds * $rate)
     for ($i = 0; $i -lt $count; $i++) {
@@ -102,18 +111,20 @@ function Add-Tone {
         $t = $i / [double]$rate
         $env = [math]::Exp(-$Decay * $t)
         if ($t -lt $Attack) { $env *= $t / $Attack }
-        $Dst[$j] += [float]([math]::Sin($TwoPi * $Freq * $t) * $env * $Amp)
+        $v = [math]::Sin($TwoPi * $Freq * $t)
+        for ($h = 0; $h -lt $Harmonics.Length; $h++) { $v += $Harmonics[$h] * [math]::Sin($TwoPi * $Freq * ($h + 2) * $t) }
+        $Dst[$j] += [float]($v * $env * $Amp)
     }
 }
 
 function Add-NoiseBurst {
-    param([float[]]$Dst, [double]$Start, [double]$Seconds, [double]$Amp, [double]$Decay, [double]$LowPass = 1.0, [double]$HighPass = 0.0)
+    param([float[]]$Dst, [double]$Start, [double]$Seconds, [double]$Amp, [double]$Decay, [double]$LowPass = 1.0, [double]$HighPass = 0.0, [bool]$Wrap = $false)
     $count = [int]($Seconds * $rate)
     $burst = New-Noise $count
     if ($LowPass -lt 1.0) { Invoke-LowPass $burst $LowPass }
     if ($HighPass -gt 0.0) { Invoke-HighPass $burst $HighPass }
     for ($i = 0; $i -lt $count; $i++) { $burst[$i] = [float]($burst[$i] * [math]::Exp(-$Decay * $i / [double]$rate)) }
-    Add-Into $Dst $burst $Start $Amp
+    Add-Into $Dst $burst $Start $Amp $Wrap
 }
 
 function Add-Whoosh {
@@ -201,5 +212,58 @@ Invoke-HighPass $dodge 0.03
 Set-Peak $dodge 0.5
 Set-Edges $dodge 0.004 0.025
 Write-Wav "dodge.wav" $dodge
+
+# K.O.: a gong struck over a boom that falls away, with a rumble under it.
+$ko = New-Buffer 1.3
+foreach ($p in @(@(210.0, 0.45, 4.0), @(530.0, 0.32, 5.5), @(1010.0, 0.24, 7.0), @(1790.0, 0.14, 9.0))) {
+    Add-Tone $ko $p[0] 0.0 1.2 $p[1] $p[2] 0.002
+}
+Add-Chirp $ko 150.0 42.0 0.0 0.6 1.0 4.5
+Add-NoiseBurst $ko 0.0 0.06 0.9 60.0 0.5
+Add-NoiseBurst $ko 0.0 0.7 0.4 3.5 0.03
+Set-Peak $ko 0.9
+Set-Edges $ko 0.002 0.08
+Write-Wav "ko.wav" $ko
+
+# Win: a rising arpeggio over a held major chord.
+$win = New-Buffer 1.7
+foreach ($n in @(@(392.0, 0.0), @(493.88, 0.16), @(587.33, 0.32), @(783.99, 0.48))) {
+    Add-Tone $win $n[0] $n[1] 1.1 0.4 3.0 0.004 @(0.35, 0.12)
+}
+foreach ($f in @(196.0, 246.94, 293.66)) { Add-Tone $win $f 0.48 1.15 0.18 1.6 0.08 }
+Set-Peak $win 0.8
+Set-Edges $win 0.002 0.12
+Write-Wav "win.wav" $win
+
+# Lose: a falling line in the minor over a low tone that stays after it.
+$lose = New-Buffer 1.9
+foreach ($n in @(@(440.0, 0.0), @(349.23, 0.24), @(293.66, 0.48), @(220.0, 0.72))) {
+    Add-Tone $lose $n[0] $n[1] 1.0 0.4 3.2 0.006 @(0.3, 0.1)
+}
+Add-Tone $lose 110.0 0.72 1.1 0.3 2.0 0.05
+Add-Tone $lose 130.81 0.72 1.1 0.15 2.0 0.05
+Set-Peak $lose 0.8
+Set-Edges $lose 0.002 0.15
+Write-Wav "lose.wav" $lose
+
+# Brazier crackle (loop, 1.8 s): a soft rumble under random pops, all wrapped around the loop point so it seams
+# without a click.
+$len = [int](1.8 * $rate)
+$crackle = New-Buffer 1.8
+$rumble = New-Noise $len
+Invoke-CircularLowPass $rumble 0.05
+Set-Peak $rumble 0.3
+Add-Into $crackle $rumble
+for ($p = 0; $p -lt 40; $p++) {
+    $start = $rng.NextDouble() * 1.8
+    $amp = 0.15 + 0.85 * $rng.NextDouble() * $rng.NextDouble()
+    Add-NoiseBurst $crackle $start (0.012 + 0.02 * $rng.NextDouble()) $amp (220.0 + 420.0 * $rng.NextDouble()) 1.0 0.15 $true
+}
+for ($i = 0; $i -lt $len; $i++) {
+    $swell = 1.0 - 0.3 * (0.5 + 0.5 * [math]::Sin($TwoPi * 3.0 * $i / [double]$len))
+    $crackle[$i] = [float]($crackle[$i] * $swell)
+}
+Set-Peak $crackle 0.7
+Write-Wav "brazier.wav" $crackle
 
 Write-Host "Done."

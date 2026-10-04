@@ -30,6 +30,12 @@ namespace
 namespace Dingo
 {
 
+	float GetHudBottomNdc()
+	{
+		const float halfHeight = 0.5f * HUD_ORTHO_SIZE;
+		return (halfHeight - HUD_BAR_DROP - 0.5f * HUD_BAR_HEIGHT) / halfHeight;
+	}
+
 	Hud::Hud(Scene& scene, int bout, bool fadeIn, bool showHint)
 		: m_Bout(bout), m_ShowHint(showHint), m_FadeInLeft(fadeIn ? HUD_FADE_IN_SECONDS : 0.0f)
 	{

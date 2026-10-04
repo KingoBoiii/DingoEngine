@@ -58,6 +58,15 @@ namespace Dingo
 		m_Logged.assign(k_FighterCount * k_FighterCount, false);
 	}
 
+	void ReachTable::Invalidate()
+	{
+		for (Sweep& sweep : m_Sweeps)
+			sweep = Sweep();
+		std::fill(m_Reach.begin(), m_Reach.end(), MoveReach());
+		m_ReachDone.assign(m_Reach.size(), false);
+		m_Logged.assign(m_Logged.size(), false);
+	}
+
 	size_t ReachTable::SweepIndex(const FighterDef& attacker, size_t move) const
 	{
 		return static_cast<size_t>(attacker.Id) * m_MoveCount + move;

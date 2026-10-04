@@ -73,6 +73,7 @@ namespace Dingo
 		AiBrain(const AiTierParams& params, uint32_t seed, const ReachTable* reach);
 
 		FighterIntent Think(float deltaTime, const Fighter& self, const Fighter& opponent) override;
+		void OnEventsChanged() override;
 		FighterIntent Decide(float deltaTime, const AiView& self, const AiView& opponent);
 
 		const AiTierParams& GetParams() const { return m_Params; }

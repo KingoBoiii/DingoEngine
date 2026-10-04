@@ -37,6 +37,37 @@ namespace Dingo
 		PlayAt(m_Sounds.Footstep, position, volume, pitch, AUDIO_STEP_NEAR, AUDIO_STEP_FAR);
 	}
 
+	void GameAudio::PlaySting(Sting sting) const
+	{
+		const std::shared_ptr<AudioClip>& clip = sting == Sting::Ko ? m_Sounds.Ko : sting == Sting::Win ? m_Sounds.Win : m_Sounds.Lose;
+		if (!clip || m_Muted)
+			return;
+
+		SoundPlayParams params;
+		params.Volume = AUDIO_STING_VOLUME;
+		Application::Get().GetAudioEngine().Play(clip, params);
+	}
+
+	AudioSoundId GameAudio::StartCrackle(const glm::vec3& position, float pitch) const
+	{
+		if (!m_Sounds.Crackle || m_Muted)
+			return k_InvalidSound;
+
+		SoundAttenuation attenuation;
+		attenuation.Model = AudioAttenuationModel::Linear;
+		attenuation.MinDistance = AUDIO_CRACKLE_NEAR;
+		attenuation.MaxDistance = AUDIO_CRACKLE_FAR;
+
+		SoundPlayParams params;
+		params.Volume = AUDIO_CRACKLE_VOLUME;
+		params.Pitch = pitch;
+		params.Looping = true;
+		params.Spatialized = true;
+		params.Position = position;
+		params.Attenuation = attenuation;
+		return Application::Get().GetAudioEngine().Play(m_Sounds.Crackle, params);
+	}
+
 	void GameAudio::PlayCombat(CombatSound sound, const glm::vec3& position, float scale) const
 	{
 		const std::shared_ptr<AudioClip>* clip = &m_Sounds.Swing;

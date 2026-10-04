@@ -2,8 +2,10 @@
 #include <DingoEngine/Core/Platform.h>
 
 #include "LaunchOptions.h"
+#include "LiveEdit.h"
 #include "MarionetteLayer.h"
 
+#include <filesystem>
 #include <optional>
 #include <string_view>
 
@@ -56,7 +58,12 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 {
 	const LaunchOptions& options = ParseLaunchOptions(args);
 	// Nobody watches a scripted run, and the long checks in OnAttach leave the window unfocused, which would pause it.
-	const bool scripted = options.Check || options.Drive != DriveMode::None || options.FixedDt > 0.0f || options.Autoplay;
+	const bool scripted = options.Check || options.Drive != DriveMode::None || options.FixedDt > 0.0f || options.Autoplay || options.LiveEditDemo;
+
+	// The live-edit demo rewrites a .events file, so it reads a copy of the assets and never the repository's own.
+	std::filesystem::path assetRoot = Platform::FindDirectoryUpward("assets").value_or("assets");
+	if (options.LiveEditDemo && PrepareLiveEditAssets(assetRoot))
+		assetRoot = GetLiveEditRoot();
 
 	ApplicationParams params = ApplicationParams{
 		.CommandLineArgs = args,
@@ -72,7 +79,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.FramesInFlight = 3,
 		},
 		.Assets = AssetManagerParams()
-			.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or("assets"))
+			.SetRootDirectory(assetRoot)
 			.SetEnableHotReload(options.HotReload),
 		.EnableUI = false,
 		.UpdateInBackground = scripted,

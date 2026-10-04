@@ -13,6 +13,13 @@
 namespace Dingo
 {
 
+	// A clip library whose clips' events a hot-reload replaced: its .events file, and how many clips now differ.
+	struct EventChange
+	{
+		std::string File;
+		int Clips = 0;
+	};
+
 	// Loads everything the Moveset names through the AssetManager, which owns the models and textures.
 	// The lit materials are the game's, so they go before the renderer does: destroy this in OnDetach.
 	class GameAssets
@@ -38,11 +45,23 @@ namespace Dingo
 		const AnimationClip* FindAnyClip(std::string_view name) const;
 		const GameSounds& GetSounds() const { return m_Sounds; }
 
+		// The libraries whose clips got new events (an AnimationClip::GetEventRevision moved) since the last call.
+		std::vector<EventChange> PollEventChanges();
+		// Counts the polls that found a change, for whoever derived something from the events.
+		uint32_t GetEventGeneration() const { return m_EventGeneration; }
+
 	private:
+		struct ClipWatch
+		{
+			uint64_t Revision = 0;
+			std::vector<AnimationClipEvent> Events;
+		};
+
 		Model* LoadModel(const char* path);
 		Texture* LoadTexture(const char* path);
 		std::shared_ptr<AudioClip> LoadSound(const char* path);
 		void BreakHitboxes();
+		void WatchEvents();
 
 	private:
 		std::unordered_map<std::string, Model*> m_Models;
@@ -51,6 +70,8 @@ namespace Dingo
 		std::vector<Model*> m_Libraries;
 		ClipSet m_Clips;
 		GameSounds m_Sounds;
+		std::vector<std::vector<ClipWatch>> m_Watches;
+		uint32_t m_EventGeneration = 0;
 	};
 
 }

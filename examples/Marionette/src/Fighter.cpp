@@ -19,14 +19,6 @@ namespace
 		const float s = std::sin(yaw);
 		return glm::vec2(local.x * c + local.y * s, -local.x * s + local.y * c);
 	}
-
-	float Covered(const ClipRange& range, float from, float to)
-	{
-		const float length = range.End - range.Begin;
-		if (!(length > 1.0e-6f))
-			return 0.0f;
-		return std::clamp((std::min(to, range.End) - std::max(from, range.Begin)) / length, 0.0f, 1.0f);
-	}
 }
 
 namespace Dingo
@@ -214,16 +206,30 @@ namespace Dingo
 
 	void Fighter::ShowIdle(float time, bool freeze)
 	{
+		ShowClip(m_Context.Assets.GetClip(Clips::IDLE), time, freeze);
+	}
+
+	void Fighter::ShowClip(const AnimationClip* clip, float time, bool freeze)
+	{
 		Animator* animator = GetAnimator();
-		const AnimationClip* idle = m_Context.Assets.GetClip(Clips::IDLE);
-		if (!animator || !idle)
+		if (!animator || !clip)
 			return;
 
-		animator->Play(idle);
+		animator->Play(clip);
 		animator->SetTime(time);
 		animator->Evaluate();
 		m_Entity.GetComponent<AnimatorComponent>().Enabled = !freeze;
 		m_Frozen = freeze;
+	}
+
+	void Fighter::OnEventsChanged()
+	{
+		Animator* animator = m_Valid && m_PoseClip ? GetAnimator() : nullptr;
+		if (!animator)
+			return;
+
+		animator->SetTime(m_PoseTime);
+		animator->Evaluate();
 	}
 
 	void Fighter::StartLocomotion(float phase)
@@ -470,11 +476,12 @@ namespace Dingo
 		m_HitboxPulse = false;
 		m_LightBuffer = 0.0f;
 
+		ReleaseTravel(animator, move.FadeIn);
 		animator.PlayOneShot(clip, move.FadeIn, move.FadeOut, 0);
 		BeginTravel(*clip, move.FadeOut, 0.0f);
 		if (m_Context.LogCombat)
 		{
-			const glm::vec2 net = m_Travel.ReturnStep / m_Def.Scale;
+			const glm::vec2 net = m_Travel.GetReturnStep() / m_Def.Scale;
 			DE_INFO("[Attack] {} {} chain={} swing={} t={:.3f} net hips ({:.3f}, {:.3f}) m", m_Def.Name, move.Clip, chainIndex, m_SwingId, m_Context.Time, net.x, net.y);
 		}
 	}
@@ -505,55 +512,57 @@ namespace Dingo
 		m_Move = nullptr;
 		m_MoveClip = nullptr;
 
+		ReleaseTravel(animator, DODGE_FADE_IN);
 		animator.PlayOneShot(clip, DODGE_FADE_IN, DODGE_FADE_OUT, 0);
 		BeginTravel(*clip, DODGE_FADE_OUT, DODGE_EXTRA_DISTANCE);
 		if (m_Context.LogCombat)
 		{
-			const glm::vec2 net = m_Travel.ReturnStep / m_Def.Scale;
+			const glm::vec2 net = m_Travel.GetReturnStep() / m_Def.Scale;
 			DE_INFO("[Dodge] {} {} t={:.3f} net hips ({:.3f}, {:.3f}) m, extra {:.2f} m", m_Def.Name, clip->GetName(), m_Context.Time, net.x, net.y,
-				glm::length(m_Travel.DashStep));
+				glm::length(m_Travel.GetDashStep()));
 		}
 	}
 
 	void Fighter::BeginTravel(const AnimationClip& clip, float fadeOut, float dashDistance)
 	{
-		const float duration = clip.GetDuration();
-		m_Travel = Travel();
-		m_Travel.Active = true;
-		m_Travel.Return = { std::max(duration - fadeOut, 0.0f), duration };
-		if (!m_Skeleton)
-			return;
+		m_Travel.Begin(m_Skeleton, clip, m_Def.Scale, fadeOut, dashDistance);
+	}
 
-		m_Travel.ReturnStep = NetHipsTravel(*m_Skeleton, clip, fadeOut) * m_Def.Scale;
-		if (!(dashDistance > 0.0f))
-			return;
+	void Fighter::ReleaseTravel(const Animator& animator, float fadeIn, bool late)
+	{
+		// The move's own clip is the pose's clock until the one-shot starts returning; after that the animator
+		// shows the way back and the travel's clock says how much of it has been paid.
+		const AnimationClip* clip = m_Travel.GetClip();
+		const float clipTime = clip && animator.GetCurrentClip(0) == clip ? animator.GetTime(0) : m_Travel.GetClock();
+		m_Travel.Release(clipTime, fadeIn);
 
-		const std::optional<ClipRange> dash = FindRange(clip, Events::DASH);
-		if (!dash || !(dash->End - dash->Begin > 1.0e-3f))
-			return;
-
-		const glm::vec2 direction = PoseHipsTravel(*m_Skeleton, clip, dash->Begin, dash->End);
-		const float length = glm::length(direction);
-		if (length > 1.0e-3f)
+		// The combat pass runs after the velocity went to the controller, and the animator's next update starts
+		// the cross-fade this frame, so the carry's first share can't wait for the next one.
+		if (late && m_LastDelta > 0.0f)
 		{
-			m_Travel.Dash = *dash;
-			m_Travel.DashStep = direction / length * (dashDistance * m_Def.Scale);
+			const glm::vec2 first = m_Travel.Step(m_LastDelta * m_AnimationRate);
+			m_Extra += Rotate(first, m_Yaw) / m_LastDelta;
+			if (CharacterController3D* controller = m_Context.World.GetCharacterController(m_Entity))
+				PushVelocity(*controller);
 		}
+
+		const glm::vec2 carry = m_Travel.GetCarry();
+		if (m_Context.LogCombat && glm::length(carry) > 1.0e-3f)
+			DE_INFO("[Carry] {} t={:.3f} owes ({:.3f}, {:.3f}) m, paid over {:.2f} s", m_Def.Name, m_Context.Time, carry.x / m_Def.Scale, carry.y / m_Def.Scale, fadeIn);
 	}
 
 	glm::vec2 Fighter::StepTravel(float deltaTime)
 	{
-		if (!m_Travel.Active || !(deltaTime > 0.0f))
+		if (!(deltaTime > 0.0f))
 			return glm::vec2(0.0f);
 
-		const float from = m_Travel.Clock;
-		const float to = from + deltaTime * m_AnimationRate;
-		m_Travel.Clock = to;
+		return Rotate(m_Travel.Step(deltaTime * m_AnimationRate), m_Yaw) / deltaTime;
+	}
 
-		const glm::vec2 local = m_Travel.DashStep * Covered(m_Travel.Dash, from, to) + m_Travel.ReturnStep * Covered(m_Travel.Return, from, to);
-		if (to >= m_Travel.Dash.End && to >= m_Travel.Return.End)
-			m_Travel.Active = false;
-		return Rotate(local, m_Yaw) / deltaTime;
+	void Fighter::PushVelocity(CharacterController3D& controller) const
+	{
+		const glm::vec2 total = m_Velocity + m_Extra;
+		controller.SetLinearVelocity(glm::vec3(total.x, m_VerticalVelocity, total.y));
 	}
 
 	void Fighter::UpdateExtra(float deltaTime)
@@ -589,7 +598,7 @@ namespace Dingo
 		m_RiposteLeft = 0.0f;
 	}
 
-	void Fighter::Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut)
+	void Fighter::Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut, bool late)
 	{
 		Animator* animator = GetAnimator();
 		const AnimationClip* clip = m_Context.Assets.GetClip(clipName);
@@ -602,7 +611,7 @@ namespace Dingo
 		m_MoveClip = nullptr;
 		m_ChainIndex = -1;
 		m_BlockRaising = false;
-		m_Travel.Active = false;
+		ReleaseTravel(*animator, fadeIn, late);
 		animator->PlayOneShot(clip, fadeIn, fadeOut, 0);
 	}
 
@@ -615,19 +624,19 @@ namespace Dingo
 		if (m_Health <= 0.0f)
 			Die();
 		else
-			Interrupt(Clips::HIT_REACT, FighterState::HitReact, 0.0f, HIT_REACT_FADE_OUT);
+			Interrupt(Clips::HIT_REACT, FighterState::HitReact, HIT_REACT_FADE_IN, HIT_REACT_FADE_OUT, true);
 	}
 
 	void Fighter::Stagger()
 	{
 		if (m_Valid && !IsDead())
-			Interrupt(Clips::STAGGER, FighterState::Stagger, 0.0f, STAGGER_FADE_OUT);
+			Interrupt(Clips::STAGGER, FighterState::Stagger, STAGGER_FADE_IN, STAGGER_FADE_OUT, true);
 	}
 
 	void Fighter::Taunt(const char* clipName)
 	{
 		if (m_Valid && !IsDead() && clipName)
-			Interrupt(clipName, FighterState::Taunt, TAUNT_FADE_IN, TAUNT_FADE_OUT);
+			Interrupt(clipName, FighterState::Taunt, TAUNT_FADE_IN, TAUNT_FADE_OUT, false);
 	}
 
 	void Fighter::Die()
@@ -642,7 +651,7 @@ namespace Dingo
 		m_Move = nullptr;
 		m_MoveClip = nullptr;
 		m_ChainIndex = -1;
-		m_Travel.Active = false;
+		ReleaseTravel(*animator, DEATH_FADE, true);
 		animator->Play(AnimationState::Clip(death).SetLoop(false), DEATH_FADE);
 		if (m_Context.LogCombat)
 			DE_INFO("[Dead] {} {} t={:.3f}", m_Def.Name, death->GetName(), m_Context.Time);
@@ -887,8 +896,7 @@ namespace Dingo
 			else
 				m_VerticalVelocity += GRAVITY_Y * deltaTime;
 
-			const glm::vec2 total = m_Velocity + m_Extra;
-			controller->SetLinearVelocity(glm::vec3(total.x, m_VerticalVelocity, total.y));
+			PushVelocity(*controller);
 			controller->SetRotation(GameMath::YawQuat(m_Yaw));
 		}
 

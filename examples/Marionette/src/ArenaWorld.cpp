@@ -1,8 +1,11 @@
 #include "ArenaWorld.h"
+#include "Audio.h"
 #include "GameTuning.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <utility>
 
 namespace
 {
@@ -16,6 +19,35 @@ namespace
 	{
 		return glm::angleAxis(radians, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
+
+	// Whether the segment crosses a box of half-size `half` turned `yaw` about Y at `center`: slabs, in the box's own frame.
+	bool SegmentHitsBox(const glm::vec3& from, const glm::vec3& to, const glm::vec3& center, const glm::vec3& half, float yaw)
+	{
+		const glm::quat inverse = Yaw(-yaw);
+		const glm::vec3 a = inverse * (from - center);
+		const glm::vec3 delta = inverse * (to - center) - a;
+		float enter = 0.0f;
+		float leave = 1.0f;
+		for (int axis = 0; axis < 3; ++axis)
+		{
+			if (std::abs(delta[axis]) < 1.0e-6f)
+			{
+				if (std::abs(a[axis]) > half[axis])
+					return false;
+				continue;
+			}
+
+			float first = (-half[axis] - a[axis]) / delta[axis];
+			float last = (half[axis] - a[axis]) / delta[axis];
+			if (first > last)
+				std::swap(first, last);
+			enter = std::max(enter, first);
+			leave = std::min(leave, last);
+			if (enter > leave)
+				return false;
+		}
+		return true;
+	}
 }
 
 namespace Dingo
@@ -26,7 +58,7 @@ namespace Dingo
 		return ARENA_RADIUS * std::cos(k_HalfSideAngle);
 	}
 
-	ArenaWorld::ArenaWorld(Scene& scene)
+	ArenaWorld::ArenaWorld(Scene& scene, const GameAudio* audio)
 		: m_Scene(scene)
 	{
 		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
@@ -54,12 +86,19 @@ namespace Dingo
 
 		BuildFloor();
 		BuildWalls();
-		BuildBraziers();
+		BuildBraziers(audio);
 		DE_INFO("Marionette: arena built, {} m across, {} braziers", 2.0f * ARENA_RADIUS, BRAZIER_COUNT);
 	}
 
 	ArenaWorld::~ArenaWorld()
 	{
+		AudioEngine& engine = Application::Get().GetAudioEngine();
+		for (const AudioSoundId sound : m_Crackles)
+		{
+			if (sound != k_InvalidSound)
+				engine.Stop(sound);
+		}
+
 		DestroyAndDelete(m_FloorMaterial);
 		DestroyAndDelete(m_WallMaterial);
 		DestroyAndDelete(m_BrazierMaterial);
@@ -114,22 +153,30 @@ namespace Dingo
 		for (int i = 0; i < ARENA_SIDES; ++i)
 		{
 			const float normal = k_SideAngle * static_cast<float>(i);
-			SpawnSolid("Wall", glm::vec3(std::cos(normal) * distance, ARENA_WALL_HEIGHT * 0.5f, std::sin(normal) * distance),
-				glm::vec3(length, ARENA_WALL_HEIGHT, ARENA_WALL_THICKNESS), 0.5f * std::numbers::pi_v<float> - normal, COLOR_WALL, m_WallMaterial);
+			const glm::vec3 center(std::cos(normal) * distance, ARENA_WALL_HEIGHT * 0.5f, std::sin(normal) * distance);
+			const glm::vec3 size(length, ARENA_WALL_HEIGHT, ARENA_WALL_THICKNESS);
+			const float yaw = 0.5f * std::numbers::pi_v<float> - normal;
+			Occluder wall;
+			wall.Parts.push_back(SpawnSolid("Wall", center, size, yaw, COLOR_WALL, m_WallMaterial));
+			wall.Center = center;
+			wall.HalfSize = 0.5f * size;
+			wall.Yaw = yaw;
+			m_Occluders.push_back(std::move(wall));
 		}
 	}
 
-	void ArenaWorld::BuildBraziers()
+	void ArenaWorld::BuildBraziers(const GameAudio* audio)
 	{
 		for (int i = 0; i < BRAZIER_COUNT; ++i)
 		{
 			const float angle = glm::radians(BRAZIER_ANGLE_OFFSET_DEG) + 2.0f * std::numbers::pi_v<float> * static_cast<float>(i) / BRAZIER_COUNT;
 			const glm::vec3 floor(std::cos(angle) * BRAZIER_RING_RADIUS, 0.0f, std::sin(angle) * BRAZIER_RING_RADIUS);
 
-			SpawnSolid("BrazierBase", floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT * 0.5f, 0.0f),
-				glm::vec3(BRAZIER_BASE_WIDTH, BRAZIER_BASE_HEIGHT, BRAZIER_BASE_WIDTH), 0.0f, COLOR_BRAZIER, m_BrazierMaterial);
-			SpawnSolid("BrazierBowl", floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT + BRAZIER_BOWL_HEIGHT * 0.5f, 0.0f),
-				glm::vec3(BRAZIER_BOWL_WIDTH, BRAZIER_BOWL_HEIGHT, BRAZIER_BOWL_WIDTH), 0.0f, COLOR_BRAZIER, m_BrazierMaterial);
+			Occluder brazier;
+			brazier.Parts.push_back(SpawnSolid("BrazierBase", floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT * 0.5f, 0.0f),
+				glm::vec3(BRAZIER_BASE_WIDTH, BRAZIER_BASE_HEIGHT, BRAZIER_BASE_WIDTH), 0.0f, COLOR_BRAZIER, m_BrazierMaterial));
+			brazier.Parts.push_back(SpawnSolid("BrazierBowl", floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT + BRAZIER_BOWL_HEIGHT * 0.5f, 0.0f),
+				glm::vec3(BRAZIER_BOWL_WIDTH, BRAZIER_BOWL_HEIGHT, BRAZIER_BOWL_WIDTH), 0.0f, COLOR_BRAZIER, m_BrazierMaterial));
 
 			const glm::vec3 flame = floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT + BRAZIER_BOWL_HEIGHT + BRAZIER_FLAME_RISE, 0.0f);
 
@@ -138,10 +185,58 @@ namespace Dingo
 			coreTransform.Position = flame;
 			coreTransform.Scale = glm::vec3(BRAZIER_FLAME_DIAMETER);
 			core.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, COLOR_FLAME)).Material = m_FlameMaterial;
+			brazier.Parts.push_back(core);
+
+			const float height = flame.y + 0.5f * BRAZIER_FLAME_DIAMETER;
+			brazier.Center = glm::vec3(floor.x, 0.5f * height, floor.z);
+			brazier.HalfSize = glm::vec3(0.5f * BRAZIER_BOWL_WIDTH, 0.5f * height, 0.5f * BRAZIER_BOWL_WIDTH);
+			m_Occluders.push_back(std::move(brazier));
+
+			if (audio)
+				m_Crackles.push_back(audio->StartCrackle(flame, 1.0f + AUDIO_CRACKLE_PITCH_STEP * (static_cast<float>(i) - 0.5f * static_cast<float>(BRAZIER_COUNT - 1))));
 
 			Entity light = m_Scene.CreateEntity("BrazierLight");
 			light.AddComponent<Transform3DComponent>().Position = flame + glm::vec3(0.0f, BRAZIER_LIGHT_RISE, 0.0f);
 			light.AddComponent<PointLightComponent>(PointLightComponent(FLAME_COLOR, BRAZIER_LIGHT_INTENSITY, BRAZIER_LIGHT_RANGE));
+		}
+	}
+
+	void ArenaWorld::SetVisible(Occluder& occluder, bool visible)
+	{
+		for (Entity& part : occluder.Parts)
+			part.GetComponent<MeshRendererComponent>().Visible = visible;
+		occluder.Hidden = !visible;
+	}
+
+	void ArenaWorld::UpdateOcclusion(float deltaTime, const glm::vec3& eye, std::span<const CameraSubject> subjects)
+	{
+		for (Occluder& occluder : m_Occluders)
+		{
+			const glm::vec3 half = occluder.HalfSize + glm::vec3(OCCLUSION_VIEW_RADIUS);
+			bool blocks = false;
+			for (const CameraSubject& subject : subjects)
+			{
+				for (const float fraction : OCCLUSION_SAMPLE_FRACTIONS)
+				{
+					const glm::vec3 toward = subject.Position + glm::vec3(0.0f, fraction * subject.Height, 0.0f) - eye;
+					const float length = glm::length(toward);
+					if (length > OCCLUSION_END_PAD)
+						blocks = blocks || SegmentHitsBox(eye, eye + toward * ((length - OCCLUSION_END_PAD) / length), occluder.Center, half, occluder.Yaw);
+				}
+			}
+
+			if (blocks)
+			{
+				occluder.ClearFor = 0.0f;
+				if (!occluder.Hidden)
+					SetVisible(occluder, false);
+			}
+			else
+			{
+				occluder.ClearFor += deltaTime;
+				if (occluder.Hidden && occluder.ClearFor >= OCCLUSION_RESTORE_DELAY)
+					SetVisible(occluder, true);
+			}
 		}
 	}
 

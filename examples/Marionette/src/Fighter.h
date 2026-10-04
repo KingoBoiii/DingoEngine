@@ -5,6 +5,7 @@
 #include "GameTuning.h"
 #include "HitGeometry.h"
 #include "Locomotion.h"
+#include "MoveTravel.h"
 #include "Moveset.h"
 
 #include <DingoEngine.h>
@@ -64,6 +65,8 @@ namespace Dingo
 		const FighterDef& GetDef() const { return m_Def; }
 
 		void ShowIdle(float time, bool freeze);
+		// Plays a library clip in a loop from `time`; frozen, it holds that frame.
+		void ShowClip(const AnimationClip* clip, float time, bool freeze);
 
 		void StartLocomotion(float phase);
 
@@ -78,6 +81,8 @@ namespace Dingo
 		void Apply(float deltaTime);
 
 		void OnAnimationEvent(const AnimationEvent& event);
+		// A clip's events were replaced: a held pose is evaluated again.
+		void OnEventsChanged();
 
 		glm::vec3 GetPosition() const;
 		glm::vec2 GetGroundPosition() const;
@@ -101,6 +106,8 @@ namespace Dingo
 		float GetMaxHealth() const { return m_Def.Health; }
 		const MoveDef* GetMove() const { return m_Move; }
 		int GetChainIndex() const { return m_ChainIndex; }
+		// What an interrupted move still owed the pose, waiting to be paid over the next state's fade-in.
+		glm::vec2 GetTravelCarry() const { return m_Travel.GetCarry(); }
 		uint32_t GetSwingId() const { return m_SwingId; }
 		bool IsSwingResolved() const { return m_SwingResolved; }
 		void ResolveSwing() { m_SwingResolved = true; }
@@ -156,7 +163,7 @@ namespace Dingo
 		void StartDodge(Animator& animator);
 		void RaiseBlock(Animator& animator);
 		void LowerBlock(Animator& animator, float fadeSeconds);
-		void Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut);
+		void Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut, bool late);
 		void Die();
 		const char* PickDodgeClip() const;
 		bool IsComboOpen(const Animator& animator) const;
@@ -167,22 +174,12 @@ namespace Dingo
 		void ThinkStill(float deltaTime);
 
 		void BeginTravel(const AnimationClip& clip, float fadeOut, float dashDistance);
+		// Ends the current move where it stands and owes its unpaid ground to whatever plays next, over `fadeIn`.
+		// `late` is a call from the combat pass, after the frame's velocity went to the controller.
+		void ReleaseTravel(const Animator& animator, float fadeIn, bool late = false);
 		glm::vec2 StepTravel(float deltaTime);
+		void PushVelocity(CharacterController3D& controller) const;
 		void UpdateExtra(float deltaTime);
-
-	private:
-		// The ground the capsule owes a one-shot: the pose already carries the clip's own hips travel, so
-		// the capsule stays put during the move and pays the net of it while the one-shot returns, plus
-		// a dodge's extra distance over its dash window. Windows are clip seconds on the move's own clock.
-		struct Travel
-		{
-			bool Active = false;
-			float Clock = 0.0f;
-			ClipRange Dash;
-			glm::vec2 DashStep{ 0.0f };
-			ClipRange Return;
-			glm::vec2 ReturnStep{ 0.0f };
-		};
 
 	private:
 		FighterContext m_Context;
@@ -219,7 +216,7 @@ namespace Dingo
 		int m_ChainIndex = -1;
 		uint32_t m_SwingId = 0;
 		bool m_SwingResolved = false;
-		Travel m_Travel;
+		MoveTravel m_Travel;
 		bool m_BlockUp = false;
 		bool m_BlockRaising = false;
 		bool m_ParryBegun = false;

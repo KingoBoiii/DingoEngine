@@ -17,6 +17,7 @@
 #include "Moveset.h"
 #include "PlayerBrain.h"
 #include "ReachTable.h"
+#include "Showcase.h"
 
 #include <algorithm>
 #include <cmath>
@@ -36,60 +37,35 @@ namespace Dingo
 		const LaunchOptions& options = GetLaunchOptions();
 		Scene& scene = GetScene();
 
-		m_World = std::make_unique<ArenaWorld>(scene);
+		if (options.DebugHitbox)
+			m_DebugView = std::make_unique<HitDebugView>();
+
+		if (options.Lineup)
+		{
+			ShowcaseParams params;
+			params.Kind = ShowcaseKind::Lineup;
+			params.Freeze = options.Freeze;
+			params.Overview = options.Overview;
+			params.Debug = m_DebugView.get();
+			m_Showcase = std::make_unique<Showcase>(scene, *m_Assets, params);
+			return;
+		}
+
 		m_Audio = std::make_unique<GameAudio>(m_Assets->GetSounds());
-		m_Audio->SetMuted(options.StepsPerFrame > 1);
+		m_Audio->SetMuted(options.StepsPerFrame > 1 || options.Tournament > 0);
+		m_World = std::make_unique<ArenaWorld>(scene, m_Audio.get());
+		m_EventGeneration = m_Assets->GetEventGeneration();
 		m_Freeze = options.Freeze;
 		m_Tournament = options.Tournament > 0;
 		m_Drive = options.Freeze ? DriveMode::None : options.Drive;
 		m_BoutNumber = std::clamp(m_Match->Bout, 1, BOUT_COUNT);
 		// A tournament run takes the next seed; a retry takes one too, or a fixed-delta autoplay would replay the same loss.
 		m_Seed = options.Seed + (m_Tournament ? static_cast<uint32_t>(m_Match->Records.size()) : static_cast<uint32_t>(m_Match->Retries));
-		if (options.DebugHitbox)
-			m_DebugView = std::make_unique<HitDebugView>();
 
 		const bool logSteps = options.Check || (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel);
 		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None || (options.Autoplay && !m_Tournament);
 		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_DebugView.get() };
-		if (options.Lineup)
-			BuildLineup(context, options);
-		else
-			BuildBout(context, options);
-	}
-
-	void ArenaDirectorScript::BuildLineup(const FighterContext& context, const LaunchOptions& options)
-	{
-		Scene& scene = GetScene();
-		const std::span<const FighterDef> defs = GetFighterDefs();
-		const float first = -0.5f * LINEUP_SPACING * static_cast<float>(defs.size() - 1);
-		float tallest = 0.0f;
-		for (size_t i = 0; i < defs.size(); ++i)
-		{
-			FighterSpawn spawn;
-			spawn.Position = glm::vec3(first + LINEUP_SPACING * static_cast<float>(i), 0.0f, 0.0f);
-			spawn.Controlled = false;
-			auto fighter = std::make_unique<Fighter>(context, defs[i], spawn);
-			fighter->ShowIdle(options.Freeze ? FREEZE_POSE_TIME : LINEUP_IDLE_STAGGER * static_cast<float>(i), options.Freeze);
-			tallest = std::max(tallest, fighter->GetModelHeight() * defs[i].Scale);
-			m_Fighters.push_back(std::move(fighter));
-		}
-
-		if (options.Overview)
-		{
-			m_Camera = std::make_unique<CameraRig>(scene, glm::vec3(0.0f), OVERVIEW_PITCH_DEG, m_World->GetRimPoints());
-		}
-		else
-		{
-			const float half = std::abs(first) + LINEUP_MARGIN;
-			const float top = std::max(tallest, 0.5f * LINEUP_FIT_HEIGHT);
-			std::vector<glm::vec3> fit;
-			for (const float x : { -half, half })
-				for (const float y : { 0.0f, top })
-					fit.emplace_back(x, y, 0.0f);
-			m_Camera = std::make_unique<CameraRig>(scene, glm::vec3(0.0f, LINEUP_LOOK_HEIGHT, 0.0f), LINEUP_PITCH_DEG, std::move(fit));
-		}
-
-		DE_INFO("Marionette: lineup of {} fighters{}{}", defs.size(), options.Freeze ? ", frozen" : "", options.Overview ? ", overview camera" : "");
+		BuildBout(context, options);
 	}
 
 	void ArenaDirectorScript::BuildBout(const FighterContext& context, const LaunchOptions& options)
@@ -165,7 +141,7 @@ namespace Dingo
 				rules.Taunts = false;
 				rules.TimeLimit = TOURNAMENT_BOUT_LIMIT;
 			}
-			m_Flow = std::make_unique<BoutFlow>(rules);
+			m_Flow = std::make_unique<BoutFlow>(rules, m_Audio.get());
 			m_Flow->Begin(opponent);
 
 			m_Hud = std::make_unique<Hud>(scene, m_BoutNumber, !m_Freeze && !m_Tournament, !options.Autoplay && !m_Freeze && m_BoutNumber == 1);
@@ -211,6 +187,8 @@ namespace Dingo
 #endif
 
 		m_Time += deltaTime;
+		if (m_Showcase)
+			m_Showcase->Update(deltaTime);
 		if (m_Bout)
 			UpdateBout(deltaTime);
 
@@ -218,8 +196,30 @@ namespace Dingo
 			m_Camera->Update();
 	}
 
+	void ArenaDirectorScript::OnEventsChanged()
+	{
+		m_EventGeneration = m_Assets->GetEventGeneration();
+		for (const std::unique_ptr<Fighter>& fighter : m_Fighters)
+			fighter->OnEventsChanged();
+		if (m_Brain)
+			m_Brain->OnEventsChanged();
+		if (m_OpponentBrain)
+			m_OpponentBrain->OnEventsChanged();
+
+		// The reach table was emptied by the reload; asking it again rebuilds the rows this pair uses.
+		if (m_Hud && m_Reach && !m_Tournament && !m_Freeze)
+		{
+			const FighterDef& opponentDef = GetOpponentDef(m_BoutNumber);
+			m_Reach->Log(GetPlayerDef(), opponentDef);
+			m_Reach->Log(opponentDef, GetPlayerDef());
+		}
+	}
+
 	void ArenaDirectorScript::UpdateBout(float deltaTime)
 	{
+		if (m_EventGeneration != m_Assets->GetEventGeneration())
+			OnEventsChanged();
+
 		Fighter& player = *m_Fighters[0];
 		Fighter& opponent = *m_Fighters[1];
 
@@ -262,7 +262,12 @@ namespace Dingo
 			m_Combat->Update(player, opponent);
 
 		if (m_FollowCamera)
-			m_FollowCamera->Update(deltaTime, player.GetPosition(), opponent.GetPosition(), m_Freeze);
+		{
+			const CameraSubject subjects[] = { { player.GetPosition(), player.GetModelHeight() * player.GetDef().Scale },
+				{ opponent.GetPosition(), opponent.GetModelHeight() * opponent.GetDef().Scale } };
+			m_FollowCamera->Update(deltaTime, subjects[0], subjects[1], m_Freeze);
+			m_World->UpdateOcclusion(deltaTime, m_FollowCamera->GetEye(), subjects);
+		}
 
 		if (m_Hud)
 			m_Hud->Update(deltaTime, player, opponent, *m_Flow);
@@ -415,6 +420,7 @@ namespace Dingo
 
 	void ArenaDirectorScript::OnDestroy()
 	{
+		m_Showcase.reset();
 		m_Hud.reset();
 		m_Flow.reset();
 		m_Camera.reset();
