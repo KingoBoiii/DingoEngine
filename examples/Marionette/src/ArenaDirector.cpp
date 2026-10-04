@@ -1,6 +1,8 @@
 #include "ArenaDirector.h"
+#include "AiBrain.h"
 #include "ArenaWorld.h"
 #include "Audio.h"
+#include "BoutFlow.h"
 #include "CameraRig.h"
 #include "CheckReport.h"
 #include "Combat.h"
@@ -10,8 +12,11 @@
 #include "GameAssets.h"
 #include "GameTuning.h"
 #include "HitGeometry.h"
+#include "Hud.h"
+#include "MatchState.h"
 #include "Moveset.h"
 #include "PlayerBrain.h"
+#include "ReachTable.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,8 +25,8 @@
 namespace Dingo
 {
 
-	ArenaDirectorScript::ArenaDirectorScript(const GameAssets* assets)
-		: m_Assets(assets)
+	ArenaDirectorScript::ArenaDirectorScript(const GameAssets* assets, const ReachTable* reach, MatchState* match)
+		: m_Assets(assets), m_Reach(reach), m_Match(match)
 	{}
 
 	ArenaDirectorScript::~ArenaDirectorScript() = default;
@@ -33,13 +38,18 @@ namespace Dingo
 
 		m_World = std::make_unique<ArenaWorld>(scene);
 		m_Audio = std::make_unique<GameAudio>(m_Assets->GetSounds());
+		m_Audio->SetMuted(options.StepsPerFrame > 1);
 		m_Freeze = options.Freeze;
+		m_Tournament = options.Tournament > 0;
 		m_Drive = options.Freeze ? DriveMode::None : options.Drive;
+		m_BoutNumber = std::clamp(m_Match->Bout, 1, BOUT_COUNT);
+		// A tournament run takes the next seed; a retry takes one too, or a fixed-delta autoplay would replay the same loss.
+		m_Seed = options.Seed + (m_Tournament ? static_cast<uint32_t>(m_Match->Records.size()) : static_cast<uint32_t>(m_Match->Retries));
 		if (options.DebugHitbox)
 			m_DebugView = std::make_unique<HitDebugView>();
 
 		const bool logSteps = options.Check || (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel);
-		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None;
+		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None || (options.Autoplay && !m_Tournament);
 		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_DebugView.get() };
 		if (options.Lineup)
 			BuildLineup(context, options);
@@ -85,11 +95,16 @@ namespace Dingo
 	void ArenaDirectorScript::BuildBout(const FighterContext& context, const LaunchOptions& options)
 	{
 		Scene& scene = GetScene();
+		const bool poseFrame = m_Freeze && !options.PoseClip.empty();
+		const bool driven = m_Drive != DriveMode::None;
+		// A bout proper: brains, the bout's phases and the HUD. A drive or a pose frame stays the bare arena.
+		const bool playing = !driven && !poseFrame;
+
 		BoutLayout layout = GetBoutLayout(m_Drive);
-		if (m_Freeze && !options.PoseClip.empty())
+		if (poseFrame)
 			layout.OpponentPosition.x = layout.PlayerPosition.x + POSE_DISTANCE;
 		const FighterDef& playerDef = GetPlayerDef();
-		const FighterDef& opponentDef = GetOpponentDef(options.Bout);
+		const FighterDef& opponentDef = GetOpponentDef(m_BoutNumber);
 
 		FighterSpawn playerSpawn;
 		playerSpawn.Position = layout.PlayerPosition;
@@ -104,8 +119,8 @@ namespace Dingo
 		Fighter& opponent = *m_Fighters[1];
 		if (m_Freeze)
 		{
-			const AnimationClip* pose = options.PoseClip.empty() ? nullptr : m_Assets->FindAnyClip(options.PoseClip);
-			if (!options.PoseClip.empty() && !pose)
+			const AnimationClip* pose = poseFrame ? m_Assets->FindAnyClip(options.PoseClip) : nullptr;
+			if (poseFrame && !pose)
 			{
 				DE_ERROR("Marionette: --pose clip '{}' is in none of the libraries", options.PoseClip);
 			}
@@ -114,7 +129,12 @@ namespace Dingo
 				player.FreezePose(*pose, options.PoseTime);
 			else
 				player.Freeze(std::max(options.Move, 0.0f), options.Phase);
-			opponent.ShowIdle(FREEZE_POSE_TIME, true);
+
+			const AnimationClip* taunt = playing && opponentDef.Intro ? m_Assets->GetClip(opponentDef.Intro) : nullptr;
+			if (taunt)
+				opponent.FreezePose(*taunt, INTRO_FREEZE_TIME);
+			else
+				opponent.ShowIdle(FREEZE_POSE_TIME, true);
 		}
 		else
 		{
@@ -125,10 +145,37 @@ namespace Dingo
 		m_Combat = std::make_unique<Combat>(*m_Audio, context.LogCombat);
 		if (m_Drive == DriveMode::Duel)
 			m_Duel = std::make_unique<DuelScript>(options.BreakHitbox);
-		else if (m_Drive != DriveMode::None)
+		else if (driven)
 			m_Brain = std::make_unique<DriveBrain>(m_Drive);
+		else if (options.Autoplay)
+			m_Brain = std::make_unique<AiBrain>(AI_TIERS[BOUT_COUNT - 1], m_Seed + static_cast<uint32_t>(m_BoutNumber) + AI_PLAYER_SEED_OFFSET, m_Reach);
 		else
 			m_Brain = std::make_unique<PlayerBrain>();
+
+		if (playing)
+		{
+			m_OpponentBrain = std::make_unique<AiBrain>(AI_TIERS[static_cast<size_t>(m_BoutNumber) - 1], m_Seed + static_cast<uint32_t>(m_BoutNumber), m_Reach);
+
+			BoutRules rules;
+			rules.Frozen = m_Freeze;
+			if (m_Tournament)
+			{
+				rules.IntroSeconds = 0.0f;
+				rules.KnockoutSeconds = 0.0f;
+				rules.Taunts = false;
+				rules.TimeLimit = TOURNAMENT_BOUT_LIMIT;
+			}
+			m_Flow = std::make_unique<BoutFlow>(rules);
+			m_Flow->Begin(opponent);
+
+			m_Hud = std::make_unique<Hud>(scene, m_BoutNumber, !m_Freeze && !m_Tournament, !options.Autoplay && !m_Freeze && m_BoutNumber == 1);
+
+			if (!m_Tournament && !m_Freeze && m_Reach)
+			{
+				m_Reach->Log(playerDef, opponentDef);
+				m_Reach->Log(opponentDef, playerDef);
+			}
+		}
 
 		if (options.Overview)
 			m_Camera = std::make_unique<CameraRig>(scene, glm::vec3(0.0f), OVERVIEW_PITCH_DEG, m_World->GetRimPoints());
@@ -141,8 +188,11 @@ namespace Dingo
 				fighter->GetDef().Name, fighter->GetModelHeight() * fighter->GetDef().Scale, fighter->GetRadius(), fighter->GetSpeedFactor(),
 				WALK_SPEED * fighter->GetSpeedFactor(), RUN_SPEED * fighter->GetSpeedFactor());
 		}
-		DE_INFO("Marionette: bout against {}{}{}{}", opponentDef.Name, m_Freeze ? ", frozen" : "",
-			m_Drive != DriveMode::None ? ", drive " : "", m_Drive != DriveMode::None ? ToString(m_Drive) : "");
+		if (!m_Tournament)
+		{
+			DE_INFO("Marionette: bout {} against {}{}{}{}{}", m_BoutNumber, opponentDef.Name, m_Freeze ? ", frozen" : "",
+				driven ? ", drive " : "", driven ? ToString(m_Drive) : "", options.Autoplay ? ", autoplay" : "");
+		}
 
 		m_Bout = true;
 		UpdateBout(0.0f);
@@ -150,6 +200,9 @@ namespace Dingo
 
 	void ArenaDirectorScript::OnUpdate(float deltaTime)
 	{
+		if (m_Match->Done)
+			return;
+
 		if (Input::IsKeyPressed(Key::Escape) || Input::IsGamepadButtonPressed(GamepadButton::Start))
 			RequestSceneTransition(SCENE_TITLE);
 #ifdef DE_DEBUG
@@ -178,6 +231,20 @@ namespace Dingo
 			if (m_Duel->ShouldClose())
 				Application::Get().Close();
 		}
+		else if (m_Flow)
+		{
+			m_Flow->Update(deltaTime, player, opponent);
+			if (m_Flow->AcceptsInput())
+			{
+				player.SetIntent(m_Brain->Think(deltaTime, player, opponent));
+				opponent.SetIntent(m_OpponentBrain->Think(deltaTime, opponent, player));
+			}
+			else
+			{
+				player.SetIntent(FighterIntent());
+				opponent.SetIntent(FighterIntent());
+			}
+		}
 		else if (!m_Freeze)
 		{
 			player.SetIntent(m_Brain->Think(deltaTime, player, opponent));
@@ -197,10 +264,114 @@ namespace Dingo
 		if (m_FollowCamera)
 			m_FollowCamera->Update(deltaTime, player.GetPosition(), opponent.GetPosition(), m_Freeze);
 
+		if (m_Hud)
+			m_Hud->Update(deltaTime, player, opponent, *m_Flow);
+		if (m_Flow && m_Flow->IsFinished() && !m_BoutDone)
+			FinishBout();
+
 		if (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel)
 			LogDrive(deltaTime);
 		if (m_Drive == DriveMode::Wall)
 			CheckWall(deltaTime);
+	}
+
+	void ArenaDirectorScript::FinishBout()
+	{
+		m_BoutDone = true;
+		const Fighter& player = *m_Fighters[0];
+		const Fighter& opponent = *m_Fighters[1];
+		const BoutWinner winner = m_Flow->GetWinner();
+		const float seconds = m_Flow->GetFightTime();
+		m_Match->Seconds += seconds;
+
+		if (m_Tournament)
+		{
+			const char* name = ToString(winner);
+			if (winner == BoutWinner::Player)
+				name = player.GetDef().Name;
+			else if (winner == BoutWinner::Opponent)
+				name = opponent.GetDef().Name;
+
+			m_Match->Records.push_back({ m_Seed, winner, seconds, player.GetHealth(), opponent.GetHealth() });
+			const CombatStats& stats = m_Combat->GetStats();
+			DE_INFO("[Bout] seed={} winner={} time={:.2f} player health={:.1f} opponent health={:.1f}", m_Seed, name, seconds, player.GetHealth(), opponent.GetHealth());
+			DE_INFO("[Stats] seed={} hits={} blocks={} parries={} dodges={} best chain={}{}", m_Seed, stats.Hits, stats.Blocks, stats.Parries, stats.Dodges,
+				stats.BestChain, m_Flow->IsTimedOut() ? " (timed out)" : "");
+
+			if (static_cast<int>(m_Match->Records.size()) < GetLaunchOptions().Tournament)
+			{
+				m_Match->Restart = true;
+			}
+			else
+			{
+				FinishTournament();
+				m_Match->Done = true;
+				Application::Get().Close();
+			}
+			return;
+		}
+
+		if (GetLaunchOptions().Autoplay)
+		{
+			DE_INFO("[Bout] {} winner={} time={:.2f} player health={:.1f} opponent health={:.1f}", m_BoutNumber,
+				winner == BoutWinner::Player ? player.GetDef().Name : (winner == BoutWinner::Opponent ? opponent.GetDef().Name : ToString(winner)),
+				seconds, player.GetHealth(), opponent.GetHealth());
+		}
+
+		if (winner == BoutWinner::Player)
+		{
+			if (m_BoutNumber < BOUT_COUNT)
+			{
+				m_Match->Bout = m_BoutNumber + 1;
+				m_Match->Restart = true;
+			}
+			else
+			{
+				m_Match->Victory = true;
+				RequestSceneTransition(SCENE_END);
+			}
+		}
+		else
+		{
+			++m_Match->Retries;
+			m_Match->Restart = true;
+		}
+	}
+
+	void ArenaDirectorScript::FinishTournament()
+	{
+		const int total = static_cast<int>(m_Match->Records.size());
+		int wins = 0;
+		int losses = 0;
+		int draws = 0;
+		int timeouts = 0;
+		float seconds = 0.0f;
+		for (const BoutRecord& record : m_Match->Records)
+		{
+			seconds += record.Seconds;
+			switch (record.Winner)
+			{
+				case BoutWinner::Player:   ++wins; break;
+				case BoutWinner::Opponent: ++losses; break;
+				case BoutWinner::Draw:     ++draws; break;
+				default:                   ++timeouts; break;
+			}
+		}
+
+		const int tier = m_BoutNumber;
+		DE_INFO("[Tournament] tier {} against tier {} ({}), seeds {} to {}: {} wins, {} losses, {} draws, {} timeouts; {:.1f} s of fighting, {:.1f} s a bout",
+			BOUT_COUNT, tier, GetOpponentDef(tier).Name, m_Match->Records.front().Seed, m_Match->Records.back().Seed, wins, losses, draws, timeouts, seconds,
+			total > 0 ? seconds / static_cast<float>(total) : 0.0f);
+
+		if (tier < BOUT_COUNT)
+		{
+			const int needed = static_cast<int>(std::ceil(TOURNAMENT_PASS_FRACTION * static_cast<float>(total) - 1.0e-3f));
+			CheckReport().Check(wins >= needed, std::format("tournament: tier {} beat tier {} in {} of {} (need {} of {})", BOUT_COUNT, tier, wins, total, needed, total));
+		}
+		else
+		{
+			DE_INFO("[INFO] tournament: tier {} beat tier {} in {} of {} (a mirror: no pass bar)", BOUT_COUNT, tier, wins, total);
+		}
 	}
 
 	void ArenaDirectorScript::CheckWall(float deltaTime)
@@ -244,8 +415,11 @@ namespace Dingo
 
 	void ArenaDirectorScript::OnDestroy()
 	{
+		m_Hud.reset();
+		m_Flow.reset();
 		m_Camera.reset();
 		m_FollowCamera.reset();
+		m_OpponentBrain.reset();
 		m_Brain.reset();
 		m_Duel.reset();
 		m_Combat.reset();

@@ -13,7 +13,7 @@ namespace Dingo
 
 	void GameAudio::PlayAt(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume, float pitch, float minDistance, float maxDistance) const
 	{
-		if (!clip)
+		if (!clip || m_Muted)
 			return;
 
 		SoundAttenuation attenuation;

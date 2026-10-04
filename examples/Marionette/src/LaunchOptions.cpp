@@ -149,13 +149,41 @@ namespace
 		ParseFlag(args, "break-hitbox", options.BreakHitbox);
 		ParseFlag(args, "hot-reload", options.HotReload);
 		ParseDrive(args, options.Drive);
-		if (!args.Get("bout") && (options.Drive != DriveMode::None || options.Freeze))
+		ParseInt(args, "tournament", 0, TOURNAMENT_MAX, options.Tournament);
+		if (options.Tournament > 0)
+		{
+			options.Autoplay = true;
+			if (options.Freeze || options.Lineup || options.Drive != DriveMode::None)
+			{
+				DE_WARN("Marionette: --tournament plays real bouts; ignoring --freeze, --lineup and --drive");
+				options.Freeze = false;
+				options.Lineup = false;
+				options.Drive = DriveMode::None;
+			}
+		}
+		if (!args.Get("bout") && (options.Drive != DriveMode::None || options.Freeze || options.Autoplay))
 			options.Bout = 1;
+		if (options.Tournament > 0 && options.Bout < 1)
+		{
+			DE_WARN("Marionette: --tournament plays a bout, not the title; using --bout=1");
+			options.Bout = 1;
+		}
 		ParsePose(args, options.PoseClip, options.PoseTime);
 		ParseRange(args, "move", 0.0f, MOVE_PARAMETER_MAX, options.Move);
 		ParseRange(args, "phase", 0.0f, 1.0f, options.Phase);
 		ParseSeconds(args, "fixed-dt", FIXED_DT_MAX, options.FixedDt);
+		if (options.Tournament > 0 && !(options.FixedDt > 0.0f))
+			options.FixedDt = FRAME_SECONDS;
 		ParseSeed(args, options.Seed);
+
+		if (options.Tournament > 0)
+			options.StepsPerFrame = TOURNAMENT_STEPS_PER_FRAME;
+		ParseInt(args, "steps-per-frame", 1, STEPS_PER_FRAME_MAX, options.StepsPerFrame);
+		if (options.StepsPerFrame > 1 && (!(options.FixedDt > 0.0f) || !options.Autoplay))
+		{
+			DE_WARN("Marionette: --steps-per-frame needs --fixed-dt and --autoplay (a key press would reach every step); using 1");
+			options.StepsPerFrame = 1;
+		}
 
 		if (!options.Freeze && (options.Move >= 0.0f || options.Phase >= 0.0f))
 			DE_WARN("Marionette: --move and --phase only apply with --freeze");

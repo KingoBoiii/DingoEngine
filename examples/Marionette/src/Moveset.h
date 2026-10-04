@@ -35,6 +35,7 @@ namespace Dingo
 		inline constexpr const char* BLOCKING        = "Melee_Blocking";
 		inline constexpr const char* BLOCK_HIT       = "Melee_Block_Hit";
 		inline constexpr const char* BLOCK_RIPOSTE   = "Melee_Block_Attack";
+		inline constexpr const char* TAUNT           = "Skeletons_Taunt";
 	}
 
 	namespace Events
@@ -82,6 +83,8 @@ namespace Dingo
 		const char* Heavy;
 		const char* Death;
 		const char* Intro;
+		// What the HUD calls an opponent; null for the player.
+		const char* Title;
 	};
 
 	struct LibraryDef

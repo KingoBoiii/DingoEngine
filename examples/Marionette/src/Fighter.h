@@ -45,6 +45,7 @@ namespace Dingo
 		Dodge,
 		HitReact,
 		Stagger,
+		Taunt,
 		Dead
 	};
 
@@ -97,6 +98,7 @@ namespace Dingo
 		bool IsCalm() const { return m_State == FighterState::Locomotion; }
 		bool IsDead() const { return m_State == FighterState::Dead; }
 		float GetHealth() const { return m_Health; }
+		float GetMaxHealth() const { return m_Def.Health; }
 		const MoveDef* GetMove() const { return m_Move; }
 		int GetChainIndex() const { return m_ChainIndex; }
 		uint32_t GetSwingId() const { return m_SwingId; }
@@ -124,6 +126,8 @@ namespace Dingo
 		void TakeHit(float damage);
 		void TakeBlock(float chip, const glm::vec2& awayDirection);
 		void Stagger();
+		// Plays a clip as a one-shot over whatever the fighter is doing; a dead fighter stays down.
+		void Taunt(const char* clipName);
 		void OpenRiposteWindow();
 		// The animator runs at HITSTOP_SPEED for this many seconds, from the next update.
 		void StartHitStop(float seconds);
@@ -152,7 +156,7 @@ namespace Dingo
 		void StartDodge(Animator& animator);
 		void RaiseBlock(Animator& animator);
 		void LowerBlock(Animator& animator, float fadeSeconds);
-		void Interrupt(const char* clipName, FighterState state, float fadeOut);
+		void Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut);
 		void Die();
 		const char* PickDodgeClip() const;
 		bool IsComboOpen(const Animator& animator) const;

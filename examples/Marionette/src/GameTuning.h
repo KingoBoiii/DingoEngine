@@ -22,6 +22,12 @@ namespace Dingo
 	inline constexpr float END_HEADING_Y       = 1.2f;
 	inline constexpr float END_PROMPT_SIZE     = 0.5f;
 	inline constexpr float END_PROMPT_Y        = -2.4f;
+	inline constexpr float END_SUBTITLE_SIZE   = 0.6f;
+	inline constexpr float END_SUBTITLE_Y      = 0.05f;
+	inline constexpr float END_STATS_SIZE      = 0.45f;
+	inline constexpr float END_STATS_Y         = -0.9f;
+	// The last blows of a win are still being pressed; the screen waits them out.
+	inline constexpr float END_INPUT_DELAY     = 1.0f;
 
 	// --- Camera --------------------------------------------------------------------
 	inline constexpr float CAMERA_FOV           = 40.0f;
@@ -371,6 +377,155 @@ namespace Dingo
 	// Scene::OnUpdate caps its delta at 4/60 s, so a longer fixed step would be silently shortened.
 	inline constexpr float FIXED_DT_MAX         = 4.0f / 60.0f;
 
+	// --- Bouts ---------------------------------------------------------------------
+	inline constexpr int   BOUT_COUNT           = 3;
+	inline constexpr float BOUT_INTRO_SECONDS   = 2.5f;
+	// The intro waits for the opponent's taunt to end, but not longer than this.
+	inline constexpr float BOUT_INTRO_MAX_SECONDS = 4.0f;
+	inline constexpr float BOUT_FIGHT_BANNER_SECONDS = 1.0f;
+	inline constexpr float BOUT_KO_SECONDS      = 3.0f;
+	inline constexpr float BOUT_KO_TAUNT_DELAY  = 0.9f;
+	// The winner taunts once calm, or this long after the K.O. whatever it is doing.
+	inline constexpr float BOUT_KO_TAUNT_FORCE  = 1.8f;
+	inline constexpr float TAUNT_FADE_IN        = 0.1f;
+	inline constexpr float TAUNT_FADE_OUT       = 0.15f;
+	// How far into its taunt the opponent is held for the --freeze intro frame.
+	inline constexpr float INTRO_FREEZE_TIME    = 0.45f;
+
+	// --- Tournament (--tournament=N) -----------------------------------------------
+	inline constexpr float TOURNAMENT_BOUT_LIMIT = 90.0f;
+	inline constexpr int   TOURNAMENT_MAX       = 1000;
+	inline constexpr int   TOURNAMENT_STEPS_PER_FRAME = 8;
+	inline constexpr int   STEPS_PER_FRAME_MAX  = 64;
+	// Tier 3 has to win this fraction of the runs against a lower tier (8 of 10).
+	inline constexpr float TOURNAMENT_PASS_FRACTION = 0.8f;
+
+	// --- AI ------------------------------------------------------------------------
+	// A tier is a bundle of probabilities and delays; every behaviour reads its own row.
+	struct AiTierParams
+	{
+		const char* Name;
+		// The AI sees the opponent as it was this long ago.
+		float ReactionTime;
+		float AttackIntervalMin;
+		float AttackIntervalMax;
+		float HeavyChance;
+		int   MaxChain;
+		// Per link after the first, once the previous swing landed.
+		float ChainChance;
+		// On seeing a windup that reaches it, tried in this order: parry, dodge, block, step back.
+		float ParryChanceLight;
+		float ParryChanceHeavy;
+		float DodgeChance;
+		float BlockChance;
+		float StepBackChance;
+		float RiposteChance;
+		float RiposteDelay;
+		float PunishChance;
+		bool  Strafes;
+		float BaitChance;
+		float RetreatMin;
+		float RetreatMax;
+		// Intent length while closing in from afar.
+		float ApproachIntent;
+		// How far outside its own reach it likes to wait.
+		float GapSlack;
+	};
+
+	inline constexpr std::array<AiTierParams, 3> AI_TIERS = { {
+		{ "Recruit",  0.45f, 1.6f, 2.4f, 0.0f,  1, 0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, false, 0.0f, 0.0f, 0.0f, 0.5f,  0.0f },
+		{ "Veteran",  0.30f, 1.0f, 1.8f, 0.3f,  2, 0.7f,  0.0f,  0.0f,  0.0f, 0.33f, 1.0f, 0.6f, 0.25f, 0.6f, true,  0.0f, 0.5f, 0.9f, 0.85f, 0.25f },
+		{ "Champion", 0.18f, 0.6f, 1.2f, 0.25f, 3, 0.95f, 0.35f, 0.6f,  0.3f, 1.0f,  0.0f, 1.0f, 0.12f, 1.0f, true,  0.3f, 0.4f, 0.8f, 1.0f,  0.25f },
+	} };
+
+	// The block goes up this long before the opponent's hitbox opens, so the hit falls inside the parry window.
+	inline constexpr float AI_PARRY_LEAD        = 0.06f;
+	// The dodge starts this long before the hit, which puts it inside the iframes (0.08 to 0.30 s of the dodge).
+	inline constexpr float AI_DODGE_LEAD        = 0.17f;
+	// A dodge started with less than this to go would run into the hit before its iframes open.
+	inline constexpr float AI_DODGE_MIN_LEAD    = 0.1f;
+	inline constexpr float AI_REACH_MARGIN      = 0.12f;
+	inline constexpr float AI_MIN_ATTACK_DISTANCE = 0.8f;
+	inline constexpr float AI_FALLBACK_REACH    = 1.4f;
+	// A windup threatens when the opponent's move reaches this far beyond the gap.
+	inline constexpr float AI_THREAT_MARGIN     = 0.3f;
+	inline constexpr float AI_THREAT_ARC_DEG    = 70.0f;
+	inline constexpr float AI_BLOCK_LINGER      = 0.3f;
+	inline constexpr float AI_PLAN_MAX_SECONDS  = 1.8f;
+	inline constexpr float AI_LATE_SECONDS      = -0.05f;
+	inline constexpr float AI_PUNISH_COOLDOWN   = 0.5f;
+	inline constexpr float AI_PUNISH_PAST_HITBOX = 0.02f;
+	inline constexpr float AI_STRAFE_INTENT     = 0.5f;
+	inline constexpr float AI_STRAFE_TURN_MIN   = 1.0f;
+	inline constexpr float AI_STRAFE_TURN_MAX   = 2.5f;
+	inline constexpr float AI_STRAFE_FLIP_CHANCE = 0.5f;
+	inline constexpr float AI_SPACING_TOLERANCE = 0.2f;
+	inline constexpr float AI_SPACING_GAIN      = 1.5f;
+	inline constexpr float AI_BACKOFF_INTENT    = 0.6f;
+	inline constexpr float AI_CLOSE_INTENT      = 0.4f;
+	inline constexpr float AI_CLOSE_RANGE       = 1.6f;
+	inline constexpr float AI_RETREAT_INTENT    = 0.8f;
+	inline constexpr float AI_BAIT_SECONDS      = 1.2f;
+	inline constexpr float AI_BAIT_MARGIN       = 0.1f;
+	inline constexpr float AI_WALL_MARGIN       = 1.6f;
+	inline constexpr float AI_WALL_PUSH         = 1.5f;
+	inline constexpr float AI_START_STAGGER     = 0.6f;
+	inline constexpr uint32_t AI_PLAYER_SEED_OFFSET = 7919;
+
+	// --- Reach (the AI's knowledge of its own moves) -------------------------------
+	inline constexpr float REACH_SAMPLE_STEP    = 1.0f / 120.0f;
+	inline constexpr float REACH_SCAN_MIN       = 0.3f;
+	inline constexpr float REACH_SCAN_MAX       = 3.4f;
+	inline constexpr float REACH_SCAN_STEP      = 0.05f;
+	inline constexpr float REACH_SANE_MIN       = 0.8f;
+	inline constexpr float REACH_SANE_MAX       = 2.8f;
+	inline constexpr float REACH_SANE_DELAY     = 1.5f;
+
+	// --- AI checks -----------------------------------------------------------------
+	inline constexpr float CHECK_AI_STEP        = 1.0f / 60.0f;
+	inline constexpr int   CHECK_AI_SWINGS      = 300;
+	inline constexpr float CHECK_AI_SWING_GAP   = 3.0f;
+	inline constexpr float CHECK_AI_DISTANCE    = 1.2f;
+	inline constexpr float CHECK_AI_LAG_SLACK   = 1.0e-4f;
+	inline constexpr int   CHECK_AI_SEEDS       = 6;
+	inline constexpr float CHECK_AI_CHANCE_LOW  = 0.25f;
+	inline constexpr float CHECK_AI_CHANCE_HIGH = 0.42f;
+	inline constexpr float CHECK_AI_DODGE_SECONDS = 0.32f;
+
+	// --- HUD -----------------------------------------------------------------------
+	inline constexpr float HUD_PADDING          = 0.5f;
+	inline constexpr float HUD_BAR_WIDTH        = 6.2f;
+	inline constexpr float HUD_BAR_HEIGHT       = 0.46f;
+	inline constexpr float HUD_BAR_INSET        = 0.06f;
+	inline constexpr float HUD_BAR_CENTER_GAP   = 1.5f;
+	inline constexpr float HUD_BAR_DROP         = 1.05f;
+	inline constexpr float HUD_NAME_SIZE        = 0.4f;
+	inline constexpr float HUD_NAME_DROP        = 0.55f;
+	inline constexpr float HUD_BOUT_LABEL_SIZE  = 0.38f;
+	inline constexpr float HUD_BOUT_LABEL_DROP  = 0.55f;
+	inline constexpr float HUD_FILL_LIFT        = 0.1f;
+	inline constexpr float HUD_TRAIL_LIFT       = 0.05f;
+	inline constexpr float HUD_TRAIL_DELAY      = 0.5f;
+	inline constexpr float HUD_TRAIL_RATE       = 0.5f;
+	inline constexpr float HUD_FADE_Z           = 0.5f;
+	inline constexpr float HUD_FADE_MARGIN      = 1.0f;
+	inline constexpr float HUD_FADE_IN_SECONDS  = 0.5f;
+	inline constexpr float HUD_FADE_OUT_SECONDS = 0.5f;
+	inline constexpr float HUD_BANNER_BIG_SIZE  = 1.7f;
+	inline constexpr float HUD_BANNER_BIG_Y     = 1.1f;
+	inline constexpr float HUD_BANNER_TITLE_SIZE = 0.85f;
+	inline constexpr float HUD_BANNER_TITLE_Y   = -0.35f;
+	inline constexpr float HUD_BANNER_SMALL_SIZE = 0.48f;
+	inline constexpr float HUD_BANNER_SMALL_Y   = -1.1f;
+	inline constexpr float HUD_BANNER_FADE      = 0.35f;
+	inline constexpr float HUD_FIGHT_SIZE       = 2.0f;
+	inline constexpr float HUD_FIGHT_Y          = 0.4f;
+	inline constexpr float HUD_KO_SIZE          = 2.4f;
+	inline constexpr float HUD_KO_Y             = 0.9f;
+	inline constexpr float HUD_HINT_SIZE        = 0.34f;
+	inline constexpr float HUD_HINT_RISE        = 0.6f;
+	inline constexpr float HUD_HINT_SECONDS     = 12.0f;
+
 	// --- Colors --------------------------------------------------------------------
 	inline constexpr glm::vec4 COLOR_BG         = { 0.016f, 0.016f, 0.03f, 1.0f };
 	inline constexpr glm::vec4 COLOR_FLOOR      = { 0.34f, 0.31f, 0.3f, 1.0f };
@@ -385,4 +540,11 @@ namespace Dingo
 
 	inline constexpr glm::vec4 COLOR_TITLE      = { 1.0f, 0.74f, 0.42f, 1.0f };
 	inline constexpr glm::vec4 COLOR_TEXT       = { 0.92f, 0.9f, 0.84f, 1.0f };
+	inline constexpr glm::vec4 COLOR_TEXT_DIM   = { 0.62f, 0.6f, 0.56f, 1.0f };
+	inline constexpr glm::vec4 COLOR_TEXT_ALERT = { 0.95f, 0.42f, 0.32f, 1.0f };
+	inline constexpr glm::vec4 COLOR_BAR_BACK   = { 0.07f, 0.06f, 0.06f, 0.88f };
+	inline constexpr glm::vec4 COLOR_BAR_PLAYER = { 1.0f, 0.74f, 0.42f, 1.0f };
+	inline constexpr glm::vec4 COLOR_BAR_OPPONENT = { 0.9f, 0.28f, 0.24f, 1.0f };
+	inline constexpr glm::vec4 COLOR_BAR_TRAIL  = { 0.97f, 0.93f, 0.85f, 0.9f };
+	inline constexpr glm::vec4 COLOR_FADE       = { 0.0f, 0.0f, 0.0f, 1.0f };
 }

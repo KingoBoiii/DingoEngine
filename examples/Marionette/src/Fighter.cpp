@@ -41,6 +41,7 @@ namespace Dingo
 			case FighterState::Dodge:    return "Dodge";
 			case FighterState::HitReact: return "HitReact";
 			case FighterState::Stagger:  return "Stagger";
+			case FighterState::Taunt:    return "Taunt";
 			case FighterState::Dead:     return "Dead";
 			default:                     return "Locomotion";
 		}
@@ -343,6 +344,7 @@ namespace Dingo
 			case FighterState::Dodge:
 			case FighterState::HitReact:
 			case FighterState::Stagger:
+			case FighterState::Taunt:
 				if (!animator.IsOneShotPlaying(0))
 					EnterLocomotion();
 				break;
@@ -587,7 +589,7 @@ namespace Dingo
 		m_RiposteLeft = 0.0f;
 	}
 
-	void Fighter::Interrupt(const char* clipName, FighterState state, float fadeOut)
+	void Fighter::Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut)
 	{
 		Animator* animator = GetAnimator();
 		const AnimationClip* clip = m_Context.Assets.GetClip(clipName);
@@ -601,7 +603,7 @@ namespace Dingo
 		m_ChainIndex = -1;
 		m_BlockRaising = false;
 		m_Travel.Active = false;
-		animator->PlayOneShot(clip, 0.0f, fadeOut, 0);
+		animator->PlayOneShot(clip, fadeIn, fadeOut, 0);
 	}
 
 	void Fighter::TakeHit(float damage)
@@ -613,13 +615,19 @@ namespace Dingo
 		if (m_Health <= 0.0f)
 			Die();
 		else
-			Interrupt(Clips::HIT_REACT, FighterState::HitReact, HIT_REACT_FADE_OUT);
+			Interrupt(Clips::HIT_REACT, FighterState::HitReact, 0.0f, HIT_REACT_FADE_OUT);
 	}
 
 	void Fighter::Stagger()
 	{
 		if (m_Valid && !IsDead())
-			Interrupt(Clips::STAGGER, FighterState::Stagger, STAGGER_FADE_OUT);
+			Interrupt(Clips::STAGGER, FighterState::Stagger, 0.0f, STAGGER_FADE_OUT);
+	}
+
+	void Fighter::Taunt(const char* clipName)
+	{
+		if (m_Valid && !IsDead() && clipName)
+			Interrupt(clipName, FighterState::Taunt, TAUNT_FADE_IN, TAUNT_FADE_OUT);
 	}
 
 	void Fighter::Die()

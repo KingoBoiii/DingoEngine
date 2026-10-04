@@ -42,11 +42,15 @@ namespace Dingo
 		void PlayStep(const glm::vec3& position, bool left, float intensity, float scale) const;
 		void PlayCombat(CombatSound sound, const glm::vec3& position, float scale) const;
 
+		// A run that steps faster than real time would play every sound over the next.
+		void SetMuted(bool muted) { m_Muted = muted; }
+
 	private:
 		void PlayAt(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume, float pitch, float minDistance, float maxDistance) const;
 
 	private:
 		GameSounds m_Sounds;
+		bool m_Muted = false;
 	};
 
 }

@@ -6,7 +6,7 @@ P4–P12 done). Every `file:line` below was read on that date. Scope source: §6
 
 **Status**: planned. D1–D4 settled by the user on 2026-10-04 on the recommended options; D5 is
 proposed. A fresh Sonnet review (2026-10-04) found 2 High, 6 Medium and 4 Low in the animation
-mechanics, all folded in (§12). M0–M3 (assets, scaffold, movement, combat) are done (§11); M4 is next.
+mechanics, all folded in (§12). M0–M4 (assets, scaffold, movement, combat, AI and bouts) are done (§11); M5 is next.
 
 ---
 
@@ -527,6 +527,35 @@ into the repo yet; M1 copies the files listed under "Repo footprint".
 - Left for M5: unpaid travel is dropped when a move is chained, interrupted or followed during its
   fade-out, so a hit mid-dodge snaps the pose up to 0.64 m (carry the unpaid offset over the next
   move's fade-in, and give HitReact/Stagger a ~0.05 s fade-in to pay it over).
+
+
+**M4** (2026-10-04), built by a Sonnet implementer whose own fresh Opus reviewer's findings it fixed:
+
+- `AiBrain` (tier rows in `AI_TIERS`, one seeded `mt19937` per bout) perceives the opponent only
+  through a `Perception` queue `REACTION_TIME` old (0.45 / 0.30 / 0.18 s). `ReachTable` sweeps each
+  move's weapon spheres through its `hitbox` against a standing target's hurt spheres (Combat's own
+  geometry), giving reach and the time from hitbox open to first contact, which the parry and dodge
+  leads aim at. Recruit: walks in, a light every 1.6–2.4 s, never defends. Veteran: light, 2-link
+  chain, heavy 30%; blocks a threatening windup with p 0.33 (a block that would land in `parry`
+  becomes a step back), punishes whiffs, strafes. Champion: chains and heavies; parries p 0.6 heavy
+  / 0.35 light, else dodges p 0.3 if its iframes can still cover the hit, else blocks; ripostes,
+  baits, avoids the wall.
+- `BoutFlow`: Intro (opponent taunt one-shot, "BOUT n", title, ~2.5 s) → Fight → Knockout (winner
+  taunts, "K.O.", 3 s, fade). Win → next bout; loss or draw → the same bout again; bout 3 won → the
+  End scene ("VICTORY"), rebuilt on leaving. `MatchState` lives in the layer; the arena scene is
+  rebuilt per bout. `Hud`: a second orthographic camera in the arena scene (names, bars with a
+  damage trail, "BOUT n / 3", banners, a controls hint on bout 1, fades).
+- `--autoplay` (tier-3 player brain), `--tournament=N` (autoplay, fixed 1/60, 8 steps a frame,
+  vsync off, muted, no intro/KO, 90 s limit, seeds `--seed`.., a PASS/FAIL line, then quits),
+  `--steps-per-frame=K`.
+- Verified: 100 checks (17 asset, 27 movement, 45 combat, 11 AI). Tournaments of 10: tier 3 beats
+  the Recruit 10/10 (8–10 s, 86–100 health left) and the Veteran 10/10 (11–15 s, 94–100 left);
+  against the Champion (mirror, no bar) 7 wins, 1 loss, 2 timeouts (27–90 s). Intro frames and an
+  autoplay fight captured with the HUD.
+- For M5: the arena camera frames too tight (heads reach the HUD bars) and a near brazier can sit
+  between the camera and the fighters; the unpaid-travel carry (M3). For M6 tuning: the Veteran
+  barely lands a hit on a tier-3 player, so bouts 1 and 2 feel alike for it.
+- Not verifiable by the main session: "a person can beat all three on keyboard and on a pad".
 
 ---
 

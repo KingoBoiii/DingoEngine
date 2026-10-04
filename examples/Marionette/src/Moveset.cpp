@@ -24,16 +24,16 @@ namespace
 	const std::array<FighterDef, 4> k_Fighters = { {
 		{ FighterId::Knight, "Knight", "characters/Knight.glb", "characters/knight_texture.png", SCALE_KNIGHT, PACE_KNIGHT, HEALTH_KNIGHT,
 			"weapons/sword_1handed.gltf", "weapons/shield_round.gltf",
-			k_KnightChain, "Melee_1H_Attack_Jump_Chop", "Death_A", nullptr },
+			k_KnightChain, "Melee_1H_Attack_Jump_Chop", "Death_A", nullptr, nullptr },
 		{ FighterId::Minion, "Skeleton Minion", "characters/Skeleton_Minion.glb", "characters/skeleton_texture.png", SCALE_MINION, PACE_MINION, HEALTH_MINION,
 			"weapons/Skeleton_Blade.gltf", nullptr,
-			k_MinionChain, nullptr, "Skeletons_Death", "Skeletons_Taunt" },
+			k_MinionChain, nullptr, "Skeletons_Death", "Skeletons_Taunt", "The Recruit" },
 		{ FighterId::Barbarian, "Barbarian", "characters/Barbarian.glb", "characters/barbarian_texture.png", SCALE_BARBARIAN, PACE_BARBARIAN, HEALTH_BARBARIAN,
 			"weapons/axe_2handed.gltf", nullptr,
-			k_BarbarianChain, "Melee_2H_Attack_Spin", "Death_B", "Skeletons_Taunt_Longer" },
+			k_BarbarianChain, "Melee_2H_Attack_Spin", "Death_B", "Skeletons_Taunt_Longer", "The Veteran" },
 		{ FighterId::Warrior, "Skeleton Warrior", "characters/Skeleton_Warrior.glb", "characters/skeleton_texture.png", SCALE_WARRIOR, PACE_WARRIOR, HEALTH_WARRIOR,
 			"weapons/Skeleton_Axe.gltf", "weapons/Skeleton_Shield_Small_A.gltf",
-			k_WarriorChain, "Melee_1H_Attack_Jump_Chop", "Skeletons_Death", "Skeletons_Taunt" },
+			k_WarriorChain, "Melee_1H_Attack_Jump_Chop", "Skeletons_Death", "Skeletons_Taunt", "The Champion" },
 	} };
 
 	const std::array<MoveDef, 9> k_Moves = { {
@@ -141,7 +141,7 @@ namespace Dingo
 		std::vector<std::string_view> names;
 		for (const char* name : { Clips::IDLE, Clips::WALK, Clips::RUN, Clips::BACKWARDS, Clips::STRAFE_LEFT, Clips::STRAFE_RIGHT,
 			Clips::DODGE_FORWARD, Clips::DODGE_BACKWARD, Clips::DODGE_LEFT, Clips::DODGE_RIGHT, Clips::HIT_REACT, Clips::STAGGER,
-			Clips::BLOCK_RAISE, Clips::BLOCKING, Clips::BLOCK_HIT, Clips::BLOCK_RIPOSTE })
+			Clips::BLOCK_RAISE, Clips::BLOCKING, Clips::BLOCK_HIT, Clips::BLOCK_RIPOSTE, Clips::TAUNT })
 			AddUnique(names, name);
 
 		for (const FighterDef& fighter : k_Fighters)

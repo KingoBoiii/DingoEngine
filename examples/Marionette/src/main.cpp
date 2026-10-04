@@ -38,16 +38,18 @@ static Dingo::GraphicsAPI ParseGraphicsAPI(const Dingo::ApplicationCommandLineAr
 	return Dingo::GraphicsAPI::Vulkan;
 }
 
-static bool ParseVSync(const Dingo::ApplicationCommandLineArgs& args)
+static bool ParseVSync(const Dingo::ApplicationCommandLineArgs& args, bool defaultValue)
 {
 	if (const std::optional<std::string_view> value = args.Get("vsync"))
 	{
 		if (*value == "off" || *value == "0" || *value == "false")
 			return false;
-		if (!value->empty() && *value != "on" && *value != "1" && *value != "true")
+		if (*value == "on" || *value == "1" || *value == "true")
+			return true;
+		if (!value->empty())
 			DE_WARN("Marionette: ignoring --vsync={} (expected on/1/true or off/0/false)", *value);
 	}
-	return true;
+	return defaultValue;
 }
 
 Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args)
@@ -62,7 +64,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.Title = "[Example] Marionette (Skeletal Animation) - Dingo Engine",
 			.Width = 1600,
 			.Height = 900,
-			.VSync = ParseVSync(args),
+			.VSync = ParseVSync(args, options.Tournament == 0),
 			.Resizable = false,
 		},
 		.Graphics = {
