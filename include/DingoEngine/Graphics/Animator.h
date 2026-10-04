@@ -112,7 +112,7 @@ namespace Dingo
 	// instead of popping. Joints a layer's clip doesn't animate keep the pose from below.
 	//
 	// A clip loaded for another skeleton is retargeted by joint name. Rotations come from the clip.
-	// Translation comes only on its root-most animated joints (usually the hips), scaled by the
+	// Translation comes only on its root-most moving joints (usually the hips), scaled by the
 	// ratio of the two skeletons' rest offsets of that joint from its parent; every other joint
 	// keeps this skeleton's rest translation and scale. The rigs need the same joint names and rest
 	// orientations.

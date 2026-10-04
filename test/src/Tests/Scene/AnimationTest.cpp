@@ -557,6 +557,50 @@ namespace Dingo
 				worst = (std::max)(worst, glm::length(glm::vec3(native.GetJointTransform(joint)[3]) - glm::vec3(retargeted.GetJointTransform(joint)[3])));
 			Check(worst < 1e-2f, std::format("Walk on the Fox rebuilt in centimetres under a 0.01 root scale moves it the same in model space (worst {:.1e} of ~150 units)", worst));
 		}
+
+		{
+			const auto rootJoint = std::find_if(skeleton.GetJoints().begin(), skeleton.GetJoints().end(), [](const Joint& joint) { return joint.Parent < 0; });
+			const int32_t root = static_cast<int32_t>(rootJoint - skeleton.GetJoints().begin());
+			const glm::vec3 rest = rootJoint->RestPose.Translation;
+			auto withRoot = [&](const char* name, const glm::vec3& end)
+			{
+				std::vector<AnimationChannel> channels = walk->GetChannels();
+				auto rootChannel = std::find_if(channels.begin(), channels.end(), [&](const AnimationChannel& channel) { return channel.JointName == rootJoint->Name; });
+				if (rootChannel == channels.end())
+				{
+					channels.push_back({});
+					rootChannel = channels.end() - 1;
+					rootChannel->JointName = rootJoint->Name;
+				}
+				rootChannel->Translation.Times = { 0.0f, walk->GetDuration() };
+				rootChannel->Translation.Values = { rest, end };
+				return AnimationClip(name, walk->GetDuration(), std::move(channels), &skeleton);
+			};
+			const AnimationClip stillRoot = withRoot("StillRoot", rest);
+			const AnimationClip movingRoot = withRoot("MovingRoot", rest + glm::vec3(0.0f, 0.0f, 5.0f));
+			const Skeleton copy(skeleton.GetJoints(), skeleton.GetRootTransform(), skeleton.GetSkinJointCount());
+
+			Animator native(&skeleton);
+			Animator still(&copy);
+			Animator moving(&copy);
+			native.Play(walk);
+			still.Play(&stillRoot);
+			moving.Play(&movingRoot);
+			for (Animator* animator : { &native, &still, &moving })
+				animator->Update(0.37f);
+
+			const int32_t hips = skeleton.FindJoint("b_Hip_01");
+			const glm::vec3 hipsRest = hips == Skeleton::k_InvalidJoint ? glm::vec3(0.0f) : skeleton.GetJoint(hips).RestPose.Translation;
+			const float motion = hips == Skeleton::k_InvalidJoint ? 0.0f : glm::length(native.GetLocalPoses()[hips].Translation - hipsRest);
+			const float gap = hips == Skeleton::k_InvalidJoint ? 1.0f : glm::length(still.GetLocalPoses()[hips].Translation - native.GetLocalPoses()[hips].Translation);
+			Check(motion > 1e-2f && gap < 1e-4f,
+				std::format("a still root keyed at its rest offset doesn't take the hips' motion when retargeting (hips {:.2f} from rest, gap {:.1e})", motion, gap));
+
+			const float rootMoved = glm::length(moving.GetLocalPoses()[root].Translation - rest);
+			const float hipsHeld = hips == Skeleton::k_InvalidJoint ? 1.0f : glm::length(moving.GetLocalPoses()[hips].Translation - hipsRest);
+			Check(rootMoved > 1.0f && hipsHeld < 1e-4f,
+				std::format("a root that really moves still takes the translation from the hips when retargeting (root moved {:.2f}, hips {:.1e} from rest)", rootMoved, hipsHeld));
+		}
 	}
 
 	void AnimationTest::RunBlendChecks()

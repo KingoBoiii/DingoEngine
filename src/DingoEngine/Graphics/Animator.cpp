@@ -83,6 +83,17 @@ namespace Dingo
 			return from > 1e-6f && to > 1e-6f ? to / from : 1.0f;
 		}
 
+		bool TranslationMoves(const AnimationTrack<glm::vec3>& track, const glm::vec3& rest)
+		{
+			const float tolerance = 1e-5f * (1.0f + glm::length(rest));
+			for (const glm::vec3& value : track.Values)
+			{
+				if (glm::any(glm::greaterThan(glm::abs(value - rest), glm::vec3(tolerance))))
+					return true;
+			}
+			return false;
+		}
+
 		float ClipDuration(const AnimationClip* clip)
 		{
 			return clip ? clip->GetDuration() : 0.0f;
@@ -1038,17 +1049,13 @@ namespace Dingo
 		const std::vector<Joint>& joints = m_Skeleton->GetJoints();
 		binding.Channels.resize(channels.size());
 
-		std::vector<bool> animated(joints.size(), false);
 		size_t bound = 0;
 		for (size_t c = 0; c < channels.size(); ++c)
 		{
 			const int32_t joint = m_Skeleton->FindJoint(channels[c].JointName);
 			binding.Channels[c].Joint = joint;
 			if (joint != Skeleton::k_InvalidJoint)
-			{
-				animated[joint] = true;
 				bound++;
-			}
 		}
 
 		if (bound == 0 && !channels.empty())
@@ -1057,6 +1064,18 @@ namespace Dingo
 		const Skeleton* source = clip.GetSourceSkeleton();
 		if (!source || source == m_Skeleton)
 			return binding;
+
+		// Exporters key a still root at its rest offset, which must not take the hips' motion away.
+		std::vector<bool> moving(joints.size(), false);
+		for (size_t c = 0; c < channels.size(); ++c)
+		{
+			const int32_t joint = binding.Channels[c].Joint;
+			if (joint == Skeleton::k_InvalidJoint)
+				continue;
+			const int32_t sourceJoint = source->FindJoint(channels[c].JointName);
+			if (sourceJoint == Skeleton::k_InvalidJoint || TranslationMoves(channels[c].Translation, source->GetJoint(sourceJoint).RestPose.Translation))
+				moving[joint] = true;
+		}
 
 		for (size_t c = 0; c < channels.size(); ++c)
 		{
@@ -1069,7 +1088,7 @@ namespace Dingo
 			bool rootMost = true;
 			for (int32_t parent = joints[channel.Joint].Parent; parent >= 0; parent = joints[parent].Parent)
 			{
-				if (animated[parent])
+				if (moving[parent])
 				{
 					rootMost = false;
 					break;

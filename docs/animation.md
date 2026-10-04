@@ -740,8 +740,12 @@ skeleton** (`clip->GetSourceSkeleton()` is not the animator's: a second characte
 joint name:
 
 - **Rotations come from the clip.** Scale never does.
-- **Translation comes only for root-most animated joints**: those with no animated ancestor in the
-  target (usually the hips). The clip's motion there is mapped as `targetRest + (key - sourceRest) *
+- **Translation comes only for root-most moving joints**: those with no ancestor in the target whose
+  translation the clip moves (usually the hips). A track moves when any key leaves the source joint's
+  rest offset (by more than 1e-5 of its length); a track that only holds that offset, like the still
+  `root` that exporters such as KayKit's key on every joint, doesn't take the hips' motion away. A track
+  held at any other offset, or naming a joint the source skeleton lacks, counts as moving. The clip's
+  motion there is mapped as `targetRest + (key - sourceRest) *
   ratio`, where `ratio` is the length of the target's rest offset of that joint from its parent divided
   by the source's (1 if either has no length). The keys live in the parent's frame, so units and root
   scale cancel: a rig in centimetres under a 0.01 root scale drives one in metres, and a character
@@ -763,7 +767,7 @@ animator.Play(library->FindAnimation("Slash"), 0.1f);                  // retarg
 **Requirements.** The rigs need the **same joint names and the same rest orientations**: one rig
 template at different proportions. Retargeting across different topologies is not supported. A clip
 retargeted onto an identical rig gives the same pose as playing it natively when its keys are
-rotations, plus translation on the root-most joints: other translation and all scale keys are
+rotations, plus translation on the root-most moving joints: other translation and all scale keys are
 dropped.
 
 Clips keep their events when they retarget, because events live on the clip.
