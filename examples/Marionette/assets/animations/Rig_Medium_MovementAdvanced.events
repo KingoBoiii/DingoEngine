@@ -1,7 +1,16 @@
-# clip                  time     event
+# clip                  time | begin..end     event
 Walking_Backwards       0.717    step_l
 Walking_Backwards       0.183    step_r
 Running_Strafe_Left     0.108    step_l
 Running_Strafe_Left     0.525    step_r
 Running_Strafe_Right    0.121    step_l
 Running_Strafe_Right    0.504    step_r
+
+Dodge_Forward    0.00..0.23     dash
+Dodge_Forward    0.08..0.30     iframes
+Dodge_Backward   0.00..0.29     dash
+Dodge_Backward   0.08..0.30     iframes
+Dodge_Left       0.00..0.34     dash
+Dodge_Left       0.08..0.30     iframes
+Dodge_Right      0.00..0.34     dash
+Dodge_Right      0.08..0.30     iframes

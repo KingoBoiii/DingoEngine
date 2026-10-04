@@ -12,10 +12,13 @@ namespace Dingo
 
 	class ArenaWorld;
 	class CameraRig;
+	class Combat;
+	class DuelScript;
 	class Fighter;
 	class FollowCamera;
 	class GameAssets;
 	class GameAudio;
+	class HitDebugView;
 	struct FighterContext;
 
 	class ArenaDirectorScript : public ScriptableEntity
@@ -41,7 +44,10 @@ namespace Dingo
 		double m_Time = 0.0;
 		std::unique_ptr<ArenaWorld> m_World;
 		std::unique_ptr<GameAudio> m_Audio;
+		std::unique_ptr<HitDebugView> m_DebugView;
 		std::vector<std::unique_ptr<Fighter>> m_Fighters;
+		std::unique_ptr<Combat> m_Combat;
+		std::unique_ptr<DuelScript> m_Duel;
 		std::unique_ptr<Brain> m_Brain;
 		std::unique_ptr<CameraRig> m_Camera;
 		std::unique_ptr<FollowCamera> m_FollowCamera;

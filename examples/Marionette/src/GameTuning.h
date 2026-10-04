@@ -129,6 +129,94 @@ namespace Dingo
 	inline constexpr float FOOTSTEP_SHARED_LEAD = 0.03f;
 	inline constexpr float SEPARATION_PUSH_SPEED = 2.0f;
 
+	// --- Combat --------------------------------------------------------------------
+	inline constexpr float HEALTH_KNIGHT        = 100.0f;
+	inline constexpr float HEALTH_MINION        = 80.0f;
+	inline constexpr float HEALTH_BARBARIAN     = 110.0f;
+	inline constexpr float HEALTH_WARRIOR       = 130.0f;
+
+	inline constexpr float DAMAGE_LIGHT_1H      = 12.0f;
+	inline constexpr float DAMAGE_LIGHT_FINISHER_1H = 14.0f;
+	inline constexpr float DAMAGE_LIGHT_2H      = 16.0f;
+	inline constexpr float DAMAGE_LIGHT_FINISHER_2H = 18.0f;
+	inline constexpr float DAMAGE_HEAVY_1H      = 26.0f;
+	inline constexpr float DAMAGE_HEAVY_2H      = 30.0f;
+	inline constexpr float DAMAGE_RIPOSTE       = 22.0f;
+
+	inline constexpr float FRAME_SECONDS        = 1.0f / 60.0f;
+
+	inline constexpr float ATTACK_FADE_IN       = 0.05f;
+	inline constexpr float ATTACK_FADE_OUT      = 0.2f;
+	inline constexpr float DODGE_FADE_IN        = FRAME_SECONDS;
+	inline constexpr float DODGE_FADE_OUT       = 0.08f;
+	inline constexpr float HIT_REACT_FADE_OUT   = 0.1f;
+	inline constexpr float STAGGER_FADE_OUT     = 0.15f;
+	inline constexpr float BLOCK_RAISE_FADE     = FRAME_SECONDS;
+	inline constexpr float BLOCK_LOWER_FADE     = 0.1f;
+	inline constexpr float BLOCK_HIT_FADE_IN    = 0.05f;
+	inline constexpr float BLOCK_HIT_FADE_OUT   = 0.1f;
+	inline constexpr float DEATH_FADE           = 0.1f;
+	inline constexpr uint32_t BLOCK_LAYER       = 1;
+
+	// Seconds of the fighter's own time, which hit-stop slows.
+	inline constexpr float INPUT_BUFFER         = 0.2f;
+	inline constexpr float RIPOSTE_WINDOW       = 0.7f;
+	inline constexpr float BLOCK_ARC_DEG        = 75.0f;
+	inline constexpr float BLOCK_CHIP_FRACTION  = 0.2f;
+	inline constexpr float BLOCK_PUSH_SPEED     = 3.0f;
+	inline constexpr float BLOCK_PUSH_DECEL     = 22.0f;
+	inline constexpr float BLOCK_MOVE_SPEED     = WALK_SPEED;
+	inline constexpr float ATTACK_TURN_RATE_DEG = 360.0f;
+	// The dodge clips carry only 0.25 to 0.64 m of root travel in the pose, so the capsule covers this much more over the dash window.
+	inline constexpr float DODGE_EXTRA_DISTANCE = 0.9f;
+	inline constexpr float DODGE_FORWARD_ARC_DEG = 45.0f;
+	inline constexpr float DODGE_BACKWARD_ARC_DEG = 135.0f;
+	// How far right of the facing the chop's blade crosses the target line; the attacker turns that far
+	// left of its opponent in the windup, or the blow passes beside a target dead ahead.
+	inline constexpr float AIM_CHOP_DEG         = 24.0f;
+
+	inline constexpr float HITSTOP_SECONDS      = 0.07f;
+	inline constexpr float HITSTOP_SPEED        = 0.05f;
+
+	// Joint offsets are along the bone, in the rig's units; the radii scale with the fighter.
+	struct HurtSphereDef
+	{
+		const char* Joint;
+		glm::vec3 Offset;
+		float Radius;
+	};
+	inline constexpr std::array<HurtSphereDef, 3> HURT_SPHERES = { {
+		{ "hips",  { 0.0f, 0.05f, 0.0f }, 0.38f },
+		{ "chest", { 0.0f, 0.03f, 0.0f }, 0.46f },
+		{ "head",  { 0.0f, 0.5f, 0.0f },  0.52f },
+	} };
+	inline constexpr std::array<float, 3> WEAPON_SPHERE_FRACTIONS = { 0.35f, 0.65f, 0.95f };
+	// The blade starts this far along the grip-to-tip axis; the guard and the handle lie before it.
+	inline constexpr float WEAPON_BLADE_START = 0.3f;
+	inline constexpr float WEAPON_SPHERE_WIDTH_FRACTION = 0.6f;
+	inline constexpr float WEAPON_SPHERE_MIN_RADIUS = 0.06f;
+	inline constexpr float WEAPON_SPHERE_MAX_RADIUS = 0.14f;
+	inline constexpr float HIT_SPHERE_MESH_RADIUS = 0.5f;
+	inline constexpr uint32_t HIT_SPHERE_MESH_RINGS = 10;
+	inline constexpr uint32_t HIT_SPHERE_MESH_SEGMENTS = 14;
+
+	inline constexpr glm::vec3 DEBUG_COLOR_IDLE = { 0.45f, 0.47f, 0.55f };
+	inline constexpr glm::vec3 DEBUG_COLOR_HITBOX = { 1.0f, 0.12f, 0.08f };
+	inline constexpr glm::vec3 DEBUG_COLOR_IFRAMES = { 0.15f, 0.4f, 1.0f };
+	inline constexpr glm::vec3 DEBUG_COLOR_PARRY = { 1.0f, 0.88f, 0.1f };
+	inline constexpr float DEBUG_EMISSIVE       = 1.0f;
+
+	inline constexpr float POSE_DISTANCE        = 1.5f;
+
+	// --- Combat audio --------------------------------------------------------------
+	inline constexpr float AUDIO_COMBAT_NEAR    = 12.0f;
+	inline constexpr float AUDIO_COMBAT_FAR     = 40.0f;
+	inline constexpr float AUDIO_SWING_VOLUME   = 0.55f;
+	inline constexpr float AUDIO_HIT_VOLUME     = 0.9f;
+	inline constexpr float AUDIO_BLOCK_VOLUME   = 0.85f;
+	inline constexpr float AUDIO_PARRY_VOLUME   = 0.9f;
+	inline constexpr float AUDIO_DODGE_VOLUME   = 0.5f;
+
 	// --- Controls ------------------------------------------------------------------
 	inline constexpr KeyCode KEY_MOVE_FORWARD   = KeyCode::W;
 	inline constexpr KeyCode KEY_MOVE_BACK      = KeyCode::S;
@@ -139,6 +227,11 @@ namespace Dingo
 	inline constexpr KeyCode KEY_MOVE_LEFT_ALT  = KeyCode::Left;
 	inline constexpr KeyCode KEY_MOVE_RIGHT_ALT = KeyCode::Right;
 	inline constexpr KeyCode KEY_WALK           = KeyCode::LeftControl;
+	inline constexpr KeyCode KEY_LIGHT          = KeyCode::J;
+	inline constexpr KeyCode KEY_HEAVY          = KeyCode::K;
+	inline constexpr KeyCode KEY_BLOCK          = KeyCode::LeftShift;
+	inline constexpr KeyCode KEY_BLOCK_ALT      = KeyCode::L;
+	inline constexpr KeyCode KEY_DODGE          = KeyCode::Space;
 
 	// --- Arena camera --------------------------------------------------------------
 	inline constexpr float ARENA_CAMERA_YAW_DEG   = 0.0f;
@@ -170,6 +263,24 @@ namespace Dingo
 	inline constexpr float DRIVE_WALL_DEADLINE  = 8.0f;
 	inline constexpr float DRIVE_WALL_MOVE_LIMIT = 0.1f;
 	inline constexpr float DRIVE_WALL_QUIET     = 0.5f;
+
+	// --- Scripted duel (--drive=duel) ----------------------------------------------
+	// The leads are real seconds before the opponent's hitbox opens (its clip time over its pace). The gap
+	// is what the weakest reach in the script covers: the riposte at a staggered opponent, 0.2 m further
+	// back after the block has pushed the player away.
+	inline constexpr float DUEL_GAP             = 1.1f;
+	inline constexpr int   DUEL_CHAIN_LENGTH    = 3;
+	inline constexpr float DUEL_START_DELAY     = 0.6f;
+	inline constexpr float DUEL_SETTLE          = 0.5f;
+	inline constexpr float DUEL_LATE_BLOCK_LEAD = 0.55f;
+	inline constexpr float DUEL_PARRY_LEAD      = 0.08f;
+	inline constexpr float DUEL_DODGE_LEAD      = 0.17f;
+	inline constexpr float DUEL_RIPOSTE_DELAY   = 0.15f;
+	inline constexpr float DUEL_CHAIN_GAP       = 1.1f;
+	inline constexpr float DUEL_BUFFER_LEAD     = 0.12f;
+	inline constexpr float DUEL_ROUND_TIMEOUT   = 6.0f;
+	inline constexpr float DUEL_DEADLINE        = 60.0f;
+	inline constexpr float DUEL_END_DELAY       = 0.6f;
 
 	// --- Audio ---------------------------------------------------------------------
 	inline constexpr float AUDIO_FOOTSTEP_VOLUME = 0.7f;
@@ -217,6 +328,45 @@ namespace Dingo
 	inline constexpr float CHECK_ZONE_HOLD      = 1.5367f;
 	inline constexpr float CHECK_ZONE_STAGGER   = 0.05f;
 	inline constexpr float CHECK_ZONE_BLEND_SECONDS = 4.0f;
+
+	// --- Combat checks -------------------------------------------------------------
+	inline constexpr int   DERIVE_SPEED_SPAN    = 2;
+	inline constexpr float DERIVE_HITBOX_FRACTION = 0.5f;
+	inline constexpr float DERIVE_WINDUP_FLOOR  = 0.1f;
+	inline constexpr float DERIVE_WINDUP_MIN    = 0.1f;
+	inline constexpr float DERIVE_DASH_FRACTION = 0.25f;
+	inline constexpr float DERIVE_COMBO_MARGIN  = 0.05f;
+	inline constexpr float DODGE_IFRAMES_BEGIN  = 0.2f;
+	inline constexpr float DODGE_IFRAMES_END    = 0.75f;
+	inline constexpr float PARRY_WINDOW_END     = 0.2f;
+	inline constexpr float CHECK_WINDOW_TOLERANCE = 0.03f;
+	inline constexpr float CHECK_ANIMATOR_STEP  = 1.0f / 60.0f;
+	inline constexpr int   CHECK_PARRY_RAISES   = 8;
+	inline constexpr float CHECK_DEATH_SETTLE   = 1.0f;
+	inline constexpr float CHECK_DEATH_WALK     = 0.3f;
+	inline constexpr float CHECK_DEATH_RAISE    = 0.2f;
+	inline constexpr float CHECK_DEATH_MARGIN   = 0.3f;
+	inline constexpr float CHECK_PARRY_RUN_IN   = 0.1f;
+	inline constexpr float CHECK_PARRY_RUN_IN_STEP = 0.137f;
+	inline constexpr float CHECK_PARRY_WATCH    = 0.5f;
+	inline constexpr float CHECK_RAISE_WATCH    = 0.4f;
+	inline constexpr float CHECK_BLOCK_SETTLE   = 0.3f;
+	inline constexpr float CHECK_BLOCK_LOWER_WATCH = 0.25f;
+	inline constexpr float CHECK_BLOCK_HOLD     = 2.5f;
+	inline constexpr float CHECK_BLOCK_HIT_WATCH = 1.2f;
+	inline constexpr float CHECK_BLOCK_HIT_AFTER = 0.5f;
+	inline constexpr float CHECK_RIPOSTE_HOLD   = 0.4f;
+	inline constexpr float CHECK_RETURN_WATCH   = 1.0f;
+	inline constexpr int   CHECK_RAISE_FINISH_STEPS = 200;
+	inline constexpr int   CHECK_ONE_SHOT_STEPS = 400;
+	inline constexpr float CHECK_BLADE_MIN_LENGTH = 0.5f;
+	inline constexpr float CHECK_BLADE_MAX_LENGTH = 2.0f;
+	inline constexpr float CHECK_DASH_MIN_TRAVEL = 0.02f;
+	inline constexpr float CHECK_GEOMETRY_TOLERANCE = 1e-5f;
+	inline constexpr float CHECK_AXIS_TOLERANCE = 1e-4f;
+	inline constexpr float CHECK_POSE_HOLD_TOLERANCE = 1e-4f;
+	inline constexpr float BREAK_HITBOX_MARGIN  = 0.06f;
+	inline constexpr float BREAK_HITBOX_LENGTH  = 0.1f;
 
 	// Scene::OnUpdate caps its delta at 4/60 s, so a longer fixed step would be silently shortened.
 	inline constexpr float FIXED_DT_MAX         = 4.0f / 60.0f;

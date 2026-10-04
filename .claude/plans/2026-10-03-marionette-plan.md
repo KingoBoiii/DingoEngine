@@ -6,7 +6,7 @@ P4–P12 done). Every `file:line` below was read on that date. Scope source: §6
 
 **Status**: planned. D1–D4 settled by the user on 2026-10-04 on the recommended options; D5 is
 proposed. A fresh Sonnet review (2026-10-04) found 2 High, 6 Medium and 4 Low in the animation
-mechanics, all folded in (§12). M0 (asset intake), M1 (scaffold) and M2 (movement) are done (§11); M3 is next.
+mechanics, all folded in (§12). M0–M3 (assets, scaffold, movement, combat) are done (§11); M4 is next.
 
 ---
 
@@ -86,8 +86,8 @@ game while it runs (P9 hot-reload).
 |---|---|---|
 | `windup` | range | The telegraph: the weapon glows, and the AI reads it to decide on a parry |
 | `hitbox` | range | Active frames: the weapon's spheres can hit |
-| `lunge` | range | The fighter moves forward at the move's lunge speed (no root motion in v0.8) |
-| `dash` | range | A dodge moves the fighter in the dodge's direction at its dash speed |
+| ~~`lunge`~~ | — | Dropped in M3: moving the capsule by the clip's travel double-counted it (the pose already moves the hips). Instead the capsule catches up with each move's net hips travel over its fade-out (§11 M3) |
+| `dash` | range | A dodge also moves the capsule `DODGE_EXTRA_DISTANCE` (0.9 m) in the dodge's direction over this window |
 | `combo` | range | A light input inside it chains to the next light attack |
 | `iframes` | range | Dodge invulnerability |
 | `parry` | range | At the start of the block raise (`Melee_Block`, t ≈ 0): a hit landing inside it is parried |
@@ -493,6 +493,40 @@ into the repo yet; M1 copies the files listed under "Repo footprint".
   60 Hz: circle 187 and strafe 147 steps, strictly alternating while moving.
 - Known: a zone switch at an arbitrary phase can still drop or double a step about 0.3% of the time
   (offline model; a cross-fade isn't phase-locked), so the checks pick phases away from frame ties.
+
+
+**M3** (2026-10-04), built by a Sonnet implementer, reviewed by a fresh Opus reviewer, fixed, then re-reviewed (Sonnet) on the fix diff:
+
+- `Combat` (swept weapon spheres against socketed hurt spheres; first contact decides the swing;
+  one resolution per swing; ±75° block cone), `HitGeometry` (weapon spheres at 0.35/0.65/0.95 of the
+  grip → farthest-vertex axis, radius 0.6 × the blade's half-width clamped to 0.06–0.14 m: sword
+  0.094), `DuelScript` (`--drive=duel`: both fighters scripted; Hit, Blocked, Parry + riposte,
+  Dodged, a 3-hit chain; `--break-hitbox` moves every hitbox into its one-shot's tail),
+  `CombatChecks`. Fighter states Locomotion/Attack/Block/Dodge/HitReact/Stagger/Dead as planned.
+- Windows in `Rig_Medium_CombatMelee.events` / `Rig_Medium_MovementAdvanced.events` are the values
+  the engine derives from the clips under `--check` (`hitbox`: the span around `handslot.r`'s peak
+  speed above half of it; `windup`: the first real hand movement to the hitbox; `combo`: hitbox end
+  to the one-shot's return; `dash`: the dodge's ground travel above a quarter of its peak; `parry`
+  0–0.2 and `iframes` 0.08–0.30 are tuning). The implementer's offline model disagreed on five;
+  the engine wins.
+- Travel: v0.8 has no root motion, and moving the capsule by a clip's travel while the pose also
+  moves the hips double-counted it. The capsule now stays put during a move and pays the move's
+  net hips displacement over its fade-out (attacks 0–0.19 m); a dodge adds 0.9 m over `dash`
+  (dodges cover ~1.15 m forward, 1.5 m back, 1.4 m sideways). KayKit's dodges carry their travel on
+  `root`, not the hips. `lunge` is gone.
+- Input buffer (0.2 s) and riposte window count the fighter's own animation time, so hit-stop
+  (exactly 70 ms, from the frame after contact) pauses them; the first version lost the chain's
+  second press to hit-stop. A parry counts from the raise's first frame; block push is a decaying
+  knockback; chip damage never heals. The Knight's chop aims 24° aside (`AimDegrees`) so its arc
+  crosses a target ahead; the duel gap is 1.1 m.
+- Scripted runs (`--check`, `--drive`, `--fixed-dt`, `--autoplay`) set `UpdateInBackground`: the
+  long checks unfocus the window, and an unfocused app pauses, which hung `--check --drive`.
+- Verified: 90 checks (17 asset, 27 movement, 45 combat); the duel PASSes with every outcome inside
+  its event window and the chain landing at 7.37/7.92/8.27 s; `--break-hitbox` gives 0 outcomes
+  from 7 swings. `ValidateMoveset` must re-run on a model reload (M5).
+- Left for M5: unpaid travel is dropped when a move is chained, interrupted or followed during its
+  fade-out, so a hit mid-dodge snaps the pose up to 0.64 m (carry the unpaid offset over the next
+  move's fade-in, and give HitReact/Stagger a ~0.05 s fade-in to pay it over).
 
 ---
 

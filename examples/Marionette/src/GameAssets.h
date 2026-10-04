@@ -1,4 +1,5 @@
 #pragma once
+#include "Audio.h"
 #include "Moveset.h"
 
 #include <DingoEngine.h>
@@ -33,11 +34,15 @@ namespace Dingo
 		std::span<Model* const> GetLibraries() const { return m_Libraries; }
 		const ClipSet& GetClips() const { return m_Clips; }
 		const AnimationClip* GetClip(std::string_view name) const { return m_Clips.Find(name); }
-		const std::shared_ptr<AudioClip>& GetFootstep() const { return m_Footstep; }
+		// Any clip of any library, used or not (--pose can show one the Moveset never plays).
+		const AnimationClip* FindAnyClip(std::string_view name) const;
+		const GameSounds& GetSounds() const { return m_Sounds; }
 
 	private:
 		Model* LoadModel(const char* path);
 		Texture* LoadTexture(const char* path);
+		std::shared_ptr<AudioClip> LoadSound(const char* path);
+		void BreakHitboxes();
 
 	private:
 		std::unordered_map<std::string, Model*> m_Models;
@@ -45,7 +50,7 @@ namespace Dingo
 		std::unordered_map<std::string, Material*> m_Materials;
 		std::vector<Model*> m_Libraries;
 		ClipSet m_Clips;
-		std::shared_ptr<AudioClip> m_Footstep;
+		GameSounds m_Sounds;
 	};
 
 }

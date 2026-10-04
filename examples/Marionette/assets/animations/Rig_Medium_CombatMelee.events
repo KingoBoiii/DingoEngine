@@ -1,0 +1,32 @@
+# clip                              begin..end     event
+Melee_1H_Attack_Slice_Diagonal     0.00..0.37     windup
+Melee_1H_Attack_Slice_Diagonal     0.37..0.47     hitbox
+Melee_1H_Attack_Slice_Diagonal     0.47..0.75     combo
+
+Melee_1H_Attack_Slice_Horizontal   0.03..0.23     windup
+Melee_1H_Attack_Slice_Horizontal   0.23..0.28     hitbox
+Melee_1H_Attack_Slice_Horizontal   0.28..1.12     combo
+
+Melee_1H_Attack_Chop               0.03..0.54     windup
+Melee_1H_Attack_Chop               0.54..0.60     hitbox
+
+Melee_1H_Attack_Stab               0.00..0.34     windup
+Melee_1H_Attack_Stab               0.34..0.41     hitbox
+
+Melee_1H_Attack_Jump_Chop          0.00..0.66     windup
+Melee_1H_Attack_Jump_Chop          0.66..0.76     hitbox
+
+Melee_2H_Attack_Slice              0.03..0.37     windup
+Melee_2H_Attack_Slice              0.37..0.43     hitbox
+Melee_2H_Attack_Slice              0.43..0.85     combo
+
+Melee_2H_Attack_Chop               0.03..0.64     windup
+Melee_2H_Attack_Chop               0.64..0.86     hitbox
+
+Melee_2H_Attack_Spin               0.10..0.61     windup
+Melee_2H_Attack_Spin               0.61..1.30     hitbox
+
+Melee_Block_Attack                 0.00..0.30     windup
+Melee_Block_Attack                 0.30..0.46     hitbox
+
+Melee_Block                        0.00..0.20     parry

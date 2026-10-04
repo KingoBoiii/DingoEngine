@@ -3,10 +3,13 @@
 #include "Audio.h"
 #include "CameraRig.h"
 #include "CheckReport.h"
+#include "Combat.h"
 #include "DriveBrain.h"
+#include "DuelScript.h"
 #include "Fighter.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
+#include "HitGeometry.h"
 #include "Moveset.h"
 #include "PlayerBrain.h"
 
@@ -29,11 +32,15 @@ namespace Dingo
 		Scene& scene = GetScene();
 
 		m_World = std::make_unique<ArenaWorld>(scene);
-		m_Audio = std::make_unique<GameAudio>(m_Assets->GetFootstep());
+		m_Audio = std::make_unique<GameAudio>(m_Assets->GetSounds());
 		m_Freeze = options.Freeze;
 		m_Drive = options.Freeze ? DriveMode::None : options.Drive;
+		if (options.DebugHitbox)
+			m_DebugView = std::make_unique<HitDebugView>();
 
-		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, options.Check || m_Drive != DriveMode::None };
+		const bool logSteps = options.Check || (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel);
+		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None;
+		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_DebugView.get() };
 		if (options.Lineup)
 			BuildLineup(context, options);
 		else
@@ -78,7 +85,9 @@ namespace Dingo
 	void ArenaDirectorScript::BuildBout(const FighterContext& context, const LaunchOptions& options)
 	{
 		Scene& scene = GetScene();
-		const BoutLayout layout = GetBoutLayout(m_Drive);
+		BoutLayout layout = GetBoutLayout(m_Drive);
+		if (m_Freeze && !options.PoseClip.empty())
+			layout.OpponentPosition.x = layout.PlayerPosition.x + POSE_DISTANCE;
 		const FighterDef& playerDef = GetPlayerDef();
 		const FighterDef& opponentDef = GetOpponentDef(options.Bout);
 
@@ -95,7 +104,16 @@ namespace Dingo
 		Fighter& opponent = *m_Fighters[1];
 		if (m_Freeze)
 		{
-			player.Freeze(std::max(options.Move, 0.0f), options.Phase);
+			const AnimationClip* pose = options.PoseClip.empty() ? nullptr : m_Assets->FindAnyClip(options.PoseClip);
+			if (!options.PoseClip.empty() && !pose)
+			{
+				DE_ERROR("Marionette: --pose clip '{}' is in none of the libraries", options.PoseClip);
+			}
+
+			if (pose)
+				player.FreezePose(*pose, options.PoseTime);
+			else
+				player.Freeze(std::max(options.Move, 0.0f), options.Phase);
 			opponent.ShowIdle(FREEZE_POSE_TIME, true);
 		}
 		else
@@ -104,7 +122,10 @@ namespace Dingo
 			opponent.StartLocomotion(OPPONENT_IDLE_PHASE);
 		}
 
-		if (m_Drive != DriveMode::None)
+		m_Combat = std::make_unique<Combat>(*m_Audio, context.LogCombat);
+		if (m_Drive == DriveMode::Duel)
+			m_Duel = std::make_unique<DuelScript>(options.BreakHitbox);
+		else if (m_Drive != DriveMode::None)
 			m_Brain = std::make_unique<DriveBrain>(m_Drive);
 		else
 			m_Brain = std::make_unique<PlayerBrain>();
@@ -149,19 +170,34 @@ namespace Dingo
 		Fighter& player = *m_Fighters[0];
 		Fighter& opponent = *m_Fighters[1];
 
-		if (!m_Freeze)
+		if (m_Duel)
+		{
+			m_Duel->Advance(deltaTime, player, opponent, *m_Combat);
+			player.SetIntent(m_Duel->GetPlayerIntent());
+			opponent.SetIntent(m_Duel->GetOpponentIntent());
+			if (m_Duel->ShouldClose())
+				Application::Get().Close();
+		}
+		else if (!m_Freeze)
+		{
 			player.SetIntent(m_Brain->Think(deltaTime, player, opponent));
+		}
 
-		player.Think(deltaTime, &opponent);
-		opponent.Think(deltaTime, &player);
+		player.Update(deltaTime, &opponent);
+		opponent.Update(deltaTime, &player);
 		Fighter::Separate(player, opponent, deltaTime);
 		player.Apply(deltaTime);
 		opponent.Apply(deltaTime);
 
+		if (m_Freeze)
+			m_Combat->UpdateDebug(player, opponent);
+		else
+			m_Combat->Update(player, opponent);
+
 		if (m_FollowCamera)
 			m_FollowCamera->Update(deltaTime, player.GetPosition(), opponent.GetPosition(), m_Freeze);
 
-		if (m_Drive != DriveMode::None)
+		if (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel)
 			LogDrive(deltaTime);
 		if (m_Drive == DriveMode::Wall)
 			CheckWall(deltaTime);
@@ -211,7 +247,10 @@ namespace Dingo
 		m_Camera.reset();
 		m_FollowCamera.reset();
 		m_Brain.reset();
+		m_Duel.reset();
+		m_Combat.reset();
 		m_Fighters.clear();
+		m_DebugView.reset();
 		m_Audio.reset();
 		m_World.reset();
 	}

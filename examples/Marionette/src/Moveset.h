@@ -1,6 +1,9 @@
 #pragma once
+#include <glm/glm.hpp>
+
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -10,7 +13,9 @@ namespace Dingo
 {
 
 	class AnimationClip;
+	class ClipSet;
 	class Model;
+	class Skeleton;
 
 	namespace Clips
 	{
@@ -36,11 +41,18 @@ namespace Dingo
 	{
 		inline constexpr const char* STEP_LEFT       = "step_l";
 		inline constexpr const char* STEP_RIGHT      = "step_r";
+		inline constexpr const char* WINDUP          = "windup";
+		inline constexpr const char* HITBOX          = "hitbox";
+		inline constexpr const char* DASH            = "dash";
+		inline constexpr const char* COMBO           = "combo";
+		inline constexpr const char* IFRAMES         = "iframes";
+		inline constexpr const char* PARRY           = "parry";
 	}
 
 	namespace Joints
 	{
 		inline constexpr const char* HIPS            = "hips";
+		inline constexpr const char* SPINE           = "spine";
 		inline constexpr const char* FOOT_LEFT       = "foot.l";
 		inline constexpr const char* FOOT_RIGHT      = "foot.r";
 		inline constexpr const char* HAND_RIGHT      = "handslot.r";
@@ -63,6 +75,7 @@ namespace Dingo
 		const char* Texture;
 		float Scale;
 		float Pace;
+		float Health;
 		const char* RightWeapon;
 		const char* LeftWeapon;
 		std::span<const char* const> LightChain;
@@ -83,6 +96,58 @@ namespace Dingo
 	std::span<const LibraryDef> GetLibraryDefs();
 
 	std::vector<std::string_view> GetUsedClipNames();
+
+	enum class MoveKind : uint8_t
+	{
+		Light,
+		Heavy,
+		Riposte
+	};
+
+	struct MoveDef
+	{
+		const char* Clip;
+		MoveKind Kind;
+		float Damage;
+		float FadeIn;
+		float FadeOut;
+		// Degrees right of the facing at which the blade crosses the line to a target dead ahead.
+		float AimDegrees = 0.0f;
+	};
+
+	std::span<const MoveDef> GetMoves();
+	const MoveDef* FindMove(std::string_view clip);
+	const MoveDef& GetRiposteMove();
+	const MoveDef* GetHeavyMove(const FighterDef& fighter);
+	// The light attack that follows `clip` in this fighter's chain; null at the end of it or off it.
+	const MoveDef* GetNextInChain(const FighterDef& fighter, std::string_view clip);
+	// Position of `clip` in the fighter's light chain, or -1.
+	int FindChainIndex(const FighterDef& fighter, std::string_view clip);
+	// True when some fighter's chain continues after `clip`, so it needs a `combo` window.
+	bool IsChainLink(std::string_view clip);
+
+	struct ClipRange
+	{
+		float Begin = 0.0f;
+		float End = 0.0f;
+
+		bool Contains(float time) const { return time >= Begin && time <= End; }
+	};
+
+	// The first range event of that name on the clip, as the sidecar (or code) gave it.
+	std::optional<ClipRange> FindRange(const AnimationClip& clip, std::string_view name);
+
+	// How far the hips move on the ground between two clip times, in the model space of `skeleton` with the
+	// clip retargeted onto it: what the pose shows. A clip that moves its root carries the travel there, and
+	// the hips' own motion under it is dropped. +z is forward, +x the left.
+	glm::vec2 PoseHipsTravel(const Skeleton& skeleton, const AnimationClip& clip, float begin, float end);
+
+	// The same up to where the one-shot starts returning.
+	glm::vec2 NetHipsTravel(const Skeleton& skeleton, const AnimationClip& clip, float fadeOut);
+
+	// Warns once per problem: a combat window that ends after its one-shot starts returning (it would
+	// never fire), and a move missing the windows its rules need. Returns the number of problems.
+	int ValidateMoveset(const ClipSet& clips);
 
 	class ClipSet
 	{

@@ -24,6 +24,7 @@ namespace Dingo
 		{
 			RunAssetChecks(*m_Assets);
 			RunMovementChecks(*m_Assets);
+			RunCombatChecks(*m_Assets);
 		}
 
 		m_TitleScene = m_SceneManager.CreateScene(SCENE_TITLE);

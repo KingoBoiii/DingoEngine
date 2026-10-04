@@ -98,8 +98,28 @@ namespace
 			out = DriveMode::Strafe;
 		else if (*value == "wall")
 			out = DriveMode::Wall;
+		else if (*value == "duel")
+			out = DriveMode::Duel;
 		else
-			DE_WARN("Marionette: ignoring --drive={} (expected ramp, circle, strafe or wall)", *value);
+			DE_WARN("Marionette: ignoring --drive={} (expected ramp, circle, strafe, wall or duel)", *value);
+	}
+
+	void ParsePose(const ApplicationCommandLineArgs& args, std::string& clip, float& time)
+	{
+		const std::optional<std::string_view> value = args.Get("pose");
+		if (!value || value->empty())
+			return;
+
+		const size_t at = value->find('@');
+		float parsed = 0.0f;
+		if (at != std::string_view::npos && (!ParseNumber(value->substr(at + 1), parsed) || !std::isfinite(parsed) || parsed < 0.0f))
+		{
+			DE_WARN("Marionette: ignoring --pose={} (expected <clip>@<seconds>)", *value);
+			return;
+		}
+
+		clip = std::string(value->substr(0, at));
+		time = parsed;
 	}
 
 	void ParseFlag(const ApplicationCommandLineArgs& args, std::string_view name, bool& out)
@@ -126,8 +146,12 @@ namespace
 		ParseFlag(args, "check", options.Check);
 		ParseFlag(args, "autoplay", options.Autoplay);
 		ParseFlag(args, "debug-hitbox", options.DebugHitbox);
+		ParseFlag(args, "break-hitbox", options.BreakHitbox);
 		ParseFlag(args, "hot-reload", options.HotReload);
 		ParseDrive(args, options.Drive);
+		if (!args.Get("bout") && (options.Drive != DriveMode::None || options.Freeze))
+			options.Bout = 1;
+		ParsePose(args, options.PoseClip, options.PoseTime);
 		ParseRange(args, "move", 0.0f, MOVE_PARAMETER_MAX, options.Move);
 		ParseRange(args, "phase", 0.0f, 1.0f, options.Phase);
 		ParseSeconds(args, "fixed-dt", FIXED_DT_MAX, options.FixedDt);
@@ -137,6 +161,8 @@ namespace
 			DE_WARN("Marionette: --move and --phase only apply with --freeze");
 		if (options.Freeze && options.Drive != DriveMode::None)
 			DE_WARN("Marionette: --drive is ignored with --freeze");
+		if (!options.Freeze && !options.PoseClip.empty())
+			DE_WARN("Marionette: --pose only applies with --freeze");
 		return options;
 	}
 }
@@ -152,6 +178,7 @@ namespace Dingo
 			case DriveMode::Circle: return "circle";
 			case DriveMode::Strafe: return "strafe";
 			case DriveMode::Wall:   return "wall";
+			case DriveMode::Duel:   return "duel";
 			default:                return "none";
 		}
 	}

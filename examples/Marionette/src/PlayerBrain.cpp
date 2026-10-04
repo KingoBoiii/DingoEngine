@@ -50,6 +50,12 @@ namespace Dingo
 		const GroundAxes axes = GetArenaCameraAxes();
 		FighterIntent intent;
 		intent.Move = (axes.Right * input.x + axes.Forward * input.y) * magnitude;
+		intent.Light = Input::IsKeyPressed(KEY_LIGHT) || Input::IsMouseButtonPressed(MouseButton::Left)
+			|| Input::IsGamepadButtonPressed(GamepadButton::X);
+		intent.Heavy = Input::IsKeyPressed(KEY_HEAVY) || Input::IsMouseButtonPressed(MouseButton::Right)
+			|| Input::IsGamepadButtonPressed(GamepadButton::Y);
+		intent.Dodge = Input::IsKeyPressed(KEY_DODGE) || Input::IsGamepadButtonPressed(GamepadButton::A);
+		intent.Block = Down(KEY_BLOCK, KEY_BLOCK_ALT) || Input::IsGamepadButtonDown(GamepadButton::RightBumper);
 		return intent;
 	}
 

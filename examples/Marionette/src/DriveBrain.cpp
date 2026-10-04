@@ -95,6 +95,11 @@ namespace Dingo
 				layout.OpponentYawDegrees = 180.0f;
 				break;
 
+			case DriveMode::Duel:
+				layout.PlayerPosition.x = -0.5f * DUEL_GAP;
+				layout.OpponentPosition.x = 0.5f * DUEL_GAP;
+				break;
+
 			case DriveMode::Circle:
 				layout.PlayerPosition = glm::vec3(DRIVE_CIRCLE_RADIUS, FIGHTER_SPAWN_LIFT, 0.0f);
 				layout.PlayerYawDegrees = 180.0f;

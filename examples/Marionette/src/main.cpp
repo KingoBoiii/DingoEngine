@@ -52,6 +52,10 @@ static bool ParseVSync(const Dingo::ApplicationCommandLineArgs& args)
 
 Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args)
 {
+	const LaunchOptions& options = ParseLaunchOptions(args);
+	// Nobody watches a scripted run, and the long checks in OnAttach leave the window unfocused, which would pause it.
+	const bool scripted = options.Check || options.Drive != DriveMode::None || options.FixedDt > 0.0f || options.Autoplay;
+
 	ApplicationParams params = ApplicationParams{
 		.CommandLineArgs = args,
 		.Window = {
@@ -67,8 +71,9 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.Assets = AssetManagerParams()
 			.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or("assets"))
-			.SetEnableHotReload(ParseLaunchOptions(args).HotReload),
+			.SetEnableHotReload(options.HotReload),
 		.EnableUI = false,
+		.UpdateInBackground = scripted,
 	};
 
 	MarionetteApplication* app = new MarionetteApplication(params);
