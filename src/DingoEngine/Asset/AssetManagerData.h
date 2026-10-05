@@ -60,6 +60,16 @@ namespace Dingo
 			bool IsReload = false;
 		};
 
+		// A file a watched asset reads beside its own, such as a model's .events sidecar.
+		struct CompanionWatch
+		{
+			std::filesystem::path Path;
+			std::filesystem::file_time_type LastWriteTime{};
+			std::filesystem::file_time_type PendingWriteTime{};
+			// Separate from PendingWriteTime because a missing file reads as the epoch, the same as "none".
+			bool Pending = false;
+		};
+
 		struct AssetManagerData
 		{
 			AssetManagerParams Params;
@@ -102,6 +112,7 @@ namespace Dingo
 			// progress, and how far through them the last poll got.
 			std::vector<AssetHandle> WatchList;
 			std::size_t WatchCursor = 0;
+			std::unordered_map<AssetHandle, CompanionWatch> Companions;
 		};
 
 	}

@@ -7,8 +7,11 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Model.h"
 
+#include "DingoEngine/Scene/AnimationDebug.h"
 #include "DingoEngine/Scene/SceneData.h"
+#include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
@@ -22,10 +25,13 @@ namespace Dingo
 	Scene::Scene(const std::string& name)
 		: m_Data(new Internal::SceneData()), m_Name(name)
 	{
+		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
+		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
 
 	Scene::~Scene()
 	{
+		Internal::AnimationDebug::UnregisterScene(this);
 		Clear();
 		delete m_Data;
 	}
@@ -106,6 +112,8 @@ namespace Dingo
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<Transform3DComponent>(registry, dst, src);
 		CopyComponentIfExists<MeshRendererComponent>(registry, dst, src);
+		CopyComponentIfExists<SkinnedMeshRendererComponent>(registry, dst, src);
+		CopyComponentIfExists<AnimatorComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody3DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
@@ -115,9 +123,13 @@ namespace Dingo
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
 
-		// Linked before the body is built, which reads the world transform.
+		// Linked before the body is built, which reads the world transform. A socket names a joint
+		// of the parent's model, which the copied parent has too.
 		if (parent)
+		{
 			Internal::HierarchySystem::Link(registry, dst, static_cast<entt::entity>(parent.m_Handle));
+			CopyComponentIfExists<Internal::SocketComponent>(registry, dst, src);
+		}
 
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
@@ -241,6 +253,15 @@ namespace Dingo
 			DestroyEntityNow(static_cast<std::uint32_t>(handle));
 		m_Data->PendingDestroy.clear();
 
+		// Animation events reach scripts here, so their destroys wait as theirs do in OnUpdate.
+		m_Data->Updating = true;
+		Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
+		m_Data->Updating = false;
+
+		for (entt::entity handle : m_Data->PendingDestroy)
+			DestroyEntityNow(static_cast<std::uint32_t>(handle));
+		m_Data->PendingDestroy.clear();
+
 		// Step physics after the script pass (scripts may have applied forces this
 		// frame), then write the simulated transforms back onto the entities.
 		m_Data->Physics.Step(m_Data->Registry, deltaTime);
@@ -249,6 +270,14 @@ namespace Dingo
 		// already happened), so sync every spatialized source's position and the
 		// listener before anything renders or is heard this frame.
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
+	}
+
+	Animator* Scene::GetAnimator(Entity entity)
+	{
+		if (!IsValid(entity))
+			return nullptr;
+
+		return Internal::AnimationSystem::GetAnimator(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 
 	void Scene::ForEachEntity(const std::function<void(Entity)>& fn)
@@ -350,6 +379,25 @@ namespace Dingo
 				continue;
 
 			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material);
+		}
+
+		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
+		for (entt::entity entity : skinnedView)
+		{
+			auto [transform, skinned] = skinnedView.get<Transform3DComponent, SkinnedMeshRendererComponent>(entity);
+			if (!skinned.Visible || !skinned.Model)
+				continue;
+
+			const glm::mat4 world = memo.Transform(entity, transform);
+			const Skeleton* skeleton = skinned.Model->GetSkeleton();
+			const std::span<const glm::mat4> palette = skeleton ? Internal::AnimationSystem::Palette(m_Data->Registry, entity, *skeleton) : std::span<const glm::mat4>();
+			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
+			{
+				if (skeleton && submesh.MeshData->HasSkin())
+					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material);
+				else
+					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material);
+			}
 		}
 	}
 
@@ -475,6 +523,7 @@ namespace Dingo
 
 	void Scene::OnPhysicsStart()
 	{
+		Internal::AnimationSystem::EnsureAnimators(m_Data->Registry);
 		m_Data->Physics.Start(m_Data->Registry, m_Gravity, m_Gravity3D);
 	}
 
@@ -503,6 +552,7 @@ namespace Dingo
 		if (!entity)
 			return;
 
+		Internal::AnimationSystem::EnsureAncestorAnimators(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 		m_Data->Physics.CreateBodiesForEntity(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 

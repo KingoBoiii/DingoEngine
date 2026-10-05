@@ -9,6 +9,8 @@
 
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 
+#include <vector>
+
 namespace Dingo::Internal
 {
 
@@ -36,11 +38,15 @@ namespace Dingo::Internal
 		glm::vec3 GetGroundNormal() const override;
 		glm::vec3 GetGroundVelocity() const override;
 
+		void IgnoreBody(PhysicsBodyId3D body, bool ignore) override;
+		bool IsBodyIgnored(PhysicsBodyId3D body) const override;
+
 	private:
 		JoltPhysics3DData* m_World = nullptr;
 		JPH::Ref<JPH::CharacterVirtual> m_Character;
 		JPH::Vec3 m_Up = JPH::Vec3::sAxisY();
 		float m_StepHeight = 0.3f;
+		std::vector<JPH::BodyID> m_IgnoredBodies;
 	};
 
 }

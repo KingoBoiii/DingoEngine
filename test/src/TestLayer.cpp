@@ -22,6 +22,7 @@
 #include "Tests/Physics/MeshColliderTest.h"
 
 #include "Tests/Scene/HierarchyTest.h"
+#include "Tests/Scene/AnimationTest.h"
 
 #include "Tests/Core/BackgroundTest.h"
 
@@ -60,6 +61,7 @@ namespace Dingo
 		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh Collider Test", []() { return new MeshColliderTest(); } });
 		m_Tests.push_back({ "Hierarchy Test", [&]() { return new HierarchyTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Animation Test", []() { return new AnimationTest(); } });
 		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.

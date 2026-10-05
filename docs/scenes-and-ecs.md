@@ -45,6 +45,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
 | `Destroy()` | Destroy this entity, its behaviour and its children. |
 | `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.7.1) | Attach to / detach from a parent (see [Parenting](#parenting-v071)). |
+| `SetParent(parent, "joint", keepWorldTransform = true)` / `GetParentJoint()` (v0.8) | Attach to a joint of the parent's skinned model, so the entity follows it as the model animates (see [Joints as parents](#joints-as-parents-v08)). |
 | `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.7.1) | Walk the hierarchy. |
 | `GetWorldTransform()` / `GetWorldPosition()` / `GetWorldRotation()` / `GetWorldScale()` (v0.7.1) | The 3D transform in world space, through every parent. |
 | `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.7.1) | Write the 3D local value that gives this world value. |
@@ -123,6 +124,8 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
 | `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material) |
+| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`. Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
+| `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
@@ -247,9 +250,13 @@ sizes taken from its world scale. The rules below are the 3D ones; 2D bodies fol
 | Static | Its collider is placed once and stays put; its mesh still follows the parent, so don't parent static bodies to anything that moves. |
 | Character controller | Placed from its world transform and written back like a dynamic body. Keep controllers on roots. |
 
-**Bodies in one hierarchy collide like any others.** Nothing filters a child against its parent, so
-a kinematic child that overlaps its parent's body, or the character controller it hangs off, pushes
-it. Keep a child's collider clear of its ancestors' colliders.
+**A kinematic child ignores its ancestors** (v0.8). Its body doesn't collide with any ancestor's
+body, and an ancestor's character controller passes through it, so a hitbox on a character's hand
+never shoves the character carrying it. Nothing else is filtered: dynamic and static children,
+siblings and unrelated bodies collide as before (a dynamic crate still rides its carrier), and 2D
+physics has no such rule. The pairs are worked out at the start of every physics step, so a
+`SetParent` or `RemoveParent` takes effect on the next one; `Physics3D::IsCollisionIgnored` and
+`CharacterController3D::IsBodyIgnored` report them.
 
 Parent an entity before its body is built (before `OnStart`, or before `CreateRigidBody` for a
 runtime spawn). `SetParent(parent, false)` on an entity that already has a body doesn't teleport
@@ -303,6 +310,81 @@ Things to know:
 - **Limits.** A scene is lit by at most four directional lights and 32 point and spot lights.
   Falloff, how lights are chosen past the limit, lit materials with specular and emissive, and
   hot-reloading the lit shader are covered in [Lighting](lighting.md).
+
+### Skinned models (v0.8)
+
+A model with bones (see [the asset pipeline](asset-pipeline.md)) draws through a
+`SkinnedMeshRendererComponent` on an entity that also has a `Transform3DComponent`. Its skinned
+submeshes are skinned on the GPU, one draw each, posed by the entity's [animator](#animating-a-model-v08)
+or, without one, by the skeleton's rest pose. Submeshes without a skin draw like a
+`MeshRendererComponent`, and the component's `Material` applies to every submesh.
+
+```cpp
+Model* fox = Model::LoadFromFile("models/Fox/Fox.gltf");
+Material* fur = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("Fox"));
+fur->SetTexture(0, fox->GetSubMeshes()[0].DiffuseTexture);
+
+Entity entity = scene.CreateEntity("Fox");
+entity.AddComponent<Transform3DComponent>(Transform3DComponent({ 0, 0, 0 }, glm::vec3(0.02f)));
+entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(fox)).Material = fur;
+```
+
+Loading skinned models, the per-frame instance budget and the 128-joint cap, draw order, custom
+skinned shaders and drawing without a scene are in [Animation](animation.md#loading-skinned-models).
+
+### Animating a model (v0.8)
+
+An `AnimatorComponent` next to the `SkinnedMeshRendererComponent` gives the entity an `Animator`,
+which plays the model's clips and poses it. `Scene::OnUpdate` advances it by `dt × Speed`, after the
+scripts and before physics.
+
+```cpp
+entity.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));   // plays, looping, from the start
+
+// In a script:
+Animator* animator = GetScene().GetAnimator(GetEntity());
+animator->Play(fox->FindAnimation("Run"), 0.25f);                      // cross-fade over 0.25 s
+```
+
+- **`Scene::GetAnimator(entity)`** creates the animator on first use and returns null without an
+  `AnimatorComponent` or a model with a skeleton. It survives `OnStop`/`OnStart`, is freed with the
+  entity or the component, and starts again from `DefaultClip` if the model changes. `Enabled = false`
+  holds the pose. `DuplicateEntity` copies the component; the copy's animator starts from the beginning.
+- **Playing, blending and the rest** are the animator's own API, which works without a scene too:
+  `Play`/`Stop` and their fades, `Blend1D`, layers, one-shots, retargeting clips from another model.
+  See [Animation](animation.md#the-animator) and [Blending](animation.md#blending).
+
+### Animation events (v0.8)
+
+A clip carries named marks on its timeline (an instant, or a range such as a sword's hitbox), added in
+code or read from a `.events` file beside the model. A script on the entity receives them as the
+animator crosses each one:
+
+```cpp
+class Fighter : public ScriptableEntity
+{
+    void OnAnimationEvent(const AnimationEvent& event) override
+    {
+        if (event.Name == "hitbox" && event.Type == AnimationEventType::RangeBegin)
+            m_Swinging = true;            // or poll GetScene().GetAnimator(GetEntity())->IsEventActive("hitbox")
+    }
+};
+```
+
+`OnAnimationEvent` runs once per event, after every script's `OnUpdate` and before physics. A
+`DestroyEntity` there waits for the end of the pass, and a script spawned this frame hears its
+entity's first events next frame, once it has started. Authoring, the `.events` format, which clip
+fires in a blend and how ranges close are in [Animation](animation.md#events).
+
+### Joints as parents (v0.8)
+
+`child.SetParent(character, "b_RightHand", keepWorldTransform)` attaches the child to a joint of the
+character's skinned model. Its world transform is then the character's world × the joint's frame ×
+its own local transform, from this frame's pose, so a sword follows the hand through every swing.
+Everything that reads world values (rendering, lights, audio, physics) follows the joint, and
+`GetParentJoint()` names it. A kinematic body on a joint is driven to this frame's pose before
+physics steps, so a hitbox follows the animation, and it ignores its ancestors' bodies (see the rule
+above). The scale strip, unknown joint names and the rest are in [Animation](animation.md#sockets).
 
 ### 2D UI over a 3D scene
 
@@ -474,9 +556,10 @@ bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
 bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`. It caps `dt` at 4/60 s, for scripts and
-physics alike, so a stall (a cold shader compile, a breakpoint) runs the scene slow instead of letting
-bodies tunnel through their colliders. Inside a script you have:
+`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`, then the animators (and their events'
+`OnAnimationEvent`), then physics. It caps
+`dt` at 4/60 s for all three, so a stall (a cold shader compile, a breakpoint) runs the scene slow
+instead of letting bodies tunnel through their colliders. Inside a script you have:
 
 - `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
 - `GetScene()` — the owning scene (to spawn or find other entities).

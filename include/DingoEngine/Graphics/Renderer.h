@@ -164,6 +164,10 @@ namespace Dingo
 		// which the allocator is free to hand back for a different framebuffer.
 		static uint64_t GetSwapChainResizeGeneration();
 
+		// Bumped each time the frame command list opens, so per-frame budgets (such as a volatile
+		// buffer's writes) can tell when a new frame starts.
+		static uint64_t GetFrameIndex();
+
 		/**************************************************
 		***		STATIC RESOURCES						***
 		**************************************************/

@@ -11,8 +11,10 @@
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
+#include "DingoEngine/Graphics/Animator.h"
 
 #include <cstdint>
+#include <memory>
 
 namespace Dingo
 {
@@ -42,6 +44,18 @@ namespace Dingo
 		struct AudioSourceRuntime
 		{
 			AudioSoundId Sound = k_InvalidSound;
+		};
+
+		// Unlike the physics handles it survives OnStop/OnStart: animation needs no world. Freed with
+		// the AnimatorComponent (AnimationSystem::Connect).
+		struct AnimatorRuntime
+		{
+			std::unique_ptr<Animator> Instance;
+			// Skeleton::GetId() of the model it was bound for, so a swapped or reloaded model rebinds
+			// even at a freed one's address; 0 = none.
+			uint64_t SkeletonId = 0;
+			// Model::GetGeneration() it last posed for, so a paused animator shows a reload's keys.
+			uint32_t ModelGeneration = 0;
 		};
 
 	}

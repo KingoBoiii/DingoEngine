@@ -5,6 +5,8 @@
 // EnTT a private implementation detail of the engine.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
@@ -50,6 +52,8 @@ namespace Dingo
 
 			// Scratch for the per-entity readers (rendering, lights, audio); reset by each pass.
 			HierarchySystem::WorldMemo Memo;
+
+			AnimationSystem::EventScratch AnimationEvents;
 		};
 
 	}

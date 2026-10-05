@@ -82,8 +82,19 @@ namespace Dingo
 		// old local values now apply relative to the new parent. A parent in another scene, or one
 		// that would create a cycle, logs an error and changes nothing.
 		void SetParent(Entity parent, bool keepWorldTransform = true);
+		// The same, under `joint` of the parent's SkinnedMeshRendererComponent::Model: world =
+		// parentWorld x jointFrame x local, so the entity follows the joint as the parent animates (a
+		// sword in a hand). The joint passes on its position and rotation, not its scale. Until the
+		// model has that joint (an unknown name, or no skinned model yet, warns) the entity follows the
+		// model's origin. Only a 3D child (Transform3DComponent) follows a joint. An empty joint is
+		// the plain SetParent.
+		void SetParent(Entity parent, std::string_view joint, bool keepWorldTransform = true);
+		// Without it a string literal would pick the bool overload. A null joint is no joint.
+		void SetParent(Entity parent, const char* joint, bool keepWorldTransform = true) { SetParent(parent, joint ? std::string_view(joint) : std::string_view(), keepWorldTransform); }
 		void RemoveParent(bool keepWorldTransform = true);
 		Entity GetParent() const; // null for a root
+		// The joint SetParent attached this entity to; empty when it follows its parent's origin.
+		std::string GetParentJoint() const;
 
 		std::uint32_t GetChildCount() const;
 		// In insertion order, over a snapshot: fn may reparent or destroy children.

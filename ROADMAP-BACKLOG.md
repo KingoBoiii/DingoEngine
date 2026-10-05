@@ -3,7 +3,8 @@
 Companion to [ROADMAP.md](ROADMAP.md). Where `ROADMAP.md` is the **milestone narrative** (what
 game each version ships), this is the **friction backlog**: 12 engine gaps surfaced while building
 the Gloomdelve dungeon crawler on prebuilt DingoEngine **v0.4.2**, prioritized by how much
-*game* code each one deletes, then sequenced by dependency + effort.
+*game* code each one deletes, then sequenced by dependency + effort. §8 adds the six that *Marionette*
+found in v0.8.
 
 - **Verified** against the tree on 2026-07-02 (engine `VERSION` = 0.4.2). Every claim below has a
   `file:line` anchor from that pass — re-confirm before implementing, code drifts.
@@ -34,7 +35,7 @@ the Gloomdelve dungeon crawler on prebuilt DingoEngine **v0.4.2**, prioritized b
 | Font | `Font::Create` **never returns nullptr** — on a missing file it logs then continues with **uninitialized `width/height`** → garbage atlas; **no `IsValid()`**; path is CWD-relative | `Font.cpp:75,88,132,254` |
 | Model | `LoadFromFile` **does** return nullptr on failure — *inconsistent* with `Font::Create` | `Model.h:22` |
 | ECS | Copy-landmine documented verbatim (2D→reset `0`, 3D→reset `k_InvalidBody3D`); **no clone/duplicate/prefab API exists at all** | `Components.h:173,197,217,293` |
-| ECS | `Model::LoadFromFile` **static-only** (no bones/skinning); **no `Parent` component / hierarchy** — transforms are flat world-space | `Model.h`, `Components.h:236` |
+| ECS | `Model::LoadFromFile` **static-only** (no bones/skinning); **no `Parent` component / hierarchy** — transforms are flat world-space — v0.7.1: parenting; v0.8: skinned models, skeletons and clips | `Model.h`, `Components.h:236` |
 | Platform | **No `Dingo::Platform`/`Dingo::IO`**; closest is `Dingo::CacheManager` (cache dirs only) | `CacheManager.h` |
 | UI | `Dingo::UI` is a **thin immediate-mode ImGui passthrough** gated behind `Layer::OnUIRender()`; no retained widgets, anchors, or hit-testing | `UI.h`, `ImGuiUI.cpp` |
 | Text | MSDF atlas charset **U+0020–U+00FF**, rendered **byte-wise, no UTF-8 decode** | `Font.cpp:258,159` |
@@ -54,9 +55,9 @@ The 12 items fall into three buckets against the existing milestone plan:
 
 **Now scheduled** (were deferred or homeless when this doc was written):
 - **#4a** parent-child transforms **shipped as v0.7.1**, pulled forward from v0.8 as the
-  independently-useful half. **#4b** full skeletal animation stays **v0.8 — Animation & Character
-  Fidelity**, so v0.4.2's "slated to land with the character fidelity push of v0.5+" note finally
-  has a real milestone behind it.
+  independently-useful half. **#4b** full skeletal animation is **v0.8 — Animation & Character
+  Fidelity**, whose engine work landed on its branch on 2026-10-03, so v0.4.2's "slated to land
+  with the character fidelity push of v0.5+" note finally has a real milestone behind it.
 - **#2b** frustum/distance culling, **#3** static batching/instancing and **#12** material sharing are
   **v1.0 — Stability, Performance & Polish**. v0.9 shed its "& Performance" half to become purely
   visual, so the throughput work landed in v1.0 rather than staying "v0.9-adjacent".
@@ -82,7 +83,7 @@ note in §1; the genuinely homeless one is **#10**, the game-facing UI layer.)
 | 1 | Point lights + emissive | 1a emissive **M** · 1b point lights **L** | ~330–380 lines (~40% of `GameController.cpp`) of torch-faking | 1a **landed v0.5** · 1b **= v0.7** (bloom=v0.9) |
 | 2 | Culling + `Visible` flag | 2a `Visible` **S** · 2b frustum **M–L** · 2c overflow assert **S** | ~50 lines mesh-nulling + restore arrays (2 systems) | unscheduled |
 | 3 | Static batching / instancing | **L–XL** | the `VIS_CULL_RADIUS` vertex-budget workaround | unscheduled |
-| 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | 4a **landed v0.7.1** · 4b **= v0.8** |
+| 4 | Skeletal / parent-child | 4a parent-child **M–L** · 4b skeletal **XL** | 4a: most of `CharacterRig::Update` (76 lines) + `export_chars.py` pivot math | 4a **landed v0.7.1** · 4b **landed v0.8** |
 | 5 | Physics3D kinematic + char controller | **M–L** | raw-velocity movement; unblocks warp/checkpoint/respawn | **v0.5-committed** |
 | 6 | `ScreenPointToRay` / ground raycast | **S–M** | `MouseGroundPoint` hand-inverted VP (37 lines) | **v0.5-committed** |
 | 7 | Script-accessible scene transitions | **S–M** | `GameSession::SceneRequest` + `main.cpp` pump (~40 lines) | **landed v0.5** |
@@ -159,8 +160,10 @@ Design #3 and #2b **together** — they're one story (the cull-radius layer is a
   world math) and the `export_chars.py` pivot reverse-engineering; DungeonCrawler3D's character rig
   already lost its per-part world maths. It did not need the skeletal work.
 - **#4b Skeletal animation** (**XL**) — skinned meshes, clips, blend tree; requires reworking the
-  static-only `Model::LoadFromFile`. Scheduled as **v0.8**; pairs with the v0.6 asset pipeline, which
-  is what makes the loader rework affordable (rigs become `AssetManager`-owned assets).
+  static-only `Model::LoadFromFile`. **Landed as v0.8's engine work** (GPU skinning, the animator,
+  blending, layers, timeline events, sockets, in-place model hot-reload); pairs with the v0.6 asset
+  pipeline, which is what makes the loader rework affordable (rigs become `AssetManager`-owned
+  assets).
 
 ---
 
@@ -234,3 +237,21 @@ Things the verification pass changed or sharpened vs. the original 12-item write
   The byte-wise engine render is confirmed, so the constraint is real — #12's UTF-8 half is genuine
   but low-signal.
 - **CharacterRig is 13–24 entities/char**, slightly under the roadmap's "15–24" (Wizard=13).
+
+---
+
+## 8. Found by Marionette (v0.8)
+
+Gaps the *Marionette* example hit while building a duel on the v0.8 animation engine (its plan,
+`.claude/plans/2026-10-03-marionette-plan.md` §10, has the detail). None blocked the game, and each
+was worked round on the game side. They are not among the 12 items above and are unscheduled; the
+effort scale is the one at the top.
+
+| Item | Effort | What Marionette does instead |
+|---|---|---|
+| **Embedded model textures.** `Model::LoadFromFile` returns no texture for an image embedded in a GLB (`Model.cpp`, `LoadDiffuseTexture` skips `*N` paths), with no warning, and most glTF packs embed theirs. Fix: decode the `aiTexture` data (`stbi_load_from_memory`) and key the texture cache by model path and index, so hot-reload still matches it | **S–M** | Ships the PNGs KayKit also provides and gives each fighter a lit material with its PNG on slot 0 |
+| **Clips-only loading of a clip library that carries a preview mesh.** KayKit's libraries hold the mannequin, so each loads its six skinned meshes and never draws them. A load option that skips meshes would stop the cost | **S** | Loads them whole and ignores the meshes |
+| **Character-vs-character collision.** `CharacterController3D` is a Jolt `CharacterVirtual`, not a body, and no `CharacterVsCharacterCollision` is set up, so two controllers walk through each other | **M** | Removes the closing speed between the fighters in game code |
+| **Sensors, cast filters and a body → entity lookup.** There are no trigger volumes, no ignore-body or layer filters on `RayCast` / `ShapeCastSphere` / `OverlapSphere`, and no way to get from a hit body back to its entity. A controller is not a body, so no cast ever hits a fighter, and a body on a socket would shove the other fighter's controller. Candlewick listed the same three | **M** | Hit and hurt spheres on sockets, tested by the game itself |
+| **Event payloads.** An `AnimationEvent` is a name, a time, a type, a clip and a layer. A damage number or a reach has no place in a `.events` line | **S–M** | Plain event names, with the per-move numbers in a game-side table keyed by clip |
+| **Root motion.** Already listed under "Not in v0.8" ([ROADMAP.md](ROADMAP.md), [docs/animation.md](docs/animation.md#limits)); Marionette is the first game to pay for it. Moving the body by a clip's travel while the pose also moves the hips counted it twice | **L** | In-place clips: the capsule pays each move's net hips travel over its fade-out, and a dodge adds a fixed distance over its `dash` range |

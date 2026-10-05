@@ -2,6 +2,7 @@
 #include "DingoEngine/Scene/Entity.h"
 #include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/ScriptableEntity.h"
+#include "DingoEngine/Graphics/Model.h"
 
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
@@ -24,7 +25,7 @@ namespace Dingo
 			return false;
 		}
 
-		void Reparent(entt::registry& registry, entt::entity child, entt::entity parent, bool keepWorldTransform)
+		void Reparent(entt::registry& registry, entt::entity child, entt::entity parent, std::string_view joint, bool keepWorldTransform)
 		{
 			// Only a 2D entity keeps its 2D world: a 3D entity's TransformComponent is unused and keeps its local values.
 			const bool is3D = registry.all_of<Transform3DComponent>(child);
@@ -36,8 +37,9 @@ namespace Dingo
 
 			if (parent == entt::null)
 				Internal::HierarchySystem::Unlink(registry, child);
-			else
+			else if (Internal::HierarchySystem::GetParent(registry, child) != parent)
 				Internal::HierarchySystem::Link(registry, child, parent);
+			Internal::HierarchySystem::SetSocket(registry, child, joint);
 
 			if (!keepWorldTransform)
 				return;
@@ -125,6 +127,11 @@ namespace Dingo
 
 	void Entity::SetParent(Entity parent, bool keepWorldTransform)
 	{
+		SetParent(parent, std::string_view(), keepWorldTransform);
+	}
+
+	void Entity::SetParent(Entity parent, std::string_view joint, bool keepWorldTransform)
+	{
 		if (!IsValid())
 			return;
 
@@ -156,10 +163,22 @@ namespace Dingo
 			return;
 		}
 
-		if (Internal::HierarchySystem::GetParent(registry, self) == newParent)
+		if (Internal::HierarchySystem::GetParent(registry, self) == newParent && Internal::HierarchySystem::GetSocket(registry, self) == joint)
 			return;
 
-		Reparent(registry, self, newParent, keepWorldTransform);
+		if (!joint.empty())
+		{
+			const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(newParent);
+			const Skeleton* skeleton = skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
+			if (!skeleton)
+				DE_CORE_WARN("SetParent: '{}' has no skinned model yet, so '{}' follows its origin until one with a joint '{}' is set", parent.GetName(), GetName(), joint);
+			else if (skeleton->FindJoint(joint) == Skeleton::k_InvalidJoint)
+				DE_CORE_WARN("SetParent: '{}' has no joint '{}', so '{}' follows its origin", parent.GetName(), joint, GetName());
+			if (!registry.all_of<Transform3DComponent>(self))
+				DE_CORE_WARN("SetParent: '{}' has no Transform3DComponent, and only 3D follows a joint, so joint '{}' is ignored", GetName(), joint);
+		}
+
+		Reparent(registry, self, newParent, joint, keepWorldTransform);
 	}
 
 	void Entity::RemoveParent(bool keepWorldTransform)
@@ -170,7 +189,7 @@ namespace Dingo
 		entt::registry& registry = m_Scene->m_Data->Registry;
 		const entt::entity self = static_cast<entt::entity>(m_Handle);
 		if (Internal::HierarchySystem::GetParent(registry, self) != entt::null)
-			Reparent(registry, self, entt::null, keepWorldTransform);
+			Reparent(registry, self, entt::null, std::string_view(), keepWorldTransform);
 	}
 
 	Entity Entity::GetParent() const
@@ -180,6 +199,14 @@ namespace Dingo
 
 		const entt::entity parent = Internal::HierarchySystem::GetParent(m_Scene->m_Data->Registry, static_cast<entt::entity>(m_Handle));
 		return parent != entt::null ? Entity(static_cast<std::uint32_t>(parent), m_Scene) : Entity();
+	}
+
+	std::string Entity::GetParentJoint() const
+	{
+		if (!IsValid())
+			return {};
+
+		return std::string(Internal::HierarchySystem::GetSocket(m_Scene->m_Data->Registry, static_cast<entt::entity>(m_Handle)));
 	}
 
 	std::uint32_t Entity::GetChildCount() const
@@ -370,6 +397,8 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(CircleCollider2DComponent)
 	DE_INSTANTIATE_COMPONENT(Transform3DComponent)
 	DE_INSTANTIATE_COMPONENT(MeshRendererComponent)
+	DE_INSTANTIATE_COMPONENT(SkinnedMeshRendererComponent)
+	DE_INSTANTIATE_COMPONENT(AnimatorComponent)
 	DE_INSTANTIATE_COMPONENT(RigidBody3DComponent)
 	DE_INSTANTIATE_COMPONENT(BoxCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(SphereCollider3DComponent)

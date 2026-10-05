@@ -22,6 +22,8 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
+#include <Jolt/Physics/Collision/GroupFilter.h>
+#include <Jolt/Physics/Collision/CollisionGroup.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -32,6 +34,8 @@
 #include <functional>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace Dingo::Internal
 {
@@ -94,6 +98,32 @@ namespace Dingo::Internal
 
 	private:
 		JPH::BroadPhaseLayer m_ObjectToBroadPhase[Layers::NUM_LAYERS];
+	};
+
+	// The group filter of every body in an ignored pair, whose group id is its own body id. Jolt
+	// calls CanCollide from its job threads inside PhysicsSystem::Update, so the pairs may only
+	// change between steps.
+	class IgnoredPairFilter final : public JPH::GroupFilter
+	{
+	public:
+		virtual bool CanCollide(const JPH::CollisionGroup& inGroup1, const JPH::CollisionGroup& inGroup2) const override
+		{
+			if (inGroup1.GetGroupFilter() != inGroup2.GetGroupFilter())
+				return true;
+			return !m_Pairs.contains(Key(inGroup1.GetGroupID(), inGroup2.GetGroupID()));
+		}
+
+		bool Contains(std::uint32_t a, std::uint32_t b) const { return m_Pairs.contains(Key(a, b)); }
+		void Add(std::uint32_t a, std::uint32_t b) { m_Pairs.insert(Key(a, b)); }
+		void Remove(std::uint32_t a, std::uint32_t b) { m_Pairs.erase(Key(a, b)); }
+
+	private:
+		static std::uint64_t Key(std::uint32_t a, std::uint32_t b)
+		{
+			return a < b ? (static_cast<std::uint64_t>(a) << 32) | b : (static_cast<std::uint64_t>(b) << 32) | a;
+		}
+
+		std::unordered_set<std::uint64_t> m_Pairs;
 	};
 
 	class ObjectVsBroadPhaseLayerFilterImpl : public JPH::ObjectVsBroadPhaseLayerFilter
@@ -168,6 +198,12 @@ namespace Dingo::Internal
 		// not keep every triangle it ever baked.
 		std::unordered_map<std::uint64_t, JPH::ShapeRefC> MeshShapeCache;
 		std::unordered_map<std::uint64_t, JPH::ShapeRefC> ConvexHullShapeCache;
+
+		// Every body whose CollisionGroup names the filter holds a reference to it, so it lives until
+		// PhysicsSystem destroys the last of them. IgnoredPartners lists each grouped body's ignored
+		// partners; a body leaves the group with its last one.
+		JPH::Ref<IgnoredPairFilter> PairFilter = new IgnoredPairFilter();
+		std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> IgnoredPartners;
 
 		explicit JoltPhysics3DData(JPH::uint maxBodies)
 			: TempAllocator(32 * 1024 * 1024) // per-Update working memory; must cover the limits below

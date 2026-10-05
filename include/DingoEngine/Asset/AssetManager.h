@@ -29,10 +29,10 @@ namespace Dingo
 		// build, set this via Platform::FindDirectoryUpward("assets").
 		std::filesystem::path RootDirectory = "assets";
 
-		// Watches loaded textures and shaders for on-disk changes and reloads them in
-		// place (existing Texture*/Shader* pointers stay valid; pipelines rebuild
-		// lazily). A shader compile error keeps the previous program running. Intended
-		// for development - leave off in shipping builds.
+		// Watches loaded textures, shaders and models (with a model's .events sidecar) for on-disk
+		// changes and reloads them in place (existing Texture*/Shader*/Model* pointers stay valid;
+		// pipelines rebuild lazily). A shader compile error or a model that fails to load keeps the
+		// previous version. Intended for development - leave off in shipping builds.
 		bool EnableHotReload = false;
 		// Seconds between file-timestamp polls when hot-reload is enabled.
 		float HotReloadInterval = 0.5f;
@@ -114,7 +114,7 @@ namespace Dingo
 		// Synchronously (re)loads an already-registered asset. Returns true when the
 		// asset is Ready afterwards.
 		//
-		// Loaded textures and shaders are refreshed IN PLACE (as hot-reload does), so
+		// Loaded textures, shaders and models are refreshed IN PLACE (as hot-reload does), so
 		// pointers already handed out stay valid and a failed reload keeps serving the
 		// previously loaded version. Every other type is destroyed and recreated, which
 		// invalidates borrowed pointers - re-Get after reloading those. Check
@@ -180,7 +180,7 @@ namespace Dingo
 		AssetHandle FindByPath(const std::filesystem::path& path) const;
 
 		// True for exactly the types ReloadInPlace can refresh without destroying the
-		// loaded object (Texture2D and Shader today). Tooling that offers a Reload
+		// loaded object (Texture2D, Shader and Model today). Tooling that offers a Reload
 		// action - such as the debug panel - should check this first: Reload() on any
 		// other type destroys and recreates the object, invalidating borrowed pointers.
 		static bool SupportsInPlaceReload(AssetType type);

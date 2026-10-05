@@ -438,6 +438,11 @@ namespace Dingo
 		return (s_Data && s_Data->SwapChain) ? s_Data->SwapChain->GetResizeGeneration() : 0;
 	}
 
+	uint64_t Renderer::GetFrameIndex()
+	{
+		return s_Data ? s_Data->FrameIndex : 0;
+	}
+
 	/**************************************************
 	***		STATIC RESOURCES						***
 	**************************************************/

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -83,6 +85,13 @@ namespace Dingo
 		// velocity lets a rider move with a kinematic platform.
 		virtual glm::vec3 GetGroundNormal() const = 0;
 		virtual glm::vec3 GetGroundVelocity() const = 0;
+
+		// Lets the character pass through a body (ignore = false restores it): the body no
+		// longer blocks, supports or pushes it out, and it no longer pushes the body. A Scene
+		// keeps this set for the bodies of the controller's kinematic descendants on every
+		// step. No-op on an invalid/stale handle.
+		virtual void IgnoreBody(PhysicsBodyId3D body, bool ignore = true) = 0;
+		virtual bool IsBodyIgnored(PhysicsBodyId3D body) const = 0;
 	};
 
 }

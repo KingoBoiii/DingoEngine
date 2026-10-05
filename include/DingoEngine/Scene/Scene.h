@@ -17,6 +17,7 @@ namespace Dingo
 {
 
 	class Entity;
+	class Animator;
 	class Physics2D;
 	class Physics3D;
 	class CharacterController3D;
@@ -71,11 +72,12 @@ namespace Dingo
 		// running without one.)
 		bool IsRunning() const { return m_IsRunning; }
 
-		// Drives every attached ScriptableEntity's OnUpdate, then steps any live
-		// physics world(s) and writes the simulated transforms back. Safe to
-		// create/destroy entities from within a script — destroys are deferred to the
-		// end of the pass. deltaTime is capped at 4/60 s for scripts and physics alike,
-		// so a stall runs the scene slow instead of tunnelling bodies through colliders.
+		// Drives every attached ScriptableEntity's OnUpdate, advances the animators, then
+		// steps any live physics world(s) and writes the simulated transforms back, so a
+		// kinematic body on a joint follows this frame's pose. Safe to create/destroy
+		// entities from within a script — destroys are deferred to the end of the pass.
+		// deltaTime is capped at 4/60 s for scripts, animation and physics alike, so a
+		// stall runs the scene slow instead of tunnelling bodies through colliders.
 		void OnUpdate(float deltaTime);
 
 		// Issues the 2D entity draw calls (no BeginScene/Clear/EndScene). The
@@ -171,6 +173,14 @@ namespace Dingo
 		}
 
 		Entity GetEntityByUUID(UUID uuid);
+
+		// --- Animation --------------------------------------------------------
+
+		// The entity's Animator, for playing clips from a script; created on first use. Null unless
+		// the entity has an AnimatorComponent and a SkinnedMeshRendererComponent whose Model has a
+		// skeleton. It survives OnStop/OnStart and is freed with the entity or its
+		// AnimatorComponent; a change of Model rebinds it, back to DefaultClip.
+		Animator* GetAnimator(Entity entity);
 
 		// --- Physics (2D + 3D) ------------------------------------------------
 

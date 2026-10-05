@@ -16,6 +16,7 @@ namespace Dingo
 
 	class Entity;
 	class ScriptableEntity;
+	struct AnimationEvent;
 
 	namespace Internal
 	{
@@ -39,6 +40,11 @@ namespace Dingo
 			void StartPending();
 
 			void Update(float deltaTime);
+
+			// To the entity's script, if it has one that has started.
+			void DeliverAnimationEvent(entt::entity handle, const AnimationEvent& event);
+			// The entity has a script and its OnStart has run.
+			bool IsStarted(entt::entity handle) const;
 
 			void ForEach(const std::function<void(ScriptableEntity*)>& fn) const;
 

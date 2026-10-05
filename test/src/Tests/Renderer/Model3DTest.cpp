@@ -4,6 +4,12 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+
 namespace
 {
 	static constexpr const char* k_ShaderSrc = R"(
@@ -66,7 +72,40 @@ namespace Dingo
 		m_Camera.SetPosition({ 0.0f, 1.5f, 4.0f });
 		m_Camera.SetTarget({ 0.0f, 0.0f, 0.0f });
 
+		const ApplicationCommandLineArgs& args = Application::Get().GetCommandLineArgs();
+		if (auto path = args.Get("model"); path && !path->empty())
+			std::snprintf(m_PathBuf, sizeof(m_PathBuf), "%.*s", static_cast<int>(path->size()), path->data());
+		if (auto angle = args.Get("model-angle"); angle && !angle->empty())
+		{
+			m_Rotation   = std::strtof(std::string(*angle).c_str(), nullptr);
+			m_AutoRotate = false;
+		}
+
 		LoadModel(m_PathBuf);
+	}
+
+	void Model3DTest::FitCamera()
+	{
+		glm::vec3 minBounds((std::numeric_limits<float>::max)());
+		glm::vec3 maxBounds((std::numeric_limits<float>::lowest)());
+		for (const auto& sm : m_Model->GetSubMeshes())
+		{
+			for (const MeshVertex& v : sm.MeshData->GetVertices())
+			{
+				minBounds = (glm::min)(minBounds, v.Position);
+				maxBounds = (glm::max)(maxBounds, v.Position);
+			}
+		}
+		if (minBounds.x > maxBounds.x)
+			return;
+
+		m_Pivot = 0.5f * (minBounds + maxBounds);
+		const float radius   = (std::max)(0.5f * glm::length(maxBounds - minBounds), 1e-3f);
+		const float distance = 1.15f * radius / std::sin(glm::radians(0.5f * m_Camera.GetFOV()));
+
+		m_Camera.SetClip(distance * 0.01f, distance * 4.0f);
+		m_Camera.SetTarget(m_Pivot);
+		m_Camera.SetPosition(m_Pivot + distance * glm::normalize(glm::vec3(0.0f, 0.375f, 1.0f)));
 	}
 
 	void Model3DTest::LoadModel(const std::string& path)
@@ -105,6 +144,8 @@ namespace Dingo
 
 			m_GpuSubMeshes.push_back(gpu);
 		}
+
+		FitCamera();
 	}
 
 	void Model3DTest::UnloadModel()
@@ -132,7 +173,9 @@ namespace Dingo
 
 		TransformUBO ubo;
 		ubo.ViewProjection = m_Camera.GetViewProjectionMatrix();
-		ubo.Model = glm::rotate(glm::mat4(1.0f), glm::radians(m_Rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+		ubo.Model = glm::translate(glm::mat4(1.0f), glm::vec3(m_Pivot.x, 0.0f, m_Pivot.z))
+			* glm::rotate(glm::mat4(1.0f), glm::radians(m_Rotation), glm::vec3(0.0f, 1.0f, 0.0f))
+			* glm::translate(glm::mat4(1.0f), glm::vec3(-m_Pivot.x, 0.0f, -m_Pivot.z));
 
 		for (auto& gsm : m_GpuSubMeshes)
 		{
@@ -162,6 +205,9 @@ namespace Dingo
 		ImGui::InputText("Path", m_PathBuf, sizeof(m_PathBuf));
 		if (ImGui::Button("Load"))
 			LoadModel(m_PathBuf);
+		ImGui::SameLine();
+		if (ImGui::Button("Fit camera") && m_Model)
+			FitCamera();
 
 		ImGui::Separator();
 
@@ -182,10 +228,35 @@ namespace Dingo
 		for (uint32_t i = 0; i < static_cast<uint32_t>(submeshes.size()); ++i)
 		{
 			const auto& sm = submeshes[i];
-			ImGui::Text("  [%u] verts=%u  idx=%u  tex=%s", i,
+			ImGui::Text("  [%u] verts=%u  idx=%u  tex=%s  skin=%s", i,
 				sm.MeshData->GetVertexCount(),
 				sm.MeshData->GetIndexCount(),
-				sm.DiffuseTexture ? "yes" : "no");
+				sm.DiffuseTexture ? "yes" : "no",
+				sm.MeshData->HasSkin() ? "yes" : "no");
+		}
+
+		if (const Skeleton* skeleton = m_Model->GetSkeleton())
+		{
+			ImGui::Separator();
+			if (ImGui::TreeNode("Skeleton", "Skeleton: %u joints", skeleton->GetJointCount()))
+			{
+				for (uint32_t j = 0; j < skeleton->GetJointCount(); ++j)
+				{
+					const Joint& joint = skeleton->GetJoint(j);
+					int depth = 0;
+					for (int32_t p = joint.Parent; p >= 0; p = skeleton->GetJoint(p).Parent)
+						++depth;
+					ImGui::Text("%*s%s", depth * 2, "", joint.Name.c_str());
+				}
+				ImGui::TreePop();
+			}
+
+			ImGui::Text("Clips: %u", m_Model->GetAnimationCount());
+			for (uint32_t c = 0; c < m_Model->GetAnimationCount(); ++c)
+			{
+				const AnimationClip* clip = m_Model->GetAnimation(c);
+				ImGui::Text("  %s  %.2f s  %zu channels", clip->GetName().c_str(), clip->GetDuration(), clip->GetChannels().size());
+			}
 		}
 
 		ImGui::Separator();

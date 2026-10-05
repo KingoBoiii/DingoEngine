@@ -309,10 +309,45 @@ namespace Dingo
 		return id.GetIndexAndSequenceNumber();
 	}
 
+	// A body joins the filter's group with its first ignored partner and leaves it with its last, so
+	// the pairs of bodies that ignore nothing never reach the filter.
+	static void LinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
+	{
+		std::vector<std::uint32_t>& partners = data.IgnoredPartners[body];
+		if (partners.empty())
+			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup(data.PairFilter.GetPtr(), body, 0));
+		partners.push_back(partner);
+	}
+
+	static void UnlinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
+	{
+		auto it = data.IgnoredPartners.find(body);
+		if (it == data.IgnoredPartners.end())
+			return;
+
+		std::erase(it->second, partner);
+		if (it->second.empty())
+		{
+			data.IgnoredPartners.erase(it);
+			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup());
+		}
+	}
+
 	void JoltPhysics3D::DestroyBody(PhysicsBodyId3D body)
 	{
 		if (!m_Data || body == k_InvalidBody3D)
 			return;
+
+		if (auto it = m_Data->IgnoredPartners.find(body); it != m_Data->IgnoredPartners.end())
+		{
+			const std::vector<std::uint32_t> partners = std::move(it->second);
+			m_Data->IgnoredPartners.erase(it);
+			for (std::uint32_t partner : partners)
+			{
+				m_Data->PairFilter->Remove(body, partner);
+				UnlinkIgnoredPartner(*m_Data, partner, body);
+			}
+		}
 
 		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
 		const JPH::BodyID id = ToBodyId(body);
@@ -397,6 +432,43 @@ namespace Dingo
 		if (!m_Data || body == k_InvalidBody3D)
 			return;
 		m_Data->PhysicsSystem.GetBodyInterface().AddForce(ToBodyId(body), ToJolt(force));
+	}
+
+	void JoltPhysics3D::IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore)
+	{
+		if (!m_Data || a == k_InvalidBody3D || b == k_InvalidBody3D || a == b)
+			return;
+
+		Internal::IgnoredPairFilter& filter = *m_Data->PairFilter;
+		if (filter.Contains(a, b) == ignore)
+			return;
+
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		if (ignore)
+		{
+			if (!bodyInterface.IsAdded(ToBodyId(a)) || !bodyInterface.IsAdded(ToBodyId(b)))
+				return;
+
+			filter.Add(a, b);
+			LinkIgnoredPartner(*m_Data, a, b);
+			LinkIgnoredPartner(*m_Data, b, a);
+		}
+		else
+		{
+			filter.Remove(a, b);
+			UnlinkIgnoredPartner(*m_Data, a, b);
+			UnlinkIgnoredPartner(*m_Data, b, a);
+		}
+
+		// The broad phase only pairs a body that is awake: a sleeping pair would keep its old
+		// contact state until something else woke one of them.
+		bodyInterface.ActivateBody(ToBodyId(a));
+		bodyInterface.ActivateBody(ToBodyId(b));
+	}
+
+	bool JoltPhysics3D::IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const
+	{
+		return m_Data && m_Data->PairFilter->Contains(a, b);
 	}
 
 	void JoltPhysics3D::SetPosition(PhysicsBodyId3D body, const glm::vec3& position)

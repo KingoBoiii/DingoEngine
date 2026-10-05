@@ -4,12 +4,16 @@ Open defects and sharp edges in DingoEngine. Companion to [ROADMAP.md](ROADMAP.m
 next) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (missing capabilities, ranked). This file is only
 for things that are **wrong or surprising in code that already ships**.
 
-- **Verified against `VERSION` 0.7.2 on 2026-10-02.** Every entry below carries a `file:line` anchor
+- **Verified against `VERSION` 0.8.0 on 2026-10-03.** Every entry below carries a `file:line` anchor
   confirmed in that pass. Code drifts — re-confirm before fixing, and delete the entry when it's gone.
   K10 and K11 are deliberate deferrals, not oversights; K16 and K17 are the two limits v0.7's
   lighting ships with, K18 a defect found reviewing its lit materials that predates it, and K19 one
   found reviewing Candlewick, all added on 2026-10-01. v0.7 and v0.7.1 closed no entry; v0.7.2
-  closed K14 and K20, moved K16's `Renderer3D.cpp` lines, and added K21, found reviewing it.
+  closed K14 and K20, moved K16's `Renderer3D.cpp` lines, and added K21, found reviewing it. v0.8
+  closed no entry. It moved the lines of K16 to K19, corrected K11's swap-chain lines, raised K10's
+  header count from 20 to 24 (`Entity.h` came with v0.7.1; `AnimationClip.h`, `Animator.h` and
+  `Skeleton.h` with v0.8), and added K22 to K25 on 2026-10-03: the three edges its P7 and P8 reviews
+  left in the animator, and the shear the v0.7.1 hierarchy drops.
 - **Not a review log.** Findings from a dated review pass live in `.claude/reviews/`; the v0.6.0 pass
   (`2026-07-29-v0.6.0-review.md`) is fully closed out — 4 Critical, 10 High, 12 Medium, 7 refactors and
   21 Lows all fixed — so nothing here comes from it.
@@ -41,16 +45,20 @@ but silently costs correctness or portability. **Latent**: real, but nothing in-
 | [K18](#k18) | A texture created at a freed texture's address is not noticed by a material | Defect | Graphics |
 | [K19](#k19) | A wireframe material on a GPU without `fillModeNonSolid` builds a line-mode pipeline the device never enabled | Defect | Vulkan |
 | [K21](#k21) | The first Vulkan frame after startup, or after a minimized stretch, is not ordered after its image acquire | Latent | Vulkan |
+| [K22](#k22) | Binding an animator to another skeleton drops its open event ranges without their `RangeEnd` | Latent | Animation |
+| [K23](#k23) | A disabled `AnimatorComponent` keeps reporting its last update's events | Latent | Animation |
+| [K24](#k24) | An animation layer that freezes while its weight is 0 freezes a stale pose | Latent | Animation |
+| [K25](#k25) | A reparent that keeps the world transform drops the shear a non-uniformly scaled parent puts on a rotated child | Limitation | Scene |
 
 ---
 
 ## K10 — GLM is the one third-party dependency that leaks into public headers {#k10}
 
-**Limitation** — 20 headers under `include/`
+**Limitation** — 24 headers under `include/`
 
 Every other vendored library is fully hidden from client code — ImGui, EnTT, Box2D, Jolt, NVRHI, GLFW
 and miniaudio each appear in **zero** public headers, behind facades and opaque handles. GLM appears in
-20, so any game linking the engine must also put GLM on its include path and match its version, and the
+24, so any game linking the engine must also put GLM on its include path and match its version, and the
 engine cannot change math libraries without breaking every consumer.
 
 This is a known, deliberate deferral rather than an oversight. **Fix**: engine-owned vector/matrix
@@ -59,7 +67,7 @@ another API break.
 
 ## K11 — Dragging a window to a display driven by another GPU is not handled {#k11}
 
-**Limitation** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanSwapChain.cpp:349-363`,
+**Limitation** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanSwapChain.cpp:352-370`,
 `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.cpp:87,389`
 
 Device selection is surface-aware at **startup**: the context probes a surface and picks a GPU that can
@@ -75,7 +83,7 @@ practice that logging may remain the right answer.
 
 ## K16 — Point and spot lights pop in and out at the light-budget edge {#k16}
 
-**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:482-511`
+**Limitation** — `src/DingoEngine/Graphics/Renderer3D.cpp:767-796`
 
 When more point and spot lights reach the view than `Renderer3DCapabilities::MaxLocalLights` (32 by
 default, and at most 32), `EndScene` keeps the brightest as seen from the camera and drops the rest. The
@@ -92,7 +100,7 @@ ranks instead of switching off.
 
 ## K17 — Overlapping bright lights clip to white until tone mapping lands {#k17}
 
-**Limitation** — `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl:139-143`
+**Limitation** — `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl:184-188`
 
 The lit shader adds ambient and every light's diffuse and specular and writes the sum straight to the
 frame, so any channel above 1.0 clamps. There is no HDR target and no tone mapping before v0.9, so
@@ -108,7 +116,7 @@ point lights.
 
 ## K18 — A texture created at a freed texture's address is not noticed by a material {#k18}
 
-**Defect** — `src/DingoEngine/Graphics/Material.cpp:65-73`,
+**Defect** — `src/DingoEngine/Graphics/Material.cpp:75-84`,
 `src/DingoEngine/Graphics/NVRHI/NvrhiRenderPass.cpp:40-91`, `include/DingoEngine/Graphics/Texture.h:116-125`
 
 `Material::SetTexture` returns early when the slot already holds the same pointer. `NvrhiRenderPass`
@@ -131,7 +139,7 @@ counter (or give each a unique id) and compare that instead of the pointer.
 ## K19 — A wireframe material on a GPU without `fillModeNonSolid` builds a line-mode pipeline the device never enabled {#k19}
 
 **Defect** — `src/DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.cpp:533`,
-`src/DingoEngine/Graphics/Material.cpp:172`, `src/DingoEngine/Graphics/NVRHI/NvrhiPipeline.cpp:26`
+`src/DingoEngine/Graphics/Material.cpp:188`, `src/DingoEngine/Graphics/NVRHI/NvrhiPipeline.cpp:26`
 
 The Vulkan device requests `fillModeNonSolid` only where the GPU reports it, which is right, but nothing
 downstream knows whether it did. `Material` still passes `FillMode::Wireframe` to its pipeline, and
@@ -174,14 +182,94 @@ predate it.
 frame's `Execute` on the render thread. On a restore, apply the pending resize and acquire before the
 first frame records.
 
+## K22 — Binding an animator to another skeleton drops its open event ranges without their `RangeEnd` {#k22}
+
+**Latent** — `src/DingoEngine/Graphics/Animator.cpp:145-150,169-176`,
+`src/DingoEngine/Scene/Systems/AnimationSystem.cpp:67`
+
+`Animator::SetSkeleton` ends in `ResetToRest`, which clears every layer's states and open event ranges
+(`:175`) and the frame's event list (`:169`), and sends nothing for what it cleared.
+`AnimationSystem::EnsureAnimator` calls it whenever an entity's model has a different skeleton from the
+one its animator is bound to: a game that assigns another `Model` to the `SkinnedMeshRendererComponent`,
+or a hot-reload that changed the model's joints (a reload that keeps every joint's name and parent keeps
+the `Skeleton`, and the ranges with it). A range that had begun then never ends. A game that opens a
+hitbox on `RangeBegin` and shuts it on `RangeEnd` leaves it open, and `IsEventActive` turns false with
+no event to say why. Every other way a range stops (a seek, a state that stops leading, events that
+changed under the clip) sends its `RangeEnd`, through `CloseRanges` (`Animator.cpp:848-853`) or the
+events-changed check in `CollectEvents`, so this is the one hole in "a range that opened always ends".
+
+Nothing in-tree changes a skeleton while a range is open; the Animation Test's one rebind check has none
+open. Left by the P8 review (the v0.8 plan's "As built in P8"). **Fix**: keep the ranges through
+`ResetToRest` and set each layer's `CloseRangesOnUpdate`, so the next `Update` ends them the way a seek
+does. That `RangeEnd` would name a clip of the old model, which a swap may have freed, so it needs a
+null `Clip` (`AnimationSystem.cpp:100-103` already tolerates one).
+
+## K23 — A disabled `AnimatorComponent` keeps reporting its last update's events {#k23}
+
+**Latent** — `include/DingoEngine/Graphics/Animator.h:189`, `src/DingoEngine/Graphics/Animator.cpp:615`,
+`src/DingoEngine/Scene/Systems/AnimationSystem.cpp:143-147`
+
+`Animator::GetEventsThisFrame` and `ForEachEventThisFrame` return the list the animator's last `Update`
+built, and only the next `Update` clears it (`Animator.cpp:615`). `AnimationSystem::Update` skips an
+animator whose `AnimatorComponent::Enabled` is false before it updates, records or delivers anything
+(`:143-144`), so a script that polls such an animator through `Scene::GetAnimator` reads the frame it was
+disabled on again and again: a footstep, or a `RangeBegin`, repeats every frame for as long as the
+component stays off. `OnAnimationEvent` and the F7 tab's event log are unaffected, because both sit after
+the `Enabled` check (`:146-147`). `IsEventActive` keeps answering true for a range open at the pause,
+which is the honest answer for a clip held mid-range.
+
+Nothing in-tree polls a disabled animator. Left by the P8 review (the v0.8 plan's "As built in P8").
+**Fix**: have `AnimationSystem` empty the list of an animator it skips, through a small `Animator` call
+for it (`m_Events` is private).
+
+## K24 — An animation layer that freezes while its weight is 0 freezes a stale pose {#k24}
+
+**Latent** — `src/DingoEngine/Graphics/Animator.cpp:306-319`, `:356-362`, `:883-896`
+
+A layer plays at most four states at once (`k_MaxStates`). A `Play`, `Stop` or `PlayOneShot` with a
+fade that would make a fifth state replaces the four by one frozen pose, the mix so far, so a burst of
+calls never pops (`Push`). For a
+layer above 0 that mix is read from the layer's cached `Pose` (`FreezeSource`), and `Evaluate` refreshes
+`Pose` only for a layer it evaluates, which leaves out a layer whose weight is 0 (`:887`). So a layer
+that freezes at weight 0 holds the last pose it showed (the rest pose, if it never showed one), not the
+mix its four states had reached, although their times kept advancing. When the weight comes up, the
+masked joints fade from that pose, which no state was ever playing, into the new state. Layer 0 is not
+affected: it has no weight and samples straight into `m_LocalPoses`.
+
+It takes a fifth state on a layer at weight 0 (four fading calls on an empty layer above 0, which
+starts with a transparent one) while the earlier fades still run, which nothing
+in-tree does. Left by the P7 review (the v0.8 plan's "As built in P7"). **Fix**: evaluate a layer that is
+about to freeze whatever its weight, or have `Push` sample the layer's states into `Pose` before it
+freezes them.
+
+## K25 — A reparent that keeps the world transform drops the shear a non-uniformly scaled parent puts on a rotated child {#k25}
+
+**Limitation** — `src/DingoEngine/Scene/Systems/HierarchySystem.cpp:296-301,303-321`,
+`src/DingoEngine/Scene/Entity.cpp:56-60`
+
+A rotated child under a parent with a non-uniform scale is sheared in world space, and its world matrix,
+which the renderer draws as it is, cannot be written as a position, rotation and scale. Everything that
+does want those three goes through `HierarchySystem::Decompose`, which keeps the position, orthonormalises
+the axes from X and drops the shear (`:314-320`) without a warning: `GetWorldRotation` and `GetWorldScale`, the
+physics bake and write-back, and `keepWorldTransform`. `SetParent(parent, true)` and `RemoveParent(true)`
+solve for the local transform that reproduces the old world under the new parent (`SetLocalFromWorld`), so
+when that local is itself sheared (a rotated child moved under a non-uniformly scaled parent, or a sheared
+one moved anywhere) the child changes shape in the call that promises to leave it where it was. A body
+baked on a sheared child collides unsheared.
+
+It dates from v0.7.1's hierarchy. docs/scenes-and-ecs.md describes it under "Shear", with the workaround:
+keep a parent's scale uniform and put its scaled mesh on a child of its own. It is listed because nothing
+warns. **Fix** (deferred): warn in `Reparent` when recomposing the solved local misses the world transform
+by more than a tolerance (reparenting is rare, so the extra product costs nothing). Keeping the shear
+needs a matrix-valued local transform, a breaking change to the components.
+
 ---
 
 ## Not tracked here
 
-- **Missing capabilities** (no skeletal animation, no runtime UI layer, no mesh culling or
-  instancing) are features, not bugs — they live in
-  [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md), ranked and dependency-sequenced, and most are now scheduled
-  in [ROADMAP.md](ROADMAP.md) at v0.8–v1.0.
+- **Missing capabilities** (no runtime UI layer, no mesh culling or instancing) are features, not
+  bugs — they live in [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md), ranked and dependency-sequenced, and
+  most are now scheduled in [ROADMAP.md](ROADMAP.md) at v0.9–v1.0.
 - **Closed findings** stay in their dated review under `.claude/reviews/`, each with the commit that
   fixed it and how it was verified. Don't re-file them here.
 - **Behaviour that surprises but is correct**: lights, specular and emissive live in the engine's

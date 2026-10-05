@@ -41,7 +41,7 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 			.Title = "Dingo Test Framework",
 			.Width = 1600,
 			.Height = 900,
-			.VSync = true,
+			.VSync = !args.Get("no-vsync").has_value(),
 			.Resizable = true,
 		},
 		.Graphics = {

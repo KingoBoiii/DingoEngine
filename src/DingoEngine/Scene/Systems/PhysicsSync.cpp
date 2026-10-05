@@ -14,6 +14,38 @@ namespace Dingo
 	namespace Internal
 	{
 
+		namespace
+		{
+			std::uint64_t PackPair(std::uint32_t first, std::uint32_t second)
+			{
+				return (static_cast<std::uint64_t>(first) << 32) | second;
+			}
+
+			// Withdraws every pair in `applied` that `wanted` no longer has, then (re)applies all of
+			// `wanted`, which becomes the new `applied`. apply(first, second, ignore) must be a no-op
+			// for a pair that is already in that state.
+			template<typename Apply>
+			void SyncPairs(std::vector<std::uint64_t>& applied, std::vector<std::uint64_t>& wanted, Apply apply)
+			{
+				if (applied.empty() && wanted.empty())
+					return;
+
+				std::sort(wanted.begin(), wanted.end());
+				wanted.erase(std::unique(wanted.begin(), wanted.end()), wanted.end());
+
+				for (std::uint64_t pair : applied)
+				{
+					if (!std::binary_search(wanted.begin(), wanted.end(), pair))
+						apply(static_cast<std::uint32_t>(pair >> 32), static_cast<std::uint32_t>(pair), false);
+				}
+
+				for (std::uint64_t pair : wanted)
+					apply(static_cast<std::uint32_t>(pair >> 32), static_cast<std::uint32_t>(pair), true);
+
+				applied.swap(wanted);
+			}
+		}
+
 		void PhysicsSync::Start(entt::registry& registry, const glm::vec2& gravity2D, const glm::vec3& gravity3D)
 		{
 			m_Memo.Begin(registry);
@@ -64,6 +96,8 @@ namespace Dingo
 				m_Physics3D->Shutdown(); // destroys all 3D bodies
 				m_Physics3D.reset();
 				registry.clear<RigidBody3DRuntime>();
+				m_IgnoredPairs.clear();
+				m_IgnoredControllerBodies.clear();
 			}
 		}
 
@@ -114,6 +148,7 @@ namespace Dingo
 			// k_MaxStepTime, so a stall never stretches a step past 1/60 s.
 			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
 
+			SyncAncestorFilters(registry);
 			DriveKinematicChildren(registry, deltaTime);
 			m_Physics3D->Step(deltaTime, collisionSteps);
 
@@ -162,6 +197,40 @@ namespace Dingo
 			}
 
 			WriteBackChildren(registry);
+		}
+
+		void PhysicsSync::SyncAncestorFilters(entt::registry& registry)
+		{
+			m_WantedPairs.clear();
+			m_WantedControllerBodies.clear();
+
+			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, HierarchyComponent>();
+			for (entt::entity handle : view)
+			{
+				const entt::entity parent = view.get<HierarchyComponent>(handle).Parent;
+				if (parent == entt::null || view.get<RigidBody3DComponent>(handle).Type != BodyType3D::Kinematic)
+					continue;
+
+				const PhysicsBodyId3D body = view.get<RigidBody3DRuntime>(handle).Body;
+				for (entt::entity ancestor = parent; ancestor != entt::null; ancestor = HierarchySystem::GetParent(registry, ancestor))
+				{
+					if (const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(ancestor))
+						m_WantedPairs.push_back(PackPair(body, runtime->Body));
+					if (const CharacterController3DRuntime* slot = registry.try_get<CharacterController3DRuntime>(ancestor))
+						m_WantedControllerBodies.push_back(PackPair(slot->Index, body));
+				}
+			}
+
+			SyncPairs(m_IgnoredPairs, m_WantedPairs, [this](std::uint32_t child, std::uint32_t ancestor, bool ignore)
+			{
+				m_Physics3D->IgnoreCollision(child, ancestor, ignore);
+			});
+
+			SyncPairs(m_IgnoredControllerBodies, m_WantedControllerBodies, [this](std::uint32_t slot, std::uint32_t body, bool ignore)
+			{
+				if (slot < m_Controllers.size() && m_Controllers[slot])
+					m_Controllers[slot]->IgnoreBody(body, ignore);
+			});
 		}
 
 		void PhysicsSync::DriveKinematicChildren2D(entt::registry& registry, float deltaTime)
@@ -308,7 +377,7 @@ namespace Dingo
 			for (const KinematicChild& child : m_KinematicChildren)
 			{
 				const glm::mat4 world = PredictedWorldTransform(registry, HierarchySystem::GetParent(registry, child.Handle), deltaTime)
-					* HierarchySystem::LocalTransform(registry, child.Handle);
+					* HierarchySystem::LinkTransform(registry, child.Handle);
 
 				glm::vec3 position, scale;
 				glm::quat rotation;
@@ -355,7 +424,7 @@ namespace Dingo
 		glm::mat4 PhysicsSync::PredictedWorldTransform(const entt::registry& registry, entt::entity handle, float deltaTime)
 		{
 			// Climbs to an ancestor already predicted this pass, or the nearest one whose pose physics
-			// decides this step, then composes the plain locals below it root-first, the same order
+			// decides this step, then composes the links below it root-first, the same order
 			// HierarchySystem::WorldTransform uses; every entity on the way is kept for its other
 			// descendants.
 			glm::mat4 world(1.0f);
@@ -380,7 +449,7 @@ namespace Dingo
 
 			for (auto it = m_PredictionChain.rbegin(); it != m_PredictionChain.rend(); ++it)
 			{
-				world = world * HierarchySystem::LocalTransform(registry, *it);
+				world = world * HierarchySystem::LinkTransform(registry, *it);
 				PredictedEntry& entry = Predicted(*it);
 				entry.World = world;
 				entry.Pass = m_PredictionPass;

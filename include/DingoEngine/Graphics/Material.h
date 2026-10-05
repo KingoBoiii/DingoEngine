@@ -58,6 +58,8 @@ namespace Dingo
 		// Routes through Destroy() so `delete material` without a prior Destroy() still
 		// frees the pipeline cache and the uniform buffer. Both are idempotent.
 		~Material();
+		Material(const Material&) = delete;
+		Material& operator=(const Material&) = delete;
 
 		void Destroy();
 
@@ -75,6 +77,10 @@ namespace Dingo
 		Texture* GetTexture(uint32_t slot) const;
 		Sampler* GetSampler(uint32_t slot) const;
 
+		// Bumped by every SetTexture/SetSampler that changes a slot, so a copy of these bindings
+		// can tell that a slot was cleared and refilled even when the new pointer equals the old.
+		uint64_t GetBindingRevision() const { return m_BindingRevision; }
+
 		// ── Uniform data ──────────────────────────────────────────────────────
 
 		// Stores data in a CPU buffer and marks the GPU buffer as needing upload.
@@ -91,6 +97,12 @@ namespace Dingo
 		// null (the default), the material's own UBO stays at binding 0. Render passes are
 		// cached per scene buffer, so a material drawn by several renderers keeps one for each.
 		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
+
+		// Binds Renderer3D's per-draw skinning buffer to the shader's uniform block named
+		// SkinData, at whatever binding the shader gave it. Shaders without one ignore it.
+		void SetSkinUniformBuffer(GraphicsBuffer* buffer);
+
+		static constexpr const char* k_SkinDataBlockName = "SkinData";
 
 		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
 		const std::vector<uint8_t>& GetUniformCPUData()                      const { return m_UniformCPUData; }
@@ -110,6 +122,10 @@ namespace Dingo
 		Shader*               GetShader() const { return m_Params.Shader; }
 		const MaterialParams& GetParams() const { return m_Params; }
 
+		// Never reused, unlike the material's address, so a cache keyed on it cannot hand a freed
+		// material's state to a new material allocated at the same address.
+		uint64_t GetId() const { return m_Id; }
+
 		// The surface settings are runtime-tweakable (unlike CullMode/FillMode, which are baked
 		// into the cached pipeline) — they only ever feed uniform data, so changing them does
 		// not invalidate the pipeline cache.
@@ -124,12 +140,15 @@ namespace Dingo
 
 	private:
 		void InvalidatePipelineCache();
+		static uint64_t AllocateId();
 
 	private:
 		MaterialParams m_Params;
+		uint64_t m_Id = AllocateId();
 
 		Texture* m_Textures[k_MaxTextureSlots] = {};
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
+		uint64_t m_BindingRevision = 0;
 
 		std::vector<uint8_t> m_UniformCPUData;
 		GraphicsBuffer*      m_UniformBuffer      = nullptr;
@@ -137,6 +156,7 @@ namespace Dingo
 
 		// Shared scene UBO (binding 0), owned by the renderer — not destroyed here.
 		GraphicsBuffer*      m_SceneUniformBuffer = nullptr;
+		GraphicsBuffer*      m_SkinUniformBuffer  = nullptr;
 
 		struct PipelineCacheEntry
 		{

@@ -13,8 +13,9 @@ namespace Dingo
 	// light riding the planet, a tank whose turret and barrel follow its hull, and bodies under
 	// parents (a dynamic crate on a moving carrier, kinematic children of a spinning pivot and of a
 	// MoveKinematic'd platform, a falling chain of dynamic boxes, a character controller on a moving
-	// carrier), plus a 2D scene with the same cases on a 2D tank and Box2D bodies. Check results
-	// show in the Properties panel and the log.
+	// carrier), plus a 2D scene with the same cases on a 2D tank and Box2D bodies, and small stepped
+	// scenes for the filter that keeps a kinematic child off its ancestors. Check results show in the
+	// Properties panel and the log.
 	class HierarchyTest : public GraphicsTest
 	{
 	public:
@@ -33,6 +34,7 @@ namespace Dingo
 	private:
 		void Check(bool condition, const std::string& name);
 		void RunStructuralChecks();
+		void RunCollisionFilterChecks();
 		void RunLightProbe();
 		void BuildScene();
 		void Animate(float deltaTime);
