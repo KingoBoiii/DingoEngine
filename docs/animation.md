@@ -6,7 +6,8 @@ DingoEngine plays skeletal animation. A `Model` loaded from a glTF or FBX file b
 `Skeleton`, its skin weights and its `AnimationClip`s. `Renderer3D` skins the meshes on the GPU from a
 joint palette, and an `Animator` plays and blends the clips into that palette. Timeline **events**
 and joint **sockets** tie the animation to gameplay: a footstep sound the moment a foot lands, a
-hitbox that is open between two moments of a swing, a sword that follows the hand.
+hitbox that is open between two moments of a swing, a sword that follows the hand. The melee duel
+`examples/Marionette` uses every piece; the sections below point to it where it is the worked example.
 
 > **Two ways to use it.** In the Scene/ECS, give an entity a `SkinnedMeshRendererComponent` and an
 > `AnimatorComponent`, and the scene draws and advances it ([Drawing in a scene](#drawing-in-a-scene),
@@ -169,7 +170,11 @@ A file with a skeleton and clips but no meshes is a **clip library**: `IsSkinned
 names can play. Several characters can share one set of animations that way
 ([Retargeting](#retargeting)); keep the library loaded for as long as an animator plays its clips.
 Animation-only Collada and BVH files read as clip libraries too (load them with `LoadFromFile`; the
-AssetManager does not recognise those extensions).
+AssetManager does not recognise those extensions). A library that also carries a preview mesh (KayKit's
+hold their mannequin) loads that mesh as well; there is no clips-only option yet.
+
+See `examples/Marionette` (`GameAssets`, `Moveset`): five KayKit libraries, one per category of clip,
+serve four characters.
 
 ### When the file is odd
 
@@ -482,6 +487,10 @@ animator.SetFloat("Speed", glm::length(velocity));
 - The parameters belong to the animator and are shared by every layer and blend; the same
   `Play(blend)` again is a no-op, so call it every frame if that suits your script.
 
+See `examples/Marionette` (`Locomotion`): idle, walk and run blend on one `Move` parameter, and
+`step_l` / `step_r` sit at one shared fraction of the walk's and the run's cycle, so a footstep sound
+fires once per step at any speed.
+
 ### Layers
 
 Layer 0 always poses the whole body at full weight. A higher layer **overrides** the joints in its
@@ -514,6 +523,11 @@ animator->Stop(0.2f, 1);                                  // let the layers belo
   the mask empty, so the layer moves nothing.
 - **Additive layers are not supported.**
 
+See `examples/Marionette` (`Fighter`): blocking is layer 1 masked from `spine` at weight 1, so a
+fighter keeps walking while the arms guard. `Melee_Block` plays with `SetLoop(false)` so its `parry`
+mark at the start of the clip fires, and the layer switches to the looping `Melee_Blocking` on
+`IsFinished(1)`. A blocked hit is a one-shot on layer 1, which returns to the guard.
+
 ### One-shots
 
 `PlayOneShot(clip, fadeIn = 0.1, fadeOut = 0.2, layer = 0)` plays a clip once over what the layer
@@ -538,6 +552,8 @@ if (animator->IsOneShotPlaying())
   seconds before the clip ends, so a `done` mark in that last stretch is lost. Put end marks before
   `duration − fadeOut`, or pass a `fadeOut` of 0. A one-shot shorter than `fadeOut` plus half its
   `fadeIn` never leads, so none of its marks fire.
+- **A one-shot always returns**, so it cannot hold a last frame. To stay down after a death, `Play` a
+  state that does not loop (`AnimationState::Clip(death).SetLoop(false)`), as Marionette does.
 
 ## Events
 
@@ -682,6 +698,37 @@ a scene does when a model's joints change): that resets the animator and drops o
 `AnimationEvent::Name` stays valid for the life of the program. The engine keeps one copy of each name
 ever authored, so a name you hold outlives the clip's events changing and a model reload.
 
+### Combat windows from events
+
+Ranges are enough to author a fighting game's timing, and `examples/Marionette` keeps none of it in
+code. Its `.events` files give every move a `windup` (the telegraph the AI reads), a `hitbox` (the
+active frames), a `combo` window (where a second press chains) and, for a dodge, `dash` and `iframes`:
+
+```
+# examples/Marionette/assets/animations/Rig_Medium_CombatMelee.events
+Melee_1H_Attack_Slice_Diagonal   0.00..0.37   windup
+Melee_1H_Attack_Slice_Diagonal   0.37..0.47   hitbox
+Melee_1H_Attack_Slice_Diagonal   0.47..0.75   combo
+```
+
+The game polls the ranges with `IsEventActive` (`Fighter::IsWindowActive`) and takes the instants,
+such as footsteps, in `Fighter::OnAnimationEvent`; a hit counts only while a `hitbox` is open. What
+building it showed:
+
+- **End every window before `duration − fadeOut`** of the one-shot that plays the move, or it never
+  fires ([One-shots](#one-shots)). Marionette checks every move at load (`ValidateMoveset`) and
+  warns, and again after each live edit.
+- **Gate on your own state as well as on the range.** A cancelled move's `hitbox` stays open until
+  its replacement takes over, at fade weight 0.5. Marionette counts a hit only while the attacker is
+  still in its attack state.
+- **A mark at the start of a clip needs a state that catches up.** A looping state that takes over
+  does not fire a mark at time 0, so the `parry` window at the start of a block raise plays on a
+  clip with `SetLoop(false)`.
+- **Slow the animator with `AnimatorComponent::Speed` for a hit-stop, not `Enabled`.** A poller of a
+  disabled animator reads its last frame's events again and again (KNOWN-BUGS K23).
+- Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
+  no payload.
+
 ## Sockets
 
 `child.SetParent(character, "joint", keepWorldTransform)` hangs an entity on a joint of the
@@ -732,6 +779,11 @@ start of every 3D step, so `SetParent` and `RemoveParent` take effect on the nex
 Parent an entity before its body is built, as for any parent; what happens when you parent one that
 already has a body is in [Physics under a parent](scenes-and-ecs.md#parenting-v071).
 
+See `examples/Marionette` (`Fighter::SpawnWeapon`, `SpawnRigSphere`): each sword, axe and shield is
+socketed to `handslot.r` or `handslot.l`, and the spheres its combat tests ride the weapons and the
+body's joints. They are plain transforms, not bodies, and the hit test reads their world positions;
+`--debug-hitbox` draws the same entities.
+
 ## Retargeting
 
 A clip plays on any skeleton that has the joints it names. When the clip was loaded with **another
@@ -772,6 +824,12 @@ dropped.
 
 Clips keep their events when they retarget, because events live on the clip.
 
+See `examples/Marionette` (`GameAssets`, `Moveset`, `--check`): five clip libraries on KayKit's
+`Rig_Medium` (23 joints, the same names and rest rotations in every file) play on the Knight, the
+Barbarian and two skeletons. The four share one body, so the ratio is 1 and the retarget is exact;
+the opponents differ in weapon, pace and uniform scale, not limb length. `--check` compares a
+retargeted idle with the library's own pose joint by joint.
+
 ## Hot-reload
 
 With the AssetManager's hot-reload on (`params.Assets.EnableHotReload = true`, or the toggle in the F6
@@ -805,6 +863,12 @@ an unmanaged model call `Model::Reload()`; for a managed one `AssetManager::Relo
 The table of what each object does through a reload, the watched files and the `.bin` caveat are in
 [Model hot-reload](asset-pipeline.md#model-hot-reload-v08). To watch it work, run the Animation Test
 with `--anim=clip --anim-reload` ([below](#debugging)).
+
+`AnimationClip::GetEventRevision()` changes whenever a clip's event list does (a reload,
+`AddEvent`, `ClearEvents`) and never goes back, so a game can tell when to re-check what it derived
+from the events. See `examples/Marionette --live-edit-demo` (`GameAssets::PollEventChanges`): it
+plays a copy of its assets with hot-reload on, rewrites the slash's `hitbox` range in the copy's
+`.events` file after ten seconds, and the next swing lands at the new time.
 
 ## Debugging
 
@@ -871,12 +935,15 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 - **Retargeting is by name** within one rig template. Different topologies, different joint names or
   different rest orientations need the rig to be fixed in the art.
 - **Models load on the main thread**, one asset a frame when loaded asynchronously.
+- **Embedded textures are skipped.** An image embedded in a GLB gives its submesh no
+  `DiffuseTexture`, and nothing is logged. Keep the PNG beside the file and put it in a lit material,
+  as Marionette does for its characters.
 
 Not in v0.8:
 
 | Item | Where it lives |
 |---|---|
-| Root motion | A v0.8.x stretch. Use in-place clips and drive a lunge between `lunge` range events. |
+| Root motion | A v0.8.x stretch. Use in-place clips and move the body yourself. Moving it by a clip's travel while the pose also moves the hips counts the travel twice: Marionette instead pays each move's net hips travel over its fade-out, and moves a dodge over its `dash` range. |
 | IK (foot, look-at) | v0.9 or later, or a module. |
 | Additive layers, state-machine graph assets | Later. Game code drives `Play`. |
 | Morph targets (blend shapes) | Later. |
@@ -896,6 +963,9 @@ Not in v0.8:
 - [Lighting & Shading](lighting.md) - lit materials, which skinned meshes draw with.
 - [3D Physics](physics-3d.md) - kinematic bodies and character controllers.
 - The test app's **Animation Test** (`test/`, `--test=anim`, flags [above](#debugging)).
+- `examples/Marionette` - the worked example: combat windows from `.events`, a masked block layer,
+  weapons and hit spheres on sockets, clip libraries shared by four characters, and live `.events`
+  editing.
 
 ---
 

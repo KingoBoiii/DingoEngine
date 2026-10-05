@@ -3,7 +3,8 @@
 Companion to [ROADMAP.md](ROADMAP.md). Where `ROADMAP.md` is the **milestone narrative** (what
 game each version ships), this is the **friction backlog**: 12 engine gaps surfaced while building
 the Gloomdelve dungeon crawler on prebuilt DingoEngine **v0.4.2**, prioritized by how much
-*game* code each one deletes, then sequenced by dependency + effort.
+*game* code each one deletes, then sequenced by dependency + effort. §8 adds the six that *Marionette*
+found in v0.8.
 
 - **Verified** against the tree on 2026-07-02 (engine `VERSION` = 0.4.2). Every claim below has a
   `file:line` anchor from that pass — re-confirm before implementing, code drifts.
@@ -236,3 +237,21 @@ Things the verification pass changed or sharpened vs. the original 12-item write
   The byte-wise engine render is confirmed, so the constraint is real — #12's UTF-8 half is genuine
   but low-signal.
 - **CharacterRig is 13–24 entities/char**, slightly under the roadmap's "15–24" (Wizard=13).
+
+---
+
+## 8. Found by Marionette (v0.8)
+
+Gaps the *Marionette* example hit while building a duel on the v0.8 animation engine (its plan,
+`.claude/plans/2026-10-03-marionette-plan.md` §10, has the detail). None blocked the game, and each
+was worked round on the game side. They are not among the 12 items above and are unscheduled; the
+effort scale is the one at the top.
+
+| Item | Effort | What Marionette does instead |
+|---|---|---|
+| **Embedded model textures.** `Model::LoadFromFile` returns no texture for an image embedded in a GLB (`Model.cpp`, `LoadDiffuseTexture` skips `*N` paths), with no warning, and most glTF packs embed theirs. Fix: decode the `aiTexture` data (`stbi_load_from_memory`) and key the texture cache by model path and index, so hot-reload still matches it | **S–M** | Ships the PNGs KayKit also provides and gives each fighter a lit material with its PNG on slot 0 |
+| **Clips-only loading of a clip library that carries a preview mesh.** KayKit's libraries hold the mannequin, so each loads its six skinned meshes and never draws them. A load option that skips meshes would stop the cost | **S** | Loads them whole and ignores the meshes |
+| **Character-vs-character collision.** `CharacterController3D` is a Jolt `CharacterVirtual`, not a body, and no `CharacterVsCharacterCollision` is set up, so two controllers walk through each other | **M** | Removes the closing speed between the fighters in game code |
+| **Sensors, cast filters and a body → entity lookup.** There are no trigger volumes, no ignore-body or layer filters on `RayCast` / `ShapeCastSphere` / `OverlapSphere`, and no way to get from a hit body back to its entity. A controller is not a body, so no cast ever hits a fighter, and a body on a socket would shove the other fighter's controller. Candlewick listed the same three | **M** | Hit and hurt spheres on sockets, tested by the game itself |
+| **Event payloads.** An `AnimationEvent` is a name, a time, a type, a clip and a layer. A damage number or a reach has no place in a `.events` line | **S–M** | Plain event names, with the per-move numbers in a game-side table keyed by clip |
+| **Root motion.** Already listed under "Not in v0.8" ([ROADMAP.md](ROADMAP.md), [docs/animation.md](docs/animation.md#limits)); Marionette is the first game to pay for it. Moving the body by a clip's travel while the pose also moves the hips counted it twice | **L** | In-place clips: the capsule pays each move's net hips travel over its fade-out, and a dodge adds a fixed distance over its `dash` range |

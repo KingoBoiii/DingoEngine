@@ -230,8 +230,9 @@ gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays 
   here, hitbox live from here to here), so a swing's damage window comes from the animation instead of
   a hand-tuned timer that drifts every time the art changes.
 
-**Status**: the engine work is done (P4–P10 of `.claude/plans/2026-10-01-v0.8-animation-plan.md`,
-2026-10-03); *Marionette* comes next, and the release waits for it. Built so far:
+2026-10-03), and so is the example game, *Marionette* (P13, M0–M6, 2026-10-05, closed by a milestone review
+in `.claude/reviews/2026-10-04-marionette-review.md`). v0.8 is not released yet. Built:
+and tuning pass is still to come). v0.8 is not released yet. Built:
 - **Skinned models**: `Model::LoadFromFile` reads skeletons, skin weights and clips from glTF and FBX, including clip libraries (clips without meshes). Static models load exactly as before.
 - **GPU skinning** on Vulkan, D3D11 and D3D12: `SkinnedMeshRendererComponent`, or `Renderer3D::SubmitSkinnedMesh` outside a scene. A model's joint palette uploads once a frame, for up to 64 models by default (256 at most), at up to 128 joints a draw. A custom shader can skin through `DE_SKINNED` and a `SkinData` block.
 - **The animator**: cross-fades, `Blend1D` on a float parameter with the clips kept in step, masked layers (an upper body over locomotion), one-shots that return to what they interrupted, and retargeting by joint name. It runs standalone or as an `AnimatorComponent`.
@@ -239,17 +240,34 @@ gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays 
 - **Joint sockets**: `SetParent(character, "b_RightHand")` hangs a sword on a hand. A kinematic child now ignores its ancestors' bodies, which narrows v0.7.1's known limit.
 - **Model hot-reload in place**: a saved model, or its `.events` file, reloads into the same objects, so the game's pointers stay valid.
 - **Debugging**: the **F7** Animation tab (every animator's layers and states, the last 20 events), skinning stats in **F4**, and a skeleton overlay in the test app.
+- **A retargeting fix found by Marionette**: KayKit's clips key a still translation on `root`, which made `root` the "root-most animated joint", so every retargeted clip lost its hips' motion. Retargeting now counts a translation track only when it leaves the source joint's rest offset (`a81727f`).
 
 **Test**: the test app's **Animation Test** (`--test=anim`): 67 checks (68 with `--anim-skeleton`) across loading, skinning, the animator, blending, events, sockets and hot-reload, on all three backends. Its modes are `--anim=bind|bindstatic|pose|clip|blend|layers|events|crowd`, with `--anim-skeleton` and `--anim-reload`. Guide: [docs/animation.md](docs/animation.md).
 
 **Not in v0.8**: root motion, IK, additive layers and state machines as assets, and skinned shadows (v0.9).
 
-**Example game**: *Marionette* — a close-quarters duel against an escalating opponent, built so that
-no combat timing lives in game code at all. Reach and hit windows come from timeline events on the
-clips; telegraphs and recoveries are cross-fades long enough to read and react to; locomotion blends
-on one speed parameter while a parry layers over the top; and the same clips retarget across three
-fighters of different proportions. If the animation is wrong the fight is wrong — which is precisely
-the pressure this milestone needs to be tested under.
+**Example game**: [Marionette](examples/Marionette/) — a one-arena melee duel against three opponents
+in a row (the Recruit, the Veteran, the Champion), each faster and smarter than the last, built so that
+no combat timing lives in game code at all. The `.events` files beside the clips hold the whole combat
+design: `windup` (the telegraph the AI reads), `hitbox` (the swing's active frames), `combo` (where a
+second press chains), `dash`, `iframes` and `parry`, plus `step_l` / `step_r` for positional
+footsteps. Swords and shields hang on hand sockets, and the hit and hurt spheres are socketed
+entities too, so the spheres `--debug-hitbox` draws are the ones tested. Locomotion is a `Blend1D` on
+one `Move` parameter; a block is a layer masked from the spine up, so a fighter walks and blocks at
+once; attacks, dodges and hit reactions are one-shots. One `Fighter` class serves the player and the
+AI, and the AI sees the opponent through a reaction delay, so a tier-3 parry depends on reading the
+wind-up in time. Four characters (the Knight, the Barbarian and two skeletons) play the same five
+KayKit clip libraries, retargeted by joint name; the free packs share one body, so they differ by
+weapon, pace and uniform scale rather than limb length. Edit a `hitbox` range in a saved `.events`
+file while the game runs (`--hot-reload`, or `--live-edit-demo`, which does it after ten seconds)
+and the next swing changes. If the animation is wrong the fight is wrong — which is precisely the
+pressure this milestone needs to be tested under.
+
+Its flags make runs checkable: `--check` (asset, movement, combat and AI checks, read from the log),
+`--drive=duel|ramp|circle|strafe|wall` (scripted input), `--autoplay` and `--tournament=N` (seeded
+AI-vs-AI bouts), `--freeze --pose=<clip>@<s>` with `--debug-hitbox` (a frozen frame), and
+`--fixed-dt=<s>` for repeatable runs. Marionette also found engine gaps, filed in
+[ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md#8-found-by-marionette-v08).
 
 ## v0.9 — Shadows, Post-processing & VFX
 The visual milestone — and the first one that inherits its dependencies instead of inventing them.

@@ -6,7 +6,7 @@ P4–P12 done). Every `file:line` below was read on that date. Scope source: §6
 
 **Status**: planned. D1–D4 settled by the user on 2026-10-04 on the recommended options; D5 is
 proposed. A fresh Sonnet review (2026-10-04) found 2 High, 6 Medium and 4 Low in the animation
-mechanics, all folded in (§12). M0–M5 (assets, scaffold, movement, combat, AI and bouts, polish) are done (§11); M6 is next.
+mechanics, all folded in (§12). M0–M6 are done (§11): P13 is complete; v0.8 is ready to release.
 
 ---
 
@@ -585,6 +585,23 @@ into the repo yet; M1 copies the files listed under "Repo footprint".
 - Left: a full model reload mid-move keeps that move's return step and a skeleton-id change resets
   the animator's layers (rare, dev-time only); the carry after hit-stop is paid over the 0.05 s
   fade, a quick but continuous slide.
+
+
+**M6** (2026-10-05): a fresh Opus milestone review of all of P13
+(`.claude/reviews/2026-10-04-marionette-review.md`: no Critical or High; 2 Medium, 9 Low, packaging and
+conventions — all fixed), plus:
+
+- `--freeze` implies a fixed delta (on a real delta, frozen captures differed by 400k px run to run as the
+  controllers settled; with it, Vulkan run to run is 0 px and D3D11/D3D12 are 89 px from Vulkan).
+- `--perf` (Release: ~0.95 ms a frame, `Scene::OnUpdate` 0.04 ms; Debug: ~4.3 ms) and `--player-tier=1..3`,
+  which turns tournaments into a ladder (the stronger tier must win 8 of 10).
+- Tuning: the Veteran gained a guard stance and 160 health. Open: a tier-1 AI on the Knight still beats it,
+  because the Knight's sword out-ranges the two-handed axe (see the review's runtime section).
+- Check-only constants moved to `CheckTuning.h`; `TitleScreen` became `Screens`; the weapon glTFs share the
+  characters' PNGs.
+- Docs: README (features, Marionette row, credits for KayKit and the Fox), ROADMAP, ROADMAP-BACKLOG §8,
+  CLAUDE.md, `docs/animation.md` ("Combat windows from events").
+- Verified: 107 checks, the duel, the live edit, the backends, the ladder, perf, the bout-1 hint.
 
 ---
 
