@@ -1,5 +1,6 @@
 #include "Checks.h"
 #include "CheckReport.h"
+#include "CheckTuning.h"
 #include "Combat.h"
 #include "Fighter.h"
 #include "GameAssets.h"
@@ -807,6 +808,61 @@ namespace
 				least, worst));
 	}
 
+	void CheckParryCooldown(CheckReport& report, const GameAssets& assets)
+	{
+		const FighterDef& def = GetPlayerDef();
+		const GameAudio audio{ GameSounds() };
+		Scene scene("Marionette parry cooldown check");
+		const double now = 0.0;
+		const FighterContext context{ scene, assets, audio, now };
+		FighterSpawn spawn;
+		spawn.Controlled = false;
+		Fighter fighter(context, def, spawn);
+		fighter.StartLocomotion(0.0f);
+
+		FighterIntent raise;
+		raise.Block = true;
+		const FighterIntent lower;
+		auto step = [&](const FighterIntent& intent, int frames, const std::function<void()>& watch = {})
+		{
+			fighter.SetIntent(intent);
+			for (int i = 0; i < frames; ++i)
+			{
+				StepFighter(fighter, def);
+				if (watch)
+					watch();
+			}
+		};
+
+		step(raise, 1);
+		const bool firstOpen = fighter.GetState() == FighterState::Block && fighter.IsParryOpen() && !fighter.IsParryDenied();
+
+		const int held = StepsFor(CHECK_PARRY_FIRST_HOLD);
+		step(raise, held - 1);
+		step(lower, 1);
+		const bool lowered = fighter.GetState() == FighterState::Locomotion;
+		step(lower, std::max(StepsFor(CHECK_PARRY_RERAISE_GAP) - held - 1, 0));
+
+		int frames = 0;
+		int windowFrames = 0;
+		bool denied = true;
+		step(raise, StepsFor(CHECK_PARRY_WATCH), [&]
+		{
+			++frames;
+			windowFrames += fighter.IsWindowActive(Events::PARRY) ? 1 : 0;
+			denied = denied && fighter.GetState() == FighterState::Block && fighter.IsParryDenied() && !fighter.IsParryOpen();
+		});
+
+		step(lower, StepsFor(BLOCK_PARRY_COOLDOWN + CHECK_PARRY_COOLED_MARGIN));
+		step(raise, 1);
+		const bool cooled = fighter.GetState() == FighterState::Block && fighter.IsParryOpen() && !fighter.IsParryDenied();
+
+		report.Check(firstOpen && lowered && denied && windowFrames > 0 && cooled,
+			std::format("a Fighter that raises its block {:.1f} s after the previous raise (lowered in between) gets no parry window: none of {} frames reports one, {} of them inside the clip's own {} range; "
+				"a raise {:.1f} s after lowering parries again (BLOCK_PARRY_COOLDOWN {:.1f} s)",
+				CHECK_PARRY_RERAISE_GAP, frames, windowFrames, Events::PARRY, BLOCK_PARRY_COOLDOWN + CHECK_PARRY_COOLED_MARGIN, BLOCK_PARRY_COOLDOWN));
+	}
+
 	void CheckGeometry(CheckReport& report, const GameAssets& assets)
 	{
 		const glm::vec3 a(-1.0f, 0.0f, 0.0f);
@@ -870,6 +926,7 @@ namespace Dingo
 			CheckTravelCarry(report, *skeleton, states, assets);
 			CheckTravelConservation(report, *skeleton, assets);
 			CheckFighterCarry(report, assets, knightSkeleton);
+			CheckParryCooldown(report, assets);
 		}
 
 		if (report.GetFailed() == 0)

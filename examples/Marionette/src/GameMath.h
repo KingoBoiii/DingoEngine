@@ -4,10 +4,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace Dingo::GameMath
 {
+
+	inline constexpr float k_Infinity = std::numeric_limits<float>::infinity();
 
 	inline float WrapAngle(float angle)
 	{
@@ -34,6 +37,14 @@ namespace Dingo::GameMath
 	inline glm::quat YawQuat(float yaw)
 	{
 		return glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+
+	// A fighter's local ground frame (+z forward, +x left) turned by `yaw` into the world's.
+	inline glm::vec2 Rotate(const glm::vec2& local, float yaw)
+	{
+		const float c = std::cos(yaw);
+		const float s = std::sin(yaw);
+		return glm::vec2(local.x * c + local.y * s, -local.x * s + local.y * c);
 	}
 
 	inline glm::vec2 MoveToward(const glm::vec2& current, const glm::vec2& target, float maxStep)

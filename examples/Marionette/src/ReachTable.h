@@ -33,8 +33,8 @@ namespace Dingo
 		// Centre-to-centre ground distances at which the swing touches.
 		const MoveReach& Get(const FighterDef& attacker, const MoveDef& move, const FighterDef& target) const;
 
-		// The reach of the fighter's first light attack, or its heavy if that is farther.
-		float GetOpeningMax(const FighterDef& attacker, const FighterDef& target) const;
+		// How long `Melee_Block`'s parry window lasts from the raise, as its clip says now (so a live edit counts).
+		float GetParryWindow() const;
 
 		void Log(const FighterDef& attacker, const FighterDef& target) const;
 
@@ -67,6 +67,7 @@ namespace Dingo
 
 	private:
 		const GameAssets& m_Assets;
+		size_t m_FighterCount;
 		size_t m_MoveCount;
 		mutable std::vector<Sweep> m_Sweeps;
 		mutable std::vector<MoveReach> m_Reach;

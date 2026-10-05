@@ -1,5 +1,6 @@
 #pragma once
 #include "CameraRig.h"
+#include "GameAssets.h"
 
 #include <DingoEngine.h>
 
@@ -13,12 +14,17 @@ namespace Dingo
 
 	float GetArenaApothem();
 
-	// Destroy it before the audio engine goes: it stops the braziers' crackle.
+	// How far a capsule of radius `margin` standing at `from` can go along the unit `direction` before it meets a
+	// wall.
+	float GetArenaFreeDistance(const glm::vec2& from, const glm::vec2& direction, float margin);
+
+	// Draws with the assets' arena materials and mesh, which outlive it. Destroy it before the audio engine goes: it
+	// stops the braziers' crackle.
 	class ArenaWorld
 	{
 	public:
 		// With `audio`, each brazier crackles in a loop.
-		ArenaWorld(Scene& scene, const GameAudio* audio = nullptr);
+		ArenaWorld(Scene& scene, const GameAssets& assets, const GameAudio* audio = nullptr);
 		~ArenaWorld();
 
 		ArenaWorld(const ArenaWorld&) = delete;
@@ -49,12 +55,8 @@ namespace Dingo
 
 	private:
 		Scene& m_Scene;
+		ArenaAssets m_Arena;
 		Mesh* m_BoxMesh = nullptr;
-		Mesh* m_FlameMesh = nullptr;
-		Material* m_FloorMaterial = nullptr;
-		Material* m_WallMaterial = nullptr;
-		Material* m_BrazierMaterial = nullptr;
-		Material* m_FlameMaterial = nullptr;
 		std::vector<Occluder> m_Occluders;
 		std::vector<AudioSoundId> m_Crackles;
 	};

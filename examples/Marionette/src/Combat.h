@@ -41,10 +41,12 @@ namespace Dingo
 		std::string DefenceClip;
 		float DefenceTime = 0.0f;
 		std::optional<ClipRange> Window;
-		// A parry and a dodge fall inside their window; a block falls past the parry window.
+		// A parry and a dodge fall inside their window; a block falls past the parry window, or has none.
 		bool InWindow = false;
 		// The parry stood on a raise the animator had not reported yet: it opens at the first frame of the raise.
 		bool ParryPending = false;
+		// The block was raised inside BLOCK_PARRY_COOLDOWN of the last one coming down: it has no parry window to fall in.
+		bool ParryDenied = false;
 		float Damage = 0.0f;
 		float Health = 0.0f;
 

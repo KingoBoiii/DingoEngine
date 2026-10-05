@@ -28,6 +28,12 @@ namespace Dingo
 	inline constexpr float END_STATS_Y         = 2.75f;
 	// The last blows of a win are still being pressed; the screen waits them out.
 	inline constexpr float END_INPUT_DELAY     = 1.0f;
+	// The Esc that left a bout must not also quit from the Title it lands on.
+	inline constexpr float TITLE_ESC_GRACE     = 0.5f;
+	inline constexpr float MISSING_HEADING_SIZE = 0.9f;
+	inline constexpr float MISSING_HEADING_Y   = 0.6f;
+	inline constexpr float MISSING_PROMPT_SIZE = 0.45f;
+	inline constexpr float MISSING_PROMPT_Y    = -0.6f;
 	// What --end shows for the run's result.
 	inline constexpr float END_DEMO_SECONDS    = 312.0f;
 	inline constexpr int   END_DEMO_RETRIES    = 2;
@@ -62,6 +68,7 @@ namespace Dingo
 	inline constexpr float BRAZIER_LIGHT_RISE   = 0.6f;
 	inline constexpr float BRAZIER_LIGHT_RANGE  = 9.0f;
 	inline constexpr float BRAZIER_LIGHT_INTENSITY = 0.8f;
+	inline constexpr float FLAME_MESH_RADIUS    = 0.5f;
 	inline constexpr uint32_t FLAME_MESH_RINGS  = 6;
 	inline constexpr uint32_t FLAME_MESH_SEGMENTS = 8;
 
@@ -152,7 +159,7 @@ namespace Dingo
 	// --- Combat --------------------------------------------------------------------
 	inline constexpr float HEALTH_KNIGHT        = 100.0f;
 	inline constexpr float HEALTH_MINION        = 80.0f;
-	inline constexpr float HEALTH_BARBARIAN     = 110.0f;
+	inline constexpr float HEALTH_BARBARIAN     = 160.0f;
 	inline constexpr float HEALTH_WARRIOR       = 130.0f;
 
 	inline constexpr float DAMAGE_LIGHT_1H      = 12.0f;
@@ -183,6 +190,9 @@ namespace Dingo
 
 	// Seconds of the fighter's own time, which hit-stop slows.
 	inline constexpr float INPUT_BUFFER         = 0.2f;
+	// After the block comes down, a raise inside this time gets no parry window: tapping block in step with the
+	// window would otherwise parry every swing.
+	inline constexpr float BLOCK_PARRY_COOLDOWN = 0.4f;
 	inline constexpr float RIPOSTE_WINDOW       = 0.7f;
 	inline constexpr float BLOCK_ARC_DEG        = 75.0f;
 	inline constexpr float BLOCK_CHIP_FRACTION  = 0.2f;
@@ -286,46 +296,6 @@ namespace Dingo
 	inline constexpr float OCCLUSION_RESTORE_DELAY = 0.35f;
 	inline constexpr std::array<float, 3> OCCLUSION_SAMPLE_FRACTIONS = { 0.0f, 0.5f, 1.0f };
 
-	// --- Scripted drive (--drive) --------------------------------------------------
-	inline constexpr float DRIVE_RAMP_SECONDS   = 4.0f;
-	inline constexpr float DRIVE_CIRCLE_RADIUS  = 3.0f;
-	inline constexpr float DRIVE_ORBIT_RADIUS   = 3.3f;
-	inline constexpr float DRIVE_ORBIT_GAIN     = 1.5f;
-	inline constexpr float DRIVE_LOG_INTERVAL   = 0.5f;
-	inline constexpr float DRIVE_LANE_START     = -7.0f;
-	inline constexpr float DRIVE_LANE_OFFSET    = 5.5f;
-	inline constexpr float DRIVE_FACE_RIGHT_DEG = 90.0f;
-	inline constexpr float DRIVE_FACE_LEFT_DEG  = -90.0f;
-	inline constexpr float DRIVE_STRAFE_HOLD    = 1.0f;
-	inline constexpr float DRIVE_STRAFE_ORBIT_A = 3.5f;
-	inline constexpr float DRIVE_STRAFE_ORBIT_B = 6.0f;
-	inline constexpr float DRIVE_STRAFE_RETREAT = 8.0f;
-	inline constexpr float DRIVE_STRAFE_LOOP    = 10.0f;
-	inline constexpr float DRIVE_WALL_START_X   = 2.0f;
-	inline constexpr float DRIVE_WALL_CONTACT_SLACK = 0.25f;
-	inline constexpr float DRIVE_WALL_HOLD      = 1.0f;
-	inline constexpr float DRIVE_WALL_DEADLINE  = 8.0f;
-	inline constexpr float DRIVE_WALL_MOVE_LIMIT = 0.1f;
-	inline constexpr float DRIVE_WALL_QUIET     = 0.5f;
-
-	// --- Scripted duel (--drive=duel) ----------------------------------------------
-	// The leads are real seconds before the opponent's hitbox opens (its clip time over its pace). The gap
-	// is what the weakest reach in the script covers: the riposte at a staggered opponent, 0.2 m further
-	// back after the block has pushed the player away.
-	inline constexpr float DUEL_GAP             = 1.1f;
-	inline constexpr int   DUEL_CHAIN_LENGTH    = 3;
-	inline constexpr float DUEL_START_DELAY     = 0.6f;
-	inline constexpr float DUEL_SETTLE          = 0.5f;
-	inline constexpr float DUEL_LATE_BLOCK_LEAD = 0.55f;
-	inline constexpr float DUEL_PARRY_LEAD      = 0.08f;
-	inline constexpr float DUEL_DODGE_LEAD      = 0.17f;
-	inline constexpr float DUEL_RIPOSTE_DELAY   = 0.15f;
-	inline constexpr float DUEL_CHAIN_GAP       = 1.1f;
-	inline constexpr float DUEL_BUFFER_LEAD     = 0.12f;
-	inline constexpr float DUEL_ROUND_TIMEOUT   = 6.0f;
-	inline constexpr float DUEL_DEADLINE        = 60.0f;
-	inline constexpr float DUEL_END_DELAY       = 0.6f;
-
 	// --- Audio ---------------------------------------------------------------------
 	inline constexpr float AUDIO_FOOTSTEP_VOLUME = 0.7f;
 	inline constexpr float AUDIO_FOOTSTEP_QUIET  = 0.55f;
@@ -333,96 +303,14 @@ namespace Dingo
 	inline constexpr float AUDIO_STEP_NEAR       = 14.0f;
 	inline constexpr float AUDIO_STEP_FAR        = 45.0f;
 
-	// --- Asset checks --------------------------------------------------------------
-	inline constexpr float CHECK_POSE_TIME      = 0.5f;
-	inline constexpr float CHECK_POSE_TOLERANCE = 1e-4f;
-	inline constexpr float CHECK_HIPS_TRAVEL    = 0.1f;
-
-	// --- Movement checks -----------------------------------------------------------
-	inline constexpr float CHECK_SAMPLE_STEP    = 1.0f / 240.0f;
-	inline constexpr float CHECK_CONTACT_BAND   = 0.02f;
-	inline constexpr float CHECK_EVENT_TOLERANCE = 0.03f;
-	inline constexpr float CHECK_PHASE_TOLERANCE = 0.01f;
-	inline constexpr float CHECK_PHASE_MATCH    = 0.002f;
-	inline constexpr float CHECK_STEP_EARLY_MAX = 0.03f;
-	inline constexpr float CHECK_STEP_LATE_MAX  = 0.09f;
-	inline constexpr float CHECK_SPEED_TOLERANCE = 0.1f;
-	inline constexpr float CHECK_ANGLE_TOLERANCE_DEG = 5.0f;
-	inline constexpr float CHECK_GAIT_CYCLES    = 4.0f;
-	inline constexpr float CHECK_GAIT_STEP      = 1.0f / 60.0f;
-	inline constexpr float CHECK_SWEEP_STEP     = 0.25f;
-	inline constexpr float CHECK_RAMP_SECONDS   = 4.0f;
-	inline constexpr float CHECK_RAMP_HOLD      = 3.0f;
-	inline constexpr std::array<float, 5> CHECK_RAMP_LENGTHS = { 3.0f, 3.5f, 4.0f, 4.5f, 5.0f };
-	inline constexpr std::array<float, 2> CHECK_RAMP_DOWN_LENGTHS = { 3.0f, 5.0f };
-	inline constexpr float CHECK_EVEN_TOLERANCE = 0.03f;
-	inline constexpr float CHECK_FOOT_GAP_MIN   = 0.6f;
-	inline constexpr float CHECK_FOOT_GAP_MAX   = 1.4f;
-	inline constexpr size_t CHECK_RAMP_MIN_STEPS = 4;
-	inline constexpr float CHECK_POP_RATIO      = 1.5f;
-	inline constexpr float CHECK_POP_FLOOR      = 1.0e-4f;
-	inline constexpr float CHECK_POP_PROBE      = 0.1f;
-	// The strafe clip's 0.8 s at STRAFE_PLAYBACK: the longest cycle any gait plays.
-	inline constexpr float CHECK_SLOWEST_CYCLE  = 0.8f / STRAFE_PLAYBACK;
-	inline constexpr float CHECK_GAP_MAX        = 0.5f * CHECK_SLOWEST_CYCLE * 1.3f;
-	inline constexpr float CHECK_STEP_GAP_MIN   = 0.24f;
-	inline constexpr int   CHECK_ZONE_PHASES    = 16;
-	inline constexpr size_t CHECK_ZONE_MIN_STEPS = 8;
-	// The stagger is three whole frames and the hold lands a fifth of a frame past a frame boundary, so no switch sits on one.
-	inline constexpr float CHECK_ZONE_HOLD      = 1.5367f;
-	inline constexpr float CHECK_ZONE_STAGGER   = 0.05f;
-	inline constexpr float CHECK_ZONE_BLEND_SECONDS = 4.0f;
-
-	// --- Combat checks -------------------------------------------------------------
-	inline constexpr int   DERIVE_SPEED_SPAN    = 2;
-	inline constexpr float DERIVE_HITBOX_FRACTION = 0.5f;
-	inline constexpr float DERIVE_WINDUP_FLOOR  = 0.1f;
-	inline constexpr float DERIVE_WINDUP_MIN    = 0.1f;
-	inline constexpr float DERIVE_DASH_FRACTION = 0.25f;
-	inline constexpr float DERIVE_COMBO_MARGIN  = 0.05f;
-	inline constexpr float DODGE_IFRAMES_BEGIN  = 0.2f;
-	inline constexpr float DODGE_IFRAMES_END    = 0.75f;
-	inline constexpr float PARRY_WINDOW_END     = 0.2f;
-	inline constexpr float CHECK_WINDOW_TOLERANCE = 0.03f;
-	inline constexpr float CHECK_ANIMATOR_STEP  = 1.0f / 60.0f;
-	inline constexpr int   CHECK_PARRY_RAISES   = 8;
-	inline constexpr float CHECK_DEATH_SETTLE   = 1.0f;
-	inline constexpr float CHECK_DEATH_WALK     = 0.3f;
-	inline constexpr float CHECK_DEATH_RAISE    = 0.2f;
-	inline constexpr float CHECK_DEATH_MARGIN   = 0.3f;
-	inline constexpr float CHECK_PARRY_RUN_IN   = 0.1f;
-	inline constexpr float CHECK_PARRY_RUN_IN_STEP = 0.137f;
-	inline constexpr float CHECK_PARRY_WATCH    = 0.5f;
-	inline constexpr float CHECK_RAISE_WATCH    = 0.4f;
-	inline constexpr float CHECK_BLOCK_SETTLE   = 0.3f;
-	inline constexpr float CHECK_BLOCK_LOWER_WATCH = 0.25f;
-	inline constexpr float CHECK_BLOCK_HOLD     = 2.5f;
-	inline constexpr float CHECK_BLOCK_HIT_WATCH = 1.2f;
-	inline constexpr float CHECK_BLOCK_HIT_AFTER = 0.5f;
-	inline constexpr float CHECK_RIPOSTE_HOLD   = 0.4f;
-	inline constexpr float CHECK_RETURN_WATCH   = 1.0f;
-	// The most the hips' step may change from one frame to the next once a dodge is cut at mid-dash, with no extra
-	// distance so that only the pose and the carry are measured. Measured by --check: a carried cut 0.031 m at most
-	// on the four dodges, an uncarried one 0.121 m at least.
-	inline constexpr float CHECK_CARRY_JERK_MAX = 0.08f;
-	inline constexpr int   CHECK_CARRY_FRAMES   = 12;
-	inline constexpr float CHECK_TRAVEL_TOLERANCE = 1.0e-4f;
-	inline constexpr float CHECK_TRAVEL_SCALE   = 1.25f;
-	// Paying a carry that long leaves enough of it in flight for a second move to cut in on top of it.
-	inline constexpr float CHECK_TRAVEL_SPREAD  = 0.2f;
-	inline constexpr int   CHECK_TRAVEL_SPREAD_STEPS = 6;
-	// A dodge cut at mid-dash owes at least this much, or the Fighter-level check would pass on nothing.
-	inline constexpr float CHECK_FIGHTER_CARRY_MIN = 0.1f;
-	inline constexpr int   CHECK_RAISE_FINISH_STEPS = 200;
-	inline constexpr int   CHECK_ONE_SHOT_STEPS = 400;
-	inline constexpr float CHECK_BLADE_MIN_LENGTH = 0.5f;
-	inline constexpr float CHECK_BLADE_MAX_LENGTH = 2.0f;
-	inline constexpr float CHECK_DASH_MIN_TRAVEL = 0.02f;
-	inline constexpr float CHECK_GEOMETRY_TOLERANCE = 1e-5f;
-	inline constexpr float CHECK_AXIS_TOLERANCE = 1e-4f;
-	inline constexpr float CHECK_POSE_HOLD_TOLERANCE = 1e-4f;
+	// --- Debug flags ---------------------------------------------------------------
+	// --break-hitbox moves every hitbox this far past where its one-shot starts returning, for this long.
 	inline constexpr float BREAK_HITBOX_MARGIN  = 0.06f;
 	inline constexpr float BREAK_HITBOX_LENGTH  = 0.1f;
+
+	// --perf: seconds to settle, then the frames averaged.
+	inline constexpr float PERF_WARMUP_SECONDS  = 3.0f;
+	inline constexpr int   PERF_FRAMES          = 600;
 
 	// --- Live edit (--live-edit-demo) ----------------------------------------------
 	// Scene seconds until the copy's hitbox range moves, and how far later it moves to (less if the one-shot would
@@ -435,6 +323,7 @@ namespace Dingo
 
 	// Scene::OnUpdate caps its delta at 4/60 s, so a longer fixed step would be silently shortened.
 	inline constexpr float FIXED_DT_MAX         = 4.0f / 60.0f;
+	inline constexpr int   STEPS_PER_FRAME_MAX  = 64;
 
 	// --- Bouts ---------------------------------------------------------------------
 	inline constexpr int   BOUT_COUNT           = 3;
@@ -452,14 +341,6 @@ namespace Dingo
 	inline constexpr float TAUNT_FADE_OUT       = 0.15f;
 	// How far into its taunt the opponent is held for the --freeze intro frame.
 	inline constexpr float INTRO_FREEZE_TIME    = 0.45f;
-
-	// --- Tournament (--tournament=N) -----------------------------------------------
-	inline constexpr float TOURNAMENT_BOUT_LIMIT = 90.0f;
-	inline constexpr int   TOURNAMENT_MAX       = 1000;
-	inline constexpr int   TOURNAMENT_STEPS_PER_FRAME = 8;
-	inline constexpr int   STEPS_PER_FRAME_MAX  = 64;
-	// Tier 3 has to win this fraction of the runs against a lower tier (8 of 10).
-	inline constexpr float TOURNAMENT_PASS_FRACTION = 0.8f;
 
 	// --- AI ------------------------------------------------------------------------
 	// A tier is a bundle of probabilities and delays; every behaviour reads its own row.
@@ -491,12 +372,17 @@ namespace Dingo
 		float ApproachIntent;
 		// How far outside its own reach it likes to wait.
 		float GapSlack;
+		// A tier with a GuardChance raises its block while the opponent is near, with no swing seen: at each
+		// decision with this chance, and holds it for a time drawn between the two holds.
+		float GuardChance;
+		float GuardHoldMin;
+		float GuardHoldMax;
 	};
 
 	inline constexpr std::array<AiTierParams, 3> AI_TIERS = { {
-		{ "Recruit",  0.45f, 1.6f, 2.4f, 0.0f,  1, 0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, false, 0.0f, 0.0f, 0.0f, 0.5f,  0.0f },
-		{ "Veteran",  0.30f, 1.0f, 1.8f, 0.3f,  2, 0.7f,  0.0f,  0.0f,  0.0f, 0.33f, 1.0f, 0.6f, 0.25f, 0.6f, true,  0.0f, 0.5f, 0.9f, 0.85f, 0.25f },
-		{ "Champion", 0.18f, 0.6f, 1.2f, 0.25f, 3, 0.95f, 0.35f, 0.6f,  0.3f, 1.0f,  0.0f, 1.0f, 0.12f, 1.0f, true,  0.3f, 0.4f, 0.8f, 1.0f,  0.25f },
+		{ "Recruit",  0.45f, 1.6f, 2.4f, 0.0f,  1, 0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f, 0.0f, 0.0f,  0.0f, false, 0.0f, 0.0f, 0.0f, 0.5f,  0.0f,  0.0f, 0.0f, 0.0f },
+		{ "Veteran",  0.30f, 0.7f, 1.2f, 0.4f,  2, 1.0f,  0.0f,  0.0f,  0.0f, 0.33f, 1.0f, 0.6f, 0.25f, 0.9f, true,  0.0f, 0.3f, 0.6f, 1.0f,  0.15f, 0.5f, 0.6f, 1.2f },
+		{ "Champion", 0.18f, 0.6f, 1.2f, 0.25f, 3, 0.95f, 0.35f, 0.6f,  0.3f, 1.0f,  0.0f, 1.0f, 0.12f, 1.0f, true,  0.3f, 0.4f, 0.8f, 1.0f,  0.25f, 0.0f, 0.0f, 0.0f },
 	} };
 
 	// The block goes up this long before the opponent's hitbox opens, so the hit falls inside the parry window.
@@ -512,6 +398,12 @@ namespace Dingo
 	inline constexpr float AI_THREAT_MARGIN     = 0.3f;
 	inline constexpr float AI_THREAT_ARC_DEG    = 70.0f;
 	inline constexpr float AI_BLOCK_LINGER      = 0.3f;
+	// Seconds between guard decisions; after a guard they count from when it comes down, so the guard never chains
+	// into the next and the offence gets a window to swing.
+	inline constexpr float AI_GUARD_DECIDE_MIN  = 0.3f;
+	inline constexpr float AI_GUARD_DECIDE_MAX  = 0.5f;
+	// The guard stands while the opponent is within the longer of the two fighters' reaches plus this.
+	inline constexpr float AI_GUARD_MARGIN      = 0.3f;
 	inline constexpr float AI_PLAN_MAX_SECONDS  = 1.8f;
 	inline constexpr float AI_LATE_SECONDS      = -0.05f;
 	inline constexpr float AI_PUNISH_COOLDOWN   = 0.5f;
@@ -520,6 +412,10 @@ namespace Dingo
 	inline constexpr float AI_STRAFE_TURN_MIN   = 1.0f;
 	inline constexpr float AI_STRAFE_TURN_MAX   = 2.5f;
 	inline constexpr float AI_STRAFE_FLIP_CHANCE = 0.5f;
+	inline constexpr float AI_STRAFE_START_CHANCE = 0.5f;
+	inline constexpr float AI_DODGE_SIDE_CHANCE = 0.5f;
+	// The parry window the AI plans against when the block clip or the reach table is not there to say.
+	inline constexpr float AI_PARRY_WINDOW_FALLBACK = 0.2f;
 	inline constexpr float AI_SPACING_TOLERANCE = 0.2f;
 	inline constexpr float AI_SPACING_GAIN      = 1.5f;
 	inline constexpr float AI_BACKOFF_INTENT    = 0.6f;
@@ -541,17 +437,6 @@ namespace Dingo
 	inline constexpr float REACH_SANE_MIN       = 0.8f;
 	inline constexpr float REACH_SANE_MAX       = 2.8f;
 	inline constexpr float REACH_SANE_DELAY     = 1.5f;
-
-	// --- AI checks -----------------------------------------------------------------
-	inline constexpr float CHECK_AI_STEP        = 1.0f / 60.0f;
-	inline constexpr int   CHECK_AI_SWINGS      = 300;
-	inline constexpr float CHECK_AI_SWING_GAP   = 3.0f;
-	inline constexpr float CHECK_AI_DISTANCE    = 1.2f;
-	inline constexpr float CHECK_AI_LAG_SLACK   = 1.0e-4f;
-	inline constexpr int   CHECK_AI_SEEDS       = 6;
-	inline constexpr float CHECK_AI_CHANCE_LOW  = 0.25f;
-	inline constexpr float CHECK_AI_CHANCE_HIGH = 0.42f;
-	inline constexpr float CHECK_AI_DODGE_SECONDS = 0.32f;
 
 	// --- HUD -----------------------------------------------------------------------
 	inline constexpr float HUD_PADDING          = 0.5f;
@@ -586,6 +471,10 @@ namespace Dingo
 	inline constexpr float HUD_HINT_SIZE        = 0.34f;
 	inline constexpr float HUD_HINT_RISE        = 0.6f;
 	inline constexpr float HUD_HINT_SECONDS     = 12.0f;
+	inline constexpr float HUD_HINT_FADE        = 2.0f;
+	// One line across the bottom of a 16:9 window: keep it about as long as this.
+	inline constexpr const char* HUD_HINT_KEYBOARD = "WASD move (Ctrl walk)   J / LMB light   K / RMB heavy   Shift / L block (tap once to parry)   Space dodge   Esc title";
+	inline constexpr const char* HUD_HINT_GAMEPAD = "Stick move   X light   Y heavy   RB block (tap once to parry)   A dodge   Start title";
 
 	// --- Colors --------------------------------------------------------------------
 	inline constexpr glm::vec4 COLOR_BG         = { 0.016f, 0.016f, 0.03f, 1.0f };

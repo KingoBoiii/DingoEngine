@@ -25,7 +25,7 @@ namespace Dingo
 	private:
 		const GameAssets* m_Assets;
 		std::unique_ptr<Showcase> m_Showcase;
-		Font* m_Font = nullptr;
+		float m_Age = 0.0f;
 	};
 
 	// Reads the run's result once, as it starts: the layer rebuilds this scene after every visit. A win shows the
@@ -45,7 +45,6 @@ namespace Dingo
 		const MatchState* m_Match;
 		const GameAssets* m_Assets;
 		std::unique_ptr<Showcase> m_Showcase;
-		Font* m_Font = nullptr;
 		float m_Age = 0.0f;
 	};
 

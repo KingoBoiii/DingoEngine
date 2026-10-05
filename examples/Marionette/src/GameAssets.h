@@ -13,6 +13,8 @@
 namespace Dingo
 {
 
+	class HitDebugView;
+
 	// A clip library whose clips' events a hot-reload replaced: its .events file, and how many clips now differ.
 	struct EventChange
 	{
@@ -20,8 +22,19 @@ namespace Dingo
 		int Clips = 0;
 	};
 
-	// Loads everything the Moveset names through the AssetManager, which owns the models and textures.
-	// The lit materials are the game's, so they go before the renderer does: destroy this in OnDetach.
+	// What the arena is built from, made once: every bout and every screen with the arena in it draws with these.
+	struct ArenaAssets
+	{
+		Mesh* FlameMesh = nullptr;
+		Material* Floor = nullptr;
+		Material* Wall = nullptr;
+		Material* Brazier = nullptr;
+		Material* Flame = nullptr;
+	};
+
+	// Loads everything the Moveset names through the AssetManager, which owns the models, the textures and the font.
+	// The lit materials, the arena's mesh and the debug view are the game's, so they go before the renderer does:
+	// destroy this in OnDetach.
 	class GameAssets
 	{
 	public:
@@ -36,6 +49,14 @@ namespace Dingo
 		Texture* GetTexture(const char* path) const;
 		// One per texture, shared by the fighters that wear it and the weapons they carry.
 		Material* GetMaterial(const FighterDef& fighter) const;
+		Font* GetFont() const { return m_Font; }
+		const ArenaAssets& GetArena() const { return m_Arena; }
+		// Null unless --debug-hitbox.
+		const HitDebugView* GetDebugView() const { return m_DebugView.get(); }
+
+		// What failed to load that a bout cannot be played without; empty when it can.
+		const std::vector<std::string>& GetProblems() const { return m_Problems; }
+		bool IsPlayable() const { return m_Problems.empty(); }
 
 		// In GetLibraryDefs() order; null where a library failed to load.
 		std::span<Model* const> GetLibraries() const { return m_Libraries; }
@@ -60,6 +81,8 @@ namespace Dingo
 		Model* LoadModel(const char* path);
 		Texture* LoadTexture(const char* path);
 		std::shared_ptr<AudioClip> LoadSound(const char* path);
+		void BuildArena();
+		void FindProblems();
 		void BreakHitboxes();
 		void WatchEvents();
 
@@ -68,8 +91,12 @@ namespace Dingo
 		std::unordered_map<std::string, Texture*> m_Textures;
 		std::unordered_map<std::string, Material*> m_Materials;
 		std::vector<Model*> m_Libraries;
+		Font* m_Font = nullptr;
+		ArenaAssets m_Arena;
+		std::unique_ptr<HitDebugView> m_DebugView;
 		ClipSet m_Clips;
 		GameSounds m_Sounds;
+		std::vector<std::string> m_Problems;
 		std::vector<std::vector<ClipWatch>> m_Watches;
 		uint32_t m_EventGeneration = 0;
 	};

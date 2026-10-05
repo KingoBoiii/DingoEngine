@@ -1,24 +1,33 @@
 #include "Fighter.h"
+#include "ArenaWorld.h"
 #include "GameMath.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
-#include <limits>
+#include <numbers>
 #include <string>
 
 namespace
 {
 	using namespace Dingo;
 
-	constexpr float k_Infinity = std::numeric_limits<float>::infinity();
+	constexpr float k_HitboxSlack = 1.0e-3f;
 
-	glm::vec2 Rotate(const glm::vec2& local, float yaw)
+	struct DodgeOption
 	{
-		const float c = std::cos(yaw);
-		const float s = std::sin(yaw);
-		return glm::vec2(local.x * c + local.y * s, -local.x * s + local.y * c);
-	}
+		const char* Clip;
+		float Angle;
+	};
+
+	// Where each clip carries the fighter, relative to its facing; a tie goes to the earlier one.
+	constexpr std::array<DodgeOption, 4> k_DodgeOptions = { {
+		{ Clips::DODGE_FORWARD, 0.0f },
+		{ Clips::DODGE_BACKWARD, std::numbers::pi_v<float> },
+		{ Clips::DODGE_LEFT, 0.5f * std::numbers::pi_v<float> },
+		{ Clips::DODGE_RIGHT, -0.5f * std::numbers::pi_v<float> },
+	} };
 }
 
 namespace Dingo
@@ -289,6 +298,7 @@ namespace Dingo
 
 	void Fighter::Update(float deltaTime, const Fighter* opponent)
 	{
+		m_Opponent = opponent;
 		if (!m_Valid)
 			return;
 
@@ -339,6 +349,7 @@ namespace Dingo
 		const float ownTime = deltaTime * m_AnimationRate / m_Def.Pace;
 		m_LightBuffer = std::max(m_LightBuffer - ownTime, 0.0f);
 		m_RiposteLeft = std::max(m_RiposteLeft - ownTime, 0.0f);
+		m_ParryCooldown = std::max(m_ParryCooldown - ownTime, 0.0f);
 		if (m_Intent.Light)
 			m_LightBuffer = INPUT_BUFFER;
 
@@ -374,7 +385,7 @@ namespace Dingo
 				return;
 			}
 		}
-		if (m_Intent.Light && !m_Def.LightChain.empty())
+		if ((m_Intent.Light || m_LightBuffer > 0.0f) && !m_Def.LightChain.empty())
 		{
 			if (const MoveDef* first = FindMove(m_Def.LightChain[0]))
 			{
@@ -501,10 +512,82 @@ namespace Dingo
 		return relative > 0.0f ? Clips::DODGE_LEFT : Clips::DODGE_RIGHT;
 	}
 
+	// The pose carries the hips along a dodge, whatever the wall does, so a dodge that would sink the pose into a wall
+	// loses its extra distance, and if the pose alone would, the next nearest direction goes instead.
+	Fighter::DodgeRoom Fighter::MeasureDodge(const AnimationClip& clip) const
+	{
+		DodgeRoom room;
+		room.Extra = DODGE_EXTRA_DISTANCE;
+
+		MoveTravel probe;
+		probe.Begin(m_Skeleton, clip, m_Def.Scale, DODGE_FADE_OUT, 1.0f);
+		const glm::vec2 unit = probe.GetDashStep();
+		const float unitLength = glm::length(unit);
+		if (!(unitLength > 1.0e-6f))
+			return room;
+
+		const glm::vec2 direction = GameMath::Rotate(unit / unitLength, m_Yaw);
+		const float pose = glm::length(probe.GetReturnStep());
+		const glm::vec2 from = GetGroundPosition();
+		const float wall = GetArenaFreeDistance(from, direction, m_Radius);
+
+		float free = wall;
+		if (m_Opponent && m_Opponent->m_Valid)
+		{
+			const glm::vec2 toOpponent = m_Opponent->GetGroundPosition() - from;
+			const float reach = m_Radius + m_Opponent->m_Radius;
+			const float along = glm::dot(toOpponent, direction);
+			const float across = glm::dot(toOpponent, toOpponent) - along * along;
+			if (along > 0.0f && across < reach * reach)
+				free = std::min(free, std::max(along - std::sqrt(reach * reach - across), 0.0f));
+		}
+
+		room.Clear = pose <= wall;
+		room.Extra = std::clamp((free - pose) / m_Def.Scale, 0.0f, DODGE_EXTRA_DISTANCE);
+		return room;
+	}
+
+	Fighter::DodgePlan Fighter::PlanDodge() const
+	{
+		const std::string_view chosen = PickDodgeClip();
+		const float length = glm::length(m_Intent.Move);
+		const float wanted = length > MOVE_DEADZONE ? GameMath::WrapAngle(GameMath::YawOf(m_Intent.Move / length) - m_Yaw) : std::numbers::pi_v<float>;
+
+		std::array<const DodgeOption*, k_DodgeOptions.size()> order;
+		for (size_t i = 0; i < order.size(); ++i)
+			order[i] = &k_DodgeOptions[i];
+		std::stable_sort(order.begin(), order.end(), [&](const DodgeOption* a, const DodgeOption* b)
+		{
+			const bool first = chosen == a->Clip;
+			if (first || chosen == b->Clip)
+				return first && chosen != b->Clip;
+			return std::abs(GameMath::WrapAngle(wanted - a->Angle)) < std::abs(GameMath::WrapAngle(wanted - b->Angle));
+		});
+
+		DodgePlan fallback;
+		for (size_t rank = 0; rank < order.size(); ++rank)
+		{
+			const AnimationClip* clip = m_Context.Assets.GetClip(order[rank]->Clip);
+			if (!clip)
+			{
+				if (rank == 0)
+					return fallback;
+				continue;
+			}
+
+			const DodgeRoom room = MeasureDodge(*clip);
+			if (rank == 0)
+				fallback = { clip, room.Extra };
+			if (room.Clear)
+				return { clip, room.Extra };
+		}
+		return fallback;
+	}
+
 	void Fighter::StartDodge(Animator& animator)
 	{
-		const AnimationClip* clip = m_Context.Assets.GetClip(PickDodgeClip());
-		if (!clip)
+		const DodgePlan plan = PlanDodge();
+		if (!plan.Clip)
 			return;
 
 		LowerBlock(animator, 0.0f);
@@ -513,13 +596,13 @@ namespace Dingo
 		m_MoveClip = nullptr;
 
 		ReleaseTravel(animator, DODGE_FADE_IN);
-		animator.PlayOneShot(clip, DODGE_FADE_IN, DODGE_FADE_OUT, 0);
-		BeginTravel(*clip, DODGE_FADE_OUT, DODGE_EXTRA_DISTANCE);
+		animator.PlayOneShot(plan.Clip, DODGE_FADE_IN, DODGE_FADE_OUT, 0);
+		BeginTravel(*plan.Clip, DODGE_FADE_OUT, plan.Extra);
 		if (m_Context.LogCombat)
 		{
 			const glm::vec2 net = m_Travel.GetReturnStep() / m_Def.Scale;
-			DE_INFO("[Dodge] {} {} t={:.3f} net hips ({:.3f}, {:.3f}) m, extra {:.2f} m", m_Def.Name, clip->GetName(), m_Context.Time, net.x, net.y,
-				glm::length(m_Travel.GetDashStep()));
+			DE_INFO("[Dodge] {} {} t={:.3f} net hips ({:.3f}, {:.3f}) m, extra {:.2f} of {:.2f} m", m_Def.Name, plan.Clip->GetName(), m_Context.Time, net.x, net.y,
+				glm::length(m_Travel.GetDashStep()), DODGE_EXTRA_DISTANCE * m_Def.Scale);
 		}
 	}
 
@@ -541,7 +624,7 @@ namespace Dingo
 		if (late && m_LastDelta > 0.0f)
 		{
 			const glm::vec2 first = m_Travel.Step(m_LastDelta * m_AnimationRate);
-			m_Extra += Rotate(first, m_Yaw) / m_LastDelta;
+			m_Extra += GameMath::Rotate(first, m_Yaw) / m_LastDelta;
 			if (CharacterController3D* controller = m_Context.World.GetCharacterController(m_Entity))
 				PushVelocity(*controller);
 		}
@@ -556,7 +639,7 @@ namespace Dingo
 		if (!(deltaTime > 0.0f))
 			return glm::vec2(0.0f);
 
-		return Rotate(m_Travel.Step(deltaTime * m_AnimationRate), m_Yaw) / deltaTime;
+		return GameMath::Rotate(m_Travel.Step(deltaTime * m_AnimationRate), m_Yaw) / deltaTime;
 	}
 
 	void Fighter::PushVelocity(CharacterController3D& controller) const
@@ -583,8 +666,9 @@ namespace Dingo
 		m_BlockUp = true;
 		m_BlockRaising = true;
 		m_ParryBegun = false;
+		m_ParryDenied = m_ParryCooldown > 0.0f;
 		if (m_Context.LogCombat)
-			DE_INFO("[Block] {} raised t={:.3f}", m_Def.Name, m_Context.Time);
+			DE_INFO("[Block] {} raised t={:.3f}{}", m_Def.Name, m_Context.Time, m_ParryDenied ? " (no parry window: lowered too recently)" : "");
 	}
 
 	void Fighter::LowerBlock(Animator& animator, float fadeSeconds)
@@ -596,6 +680,7 @@ namespace Dingo
 		m_BlockUp = false;
 		m_BlockRaising = false;
 		m_RiposteLeft = 0.0f;
+		m_ParryCooldown = BLOCK_PARRY_COOLDOWN;
 	}
 
 	void Fighter::Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut, bool late)
@@ -681,7 +766,7 @@ namespace Dingo
 
 	bool Fighter::IsParryOpen() const
 	{
-		return IsWindowActive(Events::PARRY) || (m_BlockRaising && !m_ParryBegun);
+		return !m_ParryDenied && (IsWindowActive(Events::PARRY) || (m_BlockRaising && !m_ParryBegun));
 	}
 
 	bool Fighter::IsWindowActive(std::string_view name) const
@@ -702,18 +787,26 @@ namespace Dingo
 			return false;
 
 		const Animator* animator = GetAnimator();
-		return animator && animator->GetCurrentClip(0) == m_MoveClip && (animator->IsEventActive(Events::HITBOX) || m_HitboxPulse);
+		if (!animator || animator->GetCurrentClip(0) != m_MoveClip)
+			return false;
+		if (m_HitboxPulse)
+			return true;
+
+		// A chained swing's first frame can still hold the previous swing's range open; only its own counts.
+		const std::optional<ClipRange> hitbox = FindRange(*m_MoveClip, Events::HITBOX);
+		const float time = animator->GetTime(0);
+		return hitbox && animator->IsEventActive(Events::HITBOX) && time >= hitbox->Begin - k_HitboxSlack && time <= hitbox->End + k_HitboxSlack;
 	}
 
 	float Fighter::GetSecondsToHitbox() const
 	{
 		if (m_State != FighterState::Attack || !m_MoveClip)
-			return k_Infinity;
+			return GameMath::k_Infinity;
 
 		const std::optional<ClipRange> hitbox = FindRange(*m_MoveClip, Events::HITBOX);
 		const Animator* animator = GetAnimator();
 		if (!hitbox || !animator || animator->GetCurrentClip(0) != m_MoveClip)
-			return k_Infinity;
+			return GameMath::k_Infinity;
 		return (hitbox->Begin - animator->GetTime(0)) / m_Def.Pace;
 	}
 

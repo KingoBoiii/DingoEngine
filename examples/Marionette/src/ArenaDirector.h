@@ -20,7 +20,6 @@ namespace Dingo
 	class FollowCamera;
 	class GameAssets;
 	class GameAudio;
-	class HitDebugView;
 	class Hud;
 	class ReachTable;
 	class Showcase;
@@ -41,6 +40,7 @@ namespace Dingo
 		void OnDestroy() override;
 
 	private:
+		void ShowMissingAssets();
 		void BuildBout(const FighterContext& context, const LaunchOptions& options);
 		void UpdateBout(float deltaTime);
 		void OnEventsChanged();
@@ -57,7 +57,6 @@ namespace Dingo
 		std::unique_ptr<Showcase> m_Showcase;
 		std::unique_ptr<ArenaWorld> m_World;
 		std::unique_ptr<GameAudio> m_Audio;
-		std::unique_ptr<HitDebugView> m_DebugView;
 		std::vector<std::unique_ptr<Fighter>> m_Fighters;
 		std::unique_ptr<Combat> m_Combat;
 		std::unique_ptr<DuelScript> m_Duel;
@@ -68,6 +67,7 @@ namespace Dingo
 		std::unique_ptr<CameraRig> m_Camera;
 		std::unique_ptr<FollowCamera> m_FollowCamera;
 		bool m_Bout = false;
+		bool m_AssetsMissing = false;
 		bool m_BoutDone = false;
 		bool m_Freeze = false;
 		bool m_Tournament = false;

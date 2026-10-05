@@ -1,9 +1,12 @@
 #include "GameAssets.h"
 #include "GameTuning.h"
+#include "HitGeometry.h"
 #include "LaunchOptions.h"
 
 #include <algorithm>
+#include <format>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace
@@ -18,6 +21,7 @@ namespace
 	constexpr const char* k_WinPath = "audio/win.wav";
 	constexpr const char* k_LosePath = "audio/lose.wav";
 	constexpr const char* k_CracklePath = "audio/brazier.wav";
+	constexpr const char* k_FontPath = "fonts/arialbd.ttf";
 
 	bool SameEvents(const std::vector<Dingo::AnimationClipEvent>& a, const std::vector<Dingo::AnimationClipEvent>& b)
 	{
@@ -63,6 +67,18 @@ namespace Dingo
 			BreakHitboxes();
 		ValidateMoveset(m_Clips);
 		WatchEvents();
+
+		AssetManager& assets = Application::Get().GetAssetManager();
+		m_Font = assets.GetFont(assets.Load(k_FontPath));
+		if (!m_Font)
+		{
+			DE_ERROR("Marionette: failed to load font '{}'", k_FontPath);
+		}
+
+		BuildArena();
+		if (GetLaunchOptions().DebugHitbox)
+			m_DebugView = std::make_unique<HitDebugView>();
+		FindProblems();
 
 		m_Sounds.Footstep = LoadSound(k_FootstepPath);
 		m_Sounds.Swing = LoadSound(k_SwingPath);
@@ -185,6 +201,49 @@ namespace Dingo
 	{
 		for (auto& [path, material] : m_Materials)
 			DestroyAndDelete(material);
+
+		m_DebugView.reset();
+		for (Material* material : { m_Arena.Floor, m_Arena.Wall, m_Arena.Brazier, m_Arena.Flame })
+			DestroyAndDelete(material);
+		delete m_Arena.FlameMesh;
+	}
+
+	void GameAssets::BuildArena()
+	{
+		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
+		m_Arena.FlameMesh = Mesh::CreateSphere(FLAME_MESH_RADIUS, FLAME_MESH_RINGS, FLAME_MESH_SEGMENTS);
+		m_Arena.Floor = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("ArenaFloor").SetRoughness(FLOOR_ROUGHNESS));
+		m_Arena.Wall = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("ArenaWall").SetRoughness(WALL_ROUGHNESS));
+		m_Arena.Brazier = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("ArenaBrazier").SetRoughness(BRAZIER_ROUGHNESS));
+		m_Arena.Flame = renderer3D.CreateLitMaterial(MaterialParams()
+			.SetDebugName("ArenaFlame")
+			.SetEmissiveColor(FLAME_COLOR)
+			.SetEmissiveStrength(FLAME_EMISSIVE));
+	}
+
+	void GameAssets::FindProblems()
+	{
+		for (size_t i = 0; i < m_Libraries.size(); ++i)
+		{
+			if (!m_Libraries[i])
+				m_Problems.push_back(std::format("clip library '{}'", GetLibraryDefs()[i].Path));
+		}
+		for (const FighterDef& fighter : GetFighterDefs())
+		{
+			const Model* model = GetCharacter(fighter);
+			if (!model || !model->GetSkeleton())
+				m_Problems.push_back(std::format("character model '{}'", fighter.Model));
+		}
+		for (const std::string& clip : m_Clips.GetMissing())
+			m_Problems.push_back(std::format("clip '{}'", clip));
+
+		if (!m_Problems.empty())
+		{
+			std::string list;
+			for (const std::string& problem : m_Problems)
+				list += std::format("{}{}", list.empty() ? "" : ", ", problem);
+			DE_ERROR("Marionette: bouts cannot be played, missing: {}", list);
+		}
 	}
 
 	Model* GameAssets::LoadModel(const char* path)

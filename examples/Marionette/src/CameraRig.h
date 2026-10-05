@@ -1,6 +1,7 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include <cstddef>
 #include <vector>
 
 namespace Dingo
@@ -62,7 +63,7 @@ namespace Dingo
 			float Distance = 0.0f;
 		};
 
-		Framing Fit(const CameraSubject& first, const CameraSubject& second, float aspect) const;
+		Framing Fit(const CameraSubject& first, const CameraSubject& second, float aspect);
 
 	private:
 		Entity m_Entity;
@@ -71,6 +72,7 @@ namespace Dingo
 		float m_Distance = 0.0f;
 		float m_Aspect = 0.0f;
 		bool m_Placed = false;
+		size_t m_FitIndex = 0;
 	};
 
 }

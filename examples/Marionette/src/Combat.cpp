@@ -141,7 +141,8 @@ namespace Dingo
 			{
 				record.Kind = Outcome::Blocked;
 				record.Damage = move->Damage * BLOCK_CHIP_FRACTION;
-				record.InWindow = !Inside(record.Window, record.DefenceTime);
+				record.ParryDenied = target.IsParryDenied();
+				record.InWindow = record.ParryDenied || !Inside(record.Window, record.DefenceTime);
 			}
 		}
 		return decision;
@@ -231,8 +232,8 @@ namespace Dingo
 				line += std::format(" damage={:g} health={:g}", record.Damage, record.Health);
 				break;
 			case Outcome::Blocked:
-				line += std::format(" chip={:g} health={:g} | {} t={:.2f} parry={} (past it)", record.Damage, record.Health, record.DefenceClip,
-					record.DefenceTime, Describe(record.Window));
+				line += std::format(" chip={:g} health={:g} | {} t={:.2f} parry={} ({})", record.Damage, record.Health, record.DefenceClip,
+					record.DefenceTime, Describe(record.Window), record.ParryDenied ? "denied: raised too soon after lowering" : "past it");
 				break;
 			case Outcome::Parry:
 				line += std::format(" | {} t={:.2f} parry={}{}", record.DefenceClip, record.DefenceTime, Describe(record.Window),

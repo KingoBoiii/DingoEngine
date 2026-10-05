@@ -132,7 +132,10 @@ namespace Dingo
 			const glm::vec2& toward, FighterIntent& intent);
 		void DecideAttack(const AiView& self, const AiView& opponent, float distance, FighterIntent& intent);
 		Reaction React(const AiView& self, const AiView& seen, double seenTime, const glm::vec2& toward);
-		void RollPlan(const AiView& self, const AiView& seen, float predicted);
+		void RollPlan(const AiView& seen, float predicted);
+		float GuardRange(const AiView& self, const AiView& opponent) const;
+		bool DecideGuard(const AiView& self, const AiView& opponent, float distance, FighterIntent& intent);
+		void DropGuard();
 		void DecideOffence(const AiView& self, const AiView& opponent, const AiView& seen, float distance, const glm::vec2& toward, FighterIntent& intent);
 		glm::vec2 HoldGap(float distance, const glm::vec2& toward, float gap, bool strafe) const;
 		float ApproachIntent(float distance, float attackDistance) const;
@@ -156,6 +159,9 @@ namespace Dingo
 		float m_StanceTimer = 0.0f;
 		float m_StrafeSign = 1.0f;
 		float m_StrafeTimer = 0.0f;
+
+		float m_GuardLeft = 0.0f;
+		float m_GuardTimer = 0.0f;
 
 		Plan m_Plan;
 		float m_PlanAge = 0.0f;

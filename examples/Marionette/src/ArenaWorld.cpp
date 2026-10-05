@@ -1,5 +1,7 @@
 #include "ArenaWorld.h"
 #include "Audio.h"
+#include "GameAssets.h"
+#include "GameMath.h"
 #include "GameTuning.h"
 
 #include <algorithm>
@@ -11,7 +13,6 @@ namespace
 {
 	using namespace Dingo;
 
-	constexpr float k_UnitSphereRadius = 0.5f;
 	constexpr float k_SideAngle = 2.0f * std::numbers::pi_v<float> / ARENA_SIDES;
 	constexpr float k_HalfSideAngle = 0.5f * k_SideAngle;
 
@@ -58,20 +59,25 @@ namespace Dingo
 		return ARENA_RADIUS * std::cos(k_HalfSideAngle);
 	}
 
-	ArenaWorld::ArenaWorld(Scene& scene, const GameAudio* audio)
-		: m_Scene(scene)
+	float GetArenaFreeDistance(const glm::vec2& from, const glm::vec2& direction, float margin)
 	{
-		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
-		m_BoxMesh = renderer3D.GetBoxMesh();
-		m_FlameMesh = Mesh::CreateSphere(k_UnitSphereRadius, FLAME_MESH_RINGS, FLAME_MESH_SEGMENTS);
+		const float limit = GetArenaApothem() - margin;
+		float free = GameMath::k_Infinity;
+		for (int i = 0; i < ARENA_SIDES; ++i)
+		{
+			const float angle = k_SideAngle * static_cast<float>(i);
+			const glm::vec2 normal(std::cos(angle), std::sin(angle));
+			const float closing = glm::dot(normal, direction);
+			if (closing > 1.0e-6f)
+				free = std::min(free, (limit - glm::dot(normal, from)) / closing);
+		}
+		return std::max(free, 0.0f);
+	}
 
-		m_FloorMaterial = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("ArenaFloor").SetRoughness(FLOOR_ROUGHNESS));
-		m_WallMaterial = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("ArenaWall").SetRoughness(WALL_ROUGHNESS));
-		m_BrazierMaterial = renderer3D.CreateLitMaterial(MaterialParams().SetDebugName("ArenaBrazier").SetRoughness(BRAZIER_ROUGHNESS));
-		m_FlameMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("ArenaFlame")
-			.SetEmissiveColor(FLAME_COLOR)
-			.SetEmissiveStrength(FLAME_EMISSIVE));
+	ArenaWorld::ArenaWorld(Scene& scene, const GameAssets& assets, const GameAudio* audio)
+		: m_Scene(scene), m_Arena(assets.GetArena())
+	{
+		m_BoxMesh = Application::Get().GetRenderer3D().GetBoxMesh();
 
 		Entity ambient = scene.CreateEntity("Ambient");
 		ambient.AddComponent<Transform3DComponent>();
@@ -98,12 +104,6 @@ namespace Dingo
 			if (sound != k_InvalidSound)
 				engine.Stop(sound);
 		}
-
-		DestroyAndDelete(m_FloorMaterial);
-		DestroyAndDelete(m_WallMaterial);
-		DestroyAndDelete(m_BrazierMaterial);
-		DestroyAndDelete(m_FlameMaterial);
-		delete m_FlameMesh;
 	}
 
 	std::vector<glm::vec3> ArenaWorld::GetRimPoints() const
@@ -141,7 +141,7 @@ namespace Dingo
 		for (int i = 0; i < ARENA_SIDES / 2; ++i)
 		{
 			SpawnSolid("Floor", glm::vec3(0.0f, -ARENA_FLOOR_THICKNESS * 0.5f, 0.0f),
-				glm::vec3(2.0f * apothem, ARENA_FLOOR_THICKNESS, strip), -k_SideAngle * static_cast<float>(i), COLOR_FLOOR, m_FloorMaterial);
+				glm::vec3(2.0f * apothem, ARENA_FLOOR_THICKNESS, strip), -k_SideAngle * static_cast<float>(i), COLOR_FLOOR, m_Arena.Floor);
 		}
 	}
 
@@ -157,7 +157,7 @@ namespace Dingo
 			const glm::vec3 size(length, ARENA_WALL_HEIGHT, ARENA_WALL_THICKNESS);
 			const float yaw = 0.5f * std::numbers::pi_v<float> - normal;
 			Occluder wall;
-			wall.Parts.push_back(SpawnSolid("Wall", center, size, yaw, COLOR_WALL, m_WallMaterial));
+			wall.Parts.push_back(SpawnSolid("Wall", center, size, yaw, COLOR_WALL, m_Arena.Wall));
 			wall.Center = center;
 			wall.HalfSize = 0.5f * size;
 			wall.Yaw = yaw;
@@ -174,9 +174,9 @@ namespace Dingo
 
 			Occluder brazier;
 			brazier.Parts.push_back(SpawnSolid("BrazierBase", floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT * 0.5f, 0.0f),
-				glm::vec3(BRAZIER_BASE_WIDTH, BRAZIER_BASE_HEIGHT, BRAZIER_BASE_WIDTH), 0.0f, COLOR_BRAZIER, m_BrazierMaterial));
+				glm::vec3(BRAZIER_BASE_WIDTH, BRAZIER_BASE_HEIGHT, BRAZIER_BASE_WIDTH), 0.0f, COLOR_BRAZIER, m_Arena.Brazier));
 			brazier.Parts.push_back(SpawnSolid("BrazierBowl", floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT + BRAZIER_BOWL_HEIGHT * 0.5f, 0.0f),
-				glm::vec3(BRAZIER_BOWL_WIDTH, BRAZIER_BOWL_HEIGHT, BRAZIER_BOWL_WIDTH), 0.0f, COLOR_BRAZIER, m_BrazierMaterial));
+				glm::vec3(BRAZIER_BOWL_WIDTH, BRAZIER_BOWL_HEIGHT, BRAZIER_BOWL_WIDTH), 0.0f, COLOR_BRAZIER, m_Arena.Brazier));
 
 			const glm::vec3 flame = floor + glm::vec3(0.0f, BRAZIER_BASE_HEIGHT + BRAZIER_BOWL_HEIGHT + BRAZIER_FLAME_RISE, 0.0f);
 
@@ -184,7 +184,7 @@ namespace Dingo
 			auto& coreTransform = core.AddComponent<Transform3DComponent>();
 			coreTransform.Position = flame;
 			coreTransform.Scale = glm::vec3(BRAZIER_FLAME_DIAMETER);
-			core.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, COLOR_FLAME)).Material = m_FlameMaterial;
+			core.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Arena.FlameMesh, COLOR_FLAME)).Material = m_Arena.Flame;
 			brazier.Parts.push_back(core);
 
 			const float height = flame.y + 0.5f * BRAZIER_FLAME_DIAMETER;

@@ -57,7 +57,7 @@
         {
             "mimeType" : "image/png",
             "name" : "knight_texture",
-            "uri" : "knight_texture.png"
+            "uri" : "../characters/knight_texture.png"
         }
     ],
     "accessors" : [

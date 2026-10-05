@@ -149,7 +149,8 @@ namespace Dingo
 	glm::vec2 NetHipsTravel(const Skeleton& skeleton, const AnimationClip& clip, float fadeOut);
 
 	// Warns once per problem: a combat window that ends after its one-shot starts returning (it would
-	// never fire), and a move missing the windows its rules need. Returns the number of problems.
+	// never fire), a move missing the windows its rules need, and a combo that opens before the hitbox closes.
+	// Returns the number of problems.
 	int ValidateMoveset(const ClipSet& clips);
 
 	class ClipSet

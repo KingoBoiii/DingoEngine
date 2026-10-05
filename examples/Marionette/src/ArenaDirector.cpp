@@ -5,16 +5,17 @@
 #include "BoutFlow.h"
 #include "CameraRig.h"
 #include "CheckReport.h"
+#include "CheckTuning.h"
 #include "Combat.h"
 #include "DriveBrain.h"
 #include "DuelScript.h"
 #include "Fighter.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
-#include "HitGeometry.h"
 #include "Hud.h"
 #include "MatchState.h"
 #include "Moveset.h"
+#include "Overlay.h"
 #include "PlayerBrain.h"
 #include "ReachTable.h"
 #include "Showcase.h"
@@ -37,23 +38,26 @@ namespace Dingo
 		const LaunchOptions& options = GetLaunchOptions();
 		Scene& scene = GetScene();
 
-		if (options.DebugHitbox)
-			m_DebugView = std::make_unique<HitDebugView>();
-
 		if (options.Lineup)
 		{
 			ShowcaseParams params;
 			params.Kind = ShowcaseKind::Lineup;
 			params.Freeze = options.Freeze;
 			params.Overview = options.Overview;
-			params.Debug = m_DebugView.get();
+			params.Debug = m_Assets->GetDebugView();
 			m_Showcase = std::make_unique<Showcase>(scene, *m_Assets, params);
+			return;
+		}
+
+		if (!m_Assets->IsPlayable())
+		{
+			ShowMissingAssets();
 			return;
 		}
 
 		m_Audio = std::make_unique<GameAudio>(m_Assets->GetSounds());
 		m_Audio->SetMuted(options.StepsPerFrame > 1 || options.Tournament > 0);
-		m_World = std::make_unique<ArenaWorld>(scene, m_Audio.get());
+		m_World = std::make_unique<ArenaWorld>(scene, *m_Assets, m_Audio.get());
 		m_EventGeneration = m_Assets->GetEventGeneration();
 		m_Freeze = options.Freeze;
 		m_Tournament = options.Tournament > 0;
@@ -64,8 +68,18 @@ namespace Dingo
 
 		const bool logSteps = options.Check || (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel);
 		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None || (options.Autoplay && !m_Tournament);
-		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_DebugView.get() };
+		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_Assets->GetDebugView() };
 		BuildBout(context, options);
+	}
+
+	void ArenaDirectorScript::ShowMissingAssets()
+	{
+		Scene& scene = GetScene();
+		Font* font = m_Assets->GetFont();
+		Overlay::MakeCamera(scene, "MissingCamera", HUD_ORTHO_SIZE);
+		Overlay::MakeText(scene, font, "MissingHeading", MISSING_HEADING_SIZE, COLOR_TEXT_ALERT, { 0.0f, MISSING_HEADING_Y, 0.0f }, "assets missing (see log)");
+		Overlay::MakeText(scene, font, "MissingPrompt", MISSING_PROMPT_SIZE, COLOR_TEXT, { 0.0f, MISSING_PROMPT_Y, 0.0f }, "press any key / button to return to the title");
+		m_AssetsMissing = true;
 	}
 
 	void ArenaDirectorScript::BuildBout(const FighterContext& context, const LaunchOptions& options)
@@ -124,7 +138,7 @@ namespace Dingo
 		else if (driven)
 			m_Brain = std::make_unique<DriveBrain>(m_Drive);
 		else if (options.Autoplay)
-			m_Brain = std::make_unique<AiBrain>(AI_TIERS[BOUT_COUNT - 1], m_Seed + static_cast<uint32_t>(m_BoutNumber) + AI_PLAYER_SEED_OFFSET, m_Reach);
+			m_Brain = std::make_unique<AiBrain>(AI_TIERS[static_cast<size_t>(options.PlayerTier) - 1], m_Seed + static_cast<uint32_t>(m_BoutNumber) + AI_PLAYER_SEED_OFFSET, m_Reach);
 		else
 			m_Brain = std::make_unique<PlayerBrain>();
 
@@ -144,7 +158,7 @@ namespace Dingo
 			m_Flow = std::make_unique<BoutFlow>(rules, m_Audio.get());
 			m_Flow->Begin(opponent);
 
-			m_Hud = std::make_unique<Hud>(scene, m_BoutNumber, !m_Freeze && !m_Tournament, !options.Autoplay && !m_Freeze && m_BoutNumber == 1);
+			m_Hud = std::make_unique<Hud>(scene, *m_Assets, m_BoutNumber, !m_Freeze && !m_Tournament, !options.Autoplay && !m_Freeze && m_BoutNumber == 1);
 
 			if (!m_Tournament && !m_Freeze && m_Reach)
 			{
@@ -178,6 +192,15 @@ namespace Dingo
 	{
 		if (m_Match->Done)
 			return;
+
+		if (m_AssetsMissing)
+		{
+			if (IsScripted(GetLaunchOptions()))
+				Application::Get().Close();
+			else if (Overlay::AnyInputPressed())
+				RequestSceneTransition(SCENE_TITLE);
+			return;
+		}
 
 		if (Input::IsKeyPressed(Key::Escape) || Input::IsGamepadButtonPressed(GamepadButton::Start))
 			RequestSceneTransition(SCENE_TITLE);
@@ -364,18 +387,23 @@ namespace Dingo
 		}
 
 		const int tier = m_BoutNumber;
+		const int playerTier = GetLaunchOptions().PlayerTier;
 		DE_INFO("[Tournament] tier {} against tier {} ({}), seeds {} to {}: {} wins, {} losses, {} draws, {} timeouts; {:.1f} s of fighting, {:.1f} s a bout",
-			BOUT_COUNT, tier, GetOpponentDef(tier).Name, m_Match->Records.front().Seed, m_Match->Records.back().Seed, wins, losses, draws, timeouts, seconds,
+			playerTier, tier, GetOpponentDef(tier).Name, m_Match->Records.front().Seed, m_Match->Records.back().Seed, wins, losses, draws, timeouts, seconds,
 			total > 0 ? seconds / static_cast<float>(total) : 0.0f);
 
-		if (tier < BOUT_COUNT)
+		const int needed = static_cast<int>(std::ceil(TOURNAMENT_PASS_FRACTION * static_cast<float>(total) - 1.0e-3f));
+		if (playerTier > tier)
 		{
-			const int needed = static_cast<int>(std::ceil(TOURNAMENT_PASS_FRACTION * static_cast<float>(total) - 1.0e-3f));
-			CheckReport().Check(wins >= needed, std::format("tournament: tier {} beat tier {} in {} of {} (need {} of {})", BOUT_COUNT, tier, wins, total, needed, total));
+			CheckReport().Check(wins >= needed, std::format("tournament: tier {} beat tier {} in {} of {} (need {} of {})", playerTier, tier, wins, total, needed, total));
+		}
+		else if (playerTier < tier)
+		{
+			CheckReport().Check(losses >= needed, std::format("tournament: tier {} beat tier {} in {} of {} (need {} of {})", tier, playerTier, losses, total, needed, total));
 		}
 		else
 		{
-			DE_INFO("[INFO] tournament: tier {} beat tier {} in {} of {} (a mirror: no pass bar)", BOUT_COUNT, tier, wins, total);
+			DE_INFO("[INFO] tournament: tier {} beat tier {} in {} of {} (a mirror: no pass bar)", playerTier, tier, wins, total);
 		}
 	}
 
@@ -430,7 +458,6 @@ namespace Dingo
 		m_Duel.reset();
 		m_Combat.reset();
 		m_Fighters.clear();
-		m_DebugView.reset();
 		m_Audio.reset();
 		m_World.reset();
 	}

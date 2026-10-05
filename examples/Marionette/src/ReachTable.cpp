@@ -1,5 +1,6 @@
 #include "ReachTable.h"
 #include "GameAssets.h"
+#include "GameMath.h"
 #include "GameTuning.h"
 #include "HitGeometry.h"
 
@@ -14,15 +15,6 @@ namespace
 {
 	using namespace Dingo;
 
-	constexpr size_t k_FighterCount = 4;
-
-	glm::vec2 Rotate(const glm::vec2& local, float yaw)
-	{
-		const float c = std::cos(yaw);
-		const float s = std::sin(yaw);
-		return glm::vec2(local.x * c + local.y * s, -local.x * s + local.y * c);
-	}
-
 	// A socket carries a joint's position and rotation, not its scale.
 	glm::mat3 JointBasis(const glm::mat4& joint)
 	{
@@ -31,7 +23,7 @@ namespace
 
 	glm::vec3 ToWorld(const glm::vec3& model, float scale, float yaw, const glm::vec2& origin)
 	{
-		const glm::vec2 ground = Rotate(glm::vec2(model.x, model.z) * scale, yaw) + origin;
+		const glm::vec2 ground = GameMath::Rotate(glm::vec2(model.x, model.z) * scale, yaw) + origin;
 		return glm::vec3(ground.x, model.y * scale, ground.y);
 	}
 }
@@ -50,12 +42,12 @@ namespace Dingo
 	}
 
 	ReachTable::ReachTable(const GameAssets& assets)
-		: m_Assets(assets), m_MoveCount(GetMoves().size())
+		: m_Assets(assets), m_FighterCount(GetFighterDefs().size()), m_MoveCount(GetMoves().size())
 	{
-		m_Sweeps.resize(k_FighterCount * m_MoveCount);
-		m_Reach.resize(k_FighterCount * m_MoveCount * k_FighterCount);
+		m_Sweeps.resize(m_FighterCount * m_MoveCount);
+		m_Reach.resize(m_FighterCount * m_MoveCount * m_FighterCount);
 		m_ReachDone.assign(m_Reach.size(), false);
-		m_Logged.assign(k_FighterCount * k_FighterCount, false);
+		m_Logged.assign(m_FighterCount * m_FighterCount, false);
 	}
 
 	void ReachTable::Invalidate()
@@ -74,7 +66,7 @@ namespace Dingo
 
 	size_t ReachTable::ReachIndex(const FighterDef& attacker, size_t move, const FighterDef& target) const
 	{
-		return SweepIndex(attacker, move) * k_FighterCount + static_cast<size_t>(target.Id);
+		return SweepIndex(attacker, move) * m_FighterCount + static_cast<size_t>(target.Id);
 	}
 
 	const ReachTable::Sweep& ReachTable::GetSweep(const FighterDef& attacker, size_t moveIndex) const
@@ -225,22 +217,16 @@ namespace Dingo
 		return m_Reach[at];
 	}
 
-	float ReachTable::GetOpeningMax(const FighterDef& attacker, const FighterDef& target) const
+	float ReachTable::GetParryWindow() const
 	{
-		float farthest = 0.0f;
-		if (!attacker.LightChain.empty())
-		{
-			if (const MoveDef* light = FindMove(attacker.LightChain[0]))
-				farthest = std::max(farthest, Get(attacker, *light, target).Max);
-		}
-		if (const MoveDef* heavy = GetHeavyMove(attacker))
-			farthest = std::max(farthest, Get(attacker, *heavy, target).Max);
-		return farthest;
+		const AnimationClip* raise = m_Assets.GetClip(Clips::BLOCK_RAISE);
+		const std::optional<ClipRange> parry = raise ? FindRange(*raise, Events::PARRY) : std::nullopt;
+		return parry ? parry->End : AI_PARRY_WINDOW_FALLBACK;
 	}
 
 	void ReachTable::Log(const FighterDef& attacker, const FighterDef& target) const
 	{
-		const size_t pair = static_cast<size_t>(attacker.Id) * k_FighterCount + static_cast<size_t>(target.Id);
+		const size_t pair = static_cast<size_t>(attacker.Id) * m_FighterCount + static_cast<size_t>(target.Id);
 		if (m_Logged[pair])
 			return;
 		m_Logged[pair] = true;

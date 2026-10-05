@@ -6,10 +6,12 @@
 #include "LaunchOptions.h"
 #include "LiveEdit.h"
 #include "Moveset.h"
+#include "Overlay.h"
 #include "ReachTable.h"
-#include "TitleScreen.h"
+#include "Screens.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace Dingo
 {
@@ -66,6 +68,18 @@ namespace Dingo
 		m_LiveEdit.reset();
 		m_Reach.reset();
 		m_Assets.reset();
+		if (GetLaunchOptions().LiveEditDemo)
+			CleanupLiveEditAssets();
+	}
+
+	void MarionetteLayer::OnEvent(Event& e)
+	{
+		EventDispatcher dispatcher(e);
+		dispatcher.Dispatch<WindowFocusEvent>([](WindowFocusEvent& focus)
+		{
+			Overlay::NoteFocus(focus.IsFocused());
+			return false;
+		});
 	}
 
 	void MarionetteLayer::RebuildTitleScene()
@@ -110,15 +124,42 @@ namespace Dingo
 		m_ArenaScene->OnStart();
 	}
 
+	void MarionetteLayer::RecordPerf(float deltaTime, float updateMilliseconds, float renderMilliseconds)
+	{
+		m_PerfClock += deltaTime;
+		if (m_PerfClock < PERF_WARMUP_SECONDS)
+			return;
+
+		m_PerfFrameMilliseconds += 1000.0 * static_cast<double>(deltaTime);
+		m_PerfUpdateMilliseconds += static_cast<double>(updateMilliseconds);
+		m_PerfRenderMilliseconds += static_cast<double>(renderMilliseconds);
+		if (++m_PerfFrames < PERF_FRAMES)
+			return;
+
+		const double frames = static_cast<double>(m_PerfFrames);
+		DE_INFO("[Perf] frame {:.3f} ms, Scene::OnUpdate {:.3f} ms, render {:.3f} ms (mean of {} frames)", m_PerfFrameMilliseconds / frames,
+			m_PerfUpdateMilliseconds / frames, m_PerfRenderMilliseconds / frames, m_PerfFrames);
+		m_PerfDone = true;
+	}
+
 	void MarionetteLayer::OnUpdate(float deltaTime)
 	{
+		using Clock = std::chrono::steady_clock;
+		const auto milliseconds = [](Clock::time_point from, Clock::time_point to)
+		{
+			return std::chrono::duration<float, std::milli>(to - from).count();
+		};
+
 		const LaunchOptions& options = GetLaunchOptions();
 		const bool fixed = options.FixedDt > 0.0f;
 		const float step = fixed ? options.FixedDt : deltaTime;
 		const int steps = fixed ? options.StepsPerFrame : 1;
 		const Scene* activeBefore = m_SceneManager.GetActiveScene();
+		const bool measuring = options.Perf && !m_PerfDone && activeBefore == m_ArenaScene;
 
+		Overlay::BeginFrame();
 		PollEventReload();
+		const Clock::time_point updateStart = Clock::now();
 		for (int i = 0; i < steps; ++i)
 		{
 			if (m_LiveEdit)
@@ -127,15 +168,20 @@ namespace Dingo
 			if (m_SceneManager.GetActiveScene() != activeBefore || m_Match.Restart || m_Match.Done)
 				break;
 		}
+		const Clock::time_point updateEnd = Clock::now();
 
 		const Scene* activeAfter = m_SceneManager.GetActiveScene();
 		if (activeAfter == m_ArenaScene && m_Match.Restart && !m_Match.Done)
 			RestartArena();
+		const Clock::time_point renderStart = Clock::now();
 		m_SceneManager.OnRender();
+		if (measuring)
+			RecordPerf(deltaTime, milliseconds(updateStart, updateEnd), milliseconds(renderStart, Clock::now()));
 
 		// The manager switches scenes inside its own OnUpdate, so leaving one only shows as a before/after
 		// difference. A scene's script starts once, so leaving the arena or the End scene rebuilds it for the next
-		// entry. The End scene has read the run's result as it started, so the next run can begin from bout 1.
+		// entry. Each has read the run's result as it started, so the next run can begin from bout 1, and the End
+		// scene's demo values from --end never reach a real run.
 		if (activeBefore == m_TitleScene && activeAfter != m_TitleScene)
 		{
 			RebuildTitleScene();
@@ -148,6 +194,7 @@ namespace Dingo
 		else if (activeBefore == m_EndScene && activeAfter != m_EndScene)
 		{
 			RebuildEndScene();
+			m_Match.ResetRun(1);
 		}
 	}
 

@@ -92,6 +92,18 @@ namespace
 		return problems;
 	}
 
+	int WarnComboOverlap(const AnimationClip& clip)
+	{
+		const std::optional<ClipRange> hitbox = FindRange(clip, Events::HITBOX);
+		const std::optional<ClipRange> combo = FindRange(clip, Events::COMBO);
+		if (!hitbox || !combo || combo->Begin >= hitbox->End - k_EndSlack)
+			return 0;
+
+		DE_WARN("Marionette: {}: combo {:.2f}..{:.2f} begins before its hitbox {:.2f}..{:.2f} ends, so the next swing of a chain would start while this hitbox is still open",
+			clip.GetName(), combo->Begin, combo->End, hitbox->Begin, hitbox->End);
+		return 1;
+	}
+
 	const std::array<LibraryDef, 5> k_Libraries = { {
 		{ "General", "animations/Rig_Medium_General.glb" },
 		{ "MovementBasic", "animations/Rig_Medium_MovementBasic.glb" },
@@ -252,6 +264,7 @@ namespace Dingo
 			problems += WarnMissing(*clip, { Events::WINDUP, Events::HITBOX });
 			if (IsChainLink(move.Clip))
 				problems += WarnMissing(*clip, { Events::COMBO });
+			problems += WarnComboOverlap(*clip);
 		}
 
 		for (const char* name : k_DodgeClips)

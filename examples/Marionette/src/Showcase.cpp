@@ -17,7 +17,7 @@ namespace Dingo
 		: m_Assets(assets), m_EventGeneration(assets.GetEventGeneration())
 	{
 		m_Audio = std::make_unique<GameAudio>(assets.GetSounds());
-		m_World = std::make_unique<ArenaWorld>(scene, m_Audio.get());
+		m_World = std::make_unique<ArenaWorld>(scene, assets, m_Audio.get());
 
 		if (params.Kind == ShowcaseKind::Victory)
 			BuildVictory(scene, assets, params);

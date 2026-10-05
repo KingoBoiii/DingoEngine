@@ -1,7 +1,7 @@
 #pragma once
+#include "CheckTuning.h"
 #include "Combat.h"
 #include "FighterIntent.h"
-#include "GameTuning.h"
 
 #include <array>
 #include <cstddef>

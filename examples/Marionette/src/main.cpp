@@ -58,7 +58,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 {
 	const LaunchOptions& options = ParseLaunchOptions(args);
 	// Nobody watches a scripted run, and the long checks in OnAttach leave the window unfocused, which would pause it.
-	const bool scripted = options.Check || options.Drive != DriveMode::None || options.FixedDt > 0.0f || options.Autoplay || options.LiveEditDemo;
+	// A hot-reload run is edited from another window, so it is unfocused exactly when the edit lands.
+	const bool background = IsScripted(options) || options.HotReload;
 
 	// The live-edit demo rewrites a .events file, so it reads a copy of the assets and never the repository's own.
 	std::filesystem::path assetRoot = Platform::FindDirectoryUpward("assets").value_or("assets");
@@ -82,7 +83,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.SetRootDirectory(assetRoot)
 			.SetEnableHotReload(options.HotReload),
 		.EnableUI = false,
-		.UpdateInBackground = scripted,
+		.UpdateInBackground = background,
 	};
 
 	MarionetteApplication* app = new MarionetteApplication(params);

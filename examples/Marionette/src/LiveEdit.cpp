@@ -23,6 +23,8 @@ namespace
 	constexpr const char* k_Library = "CombatMelee";
 	constexpr const char* k_Clip = "Melee_1H_Attack_Slice_Diagonal";
 
+	bool s_Prepared = false;
+
 	bool Within(const std::filesystem::path& path, const std::filesystem::path& root)
 	{
 		std::error_code error;
@@ -71,6 +73,28 @@ namespace
 		const AnimationClip* clip = library.FindAnimation(k_Clip);
 		return clip ? FindRange(*clip, Events::HITBOX) : std::nullopt;
 	}
+
+	bool ReplaceRange(std::string& text, std::string_view clip, std::string_view event, const std::string& range)
+	{
+		for (size_t start = 0; start < text.size();)
+		{
+			size_t stop = text.find('\n', start);
+			if (stop == std::string::npos)
+				stop = text.size();
+
+			std::istringstream words(text.substr(start, stop - start));
+			std::string lineClip;
+			std::string current;
+			std::string lineEvent;
+			if (words >> lineClip >> current >> lineEvent && lineClip == clip && lineEvent == event && current.find("..") != std::string::npos)
+			{
+				text.replace(text.find(current, start), current.size(), range);
+				return true;
+			}
+			start = stop + 1;
+		}
+		return false;
+	}
 }
 
 namespace Dingo
@@ -116,6 +140,7 @@ namespace Dingo
 			return false;
 		}
 
+		s_Prepared = true;
 		DE_INFO("[LiveEdit] reading the assets from the copy in '{}'; the repository's own are never written", root.string());
 		return true;
 	}
@@ -192,30 +217,26 @@ namespace Dingo
 
 		const float begin = hitbox->Begin + shift;
 		const float end = hitbox->End + shift;
-		const std::string next = std::format("{:.2f}..{:.2f}", begin, end);
-		bool replaced = false;
-		for (size_t start = 0; start < text.size() && !replaced;)
-		{
-			size_t stop = text.find('\n', start);
-			if (stop == std::string::npos)
-				stop = text.size();
-
-			std::istringstream words(text.substr(start, stop - start));
-			std::string name;
-			std::string range;
-			std::string event;
-			if (words >> name >> range >> event && name == k_Clip && event == Events::HITBOX && range.find("..") != std::string::npos)
-			{
-				text.replace(text.find(range, start), range.size(), next);
-				replaced = true;
-			}
-			start = stop + 1;
-		}
-
-		if (!replaced)
+		if (!ReplaceRange(text, k_Clip, Events::HITBOX, std::format("{:.2f}..{:.2f}", begin, end)))
 		{
 			DE_ERROR("[LiveEdit] {} has no {} {} line to rewrite", file.string(), k_Clip, Events::HITBOX);
 			return;
+		}
+
+		// The combo window opens where the hitbox closes, so it moves with it, or the swing's chain would open early.
+		const std::optional<ClipRange> combo = FindRange(*clip, Events::COMBO);
+		float comboBegin = 0.0f;
+		float comboEnd = 0.0f;
+		bool movedCombo = false;
+		if (combo)
+		{
+			comboBegin = std::min(combo->Begin + shift, limit);
+			comboEnd = std::max(std::min(combo->End + shift, limit), comboBegin);
+			movedCombo = ReplaceRange(text, k_Clip, Events::COMBO, std::format("{:.2f}..{:.2f}", comboBegin, comboEnd));
+			if (!movedCombo)
+			{
+				DE_WARN("[LiveEdit] {} has no {} {} line to move with the hitbox", file.string(), k_Clip, Events::COMBO);
+			}
 		}
 
 		std::filesystem::path scratch = file;
@@ -243,9 +264,13 @@ namespace Dingo
 
 		m_Begin = begin;
 		m_End = end;
+		m_HasCombo = movedCombo;
+		m_ComboBegin = comboBegin;
+		m_ComboEnd = comboEnd;
 		m_WrittenAt = std::chrono::steady_clock::now();
 		m_Stage = Stage::Written;
-		DE_INFO("[LiveEdit] wrote hitbox {:.2f}..{:.2f} -> {:.2f}..{:.2f} ({} in '{}')", hitbox->Begin, hitbox->End, begin, end, k_Clip, file.string());
+		DE_INFO("[LiveEdit] wrote hitbox {:.2f}..{:.2f} -> {:.2f}..{:.2f}{} ({} in '{}')", hitbox->Begin, hitbox->End, begin, end,
+			movedCombo ? std::format(", combo {:.2f}..{:.2f} -> {:.2f}..{:.2f}", combo->Begin, combo->End, comboBegin, comboEnd) : std::string(), k_Clip, file.string());
 	}
 
 	void LiveEditDemo::OnReload()
@@ -274,6 +299,47 @@ namespace Dingo
 				DE_ERROR("[LiveEdit] {} reads hitbox {} after the reload, not the {:.2f}..{:.2f} written", k_Clip,
 					now ? std::format("{:.2f}..{:.2f}", now->Begin, now->End) : std::string("none"), m_Begin, m_End);
 			}
+
+			if (!m_HasCombo)
+				continue;
+
+			const AnimationClip* clip = library->FindAnimation(k_Clip);
+			const std::optional<ClipRange> combo = clip ? FindRange(*clip, Events::COMBO) : std::nullopt;
+			if (combo && std::abs(combo->Begin - m_ComboBegin) < 1.0e-3f && std::abs(combo->End - m_ComboEnd) < 1.0e-3f)
+			{
+				DE_INFO("[LiveEdit] {} now reads combo {:.2f}..{:.2f}", k_Clip, combo->Begin, combo->End);
+			}
+			else
+			{
+				DE_ERROR("[LiveEdit] {} reads combo {} after the reload, not the {:.2f}..{:.2f} written", k_Clip,
+					combo ? std::format("{:.2f}..{:.2f}", combo->Begin, combo->End) : std::string("none"), m_ComboBegin, m_ComboEnd);
+			}
+		}
+	}
+
+	void CleanupLiveEditAssets()
+	{
+		if (!s_Prepared)
+			return;
+		s_Prepared = false;
+
+		const std::filesystem::path root = GetLiveEditRoot();
+		const std::filesystem::path folder = root.parent_path();
+		if (root.empty() || !root.is_absolute() || root.filename() != "assets" || folder.filename() != k_Folder || !IsPlain(folder) || !IsPlain(root))
+		{
+			DE_ERROR("[LiveEdit] '{}' is not the folder this run copied the assets into; leaving it alone", folder.string());
+			return;
+		}
+
+		std::error_code error;
+		std::filesystem::remove_all(folder, error);
+		if (error)
+		{
+			DE_WARN("[LiveEdit] couldn't remove the copy in '{}': {}", folder.string(), error.message());
+		}
+		else
+		{
+			DE_INFO("[LiveEdit] removed the copy in '{}'", folder.string());
 		}
 	}
 

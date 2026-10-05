@@ -1,19 +1,27 @@
 #include "Overlay.h"
 
+#include <cstdint>
+
 namespace Dingo::Overlay
 {
 
 	namespace
 	{
-		constexpr const char* k_FontPath = "fonts/arialbd.ttf";
-	}
+		constexpr uint16_t k_FirstKey = static_cast<uint16_t>(KeyCode::Space);
+		constexpr uint16_t k_LastKey = static_cast<uint16_t>(KeyCode::Menu);
+		constexpr uint16_t k_FirstFunctionKey = static_cast<uint16_t>(KeyCode::F1);
+		constexpr uint16_t k_LastFunctionKey = static_cast<uint16_t>(KeyCode::F25);
+		constexpr uint16_t k_FirstModifier = static_cast<uint16_t>(KeyCode::LeftShift);
 
-	Font* LoadFont(const char* who)
-	{
-		Font* font = Font::Create(k_FontPath);
-		if (!font)
-			DE_ERROR("Marionette: failed to load {} font '{}'", who, k_FontPath);
-		return font;
+		bool s_RefocusPending = false;
+		bool s_RefocusFrame = false;
+
+		bool IsMenuKey(uint16_t code)
+		{
+			const bool function = code >= k_FirstFunctionKey && code <= k_LastFunctionKey;
+			const bool modifier = code >= k_FirstModifier;
+			return !function && !modifier;
+		}
 	}
 
 	Entity MakeCamera(Scene& scene, const char* name, float orthoSize)
@@ -39,9 +47,32 @@ namespace Dingo::Overlay
 		return entity;
 	}
 
+	void NoteFocus(bool focused)
+	{
+		if (focused)
+			s_RefocusPending = true;
+	}
+
+	void BeginFrame()
+	{
+		s_RefocusFrame = s_RefocusPending;
+		s_RefocusPending = false;
+	}
+
+	bool IsRefocusFrame()
+	{
+		return s_RefocusFrame;
+	}
+
 	bool AnyInputPressed()
 	{
-		if (Input::IsAnyKeyPressed() || Input::IsAnyMouseButtonPressed())
+		for (uint16_t code = k_FirstKey; code <= k_LastKey; ++code)
+		{
+			if (IsMenuKey(code) && Input::IsKeyPressed(static_cast<KeyCode>(code)))
+				return true;
+		}
+
+		if (!s_RefocusFrame && Input::IsAnyMouseButtonPressed())
 			return true;
 
 		for (uint32_t button = 0; button < GamepadButtonCount; ++button)

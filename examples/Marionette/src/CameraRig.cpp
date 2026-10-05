@@ -1,4 +1,5 @@
 #include "CameraRig.h"
+#include "GameMath.h"
 #include "GameTuning.h"
 #include "Hud.h"
 
@@ -8,14 +9,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
 #include <utility>
+#include <vector>
 
 namespace
 {
 	using namespace Dingo;
-
-	constexpr float k_Infinity = std::numeric_limits<float>::infinity();
 
 	bool IsFinite(const glm::vec3& v)
 	{
@@ -132,7 +131,7 @@ namespace Dingo
 		m_Entity.AddComponent<AudioListenerComponent>();
 	}
 
-	FollowCamera::Framing FollowCamera::Fit(const CameraSubject& first, const CameraSubject& second, float aspect) const
+	FollowCamera::Framing FollowCamera::Fit(const CameraSubject& first, const CameraSubject& second, float aspect)
 	{
 		const GroundAxes axes = GetArenaCameraAxes();
 		const glm::vec3 side = glm::vec3(axes.Right.x, 0.0f, axes.Right.y) * ARENA_CAMERA_SIDE_MARGIN;
@@ -173,8 +172,8 @@ namespace Dingo
 		{
 			const glm::mat4 viewProjection = projection * glm::lookAt(target + direction * distance, target, glm::vec3(0.0f, 1.0f, 0.0f));
 			Extent extent;
-			extent.MinY = k_Infinity;
-			extent.MaxY = -k_Infinity;
+			extent.MinY = GameMath::k_Infinity;
+			extent.MaxY = -GameMath::k_Infinity;
 			for (const glm::vec3& point : points)
 			{
 				const glm::vec4 clip = viewProjection * glm::vec4(point, 1.0f);
@@ -190,28 +189,62 @@ namespace Dingo
 			return extent;
 		};
 
-		Framing framing;
-		framing.Distance = ARENA_CAMERA_MAX_DISTANCE;
-		framing.Target = glm::vec3(middle.x, ARENA_CAMERA_LOOK_HEIGHT, middle.z);
-		for (float distance = ARENA_CAMERA_MIN_DISTANCE; distance <= ARENA_CAMERA_MAX_DISTANCE; distance += CAMERA_FIT_STEP)
+		struct Candidate
+		{
+			glm::vec3 Target{ 0.0f };
+			bool Fits = false;
+		};
+		auto evaluate = [&](float distance)
 		{
 			// Moving the view up by a world unit lowers the points by cos(pitch) / (distance * tan(fov / 2)) of the
 			// screen, so a few passes centre them in the free band.
 			float height = ARENA_CAMERA_LOOK_HEIGHT;
-			glm::vec3 target(middle.x, height, middle.z);
-			Extent extent = project(target, distance);
+			Candidate candidate;
+			candidate.Target = glm::vec3(middle.x, height, middle.z);
+			Extent extent = project(candidate.Target, distance);
 			for (int pass = 0; pass < ARENA_CAMERA_CENTER_PASSES && extent.Valid; ++pass)
 			{
 				height -= (0.5f * (bottom + top) - 0.5f * (extent.MinY + extent.MaxY)) * distance * tanHalf / cosPitch;
-				target.y = height;
-				extent = project(target, distance);
+				candidate.Target.y = height;
+				extent = project(candidate.Target, distance);
 			}
+			candidate.Fits = extent.Valid && extent.MaxX <= CAMERA_FIT_MARGIN && extent.MinY >= bottom && extent.MaxY <= top;
+			return candidate;
+		};
 
-			framing.Target = target;
-			framing.Distance = distance;
-			if (extent.Valid && extent.MaxX <= CAMERA_FIT_MARGIN && extent.MinY >= bottom && extent.MaxY <= top)
-				break;
+		// The distances a scan from the nearest one steps through, accumulated the same way, so the answer is the same
+		// distance; the search starts where the last frame ended, since the subjects barely move between frames.
+		static const std::vector<float> s_Distances = []
+		{
+			std::vector<float> distances;
+			for (float distance = ARENA_CAMERA_MIN_DISTANCE; distance <= ARENA_CAMERA_MAX_DISTANCE; distance += CAMERA_FIT_STEP)
+				distances.push_back(distance);
+			return distances;
+		}();
+
+		size_t index = std::min(m_FitIndex, s_Distances.size() - 1);
+		Candidate at = evaluate(s_Distances[index]);
+		if (at.Fits)
+		{
+			while (index > 0)
+			{
+				const Candidate nearer = evaluate(s_Distances[index - 1]);
+				if (!nearer.Fits)
+					break;
+				--index;
+				at = nearer;
+			}
 		}
+		else
+		{
+			while (!at.Fits && index + 1 < s_Distances.size())
+				at = evaluate(s_Distances[++index]);
+		}
+		m_FitIndex = index;
+
+		Framing framing;
+		framing.Distance = s_Distances[index];
+		framing.Target = at.Target;
 		return framing;
 	}
 

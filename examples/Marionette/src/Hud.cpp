@@ -11,10 +11,6 @@ namespace
 {
 	using namespace Dingo;
 
-	constexpr const char* k_KeyboardHint = "WASD move    J / left mouse light    K / right mouse heavy    Shift block (tap to parry)    Space dodge    Esc title";
-	constexpr const char* k_PadHint = "Stick move    X light    Y heavy    RB block (tap to parry)    A dodge    Start title";
-	constexpr float k_HintFade = 2.0f;
-
 	glm::vec4 WithAlpha(const glm::vec4& color, float alpha)
 	{
 		return glm::vec4(glm::vec3(color), color.a * std::clamp(alpha, 0.0f, 1.0f));
@@ -36,10 +32,12 @@ namespace Dingo
 		return (halfHeight - HUD_BAR_DROP - 0.5f * HUD_BAR_HEIGHT) / halfHeight;
 	}
 
-	Hud::Hud(Scene& scene, int bout, bool fadeIn, bool showHint)
-		: m_Bout(bout), m_ShowHint(showHint), m_FadeInLeft(fadeIn ? HUD_FADE_IN_SECONDS : 0.0f)
+	Hud::Hud(Scene& scene, const GameAssets& assets, int bout, bool fadeIn, bool showHint)
+		: m_Font(assets.GetFont()), m_Bout(bout), m_ShowHint(showHint), m_FadeInLeft(fadeIn ? HUD_FADE_IN_SECONDS : 0.0f),
+		m_BoutLabelText(std::format("BOUT {} / {}", bout, BOUT_COUNT)), m_IntroText(std::format("BOUT {}", bout))
 	{
-		m_Font = Overlay::LoadFont("HUD");
+		if (bout < BOUT_COUNT)
+			m_NextText = std::format("Next: {}", GetOpponentDef(bout + 1).Title);
 		Overlay::MakeCamera(scene, "HudCamera", HUD_ORTHO_SIZE);
 
 		m_PlayerBar = MakeBar(scene, "Player", COLOR_BAR_PLAYER);
@@ -54,10 +52,7 @@ namespace Dingo
 		m_Fade.AddComponent<SpriteRendererComponent>().Color = glm::vec4(glm::vec3(COLOR_FADE), 0.0f);
 	}
 
-	Hud::~Hud()
-	{
-		DestroyAndDelete(m_Font);
-	}
+	Hud::~Hud() = default;
 
 	Hud::Bar Hud::MakeBar(Scene& scene, const char* name, const glm::vec4& fill)
 	{
@@ -135,8 +130,6 @@ namespace Dingo
 		std::string_view big;
 		std::string_view title;
 		std::string_view note;
-		std::string bigText;
-		std::string titleText;
 		float bigSize = HUD_BANNER_BIG_SIZE;
 		float bigY = HUD_BANNER_BIG_Y;
 		glm::vec4 bigColor = COLOR_TITLE;
@@ -146,8 +139,7 @@ namespace Dingo
 		switch (flow.GetPhase())
 		{
 			case BoutPhase::Intro:
-				bigText = std::format("BOUT {}", m_Bout);
-				big = bigText;
+				big = m_IntroText;
 				title = def.Title ? def.Title : def.Name;
 				note = def.Name;
 				alpha = intro;
@@ -174,8 +166,7 @@ namespace Dingo
 					case BoutWinner::Player:
 						if (m_Bout < BOUT_COUNT)
 						{
-							titleText = std::format("Next: {}", GetOpponentDef(m_Bout + 1).Title);
-							title = titleText;
+							title = m_NextText;
 						}
 						else
 						{
@@ -207,8 +198,8 @@ namespace Dingo
 		m_HintClock += deltaTime;
 		const float left = HUD_HINT_SECONDS - m_HintClock;
 		const bool visible = m_ShowHint && left > 0.0f;
-		const char* text = Input::IsGamepadConnected() ? k_PadHint : k_KeyboardHint;
-		SetLine(m_Hint, visible ? std::string_view(text) : std::string_view(), HUD_HINT_SIZE, -halfHeight + HUD_HINT_RISE, WithAlpha(COLOR_TEXT_DIM, left / k_HintFade));
+		const char* text = Input::IsGamepadConnected() ? HUD_HINT_GAMEPAD : HUD_HINT_KEYBOARD;
+		SetLine(m_Hint, visible ? std::string_view(text) : std::string_view(), HUD_HINT_SIZE, -halfHeight + HUD_HINT_RISE, WithAlpha(COLOR_TEXT_DIM, left / HUD_HINT_FADE));
 	}
 
 	void Hud::Update(float deltaTime, const Fighter& player, const Fighter& opponent, const BoutFlow& flow)
@@ -238,7 +229,7 @@ namespace Dingo
 		UpdateBar(m_PlayerBar, deltaTime, true, -(gapHalf + 0.5f * width), width, y, Fraction(player), player.GetDef().Name);
 		UpdateBar(m_OpponentBar, deltaTime, false, gapHalf + 0.5f * width, width, y, Fraction(opponent), opponent.GetDef().Name);
 
-		SetLine(m_BoutLabel, std::format("BOUT {} / {}", m_Bout, BOUT_COUNT), HUD_BOUT_LABEL_SIZE, halfHeight - HUD_BOUT_LABEL_DROP, COLOR_TEXT_DIM);
+		SetLine(m_BoutLabel, m_BoutLabelText, HUD_BOUT_LABEL_SIZE, halfHeight - HUD_BOUT_LABEL_DROP, COLOR_TEXT_DIM);
 		UpdateBanner(opponent, flow);
 		UpdateHint(deltaTime, halfHeight);
 	}

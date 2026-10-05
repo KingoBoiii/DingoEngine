@@ -1,4 +1,5 @@
 #include "LaunchOptions.h"
+#include "CheckTuning.h"
 #include "GameTuning.h"
 
 #include <charconv>
@@ -150,22 +151,25 @@ namespace
 		ParseFlag(args, "break-hitbox", options.BreakHitbox);
 		ParseFlag(args, "hot-reload", options.HotReload);
 		ParseFlag(args, "live-edit-demo", options.LiveEditDemo);
+		ParseFlag(args, "perf", options.Perf);
 		if (options.LiveEditDemo)
 			options.HotReload = true;
 		ParseDrive(args, options.Drive);
 		ParseInt(args, "tournament", 0, TOURNAMENT_MAX, options.Tournament);
+		ParseInt(args, "player-tier", 1, BOUT_COUNT, options.PlayerTier);
 		if (options.Tournament > 0)
 		{
 			options.Autoplay = true;
-			if (options.Freeze || options.Lineup || options.Drive != DriveMode::None)
+			if (options.Freeze || options.Lineup || options.End || options.Drive != DriveMode::None)
 			{
-				DE_WARN("Marionette: --tournament plays real bouts; ignoring --freeze, --lineup and --drive");
+				DE_WARN("Marionette: --tournament plays real bouts; ignoring --freeze, --lineup, --end and --drive");
 				options.Freeze = false;
 				options.Lineup = false;
+				options.End = false;
 				options.Drive = DriveMode::None;
 			}
 		}
-		if (!args.Get("bout") && (options.Drive != DriveMode::None || options.Freeze || options.Autoplay))
+		if (!args.Get("bout") && (options.Drive != DriveMode::None || options.Freeze || options.Autoplay || options.Lineup))
 			options.Bout = 1;
 		if (options.Tournament > 0 && options.Bout < 1)
 		{
@@ -176,7 +180,7 @@ namespace
 		ParseRange(args, "move", 0.0f, MOVE_PARAMETER_MAX, options.Move);
 		ParseRange(args, "phase", 0.0f, 1.0f, options.Phase);
 		ParseSeconds(args, "fixed-dt", FIXED_DT_MAX, options.FixedDt);
-		if (options.Tournament > 0 && !(options.FixedDt > 0.0f))
+		if ((options.Tournament > 0 || options.Freeze) && !(options.FixedDt > 0.0f))
 			options.FixedDt = FRAME_SECONDS;
 		ParseSeed(args, options.Seed);
 
@@ -195,6 +199,11 @@ namespace
 			DE_WARN("Marionette: --drive is ignored with --freeze");
 		if (!options.Freeze && !options.PoseClip.empty())
 			DE_WARN("Marionette: --pose only applies with --freeze");
+		if (options.Perf && !options.Autoplay)
+		{
+			DE_WARN("Marionette: --perf measures an --autoplay bout; ignoring it");
+			options.Perf = false;
+		}
 		return options;
 	}
 }
@@ -213,6 +222,11 @@ namespace Dingo
 			case DriveMode::Duel:   return "duel";
 			default:                return "none";
 		}
+	}
+
+	bool IsScripted(const LaunchOptions& options)
+	{
+		return options.Check || options.Drive != DriveMode::None || options.FixedDt > 0.0f || options.Autoplay || options.LiveEditDemo;
 	}
 
 	const LaunchOptions& ParseLaunchOptions(const ApplicationCommandLineArgs& args)

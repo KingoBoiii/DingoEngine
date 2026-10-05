@@ -1,6 +1,7 @@
 #include "Checks.h"
 #include "AiBrain.h"
 #include "CheckReport.h"
+#include "CheckTuning.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
 #include "Moveset.h"
@@ -313,6 +314,42 @@ namespace
 				tier.AttackIntervalMin, tier.AttackIntervalMax));
 	}
 
+	struct ReactiveRun
+	{
+		int Blocked = 0;
+		int Backed = 0;
+		int Neither = 0;
+		float Earliest = 1.0e9f;
+		float Tightest = 1.0e9f;
+		float Widest = 0.0f;
+
+		float GetFraction() const { return static_cast<float>(Blocked) / static_cast<float>(CHECK_AI_SWINGS); }
+		bool IsTuned() const { return GetFraction() >= CHECK_AI_CHANCE_LOW && GetFraction() <= CHECK_AI_CHANCE_HIGH; }
+	};
+
+	ReactiveRun RunReactive(const AiTierParams& tier, const FighterDef& veteran, const SwingSpec& spec)
+	{
+		AiBrain brain(tier, 1, nullptr);
+		Harness harness(veteran, spec, false);
+		harness.Run(brain, CHECK_AI_SWINGS, [](const FighterIntent&) {});
+
+		ReactiveRun run;
+		for (const SwingLog& log : harness.GetSwings())
+		{
+			run.Blocked += log.Raise >= 0.0f ? 1 : 0;
+			run.Backed += log.Raise < 0.0f && log.SteppedBack ? 1 : 0;
+			run.Neither += log.Raise < 0.0f && !log.SteppedBack ? 1 : 0;
+			if (log.Raise >= 0.0f)
+			{
+				const float lead = spec.HitSeconds() - log.Raise;
+				run.Earliest = std::min(run.Earliest, log.Raise);
+				run.Tightest = std::min(run.Tightest, lead);
+				run.Widest = std::max(run.Widest, lead);
+			}
+		}
+		return run;
+	}
+
 	void CheckVeteran(CheckReport& report, const GameAssets& assets)
 	{
 		const std::vector<SwingSpec> specs = KnightSpecs(assets);
@@ -324,9 +361,10 @@ namespace
 
 		const FighterDef& veteran = GetOpponentDef(2);
 		const AiTierParams& tier = AI_TIERS[1];
+		const float parryWindow = PARRY_WINDOW_END / veteran.Pace;
 
-		// It blocks early, on first sight, so only a swing slow enough to land past the parry window is blocked;
-		// a quicker one it would parry by accident, and it steps back from that instead.
+		// The slow swing is the slowest there is; the quick one is the quickest it can still see, whose hit a block
+		// raised on sight lands inside the parry window.
 		const SwingSpec* slow = &specs.front();
 		const SwingSpec* quick = nullptr;
 		for (const SwingSpec& spec : specs)
@@ -336,45 +374,134 @@ namespace
 			if (spec.HitSeconds() >= tier.ReactionTime + CHECK_AI_STEP && (!quick || spec.HitSeconds() < quick->HitSeconds()))
 				quick = &spec;
 		}
-
-		AiBrain brain(tier, 1, nullptr);
-		Harness harness(veteran, *slow, false);
-		harness.Run(brain, CHECK_AI_SWINGS, [](const FighterIntent&) {});
-
-		int blocked = 0;
-		int backed = 0;
-		int neither = 0;
-		float earliest = 1.0e9f;
-		for (const SwingLog& log : harness.GetSwings())
+		if (!quick || quick->HitSeconds() - tier.ReactionTime > parryWindow - CHECK_AI_STEP)
 		{
-			blocked += log.Raise >= 0.0f ? 1 : 0;
-			backed += log.Raise < 0.0f && log.SteppedBack ? 1 : 0;
-			neither += log.Raise < 0.0f && !log.SteppedBack ? 1 : 0;
-			if (log.Raise >= 0.0f)
-				earliest = std::min(earliest, log.Raise);
+			report.Check(false, "Veteran: the Knight has a swing it can see whose hit still lands inside the parry window of a block raised on sight");
+			return;
 		}
 
-		int quickBlocks = 0;
-		int quickSteps = 0;
-		if (quick)
+		AiTierParams reactive = tier;
+		reactive.GuardChance = 0.0f;
+		const ReactiveRun slowRun = RunReactive(reactive, veteran, *slow);
+		const ReactiveRun quickRun = RunReactive(reactive, veteran, *quick);
+
+		AiTierParams held = tier;
+		held.GuardChance = 1.0f;
+		held.GuardHoldMin = CHECK_AI_HELD_HOLD;
+		held.GuardHoldMax = CHECK_AI_HELD_HOLD;
+		int heldSwings = 0;
+		int heldUp = 0;
+		int heldBacked = 0;
+		for (const SwingSpec& spec : specs)
 		{
-			AiBrain quickBrain(tier, 1, nullptr);
-			Harness quickRun(veteran, *quick, false);
-			quickRun.Run(quickBrain, CHECK_AI_SWINGS, [](const FighterIntent&) {});
-			for (const SwingLog& log : quickRun.GetSwings())
+			AiBrain brain(held, 1, nullptr);
+			Harness harness(veteran, spec, false);
+			harness.Run(brain, CHECK_AI_HELD_SWINGS, [](const FighterIntent&) {});
+			for (const SwingLog& log : harness.GetSwings())
 			{
-				quickBlocks += log.Raise >= 0.0f ? 1 : 0;
-				quickSteps += log.SteppedBack ? 1 : 0;
+				++heldSwings;
+				heldUp += log.Raise >= 0.0f && log.Raise <= CHECK_AI_STEP ? 1 : 0;
+				heldBacked += log.SteppedBack ? 1 : 0;
 			}
 		}
 
-		const float fraction = static_cast<float>(blocked) / static_cast<float>(CHECK_AI_SWINGS);
-		report.Check(fraction >= CHECK_AI_CHANCE_LOW && fraction <= CHECK_AI_CHANCE_HIGH && neither == 0 && earliest >= tier.ReactionTime - CHECK_AI_STEP
-				&& quickBlocks == 0 && (!quick || quickSteps == CHECK_AI_SWINGS),
-			std::format("Veteran blocks {:.0f}% of {} slow swings ({}, hit at {:.2f} s; tuned {:.0f}%) and steps back from the rest ({} blocked, {} stepped back, {} did neither); the first block went up "
-				"{:.2f} s into a swing (reaction {:.2f} s); against the quick {} it never blocks and steps back every time ({} blocks, {} step-backs)",
-				100.0f * fraction, CHECK_AI_SWINGS, slow->Move->Clip, slow->HitSeconds(), 100.0f * tier.BlockChance, blocked, backed, neither, earliest, tier.ReactionTime,
-				quick ? quick->Move->Clip : "swing", quickBlocks, quickSteps));
+		const float earliest = std::min(slowRun.Earliest, quickRun.Earliest);
+		const bool slowOk = slowRun.IsTuned() && slowRun.Neither == 0;
+		const bool quickOk = quickRun.IsTuned() && quickRun.Neither == 0 && quickRun.Tightest >= 0.0f && quickRun.Widest <= parryWindow;
+		const bool heldOk = heldSwings > 0 && heldUp == heldSwings && heldBacked == 0;
+		report.Check(slowOk && quickOk && heldOk && earliest >= tier.ReactionTime - CHECK_AI_STEP,
+			std::format("Veteran's reaction (guard off): it blocks {:.0f}% of {} slow swings ({}, hit at {:.2f} s; tuned {:.0f}%) and steps back from the rest ({} blocked, {} stepped back, {} did neither); "
+				"against the quick {} (hit at {:.2f} s) it blocks anyway {:.0f}% ({} blocked, {} stepped back, {} did neither), the block up {:.3f} to {:.3f} s before the hit (parry window {:.3f} s); "
+				"the first block went up {:.2f} s into a swing (reaction {:.2f} s); a held guard ({:.0f} s, punish on: the only thing that lowers it, and it is back before the next swing) is up at the start of {} of {} swings and steps back from {}",
+				100.0f * slowRun.GetFraction(), CHECK_AI_SWINGS, slow->Move->Clip, slow->HitSeconds(), 100.0f * tier.BlockChance, slowRun.Blocked, slowRun.Backed, slowRun.Neither,
+				quick->Move->Clip, quick->HitSeconds(), 100.0f * quickRun.GetFraction(), quickRun.Blocked, quickRun.Backed, quickRun.Neither, quickRun.Tightest, quickRun.Widest, parryWindow,
+				earliest, tier.ReactionTime, CHECK_AI_HELD_HOLD, heldUp, heldSwings, heldBacked));
+	}
+
+	struct GuardWatch
+	{
+		float First = -1.0f;
+		int Raises = 0;
+		int Frames = 0;
+		float Shortest = 1.0e9f;
+		float Longest = 0.0f;
+	};
+
+	// The brain faces a Knight that stands still `distance` away and never swings; its own state follows its block.
+	GuardWatch WatchGuard(const AiTierParams& tier, const FighterDef& def, uint32_t seed, float distance)
+	{
+		AiView opponent;
+		opponent.Def = &GetPlayerDef();
+		opponent.Position = glm::vec2(0.0f);
+		opponent.Facing = glm::vec2(0.0f, 1.0f);
+
+		AiBrain brain(tier, seed, nullptr);
+		GuardWatch watch;
+		FighterState state = FighterState::Locomotion;
+		int up = 0;
+		const int frames = static_cast<int>(CHECK_AI_GUARD_WATCH / CHECK_AI_STEP);
+		for (int frame = 1; frame <= frames; ++frame)
+		{
+			AiView self = SelfView(def, state);
+			self.Position = glm::vec2(0.0f, distance);
+			const FighterIntent intent = brain.Decide(CHECK_AI_STEP, self, opponent);
+			if (intent.Block)
+			{
+				++watch.Frames;
+				if (up++ == 0)
+				{
+					++watch.Raises;
+					if (watch.First < 0.0f)
+						watch.First = static_cast<float>(frame) * CHECK_AI_STEP;
+				}
+			}
+			else if (up > 0)
+			{
+				const float length = static_cast<float>(up) * CHECK_AI_STEP;
+				watch.Shortest = std::min(watch.Shortest, length);
+				watch.Longest = std::max(watch.Longest, length);
+				up = 0;
+			}
+			state = intent.Block ? FighterState::Block : FighterState::Locomotion;
+		}
+		return watch;
+	}
+
+	void CheckVeteranGuard(CheckReport& report)
+	{
+		const AiTierParams& tier = AI_TIERS[1];
+		const FighterDef& veteran = GetOpponentDef(2);
+		const float bound = static_cast<float>(CHECK_AI_GUARD_DECISIONS) * AI_GUARD_DECIDE_MAX + CHECK_AI_STEP;
+
+		bool raised = true;
+		float firstBest = 1.0e9f;
+		float firstWorst = 0.0f;
+		float shortest = 1.0e9f;
+		float longest = 0.0f;
+		int fewest = 1 << 30;
+		int distantFrames = 0;
+		int unguardedFrames = 0;
+		for (int seed = 1; seed <= CHECK_AI_SEEDS; ++seed)
+		{
+			const GuardWatch inRange = WatchGuard(tier, veteran, static_cast<uint32_t>(seed), CHECK_AI_DISTANCE);
+			raised = raised && inRange.First >= 0.0f && inRange.First <= bound;
+			firstBest = std::min(firstBest, inRange.First);
+			firstWorst = std::max(firstWorst, inRange.First);
+			shortest = std::min(shortest, inRange.Shortest);
+			longest = std::max(longest, inRange.Longest);
+			fewest = std::min(fewest, inRange.Raises);
+			distantFrames += WatchGuard(tier, veteran, static_cast<uint32_t>(seed), CHECK_AI_GUARD_FAR).Frames;
+
+			unguardedFrames += WatchGuard(AI_TIERS[0], GetOpponentDef(1), static_cast<uint32_t>(seed), CHECK_AI_DISTANCE).Frames;
+			unguardedFrames += WatchGuard(AI_TIERS[2], GetOpponentDef(3), static_cast<uint32_t>(seed), CHECK_AI_DISTANCE).Frames;
+		}
+
+		const bool holds = shortest >= tier.GuardHoldMin - CHECK_AI_STEP && longest <= tier.GuardHoldMax + 2.0f * CHECK_AI_STEP;
+		report.Check(raised && holds && fewest >= CHECK_AI_GUARD_MIN_RAISES && distantFrames == 0 && unguardedFrames == 0,
+			std::format("Veteran guards: in range of a still opponent it raises its guard within {} decisions ({:.2f} s) on all {} seeds (the first at {:.2f} to {:.2f} s), holds it {:.2f} to {:.2f} s "
+				"(tuned {:.1f} to {:.1f} s) and lowers it again ({} raises at the fewest in {:.0f} s); out of range it keeps its block down ({} blocking frames); the Recruit and the Champion never guard ({} frames)",
+				CHECK_AI_GUARD_DECISIONS, bound, CHECK_AI_SEEDS, firstBest, firstWorst, shortest, longest, tier.GuardHoldMin, tier.GuardHoldMax, fewest, CHECK_AI_GUARD_WATCH, distantFrames,
+				unguardedFrames));
 	}
 
 	void CheckChampion(CheckReport& report, const GameAssets& assets)
@@ -556,6 +683,7 @@ namespace Dingo
 		CheckPerception(report);
 		CheckRecruit(report, assets);
 		CheckVeteran(report, assets);
+		CheckVeteranGuard(report);
 		CheckChampion(report, assets);
 		CheckDeterminism(report, assets);
 		CheckReach(report, reach);

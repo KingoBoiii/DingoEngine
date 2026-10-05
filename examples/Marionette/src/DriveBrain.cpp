@@ -1,4 +1,5 @@
 #include "DriveBrain.h"
+#include "CheckTuning.h"
 #include "Fighter.h"
 #include "GameMath.h"
 #include "GameTuning.h"
@@ -92,7 +93,7 @@ namespace Dingo
 			case DriveMode::Wall:
 				layout.PlayerPosition = glm::vec3(mode == DriveMode::Wall ? DRIVE_WALL_START_X : DRIVE_LANE_START, FIGHTER_SPAWN_LIFT, 0.0f);
 				layout.OpponentPosition = glm::vec3(0.0f, FIGHTER_SPAWN_LIFT, DRIVE_LANE_OFFSET);
-				layout.OpponentYawDegrees = 180.0f;
+				layout.OpponentYawDegrees = DRIVE_FACE_TOWARD_NEG_Z_DEG;
 				break;
 
 			case DriveMode::Duel:
@@ -102,7 +103,7 @@ namespace Dingo
 
 			case DriveMode::Circle:
 				layout.PlayerPosition = glm::vec3(DRIVE_CIRCLE_RADIUS, FIGHTER_SPAWN_LIFT, 0.0f);
-				layout.PlayerYawDegrees = 180.0f;
+				layout.PlayerYawDegrees = DRIVE_FACE_TOWARD_NEG_Z_DEG;
 				layout.OpponentPosition = glm::vec3(0.0f, FIGHTER_SPAWN_LIFT, 0.0f);
 				break;
 

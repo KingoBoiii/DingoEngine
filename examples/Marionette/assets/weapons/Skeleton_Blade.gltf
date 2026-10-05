@@ -56,7 +56,7 @@
         {
             "mimeType" : "image/png",
             "name" : "skeleton_texture",
-            "uri" : "skeleton_texture.png"
+            "uri" : "../characters/skeleton_texture.png"
         }
     ],
     "accessors" : [

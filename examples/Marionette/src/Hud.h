@@ -9,6 +9,7 @@ namespace Dingo
 
 	class BoutFlow;
 	class Fighter;
+	class GameAssets;
 
 	// Where the lowest thing in the HUD's top band, the health bars, ends on the screen, in normalized device y (1 is
 	// the top edge). The arena camera keeps the fighters below it.
@@ -19,7 +20,7 @@ namespace Dingo
 	class Hud
 	{
 	public:
-		Hud(Scene& scene, int bout, bool fadeIn, bool showHint);
+		Hud(Scene& scene, const GameAssets& assets, int bout, bool fadeIn, bool showHint);
 		~Hud();
 
 		Hud(const Hud&) = delete;
@@ -46,6 +47,7 @@ namespace Dingo
 		void UpdateHint(float deltaTime, float halfHeight);
 
 	private:
+		// The assets own it.
 		Font* m_Font = nullptr;
 		int m_Bout = 1;
 		bool m_ShowHint = false;
@@ -53,6 +55,9 @@ namespace Dingo
 		float m_HintClock = 0.0f;
 		// The fade quad is a sprite and text is drawn over every sprite, so the text fades by hand.
 		float m_TextVisible = 1.0f;
+		std::string m_BoutLabelText;
+		std::string m_IntroText;
+		std::string m_NextText;
 		Bar m_PlayerBar;
 		Bar m_OpponentBar;
 		Entity m_Fade;

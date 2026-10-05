@@ -112,8 +112,10 @@ namespace Dingo
 		bool IsSwingResolved() const { return m_SwingResolved; }
 		void ResolveSwing() { m_SwingResolved = true; }
 		bool CanRiposte() const;
-		// The parry window is open, or the block was raised this frame and the animator has not said so yet.
+		// The parry window is open, or the block was raised this frame and the animator has not said so yet; never on a
+		// raise made within BLOCK_PARRY_COOLDOWN of lowering the block.
 		bool IsParryOpen() const;
+		bool IsParryDenied() const { return m_ParryDenied; }
 
 		bool IsWindowActive(std::string_view name) const;
 		// The hitbox is open in an attack: the animator says so, or it opened and closed since the last look.
@@ -148,6 +150,20 @@ namespace Dingo
 			float Radius = 0.0f;
 		};
 
+		// The dodge clip to play and how much of DODGE_EXTRA_DISTANCE the room allows it.
+		struct DodgePlan
+		{
+			const AnimationClip* Clip = nullptr;
+			float Extra = 0.0f;
+		};
+
+		struct DodgeRoom
+		{
+			// The pose's own travel stays short of the wall, whatever the extra distance.
+			bool Clear = true;
+			float Extra = 0.0f;
+		};
+
 		Entity SpawnWeapon(const char* path, const char* joint);
 		void BuildHitRig(const Model* weapon, Entity weaponPart);
 		RigSphere SpawnRigSphere(const std::string& name, Entity parent, const char* joint, const glm::vec3& offset, float radius);
@@ -166,6 +182,8 @@ namespace Dingo
 		void Interrupt(const char* clipName, FighterState state, float fadeIn, float fadeOut, bool late);
 		void Die();
 		const char* PickDodgeClip() const;
+		DodgePlan PlanDodge() const;
+		DodgeRoom MeasureDodge(const AnimationClip& clip) const;
 		bool IsComboOpen(const Animator& animator) const;
 		void UpdateHitStop(float deltaTime);
 
@@ -188,6 +206,7 @@ namespace Dingo
 		const Skeleton* m_Skeleton = nullptr;
 		LocomotionStates m_States;
 		FighterIntent m_Intent;
+		const Fighter* m_Opponent = nullptr;
 
 		float m_ModelHeight = 0.0f;
 		float m_Radius = FIGHTER_RADIUS;
@@ -220,6 +239,8 @@ namespace Dingo
 		bool m_BlockUp = false;
 		bool m_BlockRaising = false;
 		bool m_ParryBegun = false;
+		bool m_ParryDenied = false;
+		float m_ParryCooldown = 0.0f;
 		float m_LightBuffer = 0.0f;
 		float m_RiposteLeft = 0.0f;
 		float m_HitStopLeft = 0.0f;

@@ -1,5 +1,6 @@
 #include "Checks.h"
 #include "CheckReport.h"
+#include "CheckTuning.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
 #include "Locomotion.h"

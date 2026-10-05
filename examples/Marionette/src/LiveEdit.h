@@ -13,8 +13,11 @@ namespace Dingo
 	// Replaces the live-edit copy with `source`. False, with the game left on its own assets, when the copy fails.
 	bool PrepareLiveEditAssets(const std::filesystem::path& source);
 
-	// After LIVE_EDIT_DELAY seconds, moves the hitbox of one move in the copy's .events file to a later range, so
-	// the running game is seen to change when the file does. It writes nowhere but into the copy.
+	// Removes the copy PrepareLiveEditAssets made, and nothing else: the guards that made the copy have to hold again.
+	void CleanupLiveEditAssets();
+
+	// After LIVE_EDIT_DELAY seconds, moves the hitbox and the combo window after it of one move in the copy's .events
+	// file later, so the running game is seen to change when the file does. It writes nowhere but into the copy.
 	class LiveEditDemo
 	{
 	public:
@@ -42,6 +45,9 @@ namespace Dingo
 		std::chrono::steady_clock::time_point m_WrittenAt;
 		float m_Begin = 0.0f;
 		float m_End = 0.0f;
+		bool m_HasCombo = false;
+		float m_ComboBegin = 0.0f;
+		float m_ComboEnd = 0.0f;
 	};
 
 }

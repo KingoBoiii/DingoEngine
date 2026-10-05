@@ -1,5 +1,6 @@
 #include "AiBrain.h"
 #include "ArenaWorld.h"
+#include "GameMath.h"
 #include "ReachTable.h"
 
 #include <algorithm>
@@ -8,8 +9,6 @@
 namespace
 {
 	using namespace Dingo;
-
-	constexpr float k_Infinity = std::numeric_limits<float>::infinity();
 
 	glm::vec2 Perpendicular(const glm::vec2& v)
 	{
@@ -94,7 +93,7 @@ namespace Dingo
 		m_PrevState = self.State;
 		m_NextMove = ChooseMove(self);
 		m_AttackTimer = Range(m_Params.AttackIntervalMin, m_Params.AttackIntervalMax);
-		m_StrafeSign = Chance(0.5f) ? 1.0f : -1.0f;
+		m_StrafeSign = Chance(AI_STRAFE_START_CHANCE) ? 1.0f : -1.0f;
 		m_StrafeTimer = Range(AI_STRAFE_TURN_MIN, AI_STRAFE_TURN_MAX);
 	}
 
@@ -154,7 +153,7 @@ namespace Dingo
 	float AiBrain::PredictedHit(const AiView& seen, double seenTime) const
 	{
 		if (!std::isfinite(seen.SecondsToHitbox))
-			return k_Infinity;
+			return GameMath::k_Infinity;
 		return seen.SecondsToHitbox - static_cast<float>(m_Clock - seenTime);
 	}
 
@@ -210,16 +209,21 @@ namespace Dingo
 		m_StrafeTimer -= deltaTime;
 		m_StanceTimer -= deltaTime;
 		m_LingerTimer -= deltaTime;
+		m_GuardLeft -= deltaTime;
+		m_GuardTimer -= deltaTime;
 		m_PlanAge += deltaTime;
 
 		if (self.State == FighterState::Dead || opponent.State == FighterState::Dead)
 		{
 			m_Plan = Plan();
+			DropGuard();
 			m_PrevState = self.State;
 			return intent;
 		}
 
 		TrackState(self);
+		if (self.State != FighterState::Locomotion && self.State != FighterState::Block)
+			DropGuard();
 
 		const glm::vec2 offset = opponent.Position - self.Position;
 		const float distance = glm::length(offset);
@@ -294,14 +298,18 @@ namespace Dingo
 		DecideOffence(self, opponent, seen, distance, toward, intent);
 	}
 
-	void AiBrain::RollPlan(const AiView& self, const AiView& seen, float predicted)
+	void AiBrain::RollPlan(const AiView& seen, float predicted)
 	{
 		m_Plan = Plan();
 		m_Plan.Swing = seen.SwingId;
 
-		// A tier that does not parry blocks early, which is only a block if the hit is past the parry window.
-		const bool parries = m_Params.ParryChanceLight > 0.0f || m_Params.ParryChanceHeavy > 0.0f;
-		const bool early = predicted >= PARRY_WINDOW_END / self.Def->Pace;
+		// A guard that is up holds through the swing: any other plan would lower it.
+		if (m_GuardLeft > 0.0f)
+		{
+			m_Plan.Kind = PlanKind::Block;
+			return;
+		}
+
 		const bool heavy = seen.Move->Kind == MoveKind::Heavy;
 		if (Chance(heavy ? m_Params.ParryChanceHeavy : m_Params.ParryChanceLight))
 		{
@@ -310,9 +318,9 @@ namespace Dingo
 		else if (Chance(m_Params.DodgeChance) && predicted >= AI_DODGE_MIN_LEAD)
 		{
 			m_Plan.Kind = PlanKind::Dodge;
-			m_Plan.Side = Chance(0.5f) ? 1.0f : -1.0f;
+			m_Plan.Side = Chance(AI_DODGE_SIDE_CHANCE) ? 1.0f : -1.0f;
 		}
-		else if (Chance(m_Params.BlockChance) && (parries || early))
+		else if (Chance(m_Params.BlockChance))
 		{
 			m_Plan.Kind = PlanKind::Block;
 		}
@@ -327,14 +335,14 @@ namespace Dingo
 		Reaction reaction;
 
 		const bool swinging = seen.State == FighterState::Attack && seen.Move != nullptr;
-		const float predicted = swinging ? PredictedContact(seen, seenTime, self) : k_Infinity;
+		const float predicted = swinging ? PredictedContact(seen, seenTime, self) : GameMath::k_Infinity;
 		if (swinging && seen.SwingId != m_HandledSwing && predicted > AI_LATE_SECONDS)
 		{
 			m_HandledSwing = seen.SwingId;
 			m_Plan = Plan();
 			m_PlanAge = 0.0f;
 			if (Threatens(self, seen))
-				RollPlan(self, seen, predicted);
+				RollPlan(seen, predicted);
 		}
 
 		if (m_Plan.Kind != PlanKind::None)
@@ -414,6 +422,57 @@ namespace Dingo
 		return ClampLength(move - position / radius * (AI_WALL_PUSH * depth), 1.0f);
 	}
 
+	// A guard that ends early (a punish, a hit, the opponent leaving) must not leave the decision timer counting out
+	// the hold it was granted, or the Veteran could not guard again for the rest of that hold.
+	void AiBrain::DropGuard()
+	{
+		if (m_GuardLeft > 0.0f)
+			m_GuardTimer = std::min(m_GuardTimer, AI_GUARD_DECIDE_MIN);
+		m_GuardLeft = 0.0f;
+	}
+
+	float AiBrain::GuardRange(const AiView& self, const AiView& opponent) const
+	{
+		float reach = OpponentReach(opponent, self);
+		if (m_NextMove)
+			reach = std::max(reach, ReachOf(self, *m_NextMove, opponent));
+		return reach + AI_GUARD_MARGIN;
+	}
+
+	// The opponent can swing at it faster than it can see, so a block that is only raised on sight comes too late
+	// to land past the parry window: a guard goes up before the swing and lets the hit fall on a block.
+	bool AiBrain::DecideGuard(const AiView& self, const AiView& opponent, float distance, FighterIntent& intent)
+	{
+		if (!(m_Params.GuardChance > 0.0f))
+			return false;
+
+		if (distance > GuardRange(self, opponent))
+		{
+			DropGuard();
+			return false;
+		}
+
+		if (!(m_GuardLeft > 0.0f))
+		{
+			if (m_Stance == Stance::Retreat || m_GuardTimer > 0.0f)
+				return false;
+
+			const float interval = Range(AI_GUARD_DECIDE_MIN, AI_GUARD_DECIDE_MAX);
+			if (!Chance(m_Params.GuardChance))
+			{
+				m_GuardTimer = interval;
+				return false;
+			}
+
+			m_GuardLeft = Range(m_Params.GuardHoldMin, m_Params.GuardHoldMax);
+			m_GuardTimer = m_GuardLeft + interval;
+		}
+
+		intent.Block = true;
+		intent.Move = AvoidWall(self.Position, glm::vec2(0.0f));
+		return true;
+	}
+
 	void AiBrain::DecideOffence(const AiView& self, const AiView& opponent, const AiView& seen, float distance, const glm::vec2& toward, FighterIntent& intent)
 	{
 		if (m_Params.PunishChance > 0.0f && m_PunishTimer <= 0.0f && seen.SwingId != m_PunishedSwing)
@@ -430,12 +489,14 @@ namespace Dingo
 					if (Chance(m_Params.PunishChance))
 					{
 						m_PunishTimer = AI_PUNISH_COOLDOWN;
+						DropGuard();
 						intent.Light = true;
 						return;
 					}
 				}
 				else
 				{
+					DropGuard();
 					intent.Move = AvoidWall(self.Position, toward * ApproachIntent(distance, quickDistance));
 					return;
 				}
@@ -449,6 +510,9 @@ namespace Dingo
 		}
 		if (m_Stance == Stance::Bait && m_StanceTimer <= 0.0f)
 			m_Stance = Stance::Engage;
+
+		if (DecideGuard(self, opponent, distance, intent))
+			return;
 
 		const float attackDistance = AttackDistance(self, opponent, m_NextMove);
 		glm::vec2 move(0.0f);
