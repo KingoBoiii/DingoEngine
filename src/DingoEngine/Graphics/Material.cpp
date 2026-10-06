@@ -185,6 +185,7 @@ namespace Dingo
 			.SetFramebuffer(framebuffer)
 			.SetVertexLayout(layout)
 			.SetCullMode(m_Params.CullMode)
+			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
 			.SetFillMode(m_Params.FillMode));
 
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));

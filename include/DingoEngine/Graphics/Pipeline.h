@@ -77,6 +77,12 @@ namespace Dingo
 			return *this;
 		}
 
+		PipelineParams& SetFrontCounterClockwise(bool frontCounterClockwise)
+		{
+			FrontCounterClockwise = frontCounterClockwise;
+			return *this;
+		}
+
 		PipelineParams& SetDepthTest(bool enabled)
 		{
 			DepthTest = enabled;
