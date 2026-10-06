@@ -282,6 +282,19 @@ the opposite of what it did.
 
 **Test**: the Mesh 3D Test checks at start that `CreateBox` and `CreateSphere` (at three detail levels) wind every triangle outward, and takes `--mesh=box|sphere` and `--mesh-angle=<deg>`. The Model 3D Test's models, which used to draw inside out, now show their outside.
 
+## v0.8.2 — Start-up Without a GPU
+A point release for two start-up failures found on a Hyper-V VM with no GPU, whose only Direct3D
+adapter is WARP (Windows' software rasterizer, "Microsoft Basic Render Driver") and which has no
+Vulkan driver. DirectX 11 already ran there, because it takes the default adapter. Checking what
+that machine drew turned up a third bug, in blending, which every machine has.
+- **DirectX 12 falls back to WARP** when no hardware adapter supports feature level 12_0, logs a warning, and reports the adapter as `AdapterDeviceType::Software`. It used to skip every software adapter and assert `No suitable DirectX 12 GPU found.` Hardware selection is unchanged.
+- **Vulkan reports a missing driver instead of crashing.** With required instance extensions or layers missing, start-up printed them to stdout and then crashed on a null instance. They now go to the engine log, and start-up stops with a `DE_CORE_VERIFY`, as a failed device selection already did.
+- **Translucent draws keep a render target's alpha.** Every pipeline wrote the destination alpha as the source's, so text, a half-transparent quad or an anti-aliased edge left the pixel under it as transparent as itself. A window never shows its swap chain's alpha, but a framebuffer composited afterwards does: the test framework's viewport let the panel behind it through as a dark box around every glyph. The alpha now composites like the colour (`a = src + dst·(1 − src)`), and colours are unchanged.
+
+WARP renders on the CPU: enough to run the test framework, not to measure anything.
+
+**Test**: none new. On the VM, the test framework starts on DX12 and its Lighting, Renderer3D Batch, Mesh 3D and Animation checks pass; `--graphics=vulkan` shows the assert dialog naming the missing extension. The Text Test's glyphs lose their boxes and the Color Quad Test's 50% white quad is half white over the clear colour instead of grey, while the 3D tests and SpaceInvaders' menu are pixel-identical.
+
 ## v0.9 — Shadows, Post-processing & VFX
 The visual milestone — and the first one that inherits its dependencies instead of inventing them.
 v0.7 gives it lights worth casting shadows from, v0.5's emissive channel and v0.7's light budget give
