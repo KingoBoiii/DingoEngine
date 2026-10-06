@@ -361,7 +361,7 @@ namespace Dingo
 				glm::vec3 position;
 				float rotation;
 				memo.Pose2D(entity, transform, position, rotation);
-				renderer.DrawText(text.Text, text.Font, position, text.Size, { .Color = text.Color, .Centered = text.Centered });
+				renderer.DrawText(text.Text, text.Font, position, text.Size, { .Color = text.Color, .Centered = text.Centered, .Rotation = rotation });
 			}
 		}
 	}

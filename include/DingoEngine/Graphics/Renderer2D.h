@@ -81,6 +81,10 @@ namespace Dingo
 			// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
 			// block on their widest line, matching what GetStringWidth() reports.
 			bool Centered = false;
+
+			// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
+			// or its middle when Centered.
+			float Rotation = 0.0f;
 		};
 
 		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes

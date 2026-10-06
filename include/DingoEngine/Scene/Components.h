@@ -95,6 +95,7 @@ namespace Dingo
 		CircleRendererComponent(const CircleRendererComponent&) = default;
 	};
 
+	// Drawn at the entity's world position and turned by its world rotation (TransformComponent).
 	struct TextComponent
 	{
 		std::string Text;
