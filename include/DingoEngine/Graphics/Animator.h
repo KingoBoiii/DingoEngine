@@ -192,6 +192,9 @@ namespace Dingo
 		std::span<const AnimationEvent> GetEventsThisFrame() const { return m_Events; }
 		// fn must not Update this animator.
 		void ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const;
+		// Empties that list until the next Update. A scene does it every frame it doesn't update a
+		// disabled AnimatorComponent's animator, so the events of the frame it stopped on don't repeat.
+		void ClearEventsThisFrame() { m_Events.clear(); }
 		// A range event that has begun and not yet ended, on any layer.
 		bool IsEventActive(std::string_view name) const;
 		// The RangeEnd of every range open on any layer: what an owner dropping this animator mid-range

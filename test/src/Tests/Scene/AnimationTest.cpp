@@ -1103,6 +1103,27 @@ namespace Dingo
 			Check(expected > 0 && heard == expected && validInside && !target.IsValid(),
 				std::format("a script hears each of Walk's {} footfalls in a second, and a DestroyEntity from OnAnimationEvent waits for the end of the pass", heard));
 		}
+		{
+			Scene scene("Disabled animator checks");
+			Entity fox = scene.CreateEntity("Fox");
+			fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(m_FoxScale)));
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+			scene.OnStart();
+
+			const Animator* animator = scene.GetAnimator(fox);
+			bool stepped = false;
+			for (int frame = 0; frame < 120 && animator && !stepped; ++frame)
+			{
+				scene.OnUpdate(1.0f / 60.0f);
+				stepped = !animator->GetEventsThisFrame().empty();
+			}
+			fox.GetComponent<AnimatorComponent>().Enabled = false;
+			scene.OnUpdate(1.0f / 60.0f);
+			scene.OnUpdate(1.0f / 60.0f);
+			Check(stepped && animator->GetEventsThisFrame().empty(),
+				"a disabled AnimatorComponent's animator reports no events, rather than the frame's it stopped on again and again");
+		}
 		if (Model* roaring = Model::LoadFromFile(k_FoxPath))
 		{
 			// A clip whose first mark is its very start, on an entity spawned by a script mid-frame:
