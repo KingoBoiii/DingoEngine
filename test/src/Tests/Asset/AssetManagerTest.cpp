@@ -2,6 +2,9 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <format>
+
 namespace Dingo
 {
 
@@ -32,6 +35,29 @@ namespace Dingo
 		Check(assets.FindByPath("Textures/Container.JPG") == m_SyncTexture, "FindByPath ignores path casing");
 		Check(assets.FindByPath(assets.ResolvePath("textures/container.jpg")) == m_SyncTexture, "FindByPath folds an absolute path under the root");
 		Check(assets.GetShader(m_SyncTexture) == nullptr, "typed Get of the wrong type returns nullptr");
+
+		// A material's cached pass compares its textures' generations at bind time, which is how it
+		// notices a texture the heap put at a freed one's address.
+		{
+			std::vector<uint32_t> generations;
+			uint32_t reusedAddress = 0;
+			uintptr_t previous = 0;
+			for (int i = 0; i < 8; ++i)
+			{
+				const Texture* texture = assets.GetTexture(m_SyncTexture);
+				if (!texture)
+					break;
+				reusedAddress += reinterpret_cast<uintptr_t>(texture) == previous;
+				previous = reinterpret_cast<uintptr_t>(texture);
+				generations.push_back(texture->GetGeneration());
+				assets.Unload(m_SyncTexture);
+				assets.Load("textures/container.jpg");
+			}
+			std::vector<uint32_t> sorted = generations;
+			std::sort(sorted.begin(), sorted.end());
+			Check(generations.size() == 8 && std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end(),
+				std::format("a texture loaded after an Unload never shares a generation with the freed one ({} of 7 at its address)", reusedAddress));
+		}
 
 		m_SyncShader = assets.Load("shaders/asset_test.glsl");
 		Check(assets.IsReady(m_SyncShader) && assets.GetShader(m_SyncShader) != nullptr, "file-based shader loads through the manager");

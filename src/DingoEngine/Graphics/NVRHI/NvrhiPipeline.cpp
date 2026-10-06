@@ -23,7 +23,19 @@ namespace Dingo
 			switch (fillMode)
 			{
 				case FillMode::Solid: return nvrhi::RasterFillMode::Solid;
-				case FillMode::Wireframe: return nvrhi::RasterFillMode::Line;
+				case FillMode::Wireframe:
+				{
+					if (GraphicsContext::Get().SupportsWireframe())
+						return nvrhi::RasterFillMode::Line;
+
+					static bool s_Warned = false;
+					if (!s_Warned)
+					{
+						DE_CORE_WARN("This GPU can't draw wireframe (no Vulkan fillModeNonSolid), so wireframe pipelines draw solid.");
+						s_Warned = true;
+					}
+					return nvrhi::RasterFillMode::Solid;
+				}
 				default: return nvrhi::RasterFillMode::Solid; // Default to solid if unknown
 			}
 		}

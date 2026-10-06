@@ -224,6 +224,7 @@ namespace Dingo
 			// reaches exactly one OnUpdate: the first one after a pause sees what changed during it.
 			if (snapshotInput)
 				Input::Update();
+			Input::UpdateRumble();
 
 			if (!shouldUpdate())
 			{

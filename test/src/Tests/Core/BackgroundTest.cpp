@@ -116,6 +116,8 @@ namespace Dingo
 			m_StretchMaxDeltaTime = 0.0f;
 			m_StretchRenderMismatch = false;
 			m_StretchSpaceEdges = 0;
+			m_StretchAspectKept = true;
+			m_StretchMinimizedAspect = m_ShownAspect;
 			m_ReturnPending = false;
 			m_CheckSecondDelta = false;
 		}
@@ -155,6 +157,18 @@ namespace Dingo
 		{
 			m_ReturnPending = false;
 			CheckStretch(deltaTime, now);
+		}
+
+		const float aspect = Application::Get().GetWindow().GetAspectRatio();
+		if (!Application::Get().IsMinimized())
+		{
+			m_ShownAspect = aspect;
+		}
+		else
+		{
+			m_StretchMinimizedAspect = aspect;
+			if (!(aspect == m_ShownAspect))
+				m_StretchAspectKept = false;
 		}
 
 		m_LastUpdate = now;
@@ -218,6 +232,11 @@ namespace Dingo
 				std::format("the delta times add up to the wall clock ({:.3f} s of {:.3f} s)", summed, wall));
 			Check(!m_StretchRenderMismatch && !Renderer::IsFrameSkipped(),
 				"updates rendered exactly while the window was not minimized, and the return renders");
+			if (m_StretchMinimized && m_StretchUpdates > 0)
+			{
+				Check(m_StretchAspectKept,
+					std::format("Window::GetAspectRatio kept the window's aspect while minimized ({:.3f}, before {:.3f})", m_StretchMinimizedAspect, m_ShownAspect));
+			}
 		}
 		else
 		{

@@ -47,6 +47,9 @@ namespace Dingo
 		const GraphicsParams& GetParams() const { return m_Params; }
 		GraphicsAPI GetGraphicsAPI() const { return m_Params.GraphicsAPI; }
 		const AdapterInfo& GetAdapterInfo() const { return m_AdapterInfo; }
+		// False on a Vulkan GPU without fillModeNonSolid, where a FillMode::Wireframe pipeline is
+		// built solid instead.
+		bool SupportsWireframe() const { return m_SupportsWireframe; }
 		static GraphicsContext& Get() { return *s_Instance; }
 
 		static std::string VendorName(uint32_t vendorID);
@@ -57,6 +60,7 @@ namespace Dingo
 	protected:
 		GraphicsParams m_Params;
 		AdapterInfo m_AdapterInfo;
+		bool m_SupportsWireframe = true;
 
 	private:
 		inline static GraphicsContext* s_Instance = nullptr;

@@ -38,6 +38,11 @@ namespace Dingo
 	class Renderer2D
 	{
 	public:
+		// Scenes a renderer can begin in one frame. On Vulkan each BeginScene writes the volatile
+		// camera buffer, which has room for this many writes a frame; later scenes draw with a stale camera.
+		static constexpr uint32_t k_MaxScenesPerFrame = 32;
+
+	public:
 		static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
 		static Renderer2D* Create(const Renderer2DParams& params);
 
@@ -55,6 +60,11 @@ namespace Dingo
 
 		void BeginScene(const glm::mat4& projectionViewMatrix);
 		void EndScene();
+
+		// Quads, circles and text batch separately, and EndScene draws every quad, then every circle,
+		// then all text. Flush draws what has been submitted so far, so what comes after lands on top
+		// of it; a scene does it between sprites, circles and text to keep them in z order.
+		void Flush();
 
 		void Clear(const glm::vec4& clearColor);
 
@@ -81,6 +91,10 @@ namespace Dingo
 			// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
 			// block on their widest line, matching what GetStringWidth() reports.
 			bool Centered = false;
+
+			// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
+			// or its middle when Centered.
+			float Rotation = 0.0f;
 		};
 
 		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes

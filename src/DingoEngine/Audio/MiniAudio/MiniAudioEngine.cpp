@@ -38,9 +38,11 @@ namespace Dingo
 
 		ma_attenuation_model ToMiniAudio(AudioAttenuationModel model)
 		{
+			// miniaudio's own "none" skips the whole spatializer: panning, doppler, and the sound's
+			// volume, which it keeps there. None is Inverse with no rolloff instead (ApplyAttenuation).
 			switch (model)
 			{
-				case AudioAttenuationModel::None:        return ma_attenuation_model_none;
+				case AudioAttenuationModel::None:        return ma_attenuation_model_inverse;
 				case AudioAttenuationModel::Linear:      return ma_attenuation_model_linear;
 				case AudioAttenuationModel::Exponential: return ma_attenuation_model_exponential;
 				case AudioAttenuationModel::Inverse:     return ma_attenuation_model_inverse;
@@ -54,7 +56,7 @@ namespace Dingo
 			// A zero min distance silences Inverse and divides by zero in Exponential.
 			ma_sound_set_min_distance(sound, (std::max)(attenuation.MinDistance, 0.001f));
 			ma_sound_set_max_distance(sound, attenuation.MaxDistance);
-			ma_sound_set_rolloff(sound, attenuation.Rolloff);
+			ma_sound_set_rolloff(sound, attenuation.Model == AudioAttenuationModel::None ? 0.0f : attenuation.Rolloff);
 			ma_sound_set_min_gain(sound, attenuation.MinGain);
 			ma_sound_set_max_gain(sound, attenuation.MaxGain);
 		}

@@ -4,7 +4,10 @@
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
+
+#include <cstring>
 
 namespace Dingo
 {
@@ -105,7 +108,7 @@ namespace Dingo
 		Initialize();
 
 		// Initialize() produced a different nvrhi::ITexture — tell cached binding sets.
-		++m_Generation;
+		m_Generation = NextGeneration();
 
 		if (m_Params.InitialData)
 		{
@@ -144,6 +147,82 @@ namespace Dingo
 		commandList->close();
 
 		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
+	}
+
+	void NvrhiTexture::ReadPixels(std::function<void(const TexturePixels&)> done)
+	{
+		if (!m_Handle || m_Handle->getDesc().format != nvrhi::Format::RGBA8_UNORM || m_Handle->getDesc().dimension != nvrhi::TextureDimension::Texture2D)
+		{
+			DE_CORE_ERROR("Texture::ReadPixels: '{}' isn't a 2D RGBA8 texture.", m_Params.DebugName);
+			done(TexturePixels{});
+			return;
+		}
+
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+		const uint32_t width = m_Handle->getDesc().width;
+		const uint32_t height = m_Handle->getDesc().height;
+
+		nvrhi::StagingTextureHandle staging = device->createStagingTexture(nvrhi::TextureDesc()
+			.setDebugName(m_Params.DebugName + " (readback)")
+			.setWidth(width)
+			.setHeight(height)
+			.setFormat(nvrhi::Format::RGBA8_UNORM)
+			.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
+
+		// Mapping waits for the GPU to finish the copy, on every backend.
+		auto resolve = [staging, width, height, done = std::move(done)]()
+		{
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+			TexturePixels pixels;
+			size_t rowPitch = 0;
+			if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
+			{
+				const size_t rowBytes = static_cast<size_t>(width) * 4;
+				pixels.Width = width;
+				pixels.Height = height;
+				pixels.Data.resize(rowBytes * height);
+				for (uint32_t row = 0; row < height; ++row)
+					std::memcpy(pixels.Data.data() + row * rowBytes, mapped + row * rowPitch, rowBytes);
+				device->unmapStagingTexture(staging);
+			}
+			done(pixels);
+		};
+
+		// As for Upload: inside a frame the copy joins its list, which keeps it after the frame's
+		// earlier draws and never opens a list of its own mid-frame (D3D11's ClearState).
+		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		{
+			// D3D12 caches the state a framebuffer or binding set left the texture in, so a draw or
+			// sample after the copy would find it a copy source: put back the state it had.
+			nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
+			const nvrhi::ResourceStates state = list->getTextureSubresourceState(m_Handle, 0, 0);
+			list->copyTexture(staging, nvrhi::TextureSlice(), m_Handle, nvrhi::TextureSlice());
+			if (state != nvrhi::ResourceStates::Unknown)
+			{
+				list->setTextureState(m_Handle, nvrhi::AllSubresources, state);
+				list->commitBarriers();
+			}
+			Renderer::RunAfterFrame(std::move(resolve));
+			return;
+		}
+
+		auto copyAndResolve = [source = m_Handle, staging, resolve = std::move(resolve)]()
+		{
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+			nvrhi::CommandListHandle commandList = device->createCommandList(nvrhi::CommandListParameters().setQueueType(nvrhi::CommandQueue::Graphics));
+			commandList->open();
+			commandList->copyTexture(staging, nvrhi::TextureSlice(), source, nvrhi::TextureSlice());
+			commandList->close();
+			device->executeCommandList(commandList);
+			resolve();
+		};
+
+		// Between frames (an event handler, a post-execution callback) the render thread may be
+		// submitting, so a list of our own waits for the next frame's start, when it is parked.
+		if (Renderer::IsRenderThreadParked())
+			copyAndResolve();
+		else
+			Renderer::RunAfterFrame(std::move(copyAndResolve));
 	}
 
 }

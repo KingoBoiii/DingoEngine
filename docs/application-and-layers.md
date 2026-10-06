@@ -163,8 +163,8 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
     belongs in a `DirectUpload` buffer. Code that records into `Renderer::GetCommandList()` itself,
     or calls `Renderer::Begin`/`Close`/`Execute`, must check `Renderer::IsFrameSkipped()` first.
   - `Window::GetWidth()`/`GetHeight()` read 0, so an aspect ratio worked out from them every frame
-    divides by zero. Keep the last one while `Application::IsMinimized()`, or use
-    `Renderer2D::GetViewportSize()`, which keeps the swap chain's size.
+    divides by zero. `Window::GetAspectRatio()` keeps the last one (since v0.8.3; before, it returned
+    NaN), and `Renderer2D::GetViewportSize()` keeps the swap chain's size.
   - The restore logs how many updates ran meanwhile.
 
 Either way, every key and button edge reaches exactly one `OnUpdate`. After a pause, the first
@@ -316,6 +316,24 @@ if (Input::IsGamepadConnected())
   (`Xbox` / `PlayStation` / `Nintendo` / `Steam` / `Unknown`, detected from
   the USB vendor id with a name fallback) cover polling, e.g. for
   button-prompt glyphs.
+
+**Rumble (v0.8.3).** `Input::SetGamepadRumble(lowFrequency, highFrequency, seconds, gamepad)`
+runs the pad's two motors, each from 0 to 1 (`lowFrequency` the heavy left one, `highFrequency`
+the light right one), for `seconds`; setting it again replaces the last, and `StopGamepadRumble`
+or 0 seconds stops it. It stops on time even while the app is paused in the background, and when
+the app closes.
+
+```cpp
+void Player::OnHit()
+{
+    Input::SetGamepadRumble(0.6f, 0.3f, 0.25f);   // a short thump on pad 0
+}
+```
+
+GLFW's gamepad API is input only, so rumble goes through XInput: Xbox-compatible pads on Windows.
+On any other pad, or platform, it does nothing and returns false;
+`Input::IsGamepadRumbleSupported(gamepad)` says which, e.g. to hide a VIBRATION setting. The F5
+Input tab has a button to try each motor.
 
 ## Events
 

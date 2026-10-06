@@ -18,6 +18,8 @@ namespace Dingo
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 		virtual void Upload(const void* data, uint64_t size, uint64_t offset = 0ul) override;
+		// Records the write into commandList; every upload of the buffer goes through it.
+		void Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset);
 
 		virtual const uint32_t GetIndexCount() const override
 		{
@@ -33,6 +35,7 @@ namespace Dingo
 
 	protected:
 		nvrhi::BufferHandle m_BufferHandle;
+		bool m_PadsWrites = false;
 
 		friend class NvrhiCommandList;
 		friend class NvrhiPipeline;

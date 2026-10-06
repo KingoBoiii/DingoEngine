@@ -532,6 +532,8 @@ namespace Dingo
 									.setPQueuePriorities(&priority));
 		}
 
+		m_SupportsWireframe = m_VulkanPhysicalDevice.getFeatures().fillModeNonSolid == VK_TRUE;
+
 		vk::PhysicalDeviceFeatures deviceFeatures = vk::PhysicalDeviceFeatures()
 			.setShaderImageGatherExtended(true)
 			.setSamplerAnisotropy(true)
@@ -540,7 +542,7 @@ namespace Dingo
 			.setGeometryShader(true)
 			.setImageCubeArray(true)
 			.setDualSrcBlend(true)
-			.setFillModeNonSolid(m_VulkanPhysicalDevice.getFeatures().fillModeNonSolid);
+			.setFillModeNonSolid(m_SupportsWireframe);
 
 		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
 			.setShaderDemoteToHelperInvocation(true);

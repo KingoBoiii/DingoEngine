@@ -25,8 +25,10 @@ namespace Dingo
 	static const Window::EventCallbackFn* s_JoystickEventCallback = nullptr;
 
 	Window::Window(const WindowParams& params)
-		: m_Params(params), m_Data({ .Width = m_Params.Width, .Height = m_Params.Height })
-	{}
+		: m_Params(params)
+	{
+		m_Data.SetSize(m_Params.Width, m_Params.Height);
+	}
 
 	void Window::Initialize()
 	{
@@ -47,8 +49,7 @@ namespace Dingo
 			const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
 
 			// Matching the desktop video mode gives borderless ("windowed") fullscreen.
-			m_Data.Width = videoMode->width;
-			m_Data.Height = videoMode->height;
+			m_Data.SetSize(videoMode->width, videoMode->height);
 
 			// No windowed position exists yet; center the restore rect on this monitor.
 			int32_t monitorX = 0, monitorY = 0;
@@ -188,8 +189,7 @@ namespace Dingo
 			WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
 
 			// Keep GetWidth()/GetHeight()/GetAspectRatio() truthful after resizes.
-			windowData.Width = width;
-			windowData.Height = height;
+			windowData.SetSize(width, height);
 
 			WindowResizeEvent resizeEvent(width, height);
 			windowData.EventCallback(resizeEvent);
@@ -288,6 +288,11 @@ namespace Dingo
 		s_JoystickEventCallback = &m_Data.EventCallback;
 		glfwSetJoystickCallback([](int jid, int event)
 		{
+			if (event == GLFW_CONNECTED)
+				Input::OnJoystickConnected();
+			else if (event == GLFW_DISCONNECTED)
+				Input::OnJoystickDisconnected(static_cast<uint32_t>(jid));
+
 			if (!s_JoystickEventCallback || !(*s_JoystickEventCallback))
 				return;
 

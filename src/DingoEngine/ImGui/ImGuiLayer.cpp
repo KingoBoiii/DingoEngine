@@ -91,8 +91,11 @@ namespace Dingo
 	{
 		ImGui::Render();
 
-		nvrhi::ICommandList* mainCmdList = static_cast<NvrhiCommandList*>(Renderer::GetCommandList())->GetNvrhiHandle();
-		m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetSwapChain(), mainCmdList);
+		if (!Renderer::IsFrameSkipped())
+		{
+			nvrhi::ICommandList* mainCmdList = static_cast<NvrhiCommandList*>(Renderer::GetCommandList())->GetNvrhiHandle();
+			m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetSwapChain(), mainCmdList);
+		}
 
 		// Update and Render additional Platform Windows
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
@@ -198,6 +201,8 @@ namespace Dingo
 	{
 		ImGuiViewportData* vd = (ImGuiViewportData*)viewport->RendererUserData;
 		vd->SwapChain->AcquireNextImage();
+		if (!vd->SwapChain->IsImageAcquired())
+			return;
 		vd->Renderer->UpdateFontTexture();
 		vd->Renderer->RenderToSwapchain(viewport, vd->SwapChain);
 	}

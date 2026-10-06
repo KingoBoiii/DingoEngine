@@ -354,6 +354,10 @@ void main()
 
 	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList)
 	{
+		// A list of its own is the first thing Render submits; a shared one is the frame's, whose
+		// owner queues the wait.
+		if (!sharedCmdList)
+			swapchain->QueueImageWait();
 		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle, sharedCmdList);
 	}
 
@@ -400,13 +404,16 @@ void main()
 			return false;
 		}
 
-		if (!ReallocateBuffer(m_IndexBuffer, drawData->TotalIdxCount * sizeof(ImDrawIdx), (drawData->TotalIdxCount + 5000) * sizeof(ImDrawIdx), true))
+		// NVRHI rounds a small Vulkan upload up to a multiple of 4 bytes, read from the copy and
+		// written to the buffer, so an odd count of 16-bit indices needs one more in both.
+		const size_t paddedIdxCount = (static_cast<size_t>(drawData->TotalIdxCount) + 1) & ~size_t(1);
+		if (!ReallocateBuffer(m_IndexBuffer, paddedIdxCount * sizeof(ImDrawIdx), (paddedIdxCount + 5000) * sizeof(ImDrawIdx), true))
 		{
 			return false;
 		}
 
 		m_VertexBufferData.resize(drawData->TotalVtxCount);
-		m_IndexBufferData.resize(drawData->TotalIdxCount);
+		m_IndexBufferData.resize(paddedIdxCount);
 
 		// copy and convert all vertices into a single contiguous buffer
 		ImDrawVert* vtxDst = &m_VertexBufferData[0];
