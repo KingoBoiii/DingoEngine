@@ -2,6 +2,9 @@
 #include "Tests/GraphicsTest.h"
 #include <glm/glm.hpp>
 
+#include <string>
+#include <vector>
+
 namespace Dingo
 {
 
@@ -22,9 +25,14 @@ namespace Dingo
 
 	private:
 		void UploadMesh(Mesh* mesh);
+		void RunWindingChecks();
+		void Check(bool condition, const std::string& name);
 
 	private:
 		struct TransformUBO { glm::mat4 ViewProjection; glm::mat4 Model; };
+		struct CheckResult { std::string Name; bool Passed = false; };
+
+		std::vector<CheckResult> m_Checks;
 
 		Shader*         m_Shader   = nullptr;
 		Material*       m_Material = nullptr;
