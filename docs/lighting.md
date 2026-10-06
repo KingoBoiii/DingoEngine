@@ -299,8 +299,9 @@ delete lamp;
   keeps the material from being drawn, with a one-time warning. An empty slot 0 draws white with the clamp sampler.
 - **Transparency** comes from the mesh colour's alpha, never the texture's. A lit draw below
   alpha 1 blends, but lit draws are not sorted and still write depth.
-- **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you,
-  because front-face winding differs between Vulkan and D3D.
+- **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you, so
+  open meshes and mirrored entities (a negative scale) still show. A custom material can cull; see
+  [Winding and culling](scenes-and-ecs.md#winding-and-culling).
 - **At run time,** `SetRoughness`, `SetSpecular` and the emissive setters are free to call every
   frame. A texture can be assigned after the first draw (a `LoadAsync` result, say), but changing a
   slot rebuilds the material's pipelines, so do not swap one every frame. A NaN setting falls back

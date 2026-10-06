@@ -181,9 +181,9 @@ namespace Dingo
 		// empty slot 0 draws white, and an empty sampler slot 0 uses the clamp sampler. Slot 0 is
 		// the only one the lit shader has: with a texture or sampler in any other slot the material
 		// is not drawn, and the renderer warns once. Shader and CullMode are set for you: lit
-		// materials draw both faces, because front-face winding differs between the Vulkan and D3D
-		// back-ends. Any Renderer3D can draw it; the caller owns it and must delete it before the
-		// renderer that created it shuts down.
+		// materials draw both faces, so open meshes and mirrored entities still show. Any
+		// Renderer3D can draw it; the caller owns it and must delete it before the renderer that
+		// created it shuts down.
 		Material* CreateLitMaterial(MaterialParams params) const;
 
 		// The material meshes with no material of their own are drawn with, for changing their

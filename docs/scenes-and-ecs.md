@@ -519,6 +519,22 @@ glow->SetUniform(GlowParams{ pulsedIntensity });
 `examples/DungeonCrawler3D/` shows this: the treasures use a custom unlit/glow material whose
 intensity is pulsed each frame (see `GameScripts.cpp`).
 
+#### Winding and culling
+
+`Mesh::CreateBox` and `Mesh::CreateSphere` are wound counter-clockwise seen from outside, and so
+are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's winding. `MaterialParams` matches that by default (`CullMode::Back` with
+`FrontCounterClockwise = true`), so a custom material hides back faces with no extra settings, on
+Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
+
+Renderer3D transforms vertices on the CPU and keeps their order, so an entity mirrored by a
+negative scale on one or three axes is drawn inside out by a culling material. Give mirrored
+entities a `CullMode::None` material.
+
+Before v0.8.1, `Material` ignored `FrontCounterClockwise` and treated clockwise triangles as front
+faces, so `CullMode::Back` drew these meshes inside out (`CreateSphere`, wound the other way, came
+out right). Code that culled with `CullMode::Front` to work around it should switch to
+`CullMode::Back`.
+
 ## Behaviours: `ScriptableEntity`
 
 Game logic lives in `ScriptableEntity` subclasses. Override the lifecycle hooks,

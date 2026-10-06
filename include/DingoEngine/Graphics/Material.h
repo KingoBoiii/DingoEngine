@@ -18,7 +18,7 @@ namespace Dingo
 		Shader*     Shader                 = nullptr;
 		CullMode    CullMode               = CullMode::Back;
 		FillMode    FillMode               = FillMode::Solid;
-		bool        FrontCounterClockwise  = false;
+		bool        FrontCounterClockwise  = true;
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
 		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
