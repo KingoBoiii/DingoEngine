@@ -230,9 +230,10 @@ gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays 
   here, hitbox live from here to here), so a swing's damage window comes from the animation instead of
   a hand-tuned timer that drifts every time the art changes.
 
-2026-10-03), and so is the example game, *Marionette* (P13, M0–M6, 2026-10-05, closed by a milestone review
-in `.claude/reviews/2026-10-04-marionette-review.md`). v0.8 is not released yet. Built:
-and tuning pass is still to come). v0.8 is not released yet. Built:
+**Status**: released as v0.8.0 on 2026-10-05. The engine work (P4–P12 of
+`.claude/plans/2026-10-01-v0.8-animation-plan.md`, reviewed in `.claude/reviews/2026-10-03-v0.8.0-review.md`)
+and the example game, *Marionette* (P13, M0–M6, closed by a milestone review in
+`.claude/reviews/2026-10-04-marionette-review.md`), shipped together. Built:
 - **Skinned models**: `Model::LoadFromFile` reads skeletons, skin weights and clips from glTF and FBX, including clip libraries (clips without meshes). Static models load exactly as before.
 - **GPU skinning** on Vulkan, D3D11 and D3D12: `SkinnedMeshRendererComponent`, or `Renderer3D::SubmitSkinnedMesh` outside a scene. A model's joint palette uploads once a frame, for up to 64 models by default (256 at most), at up to 128 joints a draw. A custom shader can skin through `DE_SKINNED` and a `SkinData` block.
 - **The animator**: cross-fades, `Blend1D` on a float parameter with the clips kept in step, masked layers (an upper body over locomotion), one-shots that return to what they interrupted, and retargeting by joint name. It runs standalone or as an `AnimatorComponent`.
@@ -242,7 +243,7 @@ and tuning pass is still to come). v0.8 is not released yet. Built:
 - **Debugging**: the **F7** Animation tab (every animator's layers and states, the last 20 events), skinning stats in **F4**, and a skeleton overlay in the test app.
 - **A retargeting fix found by Marionette**: KayKit's clips key a still translation on `root`, which made `root` the "root-most animated joint", so every retargeted clip lost its hips' motion. Retargeting now counts a translation track only when it leaves the source joint's rest offset (`a81727f`).
 
-**Test**: the test app's **Animation Test** (`--test=anim`): 67 checks (68 with `--anim-skeleton`) across loading, skinning, the animator, blending, events, sockets and hot-reload, on all three backends. Its modes are `--anim=bind|bindstatic|pose|clip|blend|layers|events|crowd`, with `--anim-skeleton` and `--anim-reload`. Guide: [docs/animation.md](docs/animation.md).
+**Test**: the test app's **Animation Test** (`--test=anim`): 78 checks in its default `bind` mode across loading, skinning, the animator, blending, events, sockets and hot-reload, on all three backends. Its modes are `--anim=bind|bindstatic|pose|clip|blend|layers|events|crowd`, with `--anim-skeleton` and `--anim-reload`. Guide: [docs/animation.md](docs/animation.md).
 
 **Not in v0.8**: root motion, IK, additive layers and state machines as assets, and skinned shadows (v0.9).
 
