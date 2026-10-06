@@ -5,6 +5,8 @@
 
 #include "NVRHI/NvrhiTexture.h"
 
+#include <atomic>
+
 namespace Dingo
 {
 
@@ -55,6 +57,12 @@ namespace Dingo
 		}
 
 		return texture;
+	}
+
+	uint32_t Texture::NextGeneration()
+	{
+		static std::atomic<uint32_t> s_Next{ 1 };
+		return s_Next.fetch_add(1, std::memory_order_relaxed);
 	}
 
 }

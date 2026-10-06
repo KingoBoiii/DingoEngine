@@ -105,7 +105,7 @@ namespace Dingo
 		Initialize();
 
 		// Initialize() produced a different nvrhi::ITexture — tell cached binding sets.
-		++m_Generation;
+		m_Generation = NextGeneration();
 
 		if (m_Params.InitialData)
 		{
