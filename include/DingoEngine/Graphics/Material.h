@@ -15,9 +15,9 @@ namespace Dingo
 	struct MaterialParams
 	{
 		std::string DebugName;
-		Shader*     Shader                 = nullptr;
-		CullMode    CullMode               = CullMode::Back;
-		FillMode    FillMode               = FillMode::Solid;
+		Dingo::Shader*  Shader             = nullptr;
+		Dingo::CullMode CullMode           = Dingo::CullMode::Back;
+		Dingo::FillMode FillMode           = Dingo::FillMode::Solid;
 		bool        FrontCounterClockwise  = true;
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
@@ -160,8 +160,8 @@ namespace Dingo
 
 		struct PipelineCacheEntry
 		{
-			Pipeline*   Pipeline   = nullptr;
-			RenderPass* RenderPass = nullptr;
+			Dingo::Pipeline*   Pipeline   = nullptr;
+			Dingo::RenderPass* RenderPass = nullptr;
 		};
 		std::unordered_map<size_t, PipelineCacheEntry> m_PipelineCache;
 

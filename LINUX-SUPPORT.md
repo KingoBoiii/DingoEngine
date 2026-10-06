@@ -62,6 +62,37 @@ but leaves something wrong behind. **Ship** isn't needed to build, but is needed
 | [L12](#l12) | Debug-ASan executables don't link | Build | `premake5.lua:32-39` | S | Appendix B |
 | [L13](#l13) | Marionette uses MSVC's `file_type::junction` | Build | `LiveEdit.cpp:58` | S | Appendix B |
 
+**Phase 1 is done** (2026-10-06). It differs from [Appendix B](#appendix-b) in four places:
+
+- [L5](#l5) uses the preferred fix. All 20 members spell their type `Dingo::`-qualified, so consumers build
+  without `-Wno-changes-meaning`. The engine keeps the flag for four engine-internal members
+  (`NvrhiRenderPass.h:56`, `Renderer.cpp:31-32` and `ImGuiLayer.cpp:147`).
+- The NVRHI half of [L2](#l2), and [L7](#l7), re-open `NVRHI-Vulkan` and `GLFW` from the root
+  `premake5.lua`, so the forks are untouched.
+- [L4](#l4)'s link list applies to executables only (`kind:ConsoleApp or WindowedApp`), because the
+  engine's own project calls the same helper.
+- [L8](#l8)'s fallback on any other platform is `std::abort()` rather than an empty macro, so a failed
+  `DE_*_VERIFY` still stops.
+
+It was verified in WSL2: Ubuntu 24.04, GCC 13.3, premake 5.0.0-beta8, LunarG's 1.4.350.0 Linux SDK and
+assimp 6.0.4.
+
+- **Build**: all 22 projects build in all four configurations.
+- **Include casing**: every path in the builds' `.d` files matches its directory entries exactly. The
+  worktree sat on case-insensitive NTFS, so this audit stood in for a case-sensitive filesystem.
+- **Windows**: regenerating the vs2026 projects gives identical files apart from the `include` casing, and
+  the whole solution builds in Debug.
+- **Headless runs**, under Xvfb and llvmpipe with the validation layer:
+  - Debug and Release: all ten examples and all 14 test cases run and close with exit code 0. 188 of 189
+    self-checks pass, and Marionette's `--check` passes 107/107.
+  - The one failing check is [L18](#l18). The examples report no validation errors. The 7 test cases that
+    draw 2D into the test's render target report [L16](#l16)'s `02684`, and the `LOG ERROR` lines are
+    [L14](#l14).
+  - Debug-ASan: executables link and run instrumented. Each one stops at [L14](#l14), where the
+    garbage-sized allocation that throws `bad_alloc` elsewhere aborts under ASan. With
+    `allocator_may_return_null=1`, FlappyBird runs clean. The test framework passes its 78 animation checks
+    under ASan, then stops at [F1](#f1).
+
 ### Phase 2 — run correctly
 
 | # | Item | Kind | Where | Effort | Tested fix |
@@ -135,8 +166,9 @@ The build needs these from `$VULKAN_SDK`:
   [L16](#l16).
 
 LunarG's download host wasn't reachable from the sandbox this was verified in, so those pieces were built
-from source at the `vulkan-sdk-1.4.357.0` tags ([Appendix A](#appendix-a)). Check the file names against a
-real SDK tarball once.
+from source at the `vulkan-sdk-1.4.357.0` tags ([Appendix A](#appendix-a)). A real tarball has the same
+file names: Phase 1 was built and run against LunarG's `vulkansdk-linux-x86_64-1.4.350.0.tar.xz` (the
+Windows SDK's version), whose `setup-env.sh` also puts its validation layer on the loader's path.
 
 <a id="building"></a>
 ## 2. Building and running (once Phase 1 lands)

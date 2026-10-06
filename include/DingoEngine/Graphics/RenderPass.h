@@ -9,7 +9,7 @@ namespace Dingo
 
 	struct RenderPassParams
 	{
-		Pipeline* Pipeline = nullptr;
+		Dingo::Pipeline* Pipeline = nullptr;
 
 		RenderPassParams& SetPipeline(Dingo::Pipeline* pipeline)
 		{

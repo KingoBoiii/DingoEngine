@@ -78,7 +78,7 @@ namespace Dingo
 	struct SpriteRendererComponent
 	{
 		glm::vec4 Color{ 1.0f };
-		Texture* Texture = nullptr; // optional; null draws a solid-colour quad
+		Dingo::Texture* Texture = nullptr; // optional; null draws a solid-colour quad
 
 		SpriteRendererComponent() = default;
 		SpriteRendererComponent(const SpriteRendererComponent&) = default;
@@ -98,7 +98,7 @@ namespace Dingo
 	struct TextComponent
 	{
 		std::string Text;
-		Font* Font = nullptr;
+		Dingo::Font* Font = nullptr;
 		glm::vec4 Color{ 1.0f };
 		float Size = 1.0f;
 		bool Centered = false; // when true, the text is horizontally centered on Position
@@ -339,7 +339,7 @@ namespace Dingo
 	// exactly like SpriteRendererComponent's Texture.
 	struct MeshRendererComponent
 	{
-		Mesh* Mesh = nullptr;
+		Dingo::Mesh* Mesh = nullptr;
 		glm::vec4 Color{ 1.0f };
 
 		// When false, the SceneRenderer skips this entity — cheap per-entity culling that
@@ -349,7 +349,7 @@ namespace Dingo
 		// Optional material (custom shader + uniforms + textures). Null draws with
 		// Renderer3D's built-in lit material. The Color above is written
 		// into the vertex stream either way. Owned by the client, not the component.
-		Material* Material = nullptr;
+		Dingo::Material* Material = nullptr;
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;

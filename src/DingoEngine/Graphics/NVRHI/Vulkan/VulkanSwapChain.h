@@ -22,7 +22,7 @@ namespace Dingo
 		virtual void AcquireNextImage() override;
 		virtual void Present() override;
 
-		virtual Framebuffer* SwapChain::GetCurrentFramebuffer() const
+		virtual Framebuffer* GetCurrentFramebuffer() const override
 		{
 			return GetFramebuffer(m_SwapChainIndex);
 		}

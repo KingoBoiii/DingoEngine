@@ -38,6 +38,10 @@ workspace "DingoEngine"
             -- LNK2038. cl embeds /INFERASANLIBS, so the linker needs no ASan flag of its own.
             defines { "_DISABLE_STRING_ANNOTATION", "_DISABLE_VECTOR_ANNOTATION" }
 
+        -- GCC has no /INFERASANLIBS: the ASan runtime only links in through the flag.
+        filter { "system:linux", "configurations:Debug-ASan" }
+            linkoptions { "-fsanitize=address" }
+
 	    filter "system:windows"
 		    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
 
@@ -66,25 +70,37 @@ BundledVendorLibs = table.concat({
     vendorLib("JoltPhysics", "Jolt"),
 }, " ")
 
--- Every exe that links the engine also loads Assimp's DLLs (and their zlib /
--- pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime — so
--- they have to sit next to the binary or it dies with STATUS_DLL_NOT_FOUND before
--- main. Call this once per project;
--- it appends the per-configuration copy step and clears the filter again.
+-- On Windows, every exe that links the engine also loads Assimp's DLLs (and their
+-- zlib / pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime —
+-- so they have to sit next to the binary or it dies with STATUS_DLL_NOT_FOUND before
+-- main. On Linux, make links only what a project names, not the engine's own
+-- dependencies as MSBuild does, so every exe names them all; the link group makes
+-- their order irrelevant. Call this once per project;
+-- it appends the per-configuration settings and clears the filter again.
 -- The source dir is baked to an absolute path at generation time because
 -- %{wks.location} expands to empty inside an included project's postbuild scope.
 function copyAssimpRuntime()
     local debugBin   = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/debug")
     local releaseBin = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/release")
 
-    filter "configurations:Debug or configurations:Debug-ASan"
+    filter { "system:windows", "configurations:Debug or configurations:Debug-ASan" }
         postbuildcommands { '{COPY} "' .. debugBin .. '" "%{cfg.targetdir}"' }
 
-    filter "configurations:Release or configurations:Distribution"
+    filter { "system:windows", "configurations:Release or configurations:Distribution" }
         postbuildcommands { '{COPY} "' .. releaseBin .. '" "%{cfg.targetdir}"' }
 
-    filter "configurations:Debug-ASan"
+    filter { "system:windows", "configurations:Debug-ASan" }
         postbuildcommands { '{COPY} "$(VCToolsInstallDir)bin\\Hostx64\\x64\\clang_rt.asan_dynamic-x86_64.dll" "%{cfg.targetdir}"' }
+
+    filter { "system:linux", "kind:ConsoleApp or WindowedApp" }
+        linkgroups "On"
+        libdirs { "%{LibraryDir.vulkan}", "%{LibraryDir.assimp}" }
+        links {
+            "DingoEngine", "spdlog", "GLFW", "NVRHI", "NVRHI-Vulkan", "ImGui",
+            "msdf-atlas-gen", "msdfgen", "freetype", "box2d", "Jolt",
+            "shaderc_combined", "spirv-cross-hlsl", "spirv-cross-glsl", "spirv-cross-core",
+            "assimp", "z", "dl", "pthread"
+        }
 
     filter {}
 end
@@ -101,7 +117,7 @@ IncludeDir['stb'] = "%{wks.location}/vendor/stb/include";
 IncludeDir['imgui'] = "%{wks.location}/vendor/imgui";
 IncludeDir["msdfgen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdfgen"
 IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas-gen"
-IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
+IncludeDir['vulkan'] = "%{VULKAN_SDK}/include";
 IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
 IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
@@ -130,6 +146,20 @@ Library["SPIRV_Cross_Release"] = "%{LibraryDir.vulkan}/spirv-cross-core.lib"
 Library["SPIRV_Cross_GLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-glsl.lib"
 Library["SPIRV_Cross_HLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-hlsl.lib"
 
+-- The Linux SDK has no debug-suffixed libraries, and vendor/assimp only holds Windows
+-- binaries: Linux links a static assimp built into vendor/assimp/lib/linux-x86_64.
+if os.istarget("linux") then
+    LibraryDir['assimp'] = "%{wks.location}/vendor/assimp/lib/linux-x86_64"
+    Library['assimp_Debug']   = "assimp"
+    Library['assimp_Release'] = "assimp"
+    for _, cfg in ipairs({ "Debug", "Release" }) do
+        Library["ShaderC_" .. cfg]          = "shaderc_combined"
+        Library["SPIRV_Cross_" .. cfg]      = "spirv-cross-core"
+        Library["SPIRV_Cross_GLSL_" .. cfg] = "spirv-cross-glsl"
+        Library["SPIRV_Cross_HLSL_" .. cfg] = "spirv-cross-hlsl"
+    end
+end
+
 -- Windows
 Library["WinSock"] = "Ws2_32.lib"
 Library["WinMM"] = "Winmm.lib"
@@ -150,6 +180,17 @@ group "Dependencies"
 	include "vendor/msdf-atlas-gen"
 	include "vendor/box2d"
 	include "vendor/JoltPhysics"
+
+	-- Linux additions to the forks' own scripts, made here so vendor/ stays untouched.
+	project "GLFW"
+		filter "system:linux"
+			files { "vendor/glfw/src/posix_module.c", "vendor/glfw/src/posix_poll.c" }
+		filter {}
+
+	project "NVRHI-Vulkan"
+		filter "system:linux"
+			includedirs { "%{VULKAN_SDK}/include" }
+		filter {}
 group ""
 
 group "Engine"
@@ -199,7 +240,6 @@ group "Engine"
 		links {
 			"spdlog",
 			"glfw",
-			"%{Library.vulkan}",
 			"nvrhi",
 			"imgui",
 			"msdf-atlas-gen",
@@ -237,6 +277,7 @@ group "Engine"
 			}
 
 			links {
+				"%{Library.vulkan}",
 				"%{Library.WinSock}",
 				"%{Library.WinMM}",
 				"%{Library.WinVersion}",
@@ -262,6 +303,7 @@ group "Engine"
 		filter "system:linux"
 			defines { "DE_PLATFORM_LINUX" }
 			buildoptions { "-Wno-changes-meaning" }
+			removefiles { "src/DingoEngine/Graphics/NVRHI/DirectX11/**", "src/DingoEngine/Graphics/NVRHI/DirectX12/**" }
 
 		filter "configurations:Debug or configurations:Debug-ASan"
 			runtime "Debug"

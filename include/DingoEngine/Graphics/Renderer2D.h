@@ -35,6 +35,22 @@ namespace Dingo
 		Renderer2DCapabilities Capabilities = {};
 	};
 
+	// At namespace scope because GCC and Clang reject a nested struct's default member
+	// initialisers in a default argument of its still-incomplete enclosing class.
+	struct Renderer2DTextParameters
+	{
+		glm::vec4 Color{ 1.0f };
+		float Kerning = 0.0f;
+		float LineSpacing = 0.0f;
+
+		// Horizontally center the string on position.x instead of starting there. The
+		// width is taken from the pen while the glyphs are emitted and the quads are
+		// shifted afterwards, so this costs one walk of the string where
+		// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
+		// block on their widest line, matching what GetStringWidth() reports.
+		bool Centered = false;
+	};
+
 	class Renderer2D
 	{
 	public:
@@ -69,19 +85,7 @@ namespace Dingo
 
 		void DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness = 1.0f, float fade = 0.005f);
 
-		struct TextParameters
-		{
-			glm::vec4 Color{ 1.0f };
-			float Kerning = 0.0f;
-			float LineSpacing = 0.0f;
-
-			// Horizontally center the string on position.x instead of starting there. The
-			// width is taken from the pen while the glyphs are emitted and the quads are
-			// shifted afterwards, so this costs one walk of the string where
-			// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
-			// block on their widest line, matching what GetStringWidth() reports.
-			bool Centered = false;
-		};
+		using TextParameters = Renderer2DTextParameters;
 
 		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes
 		// Latin-1, the printable General Punctuation and the euro sign; anything else draws '?'.
@@ -145,8 +149,8 @@ namespace Dingo
 		{
 			std::string Name;
 			const char* ShaderSource = nullptr;
-			VertexLayout VertexLayout;
-			CullMode CullMode = CullMode::Back;
+			Dingo::VertexLayout VertexLayout;
+			Dingo::CullMode CullMode = Dingo::CullMode::Back;
 			Renderer2DCapabilities Capabilities;
 			GraphicsBuffer* CameraUniformBuffer = nullptr;
 			GraphicsBuffer* IndexBuffer = nullptr;
