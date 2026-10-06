@@ -95,8 +95,16 @@ r.DrawText("Score: 42", font, { x, y }, /*size*/ 0.5f, { .Color = { 1, 1, 1, 1 }
 ```
 
 `DrawText` parameters: the string, the font, a position (`vec2`/`vec3`), a `size` in
-world units, and a `TextParameters { Color, Kerning, LineSpacing }`. The position is
-the **left baseline-ish origin** of the text (it grows to the right).
+world units, and a `TextParameters { Color, Kerning, LineSpacing, Centered, Rotation }`. The
+position is the **left baseline-ish origin** of the text (it grows to the right).
+
+`TextParameters::Rotation` (v0.8.3) turns the string, in degrees counter-clockwise like
+`DrawRotatedQuad`, about its position: where the first line's baseline starts, or its middle when
+`Centered`.
+
+```cpp
+r.DrawText("GAME OVER", font, { 0.0f, 1.0f }, 0.8f, { .Color = red, .Centered = true, .Rotation = -8.0f });
+```
 
 To center text, offset by half its measured width:
 
@@ -140,10 +148,67 @@ float height = 1.0f;                       // desired height in world units
 r.DrawQuad(pos, { height * aspect, height }, tex);
 ```
 
+### Render targets
+
+A `Framebuffer`'s colour attachments are textures. Draw into one with
+`Renderer::SetRenderTarget(framebuffer)` (back to the window with `ResetRenderTarget()`), or
+render a whole scene into it with `SceneRenderer::Render(scene, framebuffer)`
+([Rendering into a texture](scenes-and-ecs.md#rendering-into-a-texture)), then draw
+`framebuffer->GetAttachment(0)` like any texture. Give it an RGBA8 colour attachment and depth,
+like the window's framebuffer, which the renderers build their pipelines against. A render
+target's first row is the **top** of its picture, the opposite of an image loaded from a file, so
+a quad shows it upright with a negative height:
+
+```cpp
+Framebuffer* target = Framebuffer::Create(FramebufferParams()
+    .SetWidth(640).SetHeight(360)
+    .SetEnableDepth(true)
+    .AddAttachment({ TextureFormat::RGBA8_UNORM }));
+...
+r.DrawQuad({ 0.0f, 0.0f }, { 6.4f, -3.6f }, target->GetAttachment(0));
+```
+
+### Reading a texture back (v0.8.3)
+
+`Texture::ReadPixels(done)` copies an RGBA8 texture back to the CPU and hands `done` a
+`TexturePixels { Width, Height, Data }` (8-bit RGBA, rows in the texture's own order).
+`Texture::SaveToFile(path, done)` writes one as a PNG (or BMP, TGA, JPEG by extension), and
+`FileSystem::WriteImage(path, width, height, channels, pixels, flipVertically)` writes pixels you
+already have.
+
+```cpp
+SceneRenderer& scenes = Application::Get().GetSceneRenderer();
+scenes.Render(*iconScene, iconTarget);                       // this frame's draw...
+iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
+{
+    DE_INFO("icon {}", saved ? "saved" : "failed");          // ...arrives next frame
+});
+```
+
+- **When.** From `OnUpdate` or `OnUIRender` the copy follows the draws recorded so far, and
+  `Renderer2D` and `Renderer3D` record theirs at `EndScene`, so read back after it. `done` then
+  runs on the main thread at the start of the next frame, before its command list opens: it may
+  read back or create textures, not draw. From `OnAttach`, or in a frame the app skips while
+  minimized, `done` runs before the call returns; from an event handler or a post-execution
+  callback, at the next frame's start. Capture nothing in `done` that may be freed meanwhile.
+- **Paused and skipped frames.** A paused app (unfocused, `UpdateInBackground` off) has no next
+  frame until it resumes, so `done` waits that long. A frame that renders nothing
+  (`Renderer::IsFrameSkipped()`) reads back what the texture last held.
+- **Which way up.** `ReadPixels` gives rows as the texture stores them: a render target's first
+  row is the top of its picture, an image `CreateFromFile` loaded is stored bottom row first.
+  `SaveToFile` writes either so the file looks right: a render target as it is, any other texture
+  flipped back the way its file held it.
+- RGBA8 2D textures only (`TextureFormat::RGBA`, `RGB` and `RGBA8_UNORM`); anything else logs an
+  error and hands `done` empty pixels. The window's own swap chain has no texture to read.
+
 ## Batching & tips
 
-- Quads, circles, and text each batch separately and flush in `EndScene`. The
-  renderer **auto-batches**: `MaxQuads` (default **2000**) is the size of a *single*
+- Quads, circles, and text each batch separately, so `EndScene` draws every quad, then
+  every circle, then all text, whatever order you called them in. `Flush()` (v0.8.3) draws
+  what has been submitted so far, so what comes after lands on top of it: call it between a
+  text and the panel that must cover it. A scene does this itself to keep sprites, circles and
+  text in z order ([Drawing order](scenes-and-ecs.md#drawing-order)).
+- The renderer **auto-batches**: `MaxQuads` (default **2000**) is the size of a *single*
   batch, not a per-frame limit — when a batch fills up (or runs out of texture slots)
   it is flushed automatically and a fresh one begins, so you can draw any number of
   quads per frame and nothing is ever dropped.
@@ -157,7 +222,8 @@ r.DrawQuad(pos, { height * aspect, height }, tex);
   white texture.
 - Keep one `BeginScene`/`EndScene` per camera per frame. If you need a second pass
   with a different camera (e.g. a screen-space HUD), open a second block after the
-  first.
+  first. A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) blocks a frame:
+  on Vulkan, later ones draw with an earlier block's camera.
 
 `r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
 `r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,

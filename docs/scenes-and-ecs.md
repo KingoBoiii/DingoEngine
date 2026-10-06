@@ -62,7 +62,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `TransformComponent` | `glm::vec3 Position` (center), `float Rotation` (degrees, +Z), `glm::vec2 Size`; `GetTransform()` → `mat4` |
 | `SpriteRendererComponent` | `glm::vec4 Color`, `Texture* Texture` (null ⇒ solid colour) |
 | `CircleRendererComponent` | `glm::vec4 Color`, `float Thickness`, `float Fade` |
-| `TextComponent` | `std::string Text`, `Font* Font`, `glm::vec4 Color`, `float Size`, `bool Centered` |
+| `TextComponent` | `std::string Text`, `Font* Font`, `glm::vec4 Color`, `float Size`, `bool Centered`; turns with the transform's `Rotation` (v0.8.3) |
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
 | `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)) — a sun |
@@ -112,6 +112,46 @@ void GameLayer::OnUpdate(float dt)
 > per-layer bookkeeping. For a **custom overlay** in the same view (e.g. a HUD over the
 > entities), wrap your own `Renderer2D::BeginScene`/`EndScene` around `Scene::RenderEntities`,
 > taking the matrix from `Scene::GetActiveCameraViewProjection(aspect)`.
+
+### Drawing order
+
+Sprites, circles and text draw in one stream sorted by **world z**: a higher z draws on top,
+whatever its kind (v0.8.3; before, every circle drew above every sprite and every text above
+both, so a HUD text at z 0 stayed over a fade at z 0.5: raise such text above it). At equal z,
+sprites come first, then circles, then text, and within a kind a parent draws before its
+children; other ties follow the registry, not creation order, so give overlapping UI elements
+distinct z values. A panel at z 0.5 covers a label at z 0:
+
+```cpp
+label.GetComponent<TransformComponent>().Position.z = 0.0f;
+panel.GetComponent<TransformComponent>().Position.z = 0.5f;   // drawn over the label
+```
+
+The z must stay inside the camera's `OrthoNear`/`OrthoFar` range (-1 to 1 by default).
+
+### Rendering into a texture
+
+`SceneRenderer::Render(scene, target)` (v0.8.3) renders a scene into a `Framebuffer` instead of the
+window, and its projections take the framebuffer's aspect. Draw the result as a texture,
+`target->GetAttachment(0)`: crossfade from one map to the next, show a minimap, or render an icon
+and save it ([Reading a texture back](rendering-2d.md#reading-a-texture-back-v083)).
+
+```cpp
+Framebuffer* oldMap = Framebuffer::Create(FramebufferParams()
+    .SetWidth(1280).SetHeight(720)
+    .SetEnableDepth(true)                                   // RGBA8 and depth, like the window's
+    .AddAttachment({ TextureFormat::RGBA8_UNORM }));
+
+SceneRenderer& scenes = Application::Get().GetSceneRenderer();
+scenes.Render(*previousMap, oldMap);                        // into the texture
+scenes.Render(*nextMap);                                    // into the window, as usual
+// The first row of a render target is its top: a negative height shows it upright.
+hud.DrawQuad({ 0.0f, 0.0f }, { width, -height }, oldMap->GetAttachment(0), { 1, 1, 1, fade });
+```
+
+Without a target, `Render` draws into the current render target (`Renderer::SetRenderTarget`, the
+window by default), and takes that one's aspect too. The test app's **Render Target Test**
+(`--test=target`) crossfades two 3D scenes this way, and reads a probe scene back to check it.
 
 ## 3D entities (v0.4.1)
 
@@ -235,8 +275,8 @@ float aim = turret2D.GetWorldRotation2D();      // the hull's rotation + the tur
   other destroy. `DuplicateEntity` copies the subtree and gives the copy the source's parent.
 - **Readers.** Mesh rendering, sprites, circles and text, point and spot lights (position and
   aim), both camera types, `ScreenPointToRay` and audio (sources and the listener) all use world
-  values. Sprites sort by world z, and a child at the same world z as its parent draws on top of
-  it. Text ignores rotation, as it always has.
+  values. Sprites, circles and text sort by world z, and a child at the same world z as its parent
+  draws on top of it. Text turns with its world rotation (since v0.8.3).
   `MeshRendererComponent::Visible` is not inherited.
 
 **Physics under a parent.** A body is built from the entity's world transform, with 3D collider

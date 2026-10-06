@@ -317,6 +317,24 @@ if (Input::IsGamepadConnected())
   the USB vendor id with a name fallback) cover polling, e.g. for
   button-prompt glyphs.
 
+**Rumble (v0.8.3).** `Input::SetGamepadRumble(lowFrequency, highFrequency, seconds, gamepad)`
+runs the pad's two motors, each from 0 to 1 (`lowFrequency` the heavy left one, `highFrequency`
+the light right one), for `seconds`; setting it again replaces the last, and `StopGamepadRumble`
+or 0 seconds stops it. It stops on time even while the app is paused in the background, and when
+the app closes.
+
+```cpp
+void Player::OnHit()
+{
+    Input::SetGamepadRumble(0.6f, 0.3f, 0.25f);   // a short thump on pad 0
+}
+```
+
+GLFW's gamepad API is input only, so rumble goes through XInput: Xbox-compatible pads on Windows.
+On any other pad, or platform, it does nothing and returns false;
+`Input::IsGamepadRumbleSupported(gamepad)` says which, e.g. to hide a VIBRATION setting. The F5
+Input tab has a button to try each motor.
+
 ## Events
 
 Beyond polling, layers receive discrete events through `OnEvent`. Events propagate
