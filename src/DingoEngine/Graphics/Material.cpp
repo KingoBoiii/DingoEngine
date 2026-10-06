@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Renderer.h"
 
+#include <atomic>
+
 namespace Dingo
 {
 
@@ -13,11 +15,13 @@ namespace Dingo
 			seed ^= value + 0x9e3779b9ull + (seed << 6) + (seed >> 2);
 		}
 
-		// Produce a cache key from a vertex layout and a framebuffer pointer.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer)
+		// Produce a cache key from a vertex layout, a framebuffer pointer and the shared buffers.
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer)
 		{
 			size_t seed = 0;
 			HashCombine(seed, reinterpret_cast<uintptr_t>(framebuffer));
+			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
+			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(layout.Stride));
 			HashCombine(seed, layout.Attributes.size());
 			for (const auto& attr : layout.Attributes)
@@ -47,6 +51,12 @@ namespace Dingo
 		: m_Params(params)
 	{}
 
+	uint64_t Material::AllocateId()
+	{
+		static std::atomic<uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
+
 	Material::~Material()
 	{
 		Destroy();
@@ -65,13 +75,23 @@ namespace Dingo
 	void Material::SetTexture(uint32_t slot, Texture* texture)
 	{
 		DE_CORE_ASSERT(slot < k_MaxTextureSlots, "Texture slot out of range");
+		if (m_Textures[slot] == texture)
+			return;
+
 		m_Textures[slot] = texture;
+		++m_BindingRevision;
+		InvalidatePipelineCache();
 	}
 
 	void Material::SetSampler(uint32_t slot, Sampler* sampler)
 	{
 		DE_CORE_ASSERT(slot < k_MaxSamplerSlots, "Sampler slot out of range");
+		if (m_Samplers[slot] == sampler)
+			return;
+
 		m_Samplers[slot] = sampler;
+		++m_BindingRevision;
+		InvalidatePipelineCache();
 	}
 
 	Texture* Material::GetTexture(uint32_t slot) const
@@ -96,7 +116,7 @@ namespace Dingo
 			static_cast<const uint8_t*>(data),
 			static_cast<const uint8_t*>(data) + size);
 
-		m_UniformDirty = true;
+		m_UniformUploadFrame = 0;
 
 		// Recreate the GPU buffer if it doesn't exist or is too small.
 		// This also invalidates the pipeline cache so new render passes will
@@ -116,12 +136,12 @@ namespace Dingo
 
 	void Material::SetSceneUniformBuffer(GraphicsBuffer* buffer)
 	{
-		if (m_SceneUniformBuffer == buffer)
-			return;
-
-		// The scene UBO is bound into the baked render pass, so a change must rebuild it.
 		m_SceneUniformBuffer = buffer;
-		InvalidatePipelineCache();
+	}
+
+	void Material::SetSkinUniformBuffer(GraphicsBuffer* buffer)
+	{
+		m_SkinUniformBuffer = buffer;
 	}
 
 	/**************************************************
@@ -153,7 +173,7 @@ namespace Dingo
 			m_BuiltResizeGeneration = resizeGeneration;
 		}
 
-		const size_t key = MakeCacheKey(layout, framebuffer);
+		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -165,6 +185,7 @@ namespace Dingo
 			.SetFramebuffer(framebuffer)
 			.SetVertexLayout(layout)
 			.SetCullMode(m_Params.CullMode)
+			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
 			.SetFillMode(m_Params.FillMode));
 
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
@@ -182,6 +203,10 @@ namespace Dingo
 
 		if (m_UniformBuffer)
 			renderPass->SetUniformBuffer(materialUboSlot, m_UniformBuffer);
+
+		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(k_SkinDataBlockName) : -1;
+		if (skinBinding >= 0)
+			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinBinding), m_SkinUniformBuffer);
 
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{

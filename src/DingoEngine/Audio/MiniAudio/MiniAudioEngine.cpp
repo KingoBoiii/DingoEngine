@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Audio/MiniAudio/MiniAudioEngine.h"
+#include "DingoEngine/Asset/AssetPath.h"
 
 // All miniaudio usage is confined to this .cpp (+ the engine-internal MiniAudioData.h).
 #include "DingoEngine/Audio/MiniAudio/MiniAudioData.h"
@@ -34,6 +35,29 @@ namespace Dingo
 
 		std::uint32_t IndexOf(AudioSoundId id) { return id & k_IndexMask; }
 		std::uint16_t GenerationOf(AudioSoundId id) { return static_cast<std::uint16_t>(id >> k_IndexBits); }
+
+		ma_attenuation_model ToMiniAudio(AudioAttenuationModel model)
+		{
+			switch (model)
+			{
+				case AudioAttenuationModel::None:        return ma_attenuation_model_none;
+				case AudioAttenuationModel::Linear:      return ma_attenuation_model_linear;
+				case AudioAttenuationModel::Exponential: return ma_attenuation_model_exponential;
+				case AudioAttenuationModel::Inverse:     return ma_attenuation_model_inverse;
+			}
+			return ma_attenuation_model_inverse;
+		}
+
+		void ApplyAttenuation(ma_sound* sound, const SoundAttenuation& attenuation)
+		{
+			ma_sound_set_attenuation_model(sound, ToMiniAudio(attenuation.Model));
+			// A zero min distance silences Inverse and divides by zero in Exponential.
+			ma_sound_set_min_distance(sound, (std::max)(attenuation.MinDistance, 0.001f));
+			ma_sound_set_max_distance(sound, attenuation.MaxDistance);
+			ma_sound_set_rolloff(sound, attenuation.Rolloff);
+			ma_sound_set_min_gain(sound, attenuation.MinGain);
+			ma_sound_set_max_gain(sound, attenuation.MaxGain);
+		}
 
 		// The concrete clip: owns a "template" ma_sound loaded fully into memory via the
 		// engine's resource manager. It is never played directly — Play() clones it with
@@ -128,9 +152,11 @@ namespace Dingo
 		if (!m_Data)
 			return nullptr;
 
-		if (!std::filesystem::exists(filepath))
+		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
+
+		if (!std::filesystem::exists(resolvedPath))
 		{
-			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", filepath.string());
+			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", resolvedPath.string());
 			return nullptr;
 		}
 
@@ -138,11 +164,11 @@ namespace Dingo
 
 		// MA_SOUND_FLAG_DECODE: fully decode into memory now (so ma_sound_init_copy can
 		// clone the decoded data buffer). No STREAM flag — streams can't be copied.
-		const ma_result result = ma_sound_init_from_file(m_Data->Engine, filepath.string().c_str(),
+		const ma_result result = ma_sound_init_from_file(m_Data->Engine, resolvedPath.string().c_str(),
 			MA_SOUND_FLAG_DECODE, nullptr, nullptr, clip->Template());
 		if (result != MA_SUCCESS)
 		{
-			DE_CORE_ERROR("AudioEngine::LoadClip failed for '{}' ({})", filepath.string(), (int)result);
+			DE_CORE_ERROR("AudioEngine::LoadClip failed for '{}' ({})", resolvedPath.string(), (int)result);
 			return nullptr; // clip's dtor won't uninit (m_Loaded still false)
 		}
 
@@ -167,7 +193,8 @@ namespace Dingo
 	// stays valid until the sound is Stop()ped or, if non-looping, finishes and is
 	// reaped by Update() (which bumps the slot generation so the id then goes stale).
 	static AudioSoundId StartInstance(Internal::MiniAudioData& data,
-		const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params)
+		const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params,
+		const SoundAttenuation& defaultAttenuation)
 	{
 		if (!clip)
 			return k_InvalidSound;
@@ -190,7 +217,10 @@ namespace Dingo
 		ma_sound_set_looping(sound, params.Looping ? MA_TRUE : MA_FALSE);
 		ma_sound_set_spatialization_enabled(sound, params.Spatialized ? MA_TRUE : MA_FALSE);
 		if (params.Spatialized)
+		{
 			ma_sound_set_position(sound, params.Position.x, params.Position.y, params.Position.z);
+			ApplyAttenuation(sound, params.Attenuation.value_or(defaultAttenuation));
+		}
 
 		const std::uint32_t index = AcquireSlot(data);
 		Internal::SoundSlot& slot = data.Slots[index];
@@ -205,7 +235,7 @@ namespace Dingo
 	{
 		if (!m_Data)
 			return k_InvalidSound;
-		return StartInstance(*m_Data, clip, params);
+		return StartInstance(*m_Data, clip, params, m_DefaultAttenuation);
 	}
 
 	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, float volume)
@@ -214,7 +244,7 @@ namespace Dingo
 			return;
 		SoundPlayParams params;
 		params.Volume = volume;
-		StartInstance(*m_Data, clip, params);
+		StartInstance(*m_Data, clip, params, m_DefaultAttenuation);
 	}
 
 	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume)
@@ -225,7 +255,7 @@ namespace Dingo
 		params.Volume = volume;
 		params.Spatialized = true;
 		params.Position = position;
-		StartInstance(*m_Data, clip, params);
+		StartInstance(*m_Data, clip, params, m_DefaultAttenuation);
 	}
 
 	Internal::SoundSlot* MiniAudioEngine::ResolveSlot(AudioSoundId id) const
@@ -305,6 +335,12 @@ namespace Dingo
 			ma_sound_set_position(slot->Sound, position.x, position.y, position.z);
 	}
 
+	void MiniAudioEngine::SetAttenuation(AudioSoundId sound, const SoundAttenuation& attenuation)
+	{
+		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+			ApplyAttenuation(slot->Sound, attenuation);
+	}
+
 	void MiniAudioEngine::SetMasterVolume(float volume)
 	{
 		if (m_Data)
@@ -316,6 +352,16 @@ namespace Dingo
 		if (!m_Data)
 			return 0.0f;
 		return ma_engine_get_volume(m_Data->Engine);
+	}
+
+	void MiniAudioEngine::SetDefaultAttenuation(const SoundAttenuation& attenuation)
+	{
+		m_DefaultAttenuation = attenuation;
+	}
+
+	const SoundAttenuation& MiniAudioEngine::GetDefaultAttenuation() const
+	{
+		return m_DefaultAttenuation;
 	}
 
 	std::uint32_t MiniAudioEngine::GetActiveSoundCount() const

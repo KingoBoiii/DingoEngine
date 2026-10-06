@@ -1,11 +1,22 @@
 #pragma once
 #include "Enums.h"
 
+#include <cstdint>
 #include <filesystem>
+#include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace Dingo
 {
+
+	struct ShaderDefine
+	{
+		std::string Name;
+		std::string Value;
+	};
 
 	struct ShaderParams
 	{
@@ -14,6 +25,9 @@ namespace Dingo
 		bool Reflect = true; // Whether to reflect shader resources
 		std::filesystem::path FilePath;
 		std::string SourceCode; // Optional source code for inline shaders
+		// Preprocessor macros for every stage, e.g. DE_SKINNED. They are part of the bytecode cache
+		// key and survive Reload, so one source file can back several variants.
+		std::vector<ShaderDefine> Defines;
 
 		ShaderParams& SetName(const std::string& name)
 		{
@@ -44,11 +58,19 @@ namespace Dingo
 			SourceCode = source;
 			return *this;
 		}
+
+		ShaderParams& AddDefine(const std::string& name, const std::string& value = {})
+		{
+			Defines.push_back({ name, value });
+			return *this;
+		}
 	};
 
 	class Shader
 	{
 	public:
+		// A relative filepath is looked up under the asset root first, then the working
+		// directory.
 		static Shader* CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect = true);
 		static Shader* CreateFromSource(const std::string& name, const std::string& source, bool reflect = true);
 		static Shader* Create(const ShaderParams& params);
@@ -80,9 +102,14 @@ namespace Dingo
 
 		const ShaderParams& GetParams() const { return m_Params; }
 
+		// The binding of the uniform block with that name in any stage, or -1. Only reflected
+		// shaders (ShaderParams::Reflect) know their blocks.
+		int32_t FindUniformBufferBinding(std::string_view blockName) const;
+
 	protected:
 		ShaderParams m_Params;
 		uint32_t m_Generation = 0;
+		std::vector<std::pair<std::string, uint32_t>> m_UniformBufferBindings;
 
 		friend class NvrhiPipeline;
 	};

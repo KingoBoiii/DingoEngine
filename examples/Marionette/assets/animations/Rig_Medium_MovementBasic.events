@@ -1,0 +1,6 @@
+# step_l and step_r sit at one fraction of the walk's and the run's cycle: the run's touchdown less 0.03 cycle.
+# clip     time     event
+Walking_A  0.0680   step_l
+Walking_A  0.6013   step_r
+Running_A  0.0510   step_l
+Running_A  0.4510   step_r

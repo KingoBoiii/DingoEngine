@@ -72,6 +72,7 @@ namespace Dingo
 		void Shutdown();
 
 		void Update();
+		void WaitEvents(double timeoutSeconds);
 
 		bool IsRunning() const;
 
@@ -82,6 +83,8 @@ namespace Dingo
 		void SetFullscreen(bool fullscreen);
 		void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
 		bool IsFullscreen() const;
+
+		bool IsFocused() const;
 
 		int32_t GetWidth() const { return m_Data.Width; }
 		int32_t GetHeight() const { return m_Data.Height; }

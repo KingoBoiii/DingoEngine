@@ -5,6 +5,7 @@
 #include "DingoEngine/Physics/3D/JoltPhysics/JoltPhysics3DData.h"
 
 #include "DingoEngine/Physics/3D/JoltPhysics/JoltCharacterController3D.h"
+#include "DingoEngine/Graphics/Mesh.h"
 
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
@@ -12,6 +13,10 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaleHelpers.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
@@ -162,6 +167,103 @@ namespace Dingo
 		return shape;
 	}
 
+	static JPH::ShapeRefC BuildMeshShape(const Mesh& mesh, bool convex)
+	{
+		const std::vector<MeshVertex>& vertices = mesh.GetVertices();
+		const std::vector<uint32_t>& indices = mesh.GetIndices();
+
+		JPH::ShapeSettings::ShapeResult result;
+		if (convex)
+		{
+			JPH::Array<JPH::Vec3> points;
+			points.reserve(vertices.size());
+			for (const MeshVertex& vertex : vertices)
+				points.push_back(ToJolt(vertex.Position));
+
+			result = JPH::ConvexHullShapeSettings(points).Create();
+		}
+		else
+		{
+			if (indices.empty() || indices.size() % 3 != 0)
+			{
+				DE_CORE_ERROR("Physics3D: mesh collider needs a triangle list, got {} indices", indices.size());
+				return nullptr;
+			}
+
+			JPH::VertexList triangleVertices;
+			triangleVertices.reserve(vertices.size());
+			for (const MeshVertex& vertex : vertices)
+				triangleVertices.push_back(JPH::Float3(vertex.Position.x, vertex.Position.y, vertex.Position.z));
+
+			// MeshShapeSettings reads every index while it sanitizes, before its own range check.
+			JPH::IndexedTriangleList triangles;
+			triangles.reserve(indices.size() / 3);
+			for (std::size_t i = 0; i < indices.size(); i += 3)
+			{
+				if (indices[i] >= vertices.size() || indices[i + 1] >= vertices.size() || indices[i + 2] >= vertices.size())
+				{
+					DE_CORE_ERROR("Physics3D: mesh collider index out of range at triangle {} ({} vertices)", i / 3, vertices.size());
+					return nullptr;
+				}
+				triangles.push_back(JPH::IndexedTriangle(indices[i], indices[i + 1], indices[i + 2], 0));
+			}
+
+			result = JPH::MeshShapeSettings(std::move(triangleVertices), std::move(triangles)).Create();
+		}
+
+		if (result.HasError())
+		{
+			DE_CORE_ERROR("Physics3D: building a {} collider from a {}-vertex mesh failed: {}",
+				convex ? "convex hull" : "mesh", vertices.size(), result.GetError().c_str());
+			return nullptr;
+		}
+		return result.Get();
+	}
+
+	static JPH::ShapeRefC GetOrCreateMeshShape(Internal::JoltPhysics3DData& data, const RigidBodyParams3D& params)
+	{
+		if (!params.Mesh)
+		{
+			DE_CORE_ERROR("Physics3D: a Mesh or ConvexHull collider needs RigidBodyParams3D::Mesh");
+			return nullptr;
+		}
+
+		bool convex = params.Shape == ColliderShape3D::ConvexHull;
+		if (!convex && params.Type == BodyType3D::Dynamic)
+		{
+			DE_CORE_WARN("Physics3D: a Dynamic body cannot use a Mesh collider; using the mesh's convex hull instead");
+			convex = true;
+		}
+
+		auto& cache = convex ? data.ConvexHullShapeCache : data.MeshShapeCache;
+		JPH::ShapeRefC shape;
+		if (auto existing = cache.find(params.Mesh->GetId()); existing != cache.end())
+		{
+			shape = existing->second;
+		}
+		else
+		{
+			shape = BuildMeshShape(*params.Mesh, convex);
+			if (!shape)
+				return nullptr;
+
+			std::erase_if(cache, [](const auto& entry) { return entry.second->GetRefCount() == 1; });
+			cache.emplace(params.Mesh->GetId(), shape);
+		}
+
+		const JPH::Vec3 scale = ToJolt(params.MeshScale);
+		if (!shape->IsValidScale(scale))
+		{
+			DE_CORE_ERROR("Physics3D: mesh collider scale ({}, {}, {}) has a zero axis",
+				params.MeshScale.x, params.MeshScale.y, params.MeshScale.z);
+			return nullptr;
+		}
+
+		if (JPH::ScaleHelpers::IsNotScaled(scale))
+			return shape;
+		return new JPH::ScaledShape(shape, scale);
+	}
+
 	PhysicsBodyId3D JoltPhysics3D::CreateBody(const RigidBodyParams3D& params)
 	{
 		if (!m_Data)
@@ -169,7 +271,8 @@ namespace Dingo
 
 		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
 
-		const JPH::ShapeRefC shape = GetOrCreateShape(*m_Data, params);
+		const bool meshBacked = params.Shape == ColliderShape3D::Mesh || params.Shape == ColliderShape3D::ConvexHull;
+		const JPH::ShapeRefC shape = meshBacked ? GetOrCreateMeshShape(*m_Data, params) : GetOrCreateShape(*m_Data, params);
 		if (!shape)
 			return k_InvalidBody3D;
 
@@ -182,6 +285,21 @@ namespace Dingo
 			ToMotionType(params.Type), layer);
 		settings.mFriction = params.Friction;
 		settings.mRestitution = params.Restitution;
+		settings.mMotionQuality = params.ContinuousCollision ? JPH::EMotionQuality::LinearCast : JPH::EMotionQuality::Discrete;
+
+		// A triangle mesh or a flat hull has no volume to derive mass from. A kinematic
+		// body's mass never reaches the solver, so any valid value satisfies Jolt; a
+		// dynamic one would integrate to NaN.
+		if (meshBacked && params.Type == BodyType3D::Kinematic)
+		{
+			settings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
+			settings.mMassPropertiesOverride.SetMassAndInertiaOfSolidBox(JPH::Vec3::sReplicate(1.0f), 1.0f);
+		}
+		else if (meshBacked && params.Type == BodyType3D::Dynamic && !(shape->GetMassProperties().mMass > 0.0f))
+		{
+			DE_CORE_ERROR("Physics3D: a Dynamic body's convex hull has no volume (is the mesh flat?)");
+			return k_InvalidBody3D;
+		}
 
 		const JPH::EActivation activation = isStatic ? JPH::EActivation::DontActivate : JPH::EActivation::Activate;
 		const JPH::BodyID id = bodyInterface.CreateAndAddBody(settings, activation);
@@ -191,10 +309,45 @@ namespace Dingo
 		return id.GetIndexAndSequenceNumber();
 	}
 
+	// A body joins the filter's group with its first ignored partner and leaves it with its last, so
+	// the pairs of bodies that ignore nothing never reach the filter.
+	static void LinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
+	{
+		std::vector<std::uint32_t>& partners = data.IgnoredPartners[body];
+		if (partners.empty())
+			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup(data.PairFilter.GetPtr(), body, 0));
+		partners.push_back(partner);
+	}
+
+	static void UnlinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
+	{
+		auto it = data.IgnoredPartners.find(body);
+		if (it == data.IgnoredPartners.end())
+			return;
+
+		std::erase(it->second, partner);
+		if (it->second.empty())
+		{
+			data.IgnoredPartners.erase(it);
+			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup());
+		}
+	}
+
 	void JoltPhysics3D::DestroyBody(PhysicsBodyId3D body)
 	{
 		if (!m_Data || body == k_InvalidBody3D)
 			return;
+
+		if (auto it = m_Data->IgnoredPartners.find(body); it != m_Data->IgnoredPartners.end())
+		{
+			const std::vector<std::uint32_t> partners = std::move(it->second);
+			m_Data->IgnoredPartners.erase(it);
+			for (std::uint32_t partner : partners)
+			{
+				m_Data->PairFilter->Remove(body, partner);
+				UnlinkIgnoredPartner(*m_Data, partner, body);
+			}
+		}
 
 		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
 		const JPH::BodyID id = ToBodyId(body);
@@ -279,6 +432,43 @@ namespace Dingo
 		if (!m_Data || body == k_InvalidBody3D)
 			return;
 		m_Data->PhysicsSystem.GetBodyInterface().AddForce(ToBodyId(body), ToJolt(force));
+	}
+
+	void JoltPhysics3D::IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore)
+	{
+		if (!m_Data || a == k_InvalidBody3D || b == k_InvalidBody3D || a == b)
+			return;
+
+		Internal::IgnoredPairFilter& filter = *m_Data->PairFilter;
+		if (filter.Contains(a, b) == ignore)
+			return;
+
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		if (ignore)
+		{
+			if (!bodyInterface.IsAdded(ToBodyId(a)) || !bodyInterface.IsAdded(ToBodyId(b)))
+				return;
+
+			filter.Add(a, b);
+			LinkIgnoredPartner(*m_Data, a, b);
+			LinkIgnoredPartner(*m_Data, b, a);
+		}
+		else
+		{
+			filter.Remove(a, b);
+			UnlinkIgnoredPartner(*m_Data, a, b);
+			UnlinkIgnoredPartner(*m_Data, b, a);
+		}
+
+		// The broad phase only pairs a body that is awake: a sleeping pair would keep its old
+		// contact state until something else woke one of them.
+		bodyInterface.ActivateBody(ToBodyId(a));
+		bodyInterface.ActivateBody(ToBodyId(b));
+	}
+
+	bool JoltPhysics3D::IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const
+	{
+		return m_Data && m_Data->PairFilter->Contains(a, b);
 	}
 
 	void JoltPhysics3D::SetPosition(PhysicsBodyId3D body, const glm::vec3& position)

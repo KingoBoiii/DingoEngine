@@ -14,6 +14,9 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **Scenes & ECS** — entity-component scenes with `ScriptableEntity` behaviours and a `SceneManager` for multi-scene games; supports both 2D and 3D entities (ECS backend kept internal)
 - **2D Physics** — Box2D-backed rigid-body simulation wired into the ECS (`RigidBody2D` / `BoxCollider2D` / `CircleCollider2D` components, gravity, forces/impulses; physics backend kept internal)
 - **3D Physics & Scene** — Jolt-backed `Physics3D`, usable standalone or wired into the ECS (`Transform3D` / `MeshRenderer` / `RigidBody3D` / `Box`+`SphereCollider3D` components), with 3D meshes drawn through `Renderer3D` and a perspective camera (physics backend kept internal)
+- **3D Lighting** — forward-lit `Renderer3D` with coloured directional, point and spot lights (up to 32 point/spot lights per scene, the most relevant picked each frame), ambient light, Blinn-Phong specular, and lit materials with emissive and an albedo texture. Lights are ECS components (`PointLightComponent` / `SpotLightComponent` / `AmbientLightComponent` / `DirectionalLightComponent`), and the lit shader hot-reloads in Debug builds when asset hot-reload is enabled
+- **Transform Hierarchy** — 3D and 2D parent-child transforms (`Entity::SetParent`), world values computed per pass, subtree destroy/duplicate, and physics that follows parents
+- **Skeletal Animation** — skinned glTF/FBX models drawn with GPU skinning; an `Animator` with cross-fades, `Blend1D` blends, masked layers and one-shots; clip events (code or a `.events` file beside the model) delivered to scripts; joint sockets; retargeting by joint name; models and their events hot-reload in place; an F7 Animation tab
 
 ## Documentation
 
@@ -24,13 +27,15 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [2D Rendering](docs/rendering-2d.md) — quads, circles, text, textures, fonts
 - [Scenes & ECS](docs/scenes-and-ecs.md) — entities, components, systems, and scene management
 - [2D Physics](docs/physics-2d.md) — rigid bodies, colliders, gravity, and forces/impulses
-- [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated
+- [3D Physics](docs/physics-3d.md) — the Jolt-backed `Physics3D`, standalone or ECS-integrated, including mesh colliders
 - [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
+- [Lighting](docs/lighting.md) — directional, point and spot lights, the light budget, specular, and lit materials
+- [Animation](docs/animation.md) — skinned models, the animator, blending and layers, timeline events, joint sockets, and model hot-reload
 
 ## Roadmap
 
-Currently at **v0.6.1**. Every milestone ships with an example game that exercises it — see
-[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1) and what each
+Currently at **v0.8.2**, which lets DirectX 12 start on a machine without a GPU, makes Vulkan report a missing driver instead of crashing, and stops translucent draws from making a render target see-through, after v0.8.1 fixed back-face culling for custom materials. Both sit on v0.8.0: the animation engine work (skinned models, an animator with blending, layers and timeline events, joint sockets, and in-place model hot-reload) and its example game, *Marionette*. Before it, v0.7.0 shipped the lighting engine and *Candlewick*, v0.7.1 the transform hierarchy, and v0.7.2 a choice to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1–v0.7.2, v0.8.1–v0.8.2) and what each
 example is built to demonstrate.
 
 | Version | Milestone | Example game | Status |
@@ -41,8 +46,9 @@ example is built to demonstrate.
 | v0.4 | Physics & Collision — Box2D 2D and Jolt 3D, then 3D inside the ECS | `AngryBirds`, `DungeonCrawler3D` | shipped |
 | v0.5 | Audio & Gameplay-Grade Physics — miniaudio, character controller, ray/shape casts | `EchoVault` | shipped |
 | v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
-| **v0.7** | **Lighting & Shading** — point/spot lights on a capped forward multi-light path, specular | *Candlewick* | next |
-| v0.8 | Animation & Character Fidelity — transform hierarchy, skinned meshes, clips, blending | *Marionette* | planned |
+| v0.7 | Lighting & Shading — point/spot lights on a capped forward multi-light path, specular | `Candlewick` | shipped |
+| v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
+| **v0.8** | **Animation & Character Fidelity** — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
 | v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
 
@@ -76,7 +82,7 @@ Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This w
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, or `ArenaShooter`) as the startup project, and build.
+Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, `ArenaShooter`, `Candlewick`, or `Marionette`) as the startup project, and build.
 
 ## Examples
 
@@ -87,9 +93,11 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `DungeonCrawler` | Top-down 2D slice — tile collision, chasing enemies, melee combat, loot |
 | `SpaceInvaders` | Scene/ECS showcase — EnTT entities and a multi-scene `SceneManager` |
 | `AngryBirds` | 2D physics showcase — slingshot launching, destructible block towers, and pig targets on the Box2D-backed physics world |
-| `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D` |
-| `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play |
+| `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D`; run with `--night` for a dark dungeon lit by a lantern and point-lit treasure |
+| `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play; since v0.7 its orbs and sentries are lit emissive materials that carry point lights |
 | `ArenaShooter` | v0.6 showcase — wave-based top-down shooter driven entirely by the **`AssetManager`**: async loading behind a progress bar, all sprites/audio/fonts via UUID handles, and **live hot-reload** (edit `assets/shaders/background.glsl` or a sprite PNG while it runs) |
+| `Candlewick` | v0.7 showcase — a stealth crawl through a dark keep where every light is a gameplay object: the lantern you carry is a **point light whose radius is your oil**, **wardens** carry point lights and see through **spot-light vision cones** tested with the renderer's own light query (`GetLightAttenuation`), so the cone drawn on the floor is the cone that catches you, a **game-side light budget** keeps the decorative flames and the gameplay lights inside the engine's 32, and **lit emissive braziers** (hold to light) are the checkpoints; light the Chapel altar to win. Move with WASD / arrows / left stick, snuff or relight the lantern with Q / (X), hold E / (A) beside a brazier, pause with Esc / Start; synthesised 3D positional audio, full gamepad play, and `--debug-cone` to draw what the wardens test |
+| `Marionette` | v0.8 showcase — a melee duel against three escalating opponents where no combat timing lives in code: every wind-up, hit window, combo window and dodge's invulnerability is a **timeline event** in a `.events` file beside the clips, swords and hit spheres ride **joint sockets**, a **masked upper-body layer** blocks while the legs keep walking, a **`Blend1D`** locomotion blend feeds positional footsteps from step events, and **one set of clip libraries** is retargeted onto four characters. Three AI tiers read the opponent's wind-up through a reaction delay and parry, block or dodge it; edit a `.events` file while it runs (`--hot-reload`, or `--live-edit-demo`) and the fight changes live. Move with WASD / left stick, light attack J / left mouse / X, heavy K / right mouse / Y, hold Shift / right bumper to block (tap to parry), dodge with Space / A, pause with Esc / Start; `--debug-hitbox` draws the hit and hurt spheres, `--check` runs its built-in checks, and `--autoplay` or `--tournament=N` play AI against AI |
 
 ## Project Structure
 
@@ -114,3 +122,9 @@ examples/               Example projects
 | [EnTT](https://github.com/skypjack/entt) | Entity-component system (scenes) |
 | [Box2D](https://github.com/erincatto/box2d) | 2D rigid-body physics simulation |
 | [Jolt Physics](https://github.com/jrouwe/JoltPhysics) | 3D rigid-body physics simulation |
+
+## Credits
+
+*Marionette*'s characters, weapons and animations: KayKit by Kay Lousberg, [www.kaylousberg.com](https://www.kaylousberg.com) — CC0. Each pack's licence text is kept in `examples/Marionette/assets/`.
+
+The test app's Fox (`test/assets/models/Fox`): model by PixelMannen, rigging and animation by @tomkranis, glTF conversion by @AsoboStudio with @scurest — CC-BY 4.0, from the [Khronos glTF Sample Models](https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/Fox).

@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 
 #include "MSDFData.h"
+#include "Utf8.h"
 
 #include "DingoEngine/Core/Application.h"
 
@@ -286,6 +287,10 @@ void main() {
 
 	void Renderer2D::BeginScene(const glm::mat4& projectionViewMatrix)
 	{
+		m_SceneSkipped = Renderer::IsFrameSkipped();
+		if (m_SceneSkipped)
+			return;
+
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
 		m_CameraUniformBuffer->Upload(&m_CameraData, sizeof(CameraData));
 
@@ -305,6 +310,9 @@ void main() {
 
 	void Renderer2D::EndScene()
 	{
+		if (m_SceneSkipped)
+			return;
+
 		// Submit whatever each pass has accumulated since its last flush. The bulk
 		// of the work for large scenes already happened in mid-frame flushes; these
 		// just drain the final partial batch (no-op when empty).
@@ -326,6 +334,9 @@ void main() {
 
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
@@ -351,6 +362,9 @@ void main() {
 
 	void Renderer2D::DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
@@ -378,6 +392,9 @@ void main() {
 
 	void Renderer2D::DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_QuadPass.HasRoomForQuad())
 			FlushQuad();
 
@@ -402,6 +419,9 @@ void main() {
 
 	void Renderer2D::DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness, float fade)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		if (!m_CirclePass.HasRoomForQuad())
 			FlushCircle();
 
@@ -426,6 +446,9 @@ void main() {
 
 	void Renderer2D::DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size, const TextParameters& textParameters)
 	{
+		if (m_SceneSkipped)
+			return;
+
 		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();
@@ -468,9 +491,14 @@ void main() {
 		auto spaceGlyph = fontGeometry.getGlyph(' ');
 		float spaceGlyphAdvance = spaceGlyph ? (float)spaceGlyph->getAdvance() : 0.0f;
 
-		for (size_t i = 0; i < string.size(); i++)
+		const std::string_view text = string;
+		size_t index = 0;
+		while (index < text.size())
 		{
-			char character = string[i];
+			const uint32_t character = Internal::DecodeUtf8(text, index);
+			size_t lookahead = index;
+			const bool hasNext = lookahead < text.size();
+			const uint32_t nextCharacter = hasNext ? Internal::DecodeUtf8(text, lookahead) : 0;
 
 			if (character == '\n')
 			{
@@ -484,14 +512,10 @@ void main() {
 
 			if (character == ' ')
 			{
-				float advance = spaceGlyphAdvance;
-				if (i < string.size() - 1)
-				{
-					char nextCharacter = string[i + 1];
-					double dAdvance;
-					fontGeometry.getAdvance(dAdvance, character, nextCharacter);
-					advance = (float)dAdvance;
-				}
+				// getAdvance leaves its out-param untouched when either glyph is missing.
+				double advance = spaceGlyphAdvance;
+				if (hasNext)
+					fontGeometry.getAdvance(advance, character, nextCharacter);
 				x += fsScale * advance + textParameters.Kerning;
 				continue;
 			}
@@ -560,8 +584,8 @@ void main() {
 			// Advance past the last glyph too, so the pen ends on the line's full width —
 			// what GetStringWidth reports, and what centering below has to agree with.
 			double advance = glyph->getAdvance();
-			if (i < string.size() - 1)
-				fontGeometry.getAdvance(advance, character, string[i + 1]);
+			if (hasNext)
+				fontGeometry.getAdvance(advance, character, nextCharacter);
 
 			x += fsScale * advance + textParameters.Kerning;
 		}

@@ -31,6 +31,8 @@ namespace Dingo
 		SwapChain*   SwapChain      = nullptr;
 		CommandList* CommandList    = nullptr;
 		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
+		uint64_t     FrameIndex     = 0;       // bumped per command-list Begin, so never 0 while recording
+		bool         FrameSkipped   = false;   // main thread only: from SkipFrame to the next BeginFrame
 
 		std::thread             RenderThread;
 		std::mutex              Mutex;
@@ -126,7 +128,26 @@ namespace Dingo
 		std::unique_lock<std::mutex> lock(s_Data->Mutex);
 		s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
 		s_Data->FrameConsumed = false;
+		s_Data->FrameSkipped = false;
 		Begin();
+	}
+
+	void Renderer::SkipFrame()
+	{
+		{
+			std::unique_lock<std::mutex> lock(s_Data->Mutex);
+			s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
+		}
+		s_Data->FrameSkipped = true;
+
+		// The render thread collects after each present and stays parked until the next
+		// EndFrame, so the uploads made meanwhile (async asset loads) are collected here.
+		GraphicsContext::Get().RunGarbageCollection();
+	}
+
+	bool Renderer::IsFrameSkipped()
+	{
+		return s_Data && s_Data->FrameSkipped;
 	}
 
 	void Renderer::EndFrame()
@@ -205,6 +226,7 @@ namespace Dingo
 
 	void Renderer::Begin()
 	{
+		++s_Data->FrameIndex;
 		s_Data->CommandList->Begin();
 	}
 
@@ -246,11 +268,17 @@ namespace Dingo
 
 	void Renderer::Upload(GraphicsBuffer* buffer)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		s_Data->CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
 	}
 
 	void Renderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		s_Data->CommandList->UploadBuffer(buffer, data, size);
 	}
 
@@ -260,11 +288,17 @@ namespace Dingo
 
 	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		s_Data->CommandList->Clear(framebuffer, 0, clearColor);
 	}
 
 	void Renderer::Clear(const glm::vec4& clearColor)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		Framebuffer* target = GetCurrentTarget();
 		s_Data->CommandList->SetFramebuffer(target);
 		s_Data->CommandList->Clear(target, 0, clearColor);
@@ -276,6 +310,9 @@ namespace Dingo
 
 	void Renderer::Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		Framebuffer* target = GetCurrentTarget();
 		if (!s_Data->CommandList->SetPipeline(pipeline))
 			return;
@@ -286,6 +323,9 @@ namespace Dingo
 
 	void Renderer::Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		Framebuffer* target = GetCurrentTarget();
 		if (!s_Data->CommandList->SetPipeline(pipeline))
 			return;
@@ -297,6 +337,9 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
@@ -315,6 +358,9 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
@@ -333,16 +379,19 @@ namespace Dingo
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
 	{
+		if (s_Data->FrameSkipped)
+			return;
+
 		indexCount = ResolveIndexCount(indexBuffer, indexCount);
 
 		Framebuffer* target = GetCurrentTarget();
 
-		// Upload uniform data to GPU if it changed since the last draw.
-		if (material->IsUniformDirty() && material->GetUniformBuffer())
+		// The UBO is volatile: it must be written into every frame that binds it, not only when it changed.
+		if (material->GetUniformBuffer() && material->NeedsUniformUpload(s_Data->FrameIndex))
 		{
 			const auto& cpu = material->GetUniformCPUData();
 			s_Data->CommandList->UploadBuffer(material->GetUniformBuffer(), cpu.data(), cpu.size());
-			material->ClearUniformDirty();
+			material->MarkUniformUploaded(s_Data->FrameIndex);
 		}
 
 		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);
@@ -387,6 +436,11 @@ namespace Dingo
 	uint64_t Renderer::GetSwapChainResizeGeneration()
 	{
 		return (s_Data && s_Data->SwapChain) ? s_Data->SwapChain->GetResizeGeneration() : 0;
+	}
+
+	uint64_t Renderer::GetFrameIndex()
+	{
+		return s_Data ? s_Data->FrameIndex : 0;
 	}
 
 	/**************************************************

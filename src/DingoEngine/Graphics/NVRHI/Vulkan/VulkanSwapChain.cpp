@@ -211,8 +211,12 @@ namespace Dingo
 
 			if (result == vk::Result::eErrorOutOfDateKHR)
 			{
+				if (!RecreateSwapChain())
+				{
+					return;
+				}
+
 				DE_CORE_WARN("Swapchain is out of date on acquire, recreating it.");
-				RecreateSwapChain();
 				continue; // retry against the freshly created swap chain
 			}
 
@@ -229,9 +233,9 @@ namespace Dingo
 		}
 		else
 		{
-			// No image was acquired (e.g. minimized window, or a swapchain on a display this GPU
-			// cannot present to). Leave m_ImageAcquired false so Present() skips this frame instead
-			// of submitting/presenting a stale image index.
+			// No image was acquired (e.g. a swapchain on a display this GPU cannot present to).
+			// Leave m_ImageAcquired false so Present() skips this frame instead of
+			// submitting/presenting a stale image index.
 			DE_CORE_ERROR("Failed to acquire swapchain image, error code = {}", std::string(nvrhi::vulkan::resultToString(VkResult(result))));
 		}
 	}
@@ -285,8 +289,10 @@ namespace Dingo
 			{
 				// The surface changed (resized, moved to another monitor, DPI change, ...).
 				// These results are expected here, so recreate instead of asserting.
-				DE_CORE_WARN("Swapchain is out of date or suboptimal on present, recreating it.");
-				RecreateSwapChain();
+				if (RecreateSwapChain())
+				{
+					DE_CORE_WARN("Swapchain is out of date or suboptimal on present, recreating it.");
+				}
 			}
 			else
 			{
@@ -517,19 +523,19 @@ namespace Dingo
 		m_SwapChainImages.clear();
 	}
 
-	void VulkanSwapChain::RecreateSwapChain()
+	bool VulkanSwapChain::RecreateSwapChain()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
 		// A minimized window reports a (0,0) surface extent, which is invalid for a swap chain.
 		// Keep the existing swap chain (and its framebuffers) instead of destroying it into an
-		// empty state that GetCurrentFramebuffer() would index out of bounds. Present() is skipped
-		// while no image can be acquired; a later resize event recreates at a real size.
+		// empty state that GetCurrentFramebuffer() would index out of bounds. Application stops
+		// rendering while minimized; the resize on restore recreates at a real size.
 		const vk::SurfaceCapabilitiesKHR surfaceCaps = graphicsContext.m_VulkanPhysicalDevice.getSurfaceCapabilitiesKHR(m_WindowSurface);
 		if (surfaceCaps.currentExtent.width == 0 || surfaceCaps.currentExtent.height == 0)
 		{
 			m_ImageAcquired = false;
-			return;
+			return false;
 		}
 
 		DestroySwapChain();
@@ -538,6 +544,7 @@ namespace Dingo
 		CreateFramebuffers();
 
 		m_ResizeGeneration++;
+		return true;
 	}
 
 }

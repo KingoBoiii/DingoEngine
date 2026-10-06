@@ -76,37 +76,11 @@ namespace Dingo
 
 	void GameLayer::OnDetach()
 	{
-		// Clean up font
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
-
-		// Clean up textures
-		if (m_BirdTexture)
-		{
-			m_BirdTexture->Destroy();
-			m_BirdTexture = nullptr;
-		}
-
-		if (m_PipeTexture)
-		{
-			m_PipeTexture->Destroy();
-			m_PipeTexture = nullptr;
-		}
-
-		if (m_GroundTexture)
-		{
-			m_GroundTexture->Destroy();
-			m_GroundTexture = nullptr;
-		}
-
-		if (m_BackgroundTexture)
-		{
-			m_BackgroundTexture->Destroy();
-			m_BackgroundTexture = nullptr;
-		}
+		DestroyAndDelete(m_Font);
+		DestroyAndDelete(m_BirdTexture);
+		DestroyAndDelete(m_PipeTexture);
+		DestroyAndDelete(m_GroundTexture);
+		DestroyAndDelete(m_BackgroundTexture);
 	}
 
 	void GameLayer::OnUpdate(float deltaTime)

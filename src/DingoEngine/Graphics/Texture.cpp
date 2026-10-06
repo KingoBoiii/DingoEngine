@@ -1,16 +1,19 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Texture.h"
+#include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 
 #include "NVRHI/NvrhiTexture.h"
 
 namespace Dingo
 {
-	
+
 	Texture* Texture::CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName)
 	{
+		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
+
 		uint32_t width = 0, height = 0, channels = 0;
-		const uint8_t* data = FileSystem::ReadImage(filepath, &width, &height, &channels, true, true);
+		const uint8_t* data = FileSystem::ReadImage(resolvedPath, &width, &height, &channels, true, true);
 		if (!data)
 			return nullptr;
 

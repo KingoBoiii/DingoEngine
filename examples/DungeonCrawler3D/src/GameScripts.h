@@ -37,6 +37,8 @@ namespace Dingo
 	private:
 		GameContext m_Context;
 		Entity m_CameraEntity;
+		bool m_Night = false;
+		Entity m_Lantern;
 		int m_GridCols = 0;
 		int m_GridRows = 0;
 

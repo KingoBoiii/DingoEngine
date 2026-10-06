@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
+#include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -15,12 +16,15 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace Dingo
 {
 
 	class Material; // referenced by MeshRendererComponent (pointer only)
+	class Model;    // referenced by SkinnedMeshRendererComponent (pointer only)
+	struct Transform3DComponent; // the light components' ToLight, defined after it
 
 	// Identity ----------------------------------------------------------------
 
@@ -46,7 +50,8 @@ namespace Dingo
 
 	// 2D-oriented transform. Position is the center of the entity (matching the
 	// Renderer2D quad convention); Size is the full extent in world units; Rotation
-	// is in degrees about the +Z axis.
+	// is in degrees about the +Z axis. Position and Rotation are relative to the
+	// entity's parent when it has one (Entity::SetParent); Size never is.
 	struct TransformComponent
 	{
 		glm::vec3 Position{ 0.0f };
@@ -144,24 +149,91 @@ namespace Dingo
 	};
 
 	// Lighting ----------------------------------------------------------------
+	//
+	// The SceneRenderer submits these to Renderer3D every frame (Scene::SubmitLights); see
+	// Graphics/Light.h for falloff and the per-scene light budget. A scene without a single light
+	// component is lit by a default DirectionalLightComponent, so a 3D scene never renders black
+	// by accident. Any light component, even a disabled one, turns that default off. Point and
+	// spot lights take their position, and a spot its aim, from the entity's world transform
+	// (its Transform3DComponent through any parents), and are ignored without one.
 
-	// A single directional light read by the SceneRenderer and fed to Renderer3D.
-	// Defaults match Renderer3D's built-in light, so a default-constructed one
-	// reproduces the engine's out-of-the-box 3D lighting.
+	// A sun-like light. The defaults reproduce the engine's original lighting.
 	struct DirectionalLightComponent
 	{
 		glm::vec3 Direction{ -0.4f, -1.0f, -0.35f }; // the way the light travels
-		float Ambient = 0.35f;                        // lifts unlit faces
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		// The engine's original single knob: white ambient this light adds to the scene, with
+		// the light itself scaled by (1 - Ambient), so a face turned squarely to it gets
+		// Ambient + Intensity * (1 - Ambient): full brightness at Intensity 1. Every
+		// DirectionalLightComponent adds its own. Set it to 0 to light the scene with
+		// AmbientLightComponent instead and get Intensity unscaled.
+		float Ambient = 0.35f;
 
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
 	};
 
+	// Light that reaches every face equally. Every ambient source in a scene adds up.
+	struct AmbientLightComponent
+	{
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 0.1f;
+
+		AmbientLightComponent() = default;
+		AmbientLightComponent(const AmbientLightComponent&) = default;
+		AmbientLightComponent(const glm::vec3& color, float intensity)
+			: Color(color), Intensity(intensity) {}
+	};
+
+	// Light from the entity's position in every direction, reaching zero at Range.
+	struct PointLightComponent
+	{
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		float Range = 10.0f;
+		bool Enabled = true;
+
+		PointLightComponent() = default;
+		PointLightComponent(const PointLightComponent&) = default;
+		PointLightComponent(const glm::vec3& color, float intensity, float range)
+			: Color(color), Intensity(intensity), Range(range) {}
+
+		// The light Scene::SubmitLights draws for this component, placed at the transform's
+		// position. Enabled is not consulted. The transform is in world space: under a parent, pass
+		// the entity's GetWorldPosition/GetWorldRotation rather than its local component.
+		PointLight ToLight(const Transform3DComponent& transform) const;
+	};
+
+	// A cone of light from the entity's position, reaching zero at Range. Direction is in the
+	// entity's local space, so rotating the entity aims the cone; by default it points along the
+	// entity's forward axis.
+	struct SpotLightComponent
+	{
+		glm::vec3 Color{ 1.0f };
+		float Intensity = 1.0f;
+		float Range = 10.0f;
+		float InnerConeAngle = 20.0f; // degrees from the axis at full strength
+		float OuterConeAngle = 30.0f; // degrees from the axis where it reaches zero
+		glm::vec3 Direction{ 0.0f, 0.0f, -1.0f };
+		bool Enabled = true;
+
+		SpotLightComponent() = default;
+		SpotLightComponent(const SpotLightComponent&) = default;
+		SpotLightComponent(const glm::vec3& color, float intensity, float range)
+			: Color(color), Intensity(intensity), Range(range) {}
+
+		// The light Scene::SubmitLights draws for this component: the transform's position, aimed
+		// along Rotation * Direction. Enabled is not consulted. The transform is in world space, as
+		// for PointLightComponent::ToLight.
+		SpotLight ToLight(const Transform3DComponent& transform) const;
+	};
+
 	// Physics -----------------------------------------------------------------
 
 	// A 2D rigid body. The simulating body lives in the Scene's Physics2D world
-	// (a Box2D backend, kept entirely inside the engine); RuntimeBody is an opaque
-	// handle to it, valid only while the scene's physics is running. No backend
+	// (a Box2D backend, kept entirely inside the engine); Scene::GetRuntimeBody2D
+	// returns an opaque handle to it while the scene's physics is running. No backend
 	// type ever appears in this public header.
 	struct RigidBody2DComponent
 	{
@@ -171,12 +243,6 @@ namespace Dingo
 
 		BodyType Type = BodyType::Static;
 		bool FixedRotation = false; // lock rotation about Z (e.g. a player character)
-
-		// Opaque handle to the simulated body; 0 when none.
-		// NOTE: this is a live backend handle. Any future entity-duplicate / clone path
-		// MUST reset it to 0 on the copy — otherwise both entities alias (and
-		// DestroyEntity double-frees) the same physics body.
-		PhysicsBodyId2D RuntimeBody = 0;
 
 		RigidBody2DComponent() = default;
 		RigidBody2DComponent(const RigidBody2DComponent&) = default;
@@ -196,11 +262,6 @@ namespace Dingo
 		float Friction = 0.5f;
 		float Restitution = 0.0f;
 
-		// Opaque handle to the simulated collision shape; 0 when none.
-		// NOTE: live backend handle — a future entity-duplicate path MUST reset it to 0
-		// on the copy to avoid aliasing / double-freeing the same shape.
-		PhysicsShapeId2D RuntimeShape = 0;
-
 		BoxCollider2DComponent() = default;
 		BoxCollider2DComponent(const BoxCollider2DComponent&) = default;
 	};
@@ -216,11 +277,6 @@ namespace Dingo
 		float Friction = 0.5f;
 		float Restitution = 0.0f;
 
-		// Opaque handle to the simulated collision shape; 0 when none.
-		// NOTE: live backend handle — a future entity-duplicate path MUST reset it to 0
-		// on the copy to avoid aliasing / double-freeing the same shape.
-		PhysicsShapeId2D RuntimeShape = 0;
-
 		CircleCollider2DComponent() = default;
 		CircleCollider2DComponent(const CircleCollider2DComponent&) = default;
 	};
@@ -231,11 +287,13 @@ namespace Dingo
 	// Transform3DComponent (the default TransformComponent it receives on creation
 	// is 2D and simply goes unused); it is rendered through Renderer3D when it also
 	// has a MeshRendererComponent, and simulated in the Scene's Physics3D world when
-	// it has a RigidBody3DComponent plus a box/sphere collider.
+	// it has a RigidBody3DComponent plus a collider.
 
 	// 3D transform. Position is the entity center; Rotation is a quaternion; Scale
-	// is the full extent multiplier per axis. The Scene writes the simulated
-	// position/rotation back here each frame while 3D physics is running.
+	// is the full extent multiplier per axis. All three are relative to the entity's parent
+	// when it has one (Entity::SetParent); Entity::GetWorldTransform gives the world values.
+	// The Scene writes the simulated position/rotation back here each frame while 3D
+	// physics is running.
 	struct Transform3DComponent
 	{
 		glm::vec3 Position{ 0.0f };
@@ -265,6 +323,17 @@ namespace Dingo
 		glm::vec3 Up() const { return Rotation * glm::vec3(0.0f, 1.0f, 0.0f); }
 	};
 
+	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
+	{
+		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range };
+	}
+
+	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
+	{
+		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
+			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle };
+	}
+
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
 	// Color. The mesh is not owned by the component (the game/asset system owns it),
 	// exactly like SpriteRendererComponent's Texture.
@@ -278,7 +347,7 @@ namespace Dingo
 		bool Visible = true;
 
 		// Optional material (custom shader + uniforms + textures). Null draws with
-		// Renderer3D's built-in flat directional-lit material. The Color above is written
+		// Renderer3D's built-in lit material. The Color above is written
 		// into the vertex stream either way. Owned by the client, not the component.
 		Material* Material = nullptr;
 
@@ -288,11 +357,46 @@ namespace Dingo
 			: Mesh(mesh), Color(color) {}
 	};
 
+	// Draws every submesh of a Model at the entity's world transform: skinned submeshes on the GPU
+	// (Renderer3D::SubmitSkinnedMesh) posed by the entity's AnimatorComponent, or in the skeleton's
+	// rest pose without one, the rest like a MeshRendererComponent. The Model is not owned by the
+	// component. Material works as on MeshRendererComponent and applies to every submesh; the
+	// submeshes' own diffuse textures are not used.
+	struct SkinnedMeshRendererComponent
+	{
+		Dingo::Model* Model = nullptr;
+		glm::vec4 Color{ 1.0f };
+		Dingo::Material* Material = nullptr;
+		bool Visible = true;
+
+		SkinnedMeshRendererComponent() = default;
+		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;
+		SkinnedMeshRendererComponent(Dingo::Model* model, const glm::vec4& color = glm::vec4(1.0f))
+			: Model(model), Color(color) {}
+	};
+
+	// Settings for the entity's Animator, which poses its SkinnedMeshRendererComponent::Model;
+	// Scene::GetAnimator returns it for playing clips from a script. Scene::OnUpdate advances it
+	// after the scripts and before physics, by deltaTime x Speed while Enabled.
+	struct AnimatorComponent
+	{
+		// Played, looping, when the animator is created (or its model changes) if PlayOnStart is set.
+		std::string DefaultClip;
+		bool PlayOnStart = true;
+		float Speed = 1.0f;
+		// False holds the current pose.
+		bool Enabled = true;
+
+		AnimatorComponent() = default;
+		AnimatorComponent(const AnimatorComponent&) = default;
+		AnimatorComponent(std::string defaultClip) : DefaultClip(std::move(defaultClip)) {}
+	};
+
 	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden
-	// behind the Physics3D interface). RuntimeBody is an opaque handle, valid only
-	// while the scene's physics is running. Unlike the 2D collider components, the 3D
+	// behind the Physics3D interface). Scene::GetRuntimeBody3D returns an opaque handle
+	// to it while the scene's physics is running. Unlike the 2D collider components, the 3D
 	// collider shape is baked into the body when it is created, so a 3D rigid-body
-	// entity needs exactly one Box/SphereCollider3DComponent alongside this.
+	// entity needs exactly one Box/Sphere/Capsule/MeshCollider3DComponent alongside this.
 	struct RigidBody3DComponent
 	{
 		// Alias the backend-agnostic enum so RigidBody3DComponent::BodyType::Dynamic works.
@@ -300,11 +404,9 @@ namespace Dingo
 
 		BodyType Type = BodyType::Static;
 
-		// Opaque handle to the simulated body; k_InvalidBody3D when none.
-		// NOTE: this is a live backend handle. Any future entity-duplicate / clone path
-		// MUST reset it to k_InvalidBody3D on the copy — otherwise both entities alias
-		// (and DestroyEntity double-frees) the same physics body.
-		PhysicsBodyId3D RuntimeBody = k_InvalidBody3D;
+		// See RigidBodyParams3D::ContinuousCollision: turn on for fast bodies that must not
+		// tunnel through MeshCollider3DComponent geometry.
+		bool ContinuousCollision = false;
 
 		RigidBody3DComponent() = default;
 		RigidBody3DComponent(const RigidBody3DComponent&) = default;
@@ -312,7 +414,7 @@ namespace Dingo
 	};
 
 	// A box collider for an entity with a RigidBody3DComponent. HalfExtents is a
-	// fraction of Transform3DComponent::Scale, so the default { 0.5, 0.5, 0.5 }
+	// fraction of the entity's world scale, so the default { 0.5, 0.5, 0.5 }
 	// exactly covers the entity's box. (Physics3D centers the shape on the body, so
 	// there is no per-collider offset — model offset with the Transform instead.)
 	struct BoxCollider3DComponent
@@ -326,7 +428,7 @@ namespace Dingo
 		BoxCollider3DComponent(const BoxCollider3DComponent&) = default;
 	};
 
-	// A sphere collider. Radius is a fraction of Transform3DComponent::Scale.x, so
+	// A sphere collider. Radius is a fraction of the entity's world scale x, so
 	// the default 0.5 inscribes a unit box.
 	struct SphereCollider3DComponent
 	{
@@ -340,9 +442,9 @@ namespace Dingo
 	};
 
 	// A capsule collider for an entity with a RigidBody3DComponent. The capsule stands
-	// on the +Y axis. Radius is a fraction of Transform3DComponent::Scale.x and
+	// on the +Y axis. Radius is a fraction of the entity's world scale x and
 	// HalfHeight (half the cylinder section between the caps) is a fraction of
-	// Transform3DComponent::Scale.y, so on a unit-scaled entity the defaults give a
+	// its world scale y, so on a unit-scaled entity the defaults give a
 	// 1-unit-tall capsule of radius 0.5.
 	struct CapsuleCollider3DComponent
 	{
@@ -354,6 +456,28 @@ namespace Dingo
 
 		CapsuleCollider3DComponent() = default;
 		CapsuleCollider3DComponent(const CapsuleCollider3DComponent&) = default;
+	};
+
+	// A collider shaped like a Mesh, for an entity with a RigidBody3DComponent. The mesh
+	// is scaled by the entity's world scale exactly as MeshRendererComponent draws it,
+	// so the collider matches what is on screen. A null Mesh uses the entity's
+	// MeshRendererComponent::Mesh. Not owned, and only read when the body is built.
+	//
+	// Convex = false collides against the triangles themselves, for level geometry:
+	// Static or Kinematic bodies only. Convex = true uses the convex hull of the vertices
+	// and works for any body type; a Dynamic body always gets the hull.
+	struct MeshCollider3DComponent
+	{
+		Dingo::Mesh* Mesh = nullptr;
+		bool Convex = false;
+
+		float Friction = 0.5f;
+		float Restitution = 0.0f;
+
+		MeshCollider3DComponent() = default;
+		MeshCollider3DComponent(const MeshCollider3DComponent&) = default;
+		MeshCollider3DComponent(Dingo::Mesh* mesh, bool convex = false)
+			: Mesh(mesh), Convex(convex) {}
 	};
 
 	// A kinematic character controller for player/enemy movement, wrapping Jolt's
@@ -370,14 +494,6 @@ namespace Dingo
 		float StepHeight = 0.3f;     // max stair step-up height
 		float MaxSlopeAngle = 45.0f; // steepest walkable slope, degrees
 
-		// Opaque handle to the runtime CharacterController3D the Scene owns; k_InvalidControllerIndex
-		// when none. Not a physics-body handle — this indexes the Scene's controller store.
-		// NOTE: like the rigid-body handles this is live runtime state. A duplicate / clone
-		// MUST reset it to k_InvalidControllerIndex on the copy so the clone gets its own
-		// controller and never aliases (or double-frees) the source's.
-		static constexpr std::uint32_t k_InvalidControllerIndex = 0xFFFFFFFFu;
-		std::uint32_t RuntimeController = k_InvalidControllerIndex;
-
 		CharacterController3DComponent() = default;
 		CharacterController3DComponent(const CharacterController3DComponent&) = default;
 	};
@@ -389,7 +505,7 @@ namespace Dingo
 	// component does not own decoding, only a reference, exactly like
 	// MeshRendererComponent's Mesh. When Spatialized is true the Scene keeps the
 	// live sound's position in sync with the entity's transform every frame
-	// (Transform3DComponent if present, else the 2D TransformComponent at z = 0).
+	// (its world position if it has a Transform3DComponent, else the 2D TransformComponent at z = 0).
 	struct AudioSourceComponent
 	{
 		std::shared_ptr<AudioClip> Clip;
@@ -398,13 +514,10 @@ namespace Dingo
 		float Pitch = 1.0f;
 		bool Looping = false;
 		bool Spatialized = true;
+		// nullopt = use the engine's current default (AudioEngine::GetDefaultAttenuation).
+		// Ignored when Spatialized is false.
+		std::optional<SoundAttenuation> Attenuation;
 		bool PlayOnStart = false;
-
-		// Opaque handle to the live sound instance; k_InvalidSound when none is
-		// playing. Engine-managed, like RigidBody3DComponent's RuntimeBody — do not
-		// set this directly. A duplicate / clone path MUST reset it to k_InvalidSound
-		// on the copy so the clone doesn't alias (or stop) the source's sound.
-		AudioSoundId RuntimeSound = k_InvalidSound;
 
 		AudioSourceComponent() = default;
 		AudioSourceComponent(const AudioSourceComponent&) = default;

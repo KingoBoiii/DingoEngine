@@ -66,6 +66,8 @@ namespace Dingo
 
 		glfwSetWindowUserPointer(m_WindowHandle, &m_Data);
 
+		Input::AttachWindow(m_WindowHandle);
+
 		double cursorX = 0.0, cursorY = 0.0;
 		glfwGetCursorPos(m_WindowHandle, &cursorX, &cursorY);
 		Input::SeedMousePosition(static_cast<float>(cursorX), static_cast<float>(cursorY));
@@ -75,6 +77,8 @@ namespace Dingo
 
 	void Window::Shutdown()
 	{
+		Input::AttachWindow(nullptr);
+
 		glfwSetJoystickCallback(nullptr);
 		s_JoystickEventCallback = nullptr;
 
@@ -87,6 +91,15 @@ namespace Dingo
 		glfwPollEvents();
 	}
 
+	void Window::WaitEvents(double timeoutSeconds)
+	{
+		// GLFW asserts on a negative timeout.
+		if (timeoutSeconds > 0.0)
+			glfwWaitEventsTimeout(timeoutSeconds);
+		else
+			glfwPollEvents();
+	}
+
 	bool Window::IsRunning() const
 	{
 		return glfwWindowShouldClose(m_WindowHandle) == GLFW_FALSE;
@@ -95,6 +108,11 @@ namespace Dingo
 	bool Window::IsFullscreen() const
 	{
 		return glfwGetWindowMonitor(m_WindowHandle) != nullptr;
+	}
+
+	bool Window::IsFocused() const
+	{
+		return glfwGetWindowAttrib(m_WindowHandle, GLFW_FOCUSED) != 0;
 	}
 
 	// The monitor the window overlaps most, falling back to the primary monitor.
@@ -254,6 +272,17 @@ namespace Dingo
 
 			MouseScrolledEvent mouseScrolledEvent(static_cast<float>(xOffset), static_cast<float>(yOffset));
 			windowData.EventCallback(mouseScrolledEvent);
+		});
+
+		glfwSetWindowFocusCallback(m_WindowHandle, [](GLFWwindow* window, int focused)
+		{
+			const bool isFocused = focused == GLFW_TRUE;
+			Input::OnWindowFocusChanged(isFocused);
+
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+
+			WindowFocusEvent focusEvent(isFocused);
+			windowData.EventCallback(focusEvent);
 		});
 
 		s_JoystickEventCallback = &m_Data.EventCallback;

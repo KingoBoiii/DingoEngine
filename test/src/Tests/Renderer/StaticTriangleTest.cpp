@@ -58,17 +58,8 @@ void main() {
 
 	void StaticTriangleTest::Cleanup()
 	{
-		if (m_Pipeline)
-		{
-			m_Pipeline->Destroy();
-			m_Pipeline = nullptr;
-		}
-
-		if (m_Shader)
-		{
-			m_Shader->Destroy();
-			m_Shader = nullptr;
-		}
+		DestroyAndDelete(m_Pipeline);
+		DestroyAndDelete(m_Shader);
 	}
 
 }

@@ -21,19 +21,27 @@ namespace Dingo
 	inline constexpr float CAMERA_LAG        = 6.0f; // higher = snappier follow
 
 	// --- Orbs -------------------------------------------------------------------
-	inline constexpr float ORB_COLLECT_RADIUS = 1.3f;
-	inline constexpr float ORB_SPIN_DEG       = 60.0f;
-	inline constexpr float ORB_BOB            = 0.25f;
-	inline constexpr float ORB_EMISSIVE       = 2.4f;
-	inline constexpr float ORB_MAX_HEAR_DIST  = 26.0f; // for the audio rolloff hint
+	inline constexpr float ORB_COLLECT_RADIUS  = 1.3f;
+	inline constexpr float ORB_SPIN_DEG        = 60.0f;
+	inline constexpr float ORB_BOB             = 0.25f;
+	inline constexpr float ORB_EMISSIVE        = 2.4f;
+	inline constexpr float ORB_LIGHT_INTENSITY = 1.8f;
+	inline constexpr float ORB_LIGHT_RANGE     = 5.5f;
+	inline constexpr float ORB_MAX_HEAR_DIST   = 26.0f; // for the audio rolloff hint
 
 	// --- Sentry -----------------------------------------------------------------
-	inline constexpr float SENTRY_VIEW_RANGE = 14.0f; // detection reach
-	inline constexpr float SENTRY_VIEW_CONE  = 0.55f; // cos(half-angle); ~57 deg half-cone
-	inline constexpr float SENTRY_KNOCKBACK  = 11.0f; // horizontal knockback impulse speed
-	inline constexpr float SENTRY_KNOCK_UP   = 5.0f;  // vertical component
-	inline constexpr float SENTRY_COOLDOWN   = 1.5f;  // seconds between detections
-	inline constexpr float SENTRY_EMISSIVE   = 1.6f;
+	inline constexpr float SENTRY_VIEW_RANGE      = 14.0f; // detection reach
+	inline constexpr float SENTRY_VIEW_CONE       = 0.55f; // cos(half-angle); ~57 deg half-cone
+	inline constexpr float SENTRY_KNOCKBACK       = 11.0f; // horizontal knockback impulse speed
+	inline constexpr float SENTRY_KNOCK_UP        = 5.0f;  // vertical component
+	inline constexpr float SENTRY_COOLDOWN        = 1.5f;  // seconds between detections
+	inline constexpr float SENTRY_EMISSIVE        = 1.6f;
+	inline constexpr float SENTRY_LIGHT_INTENSITY = 1.8f;
+	inline constexpr float SENTRY_LIGHT_RANGE     = 5.0f;
+	inline constexpr glm::vec3 SENTRY_SCALE       = { 0.9f, 1.6f, 0.9f };
+	// World units from the sentry's centre: just proud of its front face (half depth 0.45).
+	inline constexpr glm::vec3 SENTRY_EYE_OFFSET  = { 0.0f, 0.4f, 0.5f };
+	inline constexpr float SENTRY_EYE_SIZE        = 0.35f;
 
 	// --- Course geometry --------------------------------------------------------
 	inline constexpr float PLATFORM_THICKNESS = 0.6f;

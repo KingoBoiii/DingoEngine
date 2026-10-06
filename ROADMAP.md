@@ -100,59 +100,124 @@ A point release. `Renderer3D` used to write only position, normal and colour int
 
 **Example**: [Gloomdelve](https://github.com/KingoBoiii/Gloomdelve) renders the Kenney Graveyard Kit with its colormap through its night-lighting material.
 
+## v0.6.2 — Game-Workaround Cleanup
+A point release that turns the workarounds the shipped games wrote around missing engine API into engine API:
+- **Cursor modes**: `Input::SetCursorMode(CursorMode::Normal | Hidden | Locked)`, with raw mouse motion while Locked (`SetRawMouseMotion`, `IsRawMouseMotionSupported`). This replaces the hand-declared `extern "C" glfwSetInputMode` in Gloomdelve and DingoCraft. `GetMouseDelta()` reads zero for 2 frames after a mode change or refocus, so the games' "skip the jump" counters go away. ImGui no longer resets a Hidden cursor.
+- **Window focus**: `WindowFocusEvent` and `Window::IsFocused()` replace polling `GLFW_FOCUSED` for auto-pause on alt-tab.
+- **Any input**: `Input::IsAnyKeyPressed/Down` and `IsAnyMouseButtonPressed/Down` replace loops over hardcoded GLFW key ranges.
+- **Executable-relative paths**: `Platform::GetExecutablePath/GetExecutableDirectory` and `FindDirectoryUpward("assets")` replace three games' own `GetModuleFileNameW` + parent-walk asset lookup.
+- **3D audio attenuation**: `SoundAttenuation` (model None / Inverse / Linear / Exponential, min/max distance, rolloff, min/max gain) per sound via `SoundPlayParams::Attenuation`, on live sounds via `AudioEngine::SetAttenuation`, and as the engine-wide default via `SetDefaultAttenuation` (which the positional `PlayOneShot` also uses). `AudioSourceComponent` gains the same optional field. Defaults are unchanged. This replaces Gloomdelve's trick of placing every voice 1 m from the listener and fading it by hand.
+- **Mesh colliders**: 3D physics only knew boxes, spheres and capsules, so level geometry had to be approximated with primitives. `ColliderShape3D` gains `Mesh` (the triangles themselves — terrain, ramps, stairs, a kit-built level; Static and Kinematic bodies) and `ConvexHull` (the hull of the vertices; any body type), and the ECS gains `MeshCollider3DComponent`, which by default collides as whatever the entity's `MeshRendererComponent` draws, at the transform's full scale. Each mesh's shape is baked once and shared by every body built from it at any scale, and the data is copied, so freeing the `Mesh` later is safe. Because a triangle has no thickness, bodies gain an opt-in `ContinuousCollision` flag that sweeps them along their motion, so fast projectiles cannot tunnel through a mesh, and the `Scene` now takes one Jolt collision step per 1/60 s (up to 4 a frame) instead of always one, so a low frame rate no longer drops falling bodies through thin geometry.
+- **UTF-8 text** (known bugs K2 + K3): `DrawText` and `GetStringWidth` decode UTF-8 instead of walking signed bytes, so the Latin-1 half of the atlas (`é`, `ü`, `£`, `°`) finally draws, and the atlas also bakes the printable General Punctuation and `€` — em-dashes, curly quotes and ellipses no longer render as garbage. Other codepoints draw as `?`; bytes that aren't valid UTF-8 read as Latin-1. Cached atlases regenerate once.
+
+**Test**: the test app's new **Cursor Test** (`--test=Cursor`) and the F5 Input tab's Cursor section, its **Mesh Collider Test** (`--test=collider`) — a triangle-mesh terrain bowl with a kinematic mesh lift rising through it, pelted with convex-hull pebbles, spheres and boxes, checking that the terrain answers ray casts at its true height and that nothing sinks through it, and UTF-8 lines in the **Text Test** (`--test=Text`).
+
+## v0.6.3 — Known-Bug Sweep
+A point release that closes every open entry in [KNOWN-BUGS.md](https://github.com/KingoBoiii/DingoEngine/blob/v0.6.3/KNOWN-BUGS.md) (the known-bug list of the time) except the two deliberate deferrals: K10 (GLM in public headers, waiting for the next API break) and K11 (moving a live device to another GPU).
+- **Null asset handles** (K4): a default-constructed `UUID` — and so `AssetHandle` — is now 0, which is `k_InvalidAsset`; fresh ids come from `UUID::Generate()`. The default constructor used to roll a random value, so an unset handle member passed `IsValidAssetHandle` and then resolved to nothing.
+- **Debug-ASan builds** (K5): the configuration links (the STL's container annotations now agree with the Vulkan SDK's non-ASan prebuilts) and every executable gets the ASan runtime DLL beside it.
+- **One meaning for a relative path** (K7): the raw file factories (`Font::Create`, `Texture::CreateFromFile`, `Model::LoadFromFile`, `Shader::CreateFromFile`, `AudioEngine::LoadClip`) look a relative path up under the asset root first, as the `AssetManager` does, and fall back to the working directory, so existing `"assets/..."` calls load the same files as before.
+- **Runtime handles out of the components** (K8): an entity's live physics body, 2D shapes, character controller and sound are engine-owned instead of fields on its public components, so assigning one entity's `RigidBody3DComponent` onto another's can no longer make both drive one body. **Breaking**: `RuntimeBody`, `RuntimeShape`, `RuntimeController`, `RuntimeSound` and `CharacterController3DComponent::k_InvalidControllerIndex` are gone; read the handles with `Scene::GetRuntimeBody2D/3D(entity)` and `Scene::GetRuntimeSound(entity)`.
+- **No dropped meshes** (K9): a material that outgrows a `Renderer3D` batch spills into another draw call instead of losing the rest of the scene in a shipping build. Only a single mesh bigger than a whole batch is still dropped.
+- **Swap-chain attachments** (K12 + K13): the depth attachment is stored and the colour attachment loaded, so both survive NVRHI's mid-frame render-pass restarts by the spec rather than by driver goodwill — RenderDoc replays a 3D scene correctly again — and a GPU without `VK_KHR_load_store_op_none` is no longer rejected at device selection.
+- **`Renderer2D::GetOutput` out-of-bounds read**: the swap-chain framebuffer owns no `Texture`, so `GetOutput()` indexed an empty attachment list. `Framebuffer::GetAttachment` now returns `nullptr` for an index it doesn't have, and `GetOutput()` returns `nullptr`.
+
+**Test**: the test app's new **Renderer3D Batch Test** (`--test=batch`), an assignment-aliasing check in the **Mesh Collider Test**, and a raw `Font::Create` root-relative path check in the **Asset Manager Test**.
+
 ## v0.7 — Lighting & Shading
-v0.6 made assets first-class; v0.7 does the same for **light**. Everything the engine has ever
-rendered has been lit by exactly one directional light: `DirectionalLightComponent` carries a
-direction and an ambient scalar — no colour, no intensity — the `SceneRenderer` takes the
-*first one it finds* in the scene, and it reaches the mesh shader as a single `vec4` in the scene
-UBO. A game that wants a torch, a lamp, or a muzzle flash has no choice but to fake it on the CPU:
-the external dungeon crawler spends roughly 40% of its game controller re-tinting wall, floor and
-prop albedo every frame to imitate torch pools, and eventually had to hand-write its own per-pixel
-lighting shader to escape that. This milestone retires that entire category of workaround — and
-gives v0.9's shadow maps and bloom a real light abstraction to attach to instead of inventing one
-late.
+v0.6 made assets first-class; v0.7 does the same for **light**. Every 3D scene the engine had rendered was lit by exactly one directional light with no colour and no intensity, so a game that wanted a torch, a lamp or a muzzle flash had to fake it on the CPU: the external dungeon crawler spent roughly 40% of its game controller re-tinting wall, floor and prop albedo every frame to imitate torch pools, and eventually hand-wrote its own per-pixel lighting shader to escape that. The engine work below retires that category of workaround and gives v0.9's shadow maps and bloom a real light abstraction to attach to instead of inventing one late. The engine work has been through a review pass, and it and the *Candlewick* example game below shipped as v0.7.0.
 
-- **Real light types**: a `PointLightComponent` (position from the entity's transform, plus colour,
-  intensity and range with distance attenuation) and a `SpotLightComponent` (direction with
-  inner/outer cone falloff). `DirectionalLightComponent` gains the **colour and intensity it never
-  had** and stops being implicitly one-per-scene.
-- **A capped forward multi-light path**: the `SceneRenderer` gathers lights each frame and selects
-  the N most relevant (nearest / brightest, with off-screen lights culled) into a light array in the
-  scene UBO at binding 0, and the lit shader loops them per pixel. A fixed budget deliberately keeps
-  v0.4.2's per-material batching and binding layout intact — no deferred pass, no G-buffer. When the
-  budget overflows, selection is documented and warned about rather than silently different frame to
-  frame.
-- **A shading pass worth lighting**: the current shader is pure Lambert plus an ambient lift, so
-  extra lights would have nothing to catch — a specular/roughness term lands with them, and the v0.5
-  emissive channel becomes the natural companion to a co-located point light ("this object *is* the
-  light source"). The lit shader also **moves out of the `Renderer3D.cpp` string literal** onto v0.6's
-  file-backed shader path, so it hot-reloads: light falloff and specular response become things you
-  tune with the game running.
+- **Real light types**: `Renderer3D::SubmitLight` takes a `DirectionalLight` (colour and intensity; up to 4 per scene), a `PointLight` or a `SpotLight` (position, colour, intensity and range, plus a direction and an inner/outer cone angle for the spot), and `SetAmbientLight(colour, intensity)` sets a coloured ambient. The types live in `Graphics/Light.h`. Point and spot lights fall off smoothly from their intensity at the light to exactly zero at `Range`, as `(1 - (d / Range)²)²`. Lighting is scene-scoped: whatever is submitted lights the next `EndScene`, which then clears it. A scene that submits no light and no ambient is lit by the `Renderer3DParams` default light, which reproduces the pre-v0.7 image pixel for pixel.
+- **A capped forward multi-light path**: point and spot lights share one budget of 32 (`Renderer3DCapabilities::MaxLocalLights`, read back with `GetLocalLightBudget()`). `EndScene` culls the lights whose range sphere is outside the view frustum, ranks the rest by brightness as seen from the camera and keeps the top N; ties go to the light the camera is nearer to relative to its range, then to the earlier submission, so a still scene picks the same lights every frame, and an overflow warns once and counts in `Statistics::DroppedLights`. The lights ride at the end of the scene UBO at binding 0, behind a frozen 96-byte prefix (`ViewProjection`, `LightDirection`, `Ambient`), so every existing custom material compiles and renders unchanged. v0.4.2's per-material batching is intact: no deferred pass, no G-buffer.
+- **Light components**: `PointLightComponent` and `SpotLightComponent` (position, and the spot's aim, from the entity's `Transform3DComponent`; `Enabled` snuffs one without losing its settings) and `AmbientLightComponent`. `DirectionalLightComponent` gains the colour and intensity it never had and stops being one-per-scene. The `SceneRenderer` submits all of them through the new `Scene::SubmitLights`, which is public for custom 3D passes. A scene with no light component at all still gets a default directional light, so a 3D scene never renders black by accident.
+- **A shading pass worth lighting**: normalised Blinn-Phong specular per light, shaped by two new `MaterialParams`, `Roughness` and `Specular` (0 by default, so existing materials render as before). `Renderer3D::CreateLitMaterial` makes a material that uses the lit shader with its own emissive, roughness and specular and an albedo texture in slot 0. Per-object glow therefore no longer needs a custom shader: the v0.5 emissive channel, which only the one shared default material ever received, now works on any lit material, and pairs with a co-located point light ("this object *is* the light source"). `Material::SetTexture` / `SetSampler` now rebind when a slot changes, so a texture that arrives after the first draw (a `LoadAsync` result) shows up.
+- **The lit shader is a file**: it moved out of the `Renderer3D.cpp` string literal into `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl`. The build embeds it into `DingoEngine.lib` (`scripts/embed.lua`, run as a premake custom build rule), so a game ships no engine files; Debug builds load the source file instead and, with asset hot-reload enabled, reload it on the `AssetManager`'s poll, so light falloff and specular response become things you tune with the game running.
+- **Light stats**: the F4 Renderer tab shows the directional lights in use out of 4, a bar of point and spot lights against the budget, how many were out of view and how many were dropped.
+- **Gameplay queries** (added with the example game): `GetLightAttenuation(light, point)` (`Graphics/Light.h`) returns the weight the lit shader gives a `PointLight` or `SpotLight` at a world point, the falloff times the cone for a spot, both already squared. `PointLightComponent::ToLight(transform)` and `SpotLightComponent::ToLight(transform)` build the light the `SceneRenderer` submits for a component. They run on the renderer's own angle clamps and cone set-up (`Graphics/LightMath.h`), so a game tests exactly the cone it draws, instead of copying a formula that can drift from a hot-reloaded shader. The weight leaves out `N·L`, colour, intensity, occlusion and the frame's budget; see [docs/lighting.md](docs/lighting.md#gameplay-queries).
+- **Vulkan wireframe fix**: `FillMode::Wireframe` has always been in `MaterialParams`, but the Vulkan device never requested `fillModeNonSolid`, so the first wireframe material (Candlewick's `--debug-cone`) logged a validation error. The feature is now requested whenever the GPU supports it; a wireframe material on a GPU without it is filed as K19, now [#78](https://github.com/KingoBoiii/DingoEngine/issues/78).
+- **Migration**: no API breaks, but two behaviours change. Several `DirectionalLightComponent`s now all light the scene (up to 4, each adding its own legacy `Ambient`), where before only the first counted; and 3D drawn on the shared renderer outside the `SceneRenderer`, without `Scene::SubmitLights`, is lit by the `Renderer3DParams` default light instead of the last scene's sun. The frozen scene-UBO prefix still carries only the first directional light, so a custom shader that wants the rest reads the full block. Two limits are filed as issues: lights can pop at the budget edge ([#75](https://github.com/KingoBoiii/DingoEngine/issues/75), formerly K16), and bright overlapping lights clip until v0.9's tone mapping ([#76](https://github.com/KingoBoiii/DingoEngine/issues/76), formerly K17).
 
-**Example game**: *Candlewick* — a stealth crawl through a dark keep, built so that every light in
-the scene is a gameplay object rather than set dressing. The player carries one lantern whose radius
-*is* a burning resource; wardens patrol with their own moving point lights and see through
-spot-light vision cones (the cone drawn and the detection tested from the same data, reusing v0.5's
-shape casts); braziers with emissive cores are both the checkpoints and the only way to see a room.
-Snuffing your lantern hides you and blinds you at once. It stresses the light budget honestly —
-many small static flames, a handful of moving ones — and it is *played* rather than looked at.
+**Example game**: [Candlewick](examples/Candlewick/) — a stealth crawl through a dark keep of four rooms
+(the Gatehouse, the Great Hall, the Gallery and the Chapel), built so that every light in the scene is a
+gameplay object rather than set dressing. The player carries one lantern whose radius *is* a burning
+resource: it burns 1 oil a second, its range shrinks from 7 m to 2.5 m as the oil runs down, and flasks
+and lit braziers refill it. Four wardens patrol with a lamp (a point light) and an eye (a spot light)
+each, and see through that spot-light cone: the engine's `GetLightAttenuation` weighs the cone at three
+points on the player, behind a line-of-sight ray (v0.5's ray casts), so the cone drawn on the floor is
+the cone that catches you, and each eye's range is clamped to the wall it faces so a cone never reaches
+through one. The lantern is the other half: a lit lantern (or standing in a sconce's or brazier's light)
+makes a warden notice you from further away and walk over to investigate, but only the cone catches.
+Snuffing the lantern with Q hides you from that and blinds you at once. Braziers with emissive cores
+start cold, apart from the Gatehouse's: hold E (or A on a pad) for a second beside one with the lantern
+lit and it kindles, becomes the room's main light, refills the lantern and saves your checkpoint. The
+same hold at a lit brazier refills the lantern again (and relights it), which is the way out once the
+oil and the flasks are gone.
+Lighting the Chapel altar wins, and the End screen shows the time and how often you were caught. All
+sound is synthesised by a script and positional (a crackling brazier, footsteps, a warden's alert), and
+every control has a gamepad binding.
+
+It stresses the light budget honestly — 58 local lights (49 static flames, the lantern, eight warden
+lights) against the budget of 32 — and stays inside it on purpose: a game-side light LOD counts the
+gameplay lights in view with the engine's own frustum test and fades decorative flames in and out to
+fit, so the engine never has to drop a warden's cone while it still sees you. Launch
+flags make each claim checkable: `--debug-cone` draws the tested cones and the sample points,
+`--no-light-lod` shows the engine's own selection, `--light-budget=<16-32>` lowers the budget (16 is the 14 gameplay lights plus the LOD's headroom), and
+`--room=1..4`, `--freeze`, `--overview`, `--oil=<0-100>` and `--spawn=<col>,<row>` make a frame
+reproducible. It is *played* rather than looked at.
+
+**Test**: the test app's new **Lighting Test** (`--test=light`), the first test of `Renderer3D`'s lighting. Its modes (`--lighting=default|lights|overbudget|materials`) cover the default light, orbiting point and spot lights, more lights than the budget, and lit materials — a roughness row, an emissive lamp holding a point light, a textured crate. `--entities` drives the same lights through ECS components and `--specular=off` gives a before/after on one frame. It also lists PASS/FAIL checks, among them the `GetLightAttenuation` weights. [DungeonCrawler3D](examples/DungeonCrawler3D/) gains an opt-in `--night` (a dim moon, a lantern above the hero, a point light per treasure) and `--seed=<n>`; its default look is unchanged.
+
+## v0.7.1 — Transform Hierarchy
+A point release that ships the first half of v0.8 early. Parent-child transforms pay off
+immediately and need no skinning, as v0.8's own text said: they delete the per-part world maths
+games write by hand and turn attach points into parenting. So they ship now, and v0.8 keeps
+skinning, clips, blending and events.
+- **Parenting** (3D and 2D): `Entity::SetParent(parent, keepWorldTransform = true)`, `RemoveParent`, `GetParent`, `GetChildCount`, `ForEachChild`, `GetChildren` and `FindChild(name, recursive)`. `Transform3DComponent` and `TransformComponent` become local to the parent. 3D reads and writes world values with `GetWorldTransform/Position/Rotation/Scale` and `SetWorldPosition/Rotation`. 2D has `GetWorldPosition2D/SetWorldPosition2D/GetWorldRotation2D/SetWorldRotation2D`: a 2D child's position turns with its parent's rotation, z and rotation add, and `Size` is not inherited. Cycles and parents in another scene are refused with an error. A root keeps its component's own values, so a scene without parents renders exactly as before.
+- **Lifetime**: destroying an entity destroys its subtree, and duplicating one duplicates its subtree with the links.
+- **Every reader on world values**: 3D meshes, 2D sprites, circles and text (at equal z a parent draws before its children), point and spot lights, the camera and audio sources and listeners all use world transforms.
+- **Physics**:
+  - Bodies are built from the world pose and world scale.
+  - Dynamic and character-controller children are simulated in world space and write back the local transform that reproduces it.
+  - Kinematic children follow their parent: they are moved before each step to where the parent will be after it.
+  - Static children are placed once.
+  - 2D does the same through the new `Physics2D::MoveKinematic` and `GetAngularVelocity`.
+- **Cheap worlds**: every pass over many entities (rendering, lights, audio, the physics bake, write-back and kinematic follow) works out each world transform once, parents first, and keeps nothing past the pass. In a 10,110-entity stress scene, `RenderEntities3D` on a parented scene costs 1.04x the flat one in Release (1.57x before). A flat scene costs what it did on v0.7, within measurement noise.
+- **DungeonCrawler3D's characters are parented rigs**: a root at the feet, a joint per hip and shoulder, and each part (and the sword) under its joint. The per-part world maths is gone, and the parts land where the old maths put them.
+- **EchoVault's sentry eye** rides its sentry, and line of sight now starts at the eye. The old ray started inside the sentry's own box and was always blocked, so sentries never saw the player. They now detect the player.
+
+**Test**: the test app's new **Hierarchy Test** (`--test=hierarchy`), 41 checks covering the API, reparenting, destroy and duplicate, world readers and the physics rules in 3D and 2D. Its modes are `--hierarchy=2d`, `probe2d` (a 2D draw-position probe), `stress` and `stressflat` (the 10k-entity timing pair).
+
+**Known limit**: bodies in one hierarchy are not filtered against each other, so a parent's and a child's colliders can collide. Narrowed in v0.8: a kinematic child now ignores its ancestors' bodies; dynamic and static children still collide with them.
+
+## v0.7.2 — Updating in the Background
+A point release for a v0.7.0 regression, found while bumping the co-op game *Headstone* to v0.7.1.
+v0.7.0 stopped rendering into a minimized window's (0,0) swap chain by skipping the whole frame,
+`OnUpdate` included, with no way to opt out (known bug K20). A game that pumps its network or
+simulation in `OnUpdate` froze while minimized, and exclusive fullscreen minimizes on every alt-tab.
+In *Headstone*'s co-op over TCP, a minimized host dropped its client after the 5 s session timeout,
+and a minimized client was dropped by the host.
+- **`ApplicationParams::UpdateInBackground`** (and `Application::SetUpdateInBackground` at runtime) chooses what an app does while its window is minimized or unfocused:
+  - **Off, the default: it pauses.** No `OnUpdate`, no rendering, and the paused time is left out of the deltas; audio keeps playing. An unfocused window shows its last frame. **Behaviour change**: v0.7.1 paused only while minimized and kept running while unfocused; a game that should keep running behind another window sets the flag.
+  - **On: layers keep updating** with the real delta time, and asset loads carry on. An unfocused window renders as usual. A minimized one waits on window events between updates, aiming at 60 a second (Windows' default timer gives about 35, at under 1% of a core), and renders nothing: the new `Renderer::SkipFrame()` parks the render thread as `BeginFrame` does. Until the next `BeginFrame`, every `Renderer` upload, clear and draw, every `Renderer2D` and `Renderer3D` scene and `SceneRenderer::Render` is a no-op, so a game that renders from `OnUpdate` needs no guard. New queries: `Application::IsMinimized()` and `Renderer::IsFrameSkipped()`.
+  - Either way every key and button edge reaches exactly one `OnUpdate`.
+- **The test app no longer crashes when minimized** (K14): it skips the viewport resize while ImGui reports the panel with no area, which happens in the frame a minimize lands in. The test app opts in to `UpdateInBackground`.
+
+**Test**: the test app's new **Background Test** (`--test=background`, `--update-in-background=off`, or the Properties checkbox). Minimize the window or click away, then come back, and it checks the stretch. With the flag on: updates kept coming (their rate and the longest delta), their delta times add up to the wall clock, and only minimized updates skipped rendering. With it off: no update ran, and neither of the first two deltas after the pause holds the paused time. In both modes, no key edge was lost or doubled. Run against an engine that pauses regardless of the flag, it fails.
+
+**Known limit**: the first Vulkan frame after startup, or after a minimized stretch in which assets were uploaded, is not ordered after its swap-chain image acquire. It is harmless in practice and predates v0.7.2; filed as K21, now [#79](https://github.com/KingoBoiii/DingoEngine/issues/79).
 
 ## v0.8 — Animation & Character Fidelity
 This one is a debt the roadmap has carried since v0.4.2. That milestone gave DungeonCrawler3D's hero
 a body instead of a sphere, and admitted in the same breath that a real skeletal-animation system
 "remains future engine work, slated to land with the character fidelity push of v0.5+" — a promise
 v0.5, v0.5.1, v0.6 and v0.7 have all walked past. In the meantime the workaround hardened into the
-house style: `Model` loads flat submeshes with baked node transforms and **no bone data at all**, and
-entities have **no parent-child relationship**, so every animated character in every project is a
-*pile of entities* — seven part-entities for the DungeonCrawler3D hero, 13–24 per character in the
-external dungeon crawler — each part's world transform recomputed by hand in game code every frame,
-against pivot offsets reverse-engineered out of the model exporter. v0.8 ends that.
+house style: `Model` loads flat submeshes with baked node transforms and **no bone data at all**, so
+every animated character in every project is a *pile of entities* — seven part-entities for the
+DungeonCrawler3D hero, 13–24 per character in the external dungeon crawler — posed part by part in
+game code every frame, against pivot offsets reverse-engineered out of the model exporter. v0.7.1
+gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays real animation.
 
-- **Transform hierarchy**: a parent/child relationship between entities plus a propagation pass, so a
-  child transform is finally *relative*. This is the half that pays off immediately and entirely
-  independently of skinning — it deletes the per-part world math games write today (~76 lines in one
-  rig alone) and the exporter pivot arithmetic feeding it. Attach points — a sword in a hand, a light
-  on a lantern, a turret on a hull — become parenting instead of per-frame bookkeeping.
+- **Transform hierarchy**: shipped early as [v0.7.1](#v071--transform-hierarchy).
 - **Skinned meshes**: the model loader reworked past static-only — bone hierarchies, vertex weights
   and inverse-bind matrices read from glTF/FBX, with skinning done on the GPU via a joint-matrix
   palette. This is the loader change v0.6 makes affordable rather than painful: rigs become
@@ -165,12 +230,70 @@ against pivot offsets reverse-engineered out of the model exporter. v0.8 ends th
   here, hitbox live from here to here), so a swing's damage window comes from the animation instead of
   a hand-tuned timer that drifts every time the art changes.
 
-**Example game**: *Marionette* — a close-quarters duel against an escalating opponent, built so that
-no combat timing lives in game code at all. Reach and hit windows come from timeline events on the
-clips; telegraphs and recoveries are cross-fades long enough to read and react to; locomotion blends
-on one speed parameter while a parry layers over the top; and the same clips retarget across three
-fighters of different proportions. If the animation is wrong the fight is wrong — which is precisely
-the pressure this milestone needs to be tested under.
+**Status**: released as v0.8.0 on 2026-10-05. The engine work (P4–P12 of
+`.claude/plans/2026-10-01-v0.8-animation-plan.md`, reviewed in `.claude/reviews/2026-10-03-v0.8.0-review.md`)
+and the example game, *Marionette* (P13, M0–M6, closed by a milestone review in
+`.claude/reviews/2026-10-04-marionette-review.md`), shipped together. Built:
+- **Skinned models**: `Model::LoadFromFile` reads skeletons, skin weights and clips from glTF and FBX, including clip libraries (clips without meshes). Static models load exactly as before.
+- **GPU skinning** on Vulkan, D3D11 and D3D12: `SkinnedMeshRendererComponent`, or `Renderer3D::SubmitSkinnedMesh` outside a scene. A model's joint palette uploads once a frame, for up to 64 models by default (256 at most), at up to 128 joints a draw. A custom shader can skin through `DE_SKINNED` and a `SkinData` block.
+- **The animator**: cross-fades, `Blend1D` on a float parameter with the clips kept in step, masked layers (an upper body over locomotion), one-shots that return to what they interrupted, and retargeting by joint name. It runs standalone or as an `AnimatorComponent`.
+- **Timeline events**: instants and ranges, written in code or in a `.events` file beside the model, delivered to `ScriptableEntity::OnAnimationEvent` or polled. Only the clip a layer shows fires, so a blend never doubles a footstep.
+- **Joint sockets**: `SetParent(character, "b_RightHand")` hangs a sword on a hand. A kinematic child now ignores its ancestors' bodies, which narrows v0.7.1's known limit.
+- **Model hot-reload in place**: a saved model, or its `.events` file, reloads into the same objects, so the game's pointers stay valid.
+- **Debugging**: the **F7** Animation tab (every animator's layers and states, the last 20 events), skinning stats in **F4**, and a skeleton overlay in the test app.
+- **A retargeting fix found by Marionette**: KayKit's clips key a still translation on `root`, which made `root` the "root-most animated joint", so every retargeted clip lost its hips' motion. Retargeting now counts a translation track only when it leaves the source joint's rest offset (`a81727f`).
+
+**Test**: the test app's **Animation Test** (`--test=anim`): 78 checks in its default `bind` mode across loading, skinning, the animator, blending, events, sockets and hot-reload, on all three backends. Its modes are `--anim=bind|bindstatic|pose|clip|blend|layers|events|crowd`, with `--anim-skeleton` and `--anim-reload`. Guide: [docs/animation.md](docs/animation.md).
+
+**Not in v0.8**: root motion, IK, additive layers and state machines as assets, and skinned shadows (v0.9).
+
+**Example game**: [Marionette](examples/Marionette/) — a one-arena melee duel against three opponents
+in a row (the Recruit, the Veteran, the Champion), each faster and smarter than the last, built so that
+no combat timing lives in game code at all. The `.events` files beside the clips hold the whole combat
+design: `windup` (the telegraph the AI reads), `hitbox` (the swing's active frames), `combo` (where a
+second press chains), `dash`, `iframes` and `parry`, plus `step_l` / `step_r` for positional
+footsteps. Swords and shields hang on hand sockets, and the hit and hurt spheres are socketed
+entities too, so the spheres `--debug-hitbox` draws are the ones tested. Locomotion is a `Blend1D` on
+one `Move` parameter; a block is a layer masked from the spine up, so a fighter walks and blocks at
+once; attacks, dodges and hit reactions are one-shots. One `Fighter` class serves the player and the
+AI, and the AI sees the opponent through a reaction delay, so a tier-3 parry depends on reading the
+wind-up in time. Four characters (the Knight, the Barbarian and two skeletons) play the same five
+KayKit clip libraries, retargeted by joint name; the free packs share one body, so they differ by
+weapon, pace and uniform scale rather than limb length. Edit a `hitbox` range in a saved `.events`
+file while the game runs (`--hot-reload`, or `--live-edit-demo`, which does it after ten seconds)
+and the next swing changes. If the animation is wrong the fight is wrong — which is precisely the
+pressure this milestone needs to be tested under.
+
+Its flags make runs checkable: `--check` (asset, movement, combat and AI checks, read from the log),
+`--drive=duel|ramp|circle|strafe|wall` (scripted input), `--autoplay` and `--tournament=N` (seeded
+AI-vs-AI bouts), `--freeze --pose=<clip>@<s>` with `--debug-hitbox` (a frozen frame), and
+`--fixed-dt=<s>` for repeatable runs. Marionette also found six engine gaps, filed as issues
+[#99](https://github.com/KingoBoiii/DingoEngine/issues/99)–[#104](https://github.com/KingoBoiii/DingoEngine/issues/104).
+
+## v0.8.1 — Winding and Culling
+A point release for two bugs found by *Headstone*, whose custom night material started culling back
+faces. No custom `Material` could cull an engine mesh correctly: `CullMode::Back`, the default,
+drew boxes and every loaded model inside out, and the one workaround, `CullMode::Front`, read like
+the opposite of what it did.
+- **`Material` passes `MaterialParams::FrontCounterClockwise` to its pipeline** ([#68](https://github.com/KingoBoiii/DingoEngine/issues/68)). It used to drop the flag, so every material treated clockwise triangles as front faces.
+- **`Mesh::CreateSphere` is wound counter-clockwise seen from outside** ([#69](https://github.com/KingoBoiii/DingoEngine/issues/69)), like `CreateBox` and loaded models. A sphere used as a triangle-mesh collider is now solid from outside.
+- **`MaterialParams::FrontCounterClockwise` defaults to `true`**, so a plain `MaterialParams()` culls back faces correctly on Vulkan, D3D11 and D3D12. **Behaviour change**: code that culled with `CullMode::Front` to work around #68 should switch to `CullMode::Back`. Lit materials still draw both faces.
+- `PipelineParams::SetFrontCounterClockwise` joins the other pipeline setters.
+
+**Test**: the Mesh 3D Test checks at start that `CreateBox` and `CreateSphere` (at three detail levels) wind every triangle outward, and takes `--mesh=box|sphere` and `--mesh-angle=<deg>`. The Model 3D Test's models, which used to draw inside out, now show their outside.
+
+## v0.8.2 — Start-up Without a GPU
+A point release for two start-up failures found on a Hyper-V VM with no GPU, whose only Direct3D
+adapter is WARP (Windows' software rasterizer, "Microsoft Basic Render Driver") and which has no
+Vulkan driver. DirectX 11 already ran there, because it takes the default adapter. Checking what
+that machine drew turned up a third bug, in blending, which every machine has.
+- **DirectX 12 falls back to WARP** when no hardware adapter supports feature level 12_0, logs a warning, and reports the adapter as `AdapterDeviceType::Software`. It used to skip every software adapter and assert `No suitable DirectX 12 GPU found.` Hardware selection is unchanged.
+- **Vulkan reports a missing driver instead of crashing.** With required instance extensions or layers missing, start-up printed them to stdout and then crashed on a null instance. They now go to the engine log, and start-up stops with a `DE_CORE_VERIFY`, as a failed device selection already did.
+- **Translucent draws keep a render target's alpha.** Every pipeline wrote the destination alpha as the source's, so text, a half-transparent quad or an anti-aliased edge left the pixel under it as transparent as itself. A window never shows its swap chain's alpha, but a framebuffer composited afterwards does: the test framework's viewport let the panel behind it through as a dark box around every glyph. The alpha now composites like the colour (`a = src + dst·(1 − src)`), and colours are unchanged.
+
+WARP renders on the CPU: enough to run the test framework, not to measure anything.
+
+**Test**: none new. On the VM, the test framework starts on DX12 and its Lighting, Renderer3D Batch, Mesh 3D and Animation checks pass; `--graphics=vulkan` shows the assert dialog naming the missing extension. The Text Test's glyphs lose their boxes and the Color Quad Test's 50% white quad is half white over the clear colour instead of grey, while the 3D tests and SpaceInvaders' menu are pixel-identical.
 
 ## v0.9 — Shadows, Post-processing & VFX
 The visual milestone — and the first one that inherits its dependencies instead of inventing them.
@@ -184,8 +307,9 @@ deliberately about **what the frame looks like**; the renderer throughput work t
   the design). This is also where lighting stops being decoration: in a game built on light,
   occlusion is gameplay.
 - **A post-processing stack**: bloom, tone mapping and SSAO/GTAO, run as a real chain over the scene
-  target rather than as one-off effects. Tone mapping isn't cosmetic here — the moment v0.7 lets N
-  lights sum past 1.0 the choice is mapping that range or clipping it, and today the engine clips.
+  target rather than as one-off effects. Tone mapping isn't cosmetic here — v0.7 lets N lights sum
+  past 1.0, so the choice is mapping that range or clipping it, and today the engine clips
+  ([#76](https://github.com/KingoBoiii/DingoEngine/issues/76), formerly K17).
 - **GPU particles**: an emitter/particle system on the GPU, driven from ECS components, with spawn
   hooks on v0.8's animation timeline so a spell's burst comes from the clip instead of a timer.
 - **Profiling integration** (Optick or Tracy), so each new pass can be measured as it lands rather
@@ -211,9 +335,11 @@ was called "Advanced Rendering & Performance" but was never scheduled anywhere:
   `CommandList::Draw` takes an `instanceCount`, hardcoded to 1 — so the missing piece is persistent
   buffers, not the API.
 - **Culling**: frustum and distance culling, so what gets submitted is bounded by what's *visible*
-  rather than by what exists. Games do this by hand today, nulling a mesh per entity.
+  rather than by what exists. v0.7 already culls *lights* by frustum; meshes are still submitted
+  whether or not they are visible, and games cull them by hand today, with `MeshRendererComponent::Visible`.
 - **Material sharing**: a shared-material path so the first custom material in a scene doesn't
-  fragment the single-batch fast path.
+  fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
+  costing a material each: v0.7's lit materials are per-material, not per-mesh.
 
 Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —

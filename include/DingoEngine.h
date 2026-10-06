@@ -6,6 +6,7 @@
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Input.h"
+#include "DingoEngine/Core/CursorMode.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/PerspectiveCamera.h"
@@ -61,6 +62,7 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/Animator.h"
 
 // ----------------------------------------------------------------------
 // UI

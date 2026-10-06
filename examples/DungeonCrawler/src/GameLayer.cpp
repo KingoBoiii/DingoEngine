@@ -33,11 +33,7 @@ namespace Dingo
 	{
 		m_Scene->OnStop(); // explicit teardown
 
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ------------------------------------------------------------------------

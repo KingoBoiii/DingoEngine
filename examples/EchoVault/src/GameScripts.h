@@ -57,8 +57,6 @@ namespace Dingo
 		GameContext m_Context;
 		Entity m_CameraEntity;
 
-		// Custom emissive shader + the materials orbs / sentry eyes render with.
-		Shader* m_EmissiveShader = nullptr;
 		Material* m_OrbMaterial = nullptr;
 		Material* m_SentryEyeMaterial = nullptr;
 
@@ -142,6 +140,7 @@ namespace Dingo
 		PingPongPath m_Path;
 		float m_Cooldown = 0.0f;
 		glm::vec3 m_Facing{ 0.0f, 0.0f, 1.0f };
+		Entity m_Eye;
 	};
 
 	// HUD: a 2D orthographic overlay (orb counter, hints, alert flash) drawn on top of the

@@ -189,6 +189,33 @@ namespace Dingo
 		return { velocity.x, velocity.y };
 	}
 
+	float Box2DPhysics2D::GetAngularVelocity(PhysicsBodyId2D body) const
+	{
+		if (body == 0)
+			return 0.0f;
+
+		b2BodyId bodyId = b2LoadBodyId(body);
+		if (!b2Body_IsValid(bodyId))
+			return 0.0f;
+
+		return b2Body_GetAngularVelocity(bodyId);
+	}
+
+	void Box2DPhysics2D::MoveKinematic(PhysicsBodyId2D body, const glm::vec2& targetPosition, float targetAngle, float deltaTime)
+	{
+		if (body == 0 || deltaTime <= 0.0f)
+			return;
+
+		b2BodyId bodyId = b2LoadBodyId(body);
+		if (!b2Body_IsValid(bodyId) || b2Body_GetType(bodyId) != b2_kinematicBody)
+			return;
+
+		b2WorldTransform target;
+		target.p = b2ToPos({ targetPosition.x, targetPosition.y });
+		target.q = b2MakeRot(targetAngle);
+		b2Body_SetTargetTransform(bodyId, target, deltaTime, true);
+	}
+
 	void Box2DPhysics2D::ApplyLinearImpulse(PhysicsBodyId2D body, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake)
 	{
 		if (body == 0)

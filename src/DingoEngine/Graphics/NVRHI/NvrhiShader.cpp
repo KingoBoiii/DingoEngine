@@ -76,17 +76,27 @@ namespace Dingo
 			return hash;
 		}
 
-		// Base hash shared by every cached artifact compiled from the same (source, entryPoint)
-		// pair; DeriveShaderCacheHash extends it per target so the source text - the expensive
+		static uint64_t HashDefines(const std::vector<ShaderDefine>& defines, uint64_t hash)
+		{
+			for (const ShaderDefine& define : defines)
+				hash = HashFNV1a(";", HashFNV1a(define.Value, HashFNV1a("=", HashFNV1a(define.Name, hash))));
+			return hash;
+		}
+
+		// Base hash shared by every cached artifact compiled from the same (source, entryPoint,
+		// defines); DeriveShaderCacheHash extends it per target so the source text - the expensive
 		// part to hash - is hashed once even though SPIR-V and DXBC each need their own key.
+		// Without defines it is the hash shaders had before defines existed, so their caches stay
+		// valid.
 		//
 		// This covers the top-level source only. It cannot see an #include, and neither can
 		// the hot-reload poll, which stats one file - so editing an included file would serve
 		// stale bytecode. A non-issue purely because ShaderCompiler registers no includer
 		// (includes fail to compile today); registering one has to bring both along.
-		static uint64_t ComputeShaderSourceHash(const std::string& source, const std::string& entryPoint)
+		static uint64_t ComputeShaderSourceHash(const std::string& source, const std::string& entryPoint, const std::vector<ShaderDefine>& defines)
 		{
-			return HashFNV1a(entryPoint, HashFNV1a(source));
+			const uint64_t hash = HashFNV1a(entryPoint, HashFNV1a(source));
+			return defines.empty() ? hash : HashDefines(defines, hash);
 		}
 
 		// Cache file names have to be one filesystem-safe path component: a shader named after
@@ -95,7 +105,7 @@ namespace Dingo
 		// rewritten stem is no longer a key and needs a hash of what it was rewritten from.
 		// Only a stem that survived unchanged AND names no file identifies its shader on its
 		// own; everything else carries a disambiguator.
-		static std::string MakeCacheStem(const std::string& name, const std::filesystem::path& filePath)
+		static std::string MakeCacheStem(const std::string& name, const std::filesystem::path& filePath, const std::vector<ShaderDefine>& defines)
 		{
 			std::string stem;
 			stem.reserve(name.size());
@@ -113,11 +123,17 @@ namespace Dingo
 			if (!filePath.empty())
 			{
 				const std::string pathKey = filePath.generic_string();
-				return stem + std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(pathKey)));
+				stem += std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(pathKey)));
+			}
+			else if (rewritten)
+			{
+				stem += std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(name)));
 			}
 
-			if (rewritten)
-				return stem + std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(name)));
+			// Variants of one file under one name would otherwise fail each other's source hash
+			// and rewrite the same cache file on every launch.
+			if (!defines.empty())
+				stem += std::format("_d{:08x}", static_cast<uint32_t>(HashDefines(defines, 14695981039346656037ull)));
 
 			return stem;
 		}
@@ -299,7 +315,7 @@ namespace Dingo
 
 		ShaderCompiler shaderCompiler;
 		const std::filesystem::path cacheDir = CacheManager::GetCacheDirectory("shaders");
-		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath);
+		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath, m_Params.Defines);
 
 		std::vector<std::pair<std::filesystem::path, std::string>> pendingCacheWrites;
 		std::unordered_map<ShaderType, CompiledStage> spvStages = CompileOrGetShaderBinaries(sources, name, cacheDir, shaderCompiler, forceCompile, tolerateErrors, pendingCacheWrites);
@@ -319,6 +335,7 @@ namespace Dingo
 		std::vector<ShaderReflection> reflections;
 		std::vector<uint32_t> vertexInputLocations;
 		bool vertexInputsReflected = false;
+		std::vector<std::pair<std::string, uint32_t>> uniformBufferBindings;
 		for (const auto& [shaderType, stage] : spvStages)
 		{
 			nvrhi::ShaderHandle handle;
@@ -336,7 +353,7 @@ namespace Dingo
 				// at the performance level) before cross-compiling to HLSL/DXBC - the two SPIR-V
 				// artifacts are not interchangeable, so this cannot reuse stage.Binaries.
 				std::vector<uint8_t> dxbcBytecode = Utils::LoadOrCompileCached<uint8_t>(dxbcCachePath, dxbcHash, forceCompile, name, shaderType, "DXBC", pendingCacheWrites,
-					[&]() { return shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel, !tolerateErrors); });
+					[&]() { return shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel, !tolerateErrors, m_Params.Defines); });
 				if (dxbcBytecode.empty())
 					return false;
 
@@ -375,6 +392,14 @@ namespace Dingo
 					vertexInputsReflected = true;
 				}
 
+				for (const ShaderResourceBinding& uniformBuffer : reflection.UniformBuffers)
+				{
+					const bool known = std::any_of(uniformBufferBindings.begin(), uniformBufferBindings.end(),
+						[&](const auto& entry) { return entry.first == uniformBuffer.Name; });
+					if (!known)
+						uniformBufferBindings.emplace_back(uniformBuffer.Name, uniformBuffer.Binding);
+				}
+
 				reflections.push_back(reflection);
 			}
 		}
@@ -383,6 +408,7 @@ namespace Dingo
 		m_BindingLayoutHandle = CreateBindingLayoutHandle(reflections);
 		m_VertexInputLocations = std::move(vertexInputLocations);
 		m_VertexInputsReflected = vertexInputsReflected;
+		m_UniformBufferBindings = std::move(uniformBufferBindings);
 
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.
@@ -431,38 +457,54 @@ namespace Dingo
 			.setBindingOffsets(vulkanBindingOffsets)
 			.setVisibility(nvrhi::ShaderType::All);
 
+		// A resource several stages declare (Renderer3D's scene UBO) is reflected once per
+		// stage, but a layout may name each binding only once; the item is visible to every
+		// stage anyway, so it keeps the largest array size any stage declared.
+		auto addItem = [&bindingLayoutDesc](const nvrhi::BindingLayoutItem& item)
+		{
+			for (nvrhi::BindingLayoutItem& existing : bindingLayoutDesc.bindings)
+			{
+				if (existing.type == item.type && existing.slot == item.slot)
+				{
+					existing.size = std::max<uint16_t>(existing.size, item.size);
+					return;
+				}
+			}
+			bindingLayoutDesc.addItem(item);
+		};
+
 		for (const auto& shaderReflection : reflections)
 		{
 			for (const auto& uniformBuffer : shaderReflection.UniformBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(uniformBuffer.Binding));
+				addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(uniformBuffer.Binding));
 			}
 
 			for (const auto& storageBuffer : shaderReflection.StorageBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
+				addItem(nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
 			}
 
 			for (const auto& pushConstantBuffer : shaderReflection.PushConstantBuffers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, pushConstantBuffer.Size));
+				addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, pushConstantBuffer.Size));
 			}
 
 			for (const auto& sampler : shaderReflection.SeparateSamplers)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
+				addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
 					.setSize(sampler.ArraySize));
 			}
 
 			for (const auto& sampledImage : shaderReflection.SampledImages)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
+				addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
 					.setSize(sampledImage.ArraySize));
 			}
 
 			for (const auto& sampledImage : shaderReflection.SeparateImages)
 			{
-				bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
+				addItem(nvrhi::BindingLayoutItem::Texture_SRV(sampledImage.Binding)
 					.setSize(sampledImage.ArraySize));
 			}
 		}
@@ -473,16 +515,16 @@ namespace Dingo
 	std::unordered_map<ShaderType, NvrhiShader::CompiledStage> NvrhiShader::CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, const std::filesystem::path& cacheDir, ShaderCompiler& compiler, bool forceCompile, bool tolerateErrors, std::vector<std::pair<std::filesystem::path, std::string>>& pendingCacheWrites)
 	{
 		std::unordered_map<ShaderType, CompiledStage> result;
-		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath);
+		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath, m_Params.Defines);
 
 		for (const auto& [shaderType, source] : sources)
 		{
 			std::filesystem::path shaderCacheFilePath = cacheDir / (cacheStem + "_" + Utils::ConvertShaderTypeToString(shaderType) + ".spv");
-			const uint64_t sourceHash = Utils::ComputeShaderSourceHash(source, m_Params.EntryPoint);
+			const uint64_t sourceHash = Utils::ComputeShaderSourceHash(source, m_Params.EntryPoint, m_Params.Defines);
 			const uint64_t spvHash = Utils::DeriveShaderCacheHash(sourceHash, 0);
 
 			std::vector<uint32_t> binaries = Utils::LoadOrCompileCached<uint32_t>(shaderCacheFilePath, spvHash, forceCompile, name, shaderType, "Shader", pendingCacheWrites,
-				[&]() { return compiler.CompileGLSL(shaderType, source, name, "main", true, !tolerateErrors); });
+				[&]() { return compiler.CompileGLSL(shaderType, source, name, "main", true, !tolerateErrors, m_Params.Defines); });
 			if (binaries.empty())
 				return {}; // abort the whole build - a partial result must not be committed or cached
 
@@ -518,9 +560,15 @@ namespace Dingo
 		return PreProcess(source);
 	}
 
+	// Malformed source logs an error and yields no sources rather than asserting: Build treats that as
+	// a failed build, so a hot-reload of a half-saved file keeps the previous program.
 	std::unordered_map<ShaderType, std::string> NvrhiShader::PreProcess(const std::string& source) const
 	{
-		DE_CORE_ASSERT(!source.empty(), "Shader source code is empty. Cannot preprocess shader sources.");
+		if (source.empty())
+		{
+			DE_CORE_ERROR("Shader '{}': the source is empty.", m_Params.Name);
+			return {};
+		}
 
 		std::unordered_map<ShaderType, std::string> sources;
 
@@ -530,21 +578,28 @@ namespace Dingo
 		while (pos != std::string::npos)
 		{
 			size_t eol = source.find_first_of("\r\n", pos); //End of shader type declaration line
-			DE_CORE_ASSERT(eol != std::string::npos, "Syntax error");
+			if (eol == std::string::npos)
+			{
+				DE_CORE_ERROR("Shader '{}': a '#type' line has no code after it.", m_Params.Name);
+				return {};
+			}
 			size_t begin = pos + typeTokenLength + 1; //Start of shader type name (after "#type " keyword)
-			std::string type = source.substr(begin, eol - begin);
+			std::string type = begin < eol ? source.substr(begin, eol - begin) : std::string();
 
 			if (ShaderTypeMap.find(type) == ShaderTypeMap.end())
 			{
-				DE_CORE_ERROR("Unknown shader type: {}", type);
-				DE_CORE_ASSERT(false, "Unknown shader type");
-				return {}; // Return empty map if unknown shader type
+				DE_CORE_ERROR("Shader '{}': unknown shader type '{}' after '#type'.", m_Params.Name, type);
+				return {};
 			}
 
 			ShaderType shaderType = ShaderTypeMap[type];
 
 			size_t nextLinePos = source.find_first_not_of("\r\n", eol); //Start of shader code after shader type declaration line
-			DE_CORE_ASSERT(nextLinePos != std::string::npos, "Syntax error");
+			if (nextLinePos == std::string::npos)
+			{
+				DE_CORE_ERROR("Shader '{}': the '#type {}' section is empty.", m_Params.Name, type);
+				return {};
+			}
 			pos = source.find(typeToken, nextLinePos); //Start of next shader type declaration line
 
 			sources[shaderType] = (pos == std::string::npos) ? source.substr(nextLinePos) : source.substr(nextLinePos, pos - nextLinePos);

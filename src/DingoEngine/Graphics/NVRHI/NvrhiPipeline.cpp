@@ -73,7 +73,7 @@ namespace Dingo
 			.setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
 			.setSrcBlendAlpha(nvrhi::BlendFactor::One)
 			.setDestBlend(nvrhi::BlendFactor::OneMinusSrcAlpha)
-			.setDestBlendAlpha(nvrhi::BlendFactor::Zero);
+			.setDestBlendAlpha(nvrhi::BlendFactor::OneMinusSrcAlpha);
 
 		nvrhi::BlendState blendState = nvrhi::BlendState()
 			.setAlphaToCoverageEnable(false)

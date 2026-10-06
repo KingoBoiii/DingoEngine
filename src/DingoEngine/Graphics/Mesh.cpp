@@ -1,17 +1,66 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Mesh.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 #include <glm/gtc/constants.hpp>
+#include <atomic>
 #include <cmath>
 
 namespace Dingo
 {
+
+	static_assert(sizeof(SkinnedMeshVertex) == 56, "SkinnedMeshVertex is uploaded as-is as a vertex stream");
+
+	Mesh::~Mesh()
+	{
+		DestroyAndDelete(m_SkinVertexBuffer);
+		DestroyAndDelete(m_SkinIndexBuffer);
+	}
+
+	std::uint64_t Mesh::AllocateId()
+	{
+		static std::atomic<std::uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	void Mesh::Reinitialize(Mesh& source)
+	{
+		m_Vertices = std::move(source.m_Vertices);
+		m_Indices = std::move(source.m_Indices);
+		m_SkinVertices = std::move(source.m_SkinVertices);
+		m_SkinJointCount = source.m_SkinJointCount;
+		m_Id = AllocateId();
+		DestroyAndDelete(m_SkinVertexBuffer);
+		DestroyAndDelete(m_SkinIndexBuffer);
+	}
+
+	void Mesh::Clear()
+	{
+		Mesh empty;
+		Reinitialize(empty);
+	}
 
 	Mesh* Mesh::Create(const std::vector<MeshVertex>& vertices, const std::vector<uint32_t>& indices)
 	{
 		Mesh* mesh = new Mesh();
 		mesh->m_Vertices = vertices;
 		mesh->m_Indices = indices;
+		return mesh;
+	}
+
+	Mesh* Mesh::CreateSkinned(std::vector<MeshVertex> restVertices, std::vector<SkinnedMeshVertex> skinVertices, std::vector<uint32_t> indices)
+	{
+		DE_CORE_ASSERT(restVertices.size() == skinVertices.size(), "Mesh::CreateSkinned needs one skin vertex per rest vertex");
+
+		Mesh* mesh = new Mesh();
+		mesh->m_Vertices     = std::move(restVertices);
+		mesh->m_Indices      = std::move(indices);
+		mesh->m_SkinVertices = std::move(skinVertices);
+		for (const SkinnedMeshVertex& vertex : mesh->m_SkinVertices)
+		{
+			for (int k = 0; k < 4; ++k)
+				mesh->m_SkinJointCount = std::max<uint32_t>(mesh->m_SkinJointCount, vertex.Joints[k] + 1u);
+		}
 		return mesh;
 	}
 
@@ -111,8 +160,8 @@ namespace Dingo
 				uint32_t i2 = (ring + 1) * (segments + 1) + seg;
 				uint32_t i3 = i2 + 1;
 
-				indices.push_back(i0); indices.push_back(i2); indices.push_back(i1);
-				indices.push_back(i1); indices.push_back(i2); indices.push_back(i3);
+				indices.push_back(i0); indices.push_back(i1); indices.push_back(i2);
+				indices.push_back(i1); indices.push_back(i3); indices.push_back(i2);
 			}
 		}
 

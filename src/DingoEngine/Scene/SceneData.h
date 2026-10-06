@@ -5,11 +5,16 @@
 // EnTT a private implementation detail of the engine.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Scene/Systems/AnimationSystem.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
 
 #include <entt/entt.hpp>
+#include <glm/glm.hpp>
 
+#include <cstdint>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -36,7 +41,19 @@ namespace Dingo
 
 			// Reused every frame by the sprite z-sort in RenderEntities: clear() keeps the
 			// capacity, so a steady-state frame allocates nothing to sort.
-			std::vector<std::pair<float, entt::entity>> SpriteSortBuffer;
+			struct SpriteDraw
+			{
+				glm::vec3 Position; // world; z is the sort key, then Depth
+				float Rotation;
+				std::uint32_t Depth;
+				entt::entity Entity;
+			};
+			std::vector<SpriteDraw> SpriteSortBuffer;
+
+			// Scratch for the per-entity readers (rendering, lights, audio); reset by each pass.
+			HierarchySystem::WorldMemo Memo;
+
+			AnimationSystem::EventScratch AnimationEvents;
 		};
 
 	}

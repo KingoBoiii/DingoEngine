@@ -58,23 +58,9 @@ void main() {
 
 	void VertexBufferTest::Cleanup()
 	{
-		if (m_VertexBuffer)
-		{
-			m_VertexBuffer->Destroy();
-			m_VertexBuffer = nullptr;
-		}
-
-		if (m_Pipeline)
-		{
-			m_Pipeline->Destroy();
-			m_Pipeline = nullptr;
-		}
-
-		if (m_Shader)
-		{
-			m_Shader->Destroy();
-			m_Shader = nullptr;
-		}
+		DestroyAndDelete(m_VertexBuffer);
+		DestroyAndDelete(m_Pipeline);
+		DestroyAndDelete(m_Shader);
 	}
 
 }

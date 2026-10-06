@@ -19,10 +19,12 @@ engine from source.
 | [Getting Started](getting-started.md) | Prerequisites, what's in a release package, project setup (include dirs, link libraries, defines), and a minimal window app. |
 | [Application & Layers](application-and-layers.md) | The entry point, `Application` lifecycle, the `Layer` stack, input, and events. |
 | [2D Rendering](rendering-2d.md) | `Renderer2D` (quads, circles, MSDF text), the camera/projection model, textures, and fonts. |
-| [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager`; plus (v0.4.1) 3D entities — `Transform3D`/`MeshRenderer`/`RigidBody3D`/`Box`+`SphereCollider3D` drawn through `Renderer3D`. |
+| [Scenes & ECS](scenes-and-ecs.md) | The v0.3 scene system — `Scene`, `Entity`, built-in components, `ScriptableEntity` behaviours, and `SceneManager`; plus (v0.4.1) 3D entities — `Transform3D`/`MeshRenderer`/`RigidBody3D` and the box/sphere/capsule/mesh colliders, drawn through `Renderer3D`. |
 | [2D Physics](physics-2d.md) | The v0.4 rigid-body system — `RigidBody2D`/`BoxCollider2D`/`CircleCollider2D` components, gravity, the physics lifecycle, and applying forces/impulses. |
-| [3D Physics](physics-3d.md) | The Jolt-backed `Physics3D` — 3D rigid bodies with box/sphere colliders; usable standalone, or (v0.4.1) wired into the `Scene`/ECS. |
-| [Asset Pipeline](asset-pipeline.md) | The v0.6 `AssetManager` — UUID asset handles, path dedup, background/async loading, and hot-reload of shaders and textures. |
+| [3D Physics](physics-3d.md) | The Jolt-backed `Physics3D` — 3D rigid bodies with box/sphere/capsule colliders and (v0.6.2) triangle-mesh and convex-hull colliders; usable standalone, or (v0.4.1) wired into the `Scene`/ECS. |
+| [Asset Pipeline](asset-pipeline.md) | The v0.6 `AssetManager` — UUID asset handles, path dedup, background/async loading, and hot-reload of shaders, textures and (v0.8) models. |
+| [Lighting & Shading](lighting.md) | The v0.7 lighting system — directional, point, spot and ambient lights (as components or through `Renderer3D`), the per-scene light budget, falloff, gameplay queries of a light's reach (`GetLightAttenuation`), lit materials with specular and emissive, the scene uniform block for custom shaders, and hot-reloading the lit shader. |
+| [Animation & Skinned Models](animation.md) | The v0.8 skeletal animation system — loading skinned models and clip libraries, GPU skinning (`SkinnedMeshRendererComponent`, `Renderer3D::SubmitSkinnedMesh`, the instance budget, custom skinned shaders), the `Animator` (cross-fades, `Blend1D`, masked layers, one-shots), timeline events and the `.events` sidecar, joint sockets, retargeting by joint name, in-place model hot-reload, and the F7 Animation tab. |
 
 ## A 30-second tour
 

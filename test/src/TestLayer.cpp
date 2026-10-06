@@ -7,6 +7,8 @@
 #include "Tests/Renderer/TextureTest.h"
 #include "Tests/Renderer/Mesh3DTest.h"
 #include "Tests/Renderer/Model3DTest.h"
+#include "Tests/Renderer/Renderer3DBatchTest.h"
+#include "Tests/Renderer/LightingTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
@@ -14,6 +16,15 @@
 #include "Tests/Renderer2D/CircleTest.h"
 
 #include "Tests/Asset/AssetManagerTest.h"
+
+#include "Tests/Input/CursorTest.h"
+
+#include "Tests/Physics/MeshColliderTest.h"
+
+#include "Tests/Scene/HierarchyTest.h"
+#include "Tests/Scene/AnimationTest.h"
+
+#include "Tests/Core/BackgroundTest.h"
 
 #include <imgui.h>
 
@@ -44,7 +55,14 @@ namespace Dingo
 		m_Tests.push_back({ "Circle Test (R2D)", [&]() { return new CircleTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh 3D Test", []() { return new Mesh3DTest(); } });
 		m_Tests.push_back({ "Model 3D Test", []() { return new Model3DTest(); } });
+		m_Tests.push_back({ "Renderer3D Batch Test", []() { return new Renderer3DBatchTest(); } });
+		m_Tests.push_back({ "Lighting Test", []() { return new LightingTest(); } });
 		m_Tests.push_back({ "Asset Manager Test", [&]() { return new AssetManagerTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Mesh Collider Test", []() { return new MeshColliderTest(); } });
+		m_Tests.push_back({ "Hierarchy Test", [&]() { return new HierarchyTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Animation Test", []() { return new AnimationTest(); } });
+		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))
@@ -83,11 +101,7 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		if (m_OutputFramebuffer)
-		{
-			m_OutputFramebuffer->Destroy();
-			m_OutputFramebuffer = nullptr;
-		}
+		DestroyAndDelete(m_OutputFramebuffer);
 	}
 
 	void TestLayer::OnUpdate(float deltaTime)
@@ -101,6 +115,12 @@ namespace Dingo
 			m_CurrentTest->Update(deltaTime);
 			Renderer::ResetRenderTarget();
 		}
+	}
+
+	void TestLayer::OnEvent(Event& e)
+	{
+		if (m_CurrentTest)
+			m_CurrentTest->OnEvent(e);
 	}
 
 	void TestLayer::OnUIRender()
@@ -258,11 +278,13 @@ namespace Dingo
 
 		m_TestViewportPanel.OnUIRender(m_OutputFramebuffer->GetAttachment(0));
 
-		// handle resize
-		if (m_OutputFramebuffer->GetWidth() != m_TestViewportPanel.GetViewportSize().x ||
-		   m_OutputFramebuffer->GetHeight() != m_TestViewportPanel.GetViewportSize().y)
+		// handle resize. ImGui reads the window size itself, so the frame a minimize lands in can
+		// give the panel a negative size before Application has seen the zero-sized resize.
+		const glm::vec2& viewportSize = m_TestViewportPanel.GetViewportSize();
+		if (viewportSize.x > 0.0f && viewportSize.y > 0.0f &&
+		   (m_OutputFramebuffer->GetWidth() != viewportSize.x || m_OutputFramebuffer->GetHeight() != viewportSize.y))
 		{
-			m_CurrentTest->Resize(m_TestViewportPanel.GetViewportSize().x, m_TestViewportPanel.GetViewportSize().y);
+			m_CurrentTest->Resize(viewportSize.x, viewportSize.y);
 
 			Application::Get().SubmitPostExecution([&]()
 			{

@@ -38,6 +38,17 @@ namespace Dingo
 	inline constexpr float TREASURE_Y = 0.9f;
 	inline constexpr float TREASURE_SPIN_DEG = 90.0f;
 
+	// --- Night (--night): a dim moon, the hero's lantern and glowing treasure ---
+	inline const glm::vec3 NIGHT_MOON_COLOR = { 0.55f, 0.65f, 1.0f };
+	inline constexpr float NIGHT_MOON_INTENSITY = 0.12f;
+	inline constexpr float NIGHT_AMBIENT = 0.05f;
+	inline const glm::vec3 LANTERN_COLOR = { 1.0f, 0.72f, 0.42f };
+	inline const glm::vec3 LANTERN_OFFSET = { 0.0f, 2.2f, 0.0f }; // above the hero's head
+	inline constexpr float LANTERN_INTENSITY = 3.0f;
+	inline constexpr float LANTERN_RANGE = 9.0f;
+	inline constexpr float TREASURE_LIGHT_INTENSITY = 0.9f;
+	inline constexpr float TREASURE_LIGHT_RANGE = 3.0f;
+
 	// --- Camera / world ---
 	inline const glm::vec3 GRAVITY = { 0.0f, -18.0f, 0.0f };
 	inline const glm::vec3 CAMERA_OFFSET = { 0.0f, 16.0f, 12.0f };

@@ -2,6 +2,8 @@
 #include "DingoEngine/Asset/AssetManager.h"
 
 #include "DingoEngine/Asset/AssetManagerData.h"
+#include "DingoEngine/Asset/AssetPath.h"
+#include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
@@ -18,6 +20,45 @@ namespace Dingo
 	using Internal::AssetManagerData;
 	using Internal::AsyncJob;
 	using Internal::AsyncResult;
+	using Internal::CompanionWatch;
+
+	// A copy rather than a route through Application::GetAssetManager(), which dereferences a
+	// pointer that is still null while the Application constructor runs. Written on the main
+	// thread only; the loader thread calls the raw factories with absolute paths, which
+	// ResolveRawAssetPath returns before reading this.
+	static std::filesystem::path s_RawAssetRoot;
+
+	struct UnmanagedShaderWatch
+	{
+		Shader* Target = nullptr;
+		std::filesystem::file_time_type LastWriteTime{};
+		std::filesystem::file_time_type PendingWriteTime{};
+	};
+
+	// Main-thread only, like the registry. A static rather than AssetManagerData because the
+	// renderers register their shaders before the AssetManager is constructed.
+	static std::vector<UnmanagedShaderWatch> s_UnmanagedShaderWatches;
+
+	namespace Internal
+	{
+
+		std::filesystem::path ResolveRawAssetPath(const std::filesystem::path& path)
+		{
+			if (path.empty() || path.is_absolute())
+				return path;
+
+			if (s_RawAssetRoot.empty())
+				return path;
+
+			std::error_code ec;
+			const std::filesystem::path candidate = (s_RawAssetRoot / path).lexically_normal();
+			if (std::filesystem::exists(candidate, ec) && !ec)
+				return candidate;
+
+			return path;
+		}
+
+	}
 
 	namespace Utils
 	{
@@ -62,12 +103,56 @@ namespace Dingo
 #endif
 		}
 
-		static void StampWriteTime(AssetMetadata& metadata, const std::filesystem::path& absolutePath)
+		static std::filesystem::file_time_type ReadWriteTime(const std::filesystem::path& path)
 		{
 			std::error_code ec;
-			metadata.LastWriteTime = std::filesystem::last_write_time(absolutePath, ec);
+			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, ec);
+			return ec ? std::filesystem::file_time_type{} : writeTime;
+		}
+
+		static void StampWriteTime(AssetMetadata& metadata, const std::filesystem::path& absolutePath)
+		{
+			metadata.LastWriteTime = ReadWriteTime(absolutePath);
+		}
+
+		// True when a file stamped `writeTime` changed since `lastWriteTime` and the change has settled,
+		// in which case `lastWriteTime` takes the new stamp.
+		//
+		// Wait for the timestamp to repeat before believing the write finished. An editor that
+		// truncates and then writes can be caught mid-save, and Windows resolves mtime to one
+		// ~15.6 ms clock tick, so the partial file and the final file can carry the SAME
+		// timestamp - reload the partial one and no later poll ever sees a difference again,
+		// losing the edit until the next save. A file still being written keeps moving its
+		// timestamp and simply waits here.
+		static bool ConsumeSettledStamp(std::filesystem::file_time_type writeTime, std::filesystem::file_time_type& lastWriteTime, std::filesystem::file_time_type& pendingWriteTime)
+		{
+			if (writeTime == lastWriteTime)
+			{
+				pendingWriteTime = {};
+				return false;
+			}
+
+			if (pendingWriteTime != writeTime)
+			{
+				pendingWriteTime = writeTime;
+				return false;
+			}
+
+			pendingWriteTime = {};
+			lastWriteTime = writeTime;
+			return true;
+		}
+
+		static bool ConsumeSettledWrite(const std::filesystem::path& path, std::filesystem::file_time_type& lastWriteTime, std::filesystem::file_time_type& pendingWriteTime)
+		{
+			std::error_code ec;
+			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, ec);
 			if (ec)
-				metadata.LastWriteTime = {};
+			{
+				pendingWriteTime = {};
+				return false;
+			}
+			return ConsumeSettledStamp(writeTime, lastWriteTime, pendingWriteTime);
 		}
 
 		static TextureParams MakeTextureParams(const std::string& debugName, uint32_t width, uint32_t height, uint32_t channels, const uint8_t* pixels)
@@ -140,6 +225,10 @@ namespace Dingo
 		void (*Publish)(AssetManagerData&, AsyncResult&) = nullptr;
 
 		bool HotReloadWatched = false;
+		// A second file the load reads, watched with the asset's own, and what a change to it alone
+		// refreshes (ReloadInPlace when null).
+		std::filesystem::path (*Companion)(const AssetMetadata&) = nullptr;
+		RefreshResult (*ReloadCompanion)(AssetManagerData&, const AssetMetadata&) = nullptr;
 	};
 
 	static const AssetTypePolicy& PolicyFor(AssetType type)
@@ -253,8 +342,36 @@ namespace Dingo
 					data.Models[metadata.Handle] = model;
 					return true;
 				},
+				.ReloadInPlace = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
+				{
+					auto it = data.Models.find(metadata.Handle);
+					if (it == data.Models.end())
+						return RefreshResult::NotLoaded;
+
+					// Model::Reload has logged why the file didn't load.
+					if (!it->second->Reload())
+					{
+						DE_CORE_WARN("AssetManager: keeping the loaded version of Model '{}'.", metadata.FilePath.generic_string());
+						return RefreshResult::KeptPrevious;
+					}
+					return RefreshResult::Refreshed;
+				},
 				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Models, handle); },
-				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Models.contains(handle); }
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Models.contains(handle); },
+				.HotReloadWatched = true,
+				.Companion = [](const AssetMetadata& metadata)
+				{
+					std::filesystem::path events = metadata.AbsolutePath;
+					events.replace_extension(".events");
+					return events;
+				},
+				.ReloadCompanion = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
+				{
+					auto it = data.Models.find(metadata.Handle);
+					if (it == data.Models.end())
+						return RefreshResult::NotLoaded;
+					return it->second->ReloadEvents() ? RefreshResult::Refreshed : RefreshResult::KeptPrevious;
+				}
 			},
 			{
 				.Type = AssetType::Font,
@@ -333,9 +450,50 @@ namespace Dingo
 		return Utils::FoldPathCase(NormalizeRelativePath(data, path).generic_string());
 	}
 
+	static void StampCompanion(AssetManagerData& data, const AssetMetadata& metadata)
+	{
+		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
+		if (!policy.Companion)
+			return;
+
+		CompanionWatch& watch = data.Companions[metadata.Handle];
+		watch.Path = (*policy.Companion)(metadata);
+		watch.LastWriteTime = Utils::ReadWriteTime(watch.Path);
+		watch.PendingWriteTime = {};
+		watch.Pending = false;
+	}
+
+	static bool CompanionChanged(AssetManagerData& data, AssetHandle handle)
+	{
+		auto it = data.Companions.find(handle);
+		if (it == data.Companions.end())
+			return false;
+
+		// A missing file reads as the epoch, so adding or deleting one counts as a change. Like any other,
+		// it must be seen twice: an editor that saves by delete and rename is caught in the gap.
+		CompanionWatch& watch = it->second;
+		const std::filesystem::file_time_type writeTime = Utils::ReadWriteTime(watch.Path);
+		if (writeTime == watch.LastWriteTime)
+		{
+			watch.Pending = false;
+			return false;
+		}
+		if (!watch.Pending || watch.PendingWriteTime != writeTime)
+		{
+			watch.Pending = true;
+			watch.PendingWriteTime = writeTime;
+			return false;
+		}
+
+		watch.Pending = false;
+		watch.LastWriteTime = writeTime;
+		return true;
+	}
+
 	static bool LoadInternal(AssetManagerData& data, AssetMetadata& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
+		StampCompanion(data, metadata);
 		if (policy.Load && (*policy.Load)(data, metadata))
 		{
 			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
@@ -362,7 +520,10 @@ namespace Dingo
 			return false;
 
 		if (result == RefreshResult::Refreshed)
+		{
 			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+			StampCompanion(data, metadata);
+		}
 
 		return true;
 	}
@@ -508,40 +669,25 @@ namespace Dingo
 			// Failed is watched as well as Ready: a first-load failure keeps its
 			// registration precisely so fixing the file recovers it. Its write time was
 			// never stamped, so the first poll fires immediately - and a file that is still
-			// broken gets one attempt per edit, not one per poll, because the stamp below
-			// lands whether or not the reload succeeds. Anything else (including an asset
-			// with a reload already in flight) is skipped.
+			// broken gets one attempt per edit, not one per poll, because the stamp lands
+			// whether or not the reload succeeds. Anything else (including an asset with a
+			// reload already in flight) is skipped.
 			const bool recovering = metadata.State == AssetState::Failed;
 			if (metadata.State != AssetState::Ready && !recovering)
 				continue;
 
-			std::error_code ec;
-			const auto writeTime = std::filesystem::last_write_time(metadata.AbsolutePath, ec);
-			if (ec || writeTime == metadata.LastWriteTime)
-			{
-				metadata.PendingWriteTime = {};
+			// Both are read every poll, so a save of both that settles in one poll reloads once.
+			const bool changed = Utils::ConsumeSettledWrite(metadata.AbsolutePath, metadata.LastWriteTime, metadata.PendingWriteTime);
+			const bool companionChanged = CompanionChanged(data, metadata.Handle);
+			if (!changed && !companionChanged)
 				continue;
-			}
-
-			// Wait for the timestamp to repeat before believing the write finished. An editor
-			// that truncates and then writes can be caught mid-save, and Windows resolves
-			// mtime to one ~15.6 ms clock tick, so the partial file and the final file can
-			// carry the SAME timestamp - reload the partial one and no later poll ever sees a
-			// difference again, losing the edit until the next save. A file still being
-			// written keeps moving its timestamp and simply waits here.
-			if (metadata.PendingWriteTime != writeTime)
-			{
-				metadata.PendingWriteTime = writeTime;
-				continue;
-			}
-
-			metadata.PendingWriteTime = {};
-			metadata.LastWriteTime = writeTime;
 
 			if (recovering)
 				DE_CORE_INFO("AssetManager: retrying failed {} '{}' - the file changed on disk.", AssetTypeToString(metadata.Type), metadata.FilePath.generic_string());
-			else
+			else if (changed)
 				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", metadata.FilePath.generic_string());
+			else
+				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading '{}'.", data.Companions.at(metadata.Handle).Path.filename().generic_string(), metadata.FilePath.generic_string());
 
 			const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 			if (policy.Decode)
@@ -558,7 +704,8 @@ namespace Dingo
 			}
 
 			// The stamp above is already committed, so the refresh must not stamp again.
-			const RefreshResult refreshed = policy.ReloadInPlace ? (*policy.ReloadInPlace)(data, metadata) : RefreshResult::NotLoaded;
+			const auto refresh = !changed && policy.ReloadCompanion ? policy.ReloadCompanion : policy.ReloadInPlace;
+			const RefreshResult refreshed = refresh ? (*refresh)(data, metadata) : RefreshResult::NotLoaded;
 			if (refreshed == RefreshResult::NotLoaded)
 			{
 				// Nothing to reload in place: a shader that failed its first load was
@@ -566,6 +713,39 @@ namespace Dingo
 				LoadInternal(data, metadata);
 			}
 		}
+
+		for (UnmanagedShaderWatch& watch : s_UnmanagedShaderWatches)
+		{
+			const std::filesystem::path& path = watch.Target->GetParams().FilePath;
+			if (!Utils::ConsumeSettledWrite(path, watch.LastWriteTime, watch.PendingWriteTime))
+				continue;
+
+			DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", path.generic_string());
+			watch.Target->Reload();
+		}
+	}
+
+	namespace Internal
+	{
+
+		void WatchUnmanagedShader(Shader* shader)
+		{
+			if (!shader || shader->GetParams().FilePath.empty())
+				return;
+
+			const bool alreadyWatched = std::any_of(s_UnmanagedShaderWatches.begin(), s_UnmanagedShaderWatches.end(),
+				[shader](const UnmanagedShaderWatch& watch) { return watch.Target == shader; });
+			if (alreadyWatched)
+				return;
+
+			s_UnmanagedShaderWatches.push_back({ shader, Utils::ReadWriteTime(shader->GetParams().FilePath), {} });
+		}
+
+		void UnwatchUnmanagedShader(Shader* shader)
+		{
+			std::erase_if(s_UnmanagedShaderWatches, [shader](const UnmanagedShaderWatch& watch) { return watch.Target == shader; });
+		}
+
 	}
 
 	AssetManager::AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine)
@@ -598,6 +778,8 @@ namespace Dingo
 		else
 			DE_CORE_INFO("AssetManager: asset root '{}'.", data.RootDirectory.string());
 
+		s_RawAssetRoot = data.RootDirectory;
+
 		data.Worker = std::thread(WorkerLoop, std::ref(data));
 	}
 
@@ -616,6 +798,8 @@ namespace Dingo
 			data.Worker.join();
 			data.StopWorker = false;
 		}
+
+		s_RawAssetRoot.clear();
 
 		// Free payloads that completed but were never finalized.
 		for (AsyncResult& result : data.Results)
@@ -636,6 +820,7 @@ namespace Dingo
 
 		data.Registry.clear();
 		data.PathLookup.clear();
+		data.Companions.clear();
 	}
 
 	AssetHandle AssetManager::Import(const std::filesystem::path& path)
@@ -655,11 +840,11 @@ namespace Dingo
 		}
 
 		AssetMetadata metadata;
-		metadata.Handle = AssetHandle();
+		metadata.Handle = AssetHandle::Generate();
 		// A UUID collision is astronomically unlikely, but it would silently overwrite a live
 		// registration - and re-rolling costs one lookup, once, at import time.
-		while (!IsValidAssetHandle(metadata.Handle) || data.Registry.contains(metadata.Handle))
-			metadata.Handle = AssetHandle();
+		while (data.Registry.contains(metadata.Handle))
+			metadata.Handle = AssetHandle::Generate();
 
 		metadata.Type = type;
 		metadata.FilePath = NormalizeRelativePath(data, path);
@@ -772,6 +957,7 @@ namespace Dingo
 
 		UnloadInternal(data, it->second);
 		data.PathLookup.erase(NormalizePathKey(data, it->second.FilePath));
+		data.Companions.erase(handle);
 		data.Registry.erase(it);
 	}
 
@@ -862,8 +1048,15 @@ namespace Dingo
 		for (auto& [handle, metadata] : data.Registry)
 		{
 			if (metadata.State == AssetState::Ready)
+			{
 				Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+				if (data.Companions.contains(handle))
+					StampCompanion(data, metadata);
+			}
 		}
+
+		for (UnmanagedShaderWatch& watch : s_UnmanagedShaderWatches)
+			watch.LastWriteTime = Utils::ReadWriteTime(watch.Target->GetParams().FilePath);
 	}
 
 	uint32_t AssetManager::GetRegisteredCount() const

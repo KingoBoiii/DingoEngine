@@ -43,6 +43,15 @@ namespace Dingo
 		std::array<GamepadType, MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
 
+		GLFWwindow* s_Window = nullptr;
+		CursorMode s_CursorMode = CursorMode::Normal;
+		bool s_RawMouseMotionEnabled = true;
+
+		// Entering/leaving Locked swaps GLFW's virtual and real cursor positions, and
+		// platforms may warp on (re)lock, so the next motion isn't the player's.
+		int s_MouseDeltaSuppressFrames = 0;
+		bool s_MouseDeltaSuppressed = false;
+
 		bool ValidKey(KeyCode keycode) { return static_cast<size_t>(keycode) < MaxKeys; }
 		bool ValidMouseButton(MouseButton button) { return static_cast<size_t>(button) < MaxMouseButtons; }
 		bool ValidGamepad(uint32_t gamepad) { return gamepad < MaxGamepads; }
@@ -95,6 +104,71 @@ namespace Dingo
 
 			return GamepadType::Unknown;
 		}
+
+		int GLFWCursorModeFor(CursorMode mode)
+		{
+			switch (mode)
+			{
+				case CursorMode::Hidden: return GLFW_CURSOR_HIDDEN;
+				case CursorMode::Locked: return GLFW_CURSOR_DISABLED;
+				case CursorMode::Normal:
+				default: return GLFW_CURSOR_NORMAL;
+			}
+		}
+
+		void ApplyCursorModeToWindow()
+		{
+			if (!s_Window)
+				return;
+
+			glfwSetInputMode(s_Window, GLFW_CURSOR, GLFWCursorModeFor(s_CursorMode));
+
+			if (glfwRawMouseMotionSupported())
+			{
+				const bool raw = s_CursorMode == CursorMode::Locked && s_RawMouseMotionEnabled;
+				glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, raw ? GLFW_TRUE : GLFW_FALSE);
+			}
+		}
+
+		void ArmMouseDeltaSuppression()
+		{
+			s_MouseDeltaSuppressFrames = 2;
+
+			if (s_Window)
+			{
+				double x = 0.0, y = 0.0;
+				glfwGetCursorPos(s_Window, &x, &y);
+				s_MousePosition = s_PreviousMousePosition = glm::vec2(static_cast<float>(x), static_cast<float>(y));
+			}
+		}
+
+		void PollGamepads()
+		{
+			for (uint32_t jid = 0; jid < MaxGamepads; jid++)
+			{
+				GamepadState& state = s_CurrentGamepads[jid];
+
+				GLFWgamepadstate glfwState;
+				if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
+				{
+					state = GamepadState{};
+					continue;
+				}
+
+				if (!state.Connected)
+				{
+					const char* name = glfwGetGamepadName(jid);
+					s_GamepadNames[jid] = name ? name : "Unknown Gamepad";
+					s_GamepadTypes[jid] = ClassifyGamepad(jid, s_GamepadNames[jid]);
+				}
+
+				state.Connected = true;
+				for (size_t i = 0; i < GamepadButtonCount; i++)
+					state.Buttons[i] = glfwState.buttons[i] == GLFW_PRESS;
+				for (size_t i = 0; i < GamepadAxisCount; i++)
+					state.Axes[i] = glfwState.axes[i];
+			}
+		}
 	}
 
 	void Input::Update()
@@ -104,31 +178,22 @@ namespace Dingo
 		s_PreviousMousePosition = s_MousePosition;
 		s_MouseScrollDelta = glm::vec2(0.0f); // refilled by scroll callbacks during event polling
 
+		s_MouseDeltaSuppressed = s_MouseDeltaSuppressFrames > 0;
+		if (s_MouseDeltaSuppressFrames > 0)
+			s_MouseDeltaSuppressFrames--;
+
 		s_PreviousGamepads = s_CurrentGamepads;
-		for (uint32_t jid = 0; jid < MaxGamepads; jid++)
-		{
-			GamepadState& state = s_CurrentGamepads[jid];
+		PollGamepads();
+	}
 
-			GLFWgamepadstate glfwState;
-			if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
-			{
-				state = GamepadState{};
-				continue;
-			}
-
-			if (!state.Connected)
-			{
-				const char* name = glfwGetGamepadName(jid);
-				s_GamepadNames[jid] = name ? name : "Unknown Gamepad";
-				s_GamepadTypes[jid] = ClassifyGamepad(jid, s_GamepadNames[jid]);
-			}
-
-			state.Connected = true;
-			for (size_t i = 0; i < GamepadButtonCount; i++)
-				state.Buttons[i] = glfwState.buttons[i] == GLFW_PRESS;
-			for (size_t i = 0; i < GamepadAxisCount; i++)
-				state.Axes[i] = glfwState.axes[i];
-		}
+	void Input::Resume()
+	{
+		// The snapshot from before the pause stays as the previous frame, so the first update after
+		// it sees what changed meanwhile. Gamepads are polled, not fed by events, so refresh them;
+		// the scroll and cursor motion an inactive window collected while paused are dropped.
+		PollGamepads();
+		s_MouseScrollDelta = glm::vec2(0.0f);
+		s_PreviousMousePosition = s_MousePosition;
 	}
 
 	bool Input::IsKeyPressed(KeyCode keycode)
@@ -178,12 +243,49 @@ namespace Dingo
 
 	glm::vec2 Input::GetMouseDelta()
 	{
+		if (s_MouseDeltaSuppressed)
+			return glm::vec2(0.0f);
 		return s_MousePosition - s_PreviousMousePosition;
 	}
 
 	glm::vec2 Input::GetMouseScrollDelta()
 	{
 		return s_MouseScrollDelta;
+	}
+
+	void Input::SetCursorMode(CursorMode mode)
+	{
+		if (s_CursorMode == mode)
+			return;
+
+		s_CursorMode = mode;
+		ApplyCursorModeToWindow();
+		ArmMouseDeltaSuppression();
+	}
+
+	CursorMode Input::GetCursorMode()
+	{
+		return s_CursorMode;
+	}
+
+	void Input::SetRawMouseMotion(bool enabled)
+	{
+		if (s_RawMouseMotionEnabled == enabled)
+			return;
+
+		s_RawMouseMotionEnabled = enabled;
+		if (s_CursorMode == CursorMode::Locked)
+			ApplyCursorModeToWindow();
+	}
+
+	bool Input::IsRawMouseMotionEnabled()
+	{
+		return s_RawMouseMotionEnabled;
+	}
+
+	bool Input::IsRawMouseMotionSupported()
+	{
+		return s_Window && glfwRawMouseMotionSupported();
 	}
 
 	bool Input::IsGamepadConnected(uint32_t gamepad)
@@ -266,6 +368,46 @@ namespace Dingo
 		return s_GamepadDeadzone;
 	}
 
+	bool Input::IsAnyKeyPressed()
+	{
+		for (size_t i = 0; i < MaxKeys; i++)
+		{
+			if (s_CurrentKeys[i] && !s_PreviousKeys[i])
+				return true;
+		}
+		return false;
+	}
+
+	bool Input::IsAnyKeyDown()
+	{
+		for (size_t i = 0; i < MaxKeys; i++)
+		{
+			if (s_CurrentKeys[i])
+				return true;
+		}
+		return false;
+	}
+
+	bool Input::IsAnyMouseButtonPressed()
+	{
+		for (size_t i = 0; i < MaxMouseButtons; i++)
+		{
+			if (s_CurrentMouseButtons[i] && !s_PreviousMouseButtons[i])
+				return true;
+		}
+		return false;
+	}
+
+	bool Input::IsAnyMouseButtonDown()
+	{
+		for (size_t i = 0; i < MaxMouseButtons; i++)
+		{
+			if (s_CurrentMouseButtons[i])
+				return true;
+		}
+		return false;
+	}
+
 	GamepadType Input::RegisterGamepadConnection(uint32_t gamepad, std::string& outName)
 	{
 		if (!ValidGamepad(gamepad))
@@ -317,6 +459,26 @@ namespace Dingo
 	{
 		s_MousePosition = { x, y };
 		s_PreviousMousePosition = { x, y };
+	}
+
+	void Input::AttachWindow(GLFWwindow* window)
+	{
+		s_Window = window;
+		if (!window)
+		{
+			// A graphics-API restart builds a new app whose layers never asked for the old mode.
+			s_CursorMode = CursorMode::Normal;
+			s_MouseDeltaSuppressFrames = 0;
+			s_MouseDeltaSuppressed = false;
+			return;
+		}
+		ApplyCursorModeToWindow();
+	}
+
+	void Input::OnWindowFocusChanged(bool focused)
+	{
+		if (focused && s_CursorMode == CursorMode::Locked)
+			ArmMouseDeltaSuppression();
 	}
 
 }

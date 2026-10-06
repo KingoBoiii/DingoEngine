@@ -86,6 +86,30 @@
             "preLaunchTask": "Build EchoVault Debug"
         },
         {
+            "name": "Debug Candlewick",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Candlewick/Candlewick.exe",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Candlewick",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Candlewick Debug"
+        },
+        {
+            "name": "Debug Marionette",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Marionette/Marionette.exe",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Marionette",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Marionette Debug"
+        },
+        {
             "name": "Debug ArenaShooter",
             "type": "cppvsdbg",
             "request": "launch",

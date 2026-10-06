@@ -12,67 +12,6 @@ namespace
 {
 	using namespace Dingo;
 
-	// Emissive material for orbs / sentry eyes. Reads the engine scene UBO at binding 0
-	// (view-projection) and its own emissive params at binding 1, then adds the emissive
-	// term on top of the vertex colour — the game-side counterpart to the engine's built-in
-	// emissive channel (MaterialParams::SetEmissiveColor/Strength), used here so only these
-	// meshes glow rather than every default-material mesh.
-	constexpr const char* k_EmissiveShaderSource = R"(
-#type vertex
-#version 450
-
-layout(location = 0) in vec3 a_Position;
-layout(location = 1) in vec3 a_Normal;
-layout(location = 2) in vec4 a_Color;
-
-layout(std140, binding = 0) uniform CameraData
-{
-	mat4 ViewProjection;
-	vec4 LightDirection;
-	vec4 Ambient;
-};
-
-layout(location = 0) out vec4 v_Color;
-layout(location = 1) out vec3 v_Normal;
-
-void main()
-{
-	gl_Position = ViewProjection * vec4(a_Position, 1.0);
-	v_Color = a_Color;
-	v_Normal = a_Normal; // consumed so the shared vertex layout's normal isn't flagged unused
-}
-
-#type fragment
-#version 450
-
-layout(location = 0) in vec4 v_Color;
-layout(location = 1) in vec3 v_Normal;
-
-layout(std140, binding = 1) uniform EmissiveParams
-{
-	vec4 EmissiveColor; // rgb
-	vec4 Params;        // x = strength
-};
-
-layout(location = 0) out vec4 o_Color;
-
-void main()
-{
-	// A touch of facet shading from the normal keeps the geometry readable and consumes
-	// the interpolated normal (so the shared layout's attribute is used).
-	float facet = 0.85 + 0.15 * (normalize(v_Normal).y * 0.5 + 0.5);
-	vec3 color = v_Color.rgb * facet + EmissiveColor.rgb * Params.x;
-	o_Color = vec4(color, v_Color.a);
-}
-)";
-
-	// CPU mirror of the binding-1 UBO (std140: two vec4s).
-	struct EmissiveParams
-	{
-		glm::vec4 EmissiveColor{ 1.0f };
-		glm::vec4 Params{ 0.0f }; // x = strength
-	};
-
 	glm::quat YawQuat(float yawRadians)
 	{
 		return glm::angleAxis(yawRadians, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -155,19 +94,15 @@ namespace Dingo
 
 		LoadAudio();
 
-		m_EmissiveShader = Shader::CreateFromSource("EchoVaultEmissive", k_EmissiveShaderSource);
-
-		m_OrbMaterial = Material::Create(MaterialParams()
+		m_OrbMaterial = renderer3D.CreateLitMaterial(MaterialParams()
 			.SetDebugName("OrbEmissive")
-			.SetShader(m_EmissiveShader)
-			.SetCullMode(CullMode::None));
-		m_OrbMaterial->SetUniform(EmissiveParams{ glm::vec4(glm::vec3(COLOR_ORB), 1.0f), glm::vec4(ORB_EMISSIVE, 0.0f, 0.0f, 0.0f) });
+			.SetEmissiveColor(glm::vec3(COLOR_ORB))
+			.SetEmissiveStrength(ORB_EMISSIVE));
 
-		m_SentryEyeMaterial = Material::Create(MaterialParams()
+		m_SentryEyeMaterial = renderer3D.CreateLitMaterial(MaterialParams()
 			.SetDebugName("SentryEyeEmissive")
-			.SetShader(m_EmissiveShader)
-			.SetCullMode(CullMode::None));
-		m_SentryEyeMaterial->SetUniform(EmissiveParams{ glm::vec4(glm::vec3(COLOR_SENTRY_EYE), 1.0f), glm::vec4(SENTRY_EMISSIVE, 0.0f, 0.0f, 0.0f) });
+			.SetEmissiveColor(glm::vec3(COLOR_SENTRY_EYE))
+			.SetEmissiveStrength(SENTRY_EMISSIVE));
 
 		SetupCameraAndLight();
 		BuildCourse();
@@ -277,6 +212,7 @@ namespace Dingo
 		transform.Scale = glm::vec3(0.6f);
 
 		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_ORB)).Material = m_OrbMaterial;
+		entity.AddComponent<PointLightComponent>(PointLightComponent(glm::vec3(COLOR_ORB), ORB_LIGHT_INTENSITY, ORB_LIGHT_RANGE));
 
 		if (m_Context.OrbClip)
 		{
@@ -298,18 +234,21 @@ namespace Dingo
 		Entity entity = GetScene().CreateEntity("Sentry");
 		auto& transform = entity.AddComponent<Transform3DComponent>();
 		transform.Position = a;
-		transform.Scale = { 0.9f, 1.6f, 0.9f };
+		transform.Scale = SENTRY_SCALE;
 
 		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.BoxMesh, COLOR_SENTRY));
 		entity.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Kinematic));
 		entity.AddComponent<BoxCollider3DComponent>();
+		entity.AddComponent<PointLightComponent>(PointLightComponent(glm::vec3(COLOR_SENTRY_EYE), SENTRY_LIGHT_INTENSITY, SENTRY_LIGHT_RANGE));
 
-		// A glowing "eye" child (separate entity) that renders emissive in front of the sentry.
+		// A glowing eye on the sentry's front face (+Z, the way it patrols). Its local values are
+		// in the sentry's scaled space, so they are divided by that scale to keep the eye round.
 		Entity eye = GetScene().CreateEntity("SentryEye");
 		auto& eyeTransform = eye.AddComponent<Transform3DComponent>();
-		eyeTransform.Position = a + glm::vec3(0.0f, 0.4f, 0.0f);
-		eyeTransform.Scale = glm::vec3(0.35f);
+		eyeTransform.Position = SENTRY_EYE_OFFSET / SENTRY_SCALE;
+		eyeTransform.Scale = glm::vec3(SENTRY_EYE_SIZE) / SENTRY_SCALE;
 		eye.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_SENTRY_EYE)).Material = m_SentryEyeMaterial;
+		eye.SetParent(entity, false);
 
 		entity.AddScript<SentryScript>(&m_Context, a, b, speed);
 		return entity;
@@ -420,12 +359,12 @@ namespace Dingo
 
 		UpdateCamera(deltaTime);
 
-		// Pulse the shared emissive materials.
-		const float pulse = 0.75f + 0.25f * std::sin(m_Context.ElapsedTime * 3.0f);
+		// Orb and sentry scripts read GlowPulse to pulse their lights.
+		m_Context.GlowPulse = 0.75f + 0.25f * std::sin(m_Context.ElapsedTime * 3.0f);
 		if (m_OrbMaterial)
-			m_OrbMaterial->SetUniform(EmissiveParams{ glm::vec4(glm::vec3(COLOR_ORB), 1.0f), glm::vec4(ORB_EMISSIVE * pulse, 0.0f, 0.0f, 0.0f) });
+			m_OrbMaterial->SetEmissiveStrength(ORB_EMISSIVE * m_Context.GlowPulse);
 		if (m_SentryEyeMaterial)
-			m_SentryEyeMaterial->SetUniform(EmissiveParams{ glm::vec4(glm::vec3(COLOR_SENTRY_EYE), 1.0f), glm::vec4(SENTRY_EMISSIVE * pulse, 0.0f, 0.0f, 0.0f) });
+			m_SentryEyeMaterial->SetEmissiveStrength(SENTRY_EMISSIVE * m_Context.GlowPulse);
 
 		if (m_Context.TotalOrbs > 0 && m_Context.Collected >= m_Context.TotalOrbs)
 			RequestSceneTransition("Win"); // script-driven Game -> Win transition
@@ -433,9 +372,8 @@ namespace Dingo
 
 	void CourseControllerScript::OnDestroy()
 	{
-		if (m_OrbMaterial)       { m_OrbMaterial->Destroy();       delete m_OrbMaterial;       m_OrbMaterial = nullptr; }
-		if (m_SentryEyeMaterial) { m_SentryEyeMaterial->Destroy(); delete m_SentryEyeMaterial; m_SentryEyeMaterial = nullptr; }
-		if (m_EmissiveShader)    { m_EmissiveShader->Destroy();    m_EmissiveShader = nullptr; }
+		DestroyAndDelete(m_OrbMaterial);
+		DestroyAndDelete(m_SentryEyeMaterial);
 	}
 
 	// ======================================================================
@@ -558,7 +496,7 @@ namespace Dingo
 		if (!physics)
 			return;
 
-		const std::uint32_t bodyId = GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D bodyId = GetScene().GetRuntimeBody3D(GetEntity());
 		if (bodyId == k_InvalidBody3D)
 			return;
 
@@ -584,6 +522,7 @@ namespace Dingo
 
 		transform.SetRotationEuler({ 0.0f, m_Context->ElapsedTime * ORB_SPIN_DEG, 0.0f });
 		transform.Position.y = m_BaseY + std::sin(m_Context->ElapsedTime * 2.5f + m_Phase) * ORB_BOB;
+		GetComponent<PointLightComponent>().Intensity = ORB_LIGHT_INTENSITY * m_Context->GlowPulse;
 
 		if (!m_Context->Player.IsValid())
 			return;
@@ -613,6 +552,8 @@ namespace Dingo
 		m_Facing = glm::normalize(m_Path.B - m_Path.A);
 		if (glm::length(m_Facing) < 0.0001f)
 			m_Facing = { 0.0f, 0.0f, 1.0f };
+
+		m_Eye = GetEntity().FindChild("SentryEye", false);
 	}
 
 	bool SentryScript::HasLineOfSight(const glm::vec3& eye, const glm::vec3& target) const
@@ -641,8 +582,10 @@ namespace Dingo
 		if (m_Cooldown > 0.0f)
 			m_Cooldown -= deltaTime;
 
+		GetComponent<PointLightComponent>().Intensity = SENTRY_LIGHT_INTENSITY * m_Context->GlowPulse;
+
 		Physics3D* physics = GetScene().GetPhysics3D();
-		const std::uint32_t bodyId = GetComponent<RigidBody3DComponent>().RuntimeBody;
+		const PhysicsBodyId3D bodyId = GetScene().GetRuntimeBody3D(GetEntity());
 
 		// Patrol (kinematic ping-pong).
 		if (physics && bodyId != k_InvalidBody3D && deltaTime > 0.0f)
@@ -657,8 +600,9 @@ namespace Dingo
 		if (!m_Context->Player.IsValid() || m_Cooldown > 0.0f)
 			return;
 
-		const glm::vec3 sentryPos = GetComponent<Transform3DComponent>().Position;
-		const glm::vec3 eye = sentryPos + glm::vec3(0.0f, 0.4f, 0.0f);
+		const Transform3DComponent& sentry = GetComponent<Transform3DComponent>();
+		const glm::vec3 sentryPos = sentry.Position;
+		const glm::vec3 eye = m_Eye.IsValid() ? m_Eye.GetWorldPosition() : sentryPos + sentry.Rotation * SENTRY_EYE_OFFSET;
 		const glm::vec3 playerPos = m_Context->Player.GetComponent<Transform3DComponent>().Position;
 		const glm::vec3 playerCenter = playerPos + glm::vec3(0.0f, PLAYER_HEIGHT * 0.5f, 0.0f);
 
@@ -755,11 +699,7 @@ namespace Dingo
 
 	void HudScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ======================================================================
@@ -804,11 +744,7 @@ namespace Dingo
 
 	void MenuControllerScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 
 	// ======================================================================
@@ -857,10 +793,6 @@ namespace Dingo
 
 	void WinControllerScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 }

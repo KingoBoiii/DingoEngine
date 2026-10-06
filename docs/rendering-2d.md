@@ -23,6 +23,10 @@ Do one `BeginScene`/`EndScene` pair per frame for a given camera. Each pair rese
 and then flushes the quad, circle, and text batches, so you can freely mix all three
 kinds of draw call inside one block.
 
+A minimized app that keeps updating (`ApplicationParams::UpdateInBackground`) skips rendering, and
+a block begun then draws nothing (`Renderer::IsFrameSkipped()`), so drawing from `OnUpdate` needs
+no guard. See [In the background](application-and-layers.md#in-the-background).
+
 ### The camera
 
 There is no camera *class* for 2D — you pass a matrix, which keeps the model simple
@@ -101,8 +105,16 @@ float w = font->GetStringWidth(text, size);
 r.DrawText(text, font, { centerX - w * 0.5f, y }, size, { .Color = color });
 ```
 
-`Font::GetStringWidth(text, size)` and `Font::GetBoundingBox(text, size)` let you
-measure and lay out text. Call `font->Destroy()` in `OnDetach`.
+`Font::GetStringWidth(text, size, kerning)` returns the width of the widest line, in the units
+`DrawText` lays glyphs out in — pass the same `Kerning` you draw with. `TextParameters::Centered`
+centers a string in one pass without measuring it first. Call `font->Destroy()` in `OnDetach`.
+
+**Encoding (v0.6.2).** Strings are UTF-8. The atlas bakes Latin-1 (`U+0020`–`U+00FF`), the
+printable General Punctuation (dashes, curly quotes, bullet, ellipsis, primes, guillemets) and
+the euro sign; any other codepoint draws as `?`. A byte that is not valid UTF-8 reads as Latin-1,
+so Latin-1-encoded text still draws. Only the engine itself compiles with MSVC's `/utf-8`: add it
+to your game project too (`buildoptions { "/utf-8" }`), or write non-ASCII literals as escapes
+(`"Caf\xC3\xA9"`), otherwise MSVC reads the source through the system code page.
 
 ## Textures
 
@@ -147,8 +159,9 @@ r.DrawQuad(pos, { height * aspect, height }, tex);
   with a different camera (e.g. a screen-space HUD), open a second block after the
   first.
 
-`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`, and
-`r.GetOutput()` returns the rendered colour texture if you need it.
+`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
+`r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,
+whose image is not a `Texture` you can sample (before v0.6.3 the call read out of bounds).
 
 ---
 

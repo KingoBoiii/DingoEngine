@@ -69,6 +69,8 @@ namespace Dingo
 
 		// Loads and fully decodes a clip (.wav / .ogg). Returns nullptr on failure
 		// (error is logged) — never a broken object, matching Model::LoadFromFile.
+		// A relative filepath is looked up under the asset root first, then the working
+		// directory.
 		virtual std::shared_ptr<AudioClip> LoadClip(const std::filesystem::path& filepath) = 0;
 
 		// --- Playback ---------------------------------------------------------
@@ -96,6 +98,8 @@ namespace Dingo
 		virtual void SetPitch(AudioSoundId sound, float pitch) = 0;
 		virtual void SetLooping(AudioSoundId sound, bool looping) = 0;
 		virtual void SetPosition(AudioSoundId sound, const glm::vec3& position) = 0;
+		// Re-attenuates a live sound; no-op on an invalid / stale handle, same as above.
+		virtual void SetAttenuation(AudioSoundId sound, const SoundAttenuation& attenuation) = 0;
 
 		// --- Global -----------------------------------------------------------
 
@@ -106,6 +110,11 @@ namespace Dingo
 		// Number of currently-active live sounds (playing or paused). For debug/stats
 		// display only.
 		virtual std::uint32_t GetActiveSoundCount() const = 0;
+
+		// Used by every spatialized sound started afterwards without its own
+		// SoundPlayParams::Attenuation, including the positional PlayOneShot.
+		virtual void SetDefaultAttenuation(const SoundAttenuation& attenuation) = 0;
+		virtual const SoundAttenuation& GetDefaultAttenuation() const = 0;
 
 		// --- Listener (single listener; drives all spatialized sounds) --------
 

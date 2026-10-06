@@ -77,7 +77,13 @@ namespace Dingo
 			enabledExtensions.instance.insert(std::string(glfwExt[i]));
 		}
 
-		CreateInstance();
+		const bool instanceCreated = CreateInstance();
+		DE_CORE_VERIFY(instanceCreated, "Failed to create a Vulkan instance. See the log for the missing extensions or layers.");
+		if (!instanceCreated)
+		{
+			return;
+		}
+
 #ifndef DE_DISTRIBUTION
 		CreateDebugMessenger();
 #endif
@@ -148,7 +154,7 @@ namespace Dingo
 		}
 	}
 
-	void VulkanGraphicsContext::CreateInstance()
+	bool VulkanGraphicsContext::CreateInstance()
 	{
 		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #ifndef DE_DISTRIBUTION
@@ -177,14 +183,14 @@ namespace Dingo
 		if (!requiredExtensions.empty())
 		{
 			std::stringstream ss;
-			ss << "Cannot create a Vulkan instance because the following required extension(s) are not supported:";
+			ss << "Cannot create a Vulkan instance because the following required extension(s) are not supported (is a Vulkan driver installed?):";
 			for (const auto& ext : requiredExtensions)
 			{
 				ss << std::endl << "  - " << ext;
 			}
 
-			std::cout << ss.str().c_str() << std::endl;
-			return;
+			DE_CORE_ERROR("{}", ss.str());
+			return false;
 		}
 
 		DE_CORE_TRACE("Enabled Vulkan instance extensions ({}):", enabledExtensions.instance.size());
@@ -215,8 +221,8 @@ namespace Dingo
 				ss << std::endl << "  - " << ext;
 			}
 
-			std::cout << "" << ss.str().c_str() << std::endl;
-			return;
+			DE_CORE_ERROR("{}", ss.str());
+			return false;
 		}
 
 		DE_CORE_TRACE("Enabled Vulkan Layer(s) ({}):", enabledExtensions.layers.size());
@@ -234,8 +240,7 @@ namespace Dingo
 		if (res != vk::Result::eSuccess)
 		{
 			DE_CORE_ERROR("Call to vkEnumerateInstanceVersion failed, error code = {}", nvrhi::vulkan::resultToString(VkResult(res)));
-			DE_CORE_ASSERT(false, "Call to vkEnumerateInstanceVersion failed.");
-			return;
+			return false;
 		}
 
 		const uint32_t minimumVulkanVersion = VK_MAKE_API_VERSION(0, 1, 3, 0);
@@ -263,9 +268,14 @@ namespace Dingo
 			.setPApplicationInfo(&applicationInfo);
 
 		const vk::Result result = vk::createInstance(&instanceCreateInfo, nullptr, &m_VulkanInstance);
-		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create Vulkan instance.");
+		if (result != vk::Result::eSuccess)
+		{
+			DE_CORE_ERROR("vkCreateInstance failed, error code = {}", nvrhi::vulkan::resultToString(VkResult(result)));
+			return false;
+		}
 
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanInstance);
+		return true;
 	}
 
 	void VulkanGraphicsContext::CreateDebugMessenger()
@@ -529,7 +539,8 @@ namespace Dingo
 			.setTextureCompressionBC(true)
 			.setGeometryShader(true)
 			.setImageCubeArray(true)
-			.setDualSrcBlend(true);
+			.setDualSrcBlend(true)
+			.setFillModeNonSolid(m_VulkanPhysicalDevice.getFeatures().fillModeNonSolid);
 
 		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
 			.setShaderDemoteToHelperInvocation(true);

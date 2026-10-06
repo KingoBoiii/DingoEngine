@@ -4,9 +4,35 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <algorithm>
+#include <cstdlib>
+#include <format>
+#include <memory>
 
 namespace
 {
+	// Both primitives are centred on the origin, so a triangle faces outward when its
+	// counter-clockwise normal points away from the centre.
+	uint32_t CountInwardTriangles(const Dingo::Mesh& mesh)
+	{
+		const auto& vertices = mesh.GetVertices();
+		const auto& indices  = mesh.GetIndices();
+
+		uint32_t inward = 0;
+		for (size_t i = 0; i + 2 < indices.size(); i += 3)
+		{
+			const glm::vec3& a = vertices[indices[i + 0]].Position;
+			const glm::vec3& b = vertices[indices[i + 1]].Position;
+			const glm::vec3& c = vertices[indices[i + 2]].Position;
+
+			const glm::vec3 normal = glm::cross(b - a, c - a);
+			if (glm::dot(normal, normal) < 1e-12f)
+				continue;
+			if (glm::dot(normal, a + b + c) <= 0.0f)
+				++inward;
+		}
+		return inward;
+	}
+
 	static constexpr const char* k_ShaderSrc = R"(
 #type vertex
 #version 450
@@ -80,11 +106,47 @@ namespace Dingo
 		m_Material->SetTexture(0, Renderer::GetWhiteTexture());
 		m_Material->SetSampler(0, Renderer::GetClampSampler());
 
-		UploadMesh(m_BoxMesh);
+		const ApplicationCommandLineArgs& args = Application::Get().GetCommandLineArgs();
+		if (auto mesh = args.Get("mesh"); mesh && *mesh == "sphere")
+			m_ShowSphere = true;
+		if (auto angle = args.Get("mesh-angle"); angle && !angle->empty())
+		{
+			m_Rotation   = std::strtof(std::string(*angle).c_str(), nullptr);
+			m_AutoRotate = false;
+		}
+
+		UploadMesh(m_ShowSphere ? m_SphereMesh : m_BoxMesh);
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 100.0f);
 		m_Camera.SetPosition({ 0.0f, 1.5f, 3.0f });
 		m_Camera.SetTarget({ 0.0f, 0.0f, 0.0f });
+
+		RunWindingChecks();
+	}
+
+	void Mesh3DTest::Check(bool condition, const std::string& name)
+	{
+		m_Checks.push_back({ name, condition });
+		if (condition)
+			DE_INFO("[PASS] {}", name);
+		else
+			DE_ERROR("[FAIL] {}", name);
+	}
+
+	void Mesh3DTest::RunWindingChecks()
+	{
+		m_Checks.clear();
+
+		const uint32_t boxInward = CountInwardTriangles(*m_BoxMesh);
+		Check(boxInward == 0, std::format("CreateBox winds every triangle outward ({} inward)", boxInward));
+
+		const glm::uvec2 sphereDetails[] = { { 16, 16 }, { 6, 8 }, { 3, 4 } };
+		for (const glm::uvec2& detail : sphereDetails)
+		{
+			std::unique_ptr<Mesh> sphere(Mesh::CreateSphere(0.5f, detail.x, detail.y));
+			const uint32_t inward = CountInwardTriangles(*sphere);
+			Check(inward == 0, std::format("CreateSphere({}, {}) winds every triangle outward ({} inward)", detail.x, detail.y, inward));
+		}
 	}
 
 	void Mesh3DTest::UploadMesh(Mesh* mesh)
@@ -117,10 +179,10 @@ namespace Dingo
 		m_BoxMesh    = nullptr;
 		m_SphereMesh = nullptr;
 
-		if (m_Material) { m_Material->Destroy(); delete m_Material; m_Material = nullptr; }
-		if (m_Shader)   { m_Shader->Destroy();                       m_Shader   = nullptr; }
-		if (m_VB)       { m_VB->Destroy();                           m_VB       = nullptr; }
-		if (m_IB)       { m_IB->Destroy();                           m_IB       = nullptr; }
+		DestroyAndDelete(m_Material);
+		DestroyAndDelete(m_Shader);
+		DestroyAndDelete(m_VB);
+		DestroyAndDelete(m_IB);
 	}
 
 	void Mesh3DTest::Resize(uint32_t width, uint32_t height)
@@ -142,8 +204,16 @@ namespace Dingo
 		if (m_ShowSphere != wasShowingSphere)
 			UploadMesh(m_ShowSphere ? m_SphereMesh : m_BoxMesh);
 
-		ImGui::Text("Vertices: %u  Indices: %u", m_IndexCount,
-			m_ShowSphere ? m_SphereMesh->GetVertexCount() : m_BoxMesh->GetVertexCount());
+		ImGui::Text("Vertices: %u  Indices: %u",
+			m_ShowSphere ? m_SphereMesh->GetVertexCount() : m_BoxMesh->GetVertexCount(), m_IndexCount);
+
+		ImGui::Separator();
+		ImGui::Text("Winding");
+		for (const CheckResult& check : m_Checks)
+		{
+			ImGui::TextColored(check.Passed ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+				"[%s] %s", check.Passed ? "PASS" : "FAIL", check.Name.c_str());
+		}
 
 		ImGui::Separator();
 		ImGui::Text("Camera");

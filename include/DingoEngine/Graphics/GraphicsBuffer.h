@@ -11,6 +11,7 @@ namespace Dingo
 		std::string DebugName;
 		uint64_t ByteSize = 0;
 		bool IsVolatile = false;
+		uint32_t MaxWritesPerFrame = 8; // Volatile buffers: uploads per frame before Vulkan drops one
 		bool DirectUpload = false;
 		BufferType Type = BufferType::Unknown;
 		GraphicsFormat Format = GraphicsFormat::Unknown;
@@ -33,6 +34,12 @@ namespace Dingo
 		GraphicsBufferParams& SetIsVolatile(bool isVolatile)
 		{
 			IsVolatile = isVolatile;
+			return *this;
+		}
+
+		GraphicsBufferParams& SetMaxWritesPerFrame(uint32_t maxWritesPerFrame)
+		{
+			MaxWritesPerFrame = maxWritesPerFrame;
 			return *this;
 		}
 
@@ -105,11 +112,20 @@ namespace Dingo
 		static GraphicsBuffer* CreateUniformBuffer(uint64_t size, const std::string& debugName = "Uniform Buffer");
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
+		// Never reused, unlike the buffer's address, so a cache keyed on it cannot hand a freed
+		// buffer's bindings to a new buffer allocated at the same address.
+		uint64_t GetId() const { return m_Id; }
+
 	protected:
 		GraphicsBuffer(const GraphicsBufferParams& params)
 			: GenericGraphicsBuffer<const void>(params)
 		{}
 		virtual ~GraphicsBuffer() = default;
+
+	private:
+		static uint64_t AllocateId();
+
+		uint64_t m_Id = AllocateId();
 	};
 
 }

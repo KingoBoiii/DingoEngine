@@ -2,6 +2,9 @@
 
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Core/Ray.h"
+#include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
+#include "DingoEngine/Audio/AudioTypes.h"
 
 #include <glm/glm.hpp>
 
@@ -14,6 +17,7 @@ namespace Dingo
 {
 
 	class Entity;
+	class Animator;
 	class Physics2D;
 	class Physics3D;
 	class CharacterController3D;
@@ -37,14 +41,16 @@ namespace Dingo
 
 		Entity CreateEntity(const std::string& name = std::string());
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
+		// Destroys the entity and every descendant, children first, so a child's OnDestroy still
+		// sees its parent. Called from a script, the whole subtree waits for the end of the pass.
 		void DestroyEntity(Entity entity);
 		bool IsValid(Entity entity) const;
 
-		// Deep-copies `source` and its built-in components into a new entity (with a fresh
-		// UUID) and returns it. Live physics handles are reset on the copy so the clone
-		// never aliases the source's body/shapes; if physics is running the clone gets its
-		// own body. Attached scripts are NOT cloned. Returns an invalid Entity if `source`
-		// is invalid.
+		// Deep-copies `source`, its built-in components and its whole subtree into new entities
+		// (with fresh UUIDs) and returns the copy of `source`, which gets the same parent. A clone
+		// never shares a physics body, character controller or sound; if physics is running it
+		// gets its own body. Attached scripts are NOT cloned. Returns an invalid Entity if
+		// `source` is invalid.
 		Entity DuplicateEntity(Entity source);
 
 		// Destroys every entity (and its scripts) in the scene; the Scene stays usable.
@@ -66,10 +72,12 @@ namespace Dingo
 		// running without one.)
 		bool IsRunning() const { return m_IsRunning; }
 
-		// Drives every attached ScriptableEntity's OnUpdate, then steps any live
-		// physics world(s) and writes the simulated transforms back. Safe to
-		// create/destroy entities from within a script — destroys are deferred to the
-		// end of the pass.
+		// Drives every attached ScriptableEntity's OnUpdate, advances the animators, then
+		// steps any live physics world(s) and writes the simulated transforms back, so a
+		// kinematic body on a joint follows this frame's pose. Safe to create/destroy
+		// entities from within a script — destroys are deferred to the end of the pass.
+		// deltaTime is capped at 4/60 s for scripts, animation and physics alike, so a
+		// stall runs the scene slow instead of tunnelling bodies through colliders.
 		void OnUpdate(float deltaTime);
 
 		// Issues the 2D entity draw calls (no BeginScene/Clear/EndScene). The
@@ -82,6 +90,11 @@ namespace Dingo
 		// SceneRenderer wraps this; call it directly to compose scene meshes with
 		// custom 3D drawing inside one Begin/EndScene.
 		void RenderEntities3D(Renderer3D& renderer);
+
+		// Submits the scene's light components to the renderer (no BeginScene/EndScene), for
+		// custom 3D passes the same way as RenderEntities3D. A scene without a single light
+		// component gets a default DirectionalLightComponent.
+		void SubmitLights(Renderer3D& renderer);
 
 		// --- Camera -----------------------------------------------------------
 
@@ -161,20 +174,28 @@ namespace Dingo
 
 		Entity GetEntityByUUID(UUID uuid);
 
+		// --- Animation --------------------------------------------------------
+
+		// The entity's Animator, for playing clips from a script; created on first use. Null unless
+		// the entity has an AnimatorComponent and a SkinnedMeshRendererComponent whose Model has a
+		// skeleton. It survives OnStop/OnStart and is freed with the entity or its
+		// AnimatorComponent; a change of Model rebinds it, back to DefaultClip.
+		Animator* GetAnimator(Entity entity);
+
 		// --- Physics (2D + 3D) ------------------------------------------------
 
 		// Starts physics simulation. Creates a 2D world (from the 2D gravity) if any
 		// entity has a RigidBody2DComponent, and a 3D world (from the 3D gravity) if
 		// any has a RigidBody3DComponent — a scene pays only for the dimension it
 		// uses. Each rigid-body entity gets a simulation body (2D bodies also get
-		// their box/circle collider shapes; 3D bodies bake the box/sphere collider in
-		// at creation). After this, OnUpdate steps the live world(s) each frame and
-		// writes the simulated transforms back: 2D onto TransformComponent, 3D onto
-		// Transform3DComponent.
+		// their box/circle collider shapes; 3D bodies bake their box/sphere/capsule/
+		// mesh collider in at creation). After this, OnUpdate steps the live world(s)
+		// each frame and writes the simulated transforms back: 2D onto
+		// TransformComponent, 3D onto Transform3DComponent.
 		void OnPhysicsStart();
 
-		// Tears down both physics worlds and clears the runtime handles on every
-		// rigid body / collider. Safe to call when physics isn't running.
+		// Tears down both physics worlds, and with them every entity's runtime body and
+		// character controller. Safe to call when physics isn't running.
 		void OnPhysicsStop();
 
 		// True while either the 2D or the 3D world is live.
@@ -197,6 +218,11 @@ namespace Dingo
 		// OnPhysicsStart and after OnPhysicsStop, or if the entity has no controller. The
 		// Scene owns it — don't delete it.
 		CharacterController3D* GetCharacterController(Entity entity) const;
+
+		// The entity's simulated body, for the handle-based Physics2D/Physics3D calls (ray-cast
+		// hits, MoveKinematic, IsBodyValid). 0 / k_InvalidBody3D while it has no live body.
+		PhysicsBodyId2D GetRuntimeBody2D(Entity entity) const;
+		PhysicsBodyId3D GetRuntimeBody3D(Entity entity) const;
 
 		// Instantiates a simulation body for a single entity created after
 		// OnPhysicsStart (e.g. a projectile or enemy spawned at runtime). Routes to
@@ -234,10 +260,14 @@ namespace Dingo
 		// (e.g. entity.GetComponent<AudioSourceComponent>() then Scene::PlayAudioSource).
 		void PlayAudioSource(Entity entity);
 
-		// Stops an entity's currently-playing sound (if any) and resets its
-		// RuntimeSound to k_InvalidSound. No-op if the entity has no
-		// AudioSourceComponent or nothing is playing.
+		// Stops an entity's currently-playing sound, after which GetRuntimeSound returns
+		// k_InvalidSound. No-op if nothing is playing.
 		void StopAudioSource(Entity entity);
+
+		// The sound the entity's AudioSourceComponent last started, for AudioEngine calls such
+		// as a volume fade; k_InvalidSound if none was started or it was stopped. One that ended
+		// by itself keeps its stale handle, so use AudioEngine::IsPlaying to ask if it still plays.
+		AudioSoundId GetRuntimeSound(Entity entity) const;
 
 		void SetClearColor(const glm::vec4& clearColor) { m_ClearColor = clearColor; }
 		const glm::vec4& GetClearColor() const { return m_ClearColor; }
@@ -270,17 +300,8 @@ namespace Dingo
 		// in-flight iteration. No-op when the entity has no script.
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
+		Entity DuplicateSubtree(Entity source, Entity parent);
 		Entity Wrap(std::uint32_t handle);
-
-		// Opaque runtime body handles for an entity (0 / k_InvalidBody3D when it has
-		// none). The backend types stay out of this header by working through them.
-		std::uint64_t GetRuntimeBody(Entity entity) const;
-		std::uint32_t GetRuntimeBody3D(Entity entity) const;
-
-		// Resets every live backend handle on an entity to its "none" sentinel, without
-		// touching the backend itself. Used by DuplicateEntity so a clone never aliases
-		// the source's body/shape/controller/sound.
-		void ResetRuntimeHandles(std::uint32_t handle);
 
 	private:
 		Internal::SceneData* m_Data = nullptr;

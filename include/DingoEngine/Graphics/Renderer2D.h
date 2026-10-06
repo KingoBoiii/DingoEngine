@@ -83,11 +83,14 @@ namespace Dingo
 			bool Centered = false;
 		};
 
+		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes
+		// Latin-1, the printable General Punctuation and the euro sign; anything else draws '?'.
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 
 		// Per-scene render statistics: reset each BeginScene, complete after EndScene
-		// (they reflect the most recent BeginScene/EndScene pass, not a whole frame).
+		// (they reflect the most recent BeginScene/EndScene pass, not a whole frame). A scene begun
+		// while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
 			uint32_t DrawCalls = 0;     // batches actually flushed (quad + circle + text)
@@ -103,6 +106,7 @@ namespace Dingo
 		const Statistics& GetStatistics() const { return m_Statistics; }
 		const Renderer2DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
 
+		// Always nullptr today: Renderer2D draws into the swap chain, whose image is not a Texture.
 		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{
@@ -288,6 +292,7 @@ namespace Dingo
 		Renderer2DParams m_Params;
 		Statistics m_Statistics;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
+		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
 
 		struct CameraData
 		{

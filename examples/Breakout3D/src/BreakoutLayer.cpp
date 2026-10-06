@@ -392,10 +392,10 @@ namespace Dingo
 		s.VertexBufferBase = nullptr;
 		s.IndexBufferBase  = nullptr;
 
-		if (s.VertexBuffer)  { s.VertexBuffer->Destroy();  s.VertexBuffer  = nullptr; }
-		if (s.IndexBuffer)   { s.IndexBuffer->Destroy();   s.IndexBuffer   = nullptr; }
-		if (s.MeshMaterial)  { s.MeshMaterial->Destroy();  delete s.MeshMaterial; s.MeshMaterial = nullptr; }
-		if (s.MeshShader)    { s.MeshShader->Destroy();    s.MeshShader    = nullptr; }
+		DestroyAndDelete(s.VertexBuffer);
+		DestroyAndDelete(s.IndexBuffer);
+		DestroyAndDelete(s.MeshMaterial);
+		DestroyAndDelete(s.MeshShader);
 	}
 
 	void BreakoutLayer::BeginScene3D(const PerspectiveCamera& camera, const glm::vec4& clearColor)

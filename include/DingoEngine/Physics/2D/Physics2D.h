@@ -70,6 +70,12 @@ namespace Dingo
 
 		virtual void SetLinearVelocity(PhysicsBodyId2D body, const glm::vec2& velocity) = 0;
 		virtual glm::vec2 GetLinearVelocity(PhysicsBodyId2D body) const = 0;
+		virtual float GetAngularVelocity(PhysicsBodyId2D body) const = 0; // radians per second
+
+		// Gives a Kinematic body the velocity that brings it to the target position and angle
+		// (radians) over deltaTime, which must match the next Step's. Unlike a teleport it pushes
+		// what it meets. No-op on a body that isn't Kinematic.
+		virtual void MoveKinematic(PhysicsBodyId2D body, const glm::vec2& targetPosition, float targetAngle, float deltaTime) = 0;
 		virtual void ApplyLinearImpulse(PhysicsBodyId2D body, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake = true) = 0;
 		virtual void ApplyLinearImpulseToCenter(PhysicsBodyId2D body, const glm::vec2& impulse, bool wake = true) = 0;
 		virtual void ApplyForceToCenter(PhysicsBodyId2D body, const glm::vec2& force, bool wake = true) = 0;

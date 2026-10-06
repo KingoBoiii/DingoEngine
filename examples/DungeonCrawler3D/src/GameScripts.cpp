@@ -5,8 +5,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <format>
+#include <utility>
 
 namespace
 {
@@ -69,6 +71,28 @@ void main()
 		glm::vec4 GlowColor{ 1.0f, 0.95f, 0.55f, 1.0f };
 		glm::vec4 Params{ 0.0f };
 	};
+
+	// --seed=<n> picks the first dungeon only (0 = random). The flag lives outside the controller
+	// because R restarts the scene with a brand-new controller.
+	unsigned int TakeSeedArgument()
+	{
+		static bool s_Taken = false;
+		if (std::exchange(s_Taken, true))
+			return 0;
+
+		auto seed = Dingo::Application::Get().GetCommandLineArgs().Get("seed");
+		if (!seed)
+			return 0;
+
+		unsigned int value = 0;
+		const auto [end, error] = std::from_chars(seed->data(), seed->data() + seed->size(), value);
+		if (error != std::errc() || end != seed->data() + seed->size())
+		{
+			DE_WARN("--seed={} is not a whole number from 0 to 4294967295; using a random dungeon.", *seed);
+			return 0;
+		}
+		return value;
+	}
 }
 
 namespace Dingo
@@ -85,6 +109,8 @@ namespace Dingo
 		m_Context.SphereMesh = renderer3D.GetSphereMesh();
 
 		LoadCharacterModels(); // hero / skeleton OBJs -> m_Context.HeroMesh / SkeletonMesh
+
+		m_Night = Application::Get().GetCommandLineArgs().Get("night").has_value();
 
 		GetScene().SetClearColor({ 0.05f, 0.06f, 0.09f, 1.0f });
 		GetScene().SetGravity(GRAVITY); // vec3 overload -> the 3D world
@@ -140,28 +166,12 @@ namespace Dingo
 	void DungeonControllerScript::OnDestroy()
 	{
 		// The controller owns the treasures' glow material + shader (created in OnStart).
-		if (m_GlowMaterial)
-		{
-			m_GlowMaterial->Destroy();
-			delete m_GlowMaterial;
-			m_GlowMaterial = nullptr;
-		}
-		if (m_GlowShader)
-		{
-			m_GlowShader->Destroy();
-			m_GlowShader = nullptr;
-		}
+		DestroyAndDelete(m_GlowMaterial);
+		DestroyAndDelete(m_GlowShader);
 
 		// The controller owns the character part models (loaded in OnStart).
 		for (Model*& model : m_PartModels)
-		{
-			if (model)
-			{
-				model->Destroy();
-				delete model;
-				model = nullptr;
-			}
-		}
+			DestroyAndDelete(model);
 	}
 
 	void DungeonControllerScript::LoadCharacterModels()
@@ -195,9 +205,11 @@ namespace Dingo
 
 	void DungeonControllerScript::BuildDungeon()
 	{
-		// Fresh procedural layout every build (Seed 0 => random). Rooms + corridors,
-		// guaranteed connected — see DungeonGenerator.h.
-		const GeneratedDungeon dungeon = GenerateDungeon(DungeonParams{});
+		// A fresh procedural layout every build unless --seed fixes the first one (Seed 0 => random).
+		// Rooms + corridors, guaranteed connected — see DungeonGenerator.h.
+		DungeonParams params;
+		params.Seed = TakeSeedArgument();
+		const GeneratedDungeon dungeon = GenerateDungeon(params);
 		m_GridCols = dungeon.Width;
 		m_GridRows = dungeon.Height;
 		m_Context.Seed = dungeon.Seed;
@@ -305,6 +317,8 @@ namespace Dingo
 		transform.Scale = glm::vec3(0.6f);
 
 		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.BoxMesh, COLOR_TREASURE)).Material = m_GlowMaterial;
+		if (m_Night)
+			entity.AddComponent<PointLightComponent>(PointLightComponent(glm::vec3(COLOR_TREASURE), TREASURE_LIGHT_INTENSITY, TREASURE_LIGHT_RANGE));
 		entity.AddScript<TreasureScript>(&m_Context, phase);
 		return entity;
 	}
@@ -320,7 +334,19 @@ namespace Dingo
 		camera.Primary = true;
 		m_CameraEntity.AddComponent<Transform3DComponent>();
 
-		GetScene().CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		DirectionalLightComponent& sun = GetScene().CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		if (m_Night)
+		{
+			sun.Color = NIGHT_MOON_COLOR;
+			sun.Intensity = NIGHT_MOON_INTENSITY;
+			sun.Ambient = NIGHT_AMBIENT;
+
+			// Its own entity, moved above the hero each frame: a light at the body's centre would
+			// sit inside the hero's mesh and leave it unlit.
+			m_Lantern = GetScene().CreateEntity("Lantern");
+			m_Lantern.AddComponent<Transform3DComponent>();
+			m_Lantern.AddComponent<PointLightComponent>(PointLightComponent(LANTERN_COLOR, LANTERN_INTENSITY, LANTERN_RANGE));
+		}
 	}
 
 	void DungeonControllerScript::UpdateCamera()
@@ -331,6 +357,9 @@ namespace Dingo
 		const glm::vec3 focus = m_Context.Player.IsValid()
 			? m_Context.Player.GetComponent<Transform3DComponent>().Position
 			: glm::vec3(0.0f);
+
+		if (m_Lantern.IsValid())
+			m_Lantern.GetComponent<Transform3DComponent>().Position = focus + LANTERN_OFFSET;
 
 		const glm::vec3 eye = focus + CAMERA_OFFSET;
 		const glm::vec3 target = focus + glm::vec3(0.0f, 0.5f, 0.0f);
@@ -689,10 +718,6 @@ namespace Dingo
 
 	void HudScript::OnDestroy()
 	{
-		if (m_Font)
-		{
-			m_Font->Destroy();
-			m_Font = nullptr;
-		}
+		DestroyAndDelete(m_Font);
 	}
 }

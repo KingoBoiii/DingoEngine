@@ -67,10 +67,12 @@ namespace Dingo
 
 	}
 
-	std::vector<uint32_t> ShaderCompiler::CompileGLSL(ShaderType shaderType, const std::string& source, const std::string& name, const std::string& entryPoint, bool optimize, bool assertOnFailure)
+	std::vector<uint32_t> ShaderCompiler::CompileGLSL(ShaderType shaderType, const std::string& source, const std::string& name, const std::string& entryPoint, bool optimize, bool assertOnFailure, const std::vector<ShaderDefine>& defines)
 	{
 		shaderc::Compiler compiler;
 		shaderc::CompileOptions compileOptions;
+		for (const ShaderDefine& define : defines)
+			compileOptions.AddMacroDefinition(define.Name, define.Value);
 		compileOptions.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
 		compileOptions.SetOptimizationLevel(optimize ? shaderc_optimization_level_performance : shaderc_optimization_level_zero);
 		compileOptions.SetGenerateDebugInfo();
@@ -366,7 +368,7 @@ namespace Dingo
 	}
 #endif
 
-	std::vector<uint8_t> ShaderCompiler::CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel, bool assertOnFailure)
+	std::vector<uint8_t> ShaderCompiler::CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel, bool assertOnFailure, const std::vector<ShaderDefine>& defines)
 	{
 #ifdef DE_PLATFORM_WINDOWS
 		// SM 5.0 (DX11) has no NonUniformResourceIndex — strip the nonuniformEXT wrapper so
@@ -374,7 +376,7 @@ namespace Dingo
 		const std::string& processedSource = (shaderModel < 51) ? StripNonUniformQualifier(source) : source;
 
 		// Step 1: GLSL → SPIR-V (use zero optimization to improve HLSL translation quality)
-		auto spirv = CompileGLSL(shaderType, processedSource, name, "main", false, assertOnFailure);
+		auto spirv = CompileGLSL(shaderType, processedSource, name, "main", false, assertOnFailure, defines);
 		if (spirv.empty())
 			return {};
 

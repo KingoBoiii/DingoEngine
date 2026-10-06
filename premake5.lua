@@ -33,7 +33,10 @@ workspace "DingoEngine"
             symbols "On"
             editandcontinue "Off"
             buildoptions { "-fsanitize=address" }
-            linkoptions { "-fsanitize=address" }
+            -- The Vulkan SDK's shaderc / SPIRV prebuilts are not ASan builds, and the STL's
+            -- container annotations must agree across every object or the link fails with
+            -- LNK2038. cl embeds /INFERASANLIBS, so the linker needs no ASan flag of its own.
+            defines { "_DISABLE_STRING_ANNOTATION", "_DISABLE_VECTOR_ANNOTATION" }
 
 	    filter "system:windows"
 		    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
@@ -64,8 +67,9 @@ BundledVendorLibs = table.concat({
 }, " ")
 
 -- Every exe that links the engine also loads Assimp's DLLs (and their zlib /
--- pugixml / poly2tri deps) at startup, so they have to sit next to the binary or
--- it dies with STATUS_DLL_NOT_FOUND before main. Call this once per project;
+-- pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime — so
+-- they have to sit next to the binary or it dies with STATUS_DLL_NOT_FOUND before
+-- main. Call this once per project;
 -- it appends the per-configuration copy step and clears the filter again.
 -- The source dir is baked to an absolute path at generation time because
 -- %{wks.location} expands to empty inside an included project's postbuild scope.
@@ -78,6 +82,9 @@ function copyAssimpRuntime()
 
     filter "configurations:Release or configurations:Distribution"
         postbuildcommands { '{COPY} "' .. releaseBin .. '" "%{cfg.targetdir}"' }
+
+    filter "configurations:Debug-ASan"
+        postbuildcommands { '{COPY} "$(VCToolsInstallDir)bin\\Hostx64\\x64\\clang_rt.asan_dynamic-x86_64.dll" "%{cfg.targetdir}"' }
 
     filter {}
 end
@@ -165,12 +172,14 @@ group "Engine"
 			"src/**.h",
 			"src/**.c",
 			"src/**.hpp",
-			"src/**.cpp"
+			"src/**.cpp",
+			"src/**/Shaders/*.glsl"
 		}
-	
+
 		includedirs {
 			"include",
 			"src",
+			"%{cfg.objdir}/Embedded",
 			"%{IncludeDir.spdlog}",
 			"%{IncludeDir.glfw}",
 			"%{IncludeDir.vulkan}",
@@ -201,6 +210,22 @@ group "Engine"
 		defines {
 			"GLFW_INCLUDE_NONE"
 		}
+
+		filter "files:src/**/Shaders/*.glsl"
+			buildmessage "Embedding %{file.name}"
+			buildcommands {
+				'"' .. _PREMAKE_COMMAND .. '" --file="' .. path.join(_MAIN_SCRIPT_DIR, "scripts/embed.lua")
+					.. '" --input="%{file.abspath}" --output="%{cfg.objdir}/Embedded/%{file.name}.inl" embed'
+			}
+			buildinputs { path.join(_MAIN_SCRIPT_DIR, "scripts/embed.lua") }
+			buildoutputs { "%{cfg.objdir}/Embedded/%{file.name}.inl" }
+
+		-- Debug loads engine shaders from the source tree so they hot-reload. Release and
+		-- Distribution always run the embedded copy, so they never carry a build-machine path or pick
+		-- up a source file the C++ wasn't built against. A published Debug lib still carries the
+		-- builder's path, which falls back to the embedded copy wherever that path doesn't exist.
+		filter "configurations:Debug or configurations:Debug-ASan"
+			defines { 'DE_ENGINE_SHADER_DIR="' .. path.join(_MAIN_SCRIPT_DIR, "src/DingoEngine/Graphics/Shaders") .. '"' }
 
 		filter "system:windows"
 			systemversion "latest"
@@ -295,4 +320,6 @@ group "Examples"
     include "examples/AngryBirds"
     include "examples/DungeonCrawler3D"
     include "examples/EchoVault"
+    include "examples/Candlewick"
+    include "examples/Marionette"
 group ""

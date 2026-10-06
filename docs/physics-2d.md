@@ -10,7 +10,8 @@ your `TransformComponent`s.
 The simulation backend is [Box2D](https://box2d.org/) (v3), but — exactly like the
 EnTT-based ECS — it is an internal detail: **no Box2D type appears in any public
 header**, and your game never includes or links Box2D. Bodies and shapes are
-referred to through opaque handles stored on the components.
+referred to through opaque handles the engine keeps for each entity;
+`Scene::GetRuntimeBody2D(entity)` returns the body's handle (0 while it has none).
 
 > World units are metres. Because the physics world shares the coordinate space of
 > your orthographic camera, 1 world unit = 1 metre = 1 Box2D unit. Tune sizes,
@@ -96,8 +97,10 @@ scene.OnPhysicsStop();
 
 `Scene::OnUpdate` runs your `ScriptableEntity` behaviours first (so a script can
 apply forces this frame), then steps the world and copies each body's position and
-rotation onto its `TransformComponent`. Rendering afterwards just draws the synced
-transforms — no extra work needed.
+rotation onto its `TransformComponent` (as a local value under a parent, see
+[Bodies under a parent](#bodies-under-a-parent-v071)). Rendering afterwards just draws the synced
+transforms — no extra work needed. A frame longer than 4/60 s is cut to that for scripts and
+physics alike, so a stall runs the scene slow instead of tunnelling bodies.
 
 Destroying an entity (`Entity::Destroy()` / `Scene::DestroyEntity`) automatically
 releases its physics body and shapes.
@@ -137,6 +140,27 @@ scene.ApplyLinearImpulseToCenter(entity, { 0.0f, 10.0f }); // instant change in 
 scene.ApplyLinearImpulse(entity, impulse, worldPoint);     // off-center => adds spin
 scene.ApplyForceToCenter(entity, { 0.0f, 50.0f });         // continuous push (per step)
 ```
+
+To move a kinematic body smoothly (a moving platform), give it a target each frame through the
+world: `scene.GetPhysics2D()->MoveKinematic(scene.GetRuntimeBody2D(entity), position, angleRadians,
+deltaTime)` sets the velocity that reaches the target in one step, so it carries and pushes the
+bodies it meets. `GetAngularVelocity` reads a body's spin in radians per second.
+
+## Bodies under a parent (v0.7.1)
+
+A body on a child entity ([Parenting](scenes-and-ecs.md#parenting-v071)) is built from the
+entity's **world** position and rotation. Collider sizes still come from the entity's own `Size`,
+which is never inherited.
+
+| Body | Rule |
+|---|---|
+| Dynamic | Simulated in world space. The engine writes back the local position and rotation that put it where Box2D did, so moving the parent doesn't drag it. Nested dynamic bodies are written back parents first. |
+| Kinematic with a parent | Driven with `MoveKinematic` every step to where its world transform will be at the end of that step, predicting a moving ancestor's body from its velocity. A kinematic root is still yours to move. |
+| Static | Its collider is placed once and stays put while its sprite follows the parent, so don't parent static bodies to anything that moves. |
+
+Bodies in one hierarchy collide like any others, so keep a child's collider clear of its
+ancestors'. Box2D builds and reads angles through fast approximations of sin, cos and atan2, so a
+body's angle can differ from its transform's by about a tenth of a degree.
 
 ## Collisions
 

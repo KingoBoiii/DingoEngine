@@ -37,10 +37,14 @@ namespace Dingo
 		void SetPitch(AudioSoundId sound, float pitch) override;
 		void SetLooping(AudioSoundId sound, bool looping) override;
 		void SetPosition(AudioSoundId sound, const glm::vec3& position) override;
+		void SetAttenuation(AudioSoundId sound, const SoundAttenuation& attenuation) override;
 
 		void SetMasterVolume(float volume) override;
 		float GetMasterVolume() const override;
 		std::uint32_t GetActiveSoundCount() const override;
+
+		void SetDefaultAttenuation(const SoundAttenuation& attenuation) override;
+		const SoundAttenuation& GetDefaultAttenuation() const override;
 
 		void SetListenerPosition(const glm::vec3& position) override;
 		void SetListenerOrientation(const glm::vec3& forward, const glm::vec3& up) override;
@@ -55,6 +59,7 @@ namespace Dingo
 
 	private:
 		Internal::MiniAudioData* m_Data = nullptr;
+		SoundAttenuation m_DefaultAttenuation;
 	};
 
 }
