@@ -80,12 +80,15 @@ namespace Dingo
 		// Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not
 		// redone later: data written once belongs in a DirectUpload buffer. Code that records into
 		// GetCommandList() itself, or calls Begin/Close/Execute, must check IsFrameSkipped() first.
+		// A BeginFrame that gets no swap-chain image to draw into (Vulkan, a window that can't be
+		// presented to) reports IsFrameSkipped() too, with the same no-ops, though its command list
+		// is open and its EndFrame still runs.
 		static void SkipFrame();
 		static bool IsFrameSkipped();
 
-		// Thread-safe: records the new size and returns. The swap chain is recreated on the
-		// render thread at the next safe point (after Present, before the next image acquire) --
-		// resizing it here would race the frame currently in flight.
+		// Thread-safe: records the new size and returns. The swap chain is recreated at the next
+		// safe point: on the render thread after Present, before the next image acquire, or in a
+		// BeginFrame that has no image yet. Resizing it here would race the frame in flight.
 		static void QueueResize(int32_t width, int32_t height);
 
 		/**************************************************

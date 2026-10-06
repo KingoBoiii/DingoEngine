@@ -199,6 +199,7 @@ namespace Dingo
 		}
 
 		m_ImageAcquired = false;
+		m_ImageWaitPending = false;
 
 		// Acquire the next image. If the swap chain is out of date (e.g. the window moved to a
 		// display with a different size/DPI), recreate it and retry so we return a valid image
@@ -228,8 +229,7 @@ namespace Dingo
 		if (result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR)
 		{
 			m_ImageAcquired = true;
-			// Schedule the wait. The actual wait operation will be submitted when the app executes any command list.
-			graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
+			m_ImageWaitPending = true;
 		}
 		else
 		{
@@ -238,6 +238,16 @@ namespace Dingo
 			// submitting/presenting a stale image index.
 			DE_CORE_ERROR("Failed to acquire swapchain image, error code = {}", std::string(nvrhi::vulkan::resultToString(VkResult(result))));
 		}
+	}
+
+	void VulkanSwapChain::QueueImageWait()
+	{
+		if (!m_ImageWaitPending)
+			return;
+
+		m_ImageWaitPending = false;
+		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+		graphicsContext.m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, m_AcquireSemaphores[m_AcquireSemaphoreIndex], 0);
 	}
 
 	void VulkanSwapChain::Present()
@@ -249,6 +259,10 @@ namespace Dingo
 		{
 			return;
 		}
+
+		// Nothing waited on the acquire yet, so the empty submit below must, before it signals the
+		// same semaphore again.
+		QueueImageWait();
 
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 

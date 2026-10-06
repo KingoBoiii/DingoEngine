@@ -32,7 +32,7 @@ namespace Dingo
 		CommandList* CommandList    = nullptr;
 		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
 		uint64_t     FrameIndex     = 0;       // bumped per command-list Begin, so never 0 while recording
-		bool         FrameSkipped   = false;   // main thread only: from SkipFrame to the next BeginFrame
+		bool         FrameSkipped   = false;   // main thread only: from SkipFrame, or a BeginFrame without an image, to the next BeginFrame
 
 		std::thread             RenderThread;
 		std::mutex              Mutex;
@@ -44,7 +44,8 @@ namespace Dingo
 		bool HasPendingFrame = false;
 
 		// Written by the main thread (resize events), consumed by the render thread
-		// between Present and the next AcquireNextImage. Guarded by Mutex.
+		// between Present and the next AcquireNextImage, or by a BeginFrame without an image.
+		// Guarded by Mutex.
 		bool    HasPendingResize    = false;
 		int32_t PendingResizeWidth  = 0;
 		int32_t PendingResizeHeight = 0;
@@ -129,6 +130,24 @@ namespace Dingo
 		s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
 		s_Data->FrameConsumed = false;
 		s_Data->FrameSkipped = false;
+
+		// The render thread acquires after each present, which gets no image while the window is
+		// minimized. The first frame after the restore would draw into a stale one, so the resize
+		// that restored the window is applied and an image acquired here, while that thread is parked.
+		if (!s_Data->SwapChain->IsImageAcquired())
+		{
+			const bool resize = s_Data->HasPendingResize;
+			const int32_t width = s_Data->PendingResizeWidth;
+			const int32_t height = s_Data->PendingResizeHeight;
+			s_Data->HasPendingResize = false;
+			lock.unlock();
+
+			if (resize)
+				s_Data->SwapChain->Resize(width, height);
+			s_Data->SwapChain->AcquireNextImage();
+			s_Data->FrameSkipped = !s_Data->SwapChain->IsImageAcquired();
+		}
+
 		Begin();
 	}
 
@@ -238,6 +257,7 @@ namespace Dingo
 	void Renderer::Execute()
 	{
 		s_Data->HasPendingFrame = false;
+		s_Data->SwapChain->QueueImageWait();
 		s_Data->CommandList->Execute();
 	}
 

@@ -354,6 +354,10 @@ void main()
 
 	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList)
 	{
+		// A list of its own is the first thing Render submits; a shared one is the frame's, whose
+		// owner queues the wait.
+		if (!sharedCmdList)
+			swapchain->QueueImageWait();
 		return Render(viewport, GetOrCreatePipeline(swapchain), static_cast<NvrhiFramebuffer*>(swapchain->GetCurrentFramebuffer())->m_FramebufferHandle, sharedCmdList);
 	}
 
