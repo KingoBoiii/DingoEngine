@@ -270,6 +270,18 @@ AI-vs-AI bouts), `--freeze --pose=<clip>@<s>` with `--debug-hitbox` (a frozen fr
 `--fixed-dt=<s>` for repeatable runs. Marionette also found engine gaps, filed in
 [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md#8-found-by-marionette-v08).
 
+## v0.8.1 — Winding and Culling
+A point release for two bugs found by *Headstone*, whose custom night material started culling back
+faces. No custom `Material` could cull an engine mesh correctly: `CullMode::Back`, the default,
+drew boxes and every loaded model inside out, and the one workaround, `CullMode::Front`, read like
+the opposite of what it did.
+- **`Material` passes `MaterialParams::FrontCounterClockwise` to its pipeline** ([#68](https://github.com/KingoBoiii/DingoEngine/issues/68)). It used to drop the flag, so every material treated clockwise triangles as front faces.
+- **`Mesh::CreateSphere` is wound counter-clockwise seen from outside** ([#69](https://github.com/KingoBoiii/DingoEngine/issues/69)), like `CreateBox` and loaded models. A sphere used as a triangle-mesh collider is now solid from outside.
+- **`MaterialParams::FrontCounterClockwise` defaults to `true`**, so a plain `MaterialParams()` culls back faces correctly on Vulkan, D3D11 and D3D12. **Behaviour change**: code that culled with `CullMode::Front` to work around #68 should switch to `CullMode::Back`. Lit materials still draw both faces.
+- `PipelineParams::SetFrontCounterClockwise` joins the other pipeline setters.
+
+**Test**: the Mesh 3D Test checks at start that `CreateBox` and `CreateSphere` (at three detail levels) wind every triangle outward, and takes `--mesh=box|sphere` and `--mesh-angle=<deg>`. The Model 3D Test's models, which used to draw inside out, now show their outside.
+
 ## v0.9 — Shadows, Post-processing & VFX
 The visual milestone — and the first one that inherits its dependencies instead of inventing them.
 v0.7 gives it lights worth casting shadows from, v0.5's emissive channel and v0.7's light budget give

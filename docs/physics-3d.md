@@ -117,7 +117,9 @@ crate.AddComponent<MeshCollider3DComponent>(MeshCollider3DComponent(crateMesh, t
   a warning. A Dynamic hull needs volume: a flat mesh (a single quad) is rejected.
 - **Triangles are one-sided.** A triangle collides only from the side its counter-clockwise winding
   faces (the side its normal points to). `Renderer3D` draws both sides, so a mesh with inverted
-  winding looks right but lets bodies fall through from outside.
+  winding looks right but lets bodies fall through from outside. The engine's own meshes face
+  outward; before v0.8.1 `Mesh::CreateSphere` faced inward, so a sphere mesh collider was hollow
+  from outside.
 - **Thin geometry needs `ContinuousCollision` for fast bodies.** A triangle has no thickness, so a
   body that moves farther than its own radius in one step passes straight through it — a fast
   projectile, even at 60 fps. (A `Scene` already takes one collision step per 1/60 s, so ordinary
