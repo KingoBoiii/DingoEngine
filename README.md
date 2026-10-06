@@ -34,8 +34,8 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 
 ## Roadmap
 
-Currently at **v0.8.1**, which fixes back-face culling for custom materials, on top of v0.8.0: the animation engine work (skinned models, an animator with blending, layers and timeline events, joint sockets, and in-place model hot-reload) and its example game, *Marionette*. Before it, v0.7.0 shipped the lighting engine and *Candlewick*, v0.7.1 the transform hierarchy, and v0.7.2 a choice to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
-[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1–v0.7.2, v0.8.1) and what each
+Currently at **v0.8.2**, which lets DirectX 12 start on a machine without a GPU and makes Vulkan report a missing driver instead of crashing, after v0.8.1 fixed back-face culling for custom materials. Both sit on v0.8.0: the animation engine work (skinned models, an animator with blending, layers and timeline events, joint sockets, and in-place model hot-reload) and its example game, *Marionette*. Before it, v0.7.0 shipped the lighting engine and *Candlewick*, v0.7.1 the transform hierarchy, and v0.7.2 a choice to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1–v0.7.2, v0.8.1–v0.8.2) and what each
 example is built to demonstrate.
 
 | Version | Milestone | Example game | Status |

@@ -28,7 +28,10 @@ for things that are **wrong or surprising in code that already ships**.
   through their colliders). Fixed in v0.7.2: K14 (the test framework crashed when its window was
   minimized) and K20 (from v0.7.0 a minimized window skipped every layer's `OnUpdate` with no way
   to opt out, so games that pump a network or a simulation there froze; found bumping Headstone to
-  v0.7.1, filed and fixed together by `ApplicationParams::UpdateInBackground`).
+  v0.7.1, filed and fixed together by `ApplicationParams::UpdateInBackground`). Fixed in v0.8.2,
+  both found and fixed together on a machine with no GPU: K26 (DirectX 12 refused WARP, the only
+  adapter there, and asserted) and K27 (Vulkan without a driver crashed on a null instance instead
+  of reporting it).
 - **The codebase carries no `TODO`/`FIXME`/`HACK` markers**, so nothing below came from scavenging
   in-source notes. Every entry was found by reading the code, or by hitting it while building a game on
   the engine.

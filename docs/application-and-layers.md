@@ -85,6 +85,12 @@ GraphicsAPI ParseGraphicsAPI(const ApplicationCommandLineArgs& args)
 }
 ```
 
+On a machine without a GPU (a virtual machine, a build server), DirectX 11 and DirectX 12 run on
+WARP, Windows' software rasterizer: DirectX 12 falls back to it with a warning when no hardware
+adapter supports feature level 12_0 (since v0.8.2). Vulkan needs an installed driver; without one,
+start-up stops with an error that names the missing instance extensions. WARP draws on the CPU, so
+it is slow: fine for running a game, not for measuring it.
+
 ## The Application object
 
 Subclass `Application` and override `OnInitialize()` to push your layers:
