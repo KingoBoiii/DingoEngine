@@ -52,6 +52,21 @@ namespace Dingo
 		return bestAdapter;
 	}
 
+	static IDXGIAdapter1* PickWarpAdapter(IDXGIFactory4* factory)
+	{
+		IDXGIAdapter1* adapter = nullptr;
+		if (FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter))))
+			return nullptr;
+
+		if (FAILED(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, _uuidof(ID3D12Device), nullptr)))
+		{
+			adapter->Release();
+			return nullptr;
+		}
+
+		return adapter;
+	}
+
 	DirectX12GraphicsContext::DirectX12GraphicsContext(const GraphicsParams& params)
 		: NvrhiGraphicsContext(params)
 	{}
@@ -76,6 +91,12 @@ namespace Dingo
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to create DXGI factory.");
 
 		m_DXGIAdapter = PickHardwareAdapter(m_DXGIFactory);
+		if (!m_DXGIAdapter)
+		{
+			m_DXGIAdapter = PickWarpAdapter(m_DXGIFactory);
+			if (m_DXGIAdapter)
+				DE_CORE_WARN("DirectX 12: no hardware GPU supports feature level 12_0, falling back to WARP (software rendering).");
+		}
 		DE_CORE_ASSERT(m_DXGIAdapter, "No suitable DirectX 12 GPU found.");
 
 		{
@@ -89,7 +110,10 @@ namespace Dingo
 			m_AdapterInfo.VendorID = desc.VendorId;
 			m_AdapterInfo.DeviceID = desc.DeviceId;
 			m_AdapterInfo.DedicatedVideoMemory = desc.DedicatedVideoMemory;
-			m_AdapterInfo.DeviceType = desc.DedicatedVideoMemory > 0 ? AdapterDeviceType::Discrete : AdapterDeviceType::Integrated;
+			if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+				m_AdapterInfo.DeviceType = AdapterDeviceType::Software;
+			else
+				m_AdapterInfo.DeviceType = desc.DedicatedVideoMemory > 0 ? AdapterDeviceType::Discrete : AdapterDeviceType::Integrated;
 		}
 
 		hr = D3D12CreateDevice(m_DXGIAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&m_D3D12Device));
