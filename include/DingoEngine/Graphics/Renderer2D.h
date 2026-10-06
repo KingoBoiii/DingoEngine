@@ -56,6 +56,11 @@ namespace Dingo
 		void BeginScene(const glm::mat4& projectionViewMatrix);
 		void EndScene();
 
+		// Quads, circles and text batch separately, and EndScene draws every quad, then every circle,
+		// then all text. Flush draws what has been submitted so far, so what comes after lands on top
+		// of it; a scene does it between sprites, circles and text to keep them in z order.
+		void Flush();
+
 		void Clear(const glm::vec4& clearColor);
 
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);

@@ -95,7 +95,8 @@ namespace Dingo
 		CircleRendererComponent(const CircleRendererComponent&) = default;
 	};
 
-	// Drawn at the entity's world position and turned by its world rotation (TransformComponent).
+	// Drawn at the entity's world position and turned by its world rotation (TransformComponent), in
+	// z order with sprites and circles; at equal z, above them.
 	struct TextComponent
 	{
 		std::string Text;

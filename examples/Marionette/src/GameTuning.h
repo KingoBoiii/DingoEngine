@@ -454,6 +454,8 @@ namespace Dingo
 	inline constexpr float HUD_TRAIL_DELAY      = 0.5f;
 	inline constexpr float HUD_TRAIL_RATE       = 0.5f;
 	inline constexpr float HUD_FADE_Z           = 0.5f;
+	// Above the fade, which the text fades with by itself: a scene draws text in z order with sprites.
+	inline constexpr float HUD_TEXT_Z           = 0.6f;
 	inline constexpr float HUD_FADE_MARGIN      = 1.0f;
 	inline constexpr float HUD_FADE_IN_SECONDS  = 0.5f;
 	inline constexpr float HUD_FADE_OUT_SECONDS = 0.5f;

@@ -302,6 +302,8 @@ namespace Dingo
 
 	inline constexpr glm::vec4 COLOR_FADE          = { 0.0f, 0.0f, 0.0f, 1.0f };
 	inline constexpr float HUD_FADE_Z              = 0.5f;
+	// Above the pause dim and the fade: a scene draws text in z order with its sprites.
+	inline constexpr float HUD_TEXT_Z              = 0.6f;
 
 	inline constexpr glm::vec4 COLOR_METER_BG      = { 0.07f, 0.06f, 0.06f, 0.88f };
 	inline constexpr glm::vec4 COLOR_METER_LIT     = { 1.0f, 0.7f, 0.26f, 1.0f };

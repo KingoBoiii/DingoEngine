@@ -310,12 +310,17 @@ void main() {
 
 	void Renderer2D::EndScene()
 	{
-		if (m_SceneSkipped)
-			return;
-
 		// Submit whatever each pass has accumulated since its last flush. The bulk
 		// of the work for large scenes already happened in mid-frame flushes; these
 		// just drain the final partial batch (no-op when empty).
+		Flush();
+	}
+
+	void Renderer2D::Flush()
+	{
+		if (m_SceneSkipped)
+			return;
+
 		FlushQuad();
 		FlushCircle();
 		FlushText();
