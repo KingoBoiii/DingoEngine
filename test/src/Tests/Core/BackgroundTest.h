@@ -64,6 +64,9 @@ namespace Dingo
 		float m_StretchMaxDeltaTime = 0.0f;
 		bool m_StretchRenderMismatch = false;
 		uint32_t m_StretchSpaceEdges = 0;
+		float m_ShownAspect = 1.0f;
+		float m_StretchMinimizedAspect = 1.0f;
+		bool m_StretchAspectKept = true;
 		uint32_t m_Stretches = 0;
 		std::string m_LastStretch;
 
