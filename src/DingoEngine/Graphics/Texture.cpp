@@ -59,6 +59,17 @@ namespace Dingo
 		return texture;
 	}
 
+	void Texture::SaveToFile(const std::filesystem::path& path, std::function<void(bool)> done)
+	{
+		const bool flip = !m_Params.IsRenderTarget;
+		ReadPixels([path, flip, done = std::move(done)](const TexturePixels& pixels)
+		{
+			const bool saved = !pixels.Data.empty() && FileSystem::WriteImage(path, pixels.Width, pixels.Height, 4, pixels.Data.data(), flip);
+			if (done)
+				done(saved);
+		});
+	}
+
 	uint32_t Texture::NextGeneration()
 	{
 		static std::atomic<uint32_t> s_Next{ 1 };

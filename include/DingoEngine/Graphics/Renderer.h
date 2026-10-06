@@ -11,6 +11,8 @@
 
 #include <glm/glm.hpp>
 
+#include <functional>
+
 namespace Dingo
 {
 
@@ -185,7 +187,17 @@ namespace Dingo
 		static void RenderThreadLoop();
 		static Framebuffer* GetCurrentTarget();
 
+		// Runs fn on the main thread at the start of the next frame, or at Shutdown, once the
+		// render thread has submitted the frame being recorded now: for reading back what it drew.
+		static void RunAfterFrame(std::function<void()> fn);
+		static void RunPendingAfterFrame();
+		// While true the main thread may submit a command list of its own: the render thread waits
+		// for the next frame. False from EndFrame until the next BeginFrame or SkipFrame.
+		static bool IsRenderThreadParked();
+
 		static struct RendererData* s_Data;
+
+		friend class NvrhiTexture;
 	};
 
 }

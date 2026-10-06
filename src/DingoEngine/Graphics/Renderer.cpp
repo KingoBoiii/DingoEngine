@@ -50,6 +50,12 @@ namespace Dingo
 		int32_t PendingResizeWidth  = 0;
 		int32_t PendingResizeHeight = 0;
 
+		// Main thread only: run at the next BeginFrame or SkipFrame, or at Shutdown.
+		std::vector<std::function<void()>> AfterFrame;
+		// Main thread only: from BeginFrame or SkipFrame to EndFrame, and before the first frame, the
+		// render thread is parked and the main thread may submit command lists of its own.
+		bool RenderThreadParked = true;
+
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
 		Sampler* PointSampler = nullptr;
@@ -98,11 +104,13 @@ namespace Dingo
 
 		if (s_Data->RenderThread.joinable())
 			s_Data->RenderThread.join();
+		s_Data->RenderThreadParked = true;
 
 		// If the render thread exited before executing the last closed frame,
 		// submit it now to break the NVRHI CommandList <-> TrackedCommandBuffer cycle.
 		if (s_Data->HasPendingFrame)
 			Execute();
+		RunPendingAfterFrame();
 
 		DestroyAndDelete(s_Data->CommandList);
 	}
@@ -126,22 +134,33 @@ namespace Dingo
 
 	void Renderer::BeginFrame()
 	{
-		std::unique_lock<std::mutex> lock(s_Data->Mutex);
-		s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
-		s_Data->FrameConsumed = false;
-		s_Data->FrameSkipped = false;
-
-		// The render thread acquires after each present, which gets no image while the window is
-		// minimized. The first frame after the restore would draw into a stale one, so the resize
-		// that restored the window is applied and an image acquired here, while that thread is parked.
-		if (!s_Data->SwapChain->IsImageAcquired())
+		bool acquire = false;
+		bool resize = false;
+		int32_t width = 0, height = 0;
 		{
-			const bool resize = s_Data->HasPendingResize;
-			const int32_t width = s_Data->PendingResizeWidth;
-			const int32_t height = s_Data->PendingResizeHeight;
-			s_Data->HasPendingResize = false;
-			lock.unlock();
+			std::unique_lock<std::mutex> lock(s_Data->Mutex);
+			s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
+			s_Data->FrameConsumed = false;
+			s_Data->FrameSkipped = false;
+			s_Data->RenderThreadParked = true;
 
+			// The render thread acquires after each present, which gets no image while the window is
+			// minimized. The first frame after the restore would draw into a stale one, so the resize
+			// that restored the window is applied and an image acquired below, while that thread is parked.
+			acquire = !s_Data->SwapChain->IsImageAcquired();
+			if (acquire)
+			{
+				resize = s_Data->HasPendingResize;
+				width = s_Data->PendingResizeWidth;
+				height = s_Data->PendingResizeHeight;
+				s_Data->HasPendingResize = false;
+			}
+		}
+
+		RunPendingAfterFrame();
+
+		if (acquire)
+		{
 			if (resize)
 				s_Data->SwapChain->Resize(width, height);
 			s_Data->SwapChain->AcquireNextImage();
@@ -156,7 +175,9 @@ namespace Dingo
 		{
 			std::unique_lock<std::mutex> lock(s_Data->Mutex);
 			s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
+			s_Data->RenderThreadParked = true;
 		}
+		RunPendingAfterFrame();
 		s_Data->FrameSkipped = true;
 
 		// The render thread collects after each present and stays parked until the next
@@ -169,6 +190,20 @@ namespace Dingo
 		return s_Data && s_Data->FrameSkipped;
 	}
 
+	void Renderer::RunAfterFrame(std::function<void()> fn)
+	{
+		s_Data->AfterFrame.push_back(std::move(fn));
+	}
+
+	void Renderer::RunPendingAfterFrame()
+	{
+		// A callback may queue more for the frame after.
+		std::vector<std::function<void()>> pending;
+		pending.swap(s_Data->AfterFrame);
+		for (std::function<void()>& fn : pending)
+			fn();
+	}
+
 	void Renderer::EndFrame()
 	{
 		Close();
@@ -176,8 +211,14 @@ namespace Dingo
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
 			s_Data->HasFrame        = true;
 			s_Data->HasPendingFrame = true;
+			s_Data->RenderThreadParked = false;
 		}
 		s_Data->FrameReadyCV.notify_one();
+	}
+
+	bool Renderer::IsRenderThreadParked()
+	{
+		return s_Data && s_Data->RenderThreadParked;
 	}
 
 	void Renderer::QueueResize(int32_t width, int32_t height)
