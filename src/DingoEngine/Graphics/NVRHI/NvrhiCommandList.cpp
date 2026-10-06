@@ -80,7 +80,7 @@ namespace Dingo
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading buffer.");
 		DE_CORE_ASSERT(buffer, "Uniform buffer is null.");
 
-		m_CommandListHandle->writeBuffer(static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle, data, size, offset);
+		static_cast<NvrhiGraphicsBuffer*>(buffer)->Write(m_CommandListHandle, data, size, offset);
 	}
 
 	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
