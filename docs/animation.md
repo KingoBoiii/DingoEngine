@@ -171,7 +171,8 @@ names can play. Several characters can share one set of animations that way
 ([Retargeting](#retargeting)); keep the library loaded for as long as an animator plays its clips.
 Animation-only Collada and BVH files read as clip libraries too (load them with `LoadFromFile`; the
 AssetManager does not recognise those extensions). A library that also carries a preview mesh (KayKit's
-hold their mannequin) loads that mesh as well; there is no clips-only option yet.
+hold their mannequin) loads that mesh as well; there is no clips-only option yet
+([#100](https://github.com/KingoBoiii/DingoEngine/issues/100)).
 
 See `examples/Marionette` (`GameAssets`, `Moveset`): five KayKit libraries, one per category of clip,
 serve four characters.
@@ -733,7 +734,7 @@ building it showed:
   `Enabled` because, before v0.8.3, a poller of a disabled animator read its last frame's events
   again and again ([#81](https://github.com/KingoBoiii/DingoEngine/issues/81)).
 - Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
-  no payload.
+  no payload ([#103](https://github.com/KingoBoiii/DingoEngine/issues/103)).
 
 ## Sockets
 
@@ -943,13 +944,13 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 - **Models load on the main thread**, one asset a frame when loaded asynchronously.
 - **Embedded textures are skipped.** An image embedded in a GLB gives its submesh no
   `DiffuseTexture`, and nothing is logged. Keep the PNG beside the file and put it in a lit material,
-  as Marionette does for its characters.
+  as Marionette does for its characters ([#99](https://github.com/KingoBoiii/DingoEngine/issues/99)).
 
 Not in v0.8:
 
 | Item | Where it lives |
 |---|---|
-| Root motion | A v0.8.x stretch. Use in-place clips and move the body yourself. Moving it by a clip's travel while the pose also moves the hips counts the travel twice: Marionette instead pays each move's net hips travel over its fade-out, and moves a dodge over its `dash` range. |
+| Root motion | A v0.8.x stretch, [#104](https://github.com/KingoBoiii/DingoEngine/issues/104). Use in-place clips and move the body yourself. Moving it by a clip's travel while the pose also moves the hips counts the travel twice: Marionette instead pays each move's net hips travel over its fade-out, and moves a dodge over its `dash` range. |
 | IK (foot, look-at) | v0.9 or later, or a module. |
 | Additive layers, state-machine graph assets | Later. Game code drives `Play`. |
 | Morph targets (blend shapes) | Later. |
