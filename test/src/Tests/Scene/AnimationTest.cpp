@@ -752,6 +752,29 @@ namespace Dingo
 				std::format("a layer fades in over the pose below and Stop fades it back out ({:.1e}, {:.1e})", start, end));
 		}
 		{
+			// Four fades on a layer, then a fifth that freezes their mix; one animator shows the layer
+			// throughout, the other only once it has frozen.
+			auto frozenMix = [&](float weight)
+			{
+				Animator animator(&skeleton);
+				animator.Play(walk);
+				animator.SetLayer(1, AnimationLayer().SetMask(k_UpperBody).SetWeight(weight));
+				animator.Play(survey, 1.0f, 1);
+				animator.Play(run, 1.0f, 1);
+				animator.Play(walk, 1.0f, 1);
+				animator.Update(0.3f);
+				animator.Play(survey, 1.0f, 1);
+				animator.SetLayerWeight(1, 1.0f);
+				animator.Update(0.0f);
+				return std::vector<JointPose>(animator.GetLocalPoses().begin(), animator.GetLocalPoses().end());
+			};
+			const std::vector<JointPose> shown = frozenMix(1.0f);
+			const float hiddenGap = PoseGap(frozenMix(0.0f), shown);
+			const float mixed = PoseGap(PoseAt(skeleton, walk, 0.3f), shown);
+			Check(hiddenGap < 1e-6f && mixed > 1e-2f,
+				std::format("a layer at weight 0 freezes the mix its states reached, as a shown one does, not the pose it last showed ({:.1e})", hiddenGap));
+		}
+		{
 			// The way a script drives it: Walk played every frame, the one-shot once.
 			Animator animator(&skeleton);
 			animator.Play(walk);
