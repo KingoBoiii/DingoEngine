@@ -20,7 +20,7 @@ namespace Dingo
 
 	enum class AudioAttenuationModel : std::uint8_t
 	{
-		None,
+		None,        // no distance falloff; still panned from Position
 		Inverse,     // 1/distance, clamped
 		Linear,      // reaches MinGain at MaxDistance when Rolloff == 1; needs a finite MaxDistance
 		Exponential,
