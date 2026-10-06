@@ -1,11 +1,13 @@
 #include "depch.h"
 #include "DingoEngine/Core/Input.h"
+#include "DingoEngine/Core/XInput.h"
 
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 
 namespace Dingo
@@ -42,6 +44,12 @@ namespace Dingo
 		std::array<std::string, MaxGamepads> s_GamepadNames{};
 		std::array<GamepadType, MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
+
+		using RumbleClock = std::chrono::steady_clock;
+		constexpr int k_NoXInputUser = -1;
+		// Each joystick id's XInput user index, k_NoXInputUser while it has none.
+		std::array<int, MaxGamepads> s_XInputUsers = []() { std::array<int, MaxGamepads> users; users.fill(k_NoXInputUser); return users; }();
+		std::array<std::optional<RumbleClock::time_point>, MaxGamepads> s_RumbleEnds{};
 
 		GLFWwindow* s_Window = nullptr;
 		CursorMode s_CursorMode = CursorMode::Normal;
@@ -140,6 +148,43 @@ namespace Dingo
 				glfwGetCursorPos(s_Window, &x, &y);
 				s_MousePosition = s_PreviousMousePosition = glm::vec2(static_cast<float>(x), static_cast<float>(y));
 			}
+		}
+
+		bool IsXInputJoystick(int jid)
+		{
+			// GLFW's GUID for an XInput device starts with "xinput" in hex.
+			const char* guid = glfwGetJoystickGUID(jid);
+			return guid && std::strncmp(guid, "78696e707574", 12) == 0;
+		}
+
+		// GLFW gives the XInput pads it detects the lowest free joystick ids, walking the user indices
+		// in order; walking the unpaired user indices and ids the same way pairs them as GLFW did. It
+		// runs when a joystick connects (GLFW reports them one at a time, lowest user index first) and
+		// when the window opens, for the ones GLFW found at start-up.
+		void PairXInputJoysticks()
+		{
+			const uint32_t connected = Internal::XInput::GetConnectedMask();
+			uint32_t user = 0;
+			for (int jid = 0; jid < static_cast<int>(MaxGamepads); ++jid)
+			{
+				if (s_XInputUsers[jid] != k_NoXInputUser || !glfwJoystickPresent(jid) || !IsXInputJoystick(jid))
+					continue;
+
+				auto paired = [](uint32_t index) { return std::find(s_XInputUsers.begin(), s_XInputUsers.end(), static_cast<int>(index)) != s_XInputUsers.end(); };
+				while (user < Internal::XInput::k_MaxUsers && (!(connected & (1u << user)) || paired(user)))
+					++user;
+				if (user >= Internal::XInput::k_MaxUsers)
+					break;
+
+				s_XInputUsers[jid] = static_cast<int>(user++);
+			}
+		}
+
+		void StopRumble(uint32_t gamepad)
+		{
+			if (s_RumbleEnds[gamepad] && s_XInputUsers[gamepad] != k_NoXInputUser)
+				Internal::XInput::SetVibration(static_cast<uint32_t>(s_XInputUsers[gamepad]), 0.0f, 0.0f);
+			s_RumbleEnds[gamepad].reset();
 		}
 
 		void PollGamepads()
@@ -368,6 +413,47 @@ namespace Dingo
 		return s_GamepadDeadzone;
 	}
 
+	bool Input::SetGamepadRumble(float lowFrequency, float highFrequency, float seconds, uint32_t gamepad)
+	{
+		if (!IsGamepadRumbleSupported(gamepad))
+			return false;
+
+		if (!(seconds > 0.0f))
+		{
+			StopGamepadRumble(gamepad);
+			return true;
+		}
+
+		if (!Internal::XInput::SetVibration(static_cast<uint32_t>(s_XInputUsers[gamepad]), lowFrequency, highFrequency))
+			return false;
+
+		// Capped so an infinite duration can't overflow the clock: eleven days is "until stopped".
+		const float capped = std::min(seconds, 1.0e6f);
+		s_RumbleEnds[gamepad] = RumbleClock::now() + std::chrono::duration_cast<RumbleClock::duration>(std::chrono::duration<float>(capped));
+		return true;
+	}
+
+	void Input::StopGamepadRumble(uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad))
+			StopRumble(gamepad);
+	}
+
+	bool Input::IsGamepadRumbleSupported(uint32_t gamepad)
+	{
+		return IsGamepadConnected(gamepad) && s_XInputUsers[gamepad] != k_NoXInputUser;
+	}
+
+	void Input::UpdateRumble()
+	{
+		const RumbleClock::time_point now = RumbleClock::now();
+		for (uint32_t gamepad = 0; gamepad < MaxGamepads; ++gamepad)
+		{
+			if (s_RumbleEnds[gamepad] && now >= *s_RumbleEnds[gamepad])
+				StopRumble(gamepad);
+		}
+	}
+
 	bool Input::IsAnyKeyPressed()
 	{
 		for (size_t i = 0; i < MaxKeys; i++)
@@ -433,6 +519,20 @@ namespace Dingo
 		return type;
 	}
 
+	void Input::OnJoystickConnected()
+	{
+		PairXInputJoysticks();
+	}
+
+	void Input::OnJoystickDisconnected(uint32_t joystick)
+	{
+		if (!ValidGamepad(joystick))
+			return;
+
+		s_RumbleEnds[joystick].reset();
+		s_XInputUsers[joystick] = k_NoXInputUser;
+	}
+
 	void Input::UpdateKeyState(KeyCode key, bool pressed)
 	{
 		if (ValidKey(key))
@@ -466,13 +566,18 @@ namespace Dingo
 		s_Window = window;
 		if (!window)
 		{
-			// A graphics-API restart builds a new app whose layers never asked for the old mode.
+			// A graphics-API restart builds a new app whose layers never asked for the old mode, and
+			// a pad left rumbling would go on after the app.
 			s_CursorMode = CursorMode::Normal;
 			s_MouseDeltaSuppressFrames = 0;
 			s_MouseDeltaSuppressed = false;
+			for (uint32_t gamepad = 0; gamepad < MaxGamepads; ++gamepad)
+				StopRumble(gamepad);
+			s_XInputUsers.fill(k_NoXInputUser);
 			return;
 		}
 		ApplyCursorModeToWindow();
+		PairXInputJoysticks();
 	}
 
 	void Input::OnWindowFocusChanged(bool focused)

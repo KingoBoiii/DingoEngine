@@ -288,6 +288,11 @@ namespace Dingo
 		s_JoystickEventCallback = &m_Data.EventCallback;
 		glfwSetJoystickCallback([](int jid, int event)
 		{
+			if (event == GLFW_CONNECTED)
+				Input::OnJoystickConnected();
+			else if (event == GLFW_DISCONNECTED)
+				Input::OnJoystickDisconnected(static_cast<uint32_t>(jid));
+
 			if (!s_JoystickEventCallback || !(*s_JoystickEventCallback))
 				return;
 
