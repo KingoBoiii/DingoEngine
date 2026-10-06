@@ -9,7 +9,7 @@ namespace Dingo
 	class NvrhiFramebuffer : public Framebuffer
 	{
 	public:
-		NvrhiFramebuffer(const FramebufferParams& params) : Framebuffer(params)
+		NvrhiFramebuffer(const FramebufferParams& params) : Framebuffer(params), m_Width(params.Width), m_Height(params.Height)
 		{}
 		virtual ~NvrhiFramebuffer() = default;
 

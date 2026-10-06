@@ -38,6 +38,11 @@ namespace Dingo
 	class Renderer2D
 	{
 	public:
+		// Scenes a renderer can begin in one frame. On Vulkan each BeginScene writes the volatile
+		// camera buffer, which has room for this many writes a frame; later scenes draw with a stale camera.
+		static constexpr uint32_t k_MaxScenesPerFrame = 32;
+
+	public:
 		static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
 		static Renderer2D* Create(const Renderer2DParams& params);
 

@@ -282,6 +282,11 @@ namespace Dingo
 		s_Data->RenderTarget = nullptr;
 	}
 
+	Framebuffer* Renderer::GetRenderTarget()
+	{
+		return s_Data->RenderTarget;
+	}
+
 	/**************************************************
 	***		RESOURCE UPLOAD							***
 	**************************************************/

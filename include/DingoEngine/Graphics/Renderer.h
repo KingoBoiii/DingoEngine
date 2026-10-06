@@ -147,6 +147,8 @@ namespace Dingo
 		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain.
 		static void SetRenderTarget(Framebuffer* framebuffer);
 		static void ResetRenderTarget();
+		// The override, or null while draws go to the swap chain.
+		static Framebuffer* GetRenderTarget();
 
 		static CommandList*  GetCommandList();
 

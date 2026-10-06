@@ -262,7 +262,13 @@ void main() {
 		m_QuadVertexPositions[2] = { 0.5f,  0.5f, 0.0f, 1.0f };
 		m_QuadVertexPositions[3] = { -0.5f,  0.5f, 0.0f, 1.0f };
 
-		m_CameraUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData));
+		m_CameraUniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer2D_CameraUBO")
+			.SetByteSize(sizeof(CameraData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		m_TextureSlots[0] = Renderer::GetWhiteTexture();
 		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
