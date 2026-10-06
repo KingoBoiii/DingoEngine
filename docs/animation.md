@@ -357,7 +357,8 @@ const std::span<const glm::mat4> palette = animator.GetSkinningPalette();
 
 An `Animator` constructed without a skeleton, or given a null one, plays nothing. `SetSkeleton(s)`
 binds another skeleton and returns to its rest pose with nothing playing; layer settings and
-parameters stay. An `Animator` can be copied.
+parameters stay, and the ranges that were open end at the next `Update` ([Ranges](#ranges)). An
+`Animator` can be copied.
 
 **What it plays.** `Play(state, fadeSeconds = 0, layer = 0)` takes an `AnimationState`; `Play(clip,
 ...)` is shorthand for `AnimationState::Clip(clip)`.
@@ -386,7 +387,8 @@ parameters stay. An `Animator` can be copied.
   over the ones below. When one reaches full weight everything under it is dropped. Blending between
   states lerps translation and scale and takes the shortest-path normalised lerp of rotations. A fifth
   state while four are still fading freezes the mix so far into one held pose (it shows in
-  `GetStates` as `Frozen`) and fades in over that, so a burst of `Play` calls never pops.
+  `GetStates` as `Frozen`) and fades in over that, so a burst of `Play` calls never pops. A layer at
+  weight 0 freezes the mix its states have reached while hidden, not the last pose it showed.
 
 **Reading it.** Every query but `GetFloat` takes a layer, 0 by default.
 
@@ -621,7 +623,8 @@ private:
 ```
 
 An `AnimationEvent` has `Name` (a `std::string_view`), `Time` (where the mark sits on the clip, in
-seconds), `Type` (`Instant`, `RangeBegin` or `RangeEnd`), `Clip` and `Layer`.
+seconds), `Type` (`Instant`, `RangeBegin` or `RangeEnd`), `Clip` and `Layer`. `Clip` is null only for
+the `RangeEnd` of a range that was open when the animator was bound to another skeleton.
 
 - **When.** `OnAnimationEvent` runs in the animate pass: after every script's `OnUpdate` and before
   physics, once per event, in playback order. A `DestroyEntity` from the handler waits for the end of
@@ -640,8 +643,9 @@ seconds), `Type` (`Instant`, `RangeBegin` or `RangeEnd`), `Clip` and `Layer`.
   ```
 
   The list holds the last `Update`'s events until the next one. A script's `OnUpdate` runs *before*
-  the animate pass, so it sees the previous frame's events and ranges. A disabled animator keeps
-  reporting its last update's events.
+  the animate pass, so it sees the previous frame's events and ranges. The animate pass empties the
+  list of an animator whose `AnimatorComponent` is disabled (`ClearEventsThisFrame`), so it reports
+  no events while its open ranges stay active.
 
 ### Which clip fires
 
@@ -687,11 +691,12 @@ A range that opened gets its `RangeEnd`:
   or renames it): it ends at the next `Update`, with the name it began with.
 - When the entity's `AnimatorComponent` is removed: its script hears the `RangeEnd` in the next
   animate pass (`Animator::GetOpenRangeEnds` gives the same events to code that drops an animator).
+- When the animator is bound to another skeleton (`SetSkeleton`, which a scene does when the entity's
+  model changes to one with other joints): it ends at the next `Update`, with a null `Clip`, since
+  the old model may be gone.
 
 `IsEventActive("hitbox")` is true between the begin and the end. A range of zero length opens and
-closes in one go. The one exception is binding the animator to another skeleton (`SetSkeleton`, which
-a scene does when a model's joints change): that resets the animator and drops open ranges without a
-`RangeEnd`. An end that arrives with no begin fires nothing.
+closes in one go. An end that arrives with no begin fires nothing.
 
 ### Names
 
@@ -724,9 +729,9 @@ building it showed:
 - **A mark at the start of a clip needs a state that catches up.** A looping state that takes over
   does not fire a mark at time 0, so the `parry` window at the start of a block raise plays on a
   clip with `SetLoop(false)`.
-- **Slow the animator with `AnimatorComponent::Speed` for a hit-stop, not `Enabled`.** A poller of a
-  disabled animator reads its last frame's events again and again
-  ([#81](https://github.com/KingoBoiii/DingoEngine/issues/81)).
+- **A hit-stop slows the animator with `AnimatorComponent::Speed`.** Marionette chose it over
+  `Enabled` because, before v0.8.3, a poller of a disabled animator read its last frame's events
+  again and again ([#81](https://github.com/KingoBoiii/DingoEngine/issues/81)).
 - Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
   no payload.
 

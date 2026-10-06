@@ -163,8 +163,8 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
     belongs in a `DirectUpload` buffer. Code that records into `Renderer::GetCommandList()` itself,
     or calls `Renderer::Begin`/`Close`/`Execute`, must check `Renderer::IsFrameSkipped()` first.
   - `Window::GetWidth()`/`GetHeight()` read 0, so an aspect ratio worked out from them every frame
-    divides by zero. Keep the last one while `Application::IsMinimized()`, or use
-    `Renderer2D::GetViewportSize()`, which keeps the swap chain's size.
+    divides by zero. `Window::GetAspectRatio()` keeps the last one (since v0.8.3; before, it returned
+    NaN), and `Renderer2D::GetViewportSize()` keeps the swap chain's size.
   - The restore logs how many updates ran meanwhile.
 
 Either way, every key and button edge reaches exactly one `OnUpdate`. After a pause, the first
