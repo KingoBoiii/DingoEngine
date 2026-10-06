@@ -24,6 +24,8 @@ namespace Dingo
 		// Where the mark sits on the clip, in seconds.
 		float Time = 0.0f;
 		AnimationEventType Type = AnimationEventType::Instant;
+		// Null for the RangeEnd of a range that was open when the animator was bound to another
+		// skeleton (Animator::SetSkeleton).
 		const AnimationClip* Clip = nullptr;
 		uint32_t Layer = 0;
 	};
@@ -122,7 +124,8 @@ namespace Dingo
 		explicit Animator(const Skeleton* skeleton = nullptr);
 
 		// Binds another skeleton (or none) and returns to its rest pose with nothing playing. Layer
-		// settings and parameters stay.
+		// settings and parameters stay. Ranges open until now end at the next Update, as a seek
+		// ends them, with no Clip: the old skeleton's model may be gone.
 		void            SetSkeleton(const Skeleton* skeleton);
 		const Skeleton* GetSkeleton() const { return m_Skeleton; }
 

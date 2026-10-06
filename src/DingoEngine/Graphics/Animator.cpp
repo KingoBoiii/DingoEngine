@@ -183,8 +183,10 @@ namespace Dingo
 			layer.States.clear();
 			layer.FrozenPose.clear();
 			layer.OneShotPending = false;
-			layer.OpenRanges.clear();
-			layer.CloseRangesOnUpdate = false;
+			// The clips these ranges came from may have gone with the old model.
+			for (OpenRange& range : layer.OpenRanges)
+				range.Clip = nullptr;
+			layer.CloseRangesOnUpdate = !layer.OpenRanges.empty();
 			layer.EventSerial = 0;
 			layer.EventClip = nullptr;
 			layer.Pose = m_RestPoses;
@@ -636,11 +638,16 @@ namespace Dingo
 
 	void Animator::Update(float deltaTime)
 	{
+		m_Events.clear();
 		if (!m_Skeleton)
+		{
+			// Nothing plays without a skeleton, but the ranges open when it was unbound still end.
+			for (uint32_t i = 0; i < m_Layers.size(); ++i)
+				CollectEvents(i, m_Layers[i]);
 			return;
+		}
 
 		SyncSkeleton();
-		m_Events.clear();
 		for (size_t i = 0; i < m_Layers.size(); ++i)
 		{
 			Layer& layer = m_Layers[i];

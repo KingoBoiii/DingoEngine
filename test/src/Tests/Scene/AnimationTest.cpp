@@ -1124,6 +1124,47 @@ namespace Dingo
 			Check(stepped && animator->GetEventsThisFrame().empty(),
 				"a disabled AnimatorComponent's animator reports no events, rather than the frame's it stopped on again and again");
 		}
+		if (Model* other = Model::LoadFromFile(k_FoxPath))
+		{
+			Animator animator(&skeleton);
+			animator.Play(&loop);
+			animator.Update(0.0f);
+			animator.Update(0.3f);
+			const bool open = animator.IsEventActive("window");
+			animator.SetSkeleton(other->GetSkeleton());
+			animator.Update(0.0f);
+			const std::span<const AnimationEvent> events = animator.GetEventsThisFrame();
+			Check(open && events.size() == 1 && CountEvents(events, "window", AnimationEventType::RangeEnd) == 1 && !events[0].Clip && !animator.IsEventActive("window"),
+				"a range open when the animator is bound to another skeleton ends at the next Update, with no clip");
+
+			Scene scene("Rebind checks");
+			Entity fox = scene.CreateEntity("Fox");
+			fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(m_FoxScale)));
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));
+			int lookEnds = 0;
+			bool endedWithoutClip = false;
+			fox.AddScript<EventListener>([&](Entity, const AnimationEvent& event)
+			{
+				if (event.Name == "look" && event.Type == AnimationEventType::RangeEnd)
+				{
+					lookEnds++;
+					endedWithoutClip = !event.Clip;
+				}
+			});
+			scene.OnStart();
+			const Animator* surveying = scene.GetAnimator(fox);
+			for (int frame = 0; frame < 120 && surveying && !surveying->IsEventActive("look"); ++frame)
+				scene.OnUpdate(1.0f / 60.0f);
+			const bool looking = surveying && surveying->IsEventActive("look");
+			fox.GetComponent<SkinnedMeshRendererComponent>().Model = other;
+			scene.OnUpdate(1.0f / 60.0f);
+			const Animator* rebound = scene.GetAnimator(fox);
+			Check(looking && lookEnds == 1 && endedWithoutClip && rebound && !rebound->IsEventActive("look"),
+				"giving an entity a model with another skeleton mid-range sends its script that range's RangeEnd");
+			scene.Clear();
+			DestroyAndDelete(other);
+		}
 		if (Model* roaring = Model::LoadFromFile(k_FoxPath))
 		{
 			// A clip whose first mark is its very start, on an entity spawned by a script mid-frame:
