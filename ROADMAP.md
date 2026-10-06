@@ -267,8 +267,8 @@ pressure this milestone needs to be tested under.
 Its flags make runs checkable: `--check` (asset, movement, combat and AI checks, read from the log),
 `--drive=duel|ramp|circle|strafe|wall` (scripted input), `--autoplay` and `--tournament=N` (seeded
 AI-vs-AI bouts), `--freeze --pose=<clip>@<s>` with `--debug-hitbox` (a frozen frame), and
-`--fixed-dt=<s>` for repeatable runs. Marionette also found engine gaps, filed in
-[ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md#8-found-by-marionette-v08).
+`--fixed-dt=<s>` for repeatable runs. Marionette also found six engine gaps, filed as issues
+[#99](https://github.com/KingoBoiii/DingoEngine/issues/99)–[#104](https://github.com/KingoBoiii/DingoEngine/issues/104).
 
 ## v0.8.1 — Winding and Culling
 A point release for two bugs found by *Headstone*, whose custom night material started culling back

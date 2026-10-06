@@ -144,12 +144,13 @@ Do not write code comments unless absolutely necessary. A comment must earn its 
 ## Docs & reviews
 
 - **Known bugs are GitHub issues** (since 2026-10-06): `bug` for defects and latent bugs, `enhancement` for limitations. `KNOWN-BUGS.md` is gone: the K-numbers plans and reviews cite are issues #73–#83, each with its K-number at the end of its title (K10 → #73 … K25 → #83); K1–K9, K12–K15 and K20 were fixed before the move (`git log -- KNOWN-BUGS.md`).
+- **Engine gaps no milestone takes are `enhancement` issues** too: `ROADMAP-BACKLOG.md` is gone. Its open, unplanned items are #98 (game UI layer) and #99–#104 (Marionette's six); the rest shipped by v0.8.2 or sit in ROADMAP.md's v1.0. Plans cite its items as `#1b`, `#4a`… — the last full version is `git show 5c2e057:ROADMAP-BACKLOG.md`.
 - `docs/` — `getting-started`, `application-and-layers`, `scenes-and-ecs`, `rendering-2d`, `physics-2d`, `physics-3d`, `asset-pipeline`, `lighting`, `animation` (v0.8). Keep the relevant one in step when changing a public API.
 - `.claude/reviews/` — dated code-review reports, findings keyed `B*`/`O*`/`R*` with a per-finding fix status. The current ones are `2026-10-03-v0.8.0-review.md` (the animation engine work: 7 Medium and 8 Low fixed, 11 Low open), `2026-10-04-marionette-review.md` (the v0.8 game), `2026-10-01-v0.7.0-review.md` (the lighting engine work) and `2026-10-01-candlewick-review.md` (the game). Take the *fix-status section*, not the summary sentence, as the state, and confirm against `git log` before believing either. `2026-07-29-v0.6.0-review.md` is closed out; read it before touching the asset/hot-reload path, where it also records why a passing "before" run in an A/B repro is suspect.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0) and [ROADMAP-BACKLOG.md](ROADMAP-BACKLOG.md) (dependency-sequenced engine-gap backlog).
+See [ROADMAP.md](ROADMAP.md) (v0.1 → v1.0).
 
 - **v0.5.1** (merged): input rework + gamepad support.
 - **v0.6.0** (merged, `86abb61`): the asset pipeline described under Key patterns — `AssetManager`, async loading, in-place texture/shader hot-reload, source-hash-validated shader cache, the F6 Assets panel — showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`--test=asset`), then a full review pass (see above).
