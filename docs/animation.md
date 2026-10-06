@@ -725,7 +725,8 @@ building it showed:
   does not fire a mark at time 0, so the `parry` window at the start of a block raise plays on a
   clip with `SetLoop(false)`.
 - **Slow the animator with `AnimatorComponent::Speed` for a hit-stop, not `Enabled`.** A poller of a
-  disabled animator reads its last frame's events again and again (KNOWN-BUGS K23).
+  disabled animator reads its last frame's events again and again
+  ([#81](https://github.com/KingoBoiii/DingoEngine/issues/81)).
 - Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
   no payload.
 
