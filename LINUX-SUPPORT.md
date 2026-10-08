@@ -170,15 +170,14 @@ ran.
 
 **Phase 4 is done except [L26](#l26) and [L27](#l27)** (2026-10-08), one commit per item:
 
-- [L22](#l22) is its own workflow, `build-linux.yml`, on pushes **and pull requests** to master, so a GCC-only
-  break shows up before it lands. Its setup (build packages, LunarG's latest Linux SDK tarball, a static assimp
+- [L22](#l22) is its own workflow, `build-linux.yml`, on pushes to master, like the Windows build (it ran
+  on pull requests too until 2026-10-08). Its setup (build packages, LunarG's latest Linux SDK tarball, a static assimp
   6.0.4 and premake, the last three cached) is the composite action `.github/actions/setup-linux`, which the
   release job shares. Each of Debug, Release and Distribution (the Windows job's configurations; GCC only) builds every project and runs
   `scripts/ci/linux-smoke-test.sh` under Xvfb and llvmpipe with the SDK's validation layer. The script reads
   the test list from `TestLayer.cpp`, finds the examples itself, closes each app through `WM_DELETE_WINDOW`
   (`scripts/ci/close-windows.py`, since Ubuntu's xdotool predates `windowquit`), and fails on a non-zero exit,
-  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. A concurrency group
-  cancels a pull request's superseded runs. The old disabled job in `build-master.yml` is gone.
+  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. The old disabled job in `build-master.yml` is gone.
 - [L23](#l23): the engine's Linux post-build step builds `build/dist/<cfg>/libDingoEngine.a`
   (`scripts/merge-static-libs.sh`, `ar -M` through numbered links, since MRI scripts can't quote paths with
   spaces). The release job ships it with `include/` and `glm/` for Debug, Release and Distribution, plus
