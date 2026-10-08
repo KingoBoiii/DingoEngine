@@ -1,5 +1,6 @@
 #include "CameraRig.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -32,6 +33,17 @@ namespace
 	{
 		const glm::vec2 viewport = Application::Get().GetRenderer2D().GetViewportSize();
 		return viewport.y > 0.0f ? viewport.x / viewport.y : 1.0f;
+	}
+
+	PostProcessSettings KeepPostSettings()
+	{
+		PostProcessSettings settings;
+		settings.Enabled = true;
+		settings.Tone.Operator = ToneMapOperator::Soft;
+		settings.Bloom.Enabled = true;
+		settings.Bloom.Intensity = BLOOM_INTENSITY;
+		settings.Bloom.Threshold = BLOOM_THRESHOLD;
+		return settings;
 	}
 
 	float FitDistance(const TileRect& room, float aspect)
@@ -88,6 +100,8 @@ namespace Dingo
 		camera.PerspFar = CAMERA_FAR;
 		camera.Primary = true;
 		m_Entity.AddComponent<Transform3DComponent>();
+		if (!GetLaunchOptions().NoPost)
+			m_Entity.AddComponent<PostProcessComponent>().Settings = KeepPostSettings();
 
 		Update(0.0f, focus);
 	}

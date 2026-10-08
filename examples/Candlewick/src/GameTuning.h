@@ -72,6 +72,10 @@ namespace Dingo
 	inline constexpr float CAMERA_FAR          = 160.0f;
 	inline constexpr float OVERVIEW_MARGIN     = 0.94f;
 
+	// --- Post chain: Soft leaves everything below 0.8 as it was, so only the flames change ---------
+	inline constexpr float BLOOM_INTENSITY     = 0.35f;
+	inline constexpr float BLOOM_THRESHOLD     = 1.0f;
+
 	// --- Keep geometry (1 tile = 1 m) ---------------------------------------------
 	inline constexpr float TILE_SIZE           = 1.0f;
 	inline constexpr float WALL_HEIGHT         = 2.0f;
@@ -105,8 +109,8 @@ namespace Dingo
 	inline constexpr glm::vec3 LANTERN_COLOR     = { 1.0f, 0.72f, 0.42f };
 	inline constexpr float LANTERN_FLICKER_OIL   = 5.0f;
 	inline constexpr float LANTERN_FLICKER_DEPTH = 0.4f;
-	inline constexpr float LANTERN_EMISSIVE_MIN  = 0.4f;
-	inline constexpr float LANTERN_EMISSIVE_MAX  = 1.1f;
+	inline constexpr float LANTERN_EMISSIVE_MIN  = 0.9f;
+	inline constexpr float LANTERN_EMISSIVE_MAX  = 2.4f;
 
 	// --- Wardens --------------------------------------------------------------------
 	inline constexpr float WARDEN_PATROL_SPEED      = 1.6f;
@@ -134,10 +138,10 @@ namespace Dingo
 	inline constexpr float WARDEN_LAMP_RANGE        = 3.5f;
 	inline constexpr float WARDEN_LAMP_INTENSITY    = 0.9f;
 	inline constexpr glm::vec3 WARDEN_LAMP_OFFSET   = { 0.42f, 1.0f, -0.16f };
-	inline constexpr float WARDEN_LAMP_EMISSIVE     = 1.0f;
+	inline constexpr float WARDEN_LAMP_EMISSIVE     = 1.8f;
 	inline constexpr float WARDEN_MARKER_HEIGHT     = 2.2f;
 	inline constexpr float WARDEN_MARKER_SIZE       = 0.18f;
-	inline constexpr float WARDEN_MARKER_EMISSIVE   = 1.2f;
+	inline constexpr float WARDEN_MARKER_EMISSIVE   = 2.0f;
 
 	// --- Detection ------------------------------------------------------------------
 	// The feet sample's weight where the eye's pool on the floor fades below 3/255 of added light
@@ -187,7 +191,7 @@ namespace Dingo
 
 	// --- Flames --------------------------------------------------------------------
 	inline constexpr glm::vec3 FLAME_COLOR     = { 1.0f, 0.62f, 0.3f };
-	inline constexpr float FLAME_EMISSIVE      = 1.1f;
+	inline constexpr float FLAME_EMISSIVE      = 2.6f;
 
 	inline constexpr float BRAZIER_LIGHT_RANGE     = 9.0f;
 	inline constexpr float BRAZIER_LIGHT_INTENSITY = 1.1f;
