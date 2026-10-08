@@ -244,7 +244,7 @@ owed on the GPU machine.
   - **The lantern has no flame of its own:** a flame inside the opaque glass would be hidden by its
     depth, so the lantern only smokes when snuffed. The glass's emissive is its flame.
   - **AO** is on.
-- **W5:** the review (one fresh agent) found no Critical or High. Fixed in `7d0dc49` or noted here:
+- **W5:** the review (one fresh agent) found no Critical or High. Fixed in `1c943bc` or noted here:
   - W1 Medium: the hide check's spawn tile, above;
   - W2: the log;
   - W3: probe staleness;
