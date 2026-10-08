@@ -70,6 +70,26 @@ BundledVendorLibs = table.concat({
     vendorLib("JoltPhysics", "Jolt"),
 }, " ")
 
+-- The same set for the Linux libDingoEngine.a, with the static assimp as well (Windows links
+-- assimp's import library and ships its DLLs).
+local function linuxVendorLib(rel, name)
+    return '"' .. path.join(_MAIN_SCRIPT_DIR, "vendor", rel, "bin") .. '/' .. outputdir .. '/' .. name .. '/lib' .. name .. '.a"'
+end
+
+LinuxBundledVendorLibs = table.concat({
+    linuxVendorLib("spdlog", "spdlog"),
+    linuxVendorLib("glfw", "GLFW"),
+    linuxVendorLib("nvrhi", "NVRHI"),
+    linuxVendorLib("nvrhi", "NVRHI-Vulkan"),
+    linuxVendorLib("imgui", "ImGui"),
+    linuxVendorLib("msdf-atlas-gen", "msdf-atlas-gen"),
+    linuxVendorLib("msdf-atlas-gen/msdfgen", "msdfgen"),
+    linuxVendorLib("msdf-atlas-gen/msdfgen/freetype", "freetype"),
+    linuxVendorLib("box2d", "box2d"),
+    linuxVendorLib("JoltPhysics", "Jolt"),
+    '"' .. path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/lib/linux-x86_64/libassimp.a") .. '"',
+}, " ")
+
 -- On Windows, every exe that links the engine also loads Assimp's DLLs (and their
 -- zlib / pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime —
 -- so they have to sit next to the binary or it dies with STATUS_DLL_NOT_FOUND before
@@ -322,6 +342,14 @@ group "Engine"
 			defines { "DE_PLATFORM_LINUX" }
 			buildoptions { "-Wno-changes-meaning" }
 			removefiles { "src/DingoEngine/Graphics/NVRHI/DirectX11/**", "src/DingoEngine/Graphics/NVRHI/DirectX12/**" }
+
+			-- The distributable libDingoEngine.a under build/dist, like Windows' DingoEngine.lib.
+			-- Consumers add only the Vulkan SDK's shaderc and SPIRV-Cross, zlib, dl and pthread.
+			postbuildcommands {
+				'sh "' .. path.join(_MAIN_SCRIPT_DIR, "scripts/merge-static-libs.sh") .. '" "'
+					.. path.join(_MAIN_SCRIPT_DIR, "build/dist") .. '/' .. outputdir .. '/libDingoEngine.a" "%{cfg.buildtarget.abspath}" '
+					.. LinuxBundledVendorLibs,
+			}
 
 		filter "configurations:Debug or configurations:Debug-ASan"
 			runtime "Debug"
