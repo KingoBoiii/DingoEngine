@@ -9,10 +9,12 @@ namespace Dingo
 
 	namespace
 	{
+		// Leaked: an effect owned by a global made before the first effect is destroyed after a
+		// function-local static would be.
 		std::vector<ParticleEffect*>& LiveEffects()
 		{
-			static std::vector<ParticleEffect*> s_Effects;
-			return s_Effects;
+			static std::vector<ParticleEffect*>* s_Effects = new std::vector<ParticleEffect*>();
+			return *s_Effects;
 		}
 
 		const char* ShapeName(ParticleShape shape)
