@@ -19,7 +19,8 @@ namespace Dingo
 		float Intensity = 1.0f;
 		// The first casting directional light of a scene gets cascaded shadow maps
 		// (Renderer3DParams::Shadows); another one warns once and lights unshadowed. ShadowStrength
-		// is how dark its shadows are, from 0 (none) to 1.
+		// is how dark its shadows are, from 0 (none: it renders no cascades and doesn't count as
+		// casting) to 1.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
 	};

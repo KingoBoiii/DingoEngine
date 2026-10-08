@@ -882,12 +882,14 @@ namespace Dingo
 			return false;
 		}
 
-		if (light.CastShadows)
+		// A strength of 0 draws no shadow, so it renders no cascades, as a local light skips its slot.
+		const float shadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+		if (light.CastShadows && shadowStrength > 0.0f)
 		{
 			if (m_ShadowLight < 0)
 			{
 				m_ShadowLight = count;
-				m_ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+				m_ShadowStrength = shadowStrength;
 			}
 			else if (!m_SecondShadowLightWarned)
 			{
