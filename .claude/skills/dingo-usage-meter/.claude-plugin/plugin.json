@@ -1,0 +1,6 @@
+{
+  "name": "dingo-usage-meter",
+  "version": "0.1.0",
+  "description": "Always-on band above the prompt showing the 5-hour rate-limit usage, limit and reset countdown",
+  "types": "./types/index.d.ts"
+}
