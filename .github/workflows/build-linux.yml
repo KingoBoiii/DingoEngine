@@ -45,6 +45,19 @@ jobs:
           build/dist/${{ matrix.build-configuration }}-linux-x86_64/libDingoEngine.a
           include/
 
+    - name: Package tester bundle
+      if: matrix.build-configuration == 'Release'
+      run: scripts/linux-tester/make-bundle.sh Release build/package/DingoEngine-linux-tester.tar.gz
+
+    - name: Upload tester bundle
+      if: matrix.build-configuration == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: DingoEngine-linux-tester
+        path: build/package/DingoEngine-linux-tester.tar.gz
+        compression-level: 0
+        retention-days: 30
+
     - name: Smoke test
       run: xvfb-run -a -s "-screen 0 1920x1080x24" scripts/ci/linux-smoke-test.sh ${{ matrix.build-configuration }}
 

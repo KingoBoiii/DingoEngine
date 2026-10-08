@@ -854,6 +854,18 @@ self-checks. Before calling Linux supported:
   - the user-data directory (`Platform.cpp` already follows XDG) and `GetExecutablePath`
     (`/proc/self/exe`)
 
+**Tester bundle**: `build-linux.yml`'s Release job uploads the `DingoEngine-linux-tester` artifact, built by
+`scripts/linux-tester/make-bundle.sh` (the same command builds it locally from any configuration). It holds the test app and
+every example beside its assets, so it runs without the SDK or a build. The tester follows its README:
+
+- `run-checks.sh` opens every test case and example on the tester's own desktop. It closes them by PID
+  through `close-windows.py`, which leaves the tester's other windows alone. At the end it packs the system details,
+  a summary and one log per run into a report archive.
+- `play.sh` starts any program from its own directory.
+- The README's checklist covers the subsystems above.
+
+The binaries need glibc 2.38 and GCC 13's libstdc++ (Ubuntu 24.04-era distros or newer) and `libvulkan.so.1`.
+
 <a id="l27"></a>
 ### L27 — Native Wayland *(optional)*
 
