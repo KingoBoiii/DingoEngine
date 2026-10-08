@@ -247,8 +247,12 @@ group "Engine"
 			"Jolt"
 		}
 
+		-- The SPDLOG_ pair must match vendor/spdlog's own defines, or Log.cpp compiles spdlog
+		-- header-only with the bundled fmt and the binary carries two incompatible copies of it.
 		defines {
-			"GLFW_INCLUDE_NONE"
+			"GLFW_INCLUDE_NONE",
+			"SPDLOG_COMPILED_LIB",
+			"SPDLOG_USE_STD_FORMAT"
 		}
 
 		filter "files:src/**/Shaders/*.glsl"
