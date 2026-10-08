@@ -243,10 +243,40 @@ namespace Dingo
 			chain.BlurDown->SetTexture(1, depth);
 			chain.BlurDown->SetSampler(1, Renderer::GetPointSampler());
 
+			// The upsample weighs the four nearest AO texels by depth, which it reads from the copy: the
+			// scene target it draws into has the depth bound.
 			chain.Apply = AmbientOcclusionApplyShader->CreateMaterial("Post AO apply", BlendMode::Multiply);
 			chain.Apply->SetTexture(0, chain.Raw->GetAttachment(0));
-			chain.Apply->SetSampler(0, Renderer::GetClampSampler());
+			chain.Apply->SetSampler(0, Renderer::GetPointSampler());
+			chain.Apply->SetTexture(1, CopyDepth(target));
+			chain.Apply->SetSampler(1, Renderer::GetPointSampler());
 			return chain;
+		}
+
+		// The scene depth as an R32F texture, for a pass that reads it while drawing into the scene target
+		// (whose depth is bound): drawn once per Begin.
+		Texture* CopyDepth(SceneTarget& target)
+		{
+			if (!target.DepthCopy)
+			{
+				if (!DepthCopyShader)
+					DepthCopyShader = std::make_unique<Internal::FullscreenShader>("PostDepthCopy", "PostDepthCopy.glsl");
+				target.DepthCopy = Framebuffer::Create(FramebufferParams()
+					.SetDebugName("Post scene depth copy")
+					.SetWidth(static_cast<int32_t>(target.Target->GetWidth()))
+					.SetHeight(static_cast<int32_t>(target.Target->GetHeight()))
+					.AddAttachment({ TextureFormat::R32F }));
+				target.DepthCopyMaterial = DepthCopyShader->CreateMaterial("Post depth copy");
+				target.DepthCopyMaterial->SetTexture(0, target.Target->GetDepthAttachment());
+				target.DepthCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
+			}
+
+			if (!DepthCopied)
+			{
+				Internal::DrawFullscreen(target.DepthCopyMaterial, target.DepthCopy);
+				DepthCopied = true;
+			}
+			return target.DepthCopy->GetAttachment(0);
 		}
 
 		void DrawAmbientOcclusion(SceneTarget& target, const AmbientOcclusionSettings& settings, const glm::mat4& projection)
@@ -279,6 +309,9 @@ namespace Dingo
 			SetUniformIfChanged(chain.BlurDown, data);
 			Internal::DrawFullscreen(chain.BlurDown, chain.Raw);
 
+			CopyDepth(target);
+			data.Blur = glm::vec4(0.0f, 0.0f, depthTexel);
+			SetUniformIfChanged(chain.Apply, data);
 			Internal::DrawFullscreen(chain.Apply, target.Target);
 			Renderer::EndGpuTimer();
 		}
@@ -558,30 +591,7 @@ namespace Dingo
 		Data& data = *m_Data;
 		if (!data.Active)
 			return nullptr;
-
-		Data::SceneTarget& target = *data.CurrentTarget;
-		if (!target.DepthCopy)
-		{
-			if (!data.DepthCopyShader)
-				data.DepthCopyShader = std::make_unique<Internal::FullscreenShader>("PostDepthCopy", "PostDepthCopy.glsl");
-			target.DepthCopy = Framebuffer::Create(FramebufferParams()
-				.SetDebugName("Post scene depth copy")
-				.SetWidth(static_cast<int32_t>(target.Target->GetWidth()))
-				.SetHeight(static_cast<int32_t>(target.Target->GetHeight()))
-				.AddAttachment({ TextureFormat::R32F }));
-			target.DepthCopyMaterial = data.DepthCopyShader->CreateMaterial("Post depth copy");
-			target.DepthCopyMaterial->SetTexture(0, target.Target->GetDepthAttachment());
-			target.DepthCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
-		}
-
-		if (!data.DepthCopied)
-		{
-			Framebuffer* current = Renderer::GetRenderTarget();
-			Internal::DrawFullscreen(target.DepthCopyMaterial, target.DepthCopy);
-			Renderer::SetRenderTarget(current);
-			data.DepthCopied = true;
-		}
-		return target.DepthCopy->GetAttachment(0);
+		return data.CopyDepth(*data.CurrentTarget);
 	}
 
 	void PostProcessStack::End()

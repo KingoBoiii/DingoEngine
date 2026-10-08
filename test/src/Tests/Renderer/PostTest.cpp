@@ -70,6 +70,9 @@ void main()
 		const glm::vec3 k_RoomFloorOpen{ 1.8f, 0.0f, 1.8f };
 		const glm::vec3 k_RoomWallFar{ -3.0f, 1.5f, -1.9f };
 		const glm::vec3 k_RoomCrease{ 1.5f, 0.0f, -1.8f };
+		// The resting box (0.5, 0.4, 0, size 0.8): its front face's middle, and its left edge at that height.
+		const glm::vec3 k_RestingBoxFace{ 0.5f, 0.4f, 0.4f };
+		const glm::vec3 k_RestingBoxEdge{ 0.1f, 0.4f, 0.4f };
 		const glm::vec3 k_FloatingBox{ -1.5f, 1.5f, -0.9f };
 		const glm::vec4 k_WallColor{ 0.8f, 0.75f, 0.7f, 1.0f };
 
@@ -424,8 +427,10 @@ void main()
 		const glm::ivec2 crease = ToPixel(room, k_RoomCrease, k_SceneWidth, k_SceneHeight);
 		const glm::ivec2 boxCenter = ToPixel(room, k_FloatingBox, k_SceneWidth, k_SceneHeight);
 		const int wallStart = ToPixel(room, k_RoomWallFar, k_SceneWidth, k_SceneHeight).x;
+		const glm::ivec2 restingFace = ToPixel(room, k_RestingBoxFace, k_SceneWidth, k_SceneHeight);
+		const int restingEdge = ToPixel(room, k_RestingBoxEdge, k_SceneWidth, k_SceneHeight).x;
 		readBack(m_RoomPlain, [this](const TexturePixels& pixels) { m_RoomPlainPixels = pixels.Data; });
-		readBack(m_RoomOccluded, [this, open, crease, boxCenter, wallStart](const TexturePixels& pixels)
+		readBack(m_RoomOccluded, [this, open, crease, boxCenter, wallStart, restingFace, restingEdge](const TexturePixels& pixels)
 		{
 			if (pixels.Data.size() != m_RoomPlainPixels.size() || pixels.Data.empty())
 			{
@@ -457,6 +462,34 @@ void main()
 			}
 			Check(wallPixels > 10 && darkened == 0,
 				std::format("no halo: the wall beside a box floating before it isn't darkened, up to its silhouette ({} of {} pixels darker)", darkened, wallPixels));
+
+			// The resting box's front face meets the floor beside the box on screen at its left edge; the
+			// floor there is darkened by the box, the face at that height evenly. The face's first pixel
+			// in the plain frame must darken no more than one well inside it.
+			const glm::vec4 faceReference = PixelAt(m_RoomPlainPixels, k_SceneWidth, restingFace);
+			int edge = -1;
+			for (int x = restingEdge - 6; x <= restingFace.x; ++x)
+			{
+				if (glm::all(glm::lessThanEqual(glm::abs(PixelAt(m_RoomPlainPixels, k_SceneWidth, { x, restingFace.y }) - faceReference), glm::vec4(4.0f / 255.0f))))
+				{
+					edge = x;
+					break;
+				}
+			}
+			if (edge < 0 || edge + 6 > restingFace.x)
+			{
+				Check(false, "the resting box's front face is found along its row");
+				return;
+			}
+			auto ratio = [this, &pixels, restingFace](int x)
+			{
+				const float off = PixelAt(m_RoomPlainPixels, k_SceneWidth, { x, restingFace.y }).g;
+				return off > 0.0f ? PixelAt(pixels.Data, k_SceneWidth, { x, restingFace.y }).g / off : 1.0f;
+			};
+			const float atEdge = ratio(edge);
+			const float inside = ratio(edge + 6);
+			Check(atEdge >= inside - 0.03f,
+				std::format("no bleed: the floor's contact darkness doesn't reach across the resting box's silhouette ({:.3f} of the plain frame at its edge, {:.3f} inside)", atEdge, inside));
 		});
 
 		// Two Begins of one size in one frame, bloom on in one and off in the other, each get a scene

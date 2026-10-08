@@ -121,9 +121,11 @@ after it (particles, a translucent pass) isn't darkened; `End` applies it if not
   written into the caller's depth when it has one, so a 3D draw after `End` (a gizmo, a custom pass)
   depth-tests against this frame's scene, as without the chain. Plus the HDR target's bandwidth, and
   with bloom 11 small passes (`Bloom`, inside `Post`) over levels of a quarter of the screen's pixels
-  and less, and another 4 bytes a pixel of memory for the levels. Ambient occlusion is four passes
-  (`AO`, inside `Post`): 12 taps a pixel, two 9-tap blurs and the multiply, at a quarter of the
-  pixels at half resolution, with two R8 targets.
+  and less, and another 4 bytes a pixel of memory for the levels. Ambient occlusion is five passes
+  (`AO`, inside `Post`): 12 taps a pixel, two 9-tap blurs, at a quarter of the pixels at half
+  resolution, with two R8 targets; a copy of the scene depth to R32F (4 bytes a pixel, shared with
+  soft particles); and the multiply, which upsamples from the four nearest AO texels weighed by depth
+  so contact darkness doesn't bleed across a silhouette.
 - **Blending in 16-bit float** rounds differently from 8-bit, so the chain with `None` comes within
   1/255 of the frame without it, not exactly to it.
 - **16-bit float tops out at 65504**: a brighter pixel is stored as +Inf. The tone map and bloom's

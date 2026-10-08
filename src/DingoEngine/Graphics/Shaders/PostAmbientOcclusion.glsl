@@ -2,7 +2,9 @@
 // from the scene depth, in three passes chosen by define. DE_AO_SAMPLE takes 12 taps on a spiral
 // around each pixel and writes how open it is (R8); DE_AO_BLUR blurs that along Blur.xy, weighing
 // each tap by how close its depth is so an edge stays sharp; DE_AO_APPLY multiplies the result into
-// the scene colour. Mirrors AmbientOcclusionData in PostProcess.cpp.
+// the scene colour, upsampling from the four nearest AO texels weighed by depth as well as distance,
+// so contact darkness doesn't bleed across a silhouette. Mirrors AmbientOcclusionData in
+// PostProcess.cpp.
 
 #type vertex
 #version 450
@@ -14,7 +16,7 @@
 layout(location = 0) in vec2 v_TexCoord;
 layout(location = 0) out vec4 o_Color;
 
-#if defined(DE_AO_SAMPLE) || defined(DE_AO_BLUR)
+#if defined(DE_AO_SAMPLE) || defined(DE_AO_BLUR) || defined(DE_AO_APPLY)
 
 layout(std140, binding = 0) uniform AmbientOcclusionData
 {
@@ -140,10 +142,43 @@ void main()
 
 layout(binding = 1) uniform texture2D u_Occlusion;
 layout(binding = 2) uniform sampler u_OcclusionSampler;
+layout(binding = 3) uniform texture2D u_Depth; // the scene depth copied to R32F, at full resolution
+layout(binding = 4) uniform sampler u_DepthSampler;
+
+float ViewDepth(vec2 uv)
+{
+	return ViewPosition(uv, textureLod(sampler2D(u_Depth, u_DepthSampler), uv, 0.0).r).z;
+}
 
 void main()
 {
-	float open = textureLod(sampler2D(u_Occlusion, u_OcclusionSampler), v_TexCoord, 0.0).r;
+	vec2 texel = Target.xy;
+	vec2 grid = v_TexCoord / texel - 0.5;
+	vec2 base = floor(grid);
+	vec2 f = grid - base;
+	float centerDepth = ViewDepth(v_TexCoord);
+
+	float sum = 0.0;
+	float total = 0.0;
+	float nearest = 1.0;
+	float nearestDifference = 1e30;
+	for (int i = 0; i < 4; ++i)
+	{
+		vec2 corner = vec2(float(i & 1), float(i >> 1));
+		vec2 uv = clamp((base + corner + 0.5) * texel, 0.5 * texel, 1.0 - 0.5 * texel);
+		float open = textureLod(sampler2D(u_Occlusion, u_OcclusionSampler), uv, 0.0).r;
+		float difference = abs(ViewDepth(uv) - centerDepth) / max(abs(centerDepth), 1e-4);
+		float bilinear = mix(1.0 - f.x, f.x, corner.x) * mix(1.0 - f.y, f.y, corner.y);
+		float weight = bilinear / (1e-3 + difference);
+		sum += open * weight;
+		total += weight;
+		if (difference < nearestDifference)
+		{
+			nearestDifference = difference;
+			nearest = open;
+		}
+	}
+	float open = total > 1e-6 ? sum / total : nearest;
 	o_Color = vec4(vec3(open), 1.0);
 }
 
