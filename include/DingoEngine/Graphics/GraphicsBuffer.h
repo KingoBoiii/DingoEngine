@@ -110,6 +110,9 @@ namespace Dingo
 		static GraphicsBuffer* CreateVertexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Vertex Buffer");
 		static GraphicsBuffer* CreateIndexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Index Buffer", GraphicsFormat indexFormat = GraphicsFormat::Uint16);
 		static GraphicsBuffer* CreateUniformBuffer(uint64_t size, const std::string& debugName = "Uniform Buffer");
+		// A GPU-writable buffer: a shader's storage block (std430). Compute writes it; any stage reads
+		// it, a vertex stage only when its block is readonly. Upload writes it from the CPU.
+		static GraphicsBuffer* CreateStorageBuffer(uint64_t size, const std::string& debugName = "Storage Buffer");
 		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
 		// Never reused, unlike the buffer's address, so a cache keyed on it cannot hand a freed

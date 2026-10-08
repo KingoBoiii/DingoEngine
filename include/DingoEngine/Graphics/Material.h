@@ -123,6 +123,12 @@ namespace Dingo
 		// without them ignores this.
 		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
 
+		// A storage buffer at a binding the shader's own numbering gives it (Shader::FindStorageBufferBinding);
+		// null clears it. A vertex stage reads it only from a readonly block. Changing it rebuilds the
+		// material's passes.
+		void SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer);
+		static constexpr uint32_t k_MaxStorageBuffers = 4;
+
 		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
 		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
 		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
@@ -183,6 +189,13 @@ namespace Dingo
 		GraphicsBuffer*      m_ShadowDataBuffer   = nullptr;
 		Texture*             m_ShadowAtlas        = nullptr;
 		Sampler*             m_ShadowSampler      = nullptr;
+
+		struct StorageBinding
+		{
+			uint32_t Binding = 0;
+			GraphicsBuffer* Buffer = nullptr;
+		};
+		std::vector<StorageBinding> m_StorageBuffers;
 
 		struct PipelineCacheEntry
 		{

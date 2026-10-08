@@ -58,6 +58,7 @@
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/CommandList.h"
+#include "DingoEngine/Graphics/ComputePass.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"

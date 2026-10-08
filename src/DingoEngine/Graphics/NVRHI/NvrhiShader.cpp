@@ -20,6 +20,7 @@ namespace Dingo
 			{
 				case ShaderType::Vertex: return nvrhi::ShaderType::Vertex;
 				case ShaderType::Fragment: return nvrhi::ShaderType::Pixel;
+				case ShaderType::Compute: return nvrhi::ShaderType::Compute;
 				default: break;
 			}
 
@@ -339,6 +340,9 @@ namespace Dingo
 		std::vector<std::pair<std::string, uint32_t>> uniformBufferBindings;
 		std::vector<std::pair<std::string, uint32_t>> textureBindings;
 		std::vector<std::pair<std::string, uint32_t>> samplerBindings;
+		std::vector<std::pair<std::string, uint32_t>> storageBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> storageImageBindings;
+		std::vector<uint32_t> writableStorageBuffers;
 		auto addBinding = [](std::vector<std::pair<std::string, uint32_t>>& bindings, const ShaderResourceBinding& resource)
 		{
 			const bool known = std::any_of(bindings.begin(), bindings.end(), [&](const auto& entry) { return entry.first == resource.Name; });
@@ -409,6 +413,14 @@ namespace Dingo
 					addBinding(textureBindings, image);
 				for (const ShaderImageBinding& sampler : reflection.SeparateSamplers)
 					addBinding(samplerBindings, sampler);
+				for (const ShaderStorageBinding& storage : reflection.StorageBuffers)
+				{
+					addBinding(storageBufferBindings, storage);
+					if (!storage.ReadOnly && std::find(writableStorageBuffers.begin(), writableStorageBuffers.end(), storage.Binding) == writableStorageBuffers.end())
+						writableStorageBuffers.push_back(storage.Binding);
+				}
+				for (const ShaderStorageBinding& storage : reflection.StorageImages)
+					addBinding(storageImageBindings, storage);
 
 				reflections.push_back(reflection);
 			}
@@ -421,6 +433,9 @@ namespace Dingo
 		m_UniformBufferBindings = std::move(uniformBufferBindings);
 		m_TextureBindings = std::move(textureBindings);
 		m_SamplerBindings = std::move(samplerBindings);
+		m_StorageBufferBindings = std::move(storageBufferBindings);
+		m_StorageImageBindings = std::move(storageImageBindings);
+		m_WritableStorageBuffers = std::move(writableStorageBuffers);
 
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.
@@ -459,9 +474,12 @@ namespace Dingo
 			return nullptr; // No resources to create binding set
 		}
 
+		// GLSL bindings are the Vulkan bindings as they are: every kind of resource shares one numbering.
 		nvrhi::VulkanBindingOffsets vulkanBindingOffsets = nvrhi::VulkanBindingOffsets()
+			.setShaderResourceOffset(0)
 			.setSamplerOffset(0)
-			.setConstantBufferOffset(0);
+			.setConstantBufferOffset(0)
+			.setUnorderedAccessViewOffset(0);
 
 		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
 			.setRegisterSpace(0) // set = 0
@@ -472,6 +490,17 @@ namespace Dingo
 		// A resource several stages declare (Renderer3D's scene UBO) is reflected once per
 		// stage, but a layout may name each binding only once; the item is visible to every
 		// stage anyway, so it keeps the largest array size any stage declared.
+		// A storage buffer one stage only reads and another writes binds once, as the writer's view.
+		std::vector<uint32_t> writable;
+		for (const auto& shaderReflection : reflections)
+		{
+			for (const auto& storageBuffer : shaderReflection.StorageBuffers)
+			{
+				if (!storageBuffer.ReadOnly)
+					writable.push_back(storageBuffer.Binding);
+			}
+		}
+
 		auto addItem = [&bindingLayoutDesc](const nvrhi::BindingLayoutItem& item)
 		{
 			for (nvrhi::BindingLayoutItem& existing : bindingLayoutDesc.bindings)
@@ -494,7 +523,13 @@ namespace Dingo
 
 			for (const auto& storageBuffer : shaderReflection.StorageBuffers)
 			{
-				addItem(nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
+				const bool readOnly = std::find(writable.begin(), writable.end(), storageBuffer.Binding) == writable.end();
+				addItem(readOnly ? nvrhi::BindingLayoutItem::RawBuffer_SRV(storageBuffer.Binding) : nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
+			}
+
+			for (const auto& storageImage : shaderReflection.StorageImages)
+			{
+				addItem(nvrhi::BindingLayoutItem::Texture_UAV(storageImage.Binding));
 			}
 
 			for (const auto& pushConstantBuffer : shaderReflection.PushConstantBuffers)

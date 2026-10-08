@@ -5,6 +5,7 @@
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiRenderPass.h"
+#include "NvrhiComputePass.h"
 #include "NvrhiTexture.h"
 
 #include "DingoEngine/Core/Application.h"
@@ -258,6 +259,22 @@ namespace Dingo
 			.setInstanceCount(instanceCount); // Number of instances to draw
 
 		m_CommandListHandle->drawIndexed(drawArguments);
+	}
+
+	void NvrhiCommandList::Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before dispatching.");
+		DE_CORE_ASSERT(pass, "Compute pass is null.");
+
+		NvrhiComputePass* nvrhiPass = static_cast<NvrhiComputePass*>(pass);
+		if (!nvrhiPass->Prepare() || groupsX == 0 || groupsY == 0 || groupsZ == 0)
+			return;
+
+		nvrhi::ComputeState state = nvrhi::ComputeState().setPipeline(nvrhiPass->GetPipelineHandle());
+		if (nvrhiPass->GetBindingSetHandle())
+			state.addBindingSet(nvrhiPass->GetBindingSetHandle());
+		m_CommandListHandle->setComputeState(state);
+		m_CommandListHandle->dispatch(groupsX, groupsY, groupsZ);
 	}
 
 }

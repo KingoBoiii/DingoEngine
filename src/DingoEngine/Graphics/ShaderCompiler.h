@@ -23,10 +23,18 @@ namespace Dingo
 		uint32_t ArraySize;
 	};
 
+	// A storage buffer or image. Read-only ones become shader-resource views (HLSL ByteAddressBuffer,
+	// a t register), the rest unordered-access views (RWByteAddressBuffer / RWTexture2D, a u register).
+	struct ShaderStorageBinding : public ShaderResourceBinding
+	{
+		bool ReadOnly = false;
+	};
+
 	struct ShaderReflection
 	{
 		std::vector<ShaderResourceBinding> UniformBuffers;
-		std::vector<ShaderResourceBinding> StorageBuffers;
+		std::vector<ShaderStorageBinding> StorageBuffers;
+		std::vector<ShaderStorageBinding> StorageImages;
 		std::vector<ShaderPushConstantBinding> PushConstantBuffers;
 		std::vector<ShaderImageBinding> SeparateSamplers;
 		std::vector<ShaderImageBinding> SampledImages;

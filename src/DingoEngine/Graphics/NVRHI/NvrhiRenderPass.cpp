@@ -98,6 +98,30 @@ namespace Dingo
 		m_Valid = false;
 	}
 
+	void NvrhiRenderPass::SetStorageBuffer(uint32_t slot, GraphicsBuffer* buffer)
+	{
+		DE_CORE_ASSERT(buffer && buffer->IsType(BufferType::StorageBuffer), "SetStorageBuffer takes a storage buffer.");
+
+		nvrhi::IBuffer* handle = static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle;
+		const Shader* shader = m_Params.Pipeline->GetParams().Shader;
+		const bool readOnly = !shader || shader->IsStorageBufferReadOnly(slot);
+		const nvrhi::BindingSetItem item = readOnly ? nvrhi::BindingSetItem::RawBuffer_SRV(slot, handle) : nvrhi::BindingSetItem::RawBuffer_UAV(slot, handle);
+		for (nvrhi::BindingSetItem& existing : m_BindingSetDesc.bindings)
+		{
+			if (existing.slot == slot && existing.type == item.type)
+			{
+				if (existing.resourceHandle != handle)
+				{
+					existing.resourceHandle = handle;
+					m_Valid = false;
+				}
+				return;
+			}
+		}
+		m_BindingSetDesc.addItem(item);
+		m_Valid = false;
+	}
+
 	void NvrhiRenderPass::Bake()
 	{
 		if (m_Valid)

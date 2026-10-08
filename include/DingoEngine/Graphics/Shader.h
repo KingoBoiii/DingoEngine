@@ -112,6 +112,13 @@ namespace Dingo
 		// The same for a separate texture or sampler, by its variable name.
 		int32_t FindTextureBinding(std::string_view textureName) const;
 		int32_t FindSamplerBinding(std::string_view samplerName) const;
+		// The same for a storage buffer block or a storage image.
+		int32_t FindStorageBufferBinding(std::string_view blockName) const;
+		int32_t FindStorageImageBinding(std::string_view imageName) const;
+		// Whether every stage declares the storage buffer at that binding readonly: it binds as a
+		// shader-resource view then, which a vertex stage on D3D11 needs; a writable one binds as an
+		// unordered-access view, for compute.
+		bool IsStorageBufferReadOnly(uint32_t binding) const;
 
 		// Every file the source pulled in with #include on its last build (see ShaderParams), which a
 		// hot-reload watches as well as the shader's own file. Engine shaders read from the library,
@@ -124,6 +131,9 @@ namespace Dingo
 		std::vector<std::pair<std::string, uint32_t>> m_UniformBufferBindings;
 		std::vector<std::pair<std::string, uint32_t>> m_TextureBindings;
 		std::vector<std::pair<std::string, uint32_t>> m_SamplerBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_StorageBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_StorageImageBindings;
+		std::vector<uint32_t> m_WritableStorageBuffers; // bindings any stage writes
 		std::vector<std::filesystem::path> m_IncludedFiles;
 
 		friend class NvrhiPipeline;

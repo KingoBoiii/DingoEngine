@@ -102,6 +102,7 @@ namespace Dingo
 			.setArraySize(1)
 			.setInitialState(depth ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::ShaderResource)
 			.setIsRenderTarget(m_Params.IsRenderTarget || depth)
+			.setIsUAV(m_Params.IsStorage && !depth)
 			.setKeepInitialState(true);
 
 		// D3D can't put a shader-resource view on a D32 resource: a sampled depth is created

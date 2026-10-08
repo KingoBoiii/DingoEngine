@@ -147,6 +147,28 @@ namespace Dingo
 		m_SkinUniformBuffer = buffer;
 	}
 
+	void Material::SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer)
+	{
+		for (auto it = m_StorageBuffers.begin(); it != m_StorageBuffers.end(); ++it)
+		{
+			if (it->Binding != binding)
+				continue;
+			if (it->Buffer == buffer)
+				return;
+			if (buffer)
+				it->Buffer = buffer;
+			else
+				m_StorageBuffers.erase(it);
+			InvalidatePipelineCache();
+			return;
+		}
+		if (!buffer)
+			return;
+		DE_CORE_ASSERT(m_StorageBuffers.size() < k_MaxStorageBuffers, "Material: too many storage buffers.");
+		m_StorageBuffers.push_back({ binding, buffer });
+		InvalidatePipelineCache();
+	}
+
 	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
 	{
 		m_ShadowDataBuffer = shadowData;
@@ -235,6 +257,8 @@ namespace Dingo
 			renderPass->SetTexture(static_cast<uint32_t>(shadowAtlasBinding), m_ShadowAtlas);
 		if (shadowSamplerBinding >= 0)
 			renderPass->SetSampler(static_cast<uint32_t>(shadowSamplerBinding), m_ShadowSampler);
+		for (const StorageBinding& storage : m_StorageBuffers)
+			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{

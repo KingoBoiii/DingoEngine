@@ -56,6 +56,21 @@ namespace Dingo
 		return FindBinding(m_SamplerBindings, samplerName);
 	}
 
+	int32_t Shader::FindStorageBufferBinding(std::string_view blockName) const
+	{
+		return FindBinding(m_StorageBufferBindings, blockName);
+	}
+
+	int32_t Shader::FindStorageImageBinding(std::string_view imageName) const
+	{
+		return FindBinding(m_StorageImageBindings, imageName);
+	}
+
+	bool Shader::IsStorageBufferReadOnly(uint32_t binding) const
+	{
+		return std::find(m_WritableStorageBuffers.begin(), m_WritableStorageBuffers.end(), binding) == m_WritableStorageBuffers.end();
+	}
+
 	Shader* Shader::Create(const ShaderParams& params)
 	{
 		ShaderParams resolvedParams = params;

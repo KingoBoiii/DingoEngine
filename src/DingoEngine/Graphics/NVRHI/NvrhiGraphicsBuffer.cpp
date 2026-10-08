@@ -23,8 +23,8 @@ namespace Dingo
 					return nvrhi::ResourceStates::IndexBuffer;
 				case BufferType::UniformBuffer:
 					return nvrhi::ResourceStates::ConstantBuffer;
-					//case BufferType::StorageBuffer:
-					//	return nvrhi::ResourceStates::StorageBuffer;
+				case BufferType::StorageBuffer:
+					return nvrhi::ResourceStates::ShaderResource;
 				default:
 					return nvrhi::ResourceStates::Unknown;
 			}
@@ -55,6 +55,13 @@ namespace Dingo
 			.setIsConstantBuffer(initialState == nvrhi::ResourceStates::ConstantBuffer)
 			.setIsVolatile(m_Params.IsVolatile)
 			.setByteSize(m_PadsWrites ? (m_Params.ByteSize + 3) & ~uint64_t(3) : m_Params.ByteSize);
+
+		// Read as a ByteAddressBuffer (SPIRV-Cross's SSBO), so D3D11 needs raw views; writable from compute.
+		if (m_Params.Type == BufferType::StorageBuffer)
+		{
+			DE_CORE_ASSERT(!m_Params.IsVolatile, "A storage buffer can't be volatile.");
+			bufferDesc.setCanHaveUAVs(true).setCanHaveRawViews(true);
+		}
 
 		if (bufferDesc.isVolatile)
 		{

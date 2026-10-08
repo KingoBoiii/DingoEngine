@@ -25,6 +25,8 @@ namespace Dingo
 
 		virtual void SetSampler(uint32_t slot, Sampler* sampler) override;
 
+		virtual void SetStorageBuffer(uint32_t slot, GraphicsBuffer* buffer) override;
+
 		virtual void Bake() override;
 
 	private:

@@ -48,6 +48,8 @@ namespace Dingo
 		// A D32 texture can be sampled only with this set, which makes it typeless on D3D (R32 behind a
 		// D32 depth view); without it it is a depth target alone, as the swap chain's is.
 		bool IsShaderResource = true;
+		// A compute shader can write it as a storage image (ComputePass::SetStorageTexture).
+		bool IsStorage = false;
 
 		const void* InitialData = nullptr;
 
@@ -96,6 +98,12 @@ namespace Dingo
 		TextureParams& SetIsShaderResource(bool isShaderResource)
 		{
 			IsShaderResource = isShaderResource;
+			return *this;
+		}
+
+		TextureParams& SetIsStorage(bool isStorage)
+		{
+			IsStorage = isStorage;
 			return *this;
 		}
 

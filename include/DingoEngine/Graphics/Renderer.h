@@ -177,6 +177,10 @@ namespace Dingo
 		// makes one triangle covering the target from gl_VertexIndex (DingoEngine/Fullscreen.glsl).
 		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
 
+		// Runs a compute pass in the frame's command list, ordered with the draws around it. Nothing
+		// in a frame that renders nothing (IsFrameSkipped).
+		static void Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1);
+
 		/**************************************************
 		***		QUERIES									***
 		**************************************************/

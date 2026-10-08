@@ -39,6 +39,10 @@ namespace Dingo
 
 		virtual void SetSampler(uint32_t slot, Sampler* sampler) = 0;
 
+		// A storage buffer the shader reads (a readonly block, the only kind a vertex stage can bind on
+		// D3D11) or, from a fragment stage, writes.
+		virtual void SetStorageBuffer(uint32_t slot, GraphicsBuffer* buffer) = 0;
+
 		virtual void Bake() = 0;
 
 		const RenderPassParams& GetParams() const { return m_Params; }
