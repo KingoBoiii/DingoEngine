@@ -67,7 +67,7 @@ namespace Dingo::Internal
 	private:
 		struct Submission
 		{
-			ParticleEmitter* Emitter = nullptr;
+			std::shared_ptr<ParticleEmitter> Emitter; // until EndScene, so dropping the caller's last reference can't free it first
 			glm::mat4 Transform{ 1.0f };
 			float DeltaTime = 0.0f;
 		};

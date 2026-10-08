@@ -52,7 +52,9 @@ emitter->EmitAt(point, 20); // spawns at the next submission
 ```
 
 Submit an emitter once a frame; a second scene that shows it (a minimap) submits it with a
-`deltaTime` of 0, or it steps twice. Dropping the last `shared_ptr` returns its ring to the pool.
+`deltaTime` of 0, or it steps twice. Dropping the last `shared_ptr` returns its ring to the pool; a
+submission holds one until `EndScene`, so an emitter dropped after `SubmitParticles` still draws that
+scene.
 
 ## From animation events
 

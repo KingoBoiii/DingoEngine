@@ -226,7 +226,7 @@ namespace Dingo
 		// reference returns the ring. SubmitParticles between BeginScene and EndScene steps it by
 		// deltaTime (simulate, then emit, on the GPU) and draws it after the scene's opaque meshes,
 		// unlit and depth-tested without writing depth; submit an emitter once a frame, or the other
-		// scenes with a deltaTime of 0. Through the post chain, AO is applied first so particles aren't
+		// scenes with a deltaTime of 0. A submission keeps the emitter alive until EndScene. Through the post chain, AO is applied first so particles aren't
 		// darkened, and particles with a SoftDistance fade against the scene's depth. See
 		// docs/particles.md.
 		std::shared_ptr<ParticleEmitter> CreateParticleEmitter(const ParticleEffect* effect);

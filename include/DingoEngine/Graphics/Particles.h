@@ -146,7 +146,7 @@ namespace Dingo
 	// Renderer3D::CreateParticleEmitter and drawn by Renderer3D::SubmitParticles (or, in the ECS, by a
 	// ParticleEmitterComponent). Releasing the last reference returns its ring to the pool; its
 	// particles vanish with it.
-	class ParticleEmitter
+	class ParticleEmitter : public std::enable_shared_from_this<ParticleEmitter>
 	{
 	public:
 		~ParticleEmitter();

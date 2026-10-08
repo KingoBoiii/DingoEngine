@@ -184,7 +184,7 @@ namespace Dingo::Internal
 		}
 		if (emitter.m_Capacity == 0 || !emitter.m_Effect)
 			return;
-		m_Submissions.push_back({ &emitter, transform, std::isfinite(deltaTime) ? std::max(deltaTime, 0.0f) : 0.0f });
+		m_Submissions.push_back({ emitter.shared_from_this(), transform, std::isfinite(deltaTime) ? std::max(deltaTime, 0.0f) : 0.0f });
 	}
 
 	void ParticleRenderer::EnsureResources()
