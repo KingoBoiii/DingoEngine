@@ -4,6 +4,7 @@
 
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Input.h"
+#include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -809,6 +810,108 @@ namespace Dingo::UI
 		ImGui::End();
 	}
 
+	void ProfilerSection()
+	{
+		ImGui::TextUnformatted("Tracy");
+		ImGui::Separator();
+		if (!Profiler::IsCompiledIn())
+			ImGui::TextDisabled("Not compiled in: regenerate with premake --profile to record zones.");
+		else if (Profiler::IsConnected())
+			ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.40f, 1.0f), "Compiled in, viewer connected: recording.");
+		else
+			ImGui::Text("Compiled in, waiting for the Tracy viewer to connect.");
+
+		// One sample a frame while this tab is drawn.
+		constexpr int k_History = 120;
+		constexpr int k_Rows = 5;
+		static float s_History[k_Rows][k_History] = {};
+		static int s_Cursor = 0;
+		static int s_Count = 0;
+
+		const FrameTimings& frame = Application::Get().GetFrameTimings();
+		const float samples[k_Rows] = { frame.FrameMs, frame.WaitMs, frame.UpdateMs, frame.UIMs, Renderer::GetRenderThreadMilliseconds() };
+		for (int row = 0; row < k_Rows; ++row)
+			s_History[row][s_Cursor] = samples[row];
+		s_Cursor = (s_Cursor + 1) % k_History;
+		s_Count = std::min(s_Count + 1, k_History);
+
+		auto timingTable = [](const char* id, const char* firstColumn, auto&& rows)
+		{
+			if (!ImGui::BeginTable(id, 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp))
+				return;
+			ImGui::TableSetupColumn(firstColumn);
+			ImGui::TableSetupColumn("Last ms", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableSetupColumn("Mean ms", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableSetupColumn("Max ms", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableHeadersRow();
+			rows();
+			ImGui::EndTable();
+		};
+		auto timingRow = [](const char* name, int indent, float last, float mean, float max)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::Text("%*s%s", indent * 2, "", name);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::Text("%.3f", last);
+			ImGui::TableSetColumnIndex(2);
+			ImGui::Text("%.3f", mean);
+			ImGui::TableSetColumnIndex(3);
+			ImGui::Text("%.3f", max);
+		};
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("CPU  (last 120 frames while this tab is open)");
+		ImGui::Separator();
+		static constexpr const char* s_RowNames[k_Rows] = { "Frame", "Wait for render thread", "Update", "UI", "Render thread (execute + present)" };
+		static constexpr int s_RowIndent[k_Rows] = { 0, 1, 1, 1, 0 };
+		timingTable("##cputimes", "Main thread", [&]
+		{
+			for (int row = 0; row < k_Rows; ++row)
+			{
+				float sum = 0.0f, max = 0.0f;
+				for (int i = 0; i < s_Count; ++i)
+				{
+					sum += s_History[row][i];
+					max = std::max(max, s_History[row][i]);
+				}
+				timingRow(s_RowNames[row], s_RowIndent[row], samples[row], s_Count > 0 ? sum / static_cast<float>(s_Count) : 0.0f, max);
+			}
+		});
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("GPU passes  (timer queries, read 4 frames late)");
+		ImGui::Separator();
+		const std::vector<GpuTimerStats>& timers = Renderer::GetGpuTimers();
+		if (timers.empty())
+		{
+			ImGui::TextDisabled("No GPU timer has reported yet.");
+			return;
+		}
+
+		timingTable("##gputimes", "Pass", [&]
+		{
+			for (const GpuTimerStats& timer : timers)
+			{
+				if (timer.Samples > 0)
+					timingRow(timer.Name, static_cast<int>(timer.Depth), timer.LastMs, timer.MeanMs, timer.MaxMs);
+			}
+		});
+	}
+
+	void ProfilerStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Profiler", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		ProfilerSection();
+
+		ImGui::End();
+	}
+
 	void InputStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Input Stats", open))
@@ -893,6 +996,8 @@ namespace Dingo::UI
 			});
 
 			tab("Animation", DebugTab::Animation, [] { AnimationSection(); });
+
+			tab("Profiler", DebugTab::Profiler, [] { ProfilerSection(); });
 
 			ImGui::EndTabBar();
 		}

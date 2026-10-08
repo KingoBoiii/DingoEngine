@@ -10,6 +10,7 @@
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/PerspectiveCamera.h"
+#include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Core/Ray.h"
 #include "DingoEngine/Core/UUID.h"
 

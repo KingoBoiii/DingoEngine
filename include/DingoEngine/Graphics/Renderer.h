@@ -12,11 +12,24 @@
 #include <glm/glm.hpp>
 
 #include <functional>
+#include <vector>
 
 namespace Dingo
 {
 
 	class SwapChain;
+
+	// One GPU pass timer (Renderer::BeginGpuTimer), over the last GpuTimers::k_HistoryLength frames
+	// that measured it. A frame's sample adds up every time the timer ran in that frame.
+	struct GpuTimerStats
+	{
+		const char* Name = nullptr;
+		uint32_t Depth = 0;   // timers open around it when it was first seen
+		uint32_t Samples = 0; // frames in the history, at most 120
+		float LastMs = 0.0f;
+		float MeanMs = 0.0f;
+		float MaxMs = 0.0f;
+	};
 
 	// Ownership rule for every graphics resource: the factories hand out a raw `new`, and
 	// Destroy() only releases the GPU handle — the host object is still the owner's. Every
@@ -92,6 +105,23 @@ namespace Dingo
 		// safe point: on the render thread after Present, before the next image acquire, or in a
 		// BeginFrame that has no image yet. Resizing it here would race the frame in flight.
 		static void QueueResize(int32_t width, int32_t height);
+
+		/**************************************************
+		***		GPU TIMERS								***
+		**************************************************/
+
+		// Measures the GPU time of the commands recorded between the two calls, which nest and must
+		// pair up within a frame. `name` must outlive the call only. Results are read four frames
+		// later, never waiting for the GPU (GetGpuTimers, the F8 Profiler tab, and Tracy plots in a
+		// --profile build). In a frame that renders nothing they measure nothing. "Frame" times the
+		// whole frame command list. At most 32 timers a frame; later ones warn once and are skipped.
+		static void BeginGpuTimer(const char* name);
+		static void EndGpuTimer();
+		static const std::vector<GpuTimerStats>& GetGpuTimers();
+
+		// How long the render thread spent on the last frame it submitted: executing the command
+		// list and presenting.
+		static float GetRenderThreadMilliseconds();
 
 		/**************************************************
 		***		COMMAND LIST MANAGEMENT					***

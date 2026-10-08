@@ -22,4 +22,5 @@
 #include "DingoEngine/Version.h"
 #include "DingoEngine/Log.h"
 #include "DingoEngine/Assertion.h"
+#include "DingoEngine/Core/Profiler.h"
 

@@ -279,9 +279,15 @@ namespace Dingo
 			return;
 		}
 
+		DE_PROFILE_SCOPE("Renderer3D::EndScene");
+		Renderer::BeginGpuTimer("Renderer3D");
+
 		// Written into this frame's command list ahead of every draw that binds it
 		// (CommandList::UploadBuffer, the same path material UBOs use).
-		ResolveSceneLights();
+		{
+			DE_PROFILE_SCOPE("Renderer3D::ResolveSceneLights");
+			ResolveSceneLights();
+		}
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 		ClearSceneLights();
 
@@ -290,6 +296,7 @@ namespace Dingo
 
 		// One indexed draw per batch, each from its own pooled (vertex, index) buffer so no
 		// shared buffer is re-uploaded between draws.
+		DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 		for (Material* material : m_DrawOrder)
 		{
 			if (IsLitShader(material->GetShader()))
@@ -345,6 +352,7 @@ namespace Dingo
 		}
 
 		DrawSkinnedSubmissions();
+		Renderer::EndGpuTimer();
 	}
 
 	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material)
@@ -491,6 +499,8 @@ namespace Dingo
 	{
 		if (m_SkinnedSubmissions.empty())
 			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
 
 		EnsureSkinningResources();
 

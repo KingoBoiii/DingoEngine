@@ -22,6 +22,8 @@ namespace Dingo
 		if (Renderer::IsFrameSkipped())
 			return;
 
+		DE_PROFILE_SCOPE_TEXT("SceneRenderer::Render", scene.GetName());
+
 		// A scene can carry a perspective (world) camera and/or an orthographic (UI)
 		// camera: the 3D world is drawn first, then the 2D entities as an overlay on
 		// top. Cameras are found via narrow component views — a full ForEachEntity scan

@@ -3,7 +3,11 @@
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/GpuTimers.h"
+#include "DingoEngine/Core/Profiler.h"
+#include "DingoEngine/Core/Timer.h"
 
+#include <atomic>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -59,6 +63,9 @@ namespace Dingo
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
 		Sampler* PointSampler = nullptr;
+
+		Internal::GpuTimers GpuTimers;
+		std::atomic<float> RenderThreadMs = 0.0f;
 	};
 
 	RendererData* Renderer::s_Data = nullptr;
@@ -168,6 +175,8 @@ namespace Dingo
 		}
 
 		Begin();
+		s_Data->GpuTimers.BeginFrame(s_Data->FrameIndex);
+		BeginGpuTimer("Frame");
 	}
 
 	void Renderer::SkipFrame()
@@ -206,6 +215,7 @@ namespace Dingo
 
 	void Renderer::EndFrame()
 	{
+		s_Data->GpuTimers.EndFrame(s_Data->FrameSkipped ? nullptr : s_Data->CommandList);
 		Close();
 		{
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
@@ -236,6 +246,8 @@ namespace Dingo
 
 	void Renderer::RenderThreadLoop()
 	{
+		DE_PROFILE_THREAD("Render");
+
 		while (true)
 		{
 			bool running;
@@ -249,8 +261,16 @@ namespace Dingo
 			if (!running)
 				break;
 
-			Execute();
-			s_Data->SwapChain->Present();
+			Timer timer;
+			{
+				DE_PROFILE_SCOPE("Renderer::Execute");
+				Execute();
+			}
+			{
+				DE_PROFILE_SCOPE("SwapChain::Present");
+				s_Data->SwapChain->Present();
+			}
+			s_Data->RenderThreadMs.store(timer.ElapsedMillis(), std::memory_order_relaxed);
 			GraphicsContext::Get().RunGarbageCollection();
 
 			// Apply a queued resize here: the presented frame is complete and no image is
@@ -278,6 +298,32 @@ namespace Dingo
 			}
 			s_Data->FrameConsumedCV.notify_one();
 		}
+	}
+
+	/**************************************************
+	***		GPU TIMERS								***
+	**************************************************/
+
+	void Renderer::BeginGpuTimer(const char* name)
+	{
+		CommandList* list = s_Data->FrameSkipped ? nullptr : TryGetRecordingCommandList();
+		s_Data->GpuTimers.Begin(list, name);
+	}
+
+	void Renderer::EndGpuTimer()
+	{
+		CommandList* list = s_Data->FrameSkipped ? nullptr : TryGetRecordingCommandList();
+		s_Data->GpuTimers.End(list);
+	}
+
+	const std::vector<GpuTimerStats>& Renderer::GetGpuTimers()
+	{
+		return s_Data->GpuTimers.GetStats();
+	}
+
+	float Renderer::GetRenderThreadMilliseconds()
+	{
+		return s_Data ? s_Data->RenderThreadMs.load(std::memory_order_relaxed) : 0.0f;
 	}
 
 	/**************************************************

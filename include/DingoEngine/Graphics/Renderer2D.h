@@ -307,6 +307,8 @@ namespace Dingo
 		Statistics m_Statistics;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
+		bool m_GpuTimerOpen = false;
+		uint64_t m_GpuTimerFrame = 0;
 
 		struct CameraData
 		{

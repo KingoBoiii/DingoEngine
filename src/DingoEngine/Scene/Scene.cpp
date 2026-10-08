@@ -244,19 +244,26 @@ namespace Dingo
 		// kinematic moves and controller velocities match what physics simulates; the scene
 		// runs slow through the stall instead.
 		deltaTime = std::min(deltaTime, Internal::PhysicsSync::k_MaxStepTime);
+		DE_PROFILE_SCOPE_TEXT("Scene::OnUpdate", m_Name);
 
-		m_Data->Updating = true;
-		m_Data->Scripts.Update(deltaTime);
-		m_Data->Updating = false;
+		{
+			DE_PROFILE_SCOPE("ScriptSystem::Update");
+			m_Data->Updating = true;
+			m_Data->Scripts.Update(deltaTime);
+			m_Data->Updating = false;
+		}
 
 		for (entt::entity handle : m_Data->PendingDestroy)
 			DestroyEntityNow(static_cast<std::uint32_t>(handle));
 		m_Data->PendingDestroy.clear();
 
 		// Animation events reach scripts here, so their destroys wait as theirs do in OnUpdate.
-		m_Data->Updating = true;
-		Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
-		m_Data->Updating = false;
+		{
+			DE_PROFILE_SCOPE("AnimationSystem::Update");
+			m_Data->Updating = true;
+			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
+			m_Data->Updating = false;
+		}
 
 		for (entt::entity handle : m_Data->PendingDestroy)
 			DestroyEntityNow(static_cast<std::uint32_t>(handle));
@@ -264,11 +271,15 @@ namespace Dingo
 
 		// Step physics after the script pass (scripts may have applied forces this
 		// frame), then write the simulated transforms back onto the entities.
-		m_Data->Physics.Step(m_Data->Registry, deltaTime);
+		{
+			DE_PROFILE_SCOPE("PhysicsSync::Step");
+			m_Data->Physics.Step(m_Data->Registry, deltaTime);
+		}
 
 		// Transforms are final for the frame now (physics + controller write-back
 		// already happened), so sync every spatialized source's position and the
 		// listener before anything renders or is heard this frame.
+		DE_PROFILE_SCOPE("AudioSync");
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
 	}
 
@@ -299,6 +310,7 @@ namespace Dingo
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
+		DE_PROFILE_SCOPE("Scene::RenderEntities");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
 
@@ -381,6 +393,7 @@ namespace Dingo
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
+		DE_PROFILE_SCOPE("Scene::RenderEntities3D");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
 

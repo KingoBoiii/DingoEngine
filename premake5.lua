@@ -1,5 +1,10 @@
 include "./vendor/premake/solution_items.lua"
 
+newoption {
+    trigger = "profile",
+    description = "Compile the Tracy profiler into the engine (DE_PROFILE_* zones, GPU pass plots)"
+}
+
 workspace "DingoEngine"
     configurations { "Debug", "Debug-ASan", "Release", "Distribution" }
     startproject "Dingo-TestFramework"
@@ -21,6 +26,11 @@ workspace "DingoEngine"
         "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING",
         "GLM_FORCE_DEPTH_ZERO_TO_ONE"
 	}
+
+    -- Workspace-wide so a game's own DE_PROFILE_* zones compile in too; Tracy itself is engine-only.
+    if _OPTIONS["profile"] then
+        defines { "DE_PROFILE" }
+    end
 
     filter "action:vs*"
         --sanitize { "Address" }
@@ -210,6 +220,18 @@ group "Engine"
 		defines {
 			"GLFW_INCLUDE_NONE"
 		}
+
+		if _OPTIONS["profile"] then
+			files { "vendor/tracy/public/TracyClient.cpp" }
+			includedirs { "vendor/tracy/public" }
+			-- On demand: nothing is collected or streamed until the Tracy viewer connects.
+			defines { "TRACY_ENABLE", "TRACY_ON_DEMAND" }
+
+			filter "files:vendor/tracy/public/TracyClient.cpp"
+				enablepch "Off"
+				warnings "Off"
+			filter {}
+		end
 
 		filter "files:src/**/Shaders/*.glsl"
 			buildmessage "Embedding %{file.name}"
