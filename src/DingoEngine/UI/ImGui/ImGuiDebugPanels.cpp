@@ -281,6 +281,21 @@ namespace Dingo::UI
 			}
 		}
 
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D particles  (most recent scene)");
+		ImGui::Separator();
+		BudgetBar("Pool", renderer3D.GetParticlePoolUsed(), renderer3D.GetParticlePoolCapacity());
+		if (stats3D.ParticleEmitters == 0)
+			ImGui::TextDisabled("No emitter drawn this scene.");
+		else
+		{
+			ImGui::Text("Emitters   : %u in %u draws, %u slots simulated", stats3D.ParticleEmitters, stats3D.ParticleDrawCalls, stats3D.ParticleSlots);
+			ImGui::Text("Spawned    : %u", stats3D.ParticlesSpawned);
+		}
+		if (stats3D.DroppedParticleSpawns > 0)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+				"Dropped    : %u spawns  (an emitter's ring was full; warned once)", stats3D.DroppedParticleSpawns);
+
 		const PostProcessStack::Statistics& post = Renderer::GetPostProcessStack().GetStatistics();
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Post chain  (last frame that ran it)");

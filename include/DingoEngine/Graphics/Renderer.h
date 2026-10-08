@@ -250,6 +250,7 @@ namespace Dingo
 		static struct RendererData* s_Data;
 
 		friend class NvrhiTexture;
+		friend class NvrhiGraphicsBuffer;
 	};
 
 }

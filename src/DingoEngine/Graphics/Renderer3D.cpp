@@ -5,6 +5,7 @@
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
+#include "DingoEngine/Graphics/ParticleRenderer.h"
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -190,6 +191,11 @@ namespace Dingo
 		return renderer;
 	}
 
+	Renderer3D::Renderer3D(const Renderer3DParams& params)
+		: m_Params(params)
+	{
+	}
+
 	Renderer3D::~Renderer3D()
 	{
 		std::erase(s_LitShaders, m_Shader);
@@ -250,6 +256,8 @@ namespace Dingo
 			.SetIsRenderTarget(true));
 		SetShadowSettings(m_Params.Shadows);
 
+		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
+
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
 		m_SphereMesh = Mesh::CreateSphere(0.5f, 16, 16);
@@ -257,6 +265,8 @@ namespace Dingo
 
 	void Renderer3D::Shutdown()
 	{
+		m_Particles.reset();
+
 		for (GraphicsBuffer*& buffer : m_BatchVertexBuffers)
 			DestroyAndDelete(buffer);
 		for (GraphicsBuffer*& buffer : m_BatchIndexBuffers)
@@ -384,6 +394,8 @@ namespace Dingo
 		if (m_SceneSkipped)
 		{
 			ClearSceneLights();
+			if (m_Particles)
+				m_Particles->ClearScene();
 			return;
 		}
 
@@ -483,7 +495,37 @@ namespace Dingo
 		}
 
 		DrawSkinnedSubmissions();
+		if (m_Particles)
+			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
 		Renderer::EndGpuTimer();
+	}
+
+	std::shared_ptr<ParticleEmitter> Renderer3D::CreateParticleEmitter(const ParticleEffect* effect)
+	{
+		DE_CORE_ASSERT(m_Particles, "Renderer3D::CreateParticleEmitter after Shutdown.");
+		return m_Particles->CreateEmitter(effect);
+	}
+
+	void Renderer3D::SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime)
+	{
+		if (!m_SceneActive || m_SceneSkipped || !m_Particles)
+			return;
+		m_Particles->Submit(emitter, transform, deltaTime);
+	}
+
+	GraphicsBuffer* Renderer3D::GetParticlePool() const
+	{
+		return m_Particles ? m_Particles->GetPool() : nullptr;
+	}
+
+	uint32_t Renderer3D::GetParticlePoolCapacity() const
+	{
+		return m_Particles ? m_Particles->GetCapacity() : 0;
+	}
+
+	uint32_t Renderer3D::GetParticlePoolUsed() const
+	{
+		return m_Particles ? m_Particles->GetUsed() : 0;
 	}
 
 	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows)

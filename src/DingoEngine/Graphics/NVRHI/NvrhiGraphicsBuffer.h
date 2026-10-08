@@ -18,6 +18,7 @@ namespace Dingo
 		virtual void Initialize() override;
 		virtual void Destroy() override;
 		virtual void Upload(const void* data, uint64_t size, uint64_t offset = 0ul) override;
+		virtual void ReadBack(std::function<void(const std::vector<uint8_t>&)> done, uint64_t offset = 0, uint64_t size = 0) override;
 		// Records the write into commandList; every upload of the buffer goes through it.
 		void Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset);
 

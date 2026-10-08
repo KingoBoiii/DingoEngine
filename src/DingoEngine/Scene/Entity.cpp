@@ -400,6 +400,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(MeshRendererComponent)
 	DE_INSTANTIATE_COMPONENT(SkinnedMeshRendererComponent)
 	DE_INSTANTIATE_COMPONENT(AnimatorComponent)
+	DE_INSTANTIATE_COMPONENT(ParticleEmitterComponent)
 	DE_INSTANTIATE_COMPONENT(RigidBody3DComponent)
 	DE_INSTANTIATE_COMPONENT(BoxCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(SphereCollider3DComponent)

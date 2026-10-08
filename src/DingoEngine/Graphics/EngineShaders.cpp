@@ -13,6 +13,10 @@ namespace
 #include "Skinning.glsl.inl"
 #include "Renderer3D_Shadow.glsl.inl"
 #include "Renderer3D_ShadowProbe.glsl.inl"
+#include "PostDepthCopy.glsl.inl"
+#include "ParticleCommon.glsl.inl"
+#include "ParticleSimulate.glsl.inl"
+#include "ParticleDraw.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -39,6 +43,10 @@ namespace
 		{ "Skinning.glsl", View(k_Skinning_glsl) },
 		{ "Renderer3D_Shadow.glsl", View(k_Renderer3D_Shadow_glsl) },
 		{ "Renderer3D_ShadowProbe.glsl", View(k_Renderer3D_ShadowProbe_glsl) },
+		{ "PostDepthCopy.glsl", View(k_PostDepthCopy_glsl) },
+		{ "ParticleCommon.glsl", View(k_ParticleCommon_glsl) },
+		{ "ParticleSimulate.glsl", View(k_ParticleSimulate_glsl) },
+		{ "ParticleDraw.glsl", View(k_ParticleDraw_glsl) },
 	};
 }
 

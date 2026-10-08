@@ -5,6 +5,7 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Light.h"
+#include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Pipeline.h"
 
 #include "DingoEngine/Core/PerspectiveCamera.h"
@@ -25,6 +26,7 @@ namespace Dingo
 	namespace Internal
 	{
 		class FullscreenShader;
+		class ParticleRenderer;
 	}
 
 	// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
@@ -72,6 +74,11 @@ namespace Dingo
 		// to a volatile buffer that on Vulkan has room for this many writes a frame. Later instances
 		// that frame are skipped whole, with a warning (Statistics::DroppedSkinnedDraws).
 		uint32_t MaxSkinnedInstances = 64;
+
+		// GPU particles alive at once across every emitter this renderer made, at most
+		// Renderer3D::k_MaxParticlesLimit: the pool, 48 bytes a particle, made with the first emitter.
+		// Each emitter takes a ring of it the size of its effect's Capacity.
+		uint32_t MaxParticles = 65536;
 
 		// When true, a mesh too large for an empty batch, a light past the light budget or a
 		// skinned instance past MaxSkinnedInstances trips an assert instead of the default
@@ -211,6 +218,24 @@ namespace Dingo
 		// frames are forgotten.
 		std::optional<float> GetShadowProbeResult(uint64_t key) const;
 
+		static constexpr uint32_t k_MaxParticlesLimit = 1u << 20;
+
+		// GPU particles. An emitter is a ring of this renderer's pool, the size of the effect's capacity
+		// (an emitter the pool has no room for draws nothing, with a warning); dropping its last
+		// reference returns the ring. SubmitParticles between BeginScene and EndScene steps it by
+		// deltaTime (emit, then simulate, on the GPU) and draws it after the scene's opaque meshes,
+		// unlit and depth-tested without writing depth; submit an emitter once a frame, or the other
+		// scenes with a deltaTime of 0. Through the post chain, AO is applied first so particles aren't
+		// darkened, and particles with a SoftDistance fade against the scene's depth. See
+		// docs/particles.md.
+		std::shared_ptr<ParticleEmitter> CreateParticleEmitter(const ParticleEffect* effect);
+		void SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime);
+		// The pool, for tooling and tests: 48 bytes a particle (ParticleCommon.glsl); null until the
+		// first emitter draws.
+		GraphicsBuffer* GetParticlePool() const;
+		uint32_t GetParticlePoolCapacity() const;
+		uint32_t GetParticlePoolUsed() const;
+
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
@@ -317,6 +342,11 @@ namespace Dingo
 			uint32_t UnshadowedLights = 0;    // casting point and spot lights drawn without one: past MaxShadowedLocalLights, or no atlas room
 			uint32_t FadedLights = 0;         // drawn point and spot lights the budget fade dimmed (LightBudgetFade)
 			uint32_t ShadowProbes = 0;        // probes the GPU evaluates this scene; ones answered at once aren't counted
+			uint32_t ParticleEmitters = 0;    // emitters simulated and drawn
+			uint32_t ParticleSlots = 0;       // their rings' slots, every one simulated and drawn as an instance
+			uint32_t ParticlesSpawned = 0;
+			uint32_t DroppedParticleSpawns = 0; // spawns past an emitter's ring this step
+			uint32_t ParticleDrawCalls = 0;   // one per run of emitters sharing a blend and sprite; not in DrawCalls
 			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
 			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
@@ -329,7 +359,7 @@ namespace Dingo
 		uint32_t GetLocalLightBudget() const;
 
 	private:
-		Renderer3D(const Renderer3DParams& params) : m_Params(params) {}
+		explicit Renderer3D(const Renderer3DParams& params);
 
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
@@ -622,6 +652,8 @@ namespace Dingo
 		int32_t m_ShadowLight = -1; // the directional light (submission index) that casts this scene
 		float m_ShadowStrength = 1.0f;
 		bool m_SecondShadowLightWarned = false;
+
+		std::unique_ptr<Internal::ParticleRenderer> m_Particles;
 
 		// ── Shadow probes ─────────────────────────────────────────────────────
 

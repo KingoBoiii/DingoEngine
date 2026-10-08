@@ -3,6 +3,11 @@
 #include "DingoEngine/Graphics/Enums/GraphicsFormat.h"
 #include "DingoEngine/Graphics/IBindableShaderResource.h"
 
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
+
 namespace Dingo
 {
 
@@ -118,6 +123,12 @@ namespace Dingo
 		// Never reused, unlike the buffer's address, so a cache keyed on it cannot hand a freed
 		// buffer's bindings to a new buffer allocated at the same address.
 		uint64_t GetId() const { return m_Id; }
+
+		// Copies size bytes from offset (all of it from offset when size is 0) back to the CPU, with
+		// Texture::ReadPixels' timing: inside a frame the copy follows the frame's earlier work and
+		// done runs at the next frame's start; between frames it waits for the next frame. done gets
+		// an empty vector when the buffer can't be read. Not for volatile buffers.
+		virtual void ReadBack(std::function<void(const std::vector<uint8_t>&)> done, uint64_t offset = 0, uint64_t size = 0) = 0;
 
 	protected:
 		GraphicsBuffer(const GraphicsBufferParams& params)

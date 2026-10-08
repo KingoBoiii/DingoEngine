@@ -16,6 +16,7 @@
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
+#include "DingoEngine/Scene/Systems/ParticleSync.h"
 
 #include <algorithm>
 #include <atomic>
@@ -29,6 +30,7 @@ namespace Dingo
 		static std::atomic<uint64_t> s_ProbeSalt = 0;
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
+		Internal::ParticleSync::Connect(m_Data->Registry);
 		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
 
@@ -107,6 +109,7 @@ namespace Dingo
 		CopyComponentIfExists<TextComponent>(registry, dst, src);
 		CopyComponentIfExists<CameraComponent>(registry, dst, src);
 		CopyComponentIfExists<PostProcessComponent>(registry, dst, src);
+		CopyComponentIfExists<ParticleEmitterComponent>(registry, dst, src);
 		CopyComponentIfExists<DirectionalLightComponent>(registry, dst, src);
 		CopyComponentIfExists<AmbientLightComponent>(registry, dst, src);
 		CopyComponentIfExists<PointLightComponent>(registry, dst, src);
@@ -266,6 +269,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
 			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
+			Internal::ParticleSync::Update(m_Data->Registry, deltaTime);
 			m_Data->Updating = false;
 		}
 
@@ -429,6 +433,25 @@ namespace Dingo
 					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows);
 			}
 		}
+
+		Internal::ParticleSync::Submit(m_Data->Registry, renderer, memo);
+	}
+
+	void Scene::EmitParticles(Entity entity, uint32_t count)
+	{
+		if (IsValid(entity))
+			Internal::ParticleSync::Emit(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle), count, nullptr);
+	}
+
+	void Scene::EmitParticlesAt(Entity entity, const glm::vec3& worldPosition, uint32_t count)
+	{
+		if (IsValid(entity))
+			Internal::ParticleSync::Emit(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle), count, &worldPosition);
+	}
+
+	ParticleEmitter* Scene::GetParticleEmitter(Entity entity)
+	{
+		return IsValid(entity) ? Internal::ParticleSync::GetEmitter(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle)) : nullptr;
 	}
 
 	void Scene::SubmitLights(Renderer3D& renderer)

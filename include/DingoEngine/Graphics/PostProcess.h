@@ -9,6 +9,7 @@ namespace Dingo
 {
 
 	class Framebuffer;
+	class Texture;
 
 	// What happens to light past 1.0. The engine stays display-referred: textures, lights and the lit
 	// shader mean what they always did, and every operator but Soft is for a game re-tuned to it.
@@ -112,6 +113,10 @@ namespace Dingo
 		// Begin; End applies it if nothing has. Call it before drawing what AO must not darken, such as
 		// particles or a translucent pass.
 		void ApplyAmbientOcclusion();
+		// The scene target's depth so far, copied into an R32F texture (once per Begin), for a pass that
+		// reads depth while drawing into the scene target with that depth bound: soft particles. Null
+		// while inactive.
+		Texture* CopySceneDepth();
 
 		// Between a Begin that took effect and its End.
 		bool IsActive() const;

@@ -25,6 +25,7 @@ namespace Dingo
 {
 
 	class Material; // referenced by MeshRendererComponent (pointer only)
+	class ParticleEffect; // referenced by ParticleEmitterComponent (pointer only)
 	class Model;    // referenced by SkinnedMeshRendererComponent (pointer only)
 	struct Transform3DComponent; // the light components' ToLight, defined after it
 
@@ -421,6 +422,25 @@ namespace Dingo
 		AnimatorComponent() = default;
 		AnimatorComponent(const AnimatorComponent&) = default;
 		AnimatorComponent(std::string defaultClip) : DefaultClip(std::move(defaultClip)) {}
+	};
+
+	// GPU particles from the entity's world transform (through any parent, so an emitter on a joint
+	// socket follows the joint), drawn by the SceneRenderer's 3D pass. Scene::OnUpdate steps it by the
+	// scene's capped delta, so a paused scene freezes its particles. Scene::EmitParticles and
+	// EmitParticlesAt fire bursts. The effect is the game's and must outlive the component.
+	struct ParticleEmitterComponent
+	{
+		ParticleEffect* Effect = nullptr;
+		// Stopped, it spawns nothing at its rate and its particles live out their lives; started again,
+		// it emits the effect's BurstOnPlay.
+		bool Playing = true;
+		float RateScale = 1.0f;
+		// Off, the particles move with the entity.
+		bool WorldSpace = true;
+
+		ParticleEmitterComponent() = default;
+		ParticleEmitterComponent(const ParticleEmitterComponent&) = default;
+		ParticleEmitterComponent(ParticleEffect* effect) : Effect(effect) {}
 	};
 
 	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden

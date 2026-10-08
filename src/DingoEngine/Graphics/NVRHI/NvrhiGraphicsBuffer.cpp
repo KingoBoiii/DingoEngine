@@ -2,6 +2,8 @@
 #include "NvrhiGraphicsBuffer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Renderer.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
 
 #include <cstring>
@@ -114,6 +116,63 @@ namespace Dingo
 		std::vector<uint8_t> padded((size + 3) & ~uint64_t(3), 0);
 		std::memcpy(padded.data(), data, size);
 		commandList->writeBuffer(m_BufferHandle, padded.data(), size, offset);
+	}
+
+	void NvrhiGraphicsBuffer::ReadBack(std::function<void(const std::vector<uint8_t>&)> done, uint64_t offset, uint64_t size)
+	{
+		if (size == 0 && offset < m_Params.ByteSize)
+			size = m_Params.ByteSize - offset;
+		if (!m_BufferHandle || m_Params.IsVolatile || size == 0 || offset + size > m_Params.ByteSize)
+		{
+			DE_CORE_ERROR("GraphicsBuffer::ReadBack: '{}' can't be read there (volatile, or past its end).", m_Params.DebugName);
+			done({});
+			return;
+		}
+
+		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+		nvrhi::BufferHandle staging = device->createBuffer(nvrhi::BufferDesc()
+			.setDebugName(m_Params.DebugName + " (readback)")
+			.setByteSize(size)
+			.setCpuAccess(nvrhi::CpuAccessMode::Read)
+			.setInitialState(nvrhi::ResourceStates::CopyDest)
+			.setKeepInitialState(true));
+
+		// Mapping waits for the GPU to finish the copy, on every backend.
+		auto resolve = [staging, size, done = std::move(done)]()
+		{
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+			std::vector<uint8_t> bytes;
+			if (const void* mapped = device->mapBuffer(staging, nvrhi::CpuAccessMode::Read))
+			{
+				bytes.assign(static_cast<const uint8_t*>(mapped), static_cast<const uint8_t*>(mapped) + size);
+				device->unmapBuffer(staging);
+			}
+			done(bytes);
+		};
+
+		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		{
+			nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
+			list->copyBuffer(staging, 0, m_BufferHandle, offset, size);
+			Renderer::RunAfterFrame(std::move(resolve));
+			return;
+		}
+
+		auto copyAndResolve = [source = m_BufferHandle, staging, offset, size, resolve = std::move(resolve)]()
+		{
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+			nvrhi::CommandListHandle commandList = device->createCommandList(nvrhi::CommandListParameters().setQueueType(nvrhi::CommandQueue::Graphics));
+			commandList->open();
+			commandList->copyBuffer(staging, 0, source, offset, size);
+			commandList->close();
+			device->executeCommandList(commandList);
+			resolve();
+		};
+
+		if (Renderer::IsRenderThreadParked())
+			copyAndResolve();
+		else
+			Renderer::RunAfterFrame(std::move(copyAndResolve));
 	}
 
 }

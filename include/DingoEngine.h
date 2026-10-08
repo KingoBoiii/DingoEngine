@@ -54,6 +54,7 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/Pipeline.h"

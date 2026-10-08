@@ -18,6 +18,7 @@ namespace Dingo
 
 	class Entity;
 	class Animator;
+	class ParticleEmitter;
 	class Physics2D;
 	class Physics3D;
 	class CharacterController3D;
@@ -110,6 +111,13 @@ namespace Dingo
 		// GetLightVisibility: 0 to 1, how strongly a point or spot light reaches the point; for a
 		// directional light, its visibility. 0 for a disabled light or an entity without a light.
 		float GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key = 0);
+
+		// Bursts from an entity's ParticleEmitterComponent at its next draw: from the effect's shape
+		// around the entity, or around a world-space point (an impact). Nothing for an entity without one.
+		void EmitParticles(Entity entity, uint32_t count);
+		void EmitParticlesAt(Entity entity, const glm::vec3& worldPosition, uint32_t count);
+		// The component's live emitter, for tooling: null until the 3D pass first draws it.
+		ParticleEmitter* GetParticleEmitter(Entity entity);
 
 		// --- Camera -----------------------------------------------------------
 

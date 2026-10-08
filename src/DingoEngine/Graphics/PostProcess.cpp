@@ -91,6 +91,8 @@ namespace Dingo
 			Material* ToneMap = nullptr; // samples this target alone, so its pipelines are built once
 			std::unique_ptr<BloomChain> Bloom;
 			std::unique_ptr<AmbientOcclusionChain> AmbientOcclusion;
+			Framebuffer* DepthCopy = nullptr;
+			Material* DepthCopyMaterial = nullptr;
 			bool ToneMapBlooms = false;  // its slot 1 holds Bloom's level 0 rather than black
 			uint64_t LastFrame = 0;
 		};
@@ -106,6 +108,7 @@ namespace Dingo
 		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionSampleShader;
 		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionBlurShader;
 		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionApplyShader;
+		std::unique_ptr<Internal::FullscreenShader> DepthCopyShader;
 		// What the tone map's bloom slot samples while bloom is off, so its binding set stays complete.
 		Texture* Black = nullptr;
 
@@ -118,6 +121,7 @@ namespace Dingo
 		glm::mat4 Projection{ 1.0f };
 		bool HasProjection = false;
 		bool AmbientOcclusionApplied = false;
+		bool DepthCopied = false;
 
 		Statistics Stats;
 		uint64_t StatsFrame = 0;
@@ -154,6 +158,8 @@ namespace Dingo
 			if (target.AmbientOcclusion)
 				ReleaseAmbientOcclusion(*target.AmbientOcclusion);
 			target.AmbientOcclusion.reset();
+			DestroyAndDelete(target.DepthCopyMaterial);
+			DestroyAndDelete(target.DepthCopy);
 			DestroyAndDelete(target.ToneMap);
 			DestroyAndDelete(target.Target);
 		}
@@ -355,6 +361,8 @@ namespace Dingo
 			}
 			if (target.AmbientOcclusion)
 				bytes += 2ull * target.AmbientOcclusion->Raw->GetWidth() * target.AmbientOcclusion->Raw->GetHeight() * GetBytesPerPixel(TextureFormat::R8);
+			if (target.DepthCopy)
+				bytes += static_cast<uint64_t>(target.DepthCopy->GetWidth()) * target.DepthCopy->GetHeight() * GetBytesPerPixel(TextureFormat::R32F);
 			return bytes;
 		}
 
@@ -389,6 +397,8 @@ namespace Dingo
 					target.Target->Resize(width, height);
 					ResizeBloom(target);
 					ResizeAmbientOcclusion(target);
+					if (target.DepthCopy)
+						target.DepthCopy->Resize(width, height);
 					target.LastFrame = frame;
 					return target;
 				}
@@ -440,6 +450,7 @@ namespace Dingo
 		m_Data->AmbientOcclusionSampleShader.reset();
 		m_Data->AmbientOcclusionBlurShader.reset();
 		m_Data->AmbientOcclusionApplyShader.reset();
+		m_Data->DepthCopyShader.reset();
 		DestroyAndDelete(m_Data->Black);
 		m_Data->Active = false;
 	}
@@ -486,6 +497,7 @@ namespace Dingo
 		data.Active = true;
 		data.HasProjection = false;
 		data.AmbientOcclusionApplied = false;
+		data.DepthCopied = false;
 
 		if (data.StatsFrame != frame)
 		{
@@ -523,6 +535,37 @@ namespace Dingo
 		data.DrawAmbientOcclusion(*data.CurrentTarget, data.Settings.AmbientOcclusion, data.Projection);
 		Renderer::SetRenderTarget(current);
 		++data.Stats.AmbientOcclusionScenes;
+	}
+
+	Texture* PostProcessStack::CopySceneDepth()
+	{
+		Data& data = *m_Data;
+		if (!data.Active)
+			return nullptr;
+
+		Data::SceneTarget& target = *data.CurrentTarget;
+		if (!target.DepthCopy)
+		{
+			if (!data.DepthCopyShader)
+				data.DepthCopyShader = std::make_unique<Internal::FullscreenShader>("PostDepthCopy", "PostDepthCopy.glsl");
+			target.DepthCopy = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("Post scene depth copy")
+				.SetWidth(static_cast<int32_t>(target.Target->GetWidth()))
+				.SetHeight(static_cast<int32_t>(target.Target->GetHeight()))
+				.AddAttachment({ TextureFormat::R32F }));
+			target.DepthCopyMaterial = data.DepthCopyShader->CreateMaterial("Post depth copy");
+			target.DepthCopyMaterial->SetTexture(0, target.Target->GetDepthAttachment());
+			target.DepthCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
+		}
+
+		if (!data.DepthCopied)
+		{
+			Framebuffer* current = Renderer::GetRenderTarget();
+			Internal::DrawFullscreen(target.DepthCopyMaterial, target.DepthCopy);
+			Renderer::SetRenderTarget(current);
+			data.DepthCopied = true;
+		}
+		return target.DepthCopy->GetAttachment(0);
 	}
 
 	void PostProcessStack::End()
