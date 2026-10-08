@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstring>
+#include <type_traits>
 
 namespace
 {
@@ -89,9 +90,59 @@ namespace
 		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
 	}
 
-	// Square power-of-two tiles of a square atlas, largest first: each takes the smallest free square that
-	// holds it, split in four until it fits.
-	class ShadowAtlasAllocator
+	uint32_t FloorPowerOfTwo(uint32_t value)
+	{
+		uint32_t power = 1;
+		while (power * 2 <= value)
+			power *= 2;
+		return power;
+	}
+
+	// 0 at the cutoff, 1 from (1 + band) times it up, smooth between.
+	float BudgetFade(float priority, float cutoff, float band)
+	{
+		if (!(cutoff > 0.0f))
+			return 1.0f;
+		const float t = std::clamp((priority / cutoff - 1.0f) / band, 0.0f, 1.0f);
+		return t * t * (3.0f - 2.0f * t);
+	}
+
+	bool SphereTouchesBox(const glm::vec3& center, float radius, const glm::vec3& low, const glm::vec3& high)
+	{
+		const glm::vec3 nearest = glm::clamp(center, low, high);
+		const glm::vec3 offset = nearest - center;
+		return glm::dot(offset, offset) <= radius * radius;
+	}
+
+	// A tile wider than its cone by two texels on each side, so the 3 x 3 PCF kernel near the cone's
+	// edge (or a cube face's) reads depth that was rendered.
+	float TileHalfAngleTangent(float coneTangent, uint32_t size)
+	{
+		return coneTangent * static_cast<float>(size) / static_cast<float>(size - 4);
+	}
+
+	bool BindsPastSlotZero(const Dingo::Material& material)
+	{
+		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
+		{
+			if (material.GetTexture(slot))
+				return true;
+		}
+		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
+		{
+			if (material.GetSampler(slot))
+				return true;
+		}
+		return false;
+	}
+}
+
+namespace Dingo
+{
+
+	// Square power-of-two tiles of a square atlas: each takes the smallest free square that holds it,
+	// split in four until it fits.
+	class Renderer3D::ShadowAtlasAllocator
 	{
 	public:
 		explicit ShadowAtlasAllocator(uint32_t size) { m_Free.push_back({ 0, 0, size }); }
@@ -130,33 +181,6 @@ namespace
 		};
 		std::vector<Square> m_Free;
 	};
-
-	uint32_t FloorPowerOfTwo(uint32_t value)
-	{
-		uint32_t power = 1;
-		while (power * 2 <= value)
-			power *= 2;
-		return power;
-	}
-
-	bool BindsPastSlotZero(const Dingo::Material& material)
-	{
-		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
-		{
-			if (material.GetTexture(slot))
-				return true;
-		}
-		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
-		{
-			if (material.GetSampler(slot))
-				return true;
-		}
-		return false;
-	}
-}
-
-namespace Dingo
-{
 
 	Renderer3D* Renderer3D::Create(const Renderer3DParams& params)
 	{
@@ -827,6 +851,18 @@ namespace Dingo
 		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, cone.Scale);
 		candidate->Data.SpotDirection = glm::vec4(cone.Axis, cone.Offset);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		candidate->CastShadows = light.CastShadows;
+		candidate->ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+		if constexpr (std::is_same_v<LightType, SpotLight>)
+		{
+			// Past 75 degrees one perspective view would need too wide a field of view.
+			candidate->OuterConeAngle = glm::clamp(light.OuterConeAngle, 1.0f, 179.0f);
+			candidate->ShadowFaces = candidate->OuterConeAngle > 75.0f ? 6u : 1u;
+		}
+		else
+		{
+			candidate->ShadowFaces = 6;
+		}
 		return true;
 	}
 
@@ -866,6 +902,11 @@ namespace Dingo
 	uint32_t Renderer3D::GetLocalLightBudget() const
 	{
 		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
+	}
+
+	void Renderer3D::SetLightBudgetFade(float band)
+	{
+		m_Params.Capabilities.LightBudgetFade = std::clamp(FiniteOr(band, 0.0f), 0.0f, 4.0f);
 	}
 
 	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
@@ -920,28 +961,49 @@ namespace Dingo
 			const float gap = std::max(distance - range, 0.0f);
 			candidate.Score = candidate.Brightness / (1.0f + gap * gap);
 			candidate.Nearness = distance / range;
+			candidate.Priority = candidate.Score / (1.0f + candidate.Nearness);
 			m_VisibleLocalLights.push_back(index);
 		}
 
 		const uint32_t visibleCount = static_cast<uint32_t>(m_VisibleLocalLights.size());
 		const uint32_t budget = GetLocalLightBudget();
+		const float fadeBand = m_Params.Capabilities.LightBudgetFade;
 		uint32_t localCount = visibleCount;
+		float fadeCutoff = 0.0f;
 		if (visibleCount > budget)
 		{
 			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
 				"Renderer3D: more point and spot lights in view than MaxLocalLights and AssertOnOverflow is set.");
 
-			std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
-				[this](uint32_t a, uint32_t b)
-				{
-					const LocalLightCandidate& lightA = m_LocalLights[a];
-					const LocalLightCandidate& lightB = m_LocalLights[b];
-					if (lightA.Score != lightB.Score)
-						return lightA.Score > lightB.Score;
-					if (lightA.Nearness != lightB.Nearness)
-						return lightA.Nearness < lightB.Nearness;
-					return a < b;
-				});
+			if (fadeBand > 0.0f)
+			{
+				// One past the budget, so the first dropped light's priority is known: a drawn light
+				// fades out as it nears it, and is dark by the time the two trade places.
+				std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget + 1, m_VisibleLocalLights.end(),
+					[this](uint32_t a, uint32_t b)
+					{
+						const float priorityA = m_LocalLights[a].Priority;
+						const float priorityB = m_LocalLights[b].Priority;
+						if (priorityA != priorityB)
+							return priorityA > priorityB;
+						return a < b;
+					});
+				fadeCutoff = m_LocalLights[m_VisibleLocalLights[budget]].Priority;
+			}
+			else
+			{
+				std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
+					[this](uint32_t a, uint32_t b)
+					{
+						const LocalLightCandidate& lightA = m_LocalLights[a];
+						const LocalLightCandidate& lightB = m_LocalLights[b];
+						if (lightA.Score != lightB.Score)
+							return lightA.Score > lightB.Score;
+						if (lightA.Nearness != lightB.Nearness)
+							return lightA.Nearness < lightB.Nearness;
+						return a < b;
+					});
+			}
 
 			if (!m_LocalOverflowWarned)
 			{
@@ -955,8 +1017,19 @@ namespace Dingo
 		}
 
 		for (uint32_t slot = 0; slot < localCount; ++slot)
-			m_CameraData.LocalLights[slot] = m_LocalLights[m_VisibleLocalLights[slot]].Data;
+		{
+			const LocalLightCandidate& candidate = m_LocalLights[m_VisibleLocalLights[slot]];
+			LocalLightData& data = m_CameraData.LocalLights[slot];
+			data = candidate.Data;
+			if (fadeCutoff > 0.0f)
+			{
+				const float fade = BudgetFade(candidate.Priority, fadeCutoff, fadeBand);
+				data.Color = glm::vec4(glm::vec3(data.Color) * fade, data.Color.w);
+				m_Statistics.FadedLights += fade < 1.0f ? 1 : 0;
+			}
+		}
 		m_CameraData.LightCounts.y = static_cast<int>(localCount);
+		m_DrawnLocalLights = localCount;
 
 		m_Statistics.DirectionalLights = static_cast<uint32_t>(directionalCount);
 		m_Statistics.LocalLights = localCount;
@@ -1086,6 +1159,7 @@ namespace Dingo
 		clamped.CascadeBlend = std::clamp(FiniteOr(settings.CascadeBlend, 0.1f), 0.0f, 0.5f);
 		clamped.SlopeBias = std::max(FiniteOr(settings.SlopeBias, 2.0f), 0.0f);
 		clamped.NormalBias = std::max(FiniteOr(settings.NormalBias, 1.5f), 0.0f);
+		clamped.LocalShadowResolution = FloorPowerOfTwo(std::clamp(settings.LocalShadowResolution, 128u, clamped.AtlasSize / 2));
 
 		// The biases are baked into the shadow pipelines.
 		const bool biasChanged = clamped.DepthBias != m_Params.Shadows.DepthBias || clamped.SlopeBias != m_Params.Shadows.SlopeBias;
@@ -1136,9 +1210,41 @@ namespace Dingo
 	{
 		m_ShadowData = ShadowData();
 		m_ShadowViewCount = 0;
-		if (m_ShadowLight < 0 || !m_HasCasters)
+		if (!m_HasCasters)
 			return false;
 
+		const Renderer3DShadowSettings& settings = m_Params.Shadows;
+		ShadowAtlasAllocator allocator(settings.AtlasSize);
+		const bool cascades = m_ShadowLight >= 0 && PrepareCascades(allocator);
+		PrepareLocalShadows(allocator);
+		if (m_ShadowViewCount == 0)
+			return false;
+
+		m_ShadowData.ShadowCounts.z = cascades && settings.DebugCascades ? 1 : 0;
+		m_ShadowData.ShadowParams.y = settings.NormalBias;
+		m_ShadowData.ShadowParams.z = 1.0f / static_cast<float>(settings.AtlasSize);
+		m_Statistics.ShadowViews = m_ShadowViewCount;
+		EnsureShadowResources();
+		return true;
+	}
+
+	void Renderer3D::AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params)
+	{
+		const float atlasSize = static_cast<float>(m_Params.Shadows.AtlasSize);
+		const float half = static_cast<float>(size) * 0.5f;
+		const float tileScale = static_cast<float>(size) / atlasSize;
+		const glm::vec2 tileCenter(
+			(static_cast<float>(corner.x) + half) / atlasSize * 2.0f - 1.0f,
+			1.0f - (static_cast<float>(corner.y) + half) / atlasSize * 2.0f);
+
+		m_ShadowViews.Views[m_ShadowViewCount] = { viewProjection, glm::vec4(tileCenter, tileScale, tileScale) };
+		m_ShadowData.Tiles[m_ShadowViewCount] = { viewProjection,
+			glm::vec4(static_cast<float>(corner.x) / atlasSize, static_cast<float>(corner.y) / atlasSize, tileScale, tileScale), params };
+		++m_ShadowViewCount;
+	}
+
+	bool Renderer3D::PrepareCascades(ShadowAtlasAllocator& allocator)
+	{
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
 		const glm::mat4 inverse = glm::inverse(m_CameraData.ViewProjection);
 		auto unproject = [&inverse](float x, float y, float z)
@@ -1174,8 +1280,6 @@ namespace Dingo
 
 		const uint32_t cascadeCount = perspective ? settings.CascadeCount : 1u;
 		const uint32_t resolution = settings.CascadeResolution;
-		const float atlasSize = static_cast<float>(settings.AtlasSize);
-		ShadowAtlasAllocator allocator(settings.AtlasSize);
 
 		// A point along a corner ray at a depth along the view: depth is linear along every ray.
 		auto atDepth = [&](int corner, float depth)
@@ -1188,6 +1292,7 @@ namespace Dingo
 
 		const glm::vec3 up = std::abs(lightDirection.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
 		float sliceStart = nearDepth;
+		uint32_t made = 0;
 		for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
 		{
 			// The practical split scheme: a blend of even and logarithmic splits.
@@ -1235,31 +1340,145 @@ namespace Dingo
 			if (!allocator.Allocate(resolution, corner))
 				break;
 
-			const float tileScale = static_cast<float>(resolution) / atlasSize;
-			const glm::vec2 tileCenter(
-				(static_cast<float>(corner.x) + halfResolution) / atlasSize * 2.0f - 1.0f,
-				1.0f - (static_cast<float>(corner.y) + halfResolution) / atlasSize * 2.0f);
-
-			m_ShadowViews.Views[m_ShadowViewCount] = { viewProjection, glm::vec4(tileCenter, tileScale, tileScale) };
-			ShadowCascadeData& data = m_ShadowData.Cascades[cascade];
-			data.ViewProjection = viewProjection;
-			data.AtlasRect = glm::vec4(static_cast<float>(corner.x) / atlasSize, static_cast<float>(corner.y) / atlasSize, tileScale, tileScale);
-			data.Params = glm::vec4(sliceEnd, 2.0f * radius / static_cast<float>(resolution), 0.0f, 0.0f);
+			AddShadowTile(viewProjection, corner, resolution, glm::vec4(sliceEnd, 2.0f * radius / static_cast<float>(resolution), 0.0f, 0.0f));
 			m_Statistics.ShadowCascadeEnds[cascade] = sliceEnd;
-			++m_ShadowViewCount;
+			++made;
 			sliceStart = sliceEnd;
 		}
 
-		if (m_ShadowViewCount == 0)
+		if (made == 0)
 			return false;
 
-		m_ShadowData.ShadowCounts = glm::ivec4(static_cast<int>(m_ShadowViewCount), m_ShadowLight, settings.DebugCascades ? 1 : 0, 0);
+		m_ShadowData.ShadowCounts.x = static_cast<int>(made);
+		m_ShadowData.ShadowCounts.y = m_ShadowLight;
 		m_ShadowData.ShadowOrigin = glm::vec4(origin, 0.0f);
 		m_ShadowData.ShadowForward = glm::vec4(forward, settings.CascadeBlend);
-		m_ShadowData.ShadowParams = glm::vec4(m_ShadowStrength, settings.NormalBias, 1.0f / atlasSize, farDepth);
-		m_Statistics.ShadowViews = m_ShadowViewCount;
-		EnsureShadowResources();
+		m_ShadowData.ShadowParams.x = m_ShadowStrength;
+		m_ShadowData.ShadowParams.w = farDepth;
+		m_Statistics.ShadowCascades = made;
 		return true;
+	}
+
+	void Renderer3D::PrepareLocalShadows(ShadowAtlasAllocator& allocator)
+	{
+		// Tiers are remembered by submission index, which only names the same light while the scene
+		// submits the same lights in the same order.
+		if (m_LocalShadowTiers.size() != m_LocalLights.size())
+			m_LocalShadowTiers.assign(m_LocalLights.size(), 0xFF);
+
+		const Renderer3DShadowSettings& settings = m_Params.Shadows;
+		const uint32_t cap = std::min(m_Params.Capabilities.MaxShadowedLocalLights, k_MaxShadowedLocalLights);
+		const float fadeBand = m_Params.Capabilities.LightBudgetFade;
+
+		// The drawn casting lights in budget order. One whose range holds no caster can't be shadowed.
+		std::array<uint32_t, k_MaxLocalLights> casting{};
+		uint32_t castingCount = 0;
+		for (uint32_t slot = 0; slot < m_DrawnLocalLights; ++slot)
+		{
+			const LocalLightCandidate& light = m_LocalLights[m_VisibleLocalLights[slot]];
+			if (!light.CastShadows || light.ShadowStrength <= 0.0f)
+				continue;
+			if (!SphereTouchesBox(glm::vec3(light.Data.PositionRange), light.Data.PositionRange.w, m_CasterMin, m_CasterMax))
+				continue;
+			casting[castingCount++] = slot;
+		}
+		if (castingCount == 0)
+			return;
+
+		if (castingCount > cap)
+		{
+			m_Statistics.UnshadowedLights += castingCount - cap;
+			if (!m_UnshadowedWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} point and spot lights with CastShadows are drawn but MaxShadowedLocalLights is {}; the lowest-ranked ones light unshadowed. Raise Renderer3DCapabilities.MaxShadowedLocalLights (at most {}).",
+					castingCount, cap, k_MaxShadowedLocalLights);
+				m_UnshadowedWarned = true;
+			}
+		}
+		const float shadowCutoff = fadeBand > 0.0f && castingCount > cap ? m_LocalLights[m_VisibleLocalLights[casting[cap]]].Priority : 0.0f;
+
+		auto tierFor = [](uint32_t rank) -> uint8_t { return rank < 2 ? 0 : rank < 6 ? 1 : 2; };
+
+		static const glm::vec3 k_FaceDirections[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+		static const glm::vec3 k_FaceUps[6] = { { 0, 1, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 1, 0 }, { 0, 1, 0 } };
+
+		int shadowed = 0;
+		for (uint32_t rank = 0; rank < std::min(castingCount, cap); ++rank)
+		{
+			const uint32_t slot = casting[rank];
+			const uint32_t index = m_VisibleLocalLights[slot];
+			const LocalLightCandidate& light = m_LocalLights[index];
+
+			uint8_t tier = tierFor(rank);
+			const uint8_t previous = m_LocalShadowTiers[index];
+			if (previous != 0xFF && previous != tier && (tierFor(rank > 0 ? rank - 1 : 0) == previous || tierFor(rank + 1) == previous))
+				tier = previous;
+			m_LocalShadowTiers[index] = tier;
+
+			const glm::vec3 position(light.Data.PositionRange);
+			const float range = light.Data.PositionRange.w;
+			const float nearPlane = std::max(0.05f, range * 0.002f);
+			const uint32_t baseSize = light.ShadowFaces == 6 ? settings.LocalShadowResolution / 2 : settings.LocalShadowResolution;
+			const uint32_t wanted = std::max(baseSize >> tier, 64u);
+
+			const uint32_t firstTile = m_ShadowViewCount;
+			bool complete = true;
+			for (uint32_t face = 0; face < light.ShadowFaces; ++face)
+			{
+				uint32_t size = wanted;
+				glm::uvec2 corner;
+				while (!allocator.Allocate(size, corner))
+				{
+					size /= 2;
+					if (size < 64)
+						break;
+				}
+				if (size < 64)
+				{
+					complete = false;
+					break;
+				}
+
+				glm::vec3 direction, up;
+				float tangent = 1.0f;
+				if (light.ShadowFaces == 6)
+				{
+					direction = k_FaceDirections[face];
+					up = k_FaceUps[face];
+				}
+				else
+				{
+					direction = glm::vec3(light.Data.SpotDirection);
+					up = std::abs(direction.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+					tangent = std::tan(glm::radians(light.OuterConeAngle));
+				}
+				const float halfTangent = TileHalfAngleTangent(tangent, size);
+				const glm::mat4 projection = glm::perspectiveRH_ZO(2.0f * std::atan(halfTangent), 1.0f, nearPlane, range);
+				const glm::mat4 view = glm::lookAt(position, position + direction, up);
+				AddShadowTile(projection * view, corner, size, glm::vec4(0.0f, 2.0f * halfTangent / static_cast<float>(size), 1.0f, 0.0f));
+			}
+
+			if (!complete)
+			{
+				m_ShadowViewCount = firstTile;
+				++m_Statistics.UnshadowedLights;
+				if (!m_AtlasFullWarned)
+				{
+					DE_CORE_WARN("Renderer3D: the shadow atlas ({} x {}) has no room left for a casting point or spot light, which lights unshadowed. Raise Renderer3DShadowSettings.AtlasSize or lower LocalShadowResolution.",
+						settings.AtlasSize, settings.AtlasSize);
+					m_AtlasFullWarned = true;
+				}
+				continue;
+			}
+
+			const float fade = shadowCutoff > 0.0f ? BudgetFade(light.Priority, shadowCutoff, fadeBand) : 1.0f;
+			m_ShadowData.LocalShadows[slot].Record = glm::vec4(static_cast<float>(firstTile), static_cast<float>(light.ShadowFaces), light.ShadowStrength * fade, 0.0f);
+			m_ShadowData.LocalShadows[slot].Position = glm::vec4(position, 0.0f);
+			++shadowed;
+		}
+
+		m_ShadowData.ShadowCounts.w = shadowed;
+		m_Statistics.ShadowedLights = static_cast<uint32_t>(shadowed);
 	}
 
 	void Renderer3D::DrawShadowPass()

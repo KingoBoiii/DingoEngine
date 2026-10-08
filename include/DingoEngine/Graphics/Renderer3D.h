@@ -36,6 +36,20 @@ namespace Dingo
 		// one, so a still scene picks the same lights every frame.
 		uint32_t MaxLocalLights = 32;
 
+		// Past the budget a light drops out at full strength. With a band above 0, a drawn light whose
+		// priority comes within that fraction of the first dropped light's fades out as it nears it,
+		// so a light crossing the budget's edge as the camera moves fades instead of popping (0.5 =
+		// within 50 %). Priority is then one continuous value, brightness seen from the camera over
+		// one plus the distance relative to the range, rather than brightness with ties broken by
+		// distance. 0 (the default) keeps the hard cut and the old ranking. Casting lights hand their
+		// shadow slots over through the same band. Renderer3D::SetLightBudgetFade changes it.
+		float LightBudgetFade = 0.0f;
+
+		// Point and spot lights with CastShadows that get a shadow, at most
+		// Renderer3D::k_MaxShadowedLocalLights. The drawn casting lights take them in the budget's
+		// order; the rest light unshadowed, with a warning (Statistics::UnshadowedLights).
+		uint32_t MaxShadowedLocalLights = 8;
+
 		// Skinned instances a frame, across every scene this renderer runs, at most
 		// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls with
 		// the same palette, transform and colour (a model's submeshes); it uploads its joints once,
@@ -75,6 +89,11 @@ namespace Dingo
 		int32_t DepthBias = 4;
 		float SlopeBias = 2.0f;
 		float NormalBias = 1.5f;
+		// The tile of the two highest-ranked shadowed spot lights; the next four get half, the rest a
+		// quarter. A point light's six faces each get half of what a spot light of its rank would.
+		// A light keeps its size until its rank moves two places, so a still scene never changes. A
+		// power of two from 128 to AtlasSize / 2.
+		uint32_t LocalShadowResolution = 1024;
 		// Tints the scene red, green, blue and yellow by cascade.
 		bool DebugCascades = false;
 	};
@@ -152,10 +171,16 @@ namespace Dingo
 		bool SubmitLight(const SpotLight& light);
 		void SetAmbientLight(const glm::vec3& color, float intensity);
 
+		// Capabilities.LightBudgetFade, clamped to 0..4.
+		void SetLightBudgetFade(float band);
+
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
 		static constexpr uint32_t k_MaxShadowCascades = 4;
+		static constexpr uint32_t k_MaxShadowedLocalLights = 16;
+		// Atlas tiles a scene can render: the cascades and six faces for every shadowed local light.
+		static constexpr uint32_t k_MaxShadowTiles = k_MaxShadowCascades + 6 * k_MaxShadowedLocalLights;
 
 		// Values out of range are clamped. A new AtlasSize resizes the atlas in place.
 		void SetShadowSettings(const Renderer3DShadowSettings& settings);
@@ -249,7 +274,11 @@ namespace Dingo
 			uint32_t SkinnedInstances = 0;    // joint palettes uploaded; a model's submeshes share one
 			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame
 			uint32_t SkinnedJoints = 0;       // joint matrices uploaded
-			uint32_t ShadowViews = 0;         // cascades rendered into the shadow atlas, 0 for a scene that casts nothing
+			uint32_t ShadowViews = 0;         // atlas tiles rendered (cascades and local light faces), 0 for a scene that casts nothing
+			uint32_t ShadowCascades = 0;      // of which cascades
+			uint32_t ShadowedLights = 0;      // point and spot lights drawn with a shadow
+			uint32_t UnshadowedLights = 0;    // casting point and spot lights drawn without one: past MaxShadowedLocalLights, or no atlas room
+			uint32_t FadedLights = 0;         // drawn point and spot lights the budget fade dimmed (LightBudgetFade)
 			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
 			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
@@ -304,6 +333,11 @@ namespace Dingo
 			float Brightness = 0.0f; // strongest colour channel × intensity
 			float Score = 0.0f;
 			float Nearness = 0.0f; // camera distance / range
+			float Priority = 0.0f; // Score / (1 + Nearness), the budget fade's continuous rank
+			bool CastShadows = false;
+			float ShadowStrength = 1.0f;
+			uint32_t ShadowFaces = 1;    // 1: a spot light's single view; 6: a cube around the light
+			float OuterConeAngle = 0.0f; // degrees, for a spot light's view
 		};
 
 		// std140, mirrored by CameraData in Renderer3D_Lit.glsl. The first three members are a
@@ -334,13 +368,16 @@ namespace Dingo
 		static constexpr uint32_t k_MaxPendingLocalLights = 8192;
 
 		std::vector<LocalLightCandidate> m_LocalLights;
-		std::vector<uint32_t> m_VisibleLocalLights;
+		std::vector<uint32_t> m_VisibleLocalLights; // the first m_DrawnLocalLights are the drawn ones, slot by slot
+		uint32_t m_DrawnLocalLights = 0;
 		bool m_SceneLightSubmitted = false;
 		uint32_t m_DroppedLights = 0;
 		bool m_DirectionalOverflowWarned = false;
 		bool m_LocalOverflowWarned = false;
 		bool m_PendingOverflowWarned = false;
 		bool m_LitSlotsWarned = false;
+		bool m_UnshadowedWarned = false;
+		bool m_AtlasFullWarned = false;
 
 		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
 		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.
@@ -497,27 +534,33 @@ namespace Dingo
 
 		// ── Shadows ───────────────────────────────────────────────────────────
 
-		// std140, mirrored by ShadowCascade and ShadowData in Shadows.glsl: bound by name to every
-		// material whose shader declares it, uploaded every EndScene (the lit shader always binds it).
-		struct ShadowCascadeData
+		// std140, mirrored by ShadowTile, LocalShadow and ShadowData in Shadows.glsl: bound by name to
+		// every material whose shader declares it, uploaded every EndScene (the lit shader always binds it).
+		struct ShadowTileData
 		{
 			glm::mat4 ViewProjection{ 1.0f };
 			glm::vec4 AtlasRect{ 0.0f }; // xy = top-left in atlas UV, zw = size
-			glm::vec4 Params{ 0.0f };    // x = end depth along the view, y = texel size in world units
+			glm::vec4 Params{ 0.0f };    // x = a cascade's end depth along the view; y = a texel in world units, times the distance from the light when z = 1 (perspective)
+		};
+		struct LocalShadowData
+		{
+			glm::vec4 Record{ -1.0f, 0.0f, 0.0f, 0.0f }; // x = first tile (-1 = none), y = tiles (1 or 6), z = strength
+			glm::vec4 Position{ 0.0f };                  // xyz = the light's position
 		};
 		struct ShadowData
 		{
-			glm::ivec4 ShadowCounts{ 0, -1, 0, 0 }; // x = cascades, y = the casting directional light, z = debug tint
+			glm::ivec4 ShadowCounts{ 0, -1, 0, 0 }; // x = cascades, y = the casting directional light, z = debug tint, w = shadowed local lights
 			glm::vec4 ShadowOrigin{ 0.0f };
 			glm::vec4 ShadowForward{ 0.0f };         // w = cascade blend fraction
 			glm::vec4 ShadowParams{ 0.0f };          // x = strength, y = normal bias in texels, z = atlas texel in UV, w = max distance
-			ShadowCascadeData Cascades[k_MaxShadowCascades];
+			ShadowTileData Tiles[k_MaxShadowTiles];  // the cascades first
+			LocalShadowData LocalShadows[k_MaxLocalLights]; // by local light slot
 		};
-		static_assert(sizeof(ShadowCascadeData) == 96 && offsetof(ShadowData, Cascades) == 64 && sizeof(ShadowData) == 64 + 96 * k_MaxShadowCascades,
+		static_assert(sizeof(ShadowTileData) == 96 && sizeof(LocalShadowData) == 32 && offsetof(ShadowData, Tiles) == 64 &&
+			offsetof(ShadowData, LocalShadows) == 64 + 96 * k_MaxShadowTiles && sizeof(ShadowData) == 64 + 96 * k_MaxShadowTiles + 32 * k_MaxLocalLights,
 			"ShadowData must match the std140 block in Shadows.glsl");
 
-		// std140, mirrored by ShadowViews in Renderer3D_Shadow.glsl.
-		static constexpr uint32_t k_MaxShadowViews = k_MaxShadowCascades;
+		// std140, mirrored by ShadowViews in Renderer3D_Shadow.glsl: view i renders tile i.
 		struct ShadowViewData
 		{
 			glm::mat4 ViewProjection{ 1.0f };
@@ -525,9 +568,15 @@ namespace Dingo
 		};
 		struct ShadowViews
 		{
-			ShadowViewData Views[k_MaxShadowViews];
+			ShadowViewData Views[k_MaxShadowTiles];
 		};
 		static_assert(sizeof(ShadowViewData) == 80, "ShadowViews must match the std140 block in Renderer3D_Shadow.glsl");
+
+		class ShadowAtlasAllocator;
+		bool PrepareCascades(ShadowAtlasAllocator& allocator);
+		void PrepareLocalShadows(ShadowAtlasAllocator& allocator);
+		// Fills tile m_ShadowViewCount from a view-projection and the atlas square it renders into.
+		void AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params);
 
 		ShadowData m_ShadowData;
 		ShadowViews m_ShadowViews;
@@ -535,6 +584,10 @@ namespace Dingo
 		int32_t m_ShadowLight = -1; // the directional light (submission index) that casts this scene
 		float m_ShadowStrength = 1.0f;
 		bool m_SecondShadowLightWarned = false;
+
+		// Each local light's last tile tier, by submission index, while the scene submits as many
+		// local lights as the last one did: a light keeps its tile size until its rank moves two places.
+		std::vector<uint8_t> m_LocalShadowTiers;
 
 		// Where the scene's casters are, so a cascade's depth range reaches back to every one of them.
 		glm::vec3 m_CasterMin{ 0.0f };

@@ -30,6 +30,11 @@ namespace Dingo
 		glm::vec3 Color{ 1.0f };
 		float Intensity = 1.0f;
 		float Range = 10.0f;
+		// Casting point and spot lights take the scene's shadow slots in the order the light budget
+		// ranks them (Renderer3DCapabilities::MaxShadowedLocalLights); one past them lights
+		// unshadowed. A point light takes six tiles of the shadow atlas, a spot light one.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 	};
 
 	struct SpotLight
@@ -43,14 +48,17 @@ namespace Dingo
 		// to zero at OuterConeAngle (1 to 179).
 		float InnerConeAngle = 20.0f;
 		float OuterConeAngle = 30.0f;
+		// See PointLight. A cone wider than 75 degrees from its axis casts like a point light.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 	};
 
 	// The weight Renderer3D's lit shader gives the light at `point`, from 0 to 1, for gameplay
 	// tests such as "is the player inside that cone": falloff^2 for a point light and
 	// falloff^2 * cone^2 for a spot, where falloff = 1 - d^2 / Range^2 (0 from Range on) and the
 	// cone is set up exactly as SubmitLight sets it up. It leaves out the surface's N.L, Color,
-	// Intensity, any occlusion (point and spot lights cast no shadows yet) and the frame's light
-	// budget, and is 0 for a light SubmitLight rejects as unusable.
+	// Intensity, shadows and the frame's light budget, and is 0 for a light SubmitLight rejects as
+	// unusable.
 	float GetLightAttenuation(const PointLight& light, const glm::vec3& point);
 	float GetLightAttenuation(const SpotLight& light, const glm::vec3& point);
 

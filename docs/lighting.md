@@ -184,9 +184,24 @@ Renderer tab shows them under "Renderer3D lights": directional `n / 4`, a point/
 the budget, "Out of view", and a red "Dropped" line when anything was dropped. "Dropped" counts
 both kinds; the log says which. `UI::RendererStatsSection()` embeds it in your own window.
 
-**Known limitation.** The cut-off is hard: when a light's rank crosses the budget edge, as the
-camera moves, it switches on or off within one frame. Keep ranges short so that few lights overlap
-on screen, or fade your own lights to fit, as [Candlewick does](#gameplay-queries).
+**The budget fade** (v0.9). By default the cut-off is hard: when a light's rank crosses the budget
+edge, as the camera moves, it switches on or off within one frame. Set
+`Renderer3DCapabilities::LightBudgetFade` (or call `Renderer3D::SetLightBudgetFade`) to a band
+above 0 and, whenever more lights reach the view than the budget holds, a drawn light fades out as
+its priority nears that of the first light left out: fully lit at `1 + band` times it, dark at it.
+Two lights trading places at the edge are both dark at the moment they trade, so nothing pops.
+
+```cpp
+renderer3D.SetLightBudgetFade(0.5f); // fade over the last 50 % above the cut
+```
+
+With the fade on, lights are ranked by one continuous priority, the brightness seen from the camera
+(as above) over `1 + distance / Range`, instead of brightness with ties broken by distance; under the
+budget nothing fades and nothing changes. Off (the default, 0) keeps the ranking and the hard cut of
+v0.7, so existing scenes render exactly as before. `Statistics::FadedLights` and the F4 tab count the
+dimmed lights. The frustum test still cuts a light whose range leaves the view, so a light whose
+range just reaches the screen's edge can still change the ranking at once. Keep ranges short so that
+few lights overlap on screen, or fade your own lights to fit, as [Candlewick does](#gameplay-queries).
 
 ## Falloff and cones
 
@@ -216,8 +231,8 @@ is the cone the player sees.
 
 - It leaves out the surface's `N.L` and the light's `Color` and `Intensity`: it says how much of
   the light reaches the point, not how bright a surface there looks.
-- It ignores occlusion. A point or spot light passes through walls (v0.9 shadows the sun only so
-  far, see [Shadows](shadows.md)), so pair it with a raycast when walls should block.
+- It ignores occlusion: shadows ([Shadows](shadows.md)) are drawn, not part of this weight. Pair
+  it with a raycast when walls should block.
 - It knows nothing about this frame's budget. A light dropped past `MaxLocalLights`, or refused
   because too many were submitted, is not drawn, yet still has a weight. A game whose rules depend
   on a light being seen should keep that light within the budget.
@@ -378,15 +393,16 @@ and a copy of it is embedded in the engine library at build time.
   conservative (ambient plus every light reaching a pixel near 1), or turn on the v0.9 post chain,
   whose default tone curve leaves everything under 0.8 alone and rolls off what would have clipped
   ([Post-processing](post-processing.md)).
-- **Shadows from the sun only.** The first directional light with `CastShadows` gets cascaded
-  shadows ([Shadows](shadows.md)); point and spot light still passes through walls and floors, so
-  in interiors keep their ranges short.
+- **Light passes through walls unless it casts.** The first directional light with `CastShadows`
+  gets cascaded shadows, and up to 8 (at most 16) casting point and spot lights get shadows of their
+  own ([Shadows](shadows.md)); every other light passes through walls and floors, so in interiors
+  keep their ranges short.
 - **No per-mesh surface parameters.** Roughness, specular and emissive are per material. A mesh
   that needs its own takes its own material, which is at least one more draw call.
 - **Blinn-Phong, not PBR:** no metalness, normal maps or reflections.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.
-- **Budget-edge popping**, described [above](#the-light-budget).
+- **Budget-edge popping** unless the budget fade is on, described [above](#the-light-budget).
 
 ## Migrating from v0.6
 

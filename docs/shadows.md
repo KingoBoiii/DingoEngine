@@ -2,9 +2,10 @@
 
 *(v0.9)*
 
-`Renderer3D` draws **cascaded shadow maps** for the sun: the first directional light with
-`CastShadows` darkens what stands behind something from it, skinned meshes included. Shadows are
-opt-in per light, so a scene whose lights cast nothing renders exactly as before v0.9.
+`Renderer3D` draws **cascaded shadow maps** for the sun and **shadow maps for point and spot
+lights**: the first directional light with `CastShadows`, and up to 8 casting point and spot lights,
+darken what stands behind something from them, skinned meshes included. Shadows are opt-in per
+light, so a scene whose lights cast nothing renders exactly as before v0.9.
 
 ## Turning them on
 
@@ -29,7 +30,37 @@ renderer.SubmitLight(sun);
 ```
 
 Only the first casting directional light of a scene gets shadows; another one lights unshadowed and
-warns once. Point and spot shadows are the next step of v0.9.
+warns once.
+
+## Point and spot lights
+
+Point and spot lights take the same two fields, on `PointLight`, `SpotLight`,
+`PointLightComponent` and `SpotLightComponent`:
+
+```cpp
+PointLightComponent& lamp = entity.AddComponent<PointLightComponent>(glm::vec3(1.0f, 0.8f, 0.5f), 1.5f, 8.0f);
+lamp.CastShadows = true;
+```
+
+- **A budget of shadow slots.** `Renderer3DCapabilities::MaxShadowedLocalLights` (8 by default, at
+  most 16) casting lights get a shadow each scene. Of the point and spot lights drawn this scene
+  (the light budget's choice), the casting ones take the slots in the budget's order, so the
+  lights that matter most to the camera keep theirs. A casting light past the slots still lights,
+  unshadowed: the renderer warns once and counts it in `Statistics::UnshadowedLights`. A casting
+  light whose range reaches no caster takes no slot.
+- **Tiles.** A spot light renders one view of its cone into the atlas; a point light renders six,
+  the faces of a cube around it (each a little wider than 90 degrees, so filtering at a seam reads
+  the right face). A spot light wider than 75 degrees from its axis casts like a point light. The two
+  highest-ranked lights get `LocalShadowResolution` tiles (1024), the next four half that and the
+  rest a quarter; a point light's faces get half of what a spot light of its rank would. A light
+  keeps its size until its rank moves two places, so lights trading ranks don't flicker between
+  sizes. When the atlas is full a light falls back to smaller tiles, then lights unshadowed.
+- **The budget fade** ([Lighting](lighting.md#the-light-budget)) hands shadow slots over the same
+  way it hands lights over: with `LightBudgetFade` above 0, a shadowed light ranked near the first
+  casting light without a slot loses its shadow's strength gradually instead of at once.
+- **Cost.** Every casting batch is drawn once for every tile: the cascades plus one or six per
+  shadowed light. Eight point lights are 48 views of the scene, so keep casting point lights few
+  and their ranges short. Spot lights are six times cheaper.
 
 ## Who casts
 
@@ -61,7 +92,8 @@ runtime:
 | `SplitLambda` | 0.75 | How the view splits between cascades: 0 evenly, 1 logarithmically (most detail near the camera). |
 | `CascadeBlend` | 0.1 | The part of each cascade, at its far end, that fades into the next, so the change of resolution leaves no seam. |
 | `DepthBias`, `SlopeBias` | 4, 2 | Push the stored depth away from the light, in depth steps and times the triangle's slope. |
-| `NormalBias` | 1.5 | Moves the point a lit surface looks up along its normal, in the cascade's texels. |
+| `NormalBias` | 1.5 | Moves the point a lit surface looks up along its normal, in the cascade's (or the light tile's) texels. |
+| `LocalShadowResolution` | 1024 | The tile of the two highest-ranked shadowed spot lights; see [Point and spot lights](#point-and-spot-lights). A power of two from 128 to `AtlasSize / 2`. |
 | `DebugCascades` | false | Tints the scene red, green, blue and yellow by cascade (also a checkbox in F4). |
 
 **Acne** (a lit surface striped with its own shadow) means too little bias: raise `NormalBias` first,
@@ -73,9 +105,9 @@ then `SlopeBias`. **Peter-panning** (a shadow detached from the foot of its cast
   turning the camera changes nothing, and snapped to whole texels, so moving it doesn't make edges
   shimmer. Its depth range reaches back toward the light to the bounds of every caster in the scene,
   so a caster outside the view still casts into it.
-- **One atlas, one draw per batch.** Every cascade is a tile of one depth texture, and every batch is
-  drawn into all of them at once: the shadow pass draws it instanced, one instance per cascade, with
-  clip distances at each tile's edges. Skinned meshes are skinned again for it, so a skinned instance
+- **One atlas, one draw per batch.** Every cascade and every light's view is a tile of one depth
+  texture, and every batch is drawn into all of them at once: the shadow pass draws it instanced, one
+  instance per tile, with clip distances at each tile's edges. Skinned meshes are skinned again for it, so a skinned instance
   uploads its joints twice a frame (the skin buffer holds two writes per instance of the budget).
 - **Filtering.** The lit shader reads each cascade through a comparison sampler: 3 x 3 taps of the
   hardware's 2 x 2 comparison, 16 texels in all, kept inside the tile.
@@ -96,6 +128,7 @@ The lit shader takes its shadows from an engine include, and a custom shader can
 
 // ...
 float shadow = DirectionalShadow(worldPosition, normal); // 1 lit, 0 in shadow
+float lamp = LocalLightShadow(i, worldPosition, normal);  // point or spot light i, in CameraData's order
 ```
 
 `Renderer3D` binds `ShadowData`, `u_ShadowAtlas` and `u_ShadowSampler` by name to any material whose
@@ -104,11 +137,17 @@ shader can only be drawn through `Renderer3D`, which provides them.
 
 ## Checking it
 
-The test app's **Shadow Test** (`--test=shadow`) has three scenes: `--shadow=sun` (a box, pillars to
-40 m and a sphere), `--shadow=acne` (a plane the sun grazes at 80 degrees) and `--shadow=skinned` (the
-Fox walking). `--shadow-cascades` tints by cascade and `--shadow-pan` pans the camera slowly. On start it
-draws each scene with the sun casting and without and checks by readback that the floor behind a box,
-and behind a pillar in a far cascade, goes dark; that the floor in the sun is unchanged to the byte;
-that a `ShadowsOnly` box through the ECS shadows the floor without being drawn; that the grazed plane
-doesn't shadow itself; and that the Fox casts. The Animation Test's `--anim-shadow` lights its Foxes
-with a casting sun.
+The test app's **Shadow Test** (`--test=shadow`) has six scenes: `--shadow=sun` (a box, pillars to
+40 m and a sphere), `--shadow=acne` (a plane the sun grazes at 80 degrees), `--shadow=skinned` (the
+Fox walking), `--shadow=spot` (a spot light past a box), `--shadow=point` (a point light among four
+pillars) and `--shadow=budget` (twelve casting spot lights for eight slots). `--shadow-cascades` tints
+by cascade and `--shadow-pan` pans the camera slowly. On start it draws each scene with its lights
+casting and without and checks by readback that the floor behind a box, and behind a pillar in a far
+cascade, goes dark; that the floor in the sun is unchanged to the byte; that a `ShadowsOnly` box
+through the ECS shadows the floor without being drawn; that the grazed plane doesn't shadow itself;
+that the Fox casts; that the spot light's box and each of the point light's pillars cast, on four
+cube faces, while the open floor, across the faces' seams and below the light, is unchanged; that
+eight of twelve casting lights get a shadow and the other four light unshadowed; that the same
+still scene draws the same frame twice; and that the budget fade dims lights at the budget's edge.
+The Animation Test's `--anim-shadow` lights its Foxes with a casting sun, and the Lighting Test's
+`--budget-fade` fades its overbudget scene.

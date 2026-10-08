@@ -9,16 +9,20 @@
 namespace Dingo
 {
 
-	// Cascaded sun shadows (Renderer3DShadowSettings). Start a mode with --shadow=sun (a box, pillars
-	// receding to 40 m and a sphere on a floor), acne (a plane the sun grazes at 80 degrees from its
-	// normal) or skinned (the Fox walking); --shadow-cascades tints by cascade and --shadow-pan pans the
-	// camera slowly, for shimmer. The panel switches the shadows, the cascades, the biases and the
-	// debug views.
+	// Shadows (Renderer3DShadowSettings). Start a mode with --shadow=sun (a box, pillars receding to
+	// 40 m and a sphere on a floor), acne (a plane the sun grazes at 80 degrees from its normal),
+	// skinned (the Fox walking), spot (a spot light past a box), point (a point light among four
+	// pillars) or budget (twelve casting spot lights, four more than the shadow slots);
+	// --shadow-cascades tints by cascade and --shadow-pan pans the camera slowly, for shimmer. The panel
+	// switches the shadows, the cascades, the biases and the debug views.
 	//
-	// On start it checks by readback, each scene drawn twice, with the sun casting and without: the
+	// On start it checks by readback, each scene drawn twice, with its lights casting and without: the
 	// floor behind a box and behind a pillar 35 m off (a far cascade) goes dark, the floor in the sun
 	// is unchanged to the byte, a ShadowsOnly box through the ECS shadows the floor without being
-	// drawn, the grazed plane doesn't shadow itself, and the Fox casts onto the floor.
+	// drawn, the grazed plane doesn't shadow itself, and the Fox casts onto the floor; a spot light's
+	// box and each of a point light's four pillars cast, the floor where nothing stands is unchanged
+	// on every cube face and across their seams, eight of twelve lights get a shadow and two frames of
+	// that scene are identical; and the budget fade dims lights at the budget's edge.
 	class ShadowTest : public GraphicsTest
 	{
 	public:
@@ -37,7 +41,10 @@ namespace Dingo
 		{
 			Sun,
 			Acne,
-			Skinned
+			Skinned,
+			Spot,
+			Point,
+			Budget
 		};
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
@@ -48,6 +55,7 @@ namespace Dingo
 		void BuildEntityScene();
 		void LoadFox();
 		void RunChecks();
+		void RunLocalChecks();
 
 	private:
 		TestChecks m_Checks;
@@ -82,6 +90,9 @@ namespace Dingo
 		CheckPair m_SunPair;
 		CheckPair m_AcnePair;
 		CheckPair m_FoxPair;
+		CheckPair m_SpotPair;
+		CheckPair m_PointPair;
+		CheckPair m_BudgetPair; // the same casting scene twice: On and Off are both on
 		Framebuffer* m_EntityTarget = nullptr;
 	};
 

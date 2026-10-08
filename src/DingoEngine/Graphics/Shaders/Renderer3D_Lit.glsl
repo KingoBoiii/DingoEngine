@@ -163,6 +163,8 @@ void main()
 		float falloff = 1.0 - distanceSquared / rangeSquared;
 		float cone = clamp(dot(-toLight, light.SpotDirection.xyz) * light.Color.w + light.SpotDirection.w, 0.0, 1.0);
 		float nDotL = max(dot(normal, toLight), 0.0);
+		if (ShadowCounts.w > 0 && nDotL > 0.0 && cone > 0.0)
+			nDotL *= LocalLightShadow(i, v_WorldPosition, normal);
 		lighting += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone);
 		if (shiny && nDotL > 0.0)
 			specular += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone) * Highlight(normal, toLight, toCamera, shininess);

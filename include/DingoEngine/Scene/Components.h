@@ -212,6 +212,9 @@ namespace Dingo
 		float Intensity = 1.0f;
 		float Range = 10.0f;
 		bool Enabled = true;
+		// See PointLight: casting lights share the scene's shadow slots by rank.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 
 		PointLightComponent() = default;
 		PointLightComponent(const PointLightComponent&) = default;
@@ -236,6 +239,9 @@ namespace Dingo
 		float OuterConeAngle = 30.0f; // degrees from the axis where it reaches zero
 		glm::vec3 Direction{ 0.0f, 0.0f, -1.0f };
 		bool Enabled = true;
+		// See SpotLight.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 
 		SpotLightComponent() = default;
 		SpotLightComponent(const SpotLightComponent&) = default;
@@ -344,13 +350,15 @@ namespace Dingo
 
 	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
-		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range };
+		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range,
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
 	}
 
 	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
-			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle };
+			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle,
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
 	}
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by

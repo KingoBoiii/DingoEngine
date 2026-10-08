@@ -30,6 +30,18 @@ namespace Dingo
 		const glm::vec3 k_FarPillar{ 20.0f, 2.0f, 24.0f };
 		const glm::vec3 k_PillarSize{ 1.0f, 4.0f, 1.0f };
 
+		const glm::vec3 k_SpotPosition{ -3.0f, 4.0f, 0.0f };
+		const glm::vec3 k_SpotTarget{ 2.0f, 0.0f, 0.0f };
+		const glm::vec3 k_PointPosition{ 0.0f, 2.0f, 0.0f };
+		constexpr float k_PillarRing = 3.0f;
+		constexpr int k_BudgetLights = 12;
+
+		// Where on the floor the ray from a light at `light` through `occluder` lands.
+		glm::vec3 ShadowFromLight(const glm::vec3& light, const glm::vec3& occluder)
+		{
+			return light + (occluder - light) * (light.y / (light.y - occluder.y));
+		}
+
 		// Where on the floor a point of a caster at `height` throws its shadow.
 		glm::vec3 ShadowOnFloor(const glm::vec3& base, float height, const glm::vec3& light)
 		{
@@ -88,6 +100,12 @@ namespace Dingo
 				m_Mode = Mode::Acne;
 			else if (*mode == "skinned")
 				m_Mode = Mode::Skinned;
+			else if (*mode == "spot")
+				m_Mode = Mode::Spot;
+			else if (*mode == "point")
+				m_Mode = Mode::Point;
+			else if (*mode == "budget")
+				m_Mode = Mode::Budget;
 			else
 				m_Mode = Mode::Sun;
 		}
@@ -107,6 +125,9 @@ namespace Dingo
 		m_SunPair = { MakeTarget("ShadowTest sun on"), MakeTarget("ShadowTest sun off") };
 		m_AcnePair = { MakeTarget("ShadowTest acne on"), MakeTarget("ShadowTest acne off") };
 		m_FoxPair = { MakeTarget("ShadowTest fox on"), MakeTarget("ShadowTest fox off") };
+		m_SpotPair = { MakeTarget("ShadowTest spot on"), MakeTarget("ShadowTest spot off") };
+		m_PointPair = { MakeTarget("ShadowTest point on"), MakeTarget("ShadowTest point off") };
+		m_BudgetPair = { MakeTarget("ShadowTest budget first"), MakeTarget("ShadowTest budget second") };
 		m_EntityTarget = MakeTarget("ShadowTest entities");
 	}
 
@@ -209,6 +230,18 @@ namespace Dingo
 				camera.SetPosition({ -3.0f, 4.0f, 0.5f });
 				camera.SetTarget({ -0.4f, 0.0f, 0.0f });
 				break;
+			case Mode::Spot:
+				camera.SetPosition({ 2.0f, 7.0f, 9.0f });
+				camera.SetTarget({ 0.5f, 0.0f, 0.0f });
+				break;
+			case Mode::Point:
+				camera.SetPosition({ 0.0f, 17.0f, 4.0f });
+				camera.SetTarget({ 0.0f, 0.0f, 0.0f });
+				break;
+			case Mode::Budget:
+				camera.SetPosition({ 0.0f, 12.0f, 14.0f });
+				camera.SetTarget({ 0.0f, 0.0f, 0.0f });
+				break;
 			case Mode::Sun:
 			default:
 				camera.SetPosition({ -5.0f, 4.0f, -6.0f });
@@ -220,6 +253,55 @@ namespace Dingo
 
 	void ShadowTest::DrawMode(Renderer3D& renderer, Mode mode, bool shadows, const std::vector<glm::mat4>* palette) const
 	{
+		Mesh* box = renderer.GetBoxMesh();
+		if (mode == Mode::Spot || mode == Mode::Point || mode == Mode::Budget)
+		{
+			renderer.SetAmbientLight(glm::vec3(1.0f), 0.15f);
+			renderer.SubmitMesh(box, Box({ 0.0f, -0.05f, 0.0f }, { 30.0f, 0.1f, 30.0f }), k_FloorColor);
+			if (mode == Mode::Spot)
+			{
+				SpotLight spot;
+				spot.Position = k_SpotPosition;
+				spot.Direction = k_SpotTarget - k_SpotPosition;
+				spot.Intensity = 1.5f;
+				spot.Range = 15.0f;
+				spot.InnerConeAngle = 25.0f;
+				spot.OuterConeAngle = 40.0f;
+				spot.CastShadows = shadows;
+				renderer.SubmitLight(spot);
+				renderer.SubmitMesh(box, Box({ 0.0f, 0.5f, 0.0f }, glm::vec3(1.0f)), { 0.8f, 0.4f, 0.3f, 1.0f });
+			}
+			else if (mode == Mode::Point)
+			{
+				PointLight point;
+				point.Position = k_PointPosition;
+				point.Intensity = 1.5f;
+				point.Range = 12.0f;
+				point.CastShadows = shadows;
+				renderer.SubmitLight(point);
+				for (const glm::vec2 offset : { glm::vec2(1, 0), glm::vec2(-1, 0), glm::vec2(0, 1), glm::vec2(0, -1) })
+					renderer.SubmitMesh(box, Box({ offset.x * k_PillarRing, 0.6f, offset.y * k_PillarRing }, { 0.6f, 1.2f, 0.6f }), { 0.4f, 0.5f, 0.8f, 1.0f });
+				renderer.SubmitMesh(renderer.GetSphereMesh(), Box(k_PointPosition, glm::vec3(0.2f)), glm::vec4(1.0f), nullptr, ShadowCasting::Off);
+			}
+			else
+			{
+				for (int i = 0; i < k_BudgetLights; ++i)
+				{
+					const float x = -11.0f + 2.0f * static_cast<float>(i);
+					SpotLight spot;
+					spot.Position = { x, 3.0f, -1.5f };
+					spot.Direction = { 0.0f, -1.0f, 0.6f };
+					spot.Intensity = 0.8f;
+					spot.Range = 8.0f;
+					spot.OuterConeAngle = 35.0f;
+					spot.CastShadows = shadows;
+					renderer.SubmitLight(spot);
+					renderer.SubmitMesh(box, Box({ x, 0.3f, 0.0f }, glm::vec3(0.6f)), { 0.8f, 0.4f, 0.3f, 1.0f });
+				}
+			}
+			return;
+		}
+
 		DirectionalLight sun;
 		sun.Intensity = 1.0f;
 		sun.CastShadows = shadows;
@@ -227,7 +309,6 @@ namespace Dingo
 		renderer.SubmitLight(sun);
 		renderer.SetAmbientLight(glm::vec3(1.0f), 0.3f);
 
-		Mesh* box = renderer.GetBoxMesh();
 		switch (mode)
 		{
 			case Mode::Acne:
@@ -373,7 +454,135 @@ namespace Dingo
 		{
 			Check(false, "Fox.gltf loads for the skinned shadow check");
 		}
+
+		RunLocalChecks();
 	}
+
+	void ShadowTest::RunLocalChecks()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		const float aspect = static_cast<float>(k_CheckWidth) / static_cast<float>(k_CheckHeight);
+		const PerspectiveCamera spotCamera = CameraFor(Mode::Spot, aspect);
+		const PerspectiveCamera pointCamera = CameraFor(Mode::Point, aspect);
+		const PerspectiveCamera budgetCamera = CameraFor(Mode::Budget, aspect);
+
+		DrawInto(m_SpotPair.On, Mode::Spot, true, spotCamera);
+		const Renderer3D::Statistics spotStats = renderer.GetStatistics();
+		DrawInto(m_SpotPair.Off, Mode::Spot, false, spotCamera);
+		DrawInto(m_PointPair.On, Mode::Point, true, pointCamera);
+		const Renderer3D::Statistics pointStats = renderer.GetStatistics();
+		DrawInto(m_PointPair.Off, Mode::Point, false, pointCamera);
+		DrawInto(m_BudgetPair.On, Mode::Budget, true, budgetCamera);
+		const Renderer3D::Statistics budgetStats = renderer.GetStatistics();
+		DrawInto(m_BudgetPair.Off, Mode::Budget, true, budgetCamera);
+
+		Check(spotStats.ShadowViews == 1 && spotStats.ShadowedLights == 1 && spotStats.ShadowCascades == 0,
+			std::format("a casting spot light renders one tile ({} tiles, {} shadowed lights)", spotStats.ShadowViews, spotStats.ShadowedLights));
+		Check(pointStats.ShadowViews == 6 && pointStats.ShadowedLights == 1,
+			std::format("a casting point light renders six cube faces ({} tiles)", pointStats.ShadowViews));
+		const uint32_t cap = (std::min)(renderer.GetCapabilities().MaxShadowedLocalLights, Renderer3D::k_MaxShadowedLocalLights);
+		Check(budgetStats.ShadowedLights == cap && budgetStats.UnshadowedLights == k_BudgetLights - cap && budgetStats.LocalLights == static_cast<uint32_t>(k_BudgetLights),
+			std::format("{} casting spot lights, {} shadow slots: the rest light unshadowed ({} shadowed, {} unshadowed)", k_BudgetLights, cap, budgetStats.ShadowedLights, budgetStats.UnshadowedLights));
+
+		{
+			const SpotLightComponent component;
+			SpotLightComponent casting = component;
+			casting.CastShadows = true;
+			casting.ShadowStrength = 0.5f;
+			const SpotLight light = casting.ToLight(Transform3DComponent());
+			Check(light.CastShadows && light.ShadowStrength == 0.5f && !component.ToLight(Transform3DComponent()).CastShadows,
+				"SpotLightComponent::ToLight carries CastShadows and ShadowStrength");
+		}
+
+		// The budget fade, on its own renderer: four slots, six lights at increasing distance.
+		{
+			Renderer3DParams params;
+			params.Capabilities.MaxLocalLights = 4;
+			Renderer3D* fadeRenderer = Renderer3D::Create(params);
+			auto drawLights = [&](float band)
+			{
+				fadeRenderer->SetLightBudgetFade(band);
+				Framebuffer* previous = Renderer::GetRenderTarget();
+				Renderer::SetRenderTarget(m_EntityTarget);
+				fadeRenderer->BeginScene(spotCamera);
+				for (int i = 0; i < 6; ++i)
+				{
+					PointLight light;
+					light.Position = { 0.0f, 1.0f, -2.0f - 1.5f * static_cast<float>(i) };
+					light.Range = 1.0f;
+					fadeRenderer->SubmitLight(light);
+				}
+				fadeRenderer->SubmitMesh(fadeRenderer->GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f));
+				fadeRenderer->EndScene();
+				Renderer::SetRenderTarget(previous);
+				return fadeRenderer->GetStatistics();
+			};
+			const Renderer3D::Statistics hard = drawLights(0.0f);
+			const Renderer3D::Statistics faded = drawLights(0.5f);
+			fadeRenderer->Shutdown();
+			delete fadeRenderer;
+			Check(hard.LocalLights == 4 && hard.FadedLights == 0 && faded.LocalLights == 4 && faded.FadedLights > 0,
+				std::format("past the light budget, a fade band dims the lights at its edge (hard cut {} faded, band 0.5 {} faded)", hard.FadedLights, faded.FadedLights));
+		}
+
+		const std::weak_ptr<int> alive = m_Alive;
+		auto readBack = [alive](Framebuffer* target, std::function<void(const TexturePixels&)> check)
+		{
+			target->GetAttachment(0)->ReadPixels([alive, check = std::move(check)](const TexturePixels& pixels)
+			{
+				if (!alive.expired())
+					check(pixels);
+			});
+		};
+
+		const glm::mat4 spotViewProjection = spotCamera.GetViewProjectionMatrix();
+		const glm::ivec2 behindSpotBox = ToPixel(spotViewProjection, ShadowFromLight(k_SpotPosition, { 0.2f, 0.6f, 0.0f }), k_CheckWidth, k_CheckHeight);
+		const glm::ivec2 spotLit = ToPixel(spotViewProjection, { 2.5f, 0.0f, 1.5f }, k_CheckWidth, k_CheckHeight);
+		readBack(m_SpotPair.Off, [this](const TexturePixels& pixels) { m_SpotPair.OffPixels = pixels.Data; });
+		readBack(m_SpotPair.On, [this, behindSpotBox, spotLit](const TexturePixels& pixels)
+		{
+			const glm::vec4 on = PixelAt(pixels, behindSpotBox);
+			const glm::vec4 off = PixelAt(m_SpotPair.OffPixels, k_CheckWidth, behindSpotBox);
+			Check(on.g < 0.75f * off.g, std::format("the floor behind a box goes dark when a spot light casts ({:.3f} against {:.3f})", on.g, off.g));
+			const glm::vec4 litOn = PixelAt(pixels, spotLit);
+			const glm::vec4 litOff = PixelAt(m_SpotPair.OffPixels, k_CheckWidth, spotLit);
+			Check(litOn == litOff && litOff.g > 0.3f, std::format("the floor in the spot light's cone is unchanged where nothing stands ({:.3f} against {:.3f})", litOn.g, litOff.g));
+		});
+
+		const glm::mat4 pointViewProjection = pointCamera.GetViewProjectionMatrix();
+		std::vector<glm::ivec2> behindPillars, openFloor;
+		for (const glm::vec2 offset : { glm::vec2(1, 0), glm::vec2(-1, 0), glm::vec2(0, 1), glm::vec2(0, -1) })
+		{
+			const glm::vec3 occluder(offset.x * k_PillarRing, 0.6f, offset.y * k_PillarRing);
+			behindPillars.push_back(ToPixel(pointViewProjection, ShadowFromLight(k_PointPosition, occluder), k_CheckWidth, k_CheckHeight));
+		}
+		// The diagonals lie on the seams between cube faces, and close to the light the floor is on the
+		// -y face.
+		for (const glm::vec3 point : { glm::vec3(2, 0, 2), glm::vec3(-2, 0, 2), glm::vec3(2, 0, -2), glm::vec3(-2, 0, -2),
+			glm::vec3(4, 0, 4), glm::vec3(-4, 0, -4), glm::vec3(1, 0, 0.5f), glm::vec3(-0.5f, 0, -1) })
+			openFloor.push_back(ToPixel(pointViewProjection, point, k_CheckWidth, k_CheckHeight));
+
+		readBack(m_PointPair.Off, [this](const TexturePixels& pixels) { m_PointPair.OffPixels = pixels.Data; });
+		readBack(m_PointPair.On, [this, behindPillars, openFloor](const TexturePixels& pixels)
+		{
+			int dark = 0;
+			for (const glm::ivec2& pixel : behindPillars)
+				dark += PixelAt(pixels, pixel).g < 0.75f * PixelAt(m_PointPair.OffPixels, k_CheckWidth, pixel).g ? 1 : 0;
+			Check(dark == 4, std::format("a point light's four pillars cast on the +x, -x, +z and -z faces ({} of 4 dark)", dark));
+
+			int changed = 0;
+			for (const glm::ivec2& pixel : openFloor)
+				changed += PixelAt(pixels, pixel) != PixelAt(m_PointPair.OffPixels, k_CheckWidth, pixel) ? 1 : 0;
+			Check(changed == 0, std::format("the open floor around a point light is unchanged, across the cube's seams and on its -y face ({} of {} changed)", changed, openFloor.size()));
+		});
+
+		readBack(m_BudgetPair.Off, [this](const TexturePixels& pixels) { m_BudgetPair.OffPixels = pixels.Data; });
+		readBack(m_BudgetPair.On, [this](const TexturePixels& pixels)
+		{
+			Check(pixels.Data == m_BudgetPair.OffPixels, "a still scene of twelve casting lights draws the same frame twice");
+		});
+	}
+
 
 	void ShadowTest::Update(float deltaTime)
 	{
@@ -408,7 +617,7 @@ namespace Dingo
 		m_Alive.reset();
 		Application::Get().GetRenderer3D().SetShadowSettings(m_DefaultSettings);
 
-		for (CheckPair* pair : { &m_SunPair, &m_AcnePair, &m_FoxPair })
+		for (CheckPair* pair : { &m_SunPair, &m_AcnePair, &m_FoxPair, &m_SpotPair, &m_PointPair, &m_BudgetPair })
 		{
 			DestroyAndDelete(pair->On);
 			DestroyAndDelete(pair->Off);
@@ -440,9 +649,14 @@ namespace Dingo
 		ImGui::RadioButton("Grazing plane", &mode, static_cast<int>(Mode::Acne));
 		ImGui::SameLine();
 		ImGui::RadioButton("Fox", &mode, static_cast<int>(Mode::Skinned));
+		ImGui::RadioButton("Spot", &mode, static_cast<int>(Mode::Spot));
+		ImGui::SameLine();
+		ImGui::RadioButton("Point", &mode, static_cast<int>(Mode::Point));
+		ImGui::SameLine();
+		ImGui::RadioButton("Budget", &mode, static_cast<int>(Mode::Budget));
 		m_Mode = static_cast<Mode>(mode);
 
-		ImGui::Checkbox("Sun casts shadows", &m_Shadows);
+		ImGui::Checkbox("Lights cast shadows", &m_Shadows);
 		ImGui::Checkbox("Pan slowly (shimmer)", &m_Pan);
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -457,12 +671,16 @@ namespace Dingo
 		changed |= ImGui::SliderInt("Depth bias", &settings.DepthBias, 0, 64);
 		changed |= ImGui::SliderFloat("Slope bias", &settings.SlopeBias, 0.0f, 8.0f);
 		changed |= ImGui::SliderFloat("Normal bias (texels)", &settings.NormalBias, 0.0f, 6.0f);
+		int localResolution = static_cast<int>(settings.LocalShadowResolution);
+		changed |= ImGui::SliderInt("Local light tile", &localResolution, 128, 2048);
+		settings.LocalShadowResolution = static_cast<uint32_t>(localResolution);
 		changed |= ImGui::Checkbox("Tint by cascade", &settings.DebugCascades);
 		if (changed)
 			renderer.SetShadowSettings(settings);
 
 		const Renderer3D::Statistics& stats = renderer.GetStatistics();
-		ImGui::Text("Views %u, casters %u, atlas draws %u", stats.ShadowViews, stats.ShadowCasters, stats.ShadowDrawCalls);
+		ImGui::Text("Tiles %u (%u cascades), casters %u, atlas draws %u", stats.ShadowViews, stats.ShadowCascades, stats.ShadowCasters, stats.ShadowDrawCalls);
+		ImGui::Text("Local lights %u shadowed, %u unshadowed", stats.ShadowedLights, stats.UnshadowedLights);
 
 		GraphicsTest::ImGuiRender();
 

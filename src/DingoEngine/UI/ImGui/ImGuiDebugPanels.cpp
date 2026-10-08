@@ -229,6 +229,8 @@ namespace Dingo::UI
 				"Dropped    : %u  (past a light limit; the log says which)", stats3D.DroppedLights);
 		else
 			ImGui::Text("Dropped    : 0");
+		if (caps3D.LightBudgetFade > 0.0f)
+			ImGui::Text("Faded      : %u  (budget fade band %.2f)", stats3D.FadedLights, caps3D.LightBudgetFade);
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");
@@ -245,12 +247,19 @@ namespace Dingo::UI
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D shadows  (most recent scene)");
 		ImGui::Separator();
-		if (stats3D.ShadowViews == 0)
-			ImGui::TextDisabled("None cast: no directional light with CastShadows, or nothing that casts.");
+		if (stats3D.ShadowViews == 0 && stats3D.UnshadowedLights == 0)
+			ImGui::TextDisabled("None cast: no light with CastShadows, or nothing that casts.");
 		else
 		{
-			ImGui::Text("Cascades   : %u   ends at %.1f / %.1f / %.1f / %.1f along the view", stats3D.ShadowViews,
+			ImGui::Text("Tiles      : %u rendered into the atlas", stats3D.ShadowViews);
+			ImGui::Text("Cascades   : %u   ends at %.1f / %.1f / %.1f / %.1f along the view", stats3D.ShadowCascades,
 				stats3D.ShadowCascadeEnds[0], stats3D.ShadowCascadeEnds[1], stats3D.ShadowCascadeEnds[2], stats3D.ShadowCascadeEnds[3]);
+			BudgetBar("Shadowed", stats3D.ShadowedLights, std::min(caps3D.MaxShadowedLocalLights, Renderer3D::k_MaxShadowedLocalLights));
+			if (stats3D.UnshadowedLights > 0)
+				ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+					"Unshadowed : %u  (casting lights past MaxShadowedLocalLights or the atlas; warned once)", stats3D.UnshadowedLights);
+			else
+				ImGui::Text("Unshadowed : 0");
 			ImGui::Text("Casters    : %u meshes in %u instanced draws (not in draw calls)", stats3D.ShadowCasters, stats3D.ShadowDrawCalls);
 		}
 

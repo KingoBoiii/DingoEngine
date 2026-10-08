@@ -1,13 +1,14 @@
-// Renderer3D's shadow-atlas pass: depth only, every shadow view of a scene in one instanced draw per
-// batch. Instance i takes view i: its matrix, then a move into its tile of the atlas, with clip
-// distances at the tile's edges so nothing spills into a neighbour. Static vertices are in world
+// Renderer3D's shadow-atlas pass: depth only, every shadow view of a scene (the cascades, then each
+// shadowed local light's one or six) in one instanced draw per batch. Instance i takes view i: its
+// matrix, orthographic or perspective, then a move into its tile of the atlas, with clip distances at
+// the tile's edges so nothing spills into a neighbour. Static vertices are in world
 // space already; with DE_SKINNED they are skinned like the lit shader's (Skinning.glsl). Mirrors
 // Renderer3D::ShadowViews.
 
 #type vertex
 #version 450
 
-const int MAX_SHADOW_VIEWS = 4;
+const int MAX_SHADOW_VIEWS = 100;
 
 struct ShadowView
 {

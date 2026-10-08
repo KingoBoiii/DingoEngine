@@ -454,6 +454,11 @@ namespace Dingo
 		m_UseEntities = args.Get("entities").has_value();
 		m_PostProcess = args.Get("post").has_value();
 		m_Bloom = args.Get("bloom").has_value();
+		if (auto fade = args.Get("budget-fade"))
+		{
+			const float band = fade->empty() ? 0.5f : std::strtof(std::string(*fade).c_str(), nullptr);
+			m_BudgetFade = band > 0.0f ? band : 0.5f;
+		}
 		if (auto specular = args.Get("specular"))
 			m_Specular = *specular != "off";
 
@@ -496,6 +501,7 @@ namespace Dingo
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		PostProcessSettings post;
+		renderer.SetLightBudgetFade(m_BudgetFade);
 		post.Enabled = m_PostProcess || m_Bloom;
 		post.Bloom.Enabled = m_Bloom;
 		Renderer::GetPostProcessStack().Begin(post);
@@ -762,6 +768,7 @@ namespace Dingo
 
 	void LightingTest::Cleanup()
 	{
+		Application::Get().GetRenderer3D().SetLightBudgetFade(0.0f);
 		for (Material*& material : m_RowMaterials)
 		{
 			delete material;
@@ -806,6 +813,7 @@ namespace Dingo
 		ImGui::Checkbox("Animate", &m_Animate);
 		ImGui::Checkbox("Post chain (Soft tone curve)", &m_PostProcess);
 		ImGui::Checkbox("Bloom (with the post chain)", &m_Bloom);
+		ImGui::SliderFloat("Budget fade band", &m_BudgetFade, 0.0f, 2.0f);
 		if (m_Mode == Mode::Materials)
 			ImGui::Checkbox("Specular", &m_Specular);
 		else
