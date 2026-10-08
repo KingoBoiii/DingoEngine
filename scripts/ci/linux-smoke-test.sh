@@ -33,7 +33,7 @@ run() {
 		sleep 1
 	done
 	if kill -0 $pid 2>/dev/null; then
-		$CLOSE || true
+		$CLOSE $pid || true
 		for ((i = 0; i < 60; i++)); do
 			kill -0 $pid 2>/dev/null || break
 			sleep 1
