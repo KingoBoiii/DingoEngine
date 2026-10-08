@@ -620,7 +620,8 @@ namespace Dingo
 		// The budget fade, on its own renderer: four light slots and two shadow slots, six casting point
 		// lights in a row away from the camera, each with a block beside it. Drawn with a hard cut and
 		// with a band, read back after each: the band dims the last drawn light, and the second
-		// shadowed light's shadow, at the shadow slots' edge, lightens.
+		// shadowed light's shadow, at the shadow slots' edge, lightens. Each light's priority is about
+		// 1.5 to 1.7 times the next one's, so a band narrower than that fades nothing.
 		{
 			Renderer3DParams params;
 			params.Capabilities.MaxLocalLights = 4;
@@ -659,11 +660,11 @@ namespace Dingo
 				return fadeRenderer->GetStatistics();
 			};
 			const Renderer3D::Statistics hard = drawLights(0.0f, &m_FadeHardPixels);
-			const Renderer3D::Statistics faded = drawLights(0.5f, &m_FadeBandPixels);
+			const Renderer3D::Statistics faded = drawLights(2.0f, &m_FadeBandPixels);
 			fadeRenderer->Shutdown();
 			delete fadeRenderer;
 			Check(hard.LocalLights == 4 && hard.FadedLights == 0 && faded.LocalLights == 4 && faded.FadedLights > 0 && hard.ShadowedLights == 2 && faded.ShadowedLights == 2,
-				std::format("past the light budget, a fade band dims the lights at its edge (hard cut {} faded, band 0.5 {} faded; {} and {} shadowed)", hard.FadedLights, faded.FadedLights, hard.ShadowedLights, faded.ShadowedLights));
+				std::format("past the light budget, a fade band dims the lights at its edge (hard cut {} faded, band 2 {} faded; {} and {} shadowed)", hard.FadedLights, faded.FadedLights, hard.ShadowedLights, faded.ShadowedLights));
 
 			const glm::mat4 fadeViewProjection = fadeCamera.GetViewProjectionMatrix();
 			m_FadeLastLitPixel = ToPixel(fadeViewProjection, { -0.5f, 0.0f, lightZ(3) }, k_CheckWidth, k_CheckHeight);
