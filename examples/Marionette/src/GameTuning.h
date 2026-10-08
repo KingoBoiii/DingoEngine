@@ -208,6 +208,13 @@ namespace Dingo
 	// left of its opponent in the windup, or the blow passes beside a target dead ahead.
 	inline constexpr float AIM_CHOP_DEG         = 24.0f;
 
+	// --- Particles ---------------------------------------------------------------------
+	inline constexpr uint32_t FOOT_DUST_COUNT    = 6;
+	inline constexpr uint32_t DASH_DUST_COUNT    = 18;
+	inline constexpr uint32_t FOOT_DUST_CAPACITY = 64;
+	inline constexpr float BLADE_TRAIL_RATE      = 400.0f;
+	inline constexpr float FOOT_DUST_LIFT        = 0.03f;
+
 	inline constexpr float HITSTOP_SECONDS      = 0.07f;
 	inline constexpr float HITSTOP_SPEED        = 0.05f;
 

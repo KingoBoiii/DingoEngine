@@ -112,6 +112,35 @@ namespace Dingo
 			BuildHitRig(def.RightWeapon ? context.Assets.GetModel(def.RightWeapon) : nullptr, rightHand);
 	}
 
+	Entity Fighter::SpawnEmitter(const char* name, ParticleEffect* effect, Entity parent, const char* joint, const glm::vec3& offset, bool playing)
+	{
+		Entity emitter = m_Context.World.CreateEntity(std::format("{} {}", m_Def.Name, name));
+		emitter.AddComponent<Transform3DComponent>().Position = offset;
+		emitter.AddComponent<ParticleEmitterComponent>(effect).Playing = playing;
+		emitter.SetParent(parent, joint ? joint : "", false);
+		return emitter;
+	}
+
+	void Fighter::BuildVfx(Entity weaponPart, const glm::vec3& bladeTip)
+	{
+		const ArenaVfx* vfx = m_Context.Vfx;
+		if (!vfx || !m_Valid)
+			return;
+
+		const glm::vec3 lift(0.0f, FOOT_DUST_LIFT, 0.0f);
+		Entity leftFoot = SpawnEmitter("dust l", vfx->GetFootDust(), m_Entity, Joints::FOOT_LEFT, lift, true);
+		Entity rightFoot = SpawnEmitter("dust r", vfx->GetFootDust(), m_Entity, Joints::FOOT_RIGHT, lift, true);
+		Entity dash = SpawnEmitter("dash dust", vfx->GetFootDust(), m_Entity, nullptr, lift, true);
+
+		auto& events = m_Entity.AddComponent<ParticleEventComponent>();
+		events.Bind(Events::STEP_LEFT, leftFoot.GetUUID(), FOOT_DUST_COUNT)
+			.Bind(Events::STEP_RIGHT, rightFoot.GetUUID(), FOOT_DUST_COUNT)
+			.Bind(Events::DASH, dash.GetUUID(), DASH_DUST_COUNT);
+
+		if (weaponPart)
+			events.BindRange(Events::HITBOX, SpawnEmitter("blade trail", vfx->GetBladeTrail(), weaponPart, nullptr, bladeTip, false).GetUUID());
+	}
+
 	Animator* Fighter::GetAnimator() const
 	{
 		return m_Context.World.GetAnimator(m_Entity);
@@ -191,11 +220,18 @@ namespace Dingo
 			m_Hurt.push_back(SpawnRigSphere(std::format("{} hurt {}", m_Def.Name, def.Joint), m_Entity, def.Joint, def.Offset, def.Radius));
 
 		if (!weapon || !weaponPart)
+		{
+			BuildVfx(Entity(), glm::vec3(0.0f));
 			return;
+		}
 
 		const BladeAxis blade = MeasureBlade(*weapon);
 		if (!(blade.Length > 0.0f))
+		{
+			BuildVfx(Entity(), glm::vec3(0.0f));
 			return;
+		}
+		BuildVfx(weaponPart, blade.Direction * blade.Length);
 
 		const float radius = WeaponSphereRadius(blade);
 		for (size_t i = 0; i < m_WeaponSpheres.size(); ++i)

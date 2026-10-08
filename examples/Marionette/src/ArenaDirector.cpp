@@ -1,5 +1,6 @@
 #include "ArenaDirector.h"
 #include "AiBrain.h"
+#include "ArenaVfx.h"
 #include "ArenaWorld.h"
 #include "Audio.h"
 #include "BoutFlow.h"
@@ -68,7 +69,9 @@ namespace Dingo
 
 		const bool logSteps = options.Check || (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel);
 		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None || (options.Autoplay && !m_Tournament);
-		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_Assets->GetDebugView() };
+		if (!options.NoParticles)
+			m_Vfx = std::make_unique<ArenaVfx>();
+		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_Assets->GetDebugView(), m_Vfx.get() };
 		BuildBout(context, options);
 	}
 
@@ -460,6 +463,7 @@ namespace Dingo
 		m_Fighters.clear();
 		m_Audio.reset();
 		m_World.reset();
+		m_Vfx.reset();
 	}
 
 }
