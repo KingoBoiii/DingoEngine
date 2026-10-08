@@ -220,6 +220,14 @@ namespace Dingo
 			.AddAttribute("a_Joints", Format::RGBA16_UINT, offsetof(SkinnedMeshVertex, Joints))
 			.AddAttribute("a_Weights", Format::RGBA32_FLOAT, offsetof(SkinnedMeshVertex, Weights));
 
+		// Vulkan takes locations from attribute order and warns about every one the vertex shader
+		// skips, so the depth pass reads only what Renderer3D_Shadow.glsl declares.
+		m_SkinnedShadowLayout = VertexLayout()
+			.SetStride(sizeof(SkinnedMeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(SkinnedMeshVertex, Position))
+			.AddAttribute("a_Joints", Format::RGBA16_UINT, offsetof(SkinnedMeshVertex, Joints))
+			.AddAttribute("a_Weights", Format::RGBA32_FLOAT, offsetof(SkinnedMeshVertex, Weights));
+
 		m_Layout = VertexLayout()
 			.SetStride(sizeof(Vertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(Vertex, Position))
@@ -1658,7 +1666,7 @@ namespace Dingo
 				}
 
 				EnsureSkinBuffers(submission.Mesh);
-				Renderer::DrawIndexed(m_SkinnedShadowMaterial, m_SkinnedLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
+				Renderer::DrawIndexed(m_SkinnedShadowMaterial, m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
 				++m_Statistics.ShadowDrawCalls;
 				++m_Statistics.ShadowCasters;
 			}

@@ -25,8 +25,8 @@ layout(location = 0) in vec3 a_Position;
 
 #ifdef DE_SKINNED
 #include <DingoEngine/Skinning.glsl>
-layout(location = 3) in uvec4 a_Joints;
-layout(location = 4) in vec4 a_Weights;
+layout(location = 1) in uvec4 a_Joints;
+layout(location = 2) in vec4 a_Weights;
 #endif
 
 out gl_PerVertex

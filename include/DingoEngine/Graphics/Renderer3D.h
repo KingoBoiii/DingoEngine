@@ -586,6 +586,7 @@ namespace Dingo
 		Shader* m_SkinnedShader = nullptr;
 		GraphicsBuffer* m_SkinBuffer = nullptr;
 		VertexLayout m_SkinnedLayout;
+		VertexLayout m_SkinnedShadowLayout;
 		SkinData m_SkinData;
 		// D3D11 drops a partial constant-buffer update on drivers without ConstantBufferPartialUpdate.
 		bool m_FullSkinUploads = false;
