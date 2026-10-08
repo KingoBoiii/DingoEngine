@@ -2,7 +2,7 @@
 #include "VulkanGraphicsContext.h"
 #include "VulkanCommon.h"
 
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 
 #include <iostream>
 

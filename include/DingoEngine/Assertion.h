@@ -7,6 +7,9 @@
 
 #ifdef DE_PLATFORM_WINDOWS
 #define DE_DEBUG_BREAK __debugbreak()
+#elif defined(DE_PLATFORM_LINUX)
+#include <csignal>
+#define DE_DEBUG_BREAK raise(SIGTRAP)
 #endif
 
 #ifdef DE_DEBUG

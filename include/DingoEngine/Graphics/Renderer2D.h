@@ -35,6 +35,26 @@ namespace Dingo
 		Renderer2DCapabilities Capabilities = {};
 	};
 
+	// Defined outside Renderer2D: a nested struct with default member initializers can't be a
+	// default argument (`= {}`) inside its own enclosing class on clang and gcc.
+	struct Renderer2DTextParameters
+	{
+		glm::vec4 Color{ 1.0f };
+		float Kerning = 0.0f;
+		float LineSpacing = 0.0f;
+
+		// Horizontally center the string on position.x instead of starting there. The
+		// width is taken from the pen while the glyphs are emitted and the quads are
+		// shifted afterwards, so this costs one walk of the string where
+		// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
+		// block on their widest line, matching what GetStringWidth() reports.
+		bool Centered = false;
+
+		// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
+		// or its middle when Centered.
+		float Rotation = 0.0f;
+	};
+
 	class Renderer2D
 	{
 	public:
@@ -79,23 +99,7 @@ namespace Dingo
 
 		void DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness = 1.0f, float fade = 0.005f);
 
-		struct TextParameters
-		{
-			glm::vec4 Color{ 1.0f };
-			float Kerning = 0.0f;
-			float LineSpacing = 0.0f;
-
-			// Horizontally center the string on position.x instead of starting there. The
-			// width is taken from the pen while the glyphs are emitted and the quads are
-			// shifted afterwards, so this costs one walk of the string where
-			// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
-			// block on their widest line, matching what GetStringWidth() reports.
-			bool Centered = false;
-
-			// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
-			// or its middle when Centered.
-			float Rotation = 0.0f;
-		};
+		using TextParameters = Renderer2DTextParameters;
 
 		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes
 		// Latin-1, the printable General Punctuation and the euro sign; anything else draws '?'.
