@@ -443,16 +443,19 @@ void main()
 	{
 		uint32_t currentFramebufferIndex = swapchain->GetCurrentBackBufferIndex();
 		auto& swapchainPipelineCache = m_PipelineCache[swapchain];
-		DE_CORE_ASSERT(currentFramebufferIndex < swapchainPipelineCache.Pipelines.max_size());
 
 		// The swap chain's framebuffers are recreated on every resize; drop the pipelines
 		// built against the previous generation. Never store the framebuffer handle itself
 		// (see SwapchainPipelineCache).
 		if (swapchainPipelineCache.ResizeGeneration != swapchain->GetResizeGeneration())
 		{
-			swapchainPipelineCache.Pipelines = {};
+			swapchainPipelineCache.Pipelines.clear();
 			swapchainPipelineCache.ResizeGeneration = swapchain->GetResizeGeneration();
 		}
+
+		// A driver may create more images than the swap chain asks for, most often for mailbox.
+		if (currentFramebufferIndex >= swapchainPipelineCache.Pipelines.size())
+			swapchainPipelineCache.Pipelines.resize(currentFramebufferIndex + 1);
 
 		nvrhi::GraphicsPipelineHandle pipeline = swapchainPipelineCache.Pipelines[currentFramebufferIndex];
 		if (!pipeline)
