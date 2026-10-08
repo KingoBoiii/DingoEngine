@@ -533,6 +533,7 @@ namespace Dingo
 		}
 
 		m_SupportsWireframe = m_VulkanPhysicalDevice.getFeatures().fillModeNonSolid == VK_TRUE;
+		m_SupportsClipDistance = m_VulkanPhysicalDevice.getFeatures().shaderClipDistance == VK_TRUE;
 
 		vk::PhysicalDeviceFeatures deviceFeatures = vk::PhysicalDeviceFeatures()
 			.setShaderImageGatherExtended(true)
@@ -543,7 +544,7 @@ namespace Dingo
 			.setImageCubeArray(true)
 			.setDualSrcBlend(true)
 			.setFillModeNonSolid(m_SupportsWireframe)
-			.setShaderClipDistance(m_VulkanPhysicalDevice.getFeatures().shaderClipDistance);
+			.setShaderClipDistance(m_SupportsClipDistance);
 
 		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
 			.setShaderDemoteToHelperInvocation(true);

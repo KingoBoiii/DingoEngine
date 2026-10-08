@@ -50,6 +50,9 @@ namespace Dingo
 		// False on a Vulkan GPU without fillModeNonSolid, where a FillMode::Wireframe pipeline is
 		// built solid instead.
 		bool SupportsWireframe() const { return m_SupportsWireframe; }
+		// False on a Vulkan GPU without shaderClipDistance, which the shadow pass needs to keep each
+		// view inside its atlas tile; Renderer3D then draws no shadows.
+		bool SupportsClipDistance() const { return m_SupportsClipDistance; }
 		static GraphicsContext& Get() { return *s_Instance; }
 
 		static std::string VendorName(uint32_t vendorID);
@@ -61,6 +64,7 @@ namespace Dingo
 		GraphicsParams m_Params;
 		AdapterInfo m_AdapterInfo;
 		bool m_SupportsWireframe = true;
+		bool m_SupportsClipDistance = true;
 
 	private:
 		inline static GraphicsContext* s_Instance = nullptr;

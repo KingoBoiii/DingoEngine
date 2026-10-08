@@ -451,6 +451,7 @@ namespace Dingo
 		bool m_LitSlotsWarned = false;
 		bool m_UnshadowedWarned = false;
 		bool m_AtlasFullWarned = false;
+		bool m_NoClipDistanceWarned = false;
 
 		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
 		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.

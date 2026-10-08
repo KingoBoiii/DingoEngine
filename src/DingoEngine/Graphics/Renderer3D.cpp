@@ -1284,6 +1284,15 @@ namespace Dingo
 		m_ShadowViewCount = 0;
 		if (!m_HasCasters)
 			return false;
+		if (!GraphicsContext::Get().SupportsClipDistance())
+		{
+			if (!m_NoClipDistanceWarned)
+			{
+				DE_CORE_WARN("Renderer3D: this GPU has no shaderClipDistance, which the shadow pass needs to keep each view inside its atlas tile; shadows are off.");
+				m_NoClipDistanceWarned = true;
+			}
+			return false;
+		}
 
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
 		ShadowAtlasAllocator allocator(settings.AtlasSize);

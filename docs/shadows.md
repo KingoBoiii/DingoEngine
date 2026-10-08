@@ -167,6 +167,8 @@ then `SlopeBias`. **Peter-panning** (a shadow detached from the foot of its cast
   texture, and every batch is drawn into all of them at once: the shadow pass draws it instanced, one
   instance per tile, with clip distances at each tile's edges. Skinned meshes are skinned again for it, so a skinned instance
   uploads its joints twice a frame (the skin buffer holds two writes per instance of the budget).
+  The clip distances need Vulkan's `shaderClipDistance`; on a GPU without it
+  (`GraphicsContext::SupportsClipDistance()` false) no shadows are drawn and Renderer3D warns once.
 - **Filtering.** The lit shader reads each cascade through a comparison sampler: 3 x 3 taps of the
   hardware's 2 x 2 comparison, 16 texels in all, kept inside the tile.
 - **Cost.** The shadow pass draws every casting batch's vertices once per cascade; per-mesh culling
