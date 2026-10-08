@@ -340,6 +340,10 @@ namespace Dingo
 		m_CameraData.ViewProjection = viewProjection;
 		m_CameraData.CameraPosition = cameraPosition;
 
+		const uint64_t frame = Renderer::GetFrameIndex();
+		m_SceneOfFrame = frame == m_SceneFrame ? m_SceneOfFrame + 1 : 0;
+		m_SceneFrame = frame;
+
 		m_Statistics = {};
 		m_HasCasters = false;
 		m_StaticCasters = 0;
@@ -1445,9 +1449,14 @@ namespace Dingo
 	void Renderer3D::PrepareLocalShadows(ShadowAtlasAllocator& allocator)
 	{
 		// Tiers are remembered by submission index, which only names the same light while the scene
-		// submits the same lights in the same order.
-		if (m_LocalShadowTiers.size() != m_LocalLights.size())
-			m_LocalShadowTiers.assign(m_LocalLights.size(), 0xFF);
+		// submits the same lights in the same order, and per scene of the frame, so a main view and a
+		// minimap with as many lights don't overwrite each other's every frame.
+		const size_t table = std::min<size_t>(m_SceneOfFrame, k_MaxScenesPerFrame - 1);
+		if (m_LocalShadowTiers.size() <= table)
+			m_LocalShadowTiers.resize(table + 1);
+		std::vector<uint8_t>& tiers = m_LocalShadowTiers[table];
+		if (tiers.size() != m_LocalLights.size())
+			tiers.assign(m_LocalLights.size(), 0xFF);
 
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
 		const uint32_t cap = std::min(m_Params.Capabilities.MaxShadowedLocalLights, k_MaxShadowedLocalLights);
@@ -1514,10 +1523,10 @@ namespace Dingo
 			const LocalLightCandidate& light = m_LocalLights[index];
 
 			uint8_t tier = tierFor(rank);
-			const uint8_t previous = m_LocalShadowTiers[index];
+			const uint8_t previous = tiers[index];
 			if (previous != 0xFF && previous != tier && (tierFor(rank > 0 ? rank - 1 : 0) == previous || tierFor(rank + 1) == previous))
 				tier = previous;
-			m_LocalShadowTiers[index] = tier;
+			tiers[index] = tier;
 
 			const glm::vec3 position(light.Data.PositionRange);
 			const float range = light.Data.PositionRange.w;

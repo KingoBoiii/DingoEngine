@@ -707,7 +707,10 @@ namespace Dingo
 
 		// Each local light's last tile tier, by submission index, while the scene submits as many
 		// local lights as the last one did: a light keeps its tile size until its rank moves two places.
-		std::vector<uint8_t> m_LocalShadowTiers;
+		// One table per scene of the frame, in the order they begin.
+		std::vector<std::vector<uint8_t>> m_LocalShadowTiers;
+		uint64_t m_SceneFrame = ~0ull;
+		uint32_t m_SceneOfFrame = 0;
 
 		// Where the scene's casters are, so a cascade's depth range reaches back to every one of them.
 		glm::vec3 m_CasterMin{ 0.0f };
