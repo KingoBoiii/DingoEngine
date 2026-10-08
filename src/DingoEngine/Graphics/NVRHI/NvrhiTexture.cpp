@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
+#include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <cstring>
 
@@ -246,6 +247,106 @@ namespace Dingo
 			copyAndResolve();
 		else
 			Renderer::RunAfterFrame(std::move(copyAndResolve));
+	}
+
+	namespace Internal
+	{
+
+		class NvrhiTextureReadback : public TextureReadback, public std::enable_shared_from_this<NvrhiTextureReadback>
+		{
+		public:
+			bool IsBusy() const override { return m_Busy; }
+
+			bool Read(Texture* source, std::function<void(const TexturePixels&)> done) override
+			{
+				nvrhi::ITexture* handle = source ? static_cast<nvrhi::ITexture*>(source->GetTextureHandle()) : nullptr;
+				CommandList* frameList = Renderer::TryGetRecordingCommandList();
+				if (m_Busy || !handle || !frameList)
+					return false;
+				const nvrhi::TextureDesc& desc = handle->getDesc();
+				const TextureFormat format = Utils::GetTextureFormat(desc.format);
+				if (format == TextureFormat::Unknown || desc.dimension != nvrhi::TextureDimension::Texture2D)
+					return false;
+
+				nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+				if (!m_Staging || m_Width != desc.width || m_Height != desc.height || m_Format != format)
+				{
+					m_Staging = device->createStagingTexture(nvrhi::TextureDesc()
+						.setDebugName(desc.debugName + " (readback)")
+						.setWidth(desc.width)
+						.setHeight(desc.height)
+						.setFormat(desc.format)
+						.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
+					m_Width = desc.width;
+					m_Height = desc.height;
+					m_Format = format;
+				}
+				if (!m_Event)
+					m_Event = device->createEventQuery();
+
+				// As in NvrhiTexture::ReadPixels: the copy joins the frame, and the texture gets back the
+				// state it had.
+				nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
+				const nvrhi::ResourceStates state = list->getTextureSubresourceState(handle, 0, 0);
+				list->copyTexture(m_Staging, nvrhi::TextureSlice(), handle, nvrhi::TextureSlice());
+				if (state != nvrhi::ResourceStates::Unknown)
+				{
+					list->setTextureState(handle, nvrhi::AllSubresources, state);
+					list->commitBarriers();
+				}
+
+				m_Busy = true;
+				// The frame is submitted by the next frame's start, so the event set then follows the copy.
+				Renderer::RunAfterFrame([self = shared_from_this(), done = std::move(done)]() mutable
+				{
+					nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+					device->resetEventQuery(self->m_Event);
+					device->setEventQuery(self->m_Event, nvrhi::CommandQueue::Graphics);
+					self->Poll(std::move(done));
+				});
+				return true;
+			}
+
+		private:
+			void Poll(std::function<void(const TexturePixels&)> done)
+			{
+				nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+				if (!device->pollEventQuery(m_Event) && !Renderer::IsShuttingDown())
+				{
+					Renderer::RunAfterFrame([self = shared_from_this(), done = std::move(done)]() mutable { self->Poll(std::move(done)); });
+					return;
+				}
+
+				TexturePixels pixels;
+				pixels.Format = m_Format;
+				size_t rowPitch = 0;
+				if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(m_Staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
+				{
+					const size_t rowBytes = static_cast<size_t>(m_Width) * GetBytesPerPixel(m_Format);
+					pixels.Width = m_Width;
+					pixels.Height = m_Height;
+					pixels.Data.resize(rowBytes * m_Height);
+					for (uint32_t row = 0; row < m_Height; ++row)
+						std::memcpy(pixels.Data.data() + row * rowBytes, mapped + row * rowPitch, rowBytes);
+					device->unmapStagingTexture(m_Staging);
+				}
+				m_Busy = false;
+				done(pixels);
+			}
+
+			nvrhi::StagingTextureHandle m_Staging;
+			nvrhi::EventQueryHandle m_Event;
+			uint32_t m_Width = 0;
+			uint32_t m_Height = 0;
+			TextureFormat m_Format = TextureFormat::Unknown;
+			bool m_Busy = false;
+		};
+
+		std::shared_ptr<TextureReadback> TextureReadback::Create()
+		{
+			return std::make_shared<NvrhiTextureReadback>();
+		}
+
 	}
 
 }

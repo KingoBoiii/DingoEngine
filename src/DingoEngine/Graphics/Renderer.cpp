@@ -62,6 +62,7 @@ namespace Dingo
 		// Main thread only: from BeginFrame or SkipFrame to EndFrame, and before the first frame, the
 		// render thread is parked and the main thread may submit command lists of its own.
 		bool RenderThreadParked = true;
+		bool ShuttingDown = false;
 
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
@@ -119,6 +120,7 @@ namespace Dingo
 		// submit it now to break the NVRHI CommandList <-> TrackedCommandBuffer cycle.
 		if (s_Data->HasPendingFrame)
 			Execute();
+		s_Data->ShuttingDown = true;
 		RunPendingAfterFrame();
 
 		DestroyAndDelete(s_Data->CommandList);
@@ -232,6 +234,11 @@ namespace Dingo
 	bool Renderer::IsRenderThreadParked()
 	{
 		return s_Data && s_Data->RenderThreadParked;
+	}
+
+	bool Renderer::IsShuttingDown()
+	{
+		return s_Data && s_Data->ShuttingDown;
 	}
 
 	void Renderer::QueueResize(int32_t width, int32_t height)

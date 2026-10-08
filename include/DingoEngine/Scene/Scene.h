@@ -101,7 +101,7 @@ namespace Dingo
 		// lit, 0 in its shadow (ShadowStrength of the way). The renderer's own shadow lookup works it
 		// out on the GPU (Renderer3D::AddShadowProbe), so the shadow a player sees is the shadow that
 		// hides them. Each call asks for the next frame and returns the latest answer for this light
-		// and key, a frame or two old, or 1 before the first; call it every frame you care about, with
+		// and key, one to three frames old, or 1 before the first; call it every frame you care about, with
 		// a key per point you track for the same light. The question goes out with the scene's next
 		// SubmitLights (the SceneRenderer's 3D pass), so a scene that isn't rendered never answers. A
 		// light drawn without a shadow, or not drawn at all, answers 1. The point has no surface to

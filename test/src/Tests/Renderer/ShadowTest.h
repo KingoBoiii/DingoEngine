@@ -90,6 +90,7 @@ namespace Dingo
 
 		// Frames the probe checks still issue probes for before they read the answers.
 		int m_ProbeFramesLeft = 0;
+		int m_ProbeAnswerFrame = -1;
 		std::array<Framebuffer*, 3> m_ProbeTargets{};
 
 		static constexpr uint32_t k_CheckWidth = 320;

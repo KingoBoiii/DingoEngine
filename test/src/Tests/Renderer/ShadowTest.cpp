@@ -693,6 +693,7 @@ namespace Dingo
 
 		// Answers come back a frame or two later, so the probe checks issue probes for a few frames.
 		m_ProbeFramesLeft = 8;
+		m_ProbeAnswerFrame = -1;
 		UpdateProbeChecks();
 	}
 
@@ -713,9 +714,14 @@ namespace Dingo
 		DrawInto(m_ProbeTargets[2], Mode::Point, true, CameraFor(Mode::Point, aspect), true);
 		const float entityVisibility = m_EntityScene->GetLightVisibility(m_EntitySun, k_SunBehind);
 		Application::Get().GetSceneRenderer().Render(*m_EntityScene, m_EntityTarget);
+		if (m_ProbeAnswerFrame < 0 && renderer.GetShadowProbeResult(k_SunBehindKey))
+			m_ProbeAnswerFrame = 8 - m_ProbeFramesLeft;
 
 		if (--m_ProbeFramesLeft > 0)
 			return;
+
+		Check(m_ProbeAnswerFrame >= 1 && m_ProbeAnswerFrame <= 4,
+			std::format("the GPU's probe answers arrive within four frames ({} frames)", m_ProbeAnswerFrame));
 
 		auto answer = [&renderer](uint64_t key) { return renderer.GetShadowProbeResult(key).value_or(-1.0f); };
 		const float sunBehind = answer(k_SunBehindKey);

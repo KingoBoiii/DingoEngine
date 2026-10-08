@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
+#include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -308,6 +309,7 @@ namespace Dingo
 		m_ProbeShader = nullptr;
 		DestroyAndDelete(m_ProbeBuffer);
 		DestroyAndDelete(m_ProbeTarget);
+		m_ProbeReadbacks.clear();
 		m_ShadowProbes.clear();
 		m_GpuProbeKeys.clear();
 
@@ -1712,6 +1714,15 @@ namespace Dingo
 			return;
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawShadowProbes");
+		auto readback = std::ranges::find_if(m_ProbeReadbacks, [](const std::shared_ptr<Internal::TextureReadback>& candidate) { return !candidate->IsBusy(); });
+		if (readback == m_ProbeReadbacks.end())
+		{
+			if (m_ProbeReadbacks.size() >= k_MaxProbeReadbacks)
+				return;
+			m_ProbeReadbacks.push_back(Internal::TextureReadback::Create());
+			readback = m_ProbeReadbacks.end() - 1;
+		}
+
 		if (!m_ProbeShader)
 		{
 			m_ProbeShader = new Internal::FullscreenShader("Renderer3DShadowProbe", "Renderer3D_ShadowProbe.glsl");
@@ -1737,7 +1748,7 @@ namespace Dingo
 
 		// The copy is recorded here, so the next scene's probes can draw into the same target.
 		const std::weak_ptr<ShadowProbeAnswers> answers = m_ProbeAnswers;
-		m_ProbeTarget->GetAttachment(0)->ReadPixels([answers, keys = m_GpuProbeKeys, frame = Renderer::GetFrameIndex()](const TexturePixels& pixels)
+		(*readback)->Read(m_ProbeTarget->GetAttachment(0), [answers, keys = m_GpuProbeKeys, frame = Renderer::GetFrameIndex()](const TexturePixels& pixels)
 		{
 			const std::shared_ptr<ShadowProbeAnswers> target = answers.lock();
 			if (!target || pixels.Data.empty())

@@ -93,7 +93,9 @@ const float lit = scene->GetShadowedLightAttenuation(brazier, playerChest);  // 
 ```
 
 - **Late, never stalling.** Each call asks for the next frame and returns the latest answer for
-  that light and key: one or two frames old, and 1 before the first arrives. The question goes out
+  that light and key: one to three frames old, and 1 before the first arrives. The answers are read
+  back only once a GPU event says the frame that drew them is done, so asking never makes the CPU
+  wait for the GPU. The question goes out
   with the scene's next `SubmitLights` (the `SceneRenderer`'s 3D pass), so a scene that isn't
   rendered doesn't answer.
 - **What is drawn.** A light drawn without a shadow (no `CastShadows`, past the shadow slots, or out
@@ -109,7 +111,7 @@ Without the ECS, ask `Renderer3D` directly, between submitting the light and `En
 ```cpp
 renderer.SubmitLight(lamp);
 renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), point, key); // any 64-bit key you choose
-// ... a frame or two later:
+// ... a few frames later:
 if (std::optional<float> lit = renderer.GetShadowProbeResult(key)) { /* 0..1 */ }
 ```
 

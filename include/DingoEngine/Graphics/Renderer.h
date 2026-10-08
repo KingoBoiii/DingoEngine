@@ -19,6 +19,11 @@ namespace Dingo
 {
 
 	class SwapChain;
+
+	namespace Internal
+	{
+		class NvrhiTextureReadback;
+	}
 	class PostProcessStack;
 
 	// One GPU pass timer (Renderer::BeginGpuTimer), over the last GpuTimers::k_HistoryLength frames
@@ -249,11 +254,14 @@ namespace Dingo
 		// While true the main thread may submit a command list of its own: the render thread waits
 		// for the next frame. False from EndFrame until the next BeginFrame or SkipFrame.
 		static bool IsRenderThreadParked();
+		// True in Shutdown's last run of the RunAfterFrame callbacks, after which none run.
+		static bool IsShuttingDown();
 
 		static struct RendererData* s_Data;
 
 		friend class NvrhiTexture;
 		friend class NvrhiGraphicsBuffer;
+		friend class Internal::NvrhiTextureReadback;
 	};
 
 }

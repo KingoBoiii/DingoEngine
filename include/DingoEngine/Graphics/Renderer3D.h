@@ -27,6 +27,7 @@ namespace Dingo
 	{
 		class FullscreenShader;
 		class ParticleRenderer;
+		class TextureReadback;
 	}
 
 	// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
@@ -207,7 +208,7 @@ namespace Dingo
 		// (lit) to 0 (in its shadow, ShadowStrength of the way), worked out on the GPU by the lit
 		// shader's own shadow lookup, so the shadow a player sees is the one that hides them. Add a
 		// probe before EndScene, as lights are (it clears with them), and read the answer by its key
-		// with GetShadowProbeResult: the GPU answers a frame or two later, never stalling, and a key
+		// with GetShadowProbeResult: the GPU answers one to three frames later, never stalling, and a key
 		// keeps its latest answer until the next one arrives. A light drawn without a shadow (no
 		// CastShadows, past the shadow slots, out of the budget) answers 1 at once, which is what is
 		// drawn. The point is taken as it is, with no surface normal to push it off a surface, so
@@ -696,6 +697,10 @@ namespace Dingo
 		Material* m_ProbeMaterial = nullptr;
 		GraphicsBuffer* m_ProbeBuffer = nullptr;
 		Framebuffer* m_ProbeTarget = nullptr;
+		// Reads in flight, a few frames each; a scene finding none free draws no probes and keeps the
+		// latest answers.
+		std::vector<std::shared_ptr<Internal::TextureReadback>> m_ProbeReadbacks;
+		static constexpr size_t k_MaxProbeReadbacks = 16;
 
 		// Each local light's last tile tier, by submission index, while the scene submits as many
 		// local lights as the last one did: a light keeps its tile size until its rank moves two places.
