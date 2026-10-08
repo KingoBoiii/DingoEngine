@@ -48,6 +48,7 @@ void main()
 		constexpr float k_SpotHalfSize = 4.0f / 64.0f; // an 8 x 8 px square
 		constexpr uint32_t k_SceneWidth = 320;
 		constexpr uint32_t k_SceneHeight = 240;
+		constexpr uint32_t k_SplitSize = 32;
 
 		Framebuffer* MakeTarget(const char* name, uint32_t width, uint32_t height, bool depth)
 		{
@@ -167,6 +168,7 @@ void main()
 		m_SceneDisabled = MakeTarget("PostTest scene disabled", k_SceneWidth, k_SceneHeight, true);
 		m_RoomPlain = MakeTarget("PostTest room plain", k_SceneWidth, k_SceneHeight, true);
 		m_RoomOccluded = MakeTarget("PostTest room occluded", k_SceneWidth, k_SceneHeight, true);
+		m_SplitTarget = MakeTarget("PostTest split", 2 * k_SplitSize, k_SplitSize, false);
 	}
 
 	PerspectiveCamera PostTest::RoomCamera(float aspect) const
@@ -437,6 +439,33 @@ void main()
 			Check(wallPixels > 10 && darkened == 0,
 				std::format("no halo: the wall beside a box floating before it isn't darkened, up to its silhouette ({} of {} pixels darker)", darkened, wallPixels));
 		});
+
+		// Split screen: the chain inside the right half's viewport tone-maps into that half alone and
+		// leaves the viewport set.
+		{
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_SplitTarget);
+			Renderer::Clear(glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+			const Viewport half{ static_cast<float>(k_SplitSize), 0.0f, static_cast<float>(k_SplitSize), static_cast<float>(k_SplitSize) };
+			Renderer::SetViewport(half);
+			post.Begin(WithOperator(defaults, ToneMapOperator::None));
+			const uint32_t sceneWidth = post.GetSceneTarget() ? post.GetSceneTarget()->GetWidth() : 0;
+			Renderer::Draw(m_SpotMaterial, 3);
+			post.End();
+			const std::optional<Viewport> kept = Renderer::GetViewport();
+			Renderer::SetRenderTarget(previous);
+			Check(sceneWidth == k_SplitSize && kept && kept->X == half.X && kept->Width == half.Width,
+				std::format("the chain inside a viewport renders at the viewport's size ({} px wide) and keeps the viewport", sceneWidth));
+		}
+		readBack(m_SplitTarget, [this](const TexturePixels& pixels)
+		{
+			const glm::vec4 left = PixelAt(pixels.Data, 2 * k_SplitSize, { static_cast<int>(k_SplitSize / 2), static_cast<int>(k_SplitSize / 2) });
+			const glm::vec4 spot = PixelAt(pixels.Data, 2 * k_SplitSize, { static_cast<int>(k_SplitSize + k_SplitSize / 2), static_cast<int>(k_SplitSize / 2) });
+			const glm::vec4 corner = PixelAt(pixels.Data, 2 * k_SplitSize, { static_cast<int>(k_SplitSize + 2), 2 });
+			Check(left.b > 0.99f && left.r < 0.01f && spot.r > 0.99f && corner.r < 0.01f && corner.b < 0.01f,
+				std::format("and tone-maps into the viewport alone: the left half stays clear (blue {:.2f}), the right shows the scene (spot {:.2f}, corner {:.2f})", left.b, spot.r, corner.b));
+		});
 	}
 
 	void PostTest::Update(float deltaTime)
@@ -515,6 +544,7 @@ void main()
 		DestroyAndDelete(m_SceneDisabled);
 		DestroyAndDelete(m_RoomPlain);
 		DestroyAndDelete(m_RoomOccluded);
+		DestroyAndDelete(m_SplitTarget);
 		m_RoomPlainPixels.clear();
 		DestroyAndDelete(m_GradientMaterial);
 		DestroyAndDelete(m_GradientShader);

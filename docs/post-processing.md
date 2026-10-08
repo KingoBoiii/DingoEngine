@@ -39,7 +39,10 @@ post.End();                          // tone-maps into the render target that wa
 ```
 
 `Begin` sizes the scene target to the render target current at the time (the window, or a framebuffer
-set with `Renderer::SetRenderTarget`), so the chain works for a scene rendered into a texture too. The
+set with `Renderer::SetRenderTarget`), so the chain works for a scene rendered into a texture too.
+Inside a `Renderer::SetViewport` rectangle (one view of a split screen) it takes the rectangle's size
+and `End` tone-maps into that rectangle alone, leaving the viewport set; the `SceneRenderer` also
+takes a viewport's aspect for its projections. The
 projection is what ambient occlusion rebuilds positions from; `Begin(settings)` without one runs
 every pass but AO (which then warns once).
 

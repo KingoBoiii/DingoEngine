@@ -86,6 +86,7 @@ namespace Dingo
 		bool m_ShowRoom = false;
 		Framebuffer* m_RoomPlain = nullptr;
 		Framebuffer* m_RoomOccluded = nullptr;
+		Framebuffer* m_SplitTarget = nullptr;
 		std::vector<uint8_t> m_RoomPlainPixels;
 	};
 

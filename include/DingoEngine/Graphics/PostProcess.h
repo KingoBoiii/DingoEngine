@@ -82,8 +82,9 @@ namespace Dingo
 	};
 
 	// The 3D pass's post chain. Begin redirects the draws that follow into an HDR scene target (RGBA16F
-	// colour and a sampleable depth, the size of the render target that was current); End tone-maps it
-	// into that render target and makes it current again. 2D drawn afterwards goes on top untouched:
+	// colour and a sampleable depth, the size of the render target that was current, or of its
+	// Renderer::SetViewport rectangle when one is set); End tone-maps it into that target (within
+	// that rectangle) and makes both current again. 2D drawn afterwards goes on top untouched:
 	// the HUD is never tone mapped.
 	//
 	//   PostProcessStack& post = Renderer::GetPostProcessStack();

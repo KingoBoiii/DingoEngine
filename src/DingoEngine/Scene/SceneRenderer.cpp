@@ -44,14 +44,16 @@ namespace Dingo
 		}
 
 		Framebuffer* previousTarget = Renderer::GetRenderTarget();
+		const std::optional<Viewport> previousViewport = Renderer::GetViewport();
 		if (target)
 			Renderer::SetRenderTarget(target);
 
 		// Aspect comes from the framebuffer drawn into, so projections track the window, or the
-		// texture a scene renders into. Guard a zero height.
+		// texture a scene renders into, or the viewport drawn within. Guard a zero height.
 		const Framebuffer* drawn = target ? target : previousTarget ? previousTarget : Renderer::GetSwapChainFramebuffer();
-		const float width = static_cast<float>(drawn->GetParams().Width);
-		const float height = static_cast<float>(drawn->GetParams().Height);
+		const bool inViewport = !target && previousViewport;
+		const float width = inViewport ? previousViewport->Width : static_cast<float>(drawn->GetParams().Width);
+		const float height = inViewport ? previousViewport->Height : static_cast<float>(drawn->GetParams().Height);
 		const float aspect = height > 0.0f ? width / height : 1.0f;
 		const glm::vec4 clearColor = scene.GetClearColor();
 
@@ -89,7 +91,11 @@ namespace Dingo
 		}
 
 		if (target)
+		{
 			Renderer::SetRenderTarget(previousTarget);
+			if (previousViewport)
+				Renderer::SetViewport(*previousViewport);
+		}
 	}
 
 }

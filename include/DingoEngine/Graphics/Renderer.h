@@ -12,6 +12,7 @@
 #include <glm/glm.hpp>
 
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace Dingo
@@ -196,6 +197,8 @@ namespace Dingo
 		// clear the whole target.
 		static void SetViewport(const Viewport& viewport);
 		static void ResetViewport();
+		// The SetViewport rectangle in force, or empty while draws cover the whole target.
+		static std::optional<Viewport> GetViewport();
 		// The override, or null while draws go to the swap chain.
 		static Framebuffer* GetRenderTarget();
 

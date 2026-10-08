@@ -27,7 +27,31 @@ namespace Dingo::Internal
 		Shader* m_Shader = nullptr;
 	};
 
-	// Into target, current only for the draw: the caller's render target stays current.
+	// Makes target current until it goes out of scope, then puts back the render target and the
+	// viewport that were current, which SetRenderTarget alone would drop.
+	class RenderTargetScope
+	{
+	public:
+		explicit RenderTargetScope(Framebuffer* target)
+			: m_Previous(Renderer::GetRenderTarget()), m_Viewport(Renderer::GetViewport())
+		{
+			Renderer::SetRenderTarget(target);
+		}
+		~RenderTargetScope()
+		{
+			Renderer::SetRenderTarget(m_Previous);
+			if (m_Viewport)
+				Renderer::SetViewport(*m_Viewport);
+		}
+		RenderTargetScope(const RenderTargetScope&) = delete;
+		RenderTargetScope& operator=(const RenderTargetScope&) = delete;
+
+	private:
+		Framebuffer* m_Previous;
+		std::optional<Viewport> m_Viewport;
+	};
+
+	// Into target, current only for the draw: the caller's render target and viewport stay current.
 	void DrawFullscreen(Material* material, Framebuffer* target);
 	void DrawFullscreen(Material* material, Framebuffer* target, const Viewport& viewport);
 

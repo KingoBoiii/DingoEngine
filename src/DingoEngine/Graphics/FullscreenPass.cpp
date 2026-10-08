@@ -35,19 +35,15 @@ namespace Dingo::Internal
 
 	void DrawFullscreen(Material* material, Framebuffer* target)
 	{
-		Framebuffer* previous = Renderer::GetRenderTarget();
-		Renderer::SetRenderTarget(target);
+		RenderTargetScope scope(target);
 		Renderer::Draw(material, 3);
-		Renderer::SetRenderTarget(previous);
 	}
 
 	void DrawFullscreen(Material* material, Framebuffer* target, const Viewport& viewport)
 	{
-		Framebuffer* previous = Renderer::GetRenderTarget();
-		Renderer::SetRenderTarget(target);
+		RenderTargetScope scope(target);
 		Renderer::SetViewport(viewport);
 		Renderer::Draw(material, 3);
-		Renderer::SetRenderTarget(previous);
 	}
 
 }

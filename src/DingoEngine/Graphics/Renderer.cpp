@@ -385,6 +385,13 @@ namespace Dingo
 		s_Data->HasViewport = false;
 	}
 
+	std::optional<Viewport> Renderer::GetViewport()
+	{
+		if (!s_Data->HasViewport)
+			return std::nullopt;
+		return s_Data->ViewportOverride;
+	}
+
 	void Renderer::BindTarget(Framebuffer* target)
 	{
 		s_Data->CommandList->SetFramebuffer(target);

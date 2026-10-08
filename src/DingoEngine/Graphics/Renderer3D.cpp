@@ -1573,8 +1573,7 @@ namespace Dingo
 		DE_PROFILE_SCOPE("Renderer3D::DrawShadowPass");
 		Renderer::BeginGpuTimer("Shadows");
 
-		Framebuffer* previous = Renderer::GetRenderTarget();
-		Renderer::SetRenderTarget(m_ShadowAtlas);
+		Internal::RenderTargetScope scope(m_ShadowAtlas);
 		Renderer::Clear(m_ShadowAtlas, glm::vec4(0.0f));
 		Renderer::Upload(m_ShadowViewsBuffer, &m_ShadowViews, sizeof(ShadowViews));
 
@@ -1632,7 +1631,6 @@ namespace Dingo
 			}
 		}
 
-		Renderer::SetRenderTarget(previous);
 		Renderer::EndGpuTimer();
 	}
 

@@ -115,6 +115,7 @@ namespace Dingo
 		bool Active = false;
 		bool Skipped = false;
 		Framebuffer* Caller = nullptr;
+		std::optional<Viewport> CallerViewport;
 		Framebuffer* Current = nullptr;
 		SceneTarget* CurrentTarget = nullptr; // into Targets, which nothing grows between Begin and End
 		PostProcessSettings Settings;
@@ -485,9 +486,17 @@ namespace Dingo
 		}
 
 		data.Caller = Renderer::GetRenderTarget();
+		data.CallerViewport = Renderer::GetViewport();
 		const Framebuffer* output = data.Caller ? data.Caller : Renderer::GetSwapChainFramebuffer();
-		const uint32_t width = std::max(output->GetWidth(), 1u);
-		const uint32_t height = std::max(output->GetHeight(), 1u);
+		uint32_t width = std::max(output->GetWidth(), 1u);
+		uint32_t height = std::max(output->GetHeight(), 1u);
+		// Within a viewport (one view of a split screen) the scene target is the viewport's size, and
+		// End tone-maps into the viewport alone.
+		if (data.CallerViewport)
+		{
+			width = std::max(static_cast<uint32_t>(std::lround(data.CallerViewport->Width)), 1u);
+			height = std::max(static_cast<uint32_t>(std::lround(data.CallerViewport->Height)), 1u);
+		}
 		const uint64_t frame = Renderer::GetFrameIndex();
 
 		Data::SceneTarget& target = data.AcquireTarget(width, height, frame);
@@ -582,6 +591,8 @@ namespace Dingo
 		ApplyAmbientOcclusion();
 		data.Active = false;
 		Renderer::SetRenderTarget(data.Caller);
+		if (data.CallerViewport)
+			Renderer::SetViewport(*data.CallerViewport);
 
 		DE_PROFILE_SCOPE("PostProcessStack::End");
 		Renderer::BeginGpuTimer("Post");
@@ -614,7 +625,10 @@ namespace Dingo
 		toneData.Bloom = glm::vec4(blooms ? FiniteOr(bloom.Intensity, 0.0f) : 0.0f, 0.0f, 0.0f, 0.0f);
 
 		SetUniformIfChanged(target.ToneMap, toneData);
-		Internal::DrawFullscreen(target.ToneMap, data.Caller);
+		if (data.CallerViewport)
+			Internal::DrawFullscreen(target.ToneMap, data.Caller, *data.CallerViewport);
+		else
+			Internal::DrawFullscreen(target.ToneMap, data.Caller);
 
 		data.Stats.SceneTargets = static_cast<uint32_t>(data.Targets.size());
 		data.Stats.TargetBytes = 0;

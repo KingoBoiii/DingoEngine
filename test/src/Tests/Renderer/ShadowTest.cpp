@@ -565,6 +565,8 @@ namespace Dingo
 			constexpr uint64_t k_RankKey = 7000;
 			Framebuffer* previous = Renderer::GetRenderTarget();
 			Renderer::SetRenderTarget(m_EntityTarget);
+			const Viewport inset{ 0.0f, 0.0f, static_cast<float>(k_CheckWidth / 2), static_cast<float>(k_CheckHeight / 2) };
+			Renderer::SetViewport(inset);
 			rankRenderer->BeginScene(camera);
 			rankRenderer->Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
 			for (int i = 0; i < k_RankLights; ++i)
@@ -581,7 +583,10 @@ namespace Dingo
 			}
 			rankRenderer->SubmitMesh(rankRenderer->GetBoxMesh(), Box({ 0.0f, -0.05f, -12.0f }, { 4.0f, 0.1f, 32.0f }), glm::vec4(1.0f));
 			rankRenderer->EndScene();
+			const std::optional<Viewport> kept = Renderer::GetViewport();
 			Renderer::SetRenderTarget(previous);
+			Check(kept && kept->Width == inset.Width && kept->Height == inset.Height,
+				"a scene with shadows and probes keeps the viewport it was drawn in");
 
 			const uint32_t slots = (std::min)(rankRenderer->GetCapabilities().MaxShadowedLocalLights, Renderer3D::k_MaxShadowedLocalLights);
 			std::string unshadowed;
