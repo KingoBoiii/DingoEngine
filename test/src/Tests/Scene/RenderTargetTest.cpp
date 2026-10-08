@@ -5,6 +5,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <climits>
 #include <fstream>
 #include <functional>
@@ -274,8 +275,14 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		}
 		Shader* included = Shader::CreateFromFile("RenderTargetTestInclude", main);
 		const std::vector<std::filesystem::path>& files = included->GetIncludedFiles();
-		Check(included->IsValid() && files.size() == 1 && std::filesystem::equivalent(files[0], part),
-			std::format("a shader file #includes a neighbour by relative path, once, and lists it for hot-reload ({} file(s))", files.size()));
+		// Debug builds read <DingoEngine/...> from DE_ENGINE_SHADER_DIR, so the engine include is listed too.
+		const auto partCount = std::ranges::count_if(files, [&](const std::filesystem::path& file)
+		{
+			std::error_code error;
+			return std::filesystem::equivalent(file, part, error);
+		});
+		Check(included->IsValid() && partCount == 1,
+			std::format("a shader file #includes a neighbour by relative path, once, and lists it for hot-reload ({} of {} file(s))", partCount, files.size()));
 		DestroyAndDelete(included);
 	}
 
