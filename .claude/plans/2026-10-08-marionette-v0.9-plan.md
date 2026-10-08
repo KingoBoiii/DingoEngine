@@ -4,7 +4,8 @@ Drafted 2026-10-08 on branch `claude/dingo-v0-9-0-planning-ee00a9` @ `719df64` (
 none of it run on a GPU yet). Scope source: §6 of `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`.
 The game's own design is `.claude/plans/2026-10-03-marionette-plan.md`, whose "As built" holds.
 
-**Status**: drafted 2026-10-08; decisions M1–M4 (§4) settled on the recommended options. Building V0–V4.
+**Status**: V0–V4 built 2026-10-08 (§7 "As built"); decisions M1–M4 (§4) settled on the recommended
+options. None of it is built with MSVC or run: everything in §6 is owed on the GPU machine.
 
 ---
 
@@ -140,4 +141,25 @@ event:
 
 ## 7. As built
 
-*(filled in per milestone)*
+- **V0** `0db5af3`, as designed.
+- **V1** `46144eb`, with two differences:
+  - the dash dust comes from the root at foot height, not the hips;
+  - the trail sits at the blade's full length (`MeasureBlade`), a little past the outermost sphere.
+
+  Only controlled fighters (built from `BuildHitRig`) get VFX: the lineup's poses have no hit rig
+  and no events to fire.
+- **V2** `149ee4e`, as designed. `ContactPoint` returns the sweep's nearest point itself when that
+  lies inside the hurt sphere. The showcases (title, End, `--lineup`) get the brazier effects alone.
+- **V3** `b7a0906`, as designed. `--no-post` keeps `FLAME_EMISSIVE` at v0.8's 1.1, so the flame
+  doesn't clip to white.
+- **V4:** the review (one fresh agent) found no Critical or High, and traced that nothing in the
+  change can alter a `--check` or `--tournament` result. Fixed in `FIXCOMMIT`:
+  - M1 Medium: the foot emitters were on the foot joint's frame, whose +Y points along the bone
+    (about 46° below horizontal at rest), so most of each footfall's dust went into the floor. Each
+    emitter is now turned back by its joint's rest rotation, so it emits along the model's up while
+    the foot is planted, and its lift is applied along that up.
+  - M2: the comment on the effects' lifetime.
+  - M3: `--no-post`'s emissive.
+  - M4: a showcase builds only the brazier effects.
+  - M5: the differences above, and two comments.
+- **Not verified here:** clang over every Marionette file.

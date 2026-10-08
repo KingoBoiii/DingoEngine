@@ -15,12 +15,14 @@ namespace Dingo
 	};
 
 	// The arena's particle effects, authored here and tuned live in the F4 effect editor, which copies
-	// an effect back as code, and the emitters the impacts burst from. The director owns it, so it
-	// outlives every emitter that plays its effects. Absent under --no-particles.
+	// an effect back as code, and the emitters the impacts burst from. Its owner (the director, or a
+	// showcase) frees it while the scene's emitter entities live on until the clear that follows, in
+	// which nothing reads an emitter's effect. Absent under --no-particles.
 	class ArenaVfx
 	{
 	public:
-		explicit ArenaVfx(Scene& scene);
+		// fighters: the fighters' dust, trails and impacts too; off (a showcase), only the braziers.
+		ArenaVfx(Scene& scene, bool fighters);
 
 		ArenaVfx(const ArenaVfx&) = delete;
 		ArenaVfx& operator=(const ArenaVfx&) = delete;
@@ -44,6 +46,7 @@ namespace Dingo
 			float Delay = 0.0f;
 		};
 
+		void CreateBrazierEffects();
 		Entity SpawnBurstEmitter(const char* name, ParticleEffect* effect);
 
 	private:

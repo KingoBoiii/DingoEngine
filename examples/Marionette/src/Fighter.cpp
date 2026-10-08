@@ -28,6 +28,22 @@ namespace
 		{ Clips::DODGE_LEFT, 0.5f * std::numbers::pi_v<float> },
 		{ Clips::DODGE_RIGHT, -0.5f * std::numbers::pi_v<float> },
 	} };
+
+	// A joint's rest rotation in the model's space, without the root's unit scale, as a socket's frame
+	// holds it. An emitter on the socket turned back by it emits along the model's up while the joint
+	// is near its rest pose, as a planted foot is.
+	glm::quat RestRotation(const Skeleton& skeleton, const char* joint)
+	{
+		const int32_t index = skeleton.FindJoint(joint);
+		if (index == Skeleton::k_InvalidJoint)
+			return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+		const glm::mat4 model = skeleton.GetRootTransform() * skeleton.GetRestGlobalTransforms()[static_cast<size_t>(index)];
+		glm::mat3 basis(model);
+		for (int axis = 0; axis < 3; ++axis)
+			basis[axis] = glm::normalize(basis[axis]);
+		return glm::normalize(glm::quat_cast(basis));
+	}
 }
 
 namespace Dingo
@@ -128,8 +144,15 @@ namespace Dingo
 			return;
 
 		const glm::vec3 lift(0.0f, FOOT_DUST_LIFT, 0.0f);
-		Entity leftFoot = SpawnEmitter("dust l", vfx->GetFootDust(), m_Entity, Joints::FOOT_LEFT, lift, true);
-		Entity rightFoot = SpawnEmitter("dust r", vfx->GetFootDust(), m_Entity, Joints::FOOT_RIGHT, lift, true);
+		const auto spawnFoot = [&](const char* name, const char* joint)
+		{
+			const glm::quat upright = glm::inverse(RestRotation(*m_Skeleton, joint));
+			Entity emitter = SpawnEmitter(name, vfx->GetFootDust(), m_Entity, joint, upright * lift, true);
+			emitter.GetComponent<Transform3DComponent>().Rotation = upright;
+			return emitter;
+		};
+		Entity leftFoot = spawnFoot("dust l", Joints::FOOT_LEFT);
+		Entity rightFoot = spawnFoot("dust r", Joints::FOOT_RIGHT);
 		Entity dash = SpawnEmitter("dash dust", vfx->GetFootDust(), m_Entity, nullptr, lift, true);
 
 		auto& events = m_Entity.AddComponent<ParticleEventComponent>();

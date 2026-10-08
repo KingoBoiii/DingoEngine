@@ -505,6 +505,8 @@ namespace Dingo
 	inline constexpr glm::vec4 COLOR_FLAME      = { 1.0f, 0.62f, 0.3f, 1.0f };
 	inline constexpr glm::vec3 FLAME_COLOR      = { 1.0f, 0.62f, 0.3f };
 	inline constexpr float FLAME_EMISSIVE       = 2.6f;
+	// Without the post chain the core would clip to white, so --no-post keeps the v0.8 value.
+	inline constexpr float FLAME_EMISSIVE_NO_POST = 1.1f;
 	inline constexpr float FLOOR_ROUGHNESS      = 0.85f;
 	inline constexpr float WALL_ROUGHNESS       = 0.9f;
 	inline constexpr float BRAZIER_ROUGHNESS    = 0.7f;

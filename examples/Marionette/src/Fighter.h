@@ -168,8 +168,6 @@ namespace Dingo
 
 		Entity SpawnWeapon(const char* path, const char* joint);
 		void BuildHitRig(const Model* weapon, Entity weaponPart);
-		// Dust at each footfall and dash, and a trail off the blade's tip while its hitbox is open, all
-		// fired by the clips' own events through a ParticleEventComponent.
 		void BuildVfx(Entity weaponPart, const glm::vec3& bladeTip);
 		Entity SpawnEmitter(const char* name, ParticleEffect* effect, Entity parent, const char* joint, const glm::vec3& offset, bool playing);
 		RigSphere SpawnRigSphere(const std::string& name, Entity parent, const char* joint, const glm::vec3& offset, float radius);

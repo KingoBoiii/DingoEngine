@@ -4,9 +4,13 @@
 namespace Dingo
 {
 
-	ArenaVfx::ArenaVfx(Scene& scene)
+	ArenaVfx::ArenaVfx(Scene& scene, bool fighters)
 		: m_Scene(scene)
 	{
+		CreateBrazierEffects();
+		if (!fighters)
+			return;
+
 		m_FootDust.reset(ParticleEffect::Create(ParticleEffectParams()
 			.SetDebugName("Foot dust")
 			.SetShape(ParticleShape::Cone, { 75.0f, 0.06f, 0.0f })
@@ -90,6 +94,14 @@ namespace Dingo
 			.SetSoftDistance(0.2f)
 			.SetCapacity(2 * KO_DUST_COUNT)));
 
+		m_HitEmitter = SpawnBurstEmitter("HitSparks", m_HitSparks.get());
+		m_BlockEmitter = SpawnBurstEmitter("BlockSparks", m_BlockSparks.get());
+		m_ParryEmitter = SpawnBurstEmitter("ParryFlash", m_ParryFlash.get());
+		m_KnockOutEmitter = SpawnBurstEmitter("KnockOutDust", m_KnockOutDust.get());
+	}
+
+	void ArenaVfx::CreateBrazierEffects()
+	{
 		m_BrazierFlame.reset(ParticleEffect::Create(ParticleEffectParams()
 			.SetDebugName("Brazier flame")
 			.SetShape(ParticleShape::Cone, { 14.0f, 0.2f, 0.0f })
@@ -136,11 +148,6 @@ namespace Dingo
 			.SetBlend(ParticleBlend::Alpha)
 			.SetColors({ { 0.0f, { 0.05f, 0.05f, 0.055f, 0.0f } }, { 0.15f, { 0.06f, 0.06f, 0.065f, 0.28f } }, { 1.0f, { 0.08f, 0.08f, 0.09f, 0.0f } } })
 			.SetSoftDistance(0.4f)));
-
-		m_HitEmitter = SpawnBurstEmitter("HitSparks", m_HitSparks.get());
-		m_BlockEmitter = SpawnBurstEmitter("BlockSparks", m_BlockSparks.get());
-		m_ParryEmitter = SpawnBurstEmitter("ParryFlash", m_ParryFlash.get());
-		m_KnockOutEmitter = SpawnBurstEmitter("KnockOutDust", m_KnockOutDust.get());
 	}
 
 	Entity ArenaVfx::SpawnBurstEmitter(const char* name, ParticleEffect* effect)
@@ -153,6 +160,9 @@ namespace Dingo
 
 	void ArenaVfx::Impact(ImpactKind kind, const glm::vec3& contact)
 	{
+		if (!m_HitEmitter)
+			return;
+
 		switch (kind)
 		{
 			case ImpactKind::Hit:
@@ -170,6 +180,8 @@ namespace Dingo
 
 	void ArenaVfx::KnockOut(const glm::vec3& feet)
 	{
+		if (!m_KnockOutEmitter)
+			return;
 		m_PendingDust.push_back({ feet, KO_DUST_DELAY });
 	}
 

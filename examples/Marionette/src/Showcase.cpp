@@ -20,7 +20,7 @@ namespace Dingo
 	{
 		m_Audio = std::make_unique<GameAudio>(assets.GetSounds());
 		if (!GetLaunchOptions().NoParticles)
-			m_Vfx = std::make_unique<ArenaVfx>(scene);
+			m_Vfx = std::make_unique<ArenaVfx>(scene, false);
 		m_World = std::make_unique<ArenaWorld>(scene, assets, m_Audio.get(), m_Vfx.get());
 
 		if (params.Kind == ShowcaseKind::Victory)

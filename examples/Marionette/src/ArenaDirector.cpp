@@ -59,7 +59,7 @@ namespace Dingo
 		m_Audio = std::make_unique<GameAudio>(m_Assets->GetSounds());
 		m_Audio->SetMuted(options.StepsPerFrame > 1 || options.Tournament > 0);
 		if (!options.NoParticles)
-			m_Vfx = std::make_unique<ArenaVfx>(scene);
+			m_Vfx = std::make_unique<ArenaVfx>(scene, true);
 		m_World = std::make_unique<ArenaWorld>(scene, *m_Assets, m_Audio.get(), m_Vfx.get());
 		m_EventGeneration = m_Assets->GetEventGeneration();
 		m_Freeze = options.Freeze;
