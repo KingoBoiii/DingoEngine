@@ -202,11 +202,13 @@ namespace Dingo
 				if (ImGui::MenuItem("Restart to Vulkan", NULL, currentAPI == GraphicsAPI::Vulkan, currentAPI != GraphicsAPI::Vulkan))
 					Application::Get().RequestRestart(GraphicsAPI::Vulkan);
 
+#ifdef DE_PLATFORM_WINDOWS
 				if (ImGui::MenuItem("Restart to DirectX 12", NULL, currentAPI == GraphicsAPI::DirectX12, currentAPI != GraphicsAPI::DirectX12))
 					Application::Get().RequestRestart(GraphicsAPI::DirectX12);
 
 				if (ImGui::MenuItem("Restart to DirectX 11", NULL, currentAPI == GraphicsAPI::DirectX11, currentAPI != GraphicsAPI::DirectX11))
 					Application::Get().RequestRestart(GraphicsAPI::DirectX11);
+#endif
 
 				ImGui::Separator();
 
