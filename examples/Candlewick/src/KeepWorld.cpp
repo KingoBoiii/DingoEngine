@@ -140,6 +140,7 @@ namespace Dingo
 		m_WallOfTile.assign(static_cast<size_t>(map.GetWidth()) * map.GetHeight(), -1);
 
 		CreateMaterials();
+		m_Effects = CreateFlameEffects();
 		SpawnAmbient();
 		BuildFloors();
 		BuildWalls();
@@ -376,6 +377,11 @@ namespace Dingo
 
 		BrazierSpot spot;
 		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter, m_AshMaterial, COLOR_ASH);
+		const glm::vec3 flameBase = core + glm::vec3(0.0f, style.CoreDiameter * FLAME_EMITTER_RISE, 0.0f);
+		spot.Flame = SpawnEmitter(m_Scene, "BrazierFlame", m_Effects.BrazierFlame.get(), flameBase, false);
+		spot.Embers = SpawnEmitter(m_Scene, "BrazierEmbers", m_Effects.BrazierEmbers.get(), flameBase, false);
+		spot.Smoke = SpawnEmitter(m_Scene, "BrazierSmoke", m_Effects.BrazierSmoke.get(), core + glm::vec3(0.0f, BRAZIER_SMOKE_RISE, 0.0f), false);
+		spot.Kindle = SpawnEmitter(m_Scene, "BrazierKindle", m_Effects.Kindle.get(), core);
 		spot.Light = SpawnPointLight(isAltar ? "AltarLight" : "BrazierLight", core + glm::vec3(0.0f, style.LightRise, 0.0f), style.LightIntensity, style.LightRange);
 		auto& light = spot.Light.GetComponent<PointLightComponent>();
 		light.Enabled = false;
@@ -405,14 +411,20 @@ namespace Dingo
 			{ k_SconceCupWidth, k_SconceCupHeight, k_SconceCupWidth }, COLOR_BRASS, m_BrassMaterial);
 
 		DecorFlame flame;
-		flame.Core = SpawnGlow("SconceCore", base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		const glm::vec3 core = base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f);
+		flame.Core = SpawnGlow("SconceCore", core, k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		flame.Emitter = SpawnEmitter(m_Scene, "SconceFlame", m_Effects.Sconce.get(), core + glm::vec3(0.0f, k_SconceFlameDiameter * FLAME_EMITTER_RISE, 0.0f));
 		flame.Light = SpawnPointLight("SconceLight", base + inward * k_SconceLightOffset + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), SCONCE_LIGHT_INTENSITY, SCONCE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Sconce;
 		flame.BaseIntensity = SCONCE_LIGHT_INTENSITY;
 
 		const int wallRect = m_WallOfTile[static_cast<size_t>(marker.Tile.y + wallStep->y) * m_Map.GetWidth() + marker.Tile.x + wallStep->x];
 		if (wallRect >= 0)
+		{
 			m_Walls[wallRect].Mounted.insert(m_Walls[wallRect].Mounted.end(), { stem, cup, flame.Core });
+			if (flame.Emitter.IsValid())
+				m_Walls[wallRect].Emitters.push_back(flame.Emitter);
+		}
 
 		return flame;
 	}
@@ -428,6 +440,7 @@ namespace Dingo
 
 		DecorFlame flame;
 		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		flame.Emitter = SpawnEmitter(m_Scene, "CandleParticles", m_Effects.Candle.get(), flameCenter + glm::vec3(0.0f, k_CandleFlameDiameter * FLAME_EMITTER_RISE, 0.0f));
 		flame.Light = SpawnPointLight("CandleLight", flameCenter + glm::vec3(0.0f, k_CandleLightRise, 0.0f), CANDLE_LIGHT_INTENSITY, CANDLE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Candle;
 		flame.BaseIntensity = CANDLE_LIGHT_INTENSITY;
@@ -484,6 +497,8 @@ namespace Dingo
 		SetCutAway(wall.Cap, hidden);
 		for (Entity mounted : wall.Mounted)
 			SetVisible(mounted, !hidden);
+		for (Entity emitter : wall.Emitters)
+			emitter.GetComponent<ParticleEmitterComponent>().Playing = !hidden;
 	}
 
 	void KeepWorld::UpdateCutaway(const glm::vec3& eye, const glm::vec3& target)

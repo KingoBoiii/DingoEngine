@@ -43,6 +43,7 @@ namespace
 		settings.Bloom.Enabled = true;
 		settings.Bloom.Intensity = BLOOM_INTENSITY;
 		settings.Bloom.Threshold = BLOOM_THRESHOLD;
+		settings.AmbientOcclusion.Enabled = true;
 		return settings;
 	}
 

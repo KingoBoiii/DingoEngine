@@ -210,6 +210,14 @@ namespace Dingo
 	inline constexpr float CANDLE_LIGHT_RANGE      = 2.5f;
 	inline constexpr float CANDLE_LIGHT_INTENSITY  = 0.8f;
 
+	// --- Particles ---------------------------------------------------------------------
+	inline constexpr uint32_t KINDLE_BURST_COUNT   = 80;
+	inline constexpr uint32_t SNUFF_SMOKE_COUNT    = 24;
+	// Emitters sit near the top of the glow they rise from, which hides what starts inside it.
+	inline constexpr float FLAME_EMITTER_RISE      = 0.35f;
+	inline constexpr float BRAZIER_SMOKE_RISE      = 0.6f;
+	inline constexpr float SNUFF_SMOKE_RISE        = 0.18f;
+
 	inline constexpr uint32_t FLAME_MESH_RINGS     = 6;
 	inline constexpr uint32_t FLAME_MESH_SEGMENTS  = 8;
 
