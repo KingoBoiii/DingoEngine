@@ -184,8 +184,10 @@ namespace Dingo
 		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
 
 		// Runs a compute pass in the frame's command list, ordered with the draws around it. Nothing
-		// in a frame that renders nothing (IsFrameSkipped).
-		static void Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1);
+		// in a frame that renders nothing (IsFrameSkipped). False when nothing was recorded: a skipped
+		// frame, or a pass whose pipeline or bindings can't be built (a broken hot-reload). Zero groups
+		// ask for nothing and return true.
+		static bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1);
 
 		/**************************************************
 		***		QUERIES									***

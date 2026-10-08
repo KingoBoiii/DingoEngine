@@ -73,8 +73,8 @@ namespace Dingo
 		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1) = 0;
 
 		// Runs the compute pass over groupsX x groupsY x groupsZ thread groups. The graphics state
-		// stays as it was set, so the next draw needs no rebinding.
-		virtual void Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1) = 0;
+		// stays as it was set, so the next draw needs no rebinding. False when the pass can't run.
+		virtual bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1) = 0;
 
 	protected:
 		CommandListParams m_Params;

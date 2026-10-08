@@ -584,11 +584,11 @@ namespace Dingo
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
 
-	void Renderer::Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
+	bool Renderer::Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
 	{
 		if (s_Data->FrameSkipped)
-			return;
-		s_Data->CommandList->Dispatch(pass, groupsX, groupsY, groupsZ);
+			return false;
+		return s_Data->CommandList->Dispatch(pass, groupsX, groupsY, groupsZ);
 	}
 
 	/**************************************************

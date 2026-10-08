@@ -268,14 +268,16 @@ namespace Dingo
 		m_CommandListHandle->drawIndexed(drawArguments);
 	}
 
-	void NvrhiCommandList::Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
+	bool NvrhiCommandList::Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before dispatching.");
 		DE_CORE_ASSERT(pass, "Compute pass is null.");
 
+		if (groupsX == 0 || groupsY == 0 || groupsZ == 0)
+			return true;
 		NvrhiComputePass* nvrhiPass = static_cast<NvrhiComputePass*>(pass);
-		if (!nvrhiPass->Prepare() || groupsX == 0 || groupsY == 0 || groupsZ == 0)
-			return;
+		if (!nvrhiPass->Prepare())
+			return false;
 
 		nvrhi::ComputeState state = nvrhi::ComputeState().setPipeline(nvrhiPass->GetPipelineHandle());
 		if (nvrhiPass->GetBindingSetHandle())
@@ -283,6 +285,7 @@ namespace Dingo
 		RequireStorageStates(nvrhiPass->GetStorageItems());
 		m_CommandListHandle->setComputeState(state);
 		m_CommandListHandle->dispatch(groupsX, groupsY, groupsZ);
+		return true;
 	}
 
 	bool NvrhiCommandList::IsStorageItem(const nvrhi::BindingSetItem& item)

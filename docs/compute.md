@@ -46,7 +46,9 @@ around it, with the barriers put in: a draw after a dispatch reads what it wrote
 same pass dispatched again (an iterative kernel), even with an upload or a `ReadBack` of its buffer
 in between. NVRHI alone would skip the barrier when the bindings haven't changed, so every dispatch,
 and every draw with a storage binding, asks for its storage resources' states again. A frame that
-renders nothing (`Renderer::IsFrameSkipped`) dispatches nothing.
+renders nothing (`Renderer::IsFrameSkipped`) dispatches nothing. `Dispatch` returns false when it
+recorded nothing: a skipped frame, or a pass whose pipeline or bindings can't be built (a compute
+shader broken by a hot-reload), so work that must happen once can wait for one that ran.
 
 ## Reading a storage buffer in a draw
 

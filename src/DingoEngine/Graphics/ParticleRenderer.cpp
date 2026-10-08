@@ -276,6 +276,7 @@ namespace Dingo::Internal
 		uint32_t slots = 0;
 		uint32_t spawnCount = 0;
 		bool anySoft = false;
+		std::vector<ParticleEmitter*> cleared;
 		for (uint32_t index = 0; index < m_Submissions.size(); ++index)
 		{
 			const Submission& submission = m_Submissions[index];
@@ -352,6 +353,8 @@ namespace Dingo::Internal
 			}
 			record.Counts = glm::uvec4(keys, std::max(params.FlipbookColumns, 1u), std::max(params.FlipbookRows, 1u), 0);
 
+			if (emitter.m_NeedsClear)
+				cleared.push_back(&emitter);
 			emitter.m_NeedsClear = false;
 			anySoft = anySoft || record.Size.w > 0.0f;
 			slots += emitter.m_Capacity;
@@ -365,7 +368,12 @@ namespace Dingo::Internal
 			Renderer::Upload(m_SpawnBuffer, spawns.data(), spawns.size() * sizeof(ParticleSpawnRecord));
 
 		// Age and move what is alive first, so this step's new particles start at age 0.
-		Renderer::Dispatch(m_SimulatePass, (slots + k_GroupSize - 1) / k_GroupSize);
+		// A ring is cleared by the simulate kernel; one that didn't run leaves it for the next scene.
+		if (!Renderer::Dispatch(m_SimulatePass, (slots + k_GroupSize - 1) / k_GroupSize))
+		{
+			for (ParticleEmitter* emitter : cleared)
+				emitter->m_NeedsClear = true;
+		}
 		if (spawnCount > 0)
 			Renderer::Dispatch(m_EmitPass, (spawnCount + k_GroupSize - 1) / k_GroupSize);
 
