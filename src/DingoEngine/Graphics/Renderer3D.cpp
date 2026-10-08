@@ -8,6 +8,8 @@
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <array>
 #include <cstring>
 
@@ -87,6 +89,56 @@ namespace
 		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
 	}
 
+	// Square power-of-two tiles of a square atlas, largest first: each takes the smallest free square that
+	// holds it, split in four until it fits.
+	class ShadowAtlasAllocator
+	{
+	public:
+		explicit ShadowAtlasAllocator(uint32_t size) { m_Free.push_back({ 0, 0, size }); }
+
+		bool Allocate(uint32_t size, glm::uvec2& corner)
+		{
+			int best = -1;
+			for (int i = 0; i < static_cast<int>(m_Free.size()); ++i)
+			{
+				if (m_Free[i].Size >= size && (best < 0 || m_Free[i].Size < m_Free[best].Size))
+					best = i;
+			}
+			if (best < 0)
+				return false;
+
+			Square square = m_Free[best];
+			m_Free.erase(m_Free.begin() + best);
+			while (square.Size > size)
+			{
+				const uint32_t half = square.Size / 2;
+				m_Free.push_back({ square.X + half, square.Y, half });
+				m_Free.push_back({ square.X, square.Y + half, half });
+				m_Free.push_back({ square.X + half, square.Y + half, half });
+				square.Size = half;
+			}
+			corner = { square.X, square.Y };
+			return true;
+		}
+
+	private:
+		struct Square
+		{
+			uint32_t X = 0;
+			uint32_t Y = 0;
+			uint32_t Size = 0;
+		};
+		std::vector<Square> m_Free;
+	};
+
+	uint32_t FloorPowerOfTwo(uint32_t value)
+	{
+		uint32_t power = 1;
+		while (power * 2 <= value)
+			power *= 2;
+		return power;
+	}
+
 	bool BindsPastSlotZero(const Dingo::Material& material)
 	{
 		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
@@ -118,6 +170,8 @@ namespace Dingo
 		std::erase(s_LitShaders, m_Shader);
 		Internal::UnwatchUnmanagedShader(m_Shader);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
+		Internal::UnwatchUnmanagedShader(m_ShadowShader);
+		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
 	}
 
 	void Renderer3D::Initialize()
@@ -153,6 +207,24 @@ namespace Dingo
 			.SetDirectUpload(false)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
+		// The lit shader binds the shadows always, so every scene writes them, cast or not.
+		m_ShadowDataBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_ShadowData")
+			.SetByteSize(sizeof(ShadowData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+		m_ShadowSampler = Sampler::Create(SamplerParams().SetCompare(true));
+		m_PlaceholderShadowAtlas = Texture::Create(TextureParams()
+			.SetDebugName("Renderer3D_NoShadowAtlas")
+			.SetWidth(1)
+			.SetHeight(1)
+			.SetFormat(TextureFormat::D32)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetIsRenderTarget(true));
+		SetShadowSettings(m_Params.Shadows);
+
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
 		m_SphereMesh = Mesh::CreateSphere(0.5f, 16, 16);
@@ -184,6 +256,18 @@ namespace Dingo
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 		DestroyAndDelete(m_SkinnedShader);
 
+		DestroyAndDelete(m_ShadowMaterial);
+		DestroyAndDelete(m_SkinnedShadowMaterial);
+		Internal::UnwatchUnmanagedShader(m_ShadowShader);
+		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
+		DestroyAndDelete(m_ShadowShader);
+		DestroyAndDelete(m_SkinnedShadowShader);
+		DestroyAndDelete(m_ShadowAtlas);
+		DestroyAndDelete(m_PlaceholderShadowAtlas);
+		DestroyAndDelete(m_ShadowSampler);
+		DestroyAndDelete(m_ShadowDataBuffer);
+		DestroyAndDelete(m_ShadowViewsBuffer);
+
 		DestroyAndDelete(m_SceneUniformBuffer);
 		DestroyAndDelete(m_Material);
 		std::erase(s_LitShaders, m_Shader);
@@ -212,6 +296,8 @@ namespace Dingo
 		m_CameraData.CameraPosition = cameraPosition;
 
 		m_Statistics = {};
+		m_HasCasters = false;
+		m_StaticCasters = 0;
 
 		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
 		// just last scene's: SubmitMesh takes a spare chunk before growing. Nothing tells the
@@ -278,65 +364,84 @@ namespace Dingo
 			ResolveSceneLights();
 		}
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+		const bool shadows = PrepareShadows();
+		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
 		ClearSceneLights();
 
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
 
-		// One indexed draw per batch, each from its own pooled (vertex, index) buffer so no
-		// shared buffer is re-uploaded between draws.
-		DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
-		for (Material* material : m_DrawOrder)
+		// Every chunk goes into its own pooled (vertex, index) buffer up front, so no shared buffer
+		// is re-uploaded between draws and the shadow pass can draw them before the lit pass does.
 		{
-			if (IsLitShader(material->GetShader()))
+			DE_PROFILE_SCOPE("Renderer3D::UploadBatches");
+			m_ChunkDraws.clear();
+			for (const BatchKey& key : m_DrawOrder)
 			{
-				// The binding set would name bindings the shader's layout lacks, which Vulkan does
-				// not reject: drawing it is undefined behaviour, so the material is skipped.
-				if (BindsPastSlotZero(*material))
+				Material* material = key.Material;
+				if (IsLitShader(material->GetShader()))
 				{
-					if (!m_LitSlotsWarned)
+					// The binding set would name bindings the shader's layout lacks, which Vulkan does
+					// not reject: drawing it is undefined behaviour, so the material is skipped.
+					if (BindsPastSlotZero(*material))
 					{
-						const std::string& name = material->GetParams().DebugName;
-						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-							name.empty() ? "<unnamed>" : name.c_str());
-						m_LitSlotsWarned = true;
+						if (!m_LitSlotsWarned)
+						{
+							const std::string& name = material->GetParams().DebugName;
+							DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+								name.empty() ? "<unnamed>" : name.c_str());
+							m_LitSlotsWarned = true;
+						}
+						continue;
 					}
-					continue;
+					PrepareLitMaterial(material);
 				}
-				PrepareLitMaterial(material);
-			}
 
-			MaterialBatch& matBatch = m_Batches[material];
-			for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
-			{
-				MeshChunk& chunk = matBatch.Chunks[chunkIndex];
-				if (chunk.Indices.empty())
-					continue;
-
-				// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
-				// DirectUpload = false: the writes go into the frame's command list (as
-				// Renderer2D's batches do) instead of each spinning up a throwaway command list
-				// and its own queue submit.
-				if (batchIndex >= m_BatchVertexBuffers.size())
+				MaterialBatch& matBatch = m_Batches[key];
+				for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
 				{
-					m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
-					m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+					MeshChunk& chunk = matBatch.Chunks[chunkIndex];
+					if (chunk.Indices.empty())
+						continue;
+
+					// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
+					// DirectUpload = false: the writes go into the frame's command list (as
+					// Renderer2D's batches do) instead of each spinning up a throwaway command list
+					// and its own queue submit.
+					if (batchIndex >= m_BatchVertexBuffers.size())
+					{
+						m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
+						m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+					}
+
+					Renderer::Upload(m_BatchVertexBuffers[batchIndex], chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
+					Renderer::Upload(m_BatchIndexBuffers[batchIndex], chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+					m_ChunkDraws.push_back({ key, batchIndex, static_cast<uint32_t>(chunk.Indices.size()) });
+					++batchIndex;
 				}
+			}
+		}
 
-				GraphicsBuffer* vertexBuffer = m_BatchVertexBuffers[batchIndex];
-				GraphicsBuffer* indexBuffer = m_BatchIndexBuffers[batchIndex];
+		ResolveSkinnedBudget();
+		if (shadows)
+			DrawShadowPass();
 
-				Renderer::Upload(vertexBuffer, chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
-				Renderer::Upload(indexBuffer, chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		{
+			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
+			for (const ChunkDraw& draw : m_ChunkDraws)
+			{
+				if (draw.Key.Shadows == ShadowCasting::ShadowsOnly)
+					continue;
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
 				// material also drawn skinned would otherwise keep a skin buffer this renderer may free.
+				Material* material = draw.Key.Material;
 				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 				material->SetSkinUniformBuffer(nullptr);
-				Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(chunk.Indices.size()));
+				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+				Renderer::DrawIndexed(material, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount);
 				++m_Statistics.DrawCalls;
-
-				++batchIndex;
 			}
 		}
 
@@ -344,7 +449,7 @@ namespace Dingo
 		Renderer::EndGpuTimer();
 	}
 
-	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material)
+	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
@@ -365,8 +470,28 @@ namespace Dingo
 			// A skinned shader can't draw the static vertex stream.
 			const Shader* shader = material ? material->GetShader() : nullptr;
 			const bool skinnedOnly = shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material);
+			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows);
 			return;
+		}
+
+		// The rest pose bounds the caster, padded by half its size for the animation.
+		if (shadows != ShadowCasting::Off)
+		{
+			glm::vec3 low(std::numeric_limits<float>::max());
+			glm::vec3 high(std::numeric_limits<float>::lowest());
+			for (const MeshVertex& vertex : mesh->GetVertices())
+			{
+				const glm::vec3 world = glm::vec3(transform * glm::vec4(vertex.Position, 1.0f));
+				low = glm::min(low, world);
+				high = glm::max(high, world);
+			}
+			if (low.x <= high.x)
+			{
+				const glm::vec3 pad = (high - low) * 0.5f;
+				m_CasterMin = m_HasCasters ? glm::min(m_CasterMin, low - pad) : low - pad;
+				m_CasterMax = m_HasCasters ? glm::max(m_CasterMax, high + pad) : high + pad;
+				m_HasCasters = true;
+			}
 		}
 
 		bool shared = false;
@@ -394,7 +519,7 @@ namespace Dingo
 			instance.JointCount = jointCount;
 		}
 
-		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1) });
+		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1), shadows });
 	}
 
 	uint32_t Renderer3D::GetSkinnedInstanceBudget() const
@@ -416,7 +541,7 @@ namespace Dingo
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
 			.SetDirectUpload(false)
-			.SetMaxWritesPerFrame(GetSkinnedInstanceBudget()));
+			.SetMaxWritesPerFrame(2 * GetSkinnedInstanceBudget()));
 
 		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 	}
@@ -484,14 +609,11 @@ namespace Dingo
 		return twin;
 	}
 
-	void Renderer3D::DrawSkinnedSubmissions()
+	void Renderer3D::ResolveSkinnedBudget()
 	{
+		m_SkinnedInstanceDropped.assign(m_SkinnedInstances.size(), 0);
 		if (m_SkinnedSubmissions.empty())
 			return;
-
-		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
-
-		EnsureSkinningResources();
 
 		// The skin buffer's writes are a per-frame budget, shared by every scene in the frame.
 		const uint64_t frameIndex = Renderer::GetFrameIndex();
@@ -501,49 +623,73 @@ namespace Dingo
 			m_SkinnedInstancesThisFrame = 0;
 		}
 
+		// An instance is drawn whole or not at all, so a character never loses some of its parts.
 		const uint32_t budget = GetSkinnedInstanceBudget();
-		uint32_t uploadedInstance = ~0u;
-		bool instanceDropped = false;
-		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		for (uint32_t instance = 0; instance < m_SkinnedInstances.size(); ++instance)
 		{
-			// An instance is drawn whole or not at all, so a character never loses some of its parts.
-			if (submission.Instance != uploadedInstance)
+			if (m_SkinnedInstancesThisFrame < budget)
 			{
-				uploadedInstance = submission.Instance;
-				instanceDropped = m_SkinnedInstancesThisFrame >= budget;
-				if (instanceDropped)
-				{
-					DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
-						"Renderer3D: more skinned instances in a frame than MaxSkinnedInstances and AssertOnOverflow is set.");
-
-					if (!m_SkinnedBudgetWarned)
-					{
-						DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
-							budget, k_MaxSkinnedInstancesLimit);
-						m_SkinnedBudgetWarned = true;
-					}
-				}
-				else
-				{
-					const SkinnedInstance& instance = m_SkinnedInstances[submission.Instance];
-					m_SkinData.Model = instance.Transform;
-					m_SkinData.NormalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(instance.Transform)));
-					m_SkinData.Color = instance.Color;
-					std::copy_n(m_SkinnedJoints.begin() + instance.FirstJoint, instance.JointCount, m_SkinData.Joints);
-					const uint64_t uploadSize = m_FullSkinUploads ? sizeof(SkinData) : offsetof(SkinData, Joints) + instance.JointCount * sizeof(glm::mat4);
-					Renderer::Upload(m_SkinBuffer, &m_SkinData, uploadSize);
-
-					++m_SkinnedInstancesThisFrame;
-					++m_Statistics.SkinnedInstances;
-					m_Statistics.SkinnedJoints += instance.JointCount;
-				}
+				++m_SkinnedInstancesThisFrame;
+				++m_Statistics.SkinnedInstances;
+				m_Statistics.SkinnedJoints += m_SkinnedInstances[instance].JointCount;
+				continue;
 			}
 
-			if (instanceDropped)
+			m_SkinnedInstanceDropped[instance] = 1;
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D: more skinned instances in a frame than MaxSkinnedInstances and AssertOnOverflow is set.");
+
+			if (!m_SkinnedBudgetWarned)
+			{
+				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
+					budget, k_MaxSkinnedInstancesLimit);
+				m_SkinnedBudgetWarned = true;
+			}
+		}
+	}
+
+	void Renderer3D::UploadSkinData(const SkinnedInstance& instance)
+	{
+		m_SkinData.Model = instance.Transform;
+		m_SkinData.NormalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(instance.Transform)));
+		m_SkinData.Color = instance.Color;
+		std::copy_n(m_SkinnedJoints.begin() + instance.FirstJoint, instance.JointCount, m_SkinData.Joints);
+		const uint64_t uploadSize = m_FullSkinUploads ? sizeof(SkinData) : offsetof(SkinData, Joints) + instance.JointCount * sizeof(glm::mat4);
+		Renderer::Upload(m_SkinBuffer, &m_SkinData, uploadSize);
+	}
+
+	void Renderer3D::EnsureSkinBuffers(const Mesh* mesh)
+	{
+		if (mesh->m_SkinVertexBuffer)
+			return;
+
+		const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
+		const std::vector<uint32_t>& indices = mesh->GetIndices();
+		mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
+		mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
+		Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
+		Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
+	}
+
+	void Renderer3D::DrawSkinnedSubmissions()
+	{
+		if (m_SkinnedSubmissions.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
+		EnsureSkinningResources();
+
+		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		uint32_t uploadedInstance = ~0u;
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			if (m_SkinnedInstanceDropped[submission.Instance])
 			{
 				++m_Statistics.DroppedSkinnedDraws;
 				continue;
 			}
+			if (submission.Shadows == ShadowCasting::ShadowsOnly)
+				continue;
 
 			// The same rule as the static path, so a material draws the same way skinned or not.
 			Material* requested = submission.Material ? submission.Material : m_Material;
@@ -559,20 +705,19 @@ namespace Dingo
 				continue;
 			}
 
+			if (submission.Instance != uploadedInstance)
+			{
+				uploadedInstance = submission.Instance;
+				UploadSkinData(m_SkinnedInstances[submission.Instance]);
+			}
+
 			Material* material = ResolveSkinnedMaterial(submission.Material);
 			const Mesh* mesh = submission.Mesh;
-			if (!mesh->m_SkinVertexBuffer)
-			{
-				const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
-				const std::vector<uint32_t>& indices = mesh->GetIndices();
-				mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
-				mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
-				Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
-				Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
-			}
+			EnsureSkinBuffers(mesh);
 
 			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 			material->SetSkinUniformBuffer(m_SkinBuffer);
+			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 			Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
 
 			++m_Statistics.DrawCalls;
@@ -645,6 +790,20 @@ namespace Dingo
 			}
 			++m_DroppedLights;
 			return false;
+		}
+
+		if (light.CastShadows)
+		{
+			if (m_ShadowLight < 0)
+			{
+				m_ShadowLight = count;
+				m_ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+			}
+			else if (!m_SecondShadowLightWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a scene has more than one directional light with CastShadows; only the first casts shadows.");
+				m_SecondShadowLightWarned = true;
+			}
 		}
 
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
@@ -722,6 +881,7 @@ namespace Dingo
 		m_LocalLights.clear();
 		m_SceneLightSubmitted = false;
 		m_DroppedLights = 0;
+		m_ShadowLight = -1;
 	}
 
 	void Renderer3D::ResolveSceneLights()
@@ -804,13 +964,13 @@ namespace Dingo
 		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
-	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material)
+	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
 
 		Material* batchMaterial = material ? material : m_Material;
-		MaterialBatch* batch = &m_Batches[batchMaterial];
+		MaterialBatch* batch = &m_Batches[BatchKey{ batchMaterial, shadows }];
 		if (!batch->Enqueued)
 		{
 			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
@@ -818,7 +978,7 @@ namespace Dingo
 			batch->Enqueued = true;
 			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
 			if (!batch->SkinnedOnly)
-				m_DrawOrder.push_back(batchMaterial);
+				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows });
 			else if (!m_SkinnedOnlyWarned)
 			{
 				const std::string& name = batchMaterial->GetParams().DebugName;
@@ -828,11 +988,11 @@ namespace Dingo
 		}
 		if (batch->SkinnedOnly)
 		{
-			batch = &m_Batches[m_Material];
+			batch = &m_Batches[BatchKey{ m_Material, shadows }];
 			if (!batch->Enqueued)
 			{
 				batch->Enqueued = true;
-				m_DrawOrder.push_back(m_Material);
+				m_DrawOrder.push_back(BatchKey{ m_Material, shadows });
 			}
 		}
 		MaterialBatch& matBatch = *batch;
@@ -891,12 +1051,283 @@ namespace Dingo
 			chunk->Vertices.push_back(vertex);
 		}
 
+		if (shadows != ShadowCasting::Off && !vertices.empty())
+		{
+			++m_StaticCasters;
+			const size_t first = chunk->Vertices.size() - vertices.size();
+			glm::vec3 low = m_HasCasters ? m_CasterMin : chunk->Vertices[first].Position;
+			glm::vec3 high = m_HasCasters ? m_CasterMax : chunk->Vertices[first].Position;
+			for (size_t i = first; i < chunk->Vertices.size(); ++i)
+			{
+				low = glm::min(low, chunk->Vertices[i].Position);
+				high = glm::max(high, chunk->Vertices[i].Position);
+			}
+			m_CasterMin = low;
+			m_CasterMax = high;
+			m_HasCasters = true;
+		}
+
 		for (uint32_t index : indices)
 			chunk->Indices.push_back(index + vertexOffset);
 
 		++m_Statistics.SubmittedMeshes;
 		m_Statistics.VertexCount += static_cast<uint32_t>(vertices.size());
 		m_Statistics.IndexCount += static_cast<uint32_t>(indices.size());
+	}
+
+	void Renderer3D::SetShadowSettings(const Renderer3DShadowSettings& settings)
+	{
+		Renderer3DShadowSettings clamped = settings;
+		clamped.AtlasSize = FloorPowerOfTwo(std::clamp(settings.AtlasSize, 2048u, 8192u));
+		clamped.CascadeCount = std::clamp(settings.CascadeCount, 1u, k_MaxShadowCascades);
+		clamped.CascadeResolution = FloorPowerOfTwo(std::clamp(settings.CascadeResolution, 64u, clamped.AtlasSize / 2));
+		clamped.MaxDistance = std::max(FiniteOr(settings.MaxDistance, 60.0f), 0.01f);
+		clamped.SplitLambda = std::clamp(FiniteOr(settings.SplitLambda, 0.75f), 0.0f, 1.0f);
+		clamped.CascadeBlend = std::clamp(FiniteOr(settings.CascadeBlend, 0.1f), 0.0f, 0.5f);
+		clamped.SlopeBias = std::max(FiniteOr(settings.SlopeBias, 2.0f), 0.0f);
+		clamped.NormalBias = std::max(FiniteOr(settings.NormalBias, 1.5f), 0.0f);
+
+		// The biases are baked into the shadow pipelines.
+		const bool biasChanged = clamped.DepthBias != m_Params.Shadows.DepthBias || clamped.SlopeBias != m_Params.Shadows.SlopeBias;
+		m_Params.Shadows = clamped;
+		if (biasChanged)
+		{
+			DestroyAndDelete(m_ShadowMaterial);
+			DestroyAndDelete(m_SkinnedShadowMaterial);
+		}
+		if (m_ShadowAtlas && m_ShadowAtlas->GetWidth() != clamped.AtlasSize)
+			m_ShadowAtlas->Resize(clamped.AtlasSize, clamped.AtlasSize);
+	}
+
+	void Renderer3D::EnsureShadowResources()
+	{
+		if (!m_ShadowAtlas)
+		{
+			m_ShadowAtlas = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("Renderer3D_ShadowAtlas")
+				.SetWidth(static_cast<int32_t>(m_Params.Shadows.AtlasSize))
+				.SetHeight(static_cast<int32_t>(m_Params.Shadows.AtlasSize))
+				.SetDepthSampleable(true));
+
+			m_ShadowViewsBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+				.SetDebugName("Renderer3D_ShadowViews")
+				.SetByteSize(sizeof(ShadowViews))
+				.SetType(BufferType::UniformBuffer)
+				.SetIsVolatile(true)
+				.SetDirectUpload(false)
+				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+
+			m_ShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DShadow"), "Renderer3D_Shadow.glsl");
+			Internal::WatchUnmanagedShader(m_ShadowShader);
+		}
+
+		if (!m_ShadowMaterial)
+		{
+			m_ShadowMaterial = Material::Create(MaterialParams()
+				.SetDebugName("Renderer3D_Shadow")
+				.SetShader(m_ShadowShader)
+				.SetCullMode(CullMode::None)
+				.SetBlendMode(BlendMode::Opaque)
+				.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
+		}
+	}
+
+	bool Renderer3D::PrepareShadows()
+	{
+		m_ShadowData = ShadowData();
+		m_ShadowViewCount = 0;
+		if (m_ShadowLight < 0 || !m_HasCasters)
+			return false;
+
+		const Renderer3DShadowSettings& settings = m_Params.Shadows;
+		const glm::mat4 inverse = glm::inverse(m_CameraData.ViewProjection);
+		auto unproject = [&inverse](float x, float y, float z)
+		{
+			const glm::vec4 point = inverse * glm::vec4(x, y, z, 1.0f);
+			return glm::vec3(point) / point.w;
+		};
+
+		// The view's frustum corner rays, near (z = 0) to far (z = 1).
+		const glm::vec2 cornersXY[4] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 1.0f }, { -1.0f, 1.0f } };
+		glm::vec3 nearCorners[4], farCorners[4];
+		for (int i = 0; i < 4; ++i)
+		{
+			nearCorners[i] = unproject(cornersXY[i].x, cornersXY[i].y, 0.0f);
+			farCorners[i] = unproject(cornersXY[i].x, cornersXY[i].y, 1.0f);
+		}
+		const glm::vec3 nearCenter = unproject(0.0f, 0.0f, 0.0f);
+		const glm::vec3 farCenter = unproject(0.0f, 0.0f, 1.0f);
+		if (!IsFinite(nearCenter) || !IsFinite(farCenter) || glm::length(farCenter - nearCenter) < 1e-6f)
+			return false;
+
+		const bool perspective = m_CameraData.CameraPosition.w > 0.5f;
+		const glm::vec3 forward = glm::normalize(farCenter - nearCenter);
+		const glm::vec3 origin = perspective ? glm::vec3(m_CameraData.CameraPosition) : nearCenter;
+		const float nearDepth = std::max(glm::dot(nearCenter - origin, forward), 0.0f);
+		const float farDepth = std::min(glm::dot(farCenter - origin, forward), settings.MaxDistance);
+		if (farDepth <= nearDepth)
+			return false;
+
+		const glm::vec3 lightDirection = glm::normalize(glm::vec3(m_CameraData.DirectionalLights[m_ShadowLight].Direction));
+		if (!IsFinite(lightDirection))
+			return false;
+
+		const uint32_t cascadeCount = perspective ? settings.CascadeCount : 1u;
+		const uint32_t resolution = settings.CascadeResolution;
+		const float atlasSize = static_cast<float>(settings.AtlasSize);
+		ShadowAtlasAllocator allocator(settings.AtlasSize);
+
+		// A point along a corner ray at a depth along the view: depth is linear along every ray.
+		auto atDepth = [&](int corner, float depth)
+		{
+			const float nearAlong = glm::dot(nearCorners[corner] - origin, forward);
+			const float farAlong = glm::dot(farCorners[corner] - origin, forward);
+			const float t = farAlong - nearAlong > 1e-6f ? (depth - nearAlong) / (farAlong - nearAlong) : 0.0f;
+			return nearCorners[corner] + (farCorners[corner] - nearCorners[corner]) * t;
+		};
+
+		const glm::vec3 up = std::abs(lightDirection.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+		float sliceStart = nearDepth;
+		for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+		{
+			// The practical split scheme: a blend of even and logarithmic splits.
+			const float fraction = static_cast<float>(cascade + 1) / static_cast<float>(cascadeCount);
+			const float even = nearDepth + (farDepth - nearDepth) * fraction;
+			const float logarithmic = nearDepth > 1e-3f ? nearDepth * std::pow(farDepth / nearDepth, fraction) : even;
+			const float sliceEnd = cascade + 1 == cascadeCount ? farDepth : glm::mix(even, logarithmic, settings.SplitLambda);
+
+			glm::vec3 corners[8];
+			glm::vec3 center(0.0f);
+			for (int corner = 0; corner < 4; ++corner)
+			{
+				corners[corner] = atDepth(corner, sliceStart);
+				corners[corner + 4] = atDepth(corner, sliceEnd);
+			}
+			for (const glm::vec3& corner : corners)
+				center += corner / 8.0f;
+
+			// A sphere's size doesn't change as the camera turns, and rounding it up keeps float noise
+			// from changing it either: with the texel snap below, a still light's shadows don't shimmer.
+			float radius = 0.0f;
+			for (const glm::vec3& corner : corners)
+				radius = std::max(radius, glm::length(corner - center));
+			radius = std::ceil(radius * 16.0f) / 16.0f;
+
+			const glm::mat4 view = glm::lookAt(center, center + lightDirection, up);
+
+			// From the casters nearest the light to the far side of the slice.
+			float casterReach = -radius;
+			for (int corner = 0; corner < 8; ++corner)
+			{
+				const glm::vec3 point((corner & 1) ? m_CasterMax.x : m_CasterMin.x, (corner & 2) ? m_CasterMax.y : m_CasterMin.y, (corner & 4) ? m_CasterMax.z : m_CasterMin.z);
+				casterReach = std::min(casterReach, glm::dot(point - center, lightDirection));
+			}
+			const glm::mat4 projection = glm::orthoRH_ZO(-radius, radius, -radius, radius, casterReach - 1.0f, radius + 1.0f);
+			glm::mat4 viewProjection = projection * view;
+
+			const float halfResolution = static_cast<float>(resolution) * 0.5f;
+			const glm::vec4 projectedOrigin = viewProjection * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			const glm::vec2 snapped = glm::round(glm::vec2(projectedOrigin) * halfResolution) / halfResolution;
+			viewProjection[3][0] += snapped.x - projectedOrigin.x;
+			viewProjection[3][1] += snapped.y - projectedOrigin.y;
+
+			glm::uvec2 corner;
+			if (!allocator.Allocate(resolution, corner))
+				break;
+
+			const float tileScale = static_cast<float>(resolution) / atlasSize;
+			const glm::vec2 tileCenter(
+				(static_cast<float>(corner.x) + halfResolution) / atlasSize * 2.0f - 1.0f,
+				1.0f - (static_cast<float>(corner.y) + halfResolution) / atlasSize * 2.0f);
+
+			m_ShadowViews.Views[m_ShadowViewCount] = { viewProjection, glm::vec4(tileCenter, tileScale, tileScale) };
+			ShadowCascadeData& data = m_ShadowData.Cascades[cascade];
+			data.ViewProjection = viewProjection;
+			data.AtlasRect = glm::vec4(static_cast<float>(corner.x) / atlasSize, static_cast<float>(corner.y) / atlasSize, tileScale, tileScale);
+			data.Params = glm::vec4(sliceEnd, 2.0f * radius / static_cast<float>(resolution), 0.0f, 0.0f);
+			m_Statistics.ShadowCascadeEnds[cascade] = sliceEnd;
+			++m_ShadowViewCount;
+			sliceStart = sliceEnd;
+		}
+
+		if (m_ShadowViewCount == 0)
+			return false;
+
+		m_ShadowData.ShadowCounts = glm::ivec4(static_cast<int>(m_ShadowViewCount), m_ShadowLight, settings.DebugCascades ? 1 : 0, 0);
+		m_ShadowData.ShadowOrigin = glm::vec4(origin, 0.0f);
+		m_ShadowData.ShadowForward = glm::vec4(forward, settings.CascadeBlend);
+		m_ShadowData.ShadowParams = glm::vec4(m_ShadowStrength, settings.NormalBias, 1.0f / atlasSize, farDepth);
+		m_Statistics.ShadowViews = m_ShadowViewCount;
+		EnsureShadowResources();
+		return true;
+	}
+
+	void Renderer3D::DrawShadowPass()
+	{
+		DE_PROFILE_SCOPE("Renderer3D::DrawShadowPass");
+		Renderer::BeginGpuTimer("Shadows");
+
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer::SetRenderTarget(m_ShadowAtlas);
+		Renderer::Clear(m_ShadowAtlas, glm::vec4(0.0f));
+		Renderer::Upload(m_ShadowViewsBuffer, &m_ShadowViews, sizeof(ShadowViews));
+
+		m_ShadowMaterial->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+		for (const ChunkDraw& draw : m_ChunkDraws)
+		{
+			if (draw.Key.Shadows == ShadowCasting::Off)
+				continue;
+
+			Renderer::DrawIndexed(m_ShadowMaterial, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
+			++m_Statistics.ShadowDrawCalls;
+		}
+		m_Statistics.ShadowCasters += m_StaticCasters;
+
+		bool skinnedCasts = false;
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+			skinnedCasts = skinnedCasts || (submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance]);
+
+		if (skinnedCasts)
+		{
+			EnsureSkinningResources();
+			if (!m_SkinnedShadowShader)
+			{
+				m_SkinnedShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DSkinnedShadow").AddDefine("DE_SKINNED"), "Renderer3D_Shadow.glsl");
+				Internal::WatchUnmanagedShader(m_SkinnedShadowShader);
+			}
+			if (!m_SkinnedShadowMaterial)
+			{
+				m_SkinnedShadowMaterial = Material::Create(MaterialParams()
+					.SetDebugName("Renderer3D_SkinnedShadow")
+					.SetShader(m_SkinnedShadowShader)
+					.SetCullMode(CullMode::None)
+					.SetBlendMode(BlendMode::Opaque)
+					.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
+			}
+
+			m_SkinnedShadowMaterial->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+			m_SkinnedShadowMaterial->SetSkinUniformBuffer(m_SkinBuffer);
+			uint32_t uploadedInstance = ~0u;
+			for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+			{
+				if (submission.Shadows == ShadowCasting::Off || m_SkinnedInstanceDropped[submission.Instance])
+					continue;
+
+				if (submission.Instance != uploadedInstance)
+				{
+					uploadedInstance = submission.Instance;
+					UploadSkinData(m_SkinnedInstances[submission.Instance]);
+				}
+
+				EnsureSkinBuffers(submission.Mesh);
+				Renderer::DrawIndexed(m_SkinnedShadowMaterial, m_SkinnedLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
+				++m_Statistics.ShadowDrawCalls;
+				++m_Statistics.ShadowCasters;
+			}
+		}
+
+		Renderer::SetRenderTarget(previous);
+		Renderer::EndGpuTimer();
 	}
 
 	void Renderer3D::DrawBox(const glm::mat4& transform, const glm::vec4& color)

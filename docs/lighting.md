@@ -216,8 +216,8 @@ is the cone the player sees.
 
 - It leaves out the surface's `N.L` and the light's `Color` and `Intensity`: it says how much of
   the light reaches the point, not how bright a surface there looks.
-- It ignores occlusion. Light passes through walls (no shadows until v0.9), so pair it with a
-  raycast when walls should block.
+- It ignores occlusion. A point or spot light passes through walls (v0.9 shadows the sun only so
+  far, see [Shadows](shadows.md)), so pair it with a raycast when walls should block.
 - It knows nothing about this frame's budget. A light dropped past `MaxLocalLights`, or refused
   because too many were submitted, is not drawn, yet still has a weight. A game whose rules depend
   on a light being seen should keep that light within the budget.
@@ -378,8 +378,9 @@ and a copy of it is embedded in the engine library at build time.
   conservative (ambient plus every light reaching a pixel near 1), or turn on the v0.9 post chain,
   whose default tone curve leaves everything under 0.8 alone and rolls off what would have clipped
   ([Post-processing](post-processing.md)).
-- **No shadows until v0.9.** Light passes through walls and floors, so in interiors keep ranges
-  short.
+- **Shadows from the sun only.** The first directional light with `CastShadows` gets cascaded
+  shadows ([Shadows](shadows.md)); point and spot light still passes through walls and floors, so
+  in interiors keep their ranges short.
 - **No per-mesh surface parameters.** Roughness, specular and emissive are per material. A mesh
   that needs its own takes its own material, which is at least one more draw call.
 - **Blinn-Phong, not PBR:** no metalness, normal maps or reflections.

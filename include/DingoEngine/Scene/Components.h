@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/Enums/ShadowCasting.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -184,6 +185,9 @@ namespace Dingo
 		// DirectionalLightComponent adds its own. Set it to 0 to light the scene with
 		// AmbientLightComponent instead and get Intensity unscaled.
 		float Ambient = 0.35f;
+		// See DirectionalLight: the first casting one gets cascaded shadows.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
@@ -366,6 +370,9 @@ namespace Dingo
 		// into the vertex stream either way. Owned by the client, not the component.
 		Material* Material = nullptr;
 
+		// ShadowsOnly keeps a mesh out of the picture but in the shadows; Visible = false drops both.
+		ShadowCasting Shadows = ShadowCasting::On;
+
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;
 		MeshRendererComponent(Dingo::Mesh* mesh, const glm::vec4& color = glm::vec4(1.0f))
@@ -383,6 +390,7 @@ namespace Dingo
 		glm::vec4 Color{ 1.0f };
 		Dingo::Material* Material = nullptr;
 		bool Visible = true;
+		ShadowCasting Shadows = ShadowCasting::On;
 
 		SkinnedMeshRendererComponent() = default;
 		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;

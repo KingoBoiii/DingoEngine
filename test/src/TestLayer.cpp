@@ -10,6 +10,7 @@
 #include "Tests/Renderer/Renderer3DBatchTest.h"
 #include "Tests/Renderer/LightingTest.h"
 #include "Tests/Renderer/PostTest.h"
+#include "Tests/Renderer/ShadowTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
@@ -67,6 +68,7 @@ namespace Dingo
 		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Render Target Test", [&]() { return new RenderTargetTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Post Test", []() { return new PostTest(); } });
+		m_Tests.push_back({ "Shadow Test", []() { return new ShadowTest(); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))

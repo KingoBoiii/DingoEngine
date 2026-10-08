@@ -50,6 +50,35 @@ namespace Dingo
 		bool AssertOnOverflow = false;
 	};
 
+	// Cascaded shadow maps for the first directional light with CastShadows. Every shadow view of a
+	// scene renders into one depth atlas, every batch once for all of them (instanced), before the
+	// scene's lit draws sample it. A scene whose lights cast nothing renders exactly as without shadows.
+	struct Renderer3DShadowSettings
+	{
+		// The atlas is AtlasSize x AtlasSize D32 (64 MB at 4096), made the first time a scene casts.
+		// A power of two from 2048 to 8192.
+		uint32_t AtlasSize = 4096;
+		// Cascades for a perspective camera, 1 to 4; an orthographic camera gets one fitted to its view.
+		uint32_t CascadeCount = 4;
+		// Each cascade's square tile in the atlas, a power of two of at most AtlasSize / 2.
+		uint32_t CascadeResolution = 1024;
+		// How far along the view shadows reach; the last cascade fades out over its CascadeBlend.
+		float MaxDistance = 60.0f;
+		// How the view is split between cascades: 0 evenly, 1 logarithmically (detail near the camera).
+		float SplitLambda = 0.75f;
+		// The part of each cascade, at its far end, over which it fades into the next.
+		float CascadeBlend = 0.1f;
+		// Pushes the depth stored in the atlas away from the light: DepthBias in units of the smallest
+		// depth step, SlopeBias times the triangle's slope toward the light (both baked into the shadow
+		// pipeline). NormalBias moves the point a lit surface looks up along its normal, in the
+		// cascade's texels. Together they keep a surface from shadowing itself (acne).
+		int32_t DepthBias = 4;
+		float SlopeBias = 2.0f;
+		float NormalBias = 1.5f;
+		// Tints the scene red, green, blue and yellow by cascade.
+		bool DebugCascades = false;
+	};
+
 	struct Renderer3DParams
 	{
 		// The default light: what a scene that submits no light and no ambient of its own is lit
@@ -60,6 +89,7 @@ namespace Dingo
 		float Ambient = 0.35f;
 
 		Renderer3DCapabilities Capabilities = {};
+		Renderer3DShadowSettings Shadows = {};
 	};
 
 	// A batched, forward-lit mesh renderer — the 3D sibling of Renderer2D.
@@ -125,6 +155,14 @@ namespace Dingo
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
+		static constexpr uint32_t k_MaxShadowCascades = 4;
+
+		// Values out of range are clamped. A new AtlasSize resizes the atlas in place.
+		void SetShadowSettings(const Renderer3DShadowSettings& settings);
+		const Renderer3DShadowSettings& GetShadowSettings() const { return m_Params.Shadows; }
+		// The depth atlas, for viewing it; null until a scene cast a shadow.
+		Framebuffer* GetShadowAtlas() const { return m_ShadowAtlas; }
+
 		static constexpr uint32_t k_MaxDirectionalLights = 4;
 		static constexpr uint32_t k_MaxLocalLights = 32;
 
@@ -136,8 +174,10 @@ namespace Dingo
 		// lit default), transformed into world space on the CPU. The vertex stream is
 		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
 		// (3, the mesh's UVs, for custom materials that sample a texture). No-op outside a
-		// Begin/EndScene pair.
-		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr);
+		// Begin/EndScene pair. Every material casts through the renderer's own depth-only pass, so a
+		// custom vertex shader's displacement isn't in its shadow, and a translucent mesh casts a full
+		// one.
+		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On);
 
 		// Convenience primitives drawn with the renderer's built-in unit meshes
 		// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
@@ -166,7 +206,9 @@ namespace Dingo
 		// drawn with the default material and a warning. A mesh without a skin, with too few joints
 		// passed, or skinned to more than k_MaxSkinJoints joints goes through SubmitMesh and draws its
 		// rest pose. No-op outside a Begin/EndScene pair.
-		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr);
+		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
+		// uploads its palette for each, which is why the skin buffer holds two writes per instance.
+		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On);
 
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
 		// k_MaxSkinnedInstancesLimit.
@@ -207,6 +249,10 @@ namespace Dingo
 			uint32_t SkinnedInstances = 0;    // joint palettes uploaded; a model's submeshes share one
 			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame
 			uint32_t SkinnedJoints = 0;       // joint matrices uploaded
+			uint32_t ShadowViews = 0;         // cascades rendered into the shadow atlas, 0 for a scene that casts nothing
+			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
+			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
+			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
 		};
 
 		const Statistics& GetStatistics() const { return m_Statistics; }
@@ -221,6 +267,10 @@ namespace Dingo
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
 		void ClearSceneLights();
+		bool PrepareShadows();
+		void EnsureShadowResources();
+		void DrawShadowPass();
+		void ResolveSkinnedBudget();
 
 	private:
 		Renderer3DParams m_Params;
@@ -328,14 +378,38 @@ namespace Dingo
 			bool SkinnedOnly = false;
 			uint32_t IdleScenes = 0;
 		};
-		std::unordered_map<Material*, MaterialBatch> m_Batches;
+		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
+		struct BatchKey
+		{
+			Material* Material = nullptr;
+			ShadowCasting Shadows = ShadowCasting::On;
+			bool operator==(const BatchKey&) const = default;
+		};
+		struct BatchKeyHash
+		{
+			size_t operator()(const BatchKey& key) const
+			{
+				return std::hash<const void*>()(key.Material) ^ (static_cast<size_t>(key.Shadows) * 0x9e3779b97f4a7c15ull);
+			}
+		};
+		std::unordered_map<BatchKey, MaterialBatch, BatchKeyHash> m_Batches;
 		static constexpr uint32_t k_MaxIdleBatchScenes = 300;
 
-		// Materials in the order they were first submitted to this scene. Draw order has to
+		// Batches in the order they were first submitted to this scene. Draw order has to
 		// come from here, not from the map: unordered_map iteration follows pointer hashing,
 		// so the same scene would submit its materials in a different order between runs —
 		// invisible for depth-tested opaques, but not for anything blended.
-		std::vector<Material*> m_DrawOrder;
+		std::vector<BatchKey> m_DrawOrder;
+
+		// The scene's non-empty chunks, uploaded before any pass draws them: the shadow pass needs
+		// them before the lit pass does.
+		struct ChunkDraw
+		{
+			BatchKey Key;
+			uint32_t Buffer = 0;   // into the pooled vertex/index buffers
+			uint32_t IndexCount = 0;
+		};
+		std::vector<ChunkDraw> m_ChunkDraws;
 
 		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
 		// on demand and reused. Each batch gets its own buffer, so no shared buffer is
@@ -378,6 +452,7 @@ namespace Dingo
 			const Dingo::Mesh* Mesh = nullptr;
 			Dingo::Material* Material = nullptr;
 			uint32_t Instance = 0;
+			ShadowCasting Shadows = ShadowCasting::On;
 		};
 
 		// A lit material's copy on the skinned shader, synced from it before every draw. Keyed by
@@ -409,12 +484,73 @@ namespace Dingo
 		std::vector<glm::mat4> m_SkinnedJoints; // every instance's palette, back to back
 		std::unordered_map<uint64_t, SkinnedTwin> m_SkinnedTwins;
 
+		std::vector<uint8_t> m_SkinnedInstanceDropped; // per instance of the scene: past the frame's budget
 		uint64_t m_SkinnedFrameIndex = 0;
 		uint32_t m_SkinnedInstancesThisFrame = 0;
 		bool m_SkinnedBudgetWarned = false;
 		bool m_SkinFallbackWarned = false;
 		bool m_SkinnedOnlyWarned = false;
 		bool m_SkinMaterialWarned = false;
+
+		void UploadSkinData(const SkinnedInstance& instance);
+		void EnsureSkinBuffers(const Mesh* mesh);
+
+		// ── Shadows ───────────────────────────────────────────────────────────
+
+		// std140, mirrored by ShadowCascade and ShadowData in Shadows.glsl: bound by name to every
+		// material whose shader declares it, uploaded every EndScene (the lit shader always binds it).
+		struct ShadowCascadeData
+		{
+			glm::mat4 ViewProjection{ 1.0f };
+			glm::vec4 AtlasRect{ 0.0f }; // xy = top-left in atlas UV, zw = size
+			glm::vec4 Params{ 0.0f };    // x = end depth along the view, y = texel size in world units
+		};
+		struct ShadowData
+		{
+			glm::ivec4 ShadowCounts{ 0, -1, 0, 0 }; // x = cascades, y = the casting directional light, z = debug tint
+			glm::vec4 ShadowOrigin{ 0.0f };
+			glm::vec4 ShadowForward{ 0.0f };         // w = cascade blend fraction
+			glm::vec4 ShadowParams{ 0.0f };          // x = strength, y = normal bias in texels, z = atlas texel in UV, w = max distance
+			ShadowCascadeData Cascades[k_MaxShadowCascades];
+		};
+		static_assert(sizeof(ShadowCascadeData) == 96 && offsetof(ShadowData, Cascades) == 64 && sizeof(ShadowData) == 64 + 96 * k_MaxShadowCascades,
+			"ShadowData must match the std140 block in Shadows.glsl");
+
+		// std140, mirrored by ShadowViews in Renderer3D_Shadow.glsl.
+		static constexpr uint32_t k_MaxShadowViews = k_MaxShadowCascades;
+		struct ShadowViewData
+		{
+			glm::mat4 ViewProjection{ 1.0f };
+			glm::vec4 Tile{ 0.0f }; // xy = the tile's centre in atlas clip space, zw = its scale
+		};
+		struct ShadowViews
+		{
+			ShadowViewData Views[k_MaxShadowViews];
+		};
+		static_assert(sizeof(ShadowViewData) == 80, "ShadowViews must match the std140 block in Renderer3D_Shadow.glsl");
+
+		ShadowData m_ShadowData;
+		ShadowViews m_ShadowViews;
+		uint32_t m_ShadowViewCount = 0;
+		int32_t m_ShadowLight = -1; // the directional light (submission index) that casts this scene
+		float m_ShadowStrength = 1.0f;
+		bool m_SecondShadowLightWarned = false;
+
+		// Where the scene's casters are, so a cascade's depth range reaches back to every one of them.
+		glm::vec3 m_CasterMin{ 0.0f };
+		glm::vec3 m_CasterMax{ 0.0f };
+		bool m_HasCasters = false;
+		uint32_t m_StaticCasters = 0;
+
+		GraphicsBuffer* m_ShadowDataBuffer = nullptr;
+		GraphicsBuffer* m_ShadowViewsBuffer = nullptr;
+		Framebuffer* m_ShadowAtlas = nullptr;
+		Texture* m_PlaceholderShadowAtlas = nullptr; // bound until the first scene casts
+		Sampler* m_ShadowSampler = nullptr;          // comparison, linear: hardware 2 x 2 PCF
+		Shader* m_ShadowShader = nullptr;
+		Shader* m_SkinnedShadowShader = nullptr;
+		Material* m_ShadowMaterial = nullptr;
+		Material* m_SkinnedShadowMaterial = nullptr;
 	};
 
 }

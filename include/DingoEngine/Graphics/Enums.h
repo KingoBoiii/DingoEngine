@@ -6,3 +6,4 @@
 #include "Enums/Format.h"
 #include "Enums/BlendMode.h"
 #include "Enums/DepthCompare.h"
+#include "Enums/ShadowCasting.h"

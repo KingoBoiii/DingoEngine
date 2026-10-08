@@ -242,6 +242,36 @@ namespace Dingo::UI
 		else
 			ImGui::Text("Dropped    : 0");
 
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D shadows  (most recent scene)");
+		ImGui::Separator();
+		if (stats3D.ShadowViews == 0)
+			ImGui::TextDisabled("None cast: no directional light with CastShadows, or nothing that casts.");
+		else
+		{
+			ImGui::Text("Cascades   : %u   ends at %.1f / %.1f / %.1f / %.1f along the view", stats3D.ShadowViews,
+				stats3D.ShadowCascadeEnds[0], stats3D.ShadowCascadeEnds[1], stats3D.ShadowCascadeEnds[2], stats3D.ShadowCascadeEnds[3]);
+			ImGui::Text("Casters    : %u meshes in %u instanced draws (not in draw calls)", stats3D.ShadowCasters, stats3D.ShadowDrawCalls);
+		}
+
+		Renderer3D& mutableRenderer3D = Application::Get().GetRenderer3D();
+		Renderer3DShadowSettings shadowSettings = mutableRenderer3D.GetShadowSettings();
+		if (ImGui::Checkbox("Tint by cascade", &shadowSettings.DebugCascades))
+			mutableRenderer3D.SetShadowSettings(shadowSettings);
+
+		if (Framebuffer* atlas = mutableRenderer3D.GetShadowAtlas())
+		{
+			ImGui::Text("Atlas      : %u x %u D32, %.0f MB", atlas->GetWidth(), atlas->GetHeight(),
+				static_cast<double>(atlas->GetWidth()) * atlas->GetHeight() * 4.0 / (1024.0 * 1024.0));
+			if (Texture* depth = atlas->GetDepthAttachment())
+			{
+				static bool s_ShowAtlas = false;
+				ImGui::Checkbox("Show the atlas (depth in red, near is dark)", &s_ShowAtlas);
+				if (s_ShowAtlas)
+					ImGui::Image(reinterpret_cast<ImTextureID>(depth->GetTextureHandle()), ImVec2(256.0f, 256.0f));
+			}
+		}
+
 		const PostProcessStack::Statistics& post = Renderer::GetPostProcessStack().GetStatistics();
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Post chain  (last frame that ran it)");

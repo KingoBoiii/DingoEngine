@@ -405,7 +405,7 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material);
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows);
 		}
 
 		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
@@ -421,9 +421,9 @@ namespace Dingo
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
 				if (skeleton && submesh.MeshData->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material);
+					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows);
 				else
-					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material);
+					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows);
 			}
 		}
 	}

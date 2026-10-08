@@ -957,7 +957,7 @@ Not in v0.8:
 | Cross-topology retargeting | Later. |
 | Instantiating a static multi-node model as an entity tree | Later. Static models stay pre-transformed. |
 | Inherited visibility (`SetActive`) | The v1.0 API pass. |
-| **Skinned shadows** | v0.9, through the same `DE_SKINNED` vertex stage. |
+| **Skinned shadows** | Shipped in v0.9: skinned meshes cast through the shadow pass's own `DE_SKINNED` vertex stage (`Renderer3D_Shadow.glsl`, sharing `Skinning.glsl` with the lit shader). See [Shadows](shadows.md). |
 | Animation LOD, culling and compression; instancing skinned meshes | v1.0 throughput work. |
 | Worker-thread model parsing | Later. |
 

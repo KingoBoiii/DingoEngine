@@ -17,6 +17,11 @@ namespace Dingo
 		glm::vec3 Direction{ -0.4f, -1.0f, -0.35f }; // the way the light travels
 		glm::vec3 Color{ 1.0f };
 		float Intensity = 1.0f;
+		// The first casting directional light of a scene gets cascaded shadow maps
+		// (Renderer3DParams::Shadows); another one warns once and lights unshadowed. ShadowStrength
+		// is how dark its shadows are, from 0 (none) to 1.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 	};
 
 	struct PointLight
@@ -44,8 +49,8 @@ namespace Dingo
 	// tests such as "is the player inside that cone": falloff^2 for a point light and
 	// falloff^2 * cone^2 for a spot, where falloff = 1 - d^2 / Range^2 (0 from Range on) and the
 	// cone is set up exactly as SubmitLight sets it up. It leaves out the surface's N.L, Color,
-	// Intensity, any occlusion (there are no shadows) and the frame's light budget, and is 0 for a
-	// light SubmitLight rejects as unusable.
+	// Intensity, any occlusion (point and spot lights cast no shadows yet) and the frame's light
+	// budget, and is 0 for a light SubmitLight rejects as unusable.
 	float GetLightAttenuation(const PointLight& light, const glm::vec3& point);
 	float GetLightAttenuation(const SpotLight& light, const glm::vec3& point);
 

@@ -337,6 +337,14 @@ namespace Dingo
 		std::vector<uint32_t> vertexInputLocations;
 		bool vertexInputsReflected = false;
 		std::vector<std::pair<std::string, uint32_t>> uniformBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> textureBindings;
+		std::vector<std::pair<std::string, uint32_t>> samplerBindings;
+		auto addBinding = [](std::vector<std::pair<std::string, uint32_t>>& bindings, const ShaderResourceBinding& resource)
+		{
+			const bool known = std::any_of(bindings.begin(), bindings.end(), [&](const auto& entry) { return entry.first == resource.Name; });
+			if (!known)
+				bindings.emplace_back(resource.Name, resource.Binding);
+		};
 		for (const auto& [shaderType, stage] : spvStages)
 		{
 			nvrhi::ShaderHandle handle;
@@ -394,12 +402,13 @@ namespace Dingo
 				}
 
 				for (const ShaderResourceBinding& uniformBuffer : reflection.UniformBuffers)
-				{
-					const bool known = std::any_of(uniformBufferBindings.begin(), uniformBufferBindings.end(),
-						[&](const auto& entry) { return entry.first == uniformBuffer.Name; });
-					if (!known)
-						uniformBufferBindings.emplace_back(uniformBuffer.Name, uniformBuffer.Binding);
-				}
+					addBinding(uniformBufferBindings, uniformBuffer);
+				for (const ShaderImageBinding& image : reflection.SeparateImages)
+					addBinding(textureBindings, image);
+				for (const ShaderImageBinding& image : reflection.SampledImages)
+					addBinding(textureBindings, image);
+				for (const ShaderImageBinding& sampler : reflection.SeparateSamplers)
+					addBinding(samplerBindings, sampler);
 
 				reflections.push_back(reflection);
 			}
@@ -410,6 +419,8 @@ namespace Dingo
 		m_VertexInputLocations = std::move(vertexInputLocations);
 		m_VertexInputsReflected = vertexInputsReflected;
 		m_UniformBufferBindings = std::move(uniformBufferBindings);
+		m_TextureBindings = std::move(textureBindings);
+		m_SamplerBindings = std::move(samplerBindings);
 
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.

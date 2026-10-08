@@ -30,7 +30,8 @@ namespace Dingo
 	// disk: after 1 s Walk and Run trade names, then Fox.events gains a mark. Each reload is a check.
 	//
 	// --anim-skeleton (or the checkbox) draws every bone and joint as boxes inside a see-through
-	// Fox. F7 opens the engine's Animation tab on the same animators.
+	// Fox. F7 opens the engine's Animation tab on the same animators. --anim-shadow lights the scene
+	// with a casting sun, so the Fox shadows the floor.
 	class AnimationTest : public GraphicsTest
 	{
 	public:
@@ -88,6 +89,7 @@ namespace Dingo
 		Entity      m_AnimatedFox;
 		std::vector<Entity> m_Foxes; // all but a crowd's, for the skeleton overlay
 		bool        m_ShowSkeleton = false;
+		bool        m_CastShadows = false; // --anim-shadow: a sun that casts, so the Fox shadows the floor
 		uint32_t    m_SkeletonBoxes = 0;
 
 		float     m_FoxScale = 1.0f;

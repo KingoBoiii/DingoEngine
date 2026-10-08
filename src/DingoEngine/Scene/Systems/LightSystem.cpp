@@ -59,7 +59,7 @@ namespace Dingo::Internal::LightSystem
 		// NaN, which SetAmbientLight rejects, losing every other source with it.
 		auto submitDirectional = [&](const DirectionalLightComponent& light)
 		{
-			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f) });
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f), light.CastShadows, light.ShadowStrength });
 			if (accepted && std::isfinite(light.Ambient))
 				ambient += glm::vec3(light.Ambient);
 		};

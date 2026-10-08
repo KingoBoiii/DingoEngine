@@ -109,6 +109,9 @@ namespace Dingo
 		// The binding of the uniform block with that name in any stage, or -1. Only reflected
 		// shaders (ShaderParams::Reflect) know their blocks.
 		int32_t FindUniformBufferBinding(std::string_view blockName) const;
+		// The same for a separate texture or sampler, by its variable name.
+		int32_t FindTextureBinding(std::string_view textureName) const;
+		int32_t FindSamplerBinding(std::string_view samplerName) const;
 
 		// Every file the source pulled in with #include on its last build (see ShaderParams), which a
 		// hot-reload watches as well as the shader's own file. Engine shaders read from the library,
@@ -119,6 +122,8 @@ namespace Dingo
 		ShaderParams m_Params;
 		uint32_t m_Generation = 0;
 		std::vector<std::pair<std::string, uint32_t>> m_UniformBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_TextureBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_SamplerBindings;
 		std::vector<std::filesystem::path> m_IncludedFiles;
 
 		friend class NvrhiPipeline;

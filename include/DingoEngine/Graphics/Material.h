@@ -118,6 +118,15 @@ namespace Dingo
 
 		static constexpr const char* k_SkinDataBlockName = "SkinData";
 
+		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
+		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it. A shader
+		// without them ignores this.
+		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
+
+		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
+		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
+		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
+
 		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
 		const std::vector<uint8_t>& GetUniformCPUData()                      const { return m_UniformCPUData; }
 		bool                        NeedsUniformUpload(uint64_t frameIndex)  const { return m_UniformUploadFrame != frameIndex; }
@@ -171,6 +180,9 @@ namespace Dingo
 		// Shared scene UBO (binding 0), owned by the renderer — not destroyed here.
 		GraphicsBuffer*      m_SceneUniformBuffer = nullptr;
 		GraphicsBuffer*      m_SkinUniformBuffer  = nullptr;
+		GraphicsBuffer*      m_ShadowDataBuffer   = nullptr;
+		Texture*             m_ShadowAtlas        = nullptr;
+		Sampler*             m_ShadowSampler      = nullptr;
 
 		struct PipelineCacheEntry
 		{

@@ -293,6 +293,7 @@ namespace Dingo
 				m_BlendSpeed = std::strtof(std::string(*speed).c_str(), nullptr);
 			m_LiveReload = args.Get("anim-reload").has_value();
 			m_ShowSkeleton = args.Get("anim-skeleton").has_value();
+			m_CastShadows = args.Get("anim-shadow").has_value();
 		}
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.05f, 200.0f);
@@ -1609,6 +1610,11 @@ namespace Dingo
 		Entity floor = m_Scene->CreateEntity("Floor");
 		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.05f, 0.0f }, { 40.0f, 0.1f, 40.0f }));
 		floor.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer.GetBoxMesh(), { 0.42f, 0.46f, 0.40f, 1.0f }));
+
+		// A default DirectionalLightComponent lights exactly as the default light the scene has
+		// without one; casting, the skinned Foxes shadow the floor.
+		if (m_CastShadows)
+			m_Scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>().CastShadows = true;
 
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
 		const std::string clipName = (m_Mode == Mode::Clip || m_Mode == Mode::Layers) && m_ClipName.empty() ? std::string("Walk")

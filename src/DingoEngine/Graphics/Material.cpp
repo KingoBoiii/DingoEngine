@@ -16,12 +16,15 @@ namespace Dingo
 		}
 
 		// Produce a cache key from a vertex layout, a framebuffer pointer and the shared buffers.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer)
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler)
 		{
 			size_t seed = 0;
 			HashCombine(seed, reinterpret_cast<uintptr_t>(framebuffer));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
+			HashCombine(seed, static_cast<size_t>(shadowBuffer ? shadowBuffer->GetId() : 0));
+			HashCombine(seed, reinterpret_cast<uintptr_t>(shadowAtlas));
+			HashCombine(seed, reinterpret_cast<uintptr_t>(shadowSampler));
 			HashCombine(seed, static_cast<size_t>(layout.Stride));
 			HashCombine(seed, layout.Attributes.size());
 			for (const auto& attr : layout.Attributes)
@@ -144,6 +147,13 @@ namespace Dingo
 		m_SkinUniformBuffer = buffer;
 	}
 
+	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
+	{
+		m_ShadowDataBuffer = shadowData;
+		m_ShadowAtlas = atlas;
+		m_ShadowSampler = sampler;
+	}
+
 	/**************************************************
 	***		PIPELINE CACHE								***
 	**************************************************/
@@ -173,7 +183,14 @@ namespace Dingo
 			m_BuiltResizeGeneration = resizeGeneration;
 		}
 
-		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer);
+		// Only what the shader declares joins the key, so a shader without shadows keeps one pass.
+		const Shader* shader = m_Params.Shader;
+		const int32_t shadowDataBinding = (m_ShadowDataBuffer && shader) ? shader->FindUniformBufferBinding(k_ShadowDataBlockName) : -1;
+		const int32_t shadowAtlasBinding = (m_ShadowAtlas && shader) ? shader->FindTextureBinding(k_ShadowAtlasName) : -1;
+		const int32_t shadowSamplerBinding = (m_ShadowSampler && shader) ? shader->FindSamplerBinding(k_ShadowSamplerName) : -1;
+
+		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer,
+			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -211,6 +228,13 @@ namespace Dingo
 		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(k_SkinDataBlockName) : -1;
 		if (skinBinding >= 0)
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinBinding), m_SkinUniformBuffer);
+
+		if (shadowDataBinding >= 0)
+			renderPass->SetUniformBuffer(static_cast<uint32_t>(shadowDataBinding), m_ShadowDataBuffer);
+		if (shadowAtlasBinding >= 0)
+			renderPass->SetTexture(static_cast<uint32_t>(shadowAtlasBinding), m_ShadowAtlas);
+		if (shadowSamplerBinding >= 0)
+			renderPass->SetSampler(static_cast<uint32_t>(shadowSamplerBinding), m_ShadowSampler);
 
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{
