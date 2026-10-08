@@ -6,6 +6,7 @@
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/KeyCodes.h"
+#include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/UI/DebugPanels.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -102,7 +103,7 @@ namespace Dingo
 		}
 
 		if (m_ImGuiLayer && m_Params.EnableDebugOverlays)
-			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer), F5 (input), F6 (assets) or F7 (animation) to open its tabs.");
+			DE_CORE_INFO("Debug window enabled - press F3 (engine), F4 (renderer), F5 (input), F6 (assets), F7 (animation) or F8 (profiler) to open its tabs.");
 	}
 
 	void Application::Destroy()
@@ -212,8 +213,13 @@ namespace Dingo
 			return (!renderedOnce && !m_Minimized) || m_Params.UpdateInBackground || (!m_Minimized && m_Focused);
 		};
 
+		DE_PROFILE_THREAD("Main");
+
 		while (m_IsRunning)
 		{
+			DE_PROFILE_FRAME();
+			DE_PROFILE_SCOPE("Application::Run");
+
 			float time = timer.Elapsed();
 			m_DeltaTime = time - m_LastFrameTime;
 			m_LastFrameTime = time;
@@ -248,6 +254,7 @@ namespace Dingo
 			snapshotInput = shouldUpdate();
 			if (!snapshotInput)
 			{
+				m_FrameTimings = {};
 				m_LastFrameTime = timer.Elapsed(); // a paused stretch is not a frame delta
 				RunPostExecutionCallbacks();
 				continue;
@@ -260,10 +267,15 @@ namespace Dingo
 			}
 
 			const bool render = !m_Minimized;
-			if (render)
-				Renderer::BeginFrame();
-			else
-				Renderer::SkipFrame();
+			const float waitStart = timer.Elapsed();
+			{
+				DE_PROFILE_SCOPE("Renderer::BeginFrame");
+				if (render)
+					Renderer::BeginFrame();
+				else
+					Renderer::SkipFrame();
+			}
+			const float updateStart = timer.Elapsed();
 
 			if (render && minimizedUpdates > 0)
 			{
@@ -276,23 +288,31 @@ namespace Dingo
 			// so the GPU work in here (texture uploads, shader recompiles) can't race its
 			// garbage-collection/present pass on the NVRHI device.
 			if (m_AssetManager)
+			{
+				DE_PROFILE_SCOPE("AssetManager::Update");
 				m_AssetManager->Update(m_DeltaTime); // finalize async loads, poll hot-reload
+			}
 
 			for (Layer* layer : m_LayerStack)
 			{
+				DE_PROFILE_SCOPE_TEXT("Layer::OnUpdate", layer->GetName());
 				layer->OnUpdate(m_DeltaTime);
 			}
+			const float uiStart = timer.Elapsed();
 
 			if (render)
 			{
 				if (m_ImGuiLayer)
 				{
+					DE_PROFILE_SCOPE("ImGui");
+					Renderer::BeginGpuTimer("ImGui");
 					m_ImGuiLayer->Begin();
 
 					if (m_Params.EnableUI)
 					{
 						for (Layer* layer : m_LayerStack)
 						{
+							DE_PROFILE_SCOPE_TEXT("Layer::OnUIRender", layer->GetName());
 							layer->OnUIRender();
 						}
 					}
@@ -301,8 +321,10 @@ namespace Dingo
 						RenderDebugOverlays();
 
 					m_ImGuiLayer->End();
+					Renderer::EndGpuTimer();
 				}
 
+				DE_PROFILE_SCOPE("Renderer::EndFrame");
 				Renderer::EndFrame();
 				renderedOnce = true;
 			}
@@ -311,6 +333,12 @@ namespace Dingo
 				++minimizedUpdates;
 				minimizedTime += m_DeltaTime;
 			}
+
+			const float frameEnd = timer.Elapsed();
+			m_FrameTimings.FrameMs = m_DeltaTime * 1000.0f;
+			m_FrameTimings.WaitMs = (updateStart - waitStart) * 1000.0f;
+			m_FrameTimings.UpdateMs = (uiStart - updateStart) * 1000.0f;
+			m_FrameTimings.UIMs = (frameEnd - uiStart) * 1000.0f;
 
 			RunPostExecutionCallbacks();
 		}
@@ -337,7 +365,7 @@ namespace Dingo
 	void Application::RenderDebugOverlays()
 	{
 		// One tabbed debug window: F3 = Engine, F4 = Renderer, F5 = Input, F6 = Assets,
-		// F7 = Animation.
+		// F7 = Animation, F8 = Profiler.
 		// A key opens the window on its tab (or switches to it); the active tab's key
 		// closes it.
 		UI::DebugTab request = UI::DebugTab::None;
@@ -351,6 +379,8 @@ namespace Dingo
 			request = UI::DebugTab::Assets;
 		if (Input::IsKeyPressed(Key::F7))
 			request = UI::DebugTab::Animation;
+		if (Input::IsKeyPressed(Key::F8))
+			request = UI::DebugTab::Profiler;
 
 		if (request != UI::DebugTab::None)
 		{

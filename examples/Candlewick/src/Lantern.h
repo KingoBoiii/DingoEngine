@@ -20,7 +20,8 @@ namespace Dingo
 	public:
 		enum class State { Lit, Snuffed, Striking };
 
-		Lantern(Scene& scene, const Player& player, Material* frameMaterial, GameAudio& audio, float startOil, bool burns);
+		// snuffSmoke: the puff a snuffed lantern gives off, or null for none.
+		Lantern(Scene& scene, const Player& player, Material* frameMaterial, ParticleEffect* snuffSmoke, GameAudio& audio, float startOil, bool burns);
 		~Lantern();
 
 		Lantern(const Lantern&) = delete;
@@ -60,6 +61,7 @@ namespace Dingo
 		Scene& m_Scene;
 		GameAudio& m_Audio;
 		Entity m_Light;
+		Entity m_Smoke;
 		std::vector<Part> m_Parts;
 
 		Material* m_GlassMaterial = nullptr;

@@ -304,6 +304,16 @@ void main() {
 		if (m_SceneSkipped)
 			return;
 
+		// A scene begun again before its EndScene keeps the timer it opened, and one left open at
+		// the end of a frame was closed by the renderer.
+		const uint64_t frameIndex = Renderer::GetFrameIndex();
+		if (!m_GpuTimerOpen || m_GpuTimerFrame != frameIndex)
+		{
+			Renderer::BeginGpuTimer("Renderer2D");
+			m_GpuTimerOpen = true;
+			m_GpuTimerFrame = frameIndex;
+		}
+
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
 		m_CameraUniformBuffer->Upload(&m_CameraData, sizeof(CameraData));
 
@@ -327,12 +337,18 @@ void main() {
 		// of the work for large scenes already happened in mid-frame flushes; these
 		// just drain the final partial batch (no-op when empty).
 		Flush();
+
+		if (m_GpuTimerOpen && m_GpuTimerFrame == Renderer::GetFrameIndex())
+			Renderer::EndGpuTimer();
+		m_GpuTimerOpen = false;
 	}
 
 	void Renderer2D::Flush()
 	{
 		if (m_SceneSkipped)
 			return;
+
+		DE_PROFILE_SCOPE("Renderer2D::Flush");
 
 		FlushQuad();
 		FlushCircle();

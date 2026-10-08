@@ -1,4 +1,5 @@
 #pragma once
+#include "ArenaVfx.h"
 #include "Audio.h"
 #include "Fighter.h"
 #include "HitGeometry.h"
@@ -69,7 +70,8 @@ namespace Dingo
 	class Combat
 	{
 	public:
-		Combat(const GameAudio& audio, bool log);
+		// vfx: where impacts throw their sparks, or null for none.
+		Combat(const GameAudio& audio, bool log, ArenaVfx* vfx = nullptr);
 
 		void Update(Fighter& a, Fighter& b);
 		void UpdateDebug(Fighter& a, Fighter& b);
@@ -82,6 +84,7 @@ namespace Dingo
 		{
 			Fighter* Attacker = nullptr;
 			Fighter* Target = nullptr;
+			glm::vec3 Contact{ 0.0f };
 			OutcomeRecord Record;
 		};
 
@@ -94,6 +97,7 @@ namespace Dingo
 	private:
 		const GameAudio& m_Audio;
 		bool m_Log;
+		ArenaVfx* m_Vfx = nullptr;
 		CombatStats m_Stats;
 		std::vector<OutcomeRecord> m_Outcomes;
 		std::unordered_map<const Fighter*, int> m_ChainRuns;

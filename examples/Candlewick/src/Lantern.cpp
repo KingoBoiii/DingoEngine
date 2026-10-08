@@ -1,6 +1,8 @@
 #include "Lantern.h"
 #include "Audio.h"
+#include "Flames.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 #include "Player.h"
 
 #include <algorithm>
@@ -54,7 +56,7 @@ namespace
 namespace Dingo
 {
 
-	Lantern::Lantern(Scene& scene, const Player& player, Material* frameMaterial, GameAudio& audio, float startOil, bool burns)
+	Lantern::Lantern(Scene& scene, const Player& player, Material* frameMaterial, ParticleEffect* snuffSmoke, GameAudio& audio, float startOil, bool burns)
 		: m_Scene(scene), m_Audio(audio), m_Oil(std::clamp(startOil, 0.0f, OIL_MAX)), m_Burns(burns)
 	{
 		m_GlassMaterial = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams()
@@ -72,8 +74,9 @@ namespace Dingo
 
 		m_Light = scene.CreateEntity("Lantern");
 		m_Light.AddComponent<Transform3DComponent>();
-		m_Light.AddComponent<PointLightComponent>(PointLightComponent(LANTERN_COLOR, LANTERN_INTENSITY, LANTERN_RANGE_MAX));
+		m_Light.AddComponent<PointLightComponent>(PointLightComponent(LANTERN_COLOR, LANTERN_INTENSITY, LANTERN_RANGE_MAX)).CastShadows = !GetLaunchOptions().NoShadows;
 
+		m_Smoke = SpawnEmitter(scene, "LanternSmoke", snuffSmoke, glm::vec3(0.0f));
 		m_State = m_Oil > 0.0f ? State::Lit : State::Snuffed;
 
 		Place(player, 0.0f);
@@ -89,7 +92,10 @@ namespace Dingo
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size * k_Scale;
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(Application::Get().GetRenderer3D().GetBoxMesh(), color)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(Application::Get().GetRenderer3D().GetBoxMesh(), color));
+		renderer.Material = material;
+		// The parts enclose the lantern's own light, which they would black out.
+		renderer.Shadows = ShadowCasting::Off;
 		m_Parts.push_back({ entity, offset * k_Scale });
 	}
 
@@ -169,7 +175,11 @@ namespace Dingo
 
 			const glm::vec3 position = m_Light.GetComponent<Transform3DComponent>().Position;
 			if (m_State == State::Snuffed)
+			{
 				m_Audio.PlayAt(Sfx::Snuff, position);
+				if (m_Smoke.IsValid())
+					m_Scene.EmitParticlesAt(m_Smoke, position + glm::vec3(0.0f, SNUFF_SMOKE_RISE, 0.0f), SNUFF_SMOKE_COUNT);
+			}
 			else if (m_State == State::Striking)
 				m_Audio.PlayAt(Sfx::Strike, position);
 		}

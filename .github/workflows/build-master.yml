@@ -18,6 +18,11 @@ jobs:
       fail-fast: false
       matrix:
         build-configuration: [Debug, Release, Distribution]
+        profile: [false]
+        # Tracy (premake --profile) only compiles in a build that asks for it, so one build keeps it compiling.
+        include:
+          - build-configuration: Release
+            profile: true
     steps:
     - uses: actions/checkout@v4
       with:
@@ -80,7 +85,7 @@ jobs:
 
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: .\premake5-bin\premake5.exe vs2026
+      run: .\premake5-bin\premake5.exe ${{ matrix.profile && '--profile' || '' }} vs2026
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
@@ -92,6 +97,7 @@ jobs:
       run: Copy-Item ".\build\dist\${{matrix.build-configuration}}-windows-x86_64\DingoEngine.lib" ".\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\DingoEngine.lib" -Force
 
     - name: Upload static library artifact
+      if: ${{ !matrix.profile }}
       uses: actions/upload-artifact@v4
       with:
         name: dingo-engine-windows-${{matrix.build-configuration}}-${{steps.version.outputs.VERSION}}

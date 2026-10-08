@@ -1,38 +1,33 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
+#include "DingoEngine/Graphics/EngineShaders.h"
+#include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
+#include "DingoEngine/Graphics/ParticleRenderer.h"
+#include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <array>
 #include <cstring>
+#include <type_traits>
 
 namespace
 {
-#include "Renderer3D_Lit.glsl.inl"
-
 	constexpr const char* k_LitShaderName = "Renderer3DMeshShader";
 	constexpr const char* k_SkinnedLitShaderName = "Renderer3DSkinnedMeshShader";
 
-	// The source file when this build can see it, so the AssetManager can hot-reload it;
-	// otherwise the copy compiled into the library.
 	Dingo::Shader* CreateLitShader(const char* name, bool skinned)
 	{
 		Dingo::ShaderParams params = Dingo::ShaderParams().SetName(name);
 		if (skinned)
 			params.AddDefine("DE_SKINNED");
-
-#ifdef DE_ENGINE_SHADER_DIR
-		const std::filesystem::path sourcePath = std::filesystem::path(u8"" DE_ENGINE_SHADER_DIR) / "Renderer3D_Lit.glsl";
-		std::error_code ec;
-		if (std::filesystem::exists(sourcePath, ec))
-			return Dingo::Shader::Create(params.SetFilePath(sourcePath));
-#endif
-		const std::string source(reinterpret_cast<const char*>(k_Renderer3D_Lit_glsl), sizeof(k_Renderer3D_Lit_glsl));
-		return Dingo::Shader::Create(params.SetSourceCode(source));
+		return Dingo::Internal::CreateEngineShader(params, "Renderer3D_Lit.glsl");
 	}
 
 	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
@@ -98,6 +93,37 @@ namespace
 		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
 	}
 
+	uint32_t FloorPowerOfTwo(uint32_t value)
+	{
+		uint32_t power = 1;
+		while (power * 2 <= value)
+			power *= 2;
+		return power;
+	}
+
+	// 0 at the cutoff, 1 from (1 + band) times it up, smooth between.
+	float BudgetFade(float priority, float cutoff, float band)
+	{
+		if (!(cutoff > 0.0f))
+			return 1.0f;
+		const float t = std::clamp((priority / cutoff - 1.0f) / band, 0.0f, 1.0f);
+		return t * t * (3.0f - 2.0f * t);
+	}
+
+	bool SphereTouchesBox(const glm::vec3& center, float radius, const glm::vec3& low, const glm::vec3& high)
+	{
+		const glm::vec3 nearest = glm::clamp(center, low, high);
+		const glm::vec3 offset = nearest - center;
+		return glm::dot(offset, offset) <= radius * radius;
+	}
+
+	// A tile wider than its cone by two texels on each side, so the 3 x 3 PCF kernel near the cone's
+	// edge (or a cube face's) reads depth that was rendered.
+	float TileHalfAngleTangent(float coneTangent, uint32_t size)
+	{
+		return coneTangent * static_cast<float>(size) / static_cast<float>(size - 4);
+	}
+
 	bool BindsPastSlotZero(const Dingo::Material& material)
 	{
 		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
@@ -117,6 +143,48 @@ namespace
 namespace Dingo
 {
 
+	// Square power-of-two tiles of a square atlas: each takes the smallest free square that holds it,
+	// split in four until it fits.
+	class Renderer3D::ShadowAtlasAllocator
+	{
+	public:
+		explicit ShadowAtlasAllocator(uint32_t size) { m_Free.push_back({ 0, 0, size }); }
+
+		bool Allocate(uint32_t size, glm::uvec2& corner)
+		{
+			int best = -1;
+			for (int i = 0; i < static_cast<int>(m_Free.size()); ++i)
+			{
+				if (m_Free[i].Size >= size && (best < 0 || m_Free[i].Size < m_Free[best].Size))
+					best = i;
+			}
+			if (best < 0)
+				return false;
+
+			Square square = m_Free[best];
+			m_Free.erase(m_Free.begin() + best);
+			while (square.Size > size)
+			{
+				const uint32_t half = square.Size / 2;
+				m_Free.push_back({ square.X + half, square.Y, half });
+				m_Free.push_back({ square.X, square.Y + half, half });
+				m_Free.push_back({ square.X + half, square.Y + half, half });
+				square.Size = half;
+			}
+			corner = { square.X, square.Y };
+			return true;
+		}
+
+	private:
+		struct Square
+		{
+			uint32_t X = 0;
+			uint32_t Y = 0;
+			uint32_t Size = 0;
+		};
+		std::vector<Square> m_Free;
+	};
+
 	Renderer3D* Renderer3D::Create(const Renderer3DParams& params)
 	{
 		Renderer3D* renderer = new Renderer3D(params);
@@ -124,11 +192,18 @@ namespace Dingo
 		return renderer;
 	}
 
+	Renderer3D::Renderer3D(const Renderer3DParams& params)
+		: m_Params(params)
+	{
+	}
+
 	Renderer3D::~Renderer3D()
 	{
 		std::erase(s_LitShaders, m_Shader);
 		Internal::UnwatchUnmanagedShader(m_Shader);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
+		Internal::UnwatchUnmanagedShader(m_ShadowShader);
+		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
 	}
 
 	void Renderer3D::Initialize()
@@ -142,6 +217,14 @@ namespace Dingo
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(SkinnedMeshVertex, Position))
 			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(SkinnedMeshVertex, Normal))
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(SkinnedMeshVertex, TexCoord))
+			.AddAttribute("a_Joints", Format::RGBA16_UINT, offsetof(SkinnedMeshVertex, Joints))
+			.AddAttribute("a_Weights", Format::RGBA32_FLOAT, offsetof(SkinnedMeshVertex, Weights));
+
+		// Vulkan takes locations from attribute order and warns about every one the vertex shader
+		// skips, so the depth pass reads only what Renderer3D_Shadow.glsl declares.
+		m_SkinnedShadowLayout = VertexLayout()
+			.SetStride(sizeof(SkinnedMeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(SkinnedMeshVertex, Position))
 			.AddAttribute("a_Joints", Format::RGBA16_UINT, offsetof(SkinnedMeshVertex, Joints))
 			.AddAttribute("a_Weights", Format::RGBA32_FLOAT, offsetof(SkinnedMeshVertex, Weights));
 
@@ -164,6 +247,26 @@ namespace Dingo
 			.SetDirectUpload(false)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
+		// The lit shader binds the shadows always, so every scene writes them, cast or not.
+		m_ShadowDataBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_ShadowData")
+			.SetByteSize(sizeof(ShadowData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+		m_ShadowSampler = Sampler::Create(SamplerParams().SetCompare(true));
+		m_PlaceholderShadowAtlas = Texture::Create(TextureParams()
+			.SetDebugName("Renderer3D_NoShadowAtlas")
+			.SetWidth(1)
+			.SetHeight(1)
+			.SetFormat(TextureFormat::D32)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetIsRenderTarget(true));
+		SetShadowSettings(m_Params.Shadows);
+
+		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
+
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
 		m_SphereMesh = Mesh::CreateSphere(0.5f, 16, 16);
@@ -171,6 +274,8 @@ namespace Dingo
 
 	void Renderer3D::Shutdown()
 	{
+		m_Particles.reset();
+
 		for (GraphicsBuffer*& buffer : m_BatchVertexBuffers)
 			DestroyAndDelete(buffer);
 		for (GraphicsBuffer*& buffer : m_BatchIndexBuffers)
@@ -194,6 +299,27 @@ namespace Dingo
 		DestroyAndDelete(m_SkinBuffer);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 		DestroyAndDelete(m_SkinnedShader);
+
+		DestroyAndDelete(m_ShadowMaterial);
+		DestroyAndDelete(m_SkinnedShadowMaterial);
+		Internal::UnwatchUnmanagedShader(m_ShadowShader);
+		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
+		DestroyAndDelete(m_ShadowShader);
+		DestroyAndDelete(m_SkinnedShadowShader);
+		DestroyAndDelete(m_ShadowAtlas);
+		DestroyAndDelete(m_PlaceholderShadowAtlas);
+		DestroyAndDelete(m_ShadowSampler);
+		DestroyAndDelete(m_ShadowDataBuffer);
+		DestroyAndDelete(m_ShadowViewsBuffer);
+
+		DestroyAndDelete(m_ProbeMaterial);
+		delete m_ProbeShader;
+		m_ProbeShader = nullptr;
+		DestroyAndDelete(m_ProbeBuffer);
+		DestroyAndDelete(m_ProbeTarget);
+		m_ProbeReadbacks.clear();
+		m_ShadowProbes.clear();
+		m_GpuProbeKeys.clear();
 
 		DestroyAndDelete(m_SceneUniformBuffer);
 		DestroyAndDelete(m_Material);
@@ -222,7 +348,13 @@ namespace Dingo
 		m_CameraData.ViewProjection = viewProjection;
 		m_CameraData.CameraPosition = cameraPosition;
 
+		const uint64_t frame = Renderer::GetFrameIndex();
+		m_SceneOfFrame = frame == m_SceneFrame ? m_SceneOfFrame + 1 : 0;
+		m_SceneFrame = frame;
+
 		m_Statistics = {};
+		m_HasCasters = false;
+		m_StaticCasters = 0;
 
 		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
 		// just last scene's: SubmitMesh takes a spare chunk before growing. Nothing tells the
@@ -276,78 +408,146 @@ namespace Dingo
 		if (m_SceneSkipped)
 		{
 			ClearSceneLights();
+			if (m_Particles)
+				m_Particles->ClearScene();
 			return;
 		}
 
+		DE_PROFILE_SCOPE("Renderer3D::EndScene");
+		Renderer::BeginGpuTimer("Renderer3D");
+
 		// Written into this frame's command list ahead of every draw that binds it
 		// (CommandList::UploadBuffer, the same path material UBOs use).
-		ResolveSceneLights();
+		{
+			DE_PROFILE_SCOPE("Renderer3D::ResolveSceneLights");
+			ResolveSceneLights();
+		}
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+		const bool shadows = PrepareShadows();
+		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
+		ResolveShadowProbes();
 		ClearSceneLights();
 
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
 
-		// One indexed draw per batch, each from its own pooled (vertex, index) buffer so no
-		// shared buffer is re-uploaded between draws.
-		for (Material* material : m_DrawOrder)
+		// Every chunk goes into its own pooled (vertex, index) buffer up front, so no shared buffer
+		// is re-uploaded between draws and the shadow pass can draw them before the lit pass does.
 		{
-			if (IsLitShader(material->GetShader()))
+			DE_PROFILE_SCOPE("Renderer3D::UploadBatches");
+			m_ChunkDraws.clear();
+			for (const BatchKey& key : m_DrawOrder)
 			{
-				// The binding set would name bindings the shader's layout lacks, which Vulkan does
-				// not reject: drawing it is undefined behaviour, so the material is skipped.
-				if (BindsPastSlotZero(*material))
+				Material* material = key.Material;
+				if (IsLitShader(material->GetShader()))
 				{
-					if (!m_LitSlotsWarned)
+					// The binding set would name bindings the shader's layout lacks, which Vulkan does
+					// not reject: drawing it is undefined behaviour, so the material is skipped.
+					if (BindsPastSlotZero(*material))
 					{
-						const std::string& name = material->GetParams().DebugName;
-						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-							name.empty() ? "<unnamed>" : name.c_str());
-						m_LitSlotsWarned = true;
+						if (!m_LitSlotsWarned)
+						{
+							const std::string& name = material->GetParams().DebugName;
+							DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+								name.empty() ? "<unnamed>" : name.c_str());
+							m_LitSlotsWarned = true;
+						}
+						continue;
 					}
-					continue;
+					PrepareLitMaterial(material);
 				}
-				PrepareLitMaterial(material);
-			}
 
-			MaterialBatch& matBatch = m_Batches[material];
-			for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
-			{
-				MeshChunk& chunk = matBatch.Chunks[chunkIndex];
-				if (chunk.Indices.empty())
-					continue;
-
-				// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
-				// DirectUpload = false: the writes go into the frame's command list (as
-				// Renderer2D's batches do) instead of each spinning up a throwaway command list
-				// and its own queue submit.
-				if (batchIndex >= m_BatchVertexBuffers.size())
+				MaterialBatch& matBatch = m_Batches[key];
+				for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
 				{
-					m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
-					m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+					MeshChunk& chunk = matBatch.Chunks[chunkIndex];
+					if (chunk.Indices.empty())
+						continue;
+
+					// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
+					// DirectUpload = false: the writes go into the frame's command list (as
+					// Renderer2D's batches do) instead of each spinning up a throwaway command list
+					// and its own queue submit.
+					if (batchIndex >= m_BatchVertexBuffers.size())
+					{
+						m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
+						m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+					}
+
+					Renderer::Upload(m_BatchVertexBuffers[batchIndex], chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
+					Renderer::Upload(m_BatchIndexBuffers[batchIndex], chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+					m_ChunkDraws.push_back({ key, batchIndex, static_cast<uint32_t>(chunk.Indices.size()) });
+					++batchIndex;
 				}
+			}
+		}
 
-				GraphicsBuffer* vertexBuffer = m_BatchVertexBuffers[batchIndex];
-				GraphicsBuffer* indexBuffer = m_BatchIndexBuffers[batchIndex];
+		ResolveSkinnedBudget();
+		if (shadows)
+		{
+			DrawShadowPass();
+			DrawShadowProbes();
+		}
 
-				Renderer::Upload(vertexBuffer, chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
-				Renderer::Upload(indexBuffer, chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		{
+			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
+			for (const ChunkDraw& draw : m_ChunkDraws)
+			{
+				if (draw.Key.Shadows == ShadowCasting::ShadowsOnly)
+					continue;
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
 				// material also drawn skinned would otherwise keep a skin buffer this renderer may free.
+				Material* material = draw.Key.Material;
 				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 				material->SetSkinUniformBuffer(nullptr);
-				Renderer::DrawIndexed(material, m_Layout, vertexBuffer, indexBuffer, static_cast<uint32_t>(chunk.Indices.size()));
+				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+				Renderer::DrawIndexed(material, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount);
 				++m_Statistics.DrawCalls;
-
-				++batchIndex;
 			}
 		}
 
 		DrawSkinnedSubmissions();
+		if (m_Particles)
+			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
+		Renderer::EndGpuTimer();
 	}
 
-	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material)
+	std::shared_ptr<ParticleEmitter> Renderer3D::CreateParticleEmitter(const ParticleEffect* effect)
+	{
+		DE_CORE_ASSERT(m_Particles, "Renderer3D::CreateParticleEmitter after Shutdown.");
+		return m_Particles->CreateEmitter(effect);
+	}
+
+	bool Renderer3D::OwnsParticleEmitter(const ParticleEmitter& emitter) const
+	{
+		return m_Particles && m_Particles->Owns(emitter);
+	}
+
+	void Renderer3D::SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime)
+	{
+		if (!m_SceneActive || m_SceneSkipped || !m_Particles)
+			return;
+		m_Particles->Submit(emitter, transform, deltaTime);
+	}
+
+	GraphicsBuffer* Renderer3D::GetParticlePool() const
+	{
+		return m_Particles ? m_Particles->GetPool() : nullptr;
+	}
+
+	uint32_t Renderer3D::GetParticlePoolCapacity() const
+	{
+		return m_Particles ? m_Particles->GetCapacity() : 0;
+	}
+
+	uint32_t Renderer3D::GetParticlePoolUsed() const
+	{
+		return m_Particles ? m_Particles->GetUsed() : 0;
+	}
+
+	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
@@ -368,8 +568,31 @@ namespace Dingo
 			// A skinned shader can't draw the static vertex stream.
 			const Shader* shader = material ? material->GetShader() : nullptr;
 			const bool skinnedOnly = shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material);
+			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows);
 			return;
+		}
+
+		// The rest pose's box bounds the caster, padded by half its size for the animation.
+		if (shadows != ShadowCasting::Off && mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
+		{
+			glm::vec3 low(std::numeric_limits<float>::max());
+			glm::vec3 high(std::numeric_limits<float>::lowest());
+			for (int corner = 0; corner < 8; ++corner)
+			{
+				const glm::vec3 local((corner & 1) ? mesh->GetBoundsMax().x : mesh->GetBoundsMin().x,
+					(corner & 2) ? mesh->GetBoundsMax().y : mesh->GetBoundsMin().y,
+					(corner & 4) ? mesh->GetBoundsMax().z : mesh->GetBoundsMin().z);
+				const glm::vec3 world = glm::vec3(transform * glm::vec4(local, 1.0f));
+				low = glm::min(low, world);
+				high = glm::max(high, world);
+			}
+			if (low.x <= high.x)
+			{
+				const glm::vec3 pad = (high - low) * 0.5f;
+				m_CasterMin = m_HasCasters ? glm::min(m_CasterMin, low - pad) : low - pad;
+				m_CasterMax = m_HasCasters ? glm::max(m_CasterMax, high + pad) : high + pad;
+				m_HasCasters = true;
+			}
 		}
 
 		bool shared = false;
@@ -397,7 +620,7 @@ namespace Dingo
 			instance.JointCount = jointCount;
 		}
 
-		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1) });
+		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1), shadows });
 	}
 
 	uint32_t Renderer3D::GetSkinnedInstanceBudget() const
@@ -419,7 +642,7 @@ namespace Dingo
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
 			.SetDirectUpload(false)
-			.SetMaxWritesPerFrame(GetSkinnedInstanceBudget()));
+			.SetMaxWritesPerFrame(2 * GetSkinnedInstanceBudget()));
 
 		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 	}
@@ -487,12 +710,11 @@ namespace Dingo
 		return twin;
 	}
 
-	void Renderer3D::DrawSkinnedSubmissions()
+	void Renderer3D::ResolveSkinnedBudget()
 	{
+		m_SkinnedInstanceDropped.assign(m_SkinnedInstances.size(), 0);
 		if (m_SkinnedSubmissions.empty())
 			return;
-
-		EnsureSkinningResources();
 
 		// The skin buffer's writes are a per-frame budget, shared by every scene in the frame.
 		const uint64_t frameIndex = Renderer::GetFrameIndex();
@@ -502,49 +724,73 @@ namespace Dingo
 			m_SkinnedInstancesThisFrame = 0;
 		}
 
+		// An instance is drawn whole or not at all, so a character never loses some of its parts.
 		const uint32_t budget = GetSkinnedInstanceBudget();
-		uint32_t uploadedInstance = ~0u;
-		bool instanceDropped = false;
-		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		for (uint32_t instance = 0; instance < m_SkinnedInstances.size(); ++instance)
 		{
-			// An instance is drawn whole or not at all, so a character never loses some of its parts.
-			if (submission.Instance != uploadedInstance)
+			if (m_SkinnedInstancesThisFrame < budget)
 			{
-				uploadedInstance = submission.Instance;
-				instanceDropped = m_SkinnedInstancesThisFrame >= budget;
-				if (instanceDropped)
-				{
-					DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
-						"Renderer3D: more skinned instances in a frame than MaxSkinnedInstances and AssertOnOverflow is set.");
-
-					if (!m_SkinnedBudgetWarned)
-					{
-						DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
-							budget, k_MaxSkinnedInstancesLimit);
-						m_SkinnedBudgetWarned = true;
-					}
-				}
-				else
-				{
-					const SkinnedInstance& instance = m_SkinnedInstances[submission.Instance];
-					m_SkinData.Model = instance.Transform;
-					m_SkinData.NormalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(instance.Transform)));
-					m_SkinData.Color = instance.Color;
-					std::copy_n(m_SkinnedJoints.begin() + instance.FirstJoint, instance.JointCount, m_SkinData.Joints);
-					const uint64_t uploadSize = m_FullSkinUploads ? sizeof(SkinData) : offsetof(SkinData, Joints) + instance.JointCount * sizeof(glm::mat4);
-					Renderer::Upload(m_SkinBuffer, &m_SkinData, uploadSize);
-
-					++m_SkinnedInstancesThisFrame;
-					++m_Statistics.SkinnedInstances;
-					m_Statistics.SkinnedJoints += instance.JointCount;
-				}
+				++m_SkinnedInstancesThisFrame;
+				++m_Statistics.SkinnedInstances;
+				m_Statistics.SkinnedJoints += m_SkinnedInstances[instance].JointCount;
+				continue;
 			}
 
-			if (instanceDropped)
+			m_SkinnedInstanceDropped[instance] = 1;
+			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
+				"Renderer3D: more skinned instances in a frame than MaxSkinnedInstances and AssertOnOverflow is set.");
+
+			if (!m_SkinnedBudgetWarned)
+			{
+				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
+					budget, k_MaxSkinnedInstancesLimit);
+				m_SkinnedBudgetWarned = true;
+			}
+		}
+	}
+
+	void Renderer3D::UploadSkinData(const SkinnedInstance& instance)
+	{
+		m_SkinData.Model = instance.Transform;
+		m_SkinData.NormalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(instance.Transform)));
+		m_SkinData.Color = instance.Color;
+		std::copy_n(m_SkinnedJoints.begin() + instance.FirstJoint, instance.JointCount, m_SkinData.Joints);
+		const uint64_t uploadSize = m_FullSkinUploads ? sizeof(SkinData) : offsetof(SkinData, Joints) + instance.JointCount * sizeof(glm::mat4);
+		Renderer::Upload(m_SkinBuffer, &m_SkinData, uploadSize);
+	}
+
+	void Renderer3D::EnsureSkinBuffers(const Mesh* mesh)
+	{
+		if (mesh->m_SkinVertexBuffer)
+			return;
+
+		const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
+		const std::vector<uint32_t>& indices = mesh->GetIndices();
+		mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
+		mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
+		Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
+		Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
+	}
+
+	void Renderer3D::DrawSkinnedSubmissions()
+	{
+		if (m_SkinnedSubmissions.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
+		EnsureSkinningResources();
+
+		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		uint32_t uploadedInstance = ~0u;
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			if (m_SkinnedInstanceDropped[submission.Instance])
 			{
 				++m_Statistics.DroppedSkinnedDraws;
 				continue;
 			}
+			if (submission.Shadows == ShadowCasting::ShadowsOnly)
+				continue;
 
 			// The same rule as the static path, so a material draws the same way skinned or not.
 			Material* requested = submission.Material ? submission.Material : m_Material;
@@ -560,20 +806,19 @@ namespace Dingo
 				continue;
 			}
 
+			if (submission.Instance != uploadedInstance)
+			{
+				uploadedInstance = submission.Instance;
+				UploadSkinData(m_SkinnedInstances[submission.Instance]);
+			}
+
 			Material* material = ResolveSkinnedMaterial(submission.Material);
 			const Mesh* mesh = submission.Mesh;
-			if (!mesh->m_SkinVertexBuffer)
-			{
-				const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
-				const std::vector<uint32_t>& indices = mesh->GetIndices();
-				mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
-				mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
-				Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
-				Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
-			}
+			EnsureSkinBuffers(mesh);
 
 			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 			material->SetSkinUniformBuffer(m_SkinBuffer);
+			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 			Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
 
 			++m_Statistics.DrawCalls;
@@ -630,6 +875,7 @@ namespace Dingo
 	bool Renderer3D::SubmitLight(const DirectionalLight& light)
 	{
 		m_SceneLightSubmitted = true;
+		m_LastSubmittedLight = {};
 		if (!IsFinite(light.Direction) || !IsFinite(light.Color * light.Intensity))
 			return false;
 
@@ -648,7 +894,24 @@ namespace Dingo
 			return false;
 		}
 
+		// A strength of 0 draws no shadow, so it renders no cascades, as a local light skips its slot.
+		const float shadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+		if (light.CastShadows && shadowStrength > 0.0f)
+		{
+			if (m_ShadowLight < 0)
+			{
+				m_ShadowLight = count;
+				m_ShadowStrength = shadowStrength;
+			}
+			else if (!m_SecondShadowLightWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a scene has more than one directional light with CastShadows; only the first casts shadows.");
+				m_SecondShadowLightWarned = true;
+			}
+		}
+
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
+		m_LastSubmittedLight = { count, true };
 		++count;
 		return true;
 	}
@@ -657,18 +920,32 @@ namespace Dingo
 	bool Renderer3D::SubmitLocalLight(const LightType& light)
 	{
 		m_SceneLightSubmitted = true;
+		m_LastSubmittedLight = {};
 		if (!Internal::IsUsableLight(light))
 			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
 			return false;
+		m_LastSubmittedLight = { static_cast<int32_t>(m_LocalLights.size() - 1), false };
 
 		const Internal::LightCone cone = Internal::GetLightCone(light);
 		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
 		candidate->Data.Color = glm::vec4(light.Color * light.Intensity, cone.Scale);
 		candidate->Data.SpotDirection = glm::vec4(cone.Axis, cone.Offset);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
+		candidate->CastShadows = light.CastShadows;
+		candidate->ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+		if constexpr (std::is_same_v<LightType, SpotLight>)
+		{
+			// Past 75 degrees one perspective view would need too wide a field of view.
+			candidate->OuterConeAngle = glm::clamp(light.OuterConeAngle, 1.0f, 179.0f);
+			candidate->ShadowFaces = candidate->OuterConeAngle > 75.0f ? 6u : 1u;
+		}
+		else
+		{
+			candidate->ShadowFaces = 6;
+		}
 		return true;
 	}
 
@@ -710,6 +987,11 @@ namespace Dingo
 		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
 	}
 
+	void Renderer3D::SetLightBudgetFade(float band)
+	{
+		m_Params.Capabilities.LightBudgetFade = std::clamp(FiniteOr(band, 0.0f), 0.0f, 4.0f);
+	}
+
 	void Renderer3D::SetDirectionalLight(const glm::vec3& direction, float ambient)
 	{
 		m_Params.LightDirection = direction;
@@ -723,6 +1005,9 @@ namespace Dingo
 		m_LocalLights.clear();
 		m_SceneLightSubmitted = false;
 		m_DroppedLights = 0;
+		m_ShadowLight = -1;
+		m_LastSubmittedLight = {};
+		m_ShadowProbes.clear();
 	}
 
 	void Renderer3D::ResolveSceneLights()
@@ -761,28 +1046,49 @@ namespace Dingo
 			const float gap = std::max(distance - range, 0.0f);
 			candidate.Score = candidate.Brightness / (1.0f + gap * gap);
 			candidate.Nearness = distance / range;
+			candidate.Priority = candidate.Score / (1.0f + candidate.Nearness);
 			m_VisibleLocalLights.push_back(index);
 		}
 
 		const uint32_t visibleCount = static_cast<uint32_t>(m_VisibleLocalLights.size());
 		const uint32_t budget = GetLocalLightBudget();
+		const float fadeBand = m_Params.Capabilities.LightBudgetFade;
 		uint32_t localCount = visibleCount;
+		float fadeCutoff = 0.0f;
 		if (visibleCount > budget)
 		{
 			DE_CORE_ASSERT(!m_Params.Capabilities.AssertOnOverflow,
 				"Renderer3D: more point and spot lights in view than MaxLocalLights and AssertOnOverflow is set.");
 
-			std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
-				[this](uint32_t a, uint32_t b)
-				{
-					const LocalLightCandidate& lightA = m_LocalLights[a];
-					const LocalLightCandidate& lightB = m_LocalLights[b];
-					if (lightA.Score != lightB.Score)
-						return lightA.Score > lightB.Score;
-					if (lightA.Nearness != lightB.Nearness)
-						return lightA.Nearness < lightB.Nearness;
-					return a < b;
-				});
+			if (fadeBand > 0.0f)
+			{
+				// One past the budget, so the first dropped light's priority is known: a drawn light
+				// fades out as it nears it, and is dark by the time the two trade places.
+				std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget + 1, m_VisibleLocalLights.end(),
+					[this](uint32_t a, uint32_t b)
+					{
+						const float priorityA = m_LocalLights[a].Priority;
+						const float priorityB = m_LocalLights[b].Priority;
+						if (priorityA != priorityB)
+							return priorityA > priorityB;
+						return a < b;
+					});
+				fadeCutoff = m_LocalLights[m_VisibleLocalLights[budget]].Priority;
+			}
+			else
+			{
+				std::partial_sort(m_VisibleLocalLights.begin(), m_VisibleLocalLights.begin() + budget, m_VisibleLocalLights.end(),
+					[this](uint32_t a, uint32_t b)
+					{
+						const LocalLightCandidate& lightA = m_LocalLights[a];
+						const LocalLightCandidate& lightB = m_LocalLights[b];
+						if (lightA.Score != lightB.Score)
+							return lightA.Score > lightB.Score;
+						if (lightA.Nearness != lightB.Nearness)
+							return lightA.Nearness < lightB.Nearness;
+						return a < b;
+					});
+			}
 
 			if (!m_LocalOverflowWarned)
 			{
@@ -796,8 +1102,19 @@ namespace Dingo
 		}
 
 		for (uint32_t slot = 0; slot < localCount; ++slot)
-			m_CameraData.LocalLights[slot] = m_LocalLights[m_VisibleLocalLights[slot]].Data;
+		{
+			const LocalLightCandidate& candidate = m_LocalLights[m_VisibleLocalLights[slot]];
+			LocalLightData& data = m_CameraData.LocalLights[slot];
+			data = candidate.Data;
+			if (fadeCutoff > 0.0f)
+			{
+				const float fade = BudgetFade(candidate.Priority, fadeCutoff, fadeBand);
+				data.Color = glm::vec4(glm::vec3(data.Color) * fade, data.Color.w);
+				m_Statistics.FadedLights += fade < 1.0f ? 1 : 0;
+			}
+		}
 		m_CameraData.LightCounts.y = static_cast<int>(localCount);
+		m_DrawnLocalLights = localCount;
 
 		m_Statistics.DirectionalLights = static_cast<uint32_t>(directionalCount);
 		m_Statistics.LocalLights = localCount;
@@ -805,13 +1122,13 @@ namespace Dingo
 		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
-	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material)
+	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
 
 		Material* batchMaterial = material ? material : m_Material;
-		MaterialBatch* batch = &m_Batches[batchMaterial];
+		MaterialBatch* batch = &m_Batches[BatchKey{ batchMaterial, shadows }];
 		if (!batch->Enqueued)
 		{
 			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
@@ -819,7 +1136,7 @@ namespace Dingo
 			batch->Enqueued = true;
 			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
 			if (!batch->SkinnedOnly)
-				m_DrawOrder.push_back(batchMaterial);
+				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows });
 			else if (!m_SkinnedOnlyWarned)
 			{
 				const std::string& name = batchMaterial->GetParams().DebugName;
@@ -829,11 +1146,11 @@ namespace Dingo
 		}
 		if (batch->SkinnedOnly)
 		{
-			batch = &m_Batches[m_Material];
+			batch = &m_Batches[BatchKey{ m_Material, shadows }];
 			if (!batch->Enqueued)
 			{
 				batch->Enqueued = true;
-				m_DrawOrder.push_back(m_Material);
+				m_DrawOrder.push_back(BatchKey{ m_Material, shadows });
 			}
 		}
 		MaterialBatch& matBatch = *batch;
@@ -882,6 +1199,10 @@ namespace Dingo
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
 		const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
 
+		// A caster's bounds fold into the transform loop rather than a second walk over its vertices.
+		const bool casts = shadows != ShadowCasting::Off && !vertices.empty();
+		glm::vec3 low = m_HasCasters ? m_CasterMin : glm::vec3(std::numeric_limits<float>::max());
+		glm::vec3 high = m_HasCasters ? m_CasterMax : glm::vec3(std::numeric_limits<float>::lowest());
 		for (const MeshVertex& v : vertices)
 		{
 			Vertex vertex;
@@ -890,6 +1211,19 @@ namespace Dingo
 			vertex.Color = color;
 			vertex.TexCoord = v.TexCoord;
 			chunk->Vertices.push_back(vertex);
+			if (casts)
+			{
+				low = glm::min(low, vertex.Position);
+				high = glm::max(high, vertex.Position);
+			}
+		}
+
+		if (casts)
+		{
+			++m_StaticCasters;
+			m_CasterMin = low;
+			m_CasterMax = high;
+			m_HasCasters = true;
 		}
 
 		for (uint32_t index : indices)
@@ -898,6 +1232,573 @@ namespace Dingo
 		++m_Statistics.SubmittedMeshes;
 		m_Statistics.VertexCount += static_cast<uint32_t>(vertices.size());
 		m_Statistics.IndexCount += static_cast<uint32_t>(indices.size());
+	}
+
+	void Renderer3D::SetShadowSettings(const Renderer3DShadowSettings& settings)
+	{
+		Renderer3DShadowSettings clamped = settings;
+		clamped.AtlasSize = FloorPowerOfTwo(std::clamp(settings.AtlasSize, 2048u, 8192u));
+		clamped.CascadeCount = std::clamp(settings.CascadeCount, 1u, k_MaxShadowCascades);
+		clamped.CascadeResolution = FloorPowerOfTwo(std::clamp(settings.CascadeResolution, 64u, clamped.AtlasSize / 2));
+		clamped.MaxDistance = std::max(FiniteOr(settings.MaxDistance, 60.0f), 0.01f);
+		clamped.SplitLambda = std::clamp(FiniteOr(settings.SplitLambda, 0.75f), 0.0f, 1.0f);
+		clamped.CascadeBlend = std::clamp(FiniteOr(settings.CascadeBlend, 0.1f), 0.0f, 0.5f);
+		clamped.SlopeBias = std::max(FiniteOr(settings.SlopeBias, 2.0f), 0.0f);
+		clamped.NormalBias = std::max(FiniteOr(settings.NormalBias, 1.5f), 0.0f);
+		clamped.LocalShadowResolution = FloorPowerOfTwo(std::clamp(settings.LocalShadowResolution, 128u, clamped.AtlasSize / 2));
+
+		// The biases are baked into the shadow pipelines.
+		const bool biasChanged = clamped.DepthBias != m_Params.Shadows.DepthBias || clamped.SlopeBias != m_Params.Shadows.SlopeBias;
+		m_Params.Shadows = clamped;
+		if (biasChanged)
+		{
+			DestroyAndDelete(m_ShadowMaterial);
+			DestroyAndDelete(m_SkinnedShadowMaterial);
+		}
+		if (m_ShadowAtlas && m_ShadowAtlas->GetWidth() != clamped.AtlasSize)
+			m_ShadowAtlas->Resize(clamped.AtlasSize, clamped.AtlasSize);
+	}
+
+	void Renderer3D::EnsureShadowResources()
+	{
+		if (!m_ShadowAtlas)
+		{
+			m_ShadowAtlas = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("Renderer3D_ShadowAtlas")
+				.SetWidth(static_cast<int32_t>(m_Params.Shadows.AtlasSize))
+				.SetHeight(static_cast<int32_t>(m_Params.Shadows.AtlasSize))
+				.SetDepthSampleable(true));
+
+			m_ShadowViewsBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+				.SetDebugName("Renderer3D_ShadowViews")
+				.SetByteSize(sizeof(ShadowViews))
+				.SetType(BufferType::UniformBuffer)
+				.SetIsVolatile(true)
+				.SetDirectUpload(false)
+				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+
+			m_ShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DShadow"), "Renderer3D_Shadow.glsl");
+			Internal::WatchUnmanagedShader(m_ShadowShader);
+		}
+
+		if (!m_ShadowMaterial)
+		{
+			m_ShadowMaterial = Material::Create(MaterialParams()
+				.SetDebugName("Renderer3D_Shadow")
+				.SetShader(m_ShadowShader)
+				.SetCullMode(CullMode::None)
+				.SetBlendMode(BlendMode::Opaque)
+				.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
+		}
+	}
+
+	bool Renderer3D::PrepareShadows()
+	{
+		m_ShadowData = ShadowData();
+		m_ShadowViewCount = 0;
+		if (!m_HasCasters)
+			return false;
+		if (!GraphicsContext::Get().SupportsClipDistance())
+		{
+			if (!m_NoClipDistanceWarned)
+			{
+				DE_CORE_WARN("Renderer3D: this GPU has no shaderClipDistance, which the shadow pass needs to keep each view inside its atlas tile; shadows are off.");
+				m_NoClipDistanceWarned = true;
+			}
+			return false;
+		}
+
+		const Renderer3DShadowSettings& settings = m_Params.Shadows;
+		ShadowAtlasAllocator allocator(settings.AtlasSize);
+		const bool cascades = m_ShadowLight >= 0 && PrepareCascades(allocator);
+		PrepareLocalShadows(allocator);
+		if (m_ShadowViewCount == 0)
+			return false;
+
+		m_ShadowData.ShadowCounts.z = cascades && settings.DebugCascades ? 1 : 0;
+		m_ShadowData.ShadowParams.y = settings.NormalBias;
+		m_ShadowData.ShadowParams.z = 1.0f / static_cast<float>(settings.AtlasSize);
+		m_Statistics.ShadowViews = m_ShadowViewCount;
+		EnsureShadowResources();
+		return true;
+	}
+
+	void Renderer3D::AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params)
+	{
+		const float atlasSize = static_cast<float>(m_Params.Shadows.AtlasSize);
+		const float half = static_cast<float>(size) * 0.5f;
+		const float tileScale = static_cast<float>(size) / atlasSize;
+		const glm::vec2 tileCenter(
+			(static_cast<float>(corner.x) + half) / atlasSize * 2.0f - 1.0f,
+			1.0f - (static_cast<float>(corner.y) + half) / atlasSize * 2.0f);
+
+		m_ShadowViews.Views[m_ShadowViewCount] = { viewProjection, glm::vec4(tileCenter, tileScale, tileScale) };
+		m_ShadowData.Tiles[m_ShadowViewCount] = { viewProjection,
+			glm::vec4(static_cast<float>(corner.x) / atlasSize, static_cast<float>(corner.y) / atlasSize, tileScale, tileScale), params };
+		++m_ShadowViewCount;
+	}
+
+	bool Renderer3D::PrepareCascades(ShadowAtlasAllocator& allocator)
+	{
+		const Renderer3DShadowSettings& settings = m_Params.Shadows;
+		const glm::mat4 inverse = glm::inverse(m_CameraData.ViewProjection);
+		auto unproject = [&inverse](float x, float y, float z)
+		{
+			const glm::vec4 point = inverse * glm::vec4(x, y, z, 1.0f);
+			return glm::vec3(point) / point.w;
+		};
+
+		// The view's frustum corner rays, near (z = 0) to far (z = 1).
+		const glm::vec2 cornersXY[4] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { 1.0f, 1.0f }, { -1.0f, 1.0f } };
+		glm::vec3 nearCorners[4], farCorners[4];
+		for (int i = 0; i < 4; ++i)
+		{
+			nearCorners[i] = unproject(cornersXY[i].x, cornersXY[i].y, 0.0f);
+			farCorners[i] = unproject(cornersXY[i].x, cornersXY[i].y, 1.0f);
+		}
+		const glm::vec3 nearCenter = unproject(0.0f, 0.0f, 0.0f);
+		const glm::vec3 farCenter = unproject(0.0f, 0.0f, 1.0f);
+		if (!IsFinite(nearCenter) || !IsFinite(farCenter) || glm::length(farCenter - nearCenter) < 1e-6f)
+			return false;
+
+		const bool perspective = m_CameraData.CameraPosition.w > 0.5f;
+		const glm::vec3 forward = glm::normalize(farCenter - nearCenter);
+		const glm::vec3 origin = perspective ? glm::vec3(m_CameraData.CameraPosition) : nearCenter;
+		const float nearDepth = std::max(glm::dot(nearCenter - origin, forward), 0.0f);
+		const float farDepth = std::min(glm::dot(farCenter - origin, forward), settings.MaxDistance);
+		if (farDepth <= nearDepth)
+			return false;
+
+		const glm::vec3 lightDirection = glm::normalize(glm::vec3(m_CameraData.DirectionalLights[m_ShadowLight].Direction));
+		if (!IsFinite(lightDirection))
+			return false;
+
+		const uint32_t cascadeCount = perspective ? settings.CascadeCount : 1u;
+		const uint32_t resolution = settings.CascadeResolution;
+
+		// A point along a corner ray at a depth along the view: depth is linear along every ray.
+		auto atDepth = [&](int corner, float depth)
+		{
+			const float nearAlong = glm::dot(nearCorners[corner] - origin, forward);
+			const float farAlong = glm::dot(farCorners[corner] - origin, forward);
+			const float t = farAlong - nearAlong > 1e-6f ? (depth - nearAlong) / (farAlong - nearAlong) : 0.0f;
+			return nearCorners[corner] + (farCorners[corner] - nearCorners[corner]) * t;
+		};
+
+		const glm::vec3 up = std::abs(lightDirection.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+		float sliceStart = nearDepth;
+		uint32_t made = 0;
+		for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+		{
+			// The practical split scheme: a blend of even and logarithmic splits.
+			const float fraction = static_cast<float>(cascade + 1) / static_cast<float>(cascadeCount);
+			const float even = nearDepth + (farDepth - nearDepth) * fraction;
+			const float logarithmic = nearDepth > 1e-3f ? nearDepth * std::pow(farDepth / nearDepth, fraction) : even;
+			const float sliceEnd = cascade + 1 == cascadeCount ? farDepth : glm::mix(even, logarithmic, settings.SplitLambda);
+
+			glm::vec3 corners[8];
+			glm::vec3 center(0.0f);
+			for (int corner = 0; corner < 4; ++corner)
+			{
+				corners[corner] = atDepth(corner, sliceStart);
+				corners[corner + 4] = atDepth(corner, sliceEnd);
+			}
+			for (const glm::vec3& corner : corners)
+				center += corner / 8.0f;
+
+			// A sphere's size doesn't change as the camera turns, and rounding it up keeps float noise
+			// from changing it either: with the texel snap below, a still light's shadows don't shimmer.
+			float radius = 0.0f;
+			for (const glm::vec3& corner : corners)
+				radius = std::max(radius, glm::length(corner - center));
+			radius = std::ceil(radius * 16.0f) / 16.0f;
+
+			const glm::mat4 view = glm::lookAt(center, center + lightDirection, up);
+
+			// From the casters nearest the light to the far side of the slice.
+			float casterReach = -radius;
+			for (int corner = 0; corner < 8; ++corner)
+			{
+				const glm::vec3 point((corner & 1) ? m_CasterMax.x : m_CasterMin.x, (corner & 2) ? m_CasterMax.y : m_CasterMin.y, (corner & 4) ? m_CasterMax.z : m_CasterMin.z);
+				casterReach = std::min(casterReach, glm::dot(point - center, lightDirection));
+			}
+			const glm::mat4 projection = glm::orthoRH_ZO(-radius, radius, -radius, radius, casterReach - 1.0f, radius + 1.0f);
+			glm::mat4 viewProjection = projection * view;
+
+			const float halfResolution = static_cast<float>(resolution) * 0.5f;
+			const glm::vec4 projectedOrigin = viewProjection * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			const glm::vec2 snapped = glm::round(glm::vec2(projectedOrigin) * halfResolution) / halfResolution;
+			viewProjection[3][0] += snapped.x - projectedOrigin.x;
+			viewProjection[3][1] += snapped.y - projectedOrigin.y;
+
+			glm::uvec2 corner;
+			if (!allocator.Allocate(resolution, corner))
+				break;
+
+			AddShadowTile(viewProjection, corner, resolution, glm::vec4(sliceEnd, 2.0f * radius / static_cast<float>(resolution), 0.0f, 0.0f));
+			m_Statistics.ShadowCascadeEnds[cascade] = sliceEnd;
+			++made;
+			sliceStart = sliceEnd;
+		}
+
+		if (made == 0)
+			return false;
+
+		m_ShadowData.ShadowCounts.x = static_cast<int>(made);
+		m_ShadowData.ShadowCounts.y = m_ShadowLight;
+		m_ShadowData.ShadowOrigin = glm::vec4(origin, 0.0f);
+		m_ShadowData.ShadowForward = glm::vec4(forward, settings.CascadeBlend);
+		m_ShadowData.ShadowParams.x = m_ShadowStrength;
+		m_ShadowData.ShadowParams.w = farDepth;
+		m_Statistics.ShadowCascades = made;
+		return true;
+	}
+
+	void Renderer3D::PrepareLocalShadows(ShadowAtlasAllocator& allocator)
+	{
+		// Tiers are remembered by submission index, which only names the same light while the scene
+		// submits the same lights in the same order, and per scene of the frame, so a main view and a
+		// minimap with as many lights don't overwrite each other's every frame.
+		const size_t table = std::min<size_t>(m_SceneOfFrame, k_MaxScenesPerFrame - 1);
+		if (m_LocalShadowTiers.size() <= table)
+			m_LocalShadowTiers.resize(table + 1);
+		std::vector<uint8_t>& tiers = m_LocalShadowTiers[table];
+		if (tiers.size() != m_LocalLights.size())
+			tiers.assign(m_LocalLights.size(), 0xFF);
+
+		const Renderer3DShadowSettings& settings = m_Params.Shadows;
+		const uint32_t cap = std::min(m_Params.Capabilities.MaxShadowedLocalLights, k_MaxShadowedLocalLights);
+		const float fadeBand = m_Params.Capabilities.LightBudgetFade;
+
+		// The drawn casting lights. One whose range holds no caster can't be shadowed.
+		std::array<uint32_t, k_MaxLocalLights> casting{};
+		uint32_t castingCount = 0;
+		for (uint32_t slot = 0; slot < m_DrawnLocalLights; ++slot)
+		{
+			const LocalLightCandidate& light = m_LocalLights[m_VisibleLocalLights[slot]];
+			if (!light.CastShadows || light.ShadowStrength <= 0.0f)
+				continue;
+			if (!SphereTouchesBox(glm::vec3(light.Data.PositionRange), light.Data.PositionRange.w, m_CasterMin, m_CasterMax))
+				continue;
+			casting[castingCount++] = slot;
+		}
+		if (castingCount == 0)
+			return;
+
+		// Ranked as the budget ranks: ResolveSceneLights sorts the drawn slots only when the budget
+		// overflows, and the slots themselves must keep their order, which the lit shader sums in.
+		std::sort(casting.begin(), casting.begin() + castingCount, [this, fadeBand](uint32_t slotA, uint32_t slotB)
+		{
+			const uint32_t a = m_VisibleLocalLights[slotA];
+			const uint32_t b = m_VisibleLocalLights[slotB];
+			const LocalLightCandidate& lightA = m_LocalLights[a];
+			const LocalLightCandidate& lightB = m_LocalLights[b];
+			if (fadeBand > 0.0f)
+			{
+				if (lightA.Priority != lightB.Priority)
+					return lightA.Priority > lightB.Priority;
+				return a < b;
+			}
+			if (lightA.Score != lightB.Score)
+				return lightA.Score > lightB.Score;
+			if (lightA.Nearness != lightB.Nearness)
+				return lightA.Nearness < lightB.Nearness;
+			return a < b;
+		});
+
+		if (castingCount > cap)
+		{
+			m_Statistics.UnshadowedLights += castingCount - cap;
+			if (!m_UnshadowedWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} point and spot lights with CastShadows are drawn but MaxShadowedLocalLights is {}; the lowest-ranked ones light unshadowed. Raise Renderer3DCapabilities.MaxShadowedLocalLights (at most {}).",
+					castingCount, cap, k_MaxShadowedLocalLights);
+				m_UnshadowedWarned = true;
+			}
+		}
+		const float shadowCutoff = fadeBand > 0.0f && castingCount > cap ? m_LocalLights[m_VisibleLocalLights[casting[cap]]].Priority : 0.0f;
+
+		auto tierFor = [](uint32_t rank) -> uint8_t { return rank < 2 ? 0 : rank < 6 ? 1 : 2; };
+
+		static const glm::vec3 k_FaceDirections[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+		static const glm::vec3 k_FaceUps[6] = { { 0, 1, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 1, 0 }, { 0, 1, 0 } };
+
+		int shadowed = 0;
+		for (uint32_t rank = 0; rank < std::min(castingCount, cap); ++rank)
+		{
+			const uint32_t slot = casting[rank];
+			const uint32_t index = m_VisibleLocalLights[slot];
+			const LocalLightCandidate& light = m_LocalLights[index];
+
+			uint8_t tier = tierFor(rank);
+			const uint8_t previous = tiers[index];
+			if (previous != 0xFF && previous != tier && (tierFor(rank > 0 ? rank - 1 : 0) == previous || tierFor(rank + 1) == previous))
+				tier = previous;
+			tiers[index] = tier;
+
+			const glm::vec3 position(light.Data.PositionRange);
+			const float range = light.Data.PositionRange.w;
+			const float nearPlane = std::max(0.05f, range * 0.002f);
+			const uint32_t baseSize = light.ShadowFaces == 6 ? settings.LocalShadowResolution / 2 : settings.LocalShadowResolution;
+			const uint32_t wanted = std::max(baseSize >> tier, 64u);
+
+			const uint32_t firstTile = m_ShadowViewCount;
+			bool complete = true;
+			for (uint32_t face = 0; face < light.ShadowFaces; ++face)
+			{
+				uint32_t size = wanted;
+				glm::uvec2 corner;
+				while (!allocator.Allocate(size, corner))
+				{
+					size /= 2;
+					if (size < 64)
+						break;
+				}
+				if (size < 64)
+				{
+					complete = false;
+					break;
+				}
+
+				glm::vec3 direction, up;
+				float tangent = 1.0f;
+				if (light.ShadowFaces == 6)
+				{
+					direction = k_FaceDirections[face];
+					up = k_FaceUps[face];
+				}
+				else
+				{
+					direction = glm::vec3(light.Data.SpotDirection);
+					up = std::abs(direction.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+					tangent = std::tan(glm::radians(light.OuterConeAngle));
+				}
+				const float halfTangent = TileHalfAngleTangent(tangent, size);
+				const glm::mat4 projection = glm::perspectiveRH_ZO(2.0f * std::atan(halfTangent), 1.0f, nearPlane, range);
+				const glm::mat4 view = glm::lookAt(position, position + direction, up);
+				AddShadowTile(projection * view, corner, size, glm::vec4(0.0f, 2.0f * halfTangent / static_cast<float>(size), 1.0f, 0.0f));
+			}
+
+			if (!complete)
+			{
+				m_ShadowViewCount = firstTile;
+				++m_Statistics.UnshadowedLights;
+				if (!m_AtlasFullWarned)
+				{
+					DE_CORE_WARN("Renderer3D: the shadow atlas ({} x {}) has no room left for a casting point or spot light, which lights unshadowed. Raise Renderer3DShadowSettings.AtlasSize or lower LocalShadowResolution.",
+						settings.AtlasSize, settings.AtlasSize);
+					m_AtlasFullWarned = true;
+				}
+				continue;
+			}
+
+			const float fade = shadowCutoff > 0.0f ? BudgetFade(light.Priority, shadowCutoff, fadeBand) : 1.0f;
+			m_ShadowData.LocalShadows[slot].Record = glm::vec4(static_cast<float>(firstTile), static_cast<float>(light.ShadowFaces), light.ShadowStrength * fade, 0.0f);
+			m_ShadowData.LocalShadows[slot].Position = glm::vec4(position, 0.0f);
+			++shadowed;
+		}
+
+		m_ShadowData.ShadowCounts.w = shadowed;
+		m_Statistics.ShadowedLights = static_cast<uint32_t>(shadowed);
+	}
+
+	void Renderer3D::DrawShadowPass()
+	{
+		DE_PROFILE_SCOPE("Renderer3D::DrawShadowPass");
+		Renderer::BeginGpuTimer("Shadows");
+
+		Internal::RenderTargetScope scope(m_ShadowAtlas);
+		Renderer::Clear(m_ShadowAtlas, glm::vec4(0.0f));
+		Renderer::Upload(m_ShadowViewsBuffer, &m_ShadowViews, sizeof(ShadowViews));
+
+		m_ShadowMaterial->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+		for (const ChunkDraw& draw : m_ChunkDraws)
+		{
+			if (draw.Key.Shadows == ShadowCasting::Off)
+				continue;
+
+			Renderer::DrawIndexed(m_ShadowMaterial, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
+			++m_Statistics.ShadowDrawCalls;
+		}
+		m_Statistics.ShadowCasters += m_StaticCasters;
+
+		// The lit pass's skip rule, so a mesh it doesn't draw leaves no shadow without a body.
+		auto skinnedShadowDrawn = [this](const SkinnedSubmission& submission)
+		{
+			const Material* material = submission.Material ? submission.Material : m_Material;
+			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] &&
+				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
+		};
+		bool skinnedCasts = false;
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+			skinnedCasts = skinnedCasts || skinnedShadowDrawn(submission);
+
+		if (skinnedCasts)
+		{
+			EnsureSkinningResources();
+			if (!m_SkinnedShadowShader)
+			{
+				m_SkinnedShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DSkinnedShadow").AddDefine("DE_SKINNED"), "Renderer3D_Shadow.glsl");
+				Internal::WatchUnmanagedShader(m_SkinnedShadowShader);
+			}
+			if (!m_SkinnedShadowMaterial)
+			{
+				m_SkinnedShadowMaterial = Material::Create(MaterialParams()
+					.SetDebugName("Renderer3D_SkinnedShadow")
+					.SetShader(m_SkinnedShadowShader)
+					.SetCullMode(CullMode::None)
+					.SetBlendMode(BlendMode::Opaque)
+					.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
+			}
+
+			m_SkinnedShadowMaterial->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+			m_SkinnedShadowMaterial->SetSkinUniformBuffer(m_SkinBuffer);
+			uint32_t uploadedInstance = ~0u;
+			for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+			{
+				if (!skinnedShadowDrawn(submission))
+					continue;
+
+				if (submission.Instance != uploadedInstance)
+				{
+					uploadedInstance = submission.Instance;
+					UploadSkinData(m_SkinnedInstances[submission.Instance]);
+				}
+
+				EnsureSkinBuffers(submission.Mesh);
+				Renderer::DrawIndexed(m_SkinnedShadowMaterial, m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
+				++m_Statistics.ShadowDrawCalls;
+				++m_Statistics.ShadowCasters;
+			}
+		}
+
+		Renderer::EndGpuTimer();
+	}
+
+	bool Renderer3D::AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key)
+	{
+		if (!light.IsValid() || !IsFinite(point))
+			return false;
+		if (m_ShadowProbes.size() >= k_MaxShadowProbes)
+		{
+			if (!m_ProbeOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: more than {} shadow probes in one scene; the rest are ignored.", k_MaxShadowProbes);
+				m_ProbeOverflowWarned = true;
+			}
+			return false;
+		}
+		m_ShadowProbes.push_back({ light, point, key });
+		return true;
+	}
+
+	std::optional<float> Renderer3D::GetShadowProbeResult(uint64_t key) const
+	{
+		const auto it = m_ProbeAnswers->ByKey.find(key);
+		if (it == m_ProbeAnswers->ByKey.end())
+			return std::nullopt;
+		return it->second.Value;
+	}
+
+	void Renderer3D::ResolveShadowProbes()
+	{
+		m_GpuProbeKeys.clear();
+		if (m_ShadowProbes.empty())
+			return;
+
+		const uint64_t frame = Renderer::GetFrameIndex();
+		std::unordered_map<uint64_t, ShadowProbeAnswer>& answers = m_ProbeAnswers->ByKey;
+		if (frame - m_ProbePruneFrame > 256)
+		{
+			m_ProbePruneFrame = frame;
+			std::erase_if(answers, [frame](const auto& entry) { return entry.second.Frame + 600 < frame; });
+		}
+
+		std::vector<int32_t> slotOf(m_LocalLights.size(), -1);
+		for (uint32_t slot = 0; slot < m_DrawnLocalLights; ++slot)
+			slotOf[m_VisibleLocalLights[slot]] = static_cast<int32_t>(slot);
+
+		for (const ShadowProbe& probe : m_ShadowProbes)
+		{
+			float light = -1.0f;
+			bool shadowed = false;
+			if (probe.Light.Directional)
+			{
+				shadowed = m_ShadowData.ShadowCounts.x > 0 && probe.Light.Index == m_ShadowData.ShadowCounts.y;
+			}
+			else if (static_cast<size_t>(probe.Light.Index) < slotOf.size())
+			{
+				const int32_t slot = slotOf[probe.Light.Index];
+				shadowed = slot >= 0 && m_ShadowData.LocalShadows[slot].Record.x >= 0.0f;
+				light = static_cast<float>(slot);
+			}
+
+			// What is drawn: no shadow, so the whole light.
+			if (!shadowed)
+			{
+				ShadowProbeAnswer& answer = answers[probe.Key];
+				answer = { 1.0f, frame };
+				continue;
+			}
+
+			m_ShadowProbeData.Probes[m_GpuProbeKeys.size()] = glm::vec4(probe.Point, light);
+			m_GpuProbeKeys.push_back(probe.Key);
+		}
+		// The probe pass shades all k_MaxShadowProbes pixels and indexes the shadow buffers by each
+		// probe's w, so an unused entry must hold a valid light: on Vulkan an index past the arrays
+		// loses the device.
+		std::fill(std::begin(m_ShadowProbeData.Probes) + m_GpuProbeKeys.size(), std::end(m_ShadowProbeData.Probes), glm::vec4(0.0f, 0.0f, 0.0f, -1.0f));
+		m_Statistics.ShadowProbes = static_cast<uint32_t>(m_GpuProbeKeys.size());
+	}
+
+	void Renderer3D::DrawShadowProbes()
+	{
+		if (m_GpuProbeKeys.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::DrawShadowProbes");
+		auto readback = std::ranges::find_if(m_ProbeReadbacks, [](const std::shared_ptr<Internal::TextureReadback>& candidate) { return !candidate->IsBusy(); });
+		if (readback == m_ProbeReadbacks.end())
+		{
+			if (m_ProbeReadbacks.size() >= k_MaxProbeReadbacks)
+				return;
+			m_ProbeReadbacks.push_back(Internal::TextureReadback::Create());
+			readback = m_ProbeReadbacks.end() - 1;
+		}
+
+		if (!m_ProbeShader)
+		{
+			m_ProbeShader = new Internal::FullscreenShader("Renderer3DShadowProbe", "Renderer3D_ShadowProbe.glsl");
+			m_ProbeMaterial = m_ProbeShader->CreateMaterial("Renderer3D_ShadowProbe");
+			m_ProbeBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+				.SetDebugName("Renderer3D_ShadowProbes")
+				.SetByteSize(sizeof(ShadowProbeData))
+				.SetType(BufferType::UniformBuffer)
+				.SetIsVolatile(true)
+				.SetDirectUpload(false)
+				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+			m_ProbeTarget = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("Renderer3D_ShadowProbeTarget")
+				.SetWidth(static_cast<int32_t>(k_MaxShadowProbes))
+				.SetHeight(1)
+				.AddAttachment({ TextureFormat::R8 }));
+		}
+
+		Renderer::Upload(m_ProbeBuffer, &m_ShadowProbeData, sizeof(ShadowProbeData));
+		m_ProbeMaterial->SetSceneUniformBuffer(m_ProbeBuffer);
+		m_ProbeMaterial->SetShadowResources(m_ShadowDataBuffer, m_ShadowAtlas->GetDepthAttachment(), m_ShadowSampler);
+		Internal::DrawFullscreen(m_ProbeMaterial, m_ProbeTarget);
+
+		// The copy is recorded here, so the next scene's probes can draw into the same target.
+		const std::weak_ptr<ShadowProbeAnswers> answers = m_ProbeAnswers;
+		(*readback)->Read(m_ProbeTarget->GetAttachment(0), [answers, keys = m_GpuProbeKeys, frame = Renderer::GetFrameIndex()](const TexturePixels& pixels)
+		{
+			const std::shared_ptr<ShadowProbeAnswers> target = answers.lock();
+			if (!target || pixels.Data.empty())
+				return;
+			for (uint32_t i = 0; i < keys.size() && i < pixels.Width; ++i)
+				target->ByKey[keys[i]] = { pixels.GetPixel(i, 0).r, frame };
+		});
 	}
 
 	void Renderer3D::DrawBox(const glm::mat4& transform, const glm::vec4& color)

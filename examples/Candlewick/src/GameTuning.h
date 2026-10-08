@@ -55,6 +55,13 @@ namespace Dingo
 	inline constexpr float END_PROMPT_SIZE     = 0.45f;
 	inline constexpr float END_PROMPT_Y        = -2.6f;
 
+	// --- Captures and perf ---------------------------------------------------------
+	inline constexpr float FIXED_DT_FREEZE     = 1.0f / 60.0f;
+	// Scene::OnUpdate caps its step at 4/60 s.
+	inline constexpr float FIXED_DT_MAX        = 4.0f / 60.0f;
+	inline constexpr float PERF_WARMUP_SECONDS = 2.0f;
+	inline constexpr int   PERF_FRAMES         = 600;
+
 	// --- Camera (three-quarter view, fixed yaw) --------------------------------
 	inline constexpr float CAMERA_FOV          = 50.0f;
 	inline constexpr float CAMERA_PITCH_DEG    = 55.0f;
@@ -65,6 +72,10 @@ namespace Dingo
 	inline constexpr float CAMERA_NEAR         = 0.1f;
 	inline constexpr float CAMERA_FAR          = 160.0f;
 	inline constexpr float OVERVIEW_MARGIN     = 0.94f;
+
+	// --- Post chain: Soft leaves everything below 0.8 as it was, so only the flames change ---------
+	inline constexpr float BLOOM_INTENSITY     = 0.35f;
+	inline constexpr float BLOOM_THRESHOLD     = 1.0f;
 
 	// --- Keep geometry (1 tile = 1 m) ---------------------------------------------
 	inline constexpr float TILE_SIZE           = 1.0f;
@@ -99,8 +110,8 @@ namespace Dingo
 	inline constexpr glm::vec3 LANTERN_COLOR     = { 1.0f, 0.72f, 0.42f };
 	inline constexpr float LANTERN_FLICKER_OIL   = 5.0f;
 	inline constexpr float LANTERN_FLICKER_DEPTH = 0.4f;
-	inline constexpr float LANTERN_EMISSIVE_MIN  = 0.4f;
-	inline constexpr float LANTERN_EMISSIVE_MAX  = 1.1f;
+	inline constexpr float LANTERN_EMISSIVE_MIN  = 0.9f;
+	inline constexpr float LANTERN_EMISSIVE_MAX  = 2.4f;
 
 	// --- Wardens --------------------------------------------------------------------
 	inline constexpr float WARDEN_PATROL_SPEED      = 1.6f;
@@ -118,8 +129,6 @@ namespace Dingo
 	inline constexpr float WARDEN_EYE_FORWARD       = 0.25f;
 	inline constexpr float WARDEN_EYE_PITCH_DEG     = 25.0f;
 	inline constexpr float WARDEN_EYE_RANGE         = 8.0f;
-	inline constexpr float WARDEN_EYE_RANGE_MARGIN  = 0.5f;
-	inline constexpr float WARDEN_EYE_RANGE_GROWTH  = 6.0f;
 	inline constexpr float WARDEN_EYE_INNER_DEG     = 14.0f;
 	inline constexpr float WARDEN_EYE_OUTER_DEG     = 24.0f;
 	inline constexpr float WARDEN_EYE_INTENSITY     = 1.4f;
@@ -128,10 +137,10 @@ namespace Dingo
 	inline constexpr float WARDEN_LAMP_RANGE        = 3.5f;
 	inline constexpr float WARDEN_LAMP_INTENSITY    = 0.9f;
 	inline constexpr glm::vec3 WARDEN_LAMP_OFFSET   = { 0.42f, 1.0f, -0.16f };
-	inline constexpr float WARDEN_LAMP_EMISSIVE     = 1.0f;
+	inline constexpr float WARDEN_LAMP_EMISSIVE     = 1.8f;
 	inline constexpr float WARDEN_MARKER_HEIGHT     = 2.2f;
 	inline constexpr float WARDEN_MARKER_SIZE       = 0.18f;
-	inline constexpr float WARDEN_MARKER_EMISSIVE   = 1.2f;
+	inline constexpr float WARDEN_MARKER_EMISSIVE   = 2.0f;
 
 	// --- Detection ------------------------------------------------------------------
 	// The feet sample's weight where the eye's pool on the floor fades below 3/255 of added light
@@ -153,6 +162,14 @@ namespace Dingo
 	inline constexpr float BEACON_FLAME_RANGE       = 6.0f;
 	inline constexpr float BEACON_FIELD_DEG         = 120.0f;
 	inline constexpr float BEACON_FLAME_WEIGHT      = 0.25f;
+	// How much of the lantern's light must reach a warden's eye for its glow to be seen: inside the
+	// light's range a pillar between them hides it as the drawn shadow shows. The beacon reaches 1.6x
+	// the range, where the cube shadow ends and answers 1, so out there the sight ray decides.
+	inline constexpr float BEACON_LANTERN_VISIBILITY = 0.5f;
+	// Shadow-probe keys: an eye's own keys are its samples (0..2); the lantern's are one per warden.
+	inline constexpr uint32_t PROBE_KEY_LANTERN     = 16;
+	inline constexpr uint32_t PROBE_KEY_CHEST       = 1;
+	inline constexpr int   HIDE_CHECK_FRAME         = 10;
 	inline constexpr float CAUGHT_FADE_TIME         = 1.0f;
 	inline constexpr float RESPAWN_FADE_TIME        = 0.5f;
 	inline constexpr float RESPAWN_GRACE_TIME       = 2.5f;
@@ -181,7 +198,7 @@ namespace Dingo
 
 	// --- Flames --------------------------------------------------------------------
 	inline constexpr glm::vec3 FLAME_COLOR     = { 1.0f, 0.62f, 0.3f };
-	inline constexpr float FLAME_EMISSIVE      = 1.1f;
+	inline constexpr float FLAME_EMISSIVE      = 2.6f;
 
 	inline constexpr float BRAZIER_LIGHT_RANGE     = 9.0f;
 	inline constexpr float BRAZIER_LIGHT_INTENSITY = 1.1f;
@@ -194,6 +211,14 @@ namespace Dingo
 
 	inline constexpr float CANDLE_LIGHT_RANGE      = 2.5f;
 	inline constexpr float CANDLE_LIGHT_INTENSITY  = 0.8f;
+
+	// --- Particles ---------------------------------------------------------------------
+	inline constexpr uint32_t KINDLE_BURST_COUNT   = 80;
+	inline constexpr uint32_t SNUFF_SMOKE_COUNT    = 24;
+	// Emitters sit near the top of the glow they rise from, which hides what starts inside it.
+	inline constexpr float FLAME_EMITTER_RISE      = 0.35f;
+	inline constexpr float BRAZIER_SMOKE_RISE      = 0.6f;
+	inline constexpr float SNUFF_SMOKE_RISE        = 0.18f;
 
 	inline constexpr uint32_t FLAME_MESH_RINGS     = 6;
 	inline constexpr uint32_t FLAME_MESH_SEGMENTS  = 8;
@@ -299,6 +324,7 @@ namespace Dingo
 	inline constexpr glm::vec3 DEBUG_DOT_COLOR     = { 0.35f, 1.0f, 0.3f };
 	inline constexpr glm::vec3 DEBUG_SEEN_COLOR    = { 1.0f, 0.15f, 0.1f };
 	inline constexpr glm::vec3 DEBUG_UNSEEN_COLOR  = { 0.6f, 0.6f, 0.65f };
+	inline constexpr glm::vec3 DEBUG_SHADOWED_COLOR = { 0.6f, 0.3f, 1.0f };
 
 	inline constexpr glm::vec4 COLOR_FADE          = { 0.0f, 0.0f, 0.0f, 1.0f };
 	inline constexpr float HUD_FADE_Z              = 0.5f;

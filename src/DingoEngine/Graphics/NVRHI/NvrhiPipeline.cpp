@@ -40,6 +40,53 @@ namespace Dingo
 			}
 		}
 
+		static nvrhi::ComparisonFunc ConvertDepthCompareToNVRHI(DepthCompare compare)
+		{
+			switch (compare)
+			{
+				case DepthCompare::Less: return nvrhi::ComparisonFunc::Less;
+				case DepthCompare::LessEqual: return nvrhi::ComparisonFunc::LessOrEqual;
+				case DepthCompare::Greater: return nvrhi::ComparisonFunc::Greater;
+				case DepthCompare::GreaterEqual: return nvrhi::ComparisonFunc::GreaterOrEqual;
+				case DepthCompare::Equal: return nvrhi::ComparisonFunc::Equal;
+				case DepthCompare::Always: return nvrhi::ComparisonFunc::Always;
+				default: return nvrhi::ComparisonFunc::Less;
+			}
+		}
+
+		static nvrhi::BlendState::RenderTarget MakeBlendTarget(BlendMode blendMode)
+		{
+			nvrhi::BlendState::RenderTarget target = nvrhi::BlendState::RenderTarget()
+				.setColorWriteMask(nvrhi::ColorMask::All)
+				.setBlendOp(nvrhi::BlendOp::Add)
+				.setBlendOpAlpha(nvrhi::BlendOp::Add);
+
+			switch (blendMode)
+			{
+				case BlendMode::Opaque:
+					return target.setBlendEnable(false);
+				case BlendMode::Additive:
+					return target.setBlendEnable(true)
+						.setSrcBlend(nvrhi::BlendFactor::One)
+						.setSrcBlendAlpha(nvrhi::BlendFactor::One)
+						.setDestBlend(nvrhi::BlendFactor::One)
+						.setDestBlendAlpha(nvrhi::BlendFactor::One);
+				case BlendMode::Multiply:
+					return target.setBlendEnable(true)
+						.setSrcBlend(nvrhi::BlendFactor::DstColor)
+						.setSrcBlendAlpha(nvrhi::BlendFactor::Zero)
+						.setDestBlend(nvrhi::BlendFactor::Zero)
+						.setDestBlendAlpha(nvrhi::BlendFactor::One);
+				case BlendMode::Alpha:
+				default:
+					return target.setBlendEnable(true)
+						.setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+						.setSrcBlendAlpha(nvrhi::BlendFactor::One)
+						.setDestBlend(nvrhi::BlendFactor::OneMinusSrcAlpha)
+						.setDestBlendAlpha(nvrhi::BlendFactor::OneMinusSrcAlpha);
+			}
+		}
+
 		static nvrhi::RasterCullMode ConvertCullModeToNVRHI(CullMode cullMode)
 		{
 			switch (cullMode)
@@ -75,21 +122,13 @@ namespace Dingo
 		nvrhi::RasterState rasterState = nvrhi::RasterState()
 			.setCullMode(Utils::ConvertCullModeToNVRHI(m_Params.CullMode))
 			.setFillMode(Utils::ConvertFillModeToNVRHI(m_Params.FillMode))
-			.setFrontCounterClockwise(m_Params.FrontCounterClockwise);
-
-		nvrhi::BlendState::RenderTarget renderTarget = nvrhi::BlendState::RenderTarget()
-			.setBlendEnable(true)
-			.setColorWriteMask(nvrhi::ColorMask::All)
-			.setBlendOp(nvrhi::BlendOp::Add)
-			.setBlendOpAlpha(nvrhi::BlendOp::Add)
-			.setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
-			.setSrcBlendAlpha(nvrhi::BlendFactor::One)
-			.setDestBlend(nvrhi::BlendFactor::OneMinusSrcAlpha)
-			.setDestBlendAlpha(nvrhi::BlendFactor::OneMinusSrcAlpha);
+			.setFrontCounterClockwise(m_Params.FrontCounterClockwise)
+			.setDepthBias(m_Params.DepthBias)
+			.setSlopeScaleDepthBias(m_Params.SlopeScaledDepthBias);
 
 		nvrhi::BlendState blendState = nvrhi::BlendState()
 			.setAlphaToCoverageEnable(false)
-			.setRenderTarget(0, renderTarget);
+			.setRenderTarget(0, Utils::MakeBlendTarget(m_Params.BlendMode));
 
 		// Depth only applies when the target framebuffer actually has a depth attachment.
 		// 2D/overlay pipelines opt out (DepthTest/DepthWrite = false) so same-z draws aren't
@@ -102,18 +141,21 @@ namespace Dingo
 		nvrhi::DepthStencilState depthStencilState = nvrhi::DepthStencilState()
 			.setDepthTestEnable(depthTest)
 			.setDepthWriteEnable(depthWrite)
-			.setDepthFunc(depthTest ? nvrhi::ComparisonFunc::Less : nvrhi::ComparisonFunc::Always);
+			.setDepthFunc(depthTest ? Utils::ConvertDepthCompareToNVRHI(m_Params.DepthCompare) : nvrhi::ComparisonFunc::Always);
 
 		nvrhi::RenderState renderState = nvrhi::RenderState()
 			.setRasterState(rasterState)
 			.setBlendState(blendState)
 			.setDepthStencilState(depthStencilState);
 
-		const auto& vsHandle = nvrhiShader->m_ShaderHandles[ShaderType::Vertex];
-		const auto& psHandle = nvrhiShader->m_ShaderHandles[ShaderType::Pixel];
+		// A shader without a fragment stage makes a depth-only pipeline (a shadow map).
+		const auto vsIt = nvrhiShader->m_ShaderHandles.find(ShaderType::Vertex);
+		const auto psIt = nvrhiShader->m_ShaderHandles.find(ShaderType::Pixel);
+		const nvrhi::ShaderHandle vsHandle = vsIt != nvrhiShader->m_ShaderHandles.end() ? vsIt->second : nullptr;
+		const nvrhi::ShaderHandle psHandle = psIt != nvrhiShader->m_ShaderHandles.end() ? psIt->second : nullptr;
 		if (!vsHandle) DE_CORE_ERROR("Pipeline '{}': vertex shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
-		if (!psHandle) DE_CORE_ERROR("Pipeline '{}': pixel shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
-		DE_CORE_ASSERT(vsHandle && psHandle, "Shader compilation failed — see errors above.");
+		if (psIt != nvrhiShader->m_ShaderHandles.end() && !psHandle) DE_CORE_ERROR("Pipeline '{}': pixel shader handle is null — DXBC/SPIR-V compilation failed.", m_Params.DebugName);
+		DE_CORE_ASSERT(vsHandle && (psHandle || psIt == nvrhiShader->m_ShaderHandles.end()), "Shader compilation failed — see errors above.");
 
 		nvrhi::GraphicsPipelineDesc graphicsPipelineDesc = nvrhi::GraphicsPipelineDesc()
 			.setPrimType(nvrhi::PrimitiveType::TriangleList)
@@ -146,10 +188,12 @@ namespace Dingo
 	{
 		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 
+		// A vertex stage that reads no vertex buffer (a fullscreen triangle from gl_VertexIndex) needs
+		// no input layout, and D3D11 has none with zero elements.
 		if (m_Params.VertexLayout.Attributes.empty())
 		{
-			m_InputLayoutHandle = device->createInputLayout(nullptr, 0, nvrhiShader->m_ShaderHandles[ShaderType::Vertex]);
-			return; // No attributes to create input layout
+			m_InputLayoutHandle = nullptr;
+			return;
 		}
 
 		std::vector< nvrhi::VertexAttributeDesc> attributes;

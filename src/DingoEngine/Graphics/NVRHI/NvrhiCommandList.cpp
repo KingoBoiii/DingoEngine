@@ -5,6 +5,7 @@
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiRenderPass.h"
+#include "NvrhiComputePass.h"
 #include "NvrhiTexture.h"
 
 #include "DingoEngine/Core/Application.h"
@@ -69,7 +70,9 @@ namespace Dingo
 		if (hasDepth)
 			m_CommandListHandle->setTextureState(nvrhiFB->m_DepthTextureHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
 
-		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+		// A depth-only framebuffer (a shadow map) has no colour to clear.
+		if (attachmentIndex < nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments.size())
+			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
 
 		if (hasDepth)
 			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);
@@ -100,12 +103,19 @@ namespace Dingo
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
 	}
 
+	void NvrhiCommandList::SetViewport(const Viewport& viewport)
+	{
+		const nvrhi::Viewport nvrhiViewport(viewport.X, viewport.X + viewport.Width, viewport.Y, viewport.Y + viewport.Height, 0.0f, 1.0f);
+		m_GraphicsState.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhiViewport));
+	}
+
 	bool NvrhiCommandList::SetPipeline(Pipeline* pipeline)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
 
 		m_GraphicsState = nvrhi::GraphicsState();
+		m_RenderPassStorageItems = nullptr;
 
 		if (!pipeline)
 			return false;
@@ -180,6 +190,8 @@ namespace Dingo
 		}
 
 		m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
+		if (!nvrhiRenderPass->m_StorageItems.empty())
+			m_RenderPassStorageItems = &nvrhiRenderPass->m_StorageItems;
 
 		return true;
 	}
@@ -227,6 +239,8 @@ namespace Dingo
 		if (!m_GraphicsState.pipeline)
 			return;
 
+		if (m_RenderPassStorageItems)
+			RequireStorageStates(*m_RenderPassStorageItems);
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
@@ -243,6 +257,8 @@ namespace Dingo
 		if (!m_GraphicsState.pipeline)
 			return;
 
+		if (m_RenderPassStorageItems)
+			RequireStorageStates(*m_RenderPassStorageItems);
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
@@ -250,6 +266,53 @@ namespace Dingo
 			.setInstanceCount(instanceCount); // Number of instances to draw
 
 		m_CommandListHandle->drawIndexed(drawArguments);
+	}
+
+	bool NvrhiCommandList::Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before dispatching.");
+		DE_CORE_ASSERT(pass, "Compute pass is null.");
+
+		if (groupsX == 0 || groupsY == 0 || groupsZ == 0)
+			return true;
+		NvrhiComputePass* nvrhiPass = static_cast<NvrhiComputePass*>(pass);
+		if (!nvrhiPass->Prepare())
+			return false;
+
+		nvrhi::ComputeState state = nvrhi::ComputeState().setPipeline(nvrhiPass->GetPipelineHandle());
+		if (nvrhiPass->GetBindingSetHandle())
+			state.addBindingSet(nvrhiPass->GetBindingSetHandle());
+		RequireStorageStates(nvrhiPass->GetStorageItems());
+		m_CommandListHandle->setComputeState(state);
+		m_CommandListHandle->dispatch(groupsX, groupsY, groupsZ);
+		return true;
+	}
+
+	bool NvrhiCommandList::IsStorageItem(const nvrhi::BindingSetItem& item)
+	{
+		return item.type == nvrhi::ResourceType::RawBuffer_SRV || item.type == nvrhi::ResourceType::RawBuffer_UAV
+			|| item.type == nvrhi::ResourceType::Texture_UAV;
+	}
+
+	void NvrhiCommandList::RequireStorageStates(const std::vector<nvrhi::BindingSetItem>& items)
+	{
+		for (const nvrhi::BindingSetItem& item : items)
+		{
+			switch (item.type)
+			{
+				case nvrhi::ResourceType::RawBuffer_SRV:
+					m_CommandListHandle->setBufferState(static_cast<nvrhi::IBuffer*>(item.resourceHandle), nvrhi::ResourceStates::ShaderResource);
+					break;
+				case nvrhi::ResourceType::RawBuffer_UAV:
+					m_CommandListHandle->setBufferState(static_cast<nvrhi::IBuffer*>(item.resourceHandle), nvrhi::ResourceStates::UnorderedAccess);
+					break;
+				case nvrhi::ResourceType::Texture_UAV:
+					m_CommandListHandle->setTextureState(static_cast<nvrhi::ITexture*>(item.resourceHandle), item.subresources, nvrhi::ResourceStates::UnorderedAccess);
+					break;
+				default:
+					break;
+			}
+		}
 	}
 
 }

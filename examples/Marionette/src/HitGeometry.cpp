@@ -19,6 +19,16 @@ namespace Dingo
 		return DistanceToSegment(sphere.Center, swept.From, swept.To) <= swept.Radius + sphere.Radius;
 	}
 
+	glm::vec3 ContactPoint(const SweptSphere& swept, const WorldSphere& sphere)
+	{
+		const glm::vec3 segment = swept.To - swept.From;
+		const float lengthSquared = glm::dot(segment, segment);
+		const float t = lengthSquared > 0.0f ? glm::clamp(glm::dot(sphere.Center - swept.From, segment) / lengthSquared, 0.0f, 1.0f) : 0.0f;
+		const glm::vec3 offset = swept.From + segment * t - sphere.Center;
+		const float distance = glm::length(offset);
+		return distance > 1.0e-5f ? sphere.Center + offset * (std::min(distance, sphere.Radius) / distance) : sphere.Center;
+	}
+
 	BladeAxis MeasureBlade(const Model& weapon)
 	{
 		glm::vec3 farthest(0.0f);

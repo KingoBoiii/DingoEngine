@@ -19,6 +19,17 @@ namespace Dingo
 		Dingo::CullMode CullMode           = Dingo::CullMode::Back;
 		Dingo::FillMode FillMode           = Dingo::FillMode::Solid;
 		bool        FrontCounterClockwise  = true;
+		// Baked into the material's pipelines, like CullMode (see PipelineParams).
+		BlendMode    Blend                 = BlendMode::Alpha;
+		bool         DepthTest             = true;
+		bool         DepthWrite            = true;
+		DepthCompare DepthFunction         = DepthCompare::Less;
+		int32_t      DepthBias             = 0;
+		float        SlopeScaledDepthBias  = 0.0f;
+		// How many SetUniform uploads a frame the material's volatile uniform buffer holds on Vulkan
+		// (GraphicsBufferParams::MaxWritesPerFrame): one a scene for a material drawn in many scenes
+		// a frame with different params.
+		uint32_t     UniformWritesPerFrame = 8;
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
 		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
@@ -39,6 +50,12 @@ namespace Dingo
 		MaterialParams& SetCullMode(Dingo::CullMode mode)                 { CullMode = mode; return *this; }
 		MaterialParams& SetFillMode(Dingo::FillMode mode)                 { FillMode = mode; return *this; }
 		MaterialParams& SetFrontCounterClockwise(bool v)                  { FrontCounterClockwise = v; return *this; }
+		MaterialParams& SetBlendMode(BlendMode mode)                      { Blend = mode; return *this; }
+		MaterialParams& SetDepthTest(bool enabled)                        { DepthTest = enabled; return *this; }
+		MaterialParams& SetDepthWrite(bool enabled)                       { DepthWrite = enabled; return *this; }
+		MaterialParams& SetDepthCompare(DepthCompare compare)             { DepthFunction = compare; return *this; }
+		MaterialParams& SetDepthBias(int32_t constant, float slopeScaled) { DepthBias = constant; SlopeScaledDepthBias = slopeScaled; return *this; }
+		MaterialParams& SetUniformWritesPerFrame(uint32_t writes)         { UniformWritesPerFrame = writes; return *this; }
 		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }
@@ -106,6 +123,22 @@ namespace Dingo
 
 		static constexpr const char* k_SkinDataBlockName = "SkinData";
 
+		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
+		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it. A shader
+		// without them ignores this.
+		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
+
+		// A storage buffer at a binding the shader's own numbering gives it (Shader::FindStorageBufferBinding);
+		// null clears it. A vertex stage reads it only from a readonly block. Adding or clearing one
+		// rebuilds the material's passes; replacing one only re-points their binding sets, so
+		// ping-ponging two buffers compiles no pipelines.
+		void SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer);
+		static constexpr uint32_t k_MaxStorageBuffers = 4;
+
+		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
+		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
+		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
+
 		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
 		const std::vector<uint8_t>& GetUniformCPUData()                      const { return m_UniformCPUData; }
 		bool                        NeedsUniformUpload(uint64_t frameIndex)  const { return m_UniformUploadFrame != frameIndex; }
@@ -159,6 +192,17 @@ namespace Dingo
 		// Shared scene UBO (binding 0), owned by the renderer — not destroyed here.
 		GraphicsBuffer*      m_SceneUniformBuffer = nullptr;
 		GraphicsBuffer*      m_SkinUniformBuffer  = nullptr;
+		GraphicsBuffer*      m_ShadowDataBuffer   = nullptr;
+		Texture*             m_ShadowAtlas        = nullptr;
+		Sampler*             m_ShadowSampler      = nullptr;
+
+		struct StorageBinding
+		{
+			uint32_t Binding = 0;
+			GraphicsBuffer* Buffer = nullptr;
+			uint64_t BufferId = 0; // a buffer made at a freed one's address is a change
+		};
+		std::vector<StorageBinding> m_StorageBuffers;
 
 		struct PipelineCacheEntry
 		{

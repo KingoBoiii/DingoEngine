@@ -63,8 +63,8 @@ namespace Dingo
 		Application::Get().GetAudioEngine().SetListenerPosition(m_Listener.GetComponent<Transform3DComponent>().Position);
 
 		m_Camera = std::make_unique<CameraRig>(scene, m_Player->GetPosition(), m_Overview ? std::optional<TileRect>(room.Rect) : std::nullopt);
-		m_Lantern = std::make_unique<Lantern>(scene, *m_Player, m_World->GetBrassMaterial(), *m_Audio, startOil, !options.Freeze);
-		m_Wardens = std::make_unique<Wardens>(scene, m_Map, *m_Audio, options.Freeze, !options.NoRangeClamp);
+		m_Lantern = std::make_unique<Lantern>(scene, *m_Player, m_World->GetBrassMaterial(), m_World->GetEffects().SnuffSmoke.get(), *m_Audio, startOil, !options.Freeze);
+		m_Wardens = std::make_unique<Wardens>(scene, m_Map, *m_Audio, options.Freeze, !options.NoShadows);
 		m_Detection = std::make_unique<Detection>(scene, *m_World, m_Wardens->GetCount(), options.DebugCone, !options.Freeze);
 
 		m_LightLod = std::make_unique<LightLod>(m_World->GetFlames(), !options.NoLightLod);
@@ -152,6 +152,9 @@ namespace Dingo
 
 		if (!m_Overview)
 			m_World->UpdateCutaway(m_Camera->GetEye(), m_Player->GetPosition() + glm::vec3(0.0f, CUTAWAY_TARGET_HEIGHT, 0.0f));
+
+		if (GetLaunchOptions().HideCheck && ++m_Frames == HIDE_CHECK_FRAME)
+			m_Detection->LogHideCheck(*m_Wardens, *m_Player, *m_Lantern);
 
 		m_Hud->SetRoom(m_Map.RoomOf(m_Map.TileOf(m_Player->GetPosition())));
 		m_Hud->SetFade(m_Fade);

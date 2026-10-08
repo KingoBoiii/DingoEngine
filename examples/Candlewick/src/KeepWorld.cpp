@@ -1,5 +1,6 @@
 #include "KeepWorld.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -119,6 +120,12 @@ namespace
 	{
 		entity.GetComponent<MeshRendererComponent>().Visible = visible;
 	}
+
+	// A cut-away wall still stands in the light: it stops drawing but goes on casting.
+	void SetCutAway(Entity entity, bool cutAway)
+	{
+		entity.GetComponent<MeshRendererComponent>().Shadows = cutAway ? ShadowCasting::ShadowsOnly : ShadowCasting::On;
+	}
 }
 
 namespace Dingo
@@ -133,6 +140,7 @@ namespace Dingo
 		m_WallOfTile.assign(static_cast<size_t>(map.GetWidth()) * map.GetHeight(), -1);
 
 		CreateMaterials();
+		m_Effects = CreateFlameEffects();
 		SpawnAmbient();
 		BuildFloors();
 		BuildWalls();
@@ -248,7 +256,9 @@ namespace Dingo
 		transform.Position = center;
 		transform.Scale = glm::vec3(diameter);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, color)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, color));
+		renderer.Material = material;
+		renderer.Shadows = ShadowCasting::Off;
 		return entity;
 	}
 
@@ -367,8 +377,15 @@ namespace Dingo
 
 		BrazierSpot spot;
 		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter, m_AshMaterial, COLOR_ASH);
+		const glm::vec3 flameBase = core + glm::vec3(0.0f, style.CoreDiameter * FLAME_EMITTER_RISE, 0.0f);
+		spot.Flame = SpawnEmitter(m_Scene, "BrazierFlame", m_Effects.BrazierFlame.get(), flameBase, false);
+		spot.Embers = SpawnEmitter(m_Scene, "BrazierEmbers", m_Effects.BrazierEmbers.get(), flameBase, false);
+		spot.Smoke = SpawnEmitter(m_Scene, "BrazierSmoke", m_Effects.BrazierSmoke.get(), core + glm::vec3(0.0f, BRAZIER_SMOKE_RISE, 0.0f), false);
+		spot.Kindle = SpawnEmitter(m_Scene, "BrazierKindle", m_Effects.Kindle.get(), core);
 		spot.Light = SpawnPointLight(isAltar ? "AltarLight" : "BrazierLight", core + glm::vec3(0.0f, style.LightRise, 0.0f), style.LightIntensity, style.LightRange);
-		spot.Light.GetComponent<PointLightComponent>().Enabled = false;
+		auto& light = spot.Light.GetComponent<PointLightComponent>();
+		light.Enabled = false;
+		light.CastShadows = !GetLaunchOptions().NoShadows;
 		spot.Room = marker.Room;
 		spot.Tile = marker.Tile;
 		spot.IsAltar = isAltar;
@@ -392,16 +409,26 @@ namespace Dingo
 			{ k_SconceStemWidth, k_SconceStemHeight, k_SconceStemWidth }, COLOR_BRASS, m_BrassMaterial);
 		Entity cup = SpawnDecor("SconceCup", base + inward * (k_SconceCupWidth * 0.5f) - glm::vec3(0.0f, k_SconceBracketDrop - k_SconceCupHeight * 0.5f, 0.0f),
 			{ k_SconceCupWidth, k_SconceCupHeight, k_SconceCupWidth }, COLOR_BRASS, m_BrassMaterial);
+		// A cut-away hides the bracket outright, so it casts nothing at all: what hides the player
+		// must not change with the camera.
+		stem.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
+		cup.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
 
 		DecorFlame flame;
-		flame.Core = SpawnGlow("SconceCore", base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		const glm::vec3 core = base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f);
+		flame.Core = SpawnGlow("SconceCore", core, k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		flame.Emitter = SpawnEmitter(m_Scene, "SconceFlame", m_Effects.Sconce.get(), core + glm::vec3(0.0f, k_SconceFlameDiameter * FLAME_EMITTER_RISE, 0.0f));
 		flame.Light = SpawnPointLight("SconceLight", base + inward * k_SconceLightOffset + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), SCONCE_LIGHT_INTENSITY, SCONCE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Sconce;
 		flame.BaseIntensity = SCONCE_LIGHT_INTENSITY;
 
 		const int wallRect = m_WallOfTile[static_cast<size_t>(marker.Tile.y + wallStep->y) * m_Map.GetWidth() + marker.Tile.x + wallStep->x];
 		if (wallRect >= 0)
+		{
 			m_Walls[wallRect].Mounted.insert(m_Walls[wallRect].Mounted.end(), { stem, cup, flame.Core });
+			if (flame.Emitter.IsValid())
+				m_Walls[wallRect].Emitters.push_back(flame.Emitter);
+		}
 
 		return flame;
 	}
@@ -410,12 +437,14 @@ namespace Dingo
 	{
 		const glm::vec3 floor = m_Map.TileCenter(marker.Tile);
 
-		SpawnDecor("CandleWax", floor + glm::vec3(0.0f, k_CandleHeight * 0.5f, 0.0f), { k_CandleWidth, k_CandleHeight, k_CandleWidth }, COLOR_WAX, m_WaxMaterial);
+		SpawnDecor("CandleWax", floor + glm::vec3(0.0f, k_CandleHeight * 0.5f, 0.0f), { k_CandleWidth, k_CandleHeight, k_CandleWidth }, COLOR_WAX, m_WaxMaterial)
+			.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
 
 		const glm::vec3 flameCenter = floor + glm::vec3(0.0f, k_CandleHeight + k_CandleFlameDiameter * 0.4f, 0.0f);
 
 		DecorFlame flame;
 		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		flame.Emitter = SpawnEmitter(m_Scene, "CandleParticles", m_Effects.Candle.get(), flameCenter + glm::vec3(0.0f, k_CandleFlameDiameter * FLAME_EMITTER_RISE, 0.0f));
 		flame.Light = SpawnPointLight("CandleLight", flameCenter + glm::vec3(0.0f, k_CandleLightRise, 0.0f), CANDLE_LIGHT_INTENSITY, CANDLE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Candle;
 		flame.BaseIntensity = CANDLE_LIGHT_INTENSITY;
@@ -468,10 +497,12 @@ namespace Dingo
 			return;
 
 		wall.Hidden = hidden;
-		SetVisible(wall.Wall, !hidden);
-		SetVisible(wall.Cap, !hidden);
+		SetCutAway(wall.Wall, hidden);
+		SetCutAway(wall.Cap, hidden);
 		for (Entity mounted : wall.Mounted)
 			SetVisible(mounted, !hidden);
+		for (Entity emitter : wall.Emitters)
+			emitter.GetComponent<ParticleEmitterComponent>().Playing = !hidden;
 	}
 
 	void KeepWorld::UpdateCutaway(const glm::vec3& eye, const glm::vec3& target)

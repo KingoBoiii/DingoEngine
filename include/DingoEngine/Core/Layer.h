@@ -18,6 +18,8 @@ namespace Dingo
 		virtual void OnEvent(Event& e) {}
 		virtual void OnUIRender() {} // EnableUI must be enabled for this to be called
 
+		const std::string& GetName() const { return m_Name; }
+
 	private:
 		std::string m_Name;
 	};

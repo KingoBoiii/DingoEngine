@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/Renderer2D/Renderer2DTest.h"
+#include "Tests/TestChecks.h"
 
 #include <chrono>
 #include <string>
@@ -35,7 +36,7 @@ namespace Dingo
 		void BuildScene();
 		void SetBackground(bool minimized, bool unfocused);
 		void CheckStretch(float returnDeltaTime, Clock::time_point now);
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 
 	private:
 		Scene* m_Scene = nullptr;
@@ -70,12 +71,7 @@ namespace Dingo
 		uint32_t m_Stretches = 0;
 		std::string m_LastStretch;
 
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed = false;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 	};
 
 }

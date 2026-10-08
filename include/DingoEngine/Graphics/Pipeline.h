@@ -43,6 +43,13 @@ namespace Dingo
 		bool FrontCounterClockwise = false;
 		bool DepthTest = true;   // only takes effect if the target framebuffer has a depth attachment
 		bool DepthWrite = true;  // 2D/overlay pipelines should set both false (painter's order)
+		Dingo::DepthCompare DepthCompare = Dingo::DepthCompare::Less;
+		Dingo::BlendMode BlendMode = Dingo::BlendMode::Alpha;
+		// Pushes the stored depth away from the viewer, for shadow maps: DepthBias in units of the
+		// smallest depth step, SlopeScaledDepthBias times the triangle's depth slope. Vulkan applies
+		// either only while DepthBias is not 0.
+		int32_t DepthBias = 0;
+		float SlopeScaledDepthBias = 0.0f;
 		Dingo::VertexLayout VertexLayout;
 		GraphicsBuffer* UniformBuffer = nullptr;
 		Dingo::Texture* Texture = nullptr;
@@ -92,6 +99,25 @@ namespace Dingo
 		PipelineParams& SetDepthWrite(bool enabled)
 		{
 			DepthWrite = enabled;
+			return *this;
+		}
+
+		PipelineParams& SetDepthCompare(Dingo::DepthCompare compare)
+		{
+			DepthCompare = compare;
+			return *this;
+		}
+
+		PipelineParams& SetBlendMode(Dingo::BlendMode blendMode)
+		{
+			BlendMode = blendMode;
+			return *this;
+		}
+
+		PipelineParams& SetDepthBias(int32_t constant, float slopeScaled)
+		{
+			DepthBias = constant;
+			SlopeScaledDepthBias = slopeScaled;
 			return *this;
 		}
 

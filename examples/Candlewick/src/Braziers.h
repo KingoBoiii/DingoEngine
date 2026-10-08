@@ -55,7 +55,8 @@ namespace Dingo
 		float GetProgress() const { return m_Progress; }
 
 	private:
-		void Light(size_t index);
+		// A brazier lit by the player kindles with a burst; one lit from the start just burns.
+		void Light(size_t index, bool kindle);
 		void Flicker();
 
 	private:

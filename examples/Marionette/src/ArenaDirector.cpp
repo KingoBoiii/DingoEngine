@@ -1,5 +1,6 @@
 #include "ArenaDirector.h"
 #include "AiBrain.h"
+#include "ArenaVfx.h"
 #include "ArenaWorld.h"
 #include "Audio.h"
 #include "BoutFlow.h"
@@ -57,7 +58,9 @@ namespace Dingo
 
 		m_Audio = std::make_unique<GameAudio>(m_Assets->GetSounds());
 		m_Audio->SetMuted(options.StepsPerFrame > 1 || options.Tournament > 0);
-		m_World = std::make_unique<ArenaWorld>(scene, *m_Assets, m_Audio.get());
+		if (!options.NoParticles)
+			m_Vfx = std::make_unique<ArenaVfx>(scene, true);
+		m_World = std::make_unique<ArenaWorld>(scene, *m_Assets, m_Audio.get(), m_Vfx.get());
 		m_EventGeneration = m_Assets->GetEventGeneration();
 		m_Freeze = options.Freeze;
 		m_Tournament = options.Tournament > 0;
@@ -68,7 +71,7 @@ namespace Dingo
 
 		const bool logSteps = options.Check || (m_Drive != DriveMode::None && m_Drive != DriveMode::Duel);
 		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None || (options.Autoplay && !m_Tournament);
-		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_Assets->GetDebugView() };
+		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_Assets->GetDebugView(), m_Vfx.get() };
 		BuildBout(context, options);
 	}
 
@@ -132,7 +135,7 @@ namespace Dingo
 			opponent.StartLocomotion(OPPONENT_IDLE_PHASE);
 		}
 
-		m_Combat = std::make_unique<Combat>(*m_Audio, context.LogCombat);
+		m_Combat = std::make_unique<Combat>(*m_Audio, context.LogCombat, m_Vfx.get());
 		if (m_Drive == DriveMode::Duel)
 			m_Duel = std::make_unique<DuelScript>(options.BreakHitbox);
 		else if (driven)
@@ -283,6 +286,8 @@ namespace Dingo
 			m_Combat->UpdateDebug(player, opponent);
 		else
 			m_Combat->Update(player, opponent);
+		if (m_Vfx)
+			m_Vfx->Update(deltaTime);
 
 		if (m_FollowCamera)
 		{
@@ -460,6 +465,7 @@ namespace Dingo
 		m_Fighters.clear();
 		m_Audio.reset();
 		m_World.reset();
+		m_Vfx.reset();
 	}
 
 }

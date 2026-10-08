@@ -1,6 +1,7 @@
 // Static vertices arrive in world space (Renderer3D transforms them on the CPU while batching), so
 // that vertex stage only applies the camera. With DE_SKINNED the GPU skins each vertex with the
-// joint palette in SkinData, one draw per mesh; the fragment stage is shared.
+// joint palette in SkinData (Skinning.glsl), one draw per mesh; the fragment stage is shared. The
+// fragment stage takes the scene's shadows from Shadows.glsl at bindings 5 to 7.
 //
 // CameraData mirrors Renderer3D::CameraData. Its first three members are a frozen prefix that
 // custom material shaders declare on their own, so members are only ever appended.
@@ -20,7 +21,7 @@ layout(location = 3) out vec2 v_TexCoord;
 
 #ifdef DE_SKINNED
 
-const int MAX_JOINTS = 128;
+#include <DingoEngine/Skinning.glsl>
 
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec3 a_Normal;
@@ -28,31 +29,13 @@ layout(location = 2) in vec2 a_TexCoord;
 layout(location = 3) in uvec4 a_Joints;
 layout(location = 4) in vec4 a_Weights;
 
-// Mirrors Renderer3D::SkinData. Found by its name, so a custom skinned shader may put it at any
-// binding the material's own uniforms and textures leave free, up to 13.
-layout(std140, binding = 4) uniform SkinData
-{
-	mat4 Model;
-	mat4 NormalMatrix;
-	vec4 Color;
-	mat4 Joints[MAX_JOINTS];
-};
-
 void main()
 {
-	mat4 skin = a_Weights.x * Joints[a_Joints.x] + a_Weights.y * Joints[a_Joints.y]
-	          + a_Weights.z * Joints[a_Joints.z] + a_Weights.w * Joints[a_Joints.w];
+	mat4 skin = SkinMatrix(a_Joints, a_Weights);
 	vec4 worldPosition = Model * (skin * vec4(a_Position, 1.0));
 
-	// The cofactor matrix is the inverse transpose scaled by the determinant, so a squashed or
-	// stretched joint keeps normals perpendicular without inverting a matrix per vertex. The model
-	// loader poses rest normals the same way.
-	mat3 m = mat3(skin);
-	mat3 cofactor = mat3(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1]));
-	float handedness = dot(m[0], cofactor[0]) < 0.0 ? -1.0 : 1.0;
-
 	gl_Position     = ViewProjection * worldPosition;
-	v_Normal        = mat3(NormalMatrix) * (cofactor * a_Normal * handedness);
+	v_Normal        = SkinNormal(skin, a_Normal);
 	v_Color         = Color;
 	v_WorldPosition = worldPosition.xyz;
 	v_TexCoord      = a_TexCoord;
@@ -123,6 +106,8 @@ layout(std140, binding = 1) uniform MaterialData
 layout(binding = 2) uniform texture2D u_Albedo;
 layout(binding = 3) uniform sampler u_AlbedoSampler;
 
+#include <DingoEngine/Shadows.glsl>
+
 layout(location = 0) out vec4 o_Color;
 
 const float PI = 3.14159265;
@@ -157,6 +142,8 @@ void main()
 	{
 		vec3 toLight = normalize(-DirectionalLights[i].Direction.xyz);
 		float nDotL = max(dot(normal, toLight), 0.0);
+		if (i == ShadowCounts.y && nDotL > 0.0)
+			nDotL *= DirectionalShadow(v_WorldPosition, normal);
 		lighting += DirectionalLights[i].Color.rgb * nDotL;
 		if (shiny && nDotL > 0.0)
 			specular += DirectionalLights[i].Color.rgb * nDotL * Highlight(normal, toLight, toCamera, shininess);
@@ -176,6 +163,8 @@ void main()
 		float falloff = 1.0 - distanceSquared / rangeSquared;
 		float cone = clamp(dot(-toLight, light.SpotDirection.xyz) * light.Color.w + light.SpotDirection.w, 0.0, 1.0);
 		float nDotL = max(dot(normal, toLight), 0.0);
+		if (ShadowCounts.w > 0 && nDotL > 0.0 && cone > 0.0)
+			nDotL *= LocalLightShadow(i, v_WorldPosition, normal);
 		lighting += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone);
 		if (shiny && nDotL > 0.0)
 			specular += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone) * Highlight(normal, toLight, toCamera, shininess);
@@ -183,6 +172,8 @@ void main()
 
 	vec3 finalColor = albedo * lighting + specular * Surface.z;
 	finalColor += EmissiveColor.rgb * Surface.x;
+	if (ShadowCounts.z != 0)
+		finalColor *= ShadowCascadeTint(v_WorldPosition);
 	// Lit draws are unsorted and write depth, so only the mesh colour, never an albedo map, makes
 	// them see-through.
 	o_Color = vec4(finalColor, v_Color.a);

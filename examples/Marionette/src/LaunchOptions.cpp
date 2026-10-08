@@ -150,6 +150,9 @@ namespace
 		ParseFlag(args, "debug-hitbox", options.DebugHitbox);
 		ParseFlag(args, "break-hitbox", options.BreakHitbox);
 		ParseFlag(args, "hot-reload", options.HotReload);
+		ParseFlag(args, "no-post", options.NoPost);
+		ParseFlag(args, "no-shadows", options.NoShadows);
+		ParseFlag(args, "no-particles", options.NoParticles);
 		ParseFlag(args, "live-edit-demo", options.LiveEditDemo);
 		ParseFlag(args, "perf", options.Perf);
 		if (options.LiveEditDemo)

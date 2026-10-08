@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
+#include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <cstring>
 
@@ -25,6 +26,13 @@ namespace Dingo
 				case TextureFormat::RGBA8_UNORM: return nvrhi::Format::RGBA8_UNORM;
 
 				case TextureFormat::RGBA32F: return nvrhi::Format::RGBA32_FLOAT;
+
+				case TextureFormat::RGBA16F: return nvrhi::Format::RGBA16_FLOAT;
+				case TextureFormat::R11G11B10F: return nvrhi::Format::R11G11B10_FLOAT;
+				case TextureFormat::R8: return nvrhi::Format::R8_UNORM;
+				case TextureFormat::R16F: return nvrhi::Format::R16_FLOAT;
+				case TextureFormat::R32F: return nvrhi::Format::R32_FLOAT;
+				case TextureFormat::D32: return nvrhi::Format::D32;
 
 				default: break;
 			}
@@ -59,27 +67,31 @@ namespace Dingo
 			return nvrhi::SamplerAddressMode::ClampToEdge; // Default to ClampToEdge if unknown
 		}
 
-		static uint32_t GetImageFormatBPP(TextureFormat format)
+		static uint32_t GetImageMemoryRowPitch(TextureFormat format, uint32_t width)
+		{
+			return width * GetBytesPerPixel(format);
+		}
+
+		static TextureFormat GetTextureFormat(nvrhi::Format format)
 		{
 			switch (format)
 			{
-				case TextureFormat::RGB: return 3;
-				case TextureFormat::RGBA: 
-				case TextureFormat::RGBA8_UNORM: 
-					return 4;
+				case nvrhi::Format::RGBA8_UNORM: return TextureFormat::RGBA8_UNORM;
+				case nvrhi::Format::RGBA32_FLOAT: return TextureFormat::RGBA32F;
+				case nvrhi::Format::RGBA16_FLOAT: return TextureFormat::RGBA16F;
+				case nvrhi::Format::R11G11B10_FLOAT: return TextureFormat::R11G11B10F;
+				case nvrhi::Format::R8_UNORM: return TextureFormat::R8;
+				case nvrhi::Format::R16_FLOAT: return TextureFormat::R16F;
+				case nvrhi::Format::R32_FLOAT: return TextureFormat::R32F;
+				default: return TextureFormat::Unknown;
 			}
-			return 0;
-		}
-
-		static uint32_t GetImageMemoryRowPitch(TextureFormat format, uint32_t width)
-		{
-			return width * GetImageFormatBPP(format);
 		}
 
 	}
 
 	void NvrhiTexture::Initialize()
 	{
+		const bool depth = m_Params.Format == TextureFormat::D32;
 		nvrhi::TextureDesc textureDesc = nvrhi::TextureDesc()
 			.setDebugName(m_Params.DebugName)
 			.setWidth(m_Params.Width)
@@ -89,9 +101,19 @@ namespace Dingo
 			.setDepth(1)
 			.setMipLevels(1)
 			.setArraySize(1)
-			.setInitialState(nvrhi::ResourceStates::ShaderResource)
-			.setIsRenderTarget(m_Params.IsRenderTarget)
+			.setInitialState(depth ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::ShaderResource)
+			.setIsRenderTarget(m_Params.IsRenderTarget || depth)
+			.setIsUAV(m_Params.IsStorage && !depth)
 			.setKeepInitialState(true);
+
+		// D3D can't put a shader-resource view on a D32 resource: a sampled depth is created
+		// R32_TYPELESS (NVRHI derives the D32 depth view and the R32 SRV), and one that isn't sampled
+		// must say so or creating it fails.
+		if (depth)
+		{
+			textureDesc.isShaderResource = m_Params.IsShaderResource;
+			textureDesc.isTypeless = m_Params.IsShaderResource;
+		}
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
 	}
@@ -151,9 +173,10 @@ namespace Dingo
 
 	void NvrhiTexture::ReadPixels(std::function<void(const TexturePixels&)> done)
 	{
-		if (!m_Handle || m_Handle->getDesc().format != nvrhi::Format::RGBA8_UNORM || m_Handle->getDesc().dimension != nvrhi::TextureDimension::Texture2D)
+		const TextureFormat format = m_Handle ? Utils::GetTextureFormat(m_Handle->getDesc().format) : TextureFormat::Unknown;
+		if (format == TextureFormat::Unknown || m_Handle->getDesc().dimension != nvrhi::TextureDimension::Texture2D)
 		{
-			DE_CORE_ERROR("Texture::ReadPixels: '{}' isn't a 2D RGBA8 texture.", m_Params.DebugName);
+			DE_CORE_ERROR("Texture::ReadPixels: '{}' isn't a 2D colour texture of a format it reads (RGBA8, RGBA16F, RGBA32F, R11G11B10F, R8, R16F, R32F).", m_Params.DebugName);
 			done(TexturePixels{});
 			return;
 		}
@@ -166,18 +189,19 @@ namespace Dingo
 			.setDebugName(m_Params.DebugName + " (readback)")
 			.setWidth(width)
 			.setHeight(height)
-			.setFormat(nvrhi::Format::RGBA8_UNORM)
+			.setFormat(m_Handle->getDesc().format)
 			.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
 
 		// Mapping waits for the GPU to finish the copy, on every backend.
-		auto resolve = [staging, width, height, done = std::move(done)]()
+		auto resolve = [staging, width, height, format, done = std::move(done)]()
 		{
 			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 			TexturePixels pixels;
+			pixels.Format = format;
 			size_t rowPitch = 0;
 			if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
 			{
-				const size_t rowBytes = static_cast<size_t>(width) * 4;
+				const size_t rowBytes = static_cast<size_t>(width) * GetBytesPerPixel(format);
 				pixels.Width = width;
 				pixels.Height = height;
 				pixels.Data.resize(rowBytes * height);
@@ -223,6 +247,106 @@ namespace Dingo
 			copyAndResolve();
 		else
 			Renderer::RunAfterFrame(std::move(copyAndResolve));
+	}
+
+	namespace Internal
+	{
+
+		class NvrhiTextureReadback : public TextureReadback, public std::enable_shared_from_this<NvrhiTextureReadback>
+		{
+		public:
+			bool IsBusy() const override { return m_Busy; }
+
+			bool Read(Texture* source, std::function<void(const TexturePixels&)> done) override
+			{
+				nvrhi::ITexture* handle = source ? static_cast<nvrhi::ITexture*>(source->GetTextureHandle()) : nullptr;
+				CommandList* frameList = Renderer::TryGetRecordingCommandList();
+				if (m_Busy || !handle || !frameList)
+					return false;
+				const nvrhi::TextureDesc& desc = handle->getDesc();
+				const TextureFormat format = Utils::GetTextureFormat(desc.format);
+				if (format == TextureFormat::Unknown || desc.dimension != nvrhi::TextureDimension::Texture2D)
+					return false;
+
+				nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+				if (!m_Staging || m_Width != desc.width || m_Height != desc.height || m_Format != format)
+				{
+					m_Staging = device->createStagingTexture(nvrhi::TextureDesc()
+						.setDebugName(desc.debugName + " (readback)")
+						.setWidth(desc.width)
+						.setHeight(desc.height)
+						.setFormat(desc.format)
+						.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
+					m_Width = desc.width;
+					m_Height = desc.height;
+					m_Format = format;
+				}
+				if (!m_Event)
+					m_Event = device->createEventQuery();
+
+				// As in NvrhiTexture::ReadPixels: the copy joins the frame, and the texture gets back the
+				// state it had.
+				nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
+				const nvrhi::ResourceStates state = list->getTextureSubresourceState(handle, 0, 0);
+				list->copyTexture(m_Staging, nvrhi::TextureSlice(), handle, nvrhi::TextureSlice());
+				if (state != nvrhi::ResourceStates::Unknown)
+				{
+					list->setTextureState(handle, nvrhi::AllSubresources, state);
+					list->commitBarriers();
+				}
+
+				m_Busy = true;
+				// The frame is submitted by the next frame's start, so the event set then follows the copy.
+				Renderer::RunAfterFrame([self = shared_from_this(), done = std::move(done)]() mutable
+				{
+					nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+					device->resetEventQuery(self->m_Event);
+					device->setEventQuery(self->m_Event, nvrhi::CommandQueue::Graphics);
+					self->Poll(std::move(done));
+				});
+				return true;
+			}
+
+		private:
+			void Poll(std::function<void(const TexturePixels&)> done)
+			{
+				nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+				if (!device->pollEventQuery(m_Event) && !Renderer::IsShuttingDown())
+				{
+					Renderer::RunAfterFrame([self = shared_from_this(), done = std::move(done)]() mutable { self->Poll(std::move(done)); });
+					return;
+				}
+
+				TexturePixels pixels;
+				pixels.Format = m_Format;
+				size_t rowPitch = 0;
+				if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(m_Staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
+				{
+					const size_t rowBytes = static_cast<size_t>(m_Width) * GetBytesPerPixel(m_Format);
+					pixels.Width = m_Width;
+					pixels.Height = m_Height;
+					pixels.Data.resize(rowBytes * m_Height);
+					for (uint32_t row = 0; row < m_Height; ++row)
+						std::memcpy(pixels.Data.data() + row * rowBytes, mapped + row * rowPitch, rowBytes);
+					device->unmapStagingTexture(m_Staging);
+				}
+				m_Busy = false;
+				done(pixels);
+			}
+
+			nvrhi::StagingTextureHandle m_Staging;
+			nvrhi::EventQueryHandle m_Event;
+			uint32_t m_Width = 0;
+			uint32_t m_Height = 0;
+			TextureFormat m_Format = TextureFormat::Unknown;
+			bool m_Busy = false;
+		};
+
+		std::shared_ptr<TextureReadback> TextureReadback::Create()
+		{
+			return std::make_shared<NvrhiTextureReadback>();
+		}
+
 	}
 
 }

@@ -64,8 +64,8 @@ namespace
 namespace Dingo
 {
 
-	Wardens::Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool rangeClamp)
-		: m_Scene(scene), m_Map(map), m_Audio(audio), m_Frozen(frozen), m_RangeClamp(rangeClamp)
+	Wardens::Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool castShadows)
+		: m_Scene(scene), m_Map(map), m_Audio(audio), m_Frozen(frozen), m_CastShadows(castShadows)
 	{
 		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
 
@@ -107,7 +107,7 @@ namespace Dingo
 		}
 
 		Reset();
-		DE_INFO("Candlewick: {} wardens on patrol{}{}", m_Wardens.size(), frozen ? " (frozen)" : "", rangeClamp ? "" : " (range clamp off)");
+		DE_INFO("Candlewick: {} wardens on patrol{}{}", m_Wardens.size(), frozen ? " (frozen)" : "", castShadows ? "" : " (no shadows)");
 	}
 
 	Wardens::~Wardens()
@@ -168,11 +168,13 @@ namespace Dingo
 		}
 	}
 
-	void Wardens::AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material)
+	void Wardens::AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material, ShadowCasting shadows)
 	{
 		Entity entity = m_Scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size;
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color));
+		renderer.Material = material;
+		renderer.Shadows = shadows;
 		warden.Parts.push_back({ entity, offset });
 	}
 
@@ -185,12 +187,13 @@ namespace Dingo
 		AddPart(warden, "WardenTorso", box, { 0.0f, k_TorsoCenter, 0.0f }, k_TorsoSize, COLOR_ARMOUR, m_ArmourMaterial);
 		AddPart(warden, "WardenHelm", box, { 0.0f, k_HelmCenter, 0.0f }, k_HelmSize, COLOR_ARMOUR, m_ArmourMaterial);
 		AddPart(warden, "WardenVisor", box, { 0.0f, k_VisorCenter, -k_VisorForward }, k_VisorSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_VisorMaterial);
-		AddPart(warden, "WardenLampGlass", box, WARDEN_LAMP_OFFSET, k_LampGlassSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_LampMaterial);
-		AddPart(warden, "WardenLampCap", box, WARDEN_LAMP_OFFSET + glm::vec3(0.0f, k_LampCapRise, 0.0f), k_LampCapSize, COLOR_ARMOUR, m_ArmourMaterial);
+		// The lamp's glass and cap enclose its light, so they cast nothing.
+		AddPart(warden, "WardenLampGlass", box, WARDEN_LAMP_OFFSET, k_LampGlassSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_LampMaterial, ShadowCasting::Off);
+		AddPart(warden, "WardenLampCap", box, WARDEN_LAMP_OFFSET + glm::vec3(0.0f, k_LampCapRise, 0.0f), k_LampCapSize, COLOR_ARMOUR, m_ArmourMaterial, ShadowCasting::Off);
 
 		warden.Lamp = m_Scene.CreateEntity("WardenLamp");
 		warden.Lamp.AddComponent<Transform3DComponent>();
-		warden.Lamp.AddComponent<PointLightComponent>(PointLightComponent(WARDEN_LIGHT_COLOR, WARDEN_LAMP_INTENSITY, WARDEN_LAMP_RANGE));
+		warden.Lamp.AddComponent<PointLightComponent>(PointLightComponent(WARDEN_LIGHT_COLOR, WARDEN_LAMP_INTENSITY, WARDEN_LAMP_RANGE)).CastShadows = m_CastShadows;
 
 		warden.Eye = m_Scene.CreateEntity("WardenEye");
 		warden.Eye.AddComponent<Transform3DComponent>();
@@ -199,10 +202,11 @@ namespace Dingo
 		eye.OuterConeAngle = WARDEN_EYE_OUTER_DEG;
 		eye.Direction = glm::vec3(0.0f, 0.0f, -1.0f);
 		eye.Enabled = false;
+		eye.CastShadows = m_CastShadows;
 
 		warden.Marker = m_Scene.CreateEntity("WardenMarker");
 		warden.Marker.AddComponent<Transform3DComponent>().Scale = glm::vec3(WARDEN_MARKER_SIZE);
-		warden.Marker.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer3D.GetSphereMesh(), glm::vec4(MARKER_CALM_COLOR, 1.0f)));
+		warden.Marker.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer3D.GetSphereMesh(), glm::vec4(MARKER_CALM_COLOR, 1.0f))).Shadows = ShadowCasting::Off;
 
 		const glm::ivec2 start = warden.LoopTiles.front();
 		DE_INFO("Candlewick: warden {} patrols {} from ({}, {}), {} turns per loop", index + 1,
@@ -231,7 +235,7 @@ namespace Dingo
 		warden.StepDistance = 0.0f;
 
 		Place(warden);
-		ClampRange(warden, 0.0f, true);
+		Arm(warden);
 		UpdateMarker(warden);
 	}
 
@@ -267,7 +271,7 @@ namespace Dingo
 			}
 
 			Place(warden);
-			ClampRange(warden, deltaTime, false);
+			Arm(warden);
 		}
 	}
 
@@ -555,31 +559,15 @@ namespace Dingo
 		warden.Marker.GetComponent<Transform3DComponent>().Position = warden.Feet + glm::vec3(0.0f, WARDEN_MARKER_HEIGHT, 0.0f);
 	}
 
-	// The eye looks down at 25 degrees, so its own axis would always find the floor about 4 m out;
-	// the wall it faces is found by a level ray from the eye instead.
-	// The range shrinks at once, so the cone never shines through the wall it turns to face, but
-	// grows at a limited rate, so the range sphere never jumps into view and snaps a light off.
-	void Wardens::ClampRange(Warden& warden, float deltaTime, bool snap)
+	// The eye stays dark until the scene has physics, so a warden never sees through a wall before its
+	// sight ray can be cast. Its own shadow stops its light at the wall it faces.
+	void Wardens::Arm(Warden& warden)
 	{
-		float target = WARDEN_EYE_RANGE;
-		const Physics3D* physics = m_Scene.GetPhysics3D();
-		if (m_RangeClamp && physics)
-		{
-			const glm::vec3 origin = warden.Eye.GetComponent<Transform3DComponent>().Position;
-			const glm::vec3 forward = YawRotation(warden.Yaw) * glm::vec3(0.0f, 0.0f, -1.0f);
-			RayCastHit3D hit;
-			if (physics->RayCast(Ray(origin, forward), WARDEN_EYE_RANGE, hit))
-				target = std::min(WARDEN_EYE_RANGE, hit.Fraction * WARDEN_EYE_RANGE + WARDEN_EYE_RANGE_MARGIN);
-		}
+		if (warden.Armed || !m_Scene.GetPhysics3D())
+			return;
 
-		auto& eye = warden.Eye.GetComponent<SpotLightComponent>();
-		eye.Range = (snap || target <= eye.Range) ? target : std::min(target, eye.Range + WARDEN_EYE_RANGE_GROWTH * deltaTime);
-
-		if (!warden.Armed && (physics || !m_RangeClamp))
-		{
-			warden.Armed = true;
-			eye.Enabled = true;
-		}
+		warden.Armed = true;
+		warden.Eye.GetComponent<SpotLightComponent>().Enabled = true;
 	}
 
 	void Wardens::UpdateMarker(Warden& warden)

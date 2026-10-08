@@ -1,10 +1,14 @@
 #include "RenderTargetTest.h"
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <climits>
+#include <fstream>
+#include <functional>
 #include <cmath>
 #include <cstdlib>
 #include <format>
@@ -72,6 +76,88 @@ namespace Dingo
 			return sprite;
 		}
 
+		// Fullscreen passes: the vertex stage is the engine's own, pulled in by #include.
+		constexpr const char* k_FillShaderSource = R"(
+#type vertex
+#version 450
+#include <DingoEngine/Fullscreen.glsl>
+
+#type fragment
+#version 450
+layout(location = 0) in vec2 v_TexCoord;
+layout(std140, binding = 0) uniform FillData { vec4 Color; };
+layout(location = 0) out vec4 o_Color;
+void main() { o_Color = Color; }
+)";
+
+		// Slot 0 of a material without a scene buffer: texture binding 1, sampler binding 2.
+		constexpr const char* k_SampleShaderSource = R"(
+#type vertex
+#version 450
+#include <DingoEngine/Fullscreen.glsl>
+
+#type fragment
+#version 450
+layout(location = 0) in vec2 v_TexCoord;
+layout(binding = 1) uniform texture2D u_Source;
+layout(binding = 2) uniform sampler u_Sampler;
+layout(location = 0) out vec4 o_Color;
+void main() { o_Color = texture(sampler2D(u_Source, u_Sampler), v_TexCoord); }
+)";
+
+		constexpr float k_CompareReference = 0.999f;
+		constexpr const char* k_CompareShaderSource = R"(
+#type vertex
+#version 450
+#include <DingoEngine/Fullscreen.glsl>
+
+#type fragment
+#version 450
+layout(location = 0) in vec2 v_TexCoord;
+layout(binding = 1) uniform texture2D u_Depth;
+layout(binding = 2) uniform samplerShadow u_Compare;
+layout(location = 0) out vec4 o_Color;
+void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v_TexCoord, 0.999)), 0.0, 0.0, 1.0); }
+)";
+
+		constexpr uint32_t k_DepthSize = 64;
+
+		bool Near(float a, float b, float tolerance)
+		{
+			return std::abs(a - b) <= tolerance;
+		}
+
+		Framebuffer* MakeColorTarget(const char* name, TextureFormat format, uint32_t width, uint32_t height)
+		{
+			return Framebuffer::Create(FramebufferParams()
+				.SetDebugName(name)
+				.SetWidth(static_cast<int32_t>(width))
+				.SetHeight(static_cast<int32_t>(height))
+				.AddAttachment({ format }));
+		}
+
+		Material* MakeFullscreenMaterial(const char* name, Shader* shader, BlendMode blend = BlendMode::Opaque)
+		{
+			return Material::Create(MaterialParams()
+				.SetDebugName(name)
+				.SetShader(shader)
+				.SetCullMode(CullMode::None)
+				.SetDepthTest(false)
+				.SetDepthWrite(false)
+				.SetBlendMode(blend));
+		}
+
+		// Draws a fullscreen material into target, keeping the caller's render target.
+		void DrawFullscreen(Material* material, Framebuffer* target, const Viewport* viewport = nullptr)
+		{
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(target);
+			if (viewport)
+				Renderer::SetViewport(*viewport);
+			Renderer::Draw(material, 3);
+			Renderer::SetRenderTarget(previous);
+		}
+
 		Entity AddText(Scene& scene, const char* name, const std::string& text, Font* font, const glm::vec3& position, float size, const glm::vec4& color, float rotation = 0.0f)
 		{
 			Entity entity = scene.CreateEntity(name);
@@ -85,15 +171,6 @@ namespace Dingo
 			component.Color = color;
 			return entity;
 		}
-	}
-
-	void RenderTargetTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
 	}
 
 	void RenderTargetTest::Initialize()
@@ -131,6 +208,241 @@ namespace Dingo
 		BuildProbeScene();
 
 		RunImageFileChecks();
+		CreateGroundworkResources();
+	}
+
+	void RenderTargetTest::CreateGroundworkResources()
+	{
+		m_FormatTargets = {
+			{ TextureFormat::RGBA8_UNORM, "RGBA8" },
+			{ TextureFormat::RGBA16F, "RGBA16F" },
+			{ TextureFormat::RGBA32F, "RGBA32F" },
+			{ TextureFormat::R11G11B10F, "R11G11B10F" },
+			{ TextureFormat::R8, "R8" },
+			{ TextureFormat::R16F, "R16F" },
+			{ TextureFormat::R32F, "R32F" },
+		};
+		for (FormatTarget& target : m_FormatTargets)
+			target.Target = MakeColorTarget(target.Name, target.Format, 4, 4);
+
+		m_DepthSource = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("RenderTargetTest depth source")
+			.SetWidth(k_DepthSize)
+			.SetHeight(k_DepthSize)
+			.AddAttachment({ TextureFormat::RGBA8_UNORM })
+			.SetDepthSampleable(true));
+		m_DepthCopy = MakeColorTarget("RenderTargetTest depth copy", TextureFormat::R32F, k_DepthSize, k_DepthSize);
+		m_DepthCompare = MakeColorTarget("RenderTargetTest depth compare", TextureFormat::R16F, k_DepthSize, k_DepthSize);
+		m_ResizeTarget = MakeColorTarget("RenderTargetTest resized", TextureFormat::RGBA8_UNORM, 8, 8);
+		m_ResizeCopy = MakeColorTarget("RenderTargetTest resize copy", TextureFormat::RGBA8_UNORM, 16, 16);
+		m_ViewportTarget = MakeColorTarget("RenderTargetTest viewport", TextureFormat::RGBA8_UNORM, 16, 16);
+		m_BlendTarget = MakeColorTarget("RenderTargetTest blend", TextureFormat::RGBA16F, 4, 4);
+
+		m_FillShader = Shader::CreateFromSource("RenderTargetTestFill", k_FillShaderSource);
+		m_SampleShader = Shader::CreateFromSource("RenderTargetTestSample", k_SampleShaderSource);
+		m_CompareShader = Shader::CreateFromSource("RenderTargetTestCompare", k_CompareShaderSource);
+		Check(m_FillShader->IsValid() && m_SampleShader->IsValid() && m_CompareShader->IsValid(),
+			"inline shaders compile with #include <DingoEngine/Fullscreen.glsl> as their vertex stage");
+
+		m_FillMaterial = MakeFullscreenMaterial("RenderTargetTestFill", m_FillShader);
+		m_AddMaterial = MakeFullscreenMaterial("RenderTargetTestAdd", m_FillShader, BlendMode::Additive);
+		m_AddMaterial->SetUniform(glm::vec4(0.25f, 0.125f, 1.5f, 0.0f));
+
+		m_DepthCopyMaterial = MakeFullscreenMaterial("RenderTargetTestDepthCopy", m_SampleShader);
+		m_DepthCopyMaterial->SetTexture(0, m_DepthSource->GetDepthAttachment());
+		m_DepthCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
+
+		m_CompareSampler = Sampler::Create(SamplerParams().SetCompare(true).SetMinFilter(false).SetMagFilter(false).SetMipFilter(false));
+		m_CompareMaterial = MakeFullscreenMaterial("RenderTargetTestCompare", m_CompareShader);
+		m_CompareMaterial->SetTexture(0, m_DepthSource->GetDepthAttachment());
+		m_CompareMaterial->SetSampler(0, m_CompareSampler);
+
+		m_ResizeCopyMaterial = MakeFullscreenMaterial("RenderTargetTestResizeCopy", m_SampleShader);
+		m_ResizeCopyMaterial->SetTexture(0, m_ResizeTarget->GetAttachment(0));
+		m_ResizeCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
+
+		Check(m_DepthSource->GetDepthAttachment() && m_DepthSource->GetDepthAttachment()->GetParams().Format == TextureFormat::D32 && !m_ProbeTarget->GetDepthAttachment(),
+			"FramebufferParams::SetDepthSampleable gives a D32 depth texture, and a plain depth target gives none");
+		Check(m_ResizeTarget->GetWidth() == 8 && m_ResizeTarget->GetHeight() == 8 && m_ResizeTarget->GetAttachment(0)->GetWidth() == 8,
+			"a framebuffer reports its size from creation");
+
+		// A neighbour, #included by its path relative to the file, and a common file both stages include.
+		const std::filesystem::path part = m_TempDirectory / "include-part.glsl";
+		const std::filesystem::path common = m_TempDirectory / "include-common.glsl";
+		const std::filesystem::path main = m_TempDirectory / "include-main.glsl";
+		{
+			std::ofstream(common) << "const vec4 k_Shared = vec4(1.0);\n";
+			std::ofstream(part) << "layout(location = 0) out vec4 o_Color;\nvoid main() { o_Color = k_Shared; }\n";
+			std::ofstream(main) << "#type vertex\n#version 450\n#include \"include-common.glsl\"\n#include <DingoEngine/Fullscreen.glsl>\n\n"
+				"#type fragment\n#version 450\n#include \"include-common.glsl\"\n#include \"include-part.glsl\"\n#include \"include-part.glsl\"\n";
+		}
+		Shader* included = Shader::CreateFromFile("RenderTargetTestInclude", main);
+		const std::vector<std::filesystem::path>& files = included->GetIncludedFiles();
+		// Debug builds read <DingoEngine/...> from DE_ENGINE_SHADER_DIR, so the engine include is listed too.
+		auto countOf = [&](const std::filesystem::path& wanted)
+		{
+			return std::ranges::count_if(files, [&](const std::filesystem::path& file)
+			{
+				std::error_code error;
+				return std::filesystem::equivalent(file, wanted, error);
+			});
+		};
+		const auto partCount = countOf(part);
+		const auto commonCount = countOf(common);
+		Check(included->IsValid() && partCount == 1 && commonCount == 1,
+			std::format("a shader file #includes a neighbour by relative path, once per stage, every stage that asks gets it, and each file is listed once for hot-reload ({} and {} of {} file(s))", partCount, commonCount, files.size()));
+		DestroyAndDelete(included);
+	}
+
+	void RenderTargetTest::ReadBack(Framebuffer* target, std::function<void(const TexturePixels&)> check)
+	{
+		const std::weak_ptr<int> alive = m_Alive;
+		target->GetAttachment(0)->ReadPixels([alive, check = std::move(check)](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				check(pixels);
+		});
+	}
+
+	void RenderTargetTest::RunGroundworkChecks()
+	{
+		// Every format clears and reads back; float formats keep a value past 1. Clears write alpha 1.
+		for (const FormatTarget& target : m_FormatTargets)
+		{
+			const bool unorm = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::R8;
+			const glm::vec3 clear = unorm ? glm::vec3(0.25f, 0.5f, 0.75f) : glm::vec3(2.5f, 0.5f, 0.75f);
+			Renderer::Clear(target.Target, glm::vec4(clear, 1.0f));
+
+			const bool singleChannel = target.Format == TextureFormat::R8 || target.Format == TextureFormat::R16F || target.Format == TextureFormat::R32F;
+			const char* name = target.Name;
+			const TextureFormat format = target.Format;
+			ReadBack(target.Target, [this, clear, unorm, singleChannel, name, format](const TexturePixels& pixels)
+			{
+				const glm::vec4 value = pixels.GetPixel(1, 2);
+				const float tolerance = unorm ? 1.5f / 255.0f : 1e-3f;
+				const bool red = Near(value.r, clear.r, tolerance);
+				const bool rest = singleChannel || (Near(value.g, clear.g, tolerance) && Near(value.b, clear.b, tolerance));
+				Check(pixels.Format == format && red && rest,
+					std::format("{} clears to ({}, {}, {}) and reads back ({:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b));
+			});
+		}
+
+		// A box in front of the camera into a target whose depth can be sampled, then the depth copied
+		// out through a point sampler and through a comparison sampler.
+		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer::SetRenderTarget(m_DepthSource);
+		const glm::mat4 viewProjection = glm::perspective(glm::radians(45.0f), 1.0f, 0.5f, 10.0f) * glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		renderer3D.BeginScene(viewProjection);
+		renderer3D.Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+		renderer3D.DrawBox(glm::scale(glm::mat4(1.0f), glm::vec3(1.2f)), { 1.0f, 1.0f, 1.0f, 1.0f });
+		renderer3D.EndScene();
+		Renderer::SetRenderTarget(previous);
+
+		DrawFullscreen(m_DepthCopyMaterial, m_DepthCopy);
+		ReadBack(m_DepthCopy, [this](const TexturePixels& pixels)
+		{
+			const float center = pixels.GetPixel(k_DepthSize / 2, k_DepthSize / 2).r;
+			const float corner = pixels.GetPixel(1, 1).r;
+			Check(center > 0.0f && center < 0.99f && corner == 1.0f,
+				std::format("a sampleable depth attachment samples as depth: {:.4f} on the box, {:.4f} where it was cleared", center, corner));
+		});
+
+		DrawFullscreen(m_CompareMaterial, m_DepthCompare);
+		ReadBack(m_DepthCompare, [this](const TexturePixels& pixels)
+		{
+			const float center = pixels.GetPixel(k_DepthSize / 2, k_DepthSize / 2).r;
+			const float corner = pixels.GetPixel(1, 1).r;
+			Check(center == 0.0f && corner == 1.0f,
+				std::format("a comparison sampler is 1 where the reference {} is less than the depth and 0 where not ({} on the box, {} cleared)", k_CompareReference, center, corner));
+		});
+
+		// The material sampling m_ResizeTarget has a cached pass for its texture; after the resize the
+		// same Texture holds new contents and the pass must rebind it.
+		Renderer::Clear(m_ResizeTarget, { 1.0f, 0.0f, 0.0f, 1.0f });
+		DrawFullscreen(m_ResizeCopyMaterial, m_ResizeCopy);
+		Texture* before = m_ResizeTarget->GetAttachment(0);
+		const uint32_t generation = before->GetGeneration();
+		m_ResizeTarget->Resize(32, 24);
+		Texture* after = m_ResizeTarget->GetAttachment(0);
+		Check(after == before && after->GetGeneration() != generation && after->GetWidth() == 32 && after->GetHeight() == 24 && m_ResizeTarget->GetWidth() == 32,
+			"Framebuffer::Resize keeps its attachment's Texture, with a new generation and the new size");
+		Renderer::Clear(m_ResizeTarget, { 0.0f, 1.0f, 0.0f, 1.0f });
+		DrawFullscreen(m_ResizeCopyMaterial, m_ResizeCopy);
+		ReadBack(m_ResizeCopy, [this](const TexturePixels& pixels)
+		{
+			const glm::vec4 value = pixels.GetPixel(8, 8);
+			Check(value.r < 0.1f && value.g > 0.9f,
+				std::format("a material sampling a framebuffer resized under it draws the new contents ({:.2f}, {:.2f}, {:.2f})", value.r, value.g, value.b));
+		});
+
+		// Only the left half of the target is drawn.
+		Renderer::Clear(m_ViewportTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		m_FillMaterial->SetUniform(glm::vec4(1.0f));
+		const Viewport leftHalf{ 0.0f, 0.0f, 8.0f, 16.0f };
+		DrawFullscreen(m_FillMaterial, m_ViewportTarget, &leftHalf);
+		ReadBack(m_ViewportTarget, [this](const TexturePixels& pixels)
+		{
+			const float left = pixels.GetPixel(3, 8).r;
+			const float right = pixels.GetPixel(12, 8).r;
+			Check(left > 0.99f && right < 0.01f, std::format("Renderer::SetViewport limits a draw to its rectangle (left {:.2f}, right {:.2f})", left, right));
+		});
+
+		// A target of other formats, likely at the address of the one the material drew into before.
+		Framebuffer* freed = MakeColorTarget("RenderTargetTest freed", TextureFormat::RGBA16F, 16, 16);
+		DrawFullscreen(m_FillMaterial, freed);
+		const uint64_t freedId = freed->GetId();
+		DestroyAndDelete(freed);
+		m_ReusedTarget = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("RenderTargetTest reused")
+			.SetWidth(16)
+			.SetHeight(16)
+			.AddAttachment({ TextureFormat::RGBA8_UNORM })
+			.SetEnableDepth(true));
+		Check(m_ReusedTarget->GetId() != freedId, "a new framebuffer never takes a freed one's id");
+		Renderer::Clear(m_ReusedTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		DrawFullscreen(m_FillMaterial, m_ReusedTarget);
+		ReadBack(m_ReusedTarget, [this](const TexturePixels& pixels)
+		{
+			const float value = pixels.GetPixel(8, 8).r;
+			Check(value > 0.99f, std::format("a material draws into a framebuffer made after the one it last drew into was freed ({:.2f})", value));
+		});
+
+		// Two additive draws of (0.25, 0.125, 1.5) over black.
+		Renderer::Clear(m_BlendTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		DrawFullscreen(m_AddMaterial, m_BlendTarget);
+		DrawFullscreen(m_AddMaterial, m_BlendTarget);
+		ReadBack(m_BlendTarget, [this](const TexturePixels& pixels)
+		{
+			const glm::vec4 value = pixels.GetPixel(2, 2);
+			Check(Near(value.r, 0.5f, 1e-3f) && Near(value.g, 0.25f, 1e-3f) && Near(value.b, 3.0f, 1e-3f),
+				std::format("BlendMode::Additive adds, past 1 in RGBA16F ({:.3f}, {:.3f}, {:.3f})", value.r, value.g, value.b));
+		});
+	}
+
+	void RenderTargetTest::DestroyGroundworkResources()
+	{
+		for (FormatTarget& target : m_FormatTargets)
+			DestroyAndDelete(target.Target);
+		m_FormatTargets.clear();
+
+		DestroyAndDelete(m_FillMaterial);
+		DestroyAndDelete(m_AddMaterial);
+		DestroyAndDelete(m_DepthCopyMaterial);
+		DestroyAndDelete(m_CompareMaterial);
+		DestroyAndDelete(m_ResizeCopyMaterial);
+		DestroyAndDelete(m_CompareSampler);
+		DestroyAndDelete(m_FillShader);
+		DestroyAndDelete(m_SampleShader);
+		DestroyAndDelete(m_CompareShader);
+		DestroyAndDelete(m_DepthSource);
+		DestroyAndDelete(m_DepthCopy);
+		DestroyAndDelete(m_DepthCompare);
+		DestroyAndDelete(m_ResizeTarget);
+		DestroyAndDelete(m_ResizeCopy);
+		DestroyAndDelete(m_ViewportTarget);
+		DestroyAndDelete(m_BlendTarget);
+		DestroyAndDelete(m_ReusedTarget);
 	}
 
 	Scene* RenderTargetTest::BuildShowScene(const char* name, const glm::vec4& clearColor, Mesh* mesh, const glm::vec4& color, Entity& spinner)
@@ -259,6 +571,8 @@ namespace Dingo
 		if (!m_ProbeRequested && !Renderer::IsFrameSkipped())
 		{
 			m_ProbeRequested = true;
+			RunGroundworkChecks();
+
 			Texture* probe = m_ProbeTarget->GetAttachment(0);
 			const std::weak_ptr<int> alive = m_Alive;
 			probe->ReadPixels([this, alive](const TexturePixels& pixels)
@@ -308,6 +622,7 @@ namespace Dingo
 		DestroyAndDelete(m_TargetB);
 		DestroyAndDelete(m_Container);
 		DestroyAndDelete(m_Font);
+		DestroyGroundworkResources();
 
 		std::error_code error;
 		std::filesystem::remove_all(m_TempDirectory, error);

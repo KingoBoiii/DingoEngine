@@ -29,6 +29,7 @@ namespace Dingo
 		m_Indices = std::move(source.m_Indices);
 		m_SkinVertices = std::move(source.m_SkinVertices);
 		m_SkinJointCount = source.m_SkinJointCount;
+		ComputeBounds();
 		m_Id = AllocateId();
 		DestroyAndDelete(m_SkinVertexBuffer);
 		DestroyAndDelete(m_SkinIndexBuffer);
@@ -40,11 +41,26 @@ namespace Dingo
 		Reinitialize(empty);
 	}
 
+	void Mesh::ComputeBounds()
+	{
+		m_BoundsMin = glm::vec3(1.0f);
+		m_BoundsMax = glm::vec3(-1.0f);
+		if (m_Vertices.empty())
+			return;
+		m_BoundsMin = m_BoundsMax = m_Vertices.front().Position;
+		for (const MeshVertex& vertex : m_Vertices)
+		{
+			m_BoundsMin = glm::min(m_BoundsMin, vertex.Position);
+			m_BoundsMax = glm::max(m_BoundsMax, vertex.Position);
+		}
+	}
+
 	Mesh* Mesh::Create(const std::vector<MeshVertex>& vertices, const std::vector<uint32_t>& indices)
 	{
 		Mesh* mesh = new Mesh();
 		mesh->m_Vertices = vertices;
 		mesh->m_Indices = indices;
+		mesh->ComputeBounds();
 		return mesh;
 	}
 
@@ -61,6 +77,7 @@ namespace Dingo
 			for (int k = 0; k < 4; ++k)
 				mesh->m_SkinJointCount = std::max<uint32_t>(mesh->m_SkinJointCount, vertex.Joints[k] + 1u);
 		}
+		mesh->ComputeBounds();
 		return mesh;
 	}
 

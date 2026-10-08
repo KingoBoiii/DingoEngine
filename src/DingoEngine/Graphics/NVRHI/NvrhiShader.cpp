@@ -3,8 +3,10 @@
 
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/ShaderCompiler.h"
+#include "DingoEngine/Graphics/ShaderIncludes.h"
 #include "NvrhiGraphicsContext.h"
 
 namespace Dingo
@@ -19,6 +21,7 @@ namespace Dingo
 			{
 				case ShaderType::Vertex: return nvrhi::ShaderType::Vertex;
 				case ShaderType::Fragment: return nvrhi::ShaderType::Pixel;
+				case ShaderType::Compute: return nvrhi::ShaderType::Compute;
 				default: break;
 			}
 
@@ -89,10 +92,8 @@ namespace Dingo
 		// Without defines it is the hash shaders had before defines existed, so their caches stay
 		// valid.
 		//
-		// This covers the top-level source only. It cannot see an #include, and neither can
-		// the hot-reload poll, which stats one file - so editing an included file would serve
-		// stale bytecode. A non-issue purely because ShaderCompiler registers no includer
-		// (includes fail to compile today); registering one has to bring both along.
+		// The source has its #includes pasted in already (ExpandShaderIncludes), so an edit to an
+		// included file changes the hash; a source with none hashes as it always did.
 		static uint64_t ComputeShaderSourceHash(const std::string& source, const std::string& entryPoint, const std::vector<ShaderDefine>& defines)
 		{
 			const uint64_t hash = HashFNV1a(entryPoint, HashFNV1a(source));
@@ -306,7 +307,9 @@ namespace Dingo
 			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
 		}
 
-		std::unordered_map<ShaderType, std::string> sources = GetShaderSources();
+		std::vector<std::filesystem::path> includedFiles;
+		std::unordered_map<ShaderType, std::string> sources = GetShaderSources(includedFiles);
+		m_IncludedFiles = std::move(includedFiles);
 		if (sources.empty())
 		{
 			DE_CORE_ERROR("No shader sources found. Cannot initialize shader.");
@@ -336,6 +339,17 @@ namespace Dingo
 		std::vector<uint32_t> vertexInputLocations;
 		bool vertexInputsReflected = false;
 		std::vector<std::pair<std::string, uint32_t>> uniformBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> textureBindings;
+		std::vector<std::pair<std::string, uint32_t>> samplerBindings;
+		std::vector<std::pair<std::string, uint32_t>> storageBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> storageImageBindings;
+		std::vector<uint32_t> writableStorageBuffers;
+		auto addBinding = [](std::vector<std::pair<std::string, uint32_t>>& bindings, const ShaderResourceBinding& resource)
+		{
+			const bool known = std::any_of(bindings.begin(), bindings.end(), [&](const auto& entry) { return entry.first == resource.Name; });
+			if (!known)
+				bindings.emplace_back(resource.Name, resource.Binding);
+		};
 		for (const auto& [shaderType, stage] : spvStages)
 		{
 			nvrhi::ShaderHandle handle;
@@ -393,12 +407,21 @@ namespace Dingo
 				}
 
 				for (const ShaderResourceBinding& uniformBuffer : reflection.UniformBuffers)
+					addBinding(uniformBufferBindings, uniformBuffer);
+				for (const ShaderImageBinding& image : reflection.SeparateImages)
+					addBinding(textureBindings, image);
+				for (const ShaderImageBinding& image : reflection.SampledImages)
+					addBinding(textureBindings, image);
+				for (const ShaderImageBinding& sampler : reflection.SeparateSamplers)
+					addBinding(samplerBindings, sampler);
+				for (const ShaderStorageBinding& storage : reflection.StorageBuffers)
 				{
-					const bool known = std::any_of(uniformBufferBindings.begin(), uniformBufferBindings.end(),
-						[&](const auto& entry) { return entry.first == uniformBuffer.Name; });
-					if (!known)
-						uniformBufferBindings.emplace_back(uniformBuffer.Name, uniformBuffer.Binding);
+					addBinding(storageBufferBindings, storage);
+					if (!storage.ReadOnly && std::find(writableStorageBuffers.begin(), writableStorageBuffers.end(), storage.Binding) == writableStorageBuffers.end())
+						writableStorageBuffers.push_back(storage.Binding);
 				}
+				for (const ShaderStorageBinding& storage : reflection.StorageImages)
+					addBinding(storageImageBindings, storage);
 
 				reflections.push_back(reflection);
 			}
@@ -409,6 +432,11 @@ namespace Dingo
 		m_VertexInputLocations = std::move(vertexInputLocations);
 		m_VertexInputsReflected = vertexInputsReflected;
 		m_UniformBufferBindings = std::move(uniformBufferBindings);
+		m_TextureBindings = std::move(textureBindings);
+		m_SamplerBindings = std::move(samplerBindings);
+		m_StorageBufferBindings = std::move(storageBufferBindings);
+		m_StorageImageBindings = std::move(storageImageBindings);
+		m_WritableStorageBuffers = std::move(writableStorageBuffers);
 
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.
@@ -447,9 +475,12 @@ namespace Dingo
 			return nullptr; // No resources to create binding set
 		}
 
+		// GLSL bindings are the Vulkan bindings as they are: every kind of resource shares one numbering.
 		nvrhi::VulkanBindingOffsets vulkanBindingOffsets = nvrhi::VulkanBindingOffsets()
+			.setShaderResourceOffset(0)
 			.setSamplerOffset(0)
-			.setConstantBufferOffset(0);
+			.setConstantBufferOffset(0)
+			.setUnorderedAccessViewOffset(0);
 
 		nvrhi::BindingLayoutDesc bindingLayoutDesc = nvrhi::BindingLayoutDesc()
 			.setRegisterSpace(0) // set = 0
@@ -460,6 +491,17 @@ namespace Dingo
 		// A resource several stages declare (Renderer3D's scene UBO) is reflected once per
 		// stage, but a layout may name each binding only once; the item is visible to every
 		// stage anyway, so it keeps the largest array size any stage declared.
+		// A storage buffer one stage only reads and another writes binds once, as the writer's view.
+		std::vector<uint32_t> writable;
+		for (const auto& shaderReflection : reflections)
+		{
+			for (const auto& storageBuffer : shaderReflection.StorageBuffers)
+			{
+				if (!storageBuffer.ReadOnly)
+					writable.push_back(storageBuffer.Binding);
+			}
+		}
+
 		auto addItem = [&bindingLayoutDesc](const nvrhi::BindingLayoutItem& item)
 		{
 			for (nvrhi::BindingLayoutItem& existing : bindingLayoutDesc.bindings)
@@ -482,7 +524,13 @@ namespace Dingo
 
 			for (const auto& storageBuffer : shaderReflection.StorageBuffers)
 			{
-				addItem(nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
+				const bool readOnly = std::find(writable.begin(), writable.end(), storageBuffer.Binding) == writable.end();
+				addItem(readOnly ? nvrhi::BindingLayoutItem::RawBuffer_SRV(storageBuffer.Binding) : nvrhi::BindingLayoutItem::RawBuffer_UAV(storageBuffer.Binding));
+			}
+
+			for (const auto& storageImage : shaderReflection.StorageImages)
+			{
+				addItem(nvrhi::BindingLayoutItem::Texture_UAV(storageImage.Binding));
 			}
 
 			for (const auto& pushConstantBuffer : shaderReflection.PushConstantBuffers)
@@ -534,12 +582,15 @@ namespace Dingo
 		return result;
 	}
 
-	std::unordered_map<ShaderType, std::string> NvrhiShader::GetShaderSources() const
+	std::unordered_map<ShaderType, std::string> NvrhiShader::GetShaderSources(std::vector<std::filesystem::path>& includedFiles) const
 	{
+		const std::string name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
+
 		if (m_Params.FilePath.empty())
 		{
-			// If the shader is created from source code, return the preprocessed sources
-			return PreProcess(m_Params.SourceCode);
+			// An engine shader built from the library's copy (Release) has no file, but its quoted includes
+			// still name its engine neighbours, as they do when it is read from the source tree.
+			return ExpandStages(PreProcess(m_Params.SourceCode), {}, Internal::IsEmbeddedEngineShaderSource(m_Params.SourceCode), name, includedFiles);
 		}
 
 		// Soft failures (build aborts, previous program stays): hot-reload can race an
@@ -557,7 +608,20 @@ namespace Dingo
 			return {};
 		}
 
-		return PreProcess(source);
+		return ExpandStages(PreProcess(source), m_Params.FilePath, false, name, includedFiles);
+	}
+
+	// Each stage is expanded on its own, so a file both stages #include reaches both.
+	std::unordered_map<ShaderType, std::string> NvrhiShader::ExpandStages(std::unordered_map<ShaderType, std::string> sources, const std::filesystem::path& sourcePath, bool engineSource, const std::string& name, std::vector<std::filesystem::path>& includedFiles)
+	{
+		for (auto& [type, stage] : sources)
+		{
+			std::optional<std::string> expanded = Internal::ExpandShaderIncludes(stage, sourcePath, name, includedFiles, engineSource);
+			if (!expanded)
+				return {};
+			stage = std::move(*expanded);
+		}
+		return sources;
 	}
 
 	// Malformed source logs an error and yields no sources rather than asserting: Build treats that as
