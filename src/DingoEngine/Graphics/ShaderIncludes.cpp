@@ -139,6 +139,11 @@ namespace Dingo::Internal
 
 			bool PasteFile(const std::filesystem::path& file, const Origin& origin, const std::string& requested, uint32_t depth, std::string& out)
 			{
+				// Watched before it is looked for or read, so creating a missing file, or fixing one that
+				// fails to read, reloads the shader (a missing file reads as the epoch).
+				if (std::ranges::find(m_IncludedFiles, file) == m_IncludedFiles.end())
+					m_IncludedFiles.push_back(file);
+
 				std::error_code ec;
 				if (!std::filesystem::exists(file, ec))
 				{
@@ -146,9 +151,6 @@ namespace Dingo::Internal
 					return false;
 				}
 
-				// Watched before it is read, so a fix to a file that fails to read still reloads.
-				if (std::ranges::find(m_IncludedFiles, file) == m_IncludedFiles.end())
-					m_IncludedFiles.push_back(file);
 				const std::string text = FileSystem::ReadTextFile(file);
 				return Expand(text, origin, depth + 1, out);
 			}

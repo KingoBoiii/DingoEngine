@@ -19,7 +19,8 @@ namespace Dingo::Internal
 	//                                       neighbours for a line inside one
 	//   #include <DingoEngine/Shadows.glsl> an engine shader (EngineShaders.h)
 	//
-	// includedFiles receives every file read from disk, for the hot-reload watch. Returns nullopt, with
+	// includedFiles receives every file read from disk, or looked for and missing, for the hot-reload
+	// watch. Returns nullopt, with
 	// the reason logged, when a file can't be found or includes nest past 32 levels. engineSource marks
 	// a source without a file that is an engine shader's embedded copy: its quoted includes are engine
 	// shaders, as they are when the file is read from the source tree.
