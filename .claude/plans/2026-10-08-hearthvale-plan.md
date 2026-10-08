@@ -363,6 +363,30 @@ Suggested commit trail:
 7. `feat(examples): saves, options and the festival in Hearthvale`
 8. `chore(examples): balance and review fixes for Hearthvale`
 
+
+### 4.1 Cloud or GPU machine
+
+The labels and the cloud environment are as in the v1.0 plan's §3.2: **Cloud**, **Cloud, GPU
+sign-off**, or **GPU machine**. A game is judged by looking at it, listening to it and playing it,
+so more of *Hearthvale* needs the GPU machine than the engine phases do.
+
+| # | Where | What needs the GPU machine (or a person) |
+|---|---|---|
+| H0 | **Web access, then GPU machine** | Downloading the packs and reading their licences needs kenney.nl, itch.io and opengameart.org, which the planning container's network blocked. That means the owner, or a cloud environment with those hosts allowed. The Kenney and KayKit side-by-side frame is an art call on real hardware. Scaffold, premake and the asset checks are Cloud |
+| H1 | Cloud, GPU sign-off | The "Release ≥ 120 fps" target; checking that the stepped sun doesn't make cascades crawl, on a real GPU |
+| H2 | Cloud, GPU sign-off | "500 placements without a dropped frame" is a timing |
+| H3 | Cloud | — (growth and the day roll are deterministic and checked by `--days`) |
+| H4 | Cloud, GPU sign-off | The pad-only check is simulated; one pass with a **real pad** |
+| H5 | **GPU machine** | Lights, mist, bloom, particles and the light budget at night are tuned by eye; music and ambience levels by ear. The cloud can wire it all; it can't tune it |
+| H6 | Cloud, GPU sign-off | Saves, options, packaging and the ending are Cloud. Windows packaging runs in the release job. The itch.io page (cover, screenshots) needs captures from the GPU machine and the owner's account |
+| H7 | **GPU machine** | `--perf` on three backends, the 60-minute soak, and a person's full-year playthrough on a pad. Balancing from `--days=56` logs is Cloud |
+
+**Sign-off rhythm**:
+
+- H1–H4 join the engine's batches (S2 and S3).
+- H5 and H7 are GPU-machine work in their own right: about 2 and 3 days of the owner's time, plus
+  whatever the cloud prepares for them.
+
 ---
 
 ## 5. Checks (`--check`)
