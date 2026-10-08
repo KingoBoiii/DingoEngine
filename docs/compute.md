@@ -72,8 +72,9 @@ Renderer::Draw(material, 6, 16); // 16 instances: gl_InstanceIndex picks each on
   shader-resource view (HLSL `ByteAddressBuffer`, a `t` register); one any stage writes binds as an
   unordered-access view (`RWByteAddressBuffer`, a `u` register). `Shader::IsStorageBufferReadOnly`
   says which.
-- **Writes happen in compute.** D3D11 has no writable views in the vertex stage; in the fragment
-  stage they share slots with render targets. Write in a kernel, read in the draw.
+- **Writes happen in compute.** A draw only reads storage buffers: D3D11 has no writable views in
+  the vertex stage and puts a fragment stage's after its render targets, and the Vulkan device isn't
+  created with `fragmentStoresAndAtomics`. Write in a kernel, read in the draw.
 - **D3D11 has 8 writable slots in compute** (`u0`..`u7`): keep writable bindings below 8.
 - **One binding numbering.** GLSL binding numbers are used as they are on every backend: on Vulkan
   every kind of resource shares them, on D3D each kind (`b`, `t`, `s`, `u`) has its own registers
@@ -84,7 +85,9 @@ Renderer::Draw(material, 6, 16); // 16 instances: gl_InstanceIndex picks each on
   before the first frame, else at the next frame's start. The bytes are copied, so the source can go
   as soon as the call returns; the one-argument `Renderer::Upload(buffer)` has nothing to re-send.
 - A storage image's format comes from its GLSL layout qualifier (`rgba8`, `rgba16f`, `r32f`...) and
-  must match the texture's.
+  must match the texture's. RGBA8, RGBA16F, RGBA32F and R32F work on every backend; R8, R16F and
+  R11G11B10F need Vulkan's `shaderStorageImageExtendedFormats`, which the device enables where the
+  GPU has it.
 
 ## Checking it
 
