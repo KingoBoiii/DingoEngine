@@ -13,12 +13,28 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <span>
 #include <unordered_map>
 #include <vector>
 
 namespace Dingo
 {
+
+	namespace Internal
+	{
+		class FullscreenShader;
+	}
+
+	// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
+	struct ShadowProbeLight
+	{
+		int32_t Index = -1; // among the scene's directional lights, or its point and spot lights; -1 = none
+		bool Directional = false;
+
+		bool IsValid() const { return Index >= 0; }
+	};
 
 	struct Renderer3DCapabilities
 	{
@@ -174,6 +190,27 @@ namespace Dingo
 		// Capabilities.LightBudgetFade, clamped to 0..4.
 		void SetLightBudgetFade(float band);
 
+		// The light the latest SubmitLight call added to the scene being built, for AddShadowProbe;
+		// invalid when that call ignored or dropped its light.
+		ShadowProbeLight GetLastSubmittedLight() const { return m_LastSubmittedLight; }
+
+		static constexpr uint32_t k_MaxShadowProbes = 256;
+
+		// Shadow probes: how much of `light` reaches `point` past the shadows this scene draws, from 1
+		// (lit) to 0 (in its shadow, ShadowStrength of the way), worked out on the GPU by the lit
+		// shader's own shadow lookup, so the shadow a player sees is the one that hides them. Add a
+		// probe before EndScene, as lights are (it clears with them), and read the answer by its key
+		// with GetShadowProbeResult: the GPU answers a frame or two later, never stalling, and a key
+		// keeps its latest answer until the next one arrives. A light drawn without a shadow (no
+		// CastShadows, past the shadow slots, out of the budget) answers 1 at once, which is what is
+		// drawn. The point is taken as it is, with no surface normal to push it off a surface, so
+		// probe a point in the air, such as a character's chest. At most k_MaxShadowProbes a scene;
+		// past them AddShadowProbe returns false and warns once.
+		bool AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key);
+		// The latest answer for key; empty until the first one arrives. Answers not refreshed for 600
+		// frames are forgotten.
+		std::optional<float> GetShadowProbeResult(uint64_t key) const;
+
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
@@ -279,6 +316,7 @@ namespace Dingo
 			uint32_t ShadowedLights = 0;      // point and spot lights drawn with a shadow
 			uint32_t UnshadowedLights = 0;    // casting point and spot lights drawn without one: past MaxShadowedLocalLights, or no atlas room
 			uint32_t FadedLights = 0;         // drawn point and spot lights the budget fade dimmed (LightBudgetFade)
+			uint32_t ShadowProbes = 0;        // probes the GPU evaluates this scene; ones answered at once aren't counted
 			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
 			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
@@ -584,6 +622,46 @@ namespace Dingo
 		int32_t m_ShadowLight = -1; // the directional light (submission index) that casts this scene
 		float m_ShadowStrength = 1.0f;
 		bool m_SecondShadowLightWarned = false;
+
+		// ── Shadow probes ─────────────────────────────────────────────────────
+
+		struct ShadowProbe
+		{
+			ShadowProbeLight Light;
+			glm::vec3 Point{ 0.0f };
+			uint64_t Key = 0;
+		};
+		// std140, mirrored by ProbeData in Renderer3D_ShadowProbe.glsl.
+		struct ShadowProbeData
+		{
+			glm::vec4 Probes[k_MaxShadowProbes]; // xyz = the point, w = -1: the shadowed directional light, else a local light slot
+		};
+		struct ShadowProbeAnswer
+		{
+			float Value = 1.0f;
+			uint64_t Frame = 0;
+		};
+		struct ShadowProbeAnswers
+		{
+			std::unordered_map<uint64_t, ShadowProbeAnswer> ByKey;
+		};
+
+		// Before ClearSceneLights, while the scene's light slots are known: answers what it can at once
+		// and keeps the rest for DrawShadowProbes.
+		void ResolveShadowProbes();
+		void DrawShadowProbes();
+
+		ShadowProbeLight m_LastSubmittedLight;
+		std::vector<ShadowProbe> m_ShadowProbes;
+		std::vector<uint64_t> m_GpuProbeKeys;
+		ShadowProbeData m_ShadowProbeData;
+		std::shared_ptr<ShadowProbeAnswers> m_ProbeAnswers = std::make_shared<ShadowProbeAnswers>();
+		uint64_t m_ProbePruneFrame = 0;
+		bool m_ProbeOverflowWarned = false;
+		Internal::FullscreenShader* m_ProbeShader = nullptr;
+		Material* m_ProbeMaterial = nullptr;
+		GraphicsBuffer* m_ProbeBuffer = nullptr;
+		Framebuffer* m_ProbeTarget = nullptr;
 
 		// Each local light's last tile tier, by submission index, while the scene submits as many
 		// local lights as the last one did: a light keeps its tile size until its rank moves two places.

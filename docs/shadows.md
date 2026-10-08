@@ -78,6 +78,44 @@ last argument.
 Every material casts through the renderer's own depth-only pass: a custom vertex shader's
 displacement isn't in its shadow, and a translucent mesh casts a full shadow.
 
+## Is this point in shadow?
+
+A gameplay question, such as "can the brazier see the player", should get the answer the player
+sees on screen. A physics ray tests colliders, not drawn meshes, and knows nothing of bias,
+filtering, cascades or a light that lost its shadow slot this frame. **Shadow probes** ask the
+renderer itself: the GPU runs the lit shader's own shadow lookup at the point and the answer is read
+back.
+
+```cpp
+// Every frame you care about, with a key per point you track for the same light:
+const float seen = scene->GetLightVisibility(brazier, playerChest);          // 1 lit .. 0 in its shadow
+const float lit = scene->GetShadowedLightAttenuation(brazier, playerChest);  // falloff x cone x visibility
+```
+
+- **Late, never stalling.** Each call asks for the next frame and returns the latest answer for
+  that light and key: one or two frames old, and 1 before the first arrives. The question goes out
+  with the scene's next `SubmitLights` (the `SceneRenderer`'s 3D pass), so a scene that isn't
+  rendered doesn't answer.
+- **What is drawn.** A light drawn without a shadow (no `CastShadows`, past the shadow slots, or out
+  of the light budget) answers 1 at once; `ShadowStrength` scales the answer the way it scales the
+  shadow, and the PCF edge reads in between.
+- **A point in the air.** The point has no surface normal to push it off a surface, so a point on
+  the floor can read the floor's own depth; ask about a character's chest, not its feet.
+- **Budget.** 256 probes a scene (warns once past them). Answers not asked for in 600 frames are
+  forgotten.
+
+Without the ECS, ask `Renderer3D` directly, between submitting the light and `EndScene`:
+
+```cpp
+renderer.SubmitLight(lamp);
+renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), point, key); // any 64-bit key you choose
+// ... a frame or two later:
+if (std::optional<float> lit = renderer.GetShadowProbeResult(key)) { /* 0..1 */ }
+```
+
+The probes draw into a 256 x 1 R8 target after the shadow atlas and read it back through
+`Texture::ReadPixels`; `Statistics::ShadowProbes` counts those the GPU answered.
+
 ## Tuning
 
 `Renderer3DParams::Shadows` (`Renderer3DShadowSettings`), or `Renderer3D::SetShadowSettings` at
@@ -137,10 +175,12 @@ shader can only be drawn through `Renderer3D`, which provides them.
 
 ## Checking it
 
-The test app's **Shadow Test** (`--test=shadow`) has six scenes: `--shadow=sun` (a box, pillars to
+The test app's **Shadow Test** (`--test=shadow`) has seven scenes: `--shadow=sun` (a box, pillars to
 40 m and a sphere), `--shadow=acne` (a plane the sun grazes at 80 degrees), `--shadow=skinned` (the
 Fox walking), `--shadow=spot` (a spot light past a box), `--shadow=point` (a point light among four
-pillars) and `--shadow=budget` (twelve casting spot lights for eight slots). `--shadow-cascades` tints
+pillars), `--shadow=budget` (twelve casting spot lights for eight slots) and `--shadow=probe` (the
+sun scene with a row of shadow probes across the box's shadow edge, drawn as spheres from red to
+green). `--shadow-cascades` tints
 by cascade and `--shadow-pan` pans the camera slowly. On start it draws each scene with its lights
 casting and without and checks by readback that the floor behind a box, and behind a pillar in a far
 cascade, goes dark; that the floor in the sun is unchanged to the byte; that a `ShadowsOnly` box
@@ -149,5 +189,8 @@ that the Fox casts; that the spot light's box and each of the point light's pill
 cube faces, while the open floor, across the faces' seams and below the light, is unchanged; that
 eight of twelve casting lights get a shadow and the other four light unshadowed; that the same
 still scene draws the same frame twice; and that the budget fade dims lights at the budget's edge.
+Over the next frames it checks that probes read 0 behind the sun's box, the spot light's box, a
+point light's pillar and (through `Scene::GetLightVisibility`) a `ShadowsOnly` box, 1 in the open
+and at once for a light without a shadow, and in between at the sun's PCF edge.
 The Animation Test's `--anim-shadow` lights its Foxes with a casting sun, and the Lighting Test's
 `--budget-fade` fades its overbudget scene.

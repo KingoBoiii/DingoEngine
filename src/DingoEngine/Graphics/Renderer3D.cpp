@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
+#include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
 
@@ -292,6 +293,14 @@ namespace Dingo
 		DestroyAndDelete(m_ShadowDataBuffer);
 		DestroyAndDelete(m_ShadowViewsBuffer);
 
+		DestroyAndDelete(m_ProbeMaterial);
+		delete m_ProbeShader;
+		m_ProbeShader = nullptr;
+		DestroyAndDelete(m_ProbeBuffer);
+		DestroyAndDelete(m_ProbeTarget);
+		m_ShadowProbes.clear();
+		m_GpuProbeKeys.clear();
+
 		DestroyAndDelete(m_SceneUniformBuffer);
 		DestroyAndDelete(m_Material);
 		std::erase(s_LitShaders, m_Shader);
@@ -390,6 +399,7 @@ namespace Dingo
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 		const bool shadows = PrepareShadows();
 		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
+		ResolveShadowProbes();
 		ClearSceneLights();
 
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
@@ -448,7 +458,10 @@ namespace Dingo
 
 		ResolveSkinnedBudget();
 		if (shadows)
+		{
 			DrawShadowPass();
+			DrawShadowProbes();
+		}
 
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
 		{
@@ -798,6 +811,7 @@ namespace Dingo
 	bool Renderer3D::SubmitLight(const DirectionalLight& light)
 	{
 		m_SceneLightSubmitted = true;
+		m_LastSubmittedLight = {};
 		if (!IsFinite(light.Direction) || !IsFinite(light.Color * light.Intensity))
 			return false;
 
@@ -831,6 +845,7 @@ namespace Dingo
 		}
 
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
+		m_LastSubmittedLight = { count, true };
 		++count;
 		return true;
 	}
@@ -839,12 +854,14 @@ namespace Dingo
 	bool Renderer3D::SubmitLocalLight(const LightType& light)
 	{
 		m_SceneLightSubmitted = true;
+		m_LastSubmittedLight = {};
 		if (!Internal::IsUsableLight(light))
 			return false;
 
 		LocalLightCandidate* candidate = AddLocalLight();
 		if (!candidate)
 			return false;
+		m_LastSubmittedLight = { static_cast<int32_t>(m_LocalLights.size() - 1), false };
 
 		const Internal::LightCone cone = Internal::GetLightCone(light);
 		candidate->Data.PositionRange = glm::vec4(light.Position, light.Range);
@@ -923,6 +940,8 @@ namespace Dingo
 		m_SceneLightSubmitted = false;
 		m_DroppedLights = 0;
 		m_ShadowLight = -1;
+		m_LastSubmittedLight = {};
+		m_ShadowProbes.clear();
 	}
 
 	void Renderer3D::ResolveSceneLights()
@@ -1547,6 +1566,119 @@ namespace Dingo
 
 		Renderer::SetRenderTarget(previous);
 		Renderer::EndGpuTimer();
+	}
+
+	bool Renderer3D::AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key)
+	{
+		if (!light.IsValid() || !IsFinite(point))
+			return false;
+		if (m_ShadowProbes.size() >= k_MaxShadowProbes)
+		{
+			if (!m_ProbeOverflowWarned)
+			{
+				DE_CORE_WARN("Renderer3D: more than {} shadow probes in one scene; the rest are ignored.", k_MaxShadowProbes);
+				m_ProbeOverflowWarned = true;
+			}
+			return false;
+		}
+		m_ShadowProbes.push_back({ light, point, key });
+		return true;
+	}
+
+	std::optional<float> Renderer3D::GetShadowProbeResult(uint64_t key) const
+	{
+		const auto it = m_ProbeAnswers->ByKey.find(key);
+		if (it == m_ProbeAnswers->ByKey.end())
+			return std::nullopt;
+		return it->second.Value;
+	}
+
+	void Renderer3D::ResolveShadowProbes()
+	{
+		m_GpuProbeKeys.clear();
+		if (m_ShadowProbes.empty())
+			return;
+
+		const uint64_t frame = Renderer::GetFrameIndex();
+		std::unordered_map<uint64_t, ShadowProbeAnswer>& answers = m_ProbeAnswers->ByKey;
+		if (frame - m_ProbePruneFrame > 256)
+		{
+			m_ProbePruneFrame = frame;
+			std::erase_if(answers, [frame](const auto& entry) { return entry.second.Frame + 600 < frame; });
+		}
+
+		std::vector<int32_t> slotOf(m_LocalLights.size(), -1);
+		for (uint32_t slot = 0; slot < m_DrawnLocalLights; ++slot)
+			slotOf[m_VisibleLocalLights[slot]] = static_cast<int32_t>(slot);
+
+		for (const ShadowProbe& probe : m_ShadowProbes)
+		{
+			float light = -1.0f;
+			bool shadowed = false;
+			if (probe.Light.Directional)
+			{
+				shadowed = m_ShadowData.ShadowCounts.x > 0 && probe.Light.Index == m_ShadowData.ShadowCounts.y;
+			}
+			else if (static_cast<size_t>(probe.Light.Index) < slotOf.size())
+			{
+				const int32_t slot = slotOf[probe.Light.Index];
+				shadowed = slot >= 0 && m_ShadowData.LocalShadows[slot].Record.x >= 0.0f;
+				light = static_cast<float>(slot);
+			}
+
+			// What is drawn: no shadow, so the whole light.
+			if (!shadowed)
+			{
+				ShadowProbeAnswer& answer = answers[probe.Key];
+				answer = { 1.0f, frame };
+				continue;
+			}
+
+			m_ShadowProbeData.Probes[m_GpuProbeKeys.size()] = glm::vec4(probe.Point, light);
+			m_GpuProbeKeys.push_back(probe.Key);
+		}
+		m_Statistics.ShadowProbes = static_cast<uint32_t>(m_GpuProbeKeys.size());
+	}
+
+	void Renderer3D::DrawShadowProbes()
+	{
+		if (m_GpuProbeKeys.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::DrawShadowProbes");
+		if (!m_ProbeShader)
+		{
+			m_ProbeShader = new Internal::FullscreenShader("Renderer3DShadowProbe", "Renderer3D_ShadowProbe.glsl");
+			m_ProbeMaterial = m_ProbeShader->CreateMaterial("Renderer3D_ShadowProbe");
+			m_ProbeBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+				.SetDebugName("Renderer3D_ShadowProbes")
+				.SetByteSize(sizeof(ShadowProbeData))
+				.SetType(BufferType::UniformBuffer)
+				.SetIsVolatile(true)
+				.SetDirectUpload(false)
+				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+			m_ProbeTarget = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("Renderer3D_ShadowProbeTarget")
+				.SetWidth(static_cast<int32_t>(k_MaxShadowProbes))
+				.SetHeight(1)
+				.AddAttachment({ TextureFormat::R8 }));
+		}
+
+		Renderer::Upload(m_ProbeBuffer, &m_ShadowProbeData, sizeof(ShadowProbeData));
+		m_ProbeMaterial->SetSceneUniformBuffer(m_ProbeBuffer);
+		m_ProbeMaterial->SetShadowResources(m_ShadowDataBuffer, m_ShadowAtlas->GetDepthAttachment(), m_ShadowSampler);
+		Internal::DrawFullscreen(m_ProbeMaterial, m_ProbeTarget);
+
+		// The copy is recorded here, so the next scene's probes can draw into the same target.
+		const std::weak_ptr<ShadowProbeAnswers> answers = m_ProbeAnswers;
+		m_ProbeTarget->GetAttachment(0)->ReadPixels([answers, keys = m_GpuProbeKeys, frame = Renderer::GetFrameIndex()](const TexturePixels& pixels)
+		{
+			const std::shared_ptr<ShadowProbeAnswers> target = answers.lock();
+			if (!target || pixels.Data.empty())
+				return;
+			for (uint32_t i = 0; i < keys.size() && i < pixels.Width; ++i)
+				target->ByKey[keys[i]] = { pixels.GetPixel(i, 0).r, frame };
+		});
 	}
 
 	void Renderer3D::DrawBox(const glm::mat4& transform, const glm::vec4& color)

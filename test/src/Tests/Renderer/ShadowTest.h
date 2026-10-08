@@ -2,6 +2,7 @@
 #include "Tests/GraphicsTest.h"
 #include "Tests/TestChecks.h"
 
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,7 +13,9 @@ namespace Dingo
 	// Shadows (Renderer3DShadowSettings). Start a mode with --shadow=sun (a box, pillars receding to
 	// 40 m and a sphere on a floor), acne (a plane the sun grazes at 80 degrees from its normal),
 	// skinned (the Fox walking), spot (a spot light past a box), point (a point light among four
-	// pillars) or budget (twelve casting spot lights, four more than the shadow slots);
+	// pillars), budget (twelve casting spot lights, four more than the shadow slots) or probe (the sun
+	// scene with a row of shadow probes across the box's shadow edge, drawn as spheres from red, in
+	// shadow, to green);
 	// --shadow-cascades tints by cascade and --shadow-pan pans the camera slowly, for shimmer. The panel
 	// switches the shadows, the cascades, the biases and the debug views.
 	//
@@ -22,7 +25,10 @@ namespace Dingo
 	// drawn, the grazed plane doesn't shadow itself, and the Fox casts onto the floor; a spot light's
 	// box and each of a point light's four pillars cast, the floor where nothing stands is unchanged
 	// on every cube face and across their seams, eight of twelve lights get a shadow and two frames of
-	// that scene are identical; and the budget fade dims lights at the budget's edge.
+	// that scene are identical; and the budget fade dims lights at the budget's edge. Over the next
+	// frames it checks shadow probes: 0 behind an occluder (the sun's box, the spot light's box, a point
+	// light's pillar, the ECS scene's ShadowsOnly box through Scene::GetLightVisibility), 1 in the
+	// open and at once for a light without a shadow, and in between at the sun's PCF edge.
 	class ShadowTest : public GraphicsTest
 	{
 	public:
@@ -44,18 +50,20 @@ namespace Dingo
 			Skinned,
 			Spot,
 			Point,
-			Budget
+			Budget,
+			Probe
 		};
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 
-		void DrawMode(Renderer3D& renderer, Mode mode, bool shadows, const std::vector<glm::mat4>* palette) const;
-		void DrawInto(Framebuffer* target, Mode mode, bool shadows, const PerspectiveCamera& camera);
+		void DrawMode(Renderer3D& renderer, Mode mode, bool shadows, const std::vector<glm::mat4>* palette, bool probes = false) const;
+		void DrawInto(Framebuffer* target, Mode mode, bool shadows, const PerspectiveCamera& camera, bool probes = false);
 		PerspectiveCamera CameraFor(Mode mode, float aspect) const;
 		void BuildEntityScene();
 		void LoadFox();
 		void RunChecks();
 		void RunLocalChecks();
+		void UpdateProbeChecks();
 
 	private:
 		TestChecks m_Checks;
@@ -78,6 +86,11 @@ namespace Dingo
 		std::vector<glm::mat4> m_FoxPalette;
 
 		Scene* m_EntityScene = nullptr;
+		Entity m_EntitySun;
+
+		// Frames the probe checks still issue probes for before they read the answers.
+		int m_ProbeFramesLeft = 0;
+		std::array<Framebuffer*, 3> m_ProbeTargets{};
 
 		static constexpr uint32_t k_CheckWidth = 320;
 		static constexpr uint32_t k_CheckHeight = 240;

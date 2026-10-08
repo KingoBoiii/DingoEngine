@@ -18,6 +18,7 @@
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 
 #include <algorithm>
+#include <atomic>
 
 namespace Dingo
 {
@@ -25,6 +26,8 @@ namespace Dingo
 	Scene::Scene(const std::string& name)
 		: m_Data(new Internal::SceneData()), m_Name(name)
 	{
+		static std::atomic<uint64_t> s_ProbeSalt = 0;
+		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
@@ -430,7 +433,7 @@ namespace Dingo
 
 	void Scene::SubmitLights(Renderer3D& renderer)
 	{
-		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo);
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, &m_Data->ShadowProbes);
 	}
 
 	// --- Camera -----------------------------------------------------------------
@@ -454,6 +457,51 @@ namespace Dingo
 			outPerspective = Wrap(static_cast<std::uint32_t>(perspective));
 		if (outHasOrthographic)
 			outOrthographic = Wrap(static_cast<std::uint32_t>(orthographic));
+	}
+
+	float Scene::GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key)
+	{
+		if (!IsValid(light))
+			return 1.0f;
+
+		const entt::entity handle = static_cast<entt::entity>(light.m_Handle);
+		Internal::LightSystem::ShadowProbeState& probes = m_Data->ShadowProbes;
+		const uint64_t localKey = Internal::LightSystem::ShadowProbeState::LocalKey(handle, key);
+		if (probes.Pending.size() < Renderer3D::k_MaxShadowProbes || probes.Pending.contains(localKey))
+			probes.Pending[localKey] = { handle, point };
+
+		const auto answer = probes.Answers.find(localKey);
+		return answer != probes.Answers.end() ? answer->second.Value : 1.0f;
+	}
+
+	float Scene::GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key)
+	{
+		if (!IsValid(light))
+			return 0.0f;
+
+		const entt::registry& registry = m_Data->Registry;
+		const entt::entity handle = static_cast<entt::entity>(light.m_Handle);
+		float attenuation = 0.0f;
+		if (registry.all_of<DirectionalLightComponent>(handle))
+		{
+			attenuation = 1.0f;
+		}
+		else if (const PointLightComponent* pointLight = registry.try_get<PointLightComponent>(handle))
+		{
+			if (pointLight->Enabled && registry.all_of<Transform3DComponent>(handle))
+				attenuation = GetLightAttenuation(pointLight->ToLight(Transform3DComponent(light.GetWorldPosition())), point);
+		}
+		else if (const SpotLightComponent* spotLight = registry.try_get<SpotLightComponent>(handle))
+		{
+			if (spotLight->Enabled && registry.all_of<Transform3DComponent>(handle))
+			{
+				Transform3DComponent world(light.GetWorldPosition());
+				world.Rotation = light.GetWorldRotation();
+				attenuation = GetLightAttenuation(spotLight->ToLight(world), point);
+			}
+		}
+
+		return attenuation > 0.0f ? attenuation * GetLightVisibility(light, point, key) : 0.0f;
 	}
 
 	bool Scene::GetFirstDirectionalLightEntity(Entity& out)

@@ -11,6 +11,7 @@ namespace
 #include "Shadows.glsl.inl"
 #include "Skinning.glsl.inl"
 #include "Renderer3D_Shadow.glsl.inl"
+#include "Renderer3D_ShadowProbe.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -35,6 +36,7 @@ namespace
 		{ "Shadows.glsl", View(k_Shadows_glsl) },
 		{ "Skinning.glsl", View(k_Skinning_glsl) },
 		{ "Renderer3D_Shadow.glsl", View(k_Renderer3D_Shadow_glsl) },
+		{ "Renderer3D_ShadowProbe.glsl", View(k_Renderer3D_ShadowProbe_glsl) },
 	};
 }
 

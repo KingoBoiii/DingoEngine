@@ -96,6 +96,21 @@ namespace Dingo
 		// component gets a default DirectionalLightComponent.
 		void SubmitLights(Renderer3D& renderer);
 
+		// How much of a light component's light reaches `point` past the shadows the scene draws: 1
+		// lit, 0 in its shadow (ShadowStrength of the way). The renderer's own shadow lookup works it
+		// out on the GPU (Renderer3D::AddShadowProbe), so the shadow a player sees is the shadow that
+		// hides them. Each call asks for the next frame and returns the latest answer for this light
+		// and key, a frame or two old, or 1 before the first; call it every frame you care about, with
+		// a key per point you track for the same light. The question goes out with the scene's next
+		// SubmitLights (the SceneRenderer's 3D pass), so a scene that isn't rendered never answers. A
+		// light drawn without a shadow, or not drawn at all, answers 1. The point has no surface to
+		// push it off, so ask about a point in the air, such as a character's chest.
+		float GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key = 0);
+		// GetLightAttenuation of the light's component at its world transform, times
+		// GetLightVisibility: 0 to 1, how strongly a point or spot light reaches the point; for a
+		// directional light, its visibility. 0 for a disabled light or an entity without a light.
+		float GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key = 0);
+
 		// --- Camera -----------------------------------------------------------
 
 		// Finds the scene's active camera entity: the first CameraComponent marked

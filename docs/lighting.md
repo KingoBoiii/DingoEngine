@@ -231,8 +231,10 @@ is the cone the player sees.
 
 - It leaves out the surface's `N.L` and the light's `Color` and `Intensity`: it says how much of
   the light reaches the point, not how bright a surface there looks.
-- It ignores occlusion: shadows ([Shadows](shadows.md)) are drawn, not part of this weight. Pair
-  it with a raycast when walls should block.
+- It ignores occlusion: shadows ([Shadows](shadows.md)) are drawn, not part of this weight.
+  `Scene::GetShadowedLightAttenuation` multiplies in what the shadows let through, read back from the
+  GPU ([Is this point in shadow?](shadows.md#is-this-point-in-shadow)); otherwise pair it with a
+  raycast when walls should block.
 - It knows nothing about this frame's budget. A light dropped past `MaxLocalLights`, or refused
   because too many were submitted, is not drawn, yet still has a weight. A game whose rules depend
   on a light being seen should keep that light within the budget.

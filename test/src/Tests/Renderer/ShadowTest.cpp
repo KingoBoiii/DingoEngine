@@ -36,6 +36,28 @@ namespace Dingo
 		constexpr float k_PillarRing = 3.0f;
 		constexpr int k_BudgetLights = 12;
 
+		// Shadow probes: a row across the edge of the box's sun shadow, 5 cm above the floor, where it
+		// crosses z = -0.3 at about x = -1.475; points behind each occluder and in the open.
+		constexpr int k_SweepProbes = 64;
+		constexpr uint64_t k_SweepKey = 1000;
+		constexpr uint64_t k_SunBehindKey = 1;
+		constexpr uint64_t k_SunOpenKey = 2;
+		constexpr uint64_t k_SpotBehindKey = 10;
+		constexpr uint64_t k_SpotOpenKey = 11;
+		constexpr uint64_t k_UncastKey = 12;
+		constexpr uint64_t k_PointBehindKey = 20;
+		const glm::vec3 k_SunBehind{ -0.6f, 0.3f, -0.3f };
+		const glm::vec3 k_SunOpen{ 3.0f, 0.3f, -2.0f };
+		const glm::vec3 k_SpotBehind{ 0.9f, 0.2f, 0.0f };
+		const glm::vec3 k_SpotOpen{ 2.5f, 0.3f, 1.5f };
+		const glm::vec3 k_Uncast{ -6.0f, 0.5f, 3.0f };
+		const glm::vec3 k_PointBehind{ 4.5f, 0.3f, 0.0f };
+
+		glm::vec3 SweepPoint(int i)
+		{
+			return { -1.75f + 0.5f * static_cast<float>(i) / static_cast<float>(k_SweepProbes - 1), 0.05f, -0.3f };
+		}
+
 		// Where on the floor the ray from a light at `light` through `occluder` lands.
 		glm::vec3 ShadowFromLight(const glm::vec3& light, const glm::vec3& occluder)
 		{
@@ -106,6 +128,8 @@ namespace Dingo
 				m_Mode = Mode::Point;
 			else if (*mode == "budget")
 				m_Mode = Mode::Budget;
+			else if (*mode == "probe")
+				m_Mode = Mode::Probe;
 			else
 				m_Mode = Mode::Sun;
 		}
@@ -128,6 +152,8 @@ namespace Dingo
 		m_SpotPair = { MakeTarget("ShadowTest spot on"), MakeTarget("ShadowTest spot off") };
 		m_PointPair = { MakeTarget("ShadowTest point on"), MakeTarget("ShadowTest point off") };
 		m_BudgetPair = { MakeTarget("ShadowTest budget first"), MakeTarget("ShadowTest budget second") };
+		m_ProbeTargets = { MakeTarget("ShadowTest probes sun"), MakeTarget("ShadowTest probes spot"), MakeTarget("ShadowTest probes point") };
+		m_ProbeFramesLeft = 0;
 		m_EntityTarget = MakeTarget("ShadowTest entities");
 	}
 
@@ -201,7 +227,8 @@ namespace Dingo
 		cameraComponent.PerspNear = 0.1f;
 		cameraComponent.PerspFar = 100.0f;
 
-		DirectionalLightComponent& sun = m_EntityScene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		m_EntitySun = m_EntityScene->CreateEntity("Sun");
+		DirectionalLightComponent& sun = m_EntitySun.AddComponent<DirectionalLightComponent>();
 		sun.Direction = k_SunDirection;
 		sun.Intensity = 1.0f;
 		sun.Ambient = 0.3f;
@@ -243,6 +270,7 @@ namespace Dingo
 				camera.SetTarget({ 0.0f, 0.0f, 0.0f });
 				break;
 			case Mode::Sun:
+			case Mode::Probe:
 			default:
 				camera.SetPosition({ -5.0f, 4.0f, -6.0f });
 				camera.SetTarget({ 2.0f, 0.0f, 3.0f });
@@ -251,7 +279,7 @@ namespace Dingo
 		return camera;
 	}
 
-	void ShadowTest::DrawMode(Renderer3D& renderer, Mode mode, bool shadows, const std::vector<glm::mat4>* palette) const
+	void ShadowTest::DrawMode(Renderer3D& renderer, Mode mode, bool shadows, const std::vector<glm::mat4>* palette, bool probes) const
 	{
 		Mesh* box = renderer.GetBoxMesh();
 		if (mode == Mode::Spot || mode == Mode::Point || mode == Mode::Budget)
@@ -269,7 +297,18 @@ namespace Dingo
 				spot.OuterConeAngle = 40.0f;
 				spot.CastShadows = shadows;
 				renderer.SubmitLight(spot);
+				const ShadowProbeLight spotLight = renderer.GetLastSubmittedLight();
 				renderer.SubmitMesh(box, Box({ 0.0f, 0.5f, 0.0f }, glm::vec3(1.0f)), { 0.8f, 0.4f, 0.3f, 1.0f });
+				if (probes)
+				{
+					renderer.AddShadowProbe(spotLight, k_SpotBehind, k_SpotBehindKey);
+					renderer.AddShadowProbe(spotLight, k_SpotOpen, k_SpotOpenKey);
+					PointLight uncast;
+					uncast.Position = k_Uncast + glm::vec3(0.0f, 0.5f, 0.0f);
+					uncast.Range = 2.0f;
+					renderer.SubmitLight(uncast);
+					renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), k_Uncast, k_UncastKey);
+				}
 			}
 			else if (mode == Mode::Point)
 			{
@@ -279,6 +318,8 @@ namespace Dingo
 				point.Range = 12.0f;
 				point.CastShadows = shadows;
 				renderer.SubmitLight(point);
+				if (probes)
+					renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), k_PointBehind, k_PointBehindKey);
 				for (const glm::vec2 offset : { glm::vec2(1, 0), glm::vec2(-1, 0), glm::vec2(0, 1), glm::vec2(0, -1) })
 					renderer.SubmitMesh(box, Box({ offset.x * k_PillarRing, 0.6f, offset.y * k_PillarRing }, { 0.6f, 1.2f, 0.6f }), { 0.4f, 0.5f, 0.8f, 1.0f });
 				renderer.SubmitMesh(renderer.GetSphereMesh(), Box(k_PointPosition, glm::vec3(0.2f)), glm::vec4(1.0f), nullptr, ShadowCasting::Off);
@@ -309,6 +350,24 @@ namespace Dingo
 		renderer.SubmitLight(sun);
 		renderer.SetAmbientLight(glm::vec3(1.0f), 0.3f);
 
+		if (mode == Mode::Probe || probes)
+		{
+			const ShadowProbeLight sunLight = renderer.GetLastSubmittedLight();
+			renderer.AddShadowProbe(sunLight, k_SunBehind, k_SunBehindKey);
+			renderer.AddShadowProbe(sunLight, k_SunOpen, k_SunOpenKey);
+			for (int i = 0; i < k_SweepProbes; ++i)
+			{
+				renderer.AddShadowProbe(sunLight, SweepPoint(i), k_SweepKey + i);
+				if (mode == Mode::Probe)
+				{
+					// Red in shadow, green lit; the spheres themselves cast nothing.
+					const float lit = renderer.GetShadowProbeResult(k_SweepKey + i).value_or(1.0f);
+					renderer.SubmitMesh(renderer.GetSphereMesh(), Box(SweepPoint(i) + glm::vec3(0.0f, 0.4f, 0.0f), glm::vec3(0.02f)),
+						{ 1.0f - lit, lit, 0.1f, 1.0f }, nullptr, ShadowCasting::Off);
+				}
+			}
+		}
+
 		switch (mode)
 		{
 			case Mode::Acne:
@@ -338,7 +397,7 @@ namespace Dingo
 		}
 	}
 
-	void ShadowTest::DrawInto(Framebuffer* target, Mode mode, bool shadows, const PerspectiveCamera& camera)
+	void ShadowTest::DrawInto(Framebuffer* target, Mode mode, bool shadows, const PerspectiveCamera& camera, bool probes)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		Framebuffer* previous = Renderer::GetRenderTarget();
@@ -347,7 +406,7 @@ namespace Dingo
 
 		renderer.BeginScene(camera);
 		renderer.Clear(m_ClearColor);
-		DrawMode(renderer, mode, shadows, &m_FoxPalette);
+		DrawMode(renderer, mode, shadows, &m_FoxPalette, probes);
 		renderer.EndScene();
 
 		if (target)
@@ -581,6 +640,60 @@ namespace Dingo
 		{
 			Check(pixels.Data == m_BudgetPair.OffPixels, "a still scene of twelve casting lights draws the same frame twice");
 		});
+
+		// Answers come back a frame or two later, so the probe checks issue probes for a few frames.
+		m_ProbeFramesLeft = 8;
+		UpdateProbeChecks();
+	}
+
+	void ShadowTest::UpdateProbeChecks()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		const float aspect = static_cast<float>(k_CheckWidth) / static_cast<float>(k_CheckHeight);
+
+		// A light without a shadow answers at once, before the GPU is asked anything.
+		const bool firstFrame = m_ProbeFramesLeft == 8;
+		DrawInto(m_ProbeTargets[0], Mode::Sun, true, CameraFor(Mode::Sun, aspect), true);
+		DrawInto(m_ProbeTargets[1], Mode::Spot, true, CameraFor(Mode::Spot, aspect), true);
+		if (firstFrame)
+		{
+			const std::optional<float> uncast = renderer.GetShadowProbeResult(k_UncastKey);
+			Check(uncast && *uncast == 1.0f, std::format("a probe of a light without a shadow answers 1 at once ({})", uncast ? std::format("{:.3f}", *uncast) : "no answer"));
+		}
+		DrawInto(m_ProbeTargets[2], Mode::Point, true, CameraFor(Mode::Point, aspect), true);
+		const float entityVisibility = m_EntityScene->GetLightVisibility(m_EntitySun, k_SunBehind);
+		Application::Get().GetSceneRenderer().Render(*m_EntityScene, m_EntityTarget);
+
+		if (--m_ProbeFramesLeft > 0)
+			return;
+
+		auto answer = [&renderer](uint64_t key) { return renderer.GetShadowProbeResult(key).value_or(-1.0f); };
+		const float sunBehind = answer(k_SunBehindKey);
+		const float sunOpen = answer(k_SunOpenKey);
+		Check(sunBehind >= 0.0f && sunBehind < 0.05f && sunOpen == 1.0f,
+			std::format("a sun probe behind the box reads 0 and one in the open 1 ({:.3f}, {:.3f})", sunBehind, sunOpen));
+
+		const float spotBehind = answer(k_SpotBehindKey);
+		const float spotOpen = answer(k_SpotOpenKey);
+		Check(spotBehind >= 0.0f && spotBehind < 0.05f && spotOpen == 1.0f,
+			std::format("a spot light's probe behind its box reads 0 and one in its cone 1 ({:.3f}, {:.3f})", spotBehind, spotOpen));
+
+		const float pointBehind = answer(k_PointBehindKey);
+		Check(pointBehind >= 0.0f && pointBehind < 0.05f, std::format("a point light's probe behind a pillar reads 0 ({:.3f})", pointBehind));
+
+		int inBetween = 0;
+		const float first = answer(k_SweepKey);
+		const float last = answer(k_SweepKey + k_SweepProbes - 1);
+		for (int i = 0; i < k_SweepProbes; ++i)
+		{
+			const float value = answer(k_SweepKey + i);
+			inBetween += value > 0.05f && value < 0.95f ? 1 : 0;
+		}
+		Check(first == 1.0f && last >= 0.0f && last < 0.05f && inBetween > 0,
+			std::format("probes across the sun shadow's edge go from 1 to 0 through the PCF edge ({:.3f} .. {:.3f}, {} in between)", first, last, inBetween));
+
+		Check(entityVisibility >= 0.0f && entityVisibility < 0.05f,
+			std::format("Scene::GetLightVisibility of the sun behind a ShadowsOnly box reads 0 ({:.3f})", entityVisibility));
 	}
 
 
@@ -592,6 +705,10 @@ namespace Dingo
 		{
 			m_ChecksDone = true;
 			RunChecks();
+		}
+		else if (m_ProbeFramesLeft > 0 && !Renderer::IsFrameSkipped())
+		{
+			UpdateProbeChecks();
 		}
 
 		if (m_Fox && m_Mode == Mode::Skinned)
@@ -624,6 +741,10 @@ namespace Dingo
 			pair->OffPixels.clear();
 		}
 		DestroyAndDelete(m_EntityTarget);
+		for (Framebuffer*& target : m_ProbeTargets)
+			DestroyAndDelete(target);
+		m_ProbeFramesLeft = 0;
+		m_EntitySun = {};
 
 		delete m_EntityScene;
 		m_EntityScene = nullptr;
@@ -654,6 +775,8 @@ namespace Dingo
 		ImGui::RadioButton("Point", &mode, static_cast<int>(Mode::Point));
 		ImGui::SameLine();
 		ImGui::RadioButton("Budget", &mode, static_cast<int>(Mode::Budget));
+		ImGui::SameLine();
+		ImGui::RadioButton("Probes", &mode, static_cast<int>(Mode::Probe));
 		m_Mode = static_cast<Mode>(mode);
 
 		ImGui::Checkbox("Lights cast shadows", &m_Shadows);
