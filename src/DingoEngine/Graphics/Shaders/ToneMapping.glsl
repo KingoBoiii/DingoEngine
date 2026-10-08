@@ -6,6 +6,13 @@ const int TONEMAP_SOFT = 1;
 const int TONEMAP_ACES = 2;
 const int TONEMAP_NEUTRAL = 3;
 
+// RGBA16F stores anything past 65504 as +Inf, which the curves and bloom's weights turn into NaN that
+// the filters then spread: clamp to a finite range, and drop a NaN to black.
+vec3 FiniteColor(vec3 color)
+{
+	return clamp(mix(color, vec3(0.0), isnan(color)), vec3(0.0), vec3(65000.0));
+}
+
 // Identity up to the knee, then the max channel rolls off along Reinhard's extended curve, rescaled
 // so it leaves the knee with slope 1 and reaches exactly 1 at the white point; the other channels
 // scale with it, so a hue never shifts.
@@ -52,7 +59,7 @@ vec3 ToneMapNeutral(vec3 color)
 
 vec3 ToneMap(vec3 color, int op, float knee, float white)
 {
-	color = max(color, vec3(0.0));
+	color = FiniteColor(color);
 	if (op == TONEMAP_SOFT)
 		return ToneMapSoft(color, knee, white);
 	if (op == TONEMAP_ACES)

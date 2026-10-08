@@ -126,6 +126,9 @@ after it (particles, a translucent pass) isn't darkened; `End` applies it if not
   pixels at half resolution, with two R8 targets.
 - **Blending in 16-bit float** rounds differently from 8-bit, so the chain with `None` comes within
   1/255 of the frame without it, not exactly to it.
+- **16-bit float tops out at 65504**: a brighter pixel is stored as +Inf. The tone map and bloom's
+  prefilter clamp their input to 65000 and read a NaN as black, so one such pixel draws white and
+  glows instead of turning the bloom levels into NaN.
 
 The F4 Renderer tab's *Post chain* section shows the scenes that ran it, the target size and memory.
 

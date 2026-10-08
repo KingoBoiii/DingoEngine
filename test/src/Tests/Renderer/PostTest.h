@@ -43,7 +43,7 @@ namespace Dingo
 		void DrawScene(Renderer3D& renderer) const;
 		void DrawSceneInto(Framebuffer* target, const PostProcessSettings& settings);
 		void DrawGradient(Framebuffer* target, const glm::vec3& base, float max, const PostProcessSettings& settings);
-		void DrawSpot(Framebuffer* target, const PostProcessSettings& settings);
+		void DrawSpot(Framebuffer* target, const PostProcessSettings& settings, Material* material = nullptr);
 		void DrawRoom(Renderer3D& renderer) const;
 		void DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings);
 		PerspectiveCamera RoomCamera(float aspect) const;
@@ -73,6 +73,8 @@ namespace Dingo
 		Framebuffer* m_SpotPlain = nullptr;
 		Shader* m_SpotShader = nullptr;
 		Material* m_SpotMaterial = nullptr;
+		Framebuffer* m_InfiniteSpot = nullptr;
+		Material* m_InfiniteSpotMaterial = nullptr;
 
 		// Three copies of the scene for the regression checks: without the chain, through it with None,
 		// and through a Begin whose settings have it disabled.

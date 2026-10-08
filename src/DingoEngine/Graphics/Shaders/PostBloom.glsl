@@ -10,6 +10,7 @@
 
 #type fragment
 #version 450
+#include <DingoEngine/ToneMapping.glsl>
 
 layout(location = 0) in vec2 v_TexCoord;
 
@@ -38,6 +39,7 @@ float Brightness(vec3 color)
 // (excess - knee / 2) with slope 1, so the glow never switches on.
 vec3 ApplyThreshold(vec3 color)
 {
+	color = FiniteColor(color);
 	float brightness = Brightness(color);
 	float excess = max(brightness - Threshold.x, 0.0);
 	float knee = max(Threshold.y, 1e-4);

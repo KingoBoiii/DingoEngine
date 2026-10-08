@@ -162,6 +162,16 @@ void main()
 			.SetDepthWrite(false)
 			.SetBlendMode(BlendMode::Opaque));
 		m_SpotMaterial->SetUniform(glm::vec4(k_SpotHalfSize, 8.0f, 0.0f, 0.0f));
+		m_InfiniteSpot = MakeTarget("PostTest spot infinite", k_SpotSize, k_SpotSize, false);
+		m_InfiniteSpotMaterial = Material::Create(MaterialParams()
+			.SetDebugName("PostTestSpotInfinite")
+			.SetShader(m_SpotShader)
+			.SetCullMode(CullMode::None)
+			.SetDepthTest(false)
+			.SetDepthWrite(false)
+			.SetBlendMode(BlendMode::Opaque));
+		// Past RGBA16F's 65504, so the scene target holds +Inf.
+		m_InfiniteSpotMaterial->SetUniform(glm::vec4(k_SpotHalfSize, 1.0e30f, 0.0f, 0.0f));
 
 		m_SceneOff = MakeTarget("PostTest scene off", k_SceneWidth, k_SceneHeight, true);
 		m_SceneNone = MakeTarget("PostTest scene None", k_SceneWidth, k_SceneHeight, true);
@@ -282,14 +292,14 @@ void main()
 		Renderer::SetRenderTarget(previous);
 	}
 
-	void PostTest::DrawSpot(Framebuffer* target, const PostProcessSettings& settings)
+	void PostTest::DrawSpot(Framebuffer* target, const PostProcessSettings& settings, Material* material)
 	{
 		PostProcessStack& post = Renderer::GetPostProcessStack();
 		Framebuffer* previous = Renderer::GetRenderTarget();
 		Renderer::SetRenderTarget(target);
 
 		post.Begin(settings);
-		Renderer::Draw(m_SpotMaterial, 3);
+		Renderer::Draw(material ? material : m_SpotMaterial, 3);
 		post.End();
 
 		Renderer::SetRenderTarget(previous);
@@ -379,6 +389,14 @@ void main()
 			const float left = pixels.GetPixel(k_SpotSize / 2 - 13, k_SpotSize / 2).r;
 			Check(nearGlow > 0.0f && farGlow > 0.0f && nearGlow >= farGlow && std::abs(farGlow - left) <= 2.0f / 255.0f,
 				std::format("with bloom a square at 8 glows past its edge, fading with distance and alike on both sides ({:.3f} 4 px out, {:.3f} 8 px out, {:.3f} on the left)", nearGlow, farGlow, left));
+		});
+
+		readBack(m_InfiniteSpot, [this](const TexturePixels& pixels)
+		{
+			const float inside = pixels.GetPixel(k_SpotSize / 2, k_SpotSize / 2).r;
+			const float nearGlow = pixels.GetPixel(k_SpotSize / 2 + 8, k_SpotSize / 2).r;
+			Check(inside == 1.0f && nearGlow > 0.5f,
+				std::format("a square past half floats' range (+Inf in the scene target) still maps to white and glows, not to NaN ({:.3f} inside, {:.3f} 4 px out)", inside, nearGlow));
 		});
 
 		readBack(m_SceneOff, [this](const TexturePixels& pixels) { m_SceneOffPixels = pixels.Data; });
@@ -556,6 +574,7 @@ void main()
 			DrawGradient(m_FlatBloom, glm::vec3(1.0f), 1.0f, bloom);
 			DrawSpot(m_SpotPlain, plain);
 			DrawSpot(m_SpotBloom, bloom);
+			DrawSpot(m_InfiniteSpot, bloom, m_InfiniteSpotMaterial);
 
 			PostProcessSettings roomPlain = WithOperator(PostProcessSettings(), ToneMapOperator::None);
 			PostProcessSettings roomOccluded = roomPlain;
@@ -611,6 +630,8 @@ void main()
 		DestroyAndDelete(m_SpotBloom);
 		DestroyAndDelete(m_SpotPlain);
 		DestroyAndDelete(m_SpotMaterial);
+		DestroyAndDelete(m_InfiniteSpotMaterial);
+		DestroyAndDelete(m_InfiniteSpot);
 		DestroyAndDelete(m_SpotShader);
 		m_FlatPlainPixels.clear();
 		delete m_LampMaterial;
