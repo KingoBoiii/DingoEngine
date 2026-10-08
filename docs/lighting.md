@@ -136,6 +136,43 @@ to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only t
 components the renderer accepts (the first four valid ones) add their ambient, and a non-finite
 `Ambient` or ambient intensity is skipped rather than blanking every other ambient source.
 
+## Fog
+
+Distance fog blends each lit pixel toward a colour by how far it is from the camera (radial
+distance, in world units), so far geometry fades into the background:
+
+```cpp
+Fog fog;
+fog.Mode = FogMode::Linear;     // or Exponential, ExponentialSquared; None clears it
+fog.Color = { 0.1f, 0.12f, 0.15f };
+fog.Start = 10.0f;              // Linear: no fog before Start, full fog from End
+fog.End = 40.0f;
+fog.Density = 0.05f;            // Exponential: 1 - e^(-Density d); ExponentialSquared: 1 - e^(-(Density d)^2)
+fog.MaxOpacity = 1.0f;          // the most fog a pixel gets, 0..1
+renderer.SetFog(fog);           // before EndScene, like a light
+```
+
+In the ECS, add a `FogComponent` to any entity (it has the same fields, plus `Enabled` and
+`UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` so the fog meets
+the cleared background). `Scene::SubmitLights` passes the first enabled one, in entity order, to
+`SetFog`; another enabled one warns once.
+
+- **Scene-scoped**, like lights: `EndScene` clears it, so set it every frame you want it.
+  `ClearFog()` drops it before then.
+- **Not a light.** A scene with fog and no light keeps the default light, and a `FogComponent`
+  doesn't count for the [default-light rule](#scene-scoped-lighting-and-the-default-light).
+- **Rejected** with a warning (once) and `false` from `SetFog`: a non-finite value, a negative
+  `Density`, or `Linear` with `End` not past `Start`. `MaxOpacity` is clamped to 0..1.
+- **Perspective cameras only.** An orthographic camera's scene draws without fog.
+- **What it covers:** the lit shader's static and skinned draws, emissive and highlights included,
+  before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
+  fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the
+  background is the clear colour, not fog: match the two, as `UseClearColor` does.
+- `Renderer3D::Statistics::Fogged` says whether the last scene was drawn with fog.
+
+The Lighting Test's `--fog` (or its Fog checkbox) fogs every mode into the clear colour, and its
+checks read back the fog factor on a black wall for each mode.
+
 ## The light budget
 
 Directional lights are not culled or ranked: the first four in submission order are used, and
@@ -352,8 +389,10 @@ appended after them, so a shader that declares only those three keeps compiling 
 | 128 | `ivec4 LightCounts` | x = directional lights, y = point and spot lights in use. |
 | 144 | `DirectionalLight DirectionalLights[4]` | 32 bytes each: `vec4 Direction` (xyz, not normalised), `vec4 Color` (rgb × intensity). |
 | 272 | `LocalLight LocalLights[32]` | 48 bytes each: `vec4 PositionRange` (xyz, w = range), `vec4 Color` (rgb × intensity, w = cone scale), `vec4 SpotDirection` (xyz normalised, w = cone offset). |
+| 1808 | `vec4 FogColor` | rgb = the fog's colour, a = its `MaxOpacity`. |
+| 1824 | `vec4 FogParams` | x = `Start`, y = `End`, z = `Density`, w = the `FogMode` (0 none, 1 linear, 2 exponential, 3 exponential squared). |
 
-The whole block is 1808 bytes. Declare members in this order from the start; you may stop after
+The whole block is 1840 bytes. Declare members in this order from the start; you may stop after
 any of them. To use the lights, mirror the whole block, struct definitions included, from
 [`Renderer3D_Lit.glsl`](../src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl), the reference
 implementation. Either stage may declare binding 0 (the lit shader's vertex stage declares only
@@ -412,6 +451,8 @@ and a copy of it is embedded in the engine library at build time.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.
 - **Budget-edge popping** unless the budget fade is on, described [above](#the-light-budget).
+- **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
+  orthographic camera ([Fog](#fog)).
 
 ## Migrating from v0.6
 

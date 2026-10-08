@@ -79,6 +79,14 @@ Anchors were read on `master` @ `e5f4749` (v0.8.3 merged). One phase per schedul
 
 **Verify**: GLSL compiled with glslang and cross-compiled with SPIRV-Cross to HLSL SM 5.0/5.1 in the sandbox if the tools can be installed, static and `DE_SKINNED`. GPU machine: `--test=light` all PASS on three backends; 0 px against master for `--test=light` default and a frozen Candlewick/Marionette frame (no fog set).
 
+**As built** (done; not yet built or run as a whole): as designed, on top of master's v0.9 (the shadow data is its own UBO, so `CameraData` still ended at 1808 and the fog went there). Differences:
+- The statistic is `Statistics::Fogged` (true only when a perspective camera drew the fog), not `Fog`, so a `Statistics` member doesn't share its name with the `Fog` type.
+- `SetFog` returns `bool` (false for an ignored fog, as `SubmitLight` does), and `FogMode::None` clears like `ClearFog`. A negative `Density` is rejected too.
+- `LightSystem::SubmitLights` takes the clear colour as a parameter before `probes`, and the fog goes in after the ambient, through a `SubmitFog` helper.
+- The Lighting Test has a `--fog` flag and a Fog checkbox that fog every mode (direct: `SetFog`; entities: a `FogComponent` built with the scene, toggled through `Enabled`), not a `--lighting=fog` mode. Its checks: the stats (`Fogged`, default light kept, scene-scoped, rejected fogs, `None`, orthographic, enabled/disabled components), then six readbacks of a black wall 10 units away under a white ambient (unfogged black; linear 5–15 at 0.5; exp at 1 − e⁻¹; exp² at 1 − e⁻⁰·²⁵; `MaxOpacity` 0.5; a `FogComponent` with `UseClearColor` reading the scene's clear colour), within 2.5/255.
+- F4's light section shows `Fog: on/off`.
+- Verified in the sandbox: the lit shader (static and `DE_SKINNED`) compiles with glslang 15 to SPIR-V and cross-compiles with SPIRV-Cross to HLSL SM 5.0 and 5.1 (`FogColor` lands at `c113` = 1808); the changed engine files and the Lighting Test pass `g++ -std=c++20 -fsyntax-only` (GCC 13). LunarG's SDK host is blocked here, so nothing was linked or run.
+
 ## Phase 4 — translucent materials, part 1: material state and ranged draws (#91)
 
 **Facts**

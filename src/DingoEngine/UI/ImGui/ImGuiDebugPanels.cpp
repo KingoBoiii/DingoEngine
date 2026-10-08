@@ -318,6 +318,7 @@ namespace Dingo::UI
 			ImGui::Text("Dropped    : 0");
 		if (caps3D.LightBudgetFade > 0.0f)
 			ImGui::Text("Faded      : %u  (budget fade band %.2f)", stats3D.FadedLights, caps3D.LightBudgetFade);
+		ImGui::Text("Fog        : %s", stats3D.Fogged ? "on" : "off");
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");

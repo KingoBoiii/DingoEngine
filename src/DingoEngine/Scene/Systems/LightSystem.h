@@ -49,10 +49,11 @@ namespace Dingo
 				}
 			};
 
-			// Submits every light component and the scene's summed ambient. A registry without
-			// a single light component gets a default DirectionalLightComponent instead. With probes,
-			// also issues the pending shadow probes against the lights just submitted.
-			void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, ShadowProbeState* probes = nullptr);
+			// Submits every light component, the scene's summed ambient and its first enabled
+			// FogComponent (clearColor for one with UseClearColor). A registry without a single light
+			// component gets a default DirectionalLightComponent instead. With probes, also issues the
+			// pending shadow probes against the lights just submitted.
+			void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, const glm::vec3& clearColor, ShadowProbeState* probes = nullptr);
 
 		}
 

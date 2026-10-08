@@ -92,11 +92,12 @@ namespace Dingo
 		// custom 3D drawing inside one Begin/EndScene.
 		void RenderEntities3D(Renderer3D& renderer);
 
-		// Submits the scene's light components to the renderer (no BeginScene/EndScene), for
-		// custom 3D passes the same way as RenderEntities3D. A scene without a single light
-		// component gets a default DirectionalLightComponent. With shadowProbes, the scene's pending
-		// GetLightVisibility questions go out with this pass, answered from its camera's shadows; a
-		// secondary view (a minimap) passes false and leaves them to the main view.
+		// Submits the scene's light components and its FogComponent to the renderer (no
+		// BeginScene/EndScene), for custom 3D passes the same way as RenderEntities3D. A scene
+		// without a single light component gets a default DirectionalLightComponent. With
+		// shadowProbes, the scene's pending GetLightVisibility questions go out with this pass,
+		// answered from its camera's shadows; a secondary view (a minimap) passes false and leaves
+		// them to the main view.
 		void SubmitLights(Renderer3D& renderer, bool shadowProbes = true);
 
 		// How much of a light component's light reaches `point` past the shadows the scene draws: 1

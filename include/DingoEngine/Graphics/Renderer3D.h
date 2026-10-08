@@ -241,6 +241,15 @@ namespace Dingo
 		uint32_t GetParticlePoolCapacity() const;
 		uint32_t GetParticlePoolUsed() const;
 
+		// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders and
+		// the 2D overlay aren't fogged), scene-scoped like the lights: set it before EndScene, which
+		// clears it. It is no light, so a scene with fog and no light keeps the default light. Returns
+		// false for a fog it ignores: a non-finite value, a negative Density, or Linear with End not
+		// past Start. FogMode::None clears it, as ClearFog does; MaxOpacity is clamped to 0..1. An
+		// orthographic camera's scene draws without fog.
+		bool SetFog(const Fog& fog);
+		void ClearFog();
+
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
@@ -355,6 +364,7 @@ namespace Dingo
 			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
 			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
+			bool Fogged = false;              // the scene was drawn with fog: SetFog, and a perspective camera
 		};
 
 		const Statistics& GetStatistics() const { return m_Statistics; }
@@ -425,13 +435,16 @@ namespace Dingo
 			glm::ivec4 LightCounts{ 0 };      // x = directional lights, y = point and spot lights
 			DirectionalLightData DirectionalLights[k_MaxDirectionalLights];
 			LocalLightData LocalLights[k_MaxLocalLights];
+			glm::vec4 FogColor{ 0.0f };  // rgb = colour, a = max opacity
+			glm::vec4 FogParams{ 0.0f }; // x = start, y = end, z = density, w = FogMode (0 = none)
 		};
 		static_assert(offsetof(CameraData, LightDirection) == 64 && offsetof(CameraData, Ambient) == 80,
 			"the frozen prefix custom materials declare must not move");
 		static_assert(offsetof(CameraData, CameraPosition) == 96 && offsetof(CameraData, AmbientColor) == 112 &&
 			offsetof(CameraData, LightCounts) == 128 && offsetof(CameraData, DirectionalLights) == 144 &&
 			sizeof(DirectionalLightData) == 32 && offsetof(CameraData, LocalLights) == 144 + k_MaxDirectionalLights * 32 &&
-			sizeof(LocalLightData) == 48 && sizeof(CameraData) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48,
+			sizeof(LocalLightData) == 48 && offsetof(CameraData, FogColor) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48 &&
+			offsetof(CameraData, FogParams) == offsetof(CameraData, FogColor) + 16 && sizeof(CameraData) == offsetof(CameraData, FogParams) + 16,
 			"CameraData must match the std140 block in Renderer3D_Lit.glsl");
 		CameraData m_CameraData = {};
 
@@ -452,6 +465,7 @@ namespace Dingo
 		bool m_UnshadowedWarned = false;
 		bool m_AtlasFullWarned = false;
 		bool m_NoClipDistanceWarned = false;
+		bool m_FogWarned = false;
 
 		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
 		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.

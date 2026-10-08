@@ -422,6 +422,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::ResolveSceneLights");
 			ResolveSceneLights();
 		}
+		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && m_CameraData.CameraPosition.w > 0.5f;
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 		const bool shadows = PrepareShadows();
 		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
@@ -982,6 +983,38 @@ namespace Dingo
 			m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
 	}
 
+	bool Renderer3D::SetFog(const Fog& fog)
+	{
+		if (fog.Mode == FogMode::None)
+		{
+			ClearFog();
+			return true;
+		}
+
+		const bool known = fog.Mode == FogMode::Linear || fog.Mode == FogMode::Exponential || fog.Mode == FogMode::ExponentialSquared;
+		const bool finite = IsFinite(fog.Color) && std::isfinite(fog.Start) && std::isfinite(fog.End) && std::isfinite(fog.Density) && std::isfinite(fog.MaxOpacity);
+		const bool usable = known && finite && fog.Density >= 0.0f && (fog.Mode != FogMode::Linear || fog.End > fog.Start);
+		if (!usable)
+		{
+			if (!m_FogWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a fog was ignored: it needs finite values, a Density of at least 0 and, for Linear, an End past its Start.");
+				m_FogWarned = true;
+			}
+			return false;
+		}
+
+		m_CameraData.FogColor = glm::vec4(fog.Color, std::clamp(fog.MaxOpacity, 0.0f, 1.0f));
+		m_CameraData.FogParams = glm::vec4(fog.Start, fog.End, fog.Density, static_cast<float>(fog.Mode));
+		return true;
+	}
+
+	void Renderer3D::ClearFog()
+	{
+		m_CameraData.FogColor = glm::vec4(0.0f);
+		m_CameraData.FogParams = glm::vec4(0.0f);
+	}
+
 	uint32_t Renderer3D::GetLocalLightBudget() const
 	{
 		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
@@ -1008,6 +1041,7 @@ namespace Dingo
 		m_ShadowLight = -1;
 		m_LastSubmittedLight = {};
 		m_ShadowProbes.clear();
+		ClearFog();
 	}
 
 	void Renderer3D::ResolveSceneLights()

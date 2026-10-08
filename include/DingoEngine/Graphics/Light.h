@@ -54,6 +54,28 @@ namespace Dingo
 		float ShadowStrength = 1.0f;
 	};
 
+	// Distance fog for Renderer3D::SetFog: the lit shader blends each pixel toward Color by the fog
+	// factor at its distance from the camera (radial, in world units) times MaxOpacity. Linear rises
+	// from 0 at Start to 1 at End; Exponential is 1 - e^(-Density d) and ExponentialSquared
+	// 1 - e^(-(Density d)^2). Only a perspective camera's scenes are fogged.
+	enum class FogMode
+	{
+		None,
+		Linear,
+		Exponential,
+		ExponentialSquared
+	};
+
+	struct Fog
+	{
+		FogMode Mode = FogMode::Linear;
+		glm::vec3 Color{ 0.5f };
+		float Start = 10.0f;
+		float End = 50.0f;
+		float Density = 0.05f;
+		float MaxOpacity = 1.0f;
+	};
+
 	// The weight Renderer3D's lit shader gives the light at `point`, from 0 to 1, for gameplay
 	// tests such as "is the player inside that cone": falloff^2 for a point light and
 	// falloff^2 * cone^2 for a spot, where falloff = 1 - d^2 / Range^2 (0 from Range on) and the
