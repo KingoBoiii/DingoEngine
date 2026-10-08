@@ -151,7 +151,7 @@ namespace Dingo
 
 	void HierarchyTest::BuildScene2D()
 	{
-		m_Font = Font::Create("assets/fonts/ArialBD.ttf");
+		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 		m_Scene2D = new Scene("Hierarchy Test 2D");
 
 		Entity camera = m_Scene2D->CreateEntity("Camera");
