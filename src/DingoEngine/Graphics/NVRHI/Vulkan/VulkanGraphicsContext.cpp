@@ -27,6 +27,8 @@ namespace Dingo
 
 	}
 
+	static constexpr const char* k_ValidationLayer = "VK_LAYER_KHRONOS_validation";
+
 	static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
 			VkDebugReportFlagsEXT flags,
 			VkDebugReportObjectTypeEXT objType,
@@ -85,7 +87,10 @@ namespace Dingo
 		}
 
 #ifndef DE_DISTRIBUTION
-		CreateDebugMessenger();
+		if (enabledExtensions.instance.contains(VK_EXT_DEBUG_REPORT_EXTENSION_NAME))
+		{
+			CreateDebugMessenger();
+		}
 #endif
 
 		// Create a throwaway surface for the application's main window so device selection can
@@ -158,8 +163,7 @@ namespace Dingo
 	{
 		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #ifndef DE_DISTRIBUTION
-		enabledExtensions.instance.insert(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-		enabledExtensions.layers.insert("VK_LAYER_KHRONOS_validation");
+		optionalExtensions.layers.insert(k_ValidationLayer);
 #endif
 
 		//PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader->getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
@@ -224,6 +228,13 @@ namespace Dingo
 			DE_CORE_ERROR("{}", ss.str());
 			return false;
 		}
+
+#ifndef DE_DISTRIBUTION
+		if (!enabledExtensions.layers.contains(k_ValidationLayer))
+		{
+			DE_CORE_WARN("The Vulkan validation layer ({}) is not installed, so Vulkan usage errors go unreported. It ships with the Vulkan SDK; on Linux, source the SDK's setup-env.sh or install the distribution's validation layers package.", k_ValidationLayer);
+		}
+#endif
 
 		DE_CORE_TRACE("Enabled Vulkan Layer(s) ({}):", enabledExtensions.layers.size());
 		for (const auto& layer : enabledExtensions.layers)

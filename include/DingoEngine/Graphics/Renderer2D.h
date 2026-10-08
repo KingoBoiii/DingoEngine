@@ -163,8 +163,8 @@ namespace Dingo
 		{
 			std::string Name;
 			const char* ShaderSource = nullptr;
-			VertexLayout VertexLayout;
-			CullMode CullMode = CullMode::Back;
+			Dingo::VertexLayout VertexLayout;
+			Dingo::CullMode CullMode = Dingo::CullMode::Back;
 			Renderer2DCapabilities Capabilities;
 			GraphicsBuffer* CameraUniformBuffer = nullptr;
 			GraphicsBuffer* IndexBuffer = nullptr;
@@ -176,6 +176,11 @@ namespace Dingo
 		// One auto-batching pass. Vertices accumulate into VertexBufferBase; each flush
 		// claims the next (vertex buffer, render pass) pair from a pool grown on demand
 		// and reused every frame.
+		//
+		// A pipeline only draws into framebuffers with the formats it was built for, and the
+		// swap chain's (BGRA8 on most Linux drivers) needn't match a render target's (RGBA8),
+		// so each flush draws with the pipeline for the current target's format key, each
+		// pipeline with its own render-pass pool.
 		//
 		// Every batch owns its render pass and re-binds + re-bakes at flush, including
 		// passes whose bindings never vary: an NVRHI binding set is immutable once baked,
@@ -202,15 +207,6 @@ namespace Dingo
 
 				m_Shader = Shader::CreateFromSource(m_Params.Name + "Shader", m_Params.ShaderSource);
 
-				m_Pipeline = Pipeline::Create(PipelineParams()
-					.SetDebugName(m_Params.Name + "Pipeline")
-					.SetFramebuffer(Renderer::GetSwapChainFramebuffer())
-					.SetShader(m_Shader)
-					.SetVertexLayout(m_Params.VertexLayout)
-					.SetCullMode(m_Params.CullMode)
-					.SetDepthTest(false)
-					.SetDepthWrite(false));
-
 				VertexBufferBase = new TVertex[m_Params.Capabilities.GetQuadVertexCount()];
 				VertexBufferPtr = VertexBufferBase;
 			}
@@ -221,9 +217,13 @@ namespace Dingo
 					DestroyAndDelete(vertexBuffer);
 				m_VertexBuffers.clear();
 
-				for (RenderPass*& renderPass : m_RenderPasses)
-					DestroyAndDelete(renderPass);
-				m_RenderPasses.clear();
+				for (TargetPipeline& target : m_TargetPipelines)
+				{
+					for (RenderPass*& renderPass : target.RenderPasses)
+						DestroyAndDelete(renderPass);
+					DestroyAndDelete(target.Pipeline);
+				}
+				m_TargetPipelines.clear();
 
 				delete[] VertexBufferBase;
 				VertexBufferBase = nullptr;
@@ -231,7 +231,6 @@ namespace Dingo
 				IndexCount = 0;
 				m_BatchIndex = 0;
 
-				DestroyAndDelete(m_Pipeline);
 				DestroyAndDelete(m_Shader);
 			}
 
@@ -245,10 +244,12 @@ namespace Dingo
 			bool HasRoomForQuad() const { return IndexCount + 6 <= m_Params.Capabilities.GetQuadIndexCount(); }
 			bool HasRoomForQuads(size_t quadCount) const { return IndexCount + quadCount * 6ull <= m_Params.Capabilities.GetQuadIndexCount(); }
 
-			// bindBatch receives this batch's render pass to bind whatever varies per
-			// batch. Returns false when there was nothing accumulated to submit.
+			// target is the framebuffer the batch draws into, and targetFormatKey its
+			// Internal::GetFramebufferFormatKey. bindBatch receives this batch's render pass to
+			// bind whatever varies per batch. Returns false when there was nothing accumulated
+			// to submit.
 			template<typename TBindBatch>
-			bool Flush(TBindBatch&& bindBatch)
+			bool Flush(Framebuffer* target, uint64_t targetFormatKey, TBindBatch&& bindBatch)
 			{
 				if (IndexCount == 0)
 					return false;
@@ -258,11 +259,16 @@ namespace Dingo
 					// DirectUpload = false: filled through Renderer::Upload (the deferred frame
 					// command list) so the write is ordered before the draw within that one list.
 					m_VertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(TVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, m_Params.Name + "VertexBuffer"));
-					m_RenderPasses.push_back(CreateRenderPass());
 				}
 
+				TargetPipeline& targetPipeline = GetTargetPipeline(target, targetFormatKey);
+				if (m_BatchIndex >= targetPipeline.RenderPasses.size())
+					targetPipeline.RenderPasses.resize(m_BatchIndex + 1, nullptr);
+				if (!targetPipeline.RenderPasses[m_BatchIndex])
+					targetPipeline.RenderPasses[m_BatchIndex] = CreateRenderPass(targetPipeline.Pipeline);
+
 				GraphicsBuffer* vertexBuffer = m_VertexBuffers[m_BatchIndex];
-				RenderPass* renderPass = m_RenderPasses[m_BatchIndex];
+				RenderPass* renderPass = targetPipeline.RenderPasses[m_BatchIndex];
 
 				uint32_t dataSize = (uint32_t)((uint8_t*)VertexBufferPtr - (uint8_t*)VertexBufferBase);
 				Renderer::Upload(vertexBuffer, VertexBufferBase, dataSize);
@@ -278,12 +284,44 @@ namespace Dingo
 				return true;
 			}
 
-			bool Flush() { return Flush([](RenderPass*) {}); }
+			bool Flush(Framebuffer* target, uint64_t targetFormatKey) { return Flush(target, targetFormatKey, [](RenderPass*) {}); }
 
 		private:
-			RenderPass* CreateRenderPass()
+			struct TargetPipeline
 			{
-				RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_Pipeline));
+				uint64_t FormatKey = 0;
+				Dingo::Pipeline* Pipeline = nullptr;
+				// Indexed by batch, so no render pass is bound by two batches in one frame.
+				std::vector<RenderPass*> RenderPasses;
+			};
+
+			TargetPipeline& GetTargetPipeline(Framebuffer* target, uint64_t formatKey)
+			{
+				for (TargetPipeline& targetPipeline : m_TargetPipelines)
+				{
+					if (targetPipeline.FormatKey == formatKey)
+						return targetPipeline;
+				}
+
+				// Built against whichever framebuffer first has this format. The pipeline only
+				// reads it again to rebuild after a shader reload, which these source-built
+				// shaders never get, so it may outlive that framebuffer.
+				TargetPipeline& targetPipeline = m_TargetPipelines.emplace_back();
+				targetPipeline.FormatKey = formatKey;
+				targetPipeline.Pipeline = Pipeline::Create(PipelineParams()
+					.SetDebugName(m_Params.Name + "Pipeline")
+					.SetFramebuffer(target)
+					.SetShader(m_Shader)
+					.SetVertexLayout(m_Params.VertexLayout)
+					.SetCullMode(m_Params.CullMode)
+					.SetDepthTest(false)
+					.SetDepthWrite(false));
+				return targetPipeline;
+			}
+
+			RenderPass* CreateRenderPass(Dingo::Pipeline* pipeline)
+			{
+				RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
 				renderPass->SetUniformBuffer(k_CameraBinding, m_Params.CameraUniformBuffer);
 
 				if (m_Params.BatchSampler)
@@ -295,9 +333,8 @@ namespace Dingo
 		private:
 			BatchPassParams m_Params;
 			Shader* m_Shader = nullptr;
-			Pipeline* m_Pipeline = nullptr;
 
-			std::vector<RenderPass*> m_RenderPasses;
+			std::vector<TargetPipeline> m_TargetPipelines;
 			std::vector<GraphicsBuffer*> m_VertexBuffers;
 			uint32_t m_BatchIndex = 0;
 		};

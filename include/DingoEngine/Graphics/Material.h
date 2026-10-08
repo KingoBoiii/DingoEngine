@@ -15,9 +15,9 @@ namespace Dingo
 	struct MaterialParams
 	{
 		std::string DebugName;
-		Shader*     Shader                 = nullptr;
-		CullMode    CullMode               = CullMode::Back;
-		FillMode    FillMode               = FillMode::Solid;
+		Dingo::Shader*  Shader             = nullptr;
+		Dingo::CullMode CullMode           = Dingo::CullMode::Back;
+		Dingo::FillMode FillMode           = Dingo::FillMode::Solid;
 		bool        FrontCounterClockwise  = true;
 		// Baked into the material's pipelines, like CullMode (see PipelineParams).
 		BlendMode    Blend                 = BlendMode::Alpha;
@@ -206,8 +206,8 @@ namespace Dingo
 
 		struct PipelineCacheEntry
 		{
-			Pipeline*   Pipeline   = nullptr;
-			RenderPass* RenderPass = nullptr;
+			Dingo::Pipeline*   Pipeline   = nullptr;
+			Dingo::RenderPass* RenderPass = nullptr;
 		};
 		std::unordered_map<size_t, PipelineCacheEntry> m_PipelineCache;
 

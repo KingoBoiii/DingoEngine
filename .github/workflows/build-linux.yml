@@ -1,0 +1,92 @@
+name: Build Linux
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build-configuration: [Debug, Release, Distribution]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - uses: ./.github/actions/setup-linux
+      with:
+        runtime: true
+
+    - name: Premake
+      run: premake5 gmake
+
+    - name: Build
+      run: make -j"$(nproc)" config="$(echo '${{ matrix.build-configuration }}' | tr '[:upper:]' '[:lower:]')"
+
+    - name: Upload static library artifact
+      if: github.event_name == 'push'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-engine-linux-${{ matrix.build-configuration }}
+        path: |
+          build/dist/${{ matrix.build-configuration }}-linux-x86_64/libDingoEngine.a
+          include/
+
+    - name: Package examples and test framework
+      if: matrix.build-configuration == 'Distribution'
+      run: scripts/package-linux-programs.sh Distribution build/package/programs
+
+    - name: Upload test framework
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-testframework-linux-distribution
+        path: build/package/programs/Dingo-TestFramework-linux-x86_64.tar.gz
+        compression-level: 0
+
+    - name: Upload examples
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-examples-linux-distribution
+        path: |
+          build/package/programs/*-linux-x86_64.tar.gz
+          !build/package/programs/Dingo-TestFramework-linux-x86_64.tar.gz
+        compression-level: 0
+
+    - name: Package tester bundle
+      if: matrix.build-configuration == 'Distribution'
+      run: scripts/linux-tester/make-bundle.sh Distribution build/package/DingoEngine-linux-tester.tar.gz
+
+    - name: Upload tester bundle
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: DingoEngine-linux-tester
+        path: build/package/DingoEngine-linux-tester.tar.gz
+        compression-level: 0
+        retention-days: 30
+
+    - name: Smoke test
+      run: xvfb-run -a -s "-screen 0 1920x1080x24" scripts/ci/linux-smoke-test.sh ${{ matrix.build-configuration }}
+
+    - name: Upload smoke-test logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: smoke-test-logs-linux-${{ matrix.build-configuration }}
+        path: build/smoke/
+        if-no-files-found: ignore

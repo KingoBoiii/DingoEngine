@@ -11,7 +11,7 @@ namespace Dingo
 	struct VertexLayoutAttribute
 	{
 		std::string Name;
-		Format Format;
+		Dingo::Format Format;
 		uint32_t Offset = 0;
 	};
 
@@ -36,10 +36,10 @@ namespace Dingo
 	struct PipelineParams
 	{
 		std::string DebugName;
-		Shader* Shader = nullptr;
-		Framebuffer* Framebuffer = nullptr;
-		FillMode FillMode = FillMode::Solid;
-		CullMode CullMode = CullMode::Back;
+		Dingo::Shader* Shader = nullptr;
+		Dingo::Framebuffer* Framebuffer = nullptr;
+		Dingo::FillMode FillMode = Dingo::FillMode::Solid;
+		Dingo::CullMode CullMode = Dingo::CullMode::Back;
 		bool FrontCounterClockwise = false;
 		bool DepthTest = true;   // only takes effect if the target framebuffer has a depth attachment
 		bool DepthWrite = true;  // 2D/overlay pipelines should set both false (painter's order)
@@ -50,9 +50,9 @@ namespace Dingo
 		// either only while DepthBias is not 0.
 		int32_t DepthBias = 0;
 		float SlopeScaledDepthBias = 0.0f;
-		VertexLayout VertexLayout;
+		Dingo::VertexLayout VertexLayout;
 		GraphicsBuffer* UniformBuffer = nullptr;
-		Texture* Texture = nullptr;
+		Dingo::Texture* Texture = nullptr;
 
 		PipelineParams& SetDebugName(const std::string& debugName)
 		{

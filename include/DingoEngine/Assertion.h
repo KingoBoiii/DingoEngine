@@ -5,11 +5,14 @@
 
 #include "Log.h"
 
-#ifdef DE_PLATFORM_WINDOWS
+#if defined(DE_PLATFORM_WINDOWS)
 #define DE_DEBUG_BREAK __debugbreak()
 #elif defined(DE_PLATFORM_LINUX)
 #include <csignal>
-#define DE_DEBUG_BREAK raise(SIGTRAP)
+#define DE_DEBUG_BREAK std::raise(SIGTRAP)
+#else
+#include <cstdlib>
+#define DE_DEBUG_BREAK std::abort()
 #endif
 
 #ifdef DE_DEBUG

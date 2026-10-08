@@ -55,7 +55,11 @@ namespace
 	{
 		std::error_code error;
 		const std::filesystem::file_status status = std::filesystem::symlink_status(path, error);
+#ifdef DE_PLATFORM_WINDOWS
 		return !error && (std::filesystem::is_symlink(status) || status.type() == std::filesystem::file_type::junction);
+#else
+		return !error && std::filesystem::is_symlink(status);
+#endif
 	}
 
 	bool IsPlain(const std::filesystem::path& path)

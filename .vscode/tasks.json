@@ -10,7 +10,10 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": []
+            "problemMatcher": [],
+            "linux": {
+                "command": "${workspaceFolder}/Generate-Linux.sh"
+            }
         },
         {
             "label": "Build Debug",
@@ -31,7 +34,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build Release",
@@ -49,7 +59,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=release",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build Distribution",
@@ -67,7 +84,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=distribution",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build TestFramework Debug",
@@ -85,7 +109,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug Dingo-TestFramework",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build FlappyBird Debug",
@@ -103,7 +134,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug FlappyBird",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build FlappyBird Distribution",
@@ -121,7 +159,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=distribution FlappyBird",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build Breakout3D Debug",
@@ -139,7 +184,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug Breakout3D",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build DungeonCrawler Debug",
@@ -157,7 +209,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug DungeonCrawler",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build Space Invaders Debug",
@@ -175,7 +234,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug SpaceInvaders",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build AngryBirds Debug",
@@ -193,7 +259,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug AngryBirds",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build DungeonCrawler3D Debug",
@@ -211,7 +284,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug DungeonCrawler3D",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build EchoVault Debug",
@@ -229,7 +309,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug EchoVault",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build Candlewick Debug",
@@ -247,7 +334,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug Candlewick",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build Marionette Debug",
@@ -265,7 +359,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug Marionette",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         },
         {
             "label": "Build ArenaShooter Debug",
@@ -283,7 +384,14 @@
                 "reveal": "always",
                 "panel": "shared"
             },
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug ArenaShooter",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
         }
     ]
 }

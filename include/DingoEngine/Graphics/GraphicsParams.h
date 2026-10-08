@@ -10,7 +10,7 @@ namespace Dingo
 
 	struct GraphicsParams
 	{
-		GraphicsAPI GraphicsAPI;
+		Dingo::GraphicsAPI GraphicsAPI;
 		uint16_t FramesInFlight;
 
 		// Set by the engine (from the application window) before the graphics context is created,

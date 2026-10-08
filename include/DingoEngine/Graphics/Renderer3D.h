@@ -492,7 +492,7 @@ namespace Dingo
 		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
 		struct BatchKey
 		{
-			Material* Material = nullptr;
+			Dingo::Material* Material = nullptr;
 			ShadowCasting Shadows = ShadowCasting::On;
 			bool operator==(const BatchKey&) const = default;
 		};

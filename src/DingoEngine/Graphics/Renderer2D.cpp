@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 
+#include "FramebufferFormat.h"
 #include "MSDFData.h"
 #include "Utf8.h"
 
@@ -230,6 +231,12 @@ void main() {
 			return glm::vec3(position.x + size.x * corner.x, position.y + size.y * corner.y, position.z);
 		}
 
+	}
+
+	static Framebuffer* GetDrawTarget()
+	{
+		Framebuffer* renderTarget = Renderer::GetRenderTarget();
+		return renderTarget ? renderTarget : Renderer::GetSwapChainFramebuffer();
 	}
 
 	Renderer2D* Renderer2D::Create(const Renderer2DCapabilities& capabilities)
@@ -727,7 +734,8 @@ void main() {
 
 	void Renderer2D::FlushQuad()
 	{
-		const bool flushed = m_QuadPass.Flush([this](RenderPass* renderPass)
+		Framebuffer* target = GetDrawTarget();
+		const bool flushed = m_QuadPass.Flush(target, Internal::GetFramebufferFormatKey(target), [this](RenderPass* renderPass)
 		{
 			// The shader samples a fixed 32-element array, so every slot must resolve to
 			// a real texture — the ones this batch never claimed included.
@@ -771,7 +779,8 @@ void main() {
 
 	void Renderer2D::FlushCircle()
 	{
-		if (m_CirclePass.Flush())
+		Framebuffer* target = GetDrawTarget();
+		if (m_CirclePass.Flush(target, Internal::GetFramebufferFormatKey(target)))
 			++m_Statistics.DrawCalls;
 	}
 
@@ -799,7 +808,8 @@ void main() {
 
 	void Renderer2D::FlushText()
 	{
-		const bool flushed = m_TextPass.Flush([this](RenderPass* renderPass)
+		Framebuffer* target = GetDrawTarget();
+		const bool flushed = m_TextPass.Flush(target, Internal::GetFramebufferFormatKey(target), [this](RenderPass* renderPass)
 		{
 			renderPass->SetTexture(k_TextureBinding, m_FontAtlasTexture);
 		});
