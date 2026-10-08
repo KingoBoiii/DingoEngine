@@ -69,8 +69,10 @@ namespace Dingo
 		static constexpr uint32_t k_MaxSamplerSlots = 16;
 
 		// A change rebuilds the material's cached pipelines at its next draw, so avoid swapping a
-		// slot every frame. Changes are detected by pointer: when a slot's texture is freed, clear
-		// the slot before putting a new texture in it, which may reuse the freed address.
+		// slot every frame. A texture created at a freed one's address is noticed at the next draw
+		// (Texture::GetGeneration), but don't draw the material while a slot holds a freed texture.
+		// Samplers are told apart by pointer only: when a slot's sampler is freed, clear the slot
+		// before putting a new sampler in it, which may reuse the freed address.
 		void SetTexture(uint32_t slot, Texture* texture);
 		void SetSampler(uint32_t slot, Sampler* sampler);
 

@@ -88,10 +88,8 @@ namespace Dingo
 
 		int32_t GetWidth() const { return m_Data.Width; }
 		int32_t GetHeight() const { return m_Data.Height; }
-		float GetAspectRatio() const
-		{
-			return static_cast<float>(m_Data.Width) / static_cast<float>(m_Data.Height); 
-		}
+		// The last size with both sides above 0, so a minimized window (0 x 0) keeps the aspect it had.
+		float GetAspectRatio() const { return m_Data.AspectRatio; }
 		GLFWwindow* GetNativeWindowHandle() const { return m_WindowHandle; }
 
 	private:
@@ -111,7 +109,16 @@ namespace Dingo
 		{
 			int32_t Width;
 			int32_t Height;
+			float AspectRatio = 1.0f;
 			EventCallbackFn EventCallback;
+
+			void SetSize(int32_t width, int32_t height)
+			{
+				Width = width;
+				Height = height;
+				if (width > 0 && height > 0)
+					AspectRatio = static_cast<float>(width) / static_cast<float>(height);
+			}
 		} m_Data;
 
 		friend class ImGuiLayer;

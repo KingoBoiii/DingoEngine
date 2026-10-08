@@ -196,23 +196,23 @@ namespace Dingo
 		const float top = m_Context.HalfHeight - 1.0f;
 
 		m_ScoreText = m_GameScene->CreateEntity("ScoreHud");
-		m_ScoreText.GetComponent<TransformComponent>().Position = { -m_Context.HalfWidth + 0.5f, top, 0.0f };
+		m_ScoreText.GetComponent<TransformComponent>().Position = { -m_Context.HalfWidth + 0.5f, top, HUD_TEXT_Z };
 		m_ScoreText.AddComponent<TextComponent>(MakeText("SCORE 0", m_Font, FONT_HUD, COLOR_TEXT, false));
 
 		m_LevelText = m_GameScene->CreateEntity("LevelHud");
-		m_LevelText.GetComponent<TransformComponent>().Position = { 0.0f, top, 0.0f };
+		m_LevelText.GetComponent<TransformComponent>().Position = { 0.0f, top, HUD_TEXT_Z };
 		m_LevelText.AddComponent<TextComponent>(MakeText("LEVEL 1", m_Font, FONT_HUD, COLOR_TEXT, true));
 
 		m_BirdsText = m_GameScene->CreateEntity("BirdsHud");
-		m_BirdsText.GetComponent<TransformComponent>().Position = { -m_Context.HalfWidth + 0.5f, top - 0.9f, 0.0f };
+		m_BirdsText.GetComponent<TransformComponent>().Position = { -m_Context.HalfWidth + 0.5f, top - 0.9f, HUD_TEXT_Z };
 		m_BirdsText.AddComponent<TextComponent>(MakeText("BIRDS 0", m_Font, FONT_SMALL, COLOR_TEXT, false));
 
 		m_PigsText = m_GameScene->CreateEntity("PigsHud");
-		m_PigsText.GetComponent<TransformComponent>().Position = { -m_Context.HalfWidth + 0.5f, top - 1.6f, 0.0f };
+		m_PigsText.GetComponent<TransformComponent>().Position = { -m_Context.HalfWidth + 0.5f, top - 1.6f, HUD_TEXT_Z };
 		m_PigsText.AddComponent<TextComponent>(MakeText("PIGS 0", m_Font, FONT_SMALL, COLOR_TEXT, false));
 
 		m_HintText = m_GameScene->CreateEntity("HintHud");
-		m_HintText.GetComponent<TransformComponent>().Position = { 0.0f, -m_Context.HalfHeight + 0.6f, 0.0f };
+		m_HintText.GetComponent<TransformComponent>().Position = { 0.0f, -m_Context.HalfHeight + 0.6f, HUD_TEXT_Z };
 		m_HintText.AddComponent<TextComponent>(MakeText("Drag the bird back with the mouse and release to launch", m_Font, FONT_SMALL, { 0.20f, 0.22f, 0.30f, 1.0f }, true));
 	}
 

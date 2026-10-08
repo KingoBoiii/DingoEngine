@@ -468,7 +468,7 @@ namespace Dingo
 		Material* twin = entry.Twin;
 		if (entry.SourceRevision != source->GetBindingRevision())
 		{
-			// The source may have cleared a slot and refilled it with a texture at the freed one's
+			// The source may have cleared a slot and refilled it with a sampler at the freed one's
 			// address. Clearing the twin's slot first makes it rebind instead of keeping the old one.
 			twin->SetTexture(0, nullptr);
 			twin->SetSampler(0, nullptr);

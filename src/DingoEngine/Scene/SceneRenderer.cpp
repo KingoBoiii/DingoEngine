@@ -17,7 +17,7 @@ namespace Dingo
 	{
 	}
 
-	void SceneRenderer::Render(Scene& scene)
+	void SceneRenderer::Render(Scene& scene, Framebuffer* target)
 	{
 		if (Renderer::IsFrameSkipped())
 			return;
@@ -40,10 +40,16 @@ namespace Dingo
 			return;
 		}
 
-		// Aspect comes from the swap-chain framebuffer, so projections track the window
-		// automatically. Guard a zero height (e.g. a minimized window).
-		const glm::vec2 viewportSize = m_Renderer2D->GetViewportSize();
-		const float aspect = (viewportSize.y > 0.0f) ? viewportSize.x / viewportSize.y : 1.0f;
+		Framebuffer* previousTarget = Renderer::GetRenderTarget();
+		if (target)
+			Renderer::SetRenderTarget(target);
+
+		// Aspect comes from the framebuffer drawn into, so projections track the window, or the
+		// texture a scene renders into. Guard a zero height.
+		const Framebuffer* drawn = target ? target : previousTarget ? previousTarget : Renderer::GetSwapChainFramebuffer();
+		const float width = static_cast<float>(drawn->GetParams().Width);
+		const float height = static_cast<float>(drawn->GetParams().Height);
+		const float aspect = height > 0.0f ? width / height : 1.0f;
 		const glm::vec4 clearColor = scene.GetClearColor();
 
 		// 3D world pass — clears colour + depth to the scene's clear colour. Lighting comes
@@ -68,6 +74,9 @@ namespace Dingo
 			scene.RenderEntities(*m_Renderer2D);
 			m_Renderer2D->EndScene();
 		}
+
+		if (target)
+			Renderer::SetRenderTarget(previousTarget);
 	}
 
 }

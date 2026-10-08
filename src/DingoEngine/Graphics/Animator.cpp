@@ -183,11 +183,15 @@ namespace Dingo
 			layer.States.clear();
 			layer.FrozenPose.clear();
 			layer.OneShotPending = false;
-			layer.OpenRanges.clear();
-			layer.CloseRangesOnUpdate = false;
+			// The clips these ranges came from may have gone with the old model.
+			for (OpenRange& range : layer.OpenRanges)
+				range.Clip = nullptr;
+			layer.CloseRangesOnUpdate = !layer.OpenRanges.empty();
 			layer.EventSerial = 0;
 			layer.EventClip = nullptr;
 			layer.Pose = m_RestPoses;
+			layer.AppliedWeight = 0.0f;
+			layer.PoseStale = true;
 			if (m_Skeleton)
 				ResolveMask(layer);
 		}
@@ -329,16 +333,17 @@ namespace Dingo
 		return playing;
 	}
 
-	void Animator::Push(Layer& layer, PlayingState state, float fadeSeconds, std::span<const JointPose> current)
+	void Animator::Push(uint32_t layerIndex, PlayingState state, float fadeSeconds)
 	{
+		Layer& layer = m_Layers[layerIndex];
 		const bool fade = fadeSeconds > 0.0f;
-		const bool baseLayer = &layer == &m_Layers.front();
 		if (!fade)
 		{
 			layer.States.clear();
 		}
-		else if (layer.States.size() >= k_MaxStates || (layer.States.empty() && baseLayer))
+		else if (layer.States.size() >= k_MaxStates || (layer.States.empty() && layerIndex == 0))
 		{
+			const std::span<const JointPose> current = FreezeSource(layerIndex);
 			layer.FrozenPose.assign(current.begin(), current.end());
 			layer.States.clear();
 			layer.States.emplace_back().Frozen = true;
@@ -377,15 +382,43 @@ namespace Dingo
 			return;
 		}
 
-		Push(layer, MakeState(state), fadeSeconds, FreezeSource(layerIndex));
+		Push(layerIndex, MakeState(state), fadeSeconds);
 	}
 
-	std::span<const JointPose> Animator::FreezeSource(size_t layer) const
+	std::span<const JointPose> Animator::FreezeSource(size_t layerIndex)
 	{
 		// Layer 0 writes straight into m_LocalPoses, which holds the layers above too once they apply.
-		if (layer == 0)
+		if (layerIndex == 0)
 			return m_UpperLayersApplied ? m_Layers.front().Pose : m_LocalPoses;
-		return m_Layers[layer].Pose;
+
+		// Evaluate skips a layer at weight 0 while its states go on playing, so what they have reached
+		// is worked out now, over what the layers below it showed.
+		Layer& layer = m_Layers[layerIndex];
+		if (layer.PoseStale)
+		{
+			const std::span<const JointPose> base = FreezeSource(0);
+			m_Underneath.assign(base.begin(), base.end());
+			for (size_t below = 1; below < layerIndex; ++below)
+				ApplyLayer(m_Layers[below], m_Underneath);
+			EvaluateLayer(layer, m_Underneath, layer.Pose);
+			layer.PoseStale = false;
+		}
+		return layer.Pose;
+	}
+
+	void Animator::ApplyLayer(const Layer& layer, std::span<JointPose> poses) const
+	{
+		if (!(layer.AppliedWeight > 0.0f))
+			return;
+
+		for (size_t j = 0; j < poses.size(); ++j)
+		{
+			const float jointWeight = layer.AppliedWeight * layer.Mask[j];
+			if (jointWeight >= 1.0f)
+				poses[j] = layer.Pose[j];
+			else if (jointWeight > 0.0f)
+				BlendJoint(poses[j], layer.Pose[j], jointWeight);
+		}
 	}
 
 	bool Animator::IsOneShotPlaying(uint32_t layer) const
@@ -408,7 +441,7 @@ namespace Dingo
 		layer.OneShotPending = true;
 		layer.OneShotClip = clip;
 		layer.OneShotFadeOut = std::max(fadeOut, 0.0f);
-		Push(layer, MakeState(AnimationState::Clip(clip).SetLoop(false)), fadeIn, FreezeSource(layerIndex));
+		Push(layerIndex, MakeState(AnimationState::Clip(clip).SetLoop(false)), fadeIn);
 	}
 
 	const Animator::PlayingState* Animator::Current(uint32_t layer) const
@@ -636,11 +669,16 @@ namespace Dingo
 
 	void Animator::Update(float deltaTime)
 	{
+		m_Events.clear();
 		if (!m_Skeleton)
+		{
+			// Nothing plays without a skeleton, but the ranges open when it was unbound still end.
+			for (uint32_t i = 0; i < m_Layers.size(); ++i)
+				CollectEvents(i, m_Layers[i]);
 			return;
+		}
 
 		SyncSkeleton();
-		m_Events.clear();
 		for (size_t i = 0; i < m_Layers.size(); ++i)
 		{
 			Layer& layer = m_Layers[i];
@@ -682,7 +720,7 @@ namespace Dingo
 					resume.PreviousTime = resume.Time;
 					resume.Wrapped = false;
 				}
-				Push(layer, std::move(resume), layer.OneShotFadeOut, FreezeSource(i));
+				Push(static_cast<uint32_t>(i), std::move(resume), layer.OneShotFadeOut);
 				CollectEvents(static_cast<uint32_t>(i), layer);
 			}
 
@@ -932,6 +970,8 @@ namespace Dingo
 		{
 			Layer& layer = m_Layers[i];
 			const float weight = std::clamp(layer.Settings.GetWeight(), 0.0f, 1.0f);
+			layer.AppliedWeight = 0.0f;
+			layer.PoseStale = true;
 			if (!(weight > 0.0f) || layer.States.empty() || (layer.States.size() == 1 && !layer.States[0].Frozen && IsTransparent(layer.States[0].State)))
 				continue;
 
@@ -942,14 +982,9 @@ namespace Dingo
 			}
 
 			EvaluateLayer(layer, m_LocalPoses, layer.Pose);
-			for (size_t j = 0; j < m_LocalPoses.size(); ++j)
-			{
-				const float jointWeight = weight * layer.Mask[j];
-				if (jointWeight >= 1.0f)
-					m_LocalPoses[j] = layer.Pose[j];
-				else if (jointWeight > 0.0f)
-					BlendJoint(m_LocalPoses[j], layer.Pose[j], jointWeight);
-			}
+			layer.AppliedWeight = weight;
+			layer.PoseStale = false;
+			ApplyLayer(layer, m_LocalPoses);
 		}
 
 		m_Skeleton->ComputeGlobalTransforms(m_LocalPoses, m_Globals);

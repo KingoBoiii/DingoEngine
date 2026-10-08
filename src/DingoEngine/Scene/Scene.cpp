@@ -302,66 +302,79 @@ namespace Dingo
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
 
-		// Sprites (solid-colour or textured quads), painter-sorted by z: a higher
-		// world z draws on top, and at equal z a parent draws before its children. Other
-		// equal-z ties are NOT ordered by creation (the view order decides), so give
-		// overlapping UI elements distinct z values.
+		// Sprites, circles and text, painter-sorted by z in one stream: a higher world z draws on
+		// top. At equal z sprites come first, then circles, then text, as when each kind drew in a
+		// pass of its own, and within a kind a parent draws before its children. Other equal-z ties
+		// are NOT ordered by creation (the view order decides), so give overlapping UI elements
+		// distinct z values.
+		using Internal::SceneData;
+		auto sprites = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
+		auto circles = m_Data->Registry.view<TransformComponent, CircleRendererComponent>();
+		auto texts = m_Data->Registry.view<TransformComponent, TextComponent>();
+
+		// The world pose is resolved once per entity and kept with its sort key, so the sort goes
+		// back to the registry for nothing. The buffer is a member so a steady-state frame does no
+		// allocation at all.
+		std::vector<SceneData::Draw2D>& draws = m_Data->Draw2DSortBuffer;
+		draws.clear();
+		auto collect = [&](entt::entity entity, const TransformComponent& transform, SceneData::Draw2DKind kind)
 		{
-			auto view = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
-
-			// The world pose is resolved once per sprite and kept with its sort key, so neither the
-			// sort nor the draw goes back to the registry. The buffer is a member so a steady-state
-			// frame does no allocation at all.
-			std::vector<Internal::SceneData::SpriteDraw>& sprites = m_Data->SpriteSortBuffer;
-			sprites.clear();
-			for (entt::entity entity : view)
-			{
-				Internal::SceneData::SpriteDraw& draw = sprites.emplace_back();
-				draw.Entity = entity;
-				memo.Pose2D(entity, view.get<TransformComponent>(entity), draw.Position, draw.Rotation);
-				draw.Depth = memo.Depth(entity);
-			}
-
-			std::stable_sort(sprites.begin(), sprites.end(), [](const auto& a, const auto& b)
-			{
-				return a.Position.z != b.Position.z ? a.Position.z < b.Position.z : a.Depth < b.Depth;
-			});
-
-			for (const Internal::SceneData::SpriteDraw& draw : sprites)
-			{
-				auto [transform, sprite] = view.get<TransformComponent, SpriteRendererComponent>(draw.Entity);
-				Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
-
-				if (draw.Rotation != 0.0f)
-					renderer.DrawRotatedQuad(draw.Position, draw.Rotation, transform.Size, texture, sprite.Color);
-				else
-					renderer.DrawQuad(draw.Position, transform.Size, texture, sprite.Color);
-			}
+			SceneData::Draw2D& draw = draws.emplace_back();
+			draw.Entity = entity;
+			draw.Kind = kind;
+			memo.Pose2D(entity, transform, draw.Position, draw.Rotation);
+			draw.Depth = memo.Depth(entity);
+		};
+		for (entt::entity entity : sprites)
+			collect(entity, sprites.get<TransformComponent>(entity), SceneData::Draw2DKind::Sprite);
+		for (entt::entity entity : circles)
+			collect(entity, circles.get<TransformComponent>(entity), SceneData::Draw2DKind::Circle);
+		for (entt::entity entity : texts)
+		{
+			const TextComponent& text = texts.get<TextComponent>(entity);
+			if (text.Font && !text.Text.empty())
+				collect(entity, texts.get<TransformComponent>(entity), SceneData::Draw2DKind::Text);
 		}
 
-		// Circles
+		std::stable_sort(draws.begin(), draws.end(), [](const SceneData::Draw2D& a, const SceneData::Draw2D& b)
 		{
-			auto view = m_Data->Registry.view<TransformComponent, CircleRendererComponent>();
-			for (auto entity : view)
-			{
-				auto [transform, circle] = view.get<TransformComponent, CircleRendererComponent>(entity);
-				renderer.DrawCircle(memo.Transform2D(entity, transform), circle.Color, circle.Thickness, circle.Fade);
-			}
-		}
+			if (a.Position.z != b.Position.z)
+				return a.Position.z < b.Position.z;
+			return a.Kind != b.Kind ? a.Kind < b.Kind : a.Depth < b.Depth;
+		});
 
-		// Text
+		for (size_t i = 0; i < draws.size(); ++i)
 		{
-			auto view = m_Data->Registry.view<TransformComponent, TextComponent>();
-			for (auto entity : view)
-			{
-				auto [transform, text] = view.get<TransformComponent, TextComponent>(entity);
-				if (!text.Font || text.Text.empty())
-					continue;
+			const SceneData::Draw2D& draw = draws[i];
+			// Each kind batches on its own, so a change of kind has to draw what came before it.
+			if (i > 0 && draws[i - 1].Kind != draw.Kind)
+				renderer.Flush();
 
-				glm::vec3 position;
-				float rotation;
-				memo.Pose2D(entity, transform, position, rotation);
-				renderer.DrawText(text.Text, text.Font, position, text.Size, { .Color = text.Color, .Centered = text.Centered });
+			switch (draw.Kind)
+			{
+				case SceneData::Draw2DKind::Sprite:
+				{
+					auto [transform, sprite] = sprites.get<TransformComponent, SpriteRendererComponent>(draw.Entity);
+					Texture* texture = sprite.Texture ? sprite.Texture : Renderer::GetWhiteTexture();
+
+					if (draw.Rotation != 0.0f)
+						renderer.DrawRotatedQuad(draw.Position, draw.Rotation, transform.Size, texture, sprite.Color);
+					else
+						renderer.DrawQuad(draw.Position, transform.Size, texture, sprite.Color);
+					break;
+				}
+				case SceneData::Draw2DKind::Circle:
+				{
+					auto [transform, circle] = circles.get<TransformComponent, CircleRendererComponent>(draw.Entity);
+					renderer.DrawCircle(memo.Transform2D(draw.Entity, transform), circle.Color, circle.Thickness, circle.Fade);
+					break;
+				}
+				case SceneData::Draw2DKind::Text:
+				{
+					const TextComponent& text = texts.get<TextComponent>(draw.Entity);
+					renderer.DrawText(text.Text, text.Font, draw.Position, text.Size, { .Color = text.Color, .Centered = text.Centered, .Rotation = draw.Rotation });
+					break;
+				}
 			}
 		}
 	}

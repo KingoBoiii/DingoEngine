@@ -450,6 +450,21 @@ namespace Dingo::UI
 			ImGui::ProgressBar(Input::GetGamepadAxis(GamepadAxis::LeftTrigger, pad), ImVec2(120.0f, 0.0f), "LT");
 			ImGui::SameLine();
 			ImGui::ProgressBar(Input::GetGamepadAxis(GamepadAxis::RightTrigger, pad), ImVec2(120.0f, 0.0f), "RT");
+
+			ImGui::PushID(static_cast<int>(pad));
+			if (Input::IsGamepadRumbleSupported(pad))
+			{
+				if (ImGui::Button("Rumble: low"))
+					Input::SetGamepadRumble(0.8f, 0.0f, 0.5f, pad);
+				ImGui::SameLine();
+				if (ImGui::Button("Rumble: high"))
+					Input::SetGamepadRumble(0.0f, 0.8f, 0.5f, pad);
+			}
+			else
+			{
+				ImGui::TextDisabled("No rumble (XInput pads only)");
+			}
+			ImGui::PopID();
 		}
 
 		if (!any)
