@@ -153,7 +153,7 @@ event:
 - **V3** `b7a0906`, as designed. `--no-post` keeps `FLAME_EMISSIVE` at v0.8's 1.1, so the flame
   doesn't clip to white.
 - **V4:** the review (one fresh agent) found no Critical or High, and traced that nothing in the
-  change can alter a `--check` or `--tournament` result. Fixed in `FIXCOMMIT`:
+  change can alter a `--check` or `--tournament` result. Fixed in `7305371`:
   - M1 Medium: the foot emitters were on the foot joint's frame, whose +Y points along the bone
     (about 46° below horizontal at rest), so most of each footfall's dust went into the floor. Each
     emitter is now turned back by its joint's rest rotation, so it emits along the model's up while
