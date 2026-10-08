@@ -321,12 +321,12 @@ The requests:
 **Test**: new checks in the Animation Test (a hidden layer's freeze, a disabled animator's events, and the range ends of a rebind, on a bare animator and in a scene; all four fail on v0.8.2), the Background Test (the aspect ratio while minimized), and the Asset Manager Test (no texture loaded after an `Unload` shares a generation with the freed one). The new **Render Target Test** (`--test=target`) crossfades two 3D scenes rendered into textures, and reads back a 2D probe scene rendered into a square framebuffer to check that its projection takes the framebuffer's aspect, that row 0 is its top, that text under a sprite with a higher z is hidden, that rotated text turns, and that the PNGs it saves hold the pixels read back; with v0.8.2's scene rendering the aspect, z-order and rotation checks fail. Rumble was not tried on a pad: the machine has none. The Vulkan changes (#78, #79, #86, the buffer padding) were reviewed but not run: the machine they were made on has no Vulkan driver. #78's fallback was checked on DX11 by forcing it, and the buffer padding by forcing every upload through it, which left the Mesh 3D and Model 3D frames pixel-identical.
 
 ## v0.9 — Shadows, Post-processing & VFX
-**Status**: the engine work (P1–P12 of `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`,
-whose "As built" notes override the design below) is on the branch, `VERSION` 0.9.0, with its review
-pass (P13) done and the *Candlewick* upgrade (P14, `.claude/plans/2026-10-08-candlewick-v0.9-plan.md`)
-built, and the *Marionette* upgrade (P15, `.claude/plans/2026-10-08-marionette-v0.9-plan.md`) too.
-Not yet verified on a GPU.
-What it adds:
+**Status**: released as v0.9.0 on 2026-10-08 (PR #106). The engine work (P1–P12 of
+`.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose "As built" notes override the design
+below, reviewed in `.claude/reviews/2026-10-08-v0.9.0-review.md`), the *Candlewick* upgrade (P14,
+`.claude/plans/2026-10-08-candlewick-v0.9-plan.md`) and the *Marionette* upgrade (P15,
+`.claude/plans/2026-10-08-marionette-v0.9-plan.md`) shipped together, verified on Vulkan, DX11 and
+DX12 (the plan's §9 "GPU verification"). What it adds:
 
 - **Profiling**: Tracy (not Optick) behind premake's `--profile`, `DE_PROFILE_*` zones, always-on GPU
   pass timers and an F8 Profiler tab ([docs/profiling.md](docs/profiling.md)).
