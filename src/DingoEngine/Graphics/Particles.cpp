@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
+#include "DingoEngine/Graphics/Texture.h"
 
 #include <cmath>
 
@@ -42,14 +43,35 @@ namespace Dingo
 			// A float literal that compiles: 1 prints as "1", which needs its ".0" before the "f".
 			auto f = [](float value)
 			{
+				if (std::isnan(value))
+					return std::string("std::numeric_limits<float>::quiet_NaN()");
+				if (std::isinf(value))
+					return std::string(value > 0.0f ? "std::numeric_limits<float>::infinity()" : "-std::numeric_limits<float>::infinity()");
 				std::string text = std::format("{}", value);
-				if (text.find_first_of(".en") == std::string::npos)
+				if (text.find_first_of(".e") == std::string::npos)
 					text += ".0";
 				return text + "f";
 			};
 			auto v3 = [&f](const glm::vec3& v) { return std::format("{{ {}, {}, {} }}", f(v.x), f(v.y), f(v.z)); };
+			auto quoted = [](const std::string& text)
+			{
+				std::string out = "\"";
+				for (const char c : text)
+				{
+					switch (c)
+					{
+						case '"': out += "\\\""; break;
+						case '\\': out += "\\\\"; break;
+						case '\n': out += "\\n"; break;
+						case '\t': out += "\\t"; break;
+						case '\r': out += "\\r"; break;
+						default: out += c; break;
+					}
+				}
+				return out + "\"";
+			};
 
-			std::string code = std::format("ParticleEffect::Create(ParticleEffectParams()\n\t.SetDebugName(\"{}\")\n", p.DebugName);
+			std::string code = std::format("ParticleEffect::Create(ParticleEffectParams()\n\t.SetDebugName({})\n", quoted(p.DebugName));
 			code += std::format("\t.SetShape(ParticleShape::{}, {})\n", ShapeName(p.Shape), v3(p.ShapeSize));
 			code += std::format("\t.SetRate({})\n", f(p.Rate));
 			if (p.BurstOnPlay > 0)
@@ -75,8 +97,14 @@ namespace Dingo
 			code += " })\n";
 			if (p.Blend == ParticleBlend::Alpha)
 				code += "\t.SetBlend(ParticleBlend::Alpha)\n";
-			if (p.FlipbookColumns > 1 || p.FlipbookRows > 1)
-				code += std::format("\t.SetTexture(texture, {}, {})\n", p.FlipbookColumns, p.FlipbookRows);
+			// The texture is the game's to load: the code names it in a comment and passes null.
+			if (p.Texture)
+			{
+				std::string name = quoted(p.Texture->GetParams().DebugName);
+				for (size_t at = name.find("*/"); at != std::string::npos; at = name.find("*/", at))
+					name.replace(at, 2, "* /");
+				code += std::format("\t.SetTexture(/* {} */ nullptr, {}, {})\n", name, std::max(p.FlipbookColumns, 1u), std::max(p.FlipbookRows, 1u));
+			}
 			code += std::format("\t.SetSoftDistance({})", f(p.SoftDistance));
 			if (p.Capacity > 0)
 				code += std::format("\n\t.SetCapacity({})", p.Capacity);

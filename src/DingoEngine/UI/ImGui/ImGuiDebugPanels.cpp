@@ -60,8 +60,10 @@ namespace Dingo::UI
 			{
 				for (const ParticleEffect* effect : effects)
 				{
+					ImGui::PushID(effect);
 					if (ImGui::Selectable(nameOf(effect).c_str(), effect == s_Selected))
 						s_Selected = effect;
+					ImGui::PopID();
 				}
 				ImGui::EndCombo();
 			}
