@@ -1,6 +1,6 @@
 # Hearthvale — the v1.0 release game: plan
 
-Drafted 2026-10-08 on `claude/gallant-albattani-0gyirn` (base `master` @ `4ff48ea`, v0.9.0 plus the
+Drafted 2026-10-08 on `feat/v1` (base `master` @ `4ff48ea`, v0.9.0 plus the
 Linux merge). Every file:line below was read that day. This is P13 of
 `.claude/plans/2026-10-08-v1.0-plan.md` (its §6 and decision D1). *Hearthvale* is a working title;
 HD9 settles the name.
