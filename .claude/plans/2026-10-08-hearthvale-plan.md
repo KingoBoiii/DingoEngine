@@ -24,7 +24,8 @@ and it lives in `examples/Hearthvale` beside the other examples.
 | Static geometry (P5) | Everything placed is `Static`, and placing or removing rebakes one cell, many times a day |
 | Skinned throughput (P6) | The farmer, the villagers and the animals, with animation LOD off screen |
 | Stability (P7) | Crash logs and dumps in the user-data folder of a game players install |
-| GameUI, SaveData, buses, display, fog, translucency (P8) | Every menu, the whole valley in a save, music and ambience sliders, morning mist, greenhouse glass, the pond |
+| DingoUI (workstream U) | Every menu and the HUD, pad first |
+| SaveData, buses, display, fog, translucency (P8) | The whole valley in a save, music and ambience sliders, morning mist, greenhouse glass, the pond |
 | `OnFixedUpdate`, body lookup (P9) | Deterministic day simulation for `--check`; picking a villager by ray |
 | v0.9 | A moving sun with cascades, shadowed lamps, bloom on windows, rain and firefly particles, AO |
 
@@ -136,7 +137,7 @@ The target tile is the one in front of the farmer, shown as an outline. With a m
 tile within 3 tiles of the farmer is the target instead (`ScreenPointToRay` plus
 `IntersectGroundPlane(0)`), and the farmer turns to it.
 
-### 2.4 Screens (all GameUI, v1.0 P8)
+### 2.4 Screens (all DingoUI, v1.0 workstream U)
 
 **Title** (Continue, New game, Load, Options, Credits, Quit), **save slots** (3, each showing the
 day, season, coins and farm name), **HUD** (clock, day and season, weather icon, coins, hotbar with
@@ -333,14 +334,14 @@ diff. Estimates are focused dev days.
 | **H1** | Valley and farmer: `TileGrid`, seeded generation, ground cells, decoration, farmer movement and animation, the camera, the sun's day curve, a text HUD (clock) | 3 d | P2 (culling) for perf | Walk the whole valley; `--seed` reproduces it; Release ≥ 120 fps on the GPU machine with P2 |
 | **H2** | Building: target tile, ghost preview, rules (blocked, cost, footprint), place/remove/rotate, axe and pickaxe, wood and stone, a temporary text build menu | 4 d | P3–P5 | 500 fences placed and removed without a dropped frame; each place or remove rebakes one cell (F4 stat); placement checks pass |
 | **H3** | Crops and calendar: tilling, seeds, watering, growth, regrowth, seasons, weather, sleep and the day roll, the shipping bin, sprinklers | 4 d | — | `--days=28 --autoplay` grows and sells two seasons; growth checks pass |
-| **H4** | Economy and UI: inventory, hotbar, shop, prices, the board and its requests, every menu on GameUI | 4 d | P8 (GameUI) | Every screen works with a pad only; the UI navigation check passes |
+| **H4** | Economy and UI: inventory, hotbar, shop, prices, the board and its requests, every menu on DingoUI | 4 d | U5 (DingoUI with focus navigation) | Every screen works with a pad only; the UI navigation check passes |
 | **H5** | Life: villagers (schedules, dialogue, gifts), animals (HD3), the coop and barn, the greenhouse and pond, lamps and windows, mist, particles, music and ambience on buses | 4.5 d | P6, P8 | A night in the square stays in the light budget with no popping; the greenhouse grows in winter |
 | **H6** | Saves and shipping: slots, autosave, schema versioning, the `.bak` fallback, options, title, credits, the festival ending, icons and exe metadata, Windows and Linux packages, the itch.io page (cover, screenshots, description) | 3.5 d | P7, P8, P10 | Save checks pass, including a kill mid-write; a full year plays start to festival with `--autoplay` |
 | **H7** | Balance, review and perf: tune prices, growth and board goals from `--days=56` logs; a fresh-agent review (`.claude/reviews/<date>-hearthvale-review.md`); `--perf` on all three backends with `--layout=demo`; a 60-minute soak; the name settled (HD9) | 4 d | P10 RC | Review Criticals and Highs fixed; perf targets met (§6); soak flat |
 
 **Total: about 30 dev days, about 6 weeks.** H0–H3 need only P2–P5 (perf) and run in parallel with
-P6–P9; H4 waits for GameUI (P8). Before P8 lands, H1–H3 use *Marionette*-style text HUDs, which H4
-replaces.
+P6–P9; H4 waits for DingoUI's U5 (v1.0 §3.1). Before U5 lands, H1–H3 use *Marionette*-style text
+HUDs, which H4 replaces.
 
 **Cut order** if time runs short:
 
@@ -428,7 +429,7 @@ any `[FAIL]` fails CI.
 | The moving sun makes cascades crawl | The sun moves in 0.25° steps (a step every ~22 real seconds), each step a quick 1 s blend; elevation capped at 65°, far from the `abs(dir.y) > 0.99` basis switch; checked in H1 against a still sun |
 | Rebaking on every placement hitches | Rebakes happen at most once per cell per frame; a cell is ≤ 64k vertices; measured in H2 with 500 placements |
 | Ten thousand static entities make `Scene` itself slow (hierarchy memo, ECS iteration) | Measured in H1 before any gameplay; decoration and ground merge into cell entities if needed |
-| GameUI arrives late (P8) | H1–H3 use text HUDs; H4 starts the day P8 lands |
+| DingoUI arrives late (U5) | H1–H3 use text HUDs; H4 starts the day U5 lands |
 | Save format churn during development | A schema version from H3 on, with a migration test from each saved version kept in `test/` assets |
 | A release game needs polish the engine phases don't give (balance, music, art direction) | H7 is balance first; the content target (§2.2) is fixed now, and the cut order protects the ending |
 | The name collides with an existing game or trademark | HD9 checks itch.io and Steam before H6's page goes up |
@@ -458,7 +459,7 @@ any `[FAIL]` fails CI.
 |---|---|---|
 | E1 | The model loader drops material base colours and vertex colours (`Model.cpp:160-172`, `Mesh.h:12-17`); a colour-only pack loads white | v1.0 **P1**: `SubMesh::BaseColor` from `AI_MATKEY_BASE_COLOR`, falling back to `AI_MATKEY_COLOR_DIFFUSE`, which games pass as `MeshRendererComponent::Color` (vertex colours stay out: the 48 B vertex layout is frozen) |
 | E2 | v1.0 P5's static change detection compared only transforms and meshes; a watered tile changes only its colour | v1.0 **§2.6**, now comparing the whole draw state (transform, mesh id, colour, surface override, shadow mode) |
-| E3 | `Renderer2D::DrawText` has no word wrap; dialogue and tooltips need it | v1.0 **§2.10**: `GameUI::Label` wraps to its width (`Font::GetStringWidth` per word) |
+| E3 | `Renderer2D::DrawText` has no word wrap; dialogue and tooltips need it | DingoUI's U0 (`2026-10-08-v1.0-game-ui-plan.md` §3.1): `Font::MeasureText` with wrap, shared by `DrawText` and DingoUI's `Text` |
 | E4 | No body-to-entity lookup | Already v1.0 P9 |
 | E5 | No fixed-step hook | Already v1.0 P9 (`OnFixedUpdate`); until then the director steps the scene itself, as *Marionette* does |
 | E6 | Cascades are stable for a still light only | Game-side mitigation (§8); an engine fix is post-1.0 unless H1 shows the stepped sun isn't enough |

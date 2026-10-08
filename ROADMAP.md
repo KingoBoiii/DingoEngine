@@ -395,6 +395,14 @@ was called "Advanced Rendering & Performance" but was never scheduled anywhere:
 - **Material sharing**: a shared-material path so the first custom material in a scene doesn't
   fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
   costing a material each: v0.7's lit materials are per-material, not per-mesh.
+- **DingoUI, a game UI framework** ([#98](https://github.com/KingoBoiii/DingoEngine/issues/98)):
+  games have no UI layer of their own today (`Dingo::UI` is an ImGui facade for debug panels), so
+  every example builds its HUD and menus from sprites and text by hand. `DingoUI` is an
+  immediate-mode API (`DingoUI::Button("Play")`) for HUDs and menus: flexbox-style layout anchored to
+  the screen, gamepad and keyboard focus navigation, world-space health bars and labels, 9-slice
+  skins and themes, tweens and screen transitions, and clicks the UI takes kept away from the game.
+  It draws a whole menu in about one draw call, after the post chain. ImGui stays the debug UI.
+  Plan: `.claude/plans/2026-10-08-v1.0-game-ui-plan.md`.
 
 Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
