@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Framebuffer.h"
+#include "DingoEngine/Graphics/FramebufferFormat.h"
 
 #include <nvrhi/nvrhi.h>
 
@@ -39,6 +40,7 @@ namespace Dingo
 		friend class NvrhiPipeline; // Allow NvrhiPipeline to access private members
 		friend class NvrhiCommandList; // Allow CommandList to access private members
 		friend class ImGuiRenderer; // Allow NvrhiGraphicsContext to access private members
+		friend uint64_t Internal::GetFramebufferFormatKey(const Framebuffer* framebuffer);
 	};
 
 }

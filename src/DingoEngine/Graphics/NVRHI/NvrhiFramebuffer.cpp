@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "NvrhiFramebuffer.h"
+#include "DingoEngine/Graphics/FramebufferFormat.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/Renderer.h"
@@ -94,6 +95,35 @@ namespace Dingo
 			DE_CORE_ASSERT(m_DepthTextureHandle, "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
 			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
 		}
+	}
+
+	namespace Internal
+	{
+
+		uint64_t GetFramebufferFormatKey(const Framebuffer* framebuffer)
+		{
+			const NvrhiFramebuffer* nvrhiFramebuffer = static_cast<const NvrhiFramebuffer*>(framebuffer);
+			if (!nvrhiFramebuffer || !nvrhiFramebuffer->m_FramebufferHandle)
+				return 0;
+
+			const nvrhi::FramebufferInfo& info = nvrhiFramebuffer->m_FramebufferHandle->getFramebufferInfo();
+
+			uint64_t key = 0xcbf29ce484222325ull;
+			auto mix = [&key](uint64_t value)
+			{
+				key ^= value;
+				key *= 0x100000001b3ull;
+			};
+
+			mix(info.colorFormats.size());
+			for (const nvrhi::Format format : info.colorFormats)
+				mix(static_cast<uint64_t>(format));
+			mix(static_cast<uint64_t>(info.depthFormat));
+			mix(info.sampleCount);
+			mix(info.sampleQuality);
+			return key;
+		}
+
 	}
 
 }
