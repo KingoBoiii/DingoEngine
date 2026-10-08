@@ -58,6 +58,8 @@ Anchors were read on `master` @ `e5f4749` (v0.8.3 merged). One phase per schedul
 
 **Verify** (sandbox: code review only; miniaudio's null backend could run the checks headless on a Linux build later). Windows: `--test=bus` all PASS; ear check that a bus volume change reaches a looping sound already playing (the Headstone complaint).
 
+**As built** (done; the engine as a whole not built or run, the audio backend run): as designed, plus `IsBusValid` and `GetBusCount` (the F3 Engine tab shows the count). Groups are made with `MA_SOUND_FLAG_NO_PITCH`, since every sound now passes the root group and a group's resampler would otherwise run at pitch 1. `CreateBus` with an empty name returns `k_InvalidBus`. The legacy `PlayOneShot(clip, volume)` overloads forward to the bus ones on `k_MasterBus`, which go through `Play`. `MiniAudioEngine.cpp` with the new code ran in a standalone harness (GCC 13, ASan + UBSan, miniaudio picking its device backend headless): 29 checks of the same ground as the Audio Bus Test pass, including a one-shot on a paused bus surviving past its length and finishing after `ResumeBus`, and a shutdown with nested buses and live sounds. The Audio Bus Test's and the changed engine files' syntax was checked with GCC on a scratch merge of master. Examples are not ported.
+
 ## Phase 3 — distance fog in the lit shader (#92)
 
 **Facts**

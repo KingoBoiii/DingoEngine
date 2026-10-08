@@ -520,6 +520,7 @@ namespace Dingo
 		// Ignored when Spatialized is false.
 		std::optional<SoundAttenuation> Attenuation;
 		bool PlayOnStart = false;
+		AudioBusId Bus = k_MasterBus;
 
 		AudioSourceComponent() = default;
 		AudioSourceComponent(const AudioSourceComponent&) = default;

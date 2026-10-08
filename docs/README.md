@@ -25,6 +25,7 @@ engine from source.
 | [Asset Pipeline](asset-pipeline.md) | The v0.6 `AssetManager` — UUID asset handles, path dedup, background/async loading, and hot-reload of shaders, textures and (v0.8) models. |
 | [Lighting & Shading](lighting.md) | The v0.7 lighting system — directional, point, spot and ambient lights (as components or through `Renderer3D`), the per-scene light budget, falloff, gameplay queries of a light's reach (`GetLightAttenuation`), lit materials with specular and emissive, the scene uniform block for custom shaders, and hot-reloading the lit shader. |
 | [Animation & Skinned Models](animation.md) | The v0.8 skeletal animation system — loading skinned models and clip libraries, GPU skinning (`SkinnedMeshRendererComponent`, `Renderer3D::SubmitSkinnedMesh`, the instance budget, custom skinned shaders), the `Animator` (cross-fades, `Blend1D`, masked layers, one-shots), timeline events and the `.events` sidecar, joint sockets, retargeting by joint name, in-place model hot-reload, and the F7 Animation tab. |
+| [Audio](audio.md) | The miniaudio-backed `AudioEngine` — clips, `Play`/`PlayOneShot`, positional audio and distance falloff, and mix buses (volume, mute, pause and stop per bus, `AudioSourceComponent::Bus`). |
 
 ## A 30-second tour
 

@@ -322,6 +322,7 @@ namespace Dingo::UI
 		ImGui::Text("Status        : %s", audio.IsValid() ? "Valid" : "Invalid");
 		ImGui::Text("Master volume : %.2f", audio.GetMasterVolume());
 		ImGui::Text("Active sounds : %u", audio.GetActiveSoundCount());
+		ImGui::Text("Buses         : %u", audio.GetBusCount());
 	}
 
 	void EngineStatsWindow(bool* open)
