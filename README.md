@@ -79,7 +79,7 @@ git submodule update --init
 
 On Windows, run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This will invoke Premake5 and produce a Visual Studio solution with all projects and dependencies configured.
 
-On Linux, first build assimp 6.0.4 as a static library into `vendor/assimp/lib/linux-x86_64/` (see [Getting Started](docs/getting-started.md#option-a--integrate-from-source-recommended)), then run `premake5 gmake` (premake 5.0.0-beta8, Linux build) from the root directory.
+On Linux, first build assimp 6.0.4 as a static library into `vendor/assimp/lib/linux-x86_64/` (see [Getting Started](docs/getting-started.md#option-a--integrate-from-source-recommended)), then run [Generate-Linux.sh](Generate-Linux.sh), which runs the repo's premake (`vendor/premake/bin/premake5 gmake`). VS Code users get Linux build tasks and gdb launch entries in `.vscode`.
 
 **3. Build & run**
 

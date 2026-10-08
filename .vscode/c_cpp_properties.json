@@ -39,6 +39,41 @@
             "cStandard": "c17",
             "cppStandard": "c++20",
             "intelliSenseMode": "windows-msvc-x64"
+        },
+        {
+            "name": "Linux (Debug)",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/vendor/spdlog/include",
+                "${workspaceFolder}/vendor/glfw/include",
+                "${workspaceFolder}/vendor/nvrhi/include",
+                "${workspaceFolder}/vendor/glm",
+                "${workspaceFolder}/vendor/stb/include",
+                "${workspaceFolder}/vendor/imgui",
+                "${workspaceFolder}/vendor/msdf-atlas-gen/msdfgen",
+                "${workspaceFolder}/vendor/msdf-atlas-gen/msdf-atlas-gen",
+                "${env:VULKAN_SDK}/include",
+                "${workspaceFolder}/test/src",
+                "${workspaceFolder}/vendor/assimp/include",
+                "${workspaceFolder}/vendor/entt/include",
+                "${workspaceFolder}/vendor/box2d/include",
+                "${workspaceFolder}/vendor/JoltPhysics"
+            ],
+            "defines": [
+                "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1",
+                "_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING",
+                "GLFW_INCLUDE_NONE",
+                "DE_PLATFORM_LINUX",
+                "GLM_FORCE_DEPTH_ZERO_TO_ONE",
+                "SPDLOG_COMPILED_LIB",
+                "SPDLOG_USE_STD_FORMAT",
+                "DE_DEBUG"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4

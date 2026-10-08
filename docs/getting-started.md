@@ -127,13 +127,12 @@ cmake --build /tmp/assimp/build
 mkdir -p vendor/assimp/lib/linux-x86_64 && cp /tmp/assimp/build/lib/libassimp.a vendor/assimp/lib/linux-x86_64/
 ```
 
-Then generate makefiles with premake 5.0.0-beta8's Linux build
-([releases](https://github.com/premake/premake-core/releases/tag/v5.0.0-beta8)) and build
-(`config` is `debug`, `debug-asan`, `release` or `distribution`; name a project to build only
-it and what it needs):
+Then generate makefiles (`Generate-Linux.sh` runs the repo's own premake 5.0.0-beta8,
+`vendor/premake/bin/premake5 gmake`) and build (`config` is `debug`, `debug-asan`,
+`release` or `distribution`; name a project to build only it and what it needs):
 
 ```bash
-premake5 gmake
+./Generate-Linux.sh
 make -j"$(nproc)" config=debug MyGame
 cd examples/MyGame && ../../build/bin/Debug-linux-x86_64/MyGame/MyGame
 ```
