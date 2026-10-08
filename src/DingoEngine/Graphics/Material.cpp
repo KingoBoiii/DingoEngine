@@ -132,7 +132,13 @@ namespace Dingo
 				? "MaterialUBO"
 				: m_Params.DebugName + "_UBO";
 
-			m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(size, name);
+			m_UniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+				.SetDebugName(name)
+				.SetByteSize(size)
+				.SetType(BufferType::UniformBuffer)
+				.SetIsVolatile(true)
+				.SetDirectUpload(false)
+				.SetMaxWritesPerFrame(std::max(m_Params.UniformWritesPerFrame, 1u)));
 			InvalidatePipelineCache();
 		}
 	}

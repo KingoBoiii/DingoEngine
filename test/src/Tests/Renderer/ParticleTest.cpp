@@ -582,6 +582,41 @@ namespace Dingo
 				const float below = GreenAt(pixels.Data, bottom);
 				Check(above > 0.85f && below < 0.15f, std::format("a sprite stands upright: its top half on top ({:.2f} above, {:.2f} below)", above, below));
 			});
+			return;
+		}
+
+		if (step == 6)
+		{
+			// One emitter in ten scenes of a frame, nine looking away: the tenth draws with its own
+			// camera, past the 8 writes a frame a default material uniform buffer holds on Vulkan.
+			m_CheckEffects.emplace_back(ParticleEffect::Create(StillParticles("ParticleTest scenes", 100.0f, 4)
+				.SetBurstOnPlay(1)
+				.SetStartSize(1.0f, 1.0f)
+				.SetColors({ { 0.0f, glm::vec4(1.0f) } })));
+			m_ManyScenes = m_CheckRenderer->CreateParticleEmitter(m_CheckEffects.back().get());
+			const glm::mat4 at = glm::translate(glm::mat4(1.0f), k_PuffCenter);
+			PerspectiveCamera away = CheckCamera();
+			away.SetTarget(away.GetPosition() + (away.GetPosition() - k_PuffCenter));
+			for (int scene = 0; scene < 10; ++scene)
+			{
+				const bool last = scene == 9;
+				Framebuffer* previous = Renderer::GetRenderTarget();
+				Renderer::SetRenderTarget(last ? m_CheckTarget : m_HardTarget);
+				m_CheckRenderer->BeginScene(last ? CheckCamera() : away);
+				m_CheckRenderer->Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+				m_CheckRenderer->SubmitParticles(*m_ManyScenes, at, scene == 0 ? 1.0f / 60.0f : 0.0f);
+				m_CheckRenderer->EndScene();
+				Renderer::SetRenderTarget(previous);
+			}
+			const glm::ivec2 center = ToPixel(CheckCamera().GetViewProjectionMatrix(), k_PuffCenter);
+			const std::weak_ptr<int> alive = m_Alive;
+			m_CheckTarget->GetAttachment(0)->ReadPixels([this, alive, center](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				const float green = pixels.Data.empty() ? 0.0f : GreenAt(pixels.Data, center);
+				Check(green > 0.3f, std::format("the tenth scene of a frame draws its particles with its own camera ({:.2f} at the particle)", green));
+			});
 		}
 	}
 
@@ -646,7 +681,7 @@ namespace Dingo
 
 	void ParticleTest::Update(float deltaTime)
 	{
-		if (m_CheckStep < 6 && !Renderer::IsFrameSkipped())
+		if (m_CheckStep < 7 && !Renderer::IsFrameSkipped())
 			RunCheckStep();
 		else if (m_EventScene && m_EventStep < k_BlendFrames + k_SurveyFrames && !Renderer::IsFrameSkipped())
 			RunEventStep();
@@ -675,6 +710,7 @@ namespace Dingo
 		m_HardPuff.reset();
 		m_Flipbook.reset();
 		m_Upright.reset();
+		m_ManyScenes.reset();
 
 		delete m_Scene;
 		m_Scene = nullptr;

@@ -26,6 +26,10 @@ namespace Dingo
 		DepthCompare DepthFunction         = DepthCompare::Less;
 		int32_t      DepthBias             = 0;
 		float        SlopeScaledDepthBias  = 0.0f;
+		// How many SetUniform uploads a frame the material's volatile uniform buffer holds on Vulkan
+		// (GraphicsBufferParams::MaxWritesPerFrame): one a scene for a material drawn in many scenes
+		// a frame with different params.
+		uint32_t     UniformWritesPerFrame = 8;
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
 		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
@@ -51,6 +55,7 @@ namespace Dingo
 		MaterialParams& SetDepthWrite(bool enabled)                       { DepthWrite = enabled; return *this; }
 		MaterialParams& SetDepthCompare(DepthCompare compare)             { DepthFunction = compare; return *this; }
 		MaterialParams& SetDepthBias(int32_t constant, float slopeScaled) { DepthBias = constant; SlopeScaledDepthBias = slopeScaled; return *this; }
+		MaterialParams& SetUniformWritesPerFrame(uint32_t writes)         { UniformWritesPerFrame = writes; return *this; }
 		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }

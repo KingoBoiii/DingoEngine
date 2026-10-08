@@ -227,7 +227,8 @@ namespace Dingo::Internal
 			.SetCullMode(CullMode::None)
 			.SetDepthTest(true)
 			.SetDepthWrite(false)
-			.SetBlendMode(blend == ParticleBlend::Additive ? BlendMode::Additive : BlendMode::Alpha));
+			.SetBlendMode(blend == ParticleBlend::Additive ? BlendMode::Additive : BlendMode::Alpha)
+			.SetUniformWritesPerFrame(Renderer3D::k_MaxScenesPerFrame));
 		entry.Material->SetTexture(0, sprite ? sprite : m_DotTexture);
 		entry.Material->SetSampler(0, Renderer::GetClampSampler());
 		entry.Material->SetTexture(1, depth ? depth : m_DotTexture);
