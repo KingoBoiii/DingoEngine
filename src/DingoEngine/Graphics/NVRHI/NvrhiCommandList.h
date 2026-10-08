@@ -31,6 +31,7 @@ namespace Dingo
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) override;
 
 		virtual void SetFramebuffer(Framebuffer* framebuffer) override;
+		virtual void SetViewport(const Viewport& viewport) override;
 		virtual bool SetPipeline(Pipeline* pipeline) override;
 		virtual bool SetRenderPass(RenderPass* renderPass) override;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) override;

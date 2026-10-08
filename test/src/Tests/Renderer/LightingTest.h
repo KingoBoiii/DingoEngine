@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 
 #include <cstddef>
 #include <functional>
@@ -62,7 +63,7 @@ namespace Dingo
 		void BuildLightEntities(const Lighting& lighting);
 		void UpdateLightEntities(const Lighting& lighting);
 
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void BuildCheckSteps();
 		void RunNextCheckStep();
 
@@ -85,12 +86,7 @@ namespace Dingo
 		bool m_LightEntitiesBuilt = false;
 		std::vector<Entity> m_LightEntities;
 
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		// Each EndScene writes the renderer's volatile scene buffer and Vulkan only allows a few
 		// writes per frame, so a frame runs one step and a step renders one scene.

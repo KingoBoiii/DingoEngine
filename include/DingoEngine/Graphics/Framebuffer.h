@@ -13,10 +13,13 @@ namespace Dingo
 	struct FramebufferParams
 	{
 		std::string DebugName;
-		int32_t Width;
-		int32_t Height;
-		std::vector<FramebufferAttachment> Attachments;
+		int32_t Width = 0;
+		int32_t Height = 0;
+		std::vector<FramebufferAttachment> Attachments; // none and EnableDepth: a depth-only target (a shadow map)
 		bool EnableDepth = false;
+		// The depth can be sampled through GetDepthAttachment() (a D32 texture, typeless on D3D). Off,
+		// it is a depth target alone, as before v0.9.
+		bool DepthSampleable = false;
 
 		FramebufferParams& SetDebugName(const std::string& name)
 		{
@@ -47,6 +50,14 @@ namespace Dingo
 			EnableDepth = enable;
 			return *this;
 		}
+
+		// Implies SetEnableDepth(true).
+		FramebufferParams& SetDepthSampleable(bool sampleable)
+		{
+			DepthSampleable = sampleable;
+			EnableDepth = EnableDepth || sampleable;
+			return *this;
+		}
 	};
 
 	class Framebuffer
@@ -62,6 +73,9 @@ namespace Dingo
 		virtual void Initialize() = 0;
 		virtual void Destroy() = 0;
 
+		// Resizes every attachment in place (Texture::Reinitialize): the Texture objects GetAttachment
+		// and GetDepthAttachment return stay the same, with a new GetGeneration(), so materials and
+		// passes that bound them rebind at their next draw. Their contents are undefined until drawn.
 		virtual void Resize(uint32_t width, uint32_t height) = 0;
 
 		virtual uint32_t GetWidth() const = 0;
@@ -69,6 +83,8 @@ namespace Dingo
 		// nullptr when there is no such colour attachment — always for the swap-chain
 		// framebuffer, which draws straight into the swap-chain image and owns no Texture.
 		virtual Texture* GetAttachment(uint32_t index) const = 0;
+		// The depth as a D32 texture, for sampling; nullptr unless FramebufferParams::DepthSampleable.
+		virtual Texture* GetDepthAttachment() const = 0;
 
 		const FramebufferParams& GetParams() const { return m_Params; }
 

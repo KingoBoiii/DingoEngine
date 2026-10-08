@@ -5,6 +5,7 @@
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/ShaderCompiler.h"
+#include "DingoEngine/Graphics/ShaderIncludes.h"
 #include "NvrhiGraphicsContext.h"
 
 namespace Dingo
@@ -89,10 +90,8 @@ namespace Dingo
 		// Without defines it is the hash shaders had before defines existed, so their caches stay
 		// valid.
 		//
-		// This covers the top-level source only. It cannot see an #include, and neither can
-		// the hot-reload poll, which stats one file - so editing an included file would serve
-		// stale bytecode. A non-issue purely because ShaderCompiler registers no includer
-		// (includes fail to compile today); registering one has to bring both along.
+		// The source has its #includes pasted in already (ExpandShaderIncludes), so an edit to an
+		// included file changes the hash; a source with none hashes as it always did.
 		static uint64_t ComputeShaderSourceHash(const std::string& source, const std::string& entryPoint, const std::vector<ShaderDefine>& defines)
 		{
 			const uint64_t hash = HashFNV1a(entryPoint, HashFNV1a(source));
@@ -306,7 +305,9 @@ namespace Dingo
 			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
 		}
 
-		std::unordered_map<ShaderType, std::string> sources = GetShaderSources();
+		std::vector<std::filesystem::path> includedFiles;
+		std::unordered_map<ShaderType, std::string> sources = GetShaderSources(includedFiles);
+		m_IncludedFiles = std::move(includedFiles);
 		if (sources.empty())
 		{
 			DE_CORE_ERROR("No shader sources found. Cannot initialize shader.");
@@ -534,12 +535,14 @@ namespace Dingo
 		return result;
 	}
 
-	std::unordered_map<ShaderType, std::string> NvrhiShader::GetShaderSources() const
+	std::unordered_map<ShaderType, std::string> NvrhiShader::GetShaderSources(std::vector<std::filesystem::path>& includedFiles) const
 	{
+		const std::string name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
+
 		if (m_Params.FilePath.empty())
 		{
-			// If the shader is created from source code, return the preprocessed sources
-			return PreProcess(m_Params.SourceCode);
+			const std::optional<std::string> expanded = Internal::ExpandShaderIncludes(m_Params.SourceCode, {}, name, includedFiles);
+			return expanded ? PreProcess(*expanded) : std::unordered_map<ShaderType, std::string>{};
 		}
 
 		// Soft failures (build aborts, previous program stays): hot-reload can race an
@@ -557,7 +560,8 @@ namespace Dingo
 			return {};
 		}
 
-		return PreProcess(source);
+		const std::optional<std::string> expanded = Internal::ExpandShaderIncludes(source, m_Params.FilePath, name, includedFiles);
+		return expanded ? PreProcess(*expanded) : std::unordered_map<ShaderType, std::string>{};
 	}
 
 	// Malformed source logs an error and yields no sources rather than asserting: Build treats that as

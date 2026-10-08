@@ -280,7 +280,6 @@ namespace Dingo
 			RenderPass* CreateRenderPass()
 			{
 				RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(m_Pipeline));
-				renderPass->Initialize();
 				renderPass->SetUniformBuffer(k_CameraBinding, m_Params.CameraUniformBuffer);
 
 				if (m_Params.BatchSampler)

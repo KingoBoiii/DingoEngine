@@ -186,10 +186,14 @@ namespace Dingo
 			.SetVertexLayout(layout)
 			.SetCullMode(m_Params.CullMode)
 			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
-			.SetFillMode(m_Params.FillMode));
+			.SetFillMode(m_Params.FillMode)
+			.SetBlendMode(m_Params.Blend)
+			.SetDepthTest(m_Params.DepthTest)
+			.SetDepthWrite(m_Params.DepthWrite)
+			.SetDepthCompare(m_Params.DepthFunction)
+			.SetDepthBias(m_Params.DepthBias, m_Params.SlopeScaledDepthBias));
 
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
-		renderPass->Initialize();
 
 		// Binding convention:
 		//   binding 0 = scene UBO (engine-provided camera/light) when SetSceneUniformBuffer is used

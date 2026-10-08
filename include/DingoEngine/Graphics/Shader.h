@@ -25,6 +25,10 @@ namespace Dingo
 		bool Reflect = true; // Whether to reflect shader resources
 		std::filesystem::path FilePath;
 		std::string SourceCode; // Optional source code for inline shaders
+		// Either source may #include another file: "Name.glsl" next to the file (an inline shader looks
+		// under the asset root, then the working directory) or <DingoEngine/Name.glsl> for one of the
+		// engine's own (Fullscreen.glsl). An included file is part of the bytecode cache key, and a
+		// hot-reload watches it too.
 		// Preprocessor macros for every stage, e.g. DE_SKINNED. They are part of the bytecode cache
 		// key and survive Reload, so one source file can back several variants.
 		std::vector<ShaderDefine> Defines;
@@ -106,10 +110,16 @@ namespace Dingo
 		// shaders (ShaderParams::Reflect) know their blocks.
 		int32_t FindUniformBufferBinding(std::string_view blockName) const;
 
+		// Every file the source pulled in with #include on its last build (see ShaderParams), which a
+		// hot-reload watches as well as the shader's own file. Engine shaders read from the library,
+		// not the disk, aren't listed.
+		const std::vector<std::filesystem::path>& GetIncludedFiles() const { return m_IncludedFiles; }
+
 	protected:
 		ShaderParams m_Params;
 		uint32_t m_Generation = 0;
 		std::vector<std::pair<std::string, uint32_t>> m_UniformBufferBindings;
+		std::vector<std::filesystem::path> m_IncludedFiles;
 
 		friend class NvrhiPipeline;
 	};

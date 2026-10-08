@@ -259,15 +259,6 @@ namespace Dingo
 			std::format("no Space edge lost or doubled ({} presses, {} releases, {} edges in the background)", m_SpacePresses, m_SpaceReleases, m_StretchSpaceEdges));
 	}
 
-	void BackgroundTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
-	}
-
 	void BackgroundTest::Cleanup()
 	{
 		Application::Get().SetUpdateInBackground(m_AppUpdateInBackground);

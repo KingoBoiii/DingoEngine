@@ -161,7 +161,9 @@ namespace Dingo
 		**************************************************/
 
 		// Self-contained: sets render pass bindings + framebuffer, then draws.
-		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1);
+		// Without vertex buffers: the vertex stage builds its vertices from gl_VertexIndex.
+		static void Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount = 1);
 
 		/**************************************************
 		***		DRAW — Material							***
@@ -169,16 +171,26 @@ namespace Dingo
 
 		// Lazily creates (and caches) the pipeline + render pass for the given
 		// vertex layout, uploads the uniforms (once per frame and after each SetUniform), then draws.
-		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1);
+		// Without vertex buffers, as for a fullscreen pass: Draw(material, 3) with a vertex stage that
+		// makes one triangle covering the target from gl_VertexIndex (DingoEngine/Fullscreen.glsl).
+		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
 
 		/**************************************************
 		***		QUERIES									***
 		**************************************************/
 
 		// Override the render target used by all no-arg draw/clear calls.
-		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain.
+		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain. Either also drops a
+		// SetViewport.
 		static void SetRenderTarget(Framebuffer* framebuffer);
 		static void ResetRenderTarget();
+
+		// Limits the draws that follow to a rectangle of the current render target (a shadow-atlas
+		// tile, a half-resolution pass), until ResetViewport or the next SetRenderTarget. Clears still
+		// clear the whole target.
+		static void SetViewport(const Viewport& viewport);
+		static void ResetViewport();
 		// The override, or null while draws go to the swap chain.
 		static Framebuffer* GetRenderTarget();
 
@@ -216,6 +228,8 @@ namespace Dingo
 	private:
 		static void RenderThreadLoop();
 		static Framebuffer* GetCurrentTarget();
+		static void BindTarget(Framebuffer* target);
+		static RenderPass* PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target);
 
 		// Runs fn on the main thread at the start of the next frame, or at Shutdown, once the
 		// render thread has submitted the frame being recorded now: for reading back what it drew.

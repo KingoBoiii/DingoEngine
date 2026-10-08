@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 
 #include <glm/glm.hpp>
 
@@ -48,7 +49,7 @@ namespace Dingo
 	private:
 		enum class Mode { Bind, BindStatic, Pose, Clip, Blend, Layers, Events, Crowd };
 
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunLoadChecks();
 		void RunAnimatorChecks();
 		void RunBlendChecks();
@@ -67,12 +68,7 @@ namespace Dingo
 		void TrackTiming(float deltaTime, double updateMs, double renderMs, double endSceneMs);
 
 	private:
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		Model*    m_Fox = nullptr;
 		Material* m_FoxMaterial = nullptr;

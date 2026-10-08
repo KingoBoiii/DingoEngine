@@ -26,6 +26,13 @@ namespace Dingo
 
 				case TextureFormat::RGBA32F: return nvrhi::Format::RGBA32_FLOAT;
 
+				case TextureFormat::RGBA16F: return nvrhi::Format::RGBA16_FLOAT;
+				case TextureFormat::R11G11B10F: return nvrhi::Format::R11G11B10_FLOAT;
+				case TextureFormat::R8: return nvrhi::Format::R8_UNORM;
+				case TextureFormat::R16F: return nvrhi::Format::R16_FLOAT;
+				case TextureFormat::R32F: return nvrhi::Format::R32_FLOAT;
+				case TextureFormat::D32: return nvrhi::Format::D32;
+
 				default: break;
 			}
 
@@ -59,27 +66,31 @@ namespace Dingo
 			return nvrhi::SamplerAddressMode::ClampToEdge; // Default to ClampToEdge if unknown
 		}
 
-		static uint32_t GetImageFormatBPP(TextureFormat format)
+		static uint32_t GetImageMemoryRowPitch(TextureFormat format, uint32_t width)
+		{
+			return width * GetBytesPerPixel(format);
+		}
+
+		static TextureFormat GetTextureFormat(nvrhi::Format format)
 		{
 			switch (format)
 			{
-				case TextureFormat::RGB: return 3;
-				case TextureFormat::RGBA: 
-				case TextureFormat::RGBA8_UNORM: 
-					return 4;
+				case nvrhi::Format::RGBA8_UNORM: return TextureFormat::RGBA8_UNORM;
+				case nvrhi::Format::RGBA32_FLOAT: return TextureFormat::RGBA32F;
+				case nvrhi::Format::RGBA16_FLOAT: return TextureFormat::RGBA16F;
+				case nvrhi::Format::R11G11B10_FLOAT: return TextureFormat::R11G11B10F;
+				case nvrhi::Format::R8_UNORM: return TextureFormat::R8;
+				case nvrhi::Format::R16_FLOAT: return TextureFormat::R16F;
+				case nvrhi::Format::R32_FLOAT: return TextureFormat::R32F;
+				default: return TextureFormat::Unknown;
 			}
-			return 0;
-		}
-
-		static uint32_t GetImageMemoryRowPitch(TextureFormat format, uint32_t width)
-		{
-			return width * GetImageFormatBPP(format);
 		}
 
 	}
 
 	void NvrhiTexture::Initialize()
 	{
+		const bool depth = m_Params.Format == TextureFormat::D32;
 		nvrhi::TextureDesc textureDesc = nvrhi::TextureDesc()
 			.setDebugName(m_Params.DebugName)
 			.setWidth(m_Params.Width)
@@ -89,9 +100,18 @@ namespace Dingo
 			.setDepth(1)
 			.setMipLevels(1)
 			.setArraySize(1)
-			.setInitialState(nvrhi::ResourceStates::ShaderResource)
-			.setIsRenderTarget(m_Params.IsRenderTarget)
+			.setInitialState(depth ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::ShaderResource)
+			.setIsRenderTarget(m_Params.IsRenderTarget || depth)
 			.setKeepInitialState(true);
+
+		// D3D can't put a shader-resource view on a D32 resource: a sampled depth is created
+		// R32_TYPELESS (NVRHI derives the D32 depth view and the R32 SRV), and one that isn't sampled
+		// must say so or creating it fails.
+		if (depth)
+		{
+			textureDesc.isShaderResource = m_Params.IsShaderResource;
+			textureDesc.isTypeless = m_Params.IsShaderResource;
+		}
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
 	}
@@ -151,9 +171,10 @@ namespace Dingo
 
 	void NvrhiTexture::ReadPixels(std::function<void(const TexturePixels&)> done)
 	{
-		if (!m_Handle || m_Handle->getDesc().format != nvrhi::Format::RGBA8_UNORM || m_Handle->getDesc().dimension != nvrhi::TextureDimension::Texture2D)
+		const TextureFormat format = m_Handle ? Utils::GetTextureFormat(m_Handle->getDesc().format) : TextureFormat::Unknown;
+		if (format == TextureFormat::Unknown || m_Handle->getDesc().dimension != nvrhi::TextureDimension::Texture2D)
 		{
-			DE_CORE_ERROR("Texture::ReadPixels: '{}' isn't a 2D RGBA8 texture.", m_Params.DebugName);
+			DE_CORE_ERROR("Texture::ReadPixels: '{}' isn't a 2D colour texture of a format it reads (RGBA8, RGBA16F, RGBA32F, R11G11B10F, R8, R16F, R32F).", m_Params.DebugName);
 			done(TexturePixels{});
 			return;
 		}
@@ -166,18 +187,19 @@ namespace Dingo
 			.setDebugName(m_Params.DebugName + " (readback)")
 			.setWidth(width)
 			.setHeight(height)
-			.setFormat(nvrhi::Format::RGBA8_UNORM)
+			.setFormat(m_Handle->getDesc().format)
 			.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
 
 		// Mapping waits for the GPU to finish the copy, on every backend.
-		auto resolve = [staging, width, height, done = std::move(done)]()
+		auto resolve = [staging, width, height, format, done = std::move(done)]()
 		{
 			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 			TexturePixels pixels;
+			pixels.Format = format;
 			size_t rowPitch = 0;
 			if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
 			{
-				const size_t rowBytes = static_cast<size_t>(width) * 4;
+				const size_t rowBytes = static_cast<size_t>(width) * GetBytesPerPixel(format);
 				pixels.Width = width;
 				pixels.Height = height;
 				pixels.Data.resize(rowBytes * height);

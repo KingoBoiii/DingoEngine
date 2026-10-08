@@ -542,7 +542,8 @@ namespace Dingo
 			.setGeometryShader(true)
 			.setImageCubeArray(true)
 			.setDualSrcBlend(true)
-			.setFillModeNonSolid(m_SupportsWireframe);
+			.setFillModeNonSolid(m_SupportsWireframe)
+			.setShaderClipDistance(m_VulkanPhysicalDevice.getFeatures().shaderClipDistance);
 
 		vk::PhysicalDeviceVulkan13Features vulkan13features = vk::PhysicalDeviceVulkan13Features()
 			.setShaderDemoteToHelperInvocation(true);

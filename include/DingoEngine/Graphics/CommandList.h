@@ -14,6 +14,16 @@ namespace Dingo
 	{
 	};
 
+	// A rectangle of the bound framebuffer, in pixels from its top-left corner. Draws are scissored
+	// to it as well.
+	struct Viewport
+	{
+		float X = 0.0f;
+		float Y = 0.0f;
+		float Width = 0.0f;
+		float Height = 0.0f;
+	};
+
 	class CommandList
 	{
 	public:
@@ -43,7 +53,11 @@ namespace Dingo
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) = 0;
 
+		// Binds the framebuffer with a viewport covering all of it.
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;
+		// Narrows the viewport and scissor of the framebuffer SetFramebuffer bound, until the next
+		// SetFramebuffer.
+		virtual void SetViewport(const Viewport& viewport) = 0;
 		// SetPipeline/SetRenderPass reset the graphics state to the pipeline and its bindings.
 		// Neither binds a framebuffer -- follow with SetFramebuffer() before drawing.
 		// Both return false when the pipeline could not be built (a failed shader compile,

@@ -35,6 +35,8 @@ namespace Dingo
 		SwapChain*   SwapChain      = nullptr;
 		CommandList* CommandList    = nullptr;
 		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
+		bool         HasViewport    = false;
+		Viewport     ViewportOverride;
 		uint64_t     FrameIndex     = 0;       // bumped per command-list Begin, so never 0 while recording
 		bool         FrameSkipped   = false;   // main thread only: from SkipFrame, or a BeginFrame without an image, to the next BeginFrame
 
@@ -84,13 +86,11 @@ namespace Dingo
 		s_Data->WhiteTexture = Texture::CreateFromData(1, 1, &whiteTextureData, TextureFormat::RGBA, "White Texture");
 
 		s_Data->ClampSampler = Sampler::Create(SamplerParams());
-		s_Data->ClampSampler->Initialize();
 
 		s_Data->PointSampler = Sampler::Create(SamplerParams()
 			.SetMinFilter(false)
 			.SetMagFilter(false)
 			.SetMipFilter(false));
-		s_Data->PointSampler->Initialize();
 
 		swapChain->AcquireNextImage();
 		s_Data->Running      = true;
@@ -362,11 +362,31 @@ namespace Dingo
 	void Renderer::SetRenderTarget(Framebuffer* framebuffer)
 	{
 		s_Data->RenderTarget = framebuffer;
+		s_Data->HasViewport = false;
 	}
 
 	void Renderer::ResetRenderTarget()
 	{
 		s_Data->RenderTarget = nullptr;
+		s_Data->HasViewport = false;
+	}
+
+	void Renderer::SetViewport(const Viewport& viewport)
+	{
+		s_Data->ViewportOverride = viewport;
+		s_Data->HasViewport = true;
+	}
+
+	void Renderer::ResetViewport()
+	{
+		s_Data->HasViewport = false;
+	}
+
+	void Renderer::BindTarget(Framebuffer* target)
+	{
+		s_Data->CommandList->SetFramebuffer(target);
+		if (s_Data->HasViewport)
+			s_Data->CommandList->SetViewport(s_Data->ViewportOverride);
 	}
 
 	Framebuffer* Renderer::GetRenderTarget()
@@ -429,7 +449,7 @@ namespace Dingo
 		if (!s_Data->CommandList->SetPipeline(pipeline))
 			return;
 
-		s_Data->CommandList->SetFramebuffer(target);
+		BindTarget(target);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
 
@@ -442,7 +462,7 @@ namespace Dingo
 		if (!s_Data->CommandList->SetPipeline(pipeline))
 			return;
 
-		s_Data->CommandList->SetFramebuffer(target);
+		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
@@ -458,7 +478,7 @@ namespace Dingo
 		if (!s_Data->CommandList->SetPipeline(pipeline))
 			return;
 
-		s_Data->CommandList->SetFramebuffer(target);
+		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
 		s_Data->CommandList->DrawIndexed(indexCount, 1);
@@ -468,7 +488,7 @@ namespace Dingo
 	***		DRAW — explicit RenderPass				***
 	**************************************************/
 
-	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
+	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount)
 	{
 		if (s_Data->FrameSkipped)
 			return;
@@ -479,25 +499,31 @@ namespace Dingo
 		if (!s_Data->CommandList->SetRenderPass(renderPass))
 			return;
 
-		s_Data->CommandList->SetFramebuffer(target);
+		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, 1);
+		s_Data->CommandList->DrawIndexed(indexCount, instanceCount);
+	}
+
+	void Renderer::Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount)
+	{
+		if (s_Data->FrameSkipped)
+			return;
+
+		Framebuffer* target = GetCurrentTarget();
+		if (!s_Data->CommandList->SetRenderPass(renderPass))
+			return;
+
+		BindTarget(target);
+		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
 
 	/**************************************************
 	***		DRAW — Material							***
 	**************************************************/
 
-	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount)
+	RenderPass* Renderer::PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target)
 	{
-		if (s_Data->FrameSkipped)
-			return;
-
-		indexCount = ResolveIndexCount(indexBuffer, indexCount);
-
-		Framebuffer* target = GetCurrentTarget();
-
 		// The UBO is volatile: it must be written into every frame that binds it, not only when it changed.
 		if (material->GetUniformBuffer() && material->NeedsUniformUpload(s_Data->FrameIndex))
 		{
@@ -507,13 +533,37 @@ namespace Dingo
 		}
 
 		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);
-		if (!s_Data->CommandList->SetRenderPass(renderPass))
+		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
+	}
+
+	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount)
+	{
+		if (s_Data->FrameSkipped)
 			return;
 
-		s_Data->CommandList->SetFramebuffer(target);
+		indexCount = ResolveIndexCount(indexBuffer, indexCount);
+
+		Framebuffer* target = GetCurrentTarget();
+		if (!PrepareMaterial(material, layout, target))
+			return;
+
+		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, 1);
+		s_Data->CommandList->DrawIndexed(indexCount, instanceCount);
+	}
+
+	void Renderer::Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount)
+	{
+		if (s_Data->FrameSkipped)
+			return;
+
+		Framebuffer* target = GetCurrentTarget();
+		if (!PrepareMaterial(material, VertexLayout(), target))
+			return;
+
+		BindTarget(target);
+		s_Data->CommandList->Draw(vertexCount, instanceCount);
 	}
 
 	/**************************************************

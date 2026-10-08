@@ -19,6 +19,13 @@ namespace Dingo
 		CullMode    CullMode               = CullMode::Back;
 		FillMode    FillMode               = FillMode::Solid;
 		bool        FrontCounterClockwise  = true;
+		// Baked into the material's pipelines, like CullMode (see PipelineParams).
+		BlendMode    Blend                 = BlendMode::Alpha;
+		bool         DepthTest             = true;
+		bool         DepthWrite            = true;
+		DepthCompare DepthFunction         = DepthCompare::Less;
+		int32_t      DepthBias             = 0;
+		float        SlopeScaledDepthBias  = 0.0f;
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
 		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
@@ -39,6 +46,11 @@ namespace Dingo
 		MaterialParams& SetCullMode(Dingo::CullMode mode)                 { CullMode = mode; return *this; }
 		MaterialParams& SetFillMode(Dingo::FillMode mode)                 { FillMode = mode; return *this; }
 		MaterialParams& SetFrontCounterClockwise(bool v)                  { FrontCounterClockwise = v; return *this; }
+		MaterialParams& SetBlendMode(BlendMode mode)                      { Blend = mode; return *this; }
+		MaterialParams& SetDepthTest(bool enabled)                        { DepthTest = enabled; return *this; }
+		MaterialParams& SetDepthWrite(bool enabled)                       { DepthWrite = enabled; return *this; }
+		MaterialParams& SetDepthCompare(DepthCompare compare)             { DepthFunction = compare; return *this; }
+		MaterialParams& SetDepthBias(int32_t constant, float slopeScaled) { DepthBias = constant; SlopeScaledDepthBias = slopeScaled; return *this; }
 		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }

@@ -256,15 +256,6 @@ void main()
 namespace Dingo
 {
 
-	void AnimationTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
-	}
-
 	void AnimationTest::Initialize()
 	{
 		m_Checks.clear();

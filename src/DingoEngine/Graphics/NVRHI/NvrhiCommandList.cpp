@@ -69,7 +69,9 @@ namespace Dingo
 		if (hasDepth)
 			m_CommandListHandle->setTextureState(nvrhiFB->m_DepthTextureHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
 
-		nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+		// A depth-only framebuffer (a shadow map) has no colour to clear.
+		if (attachmentIndex < nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments.size())
+			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
 
 		if (hasDepth)
 			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);
@@ -98,6 +100,12 @@ namespace Dingo
 
 		m_GraphicsState.setFramebuffer(static_cast<NvrhiFramebuffer*>(framebuffer)->m_FramebufferHandle)
 			.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(static_cast<NvrhiFramebuffer*>(framebuffer)->m_Viewport));
+	}
+
+	void NvrhiCommandList::SetViewport(const Viewport& viewport)
+	{
+		const nvrhi::Viewport nvrhiViewport(viewport.X, viewport.X + viewport.Width, viewport.Y, viewport.Y + viewport.Height, 0.0f, 1.0f);
+		m_GraphicsState.setViewport(nvrhi::ViewportState().addViewportAndScissorRect(nvrhiViewport));
 	}
 
 	bool NvrhiCommandList::SetPipeline(Pipeline* pipeline)

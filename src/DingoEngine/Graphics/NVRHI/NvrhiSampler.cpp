@@ -28,10 +28,15 @@ namespace Dingo
 	void NvrhiSampler::Initialize()
 	{
 		nvrhi::SamplerDesc samplerDesc = nvrhi::SamplerDesc()
-			.setAllAddressModes(Utils::GetSamplerAddressMode(m_Params.AddressMode))
+			.setAddressU(Utils::GetSamplerAddressMode(m_Params.AddressU))
+			.setAddressV(Utils::GetSamplerAddressMode(m_Params.AddressV))
+			.setAddressW(Utils::GetSamplerAddressMode(m_Params.AddressW))
 			.setMinFilter(m_Params.MinFilter)
 			.setMagFilter(m_Params.MagFilter)
-			.setMipFilter(m_Params.MipFilter);
+			.setMipFilter(m_Params.MipFilter)
+			.setBorderColor(nvrhi::Color(m_Params.BorderColor.r, m_Params.BorderColor.g, m_Params.BorderColor.b, m_Params.BorderColor.a))
+			.setMaxAnisotropy(m_Params.MaxAnisotropy)
+			.setReductionType(m_Params.Compare ? nvrhi::SamplerReductionType::Comparison : nvrhi::SamplerReductionType::Standard);
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createSampler(samplerDesc);
 	}

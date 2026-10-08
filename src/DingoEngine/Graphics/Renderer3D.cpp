@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
+#include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
 
@@ -12,27 +13,15 @@
 
 namespace
 {
-#include "Renderer3D_Lit.glsl.inl"
-
 	constexpr const char* k_LitShaderName = "Renderer3DMeshShader";
 	constexpr const char* k_SkinnedLitShaderName = "Renderer3DSkinnedMeshShader";
 
-	// The source file when this build can see it, so the AssetManager can hot-reload it;
-	// otherwise the copy compiled into the library.
 	Dingo::Shader* CreateLitShader(const char* name, bool skinned)
 	{
 		Dingo::ShaderParams params = Dingo::ShaderParams().SetName(name);
 		if (skinned)
 			params.AddDefine("DE_SKINNED");
-
-#ifdef DE_ENGINE_SHADER_DIR
-		const std::filesystem::path sourcePath = std::filesystem::path(u8"" DE_ENGINE_SHADER_DIR) / "Renderer3D_Lit.glsl";
-		std::error_code ec;
-		if (std::filesystem::exists(sourcePath, ec))
-			return Dingo::Shader::Create(params.SetFilePath(sourcePath));
-#endif
-		const std::string source(reinterpret_cast<const char*>(k_Renderer3D_Lit_glsl), sizeof(k_Renderer3D_Lit_glsl));
-		return Dingo::Shader::Create(params.SetSourceCode(source));
+		return Dingo::Internal::CreateEngineShader(params, "Renderer3D_Lit.glsl");
 	}
 
 	// The camera is the one point a view-projection sends to clip (0, 0, k, 0), so it is the
