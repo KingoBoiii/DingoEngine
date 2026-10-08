@@ -109,6 +109,10 @@ namespace Dingo::Internal::ParticleSync
 			ParticleEmitterRuntime& runtime = registry.get_or_emplace<ParticleEmitterRuntime>(entity);
 			for (ParticleEmitterRuntime::Instance& instance : runtime.Instances)
 				instance.PendingTime = std::min(instance.PendingTime + deltaTime, k_MaxPendingTime);
+
+			// Submit never reaches an entity that can't draw, so nothing would ever take its bursts.
+			if (!registry.get<ParticleEmitterComponent>(entity).Effect || !registry.all_of<Transform3DComponent>(entity))
+				runtime.Bursts.clear();
 		}
 	}
 

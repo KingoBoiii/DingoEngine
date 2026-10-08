@@ -155,7 +155,8 @@ namespace Dingo
 
 		// Spawns count particles at the next submission, from the effect's shape around the emitter, or
 		// around a world-space point (an impact). Past the ring's room in one step, the rest are
-		// dropped (Renderer3D::Statistics::DroppedParticleSpawns, warned once).
+		// dropped (Renderer3D::Statistics::DroppedParticleSpawns, warned once). An emitter without a ring
+		// (GetCapacity() 0) ignores both.
 		void Emit(uint32_t count);
 		void EmitAt(const glm::vec3& worldPosition, uint32_t count);
 

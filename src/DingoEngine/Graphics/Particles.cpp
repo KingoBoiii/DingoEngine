@@ -123,13 +123,13 @@ namespace Dingo
 
 	void ParticleEmitter::Emit(uint32_t count)
 	{
-		if (count > 0)
+		if (count > 0 && m_Capacity > 0)
 			m_Bursts.push_back({ glm::vec3(0.0f), false, count });
 	}
 
 	void ParticleEmitter::EmitAt(const glm::vec3& worldPosition, uint32_t count)
 	{
-		if (count > 0)
+		if (count > 0 && m_Capacity > 0)
 			m_Bursts.push_back({ worldPosition, true, count });
 	}
 
