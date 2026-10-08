@@ -2,6 +2,7 @@
 #include "Audio.h"
 #include "GameTuning.h"
 #include "Player.h"
+#include "LaunchOptions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -72,7 +73,7 @@ namespace Dingo
 
 		m_Light = scene.CreateEntity("Lantern");
 		m_Light.AddComponent<Transform3DComponent>();
-		m_Light.AddComponent<PointLightComponent>(PointLightComponent(LANTERN_COLOR, LANTERN_INTENSITY, LANTERN_RANGE_MAX));
+		m_Light.AddComponent<PointLightComponent>(PointLightComponent(LANTERN_COLOR, LANTERN_INTENSITY, LANTERN_RANGE_MAX)).CastShadows = !GetLaunchOptions().NoShadows;
 
 		m_State = m_Oil > 0.0f ? State::Lit : State::Snuffed;
 
@@ -89,7 +90,10 @@ namespace Dingo
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size * k_Scale;
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(Application::Get().GetRenderer3D().GetBoxMesh(), color)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(Application::Get().GetRenderer3D().GetBoxMesh(), color));
+		renderer.Material = material;
+		// The parts enclose the lantern's own light, which they would black out.
+		renderer.Shadows = ShadowCasting::Off;
 		m_Parts.push_back({ entity, offset * k_Scale });
 	}
 

@@ -97,7 +97,6 @@ namespace
 		ParseFlag(args, "overview", options.Overview);
 		ParseFlag(args, "no-light-lod", options.NoLightLod);
 		ParseFlag(args, "debug-cone", options.DebugCone);
-		ParseFlag(args, "no-range-clamp", options.NoRangeClamp);
 		ParseFlag(args, "all-lit", options.AllLit);
 		ParseTile(args, "spawn", options.Spawn);
 		ParseSeconds(args, "fixed-dt", FIXED_DT_MAX, options.FixedDt);

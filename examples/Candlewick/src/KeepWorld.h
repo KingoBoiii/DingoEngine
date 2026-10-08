@@ -58,6 +58,7 @@ namespace Dingo
 		size_t CollectFlasks(const glm::vec3& feet, size_t maxCount);
 
 		// Hides the wall rectangles (with their caps and mounted sconces) that sit between the eye and the target.
+		// A hidden wall and its cap still cast shadows; what is mounted on them is hidden outright.
 		void UpdateCutaway(const glm::vec3& eye, const glm::vec3& target);
 
 		// Hides every wall rectangle on the row just south of the room, for a fixed camera that looks over it.

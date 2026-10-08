@@ -128,8 +128,6 @@ namespace Dingo
 	inline constexpr float WARDEN_EYE_FORWARD       = 0.25f;
 	inline constexpr float WARDEN_EYE_PITCH_DEG     = 25.0f;
 	inline constexpr float WARDEN_EYE_RANGE         = 8.0f;
-	inline constexpr float WARDEN_EYE_RANGE_MARGIN  = 0.5f;
-	inline constexpr float WARDEN_EYE_RANGE_GROWTH  = 6.0f;
 	inline constexpr float WARDEN_EYE_INNER_DEG     = 14.0f;
 	inline constexpr float WARDEN_EYE_OUTER_DEG     = 24.0f;
 	inline constexpr float WARDEN_EYE_INTENSITY     = 1.4f;

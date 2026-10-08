@@ -1,5 +1,6 @@
 #include "KeepWorld.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -118,6 +119,12 @@ namespace
 	void SetVisible(Entity entity, bool visible)
 	{
 		entity.GetComponent<MeshRendererComponent>().Visible = visible;
+	}
+
+	// A cut-away wall still stands in the light: it stops drawing but goes on casting.
+	void SetCutAway(Entity entity, bool cutAway)
+	{
+		entity.GetComponent<MeshRendererComponent>().Shadows = cutAway ? ShadowCasting::ShadowsOnly : ShadowCasting::On;
 	}
 }
 
@@ -248,7 +255,9 @@ namespace Dingo
 		transform.Position = center;
 		transform.Scale = glm::vec3(diameter);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, color)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, color));
+		renderer.Material = material;
+		renderer.Shadows = ShadowCasting::Off;
 		return entity;
 	}
 
@@ -368,7 +377,9 @@ namespace Dingo
 		BrazierSpot spot;
 		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter, m_AshMaterial, COLOR_ASH);
 		spot.Light = SpawnPointLight(isAltar ? "AltarLight" : "BrazierLight", core + glm::vec3(0.0f, style.LightRise, 0.0f), style.LightIntensity, style.LightRange);
-		spot.Light.GetComponent<PointLightComponent>().Enabled = false;
+		auto& light = spot.Light.GetComponent<PointLightComponent>();
+		light.Enabled = false;
+		light.CastShadows = !GetLaunchOptions().NoShadows;
 		spot.Room = marker.Room;
 		spot.Tile = marker.Tile;
 		spot.IsAltar = isAltar;
@@ -410,7 +421,8 @@ namespace Dingo
 	{
 		const glm::vec3 floor = m_Map.TileCenter(marker.Tile);
 
-		SpawnDecor("CandleWax", floor + glm::vec3(0.0f, k_CandleHeight * 0.5f, 0.0f), { k_CandleWidth, k_CandleHeight, k_CandleWidth }, COLOR_WAX, m_WaxMaterial);
+		SpawnDecor("CandleWax", floor + glm::vec3(0.0f, k_CandleHeight * 0.5f, 0.0f), { k_CandleWidth, k_CandleHeight, k_CandleWidth }, COLOR_WAX, m_WaxMaterial)
+			.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
 
 		const glm::vec3 flameCenter = floor + glm::vec3(0.0f, k_CandleHeight + k_CandleFlameDiameter * 0.4f, 0.0f);
 
@@ -468,8 +480,8 @@ namespace Dingo
 			return;
 
 		wall.Hidden = hidden;
-		SetVisible(wall.Wall, !hidden);
-		SetVisible(wall.Cap, !hidden);
+		SetCutAway(wall.Wall, hidden);
+		SetCutAway(wall.Cap, hidden);
 		for (Entity mounted : wall.Mounted)
 			SetVisible(mounted, !hidden);
 	}

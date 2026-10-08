@@ -64,7 +64,7 @@ namespace Dingo
 
 		m_Camera = std::make_unique<CameraRig>(scene, m_Player->GetPosition(), m_Overview ? std::optional<TileRect>(room.Rect) : std::nullopt);
 		m_Lantern = std::make_unique<Lantern>(scene, *m_Player, m_World->GetBrassMaterial(), *m_Audio, startOil, !options.Freeze);
-		m_Wardens = std::make_unique<Wardens>(scene, m_Map, *m_Audio, options.Freeze, !options.NoRangeClamp);
+		m_Wardens = std::make_unique<Wardens>(scene, m_Map, *m_Audio, options.Freeze, !options.NoShadows);
 		m_Detection = std::make_unique<Detection>(scene, *m_World, m_Wardens->GetCount(), options.DebugCone, !options.Freeze);
 
 		m_LightLod = std::make_unique<LightLod>(m_World->GetFlames(), !options.NoLightLod);

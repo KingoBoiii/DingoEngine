@@ -50,7 +50,9 @@ namespace
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>();
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, COLOR_DEBUG_BASE)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, COLOR_DEBUG_BASE));
+		renderer.Material = material;
+		renderer.Shadows = ShadowCasting::Off;
 		return entity;
 	}
 }
