@@ -14,6 +14,8 @@ namespace Dingo::Internal
 
 	// The copy in the library, or empty for a name that isn't one ("Renderer3D_Lit.glsl").
 	std::string_view FindEmbeddedEngineShader(std::string_view fileName);
+	// Whether source is one of the library's copies, word for word.
+	bool IsEmbeddedEngineShaderSource(std::string_view source);
 
 	// The file in the source tree, or empty when this build doesn't read engine shaders from disk or
 	// the file isn't there.

@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/ShaderCompiler.h"
 #include "DingoEngine/Graphics/ShaderIncludes.h"
@@ -587,7 +588,9 @@ namespace Dingo
 
 		if (m_Params.FilePath.empty())
 		{
-			return ExpandStages(PreProcess(m_Params.SourceCode), {}, name, includedFiles);
+			// An engine shader built from the library's copy (Release) has no file, but its quoted includes
+			// still name its engine neighbours, as they do when it is read from the source tree.
+			return ExpandStages(PreProcess(m_Params.SourceCode), {}, Internal::IsEmbeddedEngineShaderSource(m_Params.SourceCode), name, includedFiles);
 		}
 
 		// Soft failures (build aborts, previous program stays): hot-reload can race an
@@ -605,15 +608,15 @@ namespace Dingo
 			return {};
 		}
 
-		return ExpandStages(PreProcess(source), m_Params.FilePath, name, includedFiles);
+		return ExpandStages(PreProcess(source), m_Params.FilePath, false, name, includedFiles);
 	}
 
 	// Each stage is expanded on its own, so a file both stages #include reaches both.
-	std::unordered_map<ShaderType, std::string> NvrhiShader::ExpandStages(std::unordered_map<ShaderType, std::string> sources, const std::filesystem::path& sourcePath, const std::string& name, std::vector<std::filesystem::path>& includedFiles)
+	std::unordered_map<ShaderType, std::string> NvrhiShader::ExpandStages(std::unordered_map<ShaderType, std::string> sources, const std::filesystem::path& sourcePath, bool engineSource, const std::string& name, std::vector<std::filesystem::path>& includedFiles)
 	{
 		for (auto& [type, stage] : sources)
 		{
-			std::optional<std::string> expanded = Internal::ExpandShaderIncludes(stage, sourcePath, name, includedFiles);
+			std::optional<std::string> expanded = Internal::ExpandShaderIncludes(stage, sourcePath, name, includedFiles, engineSource);
 			if (!expanded)
 				return {};
 			stage = std::move(*expanded);

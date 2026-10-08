@@ -20,7 +20,9 @@ namespace Dingo::Internal
 	//   #include <DingoEngine/Shadows.glsl> an engine shader (EngineShaders.h)
 	//
 	// includedFiles receives every file read from disk, for the hot-reload watch. Returns nullopt, with
-	// the reason logged, when a file can't be found or includes nest past 32 levels.
-	std::optional<std::string> ExpandShaderIncludes(const std::string& source, const std::filesystem::path& sourcePath, const std::string& shaderName, std::vector<std::filesystem::path>& includedFiles);
+	// the reason logged, when a file can't be found or includes nest past 32 levels. engineSource marks
+	// a source without a file that is an engine shader's embedded copy: its quoted includes are engine
+	// shaders, as they are when the file is read from the source tree.
+	std::optional<std::string> ExpandShaderIncludes(const std::string& source, const std::filesystem::path& sourcePath, const std::string& shaderName, std::vector<std::filesystem::path>& includedFiles, bool engineSource = false);
 
 }

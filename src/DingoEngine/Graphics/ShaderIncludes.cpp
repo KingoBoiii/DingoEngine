@@ -159,10 +159,11 @@ namespace Dingo::Internal
 		};
 	}
 
-	std::optional<std::string> ExpandShaderIncludes(const std::string& source, const std::filesystem::path& sourcePath, const std::string& shaderName, std::vector<std::filesystem::path>& includedFiles)
+	std::optional<std::string> ExpandShaderIncludes(const std::string& source, const std::filesystem::path& sourcePath, const std::string& shaderName, std::vector<std::filesystem::path>& includedFiles, bool engineSource)
 	{
 		Origin origin;
-		origin.Inline = sourcePath.empty();
+		origin.Engine = engineSource && sourcePath.empty();
+		origin.Inline = sourcePath.empty() && !origin.Engine;
 		origin.Directory = sourcePath.parent_path();
 
 		std::string expanded;

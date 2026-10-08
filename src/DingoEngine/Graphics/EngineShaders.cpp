@@ -63,6 +63,16 @@ namespace Dingo::Internal
 		return {};
 	}
 
+	bool IsEmbeddedEngineShaderSource(std::string_view source)
+	{
+		for (const EmbeddedShader& shader : s_EmbeddedShaders)
+		{
+			if (shader.Source == source)
+				return true;
+		}
+		return false;
+	}
+
 	std::filesystem::path FindEngineShaderFile(std::string_view fileName)
 	{
 #ifdef DE_ENGINE_SHADER_DIR
