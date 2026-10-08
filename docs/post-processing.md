@@ -117,7 +117,9 @@ after it (particles, a translucent pass) isn't darkened; `End` applies it if not
 
 - **Memory**: one RGBA16F colour target and a D32 depth per output size in use, 12 bytes a pixel (25 MB
   at 1920 x 1080). Targets idle for 300 frames are freed; a resized window resizes its target in place.
-- **GPU**: one fullscreen pass (`Post` in the F8 Profiler tab), plus the HDR target's bandwidth, and
+- **GPU**: two fullscreen passes (`Post` in the F8 Profiler tab): the tone map, and the scene's depth
+  written into the caller's depth when it has one, so a 3D draw after `End` (a gizmo, a custom pass)
+  depth-tests against this frame's scene, as without the chain. Plus the HDR target's bandwidth, and
   with bloom 11 small passes (`Bloom`, inside `Post`) over levels of a quarter of the screen's pixels
   and less, and another 4 bytes a pixel of memory for the levels. Ambient occlusion is four passes
   (`AO`, inside `Post`): 12 taps a pixel, two 9-tap blurs and the multiply, at a quarter of the

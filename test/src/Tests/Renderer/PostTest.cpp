@@ -169,6 +169,7 @@ void main()
 		m_RoomPlain = MakeTarget("PostTest room plain", k_SceneWidth, k_SceneHeight, true);
 		m_RoomOccluded = MakeTarget("PostTest room occluded", k_SceneWidth, k_SceneHeight, true);
 		m_SplitTarget = MakeTarget("PostTest split", 2 * k_SplitSize, k_SplitSize, false);
+		m_DepthTarget = MakeTarget("PostTest caller depth", k_SplitSize, k_SplitSize, true);
 	}
 
 	PerspectiveCamera PostTest::RoomCamera(float aspect) const
@@ -461,6 +462,41 @@ void main()
 			Check(targets[0] && targets[1] && targets[0] != targets[1], "two post-processed scenes of one size in a frame each get their own scene target");
 		}
 
+		// A red box through the chain, then, without it and without a clear, a green wall behind it: the
+		// box's depth reached the caller's depth, so the wall shows only around the box.
+		{
+			Renderer3D& renderer = Application::Get().GetRenderer3D();
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_DepthTarget);
+			Renderer::Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+			PerspectiveCamera camera(45.0f, 1.0f, 0.1f, 100.0f);
+			camera.SetPosition({ 0.0f, 0.0f, 5.0f });
+			camera.SetTarget({ 0.0f, 0.0f, 0.0f });
+			auto box = [](const glm::vec3& center, const glm::vec3& size) { return glm::scale(glm::translate(glm::mat4(1.0f), center), size); };
+
+			post.Begin(WithOperator(defaults, ToneMapOperator::None), camera.GetProjectionMatrix());
+			renderer.BeginScene(camera);
+			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+			renderer.SetAmbientLight(glm::vec3(1.0f), 1.0f);
+			renderer.SubmitMesh(renderer.GetBoxMesh(), box({ 0.0f, 0.0f, 0.0f }, glm::vec3(1.0f)), { 1.0f, 0.0f, 0.0f, 1.0f });
+			renderer.EndScene();
+			post.End();
+
+			renderer.BeginScene(camera);
+			renderer.SetAmbientLight(glm::vec3(1.0f), 1.0f);
+			renderer.SubmitMesh(renderer.GetBoxMesh(), box({ 0.0f, 0.0f, -3.0f }, { 20.0f, 20.0f, 0.1f }), { 0.0f, 1.0f, 0.0f, 1.0f });
+			renderer.EndScene();
+			Renderer::SetRenderTarget(previous);
+		}
+		readBack(m_DepthTarget, [this](const TexturePixels& pixels)
+		{
+			const glm::vec4 center = PixelAt(pixels.Data, k_SplitSize, { static_cast<int>(k_SplitSize / 2), static_cast<int>(k_SplitSize / 2) });
+			const glm::vec4 corner = PixelAt(pixels.Data, k_SplitSize, { 2, 2 });
+			Check(center.r > 0.9f && center.g < 0.1f && corner.g > 0.9f,
+				std::format("a 3D draw after a post-processed scene depth-tests against it: the box stays in front (centre {:.2f}, {:.2f}), the wall fills the rest (corner green {:.2f})", center.r, center.g, corner.g));
+		});
+
 		// Split screen: the chain inside the right half's viewport tone-maps into that half alone and
 		// leaves the viewport set.
 		{
@@ -566,6 +602,7 @@ void main()
 		DestroyAndDelete(m_RoomPlain);
 		DestroyAndDelete(m_RoomOccluded);
 		DestroyAndDelete(m_SplitTarget);
+		DestroyAndDelete(m_DepthTarget);
 		m_RoomPlainPixels.clear();
 		DestroyAndDelete(m_GradientMaterial);
 		DestroyAndDelete(m_GradientShader);

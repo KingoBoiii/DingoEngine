@@ -93,6 +93,7 @@ namespace Dingo
 			std::unique_ptr<AmbientOcclusionChain> AmbientOcclusion;
 			Framebuffer* DepthCopy = nullptr;
 			Material* DepthCopyMaterial = nullptr;
+			Material* DepthRestore = nullptr; // writes this target's depth into the caller's
 			bool ToneMapBlooms = false;  // its slot 1 holds Bloom's level 0 rather than black
 			uint64_t LastFrame = 0;
 		};
@@ -109,6 +110,7 @@ namespace Dingo
 		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionBlurShader;
 		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionApplyShader;
 		std::unique_ptr<Internal::FullscreenShader> DepthCopyShader;
+		std::unique_ptr<Internal::FullscreenShader> DepthRestoreShader;
 		// What the tone map's bloom slot samples while bloom is off, so its binding set stays complete.
 		Texture* Black = nullptr;
 
@@ -161,6 +163,7 @@ namespace Dingo
 			target.AmbientOcclusion.reset();
 			DestroyAndDelete(target.DepthCopyMaterial);
 			DestroyAndDelete(target.DepthCopy);
+			DestroyAndDelete(target.DepthRestore);
 			DestroyAndDelete(target.ToneMap);
 			DestroyAndDelete(target.Target);
 		}
@@ -455,6 +458,7 @@ namespace Dingo
 		m_Data->AmbientOcclusionBlurShader.reset();
 		m_Data->AmbientOcclusionApplyShader.reset();
 		m_Data->DepthCopyShader.reset();
+		m_Data->DepthRestoreShader.reset();
 		DestroyAndDelete(m_Data->Black);
 		m_Data->Active = false;
 	}
@@ -632,6 +636,33 @@ namespace Dingo
 			Internal::DrawFullscreen(target.ToneMap, data.Caller, *data.CallerViewport);
 		else
 			Internal::DrawFullscreen(target.ToneMap, data.Caller);
+
+		// The 3D pass wrote only the scene target's depth; a later 3D draw into the caller (a gizmo, a
+		// custom pass) would otherwise test against an earlier frame's.
+		const Framebuffer* caller = data.Caller ? data.Caller : Renderer::GetSwapChainFramebuffer();
+		if (caller->GetParams().EnableDepth)
+		{
+			if (!target.DepthRestore)
+			{
+				if (!data.DepthRestoreShader)
+					data.DepthRestoreShader = std::make_unique<Internal::FullscreenShader>("PostDepthRestore", "PostDepthCopy.glsl", std::vector<ShaderDefine>{ { "DE_DEPTH_RESTORE", "" } });
+				// Multiply by white leaves the colour as the tone map left it; only the depth is written.
+				target.DepthRestore = Material::Create(MaterialParams()
+					.SetDebugName("Post depth restore")
+					.SetShader(data.DepthRestoreShader->GetShader())
+					.SetCullMode(CullMode::None)
+					.SetDepthTest(true)
+					.SetDepthWrite(true)
+					.SetDepthCompare(DepthCompare::Always)
+					.SetBlendMode(BlendMode::Multiply));
+				target.DepthRestore->SetTexture(0, target.Target->GetDepthAttachment());
+				target.DepthRestore->SetSampler(0, Renderer::GetPointSampler());
+			}
+			if (data.CallerViewport)
+				Internal::DrawFullscreen(target.DepthRestore, data.Caller, *data.CallerViewport);
+			else
+				Internal::DrawFullscreen(target.DepthRestore, data.Caller);
+		}
 
 		data.Stats.SceneTargets = static_cast<uint32_t>(data.Targets.size());
 		data.Stats.TargetBytes = 0;

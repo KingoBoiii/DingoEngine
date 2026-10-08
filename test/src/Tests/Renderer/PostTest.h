@@ -87,6 +87,7 @@ namespace Dingo
 		Framebuffer* m_RoomPlain = nullptr;
 		Framebuffer* m_RoomOccluded = nullptr;
 		Framebuffer* m_SplitTarget = nullptr;
+		Framebuffer* m_DepthTarget = nullptr; // k_SplitSize square, with a depth the chain must write
 		std::vector<uint8_t> m_RoomPlainPixels;
 	};
 
