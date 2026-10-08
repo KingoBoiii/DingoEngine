@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
@@ -16,6 +20,10 @@ jobs:
       fail-fast: false
       matrix:
         build-configuration: [Debug, Debug-ASan, Release, Distribution]
+        compiler: [gcc]
+        include:
+        - build-configuration: Debug
+          compiler: clang
     steps:
     - uses: actions/checkout@v4
       with:
@@ -27,13 +35,13 @@ jobs:
         runtime: true
 
     - name: Premake
-      run: premake5 gmake
+      run: premake5 gmake --cc=${{ matrix.compiler }}
 
     - name: Build
       run: make -j"$(nproc)" config="$(echo '${{ matrix.build-configuration }}' | tr '[:upper:]' '[:lower:]')"
 
     - name: Upload static library artifact
-      if: github.event_name == 'push'
+      if: github.event_name == 'push' && matrix.compiler == 'gcc'
       uses: actions/upload-artifact@v4
       with:
         name: dingo-engine-linux-${{ matrix.build-configuration }}
@@ -48,6 +56,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: smoke-test-logs-linux-${{ matrix.build-configuration }}
+        name: smoke-test-logs-linux-${{ matrix.build-configuration }}-${{ matrix.compiler }}
         path: build/smoke/
         if-no-files-found: ignore

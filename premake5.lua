@@ -340,7 +340,6 @@ group "Engine"
 
 		filter "system:linux"
 			defines { "DE_PLATFORM_LINUX" }
-			buildoptions { "-Wno-changes-meaning" }
 			removefiles { "src/DingoEngine/Graphics/NVRHI/DirectX11/**", "src/DingoEngine/Graphics/NVRHI/DirectX12/**" }
 
 			-- The distributable libDingoEngine.a under build/dist, like Windows' DingoEngine.lib.
@@ -350,6 +349,10 @@ group "Engine"
 					.. path.join(_MAIN_SCRIPT_DIR, "build/dist") .. '/' .. outputdir .. '/libDingoEngine.a" "%{cfg.buildtarget.abspath}" '
 					.. LinuxBundledVendorLibs,
 			}
+
+		-- Four engine-internal members are still named after their type, which GCC alone rejects.
+		filter { "system:linux", "toolset:gcc" }
+			buildoptions { "-Wno-changes-meaning" }
 
 		filter "configurations:Debug or configurations:Debug-ASan"
 			runtime "Debug"
