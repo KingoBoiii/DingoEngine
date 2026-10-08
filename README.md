@@ -60,9 +60,8 @@ therefore not part of the 1.0 launch.
 ## Getting Started
 
 **Prerequisites**
-- Windows 10/11
-- [Vulkan SDK](https://vulkan.lunarg.com/) installed and `VULKAN_SDK` environment variable set
-- Visual Studio 2026
+- Windows 10/11 with Visual Studio 2026, or Linux (x86-64; verified on Ubuntu 24.04) with GCC 13 or newer
+- [Vulkan SDK](https://vulkan.lunarg.com/) 1.4 installed and the `VULKAN_SDK` environment variable set (on Linux, LunarG's tarball and its `setup-env.sh`; distro packages are too old)
 
 **1. Clone the repository**
 
@@ -78,11 +77,21 @@ git submodule update --init
 
 **2. Generate project files**
 
-Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This will invoke Premake5 and produce a Visual Studio solution with all projects and dependencies configured.
+On Windows, run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This will invoke Premake5 and produce a Visual Studio solution with all projects and dependencies configured.
+
+On Linux, first build assimp 6.0.4 as a static library into `vendor/assimp/lib/linux-x86_64/` (see [Getting Started](docs/getting-started.md#option-a--integrate-from-source-recommended)), then run `premake5 gmake` (premake 5.0.0-beta8, Linux build) from the root directory.
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, `ArenaShooter`, `Candlewick`, or `Marionette`) as the startup project, and build.
+On Windows, open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, `ArenaShooter`, `Candlewick`, or `Marionette`) as the startup project, and build.
+
+On Linux, run `make -j"$(nproc)" config=debug` (or `release`, `distribution`, `debug-asan`; add a project name to build just that one), then start an example from its own directory so its `assets/` resolve:
+
+```bash
+cd examples/FlappyBird && ../../build/bin/Debug-linux-x86_64/FlappyBird/FlappyBird
+```
+
+Linux has been verified headless on Mesa's software Vulkan driver; real GPUs and desktops are still being validated (see [LINUX-SUPPORT.md](LINUX-SUPPORT.md)).
 
 ## Examples
 
