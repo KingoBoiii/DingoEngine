@@ -55,6 +55,7 @@ namespace Dingo
 		constexpr int k_BlendFrames = 120;
 		constexpr int k_SurveyFrames = 180;
 		constexpr float k_EventStep = 1.0f / 60.0f;
+		constexpr uint32_t k_FlashBurst = 9;
 
 		// Counts the footfalls the Fox's script hears, to hold the bursts to.
 		class FootfallCounter : public ScriptableEntity
@@ -209,6 +210,7 @@ namespace Dingo
 		m_MotesSpawned = 0;
 		m_MotesPlayedOpen = false;
 		m_MotesStoppedClosed = false;
+		m_MotesPlayedEarly = false;
 
 		m_Fox = Model::LoadFromFile(k_FoxPath);
 		if (!m_Fox || !m_Fox->GetSkeleton())
@@ -273,11 +275,25 @@ namespace Dingo
 		m_Motes = m_EventScene->CreateEntity("Motes");
 		m_Motes.AddComponent<Transform3DComponent>().Position = { 0.0f, 1.0f, 0.0f };
 		m_Motes.AddComponent<ParticleEmitterComponent>(m_MoteEffect).Playing = false;
+		m_FlashEffect = ParticleEffect::Create(ParticleEffectParams()
+			.SetDebugName("ParticleTest one-frame range")
+			.SetRate(0.0f)
+			.SetBurstOnPlay(k_FlashBurst)
+			.SetLifetime(10.0f, 10.0f)
+			.SetSpeed(0.0f, 0.0f)
+			.SetCapacity(64));
+		m_Flash = m_EventScene->CreateEntity("Flash");
+		m_Flash.AddComponent<Transform3DComponent>().Position = { 0.0f, 2.0f, 0.0f };
+		m_Flash.AddComponent<ParticleEmitterComponent>(m_FlashEffect).Playing = false;
+		// Shorter than a frame, so it opens and closes in one update.
+		if (AnimationClip* survey = m_Fox->FindAnimation("Survey"))
+			survey->AddEventRange(0.3f, 0.3005f, "flash");
 
 		ParticleEventComponent& events = m_EventFox.AddComponent<ParticleEventComponent>();
 		for (const char* step : { "step_fl", "step_fr", "step_bl", "step_br" })
 			events.Bind(step, m_Dust.GetUUID(), k_DustPerStep);
 		events.BindRange("look", m_Motes.GetUUID());
+		events.BindRange("flash", m_Flash.GetUUID());
 
 		m_EventScene->OnStart();
 		if (Animator* animator = m_EventScene->GetAnimator(m_EventFox))
@@ -321,6 +337,8 @@ namespace Dingo
 
 		// Survey's "look" spans 0.90 to 2.50 s; its emitter is the only one that spawns at a rate.
 		const float surveyTime = static_cast<float>(step - k_BlendFrames + 1) * k_EventStep;
+		if (surveyTime < 0.85f && motesPlaying)
+			m_MotesPlayedEarly = true;
 		if (surveyTime > 1.2f && surveyTime < 2.3f)
 			m_MotesPlayedOpen = m_MotesPlayedOpen || motesPlaying;
 		if (surveyTime > 2.7f)
@@ -330,8 +348,19 @@ namespace Dingo
 
 		if (step + 1 == k_BlendFrames + k_SurveyFrames)
 		{
-			Check(m_MotesPlayedOpen && m_MotesStoppedClosed && m_MotesSpawned > 0,
-				std::format("Survey's \"look\" range plays its emitter while open and stops it on RangeEnd (played {}, stopped {}, {} spawned)", m_MotesPlayedOpen, m_MotesStoppedClosed, m_MotesSpawned));
+			Check(!m_MotesPlayedEarly && m_MotesPlayedOpen && m_MotesStoppedClosed && m_MotesSpawned > 0,
+				std::format("Survey's \"look\" range plays its emitter only while open and stops it on RangeEnd (early {}, played {}, stopped {}, {} spawned)", m_MotesPlayedEarly, m_MotesPlayedOpen, m_MotesStoppedClosed, m_MotesSpawned));
+			if (ParticleEmitter* flash = m_EventScene->GetParticleEmitter(m_Flash))
+			{
+				CountAlive(Application::Get().GetRenderer3D(), *flash, [this](uint32_t alive, float)
+				{
+					Check(alive == k_FlashBurst, std::format("a range that opens and closes in one frame still bursts its BurstOnPlay ({} of {} alive)", alive, k_FlashBurst));
+				});
+			}
+			else
+			{
+				Check(false, "the one-frame range's emitter exists");
+			}
 		}
 	}
 
@@ -739,10 +768,11 @@ namespace Dingo
 		m_SceneEmitter = {};
 		delete m_EventScene;
 		m_EventScene = nullptr;
-		m_EventFox = m_Dust = m_Motes = {};
+		m_EventFox = m_Dust = m_Motes = m_Flash = {};
 		delete m_DustEffect;
 		delete m_MoteEffect;
-		m_DustEffect = m_MoteEffect = nullptr;
+		delete m_FlashEffect;
+		m_DustEffect = m_MoteEffect = m_FlashEffect = nullptr;
 		delete m_Fox;
 		m_Fox = nullptr;
 		if (m_CheckRenderer)

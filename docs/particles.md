@@ -80,7 +80,9 @@ fighter.AddComponent<ParticleEventComponent>()
   across a blend.
 - **Ranges stop on `RangeEnd`**, including the ones a rebind, a seek or a removed `AnimatorComponent`
   sends; removing the `ParticleEventComponent` (or its entity) stops every range emitter it binds.
-  Start a range's emitter with `Playing` off.
+  Start a range's emitter with `Playing` off. A range that opens and closes within one frame (a short
+  range, a low frame rate, a seek) never reaches the emitter as playing, so it gets the effect's
+  `BurstOnPlay` as a burst instead.
 - **Live edits move them.** Editing a `.events` file while the game runs re-times the bursts through
   the model's hot-reload ([Model hot-reload](animation.md)).
 - Emitters are found by UUID. `Scene::DuplicateEntity` points a copied binding at the copy of its

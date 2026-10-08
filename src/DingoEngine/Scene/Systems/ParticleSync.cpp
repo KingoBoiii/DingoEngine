@@ -57,6 +57,9 @@ namespace Dingo::Internal::ParticleSync
 
 	void ApplyAnimationEvents(entt::registry& registry, const std::unordered_map<UUID, entt::entity>& entityMap, const std::vector<std::pair<entt::entity, AnimationEvent>>& events)
 	{
+		// A range that opens and closes in one frame leaves Playing as it was before the next Submit, so
+		// the emitter would never see it start: it gets the start's burst here instead.
+		std::vector<entt::entity> begun;
 		for (const auto& [entity, event] : events)
 		{
 			if (!registry.valid(entity))
@@ -78,9 +81,22 @@ namespace Dingo::Internal::ParticleSync
 					if (event.Type == AnimationEventType::Instant)
 						Emit(registry, emitter, binding.Count, nullptr);
 				}
-				else if (event.Type != AnimationEventType::Instant)
+				else if (event.Type == AnimationEventType::RangeBegin)
 				{
-					SetPlaying(registry, emitter, event.Type == AnimationEventType::RangeBegin);
+					const ParticleEmitterComponent* target = registry.try_get<ParticleEmitterComponent>(emitter);
+					if (target && !target->Playing)
+						begun.push_back(emitter);
+					SetPlaying(registry, emitter, true);
+				}
+				else if (event.Type == AnimationEventType::RangeEnd)
+				{
+					if (std::erase(begun, emitter) > 0)
+					{
+						const ParticleEmitterComponent& target = registry.get<ParticleEmitterComponent>(emitter);
+						if (target.Effect)
+							Emit(registry, emitter, target.Effect->GetParams().BurstOnPlay, nullptr);
+					}
+					SetPlaying(registry, emitter, false);
 				}
 			}
 		}

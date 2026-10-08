@@ -103,16 +103,19 @@ namespace Dingo
 		Model* m_Fox = nullptr;
 		ParticleEffect* m_DustEffect = nullptr;
 		ParticleEffect* m_MoteEffect = nullptr;
+		ParticleEffect* m_FlashEffect = nullptr;
 		Scene* m_EventScene = nullptr;
 		Entity m_EventFox;
 		Entity m_Dust;
 		Entity m_Motes;
+		Entity m_Flash;
 		int m_EventStep = 0;
 		uint32_t m_Footfalls = 0;
 		uint32_t m_DustSpawned = 0;
 		uint32_t m_MotesSpawned = 0;
 		bool m_MotesPlayedOpen = false;
 		bool m_MotesStoppedClosed = false;
+		bool m_MotesPlayedEarly = false;
 	};
 
 }
