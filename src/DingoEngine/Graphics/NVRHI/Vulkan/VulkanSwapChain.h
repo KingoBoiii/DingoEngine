@@ -20,6 +20,8 @@ namespace Dingo
 		virtual void Resize(int32_t width, int32_t height) override;
 
 		virtual void AcquireNextImage() override;
+		virtual bool IsImageAcquired() const override { return m_ImageAcquired; }
+		virtual void QueueImageWait() override;
 		virtual void Present() override;
 
 		virtual Framebuffer* SwapChain::GetCurrentFramebuffer() const
@@ -48,6 +50,7 @@ namespace Dingo
 		nvrhi::Format m_SwapChainTextureFormat = nvrhi::Format::RGBA8_UNORM;
 		vk::Extent2D m_SwapChainExtent = {};
 		bool m_ImageAcquired = false;
+		bool m_ImageWaitPending = false;
 
 		std::vector<vk::Semaphore> m_AcquireSemaphores;
 		std::vector<vk::Semaphore> m_PresentSemaphores;

@@ -147,7 +147,10 @@ namespace Dingo
 					Animator& animator = EnsureAnimator(registry, handle, *model);
 					const AnimatorComponent& settings = view.get<AnimatorComponent>(handle);
 					if (!settings.Enabled)
+					{
+						animator.ClearEventsThisFrame();
 						continue;
+					}
 
 					animator.Update(deltaTime * settings.Speed);
 					RecordEvents(scratch, handle, animator.GetEventsThisFrame());

@@ -32,7 +32,7 @@ namespace Dingo
 		CommandList* CommandList    = nullptr;
 		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
 		uint64_t     FrameIndex     = 0;       // bumped per command-list Begin, so never 0 while recording
-		bool         FrameSkipped   = false;   // main thread only: from SkipFrame to the next BeginFrame
+		bool         FrameSkipped   = false;   // main thread only: from SkipFrame, or a BeginFrame without an image, to the next BeginFrame
 
 		std::thread             RenderThread;
 		std::mutex              Mutex;
@@ -44,10 +44,17 @@ namespace Dingo
 		bool HasPendingFrame = false;
 
 		// Written by the main thread (resize events), consumed by the render thread
-		// between Present and the next AcquireNextImage. Guarded by Mutex.
+		// between Present and the next AcquireNextImage, or by a BeginFrame without an image.
+		// Guarded by Mutex.
 		bool    HasPendingResize    = false;
 		int32_t PendingResizeWidth  = 0;
 		int32_t PendingResizeHeight = 0;
+
+		// Main thread only: run at the next BeginFrame or SkipFrame, or at Shutdown.
+		std::vector<std::function<void()>> AfterFrame;
+		// Main thread only: from BeginFrame or SkipFrame to EndFrame, and before the first frame, the
+		// render thread is parked and the main thread may submit command lists of its own.
+		bool RenderThreadParked = true;
 
 		Texture* WhiteTexture = nullptr;
 		Sampler* ClampSampler = nullptr;
@@ -97,11 +104,13 @@ namespace Dingo
 
 		if (s_Data->RenderThread.joinable())
 			s_Data->RenderThread.join();
+		s_Data->RenderThreadParked = true;
 
 		// If the render thread exited before executing the last closed frame,
 		// submit it now to break the NVRHI CommandList <-> TrackedCommandBuffer cycle.
 		if (s_Data->HasPendingFrame)
 			Execute();
+		RunPendingAfterFrame();
 
 		DestroyAndDelete(s_Data->CommandList);
 	}
@@ -125,10 +134,39 @@ namespace Dingo
 
 	void Renderer::BeginFrame()
 	{
-		std::unique_lock<std::mutex> lock(s_Data->Mutex);
-		s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
-		s_Data->FrameConsumed = false;
-		s_Data->FrameSkipped = false;
+		bool acquire = false;
+		bool resize = false;
+		int32_t width = 0, height = 0;
+		{
+			std::unique_lock<std::mutex> lock(s_Data->Mutex);
+			s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
+			s_Data->FrameConsumed = false;
+			s_Data->FrameSkipped = false;
+			s_Data->RenderThreadParked = true;
+
+			// The render thread acquires after each present, which gets no image while the window is
+			// minimized. The first frame after the restore would draw into a stale one, so the resize
+			// that restored the window is applied and an image acquired below, while that thread is parked.
+			acquire = !s_Data->SwapChain->IsImageAcquired();
+			if (acquire)
+			{
+				resize = s_Data->HasPendingResize;
+				width = s_Data->PendingResizeWidth;
+				height = s_Data->PendingResizeHeight;
+				s_Data->HasPendingResize = false;
+			}
+		}
+
+		RunPendingAfterFrame();
+
+		if (acquire)
+		{
+			if (resize)
+				s_Data->SwapChain->Resize(width, height);
+			s_Data->SwapChain->AcquireNextImage();
+			s_Data->FrameSkipped = !s_Data->SwapChain->IsImageAcquired();
+		}
+
 		Begin();
 	}
 
@@ -137,7 +175,9 @@ namespace Dingo
 		{
 			std::unique_lock<std::mutex> lock(s_Data->Mutex);
 			s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
+			s_Data->RenderThreadParked = true;
 		}
+		RunPendingAfterFrame();
 		s_Data->FrameSkipped = true;
 
 		// The render thread collects after each present and stays parked until the next
@@ -150,6 +190,20 @@ namespace Dingo
 		return s_Data && s_Data->FrameSkipped;
 	}
 
+	void Renderer::RunAfterFrame(std::function<void()> fn)
+	{
+		s_Data->AfterFrame.push_back(std::move(fn));
+	}
+
+	void Renderer::RunPendingAfterFrame()
+	{
+		// A callback may queue more for the frame after.
+		std::vector<std::function<void()>> pending;
+		pending.swap(s_Data->AfterFrame);
+		for (std::function<void()>& fn : pending)
+			fn();
+	}
+
 	void Renderer::EndFrame()
 	{
 		Close();
@@ -157,8 +211,14 @@ namespace Dingo
 			std::lock_guard<std::mutex> lock(s_Data->Mutex);
 			s_Data->HasFrame        = true;
 			s_Data->HasPendingFrame = true;
+			s_Data->RenderThreadParked = false;
 		}
 		s_Data->FrameReadyCV.notify_one();
+	}
+
+	bool Renderer::IsRenderThreadParked()
+	{
+		return s_Data && s_Data->RenderThreadParked;
 	}
 
 	void Renderer::QueueResize(int32_t width, int32_t height)
@@ -238,6 +298,7 @@ namespace Dingo
 	void Renderer::Execute()
 	{
 		s_Data->HasPendingFrame = false;
+		s_Data->SwapChain->QueueImageWait();
 		s_Data->CommandList->Execute();
 	}
 
@@ -260,6 +321,11 @@ namespace Dingo
 	void Renderer::ResetRenderTarget()
 	{
 		s_Data->RenderTarget = nullptr;
+	}
+
+	Framebuffer* Renderer::GetRenderTarget()
+	{
+		return s_Data->RenderTarget;
 	}
 
 	/**************************************************

@@ -145,7 +145,7 @@ namespace Dingo
 		dim.Size = fade.Size;
 		SetAlpha(m_PauseDim, m_Paused ? COLOR_PAUSE_DIM.a : 0.0f);
 
-		m_RoomLabel.GetComponent<TransformComponent>().Position = { -halfW + HUD_PADDING, halfH - HUD_ROOM_LABEL_DROP, 0.0f };
+		m_RoomLabel.GetComponent<TransformComponent>().Position = { -halfW + HUD_PADDING, halfH - HUD_ROOM_LABEL_DROP, HUD_TEXT_Z };
 
 		const float barLeft = -halfW + HUD_PADDING;
 		const float barY = -halfH + HUD_OIL_BAR_RISE;
@@ -185,15 +185,15 @@ namespace Dingo
 			state = "Striking...";
 		}
 
-		m_LanternState.GetComponent<TransformComponent>().Position = { barLeft, barY + HUD_OIL_STATE_RISE, 0.0f };
+		m_LanternState.GetComponent<TransformComponent>().Position = { barLeft, barY + HUD_OIL_STATE_RISE, HUD_TEXT_Z };
 		SetText(m_LanternState, state, stateColor);
 
-		m_KeyHint.GetComponent<TransformComponent>().Position = { barLeft, barY - HUD_OIL_HINT_DROP, 0.0f };
+		m_KeyHint.GetComponent<TransformComponent>().Position = { barLeft, barY - HUD_OIL_HINT_DROP, HUD_TEXT_Z };
 		SetText(m_KeyHint, m_SnuffHint.Get(), COLOR_TEXT_DIM);
 
 		const bool prompting = !m_Paused && m_PromptKind != BrazierPrompt::None;
 		const bool holding = prompting && m_PromptKind != BrazierPrompt::NeedLantern && m_PromptKind != BrazierPrompt::NoOil;
-		m_Prompt.GetComponent<TransformComponent>().Position = { 0.0f, -halfH + HUD_PROMPT_RISE, 0.0f };
+		m_Prompt.GetComponent<TransformComponent>().Position = { 0.0f, -halfH + HUD_PROMPT_RISE, HUD_TEXT_Z };
 		if (!prompting)
 			SetText(m_Prompt, "", COLOR_TEXT);
 		else if (m_PromptKind == BrazierPrompt::NeedLantern)
@@ -220,11 +220,11 @@ namespace Dingo
 		m_ToastTime = std::max(0.0f, m_ToastTime - deltaTime);
 		glm::vec4 toastColor = COLOR_TITLE;
 		toastColor.a = std::clamp(m_ToastTime / HUD_TOAST_FADE_TIME, 0.0f, 1.0f);
-		m_Toast.GetComponent<TransformComponent>().Position = { 0.0f, halfH - HUD_TOAST_DROP, 0.0f };
+		m_Toast.GetComponent<TransformComponent>().Position = { 0.0f, halfH - HUD_TOAST_DROP, HUD_TEXT_Z };
 		SetText(m_Toast, m_ToastTime > 0.0f ? std::string_view(m_ToastText) : std::string_view(), toastColor);
 
-		m_PauseTitle.GetComponent<TransformComponent>().Position = { 0.0f, HUD_PAUSE_TITLE_RISE, 0.0f };
-		m_PauseHint.GetComponent<TransformComponent>().Position = { 0.0f, -HUD_PAUSE_HINT_DROP, 0.0f };
+		m_PauseTitle.GetComponent<TransformComponent>().Position = { 0.0f, HUD_PAUSE_TITLE_RISE, HUD_TEXT_Z };
+		m_PauseHint.GetComponent<TransformComponent>().Position = { 0.0f, -HUD_PAUSE_HINT_DROP, HUD_TEXT_Z };
 		SetText(m_PauseTitle, m_Paused ? "Paused" : "", COLOR_TITLE);
 		SetText(m_PauseHint, m_Paused ? std::string_view(m_PauseHintText.Get()) : std::string_view(), COLOR_TEXT);
 	}

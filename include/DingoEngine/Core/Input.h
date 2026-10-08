@@ -96,6 +96,14 @@ namespace Dingo
 		static void SetGamepadDeadzone(float deadzone);
 		static float GetGamepadDeadzone();
 
+		// Rumble, on XInput (Xbox-compatible) pads under Windows only: on any other pad it does
+		// nothing and returns false. lowFrequency drives the heavy left motor, highFrequency the light
+		// right one, each from 0 to 1. It stops after `seconds`, even while the app is paused in the
+		// background, or when it is set again; 0 seconds stops it.
+		static bool SetGamepadRumble(float lowFrequency, float highFrequency, float seconds, uint32_t gamepad = 0);
+		static void StopGamepadRumble(uint32_t gamepad = 0);
+		static bool IsGamepadRumbleSupported(uint32_t gamepad = 0);
+
 		/**************************************************
 		***		ANY										***
 		**************************************************/
@@ -109,6 +117,8 @@ namespace Dingo
 		static void Update();
 		// Before the first update after a pause, in place of Update.
 		static void Resume();
+		// Every pass of the main loop, paused or not: ends rumble that has run its time.
+		static void UpdateRumble();
 
 		static void UpdateKeyState(KeyCode key, bool pressed);
 		static void UpdateMouseButtonState(MouseButton button, bool pressed);
@@ -124,6 +134,9 @@ namespace Dingo
 		// classified when the connect/disconnect event reaches client code.
 		static GamepadType RegisterGamepadConnection(uint32_t gamepad, std::string& outName);
 		static GamepadType UnregisterGamepadConnection(uint32_t gamepad, std::string& outName);
+		// Every joystick, gamepad mapping or not: keeps the XInput pairing in step with GLFW's.
+		static void OnJoystickConnected();
+		static void OnJoystickDisconnected(uint32_t joystick);
 
 	private:
 		friend class Application; // drives Update() once per frame

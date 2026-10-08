@@ -74,7 +74,7 @@ namespace Dingo
 			component.Text = text;
 		component.Size = size;
 		component.Color = WithAlpha(color, m_TextVisible);
-		entity.GetComponent<TransformComponent>().Position = { 0.0f, y, 0.0f };
+		entity.GetComponent<TransformComponent>().Position = { 0.0f, y, HUD_TEXT_Z };
 	}
 
 	void Hud::UpdateBar(Bar& bar, float deltaTime, bool playerSide, float centerX, float width, float y, float fraction, std::string_view label)

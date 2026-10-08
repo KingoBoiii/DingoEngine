@@ -69,5 +69,6 @@ namespace Dingo
 	inline constexpr float FONT_SUB = 0.9f;
 	inline constexpr float FONT_HUD = 0.7f;
 	inline constexpr float FONT_SMALL = 0.45f;
+	inline constexpr float HUD_TEXT_Z = 0.5f;             // over the bird (z 0.1) and pigs (z 0.05) as they fly past
 
 }

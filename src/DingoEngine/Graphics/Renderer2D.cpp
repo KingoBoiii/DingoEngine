@@ -262,7 +262,13 @@ void main() {
 		m_QuadVertexPositions[2] = { 0.5f,  0.5f, 0.0f, 1.0f };
 		m_QuadVertexPositions[3] = { -0.5f,  0.5f, 0.0f, 1.0f };
 
-		m_CameraUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraData));
+		m_CameraUniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer2D_CameraUBO")
+			.SetByteSize(sizeof(CameraData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		m_TextureSlots[0] = Renderer::GetWhiteTexture();
 		for (uint32_t i = 1; i < m_TextureSlots.size(); i++)
@@ -310,12 +316,17 @@ void main() {
 
 	void Renderer2D::EndScene()
 	{
-		if (m_SceneSkipped)
-			return;
-
 		// Submit whatever each pass has accumulated since its last flush. The bulk
 		// of the work for large scenes already happened in mid-frame flushes; these
 		// just drain the final partial batch (no-op when empty).
+		Flush();
+	}
+
+	void Renderer2D::Flush()
+	{
+		if (m_SceneSkipped)
+			return;
+
 		FlushQuad();
 		FlushCircle();
 		FlushText();
@@ -466,6 +477,9 @@ void main() {
 		// cannot avoid a mid-string flush, so that case pays for a measuring walk instead.
 		glm::vec3 origin = position;
 		bool shiftAfterEmit = false;
+		// The string's own x axis in the world, along which centering moves it.
+		const float radians = glm::radians(textParameters.Rotation);
+		const glm::vec2 axis(std::cos(radians), std::sin(radians));
 		if (textParameters.Centered)
 		{
 			if (!m_TextPass.HasRoomForQuads(string.size()))
@@ -473,10 +487,14 @@ void main() {
 
 			shiftAfterEmit = m_TextPass.HasRoomForQuads(string.size());
 			if (!shiftAfterEmit)
-				origin.x -= font->GetStringWidth(string, size, textParameters.Kerning) * 0.5f;
+			{
+				const float halfWidth = font->GetStringWidth(string, size, textParameters.Kerning) * 0.5f;
+				origin.x -= axis.x * halfWidth;
+				origin.y -= axis.y * halfWidth;
+			}
 		}
 
-		glm::mat4 transform = Utils::CreateTransform(origin, glm::vec2(size, size));
+		glm::mat4 transform = Utils::CreateTransform(origin, glm::vec2(size, size), textParameters.Rotation);
 
 		TextVertex* const firstVertex = m_TextPass.VertexBufferPtr;
 		double widestLine = 0.0;
@@ -595,11 +613,14 @@ void main() {
 
 		if (shiftAfterEmit)
 		{
-			// The text transform is translate + scale only, so centering is a plain offset
-			// on the world-space x of every quad this string emitted.
-			const float offsetX = -static_cast<float>(widestLine) * size * 0.5f;
+			// The text transform has no shear, so centering is the same offset along the string's
+			// axis for every quad it emitted.
+			const glm::vec2 shift = axis * (-static_cast<float>(widestLine) * size * 0.5f);
 			for (TextVertex* vertex = firstVertex; vertex != m_TextPass.VertexBufferPtr; ++vertex)
-				vertex->Position.x += offsetX;
+			{
+				vertex->Position.x += shift.x;
+				vertex->Position.y += shift.y;
+			}
 		}
 	}
 

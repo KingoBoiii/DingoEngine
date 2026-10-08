@@ -24,6 +24,8 @@ namespace Dingo
 		// Where the mark sits on the clip, in seconds.
 		float Time = 0.0f;
 		AnimationEventType Type = AnimationEventType::Instant;
+		// Null for the RangeEnd of a range that was open when the animator was bound to another
+		// skeleton (Animator::SetSkeleton).
 		const AnimationClip* Clip = nullptr;
 		uint32_t Layer = 0;
 	};
@@ -122,7 +124,8 @@ namespace Dingo
 		explicit Animator(const Skeleton* skeleton = nullptr);
 
 		// Binds another skeleton (or none) and returns to its rest pose with nothing playing. Layer
-		// settings and parameters stay.
+		// settings and parameters stay. Ranges open until now end at the next Update, as a seek
+		// ends them, with no Clip: the old skeleton's model may be gone.
 		void            SetSkeleton(const Skeleton* skeleton);
 		const Skeleton* GetSkeleton() const { return m_Skeleton; }
 
@@ -192,6 +195,9 @@ namespace Dingo
 		std::span<const AnimationEvent> GetEventsThisFrame() const { return m_Events; }
 		// fn must not Update this animator.
 		void ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const;
+		// Empties that list until the next Update. A scene does it every frame it doesn't update a
+		// disabled AnimatorComponent's animator, so the events of the frame it stopped on don't repeat.
+		void ClearEventsThisFrame() { m_Events.clear(); }
 		// A range event that has begun and not yet ended, on any layer.
 		bool IsEventActive(std::string_view name) const;
 		// The RangeEnd of every range open on any layer: what an owner dropping this animator mid-range
@@ -270,6 +276,10 @@ namespace Dingo
 			std::vector<JointPose> FrozenPose;
 			// The layer's own result before masking; for layer 0 only while layers above apply.
 			std::vector<JointPose> Pose;
+			// Above layer 0: the weight the last Evaluate applied the layer at, 0 if it skipped it. A
+			// skipped layer's Pose is stale until FreezeSource works it out.
+			float AppliedWeight = 0.0f;
+			bool  PoseStale = true;
 			// A one-shot's way back: the state it interrupted, its time still running.
 			bool OneShotPending = false;
 			const AnimationClip* OneShotClip = nullptr;
@@ -295,9 +305,11 @@ namespace Dingo
 		Layer& EnsureLayer(uint32_t index);
 		bool   LayerAllowed(uint32_t index) const;
 		void   ResolveMask(Layer& layer);
-		void   Push(Layer& layer, PlayingState state, float fadeSeconds, std::span<const JointPose> current);
+		void   Push(uint32_t layer, PlayingState state, float fadeSeconds);
 		// What the layer shows now, for freezing it.
-		std::span<const JointPose> FreezeSource(size_t layer) const;
+		std::span<const JointPose> FreezeSource(size_t layer);
+		// Masks the layer's Pose over poses at its AppliedWeight.
+		void   ApplyLayer(const Layer& layer, std::span<JointPose> poses) const;
 		PlayingState MakeState(const AnimationState& state);
 		void   Advance(PlayingState& state, float deltaTime) const;
 		void   EvaluateLayer(Layer& layer, std::span<const JointPose> underneath, std::span<JointPose> out);
@@ -346,6 +358,7 @@ namespace Dingo
 		bool m_UpperLayersApplied = false;
 		std::vector<JointPose> m_Scratch;
 		std::vector<JointPose> m_BlendScratch;
+		std::vector<JointPose> m_Underneath;
 		std::vector<glm::mat4> m_Globals;
 		std::vector<glm::mat4> m_Palette;
 

@@ -39,16 +39,18 @@ namespace Dingo
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
 
-			// Reused every frame by the sprite z-sort in RenderEntities: clear() keeps the
+			// Reused every frame by the 2D z-sort in RenderEntities: clear() keeps the
 			// capacity, so a steady-state frame allocates nothing to sort.
-			struct SpriteDraw
+			enum class Draw2DKind : std::uint8_t { Sprite, Circle, Text };
+			struct Draw2D
 			{
-				glm::vec3 Position; // world; z is the sort key, then Depth
+				glm::vec3 Position; // world; z is the sort key, then Kind, then Depth
 				float Rotation;
 				std::uint32_t Depth;
 				entt::entity Entity;
+				Draw2DKind Kind;
 			};
-			std::vector<SpriteDraw> SpriteSortBuffer;
+			std::vector<Draw2D> Draw2DSortBuffer;
 
 			// Scratch for the per-entity readers (rendering, lights, audio); reset by each pass.
 			HierarchySystem::WorldMemo Memo;

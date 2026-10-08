@@ -60,6 +60,13 @@ namespace Dingo
 		virtual void Resize(int32_t width, int32_t height) = 0;
 
 		virtual void AcquireNextImage() = 0;
+		// False after an acquire that got no image (a minimized window on Vulkan), when
+		// GetCurrentFramebuffer() is a stale image and Present() skips the frame.
+		virtual bool IsImageAcquired() const { return true; }
+		// Orders the next command-list execution after the image AcquireNextImage acquired; call it
+		// just before executing the commands that draw into GetCurrentFramebuffer(). On Vulkan the
+		// wait joins whatever is submitted next, so queued any earlier, an unrelated upload takes it.
+		virtual void QueueImageWait() {}
 		virtual void Present() = 0;
 
 		Framebuffer* GetFramebuffer(uint32_t index) const;

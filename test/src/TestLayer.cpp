@@ -23,6 +23,7 @@
 
 #include "Tests/Scene/HierarchyTest.h"
 #include "Tests/Scene/AnimationTest.h"
+#include "Tests/Scene/RenderTargetTest.h"
 
 #include "Tests/Core/BackgroundTest.h"
 
@@ -63,6 +64,7 @@ namespace Dingo
 		m_Tests.push_back({ "Hierarchy Test", [&]() { return new HierarchyTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Animation Test", []() { return new AnimationTest(); } });
 		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Render Target Test", [&]() { return new RenderTargetTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))

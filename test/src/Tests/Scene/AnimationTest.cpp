@@ -752,6 +752,29 @@ namespace Dingo
 				std::format("a layer fades in over the pose below and Stop fades it back out ({:.1e}, {:.1e})", start, end));
 		}
 		{
+			// Four fades on a layer, then a fifth that freezes their mix; one animator shows the layer
+			// throughout, the other only once it has frozen.
+			auto frozenMix = [&](float weight)
+			{
+				Animator animator(&skeleton);
+				animator.Play(walk);
+				animator.SetLayer(1, AnimationLayer().SetMask(k_UpperBody).SetWeight(weight));
+				animator.Play(survey, 1.0f, 1);
+				animator.Play(run, 1.0f, 1);
+				animator.Play(walk, 1.0f, 1);
+				animator.Update(0.3f);
+				animator.Play(survey, 1.0f, 1);
+				animator.SetLayerWeight(1, 1.0f);
+				animator.Update(0.0f);
+				return std::vector<JointPose>(animator.GetLocalPoses().begin(), animator.GetLocalPoses().end());
+			};
+			const std::vector<JointPose> shown = frozenMix(1.0f);
+			const float hiddenGap = PoseGap(frozenMix(0.0f), shown);
+			const float mixed = PoseGap(PoseAt(skeleton, walk, 0.3f), shown);
+			Check(hiddenGap < 1e-6f && mixed > 1e-2f,
+				std::format("a layer at weight 0 freezes the mix its states reached, as a shown one does, not the pose it last showed ({:.1e})", hiddenGap));
+		}
+		{
 			// The way a script drives it: Walk played every frame, the one-shot once.
 			Animator animator(&skeleton);
 			animator.Play(walk);
@@ -1102,6 +1125,68 @@ namespace Dingo
 			}
 			Check(expected > 0 && heard == expected && validInside && !target.IsValid(),
 				std::format("a script hears each of Walk's {} footfalls in a second, and a DestroyEntity from OnAnimationEvent waits for the end of the pass", heard));
+		}
+		{
+			Scene scene("Disabled animator checks");
+			Entity fox = scene.CreateEntity("Fox");
+			fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(m_FoxScale)));
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+			scene.OnStart();
+
+			const Animator* animator = scene.GetAnimator(fox);
+			bool stepped = false;
+			for (int frame = 0; frame < 120 && animator && !stepped; ++frame)
+			{
+				scene.OnUpdate(1.0f / 60.0f);
+				stepped = !animator->GetEventsThisFrame().empty();
+			}
+			fox.GetComponent<AnimatorComponent>().Enabled = false;
+			scene.OnUpdate(1.0f / 60.0f);
+			scene.OnUpdate(1.0f / 60.0f);
+			Check(stepped && animator->GetEventsThisFrame().empty(),
+				"a disabled AnimatorComponent's animator reports no events, rather than the frame's it stopped on again and again");
+		}
+		if (Model* other = Model::LoadFromFile(k_FoxPath))
+		{
+			Animator animator(&skeleton);
+			animator.Play(&loop);
+			animator.Update(0.0f);
+			animator.Update(0.3f);
+			const bool open = animator.IsEventActive("window");
+			animator.SetSkeleton(other->GetSkeleton());
+			animator.Update(0.0f);
+			const std::span<const AnimationEvent> events = animator.GetEventsThisFrame();
+			Check(open && events.size() == 1 && CountEvents(events, "window", AnimationEventType::RangeEnd) == 1 && !events[0].Clip && !animator.IsEventActive("window"),
+				"a range open when the animator is bound to another skeleton ends at the next Update, with no clip");
+
+			Scene scene("Rebind checks");
+			Entity fox = scene.CreateEntity("Fox");
+			fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(m_FoxScale)));
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));
+			int lookEnds = 0;
+			bool endedWithoutClip = false;
+			fox.AddScript<EventListener>([&](Entity, const AnimationEvent& event)
+			{
+				if (event.Name == "look" && event.Type == AnimationEventType::RangeEnd)
+				{
+					lookEnds++;
+					endedWithoutClip = !event.Clip;
+				}
+			});
+			scene.OnStart();
+			const Animator* surveying = scene.GetAnimator(fox);
+			for (int frame = 0; frame < 120 && surveying && !surveying->IsEventActive("look"); ++frame)
+				scene.OnUpdate(1.0f / 60.0f);
+			const bool looking = surveying && surveying->IsEventActive("look");
+			fox.GetComponent<SkinnedMeshRendererComponent>().Model = other;
+			scene.OnUpdate(1.0f / 60.0f);
+			const Animator* rebound = scene.GetAnimator(fox);
+			Check(looking && lookEnds == 1 && endedWithoutClip && rebound && !rebound->IsEventActive("look"),
+				"giving an entity a model with another skeleton mid-range sends its script that range's RangeEnd");
+			scene.Clear();
+			DestroyAndDelete(other);
 		}
 		if (Model* roaring = Model::LoadFromFile(k_FoxPath))
 		{
