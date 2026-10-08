@@ -22,7 +22,8 @@ namespace Dingo
 	// On every start it also runs PASS/FAIL checks of the light bookkeeping (counts, culling, the
 	// budget, the default light) on private Renderer3Ds, one scene per frame and apart from the
 	// modes above, then checks GetLightAttenuation and the light components' ToLight. --post draws the
-	// scene through the post chain's default Soft tone curve, so what clips without it rolls off.
+	// scene through the post chain's default Soft tone curve, so what clips without it rolls off, and
+	// --bloom adds the default bloom (the materials mode's lamp glows).
 	class LightingTest : public GraphicsTest
 	{
 	public:
@@ -73,6 +74,7 @@ namespace Dingo
 		Mode m_Mode = Mode::PointAndSpot;
 		bool m_Animate = false;
 		bool m_PostProcess = false; // --post: the scene through the post chain's default Soft curve
+		bool m_Bloom = false;       // --bloom: and the default bloom, which implies --post
 		float m_Time = 0.0f;
 
 		static constexpr int k_RoughnessSteps = 5;

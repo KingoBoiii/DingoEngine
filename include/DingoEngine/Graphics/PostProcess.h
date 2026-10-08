@@ -29,11 +29,31 @@ namespace Dingo
 		float WhitePoint = 4.0f;
 	};
 
+	// A glow around light brighter than Threshold, added to the scene before the tone curve: the
+	// dual-filter bloom of Jimenez's "Next Generation Post Processing in Call of Duty: Advanced
+	// Warfare", six levels down from half resolution and back up. With the default threshold only what
+	// would have clipped blooms, so a scene inside 0..1 gains nothing; lit materials' EmissiveStrength
+	// past 1 is what it is for.
+	struct BloomSettings
+	{
+		bool Enabled = false;
+		// How much of the glow is added.
+		float Intensity = 0.5f;
+		// The brightest channel must pass this before anything blooms...
+		float Threshold = 1.0f;
+		// ...and the glow grows in smoothly over this much more (in the same units), so a light
+		// brightening past the threshold doesn't switch its glow on.
+		float Knee = 0.1f;
+		// The spread of each level's upsample, in its source's texels: 1 is the paper's tent.
+		float Radius = 1.0f;
+	};
+
 	struct PostProcessSettings
 	{
 		// Off, the 3D pass draws straight into its target, exactly as without the post chain.
 		bool Enabled = false;
 		ToneMapSettings Tone;
+		BloomSettings Bloom;
 	};
 
 	// The 3D pass's post chain. Begin redirects the draws that follow into an HDR scene target (RGBA16F
@@ -72,7 +92,8 @@ namespace Dingo
 			uint32_t Width = 0;         // the last scene target's size
 			uint32_t Height = 0;
 			uint32_t SceneTargets = 0;  // cached, one per output size in use
-			uint64_t TargetBytes = 0;   // GPU memory of every cached target
+			uint64_t TargetBytes = 0;   // GPU memory of every cached target, bloom levels included
+			uint32_t BloomScenes = 0;   // of Scenes, the ones that bloomed
 		};
 		const Statistics& GetStatistics() const;
 

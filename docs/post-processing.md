@@ -56,11 +56,39 @@ The engine stays *display-referred*: textures, light colours and the lit shader 
 did, and the curve only decides what happens to light that goes past 1. So a game can switch the
 chain on without re-tuning, and then raise its lights or emissive strengths past what used to clip.
 
+## Bloom
+
+Light past a threshold glows: the dual-filter bloom of Jimenez's *Next Generation Post Processing in
+Call of Duty: Advanced Warfare* (2014). The bright parts of the scene are filtered into six levels,
+each half the size of the one before (from half resolution, R11G11B10F), then added back up level by
+level with a 3 x 3 tent, and the result is added to the scene before the tone curve.
+
+```cpp
+post.Settings.Bloom.Enabled = true;
+post.Settings.Bloom.Intensity = 0.6f;
+```
+
+| `BloomSettings` | Default | Meaning |
+|---|---|---|
+| `Enabled` | false | |
+| `Intensity` | 0.5 | How much of the glow is added. |
+| `Threshold` | 1.0 | Nothing blooms until its brightest channel passes this. At 1.0, only light that would have clipped glows, so a scene that stays inside 0..1 looks exactly as without bloom. |
+| `Knee` | 0.1 | The glow grows in smoothly over this much more brightness, so a light brightening past the threshold doesn't switch its glow on. |
+| `Radius` | 1.0 | The spread of each upsample, in texels of the smaller level. |
+
+The first downsample uses Karis' average, which weighs each group of four pixels less the brighter it
+is, so a single very bright pixel (a firefly from a specular highlight) can't flood the screen.
+
+What is it for: lit materials with `EmissiveStrength` above 1 (a lamp, a brazier, a glowing orb) and
+lights bright enough to burn a surface past 1.
+
 ## What it costs and what differs
 
 - **Memory**: one RGBA16F colour target and a D32 depth per output size in use, 12 bytes a pixel (25 MB
   at 1920 x 1080). Targets idle for 300 frames are freed; a resized window resizes its target in place.
-- **GPU**: one fullscreen pass (`Post` in the F8 Profiler tab), plus the HDR target's bandwidth.
+- **GPU**: one fullscreen pass (`Post` in the F8 Profiler tab), plus the HDR target's bandwidth, and
+  with bloom 11 small passes (`Bloom`, inside `Post`) over levels of a quarter of the screen's pixels
+  and less, and another 4 bytes a pixel of memory for the levels.
 - **Blending in 16-bit float** rounds differently from 8-bit, so the chain with `None` comes within
   1/255 of the frame without it, not exactly to it.
 
@@ -73,7 +101,10 @@ the operator, exposure, knee and white point in its panel, and strips of each cu
 gradient. Flags: `--tonemap=none|soft|aces|neutral`, `--exposure=<EV>`, `--post-off`. On start it checks
 by readback that every curve rises, `Soft` is the identity to 1/255 up to its knee and reaches 1 at
 its white point, `None` clips at 1, `Soft` keeps an overbright gradient's hue, the chain with `None`
-is within 1/255 of no chain, and a disabled `Begin` draws exactly what no chain does.
+is within 1/255 of no chain, and a disabled `Begin` draws exactly what no chain does; then that bloom
+adds nothing to a gradient inside 0..1 and makes a small square at 8 glow past its edge, evenly on
+both sides. `--post=bloom` (or `--bloom`) starts with bloom on. The Lighting Test takes `--post` and
+`--bloom` too: its materials mode's lamp has an emissive strength of 1.5.
 
 ## For custom shaders
 

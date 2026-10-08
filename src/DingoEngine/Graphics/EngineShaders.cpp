@@ -7,6 +7,7 @@ namespace
 #include "Fullscreen.glsl.inl"
 #include "ToneMapping.glsl.inl"
 #include "PostToneMap.glsl.inl"
+#include "PostBloom.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -27,6 +28,7 @@ namespace
 		{ "Fullscreen.glsl", View(k_Fullscreen_glsl) },
 		{ "ToneMapping.glsl", View(k_ToneMapping_glsl) },
 		{ "PostToneMap.glsl", View(k_PostToneMap_glsl) },
+		{ "PostBloom.glsl", View(k_PostBloom_glsl) },
 	};
 }
 

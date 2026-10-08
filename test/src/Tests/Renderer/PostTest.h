@@ -12,13 +12,15 @@ namespace Dingo
 	// The post chain (PostProcessStack) on a fixed scene of pillars under lights bright enough to clip,
 	// and an emissive lamp. The viewport shows the scene through the chain with the operator, exposure,
 	// knee and white point from the panel; under it, strips show each operator applied to the same HDR
-	// gradient from 0 to 8. Start with --post=tonemap (the default), --tonemap=none|soft|aces|neutral,
-	// --exposure=<EV> or --post-off.
+	// gradient from 0 to 8. Start with --post=tonemap (the default) or --post=bloom (bloom on too),
+	// --tonemap=none|soft|aces|neutral, --exposure=<EV> or --post-off.
 	//
 	// On start it checks by readback: every curve rises left to right, Soft is the identity up to its
 	// knee and reaches 1 at its white point, None clips at 1, Soft keeps an overbright gradient's hue,
 	// the scene through the chain with None comes within 1/255 of the scene without it, and a Begin with
-	// the chain disabled draws exactly what drawing without it does.
+	// the chain disabled draws exactly what drawing without it does. Then bloom: a gradient that stays
+	// inside 0..1 comes out the same with bloom as without, and a small square at 8 glows past its
+	// edge with bloom and not without.
 	class PostTest : public GraphicsTest
 	{
 	public:
@@ -37,7 +39,8 @@ namespace Dingo
 
 		void DrawScene(Renderer3D& renderer) const;
 		void DrawSceneInto(Framebuffer* target, const PostProcessSettings& settings);
-		void DrawGradient(Framebuffer* target, const glm::vec3& base, const PostProcessSettings& settings);
+		void DrawGradient(Framebuffer* target, const glm::vec3& base, float max, const PostProcessSettings& settings);
+		void DrawSpot(Framebuffer* target, const PostProcessSettings& settings);
 		void RunChecks();
 
 	private:
@@ -57,12 +60,21 @@ namespace Dingo
 		Shader* m_GradientShader = nullptr;
 		Material* m_GradientMaterial = nullptr;
 
+		// Bloom: a 0..1 gradient with and without it, and a bright square with and without it.
+		Framebuffer* m_FlatBloom = nullptr;
+		Framebuffer* m_FlatPlain = nullptr;
+		Framebuffer* m_SpotBloom = nullptr;
+		Framebuffer* m_SpotPlain = nullptr;
+		Shader* m_SpotShader = nullptr;
+		Material* m_SpotMaterial = nullptr;
+
 		// Three copies of the scene for the regression checks: without the chain, through it with None,
 		// and through a Begin whose settings have it disabled.
 		Framebuffer* m_SceneOff = nullptr;
 		Framebuffer* m_SceneNone = nullptr;
 		Framebuffer* m_SceneDisabled = nullptr;
 		std::vector<uint8_t> m_SceneOffPixels;
+		std::vector<uint8_t> m_FlatPlainPixels;
 	};
 
 }

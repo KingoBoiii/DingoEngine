@@ -25,7 +25,27 @@ layout(location = 0) out vec4 o_Color;
 void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 )";
 
+		// A square of Value, HalfSize across from the centre in UV, on black.
+		constexpr const char* k_SpotShaderSource = R"(
+#type vertex
+#version 450
+#include <DingoEngine/Fullscreen.glsl>
+
+#type fragment
+#version 450
+layout(location = 0) in vec2 v_TexCoord;
+layout(std140, binding = 0) uniform SpotData { vec4 Spot; }; // x = half size in UV, y = value
+layout(location = 0) out vec4 o_Color;
+void main()
+{
+	bool inside = all(lessThan(abs(v_TexCoord - 0.5), vec2(Spot.x)));
+	o_Color = vec4(vec3(inside ? Spot.y : 0.0), 1.0);
+}
+)";
+
 		constexpr const char* k_OperatorNames[] = { "None", "Soft", "ACES", "Neutral" };
+		constexpr uint32_t k_SpotSize = 64;
+		constexpr float k_SpotHalfSize = 4.0f / 64.0f; // an 8 x 8 px square
 		constexpr uint32_t k_SceneWidth = 320;
 		constexpr uint32_t k_SceneHeight = 240;
 
@@ -81,6 +101,8 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 			m_Settings.Tone.Exposure = std::strtof(std::string(*exposure).c_str(), nullptr);
 		if (args.Get("post-off"))
 			m_Settings.Enabled = false;
+		if (auto mode = args.Get("post"); (mode && *mode == "bloom") || args.Get("bloom"))
+			m_Settings.Bloom.Enabled = true;
 
 		m_LampMaterial = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams()
 			.SetDebugName("PostTestLamp")
@@ -99,6 +121,20 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 			.SetDepthTest(false)
 			.SetDepthWrite(false)
 			.SetBlendMode(BlendMode::Opaque));
+
+		m_FlatBloom = MakeTarget("PostTest flat bloom", k_StripWidth, 1, false);
+		m_FlatPlain = MakeTarget("PostTest flat plain", k_StripWidth, 1, false);
+		m_SpotBloom = MakeTarget("PostTest spot bloom", k_SpotSize, k_SpotSize, false);
+		m_SpotPlain = MakeTarget("PostTest spot plain", k_SpotSize, k_SpotSize, false);
+		m_SpotShader = Shader::CreateFromSource("PostTestSpot", k_SpotShaderSource);
+		m_SpotMaterial = Material::Create(MaterialParams()
+			.SetDebugName("PostTestSpot")
+			.SetShader(m_SpotShader)
+			.SetCullMode(CullMode::None)
+			.SetDepthTest(false)
+			.SetDepthWrite(false)
+			.SetBlendMode(BlendMode::Opaque));
+		m_SpotMaterial->SetUniform(glm::vec4(k_SpotHalfSize, 8.0f, 0.0f, 0.0f));
 
 		m_SceneOff = MakeTarget("PostTest scene off", k_SceneWidth, k_SceneHeight, true);
 		m_SceneNone = MakeTarget("PostTest scene None", k_SceneWidth, k_SceneHeight, true);
@@ -157,15 +193,28 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 			Renderer::SetRenderTarget(previous);
 	}
 
-	void PostTest::DrawGradient(Framebuffer* target, const glm::vec3& base, const PostProcessSettings& settings)
+	void PostTest::DrawGradient(Framebuffer* target, const glm::vec3& base, float max, const PostProcessSettings& settings)
 	{
 		PostProcessStack& post = Renderer::GetPostProcessStack();
 		Framebuffer* previous = Renderer::GetRenderTarget();
 		Renderer::SetRenderTarget(target);
 
 		post.Begin(settings);
-		m_GradientMaterial->SetUniform(glm::vec4(base, k_GradientMax));
+		m_GradientMaterial->SetUniform(glm::vec4(base, max));
 		Renderer::Draw(m_GradientMaterial, 3);
+		post.End();
+
+		Renderer::SetRenderTarget(previous);
+	}
+
+	void PostTest::DrawSpot(Framebuffer* target, const PostProcessSettings& settings)
+	{
+		PostProcessStack& post = Renderer::GetPostProcessStack();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer::SetRenderTarget(target);
+
+		post.Begin(settings);
+		Renderer::Draw(m_SpotMaterial, 3);
 		post.End();
 
 		Renderer::SetRenderTarget(previous);
@@ -237,6 +286,26 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 			Check(worst < 0.015f, std::format("Soft keeps an overbright (1, 0.5, 0.25) gradient's hue (worst ratio error {:.4f})", worst));
 		});
 
+		readBack(m_FlatPlain, [this](const TexturePixels& pixels) { m_FlatPlainPixels = pixels.Data; });
+		readBack(m_FlatBloom, [this](const TexturePixels& pixels)
+		{
+			Check(!pixels.Data.empty() && pixels.Data == m_FlatPlainPixels, "bloom adds nothing to a gradient that stays inside 0..1 (the default threshold is 1)");
+		});
+		readBack(m_SpotPlain, [this](const TexturePixels& pixels)
+		{
+			const float outside = pixels.GetPixel(k_SpotSize / 2 + 12, k_SpotSize / 2).r;
+			const float inside = pixels.GetPixel(k_SpotSize / 2, k_SpotSize / 2).r;
+			Check(outside == 0.0f && inside == 1.0f, std::format("without bloom a square at 8 stays inside its edge ({:.3f} 8 px outside, {:.3f} inside)", outside, inside));
+		});
+		readBack(m_SpotBloom, [this](const TexturePixels& pixels)
+		{
+			const float near = pixels.GetPixel(k_SpotSize / 2 + 8, k_SpotSize / 2).r;
+			const float far = pixels.GetPixel(k_SpotSize / 2 + 12, k_SpotSize / 2).r;
+			const float left = pixels.GetPixel(k_SpotSize / 2 - 13, k_SpotSize / 2).r;
+			Check(near > 0.0f && far > 0.0f && near >= far && std::abs(far - left) <= 2.0f / 255.0f,
+				std::format("with bloom a square at 8 glows past its edge, fading with distance and alike on both sides ({:.3f} 4 px out, {:.3f} 8 px out, {:.3f} on the left)", near, far, left));
+		});
+
 		readBack(m_SceneOff, [this](const TexturePixels& pixels) { m_SceneOffPixels = pixels.Data; });
 		readBack(m_SceneNone, [this](const TexturePixels& pixels)
 		{
@@ -281,6 +350,14 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 			Renderer::SetRenderTarget(previous);
 			DrawSceneInto(m_SceneNone, WithOperator(PostProcessSettings(), ToneMapOperator::None));
 			DrawSceneInto(m_SceneDisabled, disabled);
+
+			PostProcessSettings plain = WithOperator(PostProcessSettings(), ToneMapOperator::Soft);
+			PostProcessSettings bloom = plain;
+			bloom.Bloom.Enabled = true;
+			DrawGradient(m_FlatPlain, glm::vec3(1.0f), 1.0f, plain);
+			DrawGradient(m_FlatBloom, glm::vec3(1.0f), 1.0f, bloom);
+			DrawSpot(m_SpotPlain, plain);
+			DrawSpot(m_SpotBloom, bloom);
 		}
 
 		DrawSceneInto(nullptr, m_Settings);
@@ -289,8 +366,8 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 		// defaults, on the first frame.
 		const PostProcessSettings stripSettings = runChecks ? PostProcessSettings() : m_Settings;
 		for (int op = 0; op < k_OperatorCount; ++op)
-			DrawGradient(m_Strips[op], glm::vec3(1.0f), WithOperator(stripSettings, static_cast<ToneMapOperator>(op)));
-		DrawGradient(m_HueStrip, { 1.0f, 0.5f, 0.25f }, WithOperator(stripSettings, ToneMapOperator::Soft));
+			DrawGradient(m_Strips[op], glm::vec3(1.0f), k_GradientMax, WithOperator(stripSettings, static_cast<ToneMapOperator>(op)));
+		DrawGradient(m_HueStrip, { 1.0f, 0.5f, 0.25f }, k_GradientMax, WithOperator(stripSettings, ToneMapOperator::Soft));
 
 		if (runChecks)
 			RunChecks();
@@ -317,6 +394,13 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 		DestroyAndDelete(m_SceneDisabled);
 		DestroyAndDelete(m_GradientMaterial);
 		DestroyAndDelete(m_GradientShader);
+		DestroyAndDelete(m_FlatBloom);
+		DestroyAndDelete(m_FlatPlain);
+		DestroyAndDelete(m_SpotBloom);
+		DestroyAndDelete(m_SpotPlain);
+		DestroyAndDelete(m_SpotMaterial);
+		DestroyAndDelete(m_SpotShader);
+		m_FlatPlainPixels.clear();
 		delete m_LampMaterial;
 		m_LampMaterial = nullptr;
 		m_SceneOffPixels.clear();
@@ -339,6 +423,11 @@ void main() { o_Color = vec4(Base.rgb * (v_TexCoord.x * Base.w), 1.0); }
 		ImGui::SliderFloat("Exposure (EV)", &m_Settings.Tone.Exposure, -4.0f, 4.0f);
 		ImGui::SliderFloat("Knee", &m_Settings.Tone.Knee, 0.0f, 0.99f);
 		ImGui::SliderFloat("White point", &m_Settings.Tone.WhitePoint, 1.0f, 16.0f);
+		ImGui::Checkbox("Bloom", &m_Settings.Bloom.Enabled);
+		ImGui::SliderFloat("Bloom intensity", &m_Settings.Bloom.Intensity, 0.0f, 2.0f);
+		ImGui::SliderFloat("Bloom threshold", &m_Settings.Bloom.Threshold, 0.0f, 4.0f);
+		ImGui::SliderFloat("Bloom knee", &m_Settings.Bloom.Knee, 0.0f, 1.0f);
+		ImGui::SliderFloat("Bloom radius", &m_Settings.Bloom.Radius, 0.0f, 4.0f);
 		ImGui::TextWrapped("Strips, top to bottom: None, Soft, ACES and Neutral on a white 0..8 gradient, then Soft on (1, 0.5, 0.25).");
 
 		const PostProcessStack::Statistics& stats = Renderer::GetPostProcessStack().GetStatistics();
