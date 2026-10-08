@@ -53,6 +53,7 @@ namespace Dingo
 		float m_Seconds = 0.0f;
 		int m_Catches = 0;
 		float m_StepTimer = 0.0f;
+		int m_Frames = 0;
 
 		std::unique_ptr<GameAudio> m_Audio;
 		std::unique_ptr<KeepWorld> m_World;

@@ -208,6 +208,25 @@ namespace Dingo
 	// left of its opponent in the windup, or the blow passes beside a target dead ahead.
 	inline constexpr float AIM_CHOP_DEG         = 24.0f;
 
+	// --- Post chain: Soft leaves everything below 0.8 as it was, so only what burns changes ----------
+	inline constexpr float BLOOM_INTENSITY       = 0.3f;
+
+	// --- Particles ---------------------------------------------------------------------
+	inline constexpr uint32_t FOOT_DUST_COUNT    = 6;
+	inline constexpr uint32_t DASH_DUST_COUNT    = 18;
+	inline constexpr uint32_t FOOT_DUST_CAPACITY = 64;
+	inline constexpr float BLADE_TRAIL_RATE      = 400.0f;
+	inline constexpr float FOOT_DUST_LIFT        = 0.03f;
+	inline constexpr uint32_t HIT_SPARK_COUNT    = 26;
+	inline constexpr uint32_t BLOCK_SPARK_COUNT  = 34;
+	inline constexpr uint32_t PARRY_SPARK_COUNT  = 40;
+	inline constexpr uint32_t KO_DUST_COUNT      = 40;
+	// About when a knocked-out body lands.
+	inline constexpr float KO_DUST_DELAY         = 0.65f;
+	// Emitters sit near the top of the glow they rise from, which hides what starts inside it.
+	inline constexpr float BRAZIER_EMITTER_RISE  = 0.35f;
+	inline constexpr float BRAZIER_SMOKE_RISE    = 0.6f;
+
 	inline constexpr float HITSTOP_SECONDS      = 0.07f;
 	inline constexpr float HITSTOP_SPEED        = 0.05f;
 
@@ -485,7 +504,9 @@ namespace Dingo
 	inline constexpr glm::vec4 COLOR_BRAZIER    = { 0.2f, 0.17f, 0.15f, 1.0f };
 	inline constexpr glm::vec4 COLOR_FLAME      = { 1.0f, 0.62f, 0.3f, 1.0f };
 	inline constexpr glm::vec3 FLAME_COLOR      = { 1.0f, 0.62f, 0.3f };
-	inline constexpr float FLAME_EMISSIVE       = 1.1f;
+	inline constexpr float FLAME_EMISSIVE       = 2.6f;
+	// Without the post chain the core would clip to white, so --no-post keeps the v0.8 value.
+	inline constexpr float FLAME_EMISSIVE_NO_POST = 1.1f;
 	inline constexpr float FLOOR_ROUGHNESS      = 0.85f;
 	inline constexpr float WALL_ROUGHNESS       = 0.9f;
 	inline constexpr float BRAZIER_ROUGHNESS    = 0.7f;

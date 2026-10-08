@@ -8,15 +8,6 @@
 namespace Dingo
 {
 
-	void AssetManagerTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
-	}
-
 	void AssetManagerTest::Initialize()
 	{
 		Renderer2DTest::Initialize();
@@ -32,7 +23,11 @@ namespace Dingo
 		Check(assets.Load("textures/container.jpg") == m_SyncTexture, "re-Load dedups to the same handle");
 		Check(assets.Get<Texture>(m_SyncTexture) == assets.GetTexture(m_SyncTexture), "Get<Texture> matches GetTexture");
 		Check(assets.FindByPath("textures/container.jpg") == m_SyncTexture, "FindByPath resolves the handle");
+#ifdef DE_PLATFORM_WINDOWS
 		Check(assets.FindByPath("Textures/Container.JPG") == m_SyncTexture, "FindByPath ignores path casing");
+#else
+		Check(assets.FindByPath("Textures/Container.JPG") == k_InvalidAsset, "FindByPath keeps path casing on a case-sensitive filesystem");
+#endif
 		Check(assets.FindByPath(assets.ResolvePath("textures/container.jpg")) == m_SyncTexture, "FindByPath folds an absolute path under the root");
 		Check(assets.GetShader(m_SyncTexture) == nullptr, "typed Get of the wrong type returns nullptr");
 

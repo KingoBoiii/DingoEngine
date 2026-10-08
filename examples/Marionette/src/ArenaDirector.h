@@ -11,6 +11,7 @@
 namespace Dingo
 {
 
+	class ArenaVfx;
 	class ArenaWorld;
 	class BoutFlow;
 	class CameraRig;
@@ -55,6 +56,7 @@ namespace Dingo
 		MatchState* m_Match = nullptr;
 		double m_Time = 0.0;
 		std::unique_ptr<Showcase> m_Showcase;
+		std::unique_ptr<ArenaVfx> m_Vfx;
 		std::unique_ptr<ArenaWorld> m_World;
 		std::unique_ptr<GameAudio> m_Audio;
 		std::vector<std::unique_ptr<Fighter>> m_Fighters;

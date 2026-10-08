@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 
 #include <cstddef>
 #include <functional>
@@ -20,7 +21,12 @@ namespace Dingo
 	// material that has already drawn, with Specular (--specular=off) switching the highlights off.
 	// On every start it also runs PASS/FAIL checks of the light bookkeeping (counts, culling, the
 	// budget, the default light) on private Renderer3Ds, one scene per frame and apart from the
-	// modes above, then checks GetLightAttenuation and the light components' ToLight.
+	// modes above, then checks GetLightAttenuation and the light components' ToLight. --post draws the
+	// scene through the post chain's default Soft tone curve, so what clips without it rolls off, and
+	// --bloom adds the default bloom (the materials mode's lamp glows) and --ao the default ambient
+	// occlusion (the pillars' feet darken). --budget-fade[=band] fades the
+	// overbudget mode's lights at the budget's edge (Renderer3DCapabilities::LightBudgetFade, 0.5 by
+	// default) instead of cutting them.
 	class LightingTest : public GraphicsTest
 	{
 	public:
@@ -62,7 +68,7 @@ namespace Dingo
 		void BuildLightEntities(const Lighting& lighting);
 		void UpdateLightEntities(const Lighting& lighting);
 
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void BuildCheckSteps();
 		void RunNextCheckStep();
 
@@ -70,6 +76,10 @@ namespace Dingo
 		PerspectiveCamera m_Camera;
 		Mode m_Mode = Mode::PointAndSpot;
 		bool m_Animate = false;
+		bool m_PostProcess = false; // --post: the scene through the post chain's default Soft curve
+		bool m_Bloom = false;       // --bloom: and the default bloom, which implies --post
+		float m_BudgetFade = 0.0f;
+		bool m_AmbientOcclusion = false; // --ao: the default ambient occlusion, which implies --post  // --budget-fade: the app renderer's LightBudgetFade while the test runs
 		float m_Time = 0.0f;
 
 		static constexpr int k_RoughnessSteps = 5;
@@ -85,12 +95,7 @@ namespace Dingo
 		bool m_LightEntitiesBuilt = false;
 		std::vector<Entity> m_LightEntities;
 
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		// Each EndScene writes the renderer's volatile scene buffer and Vulkan only allows a few
 		// writes per frame, so a frame runs one step and a step renders one scene.

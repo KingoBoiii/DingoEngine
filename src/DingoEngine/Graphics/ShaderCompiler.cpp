@@ -116,15 +116,22 @@ namespace Dingo
 
 		for (const auto& resource : resources.storage_buffers)
 		{
-			const auto& name = resource.name;
-			const auto& bufferType = compiler.get_type(resource.base_type_id);
-			uint32_t bufferSize = compiler.get_declared_struct_size(bufferType);
-			uint32_t descriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			uint32_t binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
-			int memberCount = bufferType.member_types.size();
-			uint32_t size = (uint32_t)compiler.get_declared_struct_size(bufferType);
+			ShaderStorageBinding storage;
+			storage.Name = resource.name;
+			storage.DescriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			storage.Binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
+			storage.ReadOnly = compiler.get_buffer_block_flags(resource.id).get(spv::DecorationNonWritable);
+			reflection.StorageBuffers.push_back(storage);
+		}
 
-			reflection.StorageBuffers.push_back({ name, descriptorSet, binding });
+		for (const auto& resource : resources.storage_images)
+		{
+			ShaderStorageBinding storage;
+			storage.Name = resource.name;
+			storage.DescriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			storage.Binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
+			storage.ReadOnly = compiler.has_decoration(resource.id, spv::DecorationNonWritable);
+			reflection.StorageImages.push_back(storage);
 		}
 
 		for (const auto& resource : resources.push_constant_buffers)

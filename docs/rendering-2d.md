@@ -154,9 +154,10 @@ A `Framebuffer`'s colour attachments are textures. Draw into one with
 `Renderer::SetRenderTarget(framebuffer)` (back to the window with `ResetRenderTarget()`), or
 render a whole scene into it with `SceneRenderer::Render(scene, framebuffer)`
 ([Rendering into a texture](scenes-and-ecs.md#rendering-into-a-texture)), then draw
-`framebuffer->GetAttachment(0)` like any texture. Give it an RGBA8 colour attachment and depth,
-like the window's framebuffer, which the renderers build their pipelines against. A render
-target's first row is the **top** of its picture, the opposite of an image loaded from a file, so
+`framebuffer->GetAttachment(0)` like any texture. Give it an RGBA8 colour attachment, the format
+`ReadPixels` reads, and depth if 3D draws into it. Its formats needn't match the window's (most
+Linux drivers give the window BGRA8): `Renderer2D` and every `Material` build a pipeline for the
+formats of the target they draw into. A render target's first row is the **top** of its picture, the opposite of an image loaded from a file, so
 a quad shows it upright with a negative height:
 
 ```cpp
@@ -224,6 +225,10 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   with a different camera (e.g. a screen-space HUD), open a second block after the
   first. A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) blocks a frame:
   on Vulkan, later ones draw with an earlier block's camera.
+
+- **2D is never tone mapped** (v0.9). The [post chain](post-processing.md) takes the 3D pass alone:
+  a scene's 2D overlay, and anything `Renderer2D` draws after `PostProcessStack::End`, goes into the
+  target as it always did, so HUD colours stay exactly what you pass.
 
 `r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
 `r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,

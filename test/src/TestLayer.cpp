@@ -9,6 +9,10 @@
 #include "Tests/Renderer/Model3DTest.h"
 #include "Tests/Renderer/Renderer3DBatchTest.h"
 #include "Tests/Renderer/LightingTest.h"
+#include "Tests/Renderer/PostTest.h"
+#include "Tests/Renderer/ShadowTest.h"
+#include "Tests/Renderer/ComputeTest.h"
+#include "Tests/Renderer/ParticleTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
 #include "Tests/Renderer2D/TextureQuadTest.h"
@@ -68,6 +72,10 @@ namespace Dingo
 		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Render Target Test", [&]() { return new RenderTargetTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Audio Bus Test", [&]() { return new AudioBusTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Post Test", []() { return new PostTest(); } });
+		m_Tests.push_back({ "Shadow Test", []() { return new ShadowTest(); } });
+		m_Tests.push_back({ "Compute Test", []() { return new ComputeTest(); } });
+		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))
@@ -205,11 +213,13 @@ namespace Dingo
 				if (ImGui::MenuItem("Restart to Vulkan", NULL, currentAPI == GraphicsAPI::Vulkan, currentAPI != GraphicsAPI::Vulkan))
 					Application::Get().RequestRestart(GraphicsAPI::Vulkan);
 
+#ifdef DE_PLATFORM_WINDOWS
 				if (ImGui::MenuItem("Restart to DirectX 12", NULL, currentAPI == GraphicsAPI::DirectX12, currentAPI != GraphicsAPI::DirectX12))
 					Application::Get().RequestRestart(GraphicsAPI::DirectX12);
 
 				if (ImGui::MenuItem("Restart to DirectX 11", NULL, currentAPI == GraphicsAPI::DirectX11, currentAPI != GraphicsAPI::DirectX11))
 					Application::Get().RequestRestart(GraphicsAPI::DirectX11);
+#endif
 
 				ImGui::Separator();
 

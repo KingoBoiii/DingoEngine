@@ -9,17 +9,24 @@ There are two ways to use the engine:
   the repo, let Premake wire everything up, and add your game as a project. This is
   the most reliable path today because Premake links every dependency for you.
 - **[Link a prebuilt package](#option-b--link-a-prebuilt-release-package)** — consume
-  the `.lib` + headers produced by the release pipeline.
+  the static library + headers produced by the release pipeline (`.lib` on Windows,
+  `.a` on Linux).
 
 Either way, your *code* is identical — only the build setup differs.
 
 ## Prerequisites
 
-| Requirement | Notes |
-|---|---|
-| Windows 10/11, x64 | Vulkan is the active back-end. |
-| [Vulkan SDK](https://vulkan.lunarg.com/) | Install it and make sure `VULKAN_SDK` is set. The engine links **ShaderC** and **SPIRV-Cross** from the SDK and loads Vulkan at runtime. |
-| C++20 toolchain | MSVC (Visual Studio 2022/2026, toolset v143+). |
+| Requirement | Windows | Linux |
+|---|---|---|
+| OS | Windows 10/11, x64 | x86-64; verified on Ubuntu 24.04 (X11, or Wayland through XWayland) |
+| [Vulkan SDK](https://vulkan.lunarg.com/) ≥ 1.4 | The installer; it sets `VULKAN_SDK` | LunarG's Linux tarball: `source <sdk>/setup-env.sh` sets `VULKAN_SDK`. Distro packages are too old. |
+| C++20 toolchain | MSVC (Visual Studio 2022/2026, toolset v143+) | GCC ≥ 13 (the engine's `std::format` needs libstdc++ 13) |
+| Packages | — | `build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev` (Ubuntu/Debian names) |
+| Runtime | A Vulkan 1.3 driver | `libvulkan1` and a Vulkan 1.3 driver |
+
+The engine links **ShaderC** and **SPIRV-Cross** from the SDK and loads Vulkan at runtime.
+Outside Distribution it enables the SDK's validation layer when it is installed, and warns
+when it isn't.
 
 ---
 
@@ -52,13 +59,16 @@ project "MyGame"
         "%{IncludeDir.imgui}"
     }
 
-    links { "DingoEngine" }           -- pulls in every transitive dependency
+    links { "DingoEngine" }
 
     filter "system:windows"
         systemversion "latest"
         -- NOMINMAX: the public headers transitively include <Windows.h>, whose
         -- min/max macros otherwise clobber std::min / std::max in your code.
         defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
+
+    filter "system:linux"
+        defines { "DE_PLATFORM_LINUX" }
 
     filter "configurations:Debug"
         symbols "On"
@@ -70,7 +80,16 @@ project "MyGame"
         kind "WindowedApp"            -- no console window
         optimize "On"
         defines { "DE_DISTRIBUTION" }
+
+    filter {}
+    copyAssimpRuntime()               -- required, see below
 ```
+
+`copyAssimpRuntime()` (defined in the root `premake5.lua`) is what makes an executable
+link and start. On Windows it copies assimp's DLLs next to the `.exe`, without which it
+dies with `STATUS_DLL_NOT_FOUND` before `main`. On Linux it gives the executable the
+engine's whole dependency list in a link group: `make` links only the libraries a
+project names, where MSBuild also links the engine's own.
 
 Register it in the root `premake5.lua`:
 
@@ -80,7 +99,9 @@ group "Examples"
 group ""
 ```
 
-**3. Generate & build.** Regenerate the Visual Studio solution and build:
+**3. Generate & build.**
+
+*Windows*: regenerate the Visual Studio solution and build:
 
 ```bash
 ./vendor/premake/bin/premake5.exe vs2026
@@ -92,6 +113,32 @@ group ""
 Open `DingoEngine.slnx`, set `MyGame` as the startup project, and build. The engine
 is a static lib, so the first build compiles it once; afterwards your game links
 against it quickly.
+
+*Linux*: assimp isn't vendored for Linux, so build assimp 6.0.4 (the version of the
+Windows binaries, whose headers the repo shares) into `vendor/assimp/lib/linux-x86_64/`
+once. The folder is git-ignored:
+
+```bash
+git clone --depth 1 -b v6.0.4 https://github.com/assimp/assimp.git /tmp/assimp
+cmake -S /tmp/assimp -B /tmp/assimp/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_TESTS=OFF \
+      -DASSIMP_BUILD_ASSIMP_TOOLS=OFF -DASSIMP_WARNINGS_AS_ERRORS=OFF
+cmake --build /tmp/assimp/build
+mkdir -p vendor/assimp/lib/linux-x86_64 && cp /tmp/assimp/build/lib/libassimp.a vendor/assimp/lib/linux-x86_64/
+```
+
+Then generate makefiles (`Generate-Linux.sh` runs the repo's own premake 5.0.0-beta8,
+`vendor/premake/bin/premake5 gmake`) and build (`config` is `debug`, `debug-asan`,
+`release` or `distribution`; name a project to build only it and what it needs):
+
+```bash
+./Generate-Linux.sh
+make -j"$(nproc)" config=debug MyGame
+cd examples/MyGame && ../../build/bin/Debug-linux-x86_64/MyGame/MyGame
+```
+
+Run from the project's own directory, so relative `assets/...` paths resolve. Outputs
+follow the Windows layout: `build/bin/<Config>-linux-x86_64/<Project>/`.
 
 ---
 
@@ -142,9 +189,34 @@ this toggles engine asserts (`DE_ASSERT`) in your translation units.
 > Until they are packaged, the smoothest path is **Option A**, or copy those `.lib`
 > files out of a local build at `build/bin/<Config>-windows-x86_64/<dependency>/`.
 
+### Linux
+
+Release builds are also published as
+`DingoEngine-<version>-<Config>-linux-x86_64.tar.gz`:
+
+```
+libDingoEngine.a           # the engine with every vendor library and assimp merged in
+include/                   # engine public headers  ← add as an include root
+glm/                       # GLM math headers       ← public dependency
+```
+
+Build with GCC ≥ 13 and link the archive with the Vulkan SDK's ShaderC and SPIRV-Cross,
+zlib, dl and pthread. Nothing else is needed, not even a link group:
+
+```bash
+g++ -std=c++20 -O2 -DDE_PLATFORM_LINUX -DDE_RELEASE -DGLM_FORCE_DEPTH_ZERO_TO_ONE \
+    -I <pkg>/include -I <pkg>/glm main.cpp -o MyGame \
+    <pkg>/libDingoEngine.a -L"$VULKAN_SDK/lib" \
+    -lshaderc_combined -lspirv-cross-hlsl -lspirv-cross-glsl -lspirv-cross-core -lz -ldl -lpthread
+```
+
+Use the package's own config define (`DE_DEBUG`, `DE_RELEASE` or `DE_DISTRIBUTION`). The
+executable needs only `libz`, the C/C++ runtime, `libvulkan1` and a Vulkan driver at run
+time.
+
 ### Runtime
 
-- Put `assimp-vc145-mt[d].dll` next to your executable.
+- Windows: put `assimp-vc145-mt[d].dll` next to your executable.
 - Run with the **working directory set to wherever your `assets/` folder lives** —
   the engine resolves relative asset paths (textures, fonts) from the current
   directory and writes its log file `Dingo.log` there.
@@ -213,6 +285,8 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
     params.Window.Title = "My First Dingo App";
     params.Window.Width = 1280;
     params.Window.Height = 720;
+    params.Graphics.GraphicsAPI = GraphicsAPI::Vulkan;   // no default: unset reads as Headless, which can't render
+    params.Graphics.FramesInFlight = 3;
     params.EnableUI = false;
 
     ExampleApp* app = new ExampleApp(params);

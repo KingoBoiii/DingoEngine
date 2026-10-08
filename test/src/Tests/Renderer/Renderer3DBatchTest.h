@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 
 #include <string>
 #include <vector>
@@ -23,16 +24,11 @@ namespace Dingo
 		void ImGuiRender() override;
 
 	private:
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunChecks();
 
 	private:
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		Renderer3D* m_BatchRenderer = nullptr;
 		PerspectiveCamera m_Camera;

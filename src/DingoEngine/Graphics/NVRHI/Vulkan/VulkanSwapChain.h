@@ -25,7 +25,7 @@ namespace Dingo
 		virtual void Present() override;
 		virtual void SetVSync(bool vsync) override;
 
-		virtual Framebuffer* SwapChain::GetCurrentFramebuffer() const
+		virtual Framebuffer* GetCurrentFramebuffer() const override
 		{
 			return GetFramebuffer(m_SwapChainIndex);
 		}

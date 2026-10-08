@@ -54,7 +54,7 @@ namespace Dingo
 		struct SwapchainPipelineCache
 		{
 			uint64_t ResizeGeneration = ~0ull;
-			std::array<nvrhi::GraphicsPipelineHandle, 3> Pipelines;
+			std::vector<nvrhi::GraphicsPipelineHandle> Pipelines;
 		};
 
 		std::map<SwapChain*, SwapchainPipelineCache> m_PipelineCache;

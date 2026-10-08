@@ -8,6 +8,7 @@
 namespace Dingo
 {
 
+	class ArenaVfx;
 	class ArenaWorld;
 	class CameraRig;
 	class Fighter;
@@ -56,6 +57,7 @@ namespace Dingo
 		uint32_t m_EventGeneration = 0;
 		double m_Time = 0.0;
 		std::unique_ptr<GameAudio> m_Audio;
+		std::unique_ptr<ArenaVfx> m_Vfx;
 		std::unique_ptr<ArenaWorld> m_World;
 		std::vector<std::unique_ptr<Fighter>> m_Fighters;
 		std::unique_ptr<CameraRig> m_Camera;

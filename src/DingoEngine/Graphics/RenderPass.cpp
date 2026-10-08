@@ -9,7 +9,9 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(params.Pipeline, "RenderPass must have a valid Pipeline set before creation.");
 
-		return new NvrhiRenderPass(params);
+		RenderPass* renderPass = new NvrhiRenderPass(params);
+		renderPass->Initialize();
+		return renderPass;
 	}
 
 } // namespace Dingo

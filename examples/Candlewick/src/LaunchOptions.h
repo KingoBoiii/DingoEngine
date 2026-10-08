@@ -15,8 +15,13 @@ namespace Dingo
 		int Oil = -1;            // -1 = not given
 		bool NoLightLod = false;
 		bool DebugCone = false;
-		bool NoRangeClamp = false;
 		bool AllLit = false;     // every brazier but the altar starts lit
+		float FixedDt = 0.0f;    // seconds; 0 = the measured delta; --freeze defaults it to 1/60
+		bool Perf = false;       // logs the mean frame, update, render and GPU pass times once, after a warm-up
+		bool NoPost = false;
+		bool NoShadows = false;
+		bool NoParticles = false;
+		bool HideCheck = false;  // logs what hides the player, once, after HIDE_CHECK_FRAME frames in the keep
 		std::optional<glm::ivec2> Spawn; // --spawn=<col>,<row>: the player's start tile
 	};
 

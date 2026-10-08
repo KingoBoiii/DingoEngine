@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/Renderer2D/Renderer2DTest.h"
+#include "Tests/TestChecks.h"
 
 #include <string>
 #include <vector>
@@ -27,15 +28,10 @@ namespace Dingo
 		virtual void ImGuiRender() override;
 
 	private:
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 
 	private:
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		AssetHandle m_SyncTexture = k_InvalidAsset;
 		AssetHandle m_SyncShader = k_InvalidAsset;

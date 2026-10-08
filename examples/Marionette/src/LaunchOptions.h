@@ -43,6 +43,9 @@ namespace Dingo
 		int Tournament = 0;       // N > 0: tier PlayerTier plays bout Bout N times, reports and closes; implies Autoplay and a fixed delta
 		int PlayerTier = 3;       // the autoplay player's AI tier
 		int StepsPerFrame = 1;    // scene updates per rendered frame; only with a fixed delta
+		bool NoPost = false;      // the v0.9 switches, each on its own, for A/B captures and --perf
+		bool NoShadows = false;
+		bool NoParticles = false;
 	};
 
 	// A run nobody plays by hand: an unfocused window must not pause it.

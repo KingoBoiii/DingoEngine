@@ -16,6 +16,10 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **3D Physics & Scene** — Jolt-backed `Physics3D`, usable standalone or wired into the ECS (`Transform3D` / `MeshRenderer` / `RigidBody3D` / `Box`+`SphereCollider3D` components), with 3D meshes drawn through `Renderer3D` and a perspective camera (physics backend kept internal)
 - **3D Lighting** — forward-lit `Renderer3D` with coloured directional, point and spot lights (up to 32 point/spot lights per scene, the most relevant picked each frame), ambient light, Blinn-Phong specular, and lit materials with emissive and an albedo texture. Lights are ECS components (`PointLightComponent` / `SpotLightComponent` / `AmbientLightComponent` / `DirectionalLightComponent`), and the lit shader hot-reloads in Debug builds when asset hot-reload is enabled
 - **Transform Hierarchy** — 3D and 2D parent-child transforms (`Entity::SetParent`), world values computed per pass, subtree destroy/duplicate, and physics that follows parents
+- **Shadows** *(v0.9)* — cascaded sun shadows, point and spot light shadows on a budget of slots, skinned casters, and gameplay shadow queries answered by the renderer's own lookup (`Scene::GetLightVisibility`)
+- **Post-processing** *(v0.9)* — an HDR scene target with tone mapping (a `Soft` curve that leaves everything below 0.8 untouched, ACES, Khronos Neutral), bloom and ambient occlusion, per camera through `PostProcessComponent`
+- **GPU Particles** *(v0.9)* — compute-simulated emitters with shapes, forces, curl noise, colour over life, sprites and soft edges, as ECS components, fired straight from animation events; a live effect editor in F4
+- **Compute & Profiling** *(v0.9)* — compute shaders and storage buffers, GPU pass timers in an F8 tab, and Tracy behind premake's `--profile`
 - **Skeletal Animation** — skinned glTF/FBX models drawn with GPU skinning; an `Animator` with cross-fades, `Blend1D` blends, masked layers and one-shots; clip events (code or a `.events` file beside the model) delivered to scripts; joint sockets; retargeting by joint name; models and their events hot-reload in place; an F7 Animation tab
 
 ## Documentation
@@ -31,6 +35,7 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
 - [Lighting](docs/lighting.md) — directional, point and spot lights, the light budget, specular, and lit materials
 - [Animation](docs/animation.md) — skinned models, the animator, blending and layers, timeline events, joint sockets, and model hot-reload
+- [Shadows](docs/shadows.md), [Post-processing](docs/post-processing.md), [Particles](docs/particles.md), [Compute](docs/compute.md) and [Profiling](docs/profiling.md) — the v0.9 visuals
 
 ## Roadmap
 
@@ -48,8 +53,8 @@ example is built to demonstrate.
 | v0.6 | Asset Pipeline & Hot-Reload — `AssetManager`, async loading, live reload | `ArenaShooter` | shipped |
 | v0.7 | Lighting & Shading — point/spot lights on a capped forward multi-light path, specular | `Candlewick` | shipped |
 | v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
-| **v0.8** | **Animation & Character Fidelity** — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
-| v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
+| v0.8 | Animation & Character Fidelity — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
+| **v0.9** | **Shadows, Post-processing & VFX** — cascaded and local shadows, tone mapping, bloom, AO, GPU particles | `Candlewick`, `Marionette` upgrades | shipped |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
 
 **Shipped out of band**: **scripting** (C# or Lua) and **networking/multiplayer** are optional
@@ -60,9 +65,8 @@ therefore not part of the 1.0 launch.
 ## Getting Started
 
 **Prerequisites**
-- Windows 10/11
-- [Vulkan SDK](https://vulkan.lunarg.com/) installed and `VULKAN_SDK` environment variable set
-- Visual Studio 2026
+- Windows 10/11 with Visual Studio 2026, or Linux (x86-64; verified on Ubuntu 24.04) with GCC 13 or newer
+- [Vulkan SDK](https://vulkan.lunarg.com/) 1.4 installed and the `VULKAN_SDK` environment variable set (on Linux, LunarG's tarball and its `setup-env.sh`; distro packages are too old)
 
 **1. Clone the repository**
 
@@ -78,11 +82,21 @@ git submodule update --init
 
 **2. Generate project files**
 
-Run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This will invoke Premake5 and produce a Visual Studio solution with all projects and dependencies configured.
+On Windows, run [Generate-Windows.bat](Generate-Windows.bat) from the root directory. This will invoke Premake5 and produce a Visual Studio solution with all projects and dependencies configured.
+
+On Linux, first build assimp 6.0.4 as a static library into `vendor/assimp/lib/linux-x86_64/` (see [Getting Started](docs/getting-started.md#option-a--integrate-from-source-recommended)), then run [Generate-Linux.sh](Generate-Linux.sh), which runs the repo's premake (`vendor/premake/bin/premake5 gmake`). VS Code users get Linux build tasks and gdb launch entries in `.vscode`.
 
 **3. Build & run**
 
-Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, `ArenaShooter`, `Candlewick`, or `Marionette`) as the startup project, and build.
+On Windows, open the generated `DingoEngine.slnx` in Visual Studio, set one of the example projects (`FlappyBird`, `Breakout3D`, `DungeonCrawler`, `SpaceInvaders`, `AngryBirds`, `DungeonCrawler3D`, `EchoVault`, `ArenaShooter`, `Candlewick`, or `Marionette`) as the startup project, and build.
+
+On Linux, run `make -j"$(nproc)" config=debug` (or `release`, `distribution`, `debug-asan`; add a project name to build just that one), then start an example from its own directory so its `assets/` resolve:
+
+```bash
+cd examples/FlappyBird && ../../build/bin/Debug-linux-x86_64/FlappyBird/FlappyBird
+```
+
+Linux has been verified headless on Mesa's software Vulkan driver; real GPUs and desktops are still being validated (see [LINUX-SUPPORT.md](LINUX-SUPPORT.md)).
 
 ## Examples
 
@@ -96,8 +110,8 @@ Open the generated `DingoEngine.slnx` in Visual Studio, set one of the example p
 | `DungeonCrawler3D` | 3D dungeon-crawler prototype — the first ECS-integrated 3D scene: **procedurally generated** dungeons (rooms + corridors), player/enemies/walls as `RigidBody3D` entities on the Jolt-backed `Physics3D`, **melee combat** (SPACE) with enemy health + a player health bar, treasure to collect, a follow camera, drawn via `Renderer3D`; run with `--night` for a dark dungeon lit by a lantern and point-lit treasure |
 | `EchoVault` | v0.5 showcase — capsule **character controller** on floating platforms (slopes, stairs, moving kinematic platforms), ray/shape-cast gameplay (patrolling sentry line-of-sight), and **3D positional audio** you navigate by, with full gamepad play; since v0.7 its orbs and sentries are lit emissive materials that carry point lights |
 | `ArenaShooter` | v0.6 showcase — wave-based top-down shooter driven entirely by the **`AssetManager`**: async loading behind a progress bar, all sprites/audio/fonts via UUID handles, and **live hot-reload** (edit `assets/shaders/background.glsl` or a sprite PNG while it runs) |
-| `Candlewick` | v0.7 showcase — a stealth crawl through a dark keep where every light is a gameplay object: the lantern you carry is a **point light whose radius is your oil**, **wardens** carry point lights and see through **spot-light vision cones** tested with the renderer's own light query (`GetLightAttenuation`), so the cone drawn on the floor is the cone that catches you, a **game-side light budget** keeps the decorative flames and the gameplay lights inside the engine's 32, and **lit emissive braziers** (hold to light) are the checkpoints; light the Chapel altar to win. Move with WASD / arrows / left stick, snuff or relight the lantern with Q / (X), hold E / (A) beside a brazier, pause with Esc / Start; synthesised 3D positional audio, full gamepad play, and `--debug-cone` to draw what the wardens test |
-| `Marionette` | v0.8 showcase — a melee duel against three escalating opponents where no combat timing lives in code: every wind-up, hit window, combo window and dodge's invulnerability is a **timeline event** in a `.events` file beside the clips, swords and hit spheres ride **joint sockets**, a **masked upper-body layer** blocks while the legs keep walking, a **`Blend1D`** locomotion blend feeds positional footsteps from step events, and **one set of clip libraries** is retargeted onto four characters. Three AI tiers read the opponent's wind-up through a reaction delay and parry, block or dodge it; edit a `.events` file while it runs (`--hot-reload`, or `--live-edit-demo`) and the fight changes live. Move with WASD / left stick, light attack J / left mouse / X, heavy K / right mouse / Y, hold Shift / right bumper to block (tap to parry), dodge with Space / A, pause with Esc / Start; `--debug-hitbox` draws the hit and hurt spheres, `--check` runs its built-in checks, and `--autoplay` or `--tournament=N` play AI against AI |
+| `Candlewick` | v0.7 showcase — a stealth crawl through a dark keep where every light is a gameplay object: the lantern you carry is a **point light whose radius is your oil**, **wardens** carry point lights and see through **spot-light vision cones** tested with the renderer's own light query (`GetLightAttenuation`), so the cone drawn on the floor is the cone that catches you, a **game-side light budget** keeps the decorative flames and the gameplay lights inside the engine's 32, and **lit emissive braziers** (hold to light) are the checkpoints; light the Chapel altar to win. Move with WASD / arrows / left stick, snuff or relight the lantern with Q / (X), hold E / (A) beside a brazier, pause with Esc / Start; synthesised 3D positional audio, full gamepad play, and `--debug-cone` to draw what the wardens test. The v0.9 upgrade: every gameplay light **casts shadows you can hide in** (wardens and braziers ask the renderer's own shadows through shadow probes), tone mapping and bloom on the flames, particle flames, embers and smoke, and AO |
+| `Marionette` | v0.8 showcase — a melee duel against three escalating opponents where no combat timing lives in code: every wind-up, hit window, combo window and dodge's invulnerability is a **timeline event** in a `.events` file beside the clips, swords and hit spheres ride **joint sockets**, a **masked upper-body layer** blocks while the legs keep walking, a **`Blend1D`** locomotion blend feeds positional footsteps from step events, and **one set of clip libraries** is retargeted onto four characters. Three AI tiers read the opponent's wind-up through a reaction delay and parry, block or dodge it; edit a `.events` file while it runs (`--hot-reload`, or `--live-edit-demo`) and the fight changes live. Move with WASD / left stick, light attack J / left mouse / X, heavy K / right mouse / Y, hold Shift / right bumper to block (tap to parry), dodge with Space / A, pause with Esc / Start; `--debug-hitbox` draws the hit and hurt spheres, `--check` runs its built-in checks, and `--autoplay` or `--tournament=N` play AI against AI. The v0.9 upgrade: footfall dust and blade trails fired **straight from the clips' events** (`ParticleEventComponent`), sparks where a blade lands, a parry flash that blooms, knock-out dust, particle braziers, and a moon and braziers casting the fighters' skinned shadows, with tone mapping and AO |
 
 ## Project Structure
 

@@ -93,6 +93,15 @@ namespace Dingo
 	class ImGuiLayer;
 	class AudioEngine;
 
+	// The main thread's last frame, split up, for the F8 Profiler tab. Zero in a paused frame.
+	struct FrameTimings
+	{
+		float FrameMs = 0.0f;    // the frame's delta
+		float WaitMs = 0.0f;     // Renderer::BeginFrame waiting for the render thread to finish the frame before
+		float UpdateMs = 0.0f;   // AssetManager::Update and every layer's OnUpdate, which record the draws
+		float UIMs = 0.0f;       // ImGui: every layer's OnUIRender, the debug window and recording ImGui's draws
+	};
+
 	class Application
 	{
 	public:
@@ -141,6 +150,7 @@ namespace Dingo
 		SwapChain* GetSwapChain() const { return m_SwapChain; }
 		AudioEngine& GetAudioEngine() const { return *m_AudioEngine; }
 		AssetManager& GetAssetManager() const { return *m_AssetManager; }
+		const FrameTimings& GetFrameTimings() const { return m_FrameTimings; }
 
 		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
 		const uint32_t GetEngineBuildNumber() const { return DE_ENGINE_VERSION_BUILD; }
@@ -186,6 +196,7 @@ namespace Dingo
 		bool m_Focused = true;
 		float m_LastFrameTime = 0.0f;
 		float m_DeltaTime = 0.0f;
+		FrameTimings m_FrameTimings;
 
 		std::vector<std::function<void()>> m_PostExecutionCallbacks;
 		// The batch currently being drained, kept as a member so the swap reuses its

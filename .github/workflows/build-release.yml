@@ -695,8 +695,7 @@ jobs:
         path: .\marionette
 
   build-linux:
-    if: 1 == 0
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -707,66 +706,78 @@ jobs:
       with:
         submodules: recursive
         lfs: true
+        fetch-depth: 0
 
-    - name: Install Vulkan SDK
+    - uses: ./.github/actions/setup-linux
+
+    - name: Get version
+      id: version
       run: |
-        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
-        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
-        sudo apt-get update
-        sudo apt-get install -y vulkan-sdk libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+        ver="${GITHUB_REF_NAME#v}"
+        IFS=. read -r major minor patch <<< "$ver"
+        commits=$(git rev-list --count HEAD)
+        {
+          echo "VERSION=$ver.$commits"
+          echo "VERSION_MAJOR=$major"
+          echo "VERSION_MINOR=$minor"
+          echo "VERSION_PATCH=$patch"
+          echo "VERSION_BUILD=$commits"
+        } >> "$GITHUB_OUTPUT"
 
-    - name: Install premake5
+    - name: Generate BuildInfo.h
       run: |
-        wget -q https://github.com/premake/premake-core/releases/download/v${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
-        tar -xzf premake-${{env.PREMAKE_VERSION}}-linux.tar.gz
-        chmod +x premake5
-        sudo mv premake5 /usr/local/bin/premake5
+        printf '%s\n' "#pragma once" \
+          "#define DE_ENGINE_VERSION_MAJOR ${{steps.version.outputs.VERSION_MAJOR}}" \
+          "#define DE_ENGINE_VERSION_MINOR ${{steps.version.outputs.VERSION_MINOR}}" \
+          "#define DE_ENGINE_VERSION_PATCH ${{steps.version.outputs.VERSION_PATCH}}" \
+          "#define DE_ENGINE_VERSION_BUILD ${{steps.version.outputs.VERSION_BUILD}}" > include/DingoEngine/BuildInfo.h
 
-    - name: Generate makefiles
+    - name: Premake
       run: premake5 gmake
-      env:
-        VULKAN_SDK: /usr
 
     - name: Build
-      run: |
-        config=$(echo "${{ matrix.build-configuration }}" | tr '[:upper:]' '[:lower:]')
-        make -j$(nproc) config=${config}_x86_64 DingoEngine FlappyBird
-      env:
-        VULKAN_SDK: /usr
+      run: make -j"$(nproc)" config="$(echo '${{ matrix.build-configuration }}' | tr '[:upper:]' '[:lower:]')"
 
-    - name: Copy include files
-      run: cp -r ./include ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/
-
-    - name: Copy glm files (third-party)
-      run: cp -r ./vendor/glm ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine/
-
-    - name: Create tar archive
+    # The merged libDingoEngine.a (engine + every vendor lib + assimp, made by the engine's
+    # post-build step), the headers and glm, like the Windows ZIP. Consumers link it with the
+    # Vulkan SDK's shaderc_combined and spirv-cross-{hlsl,glsl,core}, plus z, dl and pthread.
+    - name: Package engine
       run: |
         config="${{ matrix.build-configuration }}"
-        tar -czf "DingoEngine-${{ github.ref_name }}-$config-linux-x86_64.tar.gz" \
-          -C "./build/bin/$config-linux-x86_64/DingoEngine" .
+        pkg="build/package/DingoEngine-$config"
+        mkdir -p "$pkg"
+        cp "build/dist/$config-linux-x86_64/libDingoEngine.a" "$pkg/"
+        cp -r include "$pkg/"
+        cp -r vendor/glm "$pkg/glm"
+        tar -czf "DingoEngine-${{steps.version.outputs.VERSION}}-$config-linux-x86_64.tar.gz" -C "$pkg" .
 
-    - name: Upload to GitHub Release
-      run: |
-        config="${{ matrix.build-configuration }}"
-        gh release upload "${{ github.ref_name }}" \
-          "DingoEngine-${{ github.ref_name }}-$config-linux-x86_64.tar.gz" --clobber
+    - name: Upload engine to GitHub Release
+      run: gh release upload "${{ github.ref_name }}" "DingoEngine-${{steps.version.outputs.VERSION}}-${{ matrix.build-configuration }}-linux-x86_64.tar.gz" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload static library artifact
+    - name: Upload engine artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dingo-engine-linux-${{ matrix.build-configuration }}
-        path: ./build/bin/${{ matrix.build-configuration }}-linux-x86_64/DingoEngine
+        name: dingo-engine-linux-${{matrix.build-configuration}}-${{steps.version.outputs.VERSION}}
+        path: build/package/DingoEngine-${{ matrix.build-configuration }}
 
-    - name: Copy FlappyBird assets
+    # Each example and the test framework as <Program>/ holding the executable beside its assets/.
+    # assimp is linked statically, so at run time they need only libvulkan1 and a Vulkan driver.
+    - name: Package examples and test framework
       if: matrix.build-configuration == 'Distribution'
-      run: cp -r ./examples/FlappyBird/assets ./build/bin/Distribution-linux-x86_64/FlappyBird/
+      run: scripts/package-linux-programs.sh Distribution build/package/programs "${{steps.version.outputs.VERSION}}"
 
-    - name: Upload FlappyBird artifact
+    - name: Upload examples and test framework to GitHub Release
+      if: matrix.build-configuration == 'Distribution'
+      run: gh release upload "${{ github.ref_name }}" build/package/programs/*.tar.gz --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload examples and test framework artifact
       if: matrix.build-configuration == 'Distribution'
       uses: actions/upload-artifact@v4
       with:
-        name: flappybird-linux-distribution
-        path: ./build/bin/Distribution-linux-x86_64/FlappyBird
+        name: dingo-programs-linux-distribution-${{steps.version.outputs.VERSION}}
+        path: build/package/programs/*.tar.gz
+        compression-level: 0

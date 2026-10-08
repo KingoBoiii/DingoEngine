@@ -129,6 +129,21 @@ namespace Dingo::UI
 	void AnimationStatsWindow(bool* open = nullptr);
 
 	// ----------------------------------------------------------------------
+	// ProfilerStatsWindow section
+	// ----------------------------------------------------------------------
+
+	// Whether Tracy is compiled in (premake --profile) and connected, the main thread's frame split
+	// (Application::GetFrameTimings) and the render thread's time, then every GPU pass timer
+	// (Renderer::GetGpuTimers): last, mean and max over the last 120 frames.
+	void ProfilerSection();
+
+	// ProfilerSection in a window of its own.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	void ProfilerStatsWindow(bool* open = nullptr);
+
+	// ----------------------------------------------------------------------
 	// The combined debug window
 	// ----------------------------------------------------------------------
 
@@ -139,12 +154,13 @@ namespace Dingo::UI
 		Renderer,
 		Input,
 		Assets,
-		Animation
+		Animation,
+		Profiler
 	};
 
 	// Everything above composed into one tabbed "Debug" window (Engine / Renderer /
-	// Input / Assets / Animation). This is what the engine's built-in overlays show
-	// (F3/F4/F5/F6/F7 select the matching tab; the same key again closes the window).
+	// Input / Assets / Animation / Profiler). This is what the engine's built-in overlays show
+	// (F3/F4/F5/F6/F7/F8 select the matching tab; the same key again closes the window).
 	//
 	// 'select' forces that tab active this frame (DebugTab::None leaves the user's
 	// choice alone). Returns the tab currently shown so callers can implement

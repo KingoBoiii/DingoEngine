@@ -29,7 +29,7 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("assets/fonts/ArialBD.ttf");
+		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
 		m_AppUpdateInBackground = Application::Get().GetUpdateInBackground();
 		if (auto value = Application::Get().GetCommandLineArgs().Get("update-in-background"))
@@ -257,15 +257,6 @@ namespace Dingo
 		const uint32_t held = Input::IsKeyDown(KeyCode::Space) ? 1 : 0;
 		Check(m_SpacePresses == m_SpaceReleases + held,
 			std::format("no Space edge lost or doubled ({} presses, {} releases, {} edges in the background)", m_SpacePresses, m_SpaceReleases, m_StretchSpaceEdges));
-	}
-
-	void BackgroundTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
 	}
 
 	void BackgroundTest::Cleanup()

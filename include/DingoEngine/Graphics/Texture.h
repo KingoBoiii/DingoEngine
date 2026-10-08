@@ -3,6 +3,8 @@
 #include "DingoEngine/Graphics/Enums/TextureDimension.h"
 #include "DingoEngine/Graphics/IBindableShaderResource.h"
 
+#include <glm/glm.hpp>
+
 #include <filesystem>
 #include <functional>
 #include <vector>
@@ -10,13 +12,19 @@
 namespace Dingo
 {
 
-	// A texture's pixels back on the CPU: 8-bit RGBA, Width * 4 bytes a row, rows in the texture's
-	// own order (Texture::ReadPixels).
+	// A texture's pixels back on the CPU in the texture's own format, Width * GetBytesPerPixel(Format)
+	// bytes a row, rows in the texture's own order (Texture::ReadPixels). An RGBA8 texture reads back
+	// as 8-bit RGBA.
 	struct TexturePixels
 	{
 		uint32_t Width = 0;
 		uint32_t Height = 0;
+		TextureFormat Format = TextureFormat::RGBA8_UNORM;
 		std::vector<uint8_t> Data; // empty when the texture couldn't be read
+
+		// One pixel decoded to floats: unorm formats in 0..1, float formats as stored, and channels the
+		// format lacks as 0 (alpha 1). Zero outside the image or when Data is empty.
+		glm::vec4 GetPixel(uint32_t x, uint32_t y) const;
 	};
 
 	enum class TextureWrapMode
@@ -37,6 +45,11 @@ namespace Dingo
 		TextureDimension Dimension = TextureDimension::Unknown;
 		TextureWrapMode WrapMode = TextureWrapMode::Repeat;
 		bool IsRenderTarget = false;
+		// A D32 texture can be sampled only with this set, which makes it typeless on D3D (R32 behind a
+		// D32 depth view); without it it is a depth target alone, as the swap chain's is.
+		bool IsShaderResource = true;
+		// A compute shader can write it as a storage image (ComputePass::SetStorageTexture).
+		bool IsStorage = false;
 
 		const void* InitialData = nullptr;
 
@@ -79,6 +92,18 @@ namespace Dingo
 		TextureParams& SetIsRenderTarget(bool isRenderTarget)
 		{
 			IsRenderTarget = isRenderTarget;
+			return *this;
+		}
+
+		TextureParams& SetIsShaderResource(bool isShaderResource)
+		{
+			IsShaderResource = isShaderResource;
+			return *this;
+		}
+
+		TextureParams& SetIsStorage(bool isStorage)
+		{
+			IsStorage = isStorage;
 			return *this;
 		}
 
@@ -126,13 +151,15 @@ namespace Dingo
 		//   ReadPixels returns.
 		// - Between frames (an event handler, a post-execution callback), at the next frame's start.
 		// A paused app's next frame waits for it to resume, and a frame that renders nothing
-		// (Renderer::IsFrameSkipped) reads what the texture last held. RGBA8 2D textures only.
+		// (Renderer::IsFrameSkipped) reads what the texture last held. Any 2D colour format (not D32):
+		// the pixels come back in the texture's format, and TexturePixels::GetPixel decodes them.
 		// Row 0 is the texture's first row: the top of a render target's picture, the bottom of
 		// an image CreateFromFile loaded (it flips on load).
 		virtual void ReadPixels(std::function<void(const TexturePixels&)> done) = 0;
 		// Writes the texture to an image file through ReadPixels and FileSystem::WriteImage (PNG, or
 		// BMP, TGA, JPEG by extension), with ReadPixels' timing. A texture that isn't a render target
 		// is written last row first, so an image CreateFromFile loaded comes out as its file was.
+		// RGBA8 textures only; any other format reports failure.
 		// `done`, if given, reports whether the file was written.
 		void SaveToFile(const std::filesystem::path& path, std::function<void(bool)> done = {});
 

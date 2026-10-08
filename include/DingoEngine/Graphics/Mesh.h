@@ -49,6 +49,9 @@ namespace Dingo
 		const std::vector<uint32_t>& GetIndices() const { return m_Indices; }
 		uint32_t GetVertexCount() const { return static_cast<uint32_t>(m_Vertices.size()); }
 		uint32_t GetIndexCount() const { return static_cast<uint32_t>(m_Indices.size()); }
+		// The model-space box around GetVertices(); min above max for a mesh without vertices.
+		const glm::vec3& GetBoundsMin() const { return m_BoundsMin; }
+		const glm::vec3& GetBoundsMax() const { return m_BoundsMax; }
 
 		bool HasSkin() const { return !m_SkinVertices.empty(); }
 		const std::vector<SkinnedMeshVertex>& GetSkinVertices() const { return m_SkinVertices; }
@@ -66,6 +69,7 @@ namespace Dingo
 		// so the next skinned draw uploads the new skin.
 		void Reinitialize(Mesh& source);
 		void Clear();
+		void ComputeBounds();
 
 		friend class Model;
 
@@ -74,6 +78,8 @@ namespace Dingo
 		std::vector<uint32_t> m_Indices;
 		std::vector<SkinnedMeshVertex> m_SkinVertices;
 		uint32_t m_SkinJointCount = 0;
+		glm::vec3 m_BoundsMin{ 1.0f };
+		glm::vec3 m_BoundsMax{ -1.0f };
 		std::uint64_t m_Id = AllocateId();
 
 		// GPU copies of the skin, made by Renderer3D on the first skinned draw.

@@ -46,6 +46,16 @@ namespace Dingo
 			.SetDirectUpload(false));
 	}
 
+	GraphicsBuffer* GraphicsBuffer::CreateStorageBuffer(uint64_t size, const std::string& debugName, const void* initialData)
+	{
+		return Create(GraphicsBufferParams()
+			.SetDebugName(debugName)
+			.SetByteSize(size)
+			.SetType(Dingo::BufferType::StorageBuffer)
+			.SetDirectUpload(false)
+			.SetInitialData(initialData));
+	}
+
 	GraphicsBuffer* GraphicsBuffer::Create(const GraphicsBufferParams& params)
 	{
 		GraphicsBuffer* buffer = new NvrhiGraphicsBuffer(params);

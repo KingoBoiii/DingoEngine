@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 
+#include "FramebufferFormat.h"
 #include "MSDFData.h"
 #include "Utf8.h"
 
@@ -232,6 +233,12 @@ void main() {
 
 	}
 
+	static Framebuffer* GetDrawTarget()
+	{
+		Framebuffer* renderTarget = Renderer::GetRenderTarget();
+		return renderTarget ? renderTarget : Renderer::GetSwapChainFramebuffer();
+	}
+
 	Renderer2D* Renderer2D::Create(const Renderer2DCapabilities& capabilities)
 	{
 		Renderer2D* renderer2D = new Renderer2D(Renderer2DParams{ .Capabilities = capabilities });
@@ -297,6 +304,16 @@ void main() {
 		if (m_SceneSkipped)
 			return;
 
+		// A scene begun again before its EndScene keeps the timer it opened, and one left open at
+		// the end of a frame was closed by the renderer.
+		const uint64_t frameIndex = Renderer::GetFrameIndex();
+		if (!m_GpuTimerOpen || m_GpuTimerFrame != frameIndex)
+		{
+			Renderer::BeginGpuTimer("Renderer2D");
+			m_GpuTimerOpen = true;
+			m_GpuTimerFrame = frameIndex;
+		}
+
 		m_CameraData.ProjectionViewMatrix = projectionViewMatrix;
 		m_CameraUniformBuffer->Upload(&m_CameraData, sizeof(CameraData));
 
@@ -320,12 +337,18 @@ void main() {
 		// of the work for large scenes already happened in mid-frame flushes; these
 		// just drain the final partial batch (no-op when empty).
 		Flush();
+
+		if (m_GpuTimerOpen && m_GpuTimerFrame == Renderer::GetFrameIndex())
+			Renderer::EndGpuTimer();
+		m_GpuTimerOpen = false;
 	}
 
 	void Renderer2D::Flush()
 	{
 		if (m_SceneSkipped)
 			return;
+
+		DE_PROFILE_SCOPE("Renderer2D::Flush");
 
 		FlushQuad();
 		FlushCircle();
@@ -711,7 +734,8 @@ void main() {
 
 	void Renderer2D::FlushQuad()
 	{
-		const bool flushed = m_QuadPass.Flush([this](RenderPass* renderPass)
+		Framebuffer* target = GetDrawTarget();
+		const bool flushed = m_QuadPass.Flush(target, Internal::GetFramebufferFormatKey(target), [this](RenderPass* renderPass)
 		{
 			// The shader samples a fixed 32-element array, so every slot must resolve to
 			// a real texture — the ones this batch never claimed included.
@@ -755,7 +779,8 @@ void main() {
 
 	void Renderer2D::FlushCircle()
 	{
-		if (m_CirclePass.Flush())
+		Framebuffer* target = GetDrawTarget();
+		if (m_CirclePass.Flush(target, Internal::GetFramebufferFormatKey(target)))
 			++m_Statistics.DrawCalls;
 	}
 
@@ -783,7 +808,8 @@ void main() {
 
 	void Renderer2D::FlushText()
 	{
-		const bool flushed = m_TextPass.Flush([this](RenderPass* renderPass)
+		Framebuffer* target = GetDrawTarget();
+		const bool flushed = m_TextPass.Flush(target, Internal::GetFramebufferFormatKey(target), [this](RenderPass* renderPass)
 		{
 			renderPass->SetTexture(k_TextureBinding, m_FontAtlasTexture);
 		});

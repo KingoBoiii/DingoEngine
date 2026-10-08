@@ -20,13 +20,13 @@ namespace Dingo
 	public:
 		enum class State { Patrol, Investigate, Return };
 
-		Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool rangeClamp);
+		Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool castShadows);
 		~Wardens();
 
 		Wardens(const Wardens&) = delete;
 		Wardens& operator=(const Wardens&) = delete;
 
-		// Walks, aims the eye and clamps its range to the wall it faces.
+		// Walks and aims the eye.
 		void Update(float deltaTime);
 
 		// Every warden back at its route's start, calm.
@@ -95,7 +95,8 @@ namespace Dingo
 
 		void BuildLoop(Warden& warden, const WardenRoute& route) const;
 		void Spawn(Warden& warden, size_t index);
-		void AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material);
+		void AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material,
+			ShadowCasting shadows = ShadowCasting::On);
 
 		void ResetWarden(Warden& warden);
 		void Think(Warden& warden, size_t index, float deltaTime);
@@ -114,7 +115,7 @@ namespace Dingo
 		bool IsClearLine(const glm::vec3& from, const glm::vec3& to, int room) const;
 
 		void Place(Warden& warden);
-		void ClampRange(Warden& warden, float deltaTime, bool snap);
+		void Arm(Warden& warden);
 		void UpdateMarker(Warden& warden);
 
 	private:
@@ -122,7 +123,7 @@ namespace Dingo
 		const KeepMap& m_Map;
 		GameAudio& m_Audio;
 		bool m_Frozen = false;
-		bool m_RangeClamp = true;
+		bool m_CastShadows = true;
 
 		Material* m_ArmourMaterial = nullptr;
 		Material* m_VisorMaterial = nullptr;

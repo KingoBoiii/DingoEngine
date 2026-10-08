@@ -1,5 +1,10 @@
 include "./vendor/premake/solution_items.lua"
 
+newoption {
+    trigger = "profile",
+    description = "Compile the Tracy profiler into the engine (DE_PROFILE_* zones, GPU pass plots)"
+}
+
 workspace "DingoEngine"
     configurations { "Debug", "Debug-ASan", "Release", "Distribution" }
     startproject "Dingo-TestFramework"
@@ -22,6 +27,11 @@ workspace "DingoEngine"
         "GLM_FORCE_DEPTH_ZERO_TO_ONE"
 	}
 
+    -- Workspace-wide so a game's own DE_PROFILE_* zones compile in too; Tracy itself is engine-only.
+    if _OPTIONS["profile"] then
+        defines { "DE_PROFILE" }
+    end
+
     filter "action:vs*"
         --sanitize { "Address" }
         --flags { "NoRuntimeChecks", "NoIncrementalLink" }
@@ -37,6 +47,10 @@ workspace "DingoEngine"
             -- container annotations must agree across every object or the link fails with
             -- LNK2038. cl embeds /INFERASANLIBS, so the linker needs no ASan flag of its own.
             defines { "_DISABLE_STRING_ANNOTATION", "_DISABLE_VECTOR_ANNOTATION" }
+
+        -- GCC has no /INFERASANLIBS: the ASan runtime only links in through the flag.
+        filter { "system:linux", "configurations:Debug-ASan" }
+            linkoptions { "-fsanitize=address" }
 
 	    filter "system:windows"
 		    buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
@@ -66,25 +80,57 @@ BundledVendorLibs = table.concat({
     vendorLib("JoltPhysics", "Jolt"),
 }, " ")
 
--- Every exe that links the engine also loads Assimp's DLLs (and their zlib /
--- pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime — so
--- they have to sit next to the binary or it dies with STATUS_DLL_NOT_FOUND before
--- main. Call this once per project;
--- it appends the per-configuration copy step and clears the filter again.
+-- The same set for the Linux libDingoEngine.a, with the static assimp as well (Windows links
+-- assimp's import library and ships its DLLs).
+local function linuxVendorLib(rel, name)
+    return '"' .. path.join(_MAIN_SCRIPT_DIR, "vendor", rel, "bin") .. '/' .. outputdir .. '/' .. name .. '/lib' .. name .. '.a"'
+end
+
+LinuxBundledVendorLibs = table.concat({
+    linuxVendorLib("spdlog", "spdlog"),
+    linuxVendorLib("glfw", "GLFW"),
+    linuxVendorLib("nvrhi", "NVRHI"),
+    linuxVendorLib("nvrhi", "NVRHI-Vulkan"),
+    linuxVendorLib("imgui", "ImGui"),
+    linuxVendorLib("msdf-atlas-gen", "msdf-atlas-gen"),
+    linuxVendorLib("msdf-atlas-gen/msdfgen", "msdfgen"),
+    linuxVendorLib("msdf-atlas-gen/msdfgen/freetype", "freetype"),
+    linuxVendorLib("box2d", "box2d"),
+    linuxVendorLib("JoltPhysics", "Jolt"),
+    '"' .. path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/lib/linux-x86_64/libassimp.a") .. '"',
+}, " ")
+
+-- On Windows, every exe that links the engine also loads Assimp's DLLs (and their
+-- zlib / pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime —
+-- so they have to sit next to the binary or it dies with STATUS_DLL_NOT_FOUND before
+-- main. On Linux, make links only what a project names, not the engine's own
+-- dependencies as MSBuild does, so every exe names them all; the link group makes
+-- their order irrelevant. Call this once per project;
+-- it appends the per-configuration settings and clears the filter again.
 -- The source dir is baked to an absolute path at generation time because
 -- %{wks.location} expands to empty inside an included project's postbuild scope.
 function copyAssimpRuntime()
     local debugBin   = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/debug")
     local releaseBin = path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/bin/release")
 
-    filter "configurations:Debug or configurations:Debug-ASan"
+    filter { "system:windows", "configurations:Debug or configurations:Debug-ASan" }
         postbuildcommands { '{COPY} "' .. debugBin .. '" "%{cfg.targetdir}"' }
 
-    filter "configurations:Release or configurations:Distribution"
+    filter { "system:windows", "configurations:Release or configurations:Distribution" }
         postbuildcommands { '{COPY} "' .. releaseBin .. '" "%{cfg.targetdir}"' }
 
-    filter "configurations:Debug-ASan"
+    filter { "system:windows", "configurations:Debug-ASan" }
         postbuildcommands { '{COPY} "$(VCToolsInstallDir)bin\\Hostx64\\x64\\clang_rt.asan_dynamic-x86_64.dll" "%{cfg.targetdir}"' }
+
+    filter { "system:linux", "kind:ConsoleApp or WindowedApp" }
+        linkgroups "On"
+        libdirs { "%{LibraryDir.vulkan}", "%{LibraryDir.assimp}" }
+        links {
+            "DingoEngine", "spdlog", "GLFW", "NVRHI", "NVRHI-Vulkan", "ImGui",
+            "msdf-atlas-gen", "msdfgen", "freetype", "box2d", "Jolt",
+            "shaderc_combined", "spirv-cross-hlsl", "spirv-cross-glsl", "spirv-cross-core",
+            "assimp", "z", "dl", "pthread"
+        }
 
     filter {}
 end
@@ -101,7 +147,7 @@ IncludeDir['stb'] = "%{wks.location}/vendor/stb/include";
 IncludeDir['imgui'] = "%{wks.location}/vendor/imgui";
 IncludeDir["msdfgen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdfgen"
 IncludeDir["msdf_atlas_gen"] = "%{wks.location}/vendor/msdf-atlas-gen/msdf-atlas-gen"
-IncludeDir['vulkan'] = "%{VULKAN_SDK}/Include";
+IncludeDir['vulkan'] = "%{VULKAN_SDK}/include";
 IncludeDir['dx_headers'] = "%{wks.location}/vendor/nvrhi/thirdparty/DirectX-Headers/include";
 IncludeDir['assimp'] = "%{wks.location}/vendor/assimp/include";
 IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
@@ -130,6 +176,20 @@ Library["SPIRV_Cross_Release"] = "%{LibraryDir.vulkan}/spirv-cross-core.lib"
 Library["SPIRV_Cross_GLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-glsl.lib"
 Library["SPIRV_Cross_HLSL_Release"] = "%{LibraryDir.vulkan}/spirv-cross-hlsl.lib"
 
+-- The Linux SDK has no debug-suffixed libraries, and vendor/assimp only holds Windows
+-- binaries: Linux links a static assimp built into vendor/assimp/lib/linux-x86_64.
+if os.istarget("linux") then
+    LibraryDir['assimp'] = "%{wks.location}/vendor/assimp/lib/linux-x86_64"
+    Library['assimp_Debug']   = "assimp"
+    Library['assimp_Release'] = "assimp"
+    for _, cfg in ipairs({ "Debug", "Release" }) do
+        Library["ShaderC_" .. cfg]          = "shaderc_combined"
+        Library["SPIRV_Cross_" .. cfg]      = "spirv-cross-core"
+        Library["SPIRV_Cross_GLSL_" .. cfg] = "spirv-cross-glsl"
+        Library["SPIRV_Cross_HLSL_" .. cfg] = "spirv-cross-hlsl"
+    end
+end
+
 -- Windows
 Library["WinSock"] = "Ws2_32.lib"
 Library["WinMM"] = "Winmm.lib"
@@ -150,6 +210,31 @@ group "Dependencies"
 	include "vendor/msdf-atlas-gen"
 	include "vendor/box2d"
 	include "vendor/JoltPhysics"
+
+	-- Linux additions to the forks' own scripts, made here so vendor/ stays untouched.
+	project "GLFW"
+		filter "system:linux"
+			files { "vendor/glfw/src/posix_module.c", "vendor/glfw/src/posix_poll.c" }
+		filter {}
+
+	project "NVRHI-Vulkan"
+		filter "system:linux"
+			includedirs { "%{VULKAN_SDK}/include" }
+		filter {}
+
+	-- gmake writes each makefile next to its project's script, inside the submodule, where it
+	-- would overwrite FreeType's own tracked Makefile. Visual Studio's projects stay where they are.
+	if _ACTION == "gmake" or _ACTION == "gmake2" then
+		local vendorProjects = { "spdlog", "GLFW", "NVRHI", "NVRHI-Vulkan", "ImGui", "msdf-atlas-gen", "msdfgen", "freetype", "box2d", "Jolt" }
+		if os.istarget("windows") then
+			table.insert(vendorProjects, "NVRHI-D3D11")
+			table.insert(vendorProjects, "NVRHI-D3D12")
+		end
+		for _, name in ipairs(vendorProjects) do
+			project(name)
+				location("build/make/" .. name)
+		end
+	end
 group ""
 
 group "Engine"
@@ -199,7 +284,6 @@ group "Engine"
 		links {
 			"spdlog",
 			"glfw",
-			"%{Library.vulkan}",
 			"nvrhi",
 			"imgui",
 			"msdf-atlas-gen",
@@ -207,9 +291,25 @@ group "Engine"
 			"Jolt"
 		}
 
+		-- The SPDLOG_ pair must match vendor/spdlog's own defines, or Log.cpp compiles spdlog
+		-- header-only with the bundled fmt and the binary carries two incompatible copies of it.
 		defines {
-			"GLFW_INCLUDE_NONE"
+			"GLFW_INCLUDE_NONE",
+			"SPDLOG_COMPILED_LIB",
+			"SPDLOG_USE_STD_FORMAT"
 		}
+
+		if _OPTIONS["profile"] then
+			files { "vendor/tracy/public/TracyClient.cpp" }
+			includedirs { "vendor/tracy/public" }
+			-- On demand: nothing is collected or streamed until the Tracy viewer connects.
+			defines { "TRACY_ENABLE", "TRACY_ON_DEMAND" }
+
+			filter "files:vendor/tracy/public/TracyClient.cpp"
+				enablepch "Off"
+				warnings "Off"
+			filter {}
+		end
 
 		filter "files:src/**/Shaders/*.glsl"
 			buildmessage "Embedding %{file.name}"
@@ -237,6 +337,7 @@ group "Engine"
 			}
 
 			links {
+				"%{Library.vulkan}",
 				"%{Library.WinSock}",
 				"%{Library.WinMM}",
 				"%{Library.WinVersion}",
@@ -261,6 +362,18 @@ group "Engine"
 
 		filter "system:linux"
 			defines { "DE_PLATFORM_LINUX" }
+			removefiles { "src/DingoEngine/Graphics/NVRHI/DirectX11/**", "src/DingoEngine/Graphics/NVRHI/DirectX12/**" }
+
+			-- The distributable libDingoEngine.a under build/dist, like Windows' DingoEngine.lib.
+			-- Consumers add only the Vulkan SDK's shaderc and SPIRV-Cross, zlib, dl and pthread.
+			postbuildcommands {
+				'sh "' .. path.join(_MAIN_SCRIPT_DIR, "scripts/merge-static-libs.sh") .. '" "'
+					.. path.join(_MAIN_SCRIPT_DIR, "build/dist") .. '/' .. outputdir .. '/libDingoEngine.a" "%{cfg.buildtarget.abspath}" '
+					.. LinuxBundledVendorLibs,
+			}
+
+		-- Four engine-internal members are still named after their type, which GCC alone rejects.
+		filter { "system:linux", "toolset:gcc" }
 			buildoptions { "-Wno-changes-meaning" }
 
 		filter "configurations:Debug or configurations:Debug-ASan"

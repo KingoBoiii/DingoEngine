@@ -321,6 +321,36 @@ The requests:
 **Test**: new checks in the Animation Test (a hidden layer's freeze, a disabled animator's events, and the range ends of a rebind, on a bare animator and in a scene; all four fail on v0.8.2), the Background Test (the aspect ratio while minimized), and the Asset Manager Test (no texture loaded after an `Unload` shares a generation with the freed one). The new **Render Target Test** (`--test=target`) crossfades two 3D scenes rendered into textures, and reads back a 2D probe scene rendered into a square framebuffer to check that its projection takes the framebuffer's aspect, that row 0 is its top, that text under a sprite with a higher z is hidden, that rotated text turns, and that the PNGs it saves hold the pixels read back; with v0.8.2's scene rendering the aspect, z-order and rotation checks fail. Rumble was not tried on a pad: the machine has none. The Vulkan changes (#78, #79, #86, the buffer padding) were reviewed but not run: the machine they were made on has no Vulkan driver. #78's fallback was checked on DX11 by forcing it, and the buffer padding by forcing every upload through it, which left the Mesh 3D and Model 3D frames pixel-identical.
 
 ## v0.9 — Shadows, Post-processing & VFX
+**Status**: released as v0.9.0 on 2026-10-08 (PR #106). The engine work (P1–P12 of
+`.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose "As built" notes override the design
+below, reviewed in `.claude/reviews/2026-10-08-v0.9.0-review.md`), the *Candlewick* upgrade (P14,
+`.claude/plans/2026-10-08-candlewick-v0.9-plan.md`) and the *Marionette* upgrade (P15,
+`.claude/plans/2026-10-08-marionette-v0.9-plan.md`) shipped together, verified on Vulkan, DX11 and
+DX12 (the plan's §9 "GPU verification"). What it adds:
+
+- **Profiling**: Tracy (not Optick) behind premake's `--profile`, `DE_PROFILE_*` zones, always-on GPU
+  pass timers and an F8 Profiler tab ([docs/profiling.md](docs/profiling.md)).
+- **Shadows**: cascaded shadow maps for the first casting directional light, and shadows for up to 8
+  (at most 16) casting point and spot lights in one atlas, skinned casters, `ShadowCasting` per mesh
+  (`ShadowsOnly` for cut-away walls), and **shadow probes**: `Scene::GetLightVisibility` answers "is
+  this point in that light's shadow" with the renderer's own lookup, a frame or two late
+  ([docs/shadows.md](docs/shadows.md)).
+- **The post chain**: an HDR scene target per camera (`PostProcessComponent`), tone mapping (`Soft`,
+  the default, leaves everything below 0.8 untouched; ACES; Khronos Neutral), dual-filter bloom and
+  SAO ambient occlusion ([docs/post-processing.md](docs/post-processing.md)). #76 is closed.
+- **GPU particles**: compute-simulated emitters (`ParticleEffectParams`, `ParticleEmitterComponent`),
+  soft particles through the post chain, particles fired from animation events
+  (`ParticleEventComponent`), and a live effect editor in F4 that prints the effect's code
+  ([docs/particles.md](docs/particles.md)); under them, compute shaders and storage buffers
+  ([docs/compute.md](docs/compute.md)).
+- **The light budget's fade band** (#75): opt-in, `Renderer3DCapabilities::LightBudgetFade`.
+
+**Migration**: no API breaks, and every feature is off until a game asks for it, so an existing game
+renders as before. Behaviour notes: a `Framebuffer` resize keeps its attachment `Texture`s (it used to
+replace them, which left anything holding `GetAttachment(0)` dangling); `PostProcessStack::Begin`
+needs the projection for AO (`Begin(settings, projection)`, which the `SceneRenderer` passes);
+`ParticleEffect` is not copyable.
+
 The visual milestone — and the first one that inherits its dependencies instead of inventing them.
 v0.7 gives it lights worth casting shadows from, v0.5's emissive channel and v0.7's light budget give
 bloom something bright to bleed, and v0.8 gives it animation timelines to hang effects on. It stays

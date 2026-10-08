@@ -3,6 +3,7 @@
 #include "Pipeline.h"
 #include "GraphicsBuffer.h"
 #include "RenderPass.h"
+#include "ComputePass.h"
 #include "Texture.h"
 
 #include <glm/glm.hpp>
@@ -12,6 +13,16 @@ namespace Dingo
 
 	struct CommandListParams
 	{
+	};
+
+	// A rectangle of the bound framebuffer, in pixels from its top-left corner. Draws are scissored
+	// to it as well.
+	struct Viewport
+	{
+		float X = 0.0f;
+		float Y = 0.0f;
+		float Width = 0.0f;
+		float Height = 0.0f;
 	};
 
 	class CommandList
@@ -43,7 +54,11 @@ namespace Dingo
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) = 0;
 
+		// Binds the framebuffer with a viewport covering all of it.
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;
+		// Narrows the viewport and scissor of the framebuffer SetFramebuffer bound, until the next
+		// SetFramebuffer.
+		virtual void SetViewport(const Viewport& viewport) = 0;
 		// SetPipeline/SetRenderPass reset the graphics state to the pipeline and its bindings.
 		// Neither binds a framebuffer -- follow with SetFramebuffer() before drawing.
 		// Both return false when the pipeline could not be built (a failed shader compile,
@@ -56,6 +71,10 @@ namespace Dingo
 
 		virtual void Draw(uint32_t vertexCount, uint32_t instanceCount = 1) = 0;
 		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1) = 0;
+
+		// Runs the compute pass over groupsX x groupsY x groupsZ thread groups. The graphics state
+		// stays as it was set, so the next draw needs no rebinding. False when the pass can't run.
+		virtual bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1) = 0;
 
 	protected:
 		CommandListParams m_Params;

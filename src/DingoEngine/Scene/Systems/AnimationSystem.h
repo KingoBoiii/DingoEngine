@@ -50,6 +50,11 @@ namespace Dingo
 				std::vector<std::pair<entt::entity, AnimationEvent>> Deliveries;
 				std::vector<std::pair<entt::entity, AnimationEvent>> Waiting;
 
+				// The frame's events of entities with a ParticleEventComponent, for ParticleSync; and the
+				// RangeEnds of an animator removed mid-range, which join the next frame's.
+				std::vector<std::pair<entt::entity, AnimationEvent>> ParticleEvents;
+				std::vector<std::pair<entt::entity, AnimationEvent>> ParticleWaiting;
+
 				std::array<RecentEvent, k_RecentEvents> Recent;
 				size_t RecentNext = 0;
 				size_t RecentCount = 0;

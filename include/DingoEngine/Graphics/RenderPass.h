@@ -9,7 +9,7 @@ namespace Dingo
 
 	struct RenderPassParams
 	{
-		Pipeline* Pipeline = nullptr;
+		Dingo::Pipeline* Pipeline = nullptr;
 
 		RenderPassParams& SetPipeline(Dingo::Pipeline* pipeline)
 		{
@@ -38,6 +38,11 @@ namespace Dingo
 		virtual void SetTexture(uint32_t slot, Texture* texture, uint32_t arrayElement = 0) = 0;
 
 		virtual void SetSampler(uint32_t slot, Sampler* sampler) = 0;
+
+		// A storage buffer the shader reads, through a readonly block. Draws don't write storage buffers:
+		// Vulkan isn't asked for fragmentStoresAndAtomics, and D3D11 binds a pixel shader's writable
+		// views after its render targets; write in a ComputePass.
+		virtual void SetStorageBuffer(uint32_t slot, GraphicsBuffer* buffer) = 0;
 
 		virtual void Bake() = 0;
 

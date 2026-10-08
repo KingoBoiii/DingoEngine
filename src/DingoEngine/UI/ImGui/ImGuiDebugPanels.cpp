@@ -4,8 +4,11 @@
 
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Input.h"
+#include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -31,6 +34,92 @@ namespace Dingo::UI
 
 	namespace
 	{
+		// D7: effects are authored in code, so the editor changes the live effect and prints the code
+		// that builds what is on screen.
+		void ParticleEffectEditor()
+		{
+			const std::vector<ParticleEffect*>& effects = Internal::GetLiveParticleEffects();
+			if (!ImGui::CollapsingHeader("Particle effect editor"))
+				return;
+			if (effects.empty())
+			{
+				ImGui::TextDisabled("No ParticleEffect exists.");
+				return;
+			}
+
+			static const ParticleEffect* s_Selected = nullptr;
+			if (std::find(effects.begin(), effects.end(), s_Selected) == effects.end())
+				s_Selected = effects.front();
+
+			auto nameOf = [&effects](const ParticleEffect* effect)
+			{
+				const std::string& name = effect->GetParams().DebugName;
+				return name.empty() ? std::format("Effect {}", std::find(effects.begin(), effects.end(), effect) - effects.begin()) : name;
+			};
+			if (ImGui::BeginCombo("Effect", nameOf(s_Selected).c_str()))
+			{
+				for (const ParticleEffect* effect : effects)
+				{
+					ImGui::PushID(effect);
+					if (ImGui::Selectable(nameOf(effect).c_str(), effect == s_Selected))
+						s_Selected = effect;
+					ImGui::PopID();
+				}
+				ImGui::EndCombo();
+			}
+
+			ParticleEffect* effect = *std::find(effects.begin(), effects.end(), s_Selected);
+			ParticleEffectParams params = effect->GetParams();
+			bool changed = false;
+
+			int shape = static_cast<int>(params.Shape);
+			changed |= ImGui::Combo("Shape", &shape, "Point\0Sphere\0Cone\0Box\0");
+			params.Shape = static_cast<ParticleShape>(shape);
+			changed |= ImGui::DragFloat3("Shape size", &params.ShapeSize.x, 0.01f, 0.0f, 100.0f);
+			changed |= ImGui::DragFloat("Rate", &params.Rate, 1.0f, 0.0f, 100000.0f);
+			int burst = static_cast<int>(params.BurstOnPlay);
+			changed |= ImGui::DragInt("Burst on play", &burst, 1.0f, 0, 100000);
+			params.BurstOnPlay = static_cast<uint32_t>(std::max(burst, 0));
+			changed |= ImGui::DragFloat2("Lifetime", &params.Lifetime.x, 0.01f, 0.01f, 60.0f);
+			changed |= ImGui::DragFloat2("Speed", &params.Speed.x, 0.01f, 0.0f, 100.0f);
+			changed |= ImGui::DragFloat3("Gravity", &params.Gravity.x, 0.05f, -100.0f, 100.0f);
+			changed |= ImGui::DragFloat("Drag", &params.Drag, 0.01f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat("Inherit velocity", &params.InheritVelocity, 0.01f, 0.0f, 1.0f);
+			changed |= ImGui::DragFloat("Noise strength", &params.NoiseStrength, 0.01f, 0.0f, 50.0f);
+			changed |= ImGui::DragFloat("Noise scale", &params.NoiseScale, 0.01f, 0.01f, 20.0f);
+			changed |= ImGui::DragFloat2("Start size", &params.StartSize.x, 0.005f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat("End size", &params.EndSize, 0.01f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat2("Start rotation (deg)", &params.StartRotation.x, 1.0f, -360.0f, 360.0f);
+			changed |= ImGui::DragFloat2("Spin (deg/s)", &params.Spin.x, 1.0f, -3600.0f, 3600.0f);
+			int keys = static_cast<int>(params.ColorKeyCount);
+			changed |= ImGui::SliderInt("Colour keys", &keys, 1, static_cast<int>(ParticleEffectParams::k_MaxColorKeys));
+			params.ColorKeyCount = static_cast<uint32_t>(keys);
+			for (int i = 0; i < keys; ++i)
+			{
+				ImGui::PushID(i);
+				changed |= ImGui::DragFloat("Time", &params.ColorKeys[i].Time, 0.01f, 0.0f, 1.0f);
+				changed |= ImGui::ColorEdit4("Colour", &params.ColorKeys[i].Color.x, ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_Float);
+				ImGui::PopID();
+			}
+			int blend = static_cast<int>(params.Blend);
+			changed |= ImGui::Combo("Blend", &blend, "Additive\0Alpha\0");
+			params.Blend = static_cast<ParticleBlend>(blend);
+			changed |= ImGui::DragFloat("Soft distance", &params.SoftDistance, 0.01f, 0.0f, 10.0f);
+			ImGui::Text("Capacity %u per emitter (fixed when an emitter is made)", effect->GetEmitterCapacity());
+
+			if (changed)
+				effect->SetParams(params);
+
+			if (ImGui::Button("Copy as code"))
+			{
+				const std::string code = Internal::ParticleEffectToCode(effect->GetParams());
+				ImGui::SetClipboardText(code.c_str());
+				DE_CORE_INFO("Particle effect '{}':\n{}", effect->GetParams().DebugName, code);
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("(and logs it)");
+		}
+
 		// "label  [=====      ] used / capacity" — a labelled usage bar for a
 		// budget. ImGui tints the fill.
 		void BudgetBar(const char* label, uint32_t used, uint32_t capacity)
@@ -227,6 +316,8 @@ namespace Dingo::UI
 				"Dropped    : %u  (past a light limit; the log says which)", stats3D.DroppedLights);
 		else
 			ImGui::Text("Dropped    : 0");
+		if (caps3D.LightBudgetFade > 0.0f)
+			ImGui::Text("Faded      : %u  (budget fade band %.2f)", stats3D.FadedLights, caps3D.LightBudgetFade);
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");
@@ -239,6 +330,72 @@ namespace Dingo::UI
 				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances; warned once)", stats3D.DroppedSkinnedDraws);
 		else
 			ImGui::Text("Dropped    : 0");
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D shadows  (most recent scene)");
+		ImGui::Separator();
+		if (stats3D.ShadowViews == 0 && stats3D.UnshadowedLights == 0)
+			ImGui::TextDisabled("None cast: no light with CastShadows, or nothing that casts.");
+		else
+		{
+			ImGui::Text("Tiles      : %u rendered into the atlas", stats3D.ShadowViews);
+			ImGui::Text("Cascades   : %u   ends at %.1f / %.1f / %.1f / %.1f along the view", stats3D.ShadowCascades,
+				stats3D.ShadowCascadeEnds[0], stats3D.ShadowCascadeEnds[1], stats3D.ShadowCascadeEnds[2], stats3D.ShadowCascadeEnds[3]);
+			BudgetBar("Shadowed", stats3D.ShadowedLights, std::min(caps3D.MaxShadowedLocalLights, Renderer3D::k_MaxShadowedLocalLights));
+			if (stats3D.UnshadowedLights > 0)
+				ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+					"Unshadowed : %u  (casting lights past MaxShadowedLocalLights or the atlas; warned once)", stats3D.UnshadowedLights);
+			else
+				ImGui::Text("Unshadowed : 0");
+			ImGui::Text("Casters    : %u meshes in %u instanced draws (not in draw calls)", stats3D.ShadowCasters, stats3D.ShadowDrawCalls);
+		}
+
+		Renderer3D& mutableRenderer3D = Application::Get().GetRenderer3D();
+		Renderer3DShadowSettings shadowSettings = mutableRenderer3D.GetShadowSettings();
+		if (ImGui::Checkbox("Tint by cascade", &shadowSettings.DebugCascades))
+			mutableRenderer3D.SetShadowSettings(shadowSettings);
+
+		if (Framebuffer* atlas = mutableRenderer3D.GetShadowAtlas())
+		{
+			ImGui::Text("Atlas      : %u x %u D32, %.0f MB", atlas->GetWidth(), atlas->GetHeight(),
+				static_cast<double>(atlas->GetWidth()) * atlas->GetHeight() * 4.0 / (1024.0 * 1024.0));
+			if (Texture* depth = atlas->GetDepthAttachment())
+			{
+				static bool s_ShowAtlas = false;
+				ImGui::Checkbox("Show the atlas (depth in red, near is dark)", &s_ShowAtlas);
+				if (s_ShowAtlas)
+					ImGui::Image(reinterpret_cast<ImTextureID>(depth->GetTextureHandle()), ImVec2(256.0f, 256.0f));
+			}
+		}
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D particles  (most recent scene)");
+		ImGui::Separator();
+		BudgetBar("Pool", renderer3D.GetParticlePoolUsed(), renderer3D.GetParticlePoolCapacity());
+		if (stats3D.ParticleEmitters == 0)
+			ImGui::TextDisabled("No emitter drawn this scene.");
+		else
+		{
+			ImGui::Text("Emitters   : %u in %u draws, %u slots simulated", stats3D.ParticleEmitters, stats3D.ParticleDrawCalls, stats3D.ParticleSlots);
+			ImGui::Text("Spawned    : %u", stats3D.ParticlesSpawned);
+		}
+		if (stats3D.DroppedParticleSpawns > 0)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+				"Dropped    : %u spawns  (an emitter's ring was full; warned once)", stats3D.DroppedParticleSpawns);
+
+		ParticleEffectEditor();
+
+		const PostProcessStack::Statistics& post = Renderer::GetPostProcessStack().GetStatistics();
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Post chain  (last frame that ran it)");
+		ImGui::Separator();
+		if (post.SceneTargets == 0)
+			ImGui::TextDisabled("Not used: no PostProcessComponent or PostProcessStack::Begin has enabled it.");
+		else
+		{
+			ImGui::Text("Scenes     : %u (%u bloomed, %u with AO)   Scene target %u x %u, RGBA16F + D32", post.Scenes, post.BloomScenes, post.AmbientOcclusionScenes, post.Width, post.Height);
+			ImGui::Text("Targets    : %u cached, %.1f MB", post.SceneTargets, static_cast<double>(post.TargetBytes) / (1024.0 * 1024.0));
+		}
 	}
 
 	void RendererStatsWindow(bool* open)
@@ -814,6 +971,108 @@ namespace Dingo::UI
 		ImGui::End();
 	}
 
+	void ProfilerSection()
+	{
+		ImGui::TextUnformatted("Tracy");
+		ImGui::Separator();
+		if (!Profiler::IsCompiledIn())
+			ImGui::TextDisabled("Not compiled in: regenerate with premake --profile to record zones.");
+		else if (Profiler::IsConnected())
+			ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.40f, 1.0f), "Compiled in, viewer connected: recording.");
+		else
+			ImGui::Text("Compiled in, waiting for the Tracy viewer to connect.");
+
+		// One sample a frame while this tab is drawn.
+		constexpr int k_History = 120;
+		constexpr int k_Rows = 5;
+		static float s_History[k_Rows][k_History] = {};
+		static int s_Cursor = 0;
+		static int s_Count = 0;
+
+		const FrameTimings& frame = Application::Get().GetFrameTimings();
+		const float samples[k_Rows] = { frame.FrameMs, frame.WaitMs, frame.UpdateMs, frame.UIMs, Renderer::GetRenderThreadMilliseconds() };
+		for (int row = 0; row < k_Rows; ++row)
+			s_History[row][s_Cursor] = samples[row];
+		s_Cursor = (s_Cursor + 1) % k_History;
+		s_Count = std::min(s_Count + 1, k_History);
+
+		auto timingTable = [](const char* id, const char* firstColumn, auto&& rows)
+		{
+			if (!ImGui::BeginTable(id, 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp))
+				return;
+			ImGui::TableSetupColumn(firstColumn);
+			ImGui::TableSetupColumn("Last ms", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableSetupColumn("Mean ms", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableSetupColumn("Max ms", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableHeadersRow();
+			rows();
+			ImGui::EndTable();
+		};
+		auto timingRow = [](const char* name, int indent, float last, float mean, float max)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::Text("%*s%s", indent * 2, "", name);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::Text("%.3f", last);
+			ImGui::TableSetColumnIndex(2);
+			ImGui::Text("%.3f", mean);
+			ImGui::TableSetColumnIndex(3);
+			ImGui::Text("%.3f", max);
+		};
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("CPU  (last 120 frames while this tab is open)");
+		ImGui::Separator();
+		static constexpr const char* s_RowNames[k_Rows] = { "Frame", "Wait for render thread", "Update", "UI", "Render thread (execute + present)" };
+		static constexpr int s_RowIndent[k_Rows] = { 0, 1, 1, 1, 0 };
+		timingTable("##cputimes", "Main thread", [&]
+		{
+			for (int row = 0; row < k_Rows; ++row)
+			{
+				float sum = 0.0f, max = 0.0f;
+				for (int i = 0; i < s_Count; ++i)
+				{
+					sum += s_History[row][i];
+					max = std::max(max, s_History[row][i]);
+				}
+				timingRow(s_RowNames[row], s_RowIndent[row], samples[row], s_Count > 0 ? sum / static_cast<float>(s_Count) : 0.0f, max);
+			}
+		});
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("GPU passes  (timer queries, read 4 frames late)");
+		ImGui::Separator();
+		const std::vector<GpuTimerStats>& timers = Renderer::GetGpuTimers();
+		if (timers.empty())
+		{
+			ImGui::TextDisabled("No GPU timer has reported yet.");
+			return;
+		}
+
+		timingTable("##gputimes", "Pass", [&]
+		{
+			for (const GpuTimerStats& timer : timers)
+			{
+				if (timer.Samples > 0)
+					timingRow(timer.Name, static_cast<int>(timer.Depth), timer.LastMs, timer.MeanMs, timer.MaxMs);
+			}
+		});
+	}
+
+	void ProfilerStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Profiler", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		ProfilerSection();
+
+		ImGui::End();
+	}
+
 	void InputStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Input Stats", open))
@@ -898,6 +1157,8 @@ namespace Dingo::UI
 			});
 
 			tab("Animation", DebugTab::Animation, [] { AnimationSection(); });
+
+			tab("Profiler", DebugTab::Profiler, [] { ProfilerSection(); });
 
 			ImGui::EndTabBar();
 		}

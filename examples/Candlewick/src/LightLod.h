@@ -14,6 +14,7 @@ namespace Dingo
 	// Keeps the lights the renderer sees in view at or under its budget minus LIGHT_LOD_HEADROOM,
 	// so it never has to drop one. Gameplay lights are counted and never touched; decorative
 	// flames fade in only into a free slot and are snapped off when a gameplay light takes theirs.
+	// Shadow slots need no budget: only gameplay lights cast, and the renderer has a slot for each.
 	class LightLod
 	{
 	public:

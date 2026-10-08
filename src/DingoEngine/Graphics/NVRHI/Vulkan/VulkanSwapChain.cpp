@@ -1,7 +1,7 @@
 #include "depch.h"
 #include "VulkanSwapChain.h"
 
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 #include "VulkanGraphicsContext.h"
 
 #include <algorithm>

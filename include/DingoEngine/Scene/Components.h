@@ -5,6 +5,8 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Light.h"
+#include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/Enums/ShadowCasting.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -18,11 +20,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Dingo
 {
 
 	class Material; // referenced by MeshRendererComponent (pointer only)
+	class ParticleEffect; // referenced by ParticleEmitterComponent (pointer only)
 	class Model;    // referenced by SkinnedMeshRendererComponent (pointer only)
 	struct Transform3DComponent; // the light components' ToLight, defined after it
 
@@ -78,7 +82,7 @@ namespace Dingo
 	struct SpriteRendererComponent
 	{
 		glm::vec4 Color{ 1.0f };
-		Texture* Texture = nullptr; // optional; null draws a solid-colour quad
+		Dingo::Texture* Texture = nullptr; // optional; null draws a solid-colour quad
 
 		SpriteRendererComponent() = default;
 		SpriteRendererComponent(const SpriteRendererComponent&) = default;
@@ -100,7 +104,7 @@ namespace Dingo
 	struct TextComponent
 	{
 		std::string Text;
-		Font* Font = nullptr;
+		Dingo::Font* Font = nullptr;
 		glm::vec4 Color{ 1.0f };
 		float Size = 1.0f;
 		bool Centered = false; // when true, the text is horizontally centered on Position
@@ -150,6 +154,18 @@ namespace Dingo
 		}
 	};
 
+	// The post chain (tone mapping) for the 3D pass of the camera on this entity. SceneRenderer reads it
+	// from the primary perspective camera; on any other entity it does nothing. Settings.Enabled is
+	// false by default, which renders exactly as without it.
+	struct PostProcessComponent
+	{
+		PostProcessSettings Settings;
+
+		PostProcessComponent() = default;
+		PostProcessComponent(const PostProcessComponent&) = default;
+		explicit PostProcessComponent(const PostProcessSettings& settings) : Settings(settings) {}
+	};
+
 	// Lighting ----------------------------------------------------------------
 	//
 	// The SceneRenderer submits these to Renderer3D every frame (Scene::SubmitLights); see
@@ -171,6 +187,9 @@ namespace Dingo
 		// DirectionalLightComponent adds its own. Set it to 0 to light the scene with
 		// AmbientLightComponent instead and get Intensity unscaled.
 		float Ambient = 0.35f;
+		// See DirectionalLight: the first casting one gets cascaded shadows.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
@@ -195,6 +214,9 @@ namespace Dingo
 		float Intensity = 1.0f;
 		float Range = 10.0f;
 		bool Enabled = true;
+		// See PointLight: casting lights share the scene's shadow slots by rank.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 
 		PointLightComponent() = default;
 		PointLightComponent(const PointLightComponent&) = default;
@@ -219,6 +241,9 @@ namespace Dingo
 		float OuterConeAngle = 30.0f; // degrees from the axis where it reaches zero
 		glm::vec3 Direction{ 0.0f, 0.0f, -1.0f };
 		bool Enabled = true;
+		// See SpotLight.
+		bool CastShadows = false;
+		float ShadowStrength = 1.0f;
 
 		SpotLightComponent() = default;
 		SpotLightComponent(const SpotLightComponent&) = default;
@@ -327,13 +352,15 @@ namespace Dingo
 
 	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
-		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range };
+		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range,
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
 	}
 
 	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
-			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle };
+			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle,
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
 	}
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
@@ -341,7 +368,7 @@ namespace Dingo
 	// exactly like SpriteRendererComponent's Texture.
 	struct MeshRendererComponent
 	{
-		Mesh* Mesh = nullptr;
+		Dingo::Mesh* Mesh = nullptr;
 		glm::vec4 Color{ 1.0f };
 
 		// When false, the SceneRenderer skips this entity — cheap per-entity culling that
@@ -351,7 +378,10 @@ namespace Dingo
 		// Optional material (custom shader + uniforms + textures). Null draws with
 		// Renderer3D's built-in lit material. The Color above is written
 		// into the vertex stream either way. Owned by the client, not the component.
-		Material* Material = nullptr;
+		Dingo::Material* Material = nullptr;
+
+		// ShadowsOnly keeps a mesh out of the picture but in the shadows; Visible = false drops both.
+		ShadowCasting Shadows = ShadowCasting::On;
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;
@@ -370,6 +400,7 @@ namespace Dingo
 		glm::vec4 Color{ 1.0f };
 		Dingo::Material* Material = nullptr;
 		bool Visible = true;
+		ShadowCasting Shadows = ShadowCasting::On;
 
 		SkinnedMeshRendererComponent() = default;
 		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;
@@ -392,6 +423,57 @@ namespace Dingo
 		AnimatorComponent() = default;
 		AnimatorComponent(const AnimatorComponent&) = default;
 		AnimatorComponent(std::string defaultClip) : DefaultClip(std::move(defaultClip)) {}
+	};
+
+	// GPU particles from the entity's world transform (through any parent, so an emitter on a joint
+	// socket follows the joint), drawn by the SceneRenderer's 3D pass. Scene::OnUpdate steps it by the
+	// scene's capped delta, so a paused scene freezes its particles. Scene::EmitParticles and
+	// EmitParticlesAt fire bursts. The effect is the game's and must outlive the component.
+	struct ParticleEmitterComponent
+	{
+		ParticleEffect* Effect = nullptr;
+		// Stopped, it spawns nothing at its rate and its particles live out their lives; started again,
+		// it emits the effect's BurstOnPlay.
+		bool Playing = true;
+		float RateScale = 1.0f;
+		// Off, the particles move with the entity.
+		bool WorldSpace = true;
+
+		ParticleEmitterComponent() = default;
+		ParticleEmitterComponent(const ParticleEmitterComponent&) = default;
+		ParticleEmitterComponent(ParticleEffect* effect) : Effect(effect) {}
+	};
+
+	// Particles fired straight from the entity's animation events (its AnimatorComponent's clips): an
+	// instant event bursts an emitter entity, a range plays one while it is open. An emitter is any
+	// entity with a ParticleEmitterComponent, usually parented to a joint socket; a range's emitter
+	// should start with Playing off. A RangeEnd stops it, including the ones a rebind or a removed
+	// animator sends, and so does removing this component.
+	struct ParticleEventComponent
+	{
+		struct Binding
+		{
+			std::string Event;
+			UUID Emitter;
+			uint32_t Count = 1; // an instant event's burst
+			bool Range = false;
+		};
+		std::vector<Binding> Bindings;
+
+		ParticleEventComponent() = default;
+		ParticleEventComponent(const ParticleEventComponent&) = default;
+
+		ParticleEventComponent& Bind(std::string event, UUID emitter, uint32_t count)
+		{
+			Bindings.push_back({ std::move(event), emitter, count, false });
+			return *this;
+		}
+
+		ParticleEventComponent& BindRange(std::string event, UUID emitter)
+		{
+			Bindings.push_back({ std::move(event), emitter, 0, true });
+			return *this;
+		}
 	};
 
 	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden

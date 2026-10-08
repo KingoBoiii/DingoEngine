@@ -48,6 +48,15 @@ Intermediates/
 **.vcxproj.user
 **.csproj
 
+# premake gmake (Linux). The vendor projects' makefiles go to build/make.
+/Makefile
+/*.make
+/test/Makefile
+/examples/*/Makefile
+
+# assimp built from source on Linux (LINUX-SUPPORT.md, Appendix A)
+/vendor/assimp/lib/linux-x86_64/
+
 !Vendor/**
 
 # Visual Studio 2015/2017 cache/options directory

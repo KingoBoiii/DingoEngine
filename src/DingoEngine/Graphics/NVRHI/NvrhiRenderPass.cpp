@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "NvrhiRenderPass.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiShader.h"
@@ -26,6 +27,7 @@ namespace Dingo
 	void NvrhiRenderPass::Destroy()
 	{
 		m_BindingSetHandle = nullptr;
+		m_StorageItems.clear();
 	}
 
 	void NvrhiRenderPass::SetUniformBuffer(uint32_t slot, GraphicsBuffer* buffer)
@@ -98,6 +100,35 @@ namespace Dingo
 		m_Valid = false;
 	}
 
+	void NvrhiRenderPass::SetStorageBuffer(uint32_t slot, GraphicsBuffer* buffer)
+	{
+		DE_CORE_ASSERT(buffer && buffer->IsType(BufferType::StorageBuffer), "SetStorageBuffer takes a storage buffer.");
+
+		nvrhi::IBuffer* handle = static_cast<NvrhiGraphicsBuffer*>(buffer)->m_BufferHandle;
+		const Shader* shader = m_Params.Pipeline->GetParams().Shader;
+		const bool readOnly = !shader || shader->IsStorageBufferReadOnly(slot);
+		const nvrhi::BindingSetItem item = readOnly ? nvrhi::BindingSetItem::RawBuffer_SRV(slot, handle) : nvrhi::BindingSetItem::RawBuffer_UAV(slot, handle);
+		for (nvrhi::BindingSetItem& existing : m_BindingSetDesc.bindings)
+		{
+			if (existing.slot == slot && NvrhiCommandList::IsRawBufferItem(existing))
+			{
+				if (existing.type != item.type)
+				{
+					existing.type = item.type;
+					m_Valid = false;
+				}
+				if (existing.resourceHandle != handle)
+				{
+					existing.resourceHandle = handle;
+					m_Valid = false;
+				}
+				return;
+			}
+		}
+		m_BindingSetDesc.addItem(item);
+		m_Valid = false;
+	}
+
 	void NvrhiRenderPass::Bake()
 	{
 		if (m_Valid)
@@ -106,6 +137,15 @@ namespace Dingo
 		}
 
 		Shader* shader = m_Params.Pipeline->GetParams().Shader;
+
+		// A hot-reload can add or drop a block's readonly, which moves it between a shader-resource and
+		// an unordered-access view: the item follows the shader as it is now.
+		for (nvrhi::BindingSetItem& item : m_BindingSetDesc.bindings)
+		{
+			if (shader && NvrhiCommandList::IsRawBufferItem(item))
+				item.type = shader->IsStorageBufferReadOnly(item.slot) ? nvrhi::ResourceType::RawBuffer_SRV : nvrhi::ResourceType::RawBuffer_UAV;
+		}
+
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
 
 		if (!m_BindingSetHandle && !m_BindingSetDesc.bindings.empty())
@@ -115,6 +155,13 @@ namespace Dingo
 			// which the owner can still fix by re-setting its bindings.
 			DE_CORE_ERROR("RenderPass::Bake: createBindingSet failed for shader '{}' — the binding set does not match the shader's binding layout.", shader->GetParams().Name);
 			return;
+		}
+
+		m_StorageItems.clear();
+		for (const nvrhi::BindingSetItem& item : m_BindingSetDesc.bindings)
+		{
+			if (NvrhiCommandList::IsStorageItem(item))
+				m_StorageItems.push_back(item);
 		}
 
 		m_BuiltShaderGeneration = shader->GetGeneration();

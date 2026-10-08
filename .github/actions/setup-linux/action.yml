@@ -1,0 +1,89 @@
+name: Set up a Linux build
+description: >
+  Installs the build dependencies, the Vulkan SDK (LunarG's Linux tarball: Ubuntu's packages are too
+  old), assimp 6.0.4 built as a static library into vendor/assimp/lib/linux-x86_64, and premake.
+  With runtime, also what the headless smoke test runs on: Xvfb, Mesa's llvmpipe and python3-xlib.
+
+inputs:
+  runtime:
+    description: Install the headless runtime for scripts/ci/linux-smoke-test.sh
+    default: 'false'
+  premake-version:
+    default: '5.0.0-beta8'
+  assimp-version:
+    default: '6.0.4'
+
+runs:
+  using: composite
+  steps:
+  - name: Install packages
+    shell: bash
+    run: |
+      packages="build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev"
+      if [[ "${{ inputs.runtime }}" == "true" ]]; then
+        packages+=" xvfb xauth mesa-vulkan-drivers python3-xlib"
+      fi
+      sudo apt-get update -q
+      sudo apt-get install -y -q $packages
+
+  - name: Get Vulkan SDK version
+    id: vulkan
+    shell: bash
+    run: echo "version=$(curl -sSfL https://vulkan.lunarg.com/sdk/latest/linux.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+  - name: Cache Vulkan SDK
+    id: cache-vulkan
+    uses: actions/cache@v4
+    with:
+      path: ~/vulkansdk/${{ steps.vulkan.outputs.version }}
+      key: vulkan-sdk-linux-${{ steps.vulkan.outputs.version }}
+
+  - name: Install Vulkan SDK
+    if: steps.cache-vulkan.outputs.cache-hit != 'true'
+    shell: bash
+    run: |
+      version=${{ steps.vulkan.outputs.version }}
+      mkdir -p ~/vulkansdk
+      curl -sSfL "https://sdk.lunarg.com/sdk/download/$version/linux/vulkansdk-linux-x86_64-$version.tar.xz" | tar -xJ -C ~/vulkansdk
+
+  # What the SDK's setup-env.sh sets, minus PATH: the layer path brings its validation layer.
+  - name: Set Vulkan SDK environment
+    shell: bash
+    run: |
+      sdk=~/vulkansdk/${{ steps.vulkan.outputs.version }}/x86_64
+      echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
+      echo "VK_ADD_LAYER_PATH=$sdk/share/vulkan/explicit_layer.d" >> "$GITHUB_ENV"
+      echo "LD_LIBRARY_PATH=$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+  - name: Cache assimp
+    id: cache-assimp
+    uses: actions/cache@v4
+    with:
+      path: vendor/assimp/lib/linux-x86_64
+      key: assimp-${{ inputs.assimp-version }}-linux-x86_64-${{ runner.os }}-gcc13
+
+  - name: Build assimp
+    if: steps.cache-assimp.outputs.cache-hit != 'true'
+    shell: bash
+    run: |
+      src=$RUNNER_TEMP/assimp
+      git clone -q --depth 1 -b v${{ inputs.assimp-version }} https://github.com/assimp/assimp.git "$src"
+      cmake -S "$src" -B "$src/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_TESTS=OFF -DASSIMP_BUILD_ASSIMP_TOOLS=OFF -DASSIMP_WARNINGS_AS_ERRORS=OFF
+      cmake --build "$src/build"
+      mkdir -p vendor/assimp/lib/linux-x86_64
+      cp "$src/build/lib/libassimp.a" vendor/assimp/lib/linux-x86_64/
+
+  - name: Install premake
+    shell: bash
+    run: |
+      dir=$RUNNER_TEMP/premake
+      mkdir -p "$dir"
+      curl -sSfL "https://github.com/premake/premake-core/releases/download/v${{ inputs.premake-version }}/premake-${{ inputs.premake-version }}-linux.tar.gz" | tar -xz -C "$dir"
+      chmod +x "$dir/premake5"
+      echo "$dir" >> "$GITHUB_PATH"
+
+  - name: Use llvmpipe
+    if: inputs.runtime == 'true'
+    shell: bash
+    run: echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)" >> "$GITHUB_ENV"

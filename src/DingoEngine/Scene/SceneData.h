@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/Animator.h"
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
+#include "DingoEngine/Scene/Systems/LightSystem.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
 
@@ -56,6 +57,8 @@ namespace Dingo
 			HierarchySystem::WorldMemo Memo;
 
 			AnimationSystem::EventScratch AnimationEvents;
+
+			LightSystem::ShadowProbeState ShadowProbes;
 		};
 
 	}

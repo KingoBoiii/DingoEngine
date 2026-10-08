@@ -38,7 +38,7 @@ namespace Dingo
 				first = i;
 			if (gatehouse || (allLit && !spots[i].IsAltar))
 			{
-				Light(i);
+				Light(i, false);
 				++lit;
 			}
 		}
@@ -53,10 +53,18 @@ namespace Dingo
 			m_Checkpoint.Tile.x, m_Checkpoint.Tile.y, m_Checkpoint.Oil);
 	}
 
-	void Braziers::Light(size_t index)
+	void Braziers::Light(size_t index, bool kindle)
 	{
 		const BrazierSpot& spot = m_World.GetBraziers()[index];
 		m_Lit[index] = true;
+
+		for (Entity emitter : { spot.Flame, spot.Embers, spot.Smoke })
+		{
+			if (emitter.IsValid())
+				emitter.GetComponent<ParticleEmitterComponent>().Playing = true;
+		}
+		if (kindle && spot.Kindle.IsValid())
+			m_Scene.EmitParticles(spot.Kindle, KINDLE_BURST_COUNT);
 
 		Entity light = spot.Light;
 		light.GetComponent<PointLightComponent>().Enabled = true;
@@ -149,7 +157,7 @@ namespace Dingo
 				}
 				else
 				{
-					Light(*target);
+					Light(*target, true);
 					lantern.AddOil(OIL_MAX);
 
 					Entity core = spot.Core;

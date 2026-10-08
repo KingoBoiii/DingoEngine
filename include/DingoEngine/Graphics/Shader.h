@@ -25,6 +25,10 @@ namespace Dingo
 		bool Reflect = true; // Whether to reflect shader resources
 		std::filesystem::path FilePath;
 		std::string SourceCode; // Optional source code for inline shaders
+		// Either source may #include another file: "Name.glsl" next to the file (an inline shader looks
+		// under the asset root, then the working directory) or <DingoEngine/Name.glsl> for one of the
+		// engine's own (Fullscreen.glsl). An included file is part of the bytecode cache key, and a
+		// hot-reload watches it too.
 		// Preprocessor macros for every stage, e.g. DE_SKINNED. They are part of the bytecode cache
 		// key and survive Reload, so one source file can back several variants.
 		std::vector<ShaderDefine> Defines;
@@ -105,11 +109,32 @@ namespace Dingo
 		// The binding of the uniform block with that name in any stage, or -1. Only reflected
 		// shaders (ShaderParams::Reflect) know their blocks.
 		int32_t FindUniformBufferBinding(std::string_view blockName) const;
+		// The same for a separate texture or sampler, by its variable name.
+		int32_t FindTextureBinding(std::string_view textureName) const;
+		int32_t FindSamplerBinding(std::string_view samplerName) const;
+		// The same for a storage buffer block or a storage image.
+		int32_t FindStorageBufferBinding(std::string_view blockName) const;
+		int32_t FindStorageImageBinding(std::string_view imageName) const;
+		// Whether every stage declares the storage buffer at that binding readonly: it binds as a
+		// shader-resource view then, which a vertex stage on D3D11 needs; a writable one binds as an
+		// unordered-access view, for compute.
+		bool IsStorageBufferReadOnly(uint32_t binding) const;
+
+		// Every file the source pulled in with #include on its last build (see ShaderParams), which a
+		// hot-reload watches as well as the shader's own file. Engine shaders read from the library,
+		// not the disk, aren't listed.
+		const std::vector<std::filesystem::path>& GetIncludedFiles() const { return m_IncludedFiles; }
 
 	protected:
 		ShaderParams m_Params;
 		uint32_t m_Generation = 0;
 		std::vector<std::pair<std::string, uint32_t>> m_UniformBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_TextureBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_SamplerBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_StorageBufferBindings;
+		std::vector<std::pair<std::string, uint32_t>> m_StorageImageBindings;
+		std::vector<uint32_t> m_WritableStorageBuffers; // bindings any stage writes
+		std::vector<std::filesystem::path> m_IncludedFiles;
 
 		friend class NvrhiPipeline;
 	};

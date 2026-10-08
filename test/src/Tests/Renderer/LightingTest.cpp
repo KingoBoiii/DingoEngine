@@ -142,15 +142,6 @@ namespace Dingo
 		}
 	}
 
-	void LightingTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
-	}
-
 	void LightingTest::BuildCheckSteps()
 	{
 		m_CheckSteps.clear();
@@ -461,6 +452,14 @@ namespace Dingo
 				DE_WARN("Lighting Test: unknown --lighting={}; use default, lights, overbudget or materials.", *mode);
 		}
 		m_UseEntities = args.Get("entities").has_value();
+		m_PostProcess = args.Get("post").has_value();
+		m_Bloom = args.Get("bloom").has_value();
+		m_AmbientOcclusion = args.Get("ao").has_value();
+		if (auto fade = args.Get("budget-fade"))
+		{
+			const float band = fade->empty() ? 0.5f : std::strtof(std::string(*fade).c_str(), nullptr);
+			m_BudgetFade = band > 0.0f ? band : 0.5f;
+		}
 		if (auto specular = args.Get("specular"))
 			m_Specular = *specular != "off";
 
@@ -502,6 +501,13 @@ namespace Dingo
 		const Lighting lighting = DescribeLighting();
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		PostProcessSettings post;
+		renderer.SetLightBudgetFade(m_BudgetFade);
+		post.Enabled = m_PostProcess || m_Bloom || m_AmbientOcclusion;
+		post.Bloom.Enabled = m_Bloom;
+		post.AmbientOcclusion.Enabled = m_AmbientOcclusion;
+		Renderer::GetPostProcessStack().Begin(post, m_Camera.GetProjectionMatrix());
+
 		// The entity path begins the scene the way SceneRenderer does, from the view-projection
 		// alone, so the camera position the renderer rebuilds from it is covered too.
 		if (m_UseEntities && m_Mode != Mode::Materials)
@@ -531,6 +537,7 @@ namespace Dingo
 		}
 
 		renderer.EndScene();
+		Renderer::GetPostProcessStack().End();
 
 		RunNextCheckStep();
 	}
@@ -763,6 +770,7 @@ namespace Dingo
 
 	void LightingTest::Cleanup()
 	{
+		Application::Get().GetRenderer3D().SetLightBudgetFade(0.0f);
 		for (Material*& material : m_RowMaterials)
 		{
 			delete material;
@@ -805,6 +813,10 @@ namespace Dingo
 		ImGui::RadioButton("Materials", &mode, static_cast<int>(Mode::Materials));
 		m_Mode = static_cast<Mode>(mode);
 		ImGui::Checkbox("Animate", &m_Animate);
+		ImGui::Checkbox("Post chain (Soft tone curve)", &m_PostProcess);
+		ImGui::Checkbox("Bloom (with the post chain)", &m_Bloom);
+		ImGui::Checkbox("Ambient occlusion (with the post chain)", &m_AmbientOcclusion);
+		ImGui::SliderFloat("Budget fade band", &m_BudgetFade, 0.0f, 2.0f);
 		if (m_Mode == Mode::Materials)
 			ImGui::Checkbox("Specular", &m_Specular);
 		else

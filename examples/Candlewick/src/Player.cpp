@@ -26,7 +26,11 @@ namespace
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size;
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color)).Material = material;
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color));
+		renderer.Material = material;
+		// Detection probes the lights at points inside the body, which a casting body would hide from
+		// every light; the lantern at its side would also lose half the room.
+		renderer.Shadows = ShadowCasting::Off;
 		return entity;
 	}
 }

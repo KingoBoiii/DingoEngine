@@ -12,9 +12,13 @@
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
 #include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Graphics/Particles.h"
+
+#include <glm/glm.hpp>
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace Dingo
 {
@@ -56,6 +60,35 @@ namespace Dingo
 			uint64_t SkeletonId = 0;
 			// Model::GetGeneration() it last posed for, so a paused animator shows a reload's keys.
 			uint32_t ModelGeneration = 0;
+		};
+
+		// A ParticleEmitterComponent's emitter, made by the renderer that first draws it (ParticleSync).
+		// Freed with the component; its particles vanish with it.
+		struct ParticleEmitterRuntime
+		{
+			struct Burst
+			{
+				glm::vec3 Position{ 0.0f };
+				bool AtPosition = false;
+				uint32_t Count = 0;
+				uint64_t Serial = 0;
+			};
+
+			// One emitter per Renderer3D that draws the entity (a minimap's beside the main view's),
+			// each simulating on its own, since a renderer can only draw its own pool.
+			struct Instance
+			{
+				std::shared_ptr<ParticleEmitter> Emitter;
+				float PendingTime = 0.0f;  // the scene's time since it last stepped
+				uint64_t BurstsTaken = 0;  // the serial of the last burst it was handed
+				uint64_t LastFrame = 0;    // the frame it was last submitted in
+				uint64_t RetryFrame = 0;   // without a ring (the pool was full), when to ask for one again
+			};
+
+			std::vector<Instance> Instances; // the first made first
+			const ParticleEffect* Effect = nullptr;
+			std::vector<Burst> Bursts;       // until every instance has taken them
+			uint64_t NextBurst = 1;
 		};
 
 	}

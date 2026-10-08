@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Framebuffer.h"
+#include "DingoEngine/Graphics/FramebufferFormat.h"
 
 #include <nvrhi/nvrhi.h>
 
@@ -22,9 +23,12 @@ namespace Dingo
 		virtual uint32_t GetWidth() const override { return m_Width; }
 		virtual uint32_t GetHeight() const override { return m_Height; }
 		virtual Texture* GetAttachment(uint32_t index) const override { return index < m_Attachments.size() ? m_Attachments[index] : nullptr; }
+		virtual Texture* GetDepthAttachment() const override { return m_Params.DepthSampleable ? m_DepthAttachment : nullptr; }
 
 	private:
-		void CreateAttachments(nvrhi::FramebufferDesc& framebufferDesc);
+		TextureParams MakeColorParams(uint32_t index) const;
+		TextureParams MakeDepthParams() const;
+		void CreateHandle();
 
 	protected:
 		uint32_t m_Width = 0;
@@ -34,11 +38,13 @@ namespace Dingo
 		nvrhi::Viewport m_Viewport;
 
 		std::vector<Texture*> m_Attachments;
+		Texture* m_DepthAttachment = nullptr; // NvrhiFramebuffer's own; the swap-chain subclasses set m_DepthTextureHandle alone
 		nvrhi::TextureHandle m_DepthTextureHandle;
 
 		friend class NvrhiPipeline; // Allow NvrhiPipeline to access private members
 		friend class NvrhiCommandList; // Allow CommandList to access private members
 		friend class ImGuiRenderer; // Allow NvrhiGraphicsContext to access private members
+		friend uint64_t Internal::GetFramebufferFormatKey(const Framebuffer* framebuffer);
 	};
 
 }

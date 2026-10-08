@@ -15,13 +15,16 @@ namespace Dingo
 			seed ^= value + 0x9e3779b9ull + (seed << 6) + (seed >> 2);
 		}
 
-		// Produce a cache key from a vertex layout, a framebuffer pointer and the shared buffers.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer)
+		// Produce a cache key from a vertex layout, a framebuffer and the shared buffers.
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler)
 		{
 			size_t seed = 0;
-			HashCombine(seed, reinterpret_cast<uintptr_t>(framebuffer));
+			HashCombine(seed, static_cast<size_t>(framebuffer ? framebuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
+			HashCombine(seed, static_cast<size_t>(shadowBuffer ? shadowBuffer->GetId() : 0));
+			HashCombine(seed, reinterpret_cast<uintptr_t>(shadowAtlas));
+			HashCombine(seed, reinterpret_cast<uintptr_t>(shadowSampler));
 			HashCombine(seed, static_cast<size_t>(layout.Stride));
 			HashCombine(seed, layout.Attributes.size());
 			for (const auto& attr : layout.Attributes)
@@ -129,7 +132,13 @@ namespace Dingo
 				? "MaterialUBO"
 				: m_Params.DebugName + "_UBO";
 
-			m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(size, name);
+			m_UniformBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+				.SetDebugName(name)
+				.SetByteSize(size)
+				.SetType(BufferType::UniformBuffer)
+				.SetIsVolatile(true)
+				.SetDirectUpload(false)
+				.SetMaxWritesPerFrame(std::max(m_Params.UniformWritesPerFrame, 1u)));
 			InvalidatePipelineCache();
 		}
 	}
@@ -142,6 +151,46 @@ namespace Dingo
 	void Material::SetSkinUniformBuffer(GraphicsBuffer* buffer)
 	{
 		m_SkinUniformBuffer = buffer;
+	}
+
+	void Material::SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer)
+	{
+		for (auto it = m_StorageBuffers.begin(); it != m_StorageBuffers.end(); ++it)
+		{
+			if (it->Binding != binding)
+				continue;
+			if (buffer && it->Buffer == buffer && it->BufferId == buffer->GetId())
+				return;
+			if (!buffer)
+			{
+				m_StorageBuffers.erase(it);
+				InvalidatePipelineCache();
+				return;
+			}
+
+			// Another buffer at a binding the passes already have: their pipelines stay, only their
+			// binding sets are re-baked, so swapping two buffers every frame compiles nothing.
+			it->Buffer = buffer;
+			it->BufferId = buffer->GetId();
+			for (auto& [key, entry] : m_PipelineCache)
+			{
+				entry.RenderPass->SetStorageBuffer(binding, buffer);
+				entry.RenderPass->Bake();
+			}
+			return;
+		}
+		if (!buffer)
+			return;
+		DE_CORE_ASSERT(m_StorageBuffers.size() < k_MaxStorageBuffers, "Material: too many storage buffers.");
+		m_StorageBuffers.push_back({ binding, buffer, buffer->GetId() });
+		InvalidatePipelineCache();
+	}
+
+	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
+	{
+		m_ShadowDataBuffer = shadowData;
+		m_ShadowAtlas = atlas;
+		m_ShadowSampler = sampler;
 	}
 
 	/**************************************************
@@ -173,7 +222,14 @@ namespace Dingo
 			m_BuiltResizeGeneration = resizeGeneration;
 		}
 
-		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer);
+		// Only what the shader declares joins the key, so a shader without shadows keeps one pass.
+		const Shader* shader = m_Params.Shader;
+		const int32_t shadowDataBinding = (m_ShadowDataBuffer && shader) ? shader->FindUniformBufferBinding(k_ShadowDataBlockName) : -1;
+		const int32_t shadowAtlasBinding = (m_ShadowAtlas && shader) ? shader->FindTextureBinding(k_ShadowAtlasName) : -1;
+		const int32_t shadowSamplerBinding = (m_ShadowSampler && shader) ? shader->FindSamplerBinding(k_ShadowSamplerName) : -1;
+
+		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer,
+			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -186,10 +242,14 @@ namespace Dingo
 			.SetVertexLayout(layout)
 			.SetCullMode(m_Params.CullMode)
 			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
-			.SetFillMode(m_Params.FillMode));
+			.SetFillMode(m_Params.FillMode)
+			.SetBlendMode(m_Params.Blend)
+			.SetDepthTest(m_Params.DepthTest)
+			.SetDepthWrite(m_Params.DepthWrite)
+			.SetDepthCompare(m_Params.DepthFunction)
+			.SetDepthBias(m_Params.DepthBias, m_Params.SlopeScaledDepthBias));
 
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
-		renderPass->Initialize();
 
 		// Binding convention:
 		//   binding 0 = scene UBO (engine-provided camera/light) when SetSceneUniformBuffer is used
@@ -207,6 +267,15 @@ namespace Dingo
 		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(k_SkinDataBlockName) : -1;
 		if (skinBinding >= 0)
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinBinding), m_SkinUniformBuffer);
+
+		if (shadowDataBinding >= 0)
+			renderPass->SetUniformBuffer(static_cast<uint32_t>(shadowDataBinding), m_ShadowDataBuffer);
+		if (shadowAtlasBinding >= 0)
+			renderPass->SetTexture(static_cast<uint32_t>(shadowAtlasBinding), m_ShadowAtlas);
+		if (shadowSamplerBinding >= 0)
+			renderPass->SetSampler(static_cast<uint32_t>(shadowSamplerBinding), m_ShadowSampler);
+		for (const StorageBinding& storage : m_StorageBuffers)
+			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 
 		for (uint32_t i = 0; i < k_MaxTextureSlots; ++i)
 		{

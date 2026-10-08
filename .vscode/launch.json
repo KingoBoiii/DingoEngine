@@ -132,6 +132,182 @@
             "environment": [],
             "console": "internalConsole",
             "preLaunchTask": "Build TestFramework Debug"
+        },
+        {
+            "name": "Debug FlappyBird (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/FlappyBird/FlappyBird",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/FlappyBird",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build FlappyBird Debug"
+        },
+        {
+            "name": "Debug DungeonCrawler (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/DungeonCrawler/DungeonCrawler",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/DungeonCrawler",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build DungeonCrawler Debug"
+        },
+        {
+            "name": "Debug Breakout 3D (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/Breakout3D/Breakout3D",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Breakout3D",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build Breakout3D Debug"
+        },
+        {
+            "name": "Debug Space Invaders (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/SpaceInvaders/SpaceInvaders",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/SpaceInvaders",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build Space Invaders Debug"
+        },
+        {
+            "name": "Debug Angry Birds (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/AngryBirds/AngryBirds",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/AngryBirds",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build AngryBirds Debug"
+        },
+        {
+            "name": "Debug Dungeon Crawler 3D (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/DungeonCrawler3D/DungeonCrawler3D",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/DungeonCrawler3D",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build DungeonCrawler3D Debug"
+        },
+        {
+            "name": "Debug EchoVault (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/EchoVault/EchoVault",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/EchoVault",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build EchoVault Debug"
+        },
+        {
+            "name": "Debug Candlewick (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/Candlewick/Candlewick",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Candlewick",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build Candlewick Debug"
+        },
+        {
+            "name": "Debug Marionette (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/Marionette/Marionette",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Marionette",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build Marionette Debug"
+        },
+        {
+            "name": "Debug ArenaShooter (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/ArenaShooter/ArenaShooter",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/ArenaShooter",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build ArenaShooter Debug"
+        },
+        {
+            "name": "Debug TestFramework (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/Dingo-TestFramework/Dingo-TestFramework",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/test",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build TestFramework Debug"
         }
     ]
 }
