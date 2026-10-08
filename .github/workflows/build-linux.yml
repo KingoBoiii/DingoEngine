@@ -19,11 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build-configuration: [Debug, Debug-ASan, Release, Distribution]
-        compiler: [gcc]
-        include:
-        - build-configuration: Debug
-          compiler: clang
+        build-configuration: [Debug, Release, Distribution]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -35,13 +31,13 @@ jobs:
         runtime: true
 
     - name: Premake
-      run: premake5 gmake --cc=${{ matrix.compiler }}
+      run: premake5 gmake
 
     - name: Build
       run: make -j"$(nproc)" config="$(echo '${{ matrix.build-configuration }}' | tr '[:upper:]' '[:lower:]')"
 
     - name: Upload static library artifact
-      if: github.event_name == 'push' && matrix.compiler == 'gcc'
+      if: github.event_name == 'push'
       uses: actions/upload-artifact@v4
       with:
         name: dingo-engine-linux-${{ matrix.build-configuration }}
@@ -56,6 +52,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: smoke-test-logs-linux-${{ matrix.build-configuration }}-${{ matrix.compiler }}
+        name: smoke-test-logs-linux-${{ matrix.build-configuration }}
         path: build/smoke/
         if-no-files-found: ignore

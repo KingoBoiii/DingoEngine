@@ -173,7 +173,7 @@ ran.
 - [L22](#l22) is its own workflow, `build-linux.yml`, on pushes **and pull requests** to master, so a GCC-only
   break shows up before it lands. Its setup (build packages, LunarG's latest Linux SDK tarball, a static assimp
   6.0.4 and premake, the last three cached) is the composite action `.github/actions/setup-linux`, which the
-  release job shares. Each of Debug, Debug-ASan, Release and Distribution builds every project and runs
+  release job shares. Each of Debug, Release and Distribution (the Windows job's configurations; GCC only) builds every project and runs
   `scripts/ci/linux-smoke-test.sh` under Xvfb and llvmpipe with the SDK's validation layer. The script reads
   the test list from `TestLayer.cpp`, finds the examples itself, closes each app through `WM_DELETE_WINDOW`
   (`scripts/ci/close-windows.py`, since Ubuntu's xdotool predates `windowquit`), and fails on a non-zero exit,
@@ -190,14 +190,15 @@ ran.
 - [L25](#l25) gives every existing VS Code task a `"linux"` override, so the task names, and the launch
   entries' `preLaunchTask`, are shared. It vendors premake beta8's Linux binary (force-added: `**/bin/` ignores
   it, and `!Vendor/**` only matches case-insensitively) and adds `Generate-Linux.sh`.
-- [L28](#l28) moves `-Wno-changes-meaning` under `toolset:gcc` (clang warned about it once per engine file)
-  and adds a clang Debug job to CI.
+- [L28](#l28) moves `-Wno-changes-meaning` under `toolset:gcc` (clang warned about it once per engine file).
+  Clang 18 builds everything and passes the smoke test locally, but CI builds with GCC only: one compiler, as
+  on Windows.
 
 Verified:
 
-- **CI**, on GitHub's Ubuntu 24.04 runners with Vulkan SDK 1.4.363.0: on the branch head, all five jobs (Debug,
-  Debug-ASan, Release and Distribution with GCC, Debug with clang 18) build and pass the smoke test:
-  15 test cases, 10 examples and Marionette's `--check`.
+- **CI**, on GitHub's Ubuntu 24.04 runners with Vulkan SDK 1.4.363.0: Debug, Release and Distribution build
+  with GCC and pass the smoke test (15 test cases, 10 examples and Marionette's `--check`). Before the matrix was
+  trimmed to the Windows job's configurations, Debug-ASan with GCC and Debug with clang 18 passed too.
 - **Merged archive**: 650 members from 12 inputs (64 MB). FlappyBird's objects and Getting Started's
   sample link against it with only the SDK's ShaderC and SPIRV-Cross, `z`, `dl` and `pthread`, with no link
   group, and run. Marionette runs from its extracted release tarball.
