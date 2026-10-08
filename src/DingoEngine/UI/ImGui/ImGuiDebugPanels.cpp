@@ -295,11 +295,15 @@ namespace Dingo::UI
 
 	void WindowInfoSection()
 	{
-		const Window& window = Application::Get().GetWindow();
+		Window& window = Application::Get().GetWindow();
 
 		ImGui::TextUnformatted("Window");
 		ImGui::Separator();
 		ImGui::Text("Size : %d x %d", window.GetWidth(), window.GetHeight());
+
+		bool vsync = window.IsVSync();
+		if (ImGui::Checkbox("VSync", &vsync))
+			window.SetVSync(vsync);
 	}
 
 	void FrameTimingSection()

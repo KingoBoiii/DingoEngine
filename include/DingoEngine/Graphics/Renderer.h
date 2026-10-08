@@ -92,6 +92,8 @@ namespace Dingo
 		// safe point: on the render thread after Present, before the next image acquire, or in a
 		// BeginFrame that has no image yet. Resizing it here would race the frame in flight.
 		static void QueueResize(int32_t width, int32_t height);
+		// Thread-safe, applied at the same points as QueueResize. Window::SetVSync calls it.
+		static void QueueVSync(bool vsync);
 
 		/**************************************************
 		***		COMMAND LIST MANAGEMENT					***

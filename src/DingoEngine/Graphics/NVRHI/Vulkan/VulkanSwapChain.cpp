@@ -185,6 +185,16 @@ namespace Dingo
 		RecreateSwapChain();
 	}
 
+	void VulkanSwapChain::SetVSync(bool vsync)
+	{
+		if (m_Params.VSync == vsync)
+			return;
+
+		m_Params.VSync = vsync;
+		// While minimized this keeps the old chain; the resize on restore recreates with the flag.
+		RecreateSwapChain();
+	}
+
 	void VulkanSwapChain::AcquireNextImage()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();

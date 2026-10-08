@@ -34,6 +34,8 @@ Anchors were read on `master` @ `e5f4749` (v0.8.3 merged). One phase per schedul
 
 **Verify** (sandbox: code review only). GPU machine: Breakout3D or the test app, toggle the F3 checkbox on Vulkan, DX11, DX12 and watch the F3 frame time go from ~16.7 ms to uncapped and back; toggle while minimized and restore; toggle during a window drag-resize.
 
+**As built** (done; not yet built or run): as designed. `Renderer.cpp` takes both pending changes in one `TakePendingSwapChainChange` and applies them in `ApplySwapChainChange`, used by `RenderThreadLoop` and the `BeginFrame` no-image branch. `VulkanSwapChain::SetVSync` returns early when the flag is unchanged (so an on→off→on toggle before it applies never recreates). No test case: the change is only observable as frame pacing on a real swap chain.
+
 ## Phase 2 — audio buses (#95)
 
 **Facts**
