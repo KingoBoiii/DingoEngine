@@ -205,7 +205,9 @@ namespace Dingo
 
 		if (m_Context.Debug)
 		{
-			node.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.Debug->GetMesh())).Material = m_Context.Debug->GetMaterial(DebugTint::Idle);
+			auto& renderer = node.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.Debug->GetMesh()));
+			renderer.Material = m_Context.Debug->GetMaterial(DebugTint::Idle);
+			renderer.Shadows = ShadowCasting::Off;
 		}
 
 		RigSphere sphere;

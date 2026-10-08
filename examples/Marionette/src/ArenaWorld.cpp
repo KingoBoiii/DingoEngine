@@ -4,6 +4,7 @@
 #include "GameAssets.h"
 #include "GameMath.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -90,6 +91,7 @@ namespace Dingo
 		moonLight.Color = MOON_COLOR;
 		moonLight.Intensity = MOON_INTENSITY;
 		moonLight.Ambient = 0.0f;
+		moonLight.CastShadows = !GetLaunchOptions().NoShadows;
 
 		BuildFloor();
 		BuildWalls();
@@ -193,7 +195,9 @@ namespace Dingo
 			auto& coreTransform = core.AddComponent<Transform3DComponent>();
 			coreTransform.Position = flame;
 			coreTransform.Scale = glm::vec3(BRAZIER_FLAME_DIAMETER);
-			core.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Arena.FlameMesh, COLOR_FLAME)).Material = m_Arena.Flame;
+			auto& coreRenderer = core.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Arena.FlameMesh, COLOR_FLAME));
+			coreRenderer.Material = m_Arena.Flame;
+			coreRenderer.Shadows = ShadowCasting::Off;
 			brazier.Parts.push_back(core);
 			if (vfx)
 			{
@@ -213,14 +217,22 @@ namespace Dingo
 
 			Entity light = m_Scene.CreateEntity("BrazierLight");
 			light.AddComponent<Transform3DComponent>().Position = flame + glm::vec3(0.0f, BRAZIER_LIGHT_RISE, 0.0f);
-			light.AddComponent<PointLightComponent>(PointLightComponent(FLAME_COLOR, BRAZIER_LIGHT_INTENSITY, BRAZIER_LIGHT_RANGE));
+			light.AddComponent<PointLightComponent>(PointLightComponent(FLAME_COLOR, BRAZIER_LIGHT_INTENSITY, BRAZIER_LIGHT_RANGE)).CastShadows = !GetLaunchOptions().NoShadows;
 		}
 	}
 
 	void ArenaWorld::SetVisible(Occluder& occluder, bool visible)
 	{
+		// A wall or brazier the camera sees through still stands in the light: it stops drawing but goes
+		// on casting. A part that casts nothing (the flame core) is hidden outright.
 		for (Entity& part : occluder.Parts)
-			part.GetComponent<MeshRendererComponent>().Visible = visible;
+		{
+			auto& renderer = part.GetComponent<MeshRendererComponent>();
+			if (renderer.Shadows == ShadowCasting::Off)
+				renderer.Visible = visible;
+			else
+				renderer.Shadows = visible ? ShadowCasting::On : ShadowCasting::ShadowsOnly;
+		}
 		for (Entity& emitter : occluder.Emitters)
 			emitter.GetComponent<ParticleEmitterComponent>().Playing = visible;
 		occluder.Hidden = !visible;

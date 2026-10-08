@@ -208,6 +208,9 @@ namespace Dingo
 	// left of its opponent in the windup, or the blow passes beside a target dead ahead.
 	inline constexpr float AIM_CHOP_DEG         = 24.0f;
 
+	// --- Post chain: Soft leaves everything below 0.8 as it was, so only what burns changes ----------
+	inline constexpr float BLOOM_INTENSITY       = 0.3f;
+
 	// --- Particles ---------------------------------------------------------------------
 	inline constexpr uint32_t FOOT_DUST_COUNT    = 6;
 	inline constexpr uint32_t DASH_DUST_COUNT    = 18;
@@ -501,7 +504,7 @@ namespace Dingo
 	inline constexpr glm::vec4 COLOR_BRAZIER    = { 0.2f, 0.17f, 0.15f, 1.0f };
 	inline constexpr glm::vec4 COLOR_FLAME      = { 1.0f, 0.62f, 0.3f, 1.0f };
 	inline constexpr glm::vec3 FLAME_COLOR      = { 1.0f, 0.62f, 0.3f };
-	inline constexpr float FLAME_EMISSIVE       = 1.1f;
+	inline constexpr float FLAME_EMISSIVE       = 2.6f;
 	inline constexpr float FLOOR_ROUGHNESS      = 0.85f;
 	inline constexpr float WALL_ROUGHNESS       = 0.9f;
 	inline constexpr float BRAZIER_ROUGHNESS    = 0.7f;
