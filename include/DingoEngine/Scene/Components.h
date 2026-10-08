@@ -5,6 +5,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Light.h"
+#include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -148,6 +149,18 @@ namespace Dingo
 			const float halfWidth = halfHeight * aspect;
 			return glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, OrthoNear, OrthoFar);
 		}
+	};
+
+	// The post chain (tone mapping) for the 3D pass of the camera on this entity. SceneRenderer reads it
+	// from the primary perspective camera; on any other entity it does nothing. Settings.Enabled is
+	// false by default, which renders exactly as without it.
+	struct PostProcessComponent
+	{
+		PostProcessSettings Settings;
+
+		PostProcessComponent() = default;
+		PostProcessComponent(const PostProcessComponent&) = default;
+		explicit PostProcessComponent(const PostProcessSettings& settings) : Settings(settings) {}
 	};
 
 	// Lighting ----------------------------------------------------------------

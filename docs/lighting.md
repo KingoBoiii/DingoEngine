@@ -32,7 +32,8 @@ stays off until a material asks for it.
 | `Enabled` | true | Point and spot components only. |
 
 - A scene's lights add up, and so do its ambient components (the direct API has one ambient,
-  which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)).
+  which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)) unless the
+  [post chain](post-processing.md) tone-maps it.
 - **Components:** point and spot lights take their position from the entity's world transform (its
   `Transform3DComponent`, through any parents) and are ignored without one, with a one-time
   warning. A spot's `Direction` is in the entity's local space (default (0, 0, -1)) and is turned by
@@ -372,9 +373,11 @@ and a copy of it is embedded in the engine library at build time.
 
 ## Limits
 
-- **No tone mapping or HDR until v0.9.** A pixel clips at 1.0 per channel, so many bright lights
+- **Clipping without the post chain.** A pixel clips at 1.0 per channel, so many bright lights
   overlapping, or a bright light on a pale surface, burn out to white. Keep intensities
-  conservative: ambient plus every light reaching a pixel should stay near 1.
+  conservative (ambient plus every light reaching a pixel near 1), or turn on the v0.9 post chain,
+  whose default tone curve leaves everything under 0.8 alone and rolls off what would have clipped
+  ([Post-processing](post-processing.md)).
 - **No shadows until v0.9.** Light passes through walls and floors, so in interiors keep ranges
   short.
 - **No per-mesh surface parameters.** Roughness, specular and emissive are per material. A mesh

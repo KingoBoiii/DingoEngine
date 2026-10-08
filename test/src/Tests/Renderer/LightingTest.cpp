@@ -452,6 +452,7 @@ namespace Dingo
 				DE_WARN("Lighting Test: unknown --lighting={}; use default, lights, overbudget or materials.", *mode);
 		}
 		m_UseEntities = args.Get("entities").has_value();
+		m_PostProcess = args.Get("post").has_value();
 		if (auto specular = args.Get("specular"))
 			m_Specular = *specular != "off";
 
@@ -493,6 +494,10 @@ namespace Dingo
 		const Lighting lighting = DescribeLighting();
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		PostProcessSettings post;
+		post.Enabled = m_PostProcess;
+		Renderer::GetPostProcessStack().Begin(post);
+
 		// The entity path begins the scene the way SceneRenderer does, from the view-projection
 		// alone, so the camera position the renderer rebuilds from it is covered too.
 		if (m_UseEntities && m_Mode != Mode::Materials)
@@ -522,6 +527,7 @@ namespace Dingo
 		}
 
 		renderer.EndScene();
+		Renderer::GetPostProcessStack().End();
 
 		RunNextCheckStep();
 	}
@@ -796,6 +802,7 @@ namespace Dingo
 		ImGui::RadioButton("Materials", &mode, static_cast<int>(Mode::Materials));
 		m_Mode = static_cast<Mode>(mode);
 		ImGui::Checkbox("Animate", &m_Animate);
+		ImGui::Checkbox("Post chain (Soft tone curve)", &m_PostProcess);
 		if (m_Mode == Mode::Materials)
 			ImGui::Checkbox("Specular", &m_Specular);
 		else

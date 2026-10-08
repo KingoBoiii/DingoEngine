@@ -103,6 +103,7 @@ namespace Dingo
 		CopyComponentIfExists<CircleRendererComponent>(registry, dst, src);
 		CopyComponentIfExists<TextComponent>(registry, dst, src);
 		CopyComponentIfExists<CameraComponent>(registry, dst, src);
+		CopyComponentIfExists<PostProcessComponent>(registry, dst, src);
 		CopyComponentIfExists<DirectionalLightComponent>(registry, dst, src);
 		CopyComponentIfExists<AmbientLightComponent>(registry, dst, src);
 		CopyComponentIfExists<PointLightComponent>(registry, dst, src);

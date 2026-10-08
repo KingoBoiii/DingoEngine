@@ -65,6 +65,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `TextComponent` | `std::string Text`, `Font* Font`, `glm::vec4 Color`, `float Size`, `bool Centered`; turns with the transform's `Rotation` (v0.8.3) |
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
+| `PostProcessComponent` (v0.9) | `PostProcessSettings Settings` (`Enabled`, false by default; `Tone`: operator, exposure, knee, white point); on the primary perspective camera, the `SceneRenderer` runs the 3D pass through the post chain. See [Post-processing](post-processing.md) |
 | `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)) — a sun |
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
 | `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled` — light in every direction from the entity's `Transform3DComponent` position; `ToLight(transform)` → the `PointLight` it draws as |

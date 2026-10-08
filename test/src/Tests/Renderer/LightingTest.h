@@ -21,7 +21,8 @@ namespace Dingo
 	// material that has already drawn, with Specular (--specular=off) switching the highlights off.
 	// On every start it also runs PASS/FAIL checks of the light bookkeeping (counts, culling, the
 	// budget, the default light) on private Renderer3Ds, one scene per frame and apart from the
-	// modes above, then checks GetLightAttenuation and the light components' ToLight.
+	// modes above, then checks GetLightAttenuation and the light components' ToLight. --post draws the
+	// scene through the post chain's default Soft tone curve, so what clips without it rolls off.
 	class LightingTest : public GraphicsTest
 	{
 	public:
@@ -71,6 +72,7 @@ namespace Dingo
 		PerspectiveCamera m_Camera;
 		Mode m_Mode = Mode::PointAndSpot;
 		bool m_Animate = false;
+		bool m_PostProcess = false; // --post: the scene through the post chain's default Soft curve
 		float m_Time = 0.0f;
 
 		static constexpr int k_RoughnessSteps = 5;

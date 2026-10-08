@@ -7,6 +7,7 @@
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -240,6 +241,18 @@ namespace Dingo::UI
 				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances; warned once)", stats3D.DroppedSkinnedDraws);
 		else
 			ImGui::Text("Dropped    : 0");
+
+		const PostProcessStack::Statistics& post = Renderer::GetPostProcessStack().GetStatistics();
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Post chain  (last frame that ran it)");
+		ImGui::Separator();
+		if (post.SceneTargets == 0)
+			ImGui::TextDisabled("Not used: no PostProcessComponent or PostProcessStack::Begin has enabled it.");
+		else
+		{
+			ImGui::Text("Scenes     : %u   Scene target %u x %u, RGBA16F + D32", post.Scenes, post.Width, post.Height);
+			ImGui::Text("Targets    : %u cached, %.1f MB", post.SceneTargets, static_cast<double>(post.TargetBytes) / (1024.0 * 1024.0));
+		}
 	}
 
 	void RendererStatsWindow(bool* open)

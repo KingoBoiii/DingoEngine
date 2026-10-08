@@ -18,6 +18,7 @@ namespace Dingo
 {
 
 	class SwapChain;
+	class PostProcessStack;
 
 	// One GPU pass timer (Renderer::BeginGpuTimer), over the last GpuTimers::k_HistoryLength frames
 	// that measured it. A frame's sample adds up every time the timer ran in that frame.
@@ -224,6 +225,9 @@ namespace Dingo
 		static Texture* GetWhiteTexture();
 		static Sampler* GetClampSampler();
 		static Sampler* GetPointSampler();
+
+		// The 3D pass's post chain (PostProcess.h), shared by SceneRenderer and direct Renderer3D use.
+		static PostProcessStack& GetPostProcessStack();
 
 	private:
 		static void RenderThreadLoop();

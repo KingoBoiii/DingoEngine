@@ -6,7 +6,7 @@ namespace Dingo
 {
 
 	// Lights for Renderer3D::SubmitLight. Intensity scales Color, and a scene's lights and ambient
-	// add up: past 1.0 the frame clips, since there is no tone mapping yet.
+	// add up: past 1.0 the frame clips, unless the post chain (PostProcess.h) tone-maps it.
 	//
 	// Point and spot lights are local lights: their brightness falls off smoothly from Intensity
 	// at the light to exactly zero at Range, as (1 - (d / Range)^2)^2, and they share one

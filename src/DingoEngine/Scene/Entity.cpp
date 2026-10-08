@@ -392,6 +392,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(CircleRendererComponent)
 	DE_INSTANTIATE_COMPONENT(TextComponent)
 	DE_INSTANTIATE_COMPONENT(CameraComponent)
+	DE_INSTANTIATE_COMPONENT(PostProcessComponent)
 	DE_INSTANTIATE_COMPONENT(RigidBody2DComponent)
 	DE_INSTANTIATE_COMPONENT(BoxCollider2DComponent)
 	DE_INSTANTIATE_COMPONENT(CircleCollider2DComponent)

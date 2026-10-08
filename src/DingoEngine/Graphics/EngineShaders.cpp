@@ -5,6 +5,8 @@ namespace
 {
 #include "Renderer3D_Lit.glsl.inl"
 #include "Fullscreen.glsl.inl"
+#include "ToneMapping.glsl.inl"
+#include "PostToneMap.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -23,6 +25,8 @@ namespace
 	const EmbeddedShader s_EmbeddedShaders[] = {
 		{ "Renderer3D_Lit.glsl", View(k_Renderer3D_Lit_glsl) },
 		{ "Fullscreen.glsl", View(k_Fullscreen_glsl) },
+		{ "ToneMapping.glsl", View(k_ToneMapping_glsl) },
+		{ "PostToneMap.glsl", View(k_PostToneMap_glsl) },
 	};
 }
 

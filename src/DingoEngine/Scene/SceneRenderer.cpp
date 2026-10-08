@@ -4,6 +4,7 @@
 #include "DingoEngine/Scene/Entity.h"
 #include "DingoEngine/Scene/Components.h"
 
+#include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 
@@ -59,11 +60,21 @@ namespace Dingo
 		// previous scene's light never bleeds in.
 		if (hasPerspective)
 		{
+			// The post chain takes the 3D pass alone: the 2D overlay below draws into the target as before.
+			const PostProcessComponent* post = perspectiveCamera.HasComponent<PostProcessComponent>() ? &perspectiveCamera.GetComponent<PostProcessComponent>() : nullptr;
+			const bool postProcess = post && post->Settings.Enabled;
+			PostProcessStack& stack = Renderer::GetPostProcessStack();
+			if (postProcess)
+				stack.Begin(post->Settings);
+
 			m_Renderer3D->BeginScene(scene.GetCameraViewProjection(perspectiveCamera, aspect));
 			m_Renderer3D->Clear(clearColor);
 			scene.SubmitLights(*m_Renderer3D);
 			scene.RenderEntities3D(*m_Renderer3D);
 			m_Renderer3D->EndScene();
+
+			if (postProcess)
+				stack.End();
 		}
 
 		// 2D pass — clears only when it is the sole pass; as an overlay over the 3D

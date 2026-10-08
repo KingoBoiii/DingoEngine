@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/GpuTimers.h"
+#include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Core/Timer.h"
 
@@ -67,6 +68,7 @@ namespace Dingo
 		Sampler* PointSampler = nullptr;
 
 		Internal::GpuTimers GpuTimers;
+		PostProcessStack PostProcess;
 		std::atomic<float> RenderThreadMs = 0.0f;
 	};
 
@@ -127,6 +129,7 @@ namespace Dingo
 		if (!s_Data)
 			return;
 
+		s_Data->PostProcess.Shutdown();
 		DestroyAndDelete(s_Data->WhiteTexture);
 		DestroyAndDelete(s_Data->ClampSampler);
 		DestroyAndDelete(s_Data->PointSampler);
@@ -625,6 +628,12 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
 		return s_Data ? s_Data->PointSampler : nullptr;
+	}
+
+	PostProcessStack& Renderer::GetPostProcessStack()
+	{
+		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
+		return s_Data->PostProcess;
 	}
 
 }
