@@ -104,6 +104,35 @@ assimp 6.0.4.
 | [L18](#l18) | The Asset Manager test expects Windows path-case folding | Run | `AssetManagerTest.cpp:32` | S | Appendix B |
 | [L19](#l19) | Backslash in a cache sub-path | Hygiene | `Font.cpp:71` | S | — |
 
+**Phase 2 is done** (2026-10-08), one commit per item, on top of `master` @ `c14fe7d` (v0.8.3, which also
+carries [F1](#f1)'s fix) merged into the branch. It differs from the plan in four places:
+
+- [L15](#l15) also makes `VK_EXT_debug_report` optional, since it came with the layer, and creates the
+  debug-report callback only when the extension is enabled. A missing layer logs a warning that says where
+  to get it.
+- [L16](#l16) keys the pipelines on the target's *format* rather than on the framebuffer, as `Material`
+  does. `Internal::GetFramebufferFormatKey` (`Graphics/FramebufferFormat.h`) hashes NVRHI's
+  `FramebufferInfo` (colour formats, depth format, sample count). Each batch pass keeps a pipeline and a
+  render-pass pool per key and picks one at flush time from the current target, so render targets of one
+  format share a pipeline and nothing dangles when a target is destroyed. No BGRA8 `TextureFormat` was
+  added.
+- [L17](#l17) covers five tests: v0.8.3's Render Target Test loads the same `ArialBD.ttf`.
+- [L18](#l18) and [L19](#l19) are as planned. [L14](#l14) is as planned and still needs a run on Windows.
+
+It was verified on Ubuntu 24.04 (GCC 13.3, premake 5.0.0-beta8, [Appendix A](#appendix-a)'s Vulkan SDK
+1.4.357 components and assimp 6.0.4, Ubuntu's validation layer) under Xvfb and llvmpipe:
+
+- **Build**: all 22 projects in Debug, Debug-ASan, Release and Distribution.
+- **Debug, Release and Debug-ASan** (leak detection off): the test framework's 15 cases, all ten examples
+  and Marionette's `--check` run and close through `WM_DELETE_WINDOW` with exit code 0. The self-checks
+  pass 204/204 (L18's included) and 107/107, with no validation errors, no `LOG ERROR` lines and no
+  AddressSanitizer reports.
+- **L16 A/B**: with the pre-L16 `Renderer2D`, the Color Quad Test logs 1,048
+  `VUID-vkCmdDrawIndexed-renderPass-02684` errors and the Render Target Test 3,882 validation lines.
+  With the fix, both log none.
+- **L15**: with `VK_LOADER_LAYERS_DISABLE=VK_LAYER_KHRONOS_validation`, FlappyBird logs the warning, runs
+  and exits 0.
+
 ### Phase 3 — keep the tree clean
 
 | # | Item | Kind | Where | Effort | Tested fix |
