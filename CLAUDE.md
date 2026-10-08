@@ -67,6 +67,7 @@ Device and adapter selection lives in `Graphics/NVRHI/` (`VulkanGraphicsContext.
 | Log macros | engine `DE_CORE_INFO/WARN/ERROR/ASSERT`; client `DE_INFO/...` |
 | Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `BIT(x)` |
 
+- **`<Windows.h>` macros**: Debug builds pull `<Windows.h>` in through `Log.h` without `NOMINMAX`. In the engine (`depch.h` includes it before GLM, whose `_fixes.hpp` undefines `min`/`max`) only `near` and `far` survive; in the test app (`Log.h` includes GLM first) `min`, `max`, `near` and `far` all do, and every header after it sees them. So write `(std::min)(a, b)` / `(std::max)(...)` / `(std::numeric_limits<T>::max)()` in test code and public headers, and never name anything `near` or `far`. The examples define `NOMINMAX`.
 - `DE_CORE_ASSERT(cond, msg)` takes a **plain string only** — NOT `std::format` args (adjacent-literal pasting; format args fail to compile). `DE_CORE_WARN/ERROR` do take format args.
 - On-screen text is **UTF-8** (v0.6.2): `DrawText`/`GetStringWidth` share the decoder in `src/DingoEngine/Graphics/Utf8.h`, and invalid bytes read as Latin-1. The MSDF atlas bakes Latin-1, printable General Punctuation (U+2010–U+2027, U+2030–U+205E) and U+20AC; anything else draws `?`. Changing the charset must bump `k_FontAtlasCacheFormatVersion` in `Font.cpp`. Only the engine project builds with `/utf-8`, so non-ASCII literals in the test app/examples are hex-escaped.
 

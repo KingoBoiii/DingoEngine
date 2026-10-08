@@ -177,7 +177,7 @@ namespace Dingo
 				if (life > 0.0f)
 				{
 					++count;
-					worst = std::max(worst, age / life);
+					worst = (std::max)(worst, age / life);
 				}
 			}
 			done(count, worst);
