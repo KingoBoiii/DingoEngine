@@ -479,9 +479,9 @@ namespace Dingo
 		return IsValid(entity) ? Internal::ParticleSync::GetEmitter(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle)) : nullptr;
 	}
 
-	void Scene::SubmitLights(Renderer3D& renderer)
+	void Scene::SubmitLights(Renderer3D& renderer, bool shadowProbes)
 	{
-		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, &m_Data->ShadowProbes);
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, shadowProbes ? &m_Data->ShadowProbes : nullptr);
 	}
 
 	// --- Camera -----------------------------------------------------------------

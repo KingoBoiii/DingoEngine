@@ -94,8 +94,10 @@ namespace Dingo
 
 		// Submits the scene's light components to the renderer (no BeginScene/EndScene), for
 		// custom 3D passes the same way as RenderEntities3D. A scene without a single light
-		// component gets a default DirectionalLightComponent.
-		void SubmitLights(Renderer3D& renderer);
+		// component gets a default DirectionalLightComponent. With shadowProbes, the scene's pending
+		// GetLightVisibility questions go out with this pass, answered from its camera's shadows; a
+		// secondary view (a minimap) passes false and leaves them to the main view.
+		void SubmitLights(Renderer3D& renderer, bool shadowProbes = true);
 
 		// How much of a light component's light reaches `point` past the shadows the scene draws: 1
 		// lit, 0 in its shadow (ShadowStrength of the way). The renderer's own shadow lookup works it
@@ -103,7 +105,9 @@ namespace Dingo
 		// hides them. Each call asks for the next frame and returns the latest answer for this light
 		// and key, one to three frames old, or 1 before the first; call it every frame you care about, with
 		// a key per point you track for the same light. The question goes out with the scene's next
-		// SubmitLights (the SceneRenderer's 3D pass), so a scene that isn't rendered never answers. A
+		// SubmitLights that takes them (the SceneRenderer's 3D pass), answered from that pass's cascades
+		// and culling: a secondary view drawn first in a frame (a minimap) should pass shadowProbes
+		// false to SceneRenderer::Render or SubmitLights. A scene that isn't rendered never answers. A
 		// light drawn without a shadow, or not drawn at all, answers 1. The point has no surface to
 		// push it off, so ask about a point in the air, such as a character's chest.
 		float GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key = 0);

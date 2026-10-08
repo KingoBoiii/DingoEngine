@@ -96,8 +96,11 @@ const float lit = scene->GetShadowedLightAttenuation(brazier, playerChest);  // 
   that light and key: one to three frames old, and 1 before the first arrives. The answers are read
   back only once a GPU event says the frame that drew them is done, so asking never makes the CPU
   wait for the GPU. The question goes out
-  with the scene's next `SubmitLights` (the `SceneRenderer`'s 3D pass), so a scene that isn't
-  rendered doesn't answer.
+  with the scene's next `SubmitLights` that takes them (the `SceneRenderer`'s 3D pass), and is
+  answered from that pass's cascades and culling, so a scene that isn't rendered doesn't answer. A
+  secondary view drawn first in a frame (a minimap) passes `shadowProbes` false to
+  `SceneRenderer::Render(scene, target, false)` or `Scene::SubmitLights(renderer, false)`, leaving
+  the questions to the main view.
 - **What is drawn.** A light drawn without a shadow (no `CastShadows`, past the shadow slots, or out
   of the light budget) answers 1 at once; `ShadowStrength` scales the answer the way it scales the
   shadow, and the PCF edge reads in between.

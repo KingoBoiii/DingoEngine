@@ -18,7 +18,7 @@ namespace Dingo
 	{
 	}
 
-	void SceneRenderer::Render(Scene& scene, Framebuffer* target)
+	void SceneRenderer::Render(Scene& scene, Framebuffer* target, bool shadowProbes)
 	{
 		if (Renderer::IsFrameSkipped())
 			return;
@@ -71,7 +71,7 @@ namespace Dingo
 
 			m_Renderer3D->BeginScene(scene.GetCameraViewProjection(perspectiveCamera, aspect));
 			m_Renderer3D->Clear(clearColor);
-			scene.SubmitLights(*m_Renderer3D);
+			scene.SubmitLights(*m_Renderer3D, shadowProbes);
 			scene.RenderEntities3D(*m_Renderer3D);
 			m_Renderer3D->EndScene();
 
