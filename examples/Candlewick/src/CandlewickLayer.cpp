@@ -4,6 +4,8 @@
 #include "LaunchOptions.h"
 #include "TitleScreen.h"
 
+#include <chrono>
+
 namespace Dingo
 {
 
@@ -44,12 +46,25 @@ namespace Dingo
 
 	void CandlewickLayer::OnUpdate(float deltaTime)
 	{
-		m_Result.FrameSeconds = deltaTime;
+		using Clock = std::chrono::steady_clock;
+		const auto milliseconds = [](Clock::time_point from, Clock::time_point to)
+		{
+			return std::chrono::duration<float, std::milli>(to - from).count();
+		};
+
+		const LaunchOptions& options = GetLaunchOptions();
+		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
+		m_Result.FrameSeconds = step;
 
 		Scene* activeBefore = m_SceneManager.GetActiveScene();
+		const bool measuring = options.Perf && !m_PerfDone && activeBefore == m_KeepScene;
 
-		m_SceneManager.OnUpdate(deltaTime);
+		const Clock::time_point updateStart = Clock::now();
+		m_SceneManager.OnUpdate(step);
+		const Clock::time_point renderStart = Clock::now();
 		m_SceneManager.OnRender();
+		if (measuring)
+			RecordPerf(deltaTime, milliseconds(updateStart, renderStart), milliseconds(renderStart, Clock::now()));
 
 		// The manager switches scenes inside its own OnUpdate, so leaving a scene only shows as a
 		// before/after difference. The Keep's physics world is already gone; rebuild it now so the
@@ -62,6 +77,26 @@ namespace Dingo
 			RebuildEndScene();
 
 		CheckDroppedLights(activeAfter);
+	}
+
+	void CandlewickLayer::RecordPerf(float deltaTime, float updateMilliseconds, float renderMilliseconds)
+	{
+		m_PerfClock += deltaTime;
+		if (m_PerfClock < PERF_WARMUP_SECONDS)
+			return;
+
+		m_PerfFrameMilliseconds += 1000.0 * static_cast<double>(deltaTime);
+		m_PerfUpdateMilliseconds += static_cast<double>(updateMilliseconds);
+		m_PerfRenderMilliseconds += static_cast<double>(renderMilliseconds);
+		if (++m_PerfFrames < PERF_FRAMES)
+			return;
+
+		const double frames = static_cast<double>(m_PerfFrames);
+		DE_INFO("[Perf] frame {:.3f} ms, SceneManager::OnUpdate {:.3f} ms, OnRender {:.3f} ms (mean of {} frames)", m_PerfFrameMilliseconds / frames,
+			m_PerfUpdateMilliseconds / frames, m_PerfRenderMilliseconds / frames, m_PerfFrames);
+		for (const GpuTimerStats& timer : Renderer::GetGpuTimers())
+			DE_INFO("[Perf] GPU {}{}: mean {:.3f} ms, max {:.3f} ms over {} frames", std::string(2 * timer.Depth, ' '), timer.Name, timer.MeanMs, timer.MaxMs, timer.Samples);
+		m_PerfDone = true;
 	}
 
 	void CandlewickLayer::CheckDroppedLights(const Scene* active)

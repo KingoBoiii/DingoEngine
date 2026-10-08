@@ -91,6 +91,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		.EnableUI = false,
 	};
 	params.Renderer3D.Capabilities.MaxLocalLights = ParseLightBudget(args);
+	// A scripted run must not pause when its window opens unfocused.
+	params.UpdateInBackground = args.Get("perf").has_value();
 
 	CandlewickApplication* app = new CandlewickApplication(params);
 	app->Initialize();

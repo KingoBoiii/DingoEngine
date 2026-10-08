@@ -55,6 +55,12 @@ namespace Dingo
 	inline constexpr float END_PROMPT_SIZE     = 0.45f;
 	inline constexpr float END_PROMPT_Y        = -2.6f;
 
+	// --- Captures and perf ---------------------------------------------------------
+	inline constexpr float FIXED_DT_FREEZE     = 1.0f / 60.0f;
+	inline constexpr float FIXED_DT_MAX        = 0.1f;
+	inline constexpr float PERF_WARMUP_SECONDS = 2.0f;
+	inline constexpr int   PERF_FRAMES         = 600;
+
 	// --- Camera (three-quarter view, fixed yaw) --------------------------------
 	inline constexpr float CAMERA_FOV          = 50.0f;
 	inline constexpr float CAMERA_PITCH_DEG    = 55.0f;
