@@ -57,7 +57,8 @@ namespace Dingo
 
 	// --- Captures and perf ---------------------------------------------------------
 	inline constexpr float FIXED_DT_FREEZE     = 1.0f / 60.0f;
-	inline constexpr float FIXED_DT_MAX        = 0.1f;
+	// Scene::OnUpdate caps its step at 4/60 s.
+	inline constexpr float FIXED_DT_MAX        = 4.0f / 60.0f;
 	inline constexpr float PERF_WARMUP_SECONDS = 2.0f;
 	inline constexpr int   PERF_FRAMES         = 600;
 
@@ -161,8 +162,9 @@ namespace Dingo
 	inline constexpr float BEACON_FLAME_RANGE       = 6.0f;
 	inline constexpr float BEACON_FIELD_DEG         = 120.0f;
 	inline constexpr float BEACON_FLAME_WEIGHT      = 0.25f;
-	// How much of the lantern's light must reach a warden's eye for its glow to be seen: a pillar
-	// between them hides it, exactly as the drawn shadow shows.
+	// How much of the lantern's light must reach a warden's eye for its glow to be seen: inside the
+	// light's range a pillar between them hides it as the drawn shadow shows. The beacon reaches 1.6x
+	// the range, where the cube shadow ends and answers 1, so out there the sight ray decides.
 	inline constexpr float BEACON_LANTERN_VISIBILITY = 0.5f;
 	// Shadow-probe keys: an eye's own keys are its samples (0..2); the lantern's are one per warden.
 	inline constexpr uint32_t PROBE_KEY_LANTERN     = 16;

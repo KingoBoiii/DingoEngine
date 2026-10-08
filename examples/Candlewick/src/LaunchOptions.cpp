@@ -57,7 +57,7 @@ namespace
 		const auto [ptr, error] = std::from_chars(value->data(), end, parsed);
 		if (error != std::errc{} || ptr != end || !std::isfinite(parsed) || !(parsed > 0.0f) || parsed > max)
 		{
-			DE_WARN("Candlewick: ignoring --{}={} (expected seconds above 0 and up to {:.4f}); using the measured delta", name, *value, max);
+			DE_WARN("Candlewick: ignoring --{}={} (expected seconds above 0 and up to {:.4f})", name, *value, max);
 			return;
 		}
 

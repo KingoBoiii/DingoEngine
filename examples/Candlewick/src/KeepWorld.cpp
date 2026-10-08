@@ -409,6 +409,10 @@ namespace Dingo
 			{ k_SconceStemWidth, k_SconceStemHeight, k_SconceStemWidth }, COLOR_BRASS, m_BrassMaterial);
 		Entity cup = SpawnDecor("SconceCup", base + inward * (k_SconceCupWidth * 0.5f) - glm::vec3(0.0f, k_SconceBracketDrop - k_SconceCupHeight * 0.5f, 0.0f),
 			{ k_SconceCupWidth, k_SconceCupHeight, k_SconceCupWidth }, COLOR_BRASS, m_BrassMaterial);
+		// A cut-away hides the bracket outright, so it casts nothing at all: what hides the player
+		// must not change with the camera.
+		stem.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
+		cup.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
 
 		DecorFlame flame;
 		const glm::vec3 core = base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f);

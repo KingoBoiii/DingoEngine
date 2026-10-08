@@ -7,7 +7,8 @@ namespace Dingo
 {
 
 	// Every particle effect in the keep, authored here and tuned live in the F4 effect editor, which
-	// copies an effect back as code. KeepWorld owns them, so they outlive every emitter of the keep.
+	// copies an effect back as code. KeepWorld owns them; its emitter entities outlive it by the scene
+	// clear that follows, in which nothing reads an emitter's effect.
 	struct FlameEffects
 	{
 		std::unique_ptr<ParticleEffect> Candle;

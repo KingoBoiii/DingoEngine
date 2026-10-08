@@ -4,7 +4,9 @@ Drafted 2026-10-08 on branch `claude/dingo-v0-9-0-planning-ee00a9` @ `0543d88` (
 of it run on a GPU yet). Scope source: §6 of `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`.
 The game's own design is `.claude/plans/2026-10-01-candlewick-plan.md`, whose §11 "As built" holds.
 
-**Status**: drafted 2026-10-08; decisions C1–C4 (§4) settled on the recommended options. Building W0–W5.
+**Status**: W0–W5 built 2026-10-08 (§8 "As built"); decisions C1–C4 (§4) settled on the recommended
+options. None of it is built with MSVC or run: the captures, perf numbers and tuning passes in §6 are
+owed on the GPU machine.
 
 ---
 
@@ -195,13 +197,20 @@ The game's own design is `.claude/plans/2026-10-01-candlewick-plan.md`, whose §
 - **Before/after:** each room frozen and from above, at W0 (the before), W1, W2 and W4, into the
   visual log.
 - **The wall test:** `--room=2 --freeze --debug-cone` and `--room=3 --freeze --debug-cone`. No cone
-  light on the far side of any wall.
-- **The hide check (W3):** `--room=2 --all-lit --freeze --hide-check` logs `IsFlameLit` and every
-  visibility once, after 10 frames.
-  - `--spawn=24,5` puts the player behind the pillar at (26, 7) as seen from the brazier at
-    (28, 10). A walk along the segment says so, and the pillar at (19, 4) hides them from (17, 3).
-    The brazier at (28.5, 10.5) logs visibility 0, and flame-lit "no".
-  - `--spawn=28,6`, in the open, logs visibility 1 for that brazier, and flame-lit "yes".
+  light on the far side of any wall. The wireframe cone is drawn at the eye's full 8 m whatever
+  stands in the way, so it is not the light: read the floor.
+- **The hide check (W3):** `--room=2 --all-lit --freeze --oil=0 --hide-check` logs once, after
+  10 frames: every brazier's weight at the chest with and without its shadow, and every sample's
+  verdict. `--oil=0` keeps the lantern's beacon out of the reading.
+  - `--spawn=25,6` puts the player behind the pillar at (26, 7), as seen from the brazier at (28, 10):
+    - the line to the chest passes through the pillar with about 8° to spare;
+    - the brazier's weight there is 0.474;
+    - every sample is outside frozen warden 1's cone.
+
+    Expected: that brazier logs "lit without shadows: yes", visibility 0, "lit: no", and flame-lit
+    "no". With `--no-shadows` the same run logs "lit: yes". (W5's review found that (24, 5), the first
+    choice, lies past the weight threshold anyway, and inside warden 1's cone.)
+  - `--spawn=28,6`, in the open, logs visibility 1 and flame-lit "yes".
 - **Perf:** `--perf --vsync=off` per room, Release, with each `--no-*` flag and with none. Recorded
   in §8 next to W0's line.
 - **Engine:** none of this changes the engine. The test app's start-up checks are still owed from
@@ -216,4 +225,34 @@ The game's own design is `.claude/plans/2026-10-01-candlewick-plan.md`, whose §
 
 ## 8. As built
 
-*(filled in per milestone)*
+- **W0** `1fc4ebf`:
+  - `--fixed-dt` steps the scene by a fixed delta, which `--freeze` sets to 1/60; it is capped at
+    4/60, `Scene::OnUpdate`'s own cap.
+  - `--perf` logs the CPU means over 600 frames. Each GPU timer's mean comes from
+    `Renderer::GetGpuTimers`, whose window is the last 120 frames.
+  - `--perf` and `--hide-check` set `UpdateInBackground`.
+- **W1** `c0758a8`, as designed. `--no-post` keeps the new emissives, so it shows the cost, not the
+  v0.8 look.
+- **W2** `b2d57a5`, as designed. The eye arms in `Wardens::Arm`.
+- **W3** `e72d528`, as designed, with two changes from the review:
+  - the cone and the braziers now ask `GetLightVisibility` on every frame and multiply by the light's
+    weight themselves (`GetShadowedLightAttenuation` asks only inside the light's reach, so an answer
+    could be stale on entering it);
+  - the sconce brackets cast nothing, so a cut-away can't change what hides the player.
+- **W4** `4e81fc4`:
+  - **Effects:** seven, in `Flames.h/.cpp` and owned by `KeepWorld`.
+  - **The lantern has no flame of its own:** a flame inside the opaque glass would be hidden by its
+    depth, so the lantern only smokes when snuffed. The glass's emissive is its flame.
+  - **AO** is on.
+- **W5:** the review (one fresh agent) found no Critical or High. Fixed in `7d0dc49` or noted here:
+  - W1 Medium: the hide check's spawn tile, above;
+  - W2: the log;
+  - W3: probe staleness;
+  - W5: the comment on the lantern beacon past its range;
+  - W6: the sconce brackets;
+  - W7: the `--fixed-dt` limit and the flag parsing in `main`;
+  - W9: the comment on effect lifetime;
+  - W10: the lantern flame, recorded above.
+
+  Left as noted: W4 (the debug cone's length, §6) and W8 (the GPU mean's window).
+- **Not verified here:** clang over every Candlewick file. Owed on the GPU machine: everything in §6.

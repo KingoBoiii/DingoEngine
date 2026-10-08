@@ -17,7 +17,7 @@ namespace Dingo
 	class Wardens;
 
 	// Turns what each warden sees into its suspicion. The cone test is the renderer's own weight for
-	// the warden's eye light, shadows included (GetShadowedLightAttenuation on the same component the
+	// the warden's eye light, times its shadow's answer (GetLightVisibility on the same component the
 	// frame draws), so the pool on the floor is where a warden sees you and cover hides you; a ray
 	// still keeps walls honest, since a shadow answer is a few frames late and an eye the camera
 	// culled casts none. Only the cone can take suspicion to 1: the beacon (a lit player is noticed
@@ -68,7 +68,7 @@ namespace Dingo
 		enum class SampleVerdict { Unseen, Shadowed, Seen };
 
 		bool HasLineOfSight(const glm::vec3& eye, const glm::vec3& target) const;
-		// Asks every lit brazier's shadow each frame, so its answer stays fresh.
+		// Asks every lit brazier's shadow each frame, in its reach or not, so its answer stays current.
 		bool IsFlameLit(const glm::vec3& point);
 
 		void CreateDebugView(size_t wardenCount);

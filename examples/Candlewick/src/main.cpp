@@ -52,6 +52,12 @@ static bool ParseVSync(const Dingo::ApplicationCommandLineArgs& args)
 	return true;
 }
 
+static bool IsFlagOn(const Dingo::ApplicationCommandLineArgs& args, std::string_view name)
+{
+	const std::optional<std::string_view> value = args.Get(name);
+	return value && (value->empty() || *value == "1" || *value == "true" || *value == "on");
+}
+
 static uint32_t ParseLightBudget(const Dingo::ApplicationCommandLineArgs& args)
 {
 	const uint32_t fallback = Dingo::Renderer3DCapabilities{}.MaxLocalLights;
@@ -95,7 +101,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 	static_assert(Dingo::GAMEPLAY_LIGHTS_MAX <= static_cast<int>(Dingo::Renderer3D::k_MaxShadowedLocalLights));
 	params.Renderer3D.Capabilities.MaxShadowedLocalLights = Dingo::Renderer3D::k_MaxShadowedLocalLights;
 	// A scripted run must not pause when its window opens unfocused.
-	params.UpdateInBackground = args.Get("perf").has_value() || args.Get("hide-check").has_value();
+	params.UpdateInBackground = IsFlagOn(args, "perf") || IsFlagOn(args, "hide-check");
 
 	CandlewickApplication* app = new CandlewickApplication(params);
 	app->Initialize();
