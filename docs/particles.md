@@ -86,6 +86,13 @@ fighter.AddComponent<ParticleEventComponent>()
 - Emitters are found by UUID, so a duplicated entity's bindings still point at the original emitters;
   bind its own afterwards if it needs them.
 
+*Marionette* (`examples/Marionette/src/Fighter.cpp`, `BuildVfx`) is the worked example. Each fighter
+has dust emitters on its `foot.l` and `foot.r` sockets and at its feet, and a trail emitter at its
+blade's tip, parented to the weapon. Its `ParticleEventComponent` binds `step_l`/`step_r` to a burst
+at that foot, `dash` to a larger one, and the `hitbox` range to the trail. No game code runs per
+event. Its impacts go the other way: `Combat` bursts sparks with `Scene::EmitParticlesAt` at the
+point where a blade met its target (`ArenaVfx`).
+
 ## ParticleEffectParams
 
 | Field | Default | Meaning |
