@@ -1594,9 +1594,16 @@ namespace Dingo
 		}
 		m_Statistics.ShadowCasters += m_StaticCasters;
 
+		// The lit pass's skip rule, so a mesh it doesn't draw leaves no shadow without a body.
+		auto skinnedShadowDrawn = [this](const SkinnedSubmission& submission)
+		{
+			const Material* material = submission.Material ? submission.Material : m_Material;
+			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] &&
+				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
+		};
 		bool skinnedCasts = false;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
-			skinnedCasts = skinnedCasts || (submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance]);
+			skinnedCasts = skinnedCasts || skinnedShadowDrawn(submission);
 
 		if (skinnedCasts)
 		{
@@ -1621,7 +1628,7 @@ namespace Dingo
 			uint32_t uploadedInstance = ~0u;
 			for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 			{
-				if (submission.Shadows == ShadowCasting::Off || m_SkinnedInstanceDropped[submission.Instance])
+				if (!skinnedShadowDrawn(submission))
 					continue;
 
 				if (submission.Instance != uploadedInstance)
