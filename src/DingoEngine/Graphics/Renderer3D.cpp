@@ -560,14 +560,17 @@ namespace Dingo
 			return;
 		}
 
-		// The rest pose bounds the caster, padded by half its size for the animation.
-		if (shadows != ShadowCasting::Off)
+		// The rest pose's box bounds the caster, padded by half its size for the animation.
+		if (shadows != ShadowCasting::Off && mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
 		{
 			glm::vec3 low(std::numeric_limits<float>::max());
 			glm::vec3 high(std::numeric_limits<float>::lowest());
-			for (const MeshVertex& vertex : mesh->GetVertices())
+			for (int corner = 0; corner < 8; ++corner)
 			{
-				const glm::vec3 world = glm::vec3(transform * glm::vec4(vertex.Position, 1.0f));
+				const glm::vec3 local((corner & 1) ? mesh->GetBoundsMax().x : mesh->GetBoundsMin().x,
+					(corner & 2) ? mesh->GetBoundsMax().y : mesh->GetBoundsMin().y,
+					(corner & 4) ? mesh->GetBoundsMax().z : mesh->GetBoundsMin().z);
+				const glm::vec3 world = glm::vec3(transform * glm::vec4(local, 1.0f));
 				low = glm::min(low, world);
 				high = glm::max(high, world);
 			}
@@ -1182,6 +1185,10 @@ namespace Dingo
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
 		const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
 
+		// A caster's bounds fold into the transform loop rather than a second walk over its vertices.
+		const bool casts = shadows != ShadowCasting::Off && !vertices.empty();
+		glm::vec3 low = m_HasCasters ? m_CasterMin : glm::vec3(std::numeric_limits<float>::max());
+		glm::vec3 high = m_HasCasters ? m_CasterMax : glm::vec3(std::numeric_limits<float>::lowest());
 		for (const MeshVertex& v : vertices)
 		{
 			Vertex vertex;
@@ -1190,19 +1197,16 @@ namespace Dingo
 			vertex.Color = color;
 			vertex.TexCoord = v.TexCoord;
 			chunk->Vertices.push_back(vertex);
+			if (casts)
+			{
+				low = glm::min(low, vertex.Position);
+				high = glm::max(high, vertex.Position);
+			}
 		}
 
-		if (shadows != ShadowCasting::Off && !vertices.empty())
+		if (casts)
 		{
 			++m_StaticCasters;
-			const size_t first = chunk->Vertices.size() - vertices.size();
-			glm::vec3 low = m_HasCasters ? m_CasterMin : chunk->Vertices[first].Position;
-			glm::vec3 high = m_HasCasters ? m_CasterMax : chunk->Vertices[first].Position;
-			for (size_t i = first; i < chunk->Vertices.size(); ++i)
-			{
-				low = glm::min(low, chunk->Vertices[i].Position);
-				high = glm::max(high, chunk->Vertices[i].Position);
-			}
 			m_CasterMin = low;
 			m_CasterMax = high;
 			m_HasCasters = true;
