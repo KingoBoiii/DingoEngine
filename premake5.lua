@@ -191,6 +191,20 @@ group "Dependencies"
 		filter "system:linux"
 			includedirs { "%{VULKAN_SDK}/include" }
 		filter {}
+
+	-- gmake writes each makefile next to its project's script, inside the submodule, where it
+	-- would overwrite FreeType's own tracked Makefile. Visual Studio's projects stay where they are.
+	if _ACTION == "gmake" or _ACTION == "gmake2" then
+		local vendorProjects = { "spdlog", "GLFW", "NVRHI", "NVRHI-Vulkan", "ImGui", "msdf-atlas-gen", "msdfgen", "freetype", "box2d", "Jolt" }
+		if os.istarget("windows") then
+			table.insert(vendorProjects, "NVRHI-D3D11")
+			table.insert(vendorProjects, "NVRHI-D3D12")
+		end
+		for _, name in ipairs(vendorProjects) do
+			project(name)
+				location("build/make/" .. name)
+		end
+	end
 group ""
 
 group "Engine"
