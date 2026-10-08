@@ -3,8 +3,8 @@ import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
 
 import type { FiveHourReading } from '../types'
 
-const reading = atom({ plugin: 'dingo-usage-meter', key: 'reading' } as const, null)
-const now = atom({ plugin: 'dingo-usage-meter', key: 'now' } as const, 0)
+const reading = atom({ plugin: 'usage-meter', key: 'reading' } as const, null)
+const now = atom({ plugin: 'usage-meter', key: 'now' } as const, 0)
 
 // Shared across sessions, so every open session shows the newest reading.
 const STORE_KEY = 'fiveHour'

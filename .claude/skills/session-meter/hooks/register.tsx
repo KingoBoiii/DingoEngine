@@ -1,17 +1,14 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
+import type { EngineInterface, Register, SessionContextUsage } from 'claude-code'
 
-import type { CacheReading, ContextReading, FiveHourReading } from '../types'
+import type { CacheReading, ContextReading } from '../types'
 
-const context = atom({ plugin: 'dingo-session-meter', key: 'context' } as const, null)
-const cache = atom({ plugin: 'dingo-session-meter', key: 'cache' } as const, null)
-const fiveHour = atom({ plugin: 'dingo-session-meter', key: 'fiveHour' } as const, null)
-const now = atom({ plugin: 'dingo-session-meter', key: 'now' } as const, 0)
+const context = atom({ plugin: 'session-meter', key: 'context' } as const, null)
+const cache = atom({ plugin: 'session-meter', key: 'cache' } as const, null)
+const now = atom({ plugin: 'session-meter', key: 'now' } as const, 0)
 
-// Shared across sessions, so every open session shows the newest 5h reading.
-const STORE_KEY = 'fiveHour'
 const TICK_MS = 15_000
-// Both rows draw label and bar in fixed cells, so they line up in any font.
+// Label and bar in fixed cells, shared with usage-meter, so the bars line up in any font.
 const LABEL_CELLS = 9
 const BAR_TRACK = '#3a3a3a'
 const HOUR_MS = 60 * 60_000
@@ -21,38 +18,8 @@ function toReading(c: SessionContextUsage): ContextReading {
   return { tokens: c.tokens, window: c.window, percent: c.percent }
 }
 
-function pickFiveHour(limits: SessionRateLimit[], seenAt: number): FiveHourReading | null {
-  const window = limits.find(l => l.kind === 'five_hour')
-
-  return window ? { percentUsed: window.percentUsed, resetsAt: window.resetsAt, seenAt } : null
-}
-
-function isFiveHourReading(value: unknown): value is FiveHourReading {
-  const v = value as FiveHourReading | null
-
-  return typeof v === 'object' && v !== null && typeof v.percentUsed === 'number' && typeof v.seenAt === 'number'
-}
-
-async function saveFiveHour($: EngineInterface, fresh: FiveHourReading) {
-  await update($, fiveHour, () => fresh)
-  await $.store.set(STORE_KEY, fresh)
-}
-
-async function syncFromStore($: EngineInterface) {
-  const stored = await $.store.get(STORE_KEY)
-  if (!isFiveHourReading(stored)) {
-    return
-  }
-
-  const current = await read($, fiveHour)
-  if (current === null || stored.seenAt > current.seenAt) {
-    await update($, fiveHour, () => stored)
-  }
-}
-
 async function tick($: EngineInterface) {
   try {
-    await syncFromStore($)
     const t = await $.clock.now()
     await update($, now, () => t)
   } catch {
@@ -90,13 +57,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
 
-    await syncFromStore($)
     const usage = await $.session.usage()
     await update($, context, () => toReading(usage.context))
-    const fresh = pickFiveHour(usage.rateLimits, await $.clock.now())
-    if (fresh) {
-      await saveFiveHour($, fresh)
-    }
 
     await tick($)
     $.clock.every(TICK_MS, () => void tick($))
@@ -136,12 +98,6 @@ export const register: Register = (on, options) => {
     if (e.changed.includes('context')) {
       await update($, context, () => toReading(e.context))
     }
-    if (e.changed.includes('rateLimits')) {
-      const fresh = pickFiveHour(e.rateLimits, await $.clock.now())
-      if (fresh) {
-        await saveFiveHour($, fresh)
-      }
-    }
 
     return next(e)
   })
@@ -173,7 +129,6 @@ export const register: Register = (on, options) => {
 
     const ctx = await read($, context)
     const c = await read($, cache)
-    const r = await read($, fiveHour)
     await read($, now) // subscribes the band to the countdown ticker
     const t = await $.clock.now()
     const { Box, Text } = $.ui.resolve(e)
@@ -212,42 +167,6 @@ export const register: Register = (on, options) => {
       )
     }
 
-    // 5-hour limit
-    let fiveHourRow
-    if (r === null) {
-      fiveHourRow = (
-        <Box>
-          {label('5h limit')}
-          {bar(0, 'gray')}
-          <Text dimColor> no reading yet · shows after your next message</Text>
-        </Box>
-      )
-    } else {
-      const resetAt = r.resetsAt ? Date.parse(r.resetsAt) : NaN
-      const hasReset = Number.isFinite(resetAt) && resetAt <= t
-      const used = hasReset ? 0 : r.percentUsed
-      const left = Math.max(0, Math.round((100 - used) * 10) / 10)
-      const resetText = hasReset
-        ? 'window reset · refreshes after next message'
-        : Number.isFinite(resetAt)
-          ? `resets in ${formatDuration(resetAt - t)}`
-          : 'reset time unknown'
-      const isStale = !hasReset && t - r.seenAt >= 5 * 60_000
-      const ageText = isStale ? ` · as of ${formatDuration(t - r.seenAt)} ago` : ''
-
-      fiveHourRow = (
-        <Box>
-          {label('5h limit')}
-          {bar(used, levelColor(used))}
-          <Text color={levelColor(used)} bold>
-            {` ${used}% used`}
-          </Text>
-          <Text dimColor>{` · ${left}% left · ${resetText}${ageText}`}</Text>
-        </Box>
-      )
-    }
-
-    // Context window, and whether the prompt cache is live
     const pct = ctx?.percent
     const ctxColor = pct === undefined ? 'gray' : levelColor(pct)
     const ctxText =
@@ -264,7 +183,7 @@ export const register: Register = (on, options) => {
         ? ''
         : ` · re-caches ~${formatTokens(c.readTokens + c.writeTokens)} next message`
 
-    const contextRow = (
+    const mine = (
       <Box>
         {label('context')}
         {bar(pct ?? 0, ctxColor)}
@@ -277,13 +196,6 @@ export const register: Register = (on, options) => {
           {isLive ? '● live' : '○ cold'}
         </Text>
         <Text dimColor>{cacheText}</Text>
-      </Box>
-    )
-
-    const mine = (
-      <Box flexDirection="column">
-        {fiveHourRow}
-        {contextRow}
       </Box>
     )
 

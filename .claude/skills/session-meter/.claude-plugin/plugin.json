@@ -1,5 +1,5 @@
 {
-  "name": "dingo-session-meter",
+  "name": "session-meter",
   "version": "0.1.0",
   "description": "Band above the prompt showing context-window fill and prompt-cache time left as bars",
   "types": "./types/index.d.ts",

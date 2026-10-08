@@ -42,7 +42,7 @@ async function respond($: Engine) {
 }
 
 async function bandText($: Engine, surface: (typeof SURFACES)[number]) {
-  const ui = await $.ui.mount({ plugin: 'dingo-session-meter', surface, component: 'AbovePrompt', props: BAND })
+  const ui = await $.ui.mount({ plugin: 'session-meter', surface, component: 'AbovePrompt', props: BAND })
   const texts = await ui.findAll({ type: 'Text' })
 
   return texts.map(t => t.text).join('')
@@ -94,9 +94,8 @@ test('reports the cache cold once the TTL passes', { options: { cacheTtl: '5m' }
   }
 })
 
-test('draws the 5h row and the context row with the same label and bar cells', async ($, on) => {
+test('leaves the 5h limit to usage-meter and keeps its label cell width', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  mock.store(on)
   stubBeneath(on)
 
   await $.session.measure({
@@ -108,14 +107,14 @@ test('draws the 5h row and the context row with the same label and bar cells', a
   })
 
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'dingo-session-meter', surface, component: 'AbovePrompt', props: BAND })
+    const ui = await $.ui.mount({ plugin: 'session-meter', surface, component: 'AbovePrompt', props: BAND })
     const text = (await ui.findAll({ type: 'Text' })).map(t => t.text).join('')
-    expect(text).toContain('3% used')
-    expect(text).toContain('resets in 4h 0m')
+    expect(text).not.toContain('5h limit')
+    expect(text).not.toContain('3% used')
 
-    const labels = await ui.findAll({ type: 'Box', text: /^(5h limit|context)$/ })
+    const labels = await ui.findAll({ type: 'Box', text: /^context$/ })
     const widths = labels.filter(b => b.props.width !== undefined).map(b => b.props.width)
-    expect(widths).toEqual([9, 9])
+    expect(widths).toEqual([9])
   }
 })
 

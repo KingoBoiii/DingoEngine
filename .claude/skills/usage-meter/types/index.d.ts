@@ -9,6 +9,6 @@ export type FiveHourReading = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'dingo-usage-meter': { reading: FiveHourReading | null; now: number }
+    'usage-meter': { reading: FiveHourReading | null; now: number }
   }
 }
