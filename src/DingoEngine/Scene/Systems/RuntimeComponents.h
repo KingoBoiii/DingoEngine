@@ -82,6 +82,7 @@ namespace Dingo
 				float PendingTime = 0.0f;  // the scene's time since it last stepped
 				uint64_t BurstsTaken = 0;  // the serial of the last burst it was handed
 				uint64_t LastFrame = 0;    // the frame it was last submitted in
+				uint64_t RetryFrame = 0;   // without a ring (the pool was full), when to ask for one again
 			};
 
 			std::vector<Instance> Instances; // the first made first

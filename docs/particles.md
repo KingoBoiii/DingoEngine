@@ -122,7 +122,9 @@ which an emitter takes when it is made. An effect must outlive its emitters.
 
 - **The pool.** One storage buffer per `Renderer3D`, `Renderer3DCapabilities::MaxParticles` (65,536,
   48 bytes each: 3 MB) made with the first emitter. Each emitter owns a ring of it; one the pool has no
-  room for draws nothing and warns once.
+  room for draws nothing and warns once. A `ParticleEmitterComponent`'s emitter that found no room
+  asks again about once a second, so an entity spawned while the pool was full lights up once room
+  frees.
 - **Each scene**, `EndScene` uploads a record per emitter (its transform, the step's delta, the
   effect) and the spawns, then dispatches **simulate** (age, gravity, drag, noise; a particle past its
   lifetime dies) over every slot of the scene's emitters, then **emit** over the new particles. The

@@ -16,6 +16,8 @@ namespace Dingo::Internal::ParticleSync
 		constexpr uint64_t k_MaxIdleFrames = 300;
 		// Bursts asked of an entity no renderer draws are kept up to this many, the newest.
 		constexpr size_t k_MaxQueuedBursts = 256;
+		// An emitter that found the pool full asks again this often, about once a second.
+		constexpr uint64_t k_PoolRetryFrames = 60;
 
 		void DropRuntime(entt::registry& registry, entt::entity handle)
 		{
@@ -141,11 +143,17 @@ namespace Dingo::Internal::ParticleSync
 				ParticleEmitterRuntime::Instance instance;
 				instance.Emitter = renderer.CreateParticleEmitter(component.Effect);
 				instance.BurstsTaken = runtime.Bursts.empty() ? runtime.NextBurst - 1 : runtime.Bursts.front().Serial - 1;
+				instance.RetryFrame = frame + k_PoolRetryFrames;
 				runtime.Instances.push_back(std::move(instance));
 				it = runtime.Instances.end() - 1;
 			}
 			ParticleEmitterRuntime::Instance& instance = *it;
 			instance.LastFrame = frame;
+			if (instance.Emitter->GetCapacity() == 0 && frame >= instance.RetryFrame)
+			{
+				instance.Emitter = renderer.CreateParticleEmitter(component.Effect);
+				instance.RetryFrame = frame + k_PoolRetryFrames;
+			}
 
 			ParticleEmitter& emitter = *instance.Emitter;
 			emitter.SetPlaying(component.Playing);
