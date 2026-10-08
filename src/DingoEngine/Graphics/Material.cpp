@@ -159,19 +159,30 @@ namespace Dingo
 		{
 			if (it->Binding != binding)
 				continue;
-			if (it->Buffer == buffer)
+			if (buffer && it->Buffer == buffer && it->BufferId == buffer->GetId())
 				return;
-			if (buffer)
-				it->Buffer = buffer;
-			else
+			if (!buffer)
+			{
 				m_StorageBuffers.erase(it);
-			InvalidatePipelineCache();
+				InvalidatePipelineCache();
+				return;
+			}
+
+			// Another buffer at a binding the passes already have: their pipelines stay, only their
+			// binding sets are re-baked, so swapping two buffers every frame compiles nothing.
+			it->Buffer = buffer;
+			it->BufferId = buffer->GetId();
+			for (auto& [key, entry] : m_PipelineCache)
+			{
+				entry.RenderPass->SetStorageBuffer(binding, buffer);
+				entry.RenderPass->Bake();
+			}
 			return;
 		}
 		if (!buffer)
 			return;
 		DE_CORE_ASSERT(m_StorageBuffers.size() < k_MaxStorageBuffers, "Material: too many storage buffers.");
-		m_StorageBuffers.push_back({ binding, buffer });
+		m_StorageBuffers.push_back({ binding, buffer, buffer->GetId() });
 		InvalidatePipelineCache();
 	}
 

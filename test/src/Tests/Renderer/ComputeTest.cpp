@@ -175,6 +175,11 @@ void main() { o_Color = v_Color; }
 			.SetWidth(static_cast<int32_t>(k_ValueCount))
 			.SetHeight(2)
 			.AddAttachment({ TextureFormat::R32F }));
+		m_SwapStrip = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("ComputeTest swapped strip")
+			.SetWidth(static_cast<int32_t>(k_ValueCount))
+			.SetHeight(2)
+			.AddAttachment({ TextureFormat::R32F }));
 		m_Instanced = Framebuffer::Create(FramebufferParams()
 			.SetDebugName("ComputeTest instances")
 			.SetWidth(256)
@@ -245,6 +250,36 @@ void main() { o_Color = v_Color; }
 				wrong += value != expected ? 1 : 0;
 			}
 			Check(wrong == 0, std::format("a storage buffer holds its initial data and a later GraphicsBuffer::Upload ({} of {} wrong)", wrong, k_ValueCount));
+		});
+
+		// The read material's buffers swapped and drawn, then put back: its cached pass re-points its
+		// binding set at the new buffers.
+		{
+			m_ReadMaterial->SetStorageBuffer(0, m_Seeded);
+			m_ReadMaterial->SetStorageBuffer(1, m_Values);
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_SwapStrip);
+			Renderer::Clear(m_SwapStrip, glm::vec4(0.0f));
+			Renderer::Draw(m_ReadMaterial, 3);
+			Renderer::SetRenderTarget(previous);
+			m_ReadMaterial->SetStorageBuffer(0, m_Values);
+			m_ReadMaterial->SetStorageBuffer(1, m_Sums);
+		}
+		readBack(m_SwapStrip->GetAttachment(0), [this](const TexturePixels& pixels)
+		{
+			if (pixels.Data.empty())
+			{
+				Check(false, "the swapped storage buffers read back");
+				return;
+			}
+			uint32_t wrong = 0;
+			for (uint32_t i = 0; i < k_ValueCount; ++i)
+			{
+				const uint32_t seeded = i == 4 ? 1000u : i == 5 ? 1001u : i * 7 + 2;
+				wrong += pixels.GetPixel(i, 0).r != static_cast<float>(seeded) ? 1 : 0;
+				wrong += pixels.GetPixel(i, 1).r != static_cast<float>(i * 3 + 1) ? 1 : 0;
+			}
+			Check(wrong == 0, std::format("a material whose storage buffers are swapped draws from the new ones ({} of {} wrong)", wrong, 2 * k_ValueCount));
 		});
 
 		Renderer::Dispatch(m_ZeroPass, k_StepCount / 64);
@@ -354,6 +389,7 @@ void main() { o_Color = v_Color; }
 		DestroyAndDelete(m_Seeded);
 		DestroyAndDelete(m_Image);
 		DestroyAndDelete(m_Strip);
+		DestroyAndDelete(m_SwapStrip);
 		DestroyAndDelete(m_Instanced);
 		m_Checks.clear();
 	}

@@ -17,9 +17,10 @@ namespace Dingo
 	//
 	// On start it checks by readback that every value, every sum, the image's pattern and the sixteen
 	// quads come out exactly, which covers writable and readonly storage buffers in compute, a storage
-	// image, a uniform buffer in compute, readonly storage buffers in the fragment and vertex stages and
-	// the barriers between them, also between dispatches of one pass and after a ReadBack (#114), and a storage buffer's initial
-	// data and GraphicsBuffer::Upload (#115).
+	// image, a uniform buffer in compute, readonly storage buffers in the fragment and vertex stages,
+	// the barriers between them, between dispatches of one pass and after a ReadBack, a storage
+	// buffer's initial data and GraphicsBuffer::Upload, and a material drawing from storage buffers
+	// swapped under it.
 	class ComputeTest : public GraphicsTest
 	{
 	public:
@@ -70,6 +71,7 @@ namespace Dingo
 		GraphicsBuffer* m_Seeded = nullptr;
 		Texture* m_Image = nullptr;
 		Framebuffer* m_Strip = nullptr;     // k_ValueCount x 2 R32F: values, then sums
+		Framebuffer* m_SwapStrip = nullptr; // the same, drawn with the read material's buffers swapped
 		Framebuffer* m_Instanced = nullptr; // 256 x 16 RGBA8: a quad per instance
 	};
 

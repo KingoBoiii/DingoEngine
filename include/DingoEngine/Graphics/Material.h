@@ -129,8 +129,9 @@ namespace Dingo
 		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
 
 		// A storage buffer at a binding the shader's own numbering gives it (Shader::FindStorageBufferBinding);
-		// null clears it. A vertex stage reads it only from a readonly block. Changing it rebuilds the
-		// material's passes.
+		// null clears it. A vertex stage reads it only from a readonly block. Adding or clearing one
+		// rebuilds the material's passes; replacing one only re-points their binding sets, so
+		// ping-ponging two buffers compiles no pipelines.
 		void SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer);
 		static constexpr uint32_t k_MaxStorageBuffers = 4;
 
@@ -199,6 +200,7 @@ namespace Dingo
 		{
 			uint32_t Binding = 0;
 			GraphicsBuffer* Buffer = nullptr;
+			uint64_t BufferId = 0; // a buffer made at a freed one's address is a change
 		};
 		std::vector<StorageBinding> m_StorageBuffers;
 
