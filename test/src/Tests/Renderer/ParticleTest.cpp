@@ -140,6 +140,7 @@ namespace Dingo
 			.SetNoise(0.8f, 0.7f)
 			.SetStartSize(0.6f, 1.0f)
 			.SetEndSize(2.5f)
+			.SetStartRotation(0.0f, 360.0f)
 			.SetSpin(-20.0f, 20.0f)
 			.SetBlend(ParticleBlend::Alpha)
 			.SetColors({ { 0.0f, { 0.5f, 0.5f, 0.55f, 0.0f } }, { 0.15f, { 0.5f, 0.5f, 0.55f, 0.5f } }, { 1.0f, { 0.6f, 0.6f, 0.6f, 0.0f } } })
@@ -527,6 +528,38 @@ namespace Dingo
 			};
 			m_CheckTarget->GetAttachment(0)->ReadPixels(check("flipbook starts on its top-left frame, red", { 1.0f, 0.0f, 0.0f }));
 			m_HardTarget->GetAttachment(0)->ReadPixels(check("flipbook's third frame is the bottom-left one, blue", { 0.0f, 0.0f, 1.0f }));
+
+			// A sprite white on top and black below, bottom row first as loaded, with the default
+			// StartRotation: it stands upright.
+			const uint8_t halves[] = { 0, 0, 0, 255,   255, 255, 255, 255 };
+			m_UprightTexture = Texture::CreateFromData(1, 2, halves, TextureFormat::RGBA, "ParticleTest upright");
+			m_CheckEffects.emplace_back(ParticleEffect::Create(StillParticles("ParticleTest upright", 100.0f, 4)
+				.SetBurstOnPlay(1)
+				.SetStartSize(2.0f, 2.0f)
+				.SetColors({ { 0.0f, glm::vec4(1.0f) } })
+				.SetTexture(m_UprightTexture)));
+			m_Upright = m_CheckRenderer->CreateParticleEmitter(m_CheckEffects.back().get());
+			const glm::vec3 uprightCenter = k_PuffCenter + glm::vec3(0.0f, 0.5f, 0.0f);
+			DrawCheckScene(m_SoftTarget, { { m_Upright.get(), 1.0f / 60.0f } }, false, glm::translate(glm::mat4(1.0f), uprightCenter));
+
+			const PerspectiveCamera camera = CheckCamera();
+			const glm::vec3 forward = glm::normalize(k_PuffCenter - camera.GetPosition());
+			const glm::vec3 up = glm::normalize(glm::cross(glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f))), forward));
+			const glm::ivec2 top = ToPixel(camera.GetViewProjectionMatrix(), uprightCenter + up * 0.5f);
+			const glm::ivec2 bottom = ToPixel(camera.GetViewProjectionMatrix(), uprightCenter - up * 0.5f);
+			m_SoftTarget->GetAttachment(0)->ReadPixels([this, alive, top, bottom](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				if (pixels.Data.empty())
+				{
+					Check(false, "the upright sprite reads back");
+					return;
+				}
+				const float above = GreenAt(pixels.Data, top);
+				const float below = GreenAt(pixels.Data, bottom);
+				Check(above > 0.85f && below < 0.15f, std::format("a sprite stands upright: its top half on top ({:.2f} above, {:.2f} below)", above, below));
+			});
 		}
 	}
 
@@ -619,6 +652,7 @@ namespace Dingo
 		m_SoftPuff.reset();
 		m_HardPuff.reset();
 		m_Flipbook.reset();
+		m_Upright.reset();
 
 		delete m_Scene;
 		m_Scene = nullptr;
@@ -649,6 +683,7 @@ namespace Dingo
 		DestroyAndDelete(m_SoftTarget);
 		DestroyAndDelete(m_HardTarget);
 		DestroyAndDelete(m_FlipbookTexture);
+		DestroyAndDelete(m_UprightTexture);
 		m_HardPixels.clear();
 		m_Checks.clear();
 	}

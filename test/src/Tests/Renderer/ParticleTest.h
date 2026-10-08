@@ -91,6 +91,8 @@ namespace Dingo
 		std::shared_ptr<ParticleEmitter> m_HardPuff;
 		std::shared_ptr<ParticleEmitter> m_Flipbook;
 		Texture* m_FlipbookTexture = nullptr;
+		std::shared_ptr<ParticleEmitter> m_Upright;
+		Texture* m_UprightTexture = nullptr;
 		Scene* m_Scene = nullptr;
 		Entity m_SceneEmitter;
 		std::vector<uint8_t> m_HardPixels;

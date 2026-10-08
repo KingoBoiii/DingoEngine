@@ -60,7 +60,7 @@ void main()
 	gl_Position = ViewProjection * vec4(world, 1.0);
 	v_Color = ParticleColor(emitter, t);
 
-	vec2 frames = max(emitter.Spin.zw, vec2(1.0));
+	vec2 frames = max(vec2(emitter.Counts.yz), vec2(1.0));
 	float frame = min(floor(t * frames.x * frames.y), frames.x * frames.y - 1.0);
 	// File images load flipped (row 0 = the bottom), so v = 1 is the top and frames count rows from it.
 	vec2 cell = vec2(mod(frame, frames.x), frames.y - 1.0 - floor(frame / frames.x));

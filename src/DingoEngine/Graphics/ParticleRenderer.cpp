@@ -341,14 +341,15 @@ namespace Dingo::Internal
 			record.Forces = glm::vec4(params.Gravity, std::max(Finite(params.Drag, 0.0f), 0.0f));
 			record.Noise = glm::vec4(std::max(Finite(params.NoiseStrength, 0.0f), 0.0f), Finite(params.NoiseScale, 1.0f), Finite(params.InheritVelocity, 0.0f), emitter.m_Time);
 			record.Size = glm::vec4(std::max(Finite(params.StartSize.x, 0.1f), 0.0f), std::max(Finite(params.StartSize.y, 0.1f), 0.0f), std::max(Finite(params.EndSize, 1.0f), 0.0f), std::max(Finite(params.SoftDistance, 0.0f), 0.0f));
-			record.Spin = glm::vec4(glm::radians(Finite(params.Spin.x, 0.0f)), glm::radians(Finite(params.Spin.y, 0.0f)), static_cast<float>(std::max(params.FlipbookColumns, 1u)), static_cast<float>(std::max(params.FlipbookRows, 1u)));
+			record.Spin = glm::vec4(glm::radians(Finite(params.Spin.x, 0.0f)), glm::radians(Finite(params.Spin.y, 0.0f)),
+				glm::radians(Finite(params.StartRotation.x, 0.0f)), glm::radians(Finite(params.StartRotation.y, 0.0f)));
 			const uint32_t keys = std::min(params.ColorKeyCount, ParticleEffectParams::k_MaxColorKeys);
 			for (uint32_t key = 0; key < keys; ++key)
 			{
 				record.ColorTimes[key] = params.ColorKeys[key].Time;
 				record.Colors[key] = params.ColorKeys[key].Color;
 			}
-			record.Counts = glm::uvec4(keys, 0, 0, 0);
+			record.Counts = glm::uvec4(keys, std::max(params.FlipbookColumns, 1u), std::max(params.FlipbookRows, 1u), 0);
 
 			emitter.m_NeedsClear = false;
 			anySoft = anySoft || record.Size.w > 0.0f;

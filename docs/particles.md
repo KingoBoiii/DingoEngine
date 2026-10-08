@@ -94,6 +94,7 @@ fighter.AddComponent<ParticleEventComponent>()
 | `InheritVelocity` | 0 | The part of a world-space emitter's own velocity a particle starts with. |
 | `NoiseStrength`, `NoiseScale` | 0, 1 | A swirling push from a divergence-free (curl) field, so particles swirl without bunching. |
 | `StartSize`, `EndSize` | 0.1..0.1, 1 | Size across in world units, and its factor at death. |
+| `StartRotation` | 0..0 | Degrees, picked per particle. 0..0 keeps a sprite upright; 0..360 scatters it, as smoke and sparks want. |
 | `Spin` | 0..0 | Degrees a second. |
 | `ColorKeys` | white, fading out | Up to four HDR keys over life (0 birth, 1 death). |
 | `Blend` | `Additive` | `Additive` adds light and needs no sorting; `Alpha` draws over what is behind, unsorted. |

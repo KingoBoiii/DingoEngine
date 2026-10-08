@@ -87,6 +87,7 @@ namespace Dingo::UI
 			changed |= ImGui::DragFloat("Noise scale", &params.NoiseScale, 0.01f, 0.01f, 20.0f);
 			changed |= ImGui::DragFloat2("Start size", &params.StartSize.x, 0.005f, 0.0f, 20.0f);
 			changed |= ImGui::DragFloat("End size", &params.EndSize, 0.01f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat2("Start rotation (deg)", &params.StartRotation.x, 1.0f, -360.0f, 360.0f);
 			changed |= ImGui::DragFloat2("Spin (deg/s)", &params.Spin.x, 1.0f, -3600.0f, 3600.0f);
 			int keys = static_cast<int>(params.ColorKeyCount);
 			changed |= ImGui::SliderInt("Colour keys", &keys, 1, static_cast<int>(ParticleEffectParams::k_MaxColorKeys));

@@ -66,7 +66,8 @@ namespace Dingo
 
 		glm::vec2 StartSize{ 0.1f, 0.1f }; // world units across
 		float EndSize = 1.0f;              // the size at death, times the start size
-		glm::vec2 Spin{ 0.0f, 0.0f };      // degrees a second
+		glm::vec2 StartRotation{ 0.0f, 0.0f }; // degrees, picked per particle: 0..0 keeps a sprite upright, 0..360 scatters it
+		glm::vec2 Spin{ 0.0f, 0.0f };          // degrees a second
 
 		// Colour over life, up to four keys in time order: between them the colour blends, before the
 		// first and after the last it holds.
@@ -100,6 +101,7 @@ namespace Dingo
 		ParticleEffectParams& SetNoise(float strength, float scale) { NoiseStrength = strength; NoiseScale = scale; return *this; }
 		ParticleEffectParams& SetStartSize(float smallest, float largest) { StartSize = { smallest, largest }; return *this; }
 		ParticleEffectParams& SetEndSize(float factor) { EndSize = factor; return *this; }
+		ParticleEffectParams& SetStartRotation(float smallest, float largest) { StartRotation = { smallest, largest }; return *this; }
 		ParticleEffectParams& SetSpin(float slowest, float fastest) { Spin = { slowest, fastest }; return *this; }
 		ParticleEffectParams& SetColors(std::initializer_list<ParticleColorKey> keys)
 		{

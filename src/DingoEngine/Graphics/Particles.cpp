@@ -59,6 +59,8 @@ namespace Dingo
 			if (p.NoiseStrength > 0.0f)
 				code += std::format("\t.SetNoise({}, {})\n", f(p.NoiseStrength), f(p.NoiseScale));
 			code += std::format("\t.SetStartSize({}, {})\n\t.SetEndSize({})\n", f(p.StartSize.x), f(p.StartSize.y), f(p.EndSize));
+			if (p.StartRotation.x != 0.0f || p.StartRotation.y != 0.0f)
+				code += std::format("\t.SetStartRotation({}, {})\n", f(p.StartRotation.x), f(p.StartRotation.y));
 			if (p.Spin.x != 0.0f || p.Spin.y != 0.0f)
 				code += std::format("\t.SetSpin({}, {})\n", f(p.Spin.x), f(p.Spin.y));
 			code += "\t.SetColors({";

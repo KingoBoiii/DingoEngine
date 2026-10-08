@@ -93,7 +93,7 @@ void main()
 	Particle particle;
 	particle.PositionAge = vec4(position, 0.0);
 	particle.VelocityLife = vec4(velocity, max(life, 1e-3));
-	particle.Misc = vec4(mix(emitter.Size.x, emitter.Size.y, ParticleRandom(state)), ParticleRandom(state) * TAU,
+	particle.Misc = vec4(mix(emitter.Size.x, emitter.Size.y, ParticleRandom(state)), mix(emitter.Spin.z, emitter.Spin.w, ParticleRandom(state)),
 		mix(emitter.Spin.x, emitter.Spin.y, ParticleRandom(state)), ParticleRandom(state));
 	Particles[slot] = particle;
 }

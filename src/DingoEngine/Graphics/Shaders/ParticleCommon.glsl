@@ -19,10 +19,10 @@ struct ParticleEmitter
 	vec4 Forces;     // xyz = gravity, w = drag
 	vec4 Noise;      // x = strength, y = scale, z = inherited velocity, w = the emitter's time
 	vec4 Size;       // xy = start size range, z = end size factor, w = soft distance
-	vec4 Spin;       // xy = spin range (radians a second), zw = flipbook columns, rows
+	vec4 Spin;       // xy = spin range (radians a second), zw = start rotation range (radians)
 	vec4 ColorTimes; // the colour keys' times
 	vec4 Colors[4];
-	uvec4 Counts;    // x = colour keys
+	uvec4 Counts;    // x = colour keys, yz = flipbook columns, rows
 };
 
 struct ParticleSpawn
