@@ -5,8 +5,8 @@ Linux merge). Every file:line below was read that day. This is P13 of
 `.claude/plans/2026-10-08-v1.0-plan.md` (its §6 and decision D1). *Hearthvale* is a working title;
 HD9 settles the name.
 
-**Status**: draft, no code. HD1–HD10 in §9 are **proposed, not settled**. Each has a recommendation,
-and the owner settles them before H0. The asset choices also depend on downloads that could not be
+**Status**: draft, no code. HD1–HD10 in §9 were settled by the owner on 2026-10-08, each as
+recommended. The asset choices also depend on downloads that could not be
 made from the planning machine (§2.7).
 
 **What it is**: a cozy 3D builder/farm sim. You inherit an overgrown valley, then clear it, fence it,
@@ -436,20 +436,20 @@ any `[FAIL]` fails CI.
 
 ---
 
-## 9. Decisions (proposed 2026-10-08, awaiting the owner)
+## 9. Decisions (settled 2026-10-08, each as recommended)
 
-| # | Decision | Recommended | Alternative |
+| # | Decision | Chosen | Rejected |
 |---|---|---|---|
-| HD1 | Grid shape | **Square 1 m tiles**: fences, paths and crop rows read naturally, and Kenney's kits are square | Hex tiles with KayKit's Medieval Hexagon Pack: distinctive, but crops and fences on hexes are awkward and that pack has no crops |
-| HD2 | Art set | **Kenney Nature, Fantasy Town and Survival Kits for the world; KayKit Adventurers and clip libraries for people**, confirmed by H0's side-by-side frame | All KayKit (verified licences, no crops) or all Kenney (unverified characters) |
-| HD3 | Animals | **Conditional**: chickens and cows only if a pack's own licence says CC0 in H0, with E1 for material colours; otherwise cut, and the coop and barn go with them | Always (model them from primitives), or never |
-| HD4 | Audio licences | **CC0 first; CC-BY 4.0 allowed** with the credits screen and README naming the author | CC0 only (fewer tracks), or synthesized like the other examples (not release quality) |
-| HD5 | Day length | **12 real minutes**, time stopped in menus | 15 minutes; or a setting in options |
-| HD6 | Ending | **The Lantern Festival when the four boards are done**, then sandbox | Pure sandbox, no ending |
-| HD7 | Saving | **On sleep only, 3 slots**, autosave at the day roll | Save anywhere (state mid-day is much larger and harder to keep consistent) |
-| HD8 | Stamina | **None**: the clock is the only limit | A stamina bar as in the genre |
-| HD9 | Name | **Decide by H6**, after an itch.io and Steam search; *Hearthvale* until then | Fix it now |
-| HD10 | Co-op | **None in 1.0**. *Hearthvale* is the natural candidate for the networking module's showcase later (`ROADMAP.md:425`), so its state stays grid-based and serialisable | Plan for co-op now |
+| HD1 ✅ | Grid shape | **Square 1 m tiles**: fences, paths and crop rows read naturally, and Kenney's kits are square | Hex tiles with KayKit's Medieval Hexagon Pack: distinctive, but crops and fences on hexes are awkward and that pack has no crops |
+| HD2 ✅ | Art set | **Kenney Nature, Fantasy Town and Survival Kits for the world; KayKit Adventurers and clip libraries for people**, confirmed by H0's side-by-side frame | All KayKit (verified licences, no crops) or all Kenney (unverified characters) |
+| HD3 ✅ | Animals | **Conditional**: chickens and cows only if a pack's own licence says CC0 in H0, with E1 for material colours; otherwise cut, and the coop and barn go with them | Always (model them from primitives), or never |
+| HD4 ✅ | Audio licences | **CC0 first; CC-BY 4.0 allowed** with the credits screen and README naming the author | CC0 only (fewer tracks), or synthesized like the other examples (not release quality) |
+| HD5 ✅ | Day length | **12 real minutes**, time stopped in menus | 15 minutes; or a setting in options |
+| HD6 ✅ | Ending | **The Lantern Festival when the four boards are done**, then sandbox | Pure sandbox, no ending |
+| HD7 ✅ | Saving | **On sleep only, 3 slots**, autosave at the day roll | Save anywhere (state mid-day is much larger and harder to keep consistent) |
+| HD8 ✅ | Stamina | **None**: the clock is the only limit | A stamina bar as in the genre |
+| HD9 ✅ | Name | **Decide by H6**, after an itch.io and Steam search; *Hearthvale* until then | Fix it now |
+| HD10 ✅ | Co-op | **None in 1.0**. *Hearthvale* is the natural candidate for the networking module's showcase later (`ROADMAP.md:425`), so its state stays grid-based and serialisable | Plan for co-op now |
 
 ---
 
