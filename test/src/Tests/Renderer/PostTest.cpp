@@ -252,11 +252,11 @@ void main()
 					const float input = GradientValue(x, pixels.Width, k_GradientMax);
 					const float output = pixels.GetPixel(x, 0).r;
 					if (op == static_cast<int>(ToneMapOperator::None))
-						worst = std::max(worst, std::abs(output - std::min(input, 1.0f)));
+						worst = (std::max)(worst, std::abs(output - (std::min)(input, 1.0f)));
 					else if (op == static_cast<int>(ToneMapOperator::Soft))
 					{
 						if (input <= knee)
-							worst = std::max(worst, std::abs(output - input));
+							worst = (std::max)(worst, std::abs(output - input));
 						else if (input >= white)
 							reachesWhite = reachesWhite && output == 1.0f;
 					}
@@ -281,7 +281,7 @@ void main()
 				const float input = GradientValue(x, pixels.Width, k_GradientMax);
 				if (input <= knee || color.r < 0.5f)
 					continue;
-				worst = std::max({ worst, std::abs(color.g / color.r - 0.5f), std::abs(color.b / color.r - 0.25f) });
+				worst = (std::max)({ worst, std::abs(color.g / color.r - 0.5f), std::abs(color.b / color.r - 0.25f) });
 			}
 			Check(worst < 0.015f, std::format("Soft keeps an overbright (1, 0.5, 0.25) gradient's hue (worst ratio error {:.4f})", worst));
 		});
@@ -299,11 +299,11 @@ void main()
 		});
 		readBack(m_SpotBloom, [this](const TexturePixels& pixels)
 		{
-			const float near = pixels.GetPixel(k_SpotSize / 2 + 8, k_SpotSize / 2).r;
-			const float far = pixels.GetPixel(k_SpotSize / 2 + 12, k_SpotSize / 2).r;
+			const float nearGlow = pixels.GetPixel(k_SpotSize / 2 + 8, k_SpotSize / 2).r;
+			const float farGlow = pixels.GetPixel(k_SpotSize / 2 + 12, k_SpotSize / 2).r;
 			const float left = pixels.GetPixel(k_SpotSize / 2 - 13, k_SpotSize / 2).r;
-			Check(near > 0.0f && far > 0.0f && near >= far && std::abs(far - left) <= 2.0f / 255.0f,
-				std::format("with bloom a square at 8 glows past its edge, fading with distance and alike on both sides ({:.3f} 4 px out, {:.3f} 8 px out, {:.3f} on the left)", near, far, left));
+			Check(nearGlow > 0.0f && farGlow > 0.0f && nearGlow >= farGlow && std::abs(farGlow - left) <= 2.0f / 255.0f,
+				std::format("with bloom a square at 8 glows past its edge, fading with distance and alike on both sides ({:.3f} 4 px out, {:.3f} 8 px out, {:.3f} on the left)", nearGlow, farGlow, left));
 		});
 
 		readBack(m_SceneOff, [this](const TexturePixels& pixels) { m_SceneOffPixels = pixels.Data; });
@@ -311,11 +311,11 @@ void main()
 		{
 			int worst = 0;
 			uint32_t differing = 0;
-			const size_t count = std::min(pixels.Data.size(), m_SceneOffPixels.size());
+			const size_t count = (std::min)(pixels.Data.size(), m_SceneOffPixels.size());
 			for (size_t i = 0; i < count; ++i)
 			{
 				const int difference = std::abs(static_cast<int>(pixels.Data[i]) - static_cast<int>(m_SceneOffPixels[i]));
-				worst = std::max(worst, difference);
+				worst = (std::max)(worst, difference);
 				differing += difference > 0 ? 1 : 0;
 			}
 			Check(count > 0 && count == m_SceneOffPixels.size() && worst <= 1,
