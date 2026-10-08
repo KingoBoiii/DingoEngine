@@ -21,6 +21,10 @@ namespace Dingo
 		// 10 degrees above the horizon: 80 degrees from the plane's normal.
 		const glm::vec3 k_GrazingDirection = glm::normalize(glm::vec3(-1.0f, -std::tan(glm::radians(10.0f)), 0.0f));
 		const glm::vec3 k_FoxSunDirection = glm::normalize(glm::vec3(-1.0f, -0.8f, 0.0f));
+		// The grazed plane's positive control: a 0.4 m block in its far corner, whose shadow runs 2.3 m
+		// towards -x, clear of the self-shadowing grid (z = -3..3).
+		const glm::vec3 k_AcneBlock{ 3.5f, 0.2f, -3.5f };
+		const glm::vec3 k_AcneBlockShadow{ 2.2f, 0.0f, -3.5f };
 
 		const glm::vec4 k_FloorColor{ 0.6f, 0.6f, 0.6f, 1.0f };
 
@@ -154,6 +158,10 @@ namespace Dingo
 		m_BudgetPair = { MakeTarget("ShadowTest budget first"), MakeTarget("ShadowTest budget second") };
 		m_ProbeTargets = { MakeTarget("ShadowTest probes sun"), MakeTarget("ShadowTest probes spot"), MakeTarget("ShadowTest probes point") };
 		m_ProbeFramesLeft = 0;
+		m_BudgetSecondFramePending = false;
+		m_FadePixelsPending = false;
+		m_FadeHardPixels.clear();
+		m_FadeBandPixels.clear();
 		m_EntityTarget = MakeTarget("ShadowTest entities");
 	}
 
@@ -372,6 +380,7 @@ namespace Dingo
 		{
 			case Mode::Acne:
 				renderer.SubmitMesh(box, Box({ 0.0f, -0.025f, 0.0f }, { 8.0f, 0.05f, 8.0f }), k_FloorColor);
+				renderer.SubmitMesh(box, Box(k_AcneBlock, glm::vec3(0.4f)), { 0.8f, 0.4f, 0.3f, 1.0f });
 				break;
 
 			case Mode::Skinned:
@@ -478,8 +487,13 @@ namespace Dingo
 
 		const glm::mat4 acneViewProjection = acneCamera.GetViewProjectionMatrix();
 		readBack(m_AcnePair.Off, [this](const TexturePixels& pixels) { m_AcnePair.OffPixels = pixels.Data; });
-		readBack(m_AcnePair.On, [this, acneViewProjection](const TexturePixels& pixels)
+		const glm::ivec2 acneBlockShadow = ToPixel(acneViewProjection, k_AcneBlockShadow, k_CheckWidth, k_CheckHeight);
+		readBack(m_AcnePair.On, [this, acneViewProjection, acneBlockShadow](const TexturePixels& pixels)
 		{
+			const glm::vec4 blockOn = PixelAt(pixels, acneBlockShadow);
+			const glm::vec4 blockOff = PixelAt(m_AcnePair.OffPixels, k_CheckWidth, acneBlockShadow);
+			Check(blockOn.g < 0.75f * blockOff.g, std::format("the grazing sun's shadows do draw: a block on the plane casts its long shadow ({:.3f} against {:.3f})", blockOn.g, blockOff.g));
+
 			int samples = 0, darker = 0;
 			for (int z = -3; z <= 3; ++z)
 			{
@@ -533,7 +547,7 @@ namespace Dingo
 		DrawInto(m_PointPair.Off, Mode::Point, false, pointCamera);
 		DrawInto(m_BudgetPair.On, Mode::Budget, true, budgetCamera);
 		const Renderer3D::Statistics budgetStats = renderer.GetStatistics();
-		DrawInto(m_BudgetPair.Off, Mode::Budget, true, budgetCamera);
+		m_BudgetSecondFramePending = true;
 
 		Check(spotStats.ShadowViews == 1 && spotStats.ShadowedLights == 1 && spotStats.ShadowCascades == 0,
 			std::format("a casting spot light renders one tile ({} tiles, {} shadowed lights)", spotStats.ShadowViews, spotStats.ShadowedLights));
@@ -603,35 +617,58 @@ namespace Dingo
 				std::format("with every light inside the budget, the shadow slots go to the {} nearest (unshadowed: submissions [{}], expected [{}])", slots, unshadowed, expected));
 		}
 
-		// The budget fade, on its own renderer: four slots, six lights at increasing distance.
+		// The budget fade, on its own renderer: four light slots and two shadow slots, six casting point
+		// lights in a row away from the camera, each with a block beside it. Drawn with a hard cut and
+		// with a band, read back after each: the band dims the last drawn light, and the second
+		// shadowed light's shadow, at the shadow slots' edge, lightens.
 		{
 			Renderer3DParams params;
 			params.Capabilities.MaxLocalLights = 4;
+			params.Capabilities.MaxShadowedLocalLights = 2;
 			Renderer3D* fadeRenderer = Renderer3D::Create(params);
-			auto drawLights = [&](float band)
+			PerspectiveCamera fadeCamera(45.0f, aspect, 0.1f, 100.0f);
+			fadeCamera.SetPosition({ 0.0f, 8.0f, 4.0f });
+			fadeCamera.SetTarget({ 0.0f, 0.0f, -6.0f });
+			auto lightZ = [](int i) { return -2.0f - 2.5f * static_cast<float>(i); };
+			const std::weak_ptr<int> fadeAlive = m_Alive;
+			auto drawLights = [&](float band, std::vector<uint8_t>* pixelsOut)
 			{
 				fadeRenderer->SetLightBudgetFade(band);
 				Framebuffer* previous = Renderer::GetRenderTarget();
 				Renderer::SetRenderTarget(m_EntityTarget);
-				fadeRenderer->BeginScene(spotCamera);
+				fadeRenderer->BeginScene(fadeCamera);
+				fadeRenderer->Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+				fadeRenderer->SetAmbientLight(glm::vec3(1.0f), 0.05f);
 				for (int i = 0; i < 6; ++i)
 				{
 					PointLight light;
-					light.Position = { 0.0f, 1.0f, -2.0f - 1.5f * static_cast<float>(i) };
-					light.Range = 1.0f;
+					light.Position = { 0.0f, 1.0f, lightZ(i) };
+					light.Range = 2.0f;
+					light.CastShadows = true;
 					fadeRenderer->SubmitLight(light);
+					fadeRenderer->SubmitMesh(fadeRenderer->GetBoxMesh(), Box({ 0.35f, 0.2f, lightZ(i) }, glm::vec3(0.4f)), glm::vec4(1.0f));
 				}
-				fadeRenderer->SubmitMesh(fadeRenderer->GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f));
+				fadeRenderer->SubmitMesh(fadeRenderer->GetBoxMesh(), Box({ 0.0f, -0.05f, -8.0f }, { 30.0f, 0.1f, 40.0f }), glm::vec4(1.0f));
 				fadeRenderer->EndScene();
+				m_EntityTarget->GetAttachment(0)->ReadPixels([fadeAlive, pixelsOut](const TexturePixels& pixels)
+				{
+					if (!fadeAlive.expired())
+						*pixelsOut = pixels.Data;
+				});
 				Renderer::SetRenderTarget(previous);
 				return fadeRenderer->GetStatistics();
 			};
-			const Renderer3D::Statistics hard = drawLights(0.0f);
-			const Renderer3D::Statistics faded = drawLights(0.5f);
+			const Renderer3D::Statistics hard = drawLights(0.0f, &m_FadeHardPixels);
+			const Renderer3D::Statistics faded = drawLights(0.5f, &m_FadeBandPixels);
 			fadeRenderer->Shutdown();
 			delete fadeRenderer;
-			Check(hard.LocalLights == 4 && hard.FadedLights == 0 && faded.LocalLights == 4 && faded.FadedLights > 0,
-				std::format("past the light budget, a fade band dims the lights at its edge (hard cut {} faded, band 0.5 {} faded)", hard.FadedLights, faded.FadedLights));
+			Check(hard.LocalLights == 4 && hard.FadedLights == 0 && faded.LocalLights == 4 && faded.FadedLights > 0 && hard.ShadowedLights == 2 && faded.ShadowedLights == 2,
+				std::format("past the light budget, a fade band dims the lights at its edge (hard cut {} faded, band 0.5 {} faded; {} and {} shadowed)", hard.FadedLights, faded.FadedLights, hard.ShadowedLights, faded.ShadowedLights));
+
+			const glm::mat4 fadeViewProjection = fadeCamera.GetViewProjectionMatrix();
+			m_FadeLastLitPixel = ToPixel(fadeViewProjection, { -0.5f, 0.0f, lightZ(3) }, k_CheckWidth, k_CheckHeight);
+			m_FadeShadowPixel = ToPixel(fadeViewProjection, ShadowFromLight({ 0.0f, 1.0f, lightZ(1) }, { 0.45f, 0.4f, lightZ(1) }), k_CheckWidth, k_CheckHeight);
+			m_FadePixelsPending = true;
 		}
 
 		const std::weak_ptr<int> alive = m_Alive;
@@ -685,16 +722,40 @@ namespace Dingo
 			Check(changed == 0, std::format("the open floor around a point light is unchanged, across the cube's seams and on its -y face ({} of {} changed)", changed, openFloor.size()));
 		});
 
-		readBack(m_BudgetPair.Off, [this](const TexturePixels& pixels) { m_BudgetPair.OffPixels = pixels.Data; });
-		readBack(m_BudgetPair.On, [this](const TexturePixels& pixels)
-		{
-			Check(pixels.Data == m_BudgetPair.OffPixels, "a still scene of twelve casting lights draws the same frame twice");
-		});
+		readBack(m_BudgetPair.On, [this](const TexturePixels& pixels) { m_BudgetPair.OffPixels = pixels.Data; });
 
 		// Answers come back a frame or two later, so the probe checks issue probes for a few frames.
 		m_ProbeFramesLeft = 8;
 		m_ProbeAnswerFrame = -1;
 		UpdateProbeChecks();
+	}
+
+	// The budget scene again, a frame after the first: tiers, cascades and the versioned buffers must
+	// give the same picture frame to frame, not only twice in one frame.
+	void ShadowTest::DrawBudgetSecondFrame()
+	{
+		m_BudgetSecondFramePending = false;
+		const float aspect = static_cast<float>(k_CheckWidth) / static_cast<float>(k_CheckHeight);
+		DrawInto(m_BudgetPair.Off, Mode::Budget, true, CameraFor(Mode::Budget, aspect));
+		const std::weak_ptr<int> alive = m_Alive;
+		m_BudgetPair.Off->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				Check(!pixels.Data.empty() && pixels.Data == m_BudgetPair.OffPixels, "a still scene of twelve casting lights draws the same picture in two consecutive frames");
+		});
+	}
+
+	void ShadowTest::CheckFadePixels()
+	{
+		m_FadePixelsPending = false;
+		const glm::vec4 litHard = PixelAt(m_FadeHardPixels, k_CheckWidth, m_FadeLastLitPixel);
+		const glm::vec4 litBand = PixelAt(m_FadeBandPixels, k_CheckWidth, m_FadeLastLitPixel);
+		Check(litHard.g > 0.1f && litBand.g < 0.85f * litHard.g,
+			std::format("the band visibly dims the last light inside the budget ({:.3f} against {:.3f} with a hard cut)", litBand.g, litHard.g));
+		const glm::vec4 shadowHard = PixelAt(m_FadeHardPixels, k_CheckWidth, m_FadeShadowPixel);
+		const glm::vec4 shadowBand = PixelAt(m_FadeBandPixels, k_CheckWidth, m_FadeShadowPixel);
+		Check(shadowBand.g > shadowHard.g + 0.02f,
+			std::format("and hands the last shadow slot over: that light's shadow lightens ({:.3f} against {:.3f} with a hard cut)", shadowBand.g, shadowHard.g));
 	}
 
 	void ShadowTest::UpdateProbeChecks()
@@ -719,6 +780,9 @@ namespace Dingo
 
 		if (--m_ProbeFramesLeft > 0)
 			return;
+
+		if (m_FadePixelsPending)
+			Check(false, "the budget fade's two frames read back");
 
 		Check(m_ProbeAnswerFrame >= 1 && m_ProbeAnswerFrame <= 4,
 			std::format("the GPU's probe answers arrive within four frames ({} frames)", m_ProbeAnswerFrame));
@@ -764,6 +828,10 @@ namespace Dingo
 		}
 		else if (m_ProbeFramesLeft > 0 && !Renderer::IsFrameSkipped())
 		{
+			if (m_BudgetSecondFramePending)
+				DrawBudgetSecondFrame();
+			if (m_FadePixelsPending && !m_FadeHardPixels.empty() && !m_FadeBandPixels.empty())
+				CheckFadePixels();
 			UpdateProbeChecks();
 		}
 

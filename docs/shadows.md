@@ -206,11 +206,13 @@ green). `--shadow-cascades` tints
 by cascade and `--shadow-pan` pans the camera slowly. On start it draws each scene with its lights
 casting and without and checks by readback that the floor behind a box, and behind a pillar in a far
 cascade, goes dark; that the floor in the sun is unchanged to the byte; that a `ShadowsOnly` box
-through the ECS shadows the floor without being drawn; that the grazed plane doesn't shadow itself;
+through the ECS shadows the floor without being drawn; that the grazed plane doesn't shadow itself
+while a block on it does cast;
 that the Fox casts; that the spot light's box and each of the point light's pillars cast, on four
 cube faces, while the open floor, across the faces' seams and below the light, is unchanged; that
 eight of twelve casting lights get a shadow and the other four light unshadowed; that the same
-still scene draws the same frame twice; and that the budget fade dims lights at the budget's edge.
+still scene draws the same picture in two consecutive frames; and that the budget fade visibly dims
+the last light inside the budget and lightens the shadow at the shadow slots' edge.
 Over the next frames it checks that probes read 0 behind the sun's box, the spot light's box, a
 point light's pillar and (through `Scene::GetLightVisibility`) a `ShadowsOnly` box, 1 in the open
 and at once for a light without a shadow, and in between at the sun's PCF edge.

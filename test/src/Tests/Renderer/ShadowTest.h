@@ -22,10 +22,12 @@ namespace Dingo
 	// On start it checks by readback, each scene drawn twice, with its lights casting and without: the
 	// floor behind a box and behind a pillar 35 m off (a far cascade) goes dark, the floor in the sun
 	// is unchanged to the byte, a ShadowsOnly box through the ECS shadows the floor without being
-	// drawn, the grazed plane doesn't shadow itself, and the Fox casts onto the floor; a spot light's
+	// drawn, the grazed plane doesn't shadow itself while a block on it casts, and the Fox casts onto
+	// the floor; a spot light's
 	// box and each of a point light's four pillars cast, the floor where nothing stands is unchanged
-	// on every cube face and across their seams, eight of twelve lights get a shadow and two frames of
-	// that scene are identical; and the budget fade dims lights at the budget's edge. Over the next
+	// on every cube face and across their seams, eight of twelve lights get a shadow and two
+	// consecutive frames of that scene are identical; and the budget fade dims the last light inside
+	// the budget and lightens the shadow at the shadow slots' edge, read back. Over the next
 	// frames it checks shadow probes: 0 behind an occluder (the sun's box, the spot light's box, a point
 	// light's pillar, the ECS scene's ShadowsOnly box through Scene::GetLightVisibility), 1 in the
 	// open and at once for a light without a shadow, and in between at the sun's PCF edge.
@@ -64,6 +66,8 @@ namespace Dingo
 		void RunChecks();
 		void RunLocalChecks();
 		void UpdateProbeChecks();
+		void DrawBudgetSecondFrame();
+		void CheckFadePixels();
 
 	private:
 		TestChecks m_Checks;
@@ -107,6 +111,14 @@ namespace Dingo
 		CheckPair m_SpotPair;
 		CheckPair m_PointPair;
 		CheckPair m_BudgetPair; // the same casting scene twice: On and Off are both on
+		bool m_BudgetSecondFramePending = false; // Off is drawn a frame after On
+
+		// The budget fade's two frames, hard cut and band, read back, and where they are compared.
+		std::vector<uint8_t> m_FadeHardPixels;
+		std::vector<uint8_t> m_FadeBandPixels;
+		glm::ivec2 m_FadeLastLitPixel{ 0 };
+		glm::ivec2 m_FadeShadowPixel{ 0 };
+		bool m_FadePixelsPending = false;
 		Framebuffer* m_EntityTarget = nullptr;
 	};
 
