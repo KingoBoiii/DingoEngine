@@ -12,15 +12,18 @@ namespace Dingo
 	// GPU particles (ParticleEffect, Renderer3D::CreateParticleEmitter, ParticleEmitterComponent). Start a
 	// mode with --particles=fountain (sparks from a cone, through bloom), burst (a burst of sparks at a
 	// random point every second), soft (smoke puffs that meet the floor, through the post chain's soft
-	// edges) or budget (an emitter keeping about 30,000 particles alive). The panel switches the post
-	// chain and soft edges.
+	// edges), budget (an emitter keeping about 30,000 particles alive) or events (the Fox walking, a puff
+	// of dust from every footfall in its clips' events, and glowing motes while Survey's "look" range is
+	// open). The panel switches the post chain and soft edges.
 	//
 	// Over its first five frames it checks, on a private Renderer3D, by reading the particle pool back:
 	// an emitter takes the whole 65,536-particle pool and keeps every particle alive, and another finds
 	// no room; a burst of 100 gives 100 live particles, and none outlives its lifetime; a ring of 64
 	// asked for 100 keeps 64 and counts 36 dropped; a ParticleEmitterComponent's burst through the
 	// SceneRenderer lands in its emitter; and a soft particle fades where it meets the floor while its
-	// top stays as a hard one draws it.
+	// top stays as a hard one draws it. Then, through a ParticleEventComponent on the Fox, over 300
+	// fixed frames: across a Walk-to-Run blend every footfall a script hears bursts exactly once (six
+	// particles each), and Survey's "look" range plays its emitter only while it is open.
 	class ParticleTest : public GraphicsTest
 	{
 	public:
@@ -40,7 +43,8 @@ namespace Dingo
 			Fountain,
 			Burst,
 			Soft,
-			Budget
+			Budget,
+			Events
 		};
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
@@ -49,6 +53,8 @@ namespace Dingo
 		void CountAlive(Renderer3D& renderer, const ParticleEmitter& emitter, std::function<void(uint32_t alive, float worstAgeOverLife)> done);
 		void DrawCheckScene(Framebuffer* target, std::initializer_list<std::pair<ParticleEmitter*, float>> emitters, bool post, const glm::mat4& emitterTransform = glm::mat4(1.0f));
 		void DrawLive(float deltaTime);
+		void BuildEventScene();
+		void RunEventStep();
 
 	private:
 		TestChecks m_Checks;
@@ -86,6 +92,21 @@ namespace Dingo
 		Scene* m_Scene = nullptr;
 		Entity m_SceneEmitter;
 		std::vector<uint8_t> m_HardPixels;
+
+		// Particles from animation events.
+		Model* m_Fox = nullptr;
+		ParticleEffect* m_DustEffect = nullptr;
+		ParticleEffect* m_MoteEffect = nullptr;
+		Scene* m_EventScene = nullptr;
+		Entity m_EventFox;
+		Entity m_Dust;
+		Entity m_Motes;
+		int m_EventStep = 0;
+		uint32_t m_Footfalls = 0;
+		uint32_t m_DustSpawned = 0;
+		uint32_t m_MotesSpawned = 0;
+		bool m_MotesPlayedOpen = false;
+		bool m_MotesStoppedClosed = false;
 	};
 
 }

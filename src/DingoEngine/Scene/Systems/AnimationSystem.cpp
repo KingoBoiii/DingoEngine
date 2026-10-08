@@ -29,8 +29,13 @@ namespace Dingo
 				{
 					if (const AnimatorRuntime* runtime = registry.try_get<AnimatorRuntime>(handle); runtime && runtime->Instance)
 					{
+						const bool particles = registry.all_of<ParticleEventComponent>(handle);
 						for (const AnimationEvent& end : runtime->Instance->GetOpenRangeEnds())
+						{
 							scratch.Waiting.emplace_back(handle, end);
+							if (particles)
+								scratch.ParticleWaiting.emplace_back(handle, end);
+						}
 					}
 					registry.remove<AnimatorRuntime>(handle);
 				}
@@ -136,6 +141,8 @@ namespace Dingo
 						scratch.Deliveries.push_back(waiting);
 				}
 				scratch.Waiting.clear();
+				scratch.ParticleEvents.swap(scratch.ParticleWaiting);
+				scratch.ParticleWaiting.clear();
 
 				auto view = registry.view<AnimatorComponent, SkinnedMeshRendererComponent>();
 				for (entt::entity handle : view)
@@ -154,6 +161,11 @@ namespace Dingo
 
 					animator.Update(deltaTime * settings.Speed);
 					RecordEvents(scratch, handle, animator.GetEventsThisFrame());
+					if (registry.all_of<ParticleEventComponent>(handle))
+					{
+						for (const AnimationEvent& event : animator.GetEventsThisFrame())
+							scratch.ParticleEvents.emplace_back(handle, event);
+					}
 					if (animator.GetEventsThisFrame().empty() || !scripts.Find(handle))
 						continue;
 

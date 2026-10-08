@@ -736,6 +736,12 @@ building it showed:
 - Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
   no payload ([#103](https://github.com/KingoBoiii/DingoEngine/issues/103)).
 
+### Particles from events
+
+*(v0.9)* A `ParticleEventComponent` turns events into particles with no game code: an instant event
+bursts an emitter entity, and a range plays one while it is open. See
+[Particles from animation events](particles.md#from-animation-events).
+
 ## Sockets
 
 `child.SetParent(character, "joint", keepWorldTransform)` hangs an entity on a joint of the

@@ -51,6 +51,38 @@ emitter->EmitAt(point, 20); // spawns at the next submission
 Submit an emitter once a frame; a second scene that shows it (a minimap) submits it with a
 `deltaTime` of 0, or it steps twice. Dropping the last `shared_ptr` returns its ring to the pool.
 
+## From animation events
+
+The `.events` files beside a model already say *when* a foot lands or a blade is live
+([Events](animation.md#events)); a `ParticleEventComponent` on the animated entity says *what*:
+
+```cpp
+Entity dust = scene->CreateEntity("Left foot dust");
+dust.AddComponent<Transform3DComponent>();
+dust.AddComponent<ParticleEmitterComponent>(footDust);
+dust.SetParent(fighter, "foot_l");                  // a joint socket: the dust follows the foot
+
+Entity trail = scene->CreateEntity("Sword trail");
+trail.AddComponent<Transform3DComponent>();
+trail.AddComponent<ParticleEmitterComponent>(swordTrail).Playing = false;
+trail.SetParent(fighter, "hand_r");
+
+fighter.AddComponent<ParticleEventComponent>()
+	.Bind("step_l", dust.GetUUID(), 6)               // an instant: a burst of 6
+	.BindRange("hitbox", trail.GetUUID());           // a range: the emitter plays while it is open
+```
+
+- **Exactly what the scripts hear.** The bindings take the same events `OnAnimationEvent` gets, each
+  frame after the animate pass: the dominant clip's on each layer, so a footfall fires once even
+  across a blend.
+- **Ranges stop on `RangeEnd`**, including the ones a rebind, a seek or a removed `AnimatorComponent`
+  sends; removing the `ParticleEventComponent` (or its entity) stops every range emitter it binds.
+  Start a range's emitter with `Playing` off.
+- **Live edits move them.** Editing a `.events` file while the game runs re-times the bursts through
+  the model's hot-reload ([Model hot-reload](animation.md)).
+- Emitters are found by UUID, so a duplicated entity's bindings still point at the original emitters;
+  bind its own afterwards if it needs them.
+
 ## ParticleEffectParams
 
 | Field | Default | Meaning |
@@ -92,10 +124,13 @@ which an emitter takes when it is made. An effect must outlive its emitters.
 
 ## Checking it
 
-The test app's **Particle Test** (`--test=particles`, `--particles=fountain|burst|soft|budget`) shows
-a fountain of sparks through bloom, bursts at random points, soft smoke against the floor and an
-emitter keeping about 30,000 alive. Over its first five frames it checks by reading the pool back:
+The test app's **Particle Test** (`--test=particles`, `--particles=fountain|burst|soft|budget|events`)
+shows a fountain of sparks through bloom, bursts at random points, soft smoke against the floor, an
+emitter keeping about 30,000 alive, and the Fox puffing dust at every footfall. Over its first five frames it checks by reading the pool back:
 an emitter takes the whole pool and keeps every particle alive while another finds no room; a burst
 of 100 gives 100 live particles and none outlives its lifetime; a ring of 64 asked for 100 keeps 64
 and drops 36; a `ParticleEmitterComponent`'s burst through the `SceneRenderer` lands in its emitter;
-and a soft particle fades where it meets the floor while its top draws as a hard one does.
+and a soft particle fades where it meets the floor while its top draws as a hard one does. Over the
+next 300 fixed frames, through a `ParticleEventComponent` on the Fox, every footfall a script hears
+across a Walk-to-Run blend bursts exactly once, and Survey's `look` range plays its emitter only while
+it is open.

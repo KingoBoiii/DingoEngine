@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Dingo
 {
@@ -441,6 +442,38 @@ namespace Dingo
 		ParticleEmitterComponent() = default;
 		ParticleEmitterComponent(const ParticleEmitterComponent&) = default;
 		ParticleEmitterComponent(ParticleEffect* effect) : Effect(effect) {}
+	};
+
+	// Particles fired straight from the entity's animation events (its AnimatorComponent's clips): an
+	// instant event bursts an emitter entity, a range plays one while it is open. An emitter is any
+	// entity with a ParticleEmitterComponent, usually parented to a joint socket; a range's emitter
+	// should start with Playing off. A RangeEnd stops it, including the ones a rebind or a removed
+	// animator sends, and so does removing this component.
+	struct ParticleEventComponent
+	{
+		struct Binding
+		{
+			std::string Event;
+			UUID Emitter;
+			uint32_t Count = 1; // an instant event's burst
+			bool Range = false;
+		};
+		std::vector<Binding> Bindings;
+
+		ParticleEventComponent() = default;
+		ParticleEventComponent(const ParticleEventComponent&) = default;
+
+		ParticleEventComponent& Bind(std::string event, UUID emitter, uint32_t count)
+		{
+			Bindings.push_back({ std::move(event), emitter, count, false });
+			return *this;
+		}
+
+		ParticleEventComponent& BindRange(std::string event, UUID emitter)
+		{
+			Bindings.push_back({ std::move(event), emitter, 0, true });
+			return *this;
+		}
 	};
 
 	// A 3D rigid body simulated in the Scene's Physics3D world (Jolt backend, hidden

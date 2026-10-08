@@ -30,7 +30,7 @@ namespace Dingo
 		static std::atomic<uint64_t> s_ProbeSalt = 0;
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
-		Internal::ParticleSync::Connect(m_Data->Registry);
+		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
 		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
 
@@ -121,6 +121,7 @@ namespace Dingo
 		CopyComponentIfExists<MeshRendererComponent>(registry, dst, src);
 		CopyComponentIfExists<SkinnedMeshRendererComponent>(registry, dst, src);
 		CopyComponentIfExists<AnimatorComponent>(registry, dst, src);
+		CopyComponentIfExists<ParticleEventComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody3DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
@@ -269,6 +270,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
 			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
+			Internal::ParticleSync::ApplyAnimationEvents(m_Data->Registry, m_Data->EntityMap, m_Data->AnimationEvents.ParticleEvents);
 			Internal::ParticleSync::Update(m_Data->Registry, deltaTime);
 			m_Data->Updating = false;
 		}

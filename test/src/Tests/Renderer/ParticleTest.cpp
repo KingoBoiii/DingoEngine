@@ -49,6 +49,29 @@ namespace Dingo
 			return static_cast<float>(data[(static_cast<size_t>(p.y) * k_CheckWidth + p.x) * 4 + 1]) / 255.0f;
 		}
 
+		constexpr const char* k_FoxPath = "assets/models/Fox/Fox.gltf";
+		constexpr float k_FoxLength = 1.6f;
+		constexpr uint32_t k_DustPerStep = 6;
+		constexpr int k_BlendFrames = 120;
+		constexpr int k_SurveyFrames = 180;
+		constexpr float k_EventStep = 1.0f / 60.0f;
+
+		// Counts the footfalls the Fox's script hears, to hold the bursts to.
+		class FootfallCounter : public ScriptableEntity
+		{
+		public:
+			explicit FootfallCounter(uint32_t* count) : m_Count(count) {}
+
+			void OnAnimationEvent(const AnimationEvent& event) override
+			{
+				if (event.Type == AnimationEventType::Instant && event.Name.starts_with("step_"))
+					++*m_Count;
+			}
+
+		private:
+			uint32_t* m_Count = nullptr;
+		};
+
 		ParticleEffectParams StillParticles(const char* name, float lifetime, uint32_t capacity)
 		{
 			return ParticleEffectParams()
@@ -77,6 +100,8 @@ namespace Dingo
 				m_Mode = Mode::Soft;
 			else if (*mode == "budget")
 				m_Mode = Mode::Budget;
+			else if (*mode == "events")
+				m_Mode = Mode::Events;
 			else
 				m_Mode = Mode::Fountain;
 		}
@@ -149,6 +174,142 @@ namespace Dingo
 		m_SceneEmitter = m_Scene->CreateEntity("Emitter");
 		m_SceneEmitter.AddComponent<Transform3DComponent>();
 		m_SceneEmitter.AddComponent<ParticleEmitterComponent>(m_CheckEffects.back().get());
+
+		BuildEventScene();
+	}
+
+	void ParticleTest::BuildEventScene()
+	{
+		m_EventStep = 0;
+		m_Footfalls = 0;
+		m_DustSpawned = 0;
+		m_MotesSpawned = 0;
+		m_MotesPlayedOpen = false;
+		m_MotesStoppedClosed = false;
+
+		m_Fox = Model::LoadFromFile(k_FoxPath);
+		if (!m_Fox || !m_Fox->GetSkeleton())
+			return;
+
+		glm::vec3 low((std::numeric_limits<float>::max)());
+		glm::vec3 high((std::numeric_limits<float>::lowest)());
+		for (const SubMesh& submesh : m_Fox->GetSubMeshes())
+		{
+			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			{
+				low = (glm::min)(low, vertex.Position);
+				high = (glm::max)(high, vertex.Position);
+			}
+		}
+		const glm::vec3 extent = high - low;
+		const float scale = k_FoxLength / (std::max)({ extent.x, extent.y, extent.z });
+
+		m_DustEffect = ParticleEffect::Create(ParticleEffectParams()
+			.SetDebugName("ParticleTest footfall dust")
+			.SetShape(ParticleShape::Cone, { 70.0f, 0.1f, 0.0f })
+			.SetRate(0.0f)
+			.SetLifetime(0.5f, 0.9f)
+			.SetSpeed(0.3f, 0.7f)
+			.SetDrag(2.0f)
+			.SetGravity({ 0.0f, 0.2f, 0.0f })
+			.SetStartSize(0.08f, 0.14f)
+			.SetEndSize(2.5f)
+			.SetBlend(ParticleBlend::Alpha)
+			.SetColors({ { 0.0f, { 0.6f, 0.55f, 0.45f, 0.6f } }, { 1.0f, { 0.6f, 0.55f, 0.45f, 0.0f } } }));
+		m_MoteEffect = ParticleEffect::Create(ParticleEffectParams()
+			.SetDebugName("ParticleTest look motes")
+			.SetShape(ParticleShape::Sphere, { 0.4f, 0.0f, 0.0f })
+			.SetRate(120.0f)
+			.SetLifetime(0.6f, 1.0f)
+			.SetSpeed(0.1f, 0.3f)
+			.SetStartSize(0.03f, 0.05f)
+			.SetColors({ { 0.0f, { 2.0f, 2.5f, 4.0f, 1.0f } }, { 1.0f, { 0.5f, 0.8f, 2.0f, 0.0f } } }));
+
+		m_EventScene = new Scene("Particle Test: events");
+		m_EventScene->SetClearColor({ 0.05f, 0.05f, 0.07f, 1.0f });
+
+		Entity camera = m_EventScene->CreateEntity("Camera");
+		Transform3DComponent& cameraTransform = camera.AddComponent<Transform3DComponent>();
+		cameraTransform.Position = { -2.2f, 1.2f, 2.2f };
+		cameraTransform.Rotation = glm::quatLookAt(glm::normalize(glm::vec3(0.0f, 0.4f, 0.0f) - cameraTransform.Position), glm::vec3(0.0f, 1.0f, 0.0f));
+		camera.AddComponent<CameraComponent>().Type = CameraComponent::ProjectionType::Perspective;
+
+		Entity floor = m_EventScene->CreateEntity("Floor");
+		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.05f, 0.0f }, { 10.0f, 0.1f, 10.0f }));
+		floor.AddComponent<MeshRendererComponent>(MeshRendererComponent(Application::Get().GetRenderer3D().GetBoxMesh(), { 0.4f, 0.4f, 0.4f, 1.0f }));
+
+		m_EventFox = m_EventScene->CreateEntity("Fox");
+		m_EventFox.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -low.y * scale, 0.0f }, glm::vec3(scale)));
+		m_EventFox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+		m_EventFox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+		m_EventFox.AddScript<FootfallCounter>(&m_Footfalls);
+
+		m_Dust = m_EventScene->CreateEntity("Dust");
+		m_Dust.AddComponent<Transform3DComponent>();
+		m_Dust.AddComponent<ParticleEmitterComponent>(m_DustEffect);
+		m_Motes = m_EventScene->CreateEntity("Motes");
+		m_Motes.AddComponent<Transform3DComponent>().Position = { 0.0f, 1.0f, 0.0f };
+		m_Motes.AddComponent<ParticleEmitterComponent>(m_MoteEffect).Playing = false;
+
+		ParticleEventComponent& events = m_EventFox.AddComponent<ParticleEventComponent>();
+		for (const char* step : { "step_fl", "step_fr", "step_bl", "step_br" })
+			events.Bind(step, m_Dust.GetUUID(), k_DustPerStep);
+		events.BindRange("look", m_Motes.GetUUID());
+
+		m_EventScene->OnStart();
+		if (Animator* animator = m_EventScene->GetAnimator(m_EventFox))
+		{
+			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+			const AnimationClip* run = m_Fox->FindAnimation("Run");
+			if (walk && run)
+				animator->Play(AnimationState::Blend1D("Speed", { { 0.0f, walk }, { 1.0f, run } }));
+		}
+	}
+
+	void ParticleTest::RunEventStep()
+	{
+		const int step = m_EventStep++;
+		Animator* animator = m_EventScene->GetAnimator(m_EventFox);
+		if (!animator)
+			return;
+
+		if (step < k_BlendFrames)
+		{
+			animator->SetFloat("Speed", static_cast<float>(step) / static_cast<float>(k_BlendFrames - 1));
+		}
+		else if (step == k_BlendFrames)
+		{
+			Check(m_Footfalls > 0 && m_DustSpawned == m_Footfalls * k_DustPerStep,
+				std::format("across a Walk-to-Run blend every footfall bursts once ({} footfalls, {} dust particles, {} expected)", m_Footfalls, m_DustSpawned, m_Footfalls * k_DustPerStep));
+			if (const AnimationClip* survey = m_Fox->FindAnimation("Survey"))
+				animator->Play(survey);
+		}
+
+		m_EventScene->OnUpdate(k_EventStep);
+		const Renderer3D& renderer = Application::Get().GetRenderer3D();
+		Application::Get().GetSceneRenderer().Render(*m_EventScene, m_CheckTarget);
+
+		const bool motesPlaying = m_Motes.GetComponent<ParticleEmitterComponent>().Playing;
+		if (step < k_BlendFrames)
+		{
+			m_DustSpawned += renderer.GetStatistics().ParticlesSpawned;
+			return;
+		}
+
+		// Survey's "look" spans 0.90 to 2.50 s; its emitter is the only one that spawns at a rate.
+		const float surveyTime = static_cast<float>(step - k_BlendFrames + 1) * k_EventStep;
+		if (surveyTime > 1.2f && surveyTime < 2.3f)
+			m_MotesPlayedOpen = m_MotesPlayedOpen || motesPlaying;
+		if (surveyTime > 2.7f)
+			m_MotesStoppedClosed = !motesPlaying;
+		if (motesPlaying)
+			m_MotesSpawned += renderer.GetStatistics().ParticlesSpawned;
+
+		if (step + 1 == k_BlendFrames + k_SurveyFrames)
+		{
+			Check(m_MotesPlayedOpen && m_MotesStoppedClosed && m_MotesSpawned > 0,
+				std::format("Survey's \"look\" range plays its emitter while open and stops it on RangeEnd (played {}, stopped {}, {} spawned)", m_MotesPlayedOpen, m_MotesStoppedClosed, m_MotesSpawned));
+		}
 	}
 
 	void ParticleTest::CountAlive(Renderer3D& renderer, const ParticleEmitter& emitter, std::function<void(uint32_t, float)> done)
@@ -327,6 +488,16 @@ namespace Dingo
 
 	void ParticleTest::DrawLive(float deltaTime)
 	{
+		if (m_Mode == Mode::Events)
+		{
+			if (!m_EventScene)
+				return;
+			if (m_EventStep >= k_BlendFrames + k_SurveyFrames)
+				m_EventScene->OnUpdate(deltaTime);
+			Application::Get().GetSceneRenderer().Render(*m_EventScene);
+			return;
+		}
+
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		PostProcessSettings settings;
 		settings.Enabled = m_PostChain;
@@ -378,6 +549,13 @@ namespace Dingo
 	{
 		if (m_CheckStep < 5 && !Renderer::IsFrameSkipped())
 			RunCheckStep();
+		else if (m_EventScene && m_EventStep < k_BlendFrames + k_SurveyFrames && !Renderer::IsFrameSkipped())
+			RunEventStep();
+		else if (!m_EventScene && m_EventStep == 0)
+		{
+			m_EventStep = 1;
+			Check(false, "Fox.gltf loads for the animation event checks");
+		}
 
 		m_Time += deltaTime;
 		DrawLive(deltaTime);
@@ -400,6 +578,14 @@ namespace Dingo
 		delete m_Scene;
 		m_Scene = nullptr;
 		m_SceneEmitter = {};
+		delete m_EventScene;
+		m_EventScene = nullptr;
+		m_EventFox = m_Dust = m_Motes = {};
+		delete m_DustEffect;
+		delete m_MoteEffect;
+		m_DustEffect = m_MoteEffect = nullptr;
+		delete m_Fox;
+		m_Fox = nullptr;
 		if (m_CheckRenderer)
 		{
 			m_CheckRenderer->Shutdown();
@@ -437,6 +623,8 @@ namespace Dingo
 		ImGui::RadioButton("Soft smoke", &mode, static_cast<int>(Mode::Soft));
 		ImGui::SameLine();
 		ImGui::RadioButton("Budget", &mode, static_cast<int>(Mode::Budget));
+		ImGui::SameLine();
+		ImGui::RadioButton("Events", &mode, static_cast<int>(Mode::Events));
 		m_Mode = static_cast<Mode>(mode);
 		ImGui::Checkbox("Post chain (bloom for sparks)", &m_PostChain);
 		ImGui::Checkbox("Soft edges", &m_SoftEdges);
