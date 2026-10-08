@@ -168,6 +168,45 @@ ran.
 | [L27](#l27) | Native Wayland *(optional)* | Ship | GLFW fork | M | — |
 | [L28](#l28) | Clang *(optional)* | Ship | — | S | — |
 
+**Phase 4 is done except [L26](#l26) and [L27](#l27)** (2026-10-08), one commit per item:
+
+- [L22](#l22) is its own workflow, `build-linux.yml`, on pushes **and pull requests** to master, so a GCC-only
+  break shows up before it lands. Its setup (build packages, LunarG's latest Linux SDK tarball, a static assimp
+  6.0.4 and premake, the last three cached) is the composite action `.github/actions/setup-linux`, which the
+  release job shares. Each of Debug, Debug-ASan, Release and Distribution builds every project and runs
+  `scripts/ci/linux-smoke-test.sh` under Xvfb and llvmpipe with the SDK's validation layer. The script reads
+  the test list from `TestLayer.cpp`, finds the examples itself, closes each app through `WM_DELETE_WINDOW`
+  (`scripts/ci/close-windows.py`, since Ubuntu's xdotool predates `windowquit`), and fails on a non-zero exit,
+  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. A concurrency group
+  cancels a pull request's superseded runs. The old disabled job in `build-master.yml` is gone.
+- [L23](#l23): the engine's Linux post-build step builds `build/dist/<cfg>/libDingoEngine.a`
+  (`scripts/merge-static-libs.sh`, `ar -M` through numbered links, since MRI scripts can't quote paths with
+  spaces). The release job ships it with `include/` and `glm/` for Debug, Release and Distribution, plus
+  every example as its executable and `assets/`. It runs only on a `v*` tag, so its first real run is the next
+  release; its steps were dry-run locally for `v0.9.0`.
+- [L24](#l24) also fixes Getting Started's sample app, which never set `Graphics.GraphicsAPI` and so crashed in
+  `Application::Initialize` on every platform. The engine-side bug (no default) is
+  [#109](https://github.com/KingoBoiii/DingoEngine/issues/109).
+- [L25](#l25) gives every existing VS Code task a `"linux"` override, so the task names, and the launch
+  entries' `preLaunchTask`, are shared. It vendors premake beta8's Linux binary (force-added: `**/bin/` ignores
+  it, and `!Vendor/**` only matches case-insensitively) and adds `Generate-Linux.sh`.
+- [L28](#l28) moves `-Wno-changes-meaning` under `toolset:gcc` (clang warned about it once per engine file)
+  and adds a clang Debug job to CI.
+
+Verified:
+
+- **CI**, on GitHub's Ubuntu 24.04 runners with Vulkan SDK 1.4.363.0: on the branch head, all five jobs (Debug,
+  Debug-ASan, Release and Distribution with GCC, Debug with clang 18) build and pass the smoke test:
+  15 test cases, 10 examples and Marionette's `--check`.
+- **Merged archive**: 650 members from 12 inputs (64 MB). FlappyBird's objects and Getting Started's
+  sample link against it with only the SDK's ShaderC and SPIRV-Cross, `z`, `dl` and `pthread`, with no link
+  group, and run. Marionette runs from its extracted release tarball.
+- **Tooling**: `Generate-Linux.sh` works from any directory; every task's `make` command dry-runs; every
+  Linux launch entry's program and `cwd` exist.
+
+Still open: [L26](#l26) needs real hardware (a USB-booted Ubuntu on a real GPU is the cheapest start), and
+[L27](#l27) is a decision before it is work.
+
 ### Found along the way
 
 Not Linux-specific. Linux's working sanitizers found it.
