@@ -16,6 +16,10 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **3D Physics & Scene** — Jolt-backed `Physics3D`, usable standalone or wired into the ECS (`Transform3D` / `MeshRenderer` / `RigidBody3D` / `Box`+`SphereCollider3D` components), with 3D meshes drawn through `Renderer3D` and a perspective camera (physics backend kept internal)
 - **3D Lighting** — forward-lit `Renderer3D` with coloured directional, point and spot lights (up to 32 point/spot lights per scene, the most relevant picked each frame), ambient light, Blinn-Phong specular, and lit materials with emissive and an albedo texture. Lights are ECS components (`PointLightComponent` / `SpotLightComponent` / `AmbientLightComponent` / `DirectionalLightComponent`), and the lit shader hot-reloads in Debug builds when asset hot-reload is enabled
 - **Transform Hierarchy** — 3D and 2D parent-child transforms (`Entity::SetParent`), world values computed per pass, subtree destroy/duplicate, and physics that follows parents
+- **Shadows** *(v0.9)* — cascaded sun shadows, point and spot light shadows on a budget of slots, skinned casters, and gameplay shadow queries answered by the renderer's own lookup (`Scene::GetLightVisibility`)
+- **Post-processing** *(v0.9)* — an HDR scene target with tone mapping (a `Soft` curve that leaves everything below 0.8 untouched, ACES, Khronos Neutral), bloom and ambient occlusion, per camera through `PostProcessComponent`
+- **GPU Particles** *(v0.9)* — compute-simulated emitters with shapes, forces, curl noise, colour over life, sprites and soft edges, as ECS components, fired straight from animation events; a live effect editor in F4
+- **Compute & Profiling** *(v0.9)* — compute shaders and storage buffers, GPU pass timers in an F8 tab, and Tracy behind premake's `--profile`
 - **Skeletal Animation** — skinned glTF/FBX models drawn with GPU skinning; an `Animator` with cross-fades, `Blend1D` blends, masked layers and one-shots; clip events (code or a `.events` file beside the model) delivered to scripts; joint sockets; retargeting by joint name; models and their events hot-reload in place; an F7 Animation tab
 
 ## Documentation
@@ -31,6 +35,7 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [Asset Pipeline](docs/asset-pipeline.md) — the `AssetManager`, UUID handles, async loading, and hot-reload
 - [Lighting](docs/lighting.md) — directional, point and spot lights, the light budget, specular, and lit materials
 - [Animation](docs/animation.md) — skinned models, the animator, blending and layers, timeline events, joint sockets, and model hot-reload
+- [Shadows](docs/shadows.md), [Post-processing](docs/post-processing.md), [Particles](docs/particles.md), [Compute](docs/compute.md) and [Profiling](docs/profiling.md) — the v0.9 visuals
 
 ## Roadmap
 
@@ -49,7 +54,7 @@ example is built to demonstrate.
 | v0.7 | Lighting & Shading — point/spot lights on a capped forward multi-light path, specular | `Candlewick` | shipped |
 | v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
 | **v0.8** | **Animation & Character Fidelity** — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
-| v0.9 | Shadows, Post-processing & VFX | *Candlewick* upgrade | planned |
+| v0.9 | Shadows, Post-processing & VFX — cascaded and local shadows, tone mapping, bloom, AO, GPU particles | *Candlewick* upgrade | in progress |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
 
 **Shipped out of band**: **scripting** (C# or Lua) and **networking/multiplayer** are optional

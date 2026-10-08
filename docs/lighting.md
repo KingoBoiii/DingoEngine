@@ -365,6 +365,12 @@ The prefix carries **only the first directional light**, and no point or spot li
 with no directional light it still carries the default light's direction, so a shader using the old
 `ambient + (1 - ambient) * N.L` formula draws a sun the lit shader does not.
 
+**Shadows in a custom shader** (v0.9). `#include <DingoEngine/Shadows.glsl>` in the fragment stage
+and multiply `DirectionalShadow(worldPosition, normal)` into the directional light that
+`ShadowCounts.y` names and `LocalLightShadow(i, worldPosition, normal)` into local light `i`; the
+renderer binds `ShadowData`, `u_ShadowAtlas` and `u_ShadowSampler` by name, at bindings 5 to 7 unless
+the shader moves them. See [Shadows](shadows.md#custom-shaders).
+
 ## Hot-reloading the lit shader
 
 The lit shader is a file, [`Renderer3D_Lit.glsl`](../src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl),
