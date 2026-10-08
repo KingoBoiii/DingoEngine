@@ -129,7 +129,7 @@ namespace Dingo
 			uint32_t Scenes = 0;        // Begin/End pairs that ran the chain in the last frame that ran one
 			uint32_t Width = 0;         // the last scene target's size
 			uint32_t Height = 0;
-			uint32_t SceneTargets = 0;  // cached, one per output size in use
+			uint32_t SceneTargets = 0;  // cached, one per Begin of a frame (at each output size)
 			uint64_t TargetBytes = 0;   // GPU memory of every cached target, bloom levels and AO targets included
 			uint32_t BloomScenes = 0;   // of Scenes, the ones that bloomed
 			uint32_t AmbientOcclusionScenes = 0; // of Scenes, the ones with ambient occlusion

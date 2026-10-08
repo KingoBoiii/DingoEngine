@@ -440,6 +440,27 @@ void main()
 				std::format("no halo: the wall beside a box floating before it isn't darkened, up to its silhouette ({} of {} pixels darker)", darkened, wallPixels));
 		});
 
+		// Two Begins of one size in one frame, bloom on in one and off in the other, each get a scene
+		// target of their own.
+		{
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			PostProcessSettings bloomed = WithOperator(defaults, ToneMapOperator::None);
+			bloomed.Bloom.Enabled = true;
+			const PostProcessSettings plain = WithOperator(defaults, ToneMapOperator::None);
+			Framebuffer* targets[2] = {};
+			for (int i = 0; i < 2; ++i)
+			{
+				Framebuffer* previous = Renderer::GetRenderTarget();
+				Renderer::SetRenderTarget(m_SpotPlain);
+				post.Begin(i == 0 ? bloomed : plain);
+				targets[i] = post.GetSceneTarget();
+				Renderer::Draw(m_SpotMaterial, 3);
+				post.End();
+				Renderer::SetRenderTarget(previous);
+			}
+			Check(targets[0] && targets[1] && targets[0] != targets[1], "two post-processed scenes of one size in a frame each get their own scene target");
+		}
+
 		// Split screen: the chain inside the right half's viewport tone-maps into that half alone and
 		// leaves the viewport set.
 		{

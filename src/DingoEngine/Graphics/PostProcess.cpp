@@ -380,9 +380,12 @@ namespace Dingo
 				++it;
 			}
 
+			// One target per Begin of a frame: two scenes sharing one would swap its tone map's bloom
+			// slot (a pipeline rebuild), resize its AO targets and spend its uniform buffer's Vulkan
+			// writes back and forth every frame.
 			for (SceneTarget& target : Targets)
 			{
-				if (target.Target->GetWidth() == width && target.Target->GetHeight() == height)
+				if (target.LastFrame != frame && target.Target->GetWidth() == width && target.Target->GetHeight() == height)
 				{
 					target.LastFrame = frame;
 					return target;
