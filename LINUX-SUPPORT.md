@@ -140,6 +140,22 @@ It was verified on Ubuntu 24.04 (GCC 13.3, premake 5.0.0-beta8, [Appendix A](#ap
 | [L20](#l20) | `premake5 gmake` overwrites FreeType's tracked `Makefile` | Hygiene | FreeType fork | S | Appendix B |
 | [L21](#l21) | Generated makefiles aren't git-ignored | Hygiene | `.gitignore` | S | Appendix B |
 
+**Phase 3 is done** (2026-10-08), one commit per item. Neither touches a fork:
+
+- [L20](#l20) moves the makefiles themselves out of the submodules rather than adding `location` to the FreeType
+  fork. Under `gmake` the root `premake5.lua` re-opens every vendor project and sets its `location` to
+  `build/make/<project>`, which is already git-ignored. That keeps FreeType's tracked `Makefile` intact and the
+  other six submodules clean too. The vendor projects' paths resolve against their own scripts, so the
+  libraries still build into `vendor/*/bin/`. The Visual Studio projects don't move.
+- [L21](#l21) ignores the root `Makefile` and `*.make`, `test/Makefile`, `examples/*/Makefile` and
+  `vendor/assimp/lib/linux-x86_64/`. The forks' `.gitignore` files need nothing, since L20 keeps their
+  makefiles out of their trees.
+
+Verified on the same setup as Phase 2. After `premake5 gmake` and `make` in all four configurations,
+`git status` is empty in the superproject and in every submodule, recursively. FreeType's `libfreetype.a`
+and spdlog's `libspdlog.a` rebuilt from scratch into their usual `bin/` folders, and FlappyBird relinked and
+ran.
+
 ### Phase 4 — supported
 
 | # | Item | Kind | Where | Effort | Tested fix |
