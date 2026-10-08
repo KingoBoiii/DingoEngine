@@ -80,10 +80,32 @@ namespace Dingo
 		if (!IsValid(source))
 			return {};
 
-		return DuplicateSubtree(source, source.GetParent());
+		std::vector<std::pair<UUID, UUID>> copies;
+		Entity clone = DuplicateSubtree(source, source.GetParent(), copies);
+
+		// A copied ParticleEventComponent still names the source's emitters; one inside the copied
+		// subtree is the clone's own counterpart now. Bindings to emitters outside it stay.
+		std::unordered_map<UUID, UUID> remap(copies.begin(), copies.end());
+		entt::registry& registry = m_Data->Registry;
+		for (const auto& [from, to] : copies)
+		{
+			const auto it = m_Data->EntityMap.find(to);
+			if (it == m_Data->EntityMap.end())
+				continue;
+			if (ParticleEventComponent* events = registry.try_get<ParticleEventComponent>(it->second))
+			{
+				for (ParticleEventComponent::Binding& binding : events->Bindings)
+				{
+					const auto target = remap.find(binding.Emitter);
+					if (target != remap.end())
+						binding.Emitter = target->second;
+				}
+			}
+		}
+		return clone;
 	}
 
-	Entity Scene::DuplicateSubtree(Entity source, Entity parent)
+	Entity Scene::DuplicateSubtree(Entity source, Entity parent, std::vector<std::pair<UUID, UUID>>& copies)
 	{
 		entt::entity src = static_cast<entt::entity>(source.m_Handle);
 		entt::registry& registry = m_Data->Registry;
@@ -94,6 +116,7 @@ namespace Dingo
 			: std::string();
 		Entity clone = CreateEntity(name);
 		entt::entity dst = static_cast<entt::entity>(clone.m_Handle);
+		copies.emplace_back(source.GetUUID(), clone.GetUUID());
 
 		// Copy every built-in component present on the source EXCEPT identity (the clone
 		// keeps its fresh UUID) and the tag (already seeded above). The default
@@ -145,7 +168,7 @@ namespace Dingo
 			CreateRigidBody(clone);
 
 		for (Entity child : source.GetChildren())
-			DuplicateSubtree(child, clone);
+			DuplicateSubtree(child, clone, copies);
 
 		return clone;
 	}

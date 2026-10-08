@@ -324,7 +324,8 @@ namespace Dingo
 		// in-flight iteration. No-op when the entity has no script.
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
-		Entity DuplicateSubtree(Entity source, Entity parent);
+		// copies: every (source UUID, clone UUID) of the subtree, for rewriting bindings that point inside it.
+		Entity DuplicateSubtree(Entity source, Entity parent, std::vector<std::pair<UUID, UUID>>& copies);
 		Entity Wrap(std::uint32_t handle);
 
 	private:

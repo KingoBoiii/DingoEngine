@@ -83,8 +83,9 @@ fighter.AddComponent<ParticleEventComponent>()
   Start a range's emitter with `Playing` off.
 - **Live edits move them.** Editing a `.events` file while the game runs re-times the bursts through
   the model's hot-reload ([Model hot-reload](animation.md)).
-- Emitters are found by UUID, so a duplicated entity's bindings still point at the original emitters;
-  bind its own afterwards if it needs them.
+- Emitters are found by UUID. `Scene::DuplicateEntity` points a copied binding at the copy of its
+  emitter when the emitter is inside the duplicated subtree (a fighter's socketed dust); a binding to
+  an emitter outside it still names that one.
 
 *Marionette* (`examples/Marionette/src/Fighter.cpp`, `BuildVfx`) is the worked example. Each fighter
 has dust emitters on its `foot.l` and `foot.r` sockets and at its feet, and a trail emitter at its

@@ -176,6 +176,28 @@ namespace Dingo
 		m_SceneEmitter.AddComponent<Transform3DComponent>();
 		m_SceneEmitter.AddComponent<ParticleEmitterComponent>(m_CheckEffects.back().get());
 
+		// A duplicated rig's binding to its own socketed emitter follows the copy; one to an emitter
+		// outside the rig still names that one.
+		{
+			Entity rig = m_Scene->CreateEntity("Duplicate rig");
+			rig.AddComponent<Transform3DComponent>();
+			Entity inner = m_Scene->CreateEntity("Duplicate rig emitter");
+			inner.AddComponent<Transform3DComponent>();
+			inner.SetParent(rig);
+			rig.AddComponent<ParticleEventComponent>()
+				.Bind("step", inner.GetUUID(), 1)
+				.Bind("step", m_SceneEmitter.GetUUID(), 1);
+
+			Entity copy = m_Scene->DuplicateEntity(rig);
+			const std::vector<Entity> children = copy.GetChildren();
+			const std::vector<ParticleEventComponent::Binding>& bindings = copy.GetComponent<ParticleEventComponent>().Bindings;
+			Check(children.size() == 1 && bindings.size() == 2 && bindings[0].Emitter == children[0].GetUUID() && bindings[1].Emitter == m_SceneEmitter.GetUUID()
+					&& rig.GetComponent<ParticleEventComponent>().Bindings[0].Emitter == inner.GetUUID(),
+				"a duplicated entity's particle binding follows its own copied emitter and keeps one outside it");
+			m_Scene->DestroyEntity(copy);
+			m_Scene->DestroyEntity(rig);
+		}
+
 		BuildEventScene();
 	}
 
