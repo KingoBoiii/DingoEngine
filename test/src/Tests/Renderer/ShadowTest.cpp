@@ -553,6 +553,51 @@ namespace Dingo
 				"SpotLightComponent::ToLight carries CastShadows and ShadowStrength");
 		}
 
+		// Shadow slots go by rank even when every light fits the budget: ten casting spot lights in a
+		// row away from the camera, submitted farthest first. The two farthest light unshadowed, and
+		// a probe of an unshadowed light answers at once while a shadowed one waits for the GPU.
+		{
+			Renderer3D* rankRenderer = Renderer3D::Create();
+			PerspectiveCamera camera(60.0f, aspect, 0.1f, 100.0f);
+			camera.SetPosition({ 0.0f, 4.0f, 6.0f });
+			camera.SetTarget({ 0.0f, 0.0f, -6.0f });
+			constexpr int k_RankLights = 10;
+			constexpr uint64_t k_RankKey = 7000;
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_EntityTarget);
+			rankRenderer->BeginScene(camera);
+			rankRenderer->Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+			for (int i = 0; i < k_RankLights; ++i)
+			{
+				const float z = -3.0f * static_cast<float>(k_RankLights - 1 - i);
+				SpotLight spot;
+				spot.Position = { 0.0f, 3.0f, z };
+				spot.Direction = { 0.0f, -1.0f, 0.0f };
+				spot.Range = 4.0f;
+				spot.OuterConeAngle = 35.0f;
+				spot.CastShadows = true;
+				rankRenderer->SubmitLight(spot);
+				rankRenderer->AddShadowProbe(rankRenderer->GetLastSubmittedLight(), { 0.0f, 1.0f, z }, k_RankKey + i);
+			}
+			rankRenderer->SubmitMesh(rankRenderer->GetBoxMesh(), Box({ 0.0f, -0.05f, -12.0f }, { 4.0f, 0.1f, 32.0f }), glm::vec4(1.0f));
+			rankRenderer->EndScene();
+			Renderer::SetRenderTarget(previous);
+
+			const uint32_t slots = (std::min)(rankRenderer->GetCapabilities().MaxShadowedLocalLights, Renderer3D::k_MaxShadowedLocalLights);
+			std::string unshadowed;
+			for (int i = 0; i < k_RankLights; ++i)
+				if (rankRenderer->GetShadowProbeResult(k_RankKey + i).has_value())
+					unshadowed += std::format("{}{}", unshadowed.empty() ? "" : ", ", i);
+			std::string expected;
+			for (int i = 0; i < k_RankLights - static_cast<int>(slots); ++i)
+				expected += std::format("{}{}", expected.empty() ? "" : ", ", i);
+			const Renderer3D::Statistics stats = rankRenderer->GetStatistics();
+			rankRenderer->Shutdown();
+			delete rankRenderer;
+			Check(stats.LocalLights == static_cast<uint32_t>(k_RankLights) && stats.ShadowedLights == slots && unshadowed == expected,
+				std::format("with every light inside the budget, the shadow slots go to the {} nearest (unshadowed: submissions [{}], expected [{}])", slots, unshadowed, expected));
+		}
+
 		// The budget fade, on its own renderer: four slots, six lights at increasing distance.
 		{
 			Renderer3DParams params;

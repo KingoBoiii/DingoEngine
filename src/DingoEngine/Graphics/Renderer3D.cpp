@@ -1431,7 +1431,7 @@ namespace Dingo
 		const uint32_t cap = std::min(m_Params.Capabilities.MaxShadowedLocalLights, k_MaxShadowedLocalLights);
 		const float fadeBand = m_Params.Capabilities.LightBudgetFade;
 
-		// The drawn casting lights in budget order. One whose range holds no caster can't be shadowed.
+		// The drawn casting lights. One whose range holds no caster can't be shadowed.
 		std::array<uint32_t, k_MaxLocalLights> casting{};
 		uint32_t castingCount = 0;
 		for (uint32_t slot = 0; slot < m_DrawnLocalLights; ++slot)
@@ -1445,6 +1445,27 @@ namespace Dingo
 		}
 		if (castingCount == 0)
 			return;
+
+		// Ranked as the budget ranks: ResolveSceneLights sorts the drawn slots only when the budget
+		// overflows, and the slots themselves must keep their order, which the lit shader sums in.
+		std::sort(casting.begin(), casting.begin() + castingCount, [this, fadeBand](uint32_t slotA, uint32_t slotB)
+		{
+			const uint32_t a = m_VisibleLocalLights[slotA];
+			const uint32_t b = m_VisibleLocalLights[slotB];
+			const LocalLightCandidate& lightA = m_LocalLights[a];
+			const LocalLightCandidate& lightB = m_LocalLights[b];
+			if (fadeBand > 0.0f)
+			{
+				if (lightA.Priority != lightB.Priority)
+					return lightA.Priority > lightB.Priority;
+				return a < b;
+			}
+			if (lightA.Score != lightB.Score)
+				return lightA.Score > lightB.Score;
+			if (lightA.Nearness != lightB.Nearness)
+				return lightA.Nearness < lightB.Nearness;
+			return a < b;
+		});
 
 		if (castingCount > cap)
 		{
