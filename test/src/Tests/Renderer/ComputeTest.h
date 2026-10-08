@@ -18,7 +18,7 @@ namespace Dingo
 	// On start it checks by readback that every value, every sum, the image's pattern and the sixteen
 	// quads come out exactly, which covers writable and readonly storage buffers in compute, a storage
 	// image, a uniform buffer in compute, readonly storage buffers in the fragment and vertex stages and
-	// the barriers between them.
+	// the barriers between them, also between dispatches of one pass and after a ReadBack (#114).
 	class ComputeTest : public GraphicsTest
 	{
 	public:
@@ -46,19 +46,26 @@ namespace Dingo
 		static constexpr uint32_t k_ValueCount = 256;
 		static constexpr uint32_t k_ImageSize = 64;
 		static constexpr uint32_t k_Instances = 16;
+		static constexpr uint32_t k_StepCount = 4096;
+		static constexpr uint32_t k_StepDispatches = 4;
 
 		Shader* m_FillShader = nullptr;
 		Shader* m_SumShader = nullptr;
 		Shader* m_ReadShader = nullptr;
 		Shader* m_InstanceShader = nullptr;
+		Shader* m_StepShader = nullptr;
+		Shader* m_ZeroShader = nullptr;
 		ComputePass* m_FillPass = nullptr;
 		ComputePass* m_SumPass = nullptr;
+		ComputePass* m_StepPass = nullptr;
+		ComputePass* m_ZeroPass = nullptr;
 		Material* m_ReadMaterial = nullptr;
 		Material* m_InstanceMaterial = nullptr;
 
 		GraphicsBuffer* m_Params = nullptr;
 		GraphicsBuffer* m_Values = nullptr;
 		GraphicsBuffer* m_Sums = nullptr;
+		GraphicsBuffer* m_Steps = nullptr;
 		Texture* m_Image = nullptr;
 		Framebuffer* m_Strip = nullptr;     // k_ValueCount x 2 R32F: values, then sums
 		Framebuffer* m_Instanced = nullptr; // 256 x 16 RGBA8: a quad per instance

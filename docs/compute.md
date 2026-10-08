@@ -42,7 +42,10 @@ Renderer::Dispatch(fill, (256 + 63) / 64); // thread groups
 ```
 
 `Renderer::Dispatch` records the kernel into the frame's command list, in order with the draws
-around it; NVRHI puts the barriers in, so a draw after a dispatch reads what it wrote. A frame that
+around it, with the barriers put in: a draw after a dispatch reads what it wrote, and so does the
+same pass dispatched again (an iterative kernel), even with an upload or a `ReadBack` of its buffer
+in between. NVRHI alone would skip the barrier when the bindings haven't changed, so every dispatch,
+and every draw with a storage binding, asks for its storage resources' states again. A frame that
 renders nothing (`Renderer::IsFrameSkipped`) dispatches nothing.
 
 ## Reading a storage buffer in a draw
@@ -83,4 +86,5 @@ Renderer::Draw(material, 6, 16); // 16 instances: gl_InstanceIndex picks each on
 The test app's **Compute Test** (`--test=compute`) fills a buffer and a storage image in one kernel,
 sums neighbours through a readonly block in a second, reads both buffers in a fragment stage into an
 R32F strip, and places sixteen instanced quads from the buffer in the vertex stage, then checks every
-value, sum, pixel and quad by readback.
+value, sum, pixel and quad by readback. It also dispatches one incrementing pass four times, reads
+its buffer back, dispatches it four more times and checks both counts.

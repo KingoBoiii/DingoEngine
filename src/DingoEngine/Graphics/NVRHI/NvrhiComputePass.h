@@ -31,6 +31,7 @@ namespace Dingo
 
 		nvrhi::ComputePipelineHandle GetPipelineHandle() const { return m_PipelineHandle; }
 		nvrhi::BindingSetHandle GetBindingSetHandle() const { return m_BindingSetHandle; }
+		const std::vector<nvrhi::BindingSetItem>& GetStorageItems() const { return m_StorageItems; }
 
 	private:
 		void SetItem(const nvrhi::BindingSetItem& item, Texture* texture = nullptr);
@@ -43,6 +44,7 @@ namespace Dingo
 			uint32_t Generation = 0;
 		};
 		std::vector<Binding> m_Bindings;
+		std::vector<nvrhi::BindingSetItem> m_StorageItems; // of the built binding set
 
 		nvrhi::ComputePipelineHandle m_PipelineHandle;
 		nvrhi::BindingSetHandle m_BindingSetHandle;

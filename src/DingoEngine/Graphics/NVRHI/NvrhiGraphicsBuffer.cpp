@@ -152,8 +152,16 @@ namespace Dingo
 
 		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
 		{
+			// As Texture::ReadPixels: a later use with the binding set already bound wouldn't move the
+			// buffer out of the copy source state, so put back the state it had.
 			nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
+			const nvrhi::ResourceStates state = list->getBufferState(m_BufferHandle);
 			list->copyBuffer(staging, 0, m_BufferHandle, offset, size);
+			if (state != nvrhi::ResourceStates::Unknown)
+			{
+				list->setBufferState(m_BufferHandle, state);
+				list->commitBarriers();
+			}
 			Renderer::RunAfterFrame(std::move(resolve));
 			return;
 		}

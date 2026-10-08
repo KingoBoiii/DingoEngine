@@ -115,6 +115,7 @@ namespace Dingo
 		DE_CORE_ASSERT(pipeline, "Pipeline is null.");
 
 		m_GraphicsState = nvrhi::GraphicsState();
+		m_RenderPassStorageItems = nullptr;
 
 		if (!pipeline)
 			return false;
@@ -189,6 +190,8 @@ namespace Dingo
 		}
 
 		m_GraphicsState.addBindingSet(nvrhiRenderPass->m_BindingSetHandle);
+		if (!nvrhiRenderPass->m_StorageItems.empty())
+			m_RenderPassStorageItems = &nvrhiRenderPass->m_StorageItems;
 
 		return true;
 	}
@@ -236,6 +239,8 @@ namespace Dingo
 		if (!m_GraphicsState.pipeline)
 			return;
 
+		if (m_RenderPassStorageItems)
+			RequireStorageStates(*m_RenderPassStorageItems);
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
@@ -252,6 +257,8 @@ namespace Dingo
 		if (!m_GraphicsState.pipeline)
 			return;
 
+		if (m_RenderPassStorageItems)
+			RequireStorageStates(*m_RenderPassStorageItems);
 		m_CommandListHandle->setGraphicsState(m_GraphicsState);
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
@@ -273,8 +280,36 @@ namespace Dingo
 		nvrhi::ComputeState state = nvrhi::ComputeState().setPipeline(nvrhiPass->GetPipelineHandle());
 		if (nvrhiPass->GetBindingSetHandle())
 			state.addBindingSet(nvrhiPass->GetBindingSetHandle());
+		RequireStorageStates(nvrhiPass->GetStorageItems());
 		m_CommandListHandle->setComputeState(state);
 		m_CommandListHandle->dispatch(groupsX, groupsY, groupsZ);
+	}
+
+	bool NvrhiCommandList::IsStorageItem(const nvrhi::BindingSetItem& item)
+	{
+		return item.type == nvrhi::ResourceType::RawBuffer_SRV || item.type == nvrhi::ResourceType::RawBuffer_UAV
+			|| item.type == nvrhi::ResourceType::Texture_UAV;
+	}
+
+	void NvrhiCommandList::RequireStorageStates(const std::vector<nvrhi::BindingSetItem>& items)
+	{
+		for (const nvrhi::BindingSetItem& item : items)
+		{
+			switch (item.type)
+			{
+				case nvrhi::ResourceType::RawBuffer_SRV:
+					m_CommandListHandle->setBufferState(static_cast<nvrhi::IBuffer*>(item.resourceHandle), nvrhi::ResourceStates::ShaderResource);
+					break;
+				case nvrhi::ResourceType::RawBuffer_UAV:
+					m_CommandListHandle->setBufferState(static_cast<nvrhi::IBuffer*>(item.resourceHandle), nvrhi::ResourceStates::UnorderedAccess);
+					break;
+				case nvrhi::ResourceType::Texture_UAV:
+					m_CommandListHandle->setTextureState(static_cast<nvrhi::ITexture*>(item.resourceHandle), item.subresources, nvrhi::ResourceStates::UnorderedAccess);
+					break;
+				default:
+					break;
+			}
+		}
 	}
 
 }

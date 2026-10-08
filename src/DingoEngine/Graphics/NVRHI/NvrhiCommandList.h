@@ -45,9 +45,19 @@ namespace Dingo
 	public:
 		nvrhi::ICommandList* GetNvrhiHandle() const { return m_CommandListHandle; }
 
+		// The storage items of a binding set: raw buffers and storage textures.
+		static bool IsStorageItem(const nvrhi::BindingSetItem& item);
+
+	private:
+		// NVRHI places a binding set's barriers only when the bound sets change, so a pass bound twice in
+		// a row, or a storage buffer copied between two uses, would get none. Requiring the states again
+		// places them (a UAV barrier where the state already is UAV).
+		void RequireStorageStates(const std::vector<nvrhi::BindingSetItem>& items);
+
 	private:
 		bool m_HasBegun = false; // Track if the command list has begun
 		nvrhi::GraphicsState m_GraphicsState;
+		const std::vector<nvrhi::BindingSetItem>* m_RenderPassStorageItems = nullptr;
 		nvrhi::CommandListHandle m_CommandListHandle;
 	};
 

@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "NvrhiRenderPass.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiShader.h"
@@ -26,6 +27,7 @@ namespace Dingo
 	void NvrhiRenderPass::Destroy()
 	{
 		m_BindingSetHandle = nullptr;
+		m_StorageItems.clear();
 	}
 
 	void NvrhiRenderPass::SetUniformBuffer(uint32_t slot, GraphicsBuffer* buffer)
@@ -139,6 +141,13 @@ namespace Dingo
 			// which the owner can still fix by re-setting its bindings.
 			DE_CORE_ERROR("RenderPass::Bake: createBindingSet failed for shader '{}' — the binding set does not match the shader's binding layout.", shader->GetParams().Name);
 			return;
+		}
+
+		m_StorageItems.clear();
+		for (const nvrhi::BindingSetItem& item : m_BindingSetDesc.bindings)
+		{
+			if (NvrhiCommandList::IsStorageItem(item))
+				m_StorageItems.push_back(item);
 		}
 
 		m_BuiltShaderGeneration = shader->GetGeneration();

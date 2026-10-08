@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 
+#include <cstring>
 #include <format>
 
 namespace Dingo
@@ -43,6 +44,23 @@ void main()
 	uint i = gl_GlobalInvocationID.x;
 	if (i < 256u)
 		target[i] = source[i] + source[(i + 1u) % 256u];
+}
+)";
+
+		// One pass dispatched again and again, each step reading what the last one wrote.
+		constexpr const char* k_StepSource = R"(
+#type compute
+#version 450
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Steps { uint steps[]; };
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+#ifdef DE_STEP_ZERO
+	steps[i] = 0u;
+#else
+	steps[i] = steps[i] + 1u;
+#endif
 }
 )";
 
@@ -111,10 +129,13 @@ void main() { o_Color = v_Color; }
 		m_SumShader = Shader::CreateFromSource("ComputeTestSum", k_SumSource);
 		m_ReadShader = Shader::CreateFromSource("ComputeTestRead", k_ReadSource);
 		m_InstanceShader = Shader::CreateFromSource("ComputeTestInstances", k_InstanceSource);
+		m_StepShader = Shader::Create(ShaderParams().SetName("ComputeTestStep").SetSourceCode(k_StepSource));
+		m_ZeroShader = Shader::Create(ShaderParams().SetName("ComputeTestZero").SetSourceCode(k_StepSource).AddDefine("DE_STEP_ZERO"));
 
 		m_Params = GraphicsBuffer::CreateUniformBuffer(sizeof(glm::uvec4), "ComputeTest params");
 		m_Values = GraphicsBuffer::CreateStorageBuffer(k_ValueCount * sizeof(uint32_t), "ComputeTest values");
 		m_Sums = GraphicsBuffer::CreateStorageBuffer(k_ValueCount * sizeof(uint32_t), "ComputeTest sums");
+		m_Steps = GraphicsBuffer::CreateStorageBuffer(k_StepCount * sizeof(uint32_t), "ComputeTest steps");
 		m_Image = Texture::Create(TextureParams()
 			.SetDebugName("ComputeTest image")
 			.SetWidth(k_ImageSize)
@@ -131,6 +152,11 @@ void main() { o_Color = v_Color; }
 		m_SumPass = ComputePass::Create(ComputePassParams().SetDebugName("ComputeTest sum").SetShader(m_SumShader));
 		m_SumPass->SetStorageBuffer(0, m_Values);
 		m_SumPass->SetStorageBuffer(1, m_Sums);
+
+		m_StepPass = ComputePass::Create(ComputePassParams().SetDebugName("ComputeTest step").SetShader(m_StepShader));
+		m_StepPass->SetStorageBuffer(0, m_Steps);
+		m_ZeroPass = ComputePass::Create(ComputePassParams().SetDebugName("ComputeTest zero").SetShader(m_ZeroShader));
+		m_ZeroPass->SetStorageBuffer(0, m_Steps);
 
 		m_ReadMaterial = MakeMaterial("ComputeTest read", m_ReadShader);
 		m_ReadMaterial->SetStorageBuffer(0, m_Values);
@@ -179,6 +205,32 @@ void main() { o_Color = v_Color; }
 					check(pixels);
 			});
 		};
+
+		// The same pass back to back, and again after a copy out of its buffer: each dispatch must see
+		// the last one's writes.
+		auto checkSteps = [this, alive](uint32_t expected, const char* name)
+		{
+			m_Steps->ReadBack([this, alive, expected, name](const std::vector<uint8_t>& bytes)
+			{
+				if (alive.expired())
+					return;
+				uint32_t wrong = bytes.size() == k_StepCount * sizeof(uint32_t) ? 0 : k_StepCount;
+				for (size_t i = 0; wrong == 0 && i < k_StepCount; ++i)
+				{
+					uint32_t value = 0;
+					std::memcpy(&value, bytes.data() + i * sizeof(uint32_t), sizeof(value));
+					wrong += value != expected ? 1 : 0;
+				}
+				Check(wrong == 0, std::format("{} ({} of {} wrong)", name, wrong, k_StepCount));
+			});
+		};
+		Renderer::Dispatch(m_ZeroPass, k_StepCount / 64);
+		for (uint32_t i = 0; i < k_StepDispatches; ++i)
+			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
+		checkSteps(k_StepDispatches, "one compute pass dispatched back to back sees each dispatch's writes");
+		for (uint32_t i = 0; i < k_StepDispatches; ++i)
+			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
+		checkSteps(2 * k_StepDispatches, "a pass dispatched after GraphicsBuffer::ReadBack copied its buffer still sees its writes");
 
 		readBack(m_Strip->GetAttachment(0), [this](const TexturePixels& pixels)
 		{
@@ -262,15 +314,20 @@ void main() { o_Color = v_Color; }
 		m_Alive.reset();
 		DestroyAndDelete(m_FillPass);
 		DestroyAndDelete(m_SumPass);
+		DestroyAndDelete(m_StepPass);
+		DestroyAndDelete(m_ZeroPass);
 		DestroyAndDelete(m_ReadMaterial);
 		DestroyAndDelete(m_InstanceMaterial);
 		DestroyAndDelete(m_FillShader);
 		DestroyAndDelete(m_SumShader);
 		DestroyAndDelete(m_ReadShader);
 		DestroyAndDelete(m_InstanceShader);
+		DestroyAndDelete(m_StepShader);
+		DestroyAndDelete(m_ZeroShader);
 		DestroyAndDelete(m_Params);
 		DestroyAndDelete(m_Values);
 		DestroyAndDelete(m_Sums);
+		DestroyAndDelete(m_Steps);
 		DestroyAndDelete(m_Image);
 		DestroyAndDelete(m_Strip);
 		DestroyAndDelete(m_Instanced);

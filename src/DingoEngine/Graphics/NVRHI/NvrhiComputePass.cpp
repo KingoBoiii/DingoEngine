@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "NvrhiComputePass.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiSampler.h"
@@ -32,6 +33,7 @@ namespace Dingo
 		m_BindingSetHandle = nullptr;
 		m_PipelineHandle = nullptr;
 		m_Bindings.clear();
+		m_StorageItems.clear();
 	}
 
 	void NvrhiComputePass::SetItem(const nvrhi::BindingSetItem& item, Texture* texture)
@@ -122,6 +124,7 @@ namespace Dingo
 		if (!m_BindingsValid)
 		{
 			m_BindingSetHandle = nullptr;
+			m_StorageItems.clear();
 			if (!m_Bindings.empty() && shader->m_BindingLayoutHandle)
 			{
 				nvrhi::BindingSetDesc desc;
@@ -136,6 +139,11 @@ namespace Dingo
 						m_FailureLogged = true;
 					}
 					return false;
+				}
+				for (const Binding& binding : m_Bindings)
+				{
+					if (NvrhiCommandList::IsStorageItem(binding.Item))
+						m_StorageItems.push_back(binding.Item);
 				}
 			}
 			m_BindingsValid = true;
