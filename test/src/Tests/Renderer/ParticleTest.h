@@ -18,12 +18,15 @@ namespace Dingo
 	//
 	// Over its first five frames it checks, on a private Renderer3D, by reading the particle pool back:
 	// an emitter takes the whole 65,536-particle pool and keeps every particle alive, and another finds
-	// no room; a burst of 100 gives 100 live particles, and none outlives its lifetime; a ring of 64
+	// no room; a burst of 100 gives 100 live particles, all alive after one step shorter than their
+	// lifetime and none after a second; particles start unturned without StartRotation and at random
+	// within a 0..360 one; a ring of 64
 	// asked for 100 keeps 64 and counts 36 dropped; a ParticleEmitterComponent's burst through the
 	// SceneRenderer lands in its emitter; and a soft particle fades where it meets the floor while its
 	// top stays as a hard one draws it. Then, through a ParticleEventComponent on the Fox, over 300
 	// fixed frames: across a Walk-to-Run blend every footfall a script hears bursts exactly once (six
-	// particles each), and Survey's "look" range plays its emitter only while it is open.
+	// particles each), Survey's "look" range plays its emitter only while it is open, and a range
+	// shorter than a frame still bursts its emitter's BurstOnPlay.
 	class ParticleTest : public GraphicsTest
 	{
 	public:
@@ -51,6 +54,8 @@ namespace Dingo
 
 		void RunCheckStep();
 		void CountAlive(Renderer3D& renderer, const ParticleEmitter& emitter, std::function<void(uint32_t alive, float worstAgeOverLife)> done);
+		// The rotation of every live particle of the emitter, in radians.
+		void ReadRotations(Renderer3D& renderer, const ParticleEmitter& emitter, std::function<void(const std::vector<float>&)> done);
 		void DrawCheckScene(Framebuffer* target, std::initializer_list<std::pair<ParticleEmitter*, float>> emitters, bool post, const glm::mat4& emitterTransform = glm::mat4(1.0f));
 		void DrawLive(float deltaTime);
 		void BuildEventScene();
@@ -87,6 +92,7 @@ namespace Dingo
 		std::shared_ptr<ParticleEmitter> m_NoRoom;
 		std::shared_ptr<ParticleEmitter> m_Short;
 		std::shared_ptr<ParticleEmitter> m_Small;
+		std::shared_ptr<ParticleEmitter> m_Spun;
 		std::shared_ptr<ParticleEmitter> m_SoftPuff;
 		std::shared_ptr<ParticleEmitter> m_HardPuff;
 		std::shared_ptr<ParticleEmitter> m_Flipbook;

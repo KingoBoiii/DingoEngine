@@ -1,9 +1,11 @@
 #include "ParticleTest.h"
 
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -397,6 +399,33 @@ namespace Dingo
 		}, static_cast<uint64_t>(emitter.GetPoolOffset()) * k_ParticleBytes, static_cast<uint64_t>(capacity) * k_ParticleBytes);
 	}
 
+	void ParticleTest::ReadRotations(Renderer3D& renderer, const ParticleEmitter& emitter, std::function<void(const std::vector<float>&)> done)
+	{
+		GraphicsBuffer* pool = renderer.GetParticlePool();
+		if (!pool || emitter.GetCapacity() == 0)
+		{
+			done({});
+			return;
+		}
+
+		const std::weak_ptr<int> alive = m_Alive;
+		const uint32_t capacity = emitter.GetCapacity();
+		pool->ReadBack([alive, capacity, done = std::move(done)](const std::vector<uint8_t>& bytes)
+		{
+			if (alive.expired())
+				return;
+			std::vector<float> rotations;
+			for (uint32_t i = 0; i < capacity && (i + 1) * k_ParticleBytes <= bytes.size(); ++i)
+			{
+				float particle[12];
+				std::memcpy(particle, bytes.data() + static_cast<size_t>(i) * k_ParticleBytes, sizeof(particle));
+				if (particle[7] > 0.0f)
+					rotations.push_back(particle[9]);
+			}
+			done(rotations);
+		}, static_cast<uint64_t>(emitter.GetPoolOffset()) * k_ParticleBytes, static_cast<uint64_t>(capacity) * k_ParticleBytes);
+	}
+
 	void ParticleTest::DrawCheckScene(Framebuffer* target, std::initializer_list<std::pair<ParticleEmitter*, float>> emitters, bool post, const glm::mat4& emitterTransform)
 	{
 		Framebuffer* previous = Renderer::GetRenderTarget();
@@ -472,12 +501,33 @@ namespace Dingo
 
 		if (step == 2)
 		{
-			DrawCheckScene(m_CheckTarget, { { m_Short.get(), 0.6f }, { m_Small.get(), 1.0f / 60.0f } }, false);
-			CountAlive(*m_CheckRenderer, *m_Short, [this](uint32_t alive, float) { Check(alive == 0, std::format("past their 0.5 s lifetime none are left ({} alive)", alive)); });
+			// Two steps each shorter than the 0.5 s lifetime, read back after each: the particles must die
+			// of age summed over steps, not of one step longer than their life.
+			m_CheckEffects.emplace_back(ParticleEffect::Create(StillParticles("ParticleTest spun", 5.0f, 64).SetStartRotation(0.0f, 360.0f)));
+			m_Spun = m_CheckRenderer->CreateParticleEmitter(m_CheckEffects.back().get());
+			m_Spun->Emit(64);
+			DrawCheckScene(m_CheckTarget, { { m_Short.get(), 0.3f }, { m_Small.get(), 1.0f / 60.0f }, { m_Spun.get(), 1.0f / 60.0f } }, false);
+			CountAlive(*m_CheckRenderer, *m_Short, [this](uint32_t alive, float worst)
+			{
+				Check(alive == 100 && worst > 0.55f && worst < 0.65f, std::format("at 0.3 s of their 0.5 s lifetime all are alive ({} alive, oldest at {:.3f} of its life)", alive, worst));
+			});
 			CountAlive(*m_CheckRenderer, *m_Small, [this](uint32_t alive, float worst)
 			{
 				Check(alive == 64 && worst < 1.0f, std::format("the others age without outliving their lifetime ({} alive, oldest at {:.3f} of its life)", alive, worst));
 			});
+			ReadRotations(*m_CheckRenderer, *m_Small, [this](const std::vector<float>& rotations)
+			{
+				const bool still = !rotations.empty() && std::ranges::all_of(rotations, [](float r) { return r == 0.0f; });
+				Check(still, std::format("without StartRotation every particle starts unturned ({} read)", rotations.size()));
+			});
+			ReadRotations(*m_CheckRenderer, *m_Spun, [this](const std::vector<float>& rotations)
+			{
+				const auto [low, high] = std::ranges::minmax(rotations.empty() ? std::vector<float>{ 0.0f } : rotations);
+				const bool inRange = rotations.size() == 64 && low >= 0.0f && high <= glm::two_pi<float>() + 1e-4f;
+				Check(inRange && high - low > glm::pi<float>(), std::format("StartRotation 0..360 turns each particle at random within it ({} read, {:.2f} to {:.2f} rad)", rotations.size(), low, high));
+			});
+			DrawCheckScene(m_CheckTarget, { { m_Short.get(), 0.3f } }, false);
+			CountAlive(*m_CheckRenderer, *m_Short, [this](uint32_t alive, float) { Check(alive == 0, std::format("past their 0.5 s lifetime none are left ({} alive)", alive)); });
 			return;
 		}
 
@@ -757,6 +807,7 @@ namespace Dingo
 		m_NoRoom.reset();
 		m_Short.reset();
 		m_Small.reset();
+		m_Spun.reset();
 		m_SoftPuff.reset();
 		m_HardPuff.reset();
 		m_Flipbook.reset();

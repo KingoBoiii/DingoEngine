@@ -146,9 +146,11 @@ The test app's **Particle Test** (`--test=particles`, `--particles=fountain|burs
 shows a fountain of sparks through bloom, bursts at random points, soft smoke against the floor, an
 emitter keeping about 30,000 alive, and the Fox puffing dust at every footfall. Over its first five frames it checks by reading the pool back:
 an emitter takes the whole pool and keeps every particle alive while another finds no room; a burst
-of 100 gives 100 live particles and none outlives its lifetime; a ring of 64 asked for 100 keeps 64
+of 100 gives 100 live particles, all alive after a step shorter than their lifetime and none after a
+second; particles start unturned without `StartRotation` and at random within a 0..360 one; a ring of
+64 asked for 100 keeps 64
 and drops 36; a `ParticleEmitterComponent`'s burst through the `SceneRenderer` lands in its emitter;
 and a soft particle fades where it meets the floor while its top draws as a hard one does. Over the
 next 300 fixed frames, through a `ParticleEventComponent` on the Fox, every footfall a script hears
-across a Walk-to-Run blend bursts exactly once, and Survey's `look` range plays its emitter only while
-it is open.
+across a Walk-to-Run blend bursts exactly once, Survey's `look` range plays its emitter only while
+it is open, and a range shorter than a frame still bursts its emitter's `BurstOnPlay`.
