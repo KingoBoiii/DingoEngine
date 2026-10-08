@@ -400,7 +400,7 @@ Doing this last is deliberate: optimising a renderer is measurement work, and by
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
 instead of a moving target.
 
-**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels. The combination of real-time combat and procedural or handcrafted levels makes this the capstone stress test for the engine: hot-loaded assets (v0.6), a fully lit world (v0.7), animated characters (v0.8), and advanced visuals (v0.9). Online co-op is **no longer part of the 1.0 launch** — it follows as a post-release update once the networking module lands. **Released on Itch.io, with Steam as a stretch goal.**
+**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6).
 
 ---
 

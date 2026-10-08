@@ -55,7 +55,7 @@ example is built to demonstrate.
 | v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
 | v0.8 | Animation & Character Fidelity — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
 | **v0.9** | **Shadows, Post-processing & VFX** — cascaded and local shadows, tone mapping, bloom, AO, GPU particles | `Candlewick`, `Marionette` upgrades | shipped |
-| v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
+| v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Hearthvale* (full release) | planned |
 
 **Shipped out of band**: **scripting** (C# or Lua) and **networking/multiplayer** are optional
 **modules** layered onto a released engine rather than numbered milestones — neither blocks the
