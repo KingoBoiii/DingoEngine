@@ -420,6 +420,7 @@ namespace Dingo
 		if (s_Data->FrameSkipped)
 			return;
 
+		DE_CORE_ASSERT(buffer->GetData(), "Renderer::Upload(buffer) re-sends the data the buffer kept; a storage buffer keeps none.");
 		s_Data->CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
 	}
 

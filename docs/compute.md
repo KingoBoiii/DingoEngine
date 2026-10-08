@@ -76,8 +76,11 @@ Renderer::Draw(material, 6, 16); // 16 instances: gl_InstanceIndex picks each on
 - **One binding numbering.** GLSL binding numbers are used as they are on every backend: on Vulkan
   every kind of resource shares them, on D3D each kind (`b`, `t`, `s`, `u`) has its own registers
   with the same number. Give every resource of a shader its own binding.
-- **Storage buffers aren't volatile**: they keep their contents across frames, and `Upload` writes
-  them from the CPU (into the frame's command list when one is recording).
+- **Storage buffers aren't volatile**: they keep their contents across frames. `Renderer::Upload`
+  writes one inside a frame; `GraphicsBuffer::Upload` and `CreateStorageBuffer`'s `initialData` write
+  it at any time, with `ReadBack`'s timing: into the frame's command list inside a frame, at once
+  before the first frame, else at the next frame's start. The bytes are copied, so the source can go
+  as soon as the call returns; the one-argument `Renderer::Upload(buffer)` has nothing to re-send.
 - A storage image's format comes from its GLSL layout qualifier (`rgba8`, `rgba16f`, `r32f`...) and
   must match the texture's.
 
@@ -87,4 +90,5 @@ The test app's **Compute Test** (`--test=compute`) fills a buffer and a storage 
 sums neighbours through a readonly block in a second, reads both buffers in a fragment stage into an
 R32F strip, and places sixteen instanced quads from the buffer in the vertex stage, then checks every
 value, sum, pixel and quad by readback. It also dispatches one incrementing pass four times, reads
-its buffer back, dispatches it four more times and checks both counts.
+its buffer back, dispatches it four more times and checks both counts, and reads back a buffer made with initial
+data and patched by `GraphicsBuffer::Upload`.

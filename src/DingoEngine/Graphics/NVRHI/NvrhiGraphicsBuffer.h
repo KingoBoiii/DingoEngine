@@ -22,6 +22,10 @@ namespace Dingo
 		// Records the write into commandList; every upload of the buffer goes through it.
 		void Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset);
 
+	private:
+		static void Write(nvrhi::ICommandList* commandList, nvrhi::IBuffer* buffer, bool padsWrites, const void* data, uint64_t size, uint64_t offset);
+		void UploadStorage(const void* data, uint64_t size, uint64_t offset);
+
 		virtual const uint32_t GetIndexCount() const override
 		{
 			if (m_Params.Type == BufferType::IndexBuffer)

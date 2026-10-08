@@ -136,6 +136,12 @@ void main() { o_Color = v_Color; }
 		m_Values = GraphicsBuffer::CreateStorageBuffer(k_ValueCount * sizeof(uint32_t), "ComputeTest values");
 		m_Sums = GraphicsBuffer::CreateStorageBuffer(k_ValueCount * sizeof(uint32_t), "ComputeTest sums");
 		m_Steps = GraphicsBuffer::CreateStorageBuffer(k_StepCount * sizeof(uint32_t), "ComputeTest steps");
+		{
+			std::vector<uint32_t> seed(k_ValueCount);
+			for (uint32_t i = 0; i < k_ValueCount; ++i)
+				seed[i] = i * 7 + 2;
+			m_Seeded = GraphicsBuffer::CreateStorageBuffer(k_ValueCount * sizeof(uint32_t), "ComputeTest seeded", seed.data());
+		}
 		m_Image = Texture::Create(TextureParams()
 			.SetDebugName("ComputeTest image")
 			.SetWidth(k_ImageSize)
@@ -224,6 +230,23 @@ void main() { o_Color = v_Color; }
 				Check(wrong == 0, std::format("{} ({} of {} wrong)", name, wrong, k_StepCount));
 			});
 		};
+		const uint32_t patch[2] = { 1000, 1001 };
+		m_Seeded->Upload(patch, sizeof(patch), 4 * sizeof(uint32_t));
+		m_Seeded->ReadBack([this, alive](const std::vector<uint8_t>& bytes)
+		{
+			if (alive.expired())
+				return;
+			uint32_t wrong = bytes.size() == k_ValueCount * sizeof(uint32_t) ? 0 : k_ValueCount;
+			for (uint32_t i = 0; wrong == 0 && i < k_ValueCount; ++i)
+			{
+				uint32_t value = 0;
+				std::memcpy(&value, bytes.data() + i * sizeof(uint32_t), sizeof(value));
+				const uint32_t expected = i == 4 ? 1000u : i == 5 ? 1001u : i * 7 + 2;
+				wrong += value != expected ? 1 : 0;
+			}
+			Check(wrong == 0, std::format("a storage buffer holds its initial data and a later GraphicsBuffer::Upload ({} of {} wrong)", wrong, k_ValueCount));
+		});
+
 		Renderer::Dispatch(m_ZeroPass, k_StepCount / 64);
 		for (uint32_t i = 0; i < k_StepDispatches; ++i)
 			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
@@ -328,6 +351,7 @@ void main() { o_Color = v_Color; }
 		DestroyAndDelete(m_Values);
 		DestroyAndDelete(m_Sums);
 		DestroyAndDelete(m_Steps);
+		DestroyAndDelete(m_Seeded);
 		DestroyAndDelete(m_Image);
 		DestroyAndDelete(m_Strip);
 		DestroyAndDelete(m_Instanced);

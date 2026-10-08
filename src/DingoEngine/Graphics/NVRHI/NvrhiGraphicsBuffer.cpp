@@ -85,6 +85,12 @@ namespace Dingo
 		DE_CORE_ASSERT(size > 0, "Size must be greater than zero.");
 		DE_CORE_ASSERT(offset + size <= m_Params.ByteSize, "Upload exceeds buffer size.");
 
+		if (m_Params.Type == BufferType::StorageBuffer)
+		{
+			UploadStorage(data, size, offset);
+			return;
+		}
+
 		if (m_Params.DirectUpload)
 		{
 			nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
@@ -106,16 +112,55 @@ namespace Dingo
 
 	void NvrhiGraphicsBuffer::Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset)
 	{
-		if (!m_PadsWrites || (size & 3) == 0)
+		Write(commandList, m_BufferHandle, m_PadsWrites, data, size, offset);
+	}
+
+	void NvrhiGraphicsBuffer::Write(nvrhi::ICommandList* commandList, nvrhi::IBuffer* buffer, bool padsWrites, const void* data, uint64_t size, uint64_t offset)
+	{
+		if (!padsWrites || (size & 3) == 0)
 		{
-			commandList->writeBuffer(m_BufferHandle, data, size, offset);
+			commandList->writeBuffer(buffer, data, size, offset);
 			return;
 		}
 
 		// NVRHI copies the data while recording, so the padded copy needn't outlive the call.
 		std::vector<uint8_t> padded((size + 3) & ~uint64_t(3), 0);
 		std::memcpy(padded.data(), data, size);
-		commandList->writeBuffer(m_BufferHandle, padded.data(), size, offset);
+		commandList->writeBuffer(buffer, padded.data(), size, offset);
+	}
+
+	// ReadBack's timing: in order with the frame's work inside a frame, at once while the render thread is
+	// parked, else at the next frame's start. A list of its own mid-frame would run before the frame's
+	// earlier dispatches (and on D3D11 clear its state).
+	void NvrhiGraphicsBuffer::UploadStorage(const void* data, uint64_t size, uint64_t offset)
+	{
+		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		{
+			Write(static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle(), data, size, offset);
+			return;
+		}
+
+		auto writeNow = [](nvrhi::IBuffer* buffer, bool padsWrites, const void* bytes, uint64_t byteCount, uint64_t at)
+		{
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+			nvrhi::CommandListHandle commandList = device->createCommandList(nvrhi::CommandListParameters().setQueueType(nvrhi::CommandQueue::Graphics));
+			commandList->open();
+			Write(commandList, buffer, padsWrites, bytes, byteCount, at);
+			commandList->close();
+			device->executeCommandList(commandList);
+		};
+
+		if (Renderer::IsRenderThreadParked())
+		{
+			writeNow(m_BufferHandle, m_PadsWrites, data, size, offset);
+			return;
+		}
+
+		std::vector<uint8_t> copy(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size);
+		Renderer::RunAfterFrame([buffer = m_BufferHandle, padsWrites = m_PadsWrites, copy = std::move(copy), offset, writeNow]()
+		{
+			writeNow(buffer, padsWrites, copy.data(), copy.size(), offset);
+		});
 	}
 
 	void NvrhiGraphicsBuffer::ReadBack(std::function<void(const std::vector<uint8_t>&)> done, uint64_t offset, uint64_t size)
