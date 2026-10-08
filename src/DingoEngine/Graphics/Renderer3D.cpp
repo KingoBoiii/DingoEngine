@@ -506,6 +506,11 @@ namespace Dingo
 		return m_Particles->CreateEmitter(effect);
 	}
 
+	bool Renderer3D::OwnsParticleEmitter(const ParticleEmitter& emitter) const
+	{
+		return m_Particles && m_Particles->Owns(emitter);
+	}
+
 	void Renderer3D::SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !m_Particles)

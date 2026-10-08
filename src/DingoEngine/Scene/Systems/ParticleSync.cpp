@@ -12,6 +12,10 @@ namespace Dingo::Internal::ParticleSync
 	{
 		// A scene that doesn't render for a while (a skipped frame) resumes its particles without a jump.
 		constexpr float k_MaxPendingTime = 0.1f;
+		// A renderer that stopped drawing the entity (a closed minimap) gives its ring back after this.
+		constexpr uint64_t k_MaxIdleFrames = 300;
+		// Bursts asked of an entity no renderer draws are kept up to this many, the newest.
+		constexpr size_t k_MaxQueuedBursts = 256;
 
 		void DropRuntime(entt::registry& registry, entt::entity handle)
 		{
@@ -87,7 +91,8 @@ namespace Dingo::Internal::ParticleSync
 		for (entt::entity entity : registry.view<ParticleEmitterComponent>())
 		{
 			ParticleEmitterRuntime& runtime = registry.get_or_emplace<ParticleEmitterRuntime>(entity);
-			runtime.PendingTime = std::min(runtime.PendingTime + deltaTime, k_MaxPendingTime);
+			for (ParticleEmitterRuntime::Instance& instance : runtime.Instances)
+				instance.PendingTime = std::min(instance.PendingTime + deltaTime, k_MaxPendingTime);
 		}
 	}
 
@@ -101,28 +106,49 @@ namespace Dingo::Internal::ParticleSync
 				continue;
 
 			ParticleEmitterRuntime& runtime = registry.get_or_emplace<ParticleEmitterRuntime>(entity);
-			if (!runtime.Emitter || runtime.Owner != &renderer || runtime.Effect != component.Effect)
+			if (runtime.Effect != component.Effect)
 			{
-				runtime.Emitter = renderer.CreateParticleEmitter(component.Effect);
-				runtime.Owner = &renderer;
+				runtime.Instances.clear();
 				runtime.Effect = component.Effect;
 			}
 
-			ParticleEmitter& emitter = *runtime.Emitter;
+			const uint64_t frame = Renderer::GetFrameIndex();
+			std::erase_if(runtime.Instances, [frame](const ParticleEmitterRuntime::Instance& instance) { return instance.LastFrame + k_MaxIdleFrames < frame; });
+
+			auto it = std::ranges::find_if(runtime.Instances, [&renderer](const ParticleEmitterRuntime::Instance& instance) { return renderer.OwnsParticleEmitter(*instance.Emitter); });
+			if (it == runtime.Instances.end())
+			{
+				ParticleEmitterRuntime::Instance instance;
+				instance.Emitter = renderer.CreateParticleEmitter(component.Effect);
+				instance.BurstsTaken = runtime.Bursts.empty() ? runtime.NextBurst - 1 : runtime.Bursts.front().Serial - 1;
+				runtime.Instances.push_back(std::move(instance));
+				it = runtime.Instances.end() - 1;
+			}
+			ParticleEmitterRuntime::Instance& instance = *it;
+			instance.LastFrame = frame;
+
+			ParticleEmitter& emitter = *instance.Emitter;
 			emitter.SetPlaying(component.Playing);
 			emitter.SetRateScale(component.RateScale);
 			emitter.SetWorldSpace(component.WorldSpace);
 			for (const ParticleEmitterRuntime::Burst& burst : runtime.Bursts)
 			{
+				if (burst.Serial <= instance.BurstsTaken)
+					continue;
 				if (burst.AtPosition)
 					emitter.EmitAt(burst.Position, burst.Count);
 				else
 					emitter.Emit(burst.Count);
 			}
-			runtime.Bursts.clear();
+			instance.BurstsTaken = runtime.NextBurst - 1;
 
-			renderer.SubmitParticles(emitter, memo.Transform(entity, transform), runtime.PendingTime);
-			runtime.PendingTime = 0.0f;
+			uint64_t taken = instance.BurstsTaken;
+			for (const ParticleEmitterRuntime::Instance& other : runtime.Instances)
+				taken = std::min(taken, other.BurstsTaken);
+			std::erase_if(runtime.Bursts, [taken](const ParticleEmitterRuntime::Burst& burst) { return burst.Serial <= taken; });
+
+			renderer.SubmitParticles(emitter, memo.Transform(entity, transform), instance.PendingTime);
+			instance.PendingTime = 0.0f;
 		}
 	}
 
@@ -132,21 +158,15 @@ namespace Dingo::Internal::ParticleSync
 			return;
 
 		ParticleEmitterRuntime& runtime = registry.get_or_emplace<ParticleEmitterRuntime>(entity);
-		if (runtime.Emitter)
-		{
-			if (worldPosition)
-				runtime.Emitter->EmitAt(*worldPosition, count);
-			else
-				runtime.Emitter->Emit(count);
-			return;
-		}
-		runtime.Bursts.push_back({ worldPosition ? *worldPosition : glm::vec3(0.0f), worldPosition != nullptr, count });
+		runtime.Bursts.push_back({ worldPosition ? *worldPosition : glm::vec3(0.0f), worldPosition != nullptr, count, runtime.NextBurst++ });
+		if (runtime.Bursts.size() > k_MaxQueuedBursts)
+			runtime.Bursts.erase(runtime.Bursts.begin());
 	}
 
 	ParticleEmitter* GetEmitter(entt::registry& registry, entt::entity entity)
 	{
 		const ParticleEmitterRuntime* runtime = registry.try_get<ParticleEmitterRuntime>(entity);
-		return runtime ? runtime->Emitter.get() : nullptr;
+		return runtime && !runtime->Instances.empty() ? runtime->Instances.front().Emitter.get() : nullptr;
 	}
 
 }

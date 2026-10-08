@@ -95,6 +95,7 @@ namespace Dingo
 		Texture* m_UprightTexture = nullptr;
 		Scene* m_Scene = nullptr;
 		Entity m_SceneEmitter;
+		ParticleEmitter* m_FirstSceneEmitter = nullptr;
 		std::vector<uint8_t> m_HardPixels;
 
 		// Particles from animation events.

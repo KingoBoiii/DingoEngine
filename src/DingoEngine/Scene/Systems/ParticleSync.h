@@ -35,9 +35,9 @@ namespace Dingo
 		// Adds the scene's (capped) delta to every emitter's pending step.
 		void Update(entt::registry& registry, float deltaTime);
 
-		// Submits every emitter on an entity with a Transform3DComponent to the renderer, making its
-		// runtime emitter on the first pass (or after its effect or renderer changed) and handing it
-		// the bursts queued before then.
+		// Submits every emitter on an entity with a Transform3DComponent to the renderer, through the
+		// runtime emitter this renderer made (made on its first pass, or after the effect changed), and
+		// hands it the bursts it hasn't had. An emitter no pass submitted for 300 frames is released.
 		void Submit(entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo);
 
 		void Emit(entt::registry& registry, entt::entity entity, uint32_t count, const glm::vec3* worldPosition);

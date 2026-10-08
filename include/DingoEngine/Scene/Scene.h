@@ -116,7 +116,8 @@ namespace Dingo
 		// around the entity, or around a world-space point (an impact). Nothing for an entity without one.
 		void EmitParticles(Entity entity, uint32_t count);
 		void EmitParticlesAt(Entity entity, const glm::vec3& worldPosition, uint32_t count);
-		// The component's live emitter, for tooling: null until the 3D pass first draws it.
+		// The component's live emitter, for tooling: null until the 3D pass first draws it. Each
+		// Renderer3D drawing the scene runs an emitter of its own; this is the first one made.
 		ParticleEmitter* GetParticleEmitter(Entity entity);
 
 		// --- Camera -----------------------------------------------------------

@@ -435,6 +435,7 @@ namespace Dingo
 			m_Scene->EmitParticles(m_SceneEmitter, 10);
 			Application::Get().GetSceneRenderer().Render(*m_Scene, m_CheckTarget);
 			ParticleEmitter* emitter = m_Scene->GetParticleEmitter(m_SceneEmitter);
+			m_FirstSceneEmitter = emitter;
 			Check(emitter && emitter->GetCapacity() == 32, "a ParticleEmitterComponent gets its emitter on its first draw");
 			if (emitter)
 				CountAlive(Application::Get().GetRenderer3D(), *emitter, [this](uint32_t alive, float) { Check(alive == 10, std::format("Scene::EmitParticles before the first draw lands in the component's emitter ({} alive)", alive)); });
@@ -443,6 +444,27 @@ namespace Dingo
 
 		if (step == 4)
 		{
+			// A second renderer drawing the same scene runs an emitter of its own and leaves the first
+			// one's particles alone.
+			const uint32_t usedBefore = m_CheckRenderer->GetParticlePoolUsed();
+			m_Scene->EmitParticles(m_SceneEmitter, 5);
+			for (int pass = 0; pass < 2; ++pass)
+			{
+				Framebuffer* previous = Renderer::GetRenderTarget();
+				Renderer::SetRenderTarget(m_CheckTarget);
+				m_CheckRenderer->BeginScene(CheckCamera());
+				m_Scene->RenderEntities3D(*m_CheckRenderer);
+				m_CheckRenderer->EndScene();
+				Renderer::SetRenderTarget(previous);
+				Application::Get().GetSceneRenderer().Render(*m_Scene, m_CheckTarget);
+			}
+			ParticleEmitter* sceneEmitter = m_Scene->GetParticleEmitter(m_SceneEmitter);
+			const uint32_t usedAfter = m_CheckRenderer->GetParticlePoolUsed();
+			Check(sceneEmitter && sceneEmitter == m_FirstSceneEmitter && usedAfter == usedBefore + 32,
+				std::format("a scene drawn by two renderers keeps its first emitter and makes one more ({} pool slots taken)", usedAfter - usedBefore));
+			if (sceneEmitter && sceneEmitter == m_FirstSceneEmitter)
+				CountAlive(Application::Get().GetRenderer3D(), *sceneEmitter, [this](uint32_t alive, float) { Check(alive == 15, std::format("and the first emitter keeps its particles and gets the new burst ({} alive)", alive)); });
+
 			ParticleEffectParams puff = StillParticles("ParticleTest soft", 100.0f, 4)
 				.SetBurstOnPlay(1)
 				.SetStartSize(2.0f, 2.0f)

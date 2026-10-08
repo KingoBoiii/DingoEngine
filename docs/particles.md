@@ -37,7 +37,10 @@ The `SceneRenderer`'s 3D pass draws it from the entity's world transform, so an 
 joint socket follows the joint. `Scene::OnUpdate` steps it by the scene's capped delta: a paused
 scene freezes its particles. `Playing` (stop: no more spawns at the rate, the particles live out
 their lives; start again: the effect's `BurstOnPlay`), `RateScale` and `WorldSpace` (off: the
-particles move with the entity) are on the component.
+particles move with the entity) are on the component. Every `Renderer3D` that draws the scene (a
+custom pass through `Scene::RenderEntities3D`, say a minimap, beside the `SceneRenderer`) runs an
+emitter of its own for the entity, since a renderer draws only its own pool: each simulates on its
+own and takes every burst, and one no pass has drawn for 300 frames gives its ring back.
 
 **Without the ECS**:
 

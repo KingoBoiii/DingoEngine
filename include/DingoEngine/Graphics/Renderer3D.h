@@ -223,13 +223,15 @@ namespace Dingo
 		// GPU particles. An emitter is a ring of this renderer's pool, the size of the effect's capacity
 		// (an emitter the pool has no room for draws nothing, with a warning); dropping its last
 		// reference returns the ring. SubmitParticles between BeginScene and EndScene steps it by
-		// deltaTime (emit, then simulate, on the GPU) and draws it after the scene's opaque meshes,
+		// deltaTime (simulate, then emit, on the GPU) and draws it after the scene's opaque meshes,
 		// unlit and depth-tested without writing depth; submit an emitter once a frame, or the other
 		// scenes with a deltaTime of 0. Through the post chain, AO is applied first so particles aren't
 		// darkened, and particles with a SoftDistance fade against the scene's depth. See
 		// docs/particles.md.
 		std::shared_ptr<ParticleEmitter> CreateParticleEmitter(const ParticleEffect* effect);
 		void SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime);
+		// Whether this renderer made the emitter: one made by another Renderer3D draws nothing here.
+		bool OwnsParticleEmitter(const ParticleEmitter& emitter) const;
 		// The pool, for tooling and tests: 48 bytes a particle (ParticleCommon.glsl); null until the
 		// first emitter draws.
 		GraphicsBuffer* GetParticlePool() const;
