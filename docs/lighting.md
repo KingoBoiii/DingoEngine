@@ -262,9 +262,10 @@ bool SeesPoint(Entity warden, const glm::vec3& point)
 points on the player: feet (0.1 m), chest (1.0 m) and head (1.6 m). A sample counts as seen when its
 weight is at least 0.1, which is where the lit pool on the floor fades out of sight, and a ray from the
 eye towards it hits nothing more than 0.3 m short of it (the player is a character controller, so no
-ray ever hits the player itself). The eye's `Range` is also clamped every frame to the wall it faces,
-found with a level ray from the eye, so neither the drawn cone nor its weight reaches through that
-wall. The cone the player sees lit on the floor is therefore the cone that catches them.
+ray ever hits the player itself). Since v0.9 the eye casts a shadow, and the weight is
+`Scene::GetShadowedLightAttenuation`, so a wall or a pillar stops both the drawn cone and its weight
+([Shadows](shadows.md#is-this-point-in-shadow)). Before, the eye's `Range` was clamped every frame to
+the wall it faced. The cone the player sees lit on the floor is therefore the cone that catches them.
 
 **Keeping gameplay lights inside the budget.** The weight ignores the frame's budget, so a game
 whose rules read a light should not leave the choice of which lights are drawn to the engine's
@@ -441,6 +442,7 @@ own, since submitting any light or ambient switches the default off.
 - **DungeonCrawler3D** with `--night` (`examples/DungeonCrawler3D/`): a dim moon, a lantern that
   follows the hero, and a point light on each treasure.
 - **Candlewick** (`examples/Candlewick/`): the reference for lights that are gameplay. A lantern whose
-  range is its oil, wardens whose spot-light cones are tested with `GetLightAttenuation`, a game-side
-  light LOD, and lit emissive braziers as checkpoints. `--debug-cone` draws the tested cones and
+  range is its oil, wardens whose spot-light cones are tested with `GetLightAttenuation` (and since
+  v0.9 with their shadows, so cover hides you), a game-side light LOD, and lit emissive braziers as
+  checkpoints. `--debug-cone` draws the tested cones and
   `--no-light-lod` shows the engine's own selection.

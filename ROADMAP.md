@@ -323,7 +323,8 @@ The requests:
 ## v0.9 — Shadows, Post-processing & VFX
 **Status**: the engine work (P1–P12 of `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`,
 whose "As built" notes override the design below) is on the branch, `VERSION` 0.9.0, with its review
-pass (P13) next and the *Candlewick* and *Marionette* upgrades after it. Not yet verified on a GPU.
+pass (P13) done and the *Candlewick* upgrade (P14, `.claude/plans/2026-10-08-candlewick-v0.9-plan.md`)
+built; the *Marionette* upgrade remains. Not yet verified on a GPU.
 What it adds:
 
 - **Profiling**: Tracy (not Optick) behind premake's `--profile`, `DE_PROFILE_*` zones, always-on GPU

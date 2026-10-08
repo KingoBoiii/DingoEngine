@@ -115,8 +115,18 @@ renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), point, key); // any 64
 if (std::optional<float> lit = renderer.GetShadowProbeResult(key)) { /* 0..1 */ }
 ```
 
-The probes draw into a 256 x 1 R8 target after the shadow atlas and read it back through
-`Texture::ReadPixels`; `Statistics::ShadowProbes` counts those the GPU answered.
+The probes draw into a 256 x 1 R8 target after the shadow atlas. It is read back only once a GPU
+event set behind the copy has signalled, so the CPU never waits for it. `Statistics::ShadowProbes`
+counts the probes the GPU answered.
+
+*Candlewick* (`examples/Candlewick/src/Detection.cpp`) is the worked example:
+- A warden's cone weighs each of three points on the player by `GetShadowedLightAttenuation` of the
+  warden's eye.
+- A lit brazier counts only where its own shadow doesn't cover the player's chest.
+- The lantern's glow is noticed only while `GetLightVisibility(lantern, warden's eye)` says the
+  light reaches the warden.
+- The player casts no shadow, since every probe point is inside the player's body.
+- `--hide-check` logs every verdict once.
 
 ## Tuning
 
