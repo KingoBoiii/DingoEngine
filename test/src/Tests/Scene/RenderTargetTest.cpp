@@ -187,7 +187,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		std::error_code error;
 		std::filesystem::create_directories(m_TempDirectory, error);
 
-		m_Font = Font::Create("assets/fonts/ArialBD.ttf");
+		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
 		auto makeTarget = [](const char* name, int32_t width, int32_t height)
 		{
