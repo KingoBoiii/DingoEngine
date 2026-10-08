@@ -46,11 +46,11 @@ jobs:
           include/
 
     - name: Package tester bundle
-      if: matrix.build-configuration == 'Release'
-      run: scripts/linux-tester/make-bundle.sh Release build/package/DingoEngine-linux-tester.tar.gz
+      if: matrix.build-configuration == 'Distribution'
+      run: scripts/linux-tester/make-bundle.sh Distribution build/package/DingoEngine-linux-tester.tar.gz
 
     - name: Upload tester bundle
-      if: matrix.build-configuration == 'Release'
+      if: matrix.build-configuration == 'Distribution'
       uses: actions/upload-artifact@v4
       with:
         name: DingoEngine-linux-tester

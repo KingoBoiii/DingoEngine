@@ -854,7 +854,7 @@ self-checks. Before calling Linux supported:
   - the user-data directory (`Platform.cpp` already follows XDG) and `GetExecutablePath`
     (`/proc/self/exe`)
 
-**Tester bundle**: `build-linux.yml`'s Release job uploads the `DingoEngine-linux-tester` artifact, built by
+**Tester bundle**: `build-linux.yml`'s Distribution job uploads the `DingoEngine-linux-tester` artifact, built by
 `scripts/linux-tester/make-bundle.sh` (the same command builds it locally from any configuration). It holds the test app and
 every example beside its assets, so it runs without the SDK or a build. The tester follows its README:
 
