@@ -106,6 +106,7 @@ namespace
 		ParseFlag(args, "no-post", options.NoPost);
 		ParseFlag(args, "no-shadows", options.NoShadows);
 		ParseFlag(args, "no-particles", options.NoParticles);
+		ParseFlag(args, "hide-check", options.HideCheck);
 		return options;
 	}
 }

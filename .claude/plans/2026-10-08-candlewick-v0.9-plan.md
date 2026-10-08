@@ -196,13 +196,12 @@ The game's own design is `.claude/plans/2026-10-01-candlewick-plan.md`, whose §
   visual log.
 - **The wall test:** `--room=2 --freeze --debug-cone` and `--room=3 --freeze --debug-cone`. No cone
   light on the far side of any wall.
-- **The hide check (W3):**
-  - `--room=2 --all-lit --freeze --debug-cone --spawn=24,4` puts the player NW of the central block,
-    in (28, 10)'s shadow.
-  - The chest sample's brazier visibility logs 0, and nothing is noticed.
-  - `--spawn=24,9`, in the open, logs 1.
-  - Both lines are logged by a `--hide-check` flag that prints `IsFlameLit` and the visibilities
-    once, after 10 frames.
+- **The hide check (W3):** `--room=2 --all-lit --freeze --hide-check` logs `IsFlameLit` and every
+  visibility once, after 10 frames.
+  - `--spawn=24,5` puts the player behind the pillar at (26, 7) as seen from the brazier at
+    (28, 10). A walk along the segment says so, and the pillar at (19, 4) hides them from (17, 3).
+    The brazier at (28.5, 10.5) logs visibility 0, and flame-lit "no".
+  - `--spawn=28,6`, in the open, logs visibility 1 for that brazier, and flame-lit "yes".
 - **Perf:** `--perf --vsync=off` per room, Release, with each `--no-*` flag and with none. Recorded
   in §8 next to W0's line.
 - **Engine:** none of this changes the engine. The test app's start-up checks are still owed from

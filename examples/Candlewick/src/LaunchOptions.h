@@ -21,6 +21,7 @@ namespace Dingo
 		bool NoPost = false;
 		bool NoShadows = false;
 		bool NoParticles = false;
+		bool HideCheck = false;  // logs what hides the player, once, after HIDE_CHECK_FRAME frames in the keep
 		std::optional<glm::ivec2> Spawn; // --spawn=<col>,<row>: the player's start tile
 	};
 

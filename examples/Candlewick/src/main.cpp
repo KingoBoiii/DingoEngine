@@ -95,7 +95,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 	static_assert(Dingo::GAMEPLAY_LIGHTS_MAX <= static_cast<int>(Dingo::Renderer3D::k_MaxShadowedLocalLights));
 	params.Renderer3D.Capabilities.MaxShadowedLocalLights = Dingo::Renderer3D::k_MaxShadowedLocalLights;
 	// A scripted run must not pause when its window opens unfocused.
-	params.UpdateInBackground = args.Get("perf").has_value();
+	params.UpdateInBackground = args.Get("perf").has_value() || args.Get("hide-check").has_value();
 
 	CandlewickApplication* app = new CandlewickApplication(params);
 	app->Initialize();

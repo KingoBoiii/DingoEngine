@@ -17,10 +17,12 @@ namespace Dingo
 	class Wardens;
 
 	// Turns what each warden sees into its suspicion. The cone test is the renderer's own weight for
-	// the warden's eye light (GetLightAttenuation on the same component the frame draws), so the
-	// pool on the floor is where a warden sees you; a ray then keeps walls honest. Only the cone can
-	// take suspicion to 1: the beacon (a lit player is noticed from further off) stops at alert, and
-	// touching a warden (within TOUCH_DISTANCE, since wardens have no collider) holds it at 0.6 or more.
+	// the warden's eye light, shadows included (GetShadowedLightAttenuation on the same component the
+	// frame draws), so the pool on the floor is where a warden sees you and cover hides you; a ray
+	// still keeps walls honest, since a shadow answer is a few frames late and an eye the camera
+	// culled casts none. Only the cone can take suspicion to 1: the beacon (a lit player is noticed
+	// from further off) stops at alert, and touching a warden (within TOUCH_DISTANCE, since wardens
+	// have no collider) holds it at 0.6 or more.
 	class Detection
 	{
 	public:
@@ -37,6 +39,9 @@ namespace Dingo
 
 		// Redraws the --debug-cone view on its own, for frames that skip Update.
 		void UpdateDebugView(const Wardens& wardens, const Player& player);
+
+		// --hide-check: logs every light's verdict on the player once.
+		void LogHideCheck(const Wardens& wardens, const Player& player, const Lantern& lantern);
 
 	private:
 		struct Sconce
@@ -60,8 +65,11 @@ namespace Dingo
 			}
 		};
 
+		enum class SampleVerdict { Unseen, Shadowed, Seen };
+
 		bool HasLineOfSight(const glm::vec3& eye, const glm::vec3& target) const;
-		bool IsFlameLit(const glm::vec3& point) const;
+		// Asks every lit brazier's shadow each frame, so its answer stays fresh.
+		bool IsFlameLit(const glm::vec3& point);
 
 		void CreateDebugView(size_t wardenCount);
 		Mesh* BuildFootprint(const SpotLight& eye);
@@ -72,13 +80,14 @@ namespace Dingo
 		std::vector<Entity> m_Braziers;
 		bool m_CanCatch = true;
 		bool m_DebugView = false;
-		bool m_SampleSeen[k_SampleCount] = {};
+		SampleVerdict m_SampleVerdicts[k_SampleCount] = {};
 
 		Mesh* m_ConeMesh = nullptr;
 		Material* m_ConeMaterial = nullptr;
 		Material* m_DotMaterial = nullptr;
 		Material* m_SeenMaterial = nullptr;
 		Material* m_UnseenMaterial = nullptr;
+		Material* m_ShadowedMaterial = nullptr;
 		std::vector<Entity> m_Cones;
 		std::vector<Entity> m_Footprints;
 		std::vector<Mesh*> m_FootprintMeshes;

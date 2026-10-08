@@ -161,6 +161,13 @@ namespace Dingo
 	inline constexpr float BEACON_FLAME_RANGE       = 6.0f;
 	inline constexpr float BEACON_FIELD_DEG         = 120.0f;
 	inline constexpr float BEACON_FLAME_WEIGHT      = 0.25f;
+	// How much of the lantern's light must reach a warden's eye for its glow to be seen: a pillar
+	// between them hides it, exactly as the drawn shadow shows.
+	inline constexpr float BEACON_LANTERN_VISIBILITY = 0.5f;
+	// Shadow-probe keys: an eye's own keys are its samples (0..2); the lantern's are one per warden.
+	inline constexpr uint32_t PROBE_KEY_LANTERN     = 16;
+	inline constexpr uint32_t PROBE_KEY_CHEST       = 1;
+	inline constexpr int   HIDE_CHECK_FRAME         = 10;
 	inline constexpr float CAUGHT_FADE_TIME         = 1.0f;
 	inline constexpr float RESPAWN_FADE_TIME        = 0.5f;
 	inline constexpr float RESPAWN_GRACE_TIME       = 2.5f;
@@ -307,6 +314,7 @@ namespace Dingo
 	inline constexpr glm::vec3 DEBUG_DOT_COLOR     = { 0.35f, 1.0f, 0.3f };
 	inline constexpr glm::vec3 DEBUG_SEEN_COLOR    = { 1.0f, 0.15f, 0.1f };
 	inline constexpr glm::vec3 DEBUG_UNSEEN_COLOR  = { 0.6f, 0.6f, 0.65f };
+	inline constexpr glm::vec3 DEBUG_SHADOWED_COLOR = { 0.6f, 0.3f, 1.0f };
 
 	inline constexpr glm::vec4 COLOR_FADE          = { 0.0f, 0.0f, 0.0f, 1.0f };
 	inline constexpr float HUD_FADE_Z              = 0.5f;

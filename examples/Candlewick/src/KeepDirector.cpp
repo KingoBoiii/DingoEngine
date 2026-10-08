@@ -153,6 +153,9 @@ namespace Dingo
 		if (!m_Overview)
 			m_World->UpdateCutaway(m_Camera->GetEye(), m_Player->GetPosition() + glm::vec3(0.0f, CUTAWAY_TARGET_HEIGHT, 0.0f));
 
+		if (GetLaunchOptions().HideCheck && ++m_Frames == HIDE_CHECK_FRAME)
+			m_Detection->LogHideCheck(*m_Wardens, *m_Player, *m_Lantern);
+
 		m_Hud->SetRoom(m_Map.RoomOf(m_Map.TileOf(m_Player->GetPosition())));
 		m_Hud->SetFade(m_Fade);
 		m_Hud->SetBrazierPrompt(m_Braziers->GetPrompt(), m_Braziers->GetProgress());

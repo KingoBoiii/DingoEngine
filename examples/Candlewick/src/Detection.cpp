@@ -81,6 +81,7 @@ namespace Dingo
 		DestroyAndDelete(m_DotMaterial);
 		DestroyAndDelete(m_SeenMaterial);
 		DestroyAndDelete(m_UnseenMaterial);
+		DestroyAndDelete(m_ShadowedMaterial);
 		delete m_ConeMesh;
 		for (Mesh* mesh : m_FootprintMeshes)
 			delete mesh;
@@ -105,32 +106,29 @@ namespace Dingo
 	}
 
 	// Gameplay state, not what the frame draws: a sconce is always lit, at its base intensity (the
-	// light LOD fades its component), and a brazier is lit while its light is enabled. Candles never
-	// count, so which of them the LOD keeps cannot change what a warden notices.
-	bool Detection::IsFlameLit(const glm::vec3& point) const
+	// light LOD fades its component), and a brazier is lit while its light is enabled, where its own
+	// shadow doesn't cover the point. Candles never count, so which of them the LOD keeps cannot
+	// change what a warden notices. Sconces cast no shadow, and hang on walls.
+	bool Detection::IsFlameLit(const glm::vec3& point)
 	{
+		bool lit = false;
+		for (Entity entity : m_Braziers)
+		{
+			if (entity.IsValid() && entity.GetComponent<PointLightComponent>().Enabled)
+				lit = m_Scene.GetShadowedLightAttenuation(entity, point, PROBE_KEY_CHEST) >= BEACON_FLAME_WEIGHT || lit;
+		}
+
 		for (const Sconce& sconce : m_Sconces)
 		{
 			Entity entity = sconce.Light;
-			if (!entity.IsValid())
+			if (lit || !entity.IsValid())
 				continue;
 
 			PointLight light = entity.GetComponent<PointLightComponent>().ToLight(entity.GetComponent<Transform3DComponent>());
 			light.Intensity = sconce.BaseIntensity;
-			if (GetLightAttenuation(light, point) >= BEACON_FLAME_WEIGHT)
-				return true;
+			lit = GetLightAttenuation(light, point) >= BEACON_FLAME_WEIGHT;
 		}
-
-		for (Entity entity : m_Braziers)
-		{
-			if (!entity.IsValid())
-				continue;
-
-			const auto& brazier = entity.GetComponent<PointLightComponent>();
-			if (brazier.Enabled && GetLightAttenuation(brazier.ToLight(entity.GetComponent<Transform3DComponent>()), point) >= BEACON_FLAME_WEIGHT)
-				return true;
-		}
-		return false;
+		return lit;
 	}
 
 	std::optional<size_t> Detection::Update(float deltaTime, Wardens& wardens, const Player& player, const Lantern& lantern)
@@ -141,16 +139,16 @@ namespace Dingo
 			samples[s] = feet + glm::vec3(0.0f, k_SampleHeights[s], 0.0f);
 		const glm::vec3& chest = samples[k_ChestSample];
 
-		// A bigger flame is seen from further: the lantern's reach scales the notice range, and
-		// standing in a brazier's or sconce's light sets a floor under it.
+		// A bigger flame is seen from further: the lantern's reach scales the notice range, while its
+		// glow reaches the warden's eye, and standing in a brazier's or sconce's light sets a floor
+		// under it.
 		Entity lanternEntity = lantern.GetLight();
 		const auto& lanternLight = lanternEntity.GetComponent<PointLightComponent>();
-		float noticeRange = lanternLight.Enabled ? BEACON_LANTERN_SCALE * lanternLight.Range : 0.0f;
-		if (IsFlameLit(chest))
-			noticeRange = std::max(noticeRange, BEACON_FLAME_RANGE);
+		const float lanternRange = lanternLight.Enabled ? BEACON_LANTERN_SCALE * lanternLight.Range : 0.0f;
+		const bool flameLit = IsFlameLit(chest);
 		const float fieldCos = std::cos(glm::radians(BEACON_FIELD_DEG * 0.5f));
 
-		std::fill(std::begin(m_SampleSeen), std::end(m_SampleSeen), false);
+		std::fill(std::begin(m_SampleVerdicts), std::end(m_SampleVerdicts), SampleVerdict::Unseen);
 		std::optional<size_t> caught;
 		for (size_t i = 0; i < wardens.GetCount(); ++i)
 		{
@@ -160,26 +158,38 @@ namespace Dingo
 
 			bool coneSeen = false;
 			float coneWeight = 0.0f;
-			for (size_t s = 0; s < k_SampleCount; ++s)
+			for (size_t s = 0; s < k_SampleCount && eye.Enabled; ++s)
 			{
-				const float weight = eye.Enabled ? GetLightAttenuation(eyeLight, samples[s]) : 0.0f;
-				if (weight >= SEEN_WEIGHT && HasLineOfSight(eyeLight.Position, samples[s]))
+				// Asked every frame, so the eye's shadow answer for each sample stays fresh.
+				const float weight = m_Scene.GetShadowedLightAttenuation(eyeEntity, samples[s], static_cast<uint32_t>(s));
+				if (GetLightAttenuation(eyeLight, samples[s]) < SEEN_WEIGHT || !HasLineOfSight(eyeLight.Position, samples[s]))
+					continue;
+				if (weight >= SEEN_WEIGHT)
 				{
 					coneSeen = true;
 					coneWeight = std::max(coneWeight, weight);
-					m_SampleSeen[s] = true;
+					m_SampleVerdicts[s] = SampleVerdict::Seen;
+				}
+				else if (m_SampleVerdicts[s] == SampleVerdict::Unseen)
+				{
+					m_SampleVerdicts[s] = SampleVerdict::Shadowed;
 				}
 			}
 
+			const float lanternVisibility = eye.Enabled && lanternRange > 0.0f
+				? m_Scene.GetLightVisibility(lanternEntity, eyeLight.Position, PROBE_KEY_LANTERN + static_cast<uint32_t>(i)) : 0.0f;
+
 			bool beacon = false;
-			if (!coneSeen && eye.Enabled && noticeRange > 0.0f)
+			if (!coneSeen && eye.Enabled)
 			{
 				const glm::vec3 toChest = chest - eyeLight.Position;
 				const glm::vec2 flat(toChest.x, toChest.z);
 				const float distance = glm::length(flat);
 				const glm::vec3 forward = wardens.GetForward(i);
 				const bool inField = distance <= 0.0f || glm::dot(flat / distance, glm::vec2(forward.x, forward.z)) >= fieldCos;
-				beacon = distance <= noticeRange && inField && HasLineOfSight(eyeLight.Position, chest);
+				const bool lanternSeen = distance <= lanternRange && lanternVisibility >= BEACON_LANTERN_VISIBILITY;
+				const bool flameSeen = flameLit && distance <= BEACON_FLAME_RANGE;
+				beacon = inField && (lanternSeen || flameSeen) && HasLineOfSight(eyeLight.Position, chest);
 			}
 
 			const float previous = wardens.GetSuspicion(i);
@@ -229,6 +239,10 @@ namespace Dingo
 		m_UnseenMaterial = renderer3D.CreateLitMaterial(MaterialParams()
 			.SetDebugName("DebugSampleUnseen")
 			.SetEmissiveColor(DEBUG_UNSEEN_COLOR)
+			.SetEmissiveStrength(1.0f));
+		m_ShadowedMaterial = renderer3D.CreateLitMaterial(MaterialParams()
+			.SetDebugName("DebugSampleShadowed")
+			.SetEmissiveColor(DEBUG_SHADOWED_COLOR)
 			.SetEmissiveStrength(1.0f));
 
 		for (size_t i = 0; i < wardenCount; ++i)
@@ -290,12 +304,15 @@ namespace Dingo
 		for (size_t s = 0; s < m_Samples.size(); ++s)
 		{
 			m_Samples[s].GetComponent<Transform3DComponent>().Position = feet + glm::vec3(0.0f, k_SampleHeights[s], 0.0f) + towardsCamera * DEBUG_SAMPLE_OFFSET;
-			m_Samples[s].GetComponent<MeshRendererComponent>().Material = m_SampleSeen[s] ? m_SeenMaterial : m_UnseenMaterial;
+			const SampleVerdict verdict = m_SampleVerdicts[s];
+			m_Samples[s].GetComponent<MeshRendererComponent>().Material = verdict == SampleVerdict::Seen ? m_SeenMaterial
+				: verdict == SampleVerdict::Shadowed ? m_ShadowedMaterial : m_UnseenMaterial;
 		}
 	}
 
-	// Every grid point on the floor where a feet sample would count for this eye, the same test
-	// Update makes, drawn as a dot so a capture shows the footprint over the lit pool.
+	// Every grid point on the floor where a feet sample would count for this eye by its light and
+	// the sight ray, drawn as a dot so a capture shows the footprint over the lit pool. Shadows don't
+	// enter it (a grid would need far more probes than a scene has); the samples show them.
 	Mesh* Detection::BuildFootprint(const SpotLight& eye)
 	{
 		m_DotVertices.clear();
@@ -327,6 +344,33 @@ namespace Dingo
 		}
 
 		return m_DotVertices.empty() ? nullptr : Mesh::Create(m_DotVertices, m_DotIndices);
+	}
+
+	void Detection::LogHideCheck(const Wardens& wardens, const Player& player, const Lantern& lantern)
+	{
+		const glm::vec3 chest = player.GetPosition() + glm::vec3(0.0f, SAMPLE_CHEST, 0.0f);
+		DE_INFO("[HideCheck] chest at ({:.2f}, {:.2f}, {:.2f}): flame-lit {}", chest.x, chest.y, chest.z, IsFlameLit(chest) ? "yes" : "no");
+		for (size_t i = 0; i < m_Braziers.size(); ++i)
+		{
+			Entity entity = m_Braziers[i];
+			if (!entity.IsValid() || !entity.GetComponent<PointLightComponent>().Enabled)
+				continue;
+
+			const glm::vec3 position = entity.GetComponent<Transform3DComponent>().Position;
+			const float light = GetLightAttenuation(entity.GetComponent<PointLightComponent>().ToLight(entity.GetComponent<Transform3DComponent>()), chest);
+			DE_INFO("[HideCheck] brazier at ({:.1f}, {:.1f}): light {:.3f} at the chest, visibility {:.3f}", position.x, position.z, light,
+				m_Scene.GetLightVisibility(entity, chest, PROBE_KEY_CHEST));
+		}
+
+		Entity lanternEntity = lantern.GetLight();
+		const bool lanternLit = lanternEntity.GetComponent<PointLightComponent>().Enabled;
+		for (size_t i = 0; i < wardens.GetCount(); ++i)
+		{
+			const glm::vec3 eye = wardens.GetEye(i).GetComponent<Transform3DComponent>().Position;
+			const float visibility = lanternLit ? m_Scene.GetLightVisibility(lanternEntity, eye, PROBE_KEY_LANTERN + static_cast<uint32_t>(i)) : 0.0f;
+			DE_INFO("[HideCheck] warden {}: the lantern's visibility at its eye {:.3f}, samples {}/{}/{}, suspicion {:.2f}", i + 1, visibility,
+				static_cast<int>(m_SampleVerdicts[0]), static_cast<int>(m_SampleVerdicts[1]), static_cast<int>(m_SampleVerdicts[2]), wardens.GetSuspicion(i));
+		}
 	}
 
 }
