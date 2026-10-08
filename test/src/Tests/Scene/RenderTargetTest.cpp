@@ -388,6 +388,26 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 			Check(left > 0.99f && right < 0.01f, std::format("Renderer::SetViewport limits a draw to its rectangle (left {:.2f}, right {:.2f})", left, right));
 		});
 
+		// A target of other formats, likely at the address of the one the material drew into before.
+		Framebuffer* freed = MakeColorTarget("RenderTargetTest freed", TextureFormat::RGBA16F, 16, 16);
+		DrawFullscreen(m_FillMaterial, freed);
+		const uint64_t freedId = freed->GetId();
+		DestroyAndDelete(freed);
+		m_ReusedTarget = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("RenderTargetTest reused")
+			.SetWidth(16)
+			.SetHeight(16)
+			.AddAttachment({ TextureFormat::RGBA8_UNORM })
+			.SetEnableDepth(true));
+		Check(m_ReusedTarget->GetId() != freedId, "a new framebuffer never takes a freed one's id");
+		Renderer::Clear(m_ReusedTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		DrawFullscreen(m_FillMaterial, m_ReusedTarget);
+		ReadBack(m_ReusedTarget, [this](const TexturePixels& pixels)
+		{
+			const float value = pixels.GetPixel(8, 8).r;
+			Check(value > 0.99f, std::format("a material draws into a framebuffer made after the one it last drew into was freed ({:.2f})", value));
+		});
+
 		// Two additive draws of (0.25, 0.125, 1.5) over black.
 		Renderer::Clear(m_BlendTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
 		DrawFullscreen(m_AddMaterial, m_BlendTarget);
@@ -422,6 +442,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DestroyAndDelete(m_ResizeCopy);
 		DestroyAndDelete(m_ViewportTarget);
 		DestroyAndDelete(m_BlendTarget);
+		DestroyAndDelete(m_ReusedTarget);
 	}
 
 	Scene* RenderTargetTest::BuildShowScene(const char* name, const glm::vec4& clearColor, Mesh* mesh, const glm::vec4& color, Entity& spinner)

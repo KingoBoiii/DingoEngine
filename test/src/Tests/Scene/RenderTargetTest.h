@@ -74,6 +74,7 @@ namespace Dingo
 		Framebuffer* m_ResizeCopy = nullptr;
 		Framebuffer* m_ViewportTarget = nullptr;
 		Framebuffer* m_BlendTarget = nullptr;
+		Framebuffer* m_ReusedTarget = nullptr;
 		Shader* m_FillShader = nullptr;
 		Shader* m_SampleShader = nullptr;
 		Shader* m_CompareShader = nullptr;

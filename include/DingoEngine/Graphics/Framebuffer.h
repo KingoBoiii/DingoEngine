@@ -87,9 +87,17 @@ namespace Dingo
 		virtual Texture* GetDepthAttachment() const = 0;
 
 		const FramebufferParams& GetParams() const { return m_Params; }
+		// Never reused, unlike the address, which a freed framebuffer can hand to one of other formats.
+		uint64_t GetId() const { return m_Id; }
+
+	private:
+		static uint64_t AllocateId();
 
 	protected:
 		FramebufferParams m_Params;
+
+	private:
+		uint64_t m_Id = AllocateId();
 
 		friend class NvrhiPipeline;
 		friend class CommandList;

@@ -15,11 +15,11 @@ namespace Dingo
 			seed ^= value + 0x9e3779b9ull + (seed << 6) + (seed >> 2);
 		}
 
-		// Produce a cache key from a vertex layout, a framebuffer pointer and the shared buffers.
+		// Produce a cache key from a vertex layout, a framebuffer and the shared buffers.
 		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler)
 		{
 			size_t seed = 0;
-			HashCombine(seed, reinterpret_cast<uintptr_t>(framebuffer));
+			HashCombine(seed, static_cast<size_t>(framebuffer ? framebuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(shadowBuffer ? shadowBuffer->GetId() : 0));
