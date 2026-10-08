@@ -71,6 +71,12 @@ namespace Dingo
 						.setSrcBlendAlpha(nvrhi::BlendFactor::One)
 						.setDestBlend(nvrhi::BlendFactor::One)
 						.setDestBlendAlpha(nvrhi::BlendFactor::One);
+				case BlendMode::Multiply:
+					return target.setBlendEnable(true)
+						.setSrcBlend(nvrhi::BlendFactor::DstColor)
+						.setSrcBlendAlpha(nvrhi::BlendFactor::Zero)
+						.setDestBlend(nvrhi::BlendFactor::Zero)
+						.setDestBlendAlpha(nvrhi::BlendFactor::One);
 				case BlendMode::Alpha:
 				default:
 					return target.setBlendEnable(true)

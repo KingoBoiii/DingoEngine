@@ -30,7 +30,7 @@ text, the HUD) goes straight into the target, never tone mapped.
 
 ```cpp
 PostProcessStack& post = Renderer::GetPostProcessStack();
-post.Begin(settings);                // draws now go to the HDR scene target
+post.Begin(settings, camera.GetProjectionMatrix()); // draws now go to the HDR scene target
 renderer3D.BeginScene(camera);
 renderer3D.Clear(clearColor);
 // ... lights and meshes ...
@@ -39,7 +39,9 @@ post.End();                          // tone-maps into the render target that wa
 ```
 
 `Begin` sizes the scene target to the render target current at the time (the window, or a framebuffer
-set with `Renderer::SetRenderTarget`), so the chain works for a scene rendered into a texture too.
+set with `Renderer::SetRenderTarget`), so the chain works for a scene rendered into a texture too. The
+projection is what ambient occlusion rebuilds positions from; `Begin(settings)` without one runs
+every pass but AO (which then warns once).
 
 ## The tone curves
 
@@ -82,13 +84,41 @@ is, so a single very bright pixel (a firefly from a specular highlight) can't fl
 What is it for: lit materials with `EmissiveStrength` above 1 (a lamp, a brazier, a glowing orb) and
 lights bright enough to burn a surface past 1.
 
+## Ambient occlusion
+
+Creases, corners and the ground under things darken a little, from the scene's depth alone:
+Scalable Ambient Obscurance (McGuire, Mara and Luebke 2012). For each pixel, 12 taps on a spiral
+around it, as far as `Radius`, ask how much of the space above the surface is closed off; a two-pass
+blur that ignores taps of a different depth smooths the result without blurring across an edge.
+
+```cpp
+post.Settings.AmbientOcclusion.Enabled = true;
+post.Settings.AmbientOcclusion.Radius = 0.5f; // metres around a point that count
+```
+
+| `AmbientOcclusionSettings` | Default | Meaning |
+|---|---|---|
+| `Enabled` | false | |
+| `Radius` | 0.5 | How far around a point occluders count, in world units. Only what lies within it darkens the point, so a box floating a metre before a wall leaves no halo on the wall. |
+| `Intensity` | 1.0 | How dark a closed corner gets. |
+| `Power` | 1.5 | The result is raised to this power: higher keeps open surfaces lighter and corners darker. |
+| `Bias` | 0.02 | Occluders closer than this to the surface's plane, in world units, don't count, so a flat floor stays exactly as it was. |
+| `HalfResolution` | true | Works at half width and height: a quarter of the cost, slightly softer at edges. |
+
+A forward renderer doesn't keep ambient light apart from direct light, so the result multiplies the
+whole HDR colour after the opaque 3D pass, sunlit faces included; corners in full sun darken a little
+too. `PostProcessStack::ApplyAmbientOcclusion` applies it early, once per `Begin`, so what is drawn
+after it (particles, a translucent pass) isn't darkened; `End` applies it if nothing has.
+
 ## What it costs and what differs
 
 - **Memory**: one RGBA16F colour target and a D32 depth per output size in use, 12 bytes a pixel (25 MB
   at 1920 x 1080). Targets idle for 300 frames are freed; a resized window resizes its target in place.
 - **GPU**: one fullscreen pass (`Post` in the F8 Profiler tab), plus the HDR target's bandwidth, and
   with bloom 11 small passes (`Bloom`, inside `Post`) over levels of a quarter of the screen's pixels
-  and less, and another 4 bytes a pixel of memory for the levels.
+  and less, and another 4 bytes a pixel of memory for the levels. Ambient occlusion is four passes
+  (`AO`, inside `Post`): 12 taps a pixel, two 9-tap blurs and the multiply, at a quarter of the
+  pixels at half resolution, with two R8 targets.
 - **Blending in 16-bit float** rounds differently from 8-bit, so the chain with `None` comes within
   1/255 of the frame without it, not exactly to it.
 
@@ -103,8 +133,11 @@ by readback that every curve rises, `Soft` is the identity to 1/255 up to its kn
 its white point, `None` clips at 1, `Soft` keeps an overbright gradient's hue, the chain with `None`
 is within 1/255 of no chain, and a disabled `Begin` draws exactly what no chain does; then that bloom
 adds nothing to a gradient inside 0..1 and makes a small square at 8 glow past its edge, evenly on
-both sides. `--post=bloom` (or `--bloom`) starts with bloom on. The Lighting Test takes `--post` and
-`--bloom` too: its materials mode's lamp has an emissive strength of 1.5.
+both sides. `--post=bloom` (or `--bloom`) starts with bloom on. Then ambient occlusion, in a room:
+the open floor is unchanged, the crease where floor meets wall darkens, and the wall beside a box
+floating before it isn't darkened right up to the box's silhouette (no halo); `--post=ao` shows the
+room with AO on. The Lighting Test takes `--post`, `--bloom` and `--ao` too: its materials mode's lamp
+has an emissive strength of 1.5.
 
 ## For custom shaders
 

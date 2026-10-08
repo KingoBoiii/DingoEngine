@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include <cstdint>
 #include <memory>
 
@@ -48,12 +50,34 @@ namespace Dingo
 		float Radius = 1.0f;
 	};
 
+	// Darkens creases, corners and the ground under things, from the scene's depth: Scalable Ambient
+	// Obscurance (McGuire, Mara and Luebke 2012), 12 taps a pixel and a depth-aware blur. It multiplies
+	// the whole HDR colour after the opaque 3D pass, since a forward renderer can't tell ambient light
+	// from direct. Needs the camera's projection: PostProcessStack::Begin's second overload (the
+	// SceneRenderer passes it).
+	struct AmbientOcclusionSettings
+	{
+		bool Enabled = false;
+		// How far around a point occluders count, in world units.
+		float Radius = 0.5f;
+		// How dark a fully closed corner gets.
+		float Intensity = 1.0f;
+		// The result is raised to this power: higher keeps open surfaces lighter and darkens corners more.
+		float Power = 1.5f;
+		// Ignores occluders this far in front of the surface along its normal, in world units, so a
+		// flat surface doesn't occlude itself.
+		float Bias = 0.02f;
+		// Works at half the scene's width and height: a quarter of the cost, slightly softer edges.
+		bool HalfResolution = true;
+	};
+
 	struct PostProcessSettings
 	{
 		// Off, the 3D pass draws straight into its target, exactly as without the post chain.
 		bool Enabled = false;
 		ToneMapSettings Tone;
 		BloomSettings Bloom;
+		AmbientOcclusionSettings AmbientOcclusion;
 	};
 
 	// The 3D pass's post chain. Begin redirects the draws that follow into an HDR scene target (RGBA16F
@@ -79,7 +103,15 @@ namespace Dingo
 		PostProcessStack& operator=(const PostProcessStack&) = delete;
 
 		void Begin(const PostProcessSettings& settings);
+		// With the camera's projection, which ambient occlusion needs to rebuild positions from depth;
+		// without it AO is skipped (warned once).
+		void Begin(const PostProcessSettings& settings, const glm::mat4& projection);
 		void End();
+
+		// Applies ambient occlusion to what has been drawn into the scene target so far, once per
+		// Begin; End applies it if nothing has. Call it before drawing what AO must not darken, such as
+		// particles or a translucent pass.
+		void ApplyAmbientOcclusion();
 
 		// Between a Begin that took effect and its End.
 		bool IsActive() const;
@@ -92,8 +124,9 @@ namespace Dingo
 			uint32_t Width = 0;         // the last scene target's size
 			uint32_t Height = 0;
 			uint32_t SceneTargets = 0;  // cached, one per output size in use
-			uint64_t TargetBytes = 0;   // GPU memory of every cached target, bloom levels included
+			uint64_t TargetBytes = 0;   // GPU memory of every cached target, bloom levels and AO targets included
 			uint32_t BloomScenes = 0;   // of Scenes, the ones that bloomed
+			uint32_t AmbientOcclusionScenes = 0; // of Scenes, the ones with ambient occlusion
 		};
 		const Statistics& GetStatistics() const;
 

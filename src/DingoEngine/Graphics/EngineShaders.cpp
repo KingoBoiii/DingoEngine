@@ -8,6 +8,7 @@ namespace
 #include "ToneMapping.glsl.inl"
 #include "PostToneMap.glsl.inl"
 #include "PostBloom.glsl.inl"
+#include "PostAmbientOcclusion.glsl.inl"
 #include "Shadows.glsl.inl"
 #include "Skinning.glsl.inl"
 #include "Renderer3D_Shadow.glsl.inl"
@@ -33,6 +34,7 @@ namespace
 		{ "ToneMapping.glsl", View(k_ToneMapping_glsl) },
 		{ "PostToneMap.glsl", View(k_PostToneMap_glsl) },
 		{ "PostBloom.glsl", View(k_PostBloom_glsl) },
+		{ "PostAmbientOcclusion.glsl", View(k_PostAmbientOcclusion_glsl) },
 		{ "Shadows.glsl", View(k_Shadows_glsl) },
 		{ "Skinning.glsl", View(k_Skinning_glsl) },
 		{ "Renderer3D_Shadow.glsl", View(k_Renderer3D_Shadow_glsl) },

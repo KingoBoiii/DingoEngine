@@ -289,7 +289,7 @@ namespace Dingo::UI
 			ImGui::TextDisabled("Not used: no PostProcessComponent or PostProcessStack::Begin has enabled it.");
 		else
 		{
-			ImGui::Text("Scenes     : %u (%u bloomed)   Scene target %u x %u, RGBA16F + D32", post.Scenes, post.BloomScenes, post.Width, post.Height);
+			ImGui::Text("Scenes     : %u (%u bloomed, %u with AO)   Scene target %u x %u, RGBA16F + D32", post.Scenes, post.BloomScenes, post.AmbientOcclusionScenes, post.Width, post.Height);
 			ImGui::Text("Targets    : %u cached, %.1f MB", post.SceneTargets, static_cast<double>(post.TargetBytes) / (1024.0 * 1024.0));
 		}
 	}

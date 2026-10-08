@@ -26,6 +26,15 @@ namespace Dingo
 			glm::vec4 Threshold{ 0.0f }; // x = threshold, y = knee
 		};
 
+		// std140, mirrored by AmbientOcclusionData in PostAmbientOcclusion.glsl.
+		struct AmbientOcclusionData
+		{
+			glm::mat4 InverseProjection{ 1.0f };
+			glm::vec4 Params{ 0.0f }; // x = radius, y = intensity / radius^6, z = bias, w = power
+			glm::vec4 Target{ 0.0f }; // xy = one texel of the pass's target in UV, z = its pixels per unit at distance 1, w = 1 orthographic
+			glm::vec4 Blur{ 0.0f };   // xy = the blur's step in UV, zw = one depth texel in UV
+		};
+
 		constexpr uint32_t k_BloomLevels = 6;
 
 		uint32_t BloomLevelSize(uint32_t size, uint32_t level)
@@ -64,11 +73,24 @@ namespace Dingo
 			std::array<Material*, k_BloomLevels - 1> Up = {}; // Up[i] adds level i + 1 into level i
 		};
 
+		// Raw takes the samples and, after the blur's two passes (through Blurred), the result.
+		struct AmbientOcclusionChain
+		{
+			Framebuffer* Raw = nullptr;
+			Framebuffer* Blurred = nullptr;
+			Material* Sample = nullptr;
+			Material* BlurAcross = nullptr;
+			Material* BlurDown = nullptr;
+			Material* Apply = nullptr;
+			bool HalfResolution = true;
+		};
+
 		struct SceneTarget
 		{
 			Framebuffer* Target = nullptr;
 			Material* ToneMap = nullptr; // samples this target alone, so its pipelines are built once
 			std::unique_ptr<BloomChain> Bloom;
+			std::unique_ptr<AmbientOcclusionChain> AmbientOcclusion;
 			bool ToneMapBlooms = false;  // its slot 1 holds Bloom's level 0 rather than black
 			uint64_t LastFrame = 0;
 		};
@@ -81,6 +103,9 @@ namespace Dingo
 		std::unique_ptr<Internal::FullscreenShader> BloomPrefilterShader;
 		std::unique_ptr<Internal::FullscreenShader> BloomDownsampleShader;
 		std::unique_ptr<Internal::FullscreenShader> BloomUpsampleShader;
+		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionSampleShader;
+		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionBlurShader;
+		std::unique_ptr<Internal::FullscreenShader> AmbientOcclusionApplyShader;
 		// What the tone map's bloom slot samples while bloom is off, so its binding set stays complete.
 		Texture* Black = nullptr;
 
@@ -90,10 +115,14 @@ namespace Dingo
 		Framebuffer* Current = nullptr;
 		SceneTarget* CurrentTarget = nullptr; // into Targets, which nothing grows between Begin and End
 		PostProcessSettings Settings;
+		glm::mat4 Projection{ 1.0f };
+		bool HasProjection = false;
+		bool AmbientOcclusionApplied = false;
 
 		Statistics Stats;
 		uint64_t StatsFrame = 0;
 		bool NestedWarned = false;
+		bool NoProjectionWarned = false;
 
 		static constexpr uint64_t k_MaxIdleFrames = 300;
 
@@ -107,11 +136,24 @@ namespace Dingo
 				DestroyAndDelete(level);
 		}
 
+		static void ReleaseAmbientOcclusion(AmbientOcclusionChain& chain)
+		{
+			DestroyAndDelete(chain.Sample);
+			DestroyAndDelete(chain.BlurAcross);
+			DestroyAndDelete(chain.BlurDown);
+			DestroyAndDelete(chain.Apply);
+			DestroyAndDelete(chain.Raw);
+			DestroyAndDelete(chain.Blurred);
+		}
+
 		static void Release(SceneTarget& target)
 		{
 			if (target.Bloom)
 				ReleaseBloom(*target.Bloom);
 			target.Bloom.reset();
+			if (target.AmbientOcclusion)
+				ReleaseAmbientOcclusion(*target.AmbientOcclusion);
+			target.AmbientOcclusion.reset();
 			DestroyAndDelete(target.ToneMap);
 			DestroyAndDelete(target.Target);
 		}
@@ -122,6 +164,113 @@ namespace Dingo
 				return;
 			for (uint32_t level = 0; level < k_BloomLevels; ++level)
 				target.Bloom->Levels[level]->Resize(BloomLevelSize(target.Target->GetWidth(), level), BloomLevelSize(target.Target->GetHeight(), level));
+		}
+
+		static glm::uvec2 AmbientOcclusionSize(const Framebuffer* target, bool half)
+		{
+			const uint32_t width = target->GetWidth();
+			const uint32_t height = target->GetHeight();
+			return half ? glm::uvec2(std::max((width + 1) / 2, 1u), std::max((height + 1) / 2, 1u)) : glm::uvec2(width, height);
+		}
+
+		static void ResizeAmbientOcclusion(SceneTarget& target)
+		{
+			if (!target.AmbientOcclusion)
+				return;
+			AmbientOcclusionChain& chain = *target.AmbientOcclusion;
+			const glm::uvec2 size = AmbientOcclusionSize(target.Target, chain.HalfResolution);
+			if (chain.Raw->GetWidth() == size.x && chain.Raw->GetHeight() == size.y)
+				return;
+			chain.Raw->Resize(size.x, size.y);
+			chain.Blurred->Resize(size.x, size.y);
+		}
+
+		AmbientOcclusionChain& EnsureAmbientOcclusion(SceneTarget& target, bool half)
+		{
+			if (target.AmbientOcclusion)
+			{
+				target.AmbientOcclusion->HalfResolution = half;
+				ResizeAmbientOcclusion(target);
+				return *target.AmbientOcclusion;
+			}
+
+			if (!AmbientOcclusionSampleShader)
+			{
+				AmbientOcclusionSampleShader = std::make_unique<Internal::FullscreenShader>("PostAmbientOcclusionSample", "PostAmbientOcclusion.glsl", std::vector<ShaderDefine>{ { "DE_AO_SAMPLE", "" } });
+				AmbientOcclusionBlurShader = std::make_unique<Internal::FullscreenShader>("PostAmbientOcclusionBlur", "PostAmbientOcclusion.glsl", std::vector<ShaderDefine>{ { "DE_AO_BLUR", "" } });
+				AmbientOcclusionApplyShader = std::make_unique<Internal::FullscreenShader>("PostAmbientOcclusionApply", "PostAmbientOcclusion.glsl", std::vector<ShaderDefine>{ { "DE_AO_APPLY", "" } });
+			}
+
+			target.AmbientOcclusion = std::make_unique<AmbientOcclusionChain>();
+			AmbientOcclusionChain& chain = *target.AmbientOcclusion;
+			chain.HalfResolution = half;
+			const glm::uvec2 size = AmbientOcclusionSize(target.Target, half);
+			auto makeTarget = [&size](const char* name)
+			{
+				return Framebuffer::Create(FramebufferParams()
+					.SetDebugName(name)
+					.SetWidth(static_cast<int32_t>(size.x))
+					.SetHeight(static_cast<int32_t>(size.y))
+					.AddAttachment({ TextureFormat::R8 }));
+			};
+			chain.Raw = makeTarget("Post AO");
+			chain.Blurred = makeTarget("Post AO blurred");
+
+			Texture* depth = target.Target->GetDepthAttachment();
+			chain.Sample = AmbientOcclusionSampleShader->CreateMaterial("Post AO sample");
+			chain.Sample->SetTexture(0, depth);
+			chain.Sample->SetSampler(0, Renderer::GetPointSampler());
+
+			chain.BlurAcross = AmbientOcclusionBlurShader->CreateMaterial("Post AO blur across");
+			chain.BlurAcross->SetTexture(0, chain.Raw->GetAttachment(0));
+			chain.BlurAcross->SetSampler(0, Renderer::GetPointSampler());
+			chain.BlurAcross->SetTexture(1, depth);
+			chain.BlurAcross->SetSampler(1, Renderer::GetPointSampler());
+
+			chain.BlurDown = AmbientOcclusionBlurShader->CreateMaterial("Post AO blur down");
+			chain.BlurDown->SetTexture(0, chain.Blurred->GetAttachment(0));
+			chain.BlurDown->SetSampler(0, Renderer::GetPointSampler());
+			chain.BlurDown->SetTexture(1, depth);
+			chain.BlurDown->SetSampler(1, Renderer::GetPointSampler());
+
+			chain.Apply = AmbientOcclusionApplyShader->CreateMaterial("Post AO apply", BlendMode::Multiply);
+			chain.Apply->SetTexture(0, chain.Raw->GetAttachment(0));
+			chain.Apply->SetSampler(0, Renderer::GetClampSampler());
+			return chain;
+		}
+
+		void DrawAmbientOcclusion(SceneTarget& target, const AmbientOcclusionSettings& settings, const glm::mat4& projection)
+		{
+			DE_PROFILE_SCOPE("PostProcessStack::AmbientOcclusion");
+			Renderer::BeginGpuTimer("AO");
+
+			AmbientOcclusionChain& chain = EnsureAmbientOcclusion(target, settings.HalfResolution);
+			const float radius = std::max(FiniteOr(settings.Radius, 0.5f), 1e-3f);
+			const float width = static_cast<float>(chain.Raw->GetWidth());
+			const float height = static_cast<float>(chain.Raw->GetHeight());
+			const bool orthographic = projection[3][3] > 0.5f;
+
+			AmbientOcclusionData data;
+			data.InverseProjection = glm::inverse(projection);
+			data.Params = glm::vec4(radius, std::max(FiniteOr(settings.Intensity, 1.0f), 0.0f) / std::pow(radius, 6.0f),
+				std::max(FiniteOr(settings.Bias, 0.02f), 0.0f), std::clamp(FiniteOr(settings.Power, 1.5f), 0.1f, 8.0f));
+			data.Target = glm::vec4(1.0f / width, 1.0f / height, 0.5f * height * std::abs(projection[1][1]), orthographic ? 1.0f : 0.0f);
+			const glm::vec2 depthTexel(1.0f / static_cast<float>(target.Target->GetWidth()), 1.0f / static_cast<float>(target.Target->GetHeight()));
+
+			data.Blur = glm::vec4(0.0f, 0.0f, depthTexel);
+			SetUniformIfChanged(chain.Sample, data);
+			Internal::DrawFullscreen(chain.Sample, chain.Raw);
+
+			data.Blur = glm::vec4(1.0f / width, 0.0f, depthTexel);
+			SetUniformIfChanged(chain.BlurAcross, data);
+			Internal::DrawFullscreen(chain.BlurAcross, chain.Blurred);
+
+			data.Blur = glm::vec4(0.0f, 1.0f / height, depthTexel);
+			SetUniformIfChanged(chain.BlurDown, data);
+			Internal::DrawFullscreen(chain.BlurDown, chain.Raw);
+
+			Internal::DrawFullscreen(chain.Apply, target.Target);
+			Renderer::EndGpuTimer();
 		}
 
 		BloomChain& EnsureBloom(SceneTarget& target)
@@ -204,6 +353,8 @@ namespace Dingo
 				for (const Framebuffer* level : target.Bloom->Levels)
 					bytes += static_cast<uint64_t>(level->GetWidth()) * level->GetHeight() * GetBytesPerPixel(TextureFormat::R11G11B10F);
 			}
+			if (target.AmbientOcclusion)
+				bytes += 2ull * target.AmbientOcclusion->Raw->GetWidth() * target.AmbientOcclusion->Raw->GetHeight() * GetBytesPerPixel(TextureFormat::R8);
 			return bytes;
 		}
 
@@ -237,6 +388,7 @@ namespace Dingo
 				{
 					target.Target->Resize(width, height);
 					ResizeBloom(target);
+					ResizeAmbientOcclusion(target);
 					target.LastFrame = frame;
 					return target;
 				}
@@ -285,8 +437,21 @@ namespace Dingo
 		m_Data->BloomPrefilterShader.reset();
 		m_Data->BloomDownsampleShader.reset();
 		m_Data->BloomUpsampleShader.reset();
+		m_Data->AmbientOcclusionSampleShader.reset();
+		m_Data->AmbientOcclusionBlurShader.reset();
+		m_Data->AmbientOcclusionApplyShader.reset();
 		DestroyAndDelete(m_Data->Black);
 		m_Data->Active = false;
+	}
+
+	void PostProcessStack::Begin(const PostProcessSettings& settings, const glm::mat4& projection)
+	{
+		Begin(settings);
+		if (m_Data->Active)
+		{
+			m_Data->Projection = projection;
+			m_Data->HasProjection = true;
+		}
 	}
 
 	void PostProcessStack::Begin(const PostProcessSettings& settings)
@@ -319,18 +484,45 @@ namespace Dingo
 		data.Current = target.Target;
 		data.Settings = settings;
 		data.Active = true;
+		data.HasProjection = false;
+		data.AmbientOcclusionApplied = false;
 
 		if (data.StatsFrame != frame)
 		{
 			data.StatsFrame = frame;
 			data.Stats.Scenes = 0;
 			data.Stats.BloomScenes = 0;
+			data.Stats.AmbientOcclusionScenes = 0;
 		}
 		++data.Stats.Scenes;
 		data.Stats.Width = width;
 		data.Stats.Height = height;
 
 		Renderer::SetRenderTarget(data.Current);
+	}
+
+	void PostProcessStack::ApplyAmbientOcclusion()
+	{
+		Data& data = *m_Data;
+		if (!data.Active || data.AmbientOcclusionApplied || !data.Settings.AmbientOcclusion.Enabled)
+			return;
+		data.AmbientOcclusionApplied = true;
+
+		if (!data.HasProjection)
+		{
+			if (!data.NoProjectionWarned)
+			{
+				DE_CORE_WARN("PostProcessStack: ambient occlusion needs the camera's projection (Begin(settings, projection)); it is skipped.");
+				data.NoProjectionWarned = true;
+			}
+			return;
+		}
+
+		// The passes sample the scene depth, so the scene target can't stay bound while they draw.
+		Framebuffer* current = Renderer::GetRenderTarget();
+		data.DrawAmbientOcclusion(*data.CurrentTarget, data.Settings.AmbientOcclusion, data.Projection);
+		Renderer::SetRenderTarget(current);
+		++data.Stats.AmbientOcclusionScenes;
 	}
 
 	void PostProcessStack::End()
@@ -344,6 +536,7 @@ namespace Dingo
 		if (!data.Active)
 			return;
 
+		ApplyAmbientOcclusion();
 		data.Active = false;
 		Renderer::SetRenderTarget(data.Caller);
 

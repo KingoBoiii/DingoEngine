@@ -10,7 +10,9 @@ namespace Dingo
 		// Adds the source to the target, colour and alpha.
 		Additive,
 		// Writes the source as it is.
-		Opaque
+		Opaque,
+		// Multiplies the target's colour by the source's, keeping the target's alpha.
+		Multiply
 	};
 
 }

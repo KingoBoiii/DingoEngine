@@ -66,6 +66,27 @@ void main()
 			return settings;
 		}
 
+		const glm::vec3 k_RoomFloorOpen{ 1.8f, 0.0f, 1.8f };
+		const glm::vec3 k_RoomWallFar{ -3.0f, 1.5f, -1.9f };
+		const glm::vec3 k_RoomCrease{ 1.5f, 0.0f, -1.8f };
+		const glm::vec3 k_FloatingBox{ -1.5f, 1.5f, -0.9f };
+		const glm::vec4 k_WallColor{ 0.8f, 0.75f, 0.7f, 1.0f };
+
+		glm::ivec2 ToPixel(const glm::mat4& viewProjection, const glm::vec3& point, uint32_t width, uint32_t height)
+		{
+			const glm::vec4 clip = viewProjection * glm::vec4(point, 1.0f);
+			const glm::vec2 ndc = glm::vec2(clip) / clip.w;
+			return { static_cast<int>((ndc.x * 0.5f + 0.5f) * width), static_cast<int>((0.5f - ndc.y * 0.5f) * height) };
+		}
+
+		glm::vec4 PixelAt(const std::vector<uint8_t>& data, uint32_t width, glm::ivec2 pixel)
+		{
+			const uint32_t height = static_cast<uint32_t>(data.size() / (static_cast<size_t>(width) * 4));
+			pixel = glm::clamp(pixel, glm::ivec2(0), glm::ivec2(static_cast<int>(width) - 1, static_cast<int>(height) - 1));
+			const size_t offset = (static_cast<size_t>(pixel.y) * width + pixel.x) * 4;
+			return glm::vec4(data[offset], data[offset + 1], data[offset + 2], data[offset + 3]) / 255.0f;
+		}
+
 		// The value the gradient holds at the centre of column x.
 		float GradientValue(uint32_t x, uint32_t width, float max)
 		{
@@ -103,6 +124,11 @@ void main()
 			m_Settings.Enabled = false;
 		if (auto mode = args.Get("post"); (mode && *mode == "bloom") || args.Get("bloom"))
 			m_Settings.Bloom.Enabled = true;
+		if (auto mode = args.Get("post"); mode && *mode == "ao")
+		{
+			m_ShowRoom = true;
+			m_Settings.AmbientOcclusion.Enabled = true;
+		}
 
 		m_LampMaterial = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams()
 			.SetDebugName("PostTestLamp")
@@ -139,6 +165,52 @@ void main()
 		m_SceneOff = MakeTarget("PostTest scene off", k_SceneWidth, k_SceneHeight, true);
 		m_SceneNone = MakeTarget("PostTest scene None", k_SceneWidth, k_SceneHeight, true);
 		m_SceneDisabled = MakeTarget("PostTest scene disabled", k_SceneWidth, k_SceneHeight, true);
+		m_RoomPlain = MakeTarget("PostTest room plain", k_SceneWidth, k_SceneHeight, true);
+		m_RoomOccluded = MakeTarget("PostTest room occluded", k_SceneWidth, k_SceneHeight, true);
+	}
+
+	PerspectiveCamera PostTest::RoomCamera(float aspect) const
+	{
+		PerspectiveCamera camera(45.0f, aspect, 0.1f, 100.0f);
+		camera.SetPosition({ 0.5f, 2.0f, 5.0f });
+		camera.SetTarget({ 0.0f, 0.8f, -1.0f });
+		return camera;
+	}
+
+	void PostTest::DrawRoom(Renderer3D& renderer) const
+	{
+		DirectionalLight sun;
+		sun.Direction = { -0.3f, -1.0f, -0.6f };
+		sun.Intensity = 0.45f;
+		renderer.SubmitLight(sun);
+		renderer.SetAmbientLight(glm::vec3(1.0f), 0.35f);
+
+		auto box = [](const glm::vec3& center, const glm::vec3& size) { return glm::scale(glm::translate(glm::mat4(1.0f), center), size); };
+		renderer.SubmitMesh(renderer.GetBoxMesh(), box({ 0.0f, -0.05f, 0.0f }, { 8.0f, 0.1f, 6.0f }), { 0.8f, 0.8f, 0.8f, 1.0f });
+		renderer.SubmitMesh(renderer.GetBoxMesh(), box({ 0.0f, 2.0f, -2.0f }, { 8.0f, 4.0f, 0.2f }), k_WallColor);
+		renderer.SubmitMesh(renderer.GetBoxMesh(), box({ 0.5f, 0.4f, 0.0f }, glm::vec3(0.8f)), { 0.6f, 0.7f, 0.9f, 1.0f });
+		renderer.SubmitMesh(renderer.GetBoxMesh(), box(k_FloatingBox, glm::vec3(0.8f)), { 0.9f, 0.6f, 0.5f, 1.0f });
+	}
+
+	void PostTest::DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings)
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		if (target)
+			Renderer::SetRenderTarget(target);
+
+		const float aspect = target ? static_cast<float>(target->GetWidth()) / static_cast<float>(target->GetHeight()) : m_AspectRatio;
+		const PerspectiveCamera camera = RoomCamera(aspect);
+		PostProcessStack& post = Renderer::GetPostProcessStack();
+		post.Begin(settings, camera.GetProjectionMatrix());
+		renderer.BeginScene(camera);
+		renderer.Clear(m_ClearColor);
+		DrawRoom(renderer);
+		renderer.EndScene();
+		post.End();
+
+		if (target)
+			Renderer::SetRenderTarget(previous);
 	}
 
 	void PostTest::DrawScene(Renderer3D& renderer) const
@@ -182,7 +254,7 @@ void main()
 		if (target)
 			camera.SetAspectRatio(static_cast<float>(target->GetWidth()) / static_cast<float>(target->GetHeight()));
 
-		post.Begin(settings);
+		post.Begin(settings, camera.GetProjectionMatrix());
 		renderer.BeginScene(camera);
 		renderer.Clear(m_ClearColor);
 		DrawScene(renderer);
@@ -325,6 +397,46 @@ void main()
 		{
 			Check(!pixels.Data.empty() && pixels.Data == m_SceneOffPixels, "a Begin with the chain disabled draws exactly what drawing without it does");
 		});
+
+		const glm::mat4 room = RoomCamera(static_cast<float>(k_SceneWidth) / static_cast<float>(k_SceneHeight)).GetViewProjectionMatrix();
+		const glm::ivec2 open = ToPixel(room, k_RoomFloorOpen, k_SceneWidth, k_SceneHeight);
+		const glm::ivec2 crease = ToPixel(room, k_RoomCrease, k_SceneWidth, k_SceneHeight);
+		const glm::ivec2 boxCenter = ToPixel(room, k_FloatingBox, k_SceneWidth, k_SceneHeight);
+		const int wallStart = ToPixel(room, k_RoomWallFar, k_SceneWidth, k_SceneHeight).x;
+		readBack(m_RoomPlain, [this](const TexturePixels& pixels) { m_RoomPlainPixels = pixels.Data; });
+		readBack(m_RoomOccluded, [this, open, crease, boxCenter, wallStart](const TexturePixels& pixels)
+		{
+			if (pixels.Data.size() != m_RoomPlainPixels.size() || pixels.Data.empty())
+			{
+				Check(false, "the ambient occlusion room reads back");
+				return;
+			}
+
+			const glm::vec4 openOn = PixelAt(pixels.Data, k_SceneWidth, open);
+			const glm::vec4 openOff = PixelAt(m_RoomPlainPixels, k_SceneWidth, open);
+			Check(glm::all(glm::lessThanEqual(glm::abs(openOn - openOff), glm::vec4(2.01f / 255.0f))),
+				std::format("ambient occlusion leaves the open floor alone ({:.3f} against {:.3f})", openOn.g, openOff.g));
+
+			const glm::vec4 creaseOn = PixelAt(pixels.Data, k_SceneWidth, crease);
+			const glm::vec4 creaseOff = PixelAt(m_RoomPlainPixels, k_SceneWidth, crease);
+			Check(creaseOn.g < 0.95f * creaseOff.g, std::format("ambient occlusion darkens the crease where floor meets wall ({:.3f} against {:.3f})", creaseOn.g, creaseOff.g));
+
+			// Along the floating box's row, every pixel that shows the wall in the plain frame, right up to
+			// the box's silhouette.
+			const glm::vec4 wallReference = PixelAt(m_RoomPlainPixels, k_SceneWidth, { wallStart, boxCenter.y });
+			int wallPixels = 0, darkened = 0;
+			for (int x = wallStart; x < boxCenter.x; ++x)
+			{
+				const glm::vec4 off = PixelAt(m_RoomPlainPixels, k_SceneWidth, { x, boxCenter.y });
+				if (glm::any(glm::greaterThan(glm::abs(off - wallReference), glm::vec4(4.0f / 255.0f))))
+					break;
+				++wallPixels;
+				const glm::vec4 on = PixelAt(pixels.Data, k_SceneWidth, { x, boxCenter.y });
+				darkened += on.g < off.g - 2.01f / 255.0f ? 1 : 0;
+			}
+			Check(wallPixels > 10 && darkened == 0,
+				std::format("no halo: the wall beside a box floating before it isn't darkened, up to its silhouette ({} of {} pixels darker)", darkened, wallPixels));
+		});
 	}
 
 	void PostTest::Update(float deltaTime)
@@ -358,9 +470,18 @@ void main()
 			DrawGradient(m_FlatBloom, glm::vec3(1.0f), 1.0f, bloom);
 			DrawSpot(m_SpotPlain, plain);
 			DrawSpot(m_SpotBloom, bloom);
+
+			PostProcessSettings roomPlain = WithOperator(PostProcessSettings(), ToneMapOperator::None);
+			PostProcessSettings roomOccluded = roomPlain;
+			roomOccluded.AmbientOcclusion.Enabled = true;
+			DrawRoomInto(m_RoomPlain, roomPlain);
+			DrawRoomInto(m_RoomOccluded, roomOccluded);
 		}
 
-		DrawSceneInto(nullptr, m_Settings);
+		if (m_ShowRoom)
+			DrawRoomInto(nullptr, m_Settings);
+		else
+			DrawSceneInto(nullptr, m_Settings);
 
 		// The strips take the panel's exposure, knee and white point; the checks above them run on the
 		// defaults, on the first frame.
@@ -392,6 +513,9 @@ void main()
 		DestroyAndDelete(m_SceneOff);
 		DestroyAndDelete(m_SceneNone);
 		DestroyAndDelete(m_SceneDisabled);
+		DestroyAndDelete(m_RoomPlain);
+		DestroyAndDelete(m_RoomOccluded);
+		m_RoomPlainPixels.clear();
 		DestroyAndDelete(m_GradientMaterial);
 		DestroyAndDelete(m_GradientShader);
 		DestroyAndDelete(m_FlatBloom);
@@ -428,6 +552,13 @@ void main()
 		ImGui::SliderFloat("Bloom threshold", &m_Settings.Bloom.Threshold, 0.0f, 4.0f);
 		ImGui::SliderFloat("Bloom knee", &m_Settings.Bloom.Knee, 0.0f, 1.0f);
 		ImGui::SliderFloat("Bloom radius", &m_Settings.Bloom.Radius, 0.0f, 4.0f);
+		ImGui::Checkbox("Room (for ambient occlusion)", &m_ShowRoom);
+		ImGui::Checkbox("Ambient occlusion", &m_Settings.AmbientOcclusion.Enabled);
+		ImGui::SliderFloat("AO radius", &m_Settings.AmbientOcclusion.Radius, 0.05f, 2.0f);
+		ImGui::SliderFloat("AO intensity", &m_Settings.AmbientOcclusion.Intensity, 0.0f, 4.0f);
+		ImGui::SliderFloat("AO power", &m_Settings.AmbientOcclusion.Power, 0.5f, 4.0f);
+		ImGui::SliderFloat("AO bias", &m_Settings.AmbientOcclusion.Bias, 0.0f, 0.2f);
+		ImGui::Checkbox("AO at half resolution", &m_Settings.AmbientOcclusion.HalfResolution);
 		ImGui::TextWrapped("Strips, top to bottom: None, Soft, ACES and Neutral on a white 0..8 gradient, then Soft on (1, 0.5, 0.25).");
 
 		const PostProcessStack::Statistics& stats = Renderer::GetPostProcessStack().GetStatistics();

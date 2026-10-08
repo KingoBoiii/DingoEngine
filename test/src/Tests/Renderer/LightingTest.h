@@ -23,7 +23,8 @@ namespace Dingo
 	// budget, the default light) on private Renderer3Ds, one scene per frame and apart from the
 	// modes above, then checks GetLightAttenuation and the light components' ToLight. --post draws the
 	// scene through the post chain's default Soft tone curve, so what clips without it rolls off, and
-	// --bloom adds the default bloom (the materials mode's lamp glows). --budget-fade[=band] fades the
+	// --bloom adds the default bloom (the materials mode's lamp glows) and --ao the default ambient
+	// occlusion (the pillars' feet darken). --budget-fade[=band] fades the
 	// overbudget mode's lights at the budget's edge (Renderer3DCapabilities::LightBudgetFade, 0.5 by
 	// default) instead of cutting them.
 	class LightingTest : public GraphicsTest
@@ -77,7 +78,8 @@ namespace Dingo
 		bool m_Animate = false;
 		bool m_PostProcess = false; // --post: the scene through the post chain's default Soft curve
 		bool m_Bloom = false;       // --bloom: and the default bloom, which implies --post
-		float m_BudgetFade = 0.0f;  // --budget-fade: the app renderer's LightBudgetFade while the test runs
+		float m_BudgetFade = 0.0f;
+		bool m_AmbientOcclusion = false; // --ao: the default ambient occlusion, which implies --post  // --budget-fade: the app renderer's LightBudgetFade while the test runs
 		float m_Time = 0.0f;
 
 		static constexpr int k_RoughnessSteps = 5;
