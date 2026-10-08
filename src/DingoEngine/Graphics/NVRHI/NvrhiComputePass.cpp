@@ -41,7 +41,8 @@ namespace Dingo
 		m_BindingsValid = false;
 		for (Binding& binding : m_Bindings)
 		{
-			if (binding.Item.slot == item.slot && binding.Item.type == item.type)
+			const bool sameKind = binding.Item.type == item.type || (NvrhiCommandList::IsRawBufferItem(binding.Item) && NvrhiCommandList::IsRawBufferItem(item));
+			if (binding.Item.slot == item.slot && sameKind)
 			{
 				binding = { item, texture, texture ? texture->GetGeneration() : 0 };
 				return;
@@ -125,6 +126,12 @@ namespace Dingo
 		{
 			m_BindingSetHandle = nullptr;
 			m_StorageItems.clear();
+			// A hot-reload can add or drop a block's readonly: the item follows the shader as it is now.
+			for (Binding& binding : m_Bindings)
+			{
+				if (NvrhiCommandList::IsRawBufferItem(binding.Item))
+					binding.Item.type = shader->IsStorageBufferReadOnly(binding.Item.slot) ? nvrhi::ResourceType::RawBuffer_SRV : nvrhi::ResourceType::RawBuffer_UAV;
+			}
 			if (!m_Bindings.empty() && shader->m_BindingLayoutHandle)
 			{
 				nvrhi::BindingSetDesc desc;

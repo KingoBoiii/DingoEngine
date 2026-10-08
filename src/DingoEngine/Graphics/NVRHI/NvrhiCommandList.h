@@ -47,6 +47,10 @@ namespace Dingo
 
 		// The storage items of a binding set: raw buffers and storage textures.
 		static bool IsStorageItem(const nvrhi::BindingSetItem& item);
+		static bool IsRawBufferItem(const nvrhi::BindingSetItem& item)
+		{
+			return item.type == nvrhi::ResourceType::RawBuffer_SRV || item.type == nvrhi::ResourceType::RawBuffer_UAV;
+		}
 
 	private:
 		// NVRHI places a binding set's barriers only when the bound sets change, so a pass bound twice in

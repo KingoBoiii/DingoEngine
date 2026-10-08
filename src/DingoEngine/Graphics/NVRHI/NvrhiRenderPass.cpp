@@ -110,8 +110,13 @@ namespace Dingo
 		const nvrhi::BindingSetItem item = readOnly ? nvrhi::BindingSetItem::RawBuffer_SRV(slot, handle) : nvrhi::BindingSetItem::RawBuffer_UAV(slot, handle);
 		for (nvrhi::BindingSetItem& existing : m_BindingSetDesc.bindings)
 		{
-			if (existing.slot == slot && existing.type == item.type)
+			if (existing.slot == slot && NvrhiCommandList::IsRawBufferItem(existing))
 			{
+				if (existing.type != item.type)
+				{
+					existing.type = item.type;
+					m_Valid = false;
+				}
 				if (existing.resourceHandle != handle)
 				{
 					existing.resourceHandle = handle;
@@ -132,6 +137,15 @@ namespace Dingo
 		}
 
 		Shader* shader = m_Params.Pipeline->GetParams().Shader;
+
+		// A hot-reload can add or drop a block's readonly, which moves it between a shader-resource and
+		// an unordered-access view: the item follows the shader as it is now.
+		for (nvrhi::BindingSetItem& item : m_BindingSetDesc.bindings)
+		{
+			if (shader && NvrhiCommandList::IsRawBufferItem(item))
+				item.type = shader->IsStorageBufferReadOnly(item.slot) ? nvrhi::ResourceType::RawBuffer_SRV : nvrhi::ResourceType::RawBuffer_UAV;
+		}
+
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
 
 		if (!m_BindingSetHandle && !m_BindingSetDesc.bindings.empty())
