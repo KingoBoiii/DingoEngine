@@ -104,6 +104,11 @@ const float lit = scene->GetShadowedLightAttenuation(brazier, playerChest);  // 
 - **What is drawn.** A light drawn without a shadow (no `CastShadows`, past the shadow slots, or out
   of the light budget) answers 1 at once; `ShadowStrength` scales the answer the way it scales the
   shadow, and the PCF edge reads in between.
+- **The sun's shadow follows the camera.** Its cascades cover what the view sees, so a point behind
+  the camera, off screen or past `MaxDistance` answers 1 for a directional light, the same as the
+  lit shader would draw it there. A spot or point light's shadow covers its whole range wherever
+  the camera looks, so AI asking about an off-screen point should ask about a local light, or
+  treat the sun's answer there as unknown.
 - **A point in the air.** The point has no surface normal to push it off a surface, so a point on
   the floor can read the floor's own depth; ask about a character's chest, not its feet.
 - **Budget.** 256 probes a scene (warns once past them). Answers not asked for in 600 frames are

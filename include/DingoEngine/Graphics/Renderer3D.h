@@ -211,7 +211,9 @@ namespace Dingo
 		// with GetShadowProbeResult: the GPU answers one to three frames later, never stalling, and a key
 		// keeps its latest answer until the next one arrives. A light drawn without a shadow (no
 		// CastShadows, past the shadow slots, out of the budget) answers 1 at once, which is what is
-		// drawn. The point is taken as it is, with no surface normal to push it off a surface, so
+		// drawn; so does a directional light for a point outside this scene's cascades (behind the
+		// camera, off screen, past Shadows.MaxDistance), which cover only what the camera sees. A
+		// local light's shadow doesn't depend on the camera. The point is taken as it is, with no surface normal to push it off a surface, so
 		// probe a point in the air, such as a character's chest. At most k_MaxShadowProbes a scene;
 		// past them AddShadowProbe returns false and warns once.
 		bool AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key);
