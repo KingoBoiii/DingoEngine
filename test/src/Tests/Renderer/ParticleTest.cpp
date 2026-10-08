@@ -483,6 +483,50 @@ namespace Dingo
 				Check(std::abs(softHigh - hardHigh) <= 1.01f / 255.0f && hardHigh > 0.2f,
 					std::format("and draws like a hard one away from it ({:.3f} against {:.3f})", softHigh, hardHigh));
 			});
+			return;
+		}
+
+		if (step == 5)
+		{
+			// A 2x2 flipbook laid out as a loaded file is, bottom row first: red and green on top, then
+			// blue and white. Frame 0 is the top-left cell and frame 2 the bottom-left one.
+			const uint8_t texels[] = {
+				0, 0, 255, 255,   255, 255, 255, 255,
+				255, 0, 0, 255,   0, 255, 0, 255 };
+			m_FlipbookTexture = Texture::CreateFromData(2, 2, texels, TextureFormat::RGBA, "ParticleTest flipbook");
+			m_CheckEffects.emplace_back(ParticleEffect::Create(StillParticles("ParticleTest flipbook", 100.0f, 4)
+				.SetBurstOnPlay(1)
+				.SetStartSize(2.0f, 2.0f)
+				.SetColors({ { 0.0f, glm::vec4(1.0f) } })
+				.SetTexture(m_FlipbookTexture, 2, 2)));
+			m_Flipbook = m_CheckRenderer->CreateParticleEmitter(m_CheckEffects.back().get());
+
+			const glm::mat4 at = glm::translate(glm::mat4(1.0f), k_PuffCenter);
+			DrawCheckScene(m_CheckTarget, { { m_Flipbook.get(), 1.0f / 60.0f } }, false, at);
+			DrawCheckScene(m_HardTarget, { { m_Flipbook.get(), 60.0f } }, false, at);
+
+			const glm::ivec2 center = ToPixel(CheckCamera().GetViewProjectionMatrix(), k_PuffCenter);
+			const std::weak_ptr<int> alive = m_Alive;
+			auto check = [this, alive, center](const char* what, glm::vec3 expected)
+			{
+				return [this, alive, center, what, expected](const TexturePixels& pixels)
+				{
+					if (alive.expired())
+						return;
+					if (pixels.Data.empty())
+					{
+						Check(false, std::format("the {} reads back", what));
+						return;
+					}
+					const glm::ivec2 p = glm::clamp(center, glm::ivec2(0), glm::ivec2(k_CheckWidth - 1, k_CheckHeight - 1));
+					const uint8_t* texel = &pixels.Data[(static_cast<size_t>(p.y) * k_CheckWidth + p.x) * 4];
+					const glm::vec3 color = glm::vec3(texel[0], texel[1], texel[2]) / 255.0f;
+					const float error = glm::length(color - expected);
+					Check(error < 0.15f, std::format("the {} ({:.2f}, {:.2f}, {:.2f})", what, color.r, color.g, color.b));
+				};
+			};
+			m_CheckTarget->GetAttachment(0)->ReadPixels(check("flipbook starts on its top-left frame, red", { 1.0f, 0.0f, 0.0f }));
+			m_HardTarget->GetAttachment(0)->ReadPixels(check("flipbook's third frame is the bottom-left one, blue", { 0.0f, 0.0f, 1.0f }));
 		}
 	}
 
@@ -547,7 +591,7 @@ namespace Dingo
 
 	void ParticleTest::Update(float deltaTime)
 	{
-		if (m_CheckStep < 5 && !Renderer::IsFrameSkipped())
+		if (m_CheckStep < 6 && !Renderer::IsFrameSkipped())
 			RunCheckStep();
 		else if (m_EventScene && m_EventStep < k_BlendFrames + k_SurveyFrames && !Renderer::IsFrameSkipped())
 			RunEventStep();
@@ -574,6 +618,7 @@ namespace Dingo
 		m_Small.reset();
 		m_SoftPuff.reset();
 		m_HardPuff.reset();
+		m_Flipbook.reset();
 
 		delete m_Scene;
 		m_Scene = nullptr;
@@ -603,6 +648,7 @@ namespace Dingo
 		DestroyAndDelete(m_CheckTarget);
 		DestroyAndDelete(m_SoftTarget);
 		DestroyAndDelete(m_HardTarget);
+		DestroyAndDelete(m_FlipbookTexture);
 		m_HardPixels.clear();
 		m_Checks.clear();
 	}
