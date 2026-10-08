@@ -693,7 +693,7 @@ namespace Dingo
 		ShadowProbeLight m_LastSubmittedLight;
 		std::vector<ShadowProbe> m_ShadowProbes;
 		std::vector<uint64_t> m_GpuProbeKeys;
-		ShadowProbeData m_ShadowProbeData;
+		ShadowProbeData m_ShadowProbeData{};
 		std::shared_ptr<ShadowProbeAnswers> m_ProbeAnswers = std::make_shared<ShadowProbeAnswers>();
 		uint64_t m_ProbePruneFrame = 0;
 		bool m_ProbeOverflowWarned = false;

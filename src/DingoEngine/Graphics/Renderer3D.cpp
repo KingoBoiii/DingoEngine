@@ -1744,6 +1744,10 @@ namespace Dingo
 			m_ShadowProbeData.Probes[m_GpuProbeKeys.size()] = glm::vec4(probe.Point, light);
 			m_GpuProbeKeys.push_back(probe.Key);
 		}
+		// The probe pass shades all k_MaxShadowProbes pixels and indexes the shadow buffers by each
+		// probe's w, so an unused entry must hold a valid light: on Vulkan an index past the arrays
+		// loses the device.
+		std::fill(std::begin(m_ShadowProbeData.Probes) + m_GpuProbeKeys.size(), std::end(m_ShadowProbeData.Probes), glm::vec4(0.0f, 0.0f, 0.0f, -1.0f));
 		m_Statistics.ShadowProbes = static_cast<uint32_t>(m_GpuProbeKeys.size());
 	}
 
