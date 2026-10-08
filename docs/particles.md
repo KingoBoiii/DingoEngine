@@ -123,7 +123,7 @@ which an emitter takes when it is made. An effect must outlive its emitters.
 ## How it works
 
 - **The pool.** One storage buffer per `Renderer3D`, `Renderer3DCapabilities::MaxParticles` (65,536,
-  48 bytes each: 3 MB) made with the first emitter. Each emitter owns a ring of it; one the pool has no
+  48 bytes each: 3 MB) made at the first `EndScene` that has a submission. Each emitter owns a ring of it; one the pool has no
   room for draws nothing and warns once. A `ParticleEmitterComponent`'s emitter that found no room
   asks again about once a second, so an entity spawned while the pool was full lights up once room
   frees.

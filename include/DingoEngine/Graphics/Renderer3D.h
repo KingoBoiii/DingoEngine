@@ -77,8 +77,8 @@ namespace Dingo
 		uint32_t MaxSkinnedInstances = 64;
 
 		// GPU particles alive at once across every emitter this renderer made, at most
-		// Renderer3D::k_MaxParticlesLimit: the pool, 48 bytes a particle, made with the first emitter.
-		// Each emitter takes a ring of it the size of its effect's Capacity.
+		// Renderer3D::k_MaxParticlesLimit: the pool, 48 bytes a particle, made at the first EndScene with
+		// a submission. Each emitter takes a ring of it the size of its effect's Capacity.
 		uint32_t MaxParticles = 65536;
 
 		// When true, a mesh too large for an empty batch, a light past the light budget or a
