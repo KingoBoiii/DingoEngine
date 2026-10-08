@@ -147,7 +147,8 @@ namespace Dingo::Internal
 				}
 
 				// Watched before it is read, so a fix to a file that fails to read still reloads.
-				m_IncludedFiles.push_back(file);
+				if (std::ranges::find(m_IncludedFiles, file) == m_IncludedFiles.end())
+					m_IncludedFiles.push_back(file);
 				const std::string text = FileSystem::ReadTextFile(file);
 				return Expand(text, origin, depth + 1, out);
 			}

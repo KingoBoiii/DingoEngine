@@ -587,8 +587,7 @@ namespace Dingo
 
 		if (m_Params.FilePath.empty())
 		{
-			const std::optional<std::string> expanded = Internal::ExpandShaderIncludes(m_Params.SourceCode, {}, name, includedFiles);
-			return expanded ? PreProcess(*expanded) : std::unordered_map<ShaderType, std::string>{};
+			return ExpandStages(PreProcess(m_Params.SourceCode), {}, name, includedFiles);
 		}
 
 		// Soft failures (build aborts, previous program stays): hot-reload can race an
@@ -606,8 +605,20 @@ namespace Dingo
 			return {};
 		}
 
-		const std::optional<std::string> expanded = Internal::ExpandShaderIncludes(source, m_Params.FilePath, name, includedFiles);
-		return expanded ? PreProcess(*expanded) : std::unordered_map<ShaderType, std::string>{};
+		return ExpandStages(PreProcess(source), m_Params.FilePath, name, includedFiles);
+	}
+
+	// Each stage is expanded on its own, so a file both stages #include reaches both.
+	std::unordered_map<ShaderType, std::string> NvrhiShader::ExpandStages(std::unordered_map<ShaderType, std::string> sources, const std::filesystem::path& sourcePath, const std::string& name, std::vector<std::filesystem::path>& includedFiles)
+	{
+		for (auto& [type, stage] : sources)
+		{
+			std::optional<std::string> expanded = Internal::ExpandShaderIncludes(stage, sourcePath, name, includedFiles);
+			if (!expanded)
+				return {};
+			stage = std::move(*expanded);
+		}
+		return sources;
 	}
 
 	// Malformed source logs an error and yields no sources rather than asserting: Build treats that as

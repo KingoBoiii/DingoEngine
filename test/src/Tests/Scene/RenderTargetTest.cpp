@@ -266,23 +266,31 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		Check(m_ResizeTarget->GetWidth() == 8 && m_ResizeTarget->GetHeight() == 8 && m_ResizeTarget->GetAttachment(0)->GetWidth() == 8,
 			"a framebuffer reports its size from creation");
 
-		// A neighbour, #included by its path relative to the file.
+		// A neighbour, #included by its path relative to the file, and a common file both stages include.
 		const std::filesystem::path part = m_TempDirectory / "include-part.glsl";
+		const std::filesystem::path common = m_TempDirectory / "include-common.glsl";
 		const std::filesystem::path main = m_TempDirectory / "include-main.glsl";
 		{
-			std::ofstream(part) << "layout(location = 0) out vec4 o_Color;\nvoid main() { o_Color = vec4(1.0); }\n";
-			std::ofstream(main) << "#type vertex\n#version 450\n#include <DingoEngine/Fullscreen.glsl>\n\n#type fragment\n#version 450\n#include \"include-part.glsl\"\n#include \"include-part.glsl\"\n";
+			std::ofstream(common) << "const vec4 k_Shared = vec4(1.0);\n";
+			std::ofstream(part) << "layout(location = 0) out vec4 o_Color;\nvoid main() { o_Color = k_Shared; }\n";
+			std::ofstream(main) << "#type vertex\n#version 450\n#include \"include-common.glsl\"\n#include <DingoEngine/Fullscreen.glsl>\n\n"
+				"#type fragment\n#version 450\n#include \"include-common.glsl\"\n#include \"include-part.glsl\"\n#include \"include-part.glsl\"\n";
 		}
 		Shader* included = Shader::CreateFromFile("RenderTargetTestInclude", main);
 		const std::vector<std::filesystem::path>& files = included->GetIncludedFiles();
 		// Debug builds read <DingoEngine/...> from DE_ENGINE_SHADER_DIR, so the engine include is listed too.
-		const auto partCount = std::ranges::count_if(files, [&](const std::filesystem::path& file)
+		auto countOf = [&](const std::filesystem::path& wanted)
 		{
-			std::error_code error;
-			return std::filesystem::equivalent(file, part, error);
-		});
-		Check(included->IsValid() && partCount == 1,
-			std::format("a shader file #includes a neighbour by relative path, once, and lists it for hot-reload ({} of {} file(s))", partCount, files.size()));
+			return std::ranges::count_if(files, [&](const std::filesystem::path& file)
+			{
+				std::error_code error;
+				return std::filesystem::equivalent(file, wanted, error);
+			});
+		};
+		const auto partCount = countOf(part);
+		const auto commonCount = countOf(common);
+		Check(included->IsValid() && partCount == 1 && commonCount == 1,
+			std::format("a shader file #includes a neighbour by relative path, once per stage, every stage that asks gets it, and each file is listed once for hot-reload ({} and {} of {} file(s))", partCount, commonCount, files.size()));
 		DestroyAndDelete(included);
 	}
 
