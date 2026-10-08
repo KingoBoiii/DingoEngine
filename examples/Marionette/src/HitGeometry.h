@@ -25,6 +25,8 @@ namespace Dingo
 
 	float DistanceToSegment(const glm::vec3& point, const glm::vec3& from, const glm::vec3& to);
 	bool Touches(const SweptSphere& swept, const WorldSphere& sphere);
+	// Where a touching blade meets the sphere: the point of its surface towards the nearest point of the sweep.
+	glm::vec3 ContactPoint(const SweptSphere& swept, const WorldSphere& sphere);
 
 	// From a weapon's grip origin to its farthest vertex. The half-width is the widest the weapon stands
 	// off that axis beyond WEAPON_BLADE_START of its length.

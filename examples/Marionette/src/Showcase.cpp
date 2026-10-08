@@ -1,9 +1,11 @@
 #include "Showcase.h"
+#include "ArenaVfx.h"
 #include "ArenaWorld.h"
 #include "CameraRig.h"
 #include "Fighter.h"
 #include "GameAssets.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,7 +19,9 @@ namespace Dingo
 		: m_Assets(assets), m_EventGeneration(assets.GetEventGeneration())
 	{
 		m_Audio = std::make_unique<GameAudio>(assets.GetSounds());
-		m_World = std::make_unique<ArenaWorld>(scene, assets, m_Audio.get());
+		if (!GetLaunchOptions().NoParticles)
+			m_Vfx = std::make_unique<ArenaVfx>(scene);
+		m_World = std::make_unique<ArenaWorld>(scene, assets, m_Audio.get(), m_Vfx.get());
 
 		if (params.Kind == ShowcaseKind::Victory)
 			BuildVictory(scene, assets, params);

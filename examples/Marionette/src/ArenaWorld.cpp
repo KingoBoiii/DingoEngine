@@ -1,4 +1,5 @@
 #include "ArenaWorld.h"
+#include "ArenaVfx.h"
 #include "Audio.h"
 #include "GameAssets.h"
 #include "GameMath.h"
@@ -74,7 +75,7 @@ namespace Dingo
 		return std::max(free, 0.0f);
 	}
 
-	ArenaWorld::ArenaWorld(Scene& scene, const GameAssets& assets, const GameAudio* audio)
+	ArenaWorld::ArenaWorld(Scene& scene, const GameAssets& assets, const GameAudio* audio, const ArenaVfx* vfx)
 		: m_Scene(scene), m_Arena(assets.GetArena())
 	{
 		m_BoxMesh = Application::Get().GetRenderer3D().GetBoxMesh();
@@ -92,7 +93,7 @@ namespace Dingo
 
 		BuildFloor();
 		BuildWalls();
-		BuildBraziers(audio);
+		BuildBraziers(audio, vfx);
 		DE_INFO("Marionette: arena built, {} m across, {} braziers", 2.0f * ARENA_RADIUS, BRAZIER_COUNT);
 	}
 
@@ -165,7 +166,15 @@ namespace Dingo
 		}
 	}
 
-	void ArenaWorld::BuildBraziers(const GameAudio* audio)
+	Entity ArenaWorld::SpawnEmitter(const char* name, ParticleEffect* effect, const glm::vec3& position)
+	{
+		Entity entity = m_Scene.CreateEntity(name);
+		entity.AddComponent<Transform3DComponent>().Position = position;
+		entity.AddComponent<ParticleEmitterComponent>(effect);
+		return entity;
+	}
+
+	void ArenaWorld::BuildBraziers(const GameAudio* audio, const ArenaVfx* vfx)
 	{
 		for (int i = 0; i < BRAZIER_COUNT; ++i)
 		{
@@ -186,6 +195,13 @@ namespace Dingo
 			coreTransform.Scale = glm::vec3(BRAZIER_FLAME_DIAMETER);
 			core.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Arena.FlameMesh, COLOR_FLAME)).Material = m_Arena.Flame;
 			brazier.Parts.push_back(core);
+			if (vfx)
+			{
+				const glm::vec3 base = flame + glm::vec3(0.0f, BRAZIER_FLAME_DIAMETER * BRAZIER_EMITTER_RISE, 0.0f);
+				brazier.Emitters.push_back(SpawnEmitter("BrazierFlameParticles", vfx->GetBrazierFlame(), base));
+				brazier.Emitters.push_back(SpawnEmitter("BrazierEmbers", vfx->GetBrazierEmbers(), base));
+				brazier.Emitters.push_back(SpawnEmitter("BrazierSmoke", vfx->GetBrazierSmoke(), flame + glm::vec3(0.0f, BRAZIER_SMOKE_RISE, 0.0f)));
+			}
 
 			const float height = flame.y + 0.5f * BRAZIER_FLAME_DIAMETER;
 			brazier.Center = glm::vec3(floor.x, 0.5f * height, floor.z);
@@ -205,6 +221,8 @@ namespace Dingo
 	{
 		for (Entity& part : occluder.Parts)
 			part.GetComponent<MeshRendererComponent>().Visible = visible;
+		for (Entity& emitter : occluder.Emitters)
+			emitter.GetComponent<ParticleEmitterComponent>().Playing = visible;
 		occluder.Hidden = !visible;
 	}
 
