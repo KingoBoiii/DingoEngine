@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -33,6 +34,89 @@ namespace Dingo::UI
 
 	namespace
 	{
+		// D7: effects are authored in code, so the editor changes the live effect and prints the code
+		// that builds what is on screen.
+		void ParticleEffectEditor()
+		{
+			const std::vector<ParticleEffect*>& effects = Internal::GetLiveParticleEffects();
+			if (!ImGui::CollapsingHeader("Particle effect editor"))
+				return;
+			if (effects.empty())
+			{
+				ImGui::TextDisabled("No ParticleEffect exists.");
+				return;
+			}
+
+			static const ParticleEffect* s_Selected = nullptr;
+			if (std::find(effects.begin(), effects.end(), s_Selected) == effects.end())
+				s_Selected = effects.front();
+
+			auto nameOf = [&effects](const ParticleEffect* effect)
+			{
+				const std::string& name = effect->GetParams().DebugName;
+				return name.empty() ? std::format("Effect {}", std::find(effects.begin(), effects.end(), effect) - effects.begin()) : name;
+			};
+			if (ImGui::BeginCombo("Effect", nameOf(s_Selected).c_str()))
+			{
+				for (const ParticleEffect* effect : effects)
+				{
+					if (ImGui::Selectable(nameOf(effect).c_str(), effect == s_Selected))
+						s_Selected = effect;
+				}
+				ImGui::EndCombo();
+			}
+
+			ParticleEffect* effect = *std::find(effects.begin(), effects.end(), s_Selected);
+			ParticleEffectParams params = effect->GetParams();
+			bool changed = false;
+
+			int shape = static_cast<int>(params.Shape);
+			changed |= ImGui::Combo("Shape", &shape, "Point\0Sphere\0Cone\0Box\0");
+			params.Shape = static_cast<ParticleShape>(shape);
+			changed |= ImGui::DragFloat3("Shape size", &params.ShapeSize.x, 0.01f, 0.0f, 100.0f);
+			changed |= ImGui::DragFloat("Rate", &params.Rate, 1.0f, 0.0f, 100000.0f);
+			int burst = static_cast<int>(params.BurstOnPlay);
+			changed |= ImGui::DragInt("Burst on play", &burst, 1.0f, 0, 100000);
+			params.BurstOnPlay = static_cast<uint32_t>(std::max(burst, 0));
+			changed |= ImGui::DragFloat2("Lifetime", &params.Lifetime.x, 0.01f, 0.01f, 60.0f);
+			changed |= ImGui::DragFloat2("Speed", &params.Speed.x, 0.01f, 0.0f, 100.0f);
+			changed |= ImGui::DragFloat3("Gravity", &params.Gravity.x, 0.05f, -100.0f, 100.0f);
+			changed |= ImGui::DragFloat("Drag", &params.Drag, 0.01f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat("Inherit velocity", &params.InheritVelocity, 0.01f, 0.0f, 1.0f);
+			changed |= ImGui::DragFloat("Noise strength", &params.NoiseStrength, 0.01f, 0.0f, 50.0f);
+			changed |= ImGui::DragFloat("Noise scale", &params.NoiseScale, 0.01f, 0.01f, 20.0f);
+			changed |= ImGui::DragFloat2("Start size", &params.StartSize.x, 0.005f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat("End size", &params.EndSize, 0.01f, 0.0f, 20.0f);
+			changed |= ImGui::DragFloat2("Spin (deg/s)", &params.Spin.x, 1.0f, -3600.0f, 3600.0f);
+			int keys = static_cast<int>(params.ColorKeyCount);
+			changed |= ImGui::SliderInt("Colour keys", &keys, 1, static_cast<int>(ParticleEffectParams::k_MaxColorKeys));
+			params.ColorKeyCount = static_cast<uint32_t>(keys);
+			for (int i = 0; i < keys; ++i)
+			{
+				ImGui::PushID(i);
+				changed |= ImGui::DragFloat("Time", &params.ColorKeys[i].Time, 0.01f, 0.0f, 1.0f);
+				changed |= ImGui::ColorEdit4("Colour", &params.ColorKeys[i].Color.x, ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_Float);
+				ImGui::PopID();
+			}
+			int blend = static_cast<int>(params.Blend);
+			changed |= ImGui::Combo("Blend", &blend, "Additive\0Alpha\0");
+			params.Blend = static_cast<ParticleBlend>(blend);
+			changed |= ImGui::DragFloat("Soft distance", &params.SoftDistance, 0.01f, 0.0f, 10.0f);
+			ImGui::Text("Capacity %u per emitter (fixed when an emitter is made)", effect->GetEmitterCapacity());
+
+			if (changed)
+				effect->SetParams(params);
+
+			if (ImGui::Button("Copy as code"))
+			{
+				const std::string code = Internal::ParticleEffectToCode(effect->GetParams());
+				ImGui::SetClipboardText(code.c_str());
+				DE_CORE_INFO("Particle effect '{}':\n{}", effect->GetParams().DebugName, code);
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("(and logs it)");
+		}
+
 		// "label  [=====      ] used / capacity" — a labelled usage bar for a
 		// budget. ImGui tints the fill.
 		void BudgetBar(const char* label, uint32_t used, uint32_t capacity)
@@ -295,6 +379,8 @@ namespace Dingo::UI
 		if (stats3D.DroppedParticleSpawns > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
 				"Dropped    : %u spawns  (an emitter's ring was full; warned once)", stats3D.DroppedParticleSpawns);
+
+		ParticleEffectEditor();
 
 		const PostProcessStack::Statistics& post = Renderer::GetPostProcessStack().GetStatistics();
 		ImGui::Spacing();

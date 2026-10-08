@@ -11,6 +11,11 @@
 namespace Dingo::Internal
 {
 
+	// Every ParticleEffect alive, in creation order, for the F4 effect editor. Main thread only.
+	const std::vector<ParticleEffect*>& GetLiveParticleEffects();
+	// The effect's params as the fluent C++ that builds them, for pasting back into a game.
+	std::string ParticleEffectToCode(const ParticleEffectParams& params);
+
 	// Free ranges of a Renderer3D's particle pool, shared with its emitters so one released after the
 	// renderer still has somewhere to go.
 	struct ParticlePool

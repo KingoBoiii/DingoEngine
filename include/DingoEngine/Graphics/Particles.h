@@ -119,11 +119,15 @@ namespace Dingo
 
 	// An effect's look and behaviour, shared by every emitter that plays it. It holds no GPU resources;
 	// SetParams takes effect on the next frame for every emitter, except Capacity, which an emitter
-	// takes when it is made. It must outlive its emitters, and its texture it.
+	// takes when it is made. It must outlive its emitters, and its texture it. Every live effect is
+	// listed in the F4 Renderer tab's effect editor, which edits it in place and prints its params as code.
 	class ParticleEffect
 	{
 	public:
 		static ParticleEffect* Create(const ParticleEffectParams& params);
+		~ParticleEffect();
+		ParticleEffect(const ParticleEffect&) = delete;
+		ParticleEffect& operator=(const ParticleEffect&) = delete;
 
 		const ParticleEffectParams& GetParams() const { return m_Params; }
 		void SetParams(const ParticleEffectParams& params) { m_Params = params; }
@@ -131,7 +135,7 @@ namespace Dingo
 		uint32_t GetEmitterCapacity() const;
 
 	private:
-		explicit ParticleEffect(const ParticleEffectParams& params) : m_Params(params) {}
+		explicit ParticleEffect(const ParticleEffectParams& params);
 
 		ParticleEffectParams m_Params;
 	};
