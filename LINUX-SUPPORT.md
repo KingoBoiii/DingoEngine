@@ -182,8 +182,10 @@ ran.
 - [L23](#l23): the engine's Linux post-build step builds `build/dist/<cfg>/libDingoEngine.a`
   (`scripts/merge-static-libs.sh`, `ar -M` through numbered links, since MRI scripts can't quote paths with
   spaces). The release job ships it with `include/` and `glm/` for Debug, Release and Distribution, plus
-  every example as its executable and `assets/`. It runs only on a `v*` tag, so its first real run is the next
-  release; its steps were dry-run locally for `v0.9.0`.
+  every example and the test framework, each a `<Program>/` folder with its executable and `assets/`
+  (`scripts/package-linux-programs.sh`). It runs only on a `v*` tag, so its first real run is the next
+  release; its steps were dry-run locally for `v0.9.0`. `build-linux.yml`'s Distribution job packs the same tarballs
+  on every run, as the `dingo-testframework-linux-distribution` and `dingo-examples-linux-distribution` artifacts.
 - [L24](#l24) also fixes Getting Started's sample app, which never set `Graphics.GraphicsAPI` and so crashed in
   `Application::Initialize` on every platform. The engine-side bug (no default) is
   [#109](https://github.com/KingoBoiii/DingoEngine/issues/109).
@@ -798,7 +800,7 @@ already fixed in the CI workflow (premake's names have no architecture suffix). 
   The SDK libraries come from the consumer's own SDK, as on Windows.
 - **Packaging**: ship `DingoEngine-<version>-<Config>-linux-x86_64.tar.gz` with `include/`, next to the
   Windows ZIPs.
-- **Example tarballs**: the executable plus `assets/`. With the static assimp ([L6](#l6)), at runtime they
+- **Example and test-framework tarballs**: the executable plus `assets/`. With the static assimp ([L6](#l6)), at runtime they
   need only `libvulkan1` and a Vulkan driver.
 
 <a id="l24"></a>

@@ -45,6 +45,28 @@ jobs:
           build/dist/${{ matrix.build-configuration }}-linux-x86_64/libDingoEngine.a
           include/
 
+    - name: Package examples and test framework
+      if: matrix.build-configuration == 'Distribution'
+      run: scripts/package-linux-programs.sh Distribution build/package/programs
+
+    - name: Upload test framework
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-testframework-linux-distribution
+        path: build/package/programs/Dingo-TestFramework-linux-x86_64.tar.gz
+        compression-level: 0
+
+    - name: Upload examples
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-examples-linux-distribution
+        path: |
+          build/package/programs/*-linux-x86_64.tar.gz
+          !build/package/programs/Dingo-TestFramework-linux-x86_64.tar.gz
+        compression-level: 0
+
     - name: Package tester bundle
       if: matrix.build-configuration == 'Distribution'
       run: scripts/linux-tester/make-bundle.sh Distribution build/package/DingoEngine-linux-tester.tar.gz

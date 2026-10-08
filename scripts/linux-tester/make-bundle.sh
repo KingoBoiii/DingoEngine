@@ -19,7 +19,7 @@ cp "$ROOT"/scripts/linux-tester/{README.md,run-checks.sh,play.sh} "$ROOT/scripts
 grep -oP '^\s*m_Tests\.push_back\(\{ "\K[^"]+' "$ROOT/test/src/TestLayer.cpp" > "$pkg/tests.txt"
 
 cp "$BIN/Dingo-TestFramework/Dingo-TestFramework" "$pkg/test/"
-cp -r "$ROOT/test/assets" "$pkg/test/"
+cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$pkg/test/"
 for dir in "$ROOT"/examples/*/; do
 	example=$(basename "$dir")
 	mkdir -p "$pkg/examples/$example"

@@ -762,20 +762,22 @@ jobs:
         name: dingo-engine-linux-${{matrix.build-configuration}}-${{steps.version.outputs.VERSION}}
         path: build/package/DingoEngine-${{ matrix.build-configuration }}
 
-    # Each example as its executable plus assets/. assimp is linked statically, so at run time
-    # they need only libvulkan1 and a Vulkan driver.
-    - name: Package and upload examples
+    # Each example and the test framework as <Program>/ holding the executable beside its assets/.
+    # assimp is linked statically, so at run time they need only libvulkan1 and a Vulkan driver.
+    - name: Package examples and test framework
       if: matrix.build-configuration == 'Distribution'
-      run: |
-        for dir in examples/*/; do
-          example=$(basename "$dir")
-          pkg="build/package/$example"
-          mkdir -p "$pkg"
-          cp "build/bin/Distribution-linux-x86_64/$example/$example" "$pkg/"
-          cp -r "$dir/assets" "$pkg/"
-          archive="$example-${{steps.version.outputs.VERSION}}-linux-x86_64.tar.gz"
-          tar -czf "$archive" -C "$pkg" .
-          gh release upload "${{ github.ref_name }}" "$archive" --clobber
-        done
+      run: scripts/package-linux-programs.sh Distribution build/package/programs "${{steps.version.outputs.VERSION}}"
+
+    - name: Upload examples and test framework to GitHub Release
+      if: matrix.build-configuration == 'Distribution'
+      run: gh release upload "${{ github.ref_name }}" build/package/programs/*.tar.gz --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload examples and test framework artifact
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dingo-programs-linux-distribution-${{steps.version.outputs.VERSION}}
+        path: build/package/programs/*.tar.gz
+        compression-level: 0
