@@ -95,5 +95,6 @@ The test app's **Compute Test** (`--test=compute`) fills a buffer and a storage 
 sums neighbours through a readonly block in a second, reads both buffers in a fragment stage into an
 R32F strip, and places sixteen instanced quads from the buffer in the vertex stage, then checks every
 value, sum, pixel and quad by readback. It also dispatches one incrementing pass four times, reads
-its buffer back, dispatches it four more times and checks both counts, and reads back a buffer made with initial
-data and patched by `GraphicsBuffer::Upload`.
+its buffer back, dispatches it four more times, uploads into its first element and dispatches four
+more, checking each count; it reads back a buffer made with initial data and patched by
+`GraphicsBuffer::Upload`, and draws from it in a fragment stage.

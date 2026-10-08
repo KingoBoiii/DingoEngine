@@ -219,18 +219,26 @@ void main() { o_Color = v_Color; }
 
 		// The same pass back to back, and again after a copy out of its buffer: each dispatch must see
 		// the last one's writes.
-		auto checkSteps = [this, alive](uint32_t expected, const char* name)
+		// Every step equals expected, but the first, which equals first.
+		auto checkSteps = [this, alive](uint32_t expected, uint32_t first, const char* name)
 		{
-			m_Steps->ReadBack([this, alive, expected, name](const std::vector<uint8_t>& bytes)
+			m_Steps->ReadBack([this, alive, expected, first, name](const std::vector<uint8_t>& bytes)
 			{
 				if (alive.expired())
 					return;
-				uint32_t wrong = bytes.size() == k_StepCount * sizeof(uint32_t) ? 0 : k_StepCount;
-				for (size_t i = 0; wrong == 0 && i < k_StepCount; ++i)
+				uint32_t wrong = 0;
+				if (bytes.size() != k_StepCount * sizeof(uint32_t))
 				{
-					uint32_t value = 0;
-					std::memcpy(&value, bytes.data() + i * sizeof(uint32_t), sizeof(value));
-					wrong += value != expected ? 1 : 0;
+					wrong = k_StepCount;
+				}
+				else
+				{
+					for (size_t i = 0; i < k_StepCount; ++i)
+					{
+						uint32_t value = 0;
+						std::memcpy(&value, bytes.data() + i * sizeof(uint32_t), sizeof(value));
+						wrong += value != (i == 0 ? first : expected) ? 1 : 0;
+					}
 				}
 				Check(wrong == 0, std::format("{} ({} of {} wrong)", name, wrong, k_StepCount));
 			});
@@ -285,10 +293,15 @@ void main() { o_Color = v_Color; }
 		Renderer::Dispatch(m_ZeroPass, k_StepCount / 64);
 		for (uint32_t i = 0; i < k_StepDispatches; ++i)
 			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
-		checkSteps(k_StepDispatches, "one compute pass dispatched back to back sees each dispatch's writes");
+		checkSteps(k_StepDispatches, k_StepDispatches, "one compute pass dispatched back to back sees each dispatch's writes");
 		for (uint32_t i = 0; i < k_StepDispatches; ++i)
 			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
-		checkSteps(2 * k_StepDispatches, "a pass dispatched after GraphicsBuffer::ReadBack copied its buffer still sees its writes");
+		checkSteps(2 * k_StepDispatches, 2 * k_StepDispatches, "a pass dispatched after GraphicsBuffer::ReadBack copied its buffer still sees its writes");
+		const uint32_t restart = 100;
+		m_Steps->Upload(&restart, sizeof(restart));
+		for (uint32_t i = 0; i < k_StepDispatches; ++i)
+			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
+		checkSteps(3 * k_StepDispatches, restart + k_StepDispatches, "a pass dispatched after an Upload into its buffer sees the upload and its own writes");
 
 		readBack(m_Strip->GetAttachment(0), [this](const TexturePixels& pixels)
 		{
