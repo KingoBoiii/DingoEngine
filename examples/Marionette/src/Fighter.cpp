@@ -28,6 +28,22 @@ namespace
 		{ Clips::DODGE_LEFT, 0.5f * std::numbers::pi_v<float> },
 		{ Clips::DODGE_RIGHT, -0.5f * std::numbers::pi_v<float> },
 	} };
+
+	// A joint's rest rotation in the model's space, without the root's unit scale, as a socket's frame
+	// holds it. An emitter on the socket turned back by it emits along the model's up while the joint
+	// is near its rest pose, as a planted foot is.
+	glm::quat RestRotation(const Skeleton& skeleton, const char* joint)
+	{
+		const int32_t index = skeleton.FindJoint(joint);
+		if (index == Skeleton::k_InvalidJoint)
+			return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+		const glm::mat4 model = skeleton.GetRootTransform() * skeleton.GetRestGlobalTransforms()[static_cast<size_t>(index)];
+		glm::mat3 basis(model);
+		for (int axis = 0; axis < 3; ++axis)
+			basis[axis] = glm::normalize(basis[axis]);
+		return glm::normalize(glm::quat_cast(basis));
+	}
 }
 
 namespace Dingo
@@ -112,6 +128,42 @@ namespace Dingo
 			BuildHitRig(def.RightWeapon ? context.Assets.GetModel(def.RightWeapon) : nullptr, rightHand);
 	}
 
+	Entity Fighter::SpawnEmitter(const char* name, ParticleEffect* effect, Entity parent, const char* joint, const glm::vec3& offset, bool playing)
+	{
+		Entity emitter = m_Context.World.CreateEntity(std::format("{} {}", m_Def.Name, name));
+		emitter.AddComponent<Transform3DComponent>().Position = offset;
+		emitter.AddComponent<ParticleEmitterComponent>(effect).Playing = playing;
+		emitter.SetParent(parent, joint ? joint : "", false);
+		return emitter;
+	}
+
+	void Fighter::BuildVfx(Entity weaponPart, const glm::vec3& bladeTip)
+	{
+		const ArenaVfx* vfx = m_Context.Vfx;
+		if (!vfx || !m_Valid)
+			return;
+
+		const glm::vec3 lift(0.0f, FOOT_DUST_LIFT, 0.0f);
+		const auto spawnFoot = [&](const char* name, const char* joint)
+		{
+			const glm::quat upright = glm::inverse(RestRotation(*m_Skeleton, joint));
+			Entity emitter = SpawnEmitter(name, vfx->GetFootDust(), m_Entity, joint, upright * lift, true);
+			emitter.GetComponent<Transform3DComponent>().Rotation = upright;
+			return emitter;
+		};
+		Entity leftFoot = spawnFoot("dust l", Joints::FOOT_LEFT);
+		Entity rightFoot = spawnFoot("dust r", Joints::FOOT_RIGHT);
+		Entity dash = SpawnEmitter("dash dust", vfx->GetFootDust(), m_Entity, nullptr, lift, true);
+
+		auto& events = m_Entity.AddComponent<ParticleEventComponent>();
+		events.Bind(Events::STEP_LEFT, leftFoot.GetUUID(), FOOT_DUST_COUNT)
+			.Bind(Events::STEP_RIGHT, rightFoot.GetUUID(), FOOT_DUST_COUNT)
+			.Bind(Events::DASH, dash.GetUUID(), DASH_DUST_COUNT);
+
+		if (weaponPart)
+			events.BindRange(Events::HITBOX, SpawnEmitter("blade trail", vfx->GetBladeTrail(), weaponPart, nullptr, bladeTip, false).GetUUID());
+	}
+
 	Animator* Fighter::GetAnimator() const
 	{
 		return m_Context.World.GetAnimator(m_Entity);
@@ -176,7 +228,9 @@ namespace Dingo
 
 		if (m_Context.Debug)
 		{
-			node.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.Debug->GetMesh())).Material = m_Context.Debug->GetMaterial(DebugTint::Idle);
+			auto& renderer = node.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.Debug->GetMesh()));
+			renderer.Material = m_Context.Debug->GetMaterial(DebugTint::Idle);
+			renderer.Shadows = ShadowCasting::Off;
 		}
 
 		RigSphere sphere;
@@ -191,11 +245,18 @@ namespace Dingo
 			m_Hurt.push_back(SpawnRigSphere(std::format("{} hurt {}", m_Def.Name, def.Joint), m_Entity, def.Joint, def.Offset, def.Radius));
 
 		if (!weapon || !weaponPart)
+		{
+			BuildVfx(Entity(), glm::vec3(0.0f));
 			return;
+		}
 
 		const BladeAxis blade = MeasureBlade(*weapon);
 		if (!(blade.Length > 0.0f))
+		{
+			BuildVfx(Entity(), glm::vec3(0.0f));
 			return;
+		}
+		BuildVfx(weaponPart, blade.Direction * blade.Length);
 
 		const float radius = WeaponSphereRadius(blade);
 		for (size_t i = 0; i < m_WeaponSpheres.size(); ++i)

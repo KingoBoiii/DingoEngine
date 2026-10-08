@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 
 #include <glm/glm.hpp>
 
@@ -32,7 +33,7 @@ namespace Dingo
 		Texture* GetResult() override { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 
 	private:
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunStructuralChecks();
 		void RunCollisionFilterChecks();
 		void RunLightProbe();
@@ -61,12 +62,7 @@ namespace Dingo
 		enum class View { Scene3D, Scene2D, Probe2D, Stress, StressFlat };
 
 	private:
-		struct CheckResult
-		{
-			std::string Name;
-			bool Passed;
-		};
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		Scene* m_Scene = nullptr;
 		Mesh*  m_HullMesh = nullptr;

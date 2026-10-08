@@ -10,13 +10,16 @@ namespace Dingo
 
 	void NvrhiFramebuffer::Initialize()
 	{
-		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc();
+		for (uint32_t index = 0; index < m_Params.Attachments.size(); ++index)
+			m_Attachments.push_back(Texture::Create(MakeColorParams(index)));
 
-		CreateAttachments(framebufferDesc);
+		if (m_Params.EnableDepth)
+		{
+			m_DepthAttachment = Texture::Create(MakeDepthParams());
+			DE_CORE_ASSERT(m_DepthAttachment->GetTextureHandle(), "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
+		}
 
-		m_FramebufferHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createFramebuffer(framebufferDesc);
-
-		m_Viewport = nvrhi::Viewport(static_cast<float>(m_Params.Width), static_cast<float>(m_Params.Height));
+		CreateHandle();
 	}
 
 	void NvrhiFramebuffer::Destroy()
@@ -24,6 +27,7 @@ namespace Dingo
 		for (Texture*& attachment : m_Attachments)
 			DestroyAndDelete(attachment);
 		m_Attachments.clear();
+		DestroyAndDelete(m_DepthAttachment);
 
 		m_DepthTextureHandle = nullptr;
 		m_FramebufferHandle = nullptr;
@@ -34,66 +38,50 @@ namespace Dingo
 		m_Width = m_Params.Width = width;
 		m_Height = m_Params.Height = height;
 
-		for (Texture*& attachment : m_Attachments)
-			DestroyAndDelete(attachment);
-		m_Attachments.clear();
+		for (uint32_t index = 0; index < m_Attachments.size(); ++index)
+			m_Attachments[index]->Reinitialize(MakeColorParams(index));
+		if (m_DepthAttachment)
+			m_DepthAttachment->Reinitialize(MakeDepthParams());
 
-		m_DepthTextureHandle = nullptr;
+		CreateHandle();
+	}
 
+	TextureParams NvrhiFramebuffer::MakeColorParams(uint32_t index) const
+	{
+		return TextureParams()
+			.SetDebugName(std::format("{} ({})", m_Params.DebugName, index))
+			.SetWidth(m_Params.Width)
+			.SetHeight(m_Params.Height)
+			.SetFormat(m_Params.Attachments[index].Format)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetIsRenderTarget(true);
+	}
+
+	TextureParams NvrhiFramebuffer::MakeDepthParams() const
+	{
+		return TextureParams()
+			.SetDebugName(m_Params.DebugName + " (Depth)")
+			.SetWidth(m_Params.Width)
+			.SetHeight(m_Params.Height)
+			.SetFormat(TextureFormat::D32)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetIsRenderTarget(true)
+			.SetIsShaderResource(m_Params.DepthSampleable);
+	}
+
+	void NvrhiFramebuffer::CreateHandle()
+	{
 		nvrhi::FramebufferDesc framebufferDesc = nvrhi::FramebufferDesc();
+		for (Texture* attachment : m_Attachments)
+			framebufferDesc.addColorAttachment(static_cast<nvrhi::ITexture*>(attachment->GetTextureHandle()));
 
-		CreateAttachments(framebufferDesc);
+		m_DepthTextureHandle = m_DepthAttachment ? static_cast<nvrhi::ITexture*>(m_DepthAttachment->GetTextureHandle()) : nullptr;
+		if (m_DepthTextureHandle)
+			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
 
 		m_FramebufferHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createFramebuffer(framebufferDesc);
 
 		m_Viewport = nvrhi::Viewport(static_cast<float>(m_Params.Width), static_cast<float>(m_Params.Height));
-	}
-
-	void NvrhiFramebuffer::CreateAttachments(nvrhi::FramebufferDesc& framebufferDesc)
-	{
-		uint32_t index = 0;
-		for (const auto& attachment : m_Params.Attachments)
-		{
-			TextureParams textureParams = TextureParams()
-				.SetDebugName(std::format("{} ({})", m_Params.DebugName, index))
-				.SetWidth(m_Params.Width)
-				.SetHeight(m_Params.Height)
-				.SetFormat(attachment.Format)
-				.SetDimension(TextureDimension::Texture2D)
-				.SetIsRenderTarget(true);
-
-			Texture* texture = Texture::Create(textureParams);
-			texture->Initialize();
-
-			framebufferDesc.addColorAttachment(static_cast<nvrhi::ITexture*>(texture->GetTextureHandle()));
-
-			m_Attachments.push_back(texture);
-
-			index++;
-		}
-
-		if (m_Params.EnableDepth)
-		{
-			const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-
-			nvrhi::TextureDesc depthDesc = nvrhi::TextureDesc()
-				.setDebugName(m_Params.DebugName + " (Depth)")
-				.setWidth(m_Params.Width)
-				.setHeight(m_Params.Height)
-				.setFormat(nvrhi::Format::D32)
-				.setDimension(nvrhi::TextureDimension::Texture2D)
-				.setIsRenderTarget(true)
-				.setInitialState(nvrhi::ResourceStates::DepthWrite)
-				.setKeepInitialState(true);
-			// Depth-only target: not sampled. D3D rejects SHADER_RESOURCE on a non-typeless
-			// depth format (D32), and isShaderResource defaults to true — set it off so this
-			// offscreen depth attachment is valid on the D3D back-ends too (no setter exists).
-			depthDesc.isShaderResource = false;
-
-			m_DepthTextureHandle = device->createTexture(depthDesc);
-			DE_CORE_ASSERT(m_DepthTextureHandle, "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
-			framebufferDesc.setDepthAttachment(m_DepthTextureHandle);
-		}
 	}
 
 }

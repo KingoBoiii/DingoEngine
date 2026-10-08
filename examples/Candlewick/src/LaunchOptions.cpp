@@ -1,8 +1,11 @@
 #include "LaunchOptions.h"
 
+#include "GameTuning.h"
+
 #include <DingoEngine.h>
 
 #include <charconv>
+#include <cmath>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -43,6 +46,24 @@ namespace
 			DE_WARN("Candlewick: ignoring --{}={} (expected no value, 1/true/on or 0/false/off)", name, *value);
 	}
 
+	void ParseSeconds(const ApplicationCommandLineArgs& args, std::string_view name, float max, float& out)
+	{
+		const std::optional<std::string_view> value = args.Get(name);
+		if (!value)
+			return;
+
+		float parsed = 0.0f;
+		const char* end = value->data() + value->size();
+		const auto [ptr, error] = std::from_chars(value->data(), end, parsed);
+		if (error != std::errc{} || ptr != end || !std::isfinite(parsed) || !(parsed > 0.0f) || parsed > max)
+		{
+			DE_WARN("Candlewick: ignoring --{}={} (expected seconds above 0 and up to {:.4f})", name, *value, max);
+			return;
+		}
+
+		out = parsed;
+	}
+
 	bool ParseCoordinate(std::string_view text, int& out)
 	{
 		const char* end = text.data() + text.size();
@@ -76,9 +97,16 @@ namespace
 		ParseFlag(args, "overview", options.Overview);
 		ParseFlag(args, "no-light-lod", options.NoLightLod);
 		ParseFlag(args, "debug-cone", options.DebugCone);
-		ParseFlag(args, "no-range-clamp", options.NoRangeClamp);
 		ParseFlag(args, "all-lit", options.AllLit);
 		ParseTile(args, "spawn", options.Spawn);
+		ParseSeconds(args, "fixed-dt", FIXED_DT_MAX, options.FixedDt);
+		if (options.Freeze && !(options.FixedDt > 0.0f))
+			options.FixedDt = FIXED_DT_FREEZE;
+		ParseFlag(args, "perf", options.Perf);
+		ParseFlag(args, "no-post", options.NoPost);
+		ParseFlag(args, "no-shadows", options.NoShadows);
+		ParseFlag(args, "no-particles", options.NoParticles);
+		ParseFlag(args, "hide-check", options.HideCheck);
 		return options;
 	}
 }

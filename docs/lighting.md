@@ -32,7 +32,8 @@ stays off until a material asks for it.
 | `Enabled` | true | Point and spot components only. |
 
 - A scene's lights add up, and so do its ambient components (the direct API has one ambient,
-  which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)).
+  which `SetAmbientLight` replaces). Past 1.0 the frame clips (see [Limits](#limits)) unless the
+  [post chain](post-processing.md) tone-maps it.
 - **Components:** point and spot lights take their position from the entity's world transform (its
   `Transform3DComponent`, through any parents) and are ignored without one, with a one-time
   warning. A spot's `Direction` is in the entity's local space (default (0, 0, -1)) and is turned by
@@ -183,9 +184,24 @@ Renderer tab shows them under "Renderer3D lights": directional `n / 4`, a point/
 the budget, "Out of view", and a red "Dropped" line when anything was dropped. "Dropped" counts
 both kinds; the log says which. `UI::RendererStatsSection()` embeds it in your own window.
 
-**Known limitation.** The cut-off is hard: when a light's rank crosses the budget edge, as the
-camera moves, it switches on or off within one frame. Keep ranges short so that few lights overlap
-on screen, or fade your own lights to fit, as [Candlewick does](#gameplay-queries).
+**The budget fade** (v0.9). By default the cut-off is hard: when a light's rank crosses the budget
+edge, as the camera moves, it switches on or off within one frame. Set
+`Renderer3DCapabilities::LightBudgetFade` (or call `Renderer3D::SetLightBudgetFade`) to a band
+above 0 and, whenever more lights reach the view than the budget holds, a drawn light fades out as
+its priority nears that of the first light left out: fully lit at `1 + band` times it, dark at it.
+Two lights trading places at the edge are both dark at the moment they trade, so nothing pops.
+
+```cpp
+renderer3D.SetLightBudgetFade(0.5f); // fade over the last 50 % above the cut
+```
+
+With the fade on, lights are ranked by one continuous priority, the brightness seen from the camera
+(as above) over `1 + distance / Range`, instead of brightness with ties broken by distance; under the
+budget nothing fades and nothing changes. Off (the default, 0) keeps the ranking and the hard cut of
+v0.7, so existing scenes render exactly as before. `Statistics::FadedLights` and the F4 tab count the
+dimmed lights. The frustum test still cuts a light whose range leaves the view, so a light whose
+range just reaches the screen's edge can still change the ranking at once. Keep ranges short so that
+few lights overlap on screen, or fade your own lights to fit, as [Candlewick does](#gameplay-queries).
 
 ## Falloff and cones
 
@@ -215,7 +231,9 @@ is the cone the player sees.
 
 - It leaves out the surface's `N.L` and the light's `Color` and `Intensity`: it says how much of
   the light reaches the point, not how bright a surface there looks.
-- It ignores occlusion. Light passes through walls (no shadows until v0.9), so pair it with a
+- It ignores occlusion: shadows ([Shadows](shadows.md)) are drawn, not part of this weight.
+  `Scene::GetShadowedLightAttenuation` multiplies in what the shadows let through, read back from the
+  GPU ([Is this point in shadow?](shadows.md#is-this-point-in-shadow)); otherwise pair it with a
   raycast when walls should block.
 - It knows nothing about this frame's budget. A light dropped past `MaxLocalLights`, or refused
   because too many were submitted, is not drawn, yet still has a weight. A game whose rules depend
@@ -244,9 +262,10 @@ bool SeesPoint(Entity warden, const glm::vec3& point)
 points on the player: feet (0.1 m), chest (1.0 m) and head (1.6 m). A sample counts as seen when its
 weight is at least 0.1, which is where the lit pool on the floor fades out of sight, and a ray from the
 eye towards it hits nothing more than 0.3 m short of it (the player is a character controller, so no
-ray ever hits the player itself). The eye's `Range` is also clamped every frame to the wall it faces,
-found with a level ray from the eye, so neither the drawn cone nor its weight reaches through that
-wall. The cone the player sees lit on the floor is therefore the cone that catches them.
+ray ever hits the player itself). Since v0.9 the eye casts a shadow, and the weight is
+`Scene::GetShadowedLightAttenuation`, so a wall or a pillar stops both the drawn cone and its weight
+([Shadows](shadows.md#is-this-point-in-shadow)). Before, the eye's `Range` was clamped every frame to
+the wall it faced. The cone the player sees lit on the floor is therefore the cone that catches them.
 
 **Keeping gameplay lights inside the budget.** The weight ignores the frame's budget, so a game
 whose rules read a light should not leave the choice of which lights are drawn to the engine's
@@ -347,6 +366,12 @@ The prefix carries **only the first directional light**, and no point or spot li
 with no directional light it still carries the default light's direction, so a shader using the old
 `ambient + (1 - ambient) * N.L` formula draws a sun the lit shader does not.
 
+**Shadows in a custom shader** (v0.9). `#include <DingoEngine/Shadows.glsl>` in the fragment stage
+and multiply `DirectionalShadow(worldPosition, normal)` into the directional light that
+`ShadowCounts.y` names and `LocalLightShadow(i, worldPosition, normal)` into local light `i`; the
+renderer binds `ShadowData`, `u_ShadowAtlas` and `u_ShadowSampler` by name, at bindings 5 to 7 unless
+the shader moves them. See [Shadows](shadows.md#custom-shaders).
+
 ## Hot-reloading the lit shader
 
 The lit shader is a file, [`Renderer3D_Lit.glsl`](../src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl),
@@ -372,17 +397,21 @@ and a copy of it is embedded in the engine library at build time.
 
 ## Limits
 
-- **No tone mapping or HDR until v0.9.** A pixel clips at 1.0 per channel, so many bright lights
+- **Clipping without the post chain.** A pixel clips at 1.0 per channel, so many bright lights
   overlapping, or a bright light on a pale surface, burn out to white. Keep intensities
-  conservative: ambient plus every light reaching a pixel should stay near 1.
-- **No shadows until v0.9.** Light passes through walls and floors, so in interiors keep ranges
-  short.
+  conservative (ambient plus every light reaching a pixel near 1), or turn on the v0.9 post chain,
+  whose default tone curve leaves everything under 0.8 alone and rolls off what would have clipped
+  ([Post-processing](post-processing.md)).
+- **Light passes through walls unless it casts.** The first directional light with `CastShadows`
+  gets cascaded shadows, and up to 8 (at most 16) casting point and spot lights get shadows of their
+  own ([Shadows](shadows.md)); every other light passes through walls and floors, so in interiors
+  keep their ranges short.
 - **No per-mesh surface parameters.** Roughness, specular and emissive are per material. A mesh
   that needs its own takes its own material, which is at least one more draw call.
 - **Blinn-Phong, not PBR:** no metalness, normal maps or reflections.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.
-- **Budget-edge popping**, described [above](#the-light-budget).
+- **Budget-edge popping** unless the budget fade is on, described [above](#the-light-budget).
 
 ## Migrating from v0.6
 
@@ -413,6 +442,7 @@ own, since submitting any light or ambient switches the default off.
 - **DungeonCrawler3D** with `--night` (`examples/DungeonCrawler3D/`): a dim moon, a lantern that
   follows the hero, and a point light on each treasure.
 - **Candlewick** (`examples/Candlewick/`): the reference for lights that are gameplay. A lantern whose
-  range is its oil, wardens whose spot-light cones are tested with `GetLightAttenuation`, a game-side
-  light LOD, and lit emissive braziers as checkpoints. `--debug-cone` draws the tested cones and
+  range is its oil, wardens whose spot-light cones are tested with `GetLightAttenuation` (and since
+  v0.9 with their shadows, so cover hides you), a game-side light LOD, and lit emissive braziers as
+  checkpoints. `--debug-cone` draws the tested cones and
   `--no-light-lod` shows the engine's own selection.

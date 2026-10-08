@@ -47,11 +47,65 @@ namespace Dingo::Internal::LightSystem
 		}
 	}
 
-	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
+	namespace
+	{
+		uint64_t MixKey(uint64_t value)
+		{
+			value += 0x9e3779b97f4a7c15ull;
+			value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ull;
+			value = (value ^ (value >> 27)) * 0x94d049bb133111ebull;
+			return value ^ (value >> 31);
+		}
+
+		void IssueShadowProbes(Renderer3D& renderer, ShadowProbeState& probes, const std::unordered_map<entt::entity, ShadowProbeLight>& lights)
+		{
+			const uint64_t frame = Renderer::GetFrameIndex();
+			for (const auto& [localKey, request] : probes.Pending)
+			{
+				const uint64_t rendererKey = MixKey(probes.Salt ^ localKey);
+				const auto light = lights.find(request.Light);
+				ShadowProbeState::Answer& answer = probes.Answers[localKey];
+				answer.Frame = frame;
+
+				// A light that wasn't drawn casts nothing.
+				if (light == lights.end() || !light->second.IsValid())
+				{
+					answer.Value = 1.0f;
+					continue;
+				}
+
+				renderer.AddShadowProbe(light->second, request.Point, rendererKey);
+				if (const std::optional<float> result = renderer.GetShadowProbeResult(rendererKey))
+					answer.Value = *result;
+			}
+			probes.Pending.clear();
+
+			if (frame - probes.PruneFrame > 256)
+			{
+				probes.PruneFrame = frame;
+				std::erase_if(probes.Answers, [frame](const auto& entry) { return entry.second.Frame + 600 < frame; });
+			}
+		}
+	}
+
+	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, ShadowProbeState* probes)
 	{
 		memo.Begin(registry);
 		bool hasLight = false;
 		glm::vec3 ambient(0.0f);
+
+		// The lights probes ask about, and what Renderer3D made of each.
+		std::unordered_map<entt::entity, ShadowProbeLight> probedLights;
+		if (probes)
+		{
+			for (const auto& [key, request] : probes->Pending)
+				probedLights.emplace(request.Light, ShadowProbeLight());
+		}
+		auto noteLight = [&](entt::entity entity)
+		{
+			if (const auto it = probedLights.find(entity); it != probedLights.end())
+				it->second = renderer.GetLastSubmittedLight();
+		};
 
 		// A legacy Ambient keeps the engine's original formula, ambient + (1 - ambient) * N.L, so a
 		// scene tuned before Intensity existed looks the same. Only lights Renderer3D accepted add
@@ -59,7 +113,7 @@ namespace Dingo::Internal::LightSystem
 		// NaN, which SetAmbientLight rejects, losing every other source with it.
 		auto submitDirectional = [&](const DirectionalLightComponent& light)
 		{
-			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f) });
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f), light.CastShadows, light.ShadowStrength });
 			if (accepted && std::isfinite(light.Ambient))
 				ambient += glm::vec3(light.Ambient);
 		};
@@ -68,6 +122,7 @@ namespace Dingo::Internal::LightSystem
 		{
 			hasLight = true;
 			submitDirectional(registry.get<const DirectionalLightComponent>(entity));
+			noteLight(entity);
 		}
 
 		for (entt::entity entity : InEntityOrder<AmbientLightComponent>(registry))
@@ -88,7 +143,10 @@ namespace Dingo::Internal::LightSystem
 
 			hasLight = true;
 			if (light.Enabled)
+			{
 				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
+				noteLight(entity);
+			}
 		}
 
 		for (entt::entity entity : InEntityOrder<SpotLightComponent>(registry))
@@ -100,8 +158,14 @@ namespace Dingo::Internal::LightSystem
 
 			hasLight = true;
 			if (light.Enabled)
+			{
 				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
+				noteLight(entity);
+			}
 		}
+
+		if (probes && !probes->Pending.empty())
+			IssueShadowProbes(renderer, *probes, probedLights);
 
 		if (!hasLight)
 			submitDirectional(DirectionalLightComponent{});

@@ -31,7 +31,9 @@ namespace Dingo
 		// framebuffer the renderers build their pipelines against. Sample the result through
 		// target->GetAttachment(0): its first row is the top of the picture, the opposite of a
 		// texture loaded from a file, so a Renderer2D quad shows it upright with a negative height.
-		void Render(Scene& scene, Framebuffer* target = nullptr);
+		// shadowProbes: whether this render answers the scene's GetLightVisibility questions
+		// (Scene::SubmitLights); pass false for a secondary view, such as a minimap.
+		void Render(Scene& scene, Framebuffer* target = nullptr, bool shadowProbes = true);
 
 	private:
 		Renderer2D* m_Renderer2D = nullptr;

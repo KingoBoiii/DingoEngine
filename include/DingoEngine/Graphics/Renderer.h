@@ -12,11 +12,31 @@
 #include <glm/glm.hpp>
 
 #include <functional>
+#include <optional>
+#include <vector>
 
 namespace Dingo
 {
 
 	class SwapChain;
+
+	namespace Internal
+	{
+		class NvrhiTextureReadback;
+	}
+	class PostProcessStack;
+
+	// One GPU pass timer (Renderer::BeginGpuTimer), over the last GpuTimers::k_HistoryLength frames
+	// that measured it. A frame's sample adds up every time the timer ran in that frame.
+	struct GpuTimerStats
+	{
+		const char* Name = nullptr;
+		uint32_t Depth = 0;   // timers open around it when it was first seen
+		uint32_t Samples = 0; // frames in the history, at most 120
+		float LastMs = 0.0f;
+		float MeanMs = 0.0f;
+		float MaxMs = 0.0f;
+	};
 
 	// Ownership rule for every graphics resource: the factories hand out a raw `new`, and
 	// Destroy() only releases the GPU handle — the host object is still the owner's. Every
@@ -94,6 +114,23 @@ namespace Dingo
 		static void QueueResize(int32_t width, int32_t height);
 
 		/**************************************************
+		***		GPU TIMERS								***
+		**************************************************/
+
+		// Measures the GPU time of the commands recorded between the two calls, which nest and must
+		// pair up within a frame. `name` must outlive the call only. Results are read four frames
+		// later, never waiting for the GPU (GetGpuTimers, the F8 Profiler tab, and Tracy plots in a
+		// --profile build). In a frame that renders nothing they measure nothing. "Frame" times the
+		// whole frame command list. At most 32 timers a frame; later ones warn once and are skipped.
+		static void BeginGpuTimer(const char* name);
+		static void EndGpuTimer();
+		static const std::vector<GpuTimerStats>& GetGpuTimers();
+
+		// How long the render thread spent on the last frame it submitted: executing the command
+		// list and presenting.
+		static float GetRenderThreadMilliseconds();
+
+		/**************************************************
 		***		COMMAND LIST MANAGEMENT					***
 		**************************************************/
 
@@ -131,7 +168,9 @@ namespace Dingo
 		**************************************************/
 
 		// Self-contained: sets render pass bindings + framebuffer, then draws.
-		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1);
+		// Without vertex buffers: the vertex stage builds its vertices from gl_VertexIndex.
+		static void Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount = 1);
 
 		/**************************************************
 		***		DRAW — Material							***
@@ -139,16 +178,34 @@ namespace Dingo
 
 		// Lazily creates (and caches) the pipeline + render pass for the given
 		// vertex layout, uploads the uniforms (once per frame and after each SetUniform), then draws.
-		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1);
+		// Without vertex buffers, as for a fullscreen pass: Draw(material, 3) with a vertex stage that
+		// makes one triangle covering the target from gl_VertexIndex (DingoEngine/Fullscreen.glsl).
+		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
+
+		// Runs a compute pass in the frame's command list, ordered with the draws around it. Nothing
+		// in a frame that renders nothing (IsFrameSkipped). False when nothing was recorded: a skipped
+		// frame, or a pass whose pipeline or bindings can't be built (a broken hot-reload). Zero groups
+		// ask for nothing and return true.
+		static bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1);
 
 		/**************************************************
 		***		QUERIES									***
 		**************************************************/
 
 		// Override the render target used by all no-arg draw/clear calls.
-		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain.
+		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain. Either also drops a
+		// SetViewport.
 		static void SetRenderTarget(Framebuffer* framebuffer);
 		static void ResetRenderTarget();
+
+		// Limits the draws that follow to a rectangle of the current render target (a shadow-atlas
+		// tile, a half-resolution pass), until ResetViewport or the next SetRenderTarget. Clears still
+		// clear the whole target.
+		static void SetViewport(const Viewport& viewport);
+		static void ResetViewport();
+		// The SetViewport rectangle in force, or empty while draws cover the whole target.
+		static std::optional<Viewport> GetViewport();
 		// The override, or null while draws go to the swap chain.
 		static Framebuffer* GetRenderTarget();
 
@@ -183,9 +240,14 @@ namespace Dingo
 		static Sampler* GetClampSampler();
 		static Sampler* GetPointSampler();
 
+		// The 3D pass's post chain (PostProcess.h), shared by SceneRenderer and direct Renderer3D use.
+		static PostProcessStack& GetPostProcessStack();
+
 	private:
 		static void RenderThreadLoop();
 		static Framebuffer* GetCurrentTarget();
+		static void BindTarget(Framebuffer* target);
+		static RenderPass* PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target);
 
 		// Runs fn on the main thread at the start of the next frame, or at Shutdown, once the
 		// render thread has submitted the frame being recorded now: for reading back what it drew.
@@ -194,10 +256,14 @@ namespace Dingo
 		// While true the main thread may submit a command list of its own: the render thread waits
 		// for the next frame. False from EndFrame until the next BeginFrame or SkipFrame.
 		static bool IsRenderThreadParked();
+		// True in Shutdown's last run of the RunAfterFrame callbacks, after which none run.
+		static bool IsShuttingDown();
 
 		static struct RendererData* s_Data;
 
 		friend class NvrhiTexture;
+		friend class NvrhiGraphicsBuffer;
+		friend class Internal::NvrhiTextureReadback;
 	};
 
 }

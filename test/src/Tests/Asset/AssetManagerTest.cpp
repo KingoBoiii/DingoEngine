@@ -8,15 +8,6 @@
 namespace Dingo
 {
 
-	void AssetManagerTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
-	}
-
 	void AssetManagerTest::Initialize()
 	{
 		Renderer2DTest::Initialize();

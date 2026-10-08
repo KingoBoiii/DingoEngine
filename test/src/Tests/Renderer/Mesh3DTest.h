@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 #include <glm/glm.hpp>
 
 #include <string>
@@ -26,13 +27,12 @@ namespace Dingo
 	private:
 		void UploadMesh(Mesh* mesh);
 		void RunWindingChecks();
-		void Check(bool condition, const std::string& name);
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 
 	private:
 		struct TransformUBO { glm::mat4 ViewProjection; glm::mat4 Model; };
-		struct CheckResult { std::string Name; bool Passed = false; };
 
-		std::vector<CheckResult> m_Checks;
+		TestChecks m_Checks;
 
 		Shader*         m_Shader   = nullptr;
 		Material*       m_Material = nullptr;

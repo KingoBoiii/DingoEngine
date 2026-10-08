@@ -25,6 +25,8 @@ namespace Dingo
 
 		virtual void SetSampler(uint32_t slot, Sampler* sampler) override;
 
+		virtual void SetStorageBuffer(uint32_t slot, GraphicsBuffer* buffer) override;
+
 		virtual void Bake() override;
 
 	private:
@@ -42,6 +44,7 @@ namespace Dingo
 
 		nvrhi::BindingSetDesc m_BindingSetDesc;
 		nvrhi::BindingSetHandle m_BindingSetHandle;
+		std::vector<nvrhi::BindingSetItem> m_StorageItems; // of m_BindingSetHandle
 		// Shader generation the binding set was baked against; a hot-reload replaces
 		// the shader's binding layout, so a mismatch forces a re-bake at bind time.
 		uint32_t m_BuiltShaderGeneration = 0;

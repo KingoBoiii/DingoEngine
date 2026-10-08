@@ -16,15 +16,6 @@ namespace
 namespace Dingo
 {
 
-	void Renderer3DBatchTest::Check(bool condition, const std::string& name)
-	{
-		m_Checks.push_back({ name, condition });
-		if (condition)
-			DE_INFO("[PASS] {}", name);
-		else
-			DE_ERROR("[FAIL] {}", name);
-	}
-
 	void Renderer3DBatchTest::Initialize()
 	{
 		m_Checks.clear();

@@ -225,6 +225,10 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   first. A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) blocks a frame:
   on Vulkan, later ones draw with an earlier block's camera.
 
+- **2D is never tone mapped** (v0.9). The [post chain](post-processing.md) takes the 3D pass alone:
+  a scene's 2D overlay, and anything `Renderer2D` draws after `PostProcessStack::End`, goes into the
+  target as it always did, so HUD colours stay exactly what you pass.
+
 `r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
 `r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,
 whose image is not a `Texture` you can sample (before v0.6.3 the call read out of bounds).

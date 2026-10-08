@@ -28,14 +28,47 @@ namespace Dingo
 			.SetReflect(reflect));
 	}
 
+	namespace
+	{
+		int32_t FindBinding(const std::vector<std::pair<std::string, uint32_t>>& bindings, std::string_view wanted)
+		{
+			for (const auto& [name, binding] : bindings)
+			{
+				if (name == wanted)
+					return static_cast<int32_t>(binding);
+			}
+			return -1;
+		}
+	}
+
 	int32_t Shader::FindUniformBufferBinding(std::string_view blockName) const
 	{
-		for (const auto& [name, binding] : m_UniformBufferBindings)
-		{
-			if (name == blockName)
-				return static_cast<int32_t>(binding);
-		}
-		return -1;
+		return FindBinding(m_UniformBufferBindings, blockName);
+	}
+
+	int32_t Shader::FindTextureBinding(std::string_view textureName) const
+	{
+		return FindBinding(m_TextureBindings, textureName);
+	}
+
+	int32_t Shader::FindSamplerBinding(std::string_view samplerName) const
+	{
+		return FindBinding(m_SamplerBindings, samplerName);
+	}
+
+	int32_t Shader::FindStorageBufferBinding(std::string_view blockName) const
+	{
+		return FindBinding(m_StorageBufferBindings, blockName);
+	}
+
+	int32_t Shader::FindStorageImageBinding(std::string_view imageName) const
+	{
+		return FindBinding(m_StorageImageBindings, imageName);
+	}
+
+	bool Shader::IsStorageBufferReadOnly(uint32_t binding) const
+	{
+		return std::find(m_WritableStorageBuffers.begin(), m_WritableStorageBuffers.end(), binding) == m_WritableStorageBuffers.end();
 	}
 
 	Shader* Shader::Create(const ShaderParams& params)

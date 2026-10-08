@@ -1,4 +1,5 @@
 #pragma once
+#include "Flames.h"
 #include "KeepMap.h"
 
 #include <DingoEngine.h>
@@ -17,6 +18,7 @@ namespace Dingo
 	{
 		Entity Light;
 		Entity Core;
+		Entity Emitter;
 		FlameKind Kind = FlameKind::Candle;
 		float BaseIntensity = 0.0f;
 	};
@@ -25,6 +27,12 @@ namespace Dingo
 	{
 		Entity Light;
 		Entity Core;
+		// Particles: three that play while it burns, and the burst of its kindling. Invalid under
+		// --no-particles.
+		Entity Flame;
+		Entity Embers;
+		Entity Smoke;
+		Entity Kindle;
 		int Room = -1;
 		glm::ivec2 Tile{ 0 };
 		bool IsAltar = false;
@@ -54,10 +62,12 @@ namespace Dingo
 		// Braziers are built dark: their light off and their cores on the ash material. Lighting one
 		// swaps its core to the flame material that every decorative flame also shares.
 		Material* GetFlameMaterial() const { return m_FlameMaterial; }
+		const FlameEffects& GetEffects() const { return m_Effects; }
 
 		size_t CollectFlasks(const glm::vec3& feet, size_t maxCount);
 
 		// Hides the wall rectangles (with their caps and mounted sconces) that sit between the eye and the target.
+		// A hidden wall and its cap still cast shadows; what is mounted on them is hidden outright.
 		void UpdateCutaway(const glm::vec3& eye, const glm::vec3& target);
 
 		// Hides every wall rectangle on the row just south of the room, for a fixed camera that looks over it.
@@ -69,6 +79,7 @@ namespace Dingo
 			Entity Wall;
 			Entity Cap;
 			std::vector<Entity> Mounted;
+			std::vector<Entity> Emitters;
 			TileRect Tiles;
 			glm::vec3 Min{ 0.0f };
 			glm::vec3 Max{ 0.0f };
@@ -113,6 +124,7 @@ namespace Dingo
 		std::vector<WallRect> m_Walls;
 		std::vector<int> m_WallOfTile;
 
+		FlameEffects m_Effects;
 		std::vector<DecorFlame> m_Flames;
 		std::vector<BrazierSpot> m_Braziers;
 		std::vector<FlaskSpot> m_FlaskSpots;

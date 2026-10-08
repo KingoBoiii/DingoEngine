@@ -1,4 +1,5 @@
 #pragma once
+#include "ArenaVfx.h"
 #include "Audio.h"
 #include "FighterIntent.h"
 #include "GameAssets.h"
@@ -29,6 +30,7 @@ namespace Dingo
 		bool LogSteps = false;
 		bool LogCombat = false;
 		const HitDebugView* Debug = nullptr;
+		const ArenaVfx* Vfx = nullptr;
 	};
 
 	struct FighterSpawn
@@ -166,6 +168,8 @@ namespace Dingo
 
 		Entity SpawnWeapon(const char* path, const char* joint);
 		void BuildHitRig(const Model* weapon, Entity weaponPart);
+		void BuildVfx(Entity weaponPart, const glm::vec3& bladeTip);
+		Entity SpawnEmitter(const char* name, ParticleEffect* effect, Entity parent, const char* joint, const glm::vec3& offset, bool playing);
 		RigSphere SpawnRigSphere(const std::string& name, Entity parent, const char* joint, const glm::vec3& offset, float radius);
 		void SetupLayers(Animator& animator) const;
 		void PlayZone(Animator& animator, float deltaTime);

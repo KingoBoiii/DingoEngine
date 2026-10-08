@@ -8,7 +8,9 @@ namespace Dingo
 
 	Sampler* Sampler::Create(const SamplerParams& params)
 	{
-		return new NvrhiSampler(params);
+		Sampler* sampler = new NvrhiSampler(params);
+		sampler->Initialize();
+		return sampler;
 	}
 
 }

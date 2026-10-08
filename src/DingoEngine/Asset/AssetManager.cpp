@@ -115,6 +115,20 @@ namespace Dingo
 			metadata.LastWriteTime = ReadWriteTime(absolutePath);
 		}
 
+		// A shader also changes when a file it #includes does, so it is watched by the newest of them.
+		// A missing shader file reads as the epoch, as ReadWriteTime does.
+		static std::filesystem::file_time_type ReadShaderWriteTime(const Shader* shader, const std::filesystem::path& path)
+		{
+			const std::filesystem::file_time_type own = ReadWriteTime(path);
+			if (!shader || own == std::filesystem::file_time_type{})
+				return own;
+
+			std::filesystem::file_time_type newest = own;
+			for (const std::filesystem::path& included : shader->GetIncludedFiles())
+				newest = std::max(newest, ReadWriteTime(included));
+			return newest;
+		}
+
 		// True when a file stamped `writeTime` changed since `lastWriteTime` and the change has settled,
 		// in which case `lastWriteTime` takes the new stamp.
 		//
@@ -143,11 +157,11 @@ namespace Dingo
 			return true;
 		}
 
-		static bool ConsumeSettledWrite(const std::filesystem::path& path, std::filesystem::file_time_type& lastWriteTime, std::filesystem::file_time_type& pendingWriteTime)
+		// For a file that isn't a shader, pass a null shader.
+		static bool ConsumeSettledWrite(const Shader* shader, const std::filesystem::path& path, std::filesystem::file_time_type& lastWriteTime, std::filesystem::file_time_type& pendingWriteTime)
 		{
-			std::error_code ec;
-			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, ec);
-			if (ec)
+			const std::filesystem::file_time_type writeTime = ReadShaderWriteTime(shader, path);
+			if (writeTime == std::filesystem::file_time_type{})
 			{
 				pendingWriteTime = {};
 				return false;
@@ -490,13 +504,26 @@ namespace Dingo
 		return true;
 	}
 
+	static const Shader* FindLoadedShader(const AssetManagerData& data, const AssetMetadata& metadata)
+	{
+		if (metadata.Type != AssetType::Shader)
+			return nullptr;
+		auto it = data.Shaders.find(metadata.Handle);
+		return it != data.Shaders.end() ? it->second : nullptr;
+	}
+
+	static void StampWatchedWriteTime(const AssetManagerData& data, AssetMetadata& metadata)
+	{
+		metadata.LastWriteTime = Utils::ReadShaderWriteTime(FindLoadedShader(data, metadata), metadata.AbsolutePath);
+	}
+
 	static bool LoadInternal(AssetManagerData& data, AssetMetadata& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		StampCompanion(data, metadata);
 		if (policy.Load && (*policy.Load)(data, metadata))
 		{
-			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+			StampWatchedWriteTime(data, metadata);
 			metadata.State = AssetState::Ready;
 			return true;
 		}
@@ -521,7 +548,7 @@ namespace Dingo
 
 		if (result == RefreshResult::Refreshed)
 		{
-			Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+			StampWatchedWriteTime(data, metadata);
 			StampCompanion(data, metadata);
 		}
 
@@ -677,7 +704,7 @@ namespace Dingo
 				continue;
 
 			// Both are read every poll, so a save of both that settles in one poll reloads once.
-			const bool changed = Utils::ConsumeSettledWrite(metadata.AbsolutePath, metadata.LastWriteTime, metadata.PendingWriteTime);
+			const bool changed = Utils::ConsumeSettledWrite(FindLoadedShader(data, metadata), metadata.AbsolutePath, metadata.LastWriteTime, metadata.PendingWriteTime);
 			const bool companionChanged = CompanionChanged(data, metadata.Handle);
 			if (!changed && !companionChanged)
 				continue;
@@ -717,7 +744,7 @@ namespace Dingo
 		for (UnmanagedShaderWatch& watch : s_UnmanagedShaderWatches)
 		{
 			const std::filesystem::path& path = watch.Target->GetParams().FilePath;
-			if (!Utils::ConsumeSettledWrite(path, watch.LastWriteTime, watch.PendingWriteTime))
+			if (!Utils::ConsumeSettledWrite(watch.Target, path, watch.LastWriteTime, watch.PendingWriteTime))
 				continue;
 
 			DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", path.generic_string());
@@ -738,7 +765,7 @@ namespace Dingo
 			if (alreadyWatched)
 				return;
 
-			s_UnmanagedShaderWatches.push_back({ shader, Utils::ReadWriteTime(shader->GetParams().FilePath), {} });
+			s_UnmanagedShaderWatches.push_back({ shader, Utils::ReadShaderWriteTime(shader, shader->GetParams().FilePath), {} });
 		}
 
 		void UnwatchUnmanagedShader(Shader* shader)
@@ -1049,14 +1076,14 @@ namespace Dingo
 		{
 			if (metadata.State == AssetState::Ready)
 			{
-				Utils::StampWriteTime(metadata, metadata.AbsolutePath);
+				StampWatchedWriteTime(data, metadata);
 				if (data.Companions.contains(handle))
 					StampCompanion(data, metadata);
 			}
 		}
 
 		for (UnmanagedShaderWatch& watch : s_UnmanagedShaderWatches)
-			watch.LastWriteTime = Utils::ReadWriteTime(watch.Target->GetParams().FilePath);
+			watch.LastWriteTime = Utils::ReadShaderWriteTime(watch.Target, watch.Target->GetParams().FilePath);
 	}
 
 	uint32_t AssetManager::GetRegisteredCount() const

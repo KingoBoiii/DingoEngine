@@ -24,6 +24,7 @@ namespace Dingo
 		nvrhi::SamplerHandle m_Handle;
 
 		friend class NvrhiRenderPass; // Allow RenderPass to access private members
+		friend class NvrhiComputePass;
 		friend class NvrhiPipeline; // Allow Pipeline to access private members
 	};
 

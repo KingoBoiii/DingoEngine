@@ -736,6 +736,12 @@ building it showed:
 - Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
   no payload ([#103](https://github.com/KingoBoiii/DingoEngine/issues/103)).
 
+### Particles from events
+
+*(v0.9)* A `ParticleEventComponent` turns events into particles with no game code: an instant event
+bursts an emitter entity, and a range plays one while it is open. See
+[Particles from animation events](particles.md#from-animation-events).
+
 ## Sockets
 
 `child.SetParent(character, "joint", keepWorldTransform)` hangs an entity on a joint of the
@@ -957,7 +963,7 @@ Not in v0.8:
 | Cross-topology retargeting | Later. |
 | Instantiating a static multi-node model as an entity tree | Later. Static models stay pre-transformed. |
 | Inherited visibility (`SetActive`) | The v1.0 API pass. |
-| **Skinned shadows** | v0.9, through the same `DE_SKINNED` vertex stage. |
+| **Skinned shadows** | Shipped in v0.9: skinned meshes cast through the shadow pass's own `DE_SKINNED` vertex stage (`Renderer3D_Shadow.glsl`, sharing `Skinning.glsl` with the lit shader). See [Shadows](shadows.md). |
 | Animation LOD, culling and compression; instancing skinned meshes | v1.0 throughput work. |
 | Worker-thread model parsing | Later. |
 

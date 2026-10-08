@@ -218,7 +218,7 @@ namespace Dingo
 		m_Arena.Flame = renderer3D.CreateLitMaterial(MaterialParams()
 			.SetDebugName("ArenaFlame")
 			.SetEmissiveColor(FLAME_COLOR)
-			.SetEmissiveStrength(FLAME_EMISSIVE));
+			.SetEmissiveStrength(GetLaunchOptions().NoPost ? FLAME_EMISSIVE_NO_POST : FLAME_EMISSIVE));
 	}
 
 	void GameAssets::FindProblems()

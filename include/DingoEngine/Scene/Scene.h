@@ -18,6 +18,7 @@ namespace Dingo
 
 	class Entity;
 	class Animator;
+	class ParticleEmitter;
 	class Physics2D;
 	class Physics3D;
 	class CharacterController3D;
@@ -93,8 +94,37 @@ namespace Dingo
 
 		// Submits the scene's light components to the renderer (no BeginScene/EndScene), for
 		// custom 3D passes the same way as RenderEntities3D. A scene without a single light
-		// component gets a default DirectionalLightComponent.
-		void SubmitLights(Renderer3D& renderer);
+		// component gets a default DirectionalLightComponent. With shadowProbes, the scene's pending
+		// GetLightVisibility questions go out with this pass, answered from its camera's shadows; a
+		// secondary view (a minimap) passes false and leaves them to the main view.
+		void SubmitLights(Renderer3D& renderer, bool shadowProbes = true);
+
+		// How much of a light component's light reaches `point` past the shadows the scene draws: 1
+		// lit, 0 in its shadow (ShadowStrength of the way). The renderer's own shadow lookup works it
+		// out on the GPU (Renderer3D::AddShadowProbe), so the shadow a player sees is the shadow that
+		// hides them. Each call asks for the next frame and returns the latest answer for this light
+		// and key, one to three frames old, or 1 before the first; call it every frame you care about, with
+		// a key per point you track for the same light. The question goes out with the scene's next
+		// SubmitLights that takes them (the SceneRenderer's 3D pass), answered from that pass's cascades
+		// and culling: a secondary view drawn first in a frame (a minimap) should pass shadowProbes
+		// false to SceneRenderer::Render or SubmitLights. A scene that isn't rendered never answers. A
+		// light drawn without a shadow, or not drawn at all, answers 1, and so does the sun for a point
+		// outside the view's cascades (behind the camera, off screen, past the shadow distance): its
+		// shadow is drawn only for what the camera sees. The point has no surface to push it off, so
+		// ask about a point in the air, such as a character's chest.
+		float GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key = 0);
+		// GetLightAttenuation of the light's component at its world transform, times
+		// GetLightVisibility: 0 to 1, how strongly a point or spot light reaches the point; for a
+		// directional light, its visibility. 0 for a disabled light or an entity without a light.
+		float GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key = 0);
+
+		// Bursts from an entity's ParticleEmitterComponent at its next draw: from the effect's shape
+		// around the entity, or around a world-space point (an impact). Nothing for an entity without one.
+		void EmitParticles(Entity entity, uint32_t count);
+		void EmitParticlesAt(Entity entity, const glm::vec3& worldPosition, uint32_t count);
+		// The component's live emitter, for tooling: null until the 3D pass first draws it. Each
+		// Renderer3D drawing the scene runs an emitter of its own; this is the first one made.
+		ParticleEmitter* GetParticleEmitter(Entity entity);
 
 		// --- Camera -----------------------------------------------------------
 
@@ -300,7 +330,8 @@ namespace Dingo
 		// in-flight iteration. No-op when the entity has no script.
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
-		Entity DuplicateSubtree(Entity source, Entity parent);
+		// copies: every (source UUID, clone UUID) of the subtree, for rewriting bindings that point inside it.
+		Entity DuplicateSubtree(Entity source, Entity parent, std::vector<std::pair<UUID, UUID>>& copies);
 		Entity Wrap(std::uint32_t handle);
 
 	private:

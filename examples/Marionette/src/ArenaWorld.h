@@ -10,6 +10,7 @@
 namespace Dingo
 {
 
+	class ArenaVfx;
 	class GameAudio;
 
 	float GetArenaApothem();
@@ -24,7 +25,8 @@ namespace Dingo
 	{
 	public:
 		// With `audio`, each brazier crackles in a loop.
-		ArenaWorld(Scene& scene, const GameAssets& assets, const GameAudio* audio = nullptr);
+		// vfx: the brazier flames' effects, or null for none.
+		ArenaWorld(Scene& scene, const GameAssets& assets, const GameAudio* audio = nullptr, const ArenaVfx* vfx = nullptr);
 		~ArenaWorld();
 
 		ArenaWorld(const ArenaWorld&) = delete;
@@ -40,6 +42,7 @@ namespace Dingo
 		struct Occluder
 		{
 			std::vector<Entity> Parts;
+			std::vector<Entity> Emitters;
 			glm::vec3 Center{ 0.0f };
 			glm::vec3 HalfSize{ 0.0f };
 			float Yaw = 0.0f;
@@ -51,7 +54,8 @@ namespace Dingo
 		Entity SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, float yawRadians, const glm::vec4& color, Material* material);
 		void BuildFloor();
 		void BuildWalls();
-		void BuildBraziers(const GameAudio* audio);
+		void BuildBraziers(const GameAudio* audio, const ArenaVfx* vfx);
+		Entity SpawnEmitter(const char* name, ParticleEffect* effect, const glm::vec3& position);
 
 	private:
 		Scene& m_Scene;

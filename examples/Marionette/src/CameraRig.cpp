@@ -2,6 +2,7 @@
 #include "GameMath.h"
 #include "GameTuning.h"
 #include "Hud.h"
+#include "LaunchOptions.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -19,6 +20,20 @@ namespace
 	bool IsFinite(const glm::vec3& v)
 	{
 		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+	}
+
+	void AddPostProcess(Entity camera)
+	{
+		if (GetLaunchOptions().NoPost)
+			return;
+
+		PostProcessSettings settings;
+		settings.Enabled = true;
+		settings.Tone.Operator = ToneMapOperator::Soft;
+		settings.Bloom.Enabled = true;
+		settings.Bloom.Intensity = BLOOM_INTENSITY;
+		settings.AmbientOcclusion.Enabled = true;
+		camera.AddComponent<PostProcessComponent>().Settings = settings;
 	}
 
 	glm::vec3 ViewDirection(float yawDegrees, float pitchDegrees)
@@ -50,6 +65,7 @@ namespace Dingo
 		camera.Primary = true;
 		m_Entity.AddComponent<Transform3DComponent>();
 		m_Entity.AddComponent<AudioListenerComponent>();
+		AddPostProcess(m_Entity);
 
 		Update();
 	}
@@ -129,6 +145,7 @@ namespace Dingo
 		camera.Primary = true;
 		m_Entity.AddComponent<Transform3DComponent>();
 		m_Entity.AddComponent<AudioListenerComponent>();
+		AddPostProcess(m_Entity);
 	}
 
 	FollowCamera::Framing FollowCamera::Fit(const CameraSubject& first, const CameraSubject& second, float aspect)

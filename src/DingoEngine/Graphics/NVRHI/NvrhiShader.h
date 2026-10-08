@@ -42,8 +42,11 @@ namespace Dingo
 		// Freshly-compiled bytecode is appended to pendingCacheWrites instead of hitting
 		// disk here, so a failed multi-stage build never leaves mixed old/new cache files.
 		std::unordered_map<ShaderType, CompiledStage> CompileOrGetShaderBinaries(const std::unordered_map<ShaderType, std::string>& sources, const std::string& name, const std::filesystem::path& cacheDir, ShaderCompiler& compiler, bool forceCompile, bool tolerateErrors, std::vector<std::pair<std::filesystem::path, std::string>>& pendingCacheWrites);
-		std::unordered_map<ShaderType, std::string> GetShaderSources() const;
+		// includedFiles receives every file an #include read, even when the expansion fails, so the
+		// hot-reload watch can see a fix to the file that broke it.
+		std::unordered_map<ShaderType, std::string> GetShaderSources(std::vector<std::filesystem::path>& includedFiles) const;
 		std::unordered_map<ShaderType, std::string> PreProcess(const std::string& source) const;
+		static std::unordered_map<ShaderType, std::string> ExpandStages(std::unordered_map<ShaderType, std::string> sources, const std::filesystem::path& sourcePath, bool engineSource, const std::string& name, std::vector<std::filesystem::path>& includedFiles);
 
 	private:
 		std::unordered_map<ShaderType, nvrhi::ShaderHandle> m_ShaderHandles;
@@ -56,6 +59,7 @@ namespace Dingo
 
 		friend class NvrhiPipeline;
 		friend class NvrhiRenderPass;
+		friend class NvrhiComputePass;
 		friend class ImGuiRenderer;
 	};
 

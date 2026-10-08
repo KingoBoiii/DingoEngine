@@ -45,8 +45,8 @@ namespace Dingo
 		}
 	}
 
-	Combat::Combat(const GameAudio& audio, bool log)
-		: m_Audio(audio), m_Log(log)
+	Combat::Combat(const GameAudio& audio, bool log, ArenaVfx* vfx)
+		: m_Audio(audio), m_Log(log), m_Vfx(vfx)
 	{}
 
 	void Combat::Update(Fighter& a, Fighter& b)
@@ -87,14 +87,20 @@ namespace Dingo
 		m_HurtScratch.clear();
 		attacker.CollectSwingSpheres(m_SwingScratch);
 		target.CollectHurtSpheres(m_HurtScratch);
-		const bool touching = std::any_of(m_SwingScratch.begin(), m_SwingScratch.end(), [&](const SweptSphere& swept)
+		std::optional<glm::vec3> contact;
+		for (const SweptSphere& swept : m_SwingScratch)
 		{
-			return std::any_of(m_HurtScratch.begin(), m_HurtScratch.end(), [&](const WorldSphere& hurt) { return Touches(swept, hurt); });
-		});
-		if (!touching)
+			for (const WorldSphere& hurt : m_HurtScratch)
+			{
+				if (!contact && Touches(swept, hurt))
+					contact = ContactPoint(swept, hurt);
+			}
+		}
+		if (!contact)
 			return std::nullopt;
 
 		Decision decision;
+		decision.Contact = *contact;
 		decision.Attacker = &attacker;
 		decision.Target = &target;
 		OutcomeRecord& record = decision.Record;
@@ -160,6 +166,12 @@ namespace Dingo
 			case Outcome::Hit:
 				target.TakeHit(record.Damage);
 				m_Audio.PlayCombat(CombatSound::Hit, where, target.GetDef().Scale);
+				if (m_Vfx)
+				{
+					m_Vfx->Impact(ImpactKind::Hit, decision.Contact);
+					if (target.IsDead())
+						m_Vfx->KnockOut(where);
+				}
 				StartHitStop(attacker, target);
 				++m_Stats.Hits;
 				m_Stats.RiposteLanded = m_Stats.RiposteLanded || record.Riposte;
@@ -171,6 +183,8 @@ namespace Dingo
 				away = glm::length(away) > 1.0e-4f ? glm::normalize(away) : target.GetFacing() * -1.0f;
 				target.TakeBlock(record.Damage, away);
 				m_Audio.PlayCombat(CombatSound::Block, where, target.GetDef().Scale);
+				if (m_Vfx)
+					m_Vfx->Impact(ImpactKind::Block, decision.Contact);
 				StartHitStop(attacker, target);
 				++m_Stats.Blocks;
 				break;
@@ -180,6 +194,8 @@ namespace Dingo
 				attacker.Stagger();
 				target.OpenRiposteWindow();
 				m_Audio.PlayCombat(CombatSound::Parry, where, target.GetDef().Scale);
+				if (m_Vfx)
+					m_Vfx->Impact(ImpactKind::Parry, decision.Contact);
 				StartHitStop(attacker, target);
 				++m_Stats.Parries;
 				break;
