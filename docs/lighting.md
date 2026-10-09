@@ -354,9 +354,9 @@ delete lamp;
   the mesh colour. Slot 0 is the only slot the lit shader has: a texture or sampler in another slot
   keeps the material from being drawn, with a one-time warning. An empty slot 0 draws white with the clamp sampler.
 - **Transparency** comes from the mesh colour's alpha, never the texture's. A lit draw below
-  alpha 1 blends, but lit draws are not sorted and still write depth. A material made with
-  `MaterialParams().SetTranslucent(true)` writes no depth, so whatever is drawn after it behind it
-  still shows through; it is still depth-tested, and Renderer3D does not sort it yet.
+  alpha 1 blends, but an ordinary material's draws are not sorted and write depth, so what is drawn
+  after them behind them is hidden. For glass, smoke or a ghost, make the material translucent; see
+  [Translucent materials](#translucent-materials).
 - **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you, so
   open meshes and mirrored entities (a negative scale) still show. A custom material can cull; see
   [Winding and culling](scenes-and-ecs.md#winding-and-culling).
@@ -372,6 +372,39 @@ delete lamp;
 
 A material with your own `Shader` is not a lit material: its emissive, roughness and specular
 settings are ignored, and the shader does its own lighting.
+
+## Translucent materials
+
+```cpp
+Material* glass = renderer3D->CreateLitMaterial(MaterialParams()
+    .SetDebugName("Glass")
+    .SetTranslucent(true));
+renderer3D->SubmitMesh(pane, transform, glm::vec4(0.6f, 0.8f, 1.0f, 0.35f), glass);
+```
+
+A translucent material (`MaterialParams::Translucent`, any shader, lit or custom) draws in its own
+pass, after every opaque mesh, static and skinned:
+
+- **It writes no depth**, whatever `DepthWrite` says, but it is depth-tested, so an opaque mesh in
+  front still hides it. It blends with the material's `BlendMode` (alpha "over" by default;
+  `BlendMode::Additive` for glows).
+- **Meshes are sorted far to near** by the centre of their transformed vertices: by distance from a
+  perspective camera, along the view for an orthographic one. Meshes at the same distance keep their
+  submission order, so a still scene never flickers. Consecutive meshes of one material share a draw
+  (`Statistics::TranslucentDraws`, of `TranslucentMeshes`); materials that alternate in depth take
+  a draw each.
+- **Skinned meshes join the sort** when their material is translucent, by the centre of their rest
+  bounds; an instance's translucent meshes (a model's submeshes) share the first one's place. A model whose visor is translucent and body opaque draws the body with the opaque meshes and
+  the visor in this pass, uploading its joints for each.
+- **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off); one
+  with `ShadowsOnly` draws nothing lit and batches like an opaque mesh.
+- **Particles** draw after this pass, so they show over glass. With the post chain, ambient occlusion
+  is applied before it, so glass isn't darkened by the corners behind it.
+
+The sort is per mesh, not per triangle. Meshes that intersect, a large mesh around a smaller one
+(a water plane under a boat, say), or the faces of one mesh seen through each other (a closed lit mesh
+draws both faces) can blend in the wrong order. Split large translucent surfaces into pieces, or keep
+them convex and their alpha low.
 
 ## Custom material shaders
 
@@ -455,6 +488,7 @@ and a copy of it is embedded in the engine library at build time.
 - **Budget-edge popping** unless the budget fade is on, described [above](#the-light-budget).
 - **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
   orthographic camera ([Fog](#fog)).
+- **Translucency is sorted per mesh**, not per triangle or pixel ([Translucent materials](#translucent-materials)).
 
 ## Migrating from v0.6
 

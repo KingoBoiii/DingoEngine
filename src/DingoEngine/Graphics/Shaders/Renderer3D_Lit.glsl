@@ -186,7 +186,7 @@ void main()
 		finalColor *= ShadowCascadeTint(v_WorldPosition);
 	if (FogParams.w > 0.5 && CameraPosition.w > 0.5)
 		finalColor = mix(finalColor, FogColor.rgb, FogFactor(distance(CameraPosition.xyz, v_WorldPosition)) * FogColor.a);
-	// Lit draws are unsorted and write depth, so only the mesh colour, never an albedo map, makes
-	// them see-through.
+	// Alpha is the mesh colour's alone, never an albedo map's. Only a translucent material's meshes
+	// are sorted and leave depth unwritten, so blend correctly.
 	o_Color = vec4(finalColor, v_Color.a);
 }

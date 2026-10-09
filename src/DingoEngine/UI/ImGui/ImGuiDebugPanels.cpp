@@ -294,6 +294,7 @@ namespace Dingo::UI
 		ImGui::TextUnformatted("Renderer3D  (most recent scene)");
 		ImGui::Separator();
 		ImGui::Text("Draw calls : %u   (one or more per material)", stats3D.DrawCalls);
+		ImGui::Text("Translucent: %u meshes in %u draws  (sorted far to near, also counted above)", stats3D.TranslucentMeshes, stats3D.TranslucentDraws);
 		ImGui::Text("Meshes     : %u submitted", stats3D.SubmittedMeshes);
 		if (stats3D.DroppedMeshes > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
