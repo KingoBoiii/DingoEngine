@@ -6,6 +6,7 @@
 
 #include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Asset/AssetMetadata.h"
+#include "DingoEngine/Graphics/Model.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -88,6 +89,8 @@ namespace Dingo
 			std::unordered_map<AssetHandle, Texture*> Textures;
 			std::unordered_map<AssetHandle, Shader*> Shaders;
 			std::unordered_map<AssetHandle, Model*> Models;
+			// Only models registered with non-default params.
+			std::unordered_map<AssetHandle, ModelLoadParams> ModelParams;
 			std::unordered_map<AssetHandle, Font*> Fonts;
 			std::unordered_map<AssetHandle, std::shared_ptr<AudioClip>> AudioClips;
 

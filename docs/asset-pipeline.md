@@ -100,7 +100,8 @@ Asset types are inferred from the file extension:
 A model whose meshes have bones loads its skeleton, skin weights and animation
 clips: `Model::IsSkinned()`, `GetSkeleton()`, `GetAnimation(i)` and
 `FindAnimation(name)`. A file with clips but no meshes is a clip library, so
-several characters can share one set of animations. Each skinned `Mesh` keeps its
+several characters can share one set of animations; `Load(path, ModelLoadParams().SetClipsOnly(true))`
+(and `LoadAsync`) loads a library that carries a preview mesh without it. Each skinned `Mesh` keeps its
 rest pose in `GetVertices()`, so physics and `Renderer3D::SubmitMesh` see the
 character standing in that pose. A model without bones loads exactly as before:
 every mesh is pre-transformed into model space, and any clips it has are dropped

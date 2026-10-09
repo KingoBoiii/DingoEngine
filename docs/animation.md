@@ -171,8 +171,17 @@ names can play. Several characters can share one set of animations that way
 ([Retargeting](#retargeting)); keep the library loaded for as long as an animator plays its clips.
 Animation-only Collada and BVH files read as clip libraries too (load them with `LoadFromFile`; the
 AssetManager does not recognise those extensions). A library that also carries a preview mesh (KayKit's
-hold their mannequin) loads that mesh as well; there is no clips-only option yet
-([#100](https://github.com/KingoBoiii/DingoEngine/issues/100)).
+hold their mannequin) loads that mesh as well, unless it is loaded clips only:
+
+```cpp
+Model* library = Model::LoadFromFile("animations/Rig_Medium_General.glb", ModelLoadParams().SetClipsOnly(true));
+AssetHandle handle = assets.Load("animations/Rig_Medium_General.glb", ModelLoadParams().SetClipsOnly(true));
+```
+
+`ClipsOnly` keeps the skeleton (the one a full load builds), the clips and the `.events` sidecar, and
+skips every mesh, material and texture. `Reload` and hot-reload keep the params; the AssetManager keeps
+a model's params with its registration, so a model already loaded with other params keeps them (it
+warns; `Remove` it first). A file without bones fails a clips-only load: it has no clips to keep.
 
 See `examples/Marionette` (`GameAssets`, `Moveset`): five KayKit libraries, one per category of clip,
 serve four characters.

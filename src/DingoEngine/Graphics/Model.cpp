@@ -700,7 +700,8 @@ namespace Dingo
 		}
 	}
 
-	static SkinnedImport ImportSkinned(const aiScene* scene, const std::string& modelName, const std::filesystem::path& modelDir, TextureCache& textureCache)
+	static SkinnedImport ImportSkinned(const aiScene* scene, const std::string& modelName, const std::filesystem::path& modelDir, TextureCache& textureCache,
+	                                   bool loadMeshes)
 	{
 		SkinnedImport out;
 		SkinContext skin;
@@ -738,7 +739,8 @@ namespace Dingo
 			else
 				DE_CORE_WARN("Model '{}': none of its bones or animated nodes is in the node graph; it loads without a skeleton.", modelName);
 
-			TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
+			if (loadMeshes)
+				TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
 			return out;
 		}
 
@@ -831,7 +833,8 @@ namespace Dingo
 		skin.Skel = out.Skel.get();
 
 		out.Clips = ReadAnimations(scene, *out.Skel, modelName);
-		TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
+		if (loadMeshes)
+			TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
 
 		if (skin.Singular)
 			DE_CORE_WARN("Model '{}': a joint or mesh has a transform that can't be inverted (zero scale?); identity is used in its place.", modelName);
@@ -841,10 +844,15 @@ namespace Dingo
 
 	Model* Model::LoadFromFile(const std::filesystem::path& filepath)
 	{
-		return Load(filepath, nullptr);
+		return Load(filepath, ModelLoadParams(), nullptr);
 	}
 
-	Model* Model::Load(const std::filesystem::path& filepath, Model* refresh)
+	Model* Model::LoadFromFile(const std::filesystem::path& filepath, const ModelLoadParams& params)
+	{
+		return Load(filepath, params, nullptr);
+	}
+
+	Model* Model::Load(const std::filesystem::path& filepath, const ModelLoadParams& params, Model* refresh)
 	{
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
@@ -883,11 +891,17 @@ namespace Dingo
 		}
 
 		const std::string modelName = resolvedPath.filename().string();
+		if (params.ClipsOnly && !skinned)
+		{
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones, so it has no clips to load", resolvedPath.string());
+			return nullptr;
+		}
 		if (!skinned && scene->mNumAnimations > 0)
 			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh.", modelName, scene->mNumAnimations);
 
 		Model* model = new Model();
 		model->m_FilePath = std::filesystem::absolute(resolvedPath);
+		model->m_LoadParams = params;
 		// Absolute, so the material textures found beside the model are not resolved a second
 		// time against the asset root by Texture::CreateFromFile.
 		std::filesystem::path modelDir = model->m_FilePath.parent_path();
@@ -900,7 +914,7 @@ namespace Dingo
 		}
 		if (skinned)
 		{
-			SkinnedImport skinnedImport = ImportSkinned(scene, modelName, modelDir, textureCache);
+			SkinnedImport skinnedImport = ImportSkinned(scene, modelName, modelDir, textureCache, !params.ClipsOnly);
 			model->m_Skeleton   = std::move(skinnedImport.Skel);
 			model->m_Animations = std::move(skinnedImport.Clips);
 			model->m_SubMeshes  = std::move(skinnedImport.SubMeshes);
@@ -960,7 +974,7 @@ namespace Dingo
 			return false;
 		}
 
-		std::unique_ptr<Model> fresh(Load(m_FilePath, this));
+		std::unique_ptr<Model> fresh(Load(m_FilePath, m_LoadParams, this));
 		if (!fresh)
 			return false;
 
