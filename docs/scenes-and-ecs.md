@@ -265,8 +265,8 @@ float aim = turret2D.GetWorldRotation2D();      // the hull's rotation + the tur
   `GetWorldRotation2D`/`SetWorldRotation2D` (degrees).
 - **Shear.** A rotated child under a non-uniformly scaled parent is sheared, which position,
   rotation and scale can't express: `GetWorldRotation`/`GetWorldScale` and `keepWorldTransform`
-  approximate it. Where that matters, keep a parent's scale uniform and put its scaled mesh on a
-  child of its own. Under a parent with a zero scale on some axis there is no local position that
+  approximate it, and a `keepWorldTransform` reparent that can only approximate it logs a warning.
+  Where that matters, keep a parent's scale uniform and put its scaled mesh on a child of its own. Under a parent with a zero scale on some axis there is no local position that
   gives a chosen world position, so `keepWorldTransform`, `SetWorldPosition` and the physics
   write-back leave the local transform as it was.
 - **Mixed trees.** 2D and 3D transforms don't convert into each other: a parent counts as identity

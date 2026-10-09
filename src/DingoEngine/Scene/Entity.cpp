@@ -25,6 +25,22 @@ namespace Dingo
 			return false;
 		}
 
+		bool MatchesWorld(const glm::mat4& actual, const glm::mat4& expected)
+		{
+			float extent = 1.0f;
+			for (int column = 0; column < 3; column++)
+				extent = (std::max)(extent, glm::length(glm::vec3(expected[column])));
+
+			for (int column = 0; column < 4; column++)
+			{
+				const float tolerance = column < 3 ? 1e-3f * extent : 1e-3f * (std::max)(1.0f, glm::length(glm::vec3(expected[3])));
+				if (glm::length(glm::vec3(actual[column]) - glm::vec3(expected[column])) > tolerance)
+					return false;
+			}
+
+			return true;
+		}
+
 		void Reparent(entt::registry& registry, entt::entity child, entt::entity parent, std::string_view joint, bool keepWorldTransform)
 		{
 			// Only a 2D entity keeps its 2D world: a 3D entity's TransformComponent is unused and keeps its local values.
@@ -55,7 +71,14 @@ namespace Dingo
 
 			if (Transform3DComponent* local = registry.try_get<Transform3DComponent>(child))
 			{
-				Internal::HierarchySystem::SetLocalFromWorld(*local, Internal::HierarchySystem::ParentWorldTransform(registry, child), world);
+				if (Internal::HierarchySystem::SetLocalFromWorld(*local, Internal::HierarchySystem::ParentWorldTransform(registry, child), world)
+					&& !MatchesWorld(Internal::HierarchySystem::WorldTransform(registry, child), world))
+				{
+					const TagComponent* tag = registry.try_get<TagComponent>(child);
+					DE_CORE_WARN("SetParent/RemoveParent: '{}' can't keep its world transform: it would need a sheared local transform, which "
+						"Transform3DComponent can't hold, so it changes shape (keep the parent's scale uniform, or scale a child of it instead)",
+						tag ? tag->Tag : std::string());
+				}
 				return;
 			}
 
