@@ -354,7 +354,9 @@ delete lamp;
   the mesh colour. Slot 0 is the only slot the lit shader has: a texture or sampler in another slot
   keeps the material from being drawn, with a one-time warning. An empty slot 0 draws white with the clamp sampler.
 - **Transparency** comes from the mesh colour's alpha, never the texture's. A lit draw below
-  alpha 1 blends, but lit draws are not sorted and still write depth.
+  alpha 1 blends, but lit draws are not sorted and still write depth. A material made with
+  `MaterialParams().SetTranslucent(true)` writes no depth, so whatever is drawn after it behind it
+  still shows through; it is still depth-tested, and Renderer3D does not sort it yet.
 - **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you, so
   open meshes and mirrored entities (a negative scale) still show. A custom material can cull; see
   [Winding and culling](scenes-and-ecs.md#winding-and-culling).

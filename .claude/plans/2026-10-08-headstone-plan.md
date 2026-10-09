@@ -101,6 +101,12 @@ Anchors were read on `master` @ `e5f4749` (v0.8.3 merged). One phase per schedul
 
 **Verify**: code review; GPU machine: `--test=batch`, `--test=mesh`, `--test=light` 0 px against master.
 
+**As built** (done; not yet built or run, the changed files pass `g++ -std=c++20 -fsyntax-only`): on top of master's v0.9, which had already given `MaterialParams` `Blend`, `DepthTest`, `DepthWrite`, `DepthFunction` and the depth bias, and `DrawIndexed` an `instanceCount`. So:
+- `MaterialParams::Translucent` / `SetTranslucent`, `Material::IsTranslucent()`. `GetOrCreateRenderPass` builds `DepthWrite && !Translucent`; `DepthWrite` itself is left as set. It blends with the material's `Blend`, so `Translucent` + `BlendMode::Additive` works too. The skinned twin copies it with the params; the shadow materials ignore it (a translucent mesh still casts a full shadow, as before).
+- `firstIndex` is a trailing parameter after `instanceCount` (`CommandList::DrawIndexed`, `Renderer::DrawIndexed(RenderPass*, ...)` and `(Material*, ...)`), not a separate overload; the `Pipeline*` overload, which has no `instanceCount`, is unchanged. `ResolveIndexCount` returns the indices from `firstIndex` on (0 past the end), identical to before at `firstIndex = 0`. An explicit range past the end of the buffer is not checked, as a too-large count never was; Phase 5 computes its ranges from its own arenas.
+- Mesh 3D Test (`--test=mesh`) start-up checks, read back from 16x16 targets in the first drawn frame: a ranged draw from index 18 (count 6 and count 0) draws only the last quad; an opaque near quad hides a far one drawn after it; a translucent near quad doesn't; a translucent far quad is still hidden by an opaque near one; plus a CPU check that `SetTranslucent` leaves `DepthWrite` alone.
+- Docs: the transparency bullet in `docs/lighting.md`, CLAUDE.md's lit-materials and render-target notes.
+
 ## Phase 5 — translucent materials, part 2: the sorted pass (#91)
 
 **Facts**

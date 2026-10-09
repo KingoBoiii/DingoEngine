@@ -18,16 +18,17 @@ namespace Dingo
 
 	namespace
 	{
-		// Resolves the "whole buffer" default. The stride has to come from the buffer's own
+		// Resolves the "rest of the buffer" default. The stride has to come from the buffer's own
 		// format: assuming uint16 on a uint32 index buffer asks for twice the indices that
 		// exist. Unknown falls back to uint16, which is what CreateIndexBuffer defaults to.
-		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount)
+		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t firstIndex = 0)
 		{
 			if (indexCount != 0)
 				return indexCount;
 
 			const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
-			return static_cast<uint32_t>(indexBuffer->GetByteSize() / stride);
+			const uint64_t total = indexBuffer->GetByteSize() / stride;
+			return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
 		}
 	}
 
@@ -548,12 +549,12 @@ namespace Dingo
 	***		DRAW — explicit RenderPass				***
 	**************************************************/
 
-	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount)
+	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		if (s_Data->FrameSkipped)
 			return;
 
-		indexCount = ResolveIndexCount(indexBuffer, indexCount);
+		indexCount = ResolveIndexCount(indexBuffer, indexCount, firstIndex);
 
 		Framebuffer* target = GetCurrentTarget();
 		if (!s_Data->CommandList->SetRenderPass(renderPass))
@@ -562,7 +563,7 @@ namespace Dingo
 		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, instanceCount);
+		s_Data->CommandList->DrawIndexed(indexCount, instanceCount, firstIndex);
 	}
 
 	void Renderer::Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount)
@@ -596,12 +597,12 @@ namespace Dingo
 		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
 	}
 
-	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount)
+	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		if (s_Data->FrameSkipped)
 			return;
 
-		indexCount = ResolveIndexCount(indexBuffer, indexCount);
+		indexCount = ResolveIndexCount(indexBuffer, indexCount, firstIndex);
 
 		Framebuffer* target = GetCurrentTarget();
 		if (!PrepareMaterial(material, layout, target))
@@ -610,7 +611,7 @@ namespace Dingo
 		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, instanceCount);
+		s_Data->CommandList->DrawIndexed(indexCount, instanceCount, firstIndex);
 	}
 
 	void Renderer::Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount)
