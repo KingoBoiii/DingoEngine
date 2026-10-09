@@ -722,6 +722,7 @@ namespace Dingo
 			params.Height = cc.Height;
 			params.StepHeight = cc.StepHeight;
 			params.MaxSlopeAngle = cc.MaxSlopeAngle;
+			params.CollideWithCharacters = cc.CollideWithCharacters;
 			const Transform3DComponent& transform = registry.get<Transform3DComponent>(handle);
 			if (memo)
 				memo->Pose(handle, transform, params.Position, params.Rotation, scale);

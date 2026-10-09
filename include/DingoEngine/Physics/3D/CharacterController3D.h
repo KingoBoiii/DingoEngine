@@ -21,6 +21,9 @@ namespace Dingo
 		float MaxSlopeAngle = 45.0f; // steepest walkable slope, degrees
 		float StepHeight = 0.3f;     // max step-up height for stairs (Jolt walk-stairs)
 		float Mass = 70.0f;          // used to push dynamic bodies the character stands on
+		// Blocks, and is blocked by, the world's other controllers that set it: two characters
+		// can't walk through each other. Neither pushes the other; each stops at the other's capsule.
+		bool CollideWithCharacters = true;
 
 		glm::vec3 Up{ 0.0f, 1.0f, 0.0f }; // world up axis
 

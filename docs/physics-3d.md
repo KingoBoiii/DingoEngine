@@ -199,6 +199,14 @@ destroyed at runtime all take effect on the next step; until the first step afte
 nothing is ignored yet. The scene owns these pairs: calling `IgnoreCollision` on one by hand is
 undone on the next step.
 
+## Character controllers and each other
+
+Two character controllers block each other: neither walks through the other, and neither shoves the
+other aside, each stops at the other's capsule. `CharacterControllerParams3D::CollideWithCharacters`
+(and `CharacterController3DComponent::CollideWithCharacters`) is on by default; a controller that
+turns it off neither blocks nor is blocked by the others. A controller is still not a body, so ray,
+shape and overlap queries don't find it.
+
 ## Architecture
 
 `Physics3D` (`include/DingoEngine/Physics/3D/Physics3D.h`) is a backend-agnostic interface —

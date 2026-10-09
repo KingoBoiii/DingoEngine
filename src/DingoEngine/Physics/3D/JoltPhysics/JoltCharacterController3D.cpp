@@ -55,12 +55,18 @@ namespace Dingo::Internal
 		settings.mSupportingVolume = JPH::Plane(m_Up, -radius);
 
 		m_Character = new JPH::CharacterVirtual(&settings, ToJolt(params.Position), ToJolt(params.Rotation), &m_World->PhysicsSystem);
+		if (params.CollideWithCharacters)
+		{
+			m_World->CharacterCollision.Add(m_Character.GetPtr());
+			m_Character->SetCharacterVsCharacterCollision(&m_World->CharacterCollision);
+		}
 	}
 
 	JoltCharacterController3D::~JoltCharacterController3D()
 	{
 		// JPH::Ref releases the CharacterVirtual; it is not registered with the
-		// PhysicsSystem so nothing else needs unwinding.
+		// PhysicsSystem, only with the world's character set.
+		m_World->CharacterCollision.Remove(m_Character.GetPtr());
 		m_Character = nullptr;
 	}
 

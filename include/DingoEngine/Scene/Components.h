@@ -577,6 +577,7 @@ namespace Dingo
 		float Height = 1.8f;         // full standing height
 		float StepHeight = 0.3f;     // max stair step-up height
 		float MaxSlopeAngle = 45.0f; // steepest walkable slope, degrees
+		bool CollideWithCharacters = true; // blocks and is blocked by the other controllers that set it
 
 		CharacterController3DComponent() = default;
 		CharacterController3DComponent(const CharacterController3DComponent&) = default;
