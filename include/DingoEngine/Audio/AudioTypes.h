@@ -18,6 +18,14 @@ namespace Dingo
 	using AudioSoundId = std::uint32_t;
 	inline constexpr AudioSoundId k_InvalidSound = 0xFFFFFFFFu;
 
+	// Handle to a mix bus (AudioEngine::CreateBus), packed like AudioSoundId, so a
+	// destroyed bus's id goes stale. A strong type: a plain integer would make the
+	// PlayOneShot bus overloads ambiguous with the float-volume ones. k_MasterBus is the
+	// engine's root bus, always valid while the engine is.
+	enum class AudioBusId : std::uint32_t {};
+	inline constexpr AudioBusId k_MasterBus{ 0u };
+	inline constexpr AudioBusId k_InvalidBus{ 0xFFFFFFFFu };
+
 	enum class AudioAttenuationModel : std::uint8_t
 	{
 		None,        // no distance falloff; still panned from Position
@@ -52,6 +60,9 @@ namespace Dingo
 		// Per-sound attenuation override; nullopt = use the engine's current default
 		// (AudioEngine::GetDefaultAttenuation). Ignored when Spatialized is false.
 		std::optional<SoundAttenuation> Attenuation;
+
+		// The bus the sound mixes into. A stale bus plays on k_MasterBus (warned once).
+		AudioBusId Bus = k_MasterBus;
 
 		SoundPlayParams() = default;
 	};

@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <string_view>
 
 namespace Dingo
 {
@@ -86,6 +87,9 @@ namespace Dingo
 		virtual void PlayOneShot(const std::shared_ptr<AudioClip>& clip, float volume = 1.0f) = 0;
 		// Spatialized fire-and-forget one-shot at a world position.
 		virtual void PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume = 1.0f) = 0;
+		// The same, mixed into a bus.
+		virtual void PlayOneShot(const std::shared_ptr<AudioClip>& clip, AudioBusId bus, float volume = 1.0f) = 0;
+		virtual void PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, AudioBusId bus, float volume = 1.0f) = 0;
 
 		// --- Per-sound control (no-ops on an invalid / stale handle) ----------
 
@@ -100,6 +104,39 @@ namespace Dingo
 		virtual void SetPosition(AudioSoundId sound, const glm::vec3& position) = 0;
 		// Re-attenuates a live sound; no-op on an invalid / stale handle, same as above.
 		virtual void SetAttenuation(AudioSoundId sound, const SoundAttenuation& attenuation) = 0;
+
+		// --- Buses --------------------------------------------------------------
+
+		// A bus mixes the sounds routed to it (SoundPlayParams::Bus) and its sub-buses,
+		// then feeds its parent; k_MasterBus feeds the output. Its volume, mute and pause
+		// reach every sound under it, already playing or not. Names are unique: creating
+		// one that exists returns the existing bus (warned). Returns k_InvalidBus for an
+		// empty name or a stale parent. Every call below is a no-op (getters: 0 / false)
+		// on a stale id.
+		virtual AudioBusId CreateBus(std::string_view name, AudioBusId parent = k_MasterBus) = 0;
+		// Stops every sound on the bus and destroys its sub-buses with it. k_MasterBus
+		// can't be destroyed.
+		virtual void DestroyBus(AudioBusId bus) = 0;
+		// k_InvalidBus when no live bus has that name. The master bus is "Master".
+		virtual AudioBusId FindBus(std::string_view name) const = 0;
+		virtual bool IsBusValid(AudioBusId bus) const = 0;
+		// Live buses, not counting the master bus.
+		virtual std::uint32_t GetBusCount() const = 0;
+
+		// Linear gain. On k_MasterBus this is SetMasterVolume.
+		virtual void SetBusVolume(AudioBusId bus, float volume) = 0;
+		virtual float GetBusVolume(AudioBusId bus) const = 0;
+		// Silences the bus without touching its volume, so unmuting restores the level.
+		virtual void SetBusMuted(AudioBusId bus, bool muted) = 0;
+		virtual bool IsBusMuted(AudioBusId bus) const = 0;
+		// Freezes every sound under the bus where it is. Its sounds still report
+		// IsPlaying, a sound started on a paused bus waits for ResumeBus, and finished
+		// one-shots are reaped only after it.
+		virtual void PauseBus(AudioBusId bus) = 0;
+		virtual void ResumeBus(AudioBusId bus) = 0;
+		virtual bool IsBusPaused(AudioBusId bus) const = 0;
+		// Stops every sound on the bus and its sub-buses; the buses stay.
+		virtual void StopBus(AudioBusId bus) = 0;
 
 		// --- Global -----------------------------------------------------------
 

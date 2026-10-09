@@ -250,7 +250,7 @@ namespace Dingo
 		m_CommandListHandle->draw(drawArguments);
 	}
 
-	void NvrhiCommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount)
+	void NvrhiCommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before drawing.");
 
@@ -263,7 +263,8 @@ namespace Dingo
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
 			.setVertexCount(indexCount) // Number of vertices to draw
-			.setInstanceCount(instanceCount); // Number of instances to draw
+			.setInstanceCount(instanceCount) // Number of instances to draw
+			.setStartIndexLocation(firstIndex);
 
 		m_CommandListHandle->drawIndexed(drawArguments);
 	}

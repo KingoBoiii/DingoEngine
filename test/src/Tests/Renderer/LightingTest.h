@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,7 +27,9 @@ namespace Dingo
 	// --bloom adds the default bloom (the materials mode's lamp glows) and --ao the default ambient
 	// occlusion (the pillars' feet darken). --budget-fade[=band] fades the
 	// overbudget mode's lights at the budget's edge (Renderer3DCapabilities::LightBudgetFade, 0.5 by
-	// default) instead of cutting them.
+	// default) instead of cutting them. --fog (or the Fog checkbox) fogs every mode linearly into the
+	// clear colour, through Renderer3D::SetFog or, with entities, a FogComponent; its checks render a
+	// black wall into a small target under a white fog and read back the fog factor.
 	class LightingTest : public GraphicsTest
 	{
 	public:
@@ -68,8 +71,12 @@ namespace Dingo
 		void BuildLightEntities(const Lighting& lighting);
 		void UpdateLightEntities(const Lighting& lighting);
 
+		Fog DescribeFog() const;
+		void ReadFogProbe(Framebuffer* target, const glm::vec3& expected, const std::string& name);
+
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void BuildCheckSteps();
+		void BuildFogCheckSteps();
 		void RunNextCheckStep();
 
 	private:
@@ -81,6 +88,8 @@ namespace Dingo
 		float m_BudgetFade = 0.0f;
 		bool m_AmbientOcclusion = false; // --ao: the default ambient occlusion, which implies --post  // --budget-fade: the app renderer's LightBudgetFade while the test runs
 		float m_Time = 0.0f;
+		bool m_Fog = false; // --fog
+		Entity m_FogEntity;
 
 		static constexpr int k_RoughnessSteps = 5;
 		Material* m_RowMaterials[k_RoughnessSteps] = {};
@@ -103,6 +112,8 @@ namespace Dingo
 		size_t m_NextCheckStep = 0;
 		Renderer3D* m_CheckRenderer = nullptr;
 		Renderer3D* m_BudgetCheckRenderer = nullptr;
+		std::vector<Framebuffer*> m_FogTargets;
+		std::shared_ptr<int> m_Alive;
 	};
 
 }

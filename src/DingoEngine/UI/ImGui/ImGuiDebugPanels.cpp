@@ -294,6 +294,7 @@ namespace Dingo::UI
 		ImGui::TextUnformatted("Renderer3D  (most recent scene)");
 		ImGui::Separator();
 		ImGui::Text("Draw calls : %u   (one or more per material)", stats3D.DrawCalls);
+		ImGui::Text("Translucent: %u meshes in %u draws  (sorted far to near, also counted above)", stats3D.TranslucentMeshes, stats3D.TranslucentDraws);
 		ImGui::Text("Meshes     : %u submitted", stats3D.SubmittedMeshes);
 		if (stats3D.DroppedMeshes > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
@@ -318,6 +319,7 @@ namespace Dingo::UI
 			ImGui::Text("Dropped    : 0");
 		if (caps3D.LightBudgetFade > 0.0f)
 			ImGui::Text("Faded      : %u  (budget fade band %.2f)", stats3D.FadedLights, caps3D.LightBudgetFade);
+		ImGui::Text("Fog        : %s", stats3D.Fogged ? "on" : "off");
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");
@@ -452,11 +454,15 @@ namespace Dingo::UI
 
 	void WindowInfoSection()
 	{
-		const Window& window = Application::Get().GetWindow();
+		Window& window = Application::Get().GetWindow();
 
 		ImGui::TextUnformatted("Window");
 		ImGui::Separator();
 		ImGui::Text("Size : %d x %d", window.GetWidth(), window.GetHeight());
+
+		bool vsync = window.IsVSync();
+		if (ImGui::Checkbox("VSync", &vsync))
+			window.SetVSync(vsync);
 	}
 
 	void FrameTimingSection()
@@ -475,6 +481,7 @@ namespace Dingo::UI
 		ImGui::Text("Status        : %s", audio.IsValid() ? "Valid" : "Invalid");
 		ImGui::Text("Master volume : %.2f", audio.GetMasterVolume());
 		ImGui::Text("Active sounds : %u", audio.GetActiveSoundCount());
+		ImGui::Text("Buses         : %u", audio.GetBusCount());
 	}
 
 	void EngineStatsWindow(bool* open)

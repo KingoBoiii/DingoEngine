@@ -69,6 +69,14 @@ namespace Dingo
 		virtual void QueueImageWait() {}
 		virtual void Present() = 0;
 
+		// Only where a resize may run: the render thread after Present, or the main thread while
+		// that thread is parked. Renderer::QueueVSync gets there from anywhere. D3D reads the flag
+		// on every Present; Vulkan bakes it into the present mode, so it recreates the swap chain.
+		virtual void SetVSync(bool vsync) { m_Params.VSync = vsync; }
+		// Renderer only: stores the flag without recreating anything, for a Resize that follows at
+		// once. Read the setting through Window::IsVSync(); this flag belongs to the render thread.
+		void SetVSyncFlag(bool vsync) { m_Params.VSync = vsync; }
+
 		Framebuffer* GetFramebuffer(uint32_t index) const;
 		virtual Framebuffer* GetCurrentFramebuffer() const = 0;
 		virtual uint32_t GetCurrentBackBufferIndex() const = 0;

@@ -84,6 +84,11 @@ namespace Dingo
 		void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
 		bool IsFullscreen() const;
 
+		// Safe from event handlers; the swap chain takes it after the next present (Vulkan
+		// recreates it, as a resize does). A restart goes back to WindowParams::VSync.
+		void SetVSync(bool vsync);
+		bool IsVSync() const { return m_Params.VSync; }
+
 		bool IsFocused() const;
 
 		int32_t GetWidth() const { return m_Data.Width; }

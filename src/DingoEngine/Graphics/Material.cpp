@@ -245,7 +245,7 @@ namespace Dingo
 			.SetFillMode(m_Params.FillMode)
 			.SetBlendMode(m_Params.Blend)
 			.SetDepthTest(m_Params.DepthTest)
-			.SetDepthWrite(m_Params.DepthWrite)
+			.SetDepthWrite(m_Params.DepthWrite && !m_Params.Translucent)
 			.SetDepthCompare(m_Params.DepthFunction)
 			.SetDepthBias(m_Params.DepthBias, m_Params.SlopeScaledDepthBias));
 
