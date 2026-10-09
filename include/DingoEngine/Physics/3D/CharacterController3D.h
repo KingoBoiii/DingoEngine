@@ -95,6 +95,10 @@ namespace Dingo
 		// step. No-op on an invalid/stale handle.
 		virtual void IgnoreBody(PhysicsBodyId3D body, bool ignore = true) = 0;
 		virtual bool IsBodyIgnored(PhysicsBodyId3D body) const = 0;
+
+		// True while the capsule overlaps the body: what a sensor asks of a character, which is
+		// never a body itself. False on an invalid/stale handle.
+		virtual bool IsOverlapping(PhysicsBodyId3D body) const = 0;
 	};
 
 }

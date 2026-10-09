@@ -491,6 +491,10 @@ namespace Dingo
 		// See RigidBodyParams3D::ContinuousCollision: turn on for fast bodies that must not
 		// tunnel through MeshCollider3DComponent geometry.
 		bool ContinuousCollision = false;
+		// See RigidBodyParams3D: a trigger volume (Scene::GetSensorOverlaps lists what is inside),
+		// and the query layers QueryFilter3D tests.
+		bool IsSensor = false;
+		std::uint32_t QueryLayers = 1u;
 
 		RigidBody3DComponent() = default;
 		RigidBody3DComponent(const RigidBody3DComponent&) = default;

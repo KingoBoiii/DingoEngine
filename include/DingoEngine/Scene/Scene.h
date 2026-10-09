@@ -253,6 +253,13 @@ namespace Dingo
 		// hits, MoveKinematic, IsBodyValid). 0 / k_InvalidBody3D while it has no live body.
 		PhysicsBodyId2D GetRuntimeBody2D(Entity entity) const;
 		PhysicsBodyId3D GetRuntimeBody3D(Entity entity) const;
+		// The entity a live 3D body belongs to (a RayCastHit3D's Body), or a null Entity for a body
+		// the scene didn't make or one already destroyed. The scene keeps the entity in the body's
+		// UserData: don't SetUserData on a scene's body.
+		Entity GetEntityFromBody3D(PhysicsBodyId3D body);
+		// The entities inside a sensor entity's body (RigidBody3DComponent::IsSensor): those with a
+		// body, then those with a character controller. `out` is cleared first; false when empty.
+		bool GetSensorOverlaps(Entity sensor, std::vector<Entity>& out);
 
 		// Instantiates a simulation body for a single entity created after
 		// OnPhysicsStart (e.g. a projectile or enemy spawned at runtime). Routes to

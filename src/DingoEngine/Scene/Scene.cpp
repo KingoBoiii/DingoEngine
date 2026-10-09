@@ -703,6 +703,25 @@ namespace Dingo
 		return m_Data->Physics.RuntimeBody3D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
 
+	Entity Scene::GetEntityFromBody3D(PhysicsBodyId3D body)
+	{
+		const entt::entity handle = m_Data->Physics.EntityOfBody3D(m_Data->Registry, body);
+		return handle == entt::null ? Entity() : Wrap(static_cast<std::uint32_t>(handle));
+	}
+
+	bool Scene::GetSensorOverlaps(Entity sensor, std::vector<Entity>& out)
+	{
+		out.clear();
+		if (!IsValid(sensor))
+			return false;
+
+		std::vector<entt::entity> handles;
+		m_Data->Physics.SensorOverlaps3D(m_Data->Registry, static_cast<entt::entity>(sensor.m_Handle), handles);
+		for (const entt::entity handle : handles)
+			out.push_back(Wrap(static_cast<std::uint32_t>(handle)));
+		return !out.empty();
+	}
+
 	void Scene::SetLinearVelocity(Entity entity, const glm::vec2& velocity)
 	{
 		if (Physics2D* physics = m_Data->Physics.Get2D())

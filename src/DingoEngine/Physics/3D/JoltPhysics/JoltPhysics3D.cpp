@@ -22,10 +22,12 @@
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 
@@ -72,6 +74,42 @@ namespace Dingo
 		}
 
 		inline JPH::BodyID ToBodyId(PhysicsBodyId3D body) { return JPH::BodyID(body); }
+
+		// A body's Jolt user data: the query layers in the high half, the caller's UserData in the low.
+		inline JPH::uint64 PackUserData(std::uint32_t queryLayers, std::uint32_t userData)
+		{
+			return (static_cast<JPH::uint64>(queryLayers) << 32) | userData;
+		}
+
+		inline std::uint32_t QueryLayersOf(const JPH::Body& body) { return static_cast<std::uint32_t>(body.GetUserData() >> 32); }
+
+		class QueryBodyFilter final : public JPH::BodyFilter
+		{
+		public:
+			QueryBodyFilter(const QueryFilter3D& filter, JPH::BodyID exclude = JPH::BodyID())
+				: m_Filter(filter), m_Exclude(exclude)
+			{
+			}
+
+			virtual bool ShouldCollide(const JPH::BodyID& inBodyID) const override
+			{
+				if (inBodyID == m_Exclude)
+					return false;
+				const PhysicsBodyId3D id = inBodyID.GetIndexAndSequenceNumber();
+				return std::find(m_Filter.IgnoredBodies.begin(), m_Filter.IgnoredBodies.end(), id) == m_Filter.IgnoredBodies.end();
+			}
+
+			virtual bool ShouldCollideLocked(const JPH::Body& inBody) const override
+			{
+				if (inBody.IsSensor() && !m_Filter.IncludeSensors)
+					return false;
+				return (QueryLayersOf(inBody) & m_Filter.Layers) != 0;
+			}
+
+		private:
+			const QueryFilter3D& m_Filter;
+			JPH::BodyID m_Exclude;
+		};
 
 		// Jolt's allocator/factory/type registration is process-global; ref-count it
 		// across worlds so it's set up on the first world and torn down with the last.
@@ -286,6 +324,8 @@ namespace Dingo
 		settings.mFriction = params.Friction;
 		settings.mRestitution = params.Restitution;
 		settings.mMotionQuality = params.ContinuousCollision ? JPH::EMotionQuality::LinearCast : JPH::EMotionQuality::Discrete;
+		settings.mIsSensor = params.IsSensor;
+		settings.mUserData = PackUserData(params.QueryLayers, params.UserData);
 
 		// A triangle mesh or a flat hull has no volume to derive mass from. A kinematic
 		// body's mass never reaches the solver, so any valid value satisfies Jolt; a
@@ -523,7 +563,7 @@ namespace Dingo
 		return ToGlm(m_Data->PhysicsSystem.GetBodyInterface().GetAngularVelocity(ToBodyId(body)));
 	}
 
-	bool JoltPhysics3D::RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit) const
+	bool JoltPhysics3D::RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit, const QueryFilter3D& filter) const
 	{
 		if (!m_Data || maxDistance <= 0.0f)
 			return false;
@@ -533,7 +573,8 @@ namespace Dingo
 		const JPH::RRayCast joltRay(JPH::RVec3(ray.Origin.x, ray.Origin.y, ray.Origin.z), ToJolt(ray.Direction * maxDistance));
 
 		JPH::RayCastResult hit;
-		if (!m_Data->PhysicsSystem.GetNarrowPhaseQuery().CastRay(joltRay, hit))
+		const QueryBodyFilter bodyFilter(filter);
+		if (!m_Data->PhysicsSystem.GetNarrowPhaseQuery().CastRay(joltRay, hit, {}, {}, bodyFilter))
 			return false;
 
 		const glm::vec3 point = ToGlm(joltRay.GetPointOnRay(hit.mFraction));
@@ -553,7 +594,8 @@ namespace Dingo
 		return true;
 	}
 
-	bool JoltPhysics3D::ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit) const
+	bool JoltPhysics3D::ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit,
+		const QueryFilter3D& filter) const
 	{
 		if (!m_Data || radius <= 0.0f || maxDistance <= 0.0f)
 			return false;
@@ -567,7 +609,8 @@ namespace Dingo
 		JPH::ShapeCastSettings settings;
 		JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
 		// Return hits relative to world origin (base offset zero) so contact points are world-space.
-		m_Data->PhysicsSystem.GetNarrowPhaseQuery().CastShape(shapeCast, settings, JPH::RVec3::sZero(), collector);
+		const QueryBodyFilter bodyFilter(filter);
+		m_Data->PhysicsSystem.GetNarrowPhaseQuery().CastShape(shapeCast, settings, JPH::RVec3::sZero(), collector, {}, {}, bodyFilter);
 		if (!collector.HadHit())
 			return false;
 
@@ -578,7 +621,7 @@ namespace Dingo
 		return true;
 	}
 
-	bool JoltPhysics3D::OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out) const
+	bool JoltPhysics3D::OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out, const QueryFilter3D& filter) const
 	{
 		out.clear();
 		if (!m_Data || radius <= 0.0f)
@@ -590,12 +633,73 @@ namespace Dingo
 
 		JPH::CollideShapeSettings settings;
 		JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
-		m_Data->PhysicsSystem.GetNarrowPhaseQuery().CollideShape(&sphere, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector);
+		const QueryBodyFilter bodyFilter(filter);
+		m_Data->PhysicsSystem.GetNarrowPhaseQuery().CollideShape(&sphere, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector, {}, {}, bodyFilter);
 
 		for (const JPH::CollideShapeResult& hit : collector.mHits)
 			out.push_back(hit.mBodyID2.GetIndexAndSequenceNumber());
 
 		return !out.empty();
+	}
+
+	bool JoltPhysics3D::GetSensorOverlaps(PhysicsBodyId3D sensor, std::vector<PhysicsBodyId3D>& out) const
+	{
+		out.clear();
+		if (!m_Data || sensor == k_InvalidBody3D)
+			return false;
+
+		// Copied out of the lock: the query below locks bodies itself.
+		JPH::RefConst<JPH::Shape> shape;
+		JPH::RMat44 transform;
+		{
+			JPH::BodyLockRead lock(m_Data->PhysicsSystem.GetBodyLockInterface(), ToBodyId(sensor));
+			if (!lock.Succeeded() || !lock.GetBody().IsSensor())
+				return false;
+			shape = lock.GetBody().GetShape();
+			transform = lock.GetBody().GetCenterOfMassTransform();
+		}
+
+		const QueryFilter3D filter;
+		const QueryBodyFilter bodyFilter(filter, ToBodyId(sensor));
+		JPH::CollideShapeSettings settings;
+		JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
+		m_Data->PhysicsSystem.GetNarrowPhaseQuery().CollideShape(shape.GetPtr(), JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector, {}, {}, bodyFilter);
+
+		for (const JPH::CollideShapeResult& hit : collector.mHits)
+		{
+			const PhysicsBodyId3D body = hit.mBodyID2.GetIndexAndSequenceNumber();
+			if (std::find(out.begin(), out.end(), body) == out.end())
+				out.push_back(body);
+		}
+		return !out.empty();
+	}
+
+	bool JoltPhysics3D::IsSensor(PhysicsBodyId3D body) const
+	{
+		if (!m_Data || body == k_InvalidBody3D)
+			return false;
+
+		JPH::BodyLockRead lock(m_Data->PhysicsSystem.GetBodyLockInterface(), ToBodyId(body));
+		return lock.Succeeded() && lock.GetBody().IsSensor();
+	}
+
+	std::uint32_t JoltPhysics3D::GetUserData(PhysicsBodyId3D body) const
+	{
+		if (!m_Data || body == k_InvalidBody3D)
+			return 0;
+
+		JPH::BodyLockRead lock(m_Data->PhysicsSystem.GetBodyLockInterface(), ToBodyId(body));
+		return lock.Succeeded() ? static_cast<std::uint32_t>(lock.GetBody().GetUserData()) : 0;
+	}
+
+	void JoltPhysics3D::SetUserData(PhysicsBodyId3D body, std::uint32_t userData)
+	{
+		if (!m_Data || body == k_InvalidBody3D)
+			return;
+
+		JPH::BodyLockWrite lock(m_Data->PhysicsSystem.GetBodyLockInterface(), ToBodyId(body));
+		if (lock.Succeeded())
+			lock.GetBody().SetUserData(PackUserData(QueryLayersOf(lock.GetBody()), userData));
 	}
 
 	std::unique_ptr<CharacterController3D> JoltPhysics3D::CreateCharacterController(const CharacterControllerParams3D& params)

@@ -183,7 +183,7 @@ controller->IsBodyIgnored(shieldId);             // true
 ```
 
 - Only contacts are affected: `RayCast`, `ShapeCastSphere` and `OverlapSphere` still report both
-  bodies.
+  bodies (a `QueryFilter3D` can leave one out).
 - A pair is dropped when either body is destroyed. Changing one wakes both bodies, so it holds from
   the next `Step` even if they were asleep.
 - Both are no-ops on an invalid or stale handle, like the other per-body calls.
@@ -198,6 +198,43 @@ the pairs out at the start of every physics step, so reparenting, `RemoveParent`
 destroyed at runtime all take effect on the next step; until the first step after `OnStart`
 nothing is ignored yet. The scene owns these pairs: calling `IgnoreCollision` on one by hand is
 undone on the next step.
+
+## Sensors, query filters and body lookup
+
+A **sensor** is a trigger volume: `RigidBodyParams3D::IsSensor` (or `RigidBody3DComponent::IsSensor`).
+Nothing collides with it and character controllers walk through it. Ask what is inside:
+
+```cpp
+std::vector<PhysicsBodyId3D> bodies;
+world->GetSensorOverlaps(sensorId, bodies);     // every non-sensor body touching it, once each
+controller->IsOverlapping(sensorId);            // a character is not a body, so ask it directly
+
+std::vector<Entity> inside;
+scene->GetSensorOverlaps(triggerEntity, inside); // both: entities with a body, then with a controller
+```
+
+It is a query, not an event: call it when you need to know (each frame, for a door that opens while
+someone stands in it). A Mesh-shaped sensor doesn't find Mesh colliders, and finds only what crosses its surface: a body
+wholly inside a closed Mesh sensor isn't listed, so give a volume a box, sphere, capsule or convex
+hull shape.
+
+**Query filters.** `RayCast`, `ShapeCastSphere` and `OverlapSphere` take a `QueryFilter3D`:
+
+```cpp
+QueryFilter3D filter = QueryFilter3D().Ignore(shooterBody).SetLayers(LAYER_WORLD | LAYER_ENEMY);
+world->RayCast(ray, 50.0f, hit, filter);
+```
+
+- Every query skips sensors unless the filter `SetIncludeSensors(true)`; the overloads without a
+  filter use the defaults. No body could be a sensor before, so existing calls behave as they did.
+- `RigidBodyParams3D::QueryLayers` (and the component's) is a bit mask of the layers a body is in,
+  `1` by default. A query hits a body when `filter.Layers & body.QueryLayers` isn't zero. Layers
+  filter queries only; contacts don't read them.
+
+**Body to entity.** `Scene::GetEntityFromBody3D(hit.Body)` gives back the entity of a ray hit, or a
+null `Entity` for a body the scene didn't make or one already destroyed. The scene keeps the entity
+in the body's `UserData` (`RigidBodyParams3D::UserData`, `Physics3D::GetUserData/SetUserData`), so
+leave a scene body's user data alone.
 
 ## Character controllers and each other
 

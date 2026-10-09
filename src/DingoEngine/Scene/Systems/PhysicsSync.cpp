@@ -556,6 +556,43 @@ namespace Dingo
 			return runtime ? runtime->Body : k_InvalidBody3D;
 		}
 
+		entt::entity PhysicsSync::EntityOfBody3D(const entt::registry& registry, PhysicsBodyId3D body) const
+		{
+			if (!m_Physics3D || !m_Physics3D->IsBodyValid(body))
+				return entt::null;
+
+			const entt::entity handle = static_cast<entt::entity>(m_Physics3D->GetUserData(body));
+			return RuntimeBody3D(registry, handle) == body ? handle : entt::null;
+		}
+
+		void PhysicsSync::SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const
+		{
+			out.clear();
+			const PhysicsBodyId3D sensorBody = RuntimeBody3D(registry, sensor);
+			if (!m_Physics3D || sensorBody == k_InvalidBody3D)
+				return;
+
+			std::vector<PhysicsBodyId3D> bodies;
+			m_Physics3D->GetSensorOverlaps(sensorBody, bodies);
+			for (const PhysicsBodyId3D body : bodies)
+			{
+				const entt::entity handle = EntityOfBody3D(registry, body);
+				if (handle != entt::null)
+					out.push_back(handle);
+			}
+
+			if (!m_Physics3D->IsSensor(sensorBody))
+				return;
+
+			auto view = registry.view<CharacterController3DRuntime>();
+			for (const entt::entity handle : view)
+			{
+				const CharacterController3D* controller = m_Controllers[view.get<CharacterController3DRuntime>(handle).Index].get();
+				if (controller && controller->IsOverlapping(sensorBody))
+					out.push_back(handle);
+			}
+		}
+
 		void PhysicsSync::CreateBody2D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo)
 		{
 			if (!m_Physics2D || !m_Physics2D->IsValid())
@@ -643,6 +680,9 @@ namespace Dingo
 				HierarchySystem::WorldPose(registry, handle, transform, params.Position, params.Rotation, scale);
 			params.Type = rigidBody.Type;
 			params.ContinuousCollision = rigidBody.ContinuousCollision;
+			params.IsSensor = rigidBody.IsSensor;
+			params.QueryLayers = rigidBody.QueryLayers;
+			params.UserData = static_cast<std::uint32_t>(handle);
 
 			// The collider shape is baked into the body at creation. Collider sizes are
 			// fractions of the entity's full extent (its world scale), so a unit-scaled
