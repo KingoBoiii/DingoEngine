@@ -38,7 +38,7 @@ namespace Dingo
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) override;
 
 		virtual void Draw(uint32_t vertexCount, uint32_t instanceCount = 1) override;
-		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1) override;
+		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0) override;
 
 		virtual bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1) override;
 

@@ -237,6 +237,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_ResizeCopy = MakeColorTarget("RenderTargetTest resize copy", TextureFormat::RGBA8_UNORM, 16, 16);
 		m_ViewportTarget = MakeColorTarget("RenderTargetTest viewport", TextureFormat::RGBA8_UNORM, 16, 16);
 		m_BlendTarget = MakeColorTarget("RenderTargetTest blend", TextureFormat::RGBA16F, 4, 4);
+		m_Batch2DTarget = MakeColorTarget("RenderTargetTest 2D batches", TextureFormat::RGBA16F, 16, 16);
 
 		m_FillShader = Shader::CreateFromSource("RenderTargetTestFill", k_FillShaderSource);
 		m_SampleShader = Shader::CreateFromSource("RenderTargetTestSample", k_SampleShaderSource);
@@ -418,6 +419,25 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 			Check(Near(value.r, 0.5f, 1e-3f) && Near(value.g, 0.25f, 1e-3f) && Near(value.b, 3.0f, 1e-3f),
 				std::format("BlendMode::Additive adds, past 1 in RGBA16F ({:.3f}, {:.3f}, {:.3f})", value.r, value.g, value.b));
 		});
+
+		// An RGBA16F target without depth matches neither the swap chain nor the probe, so each batch
+		// kind needs a pipeline built for it (#144).
+		Renderer::Clear(m_Batch2DTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		Renderer::SetRenderTarget(m_Batch2DTarget);
+		m_Renderer->BeginScene(glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f));
+		m_Renderer->DrawQuad(glm::vec2(-0.5f, 0.0f), glm::vec2(1.0f, 2.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+		m_Renderer->DrawCircle(glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.8f)), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+		m_Renderer->EndScene();
+		Renderer::SetRenderTarget(previous);
+		ReadBack(m_Batch2DTarget, [this](const TexturePixels& pixels)
+		{
+			const glm::vec4 quad = pixels.GetPixel(4, 8);
+			const glm::vec4 circle = pixels.GetPixel(12, 8);
+			const glm::vec4 corner = pixels.GetPixel(15, 15);
+			Check(quad.r > 0.99f && quad.g < 0.01f && circle.g > 0.99f && circle.r < 0.01f && corner.r < 0.01f && corner.g < 0.01f,
+				std::format("Renderer2D draws quads and circles into an RGBA16F target without depth (quad ({:.2f}, {:.2f}), circle ({:.2f}, {:.2f}), corner ({:.2f}, {:.2f}))",
+					quad.r, quad.g, circle.r, circle.g, corner.r, corner.g));
+		});
 	}
 
 	void RenderTargetTest::DestroyGroundworkResources()
@@ -442,6 +462,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DestroyAndDelete(m_ResizeCopy);
 		DestroyAndDelete(m_ViewportTarget);
 		DestroyAndDelete(m_BlendTarget);
+		DestroyAndDelete(m_Batch2DTarget);
 		DestroyAndDelete(m_ReusedTarget);
 	}
 

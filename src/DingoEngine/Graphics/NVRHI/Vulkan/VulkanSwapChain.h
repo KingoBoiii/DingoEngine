@@ -23,6 +23,7 @@ namespace Dingo
 		virtual bool IsImageAcquired() const override { return m_ImageAcquired; }
 		virtual void QueueImageWait() override;
 		virtual void Present() override;
+		virtual void SetVSync(bool vsync) override;
 
 		virtual Framebuffer* GetCurrentFramebuffer() const override
 		{

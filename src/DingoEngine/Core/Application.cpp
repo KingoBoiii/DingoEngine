@@ -15,6 +15,8 @@
 #include "DingoEngine/ImGui/ImGuiLayer.h"
 #include <DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h>
 
+#include <cstdlib>
+
 namespace Dingo
 {
 	namespace
@@ -55,6 +57,8 @@ namespace Dingo
 		GraphicsParams graphicsParams = m_Params.Graphics;
 		graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
 		m_GraphicsContext = GraphicsContext::Create(graphicsParams);
+		if (!m_GraphicsContext)
+			std::abort();
 		m_GraphicsContext->Initialize();
 
 		m_SwapChain = SwapChain::Create(SwapChainParams()

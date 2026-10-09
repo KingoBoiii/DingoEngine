@@ -110,6 +110,7 @@ namespace Dingo
 				params.Pitch = source.Pitch;
 				params.Looping = source.Looping;
 				params.Spatialized = source.Spatialized;
+				params.Bus = source.Bus;
 				if (source.Spatialized)
 				{
 					params.Position = PositionOf(registry, handle);

@@ -22,7 +22,8 @@ namespace Dingo
 #endif
 			default: break;
 		}
-		DE_CORE_ASSERT(false, "Unsupported or unavailable GraphicsAPI on this platform.");
+		DE_CORE_ERROR("GraphicsAPI {} has no graphics context on this platform (Headless renders nothing).", (int)params.GraphicsAPI);
+		DE_CORE_VERIFY(false, "Unsupported or unavailable GraphicsAPI on this platform.");
 		return nullptr;
 	}
 
