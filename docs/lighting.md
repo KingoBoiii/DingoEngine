@@ -136,6 +136,43 @@ to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only t
 components the renderer accepts (the first four valid ones) add their ambient, and a non-finite
 `Ambient` or ambient intensity is skipped rather than blanking every other ambient source.
 
+## Fog
+
+Distance fog blends each lit pixel toward a colour by how far it is from the camera (radial
+distance, in world units), so far geometry fades into the background:
+
+```cpp
+Fog fog;
+fog.Mode = FogMode::Linear;     // or Exponential, ExponentialSquared; None clears it
+fog.Color = { 0.1f, 0.12f, 0.15f };
+fog.Start = 10.0f;              // Linear: no fog before Start, full fog from End
+fog.End = 40.0f;
+fog.Density = 0.05f;            // Exponential: 1 - e^(-Density d); ExponentialSquared: 1 - e^(-(Density d)^2)
+fog.MaxOpacity = 1.0f;          // the most fog a pixel gets, 0..1
+renderer.SetFog(fog);           // before EndScene, like a light
+```
+
+In the ECS, add a `FogComponent` to any entity (it has the same fields, plus `Enabled` and
+`UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` so the fog meets
+the cleared background). `Scene::SubmitLights` passes the first enabled one, in entity order, to
+`SetFog`; another enabled one warns once.
+
+- **Scene-scoped**, like lights: `EndScene` clears it, so set it every frame you want it.
+  `ClearFog()` drops it before then.
+- **Not a light.** A scene with fog and no light keeps the default light, and a `FogComponent`
+  doesn't count for the [default-light rule](#scene-scoped-lighting-and-the-default-light).
+- **Rejected** with a warning (once) and `false` from `SetFog`: a non-finite value, a negative
+  `Density`, or `Linear` with `End` not past `Start`. `MaxOpacity` is clamped to 0..1.
+- **Perspective cameras only.** An orthographic camera's scene draws without fog.
+- **What it covers:** the lit shader's static and skinned draws, emissive and highlights included,
+  before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
+  fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the
+  background is the clear colour, not fog: match the two, as `UseClearColor` does.
+- `Renderer3D::Statistics::Fogged` says whether the last scene was drawn with fog.
+
+The Lighting Test's `--fog` (or its Fog checkbox) fogs every mode into the clear colour, and its
+checks read back the fog factor on a black wall for each mode.
+
 ## The light budget
 
 Directional lights are not culled or ranked: the first four in submission order are used, and
@@ -317,7 +354,9 @@ delete lamp;
   the mesh colour. Slot 0 is the only slot the lit shader has: a texture or sampler in another slot
   keeps the material from being drawn, with a one-time warning. An empty slot 0 draws white with the clamp sampler.
 - **Transparency** comes from the mesh colour's alpha, never the texture's. A lit draw below
-  alpha 1 blends, but lit draws are not sorted and still write depth.
+  alpha 1 blends, but an ordinary material's draws are not sorted and write depth, so what is drawn
+  after them behind them is hidden. For glass, smoke or a ghost, make the material translucent; see
+  [Translucent materials](#translucent-materials).
 - **Both faces are drawn.** `CreateLitMaterial` sets the shader and `CullMode::None` for you, so
   open meshes and mirrored entities (a negative scale) still show. A custom material can cull; see
   [Winding and culling](scenes-and-ecs.md#winding-and-culling).
@@ -333,6 +372,40 @@ delete lamp;
 
 A material with your own `Shader` is not a lit material: its emissive, roughness and specular
 settings are ignored, and the shader does its own lighting.
+
+## Translucent materials
+
+```cpp
+Material* glass = renderer3D->CreateLitMaterial(MaterialParams()
+    .SetDebugName("Glass")
+    .SetTranslucent(true));
+renderer3D->SubmitMesh(pane, transform, glm::vec4(0.6f, 0.8f, 1.0f, 0.35f), glass);
+```
+
+A translucent material (`MaterialParams::Translucent`, any shader, lit or custom) draws in its own
+pass, after every opaque mesh, static and skinned:
+
+- **It writes no depth**, whatever `DepthWrite` says, but it is depth-tested, so an opaque mesh in
+  front still hides it. It blends with the material's `BlendMode` (alpha "over" by default;
+  `BlendMode::Additive` for glows).
+- **Meshes are sorted far to near** by the centre of their transformed vertices: by distance from a
+  perspective camera, along the view for an orthographic one. Meshes at the same distance keep their
+  submission order, so a still scene never flickers. Consecutive meshes of one material share a draw
+  (`Statistics::TranslucentDraws`, of `TranslucentMeshes`); materials that alternate in depth take
+  a draw each.
+- **Skinned meshes join the sort** when their material is translucent, by the centre of their rest
+  bounds; an instance's translucent meshes (a model's submeshes) share the first one's place. A model whose visor is translucent and body opaque draws the body with the opaque meshes and
+  the visor in this pass, uploading its joints for each.
+- **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off), for
+  the lights its `ShadowGroups` share a bit with, as an opaque mesh does; one with `ShadowsOnly` draws
+  nothing lit and batches like an opaque mesh.
+- **Particles** draw after this pass, so they show over glass. With the post chain, ambient occlusion
+  is applied before it, so glass isn't darkened by the corners behind it.
+
+The sort is per mesh, not per triangle. Meshes that intersect, a large mesh around a smaller one
+(a water plane under a boat, say), or the faces of one mesh seen through each other (a closed lit mesh
+draws both faces) can blend in the wrong order. Split large translucent surfaces into pieces, or keep
+them convex and their alpha low.
 
 ## Custom material shaders
 
@@ -352,8 +425,10 @@ appended after them, so a shader that declares only those three keeps compiling 
 | 128 | `ivec4 LightCounts` | x = directional lights, y = point and spot lights in use. |
 | 144 | `DirectionalLight DirectionalLights[4]` | 32 bytes each: `vec4 Direction` (xyz, not normalised), `vec4 Color` (rgb × intensity). |
 | 272 | `LocalLight LocalLights[32]` | 48 bytes each: `vec4 PositionRange` (xyz, w = range), `vec4 Color` (rgb × intensity, w = cone scale), `vec4 SpotDirection` (xyz normalised, w = cone offset). |
+| 1808 | `vec4 FogColor` | rgb = the fog's colour, a = its `MaxOpacity`. |
+| 1824 | `vec4 FogParams` | x = `Start`, y = `End`, z = `Density`, w = the `FogMode` (0 none, 1 linear, 2 exponential, 3 exponential squared). |
 
-The whole block is 1808 bytes. Declare members in this order from the start; you may stop after
+The whole block is 1840 bytes. Declare members in this order from the start; you may stop after
 any of them. To use the lights, mirror the whole block, struct definitions included, from
 [`Renderer3D_Lit.glsl`](../src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl), the reference
 implementation. Either stage may declare binding 0 (the lit shader's vertex stage declares only
@@ -412,6 +487,9 @@ and a copy of it is embedded in the engine library at build time.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.
 - **Budget-edge popping** unless the budget fade is on, described [above](#the-light-budget).
+- **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
+  orthographic camera ([Fog](#fog)).
+- **Translucency is sorted per mesh**, not per triangle or pixel ([Translucent materials](#translucent-materials)).
 
 ## Migrating from v0.6
 

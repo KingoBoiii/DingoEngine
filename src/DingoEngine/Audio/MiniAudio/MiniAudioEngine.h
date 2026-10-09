@@ -27,6 +27,23 @@ namespace Dingo
 		AudioSoundId Play(const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params) override;
 		void PlayOneShot(const std::shared_ptr<AudioClip>& clip, float volume) override;
 		void PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume) override;
+		void PlayOneShot(const std::shared_ptr<AudioClip>& clip, AudioBusId bus, float volume) override;
+		void PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, AudioBusId bus, float volume) override;
+
+		AudioBusId CreateBus(std::string_view name, AudioBusId parent) override;
+		void DestroyBus(AudioBusId bus) override;
+		AudioBusId FindBus(std::string_view name) const override;
+		bool IsBusValid(AudioBusId bus) const override;
+		std::uint32_t GetBusCount() const override;
+
+		void SetBusVolume(AudioBusId bus, float volume) override;
+		float GetBusVolume(AudioBusId bus) const override;
+		void SetBusMuted(AudioBusId bus, bool muted) override;
+		bool IsBusMuted(AudioBusId bus) const override;
+		void PauseBus(AudioBusId bus) override;
+		void ResumeBus(AudioBusId bus) override;
+		bool IsBusPaused(AudioBusId bus) const override;
+		void StopBus(AudioBusId bus) override;
 
 		void Stop(AudioSoundId sound) override;
 		void Pause(AudioSoundId sound) override;
@@ -56,6 +73,13 @@ namespace Dingo
 		// Tears down a live slot's ma_sound and bumps its generation so any handle
 		// pointing at it goes stale. Shared by Stop(), the Update() reap, and Shutdown().
 		void ReleaseSlot(Internal::SoundSlot& slot);
+
+		// The live bus's slot index, or nullopt if the id is invalid/stale.
+		std::optional<std::uint32_t> ResolveBus(AudioBusId id) const;
+		// True when bus `index` is `ancestor` or sits under it.
+		bool IsUnderBus(std::uint32_t index, std::uint32_t ancestor) const;
+		void StopSoundsUnder(std::uint32_t busIndex);
+		void ApplyBusVolume(std::uint32_t index);
 
 	private:
 		Internal::MiniAudioData* m_Data = nullptr;

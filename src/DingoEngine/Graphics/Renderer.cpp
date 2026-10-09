@@ -18,16 +18,17 @@ namespace Dingo
 
 	namespace
 	{
-		// Resolves the "whole buffer" default. The stride has to come from the buffer's own
+		// Resolves the "rest of the buffer" default. The stride has to come from the buffer's own
 		// format: assuming uint16 on a uint32 index buffer asks for twice the indices that
 		// exist. Unknown falls back to uint16, which is what CreateIndexBuffer defaults to.
-		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount)
+		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t firstIndex = 0)
 		{
 			if (indexCount != 0)
 				return indexCount;
 
 			const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
-			return static_cast<uint32_t>(indexBuffer->GetByteSize() / stride);
+			const uint64_t total = indexBuffer->GetByteSize() / stride;
+			return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
 		}
 	}
 
@@ -56,6 +57,8 @@ namespace Dingo
 		bool    HasPendingResize    = false;
 		int32_t PendingResizeWidth  = 0;
 		int32_t PendingResizeHeight = 0;
+		bool    HasPendingVSync     = false;
+		bool    PendingVSync        = false;
 
 		// Main thread only: run at the next BeginFrame or SkipFrame, or at Shutdown.
 		std::vector<std::function<void()>> AfterFrame;
@@ -74,6 +77,48 @@ namespace Dingo
 	};
 
 	RendererData* Renderer::s_Data = nullptr;
+
+	namespace
+	{
+		struct SwapChainChange
+		{
+			bool    Resize = false;
+			int32_t Width  = 0;
+			int32_t Height = 0;
+			bool    HasVSync = false;
+			bool    VSync    = false;
+		};
+
+		// Caller holds data.Mutex.
+		SwapChainChange TakePendingSwapChainChange(RendererData& data)
+		{
+			SwapChainChange change;
+			change.Resize   = data.HasPendingResize;
+			change.Width    = data.PendingResizeWidth;
+			change.Height   = data.PendingResizeHeight;
+			change.HasVSync = data.HasPendingVSync;
+			change.VSync    = data.PendingVSync;
+			data.HasPendingResize = false;
+			data.HasPendingVSync  = false;
+			return change;
+		}
+
+		// A resize recreates the swap chain anyway, so it takes the new flag along instead of
+		// SetVSync recreating it a second time.
+		void ApplySwapChainChange(SwapChain& swapChain, const SwapChainChange& change)
+		{
+			if (change.Resize)
+			{
+				if (change.HasVSync)
+					swapChain.SetVSyncFlag(change.VSync);
+				swapChain.Resize(change.Width, change.Height);
+			}
+			else if (change.HasVSync)
+			{
+				swapChain.SetVSync(change.VSync);
+			}
+		}
+	}
 
 	/**************************************************
 	***		LIFECYCLE								***
@@ -147,8 +192,7 @@ namespace Dingo
 	void Renderer::BeginFrame()
 	{
 		bool acquire = false;
-		bool resize = false;
-		int32_t width = 0, height = 0;
+		SwapChainChange change;
 		{
 			std::unique_lock<std::mutex> lock(s_Data->Mutex);
 			s_Data->FrameConsumedCV.wait(lock, [] { return s_Data->FrameConsumed; });
@@ -161,20 +205,14 @@ namespace Dingo
 			// that restored the window is applied and an image acquired below, while that thread is parked.
 			acquire = !s_Data->SwapChain->IsImageAcquired();
 			if (acquire)
-			{
-				resize = s_Data->HasPendingResize;
-				width = s_Data->PendingResizeWidth;
-				height = s_Data->PendingResizeHeight;
-				s_Data->HasPendingResize = false;
-			}
+				change = TakePendingSwapChainChange(*s_Data);
 		}
 
 		RunPendingAfterFrame();
 
 		if (acquire)
 		{
-			if (resize)
-				s_Data->SwapChain->Resize(width, height);
+			ApplySwapChainChange(*s_Data->SwapChain, change);
 			s_Data->SwapChain->AcquireNextImage();
 			s_Data->FrameSkipped = !s_Data->SwapChain->IsImageAcquired();
 		}
@@ -254,6 +292,16 @@ namespace Dingo
 		s_Data->PendingResizeHeight = height;
 	}
 
+	void Renderer::QueueVSync(bool vsync)
+	{
+		if (!s_Data)
+			return;
+
+		std::lock_guard<std::mutex> lock(s_Data->Mutex);
+		s_Data->HasPendingVSync = true;
+		s_Data->PendingVSync    = vsync;
+	}
+
 	void Renderer::RenderThreadLoop()
 	{
 		DE_PROFILE_THREAD("Render");
@@ -283,21 +331,16 @@ namespace Dingo
 			s_Data->RenderThreadMs.store(timer.ElapsedMillis(), std::memory_order_relaxed);
 			GraphicsContext::Get().RunGarbageCollection();
 
-			// Apply a queued resize here: the presented frame is complete and no image is
-			// acquired yet, so the swap chain (and its framebuffers, which the main thread
+			// Apply a queued resize or VSync change here: the presented frame is complete and no
+			// image is acquired yet, so the swap chain (and its framebuffers, which the main thread
 			// records against) can be recreated without racing either thread.
 			{
-				bool    resize = false;
-				int32_t width = 0, height = 0;
+				SwapChainChange change;
 				{
 					std::lock_guard<std::mutex> lock(s_Data->Mutex);
-					resize = s_Data->HasPendingResize;
-					width  = s_Data->PendingResizeWidth;
-					height = s_Data->PendingResizeHeight;
-					s_Data->HasPendingResize = false;
+					change = TakePendingSwapChainChange(*s_Data);
 				}
-				if (resize)
-					s_Data->SwapChain->Resize(width, height);
+				ApplySwapChainChange(*s_Data->SwapChain, change);
 			}
 
 			s_Data->SwapChain->AcquireNextImage();
@@ -506,12 +549,12 @@ namespace Dingo
 	***		DRAW — explicit RenderPass				***
 	**************************************************/
 
-	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount)
+	void Renderer::DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		if (s_Data->FrameSkipped)
 			return;
 
-		indexCount = ResolveIndexCount(indexBuffer, indexCount);
+		indexCount = ResolveIndexCount(indexBuffer, indexCount, firstIndex);
 
 		Framebuffer* target = GetCurrentTarget();
 		if (!s_Data->CommandList->SetRenderPass(renderPass))
@@ -520,7 +563,7 @@ namespace Dingo
 		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, instanceCount);
+		s_Data->CommandList->DrawIndexed(indexCount, instanceCount, firstIndex);
 	}
 
 	void Renderer::Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount)
@@ -554,12 +597,12 @@ namespace Dingo
 		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
 	}
 
-	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount)
+	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		if (s_Data->FrameSkipped)
 			return;
 
-		indexCount = ResolveIndexCount(indexBuffer, indexCount);
+		indexCount = ResolveIndexCount(indexBuffer, indexCount, firstIndex);
 
 		Framebuffer* target = GetCurrentTarget();
 		if (!PrepareMaterial(material, layout, target))
@@ -568,7 +611,7 @@ namespace Dingo
 		BindTarget(target);
 		s_Data->CommandList->AddVertexBuffer(vertexBuffer, 0);
 		s_Data->CommandList->SetIndexBuffer(indexBuffer, 0);
-		s_Data->CommandList->DrawIndexed(indexCount, instanceCount);
+		s_Data->CommandList->DrawIndexed(indexCount, instanceCount, firstIndex);
 	}
 
 	void Renderer::Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount)

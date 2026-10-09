@@ -120,13 +120,25 @@ namespace Dingo
 		if (!padsWrites || (size & 3) == 0)
 		{
 			commandList->writeBuffer(buffer, data, size, offset);
-			return;
+		}
+		else
+		{
+			// NVRHI copies the data while recording, so the padded copy needn't outlive the call.
+			std::vector<uint8_t> padded((size + 3) & ~uint64_t(3), 0);
+			std::memcpy(padded.data(), data, size);
+			commandList->writeBuffer(buffer, padded.data(), size, offset);
 		}
 
-		// NVRHI copies the data while recording, so the padded copy needn't outlive the call.
-		std::vector<uint8_t> padded((size + 3) & ~uint64_t(3), 0);
-		std::memcpy(padded.data(), data, size);
-		commandList->writeBuffer(buffer, padded.data(), size, offset);
+		// NVRHI moves vertex and index buffers out of CopyDest only when the bound buffer changes, so a
+		// draw from the buffer that is still bound would read the write without a barrier (#145).
+		// Committed at once: NVRHI ORs a later state into a pending barrier, and D3D12 rejects a write
+		// state combined with this read state (a storage buffer a dispatch then writes).
+		const nvrhi::BufferDesc& desc = buffer->getDesc();
+		if (!desc.isVolatile && desc.initialState != nvrhi::ResourceStates::Unknown)
+		{
+			commandList->setBufferState(buffer, desc.initialState);
+			commandList->commitBarriers();
+		}
 	}
 
 	// ReadBack's timing: in order with the frame's work inside a frame, at once while the render thread is

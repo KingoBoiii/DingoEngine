@@ -88,7 +88,42 @@ namespace Dingo::Internal::LightSystem
 		}
 	}
 
-	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, ShadowProbeState* probes)
+	namespace
+	{
+		void SubmitFog(const entt::registry& registry, Renderer3D& renderer, const glm::vec3& clearColor)
+		{
+			static bool s_Warned = false;
+			bool submitted = false;
+			for (entt::entity entity : InEntityOrder<FogComponent>(registry))
+			{
+				const FogComponent& component = registry.get<const FogComponent>(entity);
+				if (!component.Enabled)
+					continue;
+
+				if (submitted)
+				{
+					if (!s_Warned)
+					{
+						DE_CORE_WARN("A scene has more than one enabled FogComponent; only the first one in entity order is used.");
+						s_Warned = true;
+					}
+					break;
+				}
+
+				Fog fog;
+				fog.Mode = component.Mode;
+				fog.Color = component.UseClearColor ? clearColor : component.Color;
+				fog.Start = component.Start;
+				fog.End = component.End;
+				fog.Density = component.Density;
+				fog.MaxOpacity = component.MaxOpacity;
+				renderer.SetFog(fog);
+				submitted = true;
+			}
+		}
+	}
+
+	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, const glm::vec3& clearColor, ShadowProbeState* probes)
 	{
 		memo.Begin(registry);
 		bool hasLight = false;
@@ -173,6 +208,8 @@ namespace Dingo::Internal::LightSystem
 		// Always set, even to black: it tells Renderer3D the scene chose its lighting, so a scene
 		// whose lights are all switched off goes dark instead of falling back to the default light.
 		renderer.SetAmbientLight(ambient, 1.0f);
+
+		SubmitFog(registry, renderer, clearColor);
 	}
 
 }

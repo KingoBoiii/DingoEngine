@@ -137,6 +137,7 @@ namespace Dingo
 		CopyComponentIfExists<AmbientLightComponent>(registry, dst, src);
 		CopyComponentIfExists<PointLightComponent>(registry, dst, src);
 		CopyComponentIfExists<SpotLightComponent>(registry, dst, src);
+		CopyComponentIfExists<FogComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody2DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
@@ -481,7 +482,7 @@ namespace Dingo
 
 	void Scene::SubmitLights(Renderer3D& renderer, bool shadowProbes)
 	{
-		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, shadowProbes ? &m_Data->ShadowProbes : nullptr);
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr);
 	}
 
 	// --- Camera -----------------------------------------------------------------

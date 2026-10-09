@@ -70,7 +70,7 @@ namespace Dingo
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) = 0;
 
 		virtual void Draw(uint32_t vertexCount, uint32_t instanceCount = 1) = 0;
-		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1) = 0;
+		virtual void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0) = 0;
 
 		// Runs the compute pass over groupsX x groupsY x groupsZ thread groups. The graphics state
 		// stays as it was set, so the next draw needs no rebinding. False when the pass can't run.

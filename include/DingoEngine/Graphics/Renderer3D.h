@@ -18,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Dingo
@@ -142,7 +143,9 @@ namespace Dingo
 	// one indexed draw per batch on EndScene() (each from its own pooled buffer).
 	// Meshes with no explicit material use the built-in lit default material.
 	// Depth testing is enabled (the swap-chain carries a depth attachment), so meshes
-	// occlude correctly regardless of submission order.
+	// occlude correctly regardless of submission order. Meshes with a translucent material
+	// (MaterialParams::Translucent) are the exception: they draw after every opaque one, static
+	// and skinned, sorted far to near by their centres.
 	//
 	// Camera + lights live in a shared "scene" uniform buffer bound at binding 0 on
 	// every material (Material::SetSceneUniformBuffer); a custom material's own uniforms
@@ -228,7 +231,7 @@ namespace Dingo
 		// GPU particles. An emitter is a ring of this renderer's pool, the size of the effect's capacity
 		// (an emitter the pool has no room for draws nothing, with a warning); dropping its last
 		// reference returns the ring. SubmitParticles between BeginScene and EndScene steps it by
-		// deltaTime (simulate, then emit, on the GPU) and draws it after the scene's opaque meshes,
+		// deltaTime (simulate, then emit, on the GPU) and draws it after the scene's opaque and translucent meshes,
 		// unlit and depth-tested without writing depth; submit an emitter once a frame, or the other
 		// scenes with a deltaTime of 0. A submission keeps the emitter alive until EndScene. Through the post chain, AO is applied first so particles aren't
 		// darkened, and particles with a SoftDistance fade against the scene's depth. See
@@ -242,6 +245,15 @@ namespace Dingo
 		GraphicsBuffer* GetParticlePool() const;
 		uint32_t GetParticlePoolCapacity() const;
 		uint32_t GetParticlePoolUsed() const;
+
+		// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders and
+		// the 2D overlay aren't fogged), scene-scoped like the lights: set it before EndScene, which
+		// clears it. It is no light, so a scene with fog and no light keeps the default light. Returns
+		// false for a fog it ignores: a non-finite value, a negative Density, or Linear with End not
+		// past Start. FogMode::None clears it, as ClearFog does; MaxOpacity is clamped to 0..1. An
+		// orthographic camera's scene draws without fog.
+		bool SetFog(const Fog& fog);
+		void ClearFog();
 
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
@@ -272,6 +284,13 @@ namespace Dingo
 		// custom vertex shader's displacement isn't in its shadow, and a translucent mesh casts a full
 		// one. shadowGroups is a bit mask: a casting light takes the mesh into its shadows only when
 		// it shares a bit with the light's ShadowCasterGroups.
+		//
+		// A translucent material's meshes draw in the translucent pass, after the opaque ones: each
+		// mesh sorted far to near by the centre of its transformed vertices (along the view for an
+		// orthographic camera; ties keep submission order), consecutive meshes of one material in one
+		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
+		// wrapped around a small one, can blend in the wrong order. With ShadowsOnly it draws nothing
+		// lit, so it batches like an opaque mesh.
 		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
 
 		// Convenience primitives drawn with the renderer's built-in unit meshes
@@ -292,8 +311,10 @@ namespace Dingo
 		// and must hold at least mesh->GetSkinJointCount() matrices; consecutive calls with the same
 		// palette, transform and colour, such as a model's submeshes, share one upload.
 		//
-		// Skinned meshes draw after every static batch, so a translucent static mesh in front of one
-		// hides it rather than blending over it.
+		// Opaque skinned meshes draw after every opaque static batch. With a translucent material a
+		// skinned mesh joins the translucent pass, sorted by the centre of its rest bounds placed with
+		// transform (an instance's translucent meshes share the first one's), so it blends with translucent
+		// static meshes in depth order.
 		//
 		// A lit material (null = the default) draws through a skinned twin the renderer keeps for
 		// it. A custom material's shader needs a SkinData block (see Renderer3D_Lit.glsl) at a
@@ -302,7 +323,8 @@ namespace Dingo
 		// passed, or skinned to more than k_MaxSkinJoints joints goes through SubmitMesh and draws its
 		// rest pose. No-op outside a Begin/EndScene pair.
 		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
-		// uploads its palette for each, which is why the skin buffer holds two writes per instance.
+		// uploads its palette for each; an instance with opaque and translucent meshes is drawn lit in
+		// both passes. That is why the skin buffer holds three writes per instance.
 		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
 
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
@@ -357,7 +379,10 @@ namespace Dingo
 			uint32_t ParticleDrawCalls = 0;   // one per run of emitters sharing a blend and sprite; not in DrawCalls
 			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
 			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
+			uint32_t TranslucentMeshes = 0;   // static and skinned meshes drawn in the translucent pass, also counted in SubmittedMeshes
+			uint32_t TranslucentDraws = 0;    // draws of the translucent pass, also counted in DrawCalls
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
+			bool Fogged = false;              // the scene was drawn with fog: SetFog, and a perspective camera
 		};
 
 		const Statistics& GetStatistics() const { return m_Statistics; }
@@ -429,13 +454,16 @@ namespace Dingo
 			glm::ivec4 LightCounts{ 0 };      // x = directional lights, y = point and spot lights
 			DirectionalLightData DirectionalLights[k_MaxDirectionalLights];
 			LocalLightData LocalLights[k_MaxLocalLights];
+			glm::vec4 FogColor{ 0.0f };  // rgb = colour, a = max opacity
+			glm::vec4 FogParams{ 0.0f }; // x = start, y = end, z = density, w = FogMode (0 = none)
 		};
 		static_assert(offsetof(CameraData, LightDirection) == 64 && offsetof(CameraData, Ambient) == 80,
 			"the frozen prefix custom materials declare must not move");
 		static_assert(offsetof(CameraData, CameraPosition) == 96 && offsetof(CameraData, AmbientColor) == 112 &&
 			offsetof(CameraData, LightCounts) == 128 && offsetof(CameraData, DirectionalLights) == 144 &&
 			sizeof(DirectionalLightData) == 32 && offsetof(CameraData, LocalLights) == 144 + k_MaxDirectionalLights * 32 &&
-			sizeof(LocalLightData) == 48 && sizeof(CameraData) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48,
+			sizeof(LocalLightData) == 48 && offsetof(CameraData, FogColor) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48 &&
+			offsetof(CameraData, FogParams) == offsetof(CameraData, FogColor) + 16 && sizeof(CameraData) == offsetof(CameraData, FogParams) + 16,
 			"CameraData must match the std140 block in Renderer3D_Lit.glsl");
 		CameraData m_CameraData = {};
 
@@ -456,6 +484,7 @@ namespace Dingo
 		bool m_UnshadowedWarned = false;
 		bool m_AtlasFullWarned = false;
 		bool m_NoClipDistanceWarned = false;
+		bool m_FogWarned = false;
 
 		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
 		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.
@@ -488,9 +517,11 @@ namespace Dingo
 		{
 			std::vector<MeshChunk> Chunks;
 			uint32_t ChunksInUse = 0;
-			bool Enqueued = false; // checked and, unless SkinnedOnly, in m_DrawOrder for the scene in progress
+			bool Enqueued = false; // checked and, unless SkinnedOnly or Translucent, in m_DrawOrder for the scene in progress
 			// Its shader skins (has a SkinData block), so its meshes draw with the default material instead.
 			bool SkinnedOnly = false;
+			// Its meshes go to the translucent pass, so the batch itself stays empty.
+			bool Translucent = false;
 			uint32_t IdleScenes = 0;
 		};
 		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
@@ -525,8 +556,50 @@ namespace Dingo
 			BatchKey Key;
 			uint32_t Buffer = 0;   // into the pooled vertex/index buffers
 			uint32_t IndexCount = 0;
+			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
 		};
 		std::vector<ChunkDraw> m_ChunkDraws;
+
+		uint32_t UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex);
+
+		// A mesh of the translucent pass. A static one's vertices are transformed at submission into
+		// m_TranslucentVertices, its indices counted from its first vertex.
+		struct TranslucentSubmission
+		{
+			Dingo::Material* Material = nullptr;
+			uint32_t FirstVertex = 0;
+			uint32_t VertexCount = 0;
+			uint32_t FirstIndex = 0;
+			uint32_t IndexCount = 0;
+			int32_t Skinned = -1; // into m_SkinnedSubmissions; -1 = static
+			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
+			float SortKey = 0.0f; // larger is farther from the camera
+		};
+		// One draw of the translucent pass, far to near: a run of static meshes of one material that
+		// lie back to back in one pooled buffer, or one skinned submission.
+		struct TranslucentDraw
+		{
+			Dingo::Material* Material = nullptr;
+			int32_t Skinned = -1;
+			uint32_t Buffer = 0;
+			uint32_t FirstIndex = 0;
+			uint32_t IndexCount = 0;
+			uint32_t Meshes = 0;
+		};
+
+		float TranslucentSortKey(const glm::vec3& point) const;
+		// After the opaque uploads: sorts the scene's translucent meshes, packs them (and, for a
+		// shadowed scene, the casting ones again in m_ChunkDraws) into pooled buffers.
+		void PrepareTranslucentPass(uint32_t& batchIndex, bool shadows);
+		void DrawTranslucentPass(Texture* shadowAtlas);
+
+		std::vector<TranslucentSubmission> m_TranslucentSubmissions;
+		std::vector<Vertex> m_TranslucentVertices;
+		std::vector<uint32_t> m_TranslucentIndices;
+		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
+		std::vector<TranslucentDraw> m_TranslucentDraws;
+		std::vector<std::pair<Dingo::Material*, bool>> m_TranslucentMaterials; // checked this scene: drawable or not
 
 		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
 		// on demand and reused. Each batch gets its own buffer, so no shared buffer is
@@ -571,6 +644,7 @@ namespace Dingo
 			uint32_t Instance = 0;
 			ShadowCasting Shadows = ShadowCasting::On;
 			uint32_t ShadowGroups = 1;
+			bool Translucent = false; // drawn lit by the translucent pass
 		};
 
 		// A lit material's copy on the skinned shader, synced from it before every draw. Keyed by
@@ -588,6 +662,8 @@ namespace Dingo
 		Material* ResolveSkinnedMaterial(Material* material);
 		Material* GetSkinnedTwin(Material* source);
 		void DrawSkinnedSubmissions();
+		// Draws one lit; false when it was skipped (its instance dropped, ShadowsOnly, or an unusable lit material).
+		bool DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas);
 
 		// Made on the first skinned draw, so an app that never skins compiles no second lit program.
 		Shader* m_SkinnedShader = nullptr;

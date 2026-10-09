@@ -72,8 +72,9 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
 | `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled`, `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — light in every direction from the entity's `Transform3DComponent` position; `ToLight(transform)` → the `PointLight` it draws as |
 | `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled`, `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9) — a cone of light from the entity's `Transform3DComponent`; `ToLight(transform)` → the world-space `SpotLight` it draws as |
+| `FogComponent` | `FogMode Mode` (`Linear`, `Exponential`, `ExponentialSquared`, `None`), `glm::vec3 Color`, `bool UseClearColor` (default true: the scene's clear colour), `float Start` / `End` (linear), `float Density` (exponential), `float MaxOpacity`, `bool Enabled` — distance fog over the 3D pass; the first enabled one counts, and it is no light. See [Lighting](lighting.md#fog) |
 
-The four light components are read by the `SceneRenderer` for the 3D pass — see [Lights](#lights-v07).
+The four light components and `FogComponent` are read by the `SceneRenderer` for the 3D pass — see [Lights](#lights-v07).
 
 ## Rendering a scene
 

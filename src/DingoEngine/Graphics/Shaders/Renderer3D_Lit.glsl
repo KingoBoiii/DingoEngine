@@ -94,6 +94,8 @@ layout(std140, binding = 0) uniform CameraData
 	ivec4 LightCounts;   // x = directional lights, y = point and spot lights
 	DirectionalLight DirectionalLights[MAX_DIRECTIONAL_LIGHTS];
 	LocalLight LocalLights[MAX_LOCAL_LIGHTS];
+	vec4 FogColor;  // rgb = colour, a = max opacity
+	vec4 FogParams; // x = start, y = end, z = density, w = mode: 0 none, 1 linear, 2 exp, 3 exp squared
 };
 
 // Mirrors Renderer3D::LitMaterialData, written for every lit material each EndScene.
@@ -111,6 +113,14 @@ layout(binding = 3) uniform sampler u_AlbedoSampler;
 layout(location = 0) out vec4 o_Color;
 
 const float PI = 3.14159265;
+
+float FogFactor(float distance)
+{
+	if (FogParams.w < 1.5)
+		return clamp((distance - FogParams.x) / (FogParams.y - FogParams.x), 0.0, 1.0);
+	float density = FogParams.z * distance;
+	return 1.0 - exp(FogParams.w < 2.5 ? -density : -density * density);
+}
 
 // Normalised Blinn-Phong: the (n + 8) / 8pi factor keeps a highlight's energy the same as roughness
 // changes its size.
@@ -174,7 +184,9 @@ void main()
 	finalColor += EmissiveColor.rgb * Surface.x;
 	if (ShadowCounts.z != 0)
 		finalColor *= ShadowCascadeTint(v_WorldPosition);
-	// Lit draws are unsorted and write depth, so only the mesh colour, never an albedo map, makes
-	// them see-through.
+	if (FogParams.w > 0.5 && CameraPosition.w > 0.5)
+		finalColor = mix(finalColor, FogColor.rgb, FogFactor(distance(CameraPosition.xyz, v_WorldPosition)) * FogColor.a);
+	// Alpha is the mesh colour's alone, never an albedo map's. Only a translucent material's meshes
+	// are sorted and leave depth unwritten, so blend correctly.
 	o_Color = vec4(finalColor, v_Color.a);
 }

@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
+#include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -284,6 +285,13 @@ namespace Dingo
 		m_BatchIndexBuffers.clear();
 		m_Batches.clear();
 		m_DrawOrder.clear();
+		m_ChunkDraws.clear();
+		m_TranslucentSubmissions.clear();
+		m_TranslucentVertices.clear();
+		m_TranslucentIndices.clear();
+		m_TranslucentChunks.clear();
+		m_TranslucentDraws.clear();
+		m_TranslucentMaterials.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
@@ -396,6 +404,9 @@ namespace Dingo
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_TranslucentSubmissions.clear();
+		m_TranslucentVertices.clear();
+		m_TranslucentIndices.clear();
 	}
 
 	void Renderer3D::EndScene()
@@ -421,13 +432,13 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::ResolveSceneLights");
 			ResolveSceneLights();
 		}
+		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && m_CameraData.CameraPosition.w > 0.5f;
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 		const bool shadows = PrepareShadows();
 		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
 		ResolveShadowProbes();
 		ClearSceneLights();
 
-		const Renderer3DCapabilities& caps = m_Params.Capabilities;
 		uint32_t batchIndex = 0;
 
 		// Every chunk goes into its own pooled (vertex, index) buffer up front, so no shared buffer
@@ -463,22 +474,11 @@ namespace Dingo
 					if (chunk.Indices.empty())
 						continue;
 
-					// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
-					// DirectUpload = false: the writes go into the frame's command list (as
-					// Renderer2D's batches do) instead of each spinning up a throwaway command list
-					// and its own queue submit.
-					if (batchIndex >= m_BatchVertexBuffers.size())
-					{
-						m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
-						m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
-					}
-
-					Renderer::Upload(m_BatchVertexBuffers[batchIndex], chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
-					Renderer::Upload(m_BatchIndexBuffers[batchIndex], chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
-					m_ChunkDraws.push_back({ key, batchIndex, static_cast<uint32_t>(chunk.Indices.size()) });
-					++batchIndex;
+					const uint32_t buffer = UploadChunk(chunk, batchIndex);
+					m_ChunkDraws.push_back({ key, buffer, static_cast<uint32_t>(chunk.Indices.size()) });
 				}
 			}
+			PrepareTranslucentPass(batchIndex, shadows);
 		}
 
 		ResolveSkinnedBudget();
@@ -493,7 +493,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 			for (const ChunkDraw& draw : m_ChunkDraws)
 			{
-				if (draw.Key.Shadows == ShadowCasting::ShadowsOnly)
+				if (draw.Translucent || draw.Key.Shadows == ShadowCasting::ShadowsOnly)
 					continue;
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
@@ -508,9 +508,239 @@ namespace Dingo
 		}
 
 		DrawSkinnedSubmissions();
+		DrawTranslucentPass(shadowAtlas);
+		m_SkinnedSubmissions.clear();
+		m_SkinnedInstances.clear();
+		m_SkinnedJoints.clear();
+		m_TranslucentSubmissions.clear();
+		m_TranslucentVertices.clear();
+		m_TranslucentIndices.clear();
+
 		if (m_Particles)
 			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
 		Renderer::EndGpuTimer();
+	}
+
+	uint32_t Renderer3D::UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex)
+	{
+		// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
+		// DirectUpload = false: the writes go into the frame's command list (as Renderer2D's
+		// batches do) instead of each spinning up a throwaway command list and its own queue submit.
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		if (batchIndex >= m_BatchVertexBuffers.size())
+		{
+			m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
+			m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+		}
+
+		Renderer::Upload(m_BatchVertexBuffers[batchIndex], chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
+		Renderer::Upload(m_BatchIndexBuffers[batchIndex], chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+		return batchIndex++;
+	}
+
+	float Renderer3D::TranslucentSortKey(const glm::vec3& point) const
+	{
+		const glm::vec4& camera = m_CameraData.CameraPosition;
+		const glm::vec3 offset = point - glm::vec3(camera);
+		const float key = camera.w > 0.5f ? glm::dot(offset, offset) : -glm::dot(point, glm::vec3(camera));
+		return std::isfinite(key) ? key : 0.0f;
+	}
+
+	void Renderer3D::PrepareTranslucentPass(uint32_t& batchIndex, bool shadows)
+	{
+		m_TranslucentDraws.clear();
+		m_TranslucentMaterials.clear();
+		if (m_TranslucentSubmissions.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::PrepareTranslucentPass");
+		std::stable_sort(m_TranslucentSubmissions.begin(), m_TranslucentSubmissions.end(),
+			[](const TranslucentSubmission& a, const TranslucentSubmission& b) { return a.SortKey > b.SortKey; });
+
+		// The opaque path's rule for lit materials, checked once a material.
+		auto drawable = [this](Material* material)
+		{
+			if (!IsLitShader(material->GetShader()))
+				return true;
+			for (const auto& [checked, usable] : m_TranslucentMaterials)
+			{
+				if (checked == material)
+					return usable;
+			}
+
+			const bool usable = !BindsPastSlotZero(*material);
+			if (usable)
+				PrepareLitMaterial(material);
+			else if (!m_LitSlotsWarned)
+			{
+				const std::string& name = material->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+					name.empty() ? "<unnamed>" : name.c_str());
+				m_LitSlotsWarned = true;
+			}
+			m_TranslucentMaterials.emplace_back(material, usable);
+			return usable;
+		};
+
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		uint32_t chunksInUse = 0;
+		auto startChunk = [this, &chunksInUse]()
+		{
+			if (chunksInUse == m_TranslucentChunks.size())
+				m_TranslucentChunks.emplace_back();
+			MeshChunk& chunk = m_TranslucentChunks[chunksInUse++];
+			chunk.Vertices.clear();
+			chunk.Indices.clear();
+		};
+		// Returns the chunk the mesh landed in and where its indices start there.
+		auto append = [&](const TranslucentSubmission& submission, uint32_t& firstIndex)
+		{
+			MeshChunk* chunk = &m_TranslucentChunks[chunksInUse - 1];
+			if (chunk->Vertices.size() + submission.VertexCount > caps.MaxVertices || chunk->Indices.size() + submission.IndexCount > caps.MaxIndices)
+			{
+				startChunk();
+				chunk = &m_TranslucentChunks[chunksInUse - 1];
+			}
+
+			const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
+			firstIndex = static_cast<uint32_t>(chunk->Indices.size());
+			const auto vertices = m_TranslucentVertices.begin() + submission.FirstVertex;
+			chunk->Vertices.insert(chunk->Vertices.end(), vertices, vertices + submission.VertexCount);
+			for (uint32_t i = 0; i < submission.IndexCount; ++i)
+				chunk->Indices.push_back(m_TranslucentIndices[submission.FirstIndex + i] + vertexOffset);
+			return chunksInUse - 1;
+		};
+
+		// Depth-only, so the casters need no order: chunks apart from the lit ones, one run of chunks
+		// per caster mask, since each mask draws with its own shadow material.
+		struct CasterRun
+		{
+			uint32_t ShadowGroups = 1;
+			uint32_t FirstChunk = 0;
+			uint32_t ChunkEnd = 0;
+		};
+		std::vector<CasterRun> casterRuns;
+		if (shadows)
+		{
+			std::vector<uint32_t> groups;
+			for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
+			{
+				if (submission.Skinned < 0 && submission.Shadows == ShadowCasting::On && submission.IndexCount > 0 &&
+					std::find(groups.begin(), groups.end(), submission.ShadowGroups) == groups.end())
+					groups.push_back(submission.ShadowGroups);
+			}
+			for (const uint32_t group : groups)
+			{
+				CasterRun run;
+				run.ShadowGroups = group;
+				for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
+				{
+					if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.ShadowGroups != group ||
+						submission.IndexCount == 0 || !drawable(submission.Material))
+						continue;
+					if (run.ChunkEnd == 0)
+					{
+						startChunk();
+						run.FirstChunk = chunksInUse - 1;
+					}
+					uint32_t firstIndex = 0;
+					append(submission, firstIndex);
+					run.ChunkEnd = chunksInUse;
+				}
+				if (run.ChunkEnd > 0)
+					casterRuns.push_back(run);
+			}
+		}
+
+		bool litChunkStarted = false;
+		for (uint32_t index = 0; index < m_TranslucentSubmissions.size(); ++index)
+		{
+			const TranslucentSubmission& submission = m_TranslucentSubmissions[index];
+			if (submission.Skinned >= 0)
+			{
+				m_TranslucentDraws.push_back({ submission.Material, submission.Skinned, 0, 0, 0, 1 });
+				continue;
+			}
+			if (submission.IndexCount == 0 || !drawable(submission.Material))
+				continue;
+
+			if (!litChunkStarted)
+			{
+				startChunk();
+				litChunkStarted = true;
+			}
+			uint32_t firstIndex = 0;
+			const uint32_t chunk = append(submission, firstIndex);
+			if (!m_TranslucentDraws.empty())
+			{
+				TranslucentDraw& last = m_TranslucentDraws.back();
+				if (last.Skinned < 0 && last.Material == submission.Material && last.Buffer == chunk && last.FirstIndex + last.IndexCount == firstIndex)
+				{
+					last.IndexCount += submission.IndexCount;
+					++last.Meshes;
+					continue;
+				}
+			}
+			m_TranslucentDraws.push_back({ submission.Material, -1, chunk, firstIndex, submission.IndexCount, 1 });
+		}
+
+		// Chunk indices become pooled buffer indices.
+		std::vector<uint32_t> buffers(chunksInUse, 0);
+		for (uint32_t chunk = 0; chunk < chunksInUse; ++chunk)
+		{
+			if (!m_TranslucentChunks[chunk].Indices.empty())
+				buffers[chunk] = UploadChunk(m_TranslucentChunks[chunk], batchIndex);
+		}
+		for (const CasterRun& run : casterRuns)
+		{
+			for (uint32_t chunk = run.FirstChunk; chunk < run.ChunkEnd; ++chunk)
+			{
+				const MeshChunk& casters = m_TranslucentChunks[chunk];
+				if (!casters.Indices.empty())
+					m_ChunkDraws.push_back({ BatchKey{ nullptr, ShadowCasting::On, run.ShadowGroups }, buffers[chunk], static_cast<uint32_t>(casters.Indices.size()), true });
+			}
+		}
+		for (TranslucentDraw& draw : m_TranslucentDraws)
+		{
+			if (draw.Skinned < 0)
+				draw.Buffer = buffers[draw.Buffer];
+		}
+	}
+
+	void Renderer3D::DrawTranslucentPass(Texture* shadowAtlas)
+	{
+		if (m_TranslucentDraws.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::DrawTranslucentPass");
+		// AO from the opaque depth behind them would darken them, as it would particles.
+		PostProcessStack& post = Renderer::GetPostProcessStack();
+		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+			post.ApplyAmbientOcclusion();
+
+		uint32_t uploadedInstance = ~0u;
+		for (const TranslucentDraw& draw : m_TranslucentDraws)
+		{
+			if (draw.Skinned >= 0)
+			{
+				if (DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploadedInstance, shadowAtlas))
+				{
+					++m_Statistics.TranslucentMeshes;
+					++m_Statistics.TranslucentDraws;
+				}
+				continue;
+			}
+
+			Material* material = draw.Material;
+			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
+			material->SetSkinUniformBuffer(nullptr);
+			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+			Renderer::DrawIndexed(material, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, 1, draw.FirstIndex);
+			++m_Statistics.DrawCalls;
+			++m_Statistics.TranslucentDraws;
+			m_Statistics.TranslucentMeshes += draw.Meshes;
+		}
+		m_TranslucentDraws.clear();
 	}
 
 	std::shared_ptr<ParticleEmitter> Renderer3D::CreateParticleEmitter(const ParticleEffect* effect)
@@ -622,6 +852,39 @@ namespace Dingo
 		}
 
 		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1), shadows, shadowGroups });
+
+		const Material* requested = material ? material : m_Material;
+		if (requested->IsTranslucent() && shadows != ShadowCasting::ShadowsOnly)
+		{
+			m_SkinnedSubmissions.back().Translucent = true;
+
+			// One key for an instance's translucent meshes keeps them adjacent through the stable sort,
+			// so the pass uploads its palette once and the skin buffer's writes stay within budget.
+			const uint32_t instanceIndex = static_cast<uint32_t>(m_SkinnedInstances.size() - 1);
+			std::optional<float> sortKey;
+			for (auto it = m_TranslucentSubmissions.rbegin(); it != m_TranslucentSubmissions.rend(); ++it)
+			{
+				if (it->Skinned < 0)
+					continue;
+				if (m_SkinnedSubmissions[it->Skinned].Instance == instanceIndex)
+					sortKey = it->SortKey;
+				break;
+			}
+			if (!sortKey)
+			{
+				glm::vec3 center = glm::vec3(transform[3]);
+				if (mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
+					center = glm::vec3(transform * glm::vec4((mesh->GetBoundsMin() + mesh->GetBoundsMax()) * 0.5f, 1.0f));
+				sortKey = TranslucentSortKey(center);
+			}
+
+			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
+			submission.Material = material;
+			submission.Skinned = static_cast<int32_t>(m_SkinnedSubmissions.size() - 1);
+			submission.Shadows = shadows;
+			submission.ShadowGroups = shadowGroups;
+			submission.SortKey = *sortKey;
+		}
 	}
 
 	uint32_t Renderer3D::GetSkinnedInstanceBudget() const
@@ -643,7 +906,7 @@ namespace Dingo
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
 			.SetDirectUpload(false)
-			.SetMaxWritesPerFrame(2 * GetSkinnedInstanceBudget()));
+			.SetMaxWritesPerFrame(3 * GetSkinnedInstanceBudget()));
 
 		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 	}
@@ -779,57 +1042,59 @@ namespace Dingo
 			return;
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
-		EnsureSkinningResources();
-
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
 		uint32_t uploadedInstance = ~0u;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
-			if (m_SkinnedInstanceDropped[submission.Instance])
+			if (!submission.Translucent)
+				DrawSkinnedSubmission(submission, uploadedInstance, shadowAtlas);
+		}
+	}
+
+	bool Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas)
+	{
+		if (m_SkinnedInstanceDropped[submission.Instance])
+		{
+			++m_Statistics.DroppedSkinnedDraws;
+			return false;
+		}
+		if (submission.Shadows == ShadowCasting::ShadowsOnly)
+			return false;
+
+		// The same rule as the static path, so a material draws the same way skinned or not.
+		Material* requested = submission.Material ? submission.Material : m_Material;
+		if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
+		{
+			if (!m_LitSlotsWarned)
 			{
-				++m_Statistics.DroppedSkinnedDraws;
-				continue;
+				const std::string& name = requested->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+					name.empty() ? "<unnamed>" : name.c_str());
+				m_LitSlotsWarned = true;
 			}
-			if (submission.Shadows == ShadowCasting::ShadowsOnly)
-				continue;
-
-			// The same rule as the static path, so a material draws the same way skinned or not.
-			Material* requested = submission.Material ? submission.Material : m_Material;
-			if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
-			{
-				if (!m_LitSlotsWarned)
-				{
-					const std::string& name = requested->GetParams().DebugName;
-					DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-						name.empty() ? "<unnamed>" : name.c_str());
-					m_LitSlotsWarned = true;
-				}
-				continue;
-			}
-
-			if (submission.Instance != uploadedInstance)
-			{
-				uploadedInstance = submission.Instance;
-				UploadSkinData(m_SkinnedInstances[submission.Instance]);
-			}
-
-			Material* material = ResolveSkinnedMaterial(submission.Material);
-			const Mesh* mesh = submission.Mesh;
-			EnsureSkinBuffers(mesh);
-
-			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-			material->SetSkinUniformBuffer(m_SkinBuffer);
-			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-			Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
-
-			++m_Statistics.DrawCalls;
-			++m_Statistics.SkinnedDraws;
-			++m_Statistics.SubmittedMeshes;
+			return false;
 		}
 
-		m_SkinnedSubmissions.clear();
-		m_SkinnedInstances.clear();
-		m_SkinnedJoints.clear();
+		EnsureSkinningResources();
+		if (submission.Instance != uploadedInstance)
+		{
+			uploadedInstance = submission.Instance;
+			UploadSkinData(m_SkinnedInstances[submission.Instance]);
+		}
+
+		Material* material = ResolveSkinnedMaterial(submission.Material);
+		const Mesh* mesh = submission.Mesh;
+		EnsureSkinBuffers(mesh);
+
+		material->SetSceneUniformBuffer(m_SceneUniformBuffer);
+		material->SetSkinUniformBuffer(m_SkinBuffer);
+		material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
+
+		++m_Statistics.DrawCalls;
+		++m_Statistics.SkinnedDraws;
+		++m_Statistics.SubmittedMeshes;
+		return true;
 	}
 
 	Material* Renderer3D::CreateLitMaterial(MaterialParams params) const
@@ -985,6 +1250,38 @@ namespace Dingo
 			m_CameraData.AmbientColor = glm::vec4(color * intensity, 0.0f);
 	}
 
+	bool Renderer3D::SetFog(const Fog& fog)
+	{
+		if (fog.Mode == FogMode::None)
+		{
+			ClearFog();
+			return true;
+		}
+
+		const bool known = fog.Mode == FogMode::Linear || fog.Mode == FogMode::Exponential || fog.Mode == FogMode::ExponentialSquared;
+		const bool finite = IsFinite(fog.Color) && std::isfinite(fog.Start) && std::isfinite(fog.End) && std::isfinite(fog.Density) && std::isfinite(fog.MaxOpacity);
+		const bool usable = known && finite && fog.Density >= 0.0f && (fog.Mode != FogMode::Linear || fog.End > fog.Start);
+		if (!usable)
+		{
+			if (!m_FogWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a fog was ignored: it needs finite values, a Density of at least 0 and, for Linear, an End past its Start.");
+				m_FogWarned = true;
+			}
+			return false;
+		}
+
+		m_CameraData.FogColor = glm::vec4(fog.Color, std::clamp(fog.MaxOpacity, 0.0f, 1.0f));
+		m_CameraData.FogParams = glm::vec4(fog.Start, fog.End, fog.Density, static_cast<float>(fog.Mode));
+		return true;
+	}
+
+	void Renderer3D::ClearFog()
+	{
+		m_CameraData.FogColor = glm::vec4(0.0f);
+		m_CameraData.FogParams = glm::vec4(0.0f);
+	}
+
 	uint32_t Renderer3D::GetLocalLightBudget() const
 	{
 		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
@@ -1012,6 +1309,7 @@ namespace Dingo
 		m_ShadowCasterGroups = 0xFFFFFFFFu;
 		m_LastSubmittedLight = {};
 		m_ShadowProbes.clear();
+		ClearFog();
 	}
 
 	void Renderer3D::ResolveSceneLights()
@@ -1141,9 +1439,10 @@ namespace Dingo
 			const Shader* shader = batchMaterial->GetShader();
 			batch->Enqueued = true;
 			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			if (!batch->SkinnedOnly)
+			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && batchMaterial->IsTranslucent();
+			if (!batch->SkinnedOnly && !batch->Translucent)
 				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows, shadowGroups });
-			else if (!m_SkinnedOnlyWarned)
+			else if (batch->SkinnedOnly && !m_SkinnedOnlyWarned)
 			{
 				const std::string& name = batchMaterial->GetParams().DebugName;
 				DE_CORE_WARN("Renderer3D: material '{}' has a skinned shader, so the static meshes given it draw with the default material.", name.empty() ? "<unnamed>" : name.c_str());
@@ -1183,27 +1482,47 @@ namespace Dingo
 			return;
 		}
 
-		if (matBatch.ChunksInUse == 0)
+		// A translucent mesh is kept on its own, indexed from its first vertex, until EndScene sorts it.
+		std::vector<Vertex>* destVertices = &m_TranslucentVertices;
+		std::vector<uint32_t>* destIndices = &m_TranslucentIndices;
+		uint32_t vertexOffset = 0;
+		if (matBatch.Translucent)
 		{
-			if (matBatch.Chunks.empty())
-				matBatch.Chunks.emplace_back();
-			matBatch.ChunksInUse = 1;
+			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
+			submission.Material = batchMaterial;
+			submission.FirstVertex = static_cast<uint32_t>(m_TranslucentVertices.size());
+			submission.VertexCount = static_cast<uint32_t>(vertices.size());
+			submission.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
+			submission.IndexCount = static_cast<uint32_t>(indices.size());
+			submission.Shadows = shadows;
+			submission.ShadowGroups = shadowGroups;
 		}
-
-		MeshChunk* chunk = &matBatch.Chunks[matBatch.ChunksInUse - 1];
-		if (chunk->Vertices.size() + vertices.size() > caps.MaxVertices ||
-			chunk->Indices.size() + indices.size() > caps.MaxIndices)
+		else
 		{
-			if (matBatch.ChunksInUse == matBatch.Chunks.size())
-				matBatch.Chunks.emplace_back();
-			chunk = &matBatch.Chunks[matBatch.ChunksInUse];
-			++matBatch.ChunksInUse;
+			if (matBatch.ChunksInUse == 0)
+			{
+				if (matBatch.Chunks.empty())
+					matBatch.Chunks.emplace_back();
+				matBatch.ChunksInUse = 1;
+			}
+
+			MeshChunk* chunk = &matBatch.Chunks[matBatch.ChunksInUse - 1];
+			if (chunk->Vertices.size() + vertices.size() > caps.MaxVertices ||
+				chunk->Indices.size() + indices.size() > caps.MaxIndices)
+			{
+				if (matBatch.ChunksInUse == matBatch.Chunks.size())
+					matBatch.Chunks.emplace_back();
+				chunk = &matBatch.Chunks[matBatch.ChunksInUse];
+				++matBatch.ChunksInUse;
+			}
+			destVertices = &chunk->Vertices;
+			destIndices = &chunk->Indices;
+			vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
 		}
 
 		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
 		// doesn't skew them; positions just use the model matrix.
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
-		const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
 
 		// A caster's bounds fold into the transform loop rather than a second walk over its vertices.
 		const bool casts = shadows != ShadowCasting::Off && !vertices.empty();
@@ -1216,7 +1535,7 @@ namespace Dingo
 			vertex.Normal = normalMatrix * v.Normal;
 			vertex.Color = color;
 			vertex.TexCoord = v.TexCoord;
-			chunk->Vertices.push_back(vertex);
+			destVertices->push_back(vertex);
 			if (casts)
 			{
 				low = glm::min(low, vertex.Position);
@@ -1233,7 +1552,21 @@ namespace Dingo
 		}
 
 		for (uint32_t index : indices)
-			chunk->Indices.push_back(index + vertexOffset);
+			destIndices->push_back(index + vertexOffset);
+
+		if (matBatch.Translucent)
+		{
+			TranslucentSubmission& submission = m_TranslucentSubmissions.back();
+			glm::vec3 center = glm::vec3(transform[3]);
+			if (submission.VertexCount > 0)
+			{
+				glm::vec3 sum(0.0f);
+				for (uint32_t i = 0; i < submission.VertexCount; ++i)
+					sum += m_TranslucentVertices[submission.FirstVertex + i].Position;
+				center = sum / static_cast<float>(submission.VertexCount);
+			}
+			submission.SortKey = TranslucentSortKey(center);
+		}
 
 		++m_Statistics.SubmittedMeshes;
 		m_Statistics.VertexCount += static_cast<uint32_t>(vertices.size());

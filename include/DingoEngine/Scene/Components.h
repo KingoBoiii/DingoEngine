@@ -260,6 +260,27 @@ namespace Dingo
 		SpotLight ToLight(const Transform3DComponent& transform) const;
 	};
 
+	// Distance fog over the scene's 3D pass (see Fog in Graphics/Light.h and Renderer3D::SetFog). The
+	// first enabled one in entity order counts; more warn once. It is no light: a scene whose only
+	// light-like component is a FogComponent keeps the default light. With UseClearColor the fog takes
+	// the scene's clear colour (Scene::SetClearColor), so distant meshes fade into the background.
+	struct FogComponent
+	{
+		FogMode Mode = FogMode::Linear;
+		glm::vec3 Color{ 0.5f };
+		bool UseClearColor = true;
+		float Start = 10.0f;
+		float End = 50.0f;
+		float Density = 0.05f;
+		float MaxOpacity = 1.0f;
+		bool Enabled = true;
+
+		FogComponent() = default;
+		FogComponent(const FogComponent&) = default;
+		FogComponent(FogMode mode, float start, float end)
+			: Mode(mode), Start(start), End(end) {}
+	};
+
 	// Physics -----------------------------------------------------------------
 
 	// A 2D rigid body. The simulating body lives in the Scene's Physics2D world
@@ -624,6 +645,7 @@ namespace Dingo
 		// Ignored when Spatialized is false.
 		std::optional<SoundAttenuation> Attenuation;
 		bool PlayOnStart = false;
+		AudioBusId Bus = k_MasterBus;
 
 		AudioSourceComponent() = default;
 		AudioSourceComponent(const AudioSourceComponent&) = default;

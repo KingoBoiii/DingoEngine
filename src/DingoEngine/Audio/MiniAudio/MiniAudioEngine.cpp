@@ -2,6 +2,8 @@
 #include "DingoEngine/Audio/MiniAudio/MiniAudioEngine.h"
 #include "DingoEngine/Asset/AssetPath.h"
 
+#include <algorithm>
+
 // All miniaudio usage is confined to this .cpp (+ the engine-internal MiniAudioData.h).
 #include "DingoEngine/Audio/MiniAudio/MiniAudioData.h"
 
@@ -35,6 +37,14 @@ namespace Dingo
 
 		std::uint32_t IndexOf(AudioSoundId id) { return id & k_IndexMask; }
 		std::uint16_t GenerationOf(AudioSoundId id) { return static_cast<std::uint16_t>(id >> k_IndexBits); }
+
+		constexpr std::uint32_t k_MasterBusIndex = 0;
+		constexpr std::string_view k_MasterBusName = "Master";
+
+		AudioBusId MakeBusId(std::uint32_t index, std::uint16_t generation)
+		{
+			return static_cast<AudioBusId>(MakeId(index, generation));
+		}
 
 		ma_attenuation_model ToMiniAudio(AudioAttenuationModel model)
 		{
@@ -103,6 +113,24 @@ namespace Dingo
 			m_Data = nullptr;
 			return;
 		}
+
+		auto* root = new ma_sound();
+		const ma_result rootResult = ma_sound_group_init(m_Data->Engine, MA_SOUND_FLAG_NO_PITCH, nullptr, root);
+		if (rootResult != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("MiniAudioEngine: ma_sound_group_init failed for the master bus ({})", (int)rootResult);
+			delete root;
+			ma_engine_uninit(m_Data->Engine);
+			delete m_Data->Engine;
+			delete m_Data;
+			m_Data = nullptr;
+			return;
+		}
+
+		Internal::BusSlot& master = m_Data->Buses.emplace_back();
+		master.Group = root;
+		master.Name = k_MasterBusName;
+		master.Serial = 0;
 	}
 
 	void MiniAudioEngine::Shutdown()
@@ -118,6 +146,23 @@ namespace Dingo
 				ReleaseSlot(slot);
 		}
 		m_Data->Slots.clear();
+
+		std::vector<std::uint32_t> buses;
+		for (std::uint32_t i = 0; i < m_Data->Buses.size(); ++i)
+		{
+			if (m_Data->Buses[i].Group)
+				buses.push_back(i);
+		}
+		std::sort(buses.begin(), buses.end(), [this](std::uint32_t a, std::uint32_t b)
+		{
+			return m_Data->Buses[a].Serial > m_Data->Buses[b].Serial;
+		});
+		for (std::uint32_t index : buses)
+		{
+			ma_sound_group_uninit(m_Data->Buses[index].Group);
+			delete m_Data->Buses[index].Group;
+		}
+		m_Data->Buses.clear();
 
 		ma_engine_uninit(m_Data->Engine); // stops the device thread
 		delete m_Data->Engine;
@@ -196,7 +241,7 @@ namespace Dingo
 	// reaped by Update() (which bumps the slot generation so the id then goes stale).
 	static AudioSoundId StartInstance(Internal::MiniAudioData& data,
 		const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params,
-		const SoundAttenuation& defaultAttenuation)
+		const SoundAttenuation& defaultAttenuation, std::optional<std::uint32_t> bus)
 	{
 		if (!clip)
 			return k_InvalidSound;
@@ -205,8 +250,18 @@ namespace Dingo
 		if (!concrete->m_Loaded)
 			return k_InvalidSound;
 
+		if (!bus)
+		{
+			if (!data.StaleBusWarned)
+			{
+				DE_CORE_WARN("AudioEngine: a sound was played on a destroyed or invalid bus; it plays on the master bus");
+				data.StaleBusWarned = true;
+			}
+			bus = k_MasterBusIndex;
+		}
+
 		auto* sound = new ma_sound();
-		const ma_result result = ma_sound_init_copy(data.Engine, concrete->Template(), 0, nullptr, sound);
+		const ma_result result = ma_sound_init_copy(data.Engine, concrete->Template(), 0, data.Buses[*bus].Group, sound);
 		if (result != MA_SUCCESS)
 		{
 			DE_CORE_ERROR("AudioEngine: failed to instantiate sound ({})", (int)result);
@@ -228,6 +283,7 @@ namespace Dingo
 		Internal::SoundSlot& slot = data.Slots[index];
 		slot.Sound = sound;
 		slot.Clip = clip; // keep the decoded data alive for this instance's lifetime
+		slot.Bus = *bus;
 
 		ma_sound_start(sound);
 		return MakeId(index, slot.Generation);
@@ -237,19 +293,30 @@ namespace Dingo
 	{
 		if (!m_Data)
 			return k_InvalidSound;
-		return StartInstance(*m_Data, clip, params, m_DefaultAttenuation);
+		return StartInstance(*m_Data, clip, params, m_DefaultAttenuation, ResolveBus(params.Bus));
 	}
 
 	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, float volume)
+	{
+		PlayOneShot(clip, k_MasterBus, volume);
+	}
+
+	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume)
+	{
+		PlayOneShot(clip, position, k_MasterBus, volume);
+	}
+
+	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, AudioBusId bus, float volume)
 	{
 		if (!m_Data)
 			return;
 		SoundPlayParams params;
 		params.Volume = volume;
-		StartInstance(*m_Data, clip, params, m_DefaultAttenuation);
+		params.Bus = bus;
+		Play(clip, params);
 	}
 
-	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, float volume)
+	void MiniAudioEngine::PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, AudioBusId bus, float volume)
 	{
 		if (!m_Data)
 			return;
@@ -257,7 +324,254 @@ namespace Dingo
 		params.Volume = volume;
 		params.Spatialized = true;
 		params.Position = position;
-		StartInstance(*m_Data, clip, params, m_DefaultAttenuation);
+		params.Bus = bus;
+		Play(clip, params);
+	}
+
+	std::optional<std::uint32_t> MiniAudioEngine::ResolveBus(AudioBusId id) const
+	{
+		if (!m_Data || id == k_InvalidBus)
+			return std::nullopt;
+
+		const std::uint32_t packed = static_cast<std::uint32_t>(id);
+		const std::uint32_t index = IndexOf(packed);
+		if (index >= m_Data->Buses.size())
+			return std::nullopt;
+
+		const Internal::BusSlot& bus = m_Data->Buses[index];
+		if (!bus.Group || bus.Generation != GenerationOf(packed))
+			return std::nullopt;
+
+		return index;
+	}
+
+	bool MiniAudioEngine::IsUnderBus(std::uint32_t index, std::uint32_t ancestor) const
+	{
+		if (ancestor == k_MasterBusIndex)
+			return true;
+
+		while (index != k_MasterBusIndex)
+		{
+			if (index == ancestor)
+				return true;
+			index = m_Data->Buses[index].Parent;
+		}
+		return false;
+	}
+
+	void MiniAudioEngine::StopSoundsUnder(std::uint32_t busIndex)
+	{
+		for (Internal::SoundSlot& slot : m_Data->Slots)
+		{
+			if (slot.Sound && IsUnderBus(slot.Bus, busIndex))
+				ReleaseSlot(slot);
+		}
+	}
+
+	void MiniAudioEngine::ApplyBusVolume(std::uint32_t index)
+	{
+		// The master bus's level is the engine volume (SetMasterVolume); its group only mutes.
+		const Internal::BusSlot& bus = m_Data->Buses[index];
+		const float level = index == k_MasterBusIndex ? 1.0f : bus.Volume;
+		ma_sound_group_set_volume(bus.Group, bus.Muted ? 0.0f : level);
+	}
+
+	AudioBusId MiniAudioEngine::CreateBus(std::string_view name, AudioBusId parent)
+	{
+		if (!m_Data)
+			return k_InvalidBus;
+
+		if (name.empty())
+		{
+			DE_CORE_ERROR("AudioEngine::CreateBus: a bus needs a name");
+			return k_InvalidBus;
+		}
+
+		const std::optional<std::uint32_t> parentIndex = ResolveBus(parent);
+		if (!parentIndex)
+		{
+			DE_CORE_ERROR("AudioEngine::CreateBus: the parent of bus '{}' is destroyed or invalid", name);
+			return k_InvalidBus;
+		}
+
+		const AudioBusId existing = FindBus(name);
+		if (existing != k_InvalidBus)
+		{
+			DE_CORE_WARN("AudioEngine::CreateBus: bus '{}' already exists; returning it", name);
+			return existing;
+		}
+
+		auto* group = new ma_sound();
+		const ma_result result = ma_sound_group_init(m_Data->Engine, MA_SOUND_FLAG_NO_PITCH, m_Data->Buses[*parentIndex].Group, group);
+		if (result != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("AudioEngine::CreateBus: ma_sound_group_init failed for '{}' ({})", name, (int)result);
+			delete group;
+			return k_InvalidBus;
+		}
+
+		std::uint32_t index = 1;
+		while (index < m_Data->Buses.size() && m_Data->Buses[index].Group)
+			++index;
+		if (index == m_Data->Buses.size())
+			m_Data->Buses.emplace_back();
+
+		Internal::BusSlot& bus = m_Data->Buses[index];
+		bus.Group = group;
+		bus.Parent = *parentIndex;
+		bus.Name = name;
+		bus.Volume = 1.0f;
+		bus.Muted = false;
+		bus.Paused = false;
+		bus.Serial = m_Data->NextBusSerial++;
+		return MakeBusId(index, bus.Generation);
+	}
+
+	void MiniAudioEngine::DestroyBus(AudioBusId id)
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		if (!index)
+			return;
+
+		if (*index == k_MasterBusIndex)
+		{
+			DE_CORE_WARN("AudioEngine::DestroyBus: the master bus can't be destroyed");
+			return;
+		}
+
+		StopSoundsUnder(*index);
+
+		std::vector<std::uint32_t> doomed;
+		for (std::uint32_t i = 1; i < m_Data->Buses.size(); ++i)
+		{
+			if (m_Data->Buses[i].Group && IsUnderBus(i, *index))
+				doomed.push_back(i);
+		}
+		std::sort(doomed.begin(), doomed.end(), [this](std::uint32_t a, std::uint32_t b)
+		{
+			return m_Data->Buses[a].Serial > m_Data->Buses[b].Serial;
+		});
+
+		// Parents are read through IsUnderBus above, so nothing is freed until every
+		// sub-bus is known.
+		for (std::uint32_t i : doomed)
+		{
+			Internal::BusSlot& bus = m_Data->Buses[i];
+			ma_sound_group_uninit(bus.Group);
+			delete bus.Group;
+			bus.Group = nullptr;
+			bus.Name.clear();
+			++bus.Generation;
+		}
+	}
+
+	AudioBusId MiniAudioEngine::FindBus(std::string_view name) const
+	{
+		if (!m_Data || name.empty())
+			return k_InvalidBus;
+
+		for (std::uint32_t i = 0; i < m_Data->Buses.size(); ++i)
+		{
+			const Internal::BusSlot& bus = m_Data->Buses[i];
+			if (bus.Group && bus.Name == name)
+				return MakeBusId(i, bus.Generation);
+		}
+		return k_InvalidBus;
+	}
+
+	bool MiniAudioEngine::IsBusValid(AudioBusId bus) const
+	{
+		return ResolveBus(bus).has_value();
+	}
+
+	std::uint32_t MiniAudioEngine::GetBusCount() const
+	{
+		if (!m_Data)
+			return 0;
+
+		std::uint32_t count = 0;
+		for (std::uint32_t i = 1; i < m_Data->Buses.size(); ++i)
+		{
+			if (m_Data->Buses[i].Group)
+				++count;
+		}
+		return count;
+	}
+
+	void MiniAudioEngine::SetBusVolume(AudioBusId id, float volume)
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		if (!index)
+			return;
+
+		if (*index == k_MasterBusIndex)
+		{
+			SetMasterVolume(volume);
+			return;
+		}
+
+		m_Data->Buses[*index].Volume = volume;
+		ApplyBusVolume(*index);
+	}
+
+	float MiniAudioEngine::GetBusVolume(AudioBusId id) const
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		if (!index)
+			return 0.0f;
+		if (*index == k_MasterBusIndex)
+			return GetMasterVolume();
+		return m_Data->Buses[*index].Volume;
+	}
+
+	void MiniAudioEngine::SetBusMuted(AudioBusId id, bool muted)
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		if (!index)
+			return;
+
+		m_Data->Buses[*index].Muted = muted;
+		ApplyBusVolume(*index);
+	}
+
+	bool MiniAudioEngine::IsBusMuted(AudioBusId id) const
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		return index ? m_Data->Buses[*index].Muted : false;
+	}
+
+	void MiniAudioEngine::PauseBus(AudioBusId id)
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		if (!index)
+			return;
+
+		Internal::BusSlot& bus = m_Data->Buses[*index];
+		bus.Paused = true;
+		ma_sound_group_stop(bus.Group);
+	}
+
+	void MiniAudioEngine::ResumeBus(AudioBusId id)
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		if (!index)
+			return;
+
+		Internal::BusSlot& bus = m_Data->Buses[*index];
+		bus.Paused = false;
+		ma_sound_group_start(bus.Group);
+	}
+
+	bool MiniAudioEngine::IsBusPaused(AudioBusId id) const
+	{
+		const std::optional<std::uint32_t> index = ResolveBus(id);
+		return index ? m_Data->Buses[*index].Paused : false;
+	}
+
+	void MiniAudioEngine::StopBus(AudioBusId id)
+	{
+		if (const std::optional<std::uint32_t> index = ResolveBus(id))
+			StopSoundsUnder(*index);
 	}
 
 	Internal::SoundSlot* MiniAudioEngine::ResolveSlot(AudioSoundId id) const
