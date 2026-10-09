@@ -19,6 +19,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <span>
 
 namespace Dingo
 {
@@ -1250,12 +1251,55 @@ namespace Dingo
 					continue;
 				}
 
-				const size_t start = i;
+				// A quote inside a token quotes that part of it: a payload's key="value with spaces".
+				std::string& token = tokens.emplace_back();
 				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
-					i++;
-				tokens.emplace_back(line.substr(start, i - start));
+				{
+					if (line[i] != '"')
+					{
+						token += line[i++];
+						continue;
+					}
+
+					const size_t close = line.find('"', i + 1);
+					if (close == std::string_view::npos)
+						return false;
+					token += line.substr(i + 1, close - i - 1);
+					i = close + 1;
+				}
 			}
 			return true;
+		}
+
+		// Payload tokens back into AnimationEventPayload's text, a value with a space quoted again.
+		std::string JoinPayload(std::span<const std::string> tokens)
+		{
+			std::string payload;
+			for (const std::string& token : tokens)
+			{
+				if (!payload.empty())
+					payload += ' ';
+
+				const size_t equals = token.find('=');
+				const bool spaced = std::any_of(token.begin(), token.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); });
+				if (!spaced)
+				{
+					payload += token;
+					continue;
+				}
+				if (equals == std::string::npos)
+				{
+					payload += '"';
+					payload += token;
+					payload += '"';
+					continue;
+				}
+				payload += token.substr(0, equals + 1);
+				payload += '"';
+				payload += token.substr(equals + 1);
+				payload += '"';
+			}
+			return payload;
 		}
 
 		bool ParseSeconds(std::string_view text, float& value)
@@ -1290,9 +1334,9 @@ namespace Dingo
 			}
 			if (tokens.empty())
 				continue;
-			if (tokens.size() != 3)
+			if (tokens.size() < 3)
 			{
-				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event>` or `<clip> <begin>..<end> <event>`; line skipped", fileName, number);
+				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event> [key=value...]` or `<clip> <begin>..<end> <event> [key=value...]`; line skipped", fileName, number);
 				continue;
 			}
 
@@ -1325,10 +1369,11 @@ namespace Dingo
 			if (begin < 0.0f || begin > clip->GetDuration() || (dots != std::string_view::npos && end > clip->GetDuration()))
 				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, tokens[1], tokens[0], clip->GetDuration());
 
+			std::string payload = JoinPayload(std::span<const std::string>(tokens).subspan(3));
 			if (dots == std::string_view::npos)
-				clip->AddEvent(begin, std::move(tokens[2]));
+				clip->AddEvent(begin, std::move(tokens[2]), std::move(payload));
 			else
-				clip->AddEventRange(begin, end, std::move(tokens[2]));
+				clip->AddEventRange(begin, end, std::move(tokens[2]), std::move(payload));
 		}
 		return true;
 	}

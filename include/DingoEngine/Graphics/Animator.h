@@ -28,6 +28,9 @@ namespace Dingo
 		// skeleton (Animator::SetSkeleton).
 		const AnimationClip* Clip = nullptr;
 		uint32_t Layer = 0;
+		// The event's data from the .events line or AnimationClip::AddEvent; a RangeEnd carries its
+		// begin's.
+		AnimationEventPayload Payload;
 	};
 
 	// One state a layer is mixing, as Animator::GetStates reports it.
@@ -266,6 +269,7 @@ namespace Dingo
 			uint32_t Event = 0;
 			std::string_view Name;
 			float EndTime = 0.0f;
+			AnimationEventPayload Payload;
 		};
 
 		struct Layer

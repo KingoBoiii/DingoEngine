@@ -816,7 +816,7 @@ namespace Dingo
 			{
 				const bool kept = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name;
 				if (!kept)
-					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
+					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
 				return !kept;
 			});
 		}
@@ -908,7 +908,7 @@ namespace Dingo
 			if (open != layer.OpenRanges.end())
 				return;
 			const AnimationClipEvent& event = clip.GetEvents()[mark.Event];
-			layer.OpenRanges.push_back({ &clip, mark.Event, mark.Name, forward ? event.EndTime : event.Time });
+			layer.OpenRanges.push_back({ &clip, mark.Event, mark.Name, forward ? event.EndTime : event.Time, mark.Payload });
 		}
 		else if (type == AnimationEventType::RangeEnd)
 		{
@@ -917,13 +917,13 @@ namespace Dingo
 			layer.OpenRanges.erase(open);
 		}
 
-		m_Events.push_back({ mark.Name, mark.Time, type, &clip, layerIndex });
+		m_Events.push_back({ mark.Name, mark.Time, type, &clip, layerIndex, mark.Payload });
 	}
 
 	void Animator::CloseRanges(uint32_t layerIndex, Layer& layer)
 	{
 		for (const OpenRange& range : layer.OpenRanges)
-			m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
+			m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
 		layer.OpenRanges.clear();
 	}
 
@@ -952,7 +952,7 @@ namespace Dingo
 		for (uint32_t i = 0; i < m_Layers.size(); ++i)
 		{
 			for (const OpenRange& range : m_Layers[i].OpenRanges)
-				ends.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, i });
+				ends.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, i, range.Payload });
 		}
 		return ends;
 	}

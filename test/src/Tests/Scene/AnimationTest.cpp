@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -859,6 +860,49 @@ namespace Dingo
 		};
 		Check(steps(*walk) == 4 && steps(*run) == 4 && survey->GetEvents().size() == 1 && survey->GetEvents()[0].Range && survey->GetEvents()[0].Name == "look",
 			"Fox.events beside the model gives Walk and Run four footfalls each and Survey a range");
+
+		{
+			AnimationClip swing("Swing", 1.0f, {}, &skeleton);
+			swing.AddEventRange(0.2f, 0.4f, "hitbox", "damage=12 reach=1.5 sound=\"heavy hit\" unblockable");
+			Animator animator(&skeleton);
+			animator.Play(&swing);
+			AnimationEventPayload begin, end;
+			for (int step = 0; step <= 6; ++step)
+			{
+				animator.Update(step == 0 ? 0.0f : 0.1f);
+				for (const AnimationEvent& event : animator.GetEventsThisFrame())
+					(event.Type == AnimationEventType::RangeBegin ? begin : end) = event.Payload;
+			}
+			Check(begin.GetFloat("damage") == 12.0f && begin.GetInt("damage") == 12 && begin.GetFloat("reach") == 1.5f
+				&& begin.GetString("sound") == "heavy hit" && begin.Has("unblockable") && !begin.Has("parry")
+				&& begin.GetFloat("reach", -1.0f) == 1.5f && begin.GetInt("reach", -1) == -1 && begin.GetFloat("missing", 7.0f) == 7.0f
+				&& end.Text == begin.Text,
+				"an event's payload reads back by key, and its RangeEnd carries its begin's");
+
+			const std::filesystem::path folder = std::filesystem::temp_directory_path() / "DingoAnimationTest";
+			std::error_code error;
+			std::filesystem::create_directories(folder, error);
+			const std::filesystem::path eventsPath = folder / "Payload.events";
+			std::ofstream(eventsPath) << "Walk 0.1 swing damage=8 sound=\"two words\"  # a comment\nWalk 0.2 bare\n";
+			std::unique_ptr<Model> library(Model::LoadFromFile(k_FoxPath, ModelLoadParams().SetClipsOnly(true)));
+			const AnimationClip* walkCopy = library ? library->FindAnimation("Walk") : nullptr;
+			const AnimationClipEvent* swingEvent = nullptr;
+			const AnimationClipEvent* bareEvent = nullptr;
+			if (walkCopy && library->LoadEvents(eventsPath))
+			{
+				for (const AnimationClipEvent& event : walkCopy->GetEvents())
+				{
+					if (event.Name == "swing")
+						swingEvent = &event;
+					else if (event.Name == "bare")
+						bareEvent = &event;
+				}
+			}
+			const AnimationEventPayload parsed{ swingEvent ? std::string_view(swingEvent->Payload) : std::string_view() };
+			Check(swingEvent && bareEvent && parsed.GetInt("damage") == 8 && parsed.GetString("sound") == "two words" && bareEvent->Payload.empty(),
+				"a .events line's key=value pairs after the event name load as its payload");
+			std::filesystem::remove(eventsPath, error);
+		}
 
 		// Clips of events alone: no channels, so they pose the rest pose.
 		{

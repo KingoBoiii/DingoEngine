@@ -604,6 +604,13 @@ Slash     0.32..0.48   hitbox
 - One event per line: `<clip> <seconds> <event>` for an instant, `<clip> <begin>..<end> <event>` for
   a range. Whitespace separates them, `#` starts a comment (also after an event), and a clip or event
   name with spaces goes in double quotes (`"Hard Hit" 0.1 "impact flash"`).
+- Anything after the event name is its **payload**: `key=value` pairs separated by spaces, a value
+  with spaces in double quotes, a bare key a flag (`Slash 0.32..0.48 hitbox damage=12 reach=1.4
+  sound="heavy hit" unblockable`). A value holding `#` goes in quotes too (`color="#ff8800"`), since
+  an unquoted `#` starts a comment. `AnimationEvent::Payload` reads it: `GetFloat("damage")`,
+  `GetInt`, `GetString`, `Has`, each with a fallback for a missing key or a value that isn't that
+  kind of number. A RangeEnd carries its begin's payload, and the text lives as long as the name does.
+  In code: `clip->AddEvent(0.3f, "hit", "damage=12")`, `AddEventRange(a, b, name, payload)`.
 - A byte order mark and CRLF line endings are fine.
 - A line that does not parse, names a clip the model lacks, has an unclosed quote, or has a range
   that ends before it begins warns with the file name and line number and is skipped. A time that
@@ -742,8 +749,9 @@ building it showed:
 - **A hit-stop slows the animator with `AnimatorComponent::Speed`.** Marionette chose it over
   `Enabled` because, before v0.8.3, a poller of a disabled animator read its last frame's events
   again and again ([#81](https://github.com/KingoBoiii/DingoEngine/issues/81)).
-- Per-move numbers (damage, reach) live in a game-side table keyed by clip. An event carries a name,
-  no payload ([#103](https://github.com/KingoBoiii/DingoEngine/issues/103)).
+- Per-move numbers (damage, reach) can ride on the event as its payload (`hitbox damage=12`), so a
+  designer tunes them in the `.events` file and a live edit reaches the next swing. Marionette keeps
+  them in a game-side table keyed by clip (`Moveset`), from before payloads existed.
 
 ### Particles from events
 
