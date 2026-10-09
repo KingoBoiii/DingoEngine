@@ -25,7 +25,7 @@ and it lives in `examples/Hearthvale` beside the other examples.
 | Skinned throughput (P6) | The farmer, the villagers and the animals, with animation LOD off screen |
 | Stability (P7) | Crash logs and dumps in the user-data folder of a game players install |
 | DingoUI (workstream U) | Every menu and the HUD, pad first |
-| SaveData, buses, display, fog, translucency (P8) | The whole valley in a save, music and ambience sliders, morning mist, greenhouse glass, the pond |
+| SaveData, display modes (P8); buses, fog, translucency (on master, #110) | The whole valley in a save, music and ambience sliders, morning mist, greenhouse glass, the pond |
 | `OnFixedUpdate`, body lookup (P9) | Deterministic day simulation for `--check`; picking a villager by ray |
 | v0.9 | A moving sun with cascades, shadowed lamps, bloom on windows, rain and firefly particles, AO |
 
@@ -335,7 +335,7 @@ diff. Estimates are focused dev days.
 | **H2** | Building: target tile, ghost preview, rules (blocked, cost, footprint), place/remove/rotate, axe and pickaxe, wood and stone, a temporary text build menu | 4 d | P3–P5 | 500 fences placed and removed without a dropped frame; each place or remove rebakes one cell (F4 stat); placement checks pass |
 | **H3** | Crops and calendar: tilling, seeds, watering, growth, regrowth, seasons, weather, sleep and the day roll, the shipping bin, sprinklers | 4 d | — | `--days=28 --autoplay` grows and sells two seasons; growth checks pass |
 | **H4** | Economy and UI: inventory, hotbar, shop, prices, the board and its requests, every menu on DingoUI | 4 d | U5 (DingoUI with focus navigation) | Every screen works with a pad only; the UI navigation check passes |
-| **H5** | Life: villagers (schedules, dialogue, gifts), animals (HD3), the coop and barn, the greenhouse and pond, lamps and windows, mist, particles, music and ambience on buses | 4.5 d | P6, P8 | A night in the square stays in the light budget with no popping; the greenhouse grows in winter |
+| **H5** | Life: villagers (schedules, dialogue, gifts), animals (HD3), the coop and barn, the greenhouse and pond, lamps and windows, mist, particles, music and ambience on buses | 4.5 d | P6 | A night in the square stays in the light budget with no popping; the greenhouse grows in winter |
 | **H6** | Saves and shipping: slots, autosave, schema versioning, the `.bak` fallback, options, title, credits, the festival ending, icons and exe metadata, Windows and Linux packages, the itch.io page (cover, screenshots, description) | 3.5 d | P7, P8, P10 | Save checks pass, including a kill mid-write; a full year plays start to festival with `--autoplay` |
 | **H7** | Balance, review and perf: tune prices, growth and board goals from `--days=56` logs; a fresh-agent review (`.claude/reviews/<date>-hearthvale-review.md`); `--perf` on all three backends with `--layout=demo`; a 60-minute soak; the name settled (HD9) | 4 d | P10 RC | Review Criticals and Highs fixed; perf targets met (§6); soak flat |
 
