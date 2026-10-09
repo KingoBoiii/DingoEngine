@@ -4,6 +4,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <vector>
 
 namespace Dingo
 {
@@ -65,6 +66,17 @@ namespace Dingo
 		// steps where the body is that fast. Ignored for Static bodies.
 		bool ContinuousCollision = false;
 
+		// A trigger volume: nothing collides with it, character controllers walk through it, and
+		// scene queries skip it unless their QueryFilter3D includes sensors.
+		// Physics3D::GetSensorOverlaps lists the bodies inside it. A Mesh sensor doesn't find
+		// Mesh colliders (Jolt can't collide two triangle meshes).
+		bool IsSensor = false;
+		// The query layers the body is in, one bit each; a QueryFilter3D only hits bodies that
+		// share a bit with its Layers. Not a contact filter: bodies on any layers still collide.
+		std::uint32_t QueryLayers = 1u;
+		// Free for the caller (Physics3D::GetUserData). A Scene keeps its entity here.
+		std::uint32_t UserData = 0;
+
 		RigidBodyParams3D() = default;
 		RigidBodyParams3D(BodyType3D type, ColliderShape3D shape) : Type(type), Shape(shape) {}
 	};
@@ -80,6 +92,19 @@ namespace Dingo
 		glm::vec3 Point{ 0.0f };
 		glm::vec3 Normal{ 0.0f };
 		float Fraction = 0.0f;
+	};
+
+	// Narrows a scene query (RayCast, ShapeCastSphere, OverlapSphere). The default hits every
+	// body that isn't a sensor.
+	struct QueryFilter3D
+	{
+		std::uint32_t Layers = 0xFFFFFFFFu; // hits only bodies whose QueryLayers share a bit with it
+		std::vector<PhysicsBodyId3D> IgnoredBodies;
+		bool IncludeSensors = false;
+
+		QueryFilter3D& SetLayers(std::uint32_t layers) { Layers = layers; return *this; }
+		QueryFilter3D& Ignore(PhysicsBodyId3D body) { IgnoredBodies.push_back(body); return *this; }
+		QueryFilter3D& SetIncludeSensors(bool include) { IncludeSensors = include; return *this; }
 	};
 
 }

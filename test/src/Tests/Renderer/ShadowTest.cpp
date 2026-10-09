@@ -49,12 +49,20 @@ namespace Dingo
 		constexpr uint64_t k_SpotBehindKey = 10;
 		constexpr uint64_t k_SpotOpenKey = 11;
 		constexpr uint64_t k_UncastKey = 12;
+		constexpr uint64_t k_SpotClearedKey = 13;
+		constexpr uint64_t k_SpotGroupsKey = 14;
+		constexpr uint64_t k_GlassBehindKey = 15;
+		constexpr uint64_t k_GlassGroupsKey = 16;
 		constexpr uint64_t k_PointBehindKey = 20;
 		const glm::vec3 k_SunBehind{ -0.6f, 0.3f, -0.3f };
 		const glm::vec3 k_SunOpen{ 3.0f, 0.3f, -2.0f };
 		const glm::vec3 k_SpotBehind{ 0.9f, 0.2f, 0.0f };
 		const glm::vec3 k_SpotOpen{ 2.5f, 0.3f, 1.5f };
 		const glm::vec3 k_Uncast{ -6.0f, 0.5f, 3.0f };
+		// A translucent slab in caster group 2, floating between the spot light and k_GlassBehind, off
+		// every other probe's ray.
+		const glm::vec3 k_GlassCenter{ -1.5f, 2.0f, -0.8f };
+		const glm::vec3 k_GlassBehind{ -0.15f, 0.2f, -1.52f };
 		const glm::vec3 k_PointBehind{ 4.5f, 0.3f, 0.0f };
 
 		glm::vec3 SweepPoint(int i)
@@ -148,6 +156,7 @@ namespace Dingo
 		m_Camera = CameraFor(m_Mode, m_AspectRatio);
 
 		LoadFox();
+		m_GlassMaterial = renderer.CreateLitMaterial(MaterialParams().SetDebugName("ShadowTestGlass").SetTranslucent(true));
 		BuildEntityScene();
 
 		m_SunPair = { MakeTarget("ShadowTest sun on"), MakeTarget("ShadowTest sun off") };
@@ -311,6 +320,18 @@ namespace Dingo
 				{
 					renderer.AddShadowProbe(spotLight, k_SpotBehind, k_SpotBehindKey);
 					renderer.AddShadowProbe(spotLight, k_SpotOpen, k_SpotOpenKey);
+					renderer.AddShadowProbe(spotLight, k_SpotBehind, k_SpotClearedKey, glm::length(k_SpotPosition - k_SpotBehind) - 0.5f);
+					SpotLight skipsBox = spot;
+					skipsBox.Intensity = 0.1f;
+					skipsBox.ShadowCasterGroups = ~1u;
+					renderer.SubmitLight(skipsBox);
+					renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), k_SpotBehind, k_SpotGroupsKey);
+					renderer.SubmitMesh(box, Box(k_GlassCenter, glm::vec3(0.6f)), { 0.5f, 0.8f, 1.0f, 0.4f }, m_GlassMaterial, ShadowCasting::On, 2u);
+					renderer.AddShadowProbe(spotLight, k_GlassBehind, k_GlassBehindKey);
+					SpotLight skipsGlass = skipsBox;
+					skipsGlass.ShadowCasterGroups = ~2u;
+					renderer.SubmitLight(skipsGlass);
+					renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), k_GlassBehind, k_GlassGroupsKey);
 					PointLight uncast;
 					uncast.Position = k_Uncast + glm::vec3(0.0f, 0.5f, 0.0f);
 					uncast.Range = 2.0f;
@@ -562,9 +583,10 @@ namespace Dingo
 			SpotLightComponent casting = component;
 			casting.CastShadows = true;
 			casting.ShadowStrength = 0.5f;
+			casting.ShadowCasterGroups = 6u;
 			const SpotLight light = casting.ToLight(Transform3DComponent());
-			Check(light.CastShadows && light.ShadowStrength == 0.5f && !component.ToLight(Transform3DComponent()).CastShadows,
-				"SpotLightComponent::ToLight carries CastShadows and ShadowStrength");
+			Check(light.CastShadows && light.ShadowStrength == 0.5f && light.ShadowCasterGroups == 6u && !component.ToLight(Transform3DComponent()).CastShadows,
+				"SpotLightComponent::ToLight carries CastShadows, ShadowStrength and ShadowCasterGroups");
 		}
 
 		// Shadow slots go by rank even when every light fits the budget: ten casting spot lights in a
@@ -799,6 +821,15 @@ namespace Dingo
 		Check(spotBehind >= 0.0f && spotBehind < 0.05f && spotOpen == 1.0f,
 			std::format("a spot light's probe behind its box reads 0 and one in its cone 1 ({:.3f}, {:.3f})", spotBehind, spotOpen));
 
+		const float spotCleared = answer(k_SpotClearedKey);
+		Check(spotCleared > 0.95f, std::format("a probe behind the box with a clearance past it reads 1 ({:.3f})", spotCleared));
+		const float spotGroups = answer(k_SpotGroupsKey);
+		Check(spotGroups > 0.95f, std::format("a spot light whose caster groups leave out the box's isn't shadowed by it ({:.3f})", spotGroups));
+		const float glassBehind = answer(k_GlassBehindKey);
+		const float glassGroups = answer(k_GlassGroupsKey);
+		Check(glassBehind >= 0.0f && glassBehind < 0.05f && glassGroups > 0.95f,
+			std::format("a translucent caster shadows a spot light that shares its group and not one that leaves it out ({:.3f}, {:.3f})", glassBehind, glassGroups));
+
 		const float pointBehind = answer(k_PointBehindKey);
 		Check(pointBehind >= 0.0f && pointBehind < 0.05f, std::format("a point light's probe behind a pillar reads 0 ({:.3f})", pointBehind));
 
@@ -875,6 +906,8 @@ namespace Dingo
 		m_EntityScene = nullptr;
 		delete m_FoxMaterial;
 		m_FoxMaterial = nullptr;
+		delete m_GlassMaterial;
+		m_GlassMaterial = nullptr;
 		m_FoxAnimator = Animator();
 		m_FoxPalette.clear();
 		delete m_Fox;

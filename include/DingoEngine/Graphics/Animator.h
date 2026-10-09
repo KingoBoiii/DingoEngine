@@ -1,8 +1,10 @@
 #pragma once
 #include "DingoEngine/Graphics/Skeleton.h"
 #include "DingoEngine/Graphics/AnimationClip.h"
+#include "DingoEngine/Graphics/Enums/RootMotion.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -28,6 +30,9 @@ namespace Dingo
 		// skeleton (Animator::SetSkeleton).
 		const AnimationClip* Clip = nullptr;
 		uint32_t Layer = 0;
+		// The event's data from the .events line or AnimationClip::AddEvent; a RangeEnd carries its
+		// begin's.
+		AnimationEventPayload Payload;
 	};
 
 	// One state a layer is mixing, as Animator::GetStates reports it.
@@ -41,6 +46,15 @@ namespace Dingo
 		float Weight = 1.0f;                 // how far it has faded in, 0 to 1
 		float Time = 0.0f;                   // seconds into the clip, or a blend's phase from 0 to 1
 		float NormalizedTime = 0.0f;         // 0 to 1 through the clip or cycle
+	};
+
+	// How far the root moved over the last Animator::Update, in the model's space (the skeleton's
+	// root transform included, so a centimetre FBX's 0.01 is in it) and relative to where the model
+	// stood before it: what the entity moves by, applied after its own transform.
+	struct RootMotionDelta
+	{
+		glm::vec3 Translation{ 0.0f };
+		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
 	};
 
 	struct BlendPoint
@@ -178,6 +192,25 @@ namespace Dingo
 		// (after a SetTime, say).
 		void Evaluate();
 
+		// Off (the default) leaves clips as they are. Otherwise every clip that moves the root joint
+		// has that motion taken out of the pose, which is held where the clip starts, and Update
+		// reports what layer 0's states moved it by, folded with their fade and blend weights, in
+		// GetRootMotionDelta. Clips on higher layers are held in place too but never move the model.
+		// Only time that plays counts: a seek or a new state jumps nothing.
+		void           SetRootMotion(RootMotionMode mode) { m_RootMotion = mode; }
+		RootMotionMode GetRootMotion() const { return m_RootMotion; }
+		// The joint the motion comes from. Empty (the default) picks, per clip, the root-most joint
+		// whose translation moves; name one for a clip that only turns. The motion is measured as if
+		// the joints above it stood at rest, so keys on them (warned once) stay in the pose. The
+		// model's space is taken as Y-up. Switching the mode mid-clip moves the held root by the
+		// clip's progress so far, with nothing moving the model.
+		void               SetRootMotionJoint(std::string joint);
+		const std::string& GetRootMotionJoint() const { return m_RootMotionJoint; }
+		// The last Update's; identity while root motion is off, and after SetSkeleton.
+		const RootMotionDelta& GetRootMotionDelta() const { return m_RootMotionDelta; }
+		// Until the next Update. A scene does it for a disabled AnimatorComponent, as with events.
+		void ClearRootMotionDelta() { m_RootMotionDelta = {}; }
+
 		// The clip events the last Update crossed, layer by layer, each in playback order. Only a
 		// layer's dominant contribution fires them: the clip with the larger share of a blend, an
 		// incoming state once its fade weight passes 0.5, a one-shot until it starts fading back;
@@ -227,6 +260,22 @@ namespace Dingo
 		struct ClipBinding
 		{
 			std::vector<ChannelBinding> Channels;
+			// Root motion: the channel it comes from (-1 for none), the frame of that joint's parent in
+			// the model's space, and the joint's model-space position and rotation at the clip's start.
+			int32_t   RootChannel = -1;
+			glm::mat4 RootParent{ 1.0f };
+			glm::mat4 RootParentInverse{ 1.0f };
+			glm::quat RootParentRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+			glm::vec3 RootStartPosition{ 0.0f };
+			glm::quat RootStartRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+		};
+
+		// The part of a root joint's model-space pose that root motion takes out: where it stands and
+		// how far it has turned from the clip's start.
+		struct RootFrame
+		{
+			glm::vec3 Position{ 0.0f };
+			glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
 		};
 
 		// Its bindings are looked up by clip id rather than pointed at, so copying an Animator is safe.
@@ -250,6 +299,8 @@ namespace Dingo
 			float          PreviousTime = 0.0f;
 			bool           Fresh = true;
 			bool           Wrapped = false;
+			// Where the last Update's step took Time before the loop wrapped it, for root motion.
+			float          UnwrappedTime = 0.0f;
 			bool           Led = false;
 			// Where a state that doesn't loop catches up from when it first leads: its start, or the
 			// time of its latest seek.
@@ -266,6 +317,7 @@ namespace Dingo
 			uint32_t Event = 0;
 			std::string_view Name;
 			float EndTime = 0.0f;
+			AnimationEventPayload Payload;
 		};
 
 		struct Layer
@@ -327,6 +379,16 @@ namespace Dingo
 		PlayingState* Dominant(Layer& layer) const;
 
 		const ClipBinding& Bind(const AnimationClip& clip);
+		void   BindRootMotion(const AnimationClip& clip, ClipBinding& binding) const;
+		JointPose RootLocalAt(const AnimationClip& clip, const ClipBinding& binding, float time) const;
+		static void RootModelPose(const ClipBinding& binding, const JointPose& local, glm::vec3& position, glm::quat& rotation);
+		RootFrame MotionFrame(const ClipBinding& binding, const glm::vec3& position, const glm::quat& rotation) const;
+		RootFrame RootFrameAt(const AnimationClip& clip, const ClipBinding& binding, float time) const;
+		void   HoldRoot(const ClipBinding& binding, JointPose& pose) const;
+		RootMotionDelta SegmentMotion(const AnimationClip& clip, const ClipBinding& binding, float from, float to) const;
+		RootMotionDelta ClipMotion(const AnimationClip& clip, float from, float to, bool looping);
+		RootMotionDelta StateMotion(const PlayingState& state);
+		void   CollectRootMotion();
 		BlendSpot Locate(const AnimationState& state) const;
 		float  Duration(const AnimationState& state) const;
 		float  FadeWeight(const PlayingState& state) const;
@@ -364,6 +426,10 @@ namespace Dingo
 
 		std::vector<AnimationEvent> m_Events;
 		uint32_t m_NextSerial = 1;
+
+		RootMotionMode  m_RootMotion = RootMotionMode::Off;
+		std::string     m_RootMotionJoint;
+		RootMotionDelta m_RootMotionDelta;
 	};
 
 }

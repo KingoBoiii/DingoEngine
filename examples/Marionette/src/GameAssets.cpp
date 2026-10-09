@@ -60,7 +60,7 @@ namespace Dingo
 		}
 
 		for (const LibraryDef& library : GetLibraryDefs())
-			m_Libraries.push_back(LoadModel(library.Path));
+			m_Libraries.push_back(LoadModel(library.Path, ModelLoadParams().SetClipsOnly(true)));
 
 		m_Clips = ResolveClips(m_Libraries);
 		if (GetLaunchOptions().BreakHitbox)
@@ -246,13 +246,13 @@ namespace Dingo
 		}
 	}
 
-	Model* GameAssets::LoadModel(const char* path)
+	Model* GameAssets::LoadModel(const char* path, const ModelLoadParams& params)
 	{
 		if (const auto it = m_Models.find(path); it != m_Models.end())
 			return it->second;
 
 		AssetManager& assets = Application::Get().GetAssetManager();
-		Model* model = assets.GetModel(assets.Load(path));
+		Model* model = assets.GetModel(assets.Load(path, params));
 		if (!model)
 		{
 			DE_ERROR("Marionette: failed to load model '{}'", path);

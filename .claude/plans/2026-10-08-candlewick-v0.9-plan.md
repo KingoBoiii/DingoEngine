@@ -254,5 +254,8 @@ owed on the GPU machine.
   - W9: the comment on effect lifetime;
   - W10: the lantern flame, recorded above.
 
-  Left as noted: W4 (the debug cone's length, §6) and W8 (the GPU mean's window).
+  Left as noted: W4 (the debug cone's length, §6) and W8 (the GPU mean's window). Both fixed later for
+  #143: the cone stops at the first wall a level ray along the eye's heading meets (drawing only;
+  `LightLod` still counts the eye's full range), and `--perf` sums each timer's `LastMs` over its own
+  measured frames.
 - **Not verified here:** clang over every Candlewick file. Owed on the GPU machine: everything in §6.

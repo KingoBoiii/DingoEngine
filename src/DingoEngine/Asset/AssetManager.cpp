@@ -349,7 +349,8 @@ namespace Dingo
 				.Type = AssetType::Model,
 				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
-					Model* model = Model::LoadFromFile(metadata.AbsolutePath);
+					auto params = data.ModelParams.find(metadata.Handle);
+					Model* model = Model::LoadFromFile(metadata.AbsolutePath, params != data.ModelParams.end() ? params->second : ModelLoadParams());
 					if (!model)
 						return false;
 
@@ -531,6 +532,38 @@ namespace Dingo
 		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", AssetTypeToString(metadata.Type), metadata.AbsolutePath.string());
 		metadata.State = AssetState::Failed;
 		return false;
+	}
+
+	// False only for an invalid handle. Params for a non-model are ignored with a warning.
+	static bool SetModelParams(AssetManagerData& data, AssetHandle handle, const ModelLoadParams& params)
+	{
+		if (!IsValidAssetHandle(handle))
+			return false;
+
+		const AssetMetadata& metadata = data.Registry.at(handle);
+		if (metadata.Type != AssetType::Model)
+		{
+			DE_CORE_WARN("AssetManager: ModelLoadParams ignored for {} '{}'.", AssetTypeToString(metadata.Type), metadata.FilePath.generic_string());
+			return true;
+		}
+
+		auto existing = data.ModelParams.find(handle);
+		const ModelLoadParams current = existing != data.ModelParams.end() ? existing->second : ModelLoadParams();
+		if (current == params)
+			return true;
+
+		if (metadata.State != AssetState::Unloaded && metadata.State != AssetState::Failed)
+		{
+			DE_CORE_WARN("AssetManager: Model '{}' is already loaded with other ModelLoadParams, which it keeps; Remove it first to change them.",
+				metadata.FilePath.generic_string());
+			return true;
+		}
+
+		if (params == ModelLoadParams())
+			data.ModelParams.erase(handle);
+		else
+			data.ModelParams[handle] = params;
+		return true;
 	}
 
 	// Refreshes a loaded asset's contents without replacing the object. False when the type
@@ -848,6 +881,7 @@ namespace Dingo
 		data.Registry.clear();
 		data.PathLookup.clear();
 		data.Companions.clear();
+		data.ModelParams.clear();
 	}
 
 	AssetHandle AssetManager::Import(const std::filesystem::path& path)
@@ -930,6 +964,20 @@ namespace Dingo
 		return handle;
 	}
 
+	AssetHandle AssetManager::Load(const std::filesystem::path& path, const ModelLoadParams& params)
+	{
+		if (!SetModelParams(*m_Data, Import(path), params))
+			return k_InvalidAsset;
+		return Load(path);
+	}
+
+	AssetHandle AssetManager::LoadAsync(const std::filesystem::path& path, const ModelLoadParams& params)
+	{
+		if (!SetModelParams(*m_Data, Import(path), params))
+			return k_InvalidAsset;
+		return LoadAsync(path);
+	}
+
 	bool AssetManager::Reload(AssetHandle handle)
 	{
 		AssetManagerData& data = *m_Data;
@@ -985,6 +1033,7 @@ namespace Dingo
 		UnloadInternal(data, it->second);
 		data.PathLookup.erase(NormalizePathKey(data, it->second.FilePath));
 		data.Companions.erase(handle);
+		data.ModelParams.erase(handle);
 		data.Registry.erase(it);
 	}
 

@@ -49,9 +49,18 @@ namespace Dingo
 		void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore) override;
 		bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const override;
 
-		bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit) const override;
-		bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit) const override;
-		bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out) const override;
+		using Physics3D::RayCast;
+		using Physics3D::ShapeCastSphere;
+		using Physics3D::OverlapSphere;
+		bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit, const QueryFilter3D& filter) const override;
+		bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit,
+			const QueryFilter3D& filter) const override;
+		bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out, const QueryFilter3D& filter) const override;
+
+		bool GetSensorOverlaps(PhysicsBodyId3D sensor, std::vector<PhysicsBodyId3D>& out) const override;
+		bool IsSensor(PhysicsBodyId3D body) const override;
+		std::uint32_t GetUserData(PhysicsBodyId3D body) const override;
+		void SetUserData(PhysicsBodyId3D body, std::uint32_t userData) override;
 
 		std::unique_ptr<CharacterController3D> CreateCharacterController(const CharacterControllerParams3D& params) override;
 

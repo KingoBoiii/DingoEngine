@@ -14,6 +14,7 @@ namespace Dingo
 	class Texture;
 	class Shader;
 	class Model;
+	struct ModelLoadParams;
 	class Font;
 	class AudioClip;
 	class AudioEngine;
@@ -110,6 +111,12 @@ namespace Dingo
 		// main-thread load inside Update(), one asset per frame, so a loading screen
 		// keeps rendering between them. Poll IsReady() / GetPendingCount().
 		AssetHandle LoadAsync(const std::filesystem::path& path);
+
+		// Load/LoadAsync for a model with ModelLoadParams (Graphics/Model.h), kept for every later
+		// load and reload of it. A model already loaded, or in flight, with other params keeps them
+		// (warns): Remove it first to change them. Load(path) never changes a model's params.
+		AssetHandle Load(const std::filesystem::path& path, const ModelLoadParams& params);
+		AssetHandle LoadAsync(const std::filesystem::path& path, const ModelLoadParams& params);
 
 		// Synchronously (re)loads an already-registered asset. Returns true when the
 		// asset is Ready afterwards.

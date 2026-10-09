@@ -40,6 +40,7 @@ namespace Dingo::Internal
 
 		void IgnoreBody(PhysicsBodyId3D body, bool ignore) override;
 		bool IsBodyIgnored(PhysicsBodyId3D body) const override;
+		bool IsOverlapping(PhysicsBodyId3D body) const override;
 
 	private:
 		JoltPhysics3DData* m_World = nullptr;

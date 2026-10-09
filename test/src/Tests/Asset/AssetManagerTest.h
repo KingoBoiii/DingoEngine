@@ -29,6 +29,8 @@ namespace Dingo
 
 	private:
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
+		// Model loader checks: GLB-embedded textures and ClipsOnly, raw and managed.
+		void CheckModelLoading();
 
 	private:
 		TestChecks m_Checks;

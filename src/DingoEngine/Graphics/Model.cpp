@@ -19,6 +19,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <span>
 
 namespace Dingo
 {
@@ -55,6 +56,9 @@ namespace Dingo
 		// A reloading model's textures by path: reused when the file still uses them, so a material
 		// a game built from one keeps working.
 		std::unordered_map<std::string, CachedTexture> Reusable;
+		// Embedded images are keyed by the model's path and their own name, and dated by the model.
+		std::filesystem::path ModelPath;
+		std::filesystem::file_time_type ModelWriteTime{};
 	};
 
 	static std::filesystem::file_time_type WriteTimeOf(const std::filesystem::path& path)
@@ -62,6 +66,18 @@ namespace Dingo
 		std::error_code error;
 		const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
 		return error ? std::filesystem::file_time_type{} : time;
+	}
+
+	static TextureParams MakeImageParams(uint32_t width, uint32_t height, uint32_t channels, const uint8_t* data)
+	{
+		return TextureParams()
+			.SetDebugName("Texture (File)")
+			.SetWidth(width)
+			.SetHeight(height)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+			.SetIsRenderTarget(false)
+			.SetInitialData(data);
 	}
 
 	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path)
@@ -74,19 +90,86 @@ namespace Dingo
 			return false;
 		}
 
-		texture.Reinitialize(TextureParams()
-			.SetDebugName("Texture (File)")
-			.SetWidth(width)
-			.SetHeight(height)
-			.SetDimension(TextureDimension::Texture2D)
-			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
-			.SetIsRenderTarget(false)
-			.SetInitialData(data));
+		texture.Reinitialize(MakeImageParams(width, height, channels, data));
 		FileSystem::FreeImage(data);
 		return true;
 	}
 
-	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const std::filesystem::path& modelDir, TextureCache& textureCache)
+	// Rows flipped like ReadImage's, so embedded and file images share one UV convention.
+	static bool DecodeEmbeddedImage(const aiTexture* embedded, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height)
+	{
+		if (embedded->mHeight == 0)
+		{
+			uint32_t channels = 0;
+			const uint8_t* data = FileSystem::ReadImageFromMemory(embedded->pcData, embedded->mWidth, &width, &height, &channels, true, true);
+			if (!data)
+				return false;
+
+			rgba.assign(data, data + static_cast<size_t>(width) * height * 4);
+			FileSystem::FreeImage(data);
+			return true;
+		}
+
+		width = embedded->mWidth;
+		height = embedded->mHeight;
+		rgba.resize(static_cast<size_t>(width) * height * 4);
+		for (uint32_t y = 0; y < height; ++y)
+		{
+			const aiTexel* row = embedded->pcData + static_cast<size_t>(height - 1 - y) * width;
+			uint8_t* out = rgba.data() + static_cast<size_t>(y) * width * 4;
+			for (uint32_t x = 0; x < width; ++x)
+			{
+				out[x * 4 + 0] = row[x].r;
+				out[x * 4 + 1] = row[x].g;
+				out[x * 4 + 2] = row[x].b;
+				out[x * 4 + 3] = row[x].a;
+			}
+		}
+		return true;
+	}
+
+	static Texture* LoadEmbeddedTexture(const aiTexture* embedded, const std::string& name, TextureCache& textureCache)
+	{
+		const std::string key = textureCache.ModelPath.generic_string() + "#" + name;
+		if (auto it = textureCache.Loaded.find(key); it != textureCache.Loaded.end())
+			return it->second.Image;
+
+		CachedTexture texture;
+		auto reusable = textureCache.Reusable.find(key);
+		if (reusable != textureCache.Reusable.end())
+		{
+			texture = reusable->second;
+			texture.Borrowed = true;
+			textureCache.Reusable.erase(reusable);
+			if (texture.WriteTime == textureCache.ModelWriteTime)
+			{
+				textureCache.Loaded[key] = texture;
+				return texture.Image;
+			}
+		}
+
+		std::vector<uint8_t> rgba;
+		uint32_t width = 0, height = 0;
+		if (!DecodeEmbeddedImage(embedded, rgba, width, height))
+		{
+			DE_CORE_WARN("Model '{}': couldn't decode its embedded image '{}'{}", textureCache.ModelPath.filename().string(), name,
+				texture.Image ? ", so its texture keeps the old image" : "; the submesh has no texture");
+			if (texture.Image)
+				textureCache.Loaded[key] = texture;
+			return texture.Image;
+		}
+
+		const TextureParams params = MakeImageParams(width, height, 4, rgba.data());
+		if (texture.Image)
+			texture.Image->Reinitialize(params);
+		else
+			texture.Image = Texture::Create(params);
+		texture.WriteTime = textureCache.ModelWriteTime;
+		textureCache.Loaded[key] = texture;
+		return texture.Image;
+	}
+
+	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const aiScene* scene, const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
 		if (aiMat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
 			return nullptr;
@@ -95,9 +178,14 @@ namespace Dingo
 		aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &aiPath);
 		std::string rawPath = aiPath.C_Str();
 
-		// Embedded textures (path starts with '*') are not yet supported
 		if (!rawPath.empty() && rawPath[0] == '*')
+		{
+			if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
+				return LoadEmbeddedTexture(embedded, rawPath, textureCache);
+
+			DE_CORE_WARN("Model '{}': a material names embedded image '{}', which the file doesn't hold", textureCache.ModelPath.filename().string(), rawPath);
 			return nullptr;
+		}
 
 		std::filesystem::path texPath = rawPath;
 
@@ -141,6 +229,10 @@ namespace Dingo
 			return texture.Image;
 		}
 
+		// FBX embeds an image under its file name.
+		if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
+			return LoadEmbeddedTexture(embedded, rawPath, textureCache);
+
 		return nullptr;
 	}
 
@@ -164,7 +256,7 @@ namespace Dingo
 		submesh.Mat = Material::Create(MaterialParams()
 			.SetDebugName(mesh->mName.C_Str()));
 
-		Texture* diffuse = LoadDiffuseTexture(aiMat, modelDir, textureCache);
+		Texture* diffuse = LoadDiffuseTexture(aiMat, scene, modelDir, textureCache);
 		if (diffuse)
 		{
 			submesh.DiffuseTexture = diffuse;
@@ -700,7 +792,8 @@ namespace Dingo
 		}
 	}
 
-	static SkinnedImport ImportSkinned(const aiScene* scene, const std::string& modelName, const std::filesystem::path& modelDir, TextureCache& textureCache)
+	static SkinnedImport ImportSkinned(const aiScene* scene, const std::string& modelName, const std::filesystem::path& modelDir, TextureCache& textureCache,
+	                                   bool loadMeshes)
 	{
 		SkinnedImport out;
 		SkinContext skin;
@@ -738,7 +831,8 @@ namespace Dingo
 			else
 				DE_CORE_WARN("Model '{}': none of its bones or animated nodes is in the node graph; it loads without a skeleton.", modelName);
 
-			TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
+			if (loadMeshes)
+				TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
 			return out;
 		}
 
@@ -831,7 +925,8 @@ namespace Dingo
 		skin.Skel = out.Skel.get();
 
 		out.Clips = ReadAnimations(scene, *out.Skel, modelName);
-		TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
+		if (loadMeshes)
+			TraverseSkinnedNode(scene->mRootNode, glm::mat4(1.0f), skin, skinnedMeshesDone, scene, modelName, modelDir, textureCache, out.SubMeshes);
 
 		if (skin.Singular)
 			DE_CORE_WARN("Model '{}': a joint or mesh has a transform that can't be inverted (zero scale?); identity is used in its place.", modelName);
@@ -841,10 +936,15 @@ namespace Dingo
 
 	Model* Model::LoadFromFile(const std::filesystem::path& filepath)
 	{
-		return Load(filepath, nullptr);
+		return Load(filepath, ModelLoadParams(), nullptr);
 	}
 
-	Model* Model::Load(const std::filesystem::path& filepath, Model* refresh)
+	Model* Model::LoadFromFile(const std::filesystem::path& filepath, const ModelLoadParams& params)
+	{
+		return Load(filepath, params, nullptr);
+	}
+
+	Model* Model::Load(const std::filesystem::path& filepath, const ModelLoadParams& params, Model* refresh)
 	{
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
@@ -883,16 +983,24 @@ namespace Dingo
 		}
 
 		const std::string modelName = resolvedPath.filename().string();
+		if (params.ClipsOnly && !skinned)
+		{
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones, so it has no clips to load", resolvedPath.string());
+			return nullptr;
+		}
 		if (!skinned && scene->mNumAnimations > 0)
 			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh.", modelName, scene->mNumAnimations);
 
 		Model* model = new Model();
 		model->m_FilePath = std::filesystem::absolute(resolvedPath);
+		model->m_LoadParams = params;
 		// Absolute, so the material textures found beside the model are not resolved a second
 		// time against the asset root by Texture::CreateFromFile.
 		std::filesystem::path modelDir = model->m_FilePath.parent_path();
 
 		TextureCache textureCache;
+		textureCache.ModelPath = model->m_FilePath;
+		textureCache.ModelWriteTime = WriteTimeOf(model->m_FilePath);
 		if (refresh)
 		{
 			for (const ModelTexture& texture : refresh->m_Textures)
@@ -900,7 +1008,7 @@ namespace Dingo
 		}
 		if (skinned)
 		{
-			SkinnedImport skinnedImport = ImportSkinned(scene, modelName, modelDir, textureCache);
+			SkinnedImport skinnedImport = ImportSkinned(scene, modelName, modelDir, textureCache, !params.ClipsOnly);
 			model->m_Skeleton   = std::move(skinnedImport.Skel);
 			model->m_Animations = std::move(skinnedImport.Clips);
 			model->m_SubMeshes  = std::move(skinnedImport.SubMeshes);
@@ -960,7 +1068,7 @@ namespace Dingo
 			return false;
 		}
 
-		std::unique_ptr<Model> fresh(Load(m_FilePath, this));
+		std::unique_ptr<Model> fresh(Load(m_FilePath, m_LoadParams, this));
 		if (!fresh)
 			return false;
 
@@ -1143,12 +1251,55 @@ namespace Dingo
 					continue;
 				}
 
-				const size_t start = i;
+				// A quote inside a token quotes that part of it: a payload's key="value with spaces".
+				std::string& token = tokens.emplace_back();
 				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
-					i++;
-				tokens.emplace_back(line.substr(start, i - start));
+				{
+					if (line[i] != '"')
+					{
+						token += line[i++];
+						continue;
+					}
+
+					const size_t close = line.find('"', i + 1);
+					if (close == std::string_view::npos)
+						return false;
+					token += line.substr(i + 1, close - i - 1);
+					i = close + 1;
+				}
 			}
 			return true;
+		}
+
+		// Payload tokens back into AnimationEventPayload's text, a value with a space quoted again.
+		std::string JoinPayload(std::span<const std::string> tokens)
+		{
+			std::string payload;
+			for (const std::string& token : tokens)
+			{
+				if (!payload.empty())
+					payload += ' ';
+
+				const size_t equals = token.find('=');
+				const bool spaced = std::any_of(token.begin(), token.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); });
+				if (!spaced)
+				{
+					payload += token;
+					continue;
+				}
+				if (equals == std::string::npos)
+				{
+					payload += '"';
+					payload += token;
+					payload += '"';
+					continue;
+				}
+				payload += token.substr(0, equals + 1);
+				payload += '"';
+				payload += token.substr(equals + 1);
+				payload += '"';
+			}
+			return payload;
 		}
 
 		bool ParseSeconds(std::string_view text, float& value)
@@ -1183,9 +1334,9 @@ namespace Dingo
 			}
 			if (tokens.empty())
 				continue;
-			if (tokens.size() != 3)
+			if (tokens.size() < 3)
 			{
-				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event>` or `<clip> <begin>..<end> <event>`; line skipped", fileName, number);
+				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event> [key=value...]` or `<clip> <begin>..<end> <event> [key=value...]`; line skipped", fileName, number);
 				continue;
 			}
 
@@ -1218,10 +1369,11 @@ namespace Dingo
 			if (begin < 0.0f || begin > clip->GetDuration() || (dots != std::string_view::npos && end > clip->GetDuration()))
 				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, tokens[1], tokens[0], clip->GetDuration());
 
+			std::string payload = JoinPayload(std::span<const std::string>(tokens).subspan(3));
 			if (dots == std::string_view::npos)
-				clip->AddEvent(begin, std::move(tokens[2]));
+				clip->AddEvent(begin, std::move(tokens[2]), std::move(payload));
 			else
-				clip->AddEventRange(begin, end, std::move(tokens[2]));
+				clip->AddEventRange(begin, end, std::move(tokens[2]), std::move(payload));
 		}
 		return true;
 	}

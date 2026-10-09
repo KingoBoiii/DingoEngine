@@ -74,7 +74,7 @@ namespace Dingo::Internal::LightSystem
 					continue;
 				}
 
-				renderer.AddShadowProbe(light->second, request.Point, rendererKey);
+				renderer.AddShadowProbe(light->second, request.Point, rendererKey, request.Clearance);
 				if (const std::optional<float> result = renderer.GetShadowProbeResult(rendererKey))
 					answer.Value = *result;
 			}
@@ -148,7 +148,7 @@ namespace Dingo::Internal::LightSystem
 		// NaN, which SetAmbientLight rejects, losing every other source with it.
 		auto submitDirectional = [&](const DirectionalLightComponent& light)
 		{
-			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f), light.CastShadows, light.ShadowStrength });
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups });
 			if (accepted && std::isfinite(light.Ambient))
 				ambient += glm::vec3(light.Ambient);
 		};

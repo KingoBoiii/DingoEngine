@@ -83,6 +83,7 @@ namespace Dingo
 
 		Model* m_Fox = nullptr;
 		Material* m_FoxMaterial = nullptr;
+		Material* m_GlassMaterial = nullptr;
 		glm::mat4 m_FoxTransform{ 1.0f };
 		glm::vec3 m_FoxMin{ 0.0f };
 		glm::vec3 m_FoxMax{ 0.0f };

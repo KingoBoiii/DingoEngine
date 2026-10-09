@@ -4,6 +4,7 @@
 #include "LaunchOptions.h"
 #include "TitleScreen.h"
 
+#include <algorithm>
 #include <chrono>
 
 namespace Dingo
@@ -88,14 +89,39 @@ namespace Dingo
 		m_PerfFrameMilliseconds += 1000.0 * static_cast<double>(deltaTime);
 		m_PerfUpdateMilliseconds += static_cast<double>(updateMilliseconds);
 		m_PerfRenderMilliseconds += static_cast<double>(renderMilliseconds);
+		for (const GpuTimerStats& timer : Renderer::GetGpuTimers())
+		{
+			if (timer.Samples == 0)
+				continue;
+
+			auto it = std::find_if(m_PerfGpuTimers.begin(), m_PerfGpuTimers.end(), [&](const PerfGpuTimer& perf) { return perf.Name == timer.Name; });
+			if (it == m_PerfGpuTimers.end())
+			{
+				it = m_PerfGpuTimers.emplace(m_PerfGpuTimers.end());
+				it->Name = timer.Name;
+				it->Depth = timer.Depth;
+			}
+			// A query reads back a few frames late and not every frame; once the history is full,
+			// an unchanged LastMs is taken as the same sample.
+			const bool newSample = timer.Samples != it->SeenSamples || timer.LastMs != it->SeenMilliseconds;
+			it->SeenSamples = timer.Samples;
+			it->SeenMilliseconds = timer.LastMs;
+			if (!newSample)
+				continue;
+
+			it->SumMilliseconds += static_cast<double>(timer.LastMs);
+			it->MaxMilliseconds = (std::max)(it->MaxMilliseconds, timer.LastMs);
+			++it->Frames;
+		}
 		if (++m_PerfFrames < PERF_FRAMES)
 			return;
 
 		const double frames = static_cast<double>(m_PerfFrames);
 		DE_INFO("[Perf] frame {:.3f} ms, SceneManager::OnUpdate {:.3f} ms, OnRender {:.3f} ms (mean of {} frames)", m_PerfFrameMilliseconds / frames,
 			m_PerfUpdateMilliseconds / frames, m_PerfRenderMilliseconds / frames, m_PerfFrames);
-		for (const GpuTimerStats& timer : Renderer::GetGpuTimers())
-			DE_INFO("[Perf] GPU {}{}: mean {:.3f} ms, max {:.3f} ms over {} frames", std::string(2 * timer.Depth, ' '), timer.Name, timer.MeanMs, timer.MaxMs, timer.Samples);
+		for (const PerfGpuTimer& timer : m_PerfGpuTimers)
+			DE_INFO("[Perf] GPU {}{}: mean {:.3f} ms, max {:.3f} ms over {} frames", std::string(2 * timer.Depth, ' '), timer.Name,
+				timer.SumMilliseconds / static_cast<double>(timer.Frames), timer.MaxMilliseconds, timer.Frames);
 		m_PerfDone = true;
 	}
 
