@@ -55,6 +55,9 @@ namespace Dingo
 		// A reloading model's textures by path: reused when the file still uses them, so a material
 		// a game built from one keeps working.
 		std::unordered_map<std::string, CachedTexture> Reusable;
+		// Embedded images are keyed by the model's path and their own name, and dated by the model.
+		std::filesystem::path ModelPath;
+		std::filesystem::file_time_type ModelWriteTime{};
 	};
 
 	static std::filesystem::file_time_type WriteTimeOf(const std::filesystem::path& path)
@@ -62,6 +65,18 @@ namespace Dingo
 		std::error_code error;
 		const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
 		return error ? std::filesystem::file_time_type{} : time;
+	}
+
+	static TextureParams MakeImageParams(uint32_t width, uint32_t height, uint32_t channels, const uint8_t* data)
+	{
+		return TextureParams()
+			.SetDebugName("Texture (File)")
+			.SetWidth(width)
+			.SetHeight(height)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+			.SetIsRenderTarget(false)
+			.SetInitialData(data);
 	}
 
 	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path)
@@ -74,19 +89,86 @@ namespace Dingo
 			return false;
 		}
 
-		texture.Reinitialize(TextureParams()
-			.SetDebugName("Texture (File)")
-			.SetWidth(width)
-			.SetHeight(height)
-			.SetDimension(TextureDimension::Texture2D)
-			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
-			.SetIsRenderTarget(false)
-			.SetInitialData(data));
+		texture.Reinitialize(MakeImageParams(width, height, channels, data));
 		FileSystem::FreeImage(data);
 		return true;
 	}
 
-	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const std::filesystem::path& modelDir, TextureCache& textureCache)
+	// Rows flipped like ReadImage's, so embedded and file images share one UV convention.
+	static bool DecodeEmbeddedImage(const aiTexture* embedded, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height)
+	{
+		if (embedded->mHeight == 0)
+		{
+			uint32_t channels = 0;
+			const uint8_t* data = FileSystem::ReadImageFromMemory(embedded->pcData, embedded->mWidth, &width, &height, &channels, true, true);
+			if (!data)
+				return false;
+
+			rgba.assign(data, data + static_cast<size_t>(width) * height * 4);
+			FileSystem::FreeImage(data);
+			return true;
+		}
+
+		width = embedded->mWidth;
+		height = embedded->mHeight;
+		rgba.resize(static_cast<size_t>(width) * height * 4);
+		for (uint32_t y = 0; y < height; ++y)
+		{
+			const aiTexel* row = embedded->pcData + static_cast<size_t>(height - 1 - y) * width;
+			uint8_t* out = rgba.data() + static_cast<size_t>(y) * width * 4;
+			for (uint32_t x = 0; x < width; ++x)
+			{
+				out[x * 4 + 0] = row[x].r;
+				out[x * 4 + 1] = row[x].g;
+				out[x * 4 + 2] = row[x].b;
+				out[x * 4 + 3] = row[x].a;
+			}
+		}
+		return true;
+	}
+
+	static Texture* LoadEmbeddedTexture(const aiTexture* embedded, const std::string& name, TextureCache& textureCache)
+	{
+		const std::string key = textureCache.ModelPath.generic_string() + "#" + name;
+		if (auto it = textureCache.Loaded.find(key); it != textureCache.Loaded.end())
+			return it->second.Image;
+
+		CachedTexture texture;
+		auto reusable = textureCache.Reusable.find(key);
+		if (reusable != textureCache.Reusable.end())
+		{
+			texture = reusable->second;
+			texture.Borrowed = true;
+			textureCache.Reusable.erase(reusable);
+			if (texture.WriteTime == textureCache.ModelWriteTime)
+			{
+				textureCache.Loaded[key] = texture;
+				return texture.Image;
+			}
+		}
+
+		std::vector<uint8_t> rgba;
+		uint32_t width = 0, height = 0;
+		if (!DecodeEmbeddedImage(embedded, rgba, width, height))
+		{
+			DE_CORE_WARN("Model '{}': couldn't decode its embedded image '{}'{}", textureCache.ModelPath.filename().string(), name,
+				texture.Image ? ", so its texture keeps the old image" : "; the submesh has no texture");
+			if (texture.Image)
+				textureCache.Loaded[key] = texture;
+			return texture.Image;
+		}
+
+		const TextureParams params = MakeImageParams(width, height, 4, rgba.data());
+		if (texture.Image)
+			texture.Image->Reinitialize(params);
+		else
+			texture.Image = Texture::Create(params);
+		texture.WriteTime = textureCache.ModelWriteTime;
+		textureCache.Loaded[key] = texture;
+		return texture.Image;
+	}
+
+	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const aiScene* scene, const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
 		if (aiMat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
 			return nullptr;
@@ -95,9 +177,14 @@ namespace Dingo
 		aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &aiPath);
 		std::string rawPath = aiPath.C_Str();
 
-		// Embedded textures (path starts with '*') are not yet supported
 		if (!rawPath.empty() && rawPath[0] == '*')
+		{
+			if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
+				return LoadEmbeddedTexture(embedded, rawPath, textureCache);
+
+			DE_CORE_WARN("Model '{}': a material names embedded image '{}', which the file doesn't hold", textureCache.ModelPath.filename().string(), rawPath);
 			return nullptr;
+		}
 
 		std::filesystem::path texPath = rawPath;
 
@@ -141,6 +228,10 @@ namespace Dingo
 			return texture.Image;
 		}
 
+		// FBX embeds an image under its file name.
+		if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
+			return LoadEmbeddedTexture(embedded, rawPath, textureCache);
+
 		return nullptr;
 	}
 
@@ -164,7 +255,7 @@ namespace Dingo
 		submesh.Mat = Material::Create(MaterialParams()
 			.SetDebugName(mesh->mName.C_Str()));
 
-		Texture* diffuse = LoadDiffuseTexture(aiMat, modelDir, textureCache);
+		Texture* diffuse = LoadDiffuseTexture(aiMat, scene, modelDir, textureCache);
 		if (diffuse)
 		{
 			submesh.DiffuseTexture = diffuse;
@@ -907,6 +998,8 @@ namespace Dingo
 		std::filesystem::path modelDir = model->m_FilePath.parent_path();
 
 		TextureCache textureCache;
+		textureCache.ModelPath = model->m_FilePath;
+		textureCache.ModelWriteTime = WriteTimeOf(model->m_FilePath);
 		if (refresh)
 		{
 			for (const ModelTexture& texture : refresh->m_Textures)

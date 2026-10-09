@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <vector>
 
@@ -35,11 +36,17 @@ namespace Dingo
 		return buffer;
 	}
 	
+	namespace
+	{
+
+		// stbi_set_flip_vertically_on_load writes stb-global state and decodes run on both the main
+		// thread and the asset loader thread; serialize the whole decode.
+		std::mutex s_StbMutex;
+
+	}
+
 	const uint8_t* FileSystem::ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
 	{
-		// stbi_set_flip_vertically_on_load writes stb-global state and this runs on both
-		// the main thread and the asset loader thread; serialize the whole decode.
-		static std::mutex s_StbMutex;
 		std::scoped_lock lock(s_StbMutex);
 
 		stbi_set_flip_vertically_on_load(flipVertically);
@@ -61,6 +68,33 @@ namespace Dingo
 			*channels = 4; // Ensure channels is set to 4 if we forced RGBA
 		}
 
+		return data;
+	}
+
+	const uint8_t* FileSystem::ReadImageFromMemory(const void* bytes, size_t size, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
+	{
+		if (!bytes || size == 0 || size > static_cast<size_t>((std::numeric_limits<int>::max)()))
+		{
+			DE_CORE_ERROR("Failed to load image from memory: {} bytes", size);
+			return nullptr;
+		}
+
+		std::scoped_lock lock(s_StbMutex);
+
+		stbi_set_flip_vertically_on_load(flipVertically);
+
+		int32_t widthTemp, heightTemp, channelsTemp;
+		uint8_t* data = stbi_load_from_memory(static_cast<const stbi_uc*>(bytes), static_cast<int>(size), &widthTemp, &heightTemp, &channelsTemp,
+			forceRGBA ? STBI_rgb_alpha : STBI_default);
+		if (!data)
+		{
+			DE_CORE_ERROR("Failed to load image from memory: {}", stbi_failure_reason());
+			return nullptr;
+		}
+
+		*width = static_cast<uint32_t>(widthTemp);
+		*height = static_cast<uint32_t>(heightTemp);
+		*channels = forceRGBA ? 4 : static_cast<uint32_t>(channelsTemp);
 		return data;
 	}
 

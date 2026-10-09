@@ -957,9 +957,6 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 - **Retargeting is by name** within one rig template. Different topologies, different joint names or
   different rest orientations need the rig to be fixed in the art.
 - **Models load on the main thread**, one asset a frame when loaded asynchronously.
-- **Embedded textures are skipped.** An image embedded in a GLB gives its submesh no
-  `DiffuseTexture`, and nothing is logged. Keep the PNG beside the file and put it in a lit material,
-  as Marionette does for its characters ([#99](https://github.com/KingoBoiii/DingoEngine/issues/99)).
 
 Not in v0.8:
 
