@@ -20,8 +20,9 @@ namespace Dingo
 	// The render-target groundwork of v0.9 is checked on the same first update, by reading back what
 	// fullscreen passes drew: every colour format clears and reads back (values past 1 included), a
 	// sampleable depth attachment is sampled and compared, a framebuffer resized under a material that
-	// samples it keeps its Texture and is rebound, a viewport limits a draw, additive blending adds, and
-	// a shader file #includes its neighbour.
+	// samples it keeps its Texture and is rebound, a viewport limits a draw, additive blending adds,
+	// Renderer2D draws into a target whose formats differ from the swap chain's, and a shader file
+	// #includes its neighbour.
 	class RenderTargetTest : public Renderer2DTest
 	{
 	public:
@@ -74,6 +75,7 @@ namespace Dingo
 		Framebuffer* m_ResizeCopy = nullptr;
 		Framebuffer* m_ViewportTarget = nullptr;
 		Framebuffer* m_BlendTarget = nullptr;
+		Framebuffer* m_Batch2DTarget = nullptr; // RGBA16F, no depth: Renderer2D's batches drawn into it
 		Framebuffer* m_ReusedTarget = nullptr;
 		Shader* m_FillShader = nullptr;
 		Shader* m_SampleShader = nullptr;

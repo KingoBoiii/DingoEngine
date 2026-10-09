@@ -285,8 +285,7 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
     params.Window.Title = "My First Dingo App";
     params.Window.Width = 1280;
     params.Window.Height = 720;
-    params.Graphics.GraphicsAPI = GraphicsAPI::Vulkan;   // no default: unset reads as Headless, which can't render
-    params.Graphics.FramesInFlight = 3;
+    params.Graphics.GraphicsAPI = GraphicsAPI::Vulkan;   // the default; DirectX11/DirectX12 on Windows
     params.EnableUI = false;
 
     ExampleApp* app = new ExampleApp(params);

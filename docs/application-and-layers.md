@@ -50,6 +50,11 @@ ApplicationParams params{
 };
 ```
 
+`.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan` with
+`FramesInFlight = 3`. `GraphicsAPI::Headless` has no graphics context, so asking for it
+(or for a back-end the platform lacks, such as DirectX on Linux) logs an error and stops
+in `Application::Initialize`, in every configuration.
+
 ### Fullscreen
 
 Besides `WindowParams::Fullscreen` for starting fullscreen, the mode can be switched
