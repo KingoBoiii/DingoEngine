@@ -292,7 +292,7 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
-			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->AnimationEvents, deltaTime);
+			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime);
 			Internal::ParticleSync::ApplyAnimationEvents(m_Data->Registry, m_Data->EntityMap, m_Data->AnimationEvents.ParticleEvents);
 			Internal::ParticleSync::Update(m_Data->Registry, deltaTime);
 			m_Data->Updating = false;

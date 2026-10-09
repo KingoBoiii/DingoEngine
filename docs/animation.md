@@ -441,6 +441,8 @@ model. The component holds settings only.
 | `bool PlayOnStart` | true | `false` leaves the rest pose until you `Play`. |
 | `float Speed` | 1 | Multiplies the delta time given to the animator. |
 | `bool Enabled` | true | `false` holds the pose: no update, no events. |
+| `RootMotionMode RootMotion` | `Off` | `XZ` or `Full` takes the clips' root travel out of the pose and moves the entity by it. See [Root motion](#root-motion). |
+| `bool ApplyRootMotion` | true | `false` takes the travel out of the pose but leaves the entity where it is, for a script to apply `Animator::GetRootMotionDelta` itself. |
 
 ```cpp
 entity.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).Speed = 2.0f;   // plays at double pace
@@ -860,6 +862,85 @@ Barbarian and two skeletons. The four share one body, so the ratio is 1 and the 
 the opponents differ in weapon, pace and uniform scale, not limb length. `--check` compares a
 retargeted idle with the library's own pose joint by joint.
 
+## Root motion
+
+Clips play in place unless you ask otherwise. With root motion on, a clip that moves its root joint
+(usually the hips) moves the **entity** instead. The animator takes the root's travel out of the pose,
+holds the root where the clip starts, and reports how far it moved after each update. The travel is
+never counted twice.
+
+```cpp
+auto& settings = entity.AddComponent<AnimatorComponent>(AnimatorComponent("WalkForward"));
+settings.RootMotion = RootMotionMode::XZ;   // the clip now walks the entity forward
+```
+
+| `RootMotionMode` | Taken out of the pose | Left in the pose |
+|---|---|---|
+| `Off` (default) | Nothing; every existing game and clip is unchanged. | Everything. |
+| `XZ` | Horizontal travel and the turn about the model's vertical axis. | The root's height and tilt, so a walk still bobs and a jump still lifts the hips. |
+| `Full` | All of the root joint's travel and rotation. | Nothing of the root. Use it for a rig with a dedicated root bone. |
+
+**The root joint.** By default each clip uses its root-most joint whose translation track moves. This
+is the same test [retargeting](#retargeting) uses: a key leaves the rest offset.
+`Animator::SetRootMotionJoint(name)` names a joint instead; a clip that only turns needs this. A name
+the skeleton doesn't have warns once and moves nothing. The motion is measured as if the joints above
+the root joint stood at rest. A clip that animates one of them warns once, and those keys stay in the
+pose. The model's space is taken as Y-up, the engine's convention.
+
+**What moves.** `Animator::GetRootMotionDelta()` returns the last `Update`'s `RootMotionDelta
+{ Translation, Rotation }`. It is in the model's space, which includes the skeleton's root transform
+(an FBX's 0.01 scale too), and relative to where the model stood before the update. The entity moves
+by it after its own transform, so the entity's facing and scale apply. The scene's animate pass
+applies it:
+
+| The entity has | It moves by |
+|---|---|
+| A character controller (`CharacterController3DComponent`, physics running) | `SetLinearVelocity(travel / dt)` and `SetRotation`. `XZ` keeps the controller's vertical velocity, so gravity and jumps stay the script's. |
+| A kinematic body with no parent | `MoveKinematic` to the travelled pose. A kinematic child follows its transform, as always. |
+| A dynamic or static body | Nothing, and it warns once: physics owns the body. |
+| Neither | Its `Transform3DComponent`'s local position and rotation, so it also works under a parent. |
+
+The animate pass runs after scripts and before physics. So root motion overrides the horizontal
+velocity a script gave the controller that frame. When it stops driving a controller (the component
+is disabled, set to `Off` or not applied), it zeroes the controller's horizontal velocity once, so the
+controller doesn't slide on.
+
+- **The component is the switch.** The scene sets the animator's mode from `AnimatorComponent::RootMotion`
+  every frame, so a script's `SetRootMotion` on that animator is overwritten. `SetRootMotionJoint`
+  isn't.
+- **The `AnimatorComponent` belongs on the entity that moves.** On a child of the controller's entity,
+  it moves the child's transform, away from the capsule.
+- **A disabled animator** reports no travel, as it reports no events.
+- **Switching modes mid-clip** moves the held root by the clip's progress so far, with no matching move
+  of the model. Switch at a clip's start or under a cut.
+
+**How it adds up.**
+
+- **Fades and blends mix the travel** the way they mix the pose. A cross-fade moves the model by each
+  state's travel at that state's fade weight. A `Blend1D` moves it by its two clips' travel at the blend
+  weight, each clip over its own length.
+- **Only layer 0 moves the model.** Clips on higher layers are held in place too, and their travel is
+  dropped.
+- **Loops wrap.** A step across a loop's end counts the travel to the end and then from the start, and
+  a step of several laps counts each lap. A clip that doesn't loop stops moving at its end.
+- **Only played time counts.** `SetTime` and a new state move the model by nothing; the next step
+  moves it by that step's travel. `Evaluate()` reports nothing new, and `SetSkeleton` clears the delta.
+- **Turning** is about the held root, not the model's origin, so a clip that turns on the spot turns
+  the model in place.
+- **Retargeted clips** move by the retargeted travel: the translation keys scaled by the rest-offset
+  ratio described in [Retargeting](#retargeting).
+- Children and [sockets](#sockets) follow, because the entity itself moves.
+
+```cpp
+Animator animator(skeleton);                      // without a scene
+animator.SetRootMotion(RootMotionMode::XZ);
+animator.Play(walkForward);
+animator.Update(dt);
+const RootMotionDelta& step = animator.GetRootMotionDelta();
+position += rotation * (scale * step.Translation);
+rotation  = rotation * step.Rotation;
+```
+
 ## Hot-reload
 
 With the AssetManager's hot-reload on (`params.Assets.EnableHotReload = true`, or the toggle in the F6
@@ -937,6 +1018,7 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 | `blend` | A Speed slider blending Survey (0), Walk (1.5) and Run (4). |
 | `layers` | Walk with an upper-body Survey layer from `b_Spine01_02`, a weight slider and a one-shot Run button. |
 | `events` | The Fox walking the Speed blend, with a footprint dropped under each foot as its step event fires, and an event log. |
+| `root` | The Fox walking a circle by `XZ` root motion, on a Walk whose hips travel and turn. |
 | `crowd` | Many foxes against the instance budget, with timing. |
 
 | Flag | Applies to | Effect |
@@ -970,7 +1052,7 @@ Not in v0.8:
 
 | Item | Where it lives |
 |---|---|
-| Root motion | A v0.8.x stretch, [#104](https://github.com/KingoBoiii/DingoEngine/issues/104). Use in-place clips and move the body yourself. Moving it by a clip's travel while the pose also moves the hips counts the travel twice: Marionette instead pays each move's net hips travel over its fade-out, and moves a dodge over its `dash` range. |
+| Root motion | Shipped after v0.9 ([#104](https://github.com/KingoBoiii/DingoEngine/issues/104)); see [Root motion](#root-motion). Marionette still uses in-place clips and pays each move's net hips travel over its fade-out. |
 | IK (foot, look-at) | v0.9 or later, or a module. |
 | Additive layers, state-machine graph assets | Later. Game code drives `Play`. |
 | Morph targets (blend shapes) | Later. |

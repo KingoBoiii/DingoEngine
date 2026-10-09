@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Enums/ShadowCasting.h"
+#include "DingoEngine/Graphics/Enums/RootMotion.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -426,6 +427,15 @@ namespace Dingo
 		float Speed = 1.0f;
 		// False holds the current pose.
 		bool Enabled = true;
+		// Off plays clips in place. Otherwise the clips' root travel is taken out of the pose and moves
+		// this entity: its Transform3DComponent, its character controller's velocity and rotation, or
+		// its kinematic body through MoveKinematic. A dynamic or static body isn't moved (warned once).
+		// It sets the animator's mode every frame, so set it here rather than on the Animator. A
+		// controller it stops driving (disabled, Off, not applied) has its horizontal velocity zeroed.
+		RootMotionMode RootMotion = RootMotionMode::Off;
+		// False takes the travel out of the pose without moving the entity, for a script to apply
+		// Animator::GetRootMotionDelta itself.
+		bool ApplyRootMotion = true;
 
 		AnimatorComponent() = default;
 		AnimatorComponent(const AnimatorComponent&) = default;

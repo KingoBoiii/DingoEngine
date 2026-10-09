@@ -3,7 +3,7 @@
 The routine run that opened this branch shipped #83, #99, #100, #101, #102, #103, #137 and #143,
 one commit each. This file holds the design for the one issue it left as a phase.
 
-## #104 Root motion (effort L, not started)
+## #104 Root motion (effort L, done)
 
 Clips play in place today. A clip's root travel should be able to move the entity (and its body or
 character controller) instead of the hips, without counting it twice.
@@ -52,3 +52,34 @@ character controller) instead of the hips, without counting it twice.
   paragraph.
 - Marionette could drop its "pay the hips travel over the fade-out" workaround, but leave that to a
   separate change, since its `--check` and `--tournament` results must not move.
+
+### As built
+
+These notes override the design above.
+
+- **The delta covers only played time.** It runs from where the state stood (`PreviousTime`) to the
+  step's unwrapped target (`PlayingState::UnwrappedTime`, kept by `Advance`). A seek, a new state and
+  `Update(0)` move nothing, and the first update of a state counts its step. So no edge case needs a
+  zeroed delta.
+- **Root joint per clip.** Each `ClipBinding` picks its own root channel when it is bound: the root-most
+  bound joint whose translation moves, or `SetRootMotionJoint(name)`'s. Joints above it are taken at
+  their rest pose. Mode changes need no rebind. A joint change clears the bindings.
+- **The hold happens in `SampleClip`,** for every clip on every layer (`HoldRoot`). Only layer 0's states
+  are folded into the delta. Turning in `XZ` is the yaw of the root's model-space rotation relative to
+  its rotation at the clip's start (`Yaw` = the twist about +Y). The model turns about the held root
+  (`SegmentMotion`'s `Frame(start)` conjugation).
+- **Application** is in `AnimationSystem::Update`, which now takes `PhysicsSync&`. It applies `local x
+  delta`:
+  - a controller: velocity and rotation, with `XZ` keeping the y velocity;
+  - a kinematic root body: `MoveKinematic`;
+  - a dynamic or static body: warns once and doesn't move;
+  - otherwise the `Transform3DComponent`.
+
+  `deltaTime` (not `x Speed`) turns the travel into a velocity, because physics steps by the scene's
+  delta. A controller it stops driving (`AnimatorRuntime::DroveController`) gets its horizontal
+  velocity zeroed once, and a disabled animator's delta is cleared, like its events.
+- **Warnings,** once each: a root-motion joint name the skeleton lacks, and a clip that animates a
+  joint above its root-motion joint, whose keys stay in the pose because the motion is measured with
+  those joints at rest.
+- **Tests:** the Animation Test's `RunRootMotionChecks` (15 checks) and `--anim=root`. Marionette is
+  untouched, as planned.
