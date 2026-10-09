@@ -437,7 +437,7 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows);
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups);
 		}
 
 		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
@@ -453,9 +453,9 @@ namespace Dingo
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
 				if (skeleton && submesh.MeshData->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows);
+					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups);
 				else
-					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows);
+					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups);
 			}
 		}
 
@@ -507,7 +507,7 @@ namespace Dingo
 			outOrthographic = Wrap(static_cast<std::uint32_t>(orthographic));
 	}
 
-	float Scene::GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key)
+	float Scene::GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key, float clearance)
 	{
 		if (!IsValid(light))
 			return 1.0f;
@@ -516,13 +516,13 @@ namespace Dingo
 		Internal::LightSystem::ShadowProbeState& probes = m_Data->ShadowProbes;
 		const uint64_t localKey = Internal::LightSystem::ShadowProbeState::LocalKey(handle, key);
 		if (probes.Pending.size() < Renderer3D::k_MaxShadowProbes || probes.Pending.contains(localKey))
-			probes.Pending[localKey] = { handle, point };
+			probes.Pending[localKey] = { handle, point, clearance };
 
 		const auto answer = probes.Answers.find(localKey);
 		return answer != probes.Answers.end() ? answer->second.Value : 1.0f;
 	}
 
-	float Scene::GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key)
+	float Scene::GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key, float clearance)
 	{
 		if (!IsValid(light))
 			return 0.0f;
@@ -549,7 +549,7 @@ namespace Dingo
 			}
 		}
 
-		return attenuation > 0.0f ? attenuation * GetLightVisibility(light, point, key) : 0.0f;
+		return attenuation > 0.0f ? attenuation * GetLightVisibility(light, point, key, clearance) : 0.0f;
 	}
 
 	bool Scene::GetFirstDirectionalLightEntity(Entity& out)

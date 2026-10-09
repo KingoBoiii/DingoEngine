@@ -111,12 +111,14 @@ namespace Dingo
 		// light drawn without a shadow, or not drawn at all, answers 1, and so does the sun for a point
 		// outside the view's cascades (behind the camera, off screen, past the shadow distance): its
 		// shadow is drawn only for what the camera sees. The point has no surface to push it off, so
-		// ask about a point in the air, such as a character's chest.
-		float GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key = 0);
+		// ask about a point in the air, such as a character's chest. `clearance` moves the point that
+		// far towards the light before the lookup, so a caster within it, such as the body of the
+		// character whose chest it is, doesn't hide it (Renderer3D::AddShadowProbe).
+		float GetLightVisibility(Entity light, const glm::vec3& point, uint32_t key = 0, float clearance = 0.0f);
 		// GetLightAttenuation of the light's component at its world transform, times
 		// GetLightVisibility: 0 to 1, how strongly a point or spot light reaches the point; for a
 		// directional light, its visibility. 0 for a disabled light or an entity without a light.
-		float GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key = 0);
+		float GetShadowedLightAttenuation(Entity light, const glm::vec3& point, uint32_t key = 0, float clearance = 0.0f);
 
 		// Bursts from an entity's ParticleEmitterComponent at its next draw: from the effect's shape
 		// around the entity, or around a world-space point (an impact). Nothing for an entity without one.

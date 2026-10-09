@@ -49,6 +49,8 @@ namespace Dingo
 		constexpr uint64_t k_SpotBehindKey = 10;
 		constexpr uint64_t k_SpotOpenKey = 11;
 		constexpr uint64_t k_UncastKey = 12;
+		constexpr uint64_t k_SpotClearedKey = 13;
+		constexpr uint64_t k_SpotGroupsKey = 14;
 		constexpr uint64_t k_PointBehindKey = 20;
 		const glm::vec3 k_SunBehind{ -0.6f, 0.3f, -0.3f };
 		const glm::vec3 k_SunOpen{ 3.0f, 0.3f, -2.0f };
@@ -311,6 +313,12 @@ namespace Dingo
 				{
 					renderer.AddShadowProbe(spotLight, k_SpotBehind, k_SpotBehindKey);
 					renderer.AddShadowProbe(spotLight, k_SpotOpen, k_SpotOpenKey);
+					renderer.AddShadowProbe(spotLight, k_SpotBehind, k_SpotClearedKey, glm::length(k_SpotPosition - k_SpotBehind) - 0.5f);
+					SpotLight skipsBox = spot;
+					skipsBox.Intensity = 0.1f;
+					skipsBox.ShadowCasterGroups = ~1u;
+					renderer.SubmitLight(skipsBox);
+					renderer.AddShadowProbe(renderer.GetLastSubmittedLight(), k_SpotBehind, k_SpotGroupsKey);
 					PointLight uncast;
 					uncast.Position = k_Uncast + glm::vec3(0.0f, 0.5f, 0.0f);
 					uncast.Range = 2.0f;
@@ -562,9 +570,10 @@ namespace Dingo
 			SpotLightComponent casting = component;
 			casting.CastShadows = true;
 			casting.ShadowStrength = 0.5f;
+			casting.ShadowCasterGroups = 6u;
 			const SpotLight light = casting.ToLight(Transform3DComponent());
-			Check(light.CastShadows && light.ShadowStrength == 0.5f && !component.ToLight(Transform3DComponent()).CastShadows,
-				"SpotLightComponent::ToLight carries CastShadows and ShadowStrength");
+			Check(light.CastShadows && light.ShadowStrength == 0.5f && light.ShadowCasterGroups == 6u && !component.ToLight(Transform3DComponent()).CastShadows,
+				"SpotLightComponent::ToLight carries CastShadows, ShadowStrength and ShadowCasterGroups");
 		}
 
 		// Shadow slots go by rank even when every light fits the budget: ten casting spot lights in a
@@ -798,6 +807,11 @@ namespace Dingo
 		const float spotOpen = answer(k_SpotOpenKey);
 		Check(spotBehind >= 0.0f && spotBehind < 0.05f && spotOpen == 1.0f,
 			std::format("a spot light's probe behind its box reads 0 and one in its cone 1 ({:.3f}, {:.3f})", spotBehind, spotOpen));
+
+		const float spotCleared = answer(k_SpotClearedKey);
+		Check(spotCleared > 0.95f, std::format("a probe behind the box with a clearance past it reads 1 ({:.3f})", spotCleared));
+		const float spotGroups = answer(k_SpotGroupsKey);
+		Check(spotGroups > 0.95f, std::format("a spot light whose caster groups leave out the box's isn't shadowed by it ({:.3f})", spotGroups));
 
 		const float pointBehind = answer(k_PointBehindKey);
 		Check(pointBehind >= 0.0f && pointBehind < 0.05f, std::format("a point light's probe behind a pillar reads 0 ({:.3f})", pointBehind));

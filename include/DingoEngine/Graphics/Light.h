@@ -23,6 +23,10 @@ namespace Dingo
 		// casting) to 1.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		// The caster groups this light's shadows take: a mesh casts for it only when its own
+		// ShadowGroups (SubmitMesh, MeshRendererComponent) share a bit with this. Leave the player's
+		// group out of the lantern it carries, and the lantern lights the room without the body's shadow.
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 	};
 
 	struct PointLight
@@ -36,6 +40,7 @@ namespace Dingo
 		// unshadowed. A point light takes six tiles of the shadow atlas, a spot light one.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; // see DirectionalLight
 	};
 
 	struct SpotLight
@@ -52,6 +57,7 @@ namespace Dingo
 		// See PointLight. A cone wider than 75 degrees from its axis casts like a point light.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; // see DirectionalLight
 	};
 
 	// The weight Renderer3D's lit shader gives the light at `point`, from 0 to 1, for gameplay

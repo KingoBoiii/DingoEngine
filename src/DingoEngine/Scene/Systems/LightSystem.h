@@ -31,6 +31,7 @@ namespace Dingo
 				{
 					entt::entity Light = entt::null;
 					glm::vec3 Point{ 0.0f };
+					float Clearance = 0.0f;
 				};
 				struct Answer
 				{

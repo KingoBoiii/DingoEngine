@@ -190,6 +190,7 @@ namespace Dingo
 		// See DirectionalLight: the first casting one gets cascaded shadows.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
@@ -217,6 +218,7 @@ namespace Dingo
 		// See PointLight: casting lights share the scene's shadow slots by rank.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; // see DirectionalLight
 
 		PointLightComponent() = default;
 		PointLightComponent(const PointLightComponent&) = default;
@@ -244,6 +246,7 @@ namespace Dingo
 		// See SpotLight.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 
 		SpotLightComponent() = default;
 		SpotLightComponent(const SpotLightComponent&) = default;
@@ -353,14 +356,14 @@ namespace Dingo
 	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
 	}
 
 	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
 			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
 	}
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
@@ -382,6 +385,9 @@ namespace Dingo
 
 		// ShadowsOnly keeps a mesh out of the picture but in the shadows; Visible = false drops both.
 		ShadowCasting Shadows = ShadowCasting::On;
+		// Bit mask of caster groups; a light casts the mesh only when it shares a bit with the
+		// light's ShadowCasterGroups.
+		uint32_t ShadowGroups = 1;
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;
@@ -401,6 +407,7 @@ namespace Dingo
 		Dingo::Material* Material = nullptr;
 		bool Visible = true;
 		ShadowCasting Shadows = ShadowCasting::On;
+		uint32_t ShadowGroups = 1; // see MeshRendererComponent
 
 		SkinnedMeshRendererComponent() = default;
 		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;
