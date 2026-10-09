@@ -238,11 +238,13 @@ params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of
 
 ### Draw order and translucency
 
-Skinned meshes draw **after every static batch** in `EndScene`, in submission order. A see-through
-static mesh in front of a character therefore hides it instead of letting it show through: the static
-mesh has already written its depth, so the character behind it fails the depth test. Skinned draws are
-not sorted among themselves and they write depth, so overlapping translucent characters do not blend
-correctly either. Keep characters opaque.
+Opaque skinned meshes draw **after every opaque static batch** in `EndScene`, in submission order,
+writing depth. A skinned mesh with a translucent material (`MaterialParams::Translucent`) draws in
+the translucent pass instead, after all of them: sorted far to near together with the translucent
+static meshes, by the centre of its rest bounds, without writing depth. So a character behind a glass
+pane shows through it, and a ghost blends over the room. The sort is per mesh, so a character's
+translucent parts can blend in the wrong order with each other; see
+[Translucent materials](lighting.md#translucent-materials).
 
 ### Drawing without a scene
 
@@ -942,8 +944,8 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 - **`MaxSkinnedInstances` a frame** (64 by default, at most 256), across all scenes of a renderer. The
   rest are dropped whole, with a warning.
 - **4 states a layer.** A fifth freezes the mix so far into one pose.
-- **Skinned draws come after the static batches** and are not sorted among themselves; keep
-  characters opaque.
+- **Translucent characters sort per mesh**, by the centre of each mesh's rest bounds, so a
+  character's own see-through parts can blend in the wrong order with each other.
 - **Colliders follow the rest pose.** Bodies and mesh colliders do not deform with the animation.
 - **Retargeting is by name** within one rig template. Different topologies, different joint names or
   different rest orientations need the rig to be fixed in the art.

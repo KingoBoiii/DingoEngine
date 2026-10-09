@@ -4,6 +4,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <format>
 #include <memory>
@@ -31,6 +32,33 @@ namespace
 				++inward;
 		}
 		return inward;
+	}
+
+	constexpr uint32_t k_CheckTargetSize = 16;
+	constexpr float k_CheckTolerance = 0.02f;
+	// Lit by the test shader's light from straight on (1) or straight behind (its 0.3 ambient).
+	constexpr float k_Bright = 1.0f;
+	constexpr float k_Dim = 0.3f;
+
+	// Four quads in clip space, six indices each: the whole target near and bright, the whole target
+	// far and dim, then the left half and the right half, both bright.
+	void BuildCheckQuads(std::vector<Dingo::MeshVertex>& vertices, std::vector<uint32_t>& indices)
+	{
+		const glm::vec3 light = glm::normalize(glm::vec3(0.5f, 1.0f, 0.5f));
+		auto quad = [&](float x0, float x1, float z, const glm::vec3& normal)
+		{
+			const uint32_t base = static_cast<uint32_t>(vertices.size());
+			vertices.push_back({ { x0, -1.0f, z }, normal, { 0.0f, 0.0f } });
+			vertices.push_back({ { x1, -1.0f, z }, normal, { 1.0f, 0.0f } });
+			vertices.push_back({ { x1,  1.0f, z }, normal, { 1.0f, 1.0f } });
+			vertices.push_back({ { x0,  1.0f, z }, normal, { 0.0f, 1.0f } });
+			for (uint32_t index : { 0u, 1u, 2u, 2u, 3u, 0u })
+				indices.push_back(base + index);
+		};
+		quad(-1.0f, 1.0f, 0.25f, light);
+		quad(-1.0f, 1.0f, 0.75f, -light);
+		quad(-1.0f, 0.0f, 0.5f, light);
+		quad( 0.0f, 1.0f, 0.5f, light);
 	}
 
 	static constexpr const char* k_ShaderSrc = R"(
@@ -121,12 +149,109 @@ namespace Dingo
 		m_Camera.SetPosition({ 0.0f, 1.5f, 3.0f });
 		m_Camera.SetTarget({ 0.0f, 0.0f, 0.0f });
 
+		const TransformUBO identity{ glm::mat4(1.0f), glm::mat4(1.0f) };
+		auto checkMaterial = [this, &identity](const char* name, bool translucent)
+		{
+			Material* material = Material::Create(MaterialParams()
+				.SetDebugName(name)
+				.SetShader(m_Shader)
+				.SetCullMode(CullMode::None)
+				.SetTranslucent(translucent));
+			material->SetTexture(0, Renderer::GetWhiteTexture());
+			material->SetSampler(0, Renderer::GetClampSampler());
+			material->SetUniform(identity);
+			return material;
+		};
+		m_CheckOpaque = checkMaterial("Mesh3D_CheckOpaque", false);
+		m_CheckTranslucent = checkMaterial("Mesh3D_CheckTranslucent", true);
+
+		std::vector<MeshVertex> checkVertices;
+		std::vector<uint32_t> checkIndices;
+		BuildCheckQuads(checkVertices, checkIndices);
+		m_CheckVB = GraphicsBuffer::CreateVertexBuffer(checkVertices.size() * sizeof(MeshVertex), checkVertices.data(), true, "Mesh3D_CheckVB");
+		m_CheckIB = GraphicsBuffer::CreateIndexBuffer(checkIndices.size() * sizeof(uint32_t), checkIndices.data(), true, "Mesh3D_CheckIB", GraphicsFormat::Uint32);
+
+		m_Alive = std::make_shared<int>(0);
+		m_DrawChecksRun = false;
+
 		RunWindingChecks();
+	}
+
+	Framebuffer* Mesh3DTest::CreateCheckTarget()
+	{
+		Framebuffer* target = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("Mesh3D_Check")
+			.SetWidth(static_cast<int32_t>(k_CheckTargetSize))
+			.SetHeight(static_cast<int32_t>(k_CheckTargetSize))
+			.SetEnableDepth(true)
+			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		m_CheckTargets.push_back(target);
+		return target;
+	}
+
+	void Mesh3DTest::ReadCheckTarget(Framebuffer* target, const std::string& name, float left, float right)
+	{
+		const std::weak_ptr<int> alive = m_Alive;
+		target->GetAttachment(0)->ReadPixels([this, alive, name, left, right](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+
+			const uint32_t y = pixels.Height / 2;
+			const float readLeft = pixels.Data.empty() ? -1.0f : pixels.GetPixel(pixels.Width / 4, y).r;
+			const float readRight = pixels.Data.empty() ? -1.0f : pixels.GetPixel(pixels.Width * 3 / 4, y).r;
+			const bool matches = std::abs(readLeft - left) <= k_CheckTolerance && std::abs(readRight - right) <= k_CheckTolerance;
+			Check(matches, std::format("{} (expected left {:.2f} right {:.2f}, read {:.2f} {:.2f})", name, left, right, readLeft, readRight));
+		});
+	}
+
+	void Mesh3DTest::RunDrawChecks()
+	{
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		const glm::vec4 black{ 0.0f, 0.0f, 0.0f, 1.0f };
+
+		auto render = [&](const std::string& name, float left, float right, auto&& draw)
+		{
+			Framebuffer* target = CreateCheckTarget();
+			Renderer::SetRenderTarget(target);
+			Renderer::Clear(black);
+			draw();
+			ReadCheckTarget(target, name, left, right);
+		};
+
+		render("DrawIndexed from firstIndex 18 draws only the last quad", 0.0f, k_Bright, [this]
+		{
+			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 18);
+		});
+		render("DrawIndexed with indexCount 0 from firstIndex 18 draws the rest of the buffer", 0.0f, k_Bright, [this]
+		{
+			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 0, 1, 18);
+		});
+		render("an opaque quad hides a farther one drawn after it", k_Bright, k_Bright, [this]
+		{
+			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 0);
+			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 6);
+		});
+		render("a translucent quad writes no depth, so a farther one drawn after it shows", k_Dim, k_Dim, [this]
+		{
+			Renderer::DrawIndexed(m_CheckTranslucent, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 0);
+			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 6);
+		});
+		render("a translucent quad is still depth-tested against a nearer opaque one", k_Bright, k_Bright, [this]
+		{
+			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 0);
+			Renderer::DrawIndexed(m_CheckTranslucent, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 6);
+		});
+
+		Renderer::SetRenderTarget(previous);
 	}
 
 	void Mesh3DTest::RunWindingChecks()
 	{
 		m_Checks.clear();
+
+		Check(m_CheckTranslucent->IsTranslucent() && m_CheckTranslucent->GetParams().DepthWrite && !m_CheckOpaque->IsTranslucent(),
+			"SetTranslucent marks only its material translucent and leaves DepthWrite as set");
 
 		const uint32_t boxInward = CountInwardTriangles(*m_BoxMesh);
 		Check(boxInward == 0, std::format("CreateBox winds every triangle outward ({} inward)", boxInward));
@@ -159,6 +284,12 @@ namespace Dingo
 		ubo.Model = glm::rotate(glm::mat4(1.0f), glm::radians(m_Rotation), glm::vec3(0.0f, 1.0f, 0.0f));
 		m_Material->SetUniform(ubo);
 
+		if (!m_DrawChecksRun && !Renderer::IsFrameSkipped())
+		{
+			m_DrawChecksRun = true;
+			RunDrawChecks();
+		}
+
 		Renderer::Clear(m_ClearColor);
 		Renderer::DrawIndexed(m_Material, m_Layout, m_VB, m_IB, m_IndexCount);
 	}
@@ -169,6 +300,15 @@ namespace Dingo
 		delete m_SphereMesh;
 		m_BoxMesh    = nullptr;
 		m_SphereMesh = nullptr;
+
+		m_Alive.reset();
+		DestroyAndDelete(m_CheckOpaque);
+		DestroyAndDelete(m_CheckTranslucent);
+		for (Framebuffer*& target : m_CheckTargets)
+			DestroyAndDelete(target);
+		m_CheckTargets.clear();
+		DestroyAndDelete(m_CheckVB);
+		DestroyAndDelete(m_CheckIB);
 
 		DestroyAndDelete(m_Material);
 		DestroyAndDelete(m_Shader);
@@ -199,7 +339,7 @@ namespace Dingo
 			m_ShowSphere ? m_SphereMesh->GetVertexCount() : m_BoxMesh->GetVertexCount(), m_IndexCount);
 
 		ImGui::Separator();
-		ImGui::Text("Winding");
+		ImGui::Text("Checks");
 		for (const CheckResult& check : m_Checks)
 		{
 			ImGui::TextColored(check.Passed ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),

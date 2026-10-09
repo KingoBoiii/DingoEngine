@@ -30,6 +30,7 @@ engine from source.
 | [Compute](compute.md) | The v0.9 compute shaders and storage buffers: `ComputePass`, `Renderer::Dispatch`, `GraphicsBuffer::CreateStorageBuffer`, storage images, and reading a storage buffer in a draw. |
 | [Profiling](profiling.md) | The v0.9 GPU pass timers (`Renderer::BeginGpuTimer`) and the F8 Profiler tab, and Tracy behind premake's `--profile` option with the `DE_PROFILE_*` zone macros. |
 | [Animation & Skinned Models](animation.md) | The v0.8 skeletal animation system — loading skinned models and clip libraries, GPU skinning (`SkinnedMeshRendererComponent`, `Renderer3D::SubmitSkinnedMesh`, the instance budget, custom skinned shaders), the `Animator` (cross-fades, `Blend1D`, masked layers, one-shots), timeline events and the `.events` sidecar, joint sockets, retargeting by joint name, in-place model hot-reload, and the F7 Animation tab. |
+| [Audio](audio.md) | The miniaudio-backed `AudioEngine` — clips, `Play`/`PlayOneShot`, positional audio and distance falloff, and mix buses (volume, mute, pause and stop per bus, `AudioSourceComponent::Bus`). |
 
 ## A 30-second tour
 

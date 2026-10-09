@@ -72,6 +72,32 @@ back-end. `WindowResizeEvent` is forwarded to layers, so cameras can update thei
 aspect ratio there. Fullscreen is exclusive, so an alt-tab minimizes the window: see
 [In the background](#in-the-background).
 
+### VSync
+
+`WindowParams::VSync` sets the start value; the window switches it at runtime:
+
+```cpp
+Window& window = Application::Get().GetWindow();
+window.SetVSync(!window.IsVSync());   // e.g. a Settings menu row
+```
+
+`SetVSync` is safe from event handlers and layers alike. It goes through the same queue
+as a resize: the swap chain takes the new flag after the next present, so while the window
+is minimized or paused it waits for the first frame after the restore. D3D11 and D3D12 read it on every
+present; Vulkan bakes it into the present mode, so it recreates the swap chain, which bumps
+`SwapChain::GetResizeGeneration()` as a resize does. `IsVSync()` reports the requested value
+at once. The F3 Engine tab has a VSync checkbox.
+
+Limits:
+
+- With VSync off, Vulkan picks Mailbox, else Immediate, else FIFO (the only mode every
+  driver has), so on some drivers "off" stays capped.
+- The D3D swap chains are made without `DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING`, so a windowed
+  D3D app with VSync off may still be paced by the compositor.
+- While an ImGui window is dragged outside the main one, its own swap chain stays vsynced
+  and paces the whole frame, so VSync off has no effect.
+- `RequestRestart` rebuilds the app, so the window starts from `WindowParams::VSync` again.
+
 ### Command-line arguments
 
 `ApplicationCommandLineArgs::Get(name)` parses `--name` flags and `--name=value`
@@ -121,7 +147,7 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 |---|---|
 | `PushLayer(Layer*)` / `PushOverlay(Layer*)` | Add a layer (overlays update/draw on top). The app takes ownership. |
 | `GetRenderer2D()` | The batched 2D renderer (see [2D Rendering](rendering-2d.md)). |
-| `GetWindow()` | Window info — `GetWidth()`, `GetHeight()`. |
+| `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetFullscreen`, `SetVSync` (see [VSync](#vsync)). |
 | `GetSwapChain()` | The active swap chain. |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |

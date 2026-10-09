@@ -112,6 +112,8 @@ namespace Dingo
 		// safe point: on the render thread after Present, before the next image acquire, or in a
 		// BeginFrame that has no image yet. Resizing it here would race the frame in flight.
 		static void QueueResize(int32_t width, int32_t height);
+		// Thread-safe, applied at the same points as QueueResize. Window::SetVSync calls it.
+		static void QueueVSync(bool vsync);
 
 		/**************************************************
 		***		GPU TIMERS								***
@@ -167,8 +169,9 @@ namespace Dingo
 		***		DRAW — explicit RenderPass				***
 		**************************************************/
 
-		// Self-contained: sets render pass bindings + framebuffer, then draws.
-		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1);
+		// Self-contained: sets render pass bindings + framebuffer, then draws. firstIndex starts the
+		// draw further into the index buffer; indexCount = 0 then means the rest of it.
+		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
 		// Without vertex buffers: the vertex stage builds its vertices from gl_VertexIndex.
 		static void Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount = 1);
 
@@ -178,7 +181,8 @@ namespace Dingo
 
 		// Lazily creates (and caches) the pipeline + render pass for the given
 		// vertex layout, uploads the uniforms (once per frame and after each SetUniform), then draws.
-		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1);
+		// indexCount and firstIndex as for the RenderPass overload.
+		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
 		// Without vertex buffers, as for a fullscreen pass: Draw(material, 3) with a vertex stage that
 		// makes one triangle covering the target from gl_VertexIndex (DingoEngine/Fullscreen.glsl).
 		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);

@@ -135,6 +135,35 @@ namespace Dingo
 			return entity;
 		}
 
+		constexpr uint32_t k_FogProbeSize = 16;
+		constexpr float k_FogProbeTolerance = 2.5f / 255.0f;
+
+		// A black wall 10 units in front of CheckViewProjection's camera, filling its view, under a white
+		// ambient: unfogged it reads 0, so under a white fog the centre pixel reads the fog factor.
+		template<typename Submit>
+		void RenderFogProbe(Renderer3D& renderer, Framebuffer* target, Submit&& submit)
+		{
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(target);
+			renderer.BeginScene(CheckViewProjection());
+			renderer.Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+			submit();
+			renderer.SubmitMesh(renderer.GetBoxMesh(), BoxTransform({ 0.0f, 0.0f, -10.5f }, { 60.0f, 40.0f, 1.0f }), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+			renderer.EndScene();
+			Renderer::SetRenderTarget(previous);
+		}
+
+		Fog WhiteFog(FogMode mode, float start, float end, float density = 0.0f)
+		{
+			Fog fog;
+			fog.Mode = mode;
+			fog.Color = glm::vec3(1.0f);
+			fog.Start = start;
+			fog.End = end;
+			fog.Density = density;
+			return fog;
+		}
+
 		std::string Counts(const Renderer3D::Statistics& stats)
 		{
 			return std::format("directional {}, local {}, culled {}, dropped {}",
@@ -419,6 +448,130 @@ namespace Dingo
 				std::format("a light with an infinite Range has falloff 1 at any finite distance (point {:.6f} at 1 m and {:.6f} at 1000 km, spot on its axis {:.6f} and {:.6f})",
 					pointNear, pointFar, spotNear, spotFar));
 		});
+
+		BuildFogCheckSteps();
+	}
+
+	void LightingTest::BuildFogCheckSteps()
+	{
+		m_CheckSteps.push_back([this]
+		{
+			bool accepted = false;
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [this, &accepted] { accepted = m_CheckRenderer->SetFog(WhiteFog(FogMode::Linear, 5.0f, 15.0f)); });
+			Check(accepted && stats.Fogged && stats.DirectionalLights == 1,
+				std::format("SetFog fogs the scene and, being no light, keeps the default light (accepted {}, fogged {}, {})", accepted, stats.Fogged, Counts(stats)));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [] {});
+			Check(!stats.Fogged, "fog is scene-scoped: the scene after a fogged one has none");
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			bool backwards = true, notFinite = true, negative = true, none = false;
+			const auto stats = RenderCheckScene(*m_CheckRenderer, [&, this]
+			{
+				backwards = m_CheckRenderer->SetFog(WhiteFog(FogMode::Linear, 20.0f, 10.0f));
+				notFinite = m_CheckRenderer->SetFog(WhiteFog(FogMode::Exponential, 0.0f, 0.0f, std::numeric_limits<float>::quiet_NaN()));
+				negative = m_CheckRenderer->SetFog(WhiteFog(FogMode::Exponential, 0.0f, 0.0f, -0.1f));
+				m_CheckRenderer->SetFog(WhiteFog(FogMode::Exponential, 0.0f, 0.0f, 0.1f));
+				Fog off;
+				off.Mode = FogMode::None;
+				none = m_CheckRenderer->SetFog(off);
+			});
+			Check(!backwards && !notFinite && !negative && none && !stats.Fogged,
+				std::format("SetFog ignores a Linear fog ending before its Start, a NaN and a negative Density, and FogMode::None clears a fog (accepted {} {} {}, None {}, fogged {})",
+					backwards, notFinite, negative, none, stats.Fogged));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			m_CheckRenderer->BeginScene(glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -50.0f, 50.0f));
+			m_CheckRenderer->SetFog(WhiteFog(FogMode::Linear, 0.0f, 1.0f));
+			m_CheckRenderer->EndScene();
+			Check(!m_CheckRenderer->GetStatistics().Fogged, "an orthographic camera's scene draws without fog");
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				scene.CreateEntity("Disabled Fog").AddComponent<FogComponent>().Enabled = false;
+				scene.CreateEntity("Fog").AddComponent<FogComponent>();
+			});
+			Check(stats.Fogged && stats.DirectionalLights == 1,
+				std::format("an enabled FogComponent fogs the scene, a disabled one before it doesn't stop it, and neither counts as a light ({}, fogged {})", Counts(stats), stats.Fogged));
+		});
+
+		m_CheckSteps.push_back([this]
+		{
+			const auto stats = RenderCheckEntities(*m_CheckRenderer, [](Scene& scene)
+			{
+				scene.CreateEntity("Disabled Fog").AddComponent<FogComponent>().Enabled = false;
+			});
+			Check(!stats.Fogged, "a scene whose only FogComponent is disabled has no fog");
+		});
+
+		auto probeStep = [this](const char* name, const glm::vec3& expected, std::function<void(Renderer3D&)> submit)
+		{
+			m_CheckSteps.push_back([this, name, expected, submit = std::move(submit)]
+			{
+				Framebuffer* target = Framebuffer::Create(FramebufferParams()
+					.SetDebugName("LightingTest_FogProbe")
+					.SetWidth(static_cast<int32_t>(k_FogProbeSize))
+					.SetHeight(static_cast<int32_t>(k_FogProbeSize))
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+				m_FogTargets.push_back(target);
+				RenderFogProbe(*m_CheckRenderer, target, [this, &submit]
+				{
+					m_CheckRenderer->SetAmbientLight(glm::vec3(1.0f), 1.0f);
+					submit(*m_CheckRenderer);
+				});
+				ReadFogProbe(target, expected, name);
+			});
+		};
+
+		probeStep("without fog the probe wall reads black", glm::vec3(0.0f), [](Renderer3D&) {});
+		probeStep("a linear fog from 5 to 15 is half way at 10 units", glm::vec3(0.5f),
+			[](Renderer3D& renderer) { renderer.SetFog(WhiteFog(FogMode::Linear, 5.0f, 15.0f)); });
+		probeStep("an exponential fog of density 0.1 is 1 - e^-1 at 10 units", glm::vec3(1.0f - std::exp(-1.0f)),
+			[](Renderer3D& renderer) { renderer.SetFog(WhiteFog(FogMode::Exponential, 0.0f, 0.0f, 0.1f)); });
+		probeStep("a squared exponential fog of density 0.05 is 1 - e^-0.25 at 10 units", glm::vec3(1.0f - std::exp(-0.25f)),
+			[](Renderer3D& renderer) { renderer.SetFog(WhiteFog(FogMode::ExponentialSquared, 0.0f, 0.0f, 0.05f)); });
+		probeStep("MaxOpacity 0.5 caps a full fog at half", glm::vec3(0.5f), [](Renderer3D& renderer)
+		{
+			Fog fog = WhiteFog(FogMode::Linear, 1.0f, 2.0f);
+			fog.MaxOpacity = 0.5f;
+			renderer.SetFog(fog);
+		});
+
+		const glm::vec3 clearColor{ 0.25f, 0.5f, 0.75f };
+		probeStep("a FogComponent with UseClearColor fogs into the scene's clear colour", clearColor, [clearColor](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			scene.SetClearColor(glm::vec4(clearColor, 1.0f));
+			FogComponent& fog = scene.CreateEntity("Fog").AddComponent<FogComponent>(FogComponent(FogMode::Linear, 1.0f, 2.0f));
+			fog.Color = glm::vec3(1.0f, 0.0f, 0.0f);
+			scene.SubmitLights(renderer);
+		});
+	}
+
+	void LightingTest::ReadFogProbe(Framebuffer* target, const glm::vec3& expected, const std::string& name)
+	{
+		const std::weak_ptr<int> alive = m_Alive;
+		target->GetAttachment(0)->ReadPixels([this, alive, expected, name](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+
+			const glm::vec3 pixel(pixels.GetPixel(pixels.Width / 2, pixels.Height / 2));
+			const bool matches = !pixels.Data.empty() && glm::all(glm::lessThanEqual(glm::abs(pixel - expected), glm::vec3(k_FogProbeTolerance)));
+			Check(matches, std::format("{} (expected {:.3f} {:.3f} {:.3f}, read {:.3f} {:.3f} {:.3f})",
+				name, expected.r, expected.g, expected.b, pixel.r, pixel.g, pixel.b));
+		});
 	}
 
 	void LightingTest::RunNextCheckStep()
@@ -455,6 +608,7 @@ namespace Dingo
 		m_PostProcess = args.Get("post").has_value();
 		m_Bloom = args.Get("bloom").has_value();
 		m_AmbientOcclusion = args.Get("ao").has_value();
+		m_Fog = args.Get("fog").has_value();
 		if (auto fade = args.Get("budget-fade"))
 		{
 			const float band = fade->empty() ? 0.5f : std::strtof(std::string(*fade).c_str(), nullptr);
@@ -486,6 +640,7 @@ namespace Dingo
 
 		m_Checks.clear();
 		m_NextCheckStep = 0;
+		m_Alive = std::make_shared<int>(0);
 		Renderer3DParams budgetParams;
 		budgetParams.Capabilities.MaxLocalLights = 4;
 		m_CheckRenderer = Renderer3D::Create();
@@ -527,6 +682,12 @@ namespace Dingo
 				BuildLightEntities(lighting);
 			UpdateLightEntities(lighting);
 
+			const Fog fog = DescribeFog();
+			FogComponent& fogComponent = m_FogEntity.GetComponent<FogComponent>();
+			fogComponent.Enabled = m_Fog;
+			fogComponent.Start = fog.Start;
+			fogComponent.End = fog.End;
+			m_Scene->SetClearColor(m_ClearColor);
 			m_Scene->SubmitLights(renderer);
 			m_Scene->RenderEntities3D(renderer);
 		}
@@ -535,6 +696,9 @@ namespace Dingo
 			SubmitLights(renderer, lighting);
 			DrawScene(renderer);
 		}
+
+		if (m_Fog && !(m_UseEntities && m_Mode != Mode::Materials))
+			renderer.SetFog(DescribeFog());
 
 		renderer.EndScene();
 		Renderer::GetPostProcessStack().End();
@@ -637,6 +801,16 @@ namespace Dingo
 		return lighting;
 	}
 
+	Fog LightingTest::DescribeFog() const
+	{
+		Fog fog;
+		fog.Mode = FogMode::Linear;
+		fog.Color = glm::vec3(m_ClearColor);
+		fog.Start = 10.0f;
+		fog.End = 28.0f;
+		return fog;
+	}
+
 	void LightingTest::SubmitLights(Renderer3D& renderer, const Lighting& lighting) const
 	{
 		if (lighting.UsesDefaultLight)
@@ -706,6 +880,9 @@ namespace Dingo
 		}
 		for (float x : k_SphereXs)
 			addMesh("Sphere", renderer.GetSphereMesh(), { x, 0.6f, 0.0f }, glm::vec3(1.2f), k_SphereColor);
+
+		m_FogEntity = m_Scene->CreateEntity("Fog");
+		m_FogEntity.AddComponent<FogComponent>().Enabled = false;
 	}
 
 	void LightingTest::BuildLightEntities(const Lighting& lighting)
@@ -781,8 +958,14 @@ namespace Dingo
 		m_LampMaterial = nullptr;
 		m_CrateMaterial = nullptr;
 
+		m_Alive.reset();
+		for (Framebuffer*& target : m_FogTargets)
+			DestroyAndDelete(target);
+		m_FogTargets.clear();
+
 		m_LightEntities.clear();
 		m_LightEntitiesBuilt = false;
+		m_FogEntity = {};
 		delete m_Scene;
 		m_Scene = nullptr;
 
@@ -817,6 +1000,7 @@ namespace Dingo
 		ImGui::Checkbox("Bloom (with the post chain)", &m_Bloom);
 		ImGui::Checkbox("Ambient occlusion (with the post chain)", &m_AmbientOcclusion);
 		ImGui::SliderFloat("Budget fade band", &m_BudgetFade, 0.0f, 2.0f);
+		ImGui::Checkbox("Fog (into the clear colour)", &m_Fog);
 		if (m_Mode == Mode::Materials)
 			ImGui::Checkbox("Specular", &m_Specular);
 		else
@@ -828,6 +1012,7 @@ namespace Dingo
 		ImGui::Text("Point/spot lights  : %u", stats.LocalLights);
 		ImGui::Text("Out of view        : %u", stats.CulledLights);
 		ImGui::Text("Over budget        : %u", stats.DroppedLights);
+		ImGui::Text("Fogged             : %s", stats.Fogged ? "yes" : "no");
 
 		ImGui::Separator();
 		GraphicsTest::ImGuiRender();

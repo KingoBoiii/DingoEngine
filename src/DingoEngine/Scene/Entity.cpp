@@ -412,6 +412,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(AmbientLightComponent)
 	DE_INSTANTIATE_COMPONENT(PointLightComponent)
 	DE_INSTANTIATE_COMPONENT(SpotLightComponent)
+	DE_INSTANTIATE_COMPONENT(FogComponent)
 	DE_INSTANTIATE_COMPONENT(AudioSourceComponent)
 	DE_INSTANTIATE_COMPONENT(AudioListenerComponent)
 

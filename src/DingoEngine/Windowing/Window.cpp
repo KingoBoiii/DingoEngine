@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Core/Input.h"
 
@@ -114,6 +115,15 @@ namespace Dingo
 	bool Window::IsFocused() const
 	{
 		return glfwGetWindowAttrib(m_WindowHandle, GLFW_FOCUSED) != 0;
+	}
+
+	void Window::SetVSync(bool vsync)
+	{
+		if (m_Params.VSync == vsync)
+			return;
+
+		m_Params.VSync = vsync;
+		Renderer::QueueVSync(vsync);
 	}
 
 	// The monitor the window overlaps most, falling back to the primary monitor.
