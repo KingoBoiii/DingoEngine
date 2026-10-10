@@ -395,12 +395,20 @@ was called "Advanced Rendering & Performance" but was never scheduled anywhere:
 - **Material sharing**: a shared-material path so the first custom material in a scene doesn't
   fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
   costing a material each: v0.7's lit materials are per-material, not per-mesh.
+- **DingoUI, a game UI framework** ([#98](https://github.com/KingoBoiii/DingoEngine/issues/98)):
+  games have no UI layer of their own today (`Dingo::UI` is an ImGui facade for debug panels), so
+  every example builds its HUD and menus from sprites and text by hand. `DingoUI` is an
+  immediate-mode API (`DingoUI::Button("Play")`) for HUDs and menus: flexbox-style layout anchored to
+  the screen, gamepad and keyboard focus navigation, world-space health bars and labels, 9-slice
+  skins and themes, tweens and screen transitions, and clicks the UI takes kept away from the game.
+  It draws a whole menu in about one draw call, after the post chain. ImGui stays the debug UI.
+  Plan: `.claude/plans/2026-10-08-v1.0-game-ui-plan.md`.
 
 Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
 instead of a moving target.
 
-**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels. The combination of real-time combat and procedural or handcrafted levels makes this the capstone stress test for the engine: hot-loaded assets (v0.6), a fully lit world (v0.7), animated characters (v0.8), and advanced visuals (v0.9). Online co-op is **no longer part of the 1.0 launch** — it follows as a post-release update once the networking module lands. **Released on Itch.io, with Steam as a stretch goal.**
+**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6).
 
 ---
 

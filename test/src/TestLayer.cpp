@@ -28,6 +28,7 @@
 #include "Tests/Scene/HierarchyTest.h"
 #include "Tests/Scene/AnimationTest.h"
 #include "Tests/Scene/RenderTargetTest.h"
+#include "Tests/Scene/ThroughputTest.h"
 
 #include "Tests/Core/BackgroundTest.h"
 
@@ -76,6 +77,7 @@ namespace Dingo
 		m_Tests.push_back({ "Shadow Test", []() { return new ShadowTest(); } });
 		m_Tests.push_back({ "Compute Test", []() { return new ComputeTest(); } });
 		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
+		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))
