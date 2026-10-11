@@ -2187,6 +2187,7 @@ namespace Dingo
 				break;
 			case Mode::Clip:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedInstances == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the animated Fox is one skinned draw of 24 joints");
+				Check(Application::Get().GetRenderer3D().GetSkinnedInstancesThisFrame() == 1, "the frame's skinned instance count, which F4's budget bar shows, is the one Fox");
 				if (SkeletonShown())
 				{
 					// The floor, the hat and the Fox, then a box per joint and per bone.

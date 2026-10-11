@@ -974,6 +974,11 @@ namespace Dingo
 		return twin;
 	}
 
+	uint32_t Renderer3D::GetSkinnedInstancesThisFrame() const
+	{
+		return m_SkinnedFrameIndex == Renderer::GetFrameIndex() ? m_SkinnedInstancesThisFrame : 0;
+	}
+
 	void Renderer3D::ResolveSkinnedBudget()
 	{
 		m_SkinnedInstanceDropped.assign(m_SkinnedInstances.size(), 0);

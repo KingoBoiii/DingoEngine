@@ -330,6 +330,8 @@ namespace Dingo
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
 		// k_MaxSkinnedInstancesLimit.
 		uint32_t GetSkinnedInstanceBudget() const;
+		// What this frame's scenes have taken of that budget so far.
+		uint32_t GetSkinnedInstancesThisFrame() const;
 
 		Mesh* GetBoxMesh() const { return m_BoxMesh; }
 		Mesh* GetSphereMesh() const { return m_SphereMesh; }
@@ -365,7 +367,7 @@ namespace Dingo
 			uint32_t SkinnedDraws = 0;        // skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes; not batched, so not in VertexCount/IndexCount
 			uint32_t SkinnedInstances = 0;    // joint palettes uploaded; a model's submeshes share one
 			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame
-			uint32_t SkinnedJoints = 0;       // joint matrices uploaded
+			uint32_t SkinnedJoints = 0;       // joint matrices the instances use (D3D11 uploads the whole k_MaxSkinJoints block each time)
 			uint32_t ShadowViews = 0;         // atlas tiles rendered (cascades and local light faces), 0 for a scene that casts nothing
 			uint32_t ShadowCascades = 0;      // of which cascades
 			uint32_t ShadowedLights = 0;      // point and spot lights drawn with a shadow

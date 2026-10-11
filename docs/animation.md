@@ -344,7 +344,7 @@ draws with the **default lit material** and a warning (once), instead of vanishi
 | `SkinnedDraws` | Skinned meshes drawn. Also counted in `DrawCalls` and `SubmittedMeshes`, but not in `VertexCount` or `IndexCount`, which describe the batches. |
 | `SkinnedInstances` | Joint palettes uploaded. A model's submeshes share one. |
 | `DroppedSkinnedDraws` | Skinned meshes of instances dropped by the per-frame budget. |
-| `SkinnedJoints` | Joint matrices uploaded. |
+| `SkinnedJoints` | Joint matrices the instances use. D3D11, where a partial constant-buffer update isn't guaranteed, uploads the whole 128-joint block each time. |
 
 The F4 Renderer tab shows the same numbers ([Debugging](#debugging)).
 

@@ -322,11 +322,11 @@ namespace Dingo::UI
 		ImGui::Text("Fog        : %s", stats3D.Fogged ? "on" : "off");
 
 		ImGui::Spacing();
-		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");
+		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; the bar is the whole frame)");
 		ImGui::Separator();
 		ImGui::Text("Skinned draws: %u  (also counted in draw calls)", stats3D.SkinnedDraws);
-		BudgetBar("Instances", stats3D.SkinnedInstances, renderer3D.GetSkinnedInstanceBudget());
-		ImGui::Text("Joints     : %u uploaded", stats3D.SkinnedJoints);
+		BudgetBar("Instances", renderer3D.GetSkinnedInstancesThisFrame(), renderer3D.GetSkinnedInstanceBudget());
+		ImGui::Text("Scene      : %u instances, %u joints", stats3D.SkinnedInstances, stats3D.SkinnedJoints);
 		if (stats3D.DroppedSkinnedDraws > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
 				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances; warned once)", stats3D.DroppedSkinnedDraws);
