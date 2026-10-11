@@ -597,11 +597,19 @@ namespace Dingo
 		glm::vec3 high(std::numeric_limits<float>::lowest());
 		bool casters = false;
 
+		// Only the shadow pass reads the casters' box.
+		bool casting = m_ShadowLight >= 0;
+		for (uint32_t slot = 0; slot < m_DrawnLocalLights && !casting; ++slot)
+		{
+			const LocalLightCandidate& light = m_LocalLights[m_VisibleLocalLights[slot]];
+			casting = light.CastShadows && light.ShadowStrength > 0.0f;
+		}
+
 		// The rest pose's box bounds a skinned caster, padded by half its size for the animation.
 		for (SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
 			submission.PastDistance = submission.Bounded && pastDistance(submission.CullBounds, submission.CullDistance);
-			if (submission.Shadows != ShadowCasting::Off && !submission.Bounds.IsEmpty())
+			if (casting && submission.Shadows != ShadowCasting::Off && !submission.Bounds.IsEmpty())
 			{
 				low = glm::min(low, submission.Bounds.Min);
 				high = glm::max(high, submission.Bounds.Max);
@@ -632,7 +640,7 @@ namespace Dingo
 			submission.Bounded = IsAffine(submission.Transform);
 			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, submission.Transform) : AABB();
 			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, submission.CullDistance);
-			if (submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
+			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
 				continue;
 
 			if (!submission.Bounded)
@@ -660,7 +668,7 @@ namespace Dingo
 		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
 		{
 			const StaticSubmission& submission = m_StaticSubmissions[index];
-			if (submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty() || !submission.Bounded)
+			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty() || !submission.Bounded)
 				continue;
 			if (std::binary_search(extremes.begin(), extremes.end(), static_cast<int32_t>(index)))
 				continue;
