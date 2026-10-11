@@ -64,8 +64,12 @@ namespace Dingo
 		if (!options.Freeze || m_FrozenSteps < FREEZE_HOLD_STEPS)
 		{
 			m_SceneManager.OnUpdate(step);
-			if (options.Freeze && ++m_FrozenSteps == FREEZE_HOLD_STEPS)
-				DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
+			if (options.Freeze)
+				++m_FrozenSteps;
+		}
+		else if (m_FrozenSteps < FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES && ++m_FrozenSteps == FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES)
+		{
+			DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
 		}
 		const Clock::time_point renderStart = Clock::now();
 		m_SceneManager.OnRender();

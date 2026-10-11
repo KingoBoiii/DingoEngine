@@ -346,6 +346,8 @@ namespace Dingo
 	// --freeze steps the arena this many times and then holds it, so a capture taken any time later
 	// sees the same frame: the brazier flames would go on burning, one step per frame drawn.
 	inline constexpr int   FREEZE_HOLD_STEPS    = 600;
+	// "[Freeze] held" is logged this many frames after the hold, once every frame in flight shows it.
+	inline constexpr int   FREEZE_LOG_FRAMES    = 8;
 
 	// --- Bouts ---------------------------------------------------------------------
 	inline constexpr int   BOUT_COUNT           = 3;

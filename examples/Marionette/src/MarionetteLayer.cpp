@@ -167,14 +167,13 @@ namespace Dingo
 				m_LiveEdit->Update(step);
 			m_SceneManager.OnUpdate(step);
 			if (options.Freeze && ++m_FrozenSteps == FREEZE_HOLD_STEPS)
-			{
-				DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
 				break;
-			}
 			if (m_SceneManager.GetActiveScene() != activeBefore || m_Match.Restart || m_Match.Done)
 				break;
 		}
 		const Clock::time_point updateEnd = Clock::now();
+		if (held && m_FrozenSteps < FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES && ++m_FrozenSteps == FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES)
+			DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
 
 		const Scene* activeAfter = m_SceneManager.GetActiveScene();
 		if (activeAfter == m_ArenaScene && m_Match.Restart && !m_Match.Done)

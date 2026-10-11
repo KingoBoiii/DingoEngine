@@ -7,9 +7,8 @@
   captures are named t-*, crop them to the 3D viewport (300,24,1005,872) when diffing, since the
   side panels show live timings; m-* (Marionette) and c-* (Candlewick) compare whole. --freeze holds
   each game after 600 fixed steps (10 s at 1/60, what the old fixed wait drew at 60 Hz) and logs
-  "[Freeze] held"; the captures wait for that line, so the flames are the same every run. Before
-  v1.0 P1 they burned for as many frames as the wait drew, and only the *-np (--no-particles) twins
-  were held to 0 px.
+  "[Freeze] held" once the held frame is on screen; the captures wait for that line, so the flames
+  are the same every run.
   -Set perf: the timing runs, each waiting for its [PERF]/[Perf] line: the Throughput Test's modes
   (static, repeat, mixed and shadow at 10000, skinned at 64 and 128), Candlewick's four rooms and
   Marionette's first bout.
