@@ -289,7 +289,8 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
-		m_TranslucentChunks.clear();
+		m_TranslucentSlices.clear();
+		m_TranslucentSliceIndices.clear();
 		m_TranslucentDraws.clear();
 		m_TranslucentCasterDraws.clear();
 
@@ -408,6 +409,7 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
+		m_TranslucentSlices.clear();
 	}
 
 	void Renderer3D::EndScene()
@@ -519,6 +521,7 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
+		m_TranslucentSlices.clear();
 
 		if (m_Particles)
 			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
@@ -526,6 +529,11 @@ namespace Dingo
 	}
 
 	uint32_t Renderer3D::UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex)
+	{
+		return UploadToPool(chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size()), chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size()), batchIndex);
+	}
+
+	uint32_t Renderer3D::UploadToPool(const Vertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount, uint32_t& batchIndex)
 	{
 		// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
 		// DirectUpload = false: the writes go into the frame's command list (as Renderer2D's
@@ -537,8 +545,8 @@ namespace Dingo
 			m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
 		}
 
-		Renderer::Upload(m_BatchVertexBuffers[batchIndex], chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
-		Renderer::Upload(m_BatchIndexBuffers[batchIndex], chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+		Renderer::Upload(m_BatchVertexBuffers[batchIndex], vertices, static_cast<uint64_t>(vertexCount) * sizeof(Vertex));
+		Renderer::Upload(m_BatchIndexBuffers[batchIndex], indices, static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
 		return batchIndex++;
 	}
 
@@ -574,17 +582,13 @@ namespace Dingo
 			return batch.Drawable > 0;
 		};
 
-		const Renderer3DCapabilities& caps = m_Params.Capabilities;
-		uint32_t chunksInUse = 0;
-		auto startChunk = [this, &chunksInUse]()
-		{
-			if (chunksInUse == m_TranslucentChunks.size())
-				m_TranslucentChunks.emplace_back();
-			MeshChunk& chunk = m_TranslucentChunks[chunksInUse++];
-			chunk.Vertices.clear();
-			chunk.Indices.clear();
-		};
-		// Returns the chunk the mesh landed in and where its indices start there. With backFacesFirst its
+		const uint32_t sliceCount = static_cast<uint32_t>(m_TranslucentSlices.size());
+		if (m_TranslucentSliceIndices.size() < sliceCount)
+			m_TranslucentSliceIndices.resize(sliceCount);
+		for (uint32_t slice = 0; slice < sliceCount; ++slice)
+			m_TranslucentSliceIndices[slice].clear();
+
+		// Returns the slice the mesh lies in and where its indices start there. With backFacesFirst its
 		// triangles facing away from the camera go first, so a mesh that draws both sides never blends
 		// its far side over its near side. The vertex normals decide, since a mirrored transform turns
 		// the winding inside out but leaves them pointing outwards.
@@ -597,23 +601,15 @@ namespace Dingo
 		};
 		auto append = [&](const TranslucentSubmission& submission, uint32_t& firstIndex, bool backFacesFirst)
 		{
-			MeshChunk* chunk = &m_TranslucentChunks[chunksInUse - 1];
-			if (chunk->Vertices.size() + submission.VertexCount > caps.MaxVertices || chunk->Indices.size() + submission.IndexCount > caps.MaxIndices)
-			{
-				startChunk();
-				chunk = &m_TranslucentChunks[chunksInUse - 1];
-			}
-
-			const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
-			firstIndex = static_cast<uint32_t>(chunk->Indices.size());
-			const auto vertices = m_TranslucentVertices.begin() + submission.FirstVertex;
-			chunk->Vertices.insert(chunk->Vertices.end(), vertices, vertices + submission.VertexCount);
+			std::vector<uint32_t>& sliceIndices = m_TranslucentSliceIndices[submission.Slice];
+			const uint32_t vertexOffset = submission.FirstVertex - m_TranslucentSlices[submission.Slice].FirstVertex;
+			firstIndex = static_cast<uint32_t>(sliceIndices.size());
 			const uint32_t* indices = m_TranslucentIndices.data() + submission.FirstIndex;
 			if (!backFacesFirst)
 			{
 				for (uint32_t i = 0; i < submission.IndexCount; ++i)
-					chunk->Indices.push_back(indices[i] + vertexOffset);
-				return chunksInUse - 1;
+					sliceIndices.push_back(indices[i] + vertexOffset);
+				return submission.Slice;
 			}
 
 			const Vertex* meshVertices = m_TranslucentVertices.data() + submission.FirstVertex;
@@ -623,18 +619,17 @@ namespace Dingo
 			{
 				const uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
 				const bool inRange = a < submission.VertexCount && b < submission.VertexCount && c < submission.VertexCount;
-				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? chunk->Indices : m_TranslucentNearIndices;
+				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? sliceIndices : m_TranslucentNearIndices;
 				destination.push_back(a + vertexOffset);
 				destination.push_back(b + vertexOffset);
 				destination.push_back(c + vertexOffset);
 			}
-			chunk->Indices.insert(chunk->Indices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
+			sliceIndices.insert(sliceIndices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
 			for (uint32_t i = triangleIndices; i < submission.IndexCount; ++i)
-				chunk->Indices.push_back(indices[i] + vertexOffset);
-			return chunksInUse - 1;
+				sliceIndices.push_back(indices[i] + vertexOffset);
+			return submission.Slice;
 		};
 
-		bool litChunkStarted = false;
 		for (uint32_t index = 0; index < m_TranslucentSubmissions.size(); ++index)
 		{
 			const TranslucentSubmission& submission = m_TranslucentSubmissions[index];
@@ -646,41 +641,38 @@ namespace Dingo
 			if (submission.IndexCount == 0 || !drawable(submission))
 				continue;
 
-			if (!litChunkStarted)
-			{
-				startChunk();
-				litChunkStarted = true;
-			}
 			uint32_t firstIndex = 0;
-			const uint32_t chunk = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
+			const uint32_t slice = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
 			// Depth-only, so any material's casters of one mask that lie back to back share a draw.
 			if (shadows && submission.Shadows == ShadowCasting::On)
 			{
 				TranslucentCasterDraw* last = m_TranslucentCasterDraws.empty() ? nullptr : &m_TranslucentCasterDraws.back();
-				if (last && last->Buffer == chunk && last->ShadowGroups == submission.ShadowGroups && last->FirstIndex + last->IndexCount == firstIndex)
+				if (last && last->Buffer == slice && last->ShadowGroups == submission.ShadowGroups && last->FirstIndex + last->IndexCount == firstIndex)
 					last->IndexCount += submission.IndexCount;
 				else
-					m_TranslucentCasterDraws.push_back({ chunk, firstIndex, submission.IndexCount, submission.ShadowGroups });
+					m_TranslucentCasterDraws.push_back({ slice, firstIndex, submission.IndexCount, submission.ShadowGroups });
 			}
 			if (!m_TranslucentDraws.empty())
 			{
 				TranslucentDraw& last = m_TranslucentDraws.back();
-				if (last.Skinned < 0 && last.Material == submission.Material && last.Buffer == chunk && last.FirstIndex + last.IndexCount == firstIndex)
+				if (last.Skinned < 0 && last.Material == submission.Material && last.Buffer == slice && last.FirstIndex + last.IndexCount == firstIndex)
 				{
 					last.IndexCount += submission.IndexCount;
 					++last.Meshes;
 					continue;
 				}
 			}
-			m_TranslucentDraws.push_back({ submission.Material, -1, chunk, firstIndex, submission.IndexCount, 1 });
+			m_TranslucentDraws.push_back({ submission.Material, -1, slice, firstIndex, submission.IndexCount, 1 });
 		}
 
-		// Chunk indices become pooled buffer indices.
-		std::vector<uint32_t> buffers(chunksInUse, 0);
-		for (uint32_t chunk = 0; chunk < chunksInUse; ++chunk)
+		// Slice indices become pooled buffer indices.
+		std::vector<uint32_t> buffers(sliceCount, 0);
+		for (uint32_t slice = 0; slice < sliceCount; ++slice)
 		{
-			if (!m_TranslucentChunks[chunk].Indices.empty())
-				buffers[chunk] = UploadChunk(m_TranslucentChunks[chunk], batchIndex);
+			const std::vector<uint32_t>& sliceIndices = m_TranslucentSliceIndices[slice];
+			const TranslucentSlice& range = m_TranslucentSlices[slice];
+			if (!sliceIndices.empty())
+				buffers[slice] = UploadToPool(m_TranslucentVertices.data() + range.FirstVertex, range.VertexCount, sliceIndices.data(), static_cast<uint32_t>(sliceIndices.size()), batchIndex);
 		}
 		for (TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
 			draw.Buffer = buffers[draw.Buffer];
@@ -1500,6 +1492,15 @@ namespace Dingo
 		uint32_t vertexOffset = 0;
 		if (matBatch.Translucent)
 		{
+			const uint32_t vertexCount = static_cast<uint32_t>(vertices.size());
+			const uint32_t indexCount = static_cast<uint32_t>(indices.size());
+			if (m_TranslucentSlices.empty() || m_TranslucentSlices.back().VertexCount + vertexCount > caps.MaxVertices ||
+				m_TranslucentSlices.back().IndexCount + indexCount > caps.MaxIndices)
+				m_TranslucentSlices.push_back({ static_cast<uint32_t>(m_TranslucentVertices.size()), 0, 0 });
+			TranslucentSlice& slice = m_TranslucentSlices.back();
+			slice.VertexCount += vertexCount;
+			slice.IndexCount += indexCount;
+
 			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
 			submission.Material = batchMaterial;
 			submission.Batch = &matBatch;
@@ -1507,6 +1508,7 @@ namespace Dingo
 			submission.VertexCount = static_cast<uint32_t>(vertices.size());
 			submission.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
 			submission.IndexCount = static_cast<uint32_t>(indices.size());
+			submission.Slice = static_cast<uint32_t>(m_TranslucentSlices.size() - 1);
 			submission.Shadows = shadows;
 			submission.ShadowGroups = shadowGroups;
 		}
@@ -1569,16 +1571,12 @@ namespace Dingo
 
 		if (matBatch.Translucent)
 		{
-			TranslucentSubmission& submission = m_TranslucentSubmissions.back();
+			// The bounds' centre, as SubmitSkinnedMesh keys a skinned mesh, so a skinned mesh that falls
+			// back to this path sorts the same.
 			glm::vec3 center = glm::vec3(transform[3]);
-			if (submission.VertexCount > 0)
-			{
-				glm::vec3 sum(0.0f);
-				for (uint32_t i = 0; i < submission.VertexCount; ++i)
-					sum += m_TranslucentVertices[submission.FirstVertex + i].Position;
-				center = sum / static_cast<float>(submission.VertexCount);
-			}
-			submission.SortKey = TranslucentSortKey(center);
+			if (mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
+				center = glm::vec3(transform * glm::vec4((mesh->GetBoundsMin() + mesh->GetBoundsMax()) * 0.5f, 1.0f));
+			m_TranslucentSubmissions.back().SortKey = TranslucentSortKey(center);
 		}
 
 		++m_Statistics.SubmittedMeshes;

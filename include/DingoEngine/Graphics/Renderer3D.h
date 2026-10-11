@@ -286,9 +286,10 @@ namespace Dingo
 		// it shares a bit with the light's ShadowCasterGroups.
 		//
 		// A translucent material's meshes draw in the translucent pass, after the opaque ones: each
-		// mesh sorted far to near by the centre of its transformed vertices (along the view for an
+		// mesh sorted far to near by the centre of its bounds, transformed (along the view for an
 		// orthographic camera; ties keep submission order), consecutive meshes of one material in one
-		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
+		// draw while they share a buffer: past MaxVertices or MaxIndices of translucent geometry a scene
+		// is cut into buffers in submission order. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
 		// wrapped around a small one, can blend in the wrong order. A two-sided material's mesh
 		// (CullMode::None: every lit material) puts its triangles facing away from the camera first, so
 		// its far side never blends over its near side. With ShadowsOnly it draws nothing lit, so it
@@ -568,9 +569,10 @@ namespace Dingo
 		std::vector<ChunkDraw> m_ChunkDraws;
 
 		uint32_t UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex);
+		uint32_t UploadToPool(const Vertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount, uint32_t& batchIndex);
 
 		// A mesh of the translucent pass. A static one's vertices are transformed at submission into
-		// m_TranslucentVertices, its indices counted from its first vertex.
+		// m_TranslucentVertices, its indices counted from its first vertex, in the slice it was cut into.
 		struct TranslucentSubmission
 		{
 			Dingo::Material* Material = nullptr;
@@ -579,10 +581,19 @@ namespace Dingo
 			uint32_t VertexCount = 0;
 			uint32_t FirstIndex = 0;
 			uint32_t IndexCount = 0;
+			uint32_t Slice = 0;
 			int32_t Skinned = -1; // into m_SkinnedSubmissions; -1 = static
 			ShadowCasting Shadows = ShadowCasting::On;
 			uint32_t ShadowGroups = 1;
 			float SortKey = 0.0f; // larger is farther from the camera
+		};
+		// A run of m_TranslucentVertices, cut in submission order to fit one pooled buffer pair, so it
+		// uploads straight from there; only the indices are written again, in sorted order.
+		struct TranslucentSlice
+		{
+			uint32_t FirstVertex = 0;
+			uint32_t VertexCount = 0;
+			uint32_t IndexCount = 0;
 		};
 		// One draw of the translucent pass, far to near: a run of static meshes of one material that
 		// lie back to back in one pooled buffer, or one skinned submission.
@@ -614,7 +625,8 @@ namespace Dingo
 		std::vector<TranslucentSubmission> m_TranslucentSubmissions;
 		std::vector<Vertex> m_TranslucentVertices;
 		std::vector<uint32_t> m_TranslucentIndices;
-		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
+		std::vector<TranslucentSlice> m_TranslucentSlices;
+		std::vector<std::vector<uint32_t>> m_TranslucentSliceIndices; // per slice, sorted; storage kept from busier scenes
 		std::vector<TranslucentDraw> m_TranslucentDraws;
 		std::vector<TranslucentCasterDraw> m_TranslucentCasterDraws;
 		std::vector<uint32_t> m_TranslucentNearIndices; // PrepareTranslucentPass' scratch: a mesh's triangles facing the camera

@@ -391,7 +391,8 @@ pass, after every opaque mesh, static and skinned:
 - **It writes no depth**, whatever `DepthWrite` says, but it is depth-tested, so an opaque mesh in
   front still hides it. It blends with the material's `BlendMode` (alpha "over" by default;
   `BlendMode::Additive` for glows).
-- **Meshes are sorted far to near** by the centre of their transformed vertices: by distance from a
+- **Meshes are sorted far to near** by the centre of their bounds (`Mesh::GetBoundsMin/Max`),
+  transformed: by distance from a
   perspective camera, along the view for an orthographic one. Meshes at the same distance keep their
   submission order, so a still scene never flickers. Consecutive meshes of one material share a draw
   (`Statistics::TranslucentDraws`, of `TranslucentMeshes`); materials that alternate in depth take
