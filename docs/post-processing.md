@@ -113,6 +113,12 @@ whole HDR colour after the opaque 3D pass, sunlit faces included; corners in ful
 too. `PostProcessStack::ApplyAmbientOcclusion` applies it early, once per `Begin`, so what is drawn
 after it (particles, a translucent pass) isn't darkened; `End` applies it if nothing has.
 
+Under [fog](lighting.md#fog) the result fades by the same fog factor the lit shader gave the surface,
+so a wholly fogged mesh keeps no AO and meets the background without dark creases. `Renderer3D` hands
+its fog over (`PostProcessStack::SetAmbientOcclusionFog`) when it draws a fogged scene into the scene
+target; `Begin` clears it. A partly fogged pixel ends up as `mix(c, fog, f) × mix(ao, 1, f)`, close to
+fogging the occluded colour.
+
 ## What it costs and what differs
 
 - **Memory**: one RGBA16F colour target and a D32 depth per output size in use, 12 bytes a pixel (25 MB
@@ -145,7 +151,8 @@ is within 1/255 of no chain, and a disabled `Begin` draws exactly what no chain 
 adds nothing to a gradient inside 0..1 and makes a small square at 8 glow past its edge, evenly on
 both sides. `--post=bloom` (or `--bloom`) starts with bloom on. Then ambient occlusion, in a room:
 the open floor is unchanged, the crease where floor meets wall darkens, and the wall beside a box
-floating before it isn't darkened right up to the box's silhouette (no halo); `--post=ao` shows the
+floating before it isn't darkened right up to the box's silhouette (no halo), and a wholly fogged room
+reads the same with AO as without; `--post=ao` shows the
 room with AO on. The Lighting Test takes `--post`, `--bloom` and `--ao` too: its materials mode's lamp
 has an emissive strength of 1.5.
 

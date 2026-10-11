@@ -3,8 +3,8 @@
 // around each pixel and writes how open it is (R8); DE_AO_BLUR blurs that along Blur.xy, weighing
 // each tap by how close its depth is so an edge stays sharp; DE_AO_APPLY multiplies the result into
 // the scene colour, upsampling from the four nearest AO texels weighed by depth as well as distance,
-// so contact darkness doesn't bleed across a silhouette. Mirrors AmbientOcclusionData in
-// PostProcess.cpp.
+// so contact darkness doesn't bleed across a silhouette, and fading it with the scene's fog as the
+// lit shader fades the surface. Mirrors AmbientOcclusionData in PostProcess.cpp.
 
 #type vertex
 #version 450
@@ -24,6 +24,8 @@ layout(std140, binding = 0) uniform AmbientOcclusionData
 	vec4 Params; // x = radius, y = intensity / radius^6, z = bias, w = power
 	vec4 Target; // xy = one texel of the pass's target in UV, z = its pixels per unit at distance 1, w = 1 for an orthographic camera
 	vec4 Blur;   // xy = the blur's step in UV, zw = one depth texel in UV
+	vec4 Fog;    // DE_AO_APPLY's: x = start, y = end, z = density, w = mode: 0 none, 1 linear, 2 exp, 3 exp squared
+	vec4 FogOpacity; // x = the fog's max opacity
 };
 
 vec3 ViewPosition(vec2 uv, float depth)
@@ -145,9 +147,23 @@ layout(binding = 2) uniform sampler u_OcclusionSampler;
 layout(binding = 3) uniform texture2D u_Depth; // the scene depth copied to R32F, at full resolution
 layout(binding = 4) uniform sampler u_DepthSampler;
 
+vec3 PositionAt(vec2 uv)
+{
+	return ViewPosition(uv, textureLod(sampler2D(u_Depth, u_DepthSampler), uv, 0.0).r);
+}
+
 float ViewDepth(vec2 uv)
 {
-	return ViewPosition(uv, textureLod(sampler2D(u_Depth, u_DepthSampler), uv, 0.0).r).z;
+	return PositionAt(uv).z;
+}
+
+// Renderer3D_Lit.glsl's, over the same radial distance from the camera.
+float FogFactor(float distance)
+{
+	if (Fog.w < 1.5)
+		return clamp((distance - Fog.x) / (Fog.y - Fog.x), 0.0, 1.0);
+	float density = Fog.z * distance;
+	return 1.0 - exp(Fog.w < 2.5 ? -density : -density * density);
 }
 
 void main()
@@ -156,7 +172,8 @@ void main()
 	vec2 grid = v_TexCoord / texel - 0.5;
 	vec2 base = floor(grid);
 	vec2 f = grid - base;
-	float centerDepth = ViewDepth(v_TexCoord);
+	vec3 center = PositionAt(v_TexCoord);
+	float centerDepth = center.z;
 
 	float sum = 0.0;
 	float total = 0.0;
@@ -179,6 +196,10 @@ void main()
 		}
 	}
 	float open = total > 1e-6 ? sum / total : nearest;
+	// The lit shader has already mixed the surface toward the fog; multiplying AO into the fog's share
+	// would draw creases into a background that should be uniform.
+	if (Fog.w > 0.5 && Target.w < 0.5)
+		open = mix(open, 1.0, FogFactor(length(center)) * FogOpacity.x);
 	o_Color = vec4(vec3(open), 1.0);
 }
 

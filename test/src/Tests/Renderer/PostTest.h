@@ -45,7 +45,7 @@ namespace Dingo
 		void DrawGradient(Framebuffer* target, const glm::vec3& base, float max, const PostProcessSettings& settings);
 		void DrawSpot(Framebuffer* target, const PostProcessSettings& settings, Material* material = nullptr);
 		void DrawRoom(Renderer3D& renderer) const;
-		void DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings);
+		void DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings, const Fog* fog = nullptr);
 		PerspectiveCamera RoomCamera(float aspect) const;
 		void RunChecks();
 
@@ -88,9 +88,12 @@ namespace Dingo
 		bool m_ShowRoom = false;
 		Framebuffer* m_RoomPlain = nullptr;
 		Framebuffer* m_RoomOccluded = nullptr;
+		Framebuffer* m_RoomFogged = nullptr;
+		Framebuffer* m_RoomFoggedOccluded = nullptr;
 		Framebuffer* m_SplitTarget = nullptr;
 		Framebuffer* m_DepthTarget = nullptr; // k_SplitSize square, with a depth the chain must write
 		std::vector<uint8_t> m_RoomPlainPixels;
+		std::vector<uint8_t> m_RoomFoggedPixels;
 	};
 
 }
