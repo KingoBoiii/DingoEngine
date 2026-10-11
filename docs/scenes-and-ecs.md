@@ -485,8 +485,8 @@ The binding convention a custom mesh shader follows:
 
 - **binding 0** — the engine **scene UBO**, bound on every material each frame. Declare it to
   position your vertices (and light, if you want it). It begins with a frozen 96-byte prefix,
-  `mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`, and the camera position and the full
-  light block are appended after it (below). A shader may declare a block shorter than the
+  `mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`, and the camera position, the full
+  light block and the fog are appended after it (below). A shader may declare a block shorter than the
   buffer, so one that declares only the prefix — as every custom shader written before v0.7 does —
   compiles and renders as it did.
 - **binding 1** — your material's own uniforms (whatever you pass to `Material::SetUniform`). Omit it
@@ -520,6 +520,8 @@ layout(std140, binding = 0) uniform CameraData
     ivec4 LightCounts;        // x = directional lights in use, y = point and spot lights in use
     DirectionalLight DirectionalLights[4];
     LocalLight       LocalLights[32];
+    vec4  FogColor;           // rgb = colour, a = max opacity
+    vec4  FogParams;          // x = start, y = end, z = density, w = mode: 0 none, 1 linear, 2 exp, 3 exp squared
 };
 ```
 
@@ -532,7 +534,8 @@ therefore still draws a sun in a scene that has none, which the engine's own lit
 Declare the full block and loop over `LightCounts` to light a material the way the engine does;
 [Lighting](lighting.md) has the
 falloff and cone formulas, and `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl` is the
-reference loop.
+reference loop. The fog members are zero while the scene has no fog (`Renderer3D::SetFog`, or a
+`FogComponent`); [Lighting](lighting.md#fog) has the fog factor the lit shader mixes by.
 
 Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching),
 as `a_Position` (location 0), `a_Normal` (1), `a_Color` (2 — the component's `Color`) and
