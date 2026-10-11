@@ -396,6 +396,11 @@ pass, after every opaque mesh, static and skinned:
 - **Skinned meshes join the sort** when their material is translucent, by the centre of their rest
   bounds; an instance's translucent meshes (a model's submeshes) share the first one's place. A model whose visor is translucent and body opaque draws the body with the opaque meshes and
   the visor in this pass, uploading its joints for each.
+- **Both sides of a two-sided mesh** (`CullMode::None`, which every lit material has) draw far side
+  first: a static mesh's triangles facing away from the camera (by their vertex normals, so a mirrored
+  transform is no exception) go ahead of the rest in the same draw, and a skinned mesh draws twice,
+  culling its near side and then its far side (two `TranslucentDraws`). A material that culls draws as
+  it is.
 - **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off), for
   the lights its `ShadowGroups` share a bit with, as an opaque mesh does; one with `ShadowsOnly` draws
   nothing lit and batches like an opaque mesh.
@@ -403,9 +408,10 @@ pass, after every opaque mesh, static and skinned:
   is applied before it, so glass isn't darkened by the corners behind it.
 
 The sort is per mesh, not per triangle. Meshes that intersect, a large mesh around a smaller one
-(a water plane under a boat, say), or the faces of one mesh seen through each other (a closed lit mesh
-draws both faces) can blend in the wrong order. Split large translucent surfaces into pieces, or keep
-them convex and their alpha low.
+(a water plane under a boat, say), or the faces of a concave mesh seen through each other on one side
+(two fingers of a hand) can blend in the wrong order. Split large translucent surfaces into pieces, or
+keep them convex and their alpha low. The far side is lit with its outward normal, as an opaque
+two-sided mesh's would be.
 
 ## Custom material shaders
 

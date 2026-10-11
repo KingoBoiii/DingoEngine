@@ -583,7 +583,7 @@ namespace Dingo
 	***		DRAW — Material							***
 	**************************************************/
 
-	RenderPass* Renderer::PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target)
+	RenderPass* Renderer::PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target, CullMode cullMode)
 	{
 		// The UBO is volatile: it must be written into every frame that binds it, not only when it changed.
 		if (material->GetUniformBuffer() && material->NeedsUniformUpload(s_Data->FrameIndex))
@@ -593,11 +593,16 @@ namespace Dingo
 			material->MarkUniformUploaded(s_Data->FrameIndex);
 		}
 
-		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target);
+		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target, cullMode);
 		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
 	}
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
+	{
+		DrawIndexed(material, material->GetParams().CullMode, layout, vertexBuffer, indexBuffer, indexCount, instanceCount, firstIndex);
+	}
+
+	void Renderer::DrawIndexed(Material* material, CullMode cullMode, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		if (s_Data->FrameSkipped)
 			return;
@@ -605,7 +610,7 @@ namespace Dingo
 		indexCount = ResolveIndexCount(indexBuffer, indexCount, firstIndex);
 
 		Framebuffer* target = GetCurrentTarget();
-		if (!PrepareMaterial(material, layout, target))
+		if (!PrepareMaterial(material, layout, target, cullMode))
 			return;
 
 		BindTarget(target);
@@ -620,7 +625,7 @@ namespace Dingo
 			return;
 
 		Framebuffer* target = GetCurrentTarget();
-		if (!PrepareMaterial(material, VertexLayout(), target))
+		if (!PrepareMaterial(material, VertexLayout(), target, material->GetParams().CullMode))
 			return;
 
 		BindTarget(target);

@@ -183,6 +183,9 @@ namespace Dingo
 		// vertex layout, uploads the uniforms (once per frame and after each SetUniform), then draws.
 		// indexCount and firstIndex as for the RenderPass overload.
 		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
+		// The same, culling with cullMode instead of the material's own CullMode: a two-sided material
+		// drawn back faces first, then front faces (Renderer3D's translucent pass).
+		static void DrawIndexed(Material* material, CullMode cullMode, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
 		// Without vertex buffers, as for a fullscreen pass: Draw(material, 3) with a vertex stage that
 		// makes one triangle covering the target from gl_VertexIndex (DingoEngine/Fullscreen.glsl).
 		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
@@ -251,7 +254,7 @@ namespace Dingo
 		static void RenderThreadLoop();
 		static Framebuffer* GetCurrentTarget();
 		static void BindTarget(Framebuffer* target);
-		static RenderPass* PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target);
+		static RenderPass* PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target, CullMode cullMode);
 
 		// Runs fn on the main thread at the start of the next frame, or at Shutdown, once the
 		// render thread has submitted the frame being recorded now: for reading back what it drew.
