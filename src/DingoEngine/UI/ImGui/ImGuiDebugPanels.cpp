@@ -23,6 +23,8 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 // ImGui-backed implementation of the engine's renderer debug panels
@@ -172,6 +174,32 @@ namespace Dingo::UI
 		// something actually changed - that's the trade this cache exists to make.
 		// What this does NOT catch: an asset's path changing without its handle
 		// changing, which the current Import/Remove API has no way to do anyway.
+		std::string PathText(const std::filesystem::path& path)
+		{
+			const std::u8string text = path.generic_u8string();
+			return std::string(text.begin(), text.end());
+		}
+
+		// Resolving a source walks the mounts and stats loose files, so the column refreshes once a
+		// second rather than per row per frame.
+		const std::string& CachedAssetSource(const AssetManager& assets, AssetHandle handle)
+		{
+			static std::unordered_map<AssetHandle, std::string> s_Sources;
+			static double s_LastRefresh = -1.0;
+
+			const double now = ImGui::GetTime();
+			if (now - s_LastRefresh > 1.0)
+			{
+				s_Sources.clear();
+				s_LastRefresh = now;
+			}
+
+			auto it = s_Sources.find(handle);
+			if (it == s_Sources.end())
+				it = s_Sources.emplace(handle, assets.GetAssetSource(handle)).first;
+			return it->second;
+		}
+
 		const std::vector<AssetHandle>& SortedRegistry(const AssetManager& assets)
 		{
 			static std::vector<AssetHandle> s_Sorted;
@@ -710,7 +738,7 @@ namespace Dingo::UI
 
 		const std::vector<AssetHandle>& entries = SortedRegistry(assets);
 
-		if (ImGui::BeginTable("##assettable", 4,
+		if (ImGui::BeginTable("##assettable", 5,
 			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
 			ImVec2(0.0f, 240.0f)))
 		{
@@ -718,6 +746,7 @@ namespace Dingo::UI
 			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 62.0f);
 			ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 74.0f);
 			ImGui::TableSetupColumn("Path");
+			ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 96.0f);
 			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 118.0f);
 			ImGui::TableHeadersRow();
 
@@ -727,7 +756,7 @@ namespace Dingo::UI
 				if (!metadata)
 					continue; // removed since the snapshot was built - skip rather than show stale data
 
-				const std::string path = metadata->FilePath.generic_string();
+				const std::string path = PathText(metadata->FilePath);
 				if (s_Filter[0] != '\0' && path.find(s_Filter) == std::string::npos)
 					continue;
 
@@ -744,9 +773,13 @@ namespace Dingo::UI
 				ImGui::TextUnformatted(path.c_str());
 				if (ImGui::IsItemHovered())
 					ImGui::SetTooltip("handle %llu\n%s", static_cast<unsigned long long>(static_cast<uint64_t>(handle)),
-						assets.ResolvePath(metadata->FilePath).string().c_str());
+						PathText(assets.ResolvePath(metadata->FilePath)).c_str());
 
 				ImGui::TableSetColumnIndex(3);
+				const std::string& source = CachedAssetSource(assets, handle);
+				ImGui::TextDisabled("%s", source.c_str());
+
+				ImGui::TableSetColumnIndex(4);
 				// Reloading keeps the object alive and usable (that's the point of an
 				// in-place hot-reload) with a new version decoding in the background, so it
 				// counts as loaded for the button label and as in-flight for disabling it.

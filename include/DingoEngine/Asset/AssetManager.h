@@ -41,6 +41,17 @@ namespace Dingo
 		// Seconds between file-timestamp polls when hot-reload is enabled.
 		float HotReloadInterval = 0.5f;
 
+		// A shipped game's package: with AutoUnpackage on, Initialize() mounts
+		// <executable directory>/<executable name>.dpak when that file exists, opened with
+		// PackageKey (Dingo::Generated::GetPackageKey() from premake's embedPackKey(); a null key
+		// opens only an unencrypted package). Without the file, RootDirectory serves as before.
+		Dingo::PackageKey PackageKey;
+		bool AutoUnpackage = true;
+		// With the package mounted, RootDirectory is left unmounted, so a stray loose file can't
+		// shadow or stand in for a packed one. Set this to mount it under the package as well
+		// (files the package lacks then load loose).
+		bool AllowLooseFiles = false;
+
 		AssetManagerParams& SetRootDirectory(const std::filesystem::path& root)
 		{
 			RootDirectory = root;
@@ -56,6 +67,24 @@ namespace Dingo
 		AssetManagerParams& SetHotReloadInterval(float seconds)
 		{
 			HotReloadInterval = seconds;
+			return *this;
+		}
+
+		AssetManagerParams& SetPackageKey(const Dingo::PackageKey& key)
+		{
+			PackageKey = key;
+			return *this;
+		}
+
+		AssetManagerParams& SetAutoUnpackage(bool enable)
+		{
+			AutoUnpackage = enable;
+			return *this;
+		}
+
+		AssetManagerParams& SetAllowLooseFiles(bool allow)
+		{
+			AllowLooseFiles = allow;
 			return *this;
 		}
 	};

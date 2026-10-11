@@ -5,6 +5,7 @@
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
@@ -828,10 +829,28 @@ namespace Dingo
 		data.RootDirectory = std::move(root);
 
 		VirtualFileSystem::SetRoot(data.RootDirectory);
-		data.RootMount = VirtualFileSystem::MountDirectory(data.RootDirectory);
 
 		std::error_code ec;
-		if (!std::filesystem::is_directory(data.RootDirectory, ec) && VirtualFileSystem::GetMountCount() <= 1)
+		std::filesystem::path package;
+		if (data.Params.AutoUnpackage)
+		{
+			package = Platform::GetExecutableDirectory() / Platform::GetExecutablePath().stem();
+			package += ".dpak";
+			if (!std::filesystem::is_regular_file(package, ec))
+				package.clear();
+		}
+
+		if (package.empty() || data.Params.AllowLooseFiles)
+			data.RootMount = VirtualFileSystem::MountDirectory(data.RootDirectory);
+
+		if (!package.empty())
+		{
+			if (Unpackage(package, data.Params.PackageKey) == k_InvalidPackage)
+				DE_CORE_ERROR("AssetManager: the game's package '{}' didn't open - packed assets will fail to load.", Utils::GenericUtf8(package));
+			else if (data.RootMount == k_InvalidVfsMount)
+				DE_CORE_INFO("AssetManager: loose files under '{}' are not read (AssetManagerParams::AllowLooseFiles).", Utils::GenericUtf8(data.RootDirectory));
+		}
+		else if (!std::filesystem::is_directory(data.RootDirectory, ec) && VirtualFileSystem::GetMountCount() <= 1)
 			DE_CORE_WARN("AssetManager: asset root '{}' does not exist - loads will fail until it does.", data.RootDirectory.string());
 		else
 			DE_CORE_INFO("AssetManager: asset root '{}'.", data.RootDirectory.string());
@@ -863,8 +882,8 @@ namespace Dingo
 		{
 			VirtualFileSystem::Unmount(data.RootMount);
 			data.RootMount = k_InvalidVfsMount;
-			VirtualFileSystem::SetRoot({});
 		}
+		VirtualFileSystem::SetRoot({});
 
 		// Free payloads that completed but were never finalized.
 		for (AsyncResult& result : data.Results)

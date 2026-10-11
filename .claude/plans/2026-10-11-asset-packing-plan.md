@@ -193,6 +193,13 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
   - This also removes the "cwd must be the exe directory" requirement for packed builds.
 - The F6 Assets tab shows each asset's source (loose / pack name).
 
+**As built (E):**
+- The three settings live on `AssetManagerParams` (`ApplicationParams.Assets`): `Dingo::PackageKey PackageKey` (spelled qualified, as CLAUDE.md requires of a member named after its type), `AutoUnpackage = true`, `AllowLooseFiles = false`, with fluent setters. The package looked for is `Platform::GetExecutableDirectory() / <executable stem>.dpak`.
+- `Initialize` still sets the VFS root to `RootDirectory` (so `<root>/key` absolute paths and the legacy `assets/` prefix fold onto package keys) but mounts the directory only when there is no package or `AllowLooseFiles` is set; the package mounts above it. Without the file nothing changes, so every dev build behaves as before. A package that fails to open logs an error naming it; a mounted one logs that loose files aren't read. `Shutdown` now clears the VFS root whether or not a directory was mounted.
+- Every example includes `<DingoPackKey.h>` and passes `Dingo::Generated::GetPackageKey()`. Marionette turns `AutoUnpackage` off for `--hot-reload` and `--live-edit-demo`, which edit loose files.
+- F6's registry table has a Source column ("loose", the package's name, "missing"), refreshed once a second because resolving stats loose files; its path cells are UTF-8 (`generic_u8string`).
+- Verified on Linux (Debug, Xvfb + llvmpipe): a copy of the Marionette executable beside its encrypted `Marionette.dpak`, in a directory with no `assets/` above it, started from an unrelated working directory, passes `--check` (107) and logs the mount; Candlewick the same way starts, runs and closes cleanly. Smoke results are under F, which ran on the same build.
+
 ## Phase F: build and CI
 
 - New `scripts/pack-assets.sh` and `.ps1`, which build DingoPack if needed and pack one example.
