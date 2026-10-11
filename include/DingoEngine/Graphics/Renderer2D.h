@@ -115,6 +115,7 @@ namespace Dingo
 			uint32_t QuadCount = 0;     // quads submitted (incl. rotated / textured)
 			uint32_t CircleCount = 0;
 			uint32_t TextQuadCount = 0; // glyph quads
+			uint32_t CulledQuads = 0;   // sprites and circles Scene::RenderEntities left out, wholly outside the view
 
 			uint32_t GetTotalQuads() const { return QuadCount + CircleCount + TextQuadCount; }
 			uint32_t GetVertexCount() const { return GetTotalQuads() * 4; }
@@ -122,6 +123,14 @@ namespace Dingo
 		};
 
 		const Statistics& GetStatistics() const { return m_Statistics; }
+
+		// The scene's camera, as BeginScene took it.
+		const glm::mat4& GetViewProjection() const { return m_CameraData.ProjectionViewMatrix; }
+		// Scene::RenderEntities skips sprites and circles wholly outside the view (text is drawn
+		// regardless: its bounds take a walk of the string). Off draws them all, for checking that
+		// it changes nothing.
+		void SetCullingEnabled(bool enabled) { m_CullingEnabled = enabled; }
+		bool IsCullingEnabled() const { return m_CullingEnabled; }
 		const Renderer2DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
 
 		// Always nullptr today: Renderer2D draws into the swap chain, whose image is not a Texture.
@@ -134,6 +143,8 @@ namespace Dingo
 
 	private:
 		Renderer2D(const Renderer2DParams& params) : m_Params(params) {}
+
+		friend class Scene; // counts what RenderEntities culls
 
 	private:
 		float GetTextureIndex(Texture* texture);
@@ -345,6 +356,7 @@ namespace Dingo
 		**************************************************/
 		Renderer2DParams m_Params;
 		Statistics m_Statistics;
+		bool m_CullingEnabled = true;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
 		bool m_GpuTimerOpen = false;

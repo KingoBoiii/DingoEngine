@@ -274,7 +274,8 @@ namespace Dingo::UI
 			overlay.c_str(), 0.0f, 33.34f, ImVec2(0.0f, 60.0f));
 
 		// ---- Renderer2D -----------------------------------------------------
-		const Renderer2D::Statistics& stats2D = Application::Get().GetRenderer2D().GetStatistics();
+		Renderer2D& renderer2D = Application::Get().GetRenderer2D();
+		const Renderer2D::Statistics& stats2D = renderer2D.GetStatistics();
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer2D  (most recent scene)");
@@ -284,9 +285,13 @@ namespace Dingo::UI
 		ImGui::Text("Circles    : %u", stats2D.CircleCount);
 		ImGui::Text("Text quads : %u", stats2D.TextQuadCount);
 		ImGui::Text("Vertices   : %u    Indices : %u", stats2D.GetVertexCount(), stats2D.GetIndexCount());
+		ImGui::Text("Culled     : %u  (sprites and circles out of view, by Scene::RenderEntities)", stats2D.CulledQuads);
+		bool culling2D = renderer2D.IsCullingEnabled();
+		if (ImGui::Checkbox("Cull 2D entities", &culling2D))
+			renderer2D.SetCullingEnabled(culling2D);
 
 		// ---- Renderer3D -----------------------------------------------------
-		const Renderer3D& renderer3D = Application::Get().GetRenderer3D();
+		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
 		const Renderer3D::Statistics& stats3D = renderer3D.GetStatistics();
 		const Renderer3DCapabilities& caps3D = renderer3D.GetCapabilities();
 
@@ -301,10 +306,16 @@ namespace Dingo::UI
 				"Dropped    : %u  (a mesh exceeds Renderer3D MaxVertices/MaxIndices on its own)", stats3D.DroppedMeshes);
 		else
 			ImGui::Text("Dropped    : 0");
-
-		ImGui::Spacing();
-		BudgetBar("Vertices", stats3D.VertexCount, caps3D.MaxVertices);
-		BudgetBar("Indices", stats3D.IndexCount, caps3D.MaxIndices);
+		ImGui::Text("Culled     : %u static, %u skinned out of view or past their cull distance", stats3D.CulledMeshes, stats3D.CulledSkinned);
+		ImGui::Text("             %u casters reach no shadow view", stats3D.CulledCasters);
+		bool culling3D = renderer3D.IsCullingEnabled();
+		if (ImGui::Checkbox("Cull meshes", &culling3D))
+			renderer3D.SetCullingEnabled(culling3D);
+		ImGui::SameLine();
+		bool frozen = renderer3D.IsCullingFrozen();
+		if (ImGui::Checkbox("Freeze culling frustum", &frozen))
+			renderer3D.SetCullingFrozen(frozen);
+		ImGui::Text("Uploaded   : %u vertices, %u indices  (one draw takes at most %u / %u)", stats3D.VertexCount, stats3D.IndexCount, caps3D.MaxVertices, caps3D.MaxIndices);
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D lights  (most recent scene)");

@@ -20,6 +20,37 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
+
+namespace
+{
+	// The square of half-size `half` about `center` lies wholly beyond one side of the view, by more
+	// than rounding could undo, so nothing in it can reach a pixel.
+	bool QuadOutsideView(const glm::mat4& viewProjection, const glm::vec3& center, float half)
+	{
+		glm::vec4 clip[4];
+		for (int corner = 0; corner < 4; ++corner)
+		{
+			const glm::vec3 point(center.x + ((corner & 1) ? half : -half), center.y + ((corner & 2) ? half : -half), center.z);
+			clip[corner] = viewProjection * glm::vec4(point, 1.0f);
+		}
+		for (int axis = 0; axis < 2; ++axis)
+		{
+			for (const float side : { 1.0f, -1.0f })
+			{
+				bool outside = true;
+				for (const glm::vec4& point : clip)
+				{
+					const float distance = point.w + side * point[axis];
+					outside = outside && distance < -1e-5f * (std::abs(point.w) + std::abs(point[axis]));
+				}
+				if (outside)
+					return true;
+			}
+		}
+		return false;
+	}
+}
 
 namespace Dingo
 {
@@ -376,10 +407,31 @@ namespace Dingo
 			memo.Pose2D(entity, transform, draw.Position, draw.Rotation);
 			draw.Depth = memo.Depth(entity);
 		};
+
+		// A sprite or circle is a quad of Size about its position, turned by its rotation, so the square
+		// around its circumcircle holds it at any angle. Removing a quad that draws nothing leaves the
+		// rest in the same order, so the frame is the same.
+		const bool culling = renderer.IsCullingEnabled() && !renderer.m_SceneSkipped;
+		const glm::mat4& viewProjection = renderer.GetViewProjection();
+		uint32_t culled = 0;
+		auto collectQuad = [&](entt::entity entity, const TransformComponent& transform, SceneData::Draw2DKind kind)
+		{
+			collect(entity, transform, kind);
+			if (!culling)
+				return;
+			const SceneData::Draw2D& draw = draws.back();
+			const float half = 0.5f * glm::length(transform.Size);
+			if (QuadOutsideView(viewProjection, draw.Position, half))
+			{
+				draws.pop_back();
+				++culled;
+			}
+		};
 		for (entt::entity entity : sprites)
-			collect(entity, sprites.get<TransformComponent>(entity), SceneData::Draw2DKind::Sprite);
+			collectQuad(entity, sprites.get<TransformComponent>(entity), SceneData::Draw2DKind::Sprite);
 		for (entt::entity entity : circles)
-			collect(entity, circles.get<TransformComponent>(entity), SceneData::Draw2DKind::Circle);
+			collectQuad(entity, circles.get<TransformComponent>(entity), SceneData::Draw2DKind::Circle);
+		renderer.m_Statistics.CulledQuads += culled;
 		for (entt::entity entity : texts)
 		{
 			const TextComponent& text = texts.get<TextComponent>(entity);
@@ -443,7 +495,7 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups);
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance);
 		}
 
 		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
@@ -459,9 +511,9 @@ namespace Dingo
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
 				if (skeleton && submesh.MeshData->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups);
+					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 				else
-					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups);
+					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 			}
 		}
 
