@@ -1240,10 +1240,14 @@ namespace Dingo
 			slash.AddEventRange(0.32f, 0.40f, "hitbox");
 			animator.Update(0.02f);
 			const int ends = CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeEnd);
+			float endTime = -1.0f;
+			for (const AnimationEvent& event : animator.GetEventsThisFrame())
+				if (event.Type == AnimationEventType::RangeEnd)
+					endTime = event.Time;
 			for (int step = 0; step < 40; ++step)
 				animator.Update(0.05f);
-			Check(open && ends == 1 && !animator.IsEventActive("hitbox"),
-				std::format("a range whose new end is behind the playhead after an events change ends at once ({} RangeEnd), and the held swing keeps it closed", ends));
+			Check(open && ends == 1 && std::abs(endTime - 0.40f) < 1e-4f && !animator.IsEventActive("hitbox"),
+				std::format("a range whose new end is behind the playhead after an events change ends at once ({} RangeEnd, at its new end {:.2f} s), and the held swing keeps it closed", ends, endTime));
 		}
 		{
 			Animator animator(&skeleton);

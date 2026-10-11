@@ -868,10 +868,10 @@ namespace Dingo
 			const float time = dominant->Time * timeScale;
 			std::erase_if(layer.OpenRanges, [&](const OpenRange& range)
 			{
-				const bool kept = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name
-					&& time >= events[range.Event].Time && time <= events[range.Event].EndTime;
+				const bool same = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name;
+				const bool kept = same && time >= events[range.Event].Time && time <= events[range.Event].EndTime;
 				if (!kept)
-					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
+					m_Events.push_back({ range.Name, same ? events[range.Event].EndTime : range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
 				return !kept;
 			});
 		}
