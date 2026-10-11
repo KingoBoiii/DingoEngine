@@ -5,9 +5,11 @@
 .DESCRIPTION
   -Set regression: the plan's section 4 scene set (the 0 px gate), one frame each. Test-app
   captures are named t-*, crop them to the 3D viewport (300,24,1005,872) when diffing, since the
-  side panels show live timings; m-* (Marionette) and c-* (Candlewick) compare whole. The games'
-  flame particles differ run to run even under --freeze, so only their *-np (--no-particles)
-  captures are held to 0 px; the others are for looking at.
+  side panels show live timings; m-* (Marionette) and c-* (Candlewick) compare whole. --freeze holds
+  each game after 600 fixed steps (10 s at 1/60, what the old fixed wait drew at 60 Hz) and logs
+  "[Freeze] held"; the captures wait for that line, so the flames are the same every run. Before
+  v1.0 P1 they burned for as many frames as the wait drew, and only the *-np (--no-particles) twins
+  were held to 0 px.
   -Set perf: the timing runs, each waiting for its [PERF]/[Perf] line: the Throughput Test's modes
   (static, repeat, mixed and shadow at 10000, skinned at 64 and 128), Candlewick's four rooms and
   Marionette's first bout.
@@ -70,11 +72,12 @@ switch ($Set) {
         foreach ($np in $false, $true) {
             $flag = if ($np) { " --no-particles" } else { "" }
             $tag = if ($np) { "-np" } else { "" }
-            Add-Job "m-freeze$tag" $marionette "examples\Marionette" "--freeze$flag" @{ wait = 10 }
-            Add-Job "m-freeze-lineup$tag" $marionette "examples\Marionette" "--freeze --lineup$flag" @{ wait = 10 }
+            $held = @{ until = "\[Freeze\] held"; timeout = 120 }
+            Add-Job "m-freeze$tag" $marionette "examples\Marionette" "--freeze$flag" $held
+            Add-Job "m-freeze-lineup$tag" $marionette "examples\Marionette" "--freeze --lineup$flag" $held
             foreach ($room in 1..4) {
-                Add-Job "c-room$room$tag" $candlewick "examples\Candlewick" "--room=$room --freeze$flag" @{ wait = 10 }
-                Add-Job "c-room$room-overview$tag" $candlewick "examples\Candlewick" "--room=$room --freeze --overview$flag" @{ wait = 10 }
+                Add-Job "c-room$room$tag" $candlewick "examples\Candlewick" "--room=$room --freeze$flag" $held
+                Add-Job "c-room$room-overview$tag" $candlewick "examples\Candlewick" "--room=$room --freeze --overview$flag" $held
             }
         }
     }

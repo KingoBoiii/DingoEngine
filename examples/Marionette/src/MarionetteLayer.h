@@ -41,6 +41,7 @@ namespace Dingo
 		Scene* m_TitleScene = nullptr;
 		Scene* m_ArenaScene = nullptr;
 		Scene* m_EndScene = nullptr;
+		int m_FrozenSteps = 0;
 
 		float m_PerfClock = 0.0f;
 		int m_PerfFrames = 0;

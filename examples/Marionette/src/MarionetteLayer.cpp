@@ -153,7 +153,8 @@ namespace Dingo
 		const LaunchOptions& options = GetLaunchOptions();
 		const bool fixed = options.FixedDt > 0.0f;
 		const float step = fixed ? options.FixedDt : deltaTime;
-		const int steps = fixed ? options.StepsPerFrame : 1;
+		const bool held = options.Freeze && m_FrozenSteps >= FREEZE_HOLD_STEPS;
+		const int steps = held ? 0 : fixed ? options.StepsPerFrame : 1;
 		const Scene* activeBefore = m_SceneManager.GetActiveScene();
 		const bool measuring = options.Perf && !m_PerfDone && activeBefore == m_ArenaScene;
 
@@ -165,6 +166,11 @@ namespace Dingo
 			if (m_LiveEdit)
 				m_LiveEdit->Update(step);
 			m_SceneManager.OnUpdate(step);
+			if (options.Freeze && ++m_FrozenSteps == FREEZE_HOLD_STEPS)
+			{
+				DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
+				break;
+			}
 			if (m_SceneManager.GetActiveScene() != activeBefore || m_Match.Restart || m_Match.Done)
 				break;
 		}

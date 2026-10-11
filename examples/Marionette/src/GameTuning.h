@@ -343,6 +343,9 @@ namespace Dingo
 	// Scene::OnUpdate caps its delta at 4/60 s, so a longer fixed step would be silently shortened.
 	inline constexpr float FIXED_DT_MAX         = 4.0f / 60.0f;
 	inline constexpr int   STEPS_PER_FRAME_MAX  = 64;
+	// --freeze steps the arena this many times and then holds it, so a capture taken any time later
+	// sees the same frame: the brazier flames would go on burning, one step per frame drawn.
+	inline constexpr int   FREEZE_HOLD_STEPS    = 600;
 
 	// --- Bouts ---------------------------------------------------------------------
 	inline constexpr int   BOUT_COUNT           = 3;

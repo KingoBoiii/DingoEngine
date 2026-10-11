@@ -57,6 +57,9 @@ namespace Dingo
 
 	// --- Captures and perf ---------------------------------------------------------
 	inline constexpr float FIXED_DT_FREEZE     = 1.0f / 60.0f;
+	// --freeze steps the keep this many times and then holds it, so a capture taken any time later
+	// sees the same frame: the flames would go on burning, one step per frame drawn.
+	inline constexpr int   FREEZE_HOLD_STEPS   = 600;
 	// Scene::OnUpdate caps its step at 4/60 s.
 	inline constexpr float FIXED_DT_MAX        = 4.0f / 60.0f;
 	inline constexpr float PERF_WARMUP_SECONDS = 2.0f;

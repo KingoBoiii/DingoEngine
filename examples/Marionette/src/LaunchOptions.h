@@ -38,7 +38,7 @@ namespace Dingo
 		float Phase = -1.0f;      // with Freeze: the locomotion's phase, 0..1; negative = the idle pose of the lineup
 		std::string PoseClip;     // with Freeze: the player holds this clip at PoseTime
 		float PoseTime = 0.0f;
-		float FixedDt = 0.0f;     // seconds; 0 = the measured delta; --freeze and --tournament default it to 1/60
+		float FixedDt = 0.0f;     // seconds; 0 = the measured delta; --freeze and --tournament default it to 1/60; --freeze holds the arena after FREEZE_HOLD_STEPS
 		uint32_t Seed = 1;        // the AI's random seed; a tournament uses Seed to Seed + Tournament - 1
 		int Tournament = 0;       // N > 0: tier PlayerTier plays bout Bout N times, reports and closes; implies Autoplay and a fixed delta
 		int PlayerTier = 3;       // the autoplay player's AI tier
