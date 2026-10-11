@@ -67,34 +67,12 @@ namespace Dingo
 	Wardens::Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool castShadows)
 		: m_Scene(scene), m_Map(map), m_Audio(audio), m_Frozen(frozen), m_CastShadows(castShadows)
 	{
-		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
-
-		m_ArmourMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("WardenArmour")
-			.SetRoughness(ARMOUR_ROUGHNESS)
-			.SetSpecular(ARMOUR_SPECULAR)
-			.SetEmissiveColor(ARMOUR_EMISSIVE_COLOR)
-			.SetEmissiveStrength(ARMOUR_EMISSIVE));
-
-		m_VisorMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("WardenVisor")
-			.SetEmissiveColor(WARDEN_LIGHT_COLOR)
-			.SetEmissiveStrength(WARDEN_LAMP_EMISSIVE));
-
-		m_LampMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("WardenLamp")
-			.SetEmissiveColor(WARDEN_LIGHT_COLOR)
-			.SetEmissiveStrength(WARDEN_LAMP_EMISSIVE));
-
+		m_ArmourSurface = SurfaceOverride().SetRoughness(ARMOUR_ROUGHNESS).SetSpecular(ARMOUR_SPECULAR).SetEmissiveColor(ARMOUR_EMISSIVE_COLOR).SetEmissiveStrength(ARMOUR_EMISSIVE);
+		m_VisorSurface = SurfaceOverride().SetEmissiveColor(WARDEN_LIGHT_COLOR).SetEmissiveStrength(WARDEN_LAMP_EMISSIVE);
+		m_LampSurface = SurfaceOverride().SetEmissiveColor(WARDEN_LIGHT_COLOR).SetEmissiveStrength(WARDEN_LAMP_EMISSIVE);
 		const glm::vec3 markerColors[] = { MARKER_CALM_COLOR, MARKER_SUSPICIOUS_COLOR, MARKER_ALERT_COLOR };
-		const char* markerNames[] = { "WardenMarkerCalm", "WardenMarkerSuspicious", "WardenMarkerAlert" };
-		for (size_t i = 0; i < std::size(m_MarkerMaterials); ++i)
-		{
-			m_MarkerMaterials[i] = renderer3D.CreateLitMaterial(MaterialParams()
-				.SetDebugName(markerNames[i])
-				.SetEmissiveColor(markerColors[i])
-				.SetEmissiveStrength(WARDEN_MARKER_EMISSIVE));
-		}
+		for (size_t i = 0; i < std::size(m_MarkerSurfaces); ++i)
+			m_MarkerSurfaces[i] = SurfaceOverride().SetEmissiveColor(markerColors[i]).SetEmissiveStrength(WARDEN_MARKER_EMISSIVE);
 
 		const std::vector<WardenRoute>& routes = map.GetWardenRoutes();
 		m_Wardens.resize(routes.size());
@@ -108,15 +86,6 @@ namespace Dingo
 
 		Reset();
 		DE_INFO("Candlewick: {} wardens on patrol{}{}", m_Wardens.size(), frozen ? " (frozen)" : "", castShadows ? "" : " (no shadows)");
-	}
-
-	Wardens::~Wardens()
-	{
-		DestroyAndDelete(m_ArmourMaterial);
-		DestroyAndDelete(m_VisorMaterial);
-		DestroyAndDelete(m_LampMaterial);
-		for (Material*& material : m_MarkerMaterials)
-			DestroyAndDelete(material);
 	}
 
 	void Wardens::BuildLoop(Warden& warden, const WardenRoute& route) const
@@ -168,12 +137,12 @@ namespace Dingo
 		}
 	}
 
-	void Wardens::AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material, ShadowCasting shadows)
+	void Wardens::AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface, ShadowCasting shadows)
 	{
 		Entity entity = m_Scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size;
 		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color));
-		renderer.Material = material;
+		renderer.SetSurface(surface);
 		renderer.Shadows = shadows;
 		warden.Parts.push_back({ entity, offset });
 	}
@@ -183,13 +152,13 @@ namespace Dingo
 		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
 		Mesh* box = renderer3D.GetBoxMesh();
 
-		AddPart(warden, "WardenLegs", box, { 0.0f, k_LegsCenter, 0.0f }, k_LegsSize, COLOR_ARMOUR, m_ArmourMaterial);
-		AddPart(warden, "WardenTorso", box, { 0.0f, k_TorsoCenter, 0.0f }, k_TorsoSize, COLOR_ARMOUR, m_ArmourMaterial);
-		AddPart(warden, "WardenHelm", box, { 0.0f, k_HelmCenter, 0.0f }, k_HelmSize, COLOR_ARMOUR, m_ArmourMaterial);
-		AddPart(warden, "WardenVisor", box, { 0.0f, k_VisorCenter, -k_VisorForward }, k_VisorSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_VisorMaterial);
+		AddPart(warden, "WardenLegs", box, { 0.0f, k_LegsCenter, 0.0f }, k_LegsSize, COLOR_ARMOUR, m_ArmourSurface);
+		AddPart(warden, "WardenTorso", box, { 0.0f, k_TorsoCenter, 0.0f }, k_TorsoSize, COLOR_ARMOUR, m_ArmourSurface);
+		AddPart(warden, "WardenHelm", box, { 0.0f, k_HelmCenter, 0.0f }, k_HelmSize, COLOR_ARMOUR, m_ArmourSurface);
+		AddPart(warden, "WardenVisor", box, { 0.0f, k_VisorCenter, -k_VisorForward }, k_VisorSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_VisorSurface);
 		// The lamp's glass and cap enclose its light, so they cast nothing.
-		AddPart(warden, "WardenLampGlass", box, WARDEN_LAMP_OFFSET, k_LampGlassSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_LampMaterial, ShadowCasting::Off);
-		AddPart(warden, "WardenLampCap", box, WARDEN_LAMP_OFFSET + glm::vec3(0.0f, k_LampCapRise, 0.0f), k_LampCapSize, COLOR_ARMOUR, m_ArmourMaterial, ShadowCasting::Off);
+		AddPart(warden, "WardenLampGlass", box, WARDEN_LAMP_OFFSET, k_LampGlassSize, glm::vec4(WARDEN_LIGHT_COLOR, 1.0f), m_LampSurface, ShadowCasting::Off);
+		AddPart(warden, "WardenLampCap", box, WARDEN_LAMP_OFFSET + glm::vec3(0.0f, k_LampCapRise, 0.0f), k_LampCapSize, COLOR_ARMOUR, m_ArmourSurface, ShadowCasting::Off);
 
 		warden.Lamp = m_Scene.CreateEntity("WardenLamp");
 		warden.Lamp.AddComponent<Transform3DComponent>();
@@ -577,7 +546,7 @@ namespace Dingo
 			return;
 
 		warden.MarkerLevel = level;
-		warden.Marker.GetComponent<MeshRendererComponent>().Material = m_MarkerMaterials[level];
+		warden.Marker.GetComponent<MeshRendererComponent>().SetSurface(m_MarkerSurfaces[level]);
 	}
 
 }

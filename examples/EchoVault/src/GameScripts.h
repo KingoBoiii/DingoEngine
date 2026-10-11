@@ -39,7 +39,6 @@ namespace Dingo
 	protected:
 		void OnStart() override;
 		void OnUpdate(float deltaTime) override;
-		void OnDestroy() override;
 
 	private:
 		void LoadAudio();
@@ -57,8 +56,12 @@ namespace Dingo
 		GameContext m_Context;
 		Entity m_CameraEntity;
 
-		Material* m_OrbMaterial = nullptr;
-		Material* m_SentryEyeMaterial = nullptr;
+		struct Glow
+		{
+			Entity Target;
+			float Strength = 0.0f;
+		};
+		std::vector<Glow> m_Glows;
 
 		bool m_CameraInitialized = false;
 	};

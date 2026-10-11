@@ -56,21 +56,17 @@ namespace
 namespace Dingo
 {
 
-	Lantern::Lantern(Scene& scene, const Player& player, Material* frameMaterial, ParticleEffect* snuffSmoke, GameAudio& audio, float startOil, bool burns)
+	Lantern::Lantern(Scene& scene, const Player& player, const SurfaceOverride& frameSurface, ParticleEffect* snuffSmoke, GameAudio& audio, float startOil, bool burns)
 		: m_Scene(scene), m_Audio(audio), m_Oil(std::clamp(startOil, 0.0f, OIL_MAX)), m_Burns(burns)
 	{
-		m_GlassMaterial = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams()
-			.SetDebugName("LanternGlass")
-			.SetRoughness(GLASS_ROUGHNESS)
-			.SetEmissiveColor(LANTERN_COLOR));
-
-		AddPart(scene, "LanternGlass", glm::vec3(0.0f), k_GlassSize, COLOR_GLASS, m_GlassMaterial);
-		AddPart(scene, "LanternBase", glm::vec3(0.0f, -k_BaseDrop, 0.0f), k_BaseSize, COLOR_BRASS, frameMaterial);
-		AddPart(scene, "LanternCap", glm::vec3(0.0f, k_CapRise, 0.0f), k_CapSize, COLOR_BRASS, frameMaterial);
-		AddPart(scene, "LanternHandle", glm::vec3(0.0f, k_HandleRise, 0.0f), k_HandleSize, COLOR_BRASS, frameMaterial);
+		m_Glass = AddPart(scene, "LanternGlass", glm::vec3(0.0f), k_GlassSize, COLOR_GLASS,
+			SurfaceOverride().SetRoughness(GLASS_ROUGHNESS).SetEmissiveColor(LANTERN_COLOR));
+		AddPart(scene, "LanternBase", glm::vec3(0.0f, -k_BaseDrop, 0.0f), k_BaseSize, COLOR_BRASS, frameSurface);
+		AddPart(scene, "LanternCap", glm::vec3(0.0f, k_CapRise, 0.0f), k_CapSize, COLOR_BRASS, frameSurface);
+		AddPart(scene, "LanternHandle", glm::vec3(0.0f, k_HandleRise, 0.0f), k_HandleSize, COLOR_BRASS, frameSurface);
 		for (const float x : { -k_PostSpread, k_PostSpread })
 			for (const float z : { -k_PostSpread, k_PostSpread })
-				AddPart(scene, "LanternPost", glm::vec3(x, 0.0f, z), k_PostSize, COLOR_BRASS, frameMaterial);
+				AddPart(scene, "LanternPost", glm::vec3(x, 0.0f, z), k_PostSize, COLOR_BRASS, frameSurface);
 
 		m_Light = scene.CreateEntity("Lantern");
 		m_Light.AddComponent<Transform3DComponent>();
@@ -83,20 +79,16 @@ namespace Dingo
 		Apply();
 	}
 
-	Lantern::~Lantern()
-	{
-		DestroyAndDelete(m_GlassMaterial);
-	}
-
-	void Lantern::AddPart(Scene& scene, const char* name, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material)
+	Entity Lantern::AddPart(Scene& scene, const char* name, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface)
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size * k_Scale;
 		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(Application::Get().GetRenderer3D().GetBoxMesh(), color));
-		renderer.Material = material;
+		renderer.SetSurface(surface);
 		// The parts enclose the lantern's own light, which they would black out.
 		renderer.Shadows = ShadowCasting::Off;
 		m_Parts.push_back({ entity, offset * k_Scale });
+		return entity;
 	}
 
 	bool Lantern::CanRelight() const
@@ -240,7 +232,8 @@ namespace Dingo
 		light.Range = glm::mix(LANTERN_RANGE_MIN, LANTERN_RANGE_MAX, fill);
 		light.Intensity = LANTERN_INTENSITY * strength * flicker;
 
-		m_GlassMaterial->SetEmissiveStrength(glm::mix(LANTERN_EMISSIVE_MIN, LANTERN_EMISSIVE_MAX, fill) * strength * flicker);
+		if (auto& surface = m_Glass.GetComponent<MeshRendererComponent>().Surface)
+			surface->EmissiveStrength = glm::mix(LANTERN_EMISSIVE_MIN, LANTERN_EMISSIVE_MAX, fill) * strength * flicker;
 	}
 
 }

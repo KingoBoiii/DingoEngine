@@ -21,8 +21,7 @@ namespace Dingo
 		enum class State { Lit, Snuffed, Striking };
 
 		// snuffSmoke: the puff a snuffed lantern gives off, or null for none.
-		Lantern(Scene& scene, const Player& player, Material* frameMaterial, ParticleEffect* snuffSmoke, GameAudio& audio, float startOil, bool burns);
-		~Lantern();
+		Lantern(Scene& scene, const Player& player, const SurfaceOverride& frameSurface, ParticleEffect* snuffSmoke, GameAudio& audio, float startOil, bool burns);
 
 		Lantern(const Lantern&) = delete;
 		Lantern& operator=(const Lantern&) = delete;
@@ -52,7 +51,7 @@ namespace Dingo
 			glm::vec3 Offset{ 0.0f };
 		};
 
-		void AddPart(Scene& scene, const char* name, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material);
+		Entity AddPart(Scene& scene, const char* name, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface);
 		glm::vec3 FindHand(const glm::vec3& axis, const glm::quat& facing) const;
 		void Place(const Player& player, float deltaTime);
 		void Apply();
@@ -64,7 +63,7 @@ namespace Dingo
 		Entity m_Smoke;
 		std::vector<Part> m_Parts;
 
-		Material* m_GlassMaterial = nullptr;
+		Entity m_Glass;
 
 		State m_State = State::Lit;
 		float m_Oil = 0.0f;

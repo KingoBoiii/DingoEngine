@@ -45,7 +45,8 @@ namespace Dingo
 		bool Collected = false;
 	};
 
-	// Builds the level from the map and owns every material and mesh it creates.
+	// Builds the level from the map and owns every mesh it creates. Its surfaces are SurfaceOverrides of
+	// the default material, so the whole keep draws in one batch per shadow mode.
 	class KeepWorld
 	{
 	public:
@@ -57,11 +58,13 @@ namespace Dingo
 
 		const std::vector<DecorFlame>& GetFlames() const { return m_Flames; }
 		const std::vector<BrazierSpot>& GetBraziers() const { return m_Braziers; }
-		Material* GetBrassMaterial() const { return m_BrassMaterial; }
+		const SurfaceOverride& GetBrassSurface() const { return m_BrassSurface; }
 
-		// Braziers are built dark: their light off and their cores on the ash material. Lighting one
-		// swaps its core to the flame material that every decorative flame also shares.
-		Material* GetFlameMaterial() const { return m_FlameMaterial; }
+		// Braziers are built dark: their light off and their cores on the ash surface. Lighting one
+		// gives its core the flame surface that every decorative flame also has, and SetFlameStrength
+		// flickers them all.
+		void UseFlameSurface(Entity core);
+		void SetFlameStrength(float strength);
 		const FlameEffects& GetEffects() const { return m_Effects; }
 
 		size_t CollectFlasks(const glm::vec3& feet, size_t maxCount);
@@ -86,15 +89,15 @@ namespace Dingo
 			bool Hidden = false;
 		};
 
-		void CreateMaterials();
+		void CreateSurfaces();
 		void SpawnAmbient();
 		void BuildFloors();
 		void BuildWalls();
 		void BuildMarkers();
 
-		Entity SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material);
-		Entity SpawnDecor(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material);
-		Entity SpawnGlow(const char* name, const glm::vec3& center, float diameter, Material* material, const glm::vec4& color);
+		Entity SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface);
+		Entity SpawnDecor(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface);
+		Entity SpawnGlow(const char* name, const glm::vec3& center, float diameter, const SurfaceOverride& surface, const glm::vec4& color);
 		Entity SpawnPointLight(const char* name, const glm::vec3& position, float intensity, float range);
 
 		void SpawnFloor(const TileRect& rect);
@@ -112,14 +115,15 @@ namespace Dingo
 		Mesh* m_BoxMesh = nullptr;
 		Mesh* m_FlameMesh = nullptr;
 
-		Material* m_StoneMaterial = nullptr;
-		Material* m_CapMaterial = nullptr;
-		Material* m_FloorMaterial = nullptr;
-		Material* m_BrassMaterial = nullptr;
-		Material* m_WaxMaterial = nullptr;
-		Material* m_FlameMaterial = nullptr;
-		Material* m_AshMaterial = nullptr;
-		Material* m_FlaskMaterial = nullptr;
+		SurfaceOverride m_StoneSurface;
+		SurfaceOverride m_CapSurface;
+		SurfaceOverride m_FloorSurface;
+		SurfaceOverride m_BrassSurface;
+		SurfaceOverride m_WaxSurface;
+		SurfaceOverride m_FlameSurface;
+		SurfaceOverride m_AshSurface;
+		SurfaceOverride m_FlaskSurface;
+		std::vector<Entity> m_FlameCores;
 
 		std::vector<WallRect> m_Walls;
 		std::vector<int> m_WallOfTile;

@@ -94,16 +94,7 @@ namespace Dingo
 
 		LoadAudio();
 
-		m_OrbMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("OrbEmissive")
-			.SetEmissiveColor(glm::vec3(COLOR_ORB))
-			.SetEmissiveStrength(ORB_EMISSIVE));
-
-		m_SentryEyeMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("SentryEyeEmissive")
-			.SetEmissiveColor(glm::vec3(COLOR_SENTRY_EYE))
-			.SetEmissiveStrength(SENTRY_EMISSIVE));
-
+		m_Glows.clear();
 		SetupCameraAndLight();
 		BuildCourse();
 
@@ -211,7 +202,9 @@ namespace Dingo
 		transform.Position = position;
 		transform.Scale = glm::vec3(0.6f);
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_ORB)).Material = m_OrbMaterial;
+		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_ORB))
+			.SetSurface(SurfaceOverride().SetEmissiveColor(glm::vec3(COLOR_ORB)).SetEmissiveStrength(ORB_EMISSIVE));
+		m_Glows.push_back({ entity, ORB_EMISSIVE });
 		entity.AddComponent<PointLightComponent>(PointLightComponent(glm::vec3(COLOR_ORB), ORB_LIGHT_INTENSITY, ORB_LIGHT_RANGE));
 
 		if (m_Context.OrbClip)
@@ -247,7 +240,9 @@ namespace Dingo
 		auto& eyeTransform = eye.AddComponent<Transform3DComponent>();
 		eyeTransform.Position = SENTRY_EYE_OFFSET / SENTRY_SCALE;
 		eyeTransform.Scale = glm::vec3(SENTRY_EYE_SIZE) / SENTRY_SCALE;
-		eye.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_SENTRY_EYE)).Material = m_SentryEyeMaterial;
+		eye.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Context.SphereMesh, COLOR_SENTRY_EYE))
+			.SetSurface(SurfaceOverride().SetEmissiveColor(glm::vec3(COLOR_SENTRY_EYE)).SetEmissiveStrength(SENTRY_EMISSIVE));
+		m_Glows.push_back({ eye, SENTRY_EMISSIVE });
 		eye.SetParent(entity, false);
 
 		entity.AddScript<SentryScript>(&m_Context, a, b, speed);
@@ -361,19 +356,15 @@ namespace Dingo
 
 		// Orb and sentry scripts read GlowPulse to pulse their lights.
 		m_Context.GlowPulse = 0.75f + 0.25f * std::sin(m_Context.ElapsedTime * 3.0f);
-		if (m_OrbMaterial)
-			m_OrbMaterial->SetEmissiveStrength(ORB_EMISSIVE * m_Context.GlowPulse);
-		if (m_SentryEyeMaterial)
-			m_SentryEyeMaterial->SetEmissiveStrength(SENTRY_EMISSIVE * m_Context.GlowPulse);
+		std::erase_if(m_Glows, [](const Glow& glow) { return !glow.Target.IsValid(); });
+		for (Glow& glow : m_Glows)
+		{
+			if (auto& surface = glow.Target.GetComponent<MeshRendererComponent>().Surface)
+				surface->EmissiveStrength = glow.Strength * m_Context.GlowPulse;
+		}
 
 		if (m_Context.TotalOrbs > 0 && m_Context.Collected >= m_Context.TotalOrbs)
 			RequestSceneTransition("Win"); // script-driven Game -> Win transition
-	}
-
-	void CourseControllerScript::OnDestroy()
-	{
-		DestroyAndDelete(m_OrbMaterial);
-		DestroyAndDelete(m_SentryEyeMaterial);
 	}
 
 	// ======================================================================

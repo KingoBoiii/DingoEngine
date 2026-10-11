@@ -70,9 +70,8 @@ namespace Dingo
 		light.GetComponent<PointLightComponent>().Enabled = true;
 
 		Entity core = spot.Core;
-		auto& renderer = core.GetComponent<MeshRendererComponent>();
-		renderer.Material = m_World.GetFlameMaterial();
-		renderer.Color = COLOR_EMBER;
+		m_World.UseFlameSurface(core);
+		core.GetComponent<MeshRendererComponent>().Color = COLOR_EMBER;
 
 		if (m_Audio.GetCrackle())
 		{
@@ -204,7 +203,7 @@ namespace Dingo
 		if (!m_Flicker)
 			return;
 
-		m_World.GetFlameMaterial()->SetEmissiveStrength(FLAME_EMISSIVE * FlameFlicker(m_Clock, 0.0f, CORE_FLICKER_DEPTH));
+		m_World.SetFlameStrength(FLAME_EMISSIVE * FlameFlicker(m_Clock, 0.0f, CORE_FLICKER_DEPTH));
 		for (size_t i = 0; i < m_World.GetFlames().size(); ++i)
 			m_LightLod.SetFlicker(i, FlameFlicker(m_Clock, static_cast<float>(i) * DECOR_FLICKER_PHASE, DECOR_FLICKER_DEPTH));
 	}

@@ -85,10 +85,10 @@ namespace Dingo
 
 		Mesh* m_ConeMesh = nullptr;
 		Material* m_ConeMaterial = nullptr;
-		Material* m_DotMaterial = nullptr;
-		Material* m_SeenMaterial = nullptr;
-		Material* m_UnseenMaterial = nullptr;
-		Material* m_ShadowedMaterial = nullptr;
+		SurfaceOverride m_DotSurface;
+		SurfaceOverride m_SeenSurface;
+		SurfaceOverride m_UnseenSurface;
+		SurfaceOverride m_ShadowedSurface;
 		std::vector<Entity> m_Cones;
 		std::vector<Entity> m_Footprints;
 		std::vector<Mesh*> m_FootprintMeshes;

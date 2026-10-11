@@ -139,7 +139,7 @@ namespace Dingo
 		m_FlameMesh = Mesh::CreateSphere(k_UnitSphereRadius, FLAME_MESH_RINGS, FLAME_MESH_SEGMENTS);
 		m_WallOfTile.assign(static_cast<size_t>(map.GetWidth()) * map.GetHeight(), -1);
 
-		CreateMaterials();
+		CreateSurfaces();
 		m_Effects = CreateFlameEffects();
 		SpawnAmbient();
 		BuildFloors();
@@ -162,65 +162,35 @@ namespace Dingo
 
 	KeepWorld::~KeepWorld()
 	{
-		DestroyAndDelete(m_StoneMaterial);
-		DestroyAndDelete(m_CapMaterial);
-		DestroyAndDelete(m_FloorMaterial);
-		DestroyAndDelete(m_BrassMaterial);
-		DestroyAndDelete(m_WaxMaterial);
-		DestroyAndDelete(m_FlameMaterial);
-		DestroyAndDelete(m_AshMaterial);
-		DestroyAndDelete(m_FlaskMaterial);
 		delete m_FlameMesh;
 	}
 
-	void KeepWorld::CreateMaterials()
+	void KeepWorld::CreateSurfaces()
 	{
-		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
+		m_StoneSurface = SurfaceOverride().SetRoughness(STONE_ROUGHNESS);
+		m_CapSurface = SurfaceOverride().SetRoughness(CAP_ROUGHNESS).SetEmissiveColor(CAP_EMISSIVE_COLOR).SetEmissiveStrength(CAP_EMISSIVE);
+		m_FloorSurface = SurfaceOverride().SetRoughness(FLOOR_ROUGHNESS);
+		m_BrassSurface = SurfaceOverride().SetRoughness(BRASS_ROUGHNESS).SetEmissiveColor(BRASS_EMISSIVE_COLOR).SetEmissiveStrength(BRASS_EMISSIVE).SetSpecular(BRASS_SPECULAR);
+		m_WaxSurface = SurfaceOverride().SetEmissiveColor(glm::vec3(COLOR_WAX)).SetEmissiveStrength(WAX_EMISSIVE).SetRoughness(WAX_ROUGHNESS);
+		m_FlameSurface = SurfaceOverride().SetEmissiveColor(FLAME_COLOR).SetEmissiveStrength(FLAME_EMISSIVE);
+		m_AshSurface = SurfaceOverride().SetRoughness(ASH_ROUGHNESS).SetEmissiveColor(ASH_EMISSIVE_COLOR).SetEmissiveStrength(ASH_EMISSIVE);
+		m_FlaskSurface = SurfaceOverride().SetRoughness(OIL_ROUGHNESS).SetSpecular(OIL_SPECULAR).SetEmissiveColor(OIL_EMISSIVE_COLOR).SetEmissiveStrength(OIL_EMISSIVE);
+	}
 
-		m_StoneMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepStone")
-			.SetRoughness(STONE_ROUGHNESS));
+	void KeepWorld::UseFlameSurface(Entity core)
+	{
+		core.GetComponent<MeshRendererComponent>().SetSurface(m_FlameSurface);
+		m_FlameCores.push_back(core);
+	}
 
-		m_CapMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepCap")
-			.SetRoughness(CAP_ROUGHNESS)
-			.SetEmissiveColor(CAP_EMISSIVE_COLOR)
-			.SetEmissiveStrength(CAP_EMISSIVE));
-
-		m_FloorMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepFloor")
-			.SetRoughness(FLOOR_ROUGHNESS));
-
-		m_BrassMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepBrass")
-			.SetRoughness(BRASS_ROUGHNESS)
-			.SetEmissiveColor(BRASS_EMISSIVE_COLOR)
-			.SetEmissiveStrength(BRASS_EMISSIVE)
-			.SetSpecular(BRASS_SPECULAR));
-
-		m_WaxMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepWax")
-			.SetEmissiveColor(glm::vec3(COLOR_WAX))
-			.SetEmissiveStrength(WAX_EMISSIVE)
-			.SetRoughness(WAX_ROUGHNESS));
-
-		m_FlameMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepFlameCore")
-			.SetEmissiveColor(FLAME_COLOR)
-			.SetEmissiveStrength(FLAME_EMISSIVE));
-
-		m_AshMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepAshCore")
-			.SetRoughness(ASH_ROUGHNESS)
-			.SetEmissiveColor(ASH_EMISSIVE_COLOR)
-			.SetEmissiveStrength(ASH_EMISSIVE));
-
-		m_FlaskMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("KeepFlask")
-			.SetRoughness(OIL_ROUGHNESS)
-			.SetSpecular(OIL_SPECULAR)
-			.SetEmissiveColor(OIL_EMISSIVE_COLOR)
-			.SetEmissiveStrength(OIL_EMISSIVE));
+	void KeepWorld::SetFlameStrength(float strength)
+	{
+		m_FlameSurface.EmissiveStrength = strength;
+		for (Entity core : m_FlameCores)
+		{
+			if (auto& surface = core.GetComponent<MeshRendererComponent>().Surface)
+				surface->EmissiveStrength = strength;
+		}
 	}
 
 	void KeepWorld::SpawnAmbient()
@@ -230,26 +200,26 @@ namespace Dingo
 		ambient.AddComponent<AmbientLightComponent>(AmbientLightComponent(AMBIENT_COLOR, AMBIENT_INTENSITY));
 	}
 
-	Entity KeepWorld::SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material)
+	Entity KeepWorld::SpawnSolid(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface)
 	{
-		Entity entity = SpawnDecor(name, center, size, color, material);
+		Entity entity = SpawnDecor(name, center, size, color, surface);
 		entity.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
 		entity.AddComponent<BoxCollider3DComponent>();
 		return entity;
 	}
 
-	Entity KeepWorld::SpawnDecor(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, Material* material)
+	Entity KeepWorld::SpawnDecor(const char* name, const glm::vec3& center, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface)
 	{
 		Entity entity = m_Scene.CreateEntity(name);
 		auto& transform = entity.AddComponent<Transform3DComponent>();
 		transform.Position = center;
 		transform.Scale = size;
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_BoxMesh, color)).Material = material;
+		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_BoxMesh, color)).SetSurface(surface);
 		return entity;
 	}
 
-	Entity KeepWorld::SpawnGlow(const char* name, const glm::vec3& center, float diameter, Material* material, const glm::vec4& color)
+	Entity KeepWorld::SpawnGlow(const char* name, const glm::vec3& center, float diameter, const SurfaceOverride& surface, const glm::vec4& color)
 	{
 		Entity entity = m_Scene.CreateEntity(name);
 		auto& transform = entity.AddComponent<Transform3DComponent>();
@@ -257,7 +227,7 @@ namespace Dingo
 		transform.Scale = glm::vec3(diameter);
 
 		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, color));
-		renderer.Material = material;
+		renderer.SetSurface(surface);
 		renderer.Shadows = ShadowCasting::Off;
 		return entity;
 	}
@@ -299,7 +269,7 @@ namespace Dingo
 	void KeepWorld::SpawnFloor(const TileRect& rect)
 	{
 		SpawnSolid("Floor", RectCenter(rect, -FLOOR_THICKNESS * 0.5f),
-			{ rect.Width * TILE_SIZE, FLOOR_THICKNESS, rect.Height * TILE_SIZE }, COLOR_FLOOR, m_FloorMaterial);
+			{ rect.Width * TILE_SIZE, FLOOR_THICKNESS, rect.Height * TILE_SIZE }, COLOR_FLOOR, m_FloorSurface);
 	}
 
 	void KeepWorld::BuildWalls()
@@ -322,9 +292,9 @@ namespace Dingo
 		const float sizeX = rect.Width * TILE_SIZE;
 		const float sizeZ = rect.Height * TILE_SIZE;
 
-		wall.Wall = SpawnSolid("Wall", RectCenter(rect, WALL_HEIGHT * 0.5f), { sizeX, WALL_HEIGHT, sizeZ }, COLOR_STONE, m_StoneMaterial);
+		wall.Wall = SpawnSolid("Wall", RectCenter(rect, WALL_HEIGHT * 0.5f), { sizeX, WALL_HEIGHT, sizeZ }, COLOR_STONE, m_StoneSurface);
 		wall.Cap = SpawnDecor("WallCap", RectCenter(rect, WALL_HEIGHT + WALL_CAP_THICKNESS * 0.5f),
-			{ sizeX + 2.0f * WALL_CAP_OVERHANG, WALL_CAP_THICKNESS, sizeZ + 2.0f * WALL_CAP_OVERHANG }, COLOR_CAP, m_CapMaterial);
+			{ sizeX + 2.0f * WALL_CAP_OVERHANG, WALL_CAP_THICKNESS, sizeZ + 2.0f * WALL_CAP_OVERHANG }, COLOR_CAP, m_CapSurface);
 
 		wall.Min = glm::vec3(rect.Col * TILE_SIZE, 0.0f, rect.Row * TILE_SIZE);
 		wall.Max = glm::vec3((rect.Col + rect.Width) * TILE_SIZE, WALL_HEIGHT + WALL_CAP_THICKNESS, (rect.Row + rect.Height) * TILE_SIZE);
@@ -367,16 +337,16 @@ namespace Dingo
 		const float bowlTop = standTop + style.BowlHeight;
 
 		SpawnSolid("BrazierBase", floor + glm::vec3(0.0f, style.BaseHeight * 0.5f, 0.0f),
-			{ style.BaseWidth, style.BaseHeight, style.BaseWidth }, COLOR_BRASS, m_BrassMaterial);
+			{ style.BaseWidth, style.BaseHeight, style.BaseWidth }, COLOR_BRASS, m_BrassSurface);
 		SpawnSolid("BrazierStand", floor + glm::vec3(0.0f, style.BaseHeight + style.StandHeight * 0.5f, 0.0f),
-			{ style.StandWidth, style.StandHeight, style.StandWidth }, COLOR_BRASS, m_BrassMaterial);
+			{ style.StandWidth, style.StandHeight, style.StandWidth }, COLOR_BRASS, m_BrassSurface);
 		SpawnSolid("BrazierBowl", floor + glm::vec3(0.0f, standTop + style.BowlHeight * 0.5f, 0.0f),
-			{ style.BowlWidth, style.BowlHeight, style.BowlWidth }, COLOR_BRASS, m_BrassMaterial);
+			{ style.BowlWidth, style.BowlHeight, style.BowlWidth }, COLOR_BRASS, m_BrassSurface);
 
 		const glm::vec3 core = floor + glm::vec3(0.0f, bowlTop + style.CoreRise, 0.0f);
 
 		BrazierSpot spot;
-		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter, m_AshMaterial, COLOR_ASH);
+		spot.Core = SpawnGlow(isAltar ? "AltarCore" : "BrazierCore", core, style.CoreDiameter, m_AshSurface, COLOR_ASH);
 		const glm::vec3 flameBase = core + glm::vec3(0.0f, style.CoreDiameter * FLAME_EMITTER_RISE, 0.0f);
 		spot.Flame = SpawnEmitter(m_Scene, "BrazierFlame", m_Effects.BrazierFlame.get(), flameBase, false);
 		spot.Embers = SpawnEmitter(m_Scene, "BrazierEmbers", m_Effects.BrazierEmbers.get(), flameBase, false);
@@ -406,9 +376,9 @@ namespace Dingo
 		const glm::vec3 base = m_Map.TileCenter(marker.Tile) - inward * (0.5f * TILE_SIZE) + glm::vec3(0.0f, SCONCE_HEIGHT, 0.0f);
 
 		Entity stem = SpawnDecor("SconceStem", base + inward * (k_SconceStemWidth * 0.5f) - glm::vec3(0.0f, k_SconceBracketDrop + k_SconceStemHeight * 0.5f, 0.0f),
-			{ k_SconceStemWidth, k_SconceStemHeight, k_SconceStemWidth }, COLOR_BRASS, m_BrassMaterial);
+			{ k_SconceStemWidth, k_SconceStemHeight, k_SconceStemWidth }, COLOR_BRASS, m_BrassSurface);
 		Entity cup = SpawnDecor("SconceCup", base + inward * (k_SconceCupWidth * 0.5f) - glm::vec3(0.0f, k_SconceBracketDrop - k_SconceCupHeight * 0.5f, 0.0f),
-			{ k_SconceCupWidth, k_SconceCupHeight, k_SconceCupWidth }, COLOR_BRASS, m_BrassMaterial);
+			{ k_SconceCupWidth, k_SconceCupHeight, k_SconceCupWidth }, COLOR_BRASS, m_BrassSurface);
 		// A cut-away hides the bracket outright, so it casts nothing at all: what hides the player
 		// must not change with the camera.
 		stem.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
@@ -416,7 +386,8 @@ namespace Dingo
 
 		DecorFlame flame;
 		const glm::vec3 core = base + inward * (k_SconceCupWidth * 0.5f) + glm::vec3(0.0f, k_SconceFlameRise, 0.0f);
-		flame.Core = SpawnGlow("SconceCore", core, k_SconceFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		flame.Core = SpawnGlow("SconceCore", core, k_SconceFlameDiameter, m_FlameSurface, COLOR_EMBER);
+		m_FlameCores.push_back(flame.Core);
 		flame.Emitter = SpawnEmitter(m_Scene, "SconceFlame", m_Effects.Sconce.get(), core + glm::vec3(0.0f, k_SconceFlameDiameter * FLAME_EMITTER_RISE, 0.0f));
 		flame.Light = SpawnPointLight("SconceLight", base + inward * k_SconceLightOffset + glm::vec3(0.0f, k_SconceFlameRise, 0.0f), SCONCE_LIGHT_INTENSITY, SCONCE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Sconce;
@@ -437,13 +408,14 @@ namespace Dingo
 	{
 		const glm::vec3 floor = m_Map.TileCenter(marker.Tile);
 
-		SpawnDecor("CandleWax", floor + glm::vec3(0.0f, k_CandleHeight * 0.5f, 0.0f), { k_CandleWidth, k_CandleHeight, k_CandleWidth }, COLOR_WAX, m_WaxMaterial)
+		SpawnDecor("CandleWax", floor + glm::vec3(0.0f, k_CandleHeight * 0.5f, 0.0f), { k_CandleWidth, k_CandleHeight, k_CandleWidth }, COLOR_WAX, m_WaxSurface)
 			.GetComponent<MeshRendererComponent>().Shadows = ShadowCasting::Off;
 
 		const glm::vec3 flameCenter = floor + glm::vec3(0.0f, k_CandleHeight + k_CandleFlameDiameter * 0.4f, 0.0f);
 
 		DecorFlame flame;
-		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter, m_FlameMaterial, COLOR_EMBER);
+		flame.Core = SpawnGlow("CandleFlame", flameCenter, k_CandleFlameDiameter, m_FlameSurface, COLOR_EMBER);
+		m_FlameCores.push_back(flame.Core);
 		flame.Emitter = SpawnEmitter(m_Scene, "CandleParticles", m_Effects.Candle.get(), flameCenter + glm::vec3(0.0f, k_CandleFlameDiameter * FLAME_EMITTER_RISE, 0.0f));
 		flame.Light = SpawnPointLight("CandleLight", flameCenter + glm::vec3(0.0f, k_CandleLightRise, 0.0f), CANDLE_LIGHT_INTENSITY, CANDLE_LIGHT_RANGE);
 		flame.Kind = FlameKind::Candle;
@@ -460,11 +432,11 @@ namespace Dingo
 		auto& bodyTransform = body.AddComponent<Transform3DComponent>();
 		bodyTransform.Position = flask.Position + glm::vec3(0.0f, k_FlaskBodySize.y * 0.5f, 0.0f);
 		bodyTransform.Scale = k_FlaskBodySize;
-		body.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, COLOR_OIL)).Material = m_FlaskMaterial;
+		body.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_FlameMesh, COLOR_OIL)).SetSurface(m_FlaskSurface);
 
 		flask.Parts.push_back(body);
-		flask.Parts.push_back(SpawnDecor("FlaskNeck", flask.Position + glm::vec3(0.0f, k_FlaskNeckCenter, 0.0f), k_FlaskNeckSize, COLOR_OIL, m_FlaskMaterial));
-		flask.Parts.push_back(SpawnDecor("FlaskCork", flask.Position + glm::vec3(0.0f, k_FlaskCorkCenter, 0.0f), k_FlaskCorkSize, COLOR_BRASS, m_BrassMaterial));
+		flask.Parts.push_back(SpawnDecor("FlaskNeck", flask.Position + glm::vec3(0.0f, k_FlaskNeckCenter, 0.0f), k_FlaskNeckSize, COLOR_OIL, m_FlaskSurface));
+		flask.Parts.push_back(SpawnDecor("FlaskCork", flask.Position + glm::vec3(0.0f, k_FlaskCorkCenter, 0.0f), k_FlaskCorkSize, COLOR_BRASS, m_BrassSurface));
 		return flask;
 	}
 
