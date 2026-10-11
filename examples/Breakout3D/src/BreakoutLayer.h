@@ -38,16 +38,10 @@ namespace Dingo
 	// AABB helpers
 	// -------------------------------------------------------
 
-	struct AABB
+	inline AABB BoxFromCenterSize(const glm::vec3& center, const glm::vec3& size)
 	{
-		glm::vec3 Min;
-		glm::vec3 Max;
-
-		static AABB FromCenterSize(const glm::vec3& center, const glm::vec3& size)
-		{
-			return { center - size * 0.5f, center + size * 0.5f };
-		}
-	};
+		return { center - size * 0.5f, center + size * 0.5f };
+	}
 
 	// -------------------------------------------------------
 	// Layer

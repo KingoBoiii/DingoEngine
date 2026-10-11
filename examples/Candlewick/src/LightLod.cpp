@@ -1,17 +1,11 @@
 #include "LightLod.h"
 #include "GameTuning.h"
 
-#include <glm/gtc/matrix_access.hpp>
-
 #include <algorithm>
-#include <array>
-#include <limits>
 
 namespace
 {
 	using namespace Dingo;
-
-	using FrustumPlanes = std::array<glm::vec4, 6>;
 
 	struct Load
 	{
@@ -19,31 +13,7 @@ namespace
 		int Planned = 0;
 	};
 
-	// Renderer3D culls a light with exactly this plane extraction and sphere test, then counts what
-	// survives against its budget, so the guarantee holds only while the two agree.
-	FrustumPlanes ExtractFrustumPlanes(const glm::mat4& viewProjection)
-	{
-		const glm::vec4 x = glm::row(viewProjection, 0);
-		const glm::vec4 y = glm::row(viewProjection, 1);
-		const glm::vec4 z = glm::row(viewProjection, 2);
-		const glm::vec4 w = glm::row(viewProjection, 3);
-
-		FrustumPlanes planes = { w + x, w - x, w + y, w - y, z, w - z };
-		for (glm::vec4& plane : planes)
-			plane /= glm::length(glm::vec3(plane));
-		return planes;
-	}
-
-	// At most 0 when Renderer3D counts the sphere's light as in view.
-	float Overshoot(const FrustumPlanes& planes, const glm::vec3& center, float radius)
-	{
-		float overshoot = -std::numeric_limits<float>::max();
-		for (const glm::vec4& plane : planes)
-			overshoot = std::max(overshoot, -(glm::dot(glm::vec3(plane), center) + plane.w) - radius);
-		return overshoot;
-	}
-
-	Load CountGameplayLights(const std::vector<Entity>& lights, const FrustumPlanes& planes)
+	Load CountGameplayLights(const std::vector<Entity>& lights, const Frustum& frustum)
 	{
 		Load load;
 		for (Entity light : lights)
@@ -72,7 +42,7 @@ namespace
 			if (!enabled || range <= 0.0f || intensity <= 0.0f)
 				continue;
 
-			const float overshoot = Overshoot(planes, light.GetComponent<Transform3DComponent>().Position, range);
+			const float overshoot = frustum.DistanceOutside(light.GetComponent<Transform3DComponent>().Position, range);
 			if (overshoot <= 0.0f)
 				++load.Exact;
 			if (overshoot <= LIGHT_LOD_VIEW_MARGIN)
@@ -131,8 +101,9 @@ namespace Dingo
 
 		const int budget = static_cast<int>(Application::Get().GetRenderer3D().GetLocalLightBudget());
 		const int capacity = std::max(0, budget - LIGHT_LOD_HEADROOM);
-		const FrustumPlanes planes = ExtractFrustumPlanes(viewProjection);
-		const Load gameplay = CountGameplayLights(m_Gameplay, planes);
+		// The frustum and sphere test Renderer3D culls lights with, so what this counts is what it keeps.
+		const Frustum frustum = Frustum::FromViewProjection(viewProjection);
+		const Load gameplay = CountGameplayLights(m_Gameplay, frustum);
 		const int slots = std::max(0, capacity - gameplay.Planned);
 
 		if (!m_OverCapacityWarned && gameplay.Exact > capacity)
@@ -150,7 +121,7 @@ namespace Dingo
 				continue;
 
 			const glm::vec3 position = flame.Light.GetComponent<Transform3DComponent>().Position;
-			flame.Overshoot = Overshoot(planes, position, flame.Light.GetComponent<PointLightComponent>().Range);
+			flame.Overshoot = frustum.DistanceOutside(position, flame.Light.GetComponent<PointLightComponent>().Range);
 			if (flame.Overshoot > LIGHT_LOD_VIEW_MARGIN)
 			{
 				flame.Wanted = true;

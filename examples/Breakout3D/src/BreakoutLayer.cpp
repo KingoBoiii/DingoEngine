@@ -262,8 +262,8 @@ namespace Dingo
 		}
 
 		// Paddle collision
-		AABB paddleBox = AABB::FromCenterSize(m_Paddle.Position, m_Paddle.Size);
-		AABB ballBox   = AABB::FromCenterSize(m_Ball.Position, glm::vec3(m_Ball.Radius * 2.0f));
+		AABB paddleBox = BoxFromCenterSize(m_Paddle.Position, m_Paddle.Size);
+		AABB ballBox   = BoxFromCenterSize(m_Ball.Position, glm::vec3(m_Ball.Radius * 2.0f));
 
 		auto overlaps = [](const AABB& a, const AABB& b)
 		{
@@ -323,7 +323,7 @@ namespace Dingo
 
 	bool BreakoutLayer::CheckBallBrickCollision(const Ball& ball, const Brick& brick) const
 	{
-		AABB box = AABB::FromCenterSize(brick.Position, brick.Size);
+		AABB box = BoxFromCenterSize(brick.Position, brick.Size);
 
 		// Closest point on AABB to ball center (XZ only)
 		float cx = std::clamp(ball.Position.x, box.Min.x, box.Max.x);
