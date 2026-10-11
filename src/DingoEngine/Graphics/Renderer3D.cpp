@@ -487,7 +487,7 @@ namespace Dingo
 			PrepareTranslucentPass(batchIndex, shadows);
 		}
 
-		ResolveSkinnedBudget();
+		ResolveSkinnedBudget(shadows);
 		if (shadows)
 		{
 			DrawShadowPass();
@@ -882,7 +882,7 @@ namespace Dingo
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
 			.SetDirectUpload(false)
-			.SetMaxWritesPerFrame(3 * GetSkinnedInstanceBudget()));
+			.SetMaxWritesPerFrame(k_SkinWritesPerInstance * GetSkinnedInstanceBudget()));
 
 		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 	}
@@ -950,7 +950,7 @@ namespace Dingo
 		return twin;
 	}
 
-	void Renderer3D::ResolveSkinnedBudget()
+	void Renderer3D::ResolveSkinnedBudget(bool shadows)
 	{
 		m_SkinnedInstanceDropped.assign(m_SkinnedInstances.size(), 0);
 		if (m_SkinnedSubmissions.empty())
@@ -962,15 +962,35 @@ namespace Dingo
 		{
 			m_SkinnedFrameIndex = frameIndex;
 			m_SkinnedInstancesThisFrame = 0;
+			m_SkinWritesThisFrame = 0;
+		}
+
+		// An instance uploads its palette once in each pass it draws in. Sizing the buffer for all three
+		// would cost every skinning renderer the translucent pass's writes, so an instance is charged
+		// for the passes it uses instead: an opaque shadowed one spends 2, one with translucent meshes too 3.
+		m_SkinnedInstancePasses.assign(m_SkinnedInstances.size(), 0);
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			uint8_t& passes = m_SkinnedInstancePasses[submission.Instance];
+			if (shadows && submission.Shadows != ShadowCasting::Off)
+				passes |= 1;
+			if (submission.Translucent)
+				passes |= 4;
+			else if (submission.Shadows != ShadowCasting::ShadowsOnly)
+				passes |= 2;
 		}
 
 		// An instance is drawn whole or not at all, so a character never loses some of its parts.
 		const uint32_t budget = GetSkinnedInstanceBudget();
+		const uint32_t writes = k_SkinWritesPerInstance * budget;
 		for (uint32_t instance = 0; instance < m_SkinnedInstances.size(); ++instance)
 		{
-			if (m_SkinnedInstancesThisFrame < budget)
+			const uint8_t passes = m_SkinnedInstancePasses[instance];
+			const uint32_t cost = (passes & 1) + ((passes >> 1) & 1) + ((passes >> 2) & 1);
+			if (m_SkinnedInstancesThisFrame < budget && m_SkinWritesThisFrame + cost <= writes)
 			{
 				++m_SkinnedInstancesThisFrame;
+				m_SkinWritesThisFrame += cost;
 				++m_Statistics.SkinnedInstances;
 				m_Statistics.SkinnedJoints += m_SkinnedInstances[instance].JointCount;
 				continue;
@@ -982,8 +1002,8 @@ namespace Dingo
 
 			if (!m_SkinnedBudgetWarned)
 			{
-				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
-					budget, k_MaxSkinnedInstancesLimit);
+				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame, or more than {} palette uploads (one per instance and pass); the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
+					budget, writes, k_MaxSkinnedInstancesLimit);
 				m_SkinnedBudgetWarned = true;
 			}
 		}

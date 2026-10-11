@@ -72,9 +72,10 @@ namespace Dingo
 
 		// Skinned instances a frame, across every scene this renderer runs, at most
 		// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls with
-		// the same palette, transform and colour (a model's submeshes); it uploads its joints once,
-		// to a volatile buffer that on Vulkan has room for this many writes a frame. Later instances
-		// that frame are skipped whole, with a warning (Statistics::DroppedSkinnedDraws).
+		// the same palette, transform and colour (a model's submeshes); it uploads its joints once in each
+		// pass it draws in (shadow, opaque, translucent), to a volatile buffer that on Vulkan has room for
+		// twice this many writes a frame. Later instances that frame, or one whose writes no longer fit,
+		// are skipped whole, with a warning (Statistics::DroppedSkinnedDraws).
 		uint32_t MaxSkinnedInstances = 64;
 
 		// GPU particles alive at once across every emitter this renderer made, at most
@@ -328,7 +329,8 @@ namespace Dingo
 		// rest pose. No-op outside a Begin/EndScene pair.
 		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
 		// uploads its palette for each; an instance with opaque and translucent meshes is drawn lit in
-		// both passes. That is why the skin buffer holds three writes per instance.
+		// both passes. Each upload is a write of the skin buffer, which holds two per instance of the
+		// budget, so an instance in all three passes takes the room of one and a half.
 		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
 
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
@@ -404,7 +406,7 @@ namespace Dingo
 		bool PrepareShadows();
 		void EnsureShadowResources();
 		void DrawShadowPass();
-		void ResolveSkinnedBudget();
+		void ResolveSkinnedBudget(bool shadows);
 
 	private:
 		Renderer3DParams m_Params;
@@ -711,8 +713,11 @@ namespace Dingo
 		std::unordered_map<uint64_t, SkinnedTwin> m_SkinnedTwins;
 
 		std::vector<uint8_t> m_SkinnedInstanceDropped; // per instance of the scene: past the frame's budget
+		std::vector<uint8_t> m_SkinnedInstancePasses; // per instance of the scene: 1 shadow, 2 opaque, 4 translucent
+		static constexpr uint32_t k_SkinWritesPerInstance = 2;
 		uint64_t m_SkinnedFrameIndex = 0;
 		uint32_t m_SkinnedInstancesThisFrame = 0;
+		uint32_t m_SkinWritesThisFrame = 0; // of k_SkinWritesPerInstance x the budget
 		bool m_SkinnedBudgetWarned = false;
 		bool m_SkinFallbackWarned = false;
 		bool m_SkinnedOnlyWarned = false;

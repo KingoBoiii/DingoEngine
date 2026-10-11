@@ -237,7 +237,10 @@ params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of
 ```
 
 - The budget is **per frame**, across every scene the renderer runs, because each instance holds
-  a version of the volatile buffer on Vulkan. `Renderer3D::GetSkinnedInstanceBudget()` returns the
+  a version of the volatile buffer on Vulkan, one per pass it draws in: the shadow pass, the opaque
+  pass and the translucent pass. The buffer has room for two versions per instance of the budget,
+  so an instance in all three passes spends a third, and a frame of only such instances fits two
+  thirds of the budget. `Renderer3D::GetSkinnedInstanceBudget()` returns the
   value in force, clamped to 1 and `Renderer3D::k_MaxSkinnedInstancesLimit` (256).
 - An instance past the budget is dropped **whole**, so a character never loses some of its parts.
   The renderer warns once and counts the dropped draws in `Statistics::DroppedSkinnedDraws`.
