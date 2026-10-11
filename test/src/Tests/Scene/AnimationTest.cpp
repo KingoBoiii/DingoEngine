@@ -1090,6 +1090,24 @@ namespace Dingo
 			}
 			Check(expected > 10 && fired == expected,
 				std::format("a Speed sweep from one gait to the other over 10 s fires every footfall exactly once ({} of {})", fired, expected));
+
+			// The events switch clips where the blend passes half, at Speed 2.75: crossing it every other
+			// frame puts every footfall next to a switch.
+			animator.SetFloat(k_SpeedParameter, 2.75f);
+			animator.Update(0.0f);
+			int switchFired = 0, switchExpected = 0;
+			for (int frame = 0; frame < 600; ++frame)
+			{
+				animator.SetFloat(k_SpeedParameter, (frame / 2) % 2 == 0 ? 2.6f : 2.9f);
+				const float before = animator.GetNormalizedTime();
+				animator.Update(1.0f / 60.0f);
+				const float after = animator.GetNormalizedTime();
+				for (float footfall : { 0.25f, 0.75f })
+					switchExpected += after >= before ? (footfall > before && footfall <= after) : (footfall > before || footfall <= after);
+				switchFired += CountEvents(animator.GetEventsThisFrame(), "step", AnimationEventType::Instant);
+			}
+			Check(switchExpected > 10 && switchFired == switchExpected,
+				std::format("Speed crossing the blend's clip switch every other frame for 10 s fires every footfall exactly once ({} of {})", switchFired, switchExpected));
 		}
 		{
 			Animator animator(&skeleton);
