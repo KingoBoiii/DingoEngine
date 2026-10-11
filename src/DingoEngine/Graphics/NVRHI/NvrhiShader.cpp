@@ -124,7 +124,8 @@ namespace Dingo
 			// otherwise each fail the other's source hash and overwrite it on every build.
 			if (!filePath.empty())
 			{
-				const std::string pathKey = filePath.generic_string();
+				// The logical key, not the absolute path, so a cache survives the game moving.
+				const std::string pathKey = VirtualFileSystem::GetLogicalKey(filePath);
 				stem += std::format("_{:08x}", static_cast<uint32_t>(HashFNV1a(pathKey)));
 			}
 			else if (rewritten)

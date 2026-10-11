@@ -30,7 +30,7 @@ namespace Dingo
 		m_Context.HalfHeight = ORTHO_HEIGHT * 0.5f;
 		m_Context.HalfWidth = m_Context.HalfHeight * aspect;
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 
 		m_MenuScene = m_SceneManager.CreateScene("Menu");
 		m_GameScene = m_SceneManager.CreateScene("Game");

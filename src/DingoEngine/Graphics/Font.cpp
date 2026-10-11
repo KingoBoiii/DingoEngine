@@ -3,6 +3,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Asset/AssetPath.h"
 
 #undef INFINITE
@@ -70,7 +71,8 @@ namespace Dingo
 		inline static std::filesystem::path GetCacheFilePath(const std::string& name, const std::filesystem::path& fontPath)
 		{
 			std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts/atlas");
-			const std::string pathKey = fontPath.generic_string();
+			// The logical key, not the absolute path, so a cache survives the game moving.
+			const std::string pathKey = VirtualFileSystem::GetLogicalKey(fontPath);
 			return cachePath / std::format("{}-{:016x}.dfa", SanitizeFileName(name), HashFNV1a(pathKey.data(), pathKey.size()));
 		}
 

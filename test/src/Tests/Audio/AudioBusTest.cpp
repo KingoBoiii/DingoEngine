@@ -11,15 +11,15 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 
 		AudioEngine& audio = Application::Get().GetAudioEngine();
 		m_MasterVolume = audio.GetMasterVolume();
 		m_Checks.clear();
-		m_Clip = audio.LoadClip("assets/audio/beep.wav");
+		m_Clip = audio.LoadClip("audio/beep.wav");
 		if (!m_Clip)
 		{
-			Check(false, "assets/audio/beep.wav loads");
+			Check(false, "audio/beep.wav loads");
 			return;
 		}
 

@@ -11,7 +11,7 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 
 		Input::SetCursorMode(CursorMode::Normal);
 		m_LookYaw = 0.0f;

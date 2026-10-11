@@ -4,6 +4,7 @@
 #include "DingoEngine/Core/VfsArchive.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <fstream>
 #include <mutex>
@@ -138,7 +139,14 @@ namespace Dingo
 					if (std::optional<std::string> stripped = RelativeTo(generic, s_RootName))
 					{
 						if (std::optional<Found> found = FindInMounts(*stripped))
+						{
+#ifdef DE_DEBUG
+							static std::atomic<bool> s_Warned = false;
+							if (!s_Warned.exchange(true))
+								DE_CORE_WARN("VirtualFileSystem: '{}' names the asset root's folder; write it root-relative ('{}'). Warned once.", generic, *stripped);
+#endif
 							return found;
+						}
 					}
 				}
 			}

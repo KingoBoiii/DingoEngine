@@ -137,7 +137,7 @@ make -j"$(nproc)" config=debug MyGame
 cd examples/MyGame && ../../build/bin/Debug-linux-x86_64/MyGame/MyGame
 ```
 
-Run from the project's own directory, so relative `assets/...` paths resolve. Outputs
+Run from the project's own directory, so the default asset root `assets` resolves. Outputs
 follow the Windows layout: `build/bin/<Config>-linux-x86_64/<Project>/`.
 
 ---
@@ -217,9 +217,14 @@ time.
 ### Runtime
 
 - Windows: put `assimp-vc145-mt[d].dll` next to your executable.
-- Run with the **working directory set to wherever your `assets/` folder lives** —
-  the engine resolves relative asset paths (textures, fonts) from the current
-  directory and writes its log file `Dingo.log` there.
+- During development, run with the **working directory set to wherever your `assets/`
+  folder lives** (or anchor `ApplicationParams::Assets` to it, see
+  [Asset Pipeline](asset-pipeline.md#setup)): asset paths are relative to that root
+  (`"textures/player.png"`), and the log file `Dingo.log` is written to the working
+  directory.
+- To ship, pack the assets into `<YourGame>.dpak` beside the executable: it is mounted
+  at start-up, encrypted with your game's key, and the game then runs from any working
+  directory. See [Shipping a Game](distribution.md).
 
 ---
 

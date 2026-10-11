@@ -7,8 +7,8 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Texture = Texture::CreateFromFile("assets/textures/container.jpg", "Wooden container");
-		m_HD2Texture = Texture::CreateFromFile("assets/textures/hd2.png", "HD2 Icon");
+		m_Texture = Texture::CreateFromFile("textures/container.jpg", "Wooden container");
+		m_HD2Texture = Texture::CreateFromFile("textures/hd2.png", "HD2 Icon");
 	}
 
 	void TextureQuadTest::Cleanup()

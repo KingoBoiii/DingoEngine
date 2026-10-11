@@ -227,6 +227,12 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
   - Update `docs/asset-pipeline.md`, fix the stale cwd text in `docs/getting-started.md`, and add a CLAUDE.md entry.
   - ROADMAP.md: add this under v1.0, which is where the itch.io and Steam release lives.
 
+**As built (G):**
+- `MakeCacheStem` (`NvrhiShader.cpp`) and the font atlas's `GetCacheFilePath` (`Font.cpp`) name their cache files after `VirtualFileSystem::GetLogicalKey(path)`, so the same cache serves a loose and a packed run and survives the game moving. A path outside every mount (the engine shader directory in Debug) is still named after its own path. The source hash in each cache header still decides validity. Caches stay unencrypted under `.cache`, as decided; pre-warming them into the package (and shipping no GLSL) is left as a follow-up, not filed.
+- Every example and test source spells its paths root-relative (`"textures/x.png"`, not `"assets/textures/x.png"`); only `SetRootDirectory`/`FindDirectoryUpward("assets")` and Marionette's live-edit temp root still name the folder. The VFS's legacy strip still accepts the old spelling and, in Debug, warns once (an atomic flag), naming the path and its root-relative form. Code that hands such a path to `std::filesystem` itself has to join the root first: the Animation Test's `CopyFox` now copies from `GetAssetManager().GetRootDirectory()`. No smoke run logs the warning.
+- `examples/DungeonCrawler3D/assets/.dpakignore` keeps the `.js` that generated its part meshes out of the package; no other example ships non-asset files.
+- Docs: new `docs/distribution.md` (how it works, workflow, options, threat model, keeping the key, format), a packages section and API rows in `docs/asset-pipeline.md`, the cwd text in `docs/getting-started.md`, a row in `docs/README.md`, CLAUDE.md's "Asset packages" entry, and a v1.0 bullet in ROADMAP.md.
+
 ## Critical files
 
 - `include/DingoEngine/Asset/AssetManager.h` (`Package`, `Unpackage`, `GetPackageAssets`, `ClosePackage`, `PackageParams`, `PackageResult`, `PackageHandle`)
