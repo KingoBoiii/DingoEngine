@@ -1,6 +1,8 @@
 #include "depch.h"
 #include "DingoEngine/Audio/MiniAudio/MiniAudioEngine.h"
 #include "DingoEngine/Asset/AssetPath.h"
+#include "DingoEngine/Audio/MiniAudio/MiniAudioVfs.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 
 #include <algorithm>
 
@@ -102,13 +104,17 @@ namespace Dingo
 		m_Data = new Internal::MiniAudioData();
 		m_Data->Engine = new ma_engine();
 
-		// NULL config = sensible defaults: default playback device, embedded resource
-		// manager (needed for ma_sound_init_copy), one listener.
-		const ma_result result = ma_engine_init(nullptr, m_Data->Engine);
+		// Defaults apart from the VFS: default playback device, embedded resource manager (needed
+		// for ma_sound_init_copy), one listener.
+		m_Data->Vfs = Internal::CreateMiniAudioVfs();
+		ma_engine_config config = ma_engine_config_init();
+		config.pResourceManagerVFS = m_Data->Vfs;
+		const ma_result result = ma_engine_init(&config, m_Data->Engine);
 		if (result != MA_SUCCESS)
 		{
 			DE_CORE_ERROR("MiniAudioEngine: ma_engine_init failed ({})", (int)result);
 			delete m_Data->Engine;
+			Internal::DestroyMiniAudioVfs(m_Data->Vfs);
 			delete m_Data;
 			m_Data = nullptr;
 			return;
@@ -122,6 +128,7 @@ namespace Dingo
 			delete root;
 			ma_engine_uninit(m_Data->Engine);
 			delete m_Data->Engine;
+			Internal::DestroyMiniAudioVfs(m_Data->Vfs);
 			delete m_Data;
 			m_Data = nullptr;
 			return;
@@ -166,6 +173,7 @@ namespace Dingo
 
 		ma_engine_uninit(m_Data->Engine); // stops the device thread
 		delete m_Data->Engine;
+		Internal::DestroyMiniAudioVfs(m_Data->Vfs);
 		delete m_Data;
 		m_Data = nullptr;
 	}
@@ -201,7 +209,7 @@ namespace Dingo
 
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
-		if (!std::filesystem::exists(resolvedPath))
+		if (!VirtualFileSystem::Exists(resolvedPath))
 		{
 			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", resolvedPath.string());
 			return nullptr;
@@ -211,7 +219,7 @@ namespace Dingo
 
 		// MA_SOUND_FLAG_DECODE: fully decode into memory now (so ma_sound_init_copy can
 		// clone the decoded data buffer). No STREAM flag — streams can't be copied.
-		const ma_result result = ma_sound_init_from_file(m_Data->Engine, resolvedPath.string().c_str(),
+		const ma_result result = ma_sound_init_from_file(m_Data->Engine, Internal::ToMiniAudioPath(resolvedPath).c_str(),
 			MA_SOUND_FLAG_DECODE, nullptr, nullptr, clip->Template());
 		if (result != MA_SUCCESS)
 		{

@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/AssimpVfsIO.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
@@ -951,10 +952,12 @@ namespace Dingo
 		// the steps for that path. ApplyPostProcessing(flags) after ReadFile(path, 0) is
 		// what ReadFile(path, flags) does, so static models load exactly as before.
 		Assimp::Importer importer;
+		importer.SetIOHandler(new Internal::AssimpVfsIOSystem());
+		const std::string assimpPath = Internal::AssimpVfsIOSystem::ToAssimpPath(resolvedPath);
 		// Otherwise Collada and BVH give an animation-only file a dummy mesh with a bone per
 		// node, and it never reads as a clip library. A file with geometry is unaffected.
 		importer.SetPropertyBool(AI_CONFIG_IMPORT_NO_SKELETON_MESHES, true);
-		const aiScene* scene = importer.ReadFile(resolvedPath.string(), 0);
+		const aiScene* scene = importer.ReadFile(assimpPath, 0);
 
 		const bool skinned = scene && (HasBones(scene) || IsClipLibrary(scene));
 		if (skinned && scene->mRootNode && HasFbxPivotNodes(scene->mRootNode))
@@ -962,7 +965,7 @@ namespace Dingo
 			// Pivot helper nodes would sit between the joints and take over their names and
 			// animation channels; read again with them folded into the joints.
 			importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
-			scene = importer.ReadFile(resolvedPath.string(), 0);
+			scene = importer.ReadFile(assimpPath, 0);
 		}
 
 		// LimitBoneWeights would drop bones that weight nothing, such as an unweighted root

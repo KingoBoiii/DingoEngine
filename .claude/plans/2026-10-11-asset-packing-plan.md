@@ -94,7 +94,7 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
 - Packages plug in through an engine-internal `Internal::VfsArchive` interface (`src/DingoEngine/Core/VfsArchive.h`, `MountArchive`), so the public header names no pack type.
 - `FileSystem::ReadImage` keeps its file-name error line and adds it after `ReadImageFromMemory`'s own.
 - `.events` text is read through the VFS into an `std::istringstream`; the tokenizer already treated `\r` as space, so CRLF files parse as before.
-- Verified on Linux (Debug and Release, Xvfb + llvmpipe): the smoke test's 20 cases, 10 examples and Marionette `--check` pass with the same PASS counts as the untouched baseline (521 + 107).
+- Verified on Linux (Debug and Release, Xvfb + llvmpipe): the smoke test's 20 cases, 10 examples and Marionette `--check` pass with the same PASS counts as the untouched baseline (394 + 107).
 
 ## Phase B: assimp and miniaudio adapters (still loose files)
 
@@ -110,6 +110,14 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
 - `ma_engine_init` gets an `ma_engine_config` with `pResourceManagerVFS` set.
 - `MA_SOUND_FLAG_DECODE` and `ma_sound_init_copy` keep working, because the result is still a resource-manager data buffer.
 - `MiniAudioEngine.cpp:204` `exists` changes to `Vfs::Exists`.
+
+**As built (B):**
+- `Internal::AssimpVfsIOSystem` is installed on the importer before both reads; the importer owns and frees it. Paths reach assimp as generic UTF-8 (`ToAssimpPath`) and come back the same way, so a non-ASCII model path survives on Windows. `Seek` from the end follows assimp's own `MemoryIOStream` (`size - offset`).
+- A name is looked up as given first and percent-decoded only when that misses, so a file whose real name contains `%` still loads.
+- `ComparePaths` compares logical keys, so a model's own path given two ways is one file.
+- The one-entry cache shares its bytes between streams (`shared_ptr`), so an FBX pivot re-read or a glTF reopening its `.bin` doesn't read twice.
+- `MiniAudioVfs` is opaque outside its `.cpp` (`MiniAudioData.h` holds a pointer); it is created before `ma_engine_init` and freed after `ma_engine_uninit` and on every failed init path. `LoadClip` passes miniaudio the UTF-8 path.
+- Verified on Linux (Debug and Release, Xvfb + llvmpipe): the smoke test passes with the baseline counts (394 + 107); a manual Asset Manager Test run hot-reloaded a texture, a shader and a glTF model through the VFS.
 
 ## Phase C: the `.dpak` format, reader and `DingoPack` tool (no encryption yet)
 
