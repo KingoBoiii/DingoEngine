@@ -51,6 +51,8 @@ namespace Dingo
 				uint64_t Sequence = 0;
 			};
 
+			// A scene registers at its first OnUpdate (main thread) and unregisters in its destructor
+			// (any thread).
 			void RegisterScene(Scene* scene, SceneData* data);
 			void UnregisterScene(Scene* scene);
 

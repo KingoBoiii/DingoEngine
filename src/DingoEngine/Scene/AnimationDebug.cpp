@@ -8,6 +8,7 @@
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
 #include <algorithm>
+#include <mutex>
 
 namespace Dingo
 {
@@ -28,6 +29,13 @@ namespace Dingo
 					return *s_Scenes;
 				}
 
+				// A scene may be destroyed on another thread: its destructor waits here while the tab reads it.
+				std::mutex& ScenesMutex()
+				{
+					static auto* s_Mutex = new std::mutex();
+					return *s_Mutex;
+				}
+
 				std::string EntityName(const entt::registry& registry, entt::entity handle)
 				{
 					const TagComponent* tag = registry.try_get<TagComponent>(handle);
@@ -38,11 +46,13 @@ namespace Dingo
 
 			void RegisterScene(Scene* scene, SceneData* data)
 			{
+				std::lock_guard lock(ScenesMutex());
 				Scenes().emplace_back(scene, data);
 			}
 
 			void UnregisterScene(Scene* scene)
 			{
+				std::lock_guard lock(ScenesMutex());
 				std::vector<std::pair<Scene*, SceneData*>>& scenes = Scenes();
 				std::erase_if(scenes, [scene](const std::pair<Scene*, SceneData*>& entry) { return entry.first == scene; });
 			}
@@ -50,6 +60,7 @@ namespace Dingo
 			void CollectAnimators(std::vector<AnimatorRow>& out)
 			{
 				out.clear();
+				std::lock_guard lock(ScenesMutex());
 				for (const auto& [scene, data] : Scenes())
 				{
 					entt::registry& registry = data->Registry;
@@ -88,6 +99,7 @@ namespace Dingo
 					const AnimationSystem::EventScratch::RecentEvent* Event;
 				};
 
+				std::lock_guard lock(ScenesMutex());
 				std::vector<Candidate> candidates;
 				for (const auto& entry : Scenes())
 				{

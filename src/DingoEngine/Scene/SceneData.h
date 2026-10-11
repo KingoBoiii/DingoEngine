@@ -40,6 +40,10 @@ namespace Dingo
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
 
+			// Joined to the F7 tab's list at the first OnUpdate, on the main thread, so a scene built on
+			// a loading thread isn't read while it is filled.
+			bool DebugRegistered = false;
+
 			// Reused every frame by the 2D z-sort in RenderEntities: clear() keeps the
 			// capacity, so a steady-state frame allocates nothing to sort.
 			enum class Draw2DKind : std::uint8_t { Sprite, Circle, Text };

@@ -31,7 +31,6 @@ namespace Dingo
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
-		Internal::AnimationDebug::RegisterScene(this, m_Data);
 	}
 
 	Scene::~Scene()
@@ -277,6 +276,12 @@ namespace Dingo
 		// runs slow through the stall instead.
 		deltaTime = std::min(deltaTime, Internal::PhysicsSync::k_MaxStepTime);
 		DE_PROFILE_SCOPE_TEXT("Scene::OnUpdate", m_Name);
+
+		if (!m_Data->DebugRegistered)
+		{
+			Internal::AnimationDebug::RegisterScene(this, m_Data);
+			m_Data->DebugRegistered = true;
+		}
 
 		{
 			DE_PROFILE_SCOPE("ScriptSystem::Update");
