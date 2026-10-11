@@ -770,6 +770,7 @@ namespace Dingo
 					resume.UnwrappedTime = resume.Time;
 					resume.Wrapped = false;
 				}
+				layer.States.back().HandedOver = true;
 				Push(static_cast<uint32_t>(i), std::move(resume), layer.OneShotFadeOut);
 				CollectEvents(static_cast<uint32_t>(i), layer);
 			}
@@ -807,7 +808,7 @@ namespace Dingo
 		for (size_t i = layer.States.size(); i-- > 0;)
 		{
 			const float weight = i == 0 ? 1.0f : FadeWeight(layer.States[i]);
-			const float share = weight * through;
+			const float share = layer.States[i].HandedOver ? 0.0f : weight * through;
 			if (share > largest)
 			{
 				dominant = &layer.States[i];

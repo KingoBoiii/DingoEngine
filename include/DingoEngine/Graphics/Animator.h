@@ -305,8 +305,10 @@ namespace Dingo
 			// Where a state that doesn't loop catches up from when it first leads: its start, or the
 			// time of its latest seek.
 			float          CatchUpFrom = 0.0f;
-			// A one-shot's way back, which takes the events over the moment it starts.
+			// A one-shot's way back, which takes the events over the moment it starts, and the one-shot
+			// it took them from, which never leads again though its weight still folds.
 			bool           Returning = false;
+			bool           HandedOver = false;
 		};
 
 		// Name and end are kept so the range still closes with its RangeEnd after the clip's events

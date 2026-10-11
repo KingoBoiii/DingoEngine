@@ -1140,6 +1140,34 @@ namespace Dingo
 			Check(steps == 1, std::format("a one-shot that starts back before it leads doesn't fire Walk's footfall again ({} step_fl)", steps));
 		}
 		{
+			// The swing hands the events to its way back at 0.7 s; a Play 0.05 s later leaves both still
+			// under it, the swing heaviest.
+			AnimationClip swing("Swing", 1.0f, {}, &skeleton);
+			Animator animator(&skeleton);
+			animator.Play(&other);
+			animator.Update(0.0f);
+			animator.PlayOneShot(&swing, 0.1f, 0.3f);
+			for (int step = 0; step < 40 && animator.IsOneShotPlaying(); ++step)
+				animator.Update(0.05f);
+			animator.Update(0.05f);
+			float swingTime = -1.0f;
+			for (const AnimatorStateInfo& state : animator.GetStates())
+			{
+				if (state.Clip == &swing)
+					swingTime = state.Time;
+			}
+			swing.AddEvent(swingTime + 0.025f, "tail");
+			animator.Play(&loop, 0.3f);
+			int tails = 0;
+			for (int step = 0; step < 10; ++step)
+			{
+				animator.Update(0.05f);
+				tails += CountEvents(animator.GetEventsThisFrame(), "tail", AnimationEventType::Instant);
+			}
+			Check(swingTime > 0.6f && tails == 0,
+				std::format("a Play during a one-shot's way back never hands the events back to the one-shot (at {:.2f} s, {} tail marks)", swingTime, tails));
+		}
+		{
 			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
 			slash.AddEvent(0.12f, "whoosh");
 			slash.AddEventRange(0.32f, 0.48f, "hitbox");
