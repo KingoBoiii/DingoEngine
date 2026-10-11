@@ -167,8 +167,8 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | Component | Fields |
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
-| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1) |
-| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1), `float CullDistance` (v1.0, see [Culling](#culling-v10)) |
+| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9), `float CullDistance` (v1.0). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
@@ -220,6 +220,36 @@ t.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(eye, focus, { 0, 1, 0 })));
 scenes.OnUpdate(dt);
 scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the scene's lights
 ```
+
+### Culling (v1.0)
+
+`Renderer3D` leaves out every mesh the camera can't see, by its bounds (`Mesh::GetBoundsMin/Max`
+placed by the entity's world transform), so a scene can hold far more meshes than are in view at
+once. Nothing to turn on, and a static mesh that reaches a pixel is never left out: the cull tests
+the sides of the view, and the far plane only for materials that depth-test with `Less`, without a
+depth bias, into a target with depth. A culled mesh still casts into any shadow view its bounds
+reach. A skinned mesh is tested by its rest pose's bounds padded on every side by half their longest
+side, and its animator keeps running; a pose that reaches farther than that, or hips that travel
+away without root motion, can be culled while in view.
+
+Culling trusts the mesh's bounds. A material whose vertex shader moves vertices (wind, waves,
+outlines) takes `MaterialParams::SetFrustumCulled(false)`, and the camera then never culls its
+meshes.
+
+`CullDistance` (on both renderer components, or `SubmitMesh`/`SubmitSkinnedMesh`'s last argument)
+adds a distance cull for perspective cameras: past that distance from the camera to its bounds a
+mesh is neither drawn nor casts (its bounds still set the cascades' depth range, so other shadows
+don't shift when it crosses). Use it for small props a far view needn't spend vertices on; 0, the
+default, never culls by distance.
+
+F4's Renderer tab counts what was culled (`Statistics::CulledMeshes`, `CulledSkinned`,
+`CulledCasters`) and has two switches: **Cull meshes** off draws everything, which must look the
+same, and **Freeze culling frustum** keeps culling against the camera as it was, so flying away
+shows what that view kept. `Renderer3D::SetCullingEnabled/SetCullingFrozen` do the same from code.
+
+A scene culls 2D too: `RenderEntities` skips sprites and circles whose bounding square lies outside
+the camera's view (`Renderer2D::Statistics::CulledQuads`; `Renderer2D::SetCullingEnabled`). Text is
+never culled.
 
 ### Parenting (v0.7.1)
 

@@ -197,8 +197,10 @@ then `SlopeBias`. **Peter-panning** (a shadow detached from the foot of its cast
   (`GraphicsContext::SupportsClipDistance()` false) no shadows are drawn and Renderer3D warns once.
 - **Filtering.** The lit shader reads each cascade through a comparison sampler: 3 x 3 taps of the
   hardware's 2 x 2 comparison, 16 texels in all, kept inside the tile.
-- **Cost.** The shadow pass draws every casting batch's vertices once per cascade; per-mesh culling
-  is v1.0's. Its GPU time shows as `Shadows` in the F8 Profiler tab. F4's Renderer tab shows the
+- **Cost.** The shadow pass draws every casting batch's vertices once per cascade. Since v1.0 a
+  caster only enters it when its bounds reach a cascade or a casting light's view (and the light's
+  caster groups), and the bounds of every caster still set each cascade's depth range, culled or
+  not; `Statistics::CulledCasters` counts what was left out. Its GPU time shows as `Shadows` in the F8 Profiler tab. F4's Renderer tab shows the
   cascades, where each ends, the casters and the atlas itself.
 
 ## Custom shaders

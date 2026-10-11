@@ -316,8 +316,8 @@ the cut-off does not flicker. The ones that do not fit fade their `Intensity` to
 then disabled, and a flame fades in only when there is room, starting just before it enters the view.
 If the exact in-view count is still over, the lowest-ranked flames in view drop at once. So the
 engine's own selection never has to drop a gameplay light, and the flames that go do so by fading, not
-by popping at the budget edge. The cost is a copy of the engine's cull test in game code, which has to
-change if the engine's does, so the game warns once if the renderer ever drops a light with the LOD on.
+by popping at the budget edge. It counts with the engine's own cull test, the public `Frustum` (v1.0),
+and still warns once if the renderer ever drops a light with the LOD on.
 `--no-light-lod` turns the LOD off to show the engine's own selection, and `--light-budget` stops at 16,
 the 14 gameplay lights that can burn at once plus the two spare.
 

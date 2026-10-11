@@ -226,6 +226,10 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   first. A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) blocks a frame:
   on Vulkan, later ones draw with an earlier block's camera.
 
+- **Scenes cull** (v1.0): `Scene::RenderEntities` skips a sprite or circle whose bounding square
+  lies outside the camera's view (`Statistics::CulledQuads`; `SetCullingEnabled(false)` draws them
+  all). Quads you submit yourself are never culled, and neither is text.
+
 - **2D is never tone mapped** (v0.9). The [post chain](post-processing.md) takes the 3D pass alone:
   a scene's 2D overlay, and anything `Renderer2D` draws after `PostProcessStack::End`, goes into the
   target as it always did, so HUD colours stay exactly what you pass.
