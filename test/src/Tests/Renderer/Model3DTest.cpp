@@ -110,8 +110,8 @@ namespace Dingo
 		}
 		{
 			std::unique_ptr<Model> model(Model::LoadFromFile("assets/models/ColorQuads/ColorQuads.obj"));
-			Check(model && model->GetSubMeshCount() == 1 && NearColor(model->GetSubMeshes()[0].BaseColor, { 0.2f, 0.7f, 0.3f, 1.0f }),
-				"an OBJ submesh's BaseColor falls back to the diffuse colour (Kd)");
+			Check(model && model->GetSubMeshCount() == 1 && NearColor(model->GetSubMeshes()[0].BaseColor, { 0.2f, 0.7f, 0.3f, 0.75f }),
+				"an OBJ submesh's BaseColor falls back to the diffuse colour (Kd) and its opacity (d)");
 		}
 		{
 			std::unique_ptr<Model> model(Model::LoadFromFile("assets/models/Duck/Duck.gltf"));

@@ -100,6 +100,11 @@ Asset types are inferred from the file extension:
 A submesh's `DiffuseTexture` is its material's first diffuse image, from a file
 beside the model or embedded in it (a GLB's images, an FBX's embedded files);
 `Model::Reload` re-reads an embedded one with its model and keeps its `Texture*`.
+Its `BaseColor` is the material's colour: glTF's `baseColorFactor`, else the
+diffuse colour with the material's opacity as alpha, white when the file has
+neither (OBJ's importer fills in 0.6 grey for a material without `Kd`). Nothing
+applies it, so existing scenes look the same: pass it as the mesh colour
+(`MeshRendererComponent::Color`, `SubmitMesh`'s colour) for a colour-only pack.
 
 A model whose meshes have bones loads its skeleton, skin weights and animation
 clips: `Model::IsSkinned()`, `GetSkeleton()`, `GetAnimation(i)` and
@@ -223,6 +228,7 @@ existing one, so everything game code may hold keeps working:
 | `Model*` | Same pointer. `GetGeneration()` counts the reloads. |
 | `Mesh*` (`SubMesh::MeshData`) | Same object per submesh index, with the new vertices and a new `GetId()`. Extra submeshes are added; missing ones become empty. |
 | `Material*` (`SubMesh::Mat`) | Same object; slot 0 takes the new diffuse texture. |
+| `SubMesh::BaseColor` | The new file's colour per submesh index; white for one that became empty. |
 | `Texture*` (`SubMesh::DiffuseTexture`) | Same object per image file, re-read in place when the image file changed, so a material you built from it keeps drawing. A texture the file stopped using stays alive. |
 | `AnimationClip*` | Same object per name, with the new keys and events, so an `Animator` playing it keeps playing at its time. A clip that disappeared becomes zero-length; a new one is added. |
 | `Skeleton*` | Same object while every joint keeps its name and parent: the rest pose updates and animators keep playing. If the joints changed, a new `Skeleton` replaces it, the old one stays alive (an `Animator` bound to it keeps working), and a `Scene`'s animators start over on the new one with their `DefaultClip`. |

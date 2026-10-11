@@ -20,8 +20,9 @@ namespace Dingo
 		// Borrowed, not owned: submeshes sharing one image share one Texture, which the
 		// Model owns and frees in Destroy().
 		Texture*  DiffuseTexture = nullptr;
-		// The material's base colour (glTF's baseColorFactor, else the diffuse colour), white when
-		// the file has none. Nothing applies it: pass it as the mesh colour.
+		// The material's base colour: glTF's baseColorFactor, else the diffuse colour with the
+		// material's opacity as alpha; white when the file has neither, though some importers fill in
+		// a default (OBJ's is 0.6 grey without Kd). Nothing applies it: pass it as the mesh colour.
 		glm::vec4 BaseColor      = glm::vec4(1.0f);
 	};
 

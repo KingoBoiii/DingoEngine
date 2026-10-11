@@ -257,8 +257,16 @@ namespace Dingo
 			.SetDebugName(mesh->mName.C_Str()));
 
 		aiColor4D baseColor;
-		if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS || aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, baseColor) == AI_SUCCESS)
+		if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS)
+		{
 			submesh.BaseColor = { baseColor.r, baseColor.g, baseColor.b, baseColor.a };
+		}
+		else if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, baseColor) == AI_SUCCESS)
+		{
+			float opacity = baseColor.a;
+			aiMat->Get(AI_MATKEY_OPACITY, opacity);
+			submesh.BaseColor = { baseColor.r, baseColor.g, baseColor.b, opacity };
+		}
 
 		Texture* diffuse = LoadDiffuseTexture(aiMat, scene, modelDir, textureCache);
 		if (diffuse)
