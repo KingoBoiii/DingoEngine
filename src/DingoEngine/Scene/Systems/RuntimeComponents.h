@@ -60,6 +60,9 @@ namespace Dingo
 			uint64_t SkeletonId = 0;
 			// Model::GetGeneration() it last posed for, so a paused animator shows a reload's keys.
 			uint32_t ModelGeneration = 0;
+			// Root motion set the entity's controller velocity last pass, so it is stopped once it no
+			// longer does.
+			bool DroveController = false;
 		};
 
 		// A ParticleEmitterComponent's emitter, made by the renderer that first draws it (ParticleSync).

@@ -89,8 +89,8 @@ namespace Dingo
 			void SetWorldRotation(const entt::registry& registry, entt::entity handle, Transform3DComponent& local, const glm::quat& rotation);
 
 			// Rewrites `local` so that parentWorld x local reproduces `world` as closely as T.R.S allows;
-			// leaves it alone when parentWorld has a zero-scale axis.
-			void SetLocalFromWorld(Transform3DComponent& local, const glm::mat4& parentWorld, const glm::mat4& world);
+			// leaves it alone and returns false when parentWorld has a zero-scale axis.
+			bool SetLocalFromWorld(Transform3DComponent& local, const glm::mat4& parentWorld, const glm::mat4& world);
 
 			void Decompose(const glm::mat4& matrix, glm::vec3& translation, glm::quat& rotation, glm::vec3& scale);
 

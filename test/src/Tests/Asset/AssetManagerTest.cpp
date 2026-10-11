@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <format>
+#include <memory>
 
 namespace Dingo
 {
@@ -69,6 +70,8 @@ namespace Dingo
 		Check(rawFont != nullptr && rawFont->IsValid(), "raw Font::Create resolves a root-relative path like the manager");
 		DestroyAndDelete(rawFont);
 
+		CheckModelLoading();
+
 		m_AsyncTexture = assets.LoadAsync("textures/hd2.png");
 		m_AsyncModel = assets.LoadAsync("models/Duck/Duck.gltf");
 		m_AsyncFont = assets.LoadAsync("fonts/arial.ttf");
@@ -86,6 +89,50 @@ namespace Dingo
 			&& assets.GetState(m_AsyncTexture) == AssetState::Loading
 			&& assets.GetPendingCount() == pendingBeforeReload,
 			"Reload on an in-flight async load is a no-op");
+	}
+
+	void AssetManagerTest::CheckModelLoading()
+	{
+		AssetManager& assets = Application::Get().GetAssetManager();
+
+		{
+			std::unique_ptr<Model> external(Model::LoadFromFile("models/Duck/Duck.gltf"));
+			std::unique_ptr<Model> embedded(Model::LoadFromFile("models/Duck/DuckEmbedded.glb"));
+			const Texture* externalImage = external && external->GetSubMeshCount() > 0 ? external->GetSubMeshes()[0].DiffuseTexture : nullptr;
+			Texture* embeddedImage = embedded && embedded->GetSubMeshCount() > 0 ? embedded->GetSubMeshes()[0].DiffuseTexture : nullptr;
+			Check(externalImage && embeddedImage && embeddedImage->GetWidth() == externalImage->GetWidth()
+				&& embeddedImage->GetHeight() == externalImage->GetHeight(),
+				"a texture embedded in a GLB loads like the same image beside a glTF");
+			Check(embedded && embedded->Reload() && embedded->GetSubMeshes()[0].DiffuseTexture == embeddedImage,
+				"Model::Reload keeps an embedded texture's Texture*");
+		}
+
+		{
+			std::unique_ptr<Model> full(Model::LoadFromFile("models/Fox/Fox.gltf"));
+			std::unique_ptr<Model> clips(Model::LoadFromFile("models/Fox/Fox.gltf", ModelLoadParams().SetClipsOnly(true)));
+			Check(full && clips && clips->GetSubMeshCount() == 0 && full->GetSubMeshCount() > 0 && clips->GetSkeleton()
+				&& clips->GetSkeleton()->GetJointCount() == full->GetSkeleton()->GetJointCount()
+				&& clips->GetAnimationCount() == full->GetAnimationCount(),
+				"ClipsOnly loads the skeleton and clips without the meshes");
+			Check(clips && clips->Reload() && clips->GetSubMeshCount() == 0 && clips->GetAnimationCount() == full->GetAnimationCount(),
+				"Model::Reload keeps ClipsOnly");
+
+			std::unique_ptr<Model> staticClips(Model::LoadFromFile("models/Duck/Duck.gltf", ModelLoadParams().SetClipsOnly(true)));
+			Check(!staticClips, "ClipsOnly fails for a model without bones");
+		}
+
+		// Another test may still hold the Fox, with the default params it would keep.
+		if (IsValidAssetHandle(assets.FindByPath("models/Fox/Fox.gltf")))
+			return;
+
+		const AssetHandle library = assets.Load("models/Fox/Fox.gltf", ModelLoadParams().SetClipsOnly(true));
+		const Model* managed = assets.GetModel(library);
+		Check(managed && managed->GetSubMeshCount() == 0 && managed->GetAnimationCount() > 0 && managed->GetLoadParams().ClipsOnly,
+			"AssetManager::Load with ClipsOnly loads the clips without the meshes");
+		Check(assets.Load("models/Fox/Fox.gltf") == library && assets.GetModel(library) == managed && managed->GetSubMeshCount() == 0,
+			"a plain Load of a ClipsOnly model keeps its params");
+		Check(assets.Reload(library) && assets.GetModel(library)->GetSubMeshCount() == 0, "AssetManager::Reload keeps ClipsOnly");
+		assets.Remove(library);
 	}
 
 	void AssetManagerTest::Update(float deltaTime)

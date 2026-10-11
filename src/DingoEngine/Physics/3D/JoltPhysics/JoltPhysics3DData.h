@@ -20,6 +20,7 @@
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/GroupFilter.h>
@@ -204,6 +205,10 @@ namespace Dingo::Internal
 		// partners; a body leaves the group with its last one.
 		JPH::Ref<IgnoredPairFilter> PairFilter = new IgnoredPairFilter();
 		std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> IgnoredPartners;
+
+		// The controllers that block one another (CharacterControllerParams3D::CollideWithCharacters).
+		// Each removes itself when destroyed, which the world outlives.
+		JPH::CharacterVsCharacterCollisionSimple CharacterCollision;
 
 		explicit JoltPhysics3DData(JPH::uint maxBodies)
 			: TempAllocator(32 * 1024 * 1024) // per-Update working memory; must cover the limits below

@@ -396,8 +396,9 @@ pass, after every opaque mesh, static and skinned:
 - **Skinned meshes join the sort** when their material is translucent, by the centre of their rest
   bounds; an instance's translucent meshes (a model's submeshes) share the first one's place. A model whose visor is translucent and body opaque draws the body with the opaque meshes and
   the visor in this pass, uploading its joints for each.
-- **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off); one
-  with `ShadowsOnly` draws nothing lit and batches like an opaque mesh.
+- **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off), for
+  the lights its `ShadowGroups` share a bit with, as an opaque mesh does; one with `ShadowsOnly` draws
+  nothing lit and batches like an opaque mesh.
 - **Particles** draw after this pass, so they show over glass. With the post chain, ambient occlusion
   is applied before it, so glass isn't darkened by the corners behind it.
 

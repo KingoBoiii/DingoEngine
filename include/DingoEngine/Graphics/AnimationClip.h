@@ -46,6 +46,22 @@ namespace Dingo
 		RangeEnd
 	};
 
+	// An event's data: `key=value` pairs separated by spaces (`damage=12 reach=1.4 sound="heavy hit"`),
+	// a bare key being a flag with an empty value. Text is kept for the life of the program, like an
+	// event's name. The first pair with a key wins.
+	struct AnimationEventPayload
+	{
+		std::string_view Text;
+
+		bool IsEmpty() const { return Text.empty(); }
+		bool Has(std::string_view key) const;
+		// The value as written, quotes removed; fallback when the key is missing.
+		std::string_view GetString(std::string_view key, std::string_view fallback = std::string_view()) const;
+		// fallback when the key is missing or its value isn't a whole number of that kind.
+		float GetFloat(std::string_view key, float fallback = 0.0f) const;
+		int32_t GetInt(std::string_view key, int32_t fallback = 0) const;
+	};
+
 	// A named moment on a clip's timeline (a footstep), or a named stretch of it (a sword's hitbox).
 	struct AnimationClipEvent
 	{
@@ -53,6 +69,7 @@ namespace Dingo
 		float Time = 0.0f;    // seconds; a range's start
 		float EndTime = 0.0f; // a range's end; Time for an instant
 		bool  Range = false;
+		std::string Payload;  // AnimationEventPayload's text
 	};
 
 	class AnimationClip
@@ -69,6 +86,7 @@ namespace Dingo
 			// The event's name, kept for the life of the program, so a name an Animator hands out
 			// outlives a change to this list or a reload of the model.
 			std::string_view Name;
+			AnimationEventPayload Payload;
 		};
 
 	public:
@@ -93,8 +111,9 @@ namespace Dingo
 		// them as its playback crosses them (Animator::GetEventsThisFrame). A model reload replaces
 		// them with the file's and its .events sidecar's, so events added here must be added again
 		// (Model::GetGeneration tells when).
-		void AddEvent(float time, std::string name);
-		void AddEventRange(float begin, float end, std::string name);
+		// `payload` is AnimationEventPayload's text: `key=value` pairs separated by spaces.
+		void AddEvent(float time, std::string name, std::string payload = std::string());
+		void AddEventRange(float begin, float end, std::string name, std::string payload = std::string());
 		void ClearEvents();
 		const std::vector<AnimationClipEvent>& GetEvents()     const { return m_Events; }
 		const std::vector<EventMark>&          GetEventMarks() const { return m_EventMarks; }

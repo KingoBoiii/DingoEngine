@@ -67,6 +67,7 @@ namespace Dingo
 
 		enum class SampleVerdict { Unseen, Shadowed, Seen };
 
+		float DebugConeLength(const glm::vec3& eye, const glm::vec3& forward, float range) const;
 		bool HasLineOfSight(const glm::vec3& eye, const glm::vec3& target) const;
 		// Asks every lit brazier's shadow each frame, in its reach or not, so its answer stays current.
 		bool IsFlameLit(const glm::vec3& point);

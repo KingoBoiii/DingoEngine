@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -117,6 +118,54 @@ void main()
 		for (size_t i = 0; i < a.size(); ++i)
 			worst = (std::max)({ worst, glm::length(a[i].Translation - b[i].Translation), QuatGap(a[i].Rotation, b[i].Rotation), glm::length(a[i].Scale - b[i].Scale) });
 		return worst;
+	}
+
+	// Where root motion measures a joint: its parent's rest frame in the model's space.
+	glm::mat4 ParentFrame(const Skeleton& skeleton, int32_t joint)
+	{
+		const int32_t parent = skeleton.GetJoint(joint).Parent;
+		return parent >= 0 ? skeleton.GetRootTransform() * skeleton.GetRestGlobalTransforms()[parent] : skeleton.GetRootTransform();
+	}
+
+	glm::quat FrameRotation(const glm::mat4& frame)
+	{
+		return glm::normalize(glm::quat_cast(glm::mat3(glm::normalize(glm::vec3(frame[0])), glm::normalize(glm::vec3(frame[1])), glm::normalize(glm::vec3(frame[2])))));
+	}
+
+	// Walk with its hips carried by `travel` (model space) over each lap and turned turnDegrees about
+	// the model's vertical, lifted by `bob` at a quarter and three quarters: a clip whose root moves.
+	std::unique_ptr<AnimationClip> TravellingWalk(const Skeleton& skeleton, const AnimationClip& walk, const char* name, const glm::vec3& travel, float turnDegrees, float bob)
+	{
+		std::vector<AnimationChannel> channels = walk.GetChannels();
+		const int32_t hips = skeleton.FindJoint("b_Hip_01");
+		const auto channel = std::find_if(channels.begin(), channels.end(), [](const AnimationChannel& candidate) { return candidate.JointName == "b_Hip_01"; });
+		if (hips == Skeleton::k_InvalidJoint || channel == channels.end())
+			return nullptr;
+
+		const glm::mat4 parent = ParentFrame(skeleton, hips);
+		const glm::mat3 toLocal = glm::inverse(glm::mat3(parent));
+		const glm::quat parentRotation = FrameRotation(parent);
+		const JointPose& rest = skeleton.GetJoint(hips).RestPose;
+		const float duration = walk.GetDuration();
+
+		channel->Translation = {};
+		channel->Rotation = {};
+		constexpr int k_Keys = 8;
+		for (int key = 0; key <= k_Keys; ++key)
+		{
+			const float fraction = static_cast<float>(key) / k_Keys;
+			const float wave = std::sin(6.2831853f * fraction);
+			channel->Translation.Times.push_back(fraction * duration);
+			channel->Translation.Values.push_back(rest.Translation + toLocal * (travel * fraction + glm::vec3(0.0f, bob * wave * wave, 0.0f)));
+			channel->Rotation.Times.push_back(fraction * duration);
+			channel->Rotation.Values.push_back(glm::inverse(parentRotation) * Turn(turnDegrees * fraction, { 0.0f, 1.0f, 0.0f }) * parentRotation * rest.Rotation);
+		}
+		return std::make_unique<AnimationClip>(name, duration, std::move(channels), &skeleton);
+	}
+
+	RootMotionDelta ThenMove(const RootMotionDelta& first, const RootMotionDelta& then)
+	{
+		return { first.Translation + first.Rotation * then.Translation, glm::normalize(first.Rotation * then.Rotation) };
 	}
 
 	std::vector<JointPose> PoseAt(const Skeleton& skeleton, const AnimationClip* clip, float time, bool loop = true)
@@ -276,9 +325,9 @@ namespace Dingo
 			{
 				m_Mode = *mode == "bindstatic" ? Mode::BindStatic : *mode == "pose" ? Mode::Pose
 					: *mode == "clip" ? Mode::Clip : *mode == "blend" ? Mode::Blend : *mode == "layers" ? Mode::Layers
-					: *mode == "events" ? Mode::Events : *mode == "crowd" ? Mode::Crowd : Mode::Bind;
+					: *mode == "events" ? Mode::Events : *mode == "root" ? Mode::Root : *mode == "crowd" ? Mode::Crowd : Mode::Bind;
 				if (m_Mode == Mode::Bind && *mode != "bind")
-					DE_WARN("Animation Test: unknown --anim={}; showing bind. Use bind, bindstatic, pose, clip, blend, layers, events or crowd.", *mode);
+					DE_WARN("Animation Test: unknown --anim={}; showing bind. Use bind, bindstatic, pose, clip, blend, layers, events, root or crowd.", *mode);
 			}
 			if (auto count = args.Get("anim-count"); count && !count->empty())
 				m_CrowdCount = static_cast<uint32_t>((std::max)(1l, std::strtol(std::string(*count).c_str(), nullptr, 10)));
@@ -339,6 +388,7 @@ namespace Dingo
 		RunAnimatorChecks();
 		RunBlendChecks();
 		RunEventChecks();
+		RunRootMotionChecks();
 		RunSceneChecks();
 		RunReloadChecks();
 
@@ -349,6 +399,9 @@ namespace Dingo
 			if (m_FreezeTime >= 0.0f)
 				m_RunPose = PoseAt(*m_Fox->GetSkeleton(), run, m_FreezeTime);
 		}
+
+		if (const AnimationClip* walk = m_Mode == Mode::Root ? m_Fox->FindAnimation("Walk") : nullptr)
+			m_RootClip = TravellingWalk(*m_Fox->GetSkeleton(), *walk, "Circle", { 0.0f, 0.0f, 60.0f }, 30.0f, 0.0f);
 
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		m_FoxMaterial = renderer.CreateLitMaterial(MaterialParams().SetDebugName("Fox"));
@@ -859,6 +912,49 @@ namespace Dingo
 		};
 		Check(steps(*walk) == 4 && steps(*run) == 4 && survey->GetEvents().size() == 1 && survey->GetEvents()[0].Range && survey->GetEvents()[0].Name == "look",
 			"Fox.events beside the model gives Walk and Run four footfalls each and Survey a range");
+
+		{
+			AnimationClip swing("Swing", 1.0f, {}, &skeleton);
+			swing.AddEventRange(0.2f, 0.4f, "hitbox", "damage=12 reach=1.5 sound=\"heavy hit\" unblockable");
+			Animator animator(&skeleton);
+			animator.Play(&swing);
+			AnimationEventPayload begin, end;
+			for (int step = 0; step <= 6; ++step)
+			{
+				animator.Update(step == 0 ? 0.0f : 0.1f);
+				for (const AnimationEvent& event : animator.GetEventsThisFrame())
+					(event.Type == AnimationEventType::RangeBegin ? begin : end) = event.Payload;
+			}
+			Check(begin.GetFloat("damage") == 12.0f && begin.GetInt("damage") == 12 && begin.GetFloat("reach") == 1.5f
+				&& begin.GetString("sound") == "heavy hit" && begin.Has("unblockable") && !begin.Has("parry")
+				&& begin.GetFloat("reach", -1.0f) == 1.5f && begin.GetInt("reach", -1) == -1 && begin.GetFloat("missing", 7.0f) == 7.0f
+				&& end.Text == begin.Text,
+				"an event's payload reads back by key, and its RangeEnd carries its begin's");
+
+			const std::filesystem::path folder = std::filesystem::temp_directory_path() / "DingoAnimationTest";
+			std::error_code error;
+			std::filesystem::create_directories(folder, error);
+			const std::filesystem::path eventsPath = folder / "Payload.events";
+			std::ofstream(eventsPath) << "Walk 0.1 swing damage=8 sound=\"two words\"  # a comment\nWalk 0.2 bare\n";
+			std::unique_ptr<Model> library(Model::LoadFromFile(k_FoxPath, ModelLoadParams().SetClipsOnly(true)));
+			const AnimationClip* walkCopy = library ? library->FindAnimation("Walk") : nullptr;
+			const AnimationClipEvent* swingEvent = nullptr;
+			const AnimationClipEvent* bareEvent = nullptr;
+			if (walkCopy && library->LoadEvents(eventsPath))
+			{
+				for (const AnimationClipEvent& event : walkCopy->GetEvents())
+				{
+					if (event.Name == "swing")
+						swingEvent = &event;
+					else if (event.Name == "bare")
+						bareEvent = &event;
+				}
+			}
+			const AnimationEventPayload parsed{ swingEvent ? std::string_view(swingEvent->Payload) : std::string_view() };
+			Check(swingEvent && bareEvent && parsed.GetInt("damage") == 8 && parsed.GetString("sound") == "two words" && bareEvent->Payload.empty(),
+				"a .events line's key=value pairs after the event name load as its payload");
+			std::filesystem::remove(eventsPath, error);
+		}
 
 		// Clips of events alone: no channels, so they pose the rest pose.
 		{
@@ -1457,6 +1553,218 @@ namespace Dingo
 			m_Footprints.erase(m_Footprints.begin());
 	}
 
+	void AnimationTest::RunRootMotionChecks()
+	{
+		const Skeleton& skeleton = *m_Fox->GetSkeleton();
+		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+		const int32_t hips = skeleton.FindJoint("b_Hip_01");
+		constexpr float k_Travel = 100.0f; // model units a lap; the Fox is about 150 long
+		constexpr float k_Bob = 10.0f;
+		const glm::vec3 forward(0.0f, 0.0f, 1.0f);
+		const std::unique_ptr<AnimationClip> ahead = walk ? TravellingWalk(skeleton, *walk, "Ahead", forward * k_Travel, 0.0f, k_Bob) : nullptr;
+		const std::unique_ptr<AnimationClip> faster = walk ? TravellingWalk(skeleton, *walk, "Faster", forward * (2.0f * k_Travel), 0.0f, k_Bob) : nullptr;
+		const std::unique_ptr<AnimationClip> turning = walk ? TravellingWalk(skeleton, *walk, "Turning", glm::vec3(0.0f), 90.0f, 0.0f) : nullptr;
+		if (!ahead || !faster || !turning)
+		{
+			Check(false, "root-motion clips build from Walk's hips");
+			return;
+		}
+
+		const float duration = ahead->GetDuration();
+		const glm::mat4 hipsParent = ParentFrame(skeleton, hips);
+		const glm::vec3 hipsStart = glm::vec3(hipsParent * glm::vec4(skeleton.GetJoint(hips).RestPose.Translation, 1.0f));
+		const glm::quat hipsFacing = glm::normalize(FrameRotation(hipsParent) * skeleton.GetJoint(hips).RestPose.Rotation);
+		auto hipsNow = [&](const Animator& animator) { return glm::vec3(animator.GetJointTransform(hips)[3]); };
+		auto play = [&](Animator& animator, std::initializer_list<float> laps)
+		{
+			RootMotionDelta total;
+			for (float lap : laps)
+			{
+				animator.Update(lap * duration);
+				total = ThenMove(total, animator.GetRootMotionDelta());
+			}
+			return total;
+		};
+		const glm::quat still(1.0f, 0.0f, 0.0f, 0.0f);
+
+		{
+			Animator plain(&skeleton);
+			Animator off(&skeleton);
+			off.SetRootMotion(RootMotionMode::Off);
+			plain.Play(ahead.get());
+			off.Play(ahead.get());
+			play(plain, { 0.3f, 0.45f });
+			const RootMotionDelta moved = play(off, { 0.3f, 0.45f });
+			Check(PoseGap(plain.GetLocalPoses(), off.GetLocalPoses()) == 0.0f && moved.Translation == glm::vec3(0.0f) && moved.Rotation == still
+				&& glm::length(hipsNow(off) - hipsStart) > 0.5f * k_Travel,
+				"with root motion Off the pose carries the hips' travel, as before, and the delta stays identity");
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.Play(ahead.get());
+			const RootMotionDelta moved = play(animator, { 0.3f, 0.45f, 0.4f, 2.1f });
+			const glm::vec3 expected = forward * (3.25f * k_Travel);
+			const float gap = glm::length(moved.Translation - expected);
+			Check(gap < 0.01f * glm::length(expected) && QuatGap(moved.Rotation, still) < 1e-4f,
+				std::format("XZ root motion moves the model by the hips' travel, through a loop wrap and a step of two laps ({:.2f} off {:.0f})", gap, glm::length(expected)));
+
+			const glm::vec3 now = hipsNow(animator);
+			const float drift = glm::length(glm::vec2(now.x - hipsStart.x, now.z - hipsStart.z));
+			const float lift = now.y - hipsStart.y;
+			Check(drift < 1e-3f * k_Travel && std::abs(lift - k_Bob) < 1e-3f * k_Travel,
+				std::format("XZ holds the hips over the clip's start and leaves their bob in the pose (drift {:.1e}, lift {:.3f} of {:.0f})", drift, lift, k_Bob));
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::Full);
+			animator.Play(ahead.get());
+			const RootMotionDelta moved = play(animator, { 0.25f });
+			const glm::vec3 expected = forward * (0.25f * k_Travel) + glm::vec3(0.0f, k_Bob, 0.0f);
+			const float gap = glm::length(moved.Translation - expected);
+			const float held = glm::length(hipsNow(animator) - hipsStart);
+			Check(gap < 1e-3f * k_Travel && held < 1e-3f * k_Travel,
+				std::format("Full root motion takes the hips' height too and holds them where the clip starts (gap {:.1e}, hips {:.1e})", gap, held));
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.SetRootMotionJoint("b_Hip_01");
+			animator.Play(turning.get());
+			const RootMotionDelta turned = play(animator, { 0.4f, 0.35f });
+			const glm::quat expectedTurn = Turn(67.5f, { 0.0f, 1.0f, 0.0f });
+			const glm::vec3 pivot(hipsStart.x, 0.0f, hipsStart.z);
+			const float turnGap = QuatGap(turned.Rotation, expectedTurn);
+			const float shiftGap = glm::length(turned.Translation - (pivot - expectedTurn * pivot));
+			const float facingGap = QuatGap(FrameRotation(animator.GetJointTransform(hips)), hipsFacing);
+			Check(turnGap < 1e-3f && shiftGap < 1e-3f * k_Travel && facingGap < 1e-3f,
+				std::format("a clip that only turns the hips, its joint named, turns the model by it, about the hips, and holds their facing ({:.1e}, {:.1e}, {:.1e})", turnGap, shiftGap, facingGap));
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.SetFloat("Pace", 0.5f);
+			animator.Play(AnimationState::Blend1D("Pace", { { 0.0f, ahead.get() }, { 1.0f, faster.get() } }));
+			const RootMotionDelta moved = play(animator, { 0.5f, 0.5f });
+			const float gap = glm::length(moved.Translation - forward * (1.5f * k_Travel));
+			Check(gap < 0.015f * k_Travel, std::format("a Blend1D halfway between a clip and one twice as far moves the model one and a half times as far a cycle ({:.2f})", gap));
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.Play(ahead.get());
+			animator.Update(0.1f * duration);
+			animator.Play(faster.get(), 0.4f * duration);
+			animator.Update(0.2f * duration);
+			const float gap = glm::length(animator.GetRootMotionDelta().Translation - forward * (0.3f * k_Travel));
+			Check(gap < 1e-3f * k_Travel, std::format("a cross-fade moves the model by both clips' travel mixed at the fade weight ({:.1e})", gap));
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.Play(ahead.get());
+			animator.Update(0.1f * duration);
+			animator.SetTime(0.8f * duration);
+			animator.Update(0.0f);
+			const glm::vec3 hipsAfterSeek = hipsNow(animator);
+			const bool seekStill = animator.GetRootMotionDelta().Translation == glm::vec3(0.0f)
+				&& glm::length(glm::vec2(hipsAfterSeek.x - hipsStart.x, hipsAfterSeek.z - hipsStart.z)) < 1e-3f * k_Travel;
+			animator.Update(0.1f * duration);
+			const float gap = glm::length(animator.GetRootMotionDelta().Translation - forward * (0.1f * k_Travel));
+			Check(seekStill && gap < 1e-3f * k_Travel, std::format("a seek moves the model by nothing, the next step by its own travel ({:.1e})", gap));
+		}
+
+		{
+			std::vector<Joint> longer = skeleton.GetJoints();
+			longer[hips].RestPose.Translation *= 2.0f;
+			const Skeleton copy(std::move(longer), skeleton.GetRootTransform(), skeleton.GetSkinJointCount());
+			Animator animator(&copy);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.Play(ahead.get());
+			const RootMotionDelta moved = play(animator, { 0.5f, 0.5f });
+			const float gap = glm::length(moved.Translation - forward * (2.0f * k_Travel));
+			Check(gap < 0.02f * k_Travel, std::format("a clip retargeted onto hips twice as far from their parent moves the model twice as far ({:.2f})", gap));
+		}
+
+		{
+			Animator animator(&skeleton);
+			animator.SetRootMotion(RootMotionMode::XZ);
+			animator.SetRootMotionJoint("b_Root_00");
+			animator.Play(ahead.get());
+			const RootMotionDelta moved = play(animator, { 0.5f });
+			Check(glm::length(moved.Translation) < 1e-3f * k_Travel && glm::length(hipsNow(animator) - hipsStart) > 0.4f * k_Travel,
+				"naming a root-motion joint the clip doesn't move takes nothing out of the pose");
+		}
+
+		Scene scene("Root motion checks");
+		const glm::quat facing = Turn(90.0f, { 0.0f, 1.0f, 0.0f });
+		auto makeFox = [&](const char* name, const glm::vec3& position)
+		{
+			Entity fox = scene.CreateEntity(name);
+			fox.AddComponent<Transform3DComponent>(Transform3DComponent(position, glm::vec3(m_FoxScale))).Rotation = facing;
+			fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+			fox.AddComponent<AnimatorComponent>().RootMotion = RootMotionMode::XZ;
+			return fox;
+		};
+		Entity walker = makeFox("Walker", { 0.0f, 0.0f, 0.0f });
+		Entity held = makeFox("Held", { 0.0f, 0.0f, 10.0f });
+		held.GetComponent<AnimatorComponent>().ApplyRootMotion = false;
+		Entity runner = makeFox("Runner", { 20.0f, 0.0f, 0.0f });
+		runner.AddComponent<CharacterController3DComponent>();
+		Entity carried = makeFox("Carried", { -20.0f, 0.0f, 0.0f });
+		carried.AddComponent<RigidBody3DComponent>().Type = BodyType3D::Kinematic;
+
+		scene.OnStart();
+		std::vector<Entity> foxes{ walker, held, runner, carried };
+		std::vector<glm::vec3> starts;
+		for (Entity fox : foxes)
+		{
+			if (Animator* animator = scene.GetAnimator(fox))
+				animator->Play(ahead.get());
+			starts.push_back(fox.GetComponent<Transform3DComponent>().Position);
+		}
+
+		const int steps = static_cast<int>(std::ceil(duration / 0.05f));
+		for (int i = 0; i < steps; ++i)
+			scene.OnUpdate(duration / static_cast<float>(steps));
+
+		const glm::vec3 expected = facing * (m_FoxScale * forward * k_Travel);
+		auto moved = [&](size_t i) { return foxes[i].GetComponent<Transform3DComponent>().Position - starts[i]; };
+		auto flat = [](const glm::vec3& v) { return glm::vec3(v.x, 0.0f, v.z); };
+		const float walkerGap = glm::length(moved(0) - expected);
+		const float turnGap = QuatGap(walker.GetComponent<Transform3DComponent>().Rotation, facing);
+		Check(walkerGap < 0.01f * glm::length(expected) && turnGap < 1e-4f,
+			std::format("an AnimatorComponent with RootMotion moves its entity by the travel, in the entity's facing and scale ({:.1e} of {:.2f})", walkerGap, glm::length(expected)));
+
+		const Animator* heldAnimator = scene.GetAnimator(held);
+		Check(moved(1) == glm::vec3(0.0f) && heldAnimator && glm::length(heldAnimator->GetRootMotionDelta().Translation) > 0.0f,
+			"with ApplyRootMotion off the entity stays and the animator still reports the travel");
+
+		const float runnerGap = glm::length(flat(moved(2)) - expected);
+		Check(runnerGap < 0.02f * glm::length(expected),
+			std::format("a character controller walks by the travel through its velocity ({:.1e} of {:.2f})", runnerGap, glm::length(expected)));
+
+		const float carriedGap = glm::length(moved(3) - expected);
+		Check(carriedGap < 0.01f * glm::length(expected),
+			std::format("a kinematic body is carried by the travel through MoveKinematic ({:.1e} of {:.2f})", carriedGap, glm::length(expected)));
+
+		held.GetComponent<AnimatorComponent>().Enabled = false;
+		runner.GetComponent<AnimatorComponent>().Enabled = false;
+		const glm::vec3 runnerStopped = runner.GetComponent<Transform3DComponent>().Position;
+		scene.OnUpdate(0.05f);
+		scene.OnUpdate(0.05f);
+		const glm::vec3 slid = flat(runner.GetComponent<Transform3DComponent>().Position - runnerStopped);
+		Check(heldAnimator && heldAnimator->GetRootMotionDelta().Translation == glm::vec3(0.0f) && glm::length(slid) < 1e-4f,
+			std::format("a disabled animator reports no travel, and the controller it drove stops ({:.1e})", glm::length(slid)));
+		scene.OnStop();
+	}
+
 	void AnimationTest::RunSceneChecks()
 	{
 		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
@@ -1619,7 +1927,7 @@ namespace Dingo
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
 		const std::string clipName = (m_Mode == Mode::Clip || m_Mode == Mode::Layers) && m_ClipName.empty() ? std::string("Walk")
 			: m_Mode == Mode::Blend || m_Mode == Mode::Events ? std::string() : m_ClipName;
-		const bool animate = m_Mode == Mode::Blend || m_Mode == Mode::Events || ((m_Mode == Mode::Clip || m_Mode == Mode::Layers || (m_Mode == Mode::Crowd && !m_CrowdStatic)) && !clipName.empty());
+		const bool animate = m_Mode == Mode::Blend || m_Mode == Mode::Events || (m_Mode == Mode::Root && m_RootClip) || ((m_Mode == Mode::Clip || m_Mode == Mode::Layers || (m_Mode == Mode::Crowd && !m_CrowdStatic)) && !clipName.empty());
 		m_AnimatedFox = {};
 		std::vector<Entity> animated;
 		const uint32_t count = m_Mode == Mode::Crowd ? m_CrowdCount : (m_Mode == Mode::Pose ? 0u : 1u);
@@ -1698,6 +2006,11 @@ namespace Dingo
 			else if (m_Mode == Mode::Crowd)
 			{
 				animator->SetTime(0.137f * static_cast<float>(i));
+			}
+			else if (m_Mode == Mode::Root)
+			{
+				animated[i].GetComponent<AnimatorComponent>().RootMotion = RootMotionMode::XZ;
+				animator->Play(m_RootClip.get());
 			}
 			animator->Update(0.0f);
 		}
@@ -1936,6 +2249,7 @@ namespace Dingo
 	void AnimationTest::Cleanup()
 	{
 		DestroyScene();
+		m_RootClip.reset();
 		DestroyAndDelete(m_FoxMaterial);
 		DestroyAndDelete(m_Ghost);
 		DestroyAndDelete(m_GhostShader);

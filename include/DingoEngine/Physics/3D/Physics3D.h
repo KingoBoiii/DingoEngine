@@ -116,19 +116,40 @@ namespace Dingo
 		// Casts a ray and reports the closest body it hits within maxDistance. Returns
 		// true and fills outHit on a hit; returns false (outHit unchanged) on a miss or
 		// if the world isn't live. ray.Direction is expected to be normalized. Used for
-		// picking, line-of-sight and hitscan weapons.
-		virtual bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit) const = 0;
+		// picking, line-of-sight and hitscan weapons. Every query skips sensors and bodies the
+		// filter excludes; the overloads without one use QueryFilter3D's defaults.
+		virtual bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit, const QueryFilter3D& filter) const = 0;
+		bool RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit) const { return RayCast(ray, maxDistance, outHit, QueryFilter3D()); }
 
 		// Sweeps a sphere of `radius` from `center` along `direction` (expected normalized)
 		// up to maxDistance and reports the closest body it hits. Returns true and fills
 		// outHit on a hit; false (outHit unchanged) on a miss. A "thick" ray cast — use it
 		// for melee reach or a projectile with volume.
-		virtual bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit) const = 0;
+		virtual bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit,
+			const QueryFilter3D& filter) const = 0;
+		bool ShapeCastSphere(const glm::vec3& center, const glm::vec3& direction, float radius, float maxDistance, RayCastHit3D& outHit) const
+		{
+			return ShapeCastSphere(center, direction, radius, maxDistance, outHit, QueryFilter3D());
+		}
 
 		// Collects every body whose shape overlaps a sphere at `center` with `radius` into
 		// `out` (cleared first). Returns true if any were found. Cheap area query for melee
 		// AoE, triggers and proximity checks; order is unspecified.
-		virtual bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out) const = 0;
+		virtual bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out, const QueryFilter3D& filter) const = 0;
+		bool OverlapSphere(const glm::vec3& center, float radius, std::vector<PhysicsBodyId3D>& out) const { return OverlapSphere(center, radius, out, QueryFilter3D()); }
+
+		// --- Sensors and user data --------------------------------------------
+
+		// Collects every body (not sensor) that overlaps the sensor's shape into `out` (cleared
+		// first), once each, sleeping or not. True if any were found; false for a body that
+		// isn't a sensor, or an invalid/stale handle. Character controllers aren't bodies: ask
+		// CharacterController3D::IsOverlapping, or Scene::GetSensorOverlaps for both.
+		virtual bool GetSensorOverlaps(PhysicsBodyId3D sensor, std::vector<PhysicsBodyId3D>& out) const = 0;
+		virtual bool IsSensor(PhysicsBodyId3D body) const = 0;
+
+		// RigidBodyParams3D::UserData; 0 on an invalid/stale handle. A Scene owns its bodies'.
+		virtual std::uint32_t GetUserData(PhysicsBodyId3D body) const = 0;
+		virtual void SetUserData(PhysicsBodyId3D body, std::uint32_t userData) = 0;
 
 		// --- Character controller ---------------------------------------------
 
