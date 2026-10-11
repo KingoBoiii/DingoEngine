@@ -291,6 +291,7 @@ namespace Dingo
 		m_TranslucentIndices.clear();
 		m_TranslucentChunks.clear();
 		m_TranslucentDraws.clear();
+		m_TranslucentCasterDraws.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
@@ -496,7 +497,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 			for (const ChunkDraw& draw : m_ChunkDraws)
 			{
-				if (draw.Translucent || draw.Key.Shadows == ShadowCasting::ShadowsOnly)
+				if (draw.Key.Shadows == ShadowCasting::ShadowsOnly)
 					continue;
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
@@ -552,6 +553,7 @@ namespace Dingo
 	void Renderer3D::PrepareTranslucentPass(uint32_t& batchIndex, bool shadows)
 	{
 		m_TranslucentDraws.clear();
+		m_TranslucentCasterDraws.clear();
 		if (m_TranslucentSubmissions.empty())
 			return;
 
@@ -632,47 +634,6 @@ namespace Dingo
 			return chunksInUse - 1;
 		};
 
-		// Depth-only, so the casters need no order: chunks apart from the lit ones, one run of chunks
-		// per caster mask, since each mask draws with its own shadow material.
-		struct CasterRun
-		{
-			uint32_t ShadowGroups = 1;
-			uint32_t FirstChunk = 0;
-			uint32_t ChunkEnd = 0;
-		};
-		std::vector<CasterRun> casterRuns;
-		if (shadows)
-		{
-			std::vector<uint32_t> groups;
-			for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
-			{
-				if (submission.Skinned < 0 && submission.Shadows == ShadowCasting::On && submission.IndexCount > 0 &&
-					std::find(groups.begin(), groups.end(), submission.ShadowGroups) == groups.end())
-					groups.push_back(submission.ShadowGroups);
-			}
-			for (const uint32_t group : groups)
-			{
-				CasterRun run;
-				run.ShadowGroups = group;
-				for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
-				{
-					if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.ShadowGroups != group ||
-						submission.IndexCount == 0 || !drawable(submission))
-						continue;
-					if (run.ChunkEnd == 0)
-					{
-						startChunk();
-						run.FirstChunk = chunksInUse - 1;
-					}
-					uint32_t firstIndex = 0;
-					append(submission, firstIndex, false);
-					run.ChunkEnd = chunksInUse;
-				}
-				if (run.ChunkEnd > 0)
-					casterRuns.push_back(run);
-			}
-		}
-
 		bool litChunkStarted = false;
 		for (uint32_t index = 0; index < m_TranslucentSubmissions.size(); ++index)
 		{
@@ -692,6 +653,15 @@ namespace Dingo
 			}
 			uint32_t firstIndex = 0;
 			const uint32_t chunk = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
+			// Depth-only, so any material's casters of one mask that lie back to back share a draw.
+			if (shadows && submission.Shadows == ShadowCasting::On)
+			{
+				TranslucentCasterDraw* last = m_TranslucentCasterDraws.empty() ? nullptr : &m_TranslucentCasterDraws.back();
+				if (last && last->Buffer == chunk && last->ShadowGroups == submission.ShadowGroups && last->FirstIndex + last->IndexCount == firstIndex)
+					last->IndexCount += submission.IndexCount;
+				else
+					m_TranslucentCasterDraws.push_back({ chunk, firstIndex, submission.IndexCount, submission.ShadowGroups });
+			}
 			if (!m_TranslucentDraws.empty())
 			{
 				TranslucentDraw& last = m_TranslucentDraws.back();
@@ -712,15 +682,8 @@ namespace Dingo
 			if (!m_TranslucentChunks[chunk].Indices.empty())
 				buffers[chunk] = UploadChunk(m_TranslucentChunks[chunk], batchIndex);
 		}
-		for (const CasterRun& run : casterRuns)
-		{
-			for (uint32_t chunk = run.FirstChunk; chunk < run.ChunkEnd; ++chunk)
-			{
-				const MeshChunk& casters = m_TranslucentChunks[chunk];
-				if (!casters.Indices.empty())
-					m_ChunkDraws.push_back({ BatchKey{ nullptr, ShadowCasting::On, run.ShadowGroups }, buffers[chunk], static_cast<uint32_t>(casters.Indices.size()), true });
-			}
-		}
+		for (TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
+			draw.Buffer = buffers[draw.Buffer];
 		for (TranslucentDraw& draw : m_TranslucentDraws)
 		{
 			if (draw.Skinned < 0)
@@ -2023,6 +1986,11 @@ namespace Dingo
 				continue;
 
 			Renderer::DrawIndexed(GetShadowMaterial(false, draw.Key.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
+			++m_Statistics.ShadowDrawCalls;
+		}
+		for (const TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
+		{
+			Renderer::DrawIndexed(GetShadowMaterial(false, draw.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
 			++m_Statistics.ShadowDrawCalls;
 		}
 		m_Statistics.ShadowCasters += m_StaticCasters;

@@ -564,7 +564,6 @@ namespace Dingo
 			BatchKey Key;
 			uint32_t Buffer = 0;   // into the pooled vertex/index buffers
 			uint32_t IndexCount = 0;
-			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
 		};
 		std::vector<ChunkDraw> m_ChunkDraws;
 
@@ -598,8 +597,17 @@ namespace Dingo
 		};
 
 		float TranslucentSortKey(const glm::vec3& point) const;
-		// After the opaque uploads: sorts the scene's translucent meshes, packs them (and, for a
-		// shadowed scene, the casting ones again in m_ChunkDraws) into pooled buffers.
+		// A run of casting translucent meshes of one caster mask in a pooled buffer of the lit pass.
+		struct TranslucentCasterDraw
+		{
+			uint32_t Buffer = 0;
+			uint32_t FirstIndex = 0;
+			uint32_t IndexCount = 0;
+			uint32_t ShadowGroups = 1;
+		};
+
+		// After the opaque uploads: sorts the scene's translucent meshes, packs them into pooled buffers
+		// and, for a shadowed scene, notes the ranges of them the shadow pass draws.
 		void PrepareTranslucentPass(uint32_t& batchIndex, bool shadows);
 		void DrawTranslucentPass(Texture* shadowAtlas);
 
@@ -608,6 +616,7 @@ namespace Dingo
 		std::vector<uint32_t> m_TranslucentIndices;
 		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
 		std::vector<TranslucentDraw> m_TranslucentDraws;
+		std::vector<TranslucentCasterDraw> m_TranslucentCasterDraws;
 		std::vector<uint32_t> m_TranslucentNearIndices; // PrepareTranslucentPass' scratch: a mesh's triangles facing the camera
 
 		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
