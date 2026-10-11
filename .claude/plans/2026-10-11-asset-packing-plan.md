@@ -208,6 +208,13 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
 - `scripts/package-linux-programs.sh:23` and `scripts/linux-tester/make-bundle.sh` ship the `.dpak`. The test framework keeps loose assets, since it is a dev tool.
 - `CLAUDE.md`'s "New executable checklist" gains `embedPackKey()` and the pack step.
 
+**As built (F):**
+- `scripts/pack-assets.sh <Example> <out.dpak> [Config]` and `pack-assets.ps1 -Example -Output [-Configuration]` take the output path as a required argument, with no default beside the build's own executable: a package there would be auto-mounted by every dev run and shadow the loose files being edited. Both build DingoPack when it's missing (make / MSBuild on `DingoPack.vcxproj`) and `verify` what they wrote.
+- `build-release.yml`: the Distribution build packs every `examples/*` into its own bin folder (plus the licence files at the root of its assets, so Marionette's KayKit licences stay readable) before the binaries are uploaded, and the ten example jobs lost their `robocopy ... assets` step, so each zip holds the executable, the DLLs, the `.dpak` and any licence text. DingoPack (exe and DLLs) goes into the engine zip under `tools\DingoPack\`, and into the Linux tarball under `tools/`.
+- `package-linux-programs.sh` ships each example as executable + `.dpak` + licence files; the test framework keeps `assets/` and `imgui.ini`. `make-bundle.sh` packs the tester bundle's examples the same way, and its README gains a packed-assets checklist line.
+- `scripts/ci/linux-smoke-test.sh` ends with two packed runs: copies of Marionette (`--check`) and Candlewick beside their `.dpak`s in a temp directory, started from another one, each required to log its mount. So every CI configuration exercises DingoPack, the encryption, the auto-mount and the packed loads.
+- `CLAUDE.md`'s checklist gains `embedPackKey()`, the key in `ApplicationParams`, and where Windows and Linux packaging pack.
+
 ## Phase G: caches, docs and examples
 
 - **Caches:**
