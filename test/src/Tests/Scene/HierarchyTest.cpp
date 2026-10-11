@@ -516,6 +516,49 @@ namespace Dingo
 
 		Check(reportedWhileParented && clearedAfterDetach,
 			"IsCollisionIgnored and IsBodyIgnored report a kinematic child's ancestor pairs while it is parented, and not after RemoveParent");
+
+		{
+			Scene scene("Ancestor Filter Cleanup");
+			MakeBox(scene, "Floor", { 0.0f, -0.5f, 0.0f }, { 8.0f, 1.0f, 8.0f }, BodyType3D::Static);
+			Entity body = MakeBox(scene, "Body", { 0.0f, 0.5f, 0.0f }, glm::vec3(1.0f), BodyType3D::Dynamic);
+			Entity hand = MakeEntity(scene, "Hand", { 0.5f, 0.0f, 0.0f }, glm::vec3(0.0f), glm::vec3(1.0f));
+			hand.SetParent(body, false);
+			Entity blade = MakeBox(scene, "Blade", { 0.1f, 0.0f, 0.0f }, { 0.6f, 0.2f, 0.2f }, BodyType3D::Kinematic);
+			blade.SetParent(hand, false);
+			scene.OnStart();
+			scene.OnUpdate(1.0f / 60.0f);
+			const bool applied = scene.GetPhysics3D() && scene.GetPhysics3D()->IsCollisionIgnored(scene.GetRuntimeBody3D(blade), scene.GetRuntimeBody3D(body));
+
+			scene.OnStop();
+			scene.OnStart();
+			Physics3D* physics = scene.GetPhysics3D();
+			if (!physics)
+			{
+				Check(false, "the filter cleanup scene has a 3D world after OnStop and OnStart");
+				return;
+			}
+			const PhysicsBodyId3D bodyId = scene.GetRuntimeBody3D(body);
+			const PhysicsBodyId3D bladeId = scene.GetRuntimeBody3D(blade);
+			const glm::vec3 start = physics->GetPosition(bodyId);
+			StepOneSecond(scene);
+			const float moved = glm::length(physics->GetPosition(bodyId) - start);
+			Check(applied && physics->IsCollisionIgnored(bladeId, bodyId) && moved < 1e-3f,
+				std::format("after OnStop and OnStart a kinematic child ignores its ancestor's new body again (moved {:.1e})", moved));
+
+			scene.DestroyEntity(blade);
+			Check(!physics->IsCollisionIgnored(bladeId, bodyId) && !physics->IsCollisionIgnored(bodyId, bladeId),
+				"destroying a kinematic child drops its ancestor pairs from the filter");
+
+			Entity spear = MakeBox(scene, "Spear", { 0.1f, 0.0f, 0.0f }, { 0.6f, 0.2f, 0.2f }, BodyType3D::Kinematic);
+			spear.SetParent(hand, false);
+			scene.CreateRigidBody(spear);
+			scene.OnUpdate(1.0f / 60.0f);
+			const PhysicsBodyId3D spearId = scene.GetRuntimeBody3D(spear);
+			const bool spearApplied = physics->IsCollisionIgnored(spearId, bodyId);
+			scene.DestroyEntity(body);
+			Check(spearApplied && !physics->IsCollisionIgnored(spearId, bodyId) && !physics->IsCollisionIgnored(bodyId, spearId),
+				"destroying the ancestor (and with it the child) drops the pair from the filter");
+		}
 	}
 
 	void HierarchyTest::BuildScene()
