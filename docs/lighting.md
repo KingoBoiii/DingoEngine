@@ -408,8 +408,10 @@ pass, after every opaque mesh, static and skinned:
 - **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off), for
   the lights its `ShadowGroups` share a bit with, as an opaque mesh does; one with `ShadowsOnly` draws
   nothing lit and batches like an opaque mesh.
-- **Particles** draw after this pass, so they show over glass. With the post chain, ambient occlusion
-  is applied before it, so glass isn't darkened by the corners behind it.
+- **Particles** draw after this pass and never join its sort, so a particle *behind* glass still
+  draws over it: an alpha particle hides the glass's tint, an additive one skips its dimming. Glass
+  writes no depth, so nothing stops them. With the post chain, ambient occlusion is applied before
+  both, so neither is darkened by the corners behind it.
 
 The sort is per mesh, not per triangle. Meshes that intersect, a large mesh around a smaller one
 (a water plane under a boat, say), or the faces of a concave mesh seen through each other on one side
@@ -500,6 +502,8 @@ and a copy of it is embedded in the engine library at build time.
 - **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
   orthographic camera ([Fog](#fog)).
 - **Translucency is sorted per mesh**, not per triangle or pixel ([Translucent materials](#translucent-materials)).
+- **Particles draw over translucent meshes**, even from behind them, since they aren't in the
+  translucent sort ([Translucent materials](#translucent-materials)).
 
 ## Migrating from v0.6
 

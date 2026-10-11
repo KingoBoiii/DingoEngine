@@ -514,6 +514,14 @@ namespace Dingo
 		}
 
 		DrawSkinnedSubmissions();
+
+		// What draws from here on writes no depth, so AO from the opaque depth behind it would darken it.
+		if (!m_TranslucentDraws.empty() || (m_Particles && m_Particles->HasSubmissions()))
+		{
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+				post.ApplyAmbientOcclusion();
+		}
 		DrawTranslucentPass(shadowAtlas);
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
@@ -689,11 +697,6 @@ namespace Dingo
 			return;
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawTranslucentPass");
-		// AO from the opaque depth behind them would darken them, as it would particles.
-		PostProcessStack& post = Renderer::GetPostProcessStack();
-		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
-			post.ApplyAmbientOcclusion();
-
 		uint32_t uploadedInstance = ~0u;
 		for (const TranslucentDraw& draw : m_TranslucentDraws)
 		{
