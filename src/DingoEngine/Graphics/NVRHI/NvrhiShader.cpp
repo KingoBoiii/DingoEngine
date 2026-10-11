@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/ShaderCompiler.h"
@@ -595,7 +596,7 @@ namespace Dingo
 
 		// Soft failures (build aborts, previous program stays): hot-reload can race an
 		// editor save that briefly removes/truncates the file.
-		if (!std::filesystem::exists(m_Params.FilePath))
+		if (!VirtualFileSystem::Exists(m_Params.FilePath))
 		{
 			DE_CORE_ERROR("Shader file does not exist: '{}'.", m_Params.FilePath.string());
 			return {};

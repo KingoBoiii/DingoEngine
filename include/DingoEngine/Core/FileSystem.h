@@ -2,6 +2,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace Dingo
 {
@@ -9,6 +12,8 @@ namespace Dingo
 	class FileSystem
 	{
 	public:
+		// The reads go through the VirtualFileSystem, so they find packed files too.
+		static std::optional<std::vector<uint8_t>> ReadFileBytes(const std::filesystem::path& filepath);
 		static std::string ReadTextFile(const std::filesystem::path& filepath);
 		static const uint8_t* ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically = true, bool forceRGBA = false);
 		// ReadImage for an encoded image (PNG, JPEG, ...) already in memory.

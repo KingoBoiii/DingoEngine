@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Asset/AssetPath.h"
 
 #undef INFINITE
@@ -71,25 +72,6 @@ namespace Dingo
 			std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts/atlas");
 			const std::string pathKey = fontPath.generic_string();
 			return cachePath / std::format("{}-{:016x}.dfa", SanitizeFileName(name), HashFNV1a(pathKey.data(), pathKey.size()));
-		}
-
-		inline static std::vector<uint8_t> ReadFileBytes(const std::filesystem::path& filePath)
-		{
-			std::error_code ec;
-			const uintmax_t fileSize = std::filesystem::file_size(filePath, ec);
-			if (ec)
-				return {};
-
-			std::ifstream stream(filePath, std::ios::binary);
-			if (!stream)
-				return {};
-
-			std::vector<uint8_t> bytes(static_cast<size_t>(fileSize));
-			stream.read((char*)bytes.data(), bytes.size());
-			if (static_cast<uintmax_t>(stream.gcount()) != fileSize)
-				return {};
-
-			return bytes;
 		}
 
 		// Hash of the font file's bytes plus every parameter that changes the pixels the
@@ -211,7 +193,7 @@ namespace Dingo
 		// One read of the file, shared by the source hash and FreeType. It has to outlive
 		// InitializeFontData: FT_New_Memory_Face borrows the buffer rather than copying it,
 		// and only releases it when that function destroys the font.
-		const std::vector<uint8_t> fontData = Utils::ReadFileBytes(m_FilePath);
+		const std::vector<uint8_t> fontData = FileSystem::ReadFileBytes(m_FilePath).value_or(std::vector<uint8_t>());
 		if (fontData.empty())
 		{
 			DE_CORE_ERROR("Failed to read font file: {}", m_FilePath.string());

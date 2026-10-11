@@ -3,6 +3,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Log.h"
 
 #include <assimp/Importer.hpp>
@@ -17,7 +18,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstring>
-#include <fstream>
+#include <sstream>
 #include <limits>
 #include <span>
 
@@ -63,9 +64,7 @@ namespace Dingo
 
 	static std::filesystem::file_time_type WriteTimeOf(const std::filesystem::path& path)
 	{
-		std::error_code error;
-		const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
-		return error ? std::filesystem::file_time_type{} : time;
+		return VirtualFileSystem::GetWriteTime(path).value_or(std::filesystem::file_time_type{});
 	}
 
 	static TextureParams MakeImageParams(uint32_t width, uint32_t height, uint32_t channels, const uint8_t* data)
@@ -204,7 +203,7 @@ namespace Dingo
 			if (it != textureCache.Loaded.end())
 				return it->second.Image;
 
-			if (!std::filesystem::exists(candidates[i]))
+			if (!VirtualFileSystem::Exists(candidates[i]))
 				continue;
 
 			CachedTexture texture;
@@ -1026,8 +1025,7 @@ namespace Dingo
 		{
 			std::filesystem::path events = resolvedPath;
 			events.replace_extension(".events");
-			std::error_code error;
-			if (std::filesystem::exists(events, error))
+			if (VirtualFileSystem::Exists(events))
 				model->LoadEvents(events);
 		}
 
@@ -1087,9 +1085,8 @@ namespace Dingo
 
 		std::filesystem::path events = m_FilePath;
 		events.replace_extension(".events");
-		std::error_code error;
-		const bool exists = !m_Animations.empty() && std::filesystem::exists(events, error);
-		if (exists && !std::ifstream(events).is_open())
+		const bool exists = !m_Animations.empty() && VirtualFileSystem::Exists(events);
+		if (exists && !VirtualFileSystem::ReadBytes(events))
 		{
 			DE_CORE_WARN("Model '{}': couldn't read '{}', so the clips keep their events", m_FilePath.filename().string(), events.filename().string());
 			return false;
@@ -1312,12 +1309,13 @@ namespace Dingo
 
 	bool Model::LoadEvents(const std::filesystem::path& filepath)
 	{
-		std::ifstream file(filepath);
-		if (!file)
+		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
+		if (!bytes)
 		{
 			DE_CORE_ERROR("Model::LoadEvents: can't read '{}'", filepath.string());
 			return false;
 		}
+		std::istringstream file(std::string(bytes->begin(), bytes->end()));
 
 		const std::string fileName = filepath.filename().string();
 		std::string line;

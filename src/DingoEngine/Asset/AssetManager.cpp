@@ -5,6 +5,7 @@
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Model.h"
@@ -21,12 +22,6 @@ namespace Dingo
 	using Internal::AsyncJob;
 	using Internal::AsyncResult;
 	using Internal::CompanionWatch;
-
-	// A copy rather than a route through Application::GetAssetManager(), which dereferences a
-	// pointer that is still null while the Application constructor runs. Written on the main
-	// thread only; the loader thread calls the raw factories with absolute paths, which
-	// ResolveRawAssetPath returns before reading this.
-	static std::filesystem::path s_RawAssetRoot;
 
 	struct UnmanagedShaderWatch
 	{
@@ -46,16 +41,7 @@ namespace Dingo
 		{
 			if (path.empty() || path.is_absolute())
 				return path;
-
-			if (s_RawAssetRoot.empty())
-				return path;
-
-			std::error_code ec;
-			const std::filesystem::path candidate = (s_RawAssetRoot / path).lexically_normal();
-			if (std::filesystem::exists(candidate, ec) && !ec)
-				return candidate;
-
-			return path;
+			return VirtualFileSystem::GetVirtualPath(path);
 		}
 
 	}
@@ -103,11 +89,11 @@ namespace Dingo
 #endif
 		}
 
+		// A packed file has no write time and reads as the epoch, like a missing one, so hot reload
+		// never fires for it.
 		static std::filesystem::file_time_type ReadWriteTime(const std::filesystem::path& path)
 		{
-			std::error_code ec;
-			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, ec);
-			return ec ? std::filesystem::file_time_type{} : writeTime;
+			return VirtualFileSystem::GetWriteTime(path).value_or(std::filesystem::file_time_type{});
 		}
 
 		static void StampWriteTime(AssetMetadata& metadata, const std::filesystem::path& absolutePath)
@@ -833,12 +819,14 @@ namespace Dingo
 			root = root.parent_path();
 		data.RootDirectory = std::move(root);
 
-		if (!std::filesystem::exists(data.RootDirectory))
+		VirtualFileSystem::SetRoot(data.RootDirectory);
+		data.RootMount = VirtualFileSystem::MountDirectory(data.RootDirectory);
+
+		std::error_code ec;
+		if (!std::filesystem::is_directory(data.RootDirectory, ec) && VirtualFileSystem::GetMountCount() <= 1)
 			DE_CORE_WARN("AssetManager: asset root '{}' does not exist - loads will fail until it does.", data.RootDirectory.string());
 		else
 			DE_CORE_INFO("AssetManager: asset root '{}'.", data.RootDirectory.string());
-
-		s_RawAssetRoot = data.RootDirectory;
 
 		data.Worker = std::thread(WorkerLoop, std::ref(data));
 	}
@@ -859,7 +847,12 @@ namespace Dingo
 			data.StopWorker = false;
 		}
 
-		s_RawAssetRoot.clear();
+		if (data.RootMount != k_InvalidVfsMount)
+		{
+			VirtualFileSystem::Unmount(data.RootMount);
+			data.RootMount = k_InvalidVfsMount;
+			VirtualFileSystem::SetRoot({});
+		}
 
 		// Free payloads that completed but were never finalized.
 		for (AsyncResult& result : data.Results)

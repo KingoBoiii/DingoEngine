@@ -86,6 +86,16 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
   - `Utils::ReadWriteTime`, `CompanionChanged` and `Model.cpp:64-68` use `Vfs::GetWriteTime`.
   - Hot reload skips a file that isn't loose.
 
+**As built (A):**
+- The class is `VirtualFileSystem` (static). `Resolve` returns `std::optional<VfsResolvedPath>` with a `VfsMountId` (0 = a disk file outside every mount) rather than a `Mount*`. Besides the planned calls it has `SetRoot`/`GetRoot`, `GetVirtualPath` (what `ResolveRawAssetPath` now returns: `<root>/<key>` for a packed file, the disk file otherwise, the path unchanged when nothing matches) and `GetLogicalKey`, plus mount bookkeeping (`IsMounted`, `GetMountCount`, `GetMountName`).
+- Logical keys are UTF-8 on every platform (`generic_u8string`), the encoding package entry names use, so a non-ASCII name matches its packed entry on Windows too.
+- An absolute path folds to a key against the root first, then against each mounted directory; that key is then looked up newest mount first, so an absolute path under the root still finds a file a package overrides. An absolute path outside every mount is read from disk unchanged (the engine shader directory, `%TEMP%` copies in the Animation Test).
+- `ResolveRawAssetPath` keeps its old shortcut: an absolute or empty path is returned untouched without a lookup.
+- Packages plug in through an engine-internal `Internal::VfsArchive` interface (`src/DingoEngine/Core/VfsArchive.h`, `MountArchive`), so the public header names no pack type.
+- `FileSystem::ReadImage` keeps its file-name error line and adds it after `ReadImageFromMemory`'s own.
+- `.events` text is read through the VFS into an `std::istringstream`; the tokenizer already treated `\r` as space, so CRLF files parse as before.
+- Verified on Linux (Debug and Release, Xvfb + llvmpipe): the smoke test's 20 cases, 10 examples and Marionette `--check` pass with the same PASS counts as the untouched baseline (521 + 107).
+
 ## Phase B: assimp and miniaudio adapters (still loose files)
 
 **`src/DingoEngine/Graphics/AssimpVfsIO.{h,cpp}`**: an `Assimp::IOSystem` and `IOStream` over a memory buffer. `importer.SetIOHandler(...)` is called before both `ReadFile`s.

@@ -3,6 +3,7 @@
 #include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 
 #include <set>
 
@@ -129,9 +130,7 @@ namespace Dingo::Internal
 				if (origin.Inline)
 					file = ResolveRawAssetPath(include.Name);
 
-				std::error_code ec;
-				const std::filesystem::path canonical = std::filesystem::weakly_canonical(file, ec);
-				if (!m_Pasted.insert((ec ? file : canonical).generic_string()).second)
+				if (!m_Pasted.insert(VirtualFileSystem::GetLogicalKey(file)).second)
 					return true;
 
 				return PasteFile(file, Origin{ file.parent_path(), false, false }, include.Name, depth, out);
@@ -144,8 +143,7 @@ namespace Dingo::Internal
 				if (std::ranges::find(m_IncludedFiles, file) == m_IncludedFiles.end())
 					m_IncludedFiles.push_back(file);
 
-				std::error_code ec;
-				if (!std::filesystem::exists(file, ec))
+				if (!VirtualFileSystem::Exists(file))
 				{
 					DE_CORE_ERROR("Shader '{}': #include \"{}\" not found ({}).", m_ShaderName, requested, file.generic_string());
 					return false;

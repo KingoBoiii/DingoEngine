@@ -6,6 +6,7 @@
 
 #include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Asset/AssetMetadata.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/Model.h"
 
 #include <atomic>
@@ -75,6 +76,7 @@ namespace Dingo
 		{
 			AssetManagerParams Params;
 			std::filesystem::path RootDirectory;
+			VfsMountId RootMount = k_InvalidVfsMount;
 			// No mutex around LoadClip: ma_engine owns a resource manager whose job queue is
 			// multi-producer/multi-consumer, and node attachment is spinlock-guarded, so
 			// miniaudio supports initializing sounds from several threads at once. Serializing
