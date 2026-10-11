@@ -53,6 +53,7 @@ Intermediates/
 /*.make
 /test/Makefile
 /examples/*/Makefile
+/tools/*/Makefile
 
 # assimp built from source on Linux (LINUX-SUPPORT.md, Appendix A)
 /vendor/assimp/lib/linux-x86_64/
