@@ -830,6 +830,7 @@ namespace Dingo::UI
 	{
 		static std::vector<Internal::AnimationDebug::AnimatorRow> s_Animators;
 		static std::vector<Internal::AnimationDebug::EventRow> s_Events;
+		const std::unique_lock scenesLock = Internal::AnimationDebug::LockScenes();
 		Internal::AnimationDebug::CollectAnimators(s_Animators);
 		Internal::AnimationDebug::CollectRecentEvents(s_Events, Internal::AnimationDebug::k_RecentEvents);
 

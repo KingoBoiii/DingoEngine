@@ -29,10 +29,9 @@ namespace Dingo
 					return *s_Scenes;
 				}
 
-				// A scene may be destroyed on another thread: its destructor waits here while the tab reads it.
-				std::mutex& ScenesMutex()
+				std::recursive_mutex& ScenesMutex()
 				{
-					static auto* s_Mutex = new std::mutex();
+					static auto* s_Mutex = new std::recursive_mutex();
 					return *s_Mutex;
 				}
 
@@ -42,6 +41,11 @@ namespace Dingo
 					return tag ? tag->Tag : std::format("Entity {}", entt::to_integral(handle));
 				}
 
+			}
+
+			std::unique_lock<std::recursive_mutex> LockScenes()
+			{
+				return std::unique_lock(ScenesMutex());
 			}
 
 			void RegisterScene(Scene* scene, SceneData* data)

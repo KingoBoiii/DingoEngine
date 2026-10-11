@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -33,8 +34,8 @@ namespace Dingo
 			{
 				const Scene* Owner = nullptr;
 				uint32_t Entity = 0;
-				// Null when the animator isn't bound to the entity's current model. Valid until the scene
-				// next updates or changes.
+				// Null when the animator isn't bound to the entity's current model. Valid while LockScenes()
+				// is held and the scene neither updates nor changes.
 				const Animator* Instance = nullptr;
 				bool Enabled = true;
 				float Speed = 1.0f;
@@ -59,7 +60,9 @@ namespace Dingo
 			};
 
 			// A scene registers at its first OnUpdate (main thread) and unregisters in its destructor
-			// (any thread).
+			// (any thread), which waits while this lock is held. The tab holds it for as long as it
+			// reads the rows' animators, so a scene freed on another thread can't free one mid-read.
+			[[nodiscard]] std::unique_lock<std::recursive_mutex> LockScenes();
 			void RegisterScene(Scene* scene, SceneData* data);
 			void UnregisterScene(Scene* scene);
 
