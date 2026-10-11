@@ -1038,8 +1038,10 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 ## Limits
 
 - **128 joints a draw.** A mesh whose vertices name more than `Renderer3D::k_MaxSkinJoints` (128)
-  joints draws its rest pose, unskinned, with a warning. Joints a skin cannot reach (helpers, ends,
-  animated cameras) sort after the skin joints and do not count.
+  joints draws its rest pose, unskinned, with a warning. Bones and their ancestors come first, then
+  nodes carrying a rigid mesh, so a character's bones stay under the cap even when an animated node
+  outside the armature makes every prop in the scene a joint. Joints a skin cannot reach (helpers,
+  ends, animated cameras) sort after both and do not count.
 - **`MaxSkinnedInstances` a frame** (64 by default, at most 256), across all scenes of a renderer. The
   rest are dropped whole, with a warning.
 - **4 states a layer.** A fifth freezes the mix so far into one pose.

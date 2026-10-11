@@ -840,45 +840,47 @@ namespace Dingo
 			return out;
 		}
 
-		// Skin vertices index joints directly, so the joints they can reach (bones, nodes
-		// carrying an unskinned mesh, and their ancestors) go first. A palette then needs only
-		// those, however many helper or animated nodes the subtree also holds. Both groups stay
-		// parents first: a reachable joint's parent is reachable.
+		// Skin vertices index joints directly, so the joints they can reach go first: bones and
+		// their ancestors, then nodes carrying an unskinned mesh and theirs. A palette then needs
+		// only those, however many helper or animated nodes the subtree also holds, and a
+		// character's bones stay below k_MaxSkinJoints however many props a scene-rooted rig
+		// adds. Every group stays parents first: a joint's parent is in its group or an earlier one.
 		std::unordered_map<std::string, int32_t> subtreeByName;
 		for (int32_t i = 0; i < static_cast<int32_t>(subtree.size()); ++i)
 			subtreeByName.try_emplace(subtree[i]->mName.C_Str(), i);
 
-		std::vector<bool> reachable(subtree.size(), false);
+		enum class JointGroup : uint8_t { Bone, Rigid, Other };
+		std::vector<JointGroup> groups(subtree.size(), JointGroup::Other);
 		for (uint32_t m = 0; m < scene->mNumMeshes; ++m)
 		{
 			for (uint32_t b = 0; b < scene->mMeshes[m]->mNumBones; ++b)
 			{
 				auto it = subtreeByName.find(scene->mMeshes[m]->mBones[b]->mName.C_Str());
 				if (it != subtreeByName.end())
-					reachable[it->second] = true;
+					groups[it->second] = JointGroup::Bone;
 			}
 		}
 		for (size_t i = 0; i < subtree.size(); ++i)
 		{
 			for (uint32_t k = 0; k < subtree[i]->mNumMeshes; ++k)
 			{
-				if (!scene->mMeshes[subtree[i]->mMeshes[k]]->HasBones())
-					reachable[i] = true;
+				if (!scene->mMeshes[subtree[i]->mMeshes[k]]->HasBones() && groups[i] == JointGroup::Other)
+					groups[i] = JointGroup::Rigid;
 			}
 		}
 		for (size_t i = subtree.size(); i-- > 0;)
 		{
-			if (reachable[i] && subtreeParents[i] >= 0)
-				reachable[subtreeParents[i]] = true;
+			if (groups[i] != JointGroup::Other && subtreeParents[i] >= 0)
+				groups[subtreeParents[i]] = std::min(groups[subtreeParents[i]], groups[i]);
 		}
 
 		std::vector<int32_t> order;
 		order.reserve(subtree.size());
-		for (bool group : { true, false })
+		for (JointGroup group : { JointGroup::Bone, JointGroup::Rigid, JointGroup::Other })
 		{
 			for (size_t i = 0; i < subtree.size(); ++i)
 			{
-				if (reachable[i] == group)
+				if (groups[i] == group)
 					order.push_back(static_cast<int32_t>(i));
 			}
 		}
@@ -887,7 +889,7 @@ namespace Dingo
 			jointOfSubtree[order[j]] = static_cast<int32_t>(j);
 
 		const uint32_t jointCount     = static_cast<uint32_t>(order.size());
-		const uint32_t skinJointCount = static_cast<uint32_t>(std::count(reachable.begin(), reachable.end(), true));
+		const uint32_t skinJointCount = static_cast<uint32_t>(subtree.size() - std::count(groups.begin(), groups.end(), JointGroup::Other));
 		const glm::mat4 rootTransform = armatureRoot->mParent ? GlobalTransform(armatureRoot->mParent) : glm::mat4(1.0f);
 
 		std::vector<Joint>     joints(jointCount);

@@ -441,6 +441,20 @@ namespace Dingo
 		for (const SkinnedMeshVertex& vertex : skinned->MeshData->GetSkinVertices())
 			worstWeights = (std::max)(worstWeights, std::abs(vertex.Weights.x + vertex.Weights.y + vertex.Weights.z + vertex.Weights.w - 1.0f));
 		Check(worstWeights < 1e-5f, "every skin vertex's weights sum to 1");
+
+		// An animated node outside the armature roots the skeleton at the scene, so the prop node,
+		// which comes before the armature in the file, is a rigid-skinned joint too.
+		std::unique_ptr<Model> rig(Model::LoadFromFile("assets/models/SceneRig/SceneRig.gltf"));
+		const Skeleton* rigSkeleton = rig ? rig->GetSkeleton() : nullptr;
+		const int32_t bone = rigSkeleton ? rigSkeleton->FindJoint("Bone1") : -1;
+		const int32_t prop = rigSkeleton ? rigSkeleton->FindJoint("Prop") : -1;
+		// The body's palette ends at Bone1; the prop's own rigid-skinned submesh reaches the prop joint.
+		const bool bodyFits = rig && std::any_of(rig->GetSubMeshes().begin(), rig->GetSubMeshes().end(), [&](const SubMesh& submesh)
+		{
+			return submesh.MeshData->HasSkin() && submesh.MeshData->GetSkinJointCount() == static_cast<uint32_t>(bone + 1);
+		});
+		Check(bodyFits && bone >= 0 && prop > bone && rigSkeleton->GetSkinJointCount() > static_cast<uint32_t>(prop),
+			std::format("a scene-rooted rig orders its bones before its rigid-mesh nodes (Bone1 {}, Prop {})", bone, prop));
 	}
 
 	void AnimationTest::RunAnimatorChecks()
