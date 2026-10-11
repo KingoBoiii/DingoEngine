@@ -859,14 +859,17 @@ namespace Dingo
 		if (!clip)
 			return;
 
-		// The clip's events changed under it (a reload, ClearEvents): a range whose event is gone ends now.
+		// The clip's events changed under it (a reload, ClearEvents): a range whose event is gone, or
+		// whose new span no longer holds the playhead, ends now.
 		if (clip->GetEventRevision() != layer.EventRevision)
 		{
 			layer.EventRevision = clip->GetEventRevision();
 			const std::vector<AnimationClipEvent>& events = clip->GetEvents();
+			const float time = dominant->Time * timeScale;
 			std::erase_if(layer.OpenRanges, [&](const OpenRange& range)
 			{
-				const bool kept = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name;
+				const bool kept = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name
+					&& time >= events[range.Event].Time && time <= events[range.Event].EndTime;
 				if (!kept)
 					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
 				return !kept;

@@ -1197,6 +1197,23 @@ namespace Dingo
 			Check(open && closedBySeek && animator.IsEventActive("hitbox"), "SetTime(0) mid-swing closes the hitbox, and the replay opens it again");
 		}
 		{
+			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
+			slash.AddEventRange(0.32f, 0.48f, "hitbox");
+			Animator animator(&skeleton);
+			animator.Play(AnimationState::Clip(&slash).SetLoop(false));
+			animator.Update(0.0f);
+			animator.Update(0.45f);
+			const bool open = animator.IsEventActive("hitbox");
+			slash.ClearEvents();
+			slash.AddEventRange(0.32f, 0.40f, "hitbox");
+			animator.Update(0.02f);
+			const int ends = CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeEnd);
+			for (int step = 0; step < 40; ++step)
+				animator.Update(0.05f);
+			Check(open && ends == 1 && !animator.IsEventActive("hitbox"),
+				std::format("a range whose new end is behind the playhead after an events change ends at once ({} RangeEnd), and the held swing keeps it closed", ends));
+		}
+		{
 			Animator animator(&skeleton);
 			animator.Play(&other);
 			animator.SetLayer(1, AnimationLayer().SetWeight(0.3f));
