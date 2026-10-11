@@ -74,6 +74,14 @@ namespace Dingo
 			return key;
 		}
 
+		// UTF-8 on every platform: MSVC's generic_string() converts to the ANSI code page and throws
+		// on a name it can't map.
+		static std::string GenericUtf8(const std::filesystem::path& path)
+		{
+			const std::u8string text = path.generic_u8string();
+			return std::string(text.begin(), text.end());
+		}
+
 		static bool PathPrefixMatches(std::string_view path, std::string_view prefix)
 		{
 			if (path.size() <= prefix.size() || prefix.empty())
@@ -435,20 +443,20 @@ namespace Dingo
 	// folded back to its relative spelling so both spellings share one registration.
 	static std::filesystem::path NormalizeRelativePath(const AssetManagerData& data, const std::filesystem::path& path)
 	{
-		std::string generic = path.lexically_normal().generic_string();
-		const std::string root = data.RootDirectory.generic_string();
+		std::string generic = Utils::GenericUtf8(path.lexically_normal());
+		const std::string root = Utils::GenericUtf8(data.RootDirectory);
 
 		if (Utils::PathPrefixMatches(generic, root))
 			generic.erase(0, root.size() + 1);
 
-		return std::filesystem::path(generic);
+		return std::filesystem::path(std::u8string(generic.begin(), generic.end()));
 	}
 
 	// The canonical registry/lookup key for a path: the relative form above, case-folded on
 	// filesystems that ignore case.
 	static std::string NormalizePathKey(const AssetManagerData& data, const std::filesystem::path& path)
 	{
-		return Utils::FoldPathCase(NormalizeRelativePath(data, path).generic_string());
+		return Utils::FoldPathCase(Utils::GenericUtf8(NormalizeRelativePath(data, path)));
 	}
 
 	static void StampCompanion(AssetManagerData& data, const AssetMetadata& metadata)
@@ -846,6 +854,10 @@ namespace Dingo
 			data.Worker.join();
 			data.StopWorker = false;
 		}
+
+		for (auto& [handle, package] : data.Packages)
+			VirtualFileSystem::Unmount(package.Mount);
+		data.Packages.clear();
 
 		if (data.RootMount != k_InvalidVfsMount)
 		{

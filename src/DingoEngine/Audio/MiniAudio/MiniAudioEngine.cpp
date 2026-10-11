@@ -85,6 +85,14 @@ namespace Dingo
 					ma_sound_uninit(&m_Template);
 			}
 
+			uint64_t GetFrameCount() const override
+			{
+				ma_uint64 frames = 0;
+				if (m_Loaded)
+					ma_sound_get_length_in_pcm_frames(const_cast<ma_sound*>(&m_Template), &frames);
+				return frames;
+			}
+
 			ma_sound* Template() { return &m_Template; }
 			ma_sound m_Template{};
 			bool m_Loaded = false;

@@ -424,6 +424,10 @@ group ""
 
 include "test"
 
+group "Tools"
+    include "tools/DingoPack"
+group ""
+
 group "Examples"
     include "examples/ArenaShooter"
     include "examples/FlappyBird"

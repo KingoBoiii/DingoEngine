@@ -149,6 +149,20 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
 - `DingoPack pack <assetsDir> <out.dpak> --key <file>` calls `AssetManager::Package`.
 - `list` and `verify` open the archive through the pack reader.
 
+**As built (C):**
+- Header (64 B): magic, version 1, flags, 16-byte salt, TOC offset / packed size / raw size / CRC32, entry count and an 8-byte key check (zero until D). `TocEntry` is 42 B packed, followed by its UTF-8 name. The TOC must end the file (`TocPackedSize == fileSize - TocOffset`), and every entry has to lie between the header and the TOC, so a truncated file fails as a damaged header, not as a bad read later.
+- `.glb` is size-checked like any other file (the 5% rule), not skipped: Marionette's animation-library GLBs deflate to about 45%. Only `.png .jpg .jpeg .ogg .mp3` skip deflate.
+- stb skips the zlib Adler-32, so the TOC and every entry carry a CRC32 of the inflated bytes; a damaged entry logs "is damaged (CRC mismatch)" and reads as missing, while the rest of the package keeps working.
+- `Package` sorts the files by path (deterministic apart from the random salt) and skips the output file when it sits inside the source. The case-clash check runs on every platform. An empty source, a missing source or an unwritable output fail with `PackageResult::Error` set.
+- `Unpackage` registers only files with a known asset type; `.bin`, `.events`, includes and licences are mounted but not registered. An asset already registered (loaded loose, or held by an earlier package) is reused, not duplicated, and reloaded when it was `Ready`, so the package's copy takes over in place.
+- `ClosePackage` hands a registration it created to another mounted package holding the same file instead of removing it; one nobody else holds is `Remove`d.
+- `GetAssetSource(handle)` was added for the F6 panel (phase E): "loose", the package's file name, or "missing".
+- `AudioClip::GetFrameCount()` was added so the Pack Test can compare a packed clip's decode with the loose one.
+- `AssetManager` path keys are built with `generic_u8string` (they used `generic_string()`, which MSVC converts to the ANSI code page, throwing on a name it can't map).
+- `DingoPack` never calls `Log::Initialize`, so it writes no `Dingo.log` beside the packages. Exit codes: 0 ok, 1 failure, 2 usage.
+- Pack Test (`--test=pack`, 41 checks): packaging, excludes and `.dpakignore`, refusals, byte-for-byte reads of every file, a skinned glTF with `.bin` and `.events`, a GLB, audio, a font, a shader, texture pixels by readback, `LoadAsync` from a package while the main thread reads it, a patch package overriding and reloading in place, a pack-only shader with an `#include`, `ClosePackage` falling back, and damaged, truncated and non-package files.
+- Verified on Linux (Debug and Release, Xvfb + llvmpipe): the smoke test's 21 cases (the Pack Test's 41 checks included), 10 examples and Marionette `--check` (107) pass; `DingoPack pack/list/verify` on Marionette's assets (41 files, 7.1 MB into 3.7 MB) and its refusals (usage, a non-package) by hand.
+
 ## Phase D: encryption and the key
 
 - **`Pack/ChaCha20.{h,cpp}`:** in-house, with the RFC 8439 test vectors in the Pack Test.

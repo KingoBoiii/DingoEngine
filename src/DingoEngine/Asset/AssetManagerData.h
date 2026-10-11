@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Dingo
@@ -72,6 +73,15 @@ namespace Dingo
 			bool Pending = false;
 		};
 
+		struct MountedPackage
+		{
+			std::string Name;
+			VfsMountId Mount = k_InvalidVfsMount;
+			std::vector<AssetHandle> Assets;
+			// The registrations Unpackage made, which ClosePackage removes.
+			std::unordered_set<AssetHandle> Created;
+		};
+
 		struct AssetManagerData
 		{
 			AssetManagerParams Params;
@@ -118,6 +128,7 @@ namespace Dingo
 			std::vector<AssetHandle> WatchList;
 			std::size_t WatchCursor = 0;
 			std::unordered_map<AssetHandle, CompanionWatch> Companions;
+			std::unordered_map<PackageHandle, MountedPackage> Packages;
 		};
 
 	}
