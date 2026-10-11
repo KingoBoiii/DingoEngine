@@ -26,7 +26,7 @@ and it lives in `examples/Hearthvale` beside the other examples.
 | Stability (P7) | Crash logs and dumps in the user-data folder of a game players install |
 | DingoUI (workstream U) | Every menu and the HUD, pad first |
 | SaveData, display modes (P8); buses, fog, translucency (on master, #110) | The whole valley in a save, music and ambience sliders, morning mist, greenhouse glass, the pond |
-| `OnFixedUpdate`, body lookup (P9) | Deterministic day simulation for `--check`; picking a villager by ray |
+| `OnFixedUpdate` (P9); body lookup (on master, #149) | Deterministic day simulation for `--check`; picking a villager by ray |
 | v0.9 | A moving sun with cascades, shadowed lamps, bloom on windows, rain and firefly particles, AO |
 
 ---
@@ -38,7 +38,7 @@ and it lives in `examples/Hearthvale` beside the other examples.
 | Area | Today | Anchor |
 |---|---|---|
 | Picking | `Scene::ScreenPointToRay(screenPos, viewportSize)` (top-left origin, primary perspective camera); `Ray::IntersectGroundPlane(height, outHit)` (false when parallel or behind) | `Scene.h:160`, `Core/Ray.h:24,40,53` |
-| Physics casts | `Physics3D::RayCast(ray, maxDistance, outHit)`, `ShapeCastSphere`, `OverlapSphere`. No body-to-entity lookup (v1.0 P9 adds it) | `Physics3D.h:120-131`, `PhysicsTypes3D.h:77-83` |
+| Physics casts | `Physics3D::RayCast(ray, maxDistance, outHit, filter)`, `ShapeCastSphere`, `OverlapSphere`, each with an optional `QueryFilter3D` (ignored bodies, layers, sensors); sensors and `Scene::GetEntityFromBody3D` / `GetSensorOverlaps` (#149) | `Physics3D.h:121-135`, `PhysicsTypes3D.h:99`, `Scene.h:262-265` |
 | Character | `CharacterController3DComponent { Radius 0.3, Height 1.8, StepHeight 0.3, MaxSlopeAngle 45 }`. The game applies gravity, sets velocity and fetches the controller every frame; `Scene::OnUpdate` steps it | `Components.h:574-585`, `CharacterController3D.h:38-95` |
 | Movement pattern | Candlewick's `Player::Update`: WASD, D-pad and stick on world axes, gravity by hand, yaw toward the move direction | `examples/Candlewick/src/Player.cpp:93-135` |
 | Follow camera | Candlewick's `CameraRig::Update`: a lagged focus plus a fixed view direction | `examples/Candlewick/src/CameraRig.cpp:110-139` |
@@ -56,8 +56,8 @@ and it lives in `examples/Hearthvale` beside the other examples.
 
 - **The loader reads only diffuse textures.** `MeshVertex` is position, normal and uv
   (`Mesh.h:12-17`). `AssignMaterial` creates a plain `Material` and sets slot 0 from the diffuse
-  texture path (`Model.cpp:160-172`). Embedded textures (`*0` paths) are skipped (`Model.cpp:91-100`,
-  #99). **Vertex colours and material base colours are dropped**, so a pack coloured that way loads
+  texture path (`Model.cpp:252-265`). Embedded GLB/FBX textures load since #149 (#99).
+  **Vertex colours and material base colours are dropped**, so a pack coloured that way loads
   white. Engine gap **E1** (§10).
 - **What works today**: a model whose material points at an **external PNG**, which is how KayKit
   ships its gradient atlases and how Kenney's kits reference `Textures/colormap.png`. *Marionette*
@@ -481,10 +481,10 @@ any `[FAIL]` fails CI.
 
 | # | Gap | Where it goes |
 |---|---|---|
-| E1 | The model loader drops material base colours and vertex colours (`Model.cpp:160-172`, `Mesh.h:12-17`); a colour-only pack loads white | v1.0 **P1**: `SubMesh::BaseColor` from `AI_MATKEY_BASE_COLOR`, falling back to `AI_MATKEY_COLOR_DIFFUSE`, which games pass as `MeshRendererComponent::Color` (vertex colours stay out: the 48 B vertex layout is frozen) |
+| E1 | The model loader drops material base colours and vertex colours (`Model.cpp:252-265`, `Mesh.h:12-17`); a colour-only pack loads white | v1.0 **P1**: `SubMesh::BaseColor` from `AI_MATKEY_BASE_COLOR`, falling back to `AI_MATKEY_COLOR_DIFFUSE`, which games pass as `MeshRendererComponent::Color` (vertex colours stay out: the 48 B vertex layout is frozen) |
 | E2 | v1.0 P5's static change detection compared only transforms and meshes; a watered tile changes only its colour | v1.0 **§2.6**, now comparing the whole draw state (transform, mesh id, colour, surface override, shadow mode) |
 | E3 | `Renderer2D::DrawText` has no word wrap; dialogue and tooltips need it | DingoUI's U0 (`2026-10-08-v1.0-game-ui-plan.md` §3.1): `Font::MeasureText` with wrap, shared by `DrawText` and DingoUI's `Text` |
-| E4 | No body-to-entity lookup | Already v1.0 P9 |
+| E4 | No body-to-entity lookup | Done on master (#149): `Scene::GetEntityFromBody3D` |
 | E5 | No fixed-step hook | Already v1.0 P9 (`OnFixedUpdate`); until then the director steps the scene itself, as *Marionette* does |
 | E6 | Cascades are stable for a still light only | Game-side mitigation (§8); an engine fix is post-1.0 unless H1 shows the stepped sun isn't enough |
 
