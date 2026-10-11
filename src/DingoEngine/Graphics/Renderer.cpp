@@ -18,17 +18,9 @@ namespace Dingo
 
 	namespace
 	{
-		// Resolves the "rest of the buffer" default. The stride has to come from the buffer's own
-		// format: assuming uint16 on a uint32 index buffer asks for twice the indices that
-		// exist. Unknown falls back to uint16, which is what CreateIndexBuffer defaults to.
 		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t firstIndex = 0)
 		{
-			if (indexCount != 0)
-				return indexCount;
-
-			const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
-			const uint64_t total = indexBuffer->GetByteSize() / stride;
-			return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
+			return indexCount != 0 ? indexCount : Renderer::GetIndexCount(indexBuffer, firstIndex);
 		}
 	}
 
@@ -642,6 +634,18 @@ namespace Dingo
 	/**************************************************
 	***		QUERIES									***
 	**************************************************/
+
+	uint32_t Renderer::GetIndexCount(GraphicsBuffer* indexBuffer, uint32_t firstIndex)
+	{
+		if (!indexBuffer)
+			return 0;
+
+		// The stride has to come from the buffer's own format: assuming uint16 on a uint32 index buffer
+		// asks for twice the indices that exist. Unknown falls back to uint16, CreateIndexBuffer's default.
+		const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
+		const uint64_t total = indexBuffer->GetByteSize() / stride;
+		return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
+	}
 
 	CommandList* Renderer::GetCommandList()
 	{
