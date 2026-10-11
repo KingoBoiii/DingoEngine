@@ -168,6 +168,9 @@ the cleared background). `Scene::SubmitLights` passes the first enabled one, in 
   before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
   fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the
   background is the clear colour, not fog: match the two, as `UseClearColor` does.
+- **Blend modes:** a lit material with `BlendMode::Additive` fogs toward black and one with
+  `BlendMode::Multiply` toward white, so the fog hides a glow instead of lighting it up; `Alpha` and
+  `Opaque` fog toward the fog's colour.
 - `Renderer3D::Statistics::Fogged` says whether the last scene was drawn with fog.
 
 The Lighting Test's `--fog` (or its Fog checkbox) fogs every mode into the clear colour, and its

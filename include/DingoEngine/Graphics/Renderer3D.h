@@ -494,7 +494,7 @@ namespace Dingo
 		struct LitMaterialData
 		{
 			glm::vec4 EmissiveColor{ 0.0f }; // rgb = colour
-			glm::vec4 Surface{ 0.0f };       // x = emissive strength, y = roughness, z = specular
+			glm::vec4 Surface{ 0.0f };       // x = emissive strength, y = roughness, z = specular, w = fog target: 0 FogColor, 1 black, 2 white
 		};
 
 		void PrepareLitMaterial(Material* material) const;

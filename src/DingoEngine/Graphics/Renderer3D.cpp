@@ -1164,6 +1164,11 @@ namespace Dingo
 
 		// Rebuilt every scene: SetRoughness and the other surface setters only change the
 		// material's params, never its uniform data.
+		// A fully fogged fragment must leave its target as the fog left it: Additive adds black to it and
+		// Multiply multiplies it by white.
+		const BlendMode blend = material->GetParams().Blend;
+		const float fogTarget = blend == BlendMode::Additive ? 1.0f : blend == BlendMode::Multiply ? 2.0f : 0.0f;
+
 		LitMaterialData data;
 		const glm::vec3& emissiveColor = material->GetEmissiveColor();
 		data.EmissiveColor = glm::vec4(IsFinite(emissiveColor) ? emissiveColor : glm::vec3(0.0f), 0.0f);
@@ -1171,7 +1176,7 @@ namespace Dingo
 			FiniteOr(material->GetEmissiveStrength(), 0.0f),
 			glm::clamp(FiniteOr(material->GetRoughness(), 0.5f), 0.0f, 1.0f),
 			std::max(FiniteOr(material->GetSpecular(), 0.0f), 0.0f),
-			0.0f);
+			fogTarget);
 
 		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
 		// frame, so a material drawn in several scenes of a frame only rewrites what changed.

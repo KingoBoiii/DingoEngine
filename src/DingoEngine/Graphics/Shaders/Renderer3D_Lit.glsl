@@ -102,7 +102,7 @@ layout(std140, binding = 0) uniform CameraData
 layout(std140, binding = 1) uniform MaterialData
 {
 	vec4 EmissiveColor; // rgb = colour
-	vec4 Surface;       // x = emissive strength, y = roughness, z = specular strength
+	vec4 Surface;       // x = emissive strength, y = roughness, z = specular strength, w = fog target: 0 FogColor, 1 black, 2 white
 };
 
 layout(binding = 2) uniform texture2D u_Albedo;
@@ -185,7 +185,12 @@ void main()
 	if (ShadowCounts.z != 0)
 		finalColor *= ShadowCascadeTint(v_WorldPosition);
 	if (FogParams.w > 0.5 && CameraPosition.w > 0.5)
-		finalColor = mix(finalColor, FogColor.rgb, FogFactor(distance(CameraPosition.xyz, v_WorldPosition)) * FogColor.a);
+	{
+		// What leaves the target as the fog left it under the material's blend mode: Additive adds
+		// nothing, Multiply multiplies by white.
+		vec3 fogTarget = Surface.w < 0.5 ? FogColor.rgb : vec3(Surface.w < 1.5 ? 0.0 : 1.0);
+		finalColor = mix(finalColor, fogTarget, FogFactor(distance(CameraPosition.xyz, v_WorldPosition)) * FogColor.a);
+	}
 	// Alpha is the mesh colour's alone, never an albedo map's. Only a translucent material's meshes
 	// are sorted and leave depth unwritten, so blend correctly.
 	o_Color = vec4(finalColor, v_Color.a);
