@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <format>
 #include <limits>
 
@@ -45,6 +46,11 @@ namespace
 	constexpr float k_FoxSpacing = 2.2f;
 
 	constexpr uint32_t k_ShadowLights = 8;
+
+	constexpr int32_t k_CullCheckWidth = 640;
+	constexpr int32_t k_CullCheckHeight = 360;
+	constexpr uint32_t k_MinCulledPercent = 85;
+	constexpr uint32_t k_CullSamples = 8;
 
 	enum Prop : int32_t { Crate, Pillar, Torch, Rock, Barrel, PropCount };
 	constexpr float k_CrateSize = 0.9f;
@@ -314,6 +320,8 @@ namespace Dingo
 		m_Perf = args.Get("perf").has_value();
 		if (auto frame = args.Get("frame"))
 			m_HeldFrame = static_cast<int64_t>(std::strtoll(std::string(*frame).c_str(), nullptr, 10));
+		if (auto frame = args.Get("cull-freeze"))
+			m_CullFreezeFrame = static_cast<int64_t>(std::strtoll(std::string(*frame).c_str(), nullptr, 10));
 	}
 
 	void ThroughputTest::Initialize()
@@ -500,6 +508,8 @@ namespace Dingo
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		PlaceCamera(m_Camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
+		if (m_CullFreezeFrame >= 0 && m_Frame == static_cast<uint64_t>(m_CullFreezeFrame))
+			renderer.SetCullingFrozen(true);
 
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
@@ -551,15 +561,18 @@ namespace Dingo
 		Check(stats.DroppedMeshes == 0, std::format("no mesh dropped (DroppedMeshes {})", stats.DroppedMeshes));
 		if (m_Mode == Mode::Skinned)
 		{
+			// A fox with every mesh culled takes nothing of the budget, so the foxes left decide how many drop.
 			const uint32_t budget = Application::Get().GetRenderer3D().GetSkinnedInstanceBudget();
-			const uint32_t expectedDropped = (m_Count > budget ? m_Count - budget : 0u) * m_FoxSubMeshes;
-			Check(stats.DroppedSkinnedDraws == expectedDropped && stats.SkinnedDraws + stats.DroppedSkinnedDraws == m_Count * m_FoxSubMeshes,
-				std::format("{} foxes: {} skinned draws, {} dropped past MaxSkinnedInstances ({})", m_Count, stats.SkinnedDraws, stats.DroppedSkinnedDraws, budget));
+			const uint32_t live = m_Count - stats.CulledSkinned / m_FoxSubMeshes;
+			const uint32_t expectedDropped = (live > budget ? live - budget : 0u) * m_FoxSubMeshes;
+			Check(stats.CulledSkinned % m_FoxSubMeshes == 0 && stats.DroppedSkinnedDraws == expectedDropped && stats.SkinnedDraws + stats.DroppedSkinnedDraws + stats.CulledSkinned == m_Count * m_FoxSubMeshes,
+				std::format("{} foxes: {} skinned draws, {} dropped past MaxSkinnedInstances ({}), {} culled", m_Count, stats.SkinnedDraws, stats.DroppedSkinnedDraws, budget, stats.CulledSkinned));
 		}
 		else
 		{
 			Check(stats.SubmittedMeshes == m_Count, std::format("every entity's mesh reaches a batch ({} of {})", stats.SubmittedMeshes, m_Count));
 		}
+		RunCullingChecks();
 
 		const uint64_t again = HashLayout(GenerateLayout(m_Mode, m_Count, m_Seed));
 		Check(again == m_LayoutHash, std::format("the same seed builds the same layout (0x{:016x})", m_LayoutHash));
@@ -575,6 +588,102 @@ namespace Dingo
 			std::format("the entities' transforms are the layout's (0x{:016x})", built.Get()));
 	}
 
+	void ThroughputTest::RunCullingChecks()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		// The skinned budget is the frame's, shared by the view and both check scenes; past it, culling
+		// frees instances for others, which is meant to change the picture.
+		if (m_Mode == Mode::Skinned && 3 * m_Count > renderer.GetSkinnedInstanceBudget())
+		{
+			DE_INFO("[Throughput] {} foxes: the culling check needs --count={} or fewer, the budget's third", m_Count, renderer.GetSkinnedInstanceBudget() / 3);
+			return;
+		}
+
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_CullTargets[i])
+				m_CullTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "ThroughputCullOff" : "ThroughputCullOn")
+					.SetWidth(k_CullCheckWidth)
+					.SetHeight(k_CullCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight));
+		PlaceCamera(camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
+		if (m_Mode == Mode::Skinned)
+		{
+			// The overview sees every fox; from among them, looking along a row, half are behind the camera.
+			camera.SetPosition({ 0.0f, 1.5f, 0.0f });
+			camera.SetTarget({ m_Extent, 0.5f, 0.2f * m_Extent });
+		}
+
+		const bool wasCulling = renderer.IsCullingEnabled();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer3D::Statistics stats[2];
+		for (int i = 0; i < 2; ++i)
+		{
+			renderer.SetCullingEnabled(i == 1);
+			Renderer::SetRenderTarget(m_CullTargets[i]);
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			m_Scene->SubmitLights(renderer);
+			m_Scene->RenderEntities3D(renderer);
+			renderer.EndScene();
+			stats[i] = renderer.GetStatistics();
+		}
+		Renderer::SetRenderTarget(previous);
+		renderer.SetCullingEnabled(wasCulling);
+
+		const uint32_t culled = stats[1].CulledMeshes + stats[1].CulledSkinned;
+		Check(stats[0].CulledMeshes + stats[0].CulledSkinned + stats[0].CulledCasters == 0, "with culling off, nothing is culled");
+		if (m_Mode == Mode::Skinned)
+			Check(stats[1].CulledSkinned > 0 && stats[1].SkinnedDraws > 0, std::format("a view along a row culls the foxes behind it ({} culled, {} drawn)", stats[1].CulledSkinned, stats[1].SkinnedDraws));
+		if (m_Mode == Mode::Shadow)
+			Check(stats[1].CulledCasters > 0 && stats[1].ShadowCasters > 0, std::format("casters reaching no shadow view are culled ({} culled, {} drawn into the atlas)", stats[1].CulledCasters, stats[1].ShadowCasters));
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_CullTargets[0]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				m_CullOffPixels = pixels.Data;
+		});
+		m_CullTargets[1]->GetAttachment(0)->ReadPixels([this, alive, culled](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			size_t differing = 0;
+			for (size_t i = 0; i < pixels.Data.size() && i < m_CullOffPixels.size(); i += 4)
+				differing += std::memcmp(&pixels.Data[i], &m_CullOffPixels[i], 4) != 0 ? 1 : 0;
+			Check(!pixels.Data.empty() && pixels.Data.size() == m_CullOffPixels.size() && differing == 0,
+				std::format("culling ({} meshes) changes no pixel of the view ({} of {} differ)", culled, differing, pixels.Data.size() / 4));
+		});
+
+		if (!IsLap(m_Mode))
+			return;
+
+		// The target is the lap's average, over the frames visible_pct samples; one frame can sit
+		// anywhere around it.
+		uint64_t lapCulled = 0;
+		Renderer::SetRenderTarget(m_CullTargets[1]);
+		for (uint32_t sample = 0; sample < k_CullSamples; ++sample)
+		{
+			PlaceCamera(camera, k_WarmupFrames + sample * k_MeasuredFrames / k_CullSamples);
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			m_Scene->SubmitLights(renderer);
+			m_Scene->RenderEntities3D(renderer);
+			renderer.EndScene();
+			lapCulled += renderer.GetStatistics().CulledMeshes;
+		}
+		Renderer::SetRenderTarget(previous);
+		const double lapPercent = 100.0 * static_cast<double>(lapCulled) / (static_cast<double>(k_CullSamples) * m_Count);
+		Check(lapPercent >= k_MinCulledPercent, std::format("over the lap the camera's view culls at least {}% of the meshes ({:.1f}% over {} frames)", k_MinCulledPercent,
+			lapPercent, k_CullSamples));
+	}
+
 	void ThroughputTest::RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats)
 	{
 		m_PerfFrameMs += 1000.0 * static_cast<double>(deltaTime);
@@ -583,6 +692,7 @@ namespace Dingo
 		m_PerfEndSceneMs += endSceneMs;
 		m_PerfDraws += static_cast<double>(stats.DrawCalls);
 		m_PerfVertices += static_cast<double>(stats.VertexCount);
+		m_PerfCulled += static_cast<double>(stats.CulledMeshes + stats.CulledSkinned);
 		m_PerfDropped = (std::max)(m_PerfDropped, stats.DroppedMeshes + stats.DroppedSkinnedDraws);
 		for (const GpuTimerStats& timer : Renderer::GetGpuTimers())
 			m_PerfGpuMs[TimerKey(timer.Name)] += static_cast<double>(timer.LastMs);
@@ -591,9 +701,9 @@ namespace Dingo
 
 		m_PerfDone = true;
 		const double frames = static_cast<double>(m_PerfFrames);
-		m_PerfResult = std::format("mode={} count={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f}",
+		m_PerfResult = std::format("mode={} count={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}",
 			ModeName(m_Mode), m_Count, m_PerfFrameMs / frames, m_PerfUpdateMs / frames, m_PerfRenderEntitiesMs / frames, m_PerfEndSceneMs / frames,
-			m_PerfDraws / frames, m_PerfVertices / frames, m_PerfDropped, IsLap(m_Mode) ? EstimateVisiblePercent() : 100.0f);
+			m_PerfDraws / frames, m_PerfVertices / frames, m_PerfDropped, IsLap(m_Mode) ? EstimateVisiblePercent() : 100.0f, 100.0 * m_PerfCulled / frames / m_Count);
 		for (const auto& [name, total] : m_PerfGpuMs)
 			m_PerfResult += std::format(" gpu_{}_ms={:.3f}", name, total / frames);
 		DE_INFO("[PERF] throughput {}", m_PerfResult);
@@ -601,6 +711,12 @@ namespace Dingo
 
 	void ThroughputTest::Cleanup()
 	{
+		if (m_CullFreezeFrame >= 0)
+			Application::Get().GetRenderer3D().SetCullingFrozen(false);
+		for (Framebuffer*& target : m_CullTargets)
+			DestroyAndDelete(target);
+		m_CullOffPixels.clear();
+
 		m_Renderables.clear();
 		delete m_Scene;
 		m_Scene = nullptr;
@@ -646,12 +762,12 @@ namespace Dingo
 
 		ImGui::Text("%u entities, seed %llu, layout 0x%016llx", m_Count, static_cast<unsigned long long>(m_Seed), static_cast<unsigned long long>(m_LayoutHash));
 		ImGui::Text("Frame %.2f ms, RenderEntities3D %.3f ms, EndScene %.3f ms", m_RollingFrameMs, m_RollingRenderMs, m_RollingEndSceneMs);
-		ImGui::Text("%u draws, %u meshes, %u vertices, %u dropped", m_LastStats.DrawCalls, m_LastStats.SubmittedMeshes, m_LastStats.VertexCount,
-			m_LastStats.DroppedMeshes + m_LastStats.DroppedSkinnedDraws);
+		ImGui::Text("%u draws, %u meshes, %u vertices, %u dropped, %u culled", m_LastStats.DrawCalls, m_LastStats.SubmittedMeshes, m_LastStats.VertexCount,
+			m_LastStats.DroppedMeshes + m_LastStats.DroppedSkinnedDraws, m_LastStats.CulledMeshes + m_LastStats.CulledSkinned);
 		if (m_Mode == Mode::Skinned)
 			ImGui::Text("%u skinned draws, %u dropped", m_LastStats.SkinnedDraws, m_LastStats.DroppedSkinnedDraws);
 		if (m_Mode == Mode::Shadow)
-			ImGui::Text("%u shadow views, %u casters, %u shadow draws", m_LastStats.ShadowViews, m_LastStats.ShadowCasters, m_LastStats.ShadowDrawCalls);
+			ImGui::Text("%u shadow views, %u casters (%u culled), %u shadow draws", m_LastStats.ShadowViews, m_LastStats.ShadowCasters, m_LastStats.CulledCasters, m_LastStats.ShadowDrawCalls);
 		if (m_Perf)
 			ImGui::TextWrapped("%s", m_PerfDone ? m_PerfResult.c_str() : std::format("--perf: frame {} of {}", m_Frame, k_WarmupFrames + k_MeasuredFrames).c_str());
 

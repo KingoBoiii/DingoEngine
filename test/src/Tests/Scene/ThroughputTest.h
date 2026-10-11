@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,9 @@ namespace Dingo
 	// The layout comes from the seed and the camera from the frame index, never the clock, so two
 	// runs draw the same frames. --perf logs one [PERF] line after 120 warm-up frames, the means of
 	// the next 600; time it with the test app's --no-vsync. --frame=N holds the camera where frame N puts it.
+	//
+	// The first frame also draws its view twice more, with Renderer3D's culling off and on, and checks by
+	// readback that the two match; mixed and shadow must cull at least 85% of their meshes.
 	class ThroughputTest : public GraphicsTest
 	{
 	public:
@@ -74,6 +78,7 @@ namespace Dingo
 		Transform3DComponent MakeTransform(const Placement& placement) const;
 		float EstimateVisiblePercent() const;
 		void RunChecks(const Renderer3D::Statistics& stats);
+		void RunCullingChecks();
 		void RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats);
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
@@ -87,6 +92,7 @@ namespace Dingo
 		bool     m_Perf = false;
 		bool     m_ArgsRead = false;
 		int64_t  m_HeldFrame = -1; // --frame=N: the camera stays where frame N puts it
+		int64_t  m_CullFreezeFrame = -1; // --cull-freeze=N: culling keeps frame N's view while the camera flies on
 
 		Layout m_Layout;
 		std::vector<Mesh*> m_Props;
@@ -106,6 +112,9 @@ namespace Dingo
 		bool     m_ChecksDone = false;
 
 		Renderer3D::Statistics m_LastStats;
+		Framebuffer* m_CullTargets[2] = {}; // culling off, on
+		std::vector<uint8_t> m_CullOffPixels;
+		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		double m_RollingFrameMs = 0.0;
 		double m_RollingRenderMs = 0.0;
 		double m_RollingEndSceneMs = 0.0;
@@ -118,6 +127,7 @@ namespace Dingo
 		double   m_PerfEndSceneMs = 0.0;
 		double   m_PerfDraws = 0.0;
 		double   m_PerfVertices = 0.0;
+		double   m_PerfCulled = 0.0;
 		uint32_t m_PerfDropped = 0;
 		std::map<std::string, double> m_PerfGpuMs;
 		std::string m_PerfResult;

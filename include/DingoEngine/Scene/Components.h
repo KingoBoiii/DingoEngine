@@ -410,6 +410,9 @@ namespace Dingo
 		// Bit mask of caster groups; a light casts the mesh only when it shares a bit with the
 		// light's ShadowCasterGroups.
 		uint32_t ShadowGroups = 1;
+		// Past this distance from a perspective camera the mesh is neither drawn nor casts; 0 never.
+		// Renderer3D culls what is outside the view by itself.
+		float CullDistance = 0.0f;
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;
@@ -430,6 +433,7 @@ namespace Dingo
 		bool Visible = true;
 		ShadowCasting Shadows = ShadowCasting::On;
 		uint32_t ShadowGroups = 1; // see MeshRendererComponent
+		float CullDistance = 0.0f; // see MeshRendererComponent; the animator still runs while culled
 
 		SkinnedMeshRendererComponent() = default;
 		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;

@@ -145,7 +145,7 @@ namespace Dingo
 		**************************************************/
 
 		static void Upload(GraphicsBuffer* buffer);
-		static void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size);
+		static void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0);
 
 		/**************************************************
 		***		CLEAR									***

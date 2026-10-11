@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
+#include "DingoEngine/Graphics/Frustum.h"
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Pipeline.h"
@@ -12,6 +13,7 @@
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -42,10 +44,10 @@ namespace Dingo
 
 	struct Renderer3DCapabilities
 	{
-		// Capacity of one batch, i.e. one indexed draw. A box is 24 verts / 36 indices and
-		// a default sphere ~289 verts / 1536 indices. A material that outgrows a batch
-		// spills into another one; only a single mesh too large for an empty batch is
-		// dropped, with a warning.
+		// The most one indexed draw takes. A box is 24 verts / 36 indices and a default sphere
+		// ~289 verts / 1536 indices. A material whose meshes in view outgrow one draw spills into
+		// another; only a single mesh larger than one draw is dropped, with a warning. Every
+		// draw of a scene comes from one upload arena that grows to what the busiest frame needs.
 		uint32_t MaxVertices = 65536;
 		uint32_t MaxIndices = 98304;
 
@@ -138,10 +140,10 @@ namespace Dingo
 
 	// A batched, forward-lit mesh renderer — the 3D sibling of Renderer2D.
 	//
-	// Between BeginScene()/EndScene() it groups submitted meshes BY MATERIAL,
-	// transforming each into a per-material vertex/index batch on the CPU, then issues
-	// one indexed draw per batch on EndScene() (each from its own pooled buffer).
-	// Meshes with no explicit material use the built-in lit default material.
+	// Between BeginScene()/EndScene() it records the submitted meshes. EndScene() culls them
+	// against the camera's view and each shadow view (Frustum.h), transforms what is left on the
+	// CPU into one vertex/index batch per material, uploads the scene in one go, and issues one
+	// indexed draw per batch. Meshes with no explicit material use the built-in lit default material.
 	// Depth testing is enabled (the swap-chain carries a depth attachment), so meshes
 	// occlude correctly regardless of submission order. Meshes with a translucent material
 	// (MaterialParams::Translucent) are the exception: they draw after every opaque one, static
@@ -276,8 +278,16 @@ namespace Dingo
 		// buffer, which has room for this many writes a frame; later scenes draw with stale lighting.
 		static constexpr uint32_t k_MaxScenesPerFrame = 32;
 
-		// Appends a mesh to the batch for the given material (null => the built-in
-		// lit default), transformed into world space on the CPU. The vertex stream is
+		// Adds a mesh to the scene's batch for the given material (null => the built-in lit
+		// default); EndScene culls it and transforms what is drawn into world space on the CPU, so the
+		// mesh must stay alive and unchanged until then. It is culled when its bounds (Mesh::GetBoundsMin/Max
+		// placed by transform) lie outside the camera's view, and, for a perspective camera, when
+		// cullDistance is above 0 and the camera is farther than that from its bounds; a culled caster
+		// still casts into any shadow view its bounds reach, unless it is past its cullDistance. The
+		// near plane never culls (D3D clamps depth there instead of clipping), and the far plane only
+		// meshes whose material depth-tests with Less, without depth bias, into a target with depth,
+		// which can't draw past it on any backend. A non-affine transform is never culled, nor, by the
+		// camera, a mesh whose material isn't FrustumCulled. The vertex stream is
 		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
 		// (3, the mesh's UVs, for custom materials that sample a texture). No-op outside a
 		// Begin/EndScene pair. Every material casts through the renderer's own depth-only pass, so a
@@ -291,7 +301,7 @@ namespace Dingo
 		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
 		// wrapped around a small one, can blend in the wrong order. With ShadowsOnly it draws nothing
 		// lit, so it batches like an opaque mesh.
-		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
+		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f);
 
 		// Convenience primitives drawn with the renderer's built-in unit meshes
 		// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
@@ -325,7 +335,9 @@ namespace Dingo
 		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
 		// uploads its palette for each; an instance with opaque and translucent meshes is drawn lit in
 		// both passes. That is why the skin buffer holds three writes per instance.
-		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
+		// Culled as SubmitMesh culls, by the rest pose's bounds padded on every side by half their
+		// longest side for the animation: a pose reaching farther can be culled while in view. An instance with every mesh culled from every pass takes nothing of the budget.
+		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f);
 
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
 		// k_MaxSkinnedInstancesLimit.
@@ -351,15 +363,27 @@ namespace Dingo
 		// shared emissive, Roughness or Specular.
 		Material* GetDefaultMaterial() const { return m_Material; }
 
+		// Debugging the cull. Off, every mesh is drawn and casts into every shadow view, as before
+		// culling existed: what is drawn must look the same either way. Frozen, each scene of a frame
+		// (by the order scenes begin) keeps culling against the camera it had when frozen, so a camera
+		// that flies out shows what the frozen view kept; distance culling measures from that camera too.
+		void SetCullingEnabled(bool enabled) { m_CullingEnabled = enabled; }
+		bool IsCullingEnabled() const { return m_CullingEnabled; }
+		void SetCullingFrozen(bool frozen);
+		bool IsCullingFrozen() const { return m_CullingFrozen; }
+
 		// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
 		// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
 			uint32_t DrawCalls = 0;       // one indexed draw per non-empty batch; a material may take several
-			uint32_t SubmittedMeshes = 0; // meshes accepted into a batch this scene
-			uint32_t DroppedMeshes = 0;   // meshes too large for an empty batch
-			uint32_t VertexCount = 0;     // vertices batched this scene
-			uint32_t IndexCount = 0;      // indices batched this scene
+			uint32_t SubmittedMeshes = 0; // static meshes accepted this scene, culled ones included, and skinned meshes drawn
+			uint32_t DroppedMeshes = 0;   // meshes larger than one draw
+			uint32_t CulledMeshes = 0;    // static meshes the camera's view left out (or past their cull distance); ShadowsOnly ones aren't counted
+			uint32_t CulledSkinned = 0;   // skinned meshes the same
+			uint32_t CulledCasters = 0;   // casting meshes, static and skinned, that reached no shadow view of a scene that drew shadows
+			uint32_t VertexCount = 0;     // vertices transformed and uploaded this scene, for the lit and shadow passes
+			uint32_t IndexCount = 0;      // indices uploaded this scene
 			uint32_t DirectionalLights = 0; // directional lights the scene was lit by, the default light included
 			uint32_t LocalLights = 0;       // point and spot lights the scene was lit by
 			uint32_t CulledLights = 0;      // point and spot lights whose range can't reach anything in view
@@ -506,25 +530,23 @@ namespace Dingo
 		// renderer draws (Material::SetSceneUniformBuffer).
 		GraphicsBuffer* m_SceneUniformBuffer = nullptr;
 
-		// One batch: capped at the capabilities, drawn with one indexed draw.
+		// The translucent pass packs its meshes in sorted order before they join the scene's upload.
 		struct MeshChunk
 		{
 			std::vector<Vertex> Vertices;
 			std::vector<uint32_t> Indices;
 		};
 
-		// Chunks past ChunksInUse are storage kept from a busier scene, so a steady frame
-		// doesn't reallocate.
 		struct MaterialBatch
 		{
-			std::vector<MeshChunk> Chunks;
-			uint32_t ChunksInUse = 0;
 			bool Enqueued = false; // checked and, unless SkinnedOnly or Translucent, in m_DrawOrder for the scene in progress
 			// Its shader skins (has a SkinData block), so its meshes draw with the default material instead.
 			bool SkinnedOnly = false;
 			// Its meshes go to the translucent pass, so the batch itself stays empty.
 			bool Translucent = false;
 			uint32_t IdleScenes = 0;
+			bool Usable = false; // EndScene: its material can be drawn
+			uint32_t Slot = ~0u; // EndScene: its m_DrawSlots entry; a ShadowsOnly batch's meshes go to the shadow-only slots
 		};
 		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
 		struct BatchKey
@@ -551,24 +573,130 @@ namespace Dingo
 		// invisible for depth-tested opaques, but not for anything blended.
 		std::vector<BatchKey> m_DrawOrder;
 
-		// The scene's non-empty chunks, uploaded before any pass draws them: the shadow pass needs
-		// them before the lit pass does.
+		// A SubmitMesh call, kept until EndScene culls and transforms it.
+		struct StaticSubmission
+		{
+			const Dingo::Mesh* Mesh = nullptr;
+			glm::mat4 Transform{ 1.0f };
+			glm::vec4 Color{ 1.0f };
+			MaterialBatch* Batch = nullptr; // the batch it draws in (the default material's for a SkinnedOnly one); null for a translucent mesh
+			Dingo::Material* Material = nullptr; // what it draws with
+			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
+			float CullDistance = 0.0f;
+			int32_t Translucent = -1; // into m_TranslucentSubmissions
+
+			// Worked out by EndScene.
+			AABB Bounds;               // world bounds, padded for rounding; empty without vertices
+			bool Bounded = false;      // false for a non-affine transform, which is never culled
+			bool PastDistance = false;
+			uint32_t Chunk = ~0u;      // the m_SceneChunks entry it is transformed into, ~0u when culled
+			uint32_t ChunkVertex = 0;  // where in that chunk
+			uint32_t ChunkIndex = 0;
+		};
+		std::vector<StaticSubmission> m_StaticSubmissions;
+
+		// One draw's run of a slot's meshes in the scene's upload. A slot is a batch of the draw order,
+		// or the shadow pass's batch of the casters the camera culled, one per caster mask.
+		struct SceneChunk
+		{
+			uint32_t Slot = 0;
+			uint32_t FirstVertex = 0; // in the scene's upload
+			uint32_t FirstIndex = 0;
+			uint32_t VertexCount = 0;
+			uint32_t IndexCount = 0;
+		};
+		struct DrawSlot
+		{
+			BatchKey Key; // a shadow-only slot's has no material and ShadowCasting::ShadowsOnly
+			uint32_t OpenChunk = ~0u;
+			std::vector<uint32_t> Chunks;
+		};
+		std::vector<SceneChunk> m_SceneChunks;
+		std::vector<DrawSlot> m_DrawSlots;
+		uint32_t m_UsedDrawSlots = 0;
+		uint32_t AcquireDrawSlot(const BatchKey& key);
+		// Places a mesh's vertices and indices at the end of the slot's open chunk, or a new one.
+		void PlaceInSlot(uint32_t slot, uint32_t vertexCount, uint32_t indexCount, uint32_t& chunk, uint32_t& chunkVertex, uint32_t& chunkIndex);
+
+		// The scene's draws, all from the upload arena: the shadow pass needs them before the lit pass does.
 		struct ChunkDraw
 		{
 			BatchKey Key;
-			uint32_t Buffer = 0;   // into the pooled vertex/index buffers
+			uint32_t FirstIndex = 0; // in the arena
 			uint32_t IndexCount = 0;
 			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
 		};
 		std::vector<ChunkDraw> m_ChunkDraws;
 
-		uint32_t UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex);
+		// ── Culling ───────────────────────────────────────────────────────────
 
-		// A mesh of the translucent pass. A static one's vertices are transformed at submission into
+		struct CullView
+		{
+			glm::mat4 ViewProjection{ 1.0f };
+			glm::vec4 CameraPosition{ 0.0f };
+		};
+		// A shadow-casting light's views, so a caster tests a local light's range before its faces.
+		struct ShadowCullLight
+		{
+			glm::vec3 Position{ 0.0f };
+			float Reach = 0.0f; // the farthest any of its views reaches from Position; 0 for the cascades
+			uint32_t CasterGroups = 0xFFFFFFFFu;
+			uint32_t FirstView = 0;
+			uint32_t ViewCount = 0;
+		};
+
+		CullView GetCullView();
+		void PrepareSceneBounds(const CullView& view);
+		void PrepareShadowCulling();
+		bool ReachesShadowView(const AABB& bounds, uint32_t shadowGroups) const;
+		bool CameraSees(const AABB& bounds, const Material* material) const;
+		void LayoutStaticSubmissions(bool shadows);
+		void CullSkinnedSubmissions(bool shadows);
+		void TransformStaticSubmissions();
+
+		bool m_CullingEnabled = true;
+		bool m_CullingFrozen = false;
+		std::vector<std::optional<CullView>> m_FrozenCullViews; // per scene of the frame
+		std::array<glm::vec4, Frustum::PlaneCount> m_CullPlanes{};
+		bool m_CullFarPlane = false; // the scene's target has a depth for the far plane to cull against
+		std::vector<Frustum> m_ShadowCullViews;
+		std::vector<ShadowCullLight> m_ShadowCullLights;
+
+		// ── The upload arena ──────────────────────────────────────────────────
+
+		// One vertex and one (32-bit) index buffer that every scene of a frame appends to, grown to the
+		// busiest frame. Indices count from the arena's start, so no draw needs a base vertex. A frame's
+		// writes reach the GPU in order with its draws, so the next frame can start over at 0.
+		GraphicsBuffer* m_ArenaVertexBuffer = nullptr;
+		GraphicsBuffer* m_ArenaIndexBuffer = nullptr;
+		uint64_t m_ArenaVertexCapacity = 0;
+		uint64_t m_ArenaIndexCapacity = 0;
+		uint64_t m_ArenaVertexUsed = 0;
+		uint64_t m_ArenaIndexUsed = 0;
+		uint64_t m_ArenaFrame = ~0ull;
+		// Replaced buffers, kept until frames that drew from them are done.
+		std::vector<std::pair<GraphicsBuffer*, uint64_t>> m_RetiredArenaBuffers;
+		std::vector<Vertex> m_SceneVertices;   // the scene's upload, sized to the busiest scene
+		std::vector<uint32_t> m_SceneIndices;
+		uint32_t m_SceneVertexCount = 0;
+		uint32_t m_SceneIndexCount = 0;
+		uint32_t m_ArenaVertexBase = 0; // where this scene's upload starts in the arena
+		uint32_t m_ArenaIndexBase = 0;
+		static constexpr uint64_t k_ArenaRetireFrames = 8;
+		// Room in the arena for this scene's upload, at most this much, from m_ArenaVertexBase/IndexBase.
+		void ReserveArena(uint64_t vertices, uint64_t indices);
+		// Appends a packed chunk to the scene's upload; returns its first index in the arena.
+		uint32_t AppendToScene(const MeshChunk& chunk);
+		void UploadScene();
+
+		// A mesh of the translucent pass. A static one's vertices are transformed by EndScene into
 		// m_TranslucentVertices, its indices counted from its first vertex.
 		struct TranslucentSubmission
 		{
 			Dingo::Material* Material = nullptr;
+			int32_t Static = -1; // into m_StaticSubmissions
+			bool Culled = false;
 			uint32_t FirstVertex = 0;
 			uint32_t VertexCount = 0;
 			uint32_t FirstIndex = 0;
@@ -579,21 +707,23 @@ namespace Dingo
 			float SortKey = 0.0f; // larger is farther from the camera
 		};
 		// One draw of the translucent pass, far to near: a run of static meshes of one material that
-		// lie back to back in one pooled buffer, or one skinned submission.
+		// lie back to back in the arena, or one skinned submission.
 		struct TranslucentDraw
 		{
 			Dingo::Material* Material = nullptr;
 			int32_t Skinned = -1;
-			uint32_t Buffer = 0;
-			uint32_t FirstIndex = 0;
+			uint32_t Chunk = 0;      // into m_TranslucentChunks
+			uint32_t FirstIndex = 0; // in its chunk, then in the arena
 			uint32_t IndexCount = 0;
 			uint32_t Meshes = 0;
 		};
 
 		float TranslucentSortKey(const glm::vec3& point) const;
-		// After the opaque uploads: sorts the scene's translucent meshes, packs them (and, for a
-		// shadowed scene, the casting ones again in m_ChunkDraws) into pooled buffers.
-		void PrepareTranslucentPass(uint32_t& batchIndex, bool shadows);
+		// The opaque path's rule for lit materials, checked once a material a scene.
+		bool IsTranslucentDrawable(Dingo::Material* material);
+		// After the opaque layout: sorts the scene's translucent meshes in view, packs them (and, for a
+		// shadowed scene, the casting ones again in m_ChunkDraws) onto the end of the scene's upload.
+		void PrepareTranslucentPass(bool shadows);
 		void DrawTranslucentPass(Texture* shadowAtlas);
 
 		std::vector<TranslucentSubmission> m_TranslucentSubmissions;
@@ -602,12 +732,6 @@ namespace Dingo
 		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
 		std::vector<TranslucentDraw> m_TranslucentDraws;
 		std::vector<std::pair<Dingo::Material*, bool>> m_TranslucentMaterials; // checked this scene: drawable or not
-
-		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
-		// on demand and reused. Each batch gets its own buffer, so no shared buffer is
-		// re-uploaded mid-frame.
-		std::vector<GraphicsBuffer*> m_BatchVertexBuffers;
-		std::vector<GraphicsBuffer*> m_BatchIndexBuffers;
 
 		Mesh* m_BoxMesh = nullptr;
 		Mesh* m_SphereMesh = nullptr;
@@ -647,6 +771,13 @@ namespace Dingo
 			ShadowCasting Shadows = ShadowCasting::On;
 			uint32_t ShadowGroups = 1;
 			bool Translucent = false; // drawn lit by the translucent pass
+			float CullDistance = 0.0f;
+			AABB Bounds;     // the rest pose's, placed and padded by half per axis (the casters' box); empty without vertices
+			AABB CullBounds; // the rest box padded by half its longest side on every axis, which culling tests
+			bool Bounded = false;
+			bool PastDistance = false;
+			bool CameraCulled = false;
+			bool ShadowDrawn = false;
 		};
 
 		// A lit material's copy on the skinned shader, synced from it before every draw. Keyed by
@@ -682,6 +813,7 @@ namespace Dingo
 		std::unordered_map<uint64_t, SkinnedTwin> m_SkinnedTwins;
 
 		std::vector<uint8_t> m_SkinnedInstanceDropped; // per instance of the scene: past the frame's budget
+		std::vector<uint8_t> m_SkinnedInstanceLive;    // per instance of the scene: a mesh of it is drawn in some pass
 		uint64_t m_SkinnedFrameIndex = 0;
 		uint32_t m_SkinnedInstancesThisFrame = 0;
 		bool m_SkinnedBudgetWarned = false;
@@ -801,11 +933,11 @@ namespace Dingo
 		uint64_t m_SceneFrame = ~0ull;
 		uint32_t m_SceneOfFrame = 0;
 
-		// Where the scene's casters are, so a cascade's depth range reaches back to every one of them.
+		// Where the scene's casters are, so a cascade's depth range reaches back to every one of them,
+		// culled or not: exact for static meshes, as if every vertex were transformed.
 		glm::vec3 m_CasterMin{ 0.0f };
 		glm::vec3 m_CasterMax{ 0.0f };
 		bool m_HasCasters = false;
-		uint32_t m_StaticCasters = 0;
 
 		GraphicsBuffer* m_ShadowDataBuffer = nullptr;
 		GraphicsBuffer* m_ShadowViewsBuffer = nullptr;

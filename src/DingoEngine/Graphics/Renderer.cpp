@@ -467,12 +467,12 @@ namespace Dingo
 		s_Data->CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
 	}
 
-	void Renderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size)
+	void Renderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)
 	{
 		if (s_Data->FrameSkipped)
 			return;
 
-		s_Data->CommandList->UploadBuffer(buffer, data, size);
+		s_Data->CommandList->UploadBuffer(buffer, data, size, offset);
 	}
 
 	/**************************************************

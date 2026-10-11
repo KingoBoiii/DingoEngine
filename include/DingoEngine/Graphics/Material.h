@@ -29,6 +29,11 @@ namespace Dingo
 		// Depth-tested but never depth-writing, whatever DepthWrite says, so what draws after it
 		// behind it still shows through. It blends with Blend, the "over" of BlendMode::Alpha by default.
 		bool         Translucent           = false;
+		// Renderer3D leaves out a mesh whose bounds the camera can't see. A vertex shader that moves
+		// vertices off them (wind, waves, outlines) turns this off. Shadows come from the renderer's own
+		// depth pass, which never runs the material's shader, so casters are culled either way, and so
+		// is a mesh past its CullDistance.
+		bool         FrustumCulled         = true;
 		// How many SetUniform uploads a frame the material's volatile uniform buffer holds on Vulkan
 		// (GraphicsBufferParams::MaxWritesPerFrame): one a scene for a material drawn in many scenes
 		// a frame with different params.
@@ -59,6 +64,7 @@ namespace Dingo
 		MaterialParams& SetDepthCompare(DepthCompare compare)             { DepthFunction = compare; return *this; }
 		MaterialParams& SetDepthBias(int32_t constant, float slopeScaled) { DepthBias = constant; SlopeScaledDepthBias = slopeScaled; return *this; }
 		MaterialParams& SetTranslucent(bool translucent)                  { Translucent = translucent; return *this; }
+		MaterialParams& SetFrustumCulled(bool culled)                     { FrustumCulled = culled; return *this; }
 		MaterialParams& SetUniformWritesPerFrame(uint32_t writes)         { UniformWritesPerFrame = writes; return *this; }
 		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
