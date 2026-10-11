@@ -1330,6 +1330,7 @@ namespace Dingo
 		const std::string fileName = filepath.filename().string();
 		std::string line;
 		std::vector<std::string> tokens;
+		std::vector<AnimationClip*> added;
 		for (uint32_t number = 1; std::getline(file, line); ++number)
 		{
 			if (number == 1 && line.starts_with("\xEF\xBB\xBF"))
@@ -1378,11 +1379,13 @@ namespace Dingo
 				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, tokens[1], tokens[0], clip->GetDuration());
 
 			std::string payload = JoinPayload(std::span<const std::string>(tokens).subspan(3));
-			if (dots == std::string_view::npos)
-				clip->AddEvent(begin, std::move(tokens[2]), std::move(payload));
-			else
-				clip->AddEventRange(begin, end, std::move(tokens[2]), std::move(payload));
+			const bool range = dots != std::string_view::npos;
+			clip->AppendEvent(begin, range ? end : begin, range, std::move(tokens[2]), std::move(payload));
+			if (std::find(added.begin(), added.end(), clip) == added.end())
+				added.push_back(clip);
 		}
+		for (AnimationClip* clip : added)
+			clip->RebuildEventMarks();
 		return true;
 	}
 

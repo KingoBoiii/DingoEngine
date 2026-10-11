@@ -174,16 +174,21 @@ namespace Dingo
 
 	void AnimationClip::AddEvent(float time, std::string name, std::string payload)
 	{
-		m_Events.push_back({ std::move(name), time, time, false, std::move(payload) });
+		AppendEvent(time, time, false, std::move(name), std::move(payload));
 		RebuildEventMarks();
 	}
 
 	void AnimationClip::AddEventRange(float begin, float end, std::string name, std::string payload)
 	{
+		AppendEvent(begin, end, true, std::move(name), std::move(payload));
+		RebuildEventMarks();
+	}
+
+	void AnimationClip::AppendEvent(float begin, float end, bool range, std::string name, std::string payload)
+	{
 		if (end < begin)
 			std::swap(begin, end);
-		m_Events.push_back({ std::move(name), begin, end, true, std::move(payload) });
-		RebuildEventMarks();
+		m_Events.push_back({ std::move(name), begin, end, range, std::move(payload) });
 	}
 
 	void AnimationClip::ClearEvents()

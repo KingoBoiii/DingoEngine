@@ -123,6 +123,9 @@ namespace Dingo
 
 	private:
 		static uint64_t AllocateId();
+		// Adds an event without rebuilding the marks, for Model::LoadEvents, which rebuilds each clip
+		// once at the end.
+		void AppendEvent(float begin, float end, bool range, std::string name, std::string payload);
 		void RebuildEventMarks();
 
 		// A model reload: the source's keys and events under this clip's name, and a new id.
