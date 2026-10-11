@@ -8,7 +8,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iterator>
 #include <limits>
+#include <memory>
 
 namespace
 {
@@ -53,6 +58,13 @@ void main()
     o_Color = vec4(tex.rgb * (0.3 + diffuse * 0.7), tex.a);
 }
 )";
+
+	constexpr const char* k_ColorQuadsPath = "assets/models/ColorQuads/ColorQuads.gltf";
+
+	bool NearColor(const glm::vec4& a, const glm::vec4& b)
+	{
+		return glm::all(glm::lessThanEqual(glm::abs(a - b), glm::vec4(1e-4f)));
+	}
 }
 
 namespace Dingo
@@ -82,6 +94,54 @@ namespace Dingo
 		}
 
 		LoadModel(m_PathBuf);
+		RunBaseColorChecks();
+	}
+
+	void Model3DTest::RunBaseColorChecks()
+	{
+		m_Checks.clear();
+
+		{
+			std::unique_ptr<Model> model(Model::LoadFromFile(k_ColorQuadsPath));
+			const bool loaded = model && model->GetSubMeshCount() == 2;
+			Check(loaded && NearColor(model->GetSubMeshes()[0].BaseColor, { 0.8f, 0.2f, 0.1f, 1.0f })
+				&& NearColor(model->GetSubMeshes()[1].BaseColor, { 0.1f, 0.3f, 0.9f, 0.5f }),
+				"a glTF submesh's BaseColor is its material's baseColorFactor, alpha included");
+		}
+		{
+			std::unique_ptr<Model> model(Model::LoadFromFile("assets/models/ColorQuads/ColorQuads.obj"));
+			Check(model && model->GetSubMeshCount() == 1 && NearColor(model->GetSubMeshes()[0].BaseColor, { 0.2f, 0.7f, 0.3f, 1.0f }),
+				"an OBJ submesh's BaseColor falls back to the diffuse colour (Kd)");
+		}
+		{
+			std::unique_ptr<Model> model(Model::LoadFromFile("assets/models/Duck/Duck.gltf"));
+			Check(model && model->GetSubMeshCount() > 0 && model->GetSubMeshes()[0].DiffuseTexture
+				&& NearColor(model->GetSubMeshes()[0].BaseColor, glm::vec4(1.0f)),
+				"a textured submesh without a colour factor keeps a white BaseColor");
+		}
+
+		const std::filesystem::path folder = std::filesystem::temp_directory_path() / "DingoModel3DTest";
+		const std::filesystem::path copy = folder / "ColorQuads.gltf";
+		std::error_code error;
+		std::filesystem::create_directories(folder, error);
+		std::ifstream source(k_ColorQuadsPath, std::ios::binary);
+		std::string text((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
+		std::ofstream(copy, std::ios::binary | std::ios::trunc) << text;
+
+		std::unique_ptr<Model> model(Model::LoadFromFile(copy));
+		const size_t factor = text.find("0.8,");
+		bool reloaded = false;
+		if (model && factor != std::string::npos)
+		{
+			text.replace(factor, 4, "0.4,");
+			std::ofstream(copy, std::ios::binary | std::ios::trunc) << text;
+			reloaded = model->Reload();
+		}
+		const glm::vec4 color = model && model->GetSubMeshCount() > 0 ? model->GetSubMeshes()[0].BaseColor : glm::vec4(0.0f);
+		Check(reloaded && NearColor(color, { 0.4f, 0.2f, 0.1f, 1.0f }),
+			std::format("a model reload takes the file's new BaseColor (read {:.2f} {:.2f} {:.2f} {:.2f})", color.r, color.g, color.b, color.a));
+		model.reset();
+		std::filesystem::remove_all(folder, error);
 	}
 
 	void Model3DTest::FitCamera()
@@ -223,16 +283,25 @@ namespace Dingo
 			return;
 		}
 
+		ImGui::Text("Checks");
+		for (const CheckResult& check : m_Checks)
+		{
+			ImGui::TextColored(check.Passed ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+				"[%s] %s", check.Passed ? "PASS" : "FAIL", check.Name.c_str());
+		}
+		ImGui::Separator();
+
 		ImGui::Text("SubMeshes: %u", m_Model->GetSubMeshCount());
 		const auto& submeshes = m_Model->GetSubMeshes();
 		for (uint32_t i = 0; i < static_cast<uint32_t>(submeshes.size()); ++i)
 		{
 			const auto& sm = submeshes[i];
-			ImGui::Text("  [%u] verts=%u  idx=%u  tex=%s  skin=%s", i,
+			ImGui::Text("  [%u] verts=%u  idx=%u  tex=%s  skin=%s  color=%.2f %.2f %.2f %.2f", i,
 				sm.MeshData->GetVertexCount(),
 				sm.MeshData->GetIndexCount(),
 				sm.DiffuseTexture ? "yes" : "no",
-				sm.MeshData->HasSkin() ? "yes" : "no");
+				sm.MeshData->HasSkin() ? "yes" : "no",
+				sm.BaseColor.r, sm.BaseColor.g, sm.BaseColor.b, sm.BaseColor.a);
 		}
 
 		if (const Skeleton* skeleton = m_Model->GetSkeleton())

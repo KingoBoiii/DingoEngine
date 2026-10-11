@@ -256,6 +256,10 @@ namespace Dingo
 		submesh.Mat = Material::Create(MaterialParams()
 			.SetDebugName(mesh->mName.C_Str()));
 
+		aiColor4D baseColor;
+		if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS || aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, baseColor) == AI_SUCCESS)
+			submesh.BaseColor = { baseColor.r, baseColor.g, baseColor.b, baseColor.a };
+
 		Texture* diffuse = LoadDiffuseTexture(aiMat, scene, modelDir, textureCache);
 		if (diffuse)
 		{
@@ -1183,6 +1187,7 @@ namespace Dingo
 			current.MeshData->Reinitialize(*incoming.MeshData);
 			current.Mat->SetTexture(0, incoming.DiffuseTexture);
 			current.DiffuseTexture = incoming.DiffuseTexture;
+			current.BaseColor = incoming.BaseColor;
 			delete incoming.MeshData;
 			DestroyAndDelete(incoming.Mat);
 		}
@@ -1191,6 +1196,7 @@ namespace Dingo
 			m_SubMeshes[i].MeshData->Clear();
 			m_SubMeshes[i].Mat->SetTexture(0, nullptr);
 			m_SubMeshes[i].DiffuseTexture = nullptr;
+			m_SubMeshes[i].BaseColor = glm::vec4(1.0f);
 		}
 		fresh.m_SubMeshes.clear();
 
