@@ -260,25 +260,27 @@ namespace Dingo
 		SpotLight ToLight(const Transform3DComponent& transform) const;
 	};
 
-	// Distance fog over the scene's 3D pass (see Fog in Graphics/Light.h and Renderer3D::SetFog). The
-	// first enabled one in entity order counts; more warn once. It is no light: a scene whose only
-	// light-like component is a FogComponent keeps the default light. With UseClearColor the fog takes
-	// the scene's clear colour (Scene::SetClearColor), so distant meshes fade into the background.
+	// Distance fog over the scene's 3D pass: Settings go to Renderer3D::SetFog as they are (see Fog in
+	// Graphics/Light.h). The first enabled one in entity order counts; more warn once. It is no light:
+	// a scene whose only light-like component is a FogComponent keeps the default light. With
+	// UseClearColor the fog takes the scene's clear colour (Scene::SetClearColor) in place of
+	// Settings.Color, so distant meshes fade into the background.
 	struct FogComponent
 	{
-		FogMode Mode = FogMode::Linear;
-		glm::vec3 Color{ 0.5f };
+		Fog Settings;
 		bool UseClearColor = true;
-		float Start = 10.0f;
-		float End = 50.0f;
-		float Density = 0.05f;
-		float MaxOpacity = 1.0f;
 		bool Enabled = true;
 
 		FogComponent() = default;
 		FogComponent(const FogComponent&) = default;
+		explicit FogComponent(const Fog& settings, bool useClearColor = true)
+			: Settings(settings), UseClearColor(useClearColor) {}
 		FogComponent(FogMode mode, float start, float end)
-			: Mode(mode), Start(start), End(end) {}
+		{
+			Settings.Mode = mode;
+			Settings.Start = start;
+			Settings.End = end;
+		}
 	};
 
 	// Physics -----------------------------------------------------------------

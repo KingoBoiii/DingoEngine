@@ -568,7 +568,7 @@ namespace Dingo
 			Scene scene("Lighting Fog Check");
 			scene.SetClearColor(glm::vec4(clearColor, 1.0f));
 			FogComponent& fog = scene.CreateEntity("Fog").AddComponent<FogComponent>(FogComponent(FogMode::Linear, 1.0f, 2.0f));
-			fog.Color = glm::vec3(1.0f, 0.0f, 0.0f);
+			fog.Settings.Color = glm::vec3(1.0f, 0.0f, 0.0f);
 			scene.SubmitLights(renderer);
 		});
 	}
@@ -707,8 +707,8 @@ namespace Dingo
 			const Fog fog = DescribeFog();
 			FogComponent& fogComponent = m_FogEntity.GetComponent<FogComponent>();
 			fogComponent.Enabled = m_Fog;
-			fogComponent.Start = fog.Start;
-			fogComponent.End = fog.End;
+			fogComponent.Settings.Start = fog.Start;
+			fogComponent.Settings.End = fog.End;
 			m_Scene->SetClearColor(m_ClearColor);
 			m_Scene->SubmitLights(renderer);
 			m_Scene->RenderEntities3D(renderer);

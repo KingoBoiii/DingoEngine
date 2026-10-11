@@ -152,9 +152,9 @@ fog.MaxOpacity = 1.0f;          // the most fog a pixel gets, 0..1
 renderer.SetFog(fog);           // before EndScene, like a light
 ```
 
-In the ECS, add a `FogComponent` to any entity (it has the same fields, plus `Enabled` and
-`UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` so the fog meets
-the cleared background). `Scene::SubmitLights` passes the first enabled one, in entity order, to
+In the ECS, add a `FogComponent` to any entity. It holds a `Fog Settings`, passed on as it is, plus
+`Enabled` and `UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` in
+place of `Settings.Color` so the fog meets the cleared background. `Scene::SubmitLights` passes the first enabled one, in entity order, to
 `SetFog`; another enabled one warns once.
 
 - **Scene-scoped**, like lights: `EndScene` clears it, so set it every frame you want it.

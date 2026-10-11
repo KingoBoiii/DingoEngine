@@ -110,13 +110,9 @@ namespace Dingo::Internal::LightSystem
 					break;
 				}
 
-				Fog fog;
-				fog.Mode = component.Mode;
-				fog.Color = component.UseClearColor ? clearColor : component.Color;
-				fog.Start = component.Start;
-				fog.End = component.End;
-				fog.Density = component.Density;
-				fog.MaxOpacity = component.MaxOpacity;
+				Fog fog = component.Settings;
+				if (component.UseClearColor)
+					fog.Color = clearColor;
 				renderer.SetFog(fog);
 				submitted = true;
 			}
