@@ -842,13 +842,32 @@ namespace Dingo::UI
 		const bool scroll = s_Animators.size() > k_MaxAnimatorsShown;
 		if (scroll)
 			ImGui::BeginChild("##animators", ImVec2(0.0f, 320.0f), ImGuiChildFlags_Borders);
-		for (size_t index = 0; index < s_Animators.size(); ++index)
+		// A closed row off screen takes its height without its names being read or formatted.
+		static float s_ClosedRowHeight = 0.0f;
+		const bool defaultOpen = s_Animators.size() == 1;
+		for (const Internal::AnimationDebug::AnimatorRow& row : s_Animators)
 		{
-			const Internal::AnimationDebug::AnimatorRow& row = s_Animators[index];
-			std::string label = std::format("{}  ({}{}{})", row.Entity, row.Scene, row.Model.empty() ? "" : ", ", row.Model);
+			// Keyed on the entity, so an open row stays open while others join or leave the crowd.
+			ImGui::PushID(row.Owner);
+			ImGui::PushID(static_cast<int>(row.Entity));
+			const bool open = row.Instance && ImGui::GetStateStorage()->GetInt(ImGui::GetID("###animator"), defaultOpen ? 1 : 0) != 0;
+			if (!open && s_ClosedRowHeight > 0.0f && !ImGui::IsRectVisible(ImVec2(ImGui::GetContentRegionAvail().x, s_ClosedRowHeight)))
+			{
+				ImGui::Dummy(ImVec2(0.0f, s_ClosedRowHeight - ImGui::GetStyle().ItemSpacing.y));
+				ImGui::PopID();
+				ImGui::PopID();
+				continue;
+			}
+
+			const float top = ImGui::GetCursorPosY();
+			const Internal::AnimationDebug::AnimatorNames names = Internal::AnimationDebug::DescribeAnimator(row);
+			std::string label = std::format("{}  ({}{}{})", names.Entity, names.Scene, names.Model.empty() ? "" : ", ", names.Model);
 			if (!row.Instance)
 			{
 				ImGui::TextDisabled("%s  not bound: no skinned model, or not updated since it changed", label.c_str());
+				s_ClosedRowHeight = ImGui::GetCursorPosY() - top;
+				ImGui::PopID();
+				ImGui::PopID();
 				continue;
 			}
 
@@ -859,8 +878,10 @@ namespace Dingo::UI
 				label += std::format("  speed {:.2f}", row.Speed);
 			label += "###animator";
 
-			ImGui::PushID(static_cast<int>(index));
-			if (ImGui::TreeNodeEx(label.c_str(), s_Animators.size() == 1 ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
+			const bool expanded = ImGui::TreeNodeEx(label.c_str(), defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+			if (!expanded)
+				s_ClosedRowHeight = ImGui::GetCursorPosY() - top;
+			if (expanded)
 			{
 				for (uint32_t layer = 0; layer < animator.GetLayerCount(); ++layer)
 				{
@@ -913,6 +934,7 @@ namespace Dingo::UI
 				}
 				ImGui::TreePop();
 			}
+			ImGui::PopID();
 			ImGui::PopID();
 		}
 

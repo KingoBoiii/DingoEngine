@@ -73,8 +73,8 @@ namespace Dingo
 
 						const AnimatorComponent& settings = view.get<const AnimatorComponent>(handle);
 						AnimatorRow& row = out.emplace_back();
-						row.Scene = scene->GetName();
-						row.Entity = EntityName(registry, handle);
+						row.Owner = scene;
+						row.Entity = entt::to_integral(handle);
 						row.Enabled = settings.Enabled;
 						row.Speed = settings.Speed;
 
@@ -83,10 +83,32 @@ namespace Dingo
 						const Skeleton* skeleton = skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
 						if (skeleton && runtime.SkeletonId == skeleton->GetId())
 							row.Instance = runtime.Instance.get();
-						if (skinned && skinned->Model)
-							row.Model = skinned->Model->GetFilePath().filename().string();
 					}
 				}
+			}
+
+			AnimatorNames DescribeAnimator(const AnimatorRow& row)
+			{
+				AnimatorNames names{ "(gone)", "(gone)", std::string() };
+				std::lock_guard lock(ScenesMutex());
+				for (const auto& [scene, data] : Scenes())
+				{
+					if (scene != row.Owner)
+						continue;
+
+					names.Scene = scene->GetName();
+					const entt::registry& registry = data->Registry;
+					const entt::entity handle = static_cast<entt::entity>(row.Entity);
+					if (!registry.valid(handle))
+						break;
+
+					names.Entity = EntityName(registry, handle);
+					const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
+					if (skinned && skinned->Model)
+						names.Model = skinned->Model->GetFilePath().filename().string();
+					break;
+				}
+				return names;
 			}
 
 			void CollectRecentEvents(std::vector<EventRow>& out, size_t max)
