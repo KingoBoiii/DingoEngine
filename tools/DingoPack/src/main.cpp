@@ -105,7 +105,7 @@ namespace
 			return 1;
 
 		std::string error;
-		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(arguments.Positional[0], error);
+		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(arguments.Positional[0], *key, error);
 		if (!reader)
 		{
 			std::fprintf(stderr, "DingoPack: %s: %s\n", arguments.Positional[0].c_str(), error.c_str());

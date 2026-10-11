@@ -45,3 +45,4 @@ project "ArenaShooter"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

@@ -265,7 +265,7 @@ namespace Dingo
 			}
 		}
 
-		Internal::PackWriter writer;
+		Internal::PackWriter writer(params.Key);
 		for (const auto& [relative, file] : files)
 		{
 			std::ifstream stream(file, std::ios::binary);
@@ -298,7 +298,7 @@ namespace Dingo
 		Internal::AssetManagerData& data = *m_Data;
 
 		std::string error;
-		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(dpak, error);
+		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(dpak, key, error);
 		if (!reader)
 		{
 			DE_CORE_ERROR("AssetManager: can't open package '{}': {}.", dpak.string(), error);

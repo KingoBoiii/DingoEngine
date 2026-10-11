@@ -9,11 +9,11 @@
 namespace Dingo::Internal
 {
 
-	// Builds a whole .dpak in memory.
+	// Builds a whole .dpak in memory. A null key writes an unencrypted package.
 	class PackWriter
 	{
 	public:
-		PackWriter();
+		explicit PackWriter(const PackageKey& key);
 
 		// `name` is the entry's logical key. False, with `error` set, for an entry the format can't hold.
 		bool Add(const std::string& name, const std::vector<uint8_t>& data, std::string& error);
@@ -33,6 +33,8 @@ namespace Dingo::Internal
 		std::string m_Blob;
 		std::vector<Entry> m_Entries;
 		uint64_t m_RawBytes = 0;
+		ChaCha20::Key m_Key{};
+		bool m_Encrypted = false;
 	};
 
 }

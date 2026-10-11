@@ -50,3 +50,4 @@ project "FlappyBird"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

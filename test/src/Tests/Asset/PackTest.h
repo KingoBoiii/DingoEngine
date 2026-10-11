@@ -10,10 +10,11 @@
 namespace Dingo
 {
 
-	// Packages test/assets into a .dpak in the cache directory, mounts it over the loose files and
-	// checks that every file, and every kind of asset built from one, reads back identically; then a
-	// patch package's override order, ClosePackage's fallback to the loose files, and damaged,
-	// truncated and wrongly keyed packages failing cleanly.
+	// Checks ChaCha20 against RFC 8439, then packages test/assets into an encrypted .dpak in the
+	// cache directory, mounts it over the loose files and checks that every file, and every kind of
+	// asset built from one, reads back identically; then a patch package's override order,
+	// ClosePackage's fallback to the loose files, and damaged, truncated and wrongly keyed packages
+	// failing cleanly.
 	class PackTest : public Renderer2DTest
 	{
 	public:
@@ -51,7 +52,9 @@ namespace Dingo
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		Snapshot TakeSnapshot();
+		void CheckCipher();
 		void CheckPackaging();
+		void CheckEncryption();
 		void CheckMountedBase();
 		void CheckPatchAndClose();
 		void CheckDamagedPackages();
@@ -65,6 +68,7 @@ namespace Dingo
 		std::vector<std::string> m_Files;
 		uint32_t m_AssetFileCount = 0;
 
+		PackageKey m_Key;
 		PackageHandle m_Base = k_InvalidPackage;
 		Snapshot m_Loose;
 

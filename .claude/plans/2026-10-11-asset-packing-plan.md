@@ -176,6 +176,15 @@ void AssetManager::ClosePackage(PackageHandle);   // unloads its assets, then un
   - DingoPack reads the same file.
   - Example keys are committed. `docs/distribution.md` tells real games to keep theirs in a CI secret.
 
+**As built (D):**
+- Nonce = salt bytes 4–15 with the first four XORed with the entry index (little-endian); the TOC uses index `0xFFFFFFFF` and the key check `0xFFFFFFFE`, which no entry reaches (`k_MaxEntries` = `0xFFFF0000`). Counter 0 everywhere. The salt is fresh per `Package` call, so packing the same files with the same key twice gives different bytes and no nonce is ever reused across builds.
+- The header's `KeyCheck` holds the first 8 keystream bytes of the key-check nonce, so a wrong key fails as "wrong key" before the TOC is touched, and a missing key on an encrypted package as "no key was given". A null key writes and opens unencrypted packages, so a base package and an unencrypted patch can be mounted together. An entry flagged encrypted inside an unencrypted package reads as damaged.
+- `embedPackKey(keyFile = "dpak.key")` writes `build/generated/<project>/DingoPackKey.h` **when premake runs**, not as a prebuild step: the Windows CI builds with an MSBuild that has no premake on its path, and gmake doesn't order custom-build outputs before the objects that include them. The key is split into two 16-byte halves, each XORed with a mask derived from the key itself (FNV-1a, then an LCG), kept in four `static const volatile` arrays (two reversed), so the header changes only when the key does. A missing or malformed key file stops premake with the project's name.
+- Each of the ten examples has a committed `dpak.key` (made with `DingoPack genkey`, its comment saying it is public on purpose) and calls `embedPackKey()` after `copyAssimpRuntime()`. Nothing reads the header until phase E.
+- The Pack Test (52 checks) adds: both RFC 8439 vectors (2.3.2 block, 2.4.2 encryption) and the round trip; `PackageKey` hex and key-file parsing; a null key and a key one bit off refused (reader and `Unpackage`); no file names or file signatures (`textures/`, `#type vertex`, the GLB, PNG, Exif and WAVE headers, each 5 bytes or more so ciphertext can't match one by chance) in the encrypted package, while the unencrypted one shows the PNG and Exif headers; two packagings of the same files differ. The base package is encrypted, so every load, damage and override check now runs through decryption.
+- `strings` on an encrypted package: random ciphertext holds short printable runs, so a case-insensitive grep for a three-letter token finds a few by chance (4 hits for `glb`/`png` in Marionette's 3.6 MB package, none of them a file name); `\.glb`, `\.png` and `#type` find nothing.
+- Verified on Linux (Debug and Release, Xvfb + llvmpipe): the smoke test's 21 cases (Pack Test 52), 10 examples and Marionette `--check` (107) pass; `DingoPack` packs Marionette encrypted, verifies it with its key and refuses it without one or with Candlewick's.
+
 ## Phase E: application integration
 
 - Games call `Unpackage` themselves, so they choose when and which packs to open (a base pack, then DLC or patches).

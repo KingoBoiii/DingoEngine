@@ -15,7 +15,7 @@
 namespace Dingo::Internal
 {
 
-	std::shared_ptr<PackReader> PackReader::Open(const std::filesystem::path& path, std::string& error)
+	std::shared_ptr<PackReader> PackReader::Open(const std::filesystem::path& path, const PackageKey& key, std::string& error)
 	{
 		std::shared_ptr<PackReader> reader(new PackReader());
 		const std::u8string name = path.filename().u8string();
@@ -66,10 +66,23 @@ namespace Dingo::Internal
 		}
 
 		reader->m_Encrypted = (header.Flags & Pack::HeaderFlag_Encrypted) != 0;
+		std::memcpy(reader->m_Salt, header.Salt, sizeof(header.Salt));
 		if (reader->m_Encrypted)
 		{
-			error = "the package is encrypted, which this engine can't read";
-			return nullptr;
+			if (key.IsNull())
+			{
+				error = "the package is encrypted and no key was given";
+				return nullptr;
+			}
+			reader->m_Key = key.Bytes;
+
+			uint8_t keystream[64];
+			ChaCha20::Block(reader->m_Key, 0, Pack::MakeNonce(reader->m_Salt, Pack::k_KeyCheckNonceIndex), keystream);
+			if (std::memcmp(keystream, header.KeyCheck, sizeof(header.KeyCheck)) != 0)
+			{
+				error = "wrong key";
+				return nullptr;
+			}
 		}
 
 		if (header.TocOffset < sizeof(header) || header.TocOffset > reader->m_FileSize || header.TocPackedSize != reader->m_FileSize - header.TocOffset
@@ -88,6 +101,8 @@ namespace Dingo::Internal
 				error = "can't read the table of contents";
 				return nullptr;
 			}
+			if (reader->m_Encrypted)
+				ChaCha20::Apply(reader->m_Key, Pack::MakeNonce(reader->m_Salt, Pack::k_TocNonceIndex), 0, packedToc.data(), packedToc.size());
 			std::optional<std::vector<uint8_t>> inflated = Inflate(packedToc.data(), packedToc.size(), static_cast<size_t>(header.TocRawSize));
 			if (!inflated || Crc32(inflated->data(), inflated->size()) != header.TocCrc)
 			{
@@ -193,6 +208,16 @@ namespace Dingo::Internal
 		{
 			DE_CORE_ERROR("Package '{}': can't read '{}'.", m_Name, entry.Name);
 			return std::nullopt;
+		}
+
+		if (entry.Toc.Flags & Pack::EntryFlag_Encrypted)
+		{
+			if (!m_Encrypted)
+			{
+				DE_CORE_ERROR("Package '{}': '{}' is damaged (encrypted in an unencrypted package).", m_Name, entry.Name);
+				return std::nullopt;
+			}
+			ChaCha20::Apply(m_Key, Pack::MakeNonce(m_Salt, index), 0, bytes.data(), bytes.size());
 		}
 
 		if (entry.Toc.Flags & Pack::EntryFlag_Deflated)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DingoEngine/Asset/Pack/ChaCha20.h"
+
 #include <bit>
 #include <cstdint>
 #include <limits>
@@ -11,9 +13,10 @@ namespace Dingo::Internal::Pack
 
 	static_assert(std::endian::native == std::endian::little, "the .dpak format is read and written as little-endian structs");
 
-	// Layout: Header, the entry blobs, then the TOC. The TOC is deflated, so file names exist only
-	// inside it. An entry's bytes are deflated unless that saves under 5%. The encryption fields are
-	// reserved until packages are encrypted.
+	// Layout: Header, the entry blobs, then the TOC. The TOC is deflated, then encrypted like an
+	// entry, so file names exist only inside it. An entry's bytes are deflated (unless that saves
+	// under 5%), then encrypted. Every nonce is the salt's last 12 bytes with the first four XORed
+	// with the entry's index; the TOC and the key check take indices of their own.
 	inline constexpr char k_Magic[4] = { 'D', 'P', 'A', 'K' };
 	inline constexpr uint16_t k_Version = 1;
 
@@ -64,6 +67,18 @@ namespace Dingo::Internal::Pack
 	// stb's zlib calls take int sizes.
 	inline constexpr uint64_t k_MaxEntrySize = static_cast<uint64_t>((std::numeric_limits<int>::max)());
 	inline constexpr uint32_t k_MaxEntries = 0xFFFF0000u;
+	inline constexpr uint32_t k_TocNonceIndex = 0xFFFFFFFFu;
+	inline constexpr uint32_t k_KeyCheckNonceIndex = 0xFFFFFFFEu;
+
+	inline ChaCha20::Nonce MakeNonce(const uint8_t (&salt)[16], uint32_t index)
+	{
+		ChaCha20::Nonce nonce;
+		for (size_t i = 0; i < nonce.size(); ++i)
+			nonce[i] = salt[4 + i];
+		for (size_t i = 0; i < 4; ++i)
+			nonce[i] ^= static_cast<uint8_t>(index >> (8 * i));
+		return nonce;
+	}
 
 	inline std::string FoldCase(std::string_view name)
 	{

@@ -26,7 +26,8 @@ namespace Dingo::Internal
 
 	}
 
-	PackWriter::PackWriter()
+	PackWriter::PackWriter(const PackageKey& key)
+		: m_Key(key.Bytes), m_Encrypted(!key.IsNull())
 	{
 		std::random_device random;
 		for (size_t i = 0; i < sizeof(m_Salt); i += 4)
@@ -75,6 +76,12 @@ namespace Dingo::Internal
 		if (!(entry.Toc.Flags & Pack::EntryFlag_Deflated))
 			stored = data;
 
+		if (m_Encrypted)
+		{
+			ChaCha20::Apply(m_Key, Pack::MakeNonce(m_Salt, static_cast<uint32_t>(m_Entries.size())), 0, stored.data(), stored.size());
+			entry.Toc.Flags |= Pack::EntryFlag_Encrypted;
+		}
+
 		entry.Toc.Offset = m_Blob.size();
 		entry.Toc.PackedSize = stored.size();
 		m_Blob.append(reinterpret_cast<const char*>(stored.data()), stored.size());
@@ -97,13 +104,22 @@ namespace Dingo::Internal
 		Pack::Header header{};
 		std::memcpy(header.Magic, Pack::k_Magic, sizeof(header.Magic));
 		header.Version = Pack::k_Version;
-		header.Flags = 0;
+		header.Flags = m_Encrypted ? Pack::HeaderFlag_Encrypted : 0;
 		std::memcpy(header.Salt, m_Salt, sizeof(m_Salt));
 		header.TocRawSize = toc.size();
 		header.TocCrc = Crc32(toc.data(), toc.size());
 		header.EntryCount = static_cast<uint32_t>(m_Entries.size());
 
 		std::vector<uint8_t> packedToc = Deflate(toc.data(), toc.size()).value_or(std::vector<uint8_t>());
+
+		if (m_Encrypted)
+		{
+			ChaCha20::Apply(m_Key, Pack::MakeNonce(m_Salt, Pack::k_TocNonceIndex), 0, packedToc.data(), packedToc.size());
+
+			uint8_t keystream[64];
+			ChaCha20::Block(m_Key, 0, Pack::MakeNonce(m_Salt, Pack::k_KeyCheckNonceIndex), keystream);
+			std::memcpy(header.KeyCheck, keystream, sizeof(header.KeyCheck));
+		}
 
 		header.TocOffset = m_Blob.size();
 		header.TocPackedSize = packedToc.size();

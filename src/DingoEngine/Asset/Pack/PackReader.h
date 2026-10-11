@@ -25,8 +25,9 @@ namespace Dingo::Internal
 			Pack::TocEntry Toc{};
 		};
 
-		// nullptr with `error` set when the file is missing, isn't a package or the TOC is damaged.
-		static std::shared_ptr<PackReader> Open(const std::filesystem::path& path, std::string& error);
+		// nullptr with `error` set when the file is missing, isn't a package, the key is wrong or the
+		// TOC is damaged. A null key opens only an unencrypted package.
+		static std::shared_ptr<PackReader> Open(const std::filesystem::path& path, const PackageKey& key, std::string& error);
 		~PackReader() override;
 
 		std::optional<uint32_t> Find(std::string_view key) const override;
@@ -51,6 +52,8 @@ namespace Dingo::Internal
 #endif
 		uint64_t m_FileSize = 0;
 		bool m_Encrypted = false;
+		ChaCha20::Key m_Key{};
+		uint8_t m_Salt[16]{};
 		std::vector<EntryInfo> m_Entries;
 		std::unordered_map<std::string, uint32_t> m_Lookup;
 

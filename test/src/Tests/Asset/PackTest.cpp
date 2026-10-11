@@ -1,5 +1,6 @@
 #include "PackTest.h"
 
+#include "DingoEngine/Asset/Pack/ChaCha20.h"
 #include "DingoEngine/Asset/Pack/PackReader.h"
 #include "DingoEngine/Core/CacheManager.h"
 
@@ -46,6 +47,20 @@ namespace Dingo
 			"#type vertex\n#version 450\n#include \"pack_only_common.glsl\"\nlayout(location = 0) in vec2 inPosition;\n"
 			"void main() { gl_Position = vec4(inPosition * PACK_SCALE, 0.0, 1.0); }\n"
 			"#type fragment\n#version 450\nlayout(location = 0) out vec4 outColor;\nvoid main() { outColor = vec4(1.0); }\n";
+		std::vector<uint8_t> FromHex(std::string_view hex)
+		{
+			std::vector<uint8_t> bytes;
+			for (size_t i = 0; i + 1 < hex.size(); i += 2)
+				bytes.push_back(static_cast<uint8_t>(std::stoi(std::string(hex.substr(i, 2)), nullptr, 16)));
+			return bytes;
+		}
+
+		bool Contains(const std::vector<uint8_t>& bytes, std::string_view marker)
+		{
+			return std::search(bytes.begin(), bytes.end(), marker.begin(), marker.end(),
+				[](uint8_t b, char c) { return b == static_cast<uint8_t>(c); }) != bytes.end();
+		}
+
 		constexpr uint32_t k_PatchTextureWidth = 4;
 		constexpr std::string_view k_PackOnlyInclude = "#define PACK_SCALE 0.5\n";
 
@@ -107,6 +122,7 @@ namespace Dingo
 		std::filesystem::remove_all(m_WorkDirectory, ec);
 		std::filesystem::create_directories(m_WorkDirectory, ec);
 		m_BasePackage = m_WorkDirectory / "base.dpak";
+		m_Key = PackageKey::Generate();
 		m_PatchPackage = m_WorkDirectory / "patch.dpak";
 
 		AssetManager& assets = Application::Get().GetAssetManager();
@@ -126,7 +142,9 @@ namespace Dingo
 		if (m_LooseTexture)
 			m_LooseTexture->ReadPixels([this](const TexturePixels& pixels) { m_LoosePixels = pixels; });
 
+		CheckCipher();
 		CheckPackaging();
+		CheckEncryption();
 		CheckMountedBase();
 	}
 
@@ -136,7 +154,8 @@ namespace Dingo
 
 		const PackageResult result = AssetManager::Package(PackageParams()
 			.SetSourceDirectory(assets.GetRootDirectory())
-			.SetOutputPath(m_BasePackage));
+			.SetOutputPath(m_BasePackage)
+			.SetKey(m_Key));
 		std::error_code ec;
 		Check(result.Success && result.Error.empty(), std::format("Package writes '{}' ({})", m_BasePackage.filename().string(), result.Error));
 		Check(result.FileCount == m_Files.size(), std::format("Package takes every file under the root ({} of {})", result.FileCount, m_Files.size()));
@@ -186,13 +205,80 @@ namespace Dingo
 		Check(patch.Success && patch.FileCount == 3, "a patch package builds from a second directory");
 	}
 
+	void PackTest::CheckCipher()
+	{
+		Internal::ChaCha20::Key key;
+		for (size_t i = 0; i < key.size(); ++i)
+			key[i] = static_cast<uint8_t>(i);
+
+		Internal::ChaCha20::Nonce nonce = { 0, 0, 0, 0x09, 0, 0, 0, 0x4a, 0, 0, 0, 0 };
+		uint8_t block[64];
+		Internal::ChaCha20::Block(key, 1, nonce, block);
+		Check(std::vector<uint8_t>(block, block + 64) == FromHex("10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4e"
+			"d2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e"), "ChaCha20 matches RFC 8439's block function vector (2.3.2)");
+
+		constexpr std::string_view plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+		std::vector<uint8_t> text(plaintext.begin(), plaintext.end());
+		nonce = { 0, 0, 0, 0, 0, 0, 0, 0x4a, 0, 0, 0, 0 };
+		Internal::ChaCha20::Apply(key, nonce, 1, text.data(), text.size());
+		Check(text == FromHex("6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b357"
+			"1639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b"
+			"8eedf2785e42874d"), "ChaCha20 matches RFC 8439's encryption vector (2.4.2)");
+		Internal::ChaCha20::Apply(key, nonce, 1, text.data(), text.size());
+		Check(text == std::vector<uint8_t>(plaintext.begin(), plaintext.end()), "ChaCha20 decrypts what it encrypted");
+
+		const PackageKey generated = PackageKey::Generate();
+		const std::optional<PackageKey> parsed = PackageKey::FromHex(generated.ToHex());
+		Check(!generated.IsNull() && parsed && *parsed == generated && PackageKey().IsNull(), "PackageKey round-trips through hex");
+		Check(!PackageKey::FromHex(generated.ToHex().substr(1)) && !PackageKey::FromHex(std::string(63, '0') + "g")
+			&& PackageKey::FromHex(generated.ToHex().insert(32, "\n  ")), "PackageKey::FromHex skips whitespace and refuses anything but 64 hex digits");
+
+		const std::filesystem::path keyFile = m_WorkDirectory / "test.key";
+		WriteDiskFile(keyFile, "# a comment\r\n" + generated.ToHex() + "\r\n");
+		const std::optional<PackageKey> fromFile = PackageKey::FromFile(keyFile);
+		Check(fromFile && *fromFile == generated && !PackageKey::FromFile(m_WorkDirectory / "missing.key"), "PackageKey::FromFile reads a key file with comments and CRLF");
+	}
+
+	void PackTest::CheckEncryption()
+	{
+		AssetManager& assets = Application::Get().GetAssetManager();
+		const std::vector<uint8_t> encrypted = ReadDiskFile(m_BasePackage);
+		const std::vector<uint8_t> plain = ReadDiskFile(m_WorkDirectory / "default-root.dpak");
+
+		// Five bytes or more each, so random ciphertext matching one by chance is out of the question.
+		constexpr std::string_view k_Markers[] = { "textures/", "models/", "#type vertex", std::string_view("glTF\x02\0\0\0", 8),
+			"\x89PNG\r\n\x1a\n", std::string_view("Exif\0\0", 6), "WAVEfmt " };
+		const bool plainShowsMarkers = Contains(plain, std::string_view("Exif\0\0", 6)) && Contains(plain, "\x89PNG\r\n\x1a\n");
+		bool encryptedHidesMarkers = !encrypted.empty();
+		for (std::string_view marker : k_Markers)
+			encryptedHidesMarkers = encryptedHidesMarkers && !Contains(encrypted, marker);
+		Check(plainShowsMarkers && encryptedHidesMarkers, "an encrypted package shows no file names or file signatures (an unencrypted one does)");
+
+		std::string error;
+		Check(!Internal::PackReader::Open(m_BasePackage, PackageKey(), error) && error.find("no key") != std::string::npos,
+			"an encrypted package refuses to open without a key");
+		PackageKey wrong = m_Key;
+		wrong.Bytes[7] ^= 0x01;
+		Check(!Internal::PackReader::Open(m_BasePackage, wrong, error) && error == "wrong key", "an encrypted package refuses a key one bit off");
+		Check(assets.Unpackage(m_BasePackage, wrong) == k_InvalidPackage && assets.Unpackage(m_BasePackage, PackageKey()) == k_InvalidPackage,
+			"Unpackage with a wrong or null key returns k_InvalidPackage");
+
+		const PackageResult again = AssetManager::Package(PackageParams()
+			.SetSourceDirectory(assets.GetRootDirectory())
+			.SetOutputPath(m_WorkDirectory / "base-again.dpak")
+			.SetKey(m_Key));
+		const std::vector<uint8_t> second = ReadDiskFile(m_WorkDirectory / "base-again.dpak");
+		Check(again.Success && second.size() == encrypted.size() && second != encrypted,
+			"packaging the same files with the same key twice gives different bytes (a fresh salt each time)");
+	}
+
 	void PackTest::CheckMountedBase()
 	{
 		AssetManager& assets = Application::Get().GetAssetManager();
 
 		Check(assets.Unpackage(m_WorkDirectory / "missing.dpak", PackageKey()) == k_InvalidPackage, "Unpackage of a missing file returns k_InvalidPackage");
 
-		m_Base = assets.Unpackage(m_BasePackage, PackageKey());
+		m_Base = assets.Unpackage(m_BasePackage, m_Key);
 		Check(m_Base != k_InvalidPackage && assets.IsPackageMounted(m_Base), "Unpackage mounts the package");
 
 		const std::span<const AssetHandle> packaged = assets.GetPackageAssets(m_Base);
@@ -284,7 +370,7 @@ namespace Dingo
 		const std::vector<uint8_t> original = ReadDiskFile(m_BasePackage);
 
 		std::string error;
-		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(m_BasePackage, error);
+		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(m_BasePackage, m_Key, error);
 		const std::optional<uint32_t> entry = reader ? reader->Find("textures/container.jpg") : std::nullopt;
 		if (!entry)
 		{
@@ -299,7 +385,7 @@ namespace Dingo
 		WriteDiskFile(damagedPath, damaged);
 		reader.reset();
 
-		const PackageHandle damagedPackage = assets.Unpackage(damagedPath, PackageKey());
+		const PackageHandle damagedPackage = assets.Unpackage(damagedPath, m_Key);
 		Check(damagedPackage != k_InvalidPackage, "a package with a damaged entry still mounts");
 		Check(!VirtualFileSystem::ReadBytes("textures/container.jpg").has_value(), "a flipped byte fails the entry's CRC check");
 		Texture* fromDamaged = Texture::CreateFromFile("textures/container.jpg");
@@ -314,14 +400,14 @@ namespace Dingo
 		std::memcpy(&header, original.data(), sizeof(header));
 		badToc[static_cast<size_t>(header.TocOffset + header.TocPackedSize / 2)] ^= 0x5A;
 		WriteDiskFile(m_WorkDirectory / "bad-toc.dpak", badToc);
-		Check(assets.Unpackage(m_WorkDirectory / "bad-toc.dpak", PackageKey()) == k_InvalidPackage, "a damaged table of contents refuses to mount");
+		Check(assets.Unpackage(m_WorkDirectory / "bad-toc.dpak", m_Key) == k_InvalidPackage, "a damaged table of contents refuses to mount");
 
 		std::vector<uint8_t> truncated(original.begin(), original.begin() + original.size() / 2);
 		WriteDiskFile(m_WorkDirectory / "truncated.dpak", truncated);
-		Check(assets.Unpackage(m_WorkDirectory / "truncated.dpak", PackageKey()) == k_InvalidPackage, "a truncated package refuses to mount");
+		Check(assets.Unpackage(m_WorkDirectory / "truncated.dpak", m_Key) == k_InvalidPackage, "a truncated package refuses to mount");
 
 		WriteDiskFile(m_WorkDirectory / "not-a-package.dpak", "just some text, not a package");
-		Check(assets.Unpackage(m_WorkDirectory / "not-a-package.dpak", PackageKey()) == k_InvalidPackage, "a file that isn't a package refuses to mount");
+		Check(assets.Unpackage(m_WorkDirectory / "not-a-package.dpak", m_Key) == k_InvalidPackage, "a file that isn't a package refuses to mount");
 	}
 
 	void PackTest::Update(float deltaTime)
