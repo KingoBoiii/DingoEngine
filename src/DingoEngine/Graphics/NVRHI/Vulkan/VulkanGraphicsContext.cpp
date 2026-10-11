@@ -30,34 +30,24 @@ namespace Dingo
 	static constexpr const char* k_ValidationLayer = "VK_LAYER_KHRONOS_validation";
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
-			VkDebugReportFlagsEXT flags,
-			VkDebugReportObjectTypeEXT objType,
-			uint64_t obj,
-			size_t location,
-			int32_t code,
-			const char* layerPrefix,
-			const char* msg,
+			VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+			VkDebugUtilsMessageTypeFlagsEXT types,
+			const VkDebugUtilsMessengerCallbackDataEXT* data,
 			void* userData)
 	{
-		switch (flags)
-		{
-			case VK_DEBUG_REPORT_ERROR_BIT_EXT:
-				DE_CORE_ERROR("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
-				break;
+		const char* id = data->pMessageIdName ? data->pMessageIdName : "";
+		const char* message = data->pMessage ? data->pMessage : "";
+		const char* kind = (types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) ? "Validation"
+			: (types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) ? "Performance" : "General";
 
-			case VK_DEBUG_REPORT_WARNING_BIT_EXT:
-			case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
-				DE_CORE_WARN("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
-				break;
-
-			case VK_DEBUG_REPORT_INFORMATION_BIT_EXT:
-				DE_CORE_INFO("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
-				break;
-
-			default:
-				DE_CORE_TRACE("[Vulkan: location=0x{0} code={1} layerPrefix='{2}'] {3}", location, code, layerPrefix, msg);
-				break;
-		}
+		if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+			DE_CORE_ERROR("[Vulkan] {} Error: [ {} ] {}", kind, id, message);
+		else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+			DE_CORE_WARN("[Vulkan] {} Warning: [ {} ] {}", kind, id, message);
+		else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+			DE_CORE_INFO("[Vulkan] {}: [ {} ] {}", kind, id, message);
+		else
+			DE_CORE_TRACE("[Vulkan] {}: [ {} ] {}", kind, id, message);
 
 		return VK_FALSE;
 	}
@@ -87,7 +77,7 @@ namespace Dingo
 		}
 
 #ifndef DE_DISTRIBUTION
-		if (enabledExtensions.instance.contains(VK_EXT_DEBUG_REPORT_EXTENSION_NAME))
+		if (enabledExtensions.instance.contains(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
 		{
 			CreateDebugMessenger();
 		}
@@ -146,10 +136,10 @@ namespace Dingo
 			m_VulkanDevice = nullptr;
 		}
 
-		if (m_DebugReportCallback)
+		if (m_DebugMessenger)
 		{
-			m_VulkanInstance.destroyDebugReportCallbackEXT(m_DebugReportCallback);
-			m_DebugReportCallback = nullptr;
+			m_VulkanInstance.destroyDebugUtilsMessengerEXT(m_DebugMessenger);
+			m_DebugMessenger = nullptr;
 		}
 
 		if (m_VulkanInstance)
@@ -161,7 +151,6 @@ namespace Dingo
 
 	bool VulkanGraphicsContext::CreateInstance()
 	{
-		//enabledExtensions.instance.insert(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #ifndef DE_DISTRIBUTION
 		optionalExtensions.layers.insert(k_ValidationLayer);
 #endif
@@ -291,16 +280,17 @@ namespace Dingo
 
 	void VulkanGraphicsContext::CreateDebugMessenger()
 	{
-		vk::DebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = vk::DebugReportCallbackCreateInfoEXT()
-			.setFlags(vk::DebugReportFlagBitsEXT::eError |
-					  vk::DebugReportFlagBitsEXT::eWarning |
-					  vk::DebugReportFlagBitsEXT::eInformation |
-					  vk::DebugReportFlagBitsEXT::ePerformanceWarning)
-			.setPfnCallback(vulkanDebugCallback)
-			.setPUserData(nullptr);
+		const vk::DebugUtilsMessengerCreateInfoEXT createInfo = vk::DebugUtilsMessengerCreateInfoEXT()
+			.setMessageSeverity(vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+								vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+								vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo)
+			.setMessageType(vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+							vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+							vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
+			.setPfnUserCallback(reinterpret_cast<vk::PFN_DebugUtilsMessengerCallbackEXT>(vulkanDebugCallback));
 
-		const vk::Result result = m_VulkanInstance.createDebugReportCallbackEXT(&debugReportCallbackCreateInfo, nullptr, &m_DebugReportCallback);
-		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create debug report callback.");
+		const vk::Result result = m_VulkanInstance.createDebugUtilsMessengerEXT(&createInfo, nullptr, &m_DebugMessenger);
+		DE_CORE_ASSERT(result == vk::Result::eSuccess, "Failed to create the Vulkan debug messenger.");
 	}
 
 	bool VulkanGraphicsContext::PickPhysicalDevice(vk::SurfaceKHR surface)
