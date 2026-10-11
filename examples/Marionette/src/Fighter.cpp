@@ -111,6 +111,9 @@ namespace Dingo
 			controller.Height = std::max(m_ModelHeight * def.Scale, 2.0f * m_Radius + FIGHTER_MIN_CAPSULE_BODY);
 			controller.StepHeight = FIGHTER_STEP_HEIGHT * def.Scale;
 			controller.MaxSlopeAngle = FIGHTER_SLOPE;
+			// Separate() keeps the two apart and lets a dash shove the other, which a capsule that
+			// only blocks would stop dead.
+			controller.CollideWithCharacters = false;
 			m_Entity.AddScript<FighterScript>(this);
 		}
 

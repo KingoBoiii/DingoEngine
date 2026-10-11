@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <memory>
 
 namespace
 {
@@ -136,7 +137,108 @@ namespace Dingo
 		Check(ownBodies && physics->IsBodyValid(aliasBodyB), "assigning a live RigidBody3DComponent onto another entity leaves each its own body");
 		m_Scene->DestroyEntity(aliasB);
 
+		RunQueryChecks();
+
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 200.0f);
+	}
+
+	void MeshColliderTest::RunQueryChecks()
+	{
+		std::unique_ptr<Physics3D> world(Physics3D::Create());
+		world->Initialize(Physics3DParams());
+
+		auto box = [&](BodyType3D type, const glm::vec3& position, const glm::vec3& halfExtents, std::uint32_t layers, bool sensor, std::uint32_t userData)
+		{
+			RigidBodyParams3D params(type, ColliderShape3D::Box);
+			params.Position = position;
+			params.HalfExtents = halfExtents;
+			params.QueryLayers = layers;
+			params.IsSensor = sensor;
+			params.UserData = userData;
+			return world->CreateBody(params);
+		};
+		const PhysicsBodyId3D floor = box(BodyType3D::Static, { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 1u, false, 11);
+		const PhysicsBodyId3D wall = box(BodyType3D::Static, { 6.0f, 1.0f, 0.0f }, { 0.5f, 1.0f, 3.0f }, 2u, false, 22);
+		const PhysicsBodyId3D sensor = box(BodyType3D::Static, { 0.0f, 0.9f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1u, true, 33);
+		const PhysicsBodyId3D inside = box(BodyType3D::Kinematic, { 0.3f, 1.0f, 0.6f }, glm::vec3(0.2f), 1u, false, 44);
+
+		const Ray down({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f });
+		RayCastHit3D hit;
+		const bool skipsSensor = world->RayCast(down, 10.0f, hit) && hit.Body == floor;
+		const bool includesSensor = world->RayCast(down, 10.0f, hit, QueryFilter3D().SetIncludeSensors(true)) && hit.Body == sensor;
+		const bool ignores = !world->RayCast(down, 10.0f, hit, QueryFilter3D().Ignore(floor));
+		const Ray across({ 2.0f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f });
+		const bool layered = world->RayCast(across, 10.0f, hit) && hit.Body == wall && !world->RayCast(across, 10.0f, hit, QueryFilter3D().SetLayers(1u));
+		Check(skipsSensor && includesSensor && ignores && layered,
+			"scene queries skip sensors unless asked, and a QueryFilter3D ignores bodies and filters by layer");
+
+		std::vector<PhysicsBodyId3D> found;
+		world->OverlapSphere({ 0.3f, 1.0f, 0.6f }, 0.5f, found);
+		const bool overlapSkipsSensor = std::find(found.begin(), found.end(), sensor) == found.end() && std::find(found.begin(), found.end(), inside) != found.end();
+		world->GetSensorOverlaps(sensor, found);
+		Check(overlapSkipsSensor && found.size() == 2 && std::find(found.begin(), found.end(), inside) != found.end()
+			&& std::find(found.begin(), found.end(), floor) != found.end() && !world->GetSensorOverlaps(floor, found)
+			&& world->IsSensor(sensor) && world->GetUserData(inside) == 44 && world->GetUserData(wall) == 22,
+			"a sensor lists the bodies inside it, and a body keeps its UserData");
+
+		CharacterControllerParams3D params;
+		params.Position = { -3.0f, 0.0f, 0.0f };
+		std::unique_ptr<CharacterController3D> walker = world->CreateCharacterController(params);
+		params.Position = { 0.0f, 0.0f, 0.0f };
+		std::unique_ptr<CharacterController3D> blocker = world->CreateCharacterController(params);
+		params.Position = { -3.0f, 0.0f, -4.0f };
+		params.CollideWithCharacters = false;
+		std::unique_ptr<CharacterController3D> ghost = world->CreateCharacterController(params);
+		params.Position = { 0.0f, 0.0f, -4.0f };
+		params.CollideWithCharacters = true;
+		std::unique_ptr<CharacterController3D> ghostBlocker = world->CreateCharacterController(params);
+		bool walkerInSensor = false;
+		for (int step = 0; step < 120; ++step)
+		{
+			walker->SetLinearVelocity({ 3.0f, 0.0f, 0.0f });
+			ghost->SetLinearVelocity({ 3.0f, 0.0f, 0.0f });
+			walker->Update(1.0f / 60.0f);
+			ghost->Update(1.0f / 60.0f);
+			blocker->Update(1.0f / 60.0f);
+			ghostBlocker->Update(1.0f / 60.0f);
+			walkerInSensor = walkerInSensor || walker->IsOverlapping(sensor);
+		}
+		const float gap = blocker->GetPosition().x - walker->GetPosition().x;
+		Check(gap > 0.5f && ghost->GetPosition().x > 2.0f && walkerInSensor && !walker->IsOverlapping(wall),
+			std::format("two character controllers block each other ({:.2f} m apart) unless one opts out (it reached x = {:.2f}), and a sensor sees a controller",
+				gap, ghost->GetPosition().x));
+		walker.reset();
+		blocker.reset();
+		ghost.reset();
+		ghostBlocker.reset();
+		world->Shutdown();
+
+		Scene scene("Query Checks");
+		Entity ground = scene.CreateEntity("Ground");
+		ground.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.5f, 0.0f }, { 40.0f, 1.0f, 40.0f }));
+		ground.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
+		Entity trigger = scene.CreateEntity("Trigger");
+		trigger.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, 0.9f, 0.0f }, glm::vec3(2.0f)));
+		trigger.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static)).IsSensor = true;
+		Entity crate = scene.CreateEntity("Crate");
+		crate.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.5f, 1.0f, 0.0f }, glm::vec3(0.4f)));
+		crate.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Kinematic));
+		Entity hero = scene.CreateEntity("Hero");
+		hero.AddComponent<Transform3DComponent>(Transform3DComponent({ -0.5f, 0.0f, 0.0f }));
+		hero.AddComponent<CharacterController3DComponent>();
+		scene.OnStart();
+
+		Physics3D* physics = scene.GetPhysics3D();
+		const bool hitCrate = physics && physics->RayCast(Ray({ 0.5f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }), 10.0f, hit) && scene.GetEntityFromBody3D(hit.Body) == crate;
+		const PhysicsBodyId3D crateBody = scene.GetRuntimeBody3D(crate);
+		std::vector<Entity> overlaps;
+		scene.GetSensorOverlaps(trigger, overlaps);
+		const bool listed = overlaps.size() == 3 && std::find(overlaps.begin(), overlaps.end(), crate) != overlaps.end()
+			&& std::find(overlaps.begin(), overlaps.end(), hero) != overlaps.end() && std::find(overlaps.begin(), overlaps.end(), ground) != overlaps.end();
+		scene.DestroyEntity(crate);
+		Check(hitCrate && listed && !scene.GetEntityFromBody3D(crateBody) && !scene.GetEntityFromBody3D(k_InvalidBody3D),
+			std::format("Scene maps a ray hit's body to its entity, and a sensor entity lists the bodies and controllers inside it ({} found)", overlaps.size()));
+		scene.OnStop();
 	}
 
 	void MeshColliderTest::SpawnBody()

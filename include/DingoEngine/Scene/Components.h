@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Enums/ShadowCasting.h"
+#include "DingoEngine/Graphics/Enums/RootMotion.h"
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
@@ -190,6 +191,7 @@ namespace Dingo
 		// See DirectionalLight: the first casting one gets cascaded shadows.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
@@ -217,6 +219,7 @@ namespace Dingo
 		// See PointLight: casting lights share the scene's shadow slots by rank.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; // see DirectionalLight
 
 		PointLightComponent() = default;
 		PointLightComponent(const PointLightComponent&) = default;
@@ -244,6 +247,7 @@ namespace Dingo
 		// See SpotLight.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
+		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 
 		SpotLightComponent() = default;
 		SpotLightComponent(const SpotLightComponent&) = default;
@@ -374,14 +378,14 @@ namespace Dingo
 	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
 	}
 
 	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
 			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
 	}
 
 	// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
@@ -403,6 +407,9 @@ namespace Dingo
 
 		// ShadowsOnly keeps a mesh out of the picture but in the shadows; Visible = false drops both.
 		ShadowCasting Shadows = ShadowCasting::On;
+		// Bit mask of caster groups; a light casts the mesh only when it shares a bit with the
+		// light's ShadowCasterGroups.
+		uint32_t ShadowGroups = 1;
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;
@@ -422,6 +429,7 @@ namespace Dingo
 		Dingo::Material* Material = nullptr;
 		bool Visible = true;
 		ShadowCasting Shadows = ShadowCasting::On;
+		uint32_t ShadowGroups = 1; // see MeshRendererComponent
 
 		SkinnedMeshRendererComponent() = default;
 		SkinnedMeshRendererComponent(const SkinnedMeshRendererComponent&) = default;
@@ -440,6 +448,15 @@ namespace Dingo
 		float Speed = 1.0f;
 		// False holds the current pose.
 		bool Enabled = true;
+		// Off plays clips in place. Otherwise the clips' root travel is taken out of the pose and moves
+		// this entity: its Transform3DComponent, its character controller's velocity and rotation, or
+		// its kinematic body through MoveKinematic. A dynamic or static body isn't moved (warned once).
+		// It sets the animator's mode every frame, so set it here rather than on the Animator. A
+		// controller it stops driving (disabled, Off, not applied) has its horizontal velocity zeroed.
+		RootMotionMode RootMotion = RootMotionMode::Off;
+		// False takes the travel out of the pose without moving the entity, for a script to apply
+		// Animator::GetRootMotionDelta itself.
+		bool ApplyRootMotion = true;
 
 		AnimatorComponent() = default;
 		AnimatorComponent(const AnimatorComponent&) = default;
@@ -512,6 +529,10 @@ namespace Dingo
 		// See RigidBodyParams3D::ContinuousCollision: turn on for fast bodies that must not
 		// tunnel through MeshCollider3DComponent geometry.
 		bool ContinuousCollision = false;
+		// See RigidBodyParams3D: a trigger volume (Scene::GetSensorOverlaps lists what is inside),
+		// and the query layers QueryFilter3D tests.
+		bool IsSensor = false;
+		std::uint32_t QueryLayers = 1u;
 
 		RigidBody3DComponent() = default;
 		RigidBody3DComponent(const RigidBody3DComponent&) = default;
@@ -598,6 +619,7 @@ namespace Dingo
 		float Height = 1.8f;         // full standing height
 		float StepHeight = 0.3f;     // max stair step-up height
 		float MaxSlopeAngle = 45.0f; // steepest walkable slope, degrees
+		bool CollideWithCharacters = true; // blocks and is blocked by the other controllers that set it
 
 		CharacterController3DComponent() = default;
 		CharacterController3DComponent(const CharacterController3DComponent&) = default;

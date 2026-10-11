@@ -218,8 +218,10 @@ namespace Dingo
 		// camera, off screen, past Shadows.MaxDistance), which cover only what the camera sees. A
 		// local light's shadow doesn't depend on the camera. The point is taken as it is, with no surface normal to push it off a surface, so
 		// probe a point in the air, such as a character's chest. At most k_MaxShadowProbes a scene;
-		// past them AddShadowProbe returns false and warns once.
-		bool AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key);
+		// past them AddShadowProbe returns false and warns once. `clearance` moves the point that far
+		// towards the light first (at most to the light), so a caster within it doesn't count: a
+		// point inside a character's body, probed while the body casts.
+		bool AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key, float clearance = 0.0f);
 		// The latest answer for key; empty until the first one arrives. Answers not refreshed for 600
 		// frames are forgotten.
 		std::optional<float> GetShadowProbeResult(uint64_t key) const;
@@ -280,7 +282,8 @@ namespace Dingo
 		// (3, the mesh's UVs, for custom materials that sample a texture). No-op outside a
 		// Begin/EndScene pair. Every material casts through the renderer's own depth-only pass, so a
 		// custom vertex shader's displacement isn't in its shadow, and a translucent mesh casts a full
-		// one.
+		// one. shadowGroups is a bit mask: a casting light takes the mesh into its shadows only when
+		// it shares a bit with the light's ShadowCasterGroups.
 		//
 		// A translucent material's meshes draw in the translucent pass, after the opaque ones: each
 		// mesh sorted far to near by the centre of its transformed vertices (along the view for an
@@ -288,7 +291,7 @@ namespace Dingo
 		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
 		// wrapped around a small one, can blend in the wrong order. With ShadowsOnly it draws nothing
 		// lit, so it batches like an opaque mesh.
-		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On);
+		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
 
 		// Convenience primitives drawn with the renderer's built-in unit meshes
 		// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
@@ -322,7 +325,7 @@ namespace Dingo
 		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
 		// uploads its palette for each; an instance with opaque and translucent meshes is drawn lit in
 		// both passes. That is why the skin buffer holds three writes per instance.
-		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On);
+		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
 
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
 		// k_MaxSkinnedInstancesLimit.
@@ -434,6 +437,7 @@ namespace Dingo
 			float Priority = 0.0f; // Score / (1 + Nearness), the budget fade's continuous rank
 			bool CastShadows = false;
 			float ShadowStrength = 1.0f;
+			uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 			uint32_t ShadowFaces = 1;    // 1: a spot light's single view; 6: a cube around the light
 			float OuterConeAngle = 0.0f; // degrees, for a spot light's view
 		};
@@ -525,13 +529,15 @@ namespace Dingo
 		{
 			Dingo::Material* Material = nullptr;
 			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
 			bool operator==(const BatchKey&) const = default;
 		};
 		struct BatchKeyHash
 		{
 			size_t operator()(const BatchKey& key) const
 			{
-				return std::hash<const void*>()(key.Material) ^ (static_cast<size_t>(key.Shadows) * 0x9e3779b97f4a7c15ull);
+				const size_t cast = (static_cast<size_t>(key.ShadowGroups) << 8) | static_cast<size_t>(key.Shadows);
+				return std::hash<const void*>()(key.Material) ^ (cast * 0x9e3779b97f4a7c15ull);
 			}
 		};
 		std::unordered_map<BatchKey, MaterialBatch, BatchKeyHash> m_Batches;
@@ -567,6 +573,7 @@ namespace Dingo
 			uint32_t IndexCount = 0;
 			int32_t Skinned = -1; // into m_SkinnedSubmissions; -1 = static
 			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
 			float SortKey = 0.0f; // larger is farther from the camera
 		};
 		// One draw of the translucent pass, far to near: a run of static meshes of one material that
@@ -636,6 +643,7 @@ namespace Dingo
 			Dingo::Material* Material = nullptr;
 			uint32_t Instance = 0;
 			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
 			bool Translucent = false; // drawn lit by the translucent pass
 		};
 
@@ -715,24 +723,26 @@ namespace Dingo
 		{
 			glm::mat4 ViewProjection{ 1.0f };
 			glm::vec4 Tile{ 0.0f }; // xy = the tile's centre in atlas clip space, zw = its scale
+			glm::uvec4 Casters{ 0xFFFFFFFFu, 0u, 0u, 0u }; // x = the light's ShadowCasterGroups
 		};
 		struct ShadowViews
 		{
 			ShadowViewData Views[k_MaxShadowTiles];
 		};
-		static_assert(sizeof(ShadowViewData) == 80, "ShadowViews must match the std140 block in Renderer3D_Shadow.glsl");
+		static_assert(sizeof(ShadowViewData) == 96, "ShadowViews must match the std140 block in Renderer3D_Shadow.glsl");
 
 		class ShadowAtlasAllocator;
 		bool PrepareCascades(ShadowAtlasAllocator& allocator);
 		void PrepareLocalShadows(ShadowAtlasAllocator& allocator);
 		// Fills tile m_ShadowViewCount from a view-projection and the atlas square it renders into.
-		void AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params);
+		void AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params, uint32_t casterGroups);
 
 		ShadowData m_ShadowData;
 		ShadowViews m_ShadowViews;
 		uint32_t m_ShadowViewCount = 0;
 		int32_t m_ShadowLight = -1; // the directional light (submission index) that casts this scene
 		float m_ShadowStrength = 1.0f;
+		uint32_t m_ShadowCasterGroups = 0xFFFFFFFFu;
 		bool m_SecondShadowLightWarned = false;
 
 		std::unique_ptr<Internal::ParticleRenderer> m_Particles;
@@ -744,6 +754,7 @@ namespace Dingo
 			ShadowProbeLight Light;
 			glm::vec3 Point{ 0.0f };
 			uint64_t Key = 0;
+			float Clearance = 0.0f;
 		};
 		// std140, mirrored by ProbeData in Renderer3D_ShadowProbe.glsl.
 		struct ShadowProbeData
@@ -801,8 +812,11 @@ namespace Dingo
 		Sampler* m_ShadowSampler = nullptr;          // comparison, linear: hardware 2 x 2 PCF
 		Shader* m_ShadowShader = nullptr;
 		Shader* m_SkinnedShadowShader = nullptr;
-		Material* m_ShadowMaterial = nullptr;
-		Material* m_SkinnedShadowMaterial = nullptr;
+		// One per caster-group mask drawn, each with the mask in its ShadowCaster block.
+		std::unordered_map<uint32_t, Material*> m_ShadowMaterials;
+		std::unordered_map<uint32_t, Material*> m_SkinnedShadowMaterials;
+		Material* GetShadowMaterial(bool skinned, uint32_t shadowGroups);
+		void DestroyShadowMaterials();
 	};
 
 }

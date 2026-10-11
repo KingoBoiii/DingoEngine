@@ -78,7 +78,7 @@ namespace Dingo
 			std::vector<AnimationClipEvent> Events;
 		};
 
-		Model* LoadModel(const char* path);
+		Model* LoadModel(const char* path, const ModelLoadParams& params = ModelLoadParams());
 		Texture* LoadTexture(const char* path);
 		std::shared_ptr<AudioClip> LoadSound(const char* path);
 		void BuildArena();

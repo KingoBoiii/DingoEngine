@@ -308,8 +308,7 @@ namespace Dingo
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 		DestroyAndDelete(m_SkinnedShader);
 
-		DestroyAndDelete(m_ShadowMaterial);
-		DestroyAndDelete(m_SkinnedShadowMaterial);
+		DestroyShadowMaterials();
 		Internal::UnwatchUnmanagedShader(m_ShadowShader);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
 		DestroyAndDelete(m_ShadowShader);
@@ -612,23 +611,44 @@ namespace Dingo
 			return chunksInUse - 1;
 		};
 
-		// Depth-only, so the casters go in submission order, chunks apart from the sorted ones.
-		uint32_t firstCasterChunk = 0;
-		uint32_t casterChunkEnd = 0;
+		// Depth-only, so the casters need no order: chunks apart from the lit ones, one run of chunks
+		// per caster mask, since each mask draws with its own shadow material.
+		struct CasterRun
+		{
+			uint32_t ShadowGroups = 1;
+			uint32_t FirstChunk = 0;
+			uint32_t ChunkEnd = 0;
+		};
+		std::vector<CasterRun> casterRuns;
 		if (shadows)
 		{
+			std::vector<uint32_t> groups;
 			for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
 			{
-				if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.IndexCount == 0 || !drawable(submission.Material))
-					continue;
-				if (casterChunkEnd == 0)
+				if (submission.Skinned < 0 && submission.Shadows == ShadowCasting::On && submission.IndexCount > 0 &&
+					std::find(groups.begin(), groups.end(), submission.ShadowGroups) == groups.end())
+					groups.push_back(submission.ShadowGroups);
+			}
+			for (const uint32_t group : groups)
+			{
+				CasterRun run;
+				run.ShadowGroups = group;
+				for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
 				{
-					startChunk();
-					firstCasterChunk = chunksInUse - 1;
+					if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.ShadowGroups != group ||
+						submission.IndexCount == 0 || !drawable(submission.Material))
+						continue;
+					if (run.ChunkEnd == 0)
+					{
+						startChunk();
+						run.FirstChunk = chunksInUse - 1;
+					}
+					uint32_t firstIndex = 0;
+					append(submission, firstIndex);
+					run.ChunkEnd = chunksInUse;
 				}
-				uint32_t firstIndex = 0;
-				append(submission, firstIndex);
-				casterChunkEnd = chunksInUse;
+				if (run.ChunkEnd > 0)
+					casterRuns.push_back(run);
 			}
 		}
 
@@ -671,11 +691,14 @@ namespace Dingo
 			if (!m_TranslucentChunks[chunk].Indices.empty())
 				buffers[chunk] = UploadChunk(m_TranslucentChunks[chunk], batchIndex);
 		}
-		for (uint32_t chunk = firstCasterChunk; chunk < casterChunkEnd; ++chunk)
+		for (const CasterRun& run : casterRuns)
 		{
-			const MeshChunk& casters = m_TranslucentChunks[chunk];
-			if (!casters.Indices.empty())
-				m_ChunkDraws.push_back({ BatchKey{ nullptr, ShadowCasting::On }, buffers[chunk], static_cast<uint32_t>(casters.Indices.size()), true });
+			for (uint32_t chunk = run.FirstChunk; chunk < run.ChunkEnd; ++chunk)
+			{
+				const MeshChunk& casters = m_TranslucentChunks[chunk];
+				if (!casters.Indices.empty())
+					m_ChunkDraws.push_back({ BatchKey{ nullptr, ShadowCasting::On, run.ShadowGroups }, buffers[chunk], static_cast<uint32_t>(casters.Indices.size()), true });
+			}
 		}
 		for (TranslucentDraw& draw : m_TranslucentDraws)
 		{
@@ -753,10 +776,12 @@ namespace Dingo
 		return m_Particles ? m_Particles->GetUsed() : 0;
 	}
 
-	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows)
+	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
+		if (shadows == ShadowCasting::Off)
+			shadowGroups = 1;
 
 		const uint32_t jointCount = mesh->GetSkinJointCount();
 		const char* fallbackReason = (!mesh->HasSkin() || mesh->GetIndices().empty()) ? "" :
@@ -774,7 +799,7 @@ namespace Dingo
 			// A skinned shader can't draw the static vertex stream.
 			const Shader* shader = material ? material->GetShader() : nullptr;
 			const bool skinnedOnly = shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows);
+			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows, shadowGroups);
 			return;
 		}
 
@@ -826,7 +851,7 @@ namespace Dingo
 			instance.JointCount = jointCount;
 		}
 
-		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1), shadows });
+		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1), shadows, shadowGroups });
 
 		const Material* requested = material ? material : m_Material;
 		if (requested->IsTranslucent() && shadows != ShadowCasting::ShadowsOnly)
@@ -857,6 +882,7 @@ namespace Dingo
 			submission.Material = material;
 			submission.Skinned = static_cast<int32_t>(m_SkinnedSubmissions.size() - 1);
 			submission.Shadows = shadows;
+			submission.ShadowGroups = shadowGroups;
 			submission.SortKey = *sortKey;
 		}
 	}
@@ -1142,6 +1168,7 @@ namespace Dingo
 			{
 				m_ShadowLight = count;
 				m_ShadowStrength = shadowStrength;
+				m_ShadowCasterGroups = light.ShadowCasterGroups;
 			}
 			else if (!m_SecondShadowLightWarned)
 			{
@@ -1175,6 +1202,7 @@ namespace Dingo
 		candidate->Data.SpotDirection = glm::vec4(cone.Axis, cone.Offset);
 		candidate->Brightness = Strength(light.Color) * light.Intensity;
 		candidate->CastShadows = light.CastShadows;
+		candidate->ShadowCasterGroups = light.ShadowCasterGroups;
 		candidate->ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
 		if constexpr (std::is_same_v<LightType, SpotLight>)
 		{
@@ -1278,6 +1306,7 @@ namespace Dingo
 		m_SceneLightSubmitted = false;
 		m_DroppedLights = 0;
 		m_ShadowLight = -1;
+		m_ShadowCasterGroups = 0xFFFFFFFFu;
 		m_LastSubmittedLight = {};
 		m_ShadowProbes.clear();
 		ClearFog();
@@ -1395,13 +1424,15 @@ namespace Dingo
 		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
-	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows)
+	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
+		if (shadows == ShadowCasting::Off)
+			shadowGroups = 1;
 
 		Material* batchMaterial = material ? material : m_Material;
-		MaterialBatch* batch = &m_Batches[BatchKey{ batchMaterial, shadows }];
+		MaterialBatch* batch = &m_Batches[BatchKey{ batchMaterial, shadows, shadowGroups }];
 		if (!batch->Enqueued)
 		{
 			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
@@ -1410,7 +1441,7 @@ namespace Dingo
 			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
 			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && batchMaterial->IsTranslucent();
 			if (!batch->SkinnedOnly && !batch->Translucent)
-				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows });
+				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows, shadowGroups });
 			else if (batch->SkinnedOnly && !m_SkinnedOnlyWarned)
 			{
 				const std::string& name = batchMaterial->GetParams().DebugName;
@@ -1420,11 +1451,11 @@ namespace Dingo
 		}
 		if (batch->SkinnedOnly)
 		{
-			batch = &m_Batches[BatchKey{ m_Material, shadows }];
+			batch = &m_Batches[BatchKey{ m_Material, shadows, shadowGroups }];
 			if (!batch->Enqueued)
 			{
 				batch->Enqueued = true;
-				m_DrawOrder.push_back(BatchKey{ m_Material, shadows });
+				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
 			}
 		}
 		MaterialBatch& matBatch = *batch;
@@ -1464,6 +1495,7 @@ namespace Dingo
 			submission.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
 			submission.IndexCount = static_cast<uint32_t>(indices.size());
 			submission.Shadows = shadows;
+			submission.ShadowGroups = shadowGroups;
 		}
 		else
 		{
@@ -1558,10 +1590,7 @@ namespace Dingo
 		const bool biasChanged = clamped.DepthBias != m_Params.Shadows.DepthBias || clamped.SlopeBias != m_Params.Shadows.SlopeBias;
 		m_Params.Shadows = clamped;
 		if (biasChanged)
-		{
-			DestroyAndDelete(m_ShadowMaterial);
-			DestroyAndDelete(m_SkinnedShadowMaterial);
-		}
+			DestroyShadowMaterials();
 		if (m_ShadowAtlas && m_ShadowAtlas->GetWidth() != clamped.AtlasSize)
 			m_ShadowAtlas->Resize(clamped.AtlasSize, clamped.AtlasSize);
 	}
@@ -1587,16 +1616,36 @@ namespace Dingo
 			m_ShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DShadow"), "Renderer3D_Shadow.glsl");
 			Internal::WatchUnmanagedShader(m_ShadowShader);
 		}
+	}
 
-		if (!m_ShadowMaterial)
+	Material* Renderer3D::GetShadowMaterial(bool skinned, uint32_t shadowGroups)
+	{
+		std::unordered_map<uint32_t, Material*>& materials = skinned ? m_SkinnedShadowMaterials : m_ShadowMaterials;
+		Material*& material = materials[shadowGroups];
+		if (!material)
 		{
-			m_ShadowMaterial = Material::Create(MaterialParams()
-				.SetDebugName("Renderer3D_Shadow")
-				.SetShader(m_ShadowShader)
+			material = Material::Create(MaterialParams()
+				.SetDebugName(skinned ? "Renderer3D_SkinnedShadow" : "Renderer3D_Shadow")
+				.SetShader(skinned ? m_SkinnedShadowShader : m_ShadowShader)
 				.SetCullMode(CullMode::None)
 				.SetBlendMode(BlendMode::Opaque)
 				.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
+			material->SetUniform(glm::uvec4(shadowGroups, 0u, 0u, 0u));
 		}
+		material->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+		if (skinned)
+			material->SetSkinUniformBuffer(m_SkinBuffer);
+		return material;
+	}
+
+	void Renderer3D::DestroyShadowMaterials()
+	{
+		for (auto& [groups, material] : m_ShadowMaterials)
+			DestroyAndDelete(material);
+		for (auto& [groups, material] : m_SkinnedShadowMaterials)
+			DestroyAndDelete(material);
+		m_ShadowMaterials.clear();
+		m_SkinnedShadowMaterials.clear();
 	}
 
 	bool Renderer3D::PrepareShadows()
@@ -1630,7 +1679,7 @@ namespace Dingo
 		return true;
 	}
 
-	void Renderer3D::AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params)
+	void Renderer3D::AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params, uint32_t casterGroups)
 	{
 		const float atlasSize = static_cast<float>(m_Params.Shadows.AtlasSize);
 		const float half = static_cast<float>(size) * 0.5f;
@@ -1639,7 +1688,7 @@ namespace Dingo
 			(static_cast<float>(corner.x) + half) / atlasSize * 2.0f - 1.0f,
 			1.0f - (static_cast<float>(corner.y) + half) / atlasSize * 2.0f);
 
-		m_ShadowViews.Views[m_ShadowViewCount] = { viewProjection, glm::vec4(tileCenter, tileScale, tileScale) };
+		m_ShadowViews.Views[m_ShadowViewCount] = { viewProjection, glm::vec4(tileCenter, tileScale, tileScale), glm::uvec4(casterGroups, 0u, 0u, 0u) };
 		m_ShadowData.Tiles[m_ShadowViewCount] = { viewProjection,
 			glm::vec4(static_cast<float>(corner.x) / atlasSize, static_cast<float>(corner.y) / atlasSize, tileScale, tileScale), params };
 		++m_ShadowViewCount;
@@ -1742,7 +1791,7 @@ namespace Dingo
 			if (!allocator.Allocate(resolution, corner))
 				break;
 
-			AddShadowTile(viewProjection, corner, resolution, glm::vec4(sliceEnd, 2.0f * radius / static_cast<float>(resolution), 0.0f, 0.0f));
+			AddShadowTile(viewProjection, corner, resolution, glm::vec4(sliceEnd, 2.0f * radius / static_cast<float>(resolution), 0.0f, 0.0f), m_ShadowCasterGroups);
 			m_Statistics.ShadowCascadeEnds[cascade] = sliceEnd;
 			++made;
 			sliceStart = sliceEnd;
@@ -1883,7 +1932,7 @@ namespace Dingo
 				const float halfTangent = TileHalfAngleTangent(tangent, size);
 				const glm::mat4 projection = glm::perspectiveRH_ZO(2.0f * std::atan(halfTangent), 1.0f, nearPlane, range);
 				const glm::mat4 view = glm::lookAt(position, position + direction, up);
-				AddShadowTile(projection * view, corner, size, glm::vec4(0.0f, 2.0f * halfTangent / static_cast<float>(size), 1.0f, 0.0f));
+				AddShadowTile(projection * view, corner, size, glm::vec4(0.0f, 2.0f * halfTangent / static_cast<float>(size), 1.0f, 0.0f), light.ShadowCasterGroups);
 			}
 
 			if (!complete)
@@ -1918,13 +1967,12 @@ namespace Dingo
 		Renderer::Clear(m_ShadowAtlas, glm::vec4(0.0f));
 		Renderer::Upload(m_ShadowViewsBuffer, &m_ShadowViews, sizeof(ShadowViews));
 
-		m_ShadowMaterial->SetSceneUniformBuffer(m_ShadowViewsBuffer);
 		for (const ChunkDraw& draw : m_ChunkDraws)
 		{
 			if (draw.Key.Shadows == ShadowCasting::Off)
 				continue;
 
-			Renderer::DrawIndexed(m_ShadowMaterial, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
+			Renderer::DrawIndexed(GetShadowMaterial(false, draw.Key.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
 			++m_Statistics.ShadowDrawCalls;
 		}
 		m_Statistics.ShadowCasters += m_StaticCasters;
@@ -1948,18 +1996,6 @@ namespace Dingo
 				m_SkinnedShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DSkinnedShadow").AddDefine("DE_SKINNED"), "Renderer3D_Shadow.glsl");
 				Internal::WatchUnmanagedShader(m_SkinnedShadowShader);
 			}
-			if (!m_SkinnedShadowMaterial)
-			{
-				m_SkinnedShadowMaterial = Material::Create(MaterialParams()
-					.SetDebugName("Renderer3D_SkinnedShadow")
-					.SetShader(m_SkinnedShadowShader)
-					.SetCullMode(CullMode::None)
-					.SetBlendMode(BlendMode::Opaque)
-					.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
-			}
-
-			m_SkinnedShadowMaterial->SetSceneUniformBuffer(m_ShadowViewsBuffer);
-			m_SkinnedShadowMaterial->SetSkinUniformBuffer(m_SkinBuffer);
 			uint32_t uploadedInstance = ~0u;
 			for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 			{
@@ -1973,7 +2009,7 @@ namespace Dingo
 				}
 
 				EnsureSkinBuffers(submission.Mesh);
-				Renderer::DrawIndexed(m_SkinnedShadowMaterial, m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
+				Renderer::DrawIndexed(GetShadowMaterial(true, submission.ShadowGroups), m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
 				++m_Statistics.ShadowDrawCalls;
 				++m_Statistics.ShadowCasters;
 			}
@@ -1982,9 +2018,9 @@ namespace Dingo
 		Renderer::EndGpuTimer();
 	}
 
-	bool Renderer3D::AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key)
+	bool Renderer3D::AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key, float clearance)
 	{
-		if (!light.IsValid() || !IsFinite(point))
+		if (!light.IsValid() || !IsFinite(point) || !std::isfinite(clearance))
 			return false;
 		if (m_ShadowProbes.size() >= k_MaxShadowProbes)
 		{
@@ -1995,7 +2031,7 @@ namespace Dingo
 			}
 			return false;
 		}
-		m_ShadowProbes.push_back({ light, point, key });
+		m_ShadowProbes.push_back({ light, point, key, (std::max)(clearance, 0.0f) });
 		return true;
 	}
 
@@ -2048,7 +2084,25 @@ namespace Dingo
 				continue;
 			}
 
-			m_ShadowProbeData.Probes[m_GpuProbeKeys.size()] = glm::vec4(probe.Point, light);
+			glm::vec3 point = probe.Point;
+			if (probe.Clearance > 0.0f)
+			{
+				if (probe.Light.Directional)
+				{
+					const glm::vec3 travel(m_CameraData.DirectionalLights[probe.Light.Index].Direction);
+					if (glm::dot(travel, travel) > 0.0f)
+						point -= glm::normalize(travel) * probe.Clearance;
+				}
+				else
+				{
+					const glm::vec3 toLight = glm::vec3(m_LocalLights[probe.Light.Index].Data.PositionRange) - point;
+					const float distance = glm::length(toLight);
+					if (distance > 0.0f)
+						point += toLight * ((std::min)(probe.Clearance, distance) / distance);
+				}
+			}
+
+			m_ShadowProbeData.Probes[m_GpuProbeKeys.size()] = glm::vec4(point, light);
 			m_GpuProbeKeys.push_back(probe.Key);
 		}
 		// The probe pass shades all k_MaxShadowProbes pixels and indexes the shadow buffers by each

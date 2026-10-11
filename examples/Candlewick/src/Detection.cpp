@@ -87,6 +87,22 @@ namespace Dingo
 			delete mesh;
 	}
 
+	// Drawing only: the cone stops at the first wall a level ray along the eye's heading meets, as its
+	// light does, instead of reaching through it into the next room.
+	float Detection::DebugConeLength(const glm::vec3& eye, const glm::vec3& forward, float range) const
+	{
+		const Physics3D* physics = m_Scene.GetPhysics3D();
+		const glm::vec3 level(forward.x, 0.0f, forward.z);
+		const float levelLength = glm::length(level);
+		if (!physics || levelLength < 1e-3f)
+			return range;
+
+		RayCastHit3D hit;
+		if (!physics->RayCast(Ray(eye, level / levelLength), range * levelLength, hit))
+			return range;
+		return (std::min)(range, hit.Fraction * range);
+	}
+
 	bool Detection::HasLineOfSight(const glm::vec3& eye, const glm::vec3& target) const
 	{
 		const Physics3D* physics = m_Scene.GetPhysics3D();
@@ -285,7 +301,7 @@ namespace Dingo
 			auto& cone = m_Cones[i].GetComponent<Transform3DComponent>();
 			cone.Position = eyeTransform.Position;
 			cone.Rotation = eyeTransform.Rotation;
-			cone.Scale = glm::vec3(eye.Range);
+			cone.Scale = glm::vec3(DebugConeLength(eyeTransform.Position, eyeTransform.Rotation * eye.Direction, eye.Range));
 			m_Cones[i].GetComponent<MeshRendererComponent>().Visible = eye.Enabled;
 
 			EyeState state;

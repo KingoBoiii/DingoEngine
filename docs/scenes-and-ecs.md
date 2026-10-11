@@ -66,12 +66,12 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
 | `PostProcessComponent` (v0.9) | `PostProcessSettings Settings` (`Enabled`, false by default; `Tone`: operator, exposure, knee, white point; `Bloom`; `AmbientOcclusion`); on the primary perspective camera, the `SceneRenderer` runs the 3D pass through the post chain. See [Post-processing](post-processing.md) |
-| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)), `bool CastShadows` and `float ShadowStrength` (v0.9, see [Shadows](shadows.md)) — a sun |
+| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)), `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — a sun |
 | `ParticleEmitterComponent` (v0.9) | `ParticleEffect* Effect`, `bool Playing`, `float RateScale`, `bool WorldSpace` — GPU particles from the entity's world transform, stepped by `Scene::OnUpdate` and drawn by the `SceneRenderer`; `Scene::EmitParticles` / `EmitParticlesAt` fire bursts. See [Particles](particles.md) |
 | `ParticleEventComponent` (v0.9) | `Bindings` (`Bind(event, emitterUUID, count)`, `BindRange(event, emitterUUID)`) — the entity's animation events burst emitter entities or play them while a range is open. See [Particles](particles.md#from-animation-events) |
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
-| `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled`, `bool CastShadows` and `float ShadowStrength` (v0.9, see [Shadows](shadows.md)) — light in every direction from the entity's `Transform3DComponent` position; `ToLight(transform)` → the `PointLight` it draws as |
-| `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled`, `bool CastShadows` and `float ShadowStrength` (v0.9) — a cone of light from the entity's `Transform3DComponent`; `ToLight(transform)` → the world-space `SpotLight` it draws as |
+| `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled`, `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — light in every direction from the entity's `Transform3DComponent` position; `ToLight(transform)` → the `PointLight` it draws as |
+| `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled`, `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9) — a cone of light from the entity's `Transform3DComponent`; `ToLight(transform)` → the world-space `SpotLight` it draws as |
 | `FogComponent` | `FogMode Mode` (`Linear`, `Exponential`, `ExponentialSquared`, `None`), `glm::vec3 Color`, `bool UseClearColor` (default true: the scene's clear colour), `float Start` / `End` (linear), `float Density` (exponential), `float MaxOpacity`, `bool Enabled` — distance fog over the 3D pass; the first enabled one counts, and it is no light. See [Lighting](lighting.md#fog) |
 
 The four light components and `FogComponent` are read by the `SceneRenderer` for the 3D pass — see [Lights](#lights-v07).
@@ -167,8 +167,8 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | Component | Fields |
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
-| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)) |
-| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` (v0.9). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1) |
+| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
@@ -266,8 +266,8 @@ float aim = turret2D.GetWorldRotation2D();      // the hull's rotation + the tur
   `GetWorldRotation2D`/`SetWorldRotation2D` (degrees).
 - **Shear.** A rotated child under a non-uniformly scaled parent is sheared, which position,
   rotation and scale can't express: `GetWorldRotation`/`GetWorldScale` and `keepWorldTransform`
-  approximate it. Where that matters, keep a parent's scale uniform and put its scaled mesh on a
-  child of its own. Under a parent with a zero scale on some axis there is no local position that
+  approximate it, and a `keepWorldTransform` reparent that can only approximate it logs a warning.
+  Where that matters, keep a parent's scale uniform and put its scaled mesh on a child of its own. Under a parent with a zero scale on some axis there is no local position that
   gives a chosen world position, so `keepWorldTransform`, `SetWorldPosition` and the physics
   write-back leave the local transform as it was.
 - **Mixed trees.** 2D and 3D transforms don't convert into each other: a parent counts as identity

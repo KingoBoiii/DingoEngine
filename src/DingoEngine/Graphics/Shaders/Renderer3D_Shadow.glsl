@@ -1,7 +1,8 @@
 // Renderer3D's shadow-atlas pass: depth only, every shadow view of a scene (the cascades, then each
 // shadowed local light's one or six) in one instanced draw per batch. Instance i takes view i: its
 // matrix, orthographic or perspective, then a move into its tile of the atlas, with clip distances at
-// the tile's edges so nothing spills into a neighbour. Static vertices are in world
+// the tile's edges so nothing spills into a neighbour. A view whose light leaves out the batch's
+// caster groups clips every vertex away. Static vertices are in world
 // space already; with DE_SKINNED they are skinned like the lit shader's (Skinning.glsl). Mirrors
 // Renderer3D::ShadowViews.
 
@@ -14,11 +15,17 @@ struct ShadowView
 {
 	mat4 ViewProjection;
 	vec4 Tile; // xy = the tile's centre in atlas clip space, zw = its scale
+	uvec4 Casters; // x = the light's caster groups
 };
 
 layout(std140, binding = 0) uniform ShadowViews
 {
 	ShadowView Views[MAX_SHADOW_VIEWS];
+};
+
+layout(std140, binding = 1) uniform ShadowCaster
+{
+	uvec4 Groups; // x = the batch's caster groups
 };
 
 layout(location = 0) in vec3 a_Position;
@@ -46,7 +53,7 @@ void main()
 	ShadowView view = Views[gl_InstanceIndex];
 	vec4 clip = view.ViewProjection * worldPosition;
 
-	gl_ClipDistance[0] = clip.w + clip.x;
+	gl_ClipDistance[0] = (view.Casters.x & Groups.x) != 0u ? clip.w + clip.x : -1.0;
 	gl_ClipDistance[1] = clip.w - clip.x;
 	gl_ClipDistance[2] = clip.w + clip.y;
 	gl_ClipDistance[3] = clip.w - clip.y;

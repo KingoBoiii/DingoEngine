@@ -25,6 +25,7 @@ namespace Dingo
 	{
 
 		class ScriptSystem;
+		class PhysicsSync;
 
 		namespace AnimationSystem
 		{
@@ -66,9 +67,11 @@ namespace Dingo
 
 			// The animate pass: gives every AnimatorComponent on a skinned model its animator (playing
 			// DefaultClip when PlayOnStart is set), rebinds one whose model changed, and advances the
-			// enabled ones by deltaTime x Speed. Then hands each entity's events to its script, once
-			// every animator has moved; the caller defers destroys around it.
-			void Update(entt::registry& registry, ScriptSystem& scripts, EventScratch& scratch, float deltaTime);
+			// enabled ones by deltaTime x Speed, moving each entity whose component applies root motion
+			// by its animator's (through physics for a controller or kinematic body, so before the
+			// step). Then hands each entity's events to its script, once every animator has moved; the
+			// caller defers destroys around it.
+			void Update(entt::registry& registry, ScriptSystem& scripts, PhysicsSync& physics, EventScratch& scratch, float deltaTime);
 
 			// Created on first use; nullptr without an AnimatorComponent and a skinned model.
 			Animator* GetAnimator(entt::registry& registry, entt::entity handle);

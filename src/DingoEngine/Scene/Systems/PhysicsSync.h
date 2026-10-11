@@ -65,6 +65,10 @@ namespace Dingo
 			// Opaque runtime handles for an entity, or the "none" sentinel when it has none.
 			PhysicsBodyId2D RuntimeBody2D(const entt::registry& registry, entt::entity handle) const;
 			PhysicsBodyId3D RuntimeBody3D(const entt::registry& registry, entt::entity handle) const;
+			// The entity whose live body this is (its UserData, checked against its runtime), else null.
+			entt::entity EntityOfBody3D(const entt::registry& registry, PhysicsBodyId3D body) const;
+			// The entities with a body or a character controller inside the sensor entity's body.
+			void SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const;
 
 		private:
 			// Start's bake passes `memo`; a single late body works its pose out on demand.

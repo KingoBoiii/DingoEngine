@@ -35,6 +35,9 @@ namespace Dingo
 		void SpawnBody();
 		void UpdateLift(float deltaTime);
 		void RunSettledChecks();
+		// Query filters, sensors, controllers blocking each other and body-to-entity lookup, in
+		// worlds of their own.
+		void RunQueryChecks();
 
 	private:
 		TestChecks m_Checks;

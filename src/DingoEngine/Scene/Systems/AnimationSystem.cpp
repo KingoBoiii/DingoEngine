@@ -4,7 +4,10 @@
 #include "DingoEngine/Graphics/Animator.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Physics/3D/CharacterController3D.h"
+#include "DingoEngine/Physics/3D/Physics3D.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
+#include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
 
@@ -62,6 +65,8 @@ namespace Dingo
 						runtime->Instance = std::make_unique<Animator>();
 					}
 
+					runtime->Instance->SetRootMotion(registry.get<AnimatorComponent>(handle).RootMotion);
+
 					const Skeleton& skeleton = *model.GetSkeleton();
 					if (runtime->SkeletonId == skeleton.GetId())
 					{
@@ -98,6 +103,70 @@ namespace Dingo
 					return *runtime->Instance;
 				}
 
+				// The delta is relative to the entity's own frame, so it composes after the local transform
+				// whatever the parent: local x delta keeps world = parentWorld x local x delta.
+				// True when it drove a character controller.
+				bool ApplyRootMotion(entt::registry& registry, PhysicsSync& physics, entt::entity handle, RootMotionMode mode, const RootMotionDelta& delta, float deltaTime)
+				{
+					Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle);
+					if (!transform || !(deltaTime > 0.0f))
+						return false;
+
+					if (CharacterController3D* controller = physics.GetController(registry, handle))
+					{
+						const glm::vec3 travel = controller->GetRotation() * (HierarchySystem::WorldScale(registry, handle) * delta.Translation);
+						glm::vec3 velocity = travel / deltaTime;
+						// Gravity and jumps stay the script's.
+						if (mode == RootMotionMode::XZ)
+							velocity.y = controller->GetLinearVelocity().y;
+						controller->SetLinearVelocity(velocity);
+						controller->SetRotation(glm::normalize(controller->GetRotation() * delta.Rotation));
+						return true;
+					}
+
+					const RigidBody3DComponent* rigidBody = registry.try_get<RigidBody3DComponent>(handle);
+					const PhysicsBodyId3D body = physics.RuntimeBody3D(registry, handle);
+					if (rigidBody && body != k_InvalidBody3D)
+					{
+						if (rigidBody->Type != BodyType3D::Kinematic)
+						{
+							static bool s_Warned = false;
+							if (!s_Warned)
+							{
+								const TagComponent* tag = registry.try_get<TagComponent>(handle);
+								DE_CORE_WARN("AnimatorComponent on '{}': root motion moves only a kinematic body or a character controller, so this body stays", tag ? tag->Tag : std::string());
+								s_Warned = true;
+							}
+							return false;
+						}
+
+						// A kinematic child follows its transform (PhysicsSync::DriveKinematicChildren).
+						if (HierarchySystem::GetParent(registry, handle) == entt::null)
+						{
+							Physics3D& world = *physics.Get3D();
+							const glm::quat rotation = world.GetRotation(body);
+							const glm::vec3 target = world.GetPosition(body) + rotation * (transform->Scale * delta.Translation);
+							world.MoveKinematic(body, target, glm::normalize(rotation * delta.Rotation), deltaTime);
+							return false;
+						}
+					}
+
+					transform->Position += transform->Rotation * (transform->Scale * delta.Translation);
+					transform->Rotation = glm::normalize(transform->Rotation * delta.Rotation);
+					return false;
+				}
+
+				// A controller root motion stops driving would otherwise slide on at its last velocity.
+				void StopDrivenController(entt::registry& registry, PhysicsSync& physics, entt::entity handle)
+				{
+					AnimatorRuntime& runtime = registry.get<AnimatorRuntime>(handle);
+					if (!runtime.DroveController)
+						return;
+					runtime.DroveController = false;
+					if (CharacterController3D* controller = physics.GetController(registry, handle))
+						controller->SetLinearVelocity(glm::vec3(0.0f, controller->GetLinearVelocity().y, 0.0f));
+				}
+
 				void RecordEvents(EventScratch& scratch, entt::entity handle, std::span<const AnimationEvent> events)
 				{
 					static uint64_t s_Sequence = 0;
@@ -130,7 +199,7 @@ namespace Dingo
 				registry.on_destroy<AnimatorComponent>().connect<&DropRuntime>(scratch);
 			}
 
-			void Update(entt::registry& registry, ScriptSystem& scripts, EventScratch& scratch, float deltaTime)
+			void Update(entt::registry& registry, ScriptSystem& scripts, PhysicsSync& physics, EventScratch& scratch, float deltaTime)
 			{
 				// Every event is copied out before any is delivered: a handler may update, rebind or
 				// free any animator, its own included.
@@ -156,10 +225,23 @@ namespace Dingo
 					if (!settings.Enabled)
 					{
 						animator.ClearEventsThisFrame();
+						animator.ClearRootMotionDelta();
+						StopDrivenController(registry, physics, handle);
 						continue;
 					}
 
 					animator.Update(deltaTime * settings.Speed);
+					if (settings.RootMotion != RootMotionMode::Off && settings.ApplyRootMotion)
+					{
+						if (ApplyRootMotion(registry, physics, handle, settings.RootMotion, animator.GetRootMotionDelta(), deltaTime))
+							registry.get<AnimatorRuntime>(handle).DroveController = true;
+						else
+							StopDrivenController(registry, physics, handle);
+					}
+					else
+					{
+						StopDrivenController(registry, physics, handle);
+					}
 					RecordEvents(scratch, handle, animator.GetEventsThisFrame());
 					if (registry.all_of<ParticleEventComponent>(handle))
 					{

@@ -293,11 +293,14 @@ namespace Dingo
 				local.Rotation = glm::normalize(glm::inverse(parentRotation) * rotation);
 			}
 
-			void SetLocalFromWorld(Transform3DComponent& local, const glm::mat4& parentWorld, const glm::mat4& world)
+			bool SetLocalFromWorld(Transform3DComponent& local, const glm::mat4& parentWorld, const glm::mat4& world)
 			{
 				glm::mat4 inverseParent;
-				if (TryInverse(parentWorld, inverseParent))
-					Decompose(inverseParent * world, local.Position, local.Rotation, local.Scale);
+				if (!TryInverse(parentWorld, inverseParent))
+					return false;
+
+				Decompose(inverseParent * world, local.Position, local.Rotation, local.Scale);
+				return true;
 			}
 
 			void Decompose(const glm::mat4& matrix, glm::vec3& translation, glm::quat& rotation, glm::vec3& scale)

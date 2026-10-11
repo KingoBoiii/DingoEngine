@@ -78,6 +78,27 @@ last argument.
 Every material casts through the renderer's own depth-only pass: a custom vertex shader's
 displacement isn't in its shadow, and a translucent mesh casts a full shadow.
 
+### Caster groups
+
+A light can leave some casters out of its own shadow. Every mesh has a bit mask, `ShadowGroups`
+(1 by default; on `MeshRendererComponent`/`SkinnedMeshRendererComponent`, or `SubmitMesh`/
+`SubmitSkinnedMesh`'s last argument), and every light has `ShadowCasterGroups` (all bits by default).
+A light's shadow takes a mesh only when the two share a bit. The usual case is a light someone
+carries: give the player group 2 and the lantern `ShadowCasterGroups = ~2u`, and the lantern lights
+the room without the player's body throwing a shadow over everything, while the braziers and the
+sun still cast the player.
+
+```cpp
+playerRenderer.ShadowGroups = 2;
+lanternLight.ShadowCasterGroups = ~2u;
+```
+
+Batches split by mask, and each mask the shadow pass draws gets its own small material, so keep the
+masks few. A rejected mesh is still drawn into every tile, then clipped away, so it costs vertices
+but no pixels. The masks don't enter the shadow bookkeeping: a casting light whose mask leaves out
+every mesh still takes a shadow slot and its tiles, and an excluded mesh still widens the cascades'
+depth range.
+
 ## Is this point in shadow?
 
 A gameplay question, such as "can the brazier see the player", should get the answer the player
@@ -111,6 +132,11 @@ const float lit = scene->GetShadowedLightAttenuation(brazier, playerChest);  // 
   treat the sun's answer there as unknown.
 - **A point in the air.** The point has no surface normal to push it off a surface, so a point on
   the floor can read the floor's own depth; ask about a character's chest, not its feet.
+- **A point inside a caster.** A probe inside a mesh that casts for that light reads the mesh's own
+  shadow. Leave the mesh out of the light's caster groups, or pass a `clearance`: the last argument
+  of `GetLightVisibility`, `GetShadowedLightAttenuation` and `AddShadowProbe`, the distance the probe
+  moves toward the light (at most up to it) before it is tested. A character's half-width clears its
+  own body.
 - **Budget.** 256 probes a scene (warns once past them). Answers not asked for in 600 frames are
   forgotten.
 

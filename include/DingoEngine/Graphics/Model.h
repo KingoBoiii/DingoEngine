@@ -22,6 +22,22 @@ namespace Dingo
 		Texture*  DiffuseTexture = nullptr;
 	};
 
+	struct ModelLoadParams
+	{
+		// Loads the skeleton and clips (with the .events sidecar) but no meshes, materials or
+		// textures: a clip library that carries a preview mesh. The skeleton is the one a full
+		// load builds. A file without bones has no clips to keep, so it fails to load.
+		bool ClipsOnly = false;
+
+		ModelLoadParams& SetClipsOnly(bool clipsOnly)
+		{
+			ClipsOnly = clipsOnly;
+			return *this;
+		}
+
+		bool operator==(const ModelLoadParams&) const = default;
+	};
+
 	class Model
 	{
 	public:
@@ -29,6 +45,8 @@ namespace Dingo
 		// A relative filepath is looked up under the asset root first, then the working
 		// directory.
 		static Model* LoadFromFile(const std::filesystem::path& filepath);
+		// Reload() reads the file again with the same params.
+		static Model* LoadFromFile(const std::filesystem::path& filepath, const ModelLoadParams& params);
 
 	public:
 		Model() = default;
@@ -60,6 +78,7 @@ namespace Dingo
 		uint32_t GetGeneration() const { return m_Generation; }
 		// The absolute path LoadFromFile read; empty for a Model built by hand.
 		const std::filesystem::path& GetFilePath() const { return m_FilePath; }
+		const ModelLoadParams& GetLoadParams() const { return m_LoadParams; }
 
 		const std::vector<SubMesh>& GetSubMeshes()    const { return m_SubMeshes; }
 		uint32_t                    GetSubMeshCount()  const { return static_cast<uint32_t>(m_SubMeshes.size()); }
@@ -94,7 +113,7 @@ namespace Dingo
 
 		// `refresh` is a model being reloaded, whose textures the new file still uses are refreshed
 		// in place and reused.
-		static Model* Load(const std::filesystem::path& filepath, Model* refresh);
+		static Model* Load(const std::filesystem::path& filepath, const ModelLoadParams& params, Model* refresh);
 		void Adopt(Model& fresh);
 
 	private:
@@ -106,6 +125,7 @@ namespace Dingo
 		// Replaced by a reload that changed the joints; animators may still be bound to them.
 		std::vector<std::unique_ptr<Skeleton>> m_RetiredSkeletons;
 		std::filesystem::path m_FilePath;
+		ModelLoadParams m_LoadParams;
 		uint32_t m_Generation = 0;
 	};
 

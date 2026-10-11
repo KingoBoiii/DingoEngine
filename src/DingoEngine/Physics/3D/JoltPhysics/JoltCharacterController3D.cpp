@@ -5,6 +5,8 @@
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/ShapeFilter.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -27,6 +29,17 @@ namespace Dingo::Internal
 
 		private:
 			const std::vector<JPH::BodyID>& m_Bodies;
+		};
+
+		class SingleBodyFilter final : public JPH::BodyFilter
+		{
+		public:
+			explicit SingleBodyFilter(JPH::BodyID body) : m_Body(body) {}
+
+			virtual bool ShouldCollide(const JPH::BodyID& inBodyID) const override { return inBodyID == m_Body; }
+
+		private:
+			JPH::BodyID m_Body;
 		};
 	}
 
@@ -55,12 +68,18 @@ namespace Dingo::Internal
 		settings.mSupportingVolume = JPH::Plane(m_Up, -radius);
 
 		m_Character = new JPH::CharacterVirtual(&settings, ToJolt(params.Position), ToJolt(params.Rotation), &m_World->PhysicsSystem);
+		if (params.CollideWithCharacters)
+		{
+			m_World->CharacterCollision.Add(m_Character.GetPtr());
+			m_Character->SetCharacterVsCharacterCollision(&m_World->CharacterCollision);
+		}
 	}
 
 	JoltCharacterController3D::~JoltCharacterController3D()
 	{
 		// JPH::Ref releases the CharacterVirtual; it is not registered with the
-		// PhysicsSystem so nothing else needs unwinding.
+		// PhysicsSystem, only with the world's character set.
+		m_World->CharacterCollision.Remove(m_Character.GetPtr());
 		m_Character = nullptr;
 	}
 
@@ -144,6 +163,19 @@ namespace Dingo::Internal
 	{
 		return body != k_InvalidBody3D
 			&& std::find(m_IgnoredBodies.begin(), m_IgnoredBodies.end(), JPH::BodyID(body)) != m_IgnoredBodies.end();
+	}
+
+	bool JoltCharacterController3D::IsOverlapping(PhysicsBodyId3D body) const
+	{
+		if (body == k_InvalidBody3D || !m_World->PhysicsSystem.GetBodyInterface().IsAdded(JPH::BodyID(body)))
+			return false;
+
+		const SingleBodyFilter only{ JPH::BodyID(body) };
+		JPH::CollideShapeSettings settings;
+		JPH::AnyHitCollisionCollector<JPH::CollideShapeCollector> collector;
+		m_World->PhysicsSystem.GetNarrowPhaseQuery().CollideShape(m_Character->GetShape(), JPH::Vec3::sReplicate(1.0f), m_Character->GetCenterOfMassTransform(),
+			settings, JPH::RVec3::sZero(), collector, {}, {}, only);
+		return collector.HadHit();
 	}
 
 	bool JoltCharacterController3D::IsGrounded() const

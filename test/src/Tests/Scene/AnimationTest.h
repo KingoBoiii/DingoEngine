@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,7 +20,9 @@ namespace Dingo
 	// --anim=events walks the Fox through the Speed blend and drops a footprint under each foot
 	// as its step event (Fox.events) fires, with an event log in the Properties panel.
 	//
-	// --anim=bind|bindstatic|pose|clip|blend|layers|events|crowd, --anim-clip=Survey|Walk|Run (clip:
+	// --anim=root walks the Fox in a circle on a Walk whose hips travel and turn, with XZ root motion.
+	//
+	// --anim=bind|bindstatic|pose|clip|blend|layers|events|root|crowd, --anim-clip=Survey|Walk|Run (clip:
 	// default Walk; crowd: animates every fox, out of step), --anim-time=S (clip, layers: freeze at
 	// S seconds), --anim-speed=X (blend: the Speed parameter, Survey at 0, Walk at 1.5, Run at 4),
 	// --anim-phase=F (blend: freeze at that fraction of the cycle), --anim-count=N (crowd size,
@@ -48,7 +51,7 @@ namespace Dingo
 		Texture* GetResult() override { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 
 	private:
-		enum class Mode { Bind, BindStatic, Pose, Clip, Blend, Layers, Events, Crowd };
+		enum class Mode { Bind, BindStatic, Pose, Clip, Blend, Layers, Events, Root, Crowd };
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunLoadChecks();
@@ -56,6 +59,7 @@ namespace Dingo
 		void RunBlendChecks();
 		void RunEventChecks();
 		void RecordEvent(Entity fox, const AnimationEvent& event);
+		void RunRootMotionChecks();
 		void RunSceneChecks();
 		void RunReloadChecks();
 		void UpdateLiveReload();
@@ -77,6 +81,8 @@ namespace Dingo
 		Material* m_Ghost = nullptr;
 		bool      m_SkinnedMaterialChecked = false;
 		Scene*    m_Scene = nullptr;
+		// --anim=root: Walk carried forward and turning, so the Fox walks a circle by root motion.
+		std::unique_ptr<AnimationClip> m_RootClip;
 
 		Mode        m_Mode = Mode::Bind;
 		uint32_t    m_CrowdCount = 64;

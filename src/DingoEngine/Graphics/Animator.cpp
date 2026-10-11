@@ -94,6 +94,18 @@ namespace Dingo
 			return false;
 		}
 
+		bool AnimatesJoint(const AnimationChannel& channel, bool useTranslation, const JointPose& rest)
+		{
+			if (useTranslation && TranslationMoves(channel.Translation, rest.Translation))
+				return true;
+			for (const glm::quat& value : channel.Rotation.Values)
+			{
+				if (std::abs(glm::dot(value, rest.Rotation)) < 1.0f - 1e-6f)
+					return true;
+			}
+			return false;
+		}
+
 		float ClipDuration(const AnimationClip* clip)
 		{
 			return clip ? clip->GetDuration() : 0.0f;
@@ -103,6 +115,33 @@ namespace Dingo
 		bool IsTransparent(const AnimationState& state)
 		{
 			return !state.GetClip() && !state.IsBlend();
+		}
+
+		RootMotionDelta Compose(const RootMotionDelta& first, const RootMotionDelta& then)
+		{
+			return { first.Translation + first.Rotation * then.Translation, glm::normalize(first.Rotation * then.Rotation) };
+		}
+
+		RootMotionDelta MixMotion(const RootMotionDelta& from, const RootMotionDelta& to, float weight)
+		{
+			const glm::quat target = glm::dot(from.Rotation, to.Rotation) < 0.0f ? -to.Rotation : to.Rotation;
+			return { glm::mix(from.Translation, to.Translation, weight), glm::normalize(from.Rotation * (1.0f - weight) + target * weight) };
+		}
+
+		// The turn about the model's vertical axis within `rotation`; none when it is a half turn about
+		// a horizontal axis, which has no such part.
+		glm::quat Yaw(const glm::quat& rotation)
+		{
+			const float length = std::sqrt(rotation.w * rotation.w + rotation.y * rotation.y);
+			if (!(length > 1e-6f))
+				return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+			return glm::quat(rotation.w / length, 0.0f, rotation.y / length, 0.0f);
+		}
+
+		glm::quat RotationOf(const glm::mat4& matrix)
+		{
+			const glm::mat3 axes(glm::normalize(glm::vec3(matrix[0])), glm::normalize(glm::vec3(matrix[1])), glm::normalize(glm::vec3(matrix[2])));
+			return glm::normalize(glm::quat_cast(axes));
 		}
 
 		// Three key cursors (translation, rotation, scale) per channel of each clip in the state.
@@ -160,6 +199,12 @@ namespace Dingo
 		ResetToRest();
 	}
 
+	void Animator::SetRootMotionJoint(std::string joint)
+	{
+		m_RootMotionJoint = std::move(joint);
+		m_Bindings.clear();
+	}
+
 	void Animator::ResetToRest()
 	{
 		m_RestPoses.clear();
@@ -178,6 +223,7 @@ namespace Dingo
 		m_Palette = m_Skeleton ? m_Skeleton->GetRestPalette() : std::vector<glm::mat4>();
 
 		m_Events.clear();
+		m_RootMotionDelta = {};
 		for (Layer& layer : m_Layers)
 		{
 			layer.States.clear();
@@ -636,6 +682,7 @@ namespace Dingo
 			state.Time = Wrap(state, state.Time);
 
 		state.PreviousTime = state.Time;
+		state.UnwrappedTime = state.Time;
 		state.Wrapped = false;
 		if (state.Frozen || IsTransparent(state.State))
 			return;
@@ -665,11 +712,13 @@ namespace Dingo
 
 		state.Wrapped = state.State.IsLooping() && length > 0.0f && (target >= length || target < 0.0f);
 		state.Time = Wrap(state, target);
+		state.UnwrappedTime = state.State.IsLooping() ? target : state.Time;
 	}
 
 	void Animator::Update(float deltaTime)
 	{
 		m_Events.clear();
+		m_RootMotionDelta = {};
 		if (!m_Skeleton)
 		{
 			// Nothing plays without a skeleton, but the ranges open when it was unbound still end.
@@ -718,6 +767,7 @@ namespace Dingo
 				if (layer.EventSerial == resume.Serial)
 				{
 					resume.PreviousTime = resume.Time;
+					resume.UnwrappedTime = resume.Time;
 					resume.Wrapped = false;
 				}
 				Push(static_cast<uint32_t>(i), std::move(resume), layer.OneShotFadeOut);
@@ -738,6 +788,7 @@ namespace Dingo
 				state.Fresh = false;
 		}
 
+		CollectRootMotion();
 		Evaluate();
 	}
 
@@ -816,7 +867,7 @@ namespace Dingo
 			{
 				const bool kept = range.Event < events.size() && events[range.Event].Range && events[range.Event].Name == range.Name;
 				if (!kept)
-					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
+					m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
 				return !kept;
 			});
 		}
@@ -908,7 +959,7 @@ namespace Dingo
 			if (open != layer.OpenRanges.end())
 				return;
 			const AnimationClipEvent& event = clip.GetEvents()[mark.Event];
-			layer.OpenRanges.push_back({ &clip, mark.Event, mark.Name, forward ? event.EndTime : event.Time });
+			layer.OpenRanges.push_back({ &clip, mark.Event, mark.Name, forward ? event.EndTime : event.Time, mark.Payload });
 		}
 		else if (type == AnimationEventType::RangeEnd)
 		{
@@ -917,13 +968,13 @@ namespace Dingo
 			layer.OpenRanges.erase(open);
 		}
 
-		m_Events.push_back({ mark.Name, mark.Time, type, &clip, layerIndex });
+		m_Events.push_back({ mark.Name, mark.Time, type, &clip, layerIndex, mark.Payload });
 	}
 
 	void Animator::CloseRanges(uint32_t layerIndex, Layer& layer)
 	{
 		for (const OpenRange& range : layer.OpenRanges)
-			m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex });
+			m_Events.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, layerIndex, range.Payload });
 		layer.OpenRanges.clear();
 	}
 
@@ -952,7 +1003,7 @@ namespace Dingo
 		for (uint32_t i = 0; i < m_Layers.size(); ++i)
 		{
 			for (const OpenRange& range : m_Layers[i].OpenRanges)
-				ends.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, i });
+				ends.push_back({ range.Name, range.EndTime, AnimationEventType::RangeEnd, range.Clip, i, range.Payload });
 		}
 		return ends;
 	}
@@ -1071,6 +1122,9 @@ namespace Dingo
 			if (binding.UseScale && !channel.Scale.IsEmpty())
 				pose.Scale = SampleTrack(channel.Scale, time, channelCursors[2], MixVec3);
 		}
+
+		if (m_RootMotion != RootMotionMode::Off && clipBinding.RootChannel >= 0)
+			HoldRoot(clipBinding, out[clipBinding.Channels[clipBinding.RootChannel].Joint]);
 	}
 
 	const Animator::ClipBinding& Animator::Bind(const AnimationClip& clip)
@@ -1098,7 +1152,10 @@ namespace Dingo
 
 		const Skeleton* source = clip.GetSourceSkeleton();
 		if (!source || source == m_Skeleton)
+		{
+			BindRootMotion(clip, binding);
 			return binding;
+		}
 
 		// Exporters key a still root at its rest offset, which must not take the hips' motion away.
 		std::vector<bool> moving(joints.size(), false);
@@ -1146,7 +1203,221 @@ namespace Dingo
 			channel.TranslationOffset = joints[channel.Joint].RestPose.Translation - from.RestPose.Translation * ratio;
 		}
 
+		BindRootMotion(clip, binding);
 		return binding;
+	}
+
+	void Animator::BindRootMotion(const AnimationClip& clip, ClipBinding& binding) const
+	{
+		const std::vector<AnimationChannel>& channels = clip.GetChannels();
+		const Skeleton* source = clip.GetSourceSkeleton();
+		const bool retargeted = source && source != m_Skeleton;
+		const int32_t named = m_RootMotionJoint.empty() ? Skeleton::k_InvalidJoint : m_Skeleton->FindJoint(m_RootMotionJoint);
+
+		int32_t rootJoint = Skeleton::k_InvalidJoint;
+		for (size_t c = 0; c < channels.size(); ++c)
+		{
+			const ChannelBinding& channel = binding.Channels[c];
+			if (channel.Joint == Skeleton::k_InvalidJoint)
+				continue;
+
+			bool candidate = false;
+			if (!m_RootMotionJoint.empty())
+			{
+				candidate = channel.Joint == named;
+			}
+			else if (channel.UseTranslation)
+			{
+				const int32_t sourceJoint = retargeted ? source->FindJoint(channels[c].JointName) : Skeleton::k_InvalidJoint;
+				const JointPose& rest = sourceJoint != Skeleton::k_InvalidJoint ? source->GetJoint(sourceJoint).RestPose : m_Skeleton->GetJoint(channel.Joint).RestPose;
+				candidate = TranslationMoves(channels[c].Translation, rest.Translation);
+			}
+
+			// Parents come first, so the smallest index is the root-most.
+			if (candidate && (binding.RootChannel < 0 || channel.Joint < rootJoint))
+			{
+				binding.RootChannel = static_cast<int32_t>(c);
+				rootJoint = channel.Joint;
+			}
+		}
+
+		if (!m_RootMotionJoint.empty() && named == Skeleton::k_InvalidJoint)
+		{
+			static bool s_Warned = false;
+			if (!s_Warned)
+			{
+				DE_CORE_WARN("Animator: root-motion joint '{}' isn't in the skeleton, so no clip moves the model", m_RootMotionJoint);
+				s_Warned = true;
+			}
+		}
+
+		if (binding.RootChannel < 0)
+			return;
+
+		for (size_t c = 0; c < channels.size(); ++c)
+		{
+			const int32_t joint = binding.Channels[c].Joint;
+			if (joint == Skeleton::k_InvalidJoint || joint >= rootJoint)
+				continue;
+
+			bool ancestor = false;
+			for (int32_t up = m_Skeleton->GetJoint(rootJoint).Parent; up >= 0 && !ancestor; up = m_Skeleton->GetJoint(up).Parent)
+				ancestor = up == joint;
+			if (!ancestor || !AnimatesJoint(channels[c], binding.Channels[c].UseTranslation, m_Skeleton->GetJoint(joint).RestPose))
+				continue;
+
+			static bool s_Warned = false;
+			if (!s_Warned)
+			{
+				DE_CORE_WARN("Animator: clip '{}' animates '{}' above its root-motion joint; root motion takes it at rest, so its keys stay in the pose", clip.GetName(), channels[c].JointName);
+				s_Warned = true;
+			}
+			break;
+		}
+
+		const int32_t parent = m_Skeleton->GetJoint(rootJoint).Parent;
+		binding.RootParent = m_Skeleton->GetRootTransform();
+		if (parent >= 0)
+			binding.RootParent = binding.RootParent * m_Skeleton->GetRestGlobalTransforms()[parent];
+		binding.RootParentInverse = glm::inverse(binding.RootParent);
+		binding.RootParentRotation = RotationOf(binding.RootParent);
+		RootModelPose(binding, RootLocalAt(clip, binding, 0.0f), binding.RootStartPosition, binding.RootStartRotation);
+	}
+
+	JointPose Animator::RootLocalAt(const AnimationClip& clip, const ClipBinding& binding, float time) const
+	{
+		const ChannelBinding& channelBinding = binding.Channels[binding.RootChannel];
+		const AnimationChannel& channel = clip.GetChannels()[binding.RootChannel];
+
+		JointPose pose = m_Skeleton->GetJoint(channelBinding.Joint).RestPose;
+		uint32_t cursor = 0;
+		if (channelBinding.UseTranslation && !channel.Translation.IsEmpty())
+			pose.Translation = channelBinding.TranslationOffset + SampleTrack(channel.Translation, time, cursor, MixVec3) * channelBinding.TranslationScale;
+		cursor = 0;
+		if (!channel.Rotation.IsEmpty())
+			pose.Rotation = SampleTrack(channel.Rotation, time, cursor, MixQuat);
+		return pose;
+	}
+
+	void Animator::RootModelPose(const ClipBinding& binding, const JointPose& local, glm::vec3& position, glm::quat& rotation)
+	{
+		position = glm::vec3(binding.RootParent * glm::vec4(local.Translation, 1.0f));
+		rotation = glm::normalize(binding.RootParentRotation * local.Rotation);
+	}
+
+	Animator::RootFrame Animator::MotionFrame(const ClipBinding& binding, const glm::vec3& position, const glm::quat& rotation) const
+	{
+		const glm::quat turned = glm::normalize(rotation * glm::inverse(binding.RootStartRotation));
+		if (m_RootMotion == RootMotionMode::Full)
+			return { position, turned };
+		return { glm::vec3(position.x, 0.0f, position.z), Yaw(turned) };
+	}
+
+	Animator::RootFrame Animator::RootFrameAt(const AnimationClip& clip, const ClipBinding& binding, float time) const
+	{
+		glm::vec3 position;
+		glm::quat rotation;
+		RootModelPose(binding, RootLocalAt(clip, binding, time), position, rotation);
+		return MotionFrame(binding, position, rotation);
+	}
+
+	void Animator::HoldRoot(const ClipBinding& binding, JointPose& pose) const
+	{
+		glm::vec3 position;
+		glm::quat rotation;
+		RootModelPose(binding, pose, position, rotation);
+
+		const RootFrame frame = MotionFrame(binding, position, rotation);
+		const RootFrame start = MotionFrame(binding, binding.RootStartPosition, binding.RootStartRotation);
+		const glm::quat undo = glm::inverse(frame.Rotation);
+		const glm::vec3 held = start.Position + undo * (position - frame.Position);
+
+		pose.Translation = glm::vec3(binding.RootParentInverse * glm::vec4(held, 1.0f));
+		pose.Rotation = glm::normalize(glm::inverse(binding.RootParentRotation) * (undo * rotation));
+	}
+
+	RootMotionDelta Animator::SegmentMotion(const AnimationClip& clip, const ClipBinding& binding, float from, float to) const
+	{
+		// The model moves so the held root follows the clip's: by the root's travel seen from where
+		// it stood, turning about the held position rather than the model's origin.
+		const RootFrame a = RootFrameAt(clip, binding, from);
+		const RootFrame b = RootFrameAt(clip, binding, to);
+		const RootFrame start = MotionFrame(binding, binding.RootStartPosition, binding.RootStartRotation);
+		const glm::quat undo = glm::inverse(a.Rotation);
+
+		RootMotionDelta delta;
+		delta.Rotation = glm::normalize(undo * b.Rotation);
+		delta.Translation = undo * (b.Position - a.Position) + start.Position - delta.Rotation * start.Position;
+		return delta;
+	}
+
+	RootMotionDelta Animator::ClipMotion(const AnimationClip& clip, float from, float to, bool looping)
+	{
+		const ClipBinding& binding = Bind(clip);
+		if (binding.RootChannel < 0 || from == to)
+			return {};
+
+		const float length = clip.GetDuration();
+		if (!looping || !(length > 0.0f) || (to >= 0.0f && to <= length))
+			return SegmentMotion(clip, binding, from, std::clamp(to, 0.0f, std::max(length, 0.0f)));
+
+		const bool forward = to > length;
+		const float laps = std::floor(to / length);
+		const float remainder = std::clamp(to - laps * length, 0.0f, length);
+		const float edge = forward ? length : 0.0f;
+		const float other = forward ? 0.0f : length;
+
+		RootMotionDelta delta = SegmentMotion(clip, binding, from, edge);
+		const uint32_t whole = static_cast<uint32_t>(std::min(std::abs(laps) - 1.0f, 64.0f));
+		if (whole > 0)
+		{
+			const RootMotionDelta lap = SegmentMotion(clip, binding, other, edge);
+			for (uint32_t i = 0; i < whole; ++i)
+				delta = Compose(delta, lap);
+		}
+		return Compose(delta, SegmentMotion(clip, binding, other, remainder));
+	}
+
+	RootMotionDelta Animator::StateMotion(const PlayingState& state)
+	{
+		if (state.Frozen || IsTransparent(state.State))
+			return {};
+
+		const bool looping = state.State.IsLooping();
+		if (!state.State.IsBlend())
+			return ClipMotion(*state.State.GetClip(), state.PreviousTime, state.UnwrappedTime, looping);
+
+		// A blend's clips share its phase, each over its own length.
+		auto side = [&](const AnimationClip* clip)
+		{
+			return clip ? ClipMotion(*clip, state.PreviousTime * clip->GetDuration(), state.UnwrappedTime * clip->GetDuration(), looping) : RootMotionDelta();
+		};
+
+		const std::vector<BlendPoint>& points = state.State.GetPoints();
+		const BlendSpot spot = Locate(state.State);
+		const RootMotionDelta lower = side(points[spot.Lower].Clip);
+		if (!(spot.T > 0.0f))
+			return lower;
+		return MixMotion(lower, side(points[spot.Lower + 1].Clip), spot.T);
+	}
+
+	void Animator::CollectRootMotion()
+	{
+		m_RootMotionDelta = {};
+		if (m_RootMotion == RootMotionMode::Off)
+			return;
+
+		const Layer& layer = m_Layers.front();
+		for (size_t i = 0; i < layer.States.size(); ++i)
+		{
+			const PlayingState& state = layer.States[i];
+			const float weight = i == 0 ? 1.0f : FadeWeight(state);
+			if (!(weight > 0.0f))
+				continue;
+
+			const RootMotionDelta motion = StateMotion(state);
+			m_RootMotionDelta = weight >= 1.0f ? motion : MixMotion(m_RootMotionDelta, motion, weight);
+		}
 	}
 
 	glm::mat4 Animator::GetJointTransform(int32_t joint) const
