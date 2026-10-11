@@ -21,8 +21,8 @@ namespace Dingo
 	// fullscreen passes drew: every colour format clears and reads back (values past 1 included), a
 	// sampleable depth attachment is sampled and compared, a framebuffer resized under a material that
 	// samples it keeps its Texture and is rebound, a viewport limits a draw, additive blending adds,
-	// Renderer2D draws into a target whose formats differ from the swap chain's, and a shader file
-	// #includes its neighbour.
+	// Renderer2D draws into a target whose formats differ from the swap chain's, a shader file
+	// #includes its neighbour, and a draw after a mid-frame Texture::Upload samples the new texels.
 	class RenderTargetTest : public Renderer2DTest
 	{
 	public:
@@ -77,6 +77,8 @@ namespace Dingo
 		Framebuffer* m_BlendTarget = nullptr;
 		Framebuffer* m_Batch2DTarget = nullptr; // RGBA16F, no depth: Renderer2D's batches drawn into it
 		Framebuffer* m_ReusedTarget = nullptr;
+		Framebuffer* m_UploadTarget = nullptr;
+		Texture* m_UploadTexture = nullptr;
 		Shader* m_FillShader = nullptr;
 		Shader* m_SampleShader = nullptr;
 		Shader* m_CompareShader = nullptr;
@@ -85,6 +87,7 @@ namespace Dingo
 		Material* m_DepthCopyMaterial = nullptr;
 		Material* m_CompareMaterial = nullptr;
 		Material* m_ResizeCopyMaterial = nullptr;
+		Material* m_UploadMaterial = nullptr;
 		Sampler* m_CompareSampler = nullptr;
 
 		float m_Time = 0.0f;
