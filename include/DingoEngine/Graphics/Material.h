@@ -3,6 +3,7 @@
 #include "DingoEngine/Graphics/RenderPass.h"
 #include "DingoEngine/Graphics/Sampler.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
+#include "DingoEngine/Graphics/SurfaceOverride.h"
 
 #include <glm/glm.hpp>
 
@@ -41,9 +42,7 @@ namespace Dingo
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
 		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
-		// They are per-MATERIAL, not per-mesh: every mesh drawn with the default material
-		// (MeshRendererComponent::Material == nullptr) shares one value, so give an entity its own
-		// lit material for its own glow or shine.
+		// Every mesh drawn with the material shares them, unless the mesh has a SurfaceOverride.
 		//
 		// Emissive is additive glow, independent of any light. Specular is the strength of the
 		// highlight (0, the default, is none) and Roughness its spread, from 0 (small and sharp)
@@ -145,6 +144,12 @@ namespace Dingo
 		void SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer);
 		static constexpr uint32_t k_MaxStorageBuffers = 4;
 
+		// Binds Renderer3D's per-mesh surface records to the shader's DE_ObjectData storage block, at
+		// whatever binding the shader gave it. A shader without one ignores it. Another buffer only
+		// re-points the cached passes' binding sets, so the renderer can grow it without new pipelines.
+		void SetObjectBuffer(GraphicsBuffer* buffer);
+
+		static constexpr const char* k_ObjectDataBlockName = "DE_ObjectData";
 		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
 		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
 		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
@@ -206,6 +211,8 @@ namespace Dingo
 		GraphicsBuffer*      m_ShadowDataBuffer   = nullptr;
 		Texture*             m_ShadowAtlas        = nullptr;
 		Sampler*             m_ShadowSampler      = nullptr;
+		GraphicsBuffer*      m_ObjectBuffer       = nullptr;
+		uint64_t             m_ObjectBufferId     = 0;
 
 		struct StorageBinding
 		{

@@ -13,8 +13,9 @@ namespace Dingo
 	// A material that outgrows a Renderer3D batch must spill into another instead of dropping
 	// meshes. Uses its own Renderer3D with a tiny MaxVertices so no other test is affected.
 	// Then, one step a frame on a second renderer, the translucent pass: how it batches, and
-	// readbacks of its blending order. --batch-alpha=<a> also draws three overlapping translucent
-	// boxes of that alpha in front of the batched ones.
+	// readbacks of its blending order, and surface overrides: how they batch, and a scene of overridden
+	// meshes read back against the same scene drawn with a lit material per mesh. --batch-alpha=<a>
+	// also draws three overlapping translucent boxes of that alpha in front of the batched ones.
 	class Renderer3DBatchTest : public GraphicsTest
 	{
 	public:
@@ -32,7 +33,8 @@ namespace Dingo
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunChecks();
 		void BuildTranslucentChecks();
-		Framebuffer* CreateCheckTarget();
+		void BuildSurfaceChecks();
+		Framebuffer* CreateCheckTarget(uint32_t size);
 		template<typename Submit>
 		Renderer3D::Statistics RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit);
 		void ReadCheck(Framebuffer* target, const glm::vec3& expected, const std::string& name);
@@ -48,6 +50,7 @@ namespace Dingo
 		Renderer3D* m_CheckRenderer = nullptr;
 		Material* m_TranslucentA = nullptr;
 		Material* m_TranslucentB = nullptr;
+		std::vector<Material*> m_SurfaceMaterials;
 		Mesh* m_Quad = nullptr;
 		Mesh* m_SkinnedQuad = nullptr;
 		std::vector<glm::mat4> m_Palette;

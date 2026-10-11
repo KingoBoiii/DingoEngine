@@ -365,13 +365,43 @@ delete lamp;
   slot rebuilds the material's pipelines, so do not swap one every frame. A NaN setting falls back
   to roughness 0.5, specular 0 and no emissive.
 - **`GetDefaultMaterial()`** holds the shared settings of every mesh with no material of its own.
-  Settings belong to the material, not the mesh: give an entity its own lit material for its own
-  glow or shine.
+  A mesh that needs its own glow or shine takes a [surface override](#surface-overrides-v10)
+  rather than a material of its own.
 - **Ownership.** You own the material and must delete it before the renderer that created it shuts
   down. Any `Renderer3D` can draw it.
 
 A material with your own `Shader` is not a lit material: its emissive, roughness and specular
 settings are ignored, and the shader does its own lighting.
+
+### Surface overrides (v1.0)
+
+A `SurfaceOverride` gives one mesh its own emissive, roughness and specular while it keeps its lit
+material, so meshes that differ only in those still draw in one batch:
+
+```cpp
+auto& renderer = orb.AddComponent<MeshRendererComponent>(MeshRendererComponent(sphere, color));
+renderer.SetSurface(SurfaceOverride().SetEmissiveColor({ 1.0f, 0.6f, 0.2f }).SetEmissiveStrength(2.4f));
+
+// Each frame, for a pulse:
+orb.GetComponent<MeshRendererComponent>().Surface->EmissiveStrength = 2.4f * pulse;
+```
+
+`Renderer3D::SubmitMesh` takes one as its last argument (`const SurfaceOverride*`, copied at the call).
+
+- **All four or none.** A set override replaces the material's `EmissiveColor`, `EmissiveStrength`,
+  `Roughness` and `Specular` together, with `SurfaceOverride`'s defaults (black, 0, 0.5, 0) for the
+  ones you leave. `ClearSurface()` goes back to the material's. Values are sanitised like the
+  material's.
+- **The same pixels.** A mesh with an override draws exactly as it would with a lit material of
+  those settings (the Batch Test reads both back and requires 0 differing pixels). Folding several
+  materials into one batch changes the order their meshes draw in, which shows only where two
+  surfaces lie at exactly the same depth.
+- **Lit materials only.** A custom shader's mesh ignores it, and so does a skinned mesh
+  (`SubmitSkinnedMesh` has none).
+- **How:** each override is a 32-byte record in a storage buffer the lit shader reads by the index
+  every vertex of that mesh carries; index 0, every mesh without one, reads the material's values,
+  so a scene without overrides renders exactly as before. `Statistics::SurfaceOverrides` counts them
+  (F4 "Surfaces"); a `ShadowsOnly` mesh draws nothing lit, so it takes none.
 
 ## Translucent materials
 
@@ -481,8 +511,8 @@ and a copy of it is embedded in the engine library at build time.
   gets cascaded shadows, and up to 8 (at most 16) casting point and spot lights get shadows of their
   own ([Shadows](shadows.md)); every other light passes through walls and floors, so in interiors
   keep their ranges short.
-- **No per-mesh surface parameters.** Roughness, specular and emissive are per material. A mesh
-  that needs its own takes its own material, which is at least one more draw call.
+- **Per-mesh surfaces are static meshes only.** A `SurfaceOverride` gives a static mesh its own
+  roughness, specular and emissive; a skinned mesh still takes its own material for them.
 - **Blinn-Phong, not PBR:** no metalness, normal maps or reflections.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.

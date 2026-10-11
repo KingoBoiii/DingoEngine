@@ -301,7 +301,11 @@ namespace Dingo
 		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
 		// wrapped around a small one, can blend in the wrong order. With ShadowsOnly it draws nothing
 		// lit, so it batches like an opaque mesh.
-		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f);
+		//
+		// A surface, when given, replaces the lit material's emissive, roughness and specular for this
+		// mesh alone (copied at the call), so meshes that differ only in those share one material's
+		// batch. A custom material's mesh ignores it.
+		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f, const SurfaceOverride* surface = nullptr);
 
 		// Convenience primitives drawn with the renderer's built-in unit meshes
 		// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
@@ -407,6 +411,7 @@ namespace Dingo
 			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
 			uint32_t TranslucentMeshes = 0;   // static and skinned meshes drawn in the translucent pass, also counted in SubmittedMeshes
 			uint32_t TranslucentDraws = 0;    // draws of the translucent pass, also counted in DrawCalls
+			uint32_t SurfaceOverrides = 0;    // static meshes submitted with a SurfaceOverride their lit material takes, culled ones included; ShadowsOnly ones aren't counted
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
 			bool Fogged = false;              // the scene was drawn with fog: SetFog, and a perspective camera
 		};
@@ -432,13 +437,17 @@ namespace Dingo
 		Renderer3DParams m_Params;
 		Statistics m_Statistics;
 
+		// A custom material reads the first four members (m_Layout); the lit shader also reads
+		// ObjectIndex (m_LitLayout), its mesh's ObjectRecord.
 		struct Vertex
 		{
 			glm::vec3 Position;
 			glm::vec3 Normal;
 			glm::vec4 Color;
 			glm::vec2 TexCoord;
+			uint32_t ObjectIndex;
 		};
+		static_assert(sizeof(Vertex) == 52, "the arena's vertex stride");
 
 		struct DirectionalLightData
 		{
@@ -525,6 +534,21 @@ namespace Dingo
 		Shader* m_Shader = nullptr;
 		Material* m_Material = nullptr; // built-in lit default material
 		VertexLayout m_Layout;
+		VertexLayout m_LitLayout;
+
+		// std430, mirrored by ObjectRecord in Renderer3D_Lit.glsl: a static mesh's SurfaceOverride. The
+		// scene's records are written from 0 into one storage buffer the lit materials bind; record 0 is
+		// never read, so a vertex's ObjectIndex of 0 means the material's own values.
+		struct ObjectRecord
+		{
+			glm::vec4 Emissive{ 0.0f }; // rgb = colour, a = strength
+			glm::vec4 Surface{ 0.0f };  // x = roughness, y = specular
+		};
+		static_assert(sizeof(ObjectRecord) == 32, "ObjectRecord must match the std430 struct in Renderer3D_Lit.glsl");
+		std::vector<ObjectRecord> m_ObjectRecords;
+		GraphicsBuffer* m_ObjectBuffer = nullptr;
+		uint64_t m_ObjectCapacity = 0;
+		void UploadObjectRecords();
 
 		// Camera + lights, uploaded each EndScene and bound at binding 0 on every material the
 		// renderer draws (Material::SetSceneUniformBuffer).
@@ -585,6 +609,7 @@ namespace Dingo
 			uint32_t ShadowGroups = 1;
 			float CullDistance = 0.0f;
 			int32_t Translucent = -1; // into m_TranslucentSubmissions
+			uint32_t Object = 0;      // its m_ObjectRecords entry, 0 for none
 
 			// Worked out by EndScene.
 			AABB Bounds;               // world bounds, padded for rounding; empty without vertices

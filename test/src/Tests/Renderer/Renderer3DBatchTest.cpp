@@ -35,6 +35,23 @@ namespace
 		return glm::scale(glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, z }), { 30.0f, 30.0f, 1.0f });
 	}
 
+	// One per box of the surface checks; the last is the default material's own surface.
+	const Dingo::SurfaceOverride k_Surfaces[] = {
+		Dingo::SurfaceOverride().SetEmissiveColor({ 1.0f, 0.3f, 0.0f }).SetEmissiveStrength(0.6f),
+		Dingo::SurfaceOverride().SetRoughness(0.2f).SetSpecular(1.5f),
+		Dingo::SurfaceOverride().SetEmissiveColor({ 0.0f, 0.4f, 1.0f }).SetEmissiveStrength(1.0f).SetRoughness(0.8f).SetSpecular(0.5f),
+		Dingo::SurfaceOverride(),
+	};
+	constexpr uint32_t k_SurfaceCount = sizeof(k_Surfaces) / sizeof(k_Surfaces[0]);
+	constexpr uint32_t k_SurfaceTargetSize = 96;
+
+	glm::mat4 SurfaceBoxAt(uint32_t index)
+	{
+		const float x = (static_cast<float>(index) - 0.5f * static_cast<float>(k_SurfaceCount - 1)) * 1.6f;
+		const glm::mat4 placed = glm::translate(glm::mat4(1.0f), { x, 0.0f, -7.0f });
+		return glm::rotate(glm::rotate(placed, glm::radians(35.0f), { 0.0f, 1.0f, 0.0f }), glm::radians(25.0f), { 1.0f, 0.0f, 0.0f });
+	}
+
 	std::string Counts(const Dingo::Renderer3D::Statistics& stats)
 	{
 		return std::format("translucent {} meshes in {} draws, {} draw calls, {} submitted, {} skinned",
@@ -62,6 +79,15 @@ namespace Dingo
 		m_CheckRenderer = Renderer3D::Create();
 		m_TranslucentA = m_CheckRenderer->CreateLitMaterial(MaterialParams().SetDebugName("BatchTest_TranslucentA").SetTranslucent(true));
 		m_TranslucentB = m_CheckRenderer->CreateLitMaterial(MaterialParams().SetDebugName("BatchTest_TranslucentB").SetTranslucent(true));
+		for (const SurfaceOverride& surface : k_Surfaces)
+		{
+			m_SurfaceMaterials.push_back(m_CheckRenderer->CreateLitMaterial(MaterialParams()
+				.SetDebugName("BatchTest_Surface")
+				.SetEmissiveColor(surface.EmissiveColor)
+				.SetEmissiveStrength(surface.EmissiveStrength)
+				.SetRoughness(surface.Roughness)
+				.SetSpecular(surface.Specular)));
+		}
 
 		// A unit quad facing +z, as a mesh and as a skinned mesh bound to one joint.
 		const std::vector<MeshVertex> vertices = {
@@ -81,6 +107,7 @@ namespace Dingo
 		m_Alive = std::make_shared<int>(0);
 		m_NextCheckStep = 0;
 		BuildTranslucentChecks();
+		BuildSurfaceChecks();
 
 		m_ShowcaseAlpha = -1.0f;
 		if (auto alpha = Application::Get().GetCommandLineArgs().Get("batch-alpha"); alpha && !alpha->empty())
@@ -99,12 +126,12 @@ namespace Dingo
 			std::format("only the mesh bigger than a whole batch is dropped (DroppedMeshes = {})", stats.DroppedMeshes));
 	}
 
-	Framebuffer* Renderer3DBatchTest::CreateCheckTarget()
+	Framebuffer* Renderer3DBatchTest::CreateCheckTarget(uint32_t size)
 	{
 		Framebuffer* target = Framebuffer::Create(FramebufferParams()
 			.SetDebugName("BatchTest_Check")
-			.SetWidth(static_cast<int32_t>(k_CheckTargetSize))
-			.SetHeight(static_cast<int32_t>(k_CheckTargetSize))
+			.SetWidth(static_cast<int32_t>(size))
+			.SetHeight(static_cast<int32_t>(size))
 			.SetEnableDepth(true)
 			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 		m_CheckTargets.push_back(target);
@@ -149,7 +176,7 @@ namespace Dingo
 		{
 			m_CheckSteps.push_back([this, submit = std::move(submit), check = std::move(check)]
 			{
-				check(RenderCheck(CreateCheckTarget(), CheckViewProjection(), submit));
+				check(RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), submit));
 			});
 		};
 
@@ -208,7 +235,7 @@ namespace Dingo
 		{
 			m_CheckSteps.push_back([this, name, expected, viewProjection, submit = std::move(submit)]
 			{
-				Framebuffer* target = CreateCheckTarget();
+				Framebuffer* target = CreateCheckTarget(k_CheckTargetSize);
 				RenderCheck(target, viewProjection, submit);
 				ReadCheck(target, expected, name);
 			});
@@ -238,6 +265,153 @@ namespace Dingo
 		{
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitMesh(m_Quad, WallAt(-12.0f), k_HalfRed, m_TranslucentA);
+		});
+	}
+
+	void Renderer3DBatchTest::BuildSurfaceChecks()
+	{
+		m_CheckSteps.push_back([this]
+		{
+			const Renderer3D::Statistics stats = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), [this](Renderer3D& renderer)
+			{
+				for (uint32_t i = 0; i < k_SurfaceCount; ++i)
+					renderer.SubmitMesh(m_Quad, WallAt(-6.0f - static_cast<float>(i)), glm::vec4(1.0f), nullptr, ShadowCasting::On, 1, 0.0f, &k_Surfaces[i]);
+				renderer.SubmitMesh(m_Quad, WallAt(-12.0f), glm::vec4(1.0f));
+			});
+			Check(stats.DrawCalls == 1 && stats.SurfaceOverrides == k_SurfaceCount && stats.SubmittedMeshes == k_SurfaceCount + 1,
+				std::format("meshes of the default material with their own surfaces draw in one draw ({} draw calls, {} overrides, {} submitted)",
+					stats.DrawCalls, stats.SurfaceOverrides, stats.SubmittedMeshes));
+		});
+
+		// The same boxes three ways: a lit material each, the default material with their surfaces as
+		// overrides, and the default material alone (which must differ, or the comparison proves nothing).
+		m_CheckSteps.push_back([this]
+		{
+			auto lights = [](Renderer3D& renderer)
+			{
+				renderer.SetAmbientLight(glm::vec3(1.0f), 0.3f);
+				DirectionalLight sun;
+				sun.Direction = { -0.3f, -0.6f, -1.0f };
+				sun.Color = { 1.0f, 0.95f, 0.9f };
+				sun.Intensity = 1.2f;
+				renderer.SubmitLight(sun);
+				PointLight lamp;
+				lamp.Position = { 0.5f, 1.5f, -4.0f };
+				lamp.Color = { 0.6f, 0.8f, 1.0f };
+				lamp.Intensity = 2.0f;
+				lamp.Range = 8.0f;
+				renderer.SubmitLight(lamp);
+			};
+			const glm::vec4 color{ 0.25f, 0.3f, 0.35f, 1.0f };
+			Framebuffer* materials = CreateCheckTarget(k_SurfaceTargetSize);
+			Framebuffer* overrides = CreateCheckTarget(k_SurfaceTargetSize);
+			Framebuffer* plain = CreateCheckTarget(k_SurfaceTargetSize);
+			RenderCheck(materials, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				for (uint32_t i = 0; i < k_SurfaceCount; ++i)
+					renderer.SubmitMesh(renderer.GetBoxMesh(), SurfaceBoxAt(i), color, m_SurfaceMaterials[i]);
+			});
+			const Renderer3D::Statistics stats = RenderCheck(overrides, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				for (uint32_t i = 0; i < k_SurfaceCount; ++i)
+					renderer.SubmitMesh(renderer.GetBoxMesh(), SurfaceBoxAt(i), color, nullptr, ShadowCasting::On, 1, 0.0f, &k_Surfaces[i]);
+			});
+			RenderCheck(plain, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				for (uint32_t i = 0; i < k_SurfaceCount; ++i)
+					renderer.SubmitMesh(renderer.GetBoxMesh(), SurfaceBoxAt(i), color);
+			});
+			Check(stats.DrawCalls == 1, std::format("{} boxes with surface overrides draw in one draw (DrawCalls = {})", k_SurfaceCount, stats.DrawCalls));
+
+			auto images = std::make_shared<std::vector<TexturePixels>>();
+			const std::weak_ptr<int> alive = m_Alive;
+			for (Framebuffer* target : { materials, overrides, plain })
+			{
+				target->GetAttachment(0)->ReadPixels([this, alive, images](const TexturePixels& pixels)
+				{
+					if (alive.expired())
+						return;
+					images->push_back(pixels);
+					if (images->size() < 3)
+						return;
+
+					auto compare = [](const TexturePixels& a, const TexturePixels& b, float& worst)
+					{
+						uint32_t differing = 0;
+						worst = 0.0f;
+						for (uint32_t y = 0; y < a.Height; ++y)
+						{
+							for (uint32_t x = 0; x < a.Width; ++x)
+							{
+								const glm::vec4 delta = glm::abs(a.GetPixel(x, y) - b.GetPixel(x, y));
+								const float largest = (std::max)((std::max)(delta.r, delta.g), (std::max)(delta.b, delta.a));
+								worst = (std::max)(worst, largest);
+								differing += largest > 0.0f ? 1 : 0;
+							}
+						}
+						return differing;
+					};
+					const std::vector<TexturePixels>& read = *images;
+					const bool sized = read[0].Width == k_SurfaceTargetSize && read[1].Width == k_SurfaceTargetSize && read[2].Width == k_SurfaceTargetSize;
+					float worst = 0.0f;
+					float plainWorst = 0.0f;
+					const uint32_t differing = sized ? compare(read[0], read[1], worst) : ~0u;
+					const uint32_t plainDiffering = sized ? compare(read[0], read[2], plainWorst) : 0;
+					Check(sized && differing == 0,
+						std::format("boxes with surface overrides match the same boxes with a lit material each ({} px differ, by up to {:.0f}/255)", differing, worst * 255.0f));
+					Check(plainDiffering > 0 && plainWorst > 8.0f / 255.0f,
+						std::format("the surfaces change the picture ({} px differ from the default material's, by up to {:.0f}/255)", plainDiffering, plainWorst * 255.0f));
+				});
+			}
+		});
+
+		// Three scenes in one frame. The second outgrows the renderer's 256 records, so its buffer is
+		// replaced after the first drew; the third rewrites its record 1 after the second drew.
+		m_CheckSteps.push_back([this]
+		{
+			const glm::vec4 black{ 0.0f, 0.0f, 0.0f, 1.0f };
+			auto glowing = [](const glm::vec3& color) { return SurfaceOverride().SetEmissiveColor(color).SetEmissiveStrength(0.5f); };
+			const SurfaceOverride blue = glowing({ 0.0f, 0.0f, 1.0f });
+			const SurfaceOverride red = glowing({ 1.0f, 0.0f, 0.0f });
+			const SurfaceOverride green = glowing({ 0.0f, 1.0f, 0.0f });
+			constexpr uint32_t k_Hidden = 299;
+
+			Framebuffer* first = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* many = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* last = CreateCheckTarget(k_CheckTargetSize);
+			RenderCheck(first, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				renderer.SubmitMesh(m_Quad, WallAt(-6.0f), black, nullptr, ShadowCasting::On, 1, 0.0f, &blue);
+			});
+			const Renderer3D::Statistics stats = RenderCheck(many, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				renderer.SubmitMesh(m_Quad, WallAt(-6.0f), black, nullptr, ShadowCasting::On, 1, 0.0f, &red);
+				for (uint32_t i = 0; i < k_Hidden; ++i)
+					renderer.SubmitMesh(m_Quad, WallAt(-7.0f - 0.01f * static_cast<float>(i)), black, nullptr, ShadowCasting::On, 1, 0.0f, &green);
+			});
+			RenderCheck(last, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				renderer.SubmitMesh(m_Quad, WallAt(-6.0f), black, nullptr, ShadowCasting::On, 1, 0.0f, &green);
+			});
+			Check(stats.SurfaceOverrides == k_Hidden + 1 && stats.DrawCalls == 1,
+				std::format("{} overridden meshes in one scene draw in one draw ({} overrides, {} draw calls)", k_Hidden + 1, stats.SurfaceOverrides, stats.DrawCalls));
+			ReadCheck(first, glm::vec3(0.0f, 0.0f, 0.5f), "a scene keeps its surfaces when a later scene of the frame outgrows the record buffer");
+			ReadCheck(many, glm::vec3(0.5f, 0.0f, 0.0f), "a scene of 300 surfaces keeps its own when a later scene of the frame rewrites the records");
+			ReadCheck(last, glm::vec3(0.0f, 0.5f, 0.0f), "a scene after them reads its own surface");
+		});
+
+		const SurfaceOverride glow = SurfaceOverride().SetEmissiveColor({ 0.0f, 1.0f, 0.0f }).SetEmissiveStrength(0.5f);
+		m_CheckSteps.push_back([this, glow]
+		{
+			Framebuffer* target = CreateCheckTarget(k_CheckTargetSize);
+			RenderCheck(target, CheckViewProjection(), [this, glow](Renderer3D& renderer)
+			{
+				renderer.SubmitMesh(m_Quad, WallAt(-10.0f), glm::vec4(0.0f, 0.0f, 0.0f, 0.5f), m_TranslucentA, ShadowCasting::On, 1, 0.0f, &glow);
+			});
+			ReadCheck(target, glm::vec3(0.0f, 0.25f, 0.0f), "a translucent mesh takes its surface override");
 		});
 	}
 
@@ -307,6 +481,9 @@ namespace Dingo
 		{
 			DestroyAndDelete(m_TranslucentA);
 			DestroyAndDelete(m_TranslucentB);
+			for (Material*& material : m_SurfaceMaterials)
+				DestroyAndDelete(material);
+			m_SurfaceMaterials.clear();
 			m_CheckRenderer->Shutdown();
 			delete m_CheckRenderer;
 			m_CheckRenderer = nullptr;

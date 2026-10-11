@@ -5,6 +5,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Light.h"
+#include "DingoEngine/Graphics/SurfaceOverride.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Enums/ShadowCasting.h"
 #include "DingoEngine/Graphics/Enums/RootMotion.h"
@@ -413,6 +414,13 @@ namespace Dingo
 		// Past this distance from a perspective camera the mesh is neither drawn nor casts; 0 never.
 		// Renderer3D culls what is outside the view by itself.
 		float CullDistance = 0.0f;
+		// This mesh's emissive, roughness and specular in place of its lit material's (the default
+		// material's when Material is null), so entities that differ only in these share a batch.
+		// Ignored with a custom material.
+		std::optional<SurfaceOverride> Surface;
+
+		MeshRendererComponent& SetSurface(const SurfaceOverride& surface) { Surface = surface; return *this; }
+		MeshRendererComponent& ClearSurface() { Surface.reset(); return *this; }
 
 		MeshRendererComponent() = default;
 		MeshRendererComponent(const MeshRendererComponent&) = default;

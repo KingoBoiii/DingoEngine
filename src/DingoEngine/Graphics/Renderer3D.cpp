@@ -266,6 +266,13 @@ namespace Dingo
 			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(Vertex, Normal))
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(Vertex, Color))
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(Vertex, TexCoord));
+		m_LitLayout = VertexLayout(m_Layout)
+			.AddAttribute("a_ObjectIndex", Format::R32_UINT, offsetof(Vertex, ObjectIndex));
+
+		m_ObjectRecords.assign(1, ObjectRecord{});
+		m_ObjectCapacity = 256;
+		const std::vector<ObjectRecord> noRecords(m_ObjectCapacity);
+		m_ObjectBuffer = GraphicsBuffer::CreateStorageBuffer(m_ObjectCapacity * sizeof(ObjectRecord), "Renderer3D_ObjectData", noRecords.data());
 
 		m_Material = CreateLitMaterial(MaterialParams().SetDebugName("Renderer3D_Material"));
 
@@ -315,6 +322,9 @@ namespace Dingo
 		m_RetiredArenaBuffers.clear();
 		m_ArenaVertexCapacity = 0;
 		m_ArenaIndexCapacity = 0;
+		DestroyAndDelete(m_ObjectBuffer);
+		m_ObjectCapacity = 0;
+		m_ObjectRecords.clear();
 		m_SceneVertices.clear();
 		m_SceneIndices.clear();
 		m_Batches.clear();
@@ -415,6 +425,7 @@ namespace Dingo
 		}
 		m_DrawOrder.clear();
 		m_StaticSubmissions.clear();
+		m_ObjectRecords.resize(1);
 
 		for (auto it = m_SkinnedTwins.begin(); it != m_SkinnedTwins.end();)
 		{
@@ -484,6 +495,7 @@ namespace Dingo
 			UploadScene();
 		}
 
+		UploadObjectRecords();
 		ResolveSkinnedBudget();
 		if (shadows)
 		{
@@ -505,7 +517,9 @@ namespace Dingo
 				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 				material->SetSkinUniformBuffer(nullptr);
 				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-				Renderer::DrawIndexed(material, m_Layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+				material->SetObjectBuffer(m_ObjectBuffer);
+				const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
+				Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 				++m_Statistics.DrawCalls;
 			}
 		}
@@ -519,6 +533,7 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
+		m_ObjectRecords.resize(1);
 
 		if (m_Particles)
 			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
@@ -931,6 +946,7 @@ namespace Dingo
 				out->Normal = normalMatrix * v.Normal;
 				out->Color = submission.Color;
 				out->TexCoord = v.TexCoord;
+				out->ObjectIndex = submission.Object;
 				++out;
 			}
 		};
@@ -1042,6 +1058,21 @@ namespace Dingo
 		m_SceneVertexCount += static_cast<uint32_t>(chunk.Vertices.size());
 		m_SceneIndexCount += static_cast<uint32_t>(chunk.Indices.size());
 		return m_ArenaIndexBase + firstIndex;
+	}
+
+	void Renderer3D::UploadObjectRecords()
+	{
+		if (m_ObjectRecords.size() <= 1)
+			return;
+
+		// Replaced mid-frame like the arena, so the scenes before keep the records they drew with.
+		if (m_ObjectRecords.size() > m_ObjectCapacity)
+		{
+			m_RetiredArenaBuffers.emplace_back(m_ObjectBuffer, Renderer::GetFrameIndex());
+			m_ObjectCapacity = std::max<uint64_t>(m_ObjectCapacity * 2, m_ObjectRecords.size());
+			m_ObjectBuffer = GraphicsBuffer::CreateStorageBuffer(m_ObjectCapacity * sizeof(ObjectRecord), "Renderer3D_ObjectData");
+		}
+		Renderer::Upload(m_ObjectBuffer, m_ObjectRecords.data(), m_ObjectRecords.size() * sizeof(ObjectRecord));
 	}
 
 	void Renderer3D::UploadScene()
@@ -1252,7 +1283,9 @@ namespace Dingo
 			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 			material->SetSkinUniformBuffer(nullptr);
 			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-			Renderer::DrawIndexed(material, m_Layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+			material->SetObjectBuffer(m_ObjectBuffer);
+			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
+			Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 			++m_Statistics.DrawCalls;
 			++m_Statistics.TranslucentDraws;
 			m_Statistics.TranslucentMeshes += draw.Meshes;
@@ -1627,6 +1660,7 @@ namespace Dingo
 		material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 		material->SetSkinUniformBuffer(m_SkinBuffer);
 		material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		material->SetObjectBuffer(m_ObjectBuffer);
 		Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
 
 		++m_Statistics.DrawCalls;
@@ -1962,7 +1996,7 @@ namespace Dingo
 		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
-	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance)
+	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
@@ -2025,6 +2059,14 @@ namespace Dingo
 		submission.Shadows = shadows;
 		submission.ShadowGroups = shadowGroups;
 		submission.CullDistance = cullDistance;
+		if (surface && shadows != ShadowCasting::ShadowsOnly && IsLitShader(batchMaterial->GetShader()))
+		{
+			submission.Object = static_cast<uint32_t>(m_ObjectRecords.size());
+			ObjectRecord& record = m_ObjectRecords.emplace_back();
+			record.Emissive = glm::vec4(IsFinite(surface->EmissiveColor) ? surface->EmissiveColor : glm::vec3(0.0f), FiniteOr(surface->EmissiveStrength, 0.0f));
+			record.Surface = glm::vec4(glm::clamp(FiniteOr(surface->Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface->Specular, 0.0f), 0.0f), 0.0f, 0.0f);
+			++m_Statistics.SurfaceOverrides;
+		}
 		if (batch->Translucent)
 		{
 			// Its place in the translucent list keeps its submission order among the skinned ones.

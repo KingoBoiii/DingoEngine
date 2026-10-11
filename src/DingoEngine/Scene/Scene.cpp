@@ -495,7 +495,7 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance);
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance, mesh.Surface ? &*mesh.Surface : nullptr);
 		}
 
 		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
