@@ -368,7 +368,8 @@ namespace Dingo
 		void   Advance(PlayingState& state, float deltaTime) const;
 		void   EvaluateLayer(Layer& layer, std::span<const JointPose> underneath, std::span<JointPose> out);
 		void   Sample(const Layer& layer, PlayingState& state, std::span<const JointPose> underneath, std::span<JointPose> out);
-		void   SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out);
+		// A mask (per joint, 0 outside) skips the channels of joints outside it.
+		void   SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out, const float* mask = nullptr);
 		void   ResetToRest();
 		// Takes up a model reload's new rest pose for the same joints.
 		void   SyncSkeleton();

@@ -899,22 +899,22 @@ namespace Dingo
 		const std::vector<AnimationClip::EventMark>& marks = clip.GetEventMarks();
 		const float duration = clip.GetDuration();
 
+		// Marks are sorted by time, so each pass binary-searches where it starts.
 		// (lo, hi] in order, or [lo, hi] when lo itself counts.
 		auto ascending = [&](float lo, float hi, bool fromLo)
 		{
-			for (const AnimationClip::EventMark& mark : marks)
-			{
-				if ((fromLo ? mark.Time >= lo : mark.Time > lo) && mark.Time <= hi)
-					Fire(layerIndex, layer, clip, mark, true);
-			}
+			auto it = std::partition_point(marks.begin(), marks.end(), [&](const AnimationClip::EventMark& mark) { return fromLo ? mark.Time < lo : mark.Time <= lo; });
+			for (; it != marks.end() && it->Time <= hi; ++it)
+				Fire(layerIndex, layer, clip, *it, true);
 		};
 		// [lo, hi) in reverse, or [lo, hi] when hi itself counts.
 		auto descending = [&](float lo, float hi, bool fromHi)
 		{
-			for (size_t i = marks.size(); i-- > 0;)
+			auto it = std::partition_point(marks.begin(), marks.end(), [&](const AnimationClip::EventMark& mark) { return fromHi ? mark.Time <= hi : mark.Time < hi; });
+			while (it != marks.begin() && std::prev(it)->Time >= lo)
 			{
-				if (marks[i].Time >= lo && (fromHi ? marks[i].Time <= hi : marks[i].Time < hi))
-					Fire(layerIndex, layer, clip, marks[i], false);
+				--it;
+				Fire(layerIndex, layer, clip, *it, false);
 			}
 		};
 
@@ -1078,10 +1078,13 @@ namespace Dingo
 		if (state.Cursors.size() != cursorCount)
 			state.Cursors.assign(cursorCount, 0);
 
+		// Joints outside an upper layer's mask never show, so their channels aren't sampled.
+		const float* mask = &layer != &m_Layers.front() && layer.Mask.size() == out.size() ? layer.Mask.data() : nullptr;
+
 		if (!state.State.IsBlend())
 		{
 			if (const AnimationClip* clip = state.State.GetClip())
-				SampleClip(*clip, state.Time, state.Cursors.data(), out);
+				SampleClip(*clip, state.Time, state.Cursors.data(), out, mask);
 			return;
 		}
 
@@ -1094,25 +1097,25 @@ namespace Dingo
 
 		const BlendPoint& lower = points[spot.Lower];
 		if (lower.Clip)
-			SampleClip(*lower.Clip, state.Time * lower.Clip->GetDuration(), cursors, out);
+			SampleClip(*lower.Clip, state.Time * lower.Clip->GetDuration(), cursors, out, mask);
 		if (!(spot.T > 0.0f))
 			return;
 
 		const BlendPoint& upper = points[spot.Lower + 1];
 		std::copy(underneath.begin(), underneath.end(), m_BlendScratch.begin());
 		if (upper.Clip)
-			SampleClip(*upper.Clip, state.Time * upper.Clip->GetDuration(), cursors + (lower.Clip ? lower.Clip->GetChannels().size() * 3 : 0), m_BlendScratch);
+			SampleClip(*upper.Clip, state.Time * upper.Clip->GetDuration(), cursors + (lower.Clip ? lower.Clip->GetChannels().size() * 3 : 0), m_BlendScratch, mask);
 		BlendPoses(out, m_BlendScratch, spot.T);
 	}
 
-	void Animator::SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out)
+	void Animator::SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out, const float* mask)
 	{
 		const ClipBinding& clipBinding = Bind(clip);
 		const std::vector<AnimationChannel>& channels = clip.GetChannels();
 		for (size_t c = 0; c < channels.size(); ++c)
 		{
 			const ChannelBinding& binding = clipBinding.Channels[c];
-			if (binding.Joint == Skeleton::k_InvalidJoint)
+			if (binding.Joint == Skeleton::k_InvalidJoint || (mask && !(mask[binding.Joint] > 0.0f)))
 				continue;
 
 			const AnimationChannel& channel = channels[c];
@@ -1128,7 +1131,11 @@ namespace Dingo
 		}
 
 		if (m_RootMotion != RootMotionMode::Off && clipBinding.RootChannel >= 0)
-			HoldRoot(clipBinding, out[clipBinding.Channels[clipBinding.RootChannel].Joint]);
+		{
+			const int32_t root = clipBinding.Channels[clipBinding.RootChannel].Joint;
+			if (!mask || mask[root] > 0.0f)
+				HoldRoot(clipBinding, out[root]);
+		}
 	}
 
 	const Animator::ClipBinding& Animator::Bind(const AnimationClip& clip)
