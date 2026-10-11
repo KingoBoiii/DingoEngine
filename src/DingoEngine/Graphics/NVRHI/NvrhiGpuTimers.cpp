@@ -93,12 +93,20 @@ namespace Dingo::Internal
 		for (uint32_t i = 0; i < frame.Used; ++i)
 		{
 			Data::Query& query = frame.Queries[i];
-			if (query.Ended && device->pollTimerQuery(query.Handle))
+			const bool done = query.Ended && device->pollTimerQuery(query.Handle);
+			const float seconds = done ? device->getTimerQueryTime(query.Handle) : 0.0f;
+			if (seconds > 0.0f)
 			{
-				sums[query.Timer] += device->getTimerQueryTime(query.Handle) * 1000.0f;
+				sums[query.Timer] += seconds * 1000.0f;
 				measured[query.Timer] = true;
 			}
-			device->resetTimerQuery(query.Handle);
+			// Exactly 0 is D3D11's disjoint reading, whose start and end results NVRHI never fetches:
+			// ending those queries again would abandon them (#410), so the query is replaced.
+			nvrhi::TimerQueryHandle fresh = done && seconds <= 0.0f ? device->createTimerQuery() : nullptr;
+			if (fresh)
+				query.Handle = fresh;
+			else
+				device->resetTimerQuery(query.Handle);
 			query.Ended = false;
 		}
 		frame.Used = 0;

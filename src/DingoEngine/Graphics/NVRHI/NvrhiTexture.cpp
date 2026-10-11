@@ -281,9 +281,6 @@ namespace Dingo
 					m_Height = desc.height;
 					m_Format = format;
 				}
-				if (!m_Event)
-					m_Event = device->createEventQuery();
-
 				// As in NvrhiTexture::ReadPixels: the copy joins the frame, and the texture gets back the
 				// state it had.
 				nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
@@ -299,8 +296,10 @@ namespace Dingo
 				// The frame is submitted by the next frame's start, so the event set then follows the copy.
 				Renderer::RunAfterFrame([self = shared_from_this(), done = std::move(done)]() mutable
 				{
+					// A fresh query each time: NVRHI's D3D11 poll takes S_FALSE for done, so a reused query
+					// could be ended again with its result never fetched (#410 QUERY_END_ABANDONING_PREVIOUS_RESULTS).
 					nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-					device->resetEventQuery(self->m_Event);
+					self->m_Event = device->createEventQuery();
 					device->setEventQuery(self->m_Event, nvrhi::CommandQueue::Graphics);
 					self->Poll(std::move(done));
 				});
