@@ -291,7 +291,6 @@ namespace Dingo
 		m_TranslucentIndices.clear();
 		m_TranslucentChunks.clear();
 		m_TranslucentDraws.clear();
-		m_TranslucentMaterials.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
@@ -384,6 +383,7 @@ namespace Dingo
 			}
 			matBatch.ChunksInUse = 0;
 			matBatch.Enqueued = false;
+			matBatch.Drawable = -1;
 			++it;
 		}
 		m_DrawOrder.clear();
@@ -465,23 +465,10 @@ namespace Dingo
 			for (const BatchKey& key : m_DrawOrder)
 			{
 				Material* material = key.Material;
+				if (!IsDrawableLitMaterial(material))
+					continue;
 				if (IsLitShader(material->GetShader()))
-				{
-					// The binding set would name bindings the shader's layout lacks, which Vulkan does
-					// not reject: drawing it is undefined behaviour, so the material is skipped.
-					if (BindsPastSlotZero(*material))
-					{
-						if (!m_LitSlotsWarned)
-						{
-							const std::string& name = material->GetParams().DebugName;
-							DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-								name.empty() ? "<unnamed>" : name.c_str());
-							m_LitSlotsWarned = true;
-						}
-						continue;
-					}
 					PrepareLitMaterial(material);
-				}
 
 				MaterialBatch& matBatch = m_Batches[key];
 				for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
@@ -565,7 +552,6 @@ namespace Dingo
 	void Renderer3D::PrepareTranslucentPass(uint32_t& batchIndex, bool shadows)
 	{
 		m_TranslucentDraws.clear();
-		m_TranslucentMaterials.clear();
 		if (m_TranslucentSubmissions.empty())
 			return;
 
@@ -573,29 +559,17 @@ namespace Dingo
 		std::stable_sort(m_TranslucentSubmissions.begin(), m_TranslucentSubmissions.end(),
 			[](const TranslucentSubmission& a, const TranslucentSubmission& b) { return a.SortKey > b.SortKey; });
 
-		// The opaque path's rule for lit materials, checked once a material.
-		auto drawable = [this](Material* material)
+		// Asked once a batch a scene.
+		auto drawable = [this](const TranslucentSubmission& submission)
 		{
-			if (!IsLitShader(material->GetShader()))
-				return true;
-			for (const auto& [checked, usable] : m_TranslucentMaterials)
+			MaterialBatch& batch = *submission.Batch;
+			if (batch.Drawable < 0)
 			{
-				if (checked == material)
-					return usable;
+				batch.Drawable = IsDrawableLitMaterial(submission.Material) ? 1 : 0;
+				if (batch.Drawable && IsLitShader(submission.Material->GetShader()))
+					PrepareLitMaterial(submission.Material);
 			}
-
-			const bool usable = !BindsPastSlotZero(*material);
-			if (usable)
-				PrepareLitMaterial(material);
-			else if (!m_LitSlotsWarned)
-			{
-				const std::string& name = material->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-					name.empty() ? "<unnamed>" : name.c_str());
-				m_LitSlotsWarned = true;
-			}
-			m_TranslucentMaterials.emplace_back(material, usable);
-			return usable;
+			return batch.Drawable > 0;
 		};
 
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
@@ -683,7 +657,7 @@ namespace Dingo
 				for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
 				{
 					if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.ShadowGroups != group ||
-						submission.IndexCount == 0 || !drawable(submission.Material))
+						submission.IndexCount == 0 || !drawable(submission))
 						continue;
 					if (run.ChunkEnd == 0)
 					{
@@ -708,7 +682,7 @@ namespace Dingo
 				m_TranslucentDraws.push_back({ submission.Material, submission.Skinned, 0, 0, 0, 1 });
 				continue;
 			}
-			if (submission.IndexCount == 0 || !drawable(submission.Material))
+			if (submission.IndexCount == 0 || !drawable(submission))
 				continue;
 
 			if (!litChunkStarted)
@@ -1110,17 +1084,8 @@ namespace Dingo
 
 		// The same rule as the static path, so a material draws the same way skinned or not.
 		Material* requested = submission.Material ? submission.Material : m_Material;
-		if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
-		{
-			if (!m_LitSlotsWarned)
-			{
-				const std::string& name = requested->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-					name.empty() ? "<unnamed>" : name.c_str());
-				m_LitSlotsWarned = true;
-			}
+		if (!IsDrawableLitMaterial(requested))
 			return 0;
-		}
 
 		EnsureSkinningResources();
 		if (submission.Instance != uploadedInstance)
@@ -1167,6 +1132,21 @@ namespace Dingo
 		Material* material = Material::Create(params);
 		PrepareLitMaterial(material);
 		return material;
+	}
+
+	bool Renderer3D::IsDrawableLitMaterial(const Material* material)
+	{
+		if (!IsLitShader(material->GetShader()) || !BindsPastSlotZero(*material))
+			return true;
+
+		if (!m_LitSlotsWarned)
+		{
+			const std::string& name = material->GetParams().DebugName;
+			DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+				name.empty() ? "<unnamed>" : name.c_str());
+			m_LitSlotsWarned = true;
+		}
+		return false;
 	}
 
 	void Renderer3D::PrepareLitMaterial(Material* material) const
@@ -1559,6 +1539,7 @@ namespace Dingo
 		{
 			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
 			submission.Material = batchMaterial;
+			submission.Batch = &matBatch;
 			submission.FirstVertex = static_cast<uint32_t>(m_TranslucentVertices.size());
 			submission.VertexCount = static_cast<uint32_t>(vertices.size());
 			submission.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
@@ -2050,8 +2031,7 @@ namespace Dingo
 		auto skinnedShadowDrawn = [this](const SkinnedSubmission& submission)
 		{
 			const Material* material = submission.Material ? submission.Material : m_Material;
-			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] &&
-				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
+			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] && IsDrawableLitMaterial(material);
 		};
 		bool skinnedCasts = false;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)

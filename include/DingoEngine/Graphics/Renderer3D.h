@@ -498,6 +498,10 @@ namespace Dingo
 		};
 
 		void PrepareLitMaterial(Material* material) const;
+		// False for a lit material with a texture or sampler past slot 0 (warned once): its binding set
+		// would name bindings the lit shader's layout lacks, which Vulkan does not reject, so no pass
+		// draws it. Any other material is drawable.
+		bool IsDrawableLitMaterial(const Material* material);
 
 		Shader* m_Shader = nullptr;
 		Material* m_Material = nullptr; // built-in lit default material
@@ -525,6 +529,7 @@ namespace Dingo
 			bool SkinnedOnly = false;
 			// Its meshes go to the translucent pass, so the batch itself stays empty.
 			bool Translucent = false;
+			int8_t Drawable = -1; // the scene's IsDrawableLitMaterial answer for a translucent batch, -1 = not asked yet
 			uint32_t IdleScenes = 0;
 		};
 		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
@@ -570,6 +575,7 @@ namespace Dingo
 		struct TranslucentSubmission
 		{
 			Dingo::Material* Material = nullptr;
+			MaterialBatch* Batch = nullptr; // the translucent batch: map nodes outlive the scene
 			uint32_t FirstVertex = 0;
 			uint32_t VertexCount = 0;
 			uint32_t FirstIndex = 0;
@@ -602,7 +608,6 @@ namespace Dingo
 		std::vector<uint32_t> m_TranslucentIndices;
 		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
 		std::vector<TranslucentDraw> m_TranslucentDraws;
-		std::vector<std::pair<Dingo::Material*, bool>> m_TranslucentMaterials; // checked this scene: drawable or not
 		std::vector<uint32_t> m_TranslucentNearIndices; // PrepareTranslucentPass' scratch: a mesh's triangles facing the camera
 
 		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
