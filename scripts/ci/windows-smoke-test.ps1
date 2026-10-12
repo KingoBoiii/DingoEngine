@@ -28,6 +28,59 @@ function Format-Argument([string] $Argument)
 	return $Argument
 }
 
+# WM_CLOSE to every visible top-level window of the process, as close-windows.py does on Linux:
+# Process.CloseMainWindow posts to the one window .NET guesses is the main one, which with ImGui's
+# platform windows needn't be the app's.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class SmokeWindows
+{
+	delegate bool EnumProc(IntPtr window, IntPtr parameter);
+	[DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
+	[DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+	[DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+	[DllImport("user32.dll")] static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+	public static int CloseAll(uint processId)
+	{
+		int sent = 0;
+		EnumWindows((window, parameter) =>
+		{
+			uint owner;
+			GetWindowThreadProcessId(window, out owner);
+			if (owner == processId && IsWindowVisible(window) && PostMessageW(window, 0x0010, IntPtr.Zero, IntPtr.Zero))
+				++sent;
+			return true;
+		}, IntPtr.Zero);
+		return sent;
+	}
+}
+'@
+
+# A hung run's threads, from cdb if the runner has the Debugging Tools; system frames are named
+# through Microsoft's symbol server, the engine's through a .pdb beside the executable if any.
+function Get-HungThreads([System.Diagnostics.Process] $Process, [string] $Exe)
+{
+	$cdb = @(
+		"${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe",
+		"$env:ProgramFiles\Windows Kits\10\Debuggers\x64\cdb.exe"
+	) | Where-Object { Test-Path $_ } | Select-Object -First 1
+	if (-not $cdb) { return @('(no cdb.exe on this runner: no thread stacks)') }
+
+	$symbols = "srv*$env:TEMP\symbols*https://msdl.microsoft.com/download/symbols;$(Split-Path $Exe)"
+	$id = $Process.Id
+	$job = Start-Job { & $using:cdb -p $using:id -pv -y $using:symbols -c '~*kc 40; qd' 2>&1 }
+	if (-not (Wait-Job $job -Timeout 240))
+	{
+		Remove-Job $job -Force
+		return @('(cdb took longer than 240 s)')
+	}
+	$output = Receive-Job $job -ErrorAction Continue
+	Remove-Job $job -Force
+	return $output | Where-Object { $_ -match '^\s*#|^\s*[0-9a-f]{2} |^\s*\.?\s*\d+\s+Id:' }
+}
+
 function Invoke-Run
 {
 	param(
@@ -58,11 +111,14 @@ function Invoke-Run
 	$null = $process.Handle
 
 	$problems = @()
+	$hungThreads = @()
 	if (-not $process.WaitForExit($RunSeconds * 1000))
 	{
-		$null = $process.CloseMainWindow()
+		$null = [SmokeWindows]::CloseAll([uint32] $process.Id)
 		if (-not $process.WaitForExit(60000))
 		{
+			try { $hungThreads = Get-HungThreads $process $Exe }
+			catch { $hungThreads = @("(no thread stacks: $_)") }
 			$process.Kill()
 			$process.WaitForExit()
 			$problems += 'hung'
@@ -98,6 +154,13 @@ function Invoke-Run
 		Write-Output "::error title=Smoke test $Name ($Config)::$($problems -join ' ')"
 		Write-Output "FAIL  $Name ($passed passed): $($problems -join ' ')"
 		$text -split "`n" | Where-Object { $_ -match '\[FAIL\]|LOG ERROR|Assertion failed|crashed' } | Select-Object -First 20 | ForEach-Object { Write-Output $_ }
+		if ($problems -contains 'hung')
+		{
+			Write-Output '---- the last lines it logged ----'
+			if (Test-Path $log) { Get-Content $log -Tail 25 | ForEach-Object { Write-Output $_.TrimEnd() } }
+			Write-Output '---- its threads ----'
+			$hungThreads | Select-Object -First 300 | ForEach-Object { Write-Output $_ }
+		}
 	}
 	else
 	{

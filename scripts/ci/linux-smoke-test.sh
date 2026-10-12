@@ -31,6 +31,16 @@ APP_PRELOAD=""
 
 failures=0
 
+# gdb isn't the run's ancestor, so Yama's ptrace_scope 1 needs root to let it attach.
+dump_threads() {
+	command -v gdb > /dev/null || return 0
+	local exe
+	exe=$(readlink "/proc/$1/exe") || return 0
+	local gdb=(gdb)
+	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
+	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -400
+}
+
 # RUN_SECONDS, EXPECT_EXIT (default 0) and EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
 # default the run's output) apply to one call.
 run() {
@@ -51,6 +61,7 @@ run() {
 			sleep 1
 		done
 		if kill -0 $pid 2>/dev/null; then
+			dump_threads $pid > "$log.threads"
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
 		fi
@@ -75,6 +86,12 @@ run() {
 		echo "::error title=Smoke test $name ($CONFIG)::$problems"
 		echo "FAIL  $name ($passed passed):$problems"
 		grep -E '\[FAIL\]|Validation Error|VUID-|AddressSanitizer|LeakSanitizer|LOG ERROR|Assertion failed' "$log" | head -20
+		if [[ $problems == *hung* ]]; then
+			echo "---- the last lines it logged ----"
+			tail -25 "$log"
+			echo "---- its threads ----"
+			grep -E '^Thread|^#' "$log.threads" | head -150
+		fi
 	else
 		echo "ok    $name ($passed passed)"
 	fi

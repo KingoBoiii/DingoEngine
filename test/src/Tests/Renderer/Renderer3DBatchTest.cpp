@@ -713,7 +713,7 @@ namespace Dingo
 				std::format("a batch submitted again unchanged bakes nothing and transforms no vertex ({} baked, {} static, {} vertices)", again.StaticCellsBaked, again.StaticMeshes, again.VertexCount));
 
 			m_StaticBatch->Remove(m_StaticIds[0]);
-			const StaticMeshId far = m_StaticBatch->Add(StaticMesh().SetMesh(m_CheckRenderer->GetBoxMesh()).SetTransform(glm::translate(glm::mat4(1.0f), { 200.0f, 0.0f, -7.0f })));
+			const StaticMeshId distant = m_StaticBatch->Add(StaticMesh().SetMesh(m_CheckRenderer->GetBoxMesh()).SetTransform(glm::translate(glm::mat4(1.0f), { 200.0f, 0.0f, -7.0f })));
 			const StaticMeshId glass = m_StaticBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-5.5f)).SetColor(k_HalfGreen).SetMaterial(m_TranslucentA));
 			const Renderer3D::Statistics changed = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
 			{
@@ -725,7 +725,7 @@ namespace Dingo
 					changed.StaticMeshes, changed.StaticCellsBaked, changed.CulledMeshes));
 			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == 25,
 				std::format("a translucent mesh in a static batch draws in the translucent pass ({} translucent, {} submitted)", changed.TranslucentMeshes, changed.SubmittedMeshes));
-			m_StaticBatch->Remove(far);
+			m_StaticBatch->Remove(distant);
 			m_StaticBatch->Remove(glass);
 
 			const std::shared_ptr<StaticBatch> other = m_CheckRenderer->CreateStaticBatch();
