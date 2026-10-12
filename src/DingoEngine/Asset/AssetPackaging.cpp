@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Asset/AssetManager.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Asset/AssetManagerData.h"
 #include "DingoEngine/Asset/Pack/PackReader.h"
@@ -17,17 +18,6 @@ namespace Dingo
 
 	namespace
 	{
-
-		std::filesystem::path FromUtf8(const std::string& text)
-		{
-			return std::filesystem::path(std::u8string(text.begin(), text.end()));
-		}
-
-		std::string ToUtf8(const std::filesystem::path& path)
-		{
-			const std::u8string text = path.generic_u8string();
-			return std::string(text.begin(), text.end());
-		}
 
 		int HexDigit(char c)
 		{
@@ -209,7 +199,7 @@ namespace Dingo
 		std::error_code ec;
 		if (source.empty() || !std::filesystem::is_directory(source, ec))
 		{
-			result.Error = source.empty() ? "no source directory, and no AssetManager root to default to" : "'" + source.string() + "' is not a directory";
+			result.Error = source.empty() ? "no source directory, and no AssetManager root to default to" : "'" + Internal::PathToUtf8(source) + "' is not a directory";
 			return result;
 		}
 		if (params.OutputPath.empty())
@@ -232,7 +222,7 @@ namespace Dingo
 				continue;
 
 			const std::filesystem::path file = std::filesystem::absolute(it->path()).lexically_normal();
-			const std::string relative = ToUtf8(it->path().lexically_relative(source));
+			const std::string relative = Internal::PathToGenericUtf8(it->path().lexically_relative(source));
 			if (relative == ".dpakignore" || IsExcluded(relative, patterns))
 				continue;
 			if (file == output)
@@ -244,12 +234,12 @@ namespace Dingo
 		}
 		if (ec)
 		{
-			result.Error = "can't walk '" + source.string() + "': " + ec.message();
+			result.Error = "can't walk '" + Internal::PathToUtf8(source) + "': " + ec.message();
 			return result;
 		}
 		if (files.empty())
 		{
-			result.Error = "no files to package under '" + source.string() + "'";
+			result.Error = "no files to package under '" + Internal::PathToUtf8(source) + "'";
 			return result;
 		}
 
@@ -282,7 +272,7 @@ namespace Dingo
 		const std::string archive = writer.Finish();
 		if (!IO::WriteFileAtomic(output, archive))
 		{
-			result.Error = "can't write '" + output.string() + "'";
+			result.Error = "can't write '" + Internal::PathToUtf8(output) + "'";
 			return result;
 		}
 
@@ -301,7 +291,7 @@ namespace Dingo
 		std::shared_ptr<Internal::PackReader> reader = Internal::PackReader::Open(dpak, key, error);
 		if (!reader)
 		{
-			DE_CORE_ERROR("AssetManager: can't open package '{}': {}.", dpak.string(), error);
+			DE_CORE_ERROR("AssetManager: can't open package '{}': {}.", Internal::PathToUtf8(dpak), error);
 			return k_InvalidPackage;
 		}
 
@@ -311,7 +301,7 @@ namespace Dingo
 
 		for (uint32_t i = 0; i < reader->GetEntryCount(); ++i)
 		{
-			const std::filesystem::path entry = FromUtf8(reader->GetEntry(i).Name);
+			const std::filesystem::path entry = Internal::PathFromUtf8(reader->GetEntry(i).Name);
 			if (AssetTypeFromExtension(entry.extension()) == AssetType::None)
 				continue;
 

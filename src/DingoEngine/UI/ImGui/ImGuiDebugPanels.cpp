@@ -1,6 +1,7 @@
 #include "depch.h"
 
 #include "DingoEngine/UI/DebugPanels.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Input.h"
@@ -157,29 +158,6 @@ namespace Dingo::UI
 			}
 		}
 
-		// Registry snapshot ordered by path: the registry is an unordered_map, so
-		// iterating it directly would reshuffle rows between frames.
-		// Caches handles, not AssetMetadata pointers: Remove() erases from the registry
-		// map, which invalidates that element's address, so resolving fresh via
-		// GetMetadata() at point of use is what makes an erased handle merely fail to
-		// resolve instead of reading freed memory.
-		//
-		// Rebuilds when stale, where stale = registered count changed OR some
-		// previously-cached handle no longer resolves. The second half is load-bearing:
-		// a same-frame-gap Remove(h)+Import(p) nets no count change, so the count check
-		// alone would miss it, leaving both the dead handle AND the new import invisible
-		// until some later change happened to move the count. Checking every cached
-		// handle resolves costs one GetMetadata hash lookup per entry every frame (no
-		// allocation) but not the O(n log n) collect-and-sort, which only runs when
-		// something actually changed - that's the trade this cache exists to make.
-		// What this does NOT catch: an asset's path changing without its handle
-		// changing, which the current Import/Remove API has no way to do anyway.
-		std::string PathText(const std::filesystem::path& path)
-		{
-			const std::u8string text = path.generic_u8string();
-			return std::string(text.begin(), text.end());
-		}
-
 		// Resolving a source walks the mounts and stats loose files, so the column refreshes once a
 		// second rather than per row per frame.
 		const std::string& CachedAssetSource(const AssetManager& assets, AssetHandle handle)
@@ -200,6 +178,23 @@ namespace Dingo::UI
 			return it->second;
 		}
 
+		// Registry snapshot ordered by path: the registry is an unordered_map, so
+		// iterating it directly would reshuffle rows between frames.
+		// Caches handles, not AssetMetadata pointers: Remove() erases from the registry
+		// map, which invalidates that element's address, so resolving fresh via
+		// GetMetadata() at point of use is what makes an erased handle merely fail to
+		// resolve instead of reading freed memory.
+		//
+		// Rebuilds when stale, where stale = registered count changed OR some
+		// previously-cached handle no longer resolves. The second half is load-bearing:
+		// a same-frame-gap Remove(h)+Import(p) nets no count change, so the count check
+		// alone would miss it, leaving both the dead handle AND the new import invisible
+		// until some later change happened to move the count. Checking every cached
+		// handle resolves costs one GetMetadata hash lookup per entry every frame (no
+		// allocation) but not the O(n log n) collect-and-sort, which only runs when
+		// something actually changed - that's the trade this cache exists to make.
+		// What this does NOT catch: an asset's path changing without its handle
+		// changing, which the current Import/Remove API has no way to do anyway.
 		const std::vector<AssetHandle>& SortedRegistry(const AssetManager& assets)
 		{
 			static std::vector<AssetHandle> s_Sorted;
@@ -674,7 +669,7 @@ namespace Dingo::UI
 		ImGui::TextUnformatted("Assets");
 		ImGui::Separator();
 		// Wrapped: absolute asset roots are long enough to clip in a narrow window.
-		ImGui::TextWrapped("Root : %s", assets.GetRootDirectory().string().c_str());
+		ImGui::TextWrapped("Root : %s", Internal::PathToUtf8(assets.GetRootDirectory()).c_str());
 		ImGui::Text("Registered : %u    Loaded : %u    In flight : %u", registered, loaded, pending);
 
 		const float fraction = registered > 0 ? static_cast<float>(loaded) / static_cast<float>(registered) : 0.0f;
@@ -756,7 +751,7 @@ namespace Dingo::UI
 				if (!metadata)
 					continue; // removed since the snapshot was built - skip rather than show stale data
 
-				const std::string path = PathText(metadata->FilePath);
+				const std::string path = Internal::PathToGenericUtf8(metadata->FilePath);
 				if (s_Filter[0] != '\0' && path.find(s_Filter) == std::string::npos)
 					continue;
 
@@ -773,7 +768,7 @@ namespace Dingo::UI
 				ImGui::TextUnformatted(path.c_str());
 				if (ImGui::IsItemHovered())
 					ImGui::SetTooltip("handle %llu\n%s", static_cast<unsigned long long>(static_cast<uint64_t>(handle)),
-						PathText(assets.ResolvePath(metadata->FilePath)).c_str());
+						Internal::PathToGenericUtf8(assets.ResolvePath(metadata->FilePath)).c_str());
 
 				ImGui::TableSetColumnIndex(3);
 				const std::string& source = CachedAssetSource(assets, handle);

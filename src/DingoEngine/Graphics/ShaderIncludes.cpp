@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/ShaderIncludes.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
@@ -126,9 +127,9 @@ namespace Dingo::Internal
 					return Expand(embedded, Origin{ {}, true, false }, depth + 1, out);
 				}
 
-				std::filesystem::path file = origin.Directory / std::filesystem::path(include.Name);
+				std::filesystem::path file = origin.Directory / Internal::PathFromUtf8(include.Name);
 				if (origin.Inline)
-					file = ResolveRawAssetPath(include.Name);
+					file = ResolveRawAssetPath(Internal::PathFromUtf8(include.Name));
 
 				if (!m_Pasted.insert(VirtualFileSystem::GetLogicalKey(file)).second)
 					return true;
@@ -145,7 +146,7 @@ namespace Dingo::Internal
 
 				if (!VirtualFileSystem::Exists(file))
 				{
-					DE_CORE_ERROR("Shader '{}': #include \"{}\" not found ({}).", m_ShaderName, requested, file.generic_string());
+					DE_CORE_ERROR("Shader '{}': #include \"{}\" not found ({}).", m_ShaderName, requested, Internal::PathToGenericUtf8(file));
 					return false;
 				}
 

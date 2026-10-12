@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "NvrhiShader.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/FileSystem.h"
@@ -206,7 +207,7 @@ namespace Dingo
 				std::ofstream out(tempPath, std::ios::out | std::ios::binary | std::ios::trunc);
 				if (!out.is_open())
 				{
-					DE_CORE_WARN("Could not open shader cache file '{}' for writing - the shader will recompile next launch.", tempPath.string());
+					DE_CORE_WARN("Could not open shader cache file '{}' for writing - the shader will recompile next launch.", Internal::PathToUtf8(tempPath));
 					return;
 				}
 
@@ -215,7 +216,7 @@ namespace Dingo
 
 				if (!out)
 				{
-					DE_CORE_WARN("Could not write shader cache file '{}' - the shader will recompile next launch.", tempPath.string());
+					DE_CORE_WARN("Could not write shader cache file '{}' - the shader will recompile next launch.", Internal::PathToUtf8(tempPath));
 					std::error_code removeEc;
 					std::filesystem::remove(tempPath, removeEc);
 					return;
@@ -226,7 +227,7 @@ namespace Dingo
 			std::filesystem::rename(tempPath, path, ec);
 			if (ec)
 			{
-				DE_CORE_WARN("Could not replace shader cache file '{}': {}", path.string(), ec.message());
+				DE_CORE_WARN("Could not replace shader cache file '{}': {}", Internal::PathToUtf8(path), ec.message());
 				std::filesystem::remove(tempPath, ec);
 			}
 		}
@@ -303,7 +304,7 @@ namespace Dingo
 
 	bool NvrhiShader::Build(bool forceCompile, bool tolerateErrors)
 	{
-		std::string name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
+		std::string name = m_Params.Name.empty() ? Internal::PathToUtf8(m_Params.FilePath.filename()) : m_Params.Name;
 		if (name.empty())
 		{
 			DE_CORE_WARN("Shader name is empty, using file name as shader name.");
@@ -586,7 +587,7 @@ namespace Dingo
 
 	std::unordered_map<ShaderType, std::string> NvrhiShader::GetShaderSources(std::vector<std::filesystem::path>& includedFiles) const
 	{
-		const std::string name = m_Params.Name.empty() ? m_Params.FilePath.filename().string() : m_Params.Name;
+		const std::string name = m_Params.Name.empty() ? Internal::PathToUtf8(m_Params.FilePath.filename()) : m_Params.Name;
 
 		if (m_Params.FilePath.empty())
 		{
@@ -599,14 +600,14 @@ namespace Dingo
 		// editor save that briefly removes/truncates the file.
 		if (!VirtualFileSystem::Exists(m_Params.FilePath))
 		{
-			DE_CORE_ERROR("Shader file does not exist: '{}'.", m_Params.FilePath.string());
+			DE_CORE_ERROR("Shader file does not exist: '{}'.", Internal::PathToUtf8(m_Params.FilePath));
 			return {};
 		}
 
 		std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
 		if (source.empty())
 		{
-			DE_CORE_ERROR("Shader file is empty or unreadable: '{}'.", m_Params.FilePath.string());
+			DE_CORE_ERROR("Shader file is empty or unreadable: '{}'.", Internal::PathToUtf8(m_Params.FilePath));
 			return {};
 		}
 

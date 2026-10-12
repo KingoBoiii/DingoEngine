@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Audio/MiniAudio/MiniAudioEngine.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Audio/MiniAudio/MiniAudioVfs.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
@@ -219,7 +220,7 @@ namespace Dingo
 
 		if (!VirtualFileSystem::Exists(resolvedPath))
 		{
-			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", resolvedPath.string());
+			DE_CORE_ERROR("AudioEngine::LoadClip: file not found '{}'", Internal::PathToUtf8(resolvedPath));
 			return nullptr;
 		}
 
@@ -231,7 +232,7 @@ namespace Dingo
 			MA_SOUND_FLAG_DECODE, nullptr, nullptr, clip->Template());
 		if (result != MA_SUCCESS)
 		{
-			DE_CORE_ERROR("AudioEngine::LoadClip failed for '{}' ({})", resolvedPath.string(), (int)result);
+			DE_CORE_ERROR("AudioEngine::LoadClip failed for '{}' ({})", Internal::PathToUtf8(resolvedPath), (int)result);
 			return nullptr; // clip's dtor won't uninit (m_Loaded still false)
 		}
 

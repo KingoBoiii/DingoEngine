@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -28,7 +29,7 @@ namespace Dingo
 		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(path);
 		if (!bytes)
 		{
-			DE_CORE_ERROR("Failed to open file: {}", path.string());
+			DE_CORE_ERROR("Failed to open file: {}", Internal::PathToUtf8(path));
 			return "";
 		}
 		return std::string(bytes->begin(), bytes->end());
@@ -48,12 +49,12 @@ namespace Dingo
 		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
 		if (!bytes || bytes->empty())
 		{
-			DE_CORE_ERROR("Failed to load image: {}", filepath.string());
+			DE_CORE_ERROR("Failed to load image: {}", Internal::PathToUtf8(filepath));
 			return nullptr;
 		}
 		const uint8_t* pixels = ReadImageFromMemory(bytes->data(), bytes->size(), width, height, channels, flipVertically, forceRGBA);
 		if (!pixels)
-			DE_CORE_ERROR("Failed to load image: {}", filepath.string());
+			DE_CORE_ERROR("Failed to load image: {}", Internal::PathToUtf8(filepath));
 		return pixels;
 	}
 
@@ -93,7 +94,7 @@ namespace Dingo
 	{
 		if (!pixels || width == 0 || height == 0 || channels < 1 || channels > 4)
 		{
-			DE_CORE_ERROR("WriteImage: nothing to write to {} ({}x{}, {} channels).", filepath.string(), width, height, channels);
+			DE_CORE_ERROR("WriteImage: nothing to write to {} ({}x{}, {} channels).", Internal::PathToUtf8(filepath), width, height, channels);
 			return false;
 		}
 
@@ -117,7 +118,7 @@ namespace Dingo
 			bytes.insert(bytes.end(), static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size);
 		};
 
-		std::string extension = filepath.extension().string();
+		std::string extension = Internal::PathToUtf8(filepath.extension());
 		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
 		const int w = static_cast<int>(width), h = static_cast<int>(height), c = static_cast<int>(channels);
@@ -136,7 +137,7 @@ namespace Dingo
 			file.open(filepath, std::ios::binary | std::ios::trunc);
 		if (!encodedOk || !file.is_open())
 		{
-			DE_CORE_ERROR("WriteImage: failed to write {}", filepath.string());
+			DE_CORE_ERROR("WriteImage: failed to write {}", Internal::PathToUtf8(filepath));
 			return false;
 		}
 
@@ -144,7 +145,7 @@ namespace Dingo
 		file.close();
 		if (file.fail())
 		{
-			DE_CORE_ERROR("WriteImage: failed to write {}", filepath.string());
+			DE_CORE_ERROR("WriteImage: failed to write {}", Internal::PathToUtf8(filepath));
 			return false;
 		}
 		return true;
@@ -152,7 +153,7 @@ namespace Dingo
 
 	std::string FileSystem::GetFileName(const std::filesystem::path& filepath)
 	{
-		const std::string& filepathString = filepath.string();
+		const std::string& filepathString = Internal::PathToUtf8(filepath);
 
 		// Extract name from filepath
 		auto lastSlash = filepathString.find_last_of("/\\");

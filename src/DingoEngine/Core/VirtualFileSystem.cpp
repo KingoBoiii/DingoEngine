@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Core/VfsArchive.h"
 
@@ -247,7 +248,7 @@ namespace Dingo
 		for (const Mount& m : s_Mounts)
 		{
 			if (m.Id == mount)
-				return m.Archive ? m.Archive->GetName() : m.Directory.generic_string();
+				return m.Archive ? m.Archive->GetName() : Internal::PathToGenericUtf8(m.Directory);
 		}
 		return {};
 	}
