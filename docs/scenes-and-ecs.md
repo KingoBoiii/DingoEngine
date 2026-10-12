@@ -266,7 +266,8 @@ in one draw.
 
 The picture matches the CPU batches within rounding (the GPU and the CPU round the transform
 differently: no channel off by more than 2/255 on at most 0.1% of the pixels), so a scene where
-nothing repeats draws exactly as before. `Renderer3DCapabilities::Instancing = false`, F4's
+nothing repeats draws exactly as before. A material's instanced meshes draw after its CPU batch, so
+two of its meshes meeting at exactly equal depth can resolve the other way. `Renderer3DCapabilities::Instancing = false`, F4's
 **Instance repeated meshes** or `Renderer3D::SetInstancingEnabled(false)` batches everything on the
 CPU again. F4 counts instanced meshes and draws (`Statistics::InstancedMeshes`, `InstancedDraws`,
 `InstancedShadowDraws`); `VertexCount` leaves instanced meshes out, since nothing transforms them on
