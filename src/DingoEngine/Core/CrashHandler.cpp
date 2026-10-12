@@ -10,6 +10,7 @@
 #include <ctime>
 #include <cwchar>
 #include <exception>
+#include <memory>
 
 #if defined(DE_PLATFORM_WINDOWS)
 #include <DbgHelp.h>
@@ -19,6 +20,7 @@
 #include <csignal>
 #include <execinfo.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <unistd.h>
 #endif
 
@@ -36,7 +38,6 @@ namespace Dingo
 	namespace
 	{
 
-		std::atomic<bool> s_Crashing = false;
 		bool s_Installed = false;
 		char s_AppName[128] = "The application";
 
@@ -71,6 +72,12 @@ namespace Dingo
 			out[length] = '\0';
 		}
 
+		std::string Utf8(const std::filesystem::path& path)
+		{
+			const auto text = path.u8string();
+			return std::string(text.begin(), text.end());
+		}
+
 		std::string Timestamp()
 		{
 			const std::time_t now = std::time(nullptr);
@@ -88,10 +95,15 @@ namespace Dingo
 		void WriteStdErr(const char* text, size_t length);
 		void WriteLog(const char* text, size_t length);
 
+		void WriteBoth(const char* text, size_t length)
+		{
+			WriteStdErr(text, length);
+			WriteLog(text, length);
+		}
+
 		void WriteBoth(const LineBuilder& line)
 		{
-			WriteStdErr(line.Text, line.Length);
-			WriteLog(line.Text, line.Length);
+			WriteBoth(line.Text, line.Length);
 		}
 
 		void FlushLogIfSafe()
@@ -100,12 +112,49 @@ namespace Dingo
 				Log::Flush();
 		}
 
+		// Through spdlog when it is up and this thread isn't inside it, else straight to stderr and
+		// the log file, so a message logged after Log::Shutdown or from inside a log call still lands.
+		void ReportFatal(const std::string& message)
+		{
+			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal))
+			{
+				DE_CORE_FATAL("{}", message);
+				Log::Flush();
+				return;
+			}
+			const std::string line = std::format("\n*** {}\n", message);
+			WriteBoth(line.data(), line.size());
+		}
+
 #if defined(DE_PLATFORM_WINDOWS)
+
+		// The thread that crashed first, so another thread crashing meanwhile waits for its report
+		// instead of ending the process under it, while a fault inside the report itself still ends it.
+		std::atomic<DWORD> s_CrashingThread = 0;
 
 		HANDLE s_LogFile = INVALID_HANDLE_VALUE;
 		wchar_t s_DumpPath[1024] = L"";
 		char s_DumpPathUtf8[1024] = "";
 		wchar_t s_CrashMessage[2048] = L"";
+		LPTOP_LEVEL_EXCEPTION_FILTER s_PreviousFilter = nullptr;
+
+		constexpr DWORD k_CppExceptionCode = 0xE06D7363;
+		constexpr DWORD k_ReportedExitCode = 3;
+		constexpr DWORD k_DumpTimeoutMs = 120 * 1000;
+
+		// The exception the CRT's filter turned into std::terminate, so the dump keeps its record.
+		thread_local EXCEPTION_POINTERS* t_ChainedException = nullptr;
+
+		// MiniDumpWriteDump needs more stack than an overflowed thread has left, and the crashing
+		// thread may hold locks it takes: a thread made at Install writes the dump instead.
+		HANDLE s_DumpThread = nullptr;
+		HANDLE s_DumpRequest = nullptr;
+		HANDLE s_DumpDone = nullptr;
+		EXCEPTION_POINTERS* s_DumpException = nullptr;
+		DWORD s_DumpThreadId = 0;
+		bool s_DumpWritten = false;
+
+		void OnTerminate();
 
 		std::wstring Widen(std::string_view text)
 		{
@@ -155,37 +204,68 @@ namespace Dingo
 				case EXCEPTION_BREAKPOINT:				return "breakpoint (a failed assert or verify)";
 				case EXCEPTION_PRIV_INSTRUCTION:		return "privileged instruction";
 				case EXCEPTION_DATATYPE_MISALIGNMENT:	return "misaligned data";
-				case 0xE06D7363:						return "C++ exception";
+				case k_CppExceptionCode:				return "C++ exception";
 				default:								return "exception";
 			}
 		}
 
+		// False when another thread is already reporting: that thread ends the process.
+		bool BeginReport()
+		{
+			const DWORD self = GetCurrentThreadId();
+			DWORD expected = 0;
+			if (s_CrashingThread.compare_exchange_strong(expected, self))
+				return true;
+			if (expected != self)
+				Sleep(INFINITE);
+			return false;
+		}
+
+		bool WriteDump(EXCEPTION_POINTERS* exception, DWORD threadId)
+		{
+			if (s_DumpPath[0] == L'\0')
+				return false;
+			const HANDLE file = CreateFileW(s_DumpPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE)
+				return false;
+			MINIDUMP_EXCEPTION_INFORMATION information{};
+			information.ThreadId = threadId;
+			information.ExceptionPointers = exception;
+			information.ClientPointers = FALSE;
+			const auto type = static_cast<MINIDUMP_TYPE>(MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithDataSegs | MiniDumpWithThreadInfo);
+			const bool written = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file, type, exception ? &information : nullptr, nullptr, nullptr);
+			CloseHandle(file);
+			return written;
+		}
+
+		DWORD WINAPI DumpThreadMain(void*)
+		{
+			WaitForSingleObject(s_DumpRequest, INFINITE);
+			s_DumpWritten = WriteDump(s_DumpException, s_DumpThreadId);
+			SetEvent(s_DumpDone);
+			return 0;
+		}
+
+		bool WriteDumpFromThread(EXCEPTION_POINTERS* exception)
+		{
+			if (!s_DumpThread)
+				return WriteDump(exception, GetCurrentThreadId());
+			s_DumpException = exception;
+			s_DumpThreadId = GetCurrentThreadId();
+			SetEvent(s_DumpRequest);
+			return WaitForSingleObject(s_DumpDone, k_DumpTimeoutMs) == WAIT_OBJECT_0 && s_DumpWritten;
+		}
+
 		void WriteCrashReport(EXCEPTION_POINTERS* exception, const LineBuilder& what)
 		{
-			if (s_Crashing.exchange(true))
+			if (!BeginReport())
 				return;
-
-			FlushLogIfSafe();
 
 			LineBuilder header;
 			header << "\n*** " << s_AppName << " crashed: " << what.Text << "\n";
 			WriteBoth(header);
 
-			bool written = false;
-			if (s_DumpPath[0] != L'\0')
-			{
-				const HANDLE file = CreateFileW(s_DumpPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-				if (file != INVALID_HANDLE_VALUE)
-				{
-					MINIDUMP_EXCEPTION_INFORMATION information{};
-					information.ThreadId = GetCurrentThreadId();
-					information.ExceptionPointers = exception;
-					information.ClientPointers = FALSE;
-					const auto type = static_cast<MINIDUMP_TYPE>(MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithDataSegs | MiniDumpWithThreadInfo);
-					written = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file, type, exception ? &information : nullptr, nullptr, nullptr);
-					CloseHandle(file);
-				}
-			}
+			const bool written = WriteDumpFromThread(exception);
 
 			LineBuilder footer;
 			if (written)
@@ -194,24 +274,51 @@ namespace Dingo
 				footer << "*** No minidump could be written\n";
 			WriteBoth(footer);
 
+			// Last: a thread that crashed holding spdlog's lock waits in BeginReport, and the report is
+			// already out if this blocks on it.
+			FlushLogIfSafe();
+
 #ifdef DE_DISTRIBUTION
 			MessageBoxW(nullptr, s_CrashMessage, L"Crash", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
 #endif
 		}
 
-		[[noreturn]] void ReportAndExit(const char* what)
+		// For the reports no exception raised (abort, terminate, a pure call): the caller's context,
+		// so the dump's stack starts here rather than wherever the debugger guesses.
+		[[noreturn]] __declspec(noinline) void ReportAndExit(const char* what)
 		{
+			CONTEXT context{};
+			RtlCaptureContext(&context);
+			EXCEPTION_RECORD record{};
+			record.ExceptionCode = STATUS_FATAL_APP_EXIT;
+#if defined(_M_X64) || defined(__x86_64__)
+			record.ExceptionAddress = reinterpret_cast<PVOID>(context.Rip);
+#endif
+			EXCEPTION_POINTERS pointers{ &record, &context };
+
 			LineBuilder line;
 			line << what;
-			WriteCrashReport(nullptr, line);
-			TerminateProcess(GetCurrentProcess(), 3);
-			std::_Exit(3);
+			WriteCrashReport(t_ChainedException ? t_ChainedException : &pointers, line);
+			TerminateProcess(GetCurrentProcess(), k_ReportedExitCode);
+			std::_Exit(static_cast<int>(k_ReportedExitCode));
 		}
 
 		LONG WINAPI OnUnhandledException(EXCEPTION_POINTERS* exception)
 		{
-			LineBuilder what;
 			const EXCEPTION_RECORD* record = exception ? exception->ExceptionRecord : nullptr;
+
+			// The CRT's own filter turns an uncaught C++ exception into std::terminate with the
+			// exception current, so OnTerminate can log its what() before the report.
+			if (record && record->ExceptionCode == k_CppExceptionCode && s_PreviousFilter && s_CrashingThread == 0)
+			{
+				// The terminate handler is per thread: one the engine didn't start has the CRT's.
+				std::set_terminate(OnTerminate);
+				t_ChainedException = exception;
+				s_PreviousFilter(exception);
+				t_ChainedException = nullptr;
+			}
+
+			LineBuilder what;
 			if (record)
 			{
 				what << ExceptionName(record->ExceptionCode) << " (code ";
@@ -246,6 +353,48 @@ namespace Dingo
 			ReportAndExit("an invalid parameter passed to a C runtime function");
 		}
 
+		[[noreturn]] void CrashOnTerminate()
+		{
+			ReportAndExit("std::terminate");
+		}
+
+		// The UCRT keeps the terminate handler per thread, and a thread needs stack left after an
+		// overflow to run the filter on.
+		void PrepareThisThread()
+		{
+			ULONG guarantee = 64 * 1024;
+			SetThreadStackGuarantee(&guarantee);
+			std::set_terminate(OnTerminate);
+		}
+
+		DWORD s_GuardedExceptionCode = 0;
+
+		LONG GuardedThreadFilter(EXCEPTION_POINTERS* exception)
+		{
+			if (IsDebuggerPresent())
+				return EXCEPTION_CONTINUE_SEARCH;
+			s_GuardedExceptionCode = exception && exception->ExceptionRecord ? exception->ExceptionRecord->ExceptionCode : 0;
+			return OnUnhandledException(exception);
+		}
+
+		// std::thread's entry is noexcept on MSVC: an exception leaving the body would end in
+		// std::terminate with none current, past every filter, so it is caught by one here first.
+		void RunGuarded(void (*body)(void*), void* context)
+		{
+#ifdef _MSC_VER
+			__try
+			{
+				body(context);
+			}
+			__except (GuardedThreadFilter(GetExceptionInformation()))
+			{
+				TerminateProcess(GetCurrentProcess(), s_GuardedExceptionCode);
+			}
+#else
+			body(context);
+#endif
+		}
+
 		void InstallPlatform(const std::filesystem::path& logFile, const std::filesystem::path& dumpDirectory, uint32_t keepDumps)
 		{
 			if (s_LogFile != INVALID_HANDLE_VALUE)
@@ -266,8 +415,8 @@ namespace Dingo
 				std::vector<std::filesystem::path> dumps;
 				for (const auto& entry : std::filesystem::directory_iterator(dumpDirectory, error))
 				{
-					const std::string name = entry.path().filename().string();
-					if (entry.is_regular_file(error) && name.starts_with("Dingo-") && entry.path().extension() == ".dmp")
+					const std::wstring name = entry.path().filename().wstring();
+					if (entry.is_regular_file(error) && name.starts_with(L"Dingo-") && entry.path().extension() == L".dmp")
 						dumps.push_back(entry.path());
 				}
 				std::sort(dumps.begin(), dumps.end());
@@ -277,33 +426,31 @@ namespace Dingo
 
 				const std::filesystem::path dump = dumpDirectory / std::format("Dingo-{}-{}.dmp", Timestamp(), GetCurrentProcessId());
 				CopyWide(dump.wstring(), s_DumpPath, std::size(s_DumpPath));
-				CopyName(dump.string(), s_DumpPathUtf8, sizeof(s_DumpPathUtf8));
+				CopyName(Utf8(dump), s_DumpPathUtf8, sizeof(s_DumpPathUtf8));
 			}
 
-			const std::string message = std::format("{} crashed.\n\nA crash report was written to:\n{}", s_AppName, dumpDirectory.string());
-			CopyWide(Widen(message), s_CrashMessage, std::size(s_CrashMessage));
+			const std::wstring message = Widen(s_AppName) + L" crashed.\n\nA crash report was written to:\n" + dumpDirectory.wstring();
+			CopyWide(message, s_CrashMessage, std::size(s_CrashMessage));
 
 			if (s_Installed)
 				return;
 
-			// The filter needs stack left to run on after an overflow.
-			ULONG guarantee = 64 * 1024;
-			SetThreadStackGuarantee(&guarantee);
+			s_DumpRequest = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+			s_DumpDone = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+			if (s_DumpRequest && s_DumpDone)
+				s_DumpThread = CreateThread(nullptr, 256 * 1024, DumpThreadMain, nullptr, 0, nullptr);
 
-			SetUnhandledExceptionFilter(OnUnhandledException);
+			s_PreviousFilter = SetUnhandledExceptionFilter(OnUnhandledException);
 			std::signal(SIGABRT, OnAbortSignal);
 			_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 			_set_purecall_handler(OnPureCall);
 			_set_invalid_parameter_handler(OnInvalidParameter);
 		}
 
-		[[noreturn]] void CrashOnTerminate()
-		{
-			ReportAndExit("std::terminate");
-		}
-
 #elif defined(DE_PLATFORM_LINUX)
 
+		std::atomic<pthread_t> s_CrashingThread{};
+		std::atomic<bool> s_Crashing = false;
 		int s_LogFd = -1;
 
 		void WriteFd(int fd, const char* text, size_t length)
@@ -330,11 +477,32 @@ namespace Dingo
 			WriteFd(s_LogFd, text, length);
 		}
 
+		constexpr size_t k_AlternateStackSize = 64 * 1024;
+
+		// False when this thread is already reporting (a fault inside the report). Another thread
+		// that crashes meanwhile waits here for the reporting one to end the process.
+		bool BeginReport()
+		{
+			if (!s_Crashing.exchange(true))
+			{
+				s_CrashingThread = pthread_self();
+				return true;
+			}
+			if (!pthread_equal(s_CrashingThread.load(), pthread_self()))
+			{
+				for (;;)
+					pause();
+			}
+			return false;
+		}
+
+		void RunGuarded(void (*body)(void*), void* context)
+		{
+			body(context);
+		}
+
 #ifndef DE_CRASH_HANDLER_SANITIZED
 		constexpr int k_Signals[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT, SIGTRAP };
-
-		// For a stack overflow, which leaves no stack to run the handler on.
-		alignas(16) char s_AlternateStack[64 * 1024];
 
 		const char* SignalName(int signal)
 		{
@@ -352,36 +520,71 @@ namespace Dingo
 
 		void OnSignal(int signal, siginfo_t* info, void*)
 		{
-			if (!s_Crashing.exchange(true))
+			if (!BeginReport())
 			{
-				FlushLogIfSafe();
-
-				LineBuilder header;
-				header << "\n*** " << s_AppName << " crashed: " << SignalName(signal);
-				if (info && signal != SIGABRT && signal != SIGTRAP)
-				{
-					header << " at ";
-					header.Hex(reinterpret_cast<uintptr_t>(info->si_addr));
-				}
-				header << "\n*** Backtrace (c++filt demangles; addr2line -C -f -e <executable> <offset> names an offset):\n";
-				WriteBoth(header);
-
-				void* frames[64];
-				const int count = backtrace(frames, 64);
-				backtrace_symbols_fd(frames, count, STDERR_FILENO);
-				if (s_LogFd >= 0)
-					backtrace_symbols_fd(frames, count, s_LogFd);
-
-				LineBuilder footer;
-				footer << "*** End of backtrace\n";
-				WriteBoth(footer);
+				raise(signal);
+				return;
 			}
+
+			LineBuilder header;
+			header << "\n*** " << s_AppName << " crashed: " << SignalName(signal);
+			if (info && signal != SIGABRT && signal != SIGTRAP)
+			{
+				header << " at ";
+				header.Hex(reinterpret_cast<uintptr_t>(info->si_addr));
+			}
+			header << "\n*** Backtrace (addr2line -C -f -e <executable> <offset> names a frame):\n";
+			WriteBoth(header);
+
+			void* frames[64];
+			const int count = backtrace(frames, 64);
+			backtrace_symbols_fd(frames, count, STDERR_FILENO);
+			if (s_LogFd >= 0)
+				backtrace_symbols_fd(frames, count, s_LogFd);
+
+			LineBuilder footer;
+			footer << "*** End of backtrace\n";
+			WriteBoth(footer);
+
+			// Last: a thread that crashed holding spdlog's lock waits in BeginReport, and the report is
+			// already out if this blocks on it.
+			FlushLogIfSafe();
 
 			// SA_RESETHAND restored the default action: the process ends as it would have, core dump
 			// and exit status included.
 			raise(signal);
 		}
 #endif
+
+		void OnTerminate();
+
+		// An overflowed stack leaves none to run the handler on: each thread gets its own.
+		void PrepareThisThread()
+		{
+#ifndef DE_CRASH_HANDLER_SANITIZED
+			struct AlternateStack
+			{
+				std::unique_ptr<char[]> Memory = std::make_unique<char[]>(k_AlternateStackSize);
+
+				AlternateStack()
+				{
+					stack_t stack{};
+					stack.ss_sp = Memory.get();
+					stack.ss_size = k_AlternateStackSize;
+					sigaltstack(&stack, nullptr);
+				}
+
+				~AlternateStack()
+				{
+					stack_t stack{};
+					stack.ss_flags = SS_DISABLE;
+					sigaltstack(&stack, nullptr);
+				}
+			};
+			thread_local AlternateStack stack;
+			(void)stack;
+#endif
+		}
 
 		void InstallPlatform(const std::filesystem::path& logFile, const std::filesystem::path&, uint32_t)
 		{
@@ -401,11 +604,6 @@ namespace Dingo
 			void* frame = nullptr;
 			backtrace(&frame, 1);
 
-			stack_t stack{};
-			stack.ss_sp = s_AlternateStack;
-			stack.ss_size = sizeof(s_AlternateStack);
-			sigaltstack(&stack, nullptr);
-
 			struct sigaction action{};
 			action.sa_sigaction = OnSignal;
 			action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
@@ -424,12 +622,15 @@ namespace Dingo
 
 		void WriteStdErr(const char* text, size_t length) { std::fwrite(text, 1, length, stderr); }
 		void WriteLog(const char*, size_t) {}
+		bool BeginReport() { return true; }
+		void RunGuarded(void (*body)(void*), void* context) { body(context); }
+		void PrepareThisThread() {}
 		void InstallPlatform(const std::filesystem::path&, const std::filesystem::path&, uint32_t) {}
 		[[noreturn]] void CrashOnTerminate() { std::abort(); }
 
 #endif
 
-		[[noreturn]] void OnTerminate()
+		void OnTerminate()
 		{
 			std::string reason = "with no exception";
 			if (const std::exception_ptr exception = std::current_exception())
@@ -448,16 +649,7 @@ namespace Dingo
 				}
 			}
 
-			if (Internal::IsLoggingOnThisThread())
-			{
-				const std::string line = std::format("\n*** std::terminate called {}\n", reason);
-				WriteStdErr(line.data(), line.size());
-				WriteLog(line.data(), line.size());
-			}
-			else
-			{
-				DE_CORE_FATAL("std::terminate called {}", reason);
-			}
+			ReportFatal(std::format("std::terminate called {}", reason));
 			CrashOnTerminate();
 		}
 
@@ -467,9 +659,20 @@ namespace Dingo
 	{
 		CopyName(appName.empty() ? std::string_view("The application") : appName, s_AppName, sizeof(s_AppName));
 		InstallPlatform(logFile, dumpDirectory, keepDumps);
-		if (!s_Installed)
-			std::set_terminate(OnTerminate);
+		PrepareThisThread();
+		std::set_terminate(OnTerminate);
 		s_Installed = true;
+	}
+
+	void Internal::CrashHandler::PrepareThread()
+	{
+		PrepareThisThread();
+	}
+
+	void Internal::CrashHandler::RunThread(void (*body)(void*), void* context)
+	{
+		PrepareThisThread();
+		RunGuarded(body, context);
 	}
 
 	void Internal::CrashHandler::ShowMessage(std::string_view title, std::string_view message)
@@ -484,24 +687,16 @@ namespace Dingo
 
 	void FatalError(std::string_view message, const std::source_location& location)
 	{
-		const std::string where = std::format("{}:{}", std::filesystem::path(location.file_name()).filename().string(), location.line());
+		// Another thread's report finishes first; it ends the process.
+		BeginReport();
 
-		if (Internal::IsLoggingOnThisThread())
-		{
-			const std::string line = std::format("\n*** Fatal error: {} ({})\n", message, where);
-			WriteStdErr(line.data(), line.size());
-			WriteLog(line.data(), line.size());
-		}
-		else
-		{
-			DE_CORE_FATAL("Fatal error: {} ({})", message, where);
-			Log::Flush();
-		}
+		const std::string where = std::format("{}:{}", std::filesystem::path(location.file_name()).filename().string(), location.line());
+		ReportFatal(std::format("Fatal error: {} ({})", message, where));
 
 		const std::filesystem::path& logFile = Log::GetFilePath();
 		const std::string text = logFile.empty()
 			? std::string(message)
-			: std::format("{}\n\nThe log is in:\n{}", message, logFile.string());
+			: std::format("{}\n\nThe log is in:\n{}", message, Utf8(logFile));
 		Internal::CrashHandler::ShowMessage(s_AppName, text);
 
 		std::fflush(stdout);

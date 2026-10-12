@@ -25,8 +25,10 @@ Either way, your *code* is identical — only the build setup differs.
 | Runtime | A Vulkan 1.3 driver | `libvulkan1` and a Vulkan 1.3 driver |
 
 The engine links **ShaderC** and **SPIRV-Cross** from the SDK and loads Vulkan at runtime.
-Outside Distribution it enables the SDK's validation layer when it is installed, and warns
-when it isn't.
+Debug builds enable the SDK's validation layer when it is installed, and warn when it isn't.
+Release and Distribution load it only when asked: `--vulkan-validation` on the command line,
+or `GraphicsParams::VulkanValidation = true` (and `--vulkan-validation=off` turns it off in
+Debug).
 
 ---
 

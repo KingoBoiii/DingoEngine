@@ -33,6 +33,7 @@ namespace Dingo
 		vk::Instance GetVulkanInstance() const { return m_VulkanInstance; }
 
 	private:
+		bool WantsValidation() const;
 		bool CreateInstance();
 		void CreateDebugMessenger();
 		bool PickPhysicalDevice(vk::SurfaceKHR surface);

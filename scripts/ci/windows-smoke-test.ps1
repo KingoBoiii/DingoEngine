@@ -158,7 +158,9 @@ Invoke-Crash 'fatal' 1 "Fatal error: The test app's --crash=fatal"
 Invoke-Crash 'segv' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'thread' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'abort' 3 'crashed: abort\(\)[\s\S]*Minidump: '
-Invoke-Crash 'terminate' 3 'std::terminate called on an uncaught exception[\s\S]*Minidump: '
+Invoke-Crash 'terminate' 3 "std::terminate called on an uncaught exception: the test app's --crash=terminate[\s\S]*Minidump: "
+Invoke-Crash 'throw' 3 "std::terminate called on an uncaught exception: the test app's --crash=throw[\s\S]*Minidump: "
+Invoke-Crash 'stack' 0xC00000FD 'crashed: stack overflow[\s\S]*Minidump: '
 Invoke-Crash 'verify' 0x80000003 'crashed: breakpoint[\s\S]*Minidump: '
 
 Write-Output "Unit tests, $($tests.Count) test cases on $($Graphics -join ', '), the crash reports$(if ($Tournament) { ' and the tournament' }): $($script:Failures) failed"

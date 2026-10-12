@@ -13,7 +13,7 @@ namespace Dingo::Platform
 		std::filesystem::path directory;
 
 #ifdef DE_PLATFORM_WINDOWS
-		if (const char* localAppData = std::getenv("LOCALAPPDATA"))
+		if (const wchar_t* localAppData = _wgetenv(L"LOCALAPPDATA"))
 		{
 			directory = std::filesystem::path(localAppData) / appName;
 		}

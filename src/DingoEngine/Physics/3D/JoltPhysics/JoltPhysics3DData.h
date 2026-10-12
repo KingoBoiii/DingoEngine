@@ -26,6 +26,8 @@
 #include <Jolt/Physics/Collision/GroupFilter.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
 
+#include "DingoEngine/Core/CrashHandler.h"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -214,6 +216,7 @@ namespace Dingo::Internal
 			: TempAllocator(32 * 1024 * 1024) // per-Update working memory; must cover the limits below
 		{
 			const int threads = (int)std::max(1u, std::thread::hardware_concurrency() - 1u);
+			JobSystem.SetThreadInitFunction([](int) { CrashHandler::PrepareThread(); });
 			JobSystem.Init(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
 
 			// maxBodyPairs / maxContactConstraints are Jolt's documented "real project"

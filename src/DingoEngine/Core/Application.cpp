@@ -72,6 +72,8 @@ namespace Dingo
 
 		GraphicsParams graphicsParams = m_Params.Graphics;
 		graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
+		if (const auto validation = m_Params.CommandLineArgs.Get("vulkan-validation"))
+			graphicsParams.VulkanValidation = !(*validation == "off" || *validation == "false" || *validation == "0" || *validation == "no");
 		m_GraphicsContext = GraphicsContext::Create(graphicsParams);
 		if (!m_GraphicsContext)
 			FatalError("No graphics device could be created. See the log for why.");

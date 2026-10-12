@@ -5,12 +5,18 @@
 #include <spdlog/fmt/ostr.h>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
+#include <spdlog/sinks/dist_sink.h>
 
 #include "DingoEngine/Core/CrashHandler.h"
 
+#include <fstream>
+#include <mutex>
+
 #ifdef DE_PLATFORM_LINUX
+#include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 #endif
 
@@ -20,6 +26,59 @@ namespace Dingo
 	static std::shared_ptr<spdlog::logger> s_EngineLogger;
 	static std::shared_ptr<spdlog::logger> s_ClientLogger;
 	static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> s_EarlySink;
+
+	namespace
+	{
+		// The loggers' one sink: the file joins and the early buffer leaves under its lock, so a
+		// message another thread logs meanwhile lands in exactly one of them.
+		class LogSinks final : public spdlog::sinks::dist_sink<std::mutex>
+		{
+		public:
+			using dist_sink<std::mutex>::dist_sink;
+
+			void ReplaceEarlySink(const std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt>& early, const spdlog::sink_ptr& file)
+			{
+				std::lock_guard<std::mutex> lock(mutex_);
+				if (file)
+				{
+					for (const spdlog::details::log_msg_buffer& message : early->last_raw())
+						file->log(message);
+					sinks_.push_back(file);
+				}
+				std::erase(sinks_, early);
+			}
+		};
+
+		// spdlog's file sinks take a narrow name, which on Windows can't hold every user's
+		// %LOCALAPPDATA%; a std::filesystem::path can. Opened for appending, as the crash handler
+		// writes to the same file through its own handle.
+		class FileSink final : public spdlog::sinks::base_sink<std::mutex>
+		{
+		public:
+			explicit FileSink(const std::filesystem::path& path)
+			{
+				std::ofstream(path, std::ios::binary | std::ios::trunc).close();
+				m_File.open(path, std::ios::binary | std::ios::app);
+			}
+
+			bool IsOpen() const { return m_File.is_open(); }
+
+		protected:
+			void sink_it_(const spdlog::details::log_msg& message) override
+			{
+				spdlog::memory_buf_t text;
+				formatter_->format(message, text);
+				m_File.write(text.data(), static_cast<std::streamsize>(text.size()));
+			}
+
+			void flush_() override { m_File.flush(); }
+
+		private:
+			std::ofstream m_File;
+		};
+	}
+
+	static std::shared_ptr<LogSinks> s_Sinks;
 	static std::filesystem::path s_FilePath;
 
 	static thread_local uint32_t t_LoggingDepth = 0;
@@ -35,11 +94,6 @@ namespace Dingo
 			~LoggingScope() { --t_LoggingDepth; }
 		};
 
-		std::filesystem::path RunLogPath(const std::filesystem::path& directory, uint32_t run)
-		{
-			return directory / (run == 0 ? std::string("Dingo.log") : std::format("Dingo.{}.log", run));
-		}
-
 		uint64_t ProcessId()
 		{
 #ifdef DE_PLATFORM_WINDOWS
@@ -51,16 +105,110 @@ namespace Dingo
 #endif
 		}
 
-		void AddSink(const spdlog::sink_ptr& sink)
+		std::string Utf8(const std::filesystem::path& path)
 		{
-			for (const auto& logger : { s_EngineLogger, s_ClientLogger })
-				logger->sinks().push_back(sink);
+			const std::u8string text = path.u8string();
+			return std::string(text.begin(), text.end());
 		}
 
-		void RemoveSink(const spdlog::sink_ptr& sink)
+		std::filesystem::path RunLogPath(const std::filesystem::path& directory, uint32_t run)
 		{
-			for (const auto& logger : { s_EngineLogger, s_ClientLogger })
-				std::erase(logger->sinks(), sink);
+			return directory / (run == 0 ? std::string("Dingo.log") : std::format("Dingo.{}.log", run));
+		}
+
+		// Logs written beside a Dingo.log another instance held open, and earlier runs' logs a
+		// rotation couldn't shift, oldest dropped first.
+		void PruneSideLogs(const std::filesystem::path& directory, uint32_t keep)
+		{
+			std::error_code error;
+			std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> logs;
+			for (const auto& entry : std::filesystem::directory_iterator(directory, error))
+			{
+				const std::u8string name = entry.path().filename().u8string();
+				if (name.starts_with(u8"Dingo-") && name.ends_with(u8".log"))
+					logs.emplace_back(entry.last_write_time(error), entry.path());
+			}
+			if (logs.size() <= keep)
+				return;
+			std::sort(logs.begin(), logs.end());
+			for (size_t i = 0; i < logs.size() - keep; i++)
+				std::filesystem::remove(logs[i].second, error);
+		}
+
+#ifdef DE_PLATFORM_LINUX
+		// Linux renames a file another process has open, so a running instance holds a lock on its
+		// Dingo.log for the others to find. (Windows refuses the rename, which tells them the same.)
+		int s_LockFd = -1;
+
+		bool IsLogInUse(const std::filesystem::path& path)
+		{
+			const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+			if (fd < 0)
+				return false;
+			const bool inUse = flock(fd, LOCK_EX | LOCK_NB) != 0;
+			close(fd);
+			return inUse;
+		}
+
+		void HoldLog(const std::filesystem::path& path)
+		{
+			s_LockFd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+			if (s_LockFd >= 0)
+				flock(s_LockFd, LOCK_EX | LOCK_NB);
+		}
+#else
+		bool IsLogInUse(const std::filesystem::path&) { return false; }
+		void HoldLog(const std::filesystem::path&) {}
+#endif
+
+		// Dingo.log becomes Dingo.1.log and so on, keeping `keepRuns` in all. The newest log first
+		// moves aside under a side-log name, so a rotation that fails part way (a file held open, a
+		// crash) never overwrites a log and leaves at worst a side log the pruning keeps in bounds.
+		std::filesystem::path PickLogPath(const std::filesystem::path& directory, uint32_t keepRuns)
+		{
+			std::error_code error;
+			const std::filesystem::path newest = RunLogPath(directory, 0);
+			const std::filesystem::path sideLog = directory / std::format("Dingo-{}.log", ProcessId());
+			if (!std::filesystem::exists(newest, error))
+				return newest;
+			if (IsLogInUse(newest))
+			{
+				PruneSideLogs(directory, keepRuns - 1);
+				return sideLog;
+			}
+
+			const std::filesystem::path aside = directory / std::format("Dingo-{}-previous.log", ProcessId());
+			std::filesystem::rename(newest, aside, error);
+			if (error)
+			{
+				PruneSideLogs(directory, keepRuns - 1);
+				return sideLog;
+			}
+
+			bool shifted = true;
+			std::filesystem::remove(RunLogPath(directory, keepRuns - 1), error);
+			for (uint32_t run = keepRuns - 1; run > 1 && shifted; --run)
+			{
+				const std::filesystem::path from = RunLogPath(directory, run - 1);
+				if (!std::filesystem::exists(from, error))
+					continue;
+				std::filesystem::rename(from, RunLogPath(directory, run), error);
+				shifted = !error;
+			}
+			if (keepRuns == 1)
+				std::filesystem::remove(aside, error);
+			else if (shifted)
+				std::filesystem::rename(aside, RunLogPath(directory, 1), error);
+			PruneSideLogs(directory, keepRuns - 1);
+			return newest;
+		}
+
+		void DropEarlySink(const spdlog::sink_ptr& file)
+		{
+			if (!s_EarlySink)
+				return;
+			s_Sinks->ReplaceEarlySink(s_EarlySink, file);
+			s_EarlySink.reset();
 		}
 	}
 
@@ -102,12 +250,11 @@ namespace Dingo
 
 	void Log::Initialize()
 	{
-		std::vector<spdlog::sink_ptr> logSinks;
-		logSinks.emplace_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+		auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+		console->set_pattern("%^[%T] %n: %v%$");
 		s_EarlySink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_EarlyMessages);
-		logSinks.emplace_back(s_EarlySink);
-
-		logSinks[0]->set_pattern("%^[%T] %n: %v%$");
+		s_Sinks = std::make_shared<LogSinks>(std::vector<spdlog::sink_ptr>{ console, s_EarlySink });
+		std::vector<spdlog::sink_ptr> logSinks{ s_Sinks };
 
 		// flush_on(trace) forced a synchronous file flush on EVERY log call — a
 		// guaranteed I/O stall if anything ever logs per frame. Warnings and above
@@ -130,6 +277,7 @@ namespace Dingo
 		s_ClientLogger.reset();
 		s_EngineLogger.reset();
 		s_EarlySink.reset();
+		s_Sinks.reset();
 		spdlog::drop_all();
 	}
 
@@ -140,48 +288,27 @@ namespace Dingo
 
 		std::error_code error;
 		std::filesystem::create_directories(directory, error);
+		const std::filesystem::path path = PickLogPath(directory, (std::max)(keepRuns, 1u));
 
-		// A rename fails while another instance still has the file open (Windows), and that log
-		// must not be truncated: this run writes beside it.
-		std::filesystem::path path = RunLogPath(directory, 0);
-		bool rotated = true;
-		for (uint32_t run = (std::max)(keepRuns, 1u) - 1; run > 0; --run)
+		const auto fileSink = std::make_shared<FileSink>(path);
+		if (!fileSink->IsOpen())
 		{
-			const std::filesystem::path from = RunLogPath(directory, run - 1);
-			if (!std::filesystem::exists(from, error))
-				continue;
-			std::filesystem::rename(from, RunLogPath(directory, run), error);
-			if (error && run == 1)
-				rotated = false;
-		}
-		if (!rotated)
-			path = directory / std::format("Dingo-{}.log", ProcessId());
-
-		std::shared_ptr<spdlog::sinks::basic_file_sink_mt> fileSink;
-		try
-		{
-			fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path.string(), true);
-		}
-		catch (const spdlog::spdlog_ex& exception)
-		{
-			DE_CORE_ERROR("Log: can't write a log file in '{}' ({}); logging to the console only", directory.string(), exception.what());
+			DropEarlySink(nullptr);
+			DE_CORE_ERROR("Log: can't write a log file in '{}'; logging to the console only", Utf8(directory));
 			return false;
 		}
+		HoldLog(path);
 
 		fileSink->set_pattern(k_FilePattern);
 		if (s_EarlySink)
-		{
-			for (const spdlog::details::log_msg_buffer& message : s_EarlySink->last_raw())
-				fileSink->log(message);
-			RemoveSink(s_EarlySink);
-			s_EarlySink.reset();
-		}
-		AddSink(fileSink);
+			DropEarlySink(fileSink);
+		else
+			s_Sinks->add_sink(fileSink);
 
 		s_FilePath = std::filesystem::absolute(path, error);
 		if (error)
 			s_FilePath = path;
-		DE_CORE_INFO("Log file: {}", s_FilePath.string());
+		DE_CORE_INFO("Log file: {}", Utf8(s_FilePath));
 		return true;
 	}
 
@@ -192,6 +319,7 @@ namespace Dingo
 
 	void Log::Flush()
 	{
+		LoggingScope scope;
 		if (s_EngineLogger) s_EngineLogger->flush();
 		if (s_ClientLogger) s_ClientLogger->flush();
 	}

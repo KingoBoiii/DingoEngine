@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Core/Timer.h"
+#include "DingoEngine/Core/CrashHandler.h"
 
 #include <atomic>
 #include <thread>
@@ -142,7 +143,7 @@ namespace Dingo
 
 		swapChain->AcquireNextImage();
 		s_Data->Running      = true;
-		s_Data->RenderThread = std::thread(&Renderer::RenderThreadLoop);
+		s_Data->RenderThread = std::thread([] { Internal::CrashHandler::RunThread([](void*) { RenderThreadLoop(); }, nullptr); });
 	}
 
 	void Renderer::Shutdown()

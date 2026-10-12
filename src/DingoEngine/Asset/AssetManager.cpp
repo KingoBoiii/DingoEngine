@@ -5,6 +5,7 @@
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Model.h"
@@ -840,7 +841,7 @@ namespace Dingo
 
 		s_RawAssetRoot = data.RootDirectory;
 
-		data.Worker = std::thread(WorkerLoop, std::ref(data));
+		data.Worker = std::thread([&data] { Internal::CrashHandler::RunThread([](void* context) { WorkerLoop(*static_cast<AssetManagerData*>(context)); }, &data); });
 	}
 
 	void AssetManager::Shutdown()

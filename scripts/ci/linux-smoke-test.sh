@@ -23,6 +23,12 @@ mkdir -p "$LOGS"
 # holds the leaks Mesa and libxcb make at swap-chain creation and X11 teardown.
 export ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=0}
 
+# The Vulkan loader unloads Mesa's llvmpipe ICD before LeakSanitizer looks, so what its threads
+# hold reads as leaked from frames no suppression can name; preloaded, it stays mapped and the run
+# is clean. libasan must come first.
+APP_PRELOAD=""
+[[ $CONFIG == Debug-ASan ]] && APP_PRELOAD="$(gcc -print-file-name=libasan.so) libvulkan_lvp.so"
+
 failures=0
 
 # RUN_SECONDS, EXPECT_EXIT (default 0) and EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
@@ -32,7 +38,7 @@ run() {
 	local log=$LOGS/$name.log status problems=""
 	local seconds=${RUN_SECONDS:-$SECONDS_PER_RUN} expected=${EXPECT_EXIT:-0}
 
-	(cd "$cwd" && exec "$exe" "$@") > "$log" 2>&1 &
+	(cd "$cwd" && LD_PRELOAD=$APP_PRELOAD exec "$exe" "$@") > "$log" 2>&1 &
 	local pid=$!
 	for ((i = 0; i < seconds; i++)); do
 		kill -0 $pid 2>/dev/null || break
@@ -111,7 +117,11 @@ crash() {
 crash fatal 1 "Fatal error: The test app's --crash=fatal"
 if [[ $CONFIG != Debug-ASan ]]; then
 	crash segv 139 'End of backtrace'
-	crash terminate 134 'std::terminate called on an uncaught exception'
+	crash thread 139 'End of backtrace'
+	crash stack 139 'crashed: SIGSEGV'
+	crash abort 134 'crashed: SIGABRT'
+	crash terminate 134 "std::terminate called on an uncaught exception: the test app's --crash=terminate"
+	crash throw 134 "std::terminate called on an uncaught exception: the test app's --crash=throw"
 	if [[ $CONFIG == Distribution ]]; then
 		crash verify 1 "Fatal error: Verify Failed the test app's --crash=verify"
 	else

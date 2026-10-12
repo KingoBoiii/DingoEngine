@@ -1,5 +1,8 @@
 # LeakSanitizer suppressions for the Debug-ASan smoke test (LSAN_OPTIONS=suppressions=<this file>).
-# Only libraries outside the engine: Mesa's swap-chain creation and GLFW's X11 teardown leak through
-# libxcb (LINUX-SUPPORT.md, "LeakSanitizer").
+# Only libraries outside the engine. miniaudio dlopens the audio backends it probes, and JACK's
+# static initialisers leak (frames of an unloaded library print as <unknown module>, so the
+# dlopen's caller is the name to match); Mesa's swap-chain creation and GLFW's X11 teardown leak
+# through libxcb (LINUX-SUPPORT.md, "LeakSanitizer").
+leak:ma_dlopen
 leak:libxcb.so
 leak:libX11.so

@@ -149,11 +149,19 @@ namespace Dingo
 		}
 	}
 
+	bool VulkanGraphicsContext::WantsValidation() const
+	{
+#ifdef DE_DEBUG
+		return m_Params.VulkanValidation.value_or(true);
+#else
+		return m_Params.VulkanValidation.value_or(false);
+#endif
+	}
+
 	bool VulkanGraphicsContext::CreateInstance()
 	{
-#ifndef DE_DISTRIBUTION
-		optionalExtensions.layers.insert(k_ValidationLayer);
-#endif
+		if (WantsValidation())
+			optionalExtensions.layers.insert(k_ValidationLayer);
 
 		//PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader->getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
 		PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = m_DynamicLoader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
@@ -218,12 +226,10 @@ namespace Dingo
 			return false;
 		}
 
-#ifndef DE_DISTRIBUTION
-		if (!enabledExtensions.layers.contains(k_ValidationLayer))
+		if (WantsValidation() && !enabledExtensions.layers.contains(k_ValidationLayer))
 		{
 			DE_CORE_WARN("The Vulkan validation layer ({}) is not installed, so Vulkan usage errors go unreported. It ships with the Vulkan SDK; on Linux, source the SDK's setup-env.sh or install the distribution's validation layers package.", k_ValidationLayer);
 		}
-#endif
 
 		DE_CORE_TRACE("Enabled Vulkan Layer(s) ({}):", enabledExtensions.layers.size());
 		for (const auto& layer : enabledExtensions.layers)

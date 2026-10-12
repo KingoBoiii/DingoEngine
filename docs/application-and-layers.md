@@ -62,7 +62,9 @@ The log goes to `Dingo.log` in the game's per-user folder, `GetUserDataDir(Name)
 `$XDG_DATA_HOME`) on Linux. A game installed under Program Files can't write beside itself,
 and a player's bug report needs last session's log, so each run keeps the four before it as
 `Dingo.1.log` (the last run) to `Dingo.4.log`. A second instance running at the same time
-writes `Dingo-<pid>.log` instead of moving a log that is still open.
+writes `Dingo-<pid>.log` instead of moving a log that is still open (the newest four of those
+are kept too). A rotation that can't finish, say because a log viewer holds `Dingo.2.log`,
+moves nothing it can't and leaves last run's log as `Dingo-<pid>-previous.log`.
 
 ```cpp
 ApplicationParams params{
@@ -81,21 +83,23 @@ A crash leaves its report there too:
 
 - **Linux**: SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT and SIGTRAP write a backtrace into
   `Dingo.log` and stderr, then end the process as the signal would (exit code 128 + the
-  signal, core dump included). Debug and Release builds name the exported functions
-  (`c++filt` demangles them); every frame carries `executable(+offset)`, which
+  signal, core dump included). Every frame of the game carries `executable(+offset)`, which
   `addr2line -C -f -e <executable> <offset>` turns into a function and line given the same
-  build with symbols. Under AddressSanitizer the engine leaves the signals to ASan's report.
-- **Windows**: an unhandled exception, `abort()`, a pure virtual call or an invalid C runtime
-  parameter writes `Dingo-<date>-<time>-<pid>.dmp` beside the log (the newest five are kept)
+  build with symbols (shared libraries' frames name their own functions). Under
+  AddressSanitizer the engine leaves the signals to ASan's report.
+- **Windows**: an unhandled exception (a stack overflow included), `abort()`, a pure virtual
+  call or an invalid C runtime parameter writes `Dingo-<date>-<time>-<pid>.dmp` beside the log
+  (the newest five are kept)
   and a line into it. Open the dump in Visual Studio or WinDbg with the build's PDBs. A
   Distribution build also shows a message box naming the folder.
-- **Both**: an uncaught exception logs its `what()` before the report.
+- **Both**: an uncaught exception logs its `what()` before the report. A second thread that
+  crashes while the first is reporting waits for the exit, so the report is the first crash's.
 
 `FatalError(message)` (`DingoEngine/Core/FatalError.h`) is the way out of an error the game
 can't go on from: it logs the message with the file and line it was called from, flushes the
 log, shows a message box (Windows Distribution builds) and exits with code 1. In Distribution
 builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than breaking into a
-debugger that isn't there. The test app's `--crash=segv|thread|abort|terminate|verify|fatal`
+debugger that isn't there. The test app's `--crash=segv|thread|abort|terminate|throw|stack|verify|fatal`
 crashes on purpose, which is how CI checks all of this.
 
 ### Fullscreen
