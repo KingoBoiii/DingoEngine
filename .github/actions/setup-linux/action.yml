@@ -21,7 +21,7 @@ runs:
     run: |
       packages="build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev"
       if [[ "${{ inputs.runtime }}" == "true" ]]; then
-        packages+=" xvfb xauth mesa-vulkan-drivers python3-xlib"
+        packages+=" xvfb xauth mesa-vulkan-drivers python3-xlib gdb"
       fi
       sudo apt-get update -q
       sudo apt-get install -y -q $packages
@@ -87,3 +87,9 @@ runs:
     if: inputs.runtime == 'true'
     shell: bash
     run: echo "VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)" >> "$GITHUB_ENV"
+
+  # The smoke test attaches gdb to a hung program, which is not gdb's own child.
+  - name: Allow attaching a debugger
+    if: inputs.runtime == 'true'
+    shell: bash
+    run: sudo sysctl -w kernel.yama.ptrace_scope=0

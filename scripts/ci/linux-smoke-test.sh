@@ -22,6 +22,19 @@ export ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=0}
 
 failures=0
 
+# Every thread's stack, so a hang in CI names the wait it is stuck in. Attaching to a process that
+# isn't gdb's own child needs ptrace_scope 0 or root; CI sets the former.
+dump_stacks() {
+	if command -v gdb > /dev/null; then
+		timeout 60 gdb -p "$1" -batch -nx -ex "set pagination off" -ex "thread apply all bt" 2>&1 | grep -vE '^\[New LWP|^warning: '
+	else
+		echo "gdb not installed; /proc wait channels instead:"
+		for task in /proc/"$1"/task/*; do
+			echo "$(basename "$task") $(cat "$task/comm") $(cat "$task/wchan" 2>/dev/null)"
+		done
+	fi
+}
+
 run() {
 	local name=$1 cwd=$2 exe=$3; shift 3
 	local log=$LOGS/$name.log status problems=""
@@ -39,6 +52,7 @@ run() {
 			sleep 1
 		done
 		if kill -0 $pid 2>/dev/null; then
+			dump_stacks $pid > "$LOGS/$name.stacks.txt" 2>&1
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
 		fi
@@ -59,6 +73,14 @@ run() {
 		echo "::error title=Smoke test $name ($CONFIG)::$problems"
 		echo "FAIL  $name ($passed passed):$problems"
 		grep -E '\[FAIL\]|Validation Error|VUID-|AddressSanitizer|LOG ERROR|Assertion failed' "$log" | head -20
+		if [[ $problems == *hung* ]]; then
+			echo "::group::$name: last lines of its log"
+			tail -n 40 "$log"
+			echo "::endgroup::"
+			echo "::group::$name: thread stacks when it hung"
+			cat "$LOGS/$name.stacks.txt"
+			echo "::endgroup::"
+		fi
 	else
 		echo "ok    $name ($passed passed)"
 	fi
