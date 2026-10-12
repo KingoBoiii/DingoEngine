@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -83,6 +84,57 @@ void main()
     o_Color = v_Color;
 }
 )";
+
+	// The ghost again, reading the scene's skin arena at bindings of its own.
+	constexpr const char* k_PaletteGhostShader = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 3) in uvec4 a_Joints;
+layout(location = 4) in vec4 a_Weights;
+
+layout(std140, binding = 0) uniform CameraData
+{
+    mat4 ViewProjection;
+    vec4 LightDirection;
+    vec4 Ambient;
+};
+
+#define DE_SKIN_DATA_BINDING 2
+#define DE_SKIN_PALETTE_BINDING 3
+#define DE_SKIN_PALETTE
+#include <DingoEngine/Skinning.glsl>
+
+layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec3 v_Normal;
+layout(location = 2) out vec2 v_TexCoord;
+
+void main()
+{
+    mat4 skin = SkinMatrix(a_Joints, a_Weights);
+    gl_Position = ViewProjection * SkinModel() * skin * vec4(a_Position, 1.0);
+    v_Color = SkinColor();
+    v_Normal = SkinNormalMatrix() * a_Normal;
+    v_TexCoord = a_TexCoord;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+    o_Color = v_Color;
+}
+)";
+
+	constexpr uint32_t k_GhostCheckWidth = 160;
+	constexpr uint32_t k_GhostCheckHeight = 120;
 
 	double Milliseconds(Clock::time_point from, Clock::time_point to)
 	{
@@ -2209,7 +2261,7 @@ namespace Dingo
 				break;
 			case Mode::Clip:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedInstances == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the animated Fox is one skinned draw of 24 joints");
-				Check(Application::Get().GetRenderer3D().GetSkinnedInstancesThisFrame() == 1, "the frame's skinned instance count, which F4's budget bar shows, is the one Fox");
+				Check(Application::Get().GetRenderer3D().GetSkinnedInstancesThisFrame() == m_FrameInstancesBefore + 1, "the frame's skinned instance count, which F4's budget bar shows, grows by the one Fox");
 				if (SkeletonShown())
 				{
 					// The floor, the hat and the Fox, then a box per joint and per bone.
@@ -2263,16 +2315,70 @@ namespace Dingo
 			return;
 		}
 		m_Ghost = Material::Create(MaterialParams().SetShader(m_GhostShader).SetCullMode(CullMode::None).SetDebugName("Ghost"));
+		m_PaletteGhostShader = Shader::Create(ShaderParams().SetName("AnimationTestPaletteGhost").SetSourceCode(k_PaletteGhostShader).AddDefine("DE_SKINNED"));
+		if (!m_PaletteGhostShader || !m_PaletteGhostShader->IsValid())
+		{
+			Check(false, "the custom skin-arena shader compiles");
+			return;
+		}
+		m_PaletteGhost = Material::Create(MaterialParams().SetShader(m_PaletteGhostShader).SetCullMode(CullMode::None).SetDebugName("PaletteGhost"));
 
 		// Its own scene, which the frame's scene clears away.
+		const std::span<const glm::mat4> rest = m_Fox->GetSkeleton()->GetRestPalette();
 		renderer.BeginScene(m_Camera);
 		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_Ghost);
-		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), m_Fox->GetSkeleton()->GetRestPalette(), glm::vec4(1.0f), m_Ghost);
+		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_PaletteGhost);
+		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_Ghost);
+		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_PaletteGhost);
 		renderer.EndScene();
 
 		const Renderer3D::Statistics& stats = renderer.GetStatistics();
-		Check(stats.SkinnedDraws == 1 && stats.SubmittedMeshes == 2 && stats.DrawCalls == 2,
-			"a custom skinned material skins the Fox, and a static box given it draws with the default material instead of a pipeline its vertex stage can't take");
+		Check(stats.SkinnedDraws == 2 && stats.SkinnedInstances == 1 && stats.SubmittedMeshes == 4 && stats.DrawCalls == 3 && stats.DroppedSkinnedDraws == 0,
+			"custom skinned materials, one with a SkinData block and one reading the skin arena, skin the Fox from one instance, and static boxes given them draw with the default material instead of a pipeline their vertex stage can't take");
+
+		// Each ghost alone into a target of its own: the arena must place every vertex where SkinData does.
+		const glm::vec4 color(0.9f, 0.5f, 0.2f, 1.0f);
+		const glm::mat4 place = glm::translate(glm::mat4(1.0f), m_FoxOffset) * glm::scale(glm::mat4(1.0f), glm::vec3(m_FoxScale));
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight));
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_GhostTargets[i])
+				m_GhostTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "AnimationGhostSkinData" : "AnimationGhostArena")
+					.SetWidth(k_GhostCheckWidth)
+					.SetHeight(k_GhostCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+			Renderer::SetRenderTarget(m_GhostTargets[i]);
+			renderer.BeginScene(camera);
+			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+			renderer.SubmitSkinnedMesh(skinned->MeshData, place, rest, color, i == 0 ? m_Ghost : m_PaletteGhost);
+			renderer.EndScene();
+		}
+		Renderer::SetRenderTarget(previous);
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_GhostTargets[0]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				m_GhostPixels = pixels.Data;
+		});
+		m_GhostTargets[1]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			size_t differing = 0;
+			size_t covered = 0;
+			for (size_t i = 0; i + 3 < pixels.Data.size() && i < m_GhostPixels.size(); i += 4)
+			{
+				differing += std::memcmp(&pixels.Data[i], &m_GhostPixels[i], 4) != 0 ? 1 : 0;
+				covered += pixels.Data[i] != 0 ? 1 : 0;
+			}
+			Check(!pixels.Data.empty() && pixels.Data.size() == m_GhostPixels.size() && differing == 0 && covered > 0,
+				std::format("a custom shader reading the skin arena draws the Fox exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
+		});
 	}
 
 	void AnimationTest::Update(float deltaTime)
@@ -2282,6 +2388,7 @@ namespace Dingo
 		if (!m_SkinnedMaterialChecked && m_Scene && m_Mode != Mode::Crowd)
 			RunSkinnedMaterialCheck(renderer);
 
+		m_FrameInstancesBefore = renderer.GetSkinnedInstancesThisFrame();
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
 		if (!m_Scene)
@@ -2335,6 +2442,12 @@ namespace Dingo
 		DestroyAndDelete(m_FoxMaterial);
 		DestroyAndDelete(m_Ghost);
 		DestroyAndDelete(m_GhostShader);
+		DestroyAndDelete(m_PaletteGhost);
+		DestroyAndDelete(m_PaletteGhostShader);
+		for (Framebuffer*& target : m_GhostTargets)
+			DestroyAndDelete(target);
+		m_GhostPixels.clear();
+		m_Alive = std::make_shared<int>(0);
 		if (m_FoxAsset != k_InvalidAsset)
 		{
 			const std::filesystem::path folder = m_Fox ? m_Fox->GetFilePath().parent_path() : std::filesystem::path();

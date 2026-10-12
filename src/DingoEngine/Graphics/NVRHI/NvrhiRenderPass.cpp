@@ -146,7 +146,10 @@ namespace Dingo
 				item.type = shader->IsStorageBufferReadOnly(item.slot) ? nvrhi::ResourceType::RawBuffer_SRV : nvrhi::ResourceType::RawBuffer_UAV;
 		}
 
-		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(m_BindingSetDesc, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
+		// A copy: m_TextureBindings index the desc as it was built.
+		nvrhi::BindingSetDesc sorted = m_BindingSetDesc;
+		NvrhiCommandList::SortBySlot(sorted);
+		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(sorted, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
 
 		if (!m_BindingSetHandle && !m_BindingSetDesc.bindings.empty())
 		{

@@ -78,10 +78,13 @@ namespace Dingo
 
 		// Skinned instances a frame, across every scene this renderer runs, at most
 		// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls with
-		// the same palette, transform and colour (a model's submeshes); it uploads its joints once,
-		// to a volatile buffer that on Vulkan has room for this many writes a frame. Later instances
-		// that frame are skipped whole, with a warning (Statistics::DroppedSkinnedDraws).
-		uint32_t MaxSkinnedInstances = 64;
+		// the same palette, transform and colour (a model's submeshes); its joints go once into the
+		// scene's skin arena, one storage buffer uploaded once a scene, and each of its draws writes
+		// the 16 bytes that find them, to a volatile buffer that on Vulkan has room for this many
+		// instances a frame. Later instances that frame are skipped whole, with a warning
+		// (Statistics::DroppedSkinnedDraws). A custom shader with a SkinData block takes a write of
+		// the whole palette a draw and has at most k_MaxSkinDataInstances of them.
+		uint32_t MaxSkinnedInstances = 1024;
 
 		// GPU particles alive at once across every emitter this renderer made, at most
 		// Renderer3D::k_MaxParticlesLimit: the pool, 48 bytes a particle, made at the first EndScene with
@@ -347,8 +350,12 @@ namespace Dingo
 		// The highest binding a custom shader may give its SkinData block; D3D11 has 14 constant
 		// buffer slots.
 		static constexpr uint32_t k_MaxSkinDataBinding = 13;
-		// Each instance of the budget holds a SkinData version in host-visible memory on Vulkan.
-		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 256;
+		// Each instance of the budget holds three 16-byte DE_SkinDraw versions in host-visible memory
+		// on Vulkan, and its palette a stretch of the skin arena.
+		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
+		// Instances a frame drawn with a custom material whose shader has a SkinData block, each
+		// holding three SkinData versions (8 KiB each) in host-visible memory on Vulkan.
+		static constexpr uint32_t k_MaxSkinDataInstances = 256;
 
 		// Skins a mesh on the GPU and places it with transform, one draw per call. joints is the
 		// skinning palette (Skeleton::ComputeSkinningPalette, or GetRestPalette for the rest pose)
@@ -361,14 +368,15 @@ namespace Dingo
 		// static meshes in depth order.
 		//
 		// A lit material (null = the default) draws through a skinned twin the renderer keeps for
-		// it. A custom material's shader needs a SkinData block (see Renderer3D_Lit.glsl) at a
-		// binding from 2 to k_MaxSkinDataBinding that its textures and samplers leave free, or it is
-		// drawn with the default material and a warning. A mesh without a skin, with too few joints
+		// it. A custom material's shader needs Skinning.glsl's blocks, either DE_SkinDraw and
+		// DE_SkinPalette (DE_SKIN_PALETTE defined) or SkinData, with the uniform block at a binding
+		// from 2 to k_MaxSkinDataBinding and both at bindings its textures and samplers leave free,
+		// or it is drawn with the default material and a warning. A mesh without a skin, with too few joints
 		// passed, or skinned to more than k_MaxSkinJoints joints goes through SubmitMesh and draws its
 		// rest pose. No-op outside a Begin/EndScene pair.
 		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
-		// uploads its palette for each; an instance with opaque and translucent meshes is drawn lit in
-		// both passes. That is why the skin buffer holds three writes per instance.
+		// writes its draw block for each; an instance with opaque and translucent meshes is drawn lit in
+		// both passes. That is why the draw buffer holds three writes per instance.
 		// Culled as SubmitMesh culls, by the rest pose's bounds padded on every side by half their
 		// longest side for the animation: a pose reaching farther can be culled while in view. An instance with every mesh culled from every pass takes nothing of the budget.
 		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f);
@@ -432,9 +440,10 @@ namespace Dingo
 			uint32_t CulledLights = 0;      // point and spot lights whose range can't reach anything in view
 			uint32_t DroppedLights = 0;     // directional lights past k_MaxDirectionalLights, point and spot lights past the budget
 			uint32_t SkinnedDraws = 0;        // skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes; not batched, so not in VertexCount/IndexCount
-			uint32_t SkinnedInstances = 0;    // joint palettes uploaded; a model's submeshes share one
-			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame
-			uint32_t SkinnedJoints = 0;       // joint matrices the instances use (D3D11 uploads the whole k_MaxSkinJoints block each time)
+			uint32_t SkinnedInstances = 0;    // joint palettes put into the skin arena; a model's submeshes share one
+			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame, or past k_MaxSkinDataInstances for a SkinData shader
+			uint32_t SkinnedJoints = 0;       // joint matrices the instances use
+			uint32_t SkinPaletteBytes = 0;    // the scene's skin arena upload
 			uint32_t ShadowViews = 0;         // atlas tiles rendered (cascades and local light faces), 0 for a scene that casts nothing
 			uint32_t ShadowCascades = 0;      // of which cascades
 			uint32_t ShadowedLights = 0;      // point and spot lights drawn with a shadow
@@ -940,8 +949,8 @@ namespace Dingo
 		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: submits nothing, and EndScene only clears the lights
 		bool m_MeshOverflowWarned = false;
 
-		// std140, mirrored by SkinData in Renderer3D_Lit.glsl. Each draw uploads it only as far as
-		// its mesh's last joint.
+		// std140, mirrored by SkinData in Skinning.glsl without DE_SKIN_PALETTE: a custom shader's
+		// palette, uploaded per draw only as far as its mesh's last joint.
 		struct SkinData
 		{
 			glm::mat4 Model{ 1.0f };
@@ -961,6 +970,17 @@ namespace Dingo
 			glm::vec4 Color{ 1.0f };
 			uint32_t FirstJoint = 0;
 			uint32_t JointCount = 0;
+			uint32_t PaletteBase = 0; // its first vec4 in the skin arena, for a live instance within the budget
+		};
+
+		// The vec4s an instance takes in the skin arena ahead of its joints: Model's four columns,
+		// the normal matrix's three, Color. Mirrors Skinning.glsl's DE_SKIN_PALETTE layout.
+		static constexpr uint32_t k_SkinPaletteHeader = 8;
+		// The last upload per buffer in one pass, so a model's submeshes share them.
+		struct SkinUploads
+		{
+			uint32_t Draw = ~0u;
+			uint32_t Data = ~0u;
 		};
 
 		struct SkinnedSubmission
@@ -999,11 +1019,24 @@ namespace Dingo
 		Material* ResolveSkinnedMaterial(Material* material);
 		void DrawSkinnedSubmissions();
 		// Draws one lit; false when it was skipped (its instance dropped, ShadowsOnly, or an unusable lit material).
-		bool DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas);
+		bool DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas);
+		// Binds the instance's palette to material, uploading what this pass hasn't yet; false when a
+		// SkinData shader is past k_MaxSkinDataInstances for the frame.
+		bool BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
+		static bool IsSkinningShader(const Shader* shader);
+		static bool UsesSkinPalette(const Shader* shader);
 
 		// Made on the first skinned draw, so an app that never skins compiles no second lit program.
 		Shader* m_SkinnedShader = nullptr;
+		GraphicsBuffer* m_SkinDrawBuffer = nullptr;
+		GraphicsBuffer* m_SkinPaletteBuffer = nullptr;
+		uint64_t m_SkinPaletteCapacity = 0; // vec4s
+		std::vector<glm::vec4> m_SkinPalette;
+		// Made on the first SkinData shader's draw.
 		GraphicsBuffer* m_SkinBuffer = nullptr;
+		uint64_t m_SkinDataFrameIndex = 0;
+		uint32_t m_SkinDataWritesThisFrame = 0;
+		bool m_SkinDataBudgetWarned = false;
 		VertexLayout m_SkinnedLayout;
 		VertexLayout m_SkinnedShadowLayout;
 		SkinData m_SkinData;
@@ -1024,6 +1057,8 @@ namespace Dingo
 		bool m_SkinnedOnlyWarned = false;
 		bool m_SkinMaterialWarned = false;
 
+		void UploadSkinPalette();
+		void UploadSkinDraw(const SkinnedInstance& instance);
 		void UploadSkinData(const SkinnedInstance& instance);
 		void EnsureSkinBuffers(const Mesh* mesh);
 

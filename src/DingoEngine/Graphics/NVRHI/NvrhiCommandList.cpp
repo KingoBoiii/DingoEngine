@@ -289,6 +289,12 @@ namespace Dingo
 		return true;
 	}
 
+	void NvrhiCommandList::SortBySlot(nvrhi::BindingSetDesc& desc)
+	{
+		std::stable_sort(desc.bindings.begin(), desc.bindings.end(),
+			[](const nvrhi::BindingSetItem& a, const nvrhi::BindingSetItem& b) { return a.slot < b.slot; });
+	}
+
 	bool NvrhiCommandList::IsStorageItem(const nvrhi::BindingSetItem& item)
 	{
 		return item.type == nvrhi::ResourceType::RawBuffer_SRV || item.type == nvrhi::ResourceType::RawBuffer_UAV

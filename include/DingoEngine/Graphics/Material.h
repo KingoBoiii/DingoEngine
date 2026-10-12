@@ -138,7 +138,15 @@ namespace Dingo
 		// SkinData, at whatever binding the shader gave it. Shaders without one ignore it.
 		void SetSkinUniformBuffer(GraphicsBuffer* buffer);
 
+		// Binds Renderer3D's skin arena to the shader's DE_SkinPalette storage block and its per-draw
+		// base to the DE_SkinDraw uniform block (Skinning.glsl with DE_SKIN_PALETTE), each at whatever
+		// binding the shader gave it. A shader without them ignores this. Another arena only re-points
+		// the cached passes' binding sets, as SetObjectBuffer does.
+		void SetSkinPaletteBuffers(GraphicsBuffer* palette, GraphicsBuffer* draw);
+
 		static constexpr const char* k_SkinDataBlockName = "SkinData";
+		static constexpr const char* k_SkinPaletteBlockName = "DE_SkinPalette";
+		static constexpr const char* k_SkinDrawBlockName = "DE_SkinDraw";
 
 		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
 		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it. A shader
@@ -234,6 +242,9 @@ namespace Dingo
 		GraphicsBuffer*      m_InstanceBuffer     = nullptr;
 		uint64_t             m_InstanceBufferId   = 0;
 		GraphicsBuffer*      m_InstanceDrawBuffer = nullptr;
+		GraphicsBuffer*      m_SkinPaletteBuffer  = nullptr;
+		uint64_t             m_SkinPaletteBufferId = 0;
+		GraphicsBuffer*      m_SkinDrawBuffer     = nullptr;
 
 		struct StorageBinding
 		{

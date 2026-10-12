@@ -1,6 +1,6 @@
 // Static vertices arrive in world space (Renderer3D transforms them on the CPU while batching), so
 // that vertex stage only applies the camera. With DE_SKINNED the GPU skins each vertex with the
-// joint palette in SkinData (Skinning.glsl), one draw per mesh; with DE_INSTANCED it places each copy
+// joint palette its instance has in the scene's skin arena (Skinning.glsl), one draw per mesh; with DE_INSTANCED it places each copy
 // of a repeated mesh from its record (Instancing.glsl), one draw per mesh. The fragment stage is shared. The
 // fragment stage takes the scene's shadows from Shadows.glsl at bindings 5 to 7. A static vertex
 // names its mesh's DE_ObjectData record, which holds a SurfaceOverride; 0 is none, the material's own.
@@ -24,6 +24,7 @@ layout(location = 4) flat out uint v_ObjectIndex;
 
 #ifdef DE_SKINNED
 
+#define DE_SKIN_PALETTE
 #include <DingoEngine/Skinning.glsl>
 
 layout(location = 0) in vec3 a_Position;
@@ -35,11 +36,11 @@ layout(location = 4) in vec4 a_Weights;
 void main()
 {
 	mat4 skin = SkinMatrix(a_Joints, a_Weights);
-	vec4 worldPosition = Model * (skin * vec4(a_Position, 1.0));
+	vec4 worldPosition = SkinModel() * (skin * vec4(a_Position, 1.0));
 
 	gl_Position     = ViewProjection * worldPosition;
 	v_Normal        = SkinNormal(skin, a_Normal);
-	v_Color         = Color;
+	v_Color         = SkinColor();
 	v_WorldPosition = worldPosition.xyz;
 	v_TexCoord      = a_TexCoord;
 	v_ObjectIndex   = 0u;

@@ -79,7 +79,14 @@ namespace Dingo
 		Material* m_FoxMaterial = nullptr;
 		Shader*   m_GhostShader = nullptr;
 		Material* m_Ghost = nullptr;
+		// The same ghost on the skin arena (Skinning.glsl with DE_SKIN_PALETTE), checked against it by readback.
+		Shader*      m_PaletteGhostShader = nullptr;
+		Material*    m_PaletteGhost = nullptr;
+		Framebuffer* m_GhostTargets[2] = {};
+		std::vector<uint8_t> m_GhostPixels;
+		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		bool      m_SkinnedMaterialChecked = false;
+		uint32_t  m_FrameInstancesBefore = 0; // the frame's skinned instances before the test's own scene
 		Scene*    m_Scene = nullptr;
 		// --anim=root: Walk carried forward and turning, so the Fox walks a circle by root motion.
 		std::unique_ptr<AnimationClip> m_RootClip;

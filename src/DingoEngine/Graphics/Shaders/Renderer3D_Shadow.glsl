@@ -32,6 +32,7 @@ layout(std140, binding = 1) uniform ShadowCaster
 layout(location = 0) in vec3 a_Position;
 
 #ifdef DE_SKINNED
+#define DE_SKIN_PALETTE
 #include <DingoEngine/Skinning.glsl>
 layout(location = 1) in uvec4 a_Joints;
 layout(location = 2) in vec4 a_Weights;
@@ -48,7 +49,7 @@ out gl_PerVertex
 void main()
 {
 #ifdef DE_SKINNED
-	vec4 worldPosition = Model * (SkinMatrix(a_Joints, a_Weights) * vec4(a_Position, 1.0));
+	vec4 worldPosition = SkinModel() * (SkinMatrix(a_Joints, a_Weights) * vec4(a_Position, 1.0));
 	uint viewIndex = uint(gl_InstanceIndex);
 #elif defined(DE_INSTANCED)
 	uint views = InstanceBase.y;

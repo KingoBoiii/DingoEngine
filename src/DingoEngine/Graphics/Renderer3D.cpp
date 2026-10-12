@@ -401,6 +401,10 @@ namespace Dingo
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
 		DestroyAndDelete(m_SkinBuffer);
+		DestroyAndDelete(m_SkinDrawBuffer);
+		DestroyAndDelete(m_SkinPaletteBuffer);
+		m_SkinPaletteCapacity = 0;
+		m_SkinPalette.clear();
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 		DestroyAndDelete(m_SkinnedShader);
 
@@ -545,6 +549,7 @@ namespace Dingo
 		UploadObjectRecords();
 		UploadInstanceRecords();
 		ResolveSkinnedBudget();
+		UploadSkinPalette();
 		if (shadows)
 		{
 			DrawShadowPass();
@@ -565,6 +570,7 @@ namespace Dingo
 				Material* material = instanced ? ResolveInstancedMaterial(draw.Key.Material) : draw.Key.Material;
 				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 				material->SetSkinUniformBuffer(nullptr);
+				material->SetSkinPaletteBuffers(nullptr, nullptr);
 				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 				material->SetObjectBuffer(m_ObjectBuffer);
 				if (instanced)
@@ -1660,12 +1666,12 @@ namespace Dingo
 		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
 			post.ApplyAmbientOcclusion();
 
-		uint32_t uploadedInstance = ~0u;
+		SkinUploads uploads;
 		for (const TranslucentDraw& draw : m_TranslucentDraws)
 		{
 			if (draw.Skinned >= 0)
 			{
-				if (DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploadedInstance, shadowAtlas))
+				if (DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploads, shadowAtlas))
 				{
 					++m_Statistics.TranslucentMeshes;
 					++m_Statistics.TranslucentDraws;
@@ -1676,6 +1682,7 @@ namespace Dingo
 			Material* material = draw.Material;
 			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 			material->SetSkinUniformBuffer(nullptr);
+			material->SetSkinPaletteBuffers(nullptr, nullptr);
 			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 			material->SetObjectBuffer(m_ObjectBuffer);
 			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
@@ -1742,7 +1749,7 @@ namespace Dingo
 
 			// A skinned shader can't draw the static vertex stream.
 			const Shader* shader = material ? material->GetShader() : nullptr;
-			const bool skinnedOnly = shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
+			const bool skinnedOnly = IsSkinningShader(shader);
 			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows, shadowGroups, cullDistance);
 			return;
 		}
@@ -1856,15 +1863,23 @@ namespace Dingo
 		m_SkinnedShader = CreateLitShader(k_SkinnedLitShaderName, "DE_SKINNED");
 		Internal::WatchUnmanagedShader(m_SkinnedShader);
 
-		m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
-			.SetDebugName("Renderer3D_SkinUBO")
-			.SetByteSize(sizeof(SkinData))
+		m_SkinDrawBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_SkinDraw")
+			.SetByteSize(sizeof(glm::uvec4))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
 			.SetDirectUpload(false)
 			.SetMaxWritesPerFrame(3 * GetSkinnedInstanceBudget()));
+	}
 
-		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
+	bool Renderer3D::IsSkinningShader(const Shader* shader)
+	{
+		return shader && (shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0 || shader->FindUniformBufferBinding(Material::k_SkinDrawBlockName) >= 0);
+	}
+
+	bool Renderer3D::UsesSkinPalette(const Shader* shader)
+	{
+		return shader && shader->FindUniformBufferBinding(Material::k_SkinDrawBlockName) >= 0;
 	}
 
 	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
@@ -1875,22 +1890,29 @@ namespace Dingo
 
 		// The binding must not collide with the scene and material blocks or with a texture or
 		// sampler the material binds, or its binding set fails and the mesh silently vanishes.
-		const Shader* shader = requested->GetShader();
-		const int32_t binding = shader ? shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) : -1;
-		bool usable = binding >= 2 && binding <= static_cast<int32_t>(k_MaxSkinDataBinding);
-		if (usable)
+		auto freeBinding = [requested](int32_t binding)
 		{
+			if (binding < 2)
+				return false;
 			const uint32_t slot = static_cast<uint32_t>(binding - 2) / 2;
 			const bool samplerBinding = (binding - 2) % 2 == 1;
-			usable = samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
-		}
+			if (samplerBinding ? slot >= Material::k_MaxSamplerSlots : slot >= Material::k_MaxTextureSlots)
+				return true;
+			return samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
+		};
+		const Shader* shader = requested->GetShader();
+		const bool palette = UsesSkinPalette(shader);
+		const int32_t binding = shader ? shader->FindUniformBufferBinding(palette ? Material::k_SkinDrawBlockName : Material::k_SkinDataBlockName) : -1;
+		bool usable = binding <= static_cast<int32_t>(k_MaxSkinDataBinding) && freeBinding(binding);
+		if (usable && palette)
+			usable = freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
 		if (usable)
 			return requested;
 
 		if (!m_SkinMaterialWarned)
 		{
 			const std::string& name = requested->GetParams().DebugName;
-			DE_CORE_WARN("Renderer3D: material '{}' has no SkinData uniform block at a free binding from 2 to {}, so skinned meshes drawn with it use the default lit material.",
+			DE_CORE_WARN("Renderer3D: material '{}' has no SkinData or DE_SkinDraw uniform block at a free binding from 2 to {} (with DE_SkinPalette at a free binding), so skinned meshes drawn with it use the default lit material.",
 				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinDataBinding);
 			m_SkinMaterialWarned = true;
 		}
@@ -1993,6 +2015,104 @@ namespace Dingo
 		}
 	}
 
+	void Renderer3D::UploadSkinPalette()
+	{
+		m_SkinPalette.clear();
+		for (uint32_t index = 0; index < m_SkinnedInstances.size(); ++index)
+		{
+			if (!m_SkinnedInstanceLive[index] || m_SkinnedInstanceDropped[index])
+				continue;
+
+			SkinnedInstance& instance = m_SkinnedInstances[index];
+			instance.PaletteBase = static_cast<uint32_t>(m_SkinPalette.size());
+			const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(instance.Transform));
+			for (int column = 0; column < 4; ++column)
+				m_SkinPalette.push_back(instance.Transform[column]);
+			for (int column = 0; column < 3; ++column)
+				m_SkinPalette.emplace_back(normalMatrix[column], 0.0f);
+			m_SkinPalette.push_back(instance.Color);
+			for (uint32_t joint = 0; joint < instance.JointCount; ++joint)
+			{
+				const glm::mat4& matrix = m_SkinnedJoints[instance.FirstJoint + joint];
+				for (int column = 0; column < 4; ++column)
+					m_SkinPalette.push_back(matrix[column]);
+			}
+		}
+		if (m_SkinPalette.empty())
+			return;
+
+		if (m_SkinPalette.size() > m_SkinPaletteCapacity)
+		{
+			if (m_SkinPaletteBuffer)
+				m_RetiredArenaBuffers.emplace_back(m_SkinPaletteBuffer, Renderer::GetFrameIndex());
+			m_SkinPaletteCapacity = std::max<uint64_t>({ m_SkinPaletteCapacity * 2, m_SkinPalette.size(), 16384 });
+			m_SkinPaletteBuffer = GraphicsBuffer::CreateStorageBuffer(m_SkinPaletteCapacity * sizeof(glm::vec4), "Renderer3D_SkinPalette");
+		}
+		const uint64_t bytes = m_SkinPalette.size() * sizeof(glm::vec4);
+		Renderer::Upload(m_SkinPaletteBuffer, m_SkinPalette.data(), bytes);
+		m_Statistics.SkinPaletteBytes += static_cast<uint32_t>(bytes);
+	}
+
+	void Renderer3D::UploadSkinDraw(const SkinnedInstance& instance)
+	{
+		const glm::uvec4 draw(instance.PaletteBase, 0u, 0u, 0u);
+		Renderer::Upload(m_SkinDrawBuffer, &draw, sizeof(draw));
+	}
+
+	bool Renderer3D::BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads)
+	{
+		if (UsesSkinPalette(material->GetShader()))
+		{
+			if (uploads.Draw != instance)
+			{
+				uploads.Draw = instance;
+				UploadSkinDraw(m_SkinnedInstances[instance]);
+			}
+			material->SetSkinUniformBuffer(nullptr);
+			material->SetSkinPaletteBuffers(m_SkinPaletteBuffer, m_SkinDrawBuffer);
+			return true;
+		}
+
+		if (uploads.Data != instance)
+		{
+			// The SkinData buffer's writes are a budget of their own, shared by every scene of the frame.
+			const uint64_t frameIndex = Renderer::GetFrameIndex();
+			if (frameIndex != m_SkinDataFrameIndex)
+			{
+				m_SkinDataFrameIndex = frameIndex;
+				m_SkinDataWritesThisFrame = 0;
+			}
+			const uint32_t writes = 3 * (std::min)(GetSkinnedInstanceBudget(), k_MaxSkinDataInstances);
+			if (m_SkinDataWritesThisFrame >= writes)
+			{
+				if (!m_SkinDataBudgetWarned)
+				{
+					DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame drawn with a SkinData shader; the rest are skipped. Define DE_SKIN_PALETTE before including Skinning.glsl to take the whole budget.",
+						k_MaxSkinDataInstances);
+					m_SkinDataBudgetWarned = true;
+				}
+				return false;
+			}
+			if (!m_SkinBuffer)
+			{
+				m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+					.SetDebugName("Renderer3D_SkinUBO")
+					.SetByteSize(sizeof(SkinData))
+					.SetType(BufferType::UniformBuffer)
+					.SetIsVolatile(true)
+					.SetDirectUpload(false)
+					.SetMaxWritesPerFrame(writes));
+				m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
+			}
+			++m_SkinDataWritesThisFrame;
+			uploads.Data = instance;
+			UploadSkinData(m_SkinnedInstances[instance]);
+		}
+		material->SetSkinPaletteBuffers(nullptr, nullptr);
+		material->SetSkinUniformBuffer(m_SkinBuffer);
+		return true;
+	}
+
 	void Renderer3D::UploadSkinData(const SkinnedInstance& instance)
 	{
 		m_SkinData.Model = instance.Transform;
@@ -2023,15 +2143,15 @@ namespace Dingo
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
-		uint32_t uploadedInstance = ~0u;
+		SkinUploads uploads;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
 			if (!submission.Translucent)
-				DrawSkinnedSubmission(submission, uploadedInstance, shadowAtlas);
+				DrawSkinnedSubmission(submission, uploads, shadowAtlas);
 		}
 	}
 
-	bool Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas)
+	bool Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas)
 	{
 		if (submission.CameraCulled)
 			return false;
@@ -2058,18 +2178,16 @@ namespace Dingo
 		}
 
 		EnsureSkinningResources();
-		if (submission.Instance != uploadedInstance)
-		{
-			uploadedInstance = submission.Instance;
-			UploadSkinData(m_SkinnedInstances[submission.Instance]);
-		}
-
 		Material* material = ResolveSkinnedMaterial(submission.Material);
+		if (!BindSkinInstance(material, submission.Instance, uploads))
+		{
+			++m_Statistics.DroppedSkinnedDraws;
+			return false;
+		}
 		const Mesh* mesh = submission.Mesh;
 		EnsureSkinBuffers(mesh);
 
 		material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-		material->SetSkinUniformBuffer(m_SkinBuffer);
 		material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 		material->SetObjectBuffer(m_ObjectBuffer);
 		Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
@@ -2478,10 +2596,10 @@ namespace Dingo
 		MaterialBatch* batch = &m_Batches[BatchKey{ material, shadows, shadowGroups }];
 		if (!batch->Enqueued)
 		{
-			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
+			// A skinned shader can't draw the static vertex stream, and no skin block is bound here.
 			const Shader* shader = material->GetShader();
 			batch->Enqueued = true;
-			batch->SkinnedOnly = material != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
+			batch->SkinnedOnly = material != m_Material && IsSkinningShader(shader);
 			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && material->IsTranslucent();
 			if (!batch->SkinnedOnly && !batch->Translucent)
 				m_DrawOrder.push_back(BatchKey{ material, shadows, shadowGroups });
@@ -2540,7 +2658,7 @@ namespace Dingo
 		const Material* material = mesh.Material ? mesh.Material : m_Material;
 		const Shader* shader = material->GetShader();
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
-		return (material != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0) ||
+		return (material != m_Material && IsSkinningShader(shader)) ||
 			(mesh.Shadows != ShadowCasting::ShadowsOnly && material->IsTranslucent()) || ForcesInstancing(material) ||
 			mesh.Mesh->GetVertexCount() > caps.MaxVertices || mesh.Mesh->GetIndexCount() > caps.MaxIndices || !IsAffine(mesh.Transform);
 	}
@@ -2907,7 +3025,7 @@ namespace Dingo
 		}
 		material->SetSceneUniformBuffer(m_ShadowViewsBuffer);
 		if (skinned)
-			material->SetSkinUniformBuffer(m_SkinBuffer);
+			material->SetSkinPaletteBuffers(m_SkinPaletteBuffer, m_SkinDrawBuffer);
 		if (instanced)
 			material->SetInstanceBuffers(m_InstanceBuffer, m_InstanceDrawBuffer);
 		return material;
@@ -3300,7 +3418,7 @@ namespace Dingo
 				if (submission.Instance != uploadedInstance)
 				{
 					uploadedInstance = submission.Instance;
-					UploadSkinData(m_SkinnedInstances[submission.Instance]);
+					UploadSkinDraw(m_SkinnedInstances[submission.Instance]);
 				}
 
 				EnsureSkinBuffers(submission.Mesh);

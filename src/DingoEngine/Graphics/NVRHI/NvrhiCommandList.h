@@ -52,6 +52,11 @@ namespace Dingo
 			return item.type == nvrhi::ResourceType::RawBuffer_SRV || item.type == nvrhi::ResourceType::RawBuffer_UAV;
 		}
 
+		// NVRHI's Vulkan backend hands a set's volatile constant buffers their dynamic offsets in the
+		// order the desc lists them, and Vulkan applies them in binding order: out of order, each block
+		// reads another's version. Every binding set is sorted by slot before it is made.
+		static void SortBySlot(nvrhi::BindingSetDesc& desc);
+
 	private:
 		// NVRHI places a binding set's barriers only when the bound sets change, so a pass bound twice in
 		// a row, or a storage buffer copied between two uses, would get none. Requiring the states again

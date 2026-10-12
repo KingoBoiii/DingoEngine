@@ -225,25 +225,33 @@ entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(f
 
 ### Instances and the per-frame budget
 
-Every skinned draw reads its joints from a `SkinData` uniform buffer, written once per **instance**.
-An instance is a run of consecutive `SubmitSkinnedMesh` calls with the same palette (the same array of
-matrices), transform and colour, which is what a model's submeshes are. Each instance uploads its
-joints once and counts once against `Renderer3DCapabilities::MaxSkinnedInstances`.
+An **instance** is a run of consecutive `SubmitSkinnedMesh` calls with the same palette (the same
+array of matrices), transform and colour, which is what a model's submeshes are. At `EndScene` every
+instance a pass draws, opaque, translucent or into the shadow atlas, goes into the scene's **skin
+arena**: one storage buffer holding each instance's transform, normal matrix, colour and joints back to
+back, uploaded once. Each draw then writes only the 16 bytes that say where its instance starts
+(`DE_SkinDraw`), once per instance and pass. An instance whose meshes are all culled from every pass is
+neither uploaded nor counted. Each instance counts once against
+`Renderer3DCapabilities::MaxSkinnedInstances`.
 
 ```cpp
 ApplicationParams params;
-params.Renderer3D.Capabilities.MaxSkinnedInstances = 128;   // default 64, at most 256
+params.Renderer3D.Capabilities.MaxSkinnedInstances = 2048;  // default 1024, at most 4096
 params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of warn-and-drop
 ```
 
 - The budget is **per frame**, across every scene the renderer runs, because each instance holds
-  a version of the volatile buffer on Vulkan. `Renderer3D::GetSkinnedInstanceBudget()` returns the
-  value in force, clamped to 1 and `Renderer3D::k_MaxSkinnedInstancesLimit` (256).
+  three versions of the 16-byte draw buffer on Vulkan (shadow, opaque, translucent).
+  `Renderer3D::GetSkinnedInstanceBudget()` returns the value in force, clamped to 1 and
+  `Renderer3D::k_MaxSkinnedInstancesLimit` (4096). The arena grows by doubling as a scene needs it.
 - An instance past the budget is dropped **whole**, so a character never loses some of its parts.
   The renderer warns once and counts the dropped draws in `Statistics::DroppedSkinnedDraws`.
   `AssertOnOverflow` makes it an assert, which compiles out of release builds.
 - The budget counts instances, not draws: a character of five submeshes is one instance and five
-  draws. With the default of 64, 64 foxes draw and a 65th is dropped.
+  draws. With the default of 1024, 1024 foxes in view draw and a 1025th is dropped.
+- A custom shader with the older `SkinData` block (below) takes a whole palette upload per draw
+  instead, and at most `Renderer3D::k_MaxSkinDataInstances` (256) instances a frame draw with such
+  shaders; the rest are dropped with a warning.
 
 ### Draw order and translucency
 
@@ -307,11 +315,37 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
 
 1. **The vertex inputs** are `a_Position` (location 0), `a_Normal` (1), `a_TexCoord` (2), `a_Joints`
    (`uvec4`, 3) and `a_Weights` (`vec4`, 4). Use these names: D3D11 and D3D12 match inputs by name,
-   Vulkan by location. There is no `a_Color`; the colour comes from the block below. Positions are in
-   skin space, so the shader skins them and applies `Model` itself.
-2. **A uniform block named `SkinData`**, in std140, exactly this, at a binding from 2 to
-   `Renderer3D::k_MaxSkinDataBinding` (13, because D3D11 has 14 constant buffer slots) that the
-   material's own textures and samplers leave free:
+   Vulkan by location. There is no `a_Color`; the colour comes from the blocks below. Positions are in
+   skin space, so the shader skins them and applies the model transform itself.
+2. **The skin blocks**, from the engine's `Skinning.glsl`. Define `DE_SKIN_PALETTE` and include it,
+   and the shader reads the scene's skin arena like the engine's own:
+
+   ```glsl
+   #define DE_SKIN_DATA_BINDING 6        // DE_SkinDraw: any free binding from 2 to 13
+   #define DE_SKIN_PALETTE_BINDING 7     // DE_SkinPalette: any free binding
+   #define DE_SKIN_PALETTE
+   #include <DingoEngine/Skinning.glsl>
+
+   void main()
+   {
+       mat4 skin = SkinMatrix(a_Joints, a_Weights);
+       vec4 world = SkinModel() * (skin * vec4(a_Position, 1.0));
+       v_Normal = SkinNormal(skin, a_Normal);
+       v_Color = SkinColor();
+       // ...
+   }
+   ```
+
+   `DE_SkinDraw` is a uniform block and must sit at a binding from 2 to
+   `Renderer3D::k_MaxSkinDataBinding` (13, because D3D11 has 14 constant buffer slots); both must be
+   bindings the material's own textures and samplers leave free. The renderer finds them by name and
+   binds them with `Material::SetSkinPaletteBuffers`.
+
+   Without `DE_SKIN_PALETTE` the include declares the older per-draw block instead, which shaders
+   written before v1.0 declare themselves: a uniform block named `SkinData`, in std140, exactly this,
+   at a binding from 2 to 13 that the material's textures and samplers leave free. Each of its draws
+   uploads the whole palette, and such shaders have their own budget of
+   `Renderer3D::k_MaxSkinDataInstances` (256) instances a frame:
 
    ```glsl
    layout(std140, binding = 6) uniform SkinData   // any free binding from 2 to 13
@@ -327,13 +361,14 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    [Custom materials](scenes-and-ecs.md#custom-materials-per-mesh-shaders)), so a material with
    texture 0 and sampler 0 set occupies 2 and 3, and leaves 4 and up free.
 
-The renderer finds the block **by name**, through `Shader::FindUniformBufferBinding("SkinData")`,
-which needs a reflected shader (`ShaderParams::Reflect` is true by default) and binds its buffer there
-with `Material::SetSkinUniformBuffer`. The rest of the binding convention (0 scene, 1 material
-uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
+The renderer finds the blocks **by name**, through `Shader::FindUniformBufferBinding` and
+`FindStorageBufferBinding`, which need a reflected shader (`ShaderParams::Reflect` is true by default),
+and binds `SkinData` with `Material::SetSkinUniformBuffer`. The rest of the binding convention (0
+scene, 1 material uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
 
-When the block is missing, is outside 2 to 13, or collides with a bound texture or sampler, the mesh
-draws with the **default lit material** and a warning (once), instead of vanishing.
+When the blocks are missing, the uniform one is outside 2 to 13, or either collides with a bound
+texture or sampler, the mesh draws with the **default lit material** and a warning (once), instead of
+vanishing.
 
 ### Statistics
 
@@ -342,9 +377,10 @@ draws with the **default lit material** and a warning (once), instead of vanishi
 | Field | Meaning |
 |---|---|
 | `SkinnedDraws` | Skinned meshes drawn. Also counted in `DrawCalls` and `SubmittedMeshes`, but not in `VertexCount` or `IndexCount`, which describe the batches. |
-| `SkinnedInstances` | Joint palettes uploaded. A model's submeshes share one. |
-| `DroppedSkinnedDraws` | Skinned meshes of instances dropped by the per-frame budget. |
-| `SkinnedJoints` | Joint matrices the instances use. D3D11, where a partial constant-buffer update isn't guaranteed, uploads the whole 128-joint block each time. |
+| `SkinnedInstances` | Joint palettes put into the skin arena. A model's submeshes share one. |
+| `DroppedSkinnedDraws` | Skinned meshes of instances dropped by the per-frame budget, or by the `SkinData` shaders' 256. |
+| `SkinnedJoints` | Joint matrices the instances use. |
+| `SkinPaletteBytes` | The scene's skin arena upload: 128 bytes an instance and 64 a joint. |
 
 The F4 Renderer tab shows the same numbers ([Debugging](#debugging)).
 
@@ -1001,8 +1037,8 @@ animators, once they have been created:
 Past 16 animators the list scrolls in its own region, so the events stay in view.
 
 **F4, the Renderer tab** shows the skinned draws, an Instances bar against the
-`MaxSkinnedInstances` budget, the joints uploaded, and in red the dropped draws when the budget is
-exceeded.
+`MaxSkinnedInstances` budget, the joints and the skin arena's bytes uploaded, and in red the dropped
+draws when the budget is exceeded.
 
 **`Animator::GetStates(layer)`** is the same view for your own tooling.
 
@@ -1042,8 +1078,9 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
   nodes carrying a rigid mesh, so a character's bones stay under the cap even when an animated node
   outside the armature makes every prop in the scene a joint. Joints a skin cannot reach (helpers,
   ends, animated cameras) sort after both and do not count.
-- **`MaxSkinnedInstances` a frame** (64 by default, at most 256), across all scenes of a renderer. The
-  rest are dropped whole, with a warning.
+- **`MaxSkinnedInstances` a frame** (1024 by default, at most 4096), across all scenes of a renderer,
+  and at most 256 of them drawn with an older `SkinData` shader. The rest are dropped whole, with a
+  warning.
 - **4 states a layer.** A fifth freezes the mix so far into one pose.
 - **Translucent characters sort per mesh**, by the centre of each mesh's rest bounds, so a
   character's own see-through parts can blend in the wrong order with each other.

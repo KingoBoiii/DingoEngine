@@ -346,10 +346,10 @@ namespace Dingo::UI
 		ImGui::Separator();
 		ImGui::Text("Skinned draws: %u  (also counted in draw calls)", stats3D.SkinnedDraws);
 		BudgetBar("Instances", renderer3D.GetSkinnedInstancesThisFrame(), renderer3D.GetSkinnedInstanceBudget());
-		ImGui::Text("Scene      : %u instances, %u joints", stats3D.SkinnedInstances, stats3D.SkinnedJoints);
+		ImGui::Text("Scene      : %u instances, %u joints, %.1f KiB arena", stats3D.SkinnedInstances, stats3D.SkinnedJoints, stats3D.SkinPaletteBytes / 1024.0f);
 		if (stats3D.DroppedSkinnedDraws > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances; warned once)", stats3D.DroppedSkinnedDraws);
+				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances, or past 256 with a SkinData shader; warned once)", stats3D.DroppedSkinnedDraws);
 		else
 			ImGui::Text("Dropped    : 0");
 
