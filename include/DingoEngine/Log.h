@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <format>
 
@@ -34,8 +36,19 @@ namespace Dingo
 		};
 
 	public:
+		// Logs to the console, keeping what is logged until OpenFile in memory.
 		static void Initialize();
 		static void Shutdown();
+
+		// Opens `directory`/Dingo.log for this run, first moving the earlier runs' logs up one name
+		// (Dingo.log -> Dingo.1.log, ... up to Dingo.<keepRuns - 1>.log, the oldest dropped), and
+		// writes everything logged since Initialize into it. Application's constructor calls it;
+		// later calls keep the file already open. False when the directory can't be written: the
+		// log then goes to the console only.
+		static bool OpenFile(const std::filesystem::path& directory, uint32_t keepRuns = 5);
+		// This run's log file, or empty before OpenFile.
+		static const std::filesystem::path& GetFilePath();
+		static void Flush();
 
 		// True if a message at this level would actually be emitted. Print/PrintTag
 		// check it before formatting, so a raised log level skips std::format cost.
@@ -131,7 +144,7 @@ namespace Dingo
 		PrintInternal(type, Log::Level::Fatal, std::format("Assertion failed: {0}", message));
 
 #if DE_ASSERT_MESSAGE_BOX
-		MessageBoxA(nullptr, "No message.\nCheck Dingo.log file", "Dingo Assert", MB_OK | MB_ICONERROR);
+		MessageBoxA(nullptr, "No message.\nCheck the log file", "Dingo Assert", MB_OK | MB_ICONERROR);
 #endif
 	}
 

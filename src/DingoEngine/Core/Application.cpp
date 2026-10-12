@@ -3,6 +3,8 @@
 #include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Core/CrashHandler.h"
+#include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/KeyCodes.h"
@@ -29,6 +31,20 @@ namespace Dingo
 		: m_Params(params)
 	{
 		s_Instance = this;
+
+		if (m_Params.Name.empty())
+			m_Params.Name = Platform::GetExecutablePath().stem().string();
+
+		std::filesystem::path logDirectory = m_Params.LogDirectory;
+		if (auto directory = m_Params.CommandLineArgs.Get("log-dir"); directory && !directory->empty())
+			logDirectory = std::filesystem::path(*directory);
+		else if (m_Params.CommandLineArgs.Get("log-here"))
+			logDirectory = std::filesystem::current_path();
+		if (logDirectory.empty())
+			logDirectory = Platform::GetUserDataDir(m_Params.Name) / "logs";
+
+		Log::OpenFile(logDirectory);
+		Internal::CrashHandler::Install(Log::GetFilePath(), logDirectory, m_Params.Name);
 	}
 
 	Application::~Application()
@@ -58,7 +74,7 @@ namespace Dingo
 		graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
 		m_GraphicsContext = GraphicsContext::Create(graphicsParams);
 		if (!m_GraphicsContext)
-			std::abort();
+			FatalError("No graphics device could be created. See the log for why.");
 		m_GraphicsContext->Initialize();
 
 		m_SwapChain = SwapChain::Create(SwapChainParams()

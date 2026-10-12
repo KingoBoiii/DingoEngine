@@ -31,6 +31,10 @@ namespace Dingo
 		std::vector<std::pair<std::string, std::function<Test*()>>> m_Tests;
 		Test* m_CurrentTest = nullptr;
 		uint32_t m_CurrentTestIndex = 0;
+
+		static constexpr uint32_t k_CrashFrame = 30;
+		std::string m_CrashKind;
+		uint32_t m_CrashFrames = 0;
 	};
 
 }

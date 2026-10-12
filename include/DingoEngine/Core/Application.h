@@ -18,7 +18,9 @@
 #include "DingoEngine/UI/UIParams.h"
 #include "DingoEngine/UI/DebugPanels.h"
 
+#include <filesystem>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace Dingo
@@ -64,6 +66,14 @@ namespace Dingo
 	struct ApplicationParams
 	{
 		ApplicationCommandLineArgs CommandLineArgs;	// Parsed command line arguments
+
+		// The folder name of the game's per-user data (Platform::GetUserDataDir): logs and crash
+		// dumps go to its logs/ folder. Empty = the executable's name.
+		std::string Name;
+		// Where Dingo.log (the last 5 runs: Dingo.1.log is the run before) and crash dumps go.
+		// Empty = GetUserDataDir(Name)/logs, since a game installed under Program Files can't
+		// write beside itself. --log-here (the working directory) and --log-dir=<path> override it.
+		std::filesystem::path LogDirectory;
 
 		WindowParams Window;		// Parameters for the application window
 		GraphicsParams Graphics;	// Parameters for the graphics context
@@ -154,6 +164,9 @@ namespace Dingo
 
 		const uint32_t GetEngineVersion() const { return DE_MAKE_VERSION(DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH); }
 		const uint32_t GetEngineBuildNumber() const { return DE_ENGINE_VERSION_BUILD; }
+
+		// ApplicationParams::Name, or the executable's name when that was empty.
+		const std::string& GetName() const { return m_Params.Name; }
 
 	protected:
 		Application(const ApplicationParams& params = {});

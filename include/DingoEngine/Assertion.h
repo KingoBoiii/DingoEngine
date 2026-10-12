@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include "Log.h"
+#include "DingoEngine/Core/FatalError.h"
 
 #if defined(DE_PLATFORM_WINDOWS)
 #define DE_DEBUG_BREAK __debugbreak()
@@ -32,7 +33,11 @@
 #define DE_ASSERT(condition, ...)
 #endif
 
-#ifdef DE_ENABLE_VERIFY
+#if defined(DE_ENABLE_VERIFY) && defined(DE_DISTRIBUTION)
+// A shipped game has no debugger to break into: a failed verify is a fatal error with a message.
+#define DE_CORE_VERIFY(condition, ...) { if(!(condition)) { ::Dingo::FatalError("Verify Failed " __VA_ARGS__); } }
+#define DE_VERIFY(condition, ...) { if(!(condition)) { ::Dingo::FatalError("Verify Failed " __VA_ARGS__); } }
+#elif defined(DE_ENABLE_VERIFY)
 #define DE_CORE_VERIFY_MESSAGE_INTERNAL(...)  ::Dingo::Log::PrintAssertionMessage(::Dingo::Log::Type::Engine, "Verify Failed " __VA_ARGS__)
 #define DE_VERIFY_MESSAGE_INTERNAL(...)  ::Dingo::Log::PrintAssertionMessage(::Dingo::Log::Type::Client, "Verify Failed " __VA_ARGS__)
 

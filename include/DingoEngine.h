@@ -7,6 +7,7 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/CursorMode.h"
+#include "DingoEngine/Core/FatalError.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/PerspectiveCamera.h"

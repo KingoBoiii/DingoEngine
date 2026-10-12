@@ -1,4 +1,5 @@
 #include "TestLayer.h"
+#include "CrashTrigger.h"
 
 #include "Tests/Renderer/StaticTriangleTest.h"
 #include "Tests/Renderer/VertexBufferTest.h"
@@ -49,6 +50,9 @@ namespace Dingo
 			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 
 		m_Renderer2D = Renderer2D::Create();
+
+		if (auto crash = Application::Get().GetCommandLineArgs().Get("crash"))
+			m_CrashKind = *crash;
 
 		// TODO: Low-level Renderer tests need off-screen pass (deferred feature)
 		// m_Tests.push_back({ "Static Triangle Test", ... });
@@ -123,6 +127,9 @@ namespace Dingo
 	{
 		// The frame command list is managed by Renderer::BeginFrame/EndFrame.
 		// No work needed here — ImGui owns the swapchain clear in this setup.
+
+		if (!m_CrashKind.empty() && ++m_CrashFrames == k_CrashFrame)
+			TriggerCrash(m_CrashKind);
 
 		if (m_CurrentTest)
 		{

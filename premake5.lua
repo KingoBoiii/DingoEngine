@@ -132,6 +132,10 @@ function copyAssimpRuntime()
             "assimp", "z", "dl", "pthread"
         }
 
+    -- The crash handler's backtraces name exported functions only.
+    filter { "system:linux", "kind:ConsoleApp or WindowedApp", "configurations:not Distribution" }
+        linkoptions { "-rdynamic" }
+
     filter {}
 end
 
