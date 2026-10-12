@@ -330,8 +330,9 @@ namespace Dingo
 		// outlive the renderer, drawing nothing. SubmitStaticBatch between BeginScene and EndScene bakes
 		// what changed since the last submission, then culls each cell's draws against the camera and
 		// the shadow views as SubmitMesh culls a mesh, and keeps the batch alive until EndScene. A cell
-		// draws after the CPU batches' draws of the same material, so two meshes meeting at exactly
-		// equal depth can resolve the other way than through SubmitMesh.
+		// draws before the CPU batches of the same material, its meshes by cell and then in the order
+		// they were added, and its materials join the scene's draw order at the submission, so two
+		// meshes meeting at exactly equal depth can resolve the other way than through SubmitMesh.
 		std::shared_ptr<StaticBatch> CreateStaticBatch(const StaticBatchParams& params = {});
 		void SubmitStaticBatch(StaticBatch& batch);
 		bool OwnsStaticBatch(const StaticBatch& batch) const;

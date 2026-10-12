@@ -277,6 +277,43 @@ Translucent meshes are never instanced (the translucent pass sorts mesh by mesh)
 ones. A custom material is instanced only when its shader is written for it; see
 [Instanced custom shaders](#instanced-custom-shaders-v10).
 
+### Static geometry (v1.0)
+
+Walls, floors and props that never move can be **baked**: set `MeshRendererComponent::Static`, and
+`RenderEntities3D` transforms the mesh into world space once, with the scene's other static meshes,
+into vertex and index buffers kept on the GPU between frames. A frame then costs a cull of each
+cell of them instead of transforming every vertex.
+
+```cpp
+auto& wall = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(boxMesh, stone));
+wall.Static = true;
+```
+
+The baked meshes are split by a 32-metre world grid into cells, each with its own buffers and one
+draw per material, shadow setting and caster groups (more when they outgrow one draw). Each draw is
+culled against the camera and every shadow view by the box around its meshes, as a single mesh is,
+and drawn into the shadows as its meshes would be. The picture is the one the same meshes draw
+without `Static` on the CPU, pixel for pixel; where they would have been instanced, within the
+instancing tolerance, since baked meshes are never instanced. The order differs: a cell draws
+before the material's other meshes, its own meshes by cell and then in the order they were baked,
+and the static materials join the scene's draw order after the moving meshes'. So two meshes meeting
+at exactly equal depth can resolve the other way.
+
+Change is allowed but costs a rebake of the cell the mesh is in: changing its mesh, colour,
+material, surface override or shadow setting (or hot-reloading its model) rebakes it quietly;
+**moving** it rebakes it and warns once, since a mesh that moves shouldn't be `Static`. Adding,
+destroying or hiding one (`Visible = false`) rebakes its cell too. A mesh with a `CullDistance`, a
+translucent or skinned-only material, a custom-shader `MaterialParams::Instancing` material, more
+vertices than one draw takes, or a non-affine transform is drawn as if `Static` were false. F4 counts
+baked meshes, their draws and the cells baked each scene (`Statistics::StaticMeshes`, `StaticDraws`,
+`StaticCellsBaked`).
+
+Outside a scene the same is `Renderer3D::CreateStaticBatch(StaticBatchParams)` and
+`SubmitStaticBatch(batch)` between `BeginScene` and `EndScene`; `StaticBatch::Add`, `Update` and
+`Remove` take a `StaticMesh` (mesh, transform, colour, material, shadows, caster groups, surface).
+A batch belongs to the renderer that made it and draws nothing on another. The meshes and materials
+it holds must outlive their entries, as they must for `SubmitMesh`. Ids are reused after `Remove`.
+
 ### Parenting (v0.7.1)
 
 `child.SetParent(parent)` makes the child's transforms **local to its parent**. In 3D its world

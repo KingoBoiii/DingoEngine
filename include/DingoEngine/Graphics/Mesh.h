@@ -68,6 +68,8 @@ namespace Dingo
 		// A model reload: the source's vertices, a new id (Jolt caches shapes by it) and no GPU copy,
 		// so the next skinned or instanced draw uploads the new vertices.
 		void Reinitialize(Mesh& source);
+		// Bumped by every Reinitialize, so a static batch walks its meshes' ids only after a reload.
+		static std::uint64_t GetReinitializeCount();
 		void Clear();
 		void ComputeBounds();
 

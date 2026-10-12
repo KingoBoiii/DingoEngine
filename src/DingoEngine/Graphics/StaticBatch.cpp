@@ -102,6 +102,7 @@ namespace Dingo::Internal
 		}
 		Cells.clear();
 		CellLookup.clear();
+		FreeCells.clear();
 		OccupiedCells = 0;
 	}
 
@@ -201,6 +202,11 @@ namespace Dingo
 	uint64_t StaticBatch::GetBakeCount() const
 	{
 		return m_Data->BakeCount;
+	}
+
+	bool StaticBatch::IsRendererAlive() const
+	{
+		return m_Data->Shared->RendererAlive;
 	}
 
 }

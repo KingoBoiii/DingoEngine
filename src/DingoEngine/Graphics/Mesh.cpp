@@ -25,6 +25,16 @@ namespace Dingo
 		return s_NextId.fetch_add(1, std::memory_order_relaxed);
 	}
 
+	namespace
+	{
+		std::atomic<std::uint64_t> s_Reinitializations{ 0 };
+	}
+
+	std::uint64_t Mesh::GetReinitializeCount()
+	{
+		return s_Reinitializations.load(std::memory_order_relaxed);
+	}
+
 	void Mesh::Reinitialize(Mesh& source)
 	{
 		m_Vertices = std::move(source.m_Vertices);
@@ -33,6 +43,7 @@ namespace Dingo
 		m_SkinJointCount = source.m_SkinJointCount;
 		ComputeBounds();
 		m_Id = AllocateId();
+		s_Reinitializations.fetch_add(1, std::memory_order_relaxed);
 		DestroyAndDelete(m_SkinVertexBuffer);
 		DestroyAndDelete(m_SkinIndexBuffer);
 		DestroyAndDelete(m_StaticVertexBuffer);

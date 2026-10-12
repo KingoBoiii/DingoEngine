@@ -324,6 +324,7 @@ namespace Dingo::UI
 		bool instancing = renderer3D.IsInstancingEnabled();
 		if (ImGui::Checkbox("Instance repeated meshes", &instancing))
 			renderer3D.SetInstancingEnabled(instancing);
+		ImGui::Text("Static     : %u baked meshes in %u draws, %u cells baked  (also counted above)", stats3D.StaticMeshes, stats3D.StaticDraws, stats3D.StaticCellsBaked);
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D lights  (most recent scene)");

@@ -98,6 +98,8 @@ namespace Dingo::Internal
 		std::vector<StaticMeshId> Loose;
 		std::vector<StaticCell> Cells;
 		std::unordered_map<glm::ivec3, uint32_t, CellCoordHash> CellLookup;
+		std::vector<uint32_t> FreeCells; // emptied slots of Cells; entries hold cell indices, so slots are reused, never erased
+		uint64_t MeshRevision = ~0ull;   // Mesh::GetReinitializeCount when the entries' mesh ids were last checked
 		uint32_t MeshCount = 0;
 		uint32_t OccupiedCells = 0;
 		uint64_t BakeCount = 0;

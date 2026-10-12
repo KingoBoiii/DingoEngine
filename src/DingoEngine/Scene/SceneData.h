@@ -11,6 +11,7 @@
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
+#include "DingoEngine/Scene/Systems/StaticGeometry.h"
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
@@ -63,6 +64,8 @@ namespace Dingo
 			AnimationSystem::EventScratch AnimationEvents;
 
 			LightSystem::ShadowProbeState ShadowProbes;
+
+			StaticGeometry StaticMeshes;
 		};
 
 	}

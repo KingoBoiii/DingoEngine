@@ -624,6 +624,13 @@ namespace Dingo
 			sun.Intensity = 1.2f;
 			sun.CastShadows = true;
 			renderer.SubmitLight(sun);
+			PointLight lamp;
+			lamp.Position = { 0.5f, 3.5f, -5.0f };
+			lamp.Color = { 0.6f, 0.8f, 1.0f };
+			lamp.Intensity = 2.0f;
+			lamp.Range = 10.0f;
+			lamp.CastShadows = true;
+			renderer.SubmitLight(lamp);
 		};
 		// Dynamic meshes with surfaces beside the batch's, so their records sit after the batch's.
 		auto dynamicMeshes = [](Renderer3D& renderer)
@@ -644,6 +651,8 @@ namespace Dingo
 			Framebuffer* direct = CreateCheckTarget(k_StaticTargetSize);
 			Framebuffer* baked = CreateCheckTarget(k_StaticTargetSize);
 			Framebuffer* updated = CreateCheckTarget(k_StaticTargetSize);
+			// Baked meshes are never instanced, so the reference is the CPU batches.
+			m_CheckRenderer->SetInstancingEnabled(false);
 			RenderCheck(direct, CheckViewProjection(), [&](Renderer3D& renderer)
 			{
 				lights(renderer);
@@ -651,6 +660,7 @@ namespace Dingo
 					renderer.SubmitMesh(renderer.GetBoxMesh(), box.Transform, box.Color, nullptr, box.Shadows, 1, 0.0f, box.Surface ? &*box.Surface : nullptr);
 				dynamicMeshes(renderer);
 			});
+			m_CheckRenderer->SetInstancingEnabled(true);
 
 			m_StaticBatch = m_CheckRenderer->CreateStaticBatch(StaticBatchParams().SetCellSize(k_CellSize));
 			m_StaticIds.clear();
@@ -674,7 +684,7 @@ namespace Dingo
 				dynamicMeshes(renderer);
 			});
 
-			Check(bakedStats.StaticMeshes == 24 && bakedStats.StaticCellsBaked == cells && cells > 4 && bakedStats.ShadowViews > 0 && bakedStats.SurfaceOverrides == 10,
+			Check(bakedStats.StaticMeshes == 24 && bakedStats.StaticCellsBaked == cells && cells > 4 && bakedStats.ShadowViews > 4 && bakedStats.SurfaceOverrides == 10,
 				std::format("a static batch bakes 24 boxes into {} cells and submits them with their surfaces ({} static, {} baked, {} shadow views, {} overrides)",
 					cells, bakedStats.StaticMeshes, bakedStats.StaticCellsBaked, bakedStats.ShadowViews, bakedStats.SurfaceOverrides));
 			Check(updatedStats.StaticCellsBaked == 1, std::format("changing one mesh's colour rebakes its cell alone ({} baked)", updatedStats.StaticCellsBaked));
@@ -721,7 +731,7 @@ namespace Dingo
 			const std::shared_ptr<StaticBatch> other = m_CheckRenderer->CreateStaticBatch();
 			Check(m_CheckRenderer->OwnsStaticBatch(*other) && !m_BatchRenderer->OwnsStaticBatch(*other), "a static batch belongs to the renderer that made it");
 			m_ForeignBatch = m_BatchRenderer->CreateStaticBatch();
-			m_ForeignBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-6.0f)));
+			m_ForeignBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(glm::scale(glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, -6.0f }), glm::vec3(4.0f))).SetColor({ 0.2f, 0.2f, 0.25f, 1.0f }));
 			const Renderer3D::Statistics foreign = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
 			{
 				renderer.SubmitStaticBatch(*m_ForeignBatch);
@@ -765,6 +775,38 @@ namespace Dingo
 				Check(differing == 0 && lit > 50, std::format("the rebaked duck draws as before ({} px differ, {} px of duck)", differing, lit));
 			});
 		});
+
+		// A bake between two scenes of a frame moves the scene's own records along the object buffer.
+		m_CheckSteps.push_back([this]
+		{
+			m_StaticBatch.reset();
+			const glm::vec4 black{ 0.0f, 0.0f, 0.0f, 1.0f };
+			auto glowing = [](const glm::vec3& color) { return SurfaceOverride().SetEmissiveColor(color).SetEmissiveStrength(0.5f); };
+			const SurfaceOverride blue = glowing({ 0.0f, 0.0f, 1.0f });
+			const SurfaceOverride red = glowing({ 1.0f, 0.0f, 0.0f });
+
+			const std::shared_ptr<StaticBatch> walls = m_CheckRenderer->CreateStaticBatch();
+			const StaticMeshId back = walls->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-8.0f)).SetColor(black));
+			Framebuffer* first = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* second = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* third = CreateCheckTarget(k_CheckTargetSize);
+			RenderCheck(first, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				renderer.SubmitStaticBatch(*walls);
+				renderer.SubmitMesh(m_Quad, WallAt(-6.0f), black, nullptr, ShadowCasting::On, 1, 0.0f, &blue);
+			});
+			walls->Update(back, StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-8.0f)).SetColor(black).SetSurface(glowing({ 0.0f, 1.0f, 0.0f })));
+			const Renderer3D::Statistics stats = RenderCheck(second, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				renderer.SubmitStaticBatch(*walls);
+				renderer.SubmitMesh(m_Quad, WallAt(-6.0f), black, nullptr, ShadowCasting::On, 1, 0.0f, &red);
+			});
+			RenderCheck(third, CheckViewProjection(), [&](Renderer3D& renderer) { renderer.SubmitStaticBatch(*walls); });
+			Check(stats.StaticCellsBaked == 1 && stats.SurfaceOverrides == 2, std::format("a static mesh given a surface between scenes rebakes ({} baked, {} overrides)", stats.StaticCellsBaked, stats.SurfaceOverrides));
+			ReadCheck(first, glm::vec3(0.0f, 0.0f, 0.5f), "a scene keeps its own surface when a later scene's bake adds a static record");
+			ReadCheck(second, glm::vec3(0.5f, 0.0f, 0.0f), "a scene's own surface reads past the static records added before it");
+			ReadCheck(third, glm::vec3(0.0f, 0.5f, 0.0f), "a baked surface override draws");
+		});
 	}
 
 	void Renderer3DBatchTest::Update(float deltaTime)
@@ -784,6 +826,9 @@ namespace Dingo
 		// The built-in sphere (~289 verts, see Renderer3D.h) is bigger than the 40-vertex
 		// batch on its own: the one case SubmitMesh must still drop.
 		m_BatchRenderer->SubmitMesh(m_BatchRenderer->GetSphereMesh(), glm::mat4(1.0f), { 1.0f, 0.0f, 0.0f, 1.0f });
+		// Baked here, so its cells are still alive when this renderer shuts down before the batch is released.
+		if (m_ForeignBatch)
+			m_BatchRenderer->SubmitStaticBatch(*m_ForeignBatch);
 
 		m_BatchRenderer->EndScene();
 

@@ -419,6 +419,13 @@ namespace Dingo
 		// Ignored with a custom material.
 		std::optional<SurfaceOverride> Surface;
 
+		// For a mesh that doesn't move: Scene::RenderEntities3D bakes it into world space once, with the
+		// scene's other static meshes, into GPU buffers kept between frames (Renderer3D::CreateStaticBatch),
+		// instead of transforming it every frame. Moving it rebakes its cell of the scene and warns once;
+		// changing its mesh, colour, material, surface or shadows (or hot-reloading the mesh) rebakes it
+		// quietly. A mesh with a CullDistance is drawn as if this were false.
+		bool Static = false;
+
 		MeshRendererComponent& SetSurface(const SurfaceOverride& surface) { Surface = surface; return *this; }
 		MeshRendererComponent& ClearSurface() { Surface.reset(); return *this; }
 

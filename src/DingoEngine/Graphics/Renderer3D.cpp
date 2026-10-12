@@ -702,7 +702,6 @@ namespace Dingo
 			}
 		}
 
-		// A static batch's ranges carry their casters' exact box from the bake.
 		for (const std::shared_ptr<StaticBatch>& batch : m_SceneStaticBatches)
 		{
 			for (const Internal::StaticCell& cell : batch->m_Data->Cells)
@@ -2586,13 +2585,17 @@ namespace Dingo
 	void Renderer3D::PrepareStaticBatch(Internal::StaticBatchData& data)
 	{
 		// A hot-reloaded mesh keeps its address and gets a new id.
-		for (StaticMeshId id = 0; id < data.Entries.size(); ++id)
+		if (data.MeshRevision != Mesh::GetReinitializeCount())
 		{
-			const Internal::StaticBatchEntry& entry = data.Entries[id];
-			if (entry.Live && !entry.Queued && entry.Desc.Mesh && entry.Desc.Mesh->GetId() != entry.MeshId)
+			data.MeshRevision = Mesh::GetReinitializeCount();
+			for (StaticMeshId id = 0; id < data.Entries.size(); ++id)
 			{
-				data.Detach(id);
-				data.MarkPending(id);
+				const Internal::StaticBatchEntry& entry = data.Entries[id];
+				if (entry.Live && !entry.Queued && entry.Desc.Mesh && entry.Desc.Mesh->GetId() != entry.MeshId)
+				{
+					data.Detach(id);
+					data.MarkPending(id);
+				}
 			}
 		}
 
@@ -2622,9 +2625,17 @@ namespace Dingo
 			}
 
 			const glm::ivec3 coord(glm::floor(centre));
-			const auto [it, inserted] = data.CellLookup.try_emplace(coord, static_cast<uint32_t>(data.Cells.size()));
+			const uint32_t slot = data.FreeCells.empty() ? static_cast<uint32_t>(data.Cells.size()) : data.FreeCells.back();
+			const auto [it, inserted] = data.CellLookup.try_emplace(coord, slot);
 			if (inserted)
-				data.Cells.emplace_back().Coord = coord;
+			{
+				if (slot == data.Cells.size())
+					data.Cells.emplace_back();
+				else
+					data.FreeCells.pop_back();
+				data.Cells[slot] = {};
+				data.Cells[slot].Coord = coord;
+			}
 			Internal::StaticCell& cell = data.Cells[it->second];
 			cell.Members.insert(std::lower_bound(cell.Members.begin(), cell.Members.end(), id), id);
 			cell.Dirty = true;
@@ -2633,11 +2644,22 @@ namespace Dingo
 		data.Pending.clear();
 
 		data.OccupiedCells = 0;
-		for (Internal::StaticCell& cell : data.Cells)
+		for (uint32_t slot = 0; slot < data.Cells.size(); ++slot)
 		{
-			if (cell.Dirty)
-				BakeStaticCell(data, cell);
-			data.OccupiedCells += cell.Members.empty() ? 0 : 1;
+			Internal::StaticCell& cell = data.Cells[slot];
+			if (!cell.Dirty)
+			{
+				data.OccupiedCells += cell.Members.empty() ? 0 : 1;
+				continue;
+			}
+			BakeStaticCell(data, cell);
+			if (cell.Members.empty())
+			{
+				data.CellLookup.erase(cell.Coord);
+				data.FreeCells.push_back(slot);
+				continue;
+			}
+			++data.OccupiedCells;
 		}
 	}
 
@@ -2663,7 +2685,6 @@ namespace Dingo
 		if (cell.Members.empty())
 			return;
 
-		// The members by material and shadow setting, each in id order, the keys in order of appearance.
 		struct Group
 		{
 			Material* Material = nullptr;
@@ -2777,9 +2798,11 @@ namespace Dingo
 			{
 				for (const Internal::StaticCellRange& range : cell.Ranges)
 				{
+					// A shader reloaded into a skinned one redirects the key to the default material, leaving
+					// this key's slot from an earlier scene.
 					const BatchKey key{ range.Material, range.Shadows, range.ShadowGroups };
 					const MaterialBatch& materialBatch = m_Batches[key];
-					if (!materialBatch.Usable)
+					if (!materialBatch.Enqueued || materialBatch.SkinnedOnly || materialBatch.Translucent || !materialBatch.Usable)
 						continue;
 
 					ChunkDraw draw{ key, range.FirstIndex, range.IndexCount };

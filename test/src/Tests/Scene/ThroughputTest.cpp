@@ -321,6 +321,7 @@ namespace Dingo
 		m_Perf = args.Get("perf").has_value();
 		if (auto instancing = args.Get("instancing"))
 			m_Instancing = *instancing != "off";
+		m_Static = args.Get("static").has_value();
 		if (auto frame = args.Get("frame"))
 			m_HeldFrame = static_cast<int64_t>(std::strtoll(std::string(*frame).c_str(), nullptr, 10));
 		if (auto frame = args.Get("cull-freeze"))
@@ -417,7 +418,7 @@ namespace Dingo
 			else
 			{
 				Mesh* mesh = placement.Prop >= 0 ? m_Props[placement.Prop] : m_UniqueMeshes[placement.Unique];
-				entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, placement.Color));
+				entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, placement.Color)).Static = m_Static;
 			}
 			m_Renderables.push_back(entity);
 		}
@@ -579,6 +580,7 @@ namespace Dingo
 		}
 		RunCullingChecks();
 		RunInstancingChecks();
+		RunStaticChecks();
 		if (m_Mode == Mode::Repeat && Application::Get().GetRenderer3D().IsInstancingEnabled())
 			Check(stats.DrawCalls <= k_MaxRepeatDraws, std::format("{} repeated props take at most {} draws ({} draws, {} meshes instanced)", m_Count, k_MaxRepeatDraws, stats.DrawCalls, stats.InstancedMeshes));
 
@@ -786,6 +788,147 @@ namespace Dingo
 		});
 	}
 
+	void ThroughputTest::SetStatic(bool isStatic)
+	{
+		for (Entity entity : m_Renderables)
+		{
+			if (entity.HasComponent<MeshRendererComponent>())
+				entity.GetComponent<MeshRendererComponent>().Static = isStatic;
+		}
+	}
+
+	Renderer3D::Statistics ThroughputTest::RenderView(Framebuffer* target, const PerspectiveCamera& camera)
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer::SetRenderTarget(target);
+		renderer.BeginScene(camera);
+		renderer.Clear(m_ClearColor);
+		m_Scene->SubmitLights(renderer);
+		m_Scene->RenderEntities3D(renderer);
+		renderer.EndScene();
+		Renderer::SetRenderTarget(previous);
+		return renderer.GetStatistics();
+	}
+
+	void ThroughputTest::RunStaticChecks()
+	{
+		if (m_Mode == Mode::Skinned)
+			return;
+
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		for (int i = 0; i < 5; ++i)
+		{
+			if (!m_StaticTargets[i])
+				m_StaticTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName("ThroughputStatic")
+					.SetWidth(k_CullCheckWidth)
+					.SetHeight(k_CullCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight));
+		PlaceCamera(camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
+
+		Entity moving;
+		const glm::mat4 viewProjection = camera.GetViewProjectionMatrix();
+		for (size_t i = 0; i < m_Renderables.size() && !moving; ++i)
+		{
+			const glm::vec4 clip = viewProjection * glm::vec4(m_Layout.Placements[i].Position, 1.0f);
+			if (clip.w > 0.0f && std::abs(clip.x) <= 0.3f * clip.w && std::abs(clip.y) <= 0.3f * clip.w)
+				moving = m_Renderables[i];
+		}
+
+		// Baked meshes are never instanced, so the comparison is against the CPU batches.
+		const bool wasInstancing = renderer.IsInstancingEnabled();
+		renderer.SetInstancingEnabled(false);
+		SetStatic(false);
+		RenderView(m_StaticTargets[0], camera);
+		SetStatic(true);
+		const Renderer3D::Statistics baked = RenderView(m_StaticTargets[1], camera);
+		const Renderer3D::Statistics again = RenderView(m_StaticTargets[1], camera);
+		Check(baked.StaticMeshes == m_Count && baked.StaticCellsBaked > 0 && again.StaticCellsBaked == 0 && again.VertexCount == 0 && again.SubmittedMeshes == m_Count,
+			std::format("the scene's static meshes bake once into {} cells and are then drawn without transforming a vertex ({} static, {} baked again, {} vertices)",
+				baked.StaticCellsBaked, baked.StaticMeshes, again.StaticCellsBaked, again.VertexCount));
+		const bool wasCulling = renderer.IsCullingEnabled();
+		renderer.SetCullingEnabled(false);
+		const Renderer3D::Statistics unculled = RenderView(m_StaticTargets[4], camera);
+		renderer.SetCullingEnabled(wasCulling);
+		Check(unculled.CulledMeshes == 0 && again.CulledMeshes > 0, std::format("static cells cull ({} culled, none with culling off)", again.CulledMeshes));
+
+		Renderer3D::Statistics moved;
+		Transform3DComponent before;
+		if (moving)
+		{
+			Transform3DComponent& transform = moving.GetComponent<Transform3DComponent>();
+			before = transform;
+			transform.Position += glm::vec3(0.35f, 0.25f, 0.0f);
+			transform.Rotation = glm::angleAxis(0.4f, glm::vec3(0.0f, 1.0f, 0.0f)) * transform.Rotation;
+			moved = RenderView(m_StaticTargets[2], camera);
+			SetStatic(false);
+			RenderView(m_StaticTargets[3], camera);
+			transform = before;
+		}
+		Check(moving && moved.StaticCellsBaked >= 1 && moved.StaticCellsBaked <= 2,
+			std::format("a static entity that moves rebakes its cell alone, or the two it moves between ({} baked)", moved.StaticCellsBaked));
+
+
+		auto images = std::make_shared<std::vector<std::vector<uint8_t>>>(5);
+		auto remaining = std::make_shared<int>(5);
+		const std::weak_ptr<int> alive = m_Alive;
+		for (int i = 0; i < 5; ++i)
+		{
+			m_StaticTargets[i]->GetAttachment(0)->ReadPixels([this, alive, images, remaining, i](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				(*images)[i] = pixels.Data;
+				if (--*remaining > 0)
+					return;
+
+				auto differing = [](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b)
+				{
+					if (a.empty() || a.size() != b.size())
+						return ~size_t(0);
+					size_t count = 0;
+					for (size_t p = 0; p < a.size(); p += 4)
+						count += std::memcmp(&a[p], &b[p], 4) != 0 ? 1 : 0;
+					return count;
+				};
+				const std::vector<std::vector<uint8_t>>& read = *images;
+				const size_t total = read[0].size() / 4;
+				Check(differing(read[0], read[1]) == 0, std::format("the view through the scene's static geometry matches it through SubmitMesh ({} of {} differ)", differing(read[0], read[1]), total));
+				Check(differing(read[2], read[3]) == 0, std::format("after a static entity moves, its rebaked cell matches SubmitMesh ({} of {} differ)", differing(read[2], read[3]), total));
+				Check(differing(read[1], read[3]) > 0 && differing(read[1], read[3]) != ~size_t(0), std::format("the moved entity changes the view ({} px)", differing(read[1], read[3])));
+				Check(differing(read[1], read[4]) == 0, std::format("culling static cells changes no pixel of the view ({} of {} differ)", differing(read[1], read[4]), total));
+			});
+		}
+
+		if (!m_Duck)
+			m_Duck = Model::LoadFromFile("assets/models/Duck/Duck.gltf");
+		Check(m_Duck && m_Duck->GetSubMeshCount() > 0, "the duck loads for the static reload check");
+		if (m_Duck && m_Duck->GetSubMeshCount() > 0)
+		{
+			SetStatic(true);
+			Entity duck = m_Scene->CreateEntity("Duck");
+			duck.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(camera.GetPosition()) + 4.0f * glm::normalize(glm::vec3(camera.GetTarget() - camera.GetPosition()))));
+			duck.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Duck->GetSubMeshes().front().MeshData, glm::vec4(0.9f, 0.8f, 0.1f, 1.0f))).Static = true;
+			const Renderer3D::Statistics added = RenderView(m_StaticTargets[3], camera);
+			const bool reloaded = m_Duck->Reload();
+			const Renderer3D::Statistics reloadedStats = RenderView(m_StaticTargets[3], camera);
+			m_Scene->DestroyEntity(duck);
+			const Renderer3D::Statistics removed = RenderView(m_StaticTargets[3], camera);
+			Check(added.StaticMeshes == m_Count + 1 && reloaded && reloadedStats.StaticCellsBaked == 1 && removed.StaticMeshes == m_Count && removed.StaticCellsBaked == 1,
+				std::format("a static entity's model hot-reloads into one rebaked cell, and destroying it rebakes it again ({} rebaked on reload, {} on destroy)",
+					reloadedStats.StaticCellsBaked, removed.StaticCellsBaked));
+		}
+
+		SetStatic(m_Static);
+		renderer.SetInstancingEnabled(wasInstancing);
+	}
+
 	void ThroughputTest::RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats)
 	{
 		m_PerfFrameMs += 1000.0 * static_cast<double>(deltaTime);
@@ -803,8 +946,8 @@ namespace Dingo
 
 		m_PerfDone = true;
 		const double frames = static_cast<double>(m_PerfFrames);
-		m_PerfResult = std::format("mode={} count={} instancing={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}",
-			ModeName(m_Mode), m_Count, m_Instancing ? "on" : "off", m_PerfFrameMs / frames, m_PerfUpdateMs / frames, m_PerfRenderEntitiesMs / frames, m_PerfEndSceneMs / frames,
+		m_PerfResult = std::format("mode={} count={} instancing={} static={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}",
+			ModeName(m_Mode), m_Count, m_Instancing ? "on" : "off", m_Static ? "on" : "off", m_PerfFrameMs / frames, m_PerfUpdateMs / frames, m_PerfRenderEntitiesMs / frames, m_PerfEndSceneMs / frames,
 			m_PerfDraws / frames, m_PerfVertices / frames, m_PerfDropped, IsLap(m_Mode) ? EstimateVisiblePercent() : 100.0f, 100.0 * m_PerfCulled / frames / m_Count);
 		for (const auto& [name, total] : m_PerfGpuMs)
 			m_PerfResult += std::format(" gpu_{}_ms={:.3f}", name, total / frames);
@@ -822,6 +965,8 @@ namespace Dingo
 		for (Framebuffer*& target : m_InstanceTargets)
 			DestroyAndDelete(target);
 		m_InstanceOffPixels.clear();
+		for (Framebuffer*& target : m_StaticTargets)
+			DestroyAndDelete(target);
 
 		m_Renderables.clear();
 		delete m_Scene;
@@ -837,6 +982,7 @@ namespace Dingo
 
 		DestroyAndDelete(m_FoxMaterial);
 		DestroyAndDelete(m_Fox);
+		DestroyAndDelete(m_Duck);
 	}
 
 	void ThroughputTest::Resize(uint32_t width, uint32_t height)

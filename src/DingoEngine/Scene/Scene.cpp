@@ -488,6 +488,7 @@ namespace Dingo
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
 
+		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
 		for (entt::entity entity : view)
 		{
@@ -495,8 +496,20 @@ namespace Dingo
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
+			if (mesh.Static && !(mesh.CullDistance > 0.0f))
+			{
+				if (!bake)
+					bake = &m_Data->StaticMeshes.Create(renderer);
+				StaticMesh baked = StaticMesh().SetMesh(mesh.Mesh).SetTransform(memo.Transform(entity, transform)).SetColor(mesh.Color)
+					.SetMaterial(mesh.Material).SetShadows(mesh.Shadows).SetShadowGroups(mesh.ShadowGroups);
+				baked.Surface = mesh.Surface;
+				m_Data->StaticMeshes.Track(*bake, entity, baked);
+				continue;
+			}
 			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance, mesh.Surface ? &*mesh.Surface : nullptr);
 		}
+		if (bake)
+			m_Data->StaticMeshes.Submit(*bake, renderer);
 
 		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
 		for (entt::entity entity : skinnedView)

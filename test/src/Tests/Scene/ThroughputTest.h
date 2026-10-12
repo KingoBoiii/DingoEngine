@@ -27,13 +27,16 @@ namespace Dingo
 	// The layout comes from the seed and the camera from the frame index, never the clock, so two
 	// runs draw the same frames. --perf logs one [PERF] line after 120 warm-up frames, the means of
 	// the next 600; time it with the test app's --no-vsync. --frame=N holds the camera where frame N puts it.
-	// --instancing=off turns Renderer3D's instancing off while the test runs.
+	// --instancing=off turns Renderer3D's instancing off while the test runs. --static sets
+	// MeshRendererComponent::Static on every mesh, so the scene draws from its baked static geometry.
 	//
 	// The first frame also draws its view twice more, with Renderer3D's culling off and on, and checks by
 	// readback that the two match; mixed and shadow must cull at least 85% of their meshes. Then twice
 	// with instancing off and on: static must match exactly, the others within the instancing tolerance
 	// (no channel off by more than 2/255, at most 0.1% of pixels off, no geometry missing or added), and
-	// repeat must take at most 15 draws.
+	// repeat must take at most 15 draws. Then, with instancing off, the view through the scene's static
+	// geometry and without it must match exactly, again after one entity in view moves (its cell alone
+	// rebaking), and a hot-reloaded model's static entity must rebake.
 	class ThroughputTest : public GraphicsTest
 	{
 	public:
@@ -84,6 +87,9 @@ namespace Dingo
 		void RunChecks(const Renderer3D::Statistics& stats);
 		void RunCullingChecks();
 		void RunInstancingChecks();
+		void RunStaticChecks();
+		void SetStatic(bool isStatic);
+		Renderer3D::Statistics RenderView(Framebuffer* target, const PerspectiveCamera& camera);
 		void RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats);
 
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
@@ -97,6 +103,7 @@ namespace Dingo
 		bool     m_Perf = false;
 		bool     m_Instancing = true;     // --instancing=off batches every mesh on the CPU, the forced-CPU baseline
 		bool     m_WasInstancing = true;
+		bool     m_Static = false;         // --static
 		bool     m_ArgsRead = false;
 		int64_t  m_HeldFrame = -1; // --frame=N: the camera stays where frame N puts it
 		int64_t  m_CullFreezeFrame = -1; // --cull-freeze=N: culling keeps frame N's view while the camera flies on
@@ -123,6 +130,8 @@ namespace Dingo
 		std::vector<uint8_t> m_CullOffPixels;
 		Framebuffer* m_InstanceTargets[2] = {}; // instancing off, on
 		std::vector<uint8_t> m_InstanceOffPixels;
+		Framebuffer* m_StaticTargets[5] = {}; // dynamic, static, moved static, moved dynamic, static with culling off
+		Model* m_Duck = nullptr;
 		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		double m_RollingFrameMs = 0.0;
 		double m_RollingRenderMs = 0.0;

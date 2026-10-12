@@ -56,11 +56,13 @@ namespace Dingo
 	// Meshes that don't move, transformed into world space once and kept on the GPU, so a frame
 	// submitting them costs a cull of each cell instead of transforming every vertex
 	// (Renderer3D::CreateStaticBatch, Renderer3D::SubmitStaticBatch). The picture is the one SubmitMesh
-	// draws for the same meshes. A change (Add, Update, Remove, or a mesh whose Mesh::GetId changed, as
-	// a hot reload does) rebakes only the cells it touches, at the next submission. Meshes and
-	// materials must outlive their entries. Meshes the batch can't bake, those of a translucent,
-	// skinned-only or MaterialParams::Instancing material, larger than one draw or with a non-affine
-	// transform, are submitted through SubmitMesh every time instead.
+	// draws for the same meshes batched on the CPU (instanced, within the instancing tolerance). A
+	// change (Add, Update, Remove, or a mesh whose Mesh::GetId changed, as a hot reload does) rebakes
+	// only the cells it touches, at the next submission. Meshes and materials must outlive their
+	// entries. Meshes the batch can't bake, those of a translucent, skinned-only or custom-shader
+	// MaterialParams::Instancing material, larger than one draw or with a non-affine transform, are
+	// submitted through SubmitMesh every time instead. An entry with a null or empty mesh counts but
+	// draws nothing. Ids are reused after Remove and Clear, so a removed id can name a later mesh.
 	class StaticBatch : public std::enable_shared_from_this<StaticBatch>
 	{
 	public:
@@ -73,6 +75,7 @@ namespace Dingo
 		bool Update(StaticMeshId id, const StaticMesh& mesh);
 		bool Remove(StaticMeshId id);
 		void Clear();
+		// Valid until the next Add.
 		const StaticMesh* Get(StaticMeshId id) const;
 
 		uint32_t GetMeshCount() const;
@@ -80,6 +83,8 @@ namespace Dingo
 		uint32_t GetCellCount() const;
 		// Cells baked since the batch was made, for tooling and tests.
 		uint64_t GetBakeCount() const;
+		// False once the renderer that made it has shut down: it draws nothing anywhere.
+		bool IsRendererAlive() const;
 
 	private:
 		explicit StaticBatch(std::unique_ptr<Internal::StaticBatchData> data);
