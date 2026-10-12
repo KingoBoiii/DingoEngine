@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/EventsFile.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
@@ -1238,94 +1239,6 @@ namespace Dingo
 		return nullptr;
 	}
 
-	namespace
-	{
-
-		// Splits on whitespace up to a `#`; a double-quoted token may hold spaces. False on an
-		// unclosed quote.
-		bool TokenizeEventLine(std::string_view line, std::vector<std::string>& tokens)
-		{
-			tokens.clear();
-			size_t i = 0;
-			while (i < line.size())
-			{
-				if (std::isspace(static_cast<unsigned char>(line[i])))
-				{
-					i++;
-					continue;
-				}
-				if (line[i] == '#')
-					break;
-
-				if (line[i] == '"')
-				{
-					const size_t close = line.find('"', i + 1);
-					if (close == std::string_view::npos)
-						return false;
-					tokens.emplace_back(line.substr(i + 1, close - i - 1));
-					i = close + 1;
-					continue;
-				}
-
-				// A quote inside a token quotes that part of it: a payload's key="value with spaces".
-				std::string& token = tokens.emplace_back();
-				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
-				{
-					if (line[i] != '"')
-					{
-						token += line[i++];
-						continue;
-					}
-
-					const size_t close = line.find('"', i + 1);
-					if (close == std::string_view::npos)
-						return false;
-					token += line.substr(i + 1, close - i - 1);
-					i = close + 1;
-				}
-			}
-			return true;
-		}
-
-		// Payload tokens back into AnimationEventPayload's text, a value with a space quoted again.
-		std::string JoinPayload(std::span<const std::string> tokens)
-		{
-			std::string payload;
-			for (const std::string& token : tokens)
-			{
-				if (!payload.empty())
-					payload += ' ';
-
-				const size_t equals = token.find('=');
-				const bool spaced = std::any_of(token.begin(), token.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); });
-				if (!spaced)
-				{
-					payload += token;
-					continue;
-				}
-				if (equals == std::string::npos)
-				{
-					payload += '"';
-					payload += token;
-					payload += '"';
-					continue;
-				}
-				payload += token.substr(0, equals + 1);
-				payload += '"';
-				payload += token.substr(equals + 1);
-				payload += '"';
-			}
-			return payload;
-		}
-
-		bool ParseSeconds(std::string_view text, float& value)
-		{
-			const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-			return error == std::errc() && end == text.data() + text.size() && std::isfinite(value);
-		}
-
-	}
-
 	bool Model::LoadEvents(const std::filesystem::path& filepath)
 	{
 		std::ifstream file(filepath);
@@ -1337,58 +1250,49 @@ namespace Dingo
 
 		const std::string fileName = filepath.filename().string();
 		std::string line;
-		std::vector<std::string> tokens;
 		std::vector<AnimationClip*> added;
 		for (uint32_t number = 1; std::getline(file, line); ++number)
 		{
 			if (number == 1 && line.starts_with("\xEF\xBB\xBF"))
 				line.erase(0, 3);
 
-			if (!TokenizeEventLine(line, tokens))
+			Internal::EventsLine parsed = Internal::ParseEventsLine(line);
+			switch (parsed.Status)
 			{
-				DE_CORE_WARN("{} line {}: an unclosed quote; line skipped", fileName, number);
-				continue;
-			}
-			if (tokens.empty())
-				continue;
-			if (tokens.size() < 3)
-			{
-				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event> [key=value...]` or `<clip> <begin>..<end> <event> [key=value...]`; line skipped", fileName, number);
-				continue;
+				case Internal::EventsLine::Result::Empty:
+					continue;
+				case Internal::EventsLine::Result::UnclosedQuote:
+					DE_CORE_WARN("{} line {}: an unclosed quote; line skipped", fileName, number);
+					continue;
+				case Internal::EventsLine::Result::TooFewTokens:
+					DE_CORE_WARN("{} line {}: expected `<clip> <time> <event> [key=value...]` or `<clip> <begin>..<end> <event> [key=value...]`; line skipped", fileName, number);
+					continue;
+				default:
+					break;
 			}
 
-			AnimationClip* clip = FindAnimation(tokens[0]);
+			AnimationClip* clip = FindAnimation(parsed.Clip);
 			if (!clip)
 			{
-				DE_CORE_WARN("{} line {}: the model has no clip '{}'; line skipped", fileName, number, tokens[0]);
+				DE_CORE_WARN("{} line {}: the model has no clip '{}'; line skipped", fileName, number, parsed.Clip);
 				continue;
 			}
 
-			const std::string_view time = tokens[1];
-			const size_t dots = time.find("..");
-			float begin = 0.0f;
-			float end = 0.0f;
-			const bool parsed = dots == std::string_view::npos
-				? ParseSeconds(time, begin)
-				: ParseSeconds(time.substr(0, dots), begin) && ParseSeconds(time.substr(dots + 2), end);
-			if (!parsed)
+			if (parsed.Status == Internal::EventsLine::Result::BadTime)
 			{
-				DE_CORE_WARN("{} line {}: '{}' isn't a time in seconds or a <begin>..<end> range; line skipped", fileName, number, tokens[1]);
+				DE_CORE_WARN("{} line {}: '{}' isn't a time in seconds or a <begin>..<end> range; line skipped", fileName, number, parsed.Time);
 				continue;
 			}
-
-			if (dots != std::string_view::npos && end < begin)
+			if (parsed.Status == Internal::EventsLine::Result::ReversedRange)
 			{
-				DE_CORE_WARN("{} line {}: the range '{}' ends before it begins (a range can't wrap past the clip's end); line skipped", fileName, number, tokens[1]);
+				DE_CORE_WARN("{} line {}: the range '{}' ends before it begins (a range can't wrap past the clip's end); line skipped", fileName, number, parsed.Time);
 				continue;
 			}
 
-			if (begin < 0.0f || begin > clip->GetDuration() || (dots != std::string_view::npos && end > clip->GetDuration()))
-				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, tokens[1], tokens[0], clip->GetDuration());
+			if (parsed.Begin < 0.0f || parsed.Begin > clip->GetDuration() || (parsed.Range && parsed.End > clip->GetDuration()))
+				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, parsed.Time, parsed.Clip, clip->GetDuration());
 
-			std::string payload = JoinPayload(std::span<const std::string>(tokens).subspan(3));
-			const bool range = dots != std::string_view::npos;
-			clip->AppendEvent(begin, range ? end : begin, range, std::move(tokens[2]), std::move(payload));
+			clip->AppendEvent(parsed.Begin, parsed.End, parsed.Range, std::move(parsed.Name), std::move(parsed.Payload));
 			if (std::find(added.begin(), added.end(), clip) == added.end())
 				added.push_back(clip);
 		}

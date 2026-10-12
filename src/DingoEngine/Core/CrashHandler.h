@@ -7,6 +7,7 @@
 // ended on first. The handlers write with write(2)/WriteFile from buffers prepared at Install, and
 // flush spdlog first only when the crashing thread isn't inside it (its mutex would deadlock).
 
+#include <cstdint>
 #include <filesystem>
 #include <string_view>
 

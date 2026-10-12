@@ -52,6 +52,7 @@ Intermediates/
 /Makefile
 /*.make
 /test/Makefile
+/test/UnitTests/Makefile
 /examples/*/Makefile
 
 # assimp built from source on Linux (LINUX-SUPPORT.md, Appendix A)

@@ -31,6 +31,7 @@ namespace Dingo
 	{
 		class FullscreenShader;
 		class ParticleRenderer;
+		class ShadowAtlasAllocator;
 		class SkinnedVisibility;
 		class TextureReadback;
 		struct StaticBatchShared;
@@ -1107,9 +1108,8 @@ namespace Dingo
 		};
 		static_assert(sizeof(ShadowViewData) == 96, "ShadowViews must match the std140 block in Renderer3D_Shadow.glsl");
 
-		class ShadowAtlasAllocator;
-		bool PrepareCascades(ShadowAtlasAllocator& allocator);
-		void PrepareLocalShadows(ShadowAtlasAllocator& allocator);
+		bool PrepareCascades(Internal::ShadowAtlasAllocator& allocator);
+		void PrepareLocalShadows(Internal::ShadowAtlasAllocator& allocator);
 		// Fills tile m_ShadowViewCount from a view-projection and the atlas square it renders into.
 		void AddShadowTile(const glm::mat4& viewProjection, const glm::uvec2& corner, uint32_t size, const glm::vec4& params, uint32_t casterGroups);
 

@@ -119,6 +119,31 @@
             }
         },
         {
+            "label": "Build UnitTests Debug",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/test/UnitTests/Dingo-UnitTests.vcxproj",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug Dingo-UnitTests",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
+        },
+        {
             "label": "Build FlappyBird Debug",
             "type": "shell",
             "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",

@@ -427,6 +427,7 @@ group "Engine"
 group ""
 
 include "test"
+include "test/UnitTests"
 
 group "Examples"
     include "examples/ArenaShooter"

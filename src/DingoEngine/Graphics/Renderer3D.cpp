@@ -5,6 +5,7 @@
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
+#include "DingoEngine/Graphics/ShadowAtlasAllocator.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/SkinnedVisibility.h"
@@ -183,48 +184,6 @@ namespace
 
 namespace Dingo
 {
-
-	// Square power-of-two tiles of a square atlas: each takes the smallest free square that holds it,
-	// split in four until it fits.
-	class Renderer3D::ShadowAtlasAllocator
-	{
-	public:
-		explicit ShadowAtlasAllocator(uint32_t size) { m_Free.push_back({ 0, 0, size }); }
-
-		bool Allocate(uint32_t size, glm::uvec2& corner)
-		{
-			int best = -1;
-			for (int i = 0; i < static_cast<int>(m_Free.size()); ++i)
-			{
-				if (m_Free[i].Size >= size && (best < 0 || m_Free[i].Size < m_Free[best].Size))
-					best = i;
-			}
-			if (best < 0)
-				return false;
-
-			Square square = m_Free[best];
-			m_Free.erase(m_Free.begin() + best);
-			while (square.Size > size)
-			{
-				const uint32_t half = square.Size / 2;
-				m_Free.push_back({ square.X + half, square.Y, half });
-				m_Free.push_back({ square.X, square.Y + half, half });
-				m_Free.push_back({ square.X + half, square.Y + half, half });
-				square.Size = half;
-			}
-			corner = { square.X, square.Y };
-			return true;
-		}
-
-	private:
-		struct Square
-		{
-			uint32_t X = 0;
-			uint32_t Y = 0;
-			uint32_t Size = 0;
-		};
-		std::vector<Square> m_Free;
-	};
 
 	Renderer3D* Renderer3D::Create(const Renderer3DParams& params)
 	{
@@ -3088,7 +3047,7 @@ namespace Dingo
 		}
 
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
-		ShadowAtlasAllocator allocator(settings.AtlasSize);
+		Internal::ShadowAtlasAllocator allocator(settings.AtlasSize);
 		const bool cascades = m_ShadowLight >= 0 && PrepareCascades(allocator);
 		PrepareLocalShadows(allocator);
 		if (m_ShadowViewCount == 0)
@@ -3117,7 +3076,7 @@ namespace Dingo
 		++m_ShadowViewCount;
 	}
 
-	bool Renderer3D::PrepareCascades(ShadowAtlasAllocator& allocator)
+	bool Renderer3D::PrepareCascades(Internal::ShadowAtlasAllocator& allocator)
 	{
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
 		const glm::mat4 inverse = glm::inverse(m_CameraData.ViewProjection);
@@ -3233,7 +3192,7 @@ namespace Dingo
 		return true;
 	}
 
-	void Renderer3D::PrepareLocalShadows(ShadowAtlasAllocator& allocator)
+	void Renderer3D::PrepareLocalShadows(Internal::ShadowAtlasAllocator& allocator)
 	{
 		// Tiers are remembered by submission index, which only names the same light while the scene
 		// submits the same lights in the same order, and per scene of the frame, so a main view and a
