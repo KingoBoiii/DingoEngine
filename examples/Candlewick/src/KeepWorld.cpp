@@ -215,7 +215,9 @@ namespace Dingo
 		transform.Position = center;
 		transform.Scale = size;
 
-		entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_BoxMesh, color)).SetSurface(surface);
+		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_BoxMesh, color));
+		renderer.SetSurface(surface);
+		renderer.Static = true;
 		return entity;
 	}
 

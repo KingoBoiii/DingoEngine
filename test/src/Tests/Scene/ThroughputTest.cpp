@@ -578,8 +578,11 @@ namespace Dingo
 		{
 			Check(stats.SubmittedMeshes == m_Count, std::format("every entity's mesh reaches a batch ({} of {})", stats.SubmittedMeshes, m_Count));
 		}
+		// Baked cells cull by range and never instance; RunStaticChecks holds them to these pictures.
+		SetStatic(false);
 		RunCullingChecks();
 		RunInstancingChecks();
+		SetStatic(m_Static);
 		RunStaticChecks();
 		if (m_Mode == Mode::Repeat && Application::Get().GetRenderer3D().IsInstancingEnabled())
 			Check(stats.DrawCalls <= k_MaxRepeatDraws, std::format("{} repeated props take at most {} draws ({} draws, {} meshes instanced)", m_Count, k_MaxRepeatDraws, stats.DrawCalls, stats.InstancedMeshes));
@@ -832,13 +835,18 @@ namespace Dingo
 		camera.SetAspectRatio(static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight));
 		PlaceCamera(camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
 
+		// The nearest one, since a farther one can be hidden behind others and move without a pixel changing.
 		Entity moving;
+		float movingDepth = (std::numeric_limits<float>::max)();
 		const glm::mat4 viewProjection = camera.GetViewProjectionMatrix();
-		for (size_t i = 0; i < m_Renderables.size() && !moving; ++i)
+		for (size_t i = 0; i < m_Renderables.size(); ++i)
 		{
 			const glm::vec4 clip = viewProjection * glm::vec4(m_Layout.Placements[i].Position, 1.0f);
-			if (clip.w > 0.0f && std::abs(clip.x) <= 0.3f * clip.w && std::abs(clip.y) <= 0.3f * clip.w)
+			if (clip.w > 2.0f && clip.w < movingDepth && std::abs(clip.x) <= 0.3f * clip.w && std::abs(clip.y) <= 0.3f * clip.w)
+			{
 				moving = m_Renderables[i];
+				movingDepth = clip.w;
+			}
 		}
 
 		// Baked meshes are never instanced, so the comparison is against the CPU batches.
