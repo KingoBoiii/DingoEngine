@@ -1,0 +1,5 @@
+# LeakSanitizer suppressions for the Debug-ASan smoke test (LSAN_OPTIONS=suppressions=<this file>).
+# Only libraries outside the engine: Mesa's swap-chain creation and GLFW's X11 teardown leak through
+# libxcb (LINUX-SUPPORT.md, "LeakSanitizer").
+leak:libxcb.so
+leak:libX11.so

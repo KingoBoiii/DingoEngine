@@ -3,6 +3,7 @@ name: Build master branch
 on:
   push:
     branches: [ "master" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -90,6 +91,19 @@ jobs:
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+
+    # GitHub's Windows runners have no GPU: D3D11 and D3D12 run on WARP. Checks only, never timings.
+    - name: Checks on WARP
+      if: matrix.build-configuration == 'Release' && !matrix.profile
+      run: .\scripts\ci\windows-smoke-test.ps1 -Config Release -Tournament
+
+    - name: Upload smoke-test logs
+      if: always() && matrix.build-configuration == 'Release' && !matrix.profile
+      uses: actions/upload-artifact@v4
+      with:
+        name: smoke-test-logs-windows-Release
+        path: build/smoke/
+        if-no-files-found: ignore
 
     # Ship the self-contained lib (engine + all vendor libs merged by the
     # lib.exe post-build step) instead of the engine-only lib.

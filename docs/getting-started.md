@@ -219,7 +219,9 @@ time.
 - Windows: put `assimp-vc145-mt[d].dll` next to your executable.
 - Run with the **working directory set to wherever your `assets/` folder lives** —
   the engine resolves relative asset paths (textures, fonts) from the current
-  directory and writes its log file `Dingo.log` there.
+  directory. Its log file `Dingo.log` goes to the game's per-user folder
+  (`%LOCALAPPDATA%\<name>\logs`, `~/.local/share/<name>/logs`), or to the working
+  directory with `--log-here`: see [Logs and crashes](application-and-layers.md#logs-and-crashes).
 
 ---
 

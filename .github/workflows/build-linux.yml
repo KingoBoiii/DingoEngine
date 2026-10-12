@@ -3,6 +3,7 @@ name: Build Linux
 on:
   push:
     branches: [ "master" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build-configuration: [Debug, Release, Distribution]
+        build-configuration: [Debug, Debug-ASan, Release, Distribution]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -31,6 +32,7 @@ jobs:
       run: make -j"$(nproc)" config="$(echo '${{ matrix.build-configuration }}' | tr '[:upper:]' '[:lower:]')"
 
     - name: Upload static library artifact
+      if: matrix.build-configuration != 'Debug-ASan'
       uses: actions/upload-artifact@v4
       with:
         name: dingo-engine-linux-${{ matrix.build-configuration }}
@@ -73,7 +75,14 @@ jobs:
         compression-level: 0
         retention-days: 30
 
+    # Release adds Marionette's tournament; Debug-ASan checks for leaks too, past the known ones of
+    # Mesa and libxcb, and gives its slower runs longer.
     - name: Smoke test
+      env:
+        SMOKE_TOURNAMENT: ${{ matrix.build-configuration == 'Release' && '1' || '0' }}
+        SMOKE_SECONDS: ${{ matrix.build-configuration == 'Debug-ASan' && '45' || '20' }}
+        ASAN_OPTIONS: ${{ matrix.build-configuration == 'Debug-ASan' && 'detect_leaks=1' || 'detect_leaks=0' }}
+        LSAN_OPTIONS: suppressions=${{ github.workspace }}/scripts/ci/lsan.supp:print_suppressions=0
       run: xvfb-run -a -s "-screen 0 1920x1080x24" scripts/ci/linux-smoke-test.sh ${{ matrix.build-configuration }}
 
     - name: Upload smoke-test logs
