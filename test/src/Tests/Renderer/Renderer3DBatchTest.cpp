@@ -99,6 +99,25 @@ void main()
 }
 )";
 
+	uint32_t CountDiffering(const Dingo::TexturePixels& a, const Dingo::TexturePixels& b, float& worst)
+	{
+		uint32_t differing = 0;
+		worst = 0.0f;
+		if (a.Width != b.Width || a.Height != b.Height)
+			return ~0u;
+		for (uint32_t y = 0; y < a.Height; ++y)
+		{
+			for (uint32_t x = 0; x < a.Width; ++x)
+			{
+				const glm::vec4 delta = glm::abs(a.GetPixel(x, y) - b.GetPixel(x, y));
+				const float largest = (std::max)((std::max)(delta.r, delta.g), (std::max)(delta.b, delta.a));
+				worst = (std::max)(worst, largest);
+				differing += largest > 0.0f ? 1 : 0;
+			}
+		}
+		return differing;
+	}
+
 	std::string Counts(const Dingo::Renderer3D::Statistics& stats)
 	{
 		return std::format("translucent {} meshes in {} draws, {} draw calls, {} submitted, {} skinned",
@@ -158,6 +177,7 @@ namespace Dingo
 		BuildTranslucentChecks();
 		BuildSurfaceChecks();
 		BuildInstancingChecks();
+		BuildStaticChecks();
 
 		m_ShowcaseAlpha = -1.0f;
 		if (auto alpha = Application::Get().GetCommandLineArgs().Get("batch-alpha"); alpha && !alpha->empty())
@@ -388,22 +408,7 @@ namespace Dingo
 					if (images->size() < 3)
 						return;
 
-					auto compare = [](const TexturePixels& a, const TexturePixels& b, float& worst)
-					{
-						uint32_t differing = 0;
-						worst = 0.0f;
-						for (uint32_t y = 0; y < a.Height; ++y)
-						{
-							for (uint32_t x = 0; x < a.Width; ++x)
-							{
-								const glm::vec4 delta = glm::abs(a.GetPixel(x, y) - b.GetPixel(x, y));
-								const float largest = (std::max)((std::max)(delta.r, delta.g), (std::max)(delta.b, delta.a));
-								worst = (std::max)(worst, largest);
-								differing += largest > 0.0f ? 1 : 0;
-							}
-						}
-						return differing;
-					};
+					auto compare = CountDiffering;
 					const std::vector<TexturePixels>& read = *images;
 					const bool sized = read[0].Width == k_SurfaceTargetSize && read[1].Width == k_SurfaceTargetSize && read[2].Width == k_SurfaceTargetSize;
 					float worst = 0.0f;
@@ -561,6 +566,207 @@ namespace Dingo
 		m_CheckRenderer->EndScene();
 	}
 
+	void Renderer3DBatchTest::ReadAll(std::vector<Framebuffer*> targets, std::function<void(const std::vector<TexturePixels>&)> done)
+	{
+		auto images = std::make_shared<std::vector<TexturePixels>>(targets.size());
+		auto remaining = std::make_shared<size_t>(targets.size());
+		const std::weak_ptr<int> alive = m_Alive;
+		for (size_t i = 0; i < targets.size(); ++i)
+		{
+			targets[i]->GetAttachment(0)->ReadPixels([alive, images, remaining, i, done](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				(*images)[i] = pixels;
+				if (--*remaining == 0)
+					done(*images);
+			});
+		}
+	}
+
+	void Renderer3DBatchTest::BuildStaticChecks()
+	{
+		constexpr uint32_t k_StaticTargetSize = 128;
+		constexpr float k_CellSize = 2.0f;
+
+		// Boxes over several cells of a 2-unit grid, every third with its own surface, one only casting
+		// and one casting nothing, in front of a wall that takes their shadows; a sun that casts.
+		struct Placed
+		{
+			glm::mat4 Transform;
+			glm::vec4 Color;
+			ShadowCasting Shadows;
+			std::optional<SurfaceOverride> Surface;
+		};
+		auto staticScene = std::make_shared<std::vector<Placed>>();
+		for (uint32_t i = 0; i < 24; ++i)
+		{
+			const float x = static_cast<float>(i % 6) * 1.3f - 3.2f;
+			const float y = static_cast<float>(i / 6) * 1.1f - 1.8f;
+			const float z = -6.0f - static_cast<float>((i * 7) % 5) * 0.9f;
+			const glm::mat4 placed = glm::rotate(glm::translate(glm::mat4(1.0f), { x, y, z }), glm::radians(17.0f * static_cast<float>(i)), glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f)));
+			Placed box{ glm::scale(placed, glm::vec3(0.7f + 0.03f * static_cast<float>(i % 4))), glm::vec4(0.2f + 0.03f * static_cast<float>(i), 0.5f, 0.8f - 0.02f * static_cast<float>(i), 1.0f), ShadowCasting::On, std::nullopt };
+			if (i % 3 == 0)
+				box.Surface = k_Surfaces[i % k_SurfaceCount];
+			if (i == 7)
+				box.Shadows = ShadowCasting::ShadowsOnly;
+			if (i == 11)
+				box.Shadows = ShadowCasting::Off;
+			staticScene->push_back(box);
+		}
+
+		auto lights = [](Renderer3D& renderer)
+		{
+			renderer.SetAmbientLight(glm::vec3(1.0f), 0.3f);
+			DirectionalLight sun;
+			sun.Direction = { -0.3f, -0.6f, -1.0f };
+			sun.Color = { 1.0f, 0.95f, 0.9f };
+			sun.Intensity = 1.2f;
+			sun.CastShadows = true;
+			renderer.SubmitLight(sun);
+		};
+		// Dynamic meshes with surfaces beside the batch's, so their records sit after the batch's.
+		auto dynamicMeshes = [](Renderer3D& renderer)
+		{
+			renderer.SubmitMesh(renderer.GetBoxMesh(), glm::translate(glm::mat4(1.0f), { 2.5f, 2.2f, -7.0f }), glm::vec4(0.9f, 0.9f, 0.2f, 1.0f), nullptr, ShadowCasting::On, 1, 0.0f, &k_Surfaces[0]);
+			renderer.SubmitMesh(renderer.GetSphereMesh(), glm::translate(glm::mat4(1.0f), { -2.5f, 2.2f, -7.0f }), glm::vec4(0.3f, 0.9f, 0.4f, 1.0f), nullptr, ShadowCasting::On, 1, 0.0f, &k_Surfaces[2]);
+			renderer.SubmitMesh(renderer.GetBoxMesh(), WallAt(-12.0f), glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
+		};
+		auto describe = [](const Placed& box, Mesh* mesh)
+		{
+			StaticMesh desc = StaticMesh().SetMesh(mesh).SetTransform(box.Transform).SetColor(box.Color).SetShadows(box.Shadows);
+			desc.Surface = box.Surface;
+			return desc;
+		};
+
+		m_CheckSteps.push_back([this, staticScene, lights, dynamicMeshes, describe, k_StaticTargetSize, k_CellSize]
+		{
+			Framebuffer* direct = CreateCheckTarget(k_StaticTargetSize);
+			Framebuffer* baked = CreateCheckTarget(k_StaticTargetSize);
+			Framebuffer* updated = CreateCheckTarget(k_StaticTargetSize);
+			RenderCheck(direct, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				for (const Placed& box : *staticScene)
+					renderer.SubmitMesh(renderer.GetBoxMesh(), box.Transform, box.Color, nullptr, box.Shadows, 1, 0.0f, box.Surface ? &*box.Surface : nullptr);
+				dynamicMeshes(renderer);
+			});
+
+			m_StaticBatch = m_CheckRenderer->CreateStaticBatch(StaticBatchParams().SetCellSize(k_CellSize));
+			m_StaticIds.clear();
+			for (const Placed& box : *staticScene)
+				m_StaticIds.push_back(m_StaticBatch->Add(describe(box, m_CheckRenderer->GetBoxMesh())));
+			const Renderer3D::Statistics bakedStats = RenderCheck(baked, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				renderer.SubmitStaticBatch(*m_StaticBatch);
+				dynamicMeshes(renderer);
+			});
+			const uint32_t cells = m_StaticBatch->GetCellCount();
+
+			StaticMesh recoloured = *m_StaticBatch->Get(m_StaticIds[5]);
+			recoloured.Color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+			m_StaticBatch->Update(m_StaticIds[5], recoloured);
+			const Renderer3D::Statistics updatedStats = RenderCheck(updated, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				renderer.SubmitStaticBatch(*m_StaticBatch);
+				dynamicMeshes(renderer);
+			});
+
+			Check(bakedStats.StaticMeshes == 24 && bakedStats.StaticCellsBaked == cells && cells > 4 && bakedStats.ShadowViews > 0 && bakedStats.SurfaceOverrides == 10,
+				std::format("a static batch bakes 24 boxes into {} cells and submits them with their surfaces ({} static, {} baked, {} shadow views, {} overrides)",
+					cells, bakedStats.StaticMeshes, bakedStats.StaticCellsBaked, bakedStats.ShadowViews, bakedStats.SurfaceOverrides));
+			Check(updatedStats.StaticCellsBaked == 1, std::format("changing one mesh's colour rebakes its cell alone ({} baked)", updatedStats.StaticCellsBaked));
+			ReadAll({ direct, baked, updated }, [this](const std::vector<TexturePixels>& images)
+			{
+				float worst = 0.0f;
+				float changedWorst = 0.0f;
+				const uint32_t differing = CountDiffering(images[0], images[1], worst);
+				const uint32_t changed = CountDiffering(images[1], images[2], changedWorst);
+				Check(differing == 0,
+					std::format("a lit, shadowed scene through a static batch matches it through SubmitMesh ({} px differ, by up to {:.0f}/255)", differing, worst * 255.0f));
+				Check(changed > 0 && changed != ~0u, std::format("a rebaked cell draws its mesh's new colour ({} px changed)", changed));
+			});
+		});
+
+		m_CheckSteps.push_back([this, lights, k_StaticTargetSize]
+		{
+			if (!m_StaticBatch)
+				return;
+			const Renderer3D::Statistics again = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				renderer.SubmitStaticBatch(*m_StaticBatch);
+			});
+			Check(again.StaticCellsBaked == 0 && again.StaticMeshes == 24 && again.VertexCount == 0,
+				std::format("a batch submitted again unchanged bakes nothing and transforms no vertex ({} baked, {} static, {} vertices)", again.StaticCellsBaked, again.StaticMeshes, again.VertexCount));
+
+			m_StaticBatch->Remove(m_StaticIds[0]);
+			const StaticMeshId far = m_StaticBatch->Add(StaticMesh().SetMesh(m_CheckRenderer->GetBoxMesh()).SetTransform(glm::translate(glm::mat4(1.0f), { 200.0f, 0.0f, -7.0f })));
+			const StaticMeshId glass = m_StaticBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-5.5f)).SetColor(k_HalfGreen).SetMaterial(m_TranslucentA));
+			const Renderer3D::Statistics changed = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				lights(renderer);
+				renderer.SubmitStaticBatch(*m_StaticBatch);
+			});
+			Check(changed.StaticMeshes == 24 && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= 1,
+				std::format("removing a mesh and adding one far off screen rebakes two cells, and the far one is culled ({} static, {} baked, {} culled)",
+					changed.StaticMeshes, changed.StaticCellsBaked, changed.CulledMeshes));
+			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == 25,
+				std::format("a translucent mesh in a static batch draws in the translucent pass ({} translucent, {} submitted)", changed.TranslucentMeshes, changed.SubmittedMeshes));
+			m_StaticBatch->Remove(far);
+			m_StaticBatch->Remove(glass);
+
+			const std::shared_ptr<StaticBatch> other = m_CheckRenderer->CreateStaticBatch();
+			Check(m_CheckRenderer->OwnsStaticBatch(*other) && !m_BatchRenderer->OwnsStaticBatch(*other), "a static batch belongs to the renderer that made it");
+			m_ForeignBatch = m_BatchRenderer->CreateStaticBatch();
+			m_ForeignBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-6.0f)));
+			const Renderer3D::Statistics foreign = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				renderer.SubmitStaticBatch(*m_ForeignBatch);
+			});
+			Check(foreign.StaticMeshes == 0 && foreign.DrawCalls == 0, std::format("another renderer's static batch draws nothing ({} draws)", foreign.DrawCalls));
+		});
+
+		// A hot reload gives the duck's mesh a new id with the same vertices: its cell rebakes and the
+		// picture stays.
+		m_CheckSteps.push_back([this, lights, k_StaticTargetSize]
+		{
+			m_Duck = Model::LoadFromFile("models/Duck/Duck.gltf");
+			Check(m_Duck && m_Duck->GetSubMeshCount() > 0, "the duck loads for the static batch's reload check");
+			if (!m_Duck || m_Duck->GetSubMeshCount() == 0)
+				return;
+
+			const Mesh* first = m_Duck->GetSubMeshes().front().MeshData;
+			const glm::vec3 size = first->GetBoundsMax() - first->GetBoundsMin();
+			const float scale = 3.0f / (std::max)({ size.x, size.y, size.z, 1e-3f });
+			const glm::mat4 placed = glm::translate(glm::scale(glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, -6.0f }), glm::vec3(scale)),
+				-0.5f * (first->GetBoundsMin() + first->GetBoundsMax()));
+			const std::shared_ptr<StaticBatch> ducks = m_CheckRenderer->CreateStaticBatch();
+			for (const SubMesh& submesh : m_Duck->GetSubMeshes())
+				ducks->Add(StaticMesh().SetMesh(submesh.MeshData).SetTransform(placed).SetColor({ 0.9f, 0.8f, 0.1f, 1.0f }));
+			Framebuffer* before = CreateCheckTarget(k_StaticTargetSize);
+			Framebuffer* after = CreateCheckTarget(k_StaticTargetSize);
+			RenderCheck(before, CheckViewProjection(), [&](Renderer3D& renderer) { lights(renderer); renderer.SubmitStaticBatch(*ducks); });
+			const uint64_t bakes = ducks->GetBakeCount();
+			const bool reloaded = m_Duck->Reload();
+			const Renderer3D::Statistics stats = RenderCheck(after, CheckViewProjection(), [&](Renderer3D& renderer) { lights(renderer); renderer.SubmitStaticBatch(*ducks); });
+			Check(reloaded && stats.StaticCellsBaked >= 1 && ducks->GetBakeCount() > bakes,
+				std::format("a hot-reloaded mesh rebakes its cell ({} baked)", stats.StaticCellsBaked));
+			ReadAll({ before, after }, [this](const std::vector<TexturePixels>& images)
+			{
+				float worst = 0.0f;
+				const uint32_t differing = CountDiffering(images[0], images[1], worst);
+				uint32_t lit = 0;
+				for (uint32_t y = 0; y < images[0].Height; ++y)
+					for (uint32_t x = 0; x < images[0].Width; ++x)
+						lit += images[0].GetPixel(x, y).r > 0.05f ? 1 : 0;
+				Check(differing == 0 && lit > 50, std::format("the rebaked duck draws as before ({} px differ, {} px of duck)", differing, lit));
+			});
+		});
+	}
+
 	void Renderer3DBatchTest::Update(float deltaTime)
 	{
 		Renderer::Clear(m_ClearColor);
@@ -602,6 +808,10 @@ namespace Dingo
 	{
 		m_Alive.reset();
 		m_CheckSteps.clear();
+		m_StaticBatch.reset();
+		m_StaticIds.clear();
+		delete m_Duck;
+		m_Duck = nullptr;
 		for (Framebuffer*& target : m_CheckTargets)
 			DestroyAndDelete(target);
 		m_CheckTargets.clear();
@@ -633,6 +843,7 @@ namespace Dingo
 			delete m_BatchRenderer;
 			m_BatchRenderer = nullptr;
 		}
+		m_ForeignBatch.reset();
 	}
 
 	void Renderer3DBatchTest::Resize(uint32_t width, uint32_t height)

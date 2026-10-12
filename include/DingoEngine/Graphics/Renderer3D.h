@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Pipeline.h"
+#include "DingoEngine/Graphics/StaticBatch.h"
 
 #include "DingoEngine/Core/PerspectiveCamera.h"
 
@@ -31,6 +32,9 @@ namespace Dingo
 		class FullscreenShader;
 		class ParticleRenderer;
 		class TextureReadback;
+		struct StaticBatchShared;
+		struct StaticBatchData;
+		struct StaticCell;
 	}
 
 	// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
@@ -321,6 +325,17 @@ namespace Dingo
 		// batch. A custom material's mesh ignores it.
 		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f, const SurfaceOverride* surface = nullptr);
 
+		// Static geometry (StaticBatch.h): meshes baked into world space once, in cells kept on the GPU.
+		// A batch belongs to the renderer that made it and draws nothing on another (warned once); it may
+		// outlive the renderer, drawing nothing. SubmitStaticBatch between BeginScene and EndScene bakes
+		// what changed since the last submission, then culls each cell's draws against the camera and
+		// the shadow views as SubmitMesh culls a mesh, and keeps the batch alive until EndScene. A cell
+		// draws after the CPU batches' draws of the same material, so two meshes meeting at exactly
+		// equal depth can resolve the other way than through SubmitMesh.
+		std::shared_ptr<StaticBatch> CreateStaticBatch(const StaticBatchParams& params = {});
+		void SubmitStaticBatch(StaticBatch& batch);
+		bool OwnsStaticBatch(const StaticBatch& batch) const;
+
 		// Convenience primitives drawn with the renderer's built-in unit meshes
 		// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
 		void DrawBox(const glm::mat4& transform, const glm::vec4& color);
@@ -439,6 +454,9 @@ namespace Dingo
 			uint32_t InstancedDraws = 0;      // instanced lit draws, also counted in DrawCalls
 			uint32_t InstancedShadowDraws = 0; // instanced atlas draws, also counted in ShadowDrawCalls
 			uint32_t DroppedInstancedMeshes = 0; // meshes of a MaterialParams::Instancing material skipped past k_MaxInstancedDrawsPerFrame
+			uint32_t StaticMeshes = 0;        // baked meshes of submitted static batches, culled ones included; also in SubmittedMeshes, not in VertexCount/IndexCount
+			uint32_t StaticDraws = 0;         // lit draws of static batch cells, also counted in DrawCalls
+			uint32_t StaticCellsBaked = 0;    // static batch cells baked (or emptied) by this scene's submissions
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
 			bool Fogged = false;              // the scene was drawn with fog: SetFog, and a perspective camera
 		};
@@ -557,6 +575,7 @@ namespace Dingo
 		};
 
 		void PrepareLitMaterial(Material* material) const;
+		static void TransformVertices(const Mesh& mesh, const glm::mat4& transform, const glm::vec4& color, uint32_t object, Vertex* out);
 
 		Shader* m_Shader = nullptr;
 		Material* m_Material = nullptr; // built-in lit default material
@@ -565,9 +584,10 @@ namespace Dingo
 		VertexLayout m_MeshLayout;       // a Mesh's own MeshVertex stream, for instanced draws
 		VertexLayout m_MeshShadowLayout; // its positions alone, for instanced shadow draws
 
-		// std430, mirrored by ObjectRecord in Renderer3D_Lit.glsl: a static mesh's SurfaceOverride. The
-		// scene's records are written from 0 into one storage buffer the lit materials bind; record 0 is
-		// never read, so a vertex's ObjectIndex of 0 means the material's own values.
+		// std430, mirrored by ObjectRecord in Renderer3D_Lit.glsl: a static mesh's SurfaceOverride. One
+		// storage buffer the lit materials bind holds the static batches' records from 1 (they stay put),
+		// then the scene's; record 0 is never read, so a vertex's ObjectIndex of 0 means the material's own
+		// values.
 		struct ObjectRecord
 		{
 			glm::vec4 Emissive{ 0.0f }; // rgb = colour, a = strength
@@ -667,12 +687,27 @@ namespace Dingo
 			uint32_t VertexCount = 0;
 			uint32_t IndexCount = 0;
 		};
+		// The scene's draws, from the upload arena, a static batch cell's buffers or, instanced, from a
+		// mesh's own buffers: the shadow pass needs them before the lit pass does.
+		struct ChunkDraw
+		{
+			BatchKey Key;
+			uint32_t FirstIndex = 0; // in the arena, or in VertexBuffer/IndexBuffer when set
+			uint32_t IndexCount = 0;
+			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
+			uint32_t Group = ~0u;     // an instanced draw: its m_InstanceGroups entry
+			GraphicsBuffer* VertexBuffer = nullptr; // a static batch cell's; null = the arena
+			GraphicsBuffer* IndexBuffer = nullptr;
+		};
+		std::vector<ChunkDraw> m_ChunkDraws;
+
 		struct DrawSlot
 		{
 			BatchKey Key; // a shadow-only slot's has no material and ShadowCasting::ShadowsOnly
 			uint32_t OpenChunk = ~0u;
 			std::vector<uint32_t> Chunks;
 			std::vector<uint32_t> Groups; // its instanced draws, after its chunks
+			std::vector<ChunkDraw> StaticDraws; // static batch cells, before its chunks
 			uint32_t LastGroup = ~0u;     // the group the slot's last submission joined, to skip the lookup
 		};
 		std::vector<SceneChunk> m_SceneChunks;
@@ -682,17 +717,6 @@ namespace Dingo
 		// Places a mesh's vertices and indices at the end of the slot's open chunk, or a new one.
 		void PlaceInSlot(uint32_t slot, uint32_t vertexCount, uint32_t indexCount, uint32_t& chunk, uint32_t& chunkVertex, uint32_t& chunkIndex);
 
-		// The scene's draws, from the upload arena or, instanced, from a mesh's own buffers: the shadow
-		// pass needs them before the lit pass does.
-		struct ChunkDraw
-		{
-			BatchKey Key;
-			uint32_t FirstIndex = 0; // in the arena
-			uint32_t IndexCount = 0;
-			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
-			uint32_t Group = ~0u;     // an instanced draw: its m_InstanceGroups entry
-		};
-		std::vector<ChunkDraw> m_ChunkDraws;
 
 		// ── Instancing ────────────────────────────────────────────────────────
 
@@ -811,6 +835,24 @@ namespace Dingo
 		void LayoutStaticSubmissions(bool shadows);
 		void CullSkinnedSubmissions(bool shadows);
 		void TransformStaticSubmissions();
+
+		// ── Static batches ────────────────────────────────────────────────────
+
+		// The pending entries placed, loose or in a cell, and the dirty cells rebaked.
+		void PrepareStaticBatch(Internal::StaticBatchData& data);
+		void BakeStaticCell(Internal::StaticBatchData& data, Internal::StaticCell& cell);
+		// After the lit slots are acquired: each submitted cell's draws into its slot, or as a culled caster.
+		void LayoutStaticBatches(bool shadows);
+		// The batch's material and shadow setting, resolved (and enqueued, checked as SubmitMesh does).
+		MaterialBatch* EnqueueBatch(Material*& material, ShadowCasting shadows, uint32_t shadowGroups);
+		bool BakesLoose(const StaticMesh& mesh) const;
+		uint32_t DynamicObjectIndex(uint32_t object) const;
+
+		std::shared_ptr<Internal::StaticBatchShared> m_StaticShared;
+		std::vector<std::shared_ptr<StaticBatch>> m_SceneStaticBatches;
+		std::vector<ChunkDraw> m_StaticShadowDraws;
+		uint64_t m_StaticRecordsUploaded = ~0ull; // the shared records' revision in m_ObjectBuffer
+		bool m_StaticOwnerWarned = false;
 
 		bool m_CullingEnabled = true;
 		bool m_CullingFrozen = false;

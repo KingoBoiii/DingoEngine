@@ -66,6 +66,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/StaticBatch.h"
 #include "DingoEngine/Graphics/SurfaceOverride.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/Animator.h"

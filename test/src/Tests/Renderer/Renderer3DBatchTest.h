@@ -16,7 +16,8 @@ namespace Dingo
 	// readbacks of its blending order, and surface overrides: how they batch, and a scene of overridden
 	// meshes read back against the same scene drawn with a lit material per mesh, and instancing: the
 	// default material's repeated meshes and a custom MaterialParams::Instancing material, each one
-	// draw, and a frame's scenes each reading their own records. --batch-alpha=<a>
+	// draw, and a frame's scenes each reading their own records, and static batches: a scene drawn
+	// through one read back against SubmitMesh, rebakes, culling and a hot reload. --batch-alpha=<a>
 	// also draws three overlapping translucent boxes of that alpha in front of the batched ones.
 	class Renderer3DBatchTest : public GraphicsTest
 	{
@@ -37,6 +38,9 @@ namespace Dingo
 		void BuildTranslucentChecks();
 		void BuildSurfaceChecks();
 		void BuildInstancingChecks();
+		void BuildStaticChecks();
+		// Reads every target back and hands the images to done, in the order given.
+		void ReadAll(std::vector<Framebuffer*> targets, std::function<void(const std::vector<TexturePixels>&)> done);
 		Framebuffer* CreateCheckTarget(uint32_t size);
 		template<typename Submit>
 		Renderer3D::Statistics RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit);
@@ -66,6 +70,11 @@ namespace Dingo
 		size_t m_NextCheckStep = 0;
 		std::shared_ptr<int> m_Alive;
 		float m_ShowcaseAlpha = -1.0f;
+
+		std::shared_ptr<StaticBatch> m_StaticBatch;
+		std::shared_ptr<StaticBatch> m_ForeignBatch; // made by m_BatchRenderer, released after it shuts down
+		std::vector<StaticMeshId> m_StaticIds;
+		Model* m_Duck = nullptr;
 	};
 
 }

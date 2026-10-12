@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/LightMath.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/StaticBatchData.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -157,6 +158,12 @@ namespace
 		return coneTangent * static_cast<float>(size) / static_cast<float>(size - 4);
 	}
 
+	void FillObjectRecord(const Dingo::SurfaceOverride& surface, glm::vec4& emissive, glm::vec4& surfaceParams)
+	{
+		emissive = glm::vec4(IsFinite(surface.EmissiveColor) ? surface.EmissiveColor : glm::vec3(0.0f), FiniteOr(surface.EmissiveStrength, 0.0f));
+		surfaceParams = glm::vec4(glm::clamp(FiniteOr(surface.Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface.Specular, 0.0f), 0.0f), 0.0f, 0.0f);
+	}
+
 	bool BindsPastSlotZero(const Dingo::Material& material)
 	{
 		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
@@ -280,6 +287,7 @@ namespace Dingo
 			.SetStride(sizeof(MeshVertex))
 			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(MeshVertex, Position));
 
+		m_StaticShared = std::make_shared<Internal::StaticBatchShared>();
 		m_ObjectRecords.assign(1, ObjectRecord{});
 		m_ObjectCapacity = 256;
 		const std::vector<ObjectRecord> noRecords(m_ObjectCapacity);
@@ -325,6 +333,25 @@ namespace Dingo
 	void Renderer3D::Shutdown()
 	{
 		m_Particles.reset();
+
+		m_SceneStaticBatches.clear();
+		m_StaticShadowDraws.clear();
+		if (m_StaticShared)
+		{
+			for (Internal::StaticBatchData* batch : m_StaticShared->Live)
+			{
+				for (Internal::StaticCell& cell : batch->Cells)
+				{
+					DestroyAndDelete(cell.VertexBuffer);
+					DestroyAndDelete(cell.IndexBuffer);
+				}
+			}
+			for (auto& [buffer, frame] : m_StaticShared->Retired)
+				DestroyAndDelete(buffer);
+			m_StaticShared->Retired.clear();
+			m_StaticShared->RendererAlive = false;
+			m_StaticShared.reset();
+		}
 
 		DestroyAndDelete(m_ArenaVertexBuffer);
 		DestroyAndDelete(m_ArenaIndexBuffer);
@@ -450,6 +477,12 @@ namespace Dingo
 		m_DrawOrder.clear();
 		m_StaticSubmissions.clear();
 		m_ObjectRecords.resize(1);
+		m_SceneStaticBatches.clear();
+		if (m_StaticShared)
+		{
+			m_RetiredArenaBuffers.insert(m_RetiredArenaBuffers.end(), m_StaticShared->Retired.begin(), m_StaticShared->Retired.end());
+			m_StaticShared->Retired.clear();
+		}
 
 		ReleaseIdleTwins(m_SkinnedTwins);
 		ReleaseIdleTwins(m_InstancedTwins);
@@ -472,6 +505,7 @@ namespace Dingo
 			ClearSceneLights();
 			if (m_Particles)
 				m_Particles->ClearScene();
+			m_SceneStaticBatches.clear();
 			return;
 		}
 
@@ -545,7 +579,15 @@ namespace Dingo
 					continue;
 				}
 				const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
-				Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+				if (draw.VertexBuffer)
+				{
+					Renderer::DrawIndexed(material, layout, draw.VertexBuffer, draw.IndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+					++m_Statistics.StaticDraws;
+				}
+				else
+				{
+					Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+				}
 				++m_Statistics.DrawCalls;
 			}
 		}
@@ -560,6 +602,7 @@ namespace Dingo
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
 		m_ObjectRecords.resize(1);
+		m_SceneStaticBatches.clear();
 
 		if (m_Particles)
 			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
@@ -574,6 +617,7 @@ namespace Dingo
 		slot.Key = key;
 		slot.OpenChunk = ~0u;
 		slot.Chunks.clear();
+		slot.StaticDraws.clear();
 		return m_UsedDrawSlots++;
 	}
 
@@ -655,6 +699,22 @@ namespace Dingo
 				low = glm::min(low, submission.Bounds.Min);
 				high = glm::max(high, submission.Bounds.Max);
 				casters = true;
+			}
+		}
+
+		// A static batch's ranges carry their casters' exact box from the bake.
+		for (const std::shared_ptr<StaticBatch>& batch : m_SceneStaticBatches)
+		{
+			for (const Internal::StaticCell& cell : batch->m_Data->Cells)
+			{
+				for (const Internal::StaticCellRange& range : cell.Ranges)
+				{
+					if (!casting || range.Shadows == ShadowCasting::Off)
+						continue;
+					low = glm::min(low, range.CasterMin);
+					high = glm::max(high, range.CasterMax);
+					casters = true;
+				}
 			}
 		}
 
@@ -831,6 +891,7 @@ namespace Dingo
 			if (key.Shadows != ShadowCasting::ShadowsOnly)
 				batch.Slot = AcquireDrawSlot(key);
 		}
+		LayoutStaticBatches(shadows);
 
 		// The shadow pass draws depth alone, in any order, so every caster the camera doesn't see
 		// joins one batch per caster mask, whatever its material.
@@ -962,11 +1023,13 @@ namespace Dingo
 		for (uint32_t slot = 0; slot < m_UsedDrawSlots; ++slot)
 		{
 			const DrawSlot& drawSlot = m_DrawSlots[slot];
+			m_ChunkDraws.insert(m_ChunkDraws.end(), drawSlot.StaticDraws.begin(), drawSlot.StaticDraws.end());
 			for (const uint32_t chunk : drawSlot.Chunks)
 				m_ChunkDraws.push_back({ drawSlot.Key, m_ArenaIndexBase + m_SceneChunks[chunk].FirstIndex, m_SceneChunks[chunk].IndexCount });
 			for (const uint32_t group : drawSlot.Groups)
 				m_ChunkDraws.push_back({ drawSlot.Key, 0, 0, false, group });
 		}
+		m_ChunkDraws.insert(m_ChunkDraws.end(), m_StaticShadowDraws.begin(), m_StaticShadowDraws.end());
 	}
 
 	bool Renderer3D::CanInstance(const Material* material) const
@@ -1170,21 +1233,9 @@ namespace Dingo
 	void Renderer3D::TransformStaticSubmissions()
 	{
 		DE_PROFILE_SCOPE("Renderer3D::TransformStaticSubmissions");
-		auto transform = [](const StaticSubmission& submission, Vertex* out)
+		auto transform = [this](const StaticSubmission& submission, Vertex* out)
 		{
-			const glm::mat4& transform = submission.Transform;
-			// Normals need the inverse-transpose so non-uniform scale (stretched walls)
-			// doesn't skew them; positions just use the model matrix.
-			const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
-			for (const MeshVertex& v : submission.Mesh->GetVertices())
-			{
-				out->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
-				out->Normal = normalMatrix * v.Normal;
-				out->Color = submission.Color;
-				out->TexCoord = v.TexCoord;
-				out->ObjectIndex = submission.Object;
-				++out;
-			}
+			TransformVertices(*submission.Mesh, submission.Transform, submission.Color, DynamicObjectIndex(submission.Object), out);
 		};
 
 		uint32_t vertices = 0;
@@ -1202,7 +1253,7 @@ namespace Dingo
 					record.NormalColumns[i] = glm::vec4(normalMatrix[i], 0.0f);
 				}
 				record.Color = submission.Color;
-				record.Misc = glm::uvec4(submission.Object, 0u, 0u, 0u);
+				record.Misc = glm::uvec4(DynamicObjectIndex(submission.Object), 0u, 0u, 0u);
 				continue;
 			}
 			if (submission.Chunk == ~0u)
@@ -1310,19 +1361,35 @@ namespace Dingo
 		return m_ArenaIndexBase + firstIndex;
 	}
 
+	uint32_t Renderer3D::DynamicObjectIndex(uint32_t object) const
+	{
+		return object == 0 ? 0 : object + static_cast<uint32_t>(m_StaticShared->Records.size()) - 1;
+	}
+
 	void Renderer3D::UploadObjectRecords()
 	{
-		if (m_ObjectRecords.size() <= 1)
+		static_assert(sizeof(Internal::StaticObjectRecord) == sizeof(ObjectRecord), "the static records share the object buffer");
+		const uint64_t staticCount = m_StaticShared->Records.size();
+		const uint64_t dynamicCount = m_ObjectRecords.size() - 1;
+		if (staticCount <= 1 && dynamicCount == 0)
 			return;
 
 		// Replaced mid-frame like the arena, so the scenes before keep the records they drew with.
-		if (m_ObjectRecords.size() > m_ObjectCapacity)
+		const uint64_t total = staticCount + dynamicCount;
+		if (total > m_ObjectCapacity)
 		{
 			m_RetiredArenaBuffers.emplace_back(m_ObjectBuffer, Renderer::GetFrameIndex());
-			m_ObjectCapacity = std::max<uint64_t>(m_ObjectCapacity * 2, m_ObjectRecords.size());
+			m_ObjectCapacity = std::max<uint64_t>(m_ObjectCapacity * 2, total);
 			m_ObjectBuffer = GraphicsBuffer::CreateStorageBuffer(m_ObjectCapacity * sizeof(ObjectRecord), "Renderer3D_ObjectData");
+			m_StaticRecordsUploaded = ~0ull;
 		}
-		Renderer::Upload(m_ObjectBuffer, m_ObjectRecords.data(), m_ObjectRecords.size() * sizeof(ObjectRecord));
+		if (staticCount > 1 && m_StaticRecordsUploaded != m_StaticShared->Revision)
+		{
+			Renderer::Upload(m_ObjectBuffer, m_StaticShared->Records.data() + 1, (staticCount - 1) * sizeof(ObjectRecord), sizeof(ObjectRecord));
+			m_StaticRecordsUploaded = m_StaticShared->Revision;
+		}
+		if (dynamicCount > 0)
+			Renderer::Upload(m_ObjectBuffer, m_ObjectRecords.data() + 1, dynamicCount * sizeof(ObjectRecord), staticCount * sizeof(ObjectRecord));
 	}
 
 	void Renderer3D::UploadInstanceRecords()
@@ -2348,34 +2415,8 @@ namespace Dingo
 		if (shadows == ShadowCasting::Off)
 			shadowGroups = 1;
 
-		Material* batchMaterial = material ? material : m_Material;
-		MaterialBatch* batch = &m_Batches[BatchKey{ batchMaterial, shadows, shadowGroups }];
-		if (!batch->Enqueued)
-		{
-			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
-			const Shader* shader = batchMaterial->GetShader();
-			batch->Enqueued = true;
-			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && batchMaterial->IsTranslucent();
-			if (!batch->SkinnedOnly && !batch->Translucent)
-				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows, shadowGroups });
-			else if (batch->SkinnedOnly && !m_SkinnedOnlyWarned)
-			{
-				const std::string& name = batchMaterial->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: material '{}' has a skinned shader, so the static meshes given it draw with the default material.", name.empty() ? "<unnamed>" : name.c_str());
-				m_SkinnedOnlyWarned = true;
-			}
-		}
-		if (batch->SkinnedOnly)
-		{
-			batchMaterial = m_Material;
-			batch = &m_Batches[BatchKey{ m_Material, shadows, shadowGroups }];
-			if (!batch->Enqueued)
-			{
-				batch->Enqueued = true;
-				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
-			}
-		}
+		Material* batchMaterial = material;
+		MaterialBatch* batch = EnqueueBatch(batchMaterial, shadows, shadowGroups);
 
 		// A mesh bigger than one draw fits no batch at all, so spilling cannot help.
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
@@ -2408,8 +2449,7 @@ namespace Dingo
 		{
 			submission.Object = static_cast<uint32_t>(m_ObjectRecords.size());
 			ObjectRecord& record = m_ObjectRecords.emplace_back();
-			record.Emissive = glm::vec4(IsFinite(surface->EmissiveColor) ? surface->EmissiveColor : glm::vec3(0.0f), FiniteOr(surface->EmissiveStrength, 0.0f));
-			record.Surface = glm::vec4(glm::clamp(FiniteOr(surface->Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface->Specular, 0.0f), 0.0f), 0.0f, 0.0f);
+			FillObjectRecord(*surface, record.Emissive, record.Surface);
 			++m_Statistics.SurfaceOverrides;
 		}
 		if (batch->Translucent)
@@ -2430,6 +2470,355 @@ namespace Dingo
 		}
 
 		++m_Statistics.SubmittedMeshes;
+	}
+
+	Renderer3D::MaterialBatch* Renderer3D::EnqueueBatch(Material*& material, ShadowCasting shadows, uint32_t shadowGroups)
+	{
+		if (!material)
+			material = m_Material;
+		MaterialBatch* batch = &m_Batches[BatchKey{ material, shadows, shadowGroups }];
+		if (!batch->Enqueued)
+		{
+			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
+			const Shader* shader = material->GetShader();
+			batch->Enqueued = true;
+			batch->SkinnedOnly = material != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
+			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && material->IsTranslucent();
+			if (!batch->SkinnedOnly && !batch->Translucent)
+				m_DrawOrder.push_back(BatchKey{ material, shadows, shadowGroups });
+			else if (batch->SkinnedOnly && !m_SkinnedOnlyWarned)
+			{
+				const std::string& name = material->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: material '{}' has a skinned shader, so the static meshes given it draw with the default material.", name.empty() ? "<unnamed>" : name.c_str());
+				m_SkinnedOnlyWarned = true;
+			}
+		}
+		if (batch->SkinnedOnly)
+		{
+			material = m_Material;
+			batch = &m_Batches[BatchKey{ m_Material, shadows, shadowGroups }];
+			if (!batch->Enqueued)
+			{
+				batch->Enqueued = true;
+				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
+			}
+		}
+		return batch;
+	}
+
+	void Renderer3D::TransformVertices(const Mesh& mesh, const glm::mat4& transform, const glm::vec4& color, uint32_t object, Vertex* out)
+	{
+		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
+		// doesn't skew them; positions just use the model matrix.
+		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+		for (const MeshVertex& v : mesh.GetVertices())
+		{
+			out->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			out->Normal = normalMatrix * v.Normal;
+			out->Color = color;
+			out->TexCoord = v.TexCoord;
+			out->ObjectIndex = object;
+			++out;
+		}
+	}
+
+	std::shared_ptr<StaticBatch> Renderer3D::CreateStaticBatch(const StaticBatchParams& params)
+	{
+		DE_CORE_ASSERT(m_StaticShared, "Renderer3D::CreateStaticBatch after Shutdown.");
+		auto data = std::make_unique<Internal::StaticBatchData>();
+		data->Shared = m_StaticShared;
+		data->CellSize = std::isfinite(params.CellSize) && params.CellSize > 0.0f ? params.CellSize : 32.0f;
+		return std::shared_ptr<StaticBatch>(new StaticBatch(std::move(data)));
+	}
+
+	bool Renderer3D::OwnsStaticBatch(const StaticBatch& batch) const
+	{
+		return m_StaticShared && batch.m_Data->Shared == m_StaticShared;
+	}
+
+	bool Renderer3D::BakesLoose(const StaticMesh& mesh) const
+	{
+		const Material* material = mesh.Material ? mesh.Material : m_Material;
+		const Shader* shader = material->GetShader();
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		return (material != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0) ||
+			(mesh.Shadows != ShadowCasting::ShadowsOnly && material->IsTranslucent()) || ForcesInstancing(material) ||
+			mesh.Mesh->GetVertexCount() > caps.MaxVertices || mesh.Mesh->GetIndexCount() > caps.MaxIndices || !IsAffine(mesh.Transform);
+	}
+
+	void Renderer3D::SubmitStaticBatch(StaticBatch& batch)
+	{
+		if (!m_SceneActive || m_SceneSkipped)
+			return;
+		if (!OwnsStaticBatch(batch))
+		{
+			if (!m_StaticOwnerWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a static batch was submitted to a renderer that didn't make it; it is not drawn.");
+				m_StaticOwnerWarned = true;
+			}
+			return;
+		}
+
+		DE_PROFILE_SCOPE("Renderer3D::SubmitStaticBatch");
+		Internal::StaticBatchData& data = *batch.m_Data;
+		PrepareStaticBatch(data);
+
+		for (const Internal::StaticCell& cell : data.Cells)
+		{
+			for (const Internal::StaticCellRange& range : cell.Ranges)
+			{
+				Material* material = range.Material;
+				EnqueueBatch(material, range.Shadows, range.ShadowGroups);
+				m_Statistics.SubmittedMeshes += range.Meshes;
+				m_Statistics.StaticMeshes += range.Meshes;
+				m_Statistics.SurfaceOverrides += range.Surfaces;
+			}
+		}
+		for (const StaticMeshId id : data.Loose)
+		{
+			const StaticMesh& mesh = data.Entries[id].Desc;
+			SubmitMesh(mesh.Mesh, mesh.Transform, mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, 0.0f, mesh.Surface ? &*mesh.Surface : nullptr);
+		}
+		m_SceneStaticBatches.push_back(batch.shared_from_this());
+	}
+
+	void Renderer3D::PrepareStaticBatch(Internal::StaticBatchData& data)
+	{
+		// A hot-reloaded mesh keeps its address and gets a new id.
+		for (StaticMeshId id = 0; id < data.Entries.size(); ++id)
+		{
+			const Internal::StaticBatchEntry& entry = data.Entries[id];
+			if (entry.Live && !entry.Queued && entry.Desc.Mesh && entry.Desc.Mesh->GetId() != entry.MeshId)
+			{
+				data.Detach(id);
+				data.MarkPending(id);
+			}
+		}
+
+		for (const StaticMeshId id : data.Pending)
+		{
+			Internal::StaticBatchEntry& entry = data.Entries[id];
+			if (!entry.Queued)
+				continue;
+			entry.Queued = false;
+			if (!entry.Live || !entry.Desc.Mesh)
+				continue;
+
+			const StaticMesh& mesh = entry.Desc;
+			entry.MeshId = mesh.Mesh->GetId();
+			if (mesh.Mesh->GetVertexCount() == 0 || mesh.Mesh->GetIndexCount() == 0)
+				continue;
+
+			glm::vec3 centre(0.0f);
+			const bool loose = BakesLoose(mesh);
+			if (!loose)
+				centre = WorldBounds(*mesh.Mesh, mesh.Transform).GetCenter() / data.CellSize;
+			if (loose || !IsFinite(centre) || glm::any(glm::greaterThan(glm::abs(centre), glm::vec3(1e9f))))
+			{
+				entry.Loose = true;
+				data.Loose.push_back(id);
+				continue;
+			}
+
+			const glm::ivec3 coord(glm::floor(centre));
+			const auto [it, inserted] = data.CellLookup.try_emplace(coord, static_cast<uint32_t>(data.Cells.size()));
+			if (inserted)
+				data.Cells.emplace_back().Coord = coord;
+			Internal::StaticCell& cell = data.Cells[it->second];
+			cell.Members.insert(std::lower_bound(cell.Members.begin(), cell.Members.end(), id), id);
+			cell.Dirty = true;
+			entry.Cell = it->second;
+		}
+		data.Pending.clear();
+
+		data.OccupiedCells = 0;
+		for (Internal::StaticCell& cell : data.Cells)
+		{
+			if (cell.Dirty)
+				BakeStaticCell(data, cell);
+			data.OccupiedCells += cell.Members.empty() ? 0 : 1;
+		}
+	}
+
+	void Renderer3D::BakeStaticCell(Internal::StaticBatchData& data, Internal::StaticCell& cell)
+	{
+		DE_PROFILE_SCOPE("Renderer3D::BakeStaticCell");
+		Internal::StaticBatchShared& shared = *data.Shared;
+		const uint64_t frame = Renderer::GetFrameIndex();
+		for (GraphicsBuffer* buffer : { cell.VertexBuffer, cell.IndexBuffer })
+		{
+			if (buffer)
+				m_RetiredArenaBuffers.emplace_back(buffer, frame);
+		}
+		cell.VertexBuffer = nullptr;
+		cell.IndexBuffer = nullptr;
+		shared.Release(cell.RecordStart, cell.RecordCount);
+		cell.RecordStart = 0;
+		cell.RecordCount = 0;
+		cell.Ranges.clear();
+		cell.Dirty = false;
+		++data.BakeCount;
+		++m_Statistics.StaticCellsBaked;
+		if (cell.Members.empty())
+			return;
+
+		// The members by material and shadow setting, each in id order, the keys in order of appearance.
+		struct Group
+		{
+			Material* Material = nullptr;
+			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
+			std::vector<StaticMeshId> Members;
+		};
+		std::vector<Group> groups;
+		uint64_t vertexTotal = 0;
+		uint64_t indexTotal = 0;
+		uint32_t records = 0;
+		for (const StaticMeshId id : cell.Members)
+		{
+			const StaticMesh& mesh = data.Entries[id].Desc;
+			Material* material = mesh.Material ? mesh.Material : m_Material;
+			const uint32_t shadowGroups = mesh.Shadows == ShadowCasting::Off ? 1u : mesh.ShadowGroups;
+			auto group = std::find_if(groups.begin(), groups.end(), [&](const Group& g) { return g.Material == material && g.Shadows == mesh.Shadows && g.ShadowGroups == shadowGroups; });
+			if (group == groups.end())
+				group = groups.insert(groups.end(), Group{ material, mesh.Shadows, shadowGroups, {} });
+			group->Members.push_back(id);
+			vertexTotal += mesh.Mesh->GetVertexCount();
+			indexTotal += mesh.Mesh->GetIndexCount();
+			if (mesh.Surface && mesh.Shadows != ShadowCasting::ShadowsOnly && IsLitShader(material->GetShader()))
+				++records;
+		}
+
+		cell.RecordStart = shared.Allocate(records);
+		cell.RecordCount = records;
+		if (records > 0)
+			++shared.Revision;
+
+		std::vector<Vertex> vertices(vertexTotal);
+		std::vector<uint32_t> indices(indexTotal);
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		uint32_t vertexCursor = 0;
+		uint32_t indexCursor = 0;
+		uint32_t record = cell.RecordStart;
+		for (const Group& group : groups)
+		{
+			const bool lit = IsLitShader(group.Material->GetShader());
+			Internal::StaticCellRange* range = nullptr;
+			uint32_t rangeVertices = 0;
+			for (const StaticMeshId id : group.Members)
+			{
+				const StaticMesh& mesh = data.Entries[id].Desc;
+				const uint32_t vertexCount = mesh.Mesh->GetVertexCount();
+				const uint32_t indexCount = mesh.Mesh->GetIndexCount();
+				if (!range || rangeVertices + vertexCount > caps.MaxVertices || range->IndexCount + indexCount > caps.MaxIndices)
+				{
+					range = &cell.Ranges.emplace_back();
+					range->Material = group.Material;
+					range->Shadows = group.Shadows;
+					range->ShadowGroups = group.ShadowGroups;
+					range->FirstIndex = indexCursor;
+					range->CasterMin = glm::vec3(std::numeric_limits<float>::max());
+					range->CasterMax = glm::vec3(std::numeric_limits<float>::lowest());
+					rangeVertices = 0;
+				}
+
+				uint32_t object = 0;
+				if (mesh.Surface && mesh.Shadows != ShadowCasting::ShadowsOnly && lit)
+				{
+					object = record++;
+					Internal::StaticObjectRecord& baked = shared.Records[object];
+					FillObjectRecord(*mesh.Surface, baked.Emissive, baked.Surface);
+					++range->Surfaces;
+				}
+
+				Vertex* out = vertices.data() + vertexCursor;
+				TransformVertices(*mesh.Mesh, mesh.Transform, mesh.Color, object, out);
+				if (group.Shadows != ShadowCasting::Off)
+				{
+					for (uint32_t i = 0; i < vertexCount; ++i)
+					{
+						range->CasterMin = glm::min(range->CasterMin, out[i].Position);
+						range->CasterMax = glm::max(range->CasterMax, out[i].Position);
+					}
+				}
+				const AABB bounds = WorldBounds(*mesh.Mesh, mesh.Transform);
+				range->Bounds = range->Meshes == 0 ? bounds : AABB(glm::min(range->Bounds.Min, bounds.Min), glm::max(range->Bounds.Max, bounds.Max));
+
+				uint32_t* indexOut = indices.data() + indexCursor;
+				for (const uint32_t index : mesh.Mesh->GetIndices())
+					*indexOut++ = index + vertexCursor;
+				vertexCursor += vertexCount;
+				indexCursor += indexCount;
+				rangeVertices += vertexCount;
+				range->IndexCount += indexCount;
+				++range->Meshes;
+			}
+		}
+
+		// DirectUpload = false: written in the frame's command list, ahead of the draws that read it.
+		cell.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * vertices.size(), nullptr, false, "Renderer3D_StaticCellVB");
+		cell.IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * indices.size(), nullptr, false, "Renderer3D_StaticCellIB", GraphicsFormat::Uint32);
+		Renderer::Upload(cell.VertexBuffer, vertices.data(), sizeof(Vertex) * vertices.size());
+		Renderer::Upload(cell.IndexBuffer, indices.data(), sizeof(uint32_t) * indices.size());
+	}
+
+	void Renderer3D::LayoutStaticBatches(bool shadows)
+	{
+		m_StaticShadowDraws.clear();
+		if (m_SceneStaticBatches.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::LayoutStaticBatches");
+		const bool culling = m_CullingEnabled;
+		for (const std::shared_ptr<StaticBatch>& batch : m_SceneStaticBatches)
+		{
+			for (const Internal::StaticCell& cell : batch->m_Data->Cells)
+			{
+				for (const Internal::StaticCellRange& range : cell.Ranges)
+				{
+					const BatchKey key{ range.Material, range.Shadows, range.ShadowGroups };
+					const MaterialBatch& materialBatch = m_Batches[key];
+					if (!materialBatch.Usable)
+						continue;
+
+					ChunkDraw draw{ key, range.FirstIndex, range.IndexCount };
+					draw.VertexBuffer = cell.VertexBuffer;
+					draw.IndexBuffer = cell.IndexBuffer;
+					const bool casts = shadows && range.Shadows != ShadowCasting::Off;
+					auto castIfReached = [&]()
+					{
+						if (!culling || ReachesShadowView(range.Bounds, range.ShadowGroups))
+						{
+							ChunkDraw caster = draw;
+							caster.Key = BatchKey{ nullptr, ShadowCasting::ShadowsOnly, range.ShadowGroups };
+							m_StaticShadowDraws.push_back(caster);
+							m_Statistics.ShadowCasters += range.Meshes;
+						}
+						else
+						{
+							m_Statistics.CulledCasters += range.Meshes;
+						}
+					};
+
+					if (range.Shadows == ShadowCasting::ShadowsOnly)
+					{
+						if (casts)
+							castIfReached();
+						continue;
+					}
+					if (!culling || CameraSees(range.Bounds, range.Material))
+					{
+						m_DrawSlots[materialBatch.Slot].StaticDraws.push_back(draw);
+						m_Statistics.ShadowCasters += casts ? range.Meshes : 0;
+						continue;
+					}
+					m_Statistics.CulledMeshes += range.Meshes;
+					if (casts)
+						castIfReached();
+				}
+			}
+		}
 	}
 
 	void Renderer3D::SetShadowSettings(const Renderer3DShadowSettings& settings)
@@ -2855,7 +3244,8 @@ namespace Dingo
 				continue;
 			}
 
-			Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Static, draw.Key.ShadowGroups), m_Layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
+			Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Static, draw.Key.ShadowGroups), m_Layout, draw.VertexBuffer ? draw.VertexBuffer : m_ArenaVertexBuffer,
+				draw.IndexBuffer ? draw.IndexBuffer : m_ArenaIndexBuffer, draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
 			++m_Statistics.ShadowDrawCalls;
 		}
 
