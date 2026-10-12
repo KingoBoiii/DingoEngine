@@ -31,6 +31,7 @@ namespace Dingo
 	{
 		class FullscreenShader;
 		class ParticleRenderer;
+		class SkinnedVisibility;
 		class TextureReadback;
 		struct StaticBatchShared;
 		struct StaticBatchData;
@@ -386,6 +387,9 @@ namespace Dingo
 		uint32_t GetSkinnedInstanceBudget() const;
 		// What this frame's scenes have taken of that budget so far.
 		uint32_t GetSkinnedInstancesThisFrame() const;
+		// Engine-internal: the palettes this renderer drew this frame and the last, which a Scene reads
+		// for AnimatorComponent::CullingMode.
+		std::shared_ptr<const Internal::SkinnedVisibility> GetSkinnedVisibility() const;
 
 		Mesh* GetBoxMesh() const { return m_BoxMesh; }
 		Mesh* GetSphereMesh() const { return m_SphereMesh; }
@@ -1118,6 +1122,7 @@ namespace Dingo
 		bool m_SecondShadowLightWarned = false;
 
 		std::unique_ptr<Internal::ParticleRenderer> m_Particles;
+		std::shared_ptr<Internal::SkinnedVisibility> m_SkinnedVisibility;
 
 		// ── Shadow probes ─────────────────────────────────────────────────────
 

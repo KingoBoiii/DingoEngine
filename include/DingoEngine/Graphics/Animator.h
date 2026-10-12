@@ -186,8 +186,12 @@ namespace Dingo
 		// What the layer is mixing, oldest first, for tooling such as the F7 tab.
 		std::vector<AnimatorStateInfo> GetStates(uint32_t layer = 0) const;
 
-		// Advances every playing state by deltaTime, evaluates the pose and collects the events.
-		void Update(float deltaTime);
+		// Advances every playing state by deltaTime, evaluates the pose and collects the events. With
+		// evaluatePose false the pose (and so the palette and joint transforms) stays the last one
+		// evaluated while time, fades, events and root motion move on, which is how a scene leaves a
+		// culled animator unposed; a later Update or Evaluate catches the pose up. A state pushed past
+		// the four a layer holds meanwhile freezes that stale pose.
+		void Update(float deltaTime, bool evaluatePose = true);
 		// Recomputes the pose from where the states stand, without moving time or firing events
 		// (after a SetTime, say).
 		void Evaluate();

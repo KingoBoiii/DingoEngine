@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/LightMath.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Graphics/StaticBatchData.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
 
@@ -324,6 +325,7 @@ namespace Dingo
 		SetShadowSettings(m_Params.Shadows);
 
 		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
+		m_SkinnedVisibility = std::make_shared<Internal::SkinnedVisibility>();
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
@@ -1228,6 +1230,15 @@ namespace Dingo
 				m_SkinnedInstanceLive[submission.Instance] = 1;
 		}
 
+		// Before the budget: an instance it drops is still in view, so its animator keeps posing.
+		const uint64_t frame = Renderer::GetFrameIndex();
+		m_SkinnedVisibility->BeginScene(frame);
+		for (size_t i = 0; i < m_SkinnedInstances.size(); ++i)
+		{
+			if (m_SkinnedInstanceLive[i])
+				m_SkinnedVisibility->Record(frame, m_SkinnedInstances[i].Source);
+		}
+
 		for (TranslucentSubmission& submission : m_TranslucentSubmissions)
 		{
 			if (submission.Skinned >= 0)
@@ -1967,6 +1978,11 @@ namespace Dingo
 		twin->SetSpecular(source->GetSpecular());
 		PrepareLitMaterial(twin);
 		return twin;
+	}
+
+	std::shared_ptr<const Internal::SkinnedVisibility> Renderer3D::GetSkinnedVisibility() const
+	{
+		return m_SkinnedVisibility;
 	}
 
 	uint32_t Renderer3D::GetSkinnedInstancesThisFrame() const

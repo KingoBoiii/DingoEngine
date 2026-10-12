@@ -104,6 +104,8 @@ namespace Dingo
 		bool     m_Instancing = true;     // --instancing=off batches every mesh on the CPU, the forced-CPU baseline
 		bool     m_WasInstancing = true;
 		bool     m_Static = false;         // --static
+		bool     m_FoxRow = false;         // --fox-row: skinned, the camera among the foxes looking along a row
+		AnimatorCullingMode m_AnimatorCulling = AnimatorCullingMode::AlwaysAnimate; // --animator-culling=always|pause|reduce
 		bool     m_ArgsRead = false;
 		int64_t  m_HeldFrame = -1; // --frame=N: the camera stays where frame N puts it
 		int64_t  m_CullFreezeFrame = -1; // --cull-freeze=N: culling keeps frame N's view while the camera flies on

@@ -17,6 +17,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -66,6 +67,9 @@ namespace Dingo
 			LightSystem::ShadowProbeState ShadowProbes;
 
 			StaticGeometry StaticMeshes;
+
+			// The renderers RenderEntities3D drew with, which the animate pass asks what was culled.
+			std::vector<std::weak_ptr<const SkinnedVisibility>> SkinnedViews;
 		};
 
 	}

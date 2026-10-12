@@ -322,6 +322,10 @@ namespace Dingo
 		if (auto instancing = args.Get("instancing"))
 			m_Instancing = *instancing != "off";
 		m_Static = args.Get("static").has_value();
+		m_FoxRow = args.Get("fox-row").has_value();
+		if (auto culling = args.Get("animator-culling"))
+			m_AnimatorCulling = *culling == "pause" ? AnimatorCullingMode::PauseWhenCulled
+				: *culling == "reduce" ? AnimatorCullingMode::ReduceWhenCulled : AnimatorCullingMode::AlwaysAnimate;
 		if (auto frame = args.Get("frame"))
 			m_HeldFrame = static_cast<int64_t>(std::strtoll(std::string(*frame).c_str(), nullptr, 10));
 		if (auto frame = args.Get("cull-freeze"))
@@ -412,7 +416,7 @@ namespace Dingo
 				if (m_Fox)
 				{
 					entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox, placement.Color)).Material = m_FoxMaterial;
-					entity.AddComponent<AnimatorComponent>(AnimatorComponent(k_FoxClip));
+					entity.AddComponent<AnimatorComponent>(AnimatorComponent(k_FoxClip)).CullingMode = m_AnimatorCulling;
 				}
 			}
 			else
@@ -486,6 +490,12 @@ namespace Dingo
 
 		const float half = 0.5f * m_Extent;
 		camera.SetClip(0.1f, 4.0f * m_Extent + 50.0f);
+		if (m_Mode == Mode::Skinned && m_FoxRow)
+		{
+			camera.SetPosition({ 0.0f, 1.5f, 0.0f });
+			camera.SetTarget({ m_Extent, 0.5f, 0.2f * m_Extent });
+			return;
+		}
 		camera.SetPosition({ -0.9f * half - 2.0f, 1.1f * half + 1.5f, 1.4f * half + 2.5f });
 		camera.SetTarget(glm::vec3(0.0f));
 	}
@@ -954,9 +964,11 @@ namespace Dingo
 
 		m_PerfDone = true;
 		const double frames = static_cast<double>(m_PerfFrames);
-		m_PerfResult = std::format("mode={} count={} instancing={} static={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}",
+		m_PerfResult = std::format("mode={} count={} instancing={} static={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}{}",
 			ModeName(m_Mode), m_Count, m_Instancing ? "on" : "off", m_Static ? "on" : "off", m_PerfFrameMs / frames, m_PerfUpdateMs / frames, m_PerfRenderEntitiesMs / frames, m_PerfEndSceneMs / frames,
-			m_PerfDraws / frames, m_PerfVertices / frames, m_PerfDropped, IsLap(m_Mode) ? EstimateVisiblePercent() : 100.0f, 100.0 * m_PerfCulled / frames / m_Count);
+			m_PerfDraws / frames, m_PerfVertices / frames, m_PerfDropped, IsLap(m_Mode) ? EstimateVisiblePercent() : 100.0f, 100.0 * m_PerfCulled / frames / m_Count,
+			m_Mode != Mode::Skinned ? "" : m_AnimatorCulling == AnimatorCullingMode::PauseWhenCulled ? " animators=pause"
+				: m_AnimatorCulling == AnimatorCullingMode::ReduceWhenCulled ? " animators=reduce" : " animators=always");
 		for (const auto& [name, total] : m_PerfGpuMs)
 			m_PerfResult += std::format(" gpu_{}_ms={:.3f}", name, total / frames);
 		DE_INFO("[PERF] throughput {}", m_PerfResult);

@@ -329,7 +329,7 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
-			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime);
+			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime, m_Data->SkinnedViews);
 			Internal::ParticleSync::ApplyAnimationEvents(m_Data->Registry, m_Data->EntityMap, m_Data->AnimationEvents.ParticleEvents);
 			Internal::ParticleSync::Update(m_Data->Registry, deltaTime);
 			m_Data->Updating = false;
@@ -482,11 +482,27 @@ namespace Dingo
 		}
 	}
 
+	namespace
+	{
+		void TrackSkinnedView(Internal::SceneData& data, Renderer3D& renderer)
+		{
+			std::shared_ptr<const Internal::SkinnedVisibility> visibility = renderer.GetSkinnedVisibility();
+			std::erase_if(data.SkinnedViews, [](const std::weak_ptr<const Internal::SkinnedVisibility>& view) { return view.expired(); });
+			for (const std::weak_ptr<const Internal::SkinnedVisibility>& view : data.SkinnedViews)
+			{
+				if (view.lock() == visibility)
+					return;
+			}
+			data.SkinnedViews.push_back(visibility);
+		}
+	}
+
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
 		DE_PROFILE_SCOPE("Scene::RenderEntities3D");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
+		TrackSkinnedView(*m_Data, renderer);
 
 		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();

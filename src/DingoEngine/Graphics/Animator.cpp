@@ -715,7 +715,7 @@ namespace Dingo
 		state.UnwrappedTime = state.State.IsLooping() ? target : state.Time;
 	}
 
-	void Animator::Update(float deltaTime)
+	void Animator::Update(float deltaTime, bool evaluatePose)
 	{
 		m_Events.clear();
 		m_RootMotionDelta = {};
@@ -790,7 +790,8 @@ namespace Dingo
 		}
 
 		CollectRootMotion();
-		Evaluate();
+		if (evaluatePose)
+			Evaluate();
 	}
 
 	Animator::PlayingState* Animator::Dominant(Layer& layer) const

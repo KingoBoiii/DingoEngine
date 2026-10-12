@@ -69,6 +69,7 @@ namespace Dingo
 		void SubmitPosedFox(Renderer3D& renderer);
 		void SubmitSkeleton(Renderer3D& renderer);
 		void RunSkinnedMaterialCheck(Renderer3D& renderer);
+		void RunCullingStep(Renderer3D& renderer);
 		bool SkeletonShown() const { return m_ShowSkeleton && m_Mode != Mode::Crowd && m_Mode != Mode::Pose; }
 		void TrackTiming(float deltaTime, double updateMs, double renderMs, double endSceneMs);
 
@@ -87,6 +88,18 @@ namespace Dingo
 		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		bool      m_SkinnedMaterialChecked = false;
 		uint32_t  m_FrameInstancesBefore = 0; // the frame's skinned instances before the test's own scene
+
+		// AnimatorComponent::CullingMode, over frames: foxes behind a camera of the check's own under
+		// each mode, and one in front of it, drawn into a small target.
+		Scene*       m_LodScene = nullptr;
+		Framebuffer* m_LodTarget = nullptr;
+		Entity       m_LodFoxes[4];
+		std::vector<glm::mat4> m_LodPalettes[4];
+		uint32_t     m_LodChanges[4] = {};
+		uint32_t     m_LodEvents[4] = {};
+		uint32_t     m_LodReturned = 0;
+		uint32_t     m_LodFrame = 0;
+		bool         m_LodDone = false;
 		Scene*    m_Scene = nullptr;
 		// --anim=root: Walk carried forward and turning, so the Fox walks a circle by root motion.
 		std::unique_ptr<AnimationClip> m_RootClip;

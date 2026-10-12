@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -26,6 +27,7 @@ namespace Dingo
 
 		class ScriptSystem;
 		class PhysicsSync;
+		class SkinnedVisibility;
 
 		namespace AnimationSystem
 		{
@@ -56,6 +58,9 @@ namespace Dingo
 				std::vector<std::pair<entt::entity, AnimationEvent>> ParticleEvents;
 				std::vector<std::pair<entt::entity, AnimationEvent>> ParticleWaiting;
 
+				// The renderers alive this pass, of those that drew the scene.
+				std::vector<std::shared_ptr<const SkinnedVisibility>> Views;
+
 				std::array<RecentEvent, k_RecentEvents> Recent;
 				size_t RecentNext = 0;
 				size_t RecentCount = 0;
@@ -70,8 +75,11 @@ namespace Dingo
 			// enabled ones by deltaTime x Speed, moving each entity whose component applies root motion
 			// by its animator's (through physics for a controller or kinematic body, so before the
 			// step). Then hands each entity's events to its script, once every animator has moved; the
-			// caller defers destroys around it.
-			void Update(entt::registry& registry, ScriptSystem& scripts, PhysicsSync& physics, EventScratch& scratch, float deltaTime);
+			// caller defers destroys around it. views are the renderers that drew the scene: an
+			// animator whose palette none of them drew last frame is culled (AnimatorComponent::CullingMode),
+			// and with none alive every animator counts as seen.
+			void Update(entt::registry& registry, ScriptSystem& scripts, PhysicsSync& physics, EventScratch& scratch, float deltaTime,
+				std::span<const std::weak_ptr<const SkinnedVisibility>> views);
 
 			// Created on first use; nullptr without an AnimatorComponent and a skinned model.
 			Animator* GetAnimator(entt::registry& registry, entt::entity handle);

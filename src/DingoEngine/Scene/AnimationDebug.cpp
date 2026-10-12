@@ -81,6 +81,8 @@ namespace Dingo
 						row.Entity = entt::to_integral(handle);
 						row.Enabled = settings.Enabled;
 						row.Speed = settings.Speed;
+						row.Culled = runtime.Culled;
+						row.CullingMode = settings.CullingMode;
 
 						// An animator whose model went away keeps that model's clip pointers, which may be freed.
 						const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);

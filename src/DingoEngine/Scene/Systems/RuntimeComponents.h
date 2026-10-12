@@ -63,6 +63,9 @@ namespace Dingo
 			// Root motion set the entity's controller velocity last pass, so it is stopped once it no
 			// longer does.
 			bool DroveController = false;
+			// Its entity wasn't drawn last frame (AnimatorComponent::CullingMode), and the updates since.
+			bool Culled = false;
+			uint32_t CulledUpdates = 0;
 		};
 
 		// A ParticleEmitterComponent's emitter, made by the renderer that first draws it (ParticleSync).

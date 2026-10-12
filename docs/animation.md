@@ -460,6 +460,9 @@ next changes), `Blend`, `Frozen`, `Looping`, `Weight` (how far it has faded in, 
 
 - `Update(dt)` advances every playing state by `dt`, poses the skeleton and collects the frame's
   [events](#events).
+- `Update(dt, false)` does all of that but the posing: the pose stays the last one evaluated, which
+  is how a scene skips [culled animators](#culled-animators). A later `Update` or `Evaluate()` catches
+  it up.
 - `Evaluate()` poses the skeleton from where the states stand **without** moving time or firing
   events. Use it after a seek.
 - `GetLocalPoses()` is one `JointPose` per joint (the rest pose until the first `Update`),
@@ -481,6 +484,7 @@ model. The component holds settings only.
 | `bool Enabled` | true | `false` holds the pose: no update, no events. |
 | `RootMotionMode RootMotion` | `Off` | `XZ` or `Full` takes the clips' root travel out of the pose and moves the entity by it. See [Root motion](#root-motion). |
 | `bool ApplyRootMotion` | true | `false` takes the travel out of the pose but leaves the entity where it is, for a script to apply `Animator::GetRootMotionDelta` itself. |
+| `AnimatorCullingMode CullingMode` | `AlwaysAnimate` | What the animator does while its entity is culled: `PauseWhenCulled` keeps the last pose, `ReduceWhenCulled` poses every 4th update. See [Culled animators](#culled-animators). |
 
 ```cpp
 entity.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).Speed = 2.0f;   // plays at double pace
@@ -511,6 +515,40 @@ and physics alike, so a stall runs the scene slow instead of skipping through cl
 - `Enabled = false` is not updated by the scene. Call `animator->Update(0.0f)` or `Evaluate()`
   yourself to show a change made to a paused animator.
 - `DuplicateEntity` copies the component; the copy's animator starts from the beginning.
+
+### Culled animators
+
+A crowd mostly out of view need not be posed every frame. `CullingMode` decides what an animator does
+while none of its entity's skinned meshes was drawn, into the view or into a shadow, by the renderers
+that drew the scene in this frame or the last:
+
+```cpp
+auto& animator = entity.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+animator.CullingMode = AnimatorCullingMode::ReduceWhenCulled;   // pose every 4th update while culled
+```
+
+- **`AlwaysAnimate`** (the default) poses every update, seen or not, exactly as before.
+- **`PauseWhenCulled`** keeps the last pose.
+- **`ReduceWhenCulled`** poses every 4th update, offset by entity so a culled crowd spreads its poses
+  over the four.
+
+Only sampling and composing the pose stop (`Animator::Update(dt, false)`). Time, fades, one-shot
+returns, [events](#events) and [root motion](#root-motion) move on as they would, so a culled
+character's footsteps still play and a culled walker still walks; it shows the right pose on the
+frame after it is drawn again.
+
+- **The renderer's culling decides.** A `Renderer3D` records the palettes of the skinned instances it
+  drew each scene (camera culling, `CullDistance`, and the shadow pass's own cull), and a scene keeps
+  the renderers that drew it (`RenderEntities3D`, so `SceneManager::OnRender` and custom passes alike).
+  An instance the per-frame budget dropped still counts as seen.
+- **One frame late.** Visibility is last frame's, so an entity coming into view draws its stale pose
+  for one frame.
+- **Children hold still too.** Joint [sockets](#sockets), bodies on joints and
+  `Animator::GetSkinningPalette` read the last pose evaluated.
+- **Nothing drawn, nothing culled.** A scene no live renderer has drawn counts every animator as seen,
+  so a scene stepped without rendering (a server, a check) animates as before. With culling off
+  (`Renderer3D::SetCullingEnabled(false)`) every instance is drawn, so nothing pauses.
+- F7 marks a culled animator `culled, paused` or `culled, every 4th update`.
 
 ## Blending
 
@@ -1026,7 +1064,8 @@ plays a copy of its assets with hot-reload on, rewrites the slash's `hitbox` ran
 it). It lists every live scene's
 animators, once they have been created:
 
-- the entity, scene and model, with `disabled` and the speed when they differ from the defaults;
+- the entity, scene and model, with `disabled` and the speed when they differ from the defaults, and
+  `culled` when its [culling mode](#culled-animators) holds its pose;
 - per layer: its weight, its mask (or "whole body") and a `one-shot` flag;
 - per state: a label (the clip; `Blend1D Speed = 1.20 [Walk]` for a blend with its parameter and
   heavier clip; `(frozen)`; `(rest pose)` on layer 0 or `(below)` above it; `(once)` when it does not

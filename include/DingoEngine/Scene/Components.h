@@ -456,6 +456,16 @@ namespace Dingo
 			: Model(model), Color(color) {}
 	};
 
+	// What an AnimatorComponent does while none of its entity's skinned meshes was drawn, into the view
+	// or a shadow, by the renderers that drew the scene last frame (the renderer's culling decides).
+	// Time, fades, events and root motion always move on; only sampling and composing the pose stop.
+	enum class AnimatorCullingMode
+	{
+		AlwaysAnimate,    // poses every update, seen or not
+		PauseWhenCulled,  // keeps the last pose until the entity is drawn again
+		ReduceWhenCulled, // poses every 4th update
+	};
+
 	// Settings for the entity's Animator, which poses its SkinnedMeshRendererComponent::Model;
 	// Scene::GetAnimator returns it for playing clips from a script. Scene::OnUpdate advances it
 	// after the scripts and before physics, by deltaTime x Speed while Enabled.
@@ -476,6 +486,11 @@ namespace Dingo
 		// False takes the travel out of the pose without moving the entity, for a script to apply
 		// Animator::GetRootMotionDelta itself.
 		bool ApplyRootMotion = true;
+		// Joint sockets, bodies baked on joints and Animator::GetSkinningPalette read the last pose
+		// evaluated, so a culled animator's children hold still too. Visibility is last frame's, so an
+		// entity coming into view shows its stale pose for a frame. A scene no renderer has drawn
+		// counts as seen.
+		AnimatorCullingMode CullingMode = AnimatorCullingMode::AlwaysAnimate;
 
 		AnimatorComponent() = default;
 		AnimatorComponent(const AnimatorComponent&) = default;

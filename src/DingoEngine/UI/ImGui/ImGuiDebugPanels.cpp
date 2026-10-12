@@ -897,6 +897,8 @@ namespace Dingo::UI
 				label += "  disabled";
 			if (row.Speed != 1.0f)
 				label += std::format("  speed {:.2f}", row.Speed);
+			if (row.Culled)
+				label += row.CullingMode == AnimatorCullingMode::PauseWhenCulled ? "  culled, paused" : "  culled, every 4th update";
 			label += "###animator";
 
 			const bool expanded = ImGui::TreeNodeEx(label.c_str(), defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);

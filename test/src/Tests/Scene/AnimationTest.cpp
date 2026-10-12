@@ -133,6 +133,11 @@ void main()
 }
 )";
 
+	constexpr uint32_t k_LodSettleFrames = 4;   // until a renderer has drawn the scene and the views are known
+	constexpr uint32_t k_LodMeasuredFrames = 12;
+	constexpr uint32_t k_LodReturnFrames = 3;   // the paused fox brought into view
+	constexpr float k_LodStep = 1.0f / 15.0f;
+
 	constexpr uint32_t k_GhostCheckWidth = 160;
 	constexpr uint32_t k_GhostCheckHeight = 120;
 
@@ -362,6 +367,14 @@ namespace Dingo
 		m_Checks.clear();
 		m_DrawChecksDone = false;
 		m_SkinnedMaterialChecked = false;
+		m_LodDone = false;
+		m_LodFrame = 0;
+		m_LodReturned = 0;
+		for (uint32_t i = 0; i < 4; ++i)
+		{
+			m_LodChanges[i] = m_LodEvents[i] = 0;
+			m_LodPalettes[i].clear();
+		}
 		m_Time = 0.0f;
 		m_TimedFrames = 0;
 		m_FrameMs = m_UpdateMs = m_RenderMs = m_EndSceneMs = 0.0;
@@ -2381,12 +2394,98 @@ namespace Dingo
 		});
 	}
 
+	void AnimationTest::RunCullingStep(Renderer3D& renderer)
+	{
+		enum { Always, Paused, Reduced, Seen };
+		if (!m_LodScene)
+		{
+			m_LodScene = new Scene("Animation LOD");
+			const AnimatorCullingMode modes[4] = { AnimatorCullingMode::AlwaysAnimate, AnimatorCullingMode::PauseWhenCulled, AnimatorCullingMode::ReduceWhenCulled, AnimatorCullingMode::PauseWhenCulled };
+			const char* names[4] = { "Always", "Paused", "Reduced", "Seen" };
+			for (int i = 0; i < 4; ++i)
+			{
+				Entity fox = m_LodScene->CreateEntity(names[i]);
+				const glm::vec3 position = i == Seen ? m_FoxOffset : glm::vec3(static_cast<float>(i - 1) * 2.5f, 0.0f, 12.0f);
+				fox.AddComponent<Transform3DComponent>(Transform3DComponent(position, glm::vec3(m_FoxScale)));
+				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+				fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).CullingMode = modes[i];
+				m_LodFoxes[i] = fox;
+			}
+			m_LodScene->OnStart();
+			m_LodTarget = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("AnimationLod")
+				.SetWidth(k_GhostCheckWidth)
+				.SetHeight(k_GhostCheckHeight)
+				.SetEnableDepth(true)
+				.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		const bool returning = m_LodFrame >= k_LodSettleFrames + k_LodMeasuredFrames;
+		if (m_LodFrame == k_LodSettleFrames + k_LodMeasuredFrames)
+			m_LodFoxes[Paused].GetComponent<Transform3DComponent>().Position = m_FoxOffset;
+
+		m_LodScene->OnUpdate(k_LodStep);
+		const bool measuring = m_LodFrame >= k_LodSettleFrames && !returning;
+		for (int i = 0; i < 4; ++i)
+		{
+			const Animator* animator = m_LodScene->GetAnimator(m_LodFoxes[i]);
+			if (!animator)
+				continue;
+			const std::span<const glm::mat4> palette = animator->GetSkinningPalette();
+			const bool changed = !std::equal(palette.begin(), palette.end(), m_LodPalettes[i].begin(), m_LodPalettes[i].end());
+			if (measuring)
+			{
+				m_LodEvents[i] += static_cast<uint32_t>(animator->GetEventsThisFrame().size());
+				m_LodChanges[i] += changed ? 1 : 0;
+			}
+			if (returning && i == Paused)
+				m_LodReturned += changed ? 1 : 0;
+			m_LodPalettes[i].assign(palette.begin(), palette.end());
+		}
+
+		PerspectiveCamera camera(45.0f, static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight), 0.05f, 100.0f);
+		camera.SetPosition({ 0.0f, 0.8f, 3.0f });
+		camera.SetTarget({ 0.0f, 0.4f, 0.0f });
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer::SetRenderTarget(m_LodTarget);
+		renderer.BeginScene(camera);
+		renderer.Clear(m_ClearColor);
+		m_LodScene->SubmitLights(renderer);
+		m_LodScene->RenderEntities3D(renderer);
+		renderer.EndScene();
+		Renderer::SetRenderTarget(previous);
+
+		if (++m_LodFrame < k_LodSettleFrames + k_LodMeasuredFrames + k_LodReturnFrames)
+			return;
+		m_LodDone = true;
+
+		const Animator* always = m_LodScene->GetAnimator(m_LodFoxes[Always]);
+		const Animator* paused = m_LodScene->GetAnimator(m_LodFoxes[Paused]);
+		const std::vector<AnimatorStateInfo> alwaysStates = always ? always->GetStates() : std::vector<AnimatorStateInfo>();
+		const std::vector<AnimatorStateInfo> pausedStates = paused ? paused->GetStates() : std::vector<AnimatorStateInfo>();
+		const bool sameTime = !alwaysStates.empty() && !pausedStates.empty() && alwaysStates.back().Time == pausedStates.back().Time;
+		Check(m_LodChanges[Always] == k_LodMeasuredFrames,
+			std::format("a culled AlwaysAnimate fox is posed every update ({} of {})", m_LodChanges[Always], k_LodMeasuredFrames));
+		Check(m_LodChanges[Paused] == 0 && m_LodEvents[Always] > 0 && m_LodEvents[Paused] == m_LodEvents[Always] && sameTime,
+			std::format("a culled PauseWhenCulled fox keeps its pose ({} changes) but keeps its time and fires the same {} events as an animated one ({})",
+				m_LodChanges[Paused], m_LodEvents[Always], m_LodEvents[Paused]));
+		Check(m_LodChanges[Reduced] == k_LodMeasuredFrames / 4 && m_LodEvents[Reduced] == m_LodEvents[Always],
+			std::format("a culled ReduceWhenCulled fox is posed every 4th update ({} of {}) and fires every event ({})", m_LodChanges[Reduced], k_LodMeasuredFrames, m_LodEvents[Reduced]));
+		Check(m_LodChanges[Seen] == k_LodMeasuredFrames,
+			std::format("a PauseWhenCulled fox in view is posed every update ({} of {})", m_LodChanges[Seen], k_LodMeasuredFrames));
+		Check(m_LodReturned > 0,
+			std::format("the paused fox is posed again once it comes into view ({} of the {} updates after)", m_LodReturned, k_LodReturnFrames));
+	}
+
 	void AnimationTest::Update(float deltaTime)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		// Its skinned draw would take one of the crowd's MaxSkinnedInstances.
 		if (!m_SkinnedMaterialChecked && m_Scene && m_Mode != Mode::Crowd)
 			RunSkinnedMaterialCheck(renderer);
+
+		if (m_SkinnedMaterialChecked && !m_LodDone && m_Scene && m_Mode != Mode::Crowd)
+			RunCullingStep(renderer);
 
 		m_FrameInstancesBefore = renderer.GetSkinnedInstancesThisFrame();
 		renderer.BeginScene(m_Camera);
@@ -2446,6 +2545,11 @@ namespace Dingo
 		DestroyAndDelete(m_PaletteGhostShader);
 		for (Framebuffer*& target : m_GhostTargets)
 			DestroyAndDelete(target);
+		delete m_LodScene;
+		m_LodScene = nullptr;
+		DestroyAndDelete(m_LodTarget);
+		for (Entity& fox : m_LodFoxes)
+			fox = {};
 		m_GhostPixels.clear();
 		m_Alive = std::make_shared<int>(0);
 		if (m_FoxAsset != k_InvalidAsset)

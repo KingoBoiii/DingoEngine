@@ -4,6 +4,7 @@
 // for the F7 debug tab. Keeps EnTT and SceneData out of the UI code.
 
 #include "DingoEngine/Graphics/AnimationClip.h"
+#include "DingoEngine/Scene/Components.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +40,9 @@ namespace Dingo
 				const Animator* Instance = nullptr;
 				bool Enabled = true;
 				float Speed = 1.0f;
+				// Not drawn last frame, and posed by its CullingMode (AnimatorComponent).
+				bool Culled = false;
+				AnimatorCullingMode CullingMode = AnimatorCullingMode::AlwaysAnimate;
 			};
 
 			struct AnimatorNames
