@@ -377,17 +377,13 @@ namespace Dingo::Internal
 		if (spawnCount > 0)
 			Renderer::Dispatch(m_EmitPass, (spawnCount + k_GroupSize - 1) / k_GroupSize);
 
-		// Drawn into the post chain's scene target, AO goes on first so it doesn't darken them, and soft
-		// particles read a copy of the depth they are tested against.
+		// Drawn into the post chain's scene target (Renderer3D::EndScene has applied its AO), soft particles
+		// read a copy of the depth they are tested against.
 		Texture* depth = nullptr;
 		PostProcessStack& post = Renderer::GetPostProcessStack();
 		Framebuffer* target = Renderer::GetRenderTarget();
-		if (post.IsActive() && post.GetSceneTarget() == target)
-		{
-			post.ApplyAmbientOcclusion();
-			if (anySoft)
-				depth = post.CopySceneDepth();
-		}
+		if (anySoft && post.IsActive() && post.GetSceneTarget() == target)
+			depth = post.CopySceneDepth();
 
 		const Framebuffer* drawn = target ? target : Renderer::GetSwapChainFramebuffer();
 		ParticleDrawData draw;

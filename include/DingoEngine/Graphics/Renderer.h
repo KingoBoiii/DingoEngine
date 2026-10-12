@@ -200,6 +200,10 @@ namespace Dingo
 		***		QUERIES									***
 		**************************************************/
 
+		// The indices from firstIndex to the end of an index buffer, by its own GraphicsFormat (Uint32,
+		// else Uint16), 0 past the end: what a DrawIndexed with indexCount = 0 draws.
+		static uint32_t GetIndexCount(GraphicsBuffer* indexBuffer, uint32_t firstIndex = 0);
+
 		// Override the render target used by all no-arg draw/clear calls.
 		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain. Either also drops a
 		// SetViewport.

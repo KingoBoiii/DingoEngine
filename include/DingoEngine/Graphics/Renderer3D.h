@@ -72,9 +72,10 @@ namespace Dingo
 
 		// Skinned instances a frame, across every scene this renderer runs, at most
 		// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls with
-		// the same palette, transform and colour (a model's submeshes); it uploads its joints once,
-		// to a volatile buffer that on Vulkan has room for this many writes a frame. Later instances
-		// that frame are skipped whole, with a warning (Statistics::DroppedSkinnedDraws).
+		// the same palette, transform and colour (a model's submeshes); it uploads its joints once in each
+		// pass it draws in (shadow, opaque, translucent), to a volatile buffer that on Vulkan has room for
+		// twice this many writes a frame. Later instances that frame, or one whose writes no longer fit,
+		// are skipped whole, with a warning (Statistics::DroppedSkinnedDraws).
 		uint32_t MaxSkinnedInstances = 64;
 
 		// GPU particles alive at once across every emitter this renderer made, at most
@@ -286,9 +287,10 @@ namespace Dingo
 		// it shares a bit with the light's ShadowCasterGroups.
 		//
 		// A translucent material's meshes draw in the translucent pass, after the opaque ones: each
-		// mesh sorted far to near by the centre of its transformed vertices (along the view for an
+		// mesh sorted far to near by the centre of its bounds, transformed (along the view for an
 		// orthographic camera; ties keep submission order), consecutive meshes of one material in one
-		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
+		// draw while they share a buffer: past MaxVertices or MaxIndices of translucent geometry a scene
+		// is cut into buffers in submission order. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
 		// wrapped around a small one, can blend in the wrong order. A two-sided material's mesh
 		// (CullMode::None: every lit material) puts its triangles facing away from the camera first, so
 		// its far side never blends over its near side. With ShadowsOnly it draws nothing lit, so it
@@ -327,7 +329,8 @@ namespace Dingo
 		// rest pose. No-op outside a Begin/EndScene pair.
 		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
 		// uploads its palette for each; an instance with opaque and translucent meshes is drawn lit in
-		// both passes. That is why the skin buffer holds three writes per instance.
+		// both passes. Each upload is a write of the skin buffer, which holds two per instance of the
+		// budget, so an instance in all three passes takes the room of one and a half.
 		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1);
 
 		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
@@ -403,7 +406,7 @@ namespace Dingo
 		bool PrepareShadows();
 		void EnsureShadowResources();
 		void DrawShadowPass();
-		void ResolveSkinnedBudget();
+		void ResolveSkinnedBudget(bool shadows);
 
 	private:
 		Renderer3DParams m_Params;
@@ -498,6 +501,10 @@ namespace Dingo
 		};
 
 		void PrepareLitMaterial(Material* material) const;
+		// False for a lit material with a texture or sampler past slot 0 (warned once): its binding set
+		// would name bindings the lit shader's layout lacks, which Vulkan does not reject, so no pass
+		// draws it. Any other material is drawable.
+		bool IsDrawableLitMaterial(const Material* material);
 
 		Shader* m_Shader = nullptr;
 		Material* m_Material = nullptr; // built-in lit default material
@@ -525,6 +532,7 @@ namespace Dingo
 			bool SkinnedOnly = false;
 			// Its meshes go to the translucent pass, so the batch itself stays empty.
 			bool Translucent = false;
+			int8_t Drawable = -1; // the scene's IsDrawableLitMaterial answer for a translucent batch, -1 = not asked yet
 			uint32_t IdleScenes = 0;
 		};
 		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
@@ -559,25 +567,35 @@ namespace Dingo
 			BatchKey Key;
 			uint32_t Buffer = 0;   // into the pooled vertex/index buffers
 			uint32_t IndexCount = 0;
-			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
 		};
 		std::vector<ChunkDraw> m_ChunkDraws;
 
 		uint32_t UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex);
+		uint32_t UploadToPool(const Vertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount, uint32_t& batchIndex);
 
 		// A mesh of the translucent pass. A static one's vertices are transformed at submission into
-		// m_TranslucentVertices, its indices counted from its first vertex.
+		// m_TranslucentVertices, its indices counted from its first vertex, in the slice it was cut into.
 		struct TranslucentSubmission
 		{
 			Dingo::Material* Material = nullptr;
+			MaterialBatch* Batch = nullptr; // the translucent batch: map nodes outlive the scene
 			uint32_t FirstVertex = 0;
 			uint32_t VertexCount = 0;
 			uint32_t FirstIndex = 0;
 			uint32_t IndexCount = 0;
+			uint32_t Slice = 0;
 			int32_t Skinned = -1; // into m_SkinnedSubmissions; -1 = static
 			ShadowCasting Shadows = ShadowCasting::On;
 			uint32_t ShadowGroups = 1;
 			float SortKey = 0.0f; // larger is farther from the camera
+		};
+		// A run of m_TranslucentVertices, cut in submission order to fit one pooled buffer pair, so it
+		// uploads straight from there; only the indices are written again, in sorted order.
+		struct TranslucentSlice
+		{
+			uint32_t FirstVertex = 0;
+			uint32_t VertexCount = 0;
+			uint32_t IndexCount = 0;
 		};
 		// One draw of the translucent pass, far to near: a run of static meshes of one material that
 		// lie back to back in one pooled buffer, or one skinned submission.
@@ -592,17 +610,27 @@ namespace Dingo
 		};
 
 		float TranslucentSortKey(const glm::vec3& point) const;
-		// After the opaque uploads: sorts the scene's translucent meshes, packs them (and, for a
-		// shadowed scene, the casting ones again in m_ChunkDraws) into pooled buffers.
+		// A run of casting translucent meshes of one caster mask in a pooled buffer of the lit pass.
+		struct TranslucentCasterDraw
+		{
+			uint32_t Buffer = 0;
+			uint32_t FirstIndex = 0;
+			uint32_t IndexCount = 0;
+			uint32_t ShadowGroups = 1;
+		};
+
+		// After the opaque uploads: sorts the scene's translucent meshes, packs them into pooled buffers
+		// and, for a shadowed scene, notes the ranges of them the shadow pass draws.
 		void PrepareTranslucentPass(uint32_t& batchIndex, bool shadows);
 		void DrawTranslucentPass(Texture* shadowAtlas);
 
 		std::vector<TranslucentSubmission> m_TranslucentSubmissions;
 		std::vector<Vertex> m_TranslucentVertices;
 		std::vector<uint32_t> m_TranslucentIndices;
-		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
+		std::vector<TranslucentSlice> m_TranslucentSlices;
+		std::vector<std::vector<uint32_t>> m_TranslucentSliceIndices; // per slice, sorted; storage kept from busier scenes
 		std::vector<TranslucentDraw> m_TranslucentDraws;
-		std::vector<std::pair<Dingo::Material*, bool>> m_TranslucentMaterials; // checked this scene: drawable or not
+		std::vector<TranslucentCasterDraw> m_TranslucentCasterDraws;
 		std::vector<uint32_t> m_TranslucentNearIndices; // PrepareTranslucentPass' scratch: a mesh's triangles facing the camera
 
 		// Pooled GPU buffers — one (vertex, index) pair per batch drawn in a frame, grown
@@ -685,8 +713,11 @@ namespace Dingo
 		std::unordered_map<uint64_t, SkinnedTwin> m_SkinnedTwins;
 
 		std::vector<uint8_t> m_SkinnedInstanceDropped; // per instance of the scene: past the frame's budget
+		std::vector<uint8_t> m_SkinnedInstancePasses; // per instance of the scene: 1 shadow, 2 opaque, 4 translucent
+		static constexpr uint32_t k_SkinWritesPerInstance = 2;
 		uint64_t m_SkinnedFrameIndex = 0;
 		uint32_t m_SkinnedInstancesThisFrame = 0;
+		uint32_t m_SkinWritesThisFrame = 0; // of k_SkinWritesPerInstance x the budget
 		bool m_SkinnedBudgetWarned = false;
 		bool m_SkinFallbackWarned = false;
 		bool m_SkinnedOnlyWarned = false;

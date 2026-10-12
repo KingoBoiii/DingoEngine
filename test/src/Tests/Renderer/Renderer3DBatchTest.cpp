@@ -267,6 +267,11 @@ namespace Dingo
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitSkinnedMesh(m_SkinnedQuad, WallAt(-12.0f), m_Palette, k_HalfRed, m_TranslucentA);
 		});
+		probeStep("a translucent skinned mesh in front of a static one draws after it", k_GreenOverRed, CheckViewProjection(), [this](Renderer3D& renderer)
+		{
+			renderer.SubmitSkinnedMesh(m_SkinnedQuad, WallAt(-10.0f), m_Palette, k_HalfGreen, m_TranslucentA);
+			renderer.SubmitMesh(m_Quad, WallAt(-12.0f), k_HalfRed, m_TranslucentA);
+		});
 		probeStep("an orthographic camera sorts translucent meshes along its view", k_GreenOverRed, glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -50.0f, 50.0f), [this](Renderer3D& renderer)
 		{
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);

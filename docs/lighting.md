@@ -152,9 +152,9 @@ fog.MaxOpacity = 1.0f;          // the most fog a pixel gets, 0..1
 renderer.SetFog(fog);           // before EndScene, like a light
 ```
 
-In the ECS, add a `FogComponent` to any entity (it has the same fields, plus `Enabled` and
-`UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` so the fog meets
-the cleared background). `Scene::SubmitLights` passes the first enabled one, in entity order, to
+In the ECS, add a `FogComponent` to any entity. It holds a `Fog Settings`, passed on as it is, plus
+`Enabled` and `UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` in
+place of `Settings.Color` so the fog meets the cleared background. `Scene::SubmitLights` passes the first enabled one, in entity order, to
 `SetFog`; another enabled one warns once.
 
 - **Scene-scoped**, like lights: `EndScene` clears it, so set it every frame you want it.
@@ -391,7 +391,8 @@ pass, after every opaque mesh, static and skinned:
 - **It writes no depth**, whatever `DepthWrite` says, but it is depth-tested, so an opaque mesh in
   front still hides it. It blends with the material's `BlendMode` (alpha "over" by default;
   `BlendMode::Additive` for glows).
-- **Meshes are sorted far to near** by the centre of their transformed vertices: by distance from a
+- **Meshes are sorted far to near** by the centre of their bounds (`Mesh::GetBoundsMin/Max`),
+  transformed: by distance from a
   perspective camera, along the view for an orthographic one. Meshes at the same distance keep their
   submission order, so a still scene never flickers. Consecutive meshes of one material share a draw
   (`Statistics::TranslucentDraws`, of `TranslucentMeshes`); materials that alternate in depth take
@@ -407,8 +408,10 @@ pass, after every opaque mesh, static and skinned:
 - **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off), for
   the lights its `ShadowGroups` share a bit with, as an opaque mesh does; one with `ShadowsOnly` draws
   nothing lit and batches like an opaque mesh.
-- **Particles** draw after this pass, so they show over glass. With the post chain, ambient occlusion
-  is applied before it, so glass isn't darkened by the corners behind it.
+- **Particles** draw after this pass and never join its sort, so a particle *behind* glass still
+  draws over it: an alpha particle hides the glass's tint, an additive one skips its dimming. Glass
+  writes no depth, so nothing stops them. With the post chain, ambient occlusion is applied before
+  both, so neither is darkened by the corners behind it.
 
 The sort is per mesh, not per triangle. Meshes that intersect, a large mesh around a smaller one
 (a water plane under a boat, say), or the faces of a concave mesh seen through each other on one side
@@ -499,6 +502,8 @@ and a copy of it is embedded in the engine library at build time.
 - **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
   orthographic camera ([Fog](#fog)).
 - **Translucency is sorted per mesh**, not per triangle or pixel ([Translucent materials](#translucent-materials)).
+- **Particles draw over translucent meshes**, even from behind them, since they aren't in the
+  translucent sort ([Translucent materials](#translucent-materials)).
 
 ## Migrating from v0.6
 

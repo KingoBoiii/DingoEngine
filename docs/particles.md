@@ -133,6 +133,8 @@ which an emitter takes when it is made. An effect must outlive its emitters.
   CPU owns each ring's head, so there are no atomics.
 - **The draw** follows the opaque meshes and then the translucent ones: per run of emitters sharing a blend and sprite, one draw
   instanced over their slots, depth-tested without writing depth; a dead slot draws nothing.
+  Translucent meshes write no depth either and particles don't join their sort, so a particle behind
+  glass draws over it.
 - **With the post chain**, ambient occlusion is applied before the particles (so they aren't
   darkened) and soft particles read a copy of the scene depth (`PostProcessStack::CopySceneDepth`).
   Without it they draw with hard edges.

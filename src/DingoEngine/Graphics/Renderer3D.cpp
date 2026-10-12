@@ -289,9 +289,10 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
-		m_TranslucentChunks.clear();
+		m_TranslucentSlices.clear();
+		m_TranslucentSliceIndices.clear();
 		m_TranslucentDraws.clear();
-		m_TranslucentMaterials.clear();
+		m_TranslucentCasterDraws.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
@@ -384,6 +385,7 @@ namespace Dingo
 			}
 			matBatch.ChunksInUse = 0;
 			matBatch.Enqueued = false;
+			matBatch.Drawable = -1;
 			++it;
 		}
 		m_DrawOrder.clear();
@@ -407,6 +409,7 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
+		m_TranslucentSlices.clear();
 	}
 
 	void Renderer3D::EndScene()
@@ -465,23 +468,10 @@ namespace Dingo
 			for (const BatchKey& key : m_DrawOrder)
 			{
 				Material* material = key.Material;
+				if (!IsDrawableLitMaterial(material))
+					continue;
 				if (IsLitShader(material->GetShader()))
-				{
-					// The binding set would name bindings the shader's layout lacks, which Vulkan does
-					// not reject: drawing it is undefined behaviour, so the material is skipped.
-					if (BindsPastSlotZero(*material))
-					{
-						if (!m_LitSlotsWarned)
-						{
-							const std::string& name = material->GetParams().DebugName;
-							DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-								name.empty() ? "<unnamed>" : name.c_str());
-							m_LitSlotsWarned = true;
-						}
-						continue;
-					}
 					PrepareLitMaterial(material);
-				}
 
 				MaterialBatch& matBatch = m_Batches[key];
 				for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
@@ -497,7 +487,7 @@ namespace Dingo
 			PrepareTranslucentPass(batchIndex, shadows);
 		}
 
-		ResolveSkinnedBudget();
+		ResolveSkinnedBudget(shadows);
 		if (shadows)
 		{
 			DrawShadowPass();
@@ -509,7 +499,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 			for (const ChunkDraw& draw : m_ChunkDraws)
 			{
-				if (draw.Translucent || draw.Key.Shadows == ShadowCasting::ShadowsOnly)
+				if (draw.Key.Shadows == ShadowCasting::ShadowsOnly)
 					continue;
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
@@ -524,6 +514,14 @@ namespace Dingo
 		}
 
 		DrawSkinnedSubmissions();
+
+		// What draws from here on writes no depth, so AO from the opaque depth behind it would darken it.
+		if (!m_TranslucentDraws.empty() || (m_Particles && m_Particles->HasSubmissions()))
+		{
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+				post.ApplyAmbientOcclusion();
+		}
 		DrawTranslucentPass(shadowAtlas);
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
@@ -531,6 +529,7 @@ namespace Dingo
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
+		m_TranslucentSlices.clear();
 
 		if (m_Particles)
 			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
@@ -538,6 +537,11 @@ namespace Dingo
 	}
 
 	uint32_t Renderer3D::UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex)
+	{
+		return UploadToPool(chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size()), chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size()), batchIndex);
+	}
+
+	uint32_t Renderer3D::UploadToPool(const Vertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount, uint32_t& batchIndex)
 	{
 		// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
 		// DirectUpload = false: the writes go into the frame's command list (as Renderer2D's
@@ -549,8 +553,8 @@ namespace Dingo
 			m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
 		}
 
-		Renderer::Upload(m_BatchVertexBuffers[batchIndex], chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size() * sizeof(Vertex)));
-		Renderer::Upload(m_BatchIndexBuffers[batchIndex], chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size() * sizeof(uint32_t)));
+		Renderer::Upload(m_BatchVertexBuffers[batchIndex], vertices, static_cast<uint64_t>(vertexCount) * sizeof(Vertex));
+		Renderer::Upload(m_BatchIndexBuffers[batchIndex], indices, static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
 		return batchIndex++;
 	}
 
@@ -565,7 +569,7 @@ namespace Dingo
 	void Renderer3D::PrepareTranslucentPass(uint32_t& batchIndex, bool shadows)
 	{
 		m_TranslucentDraws.clear();
-		m_TranslucentMaterials.clear();
+		m_TranslucentCasterDraws.clear();
 		if (m_TranslucentSubmissions.empty())
 			return;
 
@@ -573,42 +577,26 @@ namespace Dingo
 		std::stable_sort(m_TranslucentSubmissions.begin(), m_TranslucentSubmissions.end(),
 			[](const TranslucentSubmission& a, const TranslucentSubmission& b) { return a.SortKey > b.SortKey; });
 
-		// The opaque path's rule for lit materials, checked once a material.
-		auto drawable = [this](Material* material)
+		// Asked once a batch a scene.
+		auto drawable = [this](const TranslucentSubmission& submission)
 		{
-			if (!IsLitShader(material->GetShader()))
-				return true;
-			for (const auto& [checked, usable] : m_TranslucentMaterials)
+			MaterialBatch& batch = *submission.Batch;
+			if (batch.Drawable < 0)
 			{
-				if (checked == material)
-					return usable;
+				batch.Drawable = IsDrawableLitMaterial(submission.Material) ? 1 : 0;
+				if (batch.Drawable && IsLitShader(submission.Material->GetShader()))
+					PrepareLitMaterial(submission.Material);
 			}
-
-			const bool usable = !BindsPastSlotZero(*material);
-			if (usable)
-				PrepareLitMaterial(material);
-			else if (!m_LitSlotsWarned)
-			{
-				const std::string& name = material->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-					name.empty() ? "<unnamed>" : name.c_str());
-				m_LitSlotsWarned = true;
-			}
-			m_TranslucentMaterials.emplace_back(material, usable);
-			return usable;
+			return batch.Drawable > 0;
 		};
 
-		const Renderer3DCapabilities& caps = m_Params.Capabilities;
-		uint32_t chunksInUse = 0;
-		auto startChunk = [this, &chunksInUse]()
-		{
-			if (chunksInUse == m_TranslucentChunks.size())
-				m_TranslucentChunks.emplace_back();
-			MeshChunk& chunk = m_TranslucentChunks[chunksInUse++];
-			chunk.Vertices.clear();
-			chunk.Indices.clear();
-		};
-		// Returns the chunk the mesh landed in and where its indices start there. With backFacesFirst its
+		const uint32_t sliceCount = static_cast<uint32_t>(m_TranslucentSlices.size());
+		if (m_TranslucentSliceIndices.size() < sliceCount)
+			m_TranslucentSliceIndices.resize(sliceCount);
+		for (uint32_t slice = 0; slice < sliceCount; ++slice)
+			m_TranslucentSliceIndices[slice].clear();
+
+		// Returns the slice the mesh lies in and where its indices start there. With backFacesFirst its
 		// triangles facing away from the camera go first, so a mesh that draws both sides never blends
 		// its far side over its near side. The vertex normals decide, since a mirrored transform turns
 		// the winding inside out but leaves them pointing outwards.
@@ -621,23 +609,15 @@ namespace Dingo
 		};
 		auto append = [&](const TranslucentSubmission& submission, uint32_t& firstIndex, bool backFacesFirst)
 		{
-			MeshChunk* chunk = &m_TranslucentChunks[chunksInUse - 1];
-			if (chunk->Vertices.size() + submission.VertexCount > caps.MaxVertices || chunk->Indices.size() + submission.IndexCount > caps.MaxIndices)
-			{
-				startChunk();
-				chunk = &m_TranslucentChunks[chunksInUse - 1];
-			}
-
-			const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
-			firstIndex = static_cast<uint32_t>(chunk->Indices.size());
-			const auto vertices = m_TranslucentVertices.begin() + submission.FirstVertex;
-			chunk->Vertices.insert(chunk->Vertices.end(), vertices, vertices + submission.VertexCount);
+			std::vector<uint32_t>& sliceIndices = m_TranslucentSliceIndices[submission.Slice];
+			const uint32_t vertexOffset = submission.FirstVertex - m_TranslucentSlices[submission.Slice].FirstVertex;
+			firstIndex = static_cast<uint32_t>(sliceIndices.size());
 			const uint32_t* indices = m_TranslucentIndices.data() + submission.FirstIndex;
 			if (!backFacesFirst)
 			{
 				for (uint32_t i = 0; i < submission.IndexCount; ++i)
-					chunk->Indices.push_back(indices[i] + vertexOffset);
-				return chunksInUse - 1;
+					sliceIndices.push_back(indices[i] + vertexOffset);
+				return submission.Slice;
 			}
 
 			const Vertex* meshVertices = m_TranslucentVertices.data() + submission.FirstVertex;
@@ -647,59 +627,17 @@ namespace Dingo
 			{
 				const uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
 				const bool inRange = a < submission.VertexCount && b < submission.VertexCount && c < submission.VertexCount;
-				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? chunk->Indices : m_TranslucentNearIndices;
+				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? sliceIndices : m_TranslucentNearIndices;
 				destination.push_back(a + vertexOffset);
 				destination.push_back(b + vertexOffset);
 				destination.push_back(c + vertexOffset);
 			}
-			chunk->Indices.insert(chunk->Indices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
+			sliceIndices.insert(sliceIndices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
 			for (uint32_t i = triangleIndices; i < submission.IndexCount; ++i)
-				chunk->Indices.push_back(indices[i] + vertexOffset);
-			return chunksInUse - 1;
+				sliceIndices.push_back(indices[i] + vertexOffset);
+			return submission.Slice;
 		};
 
-		// Depth-only, so the casters need no order: chunks apart from the lit ones, one run of chunks
-		// per caster mask, since each mask draws with its own shadow material.
-		struct CasterRun
-		{
-			uint32_t ShadowGroups = 1;
-			uint32_t FirstChunk = 0;
-			uint32_t ChunkEnd = 0;
-		};
-		std::vector<CasterRun> casterRuns;
-		if (shadows)
-		{
-			std::vector<uint32_t> groups;
-			for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
-			{
-				if (submission.Skinned < 0 && submission.Shadows == ShadowCasting::On && submission.IndexCount > 0 &&
-					std::find(groups.begin(), groups.end(), submission.ShadowGroups) == groups.end())
-					groups.push_back(submission.ShadowGroups);
-			}
-			for (const uint32_t group : groups)
-			{
-				CasterRun run;
-				run.ShadowGroups = group;
-				for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
-				{
-					if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.ShadowGroups != group ||
-						submission.IndexCount == 0 || !drawable(submission.Material))
-						continue;
-					if (run.ChunkEnd == 0)
-					{
-						startChunk();
-						run.FirstChunk = chunksInUse - 1;
-					}
-					uint32_t firstIndex = 0;
-					append(submission, firstIndex, false);
-					run.ChunkEnd = chunksInUse;
-				}
-				if (run.ChunkEnd > 0)
-					casterRuns.push_back(run);
-			}
-		}
-
-		bool litChunkStarted = false;
 		for (uint32_t index = 0; index < m_TranslucentSubmissions.size(); ++index)
 		{
 			const TranslucentSubmission& submission = m_TranslucentSubmissions[index];
@@ -708,45 +646,44 @@ namespace Dingo
 				m_TranslucentDraws.push_back({ submission.Material, submission.Skinned, 0, 0, 0, 1 });
 				continue;
 			}
-			if (submission.IndexCount == 0 || !drawable(submission.Material))
+			if (submission.IndexCount == 0 || !drawable(submission))
 				continue;
 
-			if (!litChunkStarted)
-			{
-				startChunk();
-				litChunkStarted = true;
-			}
 			uint32_t firstIndex = 0;
-			const uint32_t chunk = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
+			const uint32_t slice = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
+			// Depth-only, so any material's casters of one mask that lie back to back share a draw.
+			if (shadows && submission.Shadows == ShadowCasting::On)
+			{
+				TranslucentCasterDraw* last = m_TranslucentCasterDraws.empty() ? nullptr : &m_TranslucentCasterDraws.back();
+				if (last && last->Buffer == slice && last->ShadowGroups == submission.ShadowGroups && last->FirstIndex + last->IndexCount == firstIndex)
+					last->IndexCount += submission.IndexCount;
+				else
+					m_TranslucentCasterDraws.push_back({ slice, firstIndex, submission.IndexCount, submission.ShadowGroups });
+			}
 			if (!m_TranslucentDraws.empty())
 			{
 				TranslucentDraw& last = m_TranslucentDraws.back();
-				if (last.Skinned < 0 && last.Material == submission.Material && last.Buffer == chunk && last.FirstIndex + last.IndexCount == firstIndex)
+				if (last.Skinned < 0 && last.Material == submission.Material && last.Buffer == slice && last.FirstIndex + last.IndexCount == firstIndex)
 				{
 					last.IndexCount += submission.IndexCount;
 					++last.Meshes;
 					continue;
 				}
 			}
-			m_TranslucentDraws.push_back({ submission.Material, -1, chunk, firstIndex, submission.IndexCount, 1 });
+			m_TranslucentDraws.push_back({ submission.Material, -1, slice, firstIndex, submission.IndexCount, 1 });
 		}
 
-		// Chunk indices become pooled buffer indices.
-		std::vector<uint32_t> buffers(chunksInUse, 0);
-		for (uint32_t chunk = 0; chunk < chunksInUse; ++chunk)
+		// Slice indices become pooled buffer indices.
+		std::vector<uint32_t> buffers(sliceCount, 0);
+		for (uint32_t slice = 0; slice < sliceCount; ++slice)
 		{
-			if (!m_TranslucentChunks[chunk].Indices.empty())
-				buffers[chunk] = UploadChunk(m_TranslucentChunks[chunk], batchIndex);
+			const std::vector<uint32_t>& sliceIndices = m_TranslucentSliceIndices[slice];
+			const TranslucentSlice& range = m_TranslucentSlices[slice];
+			if (!sliceIndices.empty())
+				buffers[slice] = UploadToPool(m_TranslucentVertices.data() + range.FirstVertex, range.VertexCount, sliceIndices.data(), static_cast<uint32_t>(sliceIndices.size()), batchIndex);
 		}
-		for (const CasterRun& run : casterRuns)
-		{
-			for (uint32_t chunk = run.FirstChunk; chunk < run.ChunkEnd; ++chunk)
-			{
-				const MeshChunk& casters = m_TranslucentChunks[chunk];
-				if (!casters.Indices.empty())
-					m_ChunkDraws.push_back({ BatchKey{ nullptr, ShadowCasting::On, run.ShadowGroups }, buffers[chunk], static_cast<uint32_t>(casters.Indices.size()), true });
-			}
-		}
+		for (TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
+			draw.Buffer = buffers[draw.Buffer];
 		for (TranslucentDraw& draw : m_TranslucentDraws)
 		{
 			if (draw.Skinned < 0)
@@ -760,11 +697,6 @@ namespace Dingo
 			return;
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawTranslucentPass");
-		// AO from the opaque depth behind them would darken them, as it would particles.
-		PostProcessStack& post = Renderer::GetPostProcessStack();
-		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
-			post.ApplyAmbientOcclusion();
-
 		uint32_t uploadedInstance = ~0u;
 		for (const TranslucentDraw& draw : m_TranslucentDraws)
 		{
@@ -953,7 +885,7 @@ namespace Dingo
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
 			.SetDirectUpload(false)
-			.SetMaxWritesPerFrame(3 * GetSkinnedInstanceBudget()));
+			.SetMaxWritesPerFrame(k_SkinWritesPerInstance * GetSkinnedInstanceBudget()));
 
 		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 	}
@@ -1021,7 +953,7 @@ namespace Dingo
 		return twin;
 	}
 
-	void Renderer3D::ResolveSkinnedBudget()
+	void Renderer3D::ResolveSkinnedBudget(bool shadows)
 	{
 		m_SkinnedInstanceDropped.assign(m_SkinnedInstances.size(), 0);
 		if (m_SkinnedSubmissions.empty())
@@ -1033,15 +965,35 @@ namespace Dingo
 		{
 			m_SkinnedFrameIndex = frameIndex;
 			m_SkinnedInstancesThisFrame = 0;
+			m_SkinWritesThisFrame = 0;
+		}
+
+		// An instance uploads its palette once in each pass it draws in. Sizing the buffer for all three
+		// would cost every skinning renderer the translucent pass's writes, so an instance is charged
+		// for the passes it uses instead: an opaque shadowed one spends 2, one with translucent meshes too 3.
+		m_SkinnedInstancePasses.assign(m_SkinnedInstances.size(), 0);
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			uint8_t& passes = m_SkinnedInstancePasses[submission.Instance];
+			if (shadows && submission.Shadows != ShadowCasting::Off)
+				passes |= 1;
+			if (submission.Translucent)
+				passes |= 4;
+			else if (submission.Shadows != ShadowCasting::ShadowsOnly)
+				passes |= 2;
 		}
 
 		// An instance is drawn whole or not at all, so a character never loses some of its parts.
 		const uint32_t budget = GetSkinnedInstanceBudget();
+		const uint32_t writes = k_SkinWritesPerInstance * budget;
 		for (uint32_t instance = 0; instance < m_SkinnedInstances.size(); ++instance)
 		{
-			if (m_SkinnedInstancesThisFrame < budget)
+			const uint8_t passes = m_SkinnedInstancePasses[instance];
+			const uint32_t cost = (passes & 1) + ((passes >> 1) & 1) + ((passes >> 2) & 1);
+			if (m_SkinnedInstancesThisFrame < budget && m_SkinWritesThisFrame + cost <= writes)
 			{
 				++m_SkinnedInstancesThisFrame;
+				m_SkinWritesThisFrame += cost;
 				++m_Statistics.SkinnedInstances;
 				m_Statistics.SkinnedJoints += m_SkinnedInstances[instance].JointCount;
 				continue;
@@ -1053,8 +1005,8 @@ namespace Dingo
 
 			if (!m_SkinnedBudgetWarned)
 			{
-				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
-					budget, k_MaxSkinnedInstancesLimit);
+				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame, or more than {} palette uploads (one per instance and pass); the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
+					budget, writes, k_MaxSkinnedInstancesLimit);
 				m_SkinnedBudgetWarned = true;
 			}
 		}
@@ -1110,17 +1062,8 @@ namespace Dingo
 
 		// The same rule as the static path, so a material draws the same way skinned or not.
 		Material* requested = submission.Material ? submission.Material : m_Material;
-		if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
-		{
-			if (!m_LitSlotsWarned)
-			{
-				const std::string& name = requested->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-					name.empty() ? "<unnamed>" : name.c_str());
-				m_LitSlotsWarned = true;
-			}
+		if (!IsDrawableLitMaterial(requested))
 			return 0;
-		}
 
 		EnsureSkinningResources();
 		if (submission.Instance != uploadedInstance)
@@ -1167,6 +1110,21 @@ namespace Dingo
 		Material* material = Material::Create(params);
 		PrepareLitMaterial(material);
 		return material;
+	}
+
+	bool Renderer3D::IsDrawableLitMaterial(const Material* material)
+	{
+		if (!IsLitShader(material->GetShader()) || !BindsPastSlotZero(*material))
+			return true;
+
+		if (!m_LitSlotsWarned)
+		{
+			const std::string& name = material->GetParams().DebugName;
+			DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+				name.empty() ? "<unnamed>" : name.c_str());
+			m_LitSlotsWarned = true;
+		}
+		return false;
 	}
 
 	void Renderer3D::PrepareLitMaterial(Material* material) const
@@ -1557,12 +1515,23 @@ namespace Dingo
 		uint32_t vertexOffset = 0;
 		if (matBatch.Translucent)
 		{
+			const uint32_t vertexCount = static_cast<uint32_t>(vertices.size());
+			const uint32_t indexCount = static_cast<uint32_t>(indices.size());
+			if (m_TranslucentSlices.empty() || m_TranslucentSlices.back().VertexCount + vertexCount > caps.MaxVertices ||
+				m_TranslucentSlices.back().IndexCount + indexCount > caps.MaxIndices)
+				m_TranslucentSlices.push_back({ static_cast<uint32_t>(m_TranslucentVertices.size()), 0, 0 });
+			TranslucentSlice& slice = m_TranslucentSlices.back();
+			slice.VertexCount += vertexCount;
+			slice.IndexCount += indexCount;
+
 			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
 			submission.Material = batchMaterial;
+			submission.Batch = &matBatch;
 			submission.FirstVertex = static_cast<uint32_t>(m_TranslucentVertices.size());
 			submission.VertexCount = static_cast<uint32_t>(vertices.size());
 			submission.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
 			submission.IndexCount = static_cast<uint32_t>(indices.size());
+			submission.Slice = static_cast<uint32_t>(m_TranslucentSlices.size() - 1);
 			submission.Shadows = shadows;
 			submission.ShadowGroups = shadowGroups;
 		}
@@ -1625,16 +1594,12 @@ namespace Dingo
 
 		if (matBatch.Translucent)
 		{
-			TranslucentSubmission& submission = m_TranslucentSubmissions.back();
+			// The bounds' centre, as SubmitSkinnedMesh keys a skinned mesh, so a skinned mesh that falls
+			// back to this path sorts the same.
 			glm::vec3 center = glm::vec3(transform[3]);
-			if (submission.VertexCount > 0)
-			{
-				glm::vec3 sum(0.0f);
-				for (uint32_t i = 0; i < submission.VertexCount; ++i)
-					sum += m_TranslucentVertices[submission.FirstVertex + i].Position;
-				center = sum / static_cast<float>(submission.VertexCount);
-			}
-			submission.SortKey = TranslucentSortKey(center);
+			if (mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
+				center = glm::vec3(transform * glm::vec4((mesh->GetBoundsMin() + mesh->GetBoundsMax()) * 0.5f, 1.0f));
+			m_TranslucentSubmissions.back().SortKey = TranslucentSortKey(center);
 		}
 
 		++m_Statistics.SubmittedMeshes;
@@ -2044,14 +2009,18 @@ namespace Dingo
 			Renderer::DrawIndexed(GetShadowMaterial(false, draw.Key.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
 			++m_Statistics.ShadowDrawCalls;
 		}
+		for (const TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
+		{
+			Renderer::DrawIndexed(GetShadowMaterial(false, draw.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
+			++m_Statistics.ShadowDrawCalls;
+		}
 		m_Statistics.ShadowCasters += m_StaticCasters;
 
 		// The lit pass's skip rule, so a mesh it doesn't draw leaves no shadow without a body.
 		auto skinnedShadowDrawn = [this](const SkinnedSubmission& submission)
 		{
 			const Material* material = submission.Material ? submission.Material : m_Material;
-			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] &&
-				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
+			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] && IsDrawableLitMaterial(material);
 		};
 		bool skinnedCasts = false;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)

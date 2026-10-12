@@ -52,6 +52,7 @@ namespace Dingo::Internal
 		// the one the scene's opaque pass drew into (its depth tests the particles).
 		void EndScene(const glm::mat4& viewProjection, Renderer3D::Statistics& stats);
 		void ClearScene() { m_Submissions.clear(); }
+		bool HasSubmissions() const { return !m_Submissions.empty(); }
 
 		GraphicsBuffer* GetPool() const { return m_PoolBuffer; }
 		uint32_t GetCapacity() const { return m_Pool->Capacity; }
