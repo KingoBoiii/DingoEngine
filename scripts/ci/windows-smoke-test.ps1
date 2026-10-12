@@ -70,7 +70,7 @@ function Get-HungThreads([System.Diagnostics.Process] $Process, [string] $Exe)
 
 	$symbols = "srv*$env:TEMP\symbols*https://msdl.microsoft.com/download/symbols;$(Split-Path $Exe)"
 	$id = $Process.Id
-	$job = Start-Job { & $using:cdb -p $using:id -pv -y $using:symbols -c '~*kc 40; qd' 2>&1 }
+	$job = Start-Job { & $using:cdb -p $using:id -pv -y $using:symbols -c '~*k 30; qd' 2>&1 }
 	if (-not (Wait-Job $job -Timeout 240))
 	{
 		Remove-Job $job -Force
@@ -78,7 +78,7 @@ function Get-HungThreads([System.Diagnostics.Process] $Process, [string] $Exe)
 	}
 	$output = Receive-Job $job -ErrorAction Continue
 	Remove-Job $job -Force
-	return $output | Where-Object { $_ -match '^\s*#|^\s*[0-9a-f]{2} |^\s*\.?\s*\d+\s+Id:' }
+	return $output | ForEach-Object { "$_" } | Where-Object { $_ -notmatch '^ModLoad:|^\s*$' }
 }
 
 function Invoke-Run
@@ -159,7 +159,7 @@ function Invoke-Run
 			Write-Output '---- the last lines it logged ----'
 			if (Test-Path $log) { Get-Content $log -Tail 25 | ForEach-Object { Write-Output $_.TrimEnd() } }
 			Write-Output '---- its threads ----'
-			$hungThreads | Select-Object -First 300 | ForEach-Object { Write-Output $_ }
+			$hungThreads | Select-Object -First 600 | ForEach-Object { Write-Output $_ }
 		}
 	}
 	else
