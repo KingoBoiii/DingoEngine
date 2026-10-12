@@ -66,7 +66,7 @@ namespace Dingo
 		static std::uint64_t AllocateId();
 
 		// A model reload: the source's vertices, a new id (Jolt caches shapes by it) and no GPU copy,
-		// so the next skinned draw uploads the new skin.
+		// so the next skinned or instanced draw uploads the new vertices.
 		void Reinitialize(Mesh& source);
 		void Clear();
 		void ComputeBounds();
@@ -85,6 +85,9 @@ namespace Dingo
 		// GPU copies of the skin, made by Renderer3D on the first skinned draw.
 		mutable GraphicsBuffer* m_SkinVertexBuffer = nullptr;
 		mutable GraphicsBuffer* m_SkinIndexBuffer  = nullptr;
+		// GPU copies of GetVertices() and the indices, made by Renderer3D on the first instanced draw.
+		mutable GraphicsBuffer* m_StaticVertexBuffer = nullptr;
+		mutable GraphicsBuffer* m_StaticIndexBuffer  = nullptr;
 
 		friend class Renderer3D;
 	};

@@ -49,6 +49,7 @@ namespace
 
 	constexpr int32_t k_CullCheckWidth = 640;
 	constexpr int32_t k_CullCheckHeight = 360;
+	constexpr uint32_t k_MaxRepeatDraws = 15;
 	constexpr uint32_t k_MinCulledPercent = 85;
 	constexpr uint32_t k_CullSamples = 8;
 
@@ -318,6 +319,8 @@ namespace Dingo
 		if (auto seed = args.Get("seed"))
 			m_Seed = std::strtoull(std::string(*seed).c_str(), nullptr, 10);
 		m_Perf = args.Get("perf").has_value();
+		if (auto instancing = args.Get("instancing"))
+			m_Instancing = *instancing != "off";
 		if (auto frame = args.Get("frame"))
 			m_HeldFrame = static_cast<int64_t>(std::strtoll(std::string(*frame).c_str(), nullptr, 10));
 		if (auto frame = args.Get("cull-freeze"))
@@ -334,6 +337,8 @@ namespace Dingo
 		m_Checks.clear();
 		m_ChecksDone = false;
 		m_Frame = 0;
+		m_WasInstancing = Application::Get().GetRenderer3D().IsInstancingEnabled();
+		Application::Get().GetRenderer3D().SetInstancingEnabled(m_Instancing);
 		m_PerfFrames = 0;
 		m_PerfDone = false;
 		m_PerfFrameMs = m_PerfUpdateMs = m_PerfRenderEntitiesMs = m_PerfEndSceneMs = m_PerfDraws = m_PerfVertices = 0.0;
@@ -573,6 +578,9 @@ namespace Dingo
 			Check(stats.SubmittedMeshes == m_Count, std::format("every entity's mesh reaches a batch ({} of {})", stats.SubmittedMeshes, m_Count));
 		}
 		RunCullingChecks();
+		RunInstancingChecks();
+		if (m_Mode == Mode::Repeat && Application::Get().GetRenderer3D().IsInstancingEnabled())
+			Check(stats.DrawCalls <= k_MaxRepeatDraws, std::format("{} repeated props take at most {} draws ({} draws, {} meshes instanced)", m_Count, k_MaxRepeatDraws, stats.DrawCalls, stats.InstancedMeshes));
 
 		const uint64_t again = HashLayout(GenerateLayout(m_Mode, m_Count, m_Seed));
 		Check(again == m_LayoutHash, std::format("the same seed builds the same layout (0x{:016x})", m_LayoutHash));
@@ -684,6 +692,100 @@ namespace Dingo
 			lapPercent, k_CullSamples));
 	}
 
+	void ThroughputTest::RunInstancingChecks()
+	{
+		if (m_Mode == Mode::Skinned)
+			return;
+
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_InstanceTargets[i])
+				m_InstanceTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "ThroughputInstancingOff" : "ThroughputInstancingOn")
+					.SetWidth(k_CullCheckWidth)
+					.SetHeight(k_CullCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight));
+		PlaceCamera(camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
+
+		const bool wasInstancing = renderer.IsInstancingEnabled();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer3D::Statistics stats[2];
+		for (int i = 0; i < 2; ++i)
+		{
+			renderer.SetInstancingEnabled(i == 1);
+			Renderer::SetRenderTarget(m_InstanceTargets[i]);
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			m_Scene->SubmitLights(renderer);
+			m_Scene->RenderEntities3D(renderer);
+			renderer.EndScene();
+			stats[i] = renderer.GetStatistics();
+		}
+		Renderer::SetRenderTarget(previous);
+		renderer.SetInstancingEnabled(wasInstancing);
+
+		const bool exact = m_Mode == Mode::Static;
+		Check(stats[0].InstancedMeshes == 0 && stats[0].InstancedDraws == 0, "with instancing off, nothing is instanced");
+		if (exact)
+			Check(stats[1].InstancedMeshes == 0, std::format("distinct meshes are never instanced ({} instanced)", stats[1].InstancedMeshes));
+		else
+			Check(stats[1].InstancedMeshes > 0 && stats[1].InstancedDraws > 0 && stats[1].VertexCount < stats[0].VertexCount,
+				std::format("the repeated props are instanced ({} meshes in {} instanced draws; {} vertices batched, {} without)", stats[1].InstancedMeshes, stats[1].InstancedDraws,
+					stats[1].VertexCount, stats[0].VertexCount));
+		if (m_Mode == Mode::Shadow)
+			Check(stats[1].InstancedShadowDraws > 0 && stats[1].ShadowCasters == stats[0].ShadowCasters,
+				std::format("casters are instanced into the atlas too ({} instanced shadow draws, {} casters either way)", stats[1].InstancedShadowDraws, stats[1].ShadowCasters));
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_InstanceTargets[0]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				m_InstanceOffPixels = pixels.Data;
+		});
+		const glm::u8vec4 clear = glm::u8vec4(glm::round(glm::clamp(m_ClearColor, 0.0f, 1.0f) * 255.0f));
+		m_InstanceTargets[1]->GetAttachment(0)->ReadPixels([this, alive, exact, clear](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+
+			auto background = [&clear](const uint8_t* pixel)
+			{
+				for (int c = 0; c < 3; ++c)
+				{
+					if (std::abs(static_cast<int>(pixel[c]) - static_cast<int>(clear[c])) > 1)
+						return false;
+				}
+				return true;
+			};
+			size_t differing = 0;
+			size_t coverage = 0;
+			int largest = 0;
+			const bool sized = !pixels.Data.empty() && pixels.Data.size() == m_InstanceOffPixels.size();
+			for (size_t i = 0; sized && i < pixels.Data.size(); i += 4)
+			{
+				int delta = 0;
+				for (int c = 0; c < 4; ++c)
+					delta = (std::max)(delta, std::abs(static_cast<int>(pixels.Data[i + c]) - static_cast<int>(m_InstanceOffPixels[i + c])));
+				differing += delta > 0 ? 1 : 0;
+				largest = (std::max)(largest, delta);
+				coverage += background(&pixels.Data[i]) != background(&m_InstanceOffPixels[i]) ? 1 : 0;
+			}
+
+			const size_t total = pixels.Data.size() / 4;
+			const std::string measured = std::format("{} of {} differ, by at most {}/255, {} change coverage", differing, total, largest, coverage);
+			if (exact)
+				Check(sized && differing == 0, std::format("instancing changes no pixel of a view with nothing to instance ({})", measured));
+			else
+				Check(sized && largest <= 2 && differing * 1000 <= total && coverage == 0, std::format("instancing draws the view within tolerance of the CPU batches ({})", measured));
+		});
+	}
+
 	void ThroughputTest::RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats)
 	{
 		m_PerfFrameMs += 1000.0 * static_cast<double>(deltaTime);
@@ -701,8 +803,8 @@ namespace Dingo
 
 		m_PerfDone = true;
 		const double frames = static_cast<double>(m_PerfFrames);
-		m_PerfResult = std::format("mode={} count={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}",
-			ModeName(m_Mode), m_Count, m_PerfFrameMs / frames, m_PerfUpdateMs / frames, m_PerfRenderEntitiesMs / frames, m_PerfEndSceneMs / frames,
+		m_PerfResult = std::format("mode={} count={} instancing={} frame_ms={:.3f} update_ms={:.3f} render_entities_ms={:.3f} end_scene_ms={:.3f} draws={:.0f} vertices={:.0f} dropped={} visible_pct={:.1f} culled_pct={:.1f}",
+			ModeName(m_Mode), m_Count, m_Instancing ? "on" : "off", m_PerfFrameMs / frames, m_PerfUpdateMs / frames, m_PerfRenderEntitiesMs / frames, m_PerfEndSceneMs / frames,
 			m_PerfDraws / frames, m_PerfVertices / frames, m_PerfDropped, IsLap(m_Mode) ? EstimateVisiblePercent() : 100.0f, 100.0 * m_PerfCulled / frames / m_Count);
 		for (const auto& [name, total] : m_PerfGpuMs)
 			m_PerfResult += std::format(" gpu_{}_ms={:.3f}", name, total / frames);
@@ -713,9 +815,13 @@ namespace Dingo
 	{
 		if (m_CullFreezeFrame >= 0)
 			Application::Get().GetRenderer3D().SetCullingFrozen(false);
+		Application::Get().GetRenderer3D().SetInstancingEnabled(m_WasInstancing);
 		for (Framebuffer*& target : m_CullTargets)
 			DestroyAndDelete(target);
 		m_CullOffPixels.clear();
+		for (Framebuffer*& target : m_InstanceTargets)
+			DestroyAndDelete(target);
+		m_InstanceOffPixels.clear();
 
 		m_Renderables.clear();
 		delete m_Scene;

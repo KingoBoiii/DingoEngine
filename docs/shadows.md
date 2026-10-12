@@ -191,8 +191,9 @@ then `SlopeBias`. **Peter-panning** (a shadow detached from the foot of its cast
   so a caster outside the view still casts into it.
 - **One atlas, one draw per batch.** Every cascade and every light's view is a tile of one depth
   texture, and every batch is drawn into all of them at once: the shadow pass draws it instanced, one
-  instance per tile, with clip distances at each tile's edges. Skinned meshes are skinned again for it, so a skinned instance
-  uploads its joints twice a frame (the skin buffer holds two writes per instance of the budget).
+  instance per tile, with clip distances at each tile's edges. A mesh the lit pass instances (v1.0) is drawn
+  the same way, its copies times the tiles in one draw. Skinned meshes are skinned again for it, so a skinned instance
+  uploads its joints once more a frame (the skin buffer holds three writes per instance of the budget: shadow, opaque and translucent).
   The clip distances need Vulkan's `shaderClipDistance`; on a GPU without it
   (`GraphicsContext::SupportsClipDistance()` false) no shadows are drawn and Renderer3D warns once.
 - **Filtering.** The lit shader reads each cascade through a comparison sampler: 3 x 3 taps of the

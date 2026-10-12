@@ -22,12 +22,13 @@ namespace
 {
 	constexpr const char* k_LitShaderName = "Renderer3DMeshShader";
 	constexpr const char* k_SkinnedLitShaderName = "Renderer3DSkinnedMeshShader";
+	constexpr const char* k_InstancedLitShaderName = "Renderer3DInstancedMeshShader";
 
-	Dingo::Shader* CreateLitShader(const char* name, bool skinned)
+	Dingo::Shader* CreateLitShader(const char* name, const char* define = nullptr)
 	{
 		Dingo::ShaderParams params = Dingo::ShaderParams().SetName(name);
-		if (skinned)
-			params.AddDefine("DE_SKINNED");
+		if (define)
+			params.AddDefine(define);
 		return Dingo::Internal::CreateEngineShader(params, "Renderer3D_Lit.glsl");
 	}
 
@@ -236,11 +237,13 @@ namespace Dingo
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 		Internal::UnwatchUnmanagedShader(m_ShadowShader);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
+		Internal::UnwatchUnmanagedShader(m_InstancedShader);
+		Internal::UnwatchUnmanagedShader(m_InstancedShadowShader);
 	}
 
 	void Renderer3D::Initialize()
 	{
-		m_Shader = CreateLitShader(k_LitShaderName, false);
+		m_Shader = CreateLitShader(k_LitShaderName);
 		s_LitShaders.push_back(m_Shader);
 		Internal::WatchUnmanagedShader(m_Shader);
 
@@ -268,6 +271,14 @@ namespace Dingo
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(Vertex, TexCoord));
 		m_LitLayout = VertexLayout(m_Layout)
 			.AddAttribute("a_ObjectIndex", Format::R32_UINT, offsetof(Vertex, ObjectIndex));
+		m_MeshLayout = VertexLayout()
+			.SetStride(sizeof(MeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(MeshVertex, Position))
+			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(MeshVertex, Normal))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(MeshVertex, TexCoord));
+		m_MeshShadowLayout = VertexLayout()
+			.SetStride(sizeof(MeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(MeshVertex, Position));
 
 		m_ObjectRecords.assign(1, ObjectRecord{});
 		m_ObjectCapacity = 256;
@@ -348,6 +359,17 @@ namespace Dingo
 		for (auto& [id, entry] : m_SkinnedTwins)
 			DestroyAndDelete(entry.Twin);
 		m_SkinnedTwins.clear();
+		for (auto& [id, entry] : m_InstancedTwins)
+			DestroyAndDelete(entry.Twin);
+		m_InstancedTwins.clear();
+		m_InstanceGroups.clear();
+		m_InstanceGroupLookup.clear();
+		m_InstanceRecords.clear();
+		DestroyAndDelete(m_InstanceBuffer);
+		m_InstanceCapacity = 0;
+		DestroyAndDelete(m_InstanceDrawBuffer);
+		Internal::UnwatchUnmanagedShader(m_InstancedShader);
+		DestroyAndDelete(m_InstancedShader);
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
@@ -358,8 +380,10 @@ namespace Dingo
 		DestroyShadowMaterials();
 		Internal::UnwatchUnmanagedShader(m_ShadowShader);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
+		Internal::UnwatchUnmanagedShader(m_InstancedShadowShader);
 		DestroyAndDelete(m_ShadowShader);
 		DestroyAndDelete(m_SkinnedShadowShader);
+		DestroyAndDelete(m_InstancedShadowShader);
 		DestroyAndDelete(m_ShadowAtlas);
 		DestroyAndDelete(m_PlaceholderShadowAtlas);
 		DestroyAndDelete(m_ShadowSampler);
@@ -427,19 +451,8 @@ namespace Dingo
 		m_StaticSubmissions.clear();
 		m_ObjectRecords.resize(1);
 
-		for (auto it = m_SkinnedTwins.begin(); it != m_SkinnedTwins.end();)
-		{
-			SkinnedTwin& entry = it->second;
-			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
-			entry.Used = false;
-			if (entry.IdleScenes > k_MaxIdleBatchScenes)
-			{
-				DestroyAndDelete(entry.Twin);
-				it = m_SkinnedTwins.erase(it);
-				continue;
-			}
-			++it;
-		}
+		ReleaseIdleTwins(m_SkinnedTwins);
+		ReleaseIdleTwins(m_InstancedTwins);
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
@@ -496,6 +509,7 @@ namespace Dingo
 		}
 
 		UploadObjectRecords();
+		UploadInstanceRecords();
 		ResolveSkinnedBudget();
 		if (shadows)
 		{
@@ -513,11 +527,23 @@ namespace Dingo
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
 				// material also drawn skinned would otherwise keep a skin buffer this renderer may free.
-				Material* material = draw.Key.Material;
+				const bool instanced = draw.Group != ~0u;
+				Material* material = instanced ? ResolveInstancedMaterial(draw.Key.Material) : draw.Key.Material;
 				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 				material->SetSkinUniformBuffer(nullptr);
 				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 				material->SetObjectBuffer(m_ObjectBuffer);
+				if (instanced)
+				{
+					const InstanceGroup& group = m_InstanceGroups[draw.Group];
+					EnsureStaticBuffers(group.Mesh);
+					material->SetInstanceBuffers(m_InstanceBuffer, m_InstanceDrawBuffer);
+					UploadInstanceDraw(group.FirstRecord, 1);
+					Renderer::DrawIndexed(material, m_MeshLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer, group.Mesh->GetIndexCount(), group.Count);
+					++m_Statistics.DrawCalls;
+					++m_Statistics.InstancedDraws;
+					continue;
+				}
 				const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
 				Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 				++m_Statistics.DrawCalls;
@@ -790,6 +816,17 @@ namespace Dingo
 				}
 				PrepareLitMaterial(material);
 			}
+			else if (material->GetParams().Instancing && !CanInstance(material))
+			{
+				if (!m_InstanceMaterialWarned)
+				{
+					const std::string& name = material->GetParams().DebugName;
+					DE_CORE_WARN("Renderer3D: material '{}' has Instancing set but its shader lacks the {} storage block or the {} uniform block (Instancing.glsl), or puts one on a binding its textures or samplers use or past {}; its meshes are not drawn.",
+						name.empty() ? "<unnamed>" : name.c_str(), Material::k_InstanceDataBlockName, Material::k_InstanceDrawBlockName, k_MaxSkinDataBinding);
+					m_InstanceMaterialWarned = true;
+				}
+				continue;
+			}
 			batch.Usable = true;
 			if (key.Shadows != ShadowCasting::ShadowsOnly)
 				batch.Slot = AcquireDrawSlot(key);
@@ -816,6 +853,8 @@ namespace Dingo
 		for (StaticSubmission& submission : m_StaticSubmissions)
 		{
 			submission.Chunk = ~0u;
+			submission.Slot = ~0u;
+			submission.Group = ~0u;
 			const uint32_t vertexCount = submission.Mesh->GetVertexCount();
 			const uint32_t indexCount = submission.Mesh->GetIndexCount();
 			if (vertexCount == 0 || indexCount == 0)
@@ -827,7 +866,7 @@ namespace Dingo
 			{
 				if (!culling || !submission.Bounded || (!submission.PastDistance && ReachesShadowView(submission.Bounds, submission.ShadowGroups)))
 				{
-					PlaceInSlot(shadowSlot(submission.ShadowGroups), vertexCount, indexCount, submission.Chunk, submission.ChunkVertex, submission.ChunkIndex);
+					submission.Slot = shadowSlot(submission.ShadowGroups);
 					++m_Statistics.ShadowCasters;
 				}
 				else
@@ -865,13 +904,39 @@ namespace Dingo
 			}
 			if (seen)
 			{
-				PlaceInSlot(batch.Slot, vertexCount, indexCount, submission.Chunk, submission.ChunkVertex, submission.ChunkIndex);
+				submission.Slot = batch.Slot;
 				m_Statistics.ShadowCasters += casts ? 1 : 0;
 				continue;
 			}
 			++m_Statistics.CulledMeshes;
 			if (casts)
 				castIfReached();
+		}
+
+		// Placed in submission order, slot by slot, so a scene with nothing instanced is laid out exactly
+		// as it would be without instancing.
+		const bool grouped = GroupInstances(shadows);
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			if (submission.Slot == ~0u)
+				continue;
+			if (grouped && submission.Group != ~0u)
+			{
+				InstanceGroup& group = m_InstanceGroups[submission.Group];
+				if (group.Instanced)
+				{
+					submission.Record = group.FirstRecord + group.Placed++;
+					++m_Statistics.InstancedMeshes;
+					continue;
+				}
+				if (group.Dropped)
+				{
+					submission.Slot = ~0u;
+					++m_Statistics.DroppedInstancedMeshes;
+					continue;
+				}
+			}
+			PlaceInSlot(submission.Slot, submission.Mesh->GetVertexCount(), submission.Mesh->GetIndexCount(), submission.Chunk, submission.ChunkVertex, submission.ChunkIndex);
 		}
 
 		uint32_t vertexTotal = 0;
@@ -896,9 +961,180 @@ namespace Dingo
 
 		for (uint32_t slot = 0; slot < m_UsedDrawSlots; ++slot)
 		{
-			for (const uint32_t chunk : m_DrawSlots[slot].Chunks)
-				m_ChunkDraws.push_back({ m_DrawSlots[slot].Key, m_ArenaIndexBase + m_SceneChunks[chunk].FirstIndex, m_SceneChunks[chunk].IndexCount });
+			const DrawSlot& drawSlot = m_DrawSlots[slot];
+			for (const uint32_t chunk : drawSlot.Chunks)
+				m_ChunkDraws.push_back({ drawSlot.Key, m_ArenaIndexBase + m_SceneChunks[chunk].FirstIndex, m_SceneChunks[chunk].IndexCount });
+			for (const uint32_t group : drawSlot.Groups)
+				m_ChunkDraws.push_back({ drawSlot.Key, 0, 0, false, group });
 		}
+	}
+
+	bool Renderer3D::CanInstance(const Material* material) const
+	{
+		if (IsLitShader(material->GetShader()))
+			return true;
+		const Shader* shader = material->GetShader();
+		if (!material->GetParams().Instancing || !shader)
+			return false;
+
+		// Vulkan numbers buffers, textures and samplers together, so a block on a bound texture's or
+		// sampler's binding makes a binding set that silently draws nothing.
+		auto free = [material](int32_t binding)
+		{
+			if (binding < 2)
+				return false;
+			const uint32_t slot = static_cast<uint32_t>(binding - 2) / 2;
+			if ((binding - 2) % 2 == 1)
+				return slot >= Material::k_MaxSamplerSlots || !material->GetSampler(slot);
+			return slot >= Material::k_MaxTextureSlots || !material->GetTexture(slot);
+		};
+		const int32_t draw = shader->FindUniformBufferBinding(Material::k_InstanceDrawBlockName);
+		return free(shader->FindStorageBufferBinding(Material::k_InstanceDataBlockName)) && free(draw) &&
+			draw <= static_cast<int32_t>(k_MaxSkinDataBinding);
+	}
+
+	bool Renderer3D::ForcesInstancing(const Material* material) const
+	{
+		return material->GetParams().Instancing && !IsLitShader(material->GetShader());
+	}
+
+	bool Renderer3D::GroupInstances(bool shadows)
+	{
+		m_InstanceGroups.clear();
+		m_InstanceRecords.clear();
+		for (uint32_t slot = 0; slot < m_UsedDrawSlots; ++slot)
+		{
+			m_DrawSlots[slot].Groups.clear();
+			m_DrawSlots[slot].LastGroup = ~0u;
+		}
+
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		bool forcing = false;
+		for (uint32_t slot = 0; slot < m_UsedDrawSlots && !forcing; ++slot)
+		{
+			const Material* material = m_DrawSlots[slot].Key.Material;
+			forcing = material && ForcesInstancing(material);
+		}
+		if (!caps.Instancing && !forcing)
+			return false;
+
+		DE_PROFILE_SCOPE("Renderer3D::GroupInstances");
+
+		// Whether a mesh is instanced comes from its copies in the batch before culling, so the camera
+		// never moves a copy between the GPU's transform and the CPU's, which round differently.
+		const uint32_t threshold = std::max(caps.InstanceThreshold, 1u);
+		m_InstanceCopyLookup.clear();
+		m_InstanceCopies.clear();
+		const MaterialBatch* lastBatch = nullptr;
+		uint64_t lastMesh = 0;
+		uint32_t lastCopies = ~0u;
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			submission.Copies = ~0u;
+			if (!submission.Batch || !submission.Batch->Usable || submission.Mesh->GetVertexCount() == 0 || submission.Mesh->GetIndexCount() == 0)
+				continue;
+
+			const uint64_t meshId = submission.Mesh->GetId();
+			if (lastCopies == ~0u || lastBatch != submission.Batch || lastMesh != meshId)
+			{
+				const auto [it, inserted] = m_InstanceCopyLookup.try_emplace(InstanceCopyKey{ submission.Batch, meshId }, static_cast<uint32_t>(m_InstanceCopies.size()));
+				if (inserted)
+					m_InstanceCopies.push_back({ submission.Material, submission.Mesh });
+				lastBatch = submission.Batch;
+				lastMesh = meshId;
+				lastCopies = it->second;
+			}
+			++m_InstanceCopies[lastCopies].Count;
+			submission.Copies = lastCopies;
+		}
+		for (InstanceCopies& copies : m_InstanceCopies)
+		{
+			const bool worth = caps.Instancing && (copies.Count >= threshold ||
+				static_cast<uint64_t>(copies.Count) * copies.Mesh->GetVertexCount() > caps.MaxVertices);
+			copies.Forced = ForcesInstancing(copies.Material);
+			copies.Instanced = copies.Forced || (worth && CanInstance(copies.Material));
+		}
+
+		m_InstanceGroupLookup.clear();
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			if (submission.Slot == ~0u || submission.Copies == ~0u || !m_InstanceCopies[submission.Copies].Instanced)
+				continue;
+
+			DrawSlot& slot = m_DrawSlots[submission.Slot];
+			const uint64_t meshId = submission.Mesh->GetId();
+			uint32_t group = slot.LastGroup;
+			if (group == ~0u || m_InstanceGroups[group].MeshId != meshId)
+			{
+				const auto [it, inserted] = m_InstanceGroupLookup.try_emplace(InstanceGroupKey{ meshId, submission.Slot }, static_cast<uint32_t>(m_InstanceGroups.size()));
+				if (inserted)
+				{
+					InstanceGroup& added = m_InstanceGroups.emplace_back();
+					added.Slot = submission.Slot;
+					added.Mesh = submission.Mesh;
+					added.MeshId = meshId;
+					// Only a lit slot draws with the material; a shadow-only slot can always fall back.
+					added.Forced = slot.Key.Material && m_InstanceCopies[submission.Copies].Forced;
+				}
+				group = it->second;
+				slot.LastGroup = group;
+			}
+			++m_InstanceGroups[group].Count;
+			submission.Group = group;
+		}
+
+		const uint64_t frame = Renderer::GetFrameIndex();
+		if (frame != m_InstanceDrawFrame)
+		{
+			m_InstanceDrawFrame = frame;
+			m_InstanceDrawsThisFrame = 0;
+		}
+
+		// A forced group has no CPU path, so it takes the frame's draws first.
+		for (const bool forcedPass : { true, false })
+		{
+			for (InstanceGroup& group : m_InstanceGroups)
+			{
+				if (group.Forced != forcedPass)
+					continue;
+
+				// A lit slot's group draws once lit and, when it casts, once into the shadows; a shadow-only
+				// slot's only into the shadows.
+				const DrawSlot& slot = m_DrawSlots[group.Slot];
+				const uint32_t writes = (slot.Key.Material ? 1u : 0u) + (shadows && slot.Key.Shadows != ShadowCasting::Off ? 1u : 0u);
+				if (m_InstanceDrawsThisFrame + writes > k_MaxInstancedDrawsPerFrame)
+				{
+					group.Dropped = group.Forced;
+					DE_CORE_ASSERT(!caps.AssertOnOverflow,
+						"Renderer3D: more instanced draws in a frame than k_MaxInstancedDrawsPerFrame and AssertOnOverflow is set.");
+					if (!m_InstanceBudgetWarned)
+					{
+						DE_CORE_WARN("Renderer3D: more than {} instanced draws in one frame; the rest are batched on the CPU, and meshes of a material with Instancing are skipped.",
+							k_MaxInstancedDrawsPerFrame);
+						m_InstanceBudgetWarned = true;
+					}
+					continue;
+				}
+				m_InstanceDrawsThisFrame += writes;
+				group.Instanced = true;
+			}
+		}
+
+		uint32_t records = 0;
+		for (uint32_t index = 0; index < m_InstanceGroups.size(); ++index)
+		{
+			InstanceGroup& group = m_InstanceGroups[index];
+			if (!group.Instanced)
+				continue;
+			group.FirstRecord = records;
+			records += group.Count;
+			m_DrawSlots[group.Slot].Groups.push_back(index);
+		}
+
+		m_InstanceRecords.resize(records);
+		if (records > 0)
+			EnsureInstancingResources();
+		return true;
 	}
 
 	void Renderer3D::CullSkinnedSubmissions(bool shadows)
@@ -955,6 +1191,20 @@ namespace Dingo
 		uint32_t indices = 0;
 		for (const StaticSubmission& submission : m_StaticSubmissions)
 		{
+			if (submission.Group != ~0u && m_InstanceGroups[submission.Group].Instanced)
+			{
+				const glm::mat4& transform = submission.Transform;
+				const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+				InstanceRecord& record = m_InstanceRecords[submission.Record];
+				for (int i = 0; i < 3; ++i)
+				{
+					record.ModelRows[i] = glm::row(transform, i);
+					record.NormalColumns[i] = glm::vec4(normalMatrix[i], 0.0f);
+				}
+				record.Color = submission.Color;
+				record.Misc = glm::uvec4(submission.Object, 0u, 0u, 0u);
+				continue;
+			}
 			if (submission.Chunk == ~0u)
 				continue;
 
@@ -1075,6 +1325,68 @@ namespace Dingo
 		Renderer::Upload(m_ObjectBuffer, m_ObjectRecords.data(), m_ObjectRecords.size() * sizeof(ObjectRecord));
 	}
 
+	void Renderer3D::UploadInstanceRecords()
+	{
+		if (m_InstanceRecords.empty())
+			return;
+
+		// Replaced mid-frame like the arena, so the scenes before keep the records they drew with.
+		if (m_InstanceRecords.size() > m_InstanceCapacity)
+		{
+			if (m_InstanceBuffer)
+				m_RetiredArenaBuffers.emplace_back(m_InstanceBuffer, Renderer::GetFrameIndex());
+			m_InstanceCapacity = std::max<uint64_t>({ m_InstanceCapacity * 2, m_InstanceRecords.size(), 1024 });
+			m_InstanceBuffer = GraphicsBuffer::CreateStorageBuffer(m_InstanceCapacity * sizeof(InstanceRecord), "Renderer3D_InstanceData");
+		}
+		Renderer::Upload(m_InstanceBuffer, m_InstanceRecords.data(), m_InstanceRecords.size() * sizeof(InstanceRecord));
+	}
+
+	void Renderer3D::UploadInstanceDraw(uint32_t firstRecord, uint32_t views)
+	{
+		const glm::uvec4 draw(firstRecord, views, 0u, 0u);
+		Renderer::Upload(m_InstanceDrawBuffer, &draw, sizeof(draw));
+	}
+
+	void Renderer3D::EnsureInstancingResources()
+	{
+		if (m_InstanceDrawBuffer)
+			return;
+
+		m_InstanceDrawBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_InstanceDraw")
+			.SetByteSize(sizeof(glm::uvec4))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetDirectUpload(false)
+			.SetMaxWritesPerFrame(k_MaxInstancedDrawsPerFrame));
+	}
+
+	void Renderer3D::EnsureStaticBuffers(const Mesh* mesh)
+	{
+		if (mesh->m_StaticVertexBuffer)
+			return;
+
+		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
+		const std::vector<uint32_t>& indices = mesh->GetIndices();
+		mesh->m_StaticVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(MeshVertex), nullptr, false, "Renderer3D_MeshVB");
+		mesh->m_StaticIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_MeshIB", GraphicsFormat::Uint32);
+		Renderer::Upload(mesh->m_StaticVertexBuffer, vertices.data(), vertices.size() * sizeof(MeshVertex));
+		Renderer::Upload(mesh->m_StaticIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
+	}
+
+	Material* Renderer3D::ResolveInstancedMaterial(Material* material)
+	{
+		if (!IsLitShader(material->GetShader()))
+			return material;
+
+		if (!m_InstancedShader)
+		{
+			m_InstancedShader = CreateLitShader(k_InstancedLitShaderName, "DE_INSTANCED");
+			Internal::WatchUnmanagedShader(m_InstancedShader);
+		}
+		return GetTwin(m_InstancedTwins, material, m_InstancedShader, "_Instanced");
+	}
+
 	void Renderer3D::UploadScene()
 	{
 		if (m_SceneVertexCount > 0)
@@ -1095,12 +1407,28 @@ namespace Dingo
 
 	bool Renderer3D::IsTranslucentDrawable(Material* material)
 	{
-		if (!IsLitShader(material->GetShader()))
+		const bool lit = IsLitShader(material->GetShader());
+		if (!lit && !material->GetParams().Instancing)
 			return true;
 		for (const auto& [checked, usable] : m_TranslucentMaterials)
 		{
 			if (checked == material)
 				return usable;
+		}
+
+		// The translucent pass sorts and batches its meshes on the CPU, which a shader that places
+		// instances itself can't draw.
+		if (!lit)
+		{
+			if (!m_InstanceTranslucentWarned)
+			{
+				const std::string& name = material->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: material '{}' is translucent and has Instancing set; the translucent pass draws no instances, so its meshes are not drawn.",
+					name.empty() ? "<unnamed>" : name.c_str());
+				m_InstanceTranslucentWarned = true;
+			}
+			m_TranslucentMaterials.emplace_back(material, false);
+			return false;
 		}
 
 		const bool usable = !BindsPastSlotZero(*material);
@@ -1459,7 +1787,7 @@ namespace Dingo
 		if (m_SkinnedShader)
 			return;
 
-		m_SkinnedShader = CreateLitShader(k_SkinnedLitShaderName, true);
+		m_SkinnedShader = CreateLitShader(k_SkinnedLitShaderName, "DE_SKINNED");
 		Internal::WatchUnmanagedShader(m_SkinnedShader);
 
 		m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
@@ -1477,7 +1805,7 @@ namespace Dingo
 	{
 		Material* requested = material ? material : m_Material;
 		if (IsLitShader(requested->GetShader()))
-			return GetSkinnedTwin(requested);
+			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
 
 		// The binding must not collide with the scene and material blocks or with a texture or
 		// sampler the material binds, or its binding set fails and the mesh silently vanishes.
@@ -1500,16 +1828,33 @@ namespace Dingo
 				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinDataBinding);
 			m_SkinMaterialWarned = true;
 		}
-		return GetSkinnedTwin(m_Material);
+		return GetTwin(m_SkinnedTwins, m_Material, m_SkinnedShader, "_Skinned");
 	}
 
-	Material* Renderer3D::GetSkinnedTwin(Material* source)
+	void Renderer3D::ReleaseIdleTwins(TwinMap& twins)
 	{
-		SkinnedTwin& entry = m_SkinnedTwins[source->GetId()];
+		for (auto it = twins.begin(); it != twins.end();)
+		{
+			SkinnedTwin& entry = it->second;
+			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
+			entry.Used = false;
+			if (entry.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				DestroyAndDelete(entry.Twin);
+				it = twins.erase(it);
+				continue;
+			}
+			++it;
+		}
+	}
+
+	Material* Renderer3D::GetTwin(TwinMap& twins, Material* source, Shader* shader, const char* suffix)
+	{
+		SkinnedTwin& entry = twins[source->GetId()];
 		if (!entry.Twin)
 		{
 			MaterialParams twinParams = source->GetParams();
-			twinParams.SetDebugName(twinParams.DebugName + "_Skinned").SetShader(m_SkinnedShader).SetCullMode(CullMode::None);
+			twinParams.SetDebugName(twinParams.DebugName + suffix).SetShader(shader).SetCullMode(CullMode::None);
 			entry.Twin = Material::Create(twinParams);
 		}
 		entry.Used = true;
@@ -2132,15 +2477,17 @@ namespace Dingo
 		}
 	}
 
-	Material* Renderer3D::GetShadowMaterial(bool skinned, uint32_t shadowGroups)
+	Material* Renderer3D::GetShadowMaterial(ShadowVariant variant, uint32_t shadowGroups)
 	{
-		std::unordered_map<uint32_t, Material*>& materials = skinned ? m_SkinnedShadowMaterials : m_ShadowMaterials;
+		const bool skinned = variant == ShadowVariant::Skinned;
+		const bool instanced = variant == ShadowVariant::Instanced;
+		std::unordered_map<uint32_t, Material*>& materials = skinned ? m_SkinnedShadowMaterials : instanced ? m_InstancedShadowMaterials : m_ShadowMaterials;
 		Material*& material = materials[shadowGroups];
 		if (!material)
 		{
 			material = Material::Create(MaterialParams()
-				.SetDebugName(skinned ? "Renderer3D_SkinnedShadow" : "Renderer3D_Shadow")
-				.SetShader(skinned ? m_SkinnedShadowShader : m_ShadowShader)
+				.SetDebugName(skinned ? "Renderer3D_SkinnedShadow" : instanced ? "Renderer3D_InstancedShadow" : "Renderer3D_Shadow")
+				.SetShader(skinned ? m_SkinnedShadowShader : instanced ? m_InstancedShadowShader : m_ShadowShader)
 				.SetCullMode(CullMode::None)
 				.SetBlendMode(BlendMode::Opaque)
 				.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
@@ -2149,6 +2496,8 @@ namespace Dingo
 		material->SetSceneUniformBuffer(m_ShadowViewsBuffer);
 		if (skinned)
 			material->SetSkinUniformBuffer(m_SkinBuffer);
+		if (instanced)
+			material->SetInstanceBuffers(m_InstanceBuffer, m_InstanceDrawBuffer);
 		return material;
 	}
 
@@ -2158,8 +2507,11 @@ namespace Dingo
 			DestroyAndDelete(material);
 		for (auto& [groups, material] : m_SkinnedShadowMaterials)
 			DestroyAndDelete(material);
+		for (auto& [groups, material] : m_InstancedShadowMaterials)
+			DestroyAndDelete(material);
 		m_ShadowMaterials.clear();
 		m_SkinnedShadowMaterials.clear();
+		m_InstancedShadowMaterials.clear();
 	}
 
 	bool Renderer3D::PrepareShadows()
@@ -2486,7 +2838,24 @@ namespace Dingo
 			if (draw.Key.Shadows == ShadowCasting::Off)
 				continue;
 
-			Renderer::DrawIndexed(GetShadowMaterial(false, draw.Key.ShadowGroups), m_Layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
+			if (draw.Group != ~0u)
+			{
+				if (!m_InstancedShadowShader)
+				{
+					m_InstancedShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DInstancedShadow").AddDefine("DE_INSTANCED"), "Renderer3D_Shadow.glsl");
+					Internal::WatchUnmanagedShader(m_InstancedShadowShader);
+				}
+				const InstanceGroup& group = m_InstanceGroups[draw.Group];
+				EnsureStaticBuffers(group.Mesh);
+				UploadInstanceDraw(group.FirstRecord, m_ShadowViewCount);
+				Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Instanced, draw.Key.ShadowGroups), m_MeshShadowLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer,
+					group.Mesh->GetIndexCount(), group.Count * m_ShadowViewCount);
+				++m_Statistics.ShadowDrawCalls;
+				++m_Statistics.InstancedShadowDraws;
+				continue;
+			}
+
+			Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Static, draw.Key.ShadowGroups), m_Layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
 			++m_Statistics.ShadowDrawCalls;
 		}
 
@@ -2522,7 +2891,7 @@ namespace Dingo
 				}
 
 				EnsureSkinBuffers(submission.Mesh);
-				Renderer::DrawIndexed(GetShadowMaterial(true, submission.ShadowGroups), m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
+				Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Skinned, submission.ShadowGroups), m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
 				++m_Statistics.ShadowDrawCalls;
 				++m_Statistics.ShadowCasters;
 			}

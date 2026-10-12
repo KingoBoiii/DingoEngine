@@ -39,6 +39,13 @@ namespace Dingo
 		// (GraphicsBufferParams::MaxWritesPerFrame): one a scene for a material drawn in many scenes
 		// a frame with different params.
 		uint32_t     UniformWritesPerFrame = 8;
+		// A custom shader that places each copy of a mesh itself, from Renderer3D's instance records
+		// (Instancing.glsl): its vertex stage reads the mesh's own vertices, a_Position (0), a_Normal (1)
+		// and a_TexCoord (2), and the DE_InstanceData and DE_InstanceDraw blocks. Renderer3D then draws
+		// every mesh given the material instanced, however few copies, even with instancing off, and skips
+		// them past Renderer3D::k_MaxInstancedDrawsPerFrame. The built-in lit materials ignore it: the
+		// renderer instances them when it pays.
+		bool         Instancing            = false;
 
 		// Surface settings read by Renderer3D's lit shader: the built-in default material and any
 		// material from Renderer3D::CreateLitMaterial. A custom shader implements its own.
@@ -65,6 +72,7 @@ namespace Dingo
 		MaterialParams& SetTranslucent(bool translucent)                  { Translucent = translucent; return *this; }
 		MaterialParams& SetFrustumCulled(bool culled)                     { FrustumCulled = culled; return *this; }
 		MaterialParams& SetUniformWritesPerFrame(uint32_t writes)         { UniformWritesPerFrame = writes; return *this; }
+		MaterialParams& SetInstancing(bool instancing)                    { Instancing = instancing; return *this; }
 		MaterialParams& SetEmissiveColor(const glm::vec3& color)          { EmissiveColor = color; return *this; }
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }
@@ -149,7 +157,15 @@ namespace Dingo
 		// re-points the cached passes' binding sets, so the renderer can grow it without new pipelines.
 		void SetObjectBuffer(GraphicsBuffer* buffer);
 
+		// Binds Renderer3D's instance records to the shader's DE_InstanceData storage block and its
+		// per-draw base to the DE_InstanceDraw uniform block (Instancing.glsl), each at whatever binding
+		// the shader gave it. A shader without them ignores this. Another record buffer only re-points
+		// the cached passes' binding sets, as SetObjectBuffer does.
+		void SetInstanceBuffers(GraphicsBuffer* records, GraphicsBuffer* draw);
+
 		static constexpr const char* k_ObjectDataBlockName = "DE_ObjectData";
+		static constexpr const char* k_InstanceDataBlockName = "DE_InstanceData";
+		static constexpr const char* k_InstanceDrawBlockName = "DE_InstanceDraw";
 		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
 		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
 		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
@@ -191,6 +207,8 @@ namespace Dingo
 
 	private:
 		void InvalidatePipelineCache();
+		// Points the cached passes' storage binding found by blockName at another buffer.
+		void RepointStorageBuffer(const char* blockName, GraphicsBuffer*& current, uint64_t& currentId, GraphicsBuffer* buffer);
 		static uint64_t AllocateId();
 
 	private:
@@ -213,6 +231,9 @@ namespace Dingo
 		Sampler*             m_ShadowSampler      = nullptr;
 		GraphicsBuffer*      m_ObjectBuffer       = nullptr;
 		uint64_t             m_ObjectBufferId     = 0;
+		GraphicsBuffer*      m_InstanceBuffer     = nullptr;
+		uint64_t             m_InstanceBufferId   = 0;
+		GraphicsBuffer*      m_InstanceDrawBuffer = nullptr;
 
 		struct StorageBinding
 		{

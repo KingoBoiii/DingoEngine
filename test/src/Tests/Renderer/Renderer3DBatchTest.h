@@ -14,7 +14,9 @@ namespace Dingo
 	// meshes. Uses its own Renderer3D with a tiny MaxVertices so no other test is affected.
 	// Then, one step a frame on a second renderer, the translucent pass: how it batches, and
 	// readbacks of its blending order, and surface overrides: how they batch, and a scene of overridden
-	// meshes read back against the same scene drawn with a lit material per mesh. --batch-alpha=<a>
+	// meshes read back against the same scene drawn with a lit material per mesh, and instancing: the
+	// default material's repeated meshes and a custom MaterialParams::Instancing material, each one
+	// draw, and a frame's scenes each reading their own records. --batch-alpha=<a>
 	// also draws three overlapping translucent boxes of that alpha in front of the batched ones.
 	class Renderer3DBatchTest : public GraphicsTest
 	{
@@ -34,6 +36,7 @@ namespace Dingo
 		void RunChecks();
 		void BuildTranslucentChecks();
 		void BuildSurfaceChecks();
+		void BuildInstancingChecks();
 		Framebuffer* CreateCheckTarget(uint32_t size);
 		template<typename Submit>
 		Renderer3D::Statistics RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit);
@@ -51,6 +54,10 @@ namespace Dingo
 		Material* m_TranslucentA = nullptr;
 		Material* m_TranslucentB = nullptr;
 		std::vector<Material*> m_SurfaceMaterials;
+		Shader* m_InstancedShader = nullptr;
+		Shader* m_BlocklessShader = nullptr;
+		Material* m_InstancedMaterial = nullptr;
+		Material* m_BlocklessMaterial = nullptr;
 		Mesh* m_Quad = nullptr;
 		Mesh* m_SkinnedQuad = nullptr;
 		std::vector<glm::mat4> m_Palette;

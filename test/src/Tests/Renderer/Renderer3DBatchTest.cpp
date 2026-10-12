@@ -52,6 +52,53 @@ namespace
 		return glm::rotate(glm::rotate(placed, glm::radians(35.0f), { 0.0f, 1.0f, 0.0f }), glm::radians(25.0f), { 1.0f, 0.0f, 0.0f });
 	}
 
+	// Places each copy from its instance record and draws half its colour, unlit. DE_NO_BLOCKS builds
+	// the same stages without the instance blocks, which a material with Instancing can't draw.
+	constexpr const char* k_InstancedShader = R"(
+#type vertex
+#version 450
+
+layout(std140, binding = 0) uniform CameraData
+{
+	mat4 ViewProjection;
+	vec4 LightDirection;
+	vec4 Ambient;
+};
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 0) out vec4 v_Color;
+
+#ifdef DE_NO_BLOCKS
+void main()
+{
+	gl_Position = ViewProjection * vec4(a_Position, 1.0);
+	v_Color = vec4(1.0);
+}
+#else
+#include <DingoEngine/Instancing.glsl>
+
+void main()
+{
+	InstanceRecord instance = GetInstance(uint(gl_InstanceIndex));
+	gl_Position = ViewProjection * vec4(InstanceWorldPosition(instance, a_Position), 1.0);
+	v_Color = instance.Color;
+}
+#endif
+
+#type fragment
+#version 450
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+	o_Color = vec4(v_Color.rgb * 0.5, 1.0);
+}
+)";
+
 	std::string Counts(const Dingo::Renderer3D::Statistics& stats)
 	{
 		return std::format("translucent {} meshes in {} draws, {} draw calls, {} submitted, {} skinned",
@@ -67,7 +114,9 @@ namespace Dingo
 		m_Checks.clear();
 		m_ChecksDone = false;
 
+		// The CPU batches' spilling is under test, and five boxes outgrowing a batch would be instanced.
 		Renderer3DParams params;
+		params.Capabilities.Instancing = false;
 		params.Capabilities.MaxVertices = 40;
 		params.Capabilities.MaxIndices = 1000; // not the constraint under test — see k_BoxCount
 		m_BatchRenderer = Renderer3D::Create(params);
@@ -108,6 +157,7 @@ namespace Dingo
 		m_NextCheckStep = 0;
 		BuildTranslucentChecks();
 		BuildSurfaceChecks();
+		BuildInstancingChecks();
 
 		m_ShowcaseAlpha = -1.0f;
 		if (auto alpha = Application::Get().GetCommandLineArgs().Get("batch-alpha"); alpha && !alpha->empty())
@@ -415,6 +465,90 @@ namespace Dingo
 		});
 	}
 
+	void Renderer3DBatchTest::BuildInstancingChecks()
+	{
+		m_InstancedShader = Shader::Create(ShaderParams().SetName("BatchTestInstanced").SetSourceCode(k_InstancedShader));
+		m_BlocklessShader = Shader::Create(ShaderParams().SetName("BatchTestBlockless").SetSourceCode(k_InstancedShader).AddDefine("DE_NO_BLOCKS"));
+		Check(m_InstancedShader && m_InstancedShader->IsValid() && m_BlocklessShader && m_BlocklessShader->IsValid(), "the custom instanced shaders compile");
+		if (!m_InstancedShader || !m_InstancedShader->IsValid() || !m_BlocklessShader || !m_BlocklessShader->IsValid())
+			return;
+		m_InstancedMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_Instanced").SetShader(m_InstancedShader).SetInstancing(true));
+		m_BlocklessMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_Blockless").SetShader(m_BlocklessShader).SetInstancing(true));
+
+		// Back to front, so the readback sees the last copy, and after as many boxes hidden behind them,
+		// so the quads' records start past the boxes': a wrong instance index or base reads another colour.
+		auto quads = [this](Renderer3D& renderer, uint32_t count, const glm::vec4& front, Material* material)
+		{
+			for (uint32_t i = 0; i < count; ++i)
+				renderer.SubmitMesh(renderer.GetBoxMesh(), glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, -30.0f - 0.05f * static_cast<float>(i) }), glm::vec4(1.0f), material);
+			for (uint32_t i = 0; i < count; ++i)
+				renderer.SubmitMesh(m_Quad, WallAt(-6.0f - 0.01f * static_cast<float>(count - 1 - i)), i + 1 == count ? front : glm::vec4(1.0f), material);
+		};
+
+		m_CheckSteps.push_back([this, quads]
+		{
+			const glm::vec4 red{ 1.0f, 0.0f, 0.0f, 1.0f };
+			Framebuffer* custom = CreateCheckTarget(k_CheckTargetSize);
+			const Renderer3D::Statistics stats = RenderCheck(custom, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_InstancedMaterial); });
+			Check(stats.DrawCalls == 2 && stats.InstancedDraws == 2 && stats.InstancedMeshes == 6 && stats.VertexCount == 0,
+				std::format("a material with Instancing draws three quads and three boxes in one instanced draw each ({} draws, {} instanced, {} meshes, {} vertices batched)",
+					stats.DrawCalls, stats.InstancedDraws, stats.InstancedMeshes, stats.VertexCount));
+			ReadCheck(custom, glm::vec3(0.5f, 0.0f, 0.0f), "a custom instanced shader places each copy from its record");
+
+			const Renderer3D::Statistics blockless = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_BlocklessMaterial); });
+			Check(blockless.DrawCalls == 0 && blockless.InstancedMeshes == 0,
+				std::format("a material with Instancing whose shader lacks the blocks draws nothing ({} draws)", blockless.DrawCalls));
+
+			// Texture slot 4 binds at 10, the DE_InstanceDraw block's binding.
+			Material* clashing = Material::Create(MaterialParams().SetDebugName("BatchTest_Clashing").SetShader(m_InstancedShader).SetInstancing(true));
+			clashing->SetTexture(4, Renderer::GetWhiteTexture());
+			const Renderer3D::Statistics clash = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, clashing); });
+			DestroyAndDelete(clashing);
+			Check(clash.DrawCalls == 0 && clash.InstancedMeshes == 0,
+				std::format("a material with Instancing whose texture takes an instance block's binding draws nothing ({} draws)", clash.DrawCalls));
+
+			m_CheckRenderer->SetInstancingEnabled(false);
+			const Renderer3D::Statistics forced = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_InstancedMaterial); });
+			m_CheckRenderer->SetInstancingEnabled(true);
+			Check(forced.InstancedDraws == 2, std::format("a material with Instancing draws instanced with instancing off too ({} instanced draws)", forced.InstancedDraws));
+		});
+
+		m_CheckSteps.push_back([this, quads]
+		{
+			const glm::vec4 green{ 0.0f, 1.0f, 0.0f, 1.0f };
+			Framebuffer* instanced = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* batched = CreateCheckTarget(k_CheckTargetSize);
+			const Renderer3D::Statistics stats = RenderCheck(instanced, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 10, green, nullptr); });
+			m_CheckRenderer->SetInstancingEnabled(false);
+			const Renderer3D::Statistics cpu = RenderCheck(batched, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 10, green, nullptr); });
+			m_CheckRenderer->SetInstancingEnabled(true);
+			Check(stats.DrawCalls == 2 && stats.InstancedDraws == 2 && stats.InstancedMeshes == 20 && stats.VertexCount == 0 && cpu.InstancedMeshes == 0 && cpu.VertexCount == 40 + 240,
+				std::format("ten quads and ten boxes with the default material are one instanced draw each, and batched with instancing off ({} instanced in {} draws; off: {} vertices)",
+					stats.InstancedMeshes, stats.InstancedDraws, cpu.VertexCount));
+			ReadCheck(instanced, glm::vec3(0.0f, 1.0f, 0.0f), "the default material's instanced copies take their records' colours");
+			ReadCheck(batched, glm::vec3(0.0f, 1.0f, 0.0f), "the same copies batched on the CPU look the same");
+		});
+
+		// Three scenes in one frame. The second outgrows the renderer's first 1024 records, so the buffer
+		// is replaced after the first drew; the third rewrites the records after the second drew.
+		m_CheckSteps.push_back([this, quads]
+		{
+			const glm::vec4 blue{ 0.0f, 0.0f, 1.0f, 1.0f };
+			const glm::vec4 red{ 1.0f, 0.0f, 0.0f, 1.0f };
+			const glm::vec4 green{ 0.0f, 1.0f, 0.0f, 1.0f };
+			Framebuffer* first = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* many = CreateCheckTarget(k_CheckTargetSize);
+			Framebuffer* last = CreateCheckTarget(k_CheckTargetSize);
+			RenderCheck(first, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 10, blue, m_InstancedMaterial); });
+			const Renderer3D::Statistics stats = RenderCheck(many, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 1100, red, m_InstancedMaterial); });
+			RenderCheck(last, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 10, green, m_InstancedMaterial); });
+			Check(stats.InstancedMeshes == 2200 && stats.InstancedDraws == 2, std::format("1100 quads and 1100 boxes are one instanced draw each ({} meshes, {} draws)", stats.InstancedMeshes, stats.InstancedDraws));
+			ReadCheck(first, glm::vec3(0.0f, 0.0f, 0.5f), "a scene keeps its instances when a later scene of the frame outgrows the record buffer");
+			ReadCheck(many, glm::vec3(0.5f, 0.0f, 0.0f), "a scene of 1100 instances keeps its own when a later scene of the frame rewrites the records");
+			ReadCheck(last, glm::vec3(0.0f, 0.5f, 0.0f), "a scene after them reads its own instances");
+		});
+	}
+
 	void Renderer3DBatchTest::DrawTranslucentShowcase()
 	{
 		const glm::vec4 colors[] = { { 1.0f, 0.2f, 0.2f, m_ShowcaseAlpha }, { 0.2f, 1.0f, 0.2f, m_ShowcaseAlpha }, { 0.2f, 0.4f, 1.0f, m_ShowcaseAlpha } };
@@ -484,6 +618,10 @@ namespace Dingo
 			for (Material*& material : m_SurfaceMaterials)
 				DestroyAndDelete(material);
 			m_SurfaceMaterials.clear();
+			DestroyAndDelete(m_InstancedMaterial);
+			DestroyAndDelete(m_BlocklessMaterial);
+			DestroyAndDelete(m_InstancedShader);
+			DestroyAndDelete(m_BlocklessShader);
 			m_CheckRenderer->Shutdown();
 			delete m_CheckRenderer;
 			m_CheckRenderer = nullptr;

@@ -317,6 +317,13 @@ namespace Dingo::UI
 		if (ImGui::Checkbox("Freeze culling frustum", &frozen))
 			renderer3D.SetCullingFrozen(frozen);
 		ImGui::Text("Uploaded   : %u vertices, %u indices  (one draw takes at most %u / %u)", stats3D.VertexCount, stats3D.IndexCount, caps3D.MaxVertices, caps3D.MaxIndices);
+		ImGui::Text("Instanced  : %u meshes in %u draws, %u shadow draws  (also counted above)", stats3D.InstancedMeshes, stats3D.InstancedDraws, stats3D.InstancedShadowDraws);
+		if (stats3D.DroppedInstancedMeshes > 0)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+				"             %u meshes of an Instancing material skipped  (past the frame's instanced draws; warned once)", stats3D.DroppedInstancedMeshes);
+		bool instancing = renderer3D.IsInstancingEnabled();
+		if (ImGui::Checkbox("Instance repeated meshes", &instancing))
+			renderer3D.SetInstancingEnabled(instancing);
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D lights  (most recent scene)");

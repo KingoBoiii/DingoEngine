@@ -11,6 +11,7 @@ namespace
 #include "PostAmbientOcclusion.glsl.inl"
 #include "Shadows.glsl.inl"
 #include "Skinning.glsl.inl"
+#include "Instancing.glsl.inl"
 #include "Renderer3D_Shadow.glsl.inl"
 #include "Renderer3D_ShadowProbe.glsl.inl"
 #include "PostDepthCopy.glsl.inl"
@@ -41,6 +42,7 @@ namespace
 		{ "PostAmbientOcclusion.glsl", View(k_PostAmbientOcclusion_glsl) },
 		{ "Shadows.glsl", View(k_Shadows_glsl) },
 		{ "Skinning.glsl", View(k_Skinning_glsl) },
+		{ "Instancing.glsl", View(k_Instancing_glsl) },
 		{ "Renderer3D_Shadow.glsl", View(k_Renderer3D_Shadow_glsl) },
 		{ "Renderer3D_ShadowProbe.glsl", View(k_Renderer3D_ShadowProbe_glsl) },
 		{ "PostDepthCopy.glsl", View(k_PostDepthCopy_glsl) },

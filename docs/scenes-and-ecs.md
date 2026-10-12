@@ -251,6 +251,31 @@ A scene culls 2D too: `RenderEntities` skips sprites and circles whose bounding 
 the camera's view (`Renderer2D::Statistics::CulledQuads`; `Renderer2D::SetCullingEnabled`). Text is
 never culled.
 
+### Instancing (v1.0)
+
+A mesh drawn many times in one scene, with one material and one shadow setting, is drawn
+**instanced**: every copy in view in one draw from the mesh's own vertex and index buffers, each
+placed on the GPU from a 128-byte record (its transform, normal matrix, colour and the index of its
+surface override). Nothing to turn on: it applies to the built-in lit material and every
+`CreateLitMaterial` material once a mesh has `Renderer3DCapabilities::InstanceThreshold` copies
+submitted with one material and shadow setting (8 by default), or fewer whose vertices together
+outgrow one batch (`MaxVertices`). Below that the CPU batch stays cheaper. The count is taken before
+culling, so the camera never moves a copy between the two transforms. Copies culled from the camera
+but still casting are instanced into the shadow atlas the same way, every copy once per shadow view
+in one draw.
+
+The picture matches the CPU batches within rounding (the GPU and the CPU round the transform
+differently: no channel off by more than 2/255 on at most 0.1% of the pixels), so a scene where
+nothing repeats draws exactly as before. `Renderer3DCapabilities::Instancing = false`, F4's
+**Instance repeated meshes** or `Renderer3D::SetInstancingEnabled(false)` batches everything on the
+CPU again. F4 counts instanced meshes and draws (`Statistics::InstancedMeshes`, `InstancedDraws`,
+`InstancedShadowDraws`); `VertexCount` leaves instanced meshes out, since nothing transforms them on
+the CPU.
+
+Translucent meshes are never instanced (the translucent pass sorts mesh by mesh), nor are skinned
+ones. A custom material is instanced only when its shader is written for it; see
+[Instanced custom shaders](#instanced-custom-shaders-v10).
+
 ### Parenting (v0.7.1)
 
 `child.SetParent(parent)` makes the child's transforms **local to its parent**. In 3D its world
@@ -564,7 +589,8 @@ Declare the full block and loop over `LightCounts` to light a material the way t
 falloff and cone formulas, and `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl` is the
 reference loop.
 
-Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching),
+Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching;
+an [instanced shader](#instanced-custom-shaders-v10) places them itself),
 as `a_Position` (location 0), `a_Normal` (1), `a_Color` (2 — the component's `Color`) and
 `a_TexCoord` (3 — the mesh's UVs, since v0.6.1). Use exactly these names: D3D11/D3D12 match vertex
 inputs by name, Vulkan by location. To texture a mesh, sample a bound texture with `a_TexCoord`:
@@ -593,6 +619,43 @@ glow->SetUniform(GlowParams{ pulsedIntensity });
 `examples/DungeonCrawler3D/` shows this: the treasures use a custom unlit/glow material whose
 intensity is pulsed each frame (see `GameScripts.cpp`).
 
+#### Instanced custom shaders (v1.0)
+
+A custom material is batched on the CPU unless it opts in with `MaterialParams::SetInstancing(true)`.
+Its vertex stage then reads the mesh's own vertices, in model space, as `a_Position` (location 0),
+`a_Normal` (1) and `a_TexCoord` (2), and places each copy itself from its instance record. The
+engine include `<DingoEngine/Instancing.glsl>` declares the record buffer (`DE_InstanceData`, a
+readonly storage block at binding 9) and the draw's first record (`DE_InstanceDraw`, a uniform
+block at binding 10), both found by name: define `DE_INSTANCE_DATA_BINDING` /
+`DE_INSTANCE_DRAW_BINDING` before the include to move them off a texture's binding.
+
+```glsl
+#include <DingoEngine/Instancing.glsl>
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+
+void main()
+{
+    InstanceRecord instance = GetInstance(uint(gl_InstanceIndex)); // never gl_BaseInstance: D3D leaves it out
+    vec3 world = InstanceWorldPosition(instance, a_Position);
+    gl_Position = ViewProjection * vec4(world, 1.0);
+    v_Normal = InstanceWorldNormal(instance, a_Normal);
+    v_Color = instance.Color;                                     // the component's Color
+}
+```
+
+Such a material draws every mesh given it instanced, however few copies and even with instancing
+turned off, since its shader can't read the CPU batches (its copies culled from the camera may still
+cast through the CPU batches, which the shadow pass draws with its own shader). Past
+`Renderer3D::k_MaxInstancedDrawsPerFrame` instanced draws in a frame its meshes are skipped
+(`Statistics::DroppedInstancedMeshes`, warned once). A shader missing either block, or putting one
+on a binding the material's textures or samplers use (texture slot *i* binds at `2 + 2i`, sampler
+slot *i* at `3 + 2i`, so slot 4's texture or slot 3's sampler meet the default 10 and 9), draws
+nothing and casts no shadow (warned once), and so does a translucent material with `Instancing`,
+since the translucent pass draws no instances.
+
 #### Winding and culling
 
 `Mesh::CreateBox` and `Mesh::CreateSphere` are wound counter-clockwise seen from outside, and so
@@ -600,9 +663,9 @@ are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's wi
 `FrontCounterClockwise = true`), so a custom material hides back faces with no extra settings, on
 Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
 
-Renderer3D transforms vertices on the CPU and keeps their order, so an entity mirrored by a
-negative scale on one or three axes is drawn inside out by a culling material. Give mirrored
-entities a `CullMode::None` material.
+Renderer3D keeps the vertices' order, whether it transforms them on the CPU or instances them on
+the GPU, so an entity mirrored by a negative scale on one or three axes is drawn inside out by a
+culling material. Give mirrored entities a `CullMode::None` material.
 
 Before v0.8.1, `Material` ignored `FrontCounterClockwise` and treated clockwise triangles as front
 faces, so `CullMode::Back` drew these meshes inside out (`CreateSphere`, wound the other way, came

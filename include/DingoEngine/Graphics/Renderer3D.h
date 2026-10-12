@@ -84,6 +84,15 @@ namespace Dingo
 		// a submission. Each emitter takes a ring of it the size of its effect's Capacity.
 		uint32_t MaxParticles = 65536;
 
+		// Copies of one mesh with one material and shadow setting in view: at least InstanceThreshold of
+		// them, or more vertices together than one draw takes (MaxVertices), are drawn as one instanced
+		// draw from the mesh's own buffers, placed on the GPU, instead of being transformed into a batch
+		// on the CPU. Off (Renderer3D::SetInstancingEnabled at runtime) every static mesh is batched as
+		// before, except those of a material with MaterialParams::Instancing. Either way the picture is
+		// the same, within the rounding of the two transforms.
+		bool Instancing = true;
+		uint32_t InstanceThreshold = 8;
+
 		// When true, a mesh too large for an empty batch, a light past the light budget or a
 		// skinned instance past MaxSkinnedInstances trips an assert instead of the default
 		// warn-once-and-drop. Asserts are compiled out in release, where it warns and drops
@@ -143,7 +152,9 @@ namespace Dingo
 	// Between BeginScene()/EndScene() it records the submitted meshes. EndScene() culls them
 	// against the camera's view and each shadow view (Frustum.h), transforms what is left on the
 	// CPU into one vertex/index batch per material, uploads the scene in one go, and issues one
-	// indexed draw per batch. Meshes with no explicit material use the built-in lit default material.
+	// indexed draw per batch. A mesh repeated often enough is drawn instanced instead, all its copies
+	// in one draw placed on the GPU (Renderer3DCapabilities::Instancing). Meshes with no explicit
+	// material use the built-in lit default material.
 	// Depth testing is enabled (the swap-chain carries a depth attachment), so meshes
 	// occlude correctly regardless of submission order. Meshes with a translucent material
 	// (MaterialParams::Translucent) are the exception: they draw after every opaque one, static
@@ -279,8 +290,10 @@ namespace Dingo
 		static constexpr uint32_t k_MaxScenesPerFrame = 32;
 
 		// Adds a mesh to the scene's batch for the given material (null => the built-in lit
-		// default); EndScene culls it and transforms what is drawn into world space on the CPU, so the
-		// mesh must stay alive and unchanged until then. It is culled when its bounds (Mesh::GetBoundsMin/Max
+		// default); EndScene culls it and transforms what is drawn into world space on the CPU, or,
+		// for a mesh with enough copies in view (Renderer3DCapabilities::InstanceThreshold), draws its
+		// copies instanced from the mesh's own buffers, so the mesh must stay alive and unchanged until
+		// then. It is culled when its bounds (Mesh::GetBoundsMin/Max
 		// placed by transform) lie outside the camera's view, and, for a perspective camera, when
 		// cullDistance is above 0 and the camera is farther than that from its bounds; a culled caster
 		// still casts into any shadow view its bounds reach, unless it is past its cullDistance. The
@@ -289,7 +302,8 @@ namespace Dingo
 		// which can't draw past it on any backend. A non-affine transform is never culled, nor, by the
 		// camera, a mesh whose material isn't FrustumCulled. The vertex stream is
 		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
-		// (3, the mesh's UVs, for custom materials that sample a texture). No-op outside a
+		// (3, the mesh's UVs, for custom materials that sample a texture); a MaterialParams::Instancing
+		// material reads the mesh's own vertices and its instance record instead. No-op outside a
 		// Begin/EndScene pair. Every material casts through the renderer's own depth-only pass, so a
 		// custom vertex shader's displacement isn't in its shadow, and a translucent mesh casts a full
 		// one. shadowGroups is a bit mask: a casting light takes the mesh into its shadows only when
@@ -376,17 +390,26 @@ namespace Dingo
 		void SetCullingFrozen(bool frozen);
 		bool IsCullingFrozen() const { return m_CullingFrozen; }
 
+		void SetInstancingEnabled(bool enabled) { m_Params.Capabilities.Instancing = enabled; }
+		bool IsInstancingEnabled() const { return m_Params.Capabilities.Instancing; }
+
+		// Instanced draws a frame, lit and shadow, across every scene this renderer runs: each writes a
+		// small volatile buffer that has room for this many writes a frame on Vulkan. Groups past it
+		// are batched on the CPU instead, and a MaterialParams::Instancing material's meshes are skipped,
+		// with a warning.
+		static constexpr uint32_t k_MaxInstancedDrawsPerFrame = 512;
+
 		// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
 		// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
-			uint32_t DrawCalls = 0;       // one indexed draw per non-empty batch; a material may take several
+			uint32_t DrawCalls = 0;       // one indexed draw per non-empty batch, and one per instanced mesh; a material may take several
 			uint32_t SubmittedMeshes = 0; // static meshes accepted this scene, culled ones included, and skinned meshes drawn
 			uint32_t DroppedMeshes = 0;   // meshes larger than one draw
 			uint32_t CulledMeshes = 0;    // static meshes the camera's view left out (or past their cull distance); ShadowsOnly ones aren't counted
 			uint32_t CulledSkinned = 0;   // skinned meshes the same
 			uint32_t CulledCasters = 0;   // casting meshes, static and skinned, that reached no shadow view of a scene that drew shadows
-			uint32_t VertexCount = 0;     // vertices transformed and uploaded this scene, for the lit and shadow passes
+			uint32_t VertexCount = 0;     // vertices transformed and uploaded this scene, for the lit and shadow passes; instanced meshes aren't
 			uint32_t IndexCount = 0;      // indices uploaded this scene
 			uint32_t DirectionalLights = 0; // directional lights the scene was lit by, the default light included
 			uint32_t LocalLights = 0;       // point and spot lights the scene was lit by
@@ -408,10 +431,14 @@ namespace Dingo
 			uint32_t DroppedParticleSpawns = 0; // spawns past an emitter's ring this step
 			uint32_t ParticleDrawCalls = 0;   // one per run of emitters sharing a blend and sprite; not in DrawCalls
 			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
-			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch and skinned mesh; not in DrawCalls
+			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch, instanced mesh and skinned mesh; not in DrawCalls
 			uint32_t TranslucentMeshes = 0;   // static and skinned meshes drawn in the translucent pass, also counted in SubmittedMeshes
 			uint32_t TranslucentDraws = 0;    // draws of the translucent pass, also counted in DrawCalls
 			uint32_t SurfaceOverrides = 0;    // static meshes submitted with a SurfaceOverride their lit material takes, culled ones included; ShadowsOnly ones aren't counted
+			uint32_t InstancedMeshes = 0;     // static meshes drawn instanced, lit or into the shadows; not in VertexCount/IndexCount
+			uint32_t InstancedDraws = 0;      // instanced lit draws, also counted in DrawCalls
+			uint32_t InstancedShadowDraws = 0; // instanced atlas draws, also counted in ShadowDrawCalls
+			uint32_t DroppedInstancedMeshes = 0; // meshes of a MaterialParams::Instancing material skipped past k_MaxInstancedDrawsPerFrame
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
 			bool Fogged = false;              // the scene was drawn with fog: SetFog, and a perspective camera
 		};
@@ -535,6 +562,8 @@ namespace Dingo
 		Material* m_Material = nullptr; // built-in lit default material
 		VertexLayout m_Layout;
 		VertexLayout m_LitLayout;
+		VertexLayout m_MeshLayout;       // a Mesh's own MeshVertex stream, for instanced draws
+		VertexLayout m_MeshShadowLayout; // its positions alone, for instanced shadow draws
 
 		// std430, mirrored by ObjectRecord in Renderer3D_Lit.glsl: a static mesh's SurfaceOverride. The
 		// scene's records are written from 0 into one storage buffer the lit materials bind; record 0 is
@@ -600,6 +629,13 @@ namespace Dingo
 		// A SubmitMesh call, kept until EndScene culls and transforms it.
 		struct StaticSubmission
 		{
+			// Set by the layout: the slot it draws in, its m_InstanceCopies entry, and the instance group
+			// and record when instanced.
+			uint32_t Slot = ~0u;
+			uint32_t Copies = ~0u;
+			uint32_t Group = ~0u;
+			uint32_t Record = 0;
+
 			const Dingo::Mesh* Mesh = nullptr;
 			glm::mat4 Transform{ 1.0f };
 			glm::vec4 Color{ 1.0f };
@@ -636,6 +672,8 @@ namespace Dingo
 			BatchKey Key; // a shadow-only slot's has no material and ShadowCasting::ShadowsOnly
 			uint32_t OpenChunk = ~0u;
 			std::vector<uint32_t> Chunks;
+			std::vector<uint32_t> Groups; // its instanced draws, after its chunks
+			uint32_t LastGroup = ~0u;     // the group the slot's last submission joined, to skip the lookup
 		};
 		std::vector<SceneChunk> m_SceneChunks;
 		std::vector<DrawSlot> m_DrawSlots;
@@ -644,15 +682,109 @@ namespace Dingo
 		// Places a mesh's vertices and indices at the end of the slot's open chunk, or a new one.
 		void PlaceInSlot(uint32_t slot, uint32_t vertexCount, uint32_t indexCount, uint32_t& chunk, uint32_t& chunkVertex, uint32_t& chunkIndex);
 
-		// The scene's draws, all from the upload arena: the shadow pass needs them before the lit pass does.
+		// The scene's draws, from the upload arena or, instanced, from a mesh's own buffers: the shadow
+		// pass needs them before the lit pass does.
 		struct ChunkDraw
 		{
 			BatchKey Key;
 			uint32_t FirstIndex = 0; // in the arena
 			uint32_t IndexCount = 0;
 			bool Translucent = false; // translucent casters, for the shadow pass only (no material)
+			uint32_t Group = ~0u;     // an instanced draw: its m_InstanceGroups entry
 		};
 		std::vector<ChunkDraw> m_ChunkDraws;
+
+		// ── Instancing ────────────────────────────────────────────────────────
+
+		// std430, mirrored by InstanceRecord in Instancing.glsl: one copy of a mesh.
+		struct InstanceRecord
+		{
+			glm::vec4 ModelRows[3];
+			glm::vec4 NormalColumns[3];
+			glm::vec4 Color{ 1.0f };
+			glm::uvec4 Misc{ 0u }; // x = ObjectIndex
+		};
+		static_assert(sizeof(InstanceRecord) == 128, "InstanceRecord must match the std430 struct in Instancing.glsl");
+
+		// A slot's copies of one mesh. Instanced, they take Count records from FirstRecord.
+		struct InstanceGroup
+		{
+			uint32_t Slot = 0;
+			const Dingo::Mesh* Mesh = nullptr;
+			uint64_t MeshId = 0;
+			uint32_t Count = 0;
+			uint32_t FirstRecord = 0;
+			uint32_t Placed = 0;
+			bool Forced = false;  // a MaterialParams::Instancing material's lit slot: there is no CPU path
+			bool Instanced = false;
+			bool Dropped = false; // forced, past the frame's instanced draws
+		};
+		// A batch's copies of one mesh, culled or not: whether they are instanced, in every slot they reach.
+		struct InstanceCopies
+		{
+			Dingo::Material* Material = nullptr;
+			const Dingo::Mesh* Mesh = nullptr;
+			uint32_t Count = 0;
+			bool Forced = false;
+			bool Instanced = false;
+		};
+		struct InstanceCopyKey
+		{
+			const MaterialBatch* Batch = nullptr;
+			uint64_t MeshId = 0;
+			bool operator==(const InstanceCopyKey&) const = default;
+		};
+		struct InstanceCopyKeyHash
+		{
+			size_t operator()(const InstanceCopyKey& key) const
+			{
+				return std::hash<const void*>()(key.Batch) ^ (key.MeshId * 0x9e3779b97f4a7c15ull);
+			}
+		};
+		struct InstanceGroupKey
+		{
+			uint64_t MeshId = 0;
+			uint32_t Slot = 0;
+			bool operator==(const InstanceGroupKey&) const = default;
+		};
+		struct InstanceGroupKeyHash
+		{
+			size_t operator()(const InstanceGroupKey& key) const
+			{
+				return std::hash<uint64_t>()(key.MeshId * 0x9e3779b97f4a7c15ull + key.Slot);
+			}
+		};
+
+		// Whether a material's meshes can be drawn instanced: a lit material through its instanced twin,
+		// a custom one with MaterialParams::Instancing and a shader declaring both blocks at bindings its
+		// textures and samplers leave free.
+		bool CanInstance(const Material* material) const;
+		bool ForcesInstancing(const Material* material) const;
+		// Groups the laid-out submissions by slot and mesh and picks the groups to instance; false when
+		// nothing can be (instancing off and no material forcing it), leaving the submissions ungrouped.
+		bool GroupInstances(bool shadows);
+		void EnsureInstancingResources();
+		void EnsureStaticBuffers(const Mesh* mesh);
+		void UploadInstanceRecords();
+		// Writes the per-draw base; GroupInstances keeps the frame's writes within k_MaxInstancedDrawsPerFrame.
+		void UploadInstanceDraw(uint32_t firstRecord, uint32_t views);
+		Material* ResolveInstancedMaterial(Material* material);
+
+		std::vector<InstanceGroup> m_InstanceGroups;
+		std::vector<InstanceCopies> m_InstanceCopies;
+		std::unordered_map<InstanceCopyKey, uint32_t, InstanceCopyKeyHash> m_InstanceCopyLookup;
+		std::unordered_map<InstanceGroupKey, uint32_t, InstanceGroupKeyHash> m_InstanceGroupLookup;
+		std::vector<InstanceRecord> m_InstanceRecords;
+		GraphicsBuffer* m_InstanceBuffer = nullptr;
+		uint64_t m_InstanceCapacity = 0;
+		GraphicsBuffer* m_InstanceDrawBuffer = nullptr;
+		Shader* m_InstancedShader = nullptr;
+		Shader* m_InstancedShadowShader = nullptr;
+		uint64_t m_InstanceDrawFrame = ~0ull;
+		uint32_t m_InstanceDrawsThisFrame = 0;
+		bool m_InstanceBudgetWarned = false;
+		bool m_InstanceMaterialWarned = false;
+		bool m_InstanceTranslucentWarned = false;
 
 		// ── Culling ───────────────────────────────────────────────────────────
 
@@ -805,9 +937,9 @@ namespace Dingo
 			bool ShadowDrawn = false;
 		};
 
-		// A lit material's copy on the skinned shader, synced from it before every draw. Keyed by
-		// Material::GetId, so a new material at a freed one's address gets a twin of its own; released
-		// when idle, like the batches, since nothing reports a deleted material.
+		// A lit material's copy on the skinned or instanced shader, synced from it before every draw.
+		// Keyed by Material::GetId, so a new material at a freed one's address gets a twin of its own;
+		// released when idle, like the batches, since nothing reports a deleted material.
 		struct SkinnedTwin
 		{
 			Material* Twin = nullptr;
@@ -815,10 +947,13 @@ namespace Dingo
 			uint32_t IdleScenes = 0;
 			bool Used = false;
 		};
+		using TwinMap = std::unordered_map<uint64_t, SkinnedTwin>;
+		Material* GetTwin(TwinMap& twins, Material* source, Shader* shader, const char* suffix);
+		static void ReleaseIdleTwins(TwinMap& twins);
+		std::unordered_map<uint64_t, SkinnedTwin> m_InstancedTwins;
 
 		void EnsureSkinningResources();
 		Material* ResolveSkinnedMaterial(Material* material);
-		Material* GetSkinnedTwin(Material* source);
 		void DrawSkinnedSubmissions();
 		// Draws one lit; false when it was skipped (its instance dropped, ShadowsOnly, or an unusable lit material).
 		bool DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas);
@@ -974,7 +1109,9 @@ namespace Dingo
 		// One per caster-group mask drawn, each with the mask in its ShadowCaster block.
 		std::unordered_map<uint32_t, Material*> m_ShadowMaterials;
 		std::unordered_map<uint32_t, Material*> m_SkinnedShadowMaterials;
-		Material* GetShadowMaterial(bool skinned, uint32_t shadowGroups);
+		std::unordered_map<uint32_t, Material*> m_InstancedShadowMaterials;
+		enum class ShadowVariant { Static, Skinned, Instanced };
+		Material* GetShadowMaterial(ShadowVariant variant, uint32_t shadowGroups);
 		void DestroyShadowMaterials();
 	};
 

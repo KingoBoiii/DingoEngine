@@ -16,11 +16,16 @@ namespace Dingo
 		}
 
 		// Produce a cache key from a vertex layout, a framebuffer and the shared buffers.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer)
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
+			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer)
 		{
 			size_t seed = 0;
 			if (objectBuffer)
 				HashCombine(seed, 1);
+			if (instanceBuffer)
+				HashCombine(seed, 2);
+			if (instanceDrawBuffer)
+				HashCombine(seed, static_cast<size_t>(instanceDrawBuffer->GetId()));
 			HashCombine(seed, static_cast<size_t>(framebuffer ? framebuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
@@ -190,13 +195,24 @@ namespace Dingo
 
 	void Material::SetObjectBuffer(GraphicsBuffer* buffer)
 	{
+		RepointStorageBuffer(k_ObjectDataBlockName, m_ObjectBuffer, m_ObjectBufferId, buffer);
+	}
+
+	void Material::SetInstanceBuffers(GraphicsBuffer* records, GraphicsBuffer* draw)
+	{
+		RepointStorageBuffer(k_InstanceDataBlockName, m_InstanceBuffer, m_InstanceBufferId, records);
+		m_InstanceDrawBuffer = draw;
+	}
+
+	void Material::RepointStorageBuffer(const char* blockName, GraphicsBuffer*& current, uint64_t& currentId, GraphicsBuffer* buffer)
+	{
 		const uint64_t id = buffer ? buffer->GetId() : 0;
-		if (buffer == m_ObjectBuffer && id == m_ObjectBufferId)
+		if (buffer == current && id == currentId)
 			return;
 
 		// A pass built without a buffer lacks the binding, and the cache key keeps it apart.
-		const int32_t binding = m_Params.Shader ? m_Params.Shader->FindStorageBufferBinding(k_ObjectDataBlockName) : -1;
-		if (binding >= 0 && m_ObjectBuffer && buffer)
+		const int32_t binding = m_Params.Shader ? m_Params.Shader->FindStorageBufferBinding(blockName) : -1;
+		if (binding >= 0 && current && buffer)
 		{
 			for (auto& [key, entry] : m_PipelineCache)
 			{
@@ -204,8 +220,8 @@ namespace Dingo
 				entry.RenderPass->Bake();
 			}
 		}
-		m_ObjectBuffer = buffer;
-		m_ObjectBufferId = id;
+		current = buffer;
+		currentId = id;
 	}
 
 	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
@@ -250,10 +266,12 @@ namespace Dingo
 		const int32_t shadowAtlasBinding = (m_ShadowAtlas && shader) ? shader->FindTextureBinding(k_ShadowAtlasName) : -1;
 		const int32_t shadowSamplerBinding = (m_ShadowSampler && shader) ? shader->FindSamplerBinding(k_ShadowSamplerName) : -1;
 		const int32_t objectBinding = (m_ObjectBuffer && shader) ? shader->FindStorageBufferBinding(k_ObjectDataBlockName) : -1;
+		const int32_t instanceBinding = (m_InstanceBuffer && shader) ? shader->FindStorageBufferBinding(k_InstanceDataBlockName) : -1;
+		const int32_t instanceDrawBinding = (m_InstanceDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_InstanceDrawBlockName) : -1;
 
 		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer,
 			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr,
-			objectBinding >= 0);
+			objectBinding >= 0, instanceBinding >= 0, instanceDrawBinding >= 0 ? m_InstanceDrawBuffer : nullptr);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -300,6 +318,10 @@ namespace Dingo
 			renderPass->SetSampler(static_cast<uint32_t>(shadowSamplerBinding), m_ShadowSampler);
 		if (objectBinding >= 0)
 			renderPass->SetStorageBuffer(static_cast<uint32_t>(objectBinding), m_ObjectBuffer);
+		if (instanceBinding >= 0)
+			renderPass->SetStorageBuffer(static_cast<uint32_t>(instanceBinding), m_InstanceBuffer);
+		if (instanceDrawBinding >= 0)
+			renderPass->SetUniformBuffer(static_cast<uint32_t>(instanceDrawBinding), m_InstanceDrawBuffer);
 		for (const StorageBinding& storage : m_StorageBuffers)
 			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 

@@ -15,6 +15,8 @@ namespace Dingo
 	{
 		DestroyAndDelete(m_SkinVertexBuffer);
 		DestroyAndDelete(m_SkinIndexBuffer);
+		DestroyAndDelete(m_StaticVertexBuffer);
+		DestroyAndDelete(m_StaticIndexBuffer);
 	}
 
 	std::uint64_t Mesh::AllocateId()
@@ -33,6 +35,8 @@ namespace Dingo
 		m_Id = AllocateId();
 		DestroyAndDelete(m_SkinVertexBuffer);
 		DestroyAndDelete(m_SkinIndexBuffer);
+		DestroyAndDelete(m_StaticVertexBuffer);
+		DestroyAndDelete(m_StaticIndexBuffer);
 	}
 
 	void Mesh::Clear()
