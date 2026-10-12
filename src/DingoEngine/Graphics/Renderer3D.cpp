@@ -402,6 +402,7 @@ namespace Dingo
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_UnskinnedPalettes.clear();
 		DestroyAndDelete(m_SkinBuffer);
 		DestroyAndDelete(m_SkinDrawBuffer);
 		DestroyAndDelete(m_SkinPaletteBuffer);
@@ -495,6 +496,7 @@ namespace Dingo
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_UnskinnedPalettes.clear();
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
@@ -606,6 +608,7 @@ namespace Dingo
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_UnskinnedPalettes.clear();
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
@@ -1238,6 +1241,8 @@ namespace Dingo
 			if (m_SkinnedInstanceLive[i])
 				m_SkinnedVisibility->Record(frame, m_SkinnedInstances[i].Source);
 		}
+		for (const glm::mat4* palette : m_UnskinnedPalettes)
+			m_SkinnedVisibility->Record(frame, palette);
 
 		for (TranslucentSubmission& submission : m_TranslucentSubmissions)
 		{
@@ -1762,6 +1767,9 @@ namespace Dingo
 			const Shader* shader = material ? material->GetShader() : nullptr;
 			const bool skinnedOnly = IsSkinningShader(shader);
 			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows, shadowGroups, cullDistance);
+			// Its rest pose doesn't show the palette, but a socket or a body on a joint still reads it.
+			if (!joints.empty())
+				m_UnskinnedPalettes.push_back(joints.data());
 			return;
 		}
 
@@ -2002,6 +2010,17 @@ namespace Dingo
 		{
 			m_SkinnedFrameIndex = frameIndex;
 			m_SkinnedInstancesThisFrame = 0;
+			m_SkinDataInstancesThisFrame = 0;
+		}
+
+		// A SkinData shader's instances are a budget of their own, decided here so every pass agrees.
+		m_SkinnedInstanceSkinData.assign(m_SkinnedInstances.size(), 0);
+		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			const Material* requested = submission.Material ? submission.Material : m_Material;
+			if (submission.Shadows != ShadowCasting::ShadowsOnly && !submission.CameraCulled &&
+				!IsLitShader(requested->GetShader()) && !UsesSkinPalette(requested->GetShader()))
+				m_SkinnedInstanceSkinData[submission.Instance] = 1;
 		}
 
 		// An instance is drawn whole or not at all, so a character never loses some of its parts.
@@ -2010,9 +2029,22 @@ namespace Dingo
 		{
 			if (!m_SkinnedInstanceLive[instance])
 				continue;
+			const bool skinData = m_SkinnedInstanceSkinData[instance] != 0;
+			if (skinData && m_SkinDataInstancesThisFrame >= k_MaxSkinDataInstances)
+			{
+				m_SkinnedInstanceDropped[instance] = 1;
+				if (!m_SkinDataBudgetWarned)
+				{
+					DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame drawn with a SkinData shader; the rest are skipped. Define DE_SKIN_PALETTE before including Skinning.glsl to take the whole budget.",
+						k_MaxSkinDataInstances);
+					m_SkinDataBudgetWarned = true;
+				}
+				continue;
+			}
 			if (m_SkinnedInstancesThisFrame < budget)
 			{
 				++m_SkinnedInstancesThisFrame;
+				m_SkinDataInstancesThisFrame += skinData ? 1 : 0;
 				++m_Statistics.SkinnedInstances;
 				m_Statistics.SkinnedJoints += m_SkinnedInstances[instance].JointCount;
 				continue;
@@ -2047,6 +2079,7 @@ namespace Dingo
 			for (int column = 0; column < 3; ++column)
 				m_SkinPalette.emplace_back(normalMatrix[column], 0.0f);
 			m_SkinPalette.push_back(instance.Color);
+			DE_CORE_ASSERT(m_SkinPalette.size() == instance.PaletteBase + k_SkinPaletteHeader, "Renderer3D: the skin arena's instance header must match Skinning.glsl.");
 			for (uint32_t joint = 0; joint < instance.JointCount; ++joint)
 			{
 				const glm::mat4& matrix = m_SkinnedJoints[instance.FirstJoint + joint];
@@ -2075,7 +2108,7 @@ namespace Dingo
 		Renderer::Upload(m_SkinDrawBuffer, &draw, sizeof(draw));
 	}
 
-	bool Renderer3D::BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads)
+	void Renderer3D::BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads)
 	{
 		if (UsesSkinPalette(material->GetShader()))
 		{
@@ -2086,31 +2119,15 @@ namespace Dingo
 			}
 			material->SetSkinUniformBuffer(nullptr);
 			material->SetSkinPaletteBuffers(m_SkinPaletteBuffer, m_SkinDrawBuffer);
-			return true;
+			return;
 		}
 
 		if (uploads.Data != instance)
 		{
-			// The SkinData buffer's writes are a budget of their own, shared by every scene of the frame.
-			const uint64_t frameIndex = Renderer::GetFrameIndex();
-			if (frameIndex != m_SkinDataFrameIndex)
-			{
-				m_SkinDataFrameIndex = frameIndex;
-				m_SkinDataWritesThisFrame = 0;
-			}
-			const uint32_t writes = 3 * (std::min)(GetSkinnedInstanceBudget(), k_MaxSkinDataInstances);
-			if (m_SkinDataWritesThisFrame >= writes)
-			{
-				if (!m_SkinDataBudgetWarned)
-				{
-					DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame drawn with a SkinData shader; the rest are skipped. Define DE_SKIN_PALETTE before including Skinning.glsl to take the whole budget.",
-						k_MaxSkinDataInstances);
-					m_SkinDataBudgetWarned = true;
-				}
-				return false;
-			}
+			// An admitted instance writes it once in the opaque pass and once in the translucent one.
 			if (!m_SkinBuffer)
 			{
+				const uint32_t writes = 2 * (std::min)(GetSkinnedInstanceBudget(), k_MaxSkinDataInstances);
 				m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
 					.SetDebugName("Renderer3D_SkinUBO")
 					.SetByteSize(sizeof(SkinData))
@@ -2120,13 +2137,11 @@ namespace Dingo
 					.SetMaxWritesPerFrame(writes));
 				m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 			}
-			++m_SkinDataWritesThisFrame;
 			uploads.Data = instance;
 			UploadSkinData(m_SkinnedInstances[instance]);
 		}
 		material->SetSkinPaletteBuffers(nullptr, nullptr);
 		material->SetSkinUniformBuffer(m_SkinBuffer);
-		return true;
 	}
 
 	void Renderer3D::UploadSkinData(const SkinnedInstance& instance)
@@ -2195,11 +2210,7 @@ namespace Dingo
 
 		EnsureSkinningResources();
 		Material* material = ResolveSkinnedMaterial(submission.Material);
-		if (!BindSkinInstance(material, submission.Instance, uploads))
-		{
-			++m_Statistics.DroppedSkinnedDraws;
-			return false;
-		}
+		BindSkinInstance(material, submission.Instance, uploads);
 		const Mesh* mesh = submission.Mesh;
 		EnsureSkinBuffers(mesh);
 

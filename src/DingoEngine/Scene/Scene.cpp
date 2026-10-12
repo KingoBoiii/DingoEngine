@@ -329,7 +329,10 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
-			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime, m_Data->SkinnedViews);
+			// A scene no longer rendered (stepped headless, behind a menu) animates as if seen.
+			const bool rendered = m_Data->SkinnedViewFrame + 1 >= Renderer::GetFrameIndex();
+			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime,
+				rendered ? std::span<const std::weak_ptr<const Internal::SkinnedVisibility>>(m_Data->SkinnedViews) : std::span<const std::weak_ptr<const Internal::SkinnedVisibility>>());
 			Internal::ParticleSync::ApplyAnimationEvents(m_Data->Registry, m_Data->EntityMap, m_Data->AnimationEvents.ParticleEvents);
 			Internal::ParticleSync::Update(m_Data->Registry, deltaTime);
 			m_Data->Updating = false;
@@ -487,6 +490,7 @@ namespace Dingo
 		void TrackSkinnedView(Internal::SceneData& data, Renderer3D& renderer)
 		{
 			std::shared_ptr<const Internal::SkinnedVisibility> visibility = renderer.GetSkinnedVisibility();
+			data.SkinnedViewFrame = Renderer::GetFrameIndex();
 			std::erase_if(data.SkinnedViews, [](const std::weak_ptr<const Internal::SkinnedVisibility>& view) { return view.expired(); });
 			for (const std::weak_ptr<const Internal::SkinnedVisibility>& view : data.SkinnedViews)
 			{

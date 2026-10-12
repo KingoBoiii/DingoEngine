@@ -98,6 +98,7 @@ namespace Dingo
 		uint32_t     m_LodChanges[4] = {};
 		uint32_t     m_LodEvents[4] = {};
 		uint32_t     m_LodReturned = 0;
+		uint32_t     m_LodHeadless = 0;
 		uint32_t     m_LodFrame = 0;
 		bool         m_LodDone = false;
 		Scene*    m_Scene = nullptr;

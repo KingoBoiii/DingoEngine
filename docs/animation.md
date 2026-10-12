@@ -251,7 +251,7 @@ params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of
   draws. With the default of 1024, 1024 foxes in view draw and a 1025th is dropped.
 - A custom shader with the older `SkinData` block (below) takes a whole palette upload per draw
   instead, and at most `Renderer3D::k_MaxSkinDataInstances` (256) instances a frame draw with such
-  shaders; the rest are dropped with a warning.
+  shaders; the rest are dropped whole, from their shadows too, with a warning.
 
 ### Draw order and translucency
 
@@ -545,9 +545,12 @@ frame after it is drawn again.
   for one frame.
 - **Children hold still too.** Joint [sockets](#sockets), bodies on joints and
   `Animator::GetSkinningPalette` read the last pose evaluated.
-- **Nothing drawn, nothing culled.** A scene no live renderer has drawn counts every animator as seen,
-  so a scene stepped without rendering (a server, a check) animates as before. With culling off
+- **Nothing drawn, nothing culled.** A scene not rendered in this frame or the last (stepped headless
+  on a server, in a check, or hidden behind a full-screen menu) counts every animator as seen, and
+  so does one no live renderer has drawn: it animates as before. With culling off
   (`Renderer3D::SetCullingEnabled(false)`) every instance is drawn, so nothing pauses.
+- A skinned mesh the renderer draws in its rest pose instead (no skin, more joints than a draw takes)
+  counts as seen.
 - F7 marks a culled animator `culled, paused` or `culled, every 4th update`.
 
 ## Blending

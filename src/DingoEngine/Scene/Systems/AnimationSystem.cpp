@@ -234,15 +234,17 @@ namespace Dingo
 
 					Animator& animator = EnsureAnimator(registry, handle, *model);
 					const AnimatorComponent& settings = view.get<AnimatorComponent>(handle);
+					AnimatorRuntime& runtime = registry.get<AnimatorRuntime>(handle);
 					if (!settings.Enabled)
 					{
+						runtime.Culled = false;
+						runtime.CulledUpdates = 0;
 						animator.ClearEventsThisFrame();
 						animator.ClearRootMotionDelta();
 						StopDrivenController(registry, physics, handle);
 						continue;
 					}
 
-					AnimatorRuntime& runtime = registry.get<AnimatorRuntime>(handle);
 					bool evaluate = true;
 					if (settings.CullingMode != AnimatorCullingMode::AlwaysAnimate && !drawn.empty())
 					{

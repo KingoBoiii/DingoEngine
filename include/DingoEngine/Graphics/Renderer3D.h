@@ -355,7 +355,7 @@ namespace Dingo
 		// on Vulkan, and its palette a stretch of the skin arena.
 		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
 		// Instances a frame drawn with a custom material whose shader has a SkinData block, each
-		// holding three SkinData versions (8 KiB each) in host-visible memory on Vulkan.
+		// holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
 		static constexpr uint32_t k_MaxSkinDataInstances = 256;
 
 		// Skins a mesh on the GPU and places it with transform, one draw per call. joints is the
@@ -1024,9 +1024,8 @@ namespace Dingo
 		void DrawSkinnedSubmissions();
 		// Draws one lit; false when it was skipped (its instance dropped, ShadowsOnly, or an unusable lit material).
 		bool DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas);
-		// Binds the instance's palette to material, uploading what this pass hasn't yet; false when a
-		// SkinData shader is past k_MaxSkinDataInstances for the frame.
-		bool BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
+		// Binds the instance's palette to material, uploading what this pass hasn't yet.
+		void BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
 		static bool IsSkinningShader(const Shader* shader);
 		static bool UsesSkinPalette(const Shader* shader);
 
@@ -1038,8 +1037,8 @@ namespace Dingo
 		std::vector<glm::vec4> m_SkinPalette;
 		// Made on the first SkinData shader's draw.
 		GraphicsBuffer* m_SkinBuffer = nullptr;
-		uint64_t m_SkinDataFrameIndex = 0;
-		uint32_t m_SkinDataWritesThisFrame = 0;
+		uint32_t m_SkinDataInstancesThisFrame = 0;
+		std::vector<uint8_t> m_SkinnedInstanceSkinData; // per instance of the scene: a camera-pass draw takes a SkinData shader
 		bool m_SkinDataBudgetWarned = false;
 		VertexLayout m_SkinnedLayout;
 		VertexLayout m_SkinnedShadowLayout;
@@ -1049,10 +1048,11 @@ namespace Dingo
 
 		std::vector<SkinnedSubmission> m_SkinnedSubmissions;
 		std::vector<SkinnedInstance> m_SkinnedInstances;
+		std::vector<const glm::mat4*> m_UnskinnedPalettes; // the palettes of skinned meshes SubmitMesh drew in their rest pose, counted as seen
 		std::vector<glm::mat4> m_SkinnedJoints; // every instance's palette, back to back
 		std::unordered_map<uint64_t, SkinnedTwin> m_SkinnedTwins;
 
-		std::vector<uint8_t> m_SkinnedInstanceDropped; // per instance of the scene: past the frame's budget
+		std::vector<uint8_t> m_SkinnedInstanceDropped; // per instance of the scene: past the frame's budget, or SkinData's
 		std::vector<uint8_t> m_SkinnedInstanceLive;    // per instance of the scene: a mesh of it is drawn in some pass
 		uint64_t m_SkinnedFrameIndex = 0;
 		uint32_t m_SkinnedInstancesThisFrame = 0;

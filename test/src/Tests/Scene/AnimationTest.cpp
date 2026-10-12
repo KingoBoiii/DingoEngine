@@ -77,11 +77,12 @@ void main()
 #version 450
 
 layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec3 v_Normal;
 layout(location = 0) out vec4 o_Color;
 
 void main()
 {
-    o_Color = v_Color;
+    o_Color = vec4(v_Color.rgb * (0.5 + 0.5 * normalize(v_Normal)), 1.0);
 }
 )";
 
@@ -108,6 +109,13 @@ layout(std140, binding = 0) uniform CameraData
 #define DE_SKIN_PALETTE
 #include <DingoEngine/Skinning.glsl>
 
+// A volatile block above DE_SkinDraw's binding that the material adds before it, as the lit shader's
+// is: NVRHI's Vulkan offsets go in binding order, so an unsorted binding set swaps their versions.
+layout(std140, binding = 4) uniform ShadowData
+{
+    ivec4 ShadowCounts;
+};
+
 layout(location = 0) out vec4 v_Color;
 layout(location = 1) out vec3 v_Normal;
 layout(location = 2) out vec2 v_TexCoord;
@@ -115,7 +123,7 @@ layout(location = 2) out vec2 v_TexCoord;
 void main()
 {
     mat4 skin = SkinMatrix(a_Joints, a_Weights);
-    gl_Position = ViewProjection * SkinModel() * skin * vec4(a_Position, 1.0);
+    gl_Position = ShadowCounts.x > 64 ? vec4(0.0) : ViewProjection * SkinModel() * skin * vec4(a_Position, 1.0);
     v_Color = SkinColor();
     v_Normal = SkinNormalMatrix() * a_Normal;
     v_TexCoord = a_TexCoord;
@@ -125,17 +133,19 @@ void main()
 #version 450
 
 layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec3 v_Normal;
 layout(location = 0) out vec4 o_Color;
 
 void main()
 {
-    o_Color = v_Color;
+    o_Color = vec4(v_Color.rgb * (0.5 + 0.5 * normalize(v_Normal)), 1.0);
 }
 )";
 
 	constexpr uint32_t k_LodSettleFrames = 4;   // until a renderer has drawn the scene and the views are known
 	constexpr uint32_t k_LodMeasuredFrames = 12;
 	constexpr uint32_t k_LodReturnFrames = 3;   // the paused fox brought into view
+	constexpr uint32_t k_LodHeadlessFrames = 4; // the scene stepped without being drawn
 	constexpr float k_LodStep = 1.0f / 15.0f;
 
 	constexpr uint32_t k_GhostCheckWidth = 160;
@@ -370,6 +380,7 @@ namespace Dingo
 		m_LodDone = false;
 		m_LodFrame = 0;
 		m_LodReturned = 0;
+		m_LodHeadless = 0;
 		for (uint32_t i = 0; i < 4; ++i)
 		{
 			m_LodChanges[i] = m_LodEvents[i] = 0;
@@ -2349,9 +2360,26 @@ namespace Dingo
 		Check(stats.SkinnedDraws == 2 && stats.SkinnedInstances == 1 && stats.SubmittedMeshes == 4 && stats.DrawCalls == 3 && stats.DroppedSkinnedDraws == 0,
 			"custom skinned materials, one with a SkinData block and one reading the skin arena, skin the Fox from one instance, and static boxes given them draw with the default material instead of a pipeline their vertex stage can't take");
 
-		// Each ghost alone into a target of its own: the arena must place every vertex where SkinData does.
-		const glm::vec4 color(0.9f, 0.5f, 0.2f, 1.0f);
-		const glm::mat4 place = glm::translate(glm::mat4(1.0f), m_FoxOffset) * glm::scale(glm::mat4(1.0f), glm::vec3(m_FoxScale));
+		// Each ghost into a target of its own, three Foxes in different Walk poses, turned and tinted
+		// apart: the arena must place every vertex, and turn every normal, where SkinData does, for
+		// instances past the first too.
+		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+		std::vector<glm::mat4> poses[3];
+		glm::mat4 places[3];
+		const glm::vec4 colors[3] = { { 0.9f, 0.5f, 0.2f, 1.0f }, { 0.3f, 0.8f, 0.6f, 1.0f }, { 0.7f, 0.4f, 0.9f, 1.0f } };
+		for (int f = 0; f < 3; ++f)
+		{
+			Animator pose(m_Fox->GetSkeleton());
+			pose.Play(walk);
+			pose.SetTime(walk ? (0.2f + 0.3f * static_cast<float>(f)) * walk->GetDuration() : 0.0f);
+			pose.Evaluate();
+			poses[f].assign(pose.GetSkinningPalette().begin(), pose.GetSkinningPalette().end());
+			const float side = static_cast<float>(f - 1);
+			places[f] = glm::translate(glm::mat4(1.0f), glm::vec3(0.25f * k_FoxLength * side, 0.0f, -0.1f * k_FoxLength * side))
+				* glm::rotate(glm::mat4(1.0f), glm::radians(35.0f * side), glm::vec3(0.0f, 1.0f, 0.0f))
+				* glm::translate(glm::mat4(1.0f), m_FoxOffset) * glm::scale(glm::mat4(1.0f), glm::vec3(m_FoxScale));
+		}
+		Check(poses[0] != poses[1] && poses[1] != poses[2], "the arena check's three Walk poses differ");
 		PerspectiveCamera camera = m_Camera;
 		camera.SetAspectRatio(static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight));
 		Framebuffer* previous = Renderer::GetRenderTarget();
@@ -2367,8 +2395,11 @@ namespace Dingo
 			Renderer::SetRenderTarget(m_GhostTargets[i]);
 			renderer.BeginScene(camera);
 			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-			renderer.SubmitSkinnedMesh(skinned->MeshData, place, rest, color, i == 0 ? m_Ghost : m_PaletteGhost);
+			for (int f = 0; f < 3; ++f)
+				renderer.SubmitSkinnedMesh(skinned->MeshData, places[f], poses[f], colors[f], i == 0 ? m_Ghost : m_PaletteGhost);
 			renderer.EndScene();
+			if (i == 1)
+				Check(renderer.GetStatistics().SkinnedInstances == 3, std::format("the arena check draws three instances ({})", renderer.GetStatistics().SkinnedInstances));
 		}
 		Renderer::SetRenderTarget(previous);
 
@@ -2390,7 +2421,7 @@ namespace Dingo
 				covered += pixels.Data[i] != 0 ? 1 : 0;
 			}
 			Check(!pixels.Data.empty() && pixels.Data.size() == m_GhostPixels.size() && differing == 0 && covered > 0,
-				std::format("a custom shader reading the skin arena draws the Fox exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
+				std::format("a custom shader reading the skin arena draws three posed Foxes exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
 		});
 	}
 
@@ -2421,6 +2452,7 @@ namespace Dingo
 		}
 
 		const bool returning = m_LodFrame >= k_LodSettleFrames + k_LodMeasuredFrames;
+		const bool headless = m_LodFrame >= k_LodSettleFrames + k_LodMeasuredFrames + k_LodReturnFrames;
 		if (m_LodFrame == k_LodSettleFrames + k_LodMeasuredFrames)
 			m_LodFoxes[Paused].GetComponent<Transform3DComponent>().Position = m_FoxOffset;
 
@@ -2438,24 +2470,29 @@ namespace Dingo
 				m_LodEvents[i] += static_cast<uint32_t>(animator->GetEventsThisFrame().size());
 				m_LodChanges[i] += changed ? 1 : 0;
 			}
-			if (returning && i == Paused)
+			if (returning && !headless && i == Paused)
 				m_LodReturned += changed ? 1 : 0;
+			if (headless && i == Reduced)
+				m_LodHeadless += changed ? 1 : 0;
 			m_LodPalettes[i].assign(palette.begin(), palette.end());
 		}
 
-		PerspectiveCamera camera(45.0f, static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight), 0.05f, 100.0f);
-		camera.SetPosition({ 0.0f, 0.8f, 3.0f });
-		camera.SetTarget({ 0.0f, 0.4f, 0.0f });
-		Framebuffer* previous = Renderer::GetRenderTarget();
-		Renderer::SetRenderTarget(m_LodTarget);
-		renderer.BeginScene(camera);
-		renderer.Clear(m_ClearColor);
-		m_LodScene->SubmitLights(renderer);
-		m_LodScene->RenderEntities3D(renderer);
-		renderer.EndScene();
-		Renderer::SetRenderTarget(previous);
+		if (!headless)
+		{
+			PerspectiveCamera camera(45.0f, static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight), 0.05f, 100.0f);
+			camera.SetPosition({ 0.0f, 0.8f, 3.0f });
+			camera.SetTarget({ 0.0f, 0.4f, 0.0f });
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_LodTarget);
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			m_LodScene->SubmitLights(renderer);
+			m_LodScene->RenderEntities3D(renderer);
+			renderer.EndScene();
+			Renderer::SetRenderTarget(previous);
+		}
 
-		if (++m_LodFrame < k_LodSettleFrames + k_LodMeasuredFrames + k_LodReturnFrames)
+		if (++m_LodFrame < k_LodSettleFrames + k_LodMeasuredFrames + k_LodReturnFrames + k_LodHeadlessFrames)
 			return;
 		m_LodDone = true;
 
@@ -2475,6 +2512,8 @@ namespace Dingo
 			std::format("a PauseWhenCulled fox in view is posed every update ({} of {})", m_LodChanges[Seen], k_LodMeasuredFrames));
 		Check(m_LodReturned > 0,
 			std::format("the paused fox is posed again once it comes into view ({} of the {} updates after)", m_LodReturned, k_LodReturnFrames));
+		Check(m_LodHeadless >= k_LodHeadlessFrames - 1,
+			std::format("once the scene is no longer drawn, the culled ReduceWhenCulled fox is posed every update ({} of {})", m_LodHeadless, k_LodHeadlessFrames));
 	}
 
 	void AnimationTest::Update(float deltaTime)

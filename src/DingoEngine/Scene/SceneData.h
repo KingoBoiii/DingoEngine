@@ -70,6 +70,7 @@ namespace Dingo
 
 			// The renderers RenderEntities3D drew with, which the animate pass asks what was culled.
 			std::vector<std::weak_ptr<const SkinnedVisibility>> SkinnedViews;
+			uint64_t SkinnedViewFrame = 0; // the frame of the last RenderEntities3D
 		};
 
 	}
