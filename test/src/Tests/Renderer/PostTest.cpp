@@ -181,6 +181,8 @@ void main()
 		m_SceneDisabled = MakeTarget("PostTest scene disabled", k_SceneWidth, k_SceneHeight, true);
 		m_RoomPlain = MakeTarget("PostTest room plain", k_SceneWidth, k_SceneHeight, true);
 		m_RoomOccluded = MakeTarget("PostTest room occluded", k_SceneWidth, k_SceneHeight, true);
+		m_RoomFogged = MakeTarget("PostTest room fogged", k_SceneWidth, k_SceneHeight, true);
+		m_RoomFoggedOccluded = MakeTarget("PostTest room fogged occluded", k_SceneWidth, k_SceneHeight, true);
 		m_SplitTarget = MakeTarget("PostTest split", 2 * k_SplitSize, k_SplitSize, false);
 		m_DepthTarget = MakeTarget("PostTest caller depth", k_SplitSize, k_SplitSize, true);
 	}
@@ -208,7 +210,7 @@ void main()
 		renderer.SubmitMesh(renderer.GetBoxMesh(), box(k_FloatingBox, glm::vec3(0.8f)), { 0.9f, 0.6f, 0.5f, 1.0f });
 	}
 
-	void PostTest::DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings)
+	void PostTest::DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings, const Fog* fog)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		Framebuffer* previous = Renderer::GetRenderTarget();
@@ -222,6 +224,8 @@ void main()
 		renderer.BeginScene(camera);
 		renderer.Clear(m_ClearColor);
 		DrawRoom(renderer);
+		if (fog)
+			renderer.SetFog(*fog);
 		renderer.EndScene();
 		post.End();
 
@@ -422,6 +426,17 @@ void main()
 			Check(!pixels.Data.empty() && pixels.Data == m_SceneOffPixels, "a Begin with the chain disabled draws exactly what drawing without it does");
 		});
 
+		readBack(m_RoomFogged, [this](const TexturePixels& pixels) { m_RoomFoggedPixels = pixels.Data; });
+		readBack(m_RoomFoggedOccluded, [this](const TexturePixels& pixels)
+		{
+			int worst = 0;
+			const size_t count = (std::min)(pixels.Data.size(), m_RoomFoggedPixels.size());
+			for (size_t i = 0; i < count; ++i)
+				worst = (std::max)(worst, std::abs(static_cast<int>(pixels.Data[i]) - static_cast<int>(m_RoomFoggedPixels[i])));
+			Check(count > 0 && count == m_RoomFoggedPixels.size() && worst <= 2,
+				std::format("ambient occlusion draws nothing into a room wholly fogged (worst {}/255 against the room without it)", worst));
+		});
+
 		const glm::mat4 room = RoomCamera(static_cast<float>(k_SceneWidth) / static_cast<float>(k_SceneHeight)).GetViewProjectionMatrix();
 		const glm::ivec2 open = ToPixel(room, k_RoomFloorOpen, k_SceneWidth, k_SceneHeight);
 		const glm::ivec2 crease = ToPixel(room, k_RoomCrease, k_SceneWidth, k_SceneHeight);
@@ -614,6 +629,14 @@ void main()
 			roomOccluded.AmbientOcclusion.Enabled = true;
 			DrawRoomInto(m_RoomPlain, roomPlain);
 			DrawRoomInto(m_RoomOccluded, roomOccluded);
+
+			// Every surface of the room is past End, so it is the fog's colour alone.
+			Fog fog;
+			fog.Color = glm::vec3(0.5f);
+			fog.Start = 0.5f;
+			fog.End = 1.0f;
+			DrawRoomInto(m_RoomFogged, roomPlain, &fog);
+			DrawRoomInto(m_RoomFoggedOccluded, roomOccluded, &fog);
 		}
 
 		if (m_ShowRoom)
@@ -653,6 +676,9 @@ void main()
 		DestroyAndDelete(m_SceneDisabled);
 		DestroyAndDelete(m_RoomPlain);
 		DestroyAndDelete(m_RoomOccluded);
+		DestroyAndDelete(m_RoomFogged);
+		DestroyAndDelete(m_RoomFoggedOccluded);
+		m_RoomFoggedPixels.clear();
 		DestroyAndDelete(m_SplitTarget);
 		DestroyAndDelete(m_DepthTarget);
 		m_RoomPlainPixels.clear();

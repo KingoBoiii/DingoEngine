@@ -238,6 +238,15 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_ViewportTarget = MakeColorTarget("RenderTargetTest viewport", TextureFormat::RGBA8_UNORM, 16, 16);
 		m_BlendTarget = MakeColorTarget("RenderTargetTest blend", TextureFormat::RGBA16F, 4, 4);
 		m_Batch2DTarget = MakeColorTarget("RenderTargetTest 2D batches", TextureFormat::RGBA16F, 16, 16);
+		m_UploadTarget = MakeColorTarget("RenderTargetTest mid-frame upload", TextureFormat::RGBA8_UNORM, 16, 16);
+		const std::vector<uint32_t> red(16, 0xFF0000FFu);
+		m_UploadTexture = Texture::Create(TextureParams()
+			.SetDebugName("RenderTargetTest uploaded")
+			.SetWidth(4)
+			.SetHeight(4)
+			.SetFormat(TextureFormat::RGBA8_UNORM)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetInitialData(red.data()));
 
 		m_FillShader = Shader::CreateFromSource("RenderTargetTestFill", k_FillShaderSource);
 		m_SampleShader = Shader::CreateFromSource("RenderTargetTestSample", k_SampleShaderSource);
@@ -261,6 +270,9 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_ResizeCopyMaterial = MakeFullscreenMaterial("RenderTargetTestResizeCopy", m_SampleShader);
 		m_ResizeCopyMaterial->SetTexture(0, m_ResizeTarget->GetAttachment(0));
 		m_ResizeCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
+		m_UploadMaterial = MakeFullscreenMaterial("RenderTargetTestUpload", m_SampleShader);
+		m_UploadMaterial->SetTexture(0, m_UploadTexture);
+		m_UploadMaterial->SetSampler(0, Renderer::GetPointSampler());
 
 		Check(m_DepthSource->GetDepthAttachment() && m_DepthSource->GetDepthAttachment()->GetParams().Format == TextureFormat::D32 && !m_ProbeTarget->GetDepthAttachment(),
 			"FramebufferParams::SetDepthSampleable gives a D32 depth texture, and a plain depth target gives none");
@@ -438,6 +450,19 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 				std::format("Renderer2D draws quads and circles into an RGBA16F target without depth (quad ({:.2f}, {:.2f}), circle ({:.2f}, {:.2f}), corner ({:.2f}, {:.2f}))",
 					quad.r, quad.g, circle.r, circle.g, corner.r, corner.g));
 		});
+
+		// Two draws of one material keep its binding set bound across the upload between them, so only the
+		// upload itself can put the texture back into a state a draw may sample (#154).
+		DrawFullscreen(m_UploadMaterial, m_UploadTarget);
+		const std::vector<uint32_t> green(16, 0xFF00FF00u);
+		m_UploadTexture->Upload(green.data(), 4 * sizeof(uint32_t));
+		DrawFullscreen(m_UploadMaterial, m_UploadTarget);
+		ReadBack(m_UploadTarget, [this](const TexturePixels& pixels)
+		{
+			const glm::vec4 value = pixels.GetPixel(8, 8);
+			Check(value.g > 0.99f && value.r < 0.01f,
+				std::format("a draw after a mid-frame Texture::Upload samples the new texels ({:.2f}, {:.2f}, {:.2f})", value.r, value.g, value.b));
+		});
 	}
 
 	void RenderTargetTest::DestroyGroundworkResources()
@@ -451,6 +476,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DestroyAndDelete(m_DepthCopyMaterial);
 		DestroyAndDelete(m_CompareMaterial);
 		DestroyAndDelete(m_ResizeCopyMaterial);
+		DestroyAndDelete(m_UploadMaterial);
 		DestroyAndDelete(m_CompareSampler);
 		DestroyAndDelete(m_FillShader);
 		DestroyAndDelete(m_SampleShader);
@@ -464,6 +490,8 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DestroyAndDelete(m_BlendTarget);
 		DestroyAndDelete(m_Batch2DTarget);
 		DestroyAndDelete(m_ReusedTarget);
+		DestroyAndDelete(m_UploadTarget);
+		DestroyAndDelete(m_UploadTexture);
 	}
 
 	Scene* RenderTargetTest::BuildShowScene(const char* name, const glm::vec4& clearColor, Mesh* mesh, const glm::vec4& color, Entity& spinner)

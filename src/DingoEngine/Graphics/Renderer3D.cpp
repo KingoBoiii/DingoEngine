@@ -433,6 +433,22 @@ namespace Dingo
 			ResolveSceneLights();
 		}
 		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && m_CameraData.CameraPosition.w > 0.5f;
+		if (m_Statistics.Fogged)
+		{
+			// Before ClearSceneLights drops the fog. A later unfogged scene of the same Begin leaves it,
+			// so the fogged scene's distant pixels never take AO.
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+			{
+				Fog fog;
+				fog.Mode = static_cast<FogMode>(static_cast<int>(m_CameraData.FogParams.w + 0.5f));
+				fog.Start = m_CameraData.FogParams.x;
+				fog.End = m_CameraData.FogParams.y;
+				fog.Density = m_CameraData.FogParams.z;
+				fog.MaxOpacity = m_CameraData.FogColor.a;
+				post.SetAmbientOcclusionFog(fog);
+			}
+		}
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 		const bool shadows = PrepareShadows();
 		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
@@ -592,8 +608,18 @@ namespace Dingo
 			chunk.Vertices.clear();
 			chunk.Indices.clear();
 		};
-		// Returns the chunk the mesh landed in and where its indices start there.
-		auto append = [&](const TranslucentSubmission& submission, uint32_t& firstIndex)
+		// Returns the chunk the mesh landed in and where its indices start there. With backFacesFirst its
+		// triangles facing away from the camera go first, so a mesh that draws both sides never blends
+		// its far side over its near side. The vertex normals decide, since a mirrored transform turns
+		// the winding inside out but leaves them pointing outwards.
+		const glm::vec4& camera = m_CameraData.CameraPosition;
+		auto facesAway = [&camera](const Vertex& a, const Vertex& b, const Vertex& c)
+		{
+			const glm::vec3 center = (a.Position + b.Position + c.Position) / 3.0f;
+			const glm::vec3 toCamera = camera.w > 0.5f ? glm::vec3(camera) - center : glm::vec3(camera);
+			return glm::dot(a.Normal + b.Normal + c.Normal, toCamera) < 0.0f;
+		};
+		auto append = [&](const TranslucentSubmission& submission, uint32_t& firstIndex, bool backFacesFirst)
 		{
 			MeshChunk* chunk = &m_TranslucentChunks[chunksInUse - 1];
 			if (chunk->Vertices.size() + submission.VertexCount > caps.MaxVertices || chunk->Indices.size() + submission.IndexCount > caps.MaxIndices)
@@ -606,8 +632,29 @@ namespace Dingo
 			firstIndex = static_cast<uint32_t>(chunk->Indices.size());
 			const auto vertices = m_TranslucentVertices.begin() + submission.FirstVertex;
 			chunk->Vertices.insert(chunk->Vertices.end(), vertices, vertices + submission.VertexCount);
-			for (uint32_t i = 0; i < submission.IndexCount; ++i)
-				chunk->Indices.push_back(m_TranslucentIndices[submission.FirstIndex + i] + vertexOffset);
+			const uint32_t* indices = m_TranslucentIndices.data() + submission.FirstIndex;
+			if (!backFacesFirst)
+			{
+				for (uint32_t i = 0; i < submission.IndexCount; ++i)
+					chunk->Indices.push_back(indices[i] + vertexOffset);
+				return chunksInUse - 1;
+			}
+
+			const Vertex* meshVertices = m_TranslucentVertices.data() + submission.FirstVertex;
+			const uint32_t triangleIndices = submission.IndexCount - submission.IndexCount % 3;
+			m_TranslucentNearIndices.clear();
+			for (uint32_t i = 0; i < triangleIndices; i += 3)
+			{
+				const uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
+				const bool inRange = a < submission.VertexCount && b < submission.VertexCount && c < submission.VertexCount;
+				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? chunk->Indices : m_TranslucentNearIndices;
+				destination.push_back(a + vertexOffset);
+				destination.push_back(b + vertexOffset);
+				destination.push_back(c + vertexOffset);
+			}
+			chunk->Indices.insert(chunk->Indices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
+			for (uint32_t i = triangleIndices; i < submission.IndexCount; ++i)
+				chunk->Indices.push_back(indices[i] + vertexOffset);
 			return chunksInUse - 1;
 		};
 
@@ -644,7 +691,7 @@ namespace Dingo
 						run.FirstChunk = chunksInUse - 1;
 					}
 					uint32_t firstIndex = 0;
-					append(submission, firstIndex);
+					append(submission, firstIndex, false);
 					run.ChunkEnd = chunksInUse;
 				}
 				if (run.ChunkEnd > 0)
@@ -670,7 +717,7 @@ namespace Dingo
 				litChunkStarted = true;
 			}
 			uint32_t firstIndex = 0;
-			const uint32_t chunk = append(submission, firstIndex);
+			const uint32_t chunk = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
 			if (!m_TranslucentDraws.empty())
 			{
 				TranslucentDraw& last = m_TranslucentDraws.back();
@@ -723,10 +770,10 @@ namespace Dingo
 		{
 			if (draw.Skinned >= 0)
 			{
-				if (DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploadedInstance, shadowAtlas))
+				if (const uint32_t draws = DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploadedInstance, shadowAtlas, true))
 				{
 					++m_Statistics.TranslucentMeshes;
-					++m_Statistics.TranslucentDraws;
+					m_Statistics.TranslucentDraws += draws;
 				}
 				continue;
 			}
@@ -1047,19 +1094,19 @@ namespace Dingo
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
 			if (!submission.Translucent)
-				DrawSkinnedSubmission(submission, uploadedInstance, shadowAtlas);
+				DrawSkinnedSubmission(submission, uploadedInstance, shadowAtlas, false);
 		}
 	}
 
-	bool Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas)
+	uint32_t Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas, bool backFacesFirst)
 	{
 		if (m_SkinnedInstanceDropped[submission.Instance])
 		{
 			++m_Statistics.DroppedSkinnedDraws;
-			return false;
+			return 0;
 		}
 		if (submission.Shadows == ShadowCasting::ShadowsOnly)
-			return false;
+			return 0;
 
 		// The same rule as the static path, so a material draws the same way skinned or not.
 		Material* requested = submission.Material ? submission.Material : m_Material;
@@ -1072,7 +1119,7 @@ namespace Dingo
 					name.empty() ? "<unnamed>" : name.c_str());
 				m_LitSlotsWarned = true;
 			}
-			return false;
+			return 0;
 		}
 
 		EnsureSkinningResources();
@@ -1089,12 +1136,29 @@ namespace Dingo
 		material->SetSceneUniformBuffer(m_SceneUniformBuffer);
 		material->SetSkinUniformBuffer(m_SkinBuffer);
 		material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-		Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
 
-		++m_Statistics.DrawCalls;
-		++m_Statistics.SkinnedDraws;
+		// The skinned vertices exist only on the GPU, so a two-sided mesh's sides are split by culling:
+		// the far side in a draw of its own before the near side. A mirrored instance transform, or a
+		// material whose front faces are clockwise, swaps them; a joint that mirrors isn't noticed.
+		uint32_t draws = 1;
+		const MaterialParams& params = material->GetParams();
+		if (backFacesFirst && params.CullMode == CullMode::None)
+		{
+			const bool mirrored = glm::determinant(glm::mat3(m_SkinnedInstances[submission.Instance].Transform)) < 0.0f;
+			const bool frontCulledFirst = mirrored != params.FrontCounterClockwise;
+			Renderer::DrawIndexed(material, frontCulledFirst ? CullMode::Front : CullMode::Back, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
+			Renderer::DrawIndexed(material, frontCulledFirst ? CullMode::Back : CullMode::Front, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
+			draws = 2;
+		}
+		else
+		{
+			Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
+		}
+
+		m_Statistics.DrawCalls += draws;
+		m_Statistics.SkinnedDraws += draws;
 		++m_Statistics.SubmittedMeshes;
-		return true;
+		return draws;
 	}
 
 	Material* Renderer3D::CreateLitMaterial(MaterialParams params) const
@@ -1116,6 +1180,11 @@ namespace Dingo
 
 		// Rebuilt every scene: SetRoughness and the other surface setters only change the
 		// material's params, never its uniform data.
+		// A fully fogged fragment must leave its target as the fog left it: Additive adds black to it and
+		// Multiply multiplies it by white.
+		const BlendMode blend = material->GetParams().Blend;
+		const float fogTarget = blend == BlendMode::Additive ? 1.0f : blend == BlendMode::Multiply ? 2.0f : 0.0f;
+
 		LitMaterialData data;
 		const glm::vec3& emissiveColor = material->GetEmissiveColor();
 		data.EmissiveColor = glm::vec4(IsFinite(emissiveColor) ? emissiveColor : glm::vec3(0.0f), 0.0f);
@@ -1123,7 +1192,7 @@ namespace Dingo
 			FiniteOr(material->GetEmissiveStrength(), 0.0f),
 			glm::clamp(FiniteOr(material->GetRoughness(), 0.5f), 0.0f, 1.0f),
 			std::max(FiniteOr(material->GetSpecular(), 0.0f), 0.0f),
-			0.0f);
+			fogTarget);
 
 		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
 		// frame, so a material drawn in several scenes of a frame only rewrites what changed.

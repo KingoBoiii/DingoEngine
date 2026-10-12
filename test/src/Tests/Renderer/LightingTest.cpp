@@ -548,6 +548,20 @@ namespace Dingo
 			renderer.SetFog(fog);
 		});
 
+		// A translucent glow in front of the wall, wholly fogged, must leave the wall as the fog left it.
+		for (Material* glow : m_FogGlowMaterials)
+		{
+			const bool additive = glow->GetParams().Blend == BlendMode::Additive;
+			probeStep(additive ? "a fully fogged additive glow adds nothing to the fogged wall" : "a fully fogged multiplying glow leaves the fogged wall as it is",
+				glm::vec3(0.5f), [glow](Renderer3D& renderer)
+			{
+				Fog fog = WhiteFog(FogMode::Linear, 1.0f, 2.0f);
+				fog.Color = glm::vec3(0.5f);
+				renderer.SetFog(fog);
+				renderer.SubmitMesh(renderer.GetBoxMesh(), BoxTransform({ 0.0f, 0.0f, -6.0f }, { 60.0f, 40.0f, 1.0f }), glm::vec4(0.25f, 0.25f, 0.25f, 1.0f), glow);
+			});
+		}
+
 		const glm::vec3 clearColor{ 0.25f, 0.5f, 0.75f };
 		probeStep("a FogComponent with UseClearColor fogs into the scene's clear colour", clearColor, [clearColor](Renderer3D& renderer)
 		{
@@ -637,6 +651,14 @@ namespace Dingo
 			.SetDebugName("LightingTest_Crate")
 			.SetRoughness(0.4f));
 		m_CrateTexture = Application::Get().GetAssetManager().LoadAsync("textures/container.jpg");
+		m_FogGlowMaterials[0] = renderer.CreateLitMaterial(MaterialParams()
+			.SetDebugName("LightingTest_FogAdditive")
+			.SetTranslucent(true)
+			.SetBlendMode(BlendMode::Additive));
+		m_FogGlowMaterials[1] = renderer.CreateLitMaterial(MaterialParams()
+			.SetDebugName("LightingTest_FogMultiply")
+			.SetTranslucent(true)
+			.SetBlendMode(BlendMode::Multiply));
 
 		m_Checks.clear();
 		m_NextCheckStep = 0;
@@ -957,6 +979,11 @@ namespace Dingo
 		delete m_CrateMaterial;
 		m_LampMaterial = nullptr;
 		m_CrateMaterial = nullptr;
+		for (Material*& material : m_FogGlowMaterials)
+		{
+			delete material;
+			material = nullptr;
+		}
 
 		m_Alive.reset();
 		for (Framebuffer*& target : m_FogTargets)

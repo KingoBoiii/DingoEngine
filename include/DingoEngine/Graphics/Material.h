@@ -155,6 +155,8 @@ namespace Dingo
 		// combination so the same Material can be used with different mesh types
 		// or render targets.
 		RenderPass* GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer);
+		// The same with another cull mode than the material's own, cached beside its own passes.
+		RenderPass* GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode);
 
 		// ── Accessors ─────────────────────────────────────────────────────────
 
