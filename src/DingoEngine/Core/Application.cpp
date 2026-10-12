@@ -162,13 +162,6 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		if (m_Window)
-		{
-			m_Window->Shutdown();
-			delete m_Window;
-			m_Window = nullptr;
-		}
-
 		if (m_SwapChain)
 		{
 			m_SwapChain->Destroy();
@@ -181,6 +174,15 @@ namespace Dingo
 			m_GraphicsContext->Shutdown();
 			delete m_GraphicsContext;
 			m_GraphicsContext = nullptr;
+		}
+
+		// Last: the Vulkan surface presents through GLFW's X11 connection, which glfwTerminate
+		// closes, so the swap chain and surface must be gone first or their teardown can hang.
+		if (m_Window)
+		{
+			m_Window->Shutdown();
+			delete m_Window;
+			m_Window = nullptr;
 		}
 
 		CacheManager::Shutdown();
