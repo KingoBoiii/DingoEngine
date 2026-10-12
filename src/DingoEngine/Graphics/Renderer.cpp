@@ -152,7 +152,12 @@ namespace Dingo
 			return;
 
 		{
-			std::lock_guard<std::mutex> lock(s_Data->Mutex);
+			// The render thread takes the last frame and presents it before it reads the sentinel.
+			// Executed below instead, that frame draws into a back buffer no present retires, and
+			// WARP's D3D12 queue never idled behind it.
+			std::unique_lock<std::mutex> lock(s_Data->Mutex);
+			if (s_Data->RenderThread.joinable())
+				s_Data->FrameConsumedCV.wait(lock, [] { return !s_Data->HasFrame; });
 			s_Data->Running  = false;
 			s_Data->HasFrame = true; // sentinel: wake the render thread
 		}

@@ -48,6 +48,11 @@ namespace Dingo
 				m_Fence->SetEventOnCompletion(maxPending, m_FenceEvent);
 				WaitForSingleObject(m_FenceEvent, INFINITE);
 			}
+
+			// As in Resize: work NVRHI submitted after the last present may still draw into a back buffer.
+			auto& ctx = GraphicsContext::Get().As<DirectX12GraphicsContext>();
+			ctx.GetDeviceHandle()->waitForIdle();
+			ctx.GetDeviceHandle()->runGarbageCollection();
 		}
 
 		DestroyBuffersAndFramebuffers();

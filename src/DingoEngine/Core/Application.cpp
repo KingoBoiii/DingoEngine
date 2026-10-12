@@ -180,18 +180,20 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		if (m_Window)
-		{
-			m_Window->Shutdown();
-			delete m_Window;
-			m_Window = nullptr;
-		}
-
+		// The window must outlive its swap chain: a Vulkan surface must go first, and a DXGI back
+		// buffer the compositor still holds is never released once its window is gone.
 		if (m_SwapChain)
 		{
 			m_SwapChain->Destroy();
 			delete m_SwapChain;
 			m_SwapChain = nullptr;
+		}
+
+		if (m_Window)
+		{
+			m_Window->Shutdown();
+			delete m_Window;
+			m_Window = nullptr;
 		}
 
 		if (m_GraphicsContext)

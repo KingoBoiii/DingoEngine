@@ -68,6 +68,15 @@ namespace Dingo
 	void DirectX11SwapChain::Destroy()
 	{
 		DestroyBufferAndFramebuffer();
+
+		// As in Resize: the swap chain is only freed once nothing references its back buffer.
+		if (m_SwapChain)
+		{
+			auto& ctx = GraphicsContext::Get().As<DirectX11GraphicsContext>();
+			ctx.GetDeviceHandle()->waitForIdle();
+			ctx.GetD3D11DeviceContext()->ClearState();
+			ctx.GetDeviceHandle()->runGarbageCollection();
+		}
 		if (m_SwapChain) { m_SwapChain->Release(); m_SwapChain = nullptr; }
 	}
 
