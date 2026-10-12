@@ -43,6 +43,11 @@ namespace Dingo
 			return std::string(text.begin(), text.end());
 		}
 
+		std::filesystem::path FromUtf8(std::string_view text)
+		{
+			return std::filesystem::path(std::u8string(text.begin(), text.end()));
+		}
+
 		constexpr std::string_view k_PackOnlyShader =
 			"#type vertex\n#version 450\n#include \"pack_only_common.glsl\"\nlayout(location = 0) in vec2 inPosition;\n"
 			"void main() { gl_Position = vec4(inPosition * PACK_SCALE, 0.0, 1.0); }\n"
@@ -283,17 +288,19 @@ namespace Dingo
 
 		const std::span<const AssetHandle> packaged = assets.GetPackageAssets(m_Base);
 		bool everyAssetRegistered = packaged.size() == m_AssetFileCount;
-		for (const std::string& file : m_Files)
+		for (const std::string& name : m_Files)
 		{
+			const std::filesystem::path file = FromUtf8(name);
 			const AssetHandle handle = assets.FindByPath(file);
-			if (AssetTypeFromExtension(std::filesystem::path(file).extension()) != AssetType::None)
+			if (AssetTypeFromExtension(file.extension()) != AssetType::None)
 				everyAssetRegistered = everyAssetRegistered && std::find(packaged.begin(), packaged.end(), handle) != packaged.end();
 		}
 		Check(everyAssetRegistered, std::format("GetPackageAssets holds a registration for every asset file ({} of {})", packaged.size(), m_AssetFileCount));
 
 		uint32_t identical = 0, packedSource = 0;
-		for (const std::string& file : m_Files)
+		for (const std::string& name : m_Files)
 		{
+			const std::filesystem::path file = FromUtf8(name);
 			std::optional<std::vector<uint8_t>> packed = VirtualFileSystem::ReadBytes(file);
 			identical += packed && *packed == ReadDiskFile(assets.GetRootDirectory() / file);
 			std::optional<VfsResolvedPath> resolved = VirtualFileSystem::Resolve(file);
@@ -324,8 +331,8 @@ namespace Dingo
 			assets.LoadAsync(assets.GetMetadata(handle)->FilePath);
 
 		uint32_t readWhileDecoding = 0;
-		for (const std::string& file : m_Files)
-			readWhileDecoding += VirtualFileSystem::ReadBytes(file).has_value();
+		for (const std::string& name : m_Files)
+			readWhileDecoding += VirtualFileSystem::ReadBytes(FromUtf8(name)).has_value();
 		Check(readWhileDecoding == m_Files.size(), "the main thread reads the package while the loader thread decodes from it");
 	}
 
