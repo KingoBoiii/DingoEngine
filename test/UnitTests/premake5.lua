@@ -22,6 +22,9 @@ project "Dingo-UnitTests"
         "DingoEngine"
     }
 
+    -- doctest otherwise declares std::basic_ostream itself, which MSVC 14.44's <string_view> rejects.
+    defines { "DOCTEST_CONFIG_USE_STD_HEADERS" }
+
     filter "system:windows"
         systemversion "latest"
         defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
