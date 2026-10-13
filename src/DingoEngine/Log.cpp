@@ -184,6 +184,8 @@ namespace Dingo
 				close(fd);
 				return false;
 			}
+			if (s_LockFd >= 0)
+				close(s_LockFd);
 			s_LockFd = fd;
 			return true;
 		}
@@ -195,7 +197,10 @@ namespace Dingo
 		public:
 			explicit PickLock(const std::filesystem::path& directory)
 			{
-				m_Fd = open((directory / "Dingo.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+				const std::filesystem::path path = directory / "Dingo.lock";
+				m_Fd = open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+				if (m_Fd < 0)
+					m_Fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
 				if (m_Fd < 0)
 					return;
 				const auto deadline = std::chrono::steady_clock::now() + k_PickLockTimeout;
@@ -431,11 +436,13 @@ namespace Dingo
 
 		std::shared_ptr<FileSink> fileSink;
 		std::filesystem::path path;
+		bool lockTimedOut = false;
 		{
 			// An instance that never lets go of the lock (stopped in a debugger) costs the others
 			// only the rotation: they write a side log instead of waiting on it.
 			const PickLock lock(directory);
-			path = lock.TimedOut() ? SideLogPath(directory) : PickLogPath(directory, (std::max)(keepRuns, 1u));
+			lockTimedOut = lock.TimedOut();
+			path = lockTimedOut ? SideLogPath(directory) : PickLogPath(directory, (std::max)(keepRuns, 1u));
 			if (!HoldLog(path) && path != SideLogPath(directory))
 			{
 				path = SideLogPath(directory);
@@ -461,6 +468,8 @@ namespace Dingo
 		if (error)
 			s_FilePath = path;
 		DE_CORE_INFO("Log file: {}", Utf8(s_FilePath));
+		if (lockTimedOut)
+			DE_CORE_WARN("Log: another instance held Dingo.lock for {} s; this run's log is a side log and the old runs weren't rotated", k_PickLockTimeout.count() / 1000);
 		return true;
 	}
 

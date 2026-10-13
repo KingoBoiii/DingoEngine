@@ -188,19 +188,34 @@ TEST_SUITE("Log")
 	TEST_CASE("instances started together each keep a log of their own")
 	{
 		TempDirectory directory;
-		for (const char* name : { "Dingo.log", "Dingo.1.log", "Dingo.2.log" })
-			std::ofstream(directory.Path / name, std::ios::binary) << "an earlier run\n";
-
 		constexpr int k_Rounds = 16;
 		constexpr int k_Children = 4;
 		for (int round = 0; round < k_Rounds; round++)
 		{
+			// A fresh folder each round: Windows reuses process ids, so a writer could match an earlier round's.
+			std::error_code ignored;
+			std::filesystem::remove_all(directory.Path, ignored);
+			std::filesystem::create_directories(directory.Path, ignored);
+			for (const char* name : { "Dingo.log", "Dingo.1.log", "Dingo.2.log" })
+				std::ofstream(directory.Path / name, std::ios::binary) << "an earlier run\n";
+
 			const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 			SetVariables(directory.Path, now.count() + 150);
 
-			std::vector<Child> children(k_Children);
-			for (Child& child : children)
-				REQUIRE(child.Start());
+			std::vector<Child> children;
+			for (int i = 0; i < k_Children; i++)
+			{
+				Child child;
+				if (child.Start())
+					children.push_back(child);
+			}
+			if (children.size() != k_Children)
+			{
+				for (Child& child : children)
+					child.Wait();
+				const std::string message = std::format("only {} writers started", children.size());
+				FAIL(message);
+			}
 			std::vector<uint64_t> pids;
 			for (Child& child : children)
 			{
