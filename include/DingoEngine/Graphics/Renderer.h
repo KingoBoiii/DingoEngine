@@ -102,7 +102,8 @@ namespace Dingo
 		static void Upload(GraphicsBuffer* buffer);
 		/// Writes `size` bytes from `data` into the buffer, starting `offset` bytes in. The bytes
 		/// are copied when recorded, so `data` need not outlive the call. A no-op in a skipped
-		/// frame.
+		/// frame. A volatile (uniform) buffer is written whole from offset 0: a nonzero offset is
+		/// dropped with an error.
 		static void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0);
 
 		/**************************************************

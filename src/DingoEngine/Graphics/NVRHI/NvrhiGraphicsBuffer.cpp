@@ -7,6 +7,7 @@
 #include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
 
+#include <atomic>
 #include <cstring>
 #include <vector>
 
@@ -113,6 +114,14 @@ namespace Dingo
 
 	void NvrhiGraphicsBuffer::Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset)
 	{
+		// Vulkan and D3D12 give each volatile write a fresh version and drop the offset; D3D11 keeps it.
+		if (m_Params.IsVolatile && offset != 0)
+		{
+			static std::atomic<bool> s_Reported = false;
+			if (!s_Reported.exchange(true))
+				DE_CORE_ERROR("GraphicsBuffer '{}': a volatile buffer is written whole from offset 0; a write at offset {} was dropped.", m_Params.DebugName, offset);
+			return;
+		}
 		Write(commandList, m_BufferHandle, m_PadsWrites, data, size, offset);
 	}
 

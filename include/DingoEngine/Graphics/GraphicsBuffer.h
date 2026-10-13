@@ -108,7 +108,8 @@ namespace Dingo
 	public:
 		/// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
-		/// Writes size bytes at byte offset, which must fit in ByteSize. A Direct buffer uploads at
+		/// Writes size bytes at byte offset, which must fit in ByteSize (and be 0 for a volatile
+		/// buffer, as Renderer::Upload). A Direct buffer uploads at
 		/// once; a Deferred one only keeps the pointer (it must outlive the frame's
 		/// Renderer::Upload). A storage buffer copies the bytes at once or at the next frame's
 		/// start (see ReadBack's timing).
