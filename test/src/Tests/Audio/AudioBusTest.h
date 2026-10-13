@@ -1,6 +1,7 @@
 #pragma once
 #include "Tests/Renderer2D/Renderer2DTest.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,9 +9,10 @@
 namespace Dingo
 {
 
-	// Audio buses. Start-up checks run against the application's AudioEngine (log and the
-	// Properties panel); then a looping beep plays on a "Music" bus and the panel drives
-	// Master, Music and SFX, for the ear check that a bus change reaches a sound already playing.
+	// Audio buses and streams. Start-up checks run against the application's AudioEngine (log and
+	// the Properties panel); then a looping beep plays on a "Music" bus and the panel drives
+	// Master, Music and SFX, for the ear check that a bus change reaches a sound already playing,
+	// and can start a streamed tone that circles the listener, with gaps to listen for clicks.
 	class AudioBusTest : public Renderer2DTest
 	{
 	public:
@@ -27,6 +29,9 @@ namespace Dingo
 
 	private:
 		void RunChecks();
+		void RunStreamChecks();
+		void UpdateStreams(float deltaTime);
+		void StartTone();
 		void Check(bool condition, const std::string& name);
 		void BusControls(const char* label, AudioBusId bus);
 
@@ -37,6 +42,16 @@ namespace Dingo
 		AudioBusId m_Music = k_InvalidBus;
 		AudioSoundId m_Loop = k_InvalidSound;
 		float m_MasterVolume = 1.0f;
+
+		AudioSoundId m_UnderrunStream = k_InvalidSound;
+		float m_UnderrunTime = 0.0f;
+
+		AudioSoundId m_Tone = k_InvalidSound;
+		std::vector<std::int16_t> m_ToneScratch;
+		double m_TonePhase = 0.0;
+		float m_ToneTime = 0.0f;
+		bool m_ToneGaps = false;
+		bool m_ToneOrbit = true;
 
 		struct CheckResult
 		{

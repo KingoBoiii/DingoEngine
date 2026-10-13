@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string_view>
@@ -93,6 +94,27 @@ namespace Dingo
 		// The same, mixed into a bus.
 		virtual void PlayOneShot(const std::shared_ptr<AudioClip>& clip, AudioBusId bus, float volume = 1.0f) = 0;
 		virtual void PlayOneShot(const std::shared_ptr<AudioClip>& clip, const glm::vec3& position, AudioBusId bus, float volume = 1.0f) = 0;
+
+		// --- Streams -----------------------------------------------------------
+
+		// Starts a sound that plays whatever is pushed into it, with the usual play params
+		// (Looping is ignored). It never finishes on its own: when its buffer runs dry it fades
+		// to silence and stays alive, and it fades back in when frames arrive. Only Stop(),
+		// StopBus, DestroyBus or Shutdown end it. Once silent it resumes when one device period
+		// (in frames, counted at the stream's rate, capped at BufferFrames) is queued. Returns
+		// k_InvalidSound for BufferFrames 0, Channels 0 or above 254, or SampleRate outside
+		// 8000-384000.
+		virtual AudioSoundId CreateStream(const AudioStreamDesc& desc, const SoundPlayParams& params = {}) = 0;
+
+		// Appends interleaved frames (signed 16-bit, or float in [-1, 1]). Returns how many
+		// were taken: fewer when the buffer is full, 0 for a handle that is no live stream.
+		// Call on the thread that drives the AudioEngine, like every other call; only the device
+		// thread's read is lock-free. Data from a network thread goes through the game's own queue.
+		virtual std::uint32_t PushStreamFrames(AudioSoundId stream, const std::int16_t* frames, std::uint32_t frameCount) = 0;
+		virtual std::uint32_t PushStreamFrames(AudioSoundId stream, const float* frames, std::uint32_t frameCount) = 0;
+
+		// Frames pushed but not yet played, for a jitter buffer. 0 for a handle that is no live stream.
+		virtual std::uint32_t GetQueuedStreamFrames(AudioSoundId stream) const = 0;
 
 		// --- Per-sound control (no-ops on an invalid / stale handle) ----------
 
