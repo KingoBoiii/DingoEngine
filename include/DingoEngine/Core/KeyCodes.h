@@ -6,6 +6,8 @@
 namespace Dingo
 {
 
+	/// A keyboard key, with GLFW's key values (a key is named for its US-layout label). Also
+	/// available as Key, e.g. Key::Space; D0 to D9 are the digit row and KP0 to KP9 the keypad.
 	typedef enum class KeyCode : uint16_t
 	{
 		// From glfw3.h
@@ -141,6 +143,8 @@ namespace Dingo
 		Menu = 348
 	} Key;
 
+	/// A readable name: the character for printable keys ("A", ","), "F1" to "F25", "Keypad 0" and
+	/// so on, or a key name such as "Escape". An unknown key gives its number.
 	inline std::string ToString(KeyCode keyCode)
 	{
 		const uint16_t value = static_cast<uint16_t>(keyCode);
@@ -199,6 +203,7 @@ namespace Dingo
 		}
 	}
 
+	/// Prints the key's number, not its name; use ToString for the name.
 	inline std::ostream& operator<<(std::ostream& os, KeyCode keyCode)
 	{
 		os << static_cast<int32_t>(keyCode);

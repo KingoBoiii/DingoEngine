@@ -5,6 +5,7 @@
 namespace Dingo
 {
 
+	/// A mouse button, numbered as in GLFW; Left, Right and Middle alias Button0 to Button2.
 	enum class MouseButton : uint16_t
 	{
 		Button0 = 0,
@@ -18,6 +19,7 @@ namespace Dingo
 		Middle = Button2
 	};
 
+	/// Prints the button's number, not its name.
 	inline std::ostream& operator<<(std::ostream& os, MouseButton button)
 	{
 		os << static_cast<int32_t>(button);
