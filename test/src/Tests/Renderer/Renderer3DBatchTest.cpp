@@ -825,7 +825,7 @@ namespace Dingo
 				lights(renderer);
 				renderer.SubmitStaticBatch(*m_StaticBatch);
 			});
-			Check(changed.StaticMeshes == k_StaticMeshCount && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= 1,
+			Check(changed.StaticMeshes == k_StaticMeshCount && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= k_StaticCasterCount + 1,
 				std::format("removing a mesh and adding one far off screen rebakes two cells, and the far one is culled ({} static, {} baked, {} culled)",
 					changed.StaticMeshes, changed.StaticCellsBaked, changed.CulledMeshes));
 			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == k_StaticMeshCount + 1,
