@@ -35,8 +35,8 @@ go through the ANSI code page, and `string()` throws on a name the code page can
 Cyrillic user name under code page 1252 puts one in every `%TEMP%` path). Log, compare or store
 a path with `FileSystem::PathToUtf8(path)` (or `PathToGenericUtf8` for `/` separators) and
 build one from text with `FileSystem::PathFromUtf8(text)`. Strings the manager returns
-(`GetAssetSource`) are UTF-8 already; `AssetMetadata::FilePath`/`AbsolutePath` are paths, so
-convert them too.
+(`GetAssetSource`) are UTF-8 already; `AssetMetadata::FilePath` (root-relative) is a path, so
+convert it too.
 
 To anchor to the executable (v0.6.2), `Platform::FindDirectoryUpward` searches the
 exe's directory and up to 8 parents. The same line works for a build that ships a loose
@@ -239,7 +239,7 @@ existing one, so everything game code may hold keeps working:
 |---|---|
 | `Model*` | Same pointer. `GetGeneration()` counts the reloads. |
 | `Mesh*` (`SubMesh::Mesh`) | Same object per submesh index, with the new vertices and a new `GetId()`. Extra submeshes are added; missing ones become empty. |
-| `Material*` (`SubMesh::Mat`) | Same object; slot 0 takes the new diffuse texture. |
+| `Material*` (`SubMesh::Material`) | Same object; slot 0 takes the new diffuse texture. |
 | `SubMesh::BaseColor` | The new file's colour per submesh index; white for one that became empty. |
 | `Texture*` (`SubMesh::DiffuseTexture`) | Same object per image file, re-read in place when the image file changed, so a material you built from it keeps drawing. A texture the file stopped using stays alive. |
 | `AnimationClip*` | Same object per name, with the new keys and events, so an `Animator` playing it keeps playing at its time. A clip that disappeared becomes zero-length; a new one is added. |
@@ -318,3 +318,18 @@ The showcase for all of this is
 [examples/ArenaShooter](../examples/ArenaShooter/) — a wave-based top-down
 shooter that async-loads everything behind a progress bar and demonstrates
 live shader + texture editing.
+
+## Limits
+
+- The manager is main-thread-only (`GetPendingCount()` and `GetReloadingCount()` aside). Only
+  textures and audio clips decode on the loader thread; shaders, models and fonts load on the main
+  thread, one per frame when loaded asynchronously.
+- Hot-reload watches textures, shaders, and models with their `.events` files. Fonts and audio
+  clips are not watched, `Reload` recreates them (invalidating borrowed pointers), a glTF's `.bin`
+  is not watched, and a file read from a package never reloads.
+- Inline shaders (`Shader::CreateFromSource`) have no file to watch.
+- A package is read-only and in memory: DLC and patches are mounted on top with `Unpackage`, and
+  closing one frees the objects it registered ([Shipping a Game](distribution.md) has its threat
+  model).
+- Physics bodies built from a model keep their shape through a reload; only bodies made after it
+  see the new mesh.

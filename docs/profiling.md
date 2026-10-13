@@ -78,3 +78,10 @@ void EnemyDirector::Update(float dt)
 
 Tracy stays out of the public headers: `Profiler.h` declares the engine's own `ProfileSite` and
 `ProfileZone`, and only `src/DingoEngine/Core/Profiler.cpp` includes Tracy.
+
+## Limits
+
+- At most 32 GPU timers a frame; later ones warn once and are skipped. Results arrive four frames
+  late, and a frame that renders nothing measures nothing.
+- Tracy exists only in a `--profile` build, and only a v0.11.x viewer connects to it.
+- A zone or plot name must be a string literal (or live for the whole run).

@@ -70,8 +70,11 @@ r.DrawQuad({ 2.0f, 0.0f }, { 1.0f, 1.0f }, myTexture, { 1, 1, 1, 0.5f }); // 50%
 r.DrawRotatedQuad({ -2.0f, 0.0f }, 45.0f, { 1.0f, 1.0f }, myTexture);
 ```
 
-`DrawQuad`/`DrawRotatedQuad` accept a `glm::vec2` or `glm::vec3` position — use the
-`vec3` form to control draw order via z when needed.
+`DrawQuad`/`DrawRotatedQuad` accept a `glm::vec2` or `glm::vec3` position. z does not order
+anything: the 2D pipelines test and write no depth, so quads draw in submission order within a
+scene (see [Batching & tips](#batching--tips)), and z only goes through the camera matrix, where it
+must stay inside the projection's depth range. A `Scene` sorts its sprites, circles and text by
+world z itself ([Drawing order](scenes-and-ecs.md#drawing-order)).
 
 ## Circles
 
@@ -127,7 +130,7 @@ to your game project too (`buildoptions { "/utf-8" }`), or write non-ASCII liter
 ## Textures
 
 ```cpp
-Texture* tex = Texture::CreateFromFile("assets/sprites/player.png");
+Texture* tex = Texture::CreateFromFile("sprites/player.png");
 uint32_t w = tex->GetWidth();
 uint32_t h = tex->GetHeight();
 ...
@@ -238,6 +241,20 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
 `r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`. `Renderer2D` draws
 straight into the current render target (`Renderer::SetRenderTarget`), else the swap chain; to sample
 what it drew, draw into a `Framebuffer` of your own.
+
+## Limits
+
+- A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) `BeginScene`/`EndScene` blocks a
+  frame; on Vulkan, later ones draw with an earlier block's camera.
+- A batch holds 32 textures, and a 33rd forces a flush.
+- Quads, circles and text batch apart, so `EndScene` draws all quads, then circles, then text,
+  unless you `Flush()`; a scene keeps them in z order itself.
+- Text covers Latin-1, the printable General Punctuation and the euro sign; any other codepoint
+  draws as `?`.
+- Culling is per scene entity (sprites and circles): quads you submit yourself and text are never
+  culled.
+- 2D is never tone mapped, and `Texture::ReadPixels` reads RGBA8 2D textures only, not the window's
+  swap chain.
 
 ---
 

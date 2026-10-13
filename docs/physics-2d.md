@@ -11,7 +11,8 @@ The simulation backend is [Box2D](https://box2d.org/) (v3), but — exactly like
 EnTT-based ECS — it is an internal detail: **no Box2D type appears in any public
 header**, and your game never includes or links Box2D. Bodies and shapes are
 referred to through opaque handles the engine keeps for each entity;
-`Scene::GetRuntimeBody2D(entity)` returns the body's handle (0 while it has none).
+`Scene::GetRuntimeBody2D(entity)` returns the body's handle (`k_InvalidBody2D`, which is 0, while it
+has none).
 
 > World units are metres. Because the physics world shares the coordinate space of
 > your orthographic camera, 1 world unit = 1 metre = 1 Box2D unit. Tune sizes,
@@ -165,8 +166,8 @@ body's angle can differ from its transform's by about a tenth of a degree.
 ## Collisions
 
 The simulation resolves collisions for you: dynamic bodies bounce, stack, topple,
-and rest on static geometry automatically. There is no contact-callback API yet, so
-gameplay reactions are driven by observing the simulation — e.g. reading
+and rest on static geometry automatically. There is no contact-callback API, ray cast or
+overlap query in 2D, so gameplay reactions are driven by observing the simulation — e.g. reading
 `GetLinearVelocity2D` to detect a hard impact, or checking when a body has fallen out
 of the play area. The Angry Birds `PigScript` uses exactly this approach to decide
 when a pig has been knocked out.
@@ -188,3 +189,17 @@ access beyond the entity-based helpers above, reach the live world directly via
 - [Scenes & ECS](scenes-and-ecs.md) — entities, components, and `ScriptableEntity`.
 - The **AngryBirds** example (`examples/AngryBirds/`) — slingshot launching,
   destructible block structures, and pig targets built entirely on this system.
+
+## Limits
+
+- No contact callbacks, ray casts or overlap queries in 2D: gameplay observes velocities and
+  positions instead. So no 2D call hands a game a body id to look up, and there is no
+  `Scene::GetEntityFromBody2D` (it comes with 2D queries).
+- Only box and circle colliders (no polygons), read when the body is built: editing a component on
+  a live body changes nothing until the body is rebuilt.
+- Bodies step on the variable frame delta, cut to 4/60 s, with 4 substeps; `OnFixedUpdate` does
+  not change that ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)).
+- Unlike 3D, a kinematic child does not ignore its ancestors: bodies in one hierarchy collide, so
+  keep a child's collider clear of its parents'.
+- A body's angle can differ from its transform's by about a tenth of a degree (Box2D's fast
+  trigonometry).

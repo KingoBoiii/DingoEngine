@@ -215,3 +215,14 @@ deflated (stb's zlib; an entry is stored raw when deflate saves under 5%, and `.
 `.jpg`, `.ogg` and `.mp3` are never deflated), then encrypted. An entry is at most 2 GiB.
 A package is read with positional reads, so the loader thread and the main thread read it
 at once.
+
+## Limits
+
+- A `.dpak` is deterrence, not protection: the key ships with the game, and there is no signature
+  ([Threat model](#threat-model)).
+- Hot-reload never fires for a packed file, and an entry is at most 2 GiB.
+- `exeMetadata` is for the examples and games; the DingoPack tool keeps none. Its version
+  resource and icon are Windows-only, and on Linux it becomes a desktop entry installed by
+  `install-desktop-entry.sh`. A Linux window itself shows no icon.
+- `exeMetadata`'s `Version` must look like `1.2` or `1.2.3`.
+- Shader and font-atlas caches are not encrypted ([Threat model](#threat-model)).

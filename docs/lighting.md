@@ -539,7 +539,7 @@ and a copy of it is embedded in the engine library at build time.
   gets cascaded shadows, and up to 8 (at most 16) casting point and spot lights get shadows of their
   own ([Shadows](shadows.md)); every other light passes through walls and floors, so in interiors
   keep their ranges short.
-- **Per-mesh surfaces are static meshes only.** A `SurfaceOverride` gives a static mesh its own
+- **Per-mesh surfaces are unskinned meshes only.** A `SurfaceOverride` gives an unskinned mesh its own
   roughness, specular and emissive; a skinned mesh still takes its own material for them.
 - **Blinn-Phong, not PBR:** no metalness, normal maps or reflections.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
@@ -562,8 +562,8 @@ that did more:
   `scene.SubmitLights(renderer)`, is lit by `Renderer3DParams`' default light, not the last scene's
   sun. Call `SubmitLights` in the pass, or submit lights directly.
 - **Directional lights add up.** Several `DirectionalLightComponent`s now all light the scene, up to
-  four, and each one's legacy `Ambient` adds up too; before, only the first counted. Two default
-  components give an ambient of 0.7. Keep one sun, or set `Ambient` to 0 on the others.
+  four, and each one's legacy `Ambient` (deprecated; 0 by default since v1.0) adds up too; before,
+  only the first counted. Keep one sun, or leave `Ambient` at 0 on the others.
 - **The legacy prefix still carries only the first directional light.** A custom shader that reads
   only `LightDirection` and `Ambient` ignores the rest. Mirror the full block to see them all.
 

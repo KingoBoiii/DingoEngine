@@ -168,7 +168,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | Component | Fields |
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
-| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1), `float CullDistance` (v1.0, see [Culling](#culling-v10)), `std::optional<SurfaceOverride> Surface` (v1.0: its own emissive, roughness and specular on a lit material, set with `SetSurface`, see [Surface overrides](lighting.md#surface-overrides-v10)) |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1), `float CullDistance` (v1.0, see [Culling](#culling-v10)), `bool Static` (v1.0, see [Static geometry](#static-geometry-v10)), `std::optional<SurfaceOverride> Surface` (v1.0: its own emissive, roughness and specular on a lit material, set with `SetSurface`, see [Surface overrides](lighting.md#surface-overrides-v10)) |
 | `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9), `float CullDistance` (v1.0). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
@@ -924,6 +924,21 @@ Read `examples/SpaceInvaders/src/GameScripts.cpp` and `GameLayer.cpp` alongside 
 guide to see the patterns (including the spawn caveat and `GetScriptsOfType`) applied
 in a real game.
 
----
+## Limits
 
-Back to the [documentation index](README.md).
+- No scene serialization (see [Saves & Settings](saves-and-settings.md)), and an entity holds one
+  script.
+- A scene is lit by at most four directional lights and 32 point and spot lights
+  ([Lighting](lighting.md)).
+- Culling trusts a mesh's bounds, so a vertex shader that moves vertices needs
+  `MaterialParams::SetFrustumCulled(false)`; a skinned mesh is culled by its padded rest-pose bounds.
+- Instancing never applies to translucent or skinned meshes, and a custom material instances only
+  with a shader written for it. Past `Renderer3D::k_MaxInstancedDrawsPerFrame` instanced draws a
+  frame the rest are skipped or batched on the CPU.
+- A `Static` mesh is not drawn static when it has a `CullDistance`, a translucent or skinned-only
+  material, too many vertices for one draw or a non-affine transform; moving one rebakes its cell.
+- `OnFixedUpdate` runs at most `Scene::k_MaxFixedStepsPerUpdate` (8) times an update; physics stays
+  on the variable step.
+- A settings component is read when the object it describes is built; editing it on a live body
+  changes nothing until the body is rebuilt.
+- 2D and 3D transforms don't convert into each other in a mixed hierarchy.

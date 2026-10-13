@@ -132,3 +132,14 @@ buses.
 `Window::GetDisplayModes()` lists the modes of the monitor the window is on, largest first and
 without duplicates, for a resolution list; `GetDesktopDisplayMode()` is that monitor's own mode.
 See [Window modes](application-and-layers.md#window-modes) for switching.
+
+## Limits
+
+- There is no scene serialization and no save versioning: a game writes the state it needs and
+  reads an old save through `Get` fallbacks.
+- A save is plain JSON, neither encrypted nor signed.
+- Numbers are `int64_t` and `double`; a non-finite float is written as null, and `FromJson` refuses
+  nesting deeper than 256.
+- Slot names are 1 to 64 of `A-Z a-z 0-9 _ -`.
+- `Settings` keeps the volume of the buses it already names only, since the engine can't list a
+  game's buses, and `Apply()` sets only buses that exist when it runs.

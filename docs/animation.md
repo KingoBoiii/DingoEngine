@@ -206,7 +206,7 @@ entity needs a `Transform3DComponent` as well.
 | `Model* Model` | null | Not owned. Null draws nothing. |
 | `glm::vec4 Color` | white | Tints every submesh (the lit shader multiplies it with the albedo). Alpha comes from this colour alone. |
 | `Material* Material` | null | Applies to **every** submesh. Null is the built-in lit material. |
-| `bool Visible` | true | `false` skips the entity. It is not inherited by children. |
+| `bool Visible` | true | `false` skips the entity. It is not inherited by children; `Entity::SetActive(false)` switches a whole subtree off. |
 
 ```cpp
 entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(fox, { 1.0f, 0.9f, 0.9f, 1.0f }));   // (model, color)
@@ -215,7 +215,7 @@ entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(f
 - **Skinned submeshes** draw through `Renderer3D::SubmitSkinnedMesh`, one draw each, posed by the
   entity's [animator](#animatorcomponent) or, without one, by `Skeleton::GetRestPalette()`. Submeshes
   without a skin draw like a `MeshRendererComponent`.
-- **The material** replaces the submeshes' own: a `SubMesh`'s `Mat` and `DiffuseTexture` are not
+- **The material** replaces the submeshes' own: a `SubMesh`'s `Material` and `DiffuseTexture` are not
   used. Build a lit material and give it the texture, as above.
 - **Materials.** A lit material (null, or from `Renderer3D::CreateLitMaterial`) draws through a
   skinned copy of itself that the renderer keeps, so emissive, specular and the albedo texture work
@@ -1123,6 +1123,9 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 - **`MaxSkinnedInstances` a frame** (1024 by default, at most 4096), across all scenes of a renderer,
   and at most 256 of them drawn with an older `SkinData` shader. The rest are dropped whole, with a
   warning.
+- **Skinned culling uses the rest pose's bounds**, padded by half their longest side. A pose that
+  reaches farther, or hips that travel away without root motion, can be culled while in view
+  (`Renderer3D::SetCullingEnabled(false)` turns culling off).
 - **4 states a layer.** A fifth freezes the mix so far into one pose.
 - **Translucent characters sort per mesh**, by the centre of each mesh's rest bounds, so a
   character's own see-through parts can blend in the wrong order with each other.
@@ -1131,7 +1134,7 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
   different rest orientations need the rig to be fixed in the art.
 - **Models load on the main thread**, one asset a frame when loaded asynchronously.
 
-Not in v0.8:
+Not available:
 
 | Item | Where it lives |
 |---|---|
@@ -1141,9 +1144,10 @@ Not in v0.8:
 | Morph targets (blend shapes) | Later. |
 | Cross-topology retargeting | Later. |
 | Instantiating a static multi-node model as an entity tree | Later. Static models stay pre-transformed. |
-| Inherited visibility (`SetActive`) | The v1.0 API pass. |
+| Inherited visibility | Shipped in v1.0: `Entity::SetActive` switches an entity's animator off with its subtree ([Scenes & ECS](scenes-and-ecs.md#active-and-inactive-entities-v10)). |
 | **Skinned shadows** | Shipped in v0.9: skinned meshes cast through the shadow pass's own `DE_SKINNED` vertex stage (`Renderer3D_Shadow.glsl`, sharing `Skinning.glsl` with the lit shader). See [Shadows](shadows.md). |
-| Animation LOD, culling and compression; instancing skinned meshes | v1.0 throughput work. |
+| Animation compression; instancing skinned meshes | Later. Skinned meshes draw one instance at a time (a shared skin arena, not a shared draw). |
+| Animation culling and LOD | Shipped in v1.0: [`AnimatorComponent::CullingMode`](#culled-animators) and the skin arena. |
 | Worker-thread model parsing | Later. |
 
 ## See also
@@ -1158,7 +1162,3 @@ Not in v0.8:
 - `examples/Marionette` - the worked example: combat windows from `.events`, a masked block layer,
   weapons and hit spheres on sockets, clip libraries shared by four characters, and live `.events`
   editing.
-
----
-
-Back to the [documentation index](README.md).

@@ -247,3 +247,18 @@ point light's pillar and (through `Scene::GetLightVisibility`) a `ShadowsOnly` b
 and at once for a light without a shadow, and in between at the sun's PCF edge.
 The Animation Test's `--anim-shadow` lights its Foxes with a casting sun, and the Lighting Test's
 `--budget-fade` fades its overbudget scene.
+
+## Limits
+
+- Only the first casting directional light of a scene gets shadows. Casting point and spot lights
+  get 8 slots by default (at most 16); a point light renders six views, so casting point lights
+  are costly.
+- Every material casts through the depth-only pass: a custom vertex shader's displacement isn't in
+  its shadow, and a translucent mesh casts a full shadow.
+- Shadows need Vulkan's `shaderClipDistance`; on a GPU without it none are drawn.
+- The cascades cover `MaxDistance` (60 by default) along the view, and an orthographic camera gets
+  one cascade.
+- A shadow probe answers one to three frames late, 256 a scene. The sun's shadow follows the
+  camera, so a point off screen answers 1.
+- A light's caster groups don't spare its slot or its tiles, and an excluded mesh still widens the
+  cascades' depth range.

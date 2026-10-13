@@ -264,3 +264,19 @@ worlds, so it is initialised with the first world and torn down with the last.
   terrain bowl, a kinematic mesh lift, and convex-hull pebbles, with pass/fail checks.
 - The test app's **Hierarchy Test** (`--test=hierarchy`) — bodies under parents, including the
   checks for the ancestor filter above.
+
+## Limits
+
+- The step is the frame's delta, cut to 4/60 s, in `ceil(dt * 60 - 0.1)` collision steps (at most 4)
+  in a `Scene`; `OnFixedUpdate` does not change that ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)).
+- A `Mesh` collider is one-sided, can't be Dynamic (a Dynamic body gets the mesh's convex hull, with
+  a warning), and a hull is capped at 256 vertices.
+- A thin triangle needs `ContinuousCollision` for fast bodies.
+- A Mesh-shaped sensor finds only what crosses its surface and doesn't find Mesh colliders.
+- A character controller is not a body: ray, shape and overlap queries don't find it. Controllers
+  are rebuilt on `OnStart`, so a script never keeps a `CharacterController3D*` across
+  `OnStop`/`OnStart`.
+- A collider is baked into its body when the body is built (`OnStart`, `CreateRigidBody`, or
+  `SetActive(true)`); editing a component on a live body changes nothing until then.
+- A Scene's kinematic-ancestor filter is recomputed every step, so a hand-made `IgnoreCollision` on
+  such a pair is undone.

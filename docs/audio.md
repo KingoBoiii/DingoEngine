@@ -44,8 +44,35 @@ places a sound in the world. The listener is set with `SetListenerPosition` and
 
 Distance falloff is a `SoundAttenuation`: per sound in `SoundPlayParams::Attenuation`, live
 through `SetAttenuation(sound, ...)`, or for every later sound through
-`SetDefaultAttenuation`. The defaults are miniaudio's own (inverse distance, `MaxDistance` =
-float max). `AudioAttenuationModel::None` keeps the panning but drops the falloff.
+`SetDefaultAttenuation`. A sound without its own takes the engine default
+(`GetDefaultAttenuation`), which is miniaudio's own: inverse distance, `MaxDistance` = float max.
+
+```cpp
+SoundAttenuation falloff;
+falloff.Model = AudioAttenuationModel::Linear;
+falloff.MinDistance = 2.0f;                      // full volume inside 2 units
+falloff.MaxDistance = 20.0f;                     // Linear needs a finite maximum
+falloff.MinGain = 0.1f;                          // never fully silent
+
+SoundPlayParams params;
+params.Spatialized = true;
+params.Position = campfire;
+params.Attenuation = falloff;
+AudioSoundId id = audio.Play(crackle, params);
+audio.SetPosition(id, movedCampfire);            // a moving source
+audio.SetAttenuation(id, falloff);               // re-tune it live
+```
+
+| Field | Meaning |
+|---|---|
+| `Model` | `Inverse` (the default), `Linear` (reaches `MinGain` at `MaxDistance` when `Rolloff` is 1), `Exponential`, or `None` (keeps the panning, drops the falloff). |
+| `MinDistance` | Full volume inside this radius (default 1). |
+| `MaxDistance` | The distance past which the gain stops changing (default float max). |
+| `Rolloff` | How fast the gain falls between the two; 1 is the model's own curve (default 1). |
+| `MinGain`, `MaxGain` | The gain's floor and ceiling, for example a `MinGain` of 0.3 keeps distant sounds audible (defaults 0 and 1). |
+
+An `AudioSourceComponent` has the same `Attenuation` (empty = the engine default), and an
+`AudioListenerComponent` entity drives the listener.
 
 ## Buses
 

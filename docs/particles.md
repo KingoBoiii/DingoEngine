@@ -156,3 +156,14 @@ and a soft particle fades where it meets the floor while its top draws as a hard
 next 300 fixed frames, through a `ParticleEventComponent` on the Fox, every footfall a script hears
 across a Walk-to-Run blend bursts exactly once, Survey's `look` range plays its emitter only while
 it is open, and a range shorter than a frame still bursts its emitter's `BurstOnPlay`.
+
+## Limits
+
+- The pool is shared by every emitter of a `Renderer3D`: 65,536 particles by default (at most
+  `Renderer3D::k_MaxParticlesLimit`). An emitter the pool has no room for draws nothing.
+- Particles are unlit, depth-tested without writing depth, and not part of the translucent sort, so
+  a particle behind glass draws over it. `Alpha` particles are unsorted among themselves.
+- Soft particles and ambient occlusion order need the post chain; without it particles have hard
+  edges.
+- Every slot of every submitted emitter is simulated and drawn each scene, alive or not.
+- An emitter's `Capacity` is read when it is made, and an effect must outlive its emitters.

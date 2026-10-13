@@ -317,14 +317,14 @@ void OnUpdate(float dt) override
     if (Input::IsKeyPressed(Key::Space))
         Fire();
 
-    if (Input::IsMouseButtonPressed(Button::Left))
+    if (Input::IsMouseButtonPressed(MouseButton::Left))
         Click();
 }
 ```
 
 Key codes live in `Key::` (`Key::Space`, `Key::Escape`, `Key::A`–`Key::Z`,
-`Key::Left/Right/Up/Down`, `Key::Enter`, …) and mouse buttons in `Button::`
-(`Button::Left`, `Button::Right`, `Button::Middle`).
+`Key::Left/Right/Up/Down`, `Key::Enter`, …) and mouse buttons in `MouseButton::`
+(`MouseButton::Left`, `MouseButton::Right`, `MouseButton::Middle`).
 
 For "press any key" screens, or to notice that the player switched from a gamepad back
 to keyboard and mouse, use `IsAnyKeyPressed()` / `IsAnyKeyDown()` /
@@ -456,8 +456,10 @@ bool OnKeyPressed(KeyPressedEvent& e)
 ```
 
 `DE_BIND_EVENT_FN(fn)` wraps a member function as the callback. Event types include
-`WindowCloseEvent`, `WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
-`KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`.
+`WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
+`KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`. The application
+handles `WindowCloseEvent` itself (it stops the loop) and marks it handled, so layers never see it;
+finish up in `OnDetach`.
 
 `WindowFocusEvent::IsFocused()` tells you whether the window gained or lost focus, which
 is the natural place to auto-pause and release a locked cursor. To poll instead, use
@@ -478,6 +480,20 @@ bool OnFocus(WindowFocusEvent& e)
 > For most gameplay, polling with `Input` is simpler than handling key events. Reach
 > for events when you need the exact press/release moment, repeat counts
 > (`KeyPressedEvent::IsRepeat()`), or window-level notifications like resize.
+
+## Limits
+
+- One window, one `Application` and one graphics back-end per run; `RequestRestart` rebuilds the
+  app to change the back-end.
+- Rumble works on Xbox-compatible pads on Windows only ([Gamepads](#gamepads-v051)); up to 16 pads
+  are tracked.
+- Both fullscreen modes are GLFW fullscreen windows, which an alt-tab minimizes. Exclusive
+  fullscreen switches the display mode on the window's monitor only.
+- A crash report is a backtrace on Linux (none under AddressSanitizer) and a minidump on Windows;
+  neither is uploaded anywhere ([Logs and crashes](#logs-and-crashes)).
+- The VSync limits above apply: "off" can stay capped on some drivers and D3D compositors.
+- Update ordering is variable-step: `OnUpdate` gets the frame's delta. `Scene` scripts have a
+  fixed-step hook ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)), layers do not.
 
 ---
 

@@ -98,3 +98,12 @@ value, sum, pixel and quad by readback. It also dispatches one incrementing pass
 its buffer back, dispatches it four more times, uploads into its first element and dispatches four
 more, checking each count; it reads back a buffer made with initial data and patched by
 `GraphicsBuffer::Upload`, and draws from it in a fragment stage.
+
+## Limits
+
+- Draws only read storage buffers; every write is a dispatch (see [Rules](#rules)).
+- D3D11 has 8 writable slots in compute (`u0`..`u7`).
+- R8, R16F and R11G11B10F storage images need Vulkan's `shaderStorageImageExtendedFormats`, so
+  they can fail on a GPU without it.
+- A dispatch needs a frame to record into: a skipped frame (minimized window) dispatches nothing,
+  and a dropped `Renderer::Upload` is not redone.

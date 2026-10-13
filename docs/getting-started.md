@@ -147,18 +147,20 @@ follow the Windows layout: `build/bin/<Config>-linux-x86_64/<Project>/`.
 
 ## Option B — Link a prebuilt release package
 
-Release builds are published as
+Release packages are built by running the `build-release.yml` workflow by hand (it is not
+automatic), or you build from source (Option A). They are named
 `DingoEngine-<version>-<Config>-windows-x86_64.zip` (Config = `Debug`, `Release`, or
 `Distribution`). Extract it; you get:
 
 ```
-DingoEngine.lib            # the engine (static library)
+DingoEngine.lib            # the engine with every vendor library merged in (static library)
 include/                   # engine public headers  ← add as an include root
   DingoEngine.h            #   the umbrella header
   DingoEngine/...
 glm/                       # GLM math headers       ← public dependency
-imgui/imgui.h              # Dear ImGui header (optional; UI now via Dingo::UI — DingoEngine/UI/UI.h)
 assimp-vc145-mt[d].dll     # model-loader runtime   ← copy next to your .exe
+tools/DingoPack/           # the asset packer (see Shipping a Game)
+THIRD-PARTY-NOTICES.md     # the licences of everything the library contains
 ```
 
 ### Compiler / linker settings
@@ -166,7 +168,7 @@ assimp-vc145-mt[d].dll     # model-loader runtime   ← copy next to your .exe
 | Setting | Value |
 |---|---|
 | C++ standard | C++20 (`/std:c++20`) |
-| Include dirs | `include`, `glm`, `imgui` |
+| Include dirs | `include`, `glm` |
 | Defines | `DE_PLATFORM_WINDOWS`, `NOMINMAX`, `GLM_FORCE_DEPTH_ZERO_TO_ONE` |
 | Runtime library | **Must match the package config:** Debug → `/MDd`, Release/Distribution → `/MD` (the engine is built with the *dynamic* CRT). |
 | Link | `DingoEngine.lib` + the libraries below |
@@ -176,25 +178,20 @@ use the same `[0,1]` depth convention as the engine's Vulkan pipeline. Optionall
 define `DE_DEBUG` (Debug) / `DE_RELEASE` / `DE_DISTRIBUTION` to match the package —
 this toggles engine asserts (`DE_ASSERT`) in your translation units.
 
-**Libraries you must also link** (a static lib does not embed its dependencies):
+**Libraries you must also link** (the archive already holds NVRHI, GLFW, spdlog, Dear ImGui,
+msdf-atlas-gen, FreeType, Box2D and Jolt):
 
 - From the **Vulkan SDK** (`$(VULKAN_SDK)/Lib`): `vulkan-1.lib`, and ShaderC /
   SPIRV-Cross / SPIRV-Tools — Debug: `shaderc_combinedd.lib`,
   `spirv-cross-cored.lib`, `spirv-cross-glsld.lib`, `spirv-cross-hlsld.lib`,
   `SPIRV-Toolsd.lib`; Release: the same names without the trailing `d`.
 - **Windows system libs**: `Ws2_32 Winmm Version Bcrypt d3d12 d3d11 dxgi dxguid d3dcompiler`.
-- **assimp import lib**: `assimp-vc145-mt[d].lib` (pairs with the bundled DLL).
-
-> **Heads-up — bundling gap.** The release ZIP currently contains only the engine
-> static lib (plus the glm/imgui/entt headers and the assimp DLL). The engine's other
-> static dependencies — **NVRHI, GLFW, spdlog, Dear ImGui, msdf-atlas-gen,
-> FreeType** — and the assimp import lib are **not** included in the archive yet.
-> Until they are packaged, the smoothest path is **Option A**, or copy those `.lib`
-> files out of a local build at `build/bin/<Config>-windows-x86_64/<dependency>/`.
+- **assimp import lib**: `assimp-vc145-mt[d].lib` (pairs with the bundled DLL). It is not in
+  the archive; take it from `vendor/assimp/lib/` in the repository.
 
 ### Linux
 
-Release builds are also published as
+The workflow also makes
 `DingoEngine-<version>-<Config>-linux-x86_64.tar.gz`:
 
 ```
@@ -294,7 +291,6 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
     params.Window.Title = "My First Dingo App";
     params.Window.Width = 1280;
     params.Window.Height = 720;
-    params.Graphics.GraphicsAPI = GraphicsAPI::Vulkan;   // the default; DirectX11/DirectX12 on Windows
     params.EnableImGui = false;
 
     return new ExampleApp(params);
@@ -302,10 +298,21 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 ```
 
 Build and run — you should get a window with a dark background and a red square in
-the middle. Press `Escape` to quit.
+the middle. Press `Escape` to quit. The engine renders with Vulkan unless the params say
+otherwise (`params.Graphics.GraphicsAPI`, with DirectX 11 and 12 on Windows).
 
 From here:
 
 - [Application & Layers](application-and-layers.md) — lifecycle, input, and events in detail.
 - [2D Rendering](rendering-2d.md) — textures, fonts, and the camera model.
 - [Scenes & ECS](scenes-and-ecs.md) — the recommended way to structure a real game.
+
+## Limits
+
+- DirectX 11 and 12 exist on Windows only. Linux runs Vulkan.
+- Linux needs LunarG's Vulkan SDK (or `scripts/build-linux-toolchain.sh`'s build of the same
+  pieces) and a static assimp built once by hand: distro packages are too old, and assimp is not
+  vendored for Linux.
+- The prebuilt Windows archive leaves out the assimp import library; take it from the repository.
+- `exeMetadata`'s icon is the Windows window and taskbar icon and the Linux desktop entry's; a
+  Linux window itself has none, since GLFW on X11 takes an icon only as pixels at run time.
