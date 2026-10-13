@@ -36,13 +36,17 @@ InstanceRecord GetInstance(uint copy)
 	return Instances[InstanceBase.x + copy];
 }
 
+// Both sum in glm's order and never fuse, so a copy lands on exactly the bits the CPU batch gives
+// the same vertex: otherwise an edge pixel can flip to whatever lies behind it.
 vec3 InstanceWorldPosition(InstanceRecord instance, vec3 position)
 {
-	vec4 p = vec4(position, 1.0);
-	return vec3(dot(instance.ModelRows[0], p), dot(instance.ModelRows[1], p), dot(instance.ModelRows[2], p));
+	mat4x3 model = transpose(mat3x4(instance.ModelRows[0], instance.ModelRows[1], instance.ModelRows[2]));
+	precise vec3 world = (model[0] * position.x + model[1] * position.y) + (model[2] * position.z + model[3]);
+	return world;
 }
 
 vec3 InstanceWorldNormal(InstanceRecord instance, vec3 normal)
 {
-	return mat3(instance.NormalColumns[0].xyz, instance.NormalColumns[1].xyz, instance.NormalColumns[2].xyz) * normal;
+	precise vec3 world = instance.NormalColumns[0].xyz * normal.x + instance.NormalColumns[1].xyz * normal.y + instance.NormalColumns[2].xyz * normal.z;
+	return world;
 }
