@@ -51,6 +51,17 @@ namespace Dingo
 				}
 				std::erase(sinks_, early);
 			}
+
+			// False when another thread holds the lock: one parked in the crash handler never lets go.
+			bool TryFlush(const spdlog::sink_ptr& file)
+			{
+				std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+				if (!lock.owns_lock())
+					return false;
+				if (file)
+					file->flush();
+				return true;
+			}
 		};
 
 		// spdlog's file sinks take a narrow name, which on Windows can't hold every user's
@@ -83,6 +94,7 @@ namespace Dingo
 	}
 
 	static std::shared_ptr<LogSinks> s_Sinks;
+	static spdlog::sink_ptr s_FileSink;
 	static std::filesystem::path s_FilePath;
 
 	static thread_local uint32_t t_LoggingDepth = 0;
@@ -329,6 +341,21 @@ namespace Dingo
 		return t_LoggingDepth != 0;
 	}
 
+	bool Internal::TryFlushLog()
+	{
+		LoggingScope scope;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+		while (s_Sinks)
+		{
+			if (s_Sinks->TryFlush(s_FileSink))
+				return true;
+			if (std::chrono::steady_clock::now() >= deadline)
+				return false;
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		return false;
+	}
+
 	namespace Utils
 	{
 
@@ -389,6 +416,7 @@ namespace Dingo
 		s_ClientLogger.reset();
 		s_EngineLogger.reset();
 		s_EarlySink.reset();
+		s_FileSink.reset();
 		s_Sinks.reset();
 		spdlog::drop_all();
 	}
@@ -427,6 +455,7 @@ namespace Dingo
 			DropEarlySink(fileSink);
 		else
 			s_Sinks->add_sink(fileSink);
+		s_FileSink = fileSink;
 
 		s_FilePath = std::filesystem::absolute(path, error);
 		if (error)

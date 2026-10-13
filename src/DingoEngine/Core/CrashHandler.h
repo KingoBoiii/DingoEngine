@@ -6,7 +6,8 @@
 // it, and shows a message box in Distribution builds. Both: std::terminate logs the exception it
 // ended on first. One thread reports; any other that crashes meanwhile waits for the exit. The
 // handlers write with write(2)/WriteFile from buffers prepared at Install, and flush spdlog first
-// only when the crashing thread isn't inside it (its mutex would deadlock).
+// only when the crashing thread isn't inside it (its mutex would deadlock) and the lock is free
+// within about 200 ms (another crashed thread may hold it).
 
 #include <cstdint>
 #include <filesystem>
@@ -17,6 +18,11 @@ namespace Dingo::Internal
 
 	// True while this thread is inside a Log call (Log.cpp keeps the count).
 	bool IsLoggingOnThisThread();
+
+	// Flushes the log file without waiting more than about 200 ms for its lock, which a thread
+	// parked in a crash handler may hold for good. False when the lock couldn't be had or the log
+	// is shut down. Never from a thread inside a Log call.
+	bool TryFlushLog();
 
 	namespace CrashHandler
 	{

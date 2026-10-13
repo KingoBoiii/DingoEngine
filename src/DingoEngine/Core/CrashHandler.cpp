@@ -95,10 +95,11 @@ namespace Dingo
 		void WriteStdErr(const char* text, size_t length);
 		void WriteLog(const char* text, size_t length);
 
+		// The log first: a stderr pipe nobody drains blocks, and the log is the copy that lasts.
 		void WriteBoth(const char* text, size_t length)
 		{
-			WriteStdErr(text, length);
 			WriteLog(text, length);
+			WriteStdErr(text, length);
 		}
 
 		void WriteBoth(const LineBuilder& line)
@@ -106,20 +107,21 @@ namespace Dingo
 			WriteBoth(line.Text, line.Length);
 		}
 
+		// Before the report, so the lines buffered below Warn come ahead of it in the log.
 		void FlushLogIfSafe()
 		{
 			if (!Internal::IsLoggingOnThisThread())
-				Log::Flush();
+				Internal::TryFlushLog();
 		}
 
-		// Through spdlog when it is up and this thread isn't inside it, else straight to stderr and
-		// the log file, so a message logged after Internal::ShutdownLog or from inside a log call still lands.
+		// Through spdlog when it is up, this thread isn't inside it and no crashed thread holds its
+		// lock, else straight to the log file and stderr, so a message logged after
+		// Internal::ShutdownLog or from inside a log call still lands. Fatal flushes as it logs.
 		void ReportFatal(const std::string& message)
 		{
-			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal))
+			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal) && Internal::TryFlushLog())
 			{
 				DE_CORE_FATAL("{}", message);
-				Log::Flush();
 				return;
 			}
 			const std::string line = std::format("\n*** {}\n", message);
@@ -261,6 +263,8 @@ namespace Dingo
 			if (!BeginReport())
 				return;
 
+			FlushLogIfSafe();
+
 			LineBuilder header;
 			header << "\n*** " << s_AppName << " crashed: " << what.Text << "\n";
 			WriteBoth(header);
@@ -273,10 +277,6 @@ namespace Dingo
 			else
 				footer << "*** No minidump could be written\n";
 			WriteBoth(footer);
-
-			// Last: a thread that crashed holding spdlog's lock waits in BeginReport, and the report is
-			// already out if this blocks on it.
-			FlushLogIfSafe();
 
 #ifdef DE_DISTRIBUTION
 			MessageBoxW(nullptr, s_CrashMessage, L"Crash", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
@@ -534,6 +534,8 @@ namespace Dingo
 				return;
 			}
 
+			FlushLogIfSafe();
+
 			LineBuilder header;
 			header << "\n*** " << s_AppName << " crashed: " << SignalName(signal);
 			if (info && signal != SIGABRT && signal != SIGTRAP)
@@ -546,17 +548,13 @@ namespace Dingo
 
 			void* frames[64];
 			const int count = backtrace(frames, 64);
-			backtrace_symbols_fd(frames, count, STDERR_FILENO);
 			if (s_LogFd >= 0)
 				backtrace_symbols_fd(frames, count, s_LogFd);
+			backtrace_symbols_fd(frames, count, STDERR_FILENO);
 
 			LineBuilder footer;
 			footer << "*** End of backtrace\n";
 			WriteBoth(footer);
-
-			// Last: a thread that crashed holding spdlog's lock waits in BeginReport, and the report is
-			// already out if this blocks on it.
-			FlushLogIfSafe();
 
 			// The process ends as it would have, core dump and exit status included.
 			RaiseDefault(signal);

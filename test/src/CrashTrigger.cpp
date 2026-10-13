@@ -77,6 +77,11 @@ namespace Dingo
 			std::thread(WriteThroughNull).join();
 		else if (kind == "threads")
 			CrashThreadsTogether();
+		else if (kind == "segv-after-info")
+		{
+			DE_INFO("[Crash] last info line");
+			WriteThroughNull();
+		}
 		else if (kind == "abort")
 			std::abort();
 		else if (kind == "terminate")
@@ -92,7 +97,7 @@ namespace Dingo
 		else if (kind == "fatal")
 			FatalError("The test app's --crash=fatal.");
 		else
-			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, threads, abort, terminate, throw, stack, verify or fatal", kind);
+			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, threads, segv-after-info, abort, terminate, throw, stack, verify or fatal", kind);
 	}
 
 }

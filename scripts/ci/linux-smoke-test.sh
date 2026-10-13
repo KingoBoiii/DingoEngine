@@ -140,6 +140,12 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	crash segv 139 'End of backtrace'
 	crash thread 139 'End of backtrace'
 	crash threads 139 'End of backtrace'
+	crash segv-after-info 139 'End of backtrace'
+	if ! awk '/last info line/{i=NR} /crashed: SIGSEGV/{c=NR} END{exit !(i && i<c)}' "$LOGS/crash-segv-after-info/Dingo.log" 2>/dev/null; then
+		failures=$((failures + 1))
+		echo "::error title=Smoke test crash-segv-after-info ($CONFIG)::the last info line isn't before the report"
+		echo "FAIL  crash-segv-after-info: the last info line isn't before the report"
+	fi
 	crash stack 139 'crashed: SIGSEGV'
 	crash abort 134 'crashed: SIGABRT'
 	crash terminate 134 "std::terminate called on an uncaught exception: the test app's --crash=terminate"
