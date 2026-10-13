@@ -29,6 +29,9 @@ namespace Dingo
 					entt::entity Entity = entt::null;
 					StaticMeshId Id = k_InvalidStaticMesh;
 					uint64_t Seen = 0;
+					// A new mesh or material can reuse a freed one's address.
+					uint64_t MeshId = 0;
+					uint64_t MaterialId = 0;
 				};
 
 				std::shared_ptr<StaticBatch> Batch;

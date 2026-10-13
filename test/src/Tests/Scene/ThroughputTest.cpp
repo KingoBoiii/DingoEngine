@@ -947,6 +947,40 @@ namespace Dingo
 					reloadedStats.StaticCellsBaked, removed.StaticCellsBaked));
 		}
 
+		{
+			SetStatic(true);
+			Mesh* first = Mesh::CreateBox(0.5f, 0.5f, 0.5f);
+			Entity swapped = m_Scene->CreateEntity("Swapped");
+			swapped.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(camera.GetPosition()) + 4.0f * glm::normalize(glm::vec3(camera.GetTarget() - camera.GetPosition()))));
+			swapped.AddComponent<MeshRendererComponent>(MeshRendererComponent(first)).Static = true;
+			RenderView(m_StaticTargets[3], camera);
+
+			const uintptr_t firstAddress = reinterpret_cast<uintptr_t>(first);
+			delete first;
+			std::vector<Mesh*> misses;
+			Mesh* second = nullptr;
+			for (int attempt = 0; attempt < 16 && !second; ++attempt)
+			{
+				Mesh* mesh = Mesh::CreateSphere(0.4f, 8, 12);
+				if (reinterpret_cast<uintptr_t>(mesh) == firstAddress)
+					second = mesh;
+				else
+					misses.push_back(mesh);
+			}
+			if (second)
+			{
+				const Renderer3D::Statistics reused = RenderView(m_StaticTargets[3], camera);
+				Check(reused.StaticCellsBaked == 1, std::format("a static entity whose mesh is replaced by a new one at the freed one's address rebakes its cell ({} rebaked)", reused.StaticCellsBaked));
+			}
+			else
+				DE_WARN("Throughput: no new mesh reused the freed one's address; the static address-reuse check did not run.");
+			m_Scene->DestroyEntity(swapped);
+			RenderView(m_StaticTargets[3], camera);
+			delete second;
+			for (Mesh* mesh : misses)
+				delete mesh;
+		}
+
 		SetStatic(m_Static);
 		renderer.SetInstancingEnabled(wasInstancing);
 	}

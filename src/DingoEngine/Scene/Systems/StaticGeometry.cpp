@@ -76,16 +76,20 @@ namespace Dingo::Internal
 		entry.Entity = entity;
 		entry.Seen = bake.Pass;
 		++bake.Tracked;
+		const uint64_t meshId = mesh.Mesh ? mesh.Mesh->GetId() : 0;
+		const uint64_t materialId = mesh.Material ? mesh.Material->GetId() : 0;
 		if (entry.Id == k_InvalidStaticMesh)
 		{
 			entry.Id = bake.Batch->Add(mesh);
+			entry.MeshId = meshId;
+			entry.MaterialId = materialId;
 			return;
 		}
 
 		const StaticMesh& baked = *bake.Batch->Get(entry.Id);
 		const bool moved = !Same(baked.Transform, mesh.Transform);
-		if (!moved && baked.Mesh == mesh.Mesh && Same(baked.Color, mesh.Color) && baked.Material == mesh.Material && baked.Shadows == mesh.Shadows &&
-			baked.ShadowGroups == mesh.ShadowGroups && SameSurface(baked.Surface, mesh.Surface))
+		if (!moved && baked.Mesh == mesh.Mesh && entry.MeshId == meshId && Same(baked.Color, mesh.Color) && baked.Material == mesh.Material &&
+			entry.MaterialId == materialId && baked.Shadows == mesh.Shadows && baked.ShadowGroups == mesh.ShadowGroups && SameSurface(baked.Surface, mesh.Surface))
 			return;
 
 		if (moved && !m_MovedWarned)
@@ -95,6 +99,8 @@ namespace Dingo::Internal
 			m_MovedWarned = true;
 		}
 		bake.Batch->Update(entry.Id, mesh);
+		entry.MeshId = meshId;
+		entry.MaterialId = materialId;
 	}
 
 	void StaticGeometry::Submit(Bake& bake, Renderer3D& renderer)
