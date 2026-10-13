@@ -73,7 +73,7 @@ namespace Dingo
 		m_Camera.SetPosition({ 0.0f, 13.0f, 15.0f });
 		m_Camera.SetTarget({ 0.0f, 0.0f, -1.0f });
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 		UpdateOrthoProjection();
 
 		InitScene3D();

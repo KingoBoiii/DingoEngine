@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Asset/AssetTypes.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include <algorithm>
 #include <cctype>
@@ -37,7 +38,7 @@ namespace Dingo
 
 	AssetType AssetTypeFromExtension(const std::filesystem::path& extension)
 	{
-		std::string ext = extension.string();
+		std::string ext = Internal::PathToUtf8(extension);
 		std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
 		if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp")

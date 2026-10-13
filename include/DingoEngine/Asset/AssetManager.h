@@ -1,10 +1,13 @@
 #pragma once
 #include "DingoEngine/Asset/AssetTypes.h"
 #include "DingoEngine/Asset/AssetMetadata.h"
+#include "DingoEngine/Asset/AssetPackage.h"
 
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
+#include <string>
 #include <type_traits>
 #include <unordered_map>
 
@@ -38,6 +41,17 @@ namespace Dingo
 		// Seconds between file-timestamp polls when hot-reload is enabled.
 		float HotReloadInterval = 0.5f;
 
+		// A shipped game's package: with AutoUnpackage on, Initialize() mounts
+		// <executable directory>/<executable name>.dpak when that file exists, opened with
+		// PackageKey (Dingo::Generated::GetPackageKey() from premake's embedPackKey(); a null key
+		// opens only an unencrypted package). Without the file, RootDirectory serves as before.
+		Dingo::PackageKey PackageKey;
+		bool AutoUnpackage = true;
+		// With the package mounted, RootDirectory is left unmounted, so a stray loose file can't
+		// shadow or stand in for a packed one. Set this to mount it under the package as well
+		// (files the package lacks then load loose).
+		bool AllowLooseFiles = false;
+
 		AssetManagerParams& SetRootDirectory(const std::filesystem::path& root)
 		{
 			RootDirectory = root;
@@ -53,6 +67,24 @@ namespace Dingo
 		AssetManagerParams& SetHotReloadInterval(float seconds)
 		{
 			HotReloadInterval = seconds;
+			return *this;
+		}
+
+		AssetManagerParams& SetPackageKey(const Dingo::PackageKey& key)
+		{
+			PackageKey = key;
+			return *this;
+		}
+
+		AssetManagerParams& SetAutoUnpackage(bool enable)
+		{
+			AutoUnpackage = enable;
+			return *this;
+		}
+
+		AssetManagerParams& SetAllowLooseFiles(bool allow)
+		{
+			AllowLooseFiles = allow;
 			return *this;
 		}
 	};
@@ -217,6 +249,28 @@ namespace Dingo
 		// Hot-reload requests still in flight, including retries of a Failed asset. One that
 		// still has a loaded object (State == Reloading) keeps serving it throughout.
 		uint32_t GetReloadingCount() const;
+
+		// --- Packages ---------------------------------------------------------
+
+		// Packs a directory's files into one .dpak: deflated where that pays and encrypted with
+		// params.Key. Pure file work that needs no running application. See docs/distribution.md.
+		static PackageResult Package(const PackageParams& params);
+
+		// Mounts a .dpak in memory (nothing is extracted to disk) and imports every asset it holds,
+		// so Load("characters/Knight.glb") and the raw factories read from it. A package mounted
+		// later wins over earlier ones and over loose files; an asset already loaded from a file it
+		// overrides is reloaded. k_InvalidPackage (logged) for a missing file, a wrong key or a
+		// damaged table of contents.
+		PackageHandle Unpackage(const std::filesystem::path& dpak, const PackageKey& key);
+		// The registrations Unpackage made or found for the package's files. Empty once closed.
+		std::span<const AssetHandle> GetPackageAssets(PackageHandle package) const;
+		bool IsPackageMounted(PackageHandle package) const;
+		// Unmounts the package. Registrations it made are removed (their objects freed, pointers
+		// stale) unless another mounted package holds the same file; the rest are reloaded, so
+		// they serve whatever now wins, such as the loose file.
+		void ClosePackage(PackageHandle package);
+		// Where the asset's file comes from: "loose", a package's file name, or "missing".
+		std::string GetAssetSource(AssetHandle handle) const;
 
 		// Per-frame pump, driven by Application::Run — finalizes background loads and
 		// polls hot-reload watches.

@@ -51,7 +51,7 @@ namespace Dingo
 			return static_cast<float>(data[(static_cast<size_t>(p.y) * k_CheckWidth + p.x) * 4 + 1]) / 255.0f;
 		}
 
-		constexpr const char* k_FoxPath = "assets/models/Fox/Fox.gltf";
+		constexpr const char* k_FoxPath = "models/Fox/Fox.gltf";
 		constexpr float k_FoxLength = 1.6f;
 		constexpr uint32_t k_DustPerStep = 6;
 		constexpr int k_BlendFrames = 120;

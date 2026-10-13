@@ -30,10 +30,19 @@ game can anchor it to the executable's directory (or a CLI argument) instead of
 depending on where it was launched from — the classic cwd-relative asset trap.
 If the root does not exist at startup, a warning is logged immediately.
 
+Paths are text in UTF-8. On Windows `path::string()` and `std::filesystem::path(std::string)`
+go through the ANSI code page, and `string()` throws on a name the code page can't map (a
+Cyrillic user name under code page 1252 puts one in every `%TEMP%` path). Log, compare or store
+a path with `FileSystem::PathToUtf8(path)` (or `PathToGenericUtf8` for `/` separators) and
+build one from text with `FileSystem::PathFromUtf8(text)`. Strings the manager returns
+(`GetAssetSource`) are UTF-8 already; `AssetMetadata::FilePath`/`AbsolutePath` are paths, so
+convert them too.
+
 To anchor to the executable (v0.6.2), `Platform::FindDirectoryUpward` searches the
-exe's directory and up to 8 parents. The same line works for a packaged build
-(`assets/` beside the exe) and a dev build (exe under `build/bin/<Config>/`), and it
-works no matter which directory Steam or a shortcut launches the game from:
+exe's directory and up to 8 parents. The same line works for a build that ships a loose
+`assets/` beside the exe and a dev build (exe under `build/bin/<Config>/`), and it
+works no matter which directory Steam or a shortcut launches the game from (a game that
+ships a `.dpak`, below, needs no root at all):
 
 ```cpp
 #include <DingoEngine/Core/Platform.h>
@@ -48,7 +57,10 @@ raw factories (`Font::Create`, `Texture::CreateFromFile`, `Model::LoadFromFile`,
 same root first (v0.6.3), falling back to the working directory only if no such file
 exists there — a fallback for code written before the root existed, not a second meaning
 for the path. So `Font::Create("fonts/x.ttf")` and `assets.Load("fonts/x.ttf")` open the
-same file. The shader and font-atlas `.cache` lives beside the executable (v0.6.2),
+same file. Write such paths root-relative (`"fonts/x.ttf"`): the old
+`"assets/fonts/x.ttf"` spelling still opens the file, because a path that starts with the
+root folder's name has it stripped, but Debug builds warn once about it, and a package
+names its entries root-relative. The shader and font-atlas `.cache` lives beside the executable (v0.6.2),
 or under `Platform::GetUserDataDir("DingoEngine")/cache/<exe name>` when that directory is read-only.
 
 Access it anywhere:
@@ -239,6 +251,29 @@ Only the model file and its `.events` file are watched. A glTF's `.bin` buffer
 isn't, but exporters rewrite the `.gltf` with it. An unmanaged model reloads the
 same way with `Model::Reload()`.
 
+## Packages (.dpak)
+
+Every engine file read goes through a virtual file system: the asset root is one mount and
+an asset package is another. A shipped game carries `<Game>.dpak` beside its executable
+instead of a loose `assets/` folder; the manager mounts it at start-up with the key from
+`AssetManagerParams::PackageKey` and stops reading the loose root, and every `Load` and raw
+factory call reads from it unchanged. [Shipping a Game](distribution.md) covers the
+workflow (the key, `embedPackKey()`, the DingoPack tool), the options and the threat model.
+
+```cpp
+PackageResult result = AssetManager::Package(PackageParams()
+    .SetSourceDirectory("assets").SetOutputPath("out/MyGame.dpak").SetKey(key));
+
+PackageHandle dlc = assets.Unpackage("dlc/ForestPack.dpak", key);  // mounted on top
+assets.ClosePackage(dlc);
+```
+
+`Unpackage` imports every asset the package holds and overrides the root and earlier
+packages; assets already loaded from a file it overrides are reloaded. Closing it removes
+the registrations it made (their objects freed, so pointers to them go stale) unless
+another mounted package holds the same file, and reloads the rest from whatever now wins. Packed files have no write time, so hot-reload never
+fires for them.
+
 ## The Assets debug panel
 
 Press **F6** for the Assets tab of the engine's built-in Debug window (or embed
@@ -246,7 +281,7 @@ Press **F6** for the Assets tab of the engine's built-in Debug window (or embed
 see [DebugPanels.h](../include/DingoEngine/UI/DebugPanels.h)). It shows the asset
 root, live registered/loaded/in-flight counts with a load-progress bar, per-type
 and per-state breakdowns, and every registration in a filterable table with its
-state, type and source path.
+state, type, path and source (the loose root or the package it is read from).
 
 It is also a control surface: toggle hot-reload for the session, press **Reload**
 on a texture, shader or model row (in place, so it is safe while the game is
@@ -270,6 +305,10 @@ frees the object while game code may still hold the pointer it was handed.
 | `Get<T>(handle)` | Template form of the above (not for `AudioClip`). |
 | `IsReady/GetState/GetMetadata(handle)`, `FindByPath(path)` | Queries. `IsReady` stays true across an in-place reload. |
 | `GetRegisteredCount/GetLoadedCount/GetPendingCount/GetReloadingCount()` | Stats (debug/loading UI). |
+| `AssetManager::Package(PackageParams)` | Static: pack a directory into a `.dpak` (`PackageResult`: `Success`, `Error`, `FileCount`, `RawBytes`, `PackedBytes`, `Warnings`). |
+| `Unpackage(path, key)` | Mount a package in memory on top of what is mounted; returns a `PackageHandle` (invalid on failure, logged). |
+| `GetPackageAssets(handle)`, `IsPackageMounted(handle)`, `ClosePackage(handle)` | The registrations a package's files have; whether it is still mounted; unmount it. |
+| `GetAssetSource(handle)` | `"loose"`, the package's file name, or `"missing"`. |
 
 The showcase for all of this is
 [examples/ArenaShooter](../examples/ArenaShooter/) — a wave-based top-down

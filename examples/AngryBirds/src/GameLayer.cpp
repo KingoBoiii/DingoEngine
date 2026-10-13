@@ -43,7 +43,7 @@ namespace Dingo
 
 		m_SlingPos = { -m_Context.HalfWidth + SLING_INSET_X, GROUND_TOP_Y + SLING_HEIGHT };
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 
 		m_MenuScene = m_SceneManager.CreateScene("Menu");
 		m_GameScene = m_SceneManager.CreateScene("Game");

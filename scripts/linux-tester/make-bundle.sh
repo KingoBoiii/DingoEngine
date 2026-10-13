@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Usage: scripts/linux-tester/make-bundle.sh <Config> <output.tar.gz>
 #
-# Packs an existing build's test app and examples, each beside its assets/ as in the repo, with
-# this directory's scripts and README, into one archive a tester unpacks and runs.
+# Packs an existing build's test app beside its assets/ and each example beside its encrypted
+# <Example>.dpak, as a release ships them, with this directory's scripts and README, into one
+# archive a tester unpacks and runs.
 set -euo pipefail
 
 CONFIG=${1:?usage: $0 <Config> <output.tar.gz>}
@@ -24,7 +25,8 @@ for dir in "$ROOT"/examples/*/; do
 	example=$(basename "$dir")
 	mkdir -p "$pkg/examples/$example"
 	cp "$BIN/$example/$example" "$pkg/examples/$example/"
-	cp -r "$dir/assets" "$pkg/examples/$example/"
+	"$ROOT/scripts/pack-assets.sh" "$example" "$pkg/examples/$example/$example.dpak" "$CONFIG" > /dev/null
+	find "$dir/assets" -maxdepth 1 -type f -iname '*licen[cs]e*' -exec cp {} "$pkg/examples/$example/" \;
 done
 
 mkdir -p "$(dirname "$OUTPUT")"

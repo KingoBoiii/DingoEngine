@@ -43,3 +43,4 @@ project "Breakout3D"
         defines { "DE_DISTRIBUTION" }
 
     copyAssimpRuntime()
+	embedPackKey()

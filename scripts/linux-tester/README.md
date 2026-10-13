@@ -82,6 +82,7 @@ Anything that goes wrong is useful, but these are the things a headless CI can't
 - [ ] **Scaling and monitors**: with display scaling above 100%, is the debug window's text sized right? Can you drag a window to a second monitor? In the test app, can you drag an ImGui panel out of the main window?
 - [ ] **Session**: if your desktop offers both X11 and Wayland at login, try `./run-checks.sh` in the other one too. On Wayland the engine runs through XWayland for now.
 - [ ] **Speed**: does anything stutter? The F3 tab shows the frame time.
+- [ ] **Packed assets**: each example's folder holds only its executable and `<Example>.dpak` (its assets, packed and encrypted). Start one from another directory, e.g. `examples/Marionette/Marionette` from the bundle's root: it should look and sound the same. F6 (Assets) shows the package in the Source column.
 
 ## 4. Send back
 

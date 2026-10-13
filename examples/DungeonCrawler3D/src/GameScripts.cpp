@@ -187,11 +187,11 @@ namespace Dingo
 			return m_Context.BoxMesh;
 		};
 
-		m_Context.CharParts.Head = load(0, "assets/models/parts/head.obj");
-		m_Context.CharParts.Torso = load(1, "assets/models/parts/torso.obj");
-		m_Context.CharParts.Arm = load(2, "assets/models/parts/arm.obj");
-		m_Context.CharParts.Leg = load(3, "assets/models/parts/leg.obj");
-		m_Context.CharParts.Sword = load(4, "assets/models/parts/sword.obj");
+		m_Context.CharParts.Head = load(0, "models/parts/head.obj");
+		m_Context.CharParts.Torso = load(1, "models/parts/torso.obj");
+		m_Context.CharParts.Arm = load(2, "models/parts/arm.obj");
+		m_Context.CharParts.Leg = load(3, "models/parts/leg.obj");
+		m_Context.CharParts.Sword = load(4, "models/parts/sword.obj");
 	}
 
 	glm::vec3 DungeonControllerScript::CellToWorld(int col, int row, float y) const
@@ -617,7 +617,7 @@ namespace Dingo
 
 	void HudScript::OnStart()
 	{
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 
 		Scene& scene = GetScene();
 

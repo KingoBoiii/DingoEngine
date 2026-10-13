@@ -1,4 +1,5 @@
 #include <DingoEngine/EntryPoint.h>
+#include <DingoPackKey.h>
 #include <DingoEngine/Core/Platform.h>
 
 #include "LaunchOptions.h"
@@ -80,8 +81,10 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.FramesInFlight = 3,
 		},
 		.Assets = AssetManagerParams()
+			.SetPackageKey(Dingo::Generated::GetPackageKey())
 			.SetRootDirectory(assetRoot)
-			.SetEnableHotReload(options.HotReload),
+			.SetEnableHotReload(options.HotReload)
+			.SetAutoUnpackage(!options.HotReload && !options.LiveEditDemo),
 		.EnableUI = false,
 		.UpdateInBackground = background,
 	};

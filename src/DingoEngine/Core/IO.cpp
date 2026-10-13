@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/IO.h"
+#include "DingoEngine/Core/PathText.h"
 
 namespace Dingo::IO
 {
@@ -15,7 +16,7 @@ namespace Dingo::IO
 			std::filesystem::create_directories(directory, errorCode);
 			if (errorCode)
 			{
-				DE_CORE_ERROR("Failed to create parent directory '{}': {}", directory.string(), errorCode.message());
+				DE_CORE_ERROR("Failed to create parent directory '{}': {}", Internal::PathToUtf8(directory), errorCode.message());
 				return false;
 			}
 		}
@@ -29,7 +30,7 @@ namespace Dingo::IO
 			std::ofstream file(tempPath, std::ios::binary | std::ios::trunc);
 			if (!file.is_open())
 			{
-				DE_CORE_ERROR("Failed to open temp file for atomic write: {}", tempPath.string());
+				DE_CORE_ERROR("Failed to open temp file for atomic write: {}", Internal::PathToUtf8(tempPath));
 				return false;
 			}
 
@@ -38,7 +39,7 @@ namespace Dingo::IO
 
 			if (!file.good())
 			{
-				DE_CORE_ERROR("Failed to write contents to temp file: {}", tempPath.string());
+				DE_CORE_ERROR("Failed to write contents to temp file: {}", Internal::PathToUtf8(tempPath));
 				file.close();
 				std::error_code removeError;
 				std::filesystem::remove(tempPath, removeError);
@@ -51,7 +52,7 @@ namespace Dingo::IO
 		std::filesystem::rename(tempPath, path, errorCode);
 		if (errorCode)
 		{
-			DE_CORE_ERROR("Failed to atomically rename '{}' to '{}': {}", tempPath.string(), path.string(), errorCode.message());
+			DE_CORE_ERROR("Failed to atomically rename '{}' to '{}': {}", Internal::PathToUtf8(tempPath), Internal::PathToUtf8(path), errorCode.message());
 			std::error_code removeError;
 			std::filesystem::remove(tempPath, removeError);
 			return false;
