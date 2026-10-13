@@ -93,8 +93,7 @@ namespace Dingo
 				case nlohmann::json::value_t::number_integer: out = SaveData(json.get<int64_t>()); return true;
 				case nlohmann::json::value_t::number_unsigned:
 				{
-					const uint64_t number = json.get<uint64_t>();
-					out = std::in_range<int64_t>(number) ? SaveData(static_cast<int64_t>(number)) : SaveData(static_cast<double>(number));
+					out = SaveData(json.get<uint64_t>());
 					return true;
 				}
 				case nlohmann::json::value_t::number_float: out = SaveData(json.get<double>()); return true;

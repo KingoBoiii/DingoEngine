@@ -47,7 +47,8 @@ namespace Dingo
 		~SaveData();
 		///@}
 		/// Implicit conversions from a C++ value to the matching type: bool (Bool), integers and
-		/// enums (Int, an enum stored as its integer), floating point (Float, stored as a double),
+		/// enums (Int, an enum stored as its integer; a uint64_t from 2^63 up as the negative Int
+		/// with the same bits, which Get<uint64_t> reads back), floating point (Float, a double),
 		/// nullptr (Null), strings (String; a null const char* gives an empty string) and
 		/// vectors and quaternions (an Array of numbers, quaternions as x, y, z, w).
 		///@{
@@ -125,7 +126,8 @@ namespace Dingo
 		glm::quat AsQuat(const glm::quat& fallback = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) const;
 
 		/// The member's value read as T, or the fallback when the member is missing or of another
-		/// type, or an integer out of T's range. An enum reads its stored integer.
+		/// type, or an integer out of T's range. An enum reads its stored integer. A 64-bit
+		/// unsigned T reads an Int's bits, so every uint64_t (a UUID, say) round-trips.
 		template<typename T>
 		T Get(std::string_view key, const T& fallback) const;
 		/// Reads a string member; a null fallback counts as empty.
@@ -226,6 +228,11 @@ namespace Dingo
 		{
 			if (!value->IsNumber())
 				return fallback;
+			if constexpr (std::unsigned_integral<T> && sizeof(T) == sizeof(int64_t))
+			{
+				if (value->IsInt())
+					return static_cast<T>(value->AsInt());
+			}
 			const int64_t number = value->AsInt(static_cast<int64_t>(fallback));
 			if (!std::in_range<T>(number))
 				return fallback;

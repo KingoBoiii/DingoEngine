@@ -2,6 +2,7 @@
 
 #include <DingoEngine/Core/Platform.h>
 #include <DingoEngine/Core/SaveData.h>
+#include <DingoEngine/Core/UUID.h>
 
 #include "SaveWriter.h"
 
@@ -207,6 +208,22 @@ TEST_SUITE("SaveData")
 		CHECK(data.Get("volume", false) == false);
 	}
 
+	TEST_CASE("every uint64_t survives a save, UUIDs included")
+	{
+		SaveData data;
+		std::vector<uint64_t> ids = { 0, 1, 0x7FFFFFFFFFFFFFFFull, 0x8000000000000000ull, 0xF000000000000001ull, 0xFFFFFFFFFFFFFFFFull };
+		for (int i = 0; i < 64; i++)
+			ids.push_back(static_cast<uint64_t>(UUID::Generate()));
+		for (size_t i = 0; i < ids.size(); i++)
+			data["id" + std::to_string(i)] = ids[i];
+		const std::optional<SaveData> read = SaveData::FromJson(data.ToJson());
+		REQUIRE(read);
+		for (size_t i = 0; i < ids.size(); i++)
+			CHECK(read->Get<uint64_t>("id" + std::to_string(i), 7) == ids[i]);
+		CHECK(SaveData::FromJson("{\"id\": 17293822569102704641}")->Get<uint64_t>("id", 0) == 0xF000000000000001ull);
+		CHECK(read->Get<uint32_t>("id5", 7) == 7);
+	}
+
 	TEST_CASE("objects keep their keys sorted and unique")
 	{
 		SaveData data;
@@ -294,7 +311,8 @@ TEST_SUITE("SaveData")
 
 		CHECK(SaveData::FromJson(SaveData(1.0).ToJson())->IsFloat());
 		CHECK(SaveData::FromJson(SaveData(0.1f).ToJson())->AsFloat() == 0.1f);
-		CHECK(SaveData::FromJson("18446744073709551615")->IsFloat());
+		CHECK(SaveData::FromJson("18446744073709551615")->AsInt() == -1);
+		CHECK(SaveData::FromJson("[18446744073709551615]")->At(0).IsInt());
 	}
 
 	TEST_CASE("non-finite floats are written as null")
