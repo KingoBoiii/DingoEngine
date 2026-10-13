@@ -32,7 +32,7 @@ namespace Dingo
 				return texture;
 			}
 
-			DE_ERROR("Flappy Bird: failed to load texture '{}'; using a blank one.", path.string());
+			DE_ERROR("Flappy Bird: failed to load texture '{}'; using a blank one.", FileSystem::PathToUtf8(path));
 			uint32_t whitePixel = 0xffffffff;
 			return Texture::CreateFromData(1, 1, &whitePixel, TextureFormat::RGBA, "Flappy Bird Fallback");
 		}
