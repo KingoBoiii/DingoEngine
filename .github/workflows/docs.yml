@@ -1,0 +1,71 @@
+name: API reference
+
+# Doxygen over include/ with docs/*.md as its guides. A pull request that touches either fails when a
+# public declaration has no /// line or a guide's link doesn't resolve; master publishes the HTML to
+# GitHub Pages (Settings > Pages > Source: GitHub Actions).
+on:
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'docs/**'
+      - 'VERSION'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'include/**'
+      - 'docs/**'
+      - 'VERSION'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Doxygen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Doxygen
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq doxygen
+
+    - name: Build the reference
+      run: |
+        mkdir -p build/docs
+        DE_DOCS_VERSION=$(tr -d '[:space:]' < VERSION) doxygen docs/Doxyfile
+
+    - name: No warnings
+      run: |
+        if [ -s build/docs/warnings.txt ]; then
+          sed "s|$GITHUB_WORKSPACE/||" build/docs/warnings.txt | head -100
+          echo "::error title=API reference::$(wc -l < build/docs/warnings.txt) Doxygen warning(s); every public declaration needs a /// line (docs/conventions.md)"
+          exit 1
+        fi
+
+    - uses: actions/upload-pages-artifact@v3
+      if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+      with:
+        path: build/docs/html
+
+  deploy:
+    name: Publish to GitHub Pages
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - id: deployment
+      uses: actions/deploy-pages@v4

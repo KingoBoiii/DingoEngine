@@ -12,8 +12,8 @@ type by type.
   it can't be read (the error is logged). They are `[[nodiscard]]`: dropping the result leaks it.
 - The caller owns what a factory returns. `delete` (or a `std::unique_ptr`) frees everything the
   object holds, its GPU objects included; `DestroyAndDelete(ptr)` deletes and nulls the pointer in
-  one call. `Destroy()` (and `Renderer2D/3D::Shutdown()`) only frees the GPU side early; the object
-  must still be deleted, and deleting it afterwards is safe.
+  one call. `Destroy()` (and `Renderer2D::Shutdown()` or `Renderer3D::Shutdown()`) only frees the
+  GPU side early; the object must still be deleted, and deleting it afterwards is safe.
 - GPU objects may be deleted at any time: the backend keeps what an in-flight frame still uses until
   the GPU is done with it. Free them in `Layer::OnDetach`, which runs while the renderer is still up.
 - `Renderer3D::CreateParticleEmitter` and `CreateStaticBatch` return a `std::shared_ptr`; the last
@@ -62,3 +62,18 @@ through `Scene` (`GetRuntimeBody3D`, `GetCharacterController`, `GetAnimator`...)
   components leave the 2D name bare, `Entity`'s world-transform calls leave the 3D one bare).
 - **Engine-only declarations** live in `namespace Dingo::Internal` or under `src/`. Nothing a game
   needs is there, and none of it is covered by [versioning](versioning.md).
+
+## Documentation
+
+Every public declaration in `include/DingoEngine/` carries a `///` line (`///<` after a field)
+saying what it promises beyond its signature: units and spaces, what a default means, who owns
+what and for how long, which thread may call it, and what it returns when it fails. A run of
+fluent setters shares one line in a `///@{ ... ///@}` group. Doxygen builds these into the API
+reference, with these guides as its pages:
+
+```bash
+mkdir -p build/docs && doxygen docs/Doxyfile   # HTML in build/docs/html
+```
+
+The `API reference` workflow fails a pull request that leaves a declaration undocumented or a
+guide's link unresolved, and publishes the reference to GitHub Pages from master.

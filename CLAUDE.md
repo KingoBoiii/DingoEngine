@@ -129,6 +129,8 @@ Rules for every agent:
 
 Do not write code comments unless absolutely necessary. A comment must earn its place by stating a load-bearing "why" — a constraint, invariant, or non-obvious consequence the code cannot express itself. Never narrate what the next line does, never leave change-tracking or review commentary ("added X", "fixed Y"), and apply the same restraint to scripts, YAML, shaders, and example code. When in doubt, leave it out.
 
+The exception is `include/DingoEngine/`: every public declaration gets a `///` line saying what it promises (decision D7, `docs/conventions.md` "Documentation"). The `API reference` workflow fails a PR that leaves one out.
+
 ## Reference — read when the task needs it
 
 Read the relevant file before changing that area. They hold the detail that used to live here.
