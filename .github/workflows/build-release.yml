@@ -52,7 +52,8 @@ jobs:
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
     # Each example ships its executable and DLLs beside <Example>.dpak (its assets, packed and
-    # encrypted with its dpak.key) and the licence files at the root of its assets, never assets\.
+    # encrypted with its dpak.key), THIRD-PARTY-NOTICES.md and the licence files at the root of its
+    # assets, never assets\.
     - name: Pack example assets
       if: matrix.build-configuration == 'Distribution'
       run: |
@@ -61,6 +62,7 @@ jobs:
           $bin = ".\build\bin\Distribution-windows-x86_64\$example"
           .\scripts\pack-assets.ps1 -Example $example -Output "$bin\$example.dpak" -Configuration Distribution
           Get-ChildItem "$($_.FullName)\assets" -File | Where-Object { $_.Name -match 'licen[cs]e' } | Copy-Item -Destination $bin
+          Copy-Item .\THIRD-PARTY-NOTICES.md -Destination $bin
         }
 
     # Ship the self-contained lib (engine + all vendor libs merged by the
@@ -70,6 +72,7 @@ jobs:
 
     - name: Copy include files
       run: |
+        Copy-Item .\THIRD-PARTY-NOTICES.md .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\
         robocopy .\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\include /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
@@ -673,7 +676,7 @@ jobs:
         pkg="build/package/DingoEngine-$config"
         mkdir -p "$pkg"
         cp "build/dist/$config-linux-x86_64/libDingoEngine.a" "$pkg/"
-        cp -r include "$pkg/"
+        cp -r include THIRD-PARTY-NOTICES.md "$pkg/"
         cp -r vendor/glm "$pkg/glm"
         mkdir -p "$pkg/tools"
         cp "build/bin/$config-linux-x86_64/DingoPack/DingoPack" "$pkg/tools/"

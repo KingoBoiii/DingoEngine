@@ -25,6 +25,10 @@ jobs:
       with:
         runtime: true
 
+    - name: Third-party notices up to date
+      if: matrix.build-configuration == 'Debug'
+      run: scripts/gather-notices.sh --check
+
     - name: Premake
       run: premake5 gmake
 

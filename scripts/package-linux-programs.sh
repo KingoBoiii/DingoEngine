@@ -28,10 +28,11 @@ for dir in "$ROOT"/examples/*/; do
 	cp "$BIN/$program/$program" "$work/$program/"
 	"$ROOT/scripts/pack-assets.sh" "$program" "$work/$program/$program.dpak" "$CONFIG" > /dev/null
 	find "$dir/assets" -maxdepth 1 -type f -iname '*licen[cs]e*' -exec cp {} "$work/$program/" \;
+	cp "$ROOT/THIRD-PARTY-NOTICES.md" "$work/$program/"
 	archive "$program"
 done
 
 mkdir -p "$work/Dingo-TestFramework"
 cp "$BIN/Dingo-TestFramework/Dingo-TestFramework" "$work/Dingo-TestFramework/"
-cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$work/Dingo-TestFramework/"
+cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$ROOT/THIRD-PARTY-NOTICES.md" "$work/Dingo-TestFramework/"
 archive Dingo-TestFramework
