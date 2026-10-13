@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <format>
+#include <numeric>
 
 namespace
 {
@@ -32,6 +33,11 @@ namespace
 		return glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 100.0f) *
 			glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	}
+
+	constexpr uint32_t k_StaticBoxCount = 24;
+	constexpr uint32_t k_StaticCasterCount = 2;
+	constexpr uint32_t k_StaticMeshCount = k_StaticBoxCount + k_StaticCasterCount;
+	constexpr uint32_t k_MinShadowPixels = 100;
 
 	// A quad filling the check camera's view (or the orthographic one's) at depth z.
 	glm::mat4 WallAt(float z)
@@ -651,6 +657,9 @@ namespace Dingo
 
 		// Boxes over several cells of a 2-unit grid, every third with its own surface, one only casting
 		// and one casting nothing, in front of a wall that takes their shadows; a sun that casts.
+		// Two more reach the picture only as shadows: a box beside the view, culled by the camera but
+		// not by the sun's cascades, and a pillar behind the camera and high up the sun's way, which
+		// alone sets how far toward the sun the cascades reach.
 		struct Placed
 		{
 			glm::mat4 Transform;
@@ -659,7 +668,7 @@ namespace Dingo
 			std::optional<SurfaceOverride> Surface;
 		};
 		auto staticScene = std::make_shared<std::vector<Placed>>();
-		for (uint32_t i = 0; i < 24; ++i)
+		for (uint32_t i = 0; i < k_StaticBoxCount; ++i)
 		{
 			const float x = static_cast<float>(i % 6) * 1.3f - 3.2f;
 			const float y = static_cast<float>(i / 6) * 1.1f - 1.8f;
@@ -674,6 +683,9 @@ namespace Dingo
 				box.Shadows = ShadowCasting::Off;
 			staticScene->push_back(box);
 		}
+		const glm::vec4 casterColor(0.7f, 0.7f, 0.2f, 1.0f);
+		staticScene->push_back({ glm::rotate(glm::scale(glm::translate(glm::mat4(1.0f), { 7.5f, 4.0f, -4.0f }), glm::vec3(1.6f)), glm::radians(30.0f), { 0.0f, 1.0f, 0.0f }), casterColor, ShadowCasting::On, std::nullopt });
+		staticScene->push_back({ glm::scale(glm::translate(glm::mat4(1.0f), { 5.0f, 10.0f, 5.0f }), { 0.8f, 8.0f, 0.8f }), casterColor, ShadowCasting::On, std::nullopt });
 
 		auto lights = [](Renderer3D& renderer)
 		{
@@ -711,6 +723,9 @@ namespace Dingo
 			Framebuffer* direct = CreateCheckTarget(k_StaticTargetSize);
 			Framebuffer* baked = CreateCheckTarget(k_StaticTargetSize);
 			Framebuffer* updated = CreateCheckTarget(k_StaticTargetSize);
+			Framebuffer* withoutCasters = CreateCheckTarget(k_StaticTargetSize);
+			Framebuffer* sideOnly = CreateCheckTarget(k_StaticTargetSize);
+			Framebuffer* pillarOnly = CreateCheckTarget(k_StaticTargetSize);
 			// Baked meshes are never instanced, so the reference is the CPU batches.
 			m_CheckRenderer->SetInstancingEnabled(false);
 			RenderCheck(direct, CheckViewProjection(), [&](Renderer3D& renderer)
@@ -720,6 +735,28 @@ namespace Dingo
 					renderer.SubmitMesh(renderer.GetBoxMesh(), box.Transform, box.Color, nullptr, box.Shadows, 1, 0.0f, box.Surface ? &*box.Surface : nullptr);
 				dynamicMeshes(renderer);
 			});
+			auto directWith = [&](Framebuffer* target, std::vector<size_t> indices)
+			{
+				RenderCheck(target, CheckViewProjection(), [&](Renderer3D& renderer)
+				{
+					lights(renderer);
+					for (const size_t index : indices)
+					{
+						const Placed& box = (*staticScene)[index];
+						renderer.SubmitMesh(renderer.GetBoxMesh(), box.Transform, box.Color, nullptr, box.Shadows, 1, 0.0f, box.Surface ? &*box.Surface : nullptr);
+					}
+					dynamicMeshes(renderer);
+				});
+			};
+			std::vector<size_t> boxes(k_StaticBoxCount);
+			std::iota(boxes.begin(), boxes.end(), size_t(0));
+			std::vector<size_t> withSide = boxes;
+			withSide.push_back(k_StaticBoxCount);
+			std::vector<size_t> withPillar = boxes;
+			withPillar.push_back(k_StaticBoxCount + 1);
+			directWith(withoutCasters, boxes);
+			directWith(sideOnly, withSide);
+			directWith(pillarOnly, withPillar);
 			m_CheckRenderer->SetInstancingEnabled(true);
 
 			m_StaticBatch = m_CheckRenderer->CreateStaticBatch(StaticBatchParams().SetCellSize(k_CellSize));
@@ -744,19 +781,27 @@ namespace Dingo
 				dynamicMeshes(renderer);
 			});
 
-			Check(bakedStats.StaticMeshes == 24 && bakedStats.StaticCellsBaked == cells && cells > 4 && bakedStats.ShadowViews > 4 && bakedStats.SurfaceOverrides == 10,
-				std::format("a static batch bakes 24 boxes into {} cells and submits them with their surfaces ({} static, {} baked, {} shadow views, {} overrides)",
-					cells, bakedStats.StaticMeshes, bakedStats.StaticCellsBaked, bakedStats.ShadowViews, bakedStats.SurfaceOverrides));
+			Check(bakedStats.StaticMeshes == k_StaticMeshCount && bakedStats.StaticCellsBaked == cells && cells > 4 && bakedStats.ShadowViews > 4 && bakedStats.SurfaceOverrides == 10,
+				std::format("a static batch bakes {} boxes into {} cells and submits them with their surfaces ({} static, {} baked, {} shadow views, {} overrides)",
+					k_StaticMeshCount, cells, bakedStats.StaticMeshes, bakedStats.StaticCellsBaked, bakedStats.ShadowViews, bakedStats.SurfaceOverrides));
+			Check(bakedStats.CulledMeshes >= k_StaticCasterCount,
+				std::format("the box beside the view and the pillar behind the camera are culled by the camera ({} culled, {} culled from the shadows)", bakedStats.CulledMeshes, bakedStats.CulledCasters));
 			Check(updatedStats.StaticCellsBaked == 1, std::format("changing one mesh's colour rebakes its cell alone ({} baked)", updatedStats.StaticCellsBaked));
-			ReadAll({ direct, baked, updated }, [this](const std::vector<TexturePixels>& images)
+			ReadAll({ direct, baked, updated, withoutCasters, sideOnly, pillarOnly }, [this](const std::vector<TexturePixels>& images)
 			{
 				float worst = 0.0f;
 				float changedWorst = 0.0f;
+				float shadowWorst = 0.0f;
 				const uint32_t differing = CountDiffering(images[0], images[1], worst);
 				const uint32_t changed = CountDiffering(images[1], images[2], changedWorst);
+				const uint32_t shadowBoth = CountDiffering(images[0], images[3], shadowWorst);
+				const uint32_t shadowSide = CountDiffering(images[4], images[3], shadowWorst);
+				const uint32_t shadowPillar = CountDiffering(images[5], images[3], shadowWorst);
 				Check(differing == 0,
 					std::format("a lit, shadowed scene through a static batch matches it through SubmitMesh ({} px differ, by up to {:.0f}/255)", differing, worst * 255.0f));
 				Check(changed > 0 && changed != ~0u, std::format("a rebaked cell draws its mesh's new colour ({} px changed)", changed));
+				Check(shadowSide >= k_MinShadowPixels && shadowSide != ~0u && shadowPillar >= k_MinShadowPixels && shadowPillar != ~0u && shadowBoth >= shadowSide && shadowBoth >= shadowPillar,
+					std::format("the camera-culled box and the pillar each shadow the picture ({} and {} px, {} with both)", shadowSide, shadowPillar, shadowBoth));
 			});
 		});
 
@@ -769,7 +814,7 @@ namespace Dingo
 				lights(renderer);
 				renderer.SubmitStaticBatch(*m_StaticBatch);
 			});
-			Check(again.StaticCellsBaked == 0 && again.StaticMeshes == 24 && again.VertexCount == 0,
+			Check(again.StaticCellsBaked == 0 && again.StaticMeshes == k_StaticMeshCount && again.VertexCount == 0,
 				std::format("a batch submitted again unchanged bakes nothing and transforms no vertex ({} baked, {} static, {} vertices)", again.StaticCellsBaked, again.StaticMeshes, again.VertexCount));
 
 			m_StaticBatch->Remove(m_StaticIds[0]);
@@ -780,10 +825,10 @@ namespace Dingo
 				lights(renderer);
 				renderer.SubmitStaticBatch(*m_StaticBatch);
 			});
-			Check(changed.StaticMeshes == 24 && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= 1,
+			Check(changed.StaticMeshes == k_StaticMeshCount && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= 1,
 				std::format("removing a mesh and adding one far off screen rebakes two cells, and the far one is culled ({} static, {} baked, {} culled)",
 					changed.StaticMeshes, changed.StaticCellsBaked, changed.CulledMeshes));
-			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == 25,
+			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == k_StaticMeshCount + 1,
 				std::format("a translucent mesh in a static batch draws in the translucent pass ({} translucent, {} submitted)", changed.TranslucentMeshes, changed.SubmittedMeshes));
 			m_StaticBatch->Remove(distant);
 			m_StaticBatch->Remove(glass);
