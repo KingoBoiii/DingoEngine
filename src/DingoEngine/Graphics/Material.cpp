@@ -16,8 +16,8 @@ namespace Dingo
 			seed ^= value + 0x9e3779b9ull + (seed << 6) + (seed >> 2);
 		}
 
-		// Produce a cache key from a vertex layout, a framebuffer and the shared buffers.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
+		// Produce a cache key from a vertex layout, a framebuffer, a cull mode and the shared buffers.
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
 			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette, const GraphicsBuffer* skinDrawBuffer)
 		{
 			size_t seed = 0;
@@ -31,6 +31,7 @@ namespace Dingo
 				HashCombine(seed, 2);
 			if (instanceDrawBuffer)
 				HashCombine(seed, static_cast<size_t>(instanceDrawBuffer->GetId()));
+			HashCombine(seed, static_cast<size_t>(cullMode));
 			HashCombine(seed, static_cast<size_t>(framebuffer ? framebuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
@@ -248,6 +249,11 @@ namespace Dingo
 
 	RenderPass* Material::GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer)
 	{
+		return GetOrCreateRenderPass(layout, framebuffer, m_Params.CullMode);
+	}
+
+	RenderPass* Material::GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode)
+	{
 		// A hot-reloaded shader can have a different binding layout, and a cached pass only
 		// knows the bindings this function set the first time. Re-baking the old desc
 		// against the new layout writes descriptors NVRHI cannot validate, so throw the
@@ -282,7 +288,7 @@ namespace Dingo
 		const int32_t skinPaletteBinding = (m_SkinPaletteBuffer && shader) ? shader->FindStorageBufferBinding(k_SkinPaletteBlockName) : -1;
 		const int32_t skinDrawBinding = (m_SkinDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_SkinDrawBlockName) : -1;
 
-		const size_t key = MakeCacheKey(layout, framebuffer, m_SceneUniformBuffer, m_SkinUniformBuffer,
+		const size_t key = MakeCacheKey(layout, framebuffer, cullMode, m_SceneUniformBuffer, m_SkinUniformBuffer,
 			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr,
 			objectBinding >= 0, instanceBinding >= 0, instanceDrawBinding >= 0 ? m_InstanceDrawBuffer : nullptr,
 			skinPaletteBinding >= 0, skinDrawBinding >= 0 ? m_SkinDrawBuffer : nullptr);
@@ -296,7 +302,7 @@ namespace Dingo
 			.SetShader(m_Params.Shader)
 			.SetFramebuffer(framebuffer)
 			.SetVertexLayout(layout)
-			.SetCullMode(m_Params.CullMode)
+			.SetCullMode(cullMode)
 			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
 			.SetFillMode(m_Params.FillMode)
 			.SetBlendMode(m_Params.BlendMode)

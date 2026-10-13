@@ -43,3 +43,4 @@ project "Candlewick"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

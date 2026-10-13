@@ -43,3 +43,4 @@ project "EchoVault"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

@@ -21,17 +21,9 @@ namespace Dingo
 
 	namespace
 	{
-		// Resolves the "rest of the buffer" default. The stride has to come from the buffer's own
-		// format: assuming uint16 on a uint32 index buffer asks for twice the indices that
-		// exist.
 		uint32_t ResolveIndexCount(GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t firstIndex = 0)
 		{
-			if (indexCount != 0)
-				return indexCount;
-
-			const uint64_t stride = indexBuffer->GetIndexFormat() == IndexFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
-			const uint64_t total = indexBuffer->GetByteSize() / stride;
-			return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
+			return indexCount != 0 ? indexCount : Renderer::GetIndexCount(indexBuffer, firstIndex);
 		}
 	}
 
@@ -589,7 +581,7 @@ namespace Dingo
 	***		DRAW — Material							***
 	**************************************************/
 
-	RenderPass* Renderer::PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target)
+	RenderPass* Renderer::PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target, CullMode cullMode)
 	{
 		// The UBO is volatile: it must be written into every frame that binds it, not only when it changed.
 		if (Internal::MaterialAccess::GetUniformBuffer(material) && Internal::MaterialAccess::NeedsUniformUpload(material, s_Data->FrameIndex))
@@ -599,11 +591,16 @@ namespace Dingo
 			Internal::MaterialAccess::MarkUniformUploaded(material, s_Data->FrameIndex);
 		}
 
-		RenderPass* renderPass = Internal::MaterialAccess::GetOrCreateRenderPass(material, layout, target);
+		RenderPass* renderPass = Internal::MaterialAccess::GetOrCreateRenderPass(material, layout, target, cullMode);
 		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
 	}
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
+	{
+		DrawIndexed(material, material->GetParams().CullMode, layout, vertexBuffer, indexBuffer, indexCount, instanceCount, firstIndex);
+	}
+
+	void Renderer::DrawIndexed(Material* material, CullMode cullMode, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
 	{
 		if (s_Data->FrameSkipped)
 			return;
@@ -611,7 +608,7 @@ namespace Dingo
 		indexCount = ResolveIndexCount(indexBuffer, indexCount, firstIndex);
 
 		Framebuffer* target = GetCurrentTarget();
-		if (!PrepareMaterial(material, layout, target))
+		if (!PrepareMaterial(material, layout, target, cullMode))
 			return;
 
 		BindTarget(target);
@@ -626,7 +623,7 @@ namespace Dingo
 			return;
 
 		Framebuffer* target = GetCurrentTarget();
-		if (!PrepareMaterial(material, VertexLayout(), target))
+		if (!PrepareMaterial(material, VertexLayout(), target, material->GetParams().CullMode))
 			return;
 
 		BindTarget(target);
@@ -643,6 +640,18 @@ namespace Dingo
 	/**************************************************
 	***		QUERIES									***
 	**************************************************/
+
+	uint32_t Renderer::GetIndexCount(GraphicsBuffer* indexBuffer, uint32_t firstIndex)
+	{
+		if (!indexBuffer)
+			return 0;
+
+		// The stride has to come from the buffer's own format: assuming uint16 on a uint32 index buffer
+		// asks for twice the indices that exist.
+		const uint64_t stride = indexBuffer->GetIndexFormat() == IndexFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
+		const uint64_t total = indexBuffer->GetByteSize() / stride;
+		return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
+	}
 
 	Internal::CommandList* Renderer::GetCommandList()
 	{

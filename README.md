@@ -39,8 +39,8 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 
 ## Roadmap
 
-Currently at **v0.8.3**, which closes every open bug issue, from animation event ranges to Vulkan frame ordering, and adds what *Headstone* asked for: text that turns and keeps its z, scenes rendered into textures, saving textures as PNGs, and gamepad rumble. Before it, v0.8.2 let DirectX 12 start on a machine without a GPU and v0.8.1 fixed back-face culling for custom materials. All three sit on v0.8.0: the animation engine work (skinned models, an animator with blending, layers and timeline events, joint sockets, and in-place model hot-reload) and its example game, *Marionette*. Before it, v0.7.0 shipped the lighting engine and *Candlewick*, v0.7.1 the transform hierarchy, and v0.7.2 a choice to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
-[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1–v0.7.2, v0.8.1–v0.8.3) and what each
+Currently at **v0.9.1**, which builds and runs the engine and every example on Linux, ships each game as one encrypted `.dpak` package, and takes the rest of what *Headstone* asked for: runtime VSync, audio buses, fog, translucent 3D materials, physics sensors and query filters, root motion and animation event payloads. It also closes every open bug issue since v0.9.0. That sits on v0.9.0: cascaded and local shadows, a post chain with tone mapping, bloom and AO, and GPU particles, shown in the *Candlewick* and *Marionette* upgrades. Before them, v0.8.3 closed every open bug issue and added text rotation, scenes rendered into textures and gamepad rumble, v0.8.2 let DirectX 12 start on a machine without a GPU and v0.8.1 fixed back-face culling for custom materials. All three sit on v0.8.0: the animation engine work (skinned models, an animator with blending, layers and timeline events, joint sockets, and in-place model hot-reload) and its example game, *Marionette*. Before it, v0.7.0 shipped the lighting engine and *Candlewick*, v0.7.1 the transform hierarchy, and v0.7.2 a choice to keep updating in the background (`UpdateInBackground`). Every milestone ships with an example game that exercises it — see
+[ROADMAP.md](ROADMAP.md) for the full plan, the point releases (v0.4.1–v0.4.3, v0.5.1, v0.6.1–v0.6.3, v0.7.1–v0.7.2, v0.8.1–v0.8.3, v0.9.1) and what each
 example is built to demonstrate.
 
 | Version | Milestone | Example game | Status |
@@ -55,6 +55,7 @@ example is built to demonstrate.
 | v0.7.1 | Transform Hierarchy — parent-child transforms in 3D and 2D, world-space rendering, lights, audio and physics | `DungeonCrawler3D`, `EchoVault` | shipped |
 | v0.8 | Animation & Character Fidelity — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
 | **v0.9** | **Shadows, Post-processing & VFX** — cascaded and local shadows, tone mapping, bloom, AO, GPU particles | `Candlewick`, `Marionette` upgrades | shipped |
+| v0.9.1 | Linux & Asset Packing — the engine and every example on Linux, games shipped as one encrypted `.dpak`, *Headstone*'s requests | every example | shipped |
 | v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Hearthvale* (full release) | planned |
 
 **Shipped out of band**: **scripting** (C# or Lua) and **networking/multiplayer** are optional

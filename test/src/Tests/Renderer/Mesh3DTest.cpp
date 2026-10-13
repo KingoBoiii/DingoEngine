@@ -223,7 +223,7 @@ namespace Dingo
 		{
 			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 18);
 		});
-		render("DrawIndexed with indexCount 0 from firstIndex 18 draws the rest of the buffer", 0.0f, k_Bright, [this]
+		render("DrawIndexed with indexCount 0 from firstIndex 18 starts at the last quad", 0.0f, k_Bright, [this]
 		{
 			Renderer::DrawIndexed(m_CheckOpaque, m_Layout, m_CheckVB, m_CheckIB, 0, 1, 18);
 		});
@@ -263,6 +263,17 @@ namespace Dingo
 			const uint32_t inward = CountInwardTriangles(*sphere);
 			Check(inward == 0, std::format("CreateSphere({}, {}) winds every triangle outward ({} inward)", detail.x, detail.y, inward));
 		}
+
+		// A draw that reads past the buffer looks the same as one that doesn't (out-of-range indices read
+		// as 0 on D3D), so the "rest of the buffer" count is checked as a number.
+		const uint32_t rest[] = { Renderer::GetIndexCount(m_CheckIB), Renderer::GetIndexCount(m_CheckIB, 18), Renderer::GetIndexCount(m_CheckIB, 24), Renderer::GetIndexCount(m_CheckIB, 30) };
+		Check(rest[0] == 24 && rest[1] == 6 && rest[2] == 0 && rest[3] == 0,
+			std::format("GetIndexCount counts a Uint32 buffer from firstIndex to its end (0, 18, 24, 30: {}, {}, {}, {})", rest[0], rest[1], rest[2], rest[3]));
+		const uint16_t shortIndices[] = { 0, 1, 2, 2, 3, 0 };
+		GraphicsBuffer* shortBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(shortIndices), IndexFormat::Uint16, shortIndices, BufferUpload::Direct, "Mesh3D_CheckIB16");
+		const uint32_t shortRest = Renderer::GetIndexCount(shortBuffer, 2);
+		DestroyAndDelete(shortBuffer);
+		Check(shortRest == 4, std::format("GetIndexCount counts a Uint16 buffer by its own stride (from 2: {})", shortRest));
 	}
 
 	void Mesh3DTest::UploadMesh(Mesh* mesh)

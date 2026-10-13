@@ -1,4 +1,5 @@
 #include <DingoEngine/EntryPoint.h>
+#include <DingoPackKey.h>
 
 #include "BreakoutLayer.h"
 
@@ -46,6 +47,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
 		},
+		.Assets = Dingo::AssetManagerParams().SetPackageKey(Dingo::Generated::GetPackageKey()),
 		.EnableImGui = true,
 	};
 

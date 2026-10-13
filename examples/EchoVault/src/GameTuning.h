@@ -61,14 +61,14 @@ namespace Dingo
 	inline constexpr glm::vec4 COLOR_TEXT_DIM  = { 0.62f, 0.66f, 0.80f, 1.0f };
 
 	// --- Audio asset paths ------------------------------------------------------
-	inline constexpr const char* AUDIO_ORB       = "assets/audio/orb_chime.wav";
-	inline constexpr const char* AUDIO_HUM       = "assets/audio/platform_hum.wav";
-	inline constexpr const char* AUDIO_AMBIENT   = "assets/audio/ambient_pad.wav";
-	inline constexpr const char* AUDIO_FOOTSTEP  = "assets/audio/footstep.wav";
-	inline constexpr const char* AUDIO_PICKUP    = "assets/audio/pickup.wav";
-	inline constexpr const char* AUDIO_JUMP      = "assets/audio/jump.wav";
-	inline constexpr const char* AUDIO_DETECTION = "assets/audio/detection.wav";
-	inline constexpr const char* AUDIO_WIN       = "assets/audio/win.wav";
+	inline constexpr const char* AUDIO_ORB       = "audio/orb_chime.wav";
+	inline constexpr const char* AUDIO_HUM       = "audio/platform_hum.wav";
+	inline constexpr const char* AUDIO_AMBIENT   = "audio/ambient_pad.wav";
+	inline constexpr const char* AUDIO_FOOTSTEP  = "audio/footstep.wav";
+	inline constexpr const char* AUDIO_PICKUP    = "audio/pickup.wav";
+	inline constexpr const char* AUDIO_JUMP      = "audio/jump.wav";
+	inline constexpr const char* AUDIO_DETECTION = "audio/detection.wav";
+	inline constexpr const char* AUDIO_WIN       = "audio/win.wav";
 
 	inline float DistanceXZ(const glm::vec3& a, const glm::vec3& b)
 	{

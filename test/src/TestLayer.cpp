@@ -16,6 +16,7 @@
 #include "Tests/Renderer2D/CircleTest.h"
 
 #include "Tests/Asset/AssetManagerTest.h"
+#include "Tests/Asset/PackTest.h"
 
 #include "Tests/Input/CursorTest.h"
 
@@ -72,6 +73,7 @@ namespace Dingo
 		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
 		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
 		m_Tests.push_back({ "Display Mode Test", [&]() { return new DisplayModeTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Pack Test", [&]() { return new PackTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))

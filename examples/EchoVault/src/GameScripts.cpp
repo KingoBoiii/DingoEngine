@@ -17,7 +17,7 @@ namespace
 		return glm::angleAxis(yawRadians, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
 
-	constexpr const char* k_UiFontPath = "assets/fonts/arialbd.ttf";
+	constexpr const char* k_UiFontPath = "fonts/arialbd.ttf";
 	constexpr float k_MenuOrthoSize = 11.0f;
 
 	// Shared UI glue for the Menu/Win/Hud overlay scripts: font load, text entity creation
@@ -765,11 +765,11 @@ namespace Dingo
 		m_Prompt.GetComponent<TextComponent>().Text = ConfirmPromptText("return to the menu");
 
 		// Win fanfare (2D one-shot).
-		std::shared_ptr<AudioClip> winClip = Application::Get().GetAudioEngine().LoadClip("assets/audio/win.wav");
+		std::shared_ptr<AudioClip> winClip = Application::Get().GetAudioEngine().LoadClip("audio/win.wav");
 		if (winClip)
 			Application::Get().GetAudioEngine().PlayOneShot(winClip, 0.9f);
 		else
-			DE_ERROR("EchoVault: failed to load 'assets/audio/win.wav'");
+			DE_ERROR("EchoVault: failed to load 'audio/win.wav'");
 	}
 
 	void WinControllerScript::OnUpdate(float)

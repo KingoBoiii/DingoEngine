@@ -6,6 +6,7 @@
 
 #include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Asset/AssetMetadata.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/Model.h"
 
 #include <atomic>
@@ -18,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Dingo
@@ -84,10 +86,20 @@ namespace Dingo
 			bool Pending = false;
 		};
 
+		struct MountedPackage
+		{
+			std::string Name;
+			VfsMountId Mount = k_InvalidVfsMount;
+			std::vector<AssetHandle> Assets;
+			// The registrations Unpackage made, which ClosePackage removes.
+			std::unordered_set<AssetHandle> Created;
+		};
+
 		struct AssetManagerData
 		{
 			AssetManagerParams Params;
 			std::filesystem::path RootDirectory;
+			VfsMountId RootMount = k_InvalidVfsMount;
 			// No mutex around LoadClip: ma_engine owns a resource manager whose job queue is
 			// multi-producer/multi-consumer, and node attachment is spinlock-guarded, so
 			// miniaudio supports initializing sounds from several threads at once. Serializing
@@ -129,6 +141,7 @@ namespace Dingo
 			std::vector<AssetHandle> WatchList;
 			std::size_t WatchCursor = 0;
 			std::unordered_map<AssetHandle, CompanionWatch> Companions;
+			std::unordered_map<PackageHandle, MountedPackage> Packages;
 		};
 
 	}

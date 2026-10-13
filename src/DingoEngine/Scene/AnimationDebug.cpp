@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Scene/AnimationDebug.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Scene/Components.h"
@@ -111,7 +112,7 @@ namespace Dingo
 					names.Entity = EntityName(registry, handle);
 					const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
 					if (skinned && skinned->Model)
-						names.Model = skinned->Model->GetFilePath().filename().string();
+						names.Model = Internal::PathToUtf8(skinned->Model->GetFilePath().filename());
 					break;
 				}
 				return names;

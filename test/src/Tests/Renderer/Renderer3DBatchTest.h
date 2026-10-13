@@ -64,6 +64,8 @@ namespace Dingo
 		Material* m_BlocklessMaterial = nullptr;
 		Mesh* m_Quad = nullptr;
 		Mesh* m_SkinnedQuad = nullptr;
+		Mesh* m_ClosedQuads = nullptr;
+		Mesh* m_SkinnedClosedQuads = nullptr;
 		std::vector<glm::mat4> m_Palette;
 		std::vector<Framebuffer*> m_CheckTargets;
 		std::vector<std::function<void()>> m_CheckSteps;

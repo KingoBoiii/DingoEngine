@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/Platform.h"
 
 namespace Dingo::Internal
@@ -37,7 +38,7 @@ namespace Dingo::Internal
 				return besideExecutable;
 
 			const std::filesystem::path perUser = Platform::GetUserDataDir("DingoEngine") / "cache" / Platform::GetExecutablePath().stem();
-			DE_CORE_WARN("Cache directory '{}' is not writable; caching in '{}' instead", besideExecutable.string(), perUser.string());
+			DE_CORE_WARN("Cache directory '{}' is not writable; caching in '{}' instead", Internal::PathToUtf8(besideExecutable), Internal::PathToUtf8(perUser));
 			return perUser;
 		}
 
@@ -50,7 +51,7 @@ namespace Dingo::Internal
 		std::error_code errorCode;
 		std::filesystem::create_directories(s_BaseDirectory, errorCode);
 		if (errorCode)
-			DE_CORE_ERROR("Failed to create cache directory '{}': {}", s_BaseDirectory.string(), errorCode.message());
+			DE_CORE_ERROR("Failed to create cache directory '{}': {}", Internal::PathToUtf8(s_BaseDirectory), errorCode.message());
 	}
 
 	void CacheManager::Shutdown()

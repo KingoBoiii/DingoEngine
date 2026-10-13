@@ -1,6 +1,8 @@
 #include "depch.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/FileReaders.h"
+#include "DingoEngine/Core/PathText.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -18,25 +20,22 @@
 namespace Dingo
 {
 
+	std::optional<std::vector<uint8_t>> FileSystem::ReadFileBytes(const std::filesystem::path& filepath)
+	{
+		return VirtualFileSystem::ReadBytes(filepath);
+	}
+
 	std::string Internal::ReadTextFile(const std::filesystem::path& path)
 	{
-		std::ifstream file(path, std::ios::ate | std::ios::binary);
-		if (!file.is_open())
+		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(path);
+		if (!bytes)
 		{
-			DE_CORE_ERROR("Failed to open file: {}", path.string());
+			DE_CORE_ERROR("Failed to open file: {}", Internal::PathToUtf8(path));
 			return "";
 		}
-
-		size_t fileSize = file.tellg();
-		std::string buffer(fileSize, '\0');
-
-		file.seekg(0);
-		file.read(buffer.data(), fileSize);
-		file.close();
-
-		return buffer;
+		return std::string(bytes->begin(), bytes->end());
 	}
-	
+
 	namespace
 	{
 
@@ -48,28 +47,16 @@ namespace Dingo
 
 	const uint8_t* Internal::ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
 	{
-		std::scoped_lock lock(s_StbMutex);
-
-		stbi_set_flip_vertically_on_load(flipVertically);
-
-		int32_t widthTemp, heightTemp, channelsTemp;
-		uint8_t* data = stbi_load(filepath.string().c_str(), &widthTemp, &heightTemp, &channelsTemp, forceRGBA ? STBI_rgb_alpha : STBI_default);
-		if (!data)
+		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
+		if (!bytes || bytes->empty())
 		{
-			DE_CORE_ERROR("Failed to load image: {}", filepath.string());
+			DE_CORE_ERROR("Failed to load image: {}", Internal::PathToUtf8(filepath));
 			return nullptr;
 		}
-
-		*width = static_cast<uint32_t>(widthTemp);
-		*height = static_cast<uint32_t>(heightTemp);
-		*channels = static_cast<uint32_t>(channelsTemp);
-
-		if (forceRGBA)
-		{
-			*channels = 4; // Ensure channels is set to 4 if we forced RGBA
-		}
-
-		return data;
+		const uint8_t* pixels = ReadImageFromMemory(bytes->data(), bytes->size(), width, height, channels, flipVertically, forceRGBA);
+		if (!pixels)
+			DE_CORE_ERROR("Failed to load image: {}", Internal::PathToUtf8(filepath));
+		return pixels;
 	}
 
 	const uint8_t* Internal::ReadImageFromMemory(const void* bytes, size_t size, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
@@ -121,7 +108,7 @@ namespace Dingo
 	{
 		if (!pixels || width == 0 || height == 0 || channels < 1 || channels > 4)
 		{
-			DE_CORE_ERROR("WriteImage: nothing to write to {} ({}x{}, {} channels).", filepath.string(), width, height, channels);
+			DE_CORE_ERROR("WriteImage: nothing to write to {} ({}x{}, {} channels).", Internal::PathToUtf8(filepath), width, height, channels);
 			return false;
 		}
 
@@ -145,7 +132,7 @@ namespace Dingo
 			bytes.insert(bytes.end(), static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size);
 		};
 
-		std::string extension = filepath.extension().string();
+		std::string extension = Internal::PathToUtf8(filepath.extension());
 		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
 		const int w = static_cast<int>(width), h = static_cast<int>(height), c = static_cast<int>(channels);
@@ -164,7 +151,7 @@ namespace Dingo
 			file.open(filepath, std::ios::binary | std::ios::trunc);
 		if (!encodedOk || !file.is_open())
 		{
-			DE_CORE_ERROR("WriteImage: failed to write {}", filepath.string());
+			DE_CORE_ERROR("WriteImage: failed to write {}", Internal::PathToUtf8(filepath));
 			return false;
 		}
 
@@ -172,10 +159,25 @@ namespace Dingo
 		file.close();
 		if (file.fail())
 		{
-			DE_CORE_ERROR("WriteImage: failed to write {}", filepath.string());
+			DE_CORE_ERROR("WriteImage: failed to write {}", Internal::PathToUtf8(filepath));
 			return false;
 		}
 		return true;
+	}
+
+	std::string FileSystem::PathToUtf8(const std::filesystem::path& path)
+	{
+		return Internal::PathToUtf8(path);
+	}
+
+	std::string FileSystem::PathToGenericUtf8(const std::filesystem::path& path)
+	{
+		return Internal::PathToGenericUtf8(path);
+	}
+
+	std::filesystem::path FileSystem::PathFromUtf8(std::string_view text)
+	{
+		return Internal::PathFromUtf8(text);
 	}
 
 }

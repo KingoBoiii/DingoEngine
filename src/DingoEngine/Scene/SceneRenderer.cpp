@@ -71,7 +71,7 @@ namespace Dingo
 
 			m_Renderer3D->BeginScene(scene.GetCameraViewProjection(perspectiveCamera, aspect));
 			m_Renderer3D->Clear(clearColor);
-			scene.SubmitLights(*m_Renderer3D, shadowProbes);
+			scene.SubmitLights(*m_Renderer3D, perspectiveCamera, shadowProbes);
 			scene.RenderEntities3D(*m_Renderer3D);
 			m_Renderer3D->EndScene();
 

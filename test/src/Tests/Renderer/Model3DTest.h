@@ -56,7 +56,7 @@ namespace Dingo
 		float m_RotationSpeed = 30.0f;
 		bool  m_AutoRotate    = true;
 
-		char m_PathBuf[512] = "assets/models/Duck/Duck.gltf";
+		char m_PathBuf[512] = "models/Duck/Duck.gltf";
 	};
 
 }

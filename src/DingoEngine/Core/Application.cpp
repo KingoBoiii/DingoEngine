@@ -213,20 +213,11 @@ namespace Dingo
 			m_Renderer2D = nullptr;
 		}
 
-		// The window must outlive its swap chain: a Vulkan surface must go first, and a DXGI back
-		// buffer the compositor still holds is never released once its window is gone.
 		if (m_SwapChain)
 		{
 			m_SwapChain->Destroy();
 			delete m_SwapChain;
 			m_SwapChain = nullptr;
-		}
-
-		if (m_Window)
-		{
-			m_Window->Shutdown();
-			delete m_Window;
-			m_Window = nullptr;
 		}
 
 		if (m_GraphicsContext)
@@ -236,7 +227,18 @@ namespace Dingo
 			m_GraphicsContext = nullptr;
 		}
 
+		// Last: glfwTerminate closes the X connection, which Mesa's X11 swap chain still
+		// talks to while it is destroyed (X errors, crashes and hangs on close otherwise).
+		if (m_Window)
+		{
+			m_Window->Shutdown();
+			delete m_Window;
+			m_Window = nullptr;
+		}
+
 		Internal::CacheManager::Shutdown();
+
+		DE_CORE_INFO("Shut down.");
 	}
 
 	void Application::OnEvent(Event& e)
@@ -400,6 +402,8 @@ namespace Dingo
 			RunPostExecutionCallbacks();
 		}
 
+		DE_CORE_INFO("Shutting down.");
+
 		// Here rather than in Destroy(): that runs from ~Application, where the derived
 		// class is already gone and the call would reach only the empty base hook.
 		OnDestroy();
@@ -489,6 +493,7 @@ namespace Dingo
 
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)
 	{
+		DE_CORE_INFO("Window close requested.");
 		m_IsRunning = false; // Stop the application loop
 		return true;
 	}

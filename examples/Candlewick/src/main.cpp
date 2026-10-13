@@ -1,4 +1,5 @@
 #include <DingoEngine/EntryPoint.h>
+#include <DingoPackKey.h>
 #include <DingoEngine/Core/Platform.h>
 
 #include "CandlewickLayer.h"
@@ -92,6 +93,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.GraphicsAPI = ParseGraphicsAPI(args),
 		},
 		.Assets = AssetManagerParams()
+			.SetPackageKey(Dingo::Generated::GetPackageKey())
 			.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or("assets")),
 		.EnableImGui = false,
 	};

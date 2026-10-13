@@ -154,10 +154,23 @@ fog.MaxOpacity = 1.0f;          // the most fog a pixel gets, 0..1
 renderer.SetFog(fog);           // before EndScene, like a light
 ```
 
-In the ECS, add a `FogComponent` to any entity (it has the same fields, plus `Enabled` and
-`UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` so the fog meets
-the cleared background). `Scene::SubmitLights` passes the first enabled one, in entity order, to
-`SetFog`; another enabled one warns once.
+In the ECS, add a `FogComponent` to any entity. It holds a `Fog Settings`, passed on as it is, plus
+`Enabled` and `UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` in
+place of `Settings.Color` so the fog meets the cleared background. `Scene::SubmitLights` passes one
+of them to `SetFog`:
+
+1. an enabled `FogComponent` on the camera entity passed in. The `SceneRenderer` passes
+   its perspective camera, and a custom pass passes its own with `SubmitLights(renderer, camera)`.
+   A second camera, such as a security monitor or a cutscene camera, can then see more or less fog
+   than the player's view;
+2. otherwise the first enabled one, in entity order, on an entity without a `CameraComponent`: the
+   scene-wide fog, so another camera's fog never fogs this view;
+3. otherwise, only in a pass that names no camera, the first enabled one on a camera's entity, so a
+   scene whose only fog sits on its one camera stays fogged in a custom pass calling
+   `SubmitLights(renderer)`. A view whose camera is named never takes another camera's fog: with
+   no fog of its own and none scene-wide, it has none.
+
+More than one candidate at step 2 (or, with none there, at step 3) warns once.
 
 - **Scene-scoped**, like lights: `EndScene` clears it, so set it every frame you want it.
   `ClearFog()` drops it before then.
@@ -170,10 +183,14 @@ the cleared background). `Scene::SubmitLights` passes the first enabled one, in 
   before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
   fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the
   background is the clear colour, not fog: match the two, as `UseClearColor` does.
+- **Blend modes:** a lit material with `BlendMode::Additive` fogs toward black and one with
+  `BlendMode::Multiply` toward white, so the fog hides a glow instead of lighting it up; `Alpha` and
+  `Opaque` fog toward the fog's colour.
 - `Renderer3D::Statistics::Fogged` says whether the last scene was drawn with fog.
 
 The Lighting Test's `--fog` (or its Fog checkbox) fogs every mode into the clear colour, and its
-checks read back the fog factor on a black wall for each mode.
+checks read back the fog factor on a black wall for each mode, and which `FogComponent` a camera's
+view takes.
 
 ## The light budget
 
@@ -420,7 +437,8 @@ pass, after every opaque mesh, static and skinned:
 - **It writes no depth**, whatever `DepthWrite` says, but it is depth-tested, so an opaque mesh in
   front still hides it. It blends with the material's `BlendMode` (alpha "over" by default;
   `BlendMode::Additive` for glows).
-- **Meshes are sorted far to near** by the centre of their transformed vertices: by distance from a
+- **Meshes are sorted far to near** by the centre of their bounds (`Mesh::GetBoundsMin/Max`),
+  transformed: by distance from a
   perspective camera, along the view for an orthographic one. Meshes at the same distance keep their
   submission order, so a still scene never flickers. Consecutive meshes of one material share a draw
   (`Statistics::TranslucentDraws`, of `TranslucentMeshes`); materials that alternate in depth take
@@ -428,16 +446,24 @@ pass, after every opaque mesh, static and skinned:
 - **Skinned meshes join the sort** when their material is translucent, by the centre of their rest
   bounds; an instance's translucent meshes (a model's submeshes) share the first one's place. A model whose visor is translucent and body opaque draws the body with the opaque meshes and
   the visor in this pass, uploading its joints for each.
+- **Both sides of a two-sided mesh** (`CullMode::None`, which every lit material has) draw far side
+  first: a static mesh's triangles facing away from the camera (by their vertex normals, so a mirrored
+  transform is no exception) go ahead of the rest in the same draw, and a skinned mesh draws twice,
+  culling its near side and then its far side (two `TranslucentDraws`). A material that culls draws as
+  it is.
 - **Shadows:** a translucent mesh still casts a full shadow (`ShadowCasting::Off` turns it off), for
   the lights its `ShadowGroups` share a bit with, as an opaque mesh does; one with `ShadowsOnly` draws
   nothing lit and batches like an opaque mesh.
-- **Particles** draw after this pass, so they show over glass. With the post chain, ambient occlusion
-  is applied before it, so glass isn't darkened by the corners behind it.
+- **Particles** draw after this pass and never join its sort, so a particle *behind* glass still
+  draws over it: an alpha particle hides the glass's tint, an additive one skips its dimming. Glass
+  writes no depth, so nothing stops them. With the post chain, ambient occlusion is applied before
+  both, so neither is darkened by the corners behind it.
 
 The sort is per mesh, not per triangle. Meshes that intersect, a large mesh around a smaller one
-(a water plane under a boat, say), or the faces of one mesh seen through each other (a closed lit mesh
-draws both faces) can blend in the wrong order. Split large translucent surfaces into pieces, or keep
-them convex and their alpha low.
+(a water plane under a boat, say), or the faces of a concave mesh seen through each other on one side
+(two fingers of a hand) can blend in the wrong order. Split large translucent surfaces into pieces, or
+keep them convex and their alpha low. The far side is lit with its outward normal, as an opaque
+two-sided mesh's would be.
 
 ## Custom material shaders
 
@@ -522,6 +548,8 @@ and a copy of it is embedded in the engine library at build time.
 - **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
   orthographic camera ([Fog](#fog)).
 - **Translucency is sorted per mesh**, not per triangle or pixel ([Translucent materials](#translucent-materials)).
+- **Particles draw over translucent meshes**, even from behind them, since they aren't in the
+  translucent sort ([Translucent materials](#translucent-materials)).
 
 ## Migrating from v0.6
 

@@ -95,6 +95,7 @@ namespace Dingo
 		Material* m_RowMaterials[k_RoughnessSteps] = {};
 		Material* m_LampMaterial = nullptr;
 		Material* m_CrateMaterial = nullptr;
+		Material* m_FogGlowMaterials[2] = {}; // additive, multiply
 		AssetHandle m_CrateTexture;
 		bool m_Specular = true;
 

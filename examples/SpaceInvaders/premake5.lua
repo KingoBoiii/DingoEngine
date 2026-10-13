@@ -43,3 +43,4 @@ project "SpaceInvaders"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

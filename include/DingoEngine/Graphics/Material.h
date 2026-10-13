@@ -213,6 +213,8 @@ namespace Dingo
 
 		// Returns (or lazily creates) a baked RenderPass for the given vertex layout and framebuffer.
 		RenderPass* GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer);
+		// The same with another cull mode than the material's own, cached beside its own passes.
+		RenderPass* GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode);
 
 		friend struct Internal::MaterialAccess;
 

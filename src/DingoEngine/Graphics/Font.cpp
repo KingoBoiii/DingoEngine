@@ -1,7 +1,10 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Asset/AssetPath.h"
 
 #undef INFINITE
@@ -69,27 +72,9 @@ namespace Dingo
 		inline static std::filesystem::path GetCacheFilePath(const std::string& name, const std::filesystem::path& fontPath)
 		{
 			std::filesystem::path cachePath = Internal::CacheManager::GetCacheDirectory("fonts/atlas");
-			const std::string pathKey = fontPath.generic_string();
+			// The logical key, not the absolute path, so a cache survives the game moving.
+			const std::string pathKey = VirtualFileSystem::GetLogicalKey(fontPath);
 			return cachePath / std::format("{}-{:016x}.dfa", SanitizeFileName(name), HashFNV1a(pathKey.data(), pathKey.size()));
-		}
-
-		inline static std::vector<uint8_t> ReadFileBytes(const std::filesystem::path& filePath)
-		{
-			std::error_code ec;
-			const uintmax_t fileSize = std::filesystem::file_size(filePath, ec);
-			if (ec)
-				return {};
-
-			std::ifstream stream(filePath, std::ios::binary);
-			if (!stream)
-				return {};
-
-			std::vector<uint8_t> bytes(static_cast<size_t>(fileSize));
-			stream.read((char*)bytes.data(), bytes.size());
-			if (static_cast<uintmax_t>(stream.gcount()) != fileSize)
-				return {};
-
-			return bytes;
 		}
 
 		// Hash of the font file's bytes plus every parameter that changes the pixels the
@@ -147,7 +132,7 @@ namespace Dingo
 			std::ofstream stream(filePath, std::ios::binary | std::ios::trunc);
 			if (!stream)
 			{
-				DE_CORE_ERROR_TAG("Font", "Failed to cache font atlas to {}", filePath.string());
+				DE_CORE_ERROR_TAG("Font", "Failed to cache font atlas to {}", Internal::PathToUtf8(filePath));
 				return;
 			}
 
@@ -211,10 +196,10 @@ namespace Dingo
 		// One read of the file, shared by the source hash and FreeType. It has to outlive
 		// InitializeFontData: FT_New_Memory_Face borrows the buffer rather than copying it,
 		// and only releases it when that function destroys the font.
-		const std::vector<uint8_t> fontData = Utils::ReadFileBytes(m_FilePath);
+		const std::vector<uint8_t> fontData = FileSystem::ReadFileBytes(m_FilePath).value_or(std::vector<uint8_t>());
 		if (fontData.empty())
 		{
-			DE_CORE_ERROR("Failed to read font file: {}", m_FilePath.string());
+			DE_CORE_ERROR("Failed to read font file: {}", Internal::PathToUtf8(m_FilePath));
 			return false;
 		}
 
@@ -226,7 +211,7 @@ namespace Dingo
 			return false;
 		}
 
-		m_Name = m_Params.Name.empty() ? m_FilePath.stem().string() : m_Params.Name;
+		m_Name = m_Params.Name.empty() ? Internal::PathToUtf8(m_FilePath.stem()) : m_Params.Name;
 
 		const std::filesystem::path cacheFilePath = Utils::GetCacheFilePath(m_Name, m_FilePath);
 		const uint64_t sourceHash = Utils::ComputeFontSourceHash(fontData, m_Params);
@@ -234,7 +219,7 @@ namespace Dingo
 		std::vector<uint8_t> pixelData;
 		if (Utils::ReadCachedAtlas(cacheFilePath, sourceHash, static_cast<uint32_t>(width), static_cast<uint32_t>(height), pixelData))
 		{
-			DE_CORE_INFO("Loading cached font atlas from {}", cacheFilePath.string());
+			DE_CORE_INFO("Loading cached font atlas from {}", Internal::PathToUtf8(cacheFilePath));
 			m_AtlasTexture = Texture::CreateFromData(width, height, (void*)pixelData.data(), TextureFormat::RGBA8_UNORM);
 		}
 		else
@@ -335,7 +320,7 @@ namespace Dingo
 		msdfgen::FontHandle* font = msdfgen::loadFontData(ft, reinterpret_cast<const msdfgen::byte*>(fontData), static_cast<int>(fontDataSize));
 		if (!font)
 		{
-			DE_CORE_ERROR("Failed to load font: {}", m_FilePath.string());
+			DE_CORE_ERROR("Failed to load font: {}", Internal::PathToUtf8(m_FilePath));
 			msdfgen::deinitializeFreetype(ft);
 			return false;
 		}

@@ -32,7 +32,7 @@ namespace Dingo
 				return texture;
 			}
 
-			DE_ERROR("Flappy Bird: failed to load texture '{}'; using a blank one.", path.string());
+			DE_ERROR("Flappy Bird: failed to load texture '{}'; using a blank one.", FileSystem::PathToUtf8(path));
 			uint32_t whitePixel = 0xffffffff;
 			return Texture::CreateFromData(1, 1, &whitePixel, TextureFormat::RGBA, "Flappy Bird Fallback");
 		}
@@ -50,15 +50,15 @@ namespace Dingo
 
 		m_ProjectionViewMatrix = glm::ortho(orthoLeft, orthoRight, orthoBottom, orthoTop, m_OrthographicNear, m_OrthographicFar);
 
-		m_BackgroundTexture = Utils::LoadTextureOrFallback("assets/sprites/background-day.png");
-		m_GroundTexture = Utils::LoadTextureOrFallback("assets/sprites/base.png");
-		m_PipeTexture = Utils::LoadTextureOrFallback("assets/sprites/pipe-green.png");
-		m_BirdTexture = Utils::LoadTextureOrFallback("assets/sprites/yellowbird-midflap.png");
+		m_BackgroundTexture = Utils::LoadTextureOrFallback("sprites/background-day.png");
+		m_GroundTexture = Utils::LoadTextureOrFallback("sprites/base.png");
+		m_PipeTexture = Utils::LoadTextureOrFallback("sprites/pipe-green.png");
+		m_BirdTexture = Utils::LoadTextureOrFallback("sprites/yellowbird-midflap.png");
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 		if (!m_Font)
 		{
-			DE_ERROR("Flappy Bird: failed to load font 'assets/fonts/arialbd.ttf'; on-screen text will not be rendered.");
+			DE_ERROR("Flappy Bird: failed to load font 'fonts/arialbd.ttf'; on-screen text will not be rendered.");
 		}
 
 		// Ground aspect ratio

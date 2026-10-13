@@ -108,13 +108,18 @@ namespace Dingo
 		// custom 3D drawing inside one Begin/EndScene.
 		void RenderEntities3D(Renderer3D& renderer);
 
-		// Submits the scene's light components and its FogComponent to the renderer (no
-		// BeginScene/EndScene), for custom 3D passes the same way as RenderEntities3D. A scene
-		// without a single light component gets a default DirectionalLightComponent. With
-		// shadowProbes, the scene's pending GetLightVisibility questions go out with this pass,
-		// answered from its camera's shadows; a secondary view (a minimap) passes false and leaves
-		// them to the main view.
+		// Submits the scene's light components and its fog to the renderer (no BeginScene/EndScene),
+		// for custom 3D passes the same way as RenderEntities3D. A scene without a single light
+		// component gets a default DirectionalLightComponent. The fog is the first enabled
+		// FogComponent in entity order on an entity without a CameraComponent, else the first on one
+		// with. With shadowProbes, the scene's pending GetLightVisibility questions go out with this
+		// pass, answered from its camera's shadows; a secondary view (a minimap) passes false and
+		// leaves them to the main view.
 		void SubmitLights(Renderer3D& renderer, bool shadowProbes = true);
+		// The same for the view of `camera` (the SceneRenderer passes its perspective camera): an
+		// enabled FogComponent on the entity passed fogs this view in place of the scene's, and a
+		// FogComponent on any other camera's entity never does. An invalid camera is no camera.
+		void SubmitLights(Renderer3D& renderer, Entity camera, bool shadowProbes = true);
 
 		// How much of a light component's light reaches `point` past the shadows the scene draws: 1
 		// lit, 0 in its shadow (ShadowStrength of the way). The renderer's own shadow lookup works it

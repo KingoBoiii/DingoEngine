@@ -327,8 +327,10 @@ namespace Dingo
 		// mesh sorted far to near by the centre of its transformed vertices (along the view for an
 		// orthographic camera; ties keep submission order), consecutive meshes of one material in one
 		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
-		// wrapped around a small one, can blend in the wrong order. With ShadowsOnly it draws nothing
-		// lit, so it batches like an opaque mesh.
+		// wrapped around a small one, can blend in the wrong order. A two-sided material's mesh
+		// (CullMode::None: every lit material) puts its triangles facing away from the camera first, so
+		// its far side never blends over its near side. With ShadowsOnly it draws nothing lit, so it
+		// batches like an opaque mesh.
 		//
 		// A surface, when given, replaces the lit material's emissive, roughness and specular for this
 		// mesh alone (copied at the call), so meshes that differ only in those share one material's
@@ -375,7 +377,8 @@ namespace Dingo
 		// Opaque skinned meshes draw after every opaque static batch. With a translucent material a
 		// skinned mesh joins the translucent pass, sorted by the centre of its rest bounds placed with
 		// transform (an instance's translucent meshes share the first one's), so it blends with translucent
-		// static meshes in depth order.
+		// static meshes in depth order. A two-sided material's mesh draws twice there, culling its near
+		// side, then its far side.
 		//
 		// A lit material (null = the default) draws through a skinned twin the renderer keeps for
 		// it. A custom material's shader needs Skinning.glsl's blocks, either DE_SkinDraw and
@@ -595,7 +598,7 @@ namespace Dingo
 		struct LitMaterialData
 		{
 			glm::vec4 EmissiveColor{ 0.0f }; // rgb = colour
-			glm::vec4 Surface{ 0.0f };       // x = emissive strength, y = roughness, z = specular
+			glm::vec4 Surface{ 0.0f };       // x = emissive strength, y = roughness, z = specular, w = fog target: 0 FogColor, 1 black, 2 white
 		};
 
 		void PrepareLitMaterial(Material* material) const;
@@ -955,6 +958,7 @@ namespace Dingo
 		std::vector<MeshChunk> m_TranslucentChunks; // storage kept from busier scenes
 		std::vector<TranslucentDraw> m_TranslucentDraws;
 		std::vector<std::pair<Dingo::Material*, bool>> m_TranslucentMaterials; // checked this scene: drawable or not
+		std::vector<uint32_t> m_TranslucentNearIndices; // PrepareTranslucentPass' scratch: a mesh's triangles facing the camera
 
 		Mesh* m_BoxMesh = nullptr;
 		Mesh* m_SphereMesh = nullptr;
@@ -1032,8 +1036,9 @@ namespace Dingo
 		void EnsureSkinningResources();
 		Material* ResolveSkinnedMaterial(Material* material);
 		void DrawSkinnedSubmissions();
-		// Draws one lit; false when it was skipped (its instance dropped, ShadowsOnly, or an unusable lit material).
-		bool DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas);
+		// Draws one lit and returns its draw count: 0 when it was skipped (its instance dropped, ShadowsOnly,
+		// or an unusable lit material), 2 for a translucent pass's two-sided material (backFacesFirst).
+		uint32_t DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas, bool backFacesFirst);
 		// Binds the instance's palette to material, uploading what this pass hasn't yet.
 		void BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
 		static bool IsSkinningShader(const Shader* shader);

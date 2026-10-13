@@ -3,6 +3,7 @@
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
+#include "DingoEngine/Graphics/Light.h"
 
 #include <array>
 #include <cmath>
@@ -34,6 +35,8 @@ namespace Dingo
 			glm::vec4 Params{ 0.0f }; // x = radius, y = intensity / radius^6, z = bias, w = power
 			glm::vec4 Target{ 0.0f }; // xy = one texel of the pass's target in UV, z = its pixels per unit at distance 1, w = 1 orthographic
 			glm::vec4 Blur{ 0.0f };   // xy = the blur's step in UV, zw = one depth texel in UV
+			glm::vec4 Fog{ 0.0f };    // the apply pass's: x = start, y = end, z = density, w = FogMode (0 = none)
+			glm::vec4 FogOpacity{ 0.0f }; // x = the fog's MaxOpacity
 		};
 
 		constexpr uint32_t k_BloomLevels = 6;
@@ -123,6 +126,8 @@ namespace Dingo
 		SceneTarget* CurrentTarget = nullptr; // into Targets, which nothing grows between Begin and End
 		PostProcessSettings Settings;
 		glm::mat4 Projection{ 1.0f };
+		glm::vec4 Fog{ 0.0f };
+		float FogOpacity = 0.0f;
 		bool HasProjection = false;
 		bool AmbientOcclusionApplied = false;
 		bool DepthCopied = false;
@@ -280,7 +285,7 @@ namespace Dingo
 			return target.DepthCopy->GetAttachment(0);
 		}
 
-		void DrawAmbientOcclusion(SceneTarget& target, const AmbientOcclusionSettings& settings, const glm::mat4& projection)
+		void DrawAmbientOcclusion(SceneTarget& target, const AmbientOcclusionSettings& settings, const glm::mat4& projection, const glm::vec4& fog, float fogOpacity)
 		{
 			DE_PROFILE_SCOPE("PostProcessStack::AmbientOcclusion");
 			Renderer::BeginGpuTimer("AO");
@@ -312,6 +317,8 @@ namespace Dingo
 
 			CopyDepth(target);
 			data.Blur = glm::vec4(0.0f, 0.0f, depthTexel);
+			data.Fog = fog;
+			data.FogOpacity = glm::vec4(fogOpacity, 0.0f, 0.0f, 0.0f);
 			SetUniformIfChanged(chain.Apply, data);
 			Internal::DrawFullscreen(chain.Apply, target.Target);
 			Renderer::EndGpuTimer();
@@ -546,6 +553,8 @@ namespace Dingo
 		data.Settings = settings;
 		data.Active = true;
 		data.HasProjection = false;
+		data.Fog = glm::vec4(0.0f);
+		data.FogOpacity = 0.0f;
 		data.AmbientOcclusionApplied = false;
 		data.DepthCopied = false;
 
@@ -582,9 +591,27 @@ namespace Dingo
 
 		// The passes sample the scene depth, so the scene target can't stay bound while they draw.
 		Framebuffer* current = Renderer::GetRenderTarget();
-		data.DrawAmbientOcclusion(*data.CurrentTarget, data.Settings.AmbientOcclusion, data.Projection);
+		data.DrawAmbientOcclusion(*data.CurrentTarget, data.Settings.AmbientOcclusion, data.Projection, data.Fog, data.FogOpacity);
 		Renderer::SetRenderTarget(current);
 		++data.Stats.AmbientOcclusionScenes;
+	}
+
+	void PostProcessStack::SetAmbientOcclusionFog(const Fog& fog)
+	{
+		Data& data = *m_Data;
+		if (!data.Active)
+			return;
+		// Renderer3D::SetFog's rules: anything it would reject would put NaN into the Multiply blend.
+		const bool known = fog.Mode == FogMode::Linear || fog.Mode == FogMode::Exponential || fog.Mode == FogMode::ExponentialSquared;
+		const bool finite = std::isfinite(fog.Start) && std::isfinite(fog.End) && std::isfinite(fog.Density) && std::isfinite(fog.MaxOpacity);
+		if (!known || !finite || fog.Density < 0.0f || (fog.Mode == FogMode::Linear && !(fog.End > fog.Start)))
+		{
+			data.Fog = glm::vec4(0.0f);
+			data.FogOpacity = 0.0f;
+			return;
+		}
+		data.Fog = glm::vec4(fog.Start, fog.End, fog.Density, static_cast<float>(fog.Mode));
+		data.FogOpacity = std::clamp(fog.MaxOpacity, 0.0f, 1.0f);
 	}
 
 	Texture* PostProcessStack::CopySceneDepth()

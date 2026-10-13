@@ -1,16 +1,13 @@
 name: Build release
 
-on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+# Disabled for now: run by hand from the Actions tab, on a release tag
+on: workflow_dispatch
 
 permissions:
   contents: write
 
 env:
   SOLUTION_FILE_PATH: 'DingoEngine.slnx'
-  PREMAKE_VERSION: '5.0.0-beta8'
 
 jobs:
   build-windows:
@@ -26,38 +23,9 @@ jobs:
         lfs: true
         fetch-depth: 0
 
-    - uses: microsoft/setup-msbuild@v1.1
+    - uses: ./.github/actions/setup-windows
       with:
-        msbuild-architecture: x64
-
-    - name: Get Vulkan SDK version
-      id: vulkan
-      run: |
-        $version = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt").Content.Trim()
-        echo "version=$version" >> $env:GITHUB_OUTPUT
-
-    - name: Cache Vulkan SDK
-      id: cache-vulkan
-      uses: actions/cache@v4
-      with:
-        path: C:\VulkanSDK\${{ steps.vulkan.outputs.version }}
-        key: vulkan-sdk-windows-${{ steps.vulkan.outputs.version }}-debug
-
-    - name: Install Vulkan SDK
-      if: steps.cache-vulkan.outputs.cache-hit != 'true'
-      run: |
-        $version = "${{ steps.vulkan.outputs.version }}"
-        $installer = "vulkansdk-windows-X64-$version.exe"
-        Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/$installer" -OutFile $installer
-        Start-Process -FilePath ".\$installer" -ArgumentList "--accept-licenses --default-answer --confirm-command install com.lunarg.vulkan.debug" -Wait
-
-    - name: Set VULKAN_SDK environment variable
-      run: echo "VULKAN_SDK=C:\VulkanSDK\${{ steps.vulkan.outputs.version }}" >> $env:GITHUB_ENV
-
-    - name: Install premake5
-      run: |
-        Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v${{env.PREMAKE_VERSION}}/premake-${{env.PREMAKE_VERSION}}-windows.zip" -OutFile premake5-windows.zip
-        Expand-Archive -Path premake5-windows.zip -DestinationPath premake5-bin -Force
+        msbuild: true
 
     - name: Get version
       id: version
@@ -77,11 +45,23 @@ jobs:
       env:
         DE_VERSION: ${{steps.version.outputs.VERSION_MAJOR}}.${{steps.version.outputs.VERSION_MINOR}}.${{steps.version.outputs.VERSION_PATCH}}
         DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
-      run: .\premake5-bin\premake5.exe vs2026
+      run: premake5 vs2026
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
+
+    # Each example ships its executable and DLLs beside <Example>.dpak (its assets, packed and
+    # encrypted with its dpak.key) and the licence files at the root of its assets, never assets\.
+    - name: Pack example assets
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        Get-ChildItem .\examples -Directory | ForEach-Object {
+          $example = $_.Name
+          $bin = ".\build\bin\Distribution-windows-x86_64\$example"
+          .\scripts\pack-assets.ps1 -Example $example -Output "$bin\$example.dpak" -Configuration Distribution
+          Get-ChildItem "$($_.FullName)\assets" -File | Where-Object { $_.Name -match 'licen[cs]e' } | Copy-Item -Destination $bin
+        }
 
     # Ship the self-contained lib (engine + all vendor libs merged by the
     # lib.exe post-build step) instead of the engine-only lib.
@@ -96,6 +76,12 @@ jobs:
     - name: Copy glm files (third-party)
       run: |
         robocopy .\vendor\glm .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\glm /e /z
+        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
+
+    - name: Copy DingoPack
+      run: |
+        $config = "${{ matrix.build-configuration }}"
+        robocopy ".\build\bin\$config-windows-x86_64\DingoPack" ".\build\bin\$config-windows-x86_64\DingoEngine\tools\DingoPack" *.exe *.dll /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
@@ -218,11 +204,6 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Copy assets
-      run: |
-        robocopy .\examples\FlappyBird\assets .\flappybird\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
-
     - name: Create ZIP archive
       run: |
         $zipName = "FlappyBird-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
@@ -267,11 +248,6 @@ jobs:
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Copy assets
-      run: |
-        robocopy .\examples\DungeonCrawler\assets .\DungeonCrawler\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
       run: |
@@ -318,11 +294,6 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Copy assets
-      run: |
-        robocopy .\examples\Breakout3D\assets .\breakout3d\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
-
     - name: Create ZIP archive
       run: |
         $zipName = "Breakout3D-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
@@ -367,11 +338,6 @@ jobs:
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Copy assets
-      run: |
-        robocopy .\examples\SpaceInvaders\assets .\space-invaders\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
       run: |
@@ -418,11 +384,6 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Copy assets
-      run: |
-        robocopy .\examples\AngryBirds\assets .\angrybirds\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
-
     - name: Create ZIP archive
       run: |
         $zipName = "AngryBirds-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
@@ -467,11 +428,6 @@ jobs:
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Copy assets
-      run: |
-        robocopy .\examples\DungeonCrawler3D\assets .\dungeoncrawler3d\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
       run: |
@@ -518,11 +474,6 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Copy assets
-      run: |
-        robocopy .\examples\EchoVault\assets .\echovault\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
-
     - name: Create ZIP archive
       run: |
         $zipName = "EchoVault-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
@@ -567,11 +518,6 @@ jobs:
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Copy assets
-      run: |
-        robocopy .\examples\ArenaShooter\assets .\arenashooter\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
       run: |
@@ -618,11 +564,6 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Copy assets
-      run: |
-        robocopy .\examples\Candlewick\assets .\candlewick\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
-
     - name: Create ZIP archive
       run: |
         $zipName = "Candlewick-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
@@ -667,11 +608,6 @@ jobs:
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Copy assets
-      run: |
-        robocopy .\examples\Marionette\assets .\marionette\assets /e /z
-        if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
     - name: Create ZIP archive
       run: |
@@ -739,6 +675,8 @@ jobs:
         cp "build/dist/$config-linux-x86_64/libDingoEngine.a" "$pkg/"
         cp -r include "$pkg/"
         cp -r vendor/glm "$pkg/glm"
+        mkdir -p "$pkg/tools"
+        cp "build/bin/$config-linux-x86_64/DingoPack/DingoPack" "$pkg/tools/"
         tar -czf "DingoEngine-${{steps.version.outputs.VERSION}}-$config-linux-x86_64.tar.gz" -C "$pkg" .
 
     - name: Upload engine to GitHub Release
@@ -752,8 +690,9 @@ jobs:
         name: dingo-engine-linux-${{matrix.build-configuration}}-${{steps.version.outputs.VERSION}}
         path: build/package/DingoEngine-${{ matrix.build-configuration }}
 
-    # Each example and the test framework as <Program>/ holding the executable beside its assets/.
-    # assimp is linked statically, so at run time they need only libvulkan1 and a Vulkan driver.
+    # Each example as <Program>/ holding the executable beside <Program>.dpak, the test framework
+    # beside its loose assets/. assimp is linked statically, so at run time they need only
+    # libvulkan1 and a Vulkan driver.
     - name: Package examples and test framework
       if: matrix.build-configuration == 'Distribution'
       run: scripts/package-linux-programs.sh Distribution build/package/programs "${{steps.version.outputs.VERSION}}"

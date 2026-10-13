@@ -20,7 +20,7 @@ namespace
 
 	using Clock = std::chrono::steady_clock;
 
-	constexpr const char* k_FoxPath = "assets/models/Fox/Fox.gltf";
+	constexpr const char* k_FoxPath = "models/Fox/Fox.gltf";
 	constexpr const char* k_HatJoint = "b_Head_05";
 	constexpr const char* k_UpperBody = "b_Spine01_02";
 	constexpr const char* k_SpeedParameter = "Speed";
@@ -326,7 +326,7 @@ void main()
 	// The reload checks edit a copy, never the test's own Fox. Empty when the copy fails.
 	std::filesystem::path CopyFox(std::string_view folder)
 	{
-		const std::filesystem::path source = std::filesystem::path(k_FoxPath).parent_path();
+		const std::filesystem::path source = Application::Get().GetAssetManager().GetRootDirectory() / std::filesystem::path(k_FoxPath).parent_path();
 		const std::filesystem::path target = std::filesystem::temp_directory_path() / "DingoAnimationTest" / folder;
 		std::error_code error;
 		std::filesystem::remove_all(target, error);

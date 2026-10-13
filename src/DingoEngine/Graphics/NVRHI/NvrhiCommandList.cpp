@@ -91,7 +91,18 @@ namespace Dingo
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading a texture.");
 		DE_CORE_ASSERT(texture, "Texture is null.");
 
-		m_CommandListHandle->writeTexture(static_cast<NvrhiTexture*>(texture)->m_Handle, 0, 0, data, rowPitch);
+		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
+		m_CommandListHandle->writeTexture(handle, 0, 0, data, rowPitch);
+
+		// NVRHI requires a binding set's states only when the bound sets change, so a draw that keeps
+		// the set bound before the upload would sample the texture as a copy destination. Committed at
+		// once, as NvrhiGraphicsBuffer::Write does, so the state is never ORed into a later one.
+		const nvrhi::TextureDesc& desc = handle->getDesc();
+		if (desc.initialState != nvrhi::ResourceStates::Unknown)
+		{
+			m_CommandListHandle->setTextureState(handle, nvrhi::AllSubresources, desc.initialState);
+			m_CommandListHandle->commitBarriers();
+		}
 	}
 
 	void NvrhiCommandList::SetFramebuffer(Framebuffer* framebuffer)

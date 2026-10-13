@@ -3,7 +3,9 @@
 #
 # Runs the unit tests, then every Dingo-TestFramework case, every example and Marionette's --check
 # from an existing build, each from its own source directory, then the test app's deliberate
-# crashes (--crash=), which must leave their report in the log. Apps that don't exit by themselves
+# crashes (--crash=), which must leave their report in the log, then Marionette's --check and
+# Candlewick packed (a copy of the executable beside its .dpak, started from elsewhere). A hung
+# app's thread stacks are dumped with gdb before it is killed. Apps that don't exit by themselves
 # are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so teardown runs too. A run
 # fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan validation error, an
 # AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR. SMOKE_TOURNAMENT=1 adds
@@ -55,7 +57,8 @@ run() {
 		sleep 1
 	done
 	if kill -0 $pid 2>/dev/null; then
-		$CLOSE $pid || true
+		local delivered=1
+		$CLOSE $pid || delivered=0
 		for ((i = 0; i < 60; i++)); do
 			kill -0 $pid 2>/dev/null || break
 			sleep 1
@@ -64,6 +67,7 @@ run() {
 			dump_threads $pid > "$log.threads"
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
+			((delivered)) || problems+=" close-not-delivered"
 		fi
 	fi
 	wait $pid
@@ -146,5 +150,18 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	fi
 fi
 
-echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check and the crash reports: $failures failed"
+# Shipped the way a release ships them: a copy of the executable beside its encrypted .dpak, no
+# assets/ anywhere, started from another directory.
+packed=$(mktemp -d)
+trap 'rm -rf "$packed"' EXIT
+mkdir -p "$packed/cwd"
+for example in Marionette Candlewick; do
+	mkdir -p "$packed/$example"
+	cp "$BIN/$example/$example" "$packed/$example/"
+	"$ROOT/scripts/pack-assets.sh" "$example" "$packed/$example/$example.dpak" "$CONFIG" > /dev/null
+done
+EXPECT_LOG="mounted package 'Marionette\\.dpak'" run "packed-marionette-check" "$packed/cwd" "$packed/Marionette/Marionette" --check
+EXPECT_LOG="mounted package 'Candlewick\\.dpak'" run "packed-candlewick" "$packed/cwd" "$packed/Candlewick/Candlewick"
+
+echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
 exit $((failures > 0))

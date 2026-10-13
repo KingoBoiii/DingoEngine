@@ -23,6 +23,10 @@ namespace
 	// quad before the near green one leaves. The other order leaves (0.5, 0.25, 0).
 	const glm::vec3 k_GreenOverRed{ 0.25f, 0.5f, 0.0f };
 
+	// A closed mesh's unlit far side (black at half alpha) drawn before its lit near side (green at
+	// half alpha). The near side first, the order the mesh lists them in, leaves (0, 0.25, 0).
+	const glm::vec3 k_NearSideOverFarSide{ 0.0f, 0.5f, 0.0f };
+
 	glm::mat4 CheckViewProjection()
 	{
 		return glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 100.0f) *
@@ -118,6 +122,16 @@ void main()
 		return differing;
 	}
 
+	// A light travelling away from the check camera, alone: a side facing the camera shows its colour,
+	// a side facing away is black.
+	void LightFromCamera(Dingo::Renderer3D& renderer)
+	{
+		renderer.SetAmbientLight(glm::vec3(0.0f), 0.0f);
+		Dingo::DirectionalLight light;
+		light.Direction = { 0.0f, 0.0f, -1.0f };
+		renderer.SubmitLight(light);
+	}
+
 	std::string Counts(const Dingo::Renderer3D::Statistics& stats)
 	{
 		return std::format("translucent {} meshes in {} draws, {} draw calls, {} submitted, {} skinned",
@@ -170,6 +184,25 @@ namespace Dingo
 			skinVertices.push_back({ vertex.Position, vertex.Normal, vertex.TexCoord, glm::u16vec4(0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f) });
 		m_Quad = Mesh::Create(vertices, indices);
 		m_SkinnedQuad = Mesh::CreateSkinned(vertices, skinVertices, indices);
+
+		// The front and back of a unit box: a quad facing +z at z = 0.5 listed before one facing -z at
+		// z = -0.5, both wound counter-clockwise seen from outside.
+		const std::vector<MeshVertex> closedVertices = {
+			{ { -0.5f, -0.5f,  0.5f }, { 0.0f, 0.0f,  1.0f }, { 0.0f, 0.0f } },
+			{ {  0.5f, -0.5f,  0.5f }, { 0.0f, 0.0f,  1.0f }, { 1.0f, 0.0f } },
+			{ {  0.5f,  0.5f,  0.5f }, { 0.0f, 0.0f,  1.0f }, { 1.0f, 1.0f } },
+			{ { -0.5f,  0.5f,  0.5f }, { 0.0f, 0.0f,  1.0f }, { 0.0f, 1.0f } },
+			{ {  0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f } },
+			{ { -0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f } },
+			{ { -0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 1.0f } },
+			{ {  0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 1.0f } },
+		};
+		const std::vector<uint32_t> closedIndices = { 0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4 };
+		std::vector<SkinnedMeshVertex> closedSkinVertices;
+		for (const MeshVertex& vertex : closedVertices)
+			closedSkinVertices.push_back({ vertex.Position, vertex.Normal, vertex.TexCoord, glm::u16vec4(0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f) });
+		m_ClosedQuads = Mesh::Create(closedVertices, closedIndices);
+		m_SkinnedClosedQuads = Mesh::CreateSkinned(closedVertices, closedSkinVertices, closedIndices);
 		m_Palette.assign(1, glm::mat4(1.0f));
 
 		m_Alive = std::make_shared<int>(0);
@@ -297,8 +330,8 @@ namespace Dingo
 			renderer.SubmitSkinnedMesh(m_SkinnedQuad, WallAt(-12.0f), m_Palette, glm::vec4(1.0f), m_TranslucentA);
 		}, [this](const Renderer3D::Statistics& stats)
 		{
-			Check(stats.SkinnedDraws == 2 && stats.SkinnedInstances == 1 && stats.TranslucentMeshes == 1 && stats.TranslucentDraws == 1 && stats.DrawCalls == 2,
-				std::format("an instance's translucent skinned mesh draws in the translucent pass and shares its palette ({}, {} instances)", Counts(stats), stats.SkinnedInstances));
+			Check(stats.SkinnedDraws == 3 && stats.SkinnedInstances == 1 && stats.TranslucentMeshes == 1 && stats.TranslucentDraws == 2 && stats.DrawCalls == 3,
+				std::format("an instance's translucent skinned mesh draws in the translucent pass, one side at a time, and shares its palette ({}, {} instances)", Counts(stats), stats.SkinnedInstances));
 		});
 
 		auto probeStep = [this](const char* name, const glm::vec3& expected, const glm::mat4& viewProjection, std::function<void(Renderer3D&)> submit)
@@ -331,10 +364,37 @@ namespace Dingo
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitSkinnedMesh(m_SkinnedQuad, WallAt(-12.0f), m_Palette, k_HalfRed, m_TranslucentA);
 		});
+		probeStep("a translucent skinned mesh in front of a static one draws after it", k_GreenOverRed, CheckViewProjection(), [this](Renderer3D& renderer)
+		{
+			renderer.SubmitSkinnedMesh(m_SkinnedQuad, WallAt(-10.0f), m_Palette, k_HalfGreen, m_TranslucentA);
+			renderer.SubmitMesh(m_Quad, WallAt(-12.0f), k_HalfRed, m_TranslucentA);
+		});
 		probeStep("an orthographic camera sorts translucent meshes along its view", k_GreenOverRed, glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -50.0f, 50.0f), [this](Renderer3D& renderer)
 		{
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitMesh(m_Quad, WallAt(-12.0f), k_HalfRed, m_TranslucentA);
+		});
+
+		const glm::mat4 mirrored = glm::scale(WallAt(-10.0f), { -1.0f, 1.0f, 1.0f });
+		probeStep("a closed translucent mesh draws its far side before its near side", k_NearSideOverFarSide, CheckViewProjection(), [this](Renderer3D& renderer)
+		{
+			LightFromCamera(renderer);
+			renderer.SubmitMesh(m_ClosedQuads, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
+		});
+		probeStep("a mirrored closed translucent mesh draws its far side before its near side", k_NearSideOverFarSide, CheckViewProjection(), [this, mirrored](Renderer3D& renderer)
+		{
+			LightFromCamera(renderer);
+			renderer.SubmitMesh(m_ClosedQuads, mirrored, k_HalfGreen, m_TranslucentA);
+		});
+		probeStep("a closed translucent skinned mesh draws its far side before its near side", k_NearSideOverFarSide, CheckViewProjection(), [this](Renderer3D& renderer)
+		{
+			LightFromCamera(renderer);
+			renderer.SubmitSkinnedMesh(m_SkinnedClosedQuads, WallAt(-10.0f), m_Palette, k_HalfGreen, m_TranslucentA);
+		});
+		probeStep("a mirrored closed translucent skinned mesh draws its far side before its near side", k_NearSideOverFarSide, CheckViewProjection(), [this, mirrored](Renderer3D& renderer)
+		{
+			LightFromCamera(renderer);
+			renderer.SubmitSkinnedMesh(m_SkinnedClosedQuads, mirrored, m_Palette, k_HalfGreen, m_TranslucentA);
 		});
 	}
 
@@ -862,8 +922,12 @@ namespace Dingo
 
 		delete m_Quad;
 		delete m_SkinnedQuad;
+		delete m_ClosedQuads;
+		delete m_SkinnedClosedQuads;
 		m_Quad = nullptr;
 		m_SkinnedQuad = nullptr;
+		m_ClosedQuads = nullptr;
+		m_SkinnedClosedQuads = nullptr;
 
 		if (m_CheckRenderer)
 		{

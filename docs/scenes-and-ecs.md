@@ -74,7 +74,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
 | `PointLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `bool Enabled`, `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — light in every direction from the entity's `Transform3DComponent` position; `ToLight(transform)` → the `PointLight` it draws as |
 | `SpotLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity`, `float Range`, `float InnerConeAngle` / `OuterConeAngle` (degrees), `glm::vec3 Direction` (local space, default `{ 0, 0, -1 }`), `bool Enabled`, `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9) — a cone of light from the entity's `Transform3DComponent`; `ToLight(transform)` → the world-space `SpotLight` it draws as |
-| `FogComponent` | `FogMode Mode` (`Linear`, `Exponential`, `ExponentialSquared`, `None`), `glm::vec3 Color`, `bool UseClearColor` (default true: the scene's clear colour), `float Start` / `End` (linear), `float Density` (exponential), `float MaxOpacity`, `bool Enabled` — distance fog over the 3D pass; the first enabled one counts, and it is no light. See [Lighting](lighting.md#fog) |
+| `FogComponent` | `Fog Settings` (the struct `Renderer3D::SetFog` takes: `Mode`, `Color`, `Start` / `End`, `Density`, `MaxOpacity`), `bool UseClearColor` (default true: the scene's clear colour in place of `Settings.Color`), `bool Enabled` — distance fog over the 3D pass; one on the rendered camera's entity fogs that view, else the first enabled one on an entity without a camera counts (another camera's only in a pass that names no camera), and it is no light. See [Lighting](lighting.md#fog) |
 
 The four light components and `FogComponent` are read by the `SceneRenderer` for the 3D pass — see [Lights](#lights-v07).
 
@@ -587,8 +587,8 @@ The binding convention a custom mesh shader follows:
 
 - **binding 0** — the engine **scene UBO**, bound on every material each frame. Declare it to
   position your vertices (and light, if you want it). It begins with a frozen 96-byte prefix,
-  `mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`, and the camera position and the full
-  light block are appended after it (below). A shader may declare a block shorter than the
+  `mat4 ViewProjection; vec4 LightDirection; vec4 Ambient;`, and the camera position, the full
+  light block and the fog are appended after it (below). A shader may declare a block shorter than the
   buffer, so one that declares only the prefix — as every custom shader written before v0.7 does —
   compiles and renders as it did.
 - **binding 1** — your material's own uniforms (whatever you pass to `Material::SetUniform`). Omit it
@@ -622,6 +622,8 @@ layout(std140, binding = 0) uniform CameraData
     ivec4 LightCounts;        // x = directional lights in use, y = point and spot lights in use
     DirectionalLight DirectionalLights[4];
     LocalLight       LocalLights[32];
+    vec4  FogColor;           // rgb = colour, a = max opacity
+    vec4  FogParams;          // x = start, y = end, z = density, w = mode: 0 none, 1 linear, 2 exp, 3 exp squared
 };
 ```
 
@@ -634,7 +636,8 @@ therefore still draws a sun in a scene that has none, which the engine's own lit
 Declare the full block and loop over `LightCounts` to light a material the way the engine does;
 [Lighting](lighting.md) has the
 falloff and cone formulas, and `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl` is the
-reference loop.
+reference loop. The fog members are zero while the scene has no fog (`Renderer3D::SetFog`, or a
+`FogComponent`); [Lighting](lighting.md#fog) has the fog factor the lit shader mixes by.
 
 Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching;
 an [instanced shader](#instanced-custom-shaders-v10) places them itself),

@@ -11,15 +11,15 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/arialbd.ttf");
 
 		AudioEngine& audio = Application::Get().GetAudioEngine();
 		m_MasterVolume = audio.GetMasterVolume();
 		m_Checks.clear();
-		m_Clip = audio.LoadClip("assets/audio/beep.wav");
+		m_Clip = audio.LoadClip("audio/beep.wav");
 		if (!m_Clip)
 		{
-			Check(false, "assets/audio/beep.wav loads");
+			Check(false, "audio/beep.wav loads");
 			return;
 		}
 
@@ -90,10 +90,15 @@ namespace Dingo
 		Check(!audio.IsBusValid(sfx) && !audio.IsBusValid(ui) && !audio.IsPlaying(again) && audio.GetBusCount() == buses + 1,
 			"DestroyBus takes its sub-buses and their sounds");
 
+		// sfx's slot is the lowest free one, so this bus reuses it under a new generation.
+		const AudioBusId reused = audio.CreateBus("Bus Check Reused");
 		audio.SetBusVolume(sfx, 0.9f);
 		audio.SetBusMuted(sfx, true);
 		audio.PauseBus(sfx);
 		Check(audio.GetBusVolume(sfx) == 0.0f && !audio.IsBusMuted(sfx) && !audio.IsBusPaused(sfx), "a destroyed bus's id is stale: setters are no-ops");
+		Check(reused != k_InvalidBus && reused != sfx && audio.GetBusVolume(reused) == 1.0f && !audio.IsBusMuted(reused) && !audio.IsBusPaused(reused),
+			"a destroyed bus's id doesn't reach the bus that reuses its slot");
+		audio.DestroyBus(reused);
 		Check(audio.CreateBus("Bus Check Child", sfx) == k_InvalidBus, "CreateBus under a destroyed parent fails");
 		audio.DestroyBus(k_MasterBus);
 		Check(audio.IsBusValid(k_MasterBus), "the master bus can't be destroyed");

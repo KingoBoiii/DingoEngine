@@ -43,3 +43,4 @@ project "DungeonCrawler3D"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

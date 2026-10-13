@@ -19,6 +19,7 @@ namespace Dingo::Internal
 		static void MarkUniformUploaded(Material* material, uint64_t frameIndex) { material->MarkUniformUploaded(frameIndex); }
 
 		static RenderPass* GetOrCreateRenderPass(Material* material, const VertexLayout& layout, Framebuffer* framebuffer) { return material->GetOrCreateRenderPass(layout, framebuffer); }
+		static RenderPass* GetOrCreateRenderPass(Material* material, const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode) { return material->GetOrCreateRenderPass(layout, framebuffer, cullMode); }
 	};
 
 }

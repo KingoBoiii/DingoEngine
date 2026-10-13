@@ -548,13 +548,79 @@ namespace Dingo
 			renderer.SetFog(fog);
 		});
 
+		// A translucent glow in front of the wall, wholly fogged, must leave the wall as the fog left it.
+		for (Material* glow : m_FogGlowMaterials)
+		{
+			const bool additive = glow->GetParams().BlendMode == BlendMode::Additive;
+			probeStep(additive ? "a fully fogged additive glow adds nothing to the fogged wall" : "a fully fogged multiplying glow leaves the fogged wall as it is",
+				glm::vec3(0.5f), [glow](Renderer3D& renderer)
+			{
+				Fog fog = WhiteFog(FogMode::Linear, 1.0f, 2.0f);
+				fog.Color = glm::vec3(0.5f);
+				renderer.SetFog(fog);
+				renderer.SubmitMesh(renderer.GetBoxMesh(), BoxTransform({ 0.0f, 0.0f, -6.0f }, { 60.0f, 40.0f, 1.0f }), glm::vec4(0.25f, 0.25f, 0.25f, 1.0f), glow);
+			});
+		}
+
 		const glm::vec3 clearColor{ 0.25f, 0.5f, 0.75f };
 		probeStep("a FogComponent with UseClearColor fogs into the scene's clear colour", clearColor, [clearColor](Renderer3D& renderer)
 		{
 			Scene scene("Lighting Fog Check");
 			scene.SetClearColor(glm::vec4(clearColor, 1.0f));
 			FogComponent& fog = scene.CreateEntity("Fog").AddComponent<FogComponent>(FogComponent(FogMode::Linear, 1.0f, 2.0f));
+			fog.Settings.Color = glm::vec3(1.0f, 0.0f, 0.0f);
+			scene.SubmitLights(renderer);
+		});
+
+		// A red fog, full at the wall, marks the wrong pick; the right one is white and half way there.
+		auto redFog = []
+		{
+			Fog fog = WhiteFog(FogMode::Linear, 1.0f, 2.0f);
 			fog.Color = glm::vec3(1.0f, 0.0f, 0.0f);
+			return FogComponent(fog, false);
+		};
+		auto halfFog = [] { return FogComponent(WhiteFog(FogMode::Linear, 5.0f, 15.0f), false); };
+
+		probeStep("a FogComponent on the rendered camera's entity fogs its view in place of the scene's", glm::vec3(0.5f), [redFog, halfFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			scene.CreateEntity("Fog").AddComponent<FogComponent>(redFog());
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			camera.AddComponent<FogComponent>(halfFog());
+			scene.SubmitLights(renderer, camera);
+		});
+
+		probeStep("a camera without an enabled fog of its own takes the scene's, not another camera's", glm::vec3(0.5f), [redFog, halfFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			Entity other = scene.CreateEntity("Other Camera");
+			other.AddComponent<CameraComponent>();
+			other.AddComponent<FogComponent>(redFog());
+			scene.CreateEntity("Fog").AddComponent<FogComponent>(halfFog());
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			camera.AddComponent<FogComponent>(redFog()).Enabled = false;
+			scene.SubmitLights(renderer, camera);
+		});
+
+		probeStep("a camera without fog doesn't take another camera's when the scene has none", glm::vec3(0.0f), [redFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			Entity other = scene.CreateEntity("Other Camera");
+			other.AddComponent<CameraComponent>();
+			other.AddComponent<FogComponent>(redFog());
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			scene.SubmitLights(renderer, camera);
+		});
+
+		probeStep("a scene whose only fog sits on a camera fogs a view drawn without one", glm::vec3(0.5f), [halfFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			camera.AddComponent<FogComponent>(halfFog());
 			scene.SubmitLights(renderer);
 		});
 	}
@@ -637,6 +703,14 @@ namespace Dingo
 			.SetDebugName("LightingTest_Crate")
 			.SetRoughness(0.4f));
 		m_CrateTexture = Application::Get().GetAssetManager().LoadAsync("textures/container.jpg");
+		m_FogGlowMaterials[0] = renderer.CreateLitMaterial(MaterialParams()
+			.SetDebugName("LightingTest_FogAdditive")
+			.SetTranslucent(true)
+			.SetBlendMode(BlendMode::Additive));
+		m_FogGlowMaterials[1] = renderer.CreateLitMaterial(MaterialParams()
+			.SetDebugName("LightingTest_FogMultiply")
+			.SetTranslucent(true)
+			.SetBlendMode(BlendMode::Multiply));
 
 		m_Checks.clear();
 		m_NextCheckStep = 0;
@@ -685,8 +759,8 @@ namespace Dingo
 			const Fog fog = DescribeFog();
 			FogComponent& fogComponent = m_FogEntity.GetComponent<FogComponent>();
 			fogComponent.Enabled = m_Fog;
-			fogComponent.Start = fog.Start;
-			fogComponent.End = fog.End;
+			fogComponent.Settings.Start = fog.Start;
+			fogComponent.Settings.End = fog.End;
 			m_Scene->SetClearColor(m_ClearColor);
 			m_Scene->SubmitLights(renderer);
 			m_Scene->RenderEntities3D(renderer);
@@ -957,6 +1031,11 @@ namespace Dingo
 		delete m_CrateMaterial;
 		m_LampMaterial = nullptr;
 		m_CrateMaterial = nullptr;
+		for (Material*& material : m_FogGlowMaterials)
+		{
+			delete material;
+			material = nullptr;
+		}
 
 		m_Alive.reset();
 		for (Framebuffer*& target : m_FogTargets)

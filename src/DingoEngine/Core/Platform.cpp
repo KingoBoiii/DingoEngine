@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/Platform.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include <cstdlib>
 
@@ -44,7 +45,7 @@ namespace Dingo::Platform
 			std::filesystem::create_directories(directory, errorCode);
 			if (errorCode)
 			{
-				DE_CORE_ERROR("Failed to create user data directory '{}': {}", directory.string(), errorCode.message());
+				DE_CORE_ERROR("Failed to create user data directory '{}': {}", Internal::PathToUtf8(directory), errorCode.message());
 			}
 		}
 

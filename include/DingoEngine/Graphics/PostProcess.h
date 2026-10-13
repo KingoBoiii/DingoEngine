@@ -10,6 +10,7 @@ namespace Dingo
 
 	class Framebuffer;
 	class Texture;
+	struct Fog;
 
 	// What happens to light past 1.0. The engine stays display-referred: textures, lights and the lit
 	// shader mean what they always did, and every operator but Soft is for a game re-tuned to it.
@@ -114,6 +115,13 @@ namespace Dingo
 		// Begin; End applies it if nothing has. Call it before drawing what AO must not darken, such as
 		// particles or a translucent pass.
 		void ApplyAmbientOcclusion();
+		// The fog the 3D pass drew the scene target with, so ambient occlusion fades with it as the lit
+		// shader fades a surface into the fog: a wholly fogged pixel keeps none. Renderer3D::EndScene sets
+		// it for a fogged scene drawn into the scene target (a perspective camera's); Begin clears it, and
+		// so do FogMode::None and a fog Renderer3D::SetFog would reject. It takes effect only if AO hasn't
+		// been applied yet in this Begin: a scene drawn before the fogged one whose translucent pass or
+		// particles applied it leaves the fogged pixels unfaded.
+		void SetAmbientOcclusionFog(const Fog& fog);
 		// The scene target's depth so far, copied into an R32F texture (once per Begin), for a pass that
 		// reads depth while drawing into the scene target with that depth bound: soft particles. Null
 		// while inactive.

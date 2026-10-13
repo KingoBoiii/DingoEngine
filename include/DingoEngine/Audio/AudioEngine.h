@@ -27,6 +27,9 @@ namespace Dingo
 	{
 	public:
 		virtual ~AudioClip() = default;
+
+		// The decoded length in PCM frames at the clip's own sample rate.
+		virtual uint64_t GetFrameCount() const = 0;
 	};
 
 	// Abstraction over an audio device + mixer. An AudioEngine owns the output device,
