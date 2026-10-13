@@ -32,9 +32,9 @@ A release is a version branch merged into `master`, then a tag and a GitHub rele
 
 ## 4. Tag and GitHub release
 
-1. Lightweight tag on the merge commit: `git tag vX.Y.Z <sha> && git push origin vX.Y.Z`.
+1. Lightweight tag on the merge commit: `git tag vX.Y.Z <sha> && git push origin refs/tags/vX.Y.Z`, then confirm with `git ls-remote --tags origin vX.Y.Z`. The full ref matters: while the `vX.Y.Z` branch exists, `git push origin vX.Y.Z` matches both and pushes nothing, and `gh release create` then makes an untagged draft.
 2. Notes file in the scratchpad, in the style of the previous release (`gh release view <last-tag> --json body --jq .body`): `## vX.Y.Z — <Title>`, one intro paragraph, `###` sections by area, a **Docs** list and a **Full changelog** compare link. Links are absolute `https://github.com/KingoBoiii/DingoEngine/blob/vX.Y.Z/...`: relative ones 404 on the release page.
-3. `gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file <file>`.
+3. `gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file <file>`, then check `gh release view vX.Y.Z --json isDraft` is `false`.
 
 ## 5. Assets
 
@@ -47,4 +47,4 @@ Commit straight to `master` and push: `docs: mark vX.Y.Z released`. It updates t
 
 ## 7. Clean up
 
-Delete the release branch locally and on origin, and switch the owner's checkout back to `master`. Reply with the release URL, the tag's sha and the asset count.
+Delete the release branch locally and on origin (`git push origin --delete refs/heads/vX.Y.Z`, never the bare name, which now also names the tag), and switch the owner's checkout back to `master`. Reply with the release URL, the tag's sha and the asset count.
