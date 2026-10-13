@@ -586,6 +586,8 @@ namespace Dingo
 		}
 
 		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target, cullMode);
+		if (!renderPass)
+			return nullptr;
 		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
 	}
 

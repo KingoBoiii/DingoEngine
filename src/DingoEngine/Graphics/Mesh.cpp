@@ -66,7 +66,11 @@ namespace Dingo
 
 	Mesh* Mesh::CreateSkinned(std::vector<MeshVertex> restVertices, std::vector<SkinnedMeshVertex> skinVertices, std::vector<uint32_t> indices)
 	{
-		DE_CORE_ASSERT(restVertices.size() == skinVertices.size(), "Mesh::CreateSkinned needs one skin vertex per rest vertex");
+		if (restVertices.size() != skinVertices.size())
+		{
+			DE_CORE_ERROR("Mesh::CreateSkinned needs one skin vertex per rest vertex ({} rest, {} skin)", restVertices.size(), skinVertices.size());
+			return nullptr;
+		}
 
 		Mesh* mesh = new Mesh();
 		mesh->m_Vertices     = std::move(restVertices);
@@ -135,6 +139,9 @@ namespace Dingo
 
 	Mesh* Mesh::CreateSphere(float radius, uint32_t rings, uint32_t segments)
 	{
+		rings = std::max(rings, 2u);
+		segments = std::max(segments, 3u);
+
 		std::vector<MeshVertex> vertices;
 		std::vector<uint32_t> indices;
 

@@ -69,11 +69,13 @@ namespace Dingo
 		const glm::mat4& GetRootTransform() const { return m_RootTransform; }
 
 		// Composes local poses (one per joint) into joint transforms relative to the root
-		// transform, in one forward pass.
+		// transform, in one forward pass. Spans shorter than the joint count are an error, and
+		// nothing is written.
 		void ComputeGlobalTransforms(std::span<const JointPose> localPoses, std::span<glm::mat4> outGlobals) const;
 
 		// What a skinned draw uploads, one matrix per skin joint: RootTransform * global *
-		// InverseBind, taking a skin vertex to model space.
+		// InverseBind, taking a skin vertex to model space. Spans shorter than the skin joint
+		// count are an error, and nothing is written.
 		void ComputeSkinningPalette(std::span<const glm::mat4> globals, std::span<glm::mat4> outPalette) const;
 
 		// The palette of the rest pose, for drawing a skinned mesh nothing animates.
