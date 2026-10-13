@@ -213,7 +213,7 @@ TEST_SUITE("SaveData")
 		SaveData data;
 		std::vector<uint64_t> ids = { 0, 1, 0x7FFFFFFFFFFFFFFFull, 0x8000000000000000ull, 0xF000000000000001ull, 0xFFFFFFFFFFFFFFFFull };
 		for (int i = 0; i < 64; i++)
-			ids.push_back(static_cast<uint64_t>(UUID::Generate()));
+			ids.push_back(static_cast<uint64_t>(Dingo::UUID::Generate()));
 		for (size_t i = 0; i < ids.size(); i++)
 			data["id" + std::to_string(i)] = ids[i];
 		const std::optional<SaveData> read = SaveData::FromJson(data.ToJson());
