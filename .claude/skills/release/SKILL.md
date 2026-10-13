@@ -5,7 +5,7 @@ description: Cut a DingoEngine vX.Y.Z release end to end — the version branch 
 
 # Release
 
-A release is a version branch merged into `master`, then a tag and a GitHub release on the merge commit. The owner triggers it; each step below needs only that one ask, except where it says to stop.
+A release is a version branch merged into `master`, then a tag, a GitHub release on the merge commit, and the `build-release.yml` run that uploads its assets. A release without its assets is not done. The owner triggers it; each step below needs only that one ask, except where it says to stop.
 
 ## 1. Scope
 
@@ -38,7 +38,7 @@ A release is a version branch merged into `master`, then a tag and a GitHub rele
 
 ## 5. Assets
 
-- `build-release.yml` is `workflow_dispatch` only and uploads to an existing release, so it runs after step 4: `gh workflow run build-release.yml --ref vX.Y.Z` (or the owner runs it from the Actions tab).
+- Always run `build-release.yml` yourself, straight after step 4, without asking: it is part of every release. It is `workflow_dispatch` only and uploads to an existing release, so it can't start earlier: `gh workflow run build-release.yml --ref vX.Y.Z`, then `gh run watch <id> --exit-status` in a background command. If a job fails, report it and re-run only the failed jobs (`gh run rerun <id> --failed`).
 - Expect **27 assets**: Windows 13 (DingoEngine Debug/Release/Distribution zips + 10 example zips) and Linux 14 (3 engine `.tar.gz` + 10 examples + Dingo-TestFramework). A new example adds one per OS. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
 
 ## 6. Mark released
@@ -47,4 +47,4 @@ Commit straight to `master` and push: `docs: mark vX.Y.Z released`. It updates t
 
 ## 7. Clean up
 
-Delete the release branch locally and on origin (`git push origin --delete refs/heads/vX.Y.Z`, never the bare name, which now also names the tag), and switch the owner's checkout back to `master`. Reply with the release URL, the tag's sha and the asset count.
+Delete the release branch locally and on origin (`git push origin --delete refs/heads/vX.Y.Z`, never the bare name, which now also names the tag), and switch the owner's checkout back to `master`. Reply with the release URL, the tag's sha and the asset count. Don't call the release done before the asset count matches.
