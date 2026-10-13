@@ -10,8 +10,8 @@
   "[Freeze] held" once the held frame is on screen; the captures wait for that line, so the flames
   are the same every run.
   -Set perf: the timing runs, each waiting for its [PERF]/[Perf] line: the Throughput Test's modes
-  (static, repeat, mixed and shadow at 10000, skinned at 64 and 128), Candlewick's four rooms and
-  Marionette's first bout.
+  (static, repeat, mixed and shadow at 10000, mixed and shadow again with --static, skinned at
+  64 and 128), Candlewick's four rooms and Marionette's first bout.
   -Set checks: every test case's start-up checks, for the validation-layer runs.
 
   -Bin is a folder holding Dingo-TestFramework\, Marionette\ and Candlewick\ as the build writes
@@ -84,6 +84,9 @@ switch ($Set) {
         $until = "\[PERF\]"
         foreach ($mode in "static", "repeat", "mixed", "shadow") {
             Add-Job "p-throughput-$mode" $testApp "test" "--test=throughput --throughput=$mode --perf --no-vsync" @{ until = $until; shot = $false; timeout = 900 }
+        }
+        foreach ($mode in "mixed", "shadow") {
+            Add-Job "p-throughput-$mode-static" $testApp "test" "--test=throughput --throughput=$mode --static --perf --no-vsync" @{ until = $until; shot = $false; timeout = 900 }
         }
         foreach ($count in 64, 128) {
             Add-Job "p-throughput-skinned$count" $testApp "test" "--test=throughput --throughput=skinned --count=$count --perf --no-vsync" @{ until = $until; shot = $false; timeout = 900 }
