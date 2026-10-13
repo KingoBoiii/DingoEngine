@@ -11,6 +11,16 @@ namespace Dingo
 	namespace Internal
 	{
 
+		namespace
+		{
+			struct CallScope
+			{
+				uint32_t& Depth;
+				explicit CallScope(uint32_t& depth) : Depth(depth) { ++Depth; }
+				~CallScope() { --Depth; }
+			};
+		}
+
 		ScriptSystem::ScriptSystem(const entt::registry& registry)
 			: m_Registry(registry)
 		{
@@ -29,7 +39,10 @@ namespace Dingo
 			instance->m_Entity = owner;
 			m_Scripts[handle].reset(instance);
 			m_HasUnstarted = true;
-			instance->OnCreate();
+			{
+				CallScope scope(m_CallDepth);
+				instance->OnCreate();
+			}
 		}
 
 		ScriptableEntity* ScriptSystem::Find(entt::entity handle) const
@@ -47,6 +60,7 @@ namespace Dingo
 			m_Detached.push_back(std::move(it->second));
 			m_Scripts.erase(it);
 
+			CallScope scope(m_CallDepth);
 			m_Detached.back()->OnDestroy();
 		}
 
@@ -78,6 +92,7 @@ namespace Dingo
 					continue;
 
 				it->second->m_Started = true; // set first so a re-entrant spawn can't double-fire
+				CallScope scope(m_CallDepth);
 				it->second->OnStart();
 			}
 		}
@@ -97,7 +112,10 @@ namespace Dingo
 			{
 				auto it = m_Scripts.find(handle);
 				if (it != m_Scripts.end() && it->second->m_Started && IsActive(handle))
+				{
+					CallScope scope(m_CallDepth);
 					it->second->OnFixedUpdate(step);
+				}
 			}
 		}
 
@@ -118,7 +136,10 @@ namespace Dingo
 				// A script whose entity another one activated during this pass starts next frame.
 				auto it = m_Scripts.find(handle);
 				if (it != m_Scripts.end() && it->second->m_Started && IsActive(handle))
+				{
+					CallScope scope(m_CallDepth);
 					it->second->OnUpdate(deltaTime);
+				}
 			}
 		}
 
@@ -126,7 +147,10 @@ namespace Dingo
 		{
 			auto it = m_Scripts.find(handle);
 			if (it != m_Scripts.end() && it->second->m_Started)
+			{
+				CallScope scope(m_CallDepth);
 				it->second->OnAnimationEvent(event);
+			}
 		}
 
 		bool ScriptSystem::IsStarted(entt::entity handle) const
@@ -149,13 +173,17 @@ namespace Dingo
 			{
 				auto it = m_Scripts.find(handle);
 				if (it != m_Scripts.end())
+				{
+					CallScope scope(m_CallDepth);
 					fn(it->second.get());
+				}
 			}
 		}
 
 		void ScriptSystem::FreeDetached()
 		{
-			m_Detached.clear();
+			if (m_CallDepth == 0)
+				m_Detached.clear();
 		}
 
 		void ScriptSystem::DetachAll()

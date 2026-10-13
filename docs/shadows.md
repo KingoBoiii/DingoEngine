@@ -221,7 +221,7 @@ float lamp = LocalLightShadow(i, worldPosition, normal);  // point or spot light
 ```
 
 `Renderer3D` binds `ShadowData`, `u_ShadowAtlas` and `u_ShadowSampler` by name to any material whose
-shader declares them (`Material::SetShadowResources`); a shader that doesn't is unaffected. Such a
+shader declares them; a shader that doesn't is unaffected. Such a
 shader can only be drawn through `Renderer3D`, which provides them.
 
 ## Checking it

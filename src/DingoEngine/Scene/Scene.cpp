@@ -228,6 +228,7 @@ namespace Dingo
 	void Scene::DetachScript(std::uint32_t handle)
 	{
 		m_Data->Scripts.Detach(static_cast<entt::entity>(handle));
+		m_Data->Scripts.FreeDetached();
 	}
 
 	void Scene::DestroyEntityNow(std::uint32_t handle)
@@ -289,6 +290,7 @@ namespace Dingo
 		Internal::AudioSync::StopAllSources(m_Data->Registry);
 
 		m_Data->Scripts.DetachAll();
+		m_Data->Scripts.FreeDetached();
 
 		m_Data->Registry.clear();
 		m_Data->EntityMap.clear();
@@ -678,6 +680,10 @@ namespace Dingo
 			return 1.0f;
 
 		const entt::entity handle = static_cast<entt::entity>(light.m_Handle);
+		// Not submitted, so nothing would ever replace its last answer.
+		if (Internal::HierarchySystem::IsInactive(m_Data->Registry, handle))
+			return 1.0f;
+
 		Internal::LightSystem::ShadowProbeState& probes = m_Data->ShadowProbes;
 		const uint64_t localKey = Internal::LightSystem::ShadowProbeState::LocalKey(handle, key);
 		if (probes.Pending.size() < Renderer3D::k_MaxShadowProbes || probes.Pending.contains(localKey))
@@ -746,6 +752,7 @@ namespace Dingo
 			return;
 
 		m_IsRunning = true;
+		m_Data->FixedTimeAccumulator = 0.0f;
 
 		// Discard any transition requested before this run (or left over from a
 		// previous run) so a stale request can't fire the instant this scene reactivates.
@@ -778,6 +785,7 @@ namespace Dingo
 		// Stop every source's live sound so the scene never leaks playing audio past
 		// its own teardown (e.g. into whatever scene the SceneManager switches to).
 		Internal::AudioSync::StopAllSources(m_Data->Registry);
+		m_Data->Scripts.FreeDetached();
 
 		// Drop any request left pending when this scene stopped being active, so it
 		// can't be replayed the next time this scene starts.

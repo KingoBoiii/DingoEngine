@@ -145,8 +145,7 @@ window.SetVSync(!window.IsVSync());   // e.g. a Settings menu row
 `SetVSync` is safe from event handlers and layers alike. It goes through the same queue
 as a resize: the swap chain takes the new flag after the next present, so while the window
 is minimized or paused it waits for the first frame after the restore. D3D11 and D3D12 read it on every
-present; Vulkan bakes it into the present mode, so it recreates the swap chain, which bumps
-`SwapChain::GetResizeGeneration()` as a resize does. `IsVSync()` reports the requested value
+present; Vulkan bakes it into the present mode, so it recreates the swap chain as a resize does. `IsVSync()` reports the requested value
 at once. The F3 Engine tab has a VSync checkbox.
 
 Limits:

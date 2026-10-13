@@ -59,7 +59,7 @@ namespace Dingo
 			// Detaches every script (each gets its OnDestroy) and empties the system.
 			void DetachAll();
 
-			// Frees the detached scripts. Only where none of them can be running: a script may
+			// Frees the detached scripts unless a script callback is on the stack: a script may
 			// detach itself (RemoveScript, AddScript, destroying its own entity).
 			void FreeDetached();
 
@@ -69,6 +69,7 @@ namespace Dingo
 			const entt::registry& m_Registry;
 			std::unordered_map<entt::entity, std::unique_ptr<ScriptableEntity>> m_Scripts;
 			std::vector<std::unique_ptr<ScriptableEntity>> m_Detached;
+			mutable uint32_t m_CallDepth = 0;
 
 			// Set by Attach (the only thing that adds to m_Scripts) and cleared by
 			// StartPending, so the per-frame OnStart pass can skip the walk entirely once

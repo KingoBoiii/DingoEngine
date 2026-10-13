@@ -115,7 +115,7 @@ r.DrawText(text, font, { centerX - w * 0.5f, y }, size, { .Color = color });
 
 `Font::GetStringWidth(text, size, kerning)` returns the width of the widest line, in the units
 `DrawText` lays glyphs out in — pass the same `Kerning` you draw with. `TextParameters::Centered`
-centers a string in one pass without measuring it first. Call `font->Destroy()` in `OnDetach`.
+centers a string in one pass without measuring it first. `delete` the font in `OnDetach`.
 
 **Encoding (v0.6.2).** Strings are UTF-8. The atlas bakes Latin-1 (`U+0020`–`U+00FF`), the
 printable General Punctuation (dashes, curly quotes, bullet, ellipsis, primes, guillemets) and
@@ -131,13 +131,14 @@ Texture* tex = Texture::CreateFromFile("assets/sprites/player.png");
 uint32_t w = tex->GetWidth();
 uint32_t h = tex->GetHeight();
 ...
-tex->Destroy();   // in OnDetach
+delete tex;   // in OnDetach (frees the GPU texture too)
 ```
 
 - `Texture::CreateFromFile(path)` — load from PNG/JPG/etc. (via stb_image).
 - `Texture::CreateFromData(width, height, data, format, debugName)` — from raw pixels.
-- `Texture::Create(TextureParams{}...)` — full control (render targets, wrap modes,
-  formats) via the fluent params builder.
+- `Texture::Create(TextureParams{}...)` — full control (render targets, formats,
+  storage, initial data) via the fluent params builder. Wrapping and filtering belong to a
+  `Sampler` (`SamplerParams::SetAddressMode`, `SetFilter`).
 
 A common pattern is sizing a quad to the texture's aspect ratio so sprites aren't
 stretched:

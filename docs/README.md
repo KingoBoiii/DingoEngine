@@ -83,6 +83,6 @@ See [Getting Started](getting-started.md) for the full setup, then
 - World units, not pixels: positions and sizes you pass to `Renderer2D` are in the
   coordinate space defined by your camera matrix. A quad's *position is its center*.
 - Resources (`Texture`, `Font`) are created with `Create*()` factories that return
-  raw pointers; you own them and call `Destroy()` when done. As of v0.6 the
+  raw pointers; you own them and `delete` them when done ([conventions](conventions.md)). As of v0.6 the
   preferred route for file-backed assets is the [AssetManager](asset-pipeline.md),
   which owns what it loads and hands out stable handles instead.

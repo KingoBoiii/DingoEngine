@@ -125,7 +125,7 @@ namespace Dingo
 		// SubmitLights that takes them (the SceneRenderer's 3D pass), answered from that pass's cascades
 		// and culling: a secondary view drawn first in a frame (a minimap) should pass shadowProbes
 		// false to SceneRenderer::Render or SubmitLights. A scene that isn't rendered never answers. A
-		// light drawn without a shadow, or not drawn at all, answers 1, and so does the sun for a point
+		// light drawn without a shadow, or not drawn at all (an inactive one too), answers 1, and so does the sun for a point
 		// outside the view's cascades (behind the camera, off screen, past the shadow distance): its
 		// shadow is drawn only for what the camera sees. The point has no surface to push it off, so
 		// ask about a point in the air, such as a character's chest. `clearance` moves the point that

@@ -339,7 +339,7 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    `DE_SkinDraw` is a uniform block and must sit at a binding from 2 to
    `Renderer3D::k_MaxSkinUniformBinding` (13, because D3D11 has 14 constant buffer slots); both must be
    bindings the material's own textures and samplers leave free. The renderer finds them by name and
-   binds them with `Material::SetSkinPaletteBuffers`.
+   binds them itself.
 
    Without `DE_SKIN_PALETTE` the include declares the older per-draw block instead, which shaders
    written before v1.0 declare themselves. It is **deprecated** (the renderer warns once when a
