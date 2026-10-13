@@ -22,6 +22,8 @@ struct ma_sound;
 namespace Dingo::Internal
 {
 
+	struct MiniAudioVfs;
+
 	// One controllable live sound. Play() hands out a slot; Update() / Stop() reap it.
 	// Generation is bumped every time the slot is recycled so a stale AudioSoundId that
 	// still points at this index won't match and control the newer occupant. The 16-bit
@@ -56,6 +58,7 @@ namespace Dingo::Internal
 	struct MiniAudioData
 	{
 		ma_engine* Engine = nullptr;            // heap ma_engine
+		MiniAudioVfs* Vfs = nullptr;            // outlives Engine, whose resource manager reads through it
 		std::vector<SoundSlot> Slots;           // index-stable; grows, never shrinks
 		std::vector<BusSlot> Buses;             // index-stable; [0] is the master bus
 		std::uint64_t NextBusSerial = 1;

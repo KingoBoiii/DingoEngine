@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Scene/AnimationDebug.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Scene/Components.h"
@@ -73,7 +74,7 @@ namespace Dingo
 						if (skeleton && runtime.SkeletonId == skeleton->GetId())
 							row.Instance = runtime.Instance.get();
 						if (skinned && skinned->Model)
-							row.Model = skinned->Model->GetFilePath().filename().string();
+							row.Model = Internal::PathToUtf8(skinned->Model->GetFilePath().filename());
 					}
 				}
 			}

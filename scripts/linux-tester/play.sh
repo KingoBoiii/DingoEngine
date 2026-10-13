@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Usage: ./play.sh <program> [arguments...]
 #
-# Starts a program from its own directory, where it finds its assets/, and keeps its log in
-# logs/<program>-<time>.log beside this script as well as printing it.
+# Starts a program from its own directory, where the test app finds its assets/ (an example finds
+# its .dpak beside its executable from anywhere), and keeps its log in logs/<program>-<time>.log
+# beside this script as well as printing it.
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)

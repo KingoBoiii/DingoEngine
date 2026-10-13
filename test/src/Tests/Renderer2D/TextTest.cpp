@@ -5,7 +5,7 @@ namespace Dingo
 
 	void TextTest::Initialize()
 	{
-		m_ArialFont = Font::Create("assets/fonts/arialbd.ttf");
+		m_ArialFont = Font::Create("fonts/arialbd.ttf");
 	}
 
 	void TextTest::Cleanup()

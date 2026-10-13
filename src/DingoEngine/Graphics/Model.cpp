@@ -1,8 +1,11 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/AssimpVfsIO.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Log.h"
 
 #include <assimp/Importer.hpp>
@@ -17,7 +20,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstring>
-#include <fstream>
+#include <sstream>
 #include <limits>
 #include <span>
 
@@ -63,9 +66,7 @@ namespace Dingo
 
 	static std::filesystem::file_time_type WriteTimeOf(const std::filesystem::path& path)
 	{
-		std::error_code error;
-		const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
-		return error ? std::filesystem::file_time_type{} : time;
+		return VirtualFileSystem::GetWriteTime(path).value_or(std::filesystem::file_time_type{});
 	}
 
 	static TextureParams MakeImageParams(uint32_t width, uint32_t height, uint32_t channels, const uint8_t* data)
@@ -86,7 +87,7 @@ namespace Dingo
 		const uint8_t* data = FileSystem::ReadImage(path, &width, &height, &channels, true, true);
 		if (!data)
 		{
-			DE_CORE_WARN("Model: couldn't read '{}' again, so its texture keeps the old image", path.generic_string());
+			DE_CORE_WARN("Model: couldn't read '{}' again, so its texture keeps the old image", Internal::PathToGenericUtf8(path));
 			return false;
 		}
 
@@ -130,7 +131,7 @@ namespace Dingo
 
 	static Texture* LoadEmbeddedTexture(const aiTexture* embedded, const std::string& name, TextureCache& textureCache)
 	{
-		const std::string key = textureCache.ModelPath.generic_string() + "#" + name;
+		const std::string key = Internal::PathToGenericUtf8(textureCache.ModelPath) + "#" + name;
 		if (auto it = textureCache.Loaded.find(key); it != textureCache.Loaded.end())
 			return it->second.Image;
 
@@ -152,7 +153,7 @@ namespace Dingo
 		uint32_t width = 0, height = 0;
 		if (!DecodeEmbeddedImage(embedded, rgba, width, height))
 		{
-			DE_CORE_WARN("Model '{}': couldn't decode its embedded image '{}'{}", textureCache.ModelPath.filename().string(), name,
+			DE_CORE_WARN("Model '{}': couldn't decode its embedded image '{}'{}", Internal::PathToUtf8(textureCache.ModelPath.filename()), name,
 				texture.Image ? ", so its texture keeps the old image" : "; the submesh has no texture");
 			if (texture.Image)
 				textureCache.Loaded[key] = texture;
@@ -183,11 +184,11 @@ namespace Dingo
 			if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
 				return LoadEmbeddedTexture(embedded, rawPath, textureCache);
 
-			DE_CORE_WARN("Model '{}': a material names embedded image '{}', which the file doesn't hold", textureCache.ModelPath.filename().string(), rawPath);
+			DE_CORE_WARN("Model '{}': a material names embedded image '{}', which the file doesn't hold", Internal::PathToUtf8(textureCache.ModelPath.filename()), rawPath);
 			return nullptr;
 		}
 
-		std::filesystem::path texPath = rawPath;
+		std::filesystem::path texPath = Internal::PathFromUtf8(rawPath);
 
 		std::filesystem::path candidates[3];
 		uint32_t candidateCount = 0;
@@ -198,13 +199,13 @@ namespace Dingo
 
 		for (uint32_t i = 0; i < candidateCount; ++i)
 		{
-			const std::string key = candidates[i].generic_string();
+			const std::string key = Internal::PathToGenericUtf8(candidates[i]);
 
 			auto it = textureCache.Loaded.find(key);
 			if (it != textureCache.Loaded.end())
 				return it->second.Image;
 
-			if (!std::filesystem::exists(candidates[i]))
+			if (!VirtualFileSystem::Exists(candidates[i]))
 				continue;
 
 			CachedTexture texture;
@@ -952,10 +953,12 @@ namespace Dingo
 		// the steps for that path. ApplyPostProcessing(flags) after ReadFile(path, 0) is
 		// what ReadFile(path, flags) does, so static models load exactly as before.
 		Assimp::Importer importer;
+		importer.SetIOHandler(new Internal::AssimpVfsIOSystem());
+		const std::string assimpPath = Internal::AssimpVfsIOSystem::ToAssimpPath(resolvedPath);
 		// Otherwise Collada and BVH give an animation-only file a dummy mesh with a bone per
 		// node, and it never reads as a clip library. A file with geometry is unaffected.
 		importer.SetPropertyBool(AI_CONFIG_IMPORT_NO_SKELETON_MESHES, true);
-		const aiScene* scene = importer.ReadFile(resolvedPath.string(), 0);
+		const aiScene* scene = importer.ReadFile(assimpPath, 0);
 
 		const bool skinned = scene && (HasBones(scene) || IsClipLibrary(scene));
 		if (skinned && scene->mRootNode && HasFbxPivotNodes(scene->mRootNode))
@@ -963,7 +966,7 @@ namespace Dingo
 			// Pivot helper nodes would sit between the joints and take over their names and
 			// animation channels; read again with them folded into the joints.
 			importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
-			scene = importer.ReadFile(resolvedPath.string(), 0);
+			scene = importer.ReadFile(assimpPath, 0);
 		}
 
 		// LimitBoneWeights would drop bones that weight nothing, such as an unweighted root
@@ -978,14 +981,14 @@ namespace Dingo
 		const bool incomplete = scene && (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) && !(skinned && IsClipLibrary(scene));
 		if (!scene || incomplete || !scene->mRootNode)
 		{
-			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': {}", resolvedPath.string(), importer.GetErrorString());
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': {}", Internal::PathToUtf8(resolvedPath), importer.GetErrorString());
 			return nullptr;
 		}
 
-		const std::string modelName = resolvedPath.filename().string();
+		const std::string modelName = Internal::PathToUtf8(resolvedPath.filename());
 		if (params.ClipsOnly && !skinned)
 		{
-			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones, so it has no clips to load", resolvedPath.string());
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones, so it has no clips to load", Internal::PathToUtf8(resolvedPath));
 			return nullptr;
 		}
 		if (!skinned && scene->mNumAnimations > 0)
@@ -1026,8 +1029,7 @@ namespace Dingo
 		{
 			std::filesystem::path events = resolvedPath;
 			events.replace_extension(".events");
-			std::error_code error;
-			if (std::filesystem::exists(events, error))
+			if (VirtualFileSystem::Exists(events))
 				model->LoadEvents(events);
 		}
 
@@ -1087,11 +1089,10 @@ namespace Dingo
 
 		std::filesystem::path events = m_FilePath;
 		events.replace_extension(".events");
-		std::error_code error;
-		const bool exists = !m_Animations.empty() && std::filesystem::exists(events, error);
-		if (exists && !std::ifstream(events).is_open())
+		const bool exists = !m_Animations.empty() && VirtualFileSystem::Exists(events);
+		if (exists && !VirtualFileSystem::ReadBytes(events))
 		{
-			DE_CORE_WARN("Model '{}': couldn't read '{}', so the clips keep their events", m_FilePath.filename().string(), events.filename().string());
+			DE_CORE_WARN("Model '{}': couldn't read '{}', so the clips keep their events", Internal::PathToUtf8(m_FilePath.filename()), Internal::PathToUtf8(events.filename()));
 			return false;
 		}
 
@@ -1131,7 +1132,7 @@ namespace Dingo
 		{
 			if (m_Skeleton)
 			{
-				DE_CORE_WARN("Model '{}': the reload changed the skeleton's joints, so animators on it start over", m_FilePath.filename().string());
+				DE_CORE_WARN("Model '{}': the reload changed the skeleton's joints, so animators on it start over", Internal::PathToUtf8(m_FilePath.filename()));
 				m_RetiredSkeletons.push_back(std::move(m_Skeleton));
 			}
 			m_Skeleton = std::move(fresh.m_Skeleton);
@@ -1312,14 +1313,15 @@ namespace Dingo
 
 	bool Model::LoadEvents(const std::filesystem::path& filepath)
 	{
-		std::ifstream file(filepath);
-		if (!file)
+		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
+		if (!bytes)
 		{
-			DE_CORE_ERROR("Model::LoadEvents: can't read '{}'", filepath.string());
+			DE_CORE_ERROR("Model::LoadEvents: can't read '{}'", Internal::PathToUtf8(filepath));
 			return false;
 		}
+		std::istringstream file(std::string(bytes->begin(), bytes->end()));
 
-		const std::string fileName = filepath.filename().string();
+		const std::string fileName = Internal::PathToUtf8(filepath.filename());
 		std::string line;
 		std::vector<std::string> tokens;
 		for (uint32_t number = 1; std::getline(file, line); ++number)

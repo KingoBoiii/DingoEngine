@@ -14,6 +14,7 @@ project "Dingo-TestFramework"
 	includedirs {
         "%{wks.location}/include",
         "src",
+        "%{wks.location}/src",
         "%{IncludeDir.glm}",
         "%{IncludeDir.imgui}"
     }
