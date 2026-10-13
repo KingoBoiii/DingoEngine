@@ -53,7 +53,7 @@ jobs:
 
     # Distribution executables are built with their PDBs (premake's distributionSymbols) so a
     # player's minidump can be read, but a PDB never ships in a game: they all move into one
-    # symbols archive. The engine's own DingoEngine.pdb stays in its package, as in Release.
+    # symbols archive. The engine's Distribution library is built without debug info.
     - name: Collect Distribution symbols
       if: matrix.build-configuration == 'Distribution'
       run: |
@@ -120,6 +120,7 @@ jobs:
       if: matrix.build-configuration == 'Distribution'
       run: |
         $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-Distribution-symbols-windows-x86_64.zip"
+        if (-not (Test-Path .\symbols)) { Write-Error 'No Distribution PDB was collected' }
         Compress-Archive -Path ".\symbols\*" -DestinationPath ".\$zipName" -Force
         gh release upload "${{ github.ref_name }}" "$zipName" --clobber
       env:

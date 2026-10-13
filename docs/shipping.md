@@ -232,12 +232,13 @@ with the **PDB of the exact build the player ran**: a PDB from another build of 
 won't match. The dump names the exception and its address, and the call stack follows from there.
 
 On Windows, `distributionSymbols()` (called after the Distribution block) gives the game's
-Distribution build a PDB, and the engine's library is built with symbols too, so the PDB names
-engine frames as well as the game's. Archive the PDB of every build you release, and don't ship
+Distribution build a PDB. The engine's Distribution library has no debug info, so engine frames
+show only the names of the engine functions the game calls, with no file or line. Archive the PDB of every build you release, and don't ship
 it: the engine's own release workflow moves its examples' PDBs out of their packages into a
 separate `DingoEngine-<version>-Distribution-symbols-windows-x86_64.zip`.
 
-Linux Distribution builds stay without symbols. On Linux the same build with symbols gives `addr2line -C -f -e <executable> <offset>` a function
+Linux Distribution builds have no symbols. Add `symbols "On"` under the Distribution filter for
+Linux too, and the build gives `addr2line -C -f -e <executable> <offset>` a function
 and a line for each frame of the backtrace. Keep an unstripped copy of every release's executable.
 
 ## Settings players expect
