@@ -411,7 +411,9 @@ namespace Dingo
 
 		auto value = std::make_unique<SaveData>();
 		SaveData& member = *value;
-		m_Items.reserve(m_Items.size() + 1);
+		// Room first, so the insert below can't throw after the key went in; doubled, or each insert copies.
+		if (m_Items.size() == m_Items.capacity())
+			m_Items.reserve((std::max)(size_t(4), m_Items.capacity() * 2));
 		m_Keys.insert(m_Keys.begin() + index, std::string(key));
 		m_Items.insert(m_Items.begin() + index, std::move(value));
 		return member;
