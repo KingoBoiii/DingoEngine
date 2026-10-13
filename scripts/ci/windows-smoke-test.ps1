@@ -220,6 +220,7 @@ function Invoke-Crash([string] $Kind, [int] $ExpectExit, [string] $ExpectLog)
 Invoke-Crash 'fatal' 1 "Fatal error: The test app's --crash=fatal"
 Invoke-Crash 'segv' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'thread' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
+Invoke-Crash 'threads' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'abort' 3 'crashed: abort\(\)[\s\S]*Minidump: '
 Invoke-Crash 'terminate' 3 "std::terminate called on an uncaught exception: the test app's --crash=terminate[\s\S]*Minidump: "
 Invoke-Crash 'throw' 3 "std::terminate called on an uncaught exception: the test app's --crash=throw[\s\S]*Minidump: "

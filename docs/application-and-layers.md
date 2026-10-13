@@ -98,7 +98,7 @@ A crash leaves its report there too:
 can't go on from: it logs the message with the file and line it was called from, flushes the
 log, shows a message box (Windows Distribution builds) and exits with code 1. In Distribution
 builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than breaking into a
-debugger that isn't there. The test app's `--crash=segv|thread|abort|terminate|throw|stack|verify|fatal`
+debugger that isn't there. The test app's `--crash=segv|thread|threads|abort|terminate|throw|stack|verify|fatal`
 crashes on purpose, which is how CI checks all of this.
 
 ### Window modes

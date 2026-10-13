@@ -3,11 +3,13 @@
 #include <DingoEngine/Assertion.h>
 #include <DingoEngine/Core/FatalError.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace Dingo
 {
@@ -27,6 +29,30 @@ namespace Dingo
 			frame[0] = static_cast<char>(depth);
 			const uint64_t below = depth < (uint64_t(1) << 40) ? Recurse(depth + 1) : depth;
 			return below + static_cast<uint64_t>(frame[0]);
+		}
+
+		void CrashThreadsTogether()
+		{
+			constexpr int k_Threads = 8;
+			std::atomic<int> ready = 0;
+			std::atomic<bool> go = false;
+			std::vector<std::thread> threads;
+			for (int i = 0; i < k_Threads; i++)
+			{
+				threads.emplace_back([&]
+				{
+					ready++;
+					while (!go)
+					{
+					}
+					WriteThroughNull();
+				});
+			}
+			while (ready < k_Threads)
+				std::this_thread::yield();
+			go = true;
+			for (std::thread& thread : threads)
+				thread.join();
 		}
 
 		[[noreturn]] void TerminateWithException()
@@ -49,6 +75,8 @@ namespace Dingo
 			WriteThroughNull();
 		else if (kind == "thread")
 			std::thread(WriteThroughNull).join();
+		else if (kind == "threads")
+			CrashThreadsTogether();
 		else if (kind == "abort")
 			std::abort();
 		else if (kind == "terminate")
@@ -64,7 +92,7 @@ namespace Dingo
 		else if (kind == "fatal")
 			FatalError("The test app's --crash=fatal.");
 		else
-			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, abort, terminate, throw, stack, verify or fatal", kind);
+			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, threads, abort, terminate, throw, stack, verify or fatal", kind);
 	}
 
 }

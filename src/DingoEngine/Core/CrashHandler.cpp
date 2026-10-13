@@ -518,11 +518,19 @@ namespace Dingo
 			}
 		}
 
+		// The default action comes back only here: installed with SA_RESETHAND, a second thread
+		// faulting with the same signal would end the process before this one's report is out.
+		void RaiseDefault(int signal)
+		{
+			std::signal(signal, SIG_DFL);
+			raise(signal);
+		}
+
 		void OnSignal(int signal, siginfo_t* info, void*)
 		{
 			if (!BeginReport())
 			{
-				raise(signal);
+				RaiseDefault(signal);
 				return;
 			}
 
@@ -550,9 +558,8 @@ namespace Dingo
 			// already out if this blocks on it.
 			FlushLogIfSafe();
 
-			// SA_RESETHAND restored the default action: the process ends as it would have, core dump
-			// and exit status included.
-			raise(signal);
+			// The process ends as it would have, core dump and exit status included.
+			RaiseDefault(signal);
 		}
 #endif
 
@@ -606,7 +613,7 @@ namespace Dingo
 
 			struct sigaction action{};
 			action.sa_sigaction = OnSignal;
-			action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+			action.sa_flags = SA_SIGINFO | SA_ONSTACK;
 			sigemptyset(&action.sa_mask);
 			for (int signal : k_Signals)
 				sigaction(signal, &action, nullptr);

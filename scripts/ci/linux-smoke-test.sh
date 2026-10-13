@@ -139,6 +139,7 @@ crash fatal 1 "Fatal error: The test app's --crash=fatal"
 if [[ $CONFIG != Debug-ASan ]]; then
 	crash segv 139 'End of backtrace'
 	crash thread 139 'End of backtrace'
+	crash threads 139 'End of backtrace'
 	crash stack 139 'crashed: SIGSEGV'
 	crash abort 134 'crashed: SIGABRT'
 	crash terminate 134 "std::terminate called on an uncaught exception: the test app's --crash=terminate"
