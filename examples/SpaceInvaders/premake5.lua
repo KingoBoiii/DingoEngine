@@ -43,4 +43,5 @@ project "SpaceInvaders"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Space Invaders", Description = "Space Invaders on the scene and ECS, an example made with Dingo Engine." }
 	embedPackKey()

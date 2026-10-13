@@ -43,4 +43,5 @@ project "Candlewick"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Candlewick", Description = "Stealth through a lantern-lit keep, an example made with Dingo Engine." }
 	embedPackKey()

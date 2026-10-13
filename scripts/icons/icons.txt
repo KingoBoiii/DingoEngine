@@ -1,0 +1,12 @@
+# directory, tile colour, initials, point size
+examples/AngryBirds #C8322A AB 120
+examples/ArenaShooter #D9741C AS 120
+examples/Breakout3D #5A4FCF B3 120
+examples/Candlewick #B5651D C 150
+examples/DungeonCrawler #6B4F3A DC 120
+examples/DungeonCrawler3D #3E5C76 D3 120
+examples/EchoVault #23877B EV 120
+examples/FlappyBird #3FA9B5 FB 120
+examples/Marionette #8E3B46 M 150
+examples/SpaceInvaders #2B3070 SI 120
+test #4A4A4A T 150

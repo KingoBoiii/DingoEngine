@@ -43,4 +43,5 @@ project "ArenaShooter"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Arena Shooter", Description = "Top-down arena shooter on the asset manager, an example made with Dingo Engine." }
 	embedPackKey()

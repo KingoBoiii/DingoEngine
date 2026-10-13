@@ -102,7 +102,33 @@ licence files at the root of an example's assets beside the package as well, so 
 readable.
 
 The release workflow and `scripts/package-linux-programs.sh` do this for every example:
-each ships its executable (and DLLs) beside `<Example>.dpak`, nothing else.
+each ships its executable (and DLLs) beside `<Example>.dpak`, its licence files and
+`THIRD-PARTY-NOTICES.md`, and on Linux its icon and desktop entry (below).
+
+### 5. Name, icon and version
+
+```lua
+copyAssimpRuntime()
+exeMetadata { Name = "My Game", Description = "One line about it." }
+embedPackKey()
+```
+
+`exeMetadata()` reads `icon.ico` and `icon.png` beside the game's `premake5.lua`
+(`Icon = "art/game"` for `art/game.ico` and `.png`) and writes, when premake runs:
+
+- `build/generated/<Project>/<Project>.rc`, compiled into the Windows executable: a version
+  resource carrying the engine's version and build number (`VERSION`, or `DE_VERSION` and
+  `DE_BUILD_NUMBER` in CI), which Explorer's Details tab shows, and the icon, named
+  `GLFW_ICON` so GLFW puts it on the window and the taskbar too.
+- `build/generated/<Project>/<Project>.desktop`, a desktop entry with `@DIR@` where the
+  install folder goes. `scripts/package-linux-programs.sh` ships it with the PNG (as
+  `<Project>.png`) and `install-desktop-entry.sh`, which writes a copy naming the folder
+  into `~/.local/share/applications` (`--remove` takes it out), since a desktop entry
+  can't hold a relative path.
+
+`scripts/icons/make-icons.sh` draws the examples' placeholder tiles from
+`scripts/icons/icons.txt` (ImageMagick). The Linux window itself shows no icon: GLFW takes
+it from pixels the game passes at run time, which the engine doesn't do yet.
 
 ### From code
 

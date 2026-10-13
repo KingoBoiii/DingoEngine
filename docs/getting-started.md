@@ -85,6 +85,7 @@ project "MyGame"
 
     filter {}
     copyAssimpRuntime()               -- required, see below
+    exeMetadata { Name = "My Game" }  -- optional: icon and version, see distribution.md
 ```
 
 `copyAssimpRuntime()` (defined in the root `premake5.lua`) is what makes an executable

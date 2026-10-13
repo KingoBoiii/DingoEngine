@@ -27,13 +27,6 @@ project "Dingo-TestFramework"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", }
 
-		-- Visual Studio build metadata
-		files {
-			"Dingo-TestFramework.aps",
-			"Dingo-TestFramework.rc",
-			"resource.h"
-		}
-
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
@@ -53,3 +46,4 @@ project "Dingo-TestFramework"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Dingo Test Framework", Description = "Interactive graphics, renderer and asset tests for Dingo Engine." }

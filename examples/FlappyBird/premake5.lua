@@ -25,13 +25,6 @@ project "FlappyBird"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
 
-		-- Visual Studio build metadata
-		files {
-			"Dingo-FlappyBird.aps",
-			"Dingo-FlappyBird.rc",
-			"resource.h"
-		}
-
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
@@ -50,4 +43,5 @@ project "FlappyBird"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Flappy Bird", Description = "Flappy Bird, an example game made with Dingo Engine." }
 	embedPackKey()

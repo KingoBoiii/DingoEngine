@@ -43,4 +43,5 @@ project "AngryBirds"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Angry Birds", Description = "Slingshot puzzle game on 2D physics, an example made with Dingo Engine." }
 	embedPackKey()

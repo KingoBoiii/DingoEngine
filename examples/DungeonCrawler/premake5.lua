@@ -43,4 +43,5 @@ project "DungeonCrawler"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Dungeon Crawler", Description = "Top-down 2D dungeon crawler, an example made with Dingo Engine." }
 	embedPackKey()

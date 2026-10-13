@@ -43,4 +43,5 @@ project "Marionette"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "Marionette", Description = "Melee duel on skeletal animation, an example made with Dingo Engine." }
 	embedPackKey()

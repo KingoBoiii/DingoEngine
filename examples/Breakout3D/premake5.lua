@@ -43,4 +43,5 @@ project "Breakout3D"
         defines { "DE_DISTRIBUTION" }
 
     copyAssimpRuntime()
+	exeMetadata { Name = "Breakout 3D", Description = "Brick breaker in 3D, an example made with Dingo Engine." }
 	embedPackKey()

@@ -43,4 +43,5 @@ project "EchoVault"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	exeMetadata { Name = "EchoVault", Description = "Character controller and 3D audio, an example made with Dingo Engine." }
 	embedPackKey()
