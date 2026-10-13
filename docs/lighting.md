@@ -154,8 +154,21 @@ renderer.SetFog(fog);           // before EndScene, like a light
 
 In the ECS, add a `FogComponent` to any entity. It holds a `Fog Settings`, passed on as it is, plus
 `Enabled` and `UseClearColor`, on by default, which takes the colour from `Scene::SetClearColor` in
-place of `Settings.Color` so the fog meets the cleared background. `Scene::SubmitLights` passes the first enabled one, in entity order, to
-`SetFog`; another enabled one warns once.
+place of `Settings.Color` so the fog meets the cleared background. `Scene::SubmitLights` passes one
+of them to `SetFog`:
+
+1. an enabled `FogComponent` on the camera entity passed in. The `SceneRenderer` passes
+   its perspective camera, and a custom pass passes its own with `SubmitLights(renderer, camera)`.
+   A second camera, such as a security monitor or a cutscene camera, can then see more or less fog
+   than the player's view;
+2. otherwise the first enabled one, in entity order, on an entity without a `CameraComponent`: the
+   scene-wide fog, so another camera's fog never fogs this view;
+3. otherwise, only in a pass that names no camera, the first enabled one on a camera's entity, so a
+   scene whose only fog sits on its one camera stays fogged in a custom pass calling
+   `SubmitLights(renderer)`. A view whose camera is named never takes another camera's fog: with
+   no fog of its own and none scene-wide, it has none.
+
+More than one candidate at step 2 (or, with none there, at step 3) warns once.
 
 - **Scene-scoped**, like lights: `EndScene` clears it, so set it every frame you want it.
   `ClearFog()` drops it before then.
@@ -174,7 +187,8 @@ place of `Settings.Color` so the fog meets the cleared background. `Scene::Submi
 - `Renderer3D::Statistics::Fogged` says whether the last scene was drawn with fog.
 
 The Lighting Test's `--fog` (or its Fog checkbox) fogs every mode into the clear colour, and its
-checks read back the fog factor on a black wall for each mode.
+checks read back the fog factor on a black wall for each mode, and which `FogComponent` a camera's
+view takes.
 
 ## The light budget
 

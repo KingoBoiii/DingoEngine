@@ -90,36 +90,60 @@ namespace Dingo::Internal::LightSystem
 
 	namespace
 	{
-		void SubmitFog(const entt::registry& registry, Renderer3D& renderer, const glm::vec3& clearColor)
+		// A camera's own fog belongs to its view: another camera's view never takes it, and a pass
+		// that names no camera only when the scene has no fog on an entity without a camera.
+		void SubmitFog(const entt::registry& registry, Renderer3D& renderer, const glm::vec3& clearColor, entt::entity camera)
 		{
-			static bool s_Warned = false;
-			bool submitted = false;
-			for (entt::entity entity : InEntityOrder<FogComponent>(registry))
+			const FogComponent* chosen = nullptr;
+			if (camera != entt::null && registry.valid(camera))
 			{
-				const FogComponent& component = registry.get<const FogComponent>(entity);
-				if (!component.Enabled)
-					continue;
+				const FogComponent* own = registry.try_get<const FogComponent>(camera);
+				if (own && own->Enabled)
+					chosen = own;
+			}
 
-				if (submitted)
+			if (!chosen)
+			{
+				const FogComponent* cameraFog = nullptr;
+				uint32_t sceneWide = 0, onCameras = 0;
+				for (entt::entity entity : InEntityOrder<FogComponent>(registry))
 				{
-					if (!s_Warned)
+					const FogComponent& component = registry.get<const FogComponent>(entity);
+					if (!component.Enabled)
+						continue;
+
+					if (registry.all_of<CameraComponent>(entity))
 					{
-						DE_CORE_WARN("A scene has more than one enabled FogComponent; only the first one in entity order is used.");
-						s_Warned = true;
+						if (onCameras++ == 0)
+							cameraFog = &component;
 					}
-					break;
+					else if (sceneWide++ == 0)
+						chosen = &component;
 				}
 
-				Fog fog = component.Settings;
-				if (component.UseClearColor)
-					fog.Color = clearColor;
-				renderer.SetFog(fog);
-				submitted = true;
+				const bool noCamera = camera == entt::null;
+				static bool s_Warned = false;
+				if (!s_Warned && (sceneWide > 1 || (noCamera && sceneWide == 0 && onCameras > 1)))
+				{
+					DE_CORE_WARN("A scene has more than one enabled FogComponent that could fog this view; only the first one in entity order is used. A FogComponent on the rendered camera's entity fogs that view alone.");
+					s_Warned = true;
+				}
+
+				if (!chosen && noCamera)
+					chosen = cameraFog;
 			}
+
+			if (!chosen)
+				return;
+
+			Fog fog = chosen->Settings;
+			if (chosen->UseClearColor)
+				fog.Color = clearColor;
+			renderer.SetFog(fog);
 		}
 	}
 
-	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, const glm::vec3& clearColor, ShadowProbeState* probes)
+	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, const glm::vec3& clearColor, ShadowProbeState* probes, entt::entity camera)
 	{
 		memo.Begin(registry);
 		bool hasLight = false;
@@ -205,7 +229,7 @@ namespace Dingo::Internal::LightSystem
 		// whose lights are all switched off goes dark instead of falling back to the default light.
 		renderer.SetAmbientLight(ambient, 1.0f);
 
-		SubmitFog(registry, renderer, clearColor);
+		SubmitFog(registry, renderer, clearColor, camera);
 	}
 
 }

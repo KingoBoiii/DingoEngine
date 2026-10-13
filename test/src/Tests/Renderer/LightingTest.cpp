@@ -571,6 +571,58 @@ namespace Dingo
 			fog.Settings.Color = glm::vec3(1.0f, 0.0f, 0.0f);
 			scene.SubmitLights(renderer);
 		});
+
+		// A red fog, full at the wall, marks the wrong pick; the right one is white and half way there.
+		auto redFog = []
+		{
+			Fog fog = WhiteFog(FogMode::Linear, 1.0f, 2.0f);
+			fog.Color = glm::vec3(1.0f, 0.0f, 0.0f);
+			return FogComponent(fog, false);
+		};
+		auto halfFog = [] { return FogComponent(WhiteFog(FogMode::Linear, 5.0f, 15.0f), false); };
+
+		probeStep("a FogComponent on the rendered camera's entity fogs its view in place of the scene's", glm::vec3(0.5f), [redFog, halfFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			scene.CreateEntity("Fog").AddComponent<FogComponent>(redFog());
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			camera.AddComponent<FogComponent>(halfFog());
+			scene.SubmitLights(renderer, camera);
+		});
+
+		probeStep("a camera without an enabled fog of its own takes the scene's, not another camera's", glm::vec3(0.5f), [redFog, halfFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			Entity other = scene.CreateEntity("Other Camera");
+			other.AddComponent<CameraComponent>();
+			other.AddComponent<FogComponent>(redFog());
+			scene.CreateEntity("Fog").AddComponent<FogComponent>(halfFog());
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			camera.AddComponent<FogComponent>(redFog()).Enabled = false;
+			scene.SubmitLights(renderer, camera);
+		});
+
+		probeStep("a camera without fog doesn't take another camera's when the scene has none", glm::vec3(0.0f), [redFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			Entity other = scene.CreateEntity("Other Camera");
+			other.AddComponent<CameraComponent>();
+			other.AddComponent<FogComponent>(redFog());
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			scene.SubmitLights(renderer, camera);
+		});
+
+		probeStep("a scene whose only fog sits on a camera fogs a view drawn without one", glm::vec3(0.5f), [halfFog](Renderer3D& renderer)
+		{
+			Scene scene("Lighting Fog Check");
+			Entity camera = scene.CreateEntity("Camera");
+			camera.AddComponent<CameraComponent>();
+			camera.AddComponent<FogComponent>(halfFog());
+			scene.SubmitLights(renderer);
+		});
 	}
 
 	void LightingTest::ReadFogProbe(Framebuffer* target, const glm::vec3& expected, const std::string& name)
