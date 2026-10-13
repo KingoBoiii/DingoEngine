@@ -31,6 +31,9 @@ namespace
 	constexpr float k_Step = 1.0f / 60.0f;
 
 	constexpr float k_CellSize = 2.0f;
+	// Floor tiles stop short of each other: tiles that touch share edges whose pixels both can cover
+	// at the same depth, and those go to whichever draws first, which culling and batching change.
+	constexpr float k_FloorTileSize = k_CellSize - 0.02f;
 	constexpr uint32_t k_RoomCells = 10;
 	constexpr float k_FloorChance = 0.45f;
 	constexpr float k_UniqueChance = 0.55f;
@@ -200,7 +203,7 @@ namespace
 					{
 						placement.Prop = Crate;
 						placement.Yaw = 0.0f;
-						placement.Scale = { k_CellSize / k_CrateSize, 0.1f / k_CrateSize, k_CellSize / k_CrateSize };
+						placement.Scale = { k_FloorTileSize / k_CrateSize, 0.1f / k_CrateSize, k_FloorTileSize / k_CrateSize };
 						placement.Position.y = -0.05f;
 					}
 					else if (random.Float() < k_UniqueChance)
