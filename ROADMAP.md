@@ -377,6 +377,42 @@ about light doesn't merely make it prettier, it changes what the player can *do*
 whether the feature is real. *Marionette* (v0.8) takes the particle half, with impact and footfall
 VFX fired straight from animation events.
 
+## v0.9.1 — Linux, Asset Packing and Headstone Requests
+A point release that gathers everything merged since v0.9.0: Linux support, asset packing, the rest of
+*Headstone*'s requests and every bug filed meanwhile. No API breaks; each new feature is off until a
+game asks for it.
+- **Linux** (PR [#107](https://github.com/KingoBoiii/DingoEngine/pull/107)). The engine, the test
+  framework and every example build with GCC 13+ and run on Vulkan under X11
+  ([LINUX-SUPPORT.md](LINUX-SUPPORT.md)). Master's CI builds and smoke-tests Debug, Release and
+  Distribution on Linux, and the release ships Linux archives beside the Windows zips. Apps no longer hang on close
+  under Xvfb ([#169](https://github.com/KingoBoiii/DingoEngine/issues/169)), and the games and tests
+  turn paths into text as UTF-8 ([#172](https://github.com/KingoBoiii/DingoEngine/issues/172)).
+- **Asset packing** (PR [#167](https://github.com/KingoBoiii/DingoEngine/pull/167)). A shipped game
+  carries one encrypted, compressed `<Game>.dpak` beside its executable instead of a loose `assets/`
+  folder, read through a virtual file system and built by the `DingoPack` tool
+  ([docs/distribution.md](docs/distribution.md)). Every example ships this way.
+- ***Headstone*'s requests** (PRs [#110](https://github.com/KingoBoiii/DingoEngine/pull/110),
+  [#149](https://github.com/KingoBoiii/DingoEngine/pull/149),
+  [#171](https://github.com/KingoBoiii/DingoEngine/pull/171)): runtime VSync (#87), translucent 3D
+  materials (#91), fog in the lit shader (#92), and per camera through its own `FogComponent` (#168),
+  audio buses (#95), physics sensors, cast filters and a body-to-entity lookup (#102), character
+  controllers that collide with each other (#101), clip-only loads of a clip library (#100), textures
+  embedded in a GLB (#99), animation event payloads (#103), root motion (#104), per-light shadow caster
+  groups (#137), and a reparent that keeps a sheared world transform (#83).
+- **Bug fixes** (PRs [#148](https://github.com/KingoBoiii/DingoEngine/pull/148),
+  [#165](https://github.com/KingoBoiii/DingoEngine/pull/165)): a default graphics API (#109),
+  Renderer2D pipelines built for the target's format (#144), barriers after rewriting a bound vertex or
+  index buffer (#145) and after a mid-frame texture upload (#154), closed translucent meshes that no
+  longer blend their back faces over the front (#150), and fog that ignores AO (#151) and respects the
+  blend mode (#152).
+- **The *Headstone* review follow-ups** (PR [#166](https://github.com/KingoBoiii/DingoEngine/pull/166),
+  #153, #155–#160, #163, #164): translucent geometry is copied and uploaded once, the skin buffer is
+  sized for the real budget, `FogComponent` holds a `Fog` instead of repeating its fields, and three
+  test probes now catch what they claim to.
+
+**Test**: each PR was tested as it merged (its body says how), and master's Windows and Linux CI, with
+the Linux smoke test, runs on the release's merge commit before it is tagged.
+
 ## v1.0 — Stability, Performance & Polish
 Performance profiling (Optick or Tracy), full API documentation, cross-platform validation
 (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term
@@ -400,7 +436,7 @@ Doing this last is deliberate: optimising a renderer is measurement work, and by
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
 instead of a moving target.
 
-- **Asset packing** (done on `feat/asset-packing`, plan `.claude/plans/2026-10-11-asset-packing-plan.md`):
+- **Asset packing** (shipped early, in v0.9.1; plan `.claude/plans/2026-10-11-asset-packing-plan.md`):
   a shipped game carries one encrypted, compressed `<Game>.dpak` beside its executable instead of a
   loose `assets/` folder. Every engine file read goes through a virtual file system (assimp and
   miniaudio included), the package is mounted in memory at start-up with the game's embedded key,
