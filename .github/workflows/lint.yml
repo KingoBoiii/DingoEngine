@@ -1,0 +1,79 @@
+name: Lint
+
+on:
+  pull_request:
+    paths:
+      - '**.c'
+      - '**.cpp'
+      - '**.h'
+      - '**.hpp'
+      - '**.inl'
+      - '**/premake5.lua'
+      - 'scripts/ci/lint-changed.sh'
+      - 'scripts/embed.lua'
+      - '.github/workflows/lint.yml'
+      - '.github/actions/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    # Depth 2 brings the merge commit's base parent, which the script diffs against.
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 2
+
+    - uses: ./.github/actions/setup-linux
+
+    - name: Premake
+      run: premake5 --lint gmake
+
+    - name: Lint changed files
+      run: bash scripts/ci/lint-changed.sh
+
+    - name: Upload lint log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lint-linux
+        path: build/lint/
+        if-no-files-found: ignore
+
+  windows:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 2
+
+    - uses: ./.github/actions/setup-windows
+
+    - name: Premake
+      run: premake5 --lint vs2026
+
+    - name: Lint changed files
+      shell: bash
+      env:
+        LINT_MSBUILD_ARGS: -p:PlatformToolset=v143
+      run: bash scripts/ci/lint-changed.sh
+
+    - name: Upload lint log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lint-windows
+        path: build/lint/
+        if-no-files-found: ignore
