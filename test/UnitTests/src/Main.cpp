@@ -4,6 +4,7 @@
 #include <DingoEngine/Log.h>
 #include "DingoEngine/Core/LogLifecycle.h"
 
+#include "LogWriter.h"
 #include "SaveWriter.h"
 
 #include <cstdlib>
@@ -23,6 +24,13 @@ int main(int argc, char** argv)
 		if (path)
 			Dingo::Test::RunSaveWriter(std::filesystem::path(path));
 		return 2;
+	}
+
+	if (argc == 2 && std::string_view(argv[1]) == "--log-writer")
+	{
+		const int result = Dingo::Test::RunLogWriter();
+		Dingo::Internal::ShutdownLog();
+		return result;
 	}
 
 	doctest::Context context(argc, argv);

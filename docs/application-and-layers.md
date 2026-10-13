@@ -60,7 +60,9 @@ The log goes to `Dingo.log` in the game's per-user folder, `GetUserDataDir(Name)
 and a player's bug report needs last session's log, so each run keeps the four before it as
 `Dingo.1.log` (the last run) to `Dingo.4.log`. A second instance running at the same time
 writes `Dingo-<pid>.log` instead of moving a log that is still open (the newest four of those
-are kept too). A rotation that can't finish, say because a log viewer holds `Dingo.2.log`,
+are kept too). Instances started together take turns choosing their file through `Dingo.lock`
+in the same folder, so no two share a log; one that waits more than two seconds for its turn
+writes `Dingo-<pid>.log` without rotating. A rotation that can't finish, say because a log viewer holds `Dingo.2.log`,
 moves nothing it can't and leaves last run's log as `Dingo-<pid>-previous.log`.
 
 ```cpp

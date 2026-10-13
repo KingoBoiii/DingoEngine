@@ -12,10 +12,13 @@
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/LogLifecycle.h"
 
+#include <chrono>
 #include <fstream>
 #include <mutex>
+#include <thread>
 
 #ifdef DE_PLATFORM_LINUX
+#include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
@@ -136,6 +139,13 @@ namespace Dingo
 				std::filesystem::remove(logs[i].second, error);
 		}
 
+		std::filesystem::path SideLogPath(const std::filesystem::path& directory)
+		{
+			return directory / std::format("Dingo-{}.log", ProcessId());
+		}
+
+		constexpr std::chrono::milliseconds k_PickLockTimeout{ 2000 };
+
 #ifdef DE_PLATFORM_LINUX
 		// Linux renames a file another process has open, so a running instance holds a lock on its
 		// Dingo.log for the others to find. (Windows refuses the rename, which tells them the same.)
@@ -151,15 +161,116 @@ namespace Dingo
 			return inUse;
 		}
 
-		void HoldLog(const std::filesystem::path& path)
+		// Taken before the file is truncated, so a log someone else still holds is never emptied.
+		bool HoldLog(const std::filesystem::path& path)
 		{
-			s_LockFd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
-			if (s_LockFd >= 0)
-				flock(s_LockFd, LOCK_EX | LOCK_NB);
+			const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+			if (fd < 0)
+				return false;
+			if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+			{
+				close(fd);
+				return false;
+			}
+			s_LockFd = fd;
+			return true;
 		}
+
+		// Instances started together take turns to pick, create and lock their log; without it two
+		// can both pick Dingo.log, or one rotate away the file another has just created.
+		class PickLock
+		{
+		public:
+			explicit PickLock(const std::filesystem::path& directory)
+			{
+				m_Fd = open((directory / "Dingo.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+				if (m_Fd < 0)
+					return;
+				const auto deadline = std::chrono::steady_clock::now() + k_PickLockTimeout;
+				while (flock(m_Fd, LOCK_EX | LOCK_NB) != 0)
+				{
+					if (errno != EWOULDBLOCK && errno != EINTR)
+						return;
+					if (std::chrono::steady_clock::now() >= deadline)
+					{
+						m_TimedOut = true;
+						return;
+					}
+					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				}
+			}
+
+			~PickLock()
+			{
+				if (m_Fd >= 0)
+					close(m_Fd);
+			}
+
+			PickLock(const PickLock&) = delete;
+			PickLock& operator=(const PickLock&) = delete;
+
+			bool TimedOut() const { return m_TimedOut; }
+
+		private:
+			int m_Fd = -1;
+			bool m_TimedOut = false;
+		};
+#elif defined(DE_PLATFORM_WINDOWS)
+		bool IsLogInUse(const std::filesystem::path&) { return false; }
+		bool HoldLog(const std::filesystem::path&) { return true; }
+
+		// Instances started together take turns to pick and open their log; without it two can both
+		// pick Dingo.log, as nothing refuses the rename until the first has the file open. Held
+		// until the sink has it open.
+		class PickLock
+		{
+		public:
+			explicit PickLock(const std::filesystem::path& directory)
+			{
+				const std::filesystem::path path = directory / "Dingo.lock";
+				const auto deadline = std::chrono::steady_clock::now() + k_PickLockTimeout;
+				for (;;)
+				{
+					m_Handle = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+					if (m_Handle != INVALID_HANDLE_VALUE)
+						return;
+					const DWORD error = GetLastError();
+					if (error != ERROR_SHARING_VIOLATION && error != ERROR_LOCK_VIOLATION)
+						return;
+					if (std::chrono::steady_clock::now() >= deadline)
+					{
+						m_TimedOut = true;
+						return;
+					}
+					Sleep(5);
+				}
+			}
+
+			~PickLock()
+			{
+				if (m_Handle != INVALID_HANDLE_VALUE)
+					CloseHandle(m_Handle);
+			}
+
+			PickLock(const PickLock&) = delete;
+			PickLock& operator=(const PickLock&) = delete;
+
+			bool TimedOut() const { return m_TimedOut; }
+
+		private:
+			HANDLE m_Handle = INVALID_HANDLE_VALUE;
+			bool m_TimedOut = false;
+		};
 #else
 		bool IsLogInUse(const std::filesystem::path&) { return false; }
-		void HoldLog(const std::filesystem::path&) {}
+		bool HoldLog(const std::filesystem::path&) { return true; }
+
+		class PickLock
+		{
+		public:
+			explicit PickLock(const std::filesystem::path&) {}
+			bool TimedOut() const { return false; }
+		};
 #endif
 
 		// Dingo.log becomes Dingo.1.log and so on, keeping `keepRuns` in all. The newest log first
@@ -169,7 +280,7 @@ namespace Dingo
 		{
 			std::error_code error;
 			const std::filesystem::path newest = RunLogPath(directory, 0);
-			const std::filesystem::path sideLog = directory / std::format("Dingo-{}.log", ProcessId());
+			const std::filesystem::path sideLog = SideLogPath(directory);
 			if (!std::filesystem::exists(newest, error))
 				return newest;
 			if (IsLogInUse(newest))
@@ -289,16 +400,27 @@ namespace Dingo
 
 		std::error_code error;
 		std::filesystem::create_directories(directory, error);
-		const std::filesystem::path path = PickLogPath(directory, (std::max)(keepRuns, 1u));
 
-		const auto fileSink = std::make_shared<FileSink>(path);
+		std::shared_ptr<FileSink> fileSink;
+		std::filesystem::path path;
+		{
+			// An instance that never lets go of the lock (stopped in a debugger) costs the others
+			// only the rotation: they write a side log instead of waiting on it.
+			const PickLock lock(directory);
+			path = lock.TimedOut() ? SideLogPath(directory) : PickLogPath(directory, (std::max)(keepRuns, 1u));
+			if (!HoldLog(path) && path != SideLogPath(directory))
+			{
+				path = SideLogPath(directory);
+				HoldLog(path);
+			}
+			fileSink = std::make_shared<FileSink>(path);
+		}
 		if (!fileSink->IsOpen())
 		{
 			DropEarlySink(nullptr);
 			DE_CORE_ERROR("Log: can't write a log file in '{}'; logging to the console only", Utf8(directory));
 			return false;
 		}
-		HoldLog(path);
 
 		fileSink->set_pattern(k_FilePattern);
 		if (s_EarlySink)
