@@ -924,7 +924,7 @@ namespace Dingo
 					translucentVertices += copies * vertexCount;
 					translucentIndices += copies * indexCount;
 					if (IsTranslucentDrawable(submission.Material))
-						m_Statistics.ShadowCasters += copies - 1;
+						m_Statistics.ShadowCasters += static_cast<uint32_t>(copies - 1);
 					continue;
 				}
 				++m_Statistics.CulledMeshes;
