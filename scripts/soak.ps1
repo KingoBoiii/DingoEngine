@@ -9,6 +9,7 @@
   LOG ERROR or a [FAIL]. Marionette's --tournament is capped at 1000 bouts, which can end before
   -Minutes; the tournament is then started again on the next seeds, and each process is judged on
   its own (a process shorter than twice -SettleMinutes is judged on its exit and log only).
+  A game that exits within a minute three times in a row isn't started again.
   Candlewick has no autoplay, so it idles in -Room with its wardens, flames and lights running.
   Both are closed through WM_CLOSE at the end, so teardown runs too. Output goes to -Out.
 
@@ -32,13 +33,46 @@ $root = Split-Path -Parent $PSScriptRoot
 $Bin = if ([System.IO.Path]::IsPathRooted($Bin)) { $Bin } else { Join-Path $root $Bin }
 $Out = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path $root $Out }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
-$graphicsArg = if ($Graphics -eq "vulkan") { @() } else { @("--graphics=$Graphics") }
+$graphicsArg = @(if ($Graphics -ne "vulkan") { "--graphics=$Graphics" })
 $tournamentBouts = 1000
+$maxShortRuns = 3
+
+# WM_CLOSE to every visible top-level window of the process, as windows-smoke-test.ps1 does:
+# CloseMainWindow posts to the one window .NET guesses is the main one, which needn't be the game's.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class SoakWindows
+{
+	delegate bool EnumProc(IntPtr window, IntPtr parameter);
+	[DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
+	[DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+	[DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+	[DllImport("user32.dll")] static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+	public static int CloseAll(uint processId)
+	{
+		int sent = 0;
+		EnumWindows((window, parameter) =>
+		{
+			uint owner;
+			GetWindowThreadProcessId(window, out owner);
+			if (owner == processId && IsWindowVisible(window) && PostMessageW(window, 0x0010, IntPtr.Zero, IntPtr.Zero))
+				++sent;
+			return true;
+		}, IntPtr.Zero);
+		return sent;
+	}
+}
+'@
 
 $games = @(
-    [pscustomobject]@{ Name = "marionette"; Exe = Join-Path $Bin "Marionette\Marionette.exe"; Cwd = Join-Path $root "examples\Marionette"; Run = 0; Seed = 1 },
-    [pscustomobject]@{ Name = "candlewick"; Exe = Join-Path $Bin "Candlewick\Candlewick.exe"; Cwd = Join-Path $root "examples\Candlewick"; Run = 0; Seed = 0 }
+    [pscustomobject]@{ Name = "marionette"; Exe = Join-Path $Bin "Marionette\Marionette.exe"; Cwd = Join-Path $root "examples\Marionette"; Run = 0; Seed = 1; ShortRuns = 0 },
+    [pscustomobject]@{ Name = "candlewick"; Exe = Join-Path $Bin "Candlewick\Candlewick.exe"; Cwd = Join-Path $root "examples\Candlewick"; Run = 0; Seed = 0; ShortRuns = 0 }
 )
+foreach ($game in $games) {
+    Set-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value "run,minutes,private_mb"
+}
 
 function Get-Arguments($game) {
     if ($game.Name -eq "marionette") {
@@ -52,7 +86,7 @@ function Start-Game($game) {
     $tag = "$($game.Name)-$($game.Run)"
     $arguments = Get-Arguments $game
     $process = Start-Process -FilePath $game.Exe -WorkingDirectory $game.Cwd -ArgumentList ($arguments -join " ") `
-        -RedirectStandardOutput (Join-Path $Out "$tag.log") -RedirectStandardError (Join-Path $Out "$tag.stderr.log") -PassThru
+        -RedirectStandardOutput (Join-Path $Out "$tag.log") -RedirectStandardError (Join-Path $Out "$tag.stderr.log") -PassThru -NoNewWindow
     # Without reading the handle once, ExitCode stays empty after the process ends.
     $null = $process.Handle
     $game | Add-Member -Force NoteProperty Process $process
@@ -65,14 +99,22 @@ function Start-Game($game) {
 $results = New-Object System.Collections.Generic.List[object]
 function Finish-Game($game) {
     $process = $game.Process
+    $problems = @()
     if (-not $process.HasExited) {
-        $null = $process.CloseMainWindow()
-        if (-not $process.WaitForExit(60000)) { $process.Kill(); $process.WaitForExit() }
+        $null = [SoakWindows]::CloseAll([uint32]$process.Id)
+        if (-not $process.WaitForExit(60000)) {
+            try { $process.Kill() } catch {}
+            $problems += "hung"
+        }
     }
     $process.WaitForExit()
-    $problems = @()
     if ($process.ExitCode -ne 0) { $problems += "exit $($process.ExitCode)" }
-    $text = Get-Content -Raw -ErrorAction SilentlyContinue (Join-Path $Out "$($game.Tag).log")
+    # spdlog's own errors ("[*** LOG ERROR") go to stderr, the engine's log to stdout.
+    $text = ""
+    foreach ($file in "$($game.Tag).log", "$($game.Tag).stderr.log") {
+        $path = Join-Path $Out $file
+        if (Test-Path $path) { $text += [System.IO.File]::ReadAllText($path) }
+    }
     if ($text -match "LOG ERROR") { $problems += "log-error" }
     if ($text -match "\[FAIL\]") { $problems += "fail" }
 
@@ -99,7 +141,8 @@ function Add-Sample($game) {
     if (-not $game.Process.HasExited) {
         $mb = $game.Process.PrivateMemorySize64 / 1MB
         $game.Samples.Add($mb)
-        Add-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value ("{0},{1},{2:N1}" -f $game.Tag, ((Get-Date) - $game.Started).TotalMinutes.ToString("N1"), $mb)
+        $line = [string]::Format([cultureinfo]::InvariantCulture, "{0},{1:F1},{2:F1}", $game.Tag, ((Get-Date) - $game.Started).TotalMinutes, $mb)
+        Add-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value $line
     }
 }
 
@@ -108,19 +151,27 @@ $deadline = (Get-Date).AddMinutes($Minutes)
 $nextSample = Get-Date
 while ((Get-Date) -lt $deadline) {
     foreach ($game in $games) {
-        if ($game.Process.HasExited) {
+        if ($game.Process -and $game.Process.HasExited) {
+            $short = ((Get-Date) - $game.Started).TotalMinutes -lt 1
             Finish-Game $game
+            $game.ShortRuns = if ($short) { $game.ShortRuns + 1 } else { 0 }
+            if ($game.ShortRuns -ge $maxShortRuns) {
+                Write-Host "$($game.Name) exited within a minute $maxShortRuns times in a row; not restarting it."
+                $game.Process = $null
+                continue
+            }
             if ($game.Name -eq "marionette") { $game.Seed += $tournamentBouts }
             Start-Game $game
         }
     }
     if ((Get-Date) -ge $nextSample) {
-        foreach ($game in $games) { Add-Sample $game }
+        foreach ($game in $games) { if ($game.Process) { Add-Sample $game } }
         $nextSample = $nextSample.AddMinutes(1)
     }
     Start-Sleep -Seconds 5
 }
 foreach ($game in $games) {
+    if (-not $game.Process) { continue }
     Add-Sample $game
     Finish-Game $game
 }
