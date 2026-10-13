@@ -11,6 +11,6 @@ Read on demand from CLAUDE.md, which has the everyday commands. Linux, profiling
 
 ## Test app and devices
 
-The test framework takes `--test=<name substring>` (case-insensitive) to boot straight into one case — `--test=asset`, `--test=Text` — otherwise it starts on the first.
+The test framework takes `--test=<name substring>` (case-insensitive) to boot straight into one case — `--test=asset`, `--test="text test"` (plain `text` would match "Texture Quad Test" first) — otherwise it starts on the first.
 
 Device and adapter selection lives in `Graphics/NVRHI/` (`VulkanGraphicsContext.cpp` for Vulkan). Without a hardware GPU (a VM), D3D11 takes the default adapter, which is WARP, and D3D12 falls back to WARP with a warning (v0.8.2); Vulkan without a driver stops at instance creation with a `DE_CORE_VERIFY` and logs the missing extensions or layers. WARP rasterizes on the CPU: fine for running the test app, meaningless for timings. `GraphicsContext::SupportsWireframe()` is false on a Vulkan GPU without `fillModeNonSolid`; `NvrhiPipeline` then builds `FillMode::Wireframe` solid and warns once (v0.8.3, #78).

@@ -144,7 +144,7 @@ which an emitter takes when it is made. An effect must outlive its emitters.
 
 ## Checking it
 
-The test app's **Particle Test** (`--test=particles`, `--particles=fountain|burst|soft|budget|events`)
+The test app's **Particle Test** (`--test=particle`, `--particles=fountain|burst|soft|budget|events`)
 shows a fountain of sparks through bloom, bursts at random points, soft smoke against the floor, an
 emitter keeping about 30,000 alive, and the Fox puffing dust at every footfall. Over its first five frames it checks by reading the pool back:
 an emitter takes the whole pool and keeps every particle alive while another finds no room; a burst
