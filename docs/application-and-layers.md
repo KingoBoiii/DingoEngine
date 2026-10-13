@@ -40,7 +40,7 @@ ApplicationParams params{
         .Height     = 900,
         .VSync      = true,
         .Resizable  = true,       // live window resizing works on every back-end
-        .Fullscreen = false,      // start in borderless fullscreen at desktop resolution
+        .Mode       = WindowMode::Windowed,   // or BorderlessFullscreen, ExclusiveFullscreen
     },
     .Graphics = {
         .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
@@ -102,22 +102,39 @@ builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than break
 debugger that isn't there. The test app's `--crash=segv|thread|abort|terminate|throw|stack|verify|fatal`
 crashes on purpose, which is how CI checks all of this.
 
-### Fullscreen
+### Window modes
 
-Besides `WindowParams::Fullscreen` for starting fullscreen, the mode can be switched
-at runtime (borderless fullscreen at the desktop resolution of the monitor the window
-is on; the windowed position/size is restored when leaving):
+`WindowParams::Mode` sets the start mode, and the window switches at runtime between three:
+
+| `WindowMode` | |
+|---|---|
+| `Windowed` | A normal window. `SetSize(w, h)` sets its client size. |
+| `BorderlessFullscreen` | A fullscreen window at the monitor's desktop mode: the display mode never changes. |
+| `ExclusiveFullscreen` | A fullscreen window that switches the monitor to a display mode. |
 
 ```cpp
-Application::Get().GetWindow().ToggleFullscreen();   // e.g. bound to F11
-Application::Get().GetWindow().SetFullscreen(true);  // or explicitly
-bool fs = Application::Get().GetWindow().IsFullscreen();
+Window& window = Application::Get().GetWindow();
+window.ToggleFullscreen();                               // e.g. bound to F11: borderless or windowed
+window.SetWindowMode(WindowMode::BorderlessFullscreen);
+window.SetWindowMode(WindowMode::ExclusiveFullscreen, { 1920, 1080, 144 });
+window.SetWindowMode(WindowMode::Windowed);              // back to the windowed position and size
+
+for (const DisplayMode& mode : window.GetDisplayModes())   // largest first, for an options screen
+    AddRow(std::format("{} x {} @ {} Hz", mode.Width, mode.Height, mode.RefreshRate));
 ```
 
-The swap chain follows automatically via the normal resize path, on every graphics
-back-end. `WindowResizeEvent` is forwarded to layers, so cameras can update their
-aspect ratio there. Fullscreen is exclusive, so an alt-tab minimizes the window: see
-[In the background](#in-the-background).
+Everything happens on the monitor the window is on. Exclusive fullscreen takes the listed mode
+nearest the one asked for (`ChooseDisplayMode`: the size if listed, else the nearest; then the
+refresh rate, 0 = the highest) and reports it through `GetFullscreenDisplayMode()`; an invalid mode
+means the desktop's. `GetDesktopDisplayMode()` keeps reporting the monitor's own mode meanwhile.
+`SetSize` while fullscreen changes the size the window returns to, and `GetWindowedWidth/Height`
+read it. The swap chain follows through the ordinary resize path on every back-end, and
+`WindowResizeEvent` reaches the layers, so cameras can update their aspect there. Both fullscreen
+modes are a GLFW fullscreen window, which an alt-tab minimizes: see
+[In the background](#in-the-background). A [`Settings`](saves-and-settings.md#settings) slot saves the
+mode and starts the window in it. The test app's Display Mode Test (`--test=display`) walks every
+mode and checks the window and swap-chain sizes; `--display-exclusive=next` or `=<W>x<H>[@<Hz>]`
+makes its exclusive step change the display mode.
 
 ### VSync
 
@@ -194,7 +211,8 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 |---|---|
 | `PushLayer(Layer*)` / `PushOverlay(Layer*)` | Add a layer (overlays update/draw on top). The app takes ownership. |
 | `GetRenderer2D()` | The batched 2D renderer (see [2D Rendering](rendering-2d.md)). |
-| `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetFullscreen`, `SetVSync` (see [VSync](#vsync)). |
+| `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetWindowMode`, `SetFullscreen`, `SetSize`, `SetVSync` (see [Window modes](#window-modes), [VSync](#vsync)). |
+| `GetSaveDirectory()` | Where `SaveSlots` keeps its files (see [Saves & Settings](saves-and-settings.md)). |
 | `GetSwapChain()` | The active swap chain. |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
