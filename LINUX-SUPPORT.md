@@ -194,6 +194,14 @@ ran.
 - [L28](#l28) moves `-Wno-changes-meaning` under `toolset:gcc` (clang warned about it once per engine file).
   Clang 18 builds everything and passes the smoke test locally, but CI builds with GCC only: one compiler, as
   on Windows.
+- [#169](https://github.com/KingoBoiii/DingoEngine/issues/169), apps that sometimes hung on close in the smoke
+  test: `Application::Destroy` shut the window down (`glfwTerminate` closes the X connection) before the swap
+  chain and its surface, which Mesa's X11 WSI still drives while they are destroyed. A standalone GLFW + Vulkan
+  program that tears down in that order failed 5 runs in 80 under Xvfb and lavapipe (`BadDrawable` on
+  `X_PutImage`, which Xlib's default handler turns into `exit(1)`, or a segfault); swap chain first, none of
+  233 runs failed. The window now goes last. The smoke test also dumps a hung app's thread stacks with gdb into
+  `<name>.stacks.log` before it kills it, and flags a close request no window took (`close-not-delivered`); the
+  engine logs `Window close requested.`, `Shutting down.` and `Shut down.`.
 
 Verified:
 

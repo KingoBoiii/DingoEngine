@@ -2,7 +2,7 @@ name: Set up a Linux build
 description: >
   Installs the build dependencies, the Vulkan SDK (LunarG's Linux tarball: Ubuntu's packages are too
   old), assimp 6.0.4 built as a static library into vendor/assimp/lib/linux-x86_64, and premake.
-  With runtime, also what the headless smoke test runs on: Xvfb, Mesa's llvmpipe and python3-xlib.
+  With runtime, also what the headless smoke test runs on: Xvfb, Mesa's llvmpipe, python3-xlib and gdb.
 
 inputs:
   runtime:
@@ -21,7 +21,7 @@ runs:
     run: |
       packages="build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev"
       if [[ "${{ inputs.runtime }}" == "true" ]]; then
-        packages+=" xvfb xauth mesa-vulkan-drivers python3-xlib"
+        packages+=" xvfb xauth mesa-vulkan-drivers python3-xlib gdb"
       fi
       sudo apt-get update -q
       sudo apt-get install -y -q $packages
