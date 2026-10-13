@@ -43,6 +43,11 @@ namespace Dingo
 		if (logDirectory.empty())
 			logDirectory = Platform::GetUserDataDir(m_Params.Name) / "logs";
 
+		if (auto directory = m_Params.CommandLineArgs.Get("save-dir"); directory && !directory->empty())
+			m_Params.SaveDirectory = std::filesystem::path(*directory);
+		if (m_Params.SaveDirectory.empty())
+			m_Params.SaveDirectory = Platform::GetUserDataDir(m_Params.Name) / "saves";
+
 		Log::OpenFile(logDirectory);
 		Internal::CrashHandler::Install(Log::GetFilePath(), logDirectory, m_Params.Name);
 	}

@@ -74,6 +74,8 @@ namespace Dingo
 		// Empty = GetUserDataDir(Name)/logs, since a game installed under Program Files can't
 		// write beside itself. --log-here (the working directory) and --log-dir=<path> override it.
 		std::filesystem::path LogDirectory;
+		// Where SaveSlots keeps its files. Empty = GetUserDataDir(Name)/saves; --save-dir=<path> overrides it.
+		std::filesystem::path SaveDirectory;
 
 		WindowParams Window;		// Parameters for the application window
 		GraphicsParams Graphics;	// Parameters for the graphics context
@@ -167,6 +169,8 @@ namespace Dingo
 
 		// ApplicationParams::Name, or the executable's name when that was empty.
 		const std::string& GetName() const { return m_Params.Name; }
+		// ApplicationParams::SaveDirectory resolved; created by the first save.
+		const std::filesystem::path& GetSaveDirectory() const { return m_Params.SaveDirectory; }
 
 	protected:
 		Application(const ApplicationParams& params = {});

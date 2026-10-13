@@ -154,6 +154,7 @@ IncludeDir['entt'] = "%{wks.location}/vendor/entt/include";
 IncludeDir['box2d'] = "%{wks.location}/vendor/box2d/include";
 IncludeDir['jolt'] = "%{wks.location}/vendor/JoltPhysics";
 IncludeDir['miniaudio'] = "%{wks.location}/vendor/miniaudio"; -- header-only (miniaudio.h + stb_vorbis.c), engine-only
+IncludeDir['json'] = "%{wks.location}/vendor/json/single_include"; -- header-only nlohmann/json, engine-only (SaveData.cpp)
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -278,7 +279,8 @@ group "Engine"
 			"%{IncludeDir.entt}",
 			"%{IncludeDir.box2d}",
 			"%{IncludeDir.jolt}",
-			"%{IncludeDir.miniaudio}"
+			"%{IncludeDir.miniaudio}",
+			"%{IncludeDir.json}"
 		}
 
 		links {
