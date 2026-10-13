@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -36,6 +37,15 @@ namespace Dingo
 	public:
 		/// A Null value.
 		SaveData() = default;
+		/// Copying copies the whole tree; moving leaves the source Null. Assigning a value its own
+		/// member, or a member another member of the same tree, is safe.
+		///@{
+		SaveData(const SaveData& other);
+		SaveData(SaveData&& other) noexcept;
+		SaveData& operator=(const SaveData& other);
+		SaveData& operator=(SaveData&& other) noexcept;
+		~SaveData();
+		///@}
 		/// Implicit conversions from a C++ value to the matching type: bool (Bool), integers and
 		/// enums (Int, an enum stored as its integer), floating point (Float, stored as a double),
 		/// nullptr (Null), strings (String; a null const char* gives an empty string) and
@@ -124,12 +134,13 @@ namespace Dingo
 		// Objects.
 		/// The non-const operator[] adds a missing member (as Null) and turns a Null value
 		/// into an object; any other value is replaced by an empty object, with an error logged.
-		/// The reference is invalidated by adding or removing a member.
+		/// The reference stays valid until that member is removed, or this value is cleared,
+		/// assigned or destroyed; adding other members leaves it alone.
 		SaveData& operator[](std::string_view key);
 		/// The const one returns a Null for a missing key and never adds a member.
 		const SaveData& operator[](std::string_view key) const;
-		/// The member's value, or nullptr when it is missing or this is not an object. The pointer
-		/// is invalidated by adding or removing a member.
+		/// The member's value, or nullptr when it is missing or this is not an object. Valid as
+		/// long as operator[]'s reference would be.
 		///@{
 		SaveData* Find(std::string_view key);
 		const SaveData* Find(std::string_view key) const;
@@ -143,7 +154,8 @@ namespace Dingo
 
 		// Arrays.
 		/// Push turns a Null value into an array; any other non-array is replaced by an empty
-		/// one, with an error logged. Returns the new item, valid until the array grows again.
+		/// one, with an error logged. Returns the new item, valid until the array is cleared,
+		/// assigned or destroyed.
 		SaveData& Push(SaveData value);
 		/// At and operator[](index) also reach an object's values in key order; past the end they
 		/// return a Null (the non-const one a scratch value, with an error).
@@ -191,7 +203,9 @@ namespace Dingo
 		int64_t m_Int = 0;
 		double m_Float = 0.0;
 		std::string m_String;
-		std::vector<SaveData> m_Items;		// array items, or object values parallel to m_Keys
+		// Array items, or object values parallel to m_Keys. Boxed so a reference to a member
+		// survives inserting another: `save["copy"] = save["original"]` evaluates the right side first.
+		std::vector<std::unique_ptr<SaveData>> m_Items;
 		std::vector<std::string> m_Keys;	// sorted
 	};
 

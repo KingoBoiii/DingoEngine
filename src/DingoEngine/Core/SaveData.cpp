@@ -240,12 +240,57 @@ namespace Dingo
 		}
 	}
 
-	SaveData::SaveData(const glm::vec2& value) : m_Type(SaveValueType::Array) { m_Items = { value.x, value.y }; }
-	SaveData::SaveData(const glm::vec3& value) : m_Type(SaveValueType::Array) { m_Items = { value.x, value.y, value.z }; }
-	SaveData::SaveData(const glm::vec4& value) : m_Type(SaveValueType::Array) { m_Items = { value.x, value.y, value.z, value.w }; }
-	SaveData::SaveData(const glm::ivec2& value) : m_Type(SaveValueType::Array) { m_Items = { value.x, value.y }; }
-	SaveData::SaveData(const glm::ivec3& value) : m_Type(SaveValueType::Array) { m_Items = { value.x, value.y, value.z }; }
-	SaveData::SaveData(const glm::quat& value) : m_Type(SaveValueType::Array) { m_Items = { value.x, value.y, value.z, value.w }; }
+	SaveData::SaveData(const glm::vec2& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 2; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
+	SaveData::SaveData(const glm::vec3& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 3; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
+	SaveData::SaveData(const glm::vec4& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 4; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
+	SaveData::SaveData(const glm::ivec2& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 2; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
+	SaveData::SaveData(const glm::ivec3& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 3; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
+	SaveData::SaveData(const glm::quat& value) : m_Type(SaveValueType::Array)
+	{
+		for (const float component : { value.x, value.y, value.z, value.w })
+			m_Items.push_back(std::make_unique<SaveData>(component));
+	}
+
+	SaveData::SaveData(const SaveData& other)
+		: m_Type(other.m_Type), m_Bool(other.m_Bool), m_Int(other.m_Int), m_Float(other.m_Float), m_String(other.m_String), m_Keys(other.m_Keys)
+	{
+		m_Items.reserve(other.m_Items.size());
+		for (const std::unique_ptr<SaveData>& item : other.m_Items)
+			m_Items.push_back(std::make_unique<SaveData>(*item));
+	}
+
+	SaveData::SaveData(SaveData&& other) noexcept
+		: m_Type(std::exchange(other.m_Type, SaveValueType::Null)), m_Bool(other.m_Bool), m_Int(other.m_Int), m_Float(other.m_Float),
+		m_String(std::move(other.m_String)), m_Items(std::move(other.m_Items)), m_Keys(std::move(other.m_Keys))
+	{
+		other.m_Items.clear();
+		other.m_Keys.clear();
+	}
+
+	// Both build the new value before releasing the old tree, which may own other.
+	SaveData& SaveData::operator=(const SaveData& other)
+	{
+		if (this != &other)
+			*this = SaveData(other);
+		return *this;
+	}
+
+	SaveData& SaveData::operator=(SaveData&& other) noexcept
+	{
+		if (this == &other)
+			return *this;
+		SaveData value(std::move(other));
+		std::swap(m_Type, value.m_Type);
+		std::swap(m_Bool, value.m_Bool);
+		std::swap(m_Int, value.m_Int);
+		std::swap(m_Float, value.m_Float);
+		m_String.swap(value.m_String);
+		m_Items.swap(value.m_Items);
+		m_Keys.swap(value.m_Keys);
+		return *this;
+	}
+
+	SaveData::~SaveData() = default;
 
 	SaveData SaveData::MakeObject()
 	{
@@ -296,9 +341,9 @@ namespace Dingo
 			return false;
 		for (size_t i = 0; i < count; i++)
 		{
-			if (!m_Items[i].IsNumber())
+			if (!m_Items[i]->IsNumber())
 				return false;
-			out[i] = m_Items[i].AsFloat();
+			out[i] = m_Items[i]->AsFloat();
 		}
 		return true;
 	}
@@ -323,16 +368,16 @@ namespace Dingo
 
 	glm::ivec2 SaveData::AsIVec2(const glm::ivec2& fallback) const
 	{
-		if (m_Type != SaveValueType::Array || m_Items.size() < 2 || !m_Items[0].IsInt() || !m_Items[1].IsInt())
+		if (m_Type != SaveValueType::Array || m_Items.size() < 2 || !m_Items[0]->IsInt() || !m_Items[1]->IsInt())
 			return fallback;
-		return glm::ivec2(static_cast<int>(m_Items[0].AsInt()), static_cast<int>(m_Items[1].AsInt()));
+		return glm::ivec2(static_cast<int>(m_Items[0]->AsInt()), static_cast<int>(m_Items[1]->AsInt()));
 	}
 
 	glm::ivec3 SaveData::AsIVec3(const glm::ivec3& fallback) const
 	{
-		if (m_Type != SaveValueType::Array || m_Items.size() < 3 || !m_Items[0].IsInt() || !m_Items[1].IsInt() || !m_Items[2].IsInt())
+		if (m_Type != SaveValueType::Array || m_Items.size() < 3 || !m_Items[0]->IsInt() || !m_Items[1]->IsInt() || !m_Items[2]->IsInt())
 			return fallback;
-		return glm::ivec3(static_cast<int>(m_Items[0].AsInt()), static_cast<int>(m_Items[1].AsInt()), static_cast<int>(m_Items[2].AsInt()));
+		return glm::ivec3(static_cast<int>(m_Items[0]->AsInt()), static_cast<int>(m_Items[1]->AsInt()), static_cast<int>(m_Items[2]->AsInt()));
 	}
 
 	glm::quat SaveData::AsQuat(const glm::quat& fallback) const
@@ -363,10 +408,14 @@ namespace Dingo
 
 		const size_t index = LowerBound(key);
 		if (index < m_Keys.size() && m_Keys[index] == key)
-			return m_Items[index];
+			return *m_Items[index];
 
+		auto value = std::make_unique<SaveData>();
+		SaveData& member = *value;
+		m_Items.reserve(m_Items.size() + 1);
 		m_Keys.insert(m_Keys.begin() + index, std::string(key));
-		return *m_Items.insert(m_Items.begin() + index, SaveData());
+		m_Items.insert(m_Items.begin() + index, std::move(value));
+		return member;
 	}
 
 	const SaveData& SaveData::operator[](std::string_view key) const
@@ -387,7 +436,7 @@ namespace Dingo
 			return nullptr;
 		const size_t index = LowerBound(key);
 		if (index < m_Keys.size() && m_Keys[index] == key)
-			return &m_Items[index];
+			return m_Items[index].get();
 		return nullptr;
 	}
 
@@ -416,14 +465,14 @@ namespace Dingo
 				DE_CORE_ERROR("SaveData: Push on a value that is not an array; it becomes one.");
 			*this = MakeArray();
 		}
-		m_Items.push_back(std::move(value));
-		return m_Items.back();
+		m_Items.push_back(std::make_unique<SaveData>(std::move(value)));
+		return *m_Items.back();
 	}
 
 	SaveData& SaveData::At(size_t index)
 	{
 		if (index < m_Items.size())
-			return m_Items[index];
+			return *m_Items[index];
 		DE_CORE_ERROR("SaveData: At({}) past the end ({} items); the value goes nowhere.", index, m_Items.size());
 		thread_local SaveData t_Scratch;
 		t_Scratch = SaveData();
@@ -433,7 +482,7 @@ namespace Dingo
 	const SaveData& SaveData::At(size_t index) const
 	{
 		static const SaveData s_Null;
-		return index < m_Items.size() ? m_Items[index] : s_Null;
+		return index < m_Items.size() ? *m_Items[index] : s_Null;
 	}
 
 	void SaveData::Clear()
@@ -453,8 +502,10 @@ namespace Dingo
 			case SaveValueType::Int: return m_Int == other.m_Int;
 			case SaveValueType::Float: return m_Float == other.m_Float;
 			case SaveValueType::String: return m_String == other.m_String;
-			case SaveValueType::Array: return m_Items == other.m_Items;
-			case SaveValueType::Object: return m_Keys == other.m_Keys && m_Items == other.m_Items;
+			case SaveValueType::Array:
+			case SaveValueType::Object:
+				return m_Keys == other.m_Keys && std::equal(m_Items.begin(), m_Items.end(), other.m_Items.begin(), other.m_Items.end(),
+					[](const std::unique_ptr<SaveData>& a, const std::unique_ptr<SaveData>& b) { return *a == *b; });
 		}
 		return false;
 	}

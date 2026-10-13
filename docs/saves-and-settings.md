@@ -53,7 +53,9 @@ literal works too); invalid bytes come back as U+FFFD. `FromJson` refuses nestin
 Misuse never corrupts the tree: `operator[]` with a key on a value that isn't an object makes it
 an empty object, `Push` on one that isn't an array an empty array (both logged as errors), and the
 non-const `At` past the end hands back a scratch value. `nullptr` is a null; any other pointer
-doesn't compile (it would have been a bool).
+doesn't compile (it would have been a bool). A reference from `operator[]`, `Find` or `Push`
+survives adding other members, so `save["backup"] = save["player"]` copies safely; removing that
+member, `Clear`, or assigning or destroying its parent ends it.
 
 ## Files
 

@@ -245,6 +245,40 @@ TEST_SUITE("SaveData")
 		CHECK(data.IsEmpty());
 	}
 
+	TEST_CASE("members keep their address while others are added")
+	{
+		SaveData save;
+		SaveData& player = save["player"];
+		player["name"] = "a name long enough to live on the heap, not in the small-string buffer";
+		SaveData& item = player["inventory"].Push(7);
+		for (int i = 0; i < 64; i++)
+		{
+			save["a" + std::to_string(i)] = i;
+			player["inventory"].Push(i);
+		}
+		CHECK(&save["player"] == &player);
+		CHECK(&player["inventory"][0] == &item);
+		CHECK(item.AsInt() == 7);
+
+		save["copy"] = save["player"];
+		CHECK(save["copy"] == player);
+		CHECK(save["copy"]["name"].AsString() == player["name"].AsString());
+
+		save["player"]["self"] = save["player"];
+		CHECK(save["player"]["self"]["inventory"].Size() == 65);
+
+		save = save["player"]["inventory"];
+		REQUIRE(save.IsArray());
+		CHECK(save.Size() == 65);
+		CHECK(save[0].AsInt() == 7);
+
+		SaveData moved = std::move(save);
+		CHECK(save.IsNull());
+		CHECK(moved.Size() == 65);
+		moved = std::move(moved[0]);
+		CHECK(moved.AsInt() == 7);
+	}
+
 	TEST_CASE("JSON round-trips every type exactly")
 	{
 		const SaveData data = MakeSample();
