@@ -41,7 +41,9 @@ for (size_t i = 0; i < save["inventory"].Size(); i++)
 ```
 
 A number reads as either kind: an integer as a float, and a float as an integer when it is whole.
-`Get<T>` with an integer type gives the fallback for a value outside `T`'s range. The const
+`Get<T>` with an integer type gives the fallback for a value outside `T`'s range, except a 64-bit
+unsigned `T`: a `uint64_t` from 2^63 up is stored as the negative integer with the same bits, so
+`Get<uint64_t>` (a UUID, say) reads the bits back, and a negative value reads as a large one. The const
 `operator[]` returns a null for a missing key, so a chain of lookups on an old save without the
 member falls through to the fallback. An object keeps its keys sorted, so the same data always
 writes the same file.

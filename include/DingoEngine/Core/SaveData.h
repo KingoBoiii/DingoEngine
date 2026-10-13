@@ -38,7 +38,8 @@ namespace Dingo
 		/// A Null value.
 		SaveData() = default;
 		/// Copying copies the whole tree; moving leaves the source Null. Assigning a value its own
-		/// member, or a member another member of the same tree, is safe.
+		/// member, or a member another member of the same tree, is safe; moving a value into one of
+		/// its own members is not (it would own itself).
 		///@{
 		SaveData(const SaveData& other);
 		SaveData(SaveData&& other) noexcept;
