@@ -45,6 +45,7 @@ project "Dingo-TestFramework"
 		vectorextensions "AVX2"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
 	exeMetadata {
 		Name = "Dingo Test Framework",

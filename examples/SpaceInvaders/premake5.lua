@@ -42,6 +42,7 @@ project "SpaceInvaders"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
 	exeMetadata {
 		Name = "Space Invaders",

@@ -42,6 +42,7 @@ project "DungeonCrawler3D"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
 	exeMetadata {
 		Name = "Dungeon Crawler 3D",

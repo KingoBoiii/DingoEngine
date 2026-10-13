@@ -42,6 +42,7 @@ project "Marionette"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
 	exeMetadata {
 		Name = "Marionette",

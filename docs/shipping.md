@@ -24,6 +24,8 @@ filter "configurations:Distribution"
     optimize "On"
     symbols "Off"
     defines { "DE_DISTRIBUTION" }
+
+distributionSymbols()                 -- Windows: a PDB, so a player's minidump can be read
 ```
 
 `DE_DISTRIBUTION` is what the engine's headers switch on, so define it in the game's project, not
@@ -46,7 +48,7 @@ What Distribution changes:
 | `DE_VERIFY`, `DE_CORE_VERIFY` | log, then break into the debugger (`SIGTRAP` on Linux) | `FatalError("Verify Failed ...")`: log, message box on Windows, exit code 1 |
 | Crash on Windows | dump and log line | the same, plus a message box naming the folder |
 | Vulkan validation | on in Debug only; `--vulkan-validation` turns it on elsewhere | off, and the engine creates no validation-message callback |
-| Symbols | Debug builds only | none: see [Reading a minidump](#reading-a-minidump) |
+| Symbols | Debug builds only | a PDB on Windows with `distributionSymbols()`, never shipped: see [Reading a minidump](#reading-a-minidump) |
 
 Two things Distribution does **not** change:
 
@@ -229,12 +231,13 @@ of memory. Open the `.dmp` in Visual Studio (File, Open, then *Debug with Native
 with the **PDB of the exact build the player ran**: a PDB from another build of the same source
 won't match. The dump names the exception and its address, and the call stack follows from there.
 
-The Distribution configuration writes no symbols (`symbols "Off"`), and the engine's own library
-is built the same way, so a stock Distribution build gives a dump you can't read. Turn `symbols`
-on in Distribution for the engine and for the game, and archive the PDB of every build you
-release. Don't ship it.
+On Windows, `distributionSymbols()` (called after the Distribution block) gives the game's
+Distribution build a PDB, and the engine's library is built with symbols too, so the PDB names
+engine frames as well as the game's. Archive the PDB of every build you release, and don't ship
+it: the engine's own release workflow moves its examples' PDBs out of their packages into a
+separate `DingoEngine-<version>-Distribution-symbols-windows-x86_64.zip`.
 
-On Linux the same build with symbols gives `addr2line -C -f -e <executable> <offset>` a function
+Linux Distribution builds stay without symbols. On Linux the same build with symbols gives `addr2line -C -f -e <executable> <offset>` a function
 and a line for each frame of the backtrace. Keep an unstripped copy of every release's executable.
 
 ## Settings players expect

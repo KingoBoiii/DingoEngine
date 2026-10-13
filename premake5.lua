@@ -173,6 +173,15 @@ function copyAssimpRuntime()
     filter {}
 end
 
+-- A Windows Distribution build keeps its PDB, or a player's minidump can't be read. The PDB never
+-- ships: build-release.yml moves every executable's PDB into a separate symbols archive.
+function distributionSymbols()
+    filter { "system:windows", "configurations:Distribution" }
+        symbols "On"
+
+    filter {}
+end
+
 -- Gives an executable its identity outside the game: on Windows a version resource (Explorer's
 -- Details tab and crash dumps show it) and the icon, named GLFW_ICON so GLFW also puts it on the
 -- window and the taskbar; on Linux a .desktop template and the PNG, which

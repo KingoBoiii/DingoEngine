@@ -42,6 +42,7 @@ project "ArenaShooter"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
 	exeMetadata {
 		Name = "Arena Shooter",

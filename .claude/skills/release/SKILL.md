@@ -39,7 +39,7 @@ A release is a version branch merged into `master`, then a tag, a GitHub release
 ## 5. Assets
 
 - Always run `build-release.yml` yourself, straight after step 4, without asking: it is part of every release. It is `workflow_dispatch` only and uploads to an existing release, so it can't start earlier: `gh workflow run build-release.yml --ref vX.Y.Z`, then `gh run watch <id> --exit-status` in a background command. If a job fails, report it and re-run only the failed jobs (`gh run rerun <id> --failed`).
-- Expect **27 assets**: Windows 13 (DingoEngine Debug/Release/Distribution zips + 10 example zips) and Linux 14 (3 engine `.tar.gz` + 10 examples + Dingo-TestFramework). A new example adds one per OS. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
+- Expect **28 assets**: Windows 14 (DingoEngine Debug/Release/Distribution zips, the Distribution symbols zip + 10 example zips) and Linux 14 (3 engine `.tar.gz` + 10 examples + Dingo-TestFramework). A new example adds one per OS. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
 
 ## 6. Mark released
 

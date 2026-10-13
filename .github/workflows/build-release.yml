@@ -51,6 +51,20 @@ jobs:
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
+    # Distribution executables are built with their PDBs (premake's distributionSymbols) so a
+    # player's minidump can be read, but a PDB never ships in a game: they all move into one
+    # symbols archive. The engine's own DingoEngine.pdb stays in its package, as in Release.
+    - name: Collect Distribution symbols
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        Get-ChildItem .\build\bin\Distribution-windows-x86_64 -Directory | Where-Object { $_.Name -ne 'DingoEngine' } | ForEach-Object {
+          $pdbs = @(Get-ChildItem $_.FullName -Filter *.pdb)
+          if ($pdbs.Count) {
+            New-Item -ItemType Directory -Force ".\symbols\$($_.Name)" | Out-Null
+            $pdbs | Move-Item -Destination ".\symbols\$($_.Name)"
+          }
+        }
+
     # Each example ships its executable and DLLs beside <Example>.dpak (its assets, packed and
     # encrypted with its dpak.key), THIRD-PARTY-NOTICES.md and the licence files at the root of its
     # assets, never assets\.
@@ -98,6 +112,15 @@ jobs:
       run: |
         $config = "${{ matrix.build-configuration }}"
         $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-$config-windows-x86_64.zip"
+        gh release upload "${{ github.ref_name }}" "$zipName" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Distribution symbols to GitHub Release
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-Distribution-symbols-windows-x86_64.zip"
+        Compress-Archive -Path ".\symbols\*" -DestinationPath ".\$zipName" -Force
         gh release upload "${{ github.ref_name }}" "$zipName" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
