@@ -229,8 +229,8 @@ An **instance** is a run of consecutive `SubmitSkinnedMesh` calls with the same 
 array of matrices), transform and colour, which is what a model's submeshes are. At `EndScene` every
 instance a pass draws, opaque, translucent or into the shadow atlas, goes into the scene's **skin
 arena**: one storage buffer holding each instance's transform, normal matrix, colour and joints back to
-back, uploaded once. Each draw then writes only the 16 bytes that say where its instance starts
-(`DE_SkinDraw`), once per instance and pass. An instance whose meshes are all culled from every pass is
+back, uploaded once. Each draw then pushes the 16 bytes that say where its instance starts
+(`DE_SkinDraw`, a push constant), so no buffer is written between draws. An instance whose meshes are all culled from every pass is
 neither uploaded nor counted. Each instance counts once against
 `Renderer3DCapabilities::MaxSkinnedInstances`.
 
@@ -240,8 +240,7 @@ params.Renderer3D.Capabilities.MaxSkinnedInstances = 2048;  // default 1024, at 
 params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of warn-and-drop
 ```
 
-- The budget is **per frame**, across every scene the renderer runs, because each instance holds
-  three versions of the 16-byte draw buffer on Vulkan (shadow, opaque, translucent).
+- The budget is **per frame**, across every scene the renderer runs.
   `Renderer3D::GetSkinnedInstanceBudget()` returns the value in force, clamped to 1 and
   `Renderer3D::k_MaxSkinnedInstancesLimit` (4096). The arena grows by doubling as a scene needs it.
 - An instance past the budget is dropped **whole**, so a character never loses some of its parts.
@@ -321,7 +320,6 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    and the shader reads the scene's skin arena like the engine's own:
 
    ```glsl
-   #define DE_SKIN_DATA_BINDING 6        // DE_SkinDraw: any free binding from 2 to 13
    #define DE_SKIN_PALETTE_BINDING 7     // DE_SkinPalette: any free binding
    #define DE_SKIN_PALETTE
    #include <DingoEngine/Skinning.glsl>
@@ -336,10 +334,18 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    }
    ```
 
-   `DE_SkinDraw` is a uniform block and must sit at a binding from 2 to
-   `Renderer3D::k_MaxSkinUniformBinding` (13, because D3D11 has 14 constant buffer slots); both must be
-   bindings the material's own textures and samplers leave free. The renderer finds them by name and
-   binds them itself.
+   `DE_SkinDraw` is a push-constant block (`layout(push_constant)`), so it has no binding.
+   `DE_SkinPalette` must sit at a binding the material's own textures and samplers leave free. The
+   renderer finds both by name and feeds them itself.
+
+   The renderer owns the push constants of a skinned shader: it declares no push-constant block but
+   `DE_SkinDraw`. Every stage of the shader declares the same block, at most 128 bytes and a multiple
+   of 4 (`Shader::FindPushConstantBlockSize` reports a block's size). On D3D11 and D3D12 the block
+   takes the lowest constant-buffer register, b0 to b13, that no uniform block of the shader uses, so
+   a shader whose uniform blocks take all fourteen fails to build.
+
+   A shader must not declare `DE_SkinDraw` as a `std140` uniform block. Include `Skinning.glsl`, or
+   declare `layout(push_constant) uniform DE_SkinDraw { uvec4 SkinDraw; };`.
 
    Without `DE_SKIN_PALETTE` the include declares the older per-draw block instead, which shaders
    written before v1.0 declare themselves. It is **deprecated** (the renderer warns once when a
@@ -368,8 +374,8 @@ The renderer finds the blocks **by name**, through `Shader::FindUniformBufferBin
 and binds a `SkinData` block itself. The rest of the binding convention (0
 scene, 1 material uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
 
-When the blocks are missing, the uniform one is outside 2 to 13, or either collides with a bound
-texture or sampler, the mesh draws with the **default lit material** and a warning (once), instead of
+When the blocks are missing, the `SkinData` block is outside 2 to 13, or a block collides with a
+bound texture or sampler, the mesh draws with the **default lit material** and a warning (once), instead of
 vanishing.
 
 ### Statistics

@@ -1028,11 +1028,27 @@ upload a scene instead of one per draw. Built-in skinned meshes already use the 
 
 Only a custom skinned shader that declares a `SkinData` uniform block is affected. It still
 works, capped at 256 instances a frame, and the renderer warns once. Deprecated names:
-`Renderer3D::k_MaxSkinDataBinding` (use `k_MaxSkinUniformBinding`, which also bounds
-`DE_SkinDraw`), `Renderer3D::k_MaxSkinDataInstances` and `Material::k_SkinDataBlockName`. To move
+`Renderer3D::k_MaxSkinDataBinding` (use `k_MaxSkinUniformBinding`), `Renderer3D::k_MaxSkinDataInstances` and `Material::k_SkinDataBlockName`. To move
 a shader over, define `DE_SKIN_PALETTE` before including `Skinning.glsl` and use its blocks; see
 [custom skinned shaders](animation.md#custom-skinned-shaders). The old `k_MaxSkinnedInstancesLimit`
 is 4096 (it was 256).
+
+A custom skinned shader that copied the `DE_SkinDraw` uniform block of the v1.0 pre-releases must
+change it. `DE_SkinDraw` is now a push-constant block, so a draw's palette base reaches the shader
+without a buffer write (on Vulkan that write ended the render pass of every skinned instance):
+
+```glsl
+// before
+layout(std140, binding = 6) uniform DE_SkinDraw { uvec4 SkinDraw; };
+// after (or include Skinning.glsl with DE_SKIN_PALETTE, which declares it)
+layout(push_constant) uniform DE_SkinDraw { uvec4 SkinDraw; };
+```
+
+The shader no longer defines `DE_SKIN_DATA_BINDING` for `DE_SkinDraw`, and the material bindings it
+freed can move up. The renderer owns the push constants: a material shader cannot declare another
+push block, its stages all declare the same one, and it is at most 128 bytes. On D3D11 and D3D12 the
+block takes the lowest constant-buffer register, b0 to b13, that no uniform block uses. The first
+launch after updating recompiles every shader (the shader cache format moved to 3).
 
 ### Scene::OnPhysicsStart and OnPhysicsStop (deprecated)
 

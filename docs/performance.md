@@ -321,7 +321,8 @@ cuts the palette cost, and lets an animator stop posing a character nobody sees.
 
 Every skinned **instance** (a model's submeshes, which share a palette, transform and colour) puts
 its transform, colour and joints into one storage buffer, uploaded once a scene. Each draw then
-writes 16 bytes saying where its instance starts. A culled instance is neither uploaded nor counted.
+pushes 16 bytes (a push constant) saying where its instance starts, which writes no buffer, so the
+instances of a pass share one render pass on Vulkan. A culled instance is neither uploaded nor counted.
 
 What this changes for you is the size of the crowd. `Renderer3DCapabilities::MaxSkinnedInstances`
 is the number of skinned instances a frame across every scene the renderer runs, 1024 by default,
@@ -333,10 +334,11 @@ params.Renderer3D.Capabilities.MaxSkinnedInstances = 2048;
 ```
 
 An instance past the budget is dropped **whole**, with a warning
-(`Statistics::DroppedSkinnedDraws`), so a character never loses parts. On Vulkan the budget sizes a
-volatile buffer (three 16-byte writes an instance), so raise it only when F4's *Instances* bar is
-full or something is dropped. A custom skinned shader with the older `SkinData` block keeps working,
-but through the old path and at most 256 instances a frame. See
+(`Statistics::DroppedSkinnedDraws`), so a character never loses parts. Raise it only when F4's
+*Instances* bar is full or something is dropped. A custom skinned shader with the older `SkinData`
+block keeps working, but through the old path: at most 256 instances a frame, an upload before each
+draw, and on Vulkan every upload ends the render pass. Instanced static draws still upload between
+draws, with the same cost. See
 [Animation](animation.md#instances-and-the-per-frame-budget).
 
 ### Culled animators

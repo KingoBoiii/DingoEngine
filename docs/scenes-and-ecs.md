@@ -595,6 +595,9 @@ The binding convention a custom mesh shader follows:
   if the material has no params.
 - **binding 2+** — the material's textures/samplers (`Material::SetTexture` / `SetSampler`),
   interleaved: texture slot *i* at `2 + 2i`, sampler slot *i* at `3 + 2i`.
+- **push constants** — the renderer owns them. A material shader cannot declare its own
+  `push_constant` block; a skinned shader's only one is `DE_SkinDraw`
+  ([custom skinned shaders](animation.md#custom-skinned-shaders)).
 
 The whole of binding 0, as the engine's own lit shader declares it:
 
