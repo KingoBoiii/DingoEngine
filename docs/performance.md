@@ -120,7 +120,8 @@ each cell's draws instead of a transform of every vertex.
 In a scene, set one flag:
 
 ```cpp
-auto& wall = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(boxMesh, stone));
+auto& wall = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(boxMesh));
+wall.Material = stone;
 wall.Static = true;
 ```
 
@@ -508,6 +509,6 @@ with `DE_PROFILE_SCOPE`.
   distance, and it cannot tell an animator a gameplay system reads from one nobody does. Sockets and
   bodies on a culled character hold still.
 - **Text and hand-submitted 2D quads are never culled.**
-- **The numbers here come from a software rasteriser.** They show what the CPU does, and the
-  instanced frame was slower there than the CPU path because llvmpipe runs the vertex stage on the
-  CPU. Time your target GPU and backend (Vulkan, DirectX 11 and DirectX 12).
+- **The numbers here come from a software rasteriser.** They show what the CPU does. The whole
+  instanced frame, GPU work included, was slower there than the CPU path, because llvmpipe runs the
+  vertex stage on the CPU. Time your target GPU and backend (Vulkan, DirectX 11 and DirectX 12).

@@ -123,8 +123,9 @@ namespace Dingo
 	{
 	public:
 		///@{
-		/// Makes a material; the caller owns it and deletes it (or calls Destroy). The shader
-		/// overload uses the default MaterialParams around it. The shader is borrowed, not owned.
+		/// Makes a material; the caller owns it and deletes it, and Destroy only frees its GPU
+		/// objects early. The shader overload uses the default MaterialParams around it. The
+		/// shader is borrowed, not owned.
 		[[nodiscard]] static Material* Create(Shader* shader);
 		[[nodiscard]] static Material* Create(const MaterialParams& params);
 		///@}

@@ -165,8 +165,9 @@ game carries it beside the executable**. It already includes the engine's own MI
 
 ## Where the game writes
 
-Nothing is written next to the executable, because a game installed under Program Files can't
-write there. All per-player files live in one folder named after the game:
+Only the shader and font caches are written next to the executable, and they fall back to the
+per-user folder when it can't be written, as under Program Files. Every per-player file lives in
+one folder named after the game:
 
 | What | Where by default | How to move it |
 |---|---|---|
