@@ -6,6 +6,7 @@
 #include "NvrhiGraphicsContext.h"
 #include "NvrhiRenderPass.h"
 #include "NvrhiComputePass.h"
+#include "NvrhiShader.h"
 #include "NvrhiTexture.h"
 
 #include "DingoEngine/Core/Application.h"
@@ -36,6 +37,8 @@ namespace Dingo
 		m_CommandListHandle->open();
 
 		m_HasBegun = true;
+		m_LastDrawFramebuffer = nullptr;
+		m_UploadedSinceDraw = false;
 	}
 
 	void NvrhiCommandList::Close()
@@ -76,6 +79,8 @@ namespace Dingo
 
 		if (hasDepth)
 			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);
+
+		m_LastDrawFramebuffer = nullptr;
 	}
 
 	void NvrhiCommandList::UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)
@@ -84,6 +89,7 @@ namespace Dingo
 		DE_CORE_ASSERT(buffer, "Uniform buffer is null.");
 
 		static_cast<NvrhiGraphicsBuffer*>(buffer)->Write(m_CommandListHandle, data, size, offset);
+		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
 	}
 
 	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
@@ -93,6 +99,7 @@ namespace Dingo
 
 		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
 		m_CommandListHandle->writeTexture(handle, 0, 0, data, rowPitch);
+		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
 
 		// NVRHI requires a binding set's states only when the bound sets change, so a draw that keeps
 		// the set bound before the upload would sample the texture as a copy destination. Committed at
@@ -127,6 +134,8 @@ namespace Dingo
 
 		m_GraphicsState = nvrhi::GraphicsState();
 		m_RenderPassStorageItems = nullptr;
+		m_PushConstantSize = 0;
+		m_PushConstants.fill(0);
 
 		if (!pipeline)
 			return false;
@@ -157,6 +166,7 @@ namespace Dingo
 		// is the framebuffer the pipeline was CREATED against, and for swap-chain pipelines it
 		// dies on every resize. Callers must SetFramebuffer() with the current target after this.
 		m_GraphicsState.setPipeline(nvrhiPipeline->m_GraphicsPipelineHandle);
+		m_PushConstantSize = shader ? static_cast<NvrhiShader*>(shader)->m_PushConstantSize : 0;
 
 		if (nvrhiPipeline->m_BindingSetHandle)
 		{
@@ -241,6 +251,26 @@ namespace Dingo
 		m_GraphicsState.setIndexBuffer(indexBufferBinding);
 	}
 
+	void NvrhiCommandList::SetPushConstants(const void* data, uint32_t size)
+	{
+		DE_CORE_ASSERT(data, "Push-constant data is null.");
+		std::memcpy(m_PushConstants.data(), data, (std::min)(static_cast<size_t>(size), m_PushConstants.size()));
+	}
+
+	void NvrhiCommandList::BeginDraw()
+	{
+		if (m_RenderPassStorageItems)
+			RequireStorageStates(*m_RenderPassStorageItems);
+		m_CommandListHandle->setGraphicsState(m_GraphicsState);
+		if (m_PushConstantSize)
+			m_CommandListHandle->setPushConstants(m_PushConstants.data(), m_PushConstantSize);
+
+		if (m_UploadedSinceDraw && m_GraphicsState.framebuffer == m_LastDrawFramebuffer)
+			++m_UploadPassBreaks;
+		m_UploadedSinceDraw = false;
+		m_LastDrawFramebuffer = m_GraphicsState.framebuffer;
+	}
+
 	void NvrhiCommandList::Draw(uint32_t vertexCount, uint32_t instanceCount)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before drawing.");
@@ -250,9 +280,7 @@ namespace Dingo
 		if (!m_GraphicsState.pipeline)
 			return;
 
-		if (m_RenderPassStorageItems)
-			RequireStorageStates(*m_RenderPassStorageItems);
-		m_CommandListHandle->setGraphicsState(m_GraphicsState);
+		BeginDraw();
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
 			.setVertexCount(vertexCount) // Number of vertices to draw
@@ -268,9 +296,7 @@ namespace Dingo
 		if (!m_GraphicsState.pipeline)
 			return;
 
-		if (m_RenderPassStorageItems)
-			RequireStorageStates(*m_RenderPassStorageItems);
-		m_CommandListHandle->setGraphicsState(m_GraphicsState);
+		BeginDraw();
 
 		nvrhi::DrawArguments drawArguments = nvrhi::DrawArguments()
 			.setVertexCount(indexCount) // Number of vertices to draw
@@ -297,6 +323,7 @@ namespace Dingo
 		RequireStorageStates(nvrhiPass->GetStorageItems());
 		m_CommandListHandle->setComputeState(state);
 		m_CommandListHandle->dispatch(groupsX, groupsY, groupsZ);
+		m_LastDrawFramebuffer = nullptr;
 		return true;
 	}
 

@@ -2,16 +2,13 @@
 // vertex. Read them through SkinModel, SkinNormalMatrix, SkinColor and SkinMatrix.
 //
 // With DE_SKIN_PALETTE (the engine's shaders) every instance of the scene sits in one storage arena,
-// DE_SkinPalette, mirrored by Renderer3D's palette records: from the vec4 a draw's DE_SkinDraw names,
-// Model (4), the normal matrix's columns (3), Color, then four per joint. Without it the instance is
-// the SkinData uniform block, mirrored by Renderer3D::SkinData, uploaded per draw. Both blocks are
-// found by name, so a custom skinned shader may put them at bindings its own uniforms and textures
-// leave free, up to 13 for the uniform block: define DE_SKIN_DATA_BINDING (and
-// DE_SKIN_PALETTE_BINDING) before including this.
-
-#ifndef DE_SKIN_DATA_BINDING
-#define DE_SKIN_DATA_BINDING 4
-#endif
+// DE_SkinPalette, mirrored by Renderer3D's palette records: from the vec4 the draw's push-constant
+// block DE_SkinDraw names, Model (4), the normal matrix's columns (3), Color, then four per joint.
+// The renderer owns the vertex stage's push constants, so a shader including this declares no other
+// push-constant block. Without DE_SKIN_PALETTE the instance is the SkinData uniform block, mirrored by
+// Renderer3D::SkinData, uploaded per draw. Blocks are found by name, so a custom skinned shader may
+// put them at bindings its own uniforms and textures leave free, up to 13 for SkinData: define
+// DE_SKIN_PALETTE_BINDING (or DE_SKIN_DATA_BINDING) before including this.
 
 const int MAX_JOINTS = 128;
 
@@ -26,7 +23,7 @@ layout(std430, binding = DE_SKIN_PALETTE_BINDING) readonly buffer DE_SkinPalette
 	vec4 SkinPalette[];
 };
 
-layout(std140, binding = DE_SKIN_DATA_BINDING) uniform DE_SkinDraw
+layout(push_constant) uniform DE_SkinDraw
 {
 	uvec4 SkinDraw; // x = the instance's first vec4 in DE_SkinPalette
 };
@@ -42,6 +39,10 @@ vec4 SkinColor()        { return SkinPalette[SkinDraw.x + 7u]; }
 mat4 SkinJoint(uint joint) { return PaletteMatrix(SkinDraw.x + 8u + joint * 4u); }
 
 #else
+
+#ifndef DE_SKIN_DATA_BINDING
+#define DE_SKIN_DATA_BINDING 4
+#endif
 
 layout(std140, binding = DE_SKIN_DATA_BINDING) uniform SkinData
 {

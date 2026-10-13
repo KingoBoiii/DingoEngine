@@ -196,7 +196,8 @@ namespace Dingo
 		/// Name of the storage block Renderer3D binds its skin palette arena to (Skinning.glsl with
 		/// DE_SKIN_PALETTE).
 		static constexpr const char* k_SkinPaletteBlockName = "DE_SkinPalette";
-		/// Name of the uniform block holding a draw's base index into the skin palette.
+		/// Name of the push-constant block holding a draw's base index into the skin palette
+		/// (Skinning.glsl with DE_SKIN_PALETTE).
 		static constexpr const char* k_SkinDrawBlockName = "DE_SkinDraw";
 
 		/// A storage buffer at a binding the shader's own numbering gives it
@@ -268,10 +269,15 @@ namespace Dingo
 		// SkinData, at whatever binding the shader gave it. Shaders without one ignore it.
 		void SetSkinUniformBuffer(GraphicsBuffer* buffer);
 
-		// Binds Renderer3D's skin arena to the shader's DE_SkinPalette storage block and its per-draw
-		// base to the DE_SkinDraw uniform block (Skinning.glsl with DE_SKIN_PALETTE), each at whatever
-		// binding the shader gave it. Another arena only re-points the cached passes' binding sets.
-		void SetSkinPaletteBuffers(GraphicsBuffer* palette, GraphicsBuffer* draw);
+		// Binds Renderer3D's skin arena to the shader's DE_SkinPalette storage block (Skinning.glsl
+		// with DE_SKIN_PALETTE), at whatever binding the shader gave it. Another arena only re-points
+		// the cached passes' binding sets. A draw's base goes in its draw constants.
+		void SetSkinPaletteBuffer(GraphicsBuffer* palette);
+
+		// Pushed with each draw of this material to the shader's push-constant block (DE_SkinDraw);
+		// Renderer3D sets them just before the draw.
+		void SetDrawConstants(const glm::uvec4& constants) { m_DrawConstants = constants; }
+		const glm::uvec4& GetDrawConstants() const { return m_DrawConstants; }
 
 		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
 		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it.
@@ -329,7 +335,7 @@ namespace Dingo
 		GraphicsBuffer*      m_InstanceDrawBuffer = nullptr;
 		GraphicsBuffer*      m_SkinPaletteBuffer  = nullptr;
 		uint64_t             m_SkinPaletteBufferId = 0;
-		GraphicsBuffer*      m_SkinDrawBuffer     = nullptr;
+		glm::uvec4           m_DrawConstants{ 0u };
 
 		struct StorageBinding
 		{

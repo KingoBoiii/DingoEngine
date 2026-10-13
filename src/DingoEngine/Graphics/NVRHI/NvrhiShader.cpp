@@ -70,7 +70,7 @@ namespace Dingo
 		static constexpr uint32_t k_ShaderCacheMagic = 0x43485344; // "DSHC"
 		// Bump when compiler options or the shader toolchain change in a way that
 		// invalidates previously cached bytecode.
-		static constexpr uint32_t k_ShaderCacheFormatVersion = 2;
+		static constexpr uint32_t k_ShaderCacheFormatVersion = 3;
 
 		static uint64_t HashFNV1a(std::string_view data, uint64_t hash = 14695981039346656037ull)
 		{
@@ -354,53 +354,10 @@ namespace Dingo
 			if (!known)
 				bindings.emplace_back(resource.Name, resource.Binding);
 		};
-		for (const auto& [shaderType, stage] : spvStages)
+		if (m_Params.Reflect)
 		{
-			nvrhi::ShaderHandle handle;
-
-			if (needsDXBC)
+			for (const auto& [shaderType, stage] : spvStages)
 			{
-				// D3D12 needs SM 5.1 for NonUniformResourceIndex (nonuniformEXT); D3D11 uses SM 5.0
-				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
-
-				std::filesystem::path dxbcCachePath = cacheDir / (cacheStem + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
-				const uint64_t dxbcHash = Utils::DeriveShaderCacheHash(stage.SourceHash, shaderModel);
-
-				// CompileGLSLToHLSLBytecode recompiles GLSL -> SPIR-V at zero optimization (better
-				// HLSL translation quality than stage.Binaries, which was compiled for reflection
-				// at the performance level) before cross-compiling to HLSL/DXBC - the two SPIR-V
-				// artifacts are not interchangeable, so this cannot reuse stage.Binaries.
-				std::vector<uint8_t> dxbcBytecode = Utils::LoadOrCompileCached<uint8_t>(dxbcCachePath, dxbcHash, forceCompile, name, shaderType, "DXBC", pendingCacheWrites,
-					[&]() { return shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel, !tolerateErrors, m_Params.Defines); });
-				if (dxbcBytecode.empty())
-					return false;
-
-				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
-					.setDebugName(name)
-					.setShaderType(Utils::ConvertShaderTypeToNVRHI(shaderType))
-					.setEntryName("main");
-
-				handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()
-					->createShader(shaderDesc, dxbcBytecode.data(), dxbcBytecode.size());
-			}
-			else
-			{
-				handle = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), stage.Binaries, name);
-			}
-
-			if (!handle)
-			{
-				DE_CORE_ERROR("Failed to create shader handle for {} ({}).", name, Utils::ConvertShaderTypeToString(shaderType));
-				return false;
-			}
-
-			newHandles[shaderType] = handle;
-
-			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
-
-			if (m_Params.Reflect)
-			{
-				// Reflect shader resources if needed
 				const ShaderReflection& reflection = shaderCompiler.Reflect(shaderType, stage.Binaries);
 				shaderCompiler.PrintReflection(shaderType, reflection);
 
@@ -431,8 +388,98 @@ namespace Dingo
 			}
 		}
 
+		std::vector<std::pair<std::string, uint32_t>> pushConstantBlocks;
+		uint32_t pushConstantRegister = 0;
+		for (const ShaderReflection& reflection : reflections)
+		{
+			for (const ShaderPushConstantBinding& block : reflection.PushConstantBuffers)
+			{
+				if (pushConstantBlocks.empty())
+					pushConstantBlocks.emplace_back(block.Name, block.Size);
+				else if (pushConstantBlocks.front().first != block.Name)
+				{
+					DE_CORE_ERROR("Shader '{}': its stages declare different push-constant blocks ('{}' and '{}'); a shader has one.", name, pushConstantBlocks.front().first, block.Name);
+					return false;
+				}
+				else
+					pushConstantBlocks.front().second = (std::max)(pushConstantBlocks.front().second, block.Size);
+			}
+		}
+		const uint32_t pushConstantSize = pushConstantBlocks.empty() ? 0 : pushConstantBlocks.front().second;
+		if (pushConstantSize)
+		{
+			if (pushConstantSize > nvrhi::c_MaxPushConstantSize || pushConstantSize % 4 != 0)
+			{
+				DE_CORE_ERROR("Shader '{}': push-constant block '{}' is {} bytes; it must be a multiple of 4 and at most {}.", name, pushConstantBlocks.front().first, pushConstantSize, nvrhi::c_MaxPushConstantSize);
+				return false;
+			}
+
+			// D3D maps the push constants to a constant-buffer register, which must be one no uniform block takes.
+			constexpr uint32_t k_ConstantBufferRegisters = 14;
+			auto registerTaken = [&](uint32_t reg)
+			{
+				return std::any_of(reflections.begin(), reflections.end(), [&](const ShaderReflection& reflection)
+				{
+					return std::any_of(reflection.UniformBuffers.begin(), reflection.UniformBuffers.end(), [&](const ShaderResourceBinding& block) { return block.Binding == reg; });
+				});
+			};
+			while (pushConstantRegister < k_ConstantBufferRegisters && registerTaken(pushConstantRegister))
+				++pushConstantRegister;
+			if (pushConstantRegister == k_ConstantBufferRegisters)
+			{
+				DE_CORE_ERROR("Shader '{}': its uniform blocks take every constant-buffer register from 0 to {}, leaving none for push-constant block '{}'.", name, k_ConstantBufferRegisters - 1, pushConstantBlocks.front().first);
+				return false;
+			}
+		}
+		const int32_t hlslPushConstantRegister = pushConstantSize ? static_cast<int32_t>(pushConstantRegister) : -1;
+
+		for (const auto& [shaderType, stage] : spvStages)
+		{
+			nvrhi::ShaderHandle handle;
+
+			if (needsDXBC)
+			{
+				// D3D12 needs SM 5.1 for NonUniformResourceIndex (nonuniformEXT); D3D11 uses SM 5.0
+				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
+
+				std::filesystem::path dxbcCachePath = cacheDir / (cacheStem + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
+				const uint64_t dxbcHash = Utils::DeriveShaderCacheHash(stage.SourceHash, shaderModel);
+
+				// CompileGLSLToHLSLBytecode recompiles GLSL -> SPIR-V at zero optimization (better
+				// HLSL translation quality than stage.Binaries, which was compiled for reflection
+				// at the performance level) before cross-compiling to HLSL/DXBC - the two SPIR-V
+				// artifacts are not interchangeable, so this cannot reuse stage.Binaries.
+				std::vector<uint8_t> dxbcBytecode = Utils::LoadOrCompileCached<uint8_t>(dxbcCachePath, dxbcHash, forceCompile, name, shaderType, "DXBC", pendingCacheWrites,
+					[&]() { return shaderCompiler.CompileGLSLToHLSLBytecode(shaderType, sources.at(shaderType), name, shaderModel, !tolerateErrors, m_Params.Defines, hlslPushConstantRegister); });
+				if (dxbcBytecode.empty())
+					return false;
+
+				nvrhi::ShaderDesc shaderDesc = nvrhi::ShaderDesc()
+					.setDebugName(name)
+					.setShaderType(Utils::ConvertShaderTypeToNVRHI(shaderType))
+					.setEntryName("main");
+
+				handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()
+					->createShader(shaderDesc, dxbcBytecode.data(), dxbcBytecode.size());
+			}
+			else
+			{
+				handle = CreateShaderHandle(Utils::ConvertShaderTypeToNVRHI(shaderType), stage.Binaries, name);
+			}
+
+			if (!handle)
+			{
+				DE_CORE_ERROR("Failed to create shader handle for {} ({}).", name, Utils::ConvertShaderTypeToString(shaderType));
+				return false;
+			}
+
+			newHandles[shaderType] = handle;
+
+			DE_CORE_INFO("Shader handle created for {} ({})", name, Utils::ConvertShaderTypeToString(shaderType));
+		}
+
 		m_ShaderHandles = std::move(newHandles);
-		m_BindingLayoutHandle = CreateBindingLayoutHandle(reflections);
+		m_BindingLayoutHandle = CreateBindingLayoutHandle(reflections, pushConstantRegister, pushConstantSize);
 		m_VertexInputLocations = std::move(vertexInputLocations);
 		m_VertexInputsReflected = vertexInputsReflected;
 		m_UniformBufferBindings = std::move(uniformBufferBindings);
@@ -441,6 +488,9 @@ namespace Dingo
 		m_StorageBufferBindings = std::move(storageBufferBindings);
 		m_StorageImageBindings = std::move(storageImageBindings);
 		m_WritableStorageBuffers = std::move(writableStorageBuffers);
+		m_PushConstantBlocks = std::move(pushConstantBlocks);
+		m_PushConstantRegister = pushConstantRegister;
+		m_PushConstantSize = pushConstantSize;
 
 		// Cache files are written only once the WHOLE build succeeded, so a failed
 		// stage can't leave mixed old/new bytecode on disk across stages or targets.
@@ -466,7 +516,7 @@ namespace Dingo
 		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createShader(shaderDesc, spvbinary.data(), spvbinary.size() * 4);
 	}
 
-	nvrhi::BindingLayoutHandle NvrhiShader::CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflections)
+	nvrhi::BindingLayoutHandle NvrhiShader::CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflections, uint32_t pushConstantRegister, uint32_t pushConstantSize)
 	{
 		if (!m_Params.Reflect)
 		{
@@ -537,11 +587,6 @@ namespace Dingo
 				addItem(nvrhi::BindingLayoutItem::Texture_UAV(storageImage.Binding));
 			}
 
-			for (const auto& pushConstantBuffer : shaderReflection.PushConstantBuffers)
-			{
-				addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantBuffer.Binding, pushConstantBuffer.Size));
-			}
-
 			for (const auto& sampler : shaderReflection.SeparateSamplers)
 			{
 				addItem(nvrhi::BindingLayoutItem::Sampler(sampler.Binding)
@@ -560,6 +605,9 @@ namespace Dingo
 					.setSize(sampledImage.ArraySize));
 			}
 		}
+
+		if (pushConstantSize)
+			bindingLayoutDesc.addItem(nvrhi::BindingLayoutItem::PushConstants(pushConstantRegister, pushConstantSize));
 
 		return GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingLayout(bindingLayoutDesc);
 	}

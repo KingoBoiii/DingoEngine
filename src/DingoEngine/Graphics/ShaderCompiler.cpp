@@ -136,13 +136,12 @@ namespace Dingo
 
 		for (const auto& resource : resources.push_constant_buffers)
 		{
-			const auto& name = resource.name;
+			// SPIRV-Cross names a push block by its instance, which a block like DE_SkinDraw leaves out.
+			const std::string name = compiler.get_name(resource.base_type_id);
 			const auto& bufferType = compiler.get_type(resource.base_type_id);
-			uint32_t descriptorSet = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			uint32_t binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			uint32_t size = (uint32_t)compiler.get_declared_struct_size(bufferType);
 
-			reflection.PushConstantBuffers.push_back({ name, descriptorSet, binding, size });
+			reflection.PushConstantBuffers.push_back({ { name, 0, 0 }, size });
 		}
 
 		for (const auto& resource : resources.separate_samplers)
@@ -375,7 +374,7 @@ namespace Dingo
 	}
 #endif
 
-	std::vector<uint8_t> ShaderCompiler::CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel, bool assertOnFailure, const std::vector<ShaderDefine>& defines)
+	std::vector<uint8_t> ShaderCompiler::CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel, bool assertOnFailure, const std::vector<ShaderDefine>& defines, int32_t pushConstantRegister)
 	{
 #ifdef DE_PLATFORM_WINDOWS
 		// SM 5.0 (DX11) has no NonUniformResourceIndex — strip the nonuniformEXT wrapper so
@@ -401,6 +400,26 @@ namespace Dingo
 		// depth values and breaks depth testing on D3D (2D is unaffected since it runs depth-less).
 		commonOptions.vertex.fixup_clipspace = false;
 		hlslCompiler.set_common_options(commonOptions);
+
+		if (pushConstantRegister >= 0)
+		{
+			spirv_cross::HLSLResourceBinding pushBinding;
+			pushBinding.stage = hlslCompiler.get_execution_model();
+			pushBinding.desc_set = spirv_cross::ResourceBindingPushConstantDescriptorSet;
+			pushBinding.binding = spirv_cross::ResourceBindingPushConstantBinding;
+			pushBinding.cbv.register_space = 0;
+			pushBinding.cbv.register_binding = static_cast<uint32_t>(pushConstantRegister);
+			hlslCompiler.add_hlsl_resource_binding(pushBinding);
+
+			// The register was picked from the optimized SPIR-V's blocks, so a block this unoptimized
+			// SPIR-V still declares there is dead: let FXC place it rather than clash with the push block.
+			const spirv_cross::ShaderResources pushResources = hlslCompiler.get_shader_resources();
+			for (const auto& uniformBuffer : pushResources.uniform_buffers)
+			{
+				if (hlslCompiler.has_decoration(uniformBuffer.id, spv::DecorationBinding) && hlslCompiler.get_decoration(uniformBuffer.id, spv::DecorationBinding) == static_cast<uint32_t>(pushConstantRegister))
+					hlslCompiler.unset_decoration(uniformBuffer.id, spv::DecorationBinding);
+			}
+		}
 
 		// Remap vertex input semantics to use the original GLSL variable names.
 		// By default spirv-cross uses TEXCOORD0/1/2... but NVRHI's D3D12 input layout
@@ -504,7 +523,7 @@ namespace Dingo
 		DE_CORE_TRACE("  {0} push constant buffers", reflection.PushConstantBuffers.size());
 		for (const auto& pushConstant : reflection.PushConstantBuffers)
 		{
-			DE_CORE_TRACE("    {0} (Set={1}, Binding={2})", pushConstant.Name, pushConstant.DescriptorSet, pushConstant.Binding);
+			DE_CORE_TRACE("    {0} ({1} bytes)", pushConstant.Name, pushConstant.Size);
 		}
 
 		DE_CORE_TRACE("  {0} Separate Samplers", reflection.SeparateSamplers.size());

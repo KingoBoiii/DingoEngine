@@ -1,5 +1,7 @@
 #include "ThroughputTest.h"
 
+#include "DingoEngine/Graphics/RendererBackend.h"
+
 #include <imgui.h>
 
 #include <glm/gtc/constants.hpp>
@@ -50,6 +52,7 @@ namespace
 	constexpr int32_t k_CullCheckWidth = 640;
 	constexpr int32_t k_CullCheckHeight = 360;
 	constexpr uint32_t k_MaxRepeatDraws = 15;
+	constexpr uint64_t k_MaxSkinnedPassBreaks = 4;
 	constexpr uint32_t k_MinCulledPercent = 85;
 	constexpr uint32_t k_CullSamples = 8;
 
@@ -524,6 +527,12 @@ namespace Dingo
 		return 100.0f * static_cast<float>(inView) / static_cast<float>(k_VisibilitySamples * m_Layout.Placements.size());
 	}
 
+	uint64_t ThroughputTest::UploadPassBreaks()
+	{
+		const Internal::CommandList* list = Internal::RendererBackend::TryGetRecordingCommandList();
+		return list ? list->GetUploadPassBreaks() : 0;
+	}
+
 	void ThroughputTest::Update(float deltaTime)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -546,7 +555,9 @@ namespace Dingo
 		const Clock::time_point renderStart = Clock::now();
 		m_Scene->RenderEntities3D(renderer);
 		const Clock::time_point endSceneStart = Clock::now();
+		const uint64_t passBreaksBefore = UploadPassBreaks();
 		renderer.EndScene();
+		m_PassBreaks = UploadPassBreaks() - passBreaksBefore;
 		const Clock::time_point endSceneEnd = Clock::now();
 
 		const bool skipped = Renderer::IsFrameSkipped();
@@ -587,6 +598,8 @@ namespace Dingo
 			const uint32_t expectedDropped = (live > budget ? live - budget : 0u) * m_FoxSubMeshes;
 			Check(stats.CulledSkinned % m_FoxSubMeshes == 0 && stats.DroppedSkinnedDraws == expectedDropped && stats.SkinnedDraws + stats.DroppedSkinnedDraws + stats.CulledSkinned == m_Count * m_FoxSubMeshes,
 				std::format("{} foxes: {} skinned draws, {} dropped past MaxSkinnedInstances ({}), {} culled", m_Count, stats.SkinnedDraws, stats.DroppedSkinnedDraws, budget, stats.CulledSkinned));
+			// A material's uniform block is written at its first draw of a frame; nothing is written per instance.
+			Check(m_PassBreaks <= k_MaxSkinnedPassBreaks, std::format("{} foxes: {} buffer writes between draws of one pass ({} skinned draws)", m_Count, m_PassBreaks, stats.SkinnedDraws));
 		}
 		else
 		{

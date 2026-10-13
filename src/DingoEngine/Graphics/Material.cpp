@@ -18,13 +18,11 @@ namespace Dingo
 
 		// Produce a cache key from a vertex layout, a framebuffer, a cull mode and the shared buffers.
 		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
-			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette, const GraphicsBuffer* skinDrawBuffer)
+			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette)
 		{
 			size_t seed = 0;
 			if (skinPalette)
 				HashCombine(seed, 3);
-			if (skinDrawBuffer)
-				HashCombine(seed, static_cast<size_t>(skinDrawBuffer->GetId()));
 			if (objectBuffer)
 				HashCombine(seed, 1);
 			if (instanceBuffer)
@@ -210,10 +208,9 @@ namespace Dingo
 		m_InstanceDrawBuffer = draw;
 	}
 
-	void Material::SetSkinPaletteBuffers(GraphicsBuffer* palette, GraphicsBuffer* draw)
+	void Material::SetSkinPaletteBuffer(GraphicsBuffer* palette)
 	{
 		RepointStorageBuffer(k_SkinPaletteBlockName, m_SkinPaletteBuffer, m_SkinPaletteBufferId, palette);
-		m_SkinDrawBuffer = draw;
 	}
 
 	void Material::RepointStorageBuffer(const char* blockName, GraphicsBuffer*& current, uint64_t& currentId, GraphicsBuffer* buffer)
@@ -286,12 +283,11 @@ namespace Dingo
 		const int32_t instanceBinding = (m_InstanceBuffer && shader) ? shader->FindStorageBufferBinding(k_InstanceDataBlockName) : -1;
 		const int32_t instanceDrawBinding = (m_InstanceDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_InstanceDrawBlockName) : -1;
 		const int32_t skinPaletteBinding = (m_SkinPaletteBuffer && shader) ? shader->FindStorageBufferBinding(k_SkinPaletteBlockName) : -1;
-		const int32_t skinDrawBinding = (m_SkinDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_SkinDrawBlockName) : -1;
 
 		const size_t key = MakeCacheKey(layout, framebuffer, cullMode, m_SceneUniformBuffer, m_SkinUniformBuffer,
 			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr,
 			objectBinding >= 0, instanceBinding >= 0, instanceDrawBinding >= 0 ? m_InstanceDrawBuffer : nullptr,
-			skinPaletteBinding >= 0, skinDrawBinding >= 0 ? m_SkinDrawBuffer : nullptr);
+			skinPaletteBinding >= 0);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -344,8 +340,6 @@ namespace Dingo
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(instanceDrawBinding), m_InstanceDrawBuffer);
 		if (skinPaletteBinding >= 0)
 			renderPass->SetStorageBuffer(static_cast<uint32_t>(skinPaletteBinding), m_SkinPaletteBuffer);
-		if (skinDrawBinding >= 0)
-			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinDrawBinding), m_SkinDrawBuffer);
 		for (const StorageBinding& storage : m_StorageBuffers)
 			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 

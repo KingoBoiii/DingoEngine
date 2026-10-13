@@ -147,6 +147,9 @@ namespace Dingo
 		/// shader-resource view then, which a vertex stage on D3D11 needs; a writable one binds as
 		/// an unordered-access view, for compute.
 		bool IsStorageBufferReadOnly(uint32_t binding) const;
+		/// The size in bytes of the push-constant block with that name in any stage, or 0. Only
+		/// reflected shaders know their blocks.
+		uint32_t FindPushConstantBlockSize(std::string_view blockName) const;
 
 		/// Every file the source pulled in with `#include` on its last build (see ShaderParams),
 		/// which a hot-reload watches as well as the shader's own file. Engine shaders read from
@@ -166,6 +169,8 @@ namespace Dingo
 		std::vector<std::pair<std::string, uint32_t>> m_StorageBufferBindings;
 		/// Reflected storage images: name, binding.
 		std::vector<std::pair<std::string, uint32_t>> m_StorageImageBindings;
+		/// Reflected push-constant blocks: name, size in bytes.
+		std::vector<std::pair<std::string, uint32_t>> m_PushConstantBlocks;
 		std::vector<uint32_t> m_WritableStorageBuffers; ///< bindings any stage writes
 		std::vector<std::filesystem::path> m_IncludedFiles; ///< See GetIncludedFiles.
 

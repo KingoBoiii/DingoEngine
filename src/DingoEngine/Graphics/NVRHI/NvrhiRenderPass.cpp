@@ -148,8 +148,12 @@ namespace Dingo
 
 		// A copy: m_TextureBindings index the desc as it was built.
 		nvrhi::BindingSetDesc sorted = m_BindingSetDesc;
+		const NvrhiShader* nvrhiShader = static_cast<NvrhiShader*>(shader);
+		// D3D11 binds its push-constant buffer through the binding set.
+		if (nvrhiShader->m_PushConstantSize)
+			sorted.addItem(nvrhi::BindingSetItem::PushConstants(nvrhiShader->m_PushConstantRegister, nvrhiShader->m_PushConstantSize));
 		NvrhiCommandList::SortBySlot(sorted);
-		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(sorted, static_cast<NvrhiShader*>(shader)->m_BindingLayoutHandle);
+		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(sorted, nvrhiShader->m_BindingLayoutHandle);
 
 		if (!m_BindingSetHandle && !m_BindingSetDesc.bindings.empty())
 		{

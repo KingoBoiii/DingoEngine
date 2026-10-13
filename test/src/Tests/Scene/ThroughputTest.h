@@ -85,6 +85,8 @@ namespace Dingo
 		Transform3DComponent MakeTransform(const Placement& placement) const;
 		float EstimateVisiblePercent() const;
 		void RunChecks(const Renderer3D::Statistics& stats);
+		// The frame command list's Internal::CommandList::GetUploadPassBreaks, 0 outside a frame.
+		static uint64_t UploadPassBreaks();
 		void RunCullingChecks();
 		void RunInstancingChecks();
 		void RunStaticChecks();
@@ -128,6 +130,7 @@ namespace Dingo
 		bool     m_ChecksDone = false;
 
 		Renderer3D::Statistics m_LastStats;
+		uint64_t m_PassBreaks = 0; // the last EndScene's, see UploadPassBreaks
 		Framebuffer* m_CullTargets[2] = {}; // culling off, on
 		std::vector<uint8_t> m_CullOffPixels;
 		Framebuffer* m_InstanceTargets[2] = {}; // instancing off, on

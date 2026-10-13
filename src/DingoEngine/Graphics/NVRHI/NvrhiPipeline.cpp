@@ -230,12 +230,20 @@ namespace Dingo
 
 	void NvrhiPipeline::CreateBindingSet(nvrhi::BindingLayoutHandle bindingLayoutHandle)
 	{
+		// A pipeline a RenderPass draws binds the pass's set, which carries the push constants; a
+		// second set here would not match the pipeline's one layout.
 		if (m_Params.UniformBuffer == nullptr && m_Params.Texture == nullptr)
 		{
 			return;
 		}
 
 		nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc();
+
+		// D3D11 binds its push-constant buffer through the binding set.
+		const NvrhiShader* nvrhiShader = static_cast<const NvrhiShader*>(m_Params.Shader);
+		const uint32_t pushConstantSize = nvrhiShader ? nvrhiShader->m_PushConstantSize : 0;
+		if (pushConstantSize)
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::PushConstants(nvrhiShader->m_PushConstantRegister, pushConstantSize));
 
 		if (m_Params.UniformBuffer)
 		{

@@ -418,15 +418,14 @@ namespace Dingo
 
 		/// The most joints one skinned draw can use: the length of SkinData's palette.
 		static constexpr uint32_t k_MaxSkinJoints = 128;
-		/// The highest binding a custom shader may give its DE_SkinDraw (or SkinData) block; D3D11
-		/// has 14 constant buffer slots.
+		/// The highest binding a custom shader may give its deprecated SkinData block; D3D11 has 14
+		/// constant buffer slots.
 		static constexpr uint32_t k_MaxSkinUniformBinding = 13;
 		/// Old name of k_MaxSkinUniformBinding.
 		[[deprecated("use k_MaxSkinUniformBinding; removed in 2.0")]]
 		static constexpr uint32_t k_MaxSkinDataBinding = k_MaxSkinUniformBinding;
 		/// Upper limit of Renderer3DCapabilities::MaxSkinnedInstances. Each instance of the budget
-		/// holds three 16-byte DE_SkinDraw versions in host-visible memory on Vulkan, and its
-		/// palette a stretch of the skin arena.
+		/// holds its palette in a stretch of the skin arena.
 		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
 		/// Instances a frame drawn with a custom material whose shader has the deprecated SkinData
 		/// block, each holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
@@ -446,16 +445,18 @@ namespace Dingo
 		/// twice there, culling its near side, then its far side.
 		///
 		/// A lit material (null = the default) draws through a skinned twin the renderer keeps for
-		/// it. A custom material's shader needs Skinning.glsl's blocks, either DE_SkinDraw and
-		/// DE_SkinPalette (DE_SKIN_PALETTE defined) or the deprecated SkinData (warned once), with
-		/// the uniform block at a binding from 2 to k_MaxSkinUniformBinding and both at bindings
-		/// its textures and samplers leave free, or it is drawn with the default material and a
-		/// warning. A mesh without a skin, with too few joints passed, or skinned to more than
-		/// k_MaxSkinJoints joints goes through SubmitMesh and draws its rest pose. No-op outside a
-		/// Begin/EndScene pair. A shadowed scene draws a casting instance twice, into the shadow
-		/// atlas and then lit, and writes its draw block for each; an instance with opaque and
-		/// translucent meshes is drawn lit in both passes. That is why the draw buffer holds three
-		/// writes per instance. Culled as SubmitMesh culls, by the rest pose's bounds padded on
+		/// it. A custom material's shader needs Skinning.glsl's blocks, either the DE_SkinDraw
+		/// push-constant block and DE_SkinPalette (DE_SKIN_PALETTE defined), or the deprecated
+		/// SkinData (warned once) at a binding from 2 to k_MaxSkinUniformBinding, with DE_SkinPalette
+		/// or SkinData at a binding its textures and samplers leave free, or it is drawn with the
+		/// default material and a warning. The renderer owns the shader's push constants, so it
+		/// declares no other push-constant block. A mesh without a skin, with too few joints passed,
+		/// or skinned to more than k_MaxSkinJoints joints goes through SubmitMesh and draws its rest
+		/// pose. No-op outside a Begin/EndScene pair. A shadowed scene draws a casting instance twice,
+		/// into the shadow atlas and then lit; an instance with opaque and translucent meshes is
+		/// drawn lit in both passes. Each draw passes where its instance starts in the arena as a
+		/// push constant, so no buffer is written between draws, except a SkinData shader's block,
+		/// which is written per draw. Culled as SubmitMesh culls, by the rest pose's bounds padded on
 		/// every side by half their longest side for the animation: a pose reaching farther can be
 		/// culled while in view. An instance with every mesh culled from every pass takes nothing
 		/// of the budget.
@@ -1115,10 +1116,9 @@ namespace Dingo
 		// The vec4s an instance takes in the skin arena ahead of its joints: Model's four columns,
 		// the normal matrix's three, Color. Mirrors Skinning.glsl's DE_SKIN_PALETTE layout.
 		static constexpr uint32_t k_SkinPaletteHeader = 8;
-		// The last upload per buffer in one pass, so a model's submeshes share them.
+		// The last SkinData upload in one pass, so a model's submeshes share it.
 		struct SkinUploads
 		{
-			uint32_t Draw = ~0u;
 			uint32_t Data = ~0u;
 		};
 
@@ -1160,14 +1160,14 @@ namespace Dingo
 		// Draws one lit and returns its draw count: 0 when it was skipped (its instance dropped, ShadowsOnly,
 		// or an unusable lit material), 2 for a translucent pass's two-sided material (backFacesFirst).
 		uint32_t DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas, bool backFacesFirst);
-		// Binds the instance's palette to material, uploading what this pass hasn't yet.
+		// Binds the instance's palette to material and sets its draw constants, uploading a SkinData
+		// block this pass hasn't yet.
 		void BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
 		static bool IsSkinningShader(const Shader* shader);
 		static bool UsesSkinPalette(const Shader* shader);
 
 		// Made on the first skinned draw, so an app that never skins compiles no second lit program.
 		Shader* m_SkinnedShader = nullptr;
-		GraphicsBuffer* m_SkinDrawBuffer = nullptr;
 		GraphicsBuffer* m_SkinPaletteBuffer = nullptr;
 		uint64_t m_SkinPaletteCapacity = 0; // vec4s
 		std::vector<glm::vec4> m_SkinPalette;
@@ -1199,7 +1199,6 @@ namespace Dingo
 		bool m_SkinDataWarned = false;
 
 		void UploadSkinPalette();
-		void UploadSkinDraw(const SkinnedInstance& instance);
 		void UploadSkinData(const SkinnedInstance& instance);
 		void EnsureSkinBuffers(const Mesh* mesh);
 

@@ -71,6 +71,16 @@ namespace Dingo
 		return std::find(m_WritableStorageBuffers.begin(), m_WritableStorageBuffers.end(), binding) == m_WritableStorageBuffers.end();
 	}
 
+	uint32_t Shader::FindPushConstantBlockSize(std::string_view blockName) const
+	{
+		for (const auto& [name, size] : m_PushConstantBlocks)
+		{
+			if (name == blockName)
+				return size;
+		}
+		return 0;
+	}
+
 	Shader* Shader::Create(const ShaderParams& params)
 	{
 		ShaderParams resolvedParams = params;

@@ -8,7 +8,9 @@ namespace Dingo::Internal
 	{
 		static void SetSceneUniformBuffer(Material* material, GraphicsBuffer* buffer) { material->SetSceneUniformBuffer(buffer); }
 		static void SetSkinUniformBuffer(Material* material, GraphicsBuffer* buffer) { material->SetSkinUniformBuffer(buffer); }
-		static void SetSkinPaletteBuffers(Material* material, GraphicsBuffer* palette, GraphicsBuffer* draw) { material->SetSkinPaletteBuffers(palette, draw); }
+		static void SetSkinPaletteBuffer(Material* material, GraphicsBuffer* palette) { material->SetSkinPaletteBuffer(palette); }
+		static void SetDrawConstants(Material* material, const glm::uvec4& constants) { material->SetDrawConstants(constants); }
+		static const glm::uvec4& GetDrawConstants(const Material* material) { return material->GetDrawConstants(); }
 		static void SetShadowResources(Material* material, GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler) { material->SetShadowResources(shadowData, atlas, sampler); }
 		static void SetObjectBuffer(Material* material, GraphicsBuffer* buffer) { material->SetObjectBuffer(buffer); }
 		static void SetInstanceBuffers(Material* material, GraphicsBuffer* records, GraphicsBuffer* draw) { material->SetInstanceBuffers(records, draw); }

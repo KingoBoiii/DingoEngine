@@ -592,7 +592,12 @@ namespace Dingo
 		}
 
 		RenderPass* renderPass = Internal::MaterialAccess::GetOrCreateRenderPass(material, layout, target, cullMode);
-		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
+		if (!s_Data->CommandList->SetRenderPass(renderPass))
+			return nullptr;
+
+		const glm::uvec4& drawConstants = Internal::MaterialAccess::GetDrawConstants(material);
+		s_Data->CommandList->SetPushConstants(&drawConstants, sizeof(drawConstants));
+		return renderPass;
 	}
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)

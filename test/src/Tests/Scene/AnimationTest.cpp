@@ -59,6 +59,13 @@ layout(std140, binding = 2) uniform SkinData
     mat4 Joints[128];
 };
 
+// A volatile block below SkinData's binding that the material adds after it: NVRHI's Vulkan offsets
+// go in binding order, so an unsorted binding set swaps their versions.
+layout(std140, binding = 1) uniform ShadowData
+{
+    ivec4 ShadowCounts;
+};
+
 layout(location = 0) out vec4 v_Color;
 layout(location = 1) out vec3 v_Normal;
 layout(location = 2) out vec2 v_TexCoord;
@@ -67,7 +74,7 @@ void main()
 {
     mat4 skin = a_Weights.x * Joints[a_Joints.x] + a_Weights.y * Joints[a_Joints.y]
               + a_Weights.z * Joints[a_Joints.z] + a_Weights.w * Joints[a_Joints.w];
-    gl_Position = ViewProjection * Model * skin * vec4(a_Position, 1.0);
+    gl_Position = ShadowCounts.x > 64 ? vec4(0.0) : ViewProjection * Model * skin * vec4(a_Position, 1.0);
     v_Color = Color;
     v_Normal = mat3(NormalMatrix) * a_Normal;
     v_TexCoord = a_TexCoord;
@@ -104,14 +111,13 @@ layout(std140, binding = 0) uniform CameraData
     vec4 Ambient;
 };
 
-#define DE_SKIN_DATA_BINDING 2
 #define DE_SKIN_PALETTE_BINDING 3
 #define DE_SKIN_PALETTE
 #include <DingoEngine/Skinning.glsl>
 
-// A volatile block above DE_SkinDraw's binding that the material adds before it, as the lit shader's
-// is: NVRHI's Vulkan offsets go in binding order, so an unsorted binding set swaps their versions.
-layout(std140, binding = 4) uniform ShadowData
+// A volatile block beside the push constants: on D3D they take the lowest constant-buffer register
+// no block uses, b2 here, so a naive b0 would collide with CameraData.
+layout(std140, binding = 1) uniform ShadowData
 {
     ivec4 ShadowCounts;
 };
