@@ -11,16 +11,22 @@
 namespace Dingo
 {
 
-	GraphicsContext* GraphicsContext::Create(const GraphicsParams& params)
+	GraphicsContext* GraphicsContext::Create(const GraphicsParams& params, GLFWwindow* window)
 	{
+		GraphicsContext* context = nullptr;
 		switch (params.GraphicsAPI)
 		{
-			case GraphicsAPI::Vulkan: return new VulkanGraphicsContext(params);
+			case GraphicsAPI::Vulkan: context = new VulkanGraphicsContext(params); break;
 #ifdef DE_PLATFORM_WINDOWS
-			case GraphicsAPI::DirectX11: return new DirectX11GraphicsContext(params);
-			case GraphicsAPI::DirectX12: return new DirectX12GraphicsContext(params);
+			case GraphicsAPI::DirectX11: context = new DirectX11GraphicsContext(params); break;
+			case GraphicsAPI::DirectX12: context = new DirectX12GraphicsContext(params); break;
 #endif
 			default: break;
+		}
+		if (context)
+		{
+			context->m_Window = window;
+			return context;
 		}
 		DE_CORE_ERROR("GraphicsAPI {} has no graphics context on this platform.", (int)params.GraphicsAPI);
 		DE_CORE_VERIFY(false, "Unsupported or unavailable GraphicsAPI on this platform.");

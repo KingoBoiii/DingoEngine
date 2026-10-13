@@ -150,7 +150,7 @@ namespace Dingo
 		glm::vec3 maxBounds((std::numeric_limits<float>::lowest)());
 		for (const auto& sm : m_Model->GetSubMeshes())
 		{
-			for (const MeshVertex& v : sm.MeshData->GetVertices())
+			for (const MeshVertex& v : sm.Mesh->GetVertices())
 			{
 				minBounds = (glm::min)(minBounds, v.Position);
 				maxBounds = (glm::max)(maxBounds, v.Position);
@@ -183,13 +183,13 @@ namespace Dingo
 		for (const auto& sm : m_Model->GetSubMeshes())
 		{
 			GpuSubMesh gpu;
-			gpu.IndexCount = sm.MeshData->GetIndexCount();
+			gpu.IndexCount = sm.Mesh->GetIndexCount();
 
-			const auto& verts   = sm.MeshData->GetVertices();
-			const auto& indices = sm.MeshData->GetIndices();
+			const auto& verts   = sm.Mesh->GetVertices();
+			const auto& indices = sm.Mesh->GetIndices();
 
-			gpu.VB = GraphicsBuffer::CreateVertexBuffer(verts.size()   * sizeof(MeshVertex), nullptr, true, "Model3D_VB");
-			gpu.IB = GraphicsBuffer::CreateIndexBuffer( indices.size() * sizeof(uint32_t),   nullptr, true, "Model3D_IB", GraphicsFormat::Uint32);
+			gpu.VB = GraphicsBuffer::CreateVertexBuffer(verts.size()   * sizeof(MeshVertex), nullptr, BufferUpload::Direct, "Model3D_VB");
+			gpu.IB = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), IndexFormat::Uint32, nullptr, BufferUpload::Direct, "Model3D_IB");
 			gpu.VB->Upload(verts.data(),   static_cast<uint64_t>(verts.size())   * sizeof(MeshVertex));
 			gpu.IB->Upload(indices.data(), static_cast<uint64_t>(indices.size()) * sizeof(uint32_t));
 
@@ -297,10 +297,10 @@ namespace Dingo
 		{
 			const auto& sm = submeshes[i];
 			ImGui::Text("  [%u] verts=%u  idx=%u  tex=%s  skin=%s  color=%.2f %.2f %.2f %.2f", i,
-				sm.MeshData->GetVertexCount(),
-				sm.MeshData->GetIndexCount(),
+				sm.Mesh->GetVertexCount(),
+				sm.Mesh->GetIndexCount(),
 				sm.DiffuseTexture ? "yes" : "no",
-				sm.MeshData->HasSkin() ? "yes" : "no",
+				sm.Mesh->HasSkin() ? "yes" : "no",
 				sm.BaseColor.r, sm.BaseColor.g, sm.BaseColor.b, sm.BaseColor.a);
 		}
 

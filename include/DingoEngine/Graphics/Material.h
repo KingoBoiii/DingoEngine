@@ -13,6 +13,12 @@
 namespace Dingo
 {
 
+	namespace Internal
+	{
+		inline constexpr const char* k_SkinDataBlockName = "SkinData";
+		struct MaterialAccess;
+	}
+
 	struct MaterialParams
 	{
 		std::string DebugName;
@@ -21,14 +27,14 @@ namespace Dingo
 		Dingo::FillMode FillMode           = Dingo::FillMode::Solid;
 		bool        FrontCounterClockwise  = true;
 		// Baked into the material's pipelines, like CullMode (see PipelineParams).
-		BlendMode    Blend                 = BlendMode::Alpha;
+		Dingo::BlendMode BlendMode         = Dingo::BlendMode::Alpha;
 		bool         DepthTest             = true;
 		bool         DepthWrite            = true;
-		DepthCompare DepthFunction         = DepthCompare::Less;
+		Dingo::DepthCompare DepthCompare   = Dingo::DepthCompare::Less;
 		int32_t      DepthBias             = 0;
 		float        SlopeScaledDepthBias  = 0.0f;
 		// Depth-tested but never depth-writing, whatever DepthWrite says, so what draws after it
-		// behind it still shows through. It blends with Blend, the "over" of BlendMode::Alpha by default.
+		// behind it still shows through. It blends with BlendMode, the "over" of BlendMode::Alpha by default.
 		bool         Translucent           = false;
 		// Renderer3D leaves out a mesh whose bounds the camera can't see. A vertex shader that moves
 		// vertices off them (wind, waves, outlines) turns this off. Shadows come from the renderer's own
@@ -64,10 +70,10 @@ namespace Dingo
 		MaterialParams& SetCullMode(Dingo::CullMode mode)                 { CullMode = mode; return *this; }
 		MaterialParams& SetFillMode(Dingo::FillMode mode)                 { FillMode = mode; return *this; }
 		MaterialParams& SetFrontCounterClockwise(bool v)                  { FrontCounterClockwise = v; return *this; }
-		MaterialParams& SetBlendMode(BlendMode mode)                      { Blend = mode; return *this; }
+		MaterialParams& SetBlendMode(Dingo::BlendMode mode)               { BlendMode = mode; return *this; }
 		MaterialParams& SetDepthTest(bool enabled)                        { DepthTest = enabled; return *this; }
 		MaterialParams& SetDepthWrite(bool enabled)                       { DepthWrite = enabled; return *this; }
-		MaterialParams& SetDepthCompare(DepthCompare compare)             { DepthFunction = compare; return *this; }
+		MaterialParams& SetDepthCompare(Dingo::DepthCompare compare)      { DepthCompare = compare; return *this; }
 		MaterialParams& SetDepthBias(int32_t constant, float slopeScaled) { DepthBias = constant; SlopeScaledDepthBias = slopeScaled; return *this; }
 		MaterialParams& SetTranslucent(bool translucent)                  { Translucent = translucent; return *this; }
 		MaterialParams& SetFrustumCulled(bool culled)                     { FrustumCulled = culled; return *this; }
@@ -84,8 +90,8 @@ namespace Dingo
 	class Material
 	{
 	public:
-		static Material* Create(Shader* shader);
-		static Material* Create(const MaterialParams& params);
+		[[nodiscard]] static Material* Create(Shader* shader);
+		[[nodiscard]] static Material* Create(const MaterialParams& params);
 
 	public:
 		Material(const MaterialParams& params);
@@ -127,31 +133,10 @@ namespace Dingo
 		template<typename T>
 		void SetUniform(const T& data) { SetUniformData(&data, sizeof(T)); }
 
-		// Binds a shared, engine-owned uniform buffer at binding 0 — the "scene" UBO
-		// (e.g. Renderer3D's camera + light data). When set, the material's own
-		// SetUniform data binds at binding 1 and textures/samplers shift to 2+. When
-		// null (the default), the material's own UBO stays at binding 0. Render passes are
-		// cached per scene buffer, so a material drawn by several renderers keeps one for each.
-		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
-
-		// Binds Renderer3D's per-draw skinning buffer to the shader's uniform block named
-		// SkinData, at whatever binding the shader gave it. Shaders without one ignore it.
-		void SetSkinUniformBuffer(GraphicsBuffer* buffer);
-
-		// Binds Renderer3D's skin arena to the shader's DE_SkinPalette storage block and its per-draw
-		// base to the DE_SkinDraw uniform block (Skinning.glsl with DE_SKIN_PALETTE), each at whatever
-		// binding the shader gave it. A shader without them ignores this. Another arena only re-points
-		// the cached passes' binding sets, as SetObjectBuffer does.
-		void SetSkinPaletteBuffers(GraphicsBuffer* palette, GraphicsBuffer* draw);
-
+		[[deprecated("the SkinData block is deprecated: declare Skinning.glsl's DE_SKIN_PALETTE blocks; removed in 2.0")]]
 		static constexpr const char* k_SkinDataBlockName = "SkinData";
 		static constexpr const char* k_SkinPaletteBlockName = "DE_SkinPalette";
 		static constexpr const char* k_SkinDrawBlockName = "DE_SkinDraw";
-
-		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
-		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it. A shader
-		// without them ignores this.
-		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
 
 		// A storage buffer at a binding the shader's own numbering gives it (Shader::FindStorageBufferBinding);
 		// null clears it. A vertex stage reads it only from a readonly block. Adding or clearing one
@@ -160,36 +145,12 @@ namespace Dingo
 		void SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer);
 		static constexpr uint32_t k_MaxStorageBuffers = 4;
 
-		// Binds Renderer3D's per-mesh surface records to the shader's DE_ObjectData storage block, at
-		// whatever binding the shader gave it. A shader without one ignores it. Another buffer only
-		// re-points the cached passes' binding sets, so the renderer can grow it without new pipelines.
-		void SetObjectBuffer(GraphicsBuffer* buffer);
-
-		// Binds Renderer3D's instance records to the shader's DE_InstanceData storage block and its
-		// per-draw base to the DE_InstanceDraw uniform block (Instancing.glsl), each at whatever binding
-		// the shader gave it. A shader without them ignores this. Another record buffer only re-points
-		// the cached passes' binding sets, as SetObjectBuffer does.
-		void SetInstanceBuffers(GraphicsBuffer* records, GraphicsBuffer* draw);
-
 		static constexpr const char* k_ObjectDataBlockName = "DE_ObjectData";
 		static constexpr const char* k_InstanceDataBlockName = "DE_InstanceData";
 		static constexpr const char* k_InstanceDrawBlockName = "DE_InstanceDraw";
 		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
 		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
 		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
-
-		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
-		const std::vector<uint8_t>& GetUniformCPUData()                      const { return m_UniformCPUData; }
-		bool                        NeedsUniformUpload(uint64_t frameIndex)  const { return m_UniformUploadFrame != frameIndex; }
-		void                        MarkUniformUploaded(uint64_t frameIndex)       { m_UniformUploadFrame = frameIndex; }
-
-		// ── Pipeline cache ────────────────────────────────────────────────────
-
-		// Returns (or lazily creates) a baked RenderPass for the given vertex
-		// layout and framebuffer.  Pipelines are cached per (layout, framebuffer)
-		// combination so the same Material can be used with different mesh types
-		// or render targets.
-		RenderPass* GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer);
 
 		// ── Accessors ─────────────────────────────────────────────────────────
 
@@ -212,6 +173,48 @@ namespace Dingo
 		void SetEmissiveStrength(float strength)       { m_Params.EmissiveStrength = strength; }
 		void SetRoughness(float roughness)             { m_Params.Roughness = roughness; }
 		void SetSpecular(float specular)               { m_Params.Specular = specular; }
+
+	private:
+		// The renderers drive these through Internal::MaterialAccess.
+
+		// Binds a shared, engine-owned uniform buffer at binding 0 — the "scene" UBO
+		// (e.g. Renderer3D's camera + light data). When set, the material's own
+		// SetUniform data binds at binding 1 and textures/samplers shift to 2+. When
+		// null (the default), the material's own UBO stays at binding 0. Render passes are
+		// cached per scene buffer, so a material drawn by several renderers keeps one for each.
+		void SetSceneUniformBuffer(GraphicsBuffer* buffer);
+
+		// Binds Renderer3D's per-draw skinning buffer to the shader's uniform block named
+		// SkinData, at whatever binding the shader gave it. Shaders without one ignore it.
+		void SetSkinUniformBuffer(GraphicsBuffer* buffer);
+
+		// Binds Renderer3D's skin arena to the shader's DE_SkinPalette storage block and its per-draw
+		// base to the DE_SkinDraw uniform block (Skinning.glsl with DE_SKIN_PALETTE), each at whatever
+		// binding the shader gave it. Another arena only re-points the cached passes' binding sets.
+		void SetSkinPaletteBuffers(GraphicsBuffer* palette, GraphicsBuffer* draw);
+
+		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
+		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it.
+		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
+
+		// Binds Renderer3D's per-mesh surface records to the shader's DE_ObjectData storage block.
+		// Another buffer only re-points the cached passes' binding sets, so the renderer can grow it
+		// without new pipelines.
+		void SetObjectBuffer(GraphicsBuffer* buffer);
+
+		// Binds Renderer3D's instance records to the shader's DE_InstanceData storage block and its
+		// per-draw base to the DE_InstanceDraw uniform block (Instancing.glsl).
+		void SetInstanceBuffers(GraphicsBuffer* records, GraphicsBuffer* draw);
+
+		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }
+		const std::vector<uint8_t>& GetUniformCPUData()                      const { return m_UniformCPUData; }
+		bool                        NeedsUniformUpload(uint64_t frameIndex)  const { return m_UniformUploadFrame != frameIndex; }
+		void                        MarkUniformUploaded(uint64_t frameIndex)       { m_UniformUploadFrame = frameIndex; }
+
+		// Returns (or lazily creates) a baked RenderPass for the given vertex layout and framebuffer.
+		RenderPass* GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer);
+
+		friend struct Internal::MaterialAccess;
 
 	private:
 		void InvalidatePipelineCache();

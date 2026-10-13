@@ -27,15 +27,6 @@ namespace Dingo
 		glm::vec4 GetPixel(uint32_t x, uint32_t y) const;
 	};
 
-	enum class TextureWrapMode
-	{
-		Repeat,
-		MirroredRepeat,
-		ClampToEdge,
-		ClampToBorder,
-		MirrorClampToEdge
-	};
-
 	struct TextureParams
 	{
 		std::string DebugName;
@@ -43,7 +34,6 @@ namespace Dingo
 		uint32_t Height;
 		TextureFormat Format = TextureFormat::Unknown;
 		TextureDimension Dimension = TextureDimension::Unknown;
-		TextureWrapMode WrapMode = TextureWrapMode::Repeat;
 		bool IsRenderTarget = false;
 		// A D32 texture can be sampled only with this set, which makes it typeless on D3D (R32 behind a
 		// D32 depth view); without it it is a depth target alone, as the swap chain's is.
@@ -83,12 +73,6 @@ namespace Dingo
 			return *this;
 		}
 
-		TextureParams& SetWrapMode(TextureWrapMode wrapMode)
-		{
-			WrapMode = wrapMode;
-			return *this;
-		}
-
 		TextureParams& SetIsRenderTarget(bool isRenderTarget)
 		{
 			IsRenderTarget = isRenderTarget;
@@ -120,9 +104,9 @@ namespace Dingo
 		// Returns nullptr on failure (error is logged). Caller owns the returned Texture.
 		// A relative filepath is looked up under the asset root first, then the working
 		// directory.
-		static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
-		static Texture* CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format = TextureFormat::RGBA, const std::string& debugName = "Texture (Data)");
-		static Texture* Create(const TextureParams& params);
+		[[nodiscard]] static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
+		[[nodiscard]] static Texture* CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format = TextureFormat::RGBA8_UNORM, const std::string& debugName = "Texture (Data)");
+		[[nodiscard]] static Texture* Create(const TextureParams& params);
 
 	public:
 		Texture(const TextureParams& params)
@@ -130,18 +114,21 @@ namespace Dingo
 		{}
 		virtual ~Texture() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
-		virtual void Upload(const void* data, uint64_t size) = 0;
+		// The whole image: Width x Height pixels of the format, packed, first row first.
+		virtual void Upload(const void* data) = 0;
 
 		// Recreates the GPU texture in place from new params (uploading InitialData if
 		// set), so existing Texture* references survive a content change - the backbone
 		// of hot-reload. Changes GetGeneration(); the old GPU texture is freed by the
 		// graphics backend once in-flight frames drop it.
 		virtual void Reinitialize(const TextureParams& params) = 0;
-
-		virtual bool NativeEquals(const Texture* other) const = 0;
 
 		// Copies the texture back to the CPU and hands its pixels to `done`, on the main thread.
 		// - In OnUpdate or OnImGuiRender the copy follows the draws recorded so far (Renderer2D and
@@ -176,6 +163,10 @@ namespace Dingo
 		virtual uint32_t GetHeight() const { return m_Params.Height; }
 		const TextureParams& GetParams() const { return m_Params; }
 		virtual void* GetTextureHandle() const = 0;
+
+	private:
+		virtual bool NativeEquals(const Texture* other) const = 0;
+		friend class Renderer2D;
 
 	protected:
 		static uint32_t NextGeneration();

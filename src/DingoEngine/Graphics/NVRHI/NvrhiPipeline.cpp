@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "NvrhiPipeline.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiTexture.h"
@@ -110,7 +111,7 @@ namespace Dingo
 		if (m_TargetsSwapChain)
 			m_Params.Framebuffer = Renderer::GetSwapChainFramebuffer();
 		else
-			m_TargetsSwapChain = Renderer::IsSwapChainFramebuffer(m_Params.Framebuffer);
+			m_TargetsSwapChain = Internal::RendererBackend::IsSwapChainFramebuffer(m_Params.Framebuffer);
 
 		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 		const auto nvrhiShader = static_cast<NvrhiShader*>(m_Params.Shader);

@@ -21,7 +21,7 @@ namespace Dingo
 	class RenderPass
 	{
 	public:
-		static RenderPass* Create(const RenderPassParams& params);
+		[[nodiscard]] static RenderPass* Create(const RenderPassParams& params);
 
 	public:
 		RenderPass(const RenderPassParams& params)
@@ -29,8 +29,12 @@ namespace Dingo
 		{}
 		virtual ~RenderPass() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		virtual void SetUniformBuffer(uint32_t slot, GraphicsBuffer* buffer) = 0;

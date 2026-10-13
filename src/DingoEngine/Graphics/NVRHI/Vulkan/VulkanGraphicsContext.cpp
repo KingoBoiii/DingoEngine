@@ -88,9 +88,9 @@ namespace Dingo
 		// multi-GPU / hybrid-graphics case). The swap chain creates its own surface later; this
 		// one only informs selection and is destroyed immediately afterwards.
 		vk::SurfaceKHR probeSurface = nullptr;
-		if (m_Params.NativeWindowHandle)
+		if (m_Window)
 		{
-			const VkResult surfaceResult = glfwCreateWindowSurface(m_VulkanInstance, m_Params.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&probeSurface);
+			const VkResult surfaceResult = glfwCreateWindowSurface(m_VulkanInstance, m_Window, nullptr, (VkSurfaceKHR*)&probeSurface);
 			if (surfaceResult != VK_SUCCESS)
 			{
 				probeSurface = nullptr;

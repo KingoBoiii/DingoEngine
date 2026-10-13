@@ -6,7 +6,6 @@
 #include "DingoEngine/Windowing/Window.h"
 #include "DingoEngine/Graphics/GraphicsParams.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
-#include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
@@ -113,6 +112,7 @@ namespace Dingo
 		// The engine's main(): EntryPoint.h's main and WinMain call it.
 		int Main(int argc, char** argv);
 		enum class DebugTab : uint8_t;
+		class SwapChain;
 	}
 
 	// The main thread's last frame, split up, for the F8 Profiler tab. Zero in a paused frame.
@@ -171,7 +171,6 @@ namespace Dingo
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
 		Renderer3D& GetRenderer3D() const { return *m_Renderer3D; }
 		SceneRenderer& GetSceneRenderer() const { return *m_SceneRenderer; }
-		SwapChain* GetSwapChain() const { return m_SwapChain; }
 		AudioEngine& GetAudioEngine() const { return *m_AudioEngine; }
 		AssetManager& GetAssetManager() const { return *m_AssetManager; }
 		const FrameTimings& GetFrameTimings() const { return m_FrameTimings; }
@@ -211,7 +210,7 @@ namespace Dingo
 		ApplicationParams m_Params;
 		Window* m_Window = nullptr;
 		GraphicsContext* m_GraphicsContext = nullptr;
-		SwapChain* m_SwapChain = nullptr;
+		Internal::SwapChain* m_SwapChain = nullptr;
 		Renderer2D* m_Renderer2D = nullptr;
 		Renderer3D* m_Renderer3D = nullptr;
 		SceneRenderer* m_SceneRenderer = nullptr;

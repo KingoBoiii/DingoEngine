@@ -183,7 +183,7 @@ namespace Dingo
 			Model* model = Model::LoadFromFile(file);
 			m_PartModels[slot] = model;
 			if (model && model->GetSubMeshCount() > 0)
-				return model->GetSubMeshes()[0].MeshData;
+				return model->GetSubMeshes()[0].Mesh;
 			return m_Context.BoxMesh;
 		};
 

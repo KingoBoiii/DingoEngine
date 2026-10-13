@@ -37,7 +37,7 @@ namespace Dingo
 	class ComputePass
 	{
 	public:
-		static ComputePass* Create(const ComputePassParams& params);
+		[[nodiscard]] static ComputePass* Create(const ComputePassParams& params);
 
 	public:
 		ComputePass(const ComputePassParams& params)
@@ -45,8 +45,12 @@ namespace Dingo
 		{}
 		virtual ~ComputePass() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		virtual void SetUniformBuffer(uint32_t binding, GraphicsBuffer* buffer) = 0;

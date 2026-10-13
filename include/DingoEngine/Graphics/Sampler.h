@@ -1,5 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/SamplerAddressMode.h"
+#include "DingoEngine/Graphics/Enums/SamplerFilter.h"
 #include "DingoEngine/Graphics/IBindableShaderResource.h"
 
 #include <glm/glm.hpp>
@@ -12,9 +13,9 @@ namespace Dingo
 		SamplerAddressMode AddressU = SamplerAddressMode::Clamp;
 		SamplerAddressMode AddressV = SamplerAddressMode::Clamp;
 		SamplerAddressMode AddressW = SamplerAddressMode::Clamp;
-		bool MinFilter = true;
-		bool MagFilter = true;
-		bool MipFilter = true;
+		SamplerFilter MinFilter = SamplerFilter::Linear;
+		SamplerFilter MagFilter = SamplerFilter::Linear;
+		SamplerFilter MipFilter = SamplerFilter::Linear;
 		// Read outside the texture with SamplerAddressMode::Border. Vulkan has no free border colour:
 		// it takes transparent black, opaque black or opaque white, whichever is nearest.
 		glm::vec4 BorderColor{ 1.0f, 1.0f, 1.0f, 1.0f };
@@ -39,21 +40,28 @@ namespace Dingo
 			return *this;
 		}
 
-		SamplerParams& SetMinFilter(bool enabled)
+		// Min, mag and mip at once.
+		SamplerParams& SetFilter(SamplerFilter filter)
 		{
-			MinFilter = enabled;
+			MinFilter = MagFilter = MipFilter = filter;
 			return *this;
 		}
 
-		SamplerParams& SetMagFilter(bool enabled)
+		SamplerParams& SetMinFilter(SamplerFilter filter)
 		{
-			MagFilter = enabled;
+			MinFilter = filter;
 			return *this;
 		}
 
-		SamplerParams& SetMipFilter(bool enabled)
+		SamplerParams& SetMagFilter(SamplerFilter filter)
 		{
-			MipFilter = enabled;
+			MagFilter = filter;
+			return *this;
+		}
+
+		SamplerParams& SetMipFilter(SamplerFilter filter)
+		{
+			MipFilter = filter;
 			return *this;
 		}
 
@@ -79,7 +87,7 @@ namespace Dingo
 	class Sampler : public IBindableShaderResource
 	{
 	public:
-		static Sampler* Create(const SamplerParams& params);
+		[[nodiscard]] static Sampler* Create(const SamplerParams& params);
 
 	public:
 		Sampler(const SamplerParams& params)
@@ -88,9 +96,12 @@ namespace Dingo
 		}
 		virtual ~Sampler() = default;
 
-	public:
-		// Create() has already initialized it.
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		virtual const SamplerParams& GetParams() const { return m_Params; }

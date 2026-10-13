@@ -20,15 +20,16 @@ namespace Dingo
 		// Returns nullptr on failure (error is logged). Caller owns the returned Font.
 		// A relative filepath is looked up under the asset root first, then the working
 		// directory.
-		static Font* Create(const std::filesystem::path& filepath, const FontParams& params = {});
+		[[nodiscard]] static Font* Create(const std::filesystem::path& filepath, const FontParams& params = {});
 
 	public:
-		Font(const std::filesystem::path& filepath, const FontParams& params);
 		// Defined in Font.cpp (where MSDFData is complete) so m_Data is deleted correctly.
 		~Font();
+		Font(const Font&) = delete;
+		Font& operator=(const Font&) = delete;
 
 	public:
-		bool Initialize();
+		// Releases the atlas early; the destructor releases everything anyway.
 		void Destroy();
 
 		// True if the font loaded successfully and has a usable atlas + glyph geometry.
@@ -39,9 +40,13 @@ namespace Dingo
 		// leave it at 0 and the two disagree by one Kerning per character.
 		float GetStringWidth(const std::string& string, float size = 1.0f, float kerning = 0.0f) const;
 		Texture* GetAtlasTexture() const { return m_AtlasTexture; }
-		const MSDFData* GetMSDFData() const { return m_Data; }
 
 	private:
+		Font(const std::filesystem::path& filepath, const FontParams& params);
+		bool Initialize();
+		const MSDFData* GetMSDFData() const { return m_Data; }
+		friend class Renderer2D;
+
 		// `fontData` is borrowed by FreeType for the duration of the call, so the caller's
 		// buffer must outlive it.
 		bool InitializeFontData(const uint8_t* fontData, size_t fontDataSize, int32_t& width, int32_t& height);

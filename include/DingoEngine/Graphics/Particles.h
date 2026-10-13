@@ -126,7 +126,7 @@ namespace Dingo
 	class ParticleEffect
 	{
 	public:
-		static ParticleEffect* Create(const ParticleEffectParams& params);
+		[[nodiscard]] static ParticleEffect* Create(const ParticleEffectParams& params);
 		~ParticleEffect();
 		ParticleEffect(const ParticleEffect&) = delete;
 		ParticleEffect& operator=(const ParticleEffect&) = delete;

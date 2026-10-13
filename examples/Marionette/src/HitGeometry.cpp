@@ -35,9 +35,9 @@ namespace Dingo
 		float length = 0.0f;
 		for (const SubMesh& submesh : weapon.GetSubMeshes())
 		{
-			if (!submesh.MeshData)
+			if (!submesh.Mesh)
 				continue;
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 			{
 				const float distance = glm::length(vertex.Position);
 				if (distance > length)
@@ -56,9 +56,9 @@ namespace Dingo
 		axis.Length = length;
 		for (const SubMesh& submesh : weapon.GetSubMeshes())
 		{
-			if (!submesh.MeshData)
+			if (!submesh.Mesh)
 				continue;
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 			{
 				const float along = glm::dot(vertex.Position, axis.Direction);
 				if (along >= WEAPON_BLADE_START * length)

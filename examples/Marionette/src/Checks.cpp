@@ -139,10 +139,10 @@ namespace
 		uint32_t skinned = 0;
 		for (const SubMesh& submesh : model->GetSubMeshes())
 		{
-			if (submesh.MeshData && submesh.MeshData->HasSkin())
+			if (submesh.Mesh && submesh.Mesh->HasSkin())
 			{
 				++skinned;
-				widest = std::max(widest, submesh.MeshData->GetSkinJointCount());
+				widest = std::max(widest, submesh.Mesh->GetSkinJointCount());
 			}
 		}
 		report.Check(skeleton->GetSkinJointCount() <= Renderer3D::k_MaxSkinJoints && widest <= Renderer3D::k_MaxSkinJoints && skinned > 0,

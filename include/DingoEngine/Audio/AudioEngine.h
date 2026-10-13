@@ -56,7 +56,7 @@ namespace Dingo
 		// (error is logged) — never a broken object, matching Model::LoadFromFile.
 		// A relative filepath is looked up under the asset root first, then the working
 		// directory.
-		virtual std::shared_ptr<AudioClip> LoadClip(const std::filesystem::path& filepath) = 0;
+		[[nodiscard]] virtual std::shared_ptr<AudioClip> LoadClip(const std::filesystem::path& filepath) = 0;
 
 		// --- Playback ---------------------------------------------------------
 
@@ -97,7 +97,7 @@ namespace Dingo
 		// one that exists returns the existing bus (warned). Returns k_InvalidBus for an
 		// empty name or a stale parent. Every call below is a no-op (getters: 0 / false)
 		// on a stale id.
-		virtual AudioBusId CreateBus(std::string_view name, AudioBusId parent = k_MasterBus) = 0;
+		[[nodiscard]] virtual AudioBusId CreateBus(std::string_view name, AudioBusId parent = k_MasterBus) = 0;
 		// Stops every sound on the bus and destroys its sub-buses with it. k_MasterBus
 		// can't be destroyed.
 		virtual void DestroyBus(AudioBusId bus) = 0;

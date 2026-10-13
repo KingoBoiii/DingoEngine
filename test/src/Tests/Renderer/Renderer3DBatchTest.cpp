@@ -748,14 +748,14 @@ namespace Dingo
 			if (!m_Duck || m_Duck->GetSubMeshCount() == 0)
 				return;
 
-			const Mesh* first = m_Duck->GetSubMeshes().front().MeshData;
+			const Mesh* first = m_Duck->GetSubMeshes().front().Mesh;
 			const glm::vec3 size = first->GetBoundsMax() - first->GetBoundsMin();
 			const float scale = 3.0f / (std::max)({ size.x, size.y, size.z, 1e-3f });
 			const glm::mat4 placed = glm::translate(glm::scale(glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, -6.0f }), glm::vec3(scale)),
 				-0.5f * (first->GetBoundsMin() + first->GetBoundsMax()));
 			const std::shared_ptr<StaticBatch> ducks = m_CheckRenderer->CreateStaticBatch();
 			for (const SubMesh& submesh : m_Duck->GetSubMeshes())
-				ducks->Add(StaticMesh().SetMesh(submesh.MeshData).SetTransform(placed).SetColor({ 0.9f, 0.8f, 0.1f, 1.0f }));
+				ducks->Add(StaticMesh().SetMesh(submesh.Mesh).SetTransform(placed).SetColor({ 0.9f, 0.8f, 0.1f, 1.0f }));
 			Framebuffer* before = CreateCheckTarget(k_StaticTargetSize);
 			Framebuffer* after = CreateCheckTarget(k_StaticTargetSize);
 			RenderCheck(before, CheckViewProjection(), [&](Renderer3D& renderer) { lights(renderer); renderer.SubmitStaticBatch(*ducks); });
@@ -813,7 +813,6 @@ namespace Dingo
 	{
 		Renderer::Clear(m_ClearColor);
 
-		m_BatchRenderer->SetDirectionalLight({ -0.4f, -1.0f, -0.35f }, 0.35f);
 		m_BatchRenderer->BeginScene(m_Camera);
 
 		for (uint32_t i = 0; i < k_BoxCount; i++)

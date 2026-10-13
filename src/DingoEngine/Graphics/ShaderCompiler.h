@@ -1,5 +1,5 @@
 #pragma once
-#include "DingoEngine/Graphics/Enums/ShaderType.h"
+#include "DingoEngine/Graphics/ShaderType.h"
 #include "DingoEngine/Graphics/Shader.h"
 
 namespace Dingo

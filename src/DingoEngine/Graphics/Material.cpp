@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Renderer.h"
 
@@ -148,7 +149,7 @@ namespace Dingo
 				.SetByteSize(size)
 				.SetType(BufferType::UniformBuffer)
 				.SetIsVolatile(true)
-				.SetDirectUpload(false)
+				.SetUpload(BufferUpload::Deferred)
 				.SetMaxWritesPerFrame(std::max(m_Params.UniformWritesPerFrame, 1u)));
 			InvalidatePipelineCache();
 		}
@@ -263,7 +264,7 @@ namespace Dingo
 		// pipeline + render pass per material per resize, and a reused address could even
 		// return an entry built against a destroyed framebuffer. Drop it on a generation
 		// change, as ImGuiRenderer's pipeline cache does.
-		const uint64_t resizeGeneration = Renderer::GetSwapChainResizeGeneration();
+		const uint64_t resizeGeneration = Internal::RendererBackend::GetSwapChainResizeGeneration();
 		if (resizeGeneration != m_BuiltResizeGeneration)
 		{
 			InvalidatePipelineCache();
@@ -298,10 +299,10 @@ namespace Dingo
 			.SetCullMode(m_Params.CullMode)
 			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
 			.SetFillMode(m_Params.FillMode)
-			.SetBlendMode(m_Params.Blend)
+			.SetBlendMode(m_Params.BlendMode)
 			.SetDepthTest(m_Params.DepthTest)
 			.SetDepthWrite(m_Params.DepthWrite && !m_Params.Translucent)
-			.SetDepthCompare(m_Params.DepthFunction)
+			.SetDepthCompare(m_Params.DepthCompare)
 			.SetDepthBias(m_Params.DepthBias, m_Params.SlopeScaledDepthBias));
 
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
@@ -319,7 +320,7 @@ namespace Dingo
 		if (m_UniformBuffer)
 			renderPass->SetUniformBuffer(materialUboSlot, m_UniformBuffer);
 
-		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(k_SkinDataBlockName) : -1;
+		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
 		if (skinBinding >= 0)
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinBinding), m_SkinUniformBuffer);
 

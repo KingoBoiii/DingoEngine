@@ -150,8 +150,8 @@ namespace Dingo
 			const float quad[] = { -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f };
 			const uint16_t indices[] = { 0, 1, 2, 2, 3, 0 };
 
-			m_BackgroundVertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(quad), quad, true, "Background Vertices");
-			m_BackgroundIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(indices), indices, true, "Background Indices");
+			m_BackgroundVertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(quad), quad, BufferUpload::Direct, "Background Vertices");
+			m_BackgroundIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(indices), IndexFormat::Uint16, indices, BufferUpload::Direct, "Background Indices");
 			m_BackgroundUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(BackgroundUniform), "Background Uniform");
 
 			VertexLayout layout = VertexLayout()

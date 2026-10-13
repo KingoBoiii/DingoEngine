@@ -21,7 +21,7 @@ namespace Dingo
 		
 		virtual void ImGuiRender() override;
 
-		virtual Texture* GetResult() { return m_Renderer->GetOutput(); }
+		virtual Texture* GetResult() { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 
 	private:
 		void RecalculateProjectionViewMatrix();

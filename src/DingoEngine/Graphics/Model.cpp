@@ -77,7 +77,7 @@ namespace Dingo
 			.SetWidth(width)
 			.SetHeight(height)
 			.SetDimension(TextureDimension::Texture2D)
-			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+			.SetFormat(TextureFormat::RGBA8_UNORM)
 			.SetIsRenderTarget(false)
 			.SetInitialData(data);
 	}
@@ -255,7 +255,7 @@ namespace Dingo
 	                           const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
 		aiMaterial* aiMat = scene->mMaterials[mesh->mMaterialIndex];
-		submesh.Mat = Material::Create(MaterialParams()
+		submesh.Material = Material::Create(MaterialParams()
 			.SetDebugName(mesh->mName.C_Str()));
 
 		aiColor4D baseColor;
@@ -274,7 +274,7 @@ namespace Dingo
 		if (diffuse)
 		{
 			submesh.DiffuseTexture = diffuse;
-			submesh.Mat->SetTexture(0, diffuse);
+			submesh.Material->SetTexture(0, diffuse);
 		}
 	}
 
@@ -304,7 +304,7 @@ namespace Dingo
 		}
 
 		SubMesh submesh;
-		submesh.MeshData = Mesh::Create(vertices, ReadIndices(mesh));
+		submesh.Mesh = Mesh::Create(vertices, ReadIndices(mesh));
 		AssignMaterial(submesh, mesh, scene, modelDir, textureCache);
 		return submesh;
 	}
@@ -613,7 +613,7 @@ namespace Dingo
 		}
 
 		SubMesh submesh;
-		submesh.MeshData = Mesh::CreateSkinned(std::move(restVertices), std::move(skinVertices), ReadIndices(mesh));
+		submesh.Mesh = Mesh::CreateSkinned(std::move(restVertices), std::move(skinVertices), ReadIndices(mesh));
 		AssignMaterial(submesh, mesh, scene, modelDir, textureCache);
 		return submesh;
 	}
@@ -635,7 +635,7 @@ namespace Dingo
 		}
 
 		SubMesh submesh;
-		submesh.MeshData = Mesh::Create(vertices, ReadIndices(mesh));
+		submesh.Mesh = Mesh::Create(vertices, ReadIndices(mesh));
 		AssignMaterial(submesh, mesh, scene, modelDir, textureCache);
 		return submesh;
 	}
@@ -1059,8 +1059,8 @@ namespace Dingo
 	{
 		for (auto& sm : m_SubMeshes)
 		{
-			delete sm.MeshData;
-			DestroyAndDelete(sm.Mat);
+			delete sm.Mesh;
+			DestroyAndDelete(sm.Material);
 		}
 		m_SubMeshes.clear();
 
@@ -1196,17 +1196,17 @@ namespace Dingo
 			}
 
 			SubMesh& current = m_SubMeshes[i];
-			current.MeshData->Reinitialize(*incoming.MeshData);
-			current.Mat->SetTexture(0, incoming.DiffuseTexture);
+			current.Mesh->Reinitialize(*incoming.Mesh);
+			current.Material->SetTexture(0, incoming.DiffuseTexture);
 			current.DiffuseTexture = incoming.DiffuseTexture;
 			current.BaseColor = incoming.BaseColor;
-			delete incoming.MeshData;
-			DestroyAndDelete(incoming.Mat);
+			delete incoming.Mesh;
+			DestroyAndDelete(incoming.Material);
 		}
 		for (size_t i = fresh.m_SubMeshes.size(); i < meshCount; ++i)
 		{
-			m_SubMeshes[i].MeshData->Clear();
-			m_SubMeshes[i].Mat->SetTexture(0, nullptr);
+			m_SubMeshes[i].Mesh->Clear();
+			m_SubMeshes[i].Material->SetTexture(0, nullptr);
 			m_SubMeshes[i].DiffuseTexture = nullptr;
 			m_SubMeshes[i].BaseColor = glm::vec4(1.0f);
 		}

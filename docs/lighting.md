@@ -114,8 +114,8 @@ its scene buffer has room for that many writes, and later scenes would draw with
 **Direct API.** A scene that submits no light and no ambient is lit by the default light from
 `Renderer3DParams`: `LightDirection` (-0.4, -1, -0.35) and `Ambient` 0.35. It is emitted as a white
 ambient of `Ambient` plus one white directional light of intensity `1 - Ambient`, which is the
-pre-v0.7 image. Set it at startup through `ApplicationParams::Renderer3D`, or at run time with
-`SetDirectionalLight(direction, ambient)`, which changes only this default. Any `SubmitLight` or
+pre-v0.7 image. Set it at startup through `ApplicationParams::Renderer3D` (the run-time setter
+`SetDirectionalLight(direction, ambient)` is deprecated and goes in 2.0). Any `SubmitLight` or
 `SetAmbientLight` call in a scene switches it off, so a scene with only point lights gets no sun.
 For no light at all, call `SetAmbientLight({ 0, 0, 0 }, 0)`.
 
@@ -539,8 +539,9 @@ that did more:
 - **The legacy prefix still carries only the first directional light.** A custom shader that reads
   only `LightDirection` and `Ambient` ignores the rest. Mirror the full block to see them all.
 
-`Renderer3D::SetDirectionalLight` still works, but only for scenes that submit no light of their
-own, since submitting any light or ambient switches the default off.
+`Renderer3D::SetDirectionalLight` is deprecated (removed in 2.0). It still works, but only for
+scenes that submit no light of their own, since submitting any light or ambient switches the default
+off; submit the light each scene instead.
 
 ## See also
 

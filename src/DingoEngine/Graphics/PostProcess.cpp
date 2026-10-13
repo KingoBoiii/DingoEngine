@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
@@ -56,7 +57,7 @@ namespace Dingo
 		template<typename T>
 		void SetUniformIfChanged(Material* material, const T& data)
 		{
-			const std::vector<uint8_t>& current = material->GetUniformCPUData();
+			const std::vector<uint8_t>& current = Internal::MaterialAccess::GetUniformCPUData(material);
 			if (current.size() == sizeof(T) && std::memcmp(current.data(), &data, sizeof(T)) == 0)
 				return;
 			material->SetUniform(data);

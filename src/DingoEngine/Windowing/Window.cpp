@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Windowing/Window.h"
@@ -206,7 +207,7 @@ namespace Dingo
 			return;
 
 		m_Params.VSync = vsync;
-		Renderer::QueueVSync(vsync);
+		Internal::RendererBackend::QueueVSync(vsync);
 	}
 
 	GLFWmonitor* Window::GetCurrentMonitor() const

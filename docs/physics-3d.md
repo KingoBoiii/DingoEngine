@@ -76,7 +76,7 @@ uses `Radius` plus `HalfHeight`; Mesh and ConvexHull use `Mesh` plus `MeshScale`
 ## Mesh colliders (v0.6.2)
 
 Two shapes build a collider from a `Mesh`'s vertex positions and indices (a `Model` submesh's
-`MeshData` works too):
+`Mesh` works too):
 
 | `ColliderShape3D` | Collides with | Body types |
 |---|---|---|

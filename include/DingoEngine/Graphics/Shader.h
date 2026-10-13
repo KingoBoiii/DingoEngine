@@ -75,9 +75,9 @@ namespace Dingo
 	public:
 		// A relative filepath is looked up under the asset root first, then the working
 		// directory.
-		static Shader* CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect = true);
-		static Shader* CreateFromSource(const std::string& name, const std::string& source, bool reflect = true);
-		static Shader* Create(const ShaderParams& params);
+		[[nodiscard]] static Shader* CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect = true);
+		[[nodiscard]] static Shader* CreateFromSource(const std::string& name, const std::string& source, bool reflect = true);
+		[[nodiscard]] static Shader* Create(const ShaderParams& params);
 
 	public:
 		Shader(const ShaderParams& params)
@@ -85,8 +85,12 @@ namespace Dingo
 		{}
 		virtual ~Shader() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		// True when Initialize() actually produced a usable program - Create() never

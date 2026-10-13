@@ -1,11 +1,6 @@
 #include "TestLayer.h"
 #include "CrashTrigger.h"
 
-#include "Tests/Renderer/StaticTriangleTest.h"
-#include "Tests/Renderer/VertexBufferTest.h"
-#include "Tests/Renderer/IndexBufferTest.h"
-#include "Tests/Renderer/UniformBufferTest.h"
-#include "Tests/Renderer/TextureTest.h"
 #include "Tests/Renderer/Mesh3DTest.h"
 #include "Tests/Renderer/Model3DTest.h"
 #include "Tests/Renderer/Renderer3DBatchTest.h"
@@ -54,13 +49,6 @@ namespace Dingo
 
 		if (auto crash = Application::Get().GetCommandLineArgs().Get("crash"))
 			m_CrashKind = *crash;
-
-		// TODO: Low-level Renderer tests need off-screen pass (deferred feature)
-		// m_Tests.push_back({ "Static Triangle Test", ... });
-		// m_Tests.push_back({ "Vertex Buffer Test",   ... });
-		// m_Tests.push_back({ "Index Buffer Test",    ... });
-		// m_Tests.push_back({ "Uniform Buffer Test",  ... });
-		// m_Tests.push_back({ "Texture Test",         ... });
 
 		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });

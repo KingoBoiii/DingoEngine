@@ -1,5 +1,5 @@
 #pragma once
-#include "Framebuffer.h"
+#include "DingoEngine/Graphics/Framebuffer.h"
 
 struct GLFWwindow;
 
@@ -8,37 +8,37 @@ namespace vk
 	class SurfaceKHR;
 }
 
-namespace Dingo
+namespace Dingo::Internal
 {
 
 	struct SwapChainParams
 	{
-		GLFWwindow* NativeWindowHandle;
-		int32_t Width;
-		int32_t Height;
+		GLFWwindow* NativeWindowHandle = nullptr;
+		int32_t Width = 0;
+		int32_t Height = 0;
 		bool VSync = true;
 
 		vk::SurfaceKHR* VulkanSurface = nullptr; // Used for Vulkan (ImGui multiple viewports)
 
-		SwapChainParams SetNativeWindowHandle(GLFWwindow* handle)
+		SwapChainParams& SetNativeWindowHandle(GLFWwindow* handle)
 		{
 			NativeWindowHandle = handle;
 			return *this;
 		}
 
-		SwapChainParams SetWidth(int32_t width)
+		SwapChainParams& SetWidth(int32_t width)
 		{
 			Width = width;
 			return *this;
 		}
 
-		SwapChainParams SetHeight(int32_t height)
+		SwapChainParams& SetHeight(int32_t height)
 		{
 			Height = height;
 			return *this;
 		}
 
-		SwapChainParams SetVSync(bool vsync)
+		SwapChainParams& SetVSync(bool vsync)
 		{
 			VSync = vsync;
 			return *this;

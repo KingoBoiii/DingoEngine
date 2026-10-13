@@ -37,6 +37,8 @@ namespace Dingo
 		struct StaticBatchShared;
 		struct StaticBatchData;
 		struct StaticCell;
+
+		inline constexpr uint32_t k_MaxSkinDataInstances = 256;
 	}
 
 	// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
@@ -181,7 +183,7 @@ namespace Dingo
 	class Renderer3D
 	{
 	public:
-		static Renderer3D* Create(const Renderer3DParams& params = {});
+		[[nodiscard]] static Renderer3D* Create(const Renderer3DParams& params = {});
 
 	public:
 		Renderer3D() = delete;
@@ -189,10 +191,12 @@ namespace Dingo
 		Renderer3D& operator=(const Renderer3D&) = delete;
 		Renderer3D(Renderer3D&&) = delete;
 		Renderer3D& operator=(Renderer3D&&) = delete;
+		// Calls Shutdown.
 		~Renderer3D();
 
 	public:
-		void Initialize();
+		// Frees the renderer's GPU objects early; the destructor does it anyway. A lit material it
+		// made must be deleted before this.
 		void Shutdown();
 
 		// Begins accumulating a batch for the given view. Does not clear — call
@@ -258,7 +262,7 @@ namespace Dingo
 		// scenes with a deltaTime of 0. A submission keeps the emitter alive until EndScene. Through the post chain, AO is applied first so particles aren't
 		// darkened, and particles with a SoftDistance fade against the scene's depth. See
 		// docs/particles.md.
-		std::shared_ptr<ParticleEmitter> CreateParticleEmitter(const ParticleEffect* effect);
+		[[nodiscard]] std::shared_ptr<ParticleEmitter> CreateParticleEmitter(const ParticleEffect* effect);
 		void SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime);
 		// Whether this renderer made the emitter: one made by another Renderer3D draws nothing here.
 		bool OwnsParticleEmitter(const ParticleEmitter& emitter) const;
@@ -278,6 +282,7 @@ namespace Dingo
 		void ClearFog();
 
 		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
+		[[deprecated("submit the light each scene with SubmitLight and SetAmbientLight, or set Renderer3DParams::LightDirection/Ambient; removed in 2.0")]]
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
 		static constexpr uint32_t k_MaxShadowCascades = 4;
@@ -338,7 +343,7 @@ namespace Dingo
 		// draws before the CPU batches of the same material, its meshes by cell and then in the order
 		// they were added, and its materials join the scene's draw order at the submission, so two
 		// meshes meeting at exactly equal depth can resolve the other way than through SubmitMesh.
-		std::shared_ptr<StaticBatch> CreateStaticBatch(const StaticBatchParams& params = {});
+		[[nodiscard]] std::shared_ptr<StaticBatch> CreateStaticBatch(const StaticBatchParams& params = {});
 		void SubmitStaticBatch(StaticBatch& batch);
 		bool OwnsStaticBatch(const StaticBatch& batch) const;
 
@@ -349,15 +354,18 @@ namespace Dingo
 
 		// The most joints one skinned draw can use: the length of SkinData's palette.
 		static constexpr uint32_t k_MaxSkinJoints = 128;
-		// The highest binding a custom shader may give its SkinData block; D3D11 has 14 constant
-		// buffer slots.
-		static constexpr uint32_t k_MaxSkinDataBinding = 13;
+		// The highest binding a custom shader may give its DE_SkinDraw (or SkinData) block; D3D11 has
+		// 14 constant buffer slots.
+		static constexpr uint32_t k_MaxSkinUniformBinding = 13;
+		[[deprecated("use k_MaxSkinUniformBinding; removed in 2.0")]]
+		static constexpr uint32_t k_MaxSkinDataBinding = k_MaxSkinUniformBinding;
 		// Each instance of the budget holds three 16-byte DE_SkinDraw versions in host-visible memory
 		// on Vulkan, and its palette a stretch of the skin arena.
 		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
-		// Instances a frame drawn with a custom material whose shader has a SkinData block, each
-		// holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
-		static constexpr uint32_t k_MaxSkinDataInstances = 256;
+		// Instances a frame drawn with a custom material whose shader has the deprecated SkinData
+		// block, each holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
+		[[deprecated("the SkinData block is deprecated: declare Skinning.glsl's DE_SKIN_PALETTE blocks; removed in 2.0")]]
+		static constexpr uint32_t k_MaxSkinDataInstances = Internal::k_MaxSkinDataInstances;
 
 		// Skins a mesh on the GPU and places it with transform, one draw per call. joints is the
 		// skinning palette (Skeleton::ComputeSkinningPalette, or GetRestPalette for the rest pose)
@@ -371,8 +379,8 @@ namespace Dingo
 		//
 		// A lit material (null = the default) draws through a skinned twin the renderer keeps for
 		// it. A custom material's shader needs Skinning.glsl's blocks, either DE_SkinDraw and
-		// DE_SkinPalette (DE_SKIN_PALETTE defined) or SkinData, with the uniform block at a binding
-		// from 2 to k_MaxSkinDataBinding and both at bindings its textures and samplers leave free,
+		// DE_SkinPalette (DE_SKIN_PALETTE defined) or the deprecated SkinData (warned once), with the
+		// uniform block at a binding from 2 to k_MaxSkinUniformBinding and both at bindings its textures and samplers leave free,
 		// or it is drawn with the default material and a warning. A mesh without a skin, with too few joints
 		// passed, or skinned to more than k_MaxSkinJoints joints goes through SubmitMesh and draws its
 		// rest pose. No-op outside a Begin/EndScene pair.
@@ -404,7 +412,7 @@ namespace Dingo
 		// materials draw both faces, so open meshes and mirrored entities still show. Any
 		// Renderer3D can draw it; the caller owns it and must delete it before the renderer that
 		// created it shuts down.
-		Material* CreateLitMaterial(MaterialParams params) const;
+		[[nodiscard]] Material* CreateLitMaterial(MaterialParams params) const;
 
 		// The material meshes with no material of their own are drawn with, for changing their
 		// shared emissive, Roughness or Specular.
@@ -446,7 +454,7 @@ namespace Dingo
 			uint32_t DroppedLights = 0;     // directional lights past k_MaxDirectionalLights, point and spot lights past the budget
 			uint32_t SkinnedDraws = 0;        // skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes; not batched, so not in VertexCount/IndexCount
 			uint32_t SkinnedInstances = 0;    // joint palettes put into the skin arena; a model's submeshes share one
-			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame, or past k_MaxSkinDataInstances for a SkinData shader
+			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame, or past 256 for a SkinData shader
 			uint32_t SkinnedJoints = 0;       // joint matrices the instances use
 			uint32_t SkinPaletteBytes = 0;    // the scene's skin arena upload
 			uint32_t ShadowViews = 0;         // atlas tiles rendered (cascades and local light faces), 0 for a scene that casts nothing
@@ -484,6 +492,7 @@ namespace Dingo
 
 	private:
 		explicit Renderer3D(const Renderer3DParams& params);
+		void Initialize();
 
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
@@ -1061,6 +1070,7 @@ namespace Dingo
 		bool m_SkinFallbackWarned = false;
 		bool m_SkinnedOnlyWarned = false;
 		bool m_SkinMaterialWarned = false;
+		bool m_SkinDataWarned = false;
 
 		void UploadSkinPalette();
 		void UploadSkinDraw(const SkinnedInstance& instance);

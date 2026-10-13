@@ -178,7 +178,7 @@ namespace Dingo
 				.SetWidth(width)
 				.SetHeight(height)
 				.SetDimension(TextureDimension::Texture2D)
-				.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+				.SetFormat(TextureFormat::RGBA8_UNORM)
 				.SetIsRenderTarget(false)
 				.SetInitialData(pixels);
 		}

@@ -12,8 +12,8 @@
 namespace Dingo
 {
 
-	DirectX12SwapChain::DirectX12SwapChain(const SwapChainParams& params)
-		: SwapChain(params)
+	DirectX12SwapChain::DirectX12SwapChain(const Internal::SwapChainParams& params)
+		: Internal::SwapChain(params)
 	{}
 
 	DirectX12SwapChain::~DirectX12SwapChain()
@@ -205,7 +205,6 @@ namespace Dingo
 				.SetEnableDepth(true); // match the Vulkan swap chain so 3D passes have depth
 
 			m_SwapChainFramebuffers[i] = NvrhiSwapChainFramebuffer::Create(m_BackBuffers[i].rhiHandle, framebufferParams);
-			m_SwapChainFramebuffers[i]->Initialize();
 		}
 	}
 

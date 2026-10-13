@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
@@ -103,7 +104,7 @@ namespace
 		// Past the far plane Vulkan clips and D3D clamps the depth to 1, which Less never passes. D3D
 		// adds the bias before clamping, so a biased material can still draw there.
 		const Dingo::MaterialParams& params = material.GetParams();
-		return params.DepthTest && params.DepthFunction == Dingo::DepthCompare::Less && params.DepthBias == 0 && params.SlopeScaledDepthBias == 0.0f;
+		return params.DepthTest && params.DepthCompare == Dingo::DepthCompare::Less && params.DepthBias == 0 && params.SlopeScaledDepthBias == 0.0f;
 	}
 
 	// By the strongest channel, not luminance: a pure blue light is as strong as a pure green one
@@ -199,13 +200,7 @@ namespace Dingo
 
 	Renderer3D::~Renderer3D()
 	{
-		std::erase(s_LitShaders, m_Shader);
-		Internal::UnwatchUnmanagedShader(m_Shader);
-		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
-		Internal::UnwatchUnmanagedShader(m_ShadowShader);
-		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
-		Internal::UnwatchUnmanagedShader(m_InstancedShader);
-		Internal::UnwatchUnmanagedShader(m_InstancedShadowShader);
+		Shutdown();
 	}
 
 	void Renderer3D::Initialize()
@@ -262,7 +257,7 @@ namespace Dingo
 			.SetByteSize(sizeof(CameraData))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		// The lit shader binds the shadows always, so every scene writes them, cast or not.
@@ -271,7 +266,7 @@ namespace Dingo
 			.SetByteSize(sizeof(ShadowData))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 		m_ShadowSampler = Sampler::Create(SamplerParams().SetCompare(true));
 		m_PlaceholderShadowAtlas = Texture::Create(TextureParams()
@@ -531,16 +526,16 @@ namespace Dingo
 				// material also drawn skinned would otherwise keep a skin buffer this renderer may free.
 				const bool instanced = draw.Group != ~0u;
 				Material* material = instanced ? ResolveInstancedMaterial(draw.Key.Material) : draw.Key.Material;
-				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-				material->SetSkinUniformBuffer(nullptr);
-				material->SetSkinPaletteBuffers(nullptr, nullptr);
-				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-				material->SetObjectBuffer(m_ObjectBuffer);
+				Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
+				Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
+				Internal::MaterialAccess::SetSkinPaletteBuffers(material, nullptr, nullptr);
+				Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+				Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 				if (instanced)
 				{
 					const InstanceGroup& group = m_InstanceGroups[draw.Group];
 					EnsureStaticBuffers(group.Mesh);
-					material->SetInstanceBuffers(m_InstanceBuffer, m_InstanceDrawBuffer);
+					Internal::MaterialAccess::SetInstanceBuffers(material, m_InstanceBuffer, m_InstanceDrawBuffer);
 					UploadInstanceDraw(group.FirstRecord, 1);
 					Renderer::DrawIndexed(material, m_MeshLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer, group.Mesh->GetIndexCount(), group.Count);
 					++m_Statistics.DrawCalls;
@@ -851,7 +846,7 @@ namespace Dingo
 				{
 					const std::string& name = material->GetParams().DebugName;
 					DE_CORE_WARN("Renderer3D: material '{}' has Instancing set but its shader lacks the {} storage block or the {} uniform block (Instancing.glsl), or puts one on a binding its textures or samplers use or past {}; its meshes are not drawn.",
-						name.empty() ? "<unnamed>" : name.c_str(), Material::k_InstanceDataBlockName, Material::k_InstanceDrawBlockName, k_MaxSkinDataBinding);
+						name.empty() ? "<unnamed>" : name.c_str(), Material::k_InstanceDataBlockName, Material::k_InstanceDrawBlockName, k_MaxSkinUniformBinding);
 					m_InstanceMaterialWarned = true;
 				}
 				continue;
@@ -1022,7 +1017,7 @@ namespace Dingo
 		};
 		const int32_t draw = shader->FindUniformBufferBinding(Material::k_InstanceDrawBlockName);
 		return free(shader->FindStorageBufferBinding(Material::k_InstanceDataBlockName)) && free(draw) &&
-			draw <= static_cast<int32_t>(k_MaxSkinDataBinding);
+			draw <= static_cast<int32_t>(k_MaxSkinUniformBinding);
 	}
 
 	bool Renderer3D::ForcesInstancing(const Material* material) const
@@ -1312,11 +1307,11 @@ namespace Dingo
 			if (buffer)
 				m_RetiredArenaBuffers.emplace_back(buffer, frame);
 			capacity = std::max({ capacity * 2, used + needed, k_MinimumArena });
-			// DirectUpload = false: the writes go into the frame's command list (as Renderer2D's batches
+			// BufferUpload::Deferred: the writes go into the frame's command list (as Renderer2D's batches
 			// do) instead of each spinning up a throwaway command list and its own queue submit.
 			buffer = indexBuffer
-				? GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * capacity, nullptr, false, "Renderer3D_ArenaIB", GraphicsFormat::Uint32)
-				: GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * capacity, nullptr, false, "Renderer3D_ArenaVB");
+				? GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * capacity, IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_ArenaIB")
+				: GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * capacity, nullptr, BufferUpload::Deferred, "Renderer3D_ArenaVB");
 			used = 0;
 		};
 		reserve(m_ArenaVertexBuffer, m_ArenaVertexCapacity, m_ArenaVertexUsed, vertices, false);
@@ -1404,7 +1399,7 @@ namespace Dingo
 			.SetByteSize(sizeof(glm::uvec4))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxInstancedDrawsPerFrame));
 	}
 
@@ -1415,8 +1410,8 @@ namespace Dingo
 
 		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();
-		mesh->m_StaticVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(MeshVertex), nullptr, false, "Renderer3D_MeshVB");
-		mesh->m_StaticIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_MeshIB", GraphicsFormat::Uint32);
+		mesh->m_StaticVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(MeshVertex), nullptr, BufferUpload::Deferred, "Renderer3D_MeshVB");
+		mesh->m_StaticIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_MeshIB");
 		Renderer::Upload(mesh->m_StaticVertexBuffer, vertices.data(), vertices.size() * sizeof(MeshVertex));
 		Renderer::Upload(mesh->m_StaticIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
 	}
@@ -1655,11 +1650,11 @@ namespace Dingo
 			}
 
 			Material* material = draw.Material;
-			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-			material->SetSkinUniformBuffer(nullptr);
-			material->SetSkinPaletteBuffers(nullptr, nullptr);
-			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-			material->SetObjectBuffer(m_ObjectBuffer);
+			Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
+			Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
+			Internal::MaterialAccess::SetSkinPaletteBuffers(material, nullptr, nullptr);
+			Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+			Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
 			Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 			++m_Statistics.DrawCalls;
@@ -1846,13 +1841,13 @@ namespace Dingo
 			.SetByteSize(sizeof(glm::uvec4))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(3 * GetSkinnedInstanceBudget()));
 	}
 
 	bool Renderer3D::IsSkinningShader(const Shader* shader)
 	{
-		return shader && (shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0 || shader->FindUniformBufferBinding(Material::k_SkinDrawBlockName) >= 0);
+		return shader && (shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) >= 0 || shader->FindUniformBufferBinding(Material::k_SkinDrawBlockName) >= 0);
 	}
 
 	bool Renderer3D::UsesSkinPalette(const Shader* shader)
@@ -1880,10 +1875,17 @@ namespace Dingo
 		};
 		const Shader* shader = requested->GetShader();
 		const bool palette = UsesSkinPalette(shader);
-		const int32_t binding = shader ? shader->FindUniformBufferBinding(palette ? Material::k_SkinDrawBlockName : Material::k_SkinDataBlockName) : -1;
-		bool usable = binding <= static_cast<int32_t>(k_MaxSkinDataBinding) && freeBinding(binding);
+		const int32_t binding = shader ? shader->FindUniformBufferBinding(palette ? Material::k_SkinDrawBlockName : Internal::k_SkinDataBlockName) : -1;
+		bool usable = binding <= static_cast<int32_t>(k_MaxSkinUniformBinding) && freeBinding(binding);
 		if (usable && palette)
 			usable = freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
+		if (usable && !palette && !m_SkinDataWarned)
+		{
+			const std::string& name = requested->GetParams().DebugName;
+			DE_CORE_WARN("Renderer3D: material '{}' skins through the deprecated SkinData block, which goes in 2.0; declare Skinning.glsl's DE_SKIN_PALETTE blocks instead.",
+				name.empty() ? "<unnamed>" : name.c_str());
+			m_SkinDataWarned = true;
+		}
 		if (usable)
 			return requested;
 
@@ -1891,7 +1893,7 @@ namespace Dingo
 		{
 			const std::string& name = requested->GetParams().DebugName;
 			DE_CORE_WARN("Renderer3D: material '{}' has no SkinData or DE_SkinDraw uniform block at a free binding from 2 to {} (with DE_SkinPalette at a free binding), so skinned meshes drawn with it use the default lit material.",
-				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinDataBinding);
+				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinUniformBinding);
 			m_SkinMaterialWarned = true;
 		}
 		return GetTwin(m_SkinnedTwins, m_Material, m_SkinnedShader, "_Skinned");
@@ -1989,13 +1991,13 @@ namespace Dingo
 			if (!m_SkinnedInstanceLive[instance])
 				continue;
 			const bool skinData = m_SkinnedInstanceSkinData[instance] != 0;
-			if (skinData && m_SkinDataInstancesThisFrame >= k_MaxSkinDataInstances)
+			if (skinData && m_SkinDataInstancesThisFrame >= Internal::k_MaxSkinDataInstances)
 			{
 				m_SkinnedInstanceDropped[instance] = 1;
 				if (!m_SkinDataBudgetWarned)
 				{
 					DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame drawn with a SkinData shader; the rest are skipped. Define DE_SKIN_PALETTE before including Skinning.glsl to take the whole budget.",
-						k_MaxSkinDataInstances);
+						Internal::k_MaxSkinDataInstances);
 					m_SkinDataBudgetWarned = true;
 				}
 				continue;
@@ -2076,8 +2078,8 @@ namespace Dingo
 				uploads.Draw = instance;
 				UploadSkinDraw(m_SkinnedInstances[instance]);
 			}
-			material->SetSkinUniformBuffer(nullptr);
-			material->SetSkinPaletteBuffers(m_SkinPaletteBuffer, m_SkinDrawBuffer);
+			Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
+			Internal::MaterialAccess::SetSkinPaletteBuffers(material, m_SkinPaletteBuffer, m_SkinDrawBuffer);
 			return;
 		}
 
@@ -2086,21 +2088,21 @@ namespace Dingo
 			// An admitted instance writes it once in the opaque pass and once in the translucent one.
 			if (!m_SkinBuffer)
 			{
-				const uint32_t writes = 2 * (std::min)(GetSkinnedInstanceBudget(), k_MaxSkinDataInstances);
+				const uint32_t writes = 2 * (std::min)(GetSkinnedInstanceBudget(), Internal::k_MaxSkinDataInstances);
 				m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
 					.SetDebugName("Renderer3D_SkinUBO")
 					.SetByteSize(sizeof(SkinData))
 					.SetType(BufferType::UniformBuffer)
 					.SetIsVolatile(true)
-					.SetDirectUpload(false)
+					.SetUpload(BufferUpload::Deferred)
 					.SetMaxWritesPerFrame(writes));
 				m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
 			}
 			uploads.Data = instance;
 			UploadSkinData(m_SkinnedInstances[instance]);
 		}
-		material->SetSkinPaletteBuffers(nullptr, nullptr);
-		material->SetSkinUniformBuffer(m_SkinBuffer);
+		Internal::MaterialAccess::SetSkinPaletteBuffers(material, nullptr, nullptr);
+		Internal::MaterialAccess::SetSkinUniformBuffer(material, m_SkinBuffer);
 	}
 
 	void Renderer3D::UploadSkinData(const SkinnedInstance& instance)
@@ -2120,8 +2122,8 @@ namespace Dingo
 
 		const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();
-		mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
-		mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
+		mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, BufferUpload::Deferred, "Renderer3D_SkinVB");
+		mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_SkinIB");
 		Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
 		Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
 	}
@@ -2173,9 +2175,9 @@ namespace Dingo
 		const Mesh* mesh = submission.Mesh;
 		EnsureSkinBuffers(mesh);
 
-		material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-		material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-		material->SetObjectBuffer(m_ObjectBuffer);
+		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
+		Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 		Renderer::DrawIndexed(material, m_SkinnedLayout, mesh->m_SkinVertexBuffer, mesh->m_SkinIndexBuffer, mesh->GetIndexCount());
 
 		++m_Statistics.DrawCalls;
@@ -2214,7 +2216,7 @@ namespace Dingo
 
 		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
 		// frame, so a material drawn in several scenes of a frame only rewrites what changed.
-		const std::vector<uint8_t>& current = material->GetUniformCPUData();
+		const std::vector<uint8_t>& current = Internal::MaterialAccess::GetUniformCPUData(material);
 		if (current.size() == sizeof(data) && std::memcmp(current.data(), &data, sizeof(data)) == 0)
 			return;
 		material->SetUniform(data);
@@ -2881,9 +2883,9 @@ namespace Dingo
 			}
 		}
 
-		// DirectUpload = false: written in the frame's command list, ahead of the draws that read it.
-		cell.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * vertices.size(), nullptr, false, "Renderer3D_StaticCellVB");
-		cell.IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * indices.size(), nullptr, false, "Renderer3D_StaticCellIB", GraphicsFormat::Uint32);
+		// BufferUpload::Deferred: written in the frame's command list, ahead of the draws that read it.
+		cell.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * vertices.size(), nullptr, BufferUpload::Deferred, "Renderer3D_StaticCellVB");
+		cell.IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * indices.size(), IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_StaticCellIB");
 		Renderer::Upload(cell.VertexBuffer, vertices.data(), sizeof(Vertex) * vertices.size());
 		Renderer::Upload(cell.IndexBuffer, indices.data(), sizeof(uint32_t) * indices.size());
 	}
@@ -2985,7 +2987,7 @@ namespace Dingo
 				.SetByteSize(sizeof(ShadowViews))
 				.SetType(BufferType::UniformBuffer)
 				.SetIsVolatile(true)
-				.SetDirectUpload(false)
+				.SetUpload(BufferUpload::Deferred)
 				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 			m_ShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DShadow"), "Renderer3D_Shadow.glsl");
@@ -3009,11 +3011,11 @@ namespace Dingo
 				.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
 			material->SetUniform(glm::uvec4(shadowGroups, 0u, 0u, 0u));
 		}
-		material->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_ShadowViewsBuffer);
 		if (skinned)
-			material->SetSkinPaletteBuffers(m_SkinPaletteBuffer, m_SkinDrawBuffer);
+			Internal::MaterialAccess::SetSkinPaletteBuffers(material, m_SkinPaletteBuffer, m_SkinDrawBuffer);
 		if (instanced)
-			material->SetInstanceBuffers(m_InstanceBuffer, m_InstanceDrawBuffer);
+			Internal::MaterialAccess::SetInstanceBuffers(material, m_InstanceBuffer, m_InstanceDrawBuffer);
 		return material;
 	}
 
@@ -3535,7 +3537,7 @@ namespace Dingo
 				.SetByteSize(sizeof(ShadowProbeData))
 				.SetType(BufferType::UniformBuffer)
 				.SetIsVolatile(true)
-				.SetDirectUpload(false)
+				.SetUpload(BufferUpload::Deferred)
 				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 			m_ProbeTarget = Framebuffer::Create(FramebufferParams()
 				.SetDebugName("Renderer3D_ShadowProbeTarget")
@@ -3545,8 +3547,8 @@ namespace Dingo
 		}
 
 		Renderer::Upload(m_ProbeBuffer, &m_ShadowProbeData, sizeof(ShadowProbeData));
-		m_ProbeMaterial->SetSceneUniformBuffer(m_ProbeBuffer);
-		m_ProbeMaterial->SetShadowResources(m_ShadowDataBuffer, m_ShadowAtlas->GetDepthAttachment(), m_ShadowSampler);
+		Internal::MaterialAccess::SetSceneUniformBuffer(m_ProbeMaterial, m_ProbeBuffer);
+		Internal::MaterialAccess::SetShadowResources(m_ProbeMaterial, m_ShadowDataBuffer, m_ShadowAtlas->GetDepthAttachment(), m_ShadowSampler);
 		Internal::DrawFullscreen(m_ProbeMaterial, m_ProbeTarget);
 
 		// The copy is recorded here, so the next scene's probes can draw into the same target.

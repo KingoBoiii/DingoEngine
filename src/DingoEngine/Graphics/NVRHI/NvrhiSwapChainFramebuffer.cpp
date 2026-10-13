@@ -9,7 +9,9 @@ namespace Dingo
 
 	NvrhiSwapChainFramebuffer* NvrhiSwapChainFramebuffer::Create(nvrhi::ITexture* texture, const FramebufferParams& params)
 	{
-		return new NvrhiSwapChainFramebuffer(texture, params);
+		NvrhiSwapChainFramebuffer* framebuffer = new NvrhiSwapChainFramebuffer(texture, params);
+		framebuffer->Initialize();
+		return framebuffer;
 	}
 
 	void NvrhiSwapChainFramebuffer::Initialize()

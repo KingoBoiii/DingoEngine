@@ -618,10 +618,10 @@ namespace Dingo
 			const std::span<const glm::mat4> palette = skeleton ? Internal::AnimationSystem::Palette(m_Data->Registry, entity, *skeleton) : std::span<const glm::mat4>();
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
-				if (skeleton && submesh.MeshData->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
+				if (skeleton && submesh.Mesh->HasSkin())
+					renderer.SubmitSkinnedMesh(submesh.Mesh, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 				else
-					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
+					renderer.SubmitMesh(submesh.Mesh, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 			}
 		}
 

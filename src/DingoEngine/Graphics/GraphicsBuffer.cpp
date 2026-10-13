@@ -15,24 +15,24 @@ namespace Dingo
 		return s_NextId.fetch_add(1, std::memory_order_relaxed);
 	}
 
-	GraphicsBuffer* GraphicsBuffer::CreateVertexBuffer(uint64_t size, const void* data, bool directUpload, const std::string& debugName)
+	GraphicsBuffer* GraphicsBuffer::CreateVertexBuffer(uint64_t size, const void* data, BufferUpload upload, const std::string& debugName)
 	{
 		return Create(GraphicsBufferParams()
 			.SetDebugName(debugName)
 			.SetByteSize(size)
 			.SetType(BufferType::VertexBuffer)
-			.SetDirectUpload(directUpload)
+			.SetUpload(upload)
 			.SetInitialData(data));
 	}
 
-	GraphicsBuffer* GraphicsBuffer::CreateIndexBuffer(uint64_t size, const void* data, bool directUpload, const std::string& debugName, GraphicsFormat indexFormat)
+	GraphicsBuffer* GraphicsBuffer::CreateIndexBuffer(uint64_t size, IndexFormat format, const void* data, BufferUpload upload, const std::string& debugName)
 	{
 		return Create(GraphicsBufferParams()
 			.SetDebugName(debugName)
 			.SetByteSize(size)
 			.SetType(BufferType::IndexBuffer)
-			.SetFormat(indexFormat)
-			.SetDirectUpload(directUpload)
+			.SetIndexFormat(format)
+			.SetUpload(upload)
 			.SetInitialData(data));
 	}
 
@@ -43,7 +43,7 @@ namespace Dingo
 			.SetByteSize(size)
 			.SetType(Dingo::BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false));
+			.SetUpload(BufferUpload::Deferred));
 	}
 
 	GraphicsBuffer* GraphicsBuffer::CreateStorageBuffer(uint64_t size, const std::string& debugName, const void* initialData)
@@ -52,7 +52,7 @@ namespace Dingo
 			.SetDebugName(debugName)
 			.SetByteSize(size)
 			.SetType(Dingo::BufferType::StorageBuffer)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetInitialData(initialData));
 	}
 

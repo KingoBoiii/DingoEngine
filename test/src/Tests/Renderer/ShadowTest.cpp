@@ -184,7 +184,7 @@ namespace Dingo
 		glm::vec3 high((std::numeric_limits<float>::lowest)());
 		for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 		{
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 			{
 				low = (glm::min)(low, vertex.Position);
 				high = (glm::max)(high, vertex.Position);
@@ -410,8 +410,8 @@ namespace Dingo
 				{
 					for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 					{
-						if (submesh.MeshData->HasSkin())
-							renderer.SubmitSkinnedMesh(submesh.MeshData, m_FoxTransform, *palette, glm::vec4(1.0f), m_FoxMaterial);
+						if (submesh.Mesh->HasSkin())
+							renderer.SubmitSkinnedMesh(submesh.Mesh, m_FoxTransform, *palette, glm::vec4(1.0f), m_FoxMaterial);
 					}
 				}
 				break;

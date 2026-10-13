@@ -6,11 +6,11 @@
 namespace Dingo
 {
 
-	class NvrhiCommandList : public CommandList
+	class NvrhiCommandList : public Internal::CommandList
 	{
 	public:
-		NvrhiCommandList(const CommandListParams& params)
-			: CommandList(params)
+		NvrhiCommandList(const Internal::CommandListParams& params)
+			: Internal::CommandList(params)
 		{}
 		~NvrhiCommandList() = default;
 

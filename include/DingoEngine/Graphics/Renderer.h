@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DingoEngine/Graphics/CommandList.h"
+#include "DingoEngine/Graphics/ComputePass.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Pipeline.h"
@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/RenderPass.h"
 #include "DingoEngine/Graphics/Sampler.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/Viewport.h"
 
 #include <glm/glm.hpp>
 
@@ -18,11 +19,12 @@
 namespace Dingo
 {
 
-	class SwapChain;
-
 	namespace Internal
 	{
+		class CommandList;
 		class NvrhiTextureReadback;
+		class SwapChain;
+		struct RendererBackend;
 	}
 	class PostProcessStack;
 
@@ -38,30 +40,13 @@ namespace Dingo
 		float MaxMs = 0.0f;
 	};
 
-	// Ownership rule for every graphics resource: the factories hand out a raw `new`, and
-	// Destroy() only releases the GPU handle — the host object is still the owner's. Every
-	// owner pairs the two through this, so the pairing is not re-decided per site.
+	// Deletes the resource and nulls the pointer. Every factory's object frees everything it holds,
+	// its GPU objects included, in its destructor (docs/conventions.md), so this is plain delete.
 	template<typename T>
 	void DestroyAndDelete(T*& resource)
 	{
-		if (!resource)
-			return;
-
-		resource->Destroy();
 		delete resource;
 		resource = nullptr;
-	}
-
-	// GraphicsBuffer's destructor is protected (only its factories construct one), so the
-	// wrapper has to be deleted through the public polymorphic base it shares.
-	inline void DestroyAndDelete(GraphicsBuffer*& buffer)
-	{
-		if (!buffer)
-			return;
-
-		buffer->Destroy();
-		delete static_cast<GenericGraphicsBuffer<const void>*>(buffer);
-		buffer = nullptr;
 	}
 
 	// Renderer is a stateless gateway: all draw calls require explicit
@@ -74,46 +59,11 @@ namespace Dingo
 		Renderer(const Renderer&) = delete;
 		Renderer& operator=(const Renderer&) = delete;
 
-		/**************************************************
-		***		LIFECYCLE								***
-		**************************************************/
-
-		static void Initialize(SwapChain* swapChain);
-
-		// Parks the render thread, submits any frame still in flight and drops the frame
-		// command list, so the GPU is idle and nothing the renderer recorded still
-		// references a resource. Queries and the shared static resources below stay valid
-		// afterwards — Layer::OnDetach runs between this and Destroy(), and freeing GPU
-		// resources there is exactly what it is for.
-		static void Shutdown();
-
-		// Frees the renderer's own static resources and internal state. Every query below
-		// asserts and returns null after this point, so it must come after the layer stack
-		// has been detached.
-		static void Destroy();
-
-		static void BeginFrame();
-		static void EndFrame();
-
-		// Stands in for BeginFrame/EndFrame in a frame that renders nothing (Application skips
-		// frames while the window is minimized): it waits for the render thread to finish the
-		// frame in flight, as BeginFrame does, but opens no command list. Until the next
-		// BeginFrame, the Upload, Clear, Draw and DrawIndexed calls below are no-ops, and so are
-		// Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not
-		// redone later: data written once belongs in a DirectUpload buffer. Code that records into
-		// GetCommandList() itself, or calls Begin/Close/Execute, must check IsFrameSkipped() first.
-		// A BeginFrame that gets no swap-chain image to draw into (Vulkan, a window that can't be
-		// presented to) reports IsFrameSkipped() too, with the same no-ops, though its command list
-		// is open and its EndFrame still runs.
-		static void SkipFrame();
+		// True in a frame that renders nothing (a minimized window, or no swap-chain image): until the
+		// next frame the Upload, Clear, Draw and DrawIndexed calls below are no-ops, and so are
+		// Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not redone
+		// later: data written once belongs in a BufferUpload::Direct buffer.
 		static bool IsFrameSkipped();
-
-		// Thread-safe: records the new size and returns. The swap chain is recreated at the next
-		// safe point: on the render thread after Present, before the next image acquire, or in a
-		// BeginFrame that has no image yet. Resizing it here would race the frame in flight.
-		static void QueueResize(int32_t width, int32_t height);
-		// Thread-safe, applied at the same points as QueueResize. Window::SetVSync calls it.
-		static void QueueVSync(bool vsync);
 
 		/**************************************************
 		***		GPU TIMERS								***
@@ -131,14 +81,6 @@ namespace Dingo
 		// How long the render thread spent on the last frame it submitted: executing the command
 		// list and presenting.
 		static float GetRenderThreadMilliseconds();
-
-		/**************************************************
-		***		COMMAND LIST MANAGEMENT					***
-		**************************************************/
-
-		static void Begin();
-		static void Close();
-		static void Execute();
 
 		/**************************************************
 		***		RESOURCE UPLOAD							***
@@ -161,8 +103,7 @@ namespace Dingo
 		static void Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount = 1);
 		static void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount = 1);
 
-		// indexCount = 0 means "the whole index buffer", sized from the buffer's own
-		// GraphicsFormat (Uint16/Uint32).
+		// indexCount = 0 means "the whole index buffer", sized from the buffer's own IndexFormat.
 		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
 
 		/**************************************************
@@ -213,24 +154,7 @@ namespace Dingo
 		// The override, or null while draws go to the swap chain.
 		static Framebuffer* GetRenderTarget();
 
-		static CommandList*  GetCommandList();
-
-		// The frame command list only while it is open, else null — and null rather than an
-		// assert before Initialize() or after Destroy(). For resource writes that want to
-		// join the frame instead of opening a list of their own, but must also work when
-		// called outside one (asset loads during OnAttach, say).
-		static CommandList* TryGetRecordingCommandList();
 		static Framebuffer*  GetSwapChainFramebuffer();
-
-		// True while `framebuffer` is one the swap chain currently owns. Those are freed
-		// and recreated on every resize, so anything holding one must re-resolve rather
-		// than dereference what it captured.
-		static bool IsSwapChainFramebuffer(const Framebuffer* framebuffer);
-
-		// Bumped every time the swap chain recreates its framebuffers. Anything that caches
-		// objects built against one must compare this rather than trusting the pointer,
-		// which the allocator is free to hand back for a different framebuffer.
-		static uint64_t GetSwapChainResizeGeneration();
 
 		// Bumped each time the frame command list opens, so per-frame budgets (such as a volatile
 		// buffer's writes) can tell when a new frame starts.
@@ -248,6 +172,62 @@ namespace Dingo
 		static PostProcessStack& GetPostProcessStack();
 
 	private:
+		// The Application drives these through Internal::RendererBackend.
+		static void Initialize(Internal::SwapChain* swapChain);
+
+		// Parks the render thread, submits any frame still in flight and drops the frame
+		// command list, so the GPU is idle and nothing the renderer recorded still
+		// references a resource. Queries and the shared static resources below stay valid
+		// afterwards — Layer::OnDetach runs between this and Destroy(), and freeing GPU
+		// resources there is exactly what it is for.
+		static void Shutdown();
+
+		// Frees the renderer's own static resources and internal state. Every query below
+		// asserts and returns null after this point, so it must come after the layer stack
+		// has been detached.
+		static void Destroy();
+
+		static void BeginFrame();
+		static void EndFrame();
+
+		// Stands in for BeginFrame/EndFrame in a frame that renders nothing (Application skips
+		// frames while the window is minimized): it waits for the render thread to finish the
+		// frame in flight, as BeginFrame does, but opens no command list. Until the next
+		// BeginFrame, the Upload, Clear, Draw and DrawIndexed calls below are no-ops, and so are
+		// Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not
+		// redone later: data written once belongs in a BufferUpload::Direct buffer. Code that records into
+		// GetCommandList() itself, or calls Begin/Close/Execute, must check IsFrameSkipped() first.
+		// A BeginFrame that gets no swap-chain image to draw into (Vulkan, a window that can't be
+		// presented to) reports IsFrameSkipped() too, with the same no-ops, though its command list
+		// is open and its EndFrame still runs.
+		static void SkipFrame();
+
+		// Thread-safe: records the new size and returns. The swap chain is recreated at the next
+		// safe point: on the render thread after Present, before the next image acquire, or in a
+		// BeginFrame that has no image yet. Resizing it here would race the frame in flight.
+		static void QueueResize(int32_t width, int32_t height);
+		// Thread-safe, applied at the same points as QueueResize. Window::SetVSync calls it.
+		static void QueueVSync(bool vsync);
+
+		static void Begin();
+		static void Close();
+		static void Execute();
+
+		static Internal::CommandList* GetCommandList();
+		// The frame command list only while it is open, else null — and null rather than an
+		// assert before Initialize() or after Destroy(). For resource writes that want to
+		// join the frame instead of opening a list of their own, but must also work when
+		// called outside one (asset loads during OnAttach, say).
+		static Internal::CommandList* TryGetRecordingCommandList();
+		// True while `framebuffer` is one the swap chain currently owns. Those are freed
+		// and recreated on every resize, so anything holding one must re-resolve rather
+		// than dereference what it captured.
+		static bool IsSwapChainFramebuffer(const Framebuffer* framebuffer);
+		// Bumped every time the swap chain recreates its framebuffers. Anything that caches
+		// objects built against one must compare this rather than trusting the pointer,
+		// which the allocator is free to hand back for a different framebuffer.
+		static uint64_t GetSwapChainResizeGeneration();
+
 		static void RenderThreadLoop();
 		static Framebuffer* GetCurrentTarget();
 		static void BindTarget(Framebuffer* target);
@@ -268,6 +248,7 @@ namespace Dingo
 		friend class NvrhiTexture;
 		friend class NvrhiGraphicsBuffer;
 		friend class Internal::NvrhiTextureReadback;
+		friend struct Internal::RendererBackend;
 	};
 
 }

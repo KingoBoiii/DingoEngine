@@ -1,34 +1,25 @@
 #pragma once
-#include "Framebuffer.h"
-#include "Pipeline.h"
-#include "GraphicsBuffer.h"
-#include "RenderPass.h"
-#include "ComputePass.h"
-#include "Texture.h"
+#include "DingoEngine/Graphics/ComputePass.h"
+#include "DingoEngine/Graphics/Framebuffer.h"
+#include "DingoEngine/Graphics/GraphicsBuffer.h"
+#include "DingoEngine/Graphics/Pipeline.h"
+#include "DingoEngine/Graphics/RenderPass.h"
+#include "DingoEngine/Graphics/Texture.h"
+#include "DingoEngine/Graphics/Viewport.h"
 
 #include <glm/glm.hpp>
 
-namespace Dingo
+namespace Dingo::Internal
 {
 
 	struct CommandListParams
 	{
 	};
 
-	// A rectangle of the bound framebuffer, in pixels from its top-left corner. Draws are scissored
-	// to it as well.
-	struct Viewport
-	{
-		float X = 0.0f;
-		float Y = 0.0f;
-		float Width = 0.0f;
-		float Height = 0.0f;
-	};
-
 	class CommandList
 	{
 	public:
-		static CommandList* Create(const CommandListParams& params = {});
+		[[nodiscard]] static CommandList* Create(const CommandListParams& params = {});
 
 	public:
 		CommandList(const CommandListParams& params) 
@@ -36,8 +27,12 @@ namespace Dingo
 		{}
 		virtual ~CommandList() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		virtual void Begin() = 0;
@@ -64,8 +59,8 @@ namespace Dingo
 		// Both return false when the pipeline could not be built (a failed shader compile,
 		// including one from a hot-reload): the state is left empty and the caller must skip
 		// the draw. Draw/DrawIndexed also refuse to submit without a pipeline.
-		virtual bool SetPipeline(Pipeline* pipeline) = 0;
-		virtual bool SetRenderPass(RenderPass* renderPass) = 0;
+		[[nodiscard]] virtual bool SetPipeline(Pipeline* pipeline) = 0;
+		[[nodiscard]] virtual bool SetRenderPass(RenderPass* renderPass) = 0;
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) = 0;
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) = 0;
 

@@ -362,8 +362,8 @@ namespace Dingo
 			glm::vec3 maxBounds((std::numeric_limits<float>::lowest)());
 			for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 			{
-				minBounds = (glm::min)(minBounds, submesh.MeshData->GetBoundsMin());
-				maxBounds = (glm::max)(maxBounds, submesh.MeshData->GetBoundsMax());
+				minBounds = (glm::min)(minBounds, submesh.Mesh->GetBoundsMin());
+				maxBounds = (glm::max)(maxBounds, submesh.Mesh->GetBoundsMax());
 			}
 			const glm::vec3 extent = maxBounds - minBounds;
 			const glm::vec3 center = 0.5f * (minBounds + maxBounds);
@@ -374,7 +374,7 @@ namespace Dingo
 			m_FoxMaterial = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams().SetDebugName("ThroughputFox"));
 			for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 			{
-				if (submesh.MeshData->HasSkin() && submesh.DiffuseTexture)
+				if (submesh.Mesh->HasSkin() && submesh.DiffuseTexture)
 				{
 					m_FoxMaterial->SetTexture(0, submesh.DiffuseTexture);
 					break;
@@ -936,7 +936,7 @@ namespace Dingo
 			SetStatic(true);
 			Entity duck = m_Scene->CreateEntity("Duck");
 			duck.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(camera.GetPosition()) + 4.0f * glm::normalize(glm::vec3(camera.GetTarget() - camera.GetPosition()))));
-			duck.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Duck->GetSubMeshes().front().MeshData, glm::vec4(0.9f, 0.8f, 0.1f, 1.0f))).Static = true;
+			duck.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_Duck->GetSubMeshes().front().Mesh, glm::vec4(0.9f, 0.8f, 0.1f, 1.0f))).Static = true;
 			const Renderer3D::Statistics added = RenderView(m_StaticTargets[3], camera);
 			const bool reloaded = m_Duck->Reload();
 			const Renderer3D::Statistics reloadedStats = RenderView(m_StaticTargets[3], camera);

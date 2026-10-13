@@ -199,7 +199,7 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   row is the top of its picture, an image `CreateFromFile` loaded is stored bottom row first.
   `SaveToFile` writes either so the file looks right: a render target as it is, any other texture
   flipped back the way its file held it.
-- RGBA8 2D textures only (`TextureFormat::RGBA`, `RGB` and `RGBA8_UNORM`); anything else logs an
+- RGBA8 2D textures only (`TextureFormat::RGBA8_UNORM`, also spelled `RGBA`); anything else logs an
   error and hands `done` empty pixels. The window's own swap chain has no texture to read.
 
 ## Batching & tips
@@ -234,9 +234,9 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   a scene's 2D overlay, and anything `Renderer2D` draws after `PostProcessStack::End`, goes into the
   target as it always did, so HUD colours stay exactly what you pass.
 
-`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
-`r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,
-whose image is not a `Texture` you can sample (before v0.6.3 the call read out of bounds).
+`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`. `Renderer2D` draws
+straight into the current render target (`Renderer::SetRenderTarget`), else the swap chain; to sample
+what it drew, draw into a `Framebuffer` of your own.
 
 ---
 

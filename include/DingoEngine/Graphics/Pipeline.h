@@ -40,7 +40,7 @@ namespace Dingo
 		Dingo::Framebuffer* Framebuffer = nullptr;
 		Dingo::FillMode FillMode = Dingo::FillMode::Solid;
 		Dingo::CullMode CullMode = Dingo::CullMode::Back;
-		bool FrontCounterClockwise = false;
+		bool FrontCounterClockwise = true;
 		bool DepthTest = true;   // only takes effect if the target framebuffer has a depth attachment
 		bool DepthWrite = true;  // 2D/overlay pipelines should set both false (painter's order)
 		Dingo::DepthCompare DepthCompare = Dingo::DepthCompare::Less;
@@ -143,7 +143,7 @@ namespace Dingo
 	class Pipeline
 	{
 	public:
-		static Pipeline* Create(const PipelineParams& params);
+		[[nodiscard]] static Pipeline* Create(const PipelineParams& params);
 
 	public:
 		Pipeline(const PipelineParams& params)
@@ -151,8 +151,12 @@ namespace Dingo
 		{}
 		virtual ~Pipeline() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		const PipelineParams& GetParams() const { return m_Params; }

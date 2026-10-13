@@ -96,9 +96,9 @@ namespace Dingo
 		float top = 0.0f;
 		for (const SubMesh& submesh : model->GetSubMeshes())
 		{
-			if (!submesh.MeshData)
+			if (!submesh.Mesh)
 				continue;
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 				top = std::max(top, vertex.Position.y);
 		}
 		m_ModelHeight = top;
@@ -207,12 +207,12 @@ namespace Dingo
 		Entity first;
 		for (const SubMesh& submesh : weapon->GetSubMeshes())
 		{
-			if (!submesh.MeshData)
+			if (!submesh.Mesh)
 				continue;
 
 			Entity part = m_Context.World.CreateEntity(index == 0 ? name : std::format("{} {}", name, index));
 			part.AddComponent<Transform3DComponent>();
-			part.AddComponent<MeshRendererComponent>(MeshRendererComponent(submesh.MeshData)).Material = material;
+			part.AddComponent<MeshRendererComponent>(MeshRendererComponent(submesh.Mesh)).Material = material;
 			part.SetParent(m_Entity, joint, false);
 			if (index == 0)
 				first = part;

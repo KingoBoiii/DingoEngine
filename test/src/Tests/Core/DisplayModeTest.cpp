@@ -57,8 +57,7 @@ namespace Dingo
 
 	glm::ivec2 DisplayModeTest::GetSwapChainSize() const
 	{
-		const SwapChain* swapChain = Application::Get().GetSwapChain();
-		const Framebuffer* framebuffer = swapChain ? swapChain->GetCurrentFramebuffer() : nullptr;
+		const Framebuffer* framebuffer = Renderer::GetSwapChainFramebuffer();
 		return framebuffer ? glm::ivec2(framebuffer->GetWidth(), framebuffer->GetHeight()) : glm::ivec2(0);
 	}
 

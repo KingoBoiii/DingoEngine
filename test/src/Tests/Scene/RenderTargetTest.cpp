@@ -247,7 +247,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_DepthCopyMaterial->SetTexture(0, m_DepthSource->GetDepthAttachment());
 		m_DepthCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
 
-		m_CompareSampler = Sampler::Create(SamplerParams().SetCompare(true).SetMinFilter(false).SetMagFilter(false).SetMipFilter(false));
+		m_CompareSampler = Sampler::Create(SamplerParams().SetCompare(true).SetFilter(SamplerFilter::Nearest));
 		m_CompareMaterial = MakeFullscreenMaterial("RenderTargetTestCompare", m_CompareShader);
 		m_CompareMaterial->SetTexture(0, m_DepthSource->GetDepthAttachment());
 		m_CompareMaterial->SetSampler(0, m_CompareSampler);

@@ -31,17 +31,7 @@ namespace Dingo
 	class GraphicsContext
 	{
 	public:
-		static GraphicsContext* Create(const GraphicsParams& params);
-
-	public:
-		GraphicsContext(const GraphicsParams& params);
 		virtual ~GraphicsContext();
-
-	public:
-		virtual void Initialize() = 0;
-		virtual void Shutdown() = 0;
-
-		virtual void RunGarbageCollection() const = 0;
 
 		const GraphicsParams& GetParams() { return m_Params; }
 		const GraphicsParams& GetParams() const { return m_Params; }
@@ -61,13 +51,28 @@ namespace Dingo
 		T& As() { return static_cast<T&>(*this); }
 
 	protected:
+		GraphicsContext(const GraphicsParams& params);
+
+		virtual void Initialize() = 0;
+		virtual void Shutdown() = 0;
+
 		GraphicsParams m_Params;
+		// The application window, so device selection can check which GPU can present to the
+		// display it lives on. Null = selection is surface-blind.
+		GLFWwindow* m_Window = nullptr;
 		AdapterInfo m_AdapterInfo;
 		bool m_SupportsWireframe = true;
 		bool m_SupportsClipDistance = true;
 
 	private:
+		// The Application owns the one context (GetGraphicsContext) and drives it.
+		static GraphicsContext* Create(const GraphicsParams& params, GLFWwindow* window);
+		virtual void RunGarbageCollection() const = 0;
+
 		inline static GraphicsContext* s_Instance = nullptr;
+
+		friend class Application;
+		friend class Renderer;
 	};
 
 }

@@ -52,8 +52,8 @@ namespace Dingo
 
 	}
 
-	DirectX11SwapChain::DirectX11SwapChain(const SwapChainParams& params)
-		: SwapChain(params)
+	DirectX11SwapChain::DirectX11SwapChain(const Internal::SwapChainParams& params)
+		: Internal::SwapChain(params)
 	{}
 
 	DirectX11SwapChain::~DirectX11SwapChain()
@@ -192,7 +192,6 @@ namespace Dingo
 
 		m_SwapChainFramebuffers.resize(1);
 		m_SwapChainFramebuffers[0] = NvrhiSwapChainFramebuffer::Create(m_BackBufferHandle, framebufferParams);
-		m_SwapChainFramebuffers[0]->Initialize();
 	}
 
 	void DirectX11SwapChain::DestroyBufferAndFramebuffer()

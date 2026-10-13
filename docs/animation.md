@@ -100,7 +100,7 @@ space, there is no skeleton, and any clips in the file are dropped with a warnin
 | Call | Gives |
 |---|---|
 | `IsSkinned()`, `GetSkeleton()` | Whether the file gave a skeleton, and the `Skeleton` (null for a static model). |
-| `GetSubMeshes()` | One `SubMesh` per skinned mesh, and per placement of a static one. `MeshData->HasSkin()` says which are skinned. |
+| `GetSubMeshes()` | One `SubMesh` per skinned mesh, and per placement of a static one. `Mesh->HasSkin()` says which are skinned. |
 | `GetAnimationCount()`, `GetAnimation(i)` | The clips, in file order. The `Model` owns them. |
 | `FindAnimation(name)` | The first clip with that name, or null. |
 | `GetFilePath()`, `GetGeneration()`, `Reload()`, `ReloadEvents()` | See [Hot-reload](#hot-reload). |
@@ -249,8 +249,8 @@ params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of
   `AssertOnOverflow` makes it an assert, which compiles out of release builds.
 - The budget counts instances, not draws: a character of five submeshes is one instance and five
   draws. With the default of 1024, 1024 foxes in view draw and a 1025th is dropped.
-- A custom shader with the older `SkinData` block (below) takes a whole palette upload per draw
-  instead, and at most `Renderer3D::k_MaxSkinDataInstances` (256) instances a frame draw with such
+- A custom shader with the older, **deprecated** `SkinData` block (below) takes a whole palette
+  upload per draw instead, and at most 256 instances a frame draw with such
   shaders; the rest are dropped whole, from their shadows too, with a warning.
 
 ### Draw order and translucency
@@ -283,7 +283,7 @@ animator.Update(dt);
 
 renderer.BeginScene(camera);
 for (const SubMesh& submesh : model->GetSubMeshes())
-    renderer.SubmitSkinnedMesh(submesh.MeshData, transform, animator.GetSkinningPalette(), glm::vec4(1.0f), material);
+    renderer.SubmitSkinnedMesh(submesh.Mesh, transform, animator.GetSkinningPalette(), glm::vec4(1.0f), material);
 renderer.EndScene();
 ```
 
@@ -337,15 +337,17 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    ```
 
    `DE_SkinDraw` is a uniform block and must sit at a binding from 2 to
-   `Renderer3D::k_MaxSkinDataBinding` (13, because D3D11 has 14 constant buffer slots); both must be
+   `Renderer3D::k_MaxSkinUniformBinding` (13, because D3D11 has 14 constant buffer slots); both must be
    bindings the material's own textures and samplers leave free. The renderer finds them by name and
    binds them with `Material::SetSkinPaletteBuffers`.
 
    Without `DE_SKIN_PALETTE` the include declares the older per-draw block instead, which shaders
-   written before v1.0 declare themselves: a uniform block named `SkinData`, in std140, exactly this,
-   at a binding from 2 to 13 that the material's textures and samplers leave free. Each of its draws
-   uploads the whole palette, and such shaders have their own budget of
-   `Renderer3D::k_MaxSkinDataInstances` (256) instances a frame:
+   written before v1.0 declare themselves. It is **deprecated** (the renderer warns once when a
+   material uses it, and it goes in 2.0, with `Renderer3D::k_MaxSkinDataBinding`,
+   `k_MaxSkinDataInstances` and `Material::k_SkinDataBlockName`): a uniform block named `SkinData`, in
+   std140, exactly this, at a binding from 2 to 13 that the material's textures and samplers leave
+   free. Each of its draws uploads the whole palette, and such shaders have their own budget of 256
+   instances a frame:
 
    ```glsl
    layout(std140, binding = 6) uniform SkinData   // any free binding from 2 to 13
@@ -363,7 +365,7 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
 
 The renderer finds the blocks **by name**, through `Shader::FindUniformBufferBinding` and
 `FindStorageBufferBinding`, which need a reflected shader (`ShaderParams::Reflect` is true by default),
-and binds `SkinData` with `Material::SetSkinUniformBuffer`. The rest of the binding convention (0
+and binds a `SkinData` block itself. The rest of the binding convention (0
 scene, 1 material uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
 
 When the blocks are missing, the uniform one is outside 2 to 13, or either collides with a bound

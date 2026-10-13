@@ -42,7 +42,6 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 		},
 		.Graphics = {
 			.GraphicsAPI = graphicsAPI,
-			.FramesInFlight = 3,
 		},
 		.Assets = {
 			.EnableHotReload = true,

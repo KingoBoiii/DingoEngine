@@ -1,16 +1,14 @@
 #pragma once
 
+#include <cstdint>
+
 namespace Dingo
 {
 
-	enum class GraphicsFormat
+	enum class IndexFormat : uint8_t
 	{
-		Unknown,
-
 		Uint16,
 		Uint32,
-
-		Count
 	};
 
 }

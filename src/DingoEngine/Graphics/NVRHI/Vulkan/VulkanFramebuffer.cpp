@@ -9,7 +9,9 @@ namespace Dingo
 
 	VulkanFramebuffer* VulkanFramebuffer::Create(nvrhi::ITexture* texture, const FramebufferParams& params)
 	{
-		return new VulkanFramebuffer(texture, params);
+		VulkanFramebuffer* framebuffer = new VulkanFramebuffer(texture, params);
+		framebuffer->Initialize();
+		return framebuffer;
 	}
 
 	void VulkanFramebuffer::Initialize()

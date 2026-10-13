@@ -218,7 +218,7 @@ namespace Dingo
 		DE_CORE_ASSERT(indexBuffer, "Index buffer is null.");
 		DE_CORE_ASSERT(indexBuffer->IsType(BufferType::IndexBuffer), "Graphics buffer, must be of type BufferType::IndexBuffer");
 
-		const nvrhi::Format nvrhiFormat = (indexBuffer->GetFormat() == GraphicsFormat::Uint32)
+		const nvrhi::Format nvrhiFormat = (indexBuffer->GetIndexFormat() == IndexFormat::Uint32)
 			? nvrhi::Format::R32_UINT
 			: nvrhi::Format::R16_UINT;
 

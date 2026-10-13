@@ -43,15 +43,13 @@ ApplicationParams params{
         .Mode       = WindowMode::Windowed,   // or BorderlessFullscreen, ExclusiveFullscreen
     },
     .Graphics = {
-        .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
-        .FramesInFlight = 3,
+        .GraphicsAPI = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
     },
     .EnableImGui = false,    // set true to get OnImGuiRender() callbacks
 };
 ```
 
-`.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan` with
-`FramesInFlight = 3`. Asking for a back-end the platform lacks (DirectX on Linux) logs an error and stops
+`.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan`. Asking for a back-end the platform lacks (DirectX on Linux) logs an error and stops
 in `Application::Initialize`, in every configuration.
 
 ### Logs and crashes
@@ -212,7 +210,6 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 | `GetRenderer2D()` | The batched 2D renderer (see [2D Rendering](rendering-2d.md)). |
 | `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetWindowMode`, `SetFullscreen`, `SetSize`, `SetVSync` (see [Window modes](#window-modes), [VSync](#vsync)). |
 | `GetSaveDirectory()` | Where `SaveSlots` keeps its files (see [Saves & Settings](saves-and-settings.md)). |
-| `GetSwapChain()` | The active swap chain. |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
 | `SetUpdateInBackground(bool)` / `IsUpdatingInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
@@ -226,10 +223,11 @@ Once running, each frame the `Application`:
 
 1. `Input::Update()` — snapshots current vs. previous key/mouse state.
 2. Polls window events (which fan out through `OnEvent`).
-3. `Renderer::BeginFrame()`.
+3. Begins the frame: waits for the render thread to finish the last one and opens the frame's
+   command list (engine-internal; `Renderer::IsFrameSkipped()` says when there is nothing to draw into).
 4. Calls `OnUpdate(deltaTime)` on every layer, bottom to top.
 5. If ImGui is enabled, calls `OnImGuiRender()` on every layer.
-6. `Renderer::EndFrame()` — presents.
+6. Ends the frame: hands the command list to the render thread, which submits and presents it.
 
 `deltaTime` is seconds since the previous frame.
 
@@ -251,13 +249,12 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
   so its frames update but render nothing:
   - The loop waits on window events between updates instead of spinning, aiming at 60 a second;
     with Windows' default 15.6 ms timer it gets about 35.
-  - Step 3 becomes `Renderer::SkipFrame()`, and steps 5–6 are skipped: no `OnImGuiRender`, no debug
+  - Step 3 skips the frame (`Renderer::IsFrameSkipped()` is true), and steps 5–6 are skipped: no `OnImGuiRender`, no debug
     window.
   - `Renderer` uploads, clears and draws, `Renderer2D` and `Renderer3D` scenes and
     `SceneRenderer::Render` are no-ops, so a layer that renders inside `OnUpdate` needs no guard of
     its own. A dropped `Renderer::Upload` is not redone after the restore, so data written once
-    belongs in a `DirectUpload` buffer. Code that records into `Renderer::GetCommandList()` itself,
-    or calls `Renderer::Begin`/`Close`/`Execute`, must check `Renderer::IsFrameSkipped()` first.
+    belongs in a `BufferUpload::Direct` buffer.
   - `Window::GetWidth()`/`GetHeight()` read 0, so an aspect ratio worked out from them every frame
     divides by zero. `Window::GetAspectRatio()` keeps the last one (since v0.8.3; before, it returned
     NaN), and `Renderer2D::GetViewportSize()` keeps the swap chain's size.

@@ -348,7 +348,7 @@ namespace Dingo::Internal
 		ImGui::Text("Scene      : %u instances, %u joints, %.1f KiB arena", stats3D.SkinnedInstances, stats3D.SkinnedJoints, stats3D.SkinPaletteBytes / 1024.0f);
 		if (stats3D.DroppedSkinnedDraws > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances, or past %u with a SkinData shader; warned once)", stats3D.DroppedSkinnedDraws, Renderer3D::k_MaxSkinDataInstances);
+				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances, or past %u with a SkinData shader; warned once)", stats3D.DroppedSkinnedDraws, Internal::k_MaxSkinDataInstances);
 		else
 			ImGui::Text("Dropped    : 0");
 

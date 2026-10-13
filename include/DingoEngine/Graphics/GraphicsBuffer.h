@@ -1,6 +1,7 @@
 #pragma once
 #include "DingoEngine/Graphics/Enums/BufferType.h"
-#include "DingoEngine/Graphics/Enums/GraphicsFormat.h"
+#include "DingoEngine/Graphics/Enums/BufferUpload.h"
+#include "DingoEngine/Graphics/Enums/IndexFormat.h"
 #include "DingoEngine/Graphics/IBindableShaderResource.h"
 
 #include <cstdint>
@@ -17,9 +18,9 @@ namespace Dingo
 		uint64_t ByteSize = 0;
 		bool IsVolatile = false;
 		uint32_t MaxWritesPerFrame = 8; // Volatile buffers: uploads per frame before Vulkan drops one
-		bool DirectUpload = false;
+		BufferUpload Upload = BufferUpload::Deferred;
 		BufferType Type = BufferType::Unknown;
-		GraphicsFormat Format = GraphicsFormat::Unknown;
+		Dingo::IndexFormat IndexFormat = Dingo::IndexFormat::Uint32; // index buffers only
 		bool KeepInitialState = true;
 
 		const void* InitialData = nullptr; // Pointer to initial data, used for direct upload buffers
@@ -48,9 +49,9 @@ namespace Dingo
 			return *this;
 		}
 
-		GraphicsBufferParams& SetDirectUpload(bool directUpload)
+		GraphicsBufferParams& SetUpload(BufferUpload upload)
 		{
-			DirectUpload = directUpload;
+			Upload = upload;
 			return *this;
 		}
 
@@ -60,9 +61,9 @@ namespace Dingo
 			return *this;
 		}
 
-		GraphicsBufferParams& SetFormat(GraphicsFormat format)
+		GraphicsBufferParams& SetIndexFormat(Dingo::IndexFormat format)
 		{
-			Format = format;
+			IndexFormat = format;
 			return *this;
 		}
 
@@ -86,13 +87,17 @@ namespace Dingo
 		GenericGraphicsBuffer() = delete;
 		virtual ~GenericGraphicsBuffer() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 		virtual void Upload(T* data, uint64_t size, uint64_t offset = 0ul) = 0;
 
 		virtual const BufferType GetType() const { return m_Params.Type; }
-		virtual const GraphicsFormat GetFormat() const { return m_Params.Format; }
+		virtual const IndexFormat GetIndexFormat() const { return m_Params.IndexFormat; }
 		virtual const uint64_t GetByteSize() const { return m_Params.ByteSize; }
 		virtual const uint32_t GetIndexCount() const { return 0; }
 		virtual T* GetData() const { return m_Data; }
@@ -112,15 +117,15 @@ namespace Dingo
 	class GraphicsBuffer : public GenericGraphicsBuffer<const void>, public IBindableShaderResource
 	{
 	public:
-		static GraphicsBuffer* CreateVertexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Vertex Buffer");
-		static GraphicsBuffer* CreateIndexBuffer(uint64_t size, const void* data = nullptr, bool directUpload = true, const std::string& debugName = "Index Buffer", GraphicsFormat indexFormat = GraphicsFormat::Uint16);
-		static GraphicsBuffer* CreateUniformBuffer(uint64_t size, const std::string& debugName = "Uniform Buffer");
+		[[nodiscard]] static GraphicsBuffer* CreateVertexBuffer(uint64_t size, const void* data = nullptr, BufferUpload upload = BufferUpload::Direct, const std::string& debugName = "Vertex Buffer");
+		[[nodiscard]] static GraphicsBuffer* CreateIndexBuffer(uint64_t size, IndexFormat format, const void* data = nullptr, BufferUpload upload = BufferUpload::Direct, const std::string& debugName = "Index Buffer");
+		[[nodiscard]] static GraphicsBuffer* CreateUniformBuffer(uint64_t size, const std::string& debugName = "Uniform Buffer");
 		// A GPU-writable buffer: a shader's storage block (std430). Compute writes it; any stage reads
 		// it, a vertex stage only when its block is readonly. Upload (and initialData, size bytes) writes
 		// it from the CPU with ReadBack's timing: into the frame's command list inside a frame, at once
 		// before the first frame, else at the next frame's start. The bytes are copied, never kept.
-		static GraphicsBuffer* CreateStorageBuffer(uint64_t size, const std::string& debugName = "Storage Buffer", const void* initialData = nullptr);
-		static GraphicsBuffer* Create(const GraphicsBufferParams& params);
+		[[nodiscard]] static GraphicsBuffer* CreateStorageBuffer(uint64_t size, const std::string& debugName = "Storage Buffer", const void* initialData = nullptr);
+		[[nodiscard]] static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
 		// Never reused, unlike the buffer's address, so a cache keyed on it cannot hand a freed
 		// buffer's bindings to a new buffer allocated at the same address.
@@ -132,11 +137,12 @@ namespace Dingo
 		// an empty vector when the buffer can't be read. Not for volatile buffers.
 		virtual void ReadBack(std::function<void(const std::vector<uint8_t>&)> done, uint64_t offset = 0, uint64_t size = 0) = 0;
 
+		virtual ~GraphicsBuffer() = default;
+
 	protected:
 		GraphicsBuffer(const GraphicsBufferParams& params)
 			: GenericGraphicsBuffer<const void>(params)
 		{}
-		virtual ~GraphicsBuffer() = default;
 
 	private:
 		static uint64_t AllocateId();

@@ -160,7 +160,7 @@ void main()
 	{
 		for (const SubMesh& submesh : model.GetSubMeshes())
 		{
-			if (submesh.MeshData->HasSkin())
+			if (submesh.Mesh->HasSkin())
 				return &submesh;
 		}
 		return nullptr;
@@ -448,7 +448,7 @@ namespace Dingo
 		glm::vec3 maxBounds((std::numeric_limits<float>::lowest)());
 		for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 		{
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 			{
 				minBounds = (glm::min)(minBounds, vertex.Position);
 				maxBounds = (glm::max)(maxBounds, vertex.Position);
@@ -508,13 +508,13 @@ namespace Dingo
 		Check(skeleton.GetRestPalette().size() == 24 && worstPalette < 1e-3f, std::format("the rest palette is identity (worst {:.1e})", worstPalette));
 
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-		Check(skinned && skinned->MeshData->GetSkinJointCount() == 24 && skinned->MeshData->GetSkinJointCount() <= Renderer3D::k_MaxSkinJoints,
+		Check(skinned && skinned->Mesh->GetSkinJointCount() == 24 && skinned->Mesh->GetSkinJointCount() <= Renderer3D::k_MaxSkinJoints,
 			"the skin reads 24 palette entries, within k_MaxSkinJoints");
 		if (!skinned)
 			return;
 
 		float worstWeights = 0.0f;
-		for (const SkinnedMeshVertex& vertex : skinned->MeshData->GetSkinVertices())
+		for (const SkinnedMeshVertex& vertex : skinned->Mesh->GetSkinVertices())
 			worstWeights = (std::max)(worstWeights, std::abs(vertex.Weights.x + vertex.Weights.y + vertex.Weights.z + vertex.Weights.w - 1.0f));
 		Check(worstWeights < 1e-5f, "every skin vertex's weights sum to 1");
 
@@ -527,7 +527,7 @@ namespace Dingo
 		// The body's palette ends at Bone1; the prop's own rigid-skinned submesh reaches the prop joint.
 		const bool bodyFits = rig && std::any_of(rig->GetSubMeshes().begin(), rig->GetSubMeshes().end(), [&](const SubMesh& submesh)
 		{
-			return submesh.MeshData->HasSkin() && submesh.MeshData->GetSkinJointCount() == static_cast<uint32_t>(bone + 1);
+			return submesh.Mesh->HasSkin() && submesh.Mesh->GetSkinJointCount() == static_cast<uint32_t>(bone + 1);
 		});
 		Check(bodyFits && bone >= 0 && prop > bone && rigSkeleton->GetSkinJointCount() > static_cast<uint32_t>(prop),
 			std::format("a scene-rooted rig orders its bones before its rigid-mesh nodes (Bone1 {}, Prop {})", bone, prop));
@@ -1482,7 +1482,7 @@ namespace Dingo
 		const std::string original = ReadText(path);
 		const std::filesystem::path eventsPath = std::filesystem::path(path).replace_extension(".events");
 		const Skeleton* skeleton = model->GetSkeleton();
-		Mesh* mesh = skinned->MeshData;
+		Mesh* mesh = skinned->Mesh;
 		Texture* diffuse = skinned->DiffuseTexture;
 		const uint64_t meshId = mesh->GetId();
 		const uint64_t walkId = walk->GetId();
@@ -1498,7 +1498,7 @@ namespace Dingo
 		const bool reloaded = model->Reload();
 		const SubMesh* after = FindSkinnedSubMesh(*model);
 		Check(reloaded && model->GetGeneration() == 1 && model->FindAnimation("Walk") == walk && model->GetSkeleton() == skeleton
-			&& skeleton->GetId() == skeletonId && after && after->MeshData == mesh && after->DiffuseTexture == diffuse,
+			&& skeleton->GetId() == skeletonId && after && after->Mesh == mesh && after->DiffuseTexture == diffuse,
 			"Model::Reload keeps the model's clips, skeleton, meshes and textures where they were");
 		const bool imageKept = diffuse->GetGeneration() == textureGeneration;
 		const std::filesystem::path image = path.parent_path() / "Texture.png";
@@ -1674,7 +1674,7 @@ namespace Dingo
 				Check(swapped && gap < 1e-5f, std::format("hot-reload swapped the edited Fox in place {:.1f} s after the save, and the paused Fox shows Run's keys (gap {:.1e})", seconds, gap));
 			}
 			const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-			m_ReloadMeshId = skinned ? skinned->MeshData->GetId() : 0;
+			m_ReloadMeshId = skinned ? skinned->Mesh->GetId() : 0;
 			WriteText(eventsPath, ReadText(eventsPath) + "Walk 0.5 live_mark\n");
 		}
 		else
@@ -1682,7 +1682,7 @@ namespace Dingo
 			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
 			const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
 			const bool marked = walk && std::any_of(walk->GetEvents().begin(), walk->GetEvents().end(), [](const AnimationClipEvent& event) { return event.Name == "live_mark"; });
-			Check(marked && skinned && skinned->MeshData->GetId() == m_ReloadMeshId,
+			Check(marked && skinned && skinned->Mesh->GetId() == m_ReloadMeshId,
 				std::format("saving only Fox.events hot-reloads its events {:.1f} s later, with the new mark, and leaves the meshes alone", m_Time - m_ReloadStart));
 		}
 
@@ -2108,7 +2108,7 @@ namespace Dingo
 			// The overlay's bones draw first, in the batches, so a see-through skin shows them.
 			const glm::vec4 skin(1.0f, 1.0f, 1.0f, SkeletonShown() ? 0.35f : 1.0f);
 			if (drawStatic)
-				fox.AddComponent<MeshRendererComponent>(MeshRendererComponent(skinned->MeshData, skin)).Material = m_FoxMaterial;
+				fox.AddComponent<MeshRendererComponent>(MeshRendererComponent(skinned->Mesh, skin)).Material = m_FoxMaterial;
 			else
 				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox, skin)).Material = m_FoxMaterial;
 			if (m_Mode != Mode::Crowd)
@@ -2263,7 +2263,7 @@ namespace Dingo
 	void AnimationTest::SubmitPosedFox(Renderer3D& renderer)
 	{
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-		renderer.SubmitSkinnedMesh(skinned->MeshData, m_PoseTransform, m_PosePalette, glm::vec4(1.0f), m_FoxMaterial);
+		renderer.SubmitSkinnedMesh(skinned->Mesh, m_PoseTransform, m_PosePalette, glm::vec4(1.0f), m_FoxMaterial);
 	}
 
 	void AnimationTest::RunDrawChecks(const Renderer3D::Statistics& stats)
@@ -2358,8 +2358,8 @@ namespace Dingo
 		renderer.BeginScene(m_Camera);
 		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_Ghost);
 		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_PaletteGhost);
-		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_Ghost);
-		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_PaletteGhost);
+		renderer.SubmitSkinnedMesh(skinned->Mesh, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_Ghost);
+		renderer.SubmitSkinnedMesh(skinned->Mesh, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_PaletteGhost);
 		renderer.EndScene();
 
 		const Renderer3D::Statistics& stats = renderer.GetStatistics();
@@ -2402,7 +2402,7 @@ namespace Dingo
 			renderer.BeginScene(camera);
 			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 			for (int f = 0; f < 3; ++f)
-				renderer.SubmitSkinnedMesh(skinned->MeshData, places[f], poses[f], colors[f], i == 0 ? m_Ghost : m_PaletteGhost);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[f], poses[f], colors[f], i == 0 ? m_Ghost : m_PaletteGhost);
 			renderer.EndScene();
 			if (i == 1)
 				Check(renderer.GetStatistics().SkinnedInstances == 3, std::format("the arena check draws three instances ({})", renderer.GetStatistics().SkinnedInstances));

@@ -103,8 +103,8 @@ namespace Dingo
 
 	}
 
-	VulkanSwapChain::VulkanSwapChain(const SwapChainParams& params)
-		: SwapChain(params)
+	VulkanSwapChain::VulkanSwapChain(const Internal::SwapChainParams& params)
+		: Internal::SwapChain(params)
 	{}
 
 	VulkanSwapChain::~VulkanSwapChain()
@@ -333,12 +333,12 @@ namespace Dingo
 		}
 	}
 
-	Framebuffer* SwapChain::GetFramebuffer(uint32_t index) const
+	Framebuffer* Internal::SwapChain::GetFramebuffer(uint32_t index) const
 	{
 		return m_SwapChainFramebuffers[index];
 	}
 
-	bool SwapChain::OwnsFramebuffer(const Framebuffer* framebuffer) const
+	bool Internal::SwapChain::OwnsFramebuffer(const Framebuffer* framebuffer) const
 	{
 		for (const Framebuffer* swapChainFramebuffer : m_SwapChainFramebuffers)
 		{
@@ -495,7 +495,6 @@ namespace Dingo
 				.SetEnableDepth(true);
 
 			m_SwapChainFramebuffers[index] = VulkanFramebuffer::Create(m_SwapChainImages[index].rhiHandle, framebufferParams);
-			m_SwapChainFramebuffers[index]->Initialize();
 		}
 	}
 

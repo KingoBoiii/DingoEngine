@@ -362,8 +362,8 @@ namespace Dingo
 	{
 		auto& s = m_Scene3D;
 
-		s.VertexBuffer     = GraphicsBuffer::CreateVertexBuffer(sizeof(MeshVertex) * k_MaxVertices, nullptr, true, "Breakout3D_VB");
-		s.IndexBuffer      = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * k_MaxIndices, nullptr, true, "Breakout3D_IB", GraphicsFormat::Uint32);
+		s.VertexBuffer     = GraphicsBuffer::CreateVertexBuffer(sizeof(MeshVertex) * k_MaxVertices, nullptr, BufferUpload::Direct, "Breakout3D_VB");
+		s.IndexBuffer      = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * k_MaxIndices, IndexFormat::Uint32, nullptr, BufferUpload::Direct, "Breakout3D_IB");
 		s.VertexBufferBase = new MeshVertex[k_MaxVertices];
 		s.IndexBufferBase  = new uint32_t[k_MaxIndices];
 

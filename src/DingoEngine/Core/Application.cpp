@@ -1,4 +1,6 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
+#include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
@@ -101,22 +103,21 @@ namespace Dingo
 		m_Focused = m_Window->IsFocused();
 
 		GraphicsParams graphicsParams = m_Params.Graphics;
-		graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
 		if (const auto validation = m_Params.CommandLineArgs.Get("vulkan-validation"))
 			graphicsParams.VulkanValidation = !(*validation == "off" || *validation == "false" || *validation == "0" || *validation == "no");
-		m_GraphicsContext = GraphicsContext::Create(graphicsParams);
+		m_GraphicsContext = GraphicsContext::Create(graphicsParams, m_Window->GetNativeWindowHandle());
 		if (!m_GraphicsContext)
 			FatalError("No graphics device could be created. See the log for why.");
 		m_GraphicsContext->Initialize();
 
-		m_SwapChain = SwapChain::Create(SwapChainParams()
+		m_SwapChain = Internal::SwapChain::Create(Internal::SwapChainParams()
 			.SetNativeWindowHandle(m_Window->GetNativeWindowHandle())
 			.SetWidth(m_Window->GetWidth())
 			.SetHeight(m_Window->GetHeight())
 			.SetVSync(m_Params.Window.VSync));
 		m_SwapChain->Initialize();
 
-		Renderer::Initialize(m_SwapChain);
+		Internal::RendererBackend::Initialize(m_SwapChain);
 
 		m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
 		m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
@@ -163,7 +164,7 @@ namespace Dingo
 	void Application::Destroy()
 	{
 		// Park the render thread first so the GPU is idle before any resources are freed.
-		Renderer::Shutdown();
+		Internal::RendererBackend::Shutdown();
 
 		// Detach layers while the renderer can still answer queries: OnDetach is where a
 		// layer frees its GPU resources, and doing that legitimately involves asking for
@@ -171,7 +172,7 @@ namespace Dingo
 		m_LayerStack.Clear();
 
 		// Only now drop the renderer's own resources and state.
-		Renderer::Destroy();
+		Internal::RendererBackend::Destroy();
 
 		// Free managed assets after the layers that borrow them, but before the audio
 		// engine: AudioClips must not outlive the engine that decoded them.
@@ -327,9 +328,9 @@ namespace Dingo
 			{
 				DE_PROFILE_SCOPE("Renderer::BeginFrame");
 				if (render)
-					Renderer::BeginFrame();
+					Internal::RendererBackend::BeginFrame();
 				else
-					Renderer::SkipFrame();
+					Internal::RendererBackend::SkipFrame();
 			}
 			const float updateStart = timer.Elapsed();
 
@@ -381,7 +382,7 @@ namespace Dingo
 				}
 
 				DE_PROFILE_SCOPE("Renderer::EndFrame");
-				Renderer::EndFrame();
+				Internal::RendererBackend::EndFrame();
 				renderedOnce = true;
 			}
 			else
@@ -497,7 +498,7 @@ namespace Dingo
 		// This runs on the main thread while the render thread may be presenting; the
 		// actual swap-chain recreation happens on the render thread at a safe point.
 		m_Minimized = e.GetWidth() == 0 || e.GetHeight() == 0;
-		Renderer::QueueResize(e.GetWidth(), e.GetHeight());
+		Internal::RendererBackend::QueueResize(e.GetWidth(), e.GetHeight());
 		return false; // let layers react to the new size too
 	}
 

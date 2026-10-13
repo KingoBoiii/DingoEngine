@@ -9,10 +9,8 @@ namespace Dingo
 	{
 		Unknown,
 
-		RGB,
-		RGBA,
-
 		RGBA8_UNORM,
+		RGBA = RGBA8_UNORM,
 
 		RGBA32F,
 
@@ -27,14 +25,11 @@ namespace Dingo
 		Count
 	};
 
-	// The size of one pixel as uploaded or read back. RGB counts 3: its uploads are packed 3 bytes a
-	// pixel.
+	// The size of one pixel as uploaded or read back.
 	constexpr uint32_t GetBytesPerPixel(TextureFormat format)
 	{
 		switch (format)
 		{
-			case TextureFormat::RGB:         return 3;
-			case TextureFormat::RGBA:
 			case TextureFormat::RGBA8_UNORM: return 4;
 			case TextureFormat::RGBA32F:     return 16;
 			case TextureFormat::RGBA16F:     return 8;

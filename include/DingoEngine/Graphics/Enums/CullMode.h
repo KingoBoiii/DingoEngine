@@ -7,8 +7,7 @@ namespace Dingo
 	{
 		None,
 		Front,
-		Back,
-		BackAndFront = None
+		Back
 	};
 
 }

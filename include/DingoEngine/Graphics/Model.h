@@ -15,8 +15,8 @@ namespace Dingo
 
 	struct SubMesh
 	{
-		Mesh*     MeshData       = nullptr;
-		Material* Mat            = nullptr;
+		Dingo::Mesh*     Mesh     = nullptr;
+		Dingo::Material* Material = nullptr;
 		// Borrowed, not owned: submeshes sharing one image share one Texture, which the
 		// Model owns and frees in Destroy().
 		Texture*  DiffuseTexture = nullptr;
@@ -48,9 +48,9 @@ namespace Dingo
 		// Returns nullptr on failure (error is logged). Caller owns the returned Model.
 		// A relative filepath is looked up under the asset root first, then the working
 		// directory.
-		static Model* LoadFromFile(const std::filesystem::path& filepath);
+		[[nodiscard]] static Model* LoadFromFile(const std::filesystem::path& filepath);
 		// Reload() reads the file again with the same params.
-		static Model* LoadFromFile(const std::filesystem::path& filepath, const ModelLoadParams& params);
+		[[nodiscard]] static Model* LoadFromFile(const std::filesystem::path& filepath, const ModelLoadParams& params);
 
 	public:
 		Model() = default;

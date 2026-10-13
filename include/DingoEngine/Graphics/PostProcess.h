@@ -136,10 +136,11 @@ namespace Dingo
 		};
 		const Statistics& GetStatistics() const;
 
+	private:
 		// Frees the cached targets and passes; Renderer::Destroy calls it.
 		void Shutdown();
+		friend class Renderer;
 
-	private:
 		struct Data;
 		std::unique_ptr<Data> m_Data;
 	};

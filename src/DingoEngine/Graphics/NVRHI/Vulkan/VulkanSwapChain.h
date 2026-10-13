@@ -8,10 +8,10 @@
 namespace Dingo
 {
 
-	class VulkanSwapChain : public SwapChain
+	class VulkanSwapChain : public Internal::SwapChain
 	{
 	public:
-		VulkanSwapChain(const SwapChainParams& options);
+		VulkanSwapChain(const Internal::SwapChainParams& options);
 		virtual ~VulkanSwapChain();
 
 	public:

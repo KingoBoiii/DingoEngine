@@ -181,7 +181,7 @@ With `EnableHotReload` on, the manager polls the source files of every loaded
 
 - **Textures** re-decode on the loader thread and swap their contents inside
   the *same* `Texture` object — every `Texture*` held by game code (and every
-  cached binding set, via `NativeEquals`) keeps working, even if the new image
+  cached binding set, through `Texture::GetGeneration`) keeps working, even if the new image
   has different dimensions.
 - **Shaders** recompile from source, bypassing and rewriting the bytecode disk
   cache. On success the shader's *generation* is bumped and every `Pipeline` /
@@ -226,7 +226,7 @@ existing one, so everything game code may hold keeps working:
 | Object | After a reload |
 |---|---|
 | `Model*` | Same pointer. `GetGeneration()` counts the reloads. |
-| `Mesh*` (`SubMesh::MeshData`) | Same object per submesh index, with the new vertices and a new `GetId()`. Extra submeshes are added; missing ones become empty. |
+| `Mesh*` (`SubMesh::Mesh`) | Same object per submesh index, with the new vertices and a new `GetId()`. Extra submeshes are added; missing ones become empty. |
 | `Material*` (`SubMesh::Mat`) | Same object; slot 0 takes the new diffuse texture. |
 | `SubMesh::BaseColor` | The new file's colour per submesh index; white for one that became empty. |
 | `Texture*` (`SubMesh::DiffuseTexture`) | Same object per image file, re-read in place when the image file changed, so a material you built from it keeps drawing. A texture the file stopped using stays alive. |

@@ -25,7 +25,7 @@ namespace Dingo
 		// The box around this one moved by an affine transform (Arvo's method): exact for a box,
 		// so the box of a mesh's bounds holds every vertex of the transformed mesh. An empty box
 		// stays empty. A projective transform (bottom row other than 0, 0, 0, 1) is not supported.
-		AABB Transformed(const glm::mat4& transform) const;
+		[[nodiscard]] AABB Transformed(const glm::mat4& transform) const;
 	};
 
 	// Six planes from a view-projection: left, right, bottom, top, near, far, each normal pointing
@@ -36,7 +36,7 @@ namespace Dingo
 		enum Plane : uint32_t { Left, Right, Bottom, Top, Near, Far, PlaneCount };
 
 		// Gribb-Hartmann, for clip-space depth in [0, 1], which the engine uses on every backend.
-		static Frustum FromViewProjection(const glm::mat4& viewProjection);
+		[[nodiscard]] static Frustum FromViewProjection(const glm::mat4& viewProjection);
 
 		// False only when the box lies wholly behind one plane; a box near a corner can pass while
 		// outside, which a cull can afford.

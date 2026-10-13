@@ -31,9 +31,9 @@ namespace Dingo
 			.setAddressU(Utils::GetSamplerAddressMode(m_Params.AddressU))
 			.setAddressV(Utils::GetSamplerAddressMode(m_Params.AddressV))
 			.setAddressW(Utils::GetSamplerAddressMode(m_Params.AddressW))
-			.setMinFilter(m_Params.MinFilter)
-			.setMagFilter(m_Params.MagFilter)
-			.setMipFilter(m_Params.MipFilter)
+			.setMinFilter(m_Params.MinFilter == SamplerFilter::Linear)
+			.setMagFilter(m_Params.MagFilter == SamplerFilter::Linear)
+			.setMipFilter(m_Params.MipFilter == SamplerFilter::Linear)
 			.setBorderColor(nvrhi::Color(m_Params.BorderColor.r, m_Params.BorderColor.g, m_Params.BorderColor.b, m_Params.BorderColor.a))
 			.setMaxAnisotropy(m_Params.MaxAnisotropy)
 			.setReductionType(m_Params.Compare ? nvrhi::SamplerReductionType::Comparison : nvrhi::SamplerReductionType::Standard);

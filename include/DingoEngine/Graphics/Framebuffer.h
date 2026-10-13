@@ -63,14 +63,18 @@ namespace Dingo
 	class Framebuffer
 	{
 	public:
-		static Framebuffer* Create(const FramebufferParams& params);
+		[[nodiscard]] static Framebuffer* Create(const FramebufferParams& params);
 
 	public:
 		Framebuffer(const FramebufferParams& params);
 		virtual ~Framebuffer() = default;
 
-	public:
+	protected:
+		// Create() calls it, so a resource is ready when the factory returns it.
 		virtual void Initialize() = 0;
+
+	public:
+		// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 
 		// Resizes every attachment in place (Texture::Reinitialize): the Texture objects GetAttachment
@@ -98,10 +102,6 @@ namespace Dingo
 
 	private:
 		uint64_t m_Id = AllocateId();
-
-		friend class NvrhiPipeline;
-		friend class CommandList;
-		friend class ImGuiRenderer;
 	};
 
 }

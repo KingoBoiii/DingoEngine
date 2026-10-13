@@ -31,7 +31,6 @@ namespace Dingo
 
 	struct Renderer2DParams
 	{
-		glm::vec4 ClearColor = glm::vec4(1.0f);
 		Renderer2DCapabilities Capabilities = {};
 	};
 
@@ -63,8 +62,8 @@ namespace Dingo
 		static constexpr uint32_t k_MaxScenesPerFrame = 32;
 
 	public:
-		static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
-		static Renderer2D* Create(const Renderer2DParams& params);
+		[[nodiscard]] static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
+		[[nodiscard]] static Renderer2D* Create(const Renderer2DParams& params);
 
 	public:
 		Renderer2D() = delete;
@@ -72,10 +71,11 @@ namespace Dingo
 		Renderer2D& operator=(const Renderer2D&) = delete;
 		Renderer2D(Renderer2D&&) = delete;
 		Renderer2D& operator=(Renderer2D&&) = delete;
-		virtual ~Renderer2D() = default;
+		// Calls Shutdown.
+		virtual ~Renderer2D();
 
 	public:
-		void Initialize();
+		// Frees the renderer's GPU objects early; the destructor does it anyway.
 		void Shutdown();
 
 		void BeginScene(const glm::mat4& projectionViewMatrix);
@@ -133,8 +133,6 @@ namespace Dingo
 		bool IsCullingEnabled() const { return m_CullingEnabled; }
 		const Renderer2DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
 
-		// Always nullptr today: Renderer2D draws into the swap chain, whose image is not a Texture.
-		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
 		glm::vec2 GetViewportSize() const
 		{
 			auto* fb = Renderer::GetSwapChainFramebuffer();
@@ -143,6 +141,7 @@ namespace Dingo
 
 	private:
 		Renderer2D(const Renderer2DParams& params) : m_Params(params) {}
+		void Initialize();
 
 		friend class Scene; // counts what RenderEntities culls
 
@@ -267,9 +266,9 @@ namespace Dingo
 
 				if (m_BatchIndex >= m_VertexBuffers.size())
 				{
-					// DirectUpload = false: filled through Renderer::Upload (the deferred frame
+					// BufferUpload::Deferred: filled through Renderer::Upload (the deferred frame
 					// command list) so the write is ordered before the draw within that one list.
-					m_VertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(TVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, m_Params.Name + "VertexBuffer"));
+					m_VertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(TVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, BufferUpload::Deferred, m_Params.Name + "VertexBuffer"));
 				}
 
 				TargetPipeline& targetPipeline = GetTargetPipeline(target, targetFormatKey);
@@ -325,6 +324,8 @@ namespace Dingo
 					.SetShader(m_Shader)
 					.SetVertexLayout(m_Params.VertexLayout)
 					.SetCullMode(m_Params.CullMode)
+					// The batch quads wind clockwise; the text pass culls their back faces.
+					.SetFrontCounterClockwise(false)
 					.SetDepthTest(false)
 					.SetDepthWrite(false));
 				return targetPipeline;
