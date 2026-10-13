@@ -51,6 +51,7 @@ namespace Dingo
 		m_StepStarted = false;
 		m_Finished = false;
 		m_InitialSize = { window.GetWindowedWidth(), window.GetWindowedHeight() };
+		m_BaseSize = m_InitialSize;
 		BuildSteps();
 	}
 
@@ -98,14 +99,20 @@ namespace Dingo
 				else
 					DE_WARN("Display Mode Test: --display-exclusive={} is not next or <W>x<H>[@<Hz>]; using the desktop's mode", *request);
 			}
+
+			// The OS clamps a window to the desktop, which on a CI runner can be smaller than the app's.
+			m_BaseSize = (glm::min)(m_InitialSize, glm::ivec2(m_Desktop.Width * 3 / 4, m_Desktop.Height * 3 / 4));
 		} });
+
+		m_Steps.push_back({ "a windowed size that fits the desktop", [this] { Application::Get().GetWindow().SetSize(m_BaseSize.x, m_BaseSize.y); },
+			[this] { return m_BaseSize; }, [] {} });
 
 		m_Steps.push_back({ "borderless fullscreen", [] { Application::Get().GetWindow().SetWindowMode(WindowMode::BorderlessFullscreen); },
 			[this] { return glm::ivec2(m_Desktop.Width, m_Desktop.Height); }, [this]
 		{
 			Check(Application::Get().GetWindow().GetWindowMode() == WindowMode::BorderlessFullscreen && Application::Get().GetWindow().IsFullscreen(), "borderless: the window is fullscreen");
 			Check(!Application::Get().GetWindow().GetFullscreenDisplayMode().IsValid(), "borderless: no exclusive display mode");
-			Check(Application::Get().GetWindow().GetWindowedWidth() == m_InitialSize.x && Application::Get().GetWindow().GetWindowedHeight() == m_InitialSize.y,
+			Check(Application::Get().GetWindow().GetWindowedWidth() == m_BaseSize.x && Application::Get().GetWindow().GetWindowedHeight() == m_BaseSize.y,
 				std::format("borderless: the windowed size is kept ({}x{})", Application::Get().GetWindow().GetWindowedWidth(), Application::Get().GetWindow().GetWindowedHeight()));
 		} });
 
@@ -120,14 +127,14 @@ namespace Dingo
 		} });
 
 		m_Steps.push_back({ "windowed", [] { Application::Get().GetWindow().SetWindowMode(WindowMode::Windowed); },
-			[this] { return m_InitialSize; }, [this]
+			[this] { return m_BaseSize; }, [this]
 		{
 			Check(Application::Get().GetWindow().GetWindowMode() == WindowMode::Windowed && !Application::Get().GetWindow().IsFullscreen(), "windowed: the window left fullscreen");
 		} });
 
 		m_Steps.push_back({ "SetSize while windowed", [this]
 		{
-			m_ResizedSize = (glm::max)(m_InitialSize - glm::ivec2(200, 100), glm::ivec2(320, 240));
+			m_ResizedSize = (glm::max)(m_BaseSize - glm::ivec2(200, 100), glm::ivec2(320, 240));
 			Application::Get().GetWindow().SetSize(m_ResizedSize.x, m_ResizedSize.y);
 		}, [this] { return m_ResizedSize; }, [this]
 		{
@@ -142,7 +149,7 @@ namespace Dingo
 
 		m_Steps.push_back({ "SetSize while fullscreen", [this]
 		{
-			m_RestoreSize = (glm::max)(m_InitialSize - glm::ivec2(300, 150), glm::ivec2(320, 240));
+			m_RestoreSize = (glm::max)(m_BaseSize - glm::ivec2(300, 150), glm::ivec2(320, 240));
 			Application::Get().GetWindow().SetSize(m_RestoreSize.x, m_RestoreSize.y);
 		}, [this] { return glm::ivec2(m_Desktop.Width, m_Desktop.Height); }, [this]
 		{
@@ -180,13 +187,13 @@ namespace Dingo
 		{
 			Settings settings = Settings::Capture();
 			settings.Display.Mode = WindowMode::BorderlessFullscreen;
-			settings.Display.Width = m_InitialSize.x;
-			settings.Display.Height = m_InitialSize.y;
+			settings.Display.Width = m_BaseSize.x;
+			settings.Display.Height = m_BaseSize.y;
 			settings.Apply();
 		}, [this] { return glm::ivec2(m_Desktop.Width, m_Desktop.Height); }, [this]
 		{
 			const Window& window = Application::Get().GetWindow();
-			Check(window.GetWindowMode() == WindowMode::BorderlessFullscreen && window.GetWindowedWidth() == m_InitialSize.x && window.GetWindowedHeight() == m_InitialSize.y,
+			Check(window.GetWindowMode() == WindowMode::BorderlessFullscreen && window.GetWindowedWidth() == m_BaseSize.x && window.GetWindowedHeight() == m_BaseSize.y,
 				"Settings::Apply goes fullscreen and keeps the new windowed size to return to");
 		} });
 
@@ -195,13 +202,13 @@ namespace Dingo
 			Settings settings = Settings::Capture();
 			settings.Display.Mode = WindowMode::Windowed;
 			settings.Apply();
-		}, [this] { return m_InitialSize; }, [this]
+		}, [this] { return m_BaseSize; }, [this]
 		{
 			Check(Application::Get().GetWindow().GetWindowMode() == WindowMode::Windowed, "Settings::Apply returns to windowed");
 		} });
 
 		m_Steps.push_back({ "restore the starting size", [this] { Application::Get().GetWindow().SetSize(m_InitialSize.x, m_InitialSize.y); },
-			[this] { return m_InitialSize; }, [] {} });
+			nullptr, [] {} });
 	}
 
 	void DisplayModeTest::Update(float deltaTime)

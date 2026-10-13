@@ -53,6 +53,7 @@ namespace Dingo
 		DisplayMode m_Desktop;
 		DisplayMode m_Exclusive;
 		glm::ivec2 m_InitialSize = glm::ivec2(0);
+		glm::ivec2 m_BaseSize = glm::ivec2(0);
 		glm::ivec2 m_ResizedSize = glm::ivec2(0);
 		glm::ivec2 m_RestoreSize = glm::ivec2(0);
 		std::string m_Status;
