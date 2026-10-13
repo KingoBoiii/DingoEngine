@@ -189,7 +189,7 @@ With `EnableHotReload` on, the manager polls the source files of every loaded
 - **Textures** re-decode on the loader thread and swap their contents inside
   the *same* `Texture` object — every `Texture*` held by game code (and every
   cached binding set, via `NativeEquals`) keeps working, even if the new image
-  has different dimensions.
+  has different dimensions. `GetId()` stays the same; `GetGeneration()` changes.
 - **Shaders** recompile from source, bypassing and rewriting the bytecode disk
   cache. On success the shader's *generation* is bumped and every `Pipeline` /
   `RenderPass` built from it lazily rebuilds on its next bind — no game code
