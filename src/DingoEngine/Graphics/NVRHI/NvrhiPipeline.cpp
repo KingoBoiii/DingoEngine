@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/RendererBackend.h"
 #include "NvrhiPipeline.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiTexture.h"
 #include "NvrhiFramebuffer.h"
@@ -239,12 +240,6 @@ namespace Dingo
 
 		nvrhi::BindingSetDesc bindingSetDesc = nvrhi::BindingSetDesc();
 
-		// D3D11 binds its push-constant buffer through the binding set.
-		const NvrhiShader* nvrhiShader = static_cast<const NvrhiShader*>(m_Params.Shader);
-		const uint32_t pushConstantSize = nvrhiShader ? nvrhiShader->m_PushConstantSize : 0;
-		if (pushConstantSize)
-			bindingSetDesc.addItem(nvrhi::BindingSetItem::PushConstants(nvrhiShader->m_PushConstantRegister, pushConstantSize));
-
 		if (m_Params.UniformBuffer)
 		{
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, static_cast<NvrhiGraphicsBuffer*>(m_Params.UniformBuffer)->m_BufferHandle));
@@ -254,6 +249,14 @@ namespace Dingo
 		{
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(2, static_cast<NvrhiSampler*>(Renderer::GetClampSampler())->m_Handle));
+		}
+
+		// D3D11 binds its push-constant buffer through the binding set.
+		const NvrhiShader* nvrhiShader = static_cast<const NvrhiShader*>(m_Params.Shader);
+		if (nvrhiShader && nvrhiShader->m_PushConstantSize)
+		{
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::PushConstants(nvrhiShader->m_PushConstantRegister, nvrhiShader->m_PushConstantSize));
+			NvrhiCommandList::SortBySlot(bindingSetDesc);
 		}
 
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(bindingSetDesc, bindingLayoutHandle);

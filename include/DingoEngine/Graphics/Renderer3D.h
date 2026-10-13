@@ -93,10 +93,10 @@ namespace Dingo
 		/// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls
 		/// with the same palette, transform and colour (a model's submeshes); its joints go once
 		/// into the scene's skin arena, one storage buffer uploaded once a scene, and each of its
-		/// draws writes the 16 bytes that find them, to a volatile buffer that on Vulkan has room
-		/// for this many instances a frame. Later instances that frame are skipped whole, with a
-		/// warning (Statistics::DroppedSkinnedDraws). A custom shader with a SkinData block takes a
-		/// write of the whole palette a draw and has at most k_MaxSkinDataInstances of them.
+		/// draws pushes the 16 bytes that find them as a push constant. Later instances that frame
+		/// are skipped whole, with a warning (Statistics::DroppedSkinnedDraws). A custom shader with
+		/// a SkinData block takes a write of the whole palette a draw and has at most
+		/// k_MaxSkinDataInstances of them.
 		uint32_t MaxSkinnedInstances = 1024;
 
 		/// GPU particles alive at once across every emitter this renderer made, at most

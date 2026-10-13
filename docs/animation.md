@@ -339,8 +339,8 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    renderer finds both by name and feeds them itself.
 
    The renderer owns the push constants of a skinned shader: it declares no push-constant block but
-   `DE_SkinDraw`. Every stage of the shader declares the same block, at most 128 bytes and a multiple
-   of 4 (`Shader::FindPushConstantBlockSize` reports a block's size). On D3D11 and D3D12 the block
+   `DE_SkinDraw`. Every stage that declares a push-constant block declares the same one, at most 128
+   bytes and a multiple of 4 (`Shader::FindPushConstantBlockSize` reports a block's size). On D3D11 and D3D12 the block
    takes the lowest constant-buffer register, b0 to b13, that no uniform block of the shader uses, so
    a shader whose uniform blocks take all fourteen fails to build.
 
@@ -369,8 +369,8 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    [Custom materials](scenes-and-ecs.md#custom-materials-per-mesh-shaders)), so a material with
    texture 0 and sampler 0 set occupies 2 and 3, and leaves 4 and up free.
 
-The renderer finds the blocks **by name**, through `Shader::FindUniformBufferBinding` and
-`FindStorageBufferBinding`, which need a reflected shader (`ShaderParams::Reflect` is true by default),
+The renderer finds the blocks **by name**, through `Shader::FindPushConstantBlockSize`,
+`FindUniformBufferBinding` and `FindStorageBufferBinding`, which need a reflected shader (`ShaderParams::Reflect` is true by default),
 and binds a `SkinData` block itself. The rest of the binding convention (0
 scene, 1 material uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
 

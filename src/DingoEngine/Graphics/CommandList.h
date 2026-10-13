@@ -74,8 +74,9 @@ namespace Dingo::Internal
 		// stays as it was set, so the next draw needs no rebinding. False when the pass can't run.
 		virtual bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1) = 0;
 
-		// How many draws followed a buffer or texture upload into the target the draw before them
-		// used. On Vulkan each such upload ends the render pass and the draw begins it again.
+		// How many draws followed an UploadBuffer or UploadTexture into the target the draw before
+		// them used. On Vulkan each such upload ends the render pass and the draw begins it again.
+		// Uploads made outside this command list, readbacks and barriers are not counted.
 		uint64_t GetUploadPassBreaks() const { return m_UploadPassBreaks; }
 
 	protected:

@@ -443,7 +443,10 @@ namespace Dingo
 				const uint32_t shaderModel = (api == GraphicsAPI::DirectX12) ? 51 : 50;
 
 				std::filesystem::path dxbcCachePath = cacheDir / (cacheStem + "_" + Utils::ConvertShaderTypeToString(shaderType) + "_sm" + std::to_string(shaderModel) + ".dxbc");
-				const uint64_t dxbcHash = Utils::DeriveShaderCacheHash(stage.SourceHash, shaderModel);
+				uint64_t dxbcHash = Utils::DeriveShaderCacheHash(stage.SourceHash, shaderModel);
+				// Another stage's uniform blocks can move the push register, which this stage's HLSL bakes in.
+				if (hlslPushConstantRegister >= 0)
+					dxbcHash = Utils::HashFNV1a(std::string_view(reinterpret_cast<const char*>(&hlslPushConstantRegister), sizeof(hlslPushConstantRegister)), dxbcHash);
 
 				// CompileGLSLToHLSLBytecode recompiles GLSL -> SPIR-V at zero optimization (better
 				// HLSL translation quality than stage.Binaries, which was compiled for reflection
