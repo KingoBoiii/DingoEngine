@@ -29,7 +29,8 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 - **Windows**: `./vendor/premake/bin/premake5.exe vs2026` from the repo root, then MSBuild `DingoEngine.slnx` (or one `.vcxproj`) with `/p:Configuration=Debug /p:Platform=x64`. Never run `Generate-Windows.bat` from a non-interactive shell: it ends in `PAUSE`.
 - **Linux** (GCC ≥ 13, x86-64): `./Generate-Linux.sh`, then `make -j"$(nproc)" config=debug [Project]`. Outputs go to `build/bin/<Config>-linux-x86_64/`.
 - **Configs**: `Debug`, `Debug-ASan`, `Release`, `Distribution`. `--profile` on premake compiles Tracy in.
-- **Requirements**: `VULKAN_SDK` set. On Linux it must be LunarG's tarball; Ubuntu's headers and shaderc are too old. assimp 6.0.4 is built from source into `vendor/assimp/lib/linux-x86_64/`. Cloud containers can't reach sdk.lunarg.com; build the SDK pieces from source per LINUX-SUPPORT.md Appendix A.
+- **Requirements**: `VULKAN_SDK` set. On Linux it must be LunarG's tarball or `scripts/build-linux-toolchain.sh`'s build of the same pieces (Ubuntu's headers and shaderc are too old), plus the static assimp 6.0.4 in `vendor/assimp/lib/linux-x86_64/`.
+- **Cloud sessions**: the SessionStart hook (`.claude/hooks/session-start.sh`) installs the apt packages, inits the submodules, builds the toolchain once (sdk.lunarg.com is blocked there; the container is cached after the hook), copies assimp into place and sets `VULKAN_SDK` and `VK_DRIVER_FILES` (llvmpipe). Start at `./Generate-Linux.sh`. If its start-up line says the setup failed, read the log it names; don't rebuild the toolchain by hand unless that fails too.
 - **Run**: the engine is a static lib, and the examples and `Dingo-TestFramework` (the start project) are executables. Run an example with its source directory as the cwd, so `assets/` resolves. The test app runs from `test/` and takes `--test=<name substring>` to start on one case, e.g. `--test=shadow`.
 - More (Linux packaging and the tester bundle, ASan, profiling, versioning, devices without a GPU): [.claude/reference/build-details.md](.claude/reference/build-details.md).
 
@@ -139,6 +140,6 @@ Read the relevant file before changing that area. They hold the detail that used
 | [.claude/reference/build-details.md](.claude/reference/build-details.md) | Linux build and packaging, the new-executable checklist, profiling, Debug-ASan, versioning, devices without a GPU |
 | [.claude/reference/project-history.md](.claude/reference/project-history.md) | The full source tree with every example, where issues and reviews live, and what each release shipped |
 | [ROADMAP.md](ROADMAP.md) | The plan, v0.1 → v1.0, and the out-of-band modules |
-| [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status and Appendix A (building the Vulkan SDK pieces and assimp) |
+| [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status and Appendix A (why the toolchain is built from source; `scripts/build-linux-toolchain.sh` does it) |
 | `docs/` | One page per feature (see `docs/README.md`). Keep the relevant page in step with a public API change |
 | `.claude/plans/`, `.claude/reviews/` | Milestone plans (their "As built" notes win) and dated review reports (trust the fix-status section, and check `git log`) |

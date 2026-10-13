@@ -55,7 +55,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you touched, run the affected test cases under Xvfb, and the `--check` of any example you changed. CI runs the full smoke test only after the merge, on master.
 
-- Set the toolchain up per CLAUDE.md "Build and run" (sdk.lunarg.com is blocked; build the Vulkan SDK pieces and assimp from source per LINUX-SUPPORT.md Appendix A).
+- The SessionStart hook has already set the toolchain up (CLAUDE.md "Build and run", Cloud sessions): start at `./Generate-Linux.sh`. Only if the hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".
 - Before committing, a **fresh sub-agent** (not the one that wrote the code; `opus`, effort per CLAUDE.md "Sub-agent selection") reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
 
