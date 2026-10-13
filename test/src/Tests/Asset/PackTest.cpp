@@ -37,17 +37,6 @@ namespace Dingo
 			return WriteDiskFile(path, std::vector<uint8_t>(text.begin(), text.end()));
 		}
 
-		std::string ToUtf8(const std::filesystem::path& path)
-		{
-			const std::u8string text = path.generic_u8string();
-			return std::string(text.begin(), text.end());
-		}
-
-		std::filesystem::path FromUtf8(std::string_view text)
-		{
-			return std::filesystem::path(std::u8string(text.begin(), text.end()));
-		}
-
 		constexpr std::string_view k_PackOnlyShader =
 			"#type vertex\n#version 450\n#include \"pack_only_common.glsl\"\nlayout(location = 0) in vec2 inPosition;\n"
 			"void main() { gl_Position = vec4(inPosition * PACK_SCALE, 0.0, 1.0); }\n"
@@ -126,7 +115,7 @@ namespace Dingo
 		std::error_code ec;
 		std::filesystem::remove_all(m_WorkDirectory, ec);
 		std::filesystem::create_directories(m_WorkDirectory, ec);
-		m_BasePackage = m_WorkDirectory / "base.dpak";
+		m_BasePackage = m_WorkDirectory / FileSystem::PathFromUtf8("base-\xD0\xB1\xD0\xB0\xD0\xB7\xD0\xB0.dpak");
 		m_Key = PackageKey::Generate();
 		m_PatchPackage = m_WorkDirectory / "patch.dpak";
 
@@ -136,7 +125,7 @@ namespace Dingo
 		{
 			if (!entry.is_regular_file())
 				continue;
-			m_Files.push_back(ToUtf8(entry.path().lexically_relative(root)));
+			m_Files.push_back(FileSystem::PathToGenericUtf8(entry.path().lexically_relative(root)));
 			if (AssetTypeFromExtension(entry.path().extension()) != AssetType::None)
 				++m_AssetFileCount;
 		}
@@ -162,7 +151,7 @@ namespace Dingo
 			.SetOutputPath(m_BasePackage)
 			.SetKey(m_Key));
 		std::error_code ec;
-		Check(result.Success && result.Error.empty(), std::format("Package writes '{}' ({})", m_BasePackage.filename().string(), result.Error));
+		Check(result.Success && result.Error.empty(), std::format("Package writes '{}' ({})", FileSystem::PathToUtf8(m_BasePackage.filename()), result.Error));
 		Check(result.FileCount == m_Files.size(), std::format("Package takes every file under the root ({} of {})", result.FileCount, m_Files.size()));
 		Check(result.PackedBytes == std::filesystem::file_size(m_BasePackage, ec) && result.PackedBytes < result.RawBytes,
 			std::format("PackageResult reports the archive's size, smaller than the files ({} of {} bytes)", result.PackedBytes, result.RawBytes));
@@ -290,7 +279,7 @@ namespace Dingo
 		bool everyAssetRegistered = packaged.size() == m_AssetFileCount;
 		for (const std::string& name : m_Files)
 		{
-			const std::filesystem::path file = FromUtf8(name);
+			const std::filesystem::path file = FileSystem::PathFromUtf8(name);
 			const AssetHandle handle = assets.FindByPath(file);
 			if (AssetTypeFromExtension(file.extension()) != AssetType::None)
 				everyAssetRegistered = everyAssetRegistered && std::find(packaged.begin(), packaged.end(), handle) != packaged.end();
@@ -300,7 +289,7 @@ namespace Dingo
 		uint32_t identical = 0, packedSource = 0;
 		for (const std::string& name : m_Files)
 		{
-			const std::filesystem::path file = FromUtf8(name);
+			const std::filesystem::path file = FileSystem::PathFromUtf8(name);
 			std::optional<std::vector<uint8_t>> packed = VirtualFileSystem::ReadBytes(file);
 			identical += packed && *packed == ReadDiskFile(assets.GetRootDirectory() / file);
 			std::optional<VfsResolvedPath> resolved = VirtualFileSystem::Resolve(file);
@@ -311,7 +300,7 @@ namespace Dingo
 		Check(!VirtualFileSystem::GetWriteTime("textures/container.jpg").has_value(), "a packed file has no write time, so hot reload never watches it");
 
 		const AssetHandle containerHandle = assets.FindByPath("textures/container.jpg");
-		Check(assets.GetAssetSource(containerHandle) == m_BasePackage.filename().string(), "GetAssetSource names the package an asset comes from");
+		Check(assets.GetAssetSource(containerHandle) == FileSystem::PathToUtf8(m_BasePackage.filename()), "GetAssetSource names the package an asset comes from");
 
 		const Snapshot packed = TakeSnapshot();
 		Check(packed.Fox == m_Loose.Fox && m_Loose.Fox.Joints > 0 && m_Loose.Fox.Events > 0,
@@ -332,7 +321,7 @@ namespace Dingo
 
 		uint32_t readWhileDecoding = 0;
 		for (const std::string& name : m_Files)
-			readWhileDecoding += VirtualFileSystem::ReadBytes(FromUtf8(name)).has_value();
+			readWhileDecoding += VirtualFileSystem::ReadBytes(FileSystem::PathFromUtf8(name)).has_value();
 		Check(readWhileDecoding == m_Files.size(), "the main thread reads the package while the loader thread decodes from it");
 	}
 
