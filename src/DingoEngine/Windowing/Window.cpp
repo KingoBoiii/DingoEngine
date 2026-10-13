@@ -25,6 +25,58 @@ namespace Dingo
 	// and skipping Shutdown() would leave GLFW a dangling callback).
 	static const Window::EventCallbackFn* s_JoystickEventCallback = nullptr;
 
+	static DisplayMode ToDisplayMode(const GLFWvidmode& mode)
+	{
+		return DisplayMode{ mode.width, mode.height, mode.refreshRate };
+	}
+
+	static std::vector<DisplayMode> ListDisplayModes(GLFWmonitor* monitor)
+	{
+		int32_t count = 0;
+		const GLFWvidmode* modes = glfwGetVideoModes(monitor, &count);
+		std::vector<DisplayMode> result;
+		result.reserve(count > 0 ? count : 0);
+		for (int32_t i = 0; i < count; i++)
+			result.push_back(ToDisplayMode(modes[i]));
+		return SortDisplayModes(std::move(result));
+	}
+
+	// The monitor the window overlaps most, falling back to the primary monitor.
+	// glfwGetWindowMonitor only reports a monitor for fullscreen windows, so a windowed
+	// window about to GO fullscreen needs this overlap test to pick the right display.
+	static GLFWmonitor* FindWindowMonitor(GLFWwindow* window)
+	{
+		int32_t windowX = 0, windowY = 0, windowWidth = 0, windowHeight = 0;
+		glfwGetWindowPos(window, &windowX, &windowY);
+		glfwGetWindowSize(window, &windowWidth, &windowHeight);
+
+		int32_t monitorCount = 0;
+		GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
+
+		GLFWmonitor* best = glfwGetPrimaryMonitor();
+		int32_t bestOverlap = 0;
+
+		for (int32_t i = 0; i < monitorCount; i++)
+		{
+			const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+			int32_t monitorX = 0, monitorY = 0;
+			glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
+
+			// (std::min) parentheses dodge the Windows.h min/max macros (engine TUs lack NOMINMAX).
+			const int32_t overlapWidth = (std::min)(windowX + windowWidth, monitorX + mode->width) - (std::max)(windowX, monitorX);
+			const int32_t overlapHeight = (std::min)(windowY + windowHeight, monitorY + mode->height) - (std::max)(windowY, monitorY);
+			const int32_t overlap = (std::max)(overlapWidth, 0) * (std::max)(overlapHeight, 0);
+
+			if (overlap > bestOverlap)
+			{
+				bestOverlap = overlap;
+				best = monitors[i];
+			}
+		}
+
+		return best;
+	}
+
 	Window::Window(const WindowParams& params)
 		: m_Params(params)
 	{
@@ -44,26 +96,46 @@ namespace Dingo
 		m_WindowedHeight = m_Params.Height;
 
 		GLFWmonitor* monitor = nullptr;
-		if (m_Params.Fullscreen)
+		if (m_Params.Mode != WindowMode::Windowed)
 		{
 			monitor = glfwGetPrimaryMonitor();
-			const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
+			if (!monitor)
+				DE_CORE_WARN("No monitor to go fullscreen on; starting windowed.");
+		}
 
-			// Matching the desktop video mode gives borderless ("windowed") fullscreen.
-			m_Data.SetSize(videoMode->width, videoMode->height);
+		if (monitor)
+		{
+			m_DesktopMode = ToDisplayMode(*glfwGetVideoMode(monitor));
+			DisplayMode target = m_DesktopMode;
+			if (m_Params.Mode == WindowMode::ExclusiveFullscreen)
+			{
+				target = ChooseDisplayMode(ListDisplayModes(monitor), m_Params.FullscreenMode.IsValid() ? m_Params.FullscreenMode : m_DesktopMode);
+				m_FullscreenMode = target;
+			}
+			m_Mode = m_Params.Mode;
+			m_Data.SetSize(target.Width, target.Height);
+			glfwWindowHint(GLFW_REFRESH_RATE, target.RefreshRate > 0 ? target.RefreshRate : GLFW_DONT_CARE);
 
 			// No windowed position exists yet; center the restore rect on this monitor.
 			int32_t monitorX = 0, monitorY = 0;
 			glfwGetMonitorPos(monitor, &monitorX, &monitorY);
-			m_WindowedPosX = monitorX + (videoMode->width - m_WindowedWidth) / 2;
-			m_WindowedPosY = monitorY + (videoMode->height - m_WindowedHeight) / 2;
+			m_WindowedPosX = monitorX + (m_DesktopMode.Width - m_WindowedWidth) / 2;
+			m_WindowedPosY = monitorY + (m_DesktopMode.Height - m_WindowedHeight) / 2;
 		}
 
 		m_WindowHandle = glfwCreateWindow(m_Data.Width, m_Data.Height, m_Params.Title.c_str(), monitor, nullptr);
+		glfwWindowHint(GLFW_REFRESH_RATE, GLFW_DONT_CARE);
 		DE_CORE_VERIFY(m_WindowHandle, "Failed to create GLFW window.");
 		if (!m_WindowHandle)
 		{
 			glfwTerminate();
+		}
+
+		if (monitor)
+		{
+			int32_t width = 0, height = 0;
+			glfwGetWindowSize(m_WindowHandle, &width, &height);
+			m_Data.SetSize(width, height);
 		}
 
 		glfwSetWindowUserPointer(m_WindowHandle, &m_Data);
@@ -126,62 +198,94 @@ namespace Dingo
 		Renderer::QueueVSync(vsync);
 	}
 
-	// The monitor the window overlaps most, falling back to the primary monitor.
-	// glfwGetWindowMonitor only reports a monitor for fullscreen windows, so a windowed
-	// window about to GO fullscreen needs this overlap test to pick the right display.
-	static GLFWmonitor* FindWindowMonitor(GLFWwindow* window)
+	GLFWmonitor* Window::GetCurrentMonitor() const
 	{
-		int32_t windowX = 0, windowY = 0, windowWidth = 0, windowHeight = 0;
-		glfwGetWindowPos(window, &windowX, &windowY);
-		glfwGetWindowSize(window, &windowWidth, &windowHeight);
+		if (GLFWmonitor* monitor = glfwGetWindowMonitor(m_WindowHandle))
+			return monitor;
+		return FindWindowMonitor(m_WindowHandle);
+	}
 
-		int32_t monitorCount = 0;
-		GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
-
-		GLFWmonitor* best = glfwGetPrimaryMonitor();
-		int32_t bestOverlap = 0;
-
-		for (int32_t i = 0; i < monitorCount; i++)
+	void Window::SetWindowMode(WindowMode mode, const DisplayMode& fullscreenMode)
+	{
+		if (mode == WindowMode::Windowed)
 		{
-			const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
-			int32_t monitorX = 0, monitorY = 0;
-			glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
-
-			// (std::min) parentheses dodge the Windows.h min/max macros (engine TUs lack NOMINMAX).
-			const int32_t overlapWidth = (std::min)(windowX + windowWidth, monitorX + mode->width) - (std::max)(windowX, monitorX);
-			const int32_t overlapHeight = (std::min)(windowY + windowHeight, monitorY + mode->height) - (std::max)(windowY, monitorY);
-			const int32_t overlap = (std::max)(overlapWidth, 0) * (std::max)(overlapHeight, 0);
-
-			if (overlap > bestOverlap)
-			{
-				bestOverlap = overlap;
-				best = monitors[i];
-			}
+			m_Mode = WindowMode::Windowed;
+			m_FullscreenMode = {};
+			if (IsFullscreen())
+				glfwSetWindowMonitor(m_WindowHandle, nullptr, m_WindowedPosX, m_WindowedPosY, m_WindowedWidth, m_WindowedHeight, 0);
+			return;
 		}
 
-		return best;
+		GLFWmonitor* monitor = GetCurrentMonitor();
+		if (!monitor)
+		{
+			DE_CORE_WARN("Window::SetWindowMode: no monitor to go fullscreen on.");
+			return;
+		}
+
+		if (!IsFullscreen())
+		{
+			glfwGetWindowPos(m_WindowHandle, &m_WindowedPosX, &m_WindowedPosY);
+			glfwGetWindowSize(m_WindowHandle, &m_WindowedWidth, &m_WindowedHeight);
+		}
+		if (m_Mode != WindowMode::ExclusiveFullscreen || !IsFullscreen())
+			m_DesktopMode = ToDisplayMode(*glfwGetVideoMode(monitor));
+
+		DisplayMode target = m_DesktopMode;
+		if (mode == WindowMode::ExclusiveFullscreen)
+			target = ChooseDisplayMode(ListDisplayModes(monitor), fullscreenMode.IsValid() ? fullscreenMode : m_DesktopMode);
+
+		m_Mode = mode;
+		m_FullscreenMode = mode == WindowMode::ExclusiveFullscreen ? target : DisplayMode();
+		// The size callback fires from glfwSetWindowMonitor, so the resize event
+		// (and thus the swap-chain recreation) follows the normal path.
+		glfwSetWindowMonitor(m_WindowHandle, monitor, 0, 0, target.Width, target.Height, target.RefreshRate > 0 ? target.RefreshRate : GLFW_DONT_CARE);
 	}
 
 	void Window::SetFullscreen(bool fullscreen)
 	{
 		if (fullscreen == IsFullscreen())
 			return;
+		SetWindowMode(fullscreen ? WindowMode::BorderlessFullscreen : WindowMode::Windowed);
+	}
 
-		if (fullscreen)
-		{
-			glfwGetWindowPos(m_WindowHandle, &m_WindowedPosX, &m_WindowedPosY);
-			glfwGetWindowSize(m_WindowHandle, &m_WindowedWidth, &m_WindowedHeight);
+	std::vector<DisplayMode> Window::GetDisplayModes() const
+	{
+		GLFWmonitor* monitor = GetCurrentMonitor();
+		return monitor ? ListDisplayModes(monitor) : std::vector<DisplayMode>();
+	}
 
-			GLFWmonitor* monitor = FindWindowMonitor(m_WindowHandle);
-			const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
-			glfwSetWindowMonitor(m_WindowHandle, monitor, 0, 0, videoMode->width, videoMode->height, videoMode->refreshRate);
-		}
-		else
+	DisplayMode Window::GetDesktopDisplayMode() const
+	{
+		if (m_Mode == WindowMode::ExclusiveFullscreen && IsFullscreen())
+			return m_DesktopMode;
+		GLFWmonitor* monitor = GetCurrentMonitor();
+		const GLFWvidmode* videoMode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+		return videoMode ? ToDisplayMode(*videoMode) : DisplayMode();
+	}
+
+	void Window::SetSize(int32_t width, int32_t height)
+	{
+		if (width <= 0 || height <= 0)
 		{
-			glfwSetWindowMonitor(m_WindowHandle, nullptr, m_WindowedPosX, m_WindowedPosY, m_WindowedWidth, m_WindowedHeight, 0);
+			DE_CORE_WARN("Window::SetSize({}, {}) ignored: both sides must be above 0.", width, height);
+			return;
 		}
-		// The size callback fires from glfwSetWindowMonitor, so the resize event
-		// (and thus the swap-chain recreation) follows the normal path.
+
+		m_WindowedWidth = width;
+		m_WindowedHeight = height;
+		if (!IsFullscreen())
+			glfwSetWindowSize(m_WindowHandle, width, height);
+	}
+
+	int32_t Window::GetWindowedWidth() const
+	{
+		return IsFullscreen() || m_Data.Width <= 0 ? m_WindowedWidth : m_Data.Width;
+	}
+
+	int32_t Window::GetWindowedHeight() const
+	{
+		return IsFullscreen() || m_Data.Height <= 0 ? m_WindowedHeight : m_Data.Height;
 	}
 
 	void Window::SetupGLFWCallbacks() const

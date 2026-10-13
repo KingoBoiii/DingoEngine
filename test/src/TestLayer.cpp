@@ -32,6 +32,7 @@
 #include "Tests/Scene/ThroughputTest.h"
 
 #include "Tests/Core/BackgroundTest.h"
+#include "Tests/Core/DisplayModeTest.h"
 
 #include "Tests/Audio/AudioBusTest.h"
 
@@ -82,6 +83,7 @@ namespace Dingo
 		m_Tests.push_back({ "Compute Test", []() { return new ComputeTest(); } });
 		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
 		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
+		m_Tests.push_back({ "Display Mode Test", [&]() { return new DisplayModeTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))

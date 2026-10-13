@@ -1,10 +1,12 @@
 #pragma once
 #include "DingoEngine/Common.h"
 #include "DingoEngine/Events/Event.h"
+#include "DingoEngine/Windowing/DisplayMode.h"
 
 #include <functional>
 
 struct GLFWwindow;
+struct GLFWmonitor;
 
 namespace Dingo
 {
@@ -16,9 +18,10 @@ namespace Dingo
 		int32_t Height = 900;
 		bool VSync = true;
 		bool Resizable = true;
-		// Start in borderless fullscreen at the monitor's desktop resolution.
-		// Width/Height are kept as the windowed size to restore to.
-		bool Fullscreen = false;
+		// The mode to start in. Width/Height stay the windowed size to restore to.
+		WindowMode Mode = WindowMode::Windowed;
+		// ExclusiveFullscreen's display mode (the nearest listed one); invalid = the desktop's.
+		DisplayMode FullscreenMode;
 
 		WindowParams SetTitle(const std::string& title)
 		{
@@ -50,9 +53,22 @@ namespace Dingo
 			return *this;
 		}
 
+		// Borderless fullscreen or windowed.
 		WindowParams SetFullscreen(bool fullscreen)
 		{
-			Fullscreen = fullscreen;
+			Mode = fullscreen ? WindowMode::BorderlessFullscreen : WindowMode::Windowed;
+			return *this;
+		}
+
+		WindowParams SetMode(WindowMode mode)
+		{
+			Mode = mode;
+			return *this;
+		}
+
+		WindowParams SetFullscreenMode(const DisplayMode& mode)
+		{
+			FullscreenMode = mode;
 			return *this;
 		}
 	};
@@ -78,11 +94,31 @@ namespace Dingo
 
 		void SetEventCallback(const EventCallbackFn& callback) { m_Data.EventCallback = callback; }
 
-		// Borderless fullscreen at the desktop resolution of the monitor the window is on.
-		// The swap chain follows via the normal resize event; safe to call from event handlers.
+		// On the monitor the window is on. Both fullscreen modes are a fullscreen window that is
+		// minimized when it loses focus; exclusive also switches the display to fullscreenMode's
+		// nearest listed mode (invalid = the desktop's). The swap chain follows through the
+		// ordinary resize event; safe from event handlers.
+		void SetWindowMode(WindowMode mode, const DisplayMode& fullscreenMode = {});
+		WindowMode GetWindowMode() const { return m_Mode; }
+		// The display mode exclusive fullscreen runs at; invalid in the other modes.
+		DisplayMode GetFullscreenDisplayMode() const { return m_Mode == WindowMode::ExclusiveFullscreen ? m_FullscreenMode : DisplayMode(); }
+
+		// Borderless fullscreen, or windowed. Already fullscreen in either mode, true changes nothing.
 		void SetFullscreen(bool fullscreen);
 		void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
 		bool IsFullscreen() const;
+
+		// The display modes of the monitor the window is on, for an options screen: no duplicates,
+		// largest first.
+		std::vector<DisplayMode> GetDisplayModes() const;
+		// That monitor's mode outside exclusive fullscreen.
+		DisplayMode GetDesktopDisplayMode() const;
+
+		// The windowed client size. While fullscreen it is kept as the size to restore to.
+		void SetSize(int32_t width, int32_t height);
+		// The windowed size: the current size while windowed, the one to restore to while fullscreen.
+		int32_t GetWindowedWidth() const;
+		int32_t GetWindowedHeight() const;
 
 		// Safe from event handlers; the swap chain takes it after the next present (Vulkan
 		// recreates it, as a resize does). A restart goes back to WindowParams::VSync.
@@ -99,6 +135,7 @@ namespace Dingo
 
 	private:
 		void SetupGLFWCallbacks() const;
+		GLFWmonitor* GetCurrentMonitor() const;
 
 	private:
 		WindowParams m_Params;
@@ -109,6 +146,11 @@ namespace Dingo
 		int32_t m_WindowedPosY = 0;
 		int32_t m_WindowedWidth = 0;
 		int32_t m_WindowedHeight = 0;
+
+		WindowMode m_Mode = WindowMode::Windowed;
+		DisplayMode m_FullscreenMode;
+		// The monitor's mode before exclusive fullscreen changed it.
+		DisplayMode m_DesktopMode;
 
 		struct WindowData
 		{

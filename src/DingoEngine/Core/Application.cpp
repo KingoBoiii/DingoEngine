@@ -9,6 +9,7 @@
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/Profiler.h"
+#include "DingoEngine/Core/Settings.h"
 #include "DingoEngine/UI/DebugPanels.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -50,6 +51,24 @@ namespace Dingo
 
 		Log::OpenFile(logDirectory);
 		Internal::CrashHandler::Install(Log::GetFilePath(), logDirectory, m_Params.Name);
+
+		if (!m_Params.SettingsSlot.empty() && SaveSlots::Exists(m_Params.SettingsSlot))
+		{
+			if (const std::optional<SaveData> data = SaveSlots::Read(m_Params.SettingsSlot))
+			{
+				Settings defaults;
+				defaults.Display.Mode = m_Params.Window.Mode;
+				defaults.Display.Width = m_Params.Window.Width;
+				defaults.Display.Height = m_Params.Window.Height;
+				defaults.Display.FullscreenMode = m_Params.Window.FullscreenMode;
+				defaults.Display.VSync = m_Params.Window.VSync;
+				defaults.Input.GamepadDeadzone = Input::GetGamepadDeadzone();
+				const Settings settings = Settings::FromSaveData(*data, defaults);
+				settings.ApplyTo(m_Params.Window);
+				Input::SetGamepadDeadzone(settings.Input.GamepadDeadzone);
+				m_StartupMasterVolume = settings.Audio.MasterVolume;
+			}
+		}
 	}
 
 	Application::~Application()
@@ -101,6 +120,8 @@ namespace Dingo
 		// device thread); bring it up here so it's live before OnInitialize().
 		m_AudioEngine = AudioEngine::Create();
 		m_AudioEngine->Initialize();
+		if (m_StartupMasterVolume)
+			m_AudioEngine->SetMasterVolume(*m_StartupMasterVolume);
 
 		// After audio (clips load through it), before OnInitialize() so layers can load
 		// assets from OnAttach.

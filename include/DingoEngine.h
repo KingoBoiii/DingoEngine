@@ -13,8 +13,11 @@
 #include "DingoEngine/Core/PerspectiveCamera.h"
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Core/Ray.h"
+#include "DingoEngine/Core/SaveData.h"
+#include "DingoEngine/Core/Settings.h"
 #include "DingoEngine/Core/UUID.h"
 
+#include "DingoEngine/Windowing/DisplayMode.h"
 #include "DingoEngine/Windowing/Window.h"
 
 // ----------------------------------------------------------------------

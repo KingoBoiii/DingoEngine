@@ -76,6 +76,10 @@ namespace Dingo
 		std::filesystem::path LogDirectory;
 		// Where SaveSlots keeps its files. Empty = GetUserDataDir(Name)/saves; --save-dir=<path> overrides it.
 		std::filesystem::path SaveDirectory;
+		// A Settings slot to start from (Settings::k_DefaultSlot is "settings"): the window opens in
+		// its display settings, and its master volume and gamepad deadzone are set. Bus volumes
+		// wait for the game's Settings::Apply, after it creates its buses. Empty = none.
+		std::string SettingsSlot;
 
 		WindowParams Window;		// Parameters for the application window
 		GraphicsParams Graphics;	// Parameters for the graphics context
@@ -212,6 +216,7 @@ namespace Dingo
 		bool m_Minimized = false;
 		bool m_Focused = true;
 		float m_LastFrameTime = 0.0f;
+		std::optional<float> m_StartupMasterVolume;
 		float m_DeltaTime = 0.0f;
 		FrameTimings m_FrameTimings;
 
