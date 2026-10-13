@@ -35,13 +35,13 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 ## Verifying changes
 
-Keep it to the smallest check that proves the change. CI runs the full Linux smoke test on every push and PR, and the owner runs the GPU backends.
+Keep it to the smallest check that proves the change. CI (`build-linux.yml` with the full smoke test, `build-windows.yml`) runs only on pushes to master, so a PR gets no CI: these steps are its only Linux check before the owner runs the GPU backends.
 
 1. **Docs, comments, plans, CI or scripts that no build runs**: nothing to run. Don't set up the toolchain for them.
-2. **Code**: build Debug on Linux, only the projects you touched (the engine plus the test app or example that uses it). No warnings in files you changed.
+2. **Code**: build Debug on Linux, only the projects you touched (the engine plus the test app or example that uses it). A change to a public header or a `premake5.lua` builds every project (`make -j"$(nproc)" config=debug`), since nothing else catches a broken example before merge. No warnings in files you changed.
 3. **Run only the affected feature's test case**: `cd test && timeout 60 xvfb-run -a ../build/bin/Debug-linux-x86_64/Dingo-TestFramework/Dingo-TestFramework --test=<case>`. The app stays open after its checks, so the timeout ends it. Pass = no `[FAIL]`, no `VUID-`, no `LOG ERROR` in the output. If you changed an example that has `--check`, run that too.
 4. **Add a check only for new behaviour or a fixed bug**, inside the existing test case (`test/src/Tests/`, helpers in `Tests/TestChecks.h`).
-5. **Don't** run the full smoke test, other configurations, A/B or mutation runs, or performance captures unless asked.
+5. **Don't** run the full smoke test, other configurations, A/B or mutation runs, or performance captures unless asked; master's CI runs the smoke test after the merge.
 6. **Never claim GPU, D3D11/D3D12 or Windows results.** List them under "Needs testing on a real GPU" in the PR.
 
 ## Sub-agent selection
