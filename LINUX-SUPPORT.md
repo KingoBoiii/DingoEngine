@@ -177,7 +177,7 @@ ran.
   `scripts/ci/linux-smoke-test.sh` under Xvfb and llvmpipe with the SDK's validation layer. The script reads
   the test list from `TestLayer.cpp`, finds the examples itself, closes each app through `WM_DELETE_WINDOW`
   (`scripts/ci/close-windows.py`, since Ubuntu's xdotool predates `windowquit`), and fails on a non-zero exit,
-  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. The old disabled job in `build-master.yml` is gone.
+  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. The old disabled job in `build-master.yml` (now `build-windows.yml`) is gone.
 - [L23](#l23): the engine's Linux post-build step builds `build/dist/<cfg>/libDingoEngine.a`
   (`scripts/merge-static-libs.sh`, `ar -M` through numbered links, since MRI scripts can't quote paths with
   spaces). The release job ships it with `include/` and `glm/` for Debug, Release and Distribution, plus
