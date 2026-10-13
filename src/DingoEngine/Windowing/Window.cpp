@@ -59,6 +59,8 @@ namespace Dingo
 		for (int32_t i = 0; i < monitorCount; i++)
 		{
 			const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+			if (!mode)
+				continue;
 			int32_t monitorX = 0, monitorY = 0;
 			glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
 
@@ -81,6 +83,8 @@ namespace Dingo
 		: m_Params(params)
 	{
 		m_Data.SetSize(m_Params.Width, m_Params.Height);
+		m_Data.WindowedWidth = m_Params.Width;
+		m_Data.WindowedHeight = m_Params.Height;
 	}
 
 	void Window::Initialize()
@@ -103,9 +107,16 @@ namespace Dingo
 				DE_CORE_WARN("No monitor to go fullscreen on; starting windowed.");
 		}
 
+		const GLFWvidmode* desktopMode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+		if (monitor && !desktopMode)
+		{
+			DE_CORE_WARN("The monitor reports no video mode; starting windowed.");
+			monitor = nullptr;
+		}
+
 		if (monitor)
 		{
-			m_DesktopMode = ToDisplayMode(*glfwGetVideoMode(monitor));
+			m_DesktopMode = ToDisplayMode(*desktopMode);
 			DisplayMode target = m_DesktopMode;
 			if (m_Params.Mode == WindowMode::ExclusiveFullscreen)
 			{
@@ -226,10 +237,20 @@ namespace Dingo
 		if (!IsFullscreen())
 		{
 			glfwGetWindowPos(m_WindowHandle, &m_WindowedPosX, &m_WindowedPosY);
-			glfwGetWindowSize(m_WindowHandle, &m_WindowedWidth, &m_WindowedHeight);
+			// The size SetSize last asked for, which a window manager may not have applied yet.
+			m_WindowedWidth = m_Data.WindowedWidth;
+			m_WindowedHeight = m_Data.WindowedHeight;
 		}
 		if (m_Mode != WindowMode::ExclusiveFullscreen || !IsFullscreen())
-			m_DesktopMode = ToDisplayMode(*glfwGetVideoMode(monitor));
+		{
+			const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
+			if (!videoMode)
+			{
+				DE_CORE_WARN("Window::SetWindowMode: the monitor reports no video mode.");
+				return;
+			}
+			m_DesktopMode = ToDisplayMode(*videoMode);
+		}
 
 		DisplayMode target = m_DesktopMode;
 		if (mode == WindowMode::ExclusiveFullscreen)
@@ -275,17 +296,21 @@ namespace Dingo
 		m_WindowedWidth = width;
 		m_WindowedHeight = height;
 		if (!IsFullscreen())
+		{
+			m_Data.WindowedWidth = width;
+			m_Data.WindowedHeight = height;
 			glfwSetWindowSize(m_WindowHandle, width, height);
+		}
 	}
 
 	int32_t Window::GetWindowedWidth() const
 	{
-		return IsFullscreen() || m_Data.Width <= 0 ? m_WindowedWidth : m_Data.Width;
+		return IsFullscreen() ? m_WindowedWidth : m_Data.WindowedWidth;
 	}
 
 	int32_t Window::GetWindowedHeight() const
 	{
-		return IsFullscreen() || m_Data.Height <= 0 ? m_WindowedHeight : m_Data.Height;
+		return IsFullscreen() ? m_WindowedHeight : m_Data.WindowedHeight;
 	}
 
 	void Window::SetupGLFWCallbacks() const
@@ -304,6 +329,11 @@ namespace Dingo
 
 			// Keep GetWidth()/GetHeight()/GetAspectRatio() truthful after resizes.
 			windowData.SetSize(width, height);
+			if (width > 0 && height > 0 && !glfwGetWindowMonitor(window))
+			{
+				windowData.WindowedWidth = width;
+				windowData.WindowedHeight = height;
+			}
 
 			WindowResizeEvent resizeEvent(width, height);
 			windowData.EventCallback(resizeEvent);

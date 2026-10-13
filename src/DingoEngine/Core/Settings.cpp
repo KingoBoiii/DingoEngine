@@ -74,13 +74,13 @@ namespace Dingo
 
 		Application& application = Application::Get();
 		Window& window = application.GetWindow();
-		if (window.GetWindowedWidth() != Display.Width || window.GetWindowedHeight() != Display.Height)
-			window.SetSize(Display.Width, Display.Height);
-
-		const bool exclusiveChanged = Display.Mode == WindowMode::ExclusiveFullscreen && Display.FullscreenMode.IsValid()
-			&& window.GetFullscreenDisplayMode() != Display.FullscreenMode;
+		// The mode first: a SetSize while fullscreen only stores the size to return to.
+		const bool exclusiveChanged = Display.Mode == WindowMode::ExclusiveFullscreen
+			&& window.GetFullscreenDisplayMode() != ChooseDisplayMode(window.GetDisplayModes(), Display.FullscreenMode.IsValid() ? Display.FullscreenMode : window.GetDesktopDisplayMode());
 		if (window.GetWindowMode() != Display.Mode || exclusiveChanged)
 			window.SetWindowMode(Display.Mode, Display.FullscreenMode);
+		if (window.GetWindowedWidth() != Display.Width || window.GetWindowedHeight() != Display.Height)
+			window.SetSize(Display.Width, Display.Height);
 		window.SetVSync(Display.VSync);
 
 		AudioEngine& audio = application.GetAudioEngine();

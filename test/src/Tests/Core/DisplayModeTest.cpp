@@ -176,6 +176,30 @@ namespace Dingo
 			Check(SaveSlots::Delete(k_SettingsSlot) && !SaveSlots::Exists(k_SettingsSlot), "the test's settings slot is deleted");
 		} });
 
+		m_Steps.push_back({ "Settings::Apply to borderless with another size", [this]
+		{
+			Settings settings = Settings::Capture();
+			settings.Display.Mode = WindowMode::BorderlessFullscreen;
+			settings.Display.Width = m_InitialSize.x;
+			settings.Display.Height = m_InitialSize.y;
+			settings.Apply();
+		}, [this] { return glm::ivec2(m_Desktop.Width, m_Desktop.Height); }, [this]
+		{
+			const Window& window = Application::Get().GetWindow();
+			Check(window.GetWindowMode() == WindowMode::BorderlessFullscreen && window.GetWindowedWidth() == m_InitialSize.x && window.GetWindowedHeight() == m_InitialSize.y,
+				"Settings::Apply goes fullscreen and keeps the new windowed size to return to");
+		} });
+
+		m_Steps.push_back({ "Settings::Apply back to windowed", [this]
+		{
+			Settings settings = Settings::Capture();
+			settings.Display.Mode = WindowMode::Windowed;
+			settings.Apply();
+		}, [this] { return m_InitialSize; }, [this]
+		{
+			Check(Application::Get().GetWindow().GetWindowMode() == WindowMode::Windowed, "Settings::Apply returns to windowed");
+		} });
+
 		m_Steps.push_back({ "restore the starting size", [this] { Application::Get().GetWindow().SetSize(m_InitialSize.x, m_InitialSize.y); },
 			[this] { return m_InitialSize; }, [] {} });
 	}

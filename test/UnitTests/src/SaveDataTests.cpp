@@ -5,6 +5,7 @@
 
 #include "SaveWriter.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -46,6 +47,45 @@ namespace
 		}
 	};
 
+	class EnvironmentOverride
+	{
+	public:
+#if defined(DE_PLATFORM_WINDOWS)
+		EnvironmentOverride(const wchar_t* name, const std::filesystem::path& value)
+			: m_Name(name)
+		{
+			const wchar_t* previous = _wgetenv(name);
+			m_Had = previous != nullptr;
+			m_Previous = previous ? previous : L"";
+			_wputenv_s(name, value.c_str());
+		}
+		~EnvironmentOverride() { _wputenv_s(m_Name, m_Had ? m_Previous.c_str() : L""); }
+	private:
+		const wchar_t* m_Name;
+		std::wstring m_Previous;
+#else
+		EnvironmentOverride(const char* name, const std::filesystem::path& value)
+			: m_Name(name)
+		{
+			const char* previous = std::getenv(name);
+			m_Had = previous != nullptr;
+			m_Previous = previous ? previous : "";
+			setenv(name, value.c_str(), 1);
+		}
+		~EnvironmentOverride()
+		{
+			if (m_Had)
+				setenv(m_Name, m_Previous.c_str(), 1);
+			else
+				unsetenv(m_Name);
+		}
+	private:
+		const char* m_Name;
+		std::string m_Previous;
+#endif
+		bool m_Had = false;
+	};
+
 	void WriteText(const std::filesystem::path& path, std::string_view text)
 	{
 		std::ofstream stream(path, std::ios::binary | std::ios::trunc);
@@ -80,7 +120,8 @@ namespace
 
 		bool Start(const std::filesystem::path& file)
 		{
-			std::wstring commandLine = L"\"" + Platform::GetExecutablePath().wstring() + L"\" --save-writer=\"" + file.wstring() + L"\"";
+			EnvironmentOverride path(Test::k_SaveWriterVariableW, file);
+			std::wstring commandLine = L"\"" + Platform::GetExecutablePath().wstring() + L"\" --save-writer";
 			STARTUPINFOW startup = { sizeof(startup) };
 			return CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &Info) != 0;
 		}
@@ -101,7 +142,8 @@ namespace
 		bool Start(const std::filesystem::path& file)
 		{
 			const std::string executable = Platform::GetExecutablePath().string();
-			std::string argument = "--save-writer=" + file.string();
+			EnvironmentOverride path(Test::k_SaveWriterVariable, file);
+			std::string argument = "--save-writer";
 			char* argv[] = { const_cast<char*>(executable.c_str()), argument.data(), nullptr };
 			return posix_spawn(&Pid, executable.c_str(), nullptr, nullptr, argv, environ) == 0;
 		}
@@ -247,6 +289,42 @@ TEST_SUITE("SaveData")
 		CHECK(SaveData::FromJson(shallow).has_value());
 	}
 
+	TEST_CASE("pointers, null and UTF-8 literals take the right type")
+	{
+		CHECK(SaveData(nullptr).IsNull());
+		SaveData data;
+		data["none"] = nullptr;
+		CHECK(data["none"].IsNull());
+		CHECK(SaveData(u8"\u00e9t\u00e9").AsString() == "\xC3\xA9t\xC3\xA9");
+		CHECK(SaveData('A').AsInt() == 65);
+		CHECK(data.Get("missing", "fallback") == "fallback");
+		static_assert(!std::is_constructible_v<SaveData, int*>);
+		static_assert(!std::is_constructible_v<SaveData, const void*>);
+	}
+
+	TEST_CASE("misused accessors never corrupt the tree")
+	{
+		SaveData number = 5;
+		number["member"] = 1;
+		CHECK(number.IsObject());
+		CHECK(number["member"].AsInt() == 1);
+
+		SaveData array = SaveData::MakeArray();
+		array.Push(1);
+		array["key"] = 2;
+		CHECK(array.IsObject());
+		CHECK(array.Size() == 1);
+
+		SaveData text = "x";
+		text.Push(3);
+		CHECK(text.IsArray());
+		CHECK(text.Size() == 1);
+
+		SaveData list = SaveData::MakeArray();
+		list.At(4) = 9;
+		CHECK(list.IsEmpty());
+	}
+
 	TEST_CASE("files keep the previous write as .bak and fall back to it")
 	{
 		TempDirectory directory("files");
@@ -278,24 +356,54 @@ TEST_SUITE("SaveData")
 		std::filesystem::remove(path);
 		CHECK(SaveData::ReadFile(path) == first);
 
+		std::filesystem::path temporary = path;
+		temporary += ".tmp";
+		SaveData third;
+		third["generation"] = 3;
+		WriteText(temporary, third.ToJson());
+		CHECK(SaveData::ReadFile(path, nullptr, &source) == third);
+		CHECK(source == temporary);
+		WriteText(temporary, "{\"generation\": ");
+		CHECK(SaveData::ReadFile(path) == first);
+		std::filesystem::remove(temporary);
+
 		WriteText(backup, "garbage");
 		CHECK_FALSE(SaveData::ReadFile(path, &error).has_value());
 		CHECK_FALSE(error.empty());
+	}
+
+	TEST_CASE("writes from several threads take turns")
+	{
+		TempDirectory directory("threads");
+		const std::filesystem::path path = directory.Path / "slot.json";
+		std::vector<std::thread> threads;
+		std::atomic<int> failures = 0;
+		for (int t = 0; t < 4; t++)
+		{
+			threads.emplace_back([&, t]
+			{
+				for (int i = 0; i < 10; i++)
+				{
+					if (!Test::MakeWriterSave(t * 100 + i).WriteFile(path))
+						++failures;
+				}
+			});
+		}
+		for (std::thread& thread : threads)
+			thread.join();
+		CHECK(failures == 0);
+		const std::optional<SaveData> data = SaveData::ReadFile(path);
+		REQUIRE(data.has_value());
+		CHECK(*data == Test::MakeWriterSave((*data)["generation"].AsInt(-1)));
 	}
 
 	TEST_CASE("slots validate names and list newest first")
 	{
 		TempDirectory directory("slots");
 #if defined(DE_PLATFORM_WINDOWS)
-		const wchar_t* variable = L"LOCALAPPDATA";
-		const wchar_t* previousValue = _wgetenv(variable);
-		const std::wstring previous = previousValue ? previousValue : L"";
-		_wputenv_s(variable, directory.Path.c_str());
+		EnvironmentOverride dataHome(L"LOCALAPPDATA", directory.Path);
 #else
-		const char* variable = "XDG_DATA_HOME";
-		const char* previousValue = std::getenv(variable);
-		const std::string previous = previousValue ? previousValue : "";
-		setenv(variable, directory.Path.c_str(), 1);
+		EnvironmentOverride dataHome("XDG_DATA_HOME", directory.Path);
 #endif
 
 		CHECK(SaveSlots::IsValidName("slot_1-a"));
@@ -324,14 +432,6 @@ TEST_SUITE("SaveData")
 		CHECK_FALSE(SaveSlots::Exists("newer"));
 		CHECK(SaveSlots::List().size() == 1);
 
-#if defined(DE_PLATFORM_WINDOWS)
-		_wputenv_s(variable, previous.c_str());
-#else
-		if (previousValue)
-			setenv(variable, previous.c_str(), 1);
-		else
-			unsetenv(variable);
-#endif
 	}
 
 	TEST_CASE("a write killed at any moment leaves a complete save")
@@ -341,12 +441,19 @@ TEST_SUITE("SaveData")
 		REQUIRE(Test::MakeWriterSave(0).WriteFile(path));
 
 		std::mt19937 random(1234);
-		std::uniform_int_distribution<int> delayMs(20, 150);
+		std::uniform_int_distribution<int> delayMs(0, 60);
 		int64_t newest = 0;
 		for (int run = 0; run < 16; run++)
 		{
+			// A kill between the renames leaves no main file, so "before" may be the error value.
+			std::error_code ignored;
+			const std::filesystem::file_time_type before = std::filesystem::last_write_time(path, ignored);
 			Child child;
 			REQUIRE(child.Start(path));
+			// Timed from the child's first write, so a slow start can't use up the delay.
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+			while (std::filesystem::last_write_time(path, ignored) == before && std::chrono::steady_clock::now() < deadline)
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			std::this_thread::sleep_for(std::chrono::milliseconds(delayMs(random)));
 			child.Kill();
 

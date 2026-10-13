@@ -6,6 +6,10 @@
 namespace Dingo::Test
 {
 
+	// The child reads its file from here rather than argv, which is ANSI on Windows.
+	inline constexpr const char* k_SaveWriterVariable = "DINGO_SAVE_WRITER_PATH";
+	inline constexpr const wchar_t* k_SaveWriterVariableW = L"DINGO_SAVE_WRITER_PATH";
+
 	// Large enough that a write takes a while, so a kill lands inside one.
 	inline SaveData MakeWriterSave(int64_t generation)
 	{

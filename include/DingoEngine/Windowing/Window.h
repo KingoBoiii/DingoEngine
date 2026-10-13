@@ -157,6 +157,9 @@ namespace Dingo
 			int32_t Width;
 			int32_t Height;
 			float AspectRatio = 1.0f;
+			// The last size while windowed and not minimized.
+			int32_t WindowedWidth = 0;
+			int32_t WindowedHeight = 0;
 			EventCallbackFn EventCallback;
 
 			void SetSize(int32_t width, int32_t height)

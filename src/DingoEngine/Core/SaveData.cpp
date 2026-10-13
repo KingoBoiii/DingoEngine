@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 #include <thread>
 
 #if defined(DE_PLATFORM_LINUX)
@@ -186,7 +187,7 @@ namespace Dingo
 #endif
 		}
 
-		bool ReplaceFile(const std::filesystem::path& from, const std::filesystem::path& to, std::string& error)
+		bool MoveOver(const std::filesystem::path& from, const std::filesystem::path& to, std::string& error)
 		{
 #if defined(DE_PLATFORM_WINDOWS)
 			// A virus scanner or indexer opening the fresh file makes the move fail for a moment.
@@ -352,9 +353,12 @@ namespace Dingo
 
 	SaveData& SaveData::operator[](std::string_view key)
 	{
-		if (m_Type == SaveValueType::Null)
-			m_Type = SaveValueType::Object;
-		DE_CORE_ASSERT(m_Type == SaveValueType::Object, "SaveData: operator[] with a key on a value that is not an object.");
+		if (m_Type != SaveValueType::Object)
+		{
+			if (m_Type != SaveValueType::Null)
+				DE_CORE_ERROR("SaveData: operator[](\"{}\") on a value that is not an object; it becomes one.", key);
+			*this = MakeObject();
+		}
 
 		const size_t index = LowerBound(key);
 		if (index < m_Keys.size() && m_Keys[index] == key)
@@ -405,17 +409,24 @@ namespace Dingo
 
 	SaveData& SaveData::Push(SaveData value)
 	{
-		if (m_Type == SaveValueType::Null)
-			m_Type = SaveValueType::Array;
-		DE_CORE_ASSERT(m_Type == SaveValueType::Array, "SaveData: Push on a value that is not an array.");
+		if (m_Type != SaveValueType::Array)
+		{
+			if (m_Type != SaveValueType::Null)
+				DE_CORE_ERROR("SaveData: Push on a value that is not an array; it becomes one.");
+			*this = MakeArray();
+		}
 		m_Items.push_back(std::move(value));
 		return m_Items.back();
 	}
 
 	SaveData& SaveData::At(size_t index)
 	{
-		DE_CORE_ASSERT(index < m_Items.size(), "SaveData: At past the end.");
-		return m_Items[index];
+		if (index < m_Items.size())
+			return m_Items[index];
+		DE_CORE_ERROR("SaveData: At({}) past the end ({} items); the value goes nowhere.", index, m_Items.size());
+		thread_local SaveData t_Scratch;
+		t_Scratch = SaveData();
+		return t_Scratch;
 	}
 
 	const SaveData& SaveData::At(size_t index) const
@@ -478,6 +489,10 @@ namespace Dingo
 		std::string text = ToJson(true);
 		text.push_back('\n');
 
+		// Every write shares <path>.tmp, so two at once would interleave in it.
+		static std::mutex s_WriteMutex;
+		std::lock_guard lock(s_WriteMutex);
+
 		std::string error;
 		const std::filesystem::path directory = path.parent_path();
 		if (!directory.empty())
@@ -501,7 +516,7 @@ namespace Dingo
 		}
 
 		std::error_code errorCode;
-		if (std::filesystem::exists(path, errorCode) && !ReplaceFile(path, WithSuffix(path, ".bak"), error))
+		if (std::filesystem::exists(path, errorCode) && !MoveOver(path, WithSuffix(path, ".bak"), error))
 		{
 			DE_CORE_ERROR("SaveData: {}", error);
 			std::error_code ignored;
@@ -509,7 +524,7 @@ namespace Dingo
 			return false;
 		}
 
-		if (!ReplaceFile(temporary, path, error))
+		if (!MoveOver(temporary, path, error))
 		{
 			DE_CORE_ERROR("SaveData: {}", error);
 			return false;
@@ -522,9 +537,7 @@ namespace Dingo
 	std::optional<SaveData> SaveData::ReadFile(const std::filesystem::path& path, std::string* error, std::filesystem::path* source)
 	{
 		std::error_code errorCode;
-		const std::filesystem::path backup = WithSuffix(path, ".bak");
 		const bool mainExists = std::filesystem::exists(path, errorCode);
-		const bool backupExists = std::filesystem::exists(backup, errorCode);
 
 		std::string mainError = "not found";
 		if (mainExists)
@@ -537,22 +550,35 @@ namespace Dingo
 			}
 		}
 
-		std::string backupError = "not found";
-		if (backupExists)
+		// With <path> gone, a write stopped between its renames: its .tmp is complete if it parses.
+		std::vector<std::filesystem::path> fallbacks;
+		if (!mainExists)
+			fallbacks.push_back(WithSuffix(path, ".tmp"));
+		fallbacks.push_back(WithSuffix(path, ".bak"));
+
+		std::string fallbackErrors;
+		bool anyExists = mainExists;
+		for (const std::filesystem::path& fallback : fallbacks)
 		{
-			if (std::optional<SaveData> data = ReadOne(backup, backupError))
+			if (!std::filesystem::exists(fallback, errorCode))
+				continue;
+			anyExists = true;
+			std::string fallbackError;
+			if (std::optional<SaveData> data = ReadOne(fallback, fallbackError))
 			{
-				DE_CORE_WARN("SaveData: '{}' {}; read its backup.", DisplayPath(path), mainExists ? "is unreadable (" + mainError + ")" : std::string("is missing"));
+				DE_CORE_WARN("SaveData: '{}' {}; read '{}'.", DisplayPath(path), mainExists ? "is unreadable (" + mainError + ")" : std::string("is missing"), DisplayPath(fallback));
 				if (source)
-					*source = backup;
+					*source = fallback;
 				return data;
 			}
+			fallbackErrors += std::format("; '{}': {}", DisplayPath(fallback), fallbackError);
 		}
 
-		if (mainExists || backupExists)
-			DE_CORE_ERROR("SaveData: cannot read '{}' ({}) or its backup ({}).", DisplayPath(path), mainError, backupError);
+		const std::string reason = std::format("'{}': {}{}", DisplayPath(path), mainError, fallbackErrors);
+		if (anyExists)
+			DE_CORE_ERROR("SaveData: cannot read a save: {}", reason);
 		if (error)
-			*error = std::format("'{}': {}; backup: {}", DisplayPath(path), mainError, backupError);
+			*error = reason;
 		return std::nullopt;
 	}
 
@@ -636,28 +662,37 @@ namespace Dingo
 		if (errorCode)
 			return slots;
 
-		for (const std::filesystem::directory_entry& entry : iterator)
+		for (; iterator != std::filesystem::directory_iterator(); iterator.increment(errorCode))
 		{
+			if (errorCode)
+				break;
+			const std::filesystem::directory_entry& entry = *iterator;
 			std::error_code entryError;
 			if (!entry.is_regular_file(entryError))
 				continue;
 
-			const std::string fileName = entry.path().filename().string();
-			std::string_view name = fileName;
-			if (name.ends_with(".json"))
+			// u8string: string() throws on Windows for a name outside the ANSI code page.
+			const std::u8string fileName = entry.path().filename().u8string();
+			std::u8string_view name = fileName;
+			bool isBackup = false;
+			if (name.ends_with(u8".json"))
 				name.remove_suffix(5);
-			else if (name.ends_with(".json.bak"))
+			else if (name.ends_with(u8".json.bak"))
+			{
 				name.remove_suffix(9);
+				isBackup = true;
+			}
 			else
 				continue;
-			if (!IsValidName(name))
+			const std::string slot(name.begin(), name.end());
+			if (!IsValidName(slot))
 				continue;
 
 			const std::filesystem::file_time_type time = entry.last_write_time(entryError);
-			auto existing = std::find_if(slots.begin(), slots.end(), [&](const SaveSlotInfo& slot) { return slot.Name == name; });
+			auto existing = std::find_if(slots.begin(), slots.end(), [&](const SaveSlotInfo& info) { return info.Name == slot; });
 			if (existing == slots.end())
-				slots.push_back({ std::string(name), time });
-			else if (name.size() + 5 == fileName.size())
+				slots.push_back({ slot, time });
+			else if (!isBackup)
 				existing->LastWriteTime = time;
 		}
 

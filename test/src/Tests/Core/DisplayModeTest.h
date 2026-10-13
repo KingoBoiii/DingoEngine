@@ -11,7 +11,7 @@ namespace Dingo
 
 	// Walks the window through its modes and checks each by the window's and the swap chain's size:
 	// the display-mode list, borderless fullscreen, exclusive fullscreen, windowed again, SetSize
-	// windowed and while fullscreen, then Settings::Capture/Save/Load. Exclusive takes the desktop's
+	// windowed and while fullscreen, then Settings::Capture/Save/Load/Apply. Exclusive takes the desktop's
 	// mode unless --display-exclusive=next (the next smaller listed mode) or =<W>x<H>[@<Hz>] asks for
 	// a real mode change. The Properties panel restarts it and switches modes by hand.
 	class DisplayModeTest : public Renderer2DTest
