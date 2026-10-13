@@ -87,7 +87,7 @@ Closes #M
 
 **Did:** branch, commits.
 
-**Verification:** what was built (OS, compiler, config), what ran and the pass counts, review-agent result and which of its findings were fixed. Say plainly what was **not** run (D3D11, D3D12, any real GPU, CI if it hasn't run yet). If nothing was built: "not yet built or run".
+**Verification:** what was built (OS, compiler, config), what ran and the pass counts, review-agent result and which of its findings were fixed. Say plainly what was **not** run (D3D11, D3D12, any real GPU; CI runs only on pushes to master, so a PR has none). If nothing was built: "not yet built or run".
 
 **Questions I answered myself:**
 - Q: … — Options: …; …; … — Chose: … because …

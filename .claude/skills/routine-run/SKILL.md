@@ -38,7 +38,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 6. Implement exactly the **next** unfinished phase, never more than one, in full, as code. Only if it truly can't fit in this run, stop at a coherent sub-step, commit it as `<type>(<scope>): <phase> part 1 — …`, and leave the box unticked with a note of what remains.
 7. Verify (section 5), then commit and push (section 6).
 8. Tick the phase's box in the PR description with the short commit hash (add "*not yet built or run*" if it wasn't), and update the plan's "As built" notes in the same commit when the plan uses them.
-9. If CI runs on the push, wait for it (up to about 40 minutes) and report the result.
+9. CI runs only on pushes to master, so a PR branch has none to wait for; say so in the run log.
 10. Post the run log as a PR comment (section 7).
 
 ## 4. Mode B — no workable PR, so open issues
@@ -53,7 +53,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 ## 5. Verification
 
-Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you touched, run the affected test cases under Xvfb, and the `--check` of any example you changed. CI runs the full smoke test on the push.
+Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you touched, run the affected test cases under Xvfb, and the `--check` of any example you changed. CI runs the full smoke test only after the merge, on master.
 
 - The SessionStart hook has already set the toolchain up (CLAUDE.md "Build and run", Cloud sessions): start at `./Generate-Linux.sh`. Only if the hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".
