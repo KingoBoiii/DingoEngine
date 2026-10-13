@@ -73,13 +73,24 @@ namespace Dingo
 		// running without one.)
 		bool IsRunning() const { return m_IsRunning; }
 
-		// Drives every attached ScriptableEntity's OnUpdate, advances the animators, then
-		// steps any live physics world(s) and writes the simulated transforms back, so a
-		// kinematic body on a joint follows this frame's pose. Safe to create/destroy
-		// entities from within a script — destroys are deferred to the end of the pass.
-		// deltaTime is capped at 4/60 s for scripts, animation and physics alike, so a
+		// Runs every active script's OnFixedUpdate as many fixed steps as the delta covers, then
+		// its OnUpdate, advances the animators, then steps any live physics world(s) and writes
+		// the simulated transforms back, so a kinematic body on a joint follows this frame's pose.
+		// Safe to create/destroy entities from within a script — destroys are deferred to the end
+		// of the pass. deltaTime is capped at 4/60 s for scripts, animation and physics alike, so a
 		// stall runs the scene slow instead of tunnelling bodies through colliders.
 		void OnUpdate(float deltaTime);
+
+		// The step ScriptableEntity::OnFixedUpdate runs at (default 1/60 s, clamped to
+		// [1/1000, 1/4] s). Time left over carries into the next OnUpdate; at most
+		// k_MaxFixedStepsPerUpdate run in one, and the rest is dropped. Physics itself still steps
+		// once per OnUpdate with the frame's delta.
+		void SetFixedTimeStep(float seconds);
+		float GetFixedTimeStep() const;
+		// How far the time carried over reaches into the next fixed step, in [0, 1): for drawing
+		// state that changes only in OnFixedUpdate between its last two steps.
+		float GetFixedTimeAlpha() const;
+		static constexpr uint32_t k_MaxFixedStepsPerUpdate = 8;
 
 		// Issues the 2D entity draw calls (no BeginScene/Clear/EndScene). The
 		// SceneRenderer wraps this; call it directly between your own
@@ -343,6 +354,8 @@ namespace Dingo
 		// copies: every (source UUID, clone UUID) of the subtree, for rewriting bindings that point inside it.
 		Entity DuplicateSubtree(Entity source, Entity parent, std::vector<std::pair<UUID, UUID>>& copies);
 		Entity Wrap(std::uint32_t handle);
+		// Re-derives the active state of `root`'s subtree and starts or stops what changed with it.
+		void RefreshActive(std::uint32_t root);
 
 	private:
 		Internal::SceneData* m_Data = nullptr;

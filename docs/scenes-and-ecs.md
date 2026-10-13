@@ -44,6 +44,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `GetUUID()` / `GetName()` | The entity's id / name. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
 | `Destroy()` | Destroy this entity, its behaviour and its children. |
+| `SetActive(bool)` / `IsActive()` / `IsActiveInHierarchy()` (v1.0) | Switch the entity and its subtree off and on (see [Active and inactive entities](#active-and-inactive-entities-v10)). |
 | `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.7.1) | Attach to / detach from a parent (see [Parenting](#parenting-v071)). |
 | `SetParent(parent, "joint", keepWorldTransform = true)` / `GetParentJoint()` (v0.8) | Attach to a joint of the parent's skinned model, so the entity follows it as the model animates (see [Joints as parents](#joints-as-parents-v08)). |
 | `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.7.1) | Walk the hierarchy. |
@@ -747,9 +748,9 @@ bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
 bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`, then the animators (and their events'
-`OnAnimationEvent`), then physics. It caps
-`dt` at 4/60 s for all three, so a stall (a cold shader compile, a breakpoint) runs the scene slow
+`Scene::OnUpdate(dt)` drives every behaviour's `OnFixedUpdate` and `OnUpdate`, then the animators
+(and their events' `OnAnimationEvent`), then physics. It caps
+`dt` at 4/60 s for all of them, so a stall (a cold shader compile, a breakpoint) runs the scene slow
 instead of letting bodies tunnel through their colliders. Inside a script you have:
 
 - `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
@@ -759,6 +760,35 @@ instead of letting bodies tunnel through their colliders. Inside a script you ha
 The hooks fire in order: **`OnCreate`** when the script is attached, **`OnStart`** once when
 the scene starts (`Scene::OnStart`, *before* physics — or on the first `OnUpdate` for scripts
 spawned later), then **`OnUpdate`** every frame, and **`OnDestroy`** on removal.
+
+**`OnFixedUpdate(step)`** (v1.0) runs before `OnUpdate`, as many times as the frame's delta covers
+the scene's fixed step (`Scene::SetFixedTimeStep`, 1/60 s by default): none in a short frame, two
+in a 1/30 s one. Time left over carries into the next frame, and `Scene::GetFixedTimeAlpha()` says
+how far it reaches into the next step, for drawing between the last two. At most
+`Scene::k_MaxFixedStepsPerUpdate` (8) run in one `OnUpdate`; the rest is dropped. Use it for logic
+whose result must not depend on the frame rate (a counter, a cooldown in steps, a replay). Physics
+still steps once a frame with the frame's delta, so forces set in `OnFixedUpdate` act over that.
+
+### Active and inactive entities (v1.0)
+
+`entity.SetActive(false)` switches an entity and its whole subtree off without destroying them:
+they keep their components and scripts but don't render, light, cast, simulate, animate, emit
+particles or play or hear audio, and their scripts get no `OnUpdate`, `OnFixedUpdate` or
+`OnAnimationEvent`. It overrides each component's own switch (`Visible`, `Enabled`, `Playing`).
+`IsActive()` is the entity's own flag; `IsActiveInHierarchy()` is false when it or any ancestor is
+off, and reparenting under an inactive entity switches a subtree off the same way.
+
+- **Physics**: the bodies and character controllers are destroyed, so `GetRuntimeBody3D` and
+  `GetCharacterController` return none and a cached `CharacterController3D*` dies with them. On
+  `SetActive(true)` they are built again at the current transform, at rest.
+- **Audio**: a playing source stops; a `PlayOnStart` source starts again when the entity comes back
+  while the scene runs. `PlayAudioSource` on an inactive entity warns and does nothing.
+- **Scripts**: a script whose entity is inactive when the scene starts gets its `OnStart` when the
+  entity is first active.
+- **Lights**: an inactive light still counts as the scene choosing its lights, like a disabled one,
+  so no default light appears.
+- **Queries** still see it: `ForEachEntity`, `GetScriptsOfType`, `GetEntityByUUID` and `FindChild`
+  include inactive entities.
 
 Because a script has full `GetScene()` access, this is enough to keep game *layers* tiny: a
 single **controller** script can build the whole world in `OnStart` (spawn the level, the

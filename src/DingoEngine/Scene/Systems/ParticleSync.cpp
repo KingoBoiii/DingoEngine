@@ -106,7 +106,7 @@ namespace Dingo::Internal::ParticleSync
 
 	void Update(entt::registry& registry, float deltaTime)
 	{
-		for (entt::entity entity : registry.view<ParticleEmitterComponent>())
+		for (entt::entity entity : registry.view<ParticleEmitterComponent>(entt::exclude<InactiveComponent>))
 		{
 			ParticleEmitterRuntime& runtime = registry.get_or_emplace<ParticleEmitterRuntime>(entity);
 			for (ParticleEmitterRuntime::Instance& instance : runtime.Instances)
@@ -120,7 +120,7 @@ namespace Dingo::Internal::ParticleSync
 
 	void Submit(entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
 	{
-		auto view = registry.view<Transform3DComponent, ParticleEmitterComponent>();
+		auto view = registry.view<Transform3DComponent, ParticleEmitterComponent>(entt::exclude<InactiveComponent>);
 		for (entt::entity entity : view)
 		{
 			auto [transform, component] = view.get<Transform3DComponent, ParticleEmitterComponent>(entity);
@@ -182,7 +182,7 @@ namespace Dingo::Internal::ParticleSync
 
 	void Emit(entt::registry& registry, entt::entity entity, uint32_t count, const glm::vec3* worldPosition)
 	{
-		if (!registry.all_of<ParticleEmitterComponent>(entity) || count == 0)
+		if (!registry.all_of<ParticleEmitterComponent>(entity) || count == 0 || HierarchySystem::IsInactive(registry, entity))
 			return;
 
 		ParticleEmitterRuntime& runtime = registry.get_or_emplace<ParticleEmitterRuntime>(entity);

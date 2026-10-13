@@ -601,6 +601,9 @@ namespace Dingo
 			if (!registry.all_of<RigidBody2DComponent, TransformComponent>(handle))
 				return;
 
+			if (HierarchySystem::IsInactive(registry, handle))
+				return;
+
 			if (registry.all_of<RigidBody2DRuntime>(handle))
 				return; // a body already exists for this entity — don't leak a second one
 
@@ -664,6 +667,9 @@ namespace Dingo
 				return;
 
 			if (!registry.all_of<RigidBody3DComponent, Transform3DComponent>(handle))
+				return;
+
+			if (HierarchySystem::IsInactive(registry, handle))
 				return;
 
 			if (registry.all_of<RigidBody3DRuntime>(handle))
@@ -749,6 +755,9 @@ namespace Dingo
 				return;
 
 			if (!registry.all_of<CharacterController3DComponent, Transform3DComponent>(handle))
+				return;
+
+			if (HierarchySystem::IsInactive(registry, handle))
 				return;
 
 			if (registry.all_of<CharacterController3DRuntime>(handle))

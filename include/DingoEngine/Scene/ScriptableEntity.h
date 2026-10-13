@@ -35,6 +35,10 @@ namespace Dingo
 		// OnStart on their first OnUpdate instead.
 		virtual void OnStart() {}
 
+		// Zero or more times a frame, before every script's OnUpdate, each time with the scene's
+		// fixed step (Scene::SetFixedTimeStep): for logic that must not depend on the frame rate.
+		virtual void OnFixedUpdate(float step) {}
+
 		virtual void OnUpdate(float deltaTime) {}
 		virtual void OnDestroy() {}
 

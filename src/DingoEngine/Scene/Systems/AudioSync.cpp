@@ -59,7 +59,7 @@ namespace Dingo
 				// Primary wins, else the first listener found. If the scene has none, leave
 				// the engine's listener as it was (no implicit reset to origin).
 				entt::entity listenerHandle = entt::null;
-				auto listenerView = registry.view<AudioListenerComponent>();
+				auto listenerView = registry.view<AudioListenerComponent>(entt::exclude<InactiveComponent>);
 				for (entt::entity handle : listenerView)
 				{
 					if (listenerHandle == entt::null)

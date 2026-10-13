@@ -97,7 +97,7 @@ namespace Dingo::Internal::LightSystem
 			for (entt::entity entity : InEntityOrder<FogComponent>(registry))
 			{
 				const FogComponent& component = registry.get<const FogComponent>(entity);
-				if (!component.Enabled)
+				if (!component.Enabled || HierarchySystem::IsInactive(registry, entity))
 					continue;
 
 				if (submitted)
@@ -153,9 +153,12 @@ namespace Dingo::Internal::LightSystem
 				ambient += glm::vec3(light.Ambient);
 		};
 
+		// An inactive light still counts as the scene's choice of lighting, as a disabled one does.
 		for (entt::entity entity : InEntityOrder<DirectionalLightComponent>(registry))
 		{
 			hasLight = true;
+			if (HierarchySystem::IsInactive(registry, entity))
+				continue;
 			submitDirectional(registry.get<const DirectionalLightComponent>(entity));
 			noteLight(entity);
 		}
@@ -163,6 +166,8 @@ namespace Dingo::Internal::LightSystem
 		for (entt::entity entity : InEntityOrder<AmbientLightComponent>(registry))
 		{
 			hasLight = true;
+			if (HierarchySystem::IsInactive(registry, entity))
+				continue;
 			const AmbientLightComponent& light = registry.get<const AmbientLightComponent>(entity);
 			const glm::vec3 contribution = light.Color * light.Intensity;
 			if (std::isfinite(contribution.x) && std::isfinite(contribution.y) && std::isfinite(contribution.z))
@@ -177,7 +182,7 @@ namespace Dingo::Internal::LightSystem
 				continue;
 
 			hasLight = true;
-			if (light.Enabled)
+			if (light.Enabled && !HierarchySystem::IsInactive(registry, entity))
 			{
 				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
 				noteLight(entity);
@@ -192,7 +197,7 @@ namespace Dingo::Internal::LightSystem
 				continue;
 
 			hasLight = true;
-			if (light.Enabled)
+			if (light.Enabled && !HierarchySystem::IsInactive(registry, entity))
 			{
 				renderer.SubmitLight(light.ToLight(WorldTransform(entity, memo)));
 				noteLight(entity);

@@ -120,6 +120,20 @@ namespace Dingo
 		void SetWorldPosition2D(const glm::vec3& position);
 		void SetWorldRotation2D(float degrees);
 
+		// --- Active state ---
+		//
+		// An inactive entity and its whole subtree stay in the scene but don't render, simulate,
+		// animate, emit particles, light, hear or play audio, or run their scripts. Their physics
+		// bodies and controllers are destroyed and built again, at the current transform and at rest,
+		// when they become active; a sound stops, and a PlayOnStart source starts again then. A
+		// script's OnStart waits until its entity is first active.
+
+		void SetActive(bool active);
+		// The entity's own flag, as SetActive left it.
+		bool IsActive() const;
+		// Active, and so is every ancestor.
+		bool IsActiveInHierarchy() const;
+
 		// --- Identity / lifetime ---
 
 		UUID GetUUID() const;

@@ -148,6 +148,30 @@ namespace Dingo
 			m_Scene->DestroyEntity(*this);
 	}
 
+	void Entity::SetActive(bool active)
+	{
+		if (!IsValid() || active == IsActive())
+			return;
+
+		entt::registry& registry = m_Scene->m_Data->Registry;
+		const entt::entity self = static_cast<entt::entity>(m_Handle);
+		if (active)
+			registry.remove<Internal::InactiveSelfComponent>(self);
+		else
+			registry.emplace<Internal::InactiveSelfComponent>(self);
+		m_Scene->RefreshActive(m_Handle);
+	}
+
+	bool Entity::IsActive() const
+	{
+		return IsValid() && !m_Scene->m_Data->Registry.all_of<Internal::InactiveSelfComponent>(static_cast<entt::entity>(m_Handle));
+	}
+
+	bool Entity::IsActiveInHierarchy() const
+	{
+		return IsValid() && !Internal::HierarchySystem::IsInactive(m_Scene->m_Data->Registry, static_cast<entt::entity>(m_Handle));
+	}
+
 	void Entity::SetParent(Entity parent, bool keepWorldTransform)
 	{
 		SetParent(parent, std::string_view(), keepWorldTransform);
@@ -202,6 +226,7 @@ namespace Dingo
 		}
 
 		Reparent(registry, self, newParent, joint, keepWorldTransform);
+		m_Scene->RefreshActive(m_Handle);
 	}
 
 	void Entity::RemoveParent(bool keepWorldTransform)
@@ -212,7 +237,10 @@ namespace Dingo
 		entt::registry& registry = m_Scene->m_Data->Registry;
 		const entt::entity self = static_cast<entt::entity>(m_Handle);
 		if (Internal::HierarchySystem::GetParent(registry, self) != entt::null)
+		{
 			Reparent(registry, self, entt::null, std::string_view(), keepWorldTransform);
+			m_Scene->RefreshActive(m_Handle);
+		}
 	}
 
 	Entity Entity::GetParent() const

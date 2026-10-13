@@ -3,12 +3,20 @@
 
 #include "DingoEngine/Scene/Entity.h"
 #include "DingoEngine/Scene/ScriptableEntity.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
 namespace Dingo
 {
 
 	namespace Internal
 	{
+
+		ScriptSystem::ScriptSystem(const entt::registry& registry)
+			: m_Registry(registry)
+		{
+		}
+
+		ScriptSystem::~ScriptSystem() = default;
 
 		void ScriptSystem::Attach(entt::entity handle, ScriptableEntity* instance, Entity owner)
 		{
@@ -59,8 +67,31 @@ namespace Dingo
 				if (it == m_Scripts.end() || it->second->m_Started)
 					continue;
 
+				// Waits for its entity to become active, which marks it pending again.
+				if (!IsActive(handle))
+					continue;
+
 				it->second->m_Started = true; // set first so a re-entrant spawn can't double-fire
 				it->second->OnStart();
+			}
+		}
+
+		bool ScriptSystem::IsActive(entt::entity handle) const
+		{
+			return m_Registry.valid(handle) && !HierarchySystem::IsInactive(m_Registry, handle);
+		}
+
+		void ScriptSystem::FixedUpdate(float step)
+		{
+			m_UpdateBuffer.clear();
+			for (auto& [handle, script] : m_Scripts)
+				m_UpdateBuffer.push_back(handle);
+
+			for (entt::entity handle : m_UpdateBuffer)
+			{
+				auto it = m_Scripts.find(handle);
+				if (it != m_Scripts.end() && it->second->m_Started && IsActive(handle))
+					it->second->OnFixedUpdate(step);
 			}
 		}
 
@@ -78,8 +109,9 @@ namespace Dingo
 
 			for (entt::entity handle : m_UpdateBuffer)
 			{
+				// A script whose entity another one activated during this pass starts next frame.
 				auto it = m_Scripts.find(handle);
-				if (it != m_Scripts.end())
+				if (it != m_Scripts.end() && it->second->m_Started && IsActive(handle))
 					it->second->OnUpdate(deltaTime);
 			}
 		}

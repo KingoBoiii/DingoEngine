@@ -235,7 +235,7 @@ namespace Dingo
 					Animator& animator = EnsureAnimator(registry, handle, *model);
 					const AnimatorComponent& settings = view.get<AnimatorComponent>(handle);
 					AnimatorRuntime& runtime = registry.get<AnimatorRuntime>(handle);
-					if (!settings.Enabled)
+					if (!settings.Enabled || HierarchySystem::IsInactive(registry, handle))
 					{
 						runtime.Culled = false;
 						runtime.CulledUpdates = 0;

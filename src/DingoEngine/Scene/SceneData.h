@@ -33,8 +33,11 @@ namespace Dingo
 			entt::registry Registry;
 			std::unordered_map<UUID, entt::entity> EntityMap;
 
-			ScriptSystem Scripts;
+			ScriptSystem Scripts{ Registry };
 			PhysicsSync Physics;
+
+			float FixedTimeStep = 1.0f / 60.0f;
+			float FixedTimeAccumulator = 0.0f;
 
 			// Deferred-destruction support: while scripts are updating we queue
 			// destroys and apply them after the update pass, so a script can safely

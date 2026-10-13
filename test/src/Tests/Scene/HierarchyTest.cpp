@@ -165,6 +165,7 @@ namespace Dingo
 
 		RunStructuralChecks();
 		RunCollisionFilterChecks();
+		RunActiveChecks();
 		RunStructuralChecks2D();
 		BuildScene();
 		BuildScene2D();

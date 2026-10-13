@@ -193,6 +193,11 @@ namespace Dingo
 			CopyComponentIfExists<Internal::SocketComponent>(registry, dst, src);
 		}
 
+		if (registry.all_of<Internal::InactiveSelfComponent>(src))
+			registry.emplace<Internal::InactiveSelfComponent>(dst);
+		if (registry.all_of<Internal::InactiveSelfComponent>(dst) || (parent && Internal::HierarchySystem::IsInactive(registry, static_cast<entt::entity>(parent.m_Handle))))
+			registry.emplace<Internal::InactiveComponent>(dst);
+
 		// If the world is already simulating, give the clone its own body now (mirrors a
 		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
 		if (IsPhysicsRunning())
@@ -317,6 +322,21 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("ScriptSystem::Update");
 			m_Data->Updating = true;
+			m_Data->Scripts.StartPending();
+
+			const float step = m_Data->FixedTimeStep;
+			float& carried = m_Data->FixedTimeAccumulator;
+			carried += deltaTime;
+			uint32_t steps = 0;
+			while (carried >= step && steps < k_MaxFixedStepsPerUpdate)
+			{
+				carried -= step;
+				++steps;
+				m_Data->Scripts.FixedUpdate(step);
+			}
+			if (carried >= step)
+				carried = std::fmod(carried, step);
+
 			m_Data->Scripts.Update(deltaTime);
 			m_Data->Updating = false;
 		}
@@ -356,6 +376,56 @@ namespace Dingo
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
 	}
 
+	void Scene::SetFixedTimeStep(float seconds)
+	{
+		if (!std::isfinite(seconds))
+			return;
+
+		m_Data->FixedTimeStep = std::clamp(seconds, 1.0f / 1000.0f, 0.25f);
+		m_Data->FixedTimeAccumulator = std::min(m_Data->FixedTimeAccumulator, m_Data->FixedTimeStep);
+	}
+
+	float Scene::GetFixedTimeStep() const
+	{
+		return m_Data->FixedTimeStep;
+	}
+
+	float Scene::GetFixedTimeAlpha() const
+	{
+		return std::clamp(m_Data->FixedTimeAccumulator / m_Data->FixedTimeStep, 0.0f, 0.999999f);
+	}
+
+	void Scene::RefreshActive(std::uint32_t root)
+	{
+		entt::registry& registry = m_Data->Registry;
+		std::vector<entt::entity> activated, deactivated;
+		Internal::HierarchySystem::RefreshActive(registry, static_cast<entt::entity>(root), activated, deactivated);
+
+		for (entt::entity handle : deactivated)
+		{
+			if (IsPhysicsRunning())
+				m_Data->Physics.DestroyBodiesForEntity(registry, handle);
+			Internal::AudioSync::StopSource(registry, handle);
+		}
+
+		if (!activated.empty())
+			m_Data->Scripts.MarkPending();
+
+		// Parents first, so a child's body is built against its parent's.
+		for (entt::entity handle : activated)
+		{
+			if (!registry.valid(handle) || Internal::HierarchySystem::IsInactive(registry, handle))
+				continue;
+
+			if (IsPhysicsRunning())
+				CreateRigidBody(Wrap(static_cast<std::uint32_t>(handle)));
+
+			const AudioSourceComponent* source = registry.try_get<AudioSourceComponent>(handle);
+			if (m_IsRunning && source && source->PlayOnStart && source->Clip)
+				Internal::AudioSync::PlaySource(registry, handle);
+		}
+	}
+
 	Animator* Scene::GetAnimator(Entity entity)
 	{
 		if (!IsValid(entity))
@@ -393,9 +463,10 @@ namespace Dingo
 		// are NOT ordered by creation (the view order decides), so give overlapping UI elements
 		// distinct z values.
 		using Internal::SceneData;
-		auto sprites = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
-		auto circles = m_Data->Registry.view<TransformComponent, CircleRendererComponent>();
-		auto texts = m_Data->Registry.view<TransformComponent, TextComponent>();
+		const auto inactive = entt::exclude<Internal::InactiveComponent>;
+		auto sprites = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>(inactive);
+		auto circles = m_Data->Registry.view<TransformComponent, CircleRendererComponent>(inactive);
+		auto texts = m_Data->Registry.view<TransformComponent, TextComponent>(inactive);
 
 		// The world pose is resolved once per entity and kept with its sort key, so the sort goes
 		// back to the registry for nothing. The buffer is a member so a steady-state frame does no
@@ -509,7 +580,7 @@ namespace Dingo
 		TrackSkinnedView(*m_Data, renderer);
 
 		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
-		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
+		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
 		for (entt::entity entity : view)
 		{
 			auto [transform, mesh] = view.get<Transform3DComponent, MeshRendererComponent>(entity);
@@ -531,7 +602,7 @@ namespace Dingo
 		if (bake)
 			m_Data->StaticMeshes.Submit(*bake, renderer);
 
-		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
+		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
 		for (entt::entity entity : skinnedView)
 		{
 			auto [transform, skinned] = skinnedView.get<Transform3DComponent, SkinnedMeshRendererComponent>(entity);
@@ -621,7 +692,9 @@ namespace Dingo
 		const entt::registry& registry = m_Data->Registry;
 		const entt::entity handle = static_cast<entt::entity>(light.m_Handle);
 		float attenuation = 0.0f;
-		if (registry.all_of<DirectionalLightComponent>(handle))
+		if (Internal::HierarchySystem::IsInactive(registry, handle))
+			attenuation = 0.0f;
+		else if (registry.all_of<DirectionalLightComponent>(handle))
 		{
 			attenuation = 1.0f;
 		}
@@ -695,7 +768,7 @@ namespace Dingo
 
 		// Start every PlayOnStart source now that scripts have had a chance to set up
 		// (and, for a spatialized source, after any script-driven initial placement).
-		auto sourceView = m_Data->Registry.view<AudioSourceComponent>();
+		auto sourceView = m_Data->Registry.view<AudioSourceComponent>(entt::exclude<Internal::InactiveComponent>);
 		for (entt::entity handle : sourceView)
 		{
 			AudioSourceComponent& source = sourceView.get<AudioSourceComponent>(handle);
@@ -879,6 +952,12 @@ namespace Dingo
 	{
 		if (!IsValid(entity))
 			return;
+
+		if (Internal::HierarchySystem::IsInactive(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle)))
+		{
+			DE_CORE_WARN("PlayAudioSource: '{}' is inactive, so its source doesn't play", entity.GetName());
+			return;
+		}
 
 		Internal::AudioSync::PlaySource(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
