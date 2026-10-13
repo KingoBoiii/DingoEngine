@@ -91,9 +91,8 @@ namespace Dingo
 
 		// A change rebuilds the material's cached pipelines at its next draw, so avoid swapping a
 		// slot every frame. A texture created at a freed one's address is noticed at the next draw
-		// (Texture::GetGeneration), but don't draw the material while a slot holds a freed texture.
-		// Samplers are told apart by pointer only: when a slot's sampler is freed, clear the slot
-		// before putting a new sampler in it, which may reuse the freed address.
+		// (Texture::GetGeneration), and a sampler at the next SetSampler (Sampler::GetId), but don't
+		// draw the material while a slot holds a freed texture or sampler.
 		void SetTexture(uint32_t slot, Texture* texture);
 		void SetSampler(uint32_t slot, Sampler* sampler);
 
@@ -190,6 +189,7 @@ namespace Dingo
 
 		Texture* m_Textures[k_MaxTextureSlots] = {};
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
+		uint64_t m_SamplerIds[k_MaxSamplerSlots] = {};
 		uint64_t m_BindingRevision = 0;
 
 		std::vector<uint8_t> m_UniformCPUData;

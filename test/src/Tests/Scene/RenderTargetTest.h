@@ -79,6 +79,9 @@ namespace Dingo
 		Framebuffer* m_ReusedTarget = nullptr;
 		Framebuffer* m_UploadTarget = nullptr;
 		Texture* m_UploadTexture = nullptr;
+		Framebuffer* m_SamplerSwapTarget = nullptr;
+		Texture* m_SamplerSwapTexture = nullptr;
+		Sampler* m_SamplerSwapSampler = nullptr;
 		Shader* m_FillShader = nullptr;
 		Shader* m_SampleShader = nullptr;
 		Shader* m_CompareShader = nullptr;
@@ -88,6 +91,7 @@ namespace Dingo
 		Material* m_CompareMaterial = nullptr;
 		Material* m_ResizeCopyMaterial = nullptr;
 		Material* m_UploadMaterial = nullptr;
+		Material* m_SamplerSwapMaterial = nullptr;
 		Sampler* m_CompareSampler = nullptr;
 
 		float m_Time = 0.0f;
