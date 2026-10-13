@@ -17,7 +17,7 @@ namespace
 		return glm::angleAxis(yawRadians, glm::vec3(0.0f, 1.0f, 0.0f));
 	}
 
-	constexpr const char* k_UiFontPath = "fonts/arialbd.ttf";
+	constexpr const char* k_UiFontPath = "fonts/Inter-Bold.ttf";
 	constexpr float k_MenuOrthoSize = 11.0f;
 
 	// Shared UI glue for the Menu/Win/Hud overlay scripts: font load, text entity creation

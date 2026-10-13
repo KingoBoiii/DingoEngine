@@ -5,7 +5,7 @@ namespace Dingo::Overlay
 
 	namespace
 	{
-		constexpr const char* k_FontPath = "fonts/arialbd.ttf";
+		constexpr const char* k_FontPath = "fonts/Inter-Bold.ttf";
 	}
 
 	Font* LoadFont(const char* who)

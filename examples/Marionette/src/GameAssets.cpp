@@ -21,7 +21,7 @@ namespace
 	constexpr const char* k_WinPath = "audio/win.wav";
 	constexpr const char* k_LosePath = "audio/lose.wav";
 	constexpr const char* k_CracklePath = "audio/brazier.wav";
-	constexpr const char* k_FontPath = "fonts/arialbd.ttf";
+	constexpr const char* k_FontPath = "fonts/Inter-Bold.ttf";
 
 	bool SameEvents(const std::vector<Dingo::AnimationClipEvent>& a, const std::vector<Dingo::AnimationClipEvent>& b)
 	{

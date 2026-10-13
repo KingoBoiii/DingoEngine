@@ -621,7 +621,7 @@ namespace Dingo
 
 	void HudScript::OnStart()
 	{
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		Scene& scene = GetScene();
 

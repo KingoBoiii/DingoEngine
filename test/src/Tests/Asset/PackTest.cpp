@@ -87,7 +87,7 @@ namespace Dingo
 		if (std::shared_ptr<AudioClip> clip = Application::Get().GetAudioEngine().LoadClip("audio/beep.wav"))
 			snapshot.ClipFrames = clip->GetFrameCount();
 
-		if (Font* font = Font::Create("fonts/arial.ttf"))
+		if (Font* font = Font::Create("fonts/Inter-Regular.ttf"))
 		{
 			snapshot.FontWidth = font->GetStringWidth("Packed: AaBbQq 0123", 1.0f);
 			DestroyAndDelete(font);

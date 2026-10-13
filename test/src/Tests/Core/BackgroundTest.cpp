@@ -29,7 +29,7 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		m_AppUpdateInBackground = Application::Get().IsUpdatingInBackground();
 		if (auto value = Application::Get().GetCommandLineArgs().Get("update-in-background"))

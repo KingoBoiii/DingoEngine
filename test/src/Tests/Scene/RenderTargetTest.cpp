@@ -181,7 +181,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		std::error_code error;
 		std::filesystem::create_directories(m_TempDirectory, error);
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		auto makeTarget = [](const char* name, int32_t width, int32_t height)
 		{

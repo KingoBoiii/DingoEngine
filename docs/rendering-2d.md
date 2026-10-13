@@ -89,7 +89,7 @@ r.DrawCircle(t, { 0.2f, 0.8f, 1.0f, 1.0f }, /*thickness*/ 1.0f, /*fade*/ 0.005f)
 Text uses an MSDF atlas, so it stays crisp at any scale. Load a font once, then draw:
 
 ```cpp
-Font* font = Font::Create("assets/fonts/arialbd.ttf");   // in OnAttach
+Font* font = Font::Create("fonts/Inter-Bold.ttf");   // in OnAttach
 ...
 r.DrawText("Score: 42", font, { x, y }, /*size*/ 0.5f, { .Color = { 1, 1, 1, 1 } });
 ```

@@ -92,7 +92,7 @@ handles instead of tracking raw pointers.
 ```cpp
 // Synchronous - Ready when the call returns:
 AssetHandle tex  = assets.Load("sprites/player.png");
-AssetHandle font = assets.Load("fonts/arialbd.ttf");
+AssetHandle font = assets.Load("fonts/Inter-Bold.ttf");
 
 Texture* texture = assets.GetTexture(tex);      // or assets.Get<Texture>(tex)
 Font*    hud     = assets.GetFont(font);

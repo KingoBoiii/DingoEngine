@@ -55,10 +55,10 @@ namespace Dingo
 		m_PipeTexture = Utils::LoadTextureOrFallback("sprites/pipe-green.png");
 		m_BirdTexture = Utils::LoadTextureOrFallback("sprites/yellowbird-midflap.png");
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 		if (!m_Font)
 		{
-			DE_ERROR("Flappy Bird: failed to load font 'fonts/arialbd.ttf'; on-screen text will not be rendered.");
+			DE_ERROR("Flappy Bird: failed to load font 'fonts/Inter-Bold.ttf'; on-screen text will not be rendered.");
 		}
 
 		// Ground aspect ratio

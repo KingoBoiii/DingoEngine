@@ -14,7 +14,7 @@ namespace Dingo
 
 	void GameLayer::OnAttach()
 	{
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		m_Scene = m_SceneManager.CreateScene("Dungeon");
 		m_Scene->SetClearColor(COLOR_BG);

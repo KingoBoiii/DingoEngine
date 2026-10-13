@@ -11,7 +11,7 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		AudioEngine& audio = Application::Get().GetAudioEngine();
 		m_MasterVolume = audio.GetMasterVolume();

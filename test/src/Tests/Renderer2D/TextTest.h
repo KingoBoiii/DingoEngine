@@ -18,7 +18,7 @@ namespace Dingo
 		virtual void Update(float deltaTime) override;
 
 	private:
-		Font* m_ArialFont = nullptr;
+		Font* m_Font = nullptr;
 	};
 
 }

@@ -52,7 +52,7 @@ namespace Dingo
 		m_EnemyTexHandle = assets.LoadAsync("sprites/enemy.png");
 		m_BulletTexHandle = assets.LoadAsync("sprites/bullet.png");
 		m_ShaderHandle = assets.LoadAsync("shaders/background.glsl");
-		m_FontHandle = assets.LoadAsync("fonts/arialbd.ttf");
+		m_FontHandle = assets.LoadAsync("fonts/Inter-Bold.ttf");
 		m_ShootClip = assets.LoadAsync("audio/shoot.wav");
 		m_DeathClip = assets.LoadAsync("audio/death.wav");
 		m_HitClip = assets.LoadAsync("audio/hit.wav");

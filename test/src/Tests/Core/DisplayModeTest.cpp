@@ -39,7 +39,7 @@ namespace Dingo
 	void DisplayModeTest::Initialize()
 	{
 		Renderer2DTest::Initialize();
-		m_Font = Font::Create("assets/fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		Window& window = Application::Get().GetWindow();
 		if (window.IsFullscreen())
