@@ -170,15 +170,14 @@ ran.
 
 **Phase 4 is done except [L26](#l26) and [L27](#l27)** (2026-10-08), one commit per item:
 
-- [L22](#l22) is its own workflow, `build-linux.yml`, on pushes **and pull requests** to master, so a GCC-only
-  break shows up before it lands. Its setup (build packages, LunarG's latest Linux SDK tarball, a static assimp
+- [L22](#l22) is its own workflow, `build-linux.yml`, on pushes to master, like the Windows build
+  (pull requests no longer run it). Its setup (build packages, LunarG's latest Linux SDK tarball, a static assimp
   6.0.4 and premake, the last three cached) is the composite action `.github/actions/setup-linux`, which the
   release job shares. Each of Debug, Release and Distribution (the Windows job's configurations; GCC only) builds every project and runs
   `scripts/ci/linux-smoke-test.sh` under Xvfb and llvmpipe with the SDK's validation layer. The script reads
   the test list from `TestLayer.cpp`, finds the examples itself, closes each app through `WM_DELETE_WINDOW`
   (`scripts/ci/close-windows.py`, since Ubuntu's xdotool predates `windowquit`), and fails on a non-zero exit,
-  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. A concurrency group
-  cancels a pull request's superseded runs. The old disabled job in `build-master.yml` is gone.
+  a hang, a `[FAIL]` line, a validation error, an ASan report or an spdlog `LOG ERROR`. The old disabled job in `build-master.yml` (now `build-windows.yml`) is gone.
 - [L23](#l23): the engine's Linux post-build step builds `build/dist/<cfg>/libDingoEngine.a`
   (`scripts/merge-static-libs.sh`, `ar -M` through numbered links, since MRI scripts can't quote paths with
   spaces). The release job ships it with `include/` and `glm/` for Debug, Release and Distribution, plus
@@ -927,52 +926,18 @@ case and example.
 ## Appendix A — Vulkan SDK components and assimp from source
 
 This is what the verification used in place of LunarG's tarball, plus the static assimp [L6](#l6) needs.
-Run it from the repository root.
+It is now [`scripts/build-linux-toolchain.sh`](scripts/build-linux-toolchain.sh), which Claude Code cloud
+sessions run from their SessionStart hook (`.claude/hooks/session-start.sh`).
 
-- It installs the SDK pieces into a prefix with the `include/` + `lib/` layout the premake scripts expect, so
-  set `VULKAN_SDK` to that prefix.
-- It builds assimp 6.0.4 into `vendor/assimp/lib/linux-x86_64/`. With LunarG's SDK installed, run only the
-  last part.
-- Validation layers aren't included. Install them separately.
+- It installs the SDK pieces into `<cache>/<versions>/vulkan` (default cache `~/.cache/dingo-toolchain`)
+  with the `include/` + `lib/` layout the premake scripts expect, so set `VULKAN_SDK` to that directory.
+- It builds assimp 6.0.4 into `<cache>/<versions>/assimp/libassimp.a`; copy it into
+  `vendor/assimp/lib/linux-x86_64/`. With LunarG's SDK installed, you only need that part.
+- A finished toolchain is reused, and its directory is printed as the script's last line. Changing a
+  version in the script builds a new one beside the old.
+- Validation layers aren't included. Install them separately (Ubuntu's `vulkan-validationlayers` works).
 - shaderc is `v2026.4`, the latest tag at the time, with the dependency versions its `DEPS` file pins.
 - It takes about 20 minutes on 4 cores, mostly shaderc and assimp.
-
-```bash
-#!/bin/bash
-# Run from the DingoEngine repository root.
-set -euo pipefail
-REPO=$PWD
-PREFIX=${PREFIX:-$HOME/vulkan-sdk-src/x86_64}
-TAG=vulkan-sdk-1.4.357.0
-mkdir -p "$PREFIX/include" "$PREFIX/lib" "$REPO/vendor/assimp/lib/linux-x86_64"
-cd "$(mktemp -d)"
-
-git clone -q --depth 1 -b $TAG https://github.com/KhronosGroup/Vulkan-Headers.git
-cmake -S Vulkan-Headers -B build-vh -G Ninja -DCMAKE_INSTALL_PREFIX="$PREFIX" -DVULKAN_HEADERS_ENABLE_MODULE=OFF
-cmake --install build-vh
-
-git clone -q --depth 1 -b $TAG https://github.com/KhronosGroup/SPIRV-Cross.git
-cmake -S SPIRV-Cross -B build-sc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-      -DCMAKE_INSTALL_PREFIX="$PREFIX" -DSPIRV_CROSS_SHARED=OFF -DSPIRV_CROSS_CLI=OFF -DSPIRV_CROSS_ENABLE_TESTS=OFF
-cmake --build build-sc
-cmake --install build-sc
-
-git clone -q --depth 1 -b v2026.4 https://github.com/google/shaderc.git
-(cd shaderc && ./utils/git-sync-deps)
-cmake -S shaderc -B build-shaderc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-      -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
-      -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON -DENABLE_GLSLANG_BINARIES=OFF -DSPIRV_TOOLS_BUILD_STATIC=ON
-cmake --build build-shaderc --target shaderc_combined
-cp -r shaderc/libshaderc/include/shaderc "$PREFIX/include/"
-cp build-shaderc/libshaderc/libshaderc_combined.a "$PREFIX/lib/"
-
-# assimp: the same version as the Windows binaries in vendor/assimp, whose headers it shares.
-git clone -q --depth 1 -b v6.0.4 https://github.com/assimp/assimp.git
-cmake -S assimp -B build-assimp -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-      -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_TESTS=OFF -DASSIMP_BUILD_ASSIMP_TOOLS=OFF -DASSIMP_WARNINGS_AS_ERRORS=OFF
-cmake --build build-assimp
-cp build-assimp/lib/libassimp.a "$REPO/vendor/assimp/lib/linux-x86_64/"
-```
 
 <a id="appendix-b"></a>
 ## Appendix B — The verified patch

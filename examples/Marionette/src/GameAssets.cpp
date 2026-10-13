@@ -155,7 +155,7 @@ namespace Dingo
 			}
 
 			if (moved)
-				changes.push_back({ library->GetFilePath().stem().string() + ".events", differing });
+				changes.push_back({ FileSystem::PathToUtf8(library->GetFilePath().stem()) + ".events", differing });
 		}
 
 		if (!changes.empty())

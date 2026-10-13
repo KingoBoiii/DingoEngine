@@ -47,7 +47,7 @@ void main() {
 
 		m_UniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(CameraTransform));
 
-		m_Texture = Texture::CreateFromFile("assets/textures/container.jpg", "Wooden container");
+		m_Texture = Texture::CreateFromFile("textures/container.jpg", "Wooden container");
 
 		m_Shader = Shader::CreateFromSource("Texture Shader", ShaderSource);
 

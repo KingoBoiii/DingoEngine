@@ -2,12 +2,13 @@
 # Usage: scripts/ci/linux-smoke-test.sh <Debug|Debug-ASan|Release|Distribution>
 #
 # Runs every Dingo-TestFramework case, every example and Marionette's --check from an existing
-# build, each from its own source directory. Apps that don't exit by themselves are closed after
-# SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so teardown runs too. A run fails on a
-# non-zero exit, a hang, a [FAIL] self-check, a Vulkan validation error, an AddressSanitizer
-# report or an spdlog LOG ERROR. A hung app's thread stacks are dumped with gdb (through sudo -n
-# when ptrace is restricted) before it is killed. Needs an X display (DISPLAY) and python3-xlib;
-# logs go to build/smoke/<config>/.
+# build, each from its own source directory, then Marionette's --check and Candlewick packed (a
+# copy of the executable beside its .dpak, started from elsewhere). Apps that don't exit by
+# themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so teardown
+# runs too. A run fails on a non-zero exit, a hang, a [FAIL] self-check, a Vulkan validation
+# error, an AddressSanitizer report or an spdlog LOG ERROR. A hung app's thread stacks are dumped
+# with gdb (through sudo -n when ptrace is restricted) before it is killed. Needs an X display
+# (DISPLAY) and python3-xlib; logs go to build/smoke/<config>/.
 set -uo pipefail
 
 CONFIG=${1:?usage: $0 <Debug|Debug-ASan|Release|Distribution>}
@@ -68,6 +69,7 @@ run() {
 	grep -qE 'Validation Error|VUID-' "$log" && problems+=" validation-errors=$(grep -cE 'Validation Error|VUID-' "$log")"
 	grep -q 'ERROR: AddressSanitizer' "$log" && problems+=" asan"
 	grep -q 'LOG ERROR' "$log" && problems+=" log-error"
+	[[ -n ${REQUIRE:-} ]] && ! grep -qF "$REQUIRE" "$log" && problems+=" missing=\"$REQUIRE\""
 
 	local passed
 	passed=$(grep -c '\[PASS\]' "$log")
@@ -101,5 +103,18 @@ done
 
 run "marionette-check" "$ROOT/examples/Marionette" "$BIN/Marionette/Marionette" --check
 
-echo "${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check: $failures failed"
+# Shipped the way a release ships them: a copy of the executable beside its encrypted .dpak, no
+# assets/ anywhere, started from another directory.
+packed=$(mktemp -d)
+trap 'rm -rf "$packed"' EXIT
+mkdir -p "$packed/cwd"
+for example in Marionette Candlewick; do
+	mkdir -p "$packed/$example"
+	cp "$BIN/$example/$example" "$packed/$example/"
+	"$ROOT/scripts/pack-assets.sh" "$example" "$packed/$example/$example.dpak" "$CONFIG" > /dev/null
+done
+REQUIRE="mounted package 'Marionette.dpak'" run "packed-marionette-check" "$packed/cwd" "$packed/Marionette/Marionette" --check
+REQUIRE="mounted package 'Candlewick.dpak'" run "packed-candlewick" "$packed/cwd" "$packed/Candlewick/Candlewick"
+
+echo "${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check, packed Marionette --check and Candlewick: $failures failed"
 exit $((failures > 0))

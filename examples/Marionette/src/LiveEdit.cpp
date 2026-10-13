@@ -122,14 +122,14 @@ namespace Dingo
 
 		if (!IsPlain(root.parent_path()) || !IsPlain(root))
 		{
-			DE_ERROR("[LiveEdit] '{}' or '{}' is a link, or cannot be resolved; refusing to delete through it", root.parent_path().string(), root.string());
+			DE_ERROR("[LiveEdit] '{}' or '{}' is a link, or cannot be resolved; refusing to delete through it", FileSystem::PathToUtf8(root.parent_path()), FileSystem::PathToUtf8(root));
 			return false;
 		}
 
 		std::error_code error;
 		if (!std::filesystem::is_directory(source, error) || Overlaps(root, source))
 		{
-			DE_ERROR("[LiveEdit] '{}' is not a directory apart from the copy '{}' (neither may contain the other); refusing to replace the copy", source.string(), root.string());
+			DE_ERROR("[LiveEdit] '{}' is not a directory apart from the copy '{}' (neither may contain the other); refusing to replace the copy", FileSystem::PathToUtf8(source), FileSystem::PathToUtf8(root));
 			return false;
 		}
 
@@ -140,12 +140,12 @@ namespace Dingo
 			std::filesystem::copy(source, root, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, error);
 		if (error)
 		{
-			DE_ERROR("[LiveEdit] couldn't copy '{}' to '{}': {}", source.string(), root.string(), error.message());
+			DE_ERROR("[LiveEdit] couldn't copy '{}' to '{}': {}", FileSystem::PathToUtf8(source), FileSystem::PathToUtf8(root), error.message());
 			return false;
 		}
 
 		s_Prepared = true;
-		DE_INFO("[LiveEdit] reading the assets from the copy in '{}'; the repository's own are never written", root.string());
+		DE_INFO("[LiveEdit] reading the assets from the copy in '{}'; the repository's own are never written", FileSystem::PathToUtf8(root));
 		return true;
 	}
 
@@ -199,7 +199,7 @@ namespace Dingo
 		const std::filesystem::path live = GetLiveEditRoot();
 		if (live.empty() || !Within(file, live) || !Within(Application::Get().GetAssetManager().GetRootDirectory(), live))
 		{
-			DE_ERROR("[LiveEdit] the game is not reading the copy in the temp directory ('{}'), so nothing is written", file.string());
+			DE_ERROR("[LiveEdit] the game is not reading the copy in the temp directory ('{}'), so nothing is written", FileSystem::PathToUtf8(file));
 			return;
 		}
 
@@ -223,7 +223,7 @@ namespace Dingo
 		const float end = hitbox->End + shift;
 		if (!ReplaceRange(text, k_Clip, Events::HITBOX, std::format("{:.2f}..{:.2f}", begin, end)))
 		{
-			DE_ERROR("[LiveEdit] {} has no {} {} line to rewrite", file.string(), k_Clip, Events::HITBOX);
+			DE_ERROR("[LiveEdit] {} has no {} {} line to rewrite", FileSystem::PathToUtf8(file), k_Clip, Events::HITBOX);
 			return;
 		}
 
@@ -239,7 +239,7 @@ namespace Dingo
 			movedCombo = ReplaceRange(text, k_Clip, Events::COMBO, std::format("{:.2f}..{:.2f}", comboBegin, comboEnd));
 			if (!movedCombo)
 			{
-				DE_WARN("[LiveEdit] {} has no {} {} line to move with the hitbox", file.string(), k_Clip, Events::COMBO);
+				DE_WARN("[LiveEdit] {} has no {} {} line to move with the hitbox", FileSystem::PathToUtf8(file), k_Clip, Events::COMBO);
 			}
 		}
 
@@ -252,7 +252,7 @@ namespace Dingo
 			out.close();
 			if (!out)
 			{
-				DE_ERROR("[LiveEdit] couldn't write '{}'", scratch.string());
+				DE_ERROR("[LiveEdit] couldn't write '{}'", FileSystem::PathToUtf8(scratch));
 				std::filesystem::remove(scratch, error);
 				return;
 			}
@@ -261,7 +261,7 @@ namespace Dingo
 		std::filesystem::rename(scratch, file, error);
 		if (error)
 		{
-			DE_ERROR("[LiveEdit] couldn't replace '{}' with the edit: {}", file.string(), error.message());
+			DE_ERROR("[LiveEdit] couldn't replace '{}' with the edit: {}", FileSystem::PathToUtf8(file), error.message());
 			std::filesystem::remove(scratch, error);
 			return;
 		}
@@ -274,7 +274,7 @@ namespace Dingo
 		m_WrittenAt = std::chrono::steady_clock::now();
 		m_Stage = Stage::Written;
 		DE_INFO("[LiveEdit] wrote hitbox {:.2f}..{:.2f} -> {:.2f}..{:.2f}{} ({} in '{}')", hitbox->Begin, hitbox->End, begin, end,
-			movedCombo ? std::format(", combo {:.2f}..{:.2f} -> {:.2f}..{:.2f}", combo->Begin, combo->End, comboBegin, comboEnd) : std::string(), k_Clip, file.string());
+			movedCombo ? std::format(", combo {:.2f}..{:.2f} -> {:.2f}..{:.2f}", combo->Begin, combo->End, comboBegin, comboEnd) : std::string(), k_Clip, FileSystem::PathToUtf8(file));
 	}
 
 	void LiveEditDemo::OnReload()
@@ -331,7 +331,7 @@ namespace Dingo
 		const std::filesystem::path folder = root.parent_path();
 		if (root.empty() || !root.is_absolute() || root.filename() != "assets" || folder.filename() != k_Folder || !IsPlain(folder) || !IsPlain(root))
 		{
-			DE_ERROR("[LiveEdit] '{}' is not the folder this run copied the assets into; leaving it alone", folder.string());
+			DE_ERROR("[LiveEdit] '{}' is not the folder this run copied the assets into; leaving it alone", FileSystem::PathToUtf8(folder));
 			return;
 		}
 
@@ -339,11 +339,11 @@ namespace Dingo
 		std::filesystem::remove_all(folder, error);
 		if (error)
 		{
-			DE_WARN("[LiveEdit] couldn't remove the copy in '{}': {}", folder.string(), error.message());
+			DE_WARN("[LiveEdit] couldn't remove the copy in '{}': {}", FileSystem::PathToUtf8(folder), error.message());
 		}
 		else
 		{
-			DE_INFO("[LiveEdit] removed the copy in '{}'", folder.string());
+			DE_INFO("[LiveEdit] removed the copy in '{}'", FileSystem::PathToUtf8(folder));
 		}
 	}
 

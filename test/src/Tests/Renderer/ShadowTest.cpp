@@ -14,7 +14,7 @@ namespace Dingo
 
 	namespace
 	{
-		constexpr const char* k_FoxPath = "assets/models/Fox/Fox.gltf";
+		constexpr const char* k_FoxPath = "models/Fox/Fox.gltf";
 		constexpr float k_FoxLength = 1.6f;
 
 		const glm::vec3 k_SunDirection = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));

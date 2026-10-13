@@ -45,3 +45,4 @@ project "Marionette"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
+	embedPackKey()

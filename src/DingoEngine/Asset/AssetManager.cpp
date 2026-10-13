@@ -1,10 +1,13 @@
 #include "depch.h"
 #include "DingoEngine/Asset/AssetManager.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include "DingoEngine/Asset/AssetManagerData.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/Platform.h"
+#include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Model.h"
@@ -21,12 +24,6 @@ namespace Dingo
 	using Internal::AsyncJob;
 	using Internal::AsyncResult;
 	using Internal::CompanionWatch;
-
-	// A copy rather than a route through Application::GetAssetManager(), which dereferences a
-	// pointer that is still null while the Application constructor runs. Written on the main
-	// thread only; the loader thread calls the raw factories with absolute paths, which
-	// ResolveRawAssetPath returns before reading this.
-	static std::filesystem::path s_RawAssetRoot;
 
 	struct UnmanagedShaderWatch
 	{
@@ -46,16 +43,7 @@ namespace Dingo
 		{
 			if (path.empty() || path.is_absolute())
 				return path;
-
-			if (s_RawAssetRoot.empty())
-				return path;
-
-			std::error_code ec;
-			const std::filesystem::path candidate = (s_RawAssetRoot / path).lexically_normal();
-			if (std::filesystem::exists(candidate, ec) && !ec)
-				return candidate;
-
-			return path;
+			return VirtualFileSystem::GetVirtualPath(path);
 		}
 
 	}
@@ -67,7 +55,7 @@ namespace Dingo
 		// .cache/fonts/...), so path separators must not survive into them.
 		static std::string SanitizeAssetName(const std::filesystem::path& relativePath)
 		{
-			std::string name = relativePath.generic_string();
+			std::string name = Internal::PathToGenericUtf8(relativePath);
 			for (char& c : name)
 			{
 				if (c == '/' || c == '\\' || c == ':')
@@ -103,11 +91,11 @@ namespace Dingo
 #endif
 		}
 
+		// A packed file has no write time and reads as the epoch, like a missing one, so hot reload
+		// never fires for it.
 		static std::filesystem::file_time_type ReadWriteTime(const std::filesystem::path& path)
 		{
-			std::error_code ec;
-			const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, ec);
-			return ec ? std::filesystem::file_time_type{} : writeTime;
+			return VirtualFileSystem::GetWriteTime(path).value_or(std::filesystem::file_time_type{});
 		}
 
 		static void StampWriteTime(AssetMetadata& metadata, const std::filesystem::path& absolutePath)
@@ -258,7 +246,7 @@ namespace Dingo
 				.Type = AssetType::Texture2D,
 				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
 				{
-					Texture* texture = Texture::CreateFromFile(metadata.AbsolutePath, metadata.FilePath.generic_string());
+					Texture* texture = Texture::CreateFromFile(metadata.AbsolutePath, Internal::PathToGenericUtf8(metadata.FilePath));
 					if (!texture)
 						return false;
 
@@ -276,11 +264,11 @@ namespace Dingo
 					if (!pixels)
 					{
 						// Keep serving the currently loaded image, as a failed hot-reload does.
-						DE_CORE_ERROR("AssetManager: reload failed for Texture2D '{}' - keeping the loaded version.", metadata.FilePath.generic_string());
+						DE_CORE_ERROR("AssetManager: reload failed for Texture2D '{}' - keeping the loaded version.", Internal::PathToGenericUtf8(metadata.FilePath));
 						return RefreshResult::KeptPrevious;
 					}
 
-					it->second->Reinitialize(Utils::MakeTextureParams(metadata.FilePath.generic_string(), width, height, channels, pixels));
+					it->second->Reinitialize(Utils::MakeTextureParams(Internal::PathToGenericUtf8(metadata.FilePath), width, height, channels, pixels));
 					FileSystem::FreeImage(pixels);
 					return RefreshResult::Refreshed;
 				},
@@ -366,7 +354,7 @@ namespace Dingo
 					// Model::Reload has logged why the file didn't load.
 					if (!it->second->Reload())
 					{
-						DE_CORE_WARN("AssetManager: keeping the loaded version of Model '{}'.", metadata.FilePath.generic_string());
+						DE_CORE_WARN("AssetManager: keeping the loaded version of Model '{}'.", Internal::PathToGenericUtf8(metadata.FilePath));
 						return RefreshResult::KeptPrevious;
 					}
 					return RefreshResult::Refreshed;
@@ -449,20 +437,20 @@ namespace Dingo
 	// folded back to its relative spelling so both spellings share one registration.
 	static std::filesystem::path NormalizeRelativePath(const AssetManagerData& data, const std::filesystem::path& path)
 	{
-		std::string generic = path.lexically_normal().generic_string();
-		const std::string root = data.RootDirectory.generic_string();
+		std::string generic = Internal::PathToGenericUtf8(path.lexically_normal());
+		const std::string root = Internal::PathToGenericUtf8(data.RootDirectory);
 
 		if (Utils::PathPrefixMatches(generic, root))
 			generic.erase(0, root.size() + 1);
 
-		return std::filesystem::path(generic);
+		return std::filesystem::path(std::u8string(generic.begin(), generic.end()));
 	}
 
 	// The canonical registry/lookup key for a path: the relative form above, case-folded on
 	// filesystems that ignore case.
 	static std::string NormalizePathKey(const AssetManagerData& data, const std::filesystem::path& path)
 	{
-		return Utils::FoldPathCase(NormalizeRelativePath(data, path).generic_string());
+		return Utils::FoldPathCase(Internal::PathToGenericUtf8(NormalizeRelativePath(data, path)));
 	}
 
 	static void StampCompanion(AssetManagerData& data, const AssetMetadata& metadata)
@@ -529,7 +517,7 @@ namespace Dingo
 			return true;
 		}
 
-		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", AssetTypeToString(metadata.Type), metadata.AbsolutePath.string());
+		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", AssetTypeToString(metadata.Type), Internal::PathToUtf8(metadata.AbsolutePath));
 		metadata.State = AssetState::Failed;
 		return false;
 	}
@@ -543,7 +531,7 @@ namespace Dingo
 		const AssetMetadata& metadata = data.Registry.at(handle);
 		if (metadata.Type != AssetType::Model)
 		{
-			DE_CORE_WARN("AssetManager: ModelLoadParams ignored for {} '{}'.", AssetTypeToString(metadata.Type), metadata.FilePath.generic_string());
+			DE_CORE_WARN("AssetManager: ModelLoadParams ignored for {} '{}'.", AssetTypeToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
 			return true;
 		}
 
@@ -555,7 +543,7 @@ namespace Dingo
 		if (metadata.State != AssetState::Unloaded && metadata.State != AssetState::Failed)
 		{
 			DE_CORE_WARN("AssetManager: Model '{}' is already loaded with other ModelLoadParams, which it keeps; Remove it first to change them.",
-				metadata.FilePath.generic_string());
+				Internal::PathToGenericUtf8(metadata.FilePath));
 			return true;
 		}
 
@@ -603,7 +591,7 @@ namespace Dingo
 		job.Handle = metadata.Handle;
 		job.Type = metadata.Type;
 		job.AbsolutePath = metadata.AbsolutePath;
-		job.DebugName = metadata.FilePath.generic_string();
+		job.DebugName = Internal::PathToGenericUtf8(metadata.FilePath);
 		job.IsReload = isReload;
 		{
 			std::scoped_lock lock(data.JobMutex);
@@ -743,11 +731,11 @@ namespace Dingo
 				continue;
 
 			if (recovering)
-				DE_CORE_INFO("AssetManager: retrying failed {} '{}' - the file changed on disk.", AssetTypeToString(metadata.Type), metadata.FilePath.generic_string());
+				DE_CORE_INFO("AssetManager: retrying failed {} '{}' - the file changed on disk.", AssetTypeToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
 			else if (changed)
-				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", metadata.FilePath.generic_string());
+				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", Internal::PathToGenericUtf8(metadata.FilePath));
 			else
-				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading '{}'.", data.Companions.at(metadata.Handle).Path.filename().generic_string(), metadata.FilePath.generic_string());
+				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading '{}'.", Internal::PathToGenericUtf8(data.Companions.at(metadata.Handle).Path.filename()), Internal::PathToGenericUtf8(metadata.FilePath));
 
 			const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 			if (policy.Decode)
@@ -780,7 +768,7 @@ namespace Dingo
 			if (!Utils::ConsumeSettledWrite(watch.Target, path, watch.LastWriteTime, watch.PendingWriteTime))
 				continue;
 
-			DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", path.generic_string());
+			DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", Internal::PathToGenericUtf8(path));
 			watch.Target->Reload();
 		}
 	}
@@ -833,12 +821,32 @@ namespace Dingo
 			root = root.parent_path();
 		data.RootDirectory = std::move(root);
 
-		if (!std::filesystem::exists(data.RootDirectory))
-			DE_CORE_WARN("AssetManager: asset root '{}' does not exist - loads will fail until it does.", data.RootDirectory.string());
-		else
-			DE_CORE_INFO("AssetManager: asset root '{}'.", data.RootDirectory.string());
+		VirtualFileSystem::SetRoot(data.RootDirectory);
 
-		s_RawAssetRoot = data.RootDirectory;
+		std::error_code ec;
+		std::filesystem::path package;
+		if (data.Params.AutoUnpackage)
+		{
+			package = Platform::GetExecutableDirectory() / Platform::GetExecutablePath().stem();
+			package += ".dpak";
+			if (!std::filesystem::is_regular_file(package, ec))
+				package.clear();
+		}
+
+		if (package.empty() || data.Params.AllowLooseFiles)
+			data.RootMount = VirtualFileSystem::MountDirectory(data.RootDirectory);
+
+		if (!package.empty())
+		{
+			if (Unpackage(package, data.Params.PackageKey) == k_InvalidPackage)
+				DE_CORE_ERROR("AssetManager: the game's package '{}' didn't open - packed assets will fail to load.", Internal::PathToGenericUtf8(package));
+			else if (data.RootMount == k_InvalidVfsMount)
+				DE_CORE_INFO("AssetManager: loose files under '{}' are not read (AssetManagerParams::AllowLooseFiles).", Internal::PathToGenericUtf8(data.RootDirectory));
+		}
+		else if (!std::filesystem::is_directory(data.RootDirectory, ec) && VirtualFileSystem::GetMountCount() <= 1)
+			DE_CORE_WARN("AssetManager: asset root '{}' does not exist - loads will fail until it does.", Internal::PathToUtf8(data.RootDirectory));
+		else
+			DE_CORE_INFO("AssetManager: asset root '{}'.", Internal::PathToUtf8(data.RootDirectory));
 
 		data.Worker = std::thread(WorkerLoop, std::ref(data));
 	}
@@ -859,7 +867,16 @@ namespace Dingo
 			data.StopWorker = false;
 		}
 
-		s_RawAssetRoot.clear();
+		for (auto& [handle, package] : data.Packages)
+			VirtualFileSystem::Unmount(package.Mount);
+		data.Packages.clear();
+
+		if (data.RootMount != k_InvalidVfsMount)
+		{
+			VirtualFileSystem::Unmount(data.RootMount);
+			data.RootMount = k_InvalidVfsMount;
+		}
+		VirtualFileSystem::SetRoot({});
 
 		// Free payloads that completed but were never finalized.
 		for (AsyncResult& result : data.Results)
@@ -896,7 +913,7 @@ namespace Dingo
 		const AssetType type = AssetTypeFromExtension(path.extension());
 		if (type == AssetType::None)
 		{
-			DE_CORE_ERROR("AssetManager: cannot import '{}' - unrecognized extension '{}'.", path.string(), path.extension().string());
+			DE_CORE_ERROR("AssetManager: cannot import '{}' - unrecognized extension '{}'.", Internal::PathToUtf8(path), Internal::PathToUtf8(path.extension()));
 			return k_InvalidAsset;
 		}
 
@@ -995,7 +1012,7 @@ namespace Dingo
 		// it publishes the file as it stands on disk anyway, which is what a reload wants.
 		if (metadata.State == AssetState::Queued || metadata.State == AssetState::Loading || metadata.State == AssetState::Reloading)
 		{
-			DE_CORE_WARN("AssetManager: Reload ignored for '{}' - a load is already in flight.", metadata.FilePath.generic_string());
+			DE_CORE_WARN("AssetManager: Reload ignored for '{}' - a load is already in flight.", Internal::PathToGenericUtf8(metadata.FilePath));
 			return IsReady(handle);
 		}
 

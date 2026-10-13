@@ -1,4 +1,5 @@
 #include <DingoEngine/EntryPoint.h>
+#include <DingoPackKey.h>
 
 #include "GameLayer.h"
 
@@ -53,6 +54,7 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.FramesInFlight = 3,
 		},
 		.Assets = AssetManagerParams()
+			.SetPackageKey(Dingo::Generated::GetPackageKey())
 			.SetRootDirectory("assets")
 			.SetEnableHotReload(true),
 		.EnableUI = false,

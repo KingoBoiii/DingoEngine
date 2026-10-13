@@ -2,8 +2,10 @@
 # Usage: scripts/package-linux-programs.sh <Config> <output dir> [name suffix]
 #
 # Packs each example and the test framework of an existing build into
-# <output dir>/<Program>[-suffix]-linux-x86_64.tar.gz, holding <Program>/ with the executable
-# beside its assets/, which is where it must be started from.
+# <output dir>/<Program>[-suffix]-linux-x86_64.tar.gz, holding <Program>/. An example ships its
+# executable beside <Program>.dpak (its assets, packed and encrypted with its dpak.key) and the
+# licence files at the root of its assets, and starts from any directory. The test framework, a
+# development tool, keeps its loose assets/ and must be started from its own directory.
 set -euo pipefail
 
 CONFIG=${1:?usage: $0 <Config> <output dir> [name suffix]}
@@ -16,15 +18,20 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$OUT"
 
-pack() {
-	local program=$1 source=$2; shift 2
-	mkdir -p "$work/$program"
-	cp "$BIN/$program/$program" "$work/$program/"
-	cp -r "$source/assets" "$@" "$work/$program/"
-	tar -czf "$OUT/$program$SUFFIX-linux-x86_64.tar.gz" -C "$work" "$program"
+archive() {
+	tar -czf "$OUT/$1$SUFFIX-linux-x86_64.tar.gz" -C "$work" "$1"
 }
 
 for dir in "$ROOT"/examples/*/; do
-	pack "$(basename "$dir")" "$dir"
+	program=$(basename "$dir")
+	mkdir -p "$work/$program"
+	cp "$BIN/$program/$program" "$work/$program/"
+	"$ROOT/scripts/pack-assets.sh" "$program" "$work/$program/$program.dpak" "$CONFIG" > /dev/null
+	find "$dir/assets" -maxdepth 1 -type f -iname '*licen[cs]e*' -exec cp {} "$work/$program/" \;
+	archive "$program"
 done
-pack Dingo-TestFramework "$ROOT/test" "$ROOT/test/imgui.ini"
+
+mkdir -p "$work/Dingo-TestFramework"
+cp "$BIN/Dingo-TestFramework/Dingo-TestFramework" "$work/Dingo-TestFramework/"
+cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$work/Dingo-TestFramework/"
+archive Dingo-TestFramework
