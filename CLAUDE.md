@@ -46,19 +46,33 @@ Keep it to the smallest check that proves the change. CI runs the full Linux smo
 
 ## Sub-agent selection
 
-| Need | Use |
-|---|---|
-| Find where something lives across many files (call sites, every reader of a component, every place a format is written) | `Explore` (say "medium" or "very thorough") |
-| One known file, symbol or string | No agent: `Grep`/`Read` directly |
-| Design a phase or a multi-file change before writing it | `Plan`, then record the result in the plan file |
-| Independent fixes that touch different files | `general-purpose`, one per fix, in parallel, with `isolation: "worktree"` |
-| Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) |
-| Questions about Claude Code, hooks, skills, the API | `claude-code-guide` |
+The main session runs Opus at high effort (`.claude/settings.json`) and orchestrates. Each agent call sets `model` and `effort` from this table:
 
-- Give each agent a self-contained prompt: the goal, the files involved, the rule that applies from this file or a reference file, and what to return (a conclusion and `file:line`s, not file dumps).
+| Need | Agent | Model | Effort |
+|---|---|---|---|
+| One known file, symbol or string | No agent: `Grep`/`Read` directly | | |
+| Find where something lives across many files (call sites, every reader of a component, every place a format is written) | `Explore` ("medium" or "very thorough") | `haiku` | `low` |
+| Mechanical sweeps: check docs against code, update every reference to a renamed API, fill a test case from a clear spec | `general-purpose` | `sonnet` | `medium` |
+| Implement a well-specified, contained change (one issue, one phase step, a test, an example's game code) | `general-purpose`, one per change, parallel with `isolation: "worktree"` when the files don't overlap | `sonnet` | `high` |
+| Implement engine-core changes: render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals | `general-purpose` | `opus` | `high` |
+| Design a phase or a multi-file change before writing it | `Plan`, result recorded in the plan file | `opus` | `high` |
+| Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) | `opus` | `high` (`xhigh` for renderer, threading or synchronisation diffs) |
+| Root-cause a hard bug (device lost, validation error, race, a wrong frame) | `general-purpose` | `opus` | `xhigh` |
+| Milestone review, or a bug Opus failed on twice | `general-purpose` | `fable` | `high`, only when the owner asks |
+| Questions about Claude Code, hooks, skills, the API | `claude-code-guide` | its default | |
+
+Why these picks (prices per million input/output tokens, October 2026):
+- **Haiku 5.5** ($0.10/$0.50, a fortieth of Opus) is for reading-heavy work that returns facts, not judgement. Never let it edit engine code or review.
+- **Sonnet 5.5** ($2/$10, half of Opus) is the practical model for everyday coding when the task is fully specified: the prompt names the files, the rule, and what done looks like.
+- **Opus 5.5** ($4/$20) is for judgement: design, review, and code where a subtle mistake only shows on a real GPU, which no session can check. For judgement work, lower Opus's effort before switching to a cheaper model.
+- **Fable 5.1** ($10/$50) costs 2.5 times Opus; it is the owner's call.
+- Judge cost per finished task: a cheaper agent whose work has to be redone or re-reviewed isn't cheaper. If a Sonnet agent's change fails review twice, redo it on Opus.
+
+Rules for every agent:
+- Give it a self-contained prompt: the goal, the files involved, the rule that applies from this file or a reference file, and what to return (a conclusion and `file:line`s, not file dumps).
 - Run agents in parallel only when their work doesn't overlap. Never let two agents edit the same file.
 - Don't delegate and then search the same thing yourself, and don't spawn an agent for a one-step lookup.
-- An agent's report isn't shown to the owner; relay what matters. Check an agent's claims about code before acting on them.
+- An agent's report isn't shown to the owner; relay what matters. Check an agent's claims about code before acting on them, and review code a `sonnet` agent wrote before it is committed.
 
 ## Code conventions
 

@@ -57,7 +57,7 @@ Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you 
 
 - Set the toolchain up per CLAUDE.md "Build and run" (sdk.lunarg.com is blocked; build the Vulkan SDK pieces and assimp from source per LINUX-SUPPORT.md Appendix A).
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".
-- Before committing, a **fresh sub-agent** (not the one that wrote the code) reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
+- Before committing, a **fresh sub-agent** (not the one that wrote the code; `opus`, effort per CLAUDE.md "Sub-agent selection") reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
 
 ## 6. Commits, pushes and hard rules
 
