@@ -481,6 +481,22 @@ namespace Dingo
 			ResolveSceneLights();
 		}
 		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && m_CameraData.CameraPosition.w > 0.5f;
+		if (m_Statistics.Fogged)
+		{
+			// Before ClearSceneLights drops the fog. A later unfogged scene of the same Begin leaves it,
+			// so the fogged scene's distant pixels never take AO.
+			PostProcessStack& post = Renderer::GetPostProcessStack();
+			if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+			{
+				Fog fog;
+				fog.Mode = static_cast<FogMode>(static_cast<int>(m_CameraData.FogParams.w + 0.5f));
+				fog.Start = m_CameraData.FogParams.x;
+				fog.End = m_CameraData.FogParams.y;
+				fog.Density = m_CameraData.FogParams.z;
+				fog.MaxOpacity = m_CameraData.FogColor.a;
+				post.SetAmbientOcclusionFog(fog);
+			}
+		}
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
 		{
 			DE_PROFILE_SCOPE("Renderer3D::PrepareSceneBounds");
