@@ -36,7 +36,7 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 ## Verifying changes
 
-Keep it to the smallest check that proves the change. CI (`build-linux.yml` with the full smoke test, `build-windows.yml`) runs only on pushes to master, so a PR gets no CI: these steps are its only Linux check before the owner runs the GPU backends.
+Keep it to the smallest check that proves the change. CI (`build-linux.yml` with the full smoke test, `build-windows.yml`) runs only on pushes to master. A PR gets only `lint.yml`, a syntax-only compile of its changed files with GCC and MSVC (warnings reported, never fatal), so these steps are its only build-and-run check before the owner runs the GPU backends.
 
 1. **Docs, comments, plans, CI or scripts that no build runs**: nothing to run. Don't set up the toolchain for them.
 2. **Code**: build Debug on Linux, only the projects you touched (the engine plus the test app or example that uses it). A change to a public header or a `premake5.lua` builds every project (`make -j"$(nproc)" config=debug`), since nothing else catches a broken example before merge. No warnings in files you changed.

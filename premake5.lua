@@ -5,6 +5,11 @@ newoption {
     description = "Compile the Tracy profiler into the engine (DE_PROFILE_* zones, GPU pass plots)"
 }
 
+newoption {
+    trigger = "lint",
+    description = "Syntax-only compiles with extra warnings and no PCH, for scripts/ci/lint-changed.sh"
+}
+
 workspace "DingoEngine"
     configurations { "Debug", "Debug-ASan", "Release", "Distribution" }
     startproject "Dingo-TestFramework"
@@ -30,6 +35,17 @@ workspace "DingoEngine"
     -- Workspace-wide so a game's own DE_PROFILE_* zones compile in too; Tracy itself is engine-only.
     if _OPTIONS["profile"] then
         defines { "DE_PROFILE" }
+    end
+
+    -- No PCH: a syntax-only compile never writes the .pch/.gch the other files would read.
+    if _OPTIONS["lint"] then
+        enablepch "Off"
+        warnings "Extra"
+        filter "action:vs*"
+            buildoptions { "/Zs" }
+        filter "action:gmake*"
+            buildoptions { "-fsyntax-only" }
+        filter {}
     end
 
     filter "action:vs*"
