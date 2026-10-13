@@ -482,7 +482,13 @@ namespace Dingo
 
 	void Scene::SubmitLights(Renderer3D& renderer, bool shadowProbes)
 	{
-		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr);
+		SubmitLights(renderer, Entity(), shadowProbes);
+	}
+
+	void Scene::SubmitLights(Renderer3D& renderer, Entity camera, bool shadowProbes)
+	{
+		const entt::entity cameraHandle = IsValid(camera) ? static_cast<entt::entity>(camera.m_Handle) : entt::null;
+		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr, cameraHandle);
 	}
 
 	// --- Camera -----------------------------------------------------------------

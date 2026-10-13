@@ -261,7 +261,10 @@ namespace Dingo
 	};
 
 	// Distance fog over the scene's 3D pass: Settings go to Renderer3D::SetFog as they are (see Fog in
-	// Graphics/Light.h). The first enabled one in entity order counts; more warn once. It is no light:
+	// Graphics/Light.h). One on the camera entity passed to Scene::SubmitLights (the SceneRenderer's
+	// perspective camera) fogs that camera's view; otherwise the first enabled one in entity order on
+	// an entity without a CameraComponent counts. One on another camera's entity fogs only a pass that
+	// names no camera, and only when there is no other. More than one candidate warns once. It is no light:
 	// a scene whose only light-like component is a FogComponent keeps the default light. With
 	// UseClearColor the fog takes the scene's clear colour (Scene::SetClearColor) in place of
 	// Settings.Color, so distant meshes fade into the background.
