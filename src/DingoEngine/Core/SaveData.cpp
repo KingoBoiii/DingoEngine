@@ -2,6 +2,7 @@
 #include "DingoEngine/Core/SaveData.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Platform.h"
+#include "DingoEngine/Core/PathText.h"
 
 #include <nlohmann/json.hpp>
 
@@ -586,7 +587,7 @@ namespace Dingo
 	{
 		if (Application::HasInstance())
 			return Application::Get().GetSaveDirectory();
-		return Platform::GetUserDataDir(Platform::GetExecutablePath().stem().string()) / "saves";
+		return Platform::GetUserDataDir(Internal::PathToUtf8(Platform::GetExecutablePath().stem())) / "saves";
 	}
 
 	bool SaveSlots::IsValidName(std::string_view slot)

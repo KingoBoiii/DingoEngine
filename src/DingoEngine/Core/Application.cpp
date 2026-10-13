@@ -8,6 +8,7 @@
 #include "DingoEngine/Core/LogLifecycle.h"
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/Platform.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/KeyCodes.h"
@@ -43,7 +44,7 @@ namespace Dingo
 		}
 
 		if (m_Params.Name.empty())
-			m_Params.Name = Platform::GetExecutablePath().stem().string();
+			m_Params.Name = Internal::PathToUtf8(Platform::GetExecutablePath().stem());
 
 		std::filesystem::path logDirectory = m_Params.LogDirectory;
 		if (auto directory = m_Params.CommandLineArgs.Get("log-dir"); directory && !directory->empty())

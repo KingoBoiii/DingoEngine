@@ -690,7 +690,8 @@ namespace Dingo
 		// Another thread's report finishes first; it ends the process.
 		BeginReport();
 
-		const std::string where = std::format("{}:{}", std::filesystem::path(location.file_name()).filename().string(), location.line());
+		const std::string_view file = location.file_name();
+		const std::string where = std::format("{}:{}", file.substr(file.find_last_of("/\\") + 1), location.line());
 		ReportFatal(std::format("Fatal error: {} ({})", message, where));
 
 		const std::filesystem::path& logFile = Log::GetFilePath();
