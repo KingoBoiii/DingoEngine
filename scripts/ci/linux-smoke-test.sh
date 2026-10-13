@@ -40,7 +40,7 @@ dump_threads() {
 	exe=$(readlink "/proc/$1/exe") || return 0
 	local gdb=(gdb)
 	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
-	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -400
+	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -400
 }
 
 # RUN_SECONDS, EXPECT_EXIT (default 0) and EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
