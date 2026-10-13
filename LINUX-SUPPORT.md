@@ -1,7 +1,15 @@
 # Linux Support
 
-What it takes to move DingoEngine from **Windows-only** to **supported on Linux**: what breaks, where,
-how to fix it, and how each fix was verified. Companion to [ROADMAP.md](ROADMAP.md), whose v1.0 milestone
+**Status (v1.0, 2026-10-13): Linux is supported, and has been since v0.9.1.** The engine, the test
+app and every example build and run on Linux (GCC 13, x86-64, X11 or XWayland), and `build-linux.yml`
+builds all four configurations on every push to master and smoke-tests each under Xvfb on llvmpipe,
+with AddressSanitizer in Debug-ASan. Phases 1-4 below are done. Two items stay open:
+[L26](#l26), a run on real GPUs and desktops, and [L27](#l27), native Wayland (optional). The rest of
+this page is the record of the port as it was planned and verified; its `file:line` anchors date
+from v0.8.2 and v0.8.3 and have drifted since.
+
+What it took to move DingoEngine from **Windows-only** to **supported on Linux**: what broke, where,
+how it was fixed, and how each fix was verified. Companion to [ROADMAP.md](ROADMAP.md), whose v1.0 milestone
 lists *"cross-platform validation (Linux + Vulkan)"*, and to the
 [known-bug issues](https://github.com/KingoBoiii/DingoEngine/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
 

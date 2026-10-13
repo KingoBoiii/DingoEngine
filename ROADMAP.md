@@ -416,13 +416,23 @@ game asks for it.
 the Linux smoke test, runs on the release's merge commit before it is tagged.
 
 ## v1.0 — Stability, Performance & Polish
+**Status**: in progress on `feat/v1` (PR [#147](https://github.com/KingoBoiii/DingoEngine/pull/147)),
+plan `.claude/plans/2026-10-08-v1.0-plan.md`. Done in the cloud, with GPU sign-offs pending:
+culling (P2), per-object surface overrides (P3), GPU instancing (P4), static geometry (P5), the
+skin palette arena and animation LOD (P6), per-user logs, the crash handler and unit tests (P7),
+`SaveData`, `Settings` and display modes (P8), the API pass with [versioning](docs/versioning.md)
+and [conventions](docs/conventions.md) (P9), third-party notices, the Inter font and executable
+metadata (P10), and the Doxygen reference and 1.0 guides (P11). Left: DingoUI, the review pass
+(P12), *Hearthvale* (P13), the run on real Linux hardware ([L26](LINUX-SUPPORT.md#l26)), a
+60-minute soak and the release candidate.
+
 Performance profiling (Optick or Tracy), full API documentation, cross-platform validation
 (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term
 maintainability. It also takes on the **renderer throughput work** that has been implied since v0.9
 was called "Advanced Rendering & Performance" but was never scheduled anywhere:
 
-- **The vertex budget**: `Renderer3D` CPU-transforms *every submitted vertex, every frame*
-  (`Renderer3D.cpp:276`), so the vertex count simply **is** the frame budget, and overflowing
+- **The vertex budget**: v0.9's `Renderer3D` CPU-transformed *every submitted vertex, every frame*
+  (`Renderer3D::SubmitMesh`), so the vertex count simply **is** the frame budget, and overflowing
   `MaxVertices` drops geometry. Persistent/static batching for never-moving geometry and **GPU
   instancing** for repeated meshes retire that. The draw-call plumbing already exists —
   `CommandList::Draw` takes an `instanceCount`, hardcoded to 1 — so the missing piece is persistent
