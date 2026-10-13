@@ -32,7 +32,7 @@ namespace
 
 	constexpr float k_CellSize = 2.0f;
 	// Floor tiles stop short of each other: tiles that touch share edges whose pixels both can cover
-	// at the same depth, and those go to whichever draws first, which culling and batching change.
+	// at the same depth, and those go to whichever draws first, which static batching changes.
 	constexpr float k_FloorTileSize = k_CellSize - 0.02f;
 	constexpr uint32_t k_RoomCells = 10;
 	constexpr float k_FloorChance = 0.45f;
