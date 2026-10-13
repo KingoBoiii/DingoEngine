@@ -35,13 +35,14 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 
 | Call | Effect |
 |---|---|
-| `AddComponent<T>(value)` | Attach a built-in component `T`. Returns `T&`. |
+| `AddComponent<T>(value)` | Attach a built-in component `T`. Returns `T&`. An entity that already has a `T` gets it replaced, with a warning. |
 | `GetComponent<T>()` | Reference to the entity's `T`. |
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
-| `AddScript<T>(args...)` | Attach a behaviour (see below). |
+| `AddScript<T>(args...)` | Attach a behaviour (see below). An entity holds one script: a second `AddScript` destroys the first, with a warning. |
+| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed at the end of the update). |
 | `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
-| `GetUUID()` / `GetName()` | The entity's id / name. |
+| `GetUUID()` / `GetName()` / `SetName(name)` (v1.0) | The entity's id / name; a null entity reads `UUID()` and `""`, and an empty name becomes `"Entity"`. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
 | `Destroy()` | Destroy this entity, its behaviour and its children. |
 | `SetActive(bool)` / `IsActive()` / `IsActiveInHierarchy()` (v1.0) | Switch the entity and its subtree off and on (see [Active and inactive entities](#active-and-inactive-entities-v10)). |
@@ -67,7 +68,7 @@ Every entity created via `CreateEntity` automatically gets a stable `UUID`, a na
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
 | `PostProcessComponent` (v0.9) | `PostProcessSettings Settings` (`Enabled`, false by default; `Tone`: operator, exposure, knee, white point; `Bloom`; `AmbientOcclusion`); on the primary perspective camera, the `SceneRenderer` runs the 3D pass through the post chain. See [Post-processing](post-processing.md) |
-| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)), `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — a sun |
+| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (deprecated, 0 by default, removed in 2.0: use an `AmbientLightComponent`), `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — a sun |
 | `ParticleEmitterComponent` (v0.9) | `ParticleEffect* Effect`, `bool Playing`, `float RateScale`, `bool WorldSpace` — GPU particles from the entity's world transform, stepped by `Scene::OnUpdate` and drawn by the `SceneRenderer`; `Scene::EmitParticles` / `EmitParticlesAt` fire bursts. See [Particles](particles.md) |
 | `ParticleEventComponent` (v0.9) | `Bindings` (`Bind(event, emitterUUID, count)`, `BindRange(event, emitterUUID)`) — the entity's animation events burst emitter entities or play them while a range is open. See [Particles](particles.md#from-animation-events) |
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
@@ -98,8 +99,7 @@ void GameLayer::OnAttach()
     cam.Type = CameraComponent::ProjectionType::Orthographic;
     cam.OrthographicSize = 20.0f;
 
-    m_Scenes.SetActiveScene("Game");   // select the active scene...
-    m_Game->OnStart();                 // ...and start it (see Lifecycle, under SceneManager)
+    m_Scenes.SetActiveScene("Game");   // activates and starts it (see Lifecycle, under SceneManager)
 }
 
 void GameLayer::OnUpdate(float dt)
@@ -195,7 +195,7 @@ ball.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic
 ball.AddComponent<SphereCollider3DComponent>();
 
 scene.SetGravity(glm::vec3{ 0.0f, -9.81f, 0.0f });   // vec3 overload → the 3D world
-scene.OnPhysicsStart();                              // builds a 3D world only if 3D bodies exist
+scene.OnStart();                                     // builds a 3D world only if 3D bodies exist
 ```
 
 `Scene::OnUpdate(dt)` steps whichever physics world(s) are live and writes simulated transforms
@@ -211,7 +211,8 @@ auto& camera = cam.AddComponent<CameraComponent>();
 camera.Type = CameraComponent::ProjectionType::Perspective;
 camera.FOV = 50.0f;                       // PerspNear/PerspFar default to 0.1 / 1000
 cam.AddComponent<Transform3DComponent>();
-scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>(); // defaults match the built-in light
+scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+scene->CreateEntity("Sky").AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.35f));
 
 // Each frame — drive the camera transform (the view is inverse(translate(P) * rotate(R))):
 auto& t = cam.GetComponent<Transform3DComponent>();
@@ -439,8 +440,9 @@ Things to know:
 - **Ambient is always set.** `Scene::SubmitLights` sets the scene's ambient every frame, even to
   black. A scene whose lights are all switched off therefore goes dark, and a scene lit only by
   point lights has no sun and no ambient until you add an `AmbientLightComponent`.
-- **Directional lights add up**, up to four (the first created), and so does each one's legacy `Ambient`. Set
-  `Ambient` to 0 to light the scene with `AmbientLightComponent` instead.
+- **Directional lights add up**, up to four (the first created). The deprecated `Ambient` field (0 by
+  default since v1.0, removed in 2.0) still adds white ambient and scales its light by `1 - Ambient`;
+  light the scene with an `AmbientLightComponent` instead.
 - **Custom passes.** Lights are scene-scoped, so a custom 3D pass on the shared renderer calls
   `scene.SubmitLights(renderer)` between its `BeginScene` and `EndScene`, the same way it calls
   `RenderEntities3D`. Without it the pass gets `Renderer3DParams`' default light, not the scene's
@@ -553,6 +555,12 @@ The components hold settings only. The engine keeps each entity's live body, cha
 controller and sound itself, so copying or assigning a component between entities
 (`b.GetComponent<RigidBody3DComponent>() = a.GetComponent<RigidBody3DComponent>()`,
 `Scene::DuplicateEntity`) never makes two entities share one.
+
+A settings component is read when the object it describes is built (`OnStart`, `CreateRigidBody`,
+a sound's start): editing `RigidBody3DComponent::Type` or a collider's size on a live body changes
+nothing until the body is rebuilt, and adding a `RigidBody2D/3DComponent` to a running scene needs
+`Scene::CreateRigidBody(entity)`. Removing one (or an `AudioSourceComponent`, or a
+`CharacterController3DComponent`) does release the live object at once.
 
 ```cpp
 // Inside a ScriptableEntity: drive a kinematic platform along a path.
@@ -836,15 +844,14 @@ for (InvaderScript* invader : GetScene().GetScriptsOfType<InvaderScript>())
 
 `SceneManager` is the default way to work with scenes — it owns named scenes, drives their
 lifecycle, and updates + renders the active one. Each scene has an `OnStart` / `OnUpdate` /
-`OnStop` lifecycle: **`OnStart` brings the scene up (starts physics, `OnPhysicsStart`), `OnStop`
-tears it down (`OnPhysicsStop`)**, and `IsRunning()` reports the state.
+`OnStop` lifecycle: **`OnStart` brings the scene up (scripts' `OnStart`, then physics and
+`PlayOnStart` audio), `OnStop` tears it down**, and `IsRunning()` reports the state.
 
-Lifecycle is **explicit**: you call `scene->OnStart()` (typically the last thing in `OnAttach`)
-and `scene->OnStop()` (in `OnDetach`). `SetActiveScene(name)` only *selects* the active scene on
-its **first** call — so your explicit `OnStart` is the real start. A later **switch** between
-scenes does run `OnStop` on the outgoing scene and `OnStart` on the incoming one, so multi-scene
-transitions stay one-liners. Re-activating the already-active scene is a no-op, and `CreateScene`
-never activates.
+`SetActiveScene(name)` stops the outgoing scene, if any, and starts the new one (v1.0: before, the
+first activation only selected the scene and the host had to call `OnStart` itself). So build a
+scene's entities before activating it. `OnStart` is a no-op on a running scene, re-activating the
+already-active scene is a no-op, and `CreateScene` never activates. Stop the active scene yourself
+(`scene->OnStop()`) in `OnDetach`.
 
 ```cpp
 class GameLayer : public Layer
@@ -861,8 +868,7 @@ class GameLayer : public Layer
         m_GameOver = m_Scenes.CreateScene("GameOver");
         for (Scene* s : { m_Menu, m_Game, m_GameOver }) { s->SetClearColor(bg); SetupCamera(s); }
         BuildMenu();
-        m_Scenes.SetActiveScene("Menu");                 // selects the active scene...
-        m_Menu->OnStart();                               // ...you start it explicitly
+        m_Scenes.SetActiveScene("Menu");                 // activates and starts it
     }
 
     void OnDetach() override

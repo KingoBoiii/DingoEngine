@@ -62,6 +62,8 @@ namespace Dingo
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
+		Internal::AudioSync::Connect(m_Data->Registry);
+		m_Data->Physics.Connect(m_Data->Registry);
 	}
 
 	Scene::~Scene()
@@ -199,7 +201,7 @@ namespace Dingo
 			registry.emplace<Internal::InactiveComponent>(dst);
 
 		// If the world is already simulating, give the clone its own body now (mirrors a
-		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
+		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnStart will.
 		if (IsPhysicsRunning())
 			CreateRigidBody(clone);
 
@@ -211,7 +213,7 @@ namespace Dingo
 
 	void Scene::DestroyEntity(Entity entity)
 	{
-		if (!entity)
+		if (!IsValid(entity))
 			return;
 
 		if (m_Data->Updating)
@@ -282,7 +284,7 @@ namespace Dingo
 		// mark the scene stopped — otherwise a later OnStart() would early-return on a
 		// stale running flag and never rebuild physics.
 		m_IsRunning = false;
-		OnPhysicsStop();
+		StopPhysics();
 
 		Internal::AudioSync::StopAllSources(m_Data->Registry);
 
@@ -372,6 +374,8 @@ namespace Dingo
 		// Transforms are final for the frame now (physics + controller write-back
 		// already happened), so sync every spatialized source's position and the
 		// listener before anything renders or is heard this frame.
+		m_Data->Scripts.FreeDetached();
+
 		DE_PROFILE_SCOPE("AudioSync");
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
 	}
@@ -648,14 +652,13 @@ namespace Dingo
 
 	// --- Camera -----------------------------------------------------------------
 
-	bool Scene::GetPrimaryCameraEntity(Entity& out)
+	Entity Scene::GetPrimaryCamera()
 	{
 		entt::entity handle = entt::null;
 		if (!Internal::CameraUtils::FindPrimaryCamera(m_Data->Registry, handle))
-			return false;
+			return {};
 
-		out = Wrap(static_cast<std::uint32_t>(handle));
-		return true;
+		return Wrap(static_cast<std::uint32_t>(handle));
 	}
 
 	void Scene::GetRenderCameras(Entity& outPerspective, bool& outHasPerspective, Entity& outOrthographic, bool& outHasOrthographic)
@@ -716,16 +719,6 @@ namespace Dingo
 		return attenuation > 0.0f ? attenuation * GetLightVisibility(light, point, key, clearance) : 0.0f;
 	}
 
-	bool Scene::GetFirstDirectionalLightEntity(Entity& out)
-	{
-		entt::entity handle = entt::null;
-		if (!Internal::CameraUtils::FindFirstDirectionalLight(m_Data->Registry, handle))
-			return false;
-
-		out = Wrap(static_cast<std::uint32_t>(handle));
-		return true;
-	}
-
 	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
 	{
 		if (!IsValid(cameraEntity))
@@ -736,11 +729,8 @@ namespace Dingo
 
 	glm::mat4 Scene::GetActiveCameraViewProjection(float aspect)
 	{
-		Entity cameraEntity;
-		if (!GetPrimaryCameraEntity(cameraEntity))
-			return glm::mat4(1.0f);
-
-		return GetCameraViewProjection(cameraEntity, aspect);
+		const Entity camera = GetPrimaryCamera();
+		return camera ? GetCameraViewProjection(camera, aspect) : glm::mat4(1.0f);
 	}
 
 	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
@@ -762,9 +752,9 @@ namespace Dingo
 		ClearPendingSceneTransition();
 
 		// Run script OnStart before physics so a controller script can build the world
-		// (spawn entities) and have OnPhysicsStart bake bodies for everything it created.
+		// (spawn entities) and have physics bake bodies for everything it created.
 		StartScripts();
-		OnPhysicsStart();
+		StartPhysics();
 
 		// Start every PlayOnStart source now that scripts have had a chance to set up
 		// (and, for a spatialized source, after any script-driven initial placement).
@@ -783,7 +773,7 @@ namespace Dingo
 			return;
 
 		m_IsRunning = false;
-		OnPhysicsStop();
+		StopPhysics();
 
 		// Stop every source's live sound so the scene never leaks playing audio past
 		// its own teardown (e.g. into whatever scene the SceneManager switches to).
@@ -810,11 +800,21 @@ namespace Dingo
 
 	void Scene::OnPhysicsStart()
 	{
+		StartPhysics();
+	}
+
+	void Scene::OnPhysicsStop()
+	{
+		StopPhysics();
+	}
+
+	void Scene::StartPhysics()
+	{
 		Internal::AnimationSystem::EnsureAnimators(m_Data->Registry);
 		m_Data->Physics.Start(m_Data->Registry, m_Gravity, m_Gravity3D);
 	}
 
-	void Scene::OnPhysicsStop()
+	void Scene::StopPhysics()
 	{
 		m_Data->Physics.Stop(m_Data->Registry);
 	}
@@ -836,7 +836,7 @@ namespace Dingo
 
 	void Scene::CreateRigidBody(Entity entity)
 	{
-		if (!entity)
+		if (!IsValid(entity))
 			return;
 
 		Internal::AnimationSystem::EnsureAncestorAnimators(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
@@ -854,7 +854,7 @@ namespace Dingo
 	PhysicsBodyId2D Scene::GetRuntimeBody2D(Entity entity) const
 	{
 		if (!IsValid(entity))
-			return 0;
+			return k_InvalidBody2D;
 
 		return m_Data->Physics.RuntimeBody2D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
@@ -892,7 +892,7 @@ namespace Dingo
 			physics->SetLinearVelocity(GetRuntimeBody2D(entity), velocity);
 	}
 
-	glm::vec2 Scene::GetLinearVelocity(Entity entity)
+	glm::vec2 Scene::GetLinearVelocity2D(Entity entity)
 	{
 		Physics2D* physics = m_Data->Physics.Get2D();
 		if (!physics)

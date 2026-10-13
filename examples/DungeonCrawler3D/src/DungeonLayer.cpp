@@ -12,8 +12,7 @@ namespace Dingo
 		// its rigid bodies are baked when the scene starts).
 		m_Scene->CreateEntity("GameController").AddScript<DungeonControllerScript>();
 
-		m_SceneManager.SetActiveScene("Dungeon Crawler 3D"); // select the active scene
-		m_Scene->OnStart();                                  // explicit start: build + physics
+		m_SceneManager.SetActiveScene("Dungeon Crawler 3D"); // starts it: the controller builds, then physics
 	}
 
 	void DungeonLayer::OnDetach()

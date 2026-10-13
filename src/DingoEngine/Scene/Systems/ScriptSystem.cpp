@@ -20,6 +20,12 @@ namespace Dingo
 
 		void ScriptSystem::Attach(entt::entity handle, ScriptableEntity* instance, Entity owner)
 		{
+			if (m_Scripts.contains(handle))
+			{
+				DE_CORE_WARN("AddScript: '{}' already has a script, which is replaced (an entity holds one)", owner.GetName());
+				Detach(handle);
+			}
+
 			instance->m_Entity = owner;
 			m_Scripts[handle].reset(instance);
 			m_HasUnstarted = true;
@@ -38,10 +44,10 @@ namespace Dingo
 			if (it == m_Scripts.end())
 				return;
 
-			std::unique_ptr<ScriptableEntity> script = std::move(it->second);
+			m_Detached.push_back(std::move(it->second));
 			m_Scripts.erase(it);
 
-			script->OnDestroy();
+			m_Detached.back()->OnDestroy();
 		}
 
 		void ScriptSystem::StartPending()
@@ -145,6 +151,11 @@ namespace Dingo
 				if (it != m_Scripts.end())
 					fn(it->second.get());
 			}
+		}
+
+		void ScriptSystem::FreeDetached()
+		{
+			m_Detached.clear();
 		}
 
 		void ScriptSystem::DetachAll()

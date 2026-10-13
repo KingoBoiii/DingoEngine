@@ -17,7 +17,7 @@ namespace Dingo
 		const glm::vec3 position = GetComponent<TransformComponent>().Position;
 
 		// The pig is a live physics body: ask the scene for its simulated velocity.
-		const glm::vec2 velocity = GetScene().GetLinearVelocity(self);
+		const glm::vec2 velocity = GetScene().GetLinearVelocity2D(self);
 		const float speed = glm::length(velocity);
 
 		const bool struckHard = speed > PIG_POP_SPEED; // hit by the bird or falling debris

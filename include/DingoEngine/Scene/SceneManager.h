@@ -10,9 +10,8 @@ namespace Dingo
 
 	// Owns a set of named scenes and tracks which one is active. Switching scenes
 	// (e.g. Menu -> Game -> GameOver) is a single SetActiveScene() call, which stops the
-	// outgoing scene and starts the incoming one. The first activation only selects the
-	// scene — the host starts it explicitly (Scene::OnStart). The manager updates and
-	// renders only the active scene each frame.
+	// outgoing scene and starts the incoming one. The manager updates and renders only the
+	// active scene each frame.
 	class SceneManager
 	{
 	public:
@@ -30,10 +29,10 @@ namespace Dingo
 		Scene* GetScene(const std::string& name) const;
 		bool HasScene(const std::string& name) const;
 
-		// Makes a scene active. The FIRST activation only selects it — start it yourself
-		// with Scene::OnStart (e.g. the last thing in OnAttach). A later switch stops the
-		// outgoing scene (OnStop) and starts the incoming one (OnStart). No-op if already
-		// active; false if the name is unknown.
+		// Makes a scene active: stops the outgoing scene, if any (OnStop), and starts this one
+		// (OnStart, a no-op on a scene already running). So build the scene's entities before
+		// activating it, as OnStart bakes their bodies. No-op if already active; false if the
+		// name is unknown.
 		bool SetActiveScene(const std::string& name);
 		Scene* GetActiveScene() const { return m_ActiveScene; }
 		const std::string& GetActiveSceneName() const { return m_ActiveSceneName; }

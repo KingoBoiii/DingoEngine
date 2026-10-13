@@ -28,7 +28,7 @@ namespace Dingo
 			~ScriptSystem();
 
 			// Binds the instance to its entity, registers it, and fires OnCreate. Takes
-			// ownership. Replacing an existing script destroys the old instance.
+			// ownership. An existing script is detached first (OnDestroy).
 			void Attach(entt::entity handle, ScriptableEntity* instance, Entity owner);
 
 			ScriptableEntity* Find(entt::entity handle) const;
@@ -59,11 +59,16 @@ namespace Dingo
 			// Detaches every script (each gets its OnDestroy) and empties the system.
 			void DetachAll();
 
+			// Frees the detached scripts. Only where none of them can be running: a script may
+			// detach itself (RemoveScript, AddScript, destroying its own entity).
+			void FreeDetached();
+
 		private:
 			bool IsActive(entt::entity handle) const;
 
 			const entt::registry& m_Registry;
 			std::unordered_map<entt::entity, std::unique_ptr<ScriptableEntity>> m_Scripts;
+			std::vector<std::unique_ptr<ScriptableEntity>> m_Detached;
 
 			// Set by Attach (the only thing that adds to m_Scripts) and cleared by
 			// StartPending, so the per-frame OnStart pass can skip the walk entirely once

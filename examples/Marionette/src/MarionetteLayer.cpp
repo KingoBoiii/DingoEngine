@@ -57,7 +57,6 @@ namespace Dingo
 		RebuildArenaScene();
 
 		m_SceneManager.SetActiveScene(options.End ? SCENE_END : options.Bout > 0 ? SCENE_ARENA : SCENE_TITLE);
-		m_SceneManager.GetActiveScene()->OnStart();
 	}
 
 	void MarionetteLayer::OnDetach()

@@ -38,6 +38,7 @@ namespace Dingo
 		void RunCollisionFilterChecks();
 		// SetActive and OnFixedUpdate (HierarchyTestActive.cpp).
 		void RunActiveChecks();
+		void RunSceneApiChecks();
 		void RunLightProbe();
 		void BuildScene();
 		void Animate(float deltaTime);

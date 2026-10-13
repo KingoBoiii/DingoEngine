@@ -30,6 +30,29 @@ namespace
 		ScriptLog* m_Log;
 	};
 
+	class LifetimeScript : public ScriptableEntity
+	{
+	public:
+		LifetimeScript(int* destroyed, bool replaceSelf) : m_Destroyed(destroyed), m_ReplaceSelf(replaceSelf) {}
+
+	protected:
+		void OnUpdate(float) override
+		{
+			if (!m_ReplaceSelf)
+				return;
+			m_ReplaceSelf = false;
+			GetEntity().AddScript<LifetimeScript>(m_Destroyed, false);
+			m_Survived = m_Destroyed[0] == 1;
+			m_Destroyed[1] = m_Survived ? 1 : 0;
+		}
+		void OnDestroy() override { m_Destroyed[0]++; }
+
+	private:
+		int* m_Destroyed;
+		bool m_ReplaceSelf;
+		bool m_Survived = false;
+	};
+
 	Entity Make3D(Scene& scene, const std::string& name, const glm::vec3& position)
 	{
 		Entity entity = scene.CreateEntity(name);
@@ -194,12 +217,81 @@ namespace Dingo
 			lamp.AddComponent<PointLightComponent>();
 
 			main.SetActive(false);
-			Entity camera;
-			Check(scene.GetPrimaryCameraEntity(camera) && camera == backup, "an inactive camera is never the primary one");
+			Check(scene.GetPrimaryCamera() == backup, "an inactive camera is never the primary one");
 
 			const float lit = scene.GetShadowedLightAttenuation(lamp, { 1.0f, 0.0f, 0.0f });
 			lamp.SetActive(false);
 			Check(lit > 0.0f && scene.GetShadowedLightAttenuation(lamp, { 1.0f, 0.0f, 0.0f }) == 0.0f, "an inactive light lights nothing");
+		}
+	}
+
+	void HierarchyTest::RunSceneApiChecks()
+	{
+		{
+			Scene scene("Script Lifetime");
+			int destroyed[2] = { 0, 0 };
+			Entity entity = scene.CreateEntity("Scripted");
+			entity.AddScript<LifetimeScript>(destroyed, true);
+			scene.OnStart();
+			scene.OnUpdate(1.0f / 60.0f);
+			Check(destroyed[0] == 1 && destroyed[1] == 1 && entity.GetScript<LifetimeScript>(),
+				"a script replacing itself runs its OnDestroy and lives until the end of the pass");
+			entity.RemoveScript();
+			Check(destroyed[0] == 2 && !entity.GetScript<LifetimeScript>(), "RemoveScript runs OnDestroy and detaches the script");
+		}
+
+		{
+			Scene scene("Component Removal");
+			Entity box = Make3D(scene, "Box", { 0.0f, 3.0f, 0.0f });
+			box.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+			box.AddComponent<BoxCollider3DComponent>();
+			Entity walker = Make3D(scene, "Walker", { 3.0f, 3.0f, 0.0f });
+			walker.AddComponent<CharacterController3DComponent>();
+			Entity crate = scene.CreateEntity("Crate");
+			crate.AddComponent<RigidBody2DComponent>().Type = BodyType2D::Dynamic;
+			crate.AddComponent<BoxCollider2DComponent>();
+			scene.OnStart();
+
+			const PhysicsBodyId3D body = scene.GetRuntimeBody3D(box);
+			box.RemoveComponent<RigidBody3DComponent>();
+			walker.RemoveComponent<CharacterController3DComponent>();
+			crate.RemoveComponent<RigidBody2DComponent>();
+			Check(body != k_InvalidBody3D && !scene.GetPhysics3D()->IsBodyValid(body) && scene.GetRuntimeBody3D(box) == k_InvalidBody3D
+				&& !scene.GetCharacterController(walker) && scene.GetRuntimeBody2D(crate) == k_InvalidBody2D,
+				"removing a body or controller component destroys what it built");
+
+			Entity faller = Make3D(scene, "Faller", { 0.0f, 3.0f, 0.0f });
+			faller.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+			faller.AddComponent<BoxCollider3DComponent>();
+			scene.CreateRigidBody(faller);
+			faller.GetComponent<RigidBody3DComponent>().Type = BodyType3D::Static;
+			for (int i = 0; i < 20; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(faller.GetComponent<Transform3DComponent>().Position.y < 2.9f,
+				std::format("a body keeps the type it was built with when the component changes (y {:.2f})", faller.GetComponent<Transform3DComponent>().Position.y));
+		}
+
+		{
+			Scene first("First"), second("Second");
+			Entity keep = first.CreateEntity("Keep");
+			Entity other = second.CreateEntity("Other");
+			first.DestroyEntity(other);
+			Check(keep.IsValid() && other.IsValid(), "a scene ignores DestroyEntity of another scene's entity");
+
+			keep.SetName("Renamed");
+			Entity null;
+			Check(keep.GetName() == "Renamed" && null.GetName().empty() && null.GetUUID() == UUID() && !null.HasComponent<TransformComponent>(),
+				"SetName renames; a null entity reads no name, id 0 and no components");
+		}
+
+		{
+			SceneManager manager;
+			ScriptLog log;
+			Scene* menu = manager.CreateScene("Menu");
+			menu->CreateEntity("Script").AddScript<CountingScript>(&log);
+			manager.SetActiveScene("Menu");
+			Check(menu->IsRunning() && log.Starts == 1, "the first SetActiveScene starts the scene");
+			manager.Clear();
 		}
 	}
 

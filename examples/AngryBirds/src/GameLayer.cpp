@@ -382,7 +382,7 @@ namespace Dingo
 			m_FlightTimer += deltaTime;
 
 			const glm::vec3 position = m_Bird.IsValid() ? m_Bird.GetComponent<TransformComponent>().Position : glm::vec3(0.0f);
-			const float speed = glm::length(m_GameScene->GetLinearVelocity(m_Bird));
+			const float speed = glm::length(m_GameScene->GetLinearVelocity2D(m_Bird));
 
 			if (speed < SETTLE_SPEED)
 				m_SettleTimer += deltaTime;

@@ -29,6 +29,9 @@ namespace Dingo
 			static constexpr int k_MaxCollisionSteps = 4;
 			static constexpr float k_MaxStepTime = k_MaxCollisionSteps / 60.0f;
 
+			// Removing a body, controller or sound settings component releases what it built.
+			void Connect(entt::registry& registry);
+
 			// Creates a 2D world only if the registry has 2D rigid bodies, and a 3D world
 			// only if it has 3D rigid bodies or character controllers, so a scene pays for
 			// just the dimension it uses. Bakes a body for every qualifying entity.
@@ -71,6 +74,10 @@ namespace Dingo
 			void SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const;
 
 		private:
+			void DropBody2D(entt::registry& registry, entt::entity handle);
+			void DropBody3D(entt::registry& registry, entt::entity handle);
+			void DropController(entt::registry& registry, entt::entity handle);
+
 			// Start's bake passes `memo`; a single late body works its pose out on demand.
 			void CreateBody2D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo = nullptr);
 			void CreateBody3D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo = nullptr);

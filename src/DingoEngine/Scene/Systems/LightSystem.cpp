@@ -10,6 +10,9 @@ namespace Dingo::Internal::LightSystem
 
 	namespace
 	{
+		// The default light keeps the engine's original look, ambient + (1 - ambient) * N.L.
+		constexpr float k_DefaultLightAmbient = 0.35f;
+
 		// A light that can't be placed is skipped without switching the default light off: counting
 		// it would leave a scene whose only light lacks a transform lit by nothing at all.
 		const Transform3DComponent* PlaceLight(const entt::registry& registry, entt::entity entity)
@@ -146,12 +149,14 @@ namespace Dingo::Internal::LightSystem
 		// scene tuned before Intensity existed looks the same. Only lights Renderer3D accepted add
 		// their ambient, and a non-finite one is skipped: one NaN term would make the summed ambient
 		// NaN, which SetAmbientLight rejects, losing every other source with it.
-		auto submitDirectional = [&](const DirectionalLightComponent& light)
+		DE_SUPPRESS_DEPRECATED_BEGIN
+		auto submitDirectional = [&](const DirectionalLightComponent& light, float legacyAmbient)
 		{
-			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - light.Ambient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups });
-			if (accepted && std::isfinite(light.Ambient))
-				ambient += glm::vec3(light.Ambient);
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - legacyAmbient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups });
+			if (accepted && std::isfinite(legacyAmbient))
+				ambient += glm::vec3(legacyAmbient);
 		};
+		DE_SUPPRESS_DEPRECATED_END
 
 		// An inactive light still counts as the scene's choice of lighting, as a disabled one does.
 		for (entt::entity entity : InEntityOrder<DirectionalLightComponent>(registry))
@@ -159,7 +164,10 @@ namespace Dingo::Internal::LightSystem
 			hasLight = true;
 			if (HierarchySystem::IsInactive(registry, entity))
 				continue;
-			submitDirectional(registry.get<const DirectionalLightComponent>(entity));
+			const DirectionalLightComponent& light = registry.get<const DirectionalLightComponent>(entity);
+			DE_SUPPRESS_DEPRECATED_BEGIN
+			submitDirectional(light, light.Ambient);
+			DE_SUPPRESS_DEPRECATED_END
 			noteLight(entity);
 		}
 
@@ -208,7 +216,7 @@ namespace Dingo::Internal::LightSystem
 			IssueShadowProbes(renderer, *probes, probedLights);
 
 		if (!hasLight)
-			submitDirectional(DirectionalLightComponent{});
+			submitDirectional(DirectionalLightComponent{}, k_DefaultLightAmbient);
 
 		// Always set, even to black: it tells Renderer3D the scene chose its lighting, so a scene
 		// whose lights are all switched off goes dark instead of falling back to the default light.

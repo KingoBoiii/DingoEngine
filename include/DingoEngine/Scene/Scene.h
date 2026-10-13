@@ -59,13 +59,18 @@ namespace Dingo
 
 		// --- Lifecycle --------------------------------------------------------
 
-		// Brings the scene up: starts physics (OnPhysicsStart). Idempotent — a no-op if
-		// the scene is already running. SceneManager calls this when the scene becomes
-		// active; call it directly only for manual restart control.
+		// Brings the scene up: every active script's OnStart, then physics, then the PlayOnStart
+		// sources. Physics creates a 2D world if any entity has a RigidBody2DComponent and a 3D
+		// world if any has a RigidBody3DComponent or a CharacterController3DComponent, so a scene
+		// pays only for the dimension it uses, and bakes each active entity's body, colliders
+		// and controller from its components. Idempotent — a no-op if the scene is already
+		// running. SceneManager::SetActiveScene calls it; call it directly for a scene you drive
+		// yourself or to restart one.
 		void OnStart();
 
-		// Tears the scene down: stops physics (OnPhysicsStop). A no-op if not running.
-		// SceneManager calls this when the scene stops being active.
+		// Tears the scene down: destroys both physics worlds, with every body and controller, and
+		// stops every source's sound. A no-op if not running. SceneManager calls this when the
+		// scene stops being active.
 		void OnStop();
 
 		// True between OnStart and OnStop. (Distinct from IsPhysicsRunning(), which is
@@ -142,18 +147,9 @@ namespace Dingo
 
 		// --- Camera -----------------------------------------------------------
 
-		// Finds the scene's active camera entity: the first CameraComponent marked
-		// Primary, or the first one if none is. Returns false (out unchanged) if the
-		// scene has no CameraComponent.
-		bool GetPrimaryCameraEntity(Entity& out);
-
-		// Finds the render cameras per projection type in one narrow pass (Primary
-		// preferred, else first of that type). Each out entity is set only when the
-		// matching has-flag is true. Iterates only camera entities, not the whole scene.
-		void GetRenderCameras(Entity& outPerspective, bool& outHasPerspective, Entity& outOrthographic, bool& outHasOrthographic);
-
-		// First entity carrying a DirectionalLightComponent; false if none.
-		bool GetFirstDirectionalLightEntity(Entity& out);
+		// The scene's active camera: the first active CameraComponent marked Primary, or the
+		// first active one if none is; a null Entity if there is none.
+		Entity GetPrimaryCamera();
 
 		// View-projection for a specific camera entity at the given viewport aspect
 		// (width / height): projection from its CameraComponent, view from its transform.
@@ -228,18 +224,10 @@ namespace Dingo
 
 		// --- Physics (2D + 3D) ------------------------------------------------
 
-		// Starts physics simulation. Creates a 2D world (from the 2D gravity) if any
-		// entity has a RigidBody2DComponent, and a 3D world (from the 3D gravity) if
-		// any has a RigidBody3DComponent — a scene pays only for the dimension it
-		// uses. Each rigid-body entity gets a simulation body (2D bodies also get
-		// their box/circle collider shapes; 3D bodies bake their box/sphere/capsule/
-		// mesh collider in at creation). After this, OnUpdate steps the live world(s)
-		// each frame and writes the simulated transforms back: 2D onto
-		// TransformComponent, 3D onto Transform3DComponent.
+		// Physics alone, without the scripts' OnStart, the PlayOnStart sources or the running flag.
+		[[deprecated("use OnStart, which starts physics after the scripts' OnStart; removed in 2.0")]]
 		void OnPhysicsStart();
-
-		// Tears down both physics worlds, and with them every entity's runtime body and
-		// character controller. Safe to call when physics isn't running.
+		[[deprecated("use OnStop; removed in 2.0")]]
 		void OnPhysicsStop();
 
 		// True while either the 2D or the 3D world is live.
@@ -264,7 +252,7 @@ namespace Dingo
 		CharacterController3D* GetCharacterController(Entity entity) const;
 
 		// The entity's simulated body, for the handle-based Physics2D/Physics3D calls (ray-cast
-		// hits, MoveKinematic, IsBodyValid). 0 / k_InvalidBody3D while it has no live body.
+		// hits, MoveKinematic, IsBodyValid). k_InvalidBody2D / k_InvalidBody3D while it has no live body.
 		PhysicsBodyId2D GetRuntimeBody2D(Entity entity) const;
 		PhysicsBodyId3D GetRuntimeBody3D(Entity entity) const;
 		// The entity a live 3D body belongs to (a RayCastHit3D's Body), or a null Entity for a body
@@ -285,13 +273,13 @@ namespace Dingo
 		// The vec2 overload targets the 2D world, the vec3 overload the 3D world.
 		void SetGravity(const glm::vec2& gravity);
 		void SetGravity(const glm::vec3& gravity);
-		const glm::vec2& GetGravity() const { return m_Gravity; }
+		const glm::vec2& GetGravity2D() const { return m_Gravity; }
 		const glm::vec3& GetGravity3D() const { return m_Gravity3D; }
 
 		// Rigid-body controls. Each is a no-op if the entity has no live body. The
 		// vec2 overloads drive the 2D body, the vec3 overloads the 3D body.
 		void SetLinearVelocity(Entity entity, const glm::vec2& velocity);
-		glm::vec2 GetLinearVelocity(Entity entity);
+		glm::vec2 GetLinearVelocity2D(Entity entity);
 		void ApplyLinearImpulse(Entity entity, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake = true);
 		void ApplyLinearImpulseToCenter(Entity entity, const glm::vec2& impulse, bool wake = true);
 		void ApplyForceToCenter(Entity entity, const glm::vec2& force, bool wake = true);
@@ -337,11 +325,18 @@ namespace Dingo
 		// can never fire when the scene is reactivated later.
 		void RequestSceneTransition(const std::string& name) { m_PendingTransition = name; }
 
+
+	private:
+		// SceneManager drains a script's request once a frame, after OnUpdate.
 		bool HasPendingSceneTransition() const { return !m_PendingTransition.empty(); }
 		const std::string& GetPendingSceneTransition() const { return m_PendingTransition; }
 		void ClearPendingSceneTransition() { m_PendingTransition.clear(); }
 
-	private:
+		// Per projection type, Primary preferred, else the first of that type, active ones only.
+		void GetRenderCameras(Entity& outPerspective, bool& outHasPerspective, Entity& outOrthographic, bool& outHasOrthographic);
+		void StartPhysics();
+		void StopPhysics();
+
 		void ForEachScript(const std::function<void(ScriptableEntity*)>& fn);
 		// Fires OnStart on any script that has not started yet, marking it started.
 		void StartScripts();
@@ -370,6 +365,7 @@ namespace Dingo
 
 		friend class Entity;
 		friend class SceneManager;
+		friend class SceneRenderer;
 	};
 
 }

@@ -45,10 +45,11 @@ stays off until a material asks for it.
 ```cpp
 void AddNightLighting(Scene& scene)
 {
-    DirectionalLightComponent& moon = scene.CreateEntity("Moon").AddComponent<DirectionalLightComponent>();
+    Entity sky = scene.CreateEntity("Moon");
+    DirectionalLightComponent& moon = sky.AddComponent<DirectionalLightComponent>();
     moon.Color = { 0.55f, 0.65f, 1.0f };
     moon.Intensity = 0.12f;
-    moon.Ambient = 0.05f;
+    sky.AddComponent<AmbientLightComponent>(AmbientLightComponent({ 1.0f, 1.0f, 1.0f }, 0.05f));
 
     Entity lantern = scene.CreateEntity("Lantern");
     lantern.AddComponent<Transform3DComponent>().Position = { 2.0f, 1.5f, 0.0f };
@@ -128,13 +129,14 @@ frame, and always calls `SetAmbientLight` with the summed ambient, black if ther
   therefore goes dark.
   It does not fall back to the renderer's default light, which the `SceneRenderer` never touches.
 
-**Legacy `Ambient`.** `DirectionalLightComponent::Ambient` (default 0.35) is the engine's original
-single knob. It adds white ambient and scales the light by `(1 - Ambient)`, which is exactly the
-old `ambient + (1 - ambient) * N.L` for any `Ambient`. A face squarely turned to the light is
-`Ambient + Intensity * (1 - Ambient)` bright, exactly 1 at the default `Intensity`. Set `Ambient`
-to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only the directional
-components the renderer accepts (the first four valid ones) add their ambient, and a non-finite
-`Ambient` or ambient intensity is skipped rather than blanking every other ambient source.
+**Legacy `Ambient`** (deprecated in v1.0, removed in 2.0). `DirectionalLightComponent::Ambient` is
+the engine's original single knob: it adds white ambient and scales the light by `(1 - Ambient)`,
+the old `ambient + (1 - ambient) * N.L`. Its default was 0.35 until v1.0 and is 0 now, so a default
+`DirectionalLightComponent` is the light at its full `Intensity` with no ambient. To keep the old
+look, set `Intensity` to `Intensity * (1 - a)` and add an `AmbientLightComponent` of white at `a`
+(0.35 for the old default): that gives the same numbers. Only the directional components the
+renderer accepts (the first four valid ones) add their `Ambient`, and a non-finite one is skipped.
+The default light a scene without light components gets keeps the old 0.35 look.
 
 ## Fog
 

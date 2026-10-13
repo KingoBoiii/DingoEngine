@@ -158,9 +158,6 @@ namespace Dingo
 		// Physics3D it came from (it holds the world). Returns nullptr if the world isn't
 		// live. See CharacterController3D for the per-frame drive contract.
 		virtual std::unique_ptr<CharacterController3D> CreateCharacterController(const CharacterControllerParams3D& params) = 0;
-
-		template<typename T>
-		T& As() { return static_cast<T&>(*this); }
 	};
 
 }

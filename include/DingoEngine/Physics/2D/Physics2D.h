@@ -79,9 +79,6 @@ namespace Dingo
 		virtual void ApplyLinearImpulse(PhysicsBodyId2D body, const glm::vec2& impulse, const glm::vec2& worldPoint, bool wake = true) = 0;
 		virtual void ApplyLinearImpulseToCenter(PhysicsBodyId2D body, const glm::vec2& impulse, bool wake = true) = 0;
 		virtual void ApplyForceToCenter(PhysicsBodyId2D body, const glm::vec2& force, bool wake = true) = 0;
-
-		template<typename T>
-		T& As() { return static_cast<T&>(*this); }
 	};
 
 }

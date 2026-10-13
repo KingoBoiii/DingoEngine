@@ -166,6 +166,7 @@ namespace Dingo
 		RunStructuralChecks();
 		RunCollisionFilterChecks();
 		RunActiveChecks();
+		RunSceneApiChecks();
 		RunStructuralChecks2D();
 		BuildScene();
 		BuildScene2D();
@@ -574,8 +575,8 @@ namespace Dingo
 
 		Entity sun = m_Scene->CreateEntity("Sun Light");
 		DirectionalLightComponent& sunLight = sun.AddComponent<DirectionalLightComponent>();
-		sunLight.Intensity = 0.7f;
-		sunLight.Ambient = 0.25f;
+		sunLight.Intensity = 0.7f * (1.0f - 0.25f);
+		sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.25f));
 
 		Entity floor = MakeEntity(*m_Scene, "Floor", { 0.0f, -0.5f, 0.0f }, glm::vec3(0.0f), { 24.0f, 1.0f, 24.0f });
 		floor.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer.GetBoxMesh(), { 0.45f, 0.48f, 0.44f, 1.0f }));

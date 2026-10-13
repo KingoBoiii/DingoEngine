@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DingoEngine/Common.h"
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
@@ -177,25 +178,26 @@ namespace Dingo
 	// spot lights take their position, and a spot its aim, from the entity's world transform
 	// (its Transform3DComponent through any parents), and are ignored without one.
 
-	// A sun-like light. The defaults reproduce the engine's original lighting.
+	// A sun-like light.
 	struct DirectionalLightComponent
 	{
 		glm::vec3 Direction{ -0.4f, -1.0f, -0.35f }; // the way the light travels
 		glm::vec3 Color{ 1.0f };
 		float Intensity = 1.0f;
-		// The engine's original single knob: white ambient this light adds to the scene, with
-		// the light itself scaled by (1 - Ambient), so a face turned squarely to it gets
-		// Ambient + Intensity * (1 - Ambient): full brightness at Intensity 1. Every
-		// DirectionalLightComponent adds its own. Set it to 0 to light the scene with
-		// AmbientLightComponent instead and get Intensity unscaled.
-		float Ambient = 0.35f;
+		// Legacy: white ambient this light adds, with the light scaled by (1 - Ambient).
+		[[deprecated("use an AmbientLightComponent; DirectionalLightComponent::Ambient is removed in 2.0")]]
+		float Ambient = 0.0f;
 		// See DirectionalLight: the first casting one gets cascaded shadows.
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f;
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 
+		// The special members touch Ambient; only a game's own use of it should warn.
+		DE_SUPPRESS_DEPRECATED_BEGIN
 		DirectionalLightComponent() = default;
 		DirectionalLightComponent(const DirectionalLightComponent&) = default;
+		DirectionalLightComponent& operator=(const DirectionalLightComponent&) = default;
+		DE_SUPPRESS_DEPRECATED_END
 	};
 
 	// Light that reaches every face equally. Every ambient source in a scene adds up.
@@ -303,13 +305,13 @@ namespace Dingo
 	};
 
 	// A box collision shape for an entity that also has a RigidBody2DComponent.
-	// Size is the half-extent expressed as a fraction of TransformComponent::Size,
+	// HalfExtents is expressed as a fraction of TransformComponent::Size,
 	// so the default { 0.5, 0.5 } exactly covers the entity's quad. Offset is in
 	// the same fractional units, relative to the entity center.
 	struct BoxCollider2DComponent
 	{
 		glm::vec2 Offset{ 0.0f };
-		glm::vec2 Size{ 0.5f };
+		glm::vec2 HalfExtents{ 0.5f };
 
 		float Density = 1.0f;
 		float Friction = 0.5f;

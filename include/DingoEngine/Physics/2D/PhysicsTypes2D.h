@@ -25,6 +25,7 @@ namespace Dingo
 	// No backend (Box2D) type ever appears in the public API; this is all the
 	// client ever holds. Valid only while that world is alive; 0 means "none".
 	using PhysicsBodyId2D = std::uint64_t;
+	inline constexpr PhysicsBodyId2D k_InvalidBody2D = 0;
 	using PhysicsShapeId2D = std::uint64_t;
 
 	// Describes a rigid body to create. Position is in world units and Rotation is

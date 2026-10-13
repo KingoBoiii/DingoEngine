@@ -27,9 +27,11 @@ namespace Dingo
 	{
 
 		// The 2D colliders' shapes live on the body, so they are tracked with it.
+		// Type is the body's, as built: the settings component may change after.
 		struct RigidBody2DRuntime
 		{
 			PhysicsBodyId2D Body = 0;
+			BodyType2D Type = BodyType2D::Static;
 			PhysicsShapeId2D BoxShape = 0;
 			PhysicsShapeId2D CircleShape = 0;
 		};
@@ -37,6 +39,7 @@ namespace Dingo
 		struct RigidBody3DRuntime
 		{
 			PhysicsBodyId3D Body = k_InvalidBody3D;
+			BodyType3D Type = BodyType3D::Static;
 		};
 
 		// Slot in PhysicsSync's controller store.

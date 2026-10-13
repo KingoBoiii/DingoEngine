@@ -29,6 +29,11 @@ namespace Dingo
 		Entity() = default;
 
 		// --- Components (built-in component types only) ---
+		//
+		// AddComponent replaces a component the entity already has (with a warning). GetComponent
+		// asserts the entity has it; HasComponent is false and RemoveComponent a no-op on a null
+		// or destroyed entity. IDComponent and TagComponent can be read, not added or removed:
+		// rename with SetName.
 
 		template<typename T>
 		T& AddComponent(const T& component = T{});
@@ -45,7 +50,8 @@ namespace Dingo
 		// --- Behaviours ---
 
 		// Attach a script (must derive from ScriptableEntity). The scene owns the
-		// instance and drives its OnCreate/OnUpdate/OnDestroy.
+		// instance and drives its OnCreate/OnUpdate/OnDestroy. An entity holds one script:
+		// adding another replaces it, after the old one's OnDestroy (with a warning).
 		template<typename T, typename... Args>
 		T& AddScript(Args&&... args)
 		{
@@ -66,6 +72,10 @@ namespace Dingo
 		{
 			return GetScript<T>() != nullptr;
 		}
+
+		// Detaches the entity's script, running its OnDestroy. Safe from inside that script: the
+		// instance is freed after the scene's update pass.
+		void RemoveScript();
 
 		// --- Hierarchy ---
 		//
@@ -136,8 +146,11 @@ namespace Dingo
 
 		// --- Identity / lifetime ---
 
+		// 0 and "" for a null or destroyed entity.
 		UUID GetUUID() const;
 		const std::string& GetName() const;
+		// An empty name becomes "Entity", as in CreateEntity.
+		void SetName(std::string_view name);
 		Scene& GetScene() const;
 
 		bool IsValid() const;

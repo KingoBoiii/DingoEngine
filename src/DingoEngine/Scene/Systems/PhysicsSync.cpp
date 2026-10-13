@@ -110,12 +110,12 @@ namespace Dingo
 
 				m_ChildWriteBacks2D.clear();
 
-				auto view = registry.view<RigidBody2DRuntime, RigidBody2DComponent, TransformComponent>();
+				auto view = registry.view<RigidBody2DRuntime, TransformComponent>();
 				for (entt::entity handle : view)
 				{
 					// Static bodies never move — skip the read-back so we don't churn over
 					// them or revert a runtime edit to a static entity's Transform.
-					const BodyType2D type = view.get<RigidBody2DComponent>(handle).Type;
+					const BodyType2D type = view.get<RigidBody2DRuntime>(handle).Type;
 					if (type == BodyType2D::Static)
 						continue;
 
@@ -154,12 +154,12 @@ namespace Dingo
 
 			m_ChildWriteBacks.clear();
 
-			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, Transform3DComponent>();
+			auto view = registry.view<RigidBody3DRuntime, Transform3DComponent>();
 			for (entt::entity handle : view)
 			{
 				// Static bodies never move — skip the read-back so we don't churn over
 				// them or revert a runtime edit to a static entity's Transform3D.
-				const BodyType3D type = view.get<RigidBody3DComponent>(handle).Type;
+				const BodyType3D type = view.get<RigidBody3DRuntime>(handle).Type;
 				if (type == BodyType3D::Static)
 					continue;
 
@@ -204,11 +204,11 @@ namespace Dingo
 			m_WantedPairs.clear();
 			m_WantedControllerBodies.clear();
 
-			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, HierarchyComponent>();
+			auto view = registry.view<RigidBody3DRuntime, HierarchyComponent>();
 			for (entt::entity handle : view)
 			{
 				const entt::entity parent = view.get<HierarchyComponent>(handle).Parent;
-				if (parent == entt::null || view.get<RigidBody3DComponent>(handle).Type != BodyType3D::Kinematic)
+				if (parent == entt::null || view.get<RigidBody3DRuntime>(handle).Type != BodyType3D::Kinematic)
 					continue;
 
 				const PhysicsBodyId3D body = view.get<RigidBody3DRuntime>(handle).Body;
@@ -236,10 +236,10 @@ namespace Dingo
 		void PhysicsSync::DriveKinematicChildren2D(entt::registry& registry, float deltaTime)
 		{
 			m_KinematicChildren.clear();
-			auto view = registry.view<RigidBody2DRuntime, RigidBody2DComponent, HierarchyComponent>();
+			auto view = registry.view<RigidBody2DRuntime, HierarchyComponent>();
 			for (entt::entity handle : view)
 			{
-				if (view.get<RigidBody2DComponent>(handle).Type == BodyType2D::Kinematic && view.get<HierarchyComponent>(handle).Parent != entt::null)
+				if (view.get<RigidBody2DRuntime>(handle).Type == BodyType2D::Kinematic && view.get<HierarchyComponent>(handle).Parent != entt::null)
 					m_KinematicChildren.push_back({ handle, HierarchySystem::Depth(registry, handle) });
 			}
 
@@ -283,8 +283,7 @@ namespace Dingo
 		bool PhysicsSync::PredictedPose2D(const entt::registry& registry, entt::entity handle, float deltaTime, glm::vec3& position, float& rotation)
 		{
 			const RigidBody2DRuntime* body = registry.try_get<RigidBody2DRuntime>(handle);
-			const RigidBody2DComponent* rigidBody = registry.try_get<RigidBody2DComponent>(handle);
-			if (!body || !rigidBody || rigidBody->Type == BodyType2D::Static)
+			if (!body || body->Type == BodyType2D::Static)
 				return false;
 
 			float unusedRotation;
@@ -359,10 +358,10 @@ namespace Dingo
 		void PhysicsSync::DriveKinematicChildren(entt::registry& registry, float deltaTime)
 		{
 			m_KinematicChildren.clear();
-			auto view = registry.view<RigidBody3DRuntime, RigidBody3DComponent, HierarchyComponent>();
+			auto view = registry.view<RigidBody3DRuntime, HierarchyComponent>();
 			for (entt::entity handle : view)
 			{
-				if (view.get<RigidBody3DComponent>(handle).Type == BodyType3D::Kinematic && view.get<HierarchyComponent>(handle).Parent != entt::null)
+				if (view.get<RigidBody3DRuntime>(handle).Type == BodyType3D::Kinematic && view.get<HierarchyComponent>(handle).Parent != entt::null)
 					m_KinematicChildren.push_back({ handle, HierarchySystem::Depth(registry, handle) });
 			}
 
@@ -392,11 +391,10 @@ namespace Dingo
 			glm::quat rotation;
 
 			const RigidBody3DRuntime* body = registry.try_get<RigidBody3DRuntime>(handle);
-			const RigidBody3DComponent* rigidBody = registry.try_get<RigidBody3DComponent>(handle);
 			const CharacterController3DRuntime* controllerSlot = registry.try_get<CharacterController3DRuntime>(handle);
 			const CharacterController3D* controller = controllerSlot ? m_Controllers[controllerSlot->Index].get() : nullptr;
 
-			if (body && rigidBody && rigidBody->Type != BodyType3D::Static)
+			if (body && body->Type != BodyType3D::Static)
 			{
 				// The same integration Jolt applies over the step: exact for a MoveKinematic'd body,
 				// and blind to this step's contacts and gravity for a dynamic one.
@@ -489,26 +487,51 @@ namespace Dingo
 			CreateController(registry, handle);
 		}
 
-		void PhysicsSync::DestroyBodiesForEntity(entt::registry& registry, entt::entity handle)
+		void PhysicsSync::Connect(entt::registry& registry)
+		{
+			// The hooks run while destroy and clear walk the registry's pools, where creating a
+			// runtime pool on first use would invalidate that walk.
+			registry.storage<RigidBody2DRuntime>();
+			registry.storage<RigidBody3DRuntime>();
+			registry.storage<CharacterController3DRuntime>();
+			registry.on_destroy<RigidBody2DComponent>().connect<&PhysicsSync::DropBody2D>(*this);
+			registry.on_destroy<RigidBody3DComponent>().connect<&PhysicsSync::DropBody3D>(*this);
+			registry.on_destroy<CharacterController3DComponent>().connect<&PhysicsSync::DropController>(*this);
+		}
+
+		void PhysicsSync::DropBody2D(entt::registry& registry, entt::entity handle)
 		{
 			if (const RigidBody2DRuntime* runtime = registry.try_get<RigidBody2DRuntime>(handle))
 			{
 				m_Physics2D->DestroyBody(runtime->Body);
 				registry.remove<RigidBody2DRuntime>(handle);
 			}
+		}
 
+		void PhysicsSync::DropBody3D(entt::registry& registry, entt::entity handle)
+		{
 			if (const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(handle))
 			{
 				m_Physics3D->DestroyBody(runtime->Body);
 				registry.remove<RigidBody3DRuntime>(handle);
 			}
+		}
 
+		void PhysicsSync::DropController(entt::registry& registry, entt::entity handle)
+		{
 			// The slot stays, null, so other entities' indices remain valid.
 			if (const CharacterController3DRuntime* runtime = registry.try_get<CharacterController3DRuntime>(handle))
 			{
 				m_Controllers[runtime->Index].reset();
 				registry.remove<CharacterController3DRuntime>(handle);
 			}
+		}
+
+		void PhysicsSync::DestroyBodiesForEntity(entt::registry& registry, entt::entity handle)
+		{
+			DropBody2D(registry, handle);
+			DropBody3D(registry, handle);
+			DropController(registry, handle);
 		}
 
 		bool PhysicsSync::IsRunning() const
@@ -541,10 +564,10 @@ namespace Dingo
 		PhysicsBodyId2D PhysicsSync::RuntimeBody2D(const entt::registry& registry, entt::entity handle) const
 		{
 			if (!registry.valid(handle))
-				return 0;
+				return k_InvalidBody2D;
 
 			const RigidBody2DRuntime* runtime = registry.try_get<RigidBody2DRuntime>(handle);
-			return runtime ? runtime->Body : 0;
+			return runtime ? runtime->Body : k_InvalidBody2D;
 		}
 
 		PhysicsBodyId3D PhysicsSync::RuntimeBody3D(const entt::registry& registry, entt::entity handle) const
@@ -629,6 +652,7 @@ namespace Dingo
 
 			RigidBody2DRuntime& runtime = registry.emplace<RigidBody2DRuntime>(handle);
 			runtime.Body = body;
+			runtime.Type = rigidBody.Type;
 
 			// Collider sizes are fractions of the entity's full extent (Transform.Size);
 			// resolve them to world units here, so { 0.5, 0.5 } / radius 0.5 fits the quad.
@@ -637,7 +661,7 @@ namespace Dingo
 				const auto& collider = registry.get<BoxCollider2DComponent>(handle);
 
 				BoxShapeParams2D shapeParams;
-				shapeParams.HalfExtents = { transform.Size.x * collider.Size.x, transform.Size.y * collider.Size.y };
+				shapeParams.HalfExtents = { transform.Size.x * collider.HalfExtents.x, transform.Size.y * collider.HalfExtents.y };
 				shapeParams.Center = { collider.Offset.x * transform.Size.x, collider.Offset.y * transform.Size.y };
 				shapeParams.Density = collider.Density;
 				shapeParams.Friction = collider.Friction;
@@ -746,7 +770,7 @@ namespace Dingo
 
 			const PhysicsBodyId3D body = m_Physics3D->CreateBody(params);
 			if (body != k_InvalidBody3D)
-				registry.emplace<RigidBody3DRuntime>(handle).Body = body;
+				registry.emplace<RigidBody3DRuntime>(handle) = { body, rigidBody.Type };
 		}
 
 		void PhysicsSync::CreateController(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo)

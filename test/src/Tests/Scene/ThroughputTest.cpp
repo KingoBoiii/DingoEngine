@@ -429,7 +429,11 @@ namespace Dingo
 
 		if (m_Mode == Mode::Shadow)
 		{
-			m_Scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>().CastShadows = true;
+			Entity sun = m_Scene->CreateEntity("Sun");
+			DirectionalLightComponent& light = sun.AddComponent<DirectionalLightComponent>();
+			light.Intensity = 1.0f - 0.35f;
+			light.CastShadows = true;
+			sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.35f));
 			const float radius = k_LapRadius * m_Extent;
 			for (uint32_t i = 0; i < k_ShadowLights; ++i)
 			{

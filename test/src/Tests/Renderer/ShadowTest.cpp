@@ -247,9 +247,9 @@ namespace Dingo
 		m_EntitySun = m_EntityScene->CreateEntity("Sun");
 		DirectionalLightComponent& sun = m_EntitySun.AddComponent<DirectionalLightComponent>();
 		sun.Direction = k_SunDirection;
-		sun.Intensity = 1.0f;
-		sun.Ambient = 0.3f;
+		sun.Intensity = 1.0f * (1.0f - 0.3f);
 		sun.CastShadows = true;
+		m_EntitySun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.3f));
 
 		Entity floor = m_EntityScene->CreateEntity("Floor");
 		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.05f, 0.0f }, { 60.0f, 0.1f, 60.0f }));

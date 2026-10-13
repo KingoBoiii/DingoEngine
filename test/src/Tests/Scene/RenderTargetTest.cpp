@@ -478,9 +478,9 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		cameraTransform.Rotation = glm::quat(glm::radians(glm::vec3(-15.0f, 0.0f, 0.0f)));
 		camera.AddComponent<CameraComponent>().Type = CameraComponent::ProjectionType::Perspective;
 
-		DirectionalLightComponent& sun = scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
-		sun.Intensity = 0.8f;
-		sun.Ambient = 0.25f;
+		Entity sunEntity = scene->CreateEntity("Sun");
+		sunEntity.AddComponent<DirectionalLightComponent>().Intensity = 0.8f * (1.0f - 0.25f);
+		sunEntity.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.25f));
 
 		Entity floor = scene->CreateEntity("Floor");
 		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.65f, 0.0f }, { 6.0f, 0.1f, 6.0f }));

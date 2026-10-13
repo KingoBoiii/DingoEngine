@@ -23,8 +23,7 @@ namespace Dingo
 			Application::Get().SetUpdateInBackground(true);
 
 		Scene* first = m_Freeze ? m_GameScene : m_MenuScene;
-		m_SceneManager.SetActiveScene(first->GetName()); // first activation only selects
-		first->OnStart();                                // host starts it explicitly
+		m_SceneManager.SetActiveScene(first->GetName());
 	}
 
 	void EchoVaultLayer::OnDetach()

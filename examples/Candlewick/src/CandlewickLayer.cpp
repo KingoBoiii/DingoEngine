@@ -24,7 +24,6 @@ namespace Dingo
 		RebuildKeepScene();
 
 		m_SceneManager.SetActiveScene(GetLaunchOptions().Room > 0 ? SCENE_KEEP : SCENE_TITLE);
-		m_SceneManager.GetActiveScene()->OnStart();
 	}
 
 	void CandlewickLayer::OnDetach()

@@ -90,7 +90,6 @@ namespace Dingo
 		moonLight.Direction = MOON_DIRECTION;
 		moonLight.Color = MOON_COLOR;
 		moonLight.Intensity = MOON_INTENSITY;
-		moonLight.Ambient = 0.0f;
 		moonLight.CastShadows = !GetLaunchOptions().NoShadows;
 
 		BuildFloor();

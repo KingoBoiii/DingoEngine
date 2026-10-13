@@ -158,9 +158,6 @@ namespace Dingo
 		virtual void SetListenerPosition(const glm::vec3& position) = 0;
 		// Forward = the direction the listener faces; up = the listener's up vector.
 		virtual void SetListenerOrientation(const glm::vec3& forward, const glm::vec3& up) = 0;
-
-		template<typename T>
-		T& As() { return static_cast<T&>(*this); }
 	};
 
 }

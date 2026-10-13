@@ -320,7 +320,9 @@ namespace Dingo
 		// The listener rides the camera so spatialized audio is heard from the player's view.
 		m_CameraEntity.AddComponent<AudioListenerComponent>();
 
-		GetScene().CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		Entity sun = GetScene().CreateEntity("Sun");
+		sun.AddComponent<DirectionalLightComponent>().Intensity = 0.65f;
+		sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.35f));
 	}
 
 	void CourseControllerScript::UpdateCamera(float deltaTime)

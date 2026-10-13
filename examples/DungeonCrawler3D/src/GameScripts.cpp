@@ -131,7 +131,7 @@ namespace Dingo
 		GetScene().CreateEntity("Hud").AddScript<HudScript>(&m_Context);
 
 		UpdateCamera(); // frame a correct view before the first render
-		// OnStart runs before OnPhysicsStart (Scene::OnStart), so every rigid body
+		// Scripts start before physics (Scene::OnStart), so every rigid body
 		// spawned above is baked when physics comes up immediately after.
 	}
 
@@ -334,12 +334,15 @@ namespace Dingo
 		camera.Primary = true;
 		m_CameraEntity.AddComponent<Transform3DComponent>();
 
-		DirectionalLightComponent& sun = GetScene().CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		Entity sunEntity = GetScene().CreateEntity("Sun");
+		DirectionalLightComponent& sun = sunEntity.AddComponent<DirectionalLightComponent>();
+		sun.Intensity = 1.0f - DAY_AMBIENT;
+		float ambient = DAY_AMBIENT;
 		if (m_Night)
 		{
 			sun.Color = NIGHT_MOON_COLOR;
-			sun.Intensity = NIGHT_MOON_INTENSITY;
-			sun.Ambient = NIGHT_AMBIENT;
+			sun.Intensity = NIGHT_MOON_INTENSITY * (1.0f - NIGHT_AMBIENT);
+			ambient = NIGHT_AMBIENT;
 
 			// Its own entity, moved above the hero each frame: a light at the body's centre would
 			// sit inside the hero's mesh and leave it unlit.
@@ -347,6 +350,7 @@ namespace Dingo
 			m_Lantern.AddComponent<Transform3DComponent>();
 			m_Lantern.AddComponent<PointLightComponent>(PointLightComponent(LANTERN_COLOR, LANTERN_INTENSITY, LANTERN_RANGE));
 		}
+		sunEntity.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), ambient));
 	}
 
 	void DungeonControllerScript::UpdateCamera()

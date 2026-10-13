@@ -63,9 +63,9 @@ namespace Dingo
 
 		m_Scene->CreateEntity("Overlay Camera").AddComponent<CameraComponent>();
 
-		DirectionalLightComponent& sun = m_Scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
-		sun.Intensity = 0.5f;
-		sun.Ambient = 0.2f;
+		Entity sun = m_Scene->CreateEntity("Sun");
+		sun.AddComponent<DirectionalLightComponent>().Intensity = 0.5f * (1.0f - 0.2f);
+		sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.2f));
 
 		m_Light = m_Scene->CreateEntity("Light");
 		m_Light.AddComponent<Transform3DComponent>();

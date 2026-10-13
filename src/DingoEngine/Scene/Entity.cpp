@@ -99,39 +99,55 @@ namespace Dingo
 	template<typename T>
 	T& Entity::AddComponent(const T& component)
 	{
-		return m_Scene->m_Data->Registry.emplace<T>(static_cast<entt::entity>(m_Handle), component);
+		DE_CORE_ASSERT(IsValid(), "AddComponent on a null or destroyed entity");
+		entt::registry& registry = m_Scene->m_Data->Registry;
+		const entt::entity self = static_cast<entt::entity>(m_Handle);
+		if (registry.all_of<T>(self))
+			DE_CORE_WARN("AddComponent: '{}' already has this component, which is replaced", GetName());
+		return registry.emplace_or_replace<T>(self, component);
 	}
 
 	template<typename T>
 	T& Entity::GetComponent()
 	{
+		DE_CORE_ASSERT(IsValid(), "GetComponent on a null or destroyed entity");
+		DE_CORE_ASSERT(HasComponent<T>(), "GetComponent: the entity has no component of this type (HasComponent first)");
 		return m_Scene->m_Data->Registry.get<T>(static_cast<entt::entity>(m_Handle));
 	}
 
 	template<typename T>
 	bool Entity::HasComponent() const
 	{
-		return m_Scene->m_Data->Registry.all_of<T>(static_cast<entt::entity>(m_Handle));
+		return IsValid() && m_Scene->m_Data->Registry.all_of<T>(static_cast<entt::entity>(m_Handle));
 	}
 
 	template<typename T>
 	void Entity::RemoveComponent()
 	{
-		m_Scene->m_Data->Registry.remove<T>(static_cast<entt::entity>(m_Handle));
+		if (IsValid())
+			m_Scene->m_Data->Registry.remove<T>(static_cast<entt::entity>(m_Handle));
 	}
 
 	UUID Entity::GetUUID() const
 	{
-		return m_Scene->m_Data->Registry.get<IDComponent>(static_cast<entt::entity>(m_Handle)).ID;
+		return IsValid() ? m_Scene->m_Data->Registry.get<IDComponent>(static_cast<entt::entity>(m_Handle)).ID : UUID();
 	}
 
 	const std::string& Entity::GetName() const
 	{
-		return m_Scene->m_Data->Registry.get<TagComponent>(static_cast<entt::entity>(m_Handle)).Tag;
+		static const std::string s_None;
+		return IsValid() ? m_Scene->m_Data->Registry.get<TagComponent>(static_cast<entt::entity>(m_Handle)).Tag : s_None;
+	}
+
+	void Entity::SetName(std::string_view name)
+	{
+		if (IsValid())
+			m_Scene->m_Data->Registry.get<TagComponent>(static_cast<entt::entity>(m_Handle)).Tag = name.empty() ? std::string("Entity") : std::string(name);
 	}
 
 	Scene& Entity::GetScene() const
 	{
+		DE_CORE_ASSERT(m_Scene, "GetScene on a null entity");
 		return *m_Scene;
 	}
 
@@ -423,6 +439,12 @@ namespace Dingo
 		m_Scene->m_Data->Scripts.Attach(static_cast<entt::entity>(m_Handle), instance, *this);
 	}
 
+	void Entity::RemoveScript()
+	{
+		if (IsValid())
+			m_Scene->m_Data->Scripts.Detach(static_cast<entt::entity>(m_Handle));
+	}
+
 	ScriptableEntity* Entity::GetScriptInstance()
 	{
 		return m_Scene->m_Data->Scripts.Find(static_cast<entt::entity>(m_Handle));
@@ -436,8 +458,11 @@ namespace Dingo
 	template bool Entity::HasComponent<T>() const; \
 	template void Entity::RemoveComponent<T>();
 
-	DE_INSTANTIATE_COMPONENT(IDComponent)
-	DE_INSTANTIATE_COMPONENT(TagComponent)
+	// Identity and name are the scene's to manage: read them, never add, remove or swap them.
+	template IDComponent& Entity::GetComponent<IDComponent>();
+	template bool Entity::HasComponent<IDComponent>() const;
+	template TagComponent& Entity::GetComponent<TagComponent>();
+	template bool Entity::HasComponent<TagComponent>() const;
 	DE_INSTANTIATE_COMPONENT(TransformComponent)
 	DE_INSTANTIATE_COMPONENT(SpriteRendererComponent)
 	DE_INSTANTIATE_COMPONENT(CircleRendererComponent)

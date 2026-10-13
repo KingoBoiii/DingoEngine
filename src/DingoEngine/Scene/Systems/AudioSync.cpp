@@ -124,6 +124,12 @@ namespace Dingo
 					registry.remove<AudioSourceRuntime>(handle);
 			}
 
+			void Connect(entt::registry& registry)
+			{
+				registry.storage<AudioSourceRuntime>();
+				registry.on_destroy<AudioSourceComponent>().connect<&StopSource>();
+			}
+
 			void StopSource(entt::registry& registry, entt::entity handle)
 			{
 				const AudioSourceRuntime* runtime = registry.try_get<AudioSourceRuntime>(handle);

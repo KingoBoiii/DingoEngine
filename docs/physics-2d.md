@@ -44,7 +44,7 @@ struct RigidBody2DComponent
 struct BoxCollider2DComponent
 {
     glm::vec2 Offset{ 0.0f };
-    glm::vec2 Size{ 0.5f };   // half-extents, as a fraction of TransformComponent::Size
+    glm::vec2 HalfExtents{ 0.5f }; // as a fraction of TransformComponent::Size
     float Density = 1.0f;
     float Friction = 0.5f;
     float Restitution = 0.0f; // bounciness, [0,1]
@@ -61,7 +61,7 @@ struct CircleCollider2DComponent
 ```
 
 Collider extents are expressed as a **fraction of the entity's `Transform.Size`**,
-so the defaults (`Size = {0.5, 0.5}`, `Radius = 0.5`) make the collider exactly fill
+so the defaults (`HalfExtents = {0.5, 0.5}`, `Radius = 0.5`) make the collider exactly fill
 the entity's quad. A `Density` of 0 on a dynamic body falls back to a small mass so
 the body still simulates. `Offset` is in the same fractional units, relative to the
 entity center.
@@ -83,16 +83,16 @@ crate.AddComponent<SpriteRendererComponent>(glm::vec4(0.6f, 0.4f, 0.2f, 1.0f));
 crate.AddComponent<RigidBody2DComponent>(RigidBody2DComponent::BodyType::Dynamic);
 crate.AddComponent<BoxCollider2DComponent>();
 
-// 2. Configure gravity and start the simulation. OnPhysicsStart creates a body
-//    (and collider shapes) for every entity that currently has a RigidBody2DComponent.
+// 2. Configure gravity and start the scene. OnStart creates a body (and collider
+//    shapes) for every active entity that currently has a RigidBody2DComponent.
 scene.SetGravity({ 0.0f, -9.81f });
-scene.OnPhysicsStart();
+scene.OnStart();
 
 // 3. Each frame: Scene::OnUpdate steps the world and syncs transforms back.
 scene.OnUpdate(deltaTime);
 
 // 4. Tear it down (also done automatically by Scene::Clear and the destructor).
-scene.OnPhysicsStop();
+scene.OnStop();
 ```
 
 `Scene::OnUpdate` runs your `ScriptableEntity` behaviours first (so a script can
@@ -107,7 +107,7 @@ releases its physics body and shapes.
 
 ### Spawning bodies at runtime
 
-`OnPhysicsStart` only creates bodies for entities that exist when it is called. For
+`OnStart` only creates bodies for entities that exist when it is called. For
 something spawned later (a projectile, a new enemy), add the components and then ask
 the scene to instantiate the body:
 
@@ -130,11 +130,11 @@ Box2D out of your code:
 
 ```cpp
 scene.SetGravity({ 0.0f, -9.81f });
-glm::vec2 g = scene.GetGravity();
+glm::vec2 g = scene.GetGravity2D();
 bool running = scene.IsPhysicsRunning();
 
 scene.SetLinearVelocity(entity, { 5.0f, 0.0f });
-glm::vec2 v = scene.GetLinearVelocity(entity);
+glm::vec2 v = scene.GetLinearVelocity2D(entity);
 
 scene.ApplyLinearImpulseToCenter(entity, { 0.0f, 10.0f }); // instant change in momentum
 scene.ApplyLinearImpulse(entity, impulse, worldPoint);     // off-center => adds spin
@@ -167,7 +167,7 @@ body's angle can differ from its transform's by about a tenth of a degree.
 The simulation resolves collisions for you: dynamic bodies bounce, stack, topple,
 and rest on static geometry automatically. There is no contact-callback API yet, so
 gameplay reactions are driven by observing the simulation — e.g. reading
-`GetLinearVelocity` to detect a hard impact, or checking when a body has fallen out
+`GetLinearVelocity2D` to detect a hard impact, or checking when a body has fallen out
 of the play area. The Angry Birds `PigScript` uses exactly this approach to decide
 when a pig has been knocked out.
 
@@ -181,7 +181,7 @@ implementation of it (`Box2DPhysics2D` — the only place `box2d.h` is included)
 The `Scene` is the glue: it builds bodies from your `RigidBody2DComponent` / collider
 components, steps the world each frame, and writes the simulated transforms back. For
 access beyond the entity-based helpers above, reach the live world directly via
-`Scene::GetPhysics2D()` (null until `OnPhysicsStart`).
+`Scene::GetPhysics2D()` (null until `OnStart`).
 
 ## See also
 

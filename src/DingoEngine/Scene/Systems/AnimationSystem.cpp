@@ -126,7 +126,7 @@ namespace Dingo
 						return true;
 					}
 
-					const RigidBody3DComponent* rigidBody = registry.try_get<RigidBody3DComponent>(handle);
+					const RigidBody3DRuntime* rigidBody = registry.try_get<RigidBody3DRuntime>(handle);
 					const PhysicsBodyId3D body = physics.RuntimeBody3D(registry, handle);
 					if (rigidBody && body != k_InvalidBody3D)
 					{
