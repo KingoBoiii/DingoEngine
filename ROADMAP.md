@@ -378,6 +378,8 @@ whether the feature is real. *Marionette* (v0.8) takes the particle half, with i
 VFX fired straight from animation events.
 
 ## v0.9.1 — Linux, Asset Packing and Headstone Requests
+**Status**: released on 2026-10-13 (PR #179 → `1cc5e94`).
+
 A point release that gathers everything merged since v0.9.0: Linux support, asset packing, the rest of
 *Headstone*'s requests and every bug filed meanwhile. No API breaks; each new feature is off until a
 game asks for it.
