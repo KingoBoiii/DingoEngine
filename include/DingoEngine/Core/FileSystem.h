@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Dingo
@@ -26,6 +27,13 @@ namespace Dingo
 		static bool WriteImage(const std::filesystem::path& filepath, uint32_t width, uint32_t height, uint32_t channels, const uint8_t* pixels, bool flipVertically = false);
 
 		static std::string GetFileName(const std::filesystem::path& filepath);
+
+		// Paths as text, UTF-8 on every platform. On Windows path::string() and path(std::string)
+		// go through the ANSI code page, and string() throws on a character it can't map.
+		static std::string PathToUtf8(const std::filesystem::path& path);
+		// PathToUtf8 with '/' separators.
+		static std::string PathToGenericUtf8(const std::filesystem::path& path);
+		static std::filesystem::path PathFromUtf8(std::string_view text);
 	};
 
 }

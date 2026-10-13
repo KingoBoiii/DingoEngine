@@ -30,6 +30,14 @@ game can anchor it to the executable's directory (or a CLI argument) instead of
 depending on where it was launched from — the classic cwd-relative asset trap.
 If the root does not exist at startup, a warning is logged immediately.
 
+Paths are text in UTF-8. On Windows `path::string()` and `std::filesystem::path(std::string)`
+go through the ANSI code page, and `string()` throws on a name the code page can't map (a
+Cyrillic user name under code page 1252 puts one in every `%TEMP%` path). Log, compare or store
+a path with `FileSystem::PathToUtf8(path)` (or `PathToGenericUtf8` for `/` separators) and
+build one from text with `FileSystem::PathFromUtf8(text)`. Strings the manager returns
+(`GetAssetSource`) are UTF-8 already; `AssetMetadata::FilePath`/`AbsolutePath` are paths, so
+convert them too.
+
 To anchor to the executable (v0.6.2), `Platform::FindDirectoryUpward` searches the
 exe's directory and up to 8 parents. The same line works for a build that ships a loose
 `assets/` beside the exe and a dev build (exe under `build/bin/<Config>/`), and it
