@@ -3,10 +3,11 @@
 namespace Dingo
 {
 
+	/// How triangles are rasterised (PipelineParams::FillMode).
 	enum class FillMode
 	{
-		Solid,
-		Wireframe
+		Solid,    ///< Filled triangles.
+		Wireframe ///< Triangle edges only.
 	};
 
 }

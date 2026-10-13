@@ -4,16 +4,19 @@
 namespace Dingo
 {
 
+	/// A key went down, or its key-repeat fired while held.
 	class KeyPressedEvent : public KeyEvent
 	{
 	public:
+		/// Raised by the window; isRepeat is true for the repeats after the first press.
 		KeyPressedEvent(KeyCode keycode, bool isRepeat)
 			: KeyEvent(keycode), m_IsRepeat(isRepeat)
 		{}
 
-		// True for the key-repeat presses a held key sends after the first.
+		/// True for the key-repeat presses a held key sends after the first.
 		bool IsRepeat() const { return m_IsRepeat; }
 
+		/// "KeyPressedEvent: <key>", with " (repeat)" appended for a repeat.
 		std::string ToString() const override
 		{
 			std::stringstream ss;

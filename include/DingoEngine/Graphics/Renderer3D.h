@@ -41,456 +41,577 @@ namespace Dingo
 		inline constexpr uint32_t k_MaxSkinDataInstances = 256;
 	}
 
-	// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
+	/// A light of the scene being built, for a shadow probe: Renderer3D::GetLastSubmittedLight.
 	struct ShadowProbeLight
 	{
-		int32_t Index = -1; // among the scene's directional lights, or its point and spot lights; -1 = none
+		/// Among the scene's directional lights, or its point and spot lights; -1 = none.
+		int32_t Index = -1;
+		/// True for a directional light, false for a point or spot light.
 		bool Directional = false;
 
+		/// True when Index names a light.
 		bool IsValid() const { return Index >= 0; }
 	};
 
+	/// Budgets and switches of a renderer, set in Renderer3DParams::Capabilities at Create.
+	/// Afterwards only Instancing (SetInstancingEnabled) and LightBudgetFade (SetLightBudgetFade)
+	/// can change.
 	struct Renderer3DCapabilities
 	{
-		// The most one indexed draw takes. A box is 24 verts / 36 indices and a default sphere
-		// ~289 verts / 1536 indices. A material whose meshes in view outgrow one draw spills into
-		// another; only a single mesh larger than one draw is dropped, with a warning. Every
-		// draw of a scene comes from one upload arena that grows to what the busiest frame needs.
+		/// The most one indexed draw takes. A box is 24 verts / 36 indices and a default sphere
+		/// ~289 verts / 1536 indices. A material whose meshes in view outgrow one draw spills into
+		/// another; only a single mesh larger than one draw is dropped, with a warning. Every
+		/// draw of a scene comes from one upload arena that grows to what the busiest frame needs.
+		///@{
 		uint32_t MaxVertices = 65536;
 		uint32_t MaxIndices = 98304;
+		///@}
 
-		// Point and spot lights drawn per scene, at most Renderer3D::k_MaxLocalLights. Lights
-		// whose range can't reach anything in view are skipped first. Past the budget the
-		// brightest as seen from the camera are kept and the rest dropped with a warning; ties go
-		// to the light the camera is nearer to relative to its range, then to the earlier-submitted
-		// one, so a still scene picks the same lights every frame.
+		/// Point and spot lights drawn per scene, at most Renderer3D::k_MaxLocalLights. Lights
+		/// whose range can't reach anything in view are skipped first. Past the budget the
+		/// brightest as seen from the camera are kept and the rest dropped with a warning; ties go
+		/// to the light the camera is nearer to relative to its range, then to the
+		/// earlier-submitted one, so a still scene picks the same lights every frame.
 		uint32_t MaxLocalLights = 32;
 
-		// Past the budget a light drops out at full strength. With a band above 0, a drawn light whose
-		// priority comes within that fraction of the first dropped light's fades out as it nears it,
-		// so a light crossing the budget's edge as the camera moves fades instead of popping (0.5 =
-		// within 50 %). Priority is then one continuous value, brightness seen from the camera over
-		// one plus the distance relative to the range, rather than brightness with ties broken by
-		// distance. 0 (the default) keeps the hard cut and the old ranking. Casting lights hand their
-		// shadow slots over through the same band. Renderer3D::SetLightBudgetFade changes it.
+		/// Past the budget a light drops out at full strength. With a band above 0, a drawn light
+		/// whose priority comes within that fraction of the first dropped light's fades out as it
+		/// nears it, so a light crossing the budget's edge as the camera moves fades instead of
+		/// popping (0.5 = within 50 %). Priority is then one continuous value, brightness seen from
+		/// the camera over one plus the distance relative to the range, rather than brightness with
+		/// ties broken by distance. 0 (the default) keeps the hard cut and the old ranking. Casting
+		/// lights hand their shadow slots over through the same band.
+		/// Renderer3D::SetLightBudgetFade changes it.
 		float LightBudgetFade = 0.0f;
 
-		// Point and spot lights with CastShadows that get a shadow, at most
-		// Renderer3D::k_MaxShadowedLocalLights. The drawn casting lights take them in the budget's
-		// order; the rest light unshadowed, with a warning (Statistics::UnshadowedLights).
+		/// Point and spot lights with CastShadows that get a shadow, at most
+		/// Renderer3D::k_MaxShadowedLocalLights. The drawn casting lights take them in the budget's
+		/// order; the rest light unshadowed, with a warning (Statistics::UnshadowedLights).
 		uint32_t MaxShadowedLocalLights = 8;
 
-		// Skinned instances a frame, across every scene this renderer runs, at most
-		// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls with
-		// the same palette, transform and colour (a model's submeshes); its joints go once into the
-		// scene's skin arena, one storage buffer uploaded once a scene, and each of its draws writes
-		// the 16 bytes that find them, to a volatile buffer that on Vulkan has room for this many
-		// instances a frame. Later instances that frame are skipped whole, with a warning
-		// (Statistics::DroppedSkinnedDraws). A custom shader with a SkinData block takes a write of
-		// the whole palette a draw and has at most k_MaxSkinDataInstances of them.
+		/// Skinned instances a frame, across every scene this renderer runs, at most
+		/// Renderer3D::k_MaxSkinnedInstancesLimit. An instance is a run of SubmitSkinnedMesh calls
+		/// with the same palette, transform and colour (a model's submeshes); its joints go once
+		/// into the scene's skin arena, one storage buffer uploaded once a scene, and each of its
+		/// draws writes the 16 bytes that find them, to a volatile buffer that on Vulkan has room
+		/// for this many instances a frame. Later instances that frame are skipped whole, with a
+		/// warning (Statistics::DroppedSkinnedDraws). A custom shader with a SkinData block takes a
+		/// write of the whole palette a draw and has at most k_MaxSkinDataInstances of them.
 		uint32_t MaxSkinnedInstances = 1024;
 
-		// GPU particles alive at once across every emitter this renderer made, at most
-		// Renderer3D::k_MaxParticlesLimit: the pool, 48 bytes a particle, made at the first EndScene with
-		// a submission. Each emitter takes a ring of it the size of its effect's Capacity.
+		/// GPU particles alive at once across every emitter this renderer made, at most
+		/// Renderer3D::k_MaxParticlesLimit: the pool, 48 bytes a particle, made at the first
+		/// EndScene with a submission. Each emitter takes a ring of it the size of its effect's
+		/// Capacity.
 		uint32_t MaxParticles = 65536;
 
-		// Copies of one mesh with one material and shadow setting in view: at least InstanceThreshold of
-		// them, or more vertices together than one draw takes (MaxVertices), are drawn as one instanced
-		// draw from the mesh's own buffers, placed on the GPU, instead of being transformed into a batch
-		// on the CPU. Off (Renderer3D::SetInstancingEnabled at runtime) every static mesh is batched as
-		// before, except those of a material with MaterialParams::Instancing. Either way the picture is
-		// the same, within the rounding of the two transforms.
+		/// Copies of one mesh with one material and shadow setting submitted to a scene (culled or
+		/// not, so the camera never changes the choice): at least InstanceThreshold of them, or
+		/// more vertices together than one draw takes (MaxVertices), are drawn as one instanced
+		/// draw from the mesh's own buffers, placed on the GPU, instead of being transformed into a
+		/// batch on the CPU. Off (Renderer3D::SetInstancingEnabled at runtime) every static mesh is
+		/// batched as before, except those of a material with MaterialParams::Instancing. Either
+		/// way the picture is the same, within the rounding of the two transforms.
+		///@{
 		bool Instancing = true;
 		uint32_t InstanceThreshold = 8;
+		///@}
 
-		// When true, a mesh too large for an empty batch, a light past the light budget or a
-		// skinned instance past MaxSkinnedInstances trips an assert instead of the default
-		// warn-once-and-drop. Asserts are compiled out in release, where it warns and drops
-		// regardless.
+		/// When true, a mesh too large for an empty batch, a light past the light budget or a
+		/// skinned instance past MaxSkinnedInstances trips an assert instead of the default
+		/// warn-once-and-drop. Asserts are compiled out in release, where it warns and drops
+		/// regardless.
 		bool AssertOnOverflow = false;
 	};
 
-	// Cascaded shadow maps for the first directional light with CastShadows. Every shadow view of a
-	// scene renders into one depth atlas, every batch once for all of them (instanced), before the
-	// scene's lit draws sample it. A scene whose lights cast nothing renders exactly as without shadows.
+	/// Cascaded shadow maps for the first directional light with CastShadows. Every shadow view of
+	/// a scene renders into one depth atlas, every batch once for all of them (instanced), before
+	/// the scene's lit draws sample it. A scene whose lights cast nothing renders exactly as
+	/// without shadows.
 	struct Renderer3DShadowSettings
 	{
-		// The atlas is AtlasSize x AtlasSize D32 (64 MB at 4096), made the first time a scene casts.
-		// A power of two from 2048 to 8192.
+		/// The atlas is AtlasSize x AtlasSize D32 (64 MB at 4096), made the first time a scene
+		/// casts. A power of two from 2048 to 8192.
 		uint32_t AtlasSize = 4096;
-		// Cascades for a perspective camera, 1 to 4; an orthographic camera gets one fitted to its view.
+		/// Cascades for a perspective camera, 1 to 4; an orthographic camera gets one fitted to its
+		/// view.
 		uint32_t CascadeCount = 4;
-		// Each cascade's square tile in the atlas, a power of two of at most AtlasSize / 2.
+		/// Each cascade's square tile in the atlas, a power of two of at most AtlasSize / 2.
 		uint32_t CascadeResolution = 1024;
-		// How far along the view shadows reach; the last cascade fades out over its CascadeBlend.
+		/// How far along the view shadows reach; the last cascade fades out over its CascadeBlend.
 		float MaxDistance = 60.0f;
-		// How the view is split between cascades: 0 evenly, 1 logarithmically (detail near the camera).
+		/// How the view is split between cascades: 0 evenly, 1 logarithmically (detail near the
+		/// camera).
 		float SplitLambda = 0.75f;
-		// The part of each cascade, at its far end, over which it fades into the next.
+		/// The part of each cascade, at its far end, over which it fades into the next.
 		float CascadeBlend = 0.1f;
-		// Pushes the depth stored in the atlas away from the light: DepthBias in units of the smallest
-		// depth step, SlopeBias times the triangle's slope toward the light (both baked into the shadow
-		// pipeline). NormalBias moves the point a lit surface looks up along its normal, in the
-		// cascade's texels. Together they keep a surface from shadowing itself (acne).
+		/// Pushes the depth stored in the atlas away from the light: DepthBias in units of the
+		/// smallest depth step, SlopeBias times the triangle's slope toward the light (both baked
+		/// into the shadow pipeline). NormalBias moves the point a lit surface looks up along its
+		/// normal, in the cascade's texels. Together they keep a surface from shadowing itself
+		/// (acne).
+		///@{
 		int32_t DepthBias = 4;
 		float SlopeBias = 2.0f;
 		float NormalBias = 1.5f;
-		// The tile of the two highest-ranked shadowed spot lights; the next four get half, the rest a
-		// quarter. A point light's six faces each get half of what a spot light of its rank would.
-		// A light keeps its size until its rank moves two places, so a still scene never changes. A
-		// power of two from 128 to AtlasSize / 2.
+		///@}
+		/// The tile of the two highest-ranked shadowed spot lights; the next four get half, the
+		/// rest a quarter. A point light's six faces each get half of what a spot light of its rank
+		/// would. A light keeps its size until its rank moves two places, so a still scene never
+		/// changes. A power of two from 128 to AtlasSize / 2.
 		uint32_t LocalShadowResolution = 1024;
-		// Tints the scene red, green, blue and yellow by cascade.
+		/// Tints the scene red, green, blue and yellow by cascade.
 		bool DebugCascades = false;
 	};
 
+	/// Settings for Renderer3D::Create.
 	struct Renderer3DParams
 	{
-		// The default light: what a scene that submits no light and no ambient of its own is lit
-		// by, so code written before scene lighting existed keeps its look. Direction is the way
-		// the light travels; Ambient lifts every face, and lit faces get the remaining
-		// (1 - Ambient) scaled by how squarely they face the light.
+		/// The default light: what a scene that submits no light and no ambient of its own is lit
+		/// by, so code written before scene lighting existed keeps its look. Direction is the way
+		/// the light travels; Ambient lifts every face, and lit faces get the remaining
+		/// (1 - Ambient) scaled by how squarely they face the light.
+		///@{
 		glm::vec3 LightDirection = { -0.4f, -1.0f, -0.35f };
 		float Ambient = 0.35f;
+		///@}
 
+		/// Budgets and switches; see Renderer3DCapabilities.
 		Renderer3DCapabilities Capabilities = {};
+		/// Initial shadow settings; SetShadowSettings changes them later.
 		Renderer3DShadowSettings Shadows = {};
 	};
 
-	// A batched, forward-lit mesh renderer — the 3D sibling of Renderer2D.
-	//
-	// Between BeginScene()/EndScene() it records the submitted meshes. EndScene() culls them
-	// against the camera's view and each shadow view (Frustum.h), transforms what is left on the
-	// CPU into one vertex/index batch per material, uploads the scene in one go, and issues one
-	// indexed draw per batch. A mesh repeated often enough is drawn instanced instead, all its copies
-	// in one draw placed on the GPU (Renderer3DCapabilities::Instancing). Meshes with no explicit
-	// material use the built-in lit default material.
-	// Depth testing is enabled (the swap-chain carries a depth attachment), so meshes
-	// occlude correctly regardless of submission order. Meshes with a translucent material
-	// (MaterialParams::Translucent) are the exception: they draw after every opaque one, static
-	// and skinned, sorted far to near by their centres.
-	//
-	// Camera + lights live in a shared "scene" uniform buffer bound at binding 0 on
-	// every material (Material::SetSceneUniformBuffer); a custom material's own uniforms
-	// bind at 1 and its textures at 2+. The SceneRenderer drives this for
-	// Transform3D + MeshRenderer entities (via Scene::SubmitLights and
-	// Scene::RenderEntities3D).
-	//
-	// Note: each batch is capped at the configured capacity. A material that outgrows one
-	// spills into another batch — one more draw call — so raise Capabilities to cut draw
-	// calls in very dense scenes.
+	/// A batched, forward-lit mesh renderer - the 3D sibling of Renderer2D.
+	///
+	/// Between BeginScene()/EndScene() it records the submitted meshes. EndScene() culls them
+	/// against the camera's view and each shadow view (Frustum.h), transforms what is left on the
+	/// CPU into one vertex/index batch per material, uploads the scene in one go, and issues one
+	/// indexed draw per batch. A mesh repeated often enough is drawn instanced instead, all its
+	/// copies in one draw placed on the GPU (Renderer3DCapabilities::Instancing). Meshes with no
+	/// explicit material use the built-in lit default material. Depth testing is enabled (the
+	/// swap-chain carries a depth attachment), so meshes occlude correctly regardless of submission
+	/// order. Meshes with a translucent material (MaterialParams::Translucent) are the exception:
+	/// they draw after every opaque one, static and skinned, sorted far to near by their centres.
+	///
+	/// Camera + lights live in a shared "scene" uniform buffer bound at binding 0 on every material
+	/// (Material::SetSceneUniformBuffer); a custom material's own uniforms bind at 1 and its
+	/// textures at 2+. The SceneRenderer drives this for Transform3D + MeshRenderer entities (via
+	/// Scene::SubmitLights and Scene::RenderEntities3D).
+	///
+	/// Note: each batch is capped at the configured capacity. A material that outgrows one spills
+	/// into another batch - one more draw call - so raise Capabilities to cut draw calls in very
+	/// dense scenes.
 	class Renderer3D
 	{
 	public:
+		/// Makes a renderer; the caller owns it and deletes it. Needs the graphics device
+		/// (Renderer) up.
 		[[nodiscard]] static Renderer3D* Create(const Renderer3DParams& params = {});
 
 	public:
+		/// Not constructible, copyable or movable: make one with Create and delete it when done.
+		///@{
 		Renderer3D() = delete;
 		Renderer3D(const Renderer3D&) = delete;
 		Renderer3D& operator=(const Renderer3D&) = delete;
 		Renderer3D(Renderer3D&&) = delete;
 		Renderer3D& operator=(Renderer3D&&) = delete;
-		// Calls Shutdown.
+		///@}
+		/// Calls Shutdown.
 		~Renderer3D();
 
 	public:
-		// Frees the renderer's GPU objects early; the destructor does it anyway. A lit material it
-		// made must be deleted before this.
+		/// Frees the renderer's GPU objects early; the destructor does it anyway. A lit material it
+		/// made must be deleted before this.
 		void Shutdown();
 
-		// Begins accumulating a batch for the given view. Does not clear — call
-		// Clear() first if you want a fresh frame (it clears colour *and* depth).
+		/// Begins accumulating a batch for the given view. Does not clear - call Clear() first if
+		/// you want a fresh frame (it clears colour *and* depth). The matrix overload works out the
+		/// camera position from the matrix, and treats a matrix without perspective as an
+		/// orthographic camera.
+		///@{
 		void BeginScene(const PerspectiveCamera& camera);
 		void BeginScene(const glm::mat4& viewProjection);
+		///@}
 
-		// Uploads and draws the accumulated batch.
+		/// Uploads and draws the accumulated batch. Culls, uploads and draws what was submitted
+		/// (shadow views first), then clears the scene's lights, fog and shadow probes. Does
+		/// nothing without a BeginScene, or in a frame that renders nothing.
 		void EndScene();
 
-		// Clears the current render target's colour and depth.
+		/// Clears the current render target's colour and depth.
 		void Clear(const glm::vec4& clearColor);
 
-		// Scene lighting is rebuilt for every scene: lights and ambient submitted since the last
-		// EndScene - before or after BeginScene - light the next EndScene, which then clears
-		// them. A scene that submits no light and no ambient is lit by the default light instead.
-		// Up to k_MaxDirectionalLights directional lights count; further ones are dropped with a
-		// warning. Point and spot lights share the MaxLocalLights budget (see
-		// Renderer3DCapabilities). SetAmbientLight replaces the scene's ambient, which is black
-		// otherwise. SubmitLight returns false for a light it ignores (non-finite, or a point or spot
-		// light without positive intensity and range) or drops (a fifth directional light, or one
-		// past the pending-light cap).
+		/// Scene lighting is rebuilt for every scene: lights and ambient submitted since the last
+		/// EndScene - before or after BeginScene - light the next EndScene, which then clears them.
+		/// A scene that submits no light and no ambient is lit by the default light instead. Up to
+		/// k_MaxDirectionalLights directional lights count; further ones are dropped with a
+		/// warning. Point and spot lights share the MaxLocalLights budget (see
+		/// Renderer3DCapabilities). SetAmbientLight replaces the scene's ambient, which is black
+		/// otherwise. SubmitLight returns false for a light it ignores (non-finite, or a point or
+		/// spot light without positive intensity and range) or drops (a fifth directional light, or
+		/// one past the pending-light cap).
+		///@{
 		bool SubmitLight(const DirectionalLight& light);
 		bool SubmitLight(const PointLight& light);
 		bool SubmitLight(const SpotLight& light);
+		///@}
+		/// Sets the scene's ambient light to color (linear RGB) times intensity; ignored when not
+		/// finite. Cleared at EndScene.
 		void SetAmbientLight(const glm::vec3& color, float intensity);
 
-		// Capabilities.LightBudgetFade, clamped to 0..4.
+		/// Capabilities.LightBudgetFade, clamped to 0..4.
 		void SetLightBudgetFade(float band);
 
-		// The light the latest SubmitLight call added to the scene being built, for AddShadowProbe;
-		// invalid when that call ignored or dropped its light.
+		/// The light the latest SubmitLight call added to the scene being built, for
+		/// AddShadowProbe; invalid when that call ignored or dropped its light.
 		ShadowProbeLight GetLastSubmittedLight() const { return m_LastSubmittedLight; }
 
+		/// Shadow probes a scene can hold.
 		static constexpr uint32_t k_MaxShadowProbes = 256;
 
-		// Shadow probes: how much of `light` reaches `point` past the shadows this scene draws, from 1
-		// (lit) to 0 (in its shadow, ShadowStrength of the way), worked out on the GPU by the lit
-		// shader's own shadow lookup, so the shadow a player sees is the one that hides them. Add a
-		// probe before EndScene, as lights are (it clears with them), and read the answer by its key
-		// with GetShadowProbeResult: the GPU answers one to three frames later, never stalling, and a key
-		// keeps its latest answer until the next one arrives. A light drawn without a shadow (no
-		// CastShadows, past the shadow slots, out of the budget) answers 1 at once, which is what is
-		// drawn; so does a directional light for a point outside this scene's cascades (behind the
-		// camera, off screen, past Shadows.MaxDistance), which cover only what the camera sees. A
-		// local light's shadow doesn't depend on the camera. The point is taken as it is, with no surface normal to push it off a surface, so
-		// probe a point in the air, such as a character's chest. At most k_MaxShadowProbes a scene;
-		// past them AddShadowProbe returns false and warns once. `clearance` moves the point that far
-		// towards the light first (at most to the light), so a caster within it doesn't count: a
-		// point inside a character's body, probed while the body casts.
+		/// Shadow probes: how much of `light` reaches `point` past the shadows this scene draws,
+		/// from 1 (lit) to 0 (in its shadow, ShadowStrength of the way), worked out on the GPU by
+		/// the lit shader's own shadow lookup, so the shadow a player sees is the one that hides
+		/// them. Add a probe before EndScene, as lights are (it clears with them), and read the
+		/// answer by its key with GetShadowProbeResult: the GPU answers one to three frames later,
+		/// never stalling, and a key keeps its latest answer until the next one arrives. A light
+		/// drawn without a shadow (no CastShadows, past the shadow slots, out of the budget)
+		/// answers 1 at once, which is what is drawn; so does a directional light for a point
+		/// outside this scene's cascades (behind the camera, off screen, past Shadows.MaxDistance),
+		/// which cover only what the camera sees. A local light's shadow doesn't depend on the
+		/// camera. The point is taken as it is, with no surface normal to push it off a surface, so
+		/// probe a point in the air, such as a character's chest. At most k_MaxShadowProbes a
+		/// scene; past them AddShadowProbe returns false and warns once. `clearance` moves the
+		/// point that far towards the light first (at most to the light), so a caster within it
+		/// doesn't count: a point inside a character's body, probed while the body casts.
 		bool AddShadowProbe(ShadowProbeLight light, const glm::vec3& point, uint64_t key, float clearance = 0.0f);
-		// The latest answer for key; empty until the first one arrives. Answers not refreshed for 600
-		// frames are forgotten.
+		/// The latest answer for key; empty until the first one arrives. Answers not refreshed for
+		/// 600 frames are forgotten.
 		std::optional<float> GetShadowProbeResult(uint64_t key) const;
 
+		/// Upper limit of Renderer3DCapabilities::MaxParticles.
 		static constexpr uint32_t k_MaxParticlesLimit = 1u << 20;
 
-		// GPU particles. An emitter is a ring of this renderer's pool, the size of the effect's capacity
-		// (an emitter the pool has no room for draws nothing, with a warning); dropping its last
-		// reference returns the ring. SubmitParticles between BeginScene and EndScene steps it by
-		// deltaTime (simulate, then emit, on the GPU) and draws it after the scene's opaque and translucent meshes,
-		// unlit and depth-tested without writing depth; submit an emitter once a frame, or the other
-		// scenes with a deltaTime of 0. A submission keeps the emitter alive until EndScene. Through the post chain, AO is applied first so particles aren't
-		// darkened, and particles with a SoftDistance fade against the scene's depth. See
-		// docs/particles.md.
+		/// GPU particles. An emitter is a ring of this renderer's pool, the size of the effect's
+		/// capacity (an emitter the pool has no room for draws nothing, with a warning); dropping
+		/// its last reference returns the ring. SubmitParticles between BeginScene and EndScene
+		/// steps it by deltaTime (simulate, then emit, on the GPU) and draws it after the scene's
+		/// opaque and translucent meshes, unlit and depth-tested without writing depth; submit an
+		/// emitter once a frame, or the other scenes with a deltaTime of 0. A submission keeps the
+		/// emitter alive until EndScene. Through the post chain, AO is applied first so particles
+		/// aren't darkened, and particles with a SoftDistance fade against the scene's depth. See
+		/// docs/particles.md.
 		[[nodiscard]] std::shared_ptr<ParticleEmitter> CreateParticleEmitter(const ParticleEffect* effect);
+		/// Steps the emitter by deltaTime seconds and draws it this scene, at transform (the
+		/// emitter's local space to world). Does nothing outside a Begin/EndScene pair.
 		void SubmitParticles(ParticleEmitter& emitter, const glm::mat4& transform, float deltaTime);
-		// Whether this renderer made the emitter: one made by another Renderer3D draws nothing here.
+		/// Whether this renderer made the emitter: one made by another Renderer3D draws nothing
+		/// here.
 		bool OwnsParticleEmitter(const ParticleEmitter& emitter) const;
-		// The pool, for tooling and tests: 48 bytes a particle (ParticleCommon.glsl); null until the
-		// first emitter draws.
+		/// The pool, for tooling and tests: 48 bytes a particle (ParticleCommon.glsl); null until
+		/// the first emitter draws.
 		GraphicsBuffer* GetParticlePool() const;
+		/// Particles the pool holds: Capabilities.MaxParticles clamped to 64..k_MaxParticlesLimit.
 		uint32_t GetParticlePoolCapacity() const;
+		/// Particles of the pool taken by the live emitters' rings.
 		uint32_t GetParticlePoolUsed() const;
 
-		// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders and
-		// the 2D overlay aren't fogged), scene-scoped like the lights: set it before EndScene, which
-		// clears it. It is no light, so a scene with fog and no light keeps the default light. Returns
-		// false for a fog it ignores: a non-finite value, a negative Density, or Linear with End not
-		// past Start. FogMode::None clears it, as ClearFog does; MaxOpacity is clamped to 0..1. An
-		// orthographic camera's scene draws without fog.
+		/// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders
+		/// and the 2D overlay aren't fogged), scene-scoped like the lights: set it before EndScene,
+		/// which clears it. It is no light, so a scene with fog and no light keeps the default
+		/// light. Returns false for a fog it ignores: a non-finite value, a negative Density, or
+		/// Linear with End not past Start. FogMode::None clears it, as ClearFog does; MaxOpacity is
+		/// clamped to 0..1. An orthographic camera's scene draws without fog.
 		bool SetFog(const Fog& fog);
+		/// Removes the scene's fog, as SetFog with FogMode::None does.
 		void ClearFog();
 
-		// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
+		/// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		[[deprecated("submit the light each scene with SubmitLight and SetAmbientLight, or set Renderer3DParams::LightDirection/Ambient; removed in 2.0")]]
 		void SetDirectionalLight(const glm::vec3& direction, float ambient);
 
+		/// Upper limit of Renderer3DShadowSettings::CascadeCount.
 		static constexpr uint32_t k_MaxShadowCascades = 4;
+		/// Upper limit of Renderer3DCapabilities::MaxShadowedLocalLights.
 		static constexpr uint32_t k_MaxShadowedLocalLights = 16;
-		// Atlas tiles a scene can render: the cascades and six faces for every shadowed local light.
+		/// Atlas tiles a scene can render: the cascades and six faces for every shadowed local
+		/// light.
 		static constexpr uint32_t k_MaxShadowTiles = k_MaxShadowCascades + 6 * k_MaxShadowedLocalLights;
 
-		// Values out of range are clamped. A new AtlasSize resizes the atlas in place.
+		/// Values out of range are clamped. A new AtlasSize resizes the atlas in place.
 		void SetShadowSettings(const Renderer3DShadowSettings& settings);
+		/// The settings as clamped by SetShadowSettings.
 		const Renderer3DShadowSettings& GetShadowSettings() const { return m_Params.Shadows; }
-		// The depth atlas, for viewing it; null until a scene cast a shadow.
+		/// The depth atlas, for viewing it; null until a scene cast a shadow.
 		Framebuffer* GetShadowAtlas() const { return m_ShadowAtlas; }
 
+		/// Directional lights a scene can use; further ones are dropped.
 		static constexpr uint32_t k_MaxDirectionalLights = 4;
+		/// Upper limit of Renderer3DCapabilities::MaxLocalLights.
 		static constexpr uint32_t k_MaxLocalLights = 32;
 
-		// Scenes a renderer can run in one frame. On Vulkan each EndScene writes the volatile scene
-		// buffer, which has room for this many writes a frame; later scenes draw with stale lighting.
+		/// Scenes a renderer can run in one frame. On Vulkan each EndScene writes the volatile
+		/// scene buffer, which has room for this many writes a frame; later scenes draw with stale
+		/// lighting.
 		static constexpr uint32_t k_MaxScenesPerFrame = 32;
 
-		// Adds a mesh to the scene's batch for the given material (null => the built-in lit
-		// default); EndScene culls it and transforms what is drawn into world space on the CPU, or,
-		// for a mesh with enough copies in view (Renderer3DCapabilities::InstanceThreshold), draws its
-		// copies instanced from the mesh's own buffers, so the mesh must stay alive and unchanged until
-		// then. It is culled when its bounds (Mesh::GetBoundsMin/Max
-		// placed by transform) lie outside the camera's view, and, for a perspective camera, when
-		// cullDistance is above 0 and the camera is farther than that from its bounds; a culled caster
-		// still casts into any shadow view its bounds reach, unless it is past its cullDistance. The
-		// near plane never culls (D3D clamps depth there instead of clipping), and the far plane only
-		// meshes whose material depth-tests with Less, without depth bias, into a target with depth,
-		// which can't draw past it on any backend. A non-affine transform is never culled, nor, by the
-		// camera, a mesh whose material isn't FrustumCulled. The vertex stream is
-		// a_Position (0), a_Normal (1), a_Color (2, the color passed here) and a_TexCoord
-		// (3, the mesh's UVs, for custom materials that sample a texture); a MaterialParams::Instancing
-		// material reads the mesh's own vertices and its instance record instead. No-op outside a
-		// Begin/EndScene pair. Every material casts through the renderer's own depth-only pass, so a
-		// custom vertex shader's displacement isn't in its shadow, and a translucent mesh casts a full
-		// one. shadowGroups is a bit mask: a casting light takes the mesh into its shadows only when
-		// it shares a bit with the light's ShadowCasterGroups.
-		//
-		// A translucent material's meshes draw in the translucent pass, after the opaque ones: each
-		// mesh sorted far to near by the centre of its transformed vertices (along the view for an
-		// orthographic camera; ties keep submission order), consecutive meshes of one material in one
-		// draw. The sort is per mesh, not per triangle, so meshes that intersect, or a large one
-		// wrapped around a small one, can blend in the wrong order. A two-sided material's mesh
-		// (CullMode::None: every lit material) puts its triangles facing away from the camera first, so
-		// its far side never blends over its near side. With ShadowsOnly it draws nothing lit, so it
-		// batches like an opaque mesh.
-		//
-		// A surface, when given, replaces the lit material's emissive, roughness and specular for this
-		// mesh alone (copied at the call), so meshes that differ only in those share one material's
-		// batch. A custom material's mesh ignores it.
+		/// Adds a mesh to the scene's batch for the given material (null => the built-in lit
+		/// default); EndScene culls it and transforms what is drawn into world space on the CPU,
+		/// or, for a mesh with enough copies in view (Renderer3DCapabilities::InstanceThreshold),
+		/// draws its copies instanced from the mesh's own buffers, so the mesh must stay alive and
+		/// unchanged until then. It is culled when its bounds (Mesh::GetBoundsMin/Max placed by
+		/// transform) lie outside the camera's view, and, for a perspective camera, when
+		/// cullDistance is above 0 and the camera is farther than that from its bounds; a culled
+		/// caster still casts into any shadow view its bounds reach, unless it is past its
+		/// cullDistance. The near plane never culls (D3D clamps depth there instead of clipping),
+		/// and the far plane only meshes whose material depth-tests with Less, without depth bias,
+		/// into a target with depth, which can't draw past it on any backend. A non-affine
+		/// transform is never culled, nor, by the camera, a mesh whose material isn't
+		/// FrustumCulled. The vertex stream is a_Position (0), a_Normal (1), a_Color (2, the color
+		/// passed here) and a_TexCoord (3, the mesh's UVs, for custom materials that sample a
+		/// texture); a MaterialParams::Instancing material reads the mesh's own vertices and its
+		/// instance record instead. No-op outside a Begin/EndScene pair. Every material casts
+		/// through the renderer's own depth-only pass, so a custom vertex shader's displacement
+		/// isn't in its shadow, and a translucent mesh casts a full one. shadowGroups is a bit
+		/// mask: a casting light takes the mesh into its shadows only when it shares a bit with the
+		/// light's ShadowCasterGroups.
+		///
+		/// A translucent material's meshes draw in the translucent pass, after the opaque ones:
+		/// each mesh sorted far to near by the centre of its transformed vertices (along the view
+		/// for an orthographic camera; ties keep submission order), consecutive meshes of one
+		/// material in one draw. The sort is per mesh, not per triangle, so meshes that intersect,
+		/// or a large one wrapped around a small one, can blend in the wrong order. A two-sided
+		/// material's mesh (CullMode::None: every lit material) puts its triangles facing away from
+		/// the camera first, so its far side never blends over its near side. With ShadowsOnly it
+		/// draws nothing lit, so it batches like an opaque mesh.
+		///
+		/// A surface, when given, replaces the lit material's emissive, roughness and specular for
+		/// this mesh alone (copied at the call), so meshes that differ only in those share one
+		/// material's batch. A custom material's mesh ignores it.
 		void SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f, const SurfaceOverride* surface = nullptr);
 
-		// Static geometry (StaticBatch.h): meshes baked into world space once, in cells kept on the GPU.
-		// A batch belongs to the renderer that made it and draws nothing on another (warned once); it may
-		// outlive the renderer, drawing nothing. SubmitStaticBatch between BeginScene and EndScene bakes
-		// what changed since the last submission, then culls each cell's draws against the camera and
-		// the shadow views as SubmitMesh culls a mesh, and keeps the batch alive until EndScene. A cell
-		// draws before the CPU batches of the same material, its meshes by cell and then in the order
-		// they were added, and its materials join the scene's draw order at the submission, so two
-		// meshes meeting at exactly equal depth can resolve the other way than through SubmitMesh.
+		/// Static geometry (StaticBatch.h): meshes baked into world space once, in cells kept on
+		/// the GPU. A batch belongs to the renderer that made it and draws nothing on another
+		/// (warned once); it may outlive the renderer, drawing nothing. SubmitStaticBatch between
+		/// BeginScene and EndScene bakes what changed since the last submission, then culls each
+		/// cell's draws against the camera and the shadow views as SubmitMesh culls a mesh, and
+		/// keeps the batch alive until EndScene. A cell draws before the CPU batches of the same
+		/// material, its meshes by cell and then in the order they were added, and its materials
+		/// join the scene's draw order at the submission, so two meshes meeting at exactly equal
+		/// depth can resolve the other way than through SubmitMesh. Call it before Shutdown; the
+		/// batch it returns is never null.
 		[[nodiscard]] std::shared_ptr<StaticBatch> CreateStaticBatch(const StaticBatchParams& params = {});
+		/// Bakes what changed in the batch and draws it this scene; does nothing outside a
+		/// Begin/EndScene pair, or for a batch another renderer made.
 		void SubmitStaticBatch(StaticBatch& batch);
+		/// Whether this renderer made the batch.
 		bool OwnsStaticBatch(const StaticBatch& batch) const;
 
-		// Convenience primitives drawn with the renderer's built-in unit meshes
-		// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
+		/// Convenience primitives drawn with the renderer's built-in unit meshes
+		/// (a 1x1x1 box centred on the origin, and a unit-diameter sphere).
+		///@{
 		void DrawBox(const glm::mat4& transform, const glm::vec4& color);
 		void DrawSphere(const glm::mat4& transform, const glm::vec4& color);
+		///@}
 
-		// The most joints one skinned draw can use: the length of SkinData's palette.
+		/// The most joints one skinned draw can use: the length of SkinData's palette.
 		static constexpr uint32_t k_MaxSkinJoints = 128;
-		// The highest binding a custom shader may give its DE_SkinDraw (or SkinData) block; D3D11 has
-		// 14 constant buffer slots.
+		/// The highest binding a custom shader may give its DE_SkinDraw (or SkinData) block; D3D11
+		/// has 14 constant buffer slots.
 		static constexpr uint32_t k_MaxSkinUniformBinding = 13;
+		/// Old name of k_MaxSkinUniformBinding.
 		[[deprecated("use k_MaxSkinUniformBinding; removed in 2.0")]]
 		static constexpr uint32_t k_MaxSkinDataBinding = k_MaxSkinUniformBinding;
-		// Each instance of the budget holds three 16-byte DE_SkinDraw versions in host-visible memory
-		// on Vulkan, and its palette a stretch of the skin arena.
+		/// Upper limit of Renderer3DCapabilities::MaxSkinnedInstances. Each instance of the budget
+		/// holds three 16-byte DE_SkinDraw versions in host-visible memory on Vulkan, and its
+		/// palette a stretch of the skin arena.
 		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
-		// Instances a frame drawn with a custom material whose shader has the deprecated SkinData
-		// block, each holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
+		/// Instances a frame drawn with a custom material whose shader has the deprecated SkinData
+		/// block, each holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
 		[[deprecated("the SkinData block is deprecated: declare Skinning.glsl's DE_SKIN_PALETTE blocks; removed in 2.0")]]
 		static constexpr uint32_t k_MaxSkinDataInstances = Internal::k_MaxSkinDataInstances;
 
-		// Skins a mesh on the GPU and places it with transform, one draw per call. joints is the
-		// skinning palette (Skeleton::ComputeSkinningPalette, or GetRestPalette for the rest pose)
-		// and must hold at least mesh->GetSkinJointCount() matrices; consecutive calls with the same
-		// palette, transform and colour, such as a model's submeshes, share one upload.
-		//
-		// Opaque skinned meshes draw after every opaque static batch. With a translucent material a
-		// skinned mesh joins the translucent pass, sorted by the centre of its rest bounds placed with
-		// transform (an instance's translucent meshes share the first one's), so it blends with translucent
-		// static meshes in depth order. A two-sided material's mesh draws twice there, culling its near
-		// side, then its far side.
-		//
-		// A lit material (null = the default) draws through a skinned twin the renderer keeps for
-		// it. A custom material's shader needs Skinning.glsl's blocks, either DE_SkinDraw and
-		// DE_SkinPalette (DE_SKIN_PALETTE defined) or the deprecated SkinData (warned once), with the
-		// uniform block at a binding from 2 to k_MaxSkinUniformBinding and both at bindings its textures and samplers leave free,
-		// or it is drawn with the default material and a warning. A mesh without a skin, with too few joints
-		// passed, or skinned to more than k_MaxSkinJoints joints goes through SubmitMesh and draws its
-		// rest pose. No-op outside a Begin/EndScene pair.
-		// A shadowed scene draws a casting instance twice, into the shadow atlas and then lit, and
-		// writes its draw block for each; an instance with opaque and translucent meshes is drawn lit in
-		// both passes. That is why the draw buffer holds three writes per instance.
-		// Culled as SubmitMesh culls, by the rest pose's bounds padded on every side by half their
-		// longest side for the animation: a pose reaching farther can be culled while in view. An instance with every mesh culled from every pass takes nothing of the budget.
+		/// Skins a mesh on the GPU and places it with transform, one draw per call. joints is the
+		/// skinning palette (Skeleton::ComputeSkinningPalette, or GetRestPalette for the rest pose)
+		/// and must hold at least mesh->GetSkinJointCount() matrices; consecutive calls with the
+		/// same palette, transform and colour, such as a model's submeshes, share one upload. The
+		/// palette is copied at the call.
+		///
+		/// Opaque skinned meshes draw after every opaque static batch. With a translucent material
+		/// a skinned mesh joins the translucent pass, sorted by the centre of its rest bounds
+		/// placed with transform (an instance's translucent meshes share the first one's), so it
+		/// blends with translucent static meshes in depth order. A two-sided material's mesh draws
+		/// twice there, culling its near side, then its far side.
+		///
+		/// A lit material (null = the default) draws through a skinned twin the renderer keeps for
+		/// it. A custom material's shader needs Skinning.glsl's blocks, either DE_SkinDraw and
+		/// DE_SkinPalette (DE_SKIN_PALETTE defined) or the deprecated SkinData (warned once), with
+		/// the uniform block at a binding from 2 to k_MaxSkinUniformBinding and both at bindings
+		/// its textures and samplers leave free, or it is drawn with the default material and a
+		/// warning. A mesh without a skin, with too few joints passed, or skinned to more than
+		/// k_MaxSkinJoints joints goes through SubmitMesh and draws its rest pose. No-op outside a
+		/// Begin/EndScene pair. A shadowed scene draws a casting instance twice, into the shadow
+		/// atlas and then lit, and writes its draw block for each; an instance with opaque and
+		/// translucent meshes is drawn lit in both passes. That is why the draw buffer holds three
+		/// writes per instance. Culled as SubmitMesh culls, by the rest pose's bounds padded on
+		/// every side by half their longest side for the animation: a pose reaching farther can be
+		/// culled while in view. An instance with every mesh culled from every pass takes nothing
+		/// of the budget.
 		void SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material = nullptr, ShadowCasting shadows = ShadowCasting::On, uint32_t shadowGroups = 1, float cullDistance = 0.0f);
 
-		// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
-		// k_MaxSkinnedInstancesLimit.
+		/// Skinned instances a frame: Capabilities.MaxSkinnedInstances, between 1 and
+		/// k_MaxSkinnedInstancesLimit.
 		uint32_t GetSkinnedInstanceBudget() const;
-		// What this frame's scenes have taken of that budget so far.
+		/// What this frame's scenes have taken of that budget so far.
 		uint32_t GetSkinnedInstancesThisFrame() const;
-		// Engine-internal: the palettes this renderer drew this frame and the last, which a Scene reads
-		// for AnimatorComponent::CullingMode.
+		/// Engine-internal: the palettes this renderer drew this frame and the last, which a Scene
+		/// reads for AnimatorComponent::CullingMode.
 		std::shared_ptr<const Internal::SkinnedVisibility> GetSkinnedVisibility() const;
 
+		/// The built-in unit box; owned by the renderer, never delete it.
 		Mesh* GetBoxMesh() const { return m_BoxMesh; }
+		/// The built-in unit-diameter sphere; owned by the renderer, never delete it.
 		Mesh* GetSphereMesh() const { return m_SphereMesh; }
 
-		// A material lit like the default one but with its own emissive, Roughness and Specular
-		// (see MaterialParams) and an optional albedo texture in texture slot 0, whose colour
-		// multiplies the mesh colour; transparency comes from the mesh colour's alpha alone. An
-		// empty slot 0 draws white, and an empty sampler slot 0 uses the clamp sampler. Slot 0 is
-		// the only one the lit shader has: with a texture or sampler in any other slot the material
-		// is not drawn, and the renderer warns once. Shader and CullMode are set for you: lit
-		// materials draw both faces, so open meshes and mirrored entities still show. Any
-		// Renderer3D can draw it; the caller owns it and must delete it before the renderer that
-		// created it shuts down.
+		/// A material lit like the default one but with its own emissive, Roughness and Specular
+		/// (see MaterialParams) and an optional albedo texture in texture slot 0, whose colour
+		/// multiplies the mesh colour; transparency comes from the mesh colour's alpha alone. An
+		/// empty slot 0 draws white, and an empty sampler slot 0 uses the clamp sampler. Slot 0 is
+		/// the only one the lit shader has: with a texture or sampler in any other slot the
+		/// material is not drawn, and the renderer warns once. Shader and CullMode are set for you:
+		/// lit materials draw both faces, so open meshes and mirrored entities still show. Any
+		/// Renderer3D can draw it; the caller owns it and must delete it before the renderer that
+		/// created it shuts down.
 		[[nodiscard]] Material* CreateLitMaterial(MaterialParams params) const;
 
-		// The material meshes with no material of their own are drawn with, for changing their
-		// shared emissive, Roughness or Specular.
+		/// The material meshes with no material of their own are drawn with, for changing their
+		/// shared emissive, Roughness or Specular.
 		Material* GetDefaultMaterial() const { return m_Material; }
 
-		// Debugging the cull. Off, every mesh is drawn and casts into every shadow view, as before
-		// culling existed: what is drawn must look the same either way. Frozen, each scene of a frame
-		// (by the order scenes begin) keeps culling against the camera it had when frozen, so a camera
-		// that flies out shows what the frozen view kept; distance culling measures from that camera too.
+		/// Debugging the cull. Off, every mesh is drawn and casts into every shadow view, as before
+		/// culling existed: what is drawn must look the same either way. Frozen, each scene of a
+		/// frame (by the order scenes begin) keeps culling against the camera it had when frozen,
+		/// so a camera that flies out shows what the frozen view kept; distance culling measures
+		/// from that camera too.
+		///@{
 		void SetCullingEnabled(bool enabled) { m_CullingEnabled = enabled; }
 		bool IsCullingEnabled() const { return m_CullingEnabled; }
 		void SetCullingFrozen(bool frozen);
 		bool IsCullingFrozen() const { return m_CullingFrozen; }
+		///@}
 
+		/// Switches Renderer3DCapabilities::Instancing; takes effect at the next EndScene.
 		void SetInstancingEnabled(bool enabled) { m_Params.Capabilities.Instancing = enabled; }
+		/// Whether instancing is on; see SetInstancingEnabled.
 		bool IsInstancingEnabled() const { return m_Params.Capabilities.Instancing; }
 
-		// Instanced draws a frame, lit and shadow, across every scene this renderer runs: each writes a
-		// small volatile buffer that has room for this many writes a frame on Vulkan. Groups past it
-		// are batched on the CPU instead, and a MaterialParams::Instancing material's meshes are skipped,
-		// with a warning.
+		/// Instanced draws a frame, lit and shadow, across every scene this renderer runs: each
+		/// writes a small volatile buffer that has room for this many writes a frame on Vulkan.
+		/// Groups past it are batched on the CPU instead, and a MaterialParams::Instancing
+		/// material's meshes are skipped, with a warning.
 		static constexpr uint32_t k_MaxInstancedDrawsPerFrame = 512;
 
-		// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
-		// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
+		/// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
+		/// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
-			uint32_t DrawCalls = 0;       // one indexed draw per non-empty batch, and one per instanced mesh; a material may take several
-			uint32_t SubmittedMeshes = 0; // static meshes accepted this scene, culled ones included, and skinned meshes drawn
-			uint32_t DroppedMeshes = 0;   // meshes larger than one draw
-			uint32_t CulledMeshes = 0;    // static meshes the camera's view left out (or past their cull distance); ShadowsOnly ones aren't counted
-			uint32_t CulledSkinned = 0;   // skinned meshes the same
-			uint32_t CulledCasters = 0;   // casting meshes, static and skinned, that reached no shadow view of a scene that drew shadows
-			uint32_t VertexCount = 0;     // vertices transformed and uploaded this scene, for the lit and shadow passes; instanced meshes aren't
-			uint32_t IndexCount = 0;      // indices uploaded this scene
-			uint32_t DirectionalLights = 0; // directional lights the scene was lit by, the default light included
-			uint32_t LocalLights = 0;       // point and spot lights the scene was lit by
-			uint32_t CulledLights = 0;      // point and spot lights whose range can't reach anything in view
-			uint32_t DroppedLights = 0;     // directional lights past k_MaxDirectionalLights, point and spot lights past the budget
-			uint32_t SkinnedDraws = 0;        // skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes; not batched, so not in VertexCount/IndexCount
-			uint32_t SkinnedInstances = 0;    // joint palettes put into the skin arena; a model's submeshes share one
-			uint32_t DroppedSkinnedDraws = 0; // skinned meshes of instances past MaxSkinnedInstances for the frame, or past 256 for a SkinData shader
-			uint32_t SkinnedJoints = 0;       // joint matrices the instances use
-			uint32_t SkinPaletteBytes = 0;    // the scene's skin arena upload
-			uint32_t ShadowViews = 0;         // atlas tiles rendered (cascades and local light faces), 0 for a scene that casts nothing
-			uint32_t ShadowCascades = 0;      // of which cascades
-			uint32_t ShadowedLights = 0;      // point and spot lights drawn with a shadow
-			uint32_t UnshadowedLights = 0;    // casting point and spot lights drawn without one: past MaxShadowedLocalLights, or no atlas room
-			uint32_t FadedLights = 0;         // drawn point and spot lights the budget fade dimmed (LightBudgetFade)
-			uint32_t ShadowProbes = 0;        // probes the GPU evaluates this scene; ones answered at once aren't counted
-			uint32_t ParticleEmitters = 0;    // emitters simulated and drawn
-			uint32_t ParticleSlots = 0;       // their rings' slots, every one simulated and drawn as an instance
-			uint32_t ParticlesSpawned = 0;
-			uint32_t DroppedParticleSpawns = 0; // spawns past an emitter's ring this step
-			uint32_t ParticleDrawCalls = 0;   // one per run of emitters sharing a blend and sprite; not in DrawCalls
-			uint32_t ShadowCasters = 0;       // meshes drawn into the atlas, skinned ones included
-			uint32_t ShadowDrawCalls = 0;     // instanced atlas draws, one per casting batch, instanced mesh and skinned mesh; not in DrawCalls
-			uint32_t TranslucentMeshes = 0;   // static and skinned meshes drawn in the translucent pass, also counted in SubmittedMeshes
-			uint32_t TranslucentDraws = 0;    // draws of the translucent pass, also counted in DrawCalls
-			uint32_t SurfaceOverrides = 0;    // static meshes submitted with a SurfaceOverride their lit material takes, culled ones included; ShadowsOnly ones aren't counted
-			uint32_t InstancedMeshes = 0;     // static meshes drawn instanced, lit or into the shadows; not in VertexCount/IndexCount
-			uint32_t InstancedDraws = 0;      // instanced lit draws, also counted in DrawCalls
-			uint32_t InstancedShadowDraws = 0; // instanced atlas draws, also counted in ShadowDrawCalls
-			uint32_t DroppedInstancedMeshes = 0; // meshes of a MaterialParams::Instancing material skipped past k_MaxInstancedDrawsPerFrame
-			uint32_t StaticMeshes = 0;        // baked meshes of submitted static batches, culled ones included; also in SubmittedMeshes, not in VertexCount/IndexCount
-			uint32_t StaticDraws = 0;         // lit draws of static batch cells, also counted in DrawCalls
-			uint32_t StaticCellsBaked = 0;    // static batch cells baked (or emptied) by this scene's submissions
-			float ShadowCascadeEnds[k_MaxShadowCascades] = {}; // where each cascade ends along the view
-			bool Fogged = false;              // the scene was drawn with fog: SetFog, and a perspective camera
+			/// One indexed draw per non-empty batch, and one per instanced mesh; a material may
+			/// take several.
+			uint32_t DrawCalls = 0;
+			/// Static meshes accepted this scene, culled ones included, and skinned meshes drawn.
+			uint32_t SubmittedMeshes = 0;
+			uint32_t DroppedMeshes = 0; ///< meshes larger than one draw
+			/// Static meshes the camera's view left out (or past their cull distance); ShadowsOnly
+			/// ones aren't counted.
+			uint32_t CulledMeshes = 0;
+			uint32_t CulledSkinned = 0; ///< skinned meshes the same
+			/// Casting meshes, static and skinned, that reached no shadow view of a scene that drew
+			/// shadows.
+			uint32_t CulledCasters = 0;
+			/// Vertices transformed and uploaded this scene, for the lit and shadow passes;
+			/// instanced meshes aren't.
+			uint32_t VertexCount = 0;
+			uint32_t IndexCount = 0; ///< indices uploaded this scene
+			/// Directional lights the scene was lit by, the default light included.
+			uint32_t DirectionalLights = 0;
+			uint32_t LocalLights = 0; ///< point and spot lights the scene was lit by
+			/// Point and spot lights whose range can't reach anything in view.
+			uint32_t CulledLights = 0;
+			/// Directional lights past k_MaxDirectionalLights, point and spot lights past the
+			/// budget.
+			uint32_t DroppedLights = 0;
+			/// Skinned meshes drawn, also counted in DrawCalls and SubmittedMeshes; not batched, so
+			/// not in VertexCount/IndexCount.
+			uint32_t SkinnedDraws = 0;
+			/// Joint palettes put into the skin arena; a model's submeshes share one.
+			uint32_t SkinnedInstances = 0;
+			/// Skinned meshes of instances past MaxSkinnedInstances for the frame, or past 256 for
+			/// a SkinData shader.
+			uint32_t DroppedSkinnedDraws = 0;
+			uint32_t SkinnedJoints = 0; ///< joint matrices the instances use
+			uint32_t SkinPaletteBytes = 0; ///< the scene's skin arena upload
+			/// Atlas tiles rendered (cascades and local light faces), 0 for a scene that casts
+			/// nothing.
+			uint32_t ShadowViews = 0;
+			uint32_t ShadowCascades = 0; ///< of which cascades
+			uint32_t ShadowedLights = 0; ///< point and spot lights drawn with a shadow
+			/// Casting point and spot lights drawn without one: past MaxShadowedLocalLights, or no
+			/// atlas room.
+			uint32_t UnshadowedLights = 0;
+			/// Drawn point and spot lights the budget fade dimmed (LightBudgetFade).
+			uint32_t FadedLights = 0;
+			/// Probes the GPU evaluates this scene; ones answered at once aren't counted.
+			uint32_t ShadowProbes = 0;
+			uint32_t ParticleEmitters = 0; ///< emitters simulated and drawn
+			/// Their rings' slots, every one simulated and drawn as an instance.
+			uint32_t ParticleSlots = 0;
+			uint32_t ParticlesSpawned = 0; ///< Particles spawned this scene.
+			uint32_t DroppedParticleSpawns = 0; ///< spawns past an emitter's ring this step
+			/// One per run of emitters sharing a blend and sprite; not in DrawCalls.
+			uint32_t ParticleDrawCalls = 0;
+			uint32_t ShadowCasters = 0; ///< meshes drawn into the atlas, skinned ones included
+			/// Instanced atlas draws, one per casting batch, instanced mesh and skinned mesh; not
+			/// in DrawCalls.
+			uint32_t ShadowDrawCalls = 0;
+			/// Static and skinned meshes drawn in the translucent pass, also counted in
+			/// SubmittedMeshes.
+			uint32_t TranslucentMeshes = 0;
+			/// Draws of the translucent pass, also counted in DrawCalls.
+			uint32_t TranslucentDraws = 0;
+			/// Static meshes submitted with a SurfaceOverride their lit material takes, culled ones
+			/// included; ShadowsOnly ones aren't counted.
+			uint32_t SurfaceOverrides = 0;
+			/// Static meshes drawn instanced, lit or into the shadows; not in
+			/// VertexCount/IndexCount.
+			uint32_t InstancedMeshes = 0;
+			uint32_t InstancedDraws = 0; ///< instanced lit draws, also counted in DrawCalls
+			/// Instanced atlas draws, also counted in ShadowDrawCalls.
+			uint32_t InstancedShadowDraws = 0;
+			/// Meshes of a MaterialParams::Instancing material skipped past
+			/// k_MaxInstancedDrawsPerFrame.
+			uint32_t DroppedInstancedMeshes = 0;
+			/// Baked meshes of submitted static batches, culled ones included; also in
+			/// SubmittedMeshes, not in VertexCount/IndexCount.
+			uint32_t StaticMeshes = 0;
+			/// Lit draws of static batch cells, also counted in DrawCalls.
+			uint32_t StaticDraws = 0;
+			/// Static batch cells baked (or emptied) by this scene's submissions.
+			uint32_t StaticCellsBaked = 0;
+			/// Where each cascade ends along the view.
+			float ShadowCascadeEnds[k_MaxShadowCascades] = {};
+			bool Fogged = false; ///< the scene was drawn with fog: SetFog, and a perspective camera
 		};
 
+		/// The statistics of the latest scene; the reference stays valid and is rewritten by
+		/// BeginScene.
 		const Statistics& GetStatistics() const { return m_Statistics; }
+		/// The renderer's budgets as they are now (see Renderer3DCapabilities).
 		const Renderer3DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
 
-		// Point and spot lights a scene can draw: Capabilities.MaxLocalLights, capped at k_MaxLocalLights.
+		/// Point and spot lights a scene can draw: Capabilities.MaxLocalLights, capped at
+		/// k_MaxLocalLights.
 		uint32_t GetLocalLightBudget() const;
 
 	private:
@@ -524,21 +645,21 @@ namespace Dingo
 		struct DirectionalLightData
 		{
 			glm::vec4 Direction{ 0.0f };
-			glm::vec4 Color{ 0.0f }; // rgb = colour × intensity
+			glm::vec4 Color{ 0.0f }; // rgb = colour x intensity
 		};
 
 		// A point light is a spot light whose cone factor is always 1: scale 0, offset 1.
 		struct LocalLightData
 		{
 			glm::vec4 PositionRange{ 0.0f }; // xyz = world position, w = range
-			glm::vec4 Color{ 0.0f };         // rgb = colour × intensity, w = cone scale
+			glm::vec4 Color{ 0.0f };         // rgb = colour x intensity, w = cone scale
 			glm::vec4 SpotDirection{ 0.0f }; // xyz = the way the cone points, w = cone offset
 		};
 
 		struct LocalLightCandidate
 		{
 			LocalLightData Data;
-			float Brightness = 0.0f; // strongest colour channel × intensity
+			float Brightness = 0.0f; // strongest colour channel x intensity
 			float Score = 0.0f;
 			float Nearness = 0.0f; // camera distance / range
 			float Priority = 0.0f; // Score / (1 + Nearness), the budget fade's continuous rank
@@ -557,7 +678,7 @@ namespace Dingo
 			glm::vec4 LightDirection{ 0.0f }; // the first directional light's direction, or the default light's
 			glm::vec4 Ambient{ 0.0f };        // x = the scene's ambient as one value
 			glm::vec4 CameraPosition{ 0.0f }; // w = 1: world position; w = 0: orthographic, xyz = towards the camera
-			glm::vec4 AmbientColor{ 0.0f };   // rgb = colour × intensity
+			glm::vec4 AmbientColor{ 0.0f };   // rgb = colour x intensity
 			glm::ivec4 LightCounts{ 0 };      // x = directional lights, y = point and spot lights
 			DirectionalLightData DirectionalLights[k_MaxDirectionalLights];
 			LocalLightData LocalLights[k_MaxLocalLights];
@@ -669,7 +790,7 @@ namespace Dingo
 
 		// Batches in the order they were first submitted to this scene. Draw order has to
 		// come from here, not from the map: unordered_map iteration follows pointer hashing,
-		// so the same scene would submit its materials in a different order between runs —
+		// so the same scene would submit its materials in a different order between runs -
 		// invisible for depth-tested opaques, but not for anything blended.
 		std::vector<BatchKey> m_DrawOrder;
 
@@ -745,7 +866,7 @@ namespace Dingo
 		void PlaceInSlot(uint32_t slot, uint32_t vertexCount, uint32_t indexCount, uint32_t& chunk, uint32_t& chunkVertex, uint32_t& chunkIndex);
 
 
-		// ── Instancing ────────────────────────────────────────────────────────
+		// -- Instancing --------------------------------------------------------
 
 		// std430, mirrored by InstanceRecord in Instancing.glsl: one copy of a mesh.
 		struct InstanceRecord
@@ -837,7 +958,7 @@ namespace Dingo
 		bool m_InstanceMaterialWarned = false;
 		bool m_InstanceTranslucentWarned = false;
 
-		// ── Culling ───────────────────────────────────────────────────────────
+		// -- Culling -----------------------------------------------------------
 
 		struct CullView
 		{
@@ -863,7 +984,7 @@ namespace Dingo
 		void CullSkinnedSubmissions(bool shadows);
 		void TransformStaticSubmissions();
 
-		// ── Static batches ────────────────────────────────────────────────────
+		// -- Static batches ----------------------------------------------------
 
 		// The pending entries placed, loose or in a cell, and the dirty cells rebaked.
 		void PrepareStaticBatch(Internal::StaticBatchData& data);
@@ -889,7 +1010,7 @@ namespace Dingo
 		std::vector<Frustum> m_ShadowCullViews;
 		std::vector<ShadowCullLight> m_ShadowCullLights;
 
-		// ── The upload arena ──────────────────────────────────────────────────
+		// -- The upload arena --------------------------------------------------
 
 		// One vertex and one (32-bit) index buffer that every scene of a frame appends to, grown to the
 		// busiest frame. Indices count from the arena's start, so no draw needs a base vertex. A frame's
@@ -1082,7 +1203,7 @@ namespace Dingo
 		void UploadSkinData(const SkinnedInstance& instance);
 		void EnsureSkinBuffers(const Mesh* mesh);
 
-		// ── Shadows ───────────────────────────────────────────────────────────
+		// -- Shadows -----------------------------------------------------------
 
 		// std140, mirrored by ShadowTile, LocalShadow and ShadowData in Shadows.glsl: bound by name to
 		// every material whose shader declares it, uploaded every EndScene (the lit shader always binds it).
@@ -1139,7 +1260,7 @@ namespace Dingo
 		std::unique_ptr<Internal::ParticleRenderer> m_Particles;
 		std::shared_ptr<Internal::SkinnedVisibility> m_SkinnedVisibility;
 
-		// ── Shadow probes ─────────────────────────────────────────────────────
+		// -- Shadow probes -----------------------------------------------------
 
 		struct ShadowProbe
 		{
