@@ -83,5 +83,8 @@ Tracy stays out of the public headers: `Profiler.h` declares the engine's own `P
 
 - At most 32 GPU timers a frame; later ones warn once and are skipped. Results arrive four frames
   late, and a frame that renders nothing measures nothing.
+- On D3D11 the timers are approximate. A D3D11 timestamp doesn't wait for the work before it to
+  finish, so a short pass such as `Particles` can read 0.00, while `Frame` can read several times
+  its Vulkan time. Compare passes on Vulkan or D3D12, which show the same names.
 - Tracy exists only in a `--profile` build, and only a v0.11.x viewer connects to it.
 - A zone or plot name must be a string literal (or live for the whole run).

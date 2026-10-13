@@ -1116,6 +1116,8 @@ namespace Dingo::Internal
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("GPU passes  (timer queries, read 4 frames late)");
+		if (Application::Get().GetGraphicsContext().GetGraphicsAPI() == GraphicsAPI::DirectX11)
+			ImGui::TextDisabled("D3D11: approximate, a timestamp doesn't wait for the work before it");
 		ImGui::Separator();
 		const std::vector<GpuTimerStats>& timers = Renderer::GetGpuTimers();
 		if (timers.empty())
