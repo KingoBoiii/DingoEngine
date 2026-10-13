@@ -8,7 +8,13 @@
 set -eu
 dir=$(cd "$(dirname "$0")" && pwd)
 apps=${XDG_DATA_HOME:-$HOME/.local/share}/applications
-escaped=$(printf '%s' "$dir" | sed 's/[\\&|]/\\&/g')
+# Desktop-entry strings escape a backslash; inside Exec's quoted argument ", `, $ and \ also take
+# one first, and % is doubled. Each result is then escaped again as a sed replacement.
+replacement() {
+	sed 's/[\\&|]/\\&/g'
+}
+dir_value=$(printf '%s' "$dir" | sed 's/\\/\\\\/g' | replacement)
+exec_value=$(printf '%s' "$dir" | sed 's/[\\"`$]/\\&/g; s/\\/\\\\/g; s/%/%%/g' | replacement)
 
 found=0
 for template in "$dir"/*.desktop; do
@@ -20,7 +26,7 @@ for template in "$dir"/*.desktop; do
 		echo "Removed $target"
 	else
 		mkdir -p "$apps"
-		sed "s|@DIR@|$escaped|g" "$template" > "$target"
+		sed "s|@EXECDIR@|$exec_value|g; s|@DIR@|$dir_value|g" "$template" > "$target"
 		echo "Installed $target"
 	fi
 done

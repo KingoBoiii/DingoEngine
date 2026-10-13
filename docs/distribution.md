@@ -109,22 +109,31 @@ each ships its executable (and DLLs) beside `<Example>.dpak`, its licence files 
 
 ```lua
 copyAssimpRuntime()
-exeMetadata { Name = "My Game", Description = "One line about it." }
+exeMetadata {
+    Name = "My Game",                 -- required
+    Description = "One line about it.",
+    Version = "1.2.0",                -- defaults to the engine's version
+    Company = "My Studio",
+    Copyright = "Copyright (c) 2026 My Studio",
+}
 embedPackKey()
 ```
 
-`exeMetadata()` reads `icon.ico` and `icon.png` beside the game's `premake5.lua`
-(`Icon = "art/game"` for `art/game.ico` and `.png`) and writes, when premake runs:
+Only `Name` is required; a field left out is left out of the version resource. Set
+`Version` to your game's own: without it the executable carries the engine's version and
+build number (`VERSION`, or `DE_VERSION` and `DE_BUILD_NUMBER` in CI). `exeMetadata()` reads
+`icon.ico` and `icon.png` beside the game's `premake5.lua` (`Icon = "art/game"` for
+`art/game.ico` and `.png`); a missing file just leaves that icon out. When premake runs it
+writes:
 
-- `build/generated/<Project>/<Project>.rc`, compiled into the Windows executable: a version
-  resource carrying the engine's version and build number (`VERSION`, or `DE_VERSION` and
-  `DE_BUILD_NUMBER` in CI), which Explorer's Details tab shows, and the icon, named
-  `GLFW_ICON` so GLFW puts it on the window and the taskbar too.
-- `build/generated/<Project>/<Project>.desktop`, a desktop entry with `@DIR@` where the
-  install folder goes. `scripts/package-linux-programs.sh` ships it with the PNG (as
-  `<Project>.png`) and `install-desktop-entry.sh`, which writes a copy naming the folder
-  into `~/.local/share/applications` (`--remove` takes it out), since a desktop entry
-  can't hold a relative path.
+- `build/generated/<Project>/<Project>.rc`, compiled into the Windows executable: the
+  version resource, which Explorer's Details tab shows, and the icon, named `GLFW_ICON` so
+  GLFW puts it on the window and the taskbar too.
+- `build/generated/<Project>/<Project>.desktop` and `<Project>.png`: a desktop entry with
+  placeholders where the install folder goes, and the icon. `scripts/package-linux-programs.sh`
+  ships both with `install-desktop-entry.sh`, which writes a copy naming the folder into
+  `~/.local/share/applications` (`--remove` takes it out), since a desktop entry can't
+  hold a relative path.
 
 `scripts/icons/make-icons.sh` draws the examples' placeholder tiles from
 `scripts/icons/icons.txt` (ImageMagick). The Linux window itself shows no icon: GLFW takes

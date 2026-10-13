@@ -43,5 +43,10 @@ project "EchoVault"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
-	exeMetadata { Name = "EchoVault", Description = "Character controller and 3D audio, an example made with Dingo Engine." }
+	exeMetadata {
+		Name = "EchoVault",
+		Description = "Character controller and 3D audio, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

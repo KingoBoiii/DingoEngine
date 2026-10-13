@@ -43,5 +43,10 @@ project "DungeonCrawler"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
-	exeMetadata { Name = "Dungeon Crawler", Description = "Top-down 2D dungeon crawler, an example made with Dingo Engine." }
+	exeMetadata {
+		Name = "Dungeon Crawler",
+		Description = "Top-down 2D dungeon crawler, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

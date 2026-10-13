@@ -43,5 +43,10 @@ project "Marionette"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
-	exeMetadata { Name = "Marionette", Description = "Melee duel on skeletal animation, an example made with Dingo Engine." }
+	exeMetadata {
+		Name = "Marionette",
+		Description = "Melee duel on skeletal animation, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

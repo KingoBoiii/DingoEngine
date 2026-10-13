@@ -1,7 +1,8 @@
-# Third-party code compiled or linked into DingoEngine games, read by scripts/gather-notices.sh.
+# The engine and the third-party code compiled or linked into DingoEngine games, read by scripts/gather-notices.sh.
 # name | upstream | licence | what for | licence text: a file, or file@marker for a licence
 # embedded in a source file (from the line holding the marker to the comment's end).
 # Build tools (premake) and test-only code (doctest) never ship and are left out.
+DingoEngine | https://github.com/KingoBoiii/DingoEngine | MIT | the engine | LICENSE.txt
 GLFW | https://www.glfw.org | Zlib | windowing and input | vendor/glfw/LICENSE.md
 GLM | https://github.com/g-truc/glm | MIT | maths | vendor/glm/copying.txt
 spdlog | https://github.com/gabime/spdlog | MIT | logging | vendor/spdlog/LICENSE
@@ -9,6 +10,7 @@ stb | https://github.com/nothings/stb | MIT or public domain | image loading and
 NVRHI | https://github.com/NVIDIAGameWorks/nvrhi | MIT | graphics API abstraction | vendor/nvrhi/LICENSE.txt
 Vulkan-Headers | https://github.com/KhronosGroup/Vulkan-Headers | Apache-2.0 or MIT | Vulkan declarations | vendor/nvrhi/thirdparty/Vulkan-Headers/LICENSE.md
 DirectX-Headers | https://github.com/microsoft/DirectX-Headers | MIT | Direct3D 12 declarations (Windows) | vendor/nvrhi/thirdparty/DirectX-Headers/LICENSE
+RTXMU (in NVRHI) | https://github.com/NVIDIAGameWorks/RTXMU | MIT | acceleration-structure memory | vendor/nvrhi/rtxmu/LICENSE.txt
 Dear ImGui | https://github.com/ocornut/imgui | MIT | debug window | vendor/imgui/LICENSE.txt
 msdf-atlas-gen | https://github.com/Chlumsky/msdf-atlas-gen | MIT | font atlases | vendor/msdf-atlas-gen/LICENSE.txt
 msdfgen | https://github.com/Chlumsky/msdfgen | MIT | font atlases | vendor/msdf-atlas-gen/msdfgen/LICENSE.txt

@@ -43,5 +43,10 @@ project "Breakout3D"
         defines { "DE_DISTRIBUTION" }
 
     copyAssimpRuntime()
-	exeMetadata { Name = "Breakout 3D", Description = "Brick breaker in 3D, an example made with Dingo Engine." }
+	exeMetadata {
+		Name = "Breakout 3D",
+		Description = "Brick breaker in 3D, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

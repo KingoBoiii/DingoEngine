@@ -43,5 +43,10 @@ project "FlappyBird"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
-	exeMetadata { Name = "Flappy Bird", Description = "Flappy Bird, an example game made with Dingo Engine." }
+	exeMetadata {
+		Name = "Flappy Bird",
+		Description = "Flappy Bird, an example game made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

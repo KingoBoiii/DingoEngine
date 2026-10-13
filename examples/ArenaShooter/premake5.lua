@@ -43,5 +43,10 @@ project "ArenaShooter"
 		defines { "DE_DISTRIBUTION" }
 
 	copyAssimpRuntime()
-	exeMetadata { Name = "Arena Shooter", Description = "Top-down arena shooter on the asset manager, an example made with Dingo Engine." }
+	exeMetadata {
+		Name = "Arena Shooter",
+		Description = "Top-down arena shooter on the asset manager, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()
