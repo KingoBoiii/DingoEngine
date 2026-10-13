@@ -90,9 +90,13 @@ namespace Dingo
 		return os << ToString(type);
 	}
 
-	inline constexpr uint32_t GamepadButtonCount = 15;
-	inline constexpr uint32_t GamepadAxisCount = 6;
-	inline constexpr uint32_t MaxGamepads = 16;
+	inline constexpr uint32_t k_GamepadButtonCount = 15;
+	inline constexpr uint32_t k_GamepadAxisCount = 6;
+	inline constexpr uint32_t k_MaxGamepads = 16;
+
+	[[deprecated("use k_GamepadButtonCount; removed in 2.0")]] inline constexpr uint32_t GamepadButtonCount = k_GamepadButtonCount;
+	[[deprecated("use k_GamepadAxisCount; removed in 2.0")]] inline constexpr uint32_t GamepadAxisCount = k_GamepadAxisCount;
+	[[deprecated("use k_MaxGamepads; removed in 2.0")]] inline constexpr uint32_t MaxGamepads = k_MaxGamepads;
 
 	inline std::ostream& operator<<(std::ostream& os, GamepadButton button)
 	{

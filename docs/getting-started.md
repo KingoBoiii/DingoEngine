@@ -290,11 +290,9 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
     params.Window.Width = 1280;
     params.Window.Height = 720;
     params.Graphics.GraphicsAPI = GraphicsAPI::Vulkan;   // the default; DirectX11/DirectX12 on Windows
-    params.EnableUI = false;
+    params.EnableImGui = false;
 
-    ExampleApp* app = new ExampleApp(params);
-    app->Initialize();   // must be called before returning
-    return app;
+    return new ExampleApp(params);
 }
 ```
 

@@ -2,7 +2,7 @@
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/Platform.h"
 
-namespace Dingo
+namespace Dingo::Internal
 {
 
 	namespace

@@ -23,50 +23,50 @@ namespace Dingo
 		// ExclusiveFullscreen's display mode (the nearest listed one); invalid = the desktop's.
 		DisplayMode FullscreenMode;
 
-		WindowParams SetTitle(const std::string& title)
+		WindowParams& SetTitle(const std::string& title)
 		{
 			Title = title;
 			return *this;
 		}
 
-		WindowParams SetWidth(int32_t width)
+		WindowParams& SetWidth(int32_t width)
 		{
 			Width = width;
 			return *this;
 		}
 
-		WindowParams SetHeight(int32_t height)
+		WindowParams& SetHeight(int32_t height)
 		{
 			Height = height;
 			return *this;
 		}
 
-		WindowParams SetVSync(bool vsync)
+		WindowParams& SetVSync(bool vsync)
 		{
 			VSync = vsync;
 			return *this;
 		}
 
-		WindowParams SetResizable(bool resizable)
+		WindowParams& SetResizable(bool resizable)
 		{
 			Resizable = resizable;
 			return *this;
 		}
 
 		// Borderless fullscreen or windowed.
-		WindowParams SetFullscreen(bool fullscreen)
+		WindowParams& SetFullscreen(bool fullscreen)
 		{
 			Mode = fullscreen ? WindowMode::BorderlessFullscreen : WindowMode::Windowed;
 			return *this;
 		}
 
-		WindowParams SetMode(WindowMode mode)
+		WindowParams& SetMode(WindowMode mode)
 		{
 			Mode = mode;
 			return *this;
 		}
 
-		WindowParams SetFullscreenMode(const DisplayMode& mode)
+		WindowParams& SetFullscreenMode(const DisplayMode& mode)
 		{
 			FullscreenMode = mode;
 			return *this;
@@ -81,18 +81,11 @@ namespace Dingo
 		using EventCallbackFn = std::function<void(Event&)>;
 
 	public:
-		Window(const WindowParams& params = {});
 		~Window() = default;
-	public:
-		void Initialize();
-		void Shutdown();
-
-		void Update();
-		void WaitEvents(double timeoutSeconds);
+		Window(const Window&) = delete;
+		Window& operator=(const Window&) = delete;
 
 		bool IsRunning() const;
-
-		void SetEventCallback(const EventCallbackFn& callback) { m_Data.EventCallback = callback; }
 
 		// On the monitor the window is on. Both fullscreen modes are a fullscreen window that is
 		// minimized when it loses focus; exclusive also switches the display to fullscreenMode's
@@ -131,9 +124,22 @@ namespace Dingo
 		int32_t GetHeight() const { return m_Data.Height; }
 		// The last size with both sides above 0, so a minimized window (0 x 0) keeps the aspect it had.
 		float GetAspectRatio() const { return m_Data.AspectRatio; }
-		GLFWwindow* GetNativeWindowHandle() const { return m_WindowHandle; }
 
 	private:
+		// The Application owns the one window (GetWindow) and drives it.
+		Window(const WindowParams& params = {});
+
+		void Initialize();
+		void Shutdown();
+
+		void Update();
+		void WaitEvents(double timeoutSeconds);
+
+		void SetEventCallback(const EventCallbackFn& callback) { m_Data.EventCallback = callback; }
+		GLFWwindow* GetNativeWindowHandle() const { return m_WindowHandle; }
+
+		friend class Application;
+
 		void SetupGLFWCallbacks() const;
 		GLFWmonitor* GetCurrentMonitor() const;
 

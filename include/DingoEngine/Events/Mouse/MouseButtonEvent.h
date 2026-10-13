@@ -11,7 +11,7 @@ namespace Dingo
 	public:
 		inline MouseButton GetMouseButton() const { return m_Button; }
 
-		EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
+		DE_EVENT_CLASS_CATEGORY(Mouse | MouseButton | Input)
 	protected:
 		MouseButtonEvent(MouseButton button)
 			: m_Button(button)

@@ -1,6 +1,7 @@
 #pragma once
 #include "DingoEngine/Common.h"
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -18,23 +19,25 @@ namespace Dingo
 		GamepadConnected, GamepadDisconnected
 	};
 
-	enum EventCategory
+	enum class EventCategory : uint32_t
 	{
-		None = 0,
-		EventCategoryWindow			= BIT(0),
-		EventCategoryApplication	= BIT(1),
-		EventCategoryInput			= BIT(2),
-		EventCategoryKeyboard		= BIT(3),
-		EventCategoryMouse			= BIT(4),
-		EventCategoryMouseButton	= BIT(5),
-		EventCategoryGamepad		= BIT(6)
+		None		= 0,
+		Window		= DE_BIT(0),
+		Input		= DE_BIT(1),
+		Keyboard	= DE_BIT(2),
+		Mouse		= DE_BIT(3),
+		MouseButton	= DE_BIT(4),
+		Gamepad		= DE_BIT(5)
 	};
 
-#define EVENT_CLASS_TYPE(type) static EventType GetStaticType() { return EventType::type; }\
-								virtual EventType GetEventType() const override { return GetStaticType(); }\
+	constexpr EventCategory operator|(EventCategory a, EventCategory b) { return EventCategory(uint32_t(a) | uint32_t(b)); }
+	constexpr EventCategory operator&(EventCategory a, EventCategory b) { return EventCategory(uint32_t(a) & uint32_t(b)); }
+
+#define DE_EVENT_CLASS_TYPE(type) static ::Dingo::EventType GetStaticType() { return ::Dingo::EventType::type; }\
+								virtual ::Dingo::EventType GetEventType() const override { return GetStaticType(); }\
 								virtual const char* GetName() const override { return #type; }
 
-#define EVENT_CLASS_CATEGORY(category) virtual int GetCategoryFlags() const override { return category; }
+#define DE_EVENT_CLASS_CATEGORY(category) virtual ::Dingo::EventCategory GetCategoryFlags() const override { using enum ::Dingo::EventCategory; return category; }
 
 	class Event
 	{
@@ -45,12 +48,12 @@ namespace Dingo
 
 		virtual EventType GetEventType() const = 0;
 		virtual const char* GetName() const = 0;
-		virtual int GetCategoryFlags() const = 0;
+		virtual EventCategory GetCategoryFlags() const = 0;
 		virtual std::string ToString() const { return GetName(); }
 
-		bool IsInCategory(EventCategory category)
+		bool IsInCategory(EventCategory category) const
 		{
-			return GetCategoryFlags() & category;
+			return (GetCategoryFlags() & category) != EventCategory::None;
 		}
 	};
 

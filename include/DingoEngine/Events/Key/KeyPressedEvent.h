@@ -7,22 +7,23 @@ namespace Dingo
 	class KeyPressedEvent : public KeyEvent
 	{
 	public:
-		KeyPressedEvent(KeyCode keycode, int repeatCount)
-			: KeyEvent(keycode), m_RepeatCount(repeatCount)
+		KeyPressedEvent(KeyCode keycode, bool isRepeat)
+			: KeyEvent(keycode), m_IsRepeat(isRepeat)
 		{}
 
-		inline int GetRepeatCount() const { return m_RepeatCount; }
+		// True for the key-repeat presses a held key sends after the first.
+		bool IsRepeat() const { return m_IsRepeat; }
 
 		std::string ToString() const override
 		{
 			std::stringstream ss;
-			ss << "KeyPressedEvent: " << m_KeyCode << " (" << m_RepeatCount << " repeats)";
+			ss << "KeyPressedEvent: " << m_KeyCode << (m_IsRepeat ? " (repeat)" : "");
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(KeyPressed)
+		DE_EVENT_CLASS_TYPE(KeyPressed)
 	private:
-		int m_RepeatCount;
+		bool m_IsRepeat;
 	};
 
 }

@@ -26,8 +26,8 @@ namespace Dingo
 		}
 
 
-		EVENT_CLASS_TYPE(WindowResize)
-		EVENT_CLASS_CATEGORY(EventCategoryWindow)
+		DE_EVENT_CLASS_TYPE(WindowResize)
+		DE_EVENT_CLASS_CATEGORY(Window)
 
 	private:
 		uint32_t m_Width;

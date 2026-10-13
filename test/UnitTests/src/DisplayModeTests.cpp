@@ -36,7 +36,7 @@ TEST_SUITE("DisplayMode")
 
 	TEST_CASE("window modes have names")
 	{
-		CHECK(std::string_view(WindowModeToString(WindowMode::ExclusiveFullscreen)) == "ExclusiveFullscreen");
+		CHECK(std::string_view(ToString(WindowMode::ExclusiveFullscreen)) == "ExclusiveFullscreen");
 	}
 }
 

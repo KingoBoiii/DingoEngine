@@ -47,10 +47,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.GraphicsAPI = ParseGraphicsAPI(args),
 			.FramesInFlight = 3,
 		},
-		.EnableUI = true,
+		.EnableImGui = true,
 	};
 
-	Dingo::Breakout3DApplication* app = new Dingo::Breakout3DApplication(params);
-	app->Initialize();
-	return app;
+	return new Dingo::Breakout3DApplication(params);
 }

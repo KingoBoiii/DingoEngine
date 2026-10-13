@@ -48,7 +48,7 @@ one. Every project in the workspace gets `DE_PROFILE`, so a game's own zones com
 The engine records:
 
 - the frame (`DE_PROFILE_FRAME`) and `Application::Run`'s steps on the thread named **Main**:
-  `Renderer::BeginFrame`, `AssetManager::Update`, each layer's `OnUpdate` and `OnUIRender` (the
+  `Renderer::BeginFrame`, `AssetManager::Update`, each layer's `OnUpdate` and `OnImGuiRender` (the
   layer's name is the zone's text), `ImGui`, `Renderer::EndFrame`;
 - `Scene::OnUpdate` (the scene's name as text) and its systems: scripts, animation, physics, audio;
 - `SceneRenderer::Render`, `Scene::RenderEntities` and `RenderEntities3D`, `Renderer3D::EndScene`

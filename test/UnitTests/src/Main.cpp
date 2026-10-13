@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <DingoEngine/Log.h>
+#include "DingoEngine/Core/LogLifecycle.h"
 
 #include "SaveWriter.h"
 
@@ -10,7 +11,7 @@
 
 int main(int argc, char** argv)
 {
-	Dingo::Log::Initialize();
+	Dingo::Internal::InitializeLog();
 
 	if (argc == 2 && std::string_view(argv[1]) == "--save-writer")
 	{
@@ -27,6 +28,6 @@ int main(int argc, char** argv)
 	doctest::Context context(argc, argv);
 	const int result = context.run();
 
-	Dingo::Log::Shutdown();
+	Dingo::Internal::ShutdownLog();
 	return result;
 }

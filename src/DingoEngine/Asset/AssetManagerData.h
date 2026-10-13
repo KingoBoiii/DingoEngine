@@ -36,6 +36,19 @@ namespace Dingo
 		// The loader thread's input and output: a deep copy of everything a decode needs, and
 		// the payload the main-thread pump publishes from. What a decode is allowed to touch
 		// is stated on AssetTypePolicy::Decode.
+		struct AssetRecord : AssetMetadata
+		{
+			// FilePath resolved against the root once at registration. The root is fixed for the
+			// manager's lifetime, so this cannot go stale, and it keeps the hot-reload poll from
+			// rebuilding a path per watched asset per tick.
+			std::filesystem::path AbsolutePath;
+			// Source-file timestamp at load; the hot-reload poll compares against it.
+			std::filesystem::file_time_type LastWriteTime{};
+			// A changed timestamp the poll has seen once but not yet acted on. It must repeat on
+			// the next poll before the write counts as finished — see PollHotReload.
+			std::filesystem::file_time_type PendingWriteTime{};
+		};
+
 		struct AsyncJob
 		{
 			AssetHandle Handle = k_InvalidAsset;
@@ -81,7 +94,7 @@ namespace Dingo
 			// it here only made a sync Load block the main thread on the worker's decode.
 			AudioEngine* Audio = nullptr;
 
-			std::unordered_map<AssetHandle, AssetMetadata> Registry;
+			std::unordered_map<AssetHandle, AssetRecord> Registry;
 			// Keyed by the folded path key, not by AssetMetadata::FilePath, which keeps its
 			// original casing - see NormalizePathKey.
 			std::unordered_map<std::string, AssetHandle> PathLookup;

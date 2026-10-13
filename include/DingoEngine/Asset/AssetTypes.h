@@ -12,7 +12,7 @@ namespace Dingo
 	using AssetHandle = UUID;
 
 	// The null handle: returned when registration fails, never assigned to a real asset.
-	inline const AssetHandle k_InvalidAsset = AssetHandle(0);
+	inline constexpr AssetHandle k_InvalidAsset{};
 
 	inline bool IsValidAssetHandle(AssetHandle handle) { return static_cast<uint64_t>(handle) != 0; }
 
@@ -50,8 +50,11 @@ namespace Dingo
 		Count
 	};
 
-	const char* AssetTypeToString(AssetType type);
-	const char* AssetStateToString(AssetState state);
+	const char* ToString(AssetType type);
+	const char* ToString(AssetState state);
+
+	[[deprecated("use ToString(AssetType); removed in 2.0")]] inline const char* AssetTypeToString(AssetType type) { return ToString(type); }
+	[[deprecated("use ToString(AssetState); removed in 2.0")]] inline const char* AssetStateToString(AssetState state) { return ToString(state); }
 
 	// Infers the asset type from a file extension (".png" -> Texture2D, ".glsl" -> Shader,
 	// ".obj"/".gltf" -> Model, ".ttf" -> Font, ".wav"/".ogg" -> AudioClip). Case-insensitive.

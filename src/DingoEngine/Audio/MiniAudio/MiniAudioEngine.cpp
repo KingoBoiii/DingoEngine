@@ -32,11 +32,13 @@ namespace Dingo
 
 		AudioSoundId MakeId(std::uint32_t index, std::uint16_t generation)
 		{
-			return (static_cast<std::uint32_t>(generation) << k_IndexBits) | (index & k_IndexMask);
+			return AudioSoundId{ (static_cast<std::uint32_t>(generation) << k_IndexBits) | (index & k_IndexMask) };
 		}
 
-		std::uint32_t IndexOf(AudioSoundId id) { return id & k_IndexMask; }
-		std::uint16_t GenerationOf(AudioSoundId id) { return static_cast<std::uint16_t>(id >> k_IndexBits); }
+		std::uint32_t IndexOf(std::uint32_t packed) { return packed & k_IndexMask; }
+		std::uint16_t GenerationOf(std::uint32_t packed) { return static_cast<std::uint16_t>(packed >> k_IndexBits); }
+		std::uint32_t IndexOf(AudioSoundId id) { return IndexOf(static_cast<std::uint32_t>(id)); }
+		std::uint16_t GenerationOf(AudioSoundId id) { return GenerationOf(static_cast<std::uint32_t>(id)); }
 
 		constexpr std::uint32_t k_MasterBusIndex = 0;
 		constexpr std::string_view k_MasterBusName = "Master";

@@ -49,10 +49,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.GraphicsAPI = ParseGraphicsAPI(args),
 			.FramesInFlight = 3,
 		},
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 
-	AngryBirdsApplication* app = new AngryBirdsApplication(params);
-	app->Initialize();
-	return app;
+	return new AngryBirdsApplication(params);
 }

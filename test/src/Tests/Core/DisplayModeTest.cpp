@@ -256,7 +256,7 @@ namespace Dingo
 		{
 			const std::string lines[] = {
 				m_Status,
-				std::format("Window {}x{}, {}", window.GetWidth(), window.GetHeight(), WindowModeToString(window.GetWindowMode())),
+				std::format("Window {}x{}, {}", window.GetWidth(), window.GetHeight(), ToString(window.GetWindowMode())),
 				std::format("Desktop {}, {} modes", ToString(window.GetDesktopDisplayMode()), m_Modes.size()),
 			};
 			glm::vec2 position(-2.6f, 2.1f);

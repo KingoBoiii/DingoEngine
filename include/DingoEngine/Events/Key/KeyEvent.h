@@ -11,7 +11,7 @@ namespace Dingo
 	public:
 		inline KeyCode GetKeyCode() const { return m_KeyCode; }
 
-		EVENT_CLASS_CATEGORY(EventCategoryKeyboard | EventCategoryInput)
+		DE_EVENT_CLASS_CATEGORY(Keyboard | Input)
 	protected:
 		KeyEvent(KeyCode keycode)
 			: m_KeyCode(keycode)

@@ -11,8 +11,8 @@ namespace Dingo
 	public:
 		WindowCloseEvent() = default;
 
-		EVENT_CLASS_TYPE(WindowClose)
-		EVENT_CLASS_CATEGORY(EventCategoryWindow)
+		DE_EVENT_CLASS_TYPE(WindowClose)
+		DE_EVENT_CLASS_CATEGORY(Window)
 	};
 
 } // namespace Dingo

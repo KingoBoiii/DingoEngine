@@ -147,7 +147,7 @@ namespace Dingo
 			m_CurrentTest->OnEvent(e);
 	}
 
-	void TestLayer::OnUIRender()
+	void TestLayer::OnImGuiRender()
 	{
 		// READ THIS !!!
 		// TL;DR; this demo is more complicated than what most users you would normally use.
@@ -302,7 +302,7 @@ namespace Dingo
 
 		ImGui::End();
 
-		m_TestViewportPanel.OnUIRender(m_OutputFramebuffer->GetAttachment(0));
+		m_TestViewportPanel.OnImGuiRender(m_OutputFramebuffer->GetAttachment(0));
 
 		// handle resize. ImGui reads the window size itself, so the frame a minimize lands in can
 		// give the panel a negative size before Application has seen the zero-sized resize.

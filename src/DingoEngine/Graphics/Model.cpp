@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/EventsFile.h"
 #include "DingoEngine/Graphics/Renderer.h"
@@ -84,7 +85,7 @@ namespace Dingo
 	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path)
 	{
 		uint32_t width = 0, height = 0, channels = 0;
-		const uint8_t* data = FileSystem::ReadImage(path, &width, &height, &channels, true, true);
+		const uint8_t* data = Internal::ReadImage(path, &width, &height, &channels, true, true);
 		if (!data)
 		{
 			DE_CORE_WARN("Model: couldn't read '{}' again, so its texture keeps the old image", path.generic_string());
@@ -92,7 +93,7 @@ namespace Dingo
 		}
 
 		texture.Reinitialize(MakeImageParams(width, height, channels, data));
-		FileSystem::FreeImage(data);
+		Internal::FreeImage(data);
 		return true;
 	}
 
@@ -102,12 +103,12 @@ namespace Dingo
 		if (embedded->mHeight == 0)
 		{
 			uint32_t channels = 0;
-			const uint8_t* data = FileSystem::ReadImageFromMemory(embedded->pcData, embedded->mWidth, &width, &height, &channels, true, true);
+			const uint8_t* data = Internal::ReadImageFromMemory(embedded->pcData, embedded->mWidth, &width, &height, &channels, true, true);
 			if (!data)
 				return false;
 
 			rgba.assign(data, data + static_cast<size_t>(width) * height * 4);
-			FileSystem::FreeImage(data);
+			Internal::FreeImage(data);
 			return true;
 		}
 

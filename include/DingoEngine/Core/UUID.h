@@ -17,7 +17,7 @@ namespace Dingo
 	{
 	public:
 		constexpr UUID() = default;
-		constexpr UUID(uint64_t uuid) : m_UUID(uuid) {}
+		explicit constexpr UUID(uint64_t uuid) : m_UUID(uuid) {}
 		constexpr UUID(const UUID&) = default;
 		constexpr UUID& operator=(const UUID&) = default;
 

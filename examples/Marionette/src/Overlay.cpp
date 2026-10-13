@@ -75,7 +75,7 @@ namespace Dingo::Overlay
 		if (!s_RefocusFrame && Input::IsAnyMouseButtonPressed())
 			return true;
 
-		for (uint32_t button = 0; button < GamepadButtonCount; ++button)
+		for (uint32_t button = 0; button < k_GamepadButtonCount; ++button)
 		{
 			if (Input::IsGamepadButtonPressed(static_cast<GamepadButton>(button)))
 				return true;

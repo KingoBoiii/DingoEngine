@@ -24,8 +24,8 @@ namespace Dingo
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(WindowFocus)
-		EVENT_CLASS_CATEGORY(EventCategoryWindow)
+		DE_EVENT_CLASS_TYPE(WindowFocus)
+		DE_EVENT_CLASS_CATEGORY(Window)
 
 	private:
 		bool m_Focused;

@@ -1,9 +1,6 @@
 #pragma once
 
-#define BIT(x) (1u << x)
-
-#define DE_EXPAND_MACRO(x) x
-#define DE_STRINGIFY_MACRO(x) #x
+#define DE_BIT(x) (1u << (x))
 
 // For code that must still read a [[deprecated]] member while it lives (the engine itself, a
 // migration shim).
@@ -22,7 +19,6 @@ namespace Dingo
 
 	enum class GraphicsAPI
 	{
-		Headless,
 		Vulkan,
 		DirectX11,
 		DirectX12

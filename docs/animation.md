@@ -1062,9 +1062,7 @@ plays a copy of its assets with hot-reload on, rewrites the slash's `hitbox` ran
 
 ## Debugging
 
-**F7, the Animation tab** of the Debug window (`UI::AnimationSection()` embeds it in your own window,
-`UI::AnimationStatsWindow()` opens it as a window of its own, and `UI::DebugTab::Animation` selects
-it). It lists every live scene's
+**F7, the Animation tab** of the Debug window. It lists every live scene's
 animators, once they have been created:
 
 - the entity, scene and model, with `disabled` and the speed when they differ from the defaults, and

@@ -29,7 +29,7 @@
 // (DingoEngine/UI/DebugPanels.h). Like ImGuiUI.cpp, this is one of the only
 // translation units that includes <imgui.h>; clients call only Dingo::UI.
 
-namespace Dingo::UI
+namespace Dingo::Internal
 {
 
 	namespace
@@ -185,8 +185,7 @@ namespace Dingo::UI
 			{
 				s_Sorted.clear();
 				s_Sorted.reserve(count);
-				for (const auto& [handle, metadata] : assets.GetRegistry())
-					s_Sorted.push_back(handle);
+				s_Sorted = assets.GetHandles();
 
 				std::sort(s_Sorted.begin(), s_Sorted.end(), [&assets](AssetHandle a, AssetHandle b)
 				{
@@ -456,7 +455,6 @@ namespace Dingo::UI
 		const char* apiName = "Unknown";
 		switch (context.GetGraphicsAPI())
 		{
-			case GraphicsAPI::Headless:   apiName = "Headless";  break;
 			case GraphicsAPI::Vulkan:     apiName = "Vulkan";    break;
 			case GraphicsAPI::DirectX11:  apiName = "DirectX11"; break;
 			case GraphicsAPI::DirectX12:  apiName = "DirectX12"; break;
@@ -603,7 +601,7 @@ namespace Dingo::UI
 			Input::SetGamepadDeadzone(deadzone);
 
 		bool any = false;
-		for (uint32_t pad = 0; pad < MaxGamepads; pad++)
+		for (uint32_t pad = 0; pad < k_MaxGamepads; pad++)
 		{
 			if (!Input::IsGamepadConnected(pad))
 				continue;
@@ -613,7 +611,7 @@ namespace Dingo::UI
 			ImGui::Text("Slot %u : %s ('%s')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad).c_str());
 
 			std::string held;
-			for (uint8_t button = 0; button < GamepadButtonCount; button++)
+			for (uint8_t button = 0; button < k_GamepadButtonCount; button++)
 			{
 				if (!Input::IsGamepadButtonDown(static_cast<GamepadButton>(button), pad))
 					continue;
@@ -677,10 +675,11 @@ namespace Dingo::UI
 
 		std::array<uint32_t, static_cast<size_t>(AssetType::Count)> perType{};
 		std::array<uint32_t, static_cast<size_t>(AssetState::Count)> perState{};
-		for (const auto& [handle, metadata] : assets.GetRegistry())
+		for (const AssetHandle handle : assets.GetHandles())
 		{
-			perType[static_cast<size_t>(metadata.Type)]++;
-			perState[static_cast<size_t>(metadata.State)]++;
+			const AssetMetadata* metadata = assets.GetMetadata(handle);
+			perType[static_cast<size_t>(metadata->Type)]++;
+			perState[static_cast<size_t>(metadata->State)]++;
 		}
 
 		ImGui::Spacing();
@@ -690,7 +689,7 @@ namespace Dingo::UI
 		{
 			if (perType[type] == 0)
 				continue;
-			ImGui::Text("%-10s : %u", AssetTypeToString(static_cast<AssetType>(type)), perType[type]);
+			ImGui::Text("%-10s : %u", ToString(static_cast<AssetType>(type)), perType[type]);
 		}
 		if (registered == 0)
 			ImGui::TextUnformatted("No assets registered.");
@@ -703,7 +702,7 @@ namespace Dingo::UI
 			if (perState[state] == 0)
 				continue;
 			const AssetState value = static_cast<AssetState>(state);
-			ImGui::TextColored(AssetStateColor(value), "%-10s : %u", AssetStateToString(value), perState[state]);
+			ImGui::TextColored(AssetStateColor(value), "%-10s : %u", ToString(value), perState[state]);
 		}
 	}
 
@@ -755,10 +754,10 @@ namespace Dingo::UI
 				ImGui::TableNextRow();
 
 				ImGui::TableSetColumnIndex(0);
-				ImGui::TextColored(AssetStateColor(metadata->State), "%s", AssetStateToString(metadata->State));
+				ImGui::TextColored(AssetStateColor(metadata->State), "%s", ToString(metadata->State));
 
 				ImGui::TableSetColumnIndex(1);
-				ImGui::TextUnformatted(AssetTypeToString(metadata->Type));
+				ImGui::TextUnformatted(ToString(metadata->Type));
 
 				ImGui::TableSetColumnIndex(2);
 				ImGui::TextUnformatted(path.c_str());
@@ -787,7 +786,7 @@ namespace Dingo::UI
 				}
 				ImGui::EndDisabled();
 				if (reloadBlocked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", AssetTypeToString(metadata->Type));
+					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", ToString(metadata->Type));
 
 				ImGui::PopID();
 			}

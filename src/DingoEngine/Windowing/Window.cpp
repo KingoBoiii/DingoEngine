@@ -354,7 +354,7 @@ namespace Dingo
 			{
 				case GLFW_PRESS:
 				{
-					KeyPressedEvent keyPressedEvent(keyCode, 0);
+					KeyPressedEvent keyPressedEvent(keyCode, false);
 					windowData.EventCallback(keyPressedEvent);
 					break;
 				}
@@ -366,7 +366,7 @@ namespace Dingo
 				}
 				case GLFW_REPEAT:
 				{
-					KeyPressedEvent keyPressedRepeatEvent(keyCode, 1);
+					KeyPressedEvent keyPressedRepeatEvent(keyCode, true);
 					windowData.EventCallback(keyPressedRepeatEvent);
 					break;
 				}

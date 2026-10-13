@@ -61,7 +61,7 @@ namespace Dingo
 		void OnUpdate(float deltaTime) override;
 		void OnEvent(Event& event) override;
 #ifndef DE_DISTRIBUTION
-		void OnUIRender() override;
+		void OnImGuiRender() override;
 #endif
 
 	private:

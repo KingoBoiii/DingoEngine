@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 namespace Dingo
@@ -7,6 +8,12 @@ namespace Dingo
 
 	class Layer;
 
+}
+
+namespace Dingo::Internal
+{
+
+	// Application's layers, layers below overlays; Clear detaches and deletes them all.
 	class LayerStack
 	{
 	public:
@@ -18,9 +25,6 @@ namespace Dingo
 
 		void PushLayer(Layer* layer);
 		void PushOverlay(Layer* overlay);
-
-		void PopLayer(Layer* layer);
-		void PopOverlay(Layer* overlay);
 
 		std::vector<Layer*>::iterator begin() { return m_Layers.begin(); }
 		std::vector<Layer*>::iterator end() { return m_Layers.end(); }

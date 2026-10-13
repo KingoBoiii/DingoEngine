@@ -23,8 +23,6 @@ project "SpaceInvaders"
 
 	filter "system:windows"
 		systemversion "latest"
-		-- NOMINMAX: DingoEngine's public headers transitively include <Windows.h>,
-		-- whose min/max macros otherwise clobber std::min / std::max in game code.
 		defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
 
 	filter "system:linux"

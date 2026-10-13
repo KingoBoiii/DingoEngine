@@ -113,7 +113,7 @@ namespace Dingo
 		}
 
 		// Through spdlog when it is up and this thread isn't inside it, else straight to stderr and
-		// the log file, so a message logged after Log::Shutdown or from inside a log call still lands.
+		// the log file, so a message logged after Internal::ShutdownLog or from inside a log call still lands.
 		void ReportFatal(const std::string& message)
 		{
 			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal))

@@ -5,7 +5,7 @@
 namespace Dingo
 {
 
-	typedef enum class MouseButton : uint16_t
+	enum class MouseButton : uint16_t
 	{
 		Button0 = 0,
 		Button1 = 1,
@@ -16,7 +16,7 @@ namespace Dingo
 		Left = Button0,
 		Right = Button1,
 		Middle = Button2
-	} Button;
+	};
 
 	inline std::ostream& operator<<(std::ostream& os, MouseButton button)
 	{

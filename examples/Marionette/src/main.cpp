@@ -82,11 +82,9 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		.Assets = AssetManagerParams()
 			.SetRootDirectory(assetRoot)
 			.SetEnableHotReload(options.HotReload),
-		.EnableUI = false,
+		.EnableImGui = false,
 		.UpdateInBackground = background,
 	};
 
-	MarionetteApplication* app = new MarionetteApplication(params);
-	app->Initialize();
-	return app;
+	return new MarionetteApplication(params);
 }

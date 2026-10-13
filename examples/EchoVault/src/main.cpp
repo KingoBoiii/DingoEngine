@@ -48,10 +48,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.GraphicsAPI = ParseGraphicsAPI(args),
 			.FramesInFlight = 3,
 		},
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 
-	EchoVaultApplication* app = new EchoVaultApplication(params);
-	app->Initialize();
-	return app;
+	return new EchoVaultApplication(params);
 }

@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
@@ -90,7 +91,7 @@ namespace Dingo
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
 		uint32_t width = 0, height = 0, channels = 0;
-		const uint8_t* data = FileSystem::ReadImage(resolvedPath, &width, &height, &channels, true, true);
+		const uint8_t* data = Internal::ReadImage(resolvedPath, &width, &height, &channels, true, true);
 		if (!data)
 			return nullptr;
 
@@ -104,7 +105,7 @@ namespace Dingo
 			.SetFormat(channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB)
 			.SetIsRenderTarget(false)
 			.SetInitialData(data));
-		FileSystem::FreeImage(data);
+		Internal::FreeImage(data);
 
 		return texture;
 	}

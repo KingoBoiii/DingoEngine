@@ -49,10 +49,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.GraphicsAPI = ParseGraphicsAPI(args),
 			.FramesInFlight = 3,
 		},
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 
-	DungeonCrawler3DApplication* app = new DungeonCrawler3DApplication(params);
-	app->Initialize();
-	return app;
+	return new DungeonCrawler3DApplication(params);
 }

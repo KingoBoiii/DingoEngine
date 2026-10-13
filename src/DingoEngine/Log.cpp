@@ -10,6 +10,7 @@
 #include <spdlog/sinks/dist_sink.h>
 
 #include "DingoEngine/Core/CrashHandler.h"
+#include "DingoEngine/Core/LogLifecycle.h"
 
 #include <fstream>
 #include <mutex>
@@ -248,7 +249,7 @@ namespace Dingo
 
 	}
 
-	void Log::Initialize()
+	void Internal::InitializeLog()
 	{
 		auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 		console->set_pattern("%^[%T] %n: %v%$");
@@ -271,9 +272,9 @@ namespace Dingo
 		s_ClientLogger->flush_on(spdlog::level::warn);
 	}
 
-	void Log::Shutdown()
+	void Internal::ShutdownLog()
 	{
-		Flush();
+		Log::Flush();
 		s_ClientLogger.reset();
 		s_EngineLogger.reset();
 		s_EarlySink.reset();
@@ -281,7 +282,7 @@ namespace Dingo
 		spdlog::drop_all();
 	}
 
-	bool Log::OpenFile(const std::filesystem::path& directory, uint32_t keepRuns)
+	bool Internal::OpenLogFile(const std::filesystem::path& directory, uint32_t keepRuns)
 	{
 		if (!s_FilePath.empty() || !s_EngineLogger)
 			return !s_FilePath.empty();
@@ -322,6 +323,24 @@ namespace Dingo
 		LoggingScope scope;
 		if (s_EngineLogger) s_EngineLogger->flush();
 		if (s_ClientLogger) s_ClientLogger->flush();
+	}
+
+	void Log::PrintAssertionMessage(Log::Type type, std::string_view message)
+	{
+		ReportAssertion(type, {}, message);
+	}
+
+	void Log::ReportAssertion(Log::Type type, std::string_view tag, std::string_view message)
+	{
+		if (tag.empty())
+			PrintInternal(type, Log::Level::Fatal, std::format("Assertion failed: {0}", message));
+		else
+			PrintInternalTag(type, Log::Level::Fatal, tag, message);
+
+#if !defined(DE_RELEASE) && defined(DE_PLATFORM_WINDOWS)
+		const std::string text = tag.empty() ? std::string(message) : std::format("{}: {}", tag, message);
+		MessageBoxA(nullptr, text.c_str(), "Dingo Assert", MB_OK | MB_ICONERROR);
+#endif
 	}
 
 	bool Log::ShouldLog(Log::Type type, Log::Level level)

@@ -18,7 +18,7 @@ namespace Dingo
 		{
 			for (WindowMode mode : { WindowMode::Windowed, WindowMode::BorderlessFullscreen, WindowMode::ExclusiveFullscreen })
 			{
-				if (text == WindowModeToString(mode))
+				if (text == ToString(mode))
 					return mode;
 			}
 			return std::nullopt;
@@ -110,7 +110,7 @@ namespace Dingo
 		data["version"] = k_FormatVersion;
 
 		SaveData& display = data["display"];
-		display["mode"] = WindowModeToString(Display.Mode);
+		display["mode"] = ToString(Display.Mode);
 		display["width"] = Display.Width;
 		display["height"] = Display.Height;
 		display["fullscreenMode"] = glm::ivec3(Display.FullscreenMode.Width, Display.FullscreenMode.Height, Display.FullscreenMode.RefreshRate);

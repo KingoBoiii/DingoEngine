@@ -31,7 +31,7 @@ namespace Dingo
 
 		m_Font = Font::Create("assets/fonts/arialbd.ttf");
 
-		m_AppUpdateInBackground = Application::Get().GetUpdateInBackground();
+		m_AppUpdateInBackground = Application::Get().IsUpdatingInBackground();
 		if (auto value = Application::Get().GetCommandLineArgs().Get("update-in-background"))
 			Application::Get().SetUpdateInBackground(*value != "off");
 
@@ -109,7 +109,7 @@ namespace Dingo
 		if (inBackground && !wasInBackground)
 		{
 			m_StretchStart = m_LastUpdate;
-			m_StretchUpdatingMode = Application::Get().GetUpdateInBackground();
+			m_StretchUpdatingMode = Application::Get().IsUpdatingInBackground();
 			m_StretchMinimized = false;
 			m_StretchUpdates = 0;
 			m_StretchDeltaTime = 0.0f;
@@ -186,7 +186,7 @@ namespace Dingo
 		{
 			const std::string lines[] = {
 				std::format("Updates: {}, stretches in the background: {}", m_Updates, m_Stretches),
-				std::format("Update in background: {}", Application::Get().GetUpdateInBackground() ? "on" : "off (pauses)"),
+				std::format("Update in background: {}", Application::Get().IsUpdatingInBackground() ? "on" : "off (pauses)"),
 				m_LastStretch.empty() ? std::string("Minimize or click away, holding Space across it, then come back") : "Last: " + m_LastStretch,
 				std::format("Space: {} presses, {} releases", m_SpacePresses, m_SpaceReleases),
 			};
@@ -276,7 +276,7 @@ namespace Dingo
 		Renderer2DTest::ImGuiRender();
 
 		ImGui::Separator();
-		bool updateInBackground = Application::Get().GetUpdateInBackground();
+		bool updateInBackground = Application::Get().IsUpdatingInBackground();
 		if (ImGui::Checkbox("Update in background", &updateInBackground))
 			Application::Get().SetUpdateInBackground(updateInBackground);
 		ImGui::Text("Stretches in the background: %u", m_Stretches);

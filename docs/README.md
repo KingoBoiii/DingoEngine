@@ -70,9 +70,7 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 {
     ApplicationParams params{ .CommandLineArgs = args };
     params.Window.Title = "My Game";
-    Game* app = new Game(params);
-    app->Initialize();
-    return app;
+    return new Game(params);
 }
 ```
 

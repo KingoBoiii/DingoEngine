@@ -186,7 +186,7 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
 });
 ```
 
-- **When.** From `OnUpdate` or `OnUIRender` the copy follows the draws recorded so far, and
+- **When.** From `OnUpdate` or `OnImGuiRender` the copy follows the draws recorded so far, and
   `Renderer2D` and `Renderer3D` record theirs at `EndScene`, so read back after it. `done` then
   runs on the main thread at the start of the next frame, before its command list opens: it may
   read back or create textures, not draw. From `OnAttach`, or in a frame the app skips while

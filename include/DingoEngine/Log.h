@@ -6,14 +6,6 @@
 
 #include <glm/glm.hpp>
 
-#define DE_ASSERT_MESSAGE_BOX (!DE_RELEASE && DE_PLATFORM_WINDOWS)
-
-#if DE_ASSERT_MESSAGE_BOX
-#ifdef DE_PLATFORM_WINDOWS
-#include <Windows.h>
-#endif
-#endif
-
 namespace Dingo
 {
 
@@ -36,17 +28,7 @@ namespace Dingo
 		};
 
 	public:
-		// Logs to the console, keeping what is logged until OpenFile in memory.
-		static void Initialize();
-		static void Shutdown();
-
-		// Opens `directory`/Dingo.log for this run, first moving the earlier runs' logs up one name
-		// (Dingo.log -> Dingo.1.log, ... up to Dingo.<keepRuns - 1>.log, the oldest dropped), and
-		// writes everything logged since Initialize into it. Application's constructor calls it;
-		// later calls keep the file already open. False when the directory can't be written: the
-		// log then goes to the console only.
-		static bool OpenFile(const std::filesystem::path& directory, uint32_t keepRuns = 5);
-		// This run's log file, or empty before OpenFile.
+		// This run's log file, or empty before the Application opened it.
 		static const std::filesystem::path& GetFilePath();
 		static void Flush();
 
@@ -70,6 +52,8 @@ namespace Dingo
 		static void PrintAssertionMessage(Log::Type type, std::string_view message);
 
 	private:
+		// Logs it and, in a Debug or Distribution build on Windows, shows it in a message box.
+		static void ReportAssertion(Log::Type type, std::string_view tag, std::string_view message);
 		static void PrintInternal(Log::Type type, Log::Level level, const std::string_view formatted);
 		static void PrintInternalTag(Log::Type type, Log::Level level, const std::string_view tag, const std::string_view formatted);
 	};
@@ -129,23 +113,7 @@ namespace Dingo
 	template<typename... Args>
 	void Log::PrintAssertionMessage(Log::Type type, std::string_view tag, std::format_string<Args...> format, Args&&... args)
 	{
-		auto formatted = std::format(format, std::forward<Args>(args)...);
-
-		PrintInternalTag(type, Log::Level::Fatal, tag, formatted);
-
-#if DE_ASSERT_MESSAGE_BOX
-		MessageBoxA(nullptr, formatted.data(), "Dingo Assert", MB_OK | MB_ICONERROR);
-#endif
-	}
-
-
-	inline void Log::PrintAssertionMessage(Log::Type type, std::string_view message)
-	{
-		PrintInternal(type, Log::Level::Fatal, std::format("Assertion failed: {0}", message));
-
-#if DE_ASSERT_MESSAGE_BOX
-		MessageBoxA(nullptr, "No message.\nCheck the log file", "Dingo Assert", MB_OK | MB_ICONERROR);
-#endif
+		ReportAssertion(type, tag, std::format(format, std::forward<Args>(args)...));
 	}
 
 }

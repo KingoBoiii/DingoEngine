@@ -18,7 +18,7 @@ namespace Dingo
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(GamepadConnected)
+		DE_EVENT_CLASS_TYPE(GamepadConnected)
 	};
 
 }

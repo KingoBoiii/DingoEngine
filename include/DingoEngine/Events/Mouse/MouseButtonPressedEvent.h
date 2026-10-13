@@ -18,7 +18,7 @@ namespace Dingo
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(MouseButtonPressed)
+		DE_EVENT_CLASS_TYPE(MouseButtonPressed)
 	};
 
 }

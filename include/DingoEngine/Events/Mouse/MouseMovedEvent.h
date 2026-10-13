@@ -21,8 +21,8 @@ namespace Dingo
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(MouseMoved)
-		EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
+		DE_EVENT_CLASS_TYPE(MouseMoved)
+		DE_EVENT_CLASS_CATEGORY(Mouse | Input)
 
 	private:
 		float m_X;

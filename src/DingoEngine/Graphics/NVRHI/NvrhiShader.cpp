@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "NvrhiShader.h"
 
 #include "DingoEngine/Core/CacheManager.h"
@@ -317,7 +318,7 @@ namespace Dingo
 		}
 
 		ShaderCompiler shaderCompiler;
-		const std::filesystem::path cacheDir = CacheManager::GetCacheDirectory("shaders");
+		const std::filesystem::path cacheDir = Internal::CacheManager::GetCacheDirectory("shaders");
 		const std::string cacheStem = Utils::MakeCacheStem(name, m_Params.FilePath, m_Params.Defines);
 
 		std::vector<std::pair<std::filesystem::path, std::string>> pendingCacheWrites;
@@ -601,7 +602,7 @@ namespace Dingo
 			return {};
 		}
 
-		std::string source = FileSystem::ReadTextFile(m_Params.FilePath);
+		std::string source = Internal::ReadTextFile(m_Params.FilePath);
 		if (source.empty())
 		{
 			DE_CORE_ERROR("Shader file is empty or unreadable: '{}'.", m_Params.FilePath.string());

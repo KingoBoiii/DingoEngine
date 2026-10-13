@@ -144,7 +144,7 @@ namespace Dingo
 		virtual bool NativeEquals(const Texture* other) const = 0;
 
 		// Copies the texture back to the CPU and hands its pixels to `done`, on the main thread.
-		// - In OnUpdate or OnUIRender the copy follows the draws recorded so far (Renderer2D and
+		// - In OnUpdate or OnImGuiRender the copy follows the draws recorded so far (Renderer2D and
 		//   Renderer3D record theirs at EndScene, so call it after), and `done` runs at the start of
 		//   the next frame, before its command list opens: it may read back or upload, not draw.
 		// - In OnAttach, or a frame Application skips while minimized, `done` runs before

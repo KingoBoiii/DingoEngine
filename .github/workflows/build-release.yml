@@ -72,16 +72,11 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Generate BuildInfo.h
-      run: |
-        $major = "${{steps.version.outputs.VERSION_MAJOR}}"
-        $minor = "${{steps.version.outputs.VERSION_MINOR}}"
-        $patch = "${{steps.version.outputs.VERSION_PATCH}}"
-        $build = "${{steps.version.outputs.VERSION_BUILD}}"
-        "#pragma once", "#define DE_ENGINE_VERSION_MAJOR $major", "#define DE_ENGINE_VERSION_MINOR $minor", "#define DE_ENGINE_VERSION_PATCH $patch", "#define DE_ENGINE_VERSION_BUILD $build" | Set-Content include/DingoEngine/BuildInfo.h -Encoding utf8
-
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
+      env:
+        DE_VERSION: ${{steps.version.outputs.VERSION_MAJOR}}.${{steps.version.outputs.VERSION_MINOR}}.${{steps.version.outputs.VERSION_PATCH}}
+        DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
       run: .\premake5-bin\premake5.exe vs2026
 
     - name: Build
@@ -724,15 +719,10 @@ jobs:
           echo "VERSION_BUILD=$commits"
         } >> "$GITHUB_OUTPUT"
 
-    - name: Generate BuildInfo.h
-      run: |
-        printf '%s\n' "#pragma once" \
-          "#define DE_ENGINE_VERSION_MAJOR ${{steps.version.outputs.VERSION_MAJOR}}" \
-          "#define DE_ENGINE_VERSION_MINOR ${{steps.version.outputs.VERSION_MINOR}}" \
-          "#define DE_ENGINE_VERSION_PATCH ${{steps.version.outputs.VERSION_PATCH}}" \
-          "#define DE_ENGINE_VERSION_BUILD ${{steps.version.outputs.VERSION_BUILD}}" > include/DingoEngine/BuildInfo.h
-
     - name: Premake
+      env:
+        DE_VERSION: ${{steps.version.outputs.VERSION_MAJOR}}.${{steps.version.outputs.VERSION_MINOR}}.${{steps.version.outputs.VERSION_PATCH}}
+        DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
       run: premake5 gmake
 
     - name: Build

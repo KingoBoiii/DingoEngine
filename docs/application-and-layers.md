@@ -17,15 +17,15 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 {
     Dingo::ApplicationParams params{ .CommandLineArgs = args };
     // ...configure params...
-    auto* app = new MyApp(params);
-    app->Initialize();   // REQUIRED before returning
-    return app;
+    return new MyApp(params);
 }
 ```
 
-The engine's `main()` runs a small loop: it creates your application, runs it, and
-— if a graphics-API restart was requested via `Application::RequestRestart()` —
-recreates it. Return a heap-allocated `Application*`; the engine deletes it.
+The engine's `main()` runs a small loop: it creates your application, initializes it (window,
+renderers, audio, assets, then your `OnInitialize`), runs it, and — if a graphics-API restart was
+requested via `Application::RequestRestart(api)` — calls `CreateApplication` again, whose
+application then starts on `api` whatever its params say. Return a heap-allocated `Application*`;
+the engine deletes it.
 
 ## ApplicationParams
 
@@ -46,13 +46,12 @@ ApplicationParams params{
         .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
         .FramesInFlight = 3,
     },
-    .EnableUI = false,    // set true to get OnUIRender() callbacks
+    .EnableImGui = false,    // set true to get OnImGuiRender() callbacks
 };
 ```
 
 `.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan` with
-`FramesInFlight = 3`. `GraphicsAPI::Headless` has no graphics context, so asking for it
-(or for a back-end the platform lacks, such as DirectX on Linux) logs an error and stops
+`FramesInFlight = 3`. Asking for a back-end the platform lacks (DirectX on Linux) logs an error and stops
 in `Application::Initialize`, in every configuration.
 
 ### Logs and crashes
@@ -216,7 +215,7 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 | `GetSwapChain()` | The active swap chain. |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
-| `SetUpdateInBackground(bool)` / `GetUpdateInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
+| `SetUpdateInBackground(bool)` / `IsUpdatingInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
 | `RequestRestart(GraphicsAPI)` | Tear down and recreate the app on a different back-end. |
 | `GetEngineVersion()` / `GetEngineBuildNumber()` | Packed engine version (decode with `DE_VERSION_MAJOR/MINOR/PATCH`). |
 | `GetName()` | `ApplicationParams::Name`, or the executable's name: the per-user folder logs go to (see [Logs and crashes](#logs-and-crashes)). |
@@ -229,7 +228,7 @@ Once running, each frame the `Application`:
 2. Polls window events (which fan out through `OnEvent`).
 3. `Renderer::BeginFrame()`.
 4. Calls `OnUpdate(deltaTime)` on every layer, bottom to top.
-5. If ImGui is enabled, calls `OnUIRender()` on every layer.
+5. If ImGui is enabled, calls `OnImGuiRender()` on every layer.
 6. `Renderer::EndFrame()` — presents.
 
 `deltaTime` is seconds since the previous frame.
@@ -241,7 +240,7 @@ height; an alt-tab out of exclusive fullscreen minimizes it too) or unfocused. W
 set by `ApplicationParams::UpdateInBackground`, which `Application::SetUpdateInBackground` changes
 at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never while unfocused):
 
-- **Off (the default): the app pauses.** No `OnUpdate`, no `OnUIRender`, nothing renders, and
+- **Off (the default): the app pauses.** No `OnUpdate`, no `OnImGuiRender`, nothing renders, and
   `AssetManager` loads and hot-reload wait; an unfocused window keeps showing its last frame. The
   loop sleeps on window events, the paused time is left out of the `deltaTime`s after it, and audio
   keeps playing. The first frame runs even without focus, so a window that opens unfocused is not
@@ -252,7 +251,7 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
   so its frames update but render nothing:
   - The loop waits on window events between updates instead of spinning, aiming at 60 a second;
     with Windows' default 15.6 ms timer it gets about 35.
-  - Step 3 becomes `Renderer::SkipFrame()`, and steps 5–6 are skipped: no `OnUIRender`, no debug
+  - Step 3 becomes `Renderer::SkipFrame()`, and steps 5–6 are skipped: no `OnImGuiRender`, no debug
     window.
   - `Renderer` uploads, clears and draws, `Renderer2D` and `Renderer3D` scenes and
     `SceneRenderer::Render` are no-ops, so a layer that renders inside `OnUpdate` needs no guard of
@@ -282,7 +281,7 @@ public:
     void OnDetach() override {}                 // removed / app shutting down
     void OnUpdate(float deltaTime) override {}  // once per frame
     void OnEvent(Event& e) override {}          // input/window events
-    void OnUIRender() override {}            // only if EnableUI == true
+    void OnImGuiRender() override {}            // only if EnableImGui == true
 };
 ```
 
@@ -482,7 +481,7 @@ bool OnFocus(WindowFocusEvent& e)
 
 > For most gameplay, polling with `Input` is simpler than handling key events. Reach
 > for events when you need the exact press/release moment, repeat counts
-> (`KeyPressedEvent::GetRepeatCount()`), or window-level notifications like resize.
+> (`KeyPressedEvent::IsRepeat()`), or window-level notifications like resize.
 
 ---
 

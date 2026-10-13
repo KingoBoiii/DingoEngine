@@ -13,9 +13,9 @@
 namespace Dingo
 {
 
-	static_assert(GamepadButtonCount == GLFW_GAMEPAD_BUTTON_LAST + 1);
-	static_assert(GamepadAxisCount == GLFW_GAMEPAD_AXIS_LAST + 1);
-	static_assert(MaxGamepads == GLFW_JOYSTICK_LAST + 1);
+	static_assert(k_GamepadButtonCount == GLFW_GAMEPAD_BUTTON_LAST + 1);
+	static_assert(k_GamepadAxisCount == GLFW_GAMEPAD_AXIS_LAST + 1);
+	static_assert(k_MaxGamepads == GLFW_JOYSTICK_LAST + 1);
 
 	namespace
 	{
@@ -24,8 +24,8 @@ namespace Dingo
 
 		struct GamepadState
 		{
-			std::array<bool, GamepadButtonCount> Buttons{};
-			std::array<float, GamepadAxisCount> Axes{};
+			std::array<bool, k_GamepadButtonCount> Buttons{};
+			std::array<float, k_GamepadAxisCount> Axes{};
 			bool Connected = false;
 		};
 
@@ -39,17 +39,17 @@ namespace Dingo
 		glm::vec2 s_PreviousMousePosition{ 0.0f };
 		glm::vec2 s_MouseScrollDelta{ 0.0f };
 
-		std::array<GamepadState, MaxGamepads> s_CurrentGamepads{};
-		std::array<GamepadState, MaxGamepads> s_PreviousGamepads{};
-		std::array<std::string, MaxGamepads> s_GamepadNames{};
-		std::array<GamepadType, MaxGamepads> s_GamepadTypes{};
+		std::array<GamepadState, k_MaxGamepads> s_CurrentGamepads{};
+		std::array<GamepadState, k_MaxGamepads> s_PreviousGamepads{};
+		std::array<std::string, k_MaxGamepads> s_GamepadNames{};
+		std::array<GamepadType, k_MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
 
 		using RumbleClock = std::chrono::steady_clock;
 		constexpr int k_NoXInputUser = -1;
 		// Each joystick id's XInput user index, k_NoXInputUser while it has none.
-		std::array<int, MaxGamepads> s_XInputUsers = []() { std::array<int, MaxGamepads> users; users.fill(k_NoXInputUser); return users; }();
-		std::array<std::optional<RumbleClock::time_point>, MaxGamepads> s_RumbleEnds{};
+		std::array<int, k_MaxGamepads> s_XInputUsers = []() { std::array<int, k_MaxGamepads> users; users.fill(k_NoXInputUser); return users; }();
+		std::array<std::optional<RumbleClock::time_point>, k_MaxGamepads> s_RumbleEnds{};
 
 		GLFWwindow* s_Window = nullptr;
 		CursorMode s_CursorMode = CursorMode::Normal;
@@ -62,9 +62,9 @@ namespace Dingo
 
 		bool ValidKey(KeyCode keycode) { return static_cast<size_t>(keycode) < MaxKeys; }
 		bool ValidMouseButton(MouseButton button) { return static_cast<size_t>(button) < MaxMouseButtons; }
-		bool ValidGamepad(uint32_t gamepad) { return gamepad < MaxGamepads; }
-		bool ValidGamepadButton(GamepadButton button) { return static_cast<size_t>(button) < GamepadButtonCount; }
-		bool ValidGamepadAxis(GamepadAxis axis) { return static_cast<size_t>(axis) < GamepadAxisCount; }
+		bool ValidGamepad(uint32_t gamepad) { return gamepad < k_MaxGamepads; }
+		bool ValidGamepadButton(GamepadButton button) { return static_cast<size_t>(button) < k_GamepadButtonCount; }
+		bool ValidGamepadAxis(GamepadAxis axis) { return static_cast<size_t>(axis) < k_GamepadAxisCount; }
 
 		float ApplyDeadzone(float value, float deadzone)
 		{
@@ -165,7 +165,7 @@ namespace Dingo
 		{
 			const uint32_t connected = Internal::XInput::GetConnectedMask();
 			uint32_t user = 0;
-			for (int jid = 0; jid < static_cast<int>(MaxGamepads); ++jid)
+			for (int jid = 0; jid < static_cast<int>(k_MaxGamepads); ++jid)
 			{
 				if (s_XInputUsers[jid] != k_NoXInputUser || !glfwJoystickPresent(jid) || !IsXInputJoystick(jid))
 					continue;
@@ -189,7 +189,7 @@ namespace Dingo
 
 		void PollGamepads()
 		{
-			for (uint32_t jid = 0; jid < MaxGamepads; jid++)
+			for (uint32_t jid = 0; jid < k_MaxGamepads; jid++)
 			{
 				GamepadState& state = s_CurrentGamepads[jid];
 
@@ -208,9 +208,9 @@ namespace Dingo
 				}
 
 				state.Connected = true;
-				for (size_t i = 0; i < GamepadButtonCount; i++)
+				for (size_t i = 0; i < k_GamepadButtonCount; i++)
 					state.Buttons[i] = glfwState.buttons[i] == GLFW_PRESS;
-				for (size_t i = 0; i < GamepadAxisCount; i++)
+				for (size_t i = 0; i < k_GamepadAxisCount; i++)
 					state.Axes[i] = glfwState.axes[i];
 			}
 		}
@@ -447,7 +447,7 @@ namespace Dingo
 	void Input::UpdateRumble()
 	{
 		const RumbleClock::time_point now = RumbleClock::now();
-		for (uint32_t gamepad = 0; gamepad < MaxGamepads; ++gamepad)
+		for (uint32_t gamepad = 0; gamepad < k_MaxGamepads; ++gamepad)
 		{
 			if (s_RumbleEnds[gamepad] && now >= *s_RumbleEnds[gamepad])
 				StopRumble(gamepad);
@@ -571,7 +571,7 @@ namespace Dingo
 			s_CursorMode = CursorMode::Normal;
 			s_MouseDeltaSuppressFrames = 0;
 			s_MouseDeltaSuppressed = false;
-			for (uint32_t gamepad = 0; gamepad < MaxGamepads; ++gamepad)
+			for (uint32_t gamepad = 0; gamepad < k_MaxGamepads; ++gamepad)
 				StopRumble(gamepad);
 			s_XInputUsers.fill(k_NoXInputUser);
 			return;

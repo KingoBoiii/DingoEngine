@@ -221,7 +221,7 @@ angle.
 included), `LocalLights`, `CulledLights` and `DroppedLights`, complete after `EndScene`. The F4
 Renderer tab shows them under "Renderer3D lights": directional `n / 4`, a point/spot bar against
 the budget, "Out of view", and a red "Dropped" line when anything was dropped. "Dropped" counts
-both kinds; the log says which. `UI::RendererStatsSection()` embeds it in your own window.
+both kinds; the log says which.
 
 **The budget fade** (v0.9). By default the cut-off is hard: when a light's rank crosses the budget
 edge, as the camera moves, it switches on or off within one frame. Set

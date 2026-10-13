@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 // ----------------------------------------------------------------------
 // DingoEngine debug panels
@@ -9,9 +10,9 @@
 // header and never the backend -- the ImGui implementation lives under
 // src/DingoEngine/UI/ImGui/.
 //
-// Call these from Layer::OnUIRender() (requires ApplicationParams::EnableUI).
+// Call these from Layer::OnImGuiRender() (requires ApplicationParams::EnableImGui).
 
-namespace Dingo::UI
+namespace Dingo::Internal
 {
 
 	// Frame timing (FPS + a rolling frame-time graph) and the most recent scene's
@@ -34,8 +35,8 @@ namespace Dingo::UI
 	//
 	// Each function below draws one logical section's widgets (a heading plus its
 	// rows) into whatever ImGui window is currently open -- it does not Begin/End a
-	// window of its own. Call one from Layer::OnUIRender() (requires
-	// ApplicationParams::EnableUI) to embed that section into your own debug window,
+	// window of its own. Call one from Layer::OnImGuiRender() (requires
+	// ApplicationParams::EnableImGui) to embed that section into your own debug window,
 	// or use EngineStatsWindow() below to get all of them composed into one.
 
 	// Engine version (major.minor.patch) and build number, from Version.h/BuildInfo.h.
@@ -147,7 +148,7 @@ namespace Dingo::UI
 	// The combined debug window
 	// ----------------------------------------------------------------------
 
-	enum class DebugTab
+	enum class DebugTab : uint8_t
 	{
 		None = 0,
 		Engine,

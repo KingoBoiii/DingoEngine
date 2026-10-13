@@ -3,6 +3,7 @@
 #include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Core/LogLifecycle.h"
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
@@ -33,6 +34,12 @@ namespace Dingo
 	{
 		s_Instance = this;
 
+		if (s_PendingRestart)
+		{
+			m_Params.Graphics.GraphicsAPI = s_PendingRestartAPI;
+			s_PendingRestart = false;
+		}
+
 		if (m_Params.Name.empty())
 			m_Params.Name = Platform::GetExecutablePath().stem().string();
 
@@ -49,7 +56,7 @@ namespace Dingo
 		if (m_Params.SaveDirectory.empty())
 			m_Params.SaveDirectory = Platform::GetUserDataDir(m_Params.Name) / "saves";
 
-		Log::OpenFile(logDirectory);
+		Internal::OpenLogFile(logDirectory);
 		Internal::CrashHandler::Install(Log::GetFilePath(), logDirectory, m_Params.Name);
 
 		if (!m_Params.SettingsSlot.empty() && SaveSlots::Exists(m_Params.SettingsSlot))
@@ -83,11 +90,10 @@ namespace Dingo
 
 	void Application::Initialize()
 	{
-		// s_Instance is set unconditionally by the constructor, so it can't detect a
-		// second Initialize() call; m_Window is null until this function creates it.
-		DE_CORE_ASSERT(!m_Window, "Application already initialized. Cannot initialize again.");
+		if (m_Window)
+			return;
 
-		CacheManager::Initialize();
+		Internal::CacheManager::Initialize();
 
 		m_Window = new Window(m_Params.Window);
 		m_Window->Initialize();
@@ -136,17 +142,17 @@ namespace Dingo
 			DE_CORE_ERROR("No layers pushed to the application. Pushing an empty layer.");
 			PushLayer(new EmptyLayer());
 
-			m_Params.EnableUI = false; // Disable the UI layer if no layers are pushed
+			m_Params.EnableImGui = false; // Disable the UI layer if no layers are pushed
 			return;
 		}
 
 		// Bring up the ImGui backend if the game wants UI, or if the engine's built-in
 		// debug overlays are enabled -- so the renderer-stats window works even in
 		// projects that use no UI of their own, in every build config (Distribution too).
-		bool enableImGui = m_Params.EnableUI || m_Params.EnableDebugOverlays;
+		bool enableImGui = m_Params.EnableImGui || m_Params.EnableDebugOverlays;
 		if (enableImGui)
 		{
-			m_ImGuiLayer = new ImGuiLayer(m_Params.UI);
+			m_ImGuiLayer = new ImGuiLayer(m_Params.ImGui);
 			PushOverlay(m_ImGuiLayer);
 		}
 
@@ -229,7 +235,7 @@ namespace Dingo
 			m_GraphicsContext = nullptr;
 		}
 
-		CacheManager::Shutdown();
+		Internal::CacheManager::Shutdown();
 	}
 
 	void Application::OnEvent(Event& e)
@@ -358,12 +364,12 @@ namespace Dingo
 					Renderer::BeginGpuTimer("ImGui");
 					m_ImGuiLayer->Begin();
 
-					if (m_Params.EnableUI)
+					if (m_Params.EnableImGui)
 					{
 						for (Layer* layer : m_LayerStack)
 						{
-							DE_PROFILE_SCOPE_TEXT("Layer::OnUIRender", layer->GetName());
-							layer->OnUIRender();
+							DE_PROFILE_SCOPE_TEXT("Layer::OnImGuiRender", layer->GetName());
+							layer->OnImGuiRender();
 						}
 					}
 
@@ -418,26 +424,26 @@ namespace Dingo
 		// F7 = Animation, F8 = Profiler.
 		// A key opens the window on its tab (or switches to it); the active tab's key
 		// closes it.
-		UI::DebugTab request = UI::DebugTab::None;
+		Internal::DebugTab request = Internal::DebugTab::None;
 		if (Input::IsKeyPressed(Key::F3))
-			request = UI::DebugTab::Engine;
+			request = Internal::DebugTab::Engine;
 		if (Input::IsKeyPressed(Key::F4))
-			request = UI::DebugTab::Renderer;
+			request = Internal::DebugTab::Renderer;
 		if (Input::IsKeyPressed(Key::F5))
-			request = UI::DebugTab::Input;
+			request = Internal::DebugTab::Input;
 		if (Input::IsKeyPressed(Key::F6))
-			request = UI::DebugTab::Assets;
+			request = Internal::DebugTab::Assets;
 		if (Input::IsKeyPressed(Key::F7))
-			request = UI::DebugTab::Animation;
+			request = Internal::DebugTab::Animation;
 		if (Input::IsKeyPressed(Key::F8))
-			request = UI::DebugTab::Profiler;
+			request = Internal::DebugTab::Profiler;
 
-		if (request != UI::DebugTab::None)
+		if (request != Internal::DebugTab::None)
 		{
 			if (m_ShowDebugWindow && m_ActiveDebugTab == request)
 			{
 				m_ShowDebugWindow = false;
-				m_PendingDebugTab = UI::DebugTab::None;
+				m_PendingDebugTab = Internal::DebugTab::None;
 			}
 			else
 			{
@@ -450,9 +456,9 @@ namespace Dingo
 		{
 			// Keep requesting the pending tab until the window reports it active --
 			// ImGui applies a programmatic tab selection one frame late.
-			m_ActiveDebugTab = UI::DebugWindow(&m_ShowDebugWindow, m_PendingDebugTab);
+			m_ActiveDebugTab = Internal::DebugWindow(&m_ShowDebugWindow, m_PendingDebugTab);
 			if (m_ActiveDebugTab == m_PendingDebugTab)
-				m_PendingDebugTab = UI::DebugTab::None;
+				m_PendingDebugTab = Internal::DebugTab::None;
 		}
 	}
 
@@ -478,12 +484,6 @@ namespace Dingo
 		s_PendingRestart = true;
 		s_PendingRestartAPI = api;
 		SubmitPostExecution([]() { Application::Get().Close(); });
-	}
-
-	GraphicsAPI Application::ConsumePendingRestart()
-	{
-		s_PendingRestart = false;
-		return s_PendingRestartAPI;
 	}
 
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)

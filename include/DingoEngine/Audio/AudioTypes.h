@@ -15,8 +15,8 @@ namespace Dingo
 	// A handle encodes a slot index plus a generation counter, so a handle to a sound
 	// that has since finished/been reaped will not accidentally control a newer sound
 	// that reused the slot (the generation won't match). See AudioEngine implementation.
-	using AudioSoundId = std::uint32_t;
-	inline constexpr AudioSoundId k_InvalidSound = 0xFFFFFFFFu;
+	enum class AudioSoundId : std::uint32_t {};
+	inline constexpr AudioSoundId k_InvalidSound{ 0xFFFFFFFFu };
 
 	// Handle to a mix bus (AudioEngine::CreateBus), packed like AudioSoundId, so a
 	// destroyed bus's id goes stale. A strong type: a plain integer would make the

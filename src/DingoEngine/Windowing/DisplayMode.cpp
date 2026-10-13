@@ -9,7 +9,7 @@
 namespace Dingo
 {
 
-	const char* WindowModeToString(WindowMode mode)
+	const char* ToString(WindowMode mode)
 	{
 		switch (mode)
 		{

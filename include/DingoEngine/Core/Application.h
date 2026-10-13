@@ -15,8 +15,7 @@
 #include "DingoEngine/Events/Event.h"
 #include "DingoEngine/Events/WindowEvents.h"
 
-#include "DingoEngine/UI/UIParams.h"
-#include "DingoEngine/UI/DebugPanels.h"
+#include "DingoEngine/UI/ImGuiParams.h"
 
 #include <filesystem>
 #include <optional>
@@ -87,14 +86,14 @@ namespace Dingo
 		Renderer3DParams Renderer3D;	// Parameters for the 3D renderer (lighting, mesh batch capacity)
 		AssetManagerParams Assets;		// Parameters for the asset manager (asset root directory)
 
-		bool EnableUI = true;	// Whether to enable the immediate-mode UI layer
-		UIParams UI;			// Parameters for UI configuration, only used if EnableUI is true
+		bool EnableImGui = true;	// Whether to enable the immediate-mode UI layer
+		ImGuiParams ImGui;			// only used while EnableImGui or EnableDebugOverlays is true
 
 		// The built-in tabbed Debug window (F3 = engine tab, F4 = renderer tab,
 		// F5 = input tab, F6 = assets tab, F7 = animation tab; the active tab's key closes it).
-		// Independent of EnableUI: the engine brings up the UI backend for it even if the game
+		// Independent of EnableImGui: the engine brings up the UI backend for it even if the game
 		// uses no UI of its own. Honoured in every build config, Distribution included -- set
-		// false to strip the overlay (and, when EnableUI is also false, the ImGui backend)
+		// false to strip the overlay (and, when EnableImGui is also false, the ImGui backend)
 		// from a shipping build.
 		bool EnableDebugOverlays = true;
 
@@ -109,13 +108,20 @@ namespace Dingo
 	class ImGuiLayer;
 	class AudioEngine;
 
+	namespace Internal
+	{
+		// The engine's main(): EntryPoint.h's main and WinMain call it.
+		int Main(int argc, char** argv);
+		enum class DebugTab : uint8_t;
+	}
+
 	// The main thread's last frame, split up, for the F8 Profiler tab. Zero in a paused frame.
 	struct FrameTimings
 	{
 		float FrameMs = 0.0f;    // the frame's delta
 		float WaitMs = 0.0f;     // Renderer::BeginFrame waiting for the render thread to finish the frame before
 		float UpdateMs = 0.0f;   // AssetManager::Update and every layer's OnUpdate, which record the draws
-		float UIMs = 0.0f;       // ImGui: every layer's OnUIRender, the debug window and recording ImGui's draws
+		float UIMs = 0.0f;       // ImGui: every layer's OnImGuiRender, the debug window and recording ImGui's draws
 	};
 
 	class Application
@@ -125,8 +131,10 @@ namespace Dingo
 		virtual ~Application();
 
 	public:
+		// Brings up the window, renderers, audio and assets, then calls OnInitialize. The engine
+		// calls it after CreateApplication returns; calling it from CreateApplication first is
+		// harmless.
 		void Initialize();
-		void Destroy();
 
 		void OnEvent(Event& e);
 		void Run();
@@ -135,6 +143,7 @@ namespace Dingo
 		void PushOverlay(Layer* overlay);
 
 		void Close();
+		// Closes the app; CreateApplication then runs again and its Application starts on `api`.
 		void RequestRestart(GraphicsAPI api);
 
 		void SubmitPostExecution(const std::function<void()>& callback)
@@ -146,8 +155,6 @@ namespace Dingo
 		// False before construction and after teardown completes — check it from code
 		// that can run outside the application's lifetime (e.g. static-lifetime scenes).
 		static bool HasInstance() { return s_Instance != nullptr; }
-		static bool HasPendingRestart() { return s_PendingRestart; }
-		static GraphicsAPI ConsumePendingRestart();
 
 		Window& GetWindow() { return *m_Window; }
 		const Window& GetWindow() const { return *m_Window; }
@@ -157,7 +164,8 @@ namespace Dingo
 		bool IsMinimized() const { return m_Minimized; }
 
 		void SetUpdateInBackground(bool updateInBackground) { m_Params.UpdateInBackground = updateInBackground; }
-		bool GetUpdateInBackground() const { return m_Params.UpdateInBackground; }
+		bool IsUpdatingInBackground() const { return m_Params.UpdateInBackground; }
+		[[deprecated("use IsUpdatingInBackground; removed in 2.0")]] bool GetUpdateInBackground() const { return IsUpdatingInBackground(); }
 		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
 		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
@@ -186,6 +194,8 @@ namespace Dingo
 		virtual void OnDestroy() {}
 
 	private:
+		void Destroy();
+
 		bool OnWindowCloseEvent(WindowCloseEvent& e);
 		bool OnWindowResizeEvent(WindowResizeEvent& e);
 		bool OnWindowFocusEvent(WindowFocusEvent& e);
@@ -207,11 +217,11 @@ namespace Dingo
 		SceneRenderer* m_SceneRenderer = nullptr;
 		AudioEngine* m_AudioEngine = nullptr;
 		AssetManager* m_AssetManager = nullptr;
-		LayerStack m_LayerStack;
+		Internal::LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
 		bool m_ShowDebugWindow = false; // built-in tabbed debug window (F3-F7 select a tab)
-		UI::DebugTab m_ActiveDebugTab = UI::DebugTab::None;
-		UI::DebugTab m_PendingDebugTab = UI::DebugTab::None; // tab selection requested but not yet applied
+		Internal::DebugTab m_ActiveDebugTab{};
+		Internal::DebugTab m_PendingDebugTab{}; // tab selection requested but not yet applied
 		bool m_IsRunning = true;
 		bool m_Minimized = false;
 		bool m_Focused = true;
@@ -229,6 +239,8 @@ namespace Dingo
 		inline static Application* s_Instance = nullptr;
 		inline static bool s_PendingRestart = false;
 		inline static GraphicsAPI s_PendingRestartAPI = GraphicsAPI::Vulkan;
+
+		friend int Internal::Main(int argc, char** argv);
 	};
 
 	Application* CreateApplication(ApplicationCommandLineArgs args);

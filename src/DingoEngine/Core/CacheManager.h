@@ -1,9 +1,11 @@
 #pragma once
 #include <filesystem>
 
-namespace Dingo
+namespace Dingo::Internal
 {
 
+	// The shader and font caches: beside the executable, or under the user data folder when that
+	// is read-only.
 	class CacheManager
 	{
 	public:

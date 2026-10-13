@@ -45,7 +45,7 @@ namespace Dingo
 		if (!m_LoggedStartupGamepads)
 		{
 			m_LoggedStartupGamepads = true;
-			for (uint32_t pad = 0; pad < MaxGamepads; pad++)
+			for (uint32_t pad = 0; pad < k_MaxGamepads; pad++)
 			{
 				if (Input::IsGamepadConnected(pad))
 					DE_INFO("Gamepad already connected in slot {}: {} ('{}')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad));

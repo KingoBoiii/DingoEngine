@@ -41,30 +41,14 @@ namespace Dingo
 	class AudioEngine
 	{
 	public:
-		// Creates the default audio backend (currently miniaudio). Not live until
-		// Initialize() is called. Mirrors Physics3D::Create / GraphicsContext::Create.
-		static AudioEngine* Create();
-
-	public:
 		AudioEngine() = default;
 		virtual ~AudioEngine() = default;
 
 		AudioEngine(const AudioEngine&) = delete;
 		AudioEngine& operator=(const AudioEngine&) = delete;
 
-		// --- Lifecycle --------------------------------------------------------
-
-		// Brings up the audio device + mixer. No-op if already live.
-		virtual void Initialize() = 0;
-		// Stops every sound, frees clips owned by live sounds, and closes the device.
-		// Safe to call when idle.
-		virtual void Shutdown() = 0;
-		// True between Initialize() and Shutdown().
+		// True while the engine's audio device is open.
 		virtual bool IsValid() const = 0;
-
-		// Reaps finished fire-and-forget one-shots. Cheap to call once per frame; the
-		// backend has its own device thread, so this only recycles handles/slots.
-		virtual void Update() = 0;
 
 		// --- Clips ------------------------------------------------------------
 
@@ -158,6 +142,20 @@ namespace Dingo
 		virtual void SetListenerPosition(const glm::vec3& position) = 0;
 		// Forward = the direction the listener faces; up = the listener's up vector.
 		virtual void SetListenerOrientation(const glm::vec3& forward, const glm::vec3& up) = 0;
+
+	private:
+		// The Application owns the one engine (GetAudioEngine) and drives its lifecycle.
+		static AudioEngine* Create();
+
+		// Brings up the audio device + mixer. No-op if already live.
+		virtual void Initialize() = 0;
+		// Stops every sound, frees clips owned by live sounds, and closes the device.
+		// Safe to call when idle.
+		virtual void Shutdown() = 0;
+		// Reaps finished fire-and-forget one-shots, once a frame.
+		virtual void Update() = 0;
+
+		friend class Application;
 	};
 
 }

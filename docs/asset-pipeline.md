@@ -247,9 +247,7 @@ same way with `Model::Reload()`.
 
 ## The Assets debug panel
 
-Press **F6** for the Assets tab of the engine's built-in Debug window (or embed
-`UI::AssetSummarySection()` / `UI::AssetRegistrySection()` in your own window —
-see [DebugPanels.h](../include/DingoEngine/UI/DebugPanels.h)). It shows the asset
+Press **F6** for the Assets tab of the engine's built-in Debug window. It shows the asset
 root, live registered/loaded/in-flight counts with a load-progress bar, per-type
 and per-state breakdowns, and every registration in a filterable table with its
 state, type and source path.

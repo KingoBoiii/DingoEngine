@@ -58,14 +58,8 @@ namespace Dingo
 
 		std::vector<uint8_t> ReadImageFile(const std::filesystem::path& path, bool flipVertically)
 		{
-			uint32_t width = 0, height = 0, channels = 0;
-			std::vector<uint8_t> bytes;
-			if (const uint8_t* data = FileSystem::ReadImage(path, &width, &height, &channels, flipVertically, true))
-			{
-				bytes.assign(data, data + static_cast<size_t>(width) * height * 4);
-				FileSystem::FreeImage(data);
-			}
-			return bytes;
+			std::optional<ImageData> image = FileSystem::ReadImage(path, flipVertically, true);
+			return image ? std::move(image->Pixels) : std::vector<uint8_t>();
 		}
 
 		Entity AddSprite(Scene& scene, const char* name, const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)

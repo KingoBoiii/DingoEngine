@@ -25,11 +25,7 @@ namespace Dingo
 Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 {
 	GraphicsAPI graphicsAPI = GraphicsAPI::Vulkan;
-	if (Application::HasPendingRestart())
-	{
-		graphicsAPI = Application::ConsumePendingRestart();
-	}
-	else if (auto value = args.Get("graphics"))
+	if (auto value = args.Get("graphics"))
 	{
 		if (*value == "dx12" || *value == "directx12")  graphicsAPI = GraphicsAPI::DirectX12;
 		else if (*value == "dx11" || *value == "directx11") graphicsAPI = GraphicsAPI::DirectX11;
@@ -51,15 +47,13 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 		.Assets = {
 			.EnableHotReload = true,
 		},
-		.EnableUI = true,
-		.UI = {
+		.EnableImGui = true,
+		.ImGui = {
 			.EnableDocking = true,
 			.EnableViewports = false,
 		},
 		.UpdateInBackground = true,
 	};
 
-	TestFrameworkApplication* app = new TestFrameworkApplication(params);
-	app->Initialize();
-	return app;
+	return new TestFrameworkApplication(params);
 }

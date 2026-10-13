@@ -73,19 +73,13 @@ jobs:
         echo "VERSION=$base.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
-        echo "VERSION_PATCH=$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Generate BuildInfo.h
-      run: |
-        $major = "${{steps.version.outputs.VERSION_MAJOR}}"
-        $minor = "${{steps.version.outputs.VERSION_MINOR}}"
-        $patch = "${{steps.version.outputs.VERSION_PATCH}}"
-        $build = "${{steps.version.outputs.VERSION_BUILD}}"
-        "#pragma once", "#define DE_ENGINE_VERSION_MAJOR $major", "#define DE_ENGINE_VERSION_MINOR $minor", "#define DE_ENGINE_VERSION_PATCH $patch", "#define DE_ENGINE_VERSION_BUILD $build" | Set-Content include/DingoEngine/BuildInfo.h -Encoding utf8
 
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
+      env:
+        DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
       run: .\premake5-bin\premake5.exe ${{ matrix.profile && '--profile' || '' }} vs2026
 
     - name: Build

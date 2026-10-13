@@ -15,7 +15,7 @@ namespace Dingo
 		inline GamepadType GetGamepadType() const { return m_Type; }
 		inline const std::string& GetGamepadName() const { return m_Name; }
 
-		EVENT_CLASS_CATEGORY(EventCategoryGamepad | EventCategoryInput)
+		DE_EVENT_CLASS_CATEGORY(Gamepad | Input)
 
 	protected:
 		GamepadEvent(uint32_t gamepadId, GamepadType type, const std::string& name)

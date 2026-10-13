@@ -24,7 +24,8 @@ namespace Dingo
 		ExclusiveFullscreen
 	};
 
-	const char* WindowModeToString(WindowMode mode);
+	const char* ToString(WindowMode mode);
+	[[deprecated("use ToString(WindowMode); removed in 2.0")]] inline const char* WindowModeToString(WindowMode mode) { return ToString(mode); }
 
 	// Duplicates removed, largest first (by area, then width, then refresh rate).
 	std::vector<DisplayMode> SortDisplayModes(std::vector<DisplayMode> modes);

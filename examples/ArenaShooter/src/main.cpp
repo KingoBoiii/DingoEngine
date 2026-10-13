@@ -55,10 +55,8 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		.Assets = AssetManagerParams()
 			.SetRootDirectory("assets")
 			.SetEnableHotReload(true),
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 
-	ArenaShooterApplication* app = new ArenaShooterApplication(params);
-	app->Initialize();
-	return app;
+	return new ArenaShooterApplication(params);
 }

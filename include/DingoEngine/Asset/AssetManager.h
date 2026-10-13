@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <type_traits>
-#include <unordered_map>
+#include <vector>
 
 namespace Dingo
 {
@@ -83,13 +83,9 @@ namespace Dingo
 	class AssetManager
 	{
 	public:
-		// The audio engine is borrowed for AudioClip decoding; clips are released in
-		// Shutdown(), which must run before the audio engine itself shuts down.
-		AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine);
 		~AssetManager();
-
-		void Initialize();
-		void Shutdown();
+		AssetManager(const AssetManager&) = delete;
+		AssetManager& operator=(const AssetManager&) = delete;
 
 		// --- Registration & loading ----------------------------------------
 
@@ -195,10 +191,8 @@ namespace Dingo
 		const std::filesystem::path& GetRootDirectory() const;
 		std::filesystem::path ResolvePath(const std::filesystem::path& path) const;
 
-		// Every registration, for tooling (the built-in Assets debug panel walks this).
-		// Handles stay valid across loads, so entries can be acted on while iterating a
-		// copy of the keys.
-		const std::unordered_map<AssetHandle, AssetMetadata>& GetRegistry() const;
+		// Every registered handle, in no order, for tooling (the built-in Assets debug panel).
+		std::vector<AssetHandle> GetHandles() const;
 
 		bool IsHotReloadEnabled() const;
 		// Toggleable at runtime so a debug panel can turn watching on for a session
@@ -218,11 +212,20 @@ namespace Dingo
 		// still has a loaded object (State == Reloading) keeps serving it throughout.
 		uint32_t GetReloadingCount() const;
 
+	private:
+		// The audio engine is borrowed for AudioClip decoding; clips are released in
+		// Shutdown(), which must run before the audio engine itself shuts down.
+		AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine);
+
+		void Initialize();
+		void Shutdown();
+
 		// Per-frame pump, driven by Application::Run — finalizes background loads and
 		// polls hot-reload watches.
 		void Update(float deltaTime);
 
-	private:
+		friend class Application;
+
 		template<typename>
 		static inline constexpr bool k_AlwaysFalseAsset = false;
 
