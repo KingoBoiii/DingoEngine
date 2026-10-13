@@ -103,7 +103,7 @@ Rules for every agent:
 - `DE_CORE_ASSERT(cond, msg)` takes a plain string only; format arguments don't compile. `DE_CORE_WARN/ERROR` do take them.
 - `<Windows.h>` leaks `min`, `max`, `near` and `far` into test code and public headers. Write `(std::min)(a, b)`, `(std::max)(...)`, `(std::numeric_limits<T>::max)()`, and never name anything `near` or `far`.
 - In a public header, a member named after its own type spells the type qualified: `Dingo::Mesh* Mesh`. GCC rejects `Mesh* Mesh`.
-- Paths become text only through `Internal::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8` (`Core/PathText.h`). Never call `path.string()`/`generic_string()` in the engine, or build a `path` from a `std::string`: on Windows they go through the ANSI code page and throw on a name it can't map.
+- Paths become text only through `Internal::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8` (`Core/PathText.h`). Never call `path.string()`/`generic_string()` in the engine, or build a `path` from a `std::string`: on Windows they go through the ANSI code page and throw on a name it can't map. Games and the test app follow the same rule through the public `FileSystem::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8`.
 
 **Engine invariants**
 - A new built-in component is registered with `DE_INSTANTIATE_COMPONENT` in `src/DingoEngine/Scene/Entity.cpp`, or clients can't use it, and added to `Scene::DuplicateSubtree`'s `CopyComponentIfExists` list (`Scene.cpp`), or duplicates silently drop it. Engine-internal components (`RuntimeComponents.h`, `HierarchyComponent`, `SocketComponent`) are never registered there.

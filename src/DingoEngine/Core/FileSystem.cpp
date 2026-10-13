@@ -151,6 +151,21 @@ namespace Dingo
 		return true;
 	}
 
+	std::string FileSystem::PathToUtf8(const std::filesystem::path& path)
+	{
+		return Internal::PathToUtf8(path);
+	}
+
+	std::string FileSystem::PathToGenericUtf8(const std::filesystem::path& path)
+	{
+		return Internal::PathToGenericUtf8(path);
+	}
+
+	std::filesystem::path FileSystem::PathFromUtf8(std::string_view text)
+	{
+		return Internal::PathFromUtf8(text);
+	}
+
 	std::string FileSystem::GetFileName(const std::filesystem::path& filepath)
 	{
 		const std::string& filepathString = Internal::PathToUtf8(filepath);
