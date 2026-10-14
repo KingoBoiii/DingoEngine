@@ -607,10 +607,13 @@ namespace Dingo
 		}
 
 		const std::filesystem::path temporary = WithSuffix(path, ".tmp");
-		// The recovered .tmp is the generation ReadFile returns; promoted, it rotates to .bak below
-		// instead of being overwritten.
+		// The recovered .tmp is the generation ReadFile returns: promoted, it rotates to .bak below; left
+		// in place, writing would destroy it, so the write waits for a later try.
 		if (IsRecoverableTemporary(path) && !MoveOver(temporary, path, error))
-			DE_CORE_WARN("SaveData: cannot recover '{}': {}", DisplayPath(temporary), error);
+		{
+			DE_CORE_ERROR("SaveData: cannot recover '{}', so '{}' isn't written: {}", DisplayPath(temporary), DisplayPath(path), error);
+			return false;
+		}
 
 		std::error_code errorCode;
 

@@ -190,8 +190,8 @@ namespace Dingo
 		/// Atomic: the JSON goes to `<path>.tmp`, flushed to disk, then the current file becomes
 		/// `<path>.bak` and the new one takes its place, so a crash or kill at any point leaves a
 		/// complete file under one of the three names. A complete `<path>.tmp` left without a
-		/// `<path>` is moved to `<path>` first, so it becomes the .bak. Writes from several threads
-		/// take turns.
+		/// `<path>` is moved to `<path>` first, so it becomes the .bak; when that move fails, nothing
+		/// is written. Writes from several threads take turns.
 		/// Creates the directory. False (logged) on failure.
 		bool WriteFile(const std::filesystem::path& path) const;
 		/// Reads `<path>`; when that is missing, a complete `<path>.tmp` (a write stopped between
