@@ -932,15 +932,6 @@ namespace Dingo
 		entry.Used = true;
 
 		Material* twin = entry.Twin;
-		if (entry.SourceRevision != source->GetBindingRevision())
-		{
-			// The source may have cleared a slot and refilled it with a sampler at the freed one's
-			// address. Clearing the twin's slot first makes it rebind instead of keeping the old one.
-			twin->SetTexture(0, nullptr);
-			twin->SetSampler(0, nullptr);
-			entry.SourceRevision = source->GetBindingRevision();
-		}
-
 		// A slot's pointer changing rebuilds the twin's pipelines, so an empty source slot maps to
 		// the same default PrepareLitMaterial would put there.
 		twin->SetTexture(0, source->GetTexture(0) ? source->GetTexture(0) : Renderer::GetWhiteTexture());

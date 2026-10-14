@@ -403,6 +403,14 @@ namespace Dingo
 		}
 
 		{
+			Entity original = scene.CreateEntity("Original");
+			Entity duplicate = scene.CreateEntityWithUUID(original.GetUUID(), "Duplicate");
+			Check(!duplicate && original.IsValid() && scene.GetEntityByUUID(original.GetUUID()) == original,
+				"CreateEntityWithUUID refuses a UUID already in use and leaves its entity mapped");
+			scene.DestroyEntity(original);
+		}
+
+		{
 			Entity rig = MakeEntity(scene, "Rig", { 2.0f, 3.0f, 4.0f }, { 0.0f, 60.0f, 0.0f }, glm::vec3(1.0f));
 			Entity eye = MakeEntity(scene, "Eye", { 0.0f, 1.0f, 5.0f }, { -20.0f, 0.0f, 0.0f }, glm::vec3(1.0f));
 			eye.SetParent(rig, false);

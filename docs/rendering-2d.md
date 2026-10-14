@@ -96,7 +96,8 @@ r.DrawText("Score: 42", font, { x, y }, /*size*/ 0.5f, { .Color = { 1, 1, 1, 1 }
 
 `DrawText` parameters: the string, the font, a position (`vec2`/`vec3`), a `size` in
 world units, and a `TextParameters { Color, Kerning, LineSpacing, Centered, Rotation }`. The
-position is the **left baseline-ish origin** of the text (it grows to the right).
+position is the **left baseline-ish origin** of the text (it grows to the right). A null font
+draws nothing and warns once.
 
 `TextParameters::Rotation` (v0.8.3) turns the string, in degrees counter-clockwise like
 `DrawRotatedQuad`, about its position: where the first line's baseline starts, or its middle when

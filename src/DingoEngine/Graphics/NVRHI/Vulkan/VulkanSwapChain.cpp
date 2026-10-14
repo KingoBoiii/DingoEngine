@@ -131,6 +131,16 @@ namespace Dingo
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
 
+		// The render thread acquires right after each present, so the last acquire is still
+		// signalling at teardown. waitIdle covers queue work, not an acquire, so a submit has to wait
+		// on that semaphore before it can be destroyed.
+		if (m_AcquireSignalPending)
+		{
+			QueueImageWait();
+			graphicsContext.m_NvrhiDevice->executeCommandLists(nullptr, 0);
+			m_AcquireSignalPending = false;
+		}
+
 		DestroySwapChain();
 
 		for (auto& semaphore : m_PresentSemaphores)
@@ -240,6 +250,7 @@ namespace Dingo
 		{
 			m_ImageAcquired = true;
 			m_ImageWaitPending = true;
+			m_AcquireSignalPending = true;
 		}
 		else
 		{
@@ -298,6 +309,7 @@ namespace Dingo
 
 			const vk::Result result = graphicsContext.m_GraphicsQueue.submit(1, &submitInfo, m_InFlightFences[m_PresentSemaphoreIndex]);
 			DE_CORE_ASSERT(result == vk::Result::eSuccess);
+			m_AcquireSignalPending = false;
 		}
 
 		{

@@ -247,6 +247,15 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 			.SetFormat(TextureFormat::RGBA8_UNORM)
 			.SetDimension(TextureDimension::Texture2D)
 			.SetInitialData(red.data()));
+		m_SamplerSwapTarget = MakeColorTarget("RenderTargetTest sampler swap", TextureFormat::RGBA8_UNORM, 16, 16);
+		const uint32_t redGreen[2] = { 0xFF0000FFu, 0xFF00FF00u };
+		m_SamplerSwapTexture = Texture::Create(TextureParams()
+			.SetDebugName("RenderTargetTest red-green")
+			.SetWidth(2)
+			.SetHeight(1)
+			.SetFormat(TextureFormat::RGBA8_UNORM)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetInitialData(redGreen));
 
 		m_FillShader = Shader::CreateFromSource("RenderTargetTestFill", k_FillShaderSource);
 		m_SampleShader = Shader::CreateFromSource("RenderTargetTestSample", k_SampleShaderSource);
@@ -273,6 +282,8 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_UploadMaterial = MakeFullscreenMaterial("RenderTargetTestUpload", m_SampleShader);
 		m_UploadMaterial->SetTexture(0, m_UploadTexture);
 		m_UploadMaterial->SetSampler(0, Renderer::GetPointSampler());
+		m_SamplerSwapMaterial = MakeFullscreenMaterial("RenderTargetTestSamplerSwap", m_SampleShader);
+		m_SamplerSwapMaterial->SetTexture(0, m_SamplerSwapTexture);
 
 		Check(m_DepthSource->GetDepthAttachment() && m_DepthSource->GetDepthAttachment()->GetParams().Format == TextureFormat::D32 && !m_ProbeTarget->GetDepthAttachment(),
 			"FramebufferParams::SetDepthSampleable gives a D32 depth texture, and a plain depth target gives none");
@@ -319,24 +330,27 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 
 	void RenderTargetTest::RunGroundworkChecks()
 	{
-		// Every format clears and reads back; float formats keep a value past 1. Clears write alpha 1.
+		// Every format clears and reads back; float formats keep a value past 1. An RGBA target keeps
+		// the clear's alpha, so a transparent clear stays transparent.
 		for (const FormatTarget& target : m_FormatTargets)
 		{
 			const bool unorm = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::R8;
 			const glm::vec3 clear = unorm ? glm::vec3(0.25f, 0.5f, 0.75f) : glm::vec3(2.5f, 0.5f, 0.75f);
-			Renderer::Clear(target.Target, glm::vec4(clear, 1.0f));
+			Renderer::Clear(target.Target, glm::vec4(clear, 0.0f));
 
 			const bool singleChannel = target.Format == TextureFormat::R8 || target.Format == TextureFormat::R16F || target.Format == TextureFormat::R32F;
+			const bool hasAlpha = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::RGBA16F || target.Format == TextureFormat::RGBA32F;
 			const char* name = target.Name;
 			const TextureFormat format = target.Format;
-			ReadBack(target.Target, [this, clear, unorm, singleChannel, name, format](const TexturePixels& pixels)
+			ReadBack(target.Target, [this, clear, unorm, singleChannel, hasAlpha, name, format](const TexturePixels& pixels)
 			{
 				const glm::vec4 value = pixels.GetPixel(1, 2);
 				const float tolerance = unorm ? 1.5f / 255.0f : 1e-3f;
 				const bool red = Near(value.r, clear.r, tolerance);
 				const bool rest = singleChannel || (Near(value.g, clear.g, tolerance) && Near(value.b, clear.b, tolerance));
-				Check(pixels.Format == format && red && rest,
-					std::format("{} clears to ({}, {}, {}) and reads back ({:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b));
+				const bool alpha = !hasAlpha || Near(value.a, 0.0f, tolerance);
+				Check(pixels.Format == format && red && rest && alpha,
+					std::format("{} clears to ({}, {}, {}, 0) and reads back ({:.3f}, {:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b, value.a));
 			});
 		}
 
@@ -430,6 +444,29 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 			Check(value > 0.99f, std::format("a material draws into a framebuffer made after the one it last drew into was freed ({:.2f})", value));
 		});
 
+		// A point sampler set into the slot of a freed linear one, likely at its address, must replace it
+		// in the pass the material cached for this target. Pixel 3 of each half lies between the red and
+		// the green texel.
+		Sampler* linear = Sampler::Create(SamplerParams());
+		m_SamplerSwapMaterial->SetSampler(0, linear);
+		const Viewport swapLeft{ 0.0f, 0.0f, 8.0f, 16.0f };
+		const Viewport swapRight{ 8.0f, 0.0f, 8.0f, 16.0f };
+		DrawFullscreen(m_SamplerSwapMaterial, m_SamplerSwapTarget, &swapLeft);
+		const uintptr_t linearAddress = reinterpret_cast<uintptr_t>(linear);
+		DestroyAndDelete(linear);
+		m_SamplerSwapSampler = Sampler::Create(SamplerParams().SetMinFilter(false).SetMagFilter(false).SetMipFilter(false));
+		const bool sameAddress = reinterpret_cast<uintptr_t>(m_SamplerSwapSampler) == linearAddress;
+		m_SamplerSwapMaterial->SetSampler(0, m_SamplerSwapSampler);
+		DrawFullscreen(m_SamplerSwapMaterial, m_SamplerSwapTarget, &swapRight);
+		ReadBack(m_SamplerSwapTarget, [this, sameAddress](const TexturePixels& pixels)
+		{
+			const glm::vec4 blended = pixels.GetPixel(3, 8);
+			const glm::vec4 nearest = pixels.GetPixel(11, 8);
+			Check(blended.r > 0.5f && blended.g > 0.25f && blended.g < 0.5f && nearest.r > 0.99f && nearest.g < 0.01f,
+				std::format("Material::SetSampler replaces a freed linear sampler with a point one{} (linear ({:.2f}, {:.2f}), point ({:.2f}, {:.2f}))",
+					sameAddress ? " at its address" : "", blended.r, blended.g, nearest.r, nearest.g));
+		});
+
 		// Two additive draws of (0.25, 0.125, 1.5) over black.
 		Renderer::Clear(m_BlendTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
 		DrawFullscreen(m_AddMaterial, m_BlendTarget);
@@ -486,6 +523,8 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DestroyAndDelete(m_CompareMaterial);
 		DestroyAndDelete(m_ResizeCopyMaterial);
 		DestroyAndDelete(m_UploadMaterial);
+		DestroyAndDelete(m_SamplerSwapMaterial);
+		DestroyAndDelete(m_SamplerSwapSampler);
 		DestroyAndDelete(m_CompareSampler);
 		DestroyAndDelete(m_FillShader);
 		DestroyAndDelete(m_SampleShader);
@@ -501,6 +540,8 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DestroyAndDelete(m_ReusedTarget);
 		DestroyAndDelete(m_UploadTarget);
 		DestroyAndDelete(m_UploadTexture);
+		DestroyAndDelete(m_SamplerSwapTarget);
+		DestroyAndDelete(m_SamplerSwapTexture);
 	}
 
 	Scene* RenderTargetTest::BuildShowScene(const char* name, const glm::vec4& clearColor, Mesh* mesh, const glm::vec4& color, Entity& spinner)

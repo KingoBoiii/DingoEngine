@@ -147,7 +147,7 @@ namespace Dingo
 	struct ImGuiViewportData
 	{
 		bool WindowOwned = false;
-		SwapChain* SwapChain;
+		SwapChain* SwapChain = nullptr;
 		std::unique_ptr<ImGuiRenderer> Renderer;
 	};
 
@@ -186,7 +186,12 @@ namespace Dingo
 		if (vd)
 		{
 			vd->Renderer->Shutdown();
-			delete vd;
+			if (vd->WindowOwned && vd->SwapChain)
+			{
+				vd->SwapChain->Destroy();
+				delete vd->SwapChain;
+			}
+			IM_DELETE(vd);
 		}
 		viewport->RendererUserData = nullptr;
 	}
