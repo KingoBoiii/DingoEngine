@@ -181,6 +181,15 @@ namespace Dingo
 			&& world->IsSensor(sensor) && world->GetUserData(inside) == 44 && world->GetUserData(wall) == 22,
 			"a sensor lists the bodies inside it, and a body keeps its UserData");
 
+		const PhysicsBodyId3D doomed = box(BodyType3D::Dynamic, { -6.0f, 1.0f, 0.0f }, glm::vec3(0.3f), 1u, false, 55);
+		world->IgnoreCollision(doomed, wall);
+		world->DestroyBody(doomed);
+		world->DestroyBody(doomed);
+		const PhysicsBodyId3D successor = box(BodyType3D::Dynamic, { -6.0f, 1.0f, 0.0f }, glm::vec3(0.3f), 1u, false, 66);
+		world->DestroyBody(doomed);
+		Check(!world->IsBodyValid(doomed) && world->IsBodyValid(successor) && world->IsBodyValid(wall) && world->GetUserData(successor) == 66,
+			"destroying a body twice is a no-op, and a stale handle leaves the body that reuses its slot alone");
+
 		CharacterControllerParams3D params;
 		params.Position = { -3.0f, 0.0f, 0.0f };
 		std::unique_ptr<CharacterController3D> walker = world->CreateCharacterController(params);

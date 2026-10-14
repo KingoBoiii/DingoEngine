@@ -49,7 +49,7 @@ namespace Dingo
 		// instead of a throwaway one of their own.
 		virtual bool IsRecording() const = 0;
 
-		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) = 0;
+		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor = glm::vec4(0.3f, 0.3f, 0.3f, 1.0f)) = 0;
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) = 0;

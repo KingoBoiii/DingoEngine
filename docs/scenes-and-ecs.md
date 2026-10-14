@@ -30,6 +30,9 @@ player.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ glm::vec4{
 
 Every entity created via `CreateEntity` automatically gets a stable `UUID`, a name
 (`TagComponent`), and a `TransformComponent`.
+`CreateEntityWithUUID(uuid, name)` does the same with a UUID you choose. If an entity in the
+scene already has that UUID, it creates nothing, logs a warning and returns an invalid `Entity`.
+An entity destroyed from a script keeps its UUID until the end of that update pass.
 
 ### Entity API
 

@@ -319,24 +319,27 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 
 	void RenderTargetTest::RunGroundworkChecks()
 	{
-		// Every format clears and reads back; float formats keep a value past 1. Clears write alpha 1.
+		// Every format clears and reads back; float formats keep a value past 1. An RGBA target keeps
+		// the clear's alpha, so a transparent clear stays transparent.
 		for (const FormatTarget& target : m_FormatTargets)
 		{
 			const bool unorm = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::R8;
 			const glm::vec3 clear = unorm ? glm::vec3(0.25f, 0.5f, 0.75f) : glm::vec3(2.5f, 0.5f, 0.75f);
-			Renderer::Clear(target.Target, glm::vec4(clear, 1.0f));
+			Renderer::Clear(target.Target, glm::vec4(clear, 0.0f));
 
 			const bool singleChannel = target.Format == TextureFormat::R8 || target.Format == TextureFormat::R16F || target.Format == TextureFormat::R32F;
+			const bool hasAlpha = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::RGBA16F || target.Format == TextureFormat::RGBA32F;
 			const char* name = target.Name;
 			const TextureFormat format = target.Format;
-			ReadBack(target.Target, [this, clear, unorm, singleChannel, name, format](const TexturePixels& pixels)
+			ReadBack(target.Target, [this, clear, unorm, singleChannel, hasAlpha, name, format](const TexturePixels& pixels)
 			{
 				const glm::vec4 value = pixels.GetPixel(1, 2);
 				const float tolerance = unorm ? 1.5f / 255.0f : 1e-3f;
 				const bool red = Near(value.r, clear.r, tolerance);
 				const bool rest = singleChannel || (Near(value.g, clear.g, tolerance) && Near(value.b, clear.b, tolerance));
-				Check(pixels.Format == format && red && rest,
-					std::format("{} clears to ({}, {}, {}) and reads back ({:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b));
+				const bool alpha = !hasAlpha || Near(value.a, 0.0f, tolerance);
+				Check(pixels.Format == format && red && rest && alpha,
+					std::format("{} clears to ({}, {}, {}, 0) and reads back ({:.3f}, {:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b, value.a));
 			});
 		}
 

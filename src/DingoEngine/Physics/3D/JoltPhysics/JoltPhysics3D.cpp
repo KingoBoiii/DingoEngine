@@ -378,6 +378,11 @@ namespace Dingo
 		if (!m_Data || body == k_InvalidBody3D)
 			return;
 
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		const JPH::BodyID id = ToBodyId(body);
+		if (!bodyInterface.IsAdded(id))
+			return;
+
 		if (auto it = m_Data->IgnoredPartners.find(body); it != m_Data->IgnoredPartners.end())
 		{
 			const std::vector<std::uint32_t> partners = std::move(it->second);
@@ -389,8 +394,6 @@ namespace Dingo
 			}
 		}
 
-		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
-		const JPH::BodyID id = ToBodyId(body);
 		bodyInterface.RemoveBody(id);
 		bodyInterface.DestroyBody(id);
 	}
