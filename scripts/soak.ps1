@@ -78,7 +78,7 @@ function Get-Arguments($game) {
     if ($game.Name -eq "marionette") {
         return @("--tournament=$tournamentBouts", "--seed=$($game.Seed)", "--player-tier=3") + $graphicsArg
     }
-    return @("--room=$Room") + $graphicsArg
+    return @("--room=$Room", "--background") + $graphicsArg
 }
 
 function Start-Game($game) {
