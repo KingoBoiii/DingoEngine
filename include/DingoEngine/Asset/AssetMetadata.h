@@ -6,23 +6,14 @@
 namespace Dingo
 {
 
+	/// What the AssetManager knows about one registered asset (AssetManager::GetMetadata).
 	struct AssetMetadata
 	{
-		AssetHandle Handle = k_InvalidAsset;
-		AssetType Type = AssetType::None;
-		// Relative to the AssetManager's root directory (kept relative so registrations
-		// stay valid if the root moves between runs/machines).
+		AssetHandle Handle = k_InvalidAsset;	///< The asset's stable handle.
+		AssetType Type = AssetType::None;	///< Inferred from the file extension at Import.
+		/// Relative to the AssetManager's root directory (kept relative so registrations
+		/// stay valid if the root moves between runs/machines).
 		std::filesystem::path FilePath;
-		// FilePath resolved against the root once at registration. The root is fixed for the
-		// manager's lifetime, so this cannot go stale, and it keeps the hot-reload poll from
-		// rebuilding a path per watched asset per tick.
-		std::filesystem::path AbsolutePath;
-		AssetState State = AssetState::Unloaded;
-		// Source-file timestamp at load; the hot-reload poll compares against it.
-		std::filesystem::file_time_type LastWriteTime{};
-		// A changed timestamp the poll has seen once but not yet acted on. It must repeat on
-		// the next poll before the write counts as finished — see PollHotReload.
-		std::filesystem::file_time_type PendingWriteTime{};
+		AssetState State = AssetState::Unloaded;	///< Where the asset is in its load lifecycle.
 	};
-
 }

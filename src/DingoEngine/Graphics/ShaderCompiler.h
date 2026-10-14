@@ -1,5 +1,5 @@
 #pragma once
-#include "DingoEngine/Graphics/Enums/ShaderType.h"
+#include "DingoEngine/Graphics/ShaderType.h"
 #include "DingoEngine/Graphics/Shader.h"
 
 namespace Dingo
@@ -58,7 +58,8 @@ namespace Dingo
 		// shaderModel: 50 = SM 5.0 (DX11), 51 = SM 5.1 (DX12, required for NonUniformResourceIndex)
 		// Note: SM 6.0+ requires DXC, not D3DCompile — do not pass values >= 60.
 		// Returns an empty vector on failure; assertOnFailure as for CompileGLSL.
-		std::vector<uint8_t> CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel = 50, bool assertOnFailure = true, const std::vector<ShaderDefine>& defines = {});
+		// pushConstantRegister >= 0 places the push-constant block at that b register.
+		std::vector<uint8_t> CompileGLSLToHLSLBytecode(ShaderType shaderType, const std::string& source, const std::string& name, uint32_t shaderModel = 50, bool assertOnFailure = true, const std::vector<ShaderDefine>& defines = {}, int32_t pushConstantRegister = -1);
 
 		const ShaderReflection Reflect(ShaderType shaderType, const std::vector<uint32_t> binaries);
 

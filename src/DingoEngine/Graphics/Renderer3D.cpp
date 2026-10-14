@@ -1,12 +1,16 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
+#include "DingoEngine/Graphics/ShadowAtlasAllocator.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/SkinnedVisibility.h"
+#include "DingoEngine/Graphics/StaticBatchData.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -22,12 +26,13 @@ namespace
 {
 	constexpr const char* k_LitShaderName = "Renderer3DMeshShader";
 	constexpr const char* k_SkinnedLitShaderName = "Renderer3DSkinnedMeshShader";
+	constexpr const char* k_InstancedLitShaderName = "Renderer3DInstancedMeshShader";
 
-	Dingo::Shader* CreateLitShader(const char* name, bool skinned)
+	Dingo::Shader* CreateLitShader(const char* name, const char* define = nullptr)
 	{
 		Dingo::ShaderParams params = Dingo::ShaderParams().SetName(name);
-		if (skinned)
-			params.AddDefine("DE_SKINNED");
+		if (define)
+			params.AddDefine(define);
 		return Dingo::Internal::CreateEngineShader(params, "Renderer3D_Lit.glsl");
 	}
 
@@ -44,31 +49,62 @@ namespace
 		return length > 0.0f ? glm::vec4(-glm::vec3(eye) / length, 0.0f) : glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
 	}
 
-	using FrustumPlanes = std::array<glm::vec4, 6>;
-
-	// Gribb-Hartmann, for clip-space depth in [0, 1] (GLM_FORCE_DEPTH_ZERO_TO_ONE). Each plane's
-	// normal points into the frustum.
-	FrustumPlanes ExtractFrustumPlanes(const glm::mat4& viewProjection)
+	bool IsAffine(const glm::mat4& transform)
 	{
-		const glm::vec4 x = glm::row(viewProjection, 0);
-		const glm::vec4 y = glm::row(viewProjection, 1);
-		const glm::vec4 z = glm::row(viewProjection, 2);
-		const glm::vec4 w = glm::row(viewProjection, 3);
-
-		FrustumPlanes planes = { w + x, w - x, w + y, w - y, z, w - z };
-		for (glm::vec4& plane : planes)
-			plane /= glm::length(glm::vec3(plane));
-		return planes;
+		return transform[0][3] == 0.0f && transform[1][3] == 0.0f && transform[2][3] == 0.0f && transform[3][3] == 1.0f;
 	}
 
-	bool SphereTouchesFrustum(const FrustumPlanes& planes, const glm::vec3& center, float radius)
+	// The mesh's bounds placed by an affine transform, padded by far more than the rounding of either
+	// this or the vertex transform, so the box holds every transformed vertex.
+	Dingo::AABB WorldBounds(const Dingo::Mesh& mesh, const glm::mat4& transform)
 	{
-		for (const glm::vec4& plane : planes)
+		const Dingo::AABB local(mesh.GetBoundsMin(), mesh.GetBoundsMax());
+		Dingo::AABB bounds = local.Transformed(transform);
+		if (bounds.IsEmpty())
+			return bounds;
+
+		const glm::vec3 reach = glm::max(glm::abs(local.Min), glm::abs(local.Max));
+		glm::vec3 magnitude = glm::abs(glm::vec3(transform[3]));
+		for (int column = 0; column < 3; ++column)
+			magnitude += glm::abs(glm::vec3(transform[column])) * reach[column];
+		bounds.Min -= magnitude * 1e-5f;
+		bounds.Max += magnitude * 1e-5f;
+		return bounds;
+	}
+
+	// Wholly behind the plane, by more than the GPU's own rounding of the same test could undo:
+	// a culled mesh must be one that could not have drawn a pixel.
+	bool BoxBehindPlane(const glm::vec4& plane, const Dingo::AABB& box)
+	{
+		const glm::vec3 normal(plane);
+		const glm::vec3 farthest(normal.x >= 0.0f ? box.Max.x : box.Min.x, normal.y >= 0.0f ? box.Max.y : box.Min.y, normal.z >= 0.0f ? box.Max.z : box.Min.z);
+		const float distance = glm::dot(normal, farthest) + plane.w;
+		return distance < -1e-5f * (glm::dot(glm::abs(normal), glm::abs(farthest)) + std::abs(plane.w));
+	}
+
+	// Left, right, bottom and top: a view culls by its sides alone unless the far plane is known safe.
+	// D3D clamps depth instead of clipping it, so geometry before the near plane still draws there.
+	bool BoxOutsideSides(const std::array<glm::vec4, Dingo::Frustum::PlaneCount>& planes, const Dingo::AABB& box)
+	{
+		for (uint32_t plane = Dingo::Frustum::Left; plane <= Dingo::Frustum::Top; ++plane)
 		{
-			if (glm::dot(glm::vec3(plane), center) + plane.w < -radius)
-				return false;
+			if (BoxBehindPlane(planes[plane], box))
+				return true;
 		}
-		return true;
+		return false;
+	}
+
+	bool BoxInside(const Dingo::AABB& box, const glm::vec3& low, const glm::vec3& high)
+	{
+		return glm::all(glm::greaterThanEqual(box.Min, low)) && glm::all(glm::lessThanEqual(box.Max, high));
+	}
+
+	bool IsDepthPastFarRejected(const Dingo::Material& material)
+	{
+		// Past the far plane Vulkan clips and D3D clamps the depth to 1, which Less never passes. D3D
+		// adds the bias before clamping, so a biased material can still draw there.
+		const Dingo::MaterialParams& params = material.GetParams();
+		return params.DepthTest && params.DepthCompare == Dingo::DepthCompare::Less && params.DepthBias == 0 && params.SlopeScaledDepthBias == 0.0f;
 	}
 
 	// By the strongest channel, not luminance: a pure blue light is as strong as a pure green one
@@ -125,6 +161,12 @@ namespace
 		return coneTangent * static_cast<float>(size) / static_cast<float>(size - 4);
 	}
 
+	void FillObjectRecord(const Dingo::SurfaceOverride& surface, glm::vec4& emissive, glm::vec4& surfaceParams)
+	{
+		emissive = glm::vec4(IsFinite(surface.EmissiveColor) ? surface.EmissiveColor : glm::vec3(0.0f), FiniteOr(surface.EmissiveStrength, 0.0f));
+		surfaceParams = glm::vec4(glm::clamp(FiniteOr(surface.Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface.Specular, 0.0f), 0.0f), 0.0f, 0.0f);
+	}
+
 	bool BindsPastSlotZero(const Dingo::Material& material)
 	{
 		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
@@ -144,48 +186,6 @@ namespace
 namespace Dingo
 {
 
-	// Square power-of-two tiles of a square atlas: each takes the smallest free square that holds it,
-	// split in four until it fits.
-	class Renderer3D::ShadowAtlasAllocator
-	{
-	public:
-		explicit ShadowAtlasAllocator(uint32_t size) { m_Free.push_back({ 0, 0, size }); }
-
-		bool Allocate(uint32_t size, glm::uvec2& corner)
-		{
-			int best = -1;
-			for (int i = 0; i < static_cast<int>(m_Free.size()); ++i)
-			{
-				if (m_Free[i].Size >= size && (best < 0 || m_Free[i].Size < m_Free[best].Size))
-					best = i;
-			}
-			if (best < 0)
-				return false;
-
-			Square square = m_Free[best];
-			m_Free.erase(m_Free.begin() + best);
-			while (square.Size > size)
-			{
-				const uint32_t half = square.Size / 2;
-				m_Free.push_back({ square.X + half, square.Y, half });
-				m_Free.push_back({ square.X, square.Y + half, half });
-				m_Free.push_back({ square.X + half, square.Y + half, half });
-				square.Size = half;
-			}
-			corner = { square.X, square.Y };
-			return true;
-		}
-
-	private:
-		struct Square
-		{
-			uint32_t X = 0;
-			uint32_t Y = 0;
-			uint32_t Size = 0;
-		};
-		std::vector<Square> m_Free;
-	};
-
 	Renderer3D* Renderer3D::Create(const Renderer3DParams& params)
 	{
 		Renderer3D* renderer = new Renderer3D(params);
@@ -200,16 +200,12 @@ namespace Dingo
 
 	Renderer3D::~Renderer3D()
 	{
-		std::erase(s_LitShaders, m_Shader);
-		Internal::UnwatchUnmanagedShader(m_Shader);
-		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
-		Internal::UnwatchUnmanagedShader(m_ShadowShader);
-		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
+		Shutdown();
 	}
 
 	void Renderer3D::Initialize()
 	{
-		m_Shader = CreateLitShader(k_LitShaderName, false);
+		m_Shader = CreateLitShader(k_LitShaderName);
 		s_LitShaders.push_back(m_Shader);
 		Internal::WatchUnmanagedShader(m_Shader);
 
@@ -235,6 +231,22 @@ namespace Dingo
 			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(Vertex, Normal))
 			.AddAttribute("a_Color", Format::RGBA32_FLOAT, offsetof(Vertex, Color))
 			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(Vertex, TexCoord));
+		m_LitLayout = VertexLayout(m_Layout)
+			.AddAttribute("a_ObjectIndex", Format::R32_UINT, offsetof(Vertex, ObjectIndex));
+		m_MeshLayout = VertexLayout()
+			.SetStride(sizeof(MeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(MeshVertex, Position))
+			.AddAttribute("a_Normal", Format::RGB32_FLOAT, offsetof(MeshVertex, Normal))
+			.AddAttribute("a_TexCoord", Format::RG32_FLOAT, offsetof(MeshVertex, TexCoord));
+		m_MeshShadowLayout = VertexLayout()
+			.SetStride(sizeof(MeshVertex))
+			.AddAttribute("a_Position", Format::RGB32_FLOAT, offsetof(MeshVertex, Position));
+
+		m_StaticShared = std::make_shared<Internal::StaticBatchShared>();
+		m_ObjectRecords.assign(1, ObjectRecord{});
+		m_ObjectCapacity = 256;
+		const std::vector<ObjectRecord> noRecords(m_ObjectCapacity);
+		m_ObjectBuffer = GraphicsBuffer::CreateStorageBuffer(m_ObjectCapacity * sizeof(ObjectRecord), "Renderer3D_ObjectData", noRecords.data());
 
 		m_Material = CreateLitMaterial(MaterialParams().SetDebugName("Renderer3D_Material"));
 
@@ -245,7 +257,7 @@ namespace Dingo
 			.SetByteSize(sizeof(CameraData))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		// The lit shader binds the shadows always, so every scene writes them, cast or not.
@@ -254,7 +266,7 @@ namespace Dingo
 			.SetByteSize(sizeof(ShadowData))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 		m_ShadowSampler = Sampler::Create(SamplerParams().SetCompare(true));
 		m_PlaceholderShadowAtlas = Texture::Create(TextureParams()
@@ -267,6 +279,7 @@ namespace Dingo
 		SetShadowSettings(m_Params.Shadows);
 
 		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
+		m_SkinnedVisibility = std::make_shared<Internal::SkinnedVisibility>();
 
 		// Built-in unit primitives for the DrawBox/DrawSphere conveniences.
 		m_BoxMesh = Mesh::CreateBox();
@@ -277,22 +290,49 @@ namespace Dingo
 	{
 		m_Particles.reset();
 
-		for (GraphicsBuffer*& buffer : m_BatchVertexBuffers)
+		m_SceneStaticBatches.clear();
+		m_StaticShadowDraws.clear();
+		if (m_StaticShared)
+		{
+			for (Internal::StaticBatchData* batch : m_StaticShared->Live)
+			{
+				for (Internal::StaticCell& cell : batch->Cells)
+				{
+					DestroyAndDelete(cell.VertexBuffer);
+					DestroyAndDelete(cell.IndexBuffer);
+				}
+			}
+			for (auto& [buffer, frame] : m_StaticShared->Retired)
+				DestroyAndDelete(buffer);
+			m_StaticShared->Retired.clear();
+			m_StaticShared->RendererAlive = false;
+			m_StaticShared.reset();
+		}
+
+		DestroyAndDelete(m_ArenaVertexBuffer);
+		DestroyAndDelete(m_ArenaIndexBuffer);
+		for (auto& [buffer, frame] : m_RetiredArenaBuffers)
 			DestroyAndDelete(buffer);
-		for (GraphicsBuffer*& buffer : m_BatchIndexBuffers)
-			DestroyAndDelete(buffer);
-		m_BatchVertexBuffers.clear();
-		m_BatchIndexBuffers.clear();
+		m_RetiredArenaBuffers.clear();
+		m_ArenaVertexCapacity = 0;
+		m_ArenaIndexCapacity = 0;
+		DestroyAndDelete(m_ObjectBuffer);
+		m_ObjectCapacity = 0;
+		m_ObjectRecords.clear();
+		m_SceneVertices.clear();
+		m_SceneIndices.clear();
 		m_Batches.clear();
 		m_DrawOrder.clear();
+		m_StaticSubmissions.clear();
+		m_SceneChunks.clear();
+		m_DrawSlots.clear();
 		m_ChunkDraws.clear();
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
-		m_TranslucentSlices.clear();
-		m_TranslucentSliceIndices.clear();
+		m_TranslucentChunks.clear();
 		m_TranslucentDraws.clear();
-		m_TranslucentCasterDraws.clear();
+		m_TranslucentMaterials.clear();
 
 		delete m_BoxMesh;
 		delete m_SphereMesh;
@@ -302,18 +342,35 @@ namespace Dingo
 		for (auto& [id, entry] : m_SkinnedTwins)
 			DestroyAndDelete(entry.Twin);
 		m_SkinnedTwins.clear();
+		for (auto& [id, entry] : m_InstancedTwins)
+			DestroyAndDelete(entry.Twin);
+		m_InstancedTwins.clear();
+		m_InstanceGroups.clear();
+		m_InstanceGroupLookup.clear();
+		m_InstanceRecords.clear();
+		DestroyAndDelete(m_InstanceBuffer);
+		m_InstanceCapacity = 0;
+		DestroyAndDelete(m_InstanceDrawBuffer);
+		Internal::UnwatchUnmanagedShader(m_InstancedShader);
+		DestroyAndDelete(m_InstancedShader);
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_UnskinnedPalettes.clear();
 		DestroyAndDelete(m_SkinBuffer);
+		DestroyAndDelete(m_SkinPaletteBuffer);
+		m_SkinPaletteCapacity = 0;
+		m_SkinPalette.clear();
 		Internal::UnwatchUnmanagedShader(m_SkinnedShader);
 		DestroyAndDelete(m_SkinnedShader);
 
 		DestroyShadowMaterials();
 		Internal::UnwatchUnmanagedShader(m_ShadowShader);
 		Internal::UnwatchUnmanagedShader(m_SkinnedShadowShader);
+		Internal::UnwatchUnmanagedShader(m_InstancedShadowShader);
 		DestroyAndDelete(m_ShadowShader);
 		DestroyAndDelete(m_SkinnedShadowShader);
+		DestroyAndDelete(m_InstancedShadowShader);
 		DestroyAndDelete(m_ShadowAtlas);
 		DestroyAndDelete(m_PlaceholderShadowAtlas);
 		DestroyAndDelete(m_ShadowSampler);
@@ -362,12 +419,9 @@ namespace Dingo
 
 		m_Statistics = {};
 		m_HasCasters = false;
-		m_StaticCasters = 0;
 
-		// Reset the per-material batches, keeping their storage for reuse. Every chunk, not
-		// just last scene's: SubmitMesh takes a spare chunk before growing. Nothing tells the
-		// renderer when a material is deleted, so a batch that has sat unused for a while is
-		// released instead, or a deleted material's storage would be held forever.
+		// Nothing tells the renderer when a material is deleted, so a batch that has sat unused for
+		// a while is released, or every deleted material would keep an entry forever.
 		for (auto it = m_Batches.begin(); it != m_Batches.end();)
 		{
 			MaterialBatch& matBatch = it->second;
@@ -377,39 +431,28 @@ namespace Dingo
 				it = m_Batches.erase(it);
 				continue;
 			}
-
-			for (MeshChunk& chunk : matBatch.Chunks)
-			{
-				chunk.Vertices.clear();
-				chunk.Indices.clear();
-			}
-			matBatch.ChunksInUse = 0;
 			matBatch.Enqueued = false;
-			matBatch.Drawable = -1;
 			++it;
 		}
 		m_DrawOrder.clear();
-
-		for (auto it = m_SkinnedTwins.begin(); it != m_SkinnedTwins.end();)
+		m_StaticSubmissions.clear();
+		m_ObjectRecords.resize(1);
+		m_SceneStaticBatches.clear();
+		if (m_StaticShared)
 		{
-			SkinnedTwin& entry = it->second;
-			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
-			entry.Used = false;
-			if (entry.IdleScenes > k_MaxIdleBatchScenes)
-			{
-				DestroyAndDelete(entry.Twin);
-				it = m_SkinnedTwins.erase(it);
-				continue;
-			}
-			++it;
+			m_RetiredArenaBuffers.insert(m_RetiredArenaBuffers.end(), m_StaticShared->Retired.begin(), m_StaticShared->Retired.end());
+			m_StaticShared->Retired.clear();
 		}
+
+		ReleaseIdleTwins(m_SkinnedTwins);
+		ReleaseIdleTwins(m_InstancedTwins);
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_UnskinnedPalettes.clear();
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
-		m_TranslucentSlices.clear();
 	}
 
 	void Renderer3D::EndScene()
@@ -423,6 +466,7 @@ namespace Dingo
 			ClearSceneLights();
 			if (m_Particles)
 				m_Particles->ClearScene();
+			m_SceneStaticBatches.clear();
 			return;
 		}
 
@@ -453,41 +497,32 @@ namespace Dingo
 			}
 		}
 		Renderer::Upload(m_SceneUniformBuffer, &m_CameraData, sizeof(CameraData));
+		{
+			DE_PROFILE_SCOPE("Renderer3D::PrepareSceneBounds");
+			PrepareSceneBounds(GetCullView());
+		}
 		const bool shadows = PrepareShadows();
 		Renderer::Upload(m_ShadowDataBuffer, &m_ShadowData, sizeof(ShadowData));
 		ResolveShadowProbes();
 		ClearSceneLights();
+		PrepareShadowCulling();
 
-		uint32_t batchIndex = 0;
-
-		// Every chunk goes into its own pooled (vertex, index) buffer up front, so no shared buffer
-		// is re-uploaded between draws and the shadow pass can draw them before the lit pass does.
+		// Every draw's vertices go into the arena up front, so the shadow pass can draw them before
+		// the lit pass does.
 		{
 			DE_PROFILE_SCOPE("Renderer3D::UploadBatches");
 			m_ChunkDraws.clear();
-			for (const BatchKey& key : m_DrawOrder)
-			{
-				Material* material = key.Material;
-				if (!IsDrawableLitMaterial(material))
-					continue;
-				if (IsLitShader(material->GetShader()))
-					PrepareLitMaterial(material);
-
-				MaterialBatch& matBatch = m_Batches[key];
-				for (uint32_t chunkIndex = 0; chunkIndex < matBatch.ChunksInUse; ++chunkIndex)
-				{
-					MeshChunk& chunk = matBatch.Chunks[chunkIndex];
-					if (chunk.Indices.empty())
-						continue;
-
-					const uint32_t buffer = UploadChunk(chunk, batchIndex);
-					m_ChunkDraws.push_back({ key, buffer, static_cast<uint32_t>(chunk.Indices.size()) });
-				}
-			}
-			PrepareTranslucentPass(batchIndex, shadows);
+			LayoutStaticSubmissions(shadows);
+			CullSkinnedSubmissions(shadows);
+			TransformStaticSubmissions();
+			PrepareTranslucentPass(shadows);
+			UploadScene();
 		}
 
-		ResolveSkinnedBudget(shadows);
+		UploadObjectRecords();
+		UploadInstanceRecords();
+		ResolveSkinnedBudget();
+		UploadSkinPalette();
 		if (shadows)
 		{
 			DrawShadowPass();
@@ -499,63 +534,924 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 			for (const ChunkDraw& draw : m_ChunkDraws)
 			{
-				if (draw.Key.Shadows == ShadowCasting::ShadowsOnly)
+				if (draw.Translucent || draw.Key.Shadows == ShadowCasting::ShadowsOnly)
 					continue;
 
 				// Bind the shared camera/light UBO at binding 0 for this material, then draw. A custom
 				// material also drawn skinned would otherwise keep a skin buffer this renderer may free.
-				Material* material = draw.Key.Material;
-				material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-				material->SetSkinUniformBuffer(nullptr);
-				material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-				Renderer::DrawIndexed(material, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount);
+				const bool instanced = draw.Group != ~0u;
+				Material* material = instanced ? ResolveInstancedMaterial(draw.Key.Material) : draw.Key.Material;
+				Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
+				Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
+				Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
+				Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+				Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
+				if (instanced)
+				{
+					const InstanceGroup& group = m_InstanceGroups[draw.Group];
+					EnsureStaticBuffers(group.Mesh);
+					Internal::MaterialAccess::SetInstanceBuffers(material, m_InstanceBuffer, m_InstanceDrawBuffer);
+					UploadInstanceDraw(group.FirstRecord, 1);
+					Renderer::DrawIndexed(material, m_MeshLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer, group.Mesh->GetIndexCount(), group.Count);
+					++m_Statistics.DrawCalls;
+					++m_Statistics.InstancedDraws;
+					continue;
+				}
+				const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
+				if (draw.VertexBuffer)
+				{
+					Renderer::DrawIndexed(material, layout, draw.VertexBuffer, draw.IndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+					++m_Statistics.StaticDraws;
+				}
+				else
+				{
+					Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
+				}
 				++m_Statistics.DrawCalls;
 			}
 		}
 
 		DrawSkinnedSubmissions();
-
-		// What draws from here on writes no depth, so AO from the opaque depth behind it would darken it.
-		if (!m_TranslucentDraws.empty() || (m_Particles && m_Particles->HasSubmissions()))
-		{
-			PostProcessStack& post = Renderer::GetPostProcessStack();
-			if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
-				post.ApplyAmbientOcclusion();
-		}
 		DrawTranslucentPass(shadowAtlas);
+		m_StaticSubmissions.clear();
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
+		m_UnskinnedPalettes.clear();
 		m_TranslucentSubmissions.clear();
 		m_TranslucentVertices.clear();
 		m_TranslucentIndices.clear();
-		m_TranslucentSlices.clear();
+		m_ObjectRecords.resize(1);
+		m_SceneStaticBatches.clear();
 
 		if (m_Particles)
 			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
 		Renderer::EndGpuTimer();
 	}
 
-	uint32_t Renderer3D::UploadChunk(const MeshChunk& chunk, uint32_t& batchIndex)
+	uint32_t Renderer3D::AcquireDrawSlot(const BatchKey& key)
 	{
-		return UploadToPool(chunk.Vertices.data(), static_cast<uint32_t>(chunk.Vertices.size()), chunk.Indices.data(), static_cast<uint32_t>(chunk.Indices.size()), batchIndex);
+		if (m_UsedDrawSlots == m_DrawSlots.size())
+			m_DrawSlots.emplace_back();
+		DrawSlot& slot = m_DrawSlots[m_UsedDrawSlots];
+		slot.Key = key;
+		slot.OpenChunk = ~0u;
+		slot.Chunks.clear();
+		slot.StaticDraws.clear();
+		return m_UsedDrawSlots++;
 	}
 
-	uint32_t Renderer3D::UploadToPool(const Vertex* vertices, uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount, uint32_t& batchIndex)
+	void Renderer3D::PlaceInSlot(uint32_t slot, uint32_t vertexCount, uint32_t indexCount, uint32_t& chunk, uint32_t& chunkVertex, uint32_t& chunkIndex)
 	{
-		// Grow the buffer pool on demand; each pooled pair holds a full-capacity batch.
-		// DirectUpload = false: the writes go into the frame's command list (as Renderer2D's
-		// batches do) instead of each spinning up a throwaway command list and its own queue submit.
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
-		if (batchIndex >= m_BatchVertexBuffers.size())
+		DrawSlot& drawSlot = m_DrawSlots[slot];
+		if (drawSlot.OpenChunk == ~0u || m_SceneChunks[drawSlot.OpenChunk].VertexCount + vertexCount > caps.MaxVertices ||
+			m_SceneChunks[drawSlot.OpenChunk].IndexCount + indexCount > caps.MaxIndices)
 		{
-			m_BatchVertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * caps.MaxVertices, nullptr, false, "Renderer3D_BatchVB"));
-			m_BatchIndexBuffers.push_back(GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * caps.MaxIndices, nullptr, false, "Renderer3D_BatchIB", GraphicsFormat::Uint32));
+			drawSlot.OpenChunk = static_cast<uint32_t>(m_SceneChunks.size());
+			drawSlot.Chunks.push_back(drawSlot.OpenChunk);
+			m_SceneChunks.push_back({ slot });
 		}
 
-		Renderer::Upload(m_BatchVertexBuffers[batchIndex], vertices, static_cast<uint64_t>(vertexCount) * sizeof(Vertex));
-		Renderer::Upload(m_BatchIndexBuffers[batchIndex], indices, static_cast<uint64_t>(indexCount) * sizeof(uint32_t));
-		return batchIndex++;
+		SceneChunk& open = m_SceneChunks[drawSlot.OpenChunk];
+		chunk = drawSlot.OpenChunk;
+		chunkVertex = open.VertexCount;
+		chunkIndex = open.IndexCount;
+		open.VertexCount += vertexCount;
+		open.IndexCount += indexCount;
+	}
+
+	void Renderer3D::SetCullingFrozen(bool frozen)
+	{
+		m_CullingFrozen = frozen;
+		m_FrozenCullViews.clear();
+	}
+
+	Renderer3D::CullView Renderer3D::GetCullView()
+	{
+		CullView view{ m_CameraData.ViewProjection, m_CameraData.CameraPosition };
+		if (m_CullingFrozen)
+		{
+			const size_t table = std::min<size_t>(m_SceneOfFrame, k_MaxScenesPerFrame - 1);
+			if (m_FrozenCullViews.size() <= table)
+				m_FrozenCullViews.resize(table + 1);
+			if (!m_FrozenCullViews[table])
+				m_FrozenCullViews[table] = view;
+			view = *m_FrozenCullViews[table];
+		}
+
+		m_CullPlanes = Frustum::FromViewProjection(view.ViewProjection).GetPlanes();
+		const Framebuffer* target = Renderer::GetRenderTarget();
+		m_CullFarPlane = !target || target->GetParams().EnableDepth; // the swap chain always has one
+		return view;
+	}
+
+	void Renderer3D::PrepareSceneBounds(const CullView& view)
+	{
+		const bool distances = m_CullingEnabled && view.CameraPosition.w > 0.5f;
+		const glm::vec3 eye(view.CameraPosition);
+		auto pastDistance = [distances, &eye](const AABB& bounds, float cullDistance)
+		{
+			if (!distances || !(cullDistance > 0.0f) || bounds.IsEmpty())
+				return false;
+			const glm::vec3 offset = glm::clamp(eye, bounds.Min, bounds.Max) - eye;
+			return glm::dot(offset, offset) > cullDistance * cullDistance;
+		};
+
+		glm::vec3 low(std::numeric_limits<float>::max());
+		glm::vec3 high(std::numeric_limits<float>::lowest());
+		bool casters = false;
+
+		// Only the shadow pass reads the casters' box.
+		bool casting = m_ShadowLight >= 0;
+		for (uint32_t slot = 0; slot < m_DrawnLocalLights && !casting; ++slot)
+		{
+			const LocalLightCandidate& light = m_LocalLights[m_VisibleLocalLights[slot]];
+			casting = light.CastShadows && light.ShadowStrength > 0.0f;
+		}
+
+		// The rest pose's box bounds a skinned caster, padded by half its size for the animation.
+		for (SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			submission.PastDistance = submission.Bounded && pastDistance(submission.CullBounds, submission.CullDistance);
+			if (casting && submission.Shadows != ShadowCasting::Off && !submission.Bounds.IsEmpty())
+			{
+				low = glm::min(low, submission.Bounds.Min);
+				high = glm::max(high, submission.Bounds.Max);
+				casters = true;
+			}
+		}
+
+		for (const std::shared_ptr<StaticBatch>& batch : m_SceneStaticBatches)
+		{
+			for (const Internal::StaticCell& cell : batch->m_Data->Cells)
+			{
+				for (const Internal::StaticCellRange& range : cell.Ranges)
+				{
+					if (!casting || range.Shadows == ShadowCasting::Off)
+						continue;
+					low = glm::min(low, range.CasterMin);
+					high = glm::max(high, range.CasterMax);
+					casters = true;
+				}
+			}
+		}
+
+		// A static caster's own vertices bound it, as if every one were transformed: the cascades fit
+		// their depth to this box, so it must not change with what is culled. A mesh whose padded box
+		// already lies inside needn't be transformed for it, and the farthest meshes go first so most do.
+		auto foldVertices = [&low, &high, &casters](const StaticSubmission& submission)
+		{
+			const glm::mat4& transform = submission.Transform;
+			for (const MeshVertex& v : submission.Mesh->GetVertices())
+			{
+				const glm::vec3 position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+				low = glm::min(low, position);
+				high = glm::max(high, position);
+			}
+			casters = true;
+		};
+
+		std::array<int32_t, 6> extremes;
+		extremes.fill(-1);
+		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
+		{
+			StaticSubmission& submission = m_StaticSubmissions[index];
+			submission.Bounded = IsAffine(submission.Transform);
+			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, submission.Transform) : AABB();
+			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, submission.CullDistance);
+			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
+				continue;
+
+			if (!submission.Bounded)
+			{
+				foldVertices(submission);
+				continue;
+			}
+			for (int axis = 0; axis < 3; ++axis)
+			{
+				int32_t& lowest = extremes[axis];
+				int32_t& highest = extremes[axis + 3];
+				if (lowest < 0 || submission.Bounds.Min[axis] < m_StaticSubmissions[lowest].Bounds.Min[axis])
+					lowest = static_cast<int32_t>(index);
+				if (highest < 0 || submission.Bounds.Max[axis] > m_StaticSubmissions[highest].Bounds.Max[axis])
+					highest = static_cast<int32_t>(index);
+			}
+		}
+
+		std::sort(extremes.begin(), extremes.end());
+		for (size_t i = 0; i < extremes.size(); ++i)
+		{
+			if (extremes[i] >= 0 && (i == 0 || extremes[i] != extremes[i - 1]))
+				foldVertices(m_StaticSubmissions[extremes[i]]);
+		}
+		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
+		{
+			const StaticSubmission& submission = m_StaticSubmissions[index];
+			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty() || !submission.Bounded)
+				continue;
+			if (std::binary_search(extremes.begin(), extremes.end(), static_cast<int32_t>(index)))
+				continue;
+			if (!BoxInside(submission.Bounds, low, high))
+				foldVertices(submission);
+		}
+
+		m_HasCasters = casters;
+		if (casters)
+		{
+			m_CasterMin = low;
+			m_CasterMax = high;
+		}
+	}
+
+	void Renderer3D::PrepareShadowCulling()
+	{
+		m_ShadowCullViews.clear();
+		m_ShadowCullLights.clear();
+		for (uint32_t view = 0; view < m_ShadowViewCount; ++view)
+			m_ShadowCullViews.push_back(Frustum::FromViewProjection(m_ShadowViews.Views[view].ViewProjection));
+		if (m_ShadowViewCount == 0)
+			return;
+
+		const uint32_t cascades = static_cast<uint32_t>(std::max(m_ShadowData.ShadowCounts.x, 0));
+		if (cascades > 0)
+			m_ShadowCullLights.push_back({ glm::vec3(0.0f), 0.0f, m_ShadowViews.Views[0].Casters.x, 0, cascades });
+		for (uint32_t slot = 0; slot < k_MaxLocalLights; ++slot)
+		{
+			const LocalShadowData& local = m_ShadowData.LocalShadows[slot];
+			if (local.Record.x < 0.0f)
+				continue;
+			const uint32_t first = static_cast<uint32_t>(local.Record.x);
+			const uint32_t count = static_cast<uint32_t>(local.Record.y);
+			const glm::vec3 position(local.Position);
+			// A view's far corners lie past the range (a spot's cone, a cube face's guard band).
+			float reach = 0.0f;
+			for (uint32_t view = first; view < first + count; ++view)
+			{
+				const glm::mat4 inverse = glm::inverse(m_ShadowViews.Views[view].ViewProjection);
+				for (int corner = 0; corner < 4; ++corner)
+				{
+					const glm::vec4 world = inverse * glm::vec4(corner & 1 ? 1.0f : -1.0f, corner & 2 ? 1.0f : -1.0f, 1.0f, 1.0f);
+					reach = std::max(reach, glm::length(glm::vec3(world) / world.w - position));
+				}
+			}
+			m_ShadowCullLights.push_back({ position, reach * (1.0f + 1e-4f), m_ShadowViews.Views[first].Casters.x, first, count });
+		}
+	}
+
+	bool Renderer3D::ReachesShadowView(const AABB& bounds, uint32_t shadowGroups) const
+	{
+		for (const ShadowCullLight& light : m_ShadowCullLights)
+		{
+			if ((light.CasterGroups & shadowGroups) == 0)
+				continue;
+			if (light.Reach > 0.0f && (glm::any(glm::greaterThan(bounds.Min, light.Position + light.Reach)) || glm::any(glm::lessThan(bounds.Max, light.Position - light.Reach))))
+				continue;
+			for (uint32_t view = light.FirstView; view < light.FirstView + light.ViewCount; ++view)
+			{
+				if (!BoxOutsideSides(m_ShadowCullViews[view].GetPlanes(), bounds))
+					return true;
+			}
+		}
+		return false;
+	}
+
+	bool Renderer3D::CameraSees(const AABB& bounds, const Material* material) const
+	{
+		if (!material->GetParams().FrustumCulled)
+			return true;
+		if (BoxOutsideSides(m_CullPlanes, bounds))
+			return false;
+		return !(m_CullFarPlane && IsDepthPastFarRejected(*material) && BoxBehindPlane(m_CullPlanes[Frustum::Far], bounds));
+	}
+
+	void Renderer3D::LayoutStaticSubmissions(bool shadows)
+	{
+		m_SceneChunks.clear();
+		m_UsedDrawSlots = 0;
+		m_TranslucentMaterials.clear();
+
+		// The lit batches take their slots first, in draw order.
+		for (const BatchKey& key : m_DrawOrder)
+		{
+			MaterialBatch& batch = m_Batches[key];
+			batch.Usable = false;
+			batch.Slot = ~0u;
+			Material* material = key.Material;
+			if (IsLitShader(material->GetShader()))
+			{
+				// The binding set would name bindings the shader's layout lacks, which Vulkan does
+				// not reject: drawing it is undefined behaviour, so the material is skipped.
+				if (BindsPastSlotZero(*material))
+				{
+					if (!m_LitSlotsWarned)
+					{
+						const std::string& name = material->GetParams().DebugName;
+						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+							name.empty() ? "<unnamed>" : name.c_str());
+						m_LitSlotsWarned = true;
+					}
+					continue;
+				}
+				PrepareLitMaterial(material);
+			}
+			else if (material->GetParams().Instancing && !CanInstance(material))
+			{
+				if (!m_InstanceMaterialWarned)
+				{
+					const std::string& name = material->GetParams().DebugName;
+					DE_CORE_WARN("Renderer3D: material '{}' has Instancing set but its shader lacks the {} storage block or the {} uniform block (Instancing.glsl), or puts one on a binding its textures or samplers use or past {}; its meshes are not drawn.",
+						name.empty() ? "<unnamed>" : name.c_str(), Material::k_InstanceDataBlockName, Material::k_InstanceDrawBlockName, k_MaxSkinUniformBinding);
+					m_InstanceMaterialWarned = true;
+				}
+				continue;
+			}
+			batch.Usable = true;
+			if (key.Shadows != ShadowCasting::ShadowsOnly)
+				batch.Slot = AcquireDrawSlot(key);
+		}
+		LayoutStaticBatches(shadows);
+
+		// The shadow pass draws depth alone, in any order, so every caster the camera doesn't see
+		// joins one batch per caster mask, whatever its material.
+		std::vector<std::pair<uint32_t, uint32_t>> shadowSlots;
+		auto shadowSlot = [this, &shadowSlots](uint32_t groups)
+		{
+			for (const auto& [slotGroups, slot] : shadowSlots)
+			{
+				if (slotGroups == groups)
+					return slot;
+			}
+			const uint32_t slot = AcquireDrawSlot(BatchKey{ nullptr, ShadowCasting::ShadowsOnly, groups });
+			shadowSlots.emplace_back(groups, slot);
+			return slot;
+		};
+
+		const bool culling = m_CullingEnabled;
+		uint64_t translucentVertices = 0;
+		uint64_t translucentIndices = 0;
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			submission.Chunk = ~0u;
+			submission.Slot = ~0u;
+			submission.Group = ~0u;
+			const uint32_t vertexCount = submission.Mesh->GetVertexCount();
+			const uint32_t indexCount = submission.Mesh->GetIndexCount();
+			if (vertexCount == 0 || indexCount == 0)
+				continue;
+
+			const bool casts = shadows && submission.Shadows != ShadowCasting::Off;
+			const bool seen = !culling || !submission.Bounded || (!submission.PastDistance && CameraSees(submission.Bounds, submission.Material));
+			auto castIfReached = [&]()
+			{
+				if (!culling || !submission.Bounded || (!submission.PastDistance && ReachesShadowView(submission.Bounds, submission.ShadowGroups)))
+				{
+					submission.Slot = shadowSlot(submission.ShadowGroups);
+					++m_Statistics.ShadowCasters;
+				}
+				else
+				{
+					++m_Statistics.CulledCasters;
+				}
+			};
+
+			if (submission.Translucent >= 0)
+			{
+				m_TranslucentSubmissions[submission.Translucent].Culled = !seen;
+				if (seen)
+				{
+					const uint64_t copies = casts && submission.Shadows == ShadowCasting::On ? 2 : 1;
+					translucentVertices += copies * vertexCount;
+					translucentIndices += copies * indexCount;
+					if (IsTranslucentDrawable(submission.Material))
+						m_Statistics.ShadowCasters += static_cast<uint32_t>(copies - 1);
+					continue;
+				}
+				++m_Statistics.CulledMeshes;
+				if (casts && submission.Shadows == ShadowCasting::On && IsTranslucentDrawable(submission.Material))
+					castIfReached();
+				continue;
+			}
+
+			const MaterialBatch& batch = *submission.Batch;
+			if (!batch.Usable)
+				continue;
+			if (submission.Shadows == ShadowCasting::ShadowsOnly)
+			{
+				if (casts)
+					castIfReached();
+				continue;
+			}
+			if (seen)
+			{
+				submission.Slot = batch.Slot;
+				m_Statistics.ShadowCasters += casts ? 1 : 0;
+				continue;
+			}
+			++m_Statistics.CulledMeshes;
+			if (casts)
+				castIfReached();
+		}
+
+		// Placed in submission order, slot by slot, so a scene with nothing instanced is laid out exactly
+		// as it would be without instancing.
+		const bool grouped = GroupInstances(shadows);
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			if (submission.Slot == ~0u)
+				continue;
+			if (grouped && submission.Group != ~0u)
+			{
+				InstanceGroup& group = m_InstanceGroups[submission.Group];
+				if (group.Instanced)
+				{
+					submission.Record = group.FirstRecord + group.Placed++;
+					++m_Statistics.InstancedMeshes;
+					continue;
+				}
+				if (group.Dropped)
+				{
+					submission.Slot = ~0u;
+					++m_Statistics.DroppedInstancedMeshes;
+					continue;
+				}
+			}
+			PlaceInSlot(submission.Slot, submission.Mesh->GetVertexCount(), submission.Mesh->GetIndexCount(), submission.Chunk, submission.ChunkVertex, submission.ChunkIndex);
+		}
+
+		uint32_t vertexTotal = 0;
+		uint32_t indexTotal = 0;
+		for (SceneChunk& chunk : m_SceneChunks)
+		{
+			chunk.FirstVertex = vertexTotal;
+			chunk.FirstIndex = indexTotal;
+			vertexTotal += chunk.VertexCount;
+			indexTotal += chunk.IndexCount;
+		}
+		m_SceneVertexCount = vertexTotal;
+		m_SceneIndexCount = indexTotal;
+
+		const uint64_t vertexRoom = vertexTotal + translucentVertices;
+		const uint64_t indexRoom = indexTotal + translucentIndices;
+		ReserveArena(vertexRoom, indexRoom);
+		if (m_SceneVertices.size() < vertexRoom)
+			m_SceneVertices.resize(vertexRoom);
+		if (m_SceneIndices.size() < indexRoom)
+			m_SceneIndices.resize(indexRoom);
+
+		for (uint32_t slot = 0; slot < m_UsedDrawSlots; ++slot)
+		{
+			const DrawSlot& drawSlot = m_DrawSlots[slot];
+			m_ChunkDraws.insert(m_ChunkDraws.end(), drawSlot.StaticDraws.begin(), drawSlot.StaticDraws.end());
+			for (const uint32_t chunk : drawSlot.Chunks)
+				m_ChunkDraws.push_back({ drawSlot.Key, m_ArenaIndexBase + m_SceneChunks[chunk].FirstIndex, m_SceneChunks[chunk].IndexCount });
+			for (const uint32_t group : drawSlot.Groups)
+				m_ChunkDraws.push_back({ drawSlot.Key, 0, 0, false, group });
+		}
+		m_ChunkDraws.insert(m_ChunkDraws.end(), m_StaticShadowDraws.begin(), m_StaticShadowDraws.end());
+	}
+
+	bool Renderer3D::CanInstance(const Material* material) const
+	{
+		if (IsLitShader(material->GetShader()))
+			return true;
+		const Shader* shader = material->GetShader();
+		if (!material->GetParams().Instancing || !shader)
+			return false;
+
+		// Vulkan numbers buffers, textures and samplers together, so a block on a bound texture's or
+		// sampler's binding makes a binding set that silently draws nothing.
+		auto free = [material](int32_t binding)
+		{
+			if (binding < 2)
+				return false;
+			const uint32_t slot = static_cast<uint32_t>(binding - 2) / 2;
+			if ((binding - 2) % 2 == 1)
+				return slot >= Material::k_MaxSamplerSlots || !material->GetSampler(slot);
+			return slot >= Material::k_MaxTextureSlots || !material->GetTexture(slot);
+		};
+		const int32_t draw = shader->FindUniformBufferBinding(Material::k_InstanceDrawBlockName);
+		return free(shader->FindStorageBufferBinding(Material::k_InstanceDataBlockName)) && free(draw) &&
+			draw <= static_cast<int32_t>(k_MaxSkinUniformBinding);
+	}
+
+	bool Renderer3D::ForcesInstancing(const Material* material) const
+	{
+		return material->GetParams().Instancing && !IsLitShader(material->GetShader());
+	}
+
+	bool Renderer3D::GroupInstances(bool shadows)
+	{
+		m_InstanceGroups.clear();
+		m_InstanceRecords.clear();
+		for (uint32_t slot = 0; slot < m_UsedDrawSlots; ++slot)
+		{
+			m_DrawSlots[slot].Groups.clear();
+			m_DrawSlots[slot].LastGroup = ~0u;
+		}
+
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		bool forcing = false;
+		for (uint32_t slot = 0; slot < m_UsedDrawSlots && !forcing; ++slot)
+		{
+			const Material* material = m_DrawSlots[slot].Key.Material;
+			forcing = material && ForcesInstancing(material);
+		}
+		if (!caps.Instancing && !forcing)
+			return false;
+
+		DE_PROFILE_SCOPE("Renderer3D::GroupInstances");
+
+		// Whether a mesh is instanced comes from its copies in the batch before culling, so the camera
+		// never moves a copy between the GPU's transform and the CPU's, which round differently.
+		const uint32_t threshold = std::max(caps.InstanceThreshold, 1u);
+		m_InstanceCopyLookup.clear();
+		m_InstanceCopies.clear();
+		const MaterialBatch* lastBatch = nullptr;
+		uint64_t lastMesh = 0;
+		uint32_t lastCopies = ~0u;
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			submission.Copies = ~0u;
+			if (!submission.Batch || !submission.Batch->Usable || submission.Mesh->GetVertexCount() == 0 || submission.Mesh->GetIndexCount() == 0)
+				continue;
+
+			const uint64_t meshId = submission.Mesh->GetId();
+			if (lastCopies == ~0u || lastBatch != submission.Batch || lastMesh != meshId)
+			{
+				const auto [it, inserted] = m_InstanceCopyLookup.try_emplace(InstanceCopyKey{ submission.Batch, meshId }, static_cast<uint32_t>(m_InstanceCopies.size()));
+				if (inserted)
+					m_InstanceCopies.push_back({ submission.Material, submission.Mesh });
+				lastBatch = submission.Batch;
+				lastMesh = meshId;
+				lastCopies = it->second;
+			}
+			++m_InstanceCopies[lastCopies].Count;
+			submission.Copies = lastCopies;
+		}
+		for (InstanceCopies& copies : m_InstanceCopies)
+		{
+			const bool worth = caps.Instancing && (copies.Count >= threshold ||
+				static_cast<uint64_t>(copies.Count) * copies.Mesh->GetVertexCount() > caps.MaxVertices);
+			copies.Forced = ForcesInstancing(copies.Material);
+			copies.Instanced = copies.Forced || (worth && CanInstance(copies.Material));
+		}
+
+		m_InstanceGroupLookup.clear();
+		for (StaticSubmission& submission : m_StaticSubmissions)
+		{
+			if (submission.Slot == ~0u || submission.Copies == ~0u || !m_InstanceCopies[submission.Copies].Instanced)
+				continue;
+
+			DrawSlot& slot = m_DrawSlots[submission.Slot];
+			const uint64_t meshId = submission.Mesh->GetId();
+			uint32_t group = slot.LastGroup;
+			if (group == ~0u || m_InstanceGroups[group].MeshId != meshId)
+			{
+				const auto [it, inserted] = m_InstanceGroupLookup.try_emplace(InstanceGroupKey{ meshId, submission.Slot }, static_cast<uint32_t>(m_InstanceGroups.size()));
+				if (inserted)
+				{
+					InstanceGroup& added = m_InstanceGroups.emplace_back();
+					added.Slot = submission.Slot;
+					added.Mesh = submission.Mesh;
+					added.MeshId = meshId;
+					// Only a lit slot draws with the material; a shadow-only slot can always fall back.
+					added.Forced = slot.Key.Material && m_InstanceCopies[submission.Copies].Forced;
+				}
+				group = it->second;
+				slot.LastGroup = group;
+			}
+			++m_InstanceGroups[group].Count;
+			submission.Group = group;
+		}
+
+		const uint64_t frame = Renderer::GetFrameIndex();
+		if (frame != m_InstanceDrawFrame)
+		{
+			m_InstanceDrawFrame = frame;
+			m_InstanceDrawsThisFrame = 0;
+		}
+
+		// A forced group has no CPU path, so it takes the frame's draws first.
+		for (const bool forcedPass : { true, false })
+		{
+			for (InstanceGroup& group : m_InstanceGroups)
+			{
+				if (group.Forced != forcedPass)
+					continue;
+
+				// A lit slot's group draws once lit and, when it casts, once into the shadows; a shadow-only
+				// slot's only into the shadows.
+				const DrawSlot& slot = m_DrawSlots[group.Slot];
+				const uint32_t writes = (slot.Key.Material ? 1u : 0u) + (shadows && slot.Key.Shadows != ShadowCasting::Off ? 1u : 0u);
+				if (m_InstanceDrawsThisFrame + writes > k_MaxInstancedDrawsPerFrame)
+				{
+					group.Dropped = group.Forced;
+					DE_CORE_ASSERT(!caps.AssertOnOverflow,
+						"Renderer3D: more instanced draws in a frame than k_MaxInstancedDrawsPerFrame and AssertOnOverflow is set.");
+					if (!m_InstanceBudgetWarned)
+					{
+						DE_CORE_WARN("Renderer3D: more than {} instanced draws in one frame; the rest are batched on the CPU, and meshes of a material with Instancing are skipped.",
+							k_MaxInstancedDrawsPerFrame);
+						m_InstanceBudgetWarned = true;
+					}
+					continue;
+				}
+				m_InstanceDrawsThisFrame += writes;
+				group.Instanced = true;
+			}
+		}
+
+		uint32_t records = 0;
+		for (uint32_t index = 0; index < m_InstanceGroups.size(); ++index)
+		{
+			InstanceGroup& group = m_InstanceGroups[index];
+			if (!group.Instanced)
+				continue;
+			group.FirstRecord = records;
+			records += group.Count;
+			m_DrawSlots[group.Slot].Groups.push_back(index);
+		}
+
+		m_InstanceRecords.resize(records);
+		if (records > 0)
+			EnsureInstancingResources();
+		return true;
+	}
+
+	void Renderer3D::CullSkinnedSubmissions(bool shadows)
+	{
+		m_SkinnedInstanceLive.assign(m_SkinnedInstances.size(), 0);
+		const bool culling = m_CullingEnabled;
+		for (SkinnedSubmission& submission : m_SkinnedSubmissions)
+		{
+			submission.CameraCulled = false;
+			submission.ShadowDrawn = false;
+			if (submission.Shadows != ShadowCasting::ShadowsOnly)
+			{
+				const Material* requested = submission.Material ? submission.Material : m_Material;
+				submission.CameraCulled = culling && submission.Bounded && (submission.PastDistance || !CameraSees(submission.CullBounds, requested));
+				m_Statistics.CulledSkinned += submission.CameraCulled ? 1 : 0;
+			}
+			if (shadows && submission.Shadows != ShadowCasting::Off)
+			{
+				submission.ShadowDrawn = !culling || !submission.Bounded || (!submission.PastDistance && ReachesShadowView(submission.CullBounds, submission.ShadowGroups));
+				m_Statistics.CulledCasters += submission.ShadowDrawn ? 0 : 1;
+			}
+			if (submission.ShadowDrawn || (submission.Shadows != ShadowCasting::ShadowsOnly && !submission.CameraCulled))
+				m_SkinnedInstanceLive[submission.Instance] = 1;
+		}
+
+		// Before the budget: an instance it drops is still in view, so its animator keeps posing.
+		const uint64_t frame = Renderer::GetFrameIndex();
+		m_SkinnedVisibility->BeginScene(frame);
+		for (size_t i = 0; i < m_SkinnedInstances.size(); ++i)
+		{
+			if (m_SkinnedInstanceLive[i])
+				m_SkinnedVisibility->Record(frame, m_SkinnedInstances[i].Source);
+		}
+		for (const glm::mat4* palette : m_UnskinnedPalettes)
+			m_SkinnedVisibility->Record(frame, palette);
+
+		for (TranslucentSubmission& submission : m_TranslucentSubmissions)
+		{
+			if (submission.Skinned >= 0)
+				submission.Culled = m_SkinnedSubmissions[submission.Skinned].CameraCulled;
+		}
+	}
+
+	void Renderer3D::TransformStaticSubmissions()
+	{
+		DE_PROFILE_SCOPE("Renderer3D::TransformStaticSubmissions");
+		auto transform = [this](const StaticSubmission& submission, Vertex* out)
+		{
+			TransformVertices(*submission.Mesh, submission.Transform, submission.Color, DynamicObjectIndex(submission.Object), out);
+		};
+
+		uint32_t vertices = 0;
+		uint32_t indices = 0;
+		for (const StaticSubmission& submission : m_StaticSubmissions)
+		{
+			if (submission.Group != ~0u && m_InstanceGroups[submission.Group].Instanced)
+			{
+				const glm::mat4& transform = submission.Transform;
+				const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+				InstanceRecord& record = m_InstanceRecords[submission.Record];
+				for (int i = 0; i < 3; ++i)
+				{
+					record.ModelRows[i] = glm::row(transform, i);
+					record.NormalColumns[i] = glm::vec4(normalMatrix[i], 0.0f);
+				}
+				record.Color = submission.Color;
+				record.Misc = glm::uvec4(DynamicObjectIndex(submission.Object), 0u, 0u, 0u);
+				continue;
+			}
+			if (submission.Chunk == ~0u)
+				continue;
+
+			const SceneChunk& chunk = m_SceneChunks[submission.Chunk];
+			const uint32_t firstVertex = chunk.FirstVertex + submission.ChunkVertex;
+			transform(submission, m_SceneVertices.data() + firstVertex);
+
+			const uint32_t base = m_ArenaVertexBase + firstVertex;
+			uint32_t* out = m_SceneIndices.data() + chunk.FirstIndex + submission.ChunkIndex;
+			for (const uint32_t index : submission.Mesh->GetIndices())
+				*out++ = index + base;
+			vertices += submission.Mesh->GetVertexCount();
+			indices += submission.Mesh->GetIndexCount();
+		}
+
+		// A translucent mesh is kept on its own, indexed from its first vertex, until the pass sorts it.
+		m_TranslucentVertices.clear();
+		m_TranslucentIndices.clear();
+		for (TranslucentSubmission& translucent : m_TranslucentSubmissions)
+		{
+			if (translucent.Static < 0 || translucent.Culled)
+				continue;
+
+			const StaticSubmission& submission = m_StaticSubmissions[translucent.Static];
+			translucent.VertexCount = submission.Mesh->GetVertexCount();
+			translucent.IndexCount = submission.Mesh->GetIndexCount();
+			translucent.FirstVertex = static_cast<uint32_t>(m_TranslucentVertices.size());
+			translucent.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
+			m_TranslucentVertices.resize(m_TranslucentVertices.size() + translucent.VertexCount);
+			transform(submission, m_TranslucentVertices.data() + translucent.FirstVertex);
+			m_TranslucentIndices.insert(m_TranslucentIndices.end(), submission.Mesh->GetIndices().begin(), submission.Mesh->GetIndices().end());
+
+			glm::vec3 center = glm::vec3(submission.Transform[3]);
+			if (translucent.VertexCount > 0)
+			{
+				glm::vec3 sum(0.0f);
+				for (uint32_t i = 0; i < translucent.VertexCount; ++i)
+					sum += m_TranslucentVertices[translucent.FirstVertex + i].Position;
+				center = sum / static_cast<float>(translucent.VertexCount);
+			}
+			translucent.SortKey = TranslucentSortKey(center);
+			vertices += translucent.VertexCount;
+			indices += translucent.IndexCount;
+		}
+
+		m_Statistics.VertexCount = vertices;
+		m_Statistics.IndexCount = indices;
+	}
+
+	void Renderer3D::ReserveArena(uint64_t vertices, uint64_t indices)
+	{
+		const uint64_t frame = Renderer::GetFrameIndex();
+		if (frame != m_ArenaFrame)
+		{
+			m_ArenaFrame = frame;
+			m_ArenaVertexUsed = 0;
+			m_ArenaIndexUsed = 0;
+			std::erase_if(m_RetiredArenaBuffers, [frame](std::pair<GraphicsBuffer*, uint64_t>& retired)
+			{
+				if (retired.second + k_ArenaRetireFrames >= frame)
+					return false;
+				DestroyAndDelete(retired.first);
+				return true;
+			});
+		}
+
+		// A full arena is replaced mid-frame, so the scenes before keep drawing from the old one; the
+		// new one has room for the whole frame, so the next frame fits.
+		constexpr uint64_t k_MinimumArena = 65536;
+		auto reserve = [this, frame](GraphicsBuffer*& buffer, uint64_t& capacity, uint64_t& used, uint64_t needed, bool indexBuffer)
+		{
+			if (used + needed <= capacity)
+				return;
+			if (buffer)
+				m_RetiredArenaBuffers.emplace_back(buffer, frame);
+			capacity = std::max({ capacity * 2, used + needed, k_MinimumArena });
+			// BufferUpload::Deferred: the writes go into the frame's command list (as Renderer2D's batches
+			// do) instead of each spinning up a throwaway command list and its own queue submit.
+			buffer = indexBuffer
+				? GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * capacity, IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_ArenaIB")
+				: GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * capacity, nullptr, BufferUpload::Deferred, "Renderer3D_ArenaVB");
+			used = 0;
+		};
+		reserve(m_ArenaVertexBuffer, m_ArenaVertexCapacity, m_ArenaVertexUsed, vertices, false);
+		reserve(m_ArenaIndexBuffer, m_ArenaIndexCapacity, m_ArenaIndexUsed, indices, true);
+		m_ArenaVertexBase = static_cast<uint32_t>(m_ArenaVertexUsed);
+		m_ArenaIndexBase = static_cast<uint32_t>(m_ArenaIndexUsed);
+	}
+
+	uint32_t Renderer3D::AppendToScene(const MeshChunk& chunk)
+	{
+		DE_CORE_ASSERT(m_SceneVertexCount + chunk.Vertices.size() <= m_SceneVertices.size() && m_SceneIndexCount + chunk.Indices.size() <= m_SceneIndices.size(),
+			"Renderer3D: the translucent pass packed more than the scene reserved.");
+		const uint32_t firstVertex = m_SceneVertexCount;
+		const uint32_t firstIndex = m_SceneIndexCount;
+		std::copy(chunk.Vertices.begin(), chunk.Vertices.end(), m_SceneVertices.begin() + firstVertex);
+		const uint32_t base = m_ArenaVertexBase + firstVertex;
+		uint32_t* out = m_SceneIndices.data() + firstIndex;
+		for (const uint32_t index : chunk.Indices)
+			*out++ = index + base;
+		m_SceneVertexCount += static_cast<uint32_t>(chunk.Vertices.size());
+		m_SceneIndexCount += static_cast<uint32_t>(chunk.Indices.size());
+		return m_ArenaIndexBase + firstIndex;
+	}
+
+	uint32_t Renderer3D::DynamicObjectIndex(uint32_t object) const
+	{
+		return object == 0 ? 0 : object + static_cast<uint32_t>(m_StaticShared->Records.size()) - 1;
+	}
+
+	void Renderer3D::UploadObjectRecords()
+	{
+		static_assert(sizeof(Internal::StaticObjectRecord) == sizeof(ObjectRecord), "the static records share the object buffer");
+		const uint64_t staticCount = m_StaticShared->Records.size();
+		const uint64_t dynamicCount = m_ObjectRecords.size() - 1;
+		if (staticCount <= 1 && dynamicCount == 0)
+			return;
+
+		// Replaced mid-frame like the arena, so the scenes before keep the records they drew with.
+		const uint64_t total = staticCount + dynamicCount;
+		if (total > m_ObjectCapacity)
+		{
+			m_RetiredArenaBuffers.emplace_back(m_ObjectBuffer, Renderer::GetFrameIndex());
+			m_ObjectCapacity = std::max<uint64_t>(m_ObjectCapacity * 2, total);
+			m_ObjectBuffer = GraphicsBuffer::CreateStorageBuffer(m_ObjectCapacity * sizeof(ObjectRecord), "Renderer3D_ObjectData");
+			m_StaticRecordsUploaded = ~0ull;
+		}
+		if (staticCount > 1 && m_StaticRecordsUploaded != m_StaticShared->Revision)
+		{
+			Renderer::Upload(m_ObjectBuffer, m_StaticShared->Records.data() + 1, (staticCount - 1) * sizeof(ObjectRecord), sizeof(ObjectRecord));
+			m_StaticRecordsUploaded = m_StaticShared->Revision;
+		}
+		if (dynamicCount > 0)
+			Renderer::Upload(m_ObjectBuffer, m_ObjectRecords.data() + 1, dynamicCount * sizeof(ObjectRecord), staticCount * sizeof(ObjectRecord));
+	}
+
+	void Renderer3D::UploadInstanceRecords()
+	{
+		if (m_InstanceRecords.empty())
+			return;
+
+		// Replaced mid-frame like the arena, so the scenes before keep the records they drew with.
+		if (m_InstanceRecords.size() > m_InstanceCapacity)
+		{
+			if (m_InstanceBuffer)
+				m_RetiredArenaBuffers.emplace_back(m_InstanceBuffer, Renderer::GetFrameIndex());
+			m_InstanceCapacity = std::max<uint64_t>({ m_InstanceCapacity * 2, m_InstanceRecords.size(), 1024 });
+			m_InstanceBuffer = GraphicsBuffer::CreateStorageBuffer(m_InstanceCapacity * sizeof(InstanceRecord), "Renderer3D_InstanceData");
+		}
+		Renderer::Upload(m_InstanceBuffer, m_InstanceRecords.data(), m_InstanceRecords.size() * sizeof(InstanceRecord));
+	}
+
+	void Renderer3D::UploadInstanceDraw(uint32_t firstRecord, uint32_t views)
+	{
+		const glm::uvec4 draw(firstRecord, views, 0u, 0u);
+		Renderer::Upload(m_InstanceDrawBuffer, &draw, sizeof(draw));
+	}
+
+	void Renderer3D::EnsureInstancingResources()
+	{
+		if (m_InstanceDrawBuffer)
+			return;
+
+		m_InstanceDrawBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_InstanceDraw")
+			.SetByteSize(sizeof(glm::uvec4))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetUpload(BufferUpload::Deferred)
+			.SetMaxWritesPerFrame(k_MaxInstancedDrawsPerFrame));
+	}
+
+	void Renderer3D::EnsureStaticBuffers(const Mesh* mesh)
+	{
+		if (mesh->m_StaticVertexBuffer)
+			return;
+
+		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
+		const std::vector<uint32_t>& indices = mesh->GetIndices();
+		mesh->m_StaticVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(MeshVertex), nullptr, BufferUpload::Deferred, "Renderer3D_MeshVB");
+		mesh->m_StaticIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_MeshIB");
+		Renderer::Upload(mesh->m_StaticVertexBuffer, vertices.data(), vertices.size() * sizeof(MeshVertex));
+		Renderer::Upload(mesh->m_StaticIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
+	}
+
+	Material* Renderer3D::ResolveInstancedMaterial(Material* material)
+	{
+		if (!IsLitShader(material->GetShader()))
+			return material;
+
+		if (!m_InstancedShader)
+		{
+			m_InstancedShader = CreateLitShader(k_InstancedLitShaderName, "DE_INSTANCED");
+			Internal::WatchUnmanagedShader(m_InstancedShader);
+		}
+		return GetTwin(m_InstancedTwins, material, m_InstancedShader, "_Instanced");
+	}
+
+	void Renderer3D::UploadScene()
+	{
+		if (m_SceneVertexCount > 0)
+			Renderer::Upload(m_ArenaVertexBuffer, m_SceneVertices.data(), sizeof(Vertex) * m_SceneVertexCount, sizeof(Vertex) * static_cast<uint64_t>(m_ArenaVertexBase));
+		if (m_SceneIndexCount > 0)
+			Renderer::Upload(m_ArenaIndexBuffer, m_SceneIndices.data(), sizeof(uint32_t) * m_SceneIndexCount, sizeof(uint32_t) * static_cast<uint64_t>(m_ArenaIndexBase));
+		m_ArenaVertexUsed = m_ArenaVertexBase + m_SceneVertexCount;
+		m_ArenaIndexUsed = m_ArenaIndexBase + m_SceneIndexCount;
 	}
 
 	float Renderer3D::TranslucentSortKey(const glm::vec3& point) const
@@ -566,10 +1462,51 @@ namespace Dingo
 		return std::isfinite(key) ? key : 0.0f;
 	}
 
-	void Renderer3D::PrepareTranslucentPass(uint32_t& batchIndex, bool shadows)
+	bool Renderer3D::IsTranslucentDrawable(Material* material)
+	{
+		const bool lit = IsLitShader(material->GetShader());
+		if (!lit && !material->GetParams().Instancing)
+			return true;
+		for (const auto& [checked, usable] : m_TranslucentMaterials)
+		{
+			if (checked == material)
+				return usable;
+		}
+
+		// The translucent pass sorts and batches its meshes on the CPU, which a shader that places
+		// instances itself can't draw.
+		if (!lit)
+		{
+			if (!m_InstanceTranslucentWarned)
+			{
+				const std::string& name = material->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: material '{}' is translucent and has Instancing set; the translucent pass draws no instances, so its meshes are not drawn.",
+					name.empty() ? "<unnamed>" : name.c_str());
+				m_InstanceTranslucentWarned = true;
+			}
+			m_TranslucentMaterials.emplace_back(material, false);
+			return false;
+		}
+
+		const bool usable = !BindsPastSlotZero(*material);
+		if (usable)
+			PrepareLitMaterial(material);
+		else if (!m_LitSlotsWarned)
+		{
+			const std::string& name = material->GetParams().DebugName;
+			DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+				name.empty() ? "<unnamed>" : name.c_str());
+			m_LitSlotsWarned = true;
+		}
+		m_TranslucentMaterials.emplace_back(material, usable);
+		return usable;
+	}
+
+	void Renderer3D::PrepareTranslucentPass(bool shadows)
 	{
 		m_TranslucentDraws.clear();
-		m_TranslucentCasterDraws.clear();
+		// A stable sort of what is left orders it as sorting everything and then dropping the culled would.
+		std::erase_if(m_TranslucentSubmissions, [](const TranslucentSubmission& submission) { return submission.Culled; });
 		if (m_TranslucentSubmissions.empty())
 			return;
 
@@ -577,26 +1514,19 @@ namespace Dingo
 		std::stable_sort(m_TranslucentSubmissions.begin(), m_TranslucentSubmissions.end(),
 			[](const TranslucentSubmission& a, const TranslucentSubmission& b) { return a.SortKey > b.SortKey; });
 
-		// Asked once a batch a scene.
-		auto drawable = [this](const TranslucentSubmission& submission)
+		auto drawable = [this](Material* material) { return IsTranslucentDrawable(material); };
+
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		uint32_t chunksInUse = 0;
+		auto startChunk = [this, &chunksInUse]()
 		{
-			MaterialBatch& batch = *submission.Batch;
-			if (batch.Drawable < 0)
-			{
-				batch.Drawable = IsDrawableLitMaterial(submission.Material) ? 1 : 0;
-				if (batch.Drawable && IsLitShader(submission.Material->GetShader()))
-					PrepareLitMaterial(submission.Material);
-			}
-			return batch.Drawable > 0;
+			if (chunksInUse == m_TranslucentChunks.size())
+				m_TranslucentChunks.emplace_back();
+			MeshChunk& chunk = m_TranslucentChunks[chunksInUse++];
+			chunk.Vertices.clear();
+			chunk.Indices.clear();
 		};
-
-		const uint32_t sliceCount = static_cast<uint32_t>(m_TranslucentSlices.size());
-		if (m_TranslucentSliceIndices.size() < sliceCount)
-			m_TranslucentSliceIndices.resize(sliceCount);
-		for (uint32_t slice = 0; slice < sliceCount; ++slice)
-			m_TranslucentSliceIndices[slice].clear();
-
-		// Returns the slice the mesh lies in and where its indices start there. With backFacesFirst its
+		// Returns the chunk the mesh landed in and where its indices start there. With backFacesFirst its
 		// triangles facing away from the camera go first, so a mesh that draws both sides never blends
 		// its far side over its near side. The vertex normals decide, since a mirrored transform turns
 		// the winding inside out but leaves them pointing outwards.
@@ -609,15 +1539,23 @@ namespace Dingo
 		};
 		auto append = [&](const TranslucentSubmission& submission, uint32_t& firstIndex, bool backFacesFirst)
 		{
-			std::vector<uint32_t>& sliceIndices = m_TranslucentSliceIndices[submission.Slice];
-			const uint32_t vertexOffset = submission.FirstVertex - m_TranslucentSlices[submission.Slice].FirstVertex;
-			firstIndex = static_cast<uint32_t>(sliceIndices.size());
+			MeshChunk* chunk = &m_TranslucentChunks[chunksInUse - 1];
+			if (chunk->Vertices.size() + submission.VertexCount > caps.MaxVertices || chunk->Indices.size() + submission.IndexCount > caps.MaxIndices)
+			{
+				startChunk();
+				chunk = &m_TranslucentChunks[chunksInUse - 1];
+			}
+
+			const uint32_t vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
+			firstIndex = static_cast<uint32_t>(chunk->Indices.size());
+			const auto vertices = m_TranslucentVertices.begin() + submission.FirstVertex;
+			chunk->Vertices.insert(chunk->Vertices.end(), vertices, vertices + submission.VertexCount);
 			const uint32_t* indices = m_TranslucentIndices.data() + submission.FirstIndex;
 			if (!backFacesFirst)
 			{
 				for (uint32_t i = 0; i < submission.IndexCount; ++i)
-					sliceIndices.push_back(indices[i] + vertexOffset);
-				return submission.Slice;
+					chunk->Indices.push_back(indices[i] + vertexOffset);
+				return chunksInUse - 1;
 			}
 
 			const Vertex* meshVertices = m_TranslucentVertices.data() + submission.FirstVertex;
@@ -627,17 +1565,59 @@ namespace Dingo
 			{
 				const uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
 				const bool inRange = a < submission.VertexCount && b < submission.VertexCount && c < submission.VertexCount;
-				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? sliceIndices : m_TranslucentNearIndices;
+				std::vector<uint32_t>& destination = inRange && facesAway(meshVertices[a], meshVertices[b], meshVertices[c]) ? chunk->Indices : m_TranslucentNearIndices;
 				destination.push_back(a + vertexOffset);
 				destination.push_back(b + vertexOffset);
 				destination.push_back(c + vertexOffset);
 			}
-			sliceIndices.insert(sliceIndices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
+			chunk->Indices.insert(chunk->Indices.end(), m_TranslucentNearIndices.begin(), m_TranslucentNearIndices.end());
 			for (uint32_t i = triangleIndices; i < submission.IndexCount; ++i)
-				sliceIndices.push_back(indices[i] + vertexOffset);
-			return submission.Slice;
+				chunk->Indices.push_back(indices[i] + vertexOffset);
+			return chunksInUse - 1;
 		};
 
+		// Depth-only, so the casters need no order: chunks apart from the lit ones, one run of chunks
+		// per caster mask, since each mask draws with its own shadow material.
+		struct CasterRun
+		{
+			uint32_t ShadowGroups = 1;
+			uint32_t FirstChunk = 0;
+			uint32_t ChunkEnd = 0;
+		};
+		std::vector<CasterRun> casterRuns;
+		if (shadows)
+		{
+			std::vector<uint32_t> groups;
+			for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
+			{
+				if (submission.Skinned < 0 && submission.Shadows == ShadowCasting::On && submission.IndexCount > 0 &&
+					std::find(groups.begin(), groups.end(), submission.ShadowGroups) == groups.end())
+					groups.push_back(submission.ShadowGroups);
+			}
+			for (const uint32_t group : groups)
+			{
+				CasterRun run;
+				run.ShadowGroups = group;
+				for (const TranslucentSubmission& submission : m_TranslucentSubmissions)
+				{
+					if (submission.Skinned >= 0 || submission.Shadows != ShadowCasting::On || submission.ShadowGroups != group ||
+						submission.IndexCount == 0 || !drawable(submission.Material))
+						continue;
+					if (run.ChunkEnd == 0)
+					{
+						startChunk();
+						run.FirstChunk = chunksInUse - 1;
+					}
+					uint32_t firstIndex = 0;
+					append(submission, firstIndex, false);
+					run.ChunkEnd = chunksInUse;
+				}
+				if (run.ChunkEnd > 0)
+					casterRuns.push_back(run);
+			}
+		}
+
+		bool litChunkStarted = false;
 		for (uint32_t index = 0; index < m_TranslucentSubmissions.size(); ++index)
 		{
 			const TranslucentSubmission& submission = m_TranslucentSubmissions[index];
@@ -646,48 +1626,48 @@ namespace Dingo
 				m_TranslucentDraws.push_back({ submission.Material, submission.Skinned, 0, 0, 0, 1 });
 				continue;
 			}
-			if (submission.IndexCount == 0 || !drawable(submission))
+			if (submission.IndexCount == 0 || !drawable(submission.Material))
 				continue;
 
-			uint32_t firstIndex = 0;
-			const uint32_t slice = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
-			// Depth-only, so any material's casters of one mask that lie back to back share a draw.
-			if (shadows && submission.Shadows == ShadowCasting::On)
+			if (!litChunkStarted)
 			{
-				TranslucentCasterDraw* last = m_TranslucentCasterDraws.empty() ? nullptr : &m_TranslucentCasterDraws.back();
-				if (last && last->Buffer == slice && last->ShadowGroups == submission.ShadowGroups && last->FirstIndex + last->IndexCount == firstIndex)
-					last->IndexCount += submission.IndexCount;
-				else
-					m_TranslucentCasterDraws.push_back({ slice, firstIndex, submission.IndexCount, submission.ShadowGroups });
+				startChunk();
+				litChunkStarted = true;
 			}
+			uint32_t firstIndex = 0;
+			const uint32_t chunk = append(submission, firstIndex, submission.Material->GetParams().CullMode == CullMode::None);
 			if (!m_TranslucentDraws.empty())
 			{
 				TranslucentDraw& last = m_TranslucentDraws.back();
-				if (last.Skinned < 0 && last.Material == submission.Material && last.Buffer == slice && last.FirstIndex + last.IndexCount == firstIndex)
+				if (last.Skinned < 0 && last.Material == submission.Material && last.Chunk == chunk && last.FirstIndex + last.IndexCount == firstIndex)
 				{
 					last.IndexCount += submission.IndexCount;
 					++last.Meshes;
 					continue;
 				}
 			}
-			m_TranslucentDraws.push_back({ submission.Material, -1, slice, firstIndex, submission.IndexCount, 1 });
+			m_TranslucentDraws.push_back({ submission.Material, -1, chunk, firstIndex, submission.IndexCount, 1 });
 		}
 
-		// Slice indices become pooled buffer indices.
-		std::vector<uint32_t> buffers(sliceCount, 0);
-		for (uint32_t slice = 0; slice < sliceCount; ++slice)
+		std::vector<uint32_t> chunkStarts(chunksInUse, 0);
+		for (uint32_t chunk = 0; chunk < chunksInUse; ++chunk)
 		{
-			const std::vector<uint32_t>& sliceIndices = m_TranslucentSliceIndices[slice];
-			const TranslucentSlice& range = m_TranslucentSlices[slice];
-			if (!sliceIndices.empty())
-				buffers[slice] = UploadToPool(m_TranslucentVertices.data() + range.FirstVertex, range.VertexCount, sliceIndices.data(), static_cast<uint32_t>(sliceIndices.size()), batchIndex);
+			if (!m_TranslucentChunks[chunk].Indices.empty())
+				chunkStarts[chunk] = AppendToScene(m_TranslucentChunks[chunk]);
 		}
-		for (TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
-			draw.Buffer = buffers[draw.Buffer];
+		for (const CasterRun& run : casterRuns)
+		{
+			for (uint32_t chunk = run.FirstChunk; chunk < run.ChunkEnd; ++chunk)
+			{
+				const MeshChunk& casters = m_TranslucentChunks[chunk];
+				if (!casters.Indices.empty())
+					m_ChunkDraws.push_back({ BatchKey{ nullptr, ShadowCasting::On, run.ShadowGroups }, chunkStarts[chunk], static_cast<uint32_t>(casters.Indices.size()), true });
+			}
+		}
 		for (TranslucentDraw& draw : m_TranslucentDraws)
 		{
 			if (draw.Skinned < 0)
-				draw.Buffer = buffers[draw.Buffer];
+				draw.FirstIndex += chunkStarts[draw.Chunk];
 		}
 	}
 
@@ -697,12 +1677,17 @@ namespace Dingo
 			return;
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawTranslucentPass");
-		uint32_t uploadedInstance = ~0u;
+		// AO from the opaque depth behind them would darken them, as it would particles.
+		PostProcessStack& post = Renderer::GetPostProcessStack();
+		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+			post.ApplyAmbientOcclusion();
+
+		SkinUploads uploads;
 		for (const TranslucentDraw& draw : m_TranslucentDraws)
 		{
 			if (draw.Skinned >= 0)
 			{
-				if (const uint32_t draws = DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploadedInstance, shadowAtlas, true))
+				if (const uint32_t draws = DrawSkinnedSubmission(m_SkinnedSubmissions[draw.Skinned], uploads, shadowAtlas, true))
 				{
 					++m_Statistics.TranslucentMeshes;
 					m_Statistics.TranslucentDraws += draws;
@@ -711,10 +1696,13 @@ namespace Dingo
 			}
 
 			Material* material = draw.Material;
-			material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-			material->SetSkinUniformBuffer(nullptr);
-			material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
-			Renderer::DrawIndexed(material, m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, 1, draw.FirstIndex);
+			Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
+			Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
+			Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
+			Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+			Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
+			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
+			Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 			++m_Statistics.DrawCalls;
 			++m_Statistics.TranslucentDraws;
 			m_Statistics.TranslucentMeshes += draw.Meshes;
@@ -755,7 +1743,7 @@ namespace Dingo
 		return m_Particles ? m_Particles->GetUsed() : 0;
 	}
 
-	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups)
+	void Renderer3D::SubmitSkinnedMesh(const Mesh* mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
@@ -777,13 +1765,19 @@ namespace Dingo
 
 			// A skinned shader can't draw the static vertex stream.
 			const Shader* shader = material ? material->GetShader() : nullptr;
-			const bool skinnedOnly = shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows, shadowGroups);
+			const bool skinnedOnly = IsSkinningShader(shader);
+			SubmitMesh(mesh, transform, color, skinnedOnly ? nullptr : material, shadows, shadowGroups, cullDistance);
+			// Its rest pose doesn't show the palette, but a socket or a body on a joint still reads it.
+			if (!joints.empty())
+				m_UnskinnedPalettes.push_back(joints.data());
 			return;
 		}
 
-		// The rest pose's box bounds the caster, padded by half its size for the animation.
-		if (shadows != ShadowCasting::Off && mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
+		// The rest pose's box, padded by half its size for the animation, bounds the mesh for the casters'
+		// box; culling pads a thin side as much as the longest, since a limb can swing out along it.
+		AABB bounds;
+		AABB cullBounds;
+		if (mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
 		{
 			glm::vec3 low(std::numeric_limits<float>::max());
 			glm::vec3 high(std::numeric_limits<float>::lowest());
@@ -799,9 +1793,9 @@ namespace Dingo
 			if (low.x <= high.x)
 			{
 				const glm::vec3 pad = (high - low) * 0.5f;
-				m_CasterMin = m_HasCasters ? glm::min(m_CasterMin, low - pad) : low - pad;
-				m_CasterMax = m_HasCasters ? glm::max(m_CasterMax, high + pad) : high + pad;
-				m_HasCasters = true;
+				bounds = AABB(low - pad, high + pad);
+				const glm::vec3 swing = glm::vec3((std::max)({ pad.x, pad.y, pad.z })) - pad;
+				cullBounds = AABB(bounds.Min - swing, bounds.Max + swing);
 			}
 		}
 
@@ -830,7 +1824,16 @@ namespace Dingo
 			instance.JointCount = jointCount;
 		}
 
-		m_SkinnedSubmissions.push_back({ mesh, material, static_cast<uint32_t>(m_SkinnedInstances.size() - 1), shadows, shadowGroups });
+		SkinnedSubmission& submission = m_SkinnedSubmissions.emplace_back();
+		submission.Mesh = mesh;
+		submission.Material = material;
+		submission.Instance = static_cast<uint32_t>(m_SkinnedInstances.size() - 1);
+		submission.Shadows = shadows;
+		submission.ShadowGroups = shadowGroups;
+		submission.CullDistance = cullDistance;
+		submission.Bounds = bounds;
+		submission.CullBounds = cullBounds;
+		submission.Bounded = !bounds.IsEmpty() && IsAffine(transform);
 
 		const Material* requested = material ? material : m_Material;
 		if (requested->IsTranslucent() && shadows != ShadowCasting::ShadowsOnly)
@@ -857,12 +1860,12 @@ namespace Dingo
 				sortKey = TranslucentSortKey(center);
 			}
 
-			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
-			submission.Material = material;
-			submission.Skinned = static_cast<int32_t>(m_SkinnedSubmissions.size() - 1);
-			submission.Shadows = shadows;
-			submission.ShadowGroups = shadowGroups;
-			submission.SortKey = *sortKey;
+			TranslucentSubmission& translucent = m_TranslucentSubmissions.emplace_back();
+			translucent.Material = material;
+			translucent.Skinned = static_cast<int32_t>(m_SkinnedSubmissions.size() - 1);
+			translucent.Shadows = shadows;
+			translucent.ShadowGroups = shadowGroups;
+			translucent.SortKey = *sortKey;
 		}
 	}
 
@@ -876,36 +1879,54 @@ namespace Dingo
 		if (m_SkinnedShader)
 			return;
 
-		m_SkinnedShader = CreateLitShader(k_SkinnedLitShaderName, true);
+		m_SkinnedShader = CreateLitShader(k_SkinnedLitShaderName, "DE_SKINNED");
 		Internal::WatchUnmanagedShader(m_SkinnedShader);
+	}
 
-		m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
-			.SetDebugName("Renderer3D_SkinUBO")
-			.SetByteSize(sizeof(SkinData))
-			.SetType(BufferType::UniformBuffer)
-			.SetIsVolatile(true)
-			.SetDirectUpload(false)
-			.SetMaxWritesPerFrame(k_SkinWritesPerInstance * GetSkinnedInstanceBudget()));
+	bool Renderer3D::IsSkinningShader(const Shader* shader)
+	{
+		return shader && (shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) >= 0 || UsesSkinPalette(shader));
+	}
 
-		m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
+	bool Renderer3D::UsesSkinPalette(const Shader* shader)
+	{
+		return shader && shader->FindPushConstantBlockSize(Material::k_SkinDrawBlockName) >= sizeof(glm::uvec4);
 	}
 
 	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
 	{
 		Material* requested = material ? material : m_Material;
 		if (IsLitShader(requested->GetShader()))
-			return GetSkinnedTwin(requested);
+			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
 
 		// The binding must not collide with the scene and material blocks or with a texture or
 		// sampler the material binds, or its binding set fails and the mesh silently vanishes.
-		const Shader* shader = requested->GetShader();
-		const int32_t binding = shader ? shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) : -1;
-		bool usable = binding >= 2 && binding <= static_cast<int32_t>(k_MaxSkinDataBinding);
-		if (usable)
+		auto freeBinding = [requested](int32_t binding)
 		{
+			if (binding < 2)
+				return false;
 			const uint32_t slot = static_cast<uint32_t>(binding - 2) / 2;
 			const bool samplerBinding = (binding - 2) % 2 == 1;
-			usable = samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
+			if (samplerBinding ? slot >= Material::k_MaxSamplerSlots : slot >= Material::k_MaxTextureSlots)
+				return true;
+			return samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
+		};
+		const Shader* shader = requested->GetShader();
+		const bool palette = UsesSkinPalette(shader);
+		bool usable = false;
+		if (palette)
+			usable = freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
+		else
+		{
+			const int32_t binding = shader ? shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
+			usable = binding <= static_cast<int32_t>(k_MaxSkinUniformBinding) && freeBinding(binding);
+		}
+		if (usable && !palette && !m_SkinDataWarned)
+		{
+			const std::string& name = requested->GetParams().DebugName;
+			DE_CORE_WARN("Renderer3D: material '{}' skins through the deprecated SkinData block, which goes in 2.0; declare Skinning.glsl's DE_SKIN_PALETTE blocks instead.",
+				name.empty() ? "<unnamed>" : name.c_str());
+			m_SkinDataWarned = true;
 		}
 		if (usable)
 			return requested;
@@ -913,20 +1934,37 @@ namespace Dingo
 		if (!m_SkinMaterialWarned)
 		{
 			const std::string& name = requested->GetParams().DebugName;
-			DE_CORE_WARN("Renderer3D: material '{}' has no SkinData uniform block at a free binding from 2 to {}, so skinned meshes drawn with it use the default lit material.",
-				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinDataBinding);
+			DE_CORE_WARN("Renderer3D: material '{}' has neither the DE_SkinDraw push-constant block with DE_SkinPalette at a free binding nor a SkinData uniform block at a free binding from 2 to {}, so skinned meshes drawn with it use the default lit material.",
+				name.empty() ? "<unnamed>" : name.c_str(), k_MaxSkinUniformBinding);
 			m_SkinMaterialWarned = true;
 		}
-		return GetSkinnedTwin(m_Material);
+		return GetTwin(m_SkinnedTwins, m_Material, m_SkinnedShader, "_Skinned");
 	}
 
-	Material* Renderer3D::GetSkinnedTwin(Material* source)
+	void Renderer3D::ReleaseIdleTwins(TwinMap& twins)
 	{
-		SkinnedTwin& entry = m_SkinnedTwins[source->GetId()];
+		for (auto it = twins.begin(); it != twins.end();)
+		{
+			SkinnedTwin& entry = it->second;
+			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
+			entry.Used = false;
+			if (entry.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				DestroyAndDelete(entry.Twin);
+				it = twins.erase(it);
+				continue;
+			}
+			++it;
+		}
+	}
+
+	Material* Renderer3D::GetTwin(TwinMap& twins, Material* source, Shader* shader, const char* suffix)
+	{
+		SkinnedTwin& entry = twins[source->GetId()];
 		if (!entry.Twin)
 		{
 			MaterialParams twinParams = source->GetParams();
-			twinParams.SetDebugName(twinParams.DebugName + "_Skinned").SetShader(m_SkinnedShader).SetCullMode(CullMode::None);
+			twinParams.SetDebugName(twinParams.DebugName + suffix).SetShader(shader).SetCullMode(CullMode::None);
 			entry.Twin = Material::Create(twinParams);
 		}
 		entry.Used = true;
@@ -944,7 +1982,17 @@ namespace Dingo
 		return twin;
 	}
 
-	void Renderer3D::ResolveSkinnedBudget(bool shadows)
+	std::shared_ptr<const Internal::SkinnedVisibility> Renderer3D::GetSkinnedVisibility() const
+	{
+		return m_SkinnedVisibility;
+	}
+
+	uint32_t Renderer3D::GetSkinnedInstancesThisFrame() const
+	{
+		return m_SkinnedFrameIndex == Renderer::GetFrameIndex() ? m_SkinnedInstancesThisFrame : 0;
+	}
+
+	void Renderer3D::ResolveSkinnedBudget()
 	{
 		m_SkinnedInstanceDropped.assign(m_SkinnedInstances.size(), 0);
 		if (m_SkinnedSubmissions.empty())
@@ -956,35 +2004,41 @@ namespace Dingo
 		{
 			m_SkinnedFrameIndex = frameIndex;
 			m_SkinnedInstancesThisFrame = 0;
-			m_SkinWritesThisFrame = 0;
+			m_SkinDataInstancesThisFrame = 0;
 		}
 
-		// An instance uploads its palette once in each pass it draws in. Sizing the buffer for all three
-		// would cost every skinning renderer the translucent pass's writes, so an instance is charged
-		// for the passes it uses instead: an opaque shadowed one spends 2, one with translucent meshes too 3.
-		m_SkinnedInstancePasses.assign(m_SkinnedInstances.size(), 0);
+		// A SkinData shader's instances are a budget of their own, decided here so every pass agrees.
+		m_SkinnedInstanceSkinData.assign(m_SkinnedInstances.size(), 0);
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
-			uint8_t& passes = m_SkinnedInstancePasses[submission.Instance];
-			if (shadows && submission.Shadows != ShadowCasting::Off)
-				passes |= 1;
-			if (submission.Translucent)
-				passes |= 4;
-			else if (submission.Shadows != ShadowCasting::ShadowsOnly)
-				passes |= 2;
+			const Material* requested = submission.Material ? submission.Material : m_Material;
+			if (submission.Shadows != ShadowCasting::ShadowsOnly && !submission.CameraCulled &&
+				!IsLitShader(requested->GetShader()) && !UsesSkinPalette(requested->GetShader()))
+				m_SkinnedInstanceSkinData[submission.Instance] = 1;
 		}
 
 		// An instance is drawn whole or not at all, so a character never loses some of its parts.
 		const uint32_t budget = GetSkinnedInstanceBudget();
-		const uint32_t writes = k_SkinWritesPerInstance * budget;
 		for (uint32_t instance = 0; instance < m_SkinnedInstances.size(); ++instance)
 		{
-			const uint8_t passes = m_SkinnedInstancePasses[instance];
-			const uint32_t cost = (passes & 1) + ((passes >> 1) & 1) + ((passes >> 2) & 1);
-			if (m_SkinnedInstancesThisFrame < budget && m_SkinWritesThisFrame + cost <= writes)
+			if (!m_SkinnedInstanceLive[instance])
+				continue;
+			const bool skinData = m_SkinnedInstanceSkinData[instance] != 0;
+			if (skinData && m_SkinDataInstancesThisFrame >= Internal::k_MaxSkinDataInstances)
+			{
+				m_SkinnedInstanceDropped[instance] = 1;
+				if (!m_SkinDataBudgetWarned)
+				{
+					DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame drawn with a SkinData shader; the rest are skipped. Define DE_SKIN_PALETTE before including Skinning.glsl to take the whole budget.",
+						Internal::k_MaxSkinDataInstances);
+					m_SkinDataBudgetWarned = true;
+				}
+				continue;
+			}
+			if (m_SkinnedInstancesThisFrame < budget)
 			{
 				++m_SkinnedInstancesThisFrame;
-				m_SkinWritesThisFrame += cost;
+				m_SkinDataInstancesThisFrame += skinData ? 1 : 0;
 				++m_Statistics.SkinnedInstances;
 				m_Statistics.SkinnedJoints += m_SkinnedInstances[instance].JointCount;
 				continue;
@@ -996,11 +2050,82 @@ namespace Dingo
 
 			if (!m_SkinnedBudgetWarned)
 			{
-				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame, or more than {} palette uploads (one per instance and pass); the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
-					budget, writes, k_MaxSkinnedInstancesLimit);
+				DE_CORE_WARN("Renderer3D: more than {} skinned instances in one frame; the rest are skipped. Raise Renderer3DCapabilities.MaxSkinnedInstances (at most {}).",
+					budget, k_MaxSkinnedInstancesLimit);
 				m_SkinnedBudgetWarned = true;
 			}
 		}
+	}
+
+	void Renderer3D::UploadSkinPalette()
+	{
+		m_SkinPalette.clear();
+		for (uint32_t index = 0; index < m_SkinnedInstances.size(); ++index)
+		{
+			if (!m_SkinnedInstanceLive[index] || m_SkinnedInstanceDropped[index])
+				continue;
+
+			SkinnedInstance& instance = m_SkinnedInstances[index];
+			instance.PaletteBase = static_cast<uint32_t>(m_SkinPalette.size());
+			const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(instance.Transform));
+			for (int column = 0; column < 4; ++column)
+				m_SkinPalette.push_back(instance.Transform[column]);
+			for (int column = 0; column < 3; ++column)
+				m_SkinPalette.emplace_back(normalMatrix[column], 0.0f);
+			m_SkinPalette.push_back(instance.Color);
+			DE_CORE_ASSERT(m_SkinPalette.size() == instance.PaletteBase + k_SkinPaletteHeader, "Renderer3D: the skin arena's instance header must match Skinning.glsl.");
+			for (uint32_t joint = 0; joint < instance.JointCount; ++joint)
+			{
+				const glm::mat4& matrix = m_SkinnedJoints[instance.FirstJoint + joint];
+				for (int column = 0; column < 4; ++column)
+					m_SkinPalette.push_back(matrix[column]);
+			}
+		}
+		if (m_SkinPalette.empty())
+			return;
+
+		if (m_SkinPalette.size() > m_SkinPaletteCapacity)
+		{
+			if (m_SkinPaletteBuffer)
+				m_RetiredArenaBuffers.emplace_back(m_SkinPaletteBuffer, Renderer::GetFrameIndex());
+			m_SkinPaletteCapacity = std::max<uint64_t>({ m_SkinPaletteCapacity * 2, m_SkinPalette.size(), 16384 });
+			m_SkinPaletteBuffer = GraphicsBuffer::CreateStorageBuffer(m_SkinPaletteCapacity * sizeof(glm::vec4), "Renderer3D_SkinPalette");
+		}
+		const uint64_t bytes = m_SkinPalette.size() * sizeof(glm::vec4);
+		Renderer::Upload(m_SkinPaletteBuffer, m_SkinPalette.data(), bytes);
+		m_Statistics.SkinPaletteBytes += static_cast<uint32_t>(bytes);
+	}
+
+	void Renderer3D::BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads)
+	{
+		if (UsesSkinPalette(material->GetShader()))
+		{
+			Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
+			Internal::MaterialAccess::SetSkinPaletteBuffer(material, m_SkinPaletteBuffer);
+			Internal::MaterialAccess::SetDrawConstants(material, glm::uvec4(m_SkinnedInstances[instance].PaletteBase, 0u, 0u, 0u));
+			return;
+		}
+
+		if (uploads.Data != instance)
+		{
+			// An admitted instance writes it once in the opaque pass and once in the translucent one.
+			if (!m_SkinBuffer)
+			{
+				const uint32_t writes = 2 * (std::min)(GetSkinnedInstanceBudget(), Internal::k_MaxSkinDataInstances);
+				m_SkinBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+					.SetDebugName("Renderer3D_SkinUBO")
+					.SetByteSize(sizeof(SkinData))
+					.SetType(BufferType::UniformBuffer)
+					.SetIsVolatile(true)
+					.SetUpload(BufferUpload::Deferred)
+					.SetMaxWritesPerFrame(writes));
+				m_FullSkinUploads = GraphicsContext::Get().GetParams().GraphicsAPI == GraphicsAPI::DirectX11;
+			}
+			uploads.Data = instance;
+			UploadSkinData(m_SkinnedInstances[instance]);
+		}
+		Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
+		Internal::MaterialAccess::SetSkinUniformBuffer(material, m_SkinBuffer);
 	}
 
 	void Renderer3D::UploadSkinData(const SkinnedInstance& instance)
@@ -1020,8 +2145,8 @@ namespace Dingo
 
 		const std::vector<SkinnedMeshVertex>& vertices = mesh->GetSkinVertices();
 		const std::vector<uint32_t>& indices = mesh->GetIndices();
-		mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, false, "Renderer3D_SkinVB");
-		mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), nullptr, false, "Renderer3D_SkinIB", GraphicsFormat::Uint32);
+		mesh->m_SkinVertexBuffer = GraphicsBuffer::CreateVertexBuffer(vertices.size() * sizeof(SkinnedMeshVertex), nullptr, BufferUpload::Deferred, "Renderer3D_SkinVB");
+		mesh->m_SkinIndexBuffer = GraphicsBuffer::CreateIndexBuffer(indices.size() * sizeof(uint32_t), IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_SkinIB");
 		Renderer::Upload(mesh->m_SkinVertexBuffer, vertices.data(), vertices.size() * sizeof(SkinnedMeshVertex));
 		Renderer::Upload(mesh->m_SkinIndexBuffer, indices.data(), indices.size() * sizeof(uint32_t));
 	}
@@ -1033,16 +2158,18 @@ namespace Dingo
 
 		DE_PROFILE_SCOPE("Renderer3D::DrawSkinnedSubmissions");
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
-		uint32_t uploadedInstance = ~0u;
+		SkinUploads uploads;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
 			if (!submission.Translucent)
-				DrawSkinnedSubmission(submission, uploadedInstance, shadowAtlas, false);
+				DrawSkinnedSubmission(submission, uploads, shadowAtlas, false);
 		}
 	}
 
-	uint32_t Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, uint32_t& uploadedInstance, Texture* shadowAtlas, bool backFacesFirst)
+	uint32_t Renderer3D::DrawSkinnedSubmission(const SkinnedSubmission& submission, SkinUploads& uploads, Texture* shadowAtlas, bool backFacesFirst)
 	{
+		if (submission.CameraCulled)
+			return 0;
 		if (m_SkinnedInstanceDropped[submission.Instance])
 		{
 			++m_Statistics.DroppedSkinnedDraws;
@@ -1053,23 +2180,27 @@ namespace Dingo
 
 		// The same rule as the static path, so a material draws the same way skinned or not.
 		Material* requested = submission.Material ? submission.Material : m_Material;
-		if (!IsDrawableLitMaterial(requested))
-			return 0;
-
-		EnsureSkinningResources();
-		if (submission.Instance != uploadedInstance)
+		if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
 		{
-			uploadedInstance = submission.Instance;
-			UploadSkinData(m_SkinnedInstances[submission.Instance]);
+			if (!m_LitSlotsWarned)
+			{
+				const std::string& name = requested->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
+					name.empty() ? "<unnamed>" : name.c_str());
+				m_LitSlotsWarned = true;
+			}
+			return 0;
 		}
 
+		EnsureSkinningResources();
 		Material* material = ResolveSkinnedMaterial(submission.Material);
+		BindSkinInstance(material, submission.Instance, uploads);
 		const Mesh* mesh = submission.Mesh;
 		EnsureSkinBuffers(mesh);
 
-		material->SetSceneUniformBuffer(m_SceneUniformBuffer);
-		material->SetSkinUniformBuffer(m_SkinBuffer);
-		material->SetShadowResources(m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
+		Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 
 		// The skinned vertices exist only on the GPU, so a two-sided mesh's sides are split by culling:
 		// the far side in a draw of its own before the near side. A mirrored instance transform, or a
@@ -1103,21 +2234,6 @@ namespace Dingo
 		return material;
 	}
 
-	bool Renderer3D::IsDrawableLitMaterial(const Material* material)
-	{
-		if (!IsLitShader(material->GetShader()) || !BindsPastSlotZero(*material))
-			return true;
-
-		if (!m_LitSlotsWarned)
-		{
-			const std::string& name = material->GetParams().DebugName;
-			DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-				name.empty() ? "<unnamed>" : name.c_str());
-			m_LitSlotsWarned = true;
-		}
-		return false;
-	}
-
 	void Renderer3D::PrepareLitMaterial(Material* material) const
 	{
 		// The lit shader always samples an albedo texture, and a material's binding set has to
@@ -1131,7 +2247,7 @@ namespace Dingo
 		// material's params, never its uniform data.
 		// A fully fogged fragment must leave its target as the fog left it: Additive adds black to it and
 		// Multiply multiplies it by white.
-		const BlendMode blend = material->GetParams().Blend;
+		const BlendMode blend = material->GetParams().BlendMode;
 		const float fogTarget = blend == BlendMode::Additive ? 1.0f : blend == BlendMode::Multiply ? 2.0f : 0.0f;
 
 		LitMaterialData data;
@@ -1145,7 +2261,7 @@ namespace Dingo
 
 		// SetUniform forces a re-upload, and every upload spends one of the buffer's writes for the
 		// frame, so a material drawn in several scenes of a frame only rewrites what changed.
-		const std::vector<uint8_t>& current = material->GetUniformCPUData();
+		const std::vector<uint8_t>& current = Internal::MaterialAccess::GetUniformCPUData(material);
 		if (current.size() == sizeof(data) && std::memcmp(current.data(), &data, sizeof(data)) == 0)
 			return;
 		material->SetUniform(data);
@@ -1347,7 +2463,7 @@ namespace Dingo
 		const glm::vec4& ambientColor = m_CameraData.AmbientColor;
 		m_CameraData.Ambient = glm::vec4(std::max({ ambientColor.r, ambientColor.g, ambientColor.b }), 0.0f, 0.0f, 0.0f);
 
-		const FrustumPlanes planes = ExtractFrustumPlanes(m_CameraData.ViewProjection);
+		const Frustum frustum = Frustum::FromViewProjection(m_CameraData.ViewProjection);
 		const glm::vec4& camera = m_CameraData.CameraPosition;
 
 		m_VisibleLocalLights.clear();
@@ -1356,7 +2472,7 @@ namespace Dingo
 			LocalLightCandidate& candidate = m_LocalLights[index];
 			const glm::vec3 position = glm::vec3(candidate.Data.PositionRange);
 			const float range = candidate.Data.PositionRange.w;
-			if (!SphereTouchesFrustum(planes, position, range))
+			if (!frustum.Intersects(position, range))
 				continue;
 
 			// How bright the light looks from the camera: full strength while the camera is inside
@@ -1442,48 +2558,19 @@ namespace Dingo
 		m_Statistics.DroppedLights = m_DroppedLights;
 	}
 
-	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups)
+	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface)
 	{
 		if (!m_SceneActive || m_SceneSkipped || !mesh)
 			return;
 		if (shadows == ShadowCasting::Off)
 			shadowGroups = 1;
 
-		Material* batchMaterial = material ? material : m_Material;
-		MaterialBatch* batch = &m_Batches[BatchKey{ batchMaterial, shadows, shadowGroups }];
-		if (!batch->Enqueued)
-		{
-			// A skinned shader can't draw the static vertex stream, and no SkinData is bound here.
-			const Shader* shader = batchMaterial->GetShader();
-			batch->Enqueued = true;
-			batch->SkinnedOnly = batchMaterial != m_Material && shader && shader->FindUniformBufferBinding(Material::k_SkinDataBlockName) >= 0;
-			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && batchMaterial->IsTranslucent();
-			if (!batch->SkinnedOnly && !batch->Translucent)
-				m_DrawOrder.push_back(BatchKey{ batchMaterial, shadows, shadowGroups });
-			else if (batch->SkinnedOnly && !m_SkinnedOnlyWarned)
-			{
-				const std::string& name = batchMaterial->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: material '{}' has a skinned shader, so the static meshes given it draw with the default material.", name.empty() ? "<unnamed>" : name.c_str());
-				m_SkinnedOnlyWarned = true;
-			}
-		}
-		if (batch->SkinnedOnly)
-		{
-			batch = &m_Batches[BatchKey{ m_Material, shadows, shadowGroups }];
-			if (!batch->Enqueued)
-			{
-				batch->Enqueued = true;
-				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
-			}
-		}
-		MaterialBatch& matBatch = *batch;
+		Material* batchMaterial = material;
+		MaterialBatch* batch = EnqueueBatch(batchMaterial, shadows, shadowGroups);
 
-		const std::vector<MeshVertex>& vertices = mesh->GetVertices();
-		const std::vector<uint32_t>& indices = mesh->GetIndices();
+		// A mesh bigger than one draw fits no batch at all, so spilling cannot help.
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
-
-		// A mesh bigger than an empty batch fits no batch at all, so spilling cannot help.
-		if (vertices.size() > caps.MaxVertices || indices.size() > caps.MaxIndices)
+		if (mesh->GetVertexCount() > caps.MaxVertices || mesh->GetIndexCount() > caps.MaxIndices)
 		{
 			// DE_CORE_ASSERT takes a plain message, not a format string — the vert/index
 			// counts are in the warn below.
@@ -1500,102 +2587,412 @@ namespace Dingo
 			return;
 		}
 
-		// A translucent mesh is kept on its own, indexed from its first vertex, until EndScene sorts it.
-		std::vector<Vertex>* destVertices = &m_TranslucentVertices;
-		std::vector<uint32_t>* destIndices = &m_TranslucentIndices;
-		uint32_t vertexOffset = 0;
-		if (matBatch.Translucent)
+		StaticSubmission& submission = m_StaticSubmissions.emplace_back();
+		submission.Mesh = mesh;
+		submission.Transform = transform;
+		submission.Color = color;
+		submission.Material = batchMaterial;
+		submission.Shadows = shadows;
+		submission.ShadowGroups = shadowGroups;
+		submission.CullDistance = cullDistance;
+		if (surface && shadows != ShadowCasting::ShadowsOnly && IsLitShader(batchMaterial->GetShader()))
 		{
-			const uint32_t vertexCount = static_cast<uint32_t>(vertices.size());
-			const uint32_t indexCount = static_cast<uint32_t>(indices.size());
-			if (m_TranslucentSlices.empty() || m_TranslucentSlices.back().VertexCount + vertexCount > caps.MaxVertices ||
-				m_TranslucentSlices.back().IndexCount + indexCount > caps.MaxIndices)
-				m_TranslucentSlices.push_back({ static_cast<uint32_t>(m_TranslucentVertices.size()), 0, 0 });
-			TranslucentSlice& slice = m_TranslucentSlices.back();
-			slice.VertexCount += vertexCount;
-			slice.IndexCount += indexCount;
-
-			TranslucentSubmission& submission = m_TranslucentSubmissions.emplace_back();
-			submission.Material = batchMaterial;
-			submission.Batch = &matBatch;
-			submission.FirstVertex = static_cast<uint32_t>(m_TranslucentVertices.size());
-			submission.VertexCount = static_cast<uint32_t>(vertices.size());
-			submission.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
-			submission.IndexCount = static_cast<uint32_t>(indices.size());
-			submission.Slice = static_cast<uint32_t>(m_TranslucentSlices.size() - 1);
-			submission.Shadows = shadows;
-			submission.ShadowGroups = shadowGroups;
+			submission.Object = static_cast<uint32_t>(m_ObjectRecords.size());
+			ObjectRecord& record = m_ObjectRecords.emplace_back();
+			FillObjectRecord(*surface, record.Emissive, record.Surface);
+			++m_Statistics.SurfaceOverrides;
+		}
+		if (batch->Translucent)
+		{
+			// Its place in the translucent list keeps its submission order among the skinned ones.
+			submission.Translucent = static_cast<int32_t>(m_TranslucentSubmissions.size());
+			TranslucentSubmission& translucent = m_TranslucentSubmissions.emplace_back();
+			translucent.Material = batchMaterial;
+			translucent.Static = static_cast<int32_t>(m_StaticSubmissions.size() - 1);
+			translucent.VertexCount = mesh->GetVertexCount();
+			translucent.IndexCount = mesh->GetIndexCount();
+			translucent.Shadows = shadows;
+			translucent.ShadowGroups = shadowGroups;
 		}
 		else
 		{
-			if (matBatch.ChunksInUse == 0)
-			{
-				if (matBatch.Chunks.empty())
-					matBatch.Chunks.emplace_back();
-				matBatch.ChunksInUse = 1;
-			}
-
-			MeshChunk* chunk = &matBatch.Chunks[matBatch.ChunksInUse - 1];
-			if (chunk->Vertices.size() + vertices.size() > caps.MaxVertices ||
-				chunk->Indices.size() + indices.size() > caps.MaxIndices)
-			{
-				if (matBatch.ChunksInUse == matBatch.Chunks.size())
-					matBatch.Chunks.emplace_back();
-				chunk = &matBatch.Chunks[matBatch.ChunksInUse];
-				++matBatch.ChunksInUse;
-			}
-			destVertices = &chunk->Vertices;
-			destIndices = &chunk->Indices;
-			vertexOffset = static_cast<uint32_t>(chunk->Vertices.size());
-		}
-
-		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
-		// doesn't skew them; positions just use the model matrix.
-		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
-
-		// A caster's bounds fold into the transform loop rather than a second walk over its vertices.
-		const bool casts = shadows != ShadowCasting::Off && !vertices.empty();
-		glm::vec3 low = m_HasCasters ? m_CasterMin : glm::vec3(std::numeric_limits<float>::max());
-		glm::vec3 high = m_HasCasters ? m_CasterMax : glm::vec3(std::numeric_limits<float>::lowest());
-		for (const MeshVertex& v : vertices)
-		{
-			Vertex vertex;
-			vertex.Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
-			vertex.Normal = normalMatrix * v.Normal;
-			vertex.Color = color;
-			vertex.TexCoord = v.TexCoord;
-			destVertices->push_back(vertex);
-			if (casts)
-			{
-				low = glm::min(low, vertex.Position);
-				high = glm::max(high, vertex.Position);
-			}
-		}
-
-		if (casts)
-		{
-			++m_StaticCasters;
-			m_CasterMin = low;
-			m_CasterMax = high;
-			m_HasCasters = true;
-		}
-
-		for (uint32_t index : indices)
-			destIndices->push_back(index + vertexOffset);
-
-		if (matBatch.Translucent)
-		{
-			// The bounds' centre, as SubmitSkinnedMesh keys a skinned mesh, so a skinned mesh that falls
-			// back to this path sorts the same.
-			glm::vec3 center = glm::vec3(transform[3]);
-			if (mesh->GetBoundsMin().x <= mesh->GetBoundsMax().x)
-				center = glm::vec3(transform * glm::vec4((mesh->GetBoundsMin() + mesh->GetBoundsMax()) * 0.5f, 1.0f));
-			m_TranslucentSubmissions.back().SortKey = TranslucentSortKey(center);
+			submission.Batch = batch;
 		}
 
 		++m_Statistics.SubmittedMeshes;
-		m_Statistics.VertexCount += static_cast<uint32_t>(vertices.size());
-		m_Statistics.IndexCount += static_cast<uint32_t>(indices.size());
+	}
+
+	Renderer3D::MaterialBatch* Renderer3D::EnqueueBatch(Material*& material, ShadowCasting shadows, uint32_t shadowGroups)
+	{
+		if (!material)
+			material = m_Material;
+		MaterialBatch* batch = &m_Batches[BatchKey{ material, shadows, shadowGroups }];
+		if (!batch->Enqueued)
+		{
+			// A skinned shader can't draw the static vertex stream, and no skin block is bound here.
+			const Shader* shader = material->GetShader();
+			batch->Enqueued = true;
+			batch->SkinnedOnly = material != m_Material && IsSkinningShader(shader);
+			batch->Translucent = !batch->SkinnedOnly && shadows != ShadowCasting::ShadowsOnly && material->IsTranslucent();
+			if (!batch->SkinnedOnly && !batch->Translucent)
+				m_DrawOrder.push_back(BatchKey{ material, shadows, shadowGroups });
+			else if (batch->SkinnedOnly && !m_SkinnedOnlyWarned)
+			{
+				const std::string& name = material->GetParams().DebugName;
+				DE_CORE_WARN("Renderer3D: material '{}' has a skinned shader, so the static meshes given it draw with the default material.", name.empty() ? "<unnamed>" : name.c_str());
+				m_SkinnedOnlyWarned = true;
+			}
+		}
+		if (batch->SkinnedOnly)
+		{
+			material = m_Material;
+			batch = &m_Batches[BatchKey{ m_Material, shadows, shadowGroups }];
+			if (!batch->Enqueued)
+			{
+				batch->Enqueued = true;
+				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
+			}
+		}
+		return batch;
+	}
+
+	void Renderer3D::TransformVertices(const Mesh& mesh, const glm::mat4& transform, const glm::vec4& color, uint32_t object, Vertex* out)
+	{
+		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
+		// doesn't skew them; positions just use the model matrix.
+		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+		for (const MeshVertex& v : mesh.GetVertices())
+		{
+			out->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			out->Normal = normalMatrix * v.Normal;
+			out->Color = color;
+			out->TexCoord = v.TexCoord;
+			out->ObjectIndex = object;
+			++out;
+		}
+	}
+
+	std::shared_ptr<StaticBatch> Renderer3D::CreateStaticBatch(const StaticBatchParams& params)
+	{
+		DE_CORE_ASSERT(m_StaticShared, "Renderer3D::CreateStaticBatch after Shutdown.");
+		auto data = std::make_unique<Internal::StaticBatchData>();
+		data->Shared = m_StaticShared;
+		data->CellSize = std::isfinite(params.CellSize) && params.CellSize > 0.0f ? params.CellSize : 32.0f;
+		return std::shared_ptr<StaticBatch>(new StaticBatch(std::move(data)));
+	}
+
+	bool Renderer3D::OwnsStaticBatch(const StaticBatch& batch) const
+	{
+		return m_StaticShared && batch.m_Data->Shared == m_StaticShared;
+	}
+
+	bool Renderer3D::BakesLoose(const StaticMesh& mesh) const
+	{
+		const Material* material = mesh.Material ? mesh.Material : m_Material;
+		const Shader* shader = material->GetShader();
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		return (material != m_Material && IsSkinningShader(shader)) ||
+			(mesh.Shadows != ShadowCasting::ShadowsOnly && material->IsTranslucent()) || ForcesInstancing(material) ||
+			mesh.Mesh->GetVertexCount() > caps.MaxVertices || mesh.Mesh->GetIndexCount() > caps.MaxIndices || !IsAffine(mesh.Transform);
+	}
+
+	void Renderer3D::SubmitStaticBatch(StaticBatch& batch)
+	{
+		if (!m_SceneActive || m_SceneSkipped)
+			return;
+		if (!OwnsStaticBatch(batch))
+		{
+			if (!m_StaticOwnerWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a static batch was submitted to a renderer that didn't make it; it is not drawn.");
+				m_StaticOwnerWarned = true;
+			}
+			return;
+		}
+
+		DE_PROFILE_SCOPE("Renderer3D::SubmitStaticBatch");
+		Internal::StaticBatchData& data = *batch.m_Data;
+		PrepareStaticBatch(data);
+
+		for (const Internal::StaticCell& cell : data.Cells)
+		{
+			for (const Internal::StaticCellRange& range : cell.Ranges)
+			{
+				Material* material = range.Material;
+				EnqueueBatch(material, range.Shadows, range.ShadowGroups);
+				m_Statistics.SubmittedMeshes += range.Meshes;
+				m_Statistics.StaticMeshes += range.Meshes;
+				m_Statistics.SurfaceOverrides += range.Surfaces;
+			}
+		}
+		for (const StaticMeshId id : data.Loose)
+		{
+			const StaticMesh& mesh = data.Entries[id].Desc;
+			SubmitMesh(mesh.Mesh, mesh.Transform, mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, 0.0f, mesh.Surface ? &*mesh.Surface : nullptr);
+		}
+		m_SceneStaticBatches.push_back(batch.shared_from_this());
+	}
+
+	void Renderer3D::PrepareStaticBatch(Internal::StaticBatchData& data)
+	{
+		// A hot-reloaded mesh keeps its address and gets a new id.
+		if (data.MeshRevision != Mesh::GetReinitializeCount())
+		{
+			data.MeshRevision = Mesh::GetReinitializeCount();
+			for (StaticMeshId id = 0; id < data.Entries.size(); ++id)
+			{
+				const Internal::StaticBatchEntry& entry = data.Entries[id];
+				if (entry.Live && !entry.Queued && entry.Desc.Mesh && entry.Desc.Mesh->GetId() != entry.MeshId)
+				{
+					data.Detach(id);
+					data.MarkPending(id);
+				}
+			}
+		}
+
+		for (const StaticMeshId id : data.Pending)
+		{
+			Internal::StaticBatchEntry& entry = data.Entries[id];
+			if (!entry.Queued)
+				continue;
+			entry.Queued = false;
+			if (!entry.Live || !entry.Desc.Mesh)
+				continue;
+
+			const StaticMesh& mesh = entry.Desc;
+			entry.MeshId = mesh.Mesh->GetId();
+			if (mesh.Mesh->GetVertexCount() == 0 || mesh.Mesh->GetIndexCount() == 0)
+				continue;
+
+			glm::vec3 centre(0.0f);
+			const bool loose = BakesLoose(mesh);
+			if (!loose)
+				centre = WorldBounds(*mesh.Mesh, mesh.Transform).GetCenter() / data.CellSize;
+			if (loose || !IsFinite(centre) || glm::any(glm::greaterThan(glm::abs(centre), glm::vec3(1e9f))))
+			{
+				entry.Loose = true;
+				data.Loose.push_back(id);
+				continue;
+			}
+
+			const glm::ivec3 coord(glm::floor(centre));
+			const uint32_t slot = data.FreeCells.empty() ? static_cast<uint32_t>(data.Cells.size()) : data.FreeCells.back();
+			const auto [it, inserted] = data.CellLookup.try_emplace(coord, slot);
+			if (inserted)
+			{
+				if (slot == data.Cells.size())
+					data.Cells.emplace_back();
+				else
+					data.FreeCells.pop_back();
+				data.Cells[slot] = {};
+				data.Cells[slot].Coord = coord;
+			}
+			Internal::StaticCell& cell = data.Cells[it->second];
+			cell.Members.insert(std::lower_bound(cell.Members.begin(), cell.Members.end(), id), id);
+			cell.Dirty = true;
+			entry.Cell = it->second;
+		}
+		data.Pending.clear();
+
+		data.OccupiedCells = 0;
+		for (uint32_t slot = 0; slot < data.Cells.size(); ++slot)
+		{
+			Internal::StaticCell& cell = data.Cells[slot];
+			if (!cell.Dirty)
+			{
+				data.OccupiedCells += cell.Members.empty() ? 0 : 1;
+				continue;
+			}
+			BakeStaticCell(data, cell);
+			if (cell.Members.empty())
+			{
+				data.CellLookup.erase(cell.Coord);
+				data.FreeCells.push_back(slot);
+				continue;
+			}
+			++data.OccupiedCells;
+		}
+	}
+
+	void Renderer3D::BakeStaticCell(Internal::StaticBatchData& data, Internal::StaticCell& cell)
+	{
+		DE_PROFILE_SCOPE("Renderer3D::BakeStaticCell");
+		Internal::StaticBatchShared& shared = *data.Shared;
+		const uint64_t frame = Renderer::GetFrameIndex();
+		for (GraphicsBuffer* buffer : { cell.VertexBuffer, cell.IndexBuffer })
+		{
+			if (buffer)
+				m_RetiredArenaBuffers.emplace_back(buffer, frame);
+		}
+		cell.VertexBuffer = nullptr;
+		cell.IndexBuffer = nullptr;
+		shared.Release(cell.RecordStart, cell.RecordCount);
+		cell.RecordStart = 0;
+		cell.RecordCount = 0;
+		cell.Ranges.clear();
+		cell.Dirty = false;
+		++data.BakeCount;
+		++m_Statistics.StaticCellsBaked;
+		if (cell.Members.empty())
+			return;
+
+		struct Group
+		{
+			Material* Material = nullptr;
+			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t ShadowGroups = 1;
+			std::vector<StaticMeshId> Members;
+		};
+		std::vector<Group> groups;
+		uint64_t vertexTotal = 0;
+		uint64_t indexTotal = 0;
+		uint32_t records = 0;
+		for (const StaticMeshId id : cell.Members)
+		{
+			const StaticMesh& mesh = data.Entries[id].Desc;
+			Material* material = mesh.Material ? mesh.Material : m_Material;
+			const uint32_t shadowGroups = mesh.Shadows == ShadowCasting::Off ? 1u : mesh.ShadowGroups;
+			auto group = std::find_if(groups.begin(), groups.end(), [&](const Group& g) { return g.Material == material && g.Shadows == mesh.Shadows && g.ShadowGroups == shadowGroups; });
+			if (group == groups.end())
+				group = groups.insert(groups.end(), Group{ material, mesh.Shadows, shadowGroups, {} });
+			group->Members.push_back(id);
+			vertexTotal += mesh.Mesh->GetVertexCount();
+			indexTotal += mesh.Mesh->GetIndexCount();
+			if (mesh.Surface && mesh.Shadows != ShadowCasting::ShadowsOnly && IsLitShader(material->GetShader()))
+				++records;
+		}
+
+		cell.RecordStart = shared.Allocate(records);
+		cell.RecordCount = records;
+		if (records > 0)
+			++shared.Revision;
+
+		std::vector<Vertex> vertices(vertexTotal);
+		std::vector<uint32_t> indices(indexTotal);
+		const Renderer3DCapabilities& caps = m_Params.Capabilities;
+		uint32_t vertexCursor = 0;
+		uint32_t indexCursor = 0;
+		uint32_t record = cell.RecordStart;
+		for (const Group& group : groups)
+		{
+			const bool lit = IsLitShader(group.Material->GetShader());
+			Internal::StaticCellRange* range = nullptr;
+			uint32_t rangeVertices = 0;
+			for (const StaticMeshId id : group.Members)
+			{
+				const StaticMesh& mesh = data.Entries[id].Desc;
+				const uint32_t vertexCount = mesh.Mesh->GetVertexCount();
+				const uint32_t indexCount = mesh.Mesh->GetIndexCount();
+				if (!range || rangeVertices + vertexCount > caps.MaxVertices || range->IndexCount + indexCount > caps.MaxIndices)
+				{
+					range = &cell.Ranges.emplace_back();
+					range->Material = group.Material;
+					range->Shadows = group.Shadows;
+					range->ShadowGroups = group.ShadowGroups;
+					range->FirstIndex = indexCursor;
+					range->CasterMin = glm::vec3(std::numeric_limits<float>::max());
+					range->CasterMax = glm::vec3(std::numeric_limits<float>::lowest());
+					rangeVertices = 0;
+				}
+
+				uint32_t object = 0;
+				if (mesh.Surface && mesh.Shadows != ShadowCasting::ShadowsOnly && lit)
+				{
+					object = record++;
+					Internal::StaticObjectRecord& baked = shared.Records[object];
+					FillObjectRecord(*mesh.Surface, baked.Emissive, baked.Surface);
+					++range->Surfaces;
+				}
+
+				Vertex* out = vertices.data() + vertexCursor;
+				TransformVertices(*mesh.Mesh, mesh.Transform, mesh.Color, object, out);
+				if (group.Shadows != ShadowCasting::Off)
+				{
+					for (uint32_t i = 0; i < vertexCount; ++i)
+					{
+						range->CasterMin = glm::min(range->CasterMin, out[i].Position);
+						range->CasterMax = glm::max(range->CasterMax, out[i].Position);
+					}
+				}
+				const AABB bounds = WorldBounds(*mesh.Mesh, mesh.Transform);
+				range->Bounds = range->Meshes == 0 ? bounds : AABB(glm::min(range->Bounds.Min, bounds.Min), glm::max(range->Bounds.Max, bounds.Max));
+
+				uint32_t* indexOut = indices.data() + indexCursor;
+				for (const uint32_t index : mesh.Mesh->GetIndices())
+					*indexOut++ = index + vertexCursor;
+				vertexCursor += vertexCount;
+				indexCursor += indexCount;
+				rangeVertices += vertexCount;
+				range->IndexCount += indexCount;
+				++range->Meshes;
+			}
+		}
+
+		// BufferUpload::Deferred: written in the frame's command list, ahead of the draws that read it.
+		cell.VertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(Vertex) * vertices.size(), nullptr, BufferUpload::Deferred, "Renderer3D_StaticCellVB");
+		cell.IndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * indices.size(), IndexFormat::Uint32, nullptr, BufferUpload::Deferred, "Renderer3D_StaticCellIB");
+		Renderer::Upload(cell.VertexBuffer, vertices.data(), sizeof(Vertex) * vertices.size());
+		Renderer::Upload(cell.IndexBuffer, indices.data(), sizeof(uint32_t) * indices.size());
+	}
+
+	void Renderer3D::LayoutStaticBatches(bool shadows)
+	{
+		m_StaticShadowDraws.clear();
+		if (m_SceneStaticBatches.empty())
+			return;
+
+		DE_PROFILE_SCOPE("Renderer3D::LayoutStaticBatches");
+		const bool culling = m_CullingEnabled;
+		for (const std::shared_ptr<StaticBatch>& batch : m_SceneStaticBatches)
+		{
+			for (const Internal::StaticCell& cell : batch->m_Data->Cells)
+			{
+				for (const Internal::StaticCellRange& range : cell.Ranges)
+				{
+					// A shader reloaded into a skinned one redirects the key to the default material, leaving
+					// this key's slot from an earlier scene.
+					const BatchKey key{ range.Material, range.Shadows, range.ShadowGroups };
+					const MaterialBatch& materialBatch = m_Batches[key];
+					if (!materialBatch.Enqueued || materialBatch.SkinnedOnly || materialBatch.Translucent || !materialBatch.Usable)
+						continue;
+
+					ChunkDraw draw{ key, range.FirstIndex, range.IndexCount };
+					draw.VertexBuffer = cell.VertexBuffer;
+					draw.IndexBuffer = cell.IndexBuffer;
+					const bool casts = shadows && range.Shadows != ShadowCasting::Off;
+					auto castIfReached = [&]()
+					{
+						if (!culling || ReachesShadowView(range.Bounds, range.ShadowGroups))
+						{
+							ChunkDraw caster = draw;
+							caster.Key = BatchKey{ nullptr, ShadowCasting::ShadowsOnly, range.ShadowGroups };
+							m_StaticShadowDraws.push_back(caster);
+							m_Statistics.ShadowCasters += range.Meshes;
+						}
+						else
+						{
+							m_Statistics.CulledCasters += range.Meshes;
+						}
+					};
+
+					if (range.Shadows == ShadowCasting::ShadowsOnly)
+					{
+						if (casts)
+							castIfReached();
+						continue;
+					}
+					if (!culling || CameraSees(range.Bounds, range.Material))
+					{
+						m_DrawSlots[materialBatch.Slot].StaticDraws.push_back(draw);
+						m_Statistics.ShadowCasters += casts ? range.Meshes : 0;
+						continue;
+					}
+					m_Statistics.CulledMeshes += range.Meshes;
+					if (casts)
+						castIfReached();
+				}
+			}
+		}
 	}
 
 	void Renderer3D::SetShadowSettings(const Renderer3DShadowSettings& settings)
@@ -1635,7 +3032,7 @@ namespace Dingo
 				.SetByteSize(sizeof(ShadowViews))
 				.SetType(BufferType::UniformBuffer)
 				.SetIsVolatile(true)
-				.SetDirectUpload(false)
+				.SetUpload(BufferUpload::Deferred)
 				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 			m_ShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DShadow"), "Renderer3D_Shadow.glsl");
@@ -1643,23 +3040,27 @@ namespace Dingo
 		}
 	}
 
-	Material* Renderer3D::GetShadowMaterial(bool skinned, uint32_t shadowGroups)
+	Material* Renderer3D::GetShadowMaterial(ShadowVariant variant, uint32_t shadowGroups)
 	{
-		std::unordered_map<uint32_t, Material*>& materials = skinned ? m_SkinnedShadowMaterials : m_ShadowMaterials;
+		const bool skinned = variant == ShadowVariant::Skinned;
+		const bool instanced = variant == ShadowVariant::Instanced;
+		std::unordered_map<uint32_t, Material*>& materials = skinned ? m_SkinnedShadowMaterials : instanced ? m_InstancedShadowMaterials : m_ShadowMaterials;
 		Material*& material = materials[shadowGroups];
 		if (!material)
 		{
 			material = Material::Create(MaterialParams()
-				.SetDebugName(skinned ? "Renderer3D_SkinnedShadow" : "Renderer3D_Shadow")
-				.SetShader(skinned ? m_SkinnedShadowShader : m_ShadowShader)
+				.SetDebugName(skinned ? "Renderer3D_SkinnedShadow" : instanced ? "Renderer3D_InstancedShadow" : "Renderer3D_Shadow")
+				.SetShader(skinned ? m_SkinnedShadowShader : instanced ? m_InstancedShadowShader : m_ShadowShader)
 				.SetCullMode(CullMode::None)
 				.SetBlendMode(BlendMode::Opaque)
 				.SetDepthBias(m_Params.Shadows.DepthBias, m_Params.Shadows.SlopeBias));
 			material->SetUniform(glm::uvec4(shadowGroups, 0u, 0u, 0u));
 		}
-		material->SetSceneUniformBuffer(m_ShadowViewsBuffer);
+		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_ShadowViewsBuffer);
 		if (skinned)
-			material->SetSkinUniformBuffer(m_SkinBuffer);
+			Internal::MaterialAccess::SetSkinPaletteBuffer(material, m_SkinPaletteBuffer);
+		if (instanced)
+			Internal::MaterialAccess::SetInstanceBuffers(material, m_InstanceBuffer, m_InstanceDrawBuffer);
 		return material;
 	}
 
@@ -1669,8 +3070,11 @@ namespace Dingo
 			DestroyAndDelete(material);
 		for (auto& [groups, material] : m_SkinnedShadowMaterials)
 			DestroyAndDelete(material);
+		for (auto& [groups, material] : m_InstancedShadowMaterials)
+			DestroyAndDelete(material);
 		m_ShadowMaterials.clear();
 		m_SkinnedShadowMaterials.clear();
+		m_InstancedShadowMaterials.clear();
 	}
 
 	bool Renderer3D::PrepareShadows()
@@ -1690,7 +3094,7 @@ namespace Dingo
 		}
 
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
-		ShadowAtlasAllocator allocator(settings.AtlasSize);
+		Internal::ShadowAtlasAllocator allocator(settings.AtlasSize);
 		const bool cascades = m_ShadowLight >= 0 && PrepareCascades(allocator);
 		PrepareLocalShadows(allocator);
 		if (m_ShadowViewCount == 0)
@@ -1719,7 +3123,7 @@ namespace Dingo
 		++m_ShadowViewCount;
 	}
 
-	bool Renderer3D::PrepareCascades(ShadowAtlasAllocator& allocator)
+	bool Renderer3D::PrepareCascades(Internal::ShadowAtlasAllocator& allocator)
 	{
 		const Renderer3DShadowSettings& settings = m_Params.Shadows;
 		const glm::mat4 inverse = glm::inverse(m_CameraData.ViewProjection);
@@ -1835,7 +3239,7 @@ namespace Dingo
 		return true;
 	}
 
-	void Renderer3D::PrepareLocalShadows(ShadowAtlasAllocator& allocator)
+	void Renderer3D::PrepareLocalShadows(Internal::ShadowAtlasAllocator& allocator)
 	{
 		// Tiers are remembered by submission index, which only names the same light while the scene
 		// submits the same lights in the same order, and per scene of the frame, so a main view and a
@@ -1997,21 +3401,34 @@ namespace Dingo
 			if (draw.Key.Shadows == ShadowCasting::Off)
 				continue;
 
-			Renderer::DrawIndexed(GetShadowMaterial(false, draw.Key.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount);
+			if (draw.Group != ~0u)
+			{
+				if (!m_InstancedShadowShader)
+				{
+					m_InstancedShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DInstancedShadow").AddDefine("DE_INSTANCED"), "Renderer3D_Shadow.glsl");
+					Internal::WatchUnmanagedShader(m_InstancedShadowShader);
+				}
+				const InstanceGroup& group = m_InstanceGroups[draw.Group];
+				EnsureStaticBuffers(group.Mesh);
+				UploadInstanceDraw(group.FirstRecord, m_ShadowViewCount);
+				Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Instanced, draw.Key.ShadowGroups), m_MeshShadowLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer,
+					group.Mesh->GetIndexCount(), group.Count * m_ShadowViewCount);
+				++m_Statistics.ShadowDrawCalls;
+				++m_Statistics.InstancedShadowDraws;
+				continue;
+			}
+
+			Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Static, draw.Key.ShadowGroups), m_Layout, draw.VertexBuffer ? draw.VertexBuffer : m_ArenaVertexBuffer,
+				draw.IndexBuffer ? draw.IndexBuffer : m_ArenaIndexBuffer, draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
 			++m_Statistics.ShadowDrawCalls;
 		}
-		for (const TranslucentCasterDraw& draw : m_TranslucentCasterDraws)
-		{
-			Renderer::DrawIndexed(GetShadowMaterial(false, draw.ShadowGroups), m_Layout, m_BatchVertexBuffers[draw.Buffer], m_BatchIndexBuffers[draw.Buffer], draw.IndexCount, m_ShadowViewCount, draw.FirstIndex);
-			++m_Statistics.ShadowDrawCalls;
-		}
-		m_Statistics.ShadowCasters += m_StaticCasters;
 
 		// The lit pass's skip rule, so a mesh it doesn't draw leaves no shadow without a body.
 		auto skinnedShadowDrawn = [this](const SkinnedSubmission& submission)
 		{
 			const Material* material = submission.Material ? submission.Material : m_Material;
-			return submission.Shadows != ShadowCasting::Off && !m_SkinnedInstanceDropped[submission.Instance] && IsDrawableLitMaterial(material);
+			return submission.ShadowDrawn && !m_SkinnedInstanceDropped[submission.Instance] &&
+				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
 		};
 		bool skinnedCasts = false;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
@@ -2025,20 +3442,15 @@ namespace Dingo
 				m_SkinnedShadowShader = Internal::CreateEngineShader(ShaderParams().SetName("Renderer3DSkinnedShadow").AddDefine("DE_SKINNED"), "Renderer3D_Shadow.glsl");
 				Internal::WatchUnmanagedShader(m_SkinnedShadowShader);
 			}
-			uint32_t uploadedInstance = ~0u;
 			for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 			{
 				if (!skinnedShadowDrawn(submission))
 					continue;
 
-				if (submission.Instance != uploadedInstance)
-				{
-					uploadedInstance = submission.Instance;
-					UploadSkinData(m_SkinnedInstances[submission.Instance]);
-				}
-
 				EnsureSkinBuffers(submission.Mesh);
-				Renderer::DrawIndexed(GetShadowMaterial(true, submission.ShadowGroups), m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
+				Material* shadowMaterial = GetShadowMaterial(ShadowVariant::Skinned, submission.ShadowGroups);
+				Internal::MaterialAccess::SetDrawConstants(shadowMaterial, glm::uvec4(m_SkinnedInstances[submission.Instance].PaletteBase, 0u, 0u, 0u));
+				Renderer::DrawIndexed(shadowMaterial, m_SkinnedShadowLayout, submission.Mesh->m_SkinVertexBuffer, submission.Mesh->m_SkinIndexBuffer, submission.Mesh->GetIndexCount(), m_ShadowViewCount);
 				++m_Statistics.ShadowDrawCalls;
 				++m_Statistics.ShadowCasters;
 			}
@@ -2165,7 +3577,7 @@ namespace Dingo
 				.SetByteSize(sizeof(ShadowProbeData))
 				.SetType(BufferType::UniformBuffer)
 				.SetIsVolatile(true)
-				.SetDirectUpload(false)
+				.SetUpload(BufferUpload::Deferred)
 				.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 			m_ProbeTarget = Framebuffer::Create(FramebufferParams()
 				.SetDebugName("Renderer3D_ShadowProbeTarget")
@@ -2175,8 +3587,8 @@ namespace Dingo
 		}
 
 		Renderer::Upload(m_ProbeBuffer, &m_ShadowProbeData, sizeof(ShadowProbeData));
-		m_ProbeMaterial->SetSceneUniformBuffer(m_ProbeBuffer);
-		m_ProbeMaterial->SetShadowResources(m_ShadowDataBuffer, m_ShadowAtlas->GetDepthAttachment(), m_ShadowSampler);
+		Internal::MaterialAccess::SetSceneUniformBuffer(m_ProbeMaterial, m_ProbeBuffer);
+		Internal::MaterialAccess::SetShadowResources(m_ProbeMaterial, m_ShadowDataBuffer, m_ShadowAtlas->GetDepthAttachment(), m_ShadowSampler);
 		Internal::DrawFullscreen(m_ProbeMaterial, m_ProbeTarget);
 
 		// The copy is recorded here, so the next scene's probes can draw into the same target.

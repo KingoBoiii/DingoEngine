@@ -20,6 +20,13 @@ namespace
 	constexpr float k_WarmupSeconds = 2.0f;
 	constexpr uint32_t k_MeasuredFrames = 120;
 
+	void AddSun(Scene& scene)
+	{
+		Entity sun = scene.CreateEntity("Sun");
+		sun.AddComponent<DirectionalLightComponent>().Intensity = 1.0f - 0.35f;
+		sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.35f));
+	}
+
 	double Milliseconds(Clock::time_point from, Clock::time_point to)
 	{
 		return std::chrono::duration<double, std::milli>(to - from).count();
@@ -64,7 +71,7 @@ namespace Dingo
 		};
 		spawn(spawn, Entity(), 0);
 
-		forest->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		AddSun(*forest);
 		m_StressEntityCount = static_cast<uint32_t>(all.size());
 
 		if (parented)
@@ -84,7 +91,7 @@ namespace Dingo
 			if (spins[i])
 				m_StressSpinners.push_back(flat);
 		}
-		m_StressScene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+		AddSun(*m_StressScene);
 		delete forest;
 	}
 

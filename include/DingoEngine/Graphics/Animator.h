@@ -17,77 +17,91 @@
 namespace Dingo
 {
 
-	// One crossing of a clip event's mark, as Animator::GetEventsThisFrame reports it.
+	/// One crossing of a clip event's mark, as Animator::GetEventsThisFrame reports it.
 	struct AnimationEvent
 	{
-		// Kept for the life of the program, so it outlives the clip's events changing or its model
-		// reloading.
+		/// The event's name. Kept for the life of the program, so it outlives the clip's events
+		/// changing or its model reloading.
 		std::string_view Name;
-		// Where the mark sits on the clip, in seconds.
+		/// Where the mark sits on the clip, in seconds.
 		float Time = 0.0f;
-		AnimationEventType Type = AnimationEventType::Instant;
-		// Null for the RangeEnd of a range that was open when the animator was bound to another
-		// skeleton (Animator::SetSkeleton).
+		AnimationEventType Type = AnimationEventType::Instant; ///< Which mark of the event fired.
+		/// The clip the event belongs to. Null for the RangeEnd of a range that was open when the
+		/// animator was bound to another skeleton (Animator::SetSkeleton).
 		const AnimationClip* Clip = nullptr;
-		uint32_t Layer = 0;
-		// The event's data from the .events line or AnimationClip::AddEvent; a RangeEnd carries its
-		// begin's.
+		uint32_t Layer = 0; ///< The animator layer whose state fired it.
+		/// The event's data from the .events line or AnimationClip::AddEvent; a RangeEnd carries
+		/// its begin's.
 		AnimationEventPayload Payload;
 	};
 
-	// One state a layer is mixing, as Animator::GetStates reports it.
+	/// One state a layer is mixing, as Animator::GetStates reports it.
 	struct AnimatorStateInfo
 	{
-		const AnimationClip* Clip = nullptr; // a blend: the clip with the larger share; null for a frozen state or one that shows what lies below
-		std::string_view Parameter;          // a blend's parameter, valid until the animator next changes; empty for a clip
-		bool  Blend = false;
-		bool  Frozen = false;                // the held mix that replaces states past the cap of four
-		bool  Looping = true;
-		float Weight = 1.0f;                 // how far it has faded in, 0 to 1
-		float Time = 0.0f;                   // seconds into the clip, or a blend's phase from 0 to 1
-		float NormalizedTime = 0.0f;         // 0 to 1 through the clip or cycle
+		/// A blend: the clip with the larger share; null for a frozen state or one that shows what
+		/// lies below.
+		const AnimationClip* Clip = nullptr;
+		/// A blend's parameter, valid until the animator next changes; empty for a clip.
+		std::string_view Parameter;
+		bool  Blend = false; ///< True for a Blend1D state.
+		bool  Frozen = false; ///< The held mix that replaces states past the cap of four.
+		bool  Looping = true; ///< Whether the state loops.
+		float Weight = 1.0f; ///< How far it has faded in, 0 to 1.
+		float Time = 0.0f; ///< Seconds into the clip, or a blend's phase from 0 to 1.
+		float NormalizedTime = 0.0f; ///< 0 to 1 through the clip or cycle.
 	};
 
-	// How far the root moved over the last Animator::Update, in the model's space (the skeleton's
-	// root transform included, so a centimetre FBX's 0.01 is in it) and relative to where the model
-	// stood before it: what the entity moves by, applied after its own transform.
+	/// How far the root moved over the last Animator::Update, in the model's space (the skeleton's
+	/// root transform included, so a centimetre FBX's 0.01 is in it) and relative to where the
+	/// model stood before it: what the entity moves by, applied after its own transform.
 	struct RootMotionDelta
 	{
-		glm::vec3 Translation{ 0.0f };
+		glm::vec3 Translation{ 0.0f }; ///< Movement in the model's space; zero when nothing moved.
+		/// Turn since the last Update; identity when none.
 		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
 	};
 
+	/// One clip of a Blend1D state, placed at a parameter value.
 	struct BlendPoint
 	{
-		float Value = 0.0f;
+		float Value = 0.0f; ///< The parameter value at which this clip plays alone.
+		/// The clip; the model that owns it must outlive the state.
 		const AnimationClip* Clip = nullptr;
 	};
 
-	// What an Animator plays: one clip, or a blend of clips along a float parameter.
+	/// What an Animator plays: one clip, or a blend of clips along a float parameter.
 	class AnimationState
 	{
 	public:
-		// A null clip is what shows without it: the rest pose on layer 0, the layers below on others.
+		/// A state playing one clip. A null clip is what shows without it: the rest pose on layer
+		/// 0, the layers below on others.
 		static AnimationState Clip(const AnimationClip* clip);
-		// Blends the two clips whose Values bracket the parameter (Animator::SetFloat), past either
-		// end the end clip alone. The clips play in step: the same fraction of their own cycle,
-		// advanced at the blended cycle length, so a walk and a run put their feet down together.
+		/// Blends the two clips whose Values bracket the parameter (Animator::SetFloat), past
+		/// either end the end clip alone. The clips play in step: the same fraction of their own
+		/// cycle, advanced at the blended cycle length, so a walk and a run put their feet down
+		/// together. The points are sorted by Value; with no points the state plays nothing.
 		static AnimationState Blend1D(std::string parameter, std::vector<BlendPoint> points);
 
+		/// Whether the state loops (the default) or stops at its end; returns *this for chaining.
 		AnimationState& SetLoop(bool loop) { m_Loop = loop; return *this; }
-		// A multiple of the clip's own pace; negative plays it backwards.
+		/// A multiple of the clip's own pace; negative plays it backwards. Returns *this for
+		/// chaining.
 		AnimationState& SetSpeed(float speed) { m_Speed = speed; return *this; }
 
-		// Null for a blend.
+		/// The clip of a single-clip state. Null for a blend.
 		const AnimationClip*           GetClip()      const { return m_Clip; }
+		/// True for a Blend1D state.
 		bool                           IsBlend()      const { return !m_Points.empty(); }
+		/// The name of the Animator::SetFloat parameter a blend reads; empty for a clip.
 		const std::string&             GetParameter() const { return m_Parameter; }
-		// Sorted by Value.
+		/// A blend's clips. Sorted by Value.
 		const std::vector<BlendPoint>& GetPoints()    const { return m_Points; }
+		/// Whether the state loops; true by default.
 		bool                           IsLooping()    const { return m_Loop; }
+		/// The speed multiplier; 1 by default.
 		float                          GetSpeed()     const { return m_Speed; }
 
-		// The same clip or blend, played the same way.
+		/// The same clip or blend, played the same way.
 		bool operator==(const AnimationState& other) const;
 
 	private:
@@ -98,19 +112,24 @@ namespace Dingo
 		float m_Speed = 1.0f;
 	};
 
-	// A layer above the first overrides the joints in its mask, at its weight.
+	/// A layer above the first overrides the joints in its mask, at its weight.
 	class AnimationLayer
 	{
 	public:
-		// The subtree under this joint, itself included; empty (the default) is the whole skeleton.
+		/// The subtree under this joint, itself included; empty (the default) is the whole
+		/// skeleton. Returns *this for chaining.
 		AnimationLayer& SetMask(std::string rootJoint) { m_MaskRoot = std::move(rootJoint); return *this; }
-		// Leaves this joint's subtree out of the mask.
+		/// Leaves this joint's subtree out of the mask. Returns *this for chaining.
 		AnimationLayer& Exclude(std::string joint) { m_Exclusions.push_back(std::move(joint)); return *this; }
-		// 0 shows the layers below, 1 replaces them inside the mask.
+		/// 0 shows the layers below, 1 replaces them inside the mask; clamped to 0..1 when applied.
+		/// Returns *this for chaining.
 		AnimationLayer& SetWeight(float weight) { m_Weight = weight; return *this; }
 
+		/// The mask's root joint name; empty for the whole skeleton.
 		const std::string&              GetMaskRoot()   const { return m_MaskRoot; }
+		/// The joints whose subtrees are left out of the mask.
 		const std::vector<std::string>& GetExclusions() const { return m_Exclusions; }
+		/// The layer's weight, 1 by default.
 		float                           GetWeight()     const { return m_Weight; }
 
 	private:
@@ -119,131 +138,168 @@ namespace Dingo
 		float m_Weight = 1.0f;
 	};
 
-	// Plays clips on a skeleton and keeps its pose: the local joint poses, the joint transforms and
-	// the palette Renderer3D::SubmitSkinnedMesh takes.
-	//
-	// Layer 0 poses the whole body; a higher layer (SetLayer) overrides the joints in its mask, on
-	// top of the ones below, in index order. Each layer plays one state at a time: Play cross-fades
-	// from whatever the layer shows now, so a Play in the middle of a fade blends on from the mix
-	// instead of popping. Joints a layer's clip doesn't animate keep the pose from below.
-	//
-	// A clip loaded for another skeleton is retargeted by joint name. Rotations come from the clip.
-	// Translation comes only on its root-most moving joints (usually the hips), scaled by the
-	// ratio of the two skeletons' rest offsets of that joint from its parent; every other joint
-	// keeps this skeleton's rest translation and scale. The rigs need the same joint names and rest
-	// orientations.
+	/// Plays clips on a skeleton and keeps its pose: the local joint poses, the joint transforms
+	/// and the palette Renderer3D::SubmitSkinnedMesh takes.
+	///
+	/// Layer 0 poses the whole body; a higher layer (SetLayer) overrides the joints in its mask, on
+	/// top of the ones below, in index order. Each layer plays one state at a time: Play
+	/// cross-fades from whatever the layer shows now, so a Play in the middle of a fade blends on
+	/// from the mix instead of popping. Joints a layer's clip doesn't animate keep the pose from
+	/// below.
+	///
+	/// A clip loaded for another skeleton is retargeted by joint name. Rotations come from the
+	/// clip. Translation comes only on its root-most moving joints (usually the hips), scaled by
+	/// the ratio of the two skeletons' rest offsets of that joint from its parent; every other
+	/// joint keeps this skeleton's rest translation and scale. The rigs need the same joint names
+	/// and rest orientations.
+	///
+	/// Not thread-safe: drive it from the main thread. It borrows the Skeleton and every clip it
+	/// plays, so their Model must outlive it (or call SetSkeleton first). Copying one is safe.
 	class Animator
 	{
 	public:
+		/// Binds `skeleton`, or none; with none Play and PlayOneShot do nothing and there is no
+		/// pose.
 		explicit Animator(const Skeleton* skeleton = nullptr);
 
-		// Binds another skeleton (or none) and returns to its rest pose with nothing playing. Layer
-		// settings and parameters stay. Ranges open until now end at the next Update, as a seek
-		// ends them, with no Clip: the old skeleton's model may be gone.
+		/// Binds another skeleton (or none) and returns to its rest pose with nothing playing.
+		/// Layer settings and parameters stay. Ranges open until now end at the next Update, as a
+		/// seek ends them, with no Clip: the old skeleton's model may be gone.
 		void            SetSkeleton(const Skeleton* skeleton);
+		/// The bound skeleton; null when none.
 		const Skeleton* GetSkeleton() const { return m_Skeleton; }
 
-		// Starts `state` on `layer` and fades it in over fadeSeconds; 0 cuts to it. Playing the state
-		// that already plays there (same clip or blend, loop and speed) keeps it going, finished or
-		// not, so a script may call this every frame; with a fade of 0 it finishes that state's
-		// fade-in. SetTime(0) restarts it. A layer that doesn't exist yet is made, over the whole body.
+		///@{
+		/// Starts `state` on `layer` and fades it in over fadeSeconds; 0 cuts to it. Playing the
+		/// state that already plays there (same clip or blend, loop and speed) keeps it going,
+		/// finished or not, so a script may call this every frame; with a fade of 0 it finishes
+		/// that state's fade-in. SetTime(0) restarts it. A layer that doesn't exist yet is made,
+		/// over the whole body. Does nothing without a skeleton. The clip overload plays it looping
+		/// at normal speed.
 		void Play(const AnimationState& state, float fadeSeconds = 0.0f, uint32_t layer = 0);
 		void Play(const AnimationClip* clip, float fadeSeconds = 0.0f, uint32_t layer = 0) { Play(AnimationState::Clip(clip), fadeSeconds, layer); }
-		// Fades to what shows without the layer: the rest pose on layer 0, the layers below on others.
-		// Cancels a one-shot's way back.
+		///@}
+		/// Fades to what shows without the layer: the rest pose on layer 0, the layers below on
+		/// others. Cancels a one-shot's way back.
 		void Stop(float fadeSeconds = 0.0f, uint32_t layer = 0) { Play(AnimationState::Clip(nullptr), fadeSeconds, layer); }
-		// Plays `clip` once over what the layer plays now, then fades back to it over fadeOut,
-		// ending as the clip does. What it interrupted keeps its time running meanwhile, so a walk
-		// comes back in step. Another one-shot restarts it; a Play of anything but the interrupted
-		// state cancels the way back, and playing that state again (every frame, say) changes nothing.
+		/// Plays `clip` once over what the layer plays now, then fades back to it over fadeOut,
+		/// ending as the clip does. What it interrupted keeps its time running meanwhile, so a walk
+		/// comes back in step. Another one-shot restarts it; a Play of anything but the interrupted
+		/// state cancels the way back, and playing that state again (every frame, say) changes
+		/// nothing. Fade times are in seconds. Does nothing for a null clip or without a skeleton.
 		void PlayOneShot(const AnimationClip* clip, float fadeIn = 0.1f, float fadeOut = 0.2f, uint32_t layer = 0);
-		// True from PlayOneShot until the layer starts fading back, fadeOut before the clip ends.
+		/// True from PlayOneShot until the layer starts fading back, fadeOut before the clip ends.
 		bool IsOneShotPlaying(uint32_t layer = 0) const;
 
-		// Layer 0 is always the whole body at full weight; index 0 is ignored here. An animator has at
-		// most 32 layers: a larger index, here or in Play, is ignored with a warning.
+		/// Sets the mask and weight of layer `index`, making it if needed. Layer 0 is always the
+		/// whole body at full weight; index 0 is ignored here. An animator has at most 32 layers: a
+		/// larger index, here or in Play, is ignored with a warning.
 		void            SetLayer(uint32_t index, const AnimationLayer& layer);
+		/// Sets the weight of layer `index` (0 to 1), making the layer if needed; ignored for layer
+		/// 0.
 		void            SetLayerWeight(uint32_t index, float weight);
+		/// The number of layers made so far, layer 0 included; at least 1.
 		uint32_t        GetLayerCount() const { return static_cast<uint32_t>(m_Layers.size()); }
-		// The settings of a layer below GetLayerCount().
+		/// The settings of a layer below GetLayerCount().
 		const AnimationLayer& GetLayer(uint32_t index) const { return m_Layers[index].Settings; }
 
-		// The parameters Blend1D states read; an unset one is 0.
+		///@{
+		/// The parameters Blend1D states read; an unset one is 0.
 		void  SetFloat(std::string_view name, float value);
 		float GetFloat(std::string_view name) const;
+		///@}
 
-		// The state the latest Play started on that layer; older ones may still be fading out under
-		// it. For a blend, the clip with the larger share.
+		/// The state the latest Play started on that layer; older ones may still be fading out
+		/// under it. For a blend, the clip with the larger share. Null when the layer plays
+		/// nothing.
 		const AnimationClip* GetCurrentClip(uint32_t layer = 0) const;
-		float GetTime(uint32_t layer = 0) const;           // seconds into the current clip or blend cycle
-		float GetNormalizedTime(uint32_t layer = 0) const; // 0 to 1 through it
-		// Seek the current state; the pose follows on the next Update or Evaluate.
+		/// Seconds into the current clip or blend cycle; 0 when the layer plays nothing.
+		float GetTime(uint32_t layer = 0) const;
+		/// 0 to 1 through the current clip or blend cycle; 0 when the layer plays nothing.
+		float GetNormalizedTime(uint32_t layer = 0) const;
+		///@{
+		/// Seek the current state; the pose follows on the next Update or Evaluate. A seek counts
+		/// its new time as a start for events (see GetEventsThisFrame). Does nothing when the layer
+		/// plays nothing.
 		void SetTime(float seconds, uint32_t layer = 0);
 		void SetNormalizedTime(float fraction, uint32_t layer = 0);
-		// A state that doesn't loop has reached its end, or its start when time last ran backwards.
+		///@}
+		/// A state that doesn't loop has reached its end, or its start when time last ran
+		/// backwards.
 		bool IsFinished(uint32_t layer = 0) const;
+		/// True while an older state still fades out under the layer's newest.
 		bool IsFading(uint32_t layer = 0) const;
-		// What the layer is mixing, oldest first, for tooling such as the F7 tab.
+		/// What the layer is mixing, oldest first, for tooling such as the F7 tab.
 		std::vector<AnimatorStateInfo> GetStates(uint32_t layer = 0) const;
 
-		// Advances every playing state by deltaTime, evaluates the pose and collects the events.
-		void Update(float deltaTime);
-		// Recomputes the pose from where the states stand, without moving time or firing events
-		// (after a SetTime, say).
+		/// Advances every playing state by deltaTime (seconds), evaluates the pose and collects the
+		/// events. With evaluatePose false the pose (and so the palette and joint transforms) stays
+		/// the last one evaluated while time, fades, events and root motion move on, which is how a
+		/// scene leaves a culled animator unposed; a later Update or Evaluate catches the pose up.
+		/// A state pushed past the four a layer holds meanwhile freezes that stale pose.
+		void Update(float deltaTime, bool evaluatePose = true);
+		/// Recomputes the pose from where the states stand, without moving time or firing events
+		/// (after a SetTime, say).
 		void Evaluate();
 
-		// Off (the default) leaves clips as they are. Otherwise every clip that moves the root joint
-		// has that motion taken out of the pose, which is held where the clip starts, and Update
-		// reports what layer 0's states moved it by, folded with their fade and blend weights, in
-		// GetRootMotionDelta. Clips on higher layers are held in place too but never move the model.
-		// Only time that plays counts: a seek or a new state jumps nothing.
+		/// Off (the default) leaves clips as they are. Otherwise every clip that moves the root
+		/// joint has that motion taken out of the pose, which is held where the clip starts, and
+		/// Update reports what layer 0's states moved it by, folded with their fade and blend
+		/// weights, in GetRootMotionDelta. Clips on higher layers are held in place too but never
+		/// move the model. Only time that plays counts: a seek or a new state jumps nothing.
 		void           SetRootMotion(RootMotionMode mode) { m_RootMotion = mode; }
+		/// The current mode; Off by default.
 		RootMotionMode GetRootMotion() const { return m_RootMotion; }
-		// The joint the motion comes from. Empty (the default) picks, per clip, the root-most joint
-		// whose translation moves; name one for a clip that only turns. The motion is measured as if
-		// the joints above it stood at rest, so keys on them (warned once) stay in the pose. The
-		// model's space is taken as Y-up. Switching the mode mid-clip moves the held root by the
-		// clip's progress so far, with nothing moving the model.
+		/// The joint the motion comes from. Empty (the default) picks, per clip, the root-most
+		/// joint whose translation moves; name one for a clip that only turns. The motion is
+		/// measured as if the joints above it stood at rest, so keys on them (warned once) stay in
+		/// the pose. The model's space is taken as Y-up. Switching the mode mid-clip moves the held
+		/// root by the clip's progress so far, with nothing moving the model.
 		void               SetRootMotionJoint(std::string joint);
+		/// The named root-motion joint; empty when it is picked per clip.
 		const std::string& GetRootMotionJoint() const { return m_RootMotionJoint; }
-		// The last Update's; identity while root motion is off, and after SetSkeleton.
+		/// The last Update's; identity while root motion is off, and after SetSkeleton.
 		const RootMotionDelta& GetRootMotionDelta() const { return m_RootMotionDelta; }
-		// Until the next Update. A scene does it for a disabled AnimatorComponent, as with events.
+		/// Until the next Update. A scene does it for a disabled AnimatorComponent, as with events.
 		void ClearRootMotionDelta() { m_RootMotionDelta = {}; }
 
-		// The clip events the last Update crossed, layer by layer, each in playback order. Only a
-		// layer's dominant contribution fires them: the clip with the larger share of a blend, an
-		// incoming state once its fade weight passes 0.5, a one-shot until it starts fading back;
-		// a layer above 0 fires only at weight 0.5 or more. So walk and run blended 50/50 never
-		// double a footstep, and a swing cancelled before it showed never opens its hitbox.
-		//
-		// A mark fires when playback crosses it, after the previous Update's time and up to this
-		// one's, a loop's wrap included; a state's start counts on its first Update. A clip that
-		// doesn't loop (a one-shot) also catches up from its start when it takes over, so a fade-in
-		// doesn't swallow its first marks; a looping one doesn't, so a cross-fade never repeats
-		// footsteps. A range ends early when its clip stops being dominant, so a cancelled swing
-		// still closes its hitbox. A seek (SetTime) counts its new time as a start, and ends the open
-		// ranges when the seeked state leads; an end without its start fires nothing. A one-shot's
-		// marks in its last fadeOut seconds don't fire: its way back has taken the events over.
+		/// The clip events the last Update crossed, layer by layer, each in playback order. Only a
+		/// layer's dominant contribution fires them: the clip with the larger share of a blend, an
+		/// incoming state once its fade weight passes 0.5, a one-shot until it starts fading back;
+		/// a layer above 0 fires only at weight 0.5 or more. So walk and run blended 50/50 never
+		/// double a footstep, and a swing cancelled before it showed never opens its hitbox.
+		///
+		/// A mark fires when playback crosses it, after the previous Update's time and up to this
+		/// one's, a loop's wrap included; a state's start counts on its first Update. A clip that
+		/// doesn't loop (a one-shot) also catches up from its start when it takes over, so a
+		/// fade-in doesn't swallow its first marks; a looping one doesn't, so a cross-fade never
+		/// repeats footsteps. A range ends early when its clip stops being dominant, so a cancelled
+		/// swing still closes its hitbox. A seek (SetTime) counts its new time as a start, and ends
+		/// the open ranges when the seeked state leads; an end without its start fires nothing. A
+		/// one-shot's marks in its last fadeOut seconds don't fire: its way back has taken the
+		/// events over. The span is valid until the next Update or ClearEventsThisFrame.
 		std::span<const AnimationEvent> GetEventsThisFrame() const { return m_Events; }
-		// fn must not Update this animator.
+		/// Calls fn for each event of GetEventsThisFrame, in order. fn must not Update this
+		/// animator.
 		void ForEachEventThisFrame(const std::function<void(const AnimationEvent&)>& fn) const;
-		// Empties that list until the next Update. A scene does it every frame it doesn't update a
-		// disabled AnimatorComponent's animator, so the events of the frame it stopped on don't repeat.
+		/// Empties that list until the next Update. A scene does it every frame it doesn't update a
+		/// disabled AnimatorComponent's animator, so the events of the frame it stopped on don't
+		/// repeat.
 		void ClearEventsThisFrame() { m_Events.clear(); }
-		// A range event that has begun and not yet ended, on any layer.
+		/// A range event that has begun and not yet ended, on any layer.
 		bool IsEventActive(std::string_view name) const;
-		// The RangeEnd of every range open on any layer: what an owner dropping this animator mid-range
-		// delivers in its place, as a scene does when its AnimatorComponent is removed.
+		/// The RangeEnd of every range open on any layer: what an owner dropping this animator
+		/// mid-range delivers in its place, as a scene does when its AnimatorComponent is removed.
 		std::vector<AnimationEvent> GetOpenRangeEnds() const;
 
-		// One per skeleton joint; the rest pose until the first Update.
+		/// One per skeleton joint; the rest pose until the first Update.
 		std::span<const JointPose> GetLocalPoses()       const { return m_LocalPoses; }
-		// Relative to the skeleton's root transform, as Skeleton::ComputeGlobalTransforms gives them.
+		/// Relative to the skeleton's root transform, as Skeleton::ComputeGlobalTransforms gives
+		/// them.
 		std::span<const glm::mat4> GetGlobalTransforms() const { return m_Globals; }
-		// One per skin joint.
+		/// One per skin joint, ready for Renderer3D::SubmitSkinnedMesh.
 		std::span<const glm::mat4> GetSkinningPalette()  const { return m_Palette; }
-		// RootTransform x global: the joint in the model's space. Identity for an invalid index.
+		/// RootTransform x global: the joint in the model's space. Identity for an invalid index.
 		glm::mat4 GetJointTransform(int32_t joint) const;
 
 	private:
@@ -305,8 +361,10 @@ namespace Dingo
 			// Where a state that doesn't loop catches up from when it first leads: its start, or the
 			// time of its latest seek.
 			float          CatchUpFrom = 0.0f;
-			// A one-shot's way back, which takes the events over the moment it starts.
+			// A one-shot's way back, which takes the events over the moment it starts, and the one-shot
+			// it took them from, which never leads again though its weight still folds.
 			bool           Returning = false;
+			bool           HandedOver = false;
 		};
 
 		// Name and end are kept so the range still closes with its RangeEnd after the clip's events
@@ -366,7 +424,8 @@ namespace Dingo
 		void   Advance(PlayingState& state, float deltaTime) const;
 		void   EvaluateLayer(Layer& layer, std::span<const JointPose> underneath, std::span<JointPose> out);
 		void   Sample(const Layer& layer, PlayingState& state, std::span<const JointPose> underneath, std::span<JointPose> out);
-		void   SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out);
+		// A mask (per joint, 0 outside) skips the channels of joints outside it.
+		void   SampleClip(const AnimationClip& clip, float time, uint32_t* cursors, std::span<JointPose> out, const float* mask = nullptr);
 		void   ResetToRest();
 		// Takes up a model reload's new rest pose for the same joints.
 		void   SyncSkeleton();

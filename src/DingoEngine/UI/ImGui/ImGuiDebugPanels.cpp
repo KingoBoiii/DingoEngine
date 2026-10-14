@@ -36,7 +36,7 @@
 // (DingoEngine/UI/DebugPanels.h). Like ImGuiUI.cpp, this is one of the only
 // translation units that includes <imgui.h>; clients call only Dingo::UI.
 
-namespace Dingo::UI
+namespace Dingo::Internal
 {
 
 	namespace
@@ -212,8 +212,7 @@ namespace Dingo::UI
 			{
 				s_Sorted.clear();
 				s_Sorted.reserve(count);
-				for (const auto& [handle, metadata] : assets.GetRegistry())
-					s_Sorted.push_back(handle);
+				s_Sorted = assets.GetHandles();
 
 				std::sort(s_Sorted.begin(), s_Sorted.end(), [&assets](AssetHandle a, AssetHandle b)
 				{
@@ -301,7 +300,8 @@ namespace Dingo::UI
 			overlay.c_str(), 0.0f, 33.34f, ImVec2(0.0f, 60.0f));
 
 		// ---- Renderer2D -----------------------------------------------------
-		const Renderer2D::Statistics& stats2D = Application::Get().GetRenderer2D().GetStatistics();
+		Renderer2D& renderer2D = Application::Get().GetRenderer2D();
+		const Renderer2D::Statistics& stats2D = renderer2D.GetStatistics();
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer2D  (most recent scene)");
@@ -311,9 +311,13 @@ namespace Dingo::UI
 		ImGui::Text("Circles    : %u", stats2D.CircleCount);
 		ImGui::Text("Text quads : %u", stats2D.TextQuadCount);
 		ImGui::Text("Vertices   : %u    Indices : %u", stats2D.GetVertexCount(), stats2D.GetIndexCount());
+		ImGui::Text("Culled     : %u  (sprites and circles out of view, by Scene::RenderEntities)", stats2D.CulledQuads);
+		bool culling2D = renderer2D.IsCullingEnabled();
+		if (ImGui::Checkbox("Cull 2D entities", &culling2D))
+			renderer2D.SetCullingEnabled(culling2D);
 
 		// ---- Renderer3D -----------------------------------------------------
-		const Renderer3D& renderer3D = Application::Get().GetRenderer3D();
+		Renderer3D& renderer3D = Application::Get().GetRenderer3D();
 		const Renderer3D::Statistics& stats3D = renderer3D.GetStatistics();
 		const Renderer3DCapabilities& caps3D = renderer3D.GetCapabilities();
 
@@ -322,16 +326,31 @@ namespace Dingo::UI
 		ImGui::Separator();
 		ImGui::Text("Draw calls : %u   (one or more per material)", stats3D.DrawCalls);
 		ImGui::Text("Translucent: %u meshes in %u draws  (sorted far to near, also counted above)", stats3D.TranslucentMeshes, stats3D.TranslucentDraws);
+		ImGui::Text("Surfaces   : %u meshes with a SurfaceOverride", stats3D.SurfaceOverrides);
 		ImGui::Text("Meshes     : %u submitted", stats3D.SubmittedMeshes);
 		if (stats3D.DroppedMeshes > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
 				"Dropped    : %u  (a mesh exceeds Renderer3D MaxVertices/MaxIndices on its own)", stats3D.DroppedMeshes);
 		else
 			ImGui::Text("Dropped    : 0");
-
-		ImGui::Spacing();
-		BudgetBar("Vertices", stats3D.VertexCount, caps3D.MaxVertices);
-		BudgetBar("Indices", stats3D.IndexCount, caps3D.MaxIndices);
+		ImGui::Text("Culled     : %u static, %u skinned out of view or past their cull distance", stats3D.CulledMeshes, stats3D.CulledSkinned);
+		ImGui::Text("             %u casters reach no shadow view", stats3D.CulledCasters);
+		bool culling3D = renderer3D.IsCullingEnabled();
+		if (ImGui::Checkbox("Cull meshes", &culling3D))
+			renderer3D.SetCullingEnabled(culling3D);
+		ImGui::SameLine();
+		bool frozen = renderer3D.IsCullingFrozen();
+		if (ImGui::Checkbox("Freeze culling frustum", &frozen))
+			renderer3D.SetCullingFrozen(frozen);
+		ImGui::Text("Uploaded   : %u vertices, %u indices  (one draw takes at most %u / %u)", stats3D.VertexCount, stats3D.IndexCount, caps3D.MaxVertices, caps3D.MaxIndices);
+		ImGui::Text("Instanced  : %u meshes in %u draws, %u shadow draws  (also counted above)", stats3D.InstancedMeshes, stats3D.InstancedDraws, stats3D.InstancedShadowDraws);
+		if (stats3D.DroppedInstancedMeshes > 0)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+				"             %u meshes of an Instancing material skipped  (past the frame's instanced draws; warned once)", stats3D.DroppedInstancedMeshes);
+		bool instancing = renderer3D.IsInstancingEnabled();
+		if (ImGui::Checkbox("Instance repeated meshes", &instancing))
+			renderer3D.SetInstancingEnabled(instancing);
+		ImGui::Text("Static     : %u baked meshes in %u draws, %u cells baked  (also counted above)", stats3D.StaticMeshes, stats3D.StaticDraws, stats3D.StaticCellsBaked);
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("Renderer3D lights  (most recent scene)");
@@ -349,14 +368,14 @@ namespace Dingo::UI
 		ImGui::Text("Fog        : %s", stats3D.Fogged ? "on" : "off");
 
 		ImGui::Spacing();
-		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; budget per frame)");
+		ImGui::TextUnformatted("Renderer3D skinning  (most recent scene; the bar is the whole frame)");
 		ImGui::Separator();
 		ImGui::Text("Skinned draws: %u  (also counted in draw calls)", stats3D.SkinnedDraws);
-		BudgetBar("Instances", stats3D.SkinnedInstances, renderer3D.GetSkinnedInstanceBudget());
-		ImGui::Text("Joints     : %u uploaded", stats3D.SkinnedJoints);
+		BudgetBar("Instances", renderer3D.GetSkinnedInstancesThisFrame(), renderer3D.GetSkinnedInstanceBudget());
+		ImGui::Text("Scene      : %u instances, %u joints, %.1f KiB arena", stats3D.SkinnedInstances, stats3D.SkinnedJoints, stats3D.SkinPaletteBytes / 1024.0f);
 		if (stats3D.DroppedSkinnedDraws > 0)
 			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances; warned once)", stats3D.DroppedSkinnedDraws);
+				"Dropped    : %u  (skinned draws of instances past MaxSkinnedInstances, or past %u with a SkinData shader; warned once)", stats3D.DroppedSkinnedDraws, Internal::k_MaxSkinDataInstances);
 		else
 			ImGui::Text("Dropped    : 0");
 
@@ -463,10 +482,10 @@ namespace Dingo::UI
 		const char* apiName = "Unknown";
 		switch (context.GetGraphicsAPI())
 		{
-			case GraphicsAPI::Headless:   apiName = "Headless";  break;
 			case GraphicsAPI::Vulkan:     apiName = "Vulkan";    break;
 			case GraphicsAPI::DirectX11:  apiName = "DirectX11"; break;
 			case GraphicsAPI::DirectX12:  apiName = "DirectX12"; break;
+			case GraphicsAPI::Headless:   apiName = "Headless";  break;
 		}
 		ImGui::Text("API     : %s", apiName);
 
@@ -610,7 +629,7 @@ namespace Dingo::UI
 			Input::SetGamepadDeadzone(deadzone);
 
 		bool any = false;
-		for (uint32_t pad = 0; pad < MaxGamepads; pad++)
+		for (uint32_t pad = 0; pad < k_MaxGamepads; pad++)
 		{
 			if (!Input::IsGamepadConnected(pad))
 				continue;
@@ -620,7 +639,7 @@ namespace Dingo::UI
 			ImGui::Text("Slot %u : %s ('%s')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad).c_str());
 
 			std::string held;
-			for (uint8_t button = 0; button < GamepadButtonCount; button++)
+			for (uint8_t button = 0; button < k_GamepadButtonCount; button++)
 			{
 				if (!Input::IsGamepadButtonDown(static_cast<GamepadButton>(button), pad))
 					continue;
@@ -684,10 +703,11 @@ namespace Dingo::UI
 
 		std::array<uint32_t, static_cast<size_t>(AssetType::Count)> perType{};
 		std::array<uint32_t, static_cast<size_t>(AssetState::Count)> perState{};
-		for (const auto& [handle, metadata] : assets.GetRegistry())
+		for (const AssetHandle handle : assets.GetHandles())
 		{
-			perType[static_cast<size_t>(metadata.Type)]++;
-			perState[static_cast<size_t>(metadata.State)]++;
+			const AssetMetadata* metadata = assets.GetMetadata(handle);
+			perType[static_cast<size_t>(metadata->Type)]++;
+			perState[static_cast<size_t>(metadata->State)]++;
 		}
 
 		ImGui::Spacing();
@@ -697,7 +717,7 @@ namespace Dingo::UI
 		{
 			if (perType[type] == 0)
 				continue;
-			ImGui::Text("%-10s : %u", AssetTypeToString(static_cast<AssetType>(type)), perType[type]);
+			ImGui::Text("%-10s : %u", ToString(static_cast<AssetType>(type)), perType[type]);
 		}
 		if (registered == 0)
 			ImGui::TextUnformatted("No assets registered.");
@@ -710,7 +730,7 @@ namespace Dingo::UI
 			if (perState[state] == 0)
 				continue;
 			const AssetState value = static_cast<AssetState>(state);
-			ImGui::TextColored(AssetStateColor(value), "%-10s : %u", AssetStateToString(value), perState[state]);
+			ImGui::TextColored(AssetStateColor(value), "%-10s : %u", ToString(value), perState[state]);
 		}
 	}
 
@@ -763,10 +783,10 @@ namespace Dingo::UI
 				ImGui::TableNextRow();
 
 				ImGui::TableSetColumnIndex(0);
-				ImGui::TextColored(AssetStateColor(metadata->State), "%s", AssetStateToString(metadata->State));
+				ImGui::TextColored(AssetStateColor(metadata->State), "%s", ToString(metadata->State));
 
 				ImGui::TableSetColumnIndex(1);
-				ImGui::TextUnformatted(AssetTypeToString(metadata->Type));
+				ImGui::TextUnformatted(ToString(metadata->Type));
 
 				ImGui::TableSetColumnIndex(2);
 				ImGui::TextUnformatted(path.c_str());
@@ -799,7 +819,7 @@ namespace Dingo::UI
 				}
 				ImGui::EndDisabled();
 				if (reloadBlocked && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", AssetTypeToString(metadata->Type));
+					ImGui::SetTooltip("%s is destroyed and recreated on reload, which would invalidate pointers the game holds - not offered here.", ToString(metadata->Type));
 
 				ImGui::PopID();
 			}
@@ -862,6 +882,7 @@ namespace Dingo::UI
 	{
 		static std::vector<Internal::AnimationDebug::AnimatorRow> s_Animators;
 		static std::vector<Internal::AnimationDebug::EventRow> s_Events;
+		const std::unique_lock scenesLock = Internal::SceneDebug::LockScenes();
 		Internal::AnimationDebug::CollectAnimators(s_Animators);
 		Internal::AnimationDebug::CollectRecentEvents(s_Events, Internal::AnimationDebug::k_RecentEvents);
 
@@ -874,13 +895,32 @@ namespace Dingo::UI
 		const bool scroll = s_Animators.size() > k_MaxAnimatorsShown;
 		if (scroll)
 			ImGui::BeginChild("##animators", ImVec2(0.0f, 320.0f), ImGuiChildFlags_Borders);
-		for (size_t index = 0; index < s_Animators.size(); ++index)
+		// A closed row off screen takes its height without its names being read or formatted.
+		static float s_ClosedRowHeight = 0.0f;
+		const bool defaultOpen = s_Animators.size() == 1;
+		for (const Internal::AnimationDebug::AnimatorRow& row : s_Animators)
 		{
-			const Internal::AnimationDebug::AnimatorRow& row = s_Animators[index];
-			std::string label = std::format("{}  ({}{}{})", row.Entity, row.Scene, row.Model.empty() ? "" : ", ", row.Model);
+			// Keyed on the entity, so an open row stays open while others join or leave the crowd.
+			ImGui::PushID(row.Owner);
+			ImGui::PushID(static_cast<int>(row.Entity));
+			const bool open = row.Instance && ImGui::GetStateStorage()->GetInt(ImGui::GetID("###animator"), defaultOpen ? 1 : 0) != 0;
+			if (!open && s_ClosedRowHeight > 0.0f && !ImGui::IsRectVisible(ImVec2(ImGui::GetContentRegionAvail().x, s_ClosedRowHeight)))
+			{
+				ImGui::Dummy(ImVec2(0.0f, s_ClosedRowHeight - ImGui::GetStyle().ItemSpacing.y));
+				ImGui::PopID();
+				ImGui::PopID();
+				continue;
+			}
+
+			const float top = ImGui::GetCursorPosY();
+			const Internal::AnimationDebug::AnimatorNames names = Internal::AnimationDebug::DescribeAnimator(row);
+			std::string label = std::format("{}  ({}{}{})", names.Entity, names.Scene, names.Model.empty() ? "" : ", ", names.Model);
 			if (!row.Instance)
 			{
 				ImGui::TextDisabled("%s  not bound: no skinned model, or not updated since it changed", label.c_str());
+				s_ClosedRowHeight = ImGui::GetCursorPosY() - top;
+				ImGui::PopID();
+				ImGui::PopID();
 				continue;
 			}
 
@@ -889,10 +929,14 @@ namespace Dingo::UI
 				label += "  disabled";
 			if (row.Speed != 1.0f)
 				label += std::format("  speed {:.2f}", row.Speed);
+			if (row.Culled)
+				label += row.CullingMode == AnimatorCullingMode::PauseWhenCulled ? "  culled, paused" : "  culled, every 4th update";
 			label += "###animator";
 
-			ImGui::PushID(static_cast<int>(index));
-			if (ImGui::TreeNodeEx(label.c_str(), s_Animators.size() == 1 ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
+			const bool expanded = ImGui::TreeNodeEx(label.c_str(), defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+			if (!expanded)
+				s_ClosedRowHeight = ImGui::GetCursorPosY() - top;
+			if (expanded)
 			{
 				for (uint32_t layer = 0; layer < animator.GetLayerCount(); ++layer)
 				{
@@ -945,6 +989,7 @@ namespace Dingo::UI
 				}
 				ImGui::TreePop();
 			}
+			ImGui::PopID();
 			ImGui::PopID();
 		}
 
@@ -1076,6 +1121,8 @@ namespace Dingo::UI
 
 		ImGui::Spacing();
 		ImGui::TextUnformatted("GPU passes  (timer queries, read 4 frames late)");
+		if (Application::Get().GetGraphicsContext().GetGraphicsAPI() == GraphicsAPI::DirectX11)
+			ImGui::TextDisabled("D3D11: approximate, a timestamp doesn't wait for the work before it");
 		ImGui::Separator();
 		const std::vector<GpuTimerStats>& timers = Renderer::GetGpuTimers();
 		if (timers.empty())
@@ -1186,6 +1233,8 @@ namespace Dingo::UI
 		std::string lights = std::format("Lights: {} directional, {} ambient, {} point, {} spot", scene.DirectionalLights, scene.AmbientLights, scene.PointLights, scene.SpotLights);
 		if (scene.DisabledLocalLights > 0)
 			lights += std::format(" ({} disabled)", scene.DisabledLocalLights);
+		if (scene.InactiveLocalLights > 0)
+			lights += std::format(" ({} inactive)", scene.InactiveLocalLights);
 		ImGui::TextUnformatted(lights.c_str());
 		if (scene.UnplacedLocalLights > 0)
 			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "%u point or spot lights have no Transform3DComponent and are ignored", scene.UnplacedLocalLights);
@@ -1323,6 +1372,10 @@ namespace Dingo::UI
 		else
 			ImGui::TextDisabled("Parent: none (a root)");
 		ImGui::Text("Children: %u", s_Detail.ChildCount);
+		if (!s_Detail.Active)
+			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "Inactive (SetActive(false)): not drawn, simulated or updated");
+		else if (!s_Detail.ActiveInHierarchy)
+			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "Inactive through an ancestor: not drawn, simulated or updated");
 
 		for (size_t index = 0; index < s_Detail.Sections.size(); ++index)
 		{

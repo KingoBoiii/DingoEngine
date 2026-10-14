@@ -14,11 +14,10 @@ namespace Dingo
 
 	void GameLayer::OnAttach()
 	{
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		m_Scene = m_SceneManager.CreateScene("Dungeon");
 		m_Scene->SetClearColor(COLOR_BG);
-		m_SceneManager.SetActiveScene("Dungeon"); // selects the active scene
 		SetupCamera();
 
 		// ResetGame() generates the first dungeon and builds its tiles; every restart
@@ -26,7 +25,7 @@ namespace Dingo
 		// entity created above survives every restart.)
 		ResetGame();
 
-		m_Scene->OnStart(); // explicit start (no physics here -> just marks it running)
+		m_SceneManager.SetActiveScene("Dungeon");
 	}
 
 	void GameLayer::OnDetach()

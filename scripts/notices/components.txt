@@ -1,0 +1,43 @@
+# The engine and the third-party code compiled or linked into DingoEngine games, read by scripts/gather-notices.sh.
+# name | upstream | licence | what for | licence text: a file, or file@marker for a licence
+# embedded in a source file (from the line holding the marker to the comment's end).
+# Build tools (premake) and test-only code (doctest) never ship and are left out.
+DingoEngine | https://github.com/KingoBoiii/DingoEngine | MIT | the engine | LICENSE.txt
+GLFW | https://www.glfw.org | Zlib | windowing and input | vendor/glfw/LICENSE.md
+GLM | https://github.com/g-truc/glm | MIT | maths | vendor/glm/copying.txt
+spdlog | https://github.com/gabime/spdlog | MIT | logging | vendor/spdlog/LICENSE
+stb | https://github.com/nothings/stb | MIT or public domain | image loading and writing | vendor/stb/LICENSE.txt
+NVRHI | https://github.com/NVIDIAGameWorks/nvrhi | MIT | graphics API abstraction | vendor/nvrhi/LICENSE.txt
+Vulkan-Headers | https://github.com/KhronosGroup/Vulkan-Headers | Apache-2.0 or MIT | Vulkan declarations | vendor/nvrhi/thirdparty/Vulkan-Headers/LICENSE.md
+DirectX-Headers | https://github.com/microsoft/DirectX-Headers | MIT | Direct3D 12 declarations (Windows) | vendor/nvrhi/thirdparty/DirectX-Headers/LICENSE
+RTXMU (in NVRHI) | https://github.com/NVIDIAGameWorks/RTXMU | MIT | acceleration-structure memory | vendor/nvrhi/rtxmu/LICENSE.txt
+Dear ImGui | https://github.com/ocornut/imgui | MIT | debug window | vendor/imgui/LICENSE.txt
+msdf-atlas-gen | https://github.com/Chlumsky/msdf-atlas-gen | MIT | font atlases | vendor/msdf-atlas-gen/LICENSE.txt
+msdfgen | https://github.com/Chlumsky/msdfgen | MIT | font atlases | vendor/msdf-atlas-gen/msdfgen/LICENSE.txt
+Artery Font format | https://github.com/Chlumsky/artery-font-format | MIT | font atlases | vendor/msdf-atlas-gen/artery-font-format/LICENSE.txt
+FreeType | https://freetype.org | FTL | font loading | vendor/msdf-atlas-gen/msdfgen/freetype/LICENSE.TXT
+EnTT | https://github.com/skypjack/entt | MIT | entity component system | vendor/entt/LICENSE.txt
+Box2D | https://github.com/erincatto/box2d | MIT | 2D physics | vendor/box2d/LICENSE
+Jolt Physics | https://github.com/jrouwe/JoltPhysics | MIT | 3D physics | vendor/JoltPhysics/LICENSE
+miniaudio | https://miniaud.io | MIT-0 or public domain | audio | vendor/miniaudio/miniaudio.h@This software is available as a choice
+stb_vorbis | https://github.com/nothings/stb | MIT or public domain | Ogg Vorbis decoding | vendor/miniaudio/stb_vorbis.c@This software is available under 2 licenses
+nlohmann/json | https://github.com/nlohmann/json | MIT | save data | vendor/json/LICENSE.MIT
+Tracy | https://github.com/wolfpld/tracy | BSD-3-Clause | profiler (profiling builds only) | vendor/tracy/LICENSE
+Inter | https://rsms.me/inter | OFL-1.1 | on-screen text in the examples and the test app | scripts/notices/licenses/inter.txt
+shaderc | https://github.com/google/shaderc | Apache-2.0 | shader compilation | scripts/notices/licenses/shaderc.txt
+glslang | https://github.com/KhronosGroup/glslang | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0 and others | shader compilation | scripts/notices/licenses/glslang.txt
+SPIRV-Tools | https://github.com/KhronosGroup/SPIRV-Tools | Apache-2.0 | shader compilation | scripts/notices/licenses/spirv-tools.txt
+SPIRV-Headers | https://github.com/KhronosGroup/SPIRV-Headers | MIT | shader compilation | scripts/notices/licenses/spirv-headers.txt
+SPIRV-Cross | https://github.com/KhronosGroup/SPIRV-Cross | Apache-2.0 | shader cross-compilation | scripts/notices/licenses/spirv-cross.txt
+Open Asset Import Library (assimp) | https://github.com/assimp/assimp | BSD-3-Clause | model loading | scripts/notices/licenses/assimp.txt
+Open3DGC (in assimp) | https://github.com/amd/rest3d | MIT | model loading | scripts/notices/licenses/open3dgc.txt
+poly2tri (in assimp) | https://github.com/jhasse/poly2tri | BSD-3-Clause | model loading | scripts/notices/licenses/poly2tri.txt
+Clipper (in assimp) | https://sourceforge.net/projects/polyclipping | BSL-1.0 | model loading | scripts/notices/licenses/clipper.txt
+OpenDDL-Parser (in assimp) | https://github.com/kimkulling/openddl-parser | MIT | model loading | scripts/notices/licenses/openddlparser.txt
+pugixml (in assimp) | https://pugixml.org | MIT | model loading | scripts/notices/licenses/pugixml.txt
+RapidJSON (in assimp) | https://rapidjson.org | MIT | model loading | scripts/notices/licenses/rapidjson.txt
+UTF8-CPP (in assimp) | https://github.com/nemtrif/utfcpp | BSL-1.0 | model loading | scripts/notices/licenses/utf8cpp.txt
+earcut.hpp (in assimp) | https://github.com/mapbox/earcut.hpp | ISC | model loading | scripts/notices/licenses/earcut.txt
+MiniZip (in assimp) | https://www.winimage.com/zLibDll/minizip.html | Zlib | model loading | scripts/notices/licenses/minizip.txt
+zip (in assimp) | https://github.com/kuba--/zip | Unlicense | model loading | scripts/notices/licenses/kuba-zip.txt
+zlib | https://zlib.net | Zlib | model loading | scripts/notices/licenses/zlib.txt

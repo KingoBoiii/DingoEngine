@@ -551,7 +551,7 @@ namespace Dingo
 		// A translucent glow in front of the wall, wholly fogged, must leave the wall as the fog left it.
 		for (Material* glow : m_FogGlowMaterials)
 		{
-			const bool additive = glow->GetParams().Blend == BlendMode::Additive;
+			const bool additive = glow->GetParams().BlendMode == BlendMode::Additive;
 			probeStep(additive ? "a fully fogged additive glow adds nothing to the fogged wall" : "a fully fogged multiplying glow leaves the fogged wall as it is",
 				glm::vec3(0.5f), [glow](Renderer3D& renderer)
 			{

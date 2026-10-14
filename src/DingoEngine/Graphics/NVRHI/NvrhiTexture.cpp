@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "NvrhiTexture.h"
 
 #include "DingoEngine/Core/FileSystem.h"
@@ -20,9 +21,6 @@ namespace Dingo
 		{
 			switch (format)
 			{
-				case TextureFormat::RGBA: return nvrhi::Format::RGBA8_UNORM;
-				case TextureFormat::RGB: return nvrhi::Format::RGBA8_UNORM;
-
 				case TextureFormat::RGBA8_UNORM: return nvrhi::Format::RGBA8_UNORM;
 
 				case TextureFormat::RGBA32F: return nvrhi::Format::RGBA32_FLOAT;
@@ -51,20 +49,6 @@ namespace Dingo
 			}
 
 			return nvrhi::TextureDimension::Unknown;
-		}
-
-		static nvrhi::SamplerAddressMode GetSamplerAddressMode(const TextureWrapMode wrapMode)
-		{
-			switch (wrapMode)
-			{
-				case TextureWrapMode::Repeat: return nvrhi::SamplerAddressMode::Repeat;
-				case TextureWrapMode::MirroredRepeat: return nvrhi::SamplerAddressMode::MirroredRepeat;
-				case TextureWrapMode::ClampToEdge: return nvrhi::SamplerAddressMode::ClampToEdge;
-				case TextureWrapMode::ClampToBorder: return nvrhi::SamplerAddressMode::ClampToBorder;
-				case TextureWrapMode::MirrorClampToEdge: return nvrhi::SamplerAddressMode::MirrorClampToEdge;
-				default: break;
-			}
-			return nvrhi::SamplerAddressMode::ClampToEdge; // Default to ClampToEdge if unknown
 		}
 
 		static uint32_t GetImageMemoryRowPitch(TextureFormat format, uint32_t width)
@@ -134,14 +118,15 @@ namespace Dingo
 
 		if (m_Params.InitialData)
 		{
-			Upload(m_Params.InitialData, Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width));
+			Upload(m_Params.InitialData);
 			m_Params.InitialData = nullptr; // the caller's buffer is not retained
 		}
 	}
 
-	void NvrhiTexture::Upload(const void* data, uint64_t size)
+	void NvrhiTexture::Upload(const void* data)
 	{
-		DE_CORE_ASSERT(data);
+		DE_CORE_ASSERT(data, "Texture::Upload needs pixels");
+		const uint64_t rowPitch = Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width);
 
 		// Join the frame's command list whenever one is open. A list of our own would be
 		// wrong mid-frame on D3D11: NVRHI's open() and close() each call ClearState() on the
@@ -149,9 +134,9 @@ namespace Dingo
 		// is set, and it does not re-bind because its own graphics state looks unchanged.
 		// The async asset pump runs before any layer draws so it never noticed, but the
 		// Assets panel's Reload button runs after every layer has recorded its draws.
-		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		if (Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList())
 		{
-			frameList->UploadTexture(this, data, size);
+			frameList->UploadTexture(this, data, rowPitch);
 			return;
 		}
 
@@ -164,7 +149,7 @@ namespace Dingo
 
 		commandList->open();
 
-		commandList->writeTexture(m_Handle, 0, 0, data, size);
+		commandList->writeTexture(m_Handle, 0, 0, data, rowPitch);
 
 		commandList->close();
 
@@ -214,7 +199,7 @@ namespace Dingo
 
 		// As for Upload: inside a frame the copy joins its list, which keeps it after the frame's
 		// earlier draws and never opens a list of its own mid-frame (D3D11's ClearState).
-		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		if (Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList())
 		{
 			// D3D12 caches the state a framebuffer or binding set left the texture in, so a draw or
 			// sample after the copy would find it a copy source: put back the state it had.
@@ -260,7 +245,7 @@ namespace Dingo
 			bool Read(Texture* source, std::function<void(const TexturePixels&)> done) override
 			{
 				nvrhi::ITexture* handle = source ? static_cast<nvrhi::ITexture*>(source->GetTextureHandle()) : nullptr;
-				CommandList* frameList = Renderer::TryGetRecordingCommandList();
+				Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList();
 				if (m_Busy || !handle || !frameList)
 					return false;
 				const nvrhi::TextureDesc& desc = handle->getDesc();
@@ -281,9 +266,6 @@ namespace Dingo
 					m_Height = desc.height;
 					m_Format = format;
 				}
-				if (!m_Event)
-					m_Event = device->createEventQuery();
-
 				// As in NvrhiTexture::ReadPixels: the copy joins the frame, and the texture gets back the
 				// state it had.
 				nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
@@ -299,8 +281,10 @@ namespace Dingo
 				// The frame is submitted by the next frame's start, so the event set then follows the copy.
 				Renderer::RunAfterFrame([self = shared_from_this(), done = std::move(done)]() mutable
 				{
+					// A fresh query each time: NVRHI's D3D11 poll takes S_FALSE for done, so a reused query
+					// could be ended again with its result never fetched (#410 QUERY_END_ABANDONING_PREVIOUS_RESULTS).
 					nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-					device->resetEventQuery(self->m_Event);
+					self->m_Event = device->createEventQuery();
 					device->setEventQuery(self->m_Event, nvrhi::CommandQueue::Graphics);
 					self->Poll(std::move(done));
 				});

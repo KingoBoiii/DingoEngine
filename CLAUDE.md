@@ -36,12 +36,12 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 ## Verifying changes
 
-Keep it to the smallest check that proves the change. CI (`build-linux.yml` with the full smoke test, `build-windows.yml`) runs only on pushes to master. A PR gets only `lint.yml`, a syntax-only compile of its changed files with GCC and MSVC (warnings reported, never fatal), so these steps are its only build-and-run check before the owner runs the GPU backends.
+Keep it to the smallest check that proves the change. CI (`build-linux.yml` with the full smoke test, `build-windows.yml`) runs only on pushes to master. A PR gets only `lint.yml`, a syntax-only compile of its changed files with GCC and MSVC (warnings reported, never fatal), and, when it touches `include/` or `docs/`, the `API reference` workflow (Doxygen, fails on any warning). So these steps are its only build-and-run check before the owner runs the GPU backends.
 
-1. **Docs, comments, plans, CI or scripts that no build runs**: nothing to run. Don't set up the toolchain for them.
+1. **Docs, comments, plans, CI or scripts that no build runs**: nothing to run. Don't set up the toolchain for them. A change to `include/` or a guide runs `mkdir -p build/docs && doxygen docs/Doxyfile` and leaves `build/docs/warnings.txt` empty.
 2. **Code**: build Debug on Linux, only the projects you touched (the engine plus the test app or example that uses it). A change to a public header or a `premake5.lua` builds every project (`make -j"$(nproc)" config=debug`), since nothing else catches a broken example before merge. No warnings in files you changed.
 3. **Run only the affected feature's test case**: `cd test && timeout 60 xvfb-run -a ../build/bin/Debug-linux-x86_64/Dingo-TestFramework/Dingo-TestFramework --test=<case>`. The app stays open after its checks, so the timeout ends it. Pass = no `[FAIL]`, no `VUID-`, no `LOG ERROR` in the output. If you changed an example that has `--check`, run that too.
-4. **Add a check only for new behaviour or a fixed bug**, inside the existing test case (`test/src/Tests/`, helpers in `Tests/TestChecks.h`).
+4. **Add a check only for new behaviour or a fixed bug**, inside the existing test case (`test/src/Tests/`, helpers in `Tests/TestChecks.h`). Pure engine code (no window or device) gets a doctest case in `test/UnitTests` instead, run with `../build/bin/Debug-linux-x86_64/Dingo-UnitTests/Dingo-UnitTests`.
 5. **Don't** run the full smoke test, other configurations, A/B or mutation runs, or performance captures unless asked; master's CI runs the smoke test after the merge.
 6. **Never claim GPU, D3D11/D3D12 or Windows results.** List them under "Needs testing on a real GPU" in the PR.
 
@@ -55,8 +55,8 @@ The main session runs Opus at high effort (`.claude/settings.json`) and orchestr
 | Find where something lives across many files (call sites, every reader of a component, every place a format is written) | `Explore` ("medium" or "very thorough") | `haiku` | `low` |
 | Mechanical sweeps: check docs against code, update every reference to a renamed API, fill a test case from a clear spec | `general-purpose` | `sonnet` | `medium` |
 | Implement a well-specified, contained change (one issue, one phase step, a test, an example's game code) | `general-purpose`, one per change, parallel with `isolation: "worktree"` when the files don't overlap | `sonnet` | `high` |
-| Implement engine-core changes: render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals | `general-purpose` | `opus` | `high` |
-| Design a phase or a multi-file change before writing it | `Plan`, result recorded in the plan file | `opus` | `high` |
+| Design a phase, a multi-file change, or any engine-core change (render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals) before writing it | `Plan`, result recorded in the plan file with `file:line` anchors | `opus` | `high` |
+| Implement an engine-core change from that design | `general-purpose`, the prompt carries the design | `sonnet` | `high` |
 | Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) | `opus` | `high` (`xhigh` for renderer, threading or synchronisation diffs) |
 | Root-cause a hard bug (device lost, validation error, race, a wrong frame) | `general-purpose` | `opus` | `xhigh` |
 | Milestone review, or a bug Opus failed on twice | `general-purpose` | `fable` | `high`, only when the owner asks |
@@ -65,7 +65,7 @@ The main session runs Opus at high effort (`.claude/settings.json`) and orchestr
 Why these picks (prices per million input/output tokens, October 2026):
 - **Haiku 5.5** ($0.10/$0.50, a fortieth of Opus) is for reading-heavy work that returns facts, not judgement. Never let it edit engine code or review.
 - **Sonnet 5.5** ($2/$10, half of Opus) is the practical model for everyday coding when the task is fully specified: the prompt names the files, the rule, and what done looks like.
-- **Opus 5.5** ($4/$20) is for judgement: design, review, and code where a subtle mistake only shows on a real GPU, which no session can check. For judgement work, lower Opus's effort before switching to a cheaper model.
+- **Opus 5.5** ($4/$20) is for judgement: design, review and root-causing. Engine-core code, where a subtle mistake only shows on a real GPU, gets an Opus design first and an Opus review after, so Sonnet writes it in between. For judgement work, lower Opus's effort before switching to a cheaper model.
 - **Fable 5.1** ($10/$50) costs 2.5 times Opus; it is the owner's call.
 - Judge cost per finished task: a cheaper agent whose work has to be redone or re-reviewed isn't cheaper. If a Sonnet agent's change fails review twice, redo it on Opus.
 
@@ -94,7 +94,7 @@ Most of the cost is context re-read on every call (context size × number of cal
 | Members | `m_Name` (instance), `s_Name` (static), `k_Name` or `UPPER_SNAKE_CASE` constants, `UPPER_SNAKE_CASE` macros |
 | Backend classes | `Vulkan*`, `DirectX12*`, `Nvrhi*`, `Win*` |
 | Log macros | engine `DE_CORE_INFO/WARN/ERROR/ASSERT`; client `DE_INFO/...` |
-| Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `BIT(x)` |
+| Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `DE_BIT(x)` |
 | Resource creation | fluent `*Params` structs passed to a static `Create()`: `Texture::Create(TextureParams().SetWidth(512)...)` |
 | PCH | `depch.h` / `depch.cpp` |
 
@@ -106,7 +106,7 @@ Most of the cost is context re-read on every call (context size × number of cal
 
 **Build and shipping**
 - Never modify anything under `vendor/`.
-- Every executable that links the engine calls `copyAssimpRuntime()` in its `premake5.lua`, or it dies with `STATUS_DLL_NOT_FOUND` before `main` (on Linux it fails to link). A game that ships packed assets also calls `embedPackKey()` after it and passes `Dingo::Generated::GetPackageKey()` as `ApplicationParams.Assets.PackageKey`. Add a new example to `.github/workflows/build-release.yml`'s packaging and the `.vscode` entries too.
+- Every executable that links the engine calls `copyAssimpRuntime()` in its `premake5.lua`, or it dies with `STATUS_DLL_NOT_FOUND` before `main` (on Linux it fails to link). A game that ships packed assets also calls `embedPackKey()` after it and passes `Dingo::Generated::GetPackageKey()` as `ApplicationParams.Assets.PackageKey`. Each example and the test app also calls `exeMetadata { Name = ..., Company = ..., Copyright = ... }` after it, with an `icon.ico` and `icon.png` beside it (`scripts/icons/make-icons.sh`), or it ships without a version resource, icon or desktop entry. Add a new example to `.github/workflows/build-release.yml`'s packaging and the `.vscode` entries too.
 - Never leave a `.dpak` in `build/bin/`: the engine mounts `<exe stem>.dpak` at start-up. Re-run premake after changing a `dpak.key`.
 
 **C++ and headers** (MSVC and GCC both have to accept it)
@@ -125,6 +125,7 @@ Most of the cost is context re-read on every call (context size × number of cal
 - The `AssetManager` owns what it loads: never `Destroy()` or `delete` a managed asset.
 - `Application::OnDestroy()` stays in `Run()`'s exit path, never in `Destroy()`, where virtual dispatch no longer reaches the override. GPU teardown goes in `Layer::OnDetach`.
 - Any new code that reads a transform as world space goes through `HierarchySystem`.
+- A factory returns a ready object or `nullptr`, and `delete` frees everything; engine-only surface is private or under `Internal` (docs/conventions.md). SemVer from 1.0.0 (docs/versioning.md): an API addition waits for a minor release, a removal or rename for a major one.
 
 **Rendering**
 - `GLM_FORCE_DEPTH_ZERO_TO_ONE` is workspace-wide: never enable SPIRV-Cross `fixup_clipspace`.
@@ -138,6 +139,8 @@ Most of the cost is context re-read on every call (context size × number of cal
 ## Comments — keep them to a minimum
 
 Do not write code comments unless absolutely necessary. A comment must earn its place by stating a load-bearing "why" — a constraint, invariant, or non-obvious consequence the code cannot express itself. Never narrate what the next line does, never leave change-tracking or review commentary ("added X", "fixed Y"), and apply the same restraint to scripts, YAML, shaders, and example code. When in doubt, leave it out.
+
+The exception is `include/DingoEngine/`: every public declaration gets a `///` line saying what it promises (decision D7, `docs/conventions.md` "Documentation"). The `API reference` workflow fails a PR that leaves one out.
 
 ## Reference — read when the task needs it
 

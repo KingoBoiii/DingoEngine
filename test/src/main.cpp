@@ -23,7 +23,6 @@ namespace Dingo
 			m_Body.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
 			m_Body.AddComponent<BoxCollider3DComponent>();
 			m_Scenes.SetActiveScene("Headless");
-			scene->OnStart();
 		}
 
 		virtual void OnDetach() override
@@ -44,7 +43,7 @@ namespace Dingo
 
 			const Application& app = Application::Get();
 			const float averageDelta = m_SteppedTime / float(k_Updates - 1);
-			m_Checks.Check(app.IsHeadless() && app.GetSwapChain() == nullptr, "headless: no swap chain");
+			m_Checks.Check(app.IsHeadless() && Renderer::GetFrameIndex() == 0 && Renderer::GetWhiteTexture() == nullptr, "headless: renderer never started");
 			m_Checks.Check(averageDelta >= 0.014f && averageDelta < 0.1f, "headless: OnUpdate paced near 60 Hz");
 			m_Checks.Check(m_Body.GetComponent<Transform3DComponent>().Position.y < 9.5f, "headless: scene physics steps");
 			DE_INFO("Headless: {} updates, average delta {:.2f} ms, {} failed.", m_Updates, averageDelta * 1000.0f, m_Checks.FailedCount());
@@ -84,11 +83,7 @@ namespace Dingo
 Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 {
 	GraphicsAPI graphicsAPI = GraphicsAPI::Vulkan;
-	if (Application::HasPendingRestart())
-	{
-		graphicsAPI = Application::ConsumePendingRestart();
-	}
-	else if (auto value = args.Get("graphics"))
+	if (auto value = args.Get("graphics"))
 	{
 		if (*value == "dx12" || *value == "directx12")  graphicsAPI = GraphicsAPI::DirectX12;
 		else if (*value == "dx11" || *value == "directx11") graphicsAPI = GraphicsAPI::DirectX11;
@@ -106,20 +101,17 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 		},
 		.Graphics = {
 			.GraphicsAPI = graphicsAPI,
-			.FramesInFlight = 3,
 		},
 		.Assets = {
 			.EnableHotReload = true,
 		},
-		.EnableUI = true,
-		.UI = {
+		.EnableImGui = true,
+		.ImGui = {
 			.EnableDocking = true,
 			.EnableViewports = false,
 		},
 		.UpdateInBackground = true,
 	};
 
-	TestFrameworkApplication* app = new TestFrameworkApplication(params);
-	app->Initialize();
-	return app;
+	return new TestFrameworkApplication(params);
 }

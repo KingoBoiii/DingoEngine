@@ -9,7 +9,7 @@
 #include "DingoEngine/Graphics/NVRHI/DirectX12/DirectX12SwapChain.h"
 #endif
 
-namespace Dingo
+namespace Dingo::Internal
 {
 
 	SwapChain* SwapChain::Create(const SwapChainParams& params)

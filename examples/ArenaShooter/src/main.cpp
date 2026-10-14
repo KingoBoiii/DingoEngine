@@ -51,16 +51,13 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
-			.FramesInFlight = 3,
 		},
 		.Assets = AssetManagerParams()
 			.SetPackageKey(Dingo::Generated::GetPackageKey())
 			.SetRootDirectory("assets")
 			.SetEnableHotReload(true),
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 
-	ArenaShooterApplication* app = new ArenaShooterApplication(params);
-	app->Initialize();
-	return app;
+	return new ArenaShooterApplication(params);
 }

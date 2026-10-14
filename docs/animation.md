@@ -100,7 +100,7 @@ space, there is no skeleton, and any clips in the file are dropped with a warnin
 | Call | Gives |
 |---|---|
 | `IsSkinned()`, `GetSkeleton()` | Whether the file gave a skeleton, and the `Skeleton` (null for a static model). |
-| `GetSubMeshes()` | One `SubMesh` per skinned mesh, and per placement of a static one. `MeshData->HasSkin()` says which are skinned. |
+| `GetSubMeshes()` | One `SubMesh` per skinned mesh, and per placement of a static one. `Mesh->HasSkin()` says which are skinned. |
 | `GetAnimationCount()`, `GetAnimation(i)` | The clips, in file order. The `Model` owns them. |
 | `FindAnimation(name)` | The first clip with that name, or null. |
 | `GetFilePath()`, `GetGeneration()`, `Reload()`, `ReloadEvents()` | See [Hot-reload](#hot-reload). |
@@ -206,7 +206,7 @@ entity needs a `Transform3DComponent` as well.
 | `Model* Model` | null | Not owned. Null draws nothing. |
 | `glm::vec4 Color` | white | Tints every submesh (the lit shader multiplies it with the albedo). Alpha comes from this colour alone. |
 | `Material* Material` | null | Applies to **every** submesh. Null is the built-in lit material. |
-| `bool Visible` | true | `false` skips the entity. It is not inherited by children. |
+| `bool Visible` | true | `false` skips the entity. It is not inherited by children; `Entity::SetActive(false)` switches a whole subtree off. |
 
 ```cpp
 entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(fox, { 1.0f, 0.9f, 0.9f, 1.0f }));   // (model, color)
@@ -215,7 +215,7 @@ entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(f
 - **Skinned submeshes** draw through `Renderer3D::SubmitSkinnedMesh`, one draw each, posed by the
   entity's [animator](#animatorcomponent) or, without one, by `Skeleton::GetRestPalette()`. Submeshes
   without a skin draw like a `MeshRendererComponent`.
-- **The material** replaces the submeshes' own: a `SubMesh`'s `Mat` and `DiffuseTexture` are not
+- **The material** replaces the submeshes' own: a `SubMesh`'s `Material` and `DiffuseTexture` are not
   used. Build a lit material and give it the texture, as above.
 - **Materials.** A lit material (null, or from `Renderer3D::CreateLitMaterial`) draws through a
   skinned copy of itself that the renderer keeps, so emissive, specular and the albedo texture work
@@ -225,28 +225,32 @@ entity.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(f
 
 ### Instances and the per-frame budget
 
-Every skinned draw reads its joints from a `SkinData` uniform buffer, written once per **instance**.
-An instance is a run of consecutive `SubmitSkinnedMesh` calls with the same palette (the same array of
-matrices), transform and colour, which is what a model's submeshes are. Each instance uploads its
-joints once and counts once against `Renderer3DCapabilities::MaxSkinnedInstances`.
+An **instance** is a run of consecutive `SubmitSkinnedMesh` calls with the same palette (the same
+array of matrices), transform and colour, which is what a model's submeshes are. At `EndScene` every
+instance a pass draws, opaque, translucent or into the shadow atlas, goes into the scene's **skin
+arena**: one storage buffer holding each instance's transform, normal matrix, colour and joints back to
+back, uploaded once. Each draw then pushes the 16 bytes that say where its instance starts
+(`DE_SkinDraw`, a push constant), so no buffer is written between draws. An instance whose meshes are all culled from every pass is
+neither uploaded nor counted. Each instance counts once against
+`Renderer3DCapabilities::MaxSkinnedInstances`.
 
 ```cpp
 ApplicationParams params;
-params.Renderer3D.Capabilities.MaxSkinnedInstances = 128;   // default 64, at most 256
+params.Renderer3D.Capabilities.MaxSkinnedInstances = 2048;  // default 1024, at most 4096
 params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of warn-and-drop
 ```
 
-- The budget is **per frame**, across every scene the renderer runs, because each instance holds
-  a version of the volatile buffer on Vulkan, one per pass it draws in: the shadow pass, the opaque
-  pass and the translucent pass. The buffer has room for two versions per instance of the budget,
-  so an instance in all three passes spends a third, and a frame of only such instances fits two
-  thirds of the budget. `Renderer3D::GetSkinnedInstanceBudget()` returns the
-  value in force, clamped to 1 and `Renderer3D::k_MaxSkinnedInstancesLimit` (256).
+- The budget is **per frame**, across every scene the renderer runs.
+  `Renderer3D::GetSkinnedInstanceBudget()` returns the value in force, clamped to 1 and
+  `Renderer3D::k_MaxSkinnedInstancesLimit` (4096). The arena grows by doubling as a scene needs it.
 - An instance past the budget is dropped **whole**, so a character never loses some of its parts.
   The renderer warns once and counts the dropped draws in `Statistics::DroppedSkinnedDraws`.
   `AssertOnOverflow` makes it an assert, which compiles out of release builds.
 - The budget counts instances, not draws: a character of five submeshes is one instance and five
-  draws. With the default of 64, 64 foxes draw and a 65th is dropped.
+  draws. With the default of 1024, 1024 foxes in view draw and a 1025th is dropped.
+- A custom shader with the older, **deprecated** `SkinData` block (below) takes a whole palette
+  upload per draw instead, and at most 256 instances a frame draw with such
+  shaders; the rest are dropped whole, from their shadows too, with a warning.
 
 ### Draw order and translucency
 
@@ -279,7 +283,7 @@ animator.Update(dt);
 
 renderer.BeginScene(camera);
 for (const SubMesh& submesh : model->GetSubMeshes())
-    renderer.SubmitSkinnedMesh(submesh.MeshData, transform, animator.GetSkinningPalette(), glm::vec4(1.0f), material);
+    renderer.SubmitSkinnedMesh(submesh.Mesh, transform, animator.GetSkinningPalette(), glm::vec4(1.0f), material);
 renderer.EndScene();
 ```
 
@@ -311,11 +315,46 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
 
 1. **The vertex inputs** are `a_Position` (location 0), `a_Normal` (1), `a_TexCoord` (2), `a_Joints`
    (`uvec4`, 3) and `a_Weights` (`vec4`, 4). Use these names: D3D11 and D3D12 match inputs by name,
-   Vulkan by location. There is no `a_Color`; the colour comes from the block below. Positions are in
-   skin space, so the shader skins them and applies `Model` itself.
-2. **A uniform block named `SkinData`**, in std140, exactly this, at a binding from 2 to
-   `Renderer3D::k_MaxSkinDataBinding` (13, because D3D11 has 14 constant buffer slots) that the
-   material's own textures and samplers leave free:
+   Vulkan by location. There is no `a_Color`; the colour comes from the blocks below. Positions are in
+   skin space, so the shader skins them and applies the model transform itself.
+2. **The skin blocks**, from the engine's `Skinning.glsl`. Define `DE_SKIN_PALETTE` and include it,
+   and the shader reads the scene's skin arena like the engine's own:
+
+   ```glsl
+   #define DE_SKIN_PALETTE_BINDING 7     // DE_SkinPalette: any free binding
+   #define DE_SKIN_PALETTE
+   #include <DingoEngine/Skinning.glsl>
+
+   void main()
+   {
+       mat4 skin = SkinMatrix(a_Joints, a_Weights);
+       vec4 world = SkinModel() * (skin * vec4(a_Position, 1.0));
+       v_Normal = SkinNormal(skin, a_Normal);
+       v_Color = SkinColor();
+       // ...
+   }
+   ```
+
+   `DE_SkinDraw` is a push-constant block (`layout(push_constant)`), so it has no binding.
+   `DE_SkinPalette` must sit at a binding the material's own textures and samplers leave free. The
+   renderer finds both by name and feeds them itself.
+
+   The renderer owns the push constants of a skinned shader: it declares no push-constant block but
+   `DE_SkinDraw`. Every stage that declares a push-constant block declares the same one, at most 128
+   bytes and a multiple of 4 (`Shader::FindPushConstantBlockSize` reports a block's size). On D3D11 and D3D12 the block
+   takes the lowest constant-buffer register, b0 to b13, that no uniform block of the shader uses, so
+   a shader whose uniform blocks take all fourteen fails to build.
+
+   A shader must not declare `DE_SkinDraw` as a `std140` uniform block. Include `Skinning.glsl`, or
+   declare `layout(push_constant) uniform DE_SkinDraw { uvec4 SkinDraw; };`.
+
+   Without `DE_SKIN_PALETTE` the include declares the older per-draw block instead, which shaders
+   written before v1.0 declare themselves. It is **deprecated** (the renderer warns once when a
+   material uses it, and it goes in 2.0, with `Renderer3D::k_MaxSkinDataBinding`,
+   `k_MaxSkinDataInstances` and `Material::k_SkinDataBlockName`): a uniform block named `SkinData`, in
+   std140, exactly this, at a binding from 2 to 13 that the material's textures and samplers leave
+   free. Each of its draws uploads the whole palette, and such shaders have their own budget of 256
+   instances a frame:
 
    ```glsl
    layout(std140, binding = 6) uniform SkinData   // any free binding from 2 to 13
@@ -331,13 +370,14 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    [Custom materials](scenes-and-ecs.md#custom-materials-per-mesh-shaders)), so a material with
    texture 0 and sampler 0 set occupies 2 and 3, and leaves 4 and up free.
 
-The renderer finds the block **by name**, through `Shader::FindUniformBufferBinding("SkinData")`,
-which needs a reflected shader (`ShaderParams::Reflect` is true by default) and binds its buffer there
-with `Material::SetSkinUniformBuffer`. The rest of the binding convention (0 scene, 1 material
-uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
+The renderer finds the blocks **by name**, through `Shader::FindPushConstantBlockSize`,
+`FindUniformBufferBinding` and `FindStorageBufferBinding`, which need a reflected shader (`ShaderParams::Reflect` is true by default),
+and binds a `SkinData` block itself. The rest of the binding convention (0
+scene, 1 material uniforms, 2+ textures) is unchanged, and static batches bind no skin buffer.
 
-When the block is missing, is outside 2 to 13, or collides with a bound texture or sampler, the mesh
-draws with the **default lit material** and a warning (once), instead of vanishing.
+When the blocks are missing, the `SkinData` block is outside 2 to 13, or a block collides with a
+bound texture or sampler, the mesh draws with the **default lit material** and a warning (once), instead of
+vanishing.
 
 ### Statistics
 
@@ -346,9 +386,10 @@ draws with the **default lit material** and a warning (once), instead of vanishi
 | Field | Meaning |
 |---|---|
 | `SkinnedDraws` | Skinned meshes drawn. Also counted in `DrawCalls` and `SubmittedMeshes`, but not in `VertexCount` or `IndexCount`, which describe the batches. |
-| `SkinnedInstances` | Joint palettes uploaded. A model's submeshes share one. |
-| `DroppedSkinnedDraws` | Skinned meshes of instances dropped by the per-frame budget. |
-| `SkinnedJoints` | Joint matrices uploaded. |
+| `SkinnedInstances` | Joint palettes put into the skin arena. A model's submeshes share one. |
+| `DroppedSkinnedDraws` | Skinned meshes of instances dropped by the per-frame budget, or by the `SkinData` shaders' 256. |
+| `SkinnedJoints` | Joint matrices the instances use. |
+| `SkinPaletteBytes` | The scene's skin arena upload: 128 bytes an instance and 64 a joint. |
 
 The F4 Renderer tab shows the same numbers ([Debugging](#debugging)).
 
@@ -428,6 +469,9 @@ next changes), `Blend`, `Frozen`, `Looping`, `Weight` (how far it has faded in, 
 
 - `Update(dt)` advances every playing state by `dt`, poses the skeleton and collects the frame's
   [events](#events).
+- `Update(dt, false)` does all of that but the posing: the pose stays the last one evaluated, which
+  is how a scene skips [culled animators](#culled-animators). A later `Update` or `Evaluate()` catches
+  it up.
 - `Evaluate()` poses the skeleton from where the states stand **without** moving time or firing
   events. Use it after a seek.
 - `GetLocalPoses()` is one `JointPose` per joint (the rest pose until the first `Update`),
@@ -449,6 +493,7 @@ model. The component holds settings only.
 | `bool Enabled` | true | `false` holds the pose: no update, no events. |
 | `RootMotionMode RootMotion` | `Off` | `XZ` or `Full` takes the clips' root travel out of the pose and moves the entity by it. See [Root motion](#root-motion). |
 | `bool ApplyRootMotion` | true | `false` takes the travel out of the pose but leaves the entity where it is, for a script to apply `Animator::GetRootMotionDelta` itself. |
+| `AnimatorCullingMode CullingMode` | `AlwaysAnimate` | What the animator does while its entity is culled: `PauseWhenCulled` keeps the last pose, `ReduceWhenCulled` poses every 4th update. See [Culled animators](#culled-animators). |
 
 ```cpp
 entity.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).Speed = 2.0f;   // plays at double pace
@@ -479,6 +524,43 @@ and physics alike, so a stall runs the scene slow instead of skipping through cl
 - `Enabled = false` is not updated by the scene. Call `animator->Update(0.0f)` or `Evaluate()`
   yourself to show a change made to a paused animator.
 - `DuplicateEntity` copies the component; the copy's animator starts from the beginning.
+
+### Culled animators
+
+A crowd mostly out of view need not be posed every frame. `CullingMode` decides what an animator does
+while none of its entity's skinned meshes was drawn, into the view or into a shadow, by the renderers
+that drew the scene in this frame or the last:
+
+```cpp
+auto& animator = entity.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+animator.CullingMode = AnimatorCullingMode::ReduceWhenCulled;   // pose every 4th update while culled
+```
+
+- **`AlwaysAnimate`** (the default) poses every update, seen or not, exactly as before.
+- **`PauseWhenCulled`** keeps the last pose.
+- **`ReduceWhenCulled`** poses every 4th update, offset by entity so a culled crowd spreads its poses
+  over the four.
+
+Only sampling and composing the pose stop (`Animator::Update(dt, false)`). Time, fades, one-shot
+returns, [events](#events) and [root motion](#root-motion) move on as they would, so a culled
+character's footsteps still play and a culled walker still walks; it shows the right pose on the
+frame after it is drawn again.
+
+- **The renderer's culling decides.** A `Renderer3D` records the palettes of the skinned instances it
+  drew each scene (camera culling, `CullDistance`, and the shadow pass's own cull), and a scene keeps
+  the renderers that drew it (`RenderEntities3D`, so `SceneManager::OnRender` and custom passes alike).
+  An instance the per-frame budget dropped still counts as seen.
+- **One frame late.** Visibility is last frame's, so an entity coming into view draws its stale pose
+  for one frame.
+- **Children hold still too.** Joint [sockets](#sockets), bodies on joints and
+  `Animator::GetSkinningPalette` read the last pose evaluated.
+- **Nothing drawn, nothing culled.** A scene not rendered in this frame or the last (stepped headless
+  on a server, in a check, or hidden behind a full-screen menu) counts every animator as seen, and
+  so does one no live renderer has drawn: it animates as before. With culling off
+  (`Renderer3D::SetCullingEnabled(false)`) every instance is drawn, so nothing pauses.
+- A skinned mesh the renderer draws in its rest pose instead (no skin, more joints than a draw takes)
+  counts as seen.
+- F7 marks a culled animator `culled, paused` or `culled, every 4th update`.
 
 ## Blending
 
@@ -990,12 +1072,11 @@ plays a copy of its assets with hot-reload on, rewrites the slash's `hitbox` ran
 
 ## Debugging
 
-**F7, the Animation tab** of the Debug window (`UI::AnimationSection()` embeds it in your own window,
-`UI::AnimationStatsWindow()` opens it as a window of its own, and `UI::DebugTab::Animation` selects
-it). It lists every live scene's
+**F7, the Animation tab** of the Debug window. It lists every live scene's
 animators, once they have been created:
 
-- the entity, scene and model, with `disabled` and the speed when they differ from the defaults;
+- the entity, scene and model, with `disabled` and the speed when they differ from the defaults, and
+  `culled` when its [culling mode](#culled-animators) holds its pose;
 - per layer: its weight, its mask (or "whole body") and a `one-shot` flag;
 - per state: a label (the clip; `Blend1D Speed = 1.20 [Walk]` for a blend with its parameter and
   heavier clip; `(frozen)`; `(rest pose)` on layer 0 or `(below)` above it; `(once)` when it does not
@@ -1006,8 +1087,8 @@ animators, once they have been created:
 Past 16 animators the list scrolls in its own region, so the events stay in view.
 
 **F4, the Renderer tab** shows the skinned draws, an Instances bar against the
-`MaxSkinnedInstances` budget, the joints uploaded, and in red the dropped draws when the budget is
-exceeded.
+`MaxSkinnedInstances` budget, the joints and the skin arena's bytes uploaded, and in red the dropped
+draws when the budget is exceeded.
 
 **`Animator::GetStates(layer)`** is the same view for your own tooling.
 
@@ -1043,10 +1124,16 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
 ## Limits
 
 - **128 joints a draw.** A mesh whose vertices name more than `Renderer3D::k_MaxSkinJoints` (128)
-  joints draws its rest pose, unskinned, with a warning. Joints a skin cannot reach (helpers, ends,
-  animated cameras) sort after the skin joints and do not count.
-- **`MaxSkinnedInstances` a frame** (64 by default, at most 256), across all scenes of a renderer. The
-  rest are dropped whole, with a warning.
+  joints draws its rest pose, unskinned, with a warning. Bones and their ancestors come first, then
+  nodes carrying a rigid mesh, so a character's bones stay under the cap even when an animated node
+  outside the armature makes every prop in the scene a joint. Joints a skin cannot reach (helpers,
+  ends, animated cameras) sort after both and do not count.
+- **`MaxSkinnedInstances` a frame** (1024 by default, at most 4096), across all scenes of a renderer,
+  and at most 256 of them drawn with an older `SkinData` shader. The rest are dropped whole, with a
+  warning.
+- **Skinned culling uses the rest pose's bounds**, padded by half their longest side. A pose that
+  reaches farther, or hips that travel away without root motion, can be culled while in view
+  (`Renderer3D::SetCullingEnabled(false)` turns culling off).
 - **4 states a layer.** A fifth freezes the mix so far into one pose.
 - **Translucent characters sort per mesh**, by the centre of each mesh's rest bounds, so a
   character's own see-through parts can blend in the wrong order with each other.
@@ -1055,7 +1142,7 @@ default is `bind`; an unknown value warns and shows `bind`), and every check log
   different rest orientations need the rig to be fixed in the art.
 - **Models load on the main thread**, one asset a frame when loaded asynchronously.
 
-Not in v0.8:
+Not available:
 
 | Item | Where it lives |
 |---|---|
@@ -1065,9 +1152,10 @@ Not in v0.8:
 | Morph targets (blend shapes) | Later. |
 | Cross-topology retargeting | Later. |
 | Instantiating a static multi-node model as an entity tree | Later. Static models stay pre-transformed. |
-| Inherited visibility (`SetActive`) | The v1.0 API pass. |
+| Inherited visibility | Shipped in v1.0: `Entity::SetActive` switches an entity's animator off with its subtree ([Scenes & ECS](scenes-and-ecs.md#active-and-inactive-entities-v10)). |
 | **Skinned shadows** | Shipped in v0.9: skinned meshes cast through the shadow pass's own `DE_SKINNED` vertex stage (`Renderer3D_Shadow.glsl`, sharing `Skinning.glsl` with the lit shader). See [Shadows](shadows.md). |
-| Animation LOD, culling and compression; instancing skinned meshes | v1.0 throughput work. |
+| Animation compression; instancing skinned meshes | Later. Skinned meshes draw one instance at a time (a shared skin arena, not a shared draw). |
+| Animation culling and LOD | Shipped in v1.0: [`AnimatorComponent::CullingMode`](#culled-animators) and the skin arena. |
 | Worker-thread model parsing | Later. |
 
 ## See also
@@ -1082,7 +1170,3 @@ Not in v0.8:
 - `examples/Marionette` - the worked example: combat windows from `.events`, a masked block layer,
   weapons and hit spheres on sockets, clip libraries shared by four characters, and live `.events`
   editing.
-
----
-
-Back to the [documentation index](README.md).

@@ -33,6 +33,7 @@ namespace Dingo
 		vk::Instance GetVulkanInstance() const { return m_VulkanInstance; }
 
 	private:
+		bool WantsValidation() const;
 		bool CreateInstance();
 		void CreateDebugMessenger();
 		bool PickPhysicalDevice(vk::SurfaceKHR surface);
@@ -46,7 +47,7 @@ namespace Dingo
 		vk::detail::DynamicLoader m_DynamicLoader;
 
 		vk::Instance m_VulkanInstance;
-		vk::DebugReportCallbackEXT m_DebugReportCallback;
+		vk::DebugUtilsMessengerEXT m_DebugMessenger;
 		vk::PhysicalDevice m_VulkanPhysicalDevice;
 		QueueFamilyIndices m_QueueFamilyIndices;
 		vk::Device m_VulkanDevice;
@@ -86,7 +87,6 @@ namespace Dingo
 			// instance
 			{
 				VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME,
-				VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 				VK_EXT_DEBUG_UTILS_EXTENSION_NAME
 			},
 			// layers

@@ -57,7 +57,6 @@ namespace Dingo
 		RebuildArenaScene();
 
 		m_SceneManager.SetActiveScene(options.End ? SCENE_END : options.Bout > 0 ? SCENE_ARENA : SCENE_TITLE);
-		m_SceneManager.GetActiveScene()->OnStart();
 	}
 
 	void MarionetteLayer::OnDetach()
@@ -153,7 +152,8 @@ namespace Dingo
 		const LaunchOptions& options = GetLaunchOptions();
 		const bool fixed = options.FixedDt > 0.0f;
 		const float step = fixed ? options.FixedDt : deltaTime;
-		const int steps = fixed ? options.StepsPerFrame : 1;
+		const bool held = options.Freeze && m_FrozenSteps >= FREEZE_HOLD_STEPS;
+		const int steps = held ? 0 : fixed ? options.StepsPerFrame : 1;
 		const Scene* activeBefore = m_SceneManager.GetActiveScene();
 		const bool measuring = options.Perf && !m_PerfDone && activeBefore == m_ArenaScene;
 
@@ -165,10 +165,14 @@ namespace Dingo
 			if (m_LiveEdit)
 				m_LiveEdit->Update(step);
 			m_SceneManager.OnUpdate(step);
+			if (options.Freeze && ++m_FrozenSteps == FREEZE_HOLD_STEPS)
+				break;
 			if (m_SceneManager.GetActiveScene() != activeBefore || m_Match.Restart || m_Match.Done)
 				break;
 		}
 		const Clock::time_point updateEnd = Clock::now();
+		if (held && m_FrozenSteps < FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES && ++m_FrozenSteps == FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES)
+			DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
 
 		const Scene* activeAfter = m_SceneManager.GetActiveScene();
 		if (activeAfter == m_ArenaScene && m_Match.Restart && !m_Match.Done)

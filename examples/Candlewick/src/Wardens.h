@@ -21,7 +21,6 @@ namespace Dingo
 		enum class State { Patrol, Investigate, Return };
 
 		Wardens(Scene& scene, const KeepMap& map, GameAudio& audio, bool frozen, bool castShadows);
-		~Wardens();
 
 		Wardens(const Wardens&) = delete;
 		Wardens& operator=(const Wardens&) = delete;
@@ -95,7 +94,7 @@ namespace Dingo
 
 		void BuildLoop(Warden& warden, const WardenRoute& route) const;
 		void Spawn(Warden& warden, size_t index);
-		void AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, Material* material,
+		void AddPart(Warden& warden, const char* name, Mesh* mesh, const glm::vec3& offset, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface,
 			ShadowCasting shadows = ShadowCasting::On);
 
 		void ResetWarden(Warden& warden);
@@ -125,10 +124,10 @@ namespace Dingo
 		bool m_Frozen = false;
 		bool m_CastShadows = true;
 
-		Material* m_ArmourMaterial = nullptr;
-		Material* m_VisorMaterial = nullptr;
-		Material* m_LampMaterial = nullptr;
-		Material* m_MarkerMaterials[3] = {};
+		SurfaceOverride m_ArmourSurface;
+		SurfaceOverride m_VisorSurface;
+		SurfaceOverride m_LampSurface;
+		SurfaceOverride m_MarkerSurfaces[3];
 
 		std::vector<Warden> m_Wardens;
 	};

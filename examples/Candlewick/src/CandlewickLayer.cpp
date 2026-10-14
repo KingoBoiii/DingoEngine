@@ -24,7 +24,6 @@ namespace Dingo
 		RebuildKeepScene();
 
 		m_SceneManager.SetActiveScene(GetLaunchOptions().Room > 0 ? SCENE_KEEP : SCENE_TITLE);
-		m_SceneManager.GetActiveScene()->OnStart();
 	}
 
 	void CandlewickLayer::OnDetach()
@@ -61,7 +60,16 @@ namespace Dingo
 		const bool measuring = options.Perf && !m_PerfDone && activeBefore == m_KeepScene;
 
 		const Clock::time_point updateStart = Clock::now();
-		m_SceneManager.OnUpdate(step);
+		if (!options.Freeze || m_FrozenSteps < FREEZE_HOLD_STEPS)
+		{
+			m_SceneManager.OnUpdate(step);
+			if (options.Freeze)
+				++m_FrozenSteps;
+		}
+		else if (m_FrozenSteps < FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES && ++m_FrozenSteps == FREEZE_HOLD_STEPS + FREEZE_LOG_FRAMES)
+		{
+			DE_INFO("[Freeze] held after {} steps", FREEZE_HOLD_STEPS);
+		}
 		const Clock::time_point renderStart = Clock::now();
 		m_SceneManager.OnRender();
 		if (measuring)

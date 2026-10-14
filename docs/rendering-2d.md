@@ -70,8 +70,11 @@ r.DrawQuad({ 2.0f, 0.0f }, { 1.0f, 1.0f }, myTexture, { 1, 1, 1, 0.5f }); // 50%
 r.DrawRotatedQuad({ -2.0f, 0.0f }, 45.0f, { 1.0f, 1.0f }, myTexture);
 ```
 
-`DrawQuad`/`DrawRotatedQuad` accept a `glm::vec2` or `glm::vec3` position — use the
-`vec3` form to control draw order via z when needed.
+`DrawQuad`/`DrawRotatedQuad` accept a `glm::vec2` or `glm::vec3` position. z does not order
+anything: the 2D pipelines test and write no depth, so quads draw in submission order within a
+scene (see [Batching & tips](#batching--tips)), and z only goes through the camera matrix, where it
+must stay inside the projection's depth range. A `Scene` sorts its sprites, circles and text by
+world z itself ([Drawing order](scenes-and-ecs.md#drawing-order)).
 
 ## Circles
 
@@ -89,7 +92,7 @@ r.DrawCircle(t, { 0.2f, 0.8f, 1.0f, 1.0f }, /*thickness*/ 1.0f, /*fade*/ 0.005f)
 Text uses an MSDF atlas, so it stays crisp at any scale. Load a font once, then draw:
 
 ```cpp
-Font* font = Font::Create("assets/fonts/arialbd.ttf");   // in OnAttach
+Font* font = Font::Create("fonts/Inter-Bold.ttf");   // in OnAttach
 ...
 r.DrawText("Score: 42", font, { x, y }, /*size*/ 0.5f, { .Color = { 1, 1, 1, 1 } });
 ```
@@ -116,7 +119,7 @@ r.DrawText(text, font, { centerX - w * 0.5f, y }, size, { .Color = color });
 
 `Font::GetStringWidth(text, size, kerning)` returns the width of the widest line, in the units
 `DrawText` lays glyphs out in — pass the same `Kerning` you draw with. `TextParameters::Centered`
-centers a string in one pass without measuring it first. Call `font->Destroy()` in `OnDetach`.
+centers a string in one pass without measuring it first. `delete` the font in `OnDetach`.
 
 **Encoding (v0.6.2).** Strings are UTF-8. The atlas bakes Latin-1 (`U+0020`–`U+00FF`), the
 printable General Punctuation (dashes, curly quotes, bullet, ellipsis, primes, guillemets) and
@@ -128,17 +131,18 @@ to your game project too (`buildoptions { "/utf-8" }`), or write non-ASCII liter
 ## Textures
 
 ```cpp
-Texture* tex = Texture::CreateFromFile("assets/sprites/player.png");
+Texture* tex = Texture::CreateFromFile("sprites/player.png");
 uint32_t w = tex->GetWidth();
 uint32_t h = tex->GetHeight();
 ...
-tex->Destroy();   // in OnDetach
+delete tex;   // in OnDetach (frees the GPU texture too)
 ```
 
 - `Texture::CreateFromFile(path)` — load from PNG/JPG/etc. (via stb_image).
 - `Texture::CreateFromData(width, height, data, format, debugName)` — from raw pixels.
-- `Texture::Create(TextureParams{}...)` — full control (render targets, wrap modes,
-  formats) via the fluent params builder.
+- `Texture::Create(TextureParams{}...)` — full control (render targets, formats,
+  storage, initial data) via the fluent params builder. Wrapping and filtering belong to a
+  `Sampler` (`SamplerParams::SetAddressMode`, `SetFilter`).
 
 A common pattern is sizing a quad to the texture's aspect ratio so sprites aren't
 stretched:
@@ -187,7 +191,7 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
 });
 ```
 
-- **When.** From `OnUpdate` or `OnUIRender` the copy follows the draws recorded so far, and
+- **When.** From `OnUpdate` or `OnImGuiRender` the copy follows the draws recorded so far, and
   `Renderer2D` and `Renderer3D` record theirs at `EndScene`, so read back after it. `done` then
   runs on the main thread at the start of the next frame, before its command list opens: it may
   read back or create textures, not draw. From `OnAttach`, or in a frame the app skips while
@@ -200,7 +204,7 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   row is the top of its picture, an image `CreateFromFile` loaded is stored bottom row first.
   `SaveToFile` writes either so the file looks right: a render target as it is, any other texture
   flipped back the way its file held it.
-- RGBA8 2D textures only (`TextureFormat::RGBA`, `RGB` and `RGBA8_UNORM`); anything else logs an
+- RGBA8 2D textures only (`TextureFormat::RGBA8_UNORM`, also spelled `RGBA`); anything else logs an
   error and hands `done` empty pixels. The window's own swap chain has no texture to read.
 
 ## Batching & tips
@@ -227,13 +231,31 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
   first. A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) blocks a frame:
   on Vulkan, later ones draw with an earlier block's camera.
 
+- **Scenes cull** (v1.0): `Scene::RenderEntities` skips a sprite or circle whose bounding square
+  lies outside the camera's view (`Statistics::CulledQuads`; `SetCullingEnabled(false)` draws them
+  all). Quads you submit yourself are never culled, and neither is text.
+
 - **2D is never tone mapped** (v0.9). The [post chain](post-processing.md) takes the 3D pass alone:
   a scene's 2D overlay, and anything `Renderer2D` draws after `PostProcessStack::End`, goes into the
   target as it always did, so HUD colours stay exactly what you pass.
 
-`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`.
-`r.GetOutput()` returns `nullptr`: `Renderer2D` draws straight into the swap chain,
-whose image is not a `Texture` you can sample (before v0.6.3 the call read out of bounds).
+`r.GetViewportSize()` returns the current framebuffer size as a `glm::vec2`. `Renderer2D` draws
+straight into the current render target (`Renderer::SetRenderTarget`), else the swap chain; to sample
+what it drew, draw into a `Framebuffer` of your own.
+
+## Limits
+
+- A renderer runs at most `Renderer2D::k_MaxScenesPerFrame` (32) `BeginScene`/`EndScene` blocks a
+  frame; on Vulkan, later ones draw with an earlier block's camera.
+- A batch holds 32 textures, and a 33rd forces a flush.
+- Quads, circles and text batch apart, so `EndScene` draws all quads, then circles, then text,
+  unless you `Flush()`; a scene keeps them in z order itself.
+- Text covers Latin-1, the printable General Punctuation and the euro sign; any other codepoint
+  draws as `?`.
+- Culling is per scene entity (sprites and circles): quads you submit yourself and text are never
+  culled.
+- 2D is never tone mapped, and `Texture::ReadPixels` reads RGBA8 2D textures only, not the window's
+  swap chain.
 
 ---
 

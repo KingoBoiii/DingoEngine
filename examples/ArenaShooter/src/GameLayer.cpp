@@ -52,7 +52,7 @@ namespace Dingo
 		m_EnemyTexHandle = assets.LoadAsync("sprites/enemy.png");
 		m_BulletTexHandle = assets.LoadAsync("sprites/bullet.png");
 		m_ShaderHandle = assets.LoadAsync("shaders/background.glsl");
-		m_FontHandle = assets.LoadAsync("fonts/arialbd.ttf");
+		m_FontHandle = assets.LoadAsync("fonts/Inter-Bold.ttf");
 		m_ShootClip = assets.LoadAsync("audio/shoot.wav");
 		m_DeathClip = assets.LoadAsync("audio/death.wav");
 		m_HitClip = assets.LoadAsync("audio/hit.wav");
@@ -150,8 +150,8 @@ namespace Dingo
 			const float quad[] = { -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f };
 			const uint16_t indices[] = { 0, 1, 2, 2, 3, 0 };
 
-			m_BackgroundVertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(quad), quad, true, "Background Vertices");
-			m_BackgroundIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(indices), indices, true, "Background Indices");
+			m_BackgroundVertexBuffer = GraphicsBuffer::CreateVertexBuffer(sizeof(quad), quad, BufferUpload::Direct, "Background Vertices");
+			m_BackgroundIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(indices), IndexFormat::Uint16, indices, BufferUpload::Direct, "Background Indices");
 			m_BackgroundUniformBuffer = GraphicsBuffer::CreateUniformBuffer(sizeof(BackgroundUniform), "Background Uniform");
 
 			VertexLayout layout = VertexLayout()

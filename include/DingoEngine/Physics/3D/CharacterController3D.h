@@ -8,96 +8,117 @@
 namespace Dingo
 {
 
-	// Configuration for a CharacterController3D. The collision shape is a capsule
-	// standing on the +Y axis: Radius is the capsule radius and Height is the full
-	// standing height (the cylinder section is Height - 2*Radius, so Height must be
-	// >= 2*Radius). The controller's Position refers to the bottom of the capsule
-	// (its feet), matching Jolt's convention.
+	/// Configuration for a CharacterController3D. The collision shape is a capsule
+	/// standing on the +Y axis: Radius is the capsule radius and Height is the full
+	/// standing height (the cylinder section is Height - 2*Radius, so Height must be
+	/// >= 2*Radius). The controller's Position refers to the bottom of the capsule
+	/// (its feet), matching Jolt's convention.
 	struct CharacterControllerParams3D
 	{
-		float Radius = 0.3f;  // capsule radius
-		float Height = 1.8f;  // full standing height (feet to head)
+		float Radius = 0.3f;  ///< Capsule radius in metres.
+		float Height = 1.8f;  ///< Full standing height in metres (feet to head); at least 2*Radius.
 
-		float MaxSlopeAngle = 45.0f; // steepest walkable slope, degrees
-		float StepHeight = 0.3f;     // max step-up height for stairs (Jolt walk-stairs)
-		float Mass = 70.0f;          // used to push dynamic bodies the character stands on
-		// Blocks, and is blocked by, the world's other controllers that set it: two characters
-		// can't walk through each other. Neither pushes the other; each stops at the other's capsule.
+		/// Steepest walkable slope, in degrees; steeper ground is slid down.
+		float MaxSlopeAngle = 45.0f;
+		/// Max step-up height for stairs (Jolt walk-stairs), in metres.
+		float StepHeight = 0.3f;
+		/// In kilograms; used to push dynamic bodies the character stands on.
+		float Mass = 70.0f;
+		/// Blocks, and is blocked by, the world's other controllers that set it: two characters
+		/// can't walk through each other. Neither pushes the other; each stops at the other's
+		/// capsule.
 		bool CollideWithCharacters = true;
 
-		glm::vec3 Up{ 0.0f, 1.0f, 0.0f }; // world up axis
+		glm::vec3 Up{ 0.0f, 1.0f, 0.0f }; ///< World up axis; normalized on creation.
 
-		glm::vec3 Position{ 0.0f };
-		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f }; // identity (w, x, y, z)
+		glm::vec3 Position{ 0.0f }; ///< Starting world position of the feet.
+		/// Starting world rotation, identity (w, x, y, z) by default.
+		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
 	};
 
-	// A kinematic character controller for player/enemy movement, wrapping Jolt's
-	// CharacterVirtual. Unlike a dynamic rigid body it does not tumble or get shoved
-	// by the solver; it moves by sweeping its capsule through the world each Update,
-	// sliding along walls, snapping to the floor and stepping up stairs. It is created
-	// from a live world via Physics3D::CreateCharacterController and must be destroyed
-	// before that world.
-	//
-	// Drive contract (the caller applies gravity — this matches Jolt's ExtendedUpdate):
-	// each frame set the desired velocity, then Update, then read the new position:
-	//
-	//     glm::vec3 v = controller->GetLinearVelocity();
-	//     if (controller->IsGrounded())
-	//         v.y = 0.0f;                  // reset fall speed while on the floor
-	//     else
-	//         v.y += gravity.y * dt;       // integrate gravity while airborne
-	//     v.x = inputDir.x * moveSpeed;    // horizontal input
-	//     v.z = inputDir.z * moveSpeed;
-	//     if (jumpPressed && controller->IsGrounded())
-	//         v.y = jumpSpeed;
-	//     controller->SetLinearVelocity(v);
-	//     controller->Update(dt);
-	//     transform.Position = controller->GetPosition();
-	//
-	// No backend (Jolt) type ever appears in this interface — it is an abstract class
-	// with an opaque implementation, exactly like Physics3D.
+	/// A kinematic character controller for player/enemy movement, wrapping Jolt's
+	//// CharacterVirtual. Unlike a dynamic rigid body it does not tumble or get shoved
+	/// by the solver; it moves by sweeping its capsule through the world each Update,
+	/// sliding along walls, snapping to the floor and stepping up stairs. It is created
+	/// from a live world via Physics3D::CreateCharacterController and must be destroyed
+	/// before that world.
+	///
+	/// Drive contract (the caller applies gravity - this matches Jolt's ExtendedUpdate):
+	/// each frame set the desired velocity, then Update, then read the new position:
+	///
+	///     glm::vec3 v = controller->GetLinearVelocity();
+	///     if (controller->IsGrounded())
+	///         v.y = 0.0f;                  // reset fall speed while on the floor
+	///     else
+	///         v.y += gravity.y * dt;       // integrate gravity while airborne
+	///     v.x = inputDir.x * moveSpeed;    // horizontal input
+	///     v.z = inputDir.z * moveSpeed;
+	///     if (jumpPressed && controller->IsGrounded())
+	///         v.y = jumpSpeed;
+	///     controller->SetLinearVelocity(v);
+	///     controller->Update(dt);
+	///     transform.Position = controller->GetPosition();
+	///
+	/// No backend (Jolt) type ever appears in this interface - it is an abstract class
+	/// with an opaque implementation, exactly like Physics3D.
+	///
+	/// A Scene creates and steps its controllers itself (CharacterController3DComponent): a
+	/// script only sets the velocity and never calls Update(). The Scene rebuilds its controllers
+	/// on OnStart, so never keep a CharacterController3D* across OnStop/OnStart.
 	class CharacterController3D
 	{
 	public:
+		/// Not called directly; get one from Physics3D::CreateCharacterController.
 		CharacterController3D() = default;
+		/// Removes the character from the world; destroy it before the Physics3D that made it.
 		virtual ~CharacterController3D() = default;
 
 		CharacterController3D(const CharacterController3D&) = delete;
 		CharacterController3D& operator=(const CharacterController3D&) = delete;
 
-		// Position of the character's feet (bottom of the capsule).
+		/// Position of the character's feet (bottom of the capsule), in world space.
 		virtual glm::vec3 GetPosition() const = 0;
+		/// Teleports the feet to a world position without sweeping or colliding on the way.
 		virtual void SetPosition(const glm::vec3& position) = 0; // teleport
 
+		/// World rotation of the character.
 		virtual glm::quat GetRotation() const = 0;
+		/// Sets the world rotation of the character.
 		virtual void SetRotation(const glm::quat& rotation) = 0;
 
+		/// The velocity (metres per second) the next Update() will move the character by.
 		virtual glm::vec3 GetLinearVelocity() const = 0;
+		/// Sets the velocity (metres per second) for the next Update(); the caller adds gravity
+		/// itself (see the class comment).
 		virtual void SetLinearVelocity(const glm::vec3& velocity) = 0;
 
-		// Advances the character by its current velocity for deltaTime, handling ground
-		// snapping and stair walking. Set the desired velocity (including gravity — see
-		// the class comment) before calling.
+		/// Advances the character by its current velocity for deltaTime, handling ground
+		/// snapping and stair walking. Set the desired velocity (including gravity - see
+		/// the class comment) before calling. A Scene calls this itself; no-op when deltaTime
+		/// is not positive.
 		virtual void Update(float deltaTime) = 0;
 
-		// True when the character is standing on ground it can walk on.
+		/// True when the character is standing on ground it can walk on.
 		virtual bool IsGrounded() const = 0;
 
-		// Surface normal / velocity of the ground the character is standing on. Normal is
-		// { 0, 0, 0 } and velocity is { 0, 0, 0 } when the character is airborne. Ground
-		// velocity lets a rider move with a kinematic platform.
+		/// Surface normal / velocity of the ground the character is standing on. Normal is
+		/// { 0, 0, 0 } and velocity is { 0, 0, 0 } when the character is airborne. Ground
+		/// velocity lets a rider move with a kinematic platform.
+		///@{
 		virtual glm::vec3 GetGroundNormal() const = 0;
 		virtual glm::vec3 GetGroundVelocity() const = 0;
+		///@}
 
-		// Lets the character pass through a body (ignore = false restores it): the body no
-		// longer blocks, supports or pushes it out, and it no longer pushes the body. A Scene
-		// keeps this set for the bodies of the controller's kinematic descendants on every
-		// step. No-op on an invalid/stale handle.
+		/// Lets the character pass through a body (ignore = false restores it): the body no
+		/// longer blocks, supports or pushes it out, and it no longer pushes the body. A Scene
+		/// keeps this set for the bodies of the controller's kinematic descendants on every
+		/// step. No-op on an invalid/stale handle.
 		virtual void IgnoreBody(PhysicsBodyId3D body, bool ignore = true) = 0;
+		/// True if IgnoreBody is in effect for the body; false for an invalid/stale handle.
 		virtual bool IsBodyIgnored(PhysicsBodyId3D body) const = 0;
 
-		// True while the capsule overlaps the body: what a sensor asks of a character, which is
-		// never a body itself. False on an invalid/stale handle.
+		/// True while the capsule overlaps the body: what a sensor asks of a character, which is
+		/// never a body itself. False on an invalid/stale handle.
 		virtual bool IsOverlapping(PhysicsBodyId3D body) const = 0;
 	};
 

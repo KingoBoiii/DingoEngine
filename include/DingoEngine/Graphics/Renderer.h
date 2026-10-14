@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DingoEngine/Graphics/CommandList.h"
+#include "DingoEngine/Graphics/ComputePass.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Pipeline.h"
@@ -8,6 +8,7 @@
 #include "DingoEngine/Graphics/RenderPass.h"
 #include "DingoEngine/Graphics/Sampler.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/Viewport.h"
 
 #include <glm/glm.hpp>
 
@@ -18,72 +19,209 @@
 namespace Dingo
 {
 
-	class SwapChain;
-
 	namespace Internal
 	{
+		class CommandList;
 		class NvrhiTextureReadback;
+		class SwapChain;
+		struct RendererBackend;
 	}
 	class PostProcessStack;
 
-	// One GPU pass timer (Renderer::BeginGpuTimer), over the last GpuTimers::k_HistoryLength frames
-	// that measured it. A frame's sample adds up every time the timer ran in that frame.
+	/// One GPU pass timer (Renderer::BeginGpuTimer), over the last GpuTimers::k_HistoryLength
+	/// frames that measured it. A frame's sample adds up every time the timer ran in that frame.
 	struct GpuTimerStats
 	{
-		const char* Name = nullptr;
-		uint32_t Depth = 0;   // timers open around it when it was first seen
-		uint32_t Samples = 0; // frames in the history, at most 120
-		float LastMs = 0.0f;
-		float MeanMs = 0.0f;
-		float MaxMs = 0.0f;
+		const char* Name = nullptr; ///< The timer's name; the pointer is the engine's own copy.
+		uint32_t Depth = 0;   ///< Timers open around it when it was first seen.
+		uint32_t Samples = 0; ///< Frames in the history, at most 120.
+		float LastMs = 0.0f;  ///< GPU time of the most recent measured frame, in milliseconds.
+		float MeanMs = 0.0f;  ///< Mean over the history, in milliseconds.
+		float MaxMs = 0.0f;   ///< Longest frame in the history, in milliseconds.
 	};
 
-	// Ownership rule for every graphics resource: the factories hand out a raw `new`, and
-	// Destroy() only releases the GPU handle — the host object is still the owner's. Every
-	// owner pairs the two through this, so the pairing is not re-decided per site.
+	/// Deletes the resource and nulls the pointer. Every factory's object frees everything it
+	/// holds, its GPU objects included, in its destructor (docs/conventions.md), so this is plain
+	/// delete. Never use it on an asset the AssetManager owns.
 	template<typename T>
 	void DestroyAndDelete(T*& resource)
 	{
-		if (!resource)
-			return;
-
-		resource->Destroy();
 		delete resource;
 		resource = nullptr;
 	}
 
-	// GraphicsBuffer's destructor is protected (only its factories construct one), so the
-	// wrapper has to be deleted through the public polymorphic base it shares.
-	inline void DestroyAndDelete(GraphicsBuffer*& buffer)
-	{
-		if (!buffer)
-			return;
-
-		buffer->Destroy();
-		delete static_cast<GenericGraphicsBuffer<const void>*>(buffer);
-		buffer = nullptr;
-	}
-
-	// Renderer is a stateless gateway: all draw calls require explicit
-	// resources (Pipeline or RenderPass, vertex/index buffers, etc.).
-	// No per-draw implicit state is stored between calls.
+	/// Renderer is a stateless gateway: all draw calls require explicit resources (Pipeline or
+	/// RenderPass, vertex/index buffers, etc.). No per-draw implicit state is stored between calls.
+	/// Main thread only: calls record into the frame's command list, which the render thread
+	/// submits.
 	class Renderer
 	{
 	public:
+		/// Renderer is all statics and cannot be constructed.
 		Renderer() = delete;
+		/// Renderer is not copyable.
 		Renderer(const Renderer&) = delete;
+		/// Renderer is not copyable.
 		Renderer& operator=(const Renderer&) = delete;
 
+		/// True in a frame that renders nothing (a minimized window, or no swap-chain image): until
+		/// the next frame the Upload, Clear, Draw and DrawIndexed calls below are no-ops, and so
+		/// are Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not
+		/// redone later: data written once belongs in a BufferUpload::Direct buffer.
+		static bool IsFrameSkipped();
+
 		/**************************************************
-		***		LIFECYCLE								***
+		***		GPU TIMERS								***
 		**************************************************/
 
-		static void Initialize(SwapChain* swapChain);
+		/// Measures the GPU time of the commands recorded between the two calls, which nest and
+		/// must pair up within a frame. `name` must outlive the call only. Results are read four
+		/// frames later, never waiting for the GPU (GetGpuTimers, the F8 Profiler tab, and Tracy
+		/// plots in a --profile build). In a frame that renders nothing they measure nothing.
+		/// "Frame" times the whole frame command list. At most 32 timers a frame; later ones warn
+		/// once and are skipped.
+		///@{
+		static void BeginGpuTimer(const char* name);
+		static void EndGpuTimer();
+		///@}
+		/// Every timer measured so far, in milliseconds; refreshed once a frame, so copy what you
+		/// keep.
+		static const std::vector<GpuTimerStats>& GetGpuTimers();
+
+		/// How long the render thread spent on the last frame it submitted: executing the command
+		/// list and presenting. In milliseconds; read from any thread.
+		static float GetRenderThreadMilliseconds();
+
+		/**************************************************
+		***		RESOURCE UPLOAD							***
+		**************************************************/
+
+		/// Re-sends the data the buffer kept (GraphicsBuffer::GetData), all of it; asserts for a
+		/// buffer that kept none, such as a storage buffer. Recorded in the frame; a no-op when
+		/// skipped.
+		static void Upload(GraphicsBuffer* buffer);
+		/// Writes `size` bytes from `data` into the buffer, starting `offset` bytes in. The bytes
+		/// are copied when recorded, so `data` need not outlive the call. A no-op in a skipped
+		/// frame. A volatile (uniform) buffer is written whole from offset 0: a nonzero offset is
+		/// replaced by 0, with an error.
+		static void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0);
+
+		/**************************************************
+		***		CLEAR									***
+		**************************************************/
+
+		/// Clears colour attachment 0 of `framebuffer`, and its depth to 1 if it has one. Alpha is
+		/// ignored: the colour is cleared with alpha 1. Doesn't change the render target. Does
+		/// nothing when headless.
+		static void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
+		/// The same for the current render target (SetRenderTarget, else the swap chain), which it
+		/// also binds for the draws that follow.
+		static void Clear(const glm::vec4& clearColor);
+
+		/**************************************************
+		***		DRAW - explicit Pipeline				***
+		**************************************************/
+
+		/// Draws `vertexCount` vertices with no vertex buffer into the current render target;
+		/// nothing is drawn when the pipeline can't be set (a shader that failed to compile).
+		static void Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount = 1);
+		/// The same with `vertexBuffer` bound as the vertex stream.
+		static void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount = 1);
+
+		/// indexCount = 0 means "the whole index buffer", sized from the buffer's own IndexFormat.
+		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
+
+		/**************************************************
+		***		DRAW - explicit RenderPass				***
+		**************************************************/
+
+		/// Self-contained: sets render pass bindings + framebuffer, then draws. firstIndex starts
+		/// the draw further into the index buffer; indexCount = 0 then means the rest of it.
+		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
+		/// Without vertex buffers: the vertex stage builds its vertices from gl_VertexIndex.
+		static void Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount = 1);
+
+		/**************************************************
+		***		DRAW - Material							***
+		**************************************************/
+
+		/// Lazily creates (and caches) the pipeline + render pass for the given vertex layout,
+		/// uploads the uniforms (once per frame and after each SetUniform), then draws. indexCount
+		/// and firstIndex as for the RenderPass overload.
+		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
+		/// The same, culling with cullMode instead of the material's own CullMode: a two-sided
+		/// material drawn back faces first, then front faces (Renderer3D's translucent pass).
+		static void DrawIndexed(Material* material, CullMode cullMode, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
+		/// Without vertex buffers, as for a fullscreen pass: Draw(material, 3) with a vertex stage
+		/// that makes one triangle covering the target from gl_VertexIndex
+		/// (DingoEngine/Fullscreen.glsl).
+		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
+
+		/// Runs a compute pass in the frame's command list, ordered with the draws around it.
+		/// Nothing in a frame that renders nothing (IsFrameSkipped). False when nothing was
+		/// recorded: a skipped frame, or a pass whose pipeline or bindings can't be built (a broken
+		/// hot-reload). Zero groups ask for nothing and return true.
+		static bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1);
+
+		/**************************************************
+		***		QUERIES									***
+		**************************************************/
+
+		/// The indices from firstIndex to the end of an index buffer, by its own IndexFormat, 0
+		/// past the end: what a DrawIndexed with indexCount = 0 draws.
+		static uint32_t GetIndexCount(GraphicsBuffer* indexBuffer, uint32_t firstIndex = 0);
+
+		/// Override the render target used by all no-arg draw/clear calls. Pass nullptr (or call
+		/// ResetRenderTarget) to revert to the swap chain. Either also drops a SetViewport.
+		static void SetRenderTarget(Framebuffer* framebuffer);
+		/// Reverts to the swap chain, and drops a SetViewport.
+		static void ResetRenderTarget();
+
+		/// Limits the draws that follow to a rectangle of the current render target (a shadow-atlas
+		/// tile, a half-resolution pass), until ResetViewport or the next SetRenderTarget. Clears
+		/// still clear the whole target.
+		static void SetViewport(const Viewport& viewport);
+		/// Back to draws covering the whole render target.
+		static void ResetViewport();
+		/// The SetViewport rectangle in force, or empty while draws cover the whole target.
+		static std::optional<Viewport> GetViewport();
+		/// The override, or null while draws go to the swap chain.
+		static Framebuffer* GetRenderTarget();
+
+		/// The swap chain's framebuffer for the image drawn this frame. It is freed and recreated
+		/// on every resize, so fetch it again each frame rather than keeping it.
+		static Framebuffer*  GetSwapChainFramebuffer();
+
+		/// Bumped each time the frame command list opens, so per-frame budgets (such as a volatile
+		/// buffer's writes) can tell when a new frame starts.
+		static uint64_t GetFrameIndex();
+
+		/**************************************************
+		***		STATIC RESOURCES						***
+		**************************************************/
+
+		/// A 1x1 opaque white RGBA texture, for a texture slot that has nothing to show. Owned by
+		/// the Renderer: never destroy it. Null when headless.
+		static Texture* GetWhiteTexture();
+		/// A linear-filtering sampler that clamps to the edge. Owned by the Renderer: never destroy
+		/// it.
+		static Sampler* GetClampSampler();
+		/// A nearest-filtering sampler that clamps to the edge. Owned by the Renderer: never
+		/// destroy it.
+		static Sampler* GetPointSampler();
+
+		/// The 3D pass's post chain (PostProcess.h), shared by SceneRenderer and direct Renderer3D
+		/// use.
+		static PostProcessStack& GetPostProcessStack();
+
+	private:
+		// The Application drives these through Internal::RendererBackend.
+		static void Initialize(Internal::SwapChain* swapChain);
 
 		// Parks the render thread, submits any frame still in flight and drops the frame
 		// command list, so the GPU is idle and nothing the renderer recorded still
 		// references a resource. Queries and the shared static resources below stay valid
-		// afterwards — Layer::OnDetach runs between this and Destroy(), and freeing GPU
+		// afterwards - Layer::OnDetach runs between this and Destroy(), and freeing GPU
 		// resources there is exactly what it is for.
 		static void Shutdown();
 
@@ -100,13 +238,12 @@ namespace Dingo
 		// frame in flight, as BeginFrame does, but opens no command list. Until the next
 		// BeginFrame, the Upload, Clear, Draw and DrawIndexed calls below are no-ops, and so are
 		// Renderer2D and Renderer3D scenes and SceneRenderer::Render. A dropped Upload is not
-		// redone later: data written once belongs in a DirectUpload buffer. Code that records into
+		// redone later: data written once belongs in a BufferUpload::Direct buffer. Code that records into
 		// GetCommandList() itself, or calls Begin/Close/Execute, must check IsFrameSkipped() first.
 		// A BeginFrame that gets no swap-chain image to draw into (Vulkan, a window that can't be
 		// presented to) reports IsFrameSkipped() too, with the same no-ops, though its command list
 		// is open and its EndFrame still runs.
 		static void SkipFrame();
-		static bool IsFrameSkipped();
 
 		// Thread-safe: records the new size and returns. The swap chain is recreated at the next
 		// safe point: on the render thread after Present, before the next image acquire, or in a
@@ -115,146 +252,25 @@ namespace Dingo
 		// Thread-safe, applied at the same points as QueueResize. Window::SetVSync calls it.
 		static void QueueVSync(bool vsync);
 
-		/**************************************************
-		***		GPU TIMERS								***
-		**************************************************/
-
-		// Measures the GPU time of the commands recorded between the two calls, which nest and must
-		// pair up within a frame. `name` must outlive the call only. Results are read four frames
-		// later, never waiting for the GPU (GetGpuTimers, the F8 Profiler tab, and Tracy plots in a
-		// --profile build). In a frame that renders nothing they measure nothing. "Frame" times the
-		// whole frame command list. At most 32 timers a frame; later ones warn once and are skipped.
-		static void BeginGpuTimer(const char* name);
-		static void EndGpuTimer();
-		static const std::vector<GpuTimerStats>& GetGpuTimers();
-
-		// How long the render thread spent on the last frame it submitted: executing the command
-		// list and presenting.
-		static float GetRenderThreadMilliseconds();
-
-		/**************************************************
-		***		COMMAND LIST MANAGEMENT					***
-		**************************************************/
-
 		static void Begin();
 		static void Close();
 		static void Execute();
 
-		/**************************************************
-		***		RESOURCE UPLOAD							***
-		**************************************************/
-
-		static void Upload(GraphicsBuffer* buffer);
-		static void Upload(GraphicsBuffer* buffer, const void* data, uint64_t size);
-
-		/**************************************************
-		***		CLEAR									***
-		**************************************************/
-
-		static void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
-		static void Clear(const glm::vec4& clearColor);
-
-		/**************************************************
-		***		DRAW — explicit Pipeline				***
-		**************************************************/
-
-		static void Draw(Pipeline* pipeline, uint32_t vertexCount, uint32_t instanceCount = 1);
-		static void Draw(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, uint32_t vertexCount, uint32_t instanceCount = 1);
-
-		// indexCount = 0 means "the whole index buffer", sized from the buffer's own
-		// GraphicsFormat (Uint16/Uint32).
-		static void DrawIndexed(Pipeline* pipeline, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0);
-
-		/**************************************************
-		***		DRAW — explicit RenderPass				***
-		**************************************************/
-
-		// Self-contained: sets render pass bindings + framebuffer, then draws. firstIndex starts the
-		// draw further into the index buffer; indexCount = 0 then means the rest of it.
-		static void DrawIndexed(RenderPass* renderPass, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
-		// Without vertex buffers: the vertex stage builds its vertices from gl_VertexIndex.
-		static void Draw(RenderPass* renderPass, uint32_t vertexCount, uint32_t instanceCount = 1);
-
-		/**************************************************
-		***		DRAW — Material							***
-		**************************************************/
-
-		// Lazily creates (and caches) the pipeline + render pass for the given
-		// vertex layout, uploads the uniforms (once per frame and after each SetUniform), then draws.
-		// indexCount and firstIndex as for the RenderPass overload.
-		static void DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
-		// The same, culling with cullMode instead of the material's own CullMode: a two-sided material
-		// drawn back faces first, then front faces (Renderer3D's translucent pass).
-		static void DrawIndexed(Material* material, CullMode cullMode, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount = 0, uint32_t instanceCount = 1, uint32_t firstIndex = 0);
-		// Without vertex buffers, as for a fullscreen pass: Draw(material, 3) with a vertex stage that
-		// makes one triangle covering the target from gl_VertexIndex (DingoEngine/Fullscreen.glsl).
-		static void Draw(Material* material, uint32_t vertexCount, uint32_t instanceCount = 1);
-
-		// Runs a compute pass in the frame's command list, ordered with the draws around it. Nothing
-		// in a frame that renders nothing (IsFrameSkipped). False when nothing was recorded: a skipped
-		// frame, or a pass whose pipeline or bindings can't be built (a broken hot-reload). Zero groups
-		// ask for nothing and return true.
-		static bool Dispatch(ComputePass* pass, uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1);
-
-		/**************************************************
-		***		QUERIES									***
-		**************************************************/
-
-		// The indices from firstIndex to the end of an index buffer, by its own GraphicsFormat (Uint32,
-		// else Uint16), 0 past the end: what a DrawIndexed with indexCount = 0 draws.
-		static uint32_t GetIndexCount(GraphicsBuffer* indexBuffer, uint32_t firstIndex = 0);
-
-		// Override the render target used by all no-arg draw/clear calls.
-		// Pass nullptr (or call ResetRenderTarget) to revert to the swap chain. Either also drops a
-		// SetViewport.
-		static void SetRenderTarget(Framebuffer* framebuffer);
-		static void ResetRenderTarget();
-
-		// Limits the draws that follow to a rectangle of the current render target (a shadow-atlas
-		// tile, a half-resolution pass), until ResetViewport or the next SetRenderTarget. Clears still
-		// clear the whole target.
-		static void SetViewport(const Viewport& viewport);
-		static void ResetViewport();
-		// The SetViewport rectangle in force, or empty while draws cover the whole target.
-		static std::optional<Viewport> GetViewport();
-		// The override, or null while draws go to the swap chain.
-		static Framebuffer* GetRenderTarget();
-
-		static CommandList*  GetCommandList();
-
-		// The frame command list only while it is open, else null — and null rather than an
+		static Internal::CommandList* GetCommandList();
+		// The frame command list only while it is open, else null - and null rather than an
 		// assert before Initialize() or after Destroy(). For resource writes that want to
 		// join the frame instead of opening a list of their own, but must also work when
 		// called outside one (asset loads during OnAttach, say).
-		static CommandList* TryGetRecordingCommandList();
-		static Framebuffer*  GetSwapChainFramebuffer();
-
+		static Internal::CommandList* TryGetRecordingCommandList();
 		// True while `framebuffer` is one the swap chain currently owns. Those are freed
 		// and recreated on every resize, so anything holding one must re-resolve rather
 		// than dereference what it captured.
 		static bool IsSwapChainFramebuffer(const Framebuffer* framebuffer);
-
 		// Bumped every time the swap chain recreates its framebuffers. Anything that caches
 		// objects built against one must compare this rather than trusting the pointer,
 		// which the allocator is free to hand back for a different framebuffer.
 		static uint64_t GetSwapChainResizeGeneration();
 
-		// Bumped each time the frame command list opens, so per-frame budgets (such as a volatile
-		// buffer's writes) can tell when a new frame starts.
-		static uint64_t GetFrameIndex();
-
-		/**************************************************
-		***		STATIC RESOURCES						***
-		**************************************************/
-
-		static Texture* GetWhiteTexture();
-		static Sampler* GetClampSampler();
-		static Sampler* GetPointSampler();
-
-		// The 3D pass's post chain (PostProcess.h), shared by SceneRenderer and direct Renderer3D use.
-		static PostProcessStack& GetPostProcessStack();
-
-	private:
 		static void RenderThreadLoop();
 		static Framebuffer* GetCurrentTarget();
 		static void BindTarget(Framebuffer* target);
@@ -275,6 +291,7 @@ namespace Dingo
 		friend class NvrhiTexture;
 		friend class NvrhiGraphicsBuffer;
 		friend class Internal::NvrhiTextureReadback;
+		friend struct Internal::RendererBackend;
 	};
 
 }

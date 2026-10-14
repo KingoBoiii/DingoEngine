@@ -6,9 +6,9 @@
 namespace Dingo
 {
 
-	CommandList* CommandList::Create(const CommandListParams& params)
+	Internal::CommandList* Internal::CommandList::Create(const CommandListParams& params)
 	{
-		CommandList* commandList = new NvrhiCommandList(params);
+		Internal::CommandList* commandList = new NvrhiCommandList(params);
 		commandList->Initialize();
 		return commandList;
 	}

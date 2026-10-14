@@ -9,7 +9,7 @@
 #include <span>
 #include <string>
 #include <type_traits>
-#include <unordered_map>
+#include <vector>
 
 namespace Dingo
 {
@@ -24,34 +24,37 @@ namespace Dingo
 
 	namespace Internal { struct AssetManagerData; }
 
+	/// Settings for the AssetManager, set in ApplicationParams::Assets.
 	struct AssetManagerParams
 	{
-		// Every asset path resolves against this root. A relative root is resolved
-		// against the working directory once at Initialize(), so a game can anchor
-		// assets to e.g. the executable's directory instead of depending on where it
-		// was launched from (the classic cwd-relative asset trap). For a packaged
-		// build, set this via Platform::FindDirectoryUpward("assets").
+		/// Every asset path resolves against this root. A relative root is resolved
+		/// against the working directory once at Initialize(), so a game can anchor
+		/// assets to e.g. the executable's directory instead of depending on where it
+		/// was launched from (the classic cwd-relative asset trap). For a packaged
+		/// build, set this via Platform::FindDirectoryUpward("assets").
 		std::filesystem::path RootDirectory = "assets";
 
-		// Watches loaded textures, shaders and models (with a model's .events sidecar) for on-disk
-		// changes and reloads them in place (existing Texture*/Shader*/Model* pointers stay valid;
-		// pipelines rebuild lazily). A shader compile error or a model that fails to load keeps the
-		// previous version. Intended for development - leave off in shipping builds.
+		/// Watches loaded textures, shaders and models (with a model's .events sidecar) for on-disk
+		/// changes and reloads them in place (existing Texture*/Shader*/Model* pointers stay valid;
+		/// pipelines rebuild lazily). A shader compile error or a model that fails to load keeps
+		/// the previous version. Intended for development - leave off in shipping builds.
 		bool EnableHotReload = false;
-		// Seconds between file-timestamp polls when hot-reload is enabled.
+		/// Seconds between file-timestamp polls when hot-reload is enabled.
 		float HotReloadInterval = 0.5f;
 
-		// A shipped game's package: with AutoUnpackage on, Initialize() mounts
-		// <executable directory>/<executable name>.dpak when that file exists, opened with
-		// PackageKey (Dingo::Generated::GetPackageKey() from premake's embedPackKey(); a null key
-		// opens only an unencrypted package). Without the file, RootDirectory serves as before.
+		/// A shipped game's package: with AutoUnpackage on, Initialize() mounts
+		/// `<executable directory>/<executable name>.dpak` when that file exists, opened with
+		/// PackageKey (Dingo::Generated::GetPackageKey() from premake's embedPackKey(); a null key
+		/// opens only an unencrypted package). Without the file, RootDirectory serves as before.
 		Dingo::PackageKey PackageKey;
-		bool AutoUnpackage = true;
-		// With the package mounted, RootDirectory is left unmounted, so a stray loose file can't
-		// shadow or stand in for a packed one. Set this to mount it under the package as well
-		// (files the package lacks then load loose).
+		bool AutoUnpackage = true;	///< Mount the executable's own .dpak at start-up.
+		/// With the package mounted, RootDirectory is left unmounted, so a stray loose file can't
+		/// shadow or stand in for a packed one. Set this to mount it under the package as well
+		/// (files the package lacks then load loose).
 		bool AllowLooseFiles = false;
 
+		/// Each setter sets the field of the same name and returns *this, for chaining.
+		///@{
 		AssetManagerParams& SetRootDirectory(const std::filesystem::path& root)
 		{
 			RootDirectory = root;
@@ -87,106 +90,118 @@ namespace Dingo
 			AllowLooseFiles = allow;
 			return *this;
 		}
+		///@}
 	};
 
-	// Central registry and owner of file-backed assets. Assets are identified by a
-	// stable AssetHandle (UUID) and deduplicated by path: loading the same file twice
-	// returns the same handle and the same loaded object, instead of re-reading the
-	// file and re-creating GPU resources like the raw Create factories do. Paths are
-	// deduplicated by their normalized spelling, so an absolute path under the asset
-	// root, its relative form and (on Windows) any capitalization of either all name
-	// the same registration.
-	//
-	// The manager owns every object it loads and frees them all at Shutdown() — game
-	// code holds handles (or borrowed pointers) and never deletes managed assets.
-	// The raw factories (Texture::Create, Model::LoadFromFile, ...) remain available
-	// for unmanaged resources such as render targets or generated data.
-	//
-	// Load failures keep the asset registered with State == Failed (Get returns
-	// nullptr) so a later Reload — or hot-reload, once the file is fixed — can recover
-	// without re-registering.
-	//
-	// Threading: every member is main-thread-only (the thread driving Application::Run,
-	// where Update() finalizes background loads), with GetPendingCount() and
-	// GetReloadingCount() the only exceptions — both read an atomic. Loads decode on an
-	// internal worker thread, but that thread never touches the registry or a managed
-	// object, so calling e.g. GetTexture() from a job thread races the finalize pump's
-	// map insertions.
+	/// Central registry and owner of file-backed assets. Assets are identified by a
+	/// stable AssetHandle (UUID) and deduplicated by path: loading the same file twice
+	/// returns the same handle and the same loaded object, instead of re-reading the
+	/// file and re-creating GPU resources like the raw Create factories do. Paths are
+	/// deduplicated by their normalized spelling, so an absolute path under the asset
+	/// root, its relative form and (on Windows) any capitalization of either all name
+	/// the same registration.
+	///
+	/// The manager owns every object it loads and frees them all at Shutdown() - game
+	/// code holds handles (or borrowed pointers) and never deletes managed assets.
+	/// The raw factories (Texture::Create, Model::LoadFromFile, ...) remain available
+	/// for unmanaged resources such as render targets or generated data.
+	///
+	/// Load failures keep the asset registered with State == Failed (Get returns
+	/// nullptr) so a later Reload - or hot-reload, once the file is fixed - can recover
+	/// without re-registering.
+	///
+	/// Threading: every member is main-thread-only (the thread driving Application::Run,
+	/// where Update() finalizes background loads), with GetPendingCount() and
+	/// GetReloadingCount() the only exceptions - both read an atomic. Loads decode on an
+	/// internal worker thread, but that thread never touches the registry or a managed
+	/// object, so calling e.g. GetTexture() from a job thread races the finalize pump's
+	/// map insertions.
+	///
+	/// The Application owns the one manager; reach it with Application::GetAssetManager().
 	class AssetManager
 	{
 	public:
-		// The audio engine is borrowed for AudioClip decoding; clips are released in
-		// Shutdown(), which must run before the audio engine itself shuts down.
-		AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine);
+		/// Frees every loaded asset and unmounts packages; the Application deletes the manager.
 		~AssetManager();
-
-		void Initialize();
-		void Shutdown();
+		/// Not copyable: the manager owns its assets.
+		AssetManager(const AssetManager&) = delete;
+		/// Not copyable: the manager owns its assets.
+		AssetManager& operator=(const AssetManager&) = delete;
 
 		// --- Registration & loading ----------------------------------------
 
-		// Registers `path` (relative to the asset root; absolute paths are used as-is)
-		// without loading it, inferring the asset type from the extension. Importing an
-		// already-registered path returns its existing handle. Returns k_InvalidAsset
-		// for unrecognized extensions.
+		/// Registers `path` (relative to the asset root; absolute paths are used as-is)
+		/// without loading it, inferring the asset type from the extension. Importing an
+		/// already-registered path returns its existing handle. Returns k_InvalidAsset
+		/// for unrecognized extensions.
 		AssetHandle Import(const std::filesystem::path& path);
 
-		// Import + synchronous load: the asset is Ready when the call returns, unless
-		// loading fails (the registration stays, State == Failed) or a background load of
-		// the same path is already in flight — this does not block on those, so poll
-		// IsReady() when mixing Load and LoadAsync for one asset.
+		/// Import + synchronous load: the asset is Ready when the call returns, unless
+		/// loading fails (the registration stays, State == Failed) or a background load of
+		/// the same path is already in flight - this does not block on those, so poll
+		/// IsReady() when mixing Load and LoadAsync for one asset.
 		AssetHandle Load(const std::filesystem::path& path);
 
-		// Import + background load: returns immediately, Get returns nullptr until the
-		// asset is Ready. Textures and audio clips decode on the loader thread and are
-		// finalized (GPU upload / publish) in Update(); other types fall back to a
-		// main-thread load inside Update(), one asset per frame, so a loading screen
-		// keeps rendering between them. Poll IsReady() / GetPendingCount().
+		/// Import + background load: returns immediately, Get returns nullptr until the
+		/// asset is Ready. Textures and audio clips decode on the loader thread and are
+		/// finalized (GPU upload / publish) in Update(); other types fall back to a
+		/// main-thread load inside Update(), one asset per frame, so a loading screen
+		/// keeps rendering between them. Poll IsReady() / GetPendingCount().
 		AssetHandle LoadAsync(const std::filesystem::path& path);
 
-		// Load/LoadAsync for a model with ModelLoadParams (Graphics/Model.h), kept for every later
-		// load and reload of it. A model already loaded, or in flight, with other params keeps them
-		// (warns): Remove it first to change them. Load(path) never changes a model's params.
+		/// Load/LoadAsync for a model with ModelLoadParams (Graphics/Model.h), kept for every later
+		/// load and reload of it. A model already loaded, or in flight, with other params keeps
+		/// them (warns): Remove it first to change them. Load(path) never changes a model's params.
+		///@{
 		AssetHandle Load(const std::filesystem::path& path, const ModelLoadParams& params);
 		AssetHandle LoadAsync(const std::filesystem::path& path, const ModelLoadParams& params);
+		///@}
 
-		// Synchronously (re)loads an already-registered asset. Returns true when the
-		// asset is Ready afterwards.
-		//
-		// Loaded textures, shaders and models are refreshed IN PLACE (as hot-reload does), so
-		// pointers already handed out stay valid and a failed reload keeps serving the
-		// previously loaded version. Every other type is destroyed and recreated, which
-		// invalidates borrowed pointers - re-Get after reloading those. Check
-		// SupportsInPlaceReload(type) first if you need to know which applies without
-		// calling this.
-		//
-		// A no-op while a load or reload of the same asset is already in flight: the
-		// pending pass publishes the file as it stands on disk anyway, and cancelling it
-		// would throw away a finished decode for nothing. It returns IsReady(handle) in that
-		// case, so false there means "not loaded yet", not "the reload failed" — and with
-		// hot-reload off nothing re-polls afterwards, so an edit made *during* that first load
-		// is not picked up. Re-Reload once the asset is Ready if that matters.
+		/// Synchronously (re)loads an already-registered asset. Returns true when the
+		/// asset is Ready afterwards.
+		///
+		/// Loaded textures, shaders and models are refreshed IN PLACE (as hot-reload does), so
+		/// pointers already handed out stay valid and a failed reload keeps serving the
+		/// previously loaded version. Every other type is destroyed and recreated, which
+		/// invalidates borrowed pointers - re-Get after reloading those. Check
+		/// SupportsInPlaceReload(type) first if you need to know which applies without
+		/// calling this.
+		///
+		/// A no-op while a load or reload of the same asset is already in flight: the
+		/// pending pass publishes the file as it stands on disk anyway, and cancelling it
+		/// would throw away a finished decode for nothing. It returns IsReady(handle) in that
+		/// case, so false there means "not loaded yet", not "the reload failed" - and with
+		/// hot-reload off nothing re-polls afterwards, so an edit made *during* that first load
+		/// is not picked up. Re-Reload once the asset is Ready if that matters.
 		bool Reload(AssetHandle handle);
 
-		// Frees the loaded object but keeps the registration (State -> Unloaded).
-		// Any borrowed pointers to the object go stale — callers re-Get after a reload.
+		/// Frees the loaded object but keeps the registration (State -> Unloaded).
+		/// Any borrowed pointers to the object go stale - callers re-Get after a reload.
 		void Unload(AssetHandle handle);
 
-		// Unload + forget the registration entirely.
+		/// Unload + forget the registration entirely.
 		void Remove(AssetHandle handle);
 
 		// --- Access ---------------------------------------------------------
 
-		// The loaded object of the requested type, or nullptr while the asset has none:
-		// never loaded, still loading, failed, or unloaded. An in-place reload
-		// (State == Reloading) keeps returning the live pointer — the object is refreshed,
-		// never replaced, so a hot-reload never takes an asset away mid-frame.
+		/// The loaded object of the requested type, or nullptr while the asset has none:
+		/// never loaded, still loading, failed, or unloaded. An in-place reload
+		/// (State == Reloading) keeps returning the live pointer - the object is refreshed,
+		/// never replaced, so a hot-reload never takes an asset away mid-frame.
+		/// The manager owns the object: never Destroy() or delete it.
+		///@{
 		Texture* GetTexture(AssetHandle handle) const;
 		Shader* GetShader(AssetHandle handle) const;
 		Model* GetModel(AssetHandle handle) const;
 		Font* GetFont(AssetHandle handle) const;
+		///@}
+		/// The loaded clip, or nullptr as for the getters above. Unlike them it is shared
+		/// ownership: the clip lives on while you hold the pointer, even after the manager unloads
+		/// it.
 		std::shared_ptr<AudioClip> GetAudioClip(AssetHandle handle) const;
 
+		/// GetTexture, GetShader, GetModel or GetFont by type; a type that isn't one of these four
+		/// (use GetAudioClip for audio) does not compile.
 		template<typename T>
 		T* Get(AssetHandle handle) const
 		{
@@ -204,79 +219,98 @@ namespace Dingo
 
 		// --- Queries ----------------------------------------------------------
 
-		// True once the asset is usable — including while an in-place reload is in flight,
-		// where the previously loaded object keeps serving until the new one is published.
+		/// True once the asset is usable - including while an in-place reload is in flight,
+		/// where the previously loaded object keeps serving until the new one is published.
 		bool IsReady(AssetHandle handle) const
 		{
 			const AssetState state = GetState(handle);
 			return state == AssetState::Ready || state == AssetState::Reloading;
 		}
-		// AssetState::Unloaded for unknown handles.
+		/// AssetState::Unloaded for unknown handles.
 		AssetState GetState(AssetHandle handle) const;
-		// nullptr for unknown handles.
+		/// nullptr for unknown handles. The pointer is valid until the registration is removed.
 		const AssetMetadata* GetMetadata(AssetHandle handle) const;
-		// k_InvalidAsset if the path was never imported.
+		/// k_InvalidAsset if the path was never imported.
 		AssetHandle FindByPath(const std::filesystem::path& path) const;
 
-		// True for exactly the types ReloadInPlace can refresh without destroying the
-		// loaded object (Texture2D, Shader and Model today). Tooling that offers a Reload
-		// action - such as the debug panel - should check this first: Reload() on any
-		// other type destroys and recreates the object, invalidating borrowed pointers.
+		/// True for exactly the types ReloadInPlace can refresh without destroying the
+		/// loaded object (Texture2D, Shader and Model today). Tooling that offers a Reload
+		/// action - such as the debug panel - should check this first: Reload() on any
+		/// other type destroys and recreates the object, invalidating borrowed pointers.
 		static bool SupportsInPlaceReload(AssetType type);
 
+		/// The asset root; relative paths resolve against it. Absolute once the manager is up.
 		const std::filesystem::path& GetRootDirectory() const;
+		/// The path under the asset root, lexically normalized; an absolute path comes back as it
+		/// is. Doesn't check that the file exists, or look inside a mounted package.
 		std::filesystem::path ResolvePath(const std::filesystem::path& path) const;
 
-		// Every registration, for tooling (the built-in Assets debug panel walks this).
-		// Handles stay valid across loads, so entries can be acted on while iterating a
-		// copy of the keys.
-		const std::unordered_map<AssetHandle, AssetMetadata>& GetRegistry() const;
+		/// Every registered handle, in no order, for tooling (the built-in Assets debug panel).
+		std::vector<AssetHandle> GetHandles() const;
 
+		/// Whether hot-reload is watching the loaded files.
 		bool IsHotReloadEnabled() const;
-		// Toggleable at runtime so a debug panel can turn watching on for a session
-		// without a rebuild. Enabling re-arms the poll timer.
+		/// Toggleable at runtime so a debug panel can turn watching on for a session
+		/// without a rebuild. Enabling re-arms the poll timer.
 		void SetHotReloadEnabled(bool enable);
 
+		/// Assets registered, in any state.
 		uint32_t GetRegisteredCount() const;
+		/// Assets that currently have a loaded object.
 		uint32_t GetLoadedCount() const;
-		// LoadAsync requests still in flight (queued, decoding, or awaiting finalize).
-		// Hot-reloads are deliberately excluded so a mid-game reload cannot stall a
-		// loading screen gating on this. The one hole that leaves: a LoadAsync for a Failed
-		// asset whose hot-reload retry is already in flight early-returns, so that asset is
-		// counted by GetReloadingCount() and this can read 0 while it still has no object.
-		// Pair the gate with IsReady() if failed assets can be retried mid-load.
+		/// LoadAsync requests still in flight (queued, decoding, or awaiting finalize).
+		/// Hot-reloads are deliberately excluded so a mid-game reload cannot stall a
+		/// loading screen gating on this. The one hole that leaves: a LoadAsync for a Failed
+		/// asset whose hot-reload retry is already in flight early-returns, so that asset is
+		/// counted by GetReloadingCount() and this can read 0 while it still has no object.
+		/// Pair the gate with IsReady() if failed assets can be retried mid-load.
+		/// Safe to read from any thread.
 		uint32_t GetPendingCount() const;
-		// Hot-reload requests still in flight, including retries of a Failed asset. One that
-		// still has a loaded object (State == Reloading) keeps serving it throughout.
+		/// Hot-reload requests still in flight, including retries of a Failed asset. One that
+		/// still has a loaded object (State == Reloading) keeps serving it throughout.
+		/// Safe to read from any thread.
 		uint32_t GetReloadingCount() const;
 
 		// --- Packages ---------------------------------------------------------
 
-		// Packs a directory's files into one .dpak: deflated where that pays and encrypted with
-		// params.Key. Pure file work that needs no running application. See docs/distribution.md.
+		/// Packs a directory's files into one .dpak: deflated where that pays and encrypted with
+		/// params.Key. Pure file work that needs no running application. See docs/distribution.md.
+		/// Failure is reported in the result (Success false, Error set), not thrown.
 		static PackageResult Package(const PackageParams& params);
 
-		// Mounts a .dpak in memory (nothing is extracted to disk) and imports every asset it holds,
-		// so Load("characters/Knight.glb") and the raw factories read from it. A package mounted
-		// later wins over earlier ones and over loose files; an asset already loaded from a file it
-		// overrides is reloaded. k_InvalidPackage (logged) for a missing file, a wrong key or a
-		// damaged table of contents.
+		/// Mounts a .dpak in memory (nothing is extracted to disk) and imports every asset it
+		/// holds, so Load("characters/Knight.glb") and the raw factories read from it. A package
+		/// mounted later wins over earlier ones and over loose files; an asset already loaded from
+		/// a file it overrides is reloaded. k_InvalidPackage (logged) for a missing file, a wrong
+		/// key or a damaged table of contents.
 		PackageHandle Unpackage(const std::filesystem::path& dpak, const PackageKey& key);
-		// The registrations Unpackage made or found for the package's files. Empty once closed.
+		/// The registrations Unpackage made or found for the package's files. Empty once closed.
+		/// The span is valid until the package is closed.
 		std::span<const AssetHandle> GetPackageAssets(PackageHandle package) const;
+		/// True from a successful Unpackage until ClosePackage.
 		bool IsPackageMounted(PackageHandle package) const;
-		// Unmounts the package. Registrations it made are removed (their objects freed, pointers
-		// stale) unless another mounted package holds the same file; the rest are reloaded, so
-		// they serve whatever now wins, such as the loose file.
+		/// Unmounts the package. Registrations it made are removed (their objects freed, pointers
+		/// stale) unless another mounted package holds the same file; the rest are reloaded, so
+		/// they serve whatever now wins, such as the loose file.
 		void ClosePackage(PackageHandle package);
-		// Where the asset's file comes from: "loose", a package's file name, or "missing".
+		/// Where the asset's file comes from: "loose", a package's file name, or "missing".
+		/// Empty for an unknown handle.
 		std::string GetAssetSource(AssetHandle handle) const;
 
-		// Per-frame pump, driven by Application::Run — finalizes background loads and
+	private:
+		// The audio engine is borrowed for AudioClip decoding; clips are released in
+		// Shutdown(), which must run before the audio engine itself shuts down.
+		AssetManager(const AssetManagerParams& params, AudioEngine* audioEngine);
+
+		void Initialize();
+		void Shutdown();
+
+		// Per-frame pump, driven by Application::Run - finalizes background loads and
 		// polls hot-reload watches.
 		void Update(float deltaTime);
 
-	private:
+		friend class Application;
+
 		template<typename>
 		static inline constexpr bool k_AlwaysFalseAsset = false;
 

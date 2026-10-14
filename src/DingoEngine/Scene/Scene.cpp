@@ -20,6 +20,37 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
+
+namespace
+{
+	// The square of half-size `half` about `center` lies wholly beyond one side of the view, by more
+	// than rounding could undo, so nothing in it can reach a pixel.
+	bool QuadOutsideView(const glm::mat4& viewProjection, const glm::vec3& center, float half)
+	{
+		glm::vec4 clip[4];
+		for (int corner = 0; corner < 4; ++corner)
+		{
+			const glm::vec3 point(center.x + ((corner & 1) ? half : -half), center.y + ((corner & 2) ? half : -half), center.z);
+			clip[corner] = viewProjection * glm::vec4(point, 1.0f);
+		}
+		for (int axis = 0; axis < 2; ++axis)
+		{
+			for (const float side : { 1.0f, -1.0f })
+			{
+				bool outside = true;
+				for (const glm::vec4& point : clip)
+				{
+					const float distance = point.w + side * point[axis];
+					outside = outside && distance < -1e-5f * (std::abs(point.w) + std::abs(point[axis]));
+				}
+				if (outside)
+					return true;
+			}
+		}
+		return false;
+	}
+}
 
 namespace Dingo
 {
@@ -31,7 +62,8 @@ namespace Dingo
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
-		Internal::SceneDebug::RegisterScene(this, m_Data);
+		Internal::AudioSync::Connect(m_Data->Registry);
+		m_Data->Physics.Connect(m_Data->Registry);
 	}
 
 	Scene::~Scene()
@@ -169,8 +201,13 @@ namespace Dingo
 			CopyComponentIfExists<Internal::SocketComponent>(registry, dst, src);
 		}
 
+		if (registry.all_of<Internal::InactiveSelfComponent>(src))
+			registry.emplace<Internal::InactiveSelfComponent>(dst);
+		if (registry.all_of<Internal::InactiveSelfComponent>(dst) || (parent && Internal::HierarchySystem::IsInactive(registry, static_cast<entt::entity>(parent.m_Handle))))
+			registry.emplace<Internal::InactiveComponent>(dst);
+
 		// If the world is already simulating, give the clone its own body now (mirrors a
-		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnPhysicsStart will.
+		// runtime CreateEntity + CreateRigidBody spawn); otherwise OnStart will.
 		if (IsPhysicsRunning())
 			CreateRigidBody(clone);
 
@@ -182,7 +219,7 @@ namespace Dingo
 
 	void Scene::DestroyEntity(Entity entity)
 	{
-		if (!entity)
+		if (!IsValid(entity))
 			return;
 
 		if (m_Data->Updating)
@@ -197,6 +234,7 @@ namespace Dingo
 	void Scene::DetachScript(std::uint32_t handle)
 	{
 		m_Data->Scripts.Detach(static_cast<entt::entity>(handle));
+		m_Data->Scripts.FreeDetached();
 	}
 
 	void Scene::DestroyEntityNow(std::uint32_t handle)
@@ -253,11 +291,12 @@ namespace Dingo
 		// mark the scene stopped — otherwise a later OnStart() would early-return on a
 		// stale running flag and never rebuild physics.
 		m_IsRunning = false;
-		OnPhysicsStop();
+		StopPhysics();
 
 		Internal::AudioSync::StopAllSources(m_Data->Registry);
 
 		m_Data->Scripts.DetachAll();
+		m_Data->Scripts.FreeDetached();
 
 		m_Data->Registry.clear();
 		m_Data->EntityMap.clear();
@@ -284,9 +323,30 @@ namespace Dingo
 		deltaTime = std::min(deltaTime, Internal::PhysicsSync::k_MaxStepTime);
 		DE_PROFILE_SCOPE_TEXT("Scene::OnUpdate", m_Name);
 
+		if (!m_Data->DebugRegistered)
+		{
+			Internal::SceneDebug::RegisterScene(this, m_Data);
+			m_Data->DebugRegistered = true;
+		}
+
 		{
 			DE_PROFILE_SCOPE("ScriptSystem::Update");
 			m_Data->Updating = true;
+			m_Data->Scripts.StartPending();
+
+			const float step = m_Data->FixedTimeStep;
+			float& carried = m_Data->FixedTimeAccumulator;
+			carried += deltaTime;
+			uint32_t steps = 0;
+			while (carried >= step && steps < k_MaxFixedStepsPerUpdate)
+			{
+				carried -= step;
+				++steps;
+				m_Data->Scripts.FixedUpdate(step);
+			}
+			if (carried >= step)
+				carried = std::fmod(carried, step);
+
 			m_Data->Scripts.Update(deltaTime);
 			m_Data->Updating = false;
 		}
@@ -299,7 +359,10 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
-			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime);
+			// A scene no longer rendered (stepped headless, behind a menu) animates as if seen.
+			const bool rendered = m_Data->SkinnedViewFrame + 1 >= Renderer::GetFrameIndex();
+			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime,
+				rendered ? std::span<const std::weak_ptr<const Internal::SkinnedVisibility>>(m_Data->SkinnedViews) : std::span<const std::weak_ptr<const Internal::SkinnedVisibility>>());
 			Internal::ParticleSync::ApplyAnimationEvents(m_Data->Registry, m_Data->EntityMap, m_Data->AnimationEvents.ParticleEvents);
 			Internal::ParticleSync::Update(m_Data->Registry, deltaTime);
 			m_Data->Updating = false;
@@ -319,8 +382,60 @@ namespace Dingo
 		// Transforms are final for the frame now (physics + controller write-back
 		// already happened), so sync every spatialized source's position and the
 		// listener before anything renders or is heard this frame.
+		m_Data->Scripts.FreeDetached();
+
 		DE_PROFILE_SCOPE("AudioSync");
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
+	}
+
+	void Scene::SetFixedTimeStep(float seconds)
+	{
+		if (!std::isfinite(seconds))
+			return;
+
+		m_Data->FixedTimeStep = std::clamp(seconds, 1.0f / 1000.0f, 0.25f);
+		m_Data->FixedTimeAccumulator = std::min(m_Data->FixedTimeAccumulator, m_Data->FixedTimeStep);
+	}
+
+	float Scene::GetFixedTimeStep() const
+	{
+		return m_Data->FixedTimeStep;
+	}
+
+	float Scene::GetFixedTimeAlpha() const
+	{
+		return std::clamp(m_Data->FixedTimeAccumulator / m_Data->FixedTimeStep, 0.0f, 0.999999f);
+	}
+
+	void Scene::RefreshActive(std::uint32_t root)
+	{
+		entt::registry& registry = m_Data->Registry;
+		std::vector<entt::entity> activated, deactivated;
+		Internal::HierarchySystem::RefreshActive(registry, static_cast<entt::entity>(root), activated, deactivated);
+
+		for (entt::entity handle : deactivated)
+		{
+			if (IsPhysicsRunning())
+				m_Data->Physics.DestroyBodiesForEntity(registry, handle);
+			Internal::AudioSync::StopSource(registry, handle);
+		}
+
+		if (!activated.empty())
+			m_Data->Scripts.MarkPending();
+
+		// Parents first, so a child's body is built against its parent's.
+		for (entt::entity handle : activated)
+		{
+			if (!registry.valid(handle) || Internal::HierarchySystem::IsInactive(registry, handle))
+				continue;
+
+			if (IsPhysicsRunning())
+				CreateRigidBody(Wrap(static_cast<std::uint32_t>(handle)));
+
+			const AudioSourceComponent* source = registry.try_get<AudioSourceComponent>(handle);
+			if (m_IsRunning && source && source->PlayOnStart && source->Clip)
+				Internal::AudioSync::PlaySource(registry, handle);
+		}
 	}
 
 	Animator* Scene::GetAnimator(Entity entity)
@@ -360,9 +475,10 @@ namespace Dingo
 		// are NOT ordered by creation (the view order decides), so give overlapping UI elements
 		// distinct z values.
 		using Internal::SceneData;
-		auto sprites = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>();
-		auto circles = m_Data->Registry.view<TransformComponent, CircleRendererComponent>();
-		auto texts = m_Data->Registry.view<TransformComponent, TextComponent>();
+		const auto inactive = entt::exclude<Internal::InactiveComponent>;
+		auto sprites = m_Data->Registry.view<TransformComponent, SpriteRendererComponent>(inactive);
+		auto circles = m_Data->Registry.view<TransformComponent, CircleRendererComponent>(inactive);
+		auto texts = m_Data->Registry.view<TransformComponent, TextComponent>(inactive);
 
 		// The world pose is resolved once per entity and kept with its sort key, so the sort goes
 		// back to the registry for nothing. The buffer is a member so a steady-state frame does no
@@ -377,10 +493,31 @@ namespace Dingo
 			memo.Pose2D(entity, transform, draw.Position, draw.Rotation);
 			draw.Depth = memo.Depth(entity);
 		};
+
+		// A sprite or circle is a quad of Size about its position, turned by its rotation, so the square
+		// around its circumcircle holds it at any angle. Removing a quad that draws nothing leaves the
+		// rest in the same order, so the frame is the same.
+		const bool culling = renderer.IsCullingEnabled() && !renderer.m_SceneSkipped;
+		const glm::mat4& viewProjection = renderer.GetViewProjection();
+		uint32_t culled = 0;
+		auto collectQuad = [&](entt::entity entity, const TransformComponent& transform, SceneData::Draw2DKind kind)
+		{
+			collect(entity, transform, kind);
+			if (!culling)
+				return;
+			const SceneData::Draw2D& draw = draws.back();
+			const float half = 0.5f * glm::length(transform.Size);
+			if (QuadOutsideView(viewProjection, draw.Position, half))
+			{
+				draws.pop_back();
+				++culled;
+			}
+		};
 		for (entt::entity entity : sprites)
-			collect(entity, sprites.get<TransformComponent>(entity), SceneData::Draw2DKind::Sprite);
+			collectQuad(entity, sprites.get<TransformComponent>(entity), SceneData::Draw2DKind::Sprite);
 		for (entt::entity entity : circles)
-			collect(entity, circles.get<TransformComponent>(entity), SceneData::Draw2DKind::Circle);
+			collectQuad(entity, circles.get<TransformComponent>(entity), SceneData::Draw2DKind::Circle);
+		renderer.m_Statistics.CulledQuads += culled;
 		for (entt::entity entity : texts)
 		{
 			const TextComponent& text = texts.get<TextComponent>(entity);
@@ -431,23 +568,53 @@ namespace Dingo
 		}
 	}
 
+	namespace
+	{
+		void TrackSkinnedView(Internal::SceneData& data, Renderer3D& renderer)
+		{
+			std::shared_ptr<const Internal::SkinnedVisibility> visibility = renderer.GetSkinnedVisibility();
+			data.SkinnedViewFrame = Renderer::GetFrameIndex();
+			std::erase_if(data.SkinnedViews, [](const std::weak_ptr<const Internal::SkinnedVisibility>& view) { return view.expired(); });
+			for (const std::weak_ptr<const Internal::SkinnedVisibility>& view : data.SkinnedViews)
+			{
+				if (view.lock() == visibility)
+					return;
+			}
+			data.SkinnedViews.push_back(visibility);
+		}
+	}
+
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
 		DE_PROFILE_SCOPE("Scene::RenderEntities3D");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
+		TrackSkinnedView(*m_Data, renderer);
 
-		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>();
+		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
+		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
 		for (entt::entity entity : view)
 		{
 			auto [transform, mesh] = view.get<Transform3DComponent, MeshRendererComponent>(entity);
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups);
+			if (mesh.Static && !(mesh.CullDistance > 0.0f))
+			{
+				if (!bake)
+					bake = &m_Data->StaticMeshes.Create(renderer);
+				StaticMesh baked = StaticMesh().SetMesh(mesh.Mesh).SetTransform(memo.Transform(entity, transform)).SetColor(mesh.Color)
+					.SetMaterial(mesh.Material).SetShadows(mesh.Shadows).SetShadowGroups(mesh.ShadowGroups);
+				baked.Surface = mesh.Surface;
+				m_Data->StaticMeshes.Track(*bake, entity, baked);
+				continue;
+			}
+			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance, mesh.Surface ? &*mesh.Surface : nullptr);
 		}
+		if (bake)
+			m_Data->StaticMeshes.Submit(*bake, renderer);
 
-		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>();
+		auto skinnedView = m_Data->Registry.view<Transform3DComponent, SkinnedMeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
 		for (entt::entity entity : skinnedView)
 		{
 			auto [transform, skinned] = skinnedView.get<Transform3DComponent, SkinnedMeshRendererComponent>(entity);
@@ -459,10 +626,10 @@ namespace Dingo
 			const std::span<const glm::mat4> palette = skeleton ? Internal::AnimationSystem::Palette(m_Data->Registry, entity, *skeleton) : std::span<const glm::mat4>();
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
-				if (skeleton && submesh.MeshData->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.MeshData, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups);
+				if (skeleton && submesh.Mesh->HasSkin())
+					renderer.SubmitSkinnedMesh(submesh.Mesh, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 				else
-					renderer.SubmitMesh(submesh.MeshData, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups);
+					renderer.SubmitMesh(submesh.Mesh, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 			}
 		}
 
@@ -499,14 +666,13 @@ namespace Dingo
 
 	// --- Camera -----------------------------------------------------------------
 
-	bool Scene::GetPrimaryCameraEntity(Entity& out)
+	Entity Scene::GetPrimaryCamera()
 	{
 		entt::entity handle = entt::null;
 		if (!Internal::CameraUtils::FindPrimaryCamera(m_Data->Registry, handle))
-			return false;
+			return {};
 
-		out = Wrap(static_cast<std::uint32_t>(handle));
-		return true;
+		return Wrap(static_cast<std::uint32_t>(handle));
 	}
 
 	void Scene::GetRenderCameras(Entity& outPerspective, bool& outHasPerspective, Entity& outOrthographic, bool& outHasOrthographic)
@@ -526,6 +692,10 @@ namespace Dingo
 			return 1.0f;
 
 		const entt::entity handle = static_cast<entt::entity>(light.m_Handle);
+		// Not submitted, so nothing would ever replace its last answer.
+		if (Internal::HierarchySystem::IsInactive(m_Data->Registry, handle))
+			return 1.0f;
+
 		Internal::LightSystem::ShadowProbeState& probes = m_Data->ShadowProbes;
 		const uint64_t localKey = Internal::LightSystem::ShadowProbeState::LocalKey(handle, key);
 		if (probes.Pending.size() < Renderer3D::k_MaxShadowProbes || probes.Pending.contains(localKey))
@@ -543,7 +713,9 @@ namespace Dingo
 		const entt::registry& registry = m_Data->Registry;
 		const entt::entity handle = static_cast<entt::entity>(light.m_Handle);
 		float attenuation = 0.0f;
-		if (registry.all_of<DirectionalLightComponent>(handle))
+		if (Internal::HierarchySystem::IsInactive(registry, handle))
+			attenuation = 0.0f;
+		else if (registry.all_of<DirectionalLightComponent>(handle))
 		{
 			attenuation = 1.0f;
 		}
@@ -565,16 +737,6 @@ namespace Dingo
 		return attenuation > 0.0f ? attenuation * GetLightVisibility(light, point, key, clearance) : 0.0f;
 	}
 
-	bool Scene::GetFirstDirectionalLightEntity(Entity& out)
-	{
-		entt::entity handle = entt::null;
-		if (!Internal::CameraUtils::FindFirstDirectionalLight(m_Data->Registry, handle))
-			return false;
-
-		out = Wrap(static_cast<std::uint32_t>(handle));
-		return true;
-	}
-
 	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
 	{
 		if (!IsValid(cameraEntity))
@@ -585,11 +747,8 @@ namespace Dingo
 
 	glm::mat4 Scene::GetActiveCameraViewProjection(float aspect)
 	{
-		Entity cameraEntity;
-		if (!GetPrimaryCameraEntity(cameraEntity))
-			return glm::mat4(1.0f);
-
-		return GetCameraViewProjection(cameraEntity, aspect);
+		const Entity camera = GetPrimaryCamera();
+		return camera ? GetCameraViewProjection(camera, aspect) : glm::mat4(1.0f);
 	}
 
 	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
@@ -605,19 +764,20 @@ namespace Dingo
 			return;
 
 		m_IsRunning = true;
+		m_Data->FixedTimeAccumulator = 0.0f;
 
 		// Discard any transition requested before this run (or left over from a
 		// previous run) so a stale request can't fire the instant this scene reactivates.
 		ClearPendingSceneTransition();
 
 		// Run script OnStart before physics so a controller script can build the world
-		// (spawn entities) and have OnPhysicsStart bake bodies for everything it created.
+		// (spawn entities) and have physics bake bodies for everything it created.
 		StartScripts();
-		OnPhysicsStart();
+		StartPhysics();
 
 		// Start every PlayOnStart source now that scripts have had a chance to set up
 		// (and, for a spatialized source, after any script-driven initial placement).
-		auto sourceView = m_Data->Registry.view<AudioSourceComponent>();
+		auto sourceView = m_Data->Registry.view<AudioSourceComponent>(entt::exclude<Internal::InactiveComponent>);
 		for (entt::entity handle : sourceView)
 		{
 			AudioSourceComponent& source = sourceView.get<AudioSourceComponent>(handle);
@@ -632,11 +792,12 @@ namespace Dingo
 			return;
 
 		m_IsRunning = false;
-		OnPhysicsStop();
+		StopPhysics();
 
 		// Stop every source's live sound so the scene never leaks playing audio past
 		// its own teardown (e.g. into whatever scene the SceneManager switches to).
 		Internal::AudioSync::StopAllSources(m_Data->Registry);
+		m_Data->Scripts.FreeDetached();
 
 		// Drop any request left pending when this scene stopped being active, so it
 		// can't be replayed the next time this scene starts.
@@ -659,11 +820,21 @@ namespace Dingo
 
 	void Scene::OnPhysicsStart()
 	{
+		StartPhysics();
+	}
+
+	void Scene::OnPhysicsStop()
+	{
+		StopPhysics();
+	}
+
+	void Scene::StartPhysics()
+	{
 		Internal::AnimationSystem::EnsureAnimators(m_Data->Registry);
 		m_Data->Physics.Start(m_Data->Registry, m_Gravity, m_Gravity3D);
 	}
 
-	void Scene::OnPhysicsStop()
+	void Scene::StopPhysics()
 	{
 		m_Data->Physics.Stop(m_Data->Registry);
 	}
@@ -685,7 +856,7 @@ namespace Dingo
 
 	void Scene::CreateRigidBody(Entity entity)
 	{
-		if (!entity)
+		if (!IsValid(entity))
 			return;
 
 		Internal::AnimationSystem::EnsureAncestorAnimators(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
@@ -703,7 +874,7 @@ namespace Dingo
 	PhysicsBodyId2D Scene::GetRuntimeBody2D(Entity entity) const
 	{
 		if (!IsValid(entity))
-			return 0;
+			return k_InvalidBody2D;
 
 		return m_Data->Physics.RuntimeBody2D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}
@@ -741,7 +912,7 @@ namespace Dingo
 			physics->SetLinearVelocity(GetRuntimeBody2D(entity), velocity);
 	}
 
-	glm::vec2 Scene::GetLinearVelocity(Entity entity)
+	glm::vec2 Scene::GetLinearVelocity2D(Entity entity)
 	{
 		Physics2D* physics = m_Data->Physics.Get2D();
 		if (!physics)
@@ -801,6 +972,12 @@ namespace Dingo
 	{
 		if (!IsValid(entity))
 			return;
+
+		if (Internal::HierarchySystem::IsInactive(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle)))
+		{
+			DE_CORE_WARN("PlayAudioSource: '{}' is inactive, so its source doesn't play", entity.GetName());
+			return;
+		}
 
 		Internal::AudioSync::PlaySource(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
 	}

@@ -46,13 +46,10 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
-			.FramesInFlight = 3,
 		},
 		.Assets = Dingo::AssetManagerParams().SetPackageKey(Dingo::Generated::GetPackageKey()),
-		.EnableUI = true,
+		.EnableImGui = true,
 	};
 
-	Dingo::Breakout3DApplication* app = new Dingo::Breakout3DApplication(params);
-	app->Initialize();
-	return app;
+	return new Dingo::Breakout3DApplication(params);
 }

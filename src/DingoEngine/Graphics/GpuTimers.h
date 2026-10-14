@@ -1,4 +1,5 @@
 #pragma once
+#include "DingoEngine/Graphics/CommandList.h"
 #include "DingoEngine/Graphics/Renderer.h"
 
 #include <memory>

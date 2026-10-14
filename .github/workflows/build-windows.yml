@@ -3,6 +3,7 @@ name: Build Windows
 on:
   push:
     branches: [ "master" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,19 +43,13 @@ jobs:
         echo "VERSION=$base.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
         echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
-        echo "VERSION_PATCH=$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
-
-    - name: Generate BuildInfo.h
-      run: |
-        $major = "${{steps.version.outputs.VERSION_MAJOR}}"
-        $minor = "${{steps.version.outputs.VERSION_MINOR}}"
-        $patch = "${{steps.version.outputs.VERSION_PATCH}}"
-        $build = "${{steps.version.outputs.VERSION_BUILD}}"
-        "#pragma once", "#define DE_ENGINE_VERSION_MAJOR $major", "#define DE_ENGINE_VERSION_MINOR $minor", "#define DE_ENGINE_VERSION_PATCH $patch", "#define DE_ENGINE_VERSION_BUILD $build" | Set-Content include/DingoEngine/BuildInfo.h -Encoding utf8
 
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
+      env:
+        DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
       run: premake5 ${{ matrix.profile && '--profile' || '' }} vs2026
 
     - name: Build
@@ -93,3 +88,16 @@ jobs:
       with:
         name: dingo-testframework-windows-distribution
         path: .\build\bin\Distribution-windows-x86_64\Dingo-TestFramework
+
+    # GitHub's Windows runners have no GPU: D3D11 and D3D12 run on WARP. Checks only, never timings.
+    - name: Checks on WARP
+      if: matrix.build-configuration == 'Release' && !matrix.profile
+      run: .\scripts\ci\windows-smoke-test.ps1 -Config Release -Tournament
+
+    - name: Upload smoke-test logs
+      if: always() && matrix.build-configuration == 'Release' && !matrix.profile
+      uses: actions/upload-artifact@v4
+      with:
+        name: smoke-test-logs-windows-Release
+        path: build/smoke/
+        if-no-files-found: ignore

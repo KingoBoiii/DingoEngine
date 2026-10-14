@@ -3,6 +3,8 @@
 
 #include "DingoEngine/Graphics/Animator.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Scene/Components.h"
 #include "DingoEngine/Physics/3D/CharacterController3D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
@@ -124,7 +126,7 @@ namespace Dingo
 						return true;
 					}
 
-					const RigidBody3DComponent* rigidBody = registry.try_get<RigidBody3DComponent>(handle);
+					const RigidBody3DRuntime* rigidBody = registry.try_get<RigidBody3DRuntime>(handle);
 					const PhysicsBodyId3D body = physics.RuntimeBody3D(registry, handle);
 					if (rigidBody && body != k_InvalidBody3D)
 					{
@@ -199,8 +201,18 @@ namespace Dingo
 				registry.on_destroy<AnimatorComponent>().connect<&DropRuntime>(scratch);
 			}
 
-			void Update(entt::registry& registry, ScriptSystem& scripts, PhysicsSync& physics, EventScratch& scratch, float deltaTime)
+			void Update(entt::registry& registry, ScriptSystem& scripts, PhysicsSync& physics, EventScratch& scratch, float deltaTime,
+				std::span<const std::weak_ptr<const SkinnedVisibility>> views)
 			{
+				std::vector<std::shared_ptr<const SkinnedVisibility>>& drawn = scratch.Views;
+				drawn.clear();
+				for (const std::weak_ptr<const SkinnedVisibility>& view : views)
+				{
+					if (std::shared_ptr<const SkinnedVisibility> live = view.lock())
+						drawn.push_back(std::move(live));
+				}
+				const uint64_t frame = Renderer::GetFrameIndex();
+
 				// Every event is copied out before any is delivered: a handler may update, rebind or
 				// free any animator, its own included.
 				scratch.Deliveries.clear();
@@ -222,19 +234,43 @@ namespace Dingo
 
 					Animator& animator = EnsureAnimator(registry, handle, *model);
 					const AnimatorComponent& settings = view.get<AnimatorComponent>(handle);
-					if (!settings.Enabled)
+					AnimatorRuntime& runtime = registry.get<AnimatorRuntime>(handle);
+					if (!settings.Enabled || HierarchySystem::IsInactive(registry, handle))
 					{
+						runtime.Culled = false;
+						runtime.CulledUpdates = 0;
 						animator.ClearEventsThisFrame();
 						animator.ClearRootMotionDelta();
 						StopDrivenController(registry, physics, handle);
 						continue;
 					}
 
-					animator.Update(deltaTime * settings.Speed);
+					bool evaluate = true;
+					if (settings.CullingMode != AnimatorCullingMode::AlwaysAnimate && !drawn.empty())
+					{
+						const glm::mat4* palette = animator.GetSkinningPalette().data();
+						runtime.Culled = std::none_of(drawn.begin(), drawn.end(), [frame, palette](const std::shared_ptr<const SkinnedVisibility>& view)
+						{
+							return view->WasDrawn(frame, palette);
+						});
+						// Offset by entity, so a culled crowd spreads its poses over the four updates.
+						if (runtime.Culled)
+							evaluate = settings.CullingMode == AnimatorCullingMode::ReduceWhenCulled &&
+								(runtime.CulledUpdates++ + static_cast<uint32_t>(entt::to_entity(handle))) % 4 == 0;
+						else
+							runtime.CulledUpdates = 0;
+					}
+					else
+					{
+						runtime.Culled = false;
+						runtime.CulledUpdates = 0;
+					}
+
+					animator.Update(deltaTime * settings.Speed, evaluate);
 					if (settings.RootMotion != RootMotionMode::Off && settings.ApplyRootMotion)
 					{
 						if (ApplyRootMotion(registry, physics, handle, settings.RootMotion, animator.GetRootMotionDelta(), deltaTime))
-							registry.get<AnimatorRuntime>(handle).DroveController = true;
+							runtime.DroveController = true;
 						else
 							StopDrivenController(registry, physics, handle);
 					}

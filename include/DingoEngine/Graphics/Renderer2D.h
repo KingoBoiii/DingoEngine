@@ -17,116 +17,185 @@
 namespace Dingo
 {
 
+	/// Sizing of the 2D renderer's batches.
 	struct Renderer2DCapabilities
 	{
-		// Maximum quads per *batch*. The renderer auto-flushes into a new batch
-		// when this is exceeded, so it is a draw-call/memory granularity knob, not
-		// a hard limit on quads per frame. Larger = fewer draw calls, more memory
-		// per batch buffer. Index values stay within MaxQuads*4 per batch.
+		/// Maximum quads per *batch*. The renderer auto-flushes into a new batch
+		/// when this is exceeded, so it is a draw-call/memory granularity knob, not
+		/// a hard limit on quads per frame. Larger = fewer draw calls, more memory
+		/// per batch buffer. Index values stay within MaxQuads*4 per batch.
 		uint32_t MaxQuads = 2000;
 
+		/// Vertices a full batch holds (4 a quad).
 		constexpr uint32_t GetQuadVertexCount() const { return MaxQuads * 4; }
+		/// Indices a full batch holds (6 a quad).
 		constexpr uint32_t GetQuadIndexCount()  const { return MaxQuads * 6; }
 	};
 
+	/// Settings for Renderer2D::Create; the application's copy is ApplicationParams::Renderer2D.
 	struct Renderer2DParams
 	{
-		glm::vec4 ClearColor = glm::vec4(1.0f);
-		Renderer2DCapabilities Capabilities = {};
+		Renderer2DCapabilities Capabilities = {}; ///< Batch sizing.
 	};
 
-	// Defined outside Renderer2D: a nested struct with default member initializers can't be a
-	// default argument (`= {}`) inside its own enclosing class on clang and gcc.
+	/// How Renderer2D::DrawText lays out and colours a string (alias Renderer2D::TextParameters).
+	/// Defined outside Renderer2D: a nested struct with default member initializers can't be a
+	/// default argument (`= {}`) inside its own enclosing class on clang and gcc.
 	struct Renderer2DTextParameters
 	{
-		glm::vec4 Color{ 1.0f };
-		float Kerning = 0.0f;
+		glm::vec4 Color{ 1.0f }; ///< RGBA tint of the glyphs; white by default.
+		float Kerning = 0.0f; ///< Extra advance after every character, in units of the text size.
+		/// Extra distance between lines, in units of the text size, added to the font's line
+		/// height.
 		float LineSpacing = 0.0f;
 
-		// Horizontally center the string on position.x instead of starting there. The
-		// width is taken from the pen while the glyphs are emitted and the quads are
-		// shifted afterwards, so this costs one walk of the string where
-		// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
-		// block on their widest line, matching what GetStringWidth() reports.
+		/// Horizontally center the string on position.x instead of starting there. The
+		/// width is taken from the pen while the glyphs are emitted and the quads are
+		/// shifted afterwards, so this costs one walk of the string where
+		/// GetStringWidth() + DrawText() costs two. Multi-line strings center as a
+		/// block on their widest line, matching what GetStringWidth() reports.
 		bool Centered = false;
 
-		// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
-		// or its middle when Centered.
+		/// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
+		/// or its middle when Centered.
 		float Rotation = 0.0f;
 	};
 
+	/// Batched immediate-mode 2D renderer: quads, circles and MSDF text drawn between BeginScene
+	/// and EndScene. Main thread only. The Application owns one (Application::GetRenderer2D); a
+	/// renderer made with Create is the caller's to delete.
 	class Renderer2D
 	{
 	public:
-		// Scenes a renderer can begin in one frame. On Vulkan each BeginScene writes the volatile
-		// camera buffer, which has room for this many writes a frame; later scenes draw with a stale camera.
+		/// Scenes a renderer can begin in one frame. On Vulkan each BeginScene writes the volatile
+		/// camera buffer, which has room for this many writes a frame; later scenes draw with a
+		/// stale camera.
 		static constexpr uint32_t k_MaxScenesPerFrame = 32;
 
 	public:
-		static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
-		static Renderer2D* Create(const Renderer2DParams& params);
+		/// Creates a renderer ready to draw; the caller owns it. The overloads take just the batch
+		/// sizing or the full params.
+		///@{
+		[[nodiscard]] static Renderer2D* Create(const Renderer2DCapabilities& capabilities = {});
+		[[nodiscard]] static Renderer2D* Create(const Renderer2DParams& params);
+		///@}
 
 	public:
+		/// Not default-constructible; make renderers with Create.
 		Renderer2D() = delete;
+		/// Renderers are not copyable.
 		Renderer2D(const Renderer2D&) = delete;
+		/// Renderers are not copyable.
 		Renderer2D& operator=(const Renderer2D&) = delete;
+		/// Renderers are not movable.
 		Renderer2D(Renderer2D&&) = delete;
+		/// Renderers are not movable.
 		Renderer2D& operator=(Renderer2D&&) = delete;
-		virtual ~Renderer2D() = default;
+		/// Calls Shutdown.
+		virtual ~Renderer2D();
 
 	public:
-		void Initialize();
+		/// Frees the renderer's GPU objects early; the destructor does it anyway.
 		void Shutdown();
 
+		/// Starts a scene drawn with projectionViewMatrix (projection * view, in world units),
+		/// resets Statistics and the batches, and queues the camera upload. At most
+		/// k_MaxScenesPerFrame a frame. In a frame Renderer::IsFrameSkipped() reports, the scene
+		/// and its draws do nothing.
 		void BeginScene(const glm::mat4& projectionViewMatrix);
+		/// Ends the scene: flushes what is still queued, so everything reaches the GPU command
+		/// list.
 		void EndScene();
 
-		// Quads, circles and text batch separately, and EndScene draws every quad, then every circle,
-		// then all text. Flush draws what has been submitted so far, so what comes after lands on top
-		// of it; a scene does it between sprites, circles and text to keep them in z order.
+		/// Quads, circles and text batch separately, and EndScene draws every quad, then every
+		/// circle, then all text. Flush draws what has been submitted so far, so what comes after
+		/// lands on top of it; a scene does it between sprites, circles and text to keep them in z
+		/// order.
 		void Flush();
 
+		/// Clears the render target the scene draws into to clearColor (RGBA) at once, not batched:
+		/// draws already queued still land after it, so clear before the first draw (or Flush
+		/// first).
 		void Clear(const glm::vec4& clearColor);
 
+		/// Draws a solid quad centred on position (z is passed through to the camera matrix), size
+		/// being its full width and height in world units. The batches have no depth test: quads
+		/// draw in submission order. The overloads take a 2D position (z = 0) or a 3D one.
+		///@{
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
 		void DrawQuad(const glm::vec3& position, const glm::vec2& size, const glm::vec4& color);
+		///@}
 
+		/// Draws a quad centred on position, textured and multiplied by color (RGBA, white =
+		/// untinted). A null texture draws it solid. The texture must stay alive until the batch is
+		/// flushed (EndScene at the latest); a batch holds 31 distinct textures before it flushes.
+		/// The overloads take a 2D or 3D position.
+		///@{
 		void DrawQuad(const glm::vec2& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 		void DrawQuad(const glm::vec3& position, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+		///@}
 
+		/// As the textured DrawQuad, turned by rotation in degrees, counter-clockwise, about
+		/// position. The overloads take a 2D or 3D position.
+		///@{
 		void DrawRotatedQuad(const glm::vec2& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
 		void DrawRotatedQuad(const glm::vec3& position, float rotation, const glm::vec2& size, Texture* texture, const glm::vec4& color = glm::vec4(1.0f));
+		///@}
 
+		/// Draws a circle inscribed in the unit quad that transform places, so its diameter is the
+		/// transform's scale. thickness 1 is a filled disc, smaller a ring; fade softens the edge
+		/// (0..1 of the radius).
 		void DrawCircle(const glm::mat4& transform, const glm::vec4& color, float thickness = 1.0f, float fade = 0.005f);
 
+		/// The parameters type DrawText takes.
 		using TextParameters = Renderer2DTextParameters;
 
-		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes
-		// Latin-1, the printable General Punctuation and the euro sign; anything else draws '?'.
-		// A null font draws nothing (warned once).
+		/// Draws string with font from position, the left end of the first line's baseline (its
+		/// middle when textParameters.Centered). size scales the font: 1.0 makes its
+		/// ascender-to-descender height one world unit. A null font draws nothing (warned once). The
+		/// overloads take a 2D or 3D position. `string` is UTF-8; a byte that is not valid UTF-8
+		/// reads as Latin-1. The atlas bakes Latin-1, the printable General Punctuation and the
+		/// euro sign; anything else draws '?'.
+		///@{
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
+		///@}
 
-		// Per-scene render statistics: reset each BeginScene, complete after EndScene
-		// (they reflect the most recent BeginScene/EndScene pass, not a whole frame). A scene begun
-		// while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
+		/// Per-scene render statistics: reset each BeginScene, complete after EndScene
+		/// (they reflect the most recent BeginScene/EndScene pass, not a whole frame). A scene
+		/// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
-			uint32_t DrawCalls = 0;     // batches actually flushed (quad + circle + text)
-			uint32_t QuadCount = 0;     // quads submitted (incl. rotated / textured)
-			uint32_t CircleCount = 0;
-			uint32_t TextQuadCount = 0; // glyph quads
+			uint32_t DrawCalls = 0;     ///< batches actually flushed (quad + circle + text)
+			uint32_t QuadCount = 0;     ///< quads submitted (incl. rotated / textured)
+			uint32_t CircleCount = 0;   ///< Circles submitted.
+			uint32_t TextQuadCount = 0; ///< glyph quads
+			/// sprites and circles Scene::RenderEntities left out, wholly outside the view
+			uint32_t CulledQuads = 0;
 
+			/// Quads, circles and glyph quads together.
 			uint32_t GetTotalQuads() const { return QuadCount + CircleCount + TextQuadCount; }
+			/// Vertices those make, 4 each.
 			uint32_t GetVertexCount() const { return GetTotalQuads() * 4; }
+			/// Indices those make, 6 each.
 			uint32_t GetIndexCount() const { return GetTotalQuads() * 6; }
 		};
 
+		/// The statistics of the most recent scene.
 		const Statistics& GetStatistics() const { return m_Statistics; }
+
+		/// The scene's camera, as BeginScene took it.
+		const glm::mat4& GetViewProjection() const { return m_CameraData.ProjectionViewMatrix; }
+		/// Scene::RenderEntities skips sprites and circles wholly outside the view (text is drawn
+		/// regardless: its bounds take a walk of the string). Off draws them all, for checking that
+		/// it changes nothing.
+		void SetCullingEnabled(bool enabled) { m_CullingEnabled = enabled; }
+		/// Whether Scene::RenderEntities culls sprites and circles outside the view; on by default.
+		bool IsCullingEnabled() const { return m_CullingEnabled; }
+		/// The batch sizing the renderer runs with, after MaxQuads is clamped to at least 1.
 		const Renderer2DCapabilities& GetCapabilities() const { return m_Params.Capabilities; }
 
-		// Always nullptr today: Renderer2D draws into the swap chain, whose image is not a Texture.
-		Texture* GetOutput() const { return Renderer::GetSwapChainFramebuffer()->GetAttachment(0); }
+		/// Size in pixels of the window's framebuffer, not of the current render target.
 		glm::vec2 GetViewportSize() const
 		{
 			auto* fb = Renderer::GetSwapChainFramebuffer();
@@ -135,6 +204,9 @@ namespace Dingo
 
 	private:
 		Renderer2D(const Renderer2DParams& params) : m_Params(params) {}
+		void Initialize();
+
+		friend class Scene; // counts what RenderEntities culls
 
 	private:
 		float GetTextureIndex(Texture* texture);
@@ -186,7 +258,7 @@ namespace Dingo
 		// Every batch owns its render pass and re-binds + re-bakes at flush, including
 		// passes whose bindings never vary: an NVRHI binding set is immutable once baked,
 		// so one pass shared across batches draws them all with the last batch's
-		// resources — which is how a second font in a frame rendered from the first
+		// resources - which is how a second font in a frame rendered from the first
 		// font's atlas.
 		template<typename TVertex>
 		struct BatchPass
@@ -257,9 +329,9 @@ namespace Dingo
 
 				if (m_BatchIndex >= m_VertexBuffers.size())
 				{
-					// DirectUpload = false: filled through Renderer::Upload (the deferred frame
+					// BufferUpload::Deferred: filled through Renderer::Upload (the deferred frame
 					// command list) so the write is ordered before the draw within that one list.
-					m_VertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(TVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, false, m_Params.Name + "VertexBuffer"));
+					m_VertexBuffers.push_back(GraphicsBuffer::CreateVertexBuffer(sizeof(TVertex) * m_Params.Capabilities.GetQuadVertexCount(), nullptr, BufferUpload::Deferred, m_Params.Name + "VertexBuffer"));
 				}
 
 				TargetPipeline& targetPipeline = GetTargetPipeline(target, targetFormatKey);
@@ -315,6 +387,8 @@ namespace Dingo
 					.SetShader(m_Shader)
 					.SetVertexLayout(m_Params.VertexLayout)
 					.SetCullMode(m_Params.CullMode)
+					// The batch quads wind clockwise; the text pass culls their back faces.
+					.SetFrontCounterClockwise(false)
 					.SetDepthTest(false)
 					.SetDepthWrite(false));
 				return targetPipeline;
@@ -346,6 +420,7 @@ namespace Dingo
 		**************************************************/
 		Renderer2DParams m_Params;
 		Statistics m_Statistics;
+		bool m_CullingEnabled = true;
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
 		bool m_GpuTimerOpen = false;

@@ -5,36 +5,33 @@
 namespace Dingo
 {
 
+	/// Pixel format of a Texture (TextureParams::Format). Not the same list as Format.
 	enum class TextureFormat
 	{
-		Unknown,
+		Unknown, ///< Not set; give a texture a real format.
 
-		RGB,
-		RGBA,
+		RGBA8_UNORM, ///< 8 bits a channel, 0..1; the format for ordinary colour textures.
+		RGBA = RGBA8_UNORM, ///< Alias of RGBA8_UNORM.
 
-		RGBA8_UNORM,
+		RGBA32F, ///< 32-bit float channels.
 
-		RGBA32F,
-
-		// Render-target formats (v0.9): HDR colour, single channels and a depth that can be sampled.
+		// Render-target formats (v0.9): HDR colour, single channels and a depth that can be
+		// sampled.
 		RGBA16F,
-		R11G11B10F, // unsigned: no negative values
-		R8,         // unorm
+		R11G11B10F, ///< unsigned: no negative values
+		R8,         ///< unorm
 		R16F,
 		R32F,
-		D32,
+		D32, ///< 32-bit float depth; sampled only with TextureParams::IsShaderResource.
 
-		Count
+		Count ///< The number of formats, not a format.
 	};
 
-	// The size of one pixel as uploaded or read back. RGB counts 3: its uploads are packed 3 bytes a
-	// pixel.
+	/// The size of one pixel as uploaded or read back, in bytes; 0 for Unknown and Count.
 	constexpr uint32_t GetBytesPerPixel(TextureFormat format)
 	{
 		switch (format)
 		{
-			case TextureFormat::RGB:         return 3;
-			case TextureFormat::RGBA:
 			case TextureFormat::RGBA8_UNORM: return 4;
 			case TextureFormat::RGBA32F:     return 16;
 			case TextureFormat::RGBA16F:     return 8;

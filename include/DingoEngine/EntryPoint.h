@@ -1,49 +1,31 @@
 #pragma once
 #include "DingoEngine/Core/Application.h"
-#include "Log.h"
-
-extern Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args);
-
-namespace Dingo
-{
-
-	int Main(int argc, char** argv)
-	{
-		Dingo::Log::Initialize();
-
-		Dingo::ApplicationCommandLineArgs args = { argc, argv };
-
-		do
-		{
-			Dingo::Application* app = Dingo::CreateApplication(args);
-			app->Run();
-			bool shouldRestart = Dingo::Application::HasPendingRestart();
-			delete app;
-
-			if (!shouldRestart)
-				break;
-		}
-		while (true);
-
-		Dingo::Log::Shutdown();
-
-		return EXIT_SUCCESS;
-	}
-
-}
 
 #if DE_DISTRIBUTION && DE_PLATFORM_WINDOWS
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+
+/// The program's entry point in a Windows Distribution build (no console window): runs
+/// Internal::Main, which calls CreateApplication. Include EntryPoint.h in exactly one source file.
 int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmdshow)
 {
-	return Dingo::Main(__argc, __argv);
+	return Dingo::Internal::Main(__argc, __argv);
 }
 
 #else
 
+/// The program's entry point: runs Internal::Main, which calls the game's CreateApplication, runs
+/// the application and, on RequestRestart, creates it again. Include EntryPoint.h in exactly one
+/// source file; the game does not write main.
 int main(int argc, char** argv)
 {
-	return Dingo::Main(argc, argv);
+	return Dingo::Internal::Main(argc, argv);
 }
 
-#endif // DE_PLATFORM_WINDOWS
+#endif

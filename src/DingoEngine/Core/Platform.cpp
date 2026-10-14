@@ -14,28 +14,28 @@ namespace Dingo::Platform
 		std::filesystem::path directory;
 
 #ifdef DE_PLATFORM_WINDOWS
-		if (const char* localAppData = std::getenv("LOCALAPPDATA"))
+		if (const wchar_t* localAppData = _wgetenv(L"LOCALAPPDATA"))
 		{
-			directory = std::filesystem::path(localAppData) / appName;
+			directory = std::filesystem::path(localAppData) / Internal::PathFromUtf8(appName);
 		}
 		else
 		{
 			DE_CORE_ERROR("LOCALAPPDATA environment variable not set. Falling back to current directory for user data.");
-			directory = std::filesystem::current_path() / appName;
+			directory = std::filesystem::current_path() / Internal::PathFromUtf8(appName);
 		}
 #else
 		if (const char* xdgDataHome = std::getenv("XDG_DATA_HOME"))
 		{
-			directory = std::filesystem::path(xdgDataHome) / appName;
+			directory = std::filesystem::path(xdgDataHome) / Internal::PathFromUtf8(appName);
 		}
 		else if (const char* home = std::getenv("HOME"))
 		{
-			directory = std::filesystem::path(home) / ".local" / "share" / appName;
+			directory = std::filesystem::path(home) / ".local" / "share" / Internal::PathFromUtf8(appName);
 		}
 		else
 		{
 			DE_CORE_ERROR("Neither XDG_DATA_HOME nor HOME environment variables are set. Falling back to current directory for user data.");
-			directory = std::filesystem::current_path() / appName;
+			directory = std::filesystem::current_path() / Internal::PathFromUtf8(appName);
 		}
 #endif
 

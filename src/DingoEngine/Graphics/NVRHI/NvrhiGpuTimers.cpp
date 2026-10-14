@@ -88,17 +88,26 @@ namespace Dingo::Internal
 			return;
 
 		nvrhi::IDevice* device = GetDevice();
+		const bool d3d11 = device->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D11;
 		std::vector<float> sums(data.Timers.size(), 0.0f);
 		std::vector<bool> measured(data.Timers.size(), false);
 		for (uint32_t i = 0; i < frame.Used; ++i)
 		{
 			Data::Query& query = frame.Queries[i];
-			if (query.Ended && device->pollTimerQuery(query.Handle))
+			const bool done = query.Ended && device->pollTimerQuery(query.Handle);
+			const float seconds = done ? device->getTimerQueryTime(query.Handle) : 0.0f;
+			// Exactly 0 on D3D11 is its disjoint reading, whose start and end results NVRHI never
+			// fetches: ending those queries again would abandon them (#410), so the query is replaced.
+			const bool disjoint = d3d11 && done && seconds <= 0.0f;
+			if (done && !disjoint)
 			{
-				sums[query.Timer] += device->getTimerQueryTime(query.Handle) * 1000.0f;
+				sums[query.Timer] += seconds * 1000.0f;
 				measured[query.Timer] = true;
 			}
-			device->resetTimerQuery(query.Handle);
+			if (disjoint)
+				query.Handle = device->createTimerQuery();
+			else
+				device->resetTimerQuery(query.Handle);
 			query.Ended = false;
 		}
 		frame.Used = 0;

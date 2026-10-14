@@ -1,6 +1,7 @@
 #include "HierarchyTest.h"
 
 #include "DingoEngine/Scene/SceneDebug.h"
+#include "DingoEngine/UI/DebugPanels.h"
 
 #include <glm/gtc/constants.hpp>
 #include <imgui.h>
@@ -170,6 +171,8 @@ namespace Dingo
 		RunStructuralChecks();
 		RunSceneDebugChecks();
 		RunCollisionFilterChecks();
+		RunActiveChecks();
+		RunSceneApiChecks();
 		RunStructuralChecks2D();
 		BuildScene();
 		BuildScene2D();
@@ -446,11 +449,19 @@ namespace Dingo
 			loose.AddComponent<SpotLightComponent>();
 			childId = child.GetUUID();
 
-			for (const SD::LiveScene& live : SD::LiveScenes())
+			const auto findSerial = [&scene]
 			{
-				if (live.Instance == &scene)
-					serial = live.Serial;
-			}
+				const std::unique_lock lock = SD::LockScenes();
+				for (const SD::LiveScene& live : SD::LiveScenes())
+				{
+					if (live.Instance == &scene)
+						return live.Serial;
+				}
+				return uint64_t(0);
+			};
+			Check(findSerial() == 0, "a scene joins the Scene tab at its first update, not while it is built");
+			scene.OnUpdate(0.0f);
+			serial = findSerial();
 
 			std::vector<SD::SceneRow> scenes;
 			SD::CollectScenes(scenes);
@@ -479,6 +490,15 @@ namespace Dingo
 				std::format("the Scene tab's inspector shows the child's world transform through its parent: ({:.3f}, {:.3f}, {:.3f})",
 					detail.WorldPosition.x, detail.WorldPosition.y, detail.WorldPosition.z));
 
+			parent.SetActive(false);
+			SD::CollectScenes(scenes);
+			const auto inactiveRow = std::find_if(scenes.begin(), scenes.end(), [serial](const SD::SceneRow& r) { return r.Serial == serial; });
+			SD::EntityDetail inactiveChild;
+			Check(inactiveRow != scenes.end() && inactiveRow->PointLights == 0 && inactiveRow->InactiveLocalLights == 1
+				&& SD::CollectEntity(serial, childId, inactiveChild) && inactiveChild.Active && !inactiveChild.ActiveInHierarchy,
+				"the Scene tab counts a light under an inactive parent apart, as the renderer skips it, and marks the child inactive");
+			parent.SetActive(true);
+
 			scene.DestroyEntity(child);
 			Check(!SD::CollectEntity(serial, childId, detail) && detail.Sections.empty(), "the Scene tab's inspector lets go of a destroyed entity");
 		}
@@ -494,12 +514,12 @@ namespace Dingo
 
 		// ImGui applies a programmatic tab selection a frame late.
 		bool open = true;
-		const UI::DebugTab shown = UI::DebugWindow(&open, UI::DebugTab::Scene);
-		if (shown != UI::DebugTab::Scene && ++m_SceneTabFrames < 10)
+		const Internal::DebugTab shown = Internal::DebugWindow(&open, Internal::DebugTab::Scene);
+		if (shown != Internal::DebugTab::Scene && ++m_SceneTabFrames < 10)
 			return;
 
 		m_SceneTabChecked = true;
-		Check(shown == UI::DebugTab::Scene, std::format("the Debug window opens on the Scene tab and draws it (after {} frames)", m_SceneTabFrames));
+		Check(shown == Internal::DebugTab::Scene, std::format("the Debug window opens on the Scene tab and draws it (after {} frames)", m_SceneTabFrames));
 	}
 
 	void HierarchyTest::RunCollisionFilterChecks()
@@ -601,6 +621,49 @@ namespace Dingo
 
 		Check(reportedWhileParented && clearedAfterDetach,
 			"IsCollisionIgnored and IsBodyIgnored report a kinematic child's ancestor pairs while it is parented, and not after RemoveParent");
+
+		{
+			Scene scene("Ancestor Filter Cleanup");
+			MakeBox(scene, "Floor", { 0.0f, -0.5f, 0.0f }, { 8.0f, 1.0f, 8.0f }, BodyType3D::Static);
+			Entity body = MakeBox(scene, "Body", { 0.0f, 0.5f, 0.0f }, glm::vec3(1.0f), BodyType3D::Dynamic);
+			Entity hand = MakeEntity(scene, "Hand", { 0.5f, 0.0f, 0.0f }, glm::vec3(0.0f), glm::vec3(1.0f));
+			hand.SetParent(body, false);
+			Entity blade = MakeBox(scene, "Blade", { 0.1f, 0.0f, 0.0f }, { 0.6f, 0.2f, 0.2f }, BodyType3D::Kinematic);
+			blade.SetParent(hand, false);
+			scene.OnStart();
+			scene.OnUpdate(1.0f / 60.0f);
+			const bool applied = scene.GetPhysics3D() && scene.GetPhysics3D()->IsCollisionIgnored(scene.GetRuntimeBody3D(blade), scene.GetRuntimeBody3D(body));
+
+			scene.OnStop();
+			scene.OnStart();
+			Physics3D* physics = scene.GetPhysics3D();
+			if (!physics)
+			{
+				Check(false, "the filter cleanup scene has a 3D world after OnStop and OnStart");
+				return;
+			}
+			const PhysicsBodyId3D bodyId = scene.GetRuntimeBody3D(body);
+			const PhysicsBodyId3D bladeId = scene.GetRuntimeBody3D(blade);
+			const glm::vec3 start = physics->GetPosition(bodyId);
+			StepOneSecond(scene);
+			const float moved = glm::length(physics->GetPosition(bodyId) - start);
+			Check(applied && physics->IsCollisionIgnored(bladeId, bodyId) && moved < 1e-3f,
+				std::format("after OnStop and OnStart a kinematic child ignores its ancestor's new body again (moved {:.1e})", moved));
+
+			scene.DestroyEntity(blade);
+			Check(!physics->IsCollisionIgnored(bladeId, bodyId) && !physics->IsCollisionIgnored(bodyId, bladeId),
+				"destroying a kinematic child drops its ancestor pairs from the filter");
+
+			Entity spear = MakeBox(scene, "Spear", { 0.1f, 0.0f, 0.0f }, { 0.6f, 0.2f, 0.2f }, BodyType3D::Kinematic);
+			spear.SetParent(hand, false);
+			scene.CreateRigidBody(spear);
+			scene.OnUpdate(1.0f / 60.0f);
+			const PhysicsBodyId3D spearId = scene.GetRuntimeBody3D(spear);
+			const bool spearApplied = physics->IsCollisionIgnored(spearId, bodyId);
+			scene.DestroyEntity(body);
+			Check(spearApplied && !physics->IsCollisionIgnored(spearId, bodyId) && !physics->IsCollisionIgnored(bodyId, spearId),
+				"destroying the ancestor (and with it the child) drops the pair from the filter");
+		}
 	}
 
 	void HierarchyTest::BuildScene()
@@ -615,8 +678,8 @@ namespace Dingo
 
 		Entity sun = m_Scene->CreateEntity("Sun Light");
 		DirectionalLightComponent& sunLight = sun.AddComponent<DirectionalLightComponent>();
-		sunLight.Intensity = 0.7f;
-		sunLight.Ambient = 0.25f;
+		sunLight.Intensity = 0.7f * (1.0f - 0.25f);
+		sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.25f));
 
 		Entity floor = MakeEntity(*m_Scene, "Floor", { 0.0f, -0.5f, 0.0f }, glm::vec3(0.0f), { 24.0f, 1.0f, 24.0f });
 		floor.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer.GetBoxMesh(), { 0.45f, 0.48f, 0.44f, 1.0f }));

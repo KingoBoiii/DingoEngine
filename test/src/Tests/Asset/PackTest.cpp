@@ -71,7 +71,7 @@ namespace Dingo
 
 			counts.SubMeshes = model->GetSubMeshCount();
 			for (const SubMesh& subMesh : model->GetSubMeshes())
-				counts.Vertices += subMesh.MeshData ? subMesh.MeshData->GetVertexCount() : 0;
+				counts.Vertices += subMesh.Mesh ? subMesh.Mesh->GetVertexCount() : 0;
 			counts.Joints = model->GetSkeleton() ? model->GetSkeleton()->GetJointCount() : 0;
 			counts.Clips = model->GetAnimationCount();
 			for (uint32_t i = 0; i < model->GetAnimationCount(); ++i)
@@ -87,7 +87,7 @@ namespace Dingo
 		if (std::shared_ptr<AudioClip> clip = Application::Get().GetAudioEngine().LoadClip("audio/beep.wav"))
 			snapshot.ClipFrames = clip->GetFrameCount();
 
-		if (Font* font = Font::Create("fonts/arial.ttf"))
+		if (Font* font = Font::Create("fonts/Inter-Regular.ttf"))
 		{
 			snapshot.FontWidth = font->GetStringWidth("Packed: AaBbQq 0123", 1.0f);
 			DestroyAndDelete(font);
@@ -111,7 +111,7 @@ namespace Dingo
 		m_LoosePixels.reset();
 		m_PackedPixels.reset();
 
-		m_WorkDirectory = CacheManager::GetCacheDirectory("pack-test");
+		m_WorkDirectory = Internal::CacheManager::GetCacheDirectory("pack-test");
 		std::error_code ec;
 		std::filesystem::remove_all(m_WorkDirectory, ec);
 		std::filesystem::create_directories(m_WorkDirectory, ec);

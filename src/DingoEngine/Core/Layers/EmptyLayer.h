@@ -1,8 +1,6 @@
 #pragma once
 #include "DingoEngine/Core/Layer.h"
 
-#include "DingoEngine/Graphics/CommandList.h"
-
 namespace Dingo
 {
 	class EmptyLayer : public Layer

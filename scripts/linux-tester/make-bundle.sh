@@ -16,7 +16,7 @@ trap 'rm -rf "$work"' EXIT
 pkg=$work/DingoEngine-linux-tester
 mkdir -p "$pkg/test" "$pkg/examples"
 
-cp "$ROOT"/scripts/linux-tester/{README.md,run-checks.sh,play.sh} "$ROOT/scripts/ci/close-windows.py" "$pkg/"
+cp "$ROOT"/scripts/linux-tester/{README.md,run-checks.sh,play.sh} "$ROOT/scripts/ci/close-windows.py" "$ROOT/THIRD-PARTY-NOTICES.md" "$pkg/"
 grep -oP '^\s*m_Tests\.push_back\(\{ "\K[^"]+' "$ROOT/test/src/TestLayer.cpp" > "$pkg/tests.txt" || true
 count=$(wc -l < "$pkg/tests.txt")
 if (( count < 20 )); then

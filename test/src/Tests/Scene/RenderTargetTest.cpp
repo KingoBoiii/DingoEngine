@@ -58,14 +58,8 @@ namespace Dingo
 
 		std::vector<uint8_t> ReadImageFile(const std::filesystem::path& path, bool flipVertically)
 		{
-			uint32_t width = 0, height = 0, channels = 0;
-			std::vector<uint8_t> bytes;
-			if (const uint8_t* data = FileSystem::ReadImage(path, &width, &height, &channels, flipVertically, true))
-			{
-				bytes.assign(data, data + static_cast<size_t>(width) * height * 4);
-				FileSystem::FreeImage(data);
-			}
-			return bytes;
+			std::optional<ImageData> image = FileSystem::ReadImage(path, flipVertically, true);
+			return image ? std::move(image->Pixels) : std::vector<uint8_t>();
 		}
 
 		Entity AddSprite(Scene& scene, const char* name, const glm::vec3& position, const glm::vec2& size, const glm::vec4& color)
@@ -187,7 +181,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		std::error_code error;
 		std::filesystem::create_directories(m_TempDirectory, error);
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		auto makeTarget = [](const char* name, int32_t width, int32_t height)
 		{
@@ -271,7 +265,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_DepthCopyMaterial->SetTexture(0, m_DepthSource->GetDepthAttachment());
 		m_DepthCopyMaterial->SetSampler(0, Renderer::GetPointSampler());
 
-		m_CompareSampler = Sampler::Create(SamplerParams().SetCompare(true).SetMinFilter(false).SetMagFilter(false).SetMipFilter(false));
+		m_CompareSampler = Sampler::Create(SamplerParams().SetCompare(true).SetFilter(SamplerFilter::Nearest));
 		m_CompareMaterial = MakeFullscreenMaterial("RenderTargetTestCompare", m_CompareShader);
 		m_CompareMaterial->SetTexture(0, m_DepthSource->GetDepthAttachment());
 		m_CompareMaterial->SetSampler(0, m_CompareSampler);
@@ -454,7 +448,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DrawFullscreen(m_SamplerSwapMaterial, m_SamplerSwapTarget, &swapLeft);
 		const uintptr_t linearAddress = reinterpret_cast<uintptr_t>(linear);
 		DestroyAndDelete(linear);
-		m_SamplerSwapSampler = Sampler::Create(SamplerParams().SetMinFilter(false).SetMagFilter(false).SetMipFilter(false));
+		m_SamplerSwapSampler = Sampler::Create(SamplerParams().SetFilter(SamplerFilter::Nearest));
 		const bool sameAddress = reinterpret_cast<uintptr_t>(m_SamplerSwapSampler) == linearAddress;
 		m_SamplerSwapMaterial->SetSampler(0, m_SamplerSwapSampler);
 		DrawFullscreen(m_SamplerSwapMaterial, m_SamplerSwapTarget, &swapRight);
@@ -501,7 +495,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		// upload itself can put the texture back into a state a draw may sample (#154).
 		DrawFullscreen(m_UploadMaterial, m_UploadTarget);
 		const std::vector<uint32_t> green(16, 0xFF00FF00u);
-		m_UploadTexture->Upload(green.data(), 4 * sizeof(uint32_t));
+		m_UploadTexture->Upload(green.data());
 		DrawFullscreen(m_UploadMaterial, m_UploadTarget);
 		ReadBack(m_UploadTarget, [this](const TexturePixels& pixels)
 		{
@@ -556,9 +550,9 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		cameraTransform.Rotation = glm::quat(glm::radians(glm::vec3(-15.0f, 0.0f, 0.0f)));
 		camera.AddComponent<CameraComponent>().Type = CameraComponent::ProjectionType::Perspective;
 
-		DirectionalLightComponent& sun = scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
-		sun.Intensity = 0.8f;
-		sun.Ambient = 0.25f;
+		Entity sunEntity = scene->CreateEntity("Sun");
+		sunEntity.AddComponent<DirectionalLightComponent>().Intensity = 0.8f * (1.0f - 0.25f);
+		sunEntity.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.25f));
 
 		Entity floor = scene->CreateEntity("Floor");
 		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.65f, 0.0f }, { 6.0f, 0.1f, 6.0f }));

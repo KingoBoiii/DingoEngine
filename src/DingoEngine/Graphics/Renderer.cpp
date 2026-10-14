@@ -1,12 +1,15 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/SwapChain.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/GpuTimers.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Core/Timer.h"
+#include "DingoEngine/Core/CrashHandler.h"
 
 #include <atomic>
 #include <thread>
@@ -26,8 +29,8 @@ namespace Dingo
 
 	struct RendererData
 	{
-		SwapChain*   SwapChain      = nullptr;
-		CommandList* CommandList    = nullptr;
+		Internal::SwapChain*   SwapChain      = nullptr;
+		Internal::CommandList* CommandList = nullptr;
 		Framebuffer* RenderTarget   = nullptr; // null = use swap chain
 		bool         HasViewport    = false;
 		Viewport     ViewportOverride;
@@ -97,7 +100,7 @@ namespace Dingo
 
 		// A resize recreates the swap chain anyway, so it takes the new flag along instead of
 		// SetVSync recreating it a second time.
-		void ApplySwapChainChange(SwapChain& swapChain, const SwapChainChange& change)
+		void ApplySwapChainChange(Internal::SwapChain& swapChain, const SwapChainChange& change)
 		{
 			if (change.Resize)
 			{
@@ -116,11 +119,11 @@ namespace Dingo
 	***		LIFECYCLE								***
 	**************************************************/
 
-	void Renderer::Initialize(SwapChain* swapChain)
+	void Renderer::Initialize(Internal::SwapChain* swapChain)
 	{
 		s_Data = new RendererData();
 		s_Data->SwapChain   = swapChain;
-		s_Data->CommandList = CommandList::Create();
+		s_Data->CommandList = Internal::CommandList::Create();
 
 		uint32_t whiteTextureData = 0xffffffff;
 		s_Data->WhiteTexture = Texture::CreateFromData(1, 1, &whiteTextureData, TextureFormat::RGBA, "White Texture");
@@ -128,13 +131,11 @@ namespace Dingo
 		s_Data->ClampSampler = Sampler::Create(SamplerParams());
 
 		s_Data->PointSampler = Sampler::Create(SamplerParams()
-			.SetMinFilter(false)
-			.SetMagFilter(false)
-			.SetMipFilter(false));
+			.SetFilter(SamplerFilter::Nearest));
 
 		swapChain->AcquireNextImage();
 		s_Data->Running      = true;
-		s_Data->RenderThread = std::thread(&Renderer::RenderThreadLoop);
+		s_Data->RenderThread = std::thread([] { Internal::CrashHandler::RunThread([](void*) { RenderThreadLoop(); }, nullptr); });
 	}
 
 	void Renderer::Shutdown()
@@ -143,7 +144,12 @@ namespace Dingo
 			return;
 
 		{
-			std::lock_guard<std::mutex> lock(s_Data->Mutex);
+			// The render thread takes the last frame and presents it before it reads the sentinel.
+			// Executed below instead, that frame draws into a back buffer no present retires, and
+			// WARP's D3D12 queue never idled behind it.
+			std::unique_lock<std::mutex> lock(s_Data->Mutex);
+			if (s_Data->RenderThread.joinable())
+				s_Data->FrameConsumedCV.wait(lock, [] { return !s_Data->HasFrame; });
 			s_Data->Running  = false;
 			s_Data->HasFrame = true; // sentinel: wake the render thread
 		}
@@ -351,13 +357,13 @@ namespace Dingo
 
 	void Renderer::BeginGpuTimer(const char* name)
 	{
-		CommandList* list = s_Data->FrameSkipped ? nullptr : TryGetRecordingCommandList();
+		Internal::CommandList* list = s_Data->FrameSkipped ? nullptr : TryGetRecordingCommandList();
 		s_Data->GpuTimers.Begin(list, name);
 	}
 
 	void Renderer::EndGpuTimer()
 	{
-		CommandList* list = s_Data->FrameSkipped ? nullptr : TryGetRecordingCommandList();
+		Internal::CommandList* list = s_Data->FrameSkipped ? nullptr : TryGetRecordingCommandList();
 		s_Data->GpuTimers.End(list);
 	}
 
@@ -459,12 +465,12 @@ namespace Dingo
 		s_Data->CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
 	}
 
-	void Renderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size)
+	void Renderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)
 	{
 		if (s_Data->FrameSkipped)
 			return;
 
-		s_Data->CommandList->UploadBuffer(buffer, data, size);
+		s_Data->CommandList->UploadBuffer(buffer, data, size, offset);
 	}
 
 	/**************************************************
@@ -473,7 +479,7 @@ namespace Dingo
 
 	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)
 	{
-		if (s_Data->FrameSkipped)
+		if (!s_Data || s_Data->FrameSkipped)
 			return;
 
 		s_Data->CommandList->Clear(framebuffer, 0, clearColor);
@@ -481,7 +487,7 @@ namespace Dingo
 
 	void Renderer::Clear(const glm::vec4& clearColor)
 	{
-		if (s_Data->FrameSkipped)
+		if (!s_Data || s_Data->FrameSkipped)
 			return;
 
 		Framebuffer* target = GetCurrentTarget();
@@ -578,17 +584,20 @@ namespace Dingo
 	RenderPass* Renderer::PrepareMaterial(Material* material, const VertexLayout& layout, Framebuffer* target, CullMode cullMode)
 	{
 		// The UBO is volatile: it must be written into every frame that binds it, not only when it changed.
-		if (material->GetUniformBuffer() && material->NeedsUniformUpload(s_Data->FrameIndex))
+		if (Internal::MaterialAccess::GetUniformBuffer(material) && Internal::MaterialAccess::NeedsUniformUpload(material, s_Data->FrameIndex))
 		{
-			const auto& cpu = material->GetUniformCPUData();
-			s_Data->CommandList->UploadBuffer(material->GetUniformBuffer(), cpu.data(), cpu.size());
-			material->MarkUniformUploaded(s_Data->FrameIndex);
+			const auto& cpu = Internal::MaterialAccess::GetUniformCPUData(material);
+			s_Data->CommandList->UploadBuffer(Internal::MaterialAccess::GetUniformBuffer(material), cpu.data(), cpu.size());
+			Internal::MaterialAccess::MarkUniformUploaded(material, s_Data->FrameIndex);
 		}
 
-		RenderPass* renderPass = material->GetOrCreateRenderPass(layout, target, cullMode);
-		if (!renderPass)
+		RenderPass* renderPass = Internal::MaterialAccess::GetOrCreateRenderPass(material, layout, target, cullMode);
+		if (!renderPass || !s_Data->CommandList->SetRenderPass(renderPass))
 			return nullptr;
-		return s_Data->CommandList->SetRenderPass(renderPass) ? renderPass : nullptr;
+
+		const glm::uvec4& drawConstants = Internal::MaterialAccess::GetDrawConstants(material);
+		s_Data->CommandList->SetPushConstants(&drawConstants, sizeof(drawConstants));
+		return renderPass;
 	}
 
 	void Renderer::DrawIndexed(Material* material, const VertexLayout& layout, GraphicsBuffer* vertexBuffer, GraphicsBuffer* indexBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex)
@@ -643,24 +652,29 @@ namespace Dingo
 			return 0;
 
 		// The stride has to come from the buffer's own format: assuming uint16 on a uint32 index buffer
-		// asks for twice the indices that exist. Unknown falls back to uint16, CreateIndexBuffer's default.
-		const uint64_t stride = indexBuffer->GetFormat() == GraphicsFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
+		// asks for twice the indices that exist.
+		const uint64_t stride = indexBuffer->GetIndexFormat() == IndexFormat::Uint32 ? sizeof(uint32_t) : sizeof(uint16_t);
 		const uint64_t total = indexBuffer->GetByteSize() / stride;
 		return total > firstIndex ? static_cast<uint32_t>(total - firstIndex) : 0;
 	}
 
-	CommandList* Renderer::GetCommandList()
+	Internal::CommandList* Renderer::GetCommandList()
 	{
 		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
 		return s_Data ? s_Data->CommandList : nullptr;
 	}
 
-	CommandList* Renderer::TryGetRecordingCommandList()
+	Internal::CommandList* Renderer::TryGetRecordingCommandList()
 	{
 		if (!s_Data || !s_Data->CommandList || !s_Data->CommandList->IsRecording())
 			return nullptr;
 
 		return s_Data->CommandList;
+	}
+
+	Internal::SwapChain* Internal::RendererBackend::GetSwapChain()
+	{
+		return Renderer::s_Data ? Renderer::s_Data->SwapChain : nullptr;
 	}
 
 	Framebuffer* Renderer::GetSwapChainFramebuffer()
@@ -690,7 +704,6 @@ namespace Dingo
 
 	Texture* Renderer::GetWhiteTexture()
 	{
-		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
 		return s_Data ? s_Data->WhiteTexture : nullptr;
 	}
 

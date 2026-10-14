@@ -13,74 +13,89 @@
 namespace Dingo
 {
 
+	/// One joint's local transform, as translation, rotation and scale in its parent's space.
 	struct JointPose
 	{
-		glm::vec3 Translation{ 0.0f };
-		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
-		glm::vec3 Scale{ 1.0f };
+		glm::vec3 Translation{ 0.0f }; ///< Offset from the parent joint, in the model's units.
+		glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f }; ///< Local rotation; the default is identity.
+		glm::vec3 Scale{ 1.0f }; ///< Local scale per axis.
 
+		/// The local matrix: translation * rotation * scale.
 		glm::mat4 ToMatrix() const;
 	};
 
+	/// One bone of a Skeleton: its name, its parent and its bind data.
 	struct Joint
 	{
-		std::string Name;
+		std::string Name; ///< The name animation channels bind to; not necessarily unique.
+		/// Index of the parent joint, or -1 for a root; always below this joint's own.
 		int32_t     Parent = -1;
-		// Maps a skin vertex into this joint's space at bind time.
+		/// Maps a skin vertex into this joint's space at bind time.
 		glm::mat4   InverseBind{ 1.0f };
-		// The joint's local transform in the file's rest pose. A skin's bind pose is what
-		// InverseBind undoes; in glTF the two may differ.
+		/// The joint's local transform in the file's rest pose. A skin's bind pose is what
+		/// InverseBind undoes; in glTF the two may differ.
 		JointPose   RestPose;
 	};
 
+	/// The joint hierarchy of a skinned Model: rest pose, bind data and the pose maths. Immutable
+	/// to games; the Model owns it and a model reload may update it in place (GetRevision).
 	class Skeleton
 	{
 	public:
+		/// What FindJoint returns for a name no joint has.
 		static constexpr int32_t k_InvalidJoint = -1;
 
 	public:
-		// Joints must be ordered parents first: every Parent is -1 or a smaller index.
+		/// Builds the rest pose and rest palette. Joints must be ordered parents first: every
+		/// Parent is -1 or a smaller index. skinJointCount is how many leading joints skin vertices
+		/// index.
 		Skeleton(std::vector<Joint> joints, const glm::mat4& rootTransform, uint32_t skinJointCount);
-		// Copies would share an id.
+		///@{
+		/// Copies would share an id.
 		Skeleton(const Skeleton&) = delete;
 		Skeleton& operator=(const Skeleton&) = delete;
+		///@}
 
-		// Never reused, so an animator bound to a freed skeleton can tell that a new one at the same
-		// address is not the same.
+		/// Never reused, so an animator bound to a freed skeleton can tell that a new one at the
+		/// same address is not the same.
 		uint64_t GetId() const { return m_Id; }
-		// Bumped by every model reload that keeps the joints (names and parents), which may bring new
-		// rest poses and inverse binds; the id stays, so animators keep playing and pick them up at
-		// their next update.
+		/// Bumped by every model reload that keeps the joints (names and parents), which may bring
+		/// new rest poses and inverse binds; the id stays, so animators keep playing and pick them
+		/// up at their next update.
 		uint32_t GetRevision() const { return m_Revision; }
 
+		/// The number of joints, skin and helper joints together.
 		uint32_t                  GetJointCount() const { return static_cast<uint32_t>(m_Joints.size()); }
+		/// All joints, parents before children.
 		const std::vector<Joint>& GetJoints()     const { return m_Joints; }
+		/// The joint at index, which must be below GetJointCount().
 		const Joint&              GetJoint(uint32_t index) const { return m_Joints[index]; }
 
-		// Skin vertices only index joints below this, so a skinning palette needs only these.
-		// Helper and end joints that no vertex follows come after them.
+		/// Skin vertices only index joints below this, so a skinning palette needs only these.
+		/// Helper and end joints that no vertex follows come after them.
 		uint32_t GetSkinJointCount() const { return m_SkinJointCount; }
 
-		// k_InvalidJoint when no joint has that name. With duplicate names the first wins.
+		/// k_InvalidJoint when no joint has that name. With duplicate names the first wins.
 		int32_t FindJoint(std::string_view name) const;
 
-		// The file's transform above the skeleton's root joint. Global joint transforms are
-		// relative to it, so model space = RootTransform * global.
+		/// The file's transform above the skeleton's root joint. Global joint transforms are
+		/// relative to it, so model space = RootTransform * global.
 		const glm::mat4& GetRootTransform() const { return m_RootTransform; }
 
-		// Composes local poses (one per joint) into joint transforms relative to the root
-		// transform, in one forward pass. Spans shorter than the joint count are an error, and
-		// nothing is written.
+		/// Composes local poses (one per joint) into joint transforms relative to the root
+		/// transform, in one forward pass. Spans shorter than GetJointCount() are an error, and
+		/// nothing is written.
 		void ComputeGlobalTransforms(std::span<const JointPose> localPoses, std::span<glm::mat4> outGlobals) const;
 
-		// What a skinned draw uploads, one matrix per skin joint: RootTransform * global *
-		// InverseBind, taking a skin vertex to model space. Spans shorter than the skin joint
-		// count are an error, and nothing is written.
+		/// What a skinned draw uploads, one matrix per skin joint: RootTransform * global *
+		/// InverseBind, taking a skin vertex to model space; globals come from
+		/// ComputeGlobalTransforms. Spans shorter than GetSkinJointCount() are an error, and
+		/// nothing is written.
 		void ComputeSkinningPalette(std::span<const glm::mat4> globals, std::span<glm::mat4> outPalette) const;
 
-		// The palette of the rest pose, for drawing a skinned mesh nothing animates.
+		/// The palette of the rest pose, for drawing a skinned mesh nothing animates.
 		const std::vector<glm::mat4>& GetRestPalette() const { return m_RestPalette; }
-		// ComputeGlobalTransforms of every joint's RestPose.
+		/// ComputeGlobalTransforms of every joint's RestPose.
 		const std::vector<glm::mat4>& GetRestGlobalTransforms() const { return m_RestGlobals; }
 
 	private:

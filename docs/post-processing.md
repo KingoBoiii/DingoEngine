@@ -164,3 +164,15 @@ The curves live in an engine include, so a shader of your own can use them:
 #include <DingoEngine/ToneMapping.glsl>
 // ToneMap(color, op, knee, white): op is a ToneMapOperator value (TONEMAP_NONE ... TONEMAP_NEUTRAL)
 ```
+
+## Limits
+
+- The chain is off unless asked for, and the `SceneRenderer` runs it for the primary perspective
+  camera's `PostProcessComponent` only. The 2D overlay drawn after it is never tone mapped.
+- Ambient occlusion needs the projection (`Begin(settings, projection)`); without it that one pass
+  is skipped, with a warning. It multiplies the whole HDR colour, so sunlit corners darken a little
+  too.
+- A 16-bit float scene target tops out at 65504, and with the `None` curve the chain is within
+  1/255 of no chain, not exact.
+- The scene target costs 12 bytes a pixel per output size in use (more with bloom and AO).
+- The curves other than `Soft` shift every value, so a game re-tuned for them has to stay with them.

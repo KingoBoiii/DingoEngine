@@ -12,7 +12,7 @@ namespace Dingo
 	public:
 		NvrhiFramebuffer(const FramebufferParams& params) : Framebuffer(params), m_Width(params.Width), m_Height(params.Height)
 		{}
-		virtual ~NvrhiFramebuffer() = default;
+		virtual ~NvrhiFramebuffer() { NvrhiFramebuffer::Destroy(); }
 
 	public:
 		virtual void Initialize() override;

@@ -8,7 +8,7 @@
 namespace Dingo
 {
 
-	const char* AssetTypeToString(AssetType type)
+	const char* ToString(AssetType type)
 	{
 		switch (type)
 		{
@@ -22,7 +22,7 @@ namespace Dingo
 		return "Unknown";
 	}
 
-	const char* AssetStateToString(AssetState state)
+	const char* ToString(AssetState state)
 	{
 		switch (state)
 		{

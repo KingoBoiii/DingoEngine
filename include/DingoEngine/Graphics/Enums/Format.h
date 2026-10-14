@@ -5,9 +5,11 @@
 namespace Dingo
 {
 
+	/// A vertex attribute or texel format, named like the graphics APIs': channels with bit widths,
+	/// then UINT/SINT (integer), UNORM/SNORM (normalised to 0..1 or -1..1) or FLOAT.
 	enum class Format : uint8_t
 	{
-		UNKNOWN,
+		UNKNOWN, ///< No format; an attribute left at this is not valid.
 
 		R8_UINT,
 		R8_SINT,
@@ -30,8 +32,8 @@ namespace Dingo
 		RGBA8_UNORM,
 		RGBA8_SNORM,
 		BGRA8_UNORM,
-		SRGBA8_UNORM,
-		SBGRA8_UNORM,
+		SRGBA8_UNORM, ///< RGBA8 with sRGB encoding, decoded to linear when sampled.
+		SBGRA8_UNORM, ///< BGRA8 with sRGB encoding, decoded to linear when sampled.
 		R10G10B10A2_UNORM,
 		R11G11B10_FLOAT,
 		RG16_UINT,
@@ -57,14 +59,14 @@ namespace Dingo
 		RGBA32_SINT,
 		RGBA32_FLOAT,
 
-		D16,
+		D16,        ///< Depth formats: D<depth bits>[S<stencil bits>].
 		D24S8,
-		X24G8_UINT,
+		X24G8_UINT, ///< The stencil channel of D24S8, read as integers.
 		D32,
 		D32S8,
-		X32G8_UINT,
+		X32G8_UINT, ///< The stencil channel of D32S8, read as integers.
 
-		BC1_UNORM,
+		BC1_UNORM, ///< Block-compressed formats (BC1 to BC7), 4x4 texel blocks.
 		BC1_UNORM_SRGB,
 		BC2_UNORM,
 		BC2_UNORM_SRGB,
@@ -79,7 +81,7 @@ namespace Dingo
 		BC7_UNORM,
 		BC7_UNORM_SRGB,
 
-		COUNT,
+		COUNT, ///< The number of formats, not a format.
 	};
 
 }

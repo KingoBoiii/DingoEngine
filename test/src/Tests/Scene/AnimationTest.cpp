@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -58,6 +59,13 @@ layout(std140, binding = 2) uniform SkinData
     mat4 Joints[128];
 };
 
+// A volatile block below SkinData's binding that the material adds after it: NVRHI's Vulkan offsets
+// go in binding order, so an unsorted binding set swaps their versions.
+layout(std140, binding = 1) uniform ShadowData
+{
+    ivec4 ShadowCounts;
+};
+
 layout(location = 0) out vec4 v_Color;
 layout(location = 1) out vec3 v_Normal;
 layout(location = 2) out vec2 v_TexCoord;
@@ -66,7 +74,7 @@ void main()
 {
     mat4 skin = a_Weights.x * Joints[a_Joints.x] + a_Weights.y * Joints[a_Joints.y]
               + a_Weights.z * Joints[a_Joints.z] + a_Weights.w * Joints[a_Joints.w];
-    gl_Position = ViewProjection * Model * skin * vec4(a_Position, 1.0);
+    gl_Position = ShadowCounts.x > 64 ? vec4(0.0) : ViewProjection * Model * skin * vec4(a_Position, 1.0);
     v_Color = Color;
     v_Normal = mat3(NormalMatrix) * a_Normal;
     v_TexCoord = a_TexCoord;
@@ -76,13 +84,78 @@ void main()
 #version 450
 
 layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec3 v_Normal;
 layout(location = 0) out vec4 o_Color;
 
 void main()
 {
-    o_Color = v_Color;
+    o_Color = vec4(v_Color.rgb * (0.5 + 0.5 * normalize(v_Normal)), 1.0);
 }
 )";
+
+	// The ghost again, reading the scene's skin arena at bindings of its own.
+	constexpr const char* k_PaletteGhostShader = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+layout(location = 3) in uvec4 a_Joints;
+layout(location = 4) in vec4 a_Weights;
+
+layout(std140, binding = 0) uniform CameraData
+{
+    mat4 ViewProjection;
+    vec4 LightDirection;
+    vec4 Ambient;
+};
+
+#define DE_SKIN_PALETTE_BINDING 3
+#define DE_SKIN_PALETTE
+#include <DingoEngine/Skinning.glsl>
+
+// A volatile block beside the push constants: on D3D they take the lowest constant-buffer register
+// no block uses, b2 here, so a naive b0 would collide with CameraData.
+layout(std140, binding = 1) uniform ShadowData
+{
+    ivec4 ShadowCounts;
+};
+
+layout(location = 0) out vec4 v_Color;
+layout(location = 1) out vec3 v_Normal;
+layout(location = 2) out vec2 v_TexCoord;
+
+void main()
+{
+    mat4 skin = SkinMatrix(a_Joints, a_Weights);
+    gl_Position = ShadowCounts.x > 64 ? vec4(0.0) : ViewProjection * SkinModel() * skin * vec4(a_Position, 1.0);
+    v_Color = SkinColor();
+    v_Normal = SkinNormalMatrix() * a_Normal;
+    v_TexCoord = a_TexCoord;
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 1) in vec3 v_Normal;
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+    o_Color = vec4(v_Color.rgb * (0.5 + 0.5 * normalize(v_Normal)), 1.0);
+}
+)";
+
+	constexpr uint32_t k_LodSettleFrames = 4;   // until a renderer has drawn the scene and the views are known
+	constexpr uint32_t k_LodMeasuredFrames = 12;
+	constexpr uint32_t k_LodReturnFrames = 3;   // the paused fox brought into view
+	constexpr uint32_t k_LodHeadlessFrames = 4; // the scene stepped without being drawn
+	constexpr float k_LodStep = 1.0f / 15.0f;
+
+	constexpr uint32_t k_GhostCheckWidth = 160;
+	constexpr uint32_t k_GhostCheckHeight = 120;
 
 	double Milliseconds(Clock::time_point from, Clock::time_point to)
 	{
@@ -93,7 +166,7 @@ void main()
 	{
 		for (const SubMesh& submesh : model.GetSubMeshes())
 		{
-			if (submesh.MeshData->HasSkin())
+			if (submesh.Mesh->HasSkin())
 				return &submesh;
 		}
 		return nullptr;
@@ -310,6 +383,15 @@ namespace Dingo
 		m_Checks.clear();
 		m_DrawChecksDone = false;
 		m_SkinnedMaterialChecked = false;
+		m_LodDone = false;
+		m_LodFrame = 0;
+		m_LodReturned = 0;
+		m_LodHeadless = 0;
+		for (uint32_t i = 0; i < 4; ++i)
+		{
+			m_LodChanges[i] = m_LodEvents[i] = 0;
+			m_LodPalettes[i].clear();
+		}
 		m_Time = 0.0f;
 		m_TimedFrames = 0;
 		m_FrameMs = m_UpdateMs = m_RenderMs = m_EndSceneMs = 0.0;
@@ -372,7 +454,7 @@ namespace Dingo
 		glm::vec3 maxBounds((std::numeric_limits<float>::lowest)());
 		for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 		{
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 			{
 				minBounds = (glm::min)(minBounds, vertex.Position);
 				maxBounds = (glm::max)(maxBounds, vertex.Position);
@@ -432,15 +514,29 @@ namespace Dingo
 		Check(skeleton.GetRestPalette().size() == 24 && worstPalette < 1e-3f, std::format("the rest palette is identity (worst {:.1e})", worstPalette));
 
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-		Check(skinned && skinned->MeshData->GetSkinJointCount() == 24 && skinned->MeshData->GetSkinJointCount() <= Renderer3D::k_MaxSkinJoints,
+		Check(skinned && skinned->Mesh->GetSkinJointCount() == 24 && skinned->Mesh->GetSkinJointCount() <= Renderer3D::k_MaxSkinJoints,
 			"the skin reads 24 palette entries, within k_MaxSkinJoints");
 		if (!skinned)
 			return;
 
 		float worstWeights = 0.0f;
-		for (const SkinnedMeshVertex& vertex : skinned->MeshData->GetSkinVertices())
+		for (const SkinnedMeshVertex& vertex : skinned->Mesh->GetSkinVertices())
 			worstWeights = (std::max)(worstWeights, std::abs(vertex.Weights.x + vertex.Weights.y + vertex.Weights.z + vertex.Weights.w - 1.0f));
 		Check(worstWeights < 1e-5f, "every skin vertex's weights sum to 1");
+
+		// An animated node outside the armature roots the skeleton at the scene, so the prop node,
+		// which comes before the armature in the file, is a rigid-skinned joint too.
+		std::unique_ptr<Model> rig(Model::LoadFromFile("assets/models/SceneRig/SceneRig.gltf"));
+		const Skeleton* rigSkeleton = rig ? rig->GetSkeleton() : nullptr;
+		const int32_t bone = rigSkeleton ? rigSkeleton->FindJoint("Bone1") : -1;
+		const int32_t prop = rigSkeleton ? rigSkeleton->FindJoint("Prop") : -1;
+		// The body's palette ends at Bone1; the prop's own rigid-skinned submesh reaches the prop joint.
+		const bool bodyFits = rig && std::any_of(rig->GetSubMeshes().begin(), rig->GetSubMeshes().end(), [&](const SubMesh& submesh)
+		{
+			return submesh.Mesh->HasSkin() && submesh.Mesh->GetSkinJointCount() == static_cast<uint32_t>(bone + 1);
+		});
+		Check(bodyFits && bone >= 0 && prop > bone && rigSkeleton->GetSkinJointCount() > static_cast<uint32_t>(prop),
+			std::format("a scene-rooted rig orders its bones before its rigid-mesh nodes (Bone1 {}, Prop {})", bone, prop));
 	}
 
 	void AnimationTest::RunAnimatorChecks()
@@ -1076,6 +1172,24 @@ namespace Dingo
 			}
 			Check(expected > 10 && fired == expected,
 				std::format("a Speed sweep from one gait to the other over 10 s fires every footfall exactly once ({} of {})", fired, expected));
+
+			// The events switch clips where the blend passes half, at Speed 2.75: crossing it every other
+			// frame puts every footfall next to a switch.
+			animator.SetFloat(k_SpeedParameter, 2.75f);
+			animator.Update(0.0f);
+			int switchFired = 0, switchExpected = 0;
+			for (int frame = 0; frame < 600; ++frame)
+			{
+				animator.SetFloat(k_SpeedParameter, (frame / 2) % 2 == 0 ? 2.6f : 2.9f);
+				const float before = animator.GetNormalizedTime();
+				animator.Update(1.0f / 60.0f);
+				const float after = animator.GetNormalizedTime();
+				for (float footfall : { 0.25f, 0.75f })
+					switchExpected += after >= before ? (footfall > before && footfall <= after) : (footfall > before || footfall <= after);
+				switchFired += CountEvents(animator.GetEventsThisFrame(), "step", AnimationEventType::Instant);
+			}
+			Check(switchExpected > 10 && switchFired == switchExpected,
+				std::format("Speed crossing the blend's clip switch every other frame for 10 s fires every footfall exactly once ({} of {})", switchFired, switchExpected));
 		}
 		{
 			Animator animator(&skeleton);
@@ -1140,6 +1254,34 @@ namespace Dingo
 			Check(steps == 1, std::format("a one-shot that starts back before it leads doesn't fire Walk's footfall again ({} step_fl)", steps));
 		}
 		{
+			// The swing hands the events to its way back at 0.7 s; a Play 0.05 s later leaves both still
+			// under it, the swing heaviest.
+			AnimationClip swing("Swing", 1.0f, {}, &skeleton);
+			Animator animator(&skeleton);
+			animator.Play(&other);
+			animator.Update(0.0f);
+			animator.PlayOneShot(&swing, 0.1f, 0.3f);
+			for (int step = 0; step < 40 && animator.IsOneShotPlaying(); ++step)
+				animator.Update(0.05f);
+			animator.Update(0.05f);
+			float swingTime = -1.0f;
+			for (const AnimatorStateInfo& state : animator.GetStates())
+			{
+				if (state.Clip == &swing)
+					swingTime = state.Time;
+			}
+			swing.AddEvent(swingTime + 0.025f, "tail");
+			animator.Play(&loop, 0.3f);
+			int tails = 0;
+			for (int step = 0; step < 10; ++step)
+			{
+				animator.Update(0.05f);
+				tails += CountEvents(animator.GetEventsThisFrame(), "tail", AnimationEventType::Instant);
+			}
+			Check(swingTime > 0.6f && tails == 0,
+				std::format("a Play during a one-shot's way back never hands the events back to the one-shot (at {:.2f} s, {} tail marks)", swingTime, tails));
+		}
+		{
 			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
 			slash.AddEvent(0.12f, "whoosh");
 			slash.AddEventRange(0.32f, 0.48f, "hitbox");
@@ -1167,6 +1309,27 @@ namespace Dingo
 			const bool closedBySeek = !animator.IsEventActive("hitbox") && CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeEnd) == 1;
 			animator.Update(0.3f);
 			Check(open && closedBySeek && animator.IsEventActive("hitbox"), "SetTime(0) mid-swing closes the hitbox, and the replay opens it again");
+		}
+		{
+			AnimationClip slash("Slash", 1.0f, {}, &skeleton);
+			slash.AddEventRange(0.32f, 0.48f, "hitbox");
+			Animator animator(&skeleton);
+			animator.Play(AnimationState::Clip(&slash).SetLoop(false));
+			animator.Update(0.0f);
+			animator.Update(0.45f);
+			const bool open = animator.IsEventActive("hitbox");
+			slash.ClearEvents();
+			slash.AddEventRange(0.32f, 0.40f, "hitbox");
+			animator.Update(0.02f);
+			const int ends = CountEvents(animator.GetEventsThisFrame(), "hitbox", AnimationEventType::RangeEnd);
+			float endTime = -1.0f;
+			for (const AnimationEvent& event : animator.GetEventsThisFrame())
+				if (event.Type == AnimationEventType::RangeEnd)
+					endTime = event.Time;
+			for (int step = 0; step < 40; ++step)
+				animator.Update(0.05f);
+			Check(open && ends == 1 && std::abs(endTime - 0.40f) < 1e-4f && !animator.IsEventActive("hitbox"),
+				std::format("a range whose new end is behind the playhead after an events change ends at once ({} RangeEnd, at its new end {:.2f} s), and the held swing keeps it closed", ends, endTime));
 		}
 		{
 			Animator animator(&skeleton);
@@ -1325,7 +1488,7 @@ namespace Dingo
 		const std::string original = ReadText(path);
 		const std::filesystem::path eventsPath = std::filesystem::path(path).replace_extension(".events");
 		const Skeleton* skeleton = model->GetSkeleton();
-		Mesh* mesh = skinned->MeshData;
+		Mesh* mesh = skinned->Mesh;
 		Texture* diffuse = skinned->DiffuseTexture;
 		const uint64_t meshId = mesh->GetId();
 		const uint64_t walkId = walk->GetId();
@@ -1341,7 +1504,7 @@ namespace Dingo
 		const bool reloaded = model->Reload();
 		const SubMesh* after = FindSkinnedSubMesh(*model);
 		Check(reloaded && model->GetGeneration() == 1 && model->FindAnimation("Walk") == walk && model->GetSkeleton() == skeleton
-			&& skeleton->GetId() == skeletonId && after && after->MeshData == mesh && after->DiffuseTexture == diffuse,
+			&& skeleton->GetId() == skeletonId && after && after->Mesh == mesh && after->DiffuseTexture == diffuse,
 			"Model::Reload keeps the model's clips, skeleton, meshes and textures where they were");
 		const bool imageKept = diffuse->GetGeneration() == textureGeneration;
 		const std::filesystem::path image = path.parent_path() / "Texture.png";
@@ -1517,7 +1680,7 @@ namespace Dingo
 				Check(swapped && gap < 1e-5f, std::format("hot-reload swapped the edited Fox in place {:.1f} s after the save, and the paused Fox shows Run's keys (gap {:.1e})", seconds, gap));
 			}
 			const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-			m_ReloadMeshId = skinned ? skinned->MeshData->GetId() : 0;
+			m_ReloadMeshId = skinned ? skinned->Mesh->GetId() : 0;
 			WriteText(eventsPath, ReadText(eventsPath) + "Walk 0.5 live_mark\n");
 		}
 		else
@@ -1525,7 +1688,7 @@ namespace Dingo
 			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
 			const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
 			const bool marked = walk && std::any_of(walk->GetEvents().begin(), walk->GetEvents().end(), [](const AnimationClipEvent& event) { return event.Name == "live_mark"; });
-			Check(marked && skinned && skinned->MeshData->GetId() == m_ReloadMeshId,
+			Check(marked && skinned && skinned->Mesh->GetId() == m_ReloadMeshId,
 				std::format("saving only Fox.events hot-reloads its events {:.1f} s later, with the new mark, and leaves the meshes alone", m_Time - m_ReloadStart));
 		}
 
@@ -1919,10 +2082,16 @@ namespace Dingo
 		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.05f, 0.0f }, { 40.0f, 0.1f, 40.0f }));
 		floor.AddComponent<MeshRendererComponent>(MeshRendererComponent(renderer.GetBoxMesh(), { 0.42f, 0.46f, 0.40f, 1.0f }));
 
-		// A default DirectionalLightComponent lights exactly as the default light the scene has
-		// without one; casting, the skinned Foxes shadow the floor.
+		// Lights exactly as the default light the scene has without one; casting, the skinned
+		// Foxes shadow the floor.
 		if (m_CastShadows)
-			m_Scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>().CastShadows = true;
+		{
+			Entity sun = m_Scene->CreateEntity("Sun");
+			DirectionalLightComponent& light = sun.AddComponent<DirectionalLightComponent>();
+			light.Intensity = 1.0f - 0.35f;
+			light.CastShadows = true;
+			sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.35f));
+		}
 
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
 		const std::string clipName = (m_Mode == Mode::Clip || m_Mode == Mode::Layers) && m_ClipName.empty() ? std::string("Walk")
@@ -1945,7 +2114,7 @@ namespace Dingo
 			// The overlay's bones draw first, in the batches, so a see-through skin shows them.
 			const glm::vec4 skin(1.0f, 1.0f, 1.0f, SkeletonShown() ? 0.35f : 1.0f);
 			if (drawStatic)
-				fox.AddComponent<MeshRendererComponent>(MeshRendererComponent(skinned->MeshData, skin)).Material = m_FoxMaterial;
+				fox.AddComponent<MeshRendererComponent>(MeshRendererComponent(skinned->Mesh, skin)).Material = m_FoxMaterial;
 			else
 				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox, skin)).Material = m_FoxMaterial;
 			if (m_Mode != Mode::Crowd)
@@ -2100,7 +2269,7 @@ namespace Dingo
 	void AnimationTest::SubmitPosedFox(Renderer3D& renderer)
 	{
 		const SubMesh* skinned = FindSkinnedSubMesh(*m_Fox);
-		renderer.SubmitSkinnedMesh(skinned->MeshData, m_PoseTransform, m_PosePalette, glm::vec4(1.0f), m_FoxMaterial);
+		renderer.SubmitSkinnedMesh(skinned->Mesh, m_PoseTransform, m_PosePalette, glm::vec4(1.0f), m_FoxMaterial);
 	}
 
 	void AnimationTest::RunDrawChecks(const Renderer3D::Statistics& stats)
@@ -2128,6 +2297,7 @@ namespace Dingo
 				break;
 			case Mode::Clip:
 				Check(stats.SkinnedDraws == 1 && stats.SkinnedInstances == 1 && stats.SkinnedJoints == 24 && stats.DroppedSkinnedDraws == 0, "the animated Fox is one skinned draw of 24 joints");
+				Check(Application::Get().GetRenderer3D().GetSkinnedInstancesThisFrame() == m_FrameInstancesBefore + 1, "the frame's skinned instance count, which F4's budget bar shows, grows by the one Fox");
 				if (SkeletonShown())
 				{
 					// The floor, the hat and the Fox, then a box per joint and per bone.
@@ -2181,16 +2351,181 @@ namespace Dingo
 			return;
 		}
 		m_Ghost = Material::Create(MaterialParams().SetShader(m_GhostShader).SetCullMode(CullMode::None).SetDebugName("Ghost"));
+		m_PaletteGhostShader = Shader::Create(ShaderParams().SetName("AnimationTestPaletteGhost").SetSourceCode(k_PaletteGhostShader).AddDefine("DE_SKINNED"));
+		if (!m_PaletteGhostShader || !m_PaletteGhostShader->IsValid())
+		{
+			Check(false, "the custom skin-arena shader compiles");
+			return;
+		}
+		m_PaletteGhost = Material::Create(MaterialParams().SetShader(m_PaletteGhostShader).SetCullMode(CullMode::None).SetDebugName("PaletteGhost"));
 
 		// Its own scene, which the frame's scene clears away.
+		const std::span<const glm::mat4> rest = m_Fox->GetSkeleton()->GetRestPalette();
 		renderer.BeginScene(m_Camera);
 		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_Ghost);
-		renderer.SubmitSkinnedMesh(skinned->MeshData, glm::mat4(1.0f), m_Fox->GetSkeleton()->GetRestPalette(), glm::vec4(1.0f), m_Ghost);
+		renderer.SubmitMesh(renderer.GetBoxMesh(), glm::mat4(1.0f), glm::vec4(1.0f), m_PaletteGhost);
+		renderer.SubmitSkinnedMesh(skinned->Mesh, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_Ghost);
+		renderer.SubmitSkinnedMesh(skinned->Mesh, glm::mat4(1.0f), rest, glm::vec4(1.0f), m_PaletteGhost);
 		renderer.EndScene();
 
 		const Renderer3D::Statistics& stats = renderer.GetStatistics();
-		Check(stats.SkinnedDraws == 1 && stats.SubmittedMeshes == 2 && stats.DrawCalls == 2,
-			"a custom skinned material skins the Fox, and a static box given it draws with the default material instead of a pipeline its vertex stage can't take");
+		Check(stats.SkinnedDraws == 2 && stats.SkinnedInstances == 1 && stats.SubmittedMeshes == 4 && stats.DrawCalls == 3 && stats.DroppedSkinnedDraws == 0,
+			"custom skinned materials, one with a SkinData block and one reading the skin arena, skin the Fox from one instance, and static boxes given them draw with the default material instead of a pipeline their vertex stage can't take");
+
+		// Each ghost into a target of its own, three Foxes in different Walk poses, turned and tinted
+		// apart: the arena must place every vertex, and turn every normal, where SkinData does, for
+		// instances past the first too.
+		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+		std::vector<glm::mat4> poses[3];
+		glm::mat4 places[3];
+		const glm::vec4 colors[3] = { { 0.9f, 0.5f, 0.2f, 1.0f }, { 0.3f, 0.8f, 0.6f, 1.0f }, { 0.7f, 0.4f, 0.9f, 1.0f } };
+		for (int f = 0; f < 3; ++f)
+		{
+			Animator pose(m_Fox->GetSkeleton());
+			pose.Play(walk);
+			pose.SetTime(walk ? (0.2f + 0.3f * static_cast<float>(f)) * walk->GetDuration() : 0.0f);
+			pose.Evaluate();
+			poses[f].assign(pose.GetSkinningPalette().begin(), pose.GetSkinningPalette().end());
+			const float side = static_cast<float>(f - 1);
+			places[f] = glm::translate(glm::mat4(1.0f), glm::vec3(0.25f * k_FoxLength * side, 0.0f, -0.1f * k_FoxLength * side))
+				* glm::rotate(glm::mat4(1.0f), glm::radians(35.0f * side), glm::vec3(0.0f, 1.0f, 0.0f))
+				* glm::translate(glm::mat4(1.0f), m_FoxOffset) * glm::scale(glm::mat4(1.0f), glm::vec3(m_FoxScale));
+		}
+		Check(poses[0] != poses[1] && poses[1] != poses[2], "the arena check's three Walk poses differ");
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight));
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_GhostTargets[i])
+				m_GhostTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "AnimationGhostSkinData" : "AnimationGhostArena")
+					.SetWidth(k_GhostCheckWidth)
+					.SetHeight(k_GhostCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+			Renderer::SetRenderTarget(m_GhostTargets[i]);
+			renderer.BeginScene(camera);
+			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+			for (int f = 0; f < 3; ++f)
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[f], poses[f], colors[f], i == 0 ? m_Ghost : m_PaletteGhost);
+			renderer.EndScene();
+			if (i == 1)
+				Check(renderer.GetStatistics().SkinnedInstances == 3, std::format("the arena check draws three instances ({})", renderer.GetStatistics().SkinnedInstances));
+		}
+		Renderer::SetRenderTarget(previous);
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_GhostTargets[0]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				m_GhostPixels = pixels.Data;
+		});
+		m_GhostTargets[1]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			size_t differing = 0;
+			size_t covered = 0;
+			for (size_t i = 0; i + 3 < pixels.Data.size() && i < m_GhostPixels.size(); i += 4)
+			{
+				differing += std::memcmp(&pixels.Data[i], &m_GhostPixels[i], 4) != 0 ? 1 : 0;
+				covered += pixels.Data[i] != 0 ? 1 : 0;
+			}
+			Check(!pixels.Data.empty() && pixels.Data.size() == m_GhostPixels.size() && differing == 0 && covered > 0,
+				std::format("a custom shader reading the skin arena draws three posed Foxes exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
+		});
+	}
+
+	void AnimationTest::RunCullingStep(Renderer3D& renderer)
+	{
+		enum { Always, Paused, Reduced, Seen };
+		if (!m_LodScene)
+		{
+			m_LodScene = new Scene("Animation LOD");
+			const AnimatorCullingMode modes[4] = { AnimatorCullingMode::AlwaysAnimate, AnimatorCullingMode::PauseWhenCulled, AnimatorCullingMode::ReduceWhenCulled, AnimatorCullingMode::PauseWhenCulled };
+			const char* names[4] = { "Always", "Paused", "Reduced", "Seen" };
+			for (int i = 0; i < 4; ++i)
+			{
+				Entity fox = m_LodScene->CreateEntity(names[i]);
+				const glm::vec3 position = i == Seen ? m_FoxOffset : glm::vec3(static_cast<float>(i - 1) * 2.5f, 0.0f, 12.0f);
+				fox.AddComponent<Transform3DComponent>(Transform3DComponent(position, glm::vec3(m_FoxScale)));
+				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+				fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).CullingMode = modes[i];
+				m_LodFoxes[i] = fox;
+			}
+			m_LodScene->OnStart();
+			m_LodTarget = Framebuffer::Create(FramebufferParams()
+				.SetDebugName("AnimationLod")
+				.SetWidth(k_GhostCheckWidth)
+				.SetHeight(k_GhostCheckHeight)
+				.SetEnableDepth(true)
+				.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		const bool returning = m_LodFrame >= k_LodSettleFrames + k_LodMeasuredFrames;
+		const bool headless = m_LodFrame >= k_LodSettleFrames + k_LodMeasuredFrames + k_LodReturnFrames;
+		if (m_LodFrame == k_LodSettleFrames + k_LodMeasuredFrames)
+			m_LodFoxes[Paused].GetComponent<Transform3DComponent>().Position = m_FoxOffset;
+
+		m_LodScene->OnUpdate(k_LodStep);
+		const bool measuring = m_LodFrame >= k_LodSettleFrames && !returning;
+		for (int i = 0; i < 4; ++i)
+		{
+			const Animator* animator = m_LodScene->GetAnimator(m_LodFoxes[i]);
+			if (!animator)
+				continue;
+			const std::span<const glm::mat4> palette = animator->GetSkinningPalette();
+			const bool changed = !std::equal(palette.begin(), palette.end(), m_LodPalettes[i].begin(), m_LodPalettes[i].end());
+			if (measuring)
+			{
+				m_LodEvents[i] += static_cast<uint32_t>(animator->GetEventsThisFrame().size());
+				m_LodChanges[i] += changed ? 1 : 0;
+			}
+			if (returning && !headless && i == Paused)
+				m_LodReturned += changed ? 1 : 0;
+			if (headless && i == Reduced)
+				m_LodHeadless += changed ? 1 : 0;
+			m_LodPalettes[i].assign(palette.begin(), palette.end());
+		}
+
+		if (!headless)
+		{
+			PerspectiveCamera camera(45.0f, static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight), 0.05f, 100.0f);
+			camera.SetPosition({ 0.0f, 0.8f, 3.0f });
+			camera.SetTarget({ 0.0f, 0.4f, 0.0f });
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_LodTarget);
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			m_LodScene->SubmitLights(renderer);
+			m_LodScene->RenderEntities3D(renderer);
+			renderer.EndScene();
+			Renderer::SetRenderTarget(previous);
+		}
+
+		if (++m_LodFrame < k_LodSettleFrames + k_LodMeasuredFrames + k_LodReturnFrames + k_LodHeadlessFrames)
+			return;
+		m_LodDone = true;
+
+		const Animator* always = m_LodScene->GetAnimator(m_LodFoxes[Always]);
+		const Animator* paused = m_LodScene->GetAnimator(m_LodFoxes[Paused]);
+		const std::vector<AnimatorStateInfo> alwaysStates = always ? always->GetStates() : std::vector<AnimatorStateInfo>();
+		const std::vector<AnimatorStateInfo> pausedStates = paused ? paused->GetStates() : std::vector<AnimatorStateInfo>();
+		const bool sameTime = !alwaysStates.empty() && !pausedStates.empty() && alwaysStates.back().Time == pausedStates.back().Time;
+		Check(m_LodChanges[Always] == k_LodMeasuredFrames,
+			std::format("a culled AlwaysAnimate fox is posed every update ({} of {})", m_LodChanges[Always], k_LodMeasuredFrames));
+		Check(m_LodChanges[Paused] == 0 && m_LodEvents[Always] > 0 && m_LodEvents[Paused] == m_LodEvents[Always] && sameTime,
+			std::format("a culled PauseWhenCulled fox keeps its pose ({} changes) but keeps its time and fires the same {} events as an animated one ({})",
+				m_LodChanges[Paused], m_LodEvents[Always], m_LodEvents[Paused]));
+		Check(m_LodChanges[Reduced] == k_LodMeasuredFrames / 4 && m_LodEvents[Reduced] == m_LodEvents[Always],
+			std::format("a culled ReduceWhenCulled fox is posed every 4th update ({} of {}) and fires every event ({})", m_LodChanges[Reduced], k_LodMeasuredFrames, m_LodEvents[Reduced]));
+		Check(m_LodChanges[Seen] == k_LodMeasuredFrames,
+			std::format("a PauseWhenCulled fox in view is posed every update ({} of {})", m_LodChanges[Seen], k_LodMeasuredFrames));
+		Check(m_LodReturned > 0,
+			std::format("the paused fox is posed again once it comes into view ({} of the {} updates after)", m_LodReturned, k_LodReturnFrames));
+		Check(m_LodHeadless >= k_LodHeadlessFrames - 1,
+			std::format("once the scene is no longer drawn, the culled ReduceWhenCulled fox is posed every update ({} of {})", m_LodHeadless, k_LodHeadlessFrames));
 	}
 
 	void AnimationTest::Update(float deltaTime)
@@ -2200,6 +2535,10 @@ namespace Dingo
 		if (!m_SkinnedMaterialChecked && m_Scene && m_Mode != Mode::Crowd)
 			RunSkinnedMaterialCheck(renderer);
 
+		if (m_SkinnedMaterialChecked && !m_LodDone && m_Scene && m_Mode != Mode::Crowd)
+			RunCullingStep(renderer);
+
+		m_FrameInstancesBefore = renderer.GetSkinnedInstancesThisFrame();
 		renderer.BeginScene(m_Camera);
 		renderer.Clear(m_ClearColor);
 		if (!m_Scene)
@@ -2253,6 +2592,17 @@ namespace Dingo
 		DestroyAndDelete(m_FoxMaterial);
 		DestroyAndDelete(m_Ghost);
 		DestroyAndDelete(m_GhostShader);
+		DestroyAndDelete(m_PaletteGhost);
+		DestroyAndDelete(m_PaletteGhostShader);
+		for (Framebuffer*& target : m_GhostTargets)
+			DestroyAndDelete(target);
+		delete m_LodScene;
+		m_LodScene = nullptr;
+		DestroyAndDelete(m_LodTarget);
+		for (Entity& fox : m_LodFoxes)
+			fox = {};
+		m_GhostPixels.clear();
+		m_Alive = std::make_shared<int>(0);
 		if (m_FoxAsset != k_InvalidAsset)
 		{
 			const std::filesystem::path folder = m_Fox ? m_Fox->GetFilePath().parent_path() : std::filesystem::path();

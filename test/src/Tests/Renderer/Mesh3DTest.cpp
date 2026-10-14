@@ -115,8 +115,8 @@ namespace Dingo
 		uint32_t maxVerts   = (std::max)(m_BoxMesh->GetVertexCount(),  m_SphereMesh->GetVertexCount());
 		uint32_t maxIndices = (std::max)(m_BoxMesh->GetIndexCount(),   m_SphereMesh->GetIndexCount());
 
-		m_VB = GraphicsBuffer::CreateVertexBuffer(maxVerts   * sizeof(MeshVertex), nullptr, true, "Mesh3D_VB");
-		m_IB = GraphicsBuffer::CreateIndexBuffer( maxIndices * sizeof(uint32_t),   nullptr, true, "Mesh3D_IB", GraphicsFormat::Uint32);
+		m_VB = GraphicsBuffer::CreateVertexBuffer(maxVerts   * sizeof(MeshVertex), nullptr, BufferUpload::Direct, "Mesh3D_VB");
+		m_IB = GraphicsBuffer::CreateIndexBuffer(maxIndices * sizeof(uint32_t), IndexFormat::Uint32, nullptr, BufferUpload::Direct, "Mesh3D_IB");
 
 		m_Shader = Shader::CreateFromSource("Mesh3DShader", k_ShaderSrc);
 
@@ -168,8 +168,8 @@ namespace Dingo
 		std::vector<MeshVertex> checkVertices;
 		std::vector<uint32_t> checkIndices;
 		BuildCheckQuads(checkVertices, checkIndices);
-		m_CheckVB = GraphicsBuffer::CreateVertexBuffer(checkVertices.size() * sizeof(MeshVertex), checkVertices.data(), true, "Mesh3D_CheckVB");
-		m_CheckIB = GraphicsBuffer::CreateIndexBuffer(checkIndices.size() * sizeof(uint32_t), checkIndices.data(), true, "Mesh3D_CheckIB", GraphicsFormat::Uint32);
+		m_CheckVB = GraphicsBuffer::CreateVertexBuffer(checkVertices.size() * sizeof(MeshVertex), checkVertices.data(), BufferUpload::Direct, "Mesh3D_CheckVB");
+		m_CheckIB = GraphicsBuffer::CreateIndexBuffer(checkIndices.size() * sizeof(uint32_t), IndexFormat::Uint32, checkIndices.data(), BufferUpload::Direct, "Mesh3D_CheckIB");
 
 		m_Alive = std::make_shared<int>(0);
 		m_DrawChecksRun = false;
@@ -299,7 +299,7 @@ namespace Dingo
 		Check(rest[0] == 24 && rest[1] == 6 && rest[2] == 0 && rest[3] == 0,
 			std::format("GetIndexCount counts a Uint32 buffer from firstIndex to its end (0, 18, 24, 30: {}, {}, {}, {})", rest[0], rest[1], rest[2], rest[3]));
 		const uint16_t shortIndices[] = { 0, 1, 2, 2, 3, 0 };
-		GraphicsBuffer* shortBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(shortIndices), shortIndices, true, "Mesh3D_CheckIB16");
+		GraphicsBuffer* shortBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(shortIndices), IndexFormat::Uint16, shortIndices, BufferUpload::Direct, "Mesh3D_CheckIB16");
 		const uint32_t shortRest = Renderer::GetIndexCount(shortBuffer, 2);
 		DestroyAndDelete(shortBuffer);
 		Check(shortRest == 4, std::format("GetIndexCount counts a Uint16 buffer by its own stride (from 2: {})", shortRest));

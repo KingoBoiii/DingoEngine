@@ -24,8 +24,11 @@ namespace Dingo
 		class ScriptSystem
 		{
 		public:
+			explicit ScriptSystem(const entt::registry& registry);
+			~ScriptSystem();
+
 			// Binds the instance to its entity, registers it, and fires OnCreate. Takes
-			// ownership. Replacing an existing script destroys the old instance.
+			// ownership. An existing script is detached first (OnDestroy).
 			void Attach(entt::entity handle, ScriptableEntity* instance, Entity owner);
 
 			ScriptableEntity* Find(entt::entity handle) const;
@@ -36,10 +39,15 @@ namespace Dingo
 			// from under an in-flight iteration. No-op when the entity has no script.
 			void Detach(entt::entity handle);
 
-			// Fires OnStart on every script that has not started yet.
+			// Fires OnStart on every script of an active entity that has not started yet.
 			void StartPending();
 
+			// The scripts of active entities that have started; Update starts the pending ones first.
+			void FixedUpdate(float step);
 			void Update(float deltaTime);
+
+			// An entity became active: its script may still be waiting for OnStart.
+			void MarkPending() { m_HasUnstarted = true; }
 
 			// To the entity's script, if it has one that has started.
 			void DeliverAnimationEvent(entt::entity handle, const AnimationEvent& event);
@@ -51,8 +59,17 @@ namespace Dingo
 			// Detaches every script (each gets its OnDestroy) and empties the system.
 			void DetachAll();
 
+			// Frees the detached scripts unless a script callback is on the stack: a script may
+			// detach itself (RemoveScript, AddScript, destroying its own entity).
+			void FreeDetached();
+
 		private:
+			bool IsActive(entt::entity handle) const;
+
+			const entt::registry& m_Registry;
 			std::unordered_map<entt::entity, std::unique_ptr<ScriptableEntity>> m_Scripts;
+			std::vector<std::unique_ptr<ScriptableEntity>> m_Detached;
+			mutable uint32_t m_CallDepth = 0;
 
 			// Set by Attach (the only thing that adds to m_Scripts) and cleared by
 			// StartPending, so the per-frame OnStart pass can skip the walk entirely once

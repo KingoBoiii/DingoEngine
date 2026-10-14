@@ -42,5 +42,12 @@ project "Breakout3D"
         symbols "Off"
         defines { "DE_DISTRIBUTION" }
 
+    distributionSymbols()
     copyAssimpRuntime()
+	exeMetadata {
+		Name = "Breakout 3D",
+		Description = "Brick breaker in 3D, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

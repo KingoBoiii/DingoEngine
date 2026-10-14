@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/ShaderIncludes.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
@@ -150,7 +151,7 @@ namespace Dingo::Internal
 					return false;
 				}
 
-				const std::string text = FileSystem::ReadTextFile(file);
+				const std::string text = Internal::ReadTextFile(file);
 				return Expand(text, origin, depth + 1, out);
 			}
 

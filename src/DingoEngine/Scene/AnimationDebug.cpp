@@ -10,6 +10,7 @@
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
 #include <algorithm>
+#include <mutex>
 
 namespace Dingo
 {
@@ -34,6 +35,7 @@ namespace Dingo
 			void CollectAnimators(std::vector<AnimatorRow>& out)
 			{
 				out.clear();
+				const std::unique_lock lock = SceneDebug::LockScenes();
 				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{
 					entt::registry& registry = live.Data->Registry;
@@ -46,20 +48,44 @@ namespace Dingo
 
 						const AnimatorComponent& settings = view.get<const AnimatorComponent>(handle);
 						AnimatorRow& row = out.emplace_back();
-						row.Scene = live.Instance->GetName();
-						row.Entity = EntityName(registry, handle);
+						row.Owner = live.Instance;
+						row.Entity = entt::to_integral(handle);
 						row.Enabled = settings.Enabled;
 						row.Speed = settings.Speed;
+						row.Culled = runtime.Culled;
+						row.CullingMode = settings.CullingMode;
 
 						// An animator whose model went away keeps that model's clip pointers, which may be freed.
 						const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
 						const Skeleton* skeleton = skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
 						if (skeleton && runtime.SkeletonId == skeleton->GetId())
 							row.Instance = runtime.Instance.get();
-						if (skinned && skinned->Model)
-							row.Model = Internal::PathToUtf8(skinned->Model->GetFilePath().filename());
 					}
 				}
+			}
+
+			AnimatorNames DescribeAnimator(const AnimatorRow& row)
+			{
+				AnimatorNames names{ "(gone)", "(gone)", std::string() };
+				const std::unique_lock lock = SceneDebug::LockScenes();
+				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
+				{
+					if (live.Instance != row.Owner)
+						continue;
+
+					names.Scene = live.Instance->GetName();
+					const entt::registry& registry = live.Data->Registry;
+					const entt::entity handle = static_cast<entt::entity>(row.Entity);
+					if (!registry.valid(handle))
+						break;
+
+					names.Entity = EntityName(registry, handle);
+					const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
+					if (skinned && skinned->Model)
+						names.Model = Internal::PathToUtf8(skinned->Model->GetFilePath().filename());
+					break;
+				}
+				return names;
 			}
 
 			void CollectRecentEvents(std::vector<EventRow>& out, size_t max)
@@ -72,6 +98,7 @@ namespace Dingo
 					const AnimationSystem::EventScratch::RecentEvent* Event;
 				};
 
+				const std::unique_lock lock = SceneDebug::LockScenes();
 				std::vector<Candidate> candidates;
 				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{

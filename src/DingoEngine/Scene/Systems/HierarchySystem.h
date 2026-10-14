@@ -41,6 +41,17 @@ namespace Dingo
 			std::string Joint;
 		};
 
+		// Entity::SetActive(false) on the entity itself.
+		struct InactiveSelfComponent
+		{
+		};
+
+		// The entity or one of its ancestors is inactive (derived from InactiveSelfComponent by
+		// RefreshActive). Every per-entity system skips an entity that carries it.
+		struct InactiveComponent
+		{
+		};
+
 		namespace HierarchySystem
 		{
 
@@ -55,6 +66,11 @@ namespace Dingo
 			// The caller rules out cycles.
 			void Link(entt::registry& registry, entt::entity child, entt::entity parent);
 			void Unlink(entt::registry& registry, entt::entity child);
+
+			bool IsInactive(const entt::registry& registry, entt::entity handle);
+			// Re-derives InactiveComponent over `root`'s subtree from InactiveSelfComponent and the
+			// parent's state, parents first, appending the entities whose state changed.
+			void RefreshActive(entt::registry& registry, entt::entity root, std::vector<entt::entity>& activated, std::vector<entt::entity>& deactivated);
 
 			// An empty joint removes the socket. Link and Unlink leave it alone.
 			void SetSocket(entt::registry& registry, entt::entity child, std::string_view joint);

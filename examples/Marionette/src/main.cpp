@@ -78,18 +78,15 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
-			.FramesInFlight = 3,
 		},
 		.Assets = AssetManagerParams()
 			.SetPackageKey(Dingo::Generated::GetPackageKey())
 			.SetRootDirectory(assetRoot)
 			.SetEnableHotReload(options.HotReload)
 			.SetAutoUnpackage(!options.HotReload && !options.LiveEditDemo),
-		.EnableUI = false,
+		.EnableImGui = false,
 		.UpdateInBackground = background,
 	};
 
-	MarionetteApplication* app = new MarionetteApplication(params);
-	app->Initialize();
-	return app;
+	return new MarionetteApplication(params);
 }

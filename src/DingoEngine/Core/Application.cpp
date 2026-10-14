@@ -1,12 +1,19 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
+#include "DingoEngine/Graphics/SwapChain.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Timer.h"
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/CacheManager.h"
+#include "DingoEngine/Core/LogLifecycle.h"
+#include "DingoEngine/Core/CrashHandler.h"
+#include "DingoEngine/Core/Platform.h"
+#include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/Profiler.h"
+#include "DingoEngine/Core/Settings.h"
 #include "DingoEngine/UI/DebugPanels.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Audio/AudioEngine.h"
@@ -31,6 +38,49 @@ namespace Dingo
 		: m_Params(params)
 	{
 		s_Instance = this;
+
+		if (s_PendingRestart)
+		{
+			m_Params.Graphics.GraphicsAPI = s_PendingRestartAPI;
+			s_PendingRestart = false;
+		}
+
+		if (m_Params.Name.empty())
+			m_Params.Name = Internal::PathToUtf8(Platform::GetExecutablePath().stem());
+
+		std::filesystem::path logDirectory = m_Params.LogDirectory;
+		if (auto directory = m_Params.CommandLineArgs.Get("log-dir"); directory && !directory->empty())
+			logDirectory = std::filesystem::path(*directory);
+		else if (m_Params.CommandLineArgs.Get("log-here"))
+			logDirectory = std::filesystem::current_path();
+		if (logDirectory.empty())
+			logDirectory = Platform::GetUserDataDir(m_Params.Name) / "logs";
+
+		if (auto directory = m_Params.CommandLineArgs.Get("save-dir"); directory && !directory->empty())
+			m_Params.SaveDirectory = std::filesystem::path(*directory);
+		if (m_Params.SaveDirectory.empty())
+			m_Params.SaveDirectory = Platform::GetUserDataDir(m_Params.Name) / "saves";
+
+		Internal::OpenLogFile(logDirectory);
+		Internal::CrashHandler::Install(Log::GetFilePath(), logDirectory, m_Params.Name);
+
+		if (!m_Params.SettingsSlot.empty() && SaveSlots::Exists(m_Params.SettingsSlot))
+		{
+			if (const std::optional<SaveData> data = SaveSlots::Read(m_Params.SettingsSlot))
+			{
+				Settings defaults;
+				defaults.Display.Mode = m_Params.Window.Mode;
+				defaults.Display.Width = m_Params.Window.Width;
+				defaults.Display.Height = m_Params.Window.Height;
+				defaults.Display.FullscreenMode = m_Params.Window.FullscreenMode;
+				defaults.Display.VSync = m_Params.Window.VSync;
+				defaults.Input.GamepadDeadzone = Input::GetGamepadDeadzone();
+				const Settings settings = Settings::FromSaveData(*data, defaults);
+				settings.ApplyTo(m_Params.Window);
+				Input::SetGamepadDeadzone(settings.Input.GamepadDeadzone);
+				m_StartupMasterVolume = settings.Audio.MasterVolume;
+			}
+		}
 	}
 
 	Application::~Application()
@@ -45,11 +95,11 @@ namespace Dingo
 
 	void Application::Initialize()
 	{
-		// s_Instance is set unconditionally by the constructor, so it can't detect a
-		// second Initialize() call; m_AssetManager is null until this function creates it.
-		DE_CORE_ASSERT(!m_AssetManager, "Application already initialized. Cannot initialize again.");
+		// A headless app has no window, so the asset manager marks a finished Initialize().
+		if (m_AssetManager)
+			return;
 
-		CacheManager::Initialize();
+		Internal::CacheManager::Initialize();
 
 		if (!IsHeadless())
 		{
@@ -59,20 +109,21 @@ namespace Dingo
 			m_Focused = m_Window->IsFocused();
 
 			GraphicsParams graphicsParams = m_Params.Graphics;
-			graphicsParams.NativeWindowHandle = m_Window->GetNativeWindowHandle();
-			m_GraphicsContext = GraphicsContext::Create(graphicsParams);
+			if (const auto validation = m_Params.CommandLineArgs.Get("vulkan-validation"))
+				graphicsParams.VulkanValidation = !(*validation == "off" || *validation == "false" || *validation == "0" || *validation == "no");
+			m_GraphicsContext = GraphicsContext::Create(graphicsParams, m_Window->GetNativeWindowHandle());
 			if (!m_GraphicsContext)
-				std::abort();
+				FatalError("No graphics device could be created. See the log for why.");
 			m_GraphicsContext->Initialize();
 
-			m_SwapChain = SwapChain::Create(SwapChainParams()
+			m_SwapChain = Internal::SwapChain::Create(Internal::SwapChainParams()
 				.SetNativeWindowHandle(m_Window->GetNativeWindowHandle())
 				.SetWidth(m_Window->GetWidth())
 				.SetHeight(m_Window->GetHeight())
 				.SetVSync(m_Params.Window.VSync));
 			m_SwapChain->Initialize();
 
-			Renderer::Initialize(m_SwapChain);
+			Internal::RendererBackend::Initialize(m_SwapChain);
 
 			m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
 			m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
@@ -83,6 +134,8 @@ namespace Dingo
 		// device thread); bring it up here so it's live before OnInitialize().
 		m_AudioEngine = AudioEngine::Create();
 		m_AudioEngine->Initialize();
+		if (m_StartupMasterVolume)
+			m_AudioEngine->SetMasterVolume(*m_StartupMasterVolume);
 
 		// After audio (clips load through it), before OnInitialize() so layers can load
 		// assets from OnAttach.
@@ -97,17 +150,17 @@ namespace Dingo
 			DE_CORE_ERROR("No layers pushed to the application. Pushing an empty layer.");
 			PushLayer(new EmptyLayer());
 
-			m_Params.EnableUI = false; // Disable the UI layer if no layers are pushed
+			m_Params.EnableImGui = false; // Disable the UI layer if no layers are pushed
 			return;
 		}
 
 		// Bring up the ImGui backend if the game wants UI, or if the engine's built-in
 		// debug overlays are enabled -- so the renderer-stats window works even in
 		// projects that use no UI of their own, in every build config (Distribution too).
-		bool enableImGui = !IsHeadless() && (m_Params.EnableUI || m_Params.EnableDebugOverlays);
+		bool enableImGui = !IsHeadless() && (m_Params.EnableImGui || m_Params.EnableDebugOverlays);
 		if (enableImGui)
 		{
-			m_ImGuiLayer = new ImGuiLayer(m_Params.UI);
+			m_ImGuiLayer = new ImGuiLayer(m_Params.ImGui);
 			PushOverlay(m_ImGuiLayer);
 		}
 
@@ -118,7 +171,7 @@ namespace Dingo
 	void Application::Destroy()
 	{
 		// Park the render thread first so the GPU is idle before any resources are freed.
-		Renderer::Shutdown();
+		Internal::RendererBackend::Shutdown();
 
 		// Detach layers while the renderer can still answer queries: OnDetach is where a
 		// layer frees its GPU resources, and doing that legitimately involves asking for
@@ -126,7 +179,7 @@ namespace Dingo
 		m_LayerStack.Clear();
 
 		// Only now drop the renderer's own resources and state.
-		Renderer::Destroy();
+		Internal::RendererBackend::Destroy();
 
 		// Free managed assets after the layers that borrow them, but before the audio
 		// engine: AudioClips must not outlive the engine that decoded them.
@@ -190,7 +243,7 @@ namespace Dingo
 			m_Window = nullptr;
 		}
 
-		CacheManager::Shutdown();
+		Internal::CacheManager::Shutdown();
 
 		DE_CORE_INFO("Shut down.");
 	}
@@ -228,6 +281,7 @@ namespace Dingo
 	void Application::RunHeadless()
 	{
 		Timer timer;
+		auto next = std::chrono::steady_clock::now();
 
 		DE_PROFILE_THREAD("Main");
 
@@ -261,10 +315,14 @@ namespace Dingo
 
 			RunPostExecutionCallbacks();
 
-			// Nothing presents, so nothing paces the loop: tick at a fixed rate instead of spinning.
-			const float remaining = k_PacedUpdateInterval - (timer.Elapsed() - frameStart);
-			if (m_IsRunning && remaining > 0.0f)
-				std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int64_t>(remaining * 1'000'000.0f)));
+			// Nothing presents, so nothing paces the loop: sleep to a running deadline instead of
+			// spinning, so the coarse Windows timer evens out to the target rate on average.
+			next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<float>(k_PacedUpdateInterval));
+			const auto now = std::chrono::steady_clock::now();
+			if (next < now)
+				next = now;
+			else if (m_IsRunning)
+				std::this_thread::sleep_until(next);
 		}
 	}
 
@@ -341,9 +399,9 @@ namespace Dingo
 			{
 				DE_PROFILE_SCOPE("Renderer::BeginFrame");
 				if (render)
-					Renderer::BeginFrame();
+					Internal::RendererBackend::BeginFrame();
 				else
-					Renderer::SkipFrame();
+					Internal::RendererBackend::SkipFrame();
 			}
 			const float updateStart = timer.Elapsed();
 
@@ -378,12 +436,12 @@ namespace Dingo
 					Renderer::BeginGpuTimer("ImGui");
 					m_ImGuiLayer->Begin();
 
-					if (m_Params.EnableUI)
+					if (m_Params.EnableImGui)
 					{
 						for (Layer* layer : m_LayerStack)
 						{
-							DE_PROFILE_SCOPE_TEXT("Layer::OnUIRender", layer->GetName());
-							layer->OnUIRender();
+							DE_PROFILE_SCOPE_TEXT("Layer::OnImGuiRender", layer->GetName());
+							layer->OnImGuiRender();
 						}
 					}
 
@@ -395,7 +453,7 @@ namespace Dingo
 				}
 
 				DE_PROFILE_SCOPE("Renderer::EndFrame");
-				Renderer::EndFrame();
+				Internal::RendererBackend::EndFrame();
 				renderedOnce = true;
 			}
 			else
@@ -434,28 +492,28 @@ namespace Dingo
 		// F7 = Animation, F8 = Profiler, F9 = Scene.
 		// A key opens the window on its tab (or switches to it); the active tab's key
 		// closes it.
-		UI::DebugTab request = UI::DebugTab::None;
+		Internal::DebugTab request = Internal::DebugTab::None;
 		if (Input::IsKeyPressed(Key::F3))
-			request = UI::DebugTab::Engine;
+			request = Internal::DebugTab::Engine;
 		if (Input::IsKeyPressed(Key::F4))
-			request = UI::DebugTab::Renderer;
+			request = Internal::DebugTab::Renderer;
 		if (Input::IsKeyPressed(Key::F5))
-			request = UI::DebugTab::Input;
+			request = Internal::DebugTab::Input;
 		if (Input::IsKeyPressed(Key::F6))
-			request = UI::DebugTab::Assets;
+			request = Internal::DebugTab::Assets;
 		if (Input::IsKeyPressed(Key::F7))
-			request = UI::DebugTab::Animation;
+			request = Internal::DebugTab::Animation;
 		if (Input::IsKeyPressed(Key::F8))
-			request = UI::DebugTab::Profiler;
+			request = Internal::DebugTab::Profiler;
 		if (Input::IsKeyPressed(Key::F9))
-			request = UI::DebugTab::Scene;
+			request = Internal::DebugTab::Scene;
 
-		if (request != UI::DebugTab::None)
+		if (request != Internal::DebugTab::None)
 		{
 			if (m_ShowDebugWindow && m_ActiveDebugTab == request)
 			{
 				m_ShowDebugWindow = false;
-				m_PendingDebugTab = UI::DebugTab::None;
+				m_PendingDebugTab = Internal::DebugTab::None;
 			}
 			else
 			{
@@ -468,9 +526,9 @@ namespace Dingo
 		{
 			// Keep requesting the pending tab until the window reports it active --
 			// ImGui applies a programmatic tab selection one frame late.
-			m_ActiveDebugTab = UI::DebugWindow(&m_ShowDebugWindow, m_PendingDebugTab);
+			m_ActiveDebugTab = Internal::DebugWindow(&m_ShowDebugWindow, m_PendingDebugTab);
 			if (m_ActiveDebugTab == m_PendingDebugTab)
-				m_PendingDebugTab = UI::DebugTab::None;
+				m_PendingDebugTab = Internal::DebugTab::None;
 		}
 	}
 
@@ -498,12 +556,6 @@ namespace Dingo
 		SubmitPostExecution([]() { Application::Get().Close(); });
 	}
 
-	GraphicsAPI Application::ConsumePendingRestart()
-	{
-		s_PendingRestart = false;
-		return s_PendingRestartAPI;
-	}
-
 	bool Application::OnWindowCloseEvent(WindowCloseEvent& e)
 	{
 		DE_CORE_INFO("Window close requested.");
@@ -516,7 +568,7 @@ namespace Dingo
 		// This runs on the main thread while the render thread may be presenting; the
 		// actual swap-chain recreation happens on the render thread at a safe point.
 		m_Minimized = e.GetWidth() == 0 || e.GetHeight() == 0;
-		Renderer::QueueResize(e.GetWidth(), e.GetHeight());
+		Internal::RendererBackend::QueueResize(e.GetWidth(), e.GetHeight());
 		return false; // let layers react to the new size too
 	}
 

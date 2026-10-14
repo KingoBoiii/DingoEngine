@@ -165,6 +165,41 @@ namespace Dingo
 				childNode->NextSibling = entt::null;
 			}
 
+			bool IsInactive(const entt::registry& registry, entt::entity handle)
+			{
+				return registry.all_of<InactiveComponent>(handle);
+			}
+
+			void RefreshActive(entt::registry& registry, entt::entity root, std::vector<entt::entity>& activated, std::vector<entt::entity>& deactivated)
+			{
+				const entt::entity parent = GetParent(registry, root);
+				std::vector<std::pair<entt::entity, bool>> stack{ { root, parent != entt::null && IsInactive(registry, parent) } };
+				while (!stack.empty())
+				{
+					const auto [handle, parentInactive] = stack.back();
+					stack.pop_back();
+
+					const bool inactive = parentInactive || registry.all_of<InactiveSelfComponent>(handle);
+					if (inactive != IsInactive(registry, handle))
+					{
+						if (inactive)
+						{
+							registry.emplace<InactiveComponent>(handle);
+							deactivated.push_back(handle);
+						}
+						else
+						{
+							registry.remove<InactiveComponent>(handle);
+							activated.push_back(handle);
+						}
+					}
+
+					const HierarchyComponent* node = registry.try_get<HierarchyComponent>(handle);
+					for (entt::entity child = node ? node->LastChild : entt::null; child != entt::null; child = registry.get<HierarchyComponent>(child).PrevSibling)
+						stack.emplace_back(child, inactive);
+				}
+			}
+
 			glm::mat4 WorldTransform(const entt::registry& registry, entt::entity handle)
 			{
 				entt::entity parent = GetParent(registry, handle);

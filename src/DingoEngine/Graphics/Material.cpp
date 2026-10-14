@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Renderer.h"
 
@@ -16,9 +17,18 @@ namespace Dingo
 		}
 
 		// Produce a cache key from a vertex layout, a framebuffer, a cull mode and the shared buffers.
-		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler)
+		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
+			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette)
 		{
 			size_t seed = 0;
+			if (skinPalette)
+				HashCombine(seed, 3);
+			if (objectBuffer)
+				HashCombine(seed, 1);
+			if (instanceBuffer)
+				HashCombine(seed, 2);
+			if (instanceDrawBuffer)
+				HashCombine(seed, static_cast<size_t>(instanceDrawBuffer->GetId()));
 			HashCombine(seed, static_cast<size_t>(cullMode));
 			HashCombine(seed, static_cast<size_t>(framebuffer ? framebuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
@@ -140,7 +150,7 @@ namespace Dingo
 				.SetByteSize(size)
 				.SetType(BufferType::UniformBuffer)
 				.SetIsVolatile(true)
-				.SetDirectUpload(false)
+				.SetUpload(BufferUpload::Deferred)
 				.SetMaxWritesPerFrame(std::max(m_Params.UniformWritesPerFrame, 1u)));
 			InvalidatePipelineCache();
 		}
@@ -189,6 +199,42 @@ namespace Dingo
 		InvalidatePipelineCache();
 	}
 
+	void Material::SetObjectBuffer(GraphicsBuffer* buffer)
+	{
+		RepointStorageBuffer(k_ObjectDataBlockName, m_ObjectBuffer, m_ObjectBufferId, buffer);
+	}
+
+	void Material::SetInstanceBuffers(GraphicsBuffer* records, GraphicsBuffer* draw)
+	{
+		RepointStorageBuffer(k_InstanceDataBlockName, m_InstanceBuffer, m_InstanceBufferId, records);
+		m_InstanceDrawBuffer = draw;
+	}
+
+	void Material::SetSkinPaletteBuffer(GraphicsBuffer* palette)
+	{
+		RepointStorageBuffer(k_SkinPaletteBlockName, m_SkinPaletteBuffer, m_SkinPaletteBufferId, palette);
+	}
+
+	void Material::RepointStorageBuffer(const char* blockName, GraphicsBuffer*& current, uint64_t& currentId, GraphicsBuffer* buffer)
+	{
+		const uint64_t id = buffer ? buffer->GetId() : 0;
+		if (buffer == current && id == currentId)
+			return;
+
+		// A pass built without a buffer lacks the binding, and the cache key keeps it apart.
+		const int32_t binding = m_Params.Shader ? m_Params.Shader->FindStorageBufferBinding(blockName) : -1;
+		if (binding >= 0 && current && buffer)
+		{
+			for (auto& [key, entry] : m_PipelineCache)
+			{
+				entry.RenderPass->SetStorageBuffer(static_cast<uint32_t>(binding), buffer);
+				entry.RenderPass->Bake();
+			}
+		}
+		current = buffer;
+		currentId = id;
+	}
+
 	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
 	{
 		m_ShadowDataBuffer = shadowData;
@@ -233,7 +279,7 @@ namespace Dingo
 		// pipeline + render pass per material per resize, and a reused address could even
 		// return an entry built against a destroyed framebuffer. Drop it on a generation
 		// change, as ImGuiRenderer's pipeline cache does.
-		const uint64_t resizeGeneration = Renderer::GetSwapChainResizeGeneration();
+		const uint64_t resizeGeneration = Internal::RendererBackend::GetSwapChainResizeGeneration();
 		if (resizeGeneration != m_BuiltResizeGeneration)
 		{
 			InvalidatePipelineCache();
@@ -245,9 +291,15 @@ namespace Dingo
 		const int32_t shadowDataBinding = (m_ShadowDataBuffer && shader) ? shader->FindUniformBufferBinding(k_ShadowDataBlockName) : -1;
 		const int32_t shadowAtlasBinding = (m_ShadowAtlas && shader) ? shader->FindTextureBinding(k_ShadowAtlasName) : -1;
 		const int32_t shadowSamplerBinding = (m_ShadowSampler && shader) ? shader->FindSamplerBinding(k_ShadowSamplerName) : -1;
+		const int32_t objectBinding = (m_ObjectBuffer && shader) ? shader->FindStorageBufferBinding(k_ObjectDataBlockName) : -1;
+		const int32_t instanceBinding = (m_InstanceBuffer && shader) ? shader->FindStorageBufferBinding(k_InstanceDataBlockName) : -1;
+		const int32_t instanceDrawBinding = (m_InstanceDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_InstanceDrawBlockName) : -1;
+		const int32_t skinPaletteBinding = (m_SkinPaletteBuffer && shader) ? shader->FindStorageBufferBinding(k_SkinPaletteBlockName) : -1;
 
 		const size_t key = MakeCacheKey(layout, framebuffer, cullMode, m_SceneUniformBuffer, m_SkinUniformBuffer,
-			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr);
+			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr,
+			objectBinding >= 0, instanceBinding >= 0, instanceDrawBinding >= 0 ? m_InstanceDrawBuffer : nullptr,
+			skinPaletteBinding >= 0);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -261,10 +313,10 @@ namespace Dingo
 			.SetCullMode(cullMode)
 			.SetFrontCounterClockwise(m_Params.FrontCounterClockwise)
 			.SetFillMode(m_Params.FillMode)
-			.SetBlendMode(m_Params.Blend)
+			.SetBlendMode(m_Params.BlendMode)
 			.SetDepthTest(m_Params.DepthTest)
 			.SetDepthWrite(m_Params.DepthWrite && !m_Params.Translucent)
-			.SetDepthCompare(m_Params.DepthFunction)
+			.SetDepthCompare(m_Params.DepthCompare)
 			.SetDepthBias(m_Params.DepthBias, m_Params.SlopeScaledDepthBias));
 		if (!pipeline)
 			return nullptr;
@@ -284,7 +336,7 @@ namespace Dingo
 		if (m_UniformBuffer)
 			renderPass->SetUniformBuffer(materialUboSlot, m_UniformBuffer);
 
-		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(k_SkinDataBlockName) : -1;
+		const int32_t skinBinding = (m_SkinUniformBuffer && m_Params.Shader) ? m_Params.Shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
 		if (skinBinding >= 0)
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(skinBinding), m_SkinUniformBuffer);
 
@@ -294,6 +346,14 @@ namespace Dingo
 			renderPass->SetTexture(static_cast<uint32_t>(shadowAtlasBinding), m_ShadowAtlas);
 		if (shadowSamplerBinding >= 0)
 			renderPass->SetSampler(static_cast<uint32_t>(shadowSamplerBinding), m_ShadowSampler);
+		if (objectBinding >= 0)
+			renderPass->SetStorageBuffer(static_cast<uint32_t>(objectBinding), m_ObjectBuffer);
+		if (instanceBinding >= 0)
+			renderPass->SetStorageBuffer(static_cast<uint32_t>(instanceBinding), m_InstanceBuffer);
+		if (instanceDrawBinding >= 0)
+			renderPass->SetUniformBuffer(static_cast<uint32_t>(instanceDrawBinding), m_InstanceDrawBuffer);
+		if (skinPaletteBinding >= 0)
+			renderPass->SetStorageBuffer(static_cast<uint32_t>(skinPaletteBinding), m_SkinPaletteBuffer);
 		for (const StorageBinding& storage : m_StorageBuffers)
 			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 

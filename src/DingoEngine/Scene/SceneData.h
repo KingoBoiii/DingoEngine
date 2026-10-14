@@ -11,11 +11,13 @@
 #include "DingoEngine/Scene/Systems/LightSystem.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
+#include "DingoEngine/Scene/Systems/StaticGeometry.h"
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -31,14 +33,21 @@ namespace Dingo
 			entt::registry Registry;
 			std::unordered_map<UUID, entt::entity> EntityMap;
 
-			ScriptSystem Scripts;
+			ScriptSystem Scripts{ Registry };
 			PhysicsSync Physics;
+
+			float FixedTimeStep = 1.0f / 60.0f;
+			float FixedTimeAccumulator = 0.0f;
 
 			// Deferred-destruction support: while scripts are updating we queue
 			// destroys and apply them after the update pass, so a script can safely
 			// destroy its own (or another) entity mid-update.
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
+
+			// Joined to SceneDebug's live-scene list (the F7 and F9 tabs) at the first OnUpdate, on the main thread, so a scene built on
+			// a loading thread isn't read while it is filled.
+			bool DebugRegistered = false;
 
 			// Reused every frame by the 2D z-sort in RenderEntities: clear() keeps the
 			// capacity, so a steady-state frame allocates nothing to sort.
@@ -59,6 +68,12 @@ namespace Dingo
 			AnimationSystem::EventScratch AnimationEvents;
 
 			LightSystem::ShadowProbeState ShadowProbes;
+
+			StaticGeometry StaticMeshes;
+
+			// The renderers RenderEntities3D drew with, which the animate pass asks what was culled.
+			std::vector<std::weak_ptr<const SkinnedVisibility>> SkinnedViews;
+			uint64_t SkinnedViewFrame = 0; // the frame of the last RenderEntities3D
 		};
 
 	}

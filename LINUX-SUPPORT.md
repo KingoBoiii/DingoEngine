@@ -1,7 +1,15 @@
 # Linux Support
 
-What it takes to move DingoEngine from **Windows-only** to **supported on Linux**: what breaks, where,
-how to fix it, and how each fix was verified. Companion to [ROADMAP.md](ROADMAP.md), whose v1.0 milestone
+**Status (v1.0, 2026-10-13): Linux is supported, and has been since v0.9.1.** The engine, the test
+app and every example build and run on Linux (GCC 13, x86-64, X11 or XWayland), and `build-linux.yml`
+builds all four configurations on every push to master and smoke-tests each under Xvfb on llvmpipe,
+with AddressSanitizer in Debug-ASan. Phases 1-4 below are done. Two items stay open:
+[L26](#l26), a run on real GPUs and desktops (deferred past v1.0: [#247](https://github.com/KingoBoiii/DingoEngine/issues/247)), and [L27](#l27), native Wayland (optional). The rest of
+this page is the record of the port as it was planned and verified; its `file:line` anchors date
+from v0.8.2 and v0.8.3 and have drifted since.
+
+What it took to move DingoEngine from **Windows-only** to **supported on Linux**: what broke, where,
+how it was fixed, and how each fix was verified. Companion to [ROADMAP.md](ROADMAP.md), whose v1.0 milestone
 lists *"cross-platform validation (Linux + Vulkan)"*, and to the
 [known-bug issues](https://github.com/KingoBoiii/DingoEngine/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
 
@@ -214,7 +222,7 @@ Verified:
 - **Tooling**: `Generate-Linux.sh` works from any directory; every task's `make` command dry-runs; every
   Linux launch entry's program and `cwd` exist.
 
-Still open: [L26](#l26) needs real hardware (a USB-booted Ubuntu on a real GPU is the cheapest start), and
+Still open: [L26](#l26) needs real hardware (a USB-booted Ubuntu on a real GPU is the cheapest start) and is deferred past v1.0 ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)), and
 [L27](#l27) is a decision before it is work.
 
 ### Found along the way
@@ -309,6 +317,7 @@ All against `52acd47` with Appendix B applied.
 | Marionette `--check` | Asset 17/17, movement 27/27, combat 51/51, AI 12/12. |
 | AddressSanitizer (`debug-asan`) | All 14 test cases and all 10 examples were closed through `WM_DELETE_WINDOW`: exit code 0, no reports, and the 188 self-checks pass under ASan too. Needs [L12](#l12), and holds only after [F1](#f1), which ASan found on v0.6.1. |
 | LeakSanitizer (FlappyBird) | 260 bytes in 5 allocations, all inside `libxcb`, reached from Mesa's swap-chain creation and GLFW's X11 teardown. None belong to the engine. (On v0.6.1 it was 917 bytes, mostly FlappyBird's own textures and font, since fixed.) |
+| LeakSanitizer in CI (v1.0 P7) | `build-linux.yml`'s Debug-ASan job runs the whole smoke test with leak detection on and `scripts/ci/lsan.supp`: libxcb and libX11 as above, and `ma_dlopen`, since miniaudio probes JACK when there is no sound device and JACK's static initialisers leak 96 bytes. Mesa's llvmpipe threads hold memory the Vulkan loader's `dlclose` of the ICD leaves unattributable, so the script preloads `libasan.so` and `libvulkan_lvp.so` into the app; with that, no engine leak in any run. |
 | One merged archive ([L23](#l23)) | A single 64 MB `libDingoEngine.a` (engine, vendor libraries and the static assimp) links FlappyBird and Marionette with only the SDK libraries, zlib and libc. Both run without asset-load errors, and need only `libz`, `libstdc++`, `libm`, `libgcc_s` and `libc` at load time. |
 | Not covered | Real GPUs, Wayland, audio output (there was no sound device, so miniaudio only logged ALSA errors), gamepads, any input beyond the built-in self-checks, and clang. See [L26](#l26). |
 
@@ -846,7 +855,7 @@ paths.
 <a id="l26"></a>
 ### L26 — Validate on real hardware and desktops
 
-**Ship**
+**Ship**. Deferred past v1.0 (2026-10-14): no Linux machine was available, so v1.0.0 ships Linux as CI-tested on llvmpipe only ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
 
 Everything here ran on llvmpipe under Xvfb, with no sound device and no input beyond the built-in
 self-checks. Before calling Linux supported:

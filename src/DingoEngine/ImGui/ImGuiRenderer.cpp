@@ -352,7 +352,7 @@ void main()
 		return true;
 	}
 
-	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList)
+	bool ImGuiRenderer::RenderToSwapchain(ImGuiViewport* viewport, Internal::SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList)
 	{
 		// A list of its own is the first thing Render submits; a shared one is the frame's, whose
 		// owner queues the wait.
@@ -439,7 +439,7 @@ void main()
 		return true;
 	}
 
-	nvrhi::GraphicsPipelineHandle ImGuiRenderer::GetOrCreatePipeline(SwapChain* swapchain)
+	nvrhi::GraphicsPipelineHandle ImGuiRenderer::GetOrCreatePipeline(Internal::SwapChain* swapchain)
 	{
 		uint32_t currentFramebufferIndex = swapchain->GetCurrentBackBufferIndex();
 		auto& swapchainPipelineCache = m_PipelineCache[swapchain];

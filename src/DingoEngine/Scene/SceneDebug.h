@@ -10,6 +10,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -34,10 +35,15 @@ namespace Dingo
 				uint64_t Serial = 0;
 			};
 
+			// A scene registers at its first OnUpdate (main thread) and unregisters in its destructor
+			// (any thread), which waits while this lock is held. Hold it while reading LiveScenes() or
+			// anything a row points into, so a scene freed on another thread can't be freed mid-read.
+			// The Collect functions take it themselves.
+			[[nodiscard]] std::unique_lock<std::recursive_mutex> LockScenes();
 			void RegisterScene(Scene* scene, SceneData* data);
 			void UnregisterScene(Scene* scene);
 
-			// In creation order.
+			// In the order scenes first updated. Only while LockScenes() is held.
 			const std::vector<LiveScene>& LiveScenes();
 
 			enum class Component : uint32_t
@@ -70,13 +76,15 @@ namespace Dingo
 				uint32_t Roots = 0;
 				uint32_t Scripts = 0;
 
-				// Light components. Point and spot count only enabled ones on an entity with a
+				// Light components. Point and spot count only enabled ones on an active entity with a
 				// Transform3DComponent; the renderer ignores the others, as UnplacedLocalLights says.
 				uint32_t DirectionalLights = 0;
 				uint32_t AmbientLights = 0;
 				uint32_t PointLights = 0;
 				uint32_t SpotLights = 0;
 				uint32_t DisabledLocalLights = 0;
+				// Enabled, but on an entity that is inactive or under an inactive ancestor (Entity::SetActive).
+				uint32_t InactiveLocalLights = 0;
 				uint32_t UnplacedLocalLights = 0;
 				uint32_t ShadowedLocalLights = 0;
 				// Whether any component turns the default directional light off, as LightSystem decides it.
@@ -136,6 +144,9 @@ namespace Dingo
 			{
 				UUID Id;
 				std::string Name;
+				// Entity::IsActive and IsActiveInHierarchy.
+				bool Active = true;
+				bool ActiveInHierarchy = true;
 				bool HasParent = false;
 				UUID Parent;
 				std::string ParentName;

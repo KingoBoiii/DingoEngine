@@ -48,7 +48,7 @@ one. Every project in the workspace gets `DE_PROFILE`, so a game's own zones com
 The engine records:
 
 - the frame (`DE_PROFILE_FRAME`) and `Application::Run`'s steps on the thread named **Main**:
-  `Renderer::BeginFrame`, `AssetManager::Update`, each layer's `OnUpdate` and `OnUIRender` (the
+  `Renderer::BeginFrame`, `AssetManager::Update`, each layer's `OnUpdate` and `OnImGuiRender` (the
   layer's name is the zone's text), `ImGui`, `Renderer::EndFrame`;
 - `Scene::OnUpdate` (the scene's name as text) and its systems: scripts, animation, physics, audio;
 - `SceneRenderer::Render`, `Scene::RenderEntities` and `RenderEntities3D`, `Renderer3D::EndScene`
@@ -78,3 +78,13 @@ void EnemyDirector::Update(float dt)
 
 Tracy stays out of the public headers: `Profiler.h` declares the engine's own `ProfileSite` and
 `ProfileZone`, and only `src/DingoEngine/Core/Profiler.cpp` includes Tracy.
+
+## Limits
+
+- At most 32 GPU timers a frame; later ones warn once and are skipped. Results arrive four frames
+  late, and a frame that renders nothing measures nothing.
+- On D3D11 the timers are approximate. A D3D11 timestamp doesn't wait for the work before it to
+  finish, so a short pass such as `Particles` can read 0.00, while `Frame` can read several times
+  its Vulkan time. Compare passes on Vulkan or D3D12, which show the same names.
+- Tracy exists only in a `--profile` build, and only a v0.11.x viewer connects to it.
+- A zone or plot name must be a string literal (or live for the whole run).

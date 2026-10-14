@@ -1,4 +1,6 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
+#include "DingoEngine/Graphics/SwapChain.h"
 #include "ImGuiLayer.h"
 #include "ImGuiRenderer.h"
 
@@ -93,8 +95,8 @@ namespace Dingo
 
 		if (!Renderer::IsFrameSkipped())
 		{
-			nvrhi::ICommandList* mainCmdList = static_cast<NvrhiCommandList*>(Renderer::GetCommandList())->GetNvrhiHandle();
-			m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Application::Get().GetSwapChain(), mainCmdList);
+			nvrhi::ICommandList* mainCmdList = static_cast<NvrhiCommandList*>(Internal::RendererBackend::GetCommandList())->GetNvrhiHandle();
+			m_ImGuiRenderer->RenderToSwapchain(ImGui::GetMainViewport(), Internal::RendererBackend::GetSwapChain(), mainCmdList);
 		}
 
 		// Update and Render additional Platform Windows
@@ -147,7 +149,7 @@ namespace Dingo
 	struct ImGuiViewportData
 	{
 		bool WindowOwned = false;
-		SwapChain* SwapChain = nullptr;
+		Internal::SwapChain* SwapChain = nullptr;
 		std::unique_ptr<ImGuiRenderer> Renderer;
 	};
 
@@ -156,7 +158,7 @@ namespace Dingo
 		ImGuiViewportData* data = IM_NEW(ImGuiViewportData)();
 		viewport->RendererUserData = data;
 
-		SwapChainParams params = {
+		Internal::SwapChainParams params = {
 			.NativeWindowHandle = (GLFWwindow*)viewport->PlatformHandle,
 			.Width = (int32_t)viewport->Size.x,
 			.Height = (int32_t)viewport->Size.y,
@@ -172,7 +174,7 @@ namespace Dingo
 			params.VulkanSurface = &surface;
 		}
 
-		data->SwapChain = SwapChain::Create(params);
+		data->SwapChain = Internal::SwapChain::Create(params);
 		data->SwapChain->Initialize();
 		data->WindowOwned = true;
 

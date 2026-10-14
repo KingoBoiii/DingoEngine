@@ -3,8 +3,9 @@
 // matrix, orthographic or perspective, then a move into its tile of the atlas, with clip distances at
 // the tile's edges so nothing spills into a neighbour. A view whose light leaves out the batch's
 // caster groups clips every vertex away. Static vertices are in world
-// space already; with DE_SKINNED they are skinned like the lit shader's (Skinning.glsl). Mirrors
-// Renderer3D::ShadowViews.
+// space already; with DE_SKINNED they are skinned like the lit shader's (Skinning.glsl), and with
+// DE_INSTANCED each copy of a mesh is placed from its record (Instancing.glsl), every copy drawn
+// once per view. Mirrors Renderer3D::ShadowViews.
 
 #type vertex
 #version 450
@@ -31,9 +32,12 @@ layout(std140, binding = 1) uniform ShadowCaster
 layout(location = 0) in vec3 a_Position;
 
 #ifdef DE_SKINNED
+#define DE_SKIN_PALETTE
 #include <DingoEngine/Skinning.glsl>
 layout(location = 1) in uvec4 a_Joints;
 layout(location = 2) in vec4 a_Weights;
+#elif defined(DE_INSTANCED)
+#include <DingoEngine/Instancing.glsl>
 #endif
 
 out gl_PerVertex
@@ -45,12 +49,18 @@ out gl_PerVertex
 void main()
 {
 #ifdef DE_SKINNED
-	vec4 worldPosition = Model * (SkinMatrix(a_Joints, a_Weights) * vec4(a_Position, 1.0));
+	vec4 worldPosition = SkinModel() * (SkinMatrix(a_Joints, a_Weights) * vec4(a_Position, 1.0));
+	uint viewIndex = uint(gl_InstanceIndex);
+#elif defined(DE_INSTANCED)
+	uint views = InstanceBase.y;
+	vec4 worldPosition = vec4(InstanceWorldPosition(GetInstance(uint(gl_InstanceIndex) / views), a_Position), 1.0);
+	uint viewIndex = uint(gl_InstanceIndex) % views;
 #else
 	vec4 worldPosition = vec4(a_Position, 1.0);
+	uint viewIndex = uint(gl_InstanceIndex);
 #endif
 
-	ShadowView view = Views[gl_InstanceIndex];
+	ShadowView view = Views[viewIndex];
 	vec4 clip = view.ViewProjection * worldPosition;
 
 	gl_ClipDistance[0] = (view.Casters.x & Groups.x) != 0u ? clip.w + clip.x : -1.0;

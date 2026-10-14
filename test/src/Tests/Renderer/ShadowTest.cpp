@@ -184,7 +184,7 @@ namespace Dingo
 		glm::vec3 high((std::numeric_limits<float>::lowest)());
 		for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 		{
-			for (const MeshVertex& vertex : submesh.MeshData->GetVertices())
+			for (const MeshVertex& vertex : submesh.Mesh->GetVertices())
 			{
 				low = (glm::min)(low, vertex.Position);
 				high = (glm::max)(high, vertex.Position);
@@ -247,9 +247,9 @@ namespace Dingo
 		m_EntitySun = m_EntityScene->CreateEntity("Sun");
 		DirectionalLightComponent& sun = m_EntitySun.AddComponent<DirectionalLightComponent>();
 		sun.Direction = k_SunDirection;
-		sun.Intensity = 1.0f;
-		sun.Ambient = 0.3f;
+		sun.Intensity = 1.0f * (1.0f - 0.3f);
 		sun.CastShadows = true;
+		m_EntitySun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.3f));
 
 		Entity floor = m_EntityScene->CreateEntity("Floor");
 		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.05f, 0.0f }, { 60.0f, 0.1f, 60.0f }));
@@ -410,8 +410,8 @@ namespace Dingo
 				{
 					for (const SubMesh& submesh : m_Fox->GetSubMeshes())
 					{
-						if (submesh.MeshData->HasSkin())
-							renderer.SubmitSkinnedMesh(submesh.MeshData, m_FoxTransform, *palette, glm::vec4(1.0f), m_FoxMaterial);
+						if (submesh.Mesh->HasSkin())
+							renderer.SubmitSkinnedMesh(submesh.Mesh, m_FoxTransform, *palette, glm::vec4(1.0f), m_FoxMaterial);
 					}
 				}
 				break;

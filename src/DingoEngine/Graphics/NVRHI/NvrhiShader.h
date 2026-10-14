@@ -29,7 +29,7 @@ namespace Dingo
 		bool Build(bool forceCompile, bool tolerateErrors);
 
 		nvrhi::ShaderHandle CreateShaderHandle(nvrhi::ShaderType shaderType, const std::vector<uint32_t>& spvbinary, const std::string& debugName = "Shader");
-		nvrhi::BindingLayoutHandle CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflection);
+		nvrhi::BindingLayoutHandle CreateBindingLayoutHandle(const std::vector<ShaderReflection>& reflection, uint32_t pushConstantRegister, uint32_t pushConstantSize);
 
 		// A stage's compiled SPIR-V plus the hash of (source, entryPoint) it was compiled from -
 		// retained so the D3D cache key can be derived without re-hashing the source text.
@@ -57,7 +57,12 @@ namespace Dingo
 		std::vector<uint32_t> m_VertexInputLocations;
 		bool m_VertexInputsReflected = false;
 
+		// The push-constant block's D3D constant-buffer register and size; a size of 0 is no block.
+		uint32_t m_PushConstantRegister = 0;
+		uint32_t m_PushConstantSize = 0;
+
 		friend class NvrhiPipeline;
+		friend class NvrhiCommandList;
 		friend class NvrhiRenderPass;
 		friend class NvrhiComputePass;
 		friend class ImGuiRenderer;

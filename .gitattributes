@@ -64,3 +64,7 @@
 
 # Bash fails on CRLF, and Windows checkouts (CI runners, WSL over /mnt) would convert them.
 *.sh text eol=lf
+
+# gather-notices.sh --check compares bytes, and a Windows checkout would convert these to CRLF.
+THIRD-PARTY-NOTICES.md text eol=lf
+scripts/notices/** text eol=lf

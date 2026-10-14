@@ -30,7 +30,7 @@ namespace Dingo
 		{
 			if (m_Params.Type == BufferType::IndexBuffer)
 			{
-				return static_cast<uint32_t>(m_Params.ByteSize / sizeof(uint16_t));
+				return static_cast<uint32_t>(m_Params.ByteSize / (m_Params.IndexFormat == IndexFormat::Uint16 ? sizeof(uint16_t) : sizeof(uint32_t)));
 			}
 
 			return 0;

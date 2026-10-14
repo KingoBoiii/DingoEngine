@@ -3,13 +3,14 @@
 namespace Dingo
 {
 
+	/// What a sampler reads for texture coordinates outside 0..1; the lower names are aliases.
 	enum class SamplerAddressMode
 	{
-		Clamp,
-		Wrap,
-		Border,
-		Mirror,
-		MirrorOnce,
+		Clamp,      ///< Repeats the edge texel.
+		Wrap,       ///< Tiles the texture.
+		Border,     ///< Reads SamplerParams::BorderColor.
+		Mirror,     ///< Tiles the texture, flipping every other tile.
+		MirrorOnce, ///< Mirrors once about 0, then clamps.
 
 		ClampToEdge = Clamp,
 		Repeat = Wrap,

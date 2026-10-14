@@ -1,5 +1,7 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "NvrhiPipeline.h"
+#include "NvrhiCommandList.h"
 #include "NvrhiGraphicsBuffer.h"
 #include "NvrhiTexture.h"
 #include "NvrhiFramebuffer.h"
@@ -110,7 +112,7 @@ namespace Dingo
 		if (m_TargetsSwapChain)
 			m_Params.Framebuffer = Renderer::GetSwapChainFramebuffer();
 		else
-			m_TargetsSwapChain = Renderer::IsSwapChainFramebuffer(m_Params.Framebuffer);
+			m_TargetsSwapChain = Internal::RendererBackend::IsSwapChainFramebuffer(m_Params.Framebuffer);
 
 		const auto device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 		const auto nvrhiShader = static_cast<NvrhiShader*>(m_Params.Shader);
@@ -229,6 +231,8 @@ namespace Dingo
 
 	void NvrhiPipeline::CreateBindingSet(nvrhi::BindingLayoutHandle bindingLayoutHandle)
 	{
+		// A pipeline a RenderPass draws binds the pass's set, which carries the push constants; a
+		// second set here would not match the pipeline's one layout.
 		if (m_Params.UniformBuffer == nullptr && m_Params.Texture == nullptr)
 		{
 			return;
@@ -245,6 +249,14 @@ namespace Dingo
 		{
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(1, static_cast<NvrhiTexture*>(m_Params.Texture)->m_Handle));
 			bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(2, static_cast<NvrhiSampler*>(Renderer::GetClampSampler())->m_Handle));
+		}
+
+		// D3D11 binds its push-constant buffer through the binding set.
+		const NvrhiShader* nvrhiShader = static_cast<const NvrhiShader*>(m_Params.Shader);
+		if (nvrhiShader && nvrhiShader->m_PushConstantSize)
+		{
+			bindingSetDesc.addItem(nvrhi::BindingSetItem::PushConstants(nvrhiShader->m_PushConstantRegister, nvrhiShader->m_PushConstantSize));
+			NvrhiCommandList::SortBySlot(bindingSetDesc);
 		}
 
 		m_BindingSetHandle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createBindingSet(bindingSetDesc, bindingLayoutHandle);

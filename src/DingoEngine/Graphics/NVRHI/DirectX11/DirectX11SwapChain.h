@@ -7,10 +7,10 @@
 namespace Dingo
 {
 
-	class DirectX11SwapChain : public SwapChain
+	class DirectX11SwapChain : public Internal::SwapChain
 	{
 	public:
-		DirectX11SwapChain(const SwapChainParams& params);
+		DirectX11SwapChain(const Internal::SwapChainParams& params);
 		virtual ~DirectX11SwapChain();
 
 	public:

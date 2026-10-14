@@ -416,13 +416,24 @@ game asks for it.
 the Linux smoke test, runs on the release's merge commit before it is tagged.
 
 ## v1.0 — Stability, Performance & Polish
+**Status**: in progress on `feat/v1` (PR [#147](https://github.com/KingoBoiii/DingoEngine/pull/147)),
+plan `.claude/plans/2026-10-08-v1.0-plan.md`. Done in the cloud, with GPU sign-offs pending:
+culling (P2), per-object surface overrides (P3), GPU instancing (P4), static geometry (P5), the
+skin palette arena and animation LOD (P6), per-user logs, the crash handler and unit tests (P7),
+`SaveData`, `Settings` and display modes (P8), the API pass with [versioning](docs/versioning.md)
+and [conventions](docs/conventions.md) (P9), third-party notices, the Inter font and executable
+metadata (P10), and the Doxygen reference and 1.0 guides (P11). Left: DingoUI, the review pass
+(P12), *Hearthvale* (P13), a
+soak (20 minutes per sign-off, 60 before the release tag) and the release candidate. The run on real
+Linux hardware ([L26](LINUX-SUPPORT.md#l26)) is deferred past v1.0 ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
+
 Performance profiling (Optick or Tracy), full API documentation, cross-platform validation
 (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term
 maintainability. It also takes on the **renderer throughput work** that has been implied since v0.9
 was called "Advanced Rendering & Performance" but was never scheduled anywhere:
 
-- **The vertex budget**: `Renderer3D` CPU-transforms *every submitted vertex, every frame*
-  (`Renderer3D.cpp:276`), so the vertex count simply **is** the frame budget, and overflowing
+- **The vertex budget**: v0.9's `Renderer3D` CPU-transformed *every submitted vertex, every frame*
+  (`Renderer3D::SubmitMesh`), so the vertex count simply **is** the frame budget, and overflowing
   `MaxVertices` drops geometry. Persistent/static batching for never-moving geometry and **GPU
   instancing** for repeated meshes retire that. The draw-call plumbing already exists —
   `CommandList::Draw` takes an `instanceCount`, hardcoded to 1 — so the missing piece is persistent
@@ -433,6 +444,14 @@ was called "Advanced Rendering & Performance" but was never scheduled anywhere:
 - **Material sharing**: a shared-material path so the first custom material in a scene doesn't
   fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
   costing a material each: v0.7's lit materials are per-material, not per-mesh.
+- **DingoUI, a game UI framework** ([#98](https://github.com/KingoBoiii/DingoEngine/issues/98)):
+  games have no UI layer of their own today (`Dingo::UI` is an ImGui facade for debug panels), so
+  every example builds its HUD and menus from sprites and text by hand. `DingoUI` is an
+  immediate-mode API (`DingoUI::Button("Play")`) for HUDs and menus: flexbox-style layout anchored to
+  the screen, gamepad and keyboard focus navigation, world-space health bars and labels, 9-slice
+  skins and themes, tweens and screen transitions, and clicks the UI takes kept away from the game.
+  It draws a whole menu in about one draw call, after the post chain. ImGui stays the debug UI.
+  Plan: `.claude/plans/2026-10-08-v1.0-game-ui-plan.md`.
 
 Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
 finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
@@ -446,7 +465,7 @@ instead of a moving target.
   release workflow and the Linux packaging ship every example this way. Deterrence, not
   protection: [docs/distribution.md](docs/distribution.md) has the threat model.
 
-**Full game release**: *Dungeon Crawler* (1.0) — the content-complete evolution of the v0.5 singleplayer vertical slice: full combat, loot, and character progression across many levels. The combination of real-time combat and procedural or handcrafted levels makes this the capstone stress test for the engine: hot-loaded assets (v0.6), a fully lit world (v0.7), animated characters (v0.8), and advanced visuals (v0.9). Online co-op is **no longer part of the 1.0 launch** — it follows as a post-release update once the networking module lands. **Released on Itch.io, with Steam as a stretch goal.**
+**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6).
 
 ---
 

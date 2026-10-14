@@ -45,10 +45,11 @@ stays off until a material asks for it.
 ```cpp
 void AddNightLighting(Scene& scene)
 {
-    DirectionalLightComponent& moon = scene.CreateEntity("Moon").AddComponent<DirectionalLightComponent>();
+    Entity sky = scene.CreateEntity("Moon");
+    DirectionalLightComponent& moon = sky.AddComponent<DirectionalLightComponent>();
     moon.Color = { 0.55f, 0.65f, 1.0f };
     moon.Intensity = 0.12f;
-    moon.Ambient = 0.05f;
+    sky.AddComponent<AmbientLightComponent>(AmbientLightComponent({ 1.0f, 1.0f, 1.0f }, 0.05f));
 
     Entity lantern = scene.CreateEntity("Lantern");
     lantern.AddComponent<Transform3DComponent>().Position = { 2.0f, 1.5f, 0.0f };
@@ -113,8 +114,8 @@ its scene buffer has room for that many writes, and later scenes would draw with
 **Direct API.** A scene that submits no light and no ambient is lit by the default light from
 `Renderer3DParams`: `LightDirection` (-0.4, -1, -0.35) and `Ambient` 0.35. It is emitted as a white
 ambient of `Ambient` plus one white directional light of intensity `1 - Ambient`, which is the
-pre-v0.7 image. Set it at startup through `ApplicationParams::Renderer3D`, or at run time with
-`SetDirectionalLight(direction, ambient)`, which changes only this default. Any `SubmitLight` or
+pre-v0.7 image. Set it at startup through `ApplicationParams::Renderer3D` (the run-time setter
+`SetDirectionalLight(direction, ambient)` is deprecated and goes in 2.0). Any `SubmitLight` or
 `SetAmbientLight` call in a scene switches it off, so a scene with only point lights gets no sun.
 For no light at all, call `SetAmbientLight({ 0, 0, 0 }, 0)`.
 
@@ -128,13 +129,14 @@ frame, and always calls `SetAmbientLight` with the summed ambient, black if ther
   therefore goes dark.
   It does not fall back to the renderer's default light, which the `SceneRenderer` never touches.
 
-**Legacy `Ambient`.** `DirectionalLightComponent::Ambient` (default 0.35) is the engine's original
-single knob. It adds white ambient and scales the light by `(1 - Ambient)`, which is exactly the
-old `ambient + (1 - ambient) * N.L` for any `Ambient`. A face squarely turned to the light is
-`Ambient + Intensity * (1 - Ambient)` bright, exactly 1 at the default `Intensity`. Set `Ambient`
-to 0 to use `AmbientLightComponent` instead and get `Intensity` unscaled. Only the directional
-components the renderer accepts (the first four valid ones) add their ambient, and a non-finite
-`Ambient` or ambient intensity is skipped rather than blanking every other ambient source.
+**Legacy `Ambient`** (deprecated in v1.0, removed in 2.0). `DirectionalLightComponent::Ambient` is
+the engine's original single knob: it adds white ambient and scales the light by `(1 - Ambient)`,
+the old `ambient + (1 - ambient) * N.L`. Its default was 0.35 until v1.0 and is 0 now, so a default
+`DirectionalLightComponent` is the light at its full `Intensity` with no ambient. To keep the old
+look, set `Intensity` to `Intensity * (1 - a)` and add an `AmbientLightComponent` of white at `a`
+(0.35 for the old default): that gives the same numbers. Only the directional components the
+renderer accepts (the first four valid ones) add their `Ambient`, and a non-finite one is skipped.
+The default light a scene without light components gets keeps the old 0.35 look.
 
 ## Fog
 
@@ -236,7 +238,7 @@ angle.
 included), `LocalLights`, `CulledLights` and `DroppedLights`, complete after `EndScene`. The F4
 Renderer tab shows them under "Renderer3D lights": directional `n / 4`, a point/spot bar against
 the budget, "Out of view", and a red "Dropped" line when anything was dropped. "Dropped" counts
-both kinds; the log says which. `UI::RendererStatsSection()` embeds it in your own window.
+both kinds; the log says which.
 
 **The budget fade** (v0.9). By default the cut-off is hard: when a light's rank crosses the budget
 edge, as the camera moves, it switches on or off within one frame. Set
@@ -333,8 +335,8 @@ the cut-off does not flicker. The ones that do not fit fade their `Intensity` to
 then disabled, and a flame fades in only when there is room, starting just before it enters the view.
 If the exact in-view count is still over, the lowest-ranked flames in view drop at once. So the
 engine's own selection never has to drop a gameplay light, and the flames that go do so by fading, not
-by popping at the budget edge. The cost is a copy of the engine's cull test in game code, which has to
-change if the engine's does, so the game warns once if the renderer ever drops a light with the LOD on.
+by popping at the budget edge. It counts with the engine's own cull test, the public `Frustum` (v1.0),
+and still warns once if the renderer ever drops a light with the LOD on.
 `--no-light-lod` turns the LOD off to show the engine's own selection, and `--light-budget` stops at 16,
 the 14 gameplay lights that can burn at once plus the two spare.
 
@@ -382,13 +384,43 @@ delete lamp;
   slot rebuilds the material's pipelines, so do not swap one every frame. A NaN setting falls back
   to roughness 0.5, specular 0 and no emissive.
 - **`GetDefaultMaterial()`** holds the shared settings of every mesh with no material of its own.
-  Settings belong to the material, not the mesh: give an entity its own lit material for its own
-  glow or shine.
+  A mesh that needs its own glow or shine takes a [surface override](#surface-overrides-v10)
+  rather than a material of its own.
 - **Ownership.** You own the material and must delete it before the renderer that created it shuts
   down. Any `Renderer3D` can draw it.
 
 A material with your own `Shader` is not a lit material: its emissive, roughness and specular
 settings are ignored, and the shader does its own lighting.
+
+### Surface overrides (v1.0)
+
+A `SurfaceOverride` gives one mesh its own emissive, roughness and specular while it keeps its lit
+material, so meshes that differ only in those still draw in one batch:
+
+```cpp
+auto& renderer = orb.AddComponent<MeshRendererComponent>(MeshRendererComponent(sphere, color));
+renderer.SetSurface(SurfaceOverride().SetEmissiveColor({ 1.0f, 0.6f, 0.2f }).SetEmissiveStrength(2.4f));
+
+// Each frame, for a pulse:
+orb.GetComponent<MeshRendererComponent>().Surface->EmissiveStrength = 2.4f * pulse;
+```
+
+`Renderer3D::SubmitMesh` takes one as its last argument (`const SurfaceOverride*`, copied at the call).
+
+- **All four or none.** A set override replaces the material's `EmissiveColor`, `EmissiveStrength`,
+  `Roughness` and `Specular` together, with `SurfaceOverride`'s defaults (black, 0, 0.5, 0) for the
+  ones you leave. `ClearSurface()` goes back to the material's. Values are sanitised like the
+  material's.
+- **The same pixels.** A mesh with an override draws exactly as it would with a lit material of
+  those settings (the Batch Test reads both back and requires 0 differing pixels). Folding several
+  materials into one batch changes the order their meshes draw in, which shows only where two
+  surfaces lie at exactly the same depth.
+- **Lit materials only.** A custom shader's mesh ignores it, and so does a skinned mesh
+  (`SubmitSkinnedMesh` has none).
+- **How:** each override is a 32-byte record in a storage buffer the lit shader reads by the index
+  every vertex of that mesh carries; index 0, every mesh without one, reads the material's values,
+  so a scene without overrides renders exactly as before. `Statistics::SurfaceOverrides` counts them
+  (F4 "Surfaces"); a `ShadowsOnly` mesh draws nothing lit, so it takes none.
 
 ## Translucent materials
 
@@ -507,8 +539,8 @@ and a copy of it is embedded in the engine library at build time.
   gets cascaded shadows, and up to 8 (at most 16) casting point and spot lights get shadows of their
   own ([Shadows](shadows.md)); every other light passes through walls and floors, so in interiors
   keep their ranges short.
-- **No per-mesh surface parameters.** Roughness, specular and emissive are per material. A mesh
-  that needs its own takes its own material, which is at least one more draw call.
+- **Per-mesh surfaces are unskinned meshes only.** A `SurfaceOverride` gives an unskinned mesh its own
+  roughness, specular and emissive; a skinned mesh still takes its own material for them.
 - **Blinn-Phong, not PBR:** no metalness, normal maps or reflections.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.
@@ -530,13 +562,14 @@ that did more:
   `scene.SubmitLights(renderer)`, is lit by `Renderer3DParams`' default light, not the last scene's
   sun. Call `SubmitLights` in the pass, or submit lights directly.
 - **Directional lights add up.** Several `DirectionalLightComponent`s now all light the scene, up to
-  four, and each one's legacy `Ambient` adds up too; before, only the first counted. Two default
-  components give an ambient of 0.7. Keep one sun, or set `Ambient` to 0 on the others.
+  four, and each one's legacy `Ambient` (deprecated; 0 by default since v1.0) adds up too; before,
+  only the first counted. Keep one sun, or leave `Ambient` at 0 on the others.
 - **The legacy prefix still carries only the first directional light.** A custom shader that reads
   only `LightDirection` and `Ambient` ignores the rest. Mirror the full block to see them all.
 
-`Renderer3D::SetDirectionalLight` still works, but only for scenes that submit no light of their
-own, since submitting any light or ambient switches the default off.
+`Renderer3D::SetDirectionalLight` is deprecated (removed in 2.0). It still works, but only for
+scenes that submit no light of their own, since submitting any light or ambient switches the default
+off; submit the light each scene instead.
 
 ## See also
 

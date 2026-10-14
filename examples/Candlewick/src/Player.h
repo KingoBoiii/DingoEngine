@@ -13,7 +13,6 @@ namespace Dingo
 	{
 	public:
 		Player(Scene& scene, const KeepMap& map, const glm::ivec2& spawnTile);
-		~Player();
 
 		Player(const Player&) = delete;
 		Player& operator=(const Player&) = delete;
@@ -47,9 +46,6 @@ namespace Dingo
 		Entity m_Body;
 		Entity m_Head;
 		Entity m_Visor;
-
-		Material* m_CloakMaterial = nullptr;
-		Material* m_FaceMaterial = nullptr;
 
 		glm::vec3 m_LastFeet{ 0.0f };
 		float m_VerticalVelocity = 0.0f;

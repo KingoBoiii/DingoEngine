@@ -17,15 +17,15 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 {
     Dingo::ApplicationParams params{ .CommandLineArgs = args };
     // ...configure params...
-    auto* app = new MyApp(params);
-    app->Initialize();   // REQUIRED before returning
-    return app;
+    return new MyApp(params);
 }
 ```
 
-The engine's `main()` runs a small loop: it creates your application, runs it, and
-— if a graphics-API restart was requested via `Application::RequestRestart()` —
-recreates it. Return a heap-allocated `Application*`; the engine deletes it.
+The engine's `main()` runs a small loop: it creates your application, initializes it (window,
+renderers, audio, assets, then your `OnInitialize`), runs it, and — if a graphics-API restart was
+requested via `Application::RequestRestart(api)` — calls `CreateApplication` again, whose
+application then starts on `api` whatever its params say. Return a heap-allocated `Application*`;
+the engine deletes it.
 
 ## ApplicationParams
 
@@ -40,37 +40,101 @@ ApplicationParams params{
         .Height     = 900,
         .VSync      = true,
         .Resizable  = true,       // live window resizing works on every back-end
-        .Fullscreen = false,      // start in borderless fullscreen at desktop resolution
+        .Mode       = WindowMode::Windowed,   // or BorderlessFullscreen, ExclusiveFullscreen
     },
     .Graphics = {
-        .GraphicsAPI    = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
-        .FramesInFlight = 3,
+        .GraphicsAPI = GraphicsAPI::Vulkan,   // Vulkan is the active back-end
     },
-    .EnableUI = false,    // set true to get OnUIRender() callbacks
+    .EnableImGui = false,    // set true to get OnImGuiRender() callbacks
 };
 ```
 
-`.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan` with
-`FramesInFlight = 3`. Asking for a back-end the platform lacks, such as DirectX on Linux,
-logs an error and stops in `Application::Initialize`, in every configuration.
-`GraphicsAPI::Headless` runs without a window or GPU: see [Headless](#headless).
+`.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan`. Asking for a back-end the platform lacks (DirectX on Linux) logs an error and stops
+in `Application::Initialize`, in every configuration. `GraphicsAPI::Headless` runs without a
+window or GPU: see [Headless](#headless).
 
-### Fullscreen
+### Logs and crashes
 
-Besides `WindowParams::Fullscreen` for starting fullscreen, the mode can be switched
-at runtime (borderless fullscreen at the desktop resolution of the monitor the window
-is on; the windowed position/size is restored when leaving):
+The log goes to `Dingo.log` in the game's per-user folder, `GetUserDataDir(Name)/logs`:
+`%LOCALAPPDATA%\<Name>\logs` on Windows and `~/.local/share/<Name>/logs` (or under
+`$XDG_DATA_HOME`) on Linux. A game installed under Program Files can't write beside itself,
+and a player's bug report needs last session's log, so each run keeps the four before it as
+`Dingo.1.log` (the last run) to `Dingo.4.log`. A second instance running at the same time
+writes `Dingo-<pid>.log` instead of moving a log that is still open (the newest four of those
+are kept too). Instances started together take turns choosing their file through `Dingo.lock`
+in the same folder, so no two share a log; one that waits more than two seconds for its turn
+writes `Dingo-<pid>.log` without rotating. A rotation that can't finish, say because a log viewer holds `Dingo.2.log`,
+moves nothing it can't and leaves last run's log as `Dingo-<pid>-previous.log`.
 
 ```cpp
-Application::Get().GetWindow().ToggleFullscreen();   // e.g. bound to F11
-Application::Get().GetWindow().SetFullscreen(true);  // or explicitly
-bool fs = Application::Get().GetWindow().IsFullscreen();
+ApplicationParams params{
+    .CommandLineArgs = args,
+    .Name = "MyGame",               // the per-user folder; empty = the executable's name
+    .LogDirectory = "",             // empty = GetUserDataDir(Name)/logs
+};
 ```
 
-The swap chain follows automatically via the normal resize path, on every graphics
-back-end. `WindowResizeEvent` is forwarded to layers, so cameras can update their
-aspect ratio there. Fullscreen is exclusive, so an alt-tab minimizes the window: see
-[In the background](#in-the-background).
+On any app's command line, `--log-here` writes the log into the working directory (where it
+used to go) and `--log-dir=<path>` anywhere else. What is logged before the `Application`
+exists is kept in memory and lands at the top of the file. `Log::GetFilePath()` names the
+file of this run.
+
+A crash leaves its report there too:
+
+- **Linux**: SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT and SIGTRAP write a backtrace into
+  `Dingo.log` and stderr, then end the process as the signal would (exit code 128 + the
+  signal, core dump included). Every frame of the game carries `executable(+offset)`, which
+  `addr2line -C -f -e <executable> <offset>` turns into a function and line given the same
+  build with symbols (shared libraries' frames name their own functions). Under
+  AddressSanitizer the engine leaves the signals to ASan's report.
+- **Windows**: an unhandled exception (a stack overflow included), `abort()`, a pure virtual
+  call or an invalid C runtime parameter writes `Dingo-<date>-<time>-<pid>.dmp` beside the log
+  (the newest five are kept)
+  and a line into it. Open the dump in Visual Studio or WinDbg with the build's PDBs. A
+  Distribution build also shows a message box naming the folder.
+- **Both**: an uncaught exception logs its `what()` before the report. A second thread that
+  crashes while the first is reporting waits for the exit, so the report is the first crash's.
+
+`FatalError(message)` (`DingoEngine/Core/FatalError.h`) is the way out of an error the game
+can't go on from: it logs the message with the file and line it was called from, flushes the
+log, shows a message box (Windows Distribution builds) and exits with code 1. In Distribution
+builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than breaking into a
+debugger that isn't there. The test app's `--crash=segv|thread|threads|segv-after-info|abort|terminate|throw|stack|verify|fatal`
+crashes on purpose, which is how CI checks all of this.
+
+### Window modes
+
+`WindowParams::Mode` sets the start mode, and the window switches at runtime between three:
+
+| `WindowMode` | |
+|---|---|
+| `Windowed` | A normal window. `SetSize(w, h)` sets its client size. |
+| `BorderlessFullscreen` | A fullscreen window at the monitor's desktop mode: the display mode never changes. |
+| `ExclusiveFullscreen` | A fullscreen window that switches the monitor to a display mode. |
+
+```cpp
+Window& window = Application::Get().GetWindow();
+window.ToggleFullscreen();                               // e.g. bound to F11: borderless or windowed
+window.SetWindowMode(WindowMode::BorderlessFullscreen);
+window.SetWindowMode(WindowMode::ExclusiveFullscreen, { 1920, 1080, 144 });
+window.SetWindowMode(WindowMode::Windowed);              // back to the windowed position and size
+
+for (const DisplayMode& mode : window.GetDisplayModes())   // largest first, for an options screen
+    AddRow(std::format("{} x {} @ {} Hz", mode.Width, mode.Height, mode.RefreshRate));
+```
+
+Everything happens on the monitor the window is on. Exclusive fullscreen takes the listed mode
+nearest the one asked for (`ChooseDisplayMode`: the size if listed, else the nearest; then the
+refresh rate, 0 = the highest) and reports it through `GetFullscreenDisplayMode()`; an invalid mode
+means the desktop's. `GetDesktopDisplayMode()` keeps reporting the monitor's own mode meanwhile.
+`SetSize` while fullscreen changes the size the window returns to, and `GetWindowedWidth/Height`
+read it. The swap chain follows through the ordinary resize path on every back-end, and
+`WindowResizeEvent` reaches the layers, so cameras can update their aspect there. Both fullscreen
+modes are a GLFW fullscreen window, which an alt-tab minimizes: see
+[In the background](#in-the-background). A [`Settings`](saves-and-settings.md#settings) slot saves the
+mode and starts the window in it. The test app's Display Mode Test (`--test=display`) walks every
+mode and checks the window and swap-chain sizes; `--display-exclusive=next` or `=<W>x<H>[@<Hz>]`
+makes its exclusive step change the display mode.
 
 ### VSync
 
@@ -84,8 +148,7 @@ window.SetVSync(!window.IsVSync());   // e.g. a Settings menu row
 `SetVSync` is safe from event handlers and layers alike. It goes through the same queue
 as a resize: the swap chain takes the new flag after the next present, so while the window
 is minimized or paused it waits for the first frame after the restore. D3D11 and D3D12 read it on every
-present; Vulkan bakes it into the present mode, so it recreates the swap chain, which bumps
-`SwapChain::GetResizeGeneration()` as a resize does. `IsVSync()` reports the requested value
+present; Vulkan bakes it into the present mode, so it recreates the swap chain as a resize does. `IsVSync()` reports the requested value
 at once. The F3 Engine tab has a VSync checkbox.
 
 Limits:
@@ -147,14 +210,15 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 |---|---|
 | `PushLayer(Layer*)` / `PushOverlay(Layer*)` | Add a layer (overlays update/draw on top). The app takes ownership. |
 | `GetRenderer2D()` | The batched 2D renderer (see [2D Rendering](rendering-2d.md)). |
-| `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetFullscreen`, `SetVSync` (see [VSync](#vsync)). |
-| `GetSwapChain()` | The active swap chain; null when headless. |
+| `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetWindowMode`, `SetFullscreen`, `SetSize`, `SetVSync` (see [Window modes](#window-modes), [VSync](#vsync)). |
+| `GetSaveDirectory()` | Where `SaveSlots` keeps its files (see [Saves & Settings](saves-and-settings.md)). |
 | `IsHeadless()` | True when started with `GraphicsAPI::Headless` (see [Headless](#headless)). |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
-| `SetUpdateInBackground(bool)` / `GetUpdateInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
+| `SetUpdateInBackground(bool)` / `IsUpdatingInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
 | `RequestRestart(GraphicsAPI)` | Tear down and recreate the app on a different back-end. |
 | `GetEngineVersion()` / `GetEngineBuildNumber()` | Packed engine version (decode with `DE_VERSION_MAJOR/MINOR/PATCH`). |
+| `GetName()` | `ApplicationParams::Name`, or the executable's name: the per-user folder logs go to (see [Logs and crashes](#logs-and-crashes)). |
 
 ### The frame loop
 
@@ -162,10 +226,11 @@ Once running, each frame the `Application`:
 
 1. `Input::Update()` — snapshots current vs. previous key/mouse state.
 2. Polls window events (which fan out through `OnEvent`).
-3. `Renderer::BeginFrame()`.
+3. Begins the frame: waits for the render thread to finish the last one and opens the frame's
+   command list (engine-internal; `Renderer::IsFrameSkipped()` says when there is nothing to draw into).
 4. Calls `OnUpdate(deltaTime)` on every layer, bottom to top.
-5. If ImGui is enabled, calls `OnUIRender()` on every layer.
-6. `Renderer::EndFrame()` — presents.
+5. If ImGui is enabled, calls `OnImGuiRender()` on every layer.
+6. Ends the frame: hands the command list to the render thread, which submits and presents it.
 
 `deltaTime` is seconds since the previous frame.
 
@@ -176,7 +241,7 @@ height; an alt-tab out of exclusive fullscreen minimizes it too) or unfocused. W
 set by `ApplicationParams::UpdateInBackground`, which `Application::SetUpdateInBackground` changes
 at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never while unfocused):
 
-- **Off (the default): the app pauses.** No `OnUpdate`, no `OnUIRender`, nothing renders, and
+- **Off (the default): the app pauses.** No `OnUpdate`, no `OnImGuiRender`, nothing renders, and
   `AssetManager` loads and hot-reload wait; an unfocused window keeps showing its last frame. The
   loop sleeps on window events, the paused time is left out of the `deltaTime`s after it, and audio
   keeps playing. The first frame runs even without focus, so a window that opens unfocused is not
@@ -187,13 +252,12 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
   so its frames update but render nothing:
   - The loop waits on window events between updates instead of spinning, aiming at 60 a second;
     with Windows' default 15.6 ms timer it gets about 35.
-  - Step 3 becomes `Renderer::SkipFrame()`, and steps 5–6 are skipped: no `OnUIRender`, no debug
+  - Step 3 skips the frame (`Renderer::IsFrameSkipped()` is true), and steps 5–6 are skipped: no `OnImGuiRender`, no debug
     window.
   - `Renderer` uploads, clears and draws, `Renderer2D` and `Renderer3D` scenes and
     `SceneRenderer::Render` are no-ops, so a layer that renders inside `OnUpdate` needs no guard of
     its own. A dropped `Renderer::Upload` is not redone after the restore, so data written once
-    belongs in a `DirectUpload` buffer. Code that records into `Renderer::GetCommandList()` itself,
-    or calls `Renderer::Begin`/`Close`/`Execute`, must check `Renderer::IsFrameSkipped()` first.
+    belongs in a `BufferUpload::Direct` buffer.
   - `Window::GetWidth()`/`GetHeight()` read 0, so an aspect ratio worked out from them every frame
     divides by zero. `Window::GetAspectRatio()` keeps the last one (since v0.8.3; before, it returned
     NaN), and `Renderer2D::GetViewportSize()` keeps the swap chain's size.
@@ -207,23 +271,30 @@ window collected meanwhile are dropped.
 
 `GraphicsAPI::Headless` starts the app with no window, graphics context, swap chain, renderers or
 ImGui, and GLFW is never initialised, so it runs on a machine with no display or GPU, such as a
-dedicated server or a CI job (after v0.9.1):
+dedicated server or a CI job (v1.0):
 
 ```cpp
 params.Graphics.GraphicsAPI = GraphicsAPI::Headless;
 ```
 
 - `OnInitialize`, `OnAttach`, `OnDetach` and `OnDestroy` run as usual, and `Run()` calls every
-  layer's `OnUpdate(deltaTime)` at about 60 a second (less evenly on Windows, whose default timer
-  ticks every 15.6 ms). There is no `OnUIRender`, no debug window and no events.
-- There is no window to close, so `Close()` is the only way out of the loop.
+  layer's `OnUpdate(deltaTime)` 60 times a second on average. The loop sleeps to a running
+  deadline, so individual deltas vary with the OS timer (Windows' default ticks every 15.6 ms).
+  There is no `OnImGuiRender`, no debug window and no events; `EnableImGui` and
+  `EnableDebugOverlays` are ignored.
+- There is no window to close, so `Close()` is the only way out of the loop. `RequestRestart`
+  works, to or from Headless.
 - The `AssetManager`, `AudioEngine`, scenes, scripts and physics all work. `SceneManager::OnRender`
   does nothing. Loading anything that lives on the GPU (textures, models, fonts, shaders, or a
   scene file that refers to them) crashes: load only audio clips and plain files.
 - `GetWindow()`, `GetGraphicsContext()`, `GetRenderer2D()`, `GetRenderer3D()` and
-  `GetSceneRenderer()` must not be called (they assert in Debug); `GetSwapChain()` returns null.
+  `GetSceneRenderer()` must not be called (they assert in Debug), nor anything on `Renderer`.
   Check `Application::Get().IsHeadless()` in code a client and a server share.
+- `Settings` work without the display part: `Capture` keeps its base's `Display`, `Apply` skips
+  it, and a `SettingsSlot`'s display settings are read but unused.
 - `Input` is never updated: every key, button and gamepad reads as up.
+- Headless is the last `GraphicsAPI` value, so `GraphicsAPI{}` is Vulkan. Store a back-end by
+  name, not by its integer value.
 
 ## Layers
 
@@ -239,7 +310,7 @@ public:
     void OnDetach() override {}                 // removed / app shutting down
     void OnUpdate(float deltaTime) override {}  // once per frame
     void OnEvent(Event& e) override {}          // input/window events
-    void OnUIRender() override {}            // only if EnableUI == true
+    void OnImGuiRender() override {}            // only if EnableImGui == true
 };
 ```
 
@@ -279,14 +350,14 @@ void OnUpdate(float dt) override
     if (Input::IsKeyPressed(Key::Space))
         Fire();
 
-    if (Input::IsMouseButtonPressed(Button::Left))
+    if (Input::IsMouseButtonPressed(MouseButton::Left))
         Click();
 }
 ```
 
 Key codes live in `Key::` (`Key::Space`, `Key::Escape`, `Key::A`–`Key::Z`,
-`Key::Left/Right/Up/Down`, `Key::Enter`, …) and mouse buttons in `Button::`
-(`Button::Left`, `Button::Right`, `Button::Middle`).
+`Key::Left/Right/Up/Down`, `Key::Enter`, …) and mouse buttons in `MouseButton::`
+(`MouseButton::Left`, `MouseButton::Right`, `MouseButton::Middle`).
 
 For "press any key" screens, or to notice that the player switched from a gamepad back
 to keyboard and mouse, use `IsAnyKeyPressed()` / `IsAnyKeyDown()` /
@@ -418,8 +489,10 @@ bool OnKeyPressed(KeyPressedEvent& e)
 ```
 
 `DE_BIND_EVENT_FN(fn)` wraps a member function as the callback. Event types include
-`WindowCloseEvent`, `WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
-`KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`.
+`WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
+`KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`. The application
+handles `WindowCloseEvent` itself (it stops the loop) and marks it handled, so layers never see it;
+finish up in `OnDetach`.
 
 `WindowFocusEvent::IsFocused()` tells you whether the window gained or lost focus, which
 is the natural place to auto-pause and release a locked cursor. To poll instead, use
@@ -439,7 +512,23 @@ bool OnFocus(WindowFocusEvent& e)
 
 > For most gameplay, polling with `Input` is simpler than handling key events. Reach
 > for events when you need the exact press/release moment, repeat counts
-> (`KeyPressedEvent::GetRepeatCount()`), or window-level notifications like resize.
+> (`KeyPressedEvent::IsRepeat()`), or window-level notifications like resize.
+
+## Limits
+
+- One window, one `Application` and one graphics back-end per run; `RequestRestart` rebuilds the
+  app to change the back-end.
+- A headless app can't load GPU assets and has no `Input`; its loop averages 60 updates
+  a second ([Headless](#headless)).
+- Rumble works on Xbox-compatible pads on Windows only ([Gamepads](#gamepads-v051)); up to 16 pads
+  are tracked.
+- Both fullscreen modes are GLFW fullscreen windows, which an alt-tab minimizes. Exclusive
+  fullscreen switches the display mode on the window's monitor only.
+- A crash report is a backtrace on Linux (none under AddressSanitizer) and a minidump on Windows;
+  neither is uploaded anywhere ([Logs and crashes](#logs-and-crashes)).
+- The VSync limits above apply: "off" can stay capped on some drivers and D3D compositors.
+- Update ordering is variable-step: `OnUpdate` gets the frame's delta. `Scene` scripts have a
+  fixed-step hook ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)), layers do not.
 
 ---
 

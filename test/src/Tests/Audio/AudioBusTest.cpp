@@ -12,7 +12,7 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
 		AudioEngine& audio = Application::Get().GetAudioEngine();
 		m_MasterVolume = audio.GetMasterVolume();
@@ -176,8 +176,6 @@ namespace Dingo
 			&& audio.PushStreamFrames(k_InvalidSound, pcm16.data(), 10) == 0 && audio.GetQueuedStreamFrames(k_InvalidSound) == 0,
 			"a clip's sound or an invalid handle is no stream");
 
-		audio.Update();
-		Check(audio.IsPlaying(stream), "Update doesn't reap a stream");
 		audio.Stop(stream);
 		Check(!audio.IsPlaying(stream) && audio.GetQueuedStreamFrames(stream) == 0 && audio.PushStreamFrames(stream, pcm16.data(), 10) == 0,
 			"a stopped stream's handle is stale");
@@ -227,7 +225,7 @@ namespace Dingo
 			if (m_UnderrunTime >= 1.0f)
 			{
 				Check(audio.GetQueuedStreamFrames(m_UnderrunStream) == 0 && audio.IsPlaying(m_UnderrunStream),
-					"a stream plays what was pushed and stays alive through the underrun");
+					"a stream plays what was pushed and stays alive through the underrun and the engine's updates");
 				audio.Stop(m_UnderrunStream);
 				m_UnderrunStream = k_InvalidSound;
 			}

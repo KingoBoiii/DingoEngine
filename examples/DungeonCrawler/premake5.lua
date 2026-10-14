@@ -23,8 +23,6 @@ project "DungeonCrawler"
 
 	filter "system:windows"
 		systemversion "latest"
-		-- NOMINMAX: DingoEngine's public headers transitively include <Windows.h>,
-		-- whose min/max macros otherwise clobber std::min / std::max in game code.
 		defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
 
 	filter "system:linux"
@@ -44,5 +42,12 @@ project "DungeonCrawler"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
+	exeMetadata {
+		Name = "Dungeon Crawler",
+		Description = "Top-down 2D dungeon crawler, an example made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

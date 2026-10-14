@@ -91,21 +91,18 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
-			.FramesInFlight = 3,
 		},
 		.Assets = AssetManagerParams()
 			.SetPackageKey(Dingo::Generated::GetPackageKey())
 			.SetRootDirectory(Platform::FindDirectoryUpward("assets").value_or("assets")),
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 	params.Renderer3D.Capabilities.MaxLocalLights = ParseLightBudget(args);
 	// Every gameplay light casts and nothing else does, so all of them always hold a shadow slot.
 	static_assert(Dingo::GAMEPLAY_LIGHTS_MAX <= static_cast<int>(Dingo::Renderer3D::k_MaxShadowedLocalLights));
 	params.Renderer3D.Capabilities.MaxShadowedLocalLights = Dingo::Renderer3D::k_MaxShadowedLocalLights;
 	// A scripted run must not pause when its window opens unfocused.
-	params.UpdateInBackground = IsFlagOn(args, "perf") || IsFlagOn(args, "hide-check");
+	params.UpdateInBackground = IsFlagOn(args, "perf") || IsFlagOn(args, "hide-check") || IsFlagOn(args, "freeze") || IsFlagOn(args, "background");
 
-	CandlewickApplication* app = new CandlewickApplication(params);
-	app->Initialize();
-	return app;
+	return new CandlewickApplication(params);
 }

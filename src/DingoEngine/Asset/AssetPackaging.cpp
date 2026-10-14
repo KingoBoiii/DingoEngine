@@ -381,11 +381,11 @@ namespace Dingo
 
 	std::string AssetManager::GetAssetSource(AssetHandle handle) const
 	{
-		const AssetMetadata* metadata = GetMetadata(handle);
-		if (!metadata)
+		auto record = m_Data->Registry.find(handle);
+		if (record == m_Data->Registry.end())
 			return {};
 
-		std::optional<VfsResolvedPath> resolved = VirtualFileSystem::Resolve(metadata->AbsolutePath);
+		std::optional<VfsResolvedPath> resolved = VirtualFileSystem::Resolve(record->second.AbsolutePath);
 		if (!resolved)
 			return "missing";
 		if (!resolved->DiskPath.empty())

@@ -33,6 +33,9 @@ namespace Dingo
 			void PlaySource(entt::registry& registry, entt::entity handle);
 
 			// Stops the entity's live sound and clears its handle. No-op if nothing plays.
+			// Removing an AudioSourceComponent stops its sound.
+			void Connect(entt::registry& registry);
+
 			void StopSource(entt::registry& registry, entt::entity handle);
 
 			// Stops every live sound in the registry. Looping sounds are never

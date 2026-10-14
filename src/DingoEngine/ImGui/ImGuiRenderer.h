@@ -1,6 +1,6 @@
 #pragma once
 #include "DingoEngine/Graphics/Shader.h"
-#include "DingoEngine/UI/UIParams.h"
+#include "DingoEngine/UI/ImGuiParams.h"
 
 #include <imgui.h>
 
@@ -9,7 +9,10 @@
 namespace Dingo
 {
 
-	class SwapChain;
+	namespace Internal
+	{
+		class SwapChain;
+	}
 
 	class ImGuiRenderer
 	{
@@ -22,13 +25,13 @@ namespace Dingo
 
 		void UpdateFontTexture();
 		bool Render(ImGuiViewport* viewport, nvrhi::GraphicsPipelineHandle pipeline, nvrhi::FramebufferHandle framebuffer, nvrhi::ICommandList* sharedCmdList = nullptr);
-		bool RenderToSwapchain(ImGuiViewport* viewport, SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList = nullptr);
+		bool RenderToSwapchain(ImGuiViewport* viewport, Internal::SwapChain* swapchain, nvrhi::ICommandList* sharedCmdList = nullptr);
 
 	private:
 		bool ReallocateBuffer(nvrhi::BufferHandle& buffer, size_t requiredSize, size_t reallocateSize, bool isIndexBuffer);
 		bool UpdateGeometry(ImDrawData* drawData, nvrhi::ICommandList* commandList);
 
-		nvrhi::GraphicsPipelineHandle GetOrCreatePipeline(SwapChain* swapchain);
+		nvrhi::GraphicsPipelineHandle GetOrCreatePipeline(Internal::SwapChain* swapchain);
 		nvrhi::IBindingSet* GetBindingSet(nvrhi::ITexture* texture);
 
 	private:
@@ -57,7 +60,7 @@ namespace Dingo
 			std::vector<nvrhi::GraphicsPipelineHandle> Pipelines;
 		};
 
-		std::map<SwapChain*, SwapchainPipelineCache> m_PipelineCache;
+		std::map<Internal::SwapChain*, SwapchainPipelineCache> m_PipelineCache;
 
 		std::unordered_map<nvrhi::ITexture*, nvrhi::BindingSetHandle> m_BindingsCache;
 	};

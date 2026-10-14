@@ -102,7 +102,42 @@ licence files at the root of an example's assets beside the package as well, so 
 readable.
 
 The release workflow and `scripts/package-linux-programs.sh` do this for every example:
-each ships its executable (and DLLs) beside `<Example>.dpak`, nothing else.
+each ships its executable (and DLLs) beside `<Example>.dpak`, its licence files and
+`THIRD-PARTY-NOTICES.md`, and on Linux its icon and desktop entry (below).
+
+### 5. Name, icon and version
+
+```lua
+copyAssimpRuntime()
+exeMetadata {
+    Name = "My Game",                 -- required
+    Description = "One line about it.",
+    Version = "1.2.0",                -- defaults to the engine's version
+    Company = "My Studio",
+    Copyright = "Copyright (c) 2026 My Studio",
+}
+embedPackKey()
+```
+
+Only `Name` is required; a field left out is left out of the version resource. Set
+`Version` to your game's own: without it the executable carries the engine's version and
+build number (`VERSION`, or `DE_VERSION` and `DE_BUILD_NUMBER` in CI). `exeMetadata()` reads
+`icon.ico` and `icon.png` beside the game's `premake5.lua` (`Icon = "art/game"` for
+`art/game.ico` and `.png`); a missing file just leaves that icon out. When premake runs it
+writes:
+
+- `build/generated/<Project>/<Project>.rc`, compiled into the Windows executable: the
+  version resource, which Explorer's Details tab shows, and the icon, named `GLFW_ICON` so
+  GLFW puts it on the window and the taskbar too.
+- `build/generated/<Project>/<Project>.desktop` and `<Project>.png`: a desktop entry with
+  placeholders where the install folder goes, and the icon. `scripts/package-linux-programs.sh`
+  ships both with `install-desktop-entry.sh`, which writes a copy naming the folder into
+  `~/.local/share/applications` (`--remove` takes it out), since a desktop entry can't
+  hold a relative path.
+
+`scripts/icons/make-icons.sh` draws the examples' placeholder tiles from
+`scripts/icons/icons.txt` (ImageMagick). The Linux window itself shows no icon: GLFW takes
+it from pixels the game passes at run time, which the engine doesn't do yet.
 
 ### From code
 
@@ -180,3 +215,14 @@ deflated (stb's zlib; an entry is stored raw when deflate saves under 5%, and `.
 `.jpg`, `.ogg` and `.mp3` are never deflated), then encrypted. An entry is at most 2 GiB.
 A package is read with positional reads, so the loader thread and the main thread read it
 at once.
+
+## Limits
+
+- A `.dpak` is deterrence, not protection: the key ships with the game, and there is no signature
+  ([Threat model](#threat-model)).
+- Hot-reload never fires for a packed file, and an entry is at most 2 GiB.
+- `exeMetadata` is for the examples and games; the DingoPack tool keeps none. Its version
+  resource and icon are Windows-only, and on Linux it becomes a desktop entry installed by
+  `install-desktop-entry.sh`. A Linux window itself shows no icon.
+- `exeMetadata`'s `Version` must look like `1.2` or `1.2.3`.
+- Shader and font-atlas caches are not encrypted ([Threat model](#threat-model)).

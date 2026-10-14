@@ -1,12 +1,14 @@
 # DingoEngine Documentation
 
-DingoEngine is a C++20 game engine with a Vulkan-backed rendering pipeline (via
-[NVRHI](https://github.com/NVIDIAGameWorks/nvrhi)), a layered application
-architecture, a batched 2D renderer, a scene/entity-component system with a
-`ScriptableEntity` behaviour layer (v0.3), and — as of v0.4 — both 2D and 3D rigid-body
-physics. (The ECS is [EnTT](https://github.com/skypjack/entt), 2D physics is
-[Box2D](https://box2d.org/), and 3D physics is [Jolt](https://github.com/jrouwe/JoltPhysics),
-but those are internal details — client code never includes or links any of them.)
+DingoEngine is a C++20 game engine on [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi),
+running on Vulkan, DirectX 11 and DirectX 12 on Windows and Linux. It has a layered application
+architecture, a batched 2D renderer, a lit 3D renderer with shadows, post-processing, particles
+and skeletal animation, a scene/entity-component system with `ScriptableEntity` behaviours, 2D
+and 3D rigid-body physics, audio, an asset manager with hot-reload and packed assets, and saves
+and settings. The ECS is [EnTT](https://github.com/skypjack/entt), 2D physics is
+[Box2D](https://box2d.org/), 3D physics is [Jolt](https://github.com/jrouwe/JoltPhysics) and
+audio is [miniaudio](https://miniaud.io/), but those are internal details: client code never
+includes or links any of them.
 
 These guides cover how to **use** the engine from your own game code, whether you
 link against a prebuilt release package (`.lib` + headers) or integrate the
@@ -30,8 +32,23 @@ engine from source.
 | [Compute](compute.md) | The v0.9 compute shaders and storage buffers: `ComputePass`, `Renderer::Dispatch`, `GraphicsBuffer::CreateStorageBuffer`, storage images, and reading a storage buffer in a draw. |
 | [Profiling](profiling.md) | The v0.9 GPU pass timers (`Renderer::BeginGpuTimer`) and the F8 Profiler tab, and Tracy behind premake's `--profile` option with the `DE_PROFILE_*` zone macros. |
 | [Animation & Skinned Models](animation.md) | The v0.8 skeletal animation system — loading skinned models and clip libraries, GPU skinning (`SkinnedMeshRendererComponent`, `Renderer3D::SubmitSkinnedMesh`, the instance budget, custom skinned shaders), the `Animator` (cross-fades, `Blend1D`, masked layers, one-shots), timeline events and the `.events` sidecar, joint sockets, retargeting by joint name, in-place model hot-reload, and the F7 Animation tab. |
+| [Saves & Settings](saves-and-settings.md) | The v1.0 save system: `SaveData` (a typed tree written as JSON), atomic writes with a `.bak`, `SaveSlots` in the player's folder, and `Settings` (display, audio and input options) with the display-mode list. |
 | [Audio](audio.md) | The miniaudio-backed `AudioEngine` — clips, `Play`/`PlayOneShot`, positional audio and distance falloff, and mix buses (volume, mute, pause and stop per bus, `AudioSourceComponent::Bus`). |
-| [Shipping a Game](distribution.md) | Asset packages: `<Game>.dpak`, the virtual file system the engine reads through, `embedPackKey()` and the DingoPack tool, `AssetManager::Package`/`Unpackage`, and what the encryption does and doesn't protect against. |
+| [Asset Packages](distribution.md) | Asset packages: `<Game>.dpak`, the virtual file system the engine reads through, `embedPackKey()` and the DingoPack tool, `AssetManager::Package`/`Unpackage`, and what the encryption does and doesn't protect against. |
+
+| [Performance](performance.md) | The v1.0 throughput work: frustum culling, automatic instancing, static batches, the frame budget, and how to read the F8 counters when a scene is slow. |
+| [Shipping](shipping.md) | The checklist for handing a game to players: the build to ship, what goes in the folder, what the game writes on their machine, and crash reports. |
+
+## Reference
+
+| Page | What it covers |
+|---|---|
+| [API conventions](conventions.md) | Who owns and frees what, the shape of params structs, enums and handles, naming, and how the API reference is documented. |
+| [Versioning](versioning.md) | What 1.x promises: Semantic Versioning, what counts as the public API, deprecation, and what may change in a minor release. |
+| [Migrating to 1.0](migrating-to-1.0.md) | Every change from v0.9 that breaks a build or changes behaviour, with the code to write instead. |
+
+The API reference is built from the headers' `///` lines with Doxygen (`doxygen docs/Doxyfile`,
+see [conventions](conventions.md#documentation)), with these guides as its pages.
 
 ## A 30-second tour
 
@@ -70,9 +87,7 @@ Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 {
     ApplicationParams params{ .CommandLineArgs = args };
     params.Window.Title = "My Game";
-    Game* app = new Game(params);
-    app->Initialize();
-    return app;
+    return new Game(params);
 }
 ```
 
@@ -85,6 +100,6 @@ See [Getting Started](getting-started.md) for the full setup, then
 - World units, not pixels: positions and sizes you pass to `Renderer2D` are in the
   coordinate space defined by your camera matrix. A quad's *position is its center*.
 - Resources (`Texture`, `Font`) are created with `Create*()` factories that return
-  raw pointers; you own them and call `Destroy()` when done. As of v0.6 the
+  raw pointers; you own them and `delete` them when done ([conventions](conventions.md)). As of v0.6 the
   preferred route for file-backed assets is the [AssetManager](asset-pipeline.md),
   which owns what it loads and hands out stable handles instead.

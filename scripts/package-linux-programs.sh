@@ -5,7 +5,9 @@
 # <output dir>/<Program>[-suffix]-linux-x86_64.tar.gz, holding <Program>/. An example ships its
 # executable beside <Program>.dpak (its assets, packed and encrypted with its dpak.key) and the
 # licence files at the root of its assets, and starts from any directory. The test framework, a
-# development tool, keeps its loose assets/ and must be started from its own directory.
+# development tool, keeps its loose assets/ and must be started from its own directory. Each
+# program that calls premake's exeMetadata() also gets the .desktop template and icon it wrote,
+# which install-desktop-entry.sh fills in on the player's machine.
 set -euo pipefail
 
 CONFIG=${1:?usage: $0 <Config> <output dir> [name suffix]}
@@ -18,6 +20,13 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$OUT"
 
+desktop() {
+	local generated=$ROOT/build/generated/$1
+	[ -f "$generated/$1.desktop" ] || return 0
+	cp "$generated/$1.desktop" "$ROOT/scripts/linux-desktop/install-desktop-entry.sh" "$work/$1/"
+	[ ! -f "$generated/$1.png" ] || cp "$generated/$1.png" "$work/$1/"
+}
+
 archive() {
 	tar -czf "$OUT/$1$SUFFIX-linux-x86_64.tar.gz" -C "$work" "$1"
 }
@@ -28,10 +37,13 @@ for dir in "$ROOT"/examples/*/; do
 	cp "$BIN/$program/$program" "$work/$program/"
 	"$ROOT/scripts/pack-assets.sh" "$program" "$work/$program/$program.dpak" "$CONFIG" > /dev/null
 	find "$dir/assets" -maxdepth 1 -type f -iname '*licen[cs]e*' -exec cp {} "$work/$program/" \;
+	cp "$ROOT/THIRD-PARTY-NOTICES.md" "$work/$program/"
+	desktop "$program"
 	archive "$program"
 done
 
 mkdir -p "$work/Dingo-TestFramework"
 cp "$BIN/Dingo-TestFramework/Dingo-TestFramework" "$work/Dingo-TestFramework/"
-cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$work/Dingo-TestFramework/"
+cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$ROOT/THIRD-PARTY-NOTICES.md" "$work/Dingo-TestFramework/"
+desktop Dingo-TestFramework
 archive Dingo-TestFramework

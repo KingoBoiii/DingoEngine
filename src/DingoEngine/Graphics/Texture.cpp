@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
@@ -59,7 +60,6 @@ namespace Dingo
 		const uint8_t* pixel = Data.data() + (static_cast<size_t>(y) * Width + x) * bytesPerPixel;
 		switch (Format)
 		{
-			case TextureFormat::RGBA:
 			case TextureFormat::RGBA8_UNORM:
 				return glm::vec4(pixel[0], pixel[1], pixel[2], pixel[3]) / 255.0f;
 			case TextureFormat::R8:
@@ -90,7 +90,7 @@ namespace Dingo
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
 		uint32_t width = 0, height = 0, channels = 0;
-		const uint8_t* data = FileSystem::ReadImage(resolvedPath, &width, &height, &channels, true, true);
+		const uint8_t* data = Internal::ReadImage(resolvedPath, &width, &height, &channels, true, true);
 		if (!data)
 			return nullptr;
 
@@ -101,10 +101,10 @@ namespace Dingo
 			.SetWidth(width)
 			.SetHeight(height)
 			.SetDimension(TextureDimension::Texture2D)
-			.SetFormat(channels == 4 ? Dingo::TextureFormat::RGBA : Dingo::TextureFormat::RGB)
+			.SetFormat(TextureFormat::RGBA8_UNORM)
 			.SetIsRenderTarget(false)
 			.SetInitialData(data));
-		FileSystem::FreeImage(data);
+		Internal::FreeImage(data);
 
 		return texture;
 	}
@@ -125,12 +125,8 @@ namespace Dingo
 	{
 		Texture* texture = new NvrhiTexture(params);
 		texture->Initialize();
-
 		if (params.InitialData)
-		{
-			texture->Upload(params.InitialData, static_cast<uint64_t>(params.Width) * GetBytesPerPixel(params.Format));
-		}
-
+			texture->Upload(params.InitialData);
 		return texture;
 	}
 
@@ -139,7 +135,7 @@ namespace Dingo
 		const bool flip = !m_Params.IsRenderTarget;
 		ReadPixels([path, flip, done = std::move(done)](const TexturePixels& pixels)
 		{
-			const bool rgba8 = pixels.Format == TextureFormat::RGBA8_UNORM || pixels.Format == TextureFormat::RGBA;
+			const bool rgba8 = pixels.Format == TextureFormat::RGBA8_UNORM;
 			const bool saved = rgba8 && !pixels.Data.empty() && FileSystem::WriteImage(path, pixels.Width, pixels.Height, 4, pixels.Data.data(), flip);
 			if (done)
 				done(saved);

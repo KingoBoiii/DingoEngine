@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Scene/Entity.h"
 #include "DingoEngine/Scene/ScriptableEntity.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
 namespace Dingo
 {
@@ -10,12 +11,38 @@ namespace Dingo
 	namespace Internal
 	{
 
+		namespace
+		{
+			struct CallScope
+			{
+				uint32_t& Depth;
+				explicit CallScope(uint32_t& depth) : Depth(depth) { ++Depth; }
+				~CallScope() { --Depth; }
+			};
+		}
+
+		ScriptSystem::ScriptSystem(const entt::registry& registry)
+			: m_Registry(registry)
+		{
+		}
+
+		ScriptSystem::~ScriptSystem() = default;
+
 		void ScriptSystem::Attach(entt::entity handle, ScriptableEntity* instance, Entity owner)
 		{
+			if (m_Scripts.contains(handle))
+			{
+				DE_CORE_WARN("AddScript: '{}' already has a script, which is replaced (an entity holds one)", owner.GetName());
+				Detach(handle);
+			}
+
 			instance->m_Entity = owner;
 			m_Scripts[handle].reset(instance);
 			m_HasUnstarted = true;
-			instance->OnCreate();
+			{
+				CallScope scope(m_CallDepth);
+				instance->OnCreate();
+			}
 		}
 
 		ScriptableEntity* ScriptSystem::Find(entt::entity handle) const
@@ -30,10 +57,11 @@ namespace Dingo
 			if (it == m_Scripts.end())
 				return;
 
-			std::unique_ptr<ScriptableEntity> script = std::move(it->second);
+			m_Detached.push_back(std::move(it->second));
 			m_Scripts.erase(it);
 
-			script->OnDestroy();
+			CallScope scope(m_CallDepth);
+			m_Detached.back()->OnDestroy();
 		}
 
 		void ScriptSystem::StartPending()
@@ -59,8 +87,35 @@ namespace Dingo
 				if (it == m_Scripts.end() || it->second->m_Started)
 					continue;
 
+				// Waits for its entity to become active, which marks it pending again.
+				if (!IsActive(handle))
+					continue;
+
 				it->second->m_Started = true; // set first so a re-entrant spawn can't double-fire
+				CallScope scope(m_CallDepth);
 				it->second->OnStart();
+			}
+		}
+
+		bool ScriptSystem::IsActive(entt::entity handle) const
+		{
+			return m_Registry.valid(handle) && !HierarchySystem::IsInactive(m_Registry, handle);
+		}
+
+		void ScriptSystem::FixedUpdate(float step)
+		{
+			m_UpdateBuffer.clear();
+			for (auto& [handle, script] : m_Scripts)
+				m_UpdateBuffer.push_back(handle);
+
+			for (entt::entity handle : m_UpdateBuffer)
+			{
+				auto it = m_Scripts.find(handle);
+				if (it != m_Scripts.end() && it->second->m_Started && IsActive(handle))
+				{
+					CallScope scope(m_CallDepth);
+					it->second->OnFixedUpdate(step);
+				}
 			}
 		}
 
@@ -78,9 +133,13 @@ namespace Dingo
 
 			for (entt::entity handle : m_UpdateBuffer)
 			{
+				// A script whose entity another one activated during this pass starts next frame.
 				auto it = m_Scripts.find(handle);
-				if (it != m_Scripts.end())
+				if (it != m_Scripts.end() && it->second->m_Started && IsActive(handle))
+				{
+					CallScope scope(m_CallDepth);
 					it->second->OnUpdate(deltaTime);
+				}
 			}
 		}
 
@@ -88,7 +147,10 @@ namespace Dingo
 		{
 			auto it = m_Scripts.find(handle);
 			if (it != m_Scripts.end() && it->second->m_Started)
+			{
+				CallScope scope(m_CallDepth);
 				it->second->OnAnimationEvent(event);
+			}
 		}
 
 		bool ScriptSystem::IsStarted(entt::entity handle) const
@@ -111,8 +173,17 @@ namespace Dingo
 			{
 				auto it = m_Scripts.find(handle);
 				if (it != m_Scripts.end())
+				{
+					CallScope scope(m_CallDepth);
 					fn(it->second.get());
+				}
 			}
+		}
+
+		void ScriptSystem::FreeDetached()
+		{
+			if (m_CallDepth == 0)
+				m_Detached.clear();
 		}
 
 		void ScriptSystem::DetachAll()

@@ -22,12 +22,12 @@ namespace
 	constexpr float k_VisorLift = 0.02f;
 	constexpr float k_FacingThreshold = 0.1f;
 
-	Entity SpawnVisual(Scene& scene, const char* name, Mesh* mesh, const glm::vec3& size, const glm::vec4& color, Material* material)
+	Entity SpawnVisual(Scene& scene, const char* name, Mesh* mesh, const glm::vec3& size, const glm::vec4& color, const SurfaceOverride& surface)
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>().Scale = size;
 		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, color));
-		renderer.Material = material;
+		renderer.SetSurface(surface);
 		// Detection probes the lights at points inside the body, which a casting body would hide from
 		// every light; the lantern at its side would also lose half the room.
 		renderer.Shadows = ShadowCasting::Off;
@@ -53,30 +53,15 @@ namespace Dingo
 		controller.StepHeight = PLAYER_STEP;
 		controller.MaxSlopeAngle = PLAYER_SLOPE;
 
-		m_CloakMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("PlayerCloak")
-			.SetRoughness(CLOAK_ROUGHNESS)
-			.SetEmissiveColor(CLOAK_EMISSIVE_COLOR)
-			.SetEmissiveStrength(CLOAK_EMISSIVE));
+		const SurfaceOverride cloak = SurfaceOverride().SetRoughness(CLOAK_ROUGHNESS).SetEmissiveColor(CLOAK_EMISSIVE_COLOR).SetEmissiveStrength(CLOAK_EMISSIVE);
+		const SurfaceOverride face = SurfaceOverride().SetRoughness(FACE_ROUGHNESS).SetEmissiveColor(glm::vec3(COLOR_SKIN)).SetEmissiveStrength(FACE_EMISSIVE);
 
-		m_FaceMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("PlayerFace")
-			.SetRoughness(FACE_ROUGHNESS)
-			.SetEmissiveColor(glm::vec3(COLOR_SKIN))
-			.SetEmissiveStrength(FACE_EMISSIVE));
-
-		m_Body = SpawnVisual(scene, "PlayerBody", renderer3D.GetBoxMesh(), k_BodySize, COLOR_CLOAK, m_CloakMaterial);
-		m_Head = SpawnVisual(scene, "PlayerHead", renderer3D.GetSphereMesh(), glm::vec3(k_HeadDiameter), COLOR_CLOAK, m_CloakMaterial);
-		m_Visor = SpawnVisual(scene, "PlayerVisor", renderer3D.GetBoxMesh(), k_VisorSize, COLOR_SKIN, m_FaceMaterial);
+		m_Body = SpawnVisual(scene, "PlayerBody", renderer3D.GetBoxMesh(), k_BodySize, COLOR_CLOAK, cloak);
+		m_Head = SpawnVisual(scene, "PlayerHead", renderer3D.GetSphereMesh(), glm::vec3(k_HeadDiameter), COLOR_CLOAK, cloak);
+		m_Visor = SpawnVisual(scene, "PlayerVisor", renderer3D.GetBoxMesh(), k_VisorSize, COLOR_SKIN, face);
 
 		m_LastFeet = feet;
 		PlaceVisuals(feet);
-	}
-
-	Player::~Player()
-	{
-		DestroyAndDelete(m_CloakMaterial);
-		DestroyAndDelete(m_FaceMaterial);
 	}
 
 	glm::vec3 Player::GetPosition() const

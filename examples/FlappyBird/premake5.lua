@@ -25,13 +25,6 @@ project "FlappyBird"
 		systemversion "latest"
 		defines { "DE_PLATFORM_WINDOWS", "NOMINMAX" }
 
-		-- Visual Studio build metadata
-		files {
-			"Dingo-FlappyBird.aps",
-			"Dingo-FlappyBird.rc",
-			"resource.h"
-		}
-
 	filter "system:linux"
 		defines { "DE_PLATFORM_LINUX" }
 
@@ -49,5 +42,12 @@ project "FlappyBird"
 		symbols "Off"
 		defines { "DE_DISTRIBUTION" }
 
+	distributionSymbols()
 	copyAssimpRuntime()
+	exeMetadata {
+		Name = "Flappy Bird",
+		Description = "Flappy Bird, an example game made with Dingo Engine.",
+		Company = "Codevyn Games",
+		Copyright = "Copyright (c) 2024 Victor Hansen. MIT License; see THIRD-PARTY-NOTICES.md.",
+	}
 	embedPackKey()

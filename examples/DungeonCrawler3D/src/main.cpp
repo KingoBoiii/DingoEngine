@@ -48,13 +48,10 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 		},
 		.Graphics = {
 			.GraphicsAPI = ParseGraphicsAPI(args),
-			.FramesInFlight = 3,
 		},
 		.Assets = Dingo::AssetManagerParams().SetPackageKey(Dingo::Generated::GetPackageKey()),
-		.EnableUI = false,
+		.EnableImGui = false,
 	};
 
-	DungeonCrawler3DApplication* app = new DungeonCrawler3DApplication(params);
-	app->Initialize();
-	return app;
+	return new DungeonCrawler3DApplication(params);
 }

@@ -4,13 +4,16 @@
 namespace Dingo
 {
 
+	/// A mouse button went up.
 	class MouseButtonReleasedEvent : public MouseButtonEvent
 	{
 	public:
+		/// Raised by the window for the released button.
 		MouseButtonReleasedEvent(MouseButton button)
 			: MouseButtonEvent(button)
 		{}
 
+		/// "MouseButtonReleasedEvent: <button>".
 		std::string ToString() const override
 		{
 			std::stringstream ss;
@@ -18,7 +21,7 @@ namespace Dingo
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(MouseButtonReleased)
+		DE_EVENT_CLASS_TYPE(MouseButtonReleased)
 	};
 
 }

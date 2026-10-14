@@ -18,8 +18,12 @@ namespace Dingo
 		m_WinScene->CreateEntity("WinController").AddScript<WinControllerScript>();
 		RebuildGameScene();
 
-		m_SceneManager.SetActiveScene("Menu"); // first activation only selects
-		m_MenuScene->OnStart();                // host starts it explicitly
+		m_Freeze = Application::Get().GetCommandLineArgs().Get("freeze").has_value();
+		if (m_Freeze)
+			Application::Get().SetUpdateInBackground(true);
+
+		Scene* first = m_Freeze ? m_GameScene : m_MenuScene;
+		m_SceneManager.SetActiveScene(first->GetName());
 	}
 
 	void EchoVaultLayer::OnDetach()
@@ -41,7 +45,7 @@ namespace Dingo
 		if (!m_LoggedStartupGamepads)
 		{
 			m_LoggedStartupGamepads = true;
-			for (uint32_t pad = 0; pad < MaxGamepads; pad++)
+			for (uint32_t pad = 0; pad < k_MaxGamepads; pad++)
 			{
 				if (Input::IsGamepadConnected(pad))
 					DE_INFO("Gamepad already connected in slot {}: {} ('{}')", pad, ToString(Input::GetGamepadType(pad)), Input::GetGamepadName(pad));
@@ -53,7 +57,21 @@ namespace Dingo
 
 		Scene* activeBefore = m_SceneManager.GetActiveScene();
 
-		m_SceneManager.OnUpdate(deltaTime); // scripts + physics (+ any requested transition)
+		constexpr int k_FreezeHoldSteps = 600;
+		constexpr int k_FreezeLogFrames = 8;
+		if (!m_Freeze)
+		{
+			m_SceneManager.OnUpdate(deltaTime); // scripts + physics (+ any requested transition)
+		}
+		else if (m_FrozenSteps < k_FreezeHoldSteps)
+		{
+			m_SceneManager.OnUpdate(1.0f / 60.0f);
+			++m_FrozenSteps;
+		}
+		else if (m_FrozenSteps < k_FreezeHoldSteps + k_FreezeLogFrames && ++m_FrozenSteps == k_FreezeHoldSteps + k_FreezeLogFrames)
+		{
+			DE_INFO("[Freeze] held after {} steps", k_FreezeHoldSteps);
+		}
 		m_SceneManager.OnRender();          // 3D world + 2D HUD overlay
 
 		// The manager performs a requested transition inside its OnUpdate, in the same

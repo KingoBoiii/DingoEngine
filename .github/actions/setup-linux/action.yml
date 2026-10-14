@@ -2,7 +2,8 @@ name: Set up a Linux build
 description: >
   Installs the build dependencies, the Vulkan SDK (LunarG's Linux tarball: Ubuntu's packages are too
   old), assimp 6.0.4 built as a static library into vendor/assimp/lib/linux-x86_64, and premake.
-  With runtime, also what the headless smoke test runs on: Xvfb, Mesa's llvmpipe, python3-xlib and gdb.
+  With runtime, also what the headless smoke test runs on: Xvfb, Mesa's llvmpipe, python3-xlib and gdb
+  (the smoke test dumps a hung run's threads).
 
 inputs:
   runtime:

@@ -47,6 +47,12 @@ namespace Dingo
 					return *s_Scenes;
 				}
 
+				std::recursive_mutex& ScenesMutex()
+				{
+					static auto* s_Mutex = new std::recursive_mutex();
+					return *s_Mutex;
+				}
+
 				const LiveScene* FindScene(uint64_t serial)
 				{
 					for (const LiveScene& scene : Scenes())
@@ -100,6 +106,17 @@ namespace Dingo
 						case ShadowCasting::On: return "On";
 						case ShadowCasting::Off: return "Off";
 						case ShadowCasting::ShadowsOnly: return "ShadowsOnly";
+					}
+					return "?";
+				}
+
+				const char* CullingModeName(AnimatorCullingMode mode)
+				{
+					switch (mode)
+					{
+						case AnimatorCullingMode::AlwaysAnimate: return "always animate";
+						case AnimatorCullingMode::PauseWhenCulled: return "pause when culled";
+						case AnimatorCullingMode::ReduceWhenCulled: return "reduce when culled";
 					}
 					return "?";
 				}
@@ -248,14 +265,21 @@ namespace Dingo
 
 			}
 
+			std::unique_lock<std::recursive_mutex> LockScenes()
+			{
+				return std::unique_lock(ScenesMutex());
+			}
+
 			void RegisterScene(Scene* scene, SceneData* data)
 			{
+				std::lock_guard lock(ScenesMutex());
 				static uint64_t s_NextSerial = 1;
 				Scenes().push_back({ scene, data, s_NextSerial++ });
 			}
 
 			void UnregisterScene(Scene* scene)
 			{
+				std::lock_guard lock(ScenesMutex());
 				std::erase_if(Scenes(), [scene](const LiveScene& entry) { return entry.Instance == scene; });
 			}
 
@@ -305,6 +329,7 @@ namespace Dingo
 			void CollectScenes(std::vector<SceneRow>& out)
 			{
 				out.clear();
+				std::lock_guard lock(ScenesMutex());
 				for (const LiveScene& live : Scenes())
 				{
 					const Scene& scene = *live.Instance;
@@ -342,6 +367,11 @@ namespace Dingo
 							++row.DisabledLocalLights;
 							return;
 						}
+						if (HierarchySystem::IsInactive(registry, handle))
+						{
+							++row.InactiveLocalLights;
+							return;
+						}
 						++count;
 						row.ShadowedLocalLights += castShadows ? 1 : 0;
 					};
@@ -373,7 +403,7 @@ namespace Dingo
 
 					row.FogComponents = static_cast<uint32_t>(registry.view<const FogComponent>().size());
 					row.ClearColor = scene.GetClearColor();
-					row.Gravity2D = scene.GetGravity();
+					row.Gravity2D = scene.GetGravity2D();
 					row.Gravity3D = scene.GetGravity3D();
 				}
 			}
@@ -381,6 +411,7 @@ namespace Dingo
 			bool CollectEntities(uint64_t sceneSerial, std::vector<EntityRow>& out)
 			{
 				out.clear();
+				std::lock_guard lock(ScenesMutex());
 				const LiveScene* live = FindScene(sceneSerial);
 				if (!live)
 					return false;
@@ -431,6 +462,7 @@ namespace Dingo
 			bool CollectEntity(uint64_t sceneSerial, UUID id, EntityDetail& out)
 			{
 				out = EntityDetail();
+				std::lock_guard lock(ScenesMutex());
 				const LiveScene* live = FindScene(sceneSerial);
 				if (!live)
 					return false;
@@ -444,6 +476,8 @@ namespace Dingo
 
 				out.Id = id;
 				out.Name = EntityName(registry, handle);
+				out.Active = !registry.all_of<InactiveSelfComponent>(handle);
+				out.ActiveInHierarchy = !HierarchySystem::IsInactive(registry, handle);
 				const entt::entity parent = HierarchySystem::GetParent(registry, handle);
 				if (parent != entt::null)
 				{
@@ -539,7 +573,9 @@ namespace Dingo
 					Add(section, "Direction", Text(light->Direction));
 					Add(section, "Color", Text(light->Color));
 					Add(section, "Intensity", Text(light->Intensity));
+					DE_SUPPRESS_DEPRECATED_BEGIN
 					Add(section, "Ambient", Text(light->Ambient));
+					DE_SUPPRESS_DEPRECATED_END
 					Add(section, "Cast shadows", Text(light->CastShadows));
 					Add(section, "Shadow strength", Text(light->ShadowStrength));
 					Add(section, "Caster groups", Hex(light->ShadowCasterGroups));
@@ -602,7 +638,7 @@ namespace Dingo
 				{
 					Section& section = AddSection(out, "BoxCollider2D");
 					Add(section, "Offset", Text(box->Offset));
-					Add(section, "Size", Text(box->Size));
+					Add(section, "Half extents", Text(box->HalfExtents));
 					Add(section, "Density / friction / restitution", std::format("{:.2f} / {:.2f} / {:.2f}", box->Density, box->Friction, box->Restitution));
 				}
 
@@ -623,6 +659,17 @@ namespace Dingo
 					Add(section, "Visible", Text(renderer->Visible));
 					Add(section, "Shadows", ShadowCastingName(renderer->Shadows));
 					Add(section, "Shadow groups", Hex(renderer->ShadowGroups));
+					Add(section, "Static", Text(renderer->Static));
+					if (renderer->Surface)
+					{
+						const SurfaceOverride& surface = *renderer->Surface;
+						Add(section, "Surface emissive", std::format("{} x {:.3f}", Text(surface.EmissiveColor), surface.EmissiveStrength));
+						Add(section, "Surface roughness / specular", std::format("{:.3f} / {:.3f}", surface.Roughness, surface.Specular));
+					}
+					else
+					{
+						Add(section, "Surface", "the material's");
+					}
 				}
 
 				if (const SkinnedMeshRendererComponent* renderer = registry.try_get<SkinnedMeshRendererComponent>(handle))
@@ -645,6 +692,7 @@ namespace Dingo
 					Add(section, "Speed", Text(animator->Speed));
 					Add(section, "Root motion", RootMotionName(animator->RootMotion));
 					Add(section, "Apply root motion", Text(animator->ApplyRootMotion));
+					Add(section, "Culling mode", CullingModeName(animator->CullingMode));
 				}
 
 				if (const ParticleEmitterComponent* emitter = registry.try_get<ParticleEmitterComponent>(handle))
@@ -787,7 +835,7 @@ namespace Dingo
 						Add(section, "Sound", "none");
 					else
 					{
-						Add(section, "Sound", std::format("{:#x}", runtime->Sound));
+						Add(section, "Sound", std::format("{:#x}", static_cast<uint32_t>(runtime->Sound)));
 						Add(section, "Playing", Text(Application::Get().GetAudioEngine().IsPlaying(runtime->Sound)));
 					}
 				}

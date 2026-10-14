@@ -4,13 +4,16 @@
 namespace Dingo
 {
 
+	/// A mouse button went down; sent once per press, with no repeats.
 	class MouseButtonPressedEvent : public MouseButtonEvent
 	{
 	public:
+		/// Raised by the window for the pressed button.
 		MouseButtonPressedEvent(MouseButton button)
 			: MouseButtonEvent(button)
 		{}
 
+		/// "MouseButtonPressedEvent: <button>".
 		std::string ToString() const override
 		{
 			std::stringstream ss;
@@ -18,7 +21,7 @@ namespace Dingo
 			return ss.str();
 		}
 
-		EVENT_CLASS_TYPE(MouseButtonPressed)
+		DE_EVENT_CLASS_TYPE(MouseButtonPressed)
 	};
 
 }

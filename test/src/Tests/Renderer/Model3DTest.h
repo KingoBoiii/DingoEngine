@@ -1,5 +1,6 @@
 #pragma once
 #include "Tests/GraphicsTest.h"
+#include "Tests/TestChecks.h"
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -26,6 +27,8 @@ namespace Dingo
 		void LoadModel(const std::string& path);
 		void UnloadModel();
 		void FitCamera();
+		void RunBaseColorChecks();
+		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 
 	private:
 		struct TransformUBO { glm::mat4 ViewProjection; glm::mat4 Model; };
@@ -41,6 +44,8 @@ namespace Dingo
 		Shader*               m_Shader = nullptr;
 		VertexLayout          m_Layout;
 		std::vector<GpuSubMesh> m_GpuSubMeshes;
+
+		TestChecks m_Checks;
 
 		Model* m_Model = nullptr;
 		bool   m_LoadFailed = false;

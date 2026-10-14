@@ -36,6 +36,9 @@ namespace Dingo
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunStructuralChecks();
 		void RunCollisionFilterChecks();
+		// SetActive and OnFixedUpdate (HierarchyTestActive.cpp).
+		void RunActiveChecks();
+		void RunSceneApiChecks();
 		void RunLightProbe();
 		void RunSceneDebugChecks();
 		void CheckSceneTabOpens();

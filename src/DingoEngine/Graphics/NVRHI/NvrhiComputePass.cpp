@@ -137,6 +137,7 @@ namespace Dingo
 				nvrhi::BindingSetDesc desc;
 				for (const Binding& binding : m_Bindings)
 					desc.addItem(binding.Item);
+				NvrhiCommandList::SortBySlot(desc);
 				m_BindingSetHandle = device->createBindingSet(desc, shader->m_BindingLayoutHandle);
 				if (!m_BindingSetHandle)
 				{

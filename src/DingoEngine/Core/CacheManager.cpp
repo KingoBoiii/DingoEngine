@@ -3,7 +3,7 @@
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/Platform.h"
 
-namespace Dingo
+namespace Dingo::Internal
 {
 
 	namespace

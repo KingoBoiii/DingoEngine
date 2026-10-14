@@ -21,6 +21,10 @@ A C++20 game engine built on top of [NVRHI](https://github.com/NVIDIAGameWorks/n
 - **GPU Particles** *(v0.9)* — compute-simulated emitters with shapes, forces, curl noise, colour over life, sprites and soft edges, as ECS components, fired straight from animation events; a live effect editor in F4
 - **Compute & Profiling** *(v0.9)* — compute shaders and storage buffers, GPU pass timers in an F8 tab, and Tracy behind premake's `--profile`
 - **Skeletal Animation** — skinned glTF/FBX models drawn with GPU skinning; an `Animator` with cross-fades, `Blend1D` blends, masked layers and one-shots; clip events (code or a `.events` file beside the model) delivered to scripts; joint sockets; retargeting by joint name; models and their events hot-reload in place; an F7 Animation tab
+- **Throughput** *(v1.0)* — frustum and distance culling for meshes, shadow casters, skinned meshes and 2D; automatic GPU instancing of repeated meshes; `Static` geometry baked into culled cells and rebaked on change; per-entity `SurfaceOverride`s instead of a material each; a skin palette arena for 1024 skinned instances and animation LOD for culled animators
+- **Stability** *(v1.0)* — per-user logs that keep the last five runs, a crash handler that logs a backtrace (Linux) or writes a minidump (Windows), `FatalError`, doctest unit tests, and CI that runs every test case on Linux (llvmpipe, ASan) and on DX11/DX12 (WARP)
+- **Saves & Settings** *(v1.0)* — `SaveData` (a typed tree written as JSON, atomically, with a backup), save slots, `Settings` for display, audio and input, and windowed, borderless and exclusive fullscreen modes with the monitor's mode list
+- **A stable API** *(v1.0)* — SemVer from 1.0.0 ([versioning](docs/versioning.md)), one lifetime rule ([conventions](docs/conventions.md)), and a Doxygen reference with a line on every public declaration
 
 ## Documentation
 
@@ -36,6 +40,13 @@ Usage guides for building games with the engine live in [docs/](docs/README.md):
 - [Lighting](docs/lighting.md) — directional, point and spot lights, the light budget, specular, and lit materials
 - [Animation](docs/animation.md) — skinned models, the animator, blending and layers, timeline events, joint sockets, and model hot-reload
 - [Shadows](docs/shadows.md), [Post-processing](docs/post-processing.md), [Particles](docs/particles.md), [Compute](docs/compute.md) and [Profiling](docs/profiling.md) — the v0.9 visuals
+- [Audio](docs/audio.md) — clips, sounds, positional audio and buses
+- [Performance](docs/performance.md) — culling, static geometry, instancing, surface overrides and animation LOD
+- [Saves & Settings](docs/saves-and-settings.md) — `SaveData`, save slots, `Settings` and window modes
+- [Distribution](docs/distribution.md) and [Shipping](docs/shipping.md) — asset packages, the executable's name and icon, notices, logs and crash reports
+- [Versioning](docs/versioning.md), [Conventions](docs/conventions.md) and [Migrating to 1.0](docs/migrating-to-1.0.md) — what 1.x promises and how to upgrade from 0.9
+
+The API reference is built from the headers with Doxygen (`doxygen docs/Doxyfile`, see [Conventions](docs/conventions.md#documentation)) and published to GitHub Pages from master.
 
 ## Roadmap
 
@@ -56,7 +67,7 @@ example is built to demonstrate.
 | v0.8 | Animation & Character Fidelity — GPU-skinned meshes, clips, blending and layers, timeline events, joint sockets | `Marionette` | shipped |
 | **v0.9** | **Shadows, Post-processing & VFX** — cascaded and local shadows, tone mapping, bloom, AO, GPU particles | `Candlewick`, `Marionette` upgrades | shipped |
 | v0.9.1 | Linux & Asset Packing — the engine and every example on Linux, games shipped as one encrypted `.dpak`, *Headstone*'s requests | every example | shipped |
-| v1.0 | Stability, Performance & Polish — docs, Linux validation, culling + instancing | *Dungeon Crawler* (full release) | planned |
+| v1.0 | Stability, Performance & Polish — culling, instancing, static geometry, crash reports, saves, a stable documented API | *Hearthvale* (full release) | in progress |
 
 **Shipped out of band**: **scripting** (C# or Lua) and **networking/multiplayer** are optional
 **modules** layered onto a released engine rather than numbered milestones — neither blocks the
@@ -127,7 +138,7 @@ examples/               Example projects
 
 | Library | Purpose |
 |---|---|
-| [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi) | Graphics API abstraction (Vulkan / D3D12) |
+| [NVRHI](https://github.com/NVIDIAGameWorks/nvrhi) | Graphics API abstraction (Vulkan / D3D11 / D3D12) |
 | [GLFW](https://github.com/glfw/glfw) | Windowing and input |
 | [GLM](https://github.com/g-truc/glm) | Math (vectors, matrices, quaternions) |
 | [spdlog](https://github.com/gabime/spdlog) | Logging |
@@ -137,8 +148,18 @@ examples/               Example projects
 | [EnTT](https://github.com/skypjack/entt) | Entity-component system (scenes) |
 | [Box2D](https://github.com/erincatto/box2d) | 2D rigid-body physics simulation |
 | [Jolt Physics](https://github.com/jrouwe/JoltPhysics) | 3D rigid-body physics simulation |
+| [assimp](https://github.com/assimp/assimp) | Model loading (glTF, FBX, OBJ...) |
+| [miniaudio](https://miniaud.io) | Audio playback, positional audio and buses |
+| [nlohmann/json](https://github.com/nlohmann/json) | Save data and settings |
+| [Tracy](https://github.com/wolfpld/tracy) | Profiler (builds made with `--profile` only) |
+| [shaderc](https://github.com/google/shaderc), [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | Shader compilation (from the Vulkan SDK) |
+| [doctest](https://github.com/doctest/doctest) | Unit tests (never shipped) |
+
+Every component a game ships with, and its licence, is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which the release packages carry beside each game.
 
 ## Credits
+
+On-screen text in the examples and the test app: [Inter](https://rsms.me/inter) by Rasmus Andersson — SIL Open Font License 1.1, with its licence beside the font in each `assets/`.
 
 *Marionette*'s characters, weapons and animations: KayKit by Kay Lousberg, [www.kaylousberg.com](https://www.kaylousberg.com) — CC0. Each pack's licence text is kept in `examples/Marionette/assets/`.
 

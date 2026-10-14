@@ -9,7 +9,8 @@ namespace Dingo
 	// platform course, the player character controller, orbs, sentries, moving platforms,
 	// the follow camera, lights, audio and HUD — lives in ScriptableEntity scripts
 	// (GameScripts.h). Menu->Game and Game->Win transitions are requested from scripts
-	// via RequestSceneTransition; the SceneManager performs them.
+	// via RequestSceneTransition; the SceneManager performs them. --freeze starts in the course,
+	// steps it 1/60 s at a time and holds it after 600 steps, logging "[Freeze] held", for captures.
 	class EchoVaultLayer : public Layer
 	{
 	public:
@@ -32,6 +33,8 @@ namespace Dingo
 		Scene* m_GameScene = nullptr;
 		Scene* m_WinScene = nullptr;
 		bool m_LoggedStartupGamepads = false;
+		bool m_Freeze = false;
+		int m_FrozenSteps = 0;
 	};
 
 }

@@ -46,12 +46,14 @@ namespace
 		return Mesh::Create(vertices, indices);
 	}
 
-	Entity SpawnDebugEntity(Scene& scene, const char* name, Mesh* mesh, Material* material)
+	Entity SpawnDebugEntity(Scene& scene, const char* name, Mesh* mesh, Material* material, const SurfaceOverride& surface = {})
 	{
 		Entity entity = scene.CreateEntity(name);
 		entity.AddComponent<Transform3DComponent>();
 		auto& renderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, COLOR_DEBUG_BASE));
 		renderer.Material = material;
+		if (!material)
+			renderer.SetSurface(surface);
 		renderer.Shadows = ShadowCasting::Off;
 		return entity;
 	}
@@ -78,10 +80,6 @@ namespace Dingo
 	Detection::~Detection()
 	{
 		DestroyAndDelete(m_ConeMaterial);
-		DestroyAndDelete(m_DotMaterial);
-		DestroyAndDelete(m_SeenMaterial);
-		DestroyAndDelete(m_UnseenMaterial);
-		DestroyAndDelete(m_ShadowedMaterial);
 		delete m_ConeMesh;
 		for (Mesh* mesh : m_FootprintMeshes)
 			delete mesh;
@@ -253,34 +251,22 @@ namespace Dingo
 			.SetCullMode(CullMode::None)
 			.SetEmissiveColor(DEBUG_CONE_COLOR)
 			.SetEmissiveStrength(1.0f));
-		m_DotMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("DebugFootprint")
-			.SetEmissiveColor(DEBUG_DOT_COLOR)
-			.SetEmissiveStrength(1.0f));
-		m_SeenMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("DebugSampleSeen")
-			.SetEmissiveColor(DEBUG_SEEN_COLOR)
-			.SetEmissiveStrength(1.0f));
-		m_UnseenMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("DebugSampleUnseen")
-			.SetEmissiveColor(DEBUG_UNSEEN_COLOR)
-			.SetEmissiveStrength(1.0f));
-		m_ShadowedMaterial = renderer3D.CreateLitMaterial(MaterialParams()
-			.SetDebugName("DebugSampleShadowed")
-			.SetEmissiveColor(DEBUG_SHADOWED_COLOR)
-			.SetEmissiveStrength(1.0f));
+		m_DotSurface = SurfaceOverride().SetEmissiveColor(DEBUG_DOT_COLOR).SetEmissiveStrength(1.0f);
+		m_SeenSurface = SurfaceOverride().SetEmissiveColor(DEBUG_SEEN_COLOR).SetEmissiveStrength(1.0f);
+		m_UnseenSurface = SurfaceOverride().SetEmissiveColor(DEBUG_UNSEEN_COLOR).SetEmissiveStrength(1.0f);
+		m_ShadowedSurface = SurfaceOverride().SetEmissiveColor(DEBUG_SHADOWED_COLOR).SetEmissiveStrength(1.0f);
 
 		for (size_t i = 0; i < wardenCount; ++i)
 		{
 			m_Cones.push_back(SpawnDebugEntity(m_Scene, "DebugCone", m_ConeMesh, m_ConeMaterial));
-			m_Footprints.push_back(SpawnDebugEntity(m_Scene, "DebugFootprint", nullptr, m_DotMaterial));
+			m_Footprints.push_back(SpawnDebugEntity(m_Scene, "DebugFootprint", nullptr, nullptr, m_DotSurface));
 			m_FootprintMeshes.push_back(nullptr);
 			m_FootprintEyes.emplace_back();
 		}
 
 		for (size_t s = 0; s < k_SampleCount; ++s)
 		{
-			Entity sample = SpawnDebugEntity(m_Scene, "DebugSample", renderer3D.GetSphereMesh(), m_UnseenMaterial);
+			Entity sample = SpawnDebugEntity(m_Scene, "DebugSample", renderer3D.GetSphereMesh(), nullptr, m_UnseenSurface);
 			sample.GetComponent<Transform3DComponent>().Scale = glm::vec3(DEBUG_SAMPLE_SIZE);
 			m_Samples.push_back(sample);
 		}
@@ -330,8 +316,8 @@ namespace Dingo
 		{
 			m_Samples[s].GetComponent<Transform3DComponent>().Position = feet + glm::vec3(0.0f, k_SampleHeights[s], 0.0f) + towardsCamera * DEBUG_SAMPLE_OFFSET;
 			const SampleVerdict verdict = m_SampleVerdicts[s];
-			m_Samples[s].GetComponent<MeshRendererComponent>().Material = verdict == SampleVerdict::Seen ? m_SeenMaterial
-				: verdict == SampleVerdict::Shadowed ? m_ShadowedMaterial : m_UnseenMaterial;
+			m_Samples[s].GetComponent<MeshRendererComponent>().SetSurface(verdict == SampleVerdict::Seen ? m_SeenSurface
+				: verdict == SampleVerdict::Shadowed ? m_ShadowedSurface : m_UnseenSurface);
 		}
 	}
 

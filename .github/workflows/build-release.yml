@@ -31,8 +31,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -40,24 +44,34 @@ jobs:
         echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
         echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
 
-    - name: Generate BuildInfo.h
-      run: |
-        $major = "${{steps.version.outputs.VERSION_MAJOR}}"
-        $minor = "${{steps.version.outputs.VERSION_MINOR}}"
-        $patch = "${{steps.version.outputs.VERSION_PATCH}}"
-        $build = "${{steps.version.outputs.VERSION_BUILD}}"
-        "#pragma once", "#define DE_ENGINE_VERSION_MAJOR $major", "#define DE_ENGINE_VERSION_MINOR $minor", "#define DE_ENGINE_VERSION_PATCH $patch", "#define DE_ENGINE_VERSION_BUILD $build" | Set-Content include/DingoEngine/BuildInfo.h -Encoding utf8
-
     - name: Premake
       working-directory: ${{env.GITHUB_WORKSPACE}}
+      env:
+        DE_VERSION: ${{steps.version.outputs.VERSION_MAJOR}}.${{steps.version.outputs.VERSION_MINOR}}.${{steps.version.outputs.VERSION_PATCH}}
+        DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
       run: premake5 vs2026
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild ${{env.SOLUTION_FILE_PATH}} /m /p:Configuration=${{matrix.build-configuration}} /p:PlatformToolset=v143 -fl -flp:logfile=logs/Build-${{matrix.build-configuration}}.log
 
+    # Distribution executables are built with their PDBs (premake's distributionSymbols) so a
+    # player's minidump can be read, but a PDB never ships in a game: they all move into one
+    # symbols archive. The engine's Distribution library is built without debug info.
+    - name: Collect Distribution symbols
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        Get-ChildItem .\build\bin\Distribution-windows-x86_64 -Directory | Where-Object { $_.Name -ne 'DingoEngine' } | ForEach-Object {
+          $pdbs = @(Get-ChildItem $_.FullName -Filter *.pdb)
+          if ($pdbs.Count) {
+            New-Item -ItemType Directory -Force ".\symbols\$($_.Name)" | Out-Null
+            $pdbs | Move-Item -Destination ".\symbols\$($_.Name)"
+          }
+        }
+
     # Each example ships its executable and DLLs beside <Example>.dpak (its assets, packed and
-    # encrypted with its dpak.key) and the licence files at the root of its assets, never assets\.
+    # encrypted with its dpak.key), THIRD-PARTY-NOTICES.md and the licence files at the root of its
+    # assets, never assets\.
     - name: Pack example assets
       if: matrix.build-configuration == 'Distribution'
       run: |
@@ -66,6 +80,7 @@ jobs:
           $bin = ".\build\bin\Distribution-windows-x86_64\$example"
           .\scripts\pack-assets.ps1 -Example $example -Output "$bin\$example.dpak" -Configuration Distribution
           Get-ChildItem "$($_.FullName)\assets" -File | Where-Object { $_.Name -match 'licen[cs]e' } | Copy-Item -Destination $bin
+          Copy-Item .\THIRD-PARTY-NOTICES.md -Destination $bin
         }
 
     # Ship the self-contained lib (engine + all vendor libs merged by the
@@ -75,6 +90,7 @@ jobs:
 
     - name: Copy include files
       run: |
+        Copy-Item .\THIRD-PARTY-NOTICES.md .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\
         robocopy .\include .\build\bin\${{matrix.build-configuration}}-windows-x86_64\DingoEngine\include /e /z
         if ($lastexitcode -lt 8) { exit 0 } else { exit 1 }
 
@@ -100,6 +116,16 @@ jobs:
       run: |
         $config = "${{ matrix.build-configuration }}"
         $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-$config-windows-x86_64.zip"
+        gh release upload "${{ github.ref_name }}" "$zipName" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Distribution symbols to GitHub Release
+      if: matrix.build-configuration == 'Distribution'
+      run: |
+        $zipName = "DingoEngine-${{steps.version.outputs.VERSION}}-Distribution-symbols-windows-x86_64.zip"
+        if (-not (Test-Path .\symbols)) { Write-Error 'No Distribution PDB was collected' }
+        Compress-Archive -Path ".\symbols\*" -DestinationPath ".\$zipName" -Force
         gh release upload "${{ github.ref_name }}" "$zipName" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -200,8 +226,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -245,8 +275,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -290,8 +324,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -335,8 +373,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -380,8 +422,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -425,8 +471,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -470,8 +520,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -515,8 +569,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -560,8 +618,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -605,8 +667,12 @@ jobs:
       id: version
       run: |
         $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
         $ver = $tag.TrimStart('v')
-        $parts = $ver.Split('.')
+        $parts = $ver.Split('-')[0].Split('.')
         $commits = git rev-list --count HEAD
         echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
         echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
@@ -649,8 +715,12 @@ jobs:
     - name: Get version
       id: version
       run: |
+        if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+          echo "::error::Tag $GITHUB_REF_NAME must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        fi
         ver="${GITHUB_REF_NAME#v}"
-        IFS=. read -r major minor patch <<< "$ver"
+        IFS=. read -r major minor patch <<< "${ver%%-*}"
         commits=$(git rev-list --count HEAD)
         {
           echo "VERSION=$ver.$commits"
@@ -660,15 +730,10 @@ jobs:
           echo "VERSION_BUILD=$commits"
         } >> "$GITHUB_OUTPUT"
 
-    - name: Generate BuildInfo.h
-      run: |
-        printf '%s\n' "#pragma once" \
-          "#define DE_ENGINE_VERSION_MAJOR ${{steps.version.outputs.VERSION_MAJOR}}" \
-          "#define DE_ENGINE_VERSION_MINOR ${{steps.version.outputs.VERSION_MINOR}}" \
-          "#define DE_ENGINE_VERSION_PATCH ${{steps.version.outputs.VERSION_PATCH}}" \
-          "#define DE_ENGINE_VERSION_BUILD ${{steps.version.outputs.VERSION_BUILD}}" > include/DingoEngine/BuildInfo.h
-
     - name: Premake
+      env:
+        DE_VERSION: ${{steps.version.outputs.VERSION_MAJOR}}.${{steps.version.outputs.VERSION_MINOR}}.${{steps.version.outputs.VERSION_PATCH}}
+        DE_BUILD_NUMBER: ${{steps.version.outputs.VERSION_BUILD}}
       run: premake5 gmake
 
     - name: Build
@@ -683,7 +748,7 @@ jobs:
         pkg="build/package/DingoEngine-$config"
         mkdir -p "$pkg"
         cp "build/dist/$config-linux-x86_64/libDingoEngine.a" "$pkg/"
-        cp -r include "$pkg/"
+        cp -r include THIRD-PARTY-NOTICES.md "$pkg/"
         cp -r vendor/glm "$pkg/glm"
         mkdir -p "$pkg/tools"
         cp "build/bin/$config-linux-x86_64/DingoPack/DingoPack" "$pkg/tools/"

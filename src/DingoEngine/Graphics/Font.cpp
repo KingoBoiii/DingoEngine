@@ -71,7 +71,7 @@ namespace Dingo
 		// different directories would share one cache entry; the path hash separates them.
 		inline static std::filesystem::path GetCacheFilePath(const std::string& name, const std::filesystem::path& fontPath)
 		{
-			std::filesystem::path cachePath = CacheManager::GetCacheDirectory("fonts/atlas");
+			std::filesystem::path cachePath = Internal::CacheManager::GetCacheDirectory("fonts/atlas");
 			// The logical key, not the absolute path, so a cache survives the game moving.
 			const std::string pathKey = VirtualFileSystem::GetLogicalKey(fontPath);
 			return cachePath / std::format("{}-{:016x}.dfa", SanitizeFileName(name), HashFNV1a(pathKey.data(), pathKey.size()));

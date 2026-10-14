@@ -274,7 +274,7 @@ void main() {
 			.SetByteSize(sizeof(CameraData))
 			.SetType(BufferType::UniformBuffer)
 			.SetIsVolatile(true)
-			.SetDirectUpload(false)
+			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		m_TextureSlots[0] = Renderer::GetWhiteTexture();
@@ -286,6 +286,11 @@ void main() {
 		CreateQuadPass();
 		CreateCirclePass();
 		CreateTextPass();
+	}
+
+	Renderer2D::~Renderer2D()
+	{
+		Shutdown();
 	}
 
 	void Renderer2D::Shutdown()
@@ -357,7 +362,6 @@ void main() {
 
 	void Renderer2D::Clear(const glm::vec4& clearColor)
 	{
-		m_Params.ClearColor = clearColor;
 		Renderer::Clear(clearColor);
 	}
 
@@ -706,7 +710,7 @@ void main() {
 			offset += 4;
 		}
 
-		m_QuadIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * m_Params.Capabilities.GetQuadIndexCount(), quadIndices, true, "Renderer2DQuadIndexBuffer", GraphicsFormat::Uint32);
+		m_QuadIndexBuffer = GraphicsBuffer::CreateIndexBuffer(sizeof(uint32_t) * m_Params.Capabilities.GetQuadIndexCount(), IndexFormat::Uint32, quadIndices, BufferUpload::Direct, "Renderer2DQuadIndexBuffer");
 
 		delete[] quadIndices;
 	}
@@ -728,7 +732,7 @@ void main() {
 			.Name = "Renderer2DQuad",
 			.ShaderSource = Shaders::Renderer2DQuadShader,
 			.VertexLayout = vertexLayout,
-			.CullMode = CullMode::BackAndFront,
+			.CullMode = CullMode::None,
 			.Capabilities = m_Params.Capabilities,
 			.CameraUniformBuffer = m_CameraUniformBuffer,
 			.IndexBuffer = m_QuadIndexBuffer,
@@ -781,7 +785,7 @@ void main() {
 			.Name = "Renderer2DCircle",
 			.ShaderSource = Shaders::Renderer2DCircleShader,
 			.VertexLayout = vertexLayout,
-			.CullMode = CullMode::BackAndFront,
+			.CullMode = CullMode::None,
 			.Capabilities = m_Params.Capabilities,
 			.CameraUniformBuffer = m_CameraUniformBuffer,
 			.IndexBuffer = m_QuadIndexBuffer });

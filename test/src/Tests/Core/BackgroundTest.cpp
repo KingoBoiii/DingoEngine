@@ -29,9 +29,9 @@ namespace Dingo
 	{
 		Renderer2DTest::Initialize();
 
-		m_Font = Font::Create("fonts/arialbd.ttf");
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
 
-		m_AppUpdateInBackground = Application::Get().GetUpdateInBackground();
+		m_AppUpdateInBackground = Application::Get().IsUpdatingInBackground();
 		if (auto value = Application::Get().GetCommandLineArgs().Get("update-in-background"))
 			Application::Get().SetUpdateInBackground(*value != "off");
 
@@ -63,9 +63,9 @@ namespace Dingo
 
 		m_Scene->CreateEntity("Overlay Camera").AddComponent<CameraComponent>();
 
-		DirectionalLightComponent& sun = m_Scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
-		sun.Intensity = 0.5f;
-		sun.Ambient = 0.2f;
+		Entity sun = m_Scene->CreateEntity("Sun");
+		sun.AddComponent<DirectionalLightComponent>().Intensity = 0.5f * (1.0f - 0.2f);
+		sun.AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.2f));
 
 		m_Light = m_Scene->CreateEntity("Light");
 		m_Light.AddComponent<Transform3DComponent>();
@@ -109,7 +109,7 @@ namespace Dingo
 		if (inBackground && !wasInBackground)
 		{
 			m_StretchStart = m_LastUpdate;
-			m_StretchUpdatingMode = Application::Get().GetUpdateInBackground();
+			m_StretchUpdatingMode = Application::Get().IsUpdatingInBackground();
 			m_StretchMinimized = false;
 			m_StretchUpdates = 0;
 			m_StretchDeltaTime = 0.0f;
@@ -186,7 +186,7 @@ namespace Dingo
 		{
 			const std::string lines[] = {
 				std::format("Updates: {}, stretches in the background: {}", m_Updates, m_Stretches),
-				std::format("Update in background: {}", Application::Get().GetUpdateInBackground() ? "on" : "off (pauses)"),
+				std::format("Update in background: {}", Application::Get().IsUpdatingInBackground() ? "on" : "off (pauses)"),
 				m_LastStretch.empty() ? std::string("Minimize or click away, holding Space across it, then come back") : "Last: " + m_LastStretch,
 				std::format("Space: {} presses, {} releases", m_SpacePresses, m_SpaceReleases),
 			};
@@ -276,7 +276,7 @@ namespace Dingo
 		Renderer2DTest::ImGuiRender();
 
 		ImGui::Separator();
-		bool updateInBackground = Application::Get().GetUpdateInBackground();
+		bool updateInBackground = Application::Get().IsUpdatingInBackground();
 		if (ImGui::Checkbox("Update in background", &updateInBackground))
 			Application::Get().SetUpdateInBackground(updateInBackground);
 		ImGui::Text("Stretches in the background: %u", m_Stretches);

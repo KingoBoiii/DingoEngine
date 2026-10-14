@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Core/PathText.h"
 
@@ -6,6 +7,7 @@
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Graphics/Texture.h"
@@ -98,7 +100,7 @@ namespace Dingo
 			return VirtualFileSystem::GetWriteTime(path).value_or(std::filesystem::file_time_type{});
 		}
 
-		static void StampWriteTime(AssetMetadata& metadata, const std::filesystem::path& absolutePath)
+		static void StampWriteTime(Internal::AssetRecord& metadata, const std::filesystem::path& absolutePath)
 		{
 			metadata.LastWriteTime = ReadWriteTime(absolutePath);
 		}
@@ -164,7 +166,7 @@ namespace Dingo
 				.SetWidth(width)
 				.SetHeight(height)
 				.SetDimension(TextureDimension::Texture2D)
-				.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+				.SetFormat(TextureFormat::RGBA8_UNORM)
 				.SetIsRenderTarget(false)
 				.SetInitialData(pixels);
 		}
@@ -213,10 +215,10 @@ namespace Dingo
 		AssetType Type = AssetType::None;
 
 		// Creates the object and stores it; the caller owns stamping and the state flip.
-		bool (*Load)(AssetManagerData&, const AssetMetadata&) = nullptr;
+		bool (*Load)(AssetManagerData&, const Internal::AssetRecord&) = nullptr;
 		// Refreshes the loaded object's contents without replacing it, so pointers already
 		// handed out stay valid. Null for types that can only be destroyed and recreated.
-		RefreshResult (*ReloadInPlace)(AssetManagerData&, const AssetMetadata&) = nullptr;
+		RefreshResult (*ReloadInPlace)(AssetManagerData&, const Internal::AssetRecord&) = nullptr;
 		void (*Unload)(AssetManagerData&, AssetHandle) = nullptr;
 		bool (*IsLoaded)(const AssetManagerData&, AssetHandle) = nullptr;
 		// Decode runs on the loader thread and must touch nothing beyond the audio engine
@@ -229,8 +231,8 @@ namespace Dingo
 		bool HotReloadWatched = false;
 		// A second file the load reads, watched with the asset's own, and what a change to it alone
 		// refreshes (ReloadInPlace when null).
-		std::filesystem::path (*Companion)(const AssetMetadata&) = nullptr;
-		RefreshResult (*ReloadCompanion)(AssetManagerData&, const AssetMetadata&) = nullptr;
+		std::filesystem::path (*Companion)(const Internal::AssetRecord&) = nullptr;
+		RefreshResult (*ReloadCompanion)(AssetManagerData&, const Internal::AssetRecord&) = nullptr;
 	};
 
 	static const AssetTypePolicy& PolicyFor(AssetType type)
@@ -244,7 +246,7 @@ namespace Dingo
 			},
 			{
 				.Type = AssetType::Texture2D,
-				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
 				{
 					Texture* texture = Texture::CreateFromFile(metadata.AbsolutePath, Internal::PathToGenericUtf8(metadata.FilePath));
 					if (!texture)
@@ -253,14 +255,14 @@ namespace Dingo
 					data.Textures[metadata.Handle] = texture;
 					return true;
 				},
-				.ReloadInPlace = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
+				.ReloadInPlace = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> RefreshResult
 				{
 					auto it = data.Textures.find(metadata.Handle);
 					if (it == data.Textures.end())
 						return RefreshResult::NotLoaded;
 
 					uint32_t width = 0, height = 0, channels = 0;
-					const uint8_t* pixels = FileSystem::ReadImage(metadata.AbsolutePath, &width, &height, &channels, true, true);
+					const uint8_t* pixels = Internal::ReadImage(metadata.AbsolutePath, &width, &height, &channels, true, true);
 					if (!pixels)
 					{
 						// Keep serving the currently loaded image, as a failed hot-reload does.
@@ -269,7 +271,7 @@ namespace Dingo
 					}
 
 					it->second->Reinitialize(Utils::MakeTextureParams(Internal::PathToGenericUtf8(metadata.FilePath), width, height, channels, pixels));
-					FileSystem::FreeImage(pixels);
+					Internal::FreeImage(pixels);
 					return RefreshResult::Refreshed;
 				},
 				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Textures, handle); },
@@ -277,7 +279,7 @@ namespace Dingo
 				.Decode = [](AssetManagerData&, const AsyncJob& job, AsyncResult& result)
 				{
 					uint32_t width = 0, height = 0, channels = 0;
-					result.Pixels = FileSystem::ReadImage(job.AbsolutePath, &width, &height, &channels, true, true);
+					result.Pixels = Internal::ReadImage(job.AbsolutePath, &width, &height, &channels, true, true);
 					result.Width = width;
 					result.Height = height;
 					result.Channels = channels;
@@ -303,7 +305,7 @@ namespace Dingo
 			},
 			{
 				.Type = AssetType::Shader,
-				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
 				{
 					// Shader::Create never returns nullptr - a failed compile/read yields an
 					// object with no program, detected via IsValid().
@@ -320,7 +322,7 @@ namespace Dingo
 					data.Shaders[metadata.Handle] = shader;
 					return true;
 				},
-				.ReloadInPlace = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
+				.ReloadInPlace = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> RefreshResult
 				{
 					auto it = data.Shaders.find(metadata.Handle);
 					if (it == data.Shaders.end())
@@ -335,7 +337,7 @@ namespace Dingo
 			},
 			{
 				.Type = AssetType::Model,
-				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
 				{
 					auto params = data.ModelParams.find(metadata.Handle);
 					Model* model = Model::LoadFromFile(metadata.AbsolutePath, params != data.ModelParams.end() ? params->second : ModelLoadParams());
@@ -345,7 +347,7 @@ namespace Dingo
 					data.Models[metadata.Handle] = model;
 					return true;
 				},
-				.ReloadInPlace = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
+				.ReloadInPlace = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> RefreshResult
 				{
 					auto it = data.Models.find(metadata.Handle);
 					if (it == data.Models.end())
@@ -362,13 +364,13 @@ namespace Dingo
 				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Models, handle); },
 				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Models.contains(handle); },
 				.HotReloadWatched = true,
-				.Companion = [](const AssetMetadata& metadata)
+				.Companion = [](const Internal::AssetRecord& metadata)
 				{
 					std::filesystem::path events = metadata.AbsolutePath;
 					events.replace_extension(".events");
 					return events;
 				},
-				.ReloadCompanion = [](AssetManagerData& data, const AssetMetadata& metadata) -> RefreshResult
+				.ReloadCompanion = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> RefreshResult
 				{
 					auto it = data.Models.find(metadata.Handle);
 					if (it == data.Models.end())
@@ -378,7 +380,7 @@ namespace Dingo
 			},
 			{
 				.Type = AssetType::Font,
-				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
 				{
 					FontParams fontParams;
 					fontParams.Name = Utils::SanitizeAssetName(metadata.FilePath);
@@ -395,7 +397,7 @@ namespace Dingo
 			},
 			{
 				.Type = AssetType::AudioClip,
-				.Load = [](AssetManagerData& data, const AssetMetadata& metadata) -> bool
+				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
 				{
 					DE_CORE_ASSERT(data.Audio, "AssetManager has no audio engine - cannot load audio clips");
 					std::shared_ptr<AudioClip> clip = data.Audio->LoadClip(metadata.AbsolutePath);
@@ -453,7 +455,7 @@ namespace Dingo
 		return Utils::FoldPathCase(Internal::PathToGenericUtf8(NormalizeRelativePath(data, path)));
 	}
 
-	static void StampCompanion(AssetManagerData& data, const AssetMetadata& metadata)
+	static void StampCompanion(AssetManagerData& data, const Internal::AssetRecord& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		if (!policy.Companion)
@@ -493,7 +495,7 @@ namespace Dingo
 		return true;
 	}
 
-	static const Shader* FindLoadedShader(const AssetManagerData& data, const AssetMetadata& metadata)
+	static const Shader* FindLoadedShader(const AssetManagerData& data, const Internal::AssetRecord& metadata)
 	{
 		if (metadata.Type != AssetType::Shader)
 			return nullptr;
@@ -501,12 +503,12 @@ namespace Dingo
 		return it != data.Shaders.end() ? it->second : nullptr;
 	}
 
-	static void StampWatchedWriteTime(const AssetManagerData& data, AssetMetadata& metadata)
+	static void StampWatchedWriteTime(const AssetManagerData& data, Internal::AssetRecord& metadata)
 	{
 		metadata.LastWriteTime = Utils::ReadShaderWriteTime(FindLoadedShader(data, metadata), metadata.AbsolutePath);
 	}
 
-	static bool LoadInternal(AssetManagerData& data, AssetMetadata& metadata)
+	static bool LoadInternal(AssetManagerData& data, Internal::AssetRecord& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		StampCompanion(data, metadata);
@@ -517,7 +519,7 @@ namespace Dingo
 			return true;
 		}
 
-		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", AssetTypeToString(metadata.Type), Internal::PathToUtf8(metadata.AbsolutePath));
+		DE_CORE_ERROR("AssetManager: failed to load {} '{}'.", ToString(metadata.Type), Internal::PathToUtf8(metadata.AbsolutePath));
 		metadata.State = AssetState::Failed;
 		return false;
 	}
@@ -528,10 +530,10 @@ namespace Dingo
 		if (!IsValidAssetHandle(handle))
 			return false;
 
-		const AssetMetadata& metadata = data.Registry.at(handle);
+		const Internal::AssetRecord& metadata = data.Registry.at(handle);
 		if (metadata.Type != AssetType::Model)
 		{
-			DE_CORE_WARN("AssetManager: ModelLoadParams ignored for {} '{}'.", AssetTypeToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
+			DE_CORE_WARN("AssetManager: ModelLoadParams ignored for {} '{}'.", ToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
 			return true;
 		}
 
@@ -557,7 +559,7 @@ namespace Dingo
 	// Refreshes a loaded asset's contents without replacing the object. False when the type
 	// has no in-place path (the caller then destroys and recreates), which is the same policy
 	// slot SupportsInPlaceReload reports.
-	static bool ReloadInPlace(AssetManagerData& data, AssetMetadata& metadata)
+	static bool ReloadInPlace(AssetManagerData& data, Internal::AssetRecord& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		if (!policy.ReloadInPlace)
@@ -576,7 +578,7 @@ namespace Dingo
 		return true;
 	}
 
-	static void UnloadInternal(AssetManagerData& data, const AssetMetadata& metadata)
+	static void UnloadInternal(AssetManagerData& data, const Internal::AssetRecord& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		if (policy.Unload)
@@ -585,7 +587,7 @@ namespace Dingo
 		data.Registry.at(metadata.Handle).State = AssetState::Unloaded;
 	}
 
-	static void QueueDecodeJob(AssetManagerData& data, const AssetMetadata& metadata, bool isReload)
+	static void QueueDecodeJob(AssetManagerData& data, const Internal::AssetRecord& metadata, bool isReload)
 	{
 		AsyncJob job;
 		job.Handle = metadata.Handle;
@@ -668,14 +670,14 @@ namespace Dingo
 		}
 		else if (stillWanted)
 		{
-			DE_CORE_ERROR("AssetManager: async load failed for {} '{}'.", AssetTypeToString(result.Type), result.DebugName);
+			DE_CORE_ERROR("AssetManager: async load failed for {} '{}'.", ToString(result.Type), result.DebugName);
 			// A failed hot-reload keeps serving the still-loaded previous version.
 			const bool hasLoadedObject = policy.IsLoaded && (*policy.IsLoaded)(data, result.Handle);
 			it->second.State = hasLoadedObject ? AssetState::Ready : AssetState::Failed;
 		}
 
 		if (result.Pixels)
-			FileSystem::FreeImage(result.Pixels);
+			Internal::FreeImage(result.Pixels);
 
 		if (result.IsReload)
 			--data.ReloadCount;
@@ -712,7 +714,7 @@ namespace Dingo
 			if (entry == data.Registry.end())
 				continue;
 
-			AssetMetadata& metadata = entry->second;
+			Internal::AssetRecord& metadata = entry->second;
 
 			// Failed is watched as well as Ready: a first-load failure keeps its
 			// registration precisely so fixing the file recovers it. Its write time was
@@ -731,7 +733,7 @@ namespace Dingo
 				continue;
 
 			if (recovering)
-				DE_CORE_INFO("AssetManager: retrying failed {} '{}' - the file changed on disk.", AssetTypeToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
+				DE_CORE_INFO("AssetManager: retrying failed {} '{}' - the file changed on disk.", ToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
 			else if (changed)
 				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", Internal::PathToGenericUtf8(metadata.FilePath));
 			else
@@ -848,7 +850,7 @@ namespace Dingo
 		else
 			DE_CORE_INFO("AssetManager: asset root '{}'.", Internal::PathToUtf8(data.RootDirectory));
 
-		data.Worker = std::thread(WorkerLoop, std::ref(data));
+		data.Worker = std::thread([&data] { Internal::CrashHandler::RunThread([](void* context) { WorkerLoop(*static_cast<AssetManagerData*>(context)); }, &data); });
 	}
 
 	void AssetManager::Shutdown()
@@ -882,7 +884,7 @@ namespace Dingo
 		for (AsyncResult& result : data.Results)
 		{
 			if (result.Pixels)
-				FileSystem::FreeImage(result.Pixels);
+				Internal::FreeImage(result.Pixels);
 		}
 		data.Results.clear();
 		data.MainThreadQueue.clear();
@@ -917,7 +919,7 @@ namespace Dingo
 			return k_InvalidAsset;
 		}
 
-		AssetMetadata metadata;
+		Internal::AssetRecord metadata;
 		metadata.Handle = AssetHandle::Generate();
 		// A UUID collision is astronomically unlikely, but it would silently overwrite a live
 		// registration - and re-rolling costs one lookup, once, at import time.
@@ -942,7 +944,7 @@ namespace Dingo
 		if (!IsValidAssetHandle(handle))
 			return k_InvalidAsset;
 
-		AssetMetadata& metadata = m_Data->Registry.at(handle);
+		Internal::AssetRecord& metadata = m_Data->Registry.at(handle);
 		// Unloaded/Failed only: an asset already Ready needs nothing, and one in
 		// flight on the loader thread (Queued/Loading/Reloading) will publish via Update().
 		if (metadata.State == AssetState::Unloaded || metadata.State == AssetState::Failed)
@@ -958,7 +960,7 @@ namespace Dingo
 			return k_InvalidAsset;
 
 		AssetManagerData& data = *m_Data;
-		AssetMetadata& metadata = data.Registry.at(handle);
+		Internal::AssetRecord& metadata = data.Registry.at(handle);
 		if (metadata.State != AssetState::Unloaded && metadata.State != AssetState::Failed)
 			return handle;
 
@@ -1005,7 +1007,7 @@ namespace Dingo
 			return false;
 		}
 
-		AssetMetadata& metadata = it->second;
+		Internal::AssetRecord& metadata = it->second;
 
 		// A load is already in flight. Unloading and loading synchronously here would leave
 		// the in-flight request unwanted, so its finished decode would be thrown away - and
@@ -1114,9 +1116,13 @@ namespace Dingo
 		return (m_Data->RootDirectory / path).lexically_normal();
 	}
 
-	const std::unordered_map<AssetHandle, AssetMetadata>& AssetManager::GetRegistry() const
+	std::vector<AssetHandle> AssetManager::GetHandles() const
 	{
-		return m_Data->Registry;
+		std::vector<AssetHandle> handles;
+		handles.reserve(m_Data->Registry.size());
+		for (const auto& [handle, record] : m_Data->Registry)
+			handles.push_back(handle);
+		return handles;
 	}
 
 	bool AssetManager::IsHotReloadEnabled() const

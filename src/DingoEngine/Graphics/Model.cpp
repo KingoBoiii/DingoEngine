@@ -1,5 +1,7 @@
 #include "depch.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/EventsFile.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/AssimpVfsIO.h"
@@ -76,7 +78,7 @@ namespace Dingo
 			.SetWidth(width)
 			.SetHeight(height)
 			.SetDimension(TextureDimension::Texture2D)
-			.SetFormat(channels == 4 ? TextureFormat::RGBA : TextureFormat::RGB)
+			.SetFormat(TextureFormat::RGBA8_UNORM)
 			.SetIsRenderTarget(false)
 			.SetInitialData(data);
 	}
@@ -84,7 +86,7 @@ namespace Dingo
 	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path)
 	{
 		uint32_t width = 0, height = 0, channels = 0;
-		const uint8_t* data = FileSystem::ReadImage(path, &width, &height, &channels, true, true);
+		const uint8_t* data = Internal::ReadImage(path, &width, &height, &channels, true, true);
 		if (!data)
 		{
 			DE_CORE_WARN("Model: couldn't read '{}' again, so its texture keeps the old image", Internal::PathToGenericUtf8(path));
@@ -92,7 +94,7 @@ namespace Dingo
 		}
 
 		texture.Reinitialize(MakeImageParams(width, height, channels, data));
-		FileSystem::FreeImage(data);
+		Internal::FreeImage(data);
 		return true;
 	}
 
@@ -102,12 +104,12 @@ namespace Dingo
 		if (embedded->mHeight == 0)
 		{
 			uint32_t channels = 0;
-			const uint8_t* data = FileSystem::ReadImageFromMemory(embedded->pcData, embedded->mWidth, &width, &height, &channels, true, true);
+			const uint8_t* data = Internal::ReadImageFromMemory(embedded->pcData, embedded->mWidth, &width, &height, &channels, true, true);
 			if (!data)
 				return false;
 
 			rgba.assign(data, data + static_cast<size_t>(width) * height * 4);
-			FileSystem::FreeImage(data);
+			Internal::FreeImage(data);
 			return true;
 		}
 
@@ -254,14 +256,26 @@ namespace Dingo
 	                           const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
 		aiMaterial* aiMat = scene->mMaterials[mesh->mMaterialIndex];
-		submesh.Mat = Material::Create(MaterialParams()
+		submesh.Material = Material::Create(MaterialParams()
 			.SetDebugName(mesh->mName.C_Str()));
+
+		aiColor4D baseColor;
+		if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS)
+		{
+			submesh.BaseColor = { baseColor.r, baseColor.g, baseColor.b, baseColor.a };
+		}
+		else if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, baseColor) == AI_SUCCESS)
+		{
+			float opacity = baseColor.a;
+			aiMat->Get(AI_MATKEY_OPACITY, opacity);
+			submesh.BaseColor = { baseColor.r, baseColor.g, baseColor.b, opacity };
+		}
 
 		Texture* diffuse = LoadDiffuseTexture(aiMat, scene, modelDir, textureCache);
 		if (diffuse)
 		{
 			submesh.DiffuseTexture = diffuse;
-			submesh.Mat->SetTexture(0, diffuse);
+			submesh.Material->SetTexture(0, diffuse);
 		}
 	}
 
@@ -291,7 +305,7 @@ namespace Dingo
 		}
 
 		SubMesh submesh;
-		submesh.MeshData = Mesh::Create(vertices, ReadIndices(mesh));
+		submesh.Mesh = Mesh::Create(vertices, ReadIndices(mesh));
 		AssignMaterial(submesh, mesh, scene, modelDir, textureCache);
 		return submesh;
 	}
@@ -600,7 +614,7 @@ namespace Dingo
 		}
 
 		SubMesh submesh;
-		submesh.MeshData = Mesh::CreateSkinned(std::move(restVertices), std::move(skinVertices), ReadIndices(mesh));
+		submesh.Mesh = Mesh::CreateSkinned(std::move(restVertices), std::move(skinVertices), ReadIndices(mesh));
 		AssignMaterial(submesh, mesh, scene, modelDir, textureCache);
 		return submesh;
 	}
@@ -622,7 +636,7 @@ namespace Dingo
 		}
 
 		SubMesh submesh;
-		submesh.MeshData = Mesh::Create(vertices, ReadIndices(mesh));
+		submesh.Mesh = Mesh::Create(vertices, ReadIndices(mesh));
 		AssignMaterial(submesh, mesh, scene, modelDir, textureCache);
 		return submesh;
 	}
@@ -837,45 +851,47 @@ namespace Dingo
 			return out;
 		}
 
-		// Skin vertices index joints directly, so the joints they can reach (bones, nodes
-		// carrying an unskinned mesh, and their ancestors) go first. A palette then needs only
-		// those, however many helper or animated nodes the subtree also holds. Both groups stay
-		// parents first: a reachable joint's parent is reachable.
+		// Skin vertices index joints directly, so the joints they can reach go first: bones and
+		// their ancestors, then nodes carrying an unskinned mesh and theirs. A palette then needs
+		// only those, however many helper or animated nodes the subtree also holds, and a
+		// character's bones stay below k_MaxSkinJoints however many props a scene-rooted rig
+		// adds. Every group stays parents first: a joint's parent is in its group or an earlier one.
 		std::unordered_map<std::string, int32_t> subtreeByName;
 		for (int32_t i = 0; i < static_cast<int32_t>(subtree.size()); ++i)
 			subtreeByName.try_emplace(subtree[i]->mName.C_Str(), i);
 
-		std::vector<bool> reachable(subtree.size(), false);
+		enum class JointGroup : uint8_t { Bone, Rigid, Other };
+		std::vector<JointGroup> groups(subtree.size(), JointGroup::Other);
 		for (uint32_t m = 0; m < scene->mNumMeshes; ++m)
 		{
 			for (uint32_t b = 0; b < scene->mMeshes[m]->mNumBones; ++b)
 			{
 				auto it = subtreeByName.find(scene->mMeshes[m]->mBones[b]->mName.C_Str());
 				if (it != subtreeByName.end())
-					reachable[it->second] = true;
+					groups[it->second] = JointGroup::Bone;
 			}
 		}
 		for (size_t i = 0; i < subtree.size(); ++i)
 		{
 			for (uint32_t k = 0; k < subtree[i]->mNumMeshes; ++k)
 			{
-				if (!scene->mMeshes[subtree[i]->mMeshes[k]]->HasBones())
-					reachable[i] = true;
+				if (!scene->mMeshes[subtree[i]->mMeshes[k]]->HasBones() && groups[i] == JointGroup::Other)
+					groups[i] = JointGroup::Rigid;
 			}
 		}
 		for (size_t i = subtree.size(); i-- > 0;)
 		{
-			if (reachable[i] && subtreeParents[i] >= 0)
-				reachable[subtreeParents[i]] = true;
+			if (groups[i] != JointGroup::Other && subtreeParents[i] >= 0)
+				groups[subtreeParents[i]] = std::min(groups[subtreeParents[i]], groups[i]);
 		}
 
 		std::vector<int32_t> order;
 		order.reserve(subtree.size());
-		for (bool group : { true, false })
+		for (JointGroup group : { JointGroup::Bone, JointGroup::Rigid, JointGroup::Other })
 		{
 			for (size_t i = 0; i < subtree.size(); ++i)
 			{
-				if (reachable[i] == group)
+				if (groups[i] == group)
 					order.push_back(static_cast<int32_t>(i));
 			}
 		}
@@ -884,7 +900,7 @@ namespace Dingo
 			jointOfSubtree[order[j]] = static_cast<int32_t>(j);
 
 		const uint32_t jointCount     = static_cast<uint32_t>(order.size());
-		const uint32_t skinJointCount = static_cast<uint32_t>(std::count(reachable.begin(), reachable.end(), true));
+		const uint32_t skinJointCount = static_cast<uint32_t>(subtree.size() - std::count(groups.begin(), groups.end(), JointGroup::Other));
 		const glm::mat4 rootTransform = armatureRoot->mParent ? GlobalTransform(armatureRoot->mParent) : glm::mat4(1.0f);
 
 		std::vector<Joint>     joints(jointCount);
@@ -1045,8 +1061,8 @@ namespace Dingo
 	{
 		for (auto& sm : m_SubMeshes)
 		{
-			delete sm.MeshData;
-			DestroyAndDelete(sm.Mat);
+			delete sm.Mesh;
+			DestroyAndDelete(sm.Material);
 		}
 		m_SubMeshes.clear();
 
@@ -1181,17 +1197,19 @@ namespace Dingo
 			}
 
 			SubMesh& current = m_SubMeshes[i];
-			current.MeshData->Reinitialize(*incoming.MeshData);
-			current.Mat->SetTexture(0, incoming.DiffuseTexture);
+			current.Mesh->Reinitialize(*incoming.Mesh);
+			current.Material->SetTexture(0, incoming.DiffuseTexture);
 			current.DiffuseTexture = incoming.DiffuseTexture;
-			delete incoming.MeshData;
-			DestroyAndDelete(incoming.Mat);
+			current.BaseColor = incoming.BaseColor;
+			delete incoming.Mesh;
+			DestroyAndDelete(incoming.Material);
 		}
 		for (size_t i = fresh.m_SubMeshes.size(); i < meshCount; ++i)
 		{
-			m_SubMeshes[i].MeshData->Clear();
-			m_SubMeshes[i].Mat->SetTexture(0, nullptr);
+			m_SubMeshes[i].Mesh->Clear();
+			m_SubMeshes[i].Material->SetTexture(0, nullptr);
 			m_SubMeshes[i].DiffuseTexture = nullptr;
+			m_SubMeshes[i].BaseColor = glm::vec4(1.0f);
 		}
 		fresh.m_SubMeshes.clear();
 
@@ -1223,94 +1241,6 @@ namespace Dingo
 		return nullptr;
 	}
 
-	namespace
-	{
-
-		// Splits on whitespace up to a `#`; a double-quoted token may hold spaces. False on an
-		// unclosed quote.
-		bool TokenizeEventLine(std::string_view line, std::vector<std::string>& tokens)
-		{
-			tokens.clear();
-			size_t i = 0;
-			while (i < line.size())
-			{
-				if (std::isspace(static_cast<unsigned char>(line[i])))
-				{
-					i++;
-					continue;
-				}
-				if (line[i] == '#')
-					break;
-
-				if (line[i] == '"')
-				{
-					const size_t close = line.find('"', i + 1);
-					if (close == std::string_view::npos)
-						return false;
-					tokens.emplace_back(line.substr(i + 1, close - i - 1));
-					i = close + 1;
-					continue;
-				}
-
-				// A quote inside a token quotes that part of it: a payload's key="value with spaces".
-				std::string& token = tokens.emplace_back();
-				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
-				{
-					if (line[i] != '"')
-					{
-						token += line[i++];
-						continue;
-					}
-
-					const size_t close = line.find('"', i + 1);
-					if (close == std::string_view::npos)
-						return false;
-					token += line.substr(i + 1, close - i - 1);
-					i = close + 1;
-				}
-			}
-			return true;
-		}
-
-		// Payload tokens back into AnimationEventPayload's text, a value with a space quoted again.
-		std::string JoinPayload(std::span<const std::string> tokens)
-		{
-			std::string payload;
-			for (const std::string& token : tokens)
-			{
-				if (!payload.empty())
-					payload += ' ';
-
-				const size_t equals = token.find('=');
-				const bool spaced = std::any_of(token.begin(), token.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); });
-				if (!spaced)
-				{
-					payload += token;
-					continue;
-				}
-				if (equals == std::string::npos)
-				{
-					payload += '"';
-					payload += token;
-					payload += '"';
-					continue;
-				}
-				payload += token.substr(0, equals + 1);
-				payload += '"';
-				payload += token.substr(equals + 1);
-				payload += '"';
-			}
-			return payload;
-		}
-
-		bool ParseSeconds(std::string_view text, float& value)
-		{
-			const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-			return error == std::errc() && end == text.data() + text.size() && std::isfinite(value);
-		}
-
-	}
-
 	bool Model::LoadEvents(const std::filesystem::path& filepath)
 	{
 		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
@@ -1323,60 +1253,54 @@ namespace Dingo
 
 		const std::string fileName = Internal::PathToUtf8(filepath.filename());
 		std::string line;
-		std::vector<std::string> tokens;
+		std::vector<AnimationClip*> added;
 		for (uint32_t number = 1; std::getline(file, line); ++number)
 		{
 			if (number == 1 && line.starts_with("\xEF\xBB\xBF"))
 				line.erase(0, 3);
 
-			if (!TokenizeEventLine(line, tokens))
+			Internal::EventsLine parsed = Internal::ParseEventsLine(line);
+			switch (parsed.Status)
 			{
-				DE_CORE_WARN("{} line {}: an unclosed quote; line skipped", fileName, number);
-				continue;
-			}
-			if (tokens.empty())
-				continue;
-			if (tokens.size() < 3)
-			{
-				DE_CORE_WARN("{} line {}: expected `<clip> <time> <event> [key=value...]` or `<clip> <begin>..<end> <event> [key=value...]`; line skipped", fileName, number);
-				continue;
+				case Internal::EventsLine::Result::Empty:
+					continue;
+				case Internal::EventsLine::Result::UnclosedQuote:
+					DE_CORE_WARN("{} line {}: an unclosed quote; line skipped", fileName, number);
+					continue;
+				case Internal::EventsLine::Result::TooFewTokens:
+					DE_CORE_WARN("{} line {}: expected `<clip> <time> <event> [key=value...]` or `<clip> <begin>..<end> <event> [key=value...]`; line skipped", fileName, number);
+					continue;
+				default:
+					break;
 			}
 
-			AnimationClip* clip = FindAnimation(tokens[0]);
+			AnimationClip* clip = FindAnimation(parsed.Clip);
 			if (!clip)
 			{
-				DE_CORE_WARN("{} line {}: the model has no clip '{}'; line skipped", fileName, number, tokens[0]);
+				DE_CORE_WARN("{} line {}: the model has no clip '{}'; line skipped", fileName, number, parsed.Clip);
 				continue;
 			}
 
-			const std::string_view time = tokens[1];
-			const size_t dots = time.find("..");
-			float begin = 0.0f;
-			float end = 0.0f;
-			const bool parsed = dots == std::string_view::npos
-				? ParseSeconds(time, begin)
-				: ParseSeconds(time.substr(0, dots), begin) && ParseSeconds(time.substr(dots + 2), end);
-			if (!parsed)
+			if (parsed.Status == Internal::EventsLine::Result::BadTime)
 			{
-				DE_CORE_WARN("{} line {}: '{}' isn't a time in seconds or a <begin>..<end> range; line skipped", fileName, number, tokens[1]);
+				DE_CORE_WARN("{} line {}: '{}' isn't a time in seconds or a <begin>..<end> range; line skipped", fileName, number, parsed.Time);
 				continue;
 			}
-
-			if (dots != std::string_view::npos && end < begin)
+			if (parsed.Status == Internal::EventsLine::Result::ReversedRange)
 			{
-				DE_CORE_WARN("{} line {}: the range '{}' ends before it begins (a range can't wrap past the clip's end); line skipped", fileName, number, tokens[1]);
+				DE_CORE_WARN("{} line {}: the range '{}' ends before it begins (a range can't wrap past the clip's end); line skipped", fileName, number, parsed.Time);
 				continue;
 			}
 
-			if (begin < 0.0f || begin > clip->GetDuration() || (dots != std::string_view::npos && end > clip->GetDuration()))
-				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, tokens[1], tokens[0], clip->GetDuration());
+			if (parsed.Begin < 0.0f || parsed.Begin > clip->GetDuration() || (parsed.Range && parsed.End > clip->GetDuration()))
+				DE_CORE_WARN("{} line {}: '{}' reaches past clip '{}' ({:.3f} s), so part of it never fires", fileName, number, parsed.Time, parsed.Clip, clip->GetDuration());
 
-			std::string payload = JoinPayload(std::span<const std::string>(tokens).subspan(3));
-			if (dots == std::string_view::npos)
-				clip->AddEvent(begin, std::move(tokens[2]), std::move(payload));
-			else
-				clip->AddEventRange(begin, end, std::move(tokens[2]), std::move(payload));
+			clip->AppendEvent(parsed.Begin, parsed.End, parsed.Range, std::move(parsed.Name), std::move(parsed.Payload));
+			if (std::find(added.begin(), added.end(), clip) == added.end())
+				added.push_back(clip);
 		}
+		for (AnimationClip* clip : added)
+			clip->RebuildEventMarks();
 		return true;
 	}
 

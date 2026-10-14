@@ -191,17 +191,17 @@ then `SlopeBias`. **Peter-panning** (a shadow detached from the foot of its cast
   so a caster outside the view still casts into it.
 - **One atlas, one draw per batch.** Every cascade and every light's view is a tile of one depth
   texture, and every batch is drawn into all of them at once: the shadow pass draws it instanced, one
-  instance per tile, with clip distances at each tile's edges. Skinned meshes are skinned again for it, so a casting skinned instance
-  uploads its joints twice a frame, or three times when it also has translucent meshes. The skin
-  buffer holds two writes per instance of the budget, and each instance spends one per pass it draws
-  in, so a frame of instances that all cast and also have translucent meshes fits two thirds of
-  `MaxSkinnedInstances`.
+  instance per tile, with clip distances at each tile's edges. A mesh the lit pass instances (v1.0) is drawn
+  the same way, its copies times the tiles in one draw. Skinned meshes are skinned again for it, so a skinned instance
+  draws from the same skin arena once more, pushing its base again.
   The clip distances need Vulkan's `shaderClipDistance`; on a GPU without it
   (`GraphicsContext::SupportsClipDistance()` false) no shadows are drawn and Renderer3D warns once.
 - **Filtering.** The lit shader reads each cascade through a comparison sampler: 3 x 3 taps of the
   hardware's 2 x 2 comparison, 16 texels in all, kept inside the tile.
-- **Cost.** The shadow pass draws every casting batch's vertices once per cascade; per-mesh culling
-  is v1.0's. Its GPU time shows as `Shadows` in the F8 Profiler tab. F4's Renderer tab shows the
+- **Cost.** The shadow pass draws every casting batch's vertices once per cascade. Since v1.0 a
+  caster only enters it when its bounds reach a cascade or a casting light's view (and the light's
+  caster groups), and the bounds of every caster still set each cascade's depth range, culled or
+  not; `Statistics::CulledCasters` counts what was left out. Its GPU time shows as `Shadows` in the F8 Profiler tab. F4's Renderer tab shows the
   cascades, where each ends, the casters and the atlas itself.
 
 ## Custom shaders
@@ -221,7 +221,7 @@ float lamp = LocalLightShadow(i, worldPosition, normal);  // point or spot light
 ```
 
 `Renderer3D` binds `ShadowData`, `u_ShadowAtlas` and `u_ShadowSampler` by name to any material whose
-shader declares them (`Material::SetShadowResources`); a shader that doesn't is unaffected. Such a
+shader declares them; a shader that doesn't is unaffected. Such a
 shader can only be drawn through `Renderer3D`, which provides them.
 
 ## Checking it
@@ -247,3 +247,18 @@ point light's pillar and (through `Scene::GetLightVisibility`) a `ShadowsOnly` b
 and at once for a light without a shadow, and in between at the sun's PCF edge.
 The Animation Test's `--anim-shadow` lights its Foxes with a casting sun, and the Lighting Test's
 `--budget-fade` fades its overbudget scene.
+
+## Limits
+
+- Only the first casting directional light of a scene gets shadows. Casting point and spot lights
+  get 8 slots by default (at most 16); a point light renders six views, so casting point lights
+  are costly.
+- Every material casts through the depth-only pass: a custom vertex shader's displacement isn't in
+  its shadow, and a translucent mesh casts a full shadow.
+- Shadows need Vulkan's `shaderClipDistance`; on a GPU without it none are drawn.
+- The cascades cover `MaxDistance` (60 by default) along the view, and an orthographic camera gets
+  one cascade.
+- A shadow probe answers one to three frames late, 256 a scene. The sun's shadow follows the
+  camera, so a point off screen answers 1.
+- A light's caster groups don't spare its slot or its tiles, and an excluded mesh still widens the
+  cascades' depth range.

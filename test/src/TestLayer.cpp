@@ -1,10 +1,6 @@
 #include "TestLayer.h"
+#include "CrashTrigger.h"
 
-#include "Tests/Renderer/StaticTriangleTest.h"
-#include "Tests/Renderer/VertexBufferTest.h"
-#include "Tests/Renderer/IndexBufferTest.h"
-#include "Tests/Renderer/UniformBufferTest.h"
-#include "Tests/Renderer/TextureTest.h"
 #include "Tests/Renderer/Mesh3DTest.h"
 #include "Tests/Renderer/Model3DTest.h"
 #include "Tests/Renderer/Renderer3DBatchTest.h"
@@ -29,8 +25,10 @@
 #include "Tests/Scene/HierarchyTest.h"
 #include "Tests/Scene/AnimationTest.h"
 #include "Tests/Scene/RenderTargetTest.h"
+#include "Tests/Scene/ThroughputTest.h"
 
 #include "Tests/Core/BackgroundTest.h"
+#include "Tests/Core/DisplayModeTest.h"
 
 #include "Tests/Audio/AudioBusTest.h"
 
@@ -50,12 +48,8 @@ namespace Dingo
 
 		m_Renderer2D = Renderer2D::Create();
 
-		// TODO: Low-level Renderer tests need off-screen pass (deferred feature)
-		// m_Tests.push_back({ "Static Triangle Test", ... });
-		// m_Tests.push_back({ "Vertex Buffer Test",   ... });
-		// m_Tests.push_back({ "Index Buffer Test",    ... });
-		// m_Tests.push_back({ "Uniform Buffer Test",  ... });
-		// m_Tests.push_back({ "Texture Test",         ... });
+		if (auto crash = Application::Get().GetCommandLineArgs().Get("crash"))
+			m_CrashKind = *crash;
 
 		m_Tests.push_back({ "Color Quad Test (R2D)", [&]() { return new ColorQuadTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Texture Quad Test (R2D)", [&]() { return new TextureQuadTest(m_Renderer2D); } });
@@ -77,6 +71,8 @@ namespace Dingo
 		m_Tests.push_back({ "Shadow Test", []() { return new ShadowTest(); } });
 		m_Tests.push_back({ "Compute Test", []() { return new ComputeTest(); } });
 		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
+		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
+		m_Tests.push_back({ "Display Mode Test", [&]() { return new DisplayModeTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Pack Test", [&]() { return new PackTest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
@@ -124,6 +120,9 @@ namespace Dingo
 		// The frame command list is managed by Renderer::BeginFrame/EndFrame.
 		// No work needed here — ImGui owns the swapchain clear in this setup.
 
+		if (!m_CrashKind.empty() && ++m_CrashFrames == k_CrashFrame)
+			TriggerCrash(m_CrashKind);
+
 		if (m_CurrentTest)
 		{
 			Renderer::SetRenderTarget(m_OutputFramebuffer);
@@ -138,7 +137,7 @@ namespace Dingo
 			m_CurrentTest->OnEvent(e);
 	}
 
-	void TestLayer::OnUIRender()
+	void TestLayer::OnImGuiRender()
 	{
 		// READ THIS !!!
 		// TL;DR; this demo is more complicated than what most users you would normally use.
@@ -293,7 +292,7 @@ namespace Dingo
 
 		ImGui::End();
 
-		m_TestViewportPanel.OnUIRender(m_OutputFramebuffer->GetAttachment(0));
+		m_TestViewportPanel.OnImGuiRender(m_OutputFramebuffer->GetAttachment(0));
 
 		// handle resize. ImGui reads the window size itself, so the frame a minimize lands in can
 		// give the panel a negative size before Application has seen the zero-sized resize.

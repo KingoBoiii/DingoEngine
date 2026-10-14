@@ -38,15 +38,17 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 
 | Call | Effect |
 |---|---|
-| `AddComponent<T>(value)` | Attach a built-in component `T`. Returns `T&`. |
+| `AddComponent<T>(value)` | Attach a built-in component `T`. Returns `T&`. An entity that already has a `T` gets it replaced, with a warning. |
 | `GetComponent<T>()` | Reference to the entity's `T`. |
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
-| `AddScript<T>(args...)` | Attach a behaviour (see below). |
+| `AddScript<T>(args...)` | Attach a behaviour (see below). An entity holds one script: a second `AddScript` destroys the first, with a warning. |
+| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed at the end of the update). |
 | `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
-| `GetUUID()` / `GetName()` | The entity's id / name. |
+| `GetUUID()` / `GetName()` / `SetName(name)` (v1.0) | The entity's id / name; a null entity reads `UUID()` and `""`, and an empty name becomes `"Entity"`. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
 | `Destroy()` | Destroy this entity, its behaviour and its children. |
+| `SetActive(bool)` / `IsActive()` / `IsActiveInHierarchy()` (v1.0) | Switch the entity and its subtree off and on (see [Active and inactive entities](#active-and-inactive-entities-v10)). |
 | `SetParent(parent, keepWorldTransform = true)` / `RemoveParent(keepWorldTransform = true)` (v0.7.1) | Attach to / detach from a parent (see [Parenting](#parenting-v071)). |
 | `SetParent(parent, "joint", keepWorldTransform = true)` / `GetParentJoint()` (v0.8) | Attach to a joint of the parent's skinned model, so the entity follows it as the model animates (see [Joints as parents](#joints-as-parents-v08)). |
 | `GetParent()` / `GetChildCount()` / `GetChildren()` / `ForEachChild(fn)` / `FindChild(name, recursive = true)` (v0.7.1) | Walk the hierarchy. |
@@ -69,7 +71,7 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 | `TagComponent` / `IDComponent` | Name / `UUID` (added automatically) |
 | `CameraComponent` | `ProjectionType Type` (`Orthographic`/`Perspective`), ortho `OrthographicSize`/`OrthoNear`/`OrthoFar`, perspective `FOV`/`PerspNear`/`PerspFar`, `bool Primary`; the camera the `SceneRenderer` views the scene through |
 | `PostProcessComponent` (v0.9) | `PostProcessSettings Settings` (`Enabled`, false by default; `Tone`: operator, exposure, knee, white point; `Bloom`; `AmbientOcclusion`); on the primary perspective camera, the `SceneRenderer` runs the 3D pass through the post chain. See [Post-processing](post-processing.md) |
-| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (the original single knob, see [Lights](#lights-v07)), `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — a sun |
+| `DirectionalLightComponent` | `glm::vec3 Direction` (the way the light travels), `glm::vec3 Color` and `float Intensity` (v0.7), `float Ambient` (deprecated, 0 by default, removed in 2.0: use an `AmbientLightComponent`), `bool CastShadows`, `float ShadowStrength` and `uint32_t ShadowCasterGroups` (v0.9, see [Shadows](shadows.md)) — a sun |
 | `ParticleEmitterComponent` (v0.9) | `ParticleEffect* Effect`, `bool Playing`, `float RateScale`, `bool WorldSpace` — GPU particles from the entity's world transform, stepped by `Scene::OnUpdate` and drawn by the `SceneRenderer`; `Scene::EmitParticles` / `EmitParticlesAt` fire bursts. See [Particles](particles.md) |
 | `ParticleEventComponent` (v0.9) | `Bindings` (`Bind(event, emitterUUID, count)`, `BindRange(event, emitterUUID)`) — the entity's animation events burst emitter entities or play them while a range is open. See [Particles](particles.md#from-animation-events) |
 | `AmbientLightComponent` (v0.7) | `glm::vec3 Color`, `float Intensity` — light that reaches every face equally; all of them add up |
@@ -100,8 +102,7 @@ void GameLayer::OnAttach()
     cam.Type = CameraComponent::ProjectionType::Orthographic;
     cam.OrthographicSize = 20.0f;
 
-    m_Scenes.SetActiveScene("Game");   // select the active scene...
-    m_Game->OnStart();                 // ...and start it (see Lifecycle, under SceneManager)
+    m_Scenes.SetActiveScene("Game");   // activates and starts it (see Lifecycle, under SceneManager)
 }
 
 void GameLayer::OnUpdate(float dt)
@@ -170,8 +171,8 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | Component | Fields |
 |---|---|
 | `Transform3DComponent` | `glm::vec3 Position`, `glm::quat Rotation`, `glm::vec3 Scale`; `GetTransform()` → `mat4`; `SetRotationEuler(degrees)` |
-| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1) |
-| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
+| `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1), `float CullDistance` (v1.0, see [Culling](#culling-v10)), `bool Static` (v1.0, see [Static geometry](#static-geometry-v10)), `std::optional<SurfaceOverride> Surface` (v1.0: its own emissive, roughness and specular on a lit material, set with `SetSurface`, see [Surface overrides](lighting.md#surface-overrides-v10)) |
+| `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9), `float CullDistance` (v1.0). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
@@ -197,7 +198,7 @@ ball.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic
 ball.AddComponent<SphereCollider3DComponent>();
 
 scene.SetGravity(glm::vec3{ 0.0f, -9.81f, 0.0f });   // vec3 overload → the 3D world
-scene.OnPhysicsStart();                              // builds a 3D world only if 3D bodies exist
+scene.OnStart();                                     // builds a 3D world only if 3D bodies exist
 ```
 
 `Scene::OnUpdate(dt)` steps whichever physics world(s) are live and writes simulated transforms
@@ -213,7 +214,8 @@ auto& camera = cam.AddComponent<CameraComponent>();
 camera.Type = CameraComponent::ProjectionType::Perspective;
 camera.FOV = 50.0f;                       // PerspNear/PerspFar default to 0.1 / 1000
 cam.AddComponent<Transform3DComponent>();
-scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>(); // defaults match the built-in light
+scene->CreateEntity("Sun").AddComponent<DirectionalLightComponent>();
+scene->CreateEntity("Sky").AddComponent<AmbientLightComponent>(AmbientLightComponent(glm::vec3(1.0f), 0.35f));
 
 // Each frame — drive the camera transform (the view is inverse(translate(P) * rotate(R))):
 auto& t = cam.GetComponent<Transform3DComponent>();
@@ -223,6 +225,99 @@ t.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(eye, focus, { 0, 1, 0 })));
 scenes.OnUpdate(dt);
 scenes.OnRender();   // SceneRenderer clears + draws the Transform3D+Mesh entities, lit by the scene's lights
 ```
+
+### Culling (v1.0)
+
+`Renderer3D` leaves out every mesh the camera can't see, by its bounds (`Mesh::GetBoundsMin/Max`
+placed by the entity's world transform), so a scene can hold far more meshes than are in view at
+once. Nothing to turn on, and a static mesh that reaches a pixel is never left out: the cull tests
+the sides of the view, and the far plane only for materials that depth-test with `Less`, without a
+depth bias, into a target with depth. A culled mesh still casts into any shadow view its bounds
+reach. A skinned mesh is tested by its rest pose's bounds padded on every side by half their longest
+side, and its animator keeps running; a pose that reaches farther than that, or hips that travel
+away without root motion, can be culled while in view.
+
+Culling trusts the mesh's bounds. A material whose vertex shader moves vertices (wind, waves,
+outlines) takes `MaterialParams::SetFrustumCulled(false)`, and the camera then never culls its
+meshes.
+
+`CullDistance` (on both renderer components, or `SubmitMesh`/`SubmitSkinnedMesh`'s last argument)
+adds a distance cull for perspective cameras: past that distance from the camera to its bounds a
+mesh is neither drawn nor casts (its bounds still set the cascades' depth range, so other shadows
+don't shift when it crosses). Use it for small props a far view needn't spend vertices on; 0, the
+default, never culls by distance.
+
+F4's Renderer tab counts what was culled (`Statistics::CulledMeshes`, `CulledSkinned`,
+`CulledCasters`) and has two switches: **Cull meshes** off draws everything, which must look the
+same, and **Freeze culling frustum** keeps culling against the camera as it was, so flying away
+shows what that view kept. `Renderer3D::SetCullingEnabled/SetCullingFrozen` do the same from code.
+
+A scene culls 2D too: `RenderEntities` skips sprites and circles whose bounding square lies outside
+the camera's view (`Renderer2D::Statistics::CulledQuads`; `Renderer2D::SetCullingEnabled`). Text is
+never culled.
+
+### Instancing (v1.0)
+
+A mesh drawn many times in one scene, with one material and one shadow setting, is drawn
+**instanced**: every copy in view in one draw from the mesh's own vertex and index buffers, each
+placed on the GPU from a 128-byte record (its transform, normal matrix, colour and the index of its
+surface override). Nothing to turn on: it applies to the built-in lit material and every
+`CreateLitMaterial` material once a mesh has `Renderer3DCapabilities::InstanceThreshold` copies
+submitted with one material and shadow setting (8 by default), or fewer whose vertices together
+outgrow one batch (`MaxVertices`). Below that the CPU batch stays cheaper. The count is taken before
+culling, so the camera never moves a copy between the two transforms. Copies culled from the camera
+but still casting are instanced into the shadow atlas the same way, every copy once per shadow view
+in one draw.
+
+The picture matches the CPU batches within rounding (the GPU and the CPU round the transform
+differently: no channel off by more than 2/255 on at most 0.1% of the pixels), so a scene where
+nothing repeats draws exactly as before. A material's instanced meshes draw after its CPU batch, so
+two of its meshes meeting at exactly equal depth can resolve the other way. `Renderer3DCapabilities::Instancing = false`, F4's
+**Instance repeated meshes** or `Renderer3D::SetInstancingEnabled(false)` batches everything on the
+CPU again. F4 counts instanced meshes and draws (`Statistics::InstancedMeshes`, `InstancedDraws`,
+`InstancedShadowDraws`); `VertexCount` leaves instanced meshes out, since nothing transforms them on
+the CPU.
+
+Translucent meshes are never instanced (the translucent pass sorts mesh by mesh), nor are skinned
+ones. A custom material is instanced only when its shader is written for it; see
+[Instanced custom shaders](#instanced-custom-shaders-v10).
+
+### Static geometry (v1.0)
+
+Walls, floors and props that never move can be **baked**: set `MeshRendererComponent::Static`, and
+`RenderEntities3D` transforms the mesh into world space once, with the scene's other static meshes,
+into vertex and index buffers kept on the GPU between frames. A frame then costs a cull of each
+cell of them instead of transforming every vertex.
+
+```cpp
+auto& wall = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(boxMesh, stone));
+wall.Static = true;
+```
+
+The baked meshes are split by a 32-metre world grid into cells, each with its own buffers and one
+draw per material, shadow setting and caster groups (more when they outgrow one draw). Each draw is
+culled against the camera and every shadow view by the box around its meshes, as a single mesh is,
+and drawn into the shadows as its meshes would be. The picture is the one the same meshes draw
+without `Static` on the CPU, pixel for pixel; where they would have been instanced, within the
+instancing tolerance, since baked meshes are never instanced. The order differs: a cell draws
+before the material's other meshes, its own meshes by cell and then in the order they were baked,
+and the static materials join the scene's draw order after the moving meshes'. So two meshes meeting
+at exactly equal depth can resolve the other way.
+
+Change is allowed but costs a rebake of the cell the mesh is in: changing its mesh, colour,
+material, surface override or shadow setting (or hot-reloading its model) rebakes it quietly;
+**moving** it rebakes it and warns once, since a mesh that moves shouldn't be `Static`. Adding,
+destroying or hiding one (`Visible = false`) rebakes its cell too. A mesh with a `CullDistance`, a
+translucent or skinned-only material, a custom-shader `MaterialParams::Instancing` material, more
+vertices than one draw takes, or a non-affine transform is drawn as if `Static` were false. F4 counts
+baked meshes, their draws and the cells baked each scene (`Statistics::StaticMeshes`, `StaticDraws`,
+`StaticCellsBaked`).
+
+Outside a scene the same is `Renderer3D::CreateStaticBatch(StaticBatchParams)` and
+`SubmitStaticBatch(batch)` between `BeginScene` and `EndScene`; `StaticBatch::Add`, `Update` and
+`Remove` take a `StaticMesh` (mesh, transform, colour, material, shadows, caster groups, surface).
+A batch belongs to the renderer that made it and draws nothing on another. The meshes and materials
+it holds must outlive their entries, as they must for `SubmitMesh`. Ids are reused after `Remove`.
 
 ### Parenting (v0.7.1)
 
@@ -348,8 +443,9 @@ Things to know:
 - **Ambient is always set.** `Scene::SubmitLights` sets the scene's ambient every frame, even to
   black. A scene whose lights are all switched off therefore goes dark, and a scene lit only by
   point lights has no sun and no ambient until you add an `AmbientLightComponent`.
-- **Directional lights add up**, up to four (the first created), and so does each one's legacy `Ambient`. Set
-  `Ambient` to 0 to light the scene with `AmbientLightComponent` instead.
+- **Directional lights add up**, up to four (the first created). The deprecated `Ambient` field (0 by
+  default since v1.0, removed in 2.0) still adds white ambient and scales its light by `1 - Ambient`;
+  light the scene with an `AmbientLightComponent` instead.
 - **Custom passes.** Lights are scene-scoped, so a custom 3D pass on the shared renderer calls
   `scene.SubmitLights(renderer)` between its `BeginScene` and `EndScene`, the same way it calls
   `RenderEntities3D`. Without it the pass gets `Renderer3DParams`' default light, not the scene's
@@ -463,6 +559,12 @@ controller and sound itself, so copying or assigning a component between entitie
 (`b.GetComponent<RigidBody3DComponent>() = a.GetComponent<RigidBody3DComponent>()`,
 `Scene::DuplicateEntity`) never makes two entities share one.
 
+A settings component is read when the object it describes is built (`OnStart`, `CreateRigidBody`,
+a sound's start): editing `RigidBody3DComponent::Type` or a collider's size on a live body changes
+nothing until the body is rebuilt, and adding a `RigidBody2D/3DComponent` to a running scene needs
+`Scene::CreateRigidBody(entity)`. Removing one (or an `AudioSourceComponent`, or a
+`CharacterController3DComponent`) does release the live object at once.
+
 ```cpp
 // Inside a ScriptableEntity: drive a kinematic platform along a path.
 const PhysicsBodyId3D body = GetScene().GetRuntimeBody3D(GetEntity());
@@ -496,6 +598,9 @@ The binding convention a custom mesh shader follows:
   if the material has no params.
 - **binding 2+** — the material's textures/samplers (`Material::SetTexture` / `SetSampler`),
   interleaved: texture slot *i* at `2 + 2i`, sampler slot *i* at `3 + 2i`.
+- **push constants** — the renderer owns them. A material shader cannot declare its own
+  `push_constant` block; a skinned shader's only one is `DE_SkinDraw`
+  ([custom skinned shaders](animation.md#custom-skinned-shaders)).
 
 The whole of binding 0, as the engine's own lit shader declares it:
 
@@ -540,7 +645,8 @@ falloff and cone formulas, and `src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.
 reference loop. The fog members are zero while the scene has no fog (`Renderer3D::SetFog`, or a
 `FogComponent`); [Lighting](lighting.md#fog) has the fog factor the lit shader mixes by.
 
-Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching),
+Vertices arrive already in **world space** (Renderer3D transforms them on the CPU while batching;
+an [instanced shader](#instanced-custom-shaders-v10) places them itself),
 as `a_Position` (location 0), `a_Normal` (1), `a_Color` (2 — the component's `Color`) and
 `a_TexCoord` (3 — the mesh's UVs, since v0.6.1). Use exactly these names: D3D11/D3D12 match vertex
 inputs by name, Vulkan by location. To texture a mesh, sample a bound texture with `a_TexCoord`:
@@ -569,6 +675,43 @@ glow->SetUniform(GlowParams{ pulsedIntensity });
 `examples/DungeonCrawler3D/` shows this: the treasures use a custom unlit/glow material whose
 intensity is pulsed each frame (see `GameScripts.cpp`).
 
+#### Instanced custom shaders (v1.0)
+
+A custom material is batched on the CPU unless it opts in with `MaterialParams::SetInstancing(true)`.
+Its vertex stage then reads the mesh's own vertices, in model space, as `a_Position` (location 0),
+`a_Normal` (1) and `a_TexCoord` (2), and places each copy itself from its instance record. The
+engine include `<DingoEngine/Instancing.glsl>` declares the record buffer (`DE_InstanceData`, a
+readonly storage block at binding 9) and the draw's first record (`DE_InstanceDraw`, a uniform
+block at binding 10), both found by name: define `DE_INSTANCE_DATA_BINDING` /
+`DE_INSTANCE_DRAW_BINDING` before the include to move them off a texture's binding.
+
+```glsl
+#include <DingoEngine/Instancing.glsl>
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+
+void main()
+{
+    InstanceRecord instance = GetInstance(uint(gl_InstanceIndex)); // never gl_BaseInstance: D3D leaves it out
+    vec3 world = InstanceWorldPosition(instance, a_Position);
+    gl_Position = ViewProjection * vec4(world, 1.0);
+    v_Normal = InstanceWorldNormal(instance, a_Normal);
+    v_Color = instance.Color;                                     // the component's Color
+}
+```
+
+Such a material draws every mesh given it instanced, however few copies and even with instancing
+turned off, since its shader can't read the CPU batches (its copies culled from the camera may still
+cast through the CPU batches, which the shadow pass draws with its own shader). Past
+`Renderer3D::k_MaxInstancedDrawsPerFrame` instanced draws in a frame its meshes are skipped
+(`Statistics::DroppedInstancedMeshes`, warned once). A shader missing either block, or putting one
+on a binding the material's textures or samplers use (texture slot *i* binds at `2 + 2i`, sampler
+slot *i* at `3 + 2i`, so slot 4's texture or slot 3's sampler meet the default 10 and 9), draws
+nothing and casts no shadow (warned once), and so does a translucent material with `Instancing`,
+since the translucent pass draws no instances.
+
 #### Winding and culling
 
 `Mesh::CreateBox` and `Mesh::CreateSphere` are wound counter-clockwise seen from outside, and so
@@ -577,9 +720,9 @@ are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's wi
 Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
 `CreateSphere` raises `rings` to at least 2 and `segments` to at least 3.
 
-Renderer3D transforms vertices on the CPU and keeps their order, so an entity mirrored by a
-negative scale on one or three axes is drawn inside out by a culling material. Give mirrored
-entities a `CullMode::None` material.
+Renderer3D keeps the vertices' order, whether it transforms them on the CPU or instances them on
+the GPU, so an entity mirrored by a negative scale on one or three axes is drawn inside out by a
+culling material. Give mirrored entities a `CullMode::None` material.
 
 Before v0.8.1, `Material` ignored `FrontCounterClockwise` and treated clockwise triangles as front
 faces, so `CullMode::Back` drew these meshes inside out (`CreateSphere`, wound the other way, came
@@ -623,9 +766,9 @@ bullet.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ yellow });
 bullet.AddScript<BulletScript>(glm::vec2{ 0.0f, 20.0f });
 ```
 
-`Scene::OnUpdate(dt)` drives every behaviour's `OnUpdate`, then the animators (and their events'
-`OnAnimationEvent`), then physics. It caps
-`dt` at 4/60 s for all three, so a stall (a cold shader compile, a breakpoint) runs the scene slow
+`Scene::OnUpdate(dt)` drives every behaviour's `OnFixedUpdate` and `OnUpdate`, then the animators
+(and their events' `OnAnimationEvent`), then physics. It caps
+`dt` at 4/60 s for all of them, so a stall (a cold shader compile, a breakpoint) runs the scene slow
 instead of letting bodies tunnel through their colliders. Inside a script you have:
 
 - `GetEntity()` — the entity you're attached to (and `GetEntity().GetComponent<T>()`, `Destroy()`, …).
@@ -635,6 +778,35 @@ instead of letting bodies tunnel through their colliders. Inside a script you ha
 The hooks fire in order: **`OnCreate`** when the script is attached, **`OnStart`** once when
 the scene starts (`Scene::OnStart`, *before* physics — or on the first `OnUpdate` for scripts
 spawned later), then **`OnUpdate`** every frame, and **`OnDestroy`** on removal.
+
+**`OnFixedUpdate(step)`** (v1.0) runs before `OnUpdate`, as many times as the frame's delta covers
+the scene's fixed step (`Scene::SetFixedTimeStep`, 1/60 s by default): none in a short frame, two
+in a 1/30 s one. Time left over carries into the next frame, and `Scene::GetFixedTimeAlpha()` says
+how far it reaches into the next step, for drawing between the last two. At most
+`Scene::k_MaxFixedStepsPerUpdate` (8) run in one `OnUpdate`; the rest is dropped. Use it for logic
+whose result must not depend on the frame rate (a counter, a cooldown in steps, a replay). Physics
+still steps once a frame with the frame's delta, so forces set in `OnFixedUpdate` act over that.
+
+### Active and inactive entities (v1.0)
+
+`entity.SetActive(false)` switches an entity and its whole subtree off without destroying them:
+they keep their components and scripts but don't render, light, cast, simulate, animate, emit
+particles or play or hear audio, and their scripts get no `OnUpdate`, `OnFixedUpdate` or
+`OnAnimationEvent`. It overrides each component's own switch (`Visible`, `Enabled`, `Playing`).
+`IsActive()` is the entity's own flag; `IsActiveInHierarchy()` is false when it or any ancestor is
+off, and reparenting under an inactive entity switches a subtree off the same way.
+
+- **Physics**: the bodies and character controllers are destroyed, so `GetRuntimeBody3D` and
+  `GetCharacterController` return none and a cached `CharacterController3D*` dies with them. On
+  `SetActive(true)` they are built again at the current transform, at rest.
+- **Audio**: a playing source stops; a `PlayOnStart` source starts again when the entity comes back
+  while the scene runs. `PlayAudioSource` on an inactive entity warns and does nothing.
+- **Scripts**: a script whose entity is inactive when the scene starts gets its `OnStart` when the
+  entity is first active.
+- **Lights**: an inactive light still counts as the scene choosing its lights, like a disabled one,
+  so no default light appears.
+- **Queries** still see it: `ForEachEntity`, `GetScriptsOfType`, `GetEntityByUUID` and `FindChild`
+  include inactive entities.
 
 Because a script has full `GetScene()` access, this is enough to keep game *layers* tiny: a
 single **controller** script can build the whole world in `OnStart` (spawn the level, the
@@ -682,15 +854,14 @@ for (InvaderScript* invader : GetScene().GetScriptsOfType<InvaderScript>())
 
 `SceneManager` is the default way to work with scenes — it owns named scenes, drives their
 lifecycle, and updates + renders the active one. Each scene has an `OnStart` / `OnUpdate` /
-`OnStop` lifecycle: **`OnStart` brings the scene up (starts physics, `OnPhysicsStart`), `OnStop`
-tears it down (`OnPhysicsStop`)**, and `IsRunning()` reports the state.
+`OnStop` lifecycle: **`OnStart` brings the scene up (scripts' `OnStart`, then physics and
+`PlayOnStart` audio), `OnStop` tears it down**, and `IsRunning()` reports the state.
 
-Lifecycle is **explicit**: you call `scene->OnStart()` (typically the last thing in `OnAttach`)
-and `scene->OnStop()` (in `OnDetach`). `SetActiveScene(name)` only *selects* the active scene on
-its **first** call — so your explicit `OnStart` is the real start. A later **switch** between
-scenes does run `OnStop` on the outgoing scene and `OnStart` on the incoming one, so multi-scene
-transitions stay one-liners. Re-activating the already-active scene is a no-op, and `CreateScene`
-never activates.
+`SetActiveScene(name)` stops the outgoing scene, if any, and starts the new one (v1.0: before, the
+first activation only selected the scene and the host had to call `OnStart` itself). So build a
+scene's entities before activating it. `OnStart` is a no-op on a running scene, re-activating the
+already-active scene is a no-op, and `CreateScene` never activates. Stop the active scene yourself
+(`scene->OnStop()`) in `OnDetach`.
 
 ```cpp
 class GameLayer : public Layer
@@ -707,8 +878,7 @@ class GameLayer : public Layer
         m_GameOver = m_Scenes.CreateScene("GameOver");
         for (Scene* s : { m_Menu, m_Game, m_GameOver }) { s->SetClearColor(bg); SetupCamera(s); }
         BuildMenu();
-        m_Scenes.SetActiveScene("Menu");                 // selects the active scene...
-        m_Menu->OnStart();                               // ...you start it explicitly
+        m_Scenes.SetActiveScene("Menu");                 // activates and starts it
     }
 
     void OnDetach() override
@@ -743,11 +913,10 @@ API: `CreateScene`, `GetScene`, `HasScene`, `SetActiveScene`, `GetActiveScene`,
 
 ## Debugging: the F9 Scene tab
 
-**F9** opens the Debug window on its **Scene** tab (`UI::SceneSection()` embeds it in your own
-window, `UI::SceneStatsWindow()` opens it as a window of its own, and `UI::DebugTab::Scene` selects
-it). It is read-only and costs nothing while it isn't shown.
+**F9** opens the Debug window on its **Scene** tab. It is read-only and costs nothing while it isn't
+shown.
 
-- **Scenes**: every live scene in creation order, whether it is running and has physics, its entity
+- **Scenes**: every live scene that has updated at least once, in the order each first updated, whether it is running and has physics, its entity
   count, its enabled point and spot lights next to the renderer's local-light budget
   (`Renderer3D::GetLocalLightBudget`), and its live bodies and controllers. The budget applies to the
   lights in view, so a level with more lights than that is fine; F4 shows how many a frame drew.
@@ -791,6 +960,21 @@ Read `examples/SpaceInvaders/src/GameScripts.cpp` and `GameLayer.cpp` alongside 
 guide to see the patterns (including the spawn caveat and `GetScriptsOfType`) applied
 in a real game.
 
----
+## Limits
 
-Back to the [documentation index](README.md).
+- No scene serialization (see [Saves & Settings](saves-and-settings.md)), and an entity holds one
+  script.
+- A scene is lit by at most four directional lights and 32 point and spot lights
+  ([Lighting](lighting.md)).
+- Culling trusts a mesh's bounds, so a vertex shader that moves vertices needs
+  `MaterialParams::SetFrustumCulled(false)`; a skinned mesh is culled by its padded rest-pose bounds.
+- Instancing never applies to translucent or skinned meshes, and a custom material instances only
+  with a shader written for it. Past `Renderer3D::k_MaxInstancedDrawsPerFrame` instanced draws a
+  frame the rest are skipped or batched on the CPU.
+- A `Static` mesh is not drawn static when it has a `CullDistance`, a translucent or skinned-only
+  material, too many vertices for one draw or a non-affine transform; moving one rebakes its cell.
+- `OnFixedUpdate` runs at most `Scene::k_MaxFixedStepsPerUpdate` (8) times an update; physics stays
+  on the variable step.
+- A settings component is read when the object it describes is built; editing it on a live body
+  changes nothing until the body is rebuilt.
+- 2D and 3D transforms don't convert into each other in a mixed hierarchy.

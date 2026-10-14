@@ -141,7 +141,7 @@ namespace Dingo
 
 	// --- Tournament (--tournament=N) -----------------------------------------------
 	inline constexpr float TOURNAMENT_BOUT_LIMIT = 90.0f;
-	inline constexpr int   TOURNAMENT_MAX       = 1000;
+	inline constexpr int   TOURNAMENT_MAX       = 100000;
 	inline constexpr int   TOURNAMENT_STEPS_PER_FRAME = 8;
 	// Tier 3 has to win this fraction of the runs against a lower tier (8 of 10).
 	inline constexpr float TOURNAMENT_PASS_FRACTION = 0.8f;

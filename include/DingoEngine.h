@@ -7,14 +7,18 @@
 #include "DingoEngine/Core/Layer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/CursorMode.h"
+#include "DingoEngine/Core/FatalError.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
 #include "DingoEngine/Core/KeyCodes.h"
 #include "DingoEngine/Core/PerspectiveCamera.h"
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Core/Ray.h"
+#include "DingoEngine/Core/SaveData.h"
+#include "DingoEngine/Core/Settings.h"
 #include "DingoEngine/Core/UUID.h"
 
+#include "DingoEngine/Windowing/DisplayMode.h"
 #include "DingoEngine/Windowing/Window.h"
 
 // ----------------------------------------------------------------------
@@ -58,14 +62,17 @@
 #include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
+#include "DingoEngine/Graphics/Frustum.h"
 #include "DingoEngine/Graphics/Pipeline.h"
-#include "DingoEngine/Graphics/CommandList.h"
+#include "DingoEngine/Graphics/Viewport.h"
 #include "DingoEngine/Graphics/ComputePass.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/StaticBatch.h"
+#include "DingoEngine/Graphics/SurfaceOverride.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/Animator.h"
 
@@ -74,7 +81,6 @@
 // ----------------------------------------------------------------------
 
 #include "DingoEngine/UI/UI.h"
-#include "DingoEngine/UI/DebugPanels.h"
 
 // ----------------------------------------------------------------------
 // Audio

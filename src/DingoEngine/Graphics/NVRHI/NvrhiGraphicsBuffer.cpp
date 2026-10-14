@@ -1,4 +1,5 @@
 #include "depch.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "NvrhiGraphicsBuffer.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -6,6 +7,7 @@
 #include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
 
+#include <atomic>
 #include <cstring>
 #include <vector>
 
@@ -91,7 +93,7 @@ namespace Dingo
 			return;
 		}
 
-		if (m_Params.DirectUpload)
+		if (m_Params.Upload == BufferUpload::Direct)
 		{
 			nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
 				.setQueueType(nvrhi::CommandQueue::Graphics);
@@ -112,6 +114,15 @@ namespace Dingo
 
 	void NvrhiGraphicsBuffer::Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset)
 	{
+		// Vulkan and D3D12 give each volatile write a fresh version and drop the offset; D3D11 keeps it.
+		// Still written, at 0 everywhere: a volatile buffer bound unwritten in a frame removes the D3D12 device.
+		if (m_Params.IsVolatile && offset != 0)
+		{
+			static std::atomic<bool> s_Reported = false;
+			if (!s_Reported.exchange(true))
+				DE_CORE_ERROR("GraphicsBuffer '{}': a volatile buffer is written whole from offset 0; a write at offset {} went to offset 0.", m_Params.DebugName, offset);
+			offset = 0;
+		}
 		Write(commandList, m_BufferHandle, m_PadsWrites, data, size, offset);
 	}
 
@@ -146,7 +157,7 @@ namespace Dingo
 	// earlier dispatches (and on D3D11 clear its state).
 	void NvrhiGraphicsBuffer::UploadStorage(const void* data, uint64_t size, uint64_t offset)
 	{
-		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		if (Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList())
 		{
 			Write(static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle(), data, size, offset);
 			return;
@@ -207,7 +218,7 @@ namespace Dingo
 			done(bytes);
 		};
 
-		if (CommandList* frameList = Renderer::TryGetRecordingCommandList())
+		if (Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList())
 		{
 			// As Texture::ReadPixels: a later use with the binding set already bound wouldn't move the
 			// buffer out of the copy source state, so put back the state it had.

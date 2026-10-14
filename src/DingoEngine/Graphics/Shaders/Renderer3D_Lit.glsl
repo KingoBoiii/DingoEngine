@@ -1,7 +1,9 @@
 // Static vertices arrive in world space (Renderer3D transforms them on the CPU while batching), so
 // that vertex stage only applies the camera. With DE_SKINNED the GPU skins each vertex with the
-// joint palette in SkinData (Skinning.glsl), one draw per mesh; the fragment stage is shared. The
-// fragment stage takes the scene's shadows from Shadows.glsl at bindings 5 to 7.
+// joint palette its instance has in the scene's skin arena (Skinning.glsl), one draw per mesh; with DE_INSTANCED it places each copy
+// of a repeated mesh from its record (Instancing.glsl), one draw per mesh. The fragment stage is shared. The
+// fragment stage takes the scene's shadows from Shadows.glsl at bindings 5 to 7. A static vertex
+// names its mesh's DE_ObjectData record, which holds a SurfaceOverride; 0 is none, the material's own.
 //
 // CameraData mirrors Renderer3D::CameraData. Its first three members are a frozen prefix that
 // custom material shaders declare on their own, so members are only ever appended.
@@ -18,9 +20,11 @@ layout(location = 0) out vec3 v_Normal;
 layout(location = 1) out vec4 v_Color;
 layout(location = 2) out vec3 v_WorldPosition;
 layout(location = 3) out vec2 v_TexCoord;
+layout(location = 4) flat out uint v_ObjectIndex;
 
 #ifdef DE_SKINNED
 
+#define DE_SKIN_PALETTE
 #include <DingoEngine/Skinning.glsl>
 
 layout(location = 0) in vec3 a_Position;
@@ -32,13 +36,35 @@ layout(location = 4) in vec4 a_Weights;
 void main()
 {
 	mat4 skin = SkinMatrix(a_Joints, a_Weights);
-	vec4 worldPosition = Model * (skin * vec4(a_Position, 1.0));
+	vec4 worldPosition = SkinModel() * (skin * vec4(a_Position, 1.0));
 
 	gl_Position     = ViewProjection * worldPosition;
 	v_Normal        = SkinNormal(skin, a_Normal);
-	v_Color         = Color;
+	v_Color         = SkinColor();
 	v_WorldPosition = worldPosition.xyz;
 	v_TexCoord      = a_TexCoord;
+	v_ObjectIndex   = 0u;
+}
+
+#elif defined(DE_INSTANCED)
+
+#include <DingoEngine/Instancing.glsl>
+
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_TexCoord;
+
+void main()
+{
+	InstanceRecord instance = GetInstance(uint(gl_InstanceIndex));
+	vec3 worldPosition = InstanceWorldPosition(instance, a_Position);
+
+	gl_Position     = ViewProjection * vec4(worldPosition, 1.0);
+	v_Normal        = InstanceWorldNormal(instance, a_Normal);
+	v_Color         = instance.Color;
+	v_WorldPosition = worldPosition;
+	v_TexCoord      = a_TexCoord;
+	v_ObjectIndex   = instance.Misc.x;
 }
 
 #else
@@ -47,6 +73,7 @@ layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec3 a_Normal;
 layout(location = 2) in vec4 a_Color;
 layout(location = 3) in vec2 a_TexCoord;
+layout(location = 4) in uint a_ObjectIndex;
 
 void main()
 {
@@ -55,6 +82,7 @@ void main()
 	v_Color         = a_Color;
 	v_WorldPosition = a_Position;
 	v_TexCoord      = a_TexCoord;
+	v_ObjectIndex   = a_ObjectIndex;
 }
 
 #endif
@@ -66,6 +94,7 @@ layout(location = 0) in vec3 v_Normal;
 layout(location = 1) in vec4 v_Color;
 layout(location = 2) in vec3 v_WorldPosition;
 layout(location = 3) in vec2 v_TexCoord;
+layout(location = 4) flat in uint v_ObjectIndex;
 
 const int MAX_DIRECTIONAL_LIGHTS = 4;
 const int MAX_LOCAL_LIGHTS = 32;
@@ -105,6 +134,18 @@ layout(std140, binding = 1) uniform MaterialData
 	vec4 Surface;       // x = emissive strength, y = roughness, z = specular strength, w = fog target: 0 FogColor, 1 black, 2 white
 };
 
+// Mirrors Renderer3D::ObjectRecord.
+struct ObjectRecord
+{
+	vec4 Emissive; // rgb = colour, a = strength
+	vec4 Surface;  // x = roughness, y = specular strength
+};
+
+layout(std430, binding = 8) readonly buffer DE_ObjectData
+{
+	ObjectRecord Objects[];
+};
+
 layout(binding = 2) uniform texture2D u_Albedo;
 layout(binding = 3) uniform sampler u_AlbedoSampler;
 
@@ -140,8 +181,21 @@ void main()
 	vec3 normal = normalize(v_Normal);
 	vec3 albedo = v_Color.rgb * texture(sampler2D(u_Albedo, u_AlbedoSampler), v_TexCoord).rgb;
 
-	bool shiny = Surface.z > 0.0;
-	float shininess = exp2(10.0 * (1.0 - Surface.y) + 1.0);
+	vec3 emissiveColor = EmissiveColor.rgb;
+	float emissiveStrength = Surface.x;
+	float roughness = Surface.y;
+	float specularStrength = Surface.z;
+	if (v_ObjectIndex != 0u)
+	{
+		ObjectRecord object = Objects[v_ObjectIndex];
+		emissiveColor = object.Emissive.rgb;
+		emissiveStrength = object.Emissive.a;
+		roughness = object.Surface.x;
+		specularStrength = object.Surface.y;
+	}
+
+	bool shiny = specularStrength > 0.0;
+	float shininess = exp2(10.0 * (1.0 - roughness) + 1.0);
 	vec3 toCamera = CameraPosition.w > 0.5 ? normalize(CameraPosition.xyz - v_WorldPosition) : CameraPosition.xyz;
 
 	vec3 lighting = AmbientColor.rgb;
@@ -180,8 +234,8 @@ void main()
 			specular += light.Color.rgb * nDotL * (falloff * falloff) * (cone * cone) * Highlight(normal, toLight, toCamera, shininess);
 	}
 
-	vec3 finalColor = albedo * lighting + specular * Surface.z;
-	finalColor += EmissiveColor.rgb * Surface.x;
+	vec3 finalColor = albedo * lighting + specular * specularStrength;
+	finalColor += emissiveColor * emissiveStrength;
 	if (ShadowCounts.z != 0)
 		finalColor *= ShadowCascadeTint(v_WorldPosition);
 	if (FogParams.w > 0.5 && CameraPosition.w > 0.5)

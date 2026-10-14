@@ -19,7 +19,7 @@ namespace Dingo
 			{
 				entt::entity first = entt::null;
 
-				auto view = registry.view<const CameraComponent>();
+				auto view = registry.view<const CameraComponent>(entt::exclude<InactiveComponent>);
 				for (entt::entity handle : view)
 				{
 					if (first == entt::null)
@@ -47,7 +47,7 @@ namespace Dingo
 				outHasOrthographic = false;
 				bool perspectivePrimary = false, orthographicPrimary = false;
 
-				auto view = registry.view<const CameraComponent>();
+				auto view = registry.view<const CameraComponent>(entt::exclude<InactiveComponent>);
 				for (entt::entity handle : view)
 				{
 					const CameraComponent& camera = view.get<const CameraComponent>(handle);
@@ -71,7 +71,7 @@ namespace Dingo
 
 			bool FindFirstDirectionalLight(const entt::registry& registry, entt::entity& out)
 			{
-				for (entt::entity handle : registry.view<const DirectionalLightComponent>())
+				for (entt::entity handle : registry.view<const DirectionalLightComponent>(entt::exclude<InactiveComponent>))
 				{
 					out = handle;
 					return true;

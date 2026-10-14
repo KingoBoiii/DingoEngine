@@ -27,9 +27,11 @@ namespace Dingo
 	{
 
 		// The 2D colliders' shapes live on the body, so they are tracked with it.
+		// Type is the body's, as built: the settings component may change after.
 		struct RigidBody2DRuntime
 		{
 			PhysicsBodyId2D Body = 0;
+			BodyType2D Type = BodyType2D::Static;
 			PhysicsShapeId2D BoxShape = 0;
 			PhysicsShapeId2D CircleShape = 0;
 		};
@@ -37,6 +39,7 @@ namespace Dingo
 		struct RigidBody3DRuntime
 		{
 			PhysicsBodyId3D Body = k_InvalidBody3D;
+			BodyType3D Type = BodyType3D::Static;
 		};
 
 		// Slot in PhysicsSync's controller store.
@@ -63,6 +66,9 @@ namespace Dingo
 			// Root motion set the entity's controller velocity last pass, so it is stopped once it no
 			// longer does.
 			bool DroveController = false;
+			// Its entity wasn't drawn last frame (AnimatorComponent::CullingMode), and the updates since.
+			bool Culled = false;
+			uint32_t CulledUpdates = 0;
 		};
 
 		// A ParticleEmitterComponent's emitter, made by the renderer that first draws it (ParticleSync).

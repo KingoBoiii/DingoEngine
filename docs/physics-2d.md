@@ -11,7 +11,8 @@ The simulation backend is [Box2D](https://box2d.org/) (v3), but — exactly like
 EnTT-based ECS — it is an internal detail: **no Box2D type appears in any public
 header**, and your game never includes or links Box2D. Bodies and shapes are
 referred to through opaque handles the engine keeps for each entity;
-`Scene::GetRuntimeBody2D(entity)` returns the body's handle (0 while it has none).
+`Scene::GetRuntimeBody2D(entity)` returns the body's handle (`k_InvalidBody2D`, which is 0, while it
+has none).
 
 > World units are metres. Because the physics world shares the coordinate space of
 > your orthographic camera, 1 world unit = 1 metre = 1 Box2D unit. Tune sizes,
@@ -44,7 +45,7 @@ struct RigidBody2DComponent
 struct BoxCollider2DComponent
 {
     glm::vec2 Offset{ 0.0f };
-    glm::vec2 Size{ 0.5f };   // half-extents, as a fraction of TransformComponent::Size
+    glm::vec2 HalfExtents{ 0.5f }; // as a fraction of TransformComponent::Size
     float Density = 1.0f;
     float Friction = 0.5f;
     float Restitution = 0.0f; // bounciness, [0,1]
@@ -61,7 +62,7 @@ struct CircleCollider2DComponent
 ```
 
 Collider extents are expressed as a **fraction of the entity's `Transform.Size`**,
-so the defaults (`Size = {0.5, 0.5}`, `Radius = 0.5`) make the collider exactly fill
+so the defaults (`HalfExtents = {0.5, 0.5}`, `Radius = 0.5`) make the collider exactly fill
 the entity's quad. A `Density` of 0 on a dynamic body falls back to a small mass so
 the body still simulates. `Offset` is in the same fractional units, relative to the
 entity center.
@@ -83,16 +84,16 @@ crate.AddComponent<SpriteRendererComponent>(glm::vec4(0.6f, 0.4f, 0.2f, 1.0f));
 crate.AddComponent<RigidBody2DComponent>(RigidBody2DComponent::BodyType::Dynamic);
 crate.AddComponent<BoxCollider2DComponent>();
 
-// 2. Configure gravity and start the simulation. OnPhysicsStart creates a body
-//    (and collider shapes) for every entity that currently has a RigidBody2DComponent.
+// 2. Configure gravity and start the scene. OnStart creates a body (and collider
+//    shapes) for every active entity that currently has a RigidBody2DComponent.
 scene.SetGravity({ 0.0f, -9.81f });
-scene.OnPhysicsStart();
+scene.OnStart();
 
 // 3. Each frame: Scene::OnUpdate steps the world and syncs transforms back.
 scene.OnUpdate(deltaTime);
 
 // 4. Tear it down (also done automatically by Scene::Clear and the destructor).
-scene.OnPhysicsStop();
+scene.OnStop();
 ```
 
 `Scene::OnUpdate` runs your `ScriptableEntity` behaviours first (so a script can
@@ -107,7 +108,7 @@ releases its physics body and shapes.
 
 ### Spawning bodies at runtime
 
-`OnPhysicsStart` only creates bodies for entities that exist when it is called. For
+`OnStart` only creates bodies for entities that exist when it is called. For
 something spawned later (a projectile, a new enemy), add the components and then ask
 the scene to instantiate the body:
 
@@ -130,11 +131,11 @@ Box2D out of your code:
 
 ```cpp
 scene.SetGravity({ 0.0f, -9.81f });
-glm::vec2 g = scene.GetGravity();
+glm::vec2 g = scene.GetGravity2D();
 bool running = scene.IsPhysicsRunning();
 
 scene.SetLinearVelocity(entity, { 5.0f, 0.0f });
-glm::vec2 v = scene.GetLinearVelocity(entity);
+glm::vec2 v = scene.GetLinearVelocity2D(entity);
 
 scene.ApplyLinearImpulseToCenter(entity, { 0.0f, 10.0f }); // instant change in momentum
 scene.ApplyLinearImpulse(entity, impulse, worldPoint);     // off-center => adds spin
@@ -165,9 +166,9 @@ body's angle can differ from its transform's by about a tenth of a degree.
 ## Collisions
 
 The simulation resolves collisions for you: dynamic bodies bounce, stack, topple,
-and rest on static geometry automatically. There is no contact-callback API yet, so
-gameplay reactions are driven by observing the simulation — e.g. reading
-`GetLinearVelocity` to detect a hard impact, or checking when a body has fallen out
+and rest on static geometry automatically. There is no contact-callback API, ray cast or
+overlap query in 2D, so gameplay reactions are driven by observing the simulation — e.g. reading
+`GetLinearVelocity2D` to detect a hard impact, or checking when a body has fallen out
 of the play area. The Angry Birds `PigScript` uses exactly this approach to decide
 when a pig has been knocked out.
 
@@ -181,10 +182,24 @@ implementation of it (`Box2DPhysics2D` — the only place `box2d.h` is included)
 The `Scene` is the glue: it builds bodies from your `RigidBody2DComponent` / collider
 components, steps the world each frame, and writes the simulated transforms back. For
 access beyond the entity-based helpers above, reach the live world directly via
-`Scene::GetPhysics2D()` (null until `OnPhysicsStart`).
+`Scene::GetPhysics2D()` (null until `OnStart`).
 
 ## See also
 
 - [Scenes & ECS](scenes-and-ecs.md) — entities, components, and `ScriptableEntity`.
 - The **AngryBirds** example (`examples/AngryBirds/`) — slingshot launching,
   destructible block structures, and pig targets built entirely on this system.
+
+## Limits
+
+- No contact callbacks, ray casts or overlap queries in 2D: gameplay observes velocities and
+  positions instead. So no 2D call hands a game a body id to look up, and there is no
+  `Scene::GetEntityFromBody2D` (it comes with 2D queries).
+- Only box and circle colliders (no polygons), read when the body is built: editing a component on
+  a live body changes nothing until the body is rebuilt.
+- Bodies step on the variable frame delta, cut to 4/60 s, with 4 substeps; `OnFixedUpdate` does
+  not change that ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)).
+- Unlike 3D, a kinematic child does not ignore its ancestors: bodies in one hierarchy collide, so
+  keep a child's collider clear of its parents'.
+- A body's angle can differ from its transform's by about a tenth of a degree (Box2D's fast
+  trigonometry).

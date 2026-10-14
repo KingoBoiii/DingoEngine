@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
 
@@ -24,7 +25,7 @@ namespace Dingo
 		return VirtualFileSystem::ReadBytes(filepath);
 	}
 
-	std::string FileSystem::ReadTextFile(const std::filesystem::path& path)
+	std::string Internal::ReadTextFile(const std::filesystem::path& path)
 	{
 		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(path);
 		if (!bytes)
@@ -44,7 +45,7 @@ namespace Dingo
 
 	}
 
-	const uint8_t* FileSystem::ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
+	const uint8_t* Internal::ReadImage(const std::filesystem::path& filepath, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
 	{
 		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
 		if (!bytes || bytes->empty())
@@ -58,7 +59,7 @@ namespace Dingo
 		return pixels;
 	}
 
-	const uint8_t* FileSystem::ReadImageFromMemory(const void* bytes, size_t size, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
+	const uint8_t* Internal::ReadImageFromMemory(const void* bytes, size_t size, uint32_t* width, uint32_t* height, uint32_t* channels, bool flipVertically, bool forceRGBA)
 	{
 		if (!bytes || size == 0 || size > static_cast<size_t>((std::numeric_limits<int>::max)()))
 		{
@@ -85,9 +86,22 @@ namespace Dingo
 		return data;
 	}
 
-	void FileSystem::FreeImage(const uint8_t* data)
+	void Internal::FreeImage(const uint8_t* data)
 	{
 		stbi_image_free(const_cast<uint8_t*>(data));
+	}
+
+	std::optional<ImageData> FileSystem::ReadImage(const std::filesystem::path& filepath, bool flipVertically, bool forceRGBA)
+	{
+		ImageData image;
+		const uint8_t* data = Internal::ReadImage(filepath, &image.Width, &image.Height, &image.Channels, flipVertically, forceRGBA);
+		if (!data)
+			return std::nullopt;
+		if (forceRGBA)
+			image.Channels = 4;
+		image.Pixels.assign(data, data + static_cast<size_t>(image.Width) * image.Height * image.Channels);
+		Internal::FreeImage(data);
+		return image;
 	}
 
 	bool FileSystem::WriteImage(const std::filesystem::path& filepath, uint32_t width, uint32_t height, uint32_t channels, const uint8_t* pixels, bool flipVertically)
@@ -164,18 +178,6 @@ namespace Dingo
 	std::filesystem::path FileSystem::PathFromUtf8(std::string_view text)
 	{
 		return Internal::PathFromUtf8(text);
-	}
-
-	std::string FileSystem::GetFileName(const std::filesystem::path& filepath)
-	{
-		const std::string& filepathString = Internal::PathToUtf8(filepath);
-
-		// Extract name from filepath
-		auto lastSlash = filepathString.find_last_of("/\\");
-		lastSlash = lastSlash == std::string::npos ? 0 : lastSlash + 1;
-		auto lastDot = filepathString.rfind('.');
-		auto count = lastDot == std::string::npos ? filepathString.size() - lastSlash : lastDot - lastSlash;
-		return filepathString.substr(lastSlash, count);
 	}
 
 }
