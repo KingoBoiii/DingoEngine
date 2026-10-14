@@ -20,6 +20,9 @@
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/ImGui/ImGuiLayer.h"
+#include "DingoEngine/Core/InputBackend.h"
+#include "DingoEngine/UI/DingoUI/DingoUIContext.h"
+#include "DingoEngine/UI/DingoUI/DingoUILayer.h"
 #include <DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h>
 
 #include <chrono>
@@ -128,6 +131,9 @@ namespace Dingo
 			m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
 			m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
 			m_SceneRenderer = new SceneRenderer(*m_Renderer2D, *m_Renderer3D);
+
+			if (m_Params.DingoUI.Enabled)
+				m_DingoUIContext = new Internal::DingoUIContext(m_Params.DingoUI);
 		}
 
 		// Audio is independent of the graphics/window stack (miniaudio owns its own
@@ -157,6 +163,9 @@ namespace Dingo
 		// Bring up the ImGui backend if the game wants UI, or if the engine's built-in
 		// debug overlays are enabled -- so the renderer-stats window works even in
 		// projects that use no UI of their own, in every build config (Distribution too).
+		if (m_DingoUIContext)
+			PushOverlay(new Internal::DingoUILayer(*m_DingoUIContext));
+
 		bool enableImGui = !IsHeadless() && (m_Params.EnableImGui || m_Params.EnableDebugOverlays);
 		if (enableImGui)
 		{
@@ -212,6 +221,14 @@ namespace Dingo
 			delete m_Renderer3D;
 			m_Renderer3D = nullptr;
 		}
+
+		if (m_DingoUIContext)
+		{
+			delete m_DingoUIContext;
+			m_DingoUIContext = nullptr;
+		}
+		// Input's statics survive RequestRestart, and so would a consumed key.
+		Internal::InputBackend::ClearConsumed();
 
 		if (m_Renderer2D)
 		{
@@ -421,11 +438,19 @@ namespace Dingo
 				m_AssetManager->Update(m_DeltaTime); // finalize async loads, poll hot-reload
 			}
 
+			const float dingoUIBeginStart = timer.Elapsed();
+			BeginDingoUIFrame();
+			const float dingoUIBeginMs = (timer.Elapsed() - dingoUIBeginStart) * 1000.0f;
+
 			for (Layer* layer : m_LayerStack)
 			{
 				DE_PROFILE_SCOPE_TEXT("Layer::OnUpdate", layer->GetName());
 				layer->OnUpdate(m_DeltaTime);
 			}
+
+			const float dingoUIStart = timer.Elapsed();
+			if (m_DingoUIContext)
+				m_DingoUIContext->EndFrame(render);
 			const float uiStart = timer.Elapsed();
 
 			if (render)
@@ -465,11 +490,42 @@ namespace Dingo
 			const float frameEnd = timer.Elapsed();
 			m_FrameTimings.FrameMs = m_DeltaTime * 1000.0f;
 			m_FrameTimings.WaitMs = (updateStart - waitStart) * 1000.0f;
-			m_FrameTimings.UpdateMs = (uiStart - updateStart) * 1000.0f;
+			m_FrameTimings.DingoUIMs = dingoUIBeginMs + (uiStart - dingoUIStart) * 1000.0f;
+			m_FrameTimings.UpdateMs = (dingoUIStart - updateStart) * 1000.0f - dingoUIBeginMs;
 			m_FrameTimings.UIMs = (frameEnd - uiStart) * 1000.0f;
 
 			RunPostExecutionCallbacks();
 		}
+	}
+
+	void Application::BeginDingoUIFrame()
+	{
+		const bool imguiBlocks = m_ImGuiLayer && m_ImGuiLayer->BlocksGameInput();
+		const bool imguiMouse = imguiBlocks && m_ImGuiLayer->WantsMouse();
+		const bool imguiKeyboard = imguiBlocks && m_ImGuiLayer->WantsKeyboard();
+		// ImGui's capture flags come from its last NewFrame, a frame behind these presses; the
+		// events were already marked Handled, and this hides the polled state from the game too.
+		if (imguiMouse || imguiKeyboard)
+			Internal::InputBackend::ConsumeNewPresses(imguiMouse, imguiKeyboard);
+
+		if (!m_DingoUIContext)
+			return;
+
+		Internal::UIInputState input;
+		input.ViewportSize = { static_cast<float>(m_Window->GetWidth()), static_cast<float>(m_Window->GetHeight()) };
+		input.PointerPosition = Input::GetMousePosition();
+		input.Scroll = Input::GetMouseScrollDelta();
+		for (uint32_t button = 0; button < Internal::UIInputState::k_PointerButtonCount; ++button)
+		{
+			const MouseButton mouseButton = static_cast<MouseButton>(button);
+			input.PointerDown[button] = Input::IsMouseButtonDown(mouseButton);
+			input.PointerPressed[button] = Input::IsMouseButtonPressed(mouseButton);
+			input.PointerReleased[button] = Input::IsMouseButtonReleased(mouseButton);
+		}
+		input.PointerAvailable = !imguiMouse && Input::GetCursorMode() != CursorMode::Locked;
+		input.KeyboardAvailable = !imguiKeyboard;
+		input.DeltaTime = m_DeltaTime;
+		m_DingoUIContext->BeginFrame(input);
 	}
 
 	void Application::RunPostExecutionCallbacks()
@@ -493,19 +549,19 @@ namespace Dingo
 		// A key opens the window on its tab (or switches to it); the active tab's key
 		// closes it.
 		Internal::DebugTab request = Internal::DebugTab::None;
-		if (Input::IsKeyPressed(Key::F3))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F3))
 			request = Internal::DebugTab::Engine;
-		if (Input::IsKeyPressed(Key::F4))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F4))
 			request = Internal::DebugTab::Renderer;
-		if (Input::IsKeyPressed(Key::F5))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F5))
 			request = Internal::DebugTab::Input;
-		if (Input::IsKeyPressed(Key::F6))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F6))
 			request = Internal::DebugTab::Assets;
-		if (Input::IsKeyPressed(Key::F7))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F7))
 			request = Internal::DebugTab::Animation;
-		if (Input::IsKeyPressed(Key::F8))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F8))
 			request = Internal::DebugTab::Profiler;
-		if (Input::IsKeyPressed(Key::F9))
+		if (Internal::InputBackend::IsKeyPressedUnconsumed(Key::F9))
 			request = Internal::DebugTab::Scene;
 
 		if (request != Internal::DebugTab::None)

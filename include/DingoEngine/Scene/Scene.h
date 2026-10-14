@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -190,6 +191,12 @@ namespace Dingo
 		/// perspective camera. Scripts use this to turn mouse position into world picking
 		/// without hand-inverting a view-projection matrix.
 		Ray ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize);
+
+		/// Projects a world-space point through the scene's primary camera (perspective or
+		/// orthographic, as GetActiveCameraViewProjection picks it) to a pixel position (origin
+		/// top-left, +Y down) on a surface of viewportSize pixels, e.g. to place a label over an
+		/// entity. Returns nullopt when the point is behind the camera, or the scene has no camera.
+		std::optional<glm::vec2> WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize) const;
 
 		/// Calls `fn` for every entity in the scene, in no guaranteed order. It walks the live
 		/// registry, so collect the entities first if `fn` creates or destroys any.

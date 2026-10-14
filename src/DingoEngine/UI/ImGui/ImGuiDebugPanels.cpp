@@ -1063,13 +1063,13 @@ namespace Dingo::Internal
 
 		// One sample a frame while this tab is drawn.
 		constexpr int k_History = 120;
-		constexpr int k_Rows = 5;
+		constexpr int k_Rows = 6;
 		static float s_History[k_Rows][k_History] = {};
 		static int s_Cursor = 0;
 		static int s_Count = 0;
 
 		const FrameTimings& frame = Application::Get().GetFrameTimings();
-		const float samples[k_Rows] = { frame.FrameMs, frame.WaitMs, frame.UpdateMs, frame.UIMs, Renderer::GetRenderThreadMilliseconds() };
+		const float samples[k_Rows] = { frame.FrameMs, frame.WaitMs, frame.UpdateMs, frame.DingoUIMs, frame.UIMs, Renderer::GetRenderThreadMilliseconds() };
 		for (int row = 0; row < k_Rows; ++row)
 			s_History[row][s_Cursor] = samples[row];
 		s_Cursor = (s_Cursor + 1) % k_History;
@@ -1103,8 +1103,8 @@ namespace Dingo::Internal
 		ImGui::Spacing();
 		ImGui::TextUnformatted("CPU  (last 120 frames while this tab is open)");
 		ImGui::Separator();
-		static constexpr const char* s_RowNames[k_Rows] = { "Frame", "Wait for render thread", "Update", "UI", "Render thread (execute + present)" };
-		static constexpr int s_RowIndent[k_Rows] = { 0, 1, 1, 1, 0 };
+		static constexpr const char* s_RowNames[k_Rows] = { "Frame", "Wait for render thread", "Update", "Game UI", "ImGui", "Render thread (execute + present)" };
+		static constexpr int s_RowIndent[k_Rows] = { 0, 1, 1, 1, 1, 0 };
 		timingTable("##cputimes", "Main thread", [&]
 		{
 			for (int row = 0; row < k_Rows; ++row)

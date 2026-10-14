@@ -13,7 +13,7 @@
 #include <FontGeometry.h>
 
 #include "MSDFData.h"
-#include "Utf8.h"
+#include "TextLayout.h"
 
 namespace Dingo
 {
@@ -242,72 +242,49 @@ namespace Dingo
 
 	float Font::GetStringWidth(const std::string& string, float size, float kerning) const
 	{
-		if (string.empty() || !IsValid())
-		{
+		return MeasureText(string, size, 0.0f, kerning).Width;
+	}
+
+	float Font::GetLineHeight(float size, float lineSpacing) const
+	{
+		if (!IsValid())
 			return 0.0f;
-		}
 
-		const msdf_atlas::FontGeometry& fontGeometry = m_Data->FontGeometry;
-		const msdfgen::FontMetrics& metrics = fontGeometry.getMetrics();
-		const double fsScale = 1.0 / (metrics.ascenderY - metrics.descenderY);
+		const Internal::TextLayout::FontGlyphSource source(*this);
+		return static_cast<float>((source.LineHeight + lineSpacing) * size);
+	}
 
-		const msdf_atlas::GlyphGeometry* spaceGlyph = fontGeometry.getGlyph(' ');
-		const double spaceAdvance = spaceGlyph ? spaceGlyph->getAdvance() : 0.0;
+	float Font::GetAscender(float size) const
+	{
+		if (!IsValid())
+			return 0.0f;
 
-		double x = 0.0;
-		double widestLine = 0.0;
+		return static_cast<float>(Internal::TextLayout::FontGlyphSource(*this).Ascender * size);
+	}
 
-		const std::string_view text = string;
-		size_t index = 0;
-		while (index < text.size())
-		{
-			const uint32_t character = Internal::DecodeUtf8(text, index);
-			size_t lookahead = index;
-			const bool hasNext = lookahead < text.size();
-			const uint32_t nextCharacter = hasNext ? Internal::DecodeUtf8(text, lookahead) : 0;
+	float Font::GetDescender(float size) const
+	{
+		if (!IsValid())
+			return 0.0f;
 
-			if (character == '\n')
-			{
-				if (x > widestLine)
-					widestLine = x;
+		return static_cast<float>(Internal::TextLayout::FontGlyphSource(*this).Descender * size);
+	}
 
-				x = 0.0;
-				continue;
-			}
+	TextMetrics Font::MeasureText(const std::string& string, float size, float maxWidth, float kerning, float lineSpacing) const
+	{
+		if (string.empty() || !IsValid())
+			return {};
 
-			if (character == '\t')
-			{
-				x += 4.0 * (fsScale * spaceAdvance + kerning);
-				continue;
-			}
+		const Internal::TextLayout::FontGlyphSource source(*this);
+		const Internal::TextLayout::Measurement measurement = Internal::TextLayout::Measure(source, string,
+			{ .Kerning = kerning, .Size = size, .MaxWidth = maxWidth });
 
-			const msdf_atlas::GlyphGeometry* glyph = fontGeometry.getGlyph(character);
-			if (!glyph)
-			{
-				glyph = fontGeometry.getGlyph('?');
-			}
-			if (!glyph)
-			{
-				continue;
-			}
-
-			// Pen advance, not ink width — a space has an advance but no plane bounds.
-			// getAdvance() is an out-param that *replaces* the value, so seed it with the
-			// glyph's own advance and only let the kerned pair overwrite it when there is
-			// a next character.
-			double advance = glyph->getAdvance();
-			if (hasNext)
-			{
-				fontGeometry.getAdvance(advance, character, nextCharacter);
-			}
-
-			x += fsScale * advance + kerning;
-		}
-
-		if (x > widestLine)
-			widestLine = x;
-
-		return static_cast<float>(widestLine * size);
+		TextMetrics metrics;
+		metrics.Width = static_cast<float>(measurement.Width * size);
+		metrics.LineCount = measurement.LineCount;
+		metrics.Height = static_cast<float>((source.Ascender - source.Descender) * size
+			+ (measurement.LineCount - 1) * (source.LineHeight + lineSpacing) * size);
+		return metrics;
 	}
 
 	bool Font::InitializeFontData(const uint8_t* fontData, size_t fontDataSize, int32_t& width, int32_t& height)

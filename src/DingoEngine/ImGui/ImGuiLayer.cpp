@@ -68,6 +68,29 @@ namespace Dingo
 		ImGui::DestroyContext();
 	}
 
+	bool ImGuiLayer::WantsMouse() const
+	{
+		return m_ImGuiRenderer && ImGui::GetIO().WantCaptureMouse;
+	}
+
+	bool ImGuiLayer::WantsKeyboard() const
+	{
+		return m_ImGuiRenderer && ImGui::GetIO().WantCaptureKeyboard;
+	}
+
+	void ImGuiLayer::OnEvent(Event& e)
+	{
+		if (!m_Params.BlockGameInput)
+			return;
+
+		// Releases pass, so a layer that saw a press always sees its release.
+		const EventType type = e.GetEventType();
+		if ((type == EventType::MouseButtonPressed || type == EventType::MouseScrolled) && WantsMouse())
+			e.Handled = true;
+		else if (type == EventType::KeyPressed && WantsKeyboard())
+			e.Handled = true;
+	}
+
 	void ImGuiLayer::Begin()
 	{
 		m_ImGuiRenderer->UpdateFontTexture();
@@ -117,6 +140,10 @@ namespace Dingo
 		{
 			io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard; // Disable Keyboard Controls
 		}
+
+		// Keyboard navigation alone (a focused window) must not take the game's keys: a debug
+		// panel is focused from the frame it appears. Only an edited widget or a modal does.
+		io.ConfigNavCaptureKeyboard = false;
 
 		if (m_Params.EnableGamepadNavigation)
 		{

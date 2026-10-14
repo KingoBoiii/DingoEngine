@@ -14,7 +14,7 @@ Two tools, and they work apart:
 | Section | What it shows |
 |---|---|
 | Tracy | Whether Tracy is compiled in, and whether the viewer is connected. |
-| CPU | The main thread's last frame (`Application::GetFrameTimings`): the whole frame, the wait for the render thread inside `Renderer::BeginFrame`, the update (`AssetManager::Update` and every layer's `OnUpdate`, which is where the draws are recorded) and the UI. Then the render thread's time to execute the frame's command list and present it. Last, mean and max over the last 120 frames the tab was open for. |
+| CPU | The main thread's last frame (`Application::GetFrameTimings`): the whole frame, the wait for the render thread inside `Renderer::BeginFrame`, the update (`AssetManager::Update` and every layer's `OnUpdate`, which is where the draws are recorded), the game UI (DingoUI: its input before the update and its layout and draws after it, `FrameTimings::DingoUIMs`) and ImGui. Then the render thread's time to execute the frame's command list and present it. Last, mean and max over the last 120 frames the tab was open for. |
 | GPU passes | Every GPU timer, nested under the timers open around it when it first ran: `Frame` (the whole command list), `Renderer3D` (each `EndScene`), `Renderer2D` (each scene, `BeginScene` to `EndScene`) and `ImGui`. A timer that runs several times a frame (one per scene) adds up to one sample. |
 
 GPU results are read four frames after they were recorded, so the reader never waits for the GPU.

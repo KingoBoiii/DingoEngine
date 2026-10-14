@@ -13,6 +13,11 @@ struct GLFWwindow;
 namespace Dingo
 {
 
+	namespace Internal
+	{
+		struct InputBackend;
+	}
+
 	/// Frame-coherent input snapshot, polled with static functions from the main thread (usually in
 	/// Layer::OnUpdate). The snapshot is taken once per frame, so every key and button edge reaches
 	/// exactly one OnUpdate.
@@ -171,9 +176,22 @@ namespace Dingo
 		static void OnJoystickConnected();
 		static void OnJoystickDisconnected(uint32_t joystick);
 
+		// A consumed button or key reads as up to every query until it is released, the release
+		// frame included; consumed scroll reads zero for the frame.
+		static void ConsumeKey(KeyCode keycode);
+		static void ConsumeMouseButton(MouseButton button);
+		static void ConsumeScroll();
+		static void ConsumeGamepadButton(GamepadButton button, uint32_t gamepad);
+		static void ClearConsumed();
+		// Consumes every button (mouse) or key (keyboard) that went down this frame, and the scroll
+		// with the mouse: what a capturing ImGui takes from the game.
+		static void ConsumeNewPresses(bool mouse, bool keyboard);
+		static bool IsKeyPressedUnconsumed(KeyCode keycode);
+
 	private:
 		friend class Application; // drives Update() once per frame
 		friend class Window;      // feeds callback state
+		friend struct Internal::InputBackend;
 	};
 
 }
