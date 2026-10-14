@@ -245,6 +245,16 @@ namespace Dingo
 			return SaveData::FromJson(text, &error);
 		}
 
+		// Windows opens the device for these base names whatever the extension, so `nul.json` can't be saved.
+		bool IsWindowsDeviceName(std::string_view name)
+		{
+			std::string lower(name);
+			std::transform(lower.begin(), lower.end(), lower.begin(), [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; });
+			if (lower == "con" || lower == "prn" || lower == "aux" || lower == "nul")
+				return true;
+			return lower.size() == 4 && (lower.starts_with("com") || lower.starts_with("lpt")) && lower[3] >= '1' && lower[3] <= '9';
+		}
+
 		// With <path> missing, a .tmp that parses is a write stopped between its renames.
 		bool IsRecoverableTemporary(const std::filesystem::path& path)
 		{
@@ -689,10 +699,11 @@ namespace Dingo
 	{
 		if (slot.empty() || slot.size() > k_MaxSlotNameLength)
 			return false;
-		return std::all_of(slot.begin(), slot.end(), [](char c)
+		const bool validCharacters = std::all_of(slot.begin(), slot.end(), [](char c)
 		{
 			return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 		});
+		return validCharacters && !IsWindowsDeviceName(slot);
 	}
 
 	std::filesystem::path SaveSlots::GetPath(std::string_view slot)
@@ -704,7 +715,7 @@ namespace Dingo
 	{
 		if (!IsValidName(slot))
 		{
-			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-').", slot);
+			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-', not a Windows device name).", slot);
 			return false;
 		}
 		return data.WriteFile(GetPath(slot));
@@ -714,7 +725,7 @@ namespace Dingo
 	{
 		if (!IsValidName(slot))
 		{
-			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-').", slot);
+			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-', not a Windows device name).", slot);
 			if (error)
 				*error = "invalid slot name";
 			return std::nullopt;

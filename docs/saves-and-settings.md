@@ -83,7 +83,7 @@ so the generation `ReadFile` returned becomes the `.bak`. Writes from several th
 | `Write(slot, data)` / `Read(slot)` | `<slot>.json`, through `WriteFile` / `ReadFile`. |
 | `Exists(slot)` / `Delete(slot)` | A slot exists when `Read` could return it: its file, its `.bak`, or a complete `.tmp` without the file. `Delete` removes the `.bak` and any leftover `.tmp` too. |
 | `List()` | Every slot `Exists` reports, most recently written first, with its `LastWriteTime`. |
-| `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`. Any other name fails with an error. |
+| `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`, and not a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, in any case), which can't be saved there. The rule is the same on every platform, so saves move between them. Any other name fails with an error. |
 
 The directory is `GetUserDataDir(Name)/saves` (`%LOCALAPPDATA%\<Name>\saves`,
 `~/.local/share/<Name>/saves`), beside the logs. `ApplicationParams::SaveDirectory` moves it, and
@@ -146,6 +146,6 @@ See [Window modes](application-and-layers.md#window-modes) for switching.
 - A save is plain JSON, neither encrypted nor signed.
 - Numbers are `int64_t` and `double`; a non-finite float is written as null, and `FromJson` refuses
   nesting deeper than 256.
-- Slot names are 1 to 64 of `A-Z a-z 0-9 _ -`.
+- Slot names are 1 to 64 of `A-Z a-z 0-9 _ -`, and not a Windows device name.
 - `Settings` keeps the volume of the buses it already names only, since the engine can't list a
   game's buses, and `Apply()` sets only buses that exist when it runs.

@@ -485,6 +485,12 @@ TEST_SUITE("SaveData")
 		CHECK_FALSE(SaveSlots::IsValidName("../escape"));
 		CHECK_FALSE(SaveSlots::IsValidName("a.b"));
 		CHECK_FALSE(SaveSlots::IsValidName(std::string(65, 'a')));
+		for (const char* reserved : { "nul", "CON", "Prn", "aux", "COM1", "com9", "lpt1", "LPT9" })
+			CHECK_FALSE(SaveSlots::IsValidName(reserved));
+		CHECK(SaveSlots::IsValidName("console"));
+		CHECK(SaveSlots::IsValidName("com0"));
+		CHECK(SaveSlots::IsValidName("com10"));
+		CHECK(SaveSlots::IsValidName("nul_"));
 		CHECK(SaveSlots::GetDirectory().parent_path().parent_path() == directory.Path);
 
 		CHECK(SaveSlots::List().empty());

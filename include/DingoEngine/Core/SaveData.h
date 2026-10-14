@@ -275,7 +275,8 @@ namespace Dingo
 	};
 
 	/// Named save files under Application::GetSaveDirectory(): `<slot>.json` beside its .bak.
-	/// A slot name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-'; any other name fails (logged).
+	/// A slot name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-', and not a Windows device name; any
+	/// other name fails (logged).
 	class SaveSlots
 	{
 	public:
@@ -284,7 +285,8 @@ namespace Dingo
 		static std::filesystem::path GetDirectory();
 		/// The slot's file, `<directory>/<slot>.json`; the slot name is not validated here.
 		static std::filesystem::path GetPath(std::string_view slot);
-		/// True when the name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-'.
+		/// True when the name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-', and not one of Windows'
+		/// device names (CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9, in any case) on any platform.
 		static bool IsValidName(std::string_view slot);
 
 		/// Writes the data with SaveData::WriteFile; false (logged) for an invalid name or a failed
