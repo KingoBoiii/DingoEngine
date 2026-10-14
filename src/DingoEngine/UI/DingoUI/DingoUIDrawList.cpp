@@ -6,6 +6,8 @@
 #include "DingoEngine/Graphics/TextLayout.h"
 #include "DingoEngine/Graphics/Texture.h"
 
+#include <cstring>
+
 namespace Dingo::Internal
 {
 
@@ -18,19 +20,37 @@ namespace Dingo::Internal
 		{
 			uint64_t Value;
 
+			void Word(uint64_t word)
+			{
+				Value = (Value ^ word) * 0x9E3779B97F4A7C15ull;
+				Value ^= Value >> 32;
+			}
+
 			void Bytes(const void* data, size_t size)
 			{
 				const uint8_t* bytes = static_cast<const uint8_t*>(data);
-				for (size_t i = 0; i < size; ++i)
+				for (; size >= sizeof(uint64_t); bytes += sizeof(uint64_t), size -= sizeof(uint64_t))
 				{
-					Value ^= bytes[i];
-					Value *= 1099511628211ull;
+					uint64_t word;
+					std::memcpy(&word, bytes, sizeof(word));
+					Word(word);
+				}
+				if (size > 0)
+				{
+					uint64_t word = 0;
+					std::memcpy(&word, bytes, size);
+					Word(word ^ (static_cast<uint64_t>(size) << 56));
 				}
 			}
+		};
 
-			template<typename T>
-			void Add(const T& value) { Bytes(&value, sizeof(T)); }
+		// A command's plain fields, hashed as one run of words.
+		struct FloatBlock
+		{
+			std::array<float, 24> Values{};
+			size_t Count = 0;
 
+			void Add(float value) { Values[Count++] = value; }
 			void Add(const glm::vec2& value) { Add(value.x); Add(value.y); }
 			void Add(const glm::vec4& value) { Add(value.x); Add(value.y); Add(value.z); Add(value.w); }
 			void Add(const UIRect& rect) { Add(rect.Min); Add(rect.Max); }
@@ -193,7 +213,7 @@ namespace Dingo::Internal
 
 	void UIDrawList::AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth, const UIRect& clip, float align, float alignWidth)
 	{
-		if (!font || text.empty() || size <= 0.0f)
+		if (!font || !font->GetAtlasTexture() || text.empty() || size <= 0.0f)
 			return;
 
 		Command& command = m_Commands.emplace_back();
@@ -254,45 +274,61 @@ namespace Dingo::Internal
 		Hasher hasher{ 14695981039346656037ull ^ seed };
 		for (const Command& command : m_Commands)
 		{
-			hasher.Add(command.Kind);
-			hasher.Add(command.Rect);
-			hasher.Add(command.Clip);
-			hasher.Add(command.Color);
+			FloatBlock block;
+			block.Add(command.Rect);
+			block.Add(command.Clip);
+			block.Add(command.Color);
+			uint64_t header = static_cast<uint64_t>(command.Kind);
+			uint64_t id = 0;
 			switch (command.Kind)
 			{
 			case CommandKind::Rect:
-				hasher.Add(command.BorderColor);
-				hasher.Add(command.Radii);
-				hasher.Add(command.BorderWidth);
+				block.Add(command.BorderColor);
+				block.Add(command.Radii);
+				block.Add(command.BorderWidth);
 				break;
 			case CommandKind::Image:
-				hasher.Add(command.UVMin);
-				hasher.Add(command.UVMax);
-				hasher.Add(command.Image ? command.Image->GetId() : 0ull);
+				block.Add(command.UVMin);
+				block.Add(command.UVMax);
+				id = command.Image ? command.Image->GetId() : 0ull;
 				break;
 			case CommandKind::NineSlice:
-				hasher.Add(command.Borders);
-				hasher.Add(command.TextureSize);
-				hasher.Add(command.Scale);
-				hasher.Add(command.FillCenter);
-				hasher.Add(command.PointFilter);
-				hasher.Add(command.Image ? command.Image->GetId() : 0ull);
+				block.Add(command.Borders);
+				block.Add(command.TextureSize);
+				block.Add(command.Scale);
+				header |= (command.FillCenter ? 1ull : 0ull) << 8 | (command.PointFilter ? 1ull : 0ull) << 9;
+				id = command.Image ? command.Image->GetId() : 0ull;
 				break;
 			case CommandKind::Text:
 			{
 				const Texture* atlas = command.TextFont->GetAtlasTexture();
-				hasher.Add(atlas ? atlas->GetId() : 0ull);
-				hasher.Add(command.TextSize);
-				hasher.Add(command.MaxWidth);
-				hasher.Add(command.Align);
-				hasher.Add(command.AlignWidth);
-				hasher.Add(command.TextLength);
-				hasher.Bytes(m_Text.data() + command.TextOffset, command.TextLength);
+				id = atlas ? atlas->GetId() : 0ull;
+				block.Add(command.TextSize);
+				block.Add(command.MaxWidth);
+				block.Add(command.Align);
+				block.Add(command.AlignWidth);
+				header |= static_cast<uint64_t>(command.TextLength) << 32;
 				break;
 			}
 			}
+			hasher.Word(header);
+			hasher.Word(id);
+			hasher.Bytes(block.Values.data(), block.Count * sizeof(float));
+			if (command.Kind == CommandKind::Text)
+				hasher.Bytes(m_Text.data() + command.TextOffset, command.TextLength);
 		}
 		return hasher.Value;
+	}
+
+	bool UIDrawList::References(const Texture* texture) const
+	{
+		for (const Command& command : m_Commands)
+		{
+			const Texture* used = command.Kind == CommandKind::Text ? command.TextFont->GetAtlasTexture() : command.Image;
+			if (used == texture)
+				return true;
+		}
+		return false;
 	}
 
 	void UIDrawList::Build(UIGeometry& geometry) const

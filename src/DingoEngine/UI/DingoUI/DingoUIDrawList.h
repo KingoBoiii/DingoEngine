@@ -97,6 +97,7 @@ namespace Dingo::Internal
 		uint32_t CacheHits = 0;    // 1 when the frame drew last frame's vertices again
 		uint32_t Uploads = 0;      // 1 when the frame rebuilt and uploaded them
 		uint64_t UploadBytes = 0;
+		float HashMs = 0.0f;       // CPU time hashing the draw list for the vertex cache
 		float BuildMs = 0.0f;      // CPU time turning the draw list into vertices
 		float UploadMs = 0.0f;     // CPU time uploading them and baking the binding sets
 		float DrawMs = 0.0f;       // CPU time recording the draws
@@ -148,6 +149,8 @@ namespace Dingo::Internal
 		// Equal for two lists that build the same geometry; textures and fonts count by GetId(), so a
 		// freed texture's reused address never matches.
 		uint64_t Hash(uint64_t seed = 0) const;
+		// True when a command draws `texture`, as an image, a 9-slice or a text's font atlas.
+		bool References(const Texture* texture) const;
 		// Culls quads that their clip rect or alpha hides and splits a batch where a draw would need
 		// more than k_UITextureSlots textures. Reads no texture: it compares their addresses only.
 		void Build(UIGeometry& geometry) const;

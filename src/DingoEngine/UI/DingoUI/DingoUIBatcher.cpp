@@ -94,7 +94,12 @@ namespace Dingo::Internal
 		if (!targetPipeline)
 			return;
 
-		const uint64_t hash = drawList.Hash(formatKey ^ (static_cast<uint64_t>(width) << 32 | height));
+		uint64_t hash = 0;
+		{
+			const UICpuTimer hashTimer;
+			hash = drawList.Hash(formatKey ^ (static_cast<uint64_t>(width) << 32 | height));
+			statistics.HashMs = hashTimer.ElapsedMs();
+		}
 		if (m_HasUpload && hash == m_UploadedHash)
 		{
 			statistics.CacheHits = 1;
@@ -173,6 +178,23 @@ namespace Dingo::Internal
 
 		Renderer::EndGpuTimer();
 		statistics.DrawMs = drawTimer.ElapsedMs();
+	}
+
+	void DingoUIBatcher::ForgetTexture(const Texture* texture)
+	{
+		if (!m_HasUpload)
+			return;
+		for (const UIDrawBatch& batch : m_Geometry.Batches)
+		{
+			for (uint32_t slot = 1; slot < batch.TextureCount; ++slot)
+			{
+				if (batch.Textures[slot] == texture)
+				{
+					m_HasUpload = false;
+					return;
+				}
+			}
+		}
 	}
 
 	DingoUIBatcher::TargetPipeline* DingoUIBatcher::GetTargetPipeline(Framebuffer* target, uint64_t formatKey)

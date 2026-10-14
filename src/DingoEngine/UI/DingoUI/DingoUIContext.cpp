@@ -4,6 +4,7 @@
 #include "DingoEngine/Scene/Entity.h"
 #include "DingoEngine/Scene/Scene.h"
 #include "DingoUIBatcher.h"
+#include "DingoUITextureHook.h"
 
 #include "DingoEngine/Core/InputBackend.h"
 #include "DingoEngine/Graphics/Font.h"
@@ -26,6 +27,12 @@ namespace Dingo::Internal
 	DingoUIContext* GetDingoUIContext()
 	{
 		return s_Context;
+	}
+
+	void DingoUIOnTextureDestroyed(const Texture* texture)
+	{
+		if (s_Context && texture)
+			s_Context->OnTextureDestroyed(texture);
 	}
 
 	DingoUIContext::DingoUIContext(const DingoUIParams& params)
@@ -772,6 +779,16 @@ namespace Dingo::Internal
 			std::swap(entry->Kept, m_RootScratch);
 		}
 		emitExiting(nextExiting, (std::numeric_limits<int>::max)());
+	}
+
+	void DingoUIContext::OnTextureDestroyed(const Texture* texture)
+	{
+		if (m_RootTransitions.Size() > 0)
+		{
+			m_RootTransitions.ForgetTexture(texture);
+			m_ExitingRoots.clear();
+		}
+		m_Batcher->ForgetTexture(texture);
 	}
 
 	float DingoUIContext::Tween(std::string_view id, float target, float duration, UIEase ease)

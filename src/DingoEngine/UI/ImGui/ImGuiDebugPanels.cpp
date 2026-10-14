@@ -1432,7 +1432,7 @@ namespace Dingo::Internal
 		ImGui::Text("Draw calls %u, quads %u (culled %u), vertices %u", stats.DrawCalls, stats.Quads, stats.CulledQuads, stats.Vertices);
 		ImGui::Text("Vertex cache: %s, uploads %u, upload bytes %llu", stats.CacheHits ? "hit" : (stats.Uploads ? "rebuilt" : "none"), stats.Uploads, static_cast<unsigned long long>(stats.UploadBytes));
 		ImGui::Text("State map %u, tweens %u, transition roots %u, exiting roots %u, id collisions %u", stats.StateMapSize, stats.TweenCount, stats.TransitionRoots, stats.ExitingRoots, stats.IdCollisions);
-		ImGui::Text("CPU ms: begin %.3f, layout %.3f, emit %.3f, build %.3f, upload %.3f, draw %.3f", stats.BeginMs, stats.LayoutMs, stats.EmitMs, stats.BuildMs, stats.UploadMs, stats.DrawMs);
+		ImGui::Text("CPU ms: begin %.3f, layout %.3f, emit %.3f, hash %.3f, build %.3f, upload %.3f, draw %.3f", stats.BeginMs, stats.LayoutMs, stats.EmitMs, stats.HashMs, stats.BuildMs, stats.UploadMs, stats.DrawMs);
 		ImGui::Text("Pointer over UI: %s, capturing input: %s, modal: %s", snapshot.PointerOverUI ? "yes" : "no", snapshot.CapturingInput ? "yes" : "no", snapshot.Modal ? "yes" : "no");
 		ImGui::Text("Hover 0x%llx, active 0x%llx, focus 0x%llx%s", static_cast<unsigned long long>(snapshot.HoverId), static_cast<unsigned long long>(snapshot.ActiveId),
 			static_cast<unsigned long long>(snapshot.FocusId), snapshot.FocusId && !snapshot.FocusVisible ? " (hidden)" : "");

@@ -33,6 +33,9 @@ namespace Dingo::Internal
 
 		// Into target, which must be the current render target, in a frame that renders.
 		void Draw(const UIDrawList& drawList, Framebuffer* target, UIRenderStatistics& statistics);
+		// Drops the cached vertices when they draw `texture`, so the next Draw rebuilds and rebakes
+		// every batch it uses instead of binding the freed texture.
+		void ForgetTexture(const Texture* texture);
 
 	private:
 		struct TargetPipeline

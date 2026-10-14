@@ -34,6 +34,7 @@ namespace Dingo::Internal::DingoUIDebug
 		float BeginMs = 0.0f;
 		float LayoutMs = 0.0f;
 		float EmitMs = 0.0f;
+		float HashMs = 0.0f;
 		float BuildMs = 0.0f;
 		float UploadMs = 0.0f;
 		float DrawMs = 0.0f;

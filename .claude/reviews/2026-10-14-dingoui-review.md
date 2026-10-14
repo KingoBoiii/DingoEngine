@@ -12,6 +12,8 @@ Items the plan's "As built" notes already leave open (U9's metrics cache idea, n
 
 | Finding | Commit | Verified how |
 |---|---|---|
+| [U1](#u1) | fixed (commit pending) | `Internal::DingoUIOnTextureDestroyed` (`DingoUITextureHook.h`), called from `NvrhiTexture::Destroy` and its destructor, so a font's atlas is covered: an exiting root whose kept commands draw the texture is erased, a still-declared one's `Kept` is emptied (dropped if it then exits), and the batcher drops its cached upload when a batch binds it. No-op without a context. `UIDrawList::AddText` now skips a font with no atlas, so every kept font is freed through the hook. `--test=dingoui` "Free:" checks (font freed after the last declared frame, texture freed mid-exit, next frame rebuilds); not run under ASan. `docs/game-ui.md` says freeing mid-exit is safe and ends the exit. |
+| [F1](#f1) | fixed (commit pending) | `UIDrawList::Hash` mixes 8-byte words: one header word (kind, flags, text length), one id word, each command's floats as one block, text in 8-byte chunks with a sized tail. New `UIRenderStatistics::HashMs`, shown in the F9 DingoUI tab. Existing cache-hit/upload checks in `--test=dingoui` and the 153 unit tests pass; not re-benchmarked. |
 
 ---
 
@@ -19,9 +21,9 @@ Items the plan's "As built" notes already leave open (U9's metrics cache idea, n
 
 | ID | Severity | Area | Finding | Status |
 |---|---|---|---|---|
-| [U1](#u1) | High | Lifetime / renderer | An exiting root's kept commands dereference textures and fonts the game has already freed | open |
+| [U1](#u1) | High | Lifetime / renderer | An exiting root's kept commands dereference textures and fonts the game has already freed | fixed |
 | [N1](#n1) | Medium | Input core | With default params, one focusable HUD widget takes the arrows, Space, Enter, Escape, Tab and the pad's D-pad/A/B from the game | open |
-| [F1](#f1) | Medium | Performance / renderer | The vertex-cache hash runs byte by byte every drawn frame, outside every phase timer | open |
+| [F1](#f1) | Medium | Performance / renderer | The vertex-cache hash runs byte by byte every drawn frame, outside every phase timer | fixed |
 | [F2](#f2) | Medium | Performance | Every text is re-measured through msdf's maps every frame, with a string copy per measure | open |
 | [F3](#f3) | Low | Performance | A second state lookup per widget and two heap allocations every frame | open |
 | [N2](#n2) | Low | Input core | Nav consumption takes every key bound to an action, not the one pressed; the stick is never consumed | open |

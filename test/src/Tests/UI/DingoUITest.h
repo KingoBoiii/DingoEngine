@@ -62,6 +62,7 @@ namespace Dingo
 		bool StepWidgets(Framebuffer* output);
 		bool StepNavigation(Framebuffer* output);
 		bool StepTransitions(Framebuffer* output);
+		bool StepTextureFree();
 		bool StepWorld(Framebuffer* output);
 		bool StepStress(Framebuffer* output);
 		void SampleStress(Internal::DingoUIContext& context);
@@ -173,6 +174,10 @@ namespace Dingo
 		UIInteraction m_WNavResult[k_NavCount];
 		uint32_t m_TransStage = 0;
 		bool m_TransDone = false;
+		uint32_t m_FreeStage = 0;
+		bool m_FreeDone = false;
+		Font* m_FreeFont = nullptr;
+		Texture* m_FreeTexture = nullptr;
 		bool m_LivePanel = true;
 		Texture* m_ImageTexture = nullptr;
 		Texture* m_SliceTexture = nullptr;

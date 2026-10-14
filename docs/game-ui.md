@@ -96,7 +96,9 @@ of a line, in design pixels. The string is copied: it needn't outlive the call.
 `DingoUI::Image(texture, params)` adds a texture, `Fit` meaning its own size. `UVMin`/`UVMax` pick a
 part of it, `Tint` multiplies the colour, and `PreserveAspect` (default) keeps the texture's shape
 inside a box that has another one instead of stretching it. The texture must stay alive until the
-frame has been drawn.
+frame has been drawn. After that you may free it at any time, even while a root that drew it is
+playing its exit transition: that root is dropped at once instead of finishing its exit. The same
+goes for a font.
 
 ## Scaling
 
@@ -276,7 +278,7 @@ The default is 0, so colours change at once. A disabled widget never animates.
 A root can animate in and out: `UIRootParams::SetTransition(UITransition::Fade(0.3f).WithSlide({ -40.0f, 0.0f }))`.
 The root plays in on its first declared frame. When the game stops declaring it, the root plays out
 from the last frame it drew: it is not laid out again, takes no pointer or focus input and does not
-block the widgets under it. Fade, slide (design pixels) and scale (about the root's centre) combine
+block the widgets under it. Freeing a texture or font it drew ends the exit at once. Fade, slide (design pixels) and scale (about the root's centre) combine
 and are applied to the drawn vertices, so a transitioning UI is still one draw call, and the frame
 after the animation draws from the cache again.
 
@@ -330,7 +332,7 @@ its own. It shows the last frame:
 - counts: roots, elements, widgets, quads, vertices, draw calls, whether the vertex cache hit or the
   frame was uploaded (and its bytes), the size of the widget state map, tweens, transition roots,
   exiting roots and id collisions;
-- CPU milliseconds for `BeginFrame`, layout, emit, batch build, upload and draw (the frame's total is
+- CPU milliseconds for `BeginFrame`, layout, emit, the vertex-cache hash, batch build, upload and draw (the frame's total is
   `FrameTimings::DingoUIMs`, also a row in the F8 Profiler);
 - the roots (name, layer, screen or world, blocks input, modal, navigable, transition progress), the
   hovered, active and focused ids, and a tree of last frame's elements with their rects.

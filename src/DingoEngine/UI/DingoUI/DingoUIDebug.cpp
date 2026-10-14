@@ -39,6 +39,7 @@ namespace Dingo::Internal::DingoUIDebug
 		stats.BeginMs = costs.BeginMs;
 		stats.LayoutMs = costs.LayoutMs;
 		stats.EmitMs = costs.EmitMs;
+		stats.HashMs = render.HashMs;
 		stats.BuildMs = render.BuildMs;
 		stats.UploadMs = render.UploadMs;
 		stats.DrawMs = render.DrawMs;

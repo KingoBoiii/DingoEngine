@@ -122,6 +122,7 @@ namespace Dingo::Internal
 		float Tween(std::string_view id, float target, float duration, UIEase ease);
 		glm::vec4 TweenColor(std::string_view id, const glm::vec4& target, float duration, UIEase ease);
 		const UIRootTransitions& GetRootTransitions() const { return m_RootTransitions; }
+		void OnTextureDestroyed(const Texture* texture);
 		const UITweenMap& GetTweens() const { return m_Tweens; }
 
 		void SetDefaultFont(Font* font) { m_Params.DefaultFont = font; }

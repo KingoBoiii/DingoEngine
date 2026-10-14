@@ -182,6 +182,8 @@ namespace Dingo
 		m_SlotTextures.clear();
 		DestroyAndDelete(m_ImageTexture);
 		DestroyAndDelete(m_SliceTexture);
+		DestroyAndDelete(m_FreeTexture);
+		DestroyAndDelete(m_FreeFont);
 		DestroyAndDelete(m_CheckTarget);
 		DestroyAndDelete(m_LayoutTarget);
 		DestroyAndDelete(m_Font);
@@ -2046,6 +2048,78 @@ namespace Dingo
 		return true;
 	}
 
+	// An exiting root keeps its last frame's commands; freeing what they draw must drop the root
+	// rather than leave the exit reading a freed font or texture.
+	bool DingoUITest::StepTextureFree()
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_FreeDone || !m_TransDone || !context || !m_LayoutTarget)
+			return false;
+
+		constexpr uint32_t k_DeclaredFrames = 3;
+		const uint32_t stage = m_FreeStage++;
+		if (stage == 0)
+		{
+			const uint8_t cyan[4] = { 0, 255, 255, 255 };
+			m_FreeTexture = Texture::CreateFromData(1, 1, cyan, TextureFormat::RGBA8_UNORM, "DingoUITest_FreeImage");
+			m_FreeFont = Font::Create("fonts/Inter-Bold.ttf");
+			Check(m_FreeTexture && m_FreeFont && m_FreeFont->IsValid(), "Free: the test's own texture and font load");
+			if (!m_FreeTexture || !m_FreeFont)
+			{
+				m_FreeDone = true;
+				return true;
+			}
+		}
+
+		SetPointer(k_WidgetEmpty);
+		m_WidgetInput.DeltaTime = 0.05f;
+		const Internal::UIRootTransitions& transitions = context->GetRootTransitions();
+
+		if (stage == k_DeclaredFrames)
+		{
+			Check(transitions.Size() == 2, "Free: both transitioning roots are kept, got " + std::to_string(transitions.Size()));
+			DestroyAndDelete(m_FreeFont);
+			Check(transitions.Size() == 2, "Free: a root still declared last frame keeps its entry when its font is freed");
+		}
+		else if (stage == k_DeclaredFrames + 1)
+		{
+			Check(transitions.Size() == 1, "Free: the root whose font was freed is dropped instead of exiting, got " + std::to_string(transitions.Size()));
+			Check(context->GetFrameCosts().ExitingRoots == 1 && context->GetRenderStatistics().DrawCalls == 1, "Free: the image root plays its exit");
+			DestroyAndDelete(m_FreeTexture);
+			Check(transitions.Size() == 0, "Free: freeing an exiting root's texture drops it at once");
+		}
+		else if (stage == k_DeclaredFrames + 2)
+		{
+			Check(transitions.Size() == 0 && context->GetFrameCosts().ExitingRoots == 0, "Free: nothing exits after its texture was freed");
+		}
+		else if (stage == k_DeclaredFrames + 3)
+		{
+			const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+			Check(statistics.DrawCalls == 1 && statistics.Uploads == 1, "Free: the next frame rebuilds and draws without the freed texture");
+			m_FreeDone = true;
+			return true;
+		}
+
+		Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		if (stage < k_DeclaredFrames)
+		{
+			const UITransition fade = UITransition::Fade(0.2f).SetEase(UIEase::Linear);
+			DingoUI::BeginRoot("t_free_image", UIRootParams().SetOffset({ 100.0f, 100.0f }).SetTransition(fade));
+			DingoUI::Image(m_FreeTexture, UIImageParams().SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+			DingoUI::BeginRoot("t_free_text", UIRootParams().SetOffset({ 300.0f, 100.0f }).SetTransition(fade));
+			DingoUI::Text("Freed", UITextParams().SetFont(m_FreeFont).SetSize(20.0f));
+			DingoUI::EndRoot();
+		}
+		else if (stage == k_DeclaredFrames + 2)
+		{
+			DingoUI::BeginRoot("t_free_after", UIRootParams().SetOffset({ 100.0f, 100.0f })
+				.SetLayout(UIBoxParams().SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)).SetBackground({ 1.0f, 1.0f, 1.0f, 1.0f })));
+			DingoUI::EndRoot();
+		}
+		return true;
+	}
+
 	namespace
 	{
 		const glm::vec2 k_WorldViewport = { 960.0f, 540.0f };
@@ -2078,7 +2152,7 @@ namespace Dingo
 	bool DingoUITest::StepWorld(Framebuffer* output)
 	{
 		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
-		if (m_WorldDone || !m_TransDone || !context || !m_LayoutTarget || !m_WorldScene)
+		if (m_WorldDone || !m_FreeDone || !context || !m_LayoutTarget || !m_WorldScene)
 			return false;
 
 		const auto finish = [&]()
@@ -2729,7 +2803,7 @@ namespace Dingo
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
 		const bool busy = m_StressMode ? StepStress(output)
-			: (StepBatcher() || StepLayout(output) || StepWidgets(output) || StepNavigation(output) || StepTransitions(output) || StepWorld(output) || StepStress(output));
+			: (StepBatcher() || StepLayout(output) || StepWidgets(output) || StepNavigation(output) || StepTransitions(output) || StepTextureFree() || StepWorld(output) || StepStress(output));
 		if (!busy)
 		{
 			UpdateLiveInput(output);

@@ -77,6 +77,9 @@ namespace Dingo::Internal
 		// Plays out the roots not declared in `frame`, dropping the finished ones and those with
 		// nothing kept, and lists the rest by layer.
 		void AdvanceExiting(uint64_t frame, float dt, std::vector<Entry*>& exiting);
+		// Drops the exiting roots whose kept commands draw `texture`, and empties a declared one's,
+		// so it is dropped if it exits before it is drawn again. The other kept fonts must be alive.
+		void ForgetTexture(const Texture* texture);
 		size_t Size() const { return m_Entries.size(); }
 		const Entry* Find(uint64_t id) const;
 

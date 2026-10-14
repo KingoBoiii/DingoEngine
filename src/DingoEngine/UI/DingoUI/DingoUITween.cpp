@@ -158,6 +158,26 @@ namespace Dingo::Internal
 		std::stable_sort(exiting.begin(), exiting.end(), [](const Entry* a, const Entry* b) { return a->Layer < b->Layer; });
 	}
 
+	void UIRootTransitions::ForgetTexture(const Texture* texture)
+	{
+		for (auto it = m_Entries.begin(); it != m_Entries.end();)
+		{
+			Entry& entry = it->second;
+			if (!entry.Kept.References(texture))
+			{
+				++it;
+				continue;
+			}
+			if (entry.Exiting)
+			{
+				it = m_Entries.erase(it);
+				continue;
+			}
+			entry.Kept.Clear();
+			++it;
+		}
+	}
+
 	UIRootVisual UIRootTransitions::VisualOf(const Entry& entry)
 	{
 		const float shown = EvaluateEase(entry.Transition.Ease, entry.Progress);
