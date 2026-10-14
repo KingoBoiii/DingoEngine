@@ -2560,7 +2560,8 @@ namespace Dingo
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface)
 	{
-		if (!m_SceneActive || m_SceneSkipped || !mesh)
+		// The arena layout reserves nothing for an empty mesh, so no pass may draw one.
+		if (!m_SceneActive || m_SceneSkipped || !mesh || mesh->GetVertexCount() == 0 || mesh->GetIndexCount() == 0)
 			return;
 		if (shadows == ShadowCasting::Off)
 			shadowGroups = 1;

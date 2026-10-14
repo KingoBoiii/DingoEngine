@@ -209,6 +209,7 @@ namespace Dingo
 			closedSkinVertices.push_back({ vertex.Position, vertex.Normal, vertex.TexCoord, glm::u16vec4(0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f) });
 		m_ClosedQuads = Mesh::Create(closedVertices, closedIndices);
 		m_SkinnedClosedQuads = Mesh::CreateSkinned(closedVertices, closedSkinVertices, closedIndices);
+		m_IndicesOnly = Mesh::Create({}, { 0, 1, 2 });
 		m_Palette.assign(1, glm::mat4(1.0f));
 
 		m_Alive = std::make_shared<int>(0);
@@ -323,6 +324,17 @@ namespace Dingo
 
 		statsStep([this](Renderer3D& renderer)
 		{
+			renderer.SubmitMesh(m_IndicesOnly, WallAt(-6.0f), k_HalfGreen, m_TranslucentA);
+			renderer.SubmitMesh(m_Quad, WallAt(-9.0f), k_HalfGreen, m_TranslucentA);
+			renderer.SubmitMesh(m_IndicesOnly, WallAt(-12.0f), glm::vec4(1.0f));
+		}, [this](const Renderer3D::Statistics& stats)
+		{
+			Check(stats.TranslucentMeshes == 1 && stats.TranslucentDraws == 1 && stats.DrawCalls == 1 && stats.SubmittedMeshes == 1,
+				std::format("a mesh with indices but no vertices is skipped, translucent or not ({})", Counts(stats)));
+		});
+
+		statsStep([this](Renderer3D& renderer)
+		{
 			renderer.SubmitMesh(m_Quad, WallAt(-9.0f), k_HalfGreen, m_TranslucentA, ShadowCasting::ShadowsOnly);
 		}, [this](const Renderer3D::Statistics& stats)
 		{
@@ -352,6 +364,7 @@ namespace Dingo
 
 		probeStep("two translucent meshes submitted near first blend far to near", k_GreenOverRed, CheckViewProjection(), [this](Renderer3D& renderer)
 		{
+			renderer.SubmitMesh(m_IndicesOnly, WallAt(-8.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitMesh(m_Quad, WallAt(-12.0f), k_HalfRed, m_TranslucentA);
 		});
@@ -969,10 +982,12 @@ namespace Dingo
 		delete m_SkinnedQuad;
 		delete m_ClosedQuads;
 		delete m_SkinnedClosedQuads;
+		delete m_IndicesOnly;
 		m_Quad = nullptr;
 		m_SkinnedQuad = nullptr;
 		m_ClosedQuads = nullptr;
 		m_SkinnedClosedQuads = nullptr;
+		m_IndicesOnly = nullptr;
 
 		if (m_CheckRenderer)
 		{

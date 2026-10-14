@@ -372,7 +372,8 @@ namespace Dingo
 		/// FrustumCulled. The vertex stream is a_Position (0), a_Normal (1), a_Color (2, the color
 		/// passed here) and a_TexCoord (3, the mesh's UVs, for custom materials that sample a
 		/// texture); a MaterialParams::Instancing material reads the mesh's own vertices and its
-		/// instance record instead. No-op outside a Begin/EndScene pair. Every material casts
+		/// instance record instead. No-op outside a Begin/EndScene pair, and for a mesh with no
+		/// vertices or no indices (not counted in SubmittedMeshes). Every material casts
 		/// through the renderer's own depth-only pass, so a custom vertex shader's displacement
 		/// isn't in its shadow, and a translucent mesh casts a full one. shadowGroups is a bit
 		/// mask: a casting light takes the mesh into its shadows only when it shares a bit with the
