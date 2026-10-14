@@ -9,6 +9,7 @@
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/PathText.h"
+#include "DingoEngine/Core/LaunchFlags.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
 #include "DingoEngine/Core/Input.h"
 #include "DingoEngine/Core/KeyCodes.h"
@@ -38,6 +39,19 @@ namespace Dingo
 		: m_Params(params)
 	{
 		s_Instance = this;
+
+		if (auto value = m_Params.CommandLineArgs.Get("graphics"))
+		{
+			const std::optional<GraphicsAPI> api = Internal::ParseGraphicsFlag(*value);
+			if (!api)
+				DE_CORE_WARN("Ignoring --graphics={} (expected vulkan, dx11, dx12 or headless).", *value);
+#ifndef DE_PLATFORM_WINDOWS
+			else if (*api == GraphicsAPI::DirectX11 || *api == GraphicsAPI::DirectX12)
+				DE_CORE_WARN("Ignoring --graphics={}: DirectX runs only on Windows.", *value);
+#endif
+			else
+				m_Params.Graphics.GraphicsAPI = *api;
+		}
 
 		if (s_PendingRestart)
 		{
@@ -81,6 +95,22 @@ namespace Dingo
 				m_StartupMasterVolume = settings.Audio.MasterVolume;
 			}
 		}
+
+		if (auto value = m_Params.CommandLineArgs.Get("window"))
+		{
+			if (const std::optional<glm::ivec2> size = Internal::ParseWindowFlag(*value))
+			{
+				m_LaunchDisplayRequest = m_Params.Window;
+				m_Params.Window.Width = size->x;
+				m_Params.Window.Height = size->y;
+				m_Params.Window.Mode = WindowMode::Windowed;
+			}
+			else
+			{
+				DE_CORE_WARN("Ignoring --window={} (expected WxH, from {}x{} to {}x{}).", *value, Internal::k_MinLaunchWindowSize.x, Internal::k_MinLaunchWindowSize.y,
+					Internal::k_MaxLaunchWindowSize.x, Internal::k_MaxLaunchWindowSize.y);
+			}
+		}
 	}
 
 	Application::~Application()
@@ -104,6 +134,8 @@ namespace Dingo
 		if (!IsHeadless())
 		{
 			m_Window = new Window(m_Params.Window);
+			m_Window->m_VSyncForcedOff = Internal::IsLaunchFlagOn(m_Params.CommandLineArgs.Get("no-vsync"));
+			m_Window->m_DisplayRequest = m_LaunchDisplayRequest;
 			m_Window->Initialize();
 			m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
 			m_Focused = m_Window->IsFocused();
@@ -120,7 +152,7 @@ namespace Dingo
 				.SetNativeWindowHandle(m_Window->GetNativeWindowHandle())
 				.SetWidth(m_Window->GetWidth())
 				.SetHeight(m_Window->GetHeight())
-				.SetVSync(m_Params.Window.VSync));
+				.SetVSync(m_Params.Window.VSync && !m_Window->m_VSyncForcedOff));
 			m_SwapChain->Initialize();
 
 			Internal::RendererBackend::Initialize(m_SwapChain);

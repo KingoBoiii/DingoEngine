@@ -53,14 +53,17 @@ namespace Dingo
 
 		/// The running application's window, master volume, deadzone and the volumes of the
 		/// buses base names, over base. Without an application, base; a headless one keeps base's
-		/// Display.
+		/// Display. Started with `--window`, Display holds the mode and size the game asked for,
+		/// not the flag's.
 		///@{
 		static Settings Capture();
 		static Settings Capture(const Settings& base);
 		///@}
 		/// Sets the window mode and size, VSync, the volumes and the deadzone. Changes nothing that
 		/// already matches, so the window doesn't blink when nothing changed. Logs a warning and
-		/// does nothing without an application; a headless one skips Display.
+		/// does nothing without an application; a headless one skips Display. Started with
+		/// `--window`, the mode and size are only stored for Capture, and the window keeps the
+		/// flag's.
 		void Apply() const;
 		/// For ApplicationParams before the window exists.
 		void ApplyTo(WindowParams& params) const;

@@ -23,17 +23,6 @@ namespace Dingo
 
 }
 
-static Dingo::GraphicsAPI ParseGraphicsAPI(const Dingo::ApplicationCommandLineArgs& args)
-{
-	if (auto val = args.Get("graphics"))
-	{
-		if (*val == "vulkan")  return Dingo::GraphicsAPI::Vulkan;
-		if (*val == "dx11")    return Dingo::GraphicsAPI::DirectX11;
-		if (*val == "dx12")    return Dingo::GraphicsAPI::DirectX12;
-	}
-	return Dingo::GraphicsAPI::Vulkan;
-}
-
 Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs args)
 {
 	ApplicationParams params = ApplicationParams{
@@ -44,9 +33,6 @@ Dingo::Application* Dingo::CreateApplication(Dingo::ApplicationCommandLineArgs a
 			.Height = 900,
 			.VSync = true,
 			.Resizable = false,
-		},
-		.Graphics = {
-			.GraphicsAPI = ParseGraphicsAPI(args),
 		},
 		.Assets = Dingo::AssetManagerParams().SetPackageKey(Dingo::Generated::GetPackageKey()),
 		.EnableImGui = false,

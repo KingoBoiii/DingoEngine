@@ -82,25 +82,13 @@ namespace Dingo
 
 Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 {
-	GraphicsAPI graphicsAPI = GraphicsAPI::Vulkan;
-	if (auto value = args.Get("graphics"))
-	{
-		if (*value == "dx12" || *value == "directx12")  graphicsAPI = GraphicsAPI::DirectX12;
-		else if (*value == "dx11" || *value == "directx11") graphicsAPI = GraphicsAPI::DirectX11;
-		else if (*value == "headless") graphicsAPI = GraphicsAPI::Headless;
-	}
-
 	ApplicationParams params = ApplicationParams{
 		.CommandLineArgs = args,
 		.Window = {
 			.Title = "Dingo Test Framework",
 			.Width = 1600,
 			.Height = 900,
-			.VSync = !args.Get("no-vsync").has_value(),
 			.Resizable = true,
-		},
-		.Graphics = {
-			.GraphicsAPI = graphicsAPI,
 		},
 		.Assets = {
 			.EnableHotReload = true,

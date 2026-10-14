@@ -160,23 +160,32 @@ Limits:
 - While an ImGui window is dragged outside the main one, its own swap chain stays vsynced
   and paces the whole frame, so VSync off has no effect.
 - `RequestRestart` rebuilds the app, so the window starts from `WindowParams::VSync` again.
+- Started with `--no-vsync`, the swap chain stays off whatever is asked; `IsVSync()` still
+  reports the request (see [Command-line arguments](#command-line-arguments)).
 
 ### Command-line arguments
 
-`ApplicationCommandLineArgs::Get(name)` parses `--name` flags and `--name=value`
-pairs, returning a `std::optional<std::string_view>`:
+The engine reads a few standard flags itself at start-up, so they override what
+`CreateApplication` put in `ApplicationParams`:
+
+| Flag | Does |
+|---|---|
+| `--graphics=vulkan\|dx11\|dx12\|headless` | Sets `Graphics.GraphicsAPI` (`directx11` and `directx12` work too). DirectX on Linux, or any other value, is ignored with a warning. `RequestRestart`'s back-end still wins on a restart. `headless` only suits an app written to run [headless](#headless); the examples aren't. |
+| `--window=WxH` | Starts windowed at a `W`x`H` client size, over `Window.Width`, `Height` and `Mode` and a `SettingsSlot`'s display settings. Ignored with a warning outside 640x360 to 16384x16384 or when it doesn't read as `WxH`. For the whole run `Settings::Apply` leaves the window alone and `Settings::Capture` returns what the game asked for (see [Saves & Settings](saves-and-settings.md)); the game's own `Window::SetSize` and `SetWindowMode` still change the window, but `Settings::Capture` doesn't see them. |
+| `--no-vsync` | The swap chain runs without VSync for the whole run, whatever `WindowParams::VSync` and later `Window::SetVSync` calls ask for. `IsVSync()` still reports the request, so a settings screen saves the player's own choice; the F3 tab's VSync checkbox says "off: --no-vsync". `--no-vsync=off` (or `false`, `0`, `no`) leaves VSync alone. |
+| `--log-here`, `--log-dir=<path>` | Where the log goes (see [Logs and crashes](#logs-and-crashes)). |
+| `--save-dir=<path>` | Where `SaveSlots` keeps its files (see [Saves & Settings](saves-and-settings.md)). |
+| `--vulkan-validation[=off]` | Loads the Vulkan validation layer in any configuration (see [Getting Started](getting-started.md)). |
+
+For the game's own flags, `ApplicationCommandLineArgs::Get(name)` parses `--name` flags and
+`--name=value` pairs, returning a `std::optional<std::string_view>`: `nullopt` when absent, empty
+for a bare flag.
 
 ```cpp
-GraphicsAPI ParseGraphicsAPI(const ApplicationCommandLineArgs& args)
-{
-    if (auto val = args.Get("graphics"))   // --graphics=vulkan
-    {
-        if (*val == "vulkan") return GraphicsAPI::Vulkan;
-        if (*val == "dx11")   return GraphicsAPI::DirectX11;
-        if (*val == "dx12")   return GraphicsAPI::DirectX12;
-    }
-    return GraphicsAPI::Vulkan;
-}
+const ApplicationCommandLineArgs& args = Application::Get().GetCommandLineArgs();
+const bool debugDraw = args.Get("debug-draw").has_value();   // --debug-draw
+if (auto seed = args.Get("seed"))                             // --seed=42
+    std::from_chars(seed->data(), seed->data() + seed->size(), m_Seed);   // m_Seed kept on bad text
 ```
 
 On a machine without a GPU (a virtual machine, a build server), DirectX 11 and DirectX 12 run on
@@ -276,6 +285,8 @@ dedicated server or a CI job (v1.0):
 ```cpp
 params.Graphics.GraphicsAPI = GraphicsAPI::Headless;
 ```
+
+or, on any app's command line, `--graphics=headless`.
 
 - `OnInitialize`, `OnAttach`, `OnDetach` and `OnDestroy` run as usual, and `Run()` calls every
   layer's `OnUpdate(deltaTime)` 60 times a second on average. The loop sleeps to a running

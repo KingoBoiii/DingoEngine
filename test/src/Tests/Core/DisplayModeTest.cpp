@@ -1,9 +1,12 @@
 #include "DisplayModeTest.h"
 
+#include "DingoEngine/Core/LaunchFlags.h"
+
 #include <imgui.h>
 
 #include <charconv>
 #include <format>
+#include <memory>
 
 namespace Dingo
 {
@@ -162,49 +165,76 @@ namespace Dingo
 			Check(!Application::Get().GetWindow().IsFullscreen(), "SetFullscreen(false) restores the size set while fullscreen");
 		} });
 
-		m_Steps.push_back({ "settings", [] {}, nullptr, [this]
+		const std::optional<std::string_view> launchWindow = Application::Get().GetCommandLineArgs().Get("window");
+		if (launchWindow && Internal::ParseWindowFlag(*launchWindow))
 		{
-			Settings settings = Settings::Capture();
-			Check(settings.Display.Mode == WindowMode::Windowed && settings.Display.Width == m_RestoreSize.x && settings.Display.Height == m_RestoreSize.y
-				&& settings.Display.VSync == Application::Get().GetWindow().IsVSync(), "Settings::Capture reads the window");
+			auto launchSettings = std::make_shared<Settings>();
+			m_Steps.push_back({ "Settings under --window", [this, launchSettings]
+			{
+				*launchSettings = Settings::Capture();
+				Settings settings = *launchSettings;
+				settings.Display.Mode = WindowMode::BorderlessFullscreen;
+				settings.Display.Width = m_BaseSize.x;
+				settings.Display.Height = m_BaseSize.y;
+				settings.Display.VSync = true;
+				settings.Apply();
+			}, [this] { return m_RestoreSize; }, [this, launchSettings]
+			{
+				const Window& window = Application::Get().GetWindow();
+				Check(window.GetWindowMode() == WindowMode::Windowed && window.GetWindowedWidth() == m_RestoreSize.x && window.GetWindowedHeight() == m_RestoreSize.y,
+					"--window: Settings::Apply leaves the window alone");
+				const Settings captured = Settings::Capture();
+				Check(captured.Display.Mode == WindowMode::BorderlessFullscreen && captured.Display.Width == m_BaseSize.x && captured.Display.Height == m_BaseSize.y
+					&& captured.Display.VSync && window.IsVSync(), "--window: Settings::Capture returns what Apply asked for");
+				launchSettings->Apply();
+			} });
+		}
+		else
+		{
+			m_Steps.push_back({ "settings", [] {}, nullptr, [this]
+			{
+				Settings settings = Settings::Capture();
+				Check(settings.Display.Mode == WindowMode::Windowed && settings.Display.Width == m_RestoreSize.x && settings.Display.Height == m_RestoreSize.y
+					&& settings.Display.VSync == Application::Get().GetWindow().IsVSync(), "Settings::Capture reads the window");
 
-			settings.Display.Mode = WindowMode::ExclusiveFullscreen;
-			settings.Display.FullscreenMode = m_Exclusive;
-			settings.Audio.MasterVolume = 0.5f;
-			settings.Game["difficulty"] = 2;
-			Check(settings.Save(k_SettingsSlot), "Settings::Save writes the slot");
+				settings.Display.Mode = WindowMode::ExclusiveFullscreen;
+				settings.Display.FullscreenMode = m_Exclusive;
+				settings.Audio.MasterVolume = 0.5f;
+				settings.Game["difficulty"] = 2;
+				Check(settings.Save(k_SettingsSlot), "Settings::Save writes the slot");
 
-			bool found = false;
-			const Settings loaded = Settings::Load(k_SettingsSlot, &found);
-			Check(found && loaded.Display.Mode == WindowMode::ExclusiveFullscreen && loaded.Display.FullscreenMode == m_Exclusive
-				&& loaded.Display.Width == m_RestoreSize.x && loaded.Audio.MasterVolume == 0.5f && loaded.Game.Get("difficulty", 0) == 2,
-				"Settings::Load reads back what Save wrote");
-			Check(SaveSlots::Delete(k_SettingsSlot) && !SaveSlots::Exists(k_SettingsSlot), "the test's settings slot is deleted");
-		} });
+				bool found = false;
+				const Settings loaded = Settings::Load(k_SettingsSlot, &found);
+				Check(found && loaded.Display.Mode == WindowMode::ExclusiveFullscreen && loaded.Display.FullscreenMode == m_Exclusive
+					&& loaded.Display.Width == m_RestoreSize.x && loaded.Audio.MasterVolume == 0.5f && loaded.Game.Get("difficulty", 0) == 2,
+					"Settings::Load reads back what Save wrote");
+				Check(SaveSlots::Delete(k_SettingsSlot) && !SaveSlots::Exists(k_SettingsSlot), "the test's settings slot is deleted");
+			} });
 
-		m_Steps.push_back({ "Settings::Apply to borderless with another size", [this]
-		{
-			Settings settings = Settings::Capture();
-			settings.Display.Mode = WindowMode::BorderlessFullscreen;
-			settings.Display.Width = m_BaseSize.x;
-			settings.Display.Height = m_BaseSize.y;
-			settings.Apply();
-		}, [this] { return glm::ivec2(m_Desktop.Width, m_Desktop.Height); }, [this]
-		{
-			const Window& window = Application::Get().GetWindow();
-			Check(window.GetWindowMode() == WindowMode::BorderlessFullscreen && window.GetWindowedWidth() == m_BaseSize.x && window.GetWindowedHeight() == m_BaseSize.y,
-				"Settings::Apply goes fullscreen and keeps the new windowed size to return to");
-		} });
+			m_Steps.push_back({ "Settings::Apply to borderless with another size", [this]
+			{
+				Settings settings = Settings::Capture();
+				settings.Display.Mode = WindowMode::BorderlessFullscreen;
+				settings.Display.Width = m_BaseSize.x;
+				settings.Display.Height = m_BaseSize.y;
+				settings.Apply();
+			}, [this] { return glm::ivec2(m_Desktop.Width, m_Desktop.Height); }, [this]
+			{
+				const Window& window = Application::Get().GetWindow();
+				Check(window.GetWindowMode() == WindowMode::BorderlessFullscreen && window.GetWindowedWidth() == m_BaseSize.x && window.GetWindowedHeight() == m_BaseSize.y,
+					"Settings::Apply goes fullscreen and keeps the new windowed size to return to");
+			} });
 
-		m_Steps.push_back({ "Settings::Apply back to windowed", [this]
-		{
-			Settings settings = Settings::Capture();
-			settings.Display.Mode = WindowMode::Windowed;
-			settings.Apply();
-		}, [this] { return m_BaseSize; }, [this]
-		{
-			Check(Application::Get().GetWindow().GetWindowMode() == WindowMode::Windowed, "Settings::Apply returns to windowed");
-		} });
+			m_Steps.push_back({ "Settings::Apply back to windowed", [this]
+			{
+				Settings settings = Settings::Capture();
+				settings.Display.Mode = WindowMode::Windowed;
+				settings.Apply();
+			}, [this] { return m_BaseSize; }, [this]
+			{
+				Check(Application::Get().GetWindow().GetWindowMode() == WindowMode::Windowed, "Settings::Apply returns to windowed");
+			} });
+		}
 
 		m_Steps.push_back({ "restore the starting size", [this] { Application::Get().GetWindow().SetSize(m_InitialSize.x, m_InitialSize.y); },
 			nullptr, [] {} });

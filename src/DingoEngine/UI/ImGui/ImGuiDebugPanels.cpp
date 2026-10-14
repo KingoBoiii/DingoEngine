@@ -2,6 +2,7 @@
 
 #include "DingoEngine/UI/DebugPanels.h"
 #include "DingoEngine/Core/PathText.h"
+#include "DingoEngine/Core/LaunchFlags.h"
 
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/Input.h"
@@ -509,6 +510,11 @@ namespace Dingo::Internal
 		bool vsync = window.IsVSync();
 		if (ImGui::Checkbox("VSync", &vsync))
 			window.SetVSync(vsync);
+		if (Internal::IsLaunchFlagOn(Application::Get().GetCommandLineArgs().Get("no-vsync")))
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("(off: --no-vsync)");
+		}
 	}
 
 	void FrameTimingSection()

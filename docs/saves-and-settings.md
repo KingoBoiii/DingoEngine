@@ -117,6 +117,13 @@ differs, so applying unchanged settings doesn't blink the window. It sets the vo
 that exist, so create the game's buses first. A [headless](application-and-layers.md#headless)
 app has no window: `Capture()` keeps its base's `Display` and `Apply()` skips it.
 
+The launch flags `--window=WxH` and `--no-vsync` hold the window for the whole run without
+touching what the player chose. Under `--window`, `Apply()` stores the mode and size it is given
+without changing the window, and `Capture()` returns them. Under `--no-vsync`, the swap chain stays
+off while `Apply()` and `Capture()` keep the VSync setting. So a menu that saves during such a run
+saves the player's settings, not the flag's (see
+[Command-line arguments](application-and-layers.md#command-line-arguments)).
+
 To open the window in the saved mode rather than switching after it appears, name the slot in
 `ApplicationParams`:
 
