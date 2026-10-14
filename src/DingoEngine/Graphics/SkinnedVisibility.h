@@ -70,4 +70,20 @@ namespace Dingo::Internal
 		mutable Slot m_Slots[2];
 	};
 
+	// The frame a scene last rendered its skinned meshes in. A frame the renderer skipped records no
+	// palettes, so it must not count, or the next update would find every animator culled.
+	struct SkinnedViewStamp
+	{
+		uint64_t Frame = 0;
+
+		void Stamp(uint64_t frame, bool frameSkipped)
+		{
+			if (!frameSkipped)
+				Frame = frame;
+		}
+
+		// When false, the scene animates as if seen (stepped headless, behind a menu, or skipped).
+		bool RenderedLately(uint64_t frame) const { return Frame + 1 >= frame; }
+	};
+
 }
