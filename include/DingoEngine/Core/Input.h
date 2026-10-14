@@ -183,6 +183,11 @@ namespace Dingo
 		static void ConsumeScroll();
 		static void ConsumeGamepadButton(GamepadButton button, uint32_t gamepad);
 		static void ClearConsumed();
+		// The test app's pad: a simulated slot is connected and ignored by polling, so what is set
+		// stays until it is set again.
+		static void SimulateGamepadConnected(uint32_t gamepad, bool connected);
+		static void SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad);
+		static void SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad);
 		// The mouse button as the window reported it, consumed or not: the game UI follows a press
 		// it took until the release.
 		static bool IsMouseButtonDownUnconsumed(MouseButton button);
@@ -192,6 +197,9 @@ namespace Dingo
 		// with the mouse: what a capturing ImGui takes from the game.
 		static void ConsumeNewPresses(bool mouse, bool keyboard);
 		static bool IsKeyPressedUnconsumed(KeyCode keycode);
+		static bool IsKeyDownUnconsumed(KeyCode keycode);
+		static bool IsGamepadButtonDownUnconsumed(GamepadButton button, uint32_t gamepad);
+		static bool IsGamepadButtonPressedUnconsumed(GamepadButton button, uint32_t gamepad);
 
 	private:
 		friend class Application; // drives Update() once per frame

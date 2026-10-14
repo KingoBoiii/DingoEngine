@@ -83,6 +83,15 @@ namespace Dingo::Internal
 			return UITextParams().SetSize(style.TextSize).SetColor(enabled ? style.TextColor : style.DisabledTextColor).SetWrap(false).SetFont(style.TextFont);
 		}
 
+		void ApplyRing(UIBoxParams& box, const UIStyle& style, bool focused)
+		{
+			if (!focused || style.FocusWidth <= 0.0f)
+				return;
+			box.BorderColor = style.FocusedColor;
+			box.BorderWidth = (std::max)(box.BorderWidth, style.FocusWidth);
+			box.CornerRadius = (std::max)(box.CornerRadius, style.CornerRadius);
+		}
+
 		UIBoxParams Solid(const UISize& width, const UISize& height, const glm::vec4& color, float radius)
 		{
 			UIBoxParams box;
@@ -112,6 +121,8 @@ namespace Dingo::Internal
 		box.Justify = UIJustify::Center;
 		box.Align = UIAlign::Center;
 		ApplyFace(box, style, FaceOf(result, params.Enabled));
+		ApplyRing(box, style, result.Focused);
+		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
@@ -144,6 +155,8 @@ namespace Dingo::Internal
 		row.Gap = style.Gap;
 		row.Align = UIAlign::Center;
 		row.Padding = { 0.0f, style.RowPadding.y * 0.5f, style.RowPadding.x, style.RowPadding.y * 0.5f };
+		ApplyRing(row, style, result.Focused);
+		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, label, row, params.Enabled);
 
 		glm::vec4 trackColor = style.TrackColor;
@@ -199,6 +212,21 @@ namespace Dingo::Internal
 				current = next;
 			}
 		}
+		if (params.Enabled && high > low && m_NavAdjust != 0 && id == m_FocusId)
+		{
+			const double increment = integer ? 1.0 : (step > 0.0 ? step : (high - low) * 0.05);
+			double next = current + m_NavAdjust * increment;
+			if (step > 0.0)
+				next = low + std::round((next - low) / step) * step;
+			next = std::clamp(next, low, high);
+			if (integer)
+				next = std::round(next);
+			if (next != current)
+			{
+				result.Changed = true;
+				current = next;
+			}
+		}
 		if (integer)
 			current = std::round(current);
 		*value = current;
@@ -209,6 +237,7 @@ namespace Dingo::Internal
 		outer.Direction = UIDirection::Row;
 		outer.Gap = style.Gap;
 		outer.Align = UIAlign::Center;
+		ApplyRing(outer, style, result.Focused);
 		m_Tree.BeginBox(outer);
 
 		UIBoxParams track;
@@ -216,6 +245,7 @@ namespace Dingo::Internal
 		track.Height = UISize::Fixed(style.SliderHeight);
 		track.Direction = UIDirection::Row;
 		track.Align = UIAlign::Center;
+		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, true };
 		BeginWidgetBox(id, label, track, params.Enabled);
 
 		const auto leaf = [this](const UIBoxParams& box)
@@ -331,6 +361,8 @@ namespace Dingo::Internal
 			box.Background = result.Hovered ? style.AccentHoverColor : style.AccentColor;
 		else if (result.Hovered)
 			box.Background = result.Down ? style.PressedColor : style.HoverColor;
+		ApplyRing(box, style, result.Focused);
+		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();

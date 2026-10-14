@@ -225,6 +225,39 @@ never turns into a game click on the way out. A root with `BlocksInput = false` 
 - `DingoUI::IsCapturingInput()`: the UI holds the pointer: a press it took is still held, or a modal
   is up. Keep game drag-and-drop and camera input off while it is `true`.
 
+## Keyboard and gamepad focus
+
+Menus work without a mouse. The arrow keys, a pad's D-pad and its left stick move the focus to the
+nearest focusable widget in that direction (measured on last frame's layout); holding a direction
+repeats it after `UINavParams::RepeatDelay`. `Tab` (`Shift+Tab`) steps through the widgets in
+declaration order. Enter, Space or pad A accepts: a Button, Selectable or Toggle reports `Clicked`,
+and a focused Slider steps with Left and Right instead of moving the focus. Escape or pad B is
+reported by `DingoUI::IsBackPressed()` for the frame it went down.
+
+- Only roots that block input and have `Navigable` set (the default) take part, so a HUD that
+  does not block input never takes the arrow keys from the game. A `Modal` root confines the focus
+  to itself; closing it gives the focus back to the widget it interrupted.
+- The first widget with `DefaultFocus` set the frame it appears gets the focus; without one the
+  first widget does. A focused widget that vanishes hands the focus to its nearest neighbour.
+- `DingoUI::SetFocus(label)` focuses a widget from code. Call it in the container the widget is
+  declared in, with the same label, and it takes effect next frame.
+- The ring (`UIStyle::FocusedColor`, `FocusWidth`) and `UIInteraction::Focused` show only while the
+  player navigates: moving the mouse hides them (`DingoUI::IsFocusVisible()`), and the first key or
+  pad press afterwards only brings the ring back without moving it.
+- While a root with focusable widgets is up, the keys and pad buttons the UI acted on read as not
+  pressed in `Input`, so a pause key bound to Escape does not also fire; use `IsBackPressed()`.
+- `DingoUIParams::Nav` (`UINavParams`) turns navigation off or rebinds the keys, the pad buttons and
+  the repeat timing. With `KeyboardAvailable` off (a capturing ImGui) the keys are ignored and the pad
+  still works. `UIWidgetParams::SetFocusable(false)` skips a widget.
+
+```cpp
+DingoUI::BeginRoot("menu", UIRootParams().SetAnchor(UIAnchor::Center).SetModal(true));
+if (DingoUI::Button("Resume", UIWidgetParams().SetDefaultFocus()).Clicked) Resume();
+if (DingoUI::Button("Quit").Clicked) Quit();
+DingoUI::EndRoot();
+if (DingoUI::IsBackPressed()) Resume();
+```
+
 ## Rules the frame follows
 
 - Declare from `OnUpdate`; the layout and the draw happen after all layers have updated, and the UI

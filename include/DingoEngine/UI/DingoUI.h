@@ -1,10 +1,14 @@
 #pragma once
 
+#include "DingoEngine/Core/GamepadCodes.h"
+#include "DingoEngine/Core/KeyCodes.h"
+
 #include <glm/glm.hpp>
 
 #include <cstdint>
 #include <limits>
 #include <string_view>
+#include <vector>
 
 namespace Dingo
 {
@@ -65,7 +69,7 @@ namespace Dingo
 		glm::vec4 HoverColor{ 0.31f, 0.38f, 0.58f, 1.0f };      ///< Fill under the pointer.
 		glm::vec4 PressedColor{ 0.16f, 0.2f, 0.33f, 1.0f };     ///< Fill while held.
 		glm::vec4 DisabledColor{ 0.17f, 0.18f, 0.23f, 1.0f };   ///< Fill of a disabled widget.
-		/// Reserved: the border colour of the widget that has keyboard or gamepad focus, drawn once focus navigation lands.
+		/// The ring drawn around the widget that has keyboard or gamepad focus, while the player is navigating.
 		glm::vec4 FocusedColor{ 0.3f, 0.55f, 0.95f, 1.0f };
 
 		glm::vec4 AccentColor{ 0.3f, 0.55f, 0.95f, 1.0f };      ///< A switched-on Toggle, a slider's filled part, a selected row.
@@ -101,6 +105,8 @@ namespace Dingo
 		UINineSlice SurfaceDisabled;
 		/// Face of BeginPanel. With an image it replaces PanelColor.
 		UINineSlice Panel;
+		/// Thickness of the focus ring in design pixels (at least the style's BorderWidth); 0 draws none.
+		float FocusWidth = 2.0f;
 
 		/// The engine's theme: what a default-constructed style holds.
 		static UIStyle Default() { return UIStyle{}; }
@@ -169,6 +175,29 @@ namespace Dingo
 		UIStyle& SetSurfaceDisabled(const UINineSlice& slice) { SurfaceDisabled = slice; return *this; }
 		/// Sets Panel.
 		UIStyle& SetPanel(const UINineSlice& slice) { Panel = slice; return *this; }
+		/// Sets FocusWidth.
+		UIStyle& SetFocusWidth(float width) { FocusWidth = width; return *this; }
+	};
+
+	/// How the player moves the focus and activates widgets: the keys and pad buttons, and how a
+	/// held direction repeats. Set on DingoUIParams::Nav. A key list may hold several keys, and a
+	/// game that wants WASD adds them (`LeftKeys.push_back(Key::A)`).
+	struct UINavParams
+	{
+		/// Off, no widget takes focus and no key or button is taken from the game.
+		bool Enabled = true;
+		std::vector<KeyCode> LeftKeys{ Key::Left };                  ///< Move the focus left, or lower a focused slider.
+		std::vector<KeyCode> RightKeys{ Key::Right };                ///< Move the focus right, or raise a focused slider.
+		std::vector<KeyCode> UpKeys{ Key::Up };                      ///< Move the focus up.
+		std::vector<KeyCode> DownKeys{ Key::Down };                  ///< Move the focus down.
+		std::vector<KeyCode> AcceptKeys{ Key::Enter, Key::Space, Key::KPEnter }; ///< Activate the focused widget.
+		std::vector<KeyCode> BackKeys{ Key::Escape };                ///< Reported by DingoUI::IsBackPressed.
+		std::vector<KeyCode> NextKeys{ Key::Tab };                   ///< Focus the next widget in declaration order; with Shift, the previous one.
+		GamepadButton AcceptButton = GamepadButton::A;               ///< Pad button that activates (the D-pad and left stick move).
+		GamepadButton BackButton = GamepadButton::B;                 ///< Pad button reported by DingoUI::IsBackPressed.
+		float StickThreshold = 0.5f;                                 ///< How far the left stick must be pushed to count as a direction.
+		float RepeatDelay = 0.4f;                                    ///< Seconds a direction is held before it starts repeating.
+		float RepeatInterval = 0.1f;                                 ///< Seconds between repeats.
 	};
 
 	/// Options for the engine's game UI (DingoUI); set on ApplicationParams::DingoUI.
@@ -184,6 +213,8 @@ namespace Dingo
 		Font* DefaultFont = nullptr;
 		/// The theme the widgets start from; DingoUI::SetTheme changes it at run time.
 		UIStyle Style;
+		/// Keyboard and gamepad navigation.
+		UINavParams Nav;
 	};
 
 	/// Where a root sits on the screen. The anchor is a point of the screen; the root's pivot (the
@@ -378,6 +409,9 @@ namespace Dingo
 		/// declared earlier) get no hover or clicks, and every press and scroll, wherever the
 		/// pointer is, is taken from the game.
 		bool Modal = false;
+		/// The widgets of this root can take keyboard and gamepad focus. A root that does not block
+		/// input never does; turn this off for a permanent panel of a game that uses the arrow keys itself.
+		bool Navigable = true;
 		/// The root's own layout; its Width and Height are the root's size.
 		UIBoxParams Layout;
 
@@ -395,6 +429,8 @@ namespace Dingo
 		UIRootParams& SetBlocksInput(bool blocks) { BlocksInput = blocks; return *this; }
 		/// Sets Modal.
 		UIRootParams& SetModal(bool modal) { Modal = modal; return *this; }
+		/// Sets Navigable.
+		UIRootParams& SetNavigable(bool navigable) { Navigable = navigable; return *this; }
 		/// Sets Layout.
 		UIRootParams& SetLayout(const UIBoxParams& layout) { Layout = layout; return *this; }
 	};
@@ -462,7 +498,7 @@ namespace Dingo
 		bool Down = false;    ///< It took a press and the button is still held, wherever the pointer went.
 		bool Clicked = false; ///< The button was released over it after going down on it.
 		bool Changed = false; ///< A Toggle, Slider or SliderInt changed its value this frame.
-		bool Focused = false; ///< Reserved for keyboard and gamepad focus; always false for now.
+		bool Focused = false; ///< It has keyboard or gamepad focus and the player is navigating (see DingoUI::IsFocusVisible).
 	};
 
 	/// The size and state of a Button, Toggle, Selectable or ProgressBar. Chain the setters.
@@ -470,7 +506,10 @@ namespace Dingo
 	{
 		UISize Width;         ///< Width; Fit is the label's width plus padding (a ProgressBar defaults to 200 design pixels).
 		UISize Height;        ///< Height; Fit is the label's height plus padding (a ProgressBar defaults to 14 design pixels).
-		bool Enabled = true;  ///< Off, the widget is drawn dimmed and ignores the pointer.
+		bool Enabled = true;  ///< Off, the widget is drawn dimmed and ignores the pointer and focus.
+		bool Focusable = true; ///< Off, keyboard and gamepad focus skips the widget.
+		/// The widget takes the focus when it appears (the first item of a menu), unless it was declared last frame too.
+		bool DefaultFocus = false;
 		/// A style for this widget alone, instead of the current one; only needs to live for the call.
 		const UIStyle* Style = nullptr;
 
@@ -484,6 +523,10 @@ namespace Dingo
 		UIWidgetParams& SetHeight(const UISize& height) { Height = height; return *this; }
 		/// Sets Enabled.
 		UIWidgetParams& SetEnabled(bool enabled) { Enabled = enabled; return *this; }
+		/// Sets Focusable.
+		UIWidgetParams& SetFocusable(bool focusable) { Focusable = focusable; return *this; }
+		/// Sets DefaultFocus.
+		UIWidgetParams& SetDefaultFocus(bool defaultFocus = true) { DefaultFocus = defaultFocus; return *this; }
 	};
 
 	/// A Slider or SliderInt. Chain the setters.
@@ -492,7 +535,10 @@ namespace Dingo
 		UISize Width = UISize::Fixed(200.0f); ///< Width of the track and handle.
 		float Step = 0.0f;                    ///< Values snap to multiples of this from the minimum; 0 for none (SliderInt always steps by 1).
 		bool ShowValue = true;                ///< Draw the value after the track.
-		bool Enabled = true;                  ///< Off, the slider is drawn dimmed and ignores the pointer.
+		bool Enabled = true;                  ///< Off, the slider is drawn dimmed and ignores the pointer and focus.
+		bool Focusable = true;                ///< Off, keyboard and gamepad focus skips the slider.
+		/// The slider takes the focus when it appears, unless it was declared last frame too.
+		bool DefaultFocus = false;
 		/// A style for this slider alone, instead of the current one; only needs to live for the call.
 		const UIStyle* Style = nullptr;
 
@@ -506,6 +552,10 @@ namespace Dingo
 		UISliderParams& SetShowValue(bool show) { ShowValue = show; return *this; }
 		/// Sets Enabled.
 		UISliderParams& SetEnabled(bool enabled) { Enabled = enabled; return *this; }
+		/// Sets Focusable.
+		UISliderParams& SetFocusable(bool focusable) { Focusable = focusable; return *this; }
+		/// Sets DefaultFocus.
+		UISliderParams& SetDefaultFocus(bool defaultFocus = true) { DefaultFocus = defaultFocus; return *this; }
 	};
 
 	/// A vertically scrolling area. Chain the setters.
@@ -629,6 +679,18 @@ namespace Dingo
 		/// True while the UI holds the pointer (a press it took and has not released, a widget being
 		/// held, or a modal root), so the game should leave that input alone.
 		static bool IsCapturingInput();
+
+		/// Gives the focus to the widget `label` names, declared in the container this is called
+		/// from (it hashes to the same id the widget has, PushId included). Takes effect next
+		/// frame; ignored if no such focusable widget exists by then.
+		static void SetFocus(std::string_view label);
+		/// True while the player navigates with keys or a pad, false once the mouse moves again.
+		/// Focus rings and UIInteraction::Focused show only while it is true.
+		static bool IsFocusVisible();
+		/// True for the frame the back input (Escape, pad B by default) went down while a root with
+		/// focusable widgets is up. Those inputs are then hidden from Input, so a pause key does not
+		/// also fire; use this to close the menu instead.
+		static bool IsBackPressed();
 	};
 
 }

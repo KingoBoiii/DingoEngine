@@ -49,6 +49,8 @@ namespace Dingo
 		std::array<std::string, k_MaxGamepads> s_GamepadNames{};
 		std::array<GamepadType, k_MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
+		// Slots the test app drives itself; polling leaves them alone.
+		std::array<bool, k_MaxGamepads> s_SimulatedGamepads{};
 
 		using RumbleClock = std::chrono::steady_clock;
 		constexpr int k_NoXInputUser = -1;
@@ -197,6 +199,8 @@ namespace Dingo
 			for (uint32_t jid = 0; jid < k_MaxGamepads; jid++)
 			{
 				GamepadState& state = s_CurrentGamepads[jid];
+				if (s_SimulatedGamepads[jid])
+					continue;
 
 				GLFWgamepadstate glfwState;
 				if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
@@ -282,6 +286,34 @@ namespace Dingo
 			s_ConsumedGamepadButtons[gamepad][static_cast<size_t>(button)] = true;
 	}
 
+	void Input::SimulateGamepadConnected(uint32_t gamepad, bool connected)
+	{
+		if (!ValidGamepad(gamepad))
+			return;
+		s_SimulatedGamepads[gamepad] = connected;
+		s_CurrentGamepads[gamepad] = GamepadState{};
+		s_CurrentGamepads[gamepad].Connected = connected;
+		s_PreviousGamepads[gamepad] = s_CurrentGamepads[gamepad];
+		s_ConsumedGamepadButtons[gamepad].fill(false);
+		if (connected)
+		{
+			s_GamepadNames[gamepad] = "Simulated Gamepad";
+			s_GamepadTypes[gamepad] = GamepadType::Unknown;
+		}
+	}
+
+	void Input::SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadButton(button) && s_SimulatedGamepads[gamepad])
+			s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)] = pressed;
+	}
+
+	void Input::SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadAxis(axis) && s_SimulatedGamepads[gamepad])
+			s_CurrentGamepads[gamepad].Axes[static_cast<size_t>(axis)] = value;
+	}
+
 	void Input::ClearConsumed()
 	{
 		s_ConsumedKeys.fill(false);
@@ -309,6 +341,11 @@ namespace Dingo
 	bool Input::IsKeyPressedUnconsumed(KeyCode keycode)
 	{
 		return ValidKey(keycode) && s_CurrentKeys[static_cast<size_t>(keycode)] && !s_PreviousKeys[static_cast<size_t>(keycode)];
+	}
+
+	bool Input::IsKeyDownUnconsumed(KeyCode keycode)
+	{
+		return ValidKey(keycode) && s_CurrentKeys[static_cast<size_t>(keycode)];
 	}
 
 	bool Input::IsKeyPressed(KeyCode keycode)
@@ -446,6 +483,19 @@ namespace Dingo
 			return false;
 		const size_t index = static_cast<size_t>(button);
 		return s_CurrentGamepads[gamepad].Buttons[index] && !s_PreviousGamepads[gamepad].Buttons[index] && !s_ConsumedGamepadButtons[gamepad][index];
+	}
+
+	bool Input::IsGamepadButtonDownUnconsumed(GamepadButton button, uint32_t gamepad)
+	{
+		return ValidGamepad(gamepad) && ValidGamepadButton(button) && s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsGamepadButtonPressedUnconsumed(GamepadButton button, uint32_t gamepad)
+	{
+		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
+			return false;
+		const size_t index = static_cast<size_t>(button);
+		return s_CurrentGamepads[gamepad].Buttons[index] && !s_PreviousGamepads[gamepad].Buttons[index];
 	}
 
 	bool Input::IsGamepadButtonDown(GamepadButton button, uint32_t gamepad)

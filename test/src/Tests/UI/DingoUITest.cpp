@@ -1,11 +1,13 @@
 #include "DingoUITest.h"
 #include "DingoEngine/Core/InputBackend.h"
 #include "DingoEngine/UI/DingoUI/DingoUIContext.h"
+#include "DingoEngine/UI/DingoUI/DingoUINav.h"
 #include "UI/TestViewportPanel.h"
 
 #include <imgui.h>
 
 #include <cmath>
+#include <string_view>
 
 namespace Dingo
 {
@@ -104,6 +106,8 @@ namespace Dingo
 	{
 		Internal::InputBackend::SimulateMouseButton(MouseButton::Left, false);
 		Internal::InputBackend::SimulateKey(k_TestKey, false);
+		Internal::InputBackend::SimulateKey(Key::Down, false);
+		Internal::InputBackend::SimulateGamepadConnected(0, false);
 		Internal::InputBackend::ClearConsumed();
 		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
 		{
@@ -1487,6 +1491,356 @@ namespace Dingo
 		}
 
 		m_WidgetsDone = true;
+		m_WWidgets = false;
+		m_WNav = true;
+		SetPointer(k_WidgetEmpty);
+		return true;
+	}
+
+	void DingoUITest::DeclareNavScene()
+	{
+		if (!m_WNav)
+			return;
+		const char* const names[] = { "N1", "N2", "N3", "N4", "N5", "N6" };
+		DingoUI::BeginRoot("n_main", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
+			.SetWidth(UISize::Fixed(500.0f)).SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f })));
+		for (int row = 0; row < 2; ++row)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f));
+			for (int column = 0; column < 3; ++column)
+			{
+				const int index = row * 3 + column;
+				if (index == 4 && m_WNavHide)
+				{
+					m_WNavResult[4] = {};
+					continue;
+				}
+				m_WNavResult[index] = DingoUI::Button(names[index], UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f)).SetDefaultFocus(index == 0));
+				if (m_WNavResult[index].Clicked)
+					++m_WNavClicks;
+			}
+			if (m_WNavFocus.size() == 2 && m_WNavFocus[1] != 'M' && (m_WNavFocus[1] - '1') / 3 == row)
+				DingoUI::SetFocus(m_WNavFocus);
+			DingoUI::EndBox();
+		}
+		m_WNavResult[6] = DingoUI::Slider("NVol", &m_WNavSlider, 0.0f, 1.0f, UISliderParams().SetWidth(UISize::Grow()));
+		m_WNavResult[7] = DingoUI::Toggle("NTog", &m_WNavToggle);
+		DingoUI::EndRoot();
+
+		if (m_WNavModal)
+		{
+			DingoUI::BeginRoot("n_modal", UIRootParams().SetOffset({ 600.0f, 200.0f }).SetLayer(1).SetModal(true).SetLayout(UIBoxParams()
+				.SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.2f, 0.1f, 0.1f, 0.95f })));
+			m_WNavResult[8] = DingoUI::Button("NM1", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			m_WNavResult[9] = DingoUI::Button("NM2", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			if (!m_WNavFocus.empty() && m_WNavFocus[1] == 'M')
+				DingoUI::SetFocus(m_WNavFocus);
+			DingoUI::EndRoot();
+		}
+		else
+		{
+			m_WNavResult[8] = {};
+			m_WNavResult[9] = {};
+		}
+		m_WNavFocus.clear();
+	}
+
+	bool DingoUITest::StepNavigation(Framebuffer* output)
+	{
+		using Internal::InputBackend;
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_NavDone || !m_WidgetsDone || !context)
+			return false;
+		DeclareNavScene();
+
+		const char* const names[k_NavCount] = { "N1", "N2", "N3", "N4", "N5", "N6", "NVol", "NTog", "NM1", "NM2" };
+		struct Move { Internal::UINavDirection Direction; const char* Expect; };
+		uint32_t n = 0;
+		const auto at = [&]() { return m_NavStage == n++; };
+		const auto done = [&]() { ++m_NavStage; m_NavCounter = 0; return true; };
+		const auto idle = [&]() { SetPointer(k_WidgetEmpty); };
+		const auto press = [&](Internal::UINavDirection direction) { idle(); m_WidgetInput.Nav.Direction[static_cast<size_t>(direction)] = true; };
+		const auto focused = [&]() -> const char* {
+			for (uint32_t i = 0; i < k_NavCount; ++i)
+			{
+				if (m_WNavResult[i].Focused)
+					return names[i];
+			}
+			return "";
+		};
+		const auto focusedIs = [&](const char* name) { return std::string_view(focused()) == name; };
+		const auto walk = [&](const Move* moves, uint32_t count)
+		{
+			const uint32_t index = m_NavCounter / 2;
+			if (index >= count)
+				return true;
+			if (m_NavCounter % 2 == 0)
+				press(moves[index].Direction);
+			else
+			{
+				Check(focusedIs(moves[index].Expect), std::string("Navigation: move ") + std::to_string(index) + " lands on " + moves[index].Expect + ", got " + focused());
+				idle();
+			}
+			++m_NavCounter;
+			return false;
+		};
+
+		if (at())
+		{
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsFocusVisible() && focused()[0] == '\0', "Navigation: no focus ring until the player navigates");
+			press(Internal::UINavDirection::Right);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsFocusVisible() && focusedIs("N1"), "Navigation: the first navigation input shows the ring on the default focus without moving");
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			static const Move moves[] = {
+				{ Internal::UINavDirection::Right, "N2" }, { Internal::UINavDirection::Right, "N3" }, { Internal::UINavDirection::Right, "N3" },
+				{ Internal::UINavDirection::Down, "N6" }, { Internal::UINavDirection::Left, "N5" }, { Internal::UINavDirection::Left, "N4" },
+				{ Internal::UINavDirection::Up, "N1" }, { Internal::UINavDirection::Down, "N4" }, { Internal::UINavDirection::Down, "NVol" },
+				{ Internal::UINavDirection::Down, "NTog" }, { Internal::UINavDirection::Up, "NVol" } };
+			return walk(moves, 11) ? done() : true;
+		}
+		if (at())
+		{
+			m_NavSliderBefore = m_WNavSlider;
+			press(Internal::UINavDirection::Right);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("NVol") && m_WNavSlider > m_NavSliderBefore, "Navigation: right steps a focused slider up and keeps the focus on it");
+			press(Internal::UINavDirection::Left);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("NVol") && std::abs(m_WNavSlider - m_NavSliderBefore) < 1e-4f, "Navigation: left steps a focused slider back down");
+			press(Internal::UINavDirection::Down);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("NTog") && !m_WNavToggle, "Navigation: moving to the toggle does not change it");
+			idle();
+			m_WidgetInput.Nav.Accept = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WNavToggle && focusedIs("NTog"), "Navigation: accept flips a focused toggle");
+			idle();
+			m_WNavFocus = "N2";
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("N2"), "Navigation: SetFocus puts the focus on the named widget");
+			m_WNavClicks = 0;
+			idle();
+			m_WidgetInput.Nav.Accept = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WNavResult[1].Clicked && m_WNavClicks == 1 && !m_WNavResult[1].Pressed, "Navigation: accept clicks the focused button once");
+			idle();
+			m_WidgetInput.Nav.Back = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed(), "Navigation: back is reported to the game");
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsBackPressed(), "Navigation: back is reported for one frame");
+			m_WNavFocus = "N1";
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N1"), "Navigation: SetFocus back to the first button");
+			return done();
+		}
+		if (at())
+		{
+			if (m_NavCounter == 10)
+				Check(focusedIs("N2"), "Navigation: a held direction moves once at first");
+			if (m_NavCounter == 27)
+			{
+				Check(focusedIs("N3"), "Navigation: a held direction repeats after the delay, not before");
+				idle();
+				return done();
+			}
+			press(Internal::UINavDirection::Right);
+			++m_NavCounter;
+			return true;
+		}
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty + glm::vec2(40.0f, 0.0f));
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsFocusVisible() && focused()[0] == '\0', "Navigation: moving the mouse hides the focus ring");
+			press(Internal::UINavDirection::Right);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsFocusVisible() && focusedIs("N3"), "Navigation: navigating again shows the ring where the focus was");
+			idle();
+			m_WNavModal = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("NM1") || focusedIs("NM2"), "Navigation: a modal root takes the focus when it opens");
+			m_WNavFocus = "NM1";
+			return done();
+		}
+		if (at())
+		{
+			static const Move moves[] = { { Internal::UINavDirection::Up, "NM1" }, { Internal::UINavDirection::Down, "NM2" }, { Internal::UINavDirection::Down, "NM2" },
+				{ Internal::UINavDirection::Left, "NM2" }, { Internal::UINavDirection::Right, "NM2" }, { Internal::UINavDirection::Up, "NM1" } };
+			return walk(moves, 6) ? done() : true;
+		}
+		if (at())
+		{
+			m_WNavModal = false;
+			idle();
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("N3"), std::string("Navigation: closing a modal root restores the focus it interrupted, got ") + focused());
+			m_WNavFocus = "N5";
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("N5"), "Navigation: SetFocus on a button of the grid");
+			m_WNavHide = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focused()[0] != '\0' && !focusedIs("N5"), "Navigation: a focused widget that vanishes hands the focus to a neighbour");
+			m_WNavHide = false;
+			m_WNavFocus = "N6";
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateGamepadConnected(0, true);
+			InputBackend::SimulateGamepadButton(GamepadButton::DPadUp, true, 0);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N3"), "Navigation: a pad D-pad press moves the focus");
+			Check(!Input::IsGamepadButtonDown(GamepadButton::DPadUp, 0), "Navigation: the D-pad press the UI took is hidden from the game");
+			InputBackend::SimulateGamepadButton(GamepadButton::DPadUp, false, 0);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateGamepadAxis(GamepadAxis::LeftX, -1.0f, 0);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N2"), "Navigation: the left stick moves the focus");
+			InputBackend::SimulateGamepadAxis(GamepadAxis::LeftX, 0.0f, 0);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			m_WNavClicks = 0;
+			idle();
+			InputBackend::SimulateGamepadButton(GamepadButton::A, true, 0);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WNavClicks == 1 && m_WNavResult[1].Clicked, "Navigation: pad A clicks the focused button");
+			Check(!Input::IsGamepadButtonDown(GamepadButton::A, 0), "Navigation: the A press the UI took is hidden from the game");
+			InputBackend::SimulateGamepadButton(GamepadButton::A, false, 0);
+			InputBackend::SimulateGamepadConnected(0, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Down, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			Internal::UINavInput without;
+			Internal::ReadNavInput(without, false, UINavParams(), 0);
+			Check(!without.Any(), "Navigation: with the keyboard unavailable the keys are not read");
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N5"), "Navigation: the Down key moves the focus");
+			Check(!Input::IsKeyDown(Key::Down), "Navigation: the arrow key the UI took is hidden from the game");
+			InputBackend::SimulateKey(Key::Down, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			m_WNav = false;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetFocusId() == 0, "Navigation: without focusable widgets there is no focus");
+			return done();
+		}
+
+		m_NavDone = true;
+		m_WNav = false;
+		InputBackend::ClearConsumed();
 		context->SetTarget(output);
 		context->SetInputOverride(&m_LiveInput);
 		m_LiveInput = {};
@@ -1514,6 +1868,7 @@ namespace Dingo
 		}
 		m_LiveInput.PointerAvailable = TestViewportPanel::IsImageHovered();
 		m_LiveInput.KeyboardAvailable = true;
+		Internal::ReadNavInput(m_LiveInput.Nav, true, UINavParams(), Internal::FindNavGamepad());
 		m_LiveInput.DeltaTime = 1.0f / 60.0f;
 	}
 
@@ -1524,6 +1879,10 @@ namespace Dingo
 		DingoUI::BeginRoot("live", UIRootParams().SetAnchor(UIAnchor::TopRight).SetOffset({ -16.0f, 16.0f }).SetLayout(UIBoxParams()
 			.SetWidth(UISize::Fixed(340.0f)).SetGap(10.0f).SetPadding(14.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.92f }).SetBorder(2.0f, { 0.5f, 0.65f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
 		DingoUI::Text("Widgets: click, drag and scroll", UITextParams().SetSize(20.0f));
+		DingoUI::Text("Tab / arrows / D-pad move, Enter / A press, Esc / B back", UITextParams().SetSize(14.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }));
+		if (DingoUI::IsBackPressed())
+			++m_LiveBacks;
+		DingoUI::Text("back pressed " + std::to_string(m_LiveBacks) + " times", UITextParams().SetSize(14.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }).SetWrap(false));
 
 		DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f).SetAlign(UIAlign::Center));
 		if (DingoUI::Button("Click me").Clicked)
@@ -1582,7 +1941,7 @@ namespace Dingo
 	{
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
-		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output))
+		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output) && !StepNavigation(output))
 		{
 			UpdateLiveInput(output);
 			DeclareLivePage();

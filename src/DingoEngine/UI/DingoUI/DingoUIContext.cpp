@@ -9,6 +9,8 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Texture.h"
 
+#include <algorithm>
+
 namespace Dingo::Internal
 {
 
@@ -60,6 +62,7 @@ namespace Dingo::Internal
 		m_Input.ViewportSize = m_TargetSize;
 
 		ResolveInteraction();
+		ResolveNavigation();
 
 		m_Tree.Begin(m_TargetSize);
 		m_ScrollStack.clear();
@@ -115,6 +118,274 @@ namespace Dingo::Internal
 		m_CapturingInput = m_ModalActive || anyConsumed;
 	}
 
+	void DingoUIContext::SetFocus(std::string_view label)
+	{
+		if (!m_InFrame)
+			return;
+		const uint64_t id = m_Tree.MakeId(label);
+		if (id == 0)
+			return;
+		m_PendingFocusId = id;
+		m_PendingFocusFrames = 3;
+	}
+
+	void DingoUIContext::CollectNavCandidates()
+	{
+		m_NavCandidates.clear();
+		m_NavElements.clear();
+		m_NavRoots.clear();
+		if (!m_Params.Nav.Enabled)
+			return;
+
+		const std::vector<UIElement>& elements = m_LastTree.GetElements();
+		m_LastTree.GetRootOrder(m_RootOrder);
+		int32_t modal = k_UINoElement;
+		for (auto it = m_RootOrder.rbegin(); it != m_RootOrder.rend() && modal == k_UINoElement; ++it)
+		{
+			if (elements[*it].Modal)
+				modal = *it;
+		}
+
+		int32_t root = k_UINoElement;
+		for (int32_t i = 0; i < static_cast<int32_t>(elements.size()); ++i)
+		{
+			const UIElement& element = elements[i];
+			if (element.Kind == UIElementKind::Root)
+				root = i;
+			if (!element.Focusable || root == k_UINoElement || element.Rect.IsEmpty())
+				continue;
+			const UIElement& owner = elements[root];
+			if (!owner.Navigable || !owner.BlocksInput || (modal != k_UINoElement && root != modal))
+				continue;
+			m_NavCandidates.push_back({ element.Id, element.Rect });
+			m_NavElements.push_back(i);
+			m_NavRoots.push_back(root);
+		}
+	}
+
+	int32_t DingoUIContext::NavIndexOf(uint64_t id) const
+	{
+		if (id == 0)
+			return -1;
+		for (int32_t i = 0; i < static_cast<int32_t>(m_NavCandidates.size()); ++i)
+		{
+			if (m_NavCandidates[i].Id == id)
+				return i;
+		}
+		return -1;
+	}
+
+	int32_t DingoUIContext::EstablishFocus() const
+	{
+		int32_t topRoot = k_UINoElement;
+		int32_t topRank = -1;
+		for (const int32_t root : m_NavRoots)
+		{
+			const auto position = std::find(m_RootOrder.begin(), m_RootOrder.end(), root);
+			const int32_t rank = static_cast<int32_t>(position - m_RootOrder.begin());
+			if (rank > topRank)
+			{
+				topRank = rank;
+				topRoot = root;
+			}
+		}
+
+		const std::vector<UIElement>& elements = m_LastTree.GetElements();
+		const auto remembered = m_RootFocus.find(elements[topRoot].Id);
+		int32_t first = -1;
+		int32_t preferred = -1;
+		for (int32_t i = 0; i < static_cast<int32_t>(m_NavCandidates.size()); ++i)
+		{
+			if (m_NavRoots[i] != topRoot)
+				continue;
+			if (first < 0)
+				first = i;
+			if (remembered != m_RootFocus.end() && m_NavCandidates[i].Id == remembered->second)
+				return i;
+			if (preferred < 0 && elements[m_NavElements[i]].DefaultFocus)
+				preferred = i;
+		}
+		return preferred >= 0 ? preferred : first;
+	}
+
+	void DingoUIContext::EnsureFocusVisible(int32_t candidate)
+	{
+		const std::vector<UIElement>& elements = m_LastTree.GetElements();
+		const UIRect& rect = m_NavCandidates[candidate].Rect;
+		for (int32_t parent = elements[m_NavElements[candidate]].Parent; parent != k_UINoElement; parent = elements[parent].Parent)
+		{
+			const UIElement& area = elements[parent];
+			if (!area.Scroll)
+				continue;
+			UIWidgetState* state = m_States.Find(area.Id);
+			if (!state)
+				continue;
+			if (rect.Min.y < area.Rect.Min.y)
+				state->ScrollOffset.y -= area.Rect.Min.y - rect.Min.y;
+			else if (rect.Max.y > area.Rect.Max.y)
+				state->ScrollOffset.y += rect.Max.y - area.Rect.Max.y;
+		}
+	}
+
+	void DingoUIContext::ResolveNavigation()
+	{
+		const UIInputState& input = m_Input;
+		const UINavParams& nav = m_Params.Nav;
+		m_NavAdjust = 0;
+		m_NavAcceptId = 0;
+		m_BackPressed = false;
+
+		const bool pointerPressed = input.PointerPressed[0] || input.PointerPressed[1] || input.PointerPressed[2];
+		if (input.PointerAvailable && ((m_HadPointer && input.PointerPosition != m_LastPointer) || pointerPressed))
+			m_FocusVisible = false;
+		m_HadPointer = input.PointerAvailable;
+		m_LastPointer = input.PointerPosition;
+
+		CollectNavCandidates();
+		const std::vector<UIElement>& elements = m_LastTree.GetElements();
+		if (m_NavCandidates.empty())
+		{
+			m_FocusId = 0;
+			m_SeenDefault.clear();
+			m_DirectionHeld = {};
+			for (UINavRepeater& repeater : m_Repeaters)
+				repeater.Step(false, 0.0f, 0.0f, 0.0f);
+			return;
+		}
+
+		int32_t focus = NavIndexOf(m_FocusId);
+		bool forced = false;
+
+		if (m_PressedId != 0)
+		{
+			const int32_t pressed = NavIndexOf(m_PressedId);
+			if (pressed >= 0)
+			{
+				focus = pressed;
+				forced = true;
+			}
+		}
+		if (m_PendingFocusId != 0)
+		{
+			const int32_t pending = NavIndexOf(m_PendingFocusId);
+			if (pending >= 0)
+			{
+				focus = pending;
+				forced = true;
+				m_PendingFocusId = 0;
+			}
+			else if (--m_PendingFocusFrames == 0)
+				m_PendingFocusId = 0;
+		}
+
+		if (focus < 0)
+		{
+			const bool hadFocus = m_FocusId != 0;
+			int32_t restored = NavIndexOf(m_SavedFocusId);
+			if (restored >= 0)
+				m_SavedFocusId = 0;
+			else if (hadFocus && m_SavedFocusId == 0 && m_LastTree.FindById(m_FocusId))
+				m_SavedFocusId = m_FocusId;
+
+			if (restored < 0 && hadFocus)
+			{
+				float best = 0.0f;
+				for (int32_t i = 0; i < static_cast<int32_t>(m_NavCandidates.size()); ++i)
+				{
+					if (elements[m_NavRoots[i]].Id != m_FocusRootId)
+						continue;
+					const glm::vec2 delta = (m_NavCandidates[i].Rect.Min + m_NavCandidates[i].Rect.Max) * 0.5f - m_FocusCenter;
+					const float distance = delta.x * delta.x + delta.y * delta.y;
+					if (restored < 0 || distance < best)
+					{
+						restored = i;
+						best = distance;
+					}
+				}
+			}
+			focus = restored >= 0 ? restored : EstablishFocus();
+		}
+
+		if (!forced)
+		{
+			std::unordered_set<uint64_t> defaults;
+			int32_t fresh = -1;
+			for (int32_t i = 0; i < static_cast<int32_t>(m_NavCandidates.size()); ++i)
+			{
+				if (!elements[m_NavElements[i]].DefaultFocus)
+					continue;
+				defaults.insert(m_NavCandidates[i].Id);
+				if (!m_SeenDefault.contains(m_NavCandidates[i].Id))
+					fresh = i;
+			}
+			for (uint64_t id : m_SeenDefault)
+			{
+				if (m_LastTree.FindById(id))
+					defaults.insert(id);
+			}
+			m_SeenDefault = std::move(defaults);
+			if (fresh >= 0)
+				focus = fresh;
+		}
+
+		const UINavInput& in = input.Nav;
+		std::array<bool, k_UINavDirectionCount> pulse{};
+		UINavInput fired;
+		fired.Gamepad = in.Gamepad;
+		bool moving = false;
+		for (size_t direction = 0; direction < k_UINavDirectionCount; ++direction)
+		{
+			pulse[direction] = m_Repeaters[direction].Step(in.Direction[direction], input.DeltaTime, nav.RepeatDelay, nav.RepeatInterval);
+			fired.Direction[direction] = in.Direction[direction] && !m_DirectionHeld[direction];
+			m_DirectionHeld[direction] = in.Direction[direction];
+			moving = moving || pulse[direction];
+		}
+		fired.Accept = in.Accept;
+		fired.Back = in.Back;
+		fired.Next = in.Next;
+		fired.Previous = in.Previous;
+
+		m_BackPressed = in.Back;
+		if (moving || in.Accept || in.Next || in.Previous)
+		{
+			if (!m_FocusVisible)
+				m_FocusVisible = true;
+			else
+			{
+				if (in.Accept)
+					m_NavAcceptId = m_NavCandidates[focus].Id;
+				constexpr UINavDirection k_Order[] = { UINavDirection::Up, UINavDirection::Down, UINavDirection::Left, UINavDirection::Right };
+				for (const UINavDirection direction : k_Order)
+				{
+					if (!pulse[static_cast<size_t>(direction)])
+						continue;
+					const bool sideways = direction == UINavDirection::Left || direction == UINavDirection::Right;
+					if (sideways && elements[m_NavElements[focus]].AdjustsHorizontally)
+						m_NavAdjust += direction == UINavDirection::Right ? 1 : -1;
+					else if (const int32_t target = FindNavTarget(m_NavCandidates, focus, direction); target >= 0)
+						focus = target;
+				}
+				if (in.Next || in.Previous)
+					focus = StepNavOrder(static_cast<int32_t>(m_NavCandidates.size()), focus, in.Next);
+			}
+		}
+		if (fired.Any())
+			ConsumeNavInput(fired, input.KeyboardAvailable, nav);
+
+		const UINavCandidate& chosen = m_NavCandidates[focus];
+		if (chosen.Id != m_FocusId)
+			m_EnsureVisibleFrames = 2;
+		m_FocusId = chosen.Id;
+		m_FocusRootId = elements[m_NavRoots[focus]].Id;
+		m_FocusCenter = (chosen.Rect.Min + chosen.Rect.Max) * 0.5f;
+		m_RootFocus[m_FocusRootId] = m_FocusId;
+		if (m_EnsureVisibleFrames > 0)
+		{
+			--m_EnsureVisibleFrames;
+			EnsureFocusVisible(focus);
+		}
+	}
+
 	UIInteraction DingoUIContext::Interact(uint64_t id, std::string_view label, bool enabled, UIWidgetState*& state)
 	{
 		const UIStateMap::TouchResult touch = m_States.Touch(id, m_FrameIndex);
@@ -137,7 +408,10 @@ namespace Dingo::Internal
 			result.Down = id == m_ActiveId;
 			result.Clicked = id == m_ClickedId;
 		}
-		result.Focused = state->Focused;
+		result.Focused = enabled && m_FocusVisible && id == m_FocusId;
+		if (enabled && id == m_NavAcceptId)
+			result.Clicked = true;
+		state->Focused = result.Focused;
 		state->Hovered = result.Hovered;
 		state->Active = result.Down;
 		return result;
@@ -160,6 +434,10 @@ namespace Dingo::Internal
 		info.NameHash = UILayoutTree::HashName(label);
 		info.Interactive = interactive;
 		info.Scroll = scroll;
+		info.Focusable = m_WidgetFocus.Focusable;
+		info.DefaultFocus = m_WidgetFocus.DefaultFocus;
+		info.AdjustsHorizontally = m_WidgetFocus.AdjustsHorizontally;
+		m_WidgetFocus = {};
 		info.ScrollOffset = scrollOffset;
 		if (scroll)
 		{

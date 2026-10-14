@@ -25,11 +25,18 @@ namespace Dingo::Internal
 
 		// Engine hotkeys (the debug window's F-keys) answer even while a capture hides the key.
 		static bool IsKeyPressedUnconsumed(KeyCode keycode) { return Input::IsKeyPressedUnconsumed(keycode); }
+		// The navigation keys and buttons a game UI took stay held for the UI, which repeats them.
+		static bool IsKeyDownUnconsumed(KeyCode keycode) { return Input::IsKeyDownUnconsumed(keycode); }
+		static bool IsGamepadButtonDownUnconsumed(GamepadButton button, uint32_t gamepad) { return Input::IsGamepadButtonDownUnconsumed(button, gamepad); }
+		static bool IsGamepadButtonPressedUnconsumed(GamepadButton button, uint32_t gamepad) { return Input::IsGamepadButtonPressedUnconsumed(button, gamepad); }
 
 		// The test app's simulated devices: sets the live state the window callbacks would.
 		static void SimulateMouseButton(MouseButton button, bool pressed) { Input::UpdateMouseButtonState(button, pressed); }
 		static void SimulateScroll(float x, float y) { Input::AccumulateMouseScroll(x, y); }
 		static void SimulateKey(KeyCode keycode, bool pressed) { Input::UpdateKeyState(keycode, pressed); }
+		static void SimulateGamepadConnected(uint32_t gamepad, bool connected) { Input::SimulateGamepadConnected(gamepad, connected); }
+		static void SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad) { Input::SimulateGamepadButton(button, pressed, gamepad); }
+		static void SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad) { Input::SimulateGamepadAxis(axis, value, gamepad); }
 	};
 
 }

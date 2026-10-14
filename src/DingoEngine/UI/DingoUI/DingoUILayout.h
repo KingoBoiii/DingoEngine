@@ -70,11 +70,15 @@ namespace Dingo::Internal
 		int Layer = 0;
 		bool BlocksInput = true;
 		bool Modal = false;
+		bool Navigable = true;
 		float Scale = 1.0f;
 
 		// Widgets
 		bool Interactive = false;        // takes the pointer: hover, press, click
 		bool Scroll = false;             // a scroll area: wheel target, children move by ScrollOffset
+		bool Focusable = false;          // can take keyboard and gamepad focus
+		bool DefaultFocus = false;       // takes the focus when it first appears
+		bool AdjustsHorizontally = false; // left and right change its value instead of moving the focus
 		glm::vec2 ScrollOffset{ 0.0f };  // pixels
 		glm::vec4 ScrollThumbColor{ 0.0f };
 		float ScrollThumbWidth = 0.0f;   // design pixels
@@ -115,6 +119,9 @@ namespace Dingo::Internal
 		uint64_t NameHash = 0;
 		bool Interactive = false;
 		bool Scroll = false;
+		bool Focusable = false;
+		bool DefaultFocus = false;
+		bool AdjustsHorizontally = false;
 		glm::vec2 ScrollOffset{ 0.0f };
 		glm::vec4 ScrollThumbColor{ 0.0f };
 		float ScrollThumbWidth = 0.0f;
@@ -168,6 +175,8 @@ namespace Dingo::Internal
 		// Rects of the elements of input-blocking roots that draw something or take the pointer.
 		void CollectBlockingRects(std::vector<UIRect>& rects) const;
 		bool HasModal() const;
+		// Root element indices from the lowest layer to the topmost (the last declared of a layer is above).
+		void GetRootOrder(std::vector<int32_t>& order) const;
 		// Roots are tried from the topmost (highest Layer, then latest declared) down; the first
 		// with an interactive element under the point owns the hover, and a blocking root with
 		// anything under the point hides the roots below it. A modal root hides all below it.

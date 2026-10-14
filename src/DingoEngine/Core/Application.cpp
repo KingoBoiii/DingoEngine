@@ -525,6 +525,8 @@ namespace Dingo
 		}
 		input.PointerAvailable = !imguiMouse && Input::GetCursorMode() != CursorMode::Locked;
 		input.KeyboardAvailable = !imguiKeyboard;
+		if (m_Params.DingoUI.Nav.Enabled)
+			Internal::ReadNavInput(input.Nav, input.KeyboardAvailable, m_Params.DingoUI.Nav, Internal::FindNavGamepad());
 		input.DeltaTime = m_DeltaTime;
 		m_DingoUIContext->BeginFrame(input);
 	}

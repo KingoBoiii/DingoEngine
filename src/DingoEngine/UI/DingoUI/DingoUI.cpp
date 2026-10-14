@@ -169,4 +169,22 @@ namespace Dingo
 		return context && context->IsCapturingInput();
 	}
 
+	void DingoUI::SetFocus(std::string_view label)
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->SetFocus(label);
+	}
+
+	bool DingoUI::IsFocusVisible()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->IsFocusVisible();
+	}
+
+	bool DingoUI::IsBackPressed()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->IsBackPressed();
+	}
+
 }

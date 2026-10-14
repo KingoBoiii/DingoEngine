@@ -2,6 +2,7 @@
 #include "DingoEngine/UI/DingoUI.h"
 #include "DingoUIDrawList.h"
 #include "DingoUILayout.h"
+#include "DingoUINav.h"
 #include "DingoUIState.h"
 
 #include <glm/glm.hpp>
@@ -11,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -40,6 +42,7 @@ namespace Dingo::Internal
 		bool PointerAvailable = false;
 		// False while ImGui holds the keyboard.
 		bool KeyboardAvailable = false;
+		UINavInput Nav;
 		float DeltaTime = 0.0f;
 	};
 
@@ -127,11 +130,24 @@ namespace Dingo::Internal
 		// Widgets declared with an id another widget already used in the same frame, since the start.
 		uint32_t GetIdCollisionCount() const { return m_IdCollisionCount; }
 
+		// Focus as BeginFrame resolved it; 0 for none. The ring and UIInteraction::Focused show only
+		// while IsFocusVisible.
+		uint64_t GetFocusId() const { return m_FocusId; }
+		bool IsFocusVisible() const { return m_FocusVisible; }
+		bool IsBackPressed() const { return m_BackPressed; }
+		// Applied in the next BeginFrame once the widget exists.
+		void SetFocus(std::string_view label);
+
 	private:
 		glm::vec2 ComputeTargetSize() const;
 		bool CanDeclare();
 		void WarnMismatch(const char* what);
 		void ResolveInteraction();
+		void ResolveNavigation();
+		void CollectNavCandidates();
+		int32_t NavIndexOf(uint64_t id) const;
+		int32_t EstablishFocus() const;
+		void EnsureFocusVisible(int32_t candidate);
 		// Touches the state of `id` for this frame (reporting a reuse of the id) and reads what
 		// the pointer did to it.
 		UIInteraction Interact(uint64_t id, std::string_view label, bool enabled, UIWidgetState*& state);
@@ -179,6 +195,35 @@ namespace Dingo::Internal
 		std::vector<uint64_t> m_ScrollStack;
 		std::vector<UIStyle> m_StyleStack;
 		bool m_WarnedStyleStack = false;
+
+		struct WidgetFocus
+		{
+			bool Focusable = false;
+			bool DefaultFocus = false;
+			bool AdjustsHorizontally = false;
+		};
+		WidgetFocus m_WidgetFocus;
+		std::vector<UINavCandidate> m_NavCandidates;
+		std::vector<int32_t> m_NavElements;
+		std::vector<int32_t> m_NavRoots;
+		std::vector<int32_t> m_RootOrder;
+		std::array<UINavRepeater, k_UINavDirectionCount> m_Repeaters;
+		std::array<bool, k_UINavDirectionCount> m_DirectionHeld{};
+		std::unordered_map<uint64_t, uint64_t> m_RootFocus;
+		std::unordered_set<uint64_t> m_SeenDefault;
+		uint64_t m_FocusId = 0;
+		uint64_t m_FocusRootId = 0;
+		uint64_t m_SavedFocusId = 0;
+		uint64_t m_PendingFocusId = 0;
+		uint32_t m_PendingFocusFrames = 0;
+		uint32_t m_EnsureVisibleFrames = 0;
+		glm::vec2 m_FocusCenter{ 0.0f };
+		glm::vec2 m_LastPointer{ 0.0f };
+		bool m_HadPointer = false;
+		bool m_FocusVisible = false;
+		bool m_BackPressed = false;
+		int m_NavAdjust = 0;
+		uint64_t m_NavAcceptId = 0;
 	};
 
 	// The Application's context, or nullptr (headless, DingoUIParams::Enabled false, or outside

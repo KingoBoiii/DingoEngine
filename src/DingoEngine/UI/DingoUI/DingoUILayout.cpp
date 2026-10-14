@@ -195,6 +195,7 @@ namespace Dingo::Internal
 		element.Layer = params.Layer;
 		element.BlocksInput = params.BlocksInput;
 		element.Modal = params.Modal;
+		element.Navigable = params.Navigable;
 		m_Open.push_back(index);
 		m_OpenIdDepth.push_back(static_cast<uint32_t>(m_IdStack.size()));
 		return true;
@@ -214,6 +215,9 @@ namespace Dingo::Internal
 			element.NameHash = widget->NameHash;
 			element.Interactive = widget->Interactive;
 			element.Scroll = widget->Scroll;
+			element.Focusable = widget->Focusable;
+			element.DefaultFocus = widget->DefaultFocus;
+			element.AdjustsHorizontally = widget->AdjustsHorizontally;
 			element.ScrollOffset = widget->ScrollOffset;
 			element.ScrollThumbColor = widget->ScrollThumbColor;
 			element.ScrollThumbWidth = widget->ScrollThumbWidth;
@@ -777,6 +781,12 @@ namespace Dingo::Internal
 				return true;
 		}
 		return false;
+	}
+
+	void UILayoutTree::GetRootOrder(std::vector<int32_t>& order) const
+	{
+		SortRoots();
+		order = m_Order;
 	}
 
 	UIHit UILayoutTree::HitTest(const glm::vec2& point) const
