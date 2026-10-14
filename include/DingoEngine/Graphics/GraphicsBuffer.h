@@ -110,9 +110,9 @@ namespace Dingo
 		virtual void Destroy() = 0;
 		/// Writes size bytes at byte offset, which must fit in ByteSize (and be 0 for a volatile
 		/// buffer, as Renderer::Upload). A Direct buffer uploads at
-		/// once; a Deferred one only keeps the pointer (it must outlive the frame's
-		/// Renderer::Upload). A storage buffer copies the bytes at once or at the next frame's
-		/// start (see ReadBack's timing).
+		/// once; a Deferred one only keeps the pointer, size and offset, and Renderer::Upload(buffer)
+		/// sends that range (the pointer must outlive that frame). A storage buffer copies the bytes
+		/// at once or at the next frame's start (see ReadBack's timing).
 		virtual void Upload(T* data, uint64_t size, uint64_t offset = 0ul) = 0;
 
 		/// What the buffer is bound as.

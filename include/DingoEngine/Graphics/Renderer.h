@@ -96,8 +96,8 @@ namespace Dingo
 		***		RESOURCE UPLOAD							***
 		**************************************************/
 
-		/// Re-sends the data the buffer kept (GraphicsBuffer::GetData), all of it; asserts for a
-		/// buffer that kept none, such as a storage buffer. Recorded in the frame; a no-op when
+		/// Re-sends the range the buffer's last GraphicsBuffer::Upload named, from the pointer it
+		/// kept (GetData); asserts for a buffer that kept none, such as a storage buffer. Recorded in the frame; a no-op when
 		/// skipped.
 		static void Upload(GraphicsBuffer* buffer);
 		/// Writes `size` bytes from `data` into the buffer, starting `offset` bytes in. The bytes
