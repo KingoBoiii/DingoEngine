@@ -235,7 +235,12 @@ What decides whether your copies instance:
 - **Opaque, not skinned, not baked.** Translucent meshes are sorted mesh by mesh and so never
   instance. Skinned meshes and [`Static`](#static-geometry) ones don't either.
 - **A budget of draws.** `Renderer3D::k_MaxInstancedDrawsPerFrame` (512) instanced draws a frame,
-  lit and shadow together. Groups past it batch on the CPU instead.
+  lit and shadow together. Each mesh of a material books its draws before culling, in submission
+  order, culled copies included. A mesh books 1 draw, or 3 while the scene has shadows and it casts:
+  its lit draw, its shadow draw, and one for its copies the camera culls but that still cast. A
+  `ShadowsOnly` mesh books 1. Meshes past the budget batch on the CPU instead. So culling never
+  changes which meshes are instanced. Three things do: the order you submit in, the scenes this
+  renderer drew earlier in the frame, and whether the scene has shadows at all.
 
 Copies culled from the camera but still casting are instanced into the shadow atlas the same way,
 every copy once per shadow view in one draw.

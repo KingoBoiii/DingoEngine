@@ -67,6 +67,7 @@ namespace Dingo
 		Mesh* m_ClosedQuads = nullptr;
 		Mesh* m_SkinnedClosedQuads = nullptr;
 		Mesh* m_IndicesOnly = nullptr;
+		std::vector<Mesh*> m_BudgetQuads;
 		std::vector<glm::mat4> m_Palette;
 		std::vector<Framebuffer*> m_CheckTargets;
 		std::vector<std::function<void()>> m_CheckSteps;

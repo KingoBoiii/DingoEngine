@@ -117,8 +117,9 @@ namespace Dingo
 		uint32_t InstanceThreshold = 8;
 		///@}
 
-		/// When true, a mesh too large for an empty batch, a light past the light budget or a
-		/// skinned instance past MaxSkinnedInstances trips an assert instead of the default
+		/// When true, a mesh too large for an empty batch, a light past the light budget, a
+		/// skinned instance past MaxSkinnedInstances or instanced draws booked past
+		/// Renderer3D::k_MaxInstancedDrawsPerFrame trip an assert instead of the default
 		/// warn-once-and-drop. Asserts are compiled out in release, where it warns and drops
 		/// regardless.
 		bool AssertOnOverflow = false;
@@ -511,8 +512,9 @@ namespace Dingo
 
 		/// Instanced draws a frame, lit and shadow, across every scene this renderer runs: each
 		/// writes a small volatile buffer that has room for this many writes a frame on Vulkan.
-		/// Groups past it are batched on the CPU instead, and a MaterialParams::Instancing
-		/// material's meshes are skipped, with a warning.
+		/// Each mesh of a material books its draws before culling, in submission order, so
+		/// culling never changes which fit. Meshes past it are batched on the CPU instead, and a
+		/// MaterialParams::Instancing material's meshes are skipped, with a warning.
 		static constexpr uint32_t k_MaxInstancedDrawsPerFrame = 512;
 
 		/// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
@@ -889,9 +891,8 @@ namespace Dingo
 			uint32_t Count = 0;
 			uint32_t FirstRecord = 0;
 			uint32_t Placed = 0;
-			bool Forced = false;  // a MaterialParams::Instancing material's lit slot: there is no CPU path
 			bool Instanced = false;
-			bool Dropped = false; // forced, past the frame's instanced draws
+			bool Dropped = false; // a forced material's lit slot, past the frame's instanced draws: there is no CPU path
 		};
 		// A batch's copies of one mesh, culled or not: whether they are instanced, in every slot they reach.
 		struct InstanceCopies
@@ -899,8 +900,14 @@ namespace Dingo
 			Dingo::Material* Material = nullptr;
 			const Dingo::Mesh* Mesh = nullptr;
 			uint32_t Count = 0;
+			// Booked before culling: its lit slot's draws (lit, and shadow when it casts), and the one draw
+			// of the shadow-only slot its culled casters join.
+			uint32_t LitWrites = 0;
+			uint32_t CasterWrites = 0;
 			bool Forced = false;
-			bool Instanced = false;
+			bool Instanced = false;        // its lit slot's group
+			bool CastersInstanced = false; // its shadow-only slot's group
+			bool Dropped = false;
 		};
 		struct InstanceCopyKey
 		{

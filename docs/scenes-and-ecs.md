@@ -706,8 +706,9 @@ Such a material draws every mesh given it instanced, however few copies and even
 turned off, since its shader can't read the CPU batches (its copies culled from the camera may still
 cast through the CPU batches, which the shadow pass draws with its own shader). Past
 `Renderer3D::k_MaxInstancedDrawsPerFrame` instanced draws in a frame its meshes are skipped
-(`Statistics::DroppedInstancedMeshes`, warned once). A shader missing either block, or putting one
-on a binding the material's textures or samplers use (texture slot *i* binds at `2 + 2i`, sampler
+(`Statistics::DroppedInstancedMeshes`, warned once). The draws are booked before culling, so culled
+copies count too, and the camera never decides which meshes are skipped. A shader missing either
+block, or putting one on a binding the material's textures or samplers use (texture slot *i* binds at `2 + 2i`, sampler
 slot *i* at `3 + 2i`, so slot 4's texture or slot 3's sampler meet the default 10 and 9), draws
 nothing and casts no shadow (warned once), and so does a translucent material with `Instancing`,
 since the translucent pass draws no instances.
