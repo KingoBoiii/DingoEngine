@@ -155,17 +155,19 @@ namespace Dingo
 		virtual ~Application();
 
 	public:
-		/// Brings up the window, renderers, audio and assets, then calls OnInitialize. The engine
-		/// calls it after CreateApplication returns; calling it from CreateApplication first is
-		/// harmless. Stops with an error when the graphics back-end can't be created. If
-		/// OnInitialize pushed no layer it logs an error and pushes an empty one.
+		/// Brings up the window, renderers, audio and assets (only audio and assets when headless),
+		/// then calls OnInitialize. The engine calls it after CreateApplication returns; calling it
+		/// from CreateApplication first is harmless. Stops with an error when the graphics back-end
+		/// can't be created. If OnInitialize pushed no layer it logs an error and pushes an empty
+		/// one.
 		void Initialize();
 
 		/// Handles a window or input event: close, resize and focus first (the close event ends
 		/// there; layers see the others), then each layer's OnEvent from the top (overlays first)
 		/// until one sets Handled. The window calls it.
 		void OnEvent(Event& e);
-		/// The frame loop: runs until Close() or the window closes, then calls OnDestroy().
+		/// The frame loop: runs until Close() or the window closes, then calls OnDestroy(). Headless,
+		/// it calls each layer's OnUpdate at a fixed 60 Hz and only Close() ends it.
 		/// The engine calls it from main(); it returns when the application ends.
 		void Run();
 
@@ -196,10 +198,16 @@ namespace Dingo
 		/// that can run outside the application's lifetime (e.g. static-lifetime scenes).
 		static bool HasInstance() { return s_Instance != nullptr; }
 
-		/// The application window. Valid from Initialize() until teardown.
+		/// True when started with GraphicsAPI::Headless: there is no window, graphics context, swap
+		/// chain, renderer or ImGui, and Run() calls every layer's OnUpdate at a fixed 60 Hz until
+		/// Close().
+		bool IsHeadless() const { return m_Params.Graphics.GraphicsAPI == GraphicsAPI::Headless; }
+
+		/// The application window. Valid from Initialize() until teardown; asserts (Debug builds)
+		/// when headless, which has none.
 		///@{
-		Window& GetWindow() { return *m_Window; }
-		const Window& GetWindow() const { return *m_Window; }
+		Window& GetWindow() { DE_CORE_ASSERT(m_Window, "A headless application has no window."); return *m_Window; }
+		const Window& GetWindow() const { DE_CORE_ASSERT(m_Window, "A headless application has no window."); return *m_Window; }
 		///@}
 
 		/// From a zero-sized WindowResizeEvent until the next real size. Nothing renders meanwhile
@@ -212,16 +220,18 @@ namespace Dingo
 		bool IsUpdatingInBackground() const { return m_Params.UpdateInBackground; }
 		/// Deprecated name for IsUpdatingInBackground; removed in 2.0.
 		[[deprecated("use IsUpdatingInBackground; removed in 2.0")]] bool GetUpdateInBackground() const { return IsUpdatingInBackground(); }
-		/// The graphics device context created by Initialize(); owned by the application.
-		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
+		/// The graphics device context created by Initialize(); owned by the application. Asserts
+		/// (Debug builds) when headless, which has none.
+		const GraphicsContext& GetGraphicsContext() const { DE_CORE_ASSERT(m_GraphicsContext, "A headless application has no graphics context."); return *m_GraphicsContext; }
 		/// The command line the application was created with.
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
 		/// The engine's subsystems. The application owns them: they are valid from Initialize()
-		/// until teardown, and are never deleted by game code.
+		/// until teardown, and are never deleted by game code. A headless application has no
+		/// renderers: GetRenderer2D, GetRenderer3D and GetSceneRenderer assert (Debug builds) there.
 		///@{
-		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
-		Renderer3D& GetRenderer3D() const { return *m_Renderer3D; }
-		SceneRenderer& GetSceneRenderer() const { return *m_SceneRenderer; }
+		Renderer2D& GetRenderer2D() const { DE_CORE_ASSERT(m_Renderer2D, "A headless application has no renderer."); return *m_Renderer2D; }
+		Renderer3D& GetRenderer3D() const { DE_CORE_ASSERT(m_Renderer3D, "A headless application has no renderer."); return *m_Renderer3D; }
+		SceneRenderer& GetSceneRenderer() const { DE_CORE_ASSERT(m_SceneRenderer, "A headless application has no renderer."); return *m_SceneRenderer; }
 		AudioEngine& GetAudioEngine() const { return *m_AudioEngine; }
 		AssetManager& GetAssetManager() const { return *m_AssetManager; }
 		///@}
@@ -264,6 +274,9 @@ namespace Dingo
 		// tabs) inside the ImGui frame. Gated at runtime by
 		// ApplicationParams::EnableDebugOverlays.
 		void RenderDebugOverlays();
+
+		void RunWindowed();
+		void RunHeadless();
 
 		void RunPostExecutionCallbacks();
 

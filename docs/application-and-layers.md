@@ -50,7 +50,8 @@ ApplicationParams params{
 ```
 
 `.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan`. Asking for a back-end the platform lacks (DirectX on Linux) logs an error and stops
-in `Application::Initialize`, in every configuration.
+in `Application::Initialize`, in every configuration. `GraphicsAPI::Headless` runs without a
+window or GPU: see [Headless](#headless).
 
 ### Logs and crashes
 
@@ -211,6 +212,7 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 | `GetRenderer2D()` | The batched 2D renderer (see [2D Rendering](rendering-2d.md)). |
 | `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetWindowMode`, `SetFullscreen`, `SetSize`, `SetVSync` (see [Window modes](#window-modes), [VSync](#vsync)). |
 | `GetSaveDirectory()` | Where `SaveSlots` keeps its files (see [Saves & Settings](saves-and-settings.md)). |
+| `IsHeadless()` | True when started with `GraphicsAPI::Headless` (see [Headless](#headless)). |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
 | `SetUpdateInBackground(bool)` / `IsUpdatingInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
@@ -264,6 +266,34 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
 Either way, every key and button edge reaches exactly one `OnUpdate`. After a pause, the first
 `OnUpdate` sees what changed during it, gamepads included; the scroll and cursor motion an inactive
 window collected meanwhile are dropped.
+
+### Headless
+
+`GraphicsAPI::Headless` starts the app with no window, graphics context, swap chain, renderers or
+ImGui, and GLFW is never initialised, so it runs on a machine with no display or GPU, such as a
+dedicated server or a CI job (v1.0):
+
+```cpp
+params.Graphics.GraphicsAPI = GraphicsAPI::Headless;
+```
+
+- `OnInitialize`, `OnAttach`, `OnDetach` and `OnDestroy` run as usual, and `Run()` calls every
+  layer's `OnUpdate(deltaTime)` at about 60 a second (less evenly on Windows, whose default timer
+  ticks every 15.6 ms). There is no `OnImGuiRender`, no debug window and no events;
+  `EnableImGui` and `EnableDebugOverlays` are ignored.
+- There is no window to close, so `Close()` is the only way out of the loop. `RequestRestart`
+  works, to or from Headless.
+- The `AssetManager`, `AudioEngine`, scenes, scripts and physics all work. `SceneManager::OnRender`
+  does nothing. Loading anything that lives on the GPU (textures, models, fonts, shaders, or a
+  scene file that refers to them) crashes: load only audio clips and plain files.
+- `GetWindow()`, `GetGraphicsContext()`, `GetRenderer2D()`, `GetRenderer3D()` and
+  `GetSceneRenderer()` must not be called (they assert in Debug), nor anything on `Renderer`.
+  Check `Application::Get().IsHeadless()` in code a client and a server share.
+- `Settings` work without the display part: `Capture` keeps its base's `Display`, `Apply` skips
+  it, and a `SettingsSlot`'s display settings are read but unused.
+- `Input` is never updated: every key, button and gamepad reads as up.
+- Headless is the last `GraphicsAPI` value, so `GraphicsAPI{}` is Vulkan. Store a back-end by
+  name, not by its integer value.
 
 ## Layers
 
@@ -487,6 +517,8 @@ bool OnFocus(WindowFocusEvent& e)
 
 - One window, one `Application` and one graphics back-end per run; `RequestRestart` rebuilds the
   app to change the back-end.
+- A headless app can't load GPU assets and has no `Input`; its loop is a fixed 60 Hz
+  ([Headless](#headless)).
 - Rumble works on Xbox-compatible pads on Windows only ([Gamepads](#gamepads-v051)); up to 16 pads
   are tracked.
 - Both fullscreen modes are GLFW fullscreen windows, which an alt-tab minimizes. Exclusive

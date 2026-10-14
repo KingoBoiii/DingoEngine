@@ -52,14 +52,15 @@ namespace Dingo
 		SaveData Game = SaveData::MakeObject();
 
 		/// The running application's window, master volume, deadzone and the volumes of the
-		/// buses base names, over base. Without an application, base.
+		/// buses base names, over base. Without an application, base; a headless one keeps base's
+		/// Display.
 		///@{
 		static Settings Capture();
 		static Settings Capture(const Settings& base);
 		///@}
 		/// Sets the window mode and size, VSync, the volumes and the deadzone. Changes nothing that
 		/// already matches, so the window doesn't blink when nothing changed. Logs a warning and
-		/// does nothing without an application.
+		/// does nothing without an application; a headless one skips Display.
 		void Apply() const;
 		/// For ApplicationParams before the window exists.
 		void ApplyTo(WindowParams& params) const;

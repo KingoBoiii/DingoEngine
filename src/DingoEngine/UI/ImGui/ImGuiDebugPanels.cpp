@@ -485,6 +485,7 @@ namespace Dingo::Internal
 			case GraphicsAPI::Vulkan:     apiName = "Vulkan";    break;
 			case GraphicsAPI::DirectX11:  apiName = "DirectX11"; break;
 			case GraphicsAPI::DirectX12:  apiName = "DirectX12"; break;
+			case GraphicsAPI::Headless:   apiName = "Headless";  break;
 		}
 		ImGui::Text("API     : %s", apiName);
 

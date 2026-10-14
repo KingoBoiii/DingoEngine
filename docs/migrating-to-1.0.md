@@ -953,14 +953,18 @@ now has a duplicate case.
 .SetCullMode(CullMode::None)
 ```
 
-### GraphicsAPI::Headless is gone
+### GraphicsAPI::Headless moved to the end
 
 **Why:** it was enumerator 0, so a value-initialized `GraphicsAPI{}` was `Headless`, which
 `GraphicsContext::Create` always rejected with a fatal error.
 
-`GraphicsAPI` is now `Vulkan`, `DirectX11`, `DirectX12`, and `GraphicsAPI{}` is `Vulkan`. Every
-value shifted down by one, so a game that stored the enum as an integer (in a settings file, say)
-reads the wrong API. Store its name instead.
+`GraphicsAPI` is now `Vulkan` (0), `DirectX11` (1), `DirectX12` (2), `Headless` (3), and
+`GraphicsAPI{}` is `Vulkan`. Every other value shifted down by one, so a game that stored the enum
+as an integer (in a settings file, say) reads the wrong API. Store its name instead.
+
+`Headless` now works: the app runs with no window, GPU, renderers or ImGui, and `Run()` ticks the
+layers at 60 Hz, for a dedicated server or a CI job. `Application::IsHeadless()` tells shared code
+which it is. See [Headless](application-and-layers.md#headless).
 
 ### Renderer2D::GetOutput and ClearColor
 

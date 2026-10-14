@@ -114,7 +114,8 @@ the deadzone, and the volume of each bus the settings already name (the engine c
 buses). `Load()` reads the slot over `Capture()`, so an entry the file lacks keeps the current
 value; malformed entries are ignored and out-of-range ones clamped. `Apply()` changes only what
 differs, so applying unchanged settings doesn't blink the window. It sets the volumes of the buses
-that exist, so create the game's buses first.
+that exist, so create the game's buses first. A [headless](application-and-layers.md#headless)
+app has no window: `Capture()` keeps its base's `Display` and `Apply()` skips it.
 
 To open the window in the saved mode rather than switching after it appears, name the slot in
 `ApplicationParams`:

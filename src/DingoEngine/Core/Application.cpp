@@ -22,13 +22,15 @@
 #include "DingoEngine/ImGui/ImGuiLayer.h"
 #include <DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h>
 
+#include <chrono>
 #include <cstdlib>
+#include <thread>
 
 namespace Dingo
 {
 	namespace
 	{
-		constexpr float k_MinimizedUpdateInterval = 1.0f / 60.0f;
+		constexpr float k_PacedUpdateInterval = 1.0f / 60.0f;
 		constexpr float k_PausedWaitTimeout = 0.1f;
 	}
 
@@ -93,36 +95,40 @@ namespace Dingo
 
 	void Application::Initialize()
 	{
-		if (m_Window)
+		// A headless app has no window, so the asset manager marks a finished Initialize().
+		if (m_AssetManager)
 			return;
 
 		Internal::CacheManager::Initialize();
 
-		m_Window = new Window(m_Params.Window);
-		m_Window->Initialize();
-		m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
-		m_Focused = m_Window->IsFocused();
+		if (!IsHeadless())
+		{
+			m_Window = new Window(m_Params.Window);
+			m_Window->Initialize();
+			m_Window->SetEventCallback(DE_BIND_EVENT_FN(Application::OnEvent));
+			m_Focused = m_Window->IsFocused();
 
-		GraphicsParams graphicsParams = m_Params.Graphics;
-		if (const auto validation = m_Params.CommandLineArgs.Get("vulkan-validation"))
-			graphicsParams.VulkanValidation = !(*validation == "off" || *validation == "false" || *validation == "0" || *validation == "no");
-		m_GraphicsContext = GraphicsContext::Create(graphicsParams, m_Window->GetNativeWindowHandle());
-		if (!m_GraphicsContext)
-			FatalError("No graphics device could be created. See the log for why.");
-		m_GraphicsContext->Initialize();
+			GraphicsParams graphicsParams = m_Params.Graphics;
+			if (const auto validation = m_Params.CommandLineArgs.Get("vulkan-validation"))
+				graphicsParams.VulkanValidation = !(*validation == "off" || *validation == "false" || *validation == "0" || *validation == "no");
+			m_GraphicsContext = GraphicsContext::Create(graphicsParams, m_Window->GetNativeWindowHandle());
+			if (!m_GraphicsContext)
+				FatalError("No graphics device could be created. See the log for why.");
+			m_GraphicsContext->Initialize();
 
-		m_SwapChain = Internal::SwapChain::Create(Internal::SwapChainParams()
-			.SetNativeWindowHandle(m_Window->GetNativeWindowHandle())
-			.SetWidth(m_Window->GetWidth())
-			.SetHeight(m_Window->GetHeight())
-			.SetVSync(m_Params.Window.VSync));
-		m_SwapChain->Initialize();
+			m_SwapChain = Internal::SwapChain::Create(Internal::SwapChainParams()
+				.SetNativeWindowHandle(m_Window->GetNativeWindowHandle())
+				.SetWidth(m_Window->GetWidth())
+				.SetHeight(m_Window->GetHeight())
+				.SetVSync(m_Params.Window.VSync));
+			m_SwapChain->Initialize();
 
-		Internal::RendererBackend::Initialize(m_SwapChain);
+			Internal::RendererBackend::Initialize(m_SwapChain);
 
-		m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
-		m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
-		m_SceneRenderer = new SceneRenderer(*m_Renderer2D, *m_Renderer3D);
+			m_Renderer2D = Renderer2D::Create(m_Params.Renderer2D);
+			m_Renderer3D = Renderer3D::Create(m_Params.Renderer3D);
+			m_SceneRenderer = new SceneRenderer(*m_Renderer2D, *m_Renderer3D);
+		}
 
 		// Audio is independent of the graphics/window stack (miniaudio owns its own
 		// device thread); bring it up here so it's live before OnInitialize().
@@ -151,7 +157,7 @@ namespace Dingo
 		// Bring up the ImGui backend if the game wants UI, or if the engine's built-in
 		// debug overlays are enabled -- so the renderer-stats window works even in
 		// projects that use no UI of their own, in every build config (Distribution too).
-		bool enableImGui = m_Params.EnableImGui || m_Params.EnableDebugOverlays;
+		bool enableImGui = !IsHeadless() && (m_Params.EnableImGui || m_Params.EnableDebugOverlays);
 		if (enableImGui)
 		{
 			m_ImGuiLayer = new ImGuiLayer(m_Params.ImGui);
@@ -260,6 +266,63 @@ namespace Dingo
 
 	void Application::Run()
 	{
+		if (IsHeadless())
+			RunHeadless();
+		else
+			RunWindowed();
+
+		DE_CORE_INFO("Shutting down.");
+
+		// Here rather than in Destroy(): that runs from ~Application, where the derived
+		// class is already gone and the call would reach only the empty base hook.
+		OnDestroy();
+	}
+
+	void Application::RunHeadless()
+	{
+		Timer timer;
+
+		DE_PROFILE_THREAD("Main");
+
+		while (m_IsRunning)
+		{
+			DE_PROFILE_FRAME();
+			DE_PROFILE_SCOPE("Application::Run");
+
+			const float frameStart = timer.Elapsed();
+			m_DeltaTime = frameStart - m_LastFrameTime;
+			m_LastFrameTime = frameStart;
+
+			if (m_AudioEngine)
+				m_AudioEngine->Update();
+
+			if (m_AssetManager)
+			{
+				DE_PROFILE_SCOPE("AssetManager::Update");
+				m_AssetManager->Update(m_DeltaTime);
+			}
+
+			for (Layer* layer : m_LayerStack)
+			{
+				DE_PROFILE_SCOPE_TEXT("Layer::OnUpdate", layer->GetName());
+				layer->OnUpdate(m_DeltaTime);
+			}
+
+			m_FrameTimings = {};
+			m_FrameTimings.FrameMs = m_DeltaTime * 1000.0f;
+			m_FrameTimings.UpdateMs = (timer.Elapsed() - frameStart) * 1000.0f;
+
+			RunPostExecutionCallbacks();
+
+			// Nothing presents, so nothing paces the loop: tick at a fixed rate instead of spinning.
+			const float remaining = k_PacedUpdateInterval - (timer.Elapsed() - frameStart);
+			if (m_IsRunning && remaining > 0.0f)
+				std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int64_t>(remaining * 1'000'000.0f)));
+		}
+	}
+
+	void Application::RunWindowed()
+	{
 		Timer timer;
 		float lastWaitEnd = 0.0f;
 		bool snapshotInput = true;
@@ -300,7 +363,7 @@ namespace Dingo
 			{
 				// No swap-chain image to render into: pace the updates instead of spinning, often
 				// enough that a game's networking keeps answering.
-				m_Window->WaitEvents(k_MinimizedUpdateInterval - (timer.Elapsed() - lastWaitEnd));
+				m_Window->WaitEvents(k_PacedUpdateInterval - (timer.Elapsed() - lastWaitEnd));
 				lastWaitEnd = timer.Elapsed();
 			}
 			else
@@ -402,12 +465,6 @@ namespace Dingo
 
 			RunPostExecutionCallbacks();
 		}
-
-		DE_CORE_INFO("Shutting down.");
-
-		// Here rather than in Destroy(): that runs from ~Application, where the derived
-		// class is already gone and the call would reach only the empty base hook.
-		OnDestroy();
 	}
 
 	void Application::RunPostExecutionCallbacks()

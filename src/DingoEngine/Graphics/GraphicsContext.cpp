@@ -21,6 +21,7 @@ namespace Dingo
 			case GraphicsAPI::DirectX11: context = new DirectX11GraphicsContext(params); break;
 			case GraphicsAPI::DirectX12: context = new DirectX12GraphicsContext(params); break;
 #endif
+			case GraphicsAPI::Headless: return nullptr;
 			default: break;
 		}
 		if (context)

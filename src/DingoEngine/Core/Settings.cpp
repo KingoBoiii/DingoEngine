@@ -43,13 +43,16 @@ namespace Dingo
 			return settings;
 
 		Application& application = Application::Get();
-		const Window& window = application.GetWindow();
-		settings.Display.Mode = window.GetWindowMode();
-		settings.Display.Width = window.GetWindowedWidth();
-		settings.Display.Height = window.GetWindowedHeight();
-		if (window.GetWindowMode() == WindowMode::ExclusiveFullscreen)
-			settings.Display.FullscreenMode = window.GetFullscreenDisplayMode();
-		settings.Display.VSync = window.IsVSync();
+		if (!application.IsHeadless())
+		{
+			const Window& window = application.GetWindow();
+			settings.Display.Mode = window.GetWindowMode();
+			settings.Display.Width = window.GetWindowedWidth();
+			settings.Display.Height = window.GetWindowedHeight();
+			if (window.GetWindowMode() == WindowMode::ExclusiveFullscreen)
+				settings.Display.FullscreenMode = window.GetFullscreenDisplayMode();
+			settings.Display.VSync = window.IsVSync();
+		}
 
 		const AudioEngine& audio = application.GetAudioEngine();
 		settings.Audio.MasterVolume = audio.GetMasterVolume();
@@ -73,15 +76,18 @@ namespace Dingo
 		}
 
 		Application& application = Application::Get();
-		Window& window = application.GetWindow();
-		// The mode first: a SetSize while fullscreen only stores the size to return to.
-		const bool exclusiveChanged = Display.Mode == WindowMode::ExclusiveFullscreen
-			&& window.GetFullscreenDisplayMode() != ChooseDisplayMode(window.GetDisplayModes(), Display.FullscreenMode.IsValid() ? Display.FullscreenMode : window.GetDesktopDisplayMode());
-		if (window.GetWindowMode() != Display.Mode || exclusiveChanged)
-			window.SetWindowMode(Display.Mode, Display.FullscreenMode);
-		if (window.GetWindowedWidth() != Display.Width || window.GetWindowedHeight() != Display.Height)
-			window.SetSize(Display.Width, Display.Height);
-		window.SetVSync(Display.VSync);
+		if (!application.IsHeadless())
+		{
+			Window& window = application.GetWindow();
+			// The mode first: a SetSize while fullscreen only stores the size to return to.
+			const bool exclusiveChanged = Display.Mode == WindowMode::ExclusiveFullscreen
+				&& window.GetFullscreenDisplayMode() != ChooseDisplayMode(window.GetDisplayModes(), Display.FullscreenMode.IsValid() ? Display.FullscreenMode : window.GetDesktopDisplayMode());
+			if (window.GetWindowMode() != Display.Mode || exclusiveChanged)
+				window.SetWindowMode(Display.Mode, Display.FullscreenMode);
+			if (window.GetWindowedWidth() != Display.Width || window.GetWindowedHeight() != Display.Height)
+				window.SetSize(Display.Width, Display.Height);
+			window.SetVSync(Display.VSync);
+		}
 
 		AudioEngine& audio = application.GetAudioEngine();
 		audio.SetMasterVolume(Audio.MasterVolume);

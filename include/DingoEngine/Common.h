@@ -26,11 +26,15 @@ namespace Dingo
 {
 
 	/// The graphics back-ends the engine can run on; the DirectX ones exist on Windows only.
+	/// Store a back-end by name, not by its integer value.
 	enum class GraphicsAPI
 	{
-		Vulkan,
-		DirectX11,
-		DirectX12
+		Vulkan,		///< Vulkan; the default, on Windows and Linux.
+		DirectX11,	///< Direct3D 11, Windows only.
+		DirectX12,	///< Direct3D 12, Windows only.
+		/// No window, GPU or renderer: Run() ticks the layers at 60 Hz, for a dedicated server or
+		/// a CI job. Last, so a value-initialised GraphicsAPI{} stays Vulkan.
+		Headless
 	};
 
 }
