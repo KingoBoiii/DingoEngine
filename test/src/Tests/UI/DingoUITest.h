@@ -21,9 +21,12 @@ namespace Dingo
 	// that overlap, don't block or are modal, the consume mask, state eviction and id collisions.
 	// Styles and 9-slices are checked by pixels: a pushed style changes a button's fill and its pop
 	// restores it, a 9-slice keeps its corners at any size.
+	// Tweens and transitions are checked with a simulated frame time: eased values at fixed steps, a
+	// root fading, sliding and scaling in and out by pixels, an exiting root that takes no clicks, one
+	// draw call throughout and a vertex cache hit once the animation has ended.
 	// The view shows the wrapped text at its MaxWidth under a DingoUI panel built with the element
 	// API, and a panel of live widgets to click by hand inside the viewport, with a themed panel and a
-	// 9-slice panel beside them.
+	// 9-slice panel beside them, and a panel that fades and slides in and out.
 	class DingoUITest : public Renderer2DTest
 	{
 	public:
@@ -46,6 +49,7 @@ namespace Dingo
 		bool StepLayout(Framebuffer* output);
 		bool StepWidgets(Framebuffer* output);
 		bool StepNavigation(Framebuffer* output);
+		bool StepTransitions(Framebuffer* output);
 		void DeclareNavScene();
 		void DeclareWidgetScene();
 		void SetPointer(const glm::vec2& position, bool down = false, bool pressed = false, bool released = false, const glm::vec2& scroll = glm::vec2(0.0f));
@@ -120,6 +124,7 @@ namespace Dingo
 		int m_WSelected = 0;
 		uint32_t m_WPlayClicks = 0;
 		bool m_LiveToggle = true;
+		bool m_LivePanelOpen = true;
 		float m_LiveSlider = 0.4f;
 		int m_LiveInt = 3;
 		int m_LiveSelected = 0;
@@ -138,6 +143,9 @@ namespace Dingo
 		float m_NavSliderBefore = 0.0f;
 		uint32_t m_WNavClicks = 0;
 		UIInteraction m_WNavResult[k_NavCount];
+		uint32_t m_TransStage = 0;
+		bool m_TransDone = false;
+		bool m_LivePanel = true;
 		Texture* m_ImageTexture = nullptr;
 		Texture* m_SliceTexture = nullptr;
 		std::vector<Texture*> m_SlotTextures;

@@ -120,6 +120,13 @@ namespace Dingo::Internal
 		// 0.5 centre, 1 right) places each line within alignWidth pixels from position.
 		void AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth = 0.0f, const UIRect& clip = k_UINoClip, float align = 0.0f, float alignWidth = 0.0f);
 
+		// Appends `other`'s commands as they are.
+		void Append(const UIDrawList& other);
+		// Appends `other`'s commands moved, scaled about `pivot` and faded: p' = pivot + (p - pivot) * scale + offset,
+		// sizes, radii, borders and 9-slice scales times `scale`, alpha times `alpha`. Clip rects move
+		// with it except the unbounded one.
+		void AppendTransformed(const UIDrawList& other, float alpha, const glm::vec2& offset, float scale, const glm::vec2& pivot);
+
 		void Clear();
 		bool IsEmpty() const { return m_Commands.empty(); }
 		size_t GetCommandCount() const { return m_Commands.size(); }

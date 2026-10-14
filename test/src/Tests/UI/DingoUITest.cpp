@@ -116,6 +116,7 @@ namespace Dingo
 			context->GetDrawList().Clear();
 		}
 		DingoUI::SetDefaultFont(nullptr);
+		DingoUI::SetTheme(UIStyle::Default());
 		m_Alive.reset();
 		for (Texture*& texture : m_SlotTextures)
 			DestroyAndDelete(texture);
@@ -1847,6 +1848,146 @@ namespace Dingo
 		return true;
 	}
 
+	bool DingoUITest::StepTransitions(Framebuffer* output)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_TransDone || !m_NavDone || !context || !m_LayoutTarget)
+			return false;
+
+		constexpr uint32_t k_TweenFrames = 7;
+		constexpr float k_Progress[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.0f, 0.75f, 0.5f, 0.25f, 0.0f, 0.0f, 0.0f, 0.0f };
+		constexpr bool k_Declared[] = { true, true, true, true, true, true, false, false, false, false, false, false, false };
+		constexpr uint32_t k_RootFrames = static_cast<uint32_t>(sizeof(k_Progress) / sizeof(k_Progress[0]));
+		const glm::vec2 underPoint = { 130.0f, 120.0f };
+
+		const uint32_t stage = m_TransStage++;
+		if (stage == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			SetPointer(k_WidgetEmpty);
+			return true;
+		}
+
+		if (stage <= k_TweenFrames)
+		{
+			const uint32_t t = stage - 1;
+			SetPointer(k_WidgetEmpty);
+			m_WidgetInput.DeltaTime = 0.25f;
+			const float target = t >= 1 ? 1.0f : 0.0f;
+			const float linearExpect[k_TweenFrames] = { 0.0f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.0f };
+			const float quadExpect[k_TweenFrames] = { 0.0f, 0.0f, 0.0625f, 0.25f, 0.5625f, 1.0f, 1.0f };
+			const float linear = DingoUI::Tween("t_lin", target, 1.0f, UIEase::Linear);
+			const float quad = DingoUI::Tween("t_quad", target, 1.0f, UIEase::QuadIn);
+			const glm::vec4 color = DingoUI::TweenColor("t_col", { target, 0.5f * target, 0.0f, 1.0f }, 1.0f, UIEase::Linear);
+			const std::string suffix = " at step " + std::to_string(t);
+			Check(Near(linear, linearExpect[t], 1e-3f), "Tween: linear value" + suffix + ", got " + std::to_string(linear));
+			Check(Near(quad, quadExpect[t], 1e-3f), "Tween: quad-in value" + suffix + ", got " + std::to_string(quad));
+			Check(Near(color.x, linearExpect[t], 1e-3f) && Near(color.y, 0.5f * linearExpect[t], 1e-3f) && Near(color.w, 1.0f, 1e-3f), "Tween: colour channels move together" + suffix);
+			Check(DingoUI::Tween("t_zero", static_cast<float>(t), 0.0f) == static_cast<float>(t), "Tween: a zero duration follows the target at once" + suffix);
+			if (t == 0 || t == 6)
+			{
+				const float gone = DingoUI::Tween("t_gone", t == 0 ? 0.0f : 5.0f, 1.0f, UIEase::Linear);
+				Check(Near(gone, t == 0 ? 0.0f : 5.0f, 1e-3f), "Tween: one not declared for two frames is forgotten and snaps again" + suffix);
+			}
+			if (stage == k_TweenFrames)
+				Check(context->GetTweens().Size() >= 1, "Tween: the live tweens are kept");
+			return true;
+		}
+
+		const uint32_t r = stage - 1 - k_TweenFrames;
+		const bool finished = r >= k_RootFrames;
+
+		if (r > 0)
+		{
+			const uint32_t previous = r - 1;
+			const float p = k_Progress[previous];
+			const bool visible = previous <= 8;
+			const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+			const std::string tag = " (frame " + std::to_string(previous) + ")";
+			Check(statistics.DrawCalls == 1, "Transition: one draw call" + tag);
+			if (previous == 5 || previous == 12)
+				Check(statistics.CacheHits == 1 && statistics.Uploads == 0, "Transition: the first identical frame after the animation is a cache hit" + tag);
+			else if (previous >= 1)
+				Check(statistics.Uploads == 1 && statistics.CacheHits == 0, "Transition: an animating frame rebuilds and uploads once" + tag);
+
+			const std::weak_ptr<int> alive = m_Alive;
+			m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, p, visible, tag](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				const auto px = [&](float x, float y) { return pixels.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y)); };
+				Check(std::abs(px(250.0f, 180.0f).r - p) < 0.03f, "Transition: fade alpha reads " + std::to_string(p) + tag + ", got " + std::to_string(px(250.0f, 180.0f).r));
+				if (visible)
+				{
+					const float slideMin = 400.0f + 100.0f * (1.0f - p);
+					Check(px(slideMin + 5.0f, 150.0f).g > 0.9f && px(slideMin - 5.0f, 150.0f).g < 0.1f, "Transition: slide box starts at x " + std::to_string(slideMin) + tag);
+					const float half = 50.0f * (0.5f + 0.5f * p);
+					Check(px(750.0f + half - 4.0f, 150.0f).b > 0.9f && px(750.0f + half + 4.0f, 150.0f).b < 0.1f, "Transition: scale box is " + std::to_string(half * 2.0f) + " wide" + tag);
+				}
+				else
+				{
+					Check(px(450.0f, 150.0f).g < 0.1f && px(750.0f, 150.0f).b < 0.1f, "Transition: the leaving boxes are gone" + tag);
+				}
+			});
+		}
+
+		if (finished)
+		{
+			m_TransDone = true;
+			context->SetTarget(output);
+			context->SetInputOverride(&m_LiveInput);
+			m_LiveInput = {};
+			UIStyle live = UIStyle::Default();
+			live.SetTransition(0.15f);
+			DingoUI::SetTheme(live);
+			return true;
+		}
+
+		glm::vec2 pointer = underPoint;
+		bool down = false, pressed = false, released = false;
+		if (r == 8)
+			down = pressed = true;
+		else if (r == 9)
+			released = true;
+		else if (r >= 10)
+			pointer = k_WidgetEmpty;
+		SetPointer(pointer, down, pressed, released);
+		m_WidgetInput.DeltaTime = 0.05f;
+
+		Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		DingoUI::BeginRoot("t_under", UIRootParams().SetOffset({ 100.0f, 100.0f }));
+		const UIInteraction under = DingoUI::Button("Under", UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(40.0f)));
+		DingoUI::EndRoot();
+		if (k_Declared[r])
+		{
+			const auto box = [](const glm::vec4& color) { return UIBoxParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(100.0f)).SetBackground(color); };
+			DingoUI::BeginRoot("t_fade", UIRootParams().SetOffset({ 100.0f, 100.0f }).SetLayer(1).SetTransition(UITransition::Fade(0.2f).SetEase(UIEase::Linear))
+				.SetLayout(UIBoxParams().SetSize(UISize::Fixed(200.0f), UISize::Fixed(100.0f)).SetBackground({ 1.0f, 0.0f, 0.0f, 1.0f })));
+			DingoUI::EndRoot();
+			DingoUI::BeginRoot("t_slide", UIRootParams().SetOffset({ 400.0f, 100.0f }).SetBlocksInput(false)
+				.SetTransition(UITransition::Slide({ 100.0f, 0.0f }, 0.2f).SetEase(UIEase::Linear)).SetLayout(box({ 0.0f, 1.0f, 0.0f, 1.0f })));
+			DingoUI::EndRoot();
+			DingoUI::BeginRoot("t_scale", UIRootParams().SetOffset({ 700.0f, 100.0f }).SetBlocksInput(false)
+				.SetTransition(UITransition::Scale(0.5f, 0.2f).SetEase(UIEase::Linear)).SetLayout(box({ 0.0f, 0.0f, 1.0f, 1.0f })));
+			DingoUI::EndRoot();
+		}
+
+		if (r == 5)
+			Check(!under.Hovered && DingoUI::IsPointerOverUI(), "Transition: a fully shown root blocks the widget under it");
+		if (r == 7)
+			Check(under.Hovered, "Transition: a leaving root no longer blocks input; the widget under it is hovered");
+		if (r == 9)
+			Check(under.Pressed, "Transition: the widget under a leaving root takes the press");
+		if (r == 10)
+			Check(under.Clicked, "Transition: the click on the widget under a leaving root completes");
+		if (r == 7)
+			Check(context->GetRootTransitions().Size() == 3, "Transition: the three leaving roots are still kept");
+		if (r == 10)
+			Check(context->GetRootTransitions().Size() == 0, "Transition: finished roots are dropped");
+		return true;
+	}
+
 	void DingoUITest::UpdateLiveInput(Framebuffer* output)
 	{
 		using Internal::InputBackend;
@@ -1878,6 +2019,9 @@ namespace Dingo
 
 		DingoUI::BeginRoot("live", UIRootParams().SetAnchor(UIAnchor::TopRight).SetOffset({ -16.0f, 16.0f }).SetLayout(UIBoxParams()
 			.SetWidth(UISize::Fixed(340.0f)).SetGap(10.0f).SetPadding(14.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.92f }).SetBorder(2.0f, { 0.5f, 0.65f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
+		UIStyle hover = UIStyle::Default();
+		hover.SetTransition(0.15f);
+		DingoUI::PushStyle(hover);
 		DingoUI::Text("Widgets: click, drag and scroll", UITextParams().SetSize(20.0f));
 		DingoUI::Text("Tab / arrows / D-pad move, Enter / A press, Esc / B back", UITextParams().SetSize(14.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }));
 		if (DingoUI::IsBackPressed())
@@ -1910,7 +2054,25 @@ namespace Dingo
 			DingoUI::EndScrollArea();
 		}
 		DingoUI::Text(DingoUI::IsPointerOverUI() ? "Pointer: over the UI" : "Pointer: over the scene", UITextParams().SetSize(16.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }).SetWrap(false));
+		DingoUI::PopStyle();
 		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("live_toggle", UIRootParams().SetAnchor(UIAnchor::TopLeft).SetOffset({ 16.0f, 16.0f }).SetLayout(UIBoxParams().SetGap(8.0f)));
+		DingoUI::PushStyle(hover);
+		if (DingoUI::Button(m_LivePanelOpen ? "Hide panel" : "Show panel").Clicked)
+			m_LivePanelOpen = !m_LivePanelOpen;
+		DingoUI::PopStyle();
+		DingoUI::EndRoot();
+
+		if (m_LivePanelOpen)
+		{
+			DingoUI::BeginRoot("live_fade", UIRootParams().SetAnchor(UIAnchor::TopLeft).SetOffset({ 16.0f, 64.0f })
+				.SetTransition(UITransition::Fade(0.3f).WithSlide({ -40.0f, 0.0f })).SetLayout(UIBoxParams()
+				.SetGap(8.0f).SetPadding(14.0f).SetBackground({ 0.12f, 0.2f, 0.12f, 0.95f }).SetBorder(2.0f, { 0.5f, 1.0f, 0.6f, 1.0f }).SetCornerRadius(8.0f)));
+			DingoUI::Text("Fade + slide panel", UITextParams().SetSize(20.0f).SetWrap(false));
+			DingoUI::Text("Toggle it with the button above", UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::EndRoot();
+		}
 
 		UIStyle warm = UIStyle::Default();
 		warm.SetBackground({ 0.55f, 0.28f, 0.12f, 1.0f }).SetHoverColor({ 0.75f, 0.4f, 0.18f, 1.0f }).SetPressedColor({ 0.4f, 0.2f, 0.08f, 1.0f })
@@ -1941,7 +2103,7 @@ namespace Dingo
 	{
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
-		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output) && !StepNavigation(output))
+		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output) && !StepNavigation(output) && !StepTransitions(output))
 		{
 			UpdateLiveInput(output);
 			DeclareLivePage();

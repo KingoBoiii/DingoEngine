@@ -10,6 +10,7 @@
 #include "DingoEngine/Graphics/Texture.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace Dingo::Internal
 {
@@ -643,8 +644,7 @@ namespace Dingo::Internal
 
 		m_RenderStatistics = {};
 		const bool draw = render && !Renderer::IsFrameSkipped();
-		if (draw)
-			m_Tree.Emit(m_DrawList);
+		BuildDrawList(draw);
 		std::swap(m_Tree, m_LastTree);
 		m_ModalActive = m_LastTree.HasModal();
 
@@ -657,7 +657,106 @@ namespace Dingo::Internal
 
 		m_DrawList.Clear();
 		m_States.Evict(m_FrameIndex);
+		m_Tweens.Evict(m_FrameIndex);
 		++m_FrameIndex;
+	}
+
+	namespace
+	{
+		float SafeDelta(float dt)
+		{
+			return dt > 0.0f && dt < 1.0e6f ? dt : 0.0f;
+		}
+	}
+
+	void DingoUIContext::BuildDrawList(bool draw)
+	{
+		const float dt = SafeDelta(m_Input.DeltaTime);
+		const std::vector<UIElement>& elements = m_Tree.GetElements();
+
+		m_Tree.GetRootOrder(m_RootOrder);
+		std::vector<UIRootTransitions::Entry*> declared(m_RootOrder.size(), nullptr);
+		for (size_t i = 0; i < m_RootOrder.size(); ++i)
+		{
+			const UIElement& root = elements[m_RootOrder[i]];
+			declared[i] = m_RootTransitions.Declare(root.Id, root.Transition, root.Layer, m_FrameIndex, dt);
+		}
+		m_RootTransitions.AdvanceExiting(m_FrameIndex, dt, m_ExitingRoots);
+		if (!draw)
+			return;
+
+		const auto emitExiting = [this](size_t& next, int layer)
+		{
+			while (next < m_ExitingRoots.size() && m_ExitingRoots[next]->Layer <= layer)
+			{
+				const UIRootTransitions::Entry& entry = *m_ExitingRoots[next++];
+				const UIRootVisual visual = UIRootTransitions::VisualOf(entry);
+				m_DrawList.AppendTransformed(entry.Kept, visual.Alpha, visual.Offset * entry.RootScale, visual.Scale, entry.Pivot);
+			}
+		};
+
+		size_t nextExiting = 0;
+		for (size_t i = 0; i < m_RootOrder.size(); ++i)
+		{
+			const int32_t index = m_RootOrder[i];
+			const UIElement& root = elements[index];
+			emitExiting(nextExiting, root.Layer);
+			UIRootTransitions::Entry* entry = declared[i];
+			if (!entry)
+			{
+				m_Tree.EmitRoot(index, m_DrawList);
+				continue;
+			}
+
+			m_RootScratch.Clear();
+			m_Tree.EmitRoot(index, m_RootScratch);
+			const UIRootVisual visual = UIRootTransitions::VisualOf(*entry);
+			if (visual.IsIdentity())
+				m_DrawList.Append(m_RootScratch);
+			else
+				m_DrawList.AppendTransformed(m_RootScratch, visual.Alpha, visual.Offset * root.Scale, visual.Scale, (root.Rect.Min + root.Rect.Max) * 0.5f);
+			entry->Pivot = (root.Rect.Min + root.Rect.Max) * 0.5f;
+			entry->RootScale = root.Scale;
+			std::swap(entry->Kept, m_RootScratch);
+		}
+		emitExiting(nextExiting, (std::numeric_limits<int>::max)());
+	}
+
+	float DingoUIContext::Tween(std::string_view id, float target, float duration, UIEase ease)
+	{
+		return TweenColor(id, glm::vec4(target, 0.0f, 0.0f, 0.0f), duration, ease).x;
+	}
+
+	glm::vec4 DingoUIContext::TweenColor(std::string_view id, const glm::vec4& target, float duration, UIEase ease)
+	{
+		if (!m_InFrame)
+			return target;
+		uint64_t key = m_Tree.MakeId(id);
+		if (key == 0)
+			key = UILayoutTree::HashName(id);
+		return m_Tweens.Update(key, target, SafeDelta(m_Input.DeltaTime), duration, ease, m_FrameIndex);
+	}
+
+	std::array<float, 4> DingoUIContext::StepLook(UIWidgetState& state, const UIStyle& style, bool hover, bool press, bool focus, bool on) const
+	{
+		const std::array<float, 4> targets = { hover ? 1.0f : 0.0f, press ? 1.0f : 0.0f, focus ? 1.0f : 0.0f, on ? 1.0f : 0.0f };
+		const float duration = style.TransitionDuration;
+		if (!state.AnimInit || duration <= 0.0f)
+		{
+			state.Anim = targets;
+			state.AnimInit = true;
+			return targets;
+		}
+
+		const float dt = SafeDelta(m_Input.DeltaTime);
+		std::array<float, 4> eased{};
+		for (size_t i = 0; i < 4; ++i)
+		{
+			if (state.Anim[i] != targets[i])
+				state.Anim[i] = StepProgress(state.Anim[i], dt, duration, targets[i] > state.Anim[i]);
+			eased[i] = EvaluateEase(style.TransitionEase, state.Anim[i]);
+		}
+		return eased;
 	}
 
 	bool DingoUIContext::HitTestBlocking(const glm::vec2& point) const

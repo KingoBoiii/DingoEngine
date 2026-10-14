@@ -258,6 +258,31 @@ DingoUI::EndRoot();
 if (DingoUI::IsBackPressed()) Resume();
 ```
 
+## Tweens and transitions
+
+`DingoUI::Tween(id, target, duration, ease)` returns a value that eases toward `target` over
+`duration` seconds; `TweenColor` does the same for a colour. The first call with an id returns the
+target at once; when the target changes, the value restarts from where it was. A tween not declared
+for two frames is forgotten. `DingoUI::Ease(ease, t)` gives the bare curve (`Linear`, `QuadIn`,
+`QuadOut`, `QuadInOut`, `CubicOut`, `BackOut` and others in `UIEase`), exactly 0 at 0 and 1 at 1.
+
+```cpp
+float lift = DingoUI::Tween("menu_lift", open ? 0.0f : 40.0f, 0.25f);
+```
+
+Widgets blend their hover and pressed colours when the style asks for it: `UIStyle::SetTransition(0.15f)`.
+The default is 0, so colours change at once. A disabled widget never animates.
+
+A root can animate in and out: `UIRootParams::SetTransition(UITransition::Fade(0.3f).WithSlide({ -40.0f, 0.0f }))`.
+The root plays in on its first declared frame. When the game stops declaring it, the root plays out
+from the last frame it drew: it is not laid out again, takes no pointer or focus input and does not
+block the widgets under it. Fade, slide (design pixels) and scale (about the root's centre) combine
+and are applied to the drawn vertices, so a transitioning UI is still one draw call, and the frame
+after the animation draws from the cache again.
+
+The animations run on the real frame time (`UIInputState::DeltaTime`). The engine has no time scale,
+so they keep running while a scene is paused.
+
 ## Rules the frame follows
 
 - Declare from `OnUpdate`; the layout and the draw happen after all layers have updated, and the UI

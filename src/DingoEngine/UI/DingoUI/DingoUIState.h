@@ -20,7 +20,10 @@ namespace Dingo::Internal
 		glm::vec2 ContentSize{ 0.0f };  // scroll areas: extent of the children, padding included
 		glm::vec2 ScrollOffset{ 0.0f }; // scroll areas: pixels the content is moved up and left
 		glm::vec2 PointerLast{ 0.0f };  // scroll drag: pointer position of the last frame
-		std::array<float, 4> Anim{};    // tween scratch
+		// Eased 0..1 progress of the look, stepped by the style's TransitionDuration: hover, pressed,
+		// focus ring, switched on (Toggle on, Selectable selected). AnimInit is set once they hold their first targets.
+		std::array<float, 4> Anim{};
+		bool AnimInit = false;
 		uint64_t LastSeenFrame = 0;
 	};
 

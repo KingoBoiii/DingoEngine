@@ -211,6 +211,38 @@ namespace Dingo::Internal
 		m_Text.append(text);
 	}
 
+	void UIDrawList::Append(const UIDrawList& other)
+	{
+		const uint32_t base = static_cast<uint32_t>(m_Text.size());
+		const size_t first = m_Commands.size();
+		m_Commands.insert(m_Commands.end(), other.m_Commands.begin(), other.m_Commands.end());
+		m_Text.append(other.m_Text);
+		for (size_t i = first; i < m_Commands.size(); ++i)
+			m_Commands[i].TextOffset += base;
+	}
+
+	void UIDrawList::AppendTransformed(const UIDrawList& other, float alpha, const glm::vec2& offset, float scale, const glm::vec2& pivot)
+	{
+		const size_t first = m_Commands.size();
+		Append(other);
+		const auto move = [&](const glm::vec2& point) { return pivot + (point - pivot) * scale + offset; };
+		for (size_t i = first; i < m_Commands.size(); ++i)
+		{
+			Command& command = m_Commands[i];
+			command.Rect = { move(command.Rect.Min), move(command.Rect.Max) };
+			if (command.Clip.Min != k_UINoClip.Min || command.Clip.Max != k_UINoClip.Max)
+				command.Clip = { move(command.Clip.Min), move(command.Clip.Max) };
+			command.Color.a *= alpha;
+			command.BorderColor.a *= alpha;
+			command.Radii *= scale;
+			command.BorderWidth *= scale;
+			command.TextSize *= scale;
+			command.MaxWidth *= scale;
+			command.AlignWidth *= scale;
+			command.Scale *= scale;
+		}
+	}
+
 	void UIDrawList::Clear()
 	{
 		m_Commands.clear();

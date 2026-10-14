@@ -16,6 +16,22 @@ namespace Dingo
 	class Font;
 	class Texture;
 
+	/// How a tween or transition moves from its start to its end over its duration. The In curves
+	/// start slowly, the Out curves end slowly; BackOut overshoots the end once and ElasticOut
+	/// rings around it, so a value tweened with either leaves its range for a moment.
+	enum class UIEase
+	{
+		Linear,
+		QuadIn,
+		QuadOut,
+		QuadInOut,
+		CubicIn,
+		CubicOut,
+		CubicInOut,
+		BackOut,
+		ElasticOut
+	};
+
 	/// A picture cut into nine parts by four borders, so a panel or button face keeps its corners
 	/// crisp at any size: the corners are drawn at the border size, the edges stretch along one
 	/// axis, the centre along both. Chain the setters.
@@ -107,6 +123,11 @@ namespace Dingo
 		UINineSlice Panel;
 		/// Thickness of the focus ring in design pixels (at least the style's BorderWidth); 0 draws none.
 		float FocusWidth = 2.0f;
+		/// Seconds a widget takes to fade between its looks (rest, hover, pressed, focus ring, switched
+		/// on). 0 switches instantly. Looks that are 9-slice pictures of their own switch at the halfway point.
+		float TransitionDuration = 0.0f;
+		/// The curve of those fades.
+		UIEase TransitionEase = UIEase::QuadOut;
 
 		/// The engine's theme: what a default-constructed style holds.
 		static UIStyle Default() { return UIStyle{}; }
@@ -177,6 +198,8 @@ namespace Dingo
 		UIStyle& SetPanel(const UINineSlice& slice) { Panel = slice; return *this; }
 		/// Sets FocusWidth.
 		UIStyle& SetFocusWidth(float width) { FocusWidth = width; return *this; }
+		/// Sets TransitionDuration and TransitionEase.
+		UIStyle& SetTransition(float duration, UIEase ease = UIEase::QuadOut) { TransitionDuration = duration; TransitionEase = ease; return *this; }
 	};
 
 	/// How the player moves the focus and activates widgets: the keys and pad buttons, and how a
@@ -391,6 +414,44 @@ namespace Dingo
 		UIBoxParams& SetNineSlice(const UINineSlice& slice) { NineSlice = slice; return *this; }
 	};
 
+	/// How a root appears when the game starts declaring it and disappears when the game stops. A
+	/// root with a transition plays it in on its first frame and, once it is no longer declared, plays
+	/// it out from the last frame it drew: no layout, no hit-testing and no input while it leaves.
+	/// Fades, slides and scales combine. Chain the setters.
+	struct UITransition
+	{
+		bool FadeEnabled = false;        ///< The root's alpha goes from 0 to 1 when it appears and back when it leaves.
+		glm::vec2 SlideOffset{ 0.0f };   ///< Where the root starts from, relative to its place, in design pixels; (0, 0) for none.
+		float ScaleFrom = 1.0f;          ///< The size factor the root starts from, about its centre; 1 for none.
+		float Duration = 0.2f;           ///< Seconds to appear; 0 appears at once.
+		/// Seconds to leave; negative uses Duration, 0 removes the root at once.
+		float ExitDuration = -1.0f;
+		UIEase Ease = UIEase::QuadOut;   ///< The curve, applied to the progress.
+
+		/// True when the transition changes anything the player would see.
+		bool IsActive() const { return (FadeEnabled || SlideOffset != glm::vec2(0.0f) || ScaleFrom != 1.0f) && (Duration > 0.0f || ExitDuration > 0.0f); }
+
+		/// A fade of `duration` seconds.
+		static UITransition Fade(float duration = 0.2f) { UITransition t; t.FadeEnabled = true; t.Duration = duration; return t; }
+		/// A slide in from `offset` design pixels away, taking `duration` seconds.
+		static UITransition Slide(const glm::vec2& offset, float duration = 0.2f) { UITransition t; t.SlideOffset = offset; t.Duration = duration; return t; }
+		/// A growth from `from` times the size, taking `duration` seconds.
+		static UITransition Scale(float from, float duration = 0.2f) { UITransition t; t.ScaleFrom = from; t.Duration = duration; return t; }
+
+		/// Adds a fade.
+		UITransition& WithFade() { FadeEnabled = true; return *this; }
+		/// Adds a slide.
+		UITransition& WithSlide(const glm::vec2& offset) { SlideOffset = offset; return *this; }
+		/// Adds a scale.
+		UITransition& WithScale(float from) { ScaleFrom = from; return *this; }
+		/// Sets Duration.
+		UITransition& SetDuration(float seconds) { Duration = seconds; return *this; }
+		/// Sets ExitDuration.
+		UITransition& SetExitDuration(float seconds) { ExitDuration = seconds; return *this; }
+		/// Sets Ease.
+		UITransition& SetEase(UIEase ease) { Ease = ease; return *this; }
+	};
+
 	/// A root of the UI: a container anchored to the screen. Chain the setters.
 	struct UIRootParams
 	{
@@ -414,6 +475,9 @@ namespace Dingo
 		bool Navigable = true;
 		/// The root's own layout; its Width and Height are the root's size.
 		UIBoxParams Layout;
+		/// How the root appears and leaves; the default does neither. While a root is appearing it
+		/// takes input at its final place.
+		UITransition Transition;
 
 		/// Sets Anchor.
 		UIRootParams& SetAnchor(UIAnchor anchor) { Anchor = anchor; return *this; }
@@ -433,6 +497,8 @@ namespace Dingo
 		UIRootParams& SetNavigable(bool navigable) { Navigable = navigable; return *this; }
 		/// Sets Layout.
 		UIRootParams& SetLayout(const UIBoxParams& layout) { Layout = layout; return *this; }
+		/// Sets Transition.
+		UIRootParams& SetTransition(const UITransition& transition) { Transition = transition; return *this; }
 	};
 
 	/// A line or block of text. Chain the setters.
@@ -666,6 +732,18 @@ namespace Dingo
 		static void PushId(int id);
 		/// Removes the id pushed last. Ids pushed inside a box or root are dropped when it ends.
 		static void PopId();
+
+		/// The curve `ease` at progress `t` (clamped to 0..1): 0 at 0 and 1 at 1, and BackOut and
+		/// ElasticOut leave 0..1 in between.
+		static float Ease(UIEase ease, float t);
+		/// A value that moves toward `target` over `duration` seconds of real frame time (the UI keeps
+		/// animating while a game pauses its scene). `id` names it like a widget label, in the open
+		/// container. The first call returns `target`; a call with a new target returns the value the
+		/// tween was at and starts moving from there, and each later frame moves it on. Declare it every
+		/// frame: a tween that goes unseen for two frames is forgotten. Outside a frame it returns `target`.
+		static float Tween(std::string_view id, float target, float duration, UIEase ease = UIEase::QuadOut);
+		/// Tween for a colour, each channel moving alike.
+		static glm::vec4 TweenColor(std::string_view id, const glm::vec4& target, float duration, UIEase ease = UIEase::QuadOut);
 
 		/// Sets the font Text uses when its params name none. Pass nullptr before deleting the font.
 		static void SetDefaultFont(Font* font);

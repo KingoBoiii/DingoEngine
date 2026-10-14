@@ -196,6 +196,7 @@ namespace Dingo::Internal
 		element.BlocksInput = params.BlocksInput;
 		element.Modal = params.Modal;
 		element.Navigable = params.Navigable;
+		element.Transition = params.Transition;
 		m_Open.push_back(index);
 		m_OpenIdDepth.push_back(static_cast<uint32_t>(m_IdStack.size()));
 		return true;
@@ -696,10 +697,14 @@ namespace Dingo::Internal
 			return;
 
 		SortRoots();
-		const std::vector<int32_t>& roots = m_Order;
-
-		const int32_t elementCount = static_cast<int32_t>(m_Elements.size());
+		const std::vector<int32_t> roots = m_Order;
 		for (const int32_t root : roots)
+			EmitRoot(root, list);
+	}
+
+	void UILayoutTree::EmitRoot(int32_t root, UIDrawList& list) const
+	{
+		const int32_t elementCount = static_cast<int32_t>(m_Elements.size());
 		{
 			int32_t end = root + 1;
 			while (end < elementCount && m_Elements[end].Kind != UIElementKind::Root)

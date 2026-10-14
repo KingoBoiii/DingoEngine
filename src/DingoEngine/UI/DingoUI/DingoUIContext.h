@@ -4,6 +4,7 @@
 #include "DingoUILayout.h"
 #include "DingoUINav.h"
 #include "DingoUIState.h"
+#include "DingoUITween.h"
 
 #include <glm/glm.hpp>
 
@@ -101,6 +102,11 @@ namespace Dingo::Internal
 		const UIStyle& GetStyle() const { return m_StyleStack.back(); }
 		void SetTheme(const UIStyle& style) { m_StyleStack.front() = style; }
 
+		float Tween(std::string_view id, float target, float duration, UIEase ease);
+		glm::vec4 TweenColor(std::string_view id, const glm::vec4& target, float duration, UIEase ease);
+		const UIRootTransitions& GetRootTransitions() const { return m_RootTransitions; }
+		const UITweenMap& GetTweens() const { return m_Tweens; }
+
 		void SetDefaultFont(Font* font) { m_Params.DefaultFont = font; }
 		Font* GetDefaultFont() const { return m_Params.DefaultFont; }
 
@@ -155,6 +161,9 @@ namespace Dingo::Internal
 		uint64_t WidgetId(std::string_view label);
 		void BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll = false, const glm::vec2& scrollOffset = glm::vec2(0.0f), const UIStyle* thumbStyle = nullptr);
 		const UIStyle& Resolve(const UIStyle* override) const { return override ? *override : m_StyleStack.back(); }
+		// Steps the widget's looks toward `hover`, `press`, `focus` and `on` by the style's transition and returns them eased.
+		std::array<float, 4> StepLook(UIWidgetState& state, const UIStyle& style, bool hover, bool press, bool focus, bool on) const;
+		void BuildDrawList(bool draw);
 		UIInteraction SliderImpl(std::string_view label, double* value, double min, double max, double step, bool integer, const UISliderParams& params);
 
 	private:
@@ -181,6 +190,10 @@ namespace Dingo::Internal
 		bool m_ModalActive = false;
 
 		UIStateMap m_States;
+		UITweenMap m_Tweens;
+		UIRootTransitions m_RootTransitions;
+		std::vector<UIRootTransitions::Entry*> m_ExitingRoots;
+		UIDrawList m_RootScratch;
 		UIHit m_Hit;
 		uint64_t m_HoverId = 0;
 		uint64_t m_ActiveId = 0;

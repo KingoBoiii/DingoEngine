@@ -72,6 +72,7 @@ namespace Dingo::Internal
 		bool Modal = false;
 		bool Navigable = true;
 		float Scale = 1.0f;
+		UITransition Transition;
 
 		// Widgets
 		bool Interactive = false;        // takes the pointer: hover, press, click
@@ -165,6 +166,8 @@ namespace Dingo::Internal
 		void Layout(const UITextMeasureFn& measure);
 		// Appends the tree's drawing to `list`, roots by layer then declaration order.
 		void Emit(UIDrawList& list) const;
+		// Appends one root's drawing; `root` is the element index of a root, as GetRootOrder lists them.
+		void EmitRoot(int32_t root, UIDrawList& list) const;
 
 		const glm::vec2& GetViewport() const { return m_Viewport; }
 		const std::vector<UIElement>& GetElements() const { return m_Elements; }

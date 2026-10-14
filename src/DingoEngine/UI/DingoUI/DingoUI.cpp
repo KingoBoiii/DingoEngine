@@ -145,6 +145,23 @@ namespace Dingo
 			context->PopId();
 	}
 
+	float DingoUI::Ease(UIEase ease, float t)
+	{
+		return Internal::EvaluateEase(ease, t);
+	}
+
+	float DingoUI::Tween(std::string_view id, float target, float duration, UIEase ease)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->Tween(id, target, duration, ease) : target;
+	}
+
+	glm::vec4 DingoUI::TweenColor(std::string_view id, const glm::vec4& target, float duration, UIEase ease)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->TweenColor(id, target, duration, ease) : target;
+	}
+
 	void DingoUI::SetDefaultFont(Font* font)
 	{
 		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())

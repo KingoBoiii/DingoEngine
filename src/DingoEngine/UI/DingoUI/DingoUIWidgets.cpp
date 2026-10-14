@@ -83,11 +83,36 @@ namespace Dingo::Internal
 			return UITextParams().SetSize(style.TextSize).SetColor(enabled ? style.TextColor : style.DisabledTextColor).SetWrap(false).SetFont(style.TextFont);
 		}
 
-		void ApplyRing(UIBoxParams& box, const UIStyle& style, bool focused)
+		// A mix of the idle face and the hover and pressed ones; the 9-slice faces of their own can't be mixed, so they switch halfway.
+		void ApplyFaceBlend(UIBoxParams& box, const UIStyle& style, float hover, float press)
 		{
-			if (!focused || style.FocusWidth <= 0.0f)
+			if (style.Surface.IsValid())
+			{
+				if (style.SurfaceHover.IsValid() || style.SurfacePressed.IsValid())
+				{
+					box.NineSlice = SliceFor(style, press >= 0.5f ? Face::Pressed : (hover >= 0.5f ? Face::Hover : Face::Idle));
+				}
+				else
+				{
+					box.NineSlice = style.Surface;
+					const float shade = glm::mix(glm::mix(1.0f, 1.15f, hover), 0.8f, press);
+					box.NineSlice.Tint = glm::vec4(glm::vec3(box.NineSlice.Tint) * shade, box.NineSlice.Tint.a);
+				}
+			}
+			else
+				box.Background = glm::mix(glm::mix(style.Background, style.HoverColor, hover), style.PressedColor, press);
+			box.BorderWidth = style.BorderWidth;
+			box.BorderColor = style.BorderColor;
+			box.CornerRadius = style.CornerRadius;
+		}
+
+		// How much of the focus ring shows, 0..1.
+		void ApplyRing(UIBoxParams& box, const UIStyle& style, float amount)
+		{
+			if (amount <= 0.0f || style.FocusWidth <= 0.0f)
 				return;
 			box.BorderColor = style.FocusedColor;
+			box.BorderColor.a *= amount;
 			box.BorderWidth = (std::max)(box.BorderWidth, style.FocusWidth);
 			box.CornerRadius = (std::max)(box.CornerRadius, style.CornerRadius);
 		}
@@ -120,8 +145,13 @@ namespace Dingo::Internal
 		box.Padding = { style.Padding.x, style.Padding.y, style.Padding.x, style.Padding.y };
 		box.Justify = UIJustify::Center;
 		box.Align = UIAlign::Center;
-		ApplyFace(box, style, FaceOf(result, params.Enabled));
-		ApplyRing(box, style, result.Focused);
+		const std::array<float, 4> look = StepLook(*state, style, result.Hovered, result.Down && result.Hovered, result.Focused, false);
+		const bool animate = style.TransitionDuration > 0.0f && params.Enabled;
+		if (animate)
+			ApplyFaceBlend(box, style, look[0], look[1]);
+		else
+			ApplyFace(box, style, FaceOf(result, params.Enabled));
+		ApplyRing(box, style, animate ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
@@ -155,13 +185,17 @@ namespace Dingo::Internal
 		row.Gap = style.Gap;
 		row.Align = UIAlign::Center;
 		row.Padding = { 0.0f, style.RowPadding.y * 0.5f, style.RowPadding.x, style.RowPadding.y * 0.5f };
-		ApplyRing(row, style, result.Focused);
+		const std::array<float, 4> look = StepLook(*state, style, result.Hovered, false, result.Focused, on);
+		const bool animate = style.TransitionDuration > 0.0f && params.Enabled;
+		ApplyRing(row, style, animate ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, label, row, params.Enabled);
 
 		glm::vec4 trackColor = style.TrackColor;
 		if (!params.Enabled)
 			trackColor = style.DisabledColor;
+		else if (animate)
+			trackColor = glm::mix(glm::mix(style.TrackColor, style.HoverColor, look[0]), glm::mix(style.AccentColor, style.AccentHoverColor, look[0]), look[3]);
 		else if (on)
 			trackColor = result.Hovered ? style.AccentHoverColor : style.AccentColor;
 		else if (result.Hovered)
@@ -237,7 +271,9 @@ namespace Dingo::Internal
 		outer.Direction = UIDirection::Row;
 		outer.Gap = style.Gap;
 		outer.Align = UIAlign::Center;
-		ApplyRing(outer, style, result.Focused);
+		const std::array<float, 4> look = StepLook(*state, style, result.Hovered || result.Down, false, result.Focused, false);
+		const bool animate = style.TransitionDuration > 0.0f && params.Enabled;
+		ApplyRing(outer, style, animate ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_Tree.BeginBox(outer);
 
 		UIBoxParams track;
@@ -255,7 +291,7 @@ namespace Dingo::Internal
 		};
 		const UISize barHeight = UISize::Fixed(style.SliderTrackHeight);
 		const float barRadius = style.SliderTrackHeight * 0.5f;
-		const glm::vec4 fillColor = !params.Enabled ? style.DisabledTextColor : ((result.Hovered || result.Down) ? style.AccentHoverColor : style.AccentColor);
+		const glm::vec4 fillColor = !params.Enabled ? style.DisabledTextColor : (animate ? glm::mix(style.AccentColor, style.AccentHoverColor, look[0]) : ((result.Hovered || result.Down) ? style.AccentHoverColor : style.AccentColor));
 		if (t > 0.0f)
 			leaf(Solid(UISize::Grow(t), barHeight, fillColor, barRadius));
 		leaf(Solid(UISize::Fixed(style.HandleSize), UISize::Fixed(style.HandleSize), params.Enabled ? style.HandleColor : style.DisabledTextColor, style.HandleSize * 0.5f));
@@ -341,27 +377,37 @@ namespace Dingo::Internal
 		box.BorderColor = style.BorderColor;
 		box.CornerRadius = style.CornerRadius;
 
-		if (style.Surface.IsValid())
+		const std::array<float, 4> look = StepLook(*state, style, result.Hovered, result.Down && result.Hovered, result.Focused, selected);
+		const bool animate = style.TransitionDuration > 0.0f && params.Enabled && !style.Surface.IsValid();
+		if (animate)
 		{
-			if (!params.Enabled)
-			{
-				if (selected)
-					box.NineSlice = SliceFor(style, Face::Disabled);
-			}
-			else if (result.Hovered && result.Down)
-				box.NineSlice = SliceFor(style, Face::Pressed);
-			else if (result.Hovered)
-				box.NineSlice = SliceFor(style, Face::Hover);
-			else if (selected)
-				box.NineSlice = SliceFor(style, Face::Idle);
+			const glm::vec4 rest = glm::mix(glm::vec4(glm::vec3(style.HoverColor), 0.0f), glm::mix(style.HoverColor, style.PressedColor, look[1]), look[0]);
+			box.Background = glm::mix(rest, glm::mix(style.AccentColor, style.AccentHoverColor, look[0]), look[3]);
 		}
-		else if (!params.Enabled)
-			box.Background = selected ? style.DisabledColor : glm::vec4(0.0f);
-		else if (selected)
-			box.Background = result.Hovered ? style.AccentHoverColor : style.AccentColor;
-		else if (result.Hovered)
-			box.Background = result.Down ? style.PressedColor : style.HoverColor;
-		ApplyRing(box, style, result.Focused);
+		else
+		{
+			if (style.Surface.IsValid())
+			{
+				if (!params.Enabled)
+				{
+					if (selected)
+						box.NineSlice = SliceFor(style, Face::Disabled);
+				}
+				else if (result.Hovered && result.Down)
+					box.NineSlice = SliceFor(style, Face::Pressed);
+				else if (result.Hovered)
+					box.NineSlice = SliceFor(style, Face::Hover);
+				else if (selected)
+					box.NineSlice = SliceFor(style, Face::Idle);
+			}
+			else if (!params.Enabled)
+				box.Background = selected ? style.DisabledColor : glm::vec4(0.0f);
+			else if (selected)
+				box.Background = result.Hovered ? style.AccentHoverColor : style.AccentColor;
+			else if (result.Hovered)
+				box.Background = result.Down ? style.PressedColor : style.HoverColor;
+		}
+		ApplyRing(box, style, style.TransitionDuration > 0.0f && params.Enabled ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
