@@ -4,7 +4,7 @@
 app and every example build and run on Linux (GCC 13, x86-64, X11 or XWayland), and `build-linux.yml`
 builds all four configurations on every push to master and smoke-tests each under Xvfb on llvmpipe,
 with AddressSanitizer in Debug-ASan. Phases 1-4 below are done. Two items stay open:
-[L26](#l26), a run on real GPUs and desktops, and [L27](#l27), native Wayland (optional). The rest of
+[L26](#l26), a run on real GPUs and desktops (deferred past v1.0: [#247](https://github.com/KingoBoiii/DingoEngine/issues/247)), and [L27](#l27), native Wayland (optional). The rest of
 this page is the record of the port as it was planned and verified; its `file:line` anchors date
 from v0.8.2 and v0.8.3 and have drifted since.
 
@@ -222,7 +222,7 @@ Verified:
 - **Tooling**: `Generate-Linux.sh` works from any directory; every task's `make` command dry-runs; every
   Linux launch entry's program and `cwd` exist.
 
-Still open: [L26](#l26) needs real hardware (a USB-booted Ubuntu on a real GPU is the cheapest start), and
+Still open: [L26](#l26) needs real hardware (a USB-booted Ubuntu on a real GPU is the cheapest start) and is deferred past v1.0 ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)), and
 [L27](#l27) is a decision before it is work.
 
 ### Found along the way
@@ -855,7 +855,7 @@ paths.
 <a id="l26"></a>
 ### L26 — Validate on real hardware and desktops
 
-**Ship**
+**Ship**. Deferred past v1.0 (2026-10-14): no Linux machine was available, so v1.0.0 ships Linux as CI-tested on llvmpipe only ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
 
 Everything here ran on llvmpipe under Xvfb, with no sound device and no input beyond the built-in
 self-checks. Before calling Linux supported:
