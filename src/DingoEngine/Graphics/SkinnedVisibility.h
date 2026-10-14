@@ -4,6 +4,11 @@
 // palette they were submitted with, for this frame and the one before. A scene's animation pass reads
 // it to leave the pose of a culled animator unevaluated (AnimatorComponent::CullingMode). Main thread
 // only. Shared, so a scene holding it weakly outlives a freed renderer safely.
+//
+// Keyed by address, against the ids-not-addresses rule, because no lookup here can return a wrong
+// object: a reused address makes a new animator count as seen for at most two frames (it animates),
+// and a palette reallocated between render and update counts as culled for one update, after
+// EnsureAnimator has already evaluated it.
 
 #include <glm/glm.hpp>
 
