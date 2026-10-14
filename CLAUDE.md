@@ -6,12 +6,12 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 - **Roles.** The owner (KingoBoiii) sets direction, decides design questions, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most of the code, mostly in cloud sessions on Linux with no GPU (Mesa llvmpipe under Xvfb).
 - **Where work comes from.** Either a milestone plan or a group of GitHub issues:
-  - **Plans**: `.claude/plans/YYYY-MM-DD-<topic>-plan.md`, with the owner's decisions at the top and phases (P1, P2… or A, B…). Each phase appends "As built" notes to the plan, and those override the design. The PR body carries a phases checklist; a later run continues from the first unchecked phase.
+  - **Plans**: `.claude/plans/YYYY-MM-DD-<topic>-plan.md`, with the owner's decisions at the top and phases (P1, P2… or A, B…). Each phase appends "As built" notes to the plan, and those override the design. The PR body carries a phases checklist; a later run continues from the first unchecked phase. One phase per session (see Token budget).
   - **Issues**: defects are labelled `bug`, limitations and requests `enhancement`. A run takes one label's group. Leave issues labelled `wontfix` or `routine:skip` alone, and anything that needs hardware the session lacks (multi-GPU, a gamepad).
   - **The scheduled routine** works both through the `routine-run` skill: one PR phase (Mode A) or one issue group (Mode B) per run, claimed with the `routine:claimed` label.
 - **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases. A cloud session's assigned `claude/…` branch overrides these. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR on another only when both rewrite the same code, and say so at the top of the PR.
 - **Commits.** Conventional, lowercase: `type(scope): summary`, scoped by engine area (`renderer3d`, `asset`, `scene`, `post`, `animation`, `audio`, `graphics`, `core`, `build`, `ci`). One commit per issue, ending in `(#N)`. The body says why, not what.
-- **PRs.** Opened only when the owner asks (or by a routine run). Write the body with the `pr-writeup` skill: summary and `Closes #N` lines; **What changed** (table: issue | commit | change); **Left out**; **Needs testing on a real GPU: Yes/No** with exactly what to run on which backend; **Run log** (Did / Verification / Questions I answered myself, as *Q – Options – Chose* / Skipped / Next). The owner appends "GPU verification (owner)" after running it.
+- **PRs.** Opened only when the owner asks (or by a routine run). Write the body with the `pr-writeup` skill: summary and `Closes #N` lines; **What changed** (table: issue | commit | change); **Left out**; **Needs testing on a real GPU: Yes/No** with exactly what to run on which backend; **Run log** (Did / Verification / Questions I answered myself, as *Q – Options – Chose* / Skipped / Next). The owner appends "GPU verification (owner)" after running it, on Windows, with the `pr-gpu-test` skill.
 - **Decisions.** When the owner isn't there to ask, decide and record it in the PR's *Questions I answered myself*. Changes to public behaviour or a plan's design go to the owner first when they are around.
 - **Review.** Before the final push, one fresh review agent reads the whole diff. Fix every High and Medium, and fix or explain each Low in the PR. A milestone gets a full report in `.claude/reviews/YYYY-MM-DD-<name>-review.md`; findings left open become issues.
 - **Docs travel with the code.** A public API change updates its `docs/*.md` page in the same PR, and a changed engine pattern updates the matching `.claude/reference/` file. A bug found in passing becomes an issue, not a TODO.
@@ -74,6 +74,17 @@ Rules for every agent:
 - Run agents in parallel only when their work doesn't overlap. Never let two agents edit the same file.
 - Don't delegate and then search the same thing yourself, and don't spawn an agent for a one-step lookup.
 - An agent's report isn't shown to the owner; relay what matters. Check an agent's claims about code before acting on them, and review code a `sonnet` agent wrote before it is committed.
+
+## Token budget
+
+Most of the cost is context re-read on every call (context size × number of calls), not the text you write. Measured: the v0.8.0 animation milestone ran three days in one session, reached 967k context and cost 13 units per prompt; single-phase sessions cost 2–5.
+
+- **One session, one job.** A plan, each phase, each issue group, each PR test and each release get their own session. The plan's "As built" notes and the PR's phases checklist carry the state between them. When a job is done, say so in one line and suggest **handoff** plus a new session. Past ~200k context or a day old: stop at the next clean point (phase committed and pushed).
+- **The session model fits the job.** Opus stays the default for engine work. For docs, plan wording, CI and scripts, release bookkeeping, PR write-ups and an example's game code, say so at the start and suggest the owner switch the session to Sonnet.
+- **Agents follow "Sub-agent selection" above.** One agent per independent job. Continue an agent with SendMessage for follow-ups on the same work instead of starting a new one.
+- **Read narrowly:** the `.claude/reference/` file for the area first, then Grep, then Read only the lines you need. Never read these whole (1.1k–2.3k lines each): `test/src/Tests/Scene/AnimationTest.cpp`, `Graphics/Renderer3D.cpp`, `UI/ImGui/ImGuiDebugPanels.cpp`, `Graphics/Animator.cpp`, `Graphics/Model.cpp`, `Asset/AssetManager.cpp`, `test/src/Tests/Renderer/LightingTest.cpp`.
+- **Long command output:** send builds and test runs to a file in the scratchpad, then read only the errors, warnings in files you changed, and `[FAIL]`, `VUID-` and `LOG ERROR` lines.
+- **Release notes are what Headstone reads for an engine bump** (`gh release view vX.Y.Z`), instead of this repo. Give each release a **For games** section: breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues it closes.
 
 ## Code conventions
 
