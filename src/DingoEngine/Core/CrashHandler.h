@@ -42,7 +42,8 @@ namespace Dingo::Internal
 		void RunThread(void (*body)(void*), void* context);
 
 		// The message box FatalError and a Windows crash show: Windows Distribution builds only, so
-		// a CI run or a developer's console never blocks on one.
+		// a CI run or a developer's console never blocks on one. Once Install has run, another thread
+		// shows it while the caller waits, so the caller's windows dispatch no events meanwhile.
 		void ShowMessage(std::string_view title, std::string_view message);
 
 	}
