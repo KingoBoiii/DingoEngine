@@ -1893,15 +1893,11 @@ namespace Dingo
 		return shader && shader->FindPushConstantBlockSize(Material::k_SkinDrawBlockName) >= sizeof(glm::uvec4);
 	}
 
-	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
+	bool Renderer3D::HasUsableSkinBlock(const Material* material)
 	{
-		Material* requested = material ? material : m_Material;
-		if (IsLitShader(requested->GetShader()))
-			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
-
 		// The binding must not collide with the scene and material blocks or with a texture or
 		// sampler the material binds, or its binding set fails and the mesh silently vanishes.
-		auto freeBinding = [requested](int32_t binding)
+		auto freeBinding = [material](int32_t binding)
 		{
 			if (binding < 2)
 				return false;
@@ -1909,18 +1905,23 @@ namespace Dingo
 			const bool samplerBinding = (binding - 2) % 2 == 1;
 			if (samplerBinding ? slot >= Material::k_MaxSamplerSlots : slot >= Material::k_MaxTextureSlots)
 				return true;
-			return samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
+			return samplerBinding ? !material->GetSampler(slot) : !material->GetTexture(slot);
 		};
-		const Shader* shader = requested->GetShader();
-		const bool palette = UsesSkinPalette(shader);
-		bool usable = false;
-		if (palette)
-			usable = freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
-		else
-		{
-			const int32_t binding = shader ? shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
-			usable = binding <= static_cast<int32_t>(k_MaxSkinUniformBinding) && freeBinding(binding);
-		}
+		const Shader* shader = material->GetShader();
+		if (UsesSkinPalette(shader))
+			return freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
+		const int32_t binding = shader ? shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
+		return binding <= static_cast<int32_t>(k_MaxSkinUniformBinding) && freeBinding(binding);
+	}
+
+	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
+	{
+		Material* requested = material ? material : m_Material;
+		if (IsLitShader(requested->GetShader()))
+			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
+
+		const bool palette = UsesSkinPalette(requested->GetShader());
+		const bool usable = HasUsableSkinBlock(requested);
 		if (usable && !palette && !m_SkinDataWarned)
 		{
 			const std::string& name = requested->GetParams().DebugName;
@@ -2008,12 +2009,13 @@ namespace Dingo
 		}
 
 		// A SkinData shader's instances are a budget of their own, decided here so every pass agrees.
+		// A material ResolveSkinnedMaterial replaces with the default twin draws through the arena.
 		m_SkinnedInstanceSkinData.assign(m_SkinnedInstances.size(), 0);
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
 			const Material* requested = submission.Material ? submission.Material : m_Material;
 			if (submission.Shadows != ShadowCasting::ShadowsOnly && !submission.CameraCulled &&
-				!IsLitShader(requested->GetShader()) && !UsesSkinPalette(requested->GetShader()))
+				!IsLitShader(requested->GetShader()) && !UsesSkinPalette(requested->GetShader()) && HasUsableSkinBlock(requested))
 				m_SkinnedInstanceSkinData[submission.Instance] = 1;
 		}
 

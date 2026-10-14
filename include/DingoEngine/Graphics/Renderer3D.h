@@ -1165,6 +1165,8 @@ namespace Dingo
 		void BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
 		static bool IsSkinningShader(const Shader* shader);
 		static bool UsesSkinPalette(const Shader* shader);
+		// Its DE_SkinPalette or SkinData block sits at a binding the material leaves free.
+		static bool HasUsableSkinBlock(const Material* material);
 
 		// Made on the first skinned draw, so an app that never skins compiles no second lit program.
 		Shader* m_SkinnedShader = nullptr;

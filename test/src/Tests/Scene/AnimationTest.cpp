@@ -93,6 +93,34 @@ void main()
 }
 )";
 
+	// A custom static shader: no skin block, so a skinned mesh given it draws with the default lit material.
+	constexpr const char* k_StaticGhostShader = R"(
+#type vertex
+#version 450
+
+layout(location = 0) in vec3 a_Position;
+
+layout(std140, binding = 0) uniform CameraData
+{
+    mat4 ViewProjection;
+};
+
+void main()
+{
+    gl_Position = ViewProjection * vec4(a_Position, 1.0);
+}
+
+#type fragment
+#version 450
+
+layout(location = 0) out vec4 o_Color;
+
+void main()
+{
+    o_Color = vec4(1.0);
+}
+)";
+
 	// The ghost again, reading the scene's skin arena at bindings of its own.
 	constexpr const char* k_PaletteGhostShader = R"(
 #type vertex
@@ -2372,6 +2400,30 @@ namespace Dingo
 		Check(stats.SkinnedDraws == 2 && stats.SkinnedInstances == 1 && stats.SubmittedMeshes == 4 && stats.DrawCalls == 3 && stats.DroppedSkinnedDraws == 0,
 			"custom skinned materials, one with a SkinData block and one reading the skin arena, skin the Fox from one instance, and static boxes given them draw with the default material instead of a pipeline their vertex stage can't take");
 
+		// More instances than SkinData's 256 on a material with no skin block: they draw with
+		// the default twin through the arena, so the SkinData cap must not drop any.
+		m_StaticGhostShader = Shader::Create(ShaderParams().SetName("AnimationTestStaticGhost").SetSourceCode(k_StaticGhostShader));
+		m_StaticGhost = m_StaticGhostShader && m_StaticGhostShader->IsValid()
+			? Material::Create(MaterialParams().SetShader(m_StaticGhostShader).SetDebugName("StaticGhost"))
+			: nullptr;
+		if (m_StaticGhost)
+		{
+			constexpr uint32_t staticGhosts = 300;
+			std::vector<glm::mat4> palettes;
+			palettes.reserve(rest.size() * staticGhosts);
+			for (uint32_t i = 0; i < staticGhosts; ++i)
+				palettes.insert(palettes.end(), rest.begin(), rest.end());
+			renderer.BeginScene(m_Camera);
+			for (uint32_t i = 0; i < staticGhosts; ++i)
+				renderer.SubmitSkinnedMesh(skinned->Mesh, glm::mat4(1.0f), std::span<const glm::mat4>(palettes).subspan(i * rest.size(), rest.size()), glm::vec4(1.0f), m_StaticGhost);
+			renderer.EndScene();
+			Check(renderer.GetStatistics().SkinnedInstances == staticGhosts && renderer.GetStatistics().DroppedSkinnedDraws == 0,
+				std::format("{} Foxes given a material with no skin block draw through the arena, none dropped by the SkinData cap ({} drawn, {} dropped)",
+					staticGhosts, renderer.GetStatistics().SkinnedInstances, renderer.GetStatistics().DroppedSkinnedDraws));
+		}
+		else
+			Check(false, "the custom static shader compiles");
+
 		// Each ghost into a target of its own, three Foxes in different Walk poses, turned and tinted
 		// apart: the arena must place every vertex, and turn every normal, where SkinData does, for
 		// instances past the first too.
@@ -2594,6 +2646,8 @@ namespace Dingo
 		DestroyAndDelete(m_GhostShader);
 		DestroyAndDelete(m_PaletteGhost);
 		DestroyAndDelete(m_PaletteGhostShader);
+		DestroyAndDelete(m_StaticGhost);
+		DestroyAndDelete(m_StaticGhostShader);
 		for (Framebuffer*& target : m_GhostTargets)
 			DestroyAndDelete(target);
 		delete m_LodScene;
