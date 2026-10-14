@@ -188,7 +188,9 @@ namespace Dingo
 
 		/// Atomic: the JSON goes to `<path>.tmp`, flushed to disk, then the current file becomes
 		/// `<path>.bak` and the new one takes its place, so a crash or kill at any point leaves a
-		/// complete file under one of the three names. Writes from several threads take turns.
+		/// complete file under one of the three names. A complete `<path>.tmp` left without a
+		/// `<path>` is moved to `<path>` first, so it becomes the .bak. Writes from several threads
+		/// take turns.
 		/// Creates the directory. False (logged) on failure.
 		bool WriteFile(const std::filesystem::path& path) const;
 		/// Reads `<path>`; when that is missing, a complete `<path>.tmp` (a write stopped between
@@ -287,11 +289,12 @@ namespace Dingo
 		/// Reads the slot with SaveData::ReadFile, falling back to its .bak; nullopt for an
 		/// invalid name or no readable file, with the reason in error.
 		static std::optional<SaveData> Read(std::string_view slot, std::string* error = nullptr);
-		/// True when the slot or its .bak is on disk.
+		/// True when the slot or its .bak is on disk, or, with the slot missing, a complete .tmp.
 		static bool Exists(std::string_view slot);
 		/// Removes the slot, its .bak and any leftover .tmp. True when nothing of it is left.
 		static bool Delete(std::string_view slot);
-		/// Every slot in the directory (a .bak alone counts), most recently written first.
+		/// Every slot in the directory (a .bak alone counts, and so does a complete .tmp with the
+		/// slot missing), most recently written first.
 		static std::vector<SaveSlotInfo> List();
 	};
 

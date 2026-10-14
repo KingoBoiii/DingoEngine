@@ -70,7 +70,8 @@ A write is atomic. The JSON goes to `<path>.tmp` and is flushed to the disk; the
 becomes `<path>.bak` and the new one takes its place. A crash, a kill or a power cut at any moment
 leaves a complete save under one of those names. `ReadFile` reads `<path>`; when it is missing (a
 write stopped between its two renames) a complete `<path>.tmp`, then `<path>.bak`; when it doesn't
-parse, `<path>.bak`, logging which it used. Writes from several threads take turns.
+parse, `<path>.bak`, logging which it used. The next write first moves such a `.tmp` to `<path>`,
+so the generation `ReadFile` returned becomes the `.bak`. Writes from several threads take turns.
 `Dingo-UnitTests` checks all this by killing a process in the middle of its writes.
 
 ## Save slots
@@ -80,8 +81,8 @@ parse, `<path>.bak`, logging which it used. Writes from several threads take tur
 | | |
 |---|---|
 | `Write(slot, data)` / `Read(slot)` | `<slot>.json`, through `WriteFile` / `ReadFile`. |
-| `Exists(slot)` / `Delete(slot)` | `Delete` removes the `.bak` and any leftover `.tmp` too. |
-| `List()` | Every slot, most recently written first, with its `LastWriteTime`. |
+| `Exists(slot)` / `Delete(slot)` | A slot exists when `Read` could return it: its file, its `.bak`, or a complete `.tmp` without the file. `Delete` removes the `.bak` and any leftover `.tmp` too. |
+| `List()` | Every slot `Exists` reports, most recently written first, with its `LastWriteTime`. |
 | `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`. Any other name fails with an error. |
 
 The directory is `GetUserDataDir(Name)/saves` (`%LOCALAPPDATA%\<Name>\saves`,

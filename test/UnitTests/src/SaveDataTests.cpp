@@ -417,6 +417,17 @@ TEST_SUITE("SaveData")
 		CHECK(source == temporary);
 		WriteText(temporary, "{\"generation\": ");
 		CHECK(SaveData::ReadFile(path) == first);
+
+		WriteText(temporary, third.ToJson());
+		SaveData fourth;
+		fourth["generation"] = 4;
+		REQUIRE(fourth.WriteFile(path));
+		CHECK(SaveData::ReadFile(path) == fourth);
+		CHECK(SaveData::ReadFile(backup) == third);
+		CHECK_FALSE(std::filesystem::exists(temporary));
+		std::filesystem::rename(path, temporary);
+		WriteText(temporary, "{\"generation\": ");
+		CHECK(SaveData::ReadFile(path) == third);
 		std::filesystem::remove(temporary);
 
 		WriteText(backup, "garbage");
@@ -483,6 +494,19 @@ TEST_SUITE("SaveData")
 		CHECK(SaveSlots::Delete("newer"));
 		CHECK_FALSE(SaveSlots::Exists("newer"));
 		CHECK(SaveSlots::List().size() == 1);
+
+		std::filesystem::path recovered = SaveSlots::GetPath("recovered");
+		recovered += ".tmp";
+		WriteText(recovered, "{\"generation\": ");
+		CHECK_FALSE(SaveSlots::Exists("recovered"));
+		CHECK(SaveSlots::List().size() == 1);
+		WriteText(recovered, SaveData(5).ToJson());
+		CHECK(SaveSlots::Exists("recovered"));
+		CHECK(SaveSlots::List().size() == 2);
+		CHECK(SaveSlots::Read("recovered")->AsInt() == 5);
+		REQUIRE(SaveSlots::Write("recovered", SaveData(6)));
+		CHECK(SaveSlots::Read("recovered")->AsInt() == 6);
+		CHECK(SaveSlots::List().size() == 2);
 
 	}
 

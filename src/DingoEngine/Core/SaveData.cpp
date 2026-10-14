@@ -237,6 +237,17 @@ namespace Dingo
 			}
 			return SaveData::FromJson(text, &error);
 		}
+
+		// With <path> missing, a .tmp that parses is a write stopped between its renames.
+		bool IsRecoverableTemporary(const std::filesystem::path& path)
+		{
+			std::error_code errorCode;
+			if (std::filesystem::exists(path, errorCode))
+				return false;
+			const std::filesystem::path temporary = WithSuffix(path, ".tmp");
+			std::string ignored;
+			return std::filesystem::exists(temporary, errorCode) && ReadOne(temporary, ignored).has_value();
+		}
 	}
 
 	SaveData::SaveData(const glm::vec2& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 2; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
@@ -560,6 +571,13 @@ namespace Dingo
 		}
 
 		const std::filesystem::path temporary = WithSuffix(path, ".tmp");
+		// The recovered .tmp is the generation ReadFile returns; promoted, it rotates to .bak below
+		// instead of being overwritten.
+		if (IsRecoverableTemporary(path) && !MoveOver(temporary, path, error))
+			DE_CORE_WARN("SaveData: cannot recover '{}': {}", DisplayPath(temporary), error);
+
+		std::error_code errorCode;
+
 		if (!WriteDurably(temporary, text, error))
 		{
 			DE_CORE_ERROR("SaveData: cannot write '{}': {}", DisplayPath(temporary), error);
@@ -568,7 +586,6 @@ namespace Dingo
 			return false;
 		}
 
-		std::error_code errorCode;
 		if (std::filesystem::exists(path, errorCode) && !MoveOver(path, WithSuffix(path, ".bak"), error))
 		{
 			DE_CORE_ERROR("SaveData: {}", error);
@@ -685,7 +702,7 @@ namespace Dingo
 			return false;
 		std::error_code errorCode;
 		const std::filesystem::path path = GetPath(slot);
-		return std::filesystem::exists(path, errorCode) || std::filesystem::exists(WithSuffix(path, ".bak"), errorCode);
+		return std::filesystem::exists(path, errorCode) || std::filesystem::exists(WithSuffix(path, ".bak"), errorCode) || IsRecoverableTemporary(path);
 	}
 
 	bool SaveSlots::Delete(std::string_view slot)
@@ -735,10 +752,14 @@ namespace Dingo
 				name.remove_suffix(9);
 				isBackup = true;
 			}
+			else if (name.ends_with(u8".json.tmp"))
+				name.remove_suffix(9);
 			else
 				continue;
 			const std::string slot(name.begin(), name.end());
 			if (!IsValidName(slot))
+				continue;
+			if (fileName.ends_with(u8".tmp") && !IsRecoverableTemporary(GetPath(slot)))
 				continue;
 
 			const std::filesystem::file_time_type time = entry.last_write_time(entryError);
