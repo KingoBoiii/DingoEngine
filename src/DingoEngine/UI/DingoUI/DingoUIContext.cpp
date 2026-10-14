@@ -1,7 +1,10 @@
 #include "depch.h"
 #include "DingoUIContext.h"
+#include "DingoUIBatcher.h"
 
 #include "DingoEngine/Core/InputBackend.h"
+#include "DingoEngine/Graphics/FullscreenPass.h"
+#include "DingoEngine/Graphics/Renderer.h"
 
 namespace Dingo::Internal
 {
@@ -17,7 +20,7 @@ namespace Dingo::Internal
 	}
 
 	DingoUIContext::DingoUIContext(const DingoUIParams& params)
-		: m_Params(params)
+		: m_Params(params), m_Batcher(std::make_unique<DingoUIBatcher>())
 	{
 		DE_CORE_ASSERT(!s_Context, "Only one DingoUIContext may exist at a time");
 		s_Context = this;
@@ -43,7 +46,15 @@ namespace Dingo::Internal
 	{
 		DE_PROFILE_FUNCTION();
 
-		(void)render;
+		m_RenderStatistics = {};
+		if (render && !Renderer::IsFrameSkipped() && !m_DrawList.IsEmpty())
+		{
+			Framebuffer* target = m_Target ? m_Target : Renderer::GetSwapChainFramebuffer();
+			RenderTargetScope scope(m_Target);
+			m_Batcher->Draw(m_DrawList, target, m_RenderStatistics);
+		}
+
+		m_DrawList.Clear();
 		++m_FrameIndex;
 	}
 

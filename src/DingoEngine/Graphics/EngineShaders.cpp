@@ -18,6 +18,7 @@ namespace
 #include "ParticleCommon.glsl.inl"
 #include "ParticleSimulate.glsl.inl"
 #include "ParticleDraw.glsl.inl"
+#include "DingoUI.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -49,6 +50,7 @@ namespace
 		{ "ParticleCommon.glsl", View(k_ParticleCommon_glsl) },
 		{ "ParticleSimulate.glsl", View(k_ParticleSimulate_glsl) },
 		{ "ParticleDraw.glsl", View(k_ParticleDraw_glsl) },
+		{ "DingoUI.glsl", View(k_DingoUI_glsl) },
 	};
 }
 
