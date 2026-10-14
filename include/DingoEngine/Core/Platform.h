@@ -9,8 +9,11 @@ namespace Dingo::Platform
 {
 
 	/// Returns the per-user writable data directory for `appName`, creating it if missing.
-	/// appName must not be empty and is read as UTF-8. When the OS variables below are unset it
-	/// logs an error and uses `./<appName>` instead.
+	/// appName must not be empty and is read as UTF-8. The folder name is appName with control
+	/// characters and `<>:"/\|?*` replaced by `_`, trailing dots and spaces dropped and a Windows
+	/// device name (`con`, `nul`, `com1`...) prefixed with `_`, on every platform; on POSIX an
+	/// existing folder under the unchanged name is used while the new one doesn't exist. When the OS
+	/// variables below are unset it logs an error and uses `./<appName>` instead.
 	/// Windows:	`%LOCALAPPDATA%\<appName>`
 	/// POSIX:	`$XDG_DATA_HOME/<appName>`, else `$HOME/.local/share/<appName>`, else `./<appName>`
 	std::filesystem::path GetUserDataDir(const std::string& appName);

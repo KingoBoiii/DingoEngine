@@ -2,41 +2,91 @@
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/PathText.h"
 
+#include <cctype>
 #include <cstdlib>
+#include <string_view>
 
 namespace Dingo::Platform
 {
+
+	namespace
+	{
+		bool IsDeviceName(std::string_view stem)
+		{
+			std::string upper(stem);
+			for (char& c : upper)
+				c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+			while (!upper.empty() && upper.back() == ' ')
+				upper.pop_back();
+			if (upper == "CON" || upper == "PRN" || upper == "AUX" || upper == "NUL" || upper == "CONIN$" || upper == "CONOUT$")
+				return true;
+			if (!upper.starts_with("COM") && !upper.starts_with("LPT"))
+				return false;
+			const std::string_view number = std::string_view(upper).substr(3);
+			return (number.size() == 1 && number[0] >= '0' && number[0] <= '9')
+				|| number == "\xC2\xB9" || number == "\xC2\xB2" || number == "\xC2\xB3";
+		}
+
+		// The same folder on every platform, and one Windows can create: a name made on Linux
+		// with a ':' would otherwise lose the log, the dumps and the saves only on Windows.
+		std::string FolderName(const std::string& appName)
+		{
+			std::string name = appName;
+			for (char& c : name)
+			{
+				const unsigned char byte = static_cast<unsigned char>(c);
+				if (byte < 0x20 || byte == 0x7F || std::string_view("<>:\"/\\|?*").find(c) != std::string_view::npos)
+					c = '_';
+			}
+			while (!name.empty() && (name.back() == '.' || name.back() == ' '))
+				name.pop_back();
+			if (name.empty())
+				return "_";
+			if (IsDeviceName(std::string_view(name).substr(0, name.find('.'))))
+				name.insert(name.begin(), '_');
+			return name;
+		}
+	}
 
 	std::filesystem::path GetUserDataDir(const std::string& appName)
 	{
 		DE_CORE_ASSERT(!appName.empty(), "App name cannot be empty.");
 
+		const std::filesystem::path folder = Internal::PathFromUtf8(FolderName(appName));
 		std::filesystem::path directory;
 
 #ifdef DE_PLATFORM_WINDOWS
 		if (const wchar_t* localAppData = _wgetenv(L"LOCALAPPDATA"))
 		{
-			directory = std::filesystem::path(localAppData) / Internal::PathFromUtf8(appName);
+			directory = std::filesystem::path(localAppData) / folder;
 		}
 		else
 		{
 			DE_CORE_ERROR("LOCALAPPDATA environment variable not set. Falling back to current directory for user data.");
-			directory = std::filesystem::current_path() / Internal::PathFromUtf8(appName);
+			directory = std::filesystem::current_path() / folder;
 		}
 #else
 		if (const char* xdgDataHome = std::getenv("XDG_DATA_HOME"))
 		{
-			directory = std::filesystem::path(xdgDataHome) / Internal::PathFromUtf8(appName);
+			directory = std::filesystem::path(xdgDataHome) / folder;
 		}
 		else if (const char* home = std::getenv("HOME"))
 		{
-			directory = std::filesystem::path(home) / ".local" / "share" / Internal::PathFromUtf8(appName);
+			directory = std::filesystem::path(home) / ".local" / "share" / folder;
 		}
 		else
 		{
 			DE_CORE_ERROR("Neither XDG_DATA_HOME nor HOME environment variables are set. Falling back to current directory for user data.");
-			directory = std::filesystem::current_path() / Internal::PathFromUtf8(appName);
+			directory = std::filesystem::current_path() / folder;
 		}
+
+		// Linux could always create the unsanitised folder, so a game that shipped with such a
+		// name keeps its players' logs and saves there.
+		const std::filesystem::path legacy = directory.parent_path() / Internal::PathFromUtf8(appName);
+		std::error_code error;
+		if (appName.find('/') == std::string::npos && legacy != directory
+			&& !std::filesystem::exists(directory, error) && std::filesystem::is_directory(legacy, error))
+			directory = legacy;
 #endif
 
 		if (!std::filesystem::exists(directory))

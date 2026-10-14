@@ -70,8 +70,9 @@ namespace Dingo
 	{
 		ApplicationCommandLineArgs CommandLineArgs;	///< Parsed command line arguments
 
-		/// The folder name of the game's per-user data (Platform::GetUserDataDir): logs and crash
-		/// dumps go to its logs/ folder. Empty = the executable's name.
+		/// The game's name, and the folder name of its per-user data (Platform::GetUserDataDir,
+		/// which replaces characters a Windows folder can't hold): logs and crash dumps go to its
+		/// logs/ folder. Empty = the executable's name.
 		std::string Name;
 		/// Where Dingo.log (the last 5 runs: Dingo.1.log is the run before) and crash dumps go.
 		/// Empty = GetUserDataDir(Name)/logs, since a game installed under Program Files can't
