@@ -5,6 +5,8 @@
 
 namespace Dingo::Overlay
 {
+	// The scale of every root: it follows the screen's height, which UiPx and GetHudBottomNdc are measured in.
+	UIScale Scale();
 	// The theme of every button, set once by the layer.
 	UIStyle MenuStyle();
 	// A root for what is drawn over the game and never takes the mouse or a key.
@@ -17,7 +19,4 @@ namespace Dingo::Overlay
 	// Once at the start of each update, before anything asks.
 	void BeginFrame();
 	bool IsRefocusFrame();
-
-	// A key that is not a function key or a modifier, a mouse button outside a refocus frame, or a gamepad button.
-	bool AnyInputPressed();
 }

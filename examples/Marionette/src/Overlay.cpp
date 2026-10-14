@@ -1,28 +1,20 @@
 #include "Overlay.h"
 #include "GameTuning.h"
 
-#include <cstdint>
-
 namespace Dingo::Overlay
 {
 
 	namespace
 	{
-		constexpr uint16_t k_FirstKey = static_cast<uint16_t>(KeyCode::Space);
-		constexpr uint16_t k_LastKey = static_cast<uint16_t>(KeyCode::Menu);
-		constexpr uint16_t k_FirstFunctionKey = static_cast<uint16_t>(KeyCode::F1);
-		constexpr uint16_t k_LastFunctionKey = static_cast<uint16_t>(KeyCode::F25);
-		constexpr uint16_t k_FirstModifier = static_cast<uint16_t>(KeyCode::LeftShift);
+		constexpr float k_HeightMatch = 1.0f;
 
 		bool s_RefocusPending = false;
 		bool s_RefocusFrame = false;
+	}
 
-		bool IsMenuKey(uint16_t code)
-		{
-			const bool function = code >= k_FirstFunctionKey && code <= k_LastFunctionKey;
-			const bool modifier = code >= k_FirstModifier;
-			return !function && !modifier;
-		}
+	UIScale Scale()
+	{
+		return UIScale::ScaleWithScreen(glm::vec2(1920.0f, 1080.0f), k_HeightMatch);
 	}
 
 	UIStyle MenuStyle()
@@ -43,14 +35,14 @@ namespace Dingo::Overlay
 
 	UIRootParams HudRoot(UIAnchor anchor)
 	{
-		return UIRootParams().SetAnchor(anchor).SetScale(UIScale::ScaleWithScreen()).SetBlocksInput(false);
+		return UIRootParams().SetAnchor(anchor).SetScale(Scale()).SetBlocksInput(false);
 	}
 
 	UIRootParams MenuRoot(const UIBoxParams& layout)
 	{
 		return UIRootParams()
 			.SetAnchor(UIAnchor::Stretch)
-			.SetScale(UIScale::ScaleWithScreen())
+			.SetScale(Scale())
 			.SetNavigable(true)
 			.SetTransition(UITransition::Fade(UI_FADE_SECONDS))
 			.SetLayout(layout);
@@ -71,25 +63,6 @@ namespace Dingo::Overlay
 	bool IsRefocusFrame()
 	{
 		return s_RefocusFrame;
-	}
-
-	bool AnyInputPressed()
-	{
-		for (uint16_t code = k_FirstKey; code <= k_LastKey; ++code)
-		{
-			if (IsMenuKey(code) && Input::IsKeyPressed(static_cast<KeyCode>(code)))
-				return true;
-		}
-
-		if (!s_RefocusFrame && Input::IsAnyMouseButtonPressed())
-			return true;
-
-		for (uint32_t button = 0; button < k_GamepadButtonCount; ++button)
-		{
-			if (Input::IsGamepadButtonPressed(static_cast<GamepadButton>(button)))
-				return true;
-		}
-		return false;
 	}
 
 }

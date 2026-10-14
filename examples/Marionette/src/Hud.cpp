@@ -128,7 +128,7 @@ namespace Dingo
 			return;
 
 		const glm::vec3 head = fighter.GetPosition() + glm::vec3(0.0f, fighter.GetModelHeight() * fighter.GetDef().Scale + HUD_WORLD_BAR_LIFT, 0.0f);
-		const UIWorldRootParams params = UIWorldRootParams().SetScale(UIScale::ScaleWithScreen()).SetDistanceScale(HUD_WORLD_REFERENCE_DISTANCE, 0.6f, 1.5f);
+		const UIWorldRootParams params = UIWorldRootParams().SetScale(Overlay::Scale()).SetDistanceScale(HUD_WORLD_REFERENCE_DISTANCE, 0.6f, 1.5f);
 		if (!DingoUI::BeginWorldRoot(id, *m_Scene, head, params))
 			return;
 		DrawBar(UiPx(HUD_WORLD_BAR_WIDTH), UiPx(HUD_WORLD_BAR_HEIGHT), UiPx(HUD_WORLD_BAR_INSET), fraction, trail.Fraction, fill, false);
@@ -193,9 +193,8 @@ namespace Dingo
 		}
 	}
 
-	void Hud::DeclareHint(float deltaTime)
+	void Hud::DeclareHint()
 	{
-		m_HintClock += deltaTime;
 		if (!m_ShowHint || HUD_HINT_SECONDS - m_HintClock <= HUD_HINT_FADE)
 			return;
 
@@ -220,12 +219,17 @@ namespace Dingo
 		}
 	}
 
-	void Hud::Update(float deltaTime, const Fighter& player, const Fighter& opponent, const BoutFlow& flow)
+	void Hud::Update(float deltaTime, const Fighter& player, const Fighter& opponent)
+	{
+		UpdateTrail(m_PlayerTrail, deltaTime, Fraction(player));
+		UpdateTrail(m_OpponentTrail, deltaTime, Fraction(opponent));
+		m_HintClock += deltaTime;
+	}
+
+	void Hud::Declare(const Fighter& player, const Fighter& opponent, const BoutFlow& flow)
 	{
 		const float playerFraction = Fraction(player);
 		const float opponentFraction = Fraction(opponent);
-		UpdateTrail(m_PlayerTrail, deltaTime, playerFraction);
-		UpdateTrail(m_OpponentTrail, deltaTime, opponentFraction);
 
 		if (DingoUI::BeginRoot("bars", Overlay::HudRoot(UIAnchor::Top).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(UiPx(HUD_BAR_CENTER_GAP)))))
 		{
@@ -238,7 +242,7 @@ namespace Dingo
 		DeclareWorldBar("player_hp", player, m_PlayerTrail, playerFraction, COLOR_BAR_PLAYER);
 		DeclareWorldBar("opponent_hp", opponent, m_OpponentTrail, opponentFraction, COLOR_BAR_OPPONENT);
 		DeclareBanner(flow, opponent);
-		DeclareHint(deltaTime);
+		DeclareHint();
 		DeclareCovers(flow);
 	}
 

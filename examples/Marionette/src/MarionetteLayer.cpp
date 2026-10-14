@@ -93,7 +93,7 @@ namespace Dingo
 	void MarionetteLayer::RebuildArenaScene()
 	{
 		m_ArenaScene->Clear();
-		m_ArenaScene->CreateEntity("ArenaDirector").AddScript<ArenaDirectorScript>(m_Assets.get(), m_Reach.get(), &m_Match);
+		m_ArenaDirector = &m_ArenaScene->CreateEntity("ArenaDirector").AddScript<ArenaDirectorScript>(m_Assets.get(), m_Reach.get(), &m_Match);
 	}
 
 	void MarionetteLayer::RebuildEndScene()
@@ -181,6 +181,8 @@ namespace Dingo
 		const Scene* activeAfter = m_SceneManager.GetActiveScene();
 		if (activeAfter == m_ArenaScene && m_Match.Restart && !m_Match.Done)
 			RestartArena();
+		if (m_SceneManager.GetActiveScene() == m_ArenaScene)
+			m_ArenaDirector->DeclareUi();
 		const Clock::time_point renderStart = Clock::now();
 		m_SceneManager.OnRender();
 		if (measuring)

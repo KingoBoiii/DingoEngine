@@ -212,6 +212,13 @@ namespace Dingo
 			m_Camera->Update();
 	}
 
+	void ArenaDirectorScript::DeclareUi()
+	{
+		if (m_Match->Done || !m_Bout || !m_Hud)
+			return;
+		m_Hud->Declare(*m_Fighters[0], *m_Fighters[1], *m_Flow);
+	}
+
 	void ArenaDirectorScript::OnEventsChanged()
 	{
 		m_EventGeneration = m_Assets->GetEventGeneration();
@@ -288,7 +295,7 @@ namespace Dingo
 		}
 
 		if (m_Hud)
-			m_Hud->Update(deltaTime, player, opponent, *m_Flow);
+			m_Hud->Update(deltaTime, player, opponent);
 		if (m_Flow && m_Flow->IsFinished() && !m_BoutDone)
 			FinishBout();
 

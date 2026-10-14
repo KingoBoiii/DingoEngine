@@ -14,8 +14,9 @@ namespace Dingo
 	// the top edge). The arena camera keeps the fighters below it.
 	float GetHudBottomNdc();
 
-	// Health bars, the bout banner, the controls hint and the fades, declared every update through DingoUI over the 3D
-	// world, plus a small bar floating over each fighter's head.
+	// Health bars, the bout banner, the controls hint and the fades, declared once per rendered frame through DingoUI
+	// over the 3D world, plus a small bar floating over each fighter's head. Update runs once per simulation step and
+	// only moves the clocks; Declare is the only call that touches DingoUI.
 	class Hud
 	{
 	public:
@@ -25,7 +26,9 @@ namespace Dingo
 		Hud(const Hud&) = delete;
 		Hud& operator=(const Hud&) = delete;
 
-		void Update(float deltaTime, const Fighter& player, const Fighter& opponent, const BoutFlow& flow);
+		void Update(float deltaTime, const Fighter& player, const Fighter& opponent);
+		// From a layer's OnUpdate, once per frame, after the last step.
+		void Declare(const Fighter& player, const Fighter& opponent, const BoutFlow& flow);
 
 	private:
 		// The pale part of a bar: what the last hit took, held for a moment and then drained.
@@ -39,7 +42,7 @@ namespace Dingo
 		static void UpdateTrail(Trail& trail, float deltaTime, float fraction);
 		void DeclareWorldBar(const char* id, const Fighter& fighter, const Trail& trail, float fraction, const glm::vec4& fill) const;
 		void DeclareBanner(const BoutFlow& flow, const Fighter& opponent) const;
-		void DeclareHint(float deltaTime);
+		void DeclareHint();
 		void DeclareCovers(const BoutFlow& flow);
 
 	private:

@@ -27,6 +27,11 @@ namespace
 	{
 		return UiPx(0.5f * HUD_ORTHO_SIZE - centerY - 0.5f * size);
 	}
+
+	bool Clicked(const char* label, const UIWidgetParams& params = UIWidgetParams())
+	{
+		return DingoUI::Button(label, params).Clicked && !Overlay::IsRefocusFrame();
+	}
 }
 
 namespace Dingo
@@ -38,7 +43,7 @@ namespace Dingo
 		if (DingoUI::BeginRoot("missing", Overlay::MenuRoot(UIBoxParams().SetAlign(UIAlign::Center).SetJustify(UIJustify::Center).SetGap(UiPx(MISSING_GAP)))))
 		{
 			DingoUI::Text("assets missing (see log)", Heading(MISSING_HEADING_SIZE, COLOR_TEXT_ALERT));
-			back = DingoUI::Button(k_BackLabel, UIWidgetParams().SetDefaultFocus()).Clicked;
+			back = Clicked(k_BackLabel, UIWidgetParams().SetDefaultFocus());
 			DingoUI::EndRoot();
 		}
 		return back || DingoUI::IsBackPressed();
@@ -73,8 +78,8 @@ namespace Dingo
 		{
 			DingoUI::Text("MARIONETTE", Heading(TITLE_HEADING_SIZE, COLOR_TITLE));
 			DingoUI::BeginBox(Buttons());
-			play = DingoUI::Button("Play", UIWidgetParams().SetDefaultFocus()).Clicked;
-			quit = DingoUI::Button("Quit").Clicked;
+			play = Clicked("Play", UIWidgetParams().SetDefaultFocus());
+			quit = Clicked("Quit");
 			DingoUI::EndBox();
 			DingoUI::EndRoot();
 		}
@@ -135,7 +140,7 @@ namespace Dingo
 			if (ready)
 			{
 				DingoUI::BeginBox(Buttons());
-				back = DingoUI::Button(k_BackLabel, UIWidgetParams().SetDefaultFocus()).Clicked;
+				back = Clicked(k_BackLabel, UIWidgetParams().SetDefaultFocus());
 				DingoUI::EndBox();
 			}
 			DingoUI::EndRoot();
