@@ -4,47 +4,49 @@
   process's private bytes every -SampleSeconds.
 
 .DESCRIPTION
-  Samples start once a process is a minute old, past start-up. A run fails when it exits with a
-  non-zero code, when its output has a LOG ERROR or a [FAIL], or when its private bytes grow more
-  than -MaxGrowth percent: from its sample at -SettleMinutes to its last, or, for a run shorter
-  than twice -SettleMinutes, from its first sample to its last. A run with fewer than three
-  samples is judged on its exit and log only.
-  Marionette's --tournament is capped at 1000 bouts, about 3 minutes in Release, so it is started
-  again on the next seeds until -Minutes are up. A short run can only show a fast leak, so its
-  runs from the second on are also judged together (the first settled about 30 MB above the rest
-  in the first soak): their in-run rises are summed, as if one process had run that long, and the
-  highest final sample of a run that ended on its own is compared with the second run's.
-  A game is failed when none of its runs was judged on memory, or when it exited within a minute
-  three times in a row and so wasn't started again.
-  Candlewick has no autoplay, so it idles in -Room with its wardens, flames and lights running.
-  --perf keeps it updating while unfocused; it times the first 600 frames once and goes on.
-  Both are closed through WM_CLOSE at the end, so teardown runs too. Output goes to -Out.
+  Each process is judged on its own samples from -SettleMinutes after it started: a Theil-Sen
+  slope above -MaxSlope MB per minute fails it, and so does a process with fewer than -MinSamples
+  settled samples, so a soak can't pass without measuring anything. A process also fails when it
+  exits with a non-zero code or its output has a LOG ERROR or a [FAIL].
+  Marionette runs one --tournament long enough to outlast -Minutes, so a leak can build up inside
+  one process; if it exits early it is started again on the next seeds. Candlewick has no
+  autoplay, so it idles in -Room with its wardens, flames and lights running, and --background
+  keeps it updating while its window is unfocused. A game that exits within a minute three times
+  in a row isn't started again. Both are closed through WM_CLOSE at the end, so teardown runs too.
+  Output goes to -Out.
+
+  A sign-off runs the 20-minute default; the run before a release tag uses -Minutes 60.
 
 .EXAMPLE
-  powershell -File scripts\soak.ps1 -Bin build\bin\Release-windows-x86_64 -Graphics vulkan -Minutes 60
+  powershell -File scripts\soak.ps1 -Bin build\bin\Release-windows-x86_64 -Graphics vulkan -Minutes 20
 #>
 [CmdletBinding()]
 param(
     [string]$Bin = "build\bin\Release-windows-x86_64",
     [ValidateSet("vulkan", "dx11", "dx12")]
     [string]$Graphics = "vulkan",
-    [int]$Minutes = 60,
+    [int]$Minutes = 20,
     [int]$SettleMinutes = 5,
-    [int]$SampleSeconds = 30,
-    [double]$MaxGrowth = 5.0,
+    [int]$SampleSeconds = 15,
+    [double]$MaxSlope = 0.1,
+    [int]$MinSamples = 20,
     [int]$Room = 1,
     [string]$Out = "build\soak"
 )
 
 $ErrorActionPreference = "Stop"
+if ($Minutes * 60 -lt $SettleMinutes * 60 + $MinSamples * $SampleSeconds) {
+    [Console]::Error.WriteLine("-Minutes $Minutes is too short to judge: it needs -SettleMinutes plus -MinSamples samples ($SettleMinutes min + $MinSamples x $SampleSeconds s).")
+    exit 2
+}
 $root = Split-Path -Parent $PSScriptRoot
 $Bin = if ([System.IO.Path]::IsPathRooted($Bin)) { $Bin } else { Join-Path $root $Bin }
 $Out = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path $root $Out }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $graphicsArg = @(if ($Graphics -ne "vulkan") { "--graphics=$Graphics" })
-$tournamentBouts = 1000
+# Marionette's cap (TOURNAMENT_MAX): about 350 bouts a minute on the GPU machine, so hours of play.
+$tournamentBouts = 100000
 $maxShortRuns = 3
-$warmupMinutes = 1.0
 
 # WM_CLOSE to every visible top-level window of the process, as windows-smoke-test.ps1 does:
 # CloseMainWindow posts to the one window .NET guesses is the main one, which needn't be the game's.
@@ -81,14 +83,13 @@ $games = @(
 )
 foreach ($game in $games) {
     Set-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value "run,minutes,private_mb"
-    $game | Add-Member -Force NoteProperty RunEnds (New-Object System.Collections.Generic.List[object])
 }
 
 function Get-Arguments($game) {
     if ($game.Name -eq "marionette") {
         return @("--tournament=$tournamentBouts", "--seed=$($game.Seed)", "--player-tier=3") + $graphicsArg
     }
-    return @("--room=$Room", "--perf") + $graphicsArg
+    return @("--room=$Room", "--background") + $graphicsArg
 }
 
 function Start-Game($game) {
@@ -106,12 +107,27 @@ function Start-Game($game) {
     Write-Host "$tag started: $($arguments -join ' ')"
 }
 
+# The median of the pairwise slopes (Theil-Sen), in MB per minute: one transient 41 MB dip moved a
+# least-squares fit of a Marionette run between 0.15 and 1.8 MB/min.
+function Get-Slope($samples) {
+    $slopes = New-Object System.Collections.Generic.List[double]
+    for ($i = 0; $i -lt $samples.Count; $i++) {
+        for ($j = $i + 1; $j -lt $samples.Count; $j++) {
+            $dt = $samples[$j].Minutes - $samples[$i].Minutes
+            if ($dt -gt 0) { $slopes.Add(($samples[$j].MB - $samples[$i].MB) / $dt) }
+        }
+    }
+    if ($slopes.Count -eq 0) { return 0.0 }
+    $sorted = $slopes.ToArray()
+    [Array]::Sort($sorted)
+    return $sorted[[int][math]::Floor($sorted.Length / 2)]
+}
+
 $results = New-Object System.Collections.Generic.List[object]
 function Finish-Game($game) {
     $process = $game.Process
     $problems = @()
-    $completed = $process.HasExited
-    if (-not $completed) {
+    if (-not $process.HasExited) {
         $null = [SoakWindows]::CloseAll([uint32]$process.Id)
         if (-not $process.WaitForExit(60000)) {
             try { $process.Kill() } catch {}
@@ -130,49 +146,41 @@ function Finish-Game($game) {
     if ($text -match "\[FAIL\]") { $problems += "fail" }
 
     $samples = $game.Samples
-    $first = $null; $settled = $null; $last = $null; $growth = $null
-    if ($samples.Count) {
-        $first = $samples[0].MB
-        $last = $samples[$samples.Count - 1].MB
-        $game.RunEnds.Add([pscustomobject]@{
-            Run = $game.Run; MB = $last; Completed = $completed; Rise = $last - $first
-            Span = $samples[$samples.Count - 1].Minutes - $samples[0].Minutes
-        })
+    $settled = @($samples | Where-Object { $_.Minutes -ge $SettleMinutes })
+    $slope = $null
+    if ($settled.Count -ge $MinSamples) {
+        $slope = Get-Slope $settled
+        if ($slope -gt $MaxSlope) { $problems += [string]::Format([cultureinfo]::InvariantCulture, "growth {0:F3} MB/min", $slope) }
     }
-    if ($samples.Count -ge 3) {
-        $span = $samples[$samples.Count - 1].Minutes
-        $settledSample = $samples[0]
-        if ($span -ge 2 * $SettleMinutes) {
-            $settledSample = @($samples | Where-Object { $_.Minutes -ge $SettleMinutes })[0]
-        }
-        $settled = $settledSample.MB
-        $growth = 100.0 * ($last - $settled) / $settled
-        if ($growth -gt $MaxGrowth) { $problems += ("growth {0:N1}%" -f $growth) }
+    else {
+        $problems += "unjudged ($($settled.Count) settled samples)"
     }
     $results.Add([pscustomobject]@{
-        Run = $game.Tag; Minutes = [math]::Round(($process.ExitTime - $game.Started).TotalMinutes, 1)
-        FirstMB = $(if ($null -ne $first) { [math]::Round($first, 1) } else { $null })
-        SettledMB = $(if ($null -ne $settled) { [math]::Round($settled, 1) } else { $null })
-        EndMB = $(if ($null -ne $last) { [math]::Round($last, 1) } else { $null })
-        GrowthPct = $(if ($null -ne $growth) { [math]::Round($growth, 2) } else { $null })
+        Run = $game.Tag
+        Minutes = $(if ($samples.Count) { [math]::Round($samples[$samples.Count - 1].Minutes, 1) } else { 0 })
+        FirstMB = $(if ($samples.Count) { [math]::Round($samples[0].MB, 1) } else { $null })
+        SettledMB = $(if ($settled.Count) { [math]::Round($settled[0].MB, 1) } else { $null })
+        EndMB = $(if ($samples.Count) { [math]::Round($samples[$samples.Count - 1].MB, 1) } else { $null })
+        SlopeMBPerMin = $(if ($null -ne $slope) { [math]::Round($slope, 4) } else { $null })
         Result = $(if ($problems.Count) { $problems -join ", " } else { "ok" })
     })
 }
 
 function Add-Sample($game) {
     $game.Process.Refresh()
-    if ($game.Process.HasExited) { return }
-    $age = ((Get-Date) - $game.Started).TotalMinutes
-    if ($age -lt $warmupMinutes) { return }
-    try { $mb = $game.Process.PrivateMemorySize64 / 1MB } catch { return }
-    $game.Samples.Add([pscustomobject]@{ Minutes = $age; MB = $mb })
-    $line = [string]::Format([cultureinfo]::InvariantCulture, "{0},{1:F2},{2:F1}", $game.Tag, $age, $mb)
-    Add-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value $line
+    if (-not $game.Process.HasExited) {
+        $minutes = ((Get-Date) - $game.Started).TotalMinutes
+        $mb = $game.Process.PrivateMemorySize64 / 1MB
+        $game.Samples.Add([pscustomobject]@{ Minutes = $minutes; MB = $mb })
+        $line = [string]::Format([cultureinfo]::InvariantCulture, "{0},{1:F2},{2:F1}", $game.Tag, $minutes, $mb)
+        Add-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value $line
+    }
 }
 
 foreach ($game in $games) { Start-Game $game }
 $deadline = (Get-Date).AddMinutes($Minutes)
-$nextSample = Get-Date
+# The first sample waits one interval, so it never reads a process that hasn't initialised yet.
+$nextSample = (Get-Date).AddSeconds($SampleSeconds)
 while ((Get-Date) -lt $deadline) {
     foreach ($game in $games) {
         if ($game.Process -and $game.Process.HasExited) {
@@ -181,7 +189,6 @@ while ((Get-Date) -lt $deadline) {
             $game.ShortRuns = if ($short) { $game.ShortRuns + 1 } else { 0 }
             if ($game.ShortRuns -ge $maxShortRuns) {
                 Write-Host "$($game.Name) exited within a minute $maxShortRuns times in a row; not restarting it."
-                $results.Add([pscustomobject]@{ Run = "$($game.Name)"; Result = "stopped after $maxShortRuns short runs" })
                 $game.Process = $null
                 continue
             }
@@ -193,7 +200,7 @@ while ((Get-Date) -lt $deadline) {
         foreach ($game in $games) { if ($game.Process) { Add-Sample $game } }
         $nextSample = $nextSample.AddSeconds($SampleSeconds)
     }
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 1
 }
 foreach ($game in $games) {
     if (-not $game.Process) { continue }
@@ -201,31 +208,7 @@ foreach ($game in $games) {
     Finish-Game $game
 }
 
-foreach ($game in $games) {
-    $runs = @($game.RunEnds | Where-Object { $_.Run -ge 2 })
-    $ended = @($runs | Where-Object { $_.Completed })
-    if ($runs.Count -lt 2 -or $ended.Count -lt 1) { continue }
-    $base = $runs[0].MB
-    $rise = ($runs | Measure-Object -Property Rise -Sum).Sum
-    $span = ($runs | Measure-Object -Property Span -Sum).Sum
-    $pooled = 100.0 * $rise / $base
-    $peak = ($ended | Measure-Object -Property MB -Maximum).Maximum
-    $drift = 100.0 * ($peak - $base) / $base
-    $problems = @()
-    if ($pooled -gt $MaxGrowth) { $problems += ("growth {0:N1}% over {1:N0} min of runs" -f $pooled, $span) }
-    if ($drift -gt $MaxGrowth) { $problems += ("a run ended {0:N1}% above run $($runs[0].Run)" -f $drift) }
-    $results.Add([pscustomobject]@{
-        Run = "$($game.Name) runs $($runs[0].Run)-$($runs[$runs.Count - 1].Run)"; Minutes = [math]::Round($span, 1)
-        SettledMB = [math]::Round($base, 1); EndMB = [math]::Round($peak, 1); GrowthPct = [math]::Round($pooled, 2)
-        Result = $(if ($problems.Count) { $problems -join ", " } else { "ok" })
-    })
-}
-foreach ($game in $games) {
-    $judged = @($results | Where-Object { "$($_.Run)".StartsWith($game.Name) -and $null -ne $_.GrowthPct })
-    if (-not $judged.Count) { $results.Add([pscustomobject]@{ Run = "$($game.Name)"; Result = "memory not judged" }) }
-}
-
-$results | Format-Table -AutoSize | Out-String | Tee-Object -FilePath (Join-Path $Out "summary.txt") | Write-Host
+$results | Format-Table -AutoSize | Out-String -Width 200 | Tee-Object -FilePath (Join-Path $Out "summary.txt") | Write-Host
 $failed = @($results | Where-Object { $_.Result -ne "ok" }).Count
-Write-Host "Soak ($Graphics, $Minutes min): $failed of $($results.Count) run(s) failed. Output: $Out"
+Write-Host "Soak ($Graphics, $Minutes min, max $MaxSlope MB/min): $failed of $($results.Count) run(s) failed. Output: $Out"
 exit [int]($failed -gt 0)
