@@ -61,6 +61,7 @@ namespace Dingo::Internal
 		float BorderWidth = 0.0f;
 		float CornerRadius = 0.0f;
 		bool ClipChildren = false;
+		UINineSlice NineSlice;
 
 		// Root
 		UIAnchor Anchor = UIAnchor::TopLeft;
@@ -75,6 +76,8 @@ namespace Dingo::Internal
 		bool Interactive = false;        // takes the pointer: hover, press, click
 		bool Scroll = false;             // a scroll area: wheel target, children move by ScrollOffset
 		glm::vec2 ScrollOffset{ 0.0f };  // pixels
+		glm::vec4 ScrollThumbColor{ 0.0f };
+		float ScrollThumbWidth = 0.0f;   // design pixels
 
 		// Text
 		const Font* TextFont = nullptr;
@@ -113,6 +116,8 @@ namespace Dingo::Internal
 		bool Interactive = false;
 		bool Scroll = false;
 		glm::vec2 ScrollOffset{ 0.0f };
+		glm::vec4 ScrollThumbColor{ 0.0f };
+		float ScrollThumbWidth = 0.0f;
 	};
 
 	// What a point of the screen is over, in last frame's layout.

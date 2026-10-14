@@ -90,6 +90,43 @@ namespace Dingo
 			context->EndScrollArea();
 	}
 
+	bool DingoUI::BeginPanel(const UIBoxParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->BeginPanel(params);
+	}
+
+	void DingoUI::EndPanel()
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->EndPanel();
+	}
+
+	void DingoUI::PushStyle(const UIStyle& style)
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->PushStyle(style);
+	}
+
+	void DingoUI::PopStyle()
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->PopStyle();
+	}
+
+	const UIStyle& DingoUI::GetStyle()
+	{
+		static const UIStyle s_Fallback;
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->GetStyle() : s_Fallback;
+	}
+
+	void DingoUI::SetTheme(const UIStyle& style)
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->SetTheme(style);
+	}
+
 	void DingoUI::PushId(std::string_view id)
 	{
 		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())

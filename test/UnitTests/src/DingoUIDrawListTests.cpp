@@ -135,3 +135,70 @@ TEST_CASE("UIDrawList hash follows the commands")
 	CHECK(list.Hash(1) != list.Hash(2));
 	CHECK(list.Hash() != UIDrawList().Hash());
 }
+
+TEST_CASE("UIDrawList builds a 9-slice as nine quads with constant corners")
+{
+	const glm::vec2 textureSize(8.0f, 8.0f);
+	const glm::vec4 borders(2.0f, 1.0f, 2.0f, 3.0f);
+
+	auto build = [&](const UIRect& rect, float scale, bool fillCenter, bool point)
+	{
+		UIDrawList list;
+		list.AddNineSlice(rect, FakeTexture(0), textureSize, borders, scale, fillCenter, point);
+		UIGeometry geometry;
+		list.Build(geometry);
+		return geometry;
+	};
+
+	for (const glm::vec2 size : { glm::vec2(40.0f, 30.0f), glm::vec2(100.0f, 64.0f) })
+	{
+		const UIRect rect = { { 10.0f, 20.0f }, { 10.0f + size.x, 20.0f + size.y } };
+		const UIGeometry geometry = build(rect, 1.0f, true, false);
+		REQUIRE(geometry.QuadCount == 9);
+		REQUIRE(geometry.Vertices.size() == 36);
+		REQUIRE(geometry.Batches.size() == 1);
+		CHECK(geometry.Batches[0].IndexCount == 54);
+		CHECK(geometry.Batches[0].TextureCount == 2);
+
+		const auto quadSize = [&](size_t quad) { return geometry.Vertices[quad * 4 + 2].Position - geometry.Vertices[quad * 4].Position; };
+		CHECK(quadSize(0) == glm::vec2(2.0f, 1.0f));
+		CHECK(quadSize(2) == glm::vec2(2.0f, 1.0f));
+		CHECK(quadSize(6) == glm::vec2(2.0f, 3.0f));
+		CHECK(quadSize(8) == glm::vec2(2.0f, 3.0f));
+		CHECK(quadSize(4) == glm::vec2(size.x - 4.0f, size.y - 4.0f));
+		CHECK(geometry.Vertices[0].Position == rect.Min);
+		CHECK(geometry.Vertices[8 * 4 + 2].Position == rect.Max);
+	}
+
+	const UIGeometry geometry = build({ { 0.0f, 0.0f }, { 40.0f, 30.0f } }, 1.0f, true, false);
+	// Image UVs: (0, 0) is the bottom-left, so the top-left cell takes the picture's top-left corner.
+	CHECK(geometry.Vertices[0].TexCoord == glm::vec2(0.0f, 1.0f));
+	CHECK(geometry.Vertices[2].TexCoord == glm::vec2(0.25f, 1.0f - 1.0f / 8.0f));
+	CHECK(geometry.Vertices[8 * 4 + 2].TexCoord == glm::vec2(1.0f, 0.0f));
+	CHECK(geometry.Vertices[6 * 4 + 3].TexCoord == glm::vec2(0.0f, 0.0f));
+	CHECK(geometry.Vertices[4 * 4].TexCoord == glm::vec2(0.25f, 1.0f - 1.0f / 8.0f));
+	CHECK(geometry.Vertices[4 * 4 + 2].TexCoord == glm::vec2(0.75f, 3.0f / 8.0f));
+	CHECK(geometry.Vertices[0].Params.z == static_cast<float>(UIQuadKind::Shape));
+
+	const UIGeometry scaled = build({ { 0.0f, 0.0f }, { 40.0f, 30.0f } }, 2.5f, true, true);
+	CHECK(scaled.Vertices[2].Position == glm::vec2(5.0f, 3.0f));
+	CHECK(scaled.Vertices[0].Params.z == static_cast<float>(UIQuadKind::ShapePoint));
+
+	const UIGeometry hole = build({ { 0.0f, 0.0f }, { 40.0f, 30.0f } }, 1.0f, false, false);
+	CHECK(hole.QuadCount == 8);
+
+	const UIGeometry tiny = build({ { 0.0f, 0.0f }, { 3.0f, 30.0f } }, 1.0f, true, false);
+	REQUIRE(tiny.QuadCount > 0);
+	float widest = 0.0f;
+	for (const UIVertex& vertex : tiny.Vertices)
+		widest = (std::max)(widest, vertex.Position.x);
+	CHECK(widest == 3.0f);
+
+	UIDrawList clipped;
+	clipped.AddNineSlice({ { 0.0f, 0.0f }, { 40.0f, 30.0f } }, FakeTexture(0), textureSize, borders, 1.0f, true, false, glm::vec4(1.0f), { { 100.0f, 100.0f }, { 200.0f, 200.0f } });
+	clipped.AddNineSlice({ { 0.0f, 0.0f }, { 40.0f, 30.0f } }, nullptr, textureSize, borders);
+	UIGeometry culled;
+	clipped.Build(culled);
+	CHECK(culled.QuadCount == 0);
+	CHECK(culled.CulledQuads == 2);
+}

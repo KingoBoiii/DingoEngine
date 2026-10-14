@@ -60,6 +60,7 @@ layout(location = 0) out vec4 o_Color;
 
 layout(set = 0, binding = 1) uniform texture2D u_Textures[32];
 layout(set = 0, binding = 2) uniform sampler u_Sampler;
+layout(set = 0, binding = 3) uniform sampler u_PointSampler;
 
 float Median(float r, float g, float b)
 {
@@ -75,11 +76,14 @@ float RoundedRectDistance(vec2 p, vec2 halfSize, vec4 radii)
 
 void main()
 {
-	// Sampled before any discard, in uniform control flow, so the implicit derivatives hold.
-	vec4 texel = texture(sampler2D(u_Textures[nonuniformEXT(int(v_Params.y))], u_Sampler), v_TexCoord);
+	// Both filters are sampled before any discard, in uniform control flow, so the implicit derivatives hold.
+	int slot = int(v_Params.y);
+	vec4 linearTexel = texture(sampler2D(u_Textures[nonuniformEXT(slot)], u_Sampler), v_TexCoord);
+	vec4 pointTexel = texture(sampler2D(u_Textures[nonuniformEXT(slot)], u_PointSampler), v_TexCoord);
+	vec4 texel = v_Params.z > 1.5 ? pointTexel : linearTexel;
 
 	vec4 color;
-	if (v_Params.z > 0.5)
+	if (v_Params.z > 0.5 && v_Params.z < 1.5)
 	{
 		float distance = v_Params.w * (Median(texel.r, texel.g, texel.b) - 0.5);
 		color = vec4(v_Color.rgb, v_Color.a * clamp(distance + 0.5, 0.0, 1.0));

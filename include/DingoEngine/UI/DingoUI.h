@@ -12,6 +12,165 @@ namespace Dingo
 	class Font;
 	class Texture;
 
+	/// A picture cut into nine parts by four borders, so a panel or button face keeps its corners
+	/// crisp at any size: the corners are drawn at the border size, the edges stretch along one
+	/// axis, the centre along both. Chain the setters.
+	struct UINineSlice
+	{
+		/// The picture; null means no 9-slice. The caller owns it and keeps it alive while it is used.
+		Texture* Image = nullptr;
+		/// The border widths in texture pixels: left, top, right, bottom.
+		glm::vec4 Borders{ 0.0f };
+		/// Drawn border size is Borders times Scale (and times the root's scale), rounded to whole pixels.
+		float Scale = 1.0f;
+		/// Draw the centre; off leaves a frame with a hole.
+		bool FillCenter = true;
+		/// Sample with the point (nearest) filter instead of the linear one, for pixel art.
+		bool PointFilter = false;
+		/// Multiplied into the picture; straight alpha.
+		glm::vec4 Tint{ 1.0f };
+
+		/// True when there is a picture to draw.
+		bool IsValid() const { return Image != nullptr; }
+
+		/// Sets Image and Borders.
+		UINineSlice& SetImage(Texture* image, const glm::vec4& borders) { Image = image; Borders = borders; return *this; }
+		/// The same border on every side.
+		UINineSlice& SetBorders(float all) { Borders = glm::vec4(all); return *this; }
+		/// Sets Borders: left, top, right, bottom.
+		UINineSlice& SetBorders(float left, float top, float right, float bottom) { Borders = { left, top, right, bottom }; return *this; }
+		/// Sets Scale.
+		UINineSlice& SetScale(float scale) { Scale = scale; return *this; }
+		/// Sets FillCenter.
+		UINineSlice& SetFillCenter(bool fill) { FillCenter = fill; return *this; }
+		/// Sets PointFilter.
+		UINineSlice& SetPointFilter(bool point) { PointFilter = point; return *this; }
+		/// Sets Tint.
+		UINineSlice& SetTint(const glm::vec4& tint) { Tint = tint; return *this; }
+	};
+
+	/// The look of the widgets: fonts, colours per state, padding, borders and 9-slice faces. The
+	/// default is the engine's theme; set another for the whole UI with DingoUIParams::Style or
+	/// DingoUI::SetTheme, for a stretch of the frame with DingoUI::PushStyle, or for one widget
+	/// through its params. All sizes are design pixels. Chain the setters.
+	struct UIStyle
+	{
+		/// The font of widget text; null uses the DefaultFont.
+		const Font* TextFont = nullptr;
+		float TextSize = 18.0f;                                 ///< Height of a line of widget text.
+		glm::vec4 TextColor{ 0.95f, 0.96f, 1.0f, 1.0f };        ///< Widget text.
+		glm::vec4 DisabledTextColor{ 0.55f, 0.57f, 0.63f, 1.0f }; ///< Text, and handles and fills, of a disabled widget.
+
+		glm::vec4 Background{ 0.22f, 0.27f, 0.42f, 1.0f };      ///< A button's fill at rest.
+		glm::vec4 HoverColor{ 0.31f, 0.38f, 0.58f, 1.0f };      ///< Fill under the pointer.
+		glm::vec4 PressedColor{ 0.16f, 0.2f, 0.33f, 1.0f };     ///< Fill while held.
+		glm::vec4 DisabledColor{ 0.17f, 0.18f, 0.23f, 1.0f };   ///< Fill of a disabled widget.
+		/// Reserved: the border colour of the widget that has keyboard or gamepad focus, drawn once focus navigation lands.
+		glm::vec4 FocusedColor{ 0.3f, 0.55f, 0.95f, 1.0f };
+
+		glm::vec4 AccentColor{ 0.3f, 0.55f, 0.95f, 1.0f };      ///< A switched-on Toggle, a slider's filled part, a selected row.
+		glm::vec4 AccentHoverColor{ 0.4f, 0.64f, 1.0f, 1.0f };  ///< AccentColor under the pointer.
+		glm::vec4 TrackColor{ 0.14f, 0.16f, 0.24f, 1.0f };      ///< A switched-off Toggle, a slider's empty part, a ProgressBar's trough.
+		glm::vec4 HandleColor{ 0.96f, 0.97f, 1.0f, 1.0f };      ///< The knob of a Toggle and the handle of a Slider.
+		glm::vec4 ProgressFillColor{ 0.3f, 0.55f, 0.95f, 1.0f }; ///< The filled part of a ProgressBar.
+		glm::vec4 ScrollThumbColor{ 0.8f, 0.85f, 1.0f, 0.45f }; ///< The scroll bar of a scroll area.
+		glm::vec4 PanelColor{ 0.09f, 0.11f, 0.17f, 0.95f };     ///< The fill of BeginPanel.
+
+		glm::vec4 BorderColor{ 0.0f };                          ///< Border of buttons, rows and panels.
+		float BorderWidth = 0.0f;                               ///< Border thickness; 0 for none.
+		float CornerRadius = 6.0f;                              ///< Rounds buttons, rows and panels.
+
+		glm::vec2 Padding{ 14.0f, 7.0f };                       ///< Inside a Button: horizontal, vertical.
+		glm::vec2 RowPadding{ 10.0f, 5.0f };                    ///< Inside a Selectable, and after a Toggle: horizontal, vertical.
+		float PanelPadding = 12.0f;                             ///< Inside BeginPanel when the box asks for none.
+		float Gap = 8.0f;                                       ///< Between a Toggle or Slider and its label.
+		glm::vec2 ToggleSize{ 40.0f, 22.0f };                   ///< Width and height of a Toggle's track.
+		float HandleSize = 16.0f;                               ///< Diameter of a Toggle's knob and a Slider's handle.
+		float SliderHeight = 24.0f;                             ///< Height of a Slider's hit area.
+		float SliderTrackHeight = 6.0f;                         ///< Thickness of a Slider's bar.
+		glm::vec2 ProgressSize{ 200.0f, 14.0f };               ///< A ProgressBar's size when its params give none.
+		float ScrollThumbWidth = 4.0f;                          ///< Width of a scroll area's bar.
+
+		/// Face of a Button and, for a selected row, a Selectable. With an image it replaces Background.
+		UINineSlice Surface;
+		/// Face under the pointer; with no image, Surface is drawn lighter.
+		UINineSlice SurfaceHover;
+		/// Face while held; with no image, Surface is drawn darker.
+		UINineSlice SurfacePressed;
+		/// Face when disabled; with no image, Surface is drawn dimmed.
+		UINineSlice SurfaceDisabled;
+		/// Face of BeginPanel. With an image it replaces PanelColor.
+		UINineSlice Panel;
+
+		/// The engine's theme: what a default-constructed style holds.
+		static UIStyle Default() { return UIStyle{}; }
+
+		/// Sets TextFont.
+		UIStyle& SetTextFont(const Font* font) { TextFont = font; return *this; }
+		/// Sets TextSize.
+		UIStyle& SetTextSize(float size) { TextSize = size; return *this; }
+		/// Sets TextColor.
+		UIStyle& SetTextColor(const glm::vec4& color) { TextColor = color; return *this; }
+		/// Sets DisabledTextColor.
+		UIStyle& SetDisabledTextColor(const glm::vec4& color) { DisabledTextColor = color; return *this; }
+		/// Sets Background.
+		UIStyle& SetBackground(const glm::vec4& color) { Background = color; return *this; }
+		/// Sets HoverColor.
+		UIStyle& SetHoverColor(const glm::vec4& color) { HoverColor = color; return *this; }
+		/// Sets PressedColor.
+		UIStyle& SetPressedColor(const glm::vec4& color) { PressedColor = color; return *this; }
+		/// Sets DisabledColor.
+		UIStyle& SetDisabledColor(const glm::vec4& color) { DisabledColor = color; return *this; }
+		/// Sets FocusedColor.
+		UIStyle& SetFocusedColor(const glm::vec4& color) { FocusedColor = color; return *this; }
+		/// Sets AccentColor and AccentHoverColor.
+		UIStyle& SetAccent(const glm::vec4& color, const glm::vec4& hover) { AccentColor = color; AccentHoverColor = hover; return *this; }
+		/// Sets TrackColor.
+		UIStyle& SetTrackColor(const glm::vec4& color) { TrackColor = color; return *this; }
+		/// Sets HandleColor.
+		UIStyle& SetHandleColor(const glm::vec4& color) { HandleColor = color; return *this; }
+		/// Sets ProgressFillColor.
+		UIStyle& SetProgressFillColor(const glm::vec4& color) { ProgressFillColor = color; return *this; }
+		/// Sets ScrollThumbColor.
+		UIStyle& SetScrollThumbColor(const glm::vec4& color) { ScrollThumbColor = color; return *this; }
+		/// Sets PanelColor.
+		UIStyle& SetPanelColor(const glm::vec4& color) { PanelColor = color; return *this; }
+		/// Sets BorderWidth and BorderColor.
+		UIStyle& SetBorder(float width, const glm::vec4& color) { BorderWidth = width; BorderColor = color; return *this; }
+		/// Sets CornerRadius.
+		UIStyle& SetCornerRadius(float radius) { CornerRadius = radius; return *this; }
+		/// Sets Padding.
+		UIStyle& SetPadding(float horizontal, float vertical) { Padding = { horizontal, vertical }; return *this; }
+		/// Sets RowPadding.
+		UIStyle& SetRowPadding(float horizontal, float vertical) { RowPadding = { horizontal, vertical }; return *this; }
+		/// Sets PanelPadding.
+		UIStyle& SetPanelPadding(float padding) { PanelPadding = padding; return *this; }
+		/// Sets Gap.
+		UIStyle& SetGap(float gap) { Gap = gap; return *this; }
+		/// Sets ToggleSize.
+		UIStyle& SetToggleSize(float width, float height) { ToggleSize = { width, height }; return *this; }
+		/// Sets HandleSize.
+		UIStyle& SetHandleSize(float size) { HandleSize = size; return *this; }
+		/// Sets SliderHeight.
+		UIStyle& SetSliderHeight(float height) { SliderHeight = height; return *this; }
+		/// Sets SliderTrackHeight.
+		UIStyle& SetSliderTrackHeight(float height) { SliderTrackHeight = height; return *this; }
+		/// Sets ProgressSize.
+		UIStyle& SetProgressSize(float width, float height) { ProgressSize = { width, height }; return *this; }
+		/// Sets ScrollThumbWidth.
+		UIStyle& SetScrollThumbWidth(float width) { ScrollThumbWidth = width; return *this; }
+		/// Sets Surface.
+		UIStyle& SetSurface(const UINineSlice& slice) { Surface = slice; return *this; }
+		/// Sets SurfaceHover.
+		UIStyle& SetSurfaceHover(const UINineSlice& slice) { SurfaceHover = slice; return *this; }
+		/// Sets SurfacePressed.
+		UIStyle& SetSurfacePressed(const UINineSlice& slice) { SurfacePressed = slice; return *this; }
+		/// Sets SurfaceDisabled.
+		UIStyle& SetSurfaceDisabled(const UINineSlice& slice) { SurfaceDisabled = slice; return *this; }
+		/// Sets Panel.
+		UIStyle& SetPanel(const UINineSlice& slice) { Panel = slice; return *this; }
+	};
+
 	/// Options for the engine's game UI (DingoUI); set on ApplicationParams::DingoUI.
 	struct DingoUIParams
 	{
@@ -23,6 +182,8 @@ namespace Dingo
 		/// game that loads its font after the Application exists sets it. Text with no font at all
 		/// warns once and is skipped.
 		Font* DefaultFont = nullptr;
+		/// The theme the widgets start from; DingoUI::SetTheme changes it at run time.
+		UIStyle Style;
 	};
 
 	/// Where a root sits on the screen. The anchor is a point of the screen; the root's pivot (the
@@ -162,6 +323,8 @@ namespace Dingo
 		float BorderWidth = 0.0f;           ///< Border thickness inside the edge, in design pixels.
 		float CornerRadius = 0.0f;          ///< Rounds the corners of the fill and the border, in design pixels.
 		bool ClipChildren = false;          ///< Draws nothing of the children outside this box.
+		/// A 9-slice drawn over Background and under the children; with no image, nothing extra is drawn.
+		UINineSlice NineSlice;
 
 		/// Sets Id.
 		UIBoxParams& SetId(std::string_view id) { Id = id; return *this; }
@@ -193,6 +356,8 @@ namespace Dingo
 		UIBoxParams& SetCornerRadius(float radius) { CornerRadius = radius; return *this; }
 		/// Sets ClipChildren.
 		UIBoxParams& SetClipChildren(bool clip) { ClipChildren = clip; return *this; }
+		/// Sets NineSlice.
+		UIBoxParams& SetNineSlice(const UINineSlice& slice) { NineSlice = slice; return *this; }
 	};
 
 	/// A root of the UI: a container anchored to the screen. Chain the setters.
@@ -306,7 +471,11 @@ namespace Dingo
 		UISize Width;         ///< Width; Fit is the label's width plus padding (a ProgressBar defaults to 200 design pixels).
 		UISize Height;        ///< Height; Fit is the label's height plus padding (a ProgressBar defaults to 14 design pixels).
 		bool Enabled = true;  ///< Off, the widget is drawn dimmed and ignores the pointer.
+		/// A style for this widget alone, instead of the current one; only needs to live for the call.
+		const UIStyle* Style = nullptr;
 
+		/// Sets Style.
+		UIWidgetParams& SetStyle(const UIStyle* style) { Style = style; return *this; }
 		/// Sets Width and Height.
 		UIWidgetParams& SetSize(const UISize& width, const UISize& height) { Width = width; Height = height; return *this; }
 		/// Sets Width.
@@ -324,7 +493,11 @@ namespace Dingo
 		float Step = 0.0f;                    ///< Values snap to multiples of this from the minimum; 0 for none (SliderInt always steps by 1).
 		bool ShowValue = true;                ///< Draw the value after the track.
 		bool Enabled = true;                  ///< Off, the slider is drawn dimmed and ignores the pointer.
+		/// A style for this slider alone, instead of the current one; only needs to live for the call.
+		const UIStyle* Style = nullptr;
 
+		/// Sets Style.
+		UISliderParams& SetStyle(const UIStyle* style) { Style = style; return *this; }
 		/// Sets Width.
 		UISliderParams& SetWidth(const UISize& width) { Width = width; return *this; }
 		/// Sets Step.
@@ -343,6 +516,8 @@ namespace Dingo
 		UIBoxParams Layout;
 		float WheelStep = 40.0f;  ///< Design pixels one wheel notch scrolls.
 		bool DragScroll = false;  ///< Dragging the area's empty background scrolls it.
+		/// A style for this area's bar alone, instead of the current one; only needs to live for the call.
+		const UIStyle* Style = nullptr;
 
 		/// Sets Layout.
 		UIScrollParams& SetLayout(const UIBoxParams& layout) { Layout = layout; return *this; }
@@ -350,6 +525,8 @@ namespace Dingo
 		UIScrollParams& SetWheelStep(float step) { WheelStep = step; return *this; }
 		/// Sets DragScroll.
 		UIScrollParams& SetDragScroll(bool drag) { DragScroll = drag; return *this; }
+		/// Sets Style.
+		UIScrollParams& SetStyle(const UIStyle* style) { Style = style; return *this; }
 	};
 
 	/// The game UI: HUDs and menus declared every frame from OnUpdate, laid out, drawn over the
@@ -414,6 +591,22 @@ namespace Dingo
 		static bool BeginScrollArea(std::string_view label, const UIScrollParams& params = {});
 		/// Closes the area opened by the matching BeginScrollArea.
 		static void EndScrollArea();
+		/// Opens a container dressed as a panel: the current style's PanelColor (or Panel 9-slice),
+		/// border, corner radius and PanelPadding, for whatever `params` leaves at its default.
+		/// Returns false, and EndPanel must not be called, when no root is open.
+		static bool BeginPanel(const UIBoxParams& params = {});
+		/// Closes the panel opened by the matching BeginPanel.
+		static void EndPanel();
+
+		/// Makes `style` the current style until the matching PopStyle: widgets and panels declared
+		/// meanwhile use it. Styles nest; unpopped ones are dropped, with one warning, at the end of the frame.
+		static void PushStyle(const UIStyle& style);
+		/// Returns to the style before the last PushStyle. Pops beyond the theme are ignored.
+		static void PopStyle();
+		/// The current style: the last pushed, or the theme.
+		static const UIStyle& GetStyle();
+		/// Replaces the theme, the style when nothing is pushed.
+		static void SetTheme(const UIStyle& style);
 
 		/// Mixes `id` into the ids of the widgets declared until the matching PopId, so a loop can
 		/// give each iteration's widgets their own id. Pops that outnumber pushes inside a

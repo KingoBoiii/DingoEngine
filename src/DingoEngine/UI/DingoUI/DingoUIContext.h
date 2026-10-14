@@ -88,9 +88,15 @@ namespace Dingo::Internal
 		UIInteraction Selectable(std::string_view label, bool selected, const UIWidgetParams& params);
 		bool BeginScrollArea(std::string_view label, const UIScrollParams& params);
 		void EndScrollArea();
+		bool BeginPanel(const UIBoxParams& params);
+		void EndPanel();
 		void PushId(std::string_view id);
 		void PushId(int id);
 		void PopId();
+		void PushStyle(const UIStyle& style);
+		void PopStyle();
+		const UIStyle& GetStyle() const { return m_StyleStack.back(); }
+		void SetTheme(const UIStyle& style) { m_StyleStack.front() = style; }
 
 		void SetDefaultFont(Font* font) { m_Params.DefaultFont = font; }
 		Font* GetDefaultFont() const { return m_Params.DefaultFont; }
@@ -131,7 +137,8 @@ namespace Dingo::Internal
 		UIInteraction Interact(uint64_t id, std::string_view label, bool enabled, UIWidgetState*& state);
 		// 0 (with a warning once) when no root is open.
 		uint64_t WidgetId(std::string_view label);
-		void BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll = false, const glm::vec2& scrollOffset = glm::vec2(0.0f));
+		void BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll = false, const glm::vec2& scrollOffset = glm::vec2(0.0f), const UIStyle* thumbStyle = nullptr);
+		const UIStyle& Resolve(const UIStyle* override) const { return override ? *override : m_StyleStack.back(); }
 		UIInteraction SliderImpl(std::string_view label, double* value, double min, double max, double step, bool integer, const UISliderParams& params);
 
 	private:
@@ -170,6 +177,8 @@ namespace Dingo::Internal
 		std::unordered_set<uint64_t> m_WarnedCollisions;
 		uint32_t m_IdCollisionCount = 0;
 		std::vector<uint64_t> m_ScrollStack;
+		std::vector<UIStyle> m_StyleStack;
+		bool m_WarnedStyleStack = false;
 	};
 
 	// The Application's context, or nullptr (headless, DingoUIParams::Enabled false, or outside

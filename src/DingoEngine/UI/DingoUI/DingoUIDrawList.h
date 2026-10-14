@@ -45,7 +45,8 @@ namespace Dingo::Internal
 	enum class UIQuadKind : uint32_t
 	{
 		Shape = 0, // rounded rect with border, textured (white for a solid fill)
-		Glyph = 1  // MSDF glyph from a font atlas
+		Glyph = 1, // MSDF glyph from a font atlas
+		ShapePoint = 2 // as Shape, sampling the texture with the point sampler
 	};
 
 	// Mirrors DingoUI.glsl's inputs, in location order. Pixels of the target, origin top-left, +Y down.
@@ -109,6 +110,11 @@ namespace Dingo::Internal
 		// UVs as Renderer2D's: (0, 0) at the rect's bottom-left, so an image CreateFromFile loaded
 		// stands upright. A null texture draws the tint alone.
 		void AddImage(const UIRect& rect, Texture* texture, const glm::vec2& uvMin = glm::vec2(0.0f), const glm::vec2& uvMax = glm::vec2(1.0f), const glm::vec4& tint = glm::vec4(1.0f), const UIRect& clip = k_UINoClip);
+		// Nine quads (eight without the centre) from one texture of textureSize pixels. borders (left, top, right, bottom)
+		// are in texture pixels; each is drawn borders * scale pixels wide, rounded, and shrunk
+		// together when two opposite ones would not fit rect. Corners keep their size, edges stretch
+		// along one axis, the centre along both. UVs as AddImage's.
+		void AddNineSlice(const UIRect& rect, Texture* texture, const glm::vec2& textureSize, const glm::vec4& borders, float scale = 1.0f, bool fillCenter = true, bool pointFilter = false, const glm::vec4& tint = glm::vec4(1.0f), const UIRect& clip = k_UINoClip);
 		// position is the top-left of the first line's box; size is the ascender-to-descender
 		// height in pixels, as Font::MeasureText measures it. maxWidth > 0 wraps. align (0 left,
 		// 0.5 centre, 1 right) places each line within alignWidth pixels from position.
@@ -130,7 +136,8 @@ namespace Dingo::Internal
 		{
 			Rect,
 			Image,
-			Text
+			Text,
+			NineSlice
 		};
 
 		struct Command
@@ -148,6 +155,11 @@ namespace Dingo::Internal
 			float MaxWidth = 0.0f;
 			float Align = 0.0f;
 			float AlignWidth = 0.0f;
+			glm::vec4 Borders{ 0.0f };   // NineSlice: texture pixels
+			glm::vec2 TextureSize{ 0.0f };
+			float Scale = 1.0f;
+			bool FillCenter = true;
+			bool PointFilter = false;
 			Dingo::Texture* Image = nullptr;
 			const Dingo::Font* TextFont = nullptr;
 			uint32_t TextOffset = 0;

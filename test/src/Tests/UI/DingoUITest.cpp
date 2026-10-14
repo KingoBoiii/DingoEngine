@@ -64,6 +64,28 @@ namespace Dingo
 			m_SlotTextures.push_back(Texture::CreateFromData(1, 1, pixel, TextureFormat::RGBA8_UNORM, "DingoUITest_Slot"));
 		}
 
+		{
+			struct Rgb { uint8_t R, G, B; };
+			const Rgb topLeft{ 255, 0, 0 }, topRight{ 0, 255, 0 }, bottomRight{ 0, 0, 255 }, bottomLeft{ 255, 255, 0 };
+			const Rgb top{ 255, 0, 255 }, right{ 255, 128, 0 }, bottom{ 0, 255, 255 }, left{ 128, 0, 255 }, center{ 128, 128, 128 };
+			uint8_t data[8 * 8 * 4];
+			for (int row = 0; row < 8; ++row)
+			{
+				for (int x = 0; x < 8; ++x)
+				{
+					const bool isLeft = x < 2, isRight = x >= 6, isTop = row < 2, isBottom = row >= 6;
+					Rgb c = center;
+					if (isTop) c = isLeft ? topLeft : (isRight ? topRight : top);
+					else if (isBottom) c = isLeft ? bottomLeft : (isRight ? bottomRight : bottom);
+					else if (isLeft) c = left;
+					else if (isRight) c = right;
+					uint8_t* pixel = data + ((7 - row) * 8 + x) * 4; // CreateFromData row 0 is the picture's bottom
+					pixel[0] = c.R; pixel[1] = c.G; pixel[2] = c.B; pixel[3] = 255;
+				}
+			}
+			m_SliceTexture = Texture::CreateFromData(8, 8, data, TextureFormat::RGBA8_UNORM, "DingoUITest_Slice");
+		}
+
 		m_LayoutTarget = Framebuffer::Create(FramebufferParams()
 			.SetDebugName("DingoUITest_LayoutTarget")
 			.SetWidth(static_cast<int32_t>(k_LayoutWidth))
@@ -95,6 +117,7 @@ namespace Dingo
 			DestroyAndDelete(texture);
 		m_SlotTextures.clear();
 		DestroyAndDelete(m_ImageTexture);
+		DestroyAndDelete(m_SliceTexture);
 		DestroyAndDelete(m_CheckTarget);
 		DestroyAndDelete(m_LayoutTarget);
 		DestroyAndDelete(m_Font);
@@ -592,6 +615,228 @@ namespace Dingo
 		Check(statistics.Quads >= 10, "Every element's drawing reaches the batcher");
 	}
 
+	UINineSlice DingoUITest::MakeSlice(bool point, float scale) const
+	{
+		return UINineSlice().SetImage(m_SliceTexture, glm::vec4(2.0f)).SetPointFilter(point).SetScale(scale);
+	}
+
+	void DingoUITest::DeclareStyle()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		const UIStyle fallback = UIStyle::Default();
+		const UIStyle green = UIStyle::Default().SetBackground(k_Green).SetDisabledColor(k_Yellow);
+		UIStyle blue = green;
+		blue.SetBackground(k_Blue);
+		const UIWidgetParams size = UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f));
+
+		Check(DingoUI::GetStyle().Background == fallback.Background, "Styles: with nothing pushed the style is the theme");
+		DingoUI::BeginRoot("s_root", UIRootParams().SetOffset({ 10.0f, 10.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		DingoUI::Button("##sa", size);
+		DingoUI::PushStyle(green);
+		Check(DingoUI::GetStyle().Background == k_Green, "Styles: PushStyle makes the style current");
+		DingoUI::Button("##sb", size);
+		DingoUI::PushStyle(blue);
+		DingoUI::Button("##sc", size);
+		DingoUI::PopStyle();
+		Check(DingoUI::GetStyle().Background == k_Green, "Styles: PopStyle returns to the one pushed before");
+		DingoUI::Button("##sd", size);
+		DingoUI::PopStyle();
+		Check(DingoUI::GetStyle().Background == fallback.Background, "Styles: the last PopStyle returns to the theme");
+		DingoUI::Button("##se", size);
+		DingoUI::Button("##sf", UIWidgetParams(size).SetEnabled(false));
+		DingoUI::PushStyle(green);
+		DingoUI::Button("##sg", UIWidgetParams(size).SetEnabled(false));
+		DingoUI::PopStyle();
+		DingoUI::Button("##sh", UIWidgetParams(size).SetStyle(&blue));
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("s_root2", UIRootParams().SetOffset({ 10.0f, 70.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		DingoUI::SetTheme(green);
+		DingoUI::Button("##sx", size);
+		DingoUI::SetTheme(fallback);
+		DingoUI::Button("##sy", size);
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyStyle()
+	{
+		const Internal::UIElement* elements[10] = {};
+		const char* names[10] = { "##sa", "##sb", "##sc", "##sd", "##se", "##sf", "##sg", "##sh", "##sx", "##sy" };
+		for (size_t i = 0; i < 10; ++i)
+			elements[i] = LastElement(names[i]);
+		Check(elements[0] && elements[9], "Styles: the buttons are laid out");
+		if (!elements[0] || !elements[9])
+			return;
+
+		glm::vec2 points[10];
+		for (size_t i = 0; i < 10; ++i)
+			points[i] = elements[i] ? elements[i]->Rect.Min + glm::vec2(12.0f, 4.0f) : glm::vec2(0.0f);
+
+		const UIStyle fallback = UIStyle::Default();
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, points, fallback](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			const auto at = [&](size_t i) { return pixels.GetPixel(static_cast<uint32_t>(points[i].x), static_cast<uint32_t>(points[i].y)); };
+			Check(NearColor(at(0), fallback.Background), "Styles: a button with nothing pushed has the theme's fill");
+			Check(NearColor(at(1), k_Green), "Styles: a pushed style changes a button's fill");
+			Check(NearColor(at(2), k_Blue), "Styles: a nested style overrides the outer one");
+			Check(NearColor(at(3), k_Green), "Styles: after the inner PopStyle the outer style is back");
+			Check(NearColor(at(4), fallback.Background), "Styles: after the last PopStyle the fill is the theme's again");
+			Check(NearColor(at(5), fallback.DisabledColor), "Styles: a disabled button has the disabled fill");
+			Check(NearColor(at(6), k_Yellow), "Styles: a disabled button uses the pushed style's disabled fill");
+			Check(NearColor(at(7), k_Blue), "Styles: a style in the widget's params overrides the current one");
+			Check(NearColor(at(8), k_Green), "Styles: SetTheme changes the style when nothing is pushed");
+			Check(NearColor(at(9), fallback.Background), "Styles: SetTheme back restores it");
+		});
+	}
+
+	void DingoUITest::DeclareNineSlice()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		const UISize sizes[3][2] = { { UISize::Fixed(16.0f), UISize::Fixed(16.0f) }, { UISize::Fixed(40.0f), UISize::Fixed(24.0f) }, { UISize::Fixed(70.0f), UISize::Fixed(70.0f) } };
+		const char* linear[3] = { "n1", "n2", "n3" };
+		DingoUI::BeginRoot("n_root", UIRootParams().SetOffset({ 10.0f, 10.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		for (size_t i = 0; i < 3; ++i)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(linear[i]).SetSize(sizes[i][0], sizes[i][1]).SetNineSlice(MakeSlice(false, 1.0f)));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+
+		const char* point[3] = { "n4", "n5", "n6" };
+		DingoUI::BeginRoot("n_root2", UIRootParams().SetOffset({ 10.0f, 120.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		for (size_t i = 0; i < 3; ++i)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(point[i]).SetSize(UISize::Fixed(20.0f + 30.0f * static_cast<float>(i)), UISize::Fixed(20.0f + 30.0f * static_cast<float>(i))).SetNineSlice(MakeSlice(true, 2.0f)));
+			DingoUI::EndBox();
+		}
+		UINineSlice frame = MakeSlice(false, 1.0f);
+		frame.SetFillCenter(false);
+		DingoUI::BeginBox(UIBoxParams().SetId("n7").SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)).SetNineSlice(frame));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("n_root3", UIRootParams().SetOffset({ 10.0f, 220.0f }).SetScale(UIScale::ConstantPixel(2.0f)).SetLayout(UIBoxParams()));
+		DingoUI::BeginBox(UIBoxParams().SetId("n8").SetSize(UISize::Fixed(20.0f), UISize::Fixed(20.0f)).SetNineSlice(MakeSlice(true, 1.0f)));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyNineSlice()
+	{
+		struct Sample
+		{
+			Internal::UIRect Rect;
+			bool Present = false;
+		};
+		Sample samples[8];
+		const char* names[8] = { "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8" };
+		for (size_t i = 0; i < 8; ++i)
+		{
+			if (const Internal::UIElement* element = LastElement(names[i]))
+			{
+				samples[i].Rect = element->Rect;
+				samples[i].Present = true;
+			}
+		}
+		Check(samples[0].Present && samples[7].Present, "9-slice: the boxes are laid out");
+		if (!samples[0].Present || !samples[7].Present)
+			return;
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, samples](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			const auto px = [&](float x, float y) { return pixels.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y)); };
+			const glm::vec4 red = k_Red, green = k_Green, blue = k_Blue, yellow = k_Yellow;
+			const glm::vec4 magenta{ 1.0f, 0.0f, 1.0f, 1.0f }, orange{ 1.0f, 0.5f, 0.0f, 1.0f }, cyan{ 0.0f, 1.0f, 1.0f, 1.0f };
+			const glm::vec4 purple{ 0.5f, 0.0f, 1.0f, 1.0f }, grey{ 0.5f, 0.5f, 0.5f, 1.0f };
+
+			// inset: how far inside the corner a pixel is sampled; the corner is `corner` pixels wide.
+			const auto corners = [&](const Sample& s, float inset, const char* what)
+			{
+				const Internal::UIRect& r = s.Rect;
+				const std::string name = std::string("9-slice: ") + what;
+				Check(NearColor(px(r.Min.x + inset, r.Min.y + inset), red), name + " keeps its top-left corner");
+				Check(NearColor(px(r.Max.x - 1.0f - inset, r.Min.y + inset), green), name + " keeps its top-right corner");
+				Check(NearColor(px(r.Max.x - 1.0f - inset, r.Max.y - 1.0f - inset), blue), name + " keeps its bottom-right corner");
+				Check(NearColor(px(r.Min.x + inset, r.Max.y - 1.0f - inset), yellow), name + " keeps its bottom-left corner");
+				const float cx = std::floor((r.Min.x + r.Max.x) * 0.5f), cy = std::floor((r.Min.y + r.Max.y) * 0.5f);
+				Check(NearColor(px(cx, r.Min.y + inset), magenta), name + " stretches its top edge");
+				Check(NearColor(px(r.Max.x - 1.0f - inset, cy), orange), name + " stretches its right edge");
+				Check(NearColor(px(cx, r.Max.y - 1.0f - inset), cyan), name + " stretches its bottom edge");
+				Check(NearColor(px(r.Min.x + inset, cy), purple), name + " stretches its left edge");
+				Check(NearColor(px(cx, cy), grey), name + " fills its centre");
+			};
+			corners(samples[0], 0.0f, "a 16x16 slice");
+			corners(samples[1], 1.0f, "a 40x24 slice");
+			corners(samples[2], 1.0f, "a 70x70 slice");
+			corners(samples[3], 3.0f, "a 20x20 point-filtered slice at scale 2");
+			corners(samples[4], 3.0f, "a 50x50 point-filtered slice at scale 2");
+			corners(samples[5], 3.0f, "a 80x80 point-filtered slice at scale 2");
+
+			const Internal::UIRect& hole = samples[6].Rect;
+			Check(NearColor(px(hole.Min.x, hole.Min.y), red), "9-slice: a frame without its centre keeps the corners");
+			Check(NearColor(px(std::floor((hole.Min.x + hole.Max.x) * 0.5f), std::floor((hole.Min.y + hole.Max.y) * 0.5f)), k_Background), "9-slice: a frame without its centre leaves a hole");
+
+			const Internal::UIRect& scaled = samples[7].Rect;
+			Check(scaled.Max.x - scaled.Min.x == 40.0f, "9-slice: a root scale of 2 doubles the box");
+			Check(NearColor(px(scaled.Min.x + 3.0f, scaled.Min.y + 3.0f), red) && NearColor(px(scaled.Min.x + 4.0f, scaled.Min.y + 1.0f), magenta), "9-slice: a root scale of 2 doubles the borders");
+		});
+	}
+
+	void DingoUITest::DeclareStyledMenu()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		UIStyle style = UIStyle::Default();
+		style.SetSurface(MakeSlice(true, 1.0f)).SetPanel(MakeSlice(true, 2.0f)).SetPanelPadding(10.0f);
+		DingoUI::PushStyle(style);
+		DingoUI::BeginRoot("t_root", UIRootParams().SetOffset({ 20.0f, 20.0f }));
+		DingoUI::BeginPanel(UIBoxParams().SetId("t_panel").SetWidth(UISize::Fixed(260.0f)).SetGap(8.0f).SetAlign(UIAlign::Stretch));
+		DingoUI::Text("Styled menu", UITextParams().SetSize(24.0f));
+		DingoUI::Button("Continue");
+		DingoUI::Button("Options##t");
+		DingoUI::Button("Disabled", UIWidgetParams().SetEnabled(false));
+		DingoUI::Selectable("Row", true);
+		bool on = true;
+		DingoUI::Toggle("Sound", &on);
+		float volume = 0.5f;
+		DingoUI::Slider("Volume", &volume, 0.0f, 1.0f);
+		DingoUI::EndPanel();
+		DingoUI::EndRoot();
+		DingoUI::PopStyle();
+	}
+
+	void DingoUITest::VerifyStyledMenu()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+		Check(statistics.DrawCalls == 1, "Styles: a styled menu with a 9-slice panel and 9-slice buttons is one draw call");
+		Check(statistics.Quads >= 9 * 4, "Styles: the 9-slice faces reach the batcher");
+
+		const Internal::UIElement* panel = LastElement("t_panel");
+		const Internal::UIElement* button = LastElement("Continue");
+		const Internal::UIElement* disabled = LastElement("Disabled");
+		Check(panel && button && disabled, "Styles: the styled menu is laid out");
+		if (!panel || !button || !disabled)
+			return;
+
+		const glm::vec2 points[3] = { panel->Rect.Min, button->Rect.Min, disabled->Rect.Min };
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, points](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			const auto px = [&](const glm::vec2& p) { return pixels.GetPixel(static_cast<uint32_t>(p.x) + 1, static_cast<uint32_t>(p.y) + 1); };
+			Check(NearColor(px(points[0]), k_Red), "Styles: BeginPanel draws the style's Panel 9-slice");
+			Check(NearColor(px(points[1]), k_Red), "Styles: a button draws the style's Surface 9-slice");
+			Check(NearColor(px(points[2]), glm::vec4(0.5f, 0.0f, 0.0f, 1.0f)), "Styles: a disabled button dims the Surface 9-slice");
+		});
+	}
+
 	void DingoUITest::DeclareUnmatched()
 	{
 		DingoUI::EndBox();
@@ -707,6 +952,9 @@ namespace Dingo
 			{ &DingoUITest::DeclarePixels, &DingoUITest::VerifyPixels },
 			{ &DingoUITest::DeclareMenu, &DingoUITest::VerifyMenu },
 			{ &DingoUITest::DeclareUnmatched, &DingoUITest::VerifyUnmatched },
+			{ &DingoUITest::DeclareStyle, &DingoUITest::VerifyStyle },
+			{ &DingoUITest::DeclareNineSlice, &DingoUITest::VerifyNineSlice },
+			{ &DingoUITest::DeclareStyledMenu, &DingoUITest::VerifyStyledMenu },
 			{ &DingoUITest::DeclareNoFont, &DingoUITest::VerifyNoFont },
 			{ &DingoUITest::DeclarePointerBlocking, &DingoUITest::VerifyPointerBlocking },
 			{ &DingoUITest::DeclarePointerPassive, &DingoUITest::VerifyPointerPassive } };
@@ -1303,6 +1551,30 @@ namespace Dingo
 			DingoUI::EndScrollArea();
 		}
 		DingoUI::Text(DingoUI::IsPointerOverUI() ? "Pointer: over the UI" : "Pointer: over the scene", UITextParams().SetSize(16.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }).SetWrap(false));
+		DingoUI::EndRoot();
+
+		UIStyle warm = UIStyle::Default();
+		warm.SetBackground({ 0.55f, 0.28f, 0.12f, 1.0f }).SetHoverColor({ 0.75f, 0.4f, 0.18f, 1.0f }).SetPressedColor({ 0.4f, 0.2f, 0.08f, 1.0f })
+			.SetAccent({ 0.95f, 0.65f, 0.15f, 1.0f }, { 1.0f, 0.78f, 0.35f, 1.0f }).SetPanelColor({ 0.2f, 0.1f, 0.05f, 0.95f })
+			.SetBorder(2.0f, { 0.95f, 0.65f, 0.15f, 1.0f }).SetCornerRadius(12.0f).SetTextSize(20.0f);
+		UIStyle sliced = UIStyle::Default();
+		sliced.SetSurface(MakeSlice(true, 3.0f)).SetPanel(MakeSlice(true, 5.0f)).SetPanelPadding(24.0f).SetTextSize(20.0f);
+
+		DingoUI::BeginRoot("live_themes", UIRootParams().SetAnchor(UIAnchor::BottomLeft).SetOffset({ 16.0f, -16.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(16.0f).SetAlign(UIAlign::End)));
+		DingoUI::PushStyle(warm);
+		DingoUI::BeginPanel(UIBoxParams().SetId("live_warm").SetGap(8.0f));
+		DingoUI::Text("Themed panel", UITextParams().SetSize(22.0f).SetColor({ 1.0f, 0.85f, 0.5f, 1.0f }));
+		DingoUI::Button("Warm button");
+		DingoUI::Toggle("Warm toggle", &m_LiveToggle);
+		DingoUI::EndPanel();
+		DingoUI::PopStyle();
+		DingoUI::PushStyle(sliced);
+		DingoUI::BeginPanel(UIBoxParams().SetId("live_sliced").SetGap(8.0f));
+		DingoUI::Text("9-slice panel", UITextParams().SetSize(22.0f));
+		DingoUI::Button("Sliced button");
+		DingoUI::Selectable("Sliced row", m_LiveSelected == 1);
+		DingoUI::EndPanel();
+		DingoUI::PopStyle();
 		DingoUI::EndRoot();
 	}
 

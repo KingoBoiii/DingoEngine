@@ -57,7 +57,7 @@ namespace Dingo::Internal
 					m_Geometry.Batches.pop_back();
 			}
 
-			void Shape(const UIRect& rect, const QuadCorners& corners, Texture* texture, const glm::vec4& color, const glm::vec4& borderColor, const glm::vec4& radii, float borderWidth, const UIRect& clip)
+			void Shape(const UIRect& rect, const QuadCorners& corners, Texture* texture, const glm::vec4& color, const glm::vec4& borderColor, const glm::vec4& radii, float borderWidth, const UIRect& clip, bool point = false)
 			{
 				const glm::vec2 half = (rect.Max - rect.Min) * 0.5f;
 				const float largest = (std::min)(half.x, half.y);
@@ -77,7 +77,7 @@ namespace Dingo::Internal
 					vertex.Local = glm::vec4(offsets[i], half);
 					vertex.Radii = clampedRadii;
 					vertex.Clip = glm::vec4(clip.Min, clip.Max);
-					vertex.Params = glm::vec4(border, slot, static_cast<float>(UIQuadKind::Shape), 0.0f);
+					vertex.Params = glm::vec4(border, slot, static_cast<float>(point ? UIQuadKind::ShapePoint : UIQuadKind::Shape), 0.0f);
 				}
 				EndQuad();
 			}
@@ -176,6 +176,21 @@ namespace Dingo::Internal
 		command.Image = texture;
 	}
 
+	void UIDrawList::AddNineSlice(const UIRect& rect, Texture* texture, const glm::vec2& textureSize, const glm::vec4& borders, float scale, bool fillCenter, bool pointFilter, const glm::vec4& tint, const UIRect& clip)
+	{
+		Command& command = m_Commands.emplace_back();
+		command.Kind = CommandKind::NineSlice;
+		command.Rect = rect;
+		command.Clip = clip;
+		command.Color = tint;
+		command.Borders = borders;
+		command.TextureSize = textureSize;
+		command.Scale = scale;
+		command.FillCenter = fillCenter;
+		command.PointFilter = pointFilter;
+		command.Image = texture;
+	}
+
 	void UIDrawList::AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth, const UIRect& clip, float align, float alignWidth)
 	{
 		if (!font || text.empty() || size <= 0.0f)
@@ -223,6 +238,14 @@ namespace Dingo::Internal
 				hasher.Add(command.UVMax);
 				hasher.Add(command.Image ? command.Image->GetId() : 0ull);
 				break;
+			case CommandKind::NineSlice:
+				hasher.Add(command.Borders);
+				hasher.Add(command.TextureSize);
+				hasher.Add(command.Scale);
+				hasher.Add(command.FillCenter);
+				hasher.Add(command.PointFilter);
+				hasher.Add(command.Image ? command.Image->GetId() : 0ull);
+				break;
 			case CommandKind::Text:
 			{
 				const Texture* atlas = command.TextFont->GetAtlasTexture();
@@ -266,6 +289,49 @@ namespace Dingo::Internal
 				}
 				builder.Shape(command.Rect, ImageCorners(command.UVMin, command.UVMax), command.Image, command.Color, glm::vec4(0.0f), glm::vec4(0.0f), 0.0f, command.Clip);
 				break;
+
+			case CommandKind::NineSlice:
+			{
+				const glm::vec2 size = command.Rect.Max - command.Rect.Min;
+				if (!command.Image || command.Rect.IsEmpty() || !command.Rect.Overlaps(command.Clip) || command.Color.a <= 0.0f || command.TextureSize.x <= 0.0f || command.TextureSize.y <= 0.0f)
+				{
+					builder.Cull();
+					break;
+				}
+
+				const glm::vec2 texture = command.TextureSize;
+				const glm::vec4 source = glm::clamp(command.Borders, glm::vec4(0.0f), glm::vec4(texture.x, texture.y, texture.x, texture.y));
+				glm::vec4 drawn = glm::round(source * command.Scale);
+				if (drawn.x + drawn.z > size.x)
+				{
+					const float shrink = size.x / (drawn.x + drawn.z);
+					drawn.x = std::floor(drawn.x * shrink);
+					drawn.z = size.x - drawn.x;
+				}
+				if (drawn.y + drawn.w > size.y)
+				{
+					const float shrink = size.y / (drawn.y + drawn.w);
+					drawn.y = std::floor(drawn.y * shrink);
+					drawn.w = size.y - drawn.y;
+				}
+
+				const std::array<float, 4> xs = { command.Rect.Min.x, command.Rect.Min.x + drawn.x, command.Rect.Max.x - drawn.z, command.Rect.Max.x };
+				const std::array<float, 4> ys = { command.Rect.Min.y, command.Rect.Min.y + drawn.y, command.Rect.Max.y - drawn.w, command.Rect.Max.y };
+				const std::array<float, 4> us = { 0.0f, source.x / texture.x, 1.0f - source.z / texture.x, 1.0f };
+				const std::array<float, 4> vs = { 1.0f, 1.0f - source.y / texture.y, source.w / texture.y, 0.0f }; // top to bottom, bottom-left origin
+
+				for (size_t row = 0; row < 3; ++row)
+				{
+					for (size_t column = 0; column < 3; ++column)
+					{
+						const UIRect cell{ { xs[column], ys[row] }, { xs[column + 1], ys[row + 1] } };
+						if (cell.IsEmpty() || !cell.Overlaps(command.Clip) || (row == 1 && column == 1 && !command.FillCenter))
+							continue;
+						builder.Shape(cell, ImageCorners({ us[column], vs[row + 1] }, { us[column + 1], vs[row] }), command.Image, command.Color, glm::vec4(0.0f), glm::vec4(0.0f), 0.0f, command.Clip, command.PointFilter);
+					}
+				}
+				break;
+			}
 
 			case CommandKind::Text:
 			{

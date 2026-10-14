@@ -19,8 +19,11 @@ namespace Dingo
 	// and one draw call for a menu. Then the widgets, driven by an input override and simulated
 	// mouse buttons: hover, click, drag-out, a late widget, a slider drag, a scroll area, roots
 	// that overlap, don't block or are modal, the consume mask, state eviction and id collisions.
+	// Styles and 9-slices are checked by pixels: a pushed style changes a button's fill and its pop
+	// restores it, a 9-slice keeps its corners at any size.
 	// The view shows the wrapped text at its MaxWidth under a DingoUI panel built with the element
-	// API, and a panel of live widgets to click by hand inside the viewport.
+	// API, and a panel of live widgets to click by hand inside the viewport, with a themed panel and a
+	// 9-slice panel beside them.
 	class DingoUITest : public Renderer2DTest
 	{
 	public:
@@ -67,6 +70,13 @@ namespace Dingo
 		void VerifyMenu();
 		void DeclareUnmatched();
 		void VerifyUnmatched();
+		void DeclareStyle();
+		void VerifyStyle();
+		void DeclareNineSlice();
+		void VerifyNineSlice();
+		void DeclareStyledMenu();
+		void VerifyStyledMenu();
+		UINineSlice MakeSlice(bool point, float scale) const;
 		void DeclareNoFont();
 		void VerifyNoFont();
 		void DeclarePointerBlocking();
@@ -113,6 +123,7 @@ namespace Dingo
 		int m_LiveSelected = 0;
 		uint32_t m_LiveClicks = 0;
 		Texture* m_ImageTexture = nullptr;
+		Texture* m_SliceTexture = nullptr;
 		std::vector<Texture*> m_SlotTextures;
 		std::shared_ptr<int> m_Alive;
 		TestChecks m_Checks;

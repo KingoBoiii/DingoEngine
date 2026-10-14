@@ -25,6 +25,7 @@ namespace Dingo::Internal
 	DingoUIContext::DingoUIContext(const DingoUIParams& params)
 		: m_Params(params), m_Batcher(std::make_unique<DingoUIBatcher>())
 	{
+		m_StyleStack.push_back(params.Style);
 		DE_CORE_ASSERT(!s_Context, "Only one DingoUIContext may exist at a time");
 		s_Context = this;
 
@@ -152,7 +153,7 @@ namespace Dingo::Internal
 		return id;
 	}
 
-	void DingoUIContext::BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll, const glm::vec2& scrollOffset)
+	void DingoUIContext::BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll, const glm::vec2& scrollOffset, const UIStyle* thumbStyle)
 	{
 		UIWidgetInfo info;
 		info.Id = id;
@@ -160,7 +161,63 @@ namespace Dingo::Internal
 		info.Interactive = interactive;
 		info.Scroll = scroll;
 		info.ScrollOffset = scrollOffset;
+		if (scroll)
+		{
+			const UIStyle& style = Resolve(thumbStyle);
+			info.ScrollThumbColor = style.ScrollThumbColor;
+			info.ScrollThumbWidth = style.ScrollThumbWidth;
+		}
 		m_Tree.BeginBox(box, &info);
+	}
+
+	bool DingoUIContext::BeginPanel(const UIBoxParams& params)
+	{
+		if (!CanDeclare())
+			return false;
+
+		const UIStyle& style = m_StyleStack.back();
+		UIBoxParams box = params;
+		if (!box.NineSlice.IsValid())
+			box.NineSlice = style.Panel;
+		if (box.Background.a <= 0.0f && !box.NineSlice.IsValid())
+			box.Background = style.PanelColor;
+		if (box.BorderWidth <= 0.0f)
+		{
+			box.BorderWidth = style.BorderWidth;
+			box.BorderColor = style.BorderColor;
+		}
+		if (box.CornerRadius <= 0.0f)
+			box.CornerRadius = style.CornerRadius;
+		if (box.Padding == glm::vec4(0.0f))
+			box.Padding = glm::vec4(style.PanelPadding);
+		return BeginBox(box);
+	}
+
+	void DingoUIContext::EndPanel()
+	{
+		EndBox();
+	}
+
+	void DingoUIContext::PushStyle(const UIStyle& style)
+	{
+		if (m_InFrame)
+			m_StyleStack.push_back(style);
+	}
+
+	void DingoUIContext::PopStyle()
+	{
+		if (!m_InFrame)
+			return;
+		if (m_StyleStack.size() <= 1)
+		{
+			if (!m_WarnedStyleStack)
+			{
+				m_WarnedStyleStack = true;
+				DE_CORE_WARN("DingoUI: PopStyle without a PushStyle; the call was ignored");
+			}
+			return;
+		}
+		m_StyleStack.pop_back();
 	}
 
 	void DingoUIContext::PushId(std::string_view id)
@@ -250,7 +307,7 @@ namespace Dingo::Internal
 		if (!CanDeclare())
 			return;
 
-		const Font* font = params.TextFont ? params.TextFont : m_Params.DefaultFont;
+		const Font* font = params.TextFont ? params.TextFont : (m_StyleStack.back().TextFont ? m_StyleStack.back().TextFont : m_Params.DefaultFont);
 		if (!font || !font->IsValid())
 		{
 			if (!m_WarnedNoFont)
@@ -281,6 +338,16 @@ namespace Dingo::Internal
 		m_InFrame = false;
 		if (m_Tree.CloseAll() > 0)
 			WarnMismatch("a Begin call was never closed; the frame's elements were closed for you");
+
+		if (m_StyleStack.size() > 1)
+		{
+			m_StyleStack.resize(1);
+			if (!m_WarnedStyleStack)
+			{
+				m_WarnedStyleStack = true;
+				DE_CORE_WARN("DingoUI: a PushStyle was never popped; the frame's styles were dropped for you");
+			}
+		}
 
 		m_Tree.Layout(m_Measure);
 

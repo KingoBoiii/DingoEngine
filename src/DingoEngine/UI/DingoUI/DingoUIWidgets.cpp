@@ -1,6 +1,5 @@
 #include "depch.h"
 #include "DingoUIContext.h"
-#include "DingoUIWidgetLook.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,24 +11,76 @@ namespace Dingo::Internal
 	namespace
 	{
 
+		constexpr float k_ValueWidth = 56.0f;
+
 		std::string_view VisibleLabel(std::string_view label)
 		{
 			const size_t suffix = label.find("##");
 			return suffix == std::string_view::npos ? label : label.substr(0, suffix);
 		}
 
-		glm::vec4 Surface(const UIInteraction& state, bool enabled)
+		enum class Face
+		{
+			Idle,
+			Hover,
+			Pressed,
+			Disabled
+		};
+
+		Face FaceOf(const UIInteraction& state, bool enabled)
 		{
 			if (!enabled)
-				return UILook::k_Disabled;
+				return Face::Disabled;
 			if (state.Down && state.Hovered)
-				return UILook::k_Pressed;
-			return state.Hovered ? UILook::k_Hover : UILook::k_Idle;
+				return Face::Pressed;
+			return state.Hovered ? Face::Hover : Face::Idle;
 		}
 
-		UITextParams LabelStyle(bool enabled)
+		glm::vec4 Surface(const UIStyle& style, Face face)
 		{
-			return UITextParams().SetSize(UILook::k_TextSize).SetColor(enabled ? UILook::k_Text : UILook::k_TextDisabled).SetWrap(false);
+			switch (face)
+			{
+			case Face::Disabled: return style.DisabledColor;
+			case Face::Pressed: return style.PressedColor;
+			case Face::Hover: return style.HoverColor;
+			case Face::Idle: break;
+			}
+			return style.Background;
+		}
+
+		UINineSlice SliceFor(const UIStyle& style, Face face)
+		{
+			const UINineSlice* own = nullptr;
+			glm::vec3 shade(1.0f);
+			switch (face)
+			{
+			case Face::Disabled: own = &style.SurfaceDisabled; shade = glm::vec3(0.5f); break;
+			case Face::Pressed: own = &style.SurfacePressed; shade = glm::vec3(0.8f); break;
+			case Face::Hover: own = &style.SurfaceHover; shade = glm::vec3(1.15f); break;
+			case Face::Idle: break;
+			}
+			if (own && own->IsValid())
+				return *own;
+			UINineSlice slice = style.Surface;
+			slice.Tint = glm::vec4(glm::vec3(slice.Tint) * shade, slice.Tint.a);
+			return slice;
+		}
+
+		// A slice replaces the fill; the border and corner radius stay as the style has them.
+		void ApplyFace(UIBoxParams& box, const UIStyle& style, Face face)
+		{
+			if (style.Surface.IsValid())
+				box.NineSlice = SliceFor(style, face);
+			else
+				box.Background = Surface(style, face);
+			box.BorderWidth = style.BorderWidth;
+			box.BorderColor = style.BorderColor;
+			box.CornerRadius = style.CornerRadius;
+		}
+
+		UITextParams LabelStyle(const UIStyle& style, bool enabled)
+		{
+			return UITextParams().SetSize(style.TextSize).SetColor(enabled ? style.TextColor : style.DisabledTextColor).SetWrap(false).SetFont(style.TextFont);
 		}
 
 		UIBoxParams Solid(const UISize& width, const UISize& height, const glm::vec4& color, float radius)
@@ -53,16 +104,16 @@ namespace Dingo::Internal
 		UIWidgetState* state = nullptr;
 		const UIInteraction result = Interact(id, label, params.Enabled, state);
 
+		const UIStyle& style = Resolve(params.Style);
 		UIBoxParams box;
 		box.Width = params.Width;
 		box.Height = params.Height;
-		box.Padding = { UILook::k_ButtonPaddingX, UILook::k_ButtonPaddingY, UILook::k_ButtonPaddingX, UILook::k_ButtonPaddingY };
+		box.Padding = { style.Padding.x, style.Padding.y, style.Padding.x, style.Padding.y };
 		box.Justify = UIJustify::Center;
 		box.Align = UIAlign::Center;
-		box.Background = Surface(result, params.Enabled);
-		box.CornerRadius = UILook::k_CornerRadius;
+		ApplyFace(box, style, FaceOf(result, params.Enabled));
 		BeginWidgetBox(id, label, box, params.Enabled);
-		Text(VisibleLabel(label), LabelStyle(params.Enabled));
+		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
 		return result;
 	}
@@ -85,36 +136,37 @@ namespace Dingo::Internal
 		}
 		const bool on = *target;
 
+		const UIStyle& style = Resolve(params.Style);
 		UIBoxParams row;
 		row.Width = params.Width;
 		row.Height = params.Height;
 		row.Direction = UIDirection::Row;
-		row.Gap = UILook::k_Gap;
+		row.Gap = style.Gap;
 		row.Align = UIAlign::Center;
-		row.Padding = { 0.0f, UILook::k_RowPaddingY * 0.5f, UILook::k_RowPaddingX, UILook::k_RowPaddingY * 0.5f };
+		row.Padding = { 0.0f, style.RowPadding.y * 0.5f, style.RowPadding.x, style.RowPadding.y * 0.5f };
 		BeginWidgetBox(id, label, row, params.Enabled);
 
-		glm::vec4 trackColor = UILook::k_Track;
+		glm::vec4 trackColor = style.TrackColor;
 		if (!params.Enabled)
-			trackColor = UILook::k_Disabled;
+			trackColor = style.DisabledColor;
 		else if (on)
-			trackColor = result.Hovered ? UILook::k_AccentHover : UILook::k_Accent;
+			trackColor = result.Hovered ? style.AccentHoverColor : style.AccentColor;
 		else if (result.Hovered)
-			trackColor = UILook::k_Hover;
+			trackColor = style.HoverColor;
 
-		UIBoxParams track = Solid(UISize::Fixed(UILook::k_ToggleWidth), UISize::Fixed(UILook::k_ToggleHeight), trackColor, UILook::k_ToggleHeight * 0.5f);
+		UIBoxParams track = Solid(UISize::Fixed(style.ToggleSize.x), UISize::Fixed(style.ToggleSize.y), trackColor, style.ToggleSize.y * 0.5f);
 		track.Direction = UIDirection::Row;
 		track.Align = UIAlign::Center;
 		track.Justify = on ? UIJustify::End : UIJustify::Start;
-		track.Padding = glm::vec4((UILook::k_ToggleHeight - UILook::k_ToggleKnob) * 0.5f);
+		track.Padding = glm::vec4((style.ToggleSize.y - style.HandleSize) * 0.5f);
 		m_Tree.BeginBox(track);
-		m_Tree.BeginBox(Solid(UISize::Fixed(UILook::k_ToggleKnob), UISize::Fixed(UILook::k_ToggleKnob), params.Enabled ? UILook::k_Knob : UILook::k_TextDisabled, UILook::k_ToggleKnob * 0.5f));
+		m_Tree.BeginBox(Solid(UISize::Fixed(style.HandleSize), UISize::Fixed(style.HandleSize), params.Enabled ? style.HandleColor : style.DisabledTextColor, style.HandleSize * 0.5f));
 		m_Tree.EndBox();
 		m_Tree.EndBox();
 
 		const std::string_view text = VisibleLabel(label);
 		if (!text.empty())
-			Text(text, LabelStyle(params.Enabled));
+			Text(text, LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
 		return result;
 	}
@@ -127,13 +179,14 @@ namespace Dingo::Internal
 
 		UIWidgetState* state = nullptr;
 		UIInteraction result = Interact(id, label, params.Enabled, state);
+		const UIStyle& style = Resolve(params.Style);
 
 		const double low = min;
 		const double high = (std::max)(max, min);
 		double current = std::clamp(*value, low, high);
 		if (params.Enabled && high > low && (result.Pressed || result.Down || id == m_ReleasedId))
 		{
-			const float handle = UILook::k_SliderHandle * m_Tree.GetRootScale();
+			const float handle = style.HandleSize * m_Tree.GetRootScale();
 			const float travel = (state->LastRect.Max.x - state->LastRect.Min.x) - handle;
 			if (travel > 0.5f)
 			{
@@ -154,13 +207,13 @@ namespace Dingo::Internal
 
 		UIBoxParams outer;
 		outer.Direction = UIDirection::Row;
-		outer.Gap = UILook::k_Gap;
+		outer.Gap = style.Gap;
 		outer.Align = UIAlign::Center;
 		m_Tree.BeginBox(outer);
 
 		UIBoxParams track;
 		track.Width = params.Width;
-		track.Height = UISize::Fixed(UILook::k_SliderHeight);
+		track.Height = UISize::Fixed(style.SliderHeight);
 		track.Direction = UIDirection::Row;
 		track.Align = UIAlign::Center;
 		BeginWidgetBox(id, label, track, params.Enabled);
@@ -170,24 +223,24 @@ namespace Dingo::Internal
 			m_Tree.BeginBox(box);
 			m_Tree.EndBox();
 		};
-		const UISize barHeight = UISize::Fixed(UILook::k_SliderTrackHeight);
-		const float barRadius = UILook::k_SliderTrackHeight * 0.5f;
-		const glm::vec4 fillColor = !params.Enabled ? UILook::k_TextDisabled : ((result.Hovered || result.Down) ? UILook::k_AccentHover : UILook::k_Accent);
+		const UISize barHeight = UISize::Fixed(style.SliderTrackHeight);
+		const float barRadius = style.SliderTrackHeight * 0.5f;
+		const glm::vec4 fillColor = !params.Enabled ? style.DisabledTextColor : ((result.Hovered || result.Down) ? style.AccentHoverColor : style.AccentColor);
 		if (t > 0.0f)
 			leaf(Solid(UISize::Grow(t), barHeight, fillColor, barRadius));
-		leaf(Solid(UISize::Fixed(UILook::k_SliderHandle), UISize::Fixed(UILook::k_SliderHandle), params.Enabled ? UILook::k_Knob : UILook::k_TextDisabled, UILook::k_SliderHandle * 0.5f));
+		leaf(Solid(UISize::Fixed(style.HandleSize), UISize::Fixed(style.HandleSize), params.Enabled ? style.HandleColor : style.DisabledTextColor, style.HandleSize * 0.5f));
 		if (t < 1.0f)
-			leaf(Solid(UISize::Grow(1.0f - t), barHeight, params.Enabled ? UILook::k_Track : UILook::k_Disabled, barRadius));
+			leaf(Solid(UISize::Grow(1.0f - t), barHeight, params.Enabled ? style.TrackColor : style.DisabledColor, barRadius));
 		m_Tree.EndBox();
 
 		if (params.ShowValue)
 		{
 			const std::string text = integer ? std::format("{}", static_cast<long long>(current)) : (step >= 1.0 && step == std::floor(step) ? std::format("{:.0f}", current) : std::format("{:.2f}", current));
-			Text(text, LabelStyle(params.Enabled).SetWidth(UISize::Fixed(56.0f)).SetAlign(UITextAlign::Right));
+			Text(text, LabelStyle(style, params.Enabled).SetWidth(UISize::Fixed(k_ValueWidth)).SetAlign(UITextAlign::Right));
 		}
 		const std::string_view caption = VisibleLabel(label);
 		if (!caption.empty())
-			Text(caption, LabelStyle(params.Enabled));
+			Text(caption, LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
 		return result;
 	}
@@ -224,15 +277,16 @@ namespace Dingo::Internal
 			m_Tree.BeginBox(box);
 			m_Tree.EndBox();
 		};
+		const UIStyle& style = Resolve(params.Style);
 		const float t = std::clamp(value, 0.0f, 1.0f);
-		const UISize width = params.Width.Mode == UISizeMode::Fit ? UISize::Fixed(UILook::k_ProgressWidth) : params.Width;
-		const UISize height = params.Height.Mode == UISizeMode::Fit ? UISize::Fixed(UILook::k_ProgressHeight) : params.Height;
+		const UISize width = params.Width.Mode == UISizeMode::Fit ? UISize::Fixed(style.ProgressSize.x) : params.Width;
+		const UISize height = params.Height.Mode == UISizeMode::Fit ? UISize::Fixed(style.ProgressSize.y) : params.Height;
 
-		UIBoxParams bar = Solid(width, height, params.Enabled ? UILook::k_Track : UILook::k_Disabled, UILook::k_ProgressHeight * 0.5f);
+		UIBoxParams bar = Solid(width, height, params.Enabled ? style.TrackColor : style.DisabledColor, style.ProgressSize.y * 0.5f);
 		bar.Direction = UIDirection::Row;
 		BeginWidgetBox(id, idText, bar, false);
 		if (t > 0.0f)
-			leaf(Solid(UISize::Grow(t), UISize::Grow(1.0f), params.Enabled ? UILook::k_Accent : UILook::k_TextDisabled, UILook::k_ProgressHeight * 0.5f));
+			leaf(Solid(UISize::Grow(t), UISize::Grow(1.0f), params.Enabled ? style.ProgressFillColor : style.DisabledTextColor, style.ProgressSize.y * 0.5f));
 		if (t > 0.0f && t < 1.0f)
 			leaf(UIBoxParams().SetWidth(UISize::Grow(1.0f - t)));
 		m_Tree.EndBox();
@@ -247,23 +301,38 @@ namespace Dingo::Internal
 		UIWidgetState* state = nullptr;
 		const UIInteraction result = Interact(id, label, params.Enabled, state);
 
-		glm::vec4 fill = UILook::k_Transparent;
-		if (!params.Enabled)
-			fill = selected ? UILook::k_Disabled : UILook::k_Transparent;
-		else if (selected)
-			fill = result.Hovered ? UILook::k_AccentHover : UILook::k_Accent;
-		else if (result.Hovered)
-			fill = (result.Down) ? UILook::k_Pressed : UILook::k_Hover;
-
+		const UIStyle& style = Resolve(params.Style);
 		UIBoxParams box;
 		box.Width = params.Width;
 		box.Height = params.Height;
-		box.Padding = { UILook::k_RowPaddingX, UILook::k_RowPaddingY, UILook::k_RowPaddingX, UILook::k_RowPaddingY };
+		box.Padding = { style.RowPadding.x, style.RowPadding.y, style.RowPadding.x, style.RowPadding.y };
 		box.Justify = UIJustify::Center;
-		box.Background = fill;
-		box.CornerRadius = UILook::k_CornerRadius;
+		box.BorderWidth = style.BorderWidth;
+		box.BorderColor = style.BorderColor;
+		box.CornerRadius = style.CornerRadius;
+
+		if (style.Surface.IsValid())
+		{
+			if (!params.Enabled)
+			{
+				if (selected)
+					box.NineSlice = SliceFor(style, Face::Disabled);
+			}
+			else if (result.Hovered && result.Down)
+				box.NineSlice = SliceFor(style, Face::Pressed);
+			else if (result.Hovered)
+				box.NineSlice = SliceFor(style, Face::Hover);
+			else if (selected)
+				box.NineSlice = SliceFor(style, Face::Idle);
+		}
+		else if (!params.Enabled)
+			box.Background = selected ? style.DisabledColor : glm::vec4(0.0f);
+		else if (selected)
+			box.Background = result.Hovered ? style.AccentHoverColor : style.AccentColor;
+		else if (result.Hovered)
+			box.Background = result.Down ? style.PressedColor : style.HoverColor;
 		BeginWidgetBox(id, label, box, params.Enabled);
-		Text(VisibleLabel(label), LabelStyle(params.Enabled));
+		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
 		return result;
 	}
@@ -297,7 +366,7 @@ namespace Dingo::Internal
 		offset.y = std::clamp(offset.y, 0.0f, range);
 		state->ScrollOffset = offset;
 
-		BeginWidgetBox(id, label, params.Layout, params.DragScroll, true, offset);
+		BeginWidgetBox(id, label, params.Layout, params.DragScroll, true, offset, params.Style);
 		m_ScrollStack.push_back(id);
 		return true;
 	}

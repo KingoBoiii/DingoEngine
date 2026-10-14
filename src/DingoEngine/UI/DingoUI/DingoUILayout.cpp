@@ -1,7 +1,7 @@
 #include "depch.h"
 #include "DingoUILayout.h"
 
-#include "DingoUIWidgetLook.h"
+#include "DingoEngine/Graphics/Texture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,6 +14,8 @@ namespace Dingo::Internal
 		constexpr uint64_t k_FnvOffset = 14695981039346656037ull;
 		constexpr uint64_t k_FnvPrime = 1099511628211ull;
 		constexpr float k_Epsilon = 0.01f;
+		constexpr float k_ScrollThumbMargin = 2.0f;
+		constexpr float k_ScrollThumbMin = 16.0f;
 
 		uint64_t Mix(uint64_t seed, uint64_t value)
 		{
@@ -72,7 +74,7 @@ namespace Dingo::Internal
 				return true;
 			case UIElementKind::Root:
 			case UIElementKind::Box:
-				return element.Background.a > 0.0f || (element.BorderWidth > 0.0f && element.BorderColor.a > 0.0f);
+				return element.Background.a > 0.0f || (element.BorderWidth > 0.0f && element.BorderColor.a > 0.0f) || element.NineSlice.IsValid();
 			}
 			return false;
 		}
@@ -167,6 +169,7 @@ namespace Dingo::Internal
 		element.BorderWidth = params.BorderWidth * scale;
 		element.CornerRadius = params.CornerRadius * scale;
 		element.ClipChildren = params.ClipChildren;
+		element.NineSlice = params.NineSlice;
 
 		if (!params.Id.empty())
 		{
@@ -212,6 +215,8 @@ namespace Dingo::Internal
 			element.Interactive = widget->Interactive;
 			element.Scroll = widget->Scroll;
 			element.ScrollOffset = widget->ScrollOffset;
+			element.ScrollThumbColor = widget->ScrollThumbColor;
+			element.ScrollThumbWidth = widget->ScrollThumbWidth;
 			if (widget->Scroll)
 				element.ClipChildren = true;
 		}
@@ -705,6 +710,8 @@ namespace Dingo::Internal
 				case UIElementKind::Box:
 					if (element.Background.a > 0.0f || (element.BorderWidth > 0.0f && element.BorderColor.a > 0.0f))
 						list.AddRect(element.Rect, element.Background, element.CornerRadius, element.BorderWidth, element.BorderColor, element.Clip);
+					if (element.NineSlice.IsValid())
+						list.AddNineSlice(element.Rect, element.NineSlice.Image, glm::vec2(static_cast<float>(element.NineSlice.Image->GetWidth()), static_cast<float>(element.NineSlice.Image->GetHeight())), element.NineSlice.Borders, element.NineSlice.Scale * element.Scale, element.NineSlice.FillCenter, element.NineSlice.PointFilter, element.NineSlice.Tint, element.Clip);
 					break;
 
 				case UIElementKind::Text:
@@ -740,14 +747,14 @@ namespace Dingo::Internal
 				if (!element.Scroll || range <= 0.5f || height <= 0.0f)
 					continue;
 
-				const float width = UILook::k_ScrollThumbWidth * element.Scale;
-				const float margin = UILook::k_ScrollThumbMargin * element.Scale;
-				const float thumb = (std::min)(height, (std::max)(UILook::k_ScrollThumbMin * element.Scale, height * height / element.ContentSize.y));
+				const float width = element.ScrollThumbWidth * element.Scale;
+				const float margin = k_ScrollThumbMargin * element.Scale;
+				const float thumb = (std::min)(height, (std::max)(k_ScrollThumbMin * element.Scale, height * height / element.ContentSize.y));
 				const float travel = (height - thumb) * std::clamp(element.ScrollOffset.y / range, 0.0f, 1.0f);
 				UIRect rect;
 				rect.Min = { Snap(element.Rect.Max.x - margin - width), Snap(element.Rect.Min.y + travel) };
 				rect.Max = { Snap(element.Rect.Max.x - margin), Snap(element.Rect.Min.y + travel + thumb) };
-				list.AddRect(rect, UILook::k_ScrollThumb, width * 0.5f, 0.0f, glm::vec4(0.0f), element.Clip);
+				list.AddRect(rect, element.ScrollThumbColor, width * 0.5f, 0.0f, glm::vec4(0.0f), element.Clip);
 			}
 		}
 	}

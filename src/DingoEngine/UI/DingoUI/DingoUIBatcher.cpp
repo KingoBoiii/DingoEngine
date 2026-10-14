@@ -18,6 +18,7 @@ namespace Dingo::Internal
 		constexpr uint32_t k_FrameBinding = 0;
 		constexpr uint32_t k_TextureBinding = 1;
 		constexpr uint32_t k_SamplerBinding = 2;
+		constexpr uint32_t k_PointSamplerBinding = 3;
 
 		constexpr uint32_t k_MinimumQuads = 256;
 		// As Renderer3D's arena: longer than any frame stays in flight.
@@ -124,6 +125,7 @@ namespace Dingo::Internal
 					renderPasses[i] = RenderPass::Create(RenderPassParams().SetPipeline(targetPipeline->Pipeline));
 					renderPasses[i]->SetUniformBuffer(k_FrameBinding, m_UniformBuffer);
 					renderPasses[i]->SetSampler(k_SamplerBinding, Renderer::GetClampSampler());
+					renderPasses[i]->SetSampler(k_PointSamplerBinding, Renderer::GetPointSampler());
 				}
 
 				// The shader declares all k_UITextureSlots, so every slot needs a real texture.

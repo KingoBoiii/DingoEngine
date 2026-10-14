@@ -122,7 +122,7 @@ the next frame.
 ## Widgets
 
 Widgets are declared like boxes and answer in the same call. They sit inside a root (or any box),
-look the same everywhere (one hard-coded look until the style system), and return a `UIInteraction`.
+take their look from the current style (see [Styles and themes](#styles-and-themes)), and return a `UIInteraction`.
 
 | Call | |
 |---|---|
@@ -154,6 +154,59 @@ boxes around it and the `PushId` stack. Two widgets with the same id in one fram
 and warn once (Debug builds); fix it with a suffix after `##`, which is hashed but not shown
 (`"Delete##row3"`), or with `PushId(i)` / `PopId()` around a loop.
 State of a widget that isn't declared for a couple of frames is dropped.
+
+## Styles and themes
+
+A `UIStyle` holds the look of the widgets: text font, size and colour, a fill per state (`Background`,
+`HoverColor`, `PressedColor`, `DisabledColor`), the accent used by switched-on toggles, filled
+slider parts and selected rows, track, handle, progress and scroll-bar colours, border, corner
+radius, padding, gaps and the sizes of toggles, handles and bars. All sizes are design pixels, so a
+root's scale applies. `UIStyle::Default()` (what a default-constructed style holds) is the engine's
+theme; the setters chain.
+
+Three ways to change it:
+
+- **The theme**: `DingoUIParams::Style` at start-up, or `DingoUI::SetTheme(style)` later. It is the
+  style when nothing is pushed.
+- **A stretch of a frame**: `PushStyle(style)` ... `PopStyle()`. Styles nest, and what a widget uses is
+  decided when it is declared. A push left open is dropped, with one warning, at the end of the frame.
+  `GetStyle()` returns the current one.
+- **One widget**: `UIWidgetParams::SetStyle(&style)` (also on `UISliderParams`, `UIScrollParams`).
+
+`TextFont` null falls back to `DingoUIParams::DefaultFont` / `SetDefaultFont`. Plain `Text` keeps its
+own size and colour but takes the style's font when its params name none.
+
+`BeginPanel(params)` / `EndPanel()` open a box dressed from the style: `PanelColor` (or the `Panel`
+9-slice), border, corner radius and `PanelPadding`, for whatever the box's own params leave at their
+default.
+
+```cpp
+UIStyle warm = UIStyle::Default().SetBackground({ 0.55f, 0.28f, 0.12f, 1 }).SetCornerRadius(12.0f);
+DingoUI::PushStyle(warm);
+DingoUI::BeginPanel();
+if (DingoUI::Button("Play").Clicked) StartGame();
+DingoUI::EndPanel();
+DingoUI::PopStyle();
+```
+
+### 9-slice
+
+A `UINineSlice` cuts a picture by four borders (`Borders`: left, top, right, bottom, in texture
+pixels as the picture is displayed) and draws nine quads: the corners keep their size, the edges
+stretch along one axis, the centre along both. It is one more command in the same vertex stream, so a
+panel made of 9-slices is still one draw call. The drawn border is `Borders * Scale * the root's
+scale`, rounded to whole pixels, and shrinks if two opposite borders no longer fit. `FillCenter` off
+leaves a frame; `PointFilter` samples with the nearest filter for pixel art; `Tint` multiplies the
+picture. UVs follow `Image`'s convention (a picture loaded with `Texture::CreateFromFile` stands upright).
+
+Use it on any box (`UIBoxParams::SetNineSlice`, drawn over `Background` and under the children) or in a style:
+
+- `Surface` is the face of a `Button` and of a selected `Selectable`. With an image it replaces
+  `Background`; `SurfaceHover`, `SurfacePressed` and `SurfaceDisabled` replace it per state, and a state
+  with no image draws `Surface` lighter (hover), darker (pressed) or dimmed (disabled).
+- `Panel` is the face of `BeginPanel`.
+
+Toggles, sliders, progress bars and scroll bars stay colour-only. Tiling the centre is not supported.
 
 ## Pointer, hit-testing and the input you keep
 
