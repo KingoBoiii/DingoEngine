@@ -6,6 +6,7 @@
 #include "DingoEngine/Scene/Components.h"
 #include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/SceneData.h"
+#include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
 #include <algorithm>
@@ -23,19 +24,6 @@ namespace Dingo
 			namespace
 			{
 
-				std::vector<std::pair<Scene*, SceneData*>>& Scenes()
-				{
-					// Leaked: a Scene destroyed during static destruction still unregisters.
-					static auto* s_Scenes = new std::vector<std::pair<Scene*, SceneData*>>();
-					return *s_Scenes;
-				}
-
-				std::recursive_mutex& ScenesMutex()
-				{
-					static auto* s_Mutex = new std::recursive_mutex();
-					return *s_Mutex;
-				}
-
 				std::string EntityName(const entt::registry& registry, entt::entity handle)
 				{
 					const TagComponent* tag = registry.try_get<TagComponent>(handle);
@@ -44,31 +32,13 @@ namespace Dingo
 
 			}
 
-			std::unique_lock<std::recursive_mutex> LockScenes()
-			{
-				return std::unique_lock(ScenesMutex());
-			}
-
-			void RegisterScene(Scene* scene, SceneData* data)
-			{
-				std::lock_guard lock(ScenesMutex());
-				Scenes().emplace_back(scene, data);
-			}
-
-			void UnregisterScene(Scene* scene)
-			{
-				std::lock_guard lock(ScenesMutex());
-				std::vector<std::pair<Scene*, SceneData*>>& scenes = Scenes();
-				std::erase_if(scenes, [scene](const std::pair<Scene*, SceneData*>& entry) { return entry.first == scene; });
-			}
-
 			void CollectAnimators(std::vector<AnimatorRow>& out)
 			{
 				out.clear();
-				std::lock_guard lock(ScenesMutex());
-				for (const auto& [scene, data] : Scenes())
+				const std::unique_lock lock = SceneDebug::LockScenes();
+				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{
-					entt::registry& registry = data->Registry;
+					entt::registry& registry = live.Data->Registry;
 					auto view = registry.view<const AnimatorComponent, const AnimatorRuntime>();
 					for (entt::entity handle : view)
 					{
@@ -78,7 +48,7 @@ namespace Dingo
 
 						const AnimatorComponent& settings = view.get<const AnimatorComponent>(handle);
 						AnimatorRow& row = out.emplace_back();
-						row.Owner = scene;
+						row.Owner = live.Instance;
 						row.Entity = entt::to_integral(handle);
 						row.Enabled = settings.Enabled;
 						row.Speed = settings.Speed;
@@ -97,14 +67,14 @@ namespace Dingo
 			AnimatorNames DescribeAnimator(const AnimatorRow& row)
 			{
 				AnimatorNames names{ "(gone)", "(gone)", std::string() };
-				std::lock_guard lock(ScenesMutex());
-				for (const auto& [scene, data] : Scenes())
+				const std::unique_lock lock = SceneDebug::LockScenes();
+				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{
-					if (scene != row.Owner)
+					if (live.Instance != row.Owner)
 						continue;
 
-					names.Scene = scene->GetName();
-					const entt::registry& registry = data->Registry;
+					names.Scene = live.Instance->GetName();
+					const entt::registry& registry = live.Data->Registry;
 					const entt::entity handle = static_cast<entt::entity>(row.Entity);
 					if (!registry.valid(handle))
 						break;
@@ -128,13 +98,13 @@ namespace Dingo
 					const AnimationSystem::EventScratch::RecentEvent* Event;
 				};
 
-				std::lock_guard lock(ScenesMutex());
+				const std::unique_lock lock = SceneDebug::LockScenes();
 				std::vector<Candidate> candidates;
-				for (const auto& entry : Scenes())
+				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{
-					const AnimationSystem::EventScratch& scratch = entry.second->AnimationEvents;
+					const AnimationSystem::EventScratch& scratch = live.Data->AnimationEvents;
 					for (size_t i = 0; i < scratch.RecentCount; ++i)
-						candidates.push_back({ entry.second, &scratch.Recent[i] });
+						candidates.push_back({ live.Data, &scratch.Recent[i] });
 				}
 
 				std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b)

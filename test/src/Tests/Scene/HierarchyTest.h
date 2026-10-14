@@ -40,6 +40,8 @@ namespace Dingo
 		void RunActiveChecks();
 		void RunSceneApiChecks();
 		void RunLightProbe();
+		void RunSceneDebugChecks();
+		void CheckSceneTabOpens();
 		void BuildScene();
 		void Animate(float deltaTime);
 		void TrackPhysics();
@@ -91,6 +93,8 @@ namespace Dingo
 		bool  m_Animate = true;
 		bool  m_LightProbeDone = false;
 		bool  m_PhysicsChecksDone = false;
+		bool  m_SceneTabChecked = false;
+		int   m_SceneTabFrames = 0;
 
 		glm::vec3 m_CrateStart{ 0.0f };
 		glm::vec3 m_CarrierStart{ 0.0f };

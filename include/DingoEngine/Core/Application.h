@@ -98,8 +98,8 @@ namespace Dingo
 		ImGuiParams ImGui;			///< only used while EnableImGui or EnableDebugOverlays is true
 
 		/// The built-in tabbed Debug window (F3 = engine tab, F4 = renderer tab,
-		/// F5 = input tab, F6 = assets tab, F7 = animation tab, F8 = profiler tab; the active
-		/// tab's key closes it).
+		/// F5 = input tab, F6 = assets tab, F7 = animation tab, F8 = profiler tab, F9 = scene tab;
+		/// the active tab's key closes it).
 		/// Independent of EnableImGui: the engine brings up the UI backend for it even if the game
 		/// uses no UI of its own. Honoured in every build config, Distribution included -- set
 		/// false to strip the overlay (and, when EnableImGui is also false, the ImGui backend)
@@ -260,7 +260,7 @@ namespace Dingo
 		bool OnWindowResizeEvent(WindowResizeEvent& e);
 		bool OnWindowFocusEvent(WindowFocusEvent& e);
 
-		// Renders the engine's built-in tabbed Debug window (F3-F8 select its
+		// Renders the engine's built-in tabbed Debug window (F3-F9 select its
 		// tabs) inside the ImGui frame. Gated at runtime by
 		// ApplicationParams::EnableDebugOverlays.
 		void RenderDebugOverlays();
@@ -279,7 +279,7 @@ namespace Dingo
 		AssetManager* m_AssetManager = nullptr;
 		Internal::LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
-		bool m_ShowDebugWindow = false; // built-in tabbed debug window (F3-F8 select a tab)
+		bool m_ShowDebugWindow = false; // built-in tabbed debug window (F3-F9 select a tab)
 		Internal::DebugTab m_ActiveDebugTab{};
 		Internal::DebugTab m_PendingDebugTab{}; // tab selection requested but not yet applied
 		bool m_IsRunning = true;

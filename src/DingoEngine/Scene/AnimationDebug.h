@@ -8,7 +8,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,8 +21,6 @@ namespace Dingo
 	namespace Internal
 	{
 
-		struct SceneData;
-
 		namespace AnimationDebug
 		{
 
@@ -35,7 +32,7 @@ namespace Dingo
 			{
 				const Scene* Owner = nullptr;
 				uint32_t Entity = 0;
-				// Null when the animator isn't bound to the entity's current model. Valid while LockScenes()
+				// Null when the animator isn't bound to the entity's current model. Valid while SceneDebug::LockScenes()
 				// is held and the scene neither updates nor changes.
 				const Animator* Instance = nullptr;
 				bool Enabled = true;
@@ -63,14 +60,7 @@ namespace Dingo
 				uint64_t Sequence = 0;
 			};
 
-			// A scene registers at its first OnUpdate (main thread) and unregisters in its destructor
-			// (any thread), which waits while this lock is held. The tab holds it for as long as it
-			// reads the rows' animators, so a scene freed on another thread can't free one mid-read.
-			[[nodiscard]] std::unique_lock<std::recursive_mutex> LockScenes();
-			void RegisterScene(Scene* scene, SceneData* data);
-			void UnregisterScene(Scene* scene);
-
-			// Every live scene's animators that have a runtime animator, scenes in the order they first updated.
+			// Every live scene's animators that have a runtime animator, scenes in creation order.
 			void CollectAnimators(std::vector<AnimatorRow>& out);
 			// The row's scene, entity and model names; "(gone)" for a scene or entity gone since.
 			AnimatorNames DescribeAnimator(const AnimatorRow& row);

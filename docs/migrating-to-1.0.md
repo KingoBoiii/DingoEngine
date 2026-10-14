@@ -180,7 +180,7 @@ layout stable.
 `AnimationStatsWindow`, `ProfilerStatsWindow`, every `...Section()` function, `UI::DebugWindow`
 and `UI::DebugTab`, together with `UI/DebugPanels.h`, are now engine-internal.
 
-The built-in Debug window is unchanged: F3 to F8 open its tabs in every build that keeps
+The built-in Debug window is unchanged: F3 to F9 open its tabs in every build that keeps
 `ApplicationParams::EnableDebugOverlays` on. A game that embedded a panel in its own window draws
 the numbers it wants from the same sources:
 

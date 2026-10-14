@@ -52,7 +52,7 @@ What Distribution changes:
 
 Two things Distribution does **not** change:
 
-- The built-in Debug window (F3 to F8: engine, renderer, input, assets, animation and profiler
+- The built-in Debug window (F3 to F9: engine, renderer, input, assets, animation, profiler and scene
   tabs) is on in every configuration. Set `EnableDebugOverlays = false` in `ApplicationParams`
   to strip it from the shipped game (see
   [Application & Layers](application-and-layers.md#applicationparams)).
@@ -276,7 +276,7 @@ settings.Save();
       project, and was rebuilt against the engine version you ship (the promise is source
       compatibility, not binary: see [Versioning](versioning.md)).
 - [ ] `ApplicationParams::Name`, `Window.Title`, and `exeMetadata`'s `Name` and `Version` are set.
-- [ ] `EnableDebugOverlays` is `false`, unless you want players to have the F3 to F8 window.
+- [ ] `EnableDebugOverlays` is `false`, unless you want players to have the F3 to F9 window.
 - [ ] The folder holds the executable, `<Game>.dpak` named like it, the DLLs (Windows),
       `THIRD-PARTY-NOTICES.md` and the licence files, and none of: `assets/`, `.cache/`,
       `imgui.ini`, logs, a stray `.dpak`.

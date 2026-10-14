@@ -9,7 +9,7 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/Model.h"
 
-#include "DingoEngine/Scene/AnimationDebug.h"
+#include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
@@ -68,7 +68,7 @@ namespace Dingo
 
 	Scene::~Scene()
 	{
-		Internal::AnimationDebug::UnregisterScene(this);
+		Internal::SceneDebug::UnregisterScene(this);
 		Clear();
 		delete m_Data;
 	}
@@ -325,7 +325,7 @@ namespace Dingo
 
 		if (!m_Data->DebugRegistered)
 		{
-			Internal::AnimationDebug::RegisterScene(this, m_Data);
+			Internal::SceneDebug::RegisterScene(this, m_Data);
 			m_Data->DebugRegistered = true;
 		}
 

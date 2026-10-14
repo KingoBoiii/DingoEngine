@@ -1145,7 +1145,6 @@ namespace Dingo
 		struct SkinnedTwin
 		{
 			Material* Twin = nullptr;
-			uint64_t SourceRevision = ~0ull;
 			uint32_t IdleScenes = 0;
 			bool Used = false;
 		};

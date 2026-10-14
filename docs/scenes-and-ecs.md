@@ -911,6 +911,35 @@ API: `CreateScene`, `GetScene`, `HasScene`, `SetActiveScene`, `GetActiveScene`,
 `GetActiveSceneName`, `OnUpdate`, `OnRender` (no argument — uses the engine `SceneRenderer`),
 `Clear`. Scene lifecycle: `OnStart` / `OnStop` / `IsRunning`. The manager owns the scenes.
 
+## Debugging: the F9 Scene tab
+
+**F9** opens the Debug window on its **Scene** tab. It is read-only and costs nothing while it isn't
+shown.
+
+- **Scenes**: every live scene that has updated at least once, in the order each first updated, whether it is running and has physics, its entity
+  count, its enabled point and spot lights next to the renderer's local-light budget
+  (`Renderer3D::GetLocalLightBudget`), and its live bodies and controllers. The budget applies to the
+  lights in view, so a level with more lights than that is fine; F4 shows how many a frame drew.
+  Below the list, the selected scene's primary camera, light counts (point and spot lights without a
+  `Transform3DComponent`, which the renderer ignores, are called out, and so is the default light
+  when it is in use), fog components, clear colour, and its 2D and 3D worlds: bodies, sensors,
+  controllers and gravity.
+- **Entities**: the selected scene's entities as a parent/child tree, roots in entity order (creation
+  order, except that an entity reusing a destroyed one's slot sorts in its place) and children in
+  child order, with a joint socket shown as `@joint`. A name filter (case-insensitive)
+  and a "has component" filter turn the tree into a flat list of matches.
+- **Inspector**: the selected entity's UUID, parent, socket and child count, then one section per
+  built-in component with its fields. Transforms show the local values and the world values, read
+  through the hierarchy. The runtime state behind the settings components (the live 2D or 3D body
+  with its position and velocity, the character controller and whether it is grounded, the playing sound, the
+  bound animator and each layer's clip, the particle emitters, and the attached script's type and
+  whether it has started) follows in its own sections, marked *runtime, read-only*.
+
+The selection is kept by entity UUID and a scene serial that is never reused: destroying the
+selected entity empties the inspector, and destroying the selected scene falls back to the first
+one, never to an entity or scene that took the old one's place. Editing fields from the tab isn't
+supported yet.
+
 ## Worked example: Space Invaders
 
 `examples/SpaceInvaders/` is a complete game built on this system and is the best
