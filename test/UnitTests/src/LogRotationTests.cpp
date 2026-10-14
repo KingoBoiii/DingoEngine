@@ -88,10 +88,11 @@ namespace
 		uint64_t Id() const { return Info.dwProcessId; }
 	};
 
-	void SetVariables(const std::filesystem::path& directory, int64_t startMs)
+	void SetVariables(const std::filesystem::path& directory, int64_t startMs, int64_t holdMs = 100)
 	{
 		_wputenv_s(Test::k_LogWriterVariableW, directory.c_str());
 		_wputenv_s(Test::k_LogWriterStartVariableW, std::to_wstring(startMs).c_str());
+		_wputenv_s(Test::k_LogWriterHoldVariableW, std::to_wstring(holdMs).c_str());
 	}
 #else
 	struct Child
@@ -116,10 +117,11 @@ namespace
 		uint64_t Id() const { return static_cast<uint64_t>(Pid); }
 	};
 
-	void SetVariables(const std::filesystem::path& directory, int64_t startMs)
+	void SetVariables(const std::filesystem::path& directory, int64_t startMs, int64_t holdMs = 100)
 	{
 		setenv(Test::k_LogWriterVariable, directory.c_str(), 1);
 		setenv(Test::k_LogWriterStartVariable, std::to_string(startMs).c_str(), 1);
+		setenv(Test::k_LogWriterHoldVariable, std::to_string(holdMs).c_str(), 1);
 	}
 #endif
 
@@ -165,7 +167,8 @@ int Test::RunLogWriter()
 	const char* directory = std::getenv(k_LogWriterVariable);
 #endif
 	const char* start = std::getenv(k_LogWriterStartVariable);
-	if (!directory || !start)
+	const char* hold = std::getenv(k_LogWriterHoldVariable);
+	if (!directory || !start || !hold)
 		return 2;
 
 	std::this_thread::sleep_until(std::chrono::system_clock::time_point(std::chrono::milliseconds(std::strtoll(start, nullptr, 10))));
@@ -174,7 +177,7 @@ int Test::RunLogWriter()
 
 	const uint64_t pid = ProcessId();
 	DE_WARN("writer {} start", pid);
-	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	std::this_thread::sleep_for(std::chrono::milliseconds(std::strtoll(hold, nullptr, 10)));
 	DE_WARN("writer {} end", pid);
 
 	const std::string text = ReadText(Log::GetFilePath());
@@ -245,6 +248,28 @@ TEST_SUITE("Log")
 				CHECK_MESSAGE(started == 1, "round ", round, ": writer ", pid, "'s start is in ", started, " files");
 				CHECK_MESSAGE(ended, "round ", round, ": writer ", pid, "'s end isn't beside its start");
 			}
+		}
+	}
+
+	TEST_CASE("pruning side logs never deletes one a running instance writes")
+	{
+		TempDirectory directory;
+		constexpr int k_Children = 7;
+		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+
+		std::vector<Child> children;
+		for (int i = 0; i < k_Children; i++)
+		{
+			SetVariables(directory.Path, now.count() + 150 + i * 100, 2000 - i * 100);
+			Child child;
+			if (child.Start())
+				children.push_back(child);
+		}
+		CHECK(children.size() == k_Children);
+		for (Child& child : children)
+		{
+			const uint64_t pid = child.Id();
+			CHECK_MESSAGE(child.Wait() == 0, "writer ", pid, " lost its log");
 		}
 	}
 }

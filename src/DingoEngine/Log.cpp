@@ -132,25 +132,6 @@ namespace Dingo
 			return directory / (run == 0 ? std::string("Dingo.log") : std::format("Dingo.{}.log", run));
 		}
 
-		// Logs written beside a Dingo.log another instance held open, and earlier runs' logs a
-		// rotation couldn't shift, oldest dropped first.
-		void PruneSideLogs(const std::filesystem::path& directory, uint32_t keep)
-		{
-			std::error_code error;
-			std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> logs;
-			for (const auto& entry : std::filesystem::directory_iterator(directory, error))
-			{
-				const std::u8string name = entry.path().filename().u8string();
-				if (name.starts_with(u8"Dingo-") && name.ends_with(u8".log"))
-					logs.emplace_back(entry.last_write_time(error), entry.path());
-			}
-			if (logs.size() <= keep)
-				return;
-			std::sort(logs.begin(), logs.end());
-			for (size_t i = 0; i < logs.size() - keep; i++)
-				std::filesystem::remove(logs[i].second, error);
-		}
-
 		std::filesystem::path SideLogPath(const std::filesystem::path& directory)
 		{
 			return directory / std::format("Dingo-{}.log", ProcessId());
@@ -168,7 +149,7 @@ namespace Dingo
 			const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
 			if (fd < 0)
 				return false;
-			const bool inUse = flock(fd, LOCK_EX | LOCK_NB) != 0;
+			const bool inUse = flock(fd, LOCK_EX | LOCK_NB) != 0 && errno == EWOULDBLOCK;
 			close(fd);
 			return inUse;
 		}
@@ -289,6 +270,29 @@ namespace Dingo
 			bool TimedOut() const { return false; }
 		};
 #endif
+
+		// Logs written beside a Dingo.log another instance held open, and earlier runs' logs a
+		// rotation couldn't shift, oldest dropped first. Linux would unlink one a running instance
+		// still writes, losing its whole log.
+		void PruneSideLogs(const std::filesystem::path& directory, uint32_t keep)
+		{
+			std::error_code error;
+			std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> logs;
+			for (const auto& entry : std::filesystem::directory_iterator(directory, error))
+			{
+				const std::u8string name = entry.path().filename().u8string();
+				if (name.starts_with(u8"Dingo-") && name.ends_with(u8".log"))
+					logs.emplace_back(entry.last_write_time(error), entry.path());
+			}
+			if (logs.size() <= keep)
+				return;
+			std::sort(logs.begin(), logs.end());
+			for (size_t i = 0; i < logs.size() - keep; i++)
+			{
+				if (!IsLogInUse(logs[i].second))
+					std::filesystem::remove(logs[i].second, error);
+			}
+		}
 
 		// Dingo.log becomes Dingo.1.log and so on, keeping `keepRuns` in all. The newest log first
 		// moves aside under a side-log name, so a rotation that fails part way (a file held open, a
