@@ -574,6 +574,19 @@ namespace Dingo
 			for (uint32_t gamepad = 0; gamepad < k_MaxGamepads; ++gamepad)
 				StopRumble(gamepad);
 			s_XInputUsers.fill(k_NoXInputUser);
+
+			// Input::Update never runs headless, so a snapshot left from the old window would read forever.
+			s_CurrentKeys.fill(false);
+			s_PreviousKeys.fill(false);
+			s_CurrentMouseButtons.fill(false);
+			s_PreviousMouseButtons.fill(false);
+			s_MousePosition = glm::vec2(0.0f);
+			s_PreviousMousePosition = glm::vec2(0.0f);
+			s_MouseScrollDelta = glm::vec2(0.0f);
+			s_CurrentGamepads.fill(GamepadState{});
+			s_PreviousGamepads.fill(GamepadState{});
+			s_GamepadNames.fill(std::string{});
+			s_GamepadTypes.fill(GamepadType{});
 			return;
 		}
 		ApplyCursorModeToWindow();

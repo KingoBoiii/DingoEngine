@@ -43,7 +43,7 @@ namespace Dingo
 
 			const Application& app = Application::Get();
 			const float averageDelta = m_SteppedTime / float(k_Updates - 1);
-			m_Checks.Check(app.IsHeadless() && Renderer::GetFrameIndex() == 0, "headless: no renderer frames");
+			m_Checks.Check(app.IsHeadless() && Renderer::GetFrameIndex() == 0 && Renderer::GetWhiteTexture() == nullptr, "headless: renderer never started");
 			m_Checks.Check(averageDelta >= 0.014f && averageDelta < 0.1f, "headless: OnUpdate paced near 60 Hz");
 			m_Checks.Check(m_Body.GetComponent<Transform3DComponent>().Position.y < 9.5f, "headless: scene physics steps");
 			DE_INFO("Headless: {} updates, average delta {:.2f} ms, {} failed.", m_Updates, averageDelta * 1000.0f, m_Checks.FailedCount());

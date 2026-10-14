@@ -167,12 +167,13 @@ namespace Dingo
 		/// until one sets Handled. The window calls it.
 		void OnEvent(Event& e);
 		/// The frame loop: runs until Close() or the window closes, then calls OnDestroy(). Headless,
-		/// it calls each layer's OnUpdate at a fixed 60 Hz and only Close() ends it.
+		/// it calls each layer's OnUpdate 60 times a second on average and only Close() ends it.
 		/// The engine calls it from main(); it returns when the application ends.
 		void Run();
 
 		/// Takes ownership of layer and calls its OnAttach() now. Layers update in push order,
-		/// below every overlay. Push from OnInitialize, once the renderers and assets are live.
+		/// below every overlay. Push from OnInitialize, once the renderers (not when headless) and
+		/// assets are live.
 		void PushLayer(Layer* layer);
 		/// Like PushLayer, but the overlay sits above all layers: it updates last and sees events
 		/// first.
@@ -199,8 +200,8 @@ namespace Dingo
 		static bool HasInstance() { return s_Instance != nullptr; }
 
 		/// True when started with GraphicsAPI::Headless: there is no window, graphics context, swap
-		/// chain, renderer or ImGui, and Run() calls every layer's OnUpdate at a fixed 60 Hz until
-		/// Close().
+		/// chain, renderer or ImGui, and Run() calls every layer's OnUpdate 60 times a second on average
+		/// until Close().
 		bool IsHeadless() const { return m_Params.Graphics.GraphicsAPI == GraphicsAPI::Headless; }
 
 		/// The application window. Valid from Initialize() until teardown; asserts (Debug builds)
@@ -256,11 +257,12 @@ namespace Dingo
 		Application(const ApplicationParams& params = {});
 
 	protected:
-		/// Called at the end of Initialize(), with the window, renderers, audio and assets live.
+		/// Called at the end of Initialize(), with the window, renderers, audio and assets live (no window
+		/// or renderers when headless).
 		/// Push your layers here.
 		virtual void OnInitialize() {}
 		/// Runs once when Run() returns, before teardown: layers, renderer, audio and assets
-		/// are all still live.
+		/// are all still live (no renderer when headless).
 		virtual void OnDestroy() {}
 
 	private:

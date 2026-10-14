@@ -963,7 +963,7 @@ now has a duplicate case.
 as an integer (in a settings file, say) reads the wrong API. Store its name instead.
 
 `Headless` now works: the app runs with no window, GPU, renderers or ImGui, and `Run()` ticks the
-layers at 60 Hz, for a dedicated server or a CI job. `Application::IsHeadless()` tells shared code
+layers 60 times a second on average, for a dedicated server or a CI job. `Application::IsHeadless()` tells shared code
 which it is. See [Headless](application-and-layers.md#headless).
 
 ### Renderer2D::GetOutput and ClearColor

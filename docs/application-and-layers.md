@@ -278,9 +278,10 @@ params.Graphics.GraphicsAPI = GraphicsAPI::Headless;
 ```
 
 - `OnInitialize`, `OnAttach`, `OnDetach` and `OnDestroy` run as usual, and `Run()` calls every
-  layer's `OnUpdate(deltaTime)` at about 60 a second (less evenly on Windows, whose default timer
-  ticks every 15.6 ms). There is no `OnImGuiRender`, no debug window and no events;
-  `EnableImGui` and `EnableDebugOverlays` are ignored.
+  layer's `OnUpdate(deltaTime)` 60 times a second on average. The loop sleeps to a running
+  deadline, so individual deltas vary with the OS timer (Windows' default ticks every 15.6 ms).
+  There is no `OnImGuiRender`, no debug window and no events; `EnableImGui` and
+  `EnableDebugOverlays` are ignored.
 - There is no window to close, so `Close()` is the only way out of the loop. `RequestRestart`
   works, to or from Headless.
 - The `AssetManager`, `AudioEngine`, scenes, scripts and physics all work. `SceneManager::OnRender`
@@ -517,8 +518,8 @@ bool OnFocus(WindowFocusEvent& e)
 
 - One window, one `Application` and one graphics back-end per run; `RequestRestart` rebuilds the
   app to change the back-end.
-- A headless app can't load GPU assets and has no `Input`; its loop is a fixed 60 Hz
-  ([Headless](#headless)).
+- A headless app can't load GPU assets and has no `Input`; its loop averages 60 updates
+  a second ([Headless](#headless)).
 - Rumble works on Xbox-compatible pads on Windows only ([Gamepads](#gamepads-v051)); up to 16 pads
   are tracked.
 - Both fullscreen modes are GLFW fullscreen windows, which an alt-tab minimizes. Exclusive

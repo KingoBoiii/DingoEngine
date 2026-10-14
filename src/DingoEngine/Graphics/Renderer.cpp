@@ -479,7 +479,7 @@ namespace Dingo
 
 	void Renderer::Clear(Framebuffer* framebuffer, const glm::vec4& clearColor)
 	{
-		if (s_Data->FrameSkipped)
+		if (!s_Data || s_Data->FrameSkipped)
 			return;
 
 		s_Data->CommandList->Clear(framebuffer, 0, clearColor);
@@ -487,7 +487,7 @@ namespace Dingo
 
 	void Renderer::Clear(const glm::vec4& clearColor)
 	{
-		if (s_Data->FrameSkipped)
+		if (!s_Data || s_Data->FrameSkipped)
 			return;
 
 		Framebuffer* target = GetCurrentTarget();
@@ -704,7 +704,6 @@ namespace Dingo
 
 	Texture* Renderer::GetWhiteTexture()
 	{
-		DE_CORE_ASSERT(s_Data, "Renderer used after Renderer::Destroy()");
 		return s_Data ? s_Data->WhiteTexture : nullptr;
 	}
 

@@ -111,7 +111,8 @@ namespace Dingo
 		**************************************************/
 
 		/// Clears colour attachment 0 of `framebuffer`, and its depth to 1 if it has one. Alpha is
-		/// ignored: the colour is cleared with alpha 1. Doesn't change the render target.
+		/// ignored: the colour is cleared with alpha 1. Doesn't change the render target. Does
+		/// nothing when headless.
 		static void Clear(Framebuffer* framebuffer, const glm::vec4& clearColor);
 		/// The same for the current render target (SetRenderTarget, else the swap chain), which it
 		/// also binds for the draws that follow.
@@ -200,7 +201,7 @@ namespace Dingo
 		**************************************************/
 
 		/// A 1x1 opaque white RGBA texture, for a texture slot that has nothing to show. Owned by
-		/// the Renderer: never destroy it.
+		/// the Renderer: never destroy it. Null when headless.
 		static Texture* GetWhiteTexture();
 		/// A linear-filtering sampler that clamps to the edge. Owned by the Renderer: never destroy
 		/// it.

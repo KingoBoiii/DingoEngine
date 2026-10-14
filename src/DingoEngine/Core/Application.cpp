@@ -281,6 +281,7 @@ namespace Dingo
 	void Application::RunHeadless()
 	{
 		Timer timer;
+		auto next = std::chrono::steady_clock::now();
 
 		DE_PROFILE_THREAD("Main");
 
@@ -314,10 +315,14 @@ namespace Dingo
 
 			RunPostExecutionCallbacks();
 
-			// Nothing presents, so nothing paces the loop: tick at a fixed rate instead of spinning.
-			const float remaining = k_PacedUpdateInterval - (timer.Elapsed() - frameStart);
-			if (m_IsRunning && remaining > 0.0f)
-				std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int64_t>(remaining * 1'000'000.0f)));
+			// Nothing presents, so nothing paces the loop: sleep to a running deadline instead of
+			// spinning, so the coarse Windows timer evens out to the target rate on average.
+			next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<float>(k_PacedUpdateInterval));
+			const auto now = std::chrono::steady_clock::now();
+			if (next < now)
+				next = now;
+			else if (m_IsRunning)
+				std::this_thread::sleep_until(next);
 		}
 	}
 

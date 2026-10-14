@@ -53,7 +53,8 @@ namespace Dingo
 		/// False on a Vulkan GPU without shaderClipDistance, which the shadow pass needs to keep
 		/// each view inside its atlas tile; Renderer3D then draws no shadows.
 		bool SupportsClipDistance() const { return m_SupportsClipDistance; }
-		/// The one live context; valid from the Application's start-up until its shutdown.
+		/// The one live context; valid from the Application's start-up until its shutdown. There
+		/// is none when headless.
 		static GraphicsContext& Get() { return *s_Instance; }
 
 		/// A readable vendor name for a PCI vendor id ("NVIDIA", "AMD", "Intel", ...), or

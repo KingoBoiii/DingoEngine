@@ -32,8 +32,8 @@ namespace Dingo
 		Vulkan,		///< Vulkan; the default, on Windows and Linux.
 		DirectX11,	///< Direct3D 11, Windows only.
 		DirectX12,	///< Direct3D 12, Windows only.
-		/// No window, GPU or renderer: Run() ticks the layers at 60 Hz, for a dedicated server or
-		/// a CI job. Last, so a value-initialised GraphicsAPI{} stays Vulkan.
+		/// No window, GPU or renderer: Run() ticks the layers 60 times a second on average, for a
+		/// dedicated server or a CI job. Last, so a value-initialised GraphicsAPI{} stays Vulkan.
 		Headless
 	};
 
