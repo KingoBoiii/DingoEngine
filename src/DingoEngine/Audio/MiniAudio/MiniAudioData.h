@@ -23,6 +23,7 @@ namespace Dingo::Internal
 {
 
 	struct MiniAudioVfs;
+	struct MiniAudioStream;
 
 	// One controllable live sound. Play() hands out a slot; Update() / Stop() reap it.
 	// Generation is bumped every time the slot is recycled so a stale AudioSoundId that
@@ -34,6 +35,7 @@ namespace Dingo::Internal
 	{
 		ma_sound* Sound = nullptr;              // heap ma_sound, owned by this slot while live
 		std::shared_ptr<AudioClip> Clip;        // keeps the clip's decoded data alive while playing
+		MiniAudioStream* Stream = nullptr;      // CreateStream's data source; freed after Sound
 		std::uint32_t Bus = 0;                  // BusSlot index; a bus releases its sounds before it goes
 		std::uint16_t Generation = 0;
 	};
