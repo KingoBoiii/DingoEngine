@@ -51,9 +51,9 @@ ApplicationParams params{
 ```
 
 `.Graphics` may be left out: `GraphicsParams` defaults to `GraphicsAPI::Vulkan` with
-`FramesInFlight = 3`. `GraphicsAPI::Headless` has no graphics context, so asking for it
-(or for a back-end the platform lacks, such as DirectX on Linux) logs an error and stops
-in `Application::Initialize`, in every configuration.
+`FramesInFlight = 3`. Asking for a back-end the platform lacks, such as DirectX on Linux,
+logs an error and stops in `Application::Initialize`, in every configuration.
+`GraphicsAPI::Headless` runs without a window or GPU: see [Headless](#headless).
 
 ### Fullscreen
 
@@ -148,7 +148,8 @@ Useful members (access the singleton anywhere with `Application::Get()`):
 | `PushLayer(Layer*)` / `PushOverlay(Layer*)` | Add a layer (overlays update/draw on top). The app takes ownership. |
 | `GetRenderer2D()` | The batched 2D renderer (see [2D Rendering](rendering-2d.md)). |
 | `GetWindow()` | Window info — `GetWidth()`, `GetHeight()` — and runtime switches: `SetFullscreen`, `SetVSync` (see [VSync](#vsync)). |
-| `GetSwapChain()` | The active swap chain. |
+| `GetSwapChain()` | The active swap chain; null when headless. |
+| `IsHeadless()` | True when started with `GraphicsAPI::Headless` (see [Headless](#headless)). |
 | `Close()` | Request shutdown after the current frame. |
 | `IsMinimized()` | True while the window is minimized: nothing renders (see [In the background](#in-the-background)). |
 | `SetUpdateInBackground(bool)` / `GetUpdateInBackground()` | Keep updating while minimized or unfocused, or pause there (the default). |
@@ -201,6 +202,28 @@ at runtime (v0.7.2; v0.7.0 and v0.7.1 always paused while minimized, and never w
 Either way, every key and button edge reaches exactly one `OnUpdate`. After a pause, the first
 `OnUpdate` sees what changed during it, gamepads included; the scroll and cursor motion an inactive
 window collected meanwhile are dropped.
+
+### Headless
+
+`GraphicsAPI::Headless` starts the app with no window, graphics context, swap chain, renderers or
+ImGui, and GLFW is never initialised, so it runs on a machine with no display or GPU, such as a
+dedicated server or a CI job (after v0.9.1):
+
+```cpp
+params.Graphics.GraphicsAPI = GraphicsAPI::Headless;
+```
+
+- `OnInitialize`, `OnAttach`, `OnDetach` and `OnDestroy` run as usual, and `Run()` calls every
+  layer's `OnUpdate(deltaTime)` at about 60 a second (less evenly on Windows, whose default timer
+  ticks every 15.6 ms). There is no `OnUIRender`, no debug window and no events.
+- There is no window to close, so `Close()` is the only way out of the loop.
+- The `AssetManager`, `AudioEngine`, scenes, scripts and physics all work. `SceneManager::OnRender`
+  does nothing. Loading anything that lives on the GPU (textures, models, fonts, shaders, or a
+  scene file that refers to them) crashes: load only audio clips and plain files.
+- `GetWindow()`, `GetGraphicsContext()`, `GetRenderer2D()`, `GetRenderer3D()` and
+  `GetSceneRenderer()` must not be called (they assert in Debug); `GetSwapChain()` returns null.
+  Check `Application::Get().IsHeadless()` in code a client and a server share.
+- `Input` is never updated: every key, button and gamepad reads as up.
 
 ## Layers
 

@@ -91,7 +91,7 @@ namespace Dingo
 
 	void SceneManager::OnRender()
 	{
-		if (m_ActiveScene)
+		if (m_ActiveScene && !Application::Get().IsHeadless())
 			Application::Get().GetSceneRenderer().Render(*m_ActiveScene);
 	}
 
