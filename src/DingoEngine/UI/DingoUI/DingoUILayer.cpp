@@ -17,7 +17,7 @@ namespace Dingo::Internal
 		if (m_Context.HasInputOverride() || Input::GetCursorMode() == CursorMode::Locked)
 			return;
 
-		if (m_Context.HitTestBlocking(Input::GetMousePosition()))
+		if (m_Context.HitTestBlocking(m_Context.WindowToTarget(Input::GetMousePosition())))
 			e.Handled = true;
 	}
 

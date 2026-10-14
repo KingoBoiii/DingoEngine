@@ -1,12 +1,15 @@
 #pragma once
 #include "DingoEngine/UI/DingoUI.h"
 #include "DingoUIDrawList.h"
+#include "DingoUILayout.h"
 
 #include <glm/glm.hpp>
 
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace Dingo
@@ -25,7 +28,7 @@ namespace Dingo::Internal
 	{
 		static constexpr size_t k_PointerButtonCount = 3; // left, right, middle
 
-		glm::vec2 ViewportSize{ 0.0f };     // pixels the pointer position is measured against
+		glm::vec2 ViewportSize{ 0.0f };     // pixels the pointer position is measured against (the window)
 		glm::vec2 PointerPosition{ 0.0f };  // pixels, origin top-left, +Y down
 		glm::vec2 Scroll{ 0.0f };
 		std::array<bool, k_PointerButtonCount> PointerDown{};
@@ -61,12 +64,32 @@ namespace Dingo::Internal
 		void SetInputOverride(const UIInputState* input) { m_InputOverride = input; }
 		bool HasInputOverride() const { return m_InputOverride != nullptr; }
 
-		// Commands drawn at this frame's EndFrame, then cleared. Until U2's elements build it, the
-		// test app fills it directly.
+		// Commands drawn at this frame's EndFrame, then cleared, before the elements' own. The test
+		// app fills it directly to check the batcher alone.
 		UIDrawList& GetDrawList() { return m_DrawList; }
 		// What the last EndFrame drew; zero when it drew nothing.
 		const UIRenderStatistics& GetRenderStatistics() const { return m_RenderStatistics; }
 
+		// The declarations. Valid between BeginFrame and EndFrame; false outside, with a warning once.
+		bool BeginRoot(std::string_view name, const UIRootParams& params);
+		void EndRoot();
+		bool BeginBox(const UIBoxParams& params);
+		void EndBox();
+		void Text(std::string_view text, const UITextParams& params);
+		void Image(Texture* texture, const UIImageParams& params);
+
+		void SetDefaultFont(Font* font) { m_Params.DefaultFont = font; }
+		Font* GetDefaultFont() const { return m_Params.DefaultFont; }
+
+		// Last frame's elements with their final rects, in target pixels: what the next frame's
+		// hit-testing reads. Replaced by EndFrame.
+		const UILayoutTree& GetLastLayout() const { return m_LastTree; }
+		// Pixels of the target the UI lays out on (the Application's swap chain, or SetTarget's).
+		const glm::vec2& GetTargetSize() const { return m_TargetSize; }
+		// A point in the window (what Input reports) in target pixels.
+		glm::vec2 WindowToTarget(const glm::vec2& point) const { return point * m_WindowToTarget; }
+
+		// The input as BeginFrame took it; the pointer is in target pixels.
 		const UIInputState& GetInput() const { return m_Input; }
 		const DingoUIParams& GetParams() const { return m_Params; }
 		uint64_t GetFrameIndex() const { return m_FrameIndex; }
@@ -77,11 +100,26 @@ namespace Dingo::Internal
 		bool IsCapturingInput() const { return m_CapturingInput; }
 
 	private:
+		glm::vec2 ComputeTargetSize() const;
+		bool CanDeclare();
+		void WarnMismatch(const char* what);
+
+	private:
 		DingoUIParams m_Params;
 		Framebuffer* m_Target = nullptr;
 		const UIInputState* m_InputOverride = nullptr;
 		UIInputState m_Input;
 		std::vector<UIRect> m_BlockingRects;
+		UILayoutTree m_Tree;
+		UILayoutTree m_LastTree;
+		UITextMeasureFn m_Measure;
+		std::string m_MeasureScratch;
+		glm::vec2 m_TargetSize{ 0.0f };
+		glm::vec2 m_WindowToTarget{ 1.0f };
+		bool m_InFrame = false;
+		bool m_WarnedOutsideFrame = false;
+		bool m_WarnedMismatch = false;
+		bool m_WarnedNoFont = false;
 		UIDrawList m_DrawList;
 		std::unique_ptr<DingoUIBatcher> m_Batcher;
 		UIRenderStatistics m_RenderStatistics;

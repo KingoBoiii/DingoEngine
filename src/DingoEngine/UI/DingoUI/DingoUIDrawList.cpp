@@ -176,7 +176,7 @@ namespace Dingo::Internal
 		command.Image = texture;
 	}
 
-	void UIDrawList::AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth, const UIRect& clip)
+	void UIDrawList::AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth, const UIRect& clip, float align, float alignWidth)
 	{
 		if (!font || text.empty() || size <= 0.0f)
 			return;
@@ -188,6 +188,8 @@ namespace Dingo::Internal
 		command.Color = color;
 		command.TextSize = size;
 		command.MaxWidth = maxWidth;
+		command.Align = align;
+		command.AlignWidth = alignWidth;
 		command.TextFont = font;
 		command.TextOffset = static_cast<uint32_t>(m_Text.size());
 		command.TextLength = static_cast<uint32_t>(text.size());
@@ -227,6 +229,8 @@ namespace Dingo::Internal
 				hasher.Add(atlas ? atlas->GetId() : 0ull);
 				hasher.Add(command.TextSize);
 				hasher.Add(command.MaxWidth);
+				hasher.Add(command.Align);
+				hasher.Add(command.AlignWidth);
 				hasher.Add(command.TextLength);
 				hasher.Bytes(m_Text.data() + command.TextOffset, command.TextLength);
 				break;
@@ -279,6 +283,16 @@ namespace Dingo::Internal
 
 				const std::string_view text(m_Text.data() + command.TextOffset, command.TextLength);
 				const TextLayout::Params params{ .Size = size, .MaxWidth = command.MaxWidth };
+				std::vector<float> lineOffsets;
+				if (command.Align > 0.0f && command.AlignWidth > 0.0f)
+				{
+					TextLayout::Walk(source, text, params,
+						[](TextLayout::FontGlyphSource::Glyph, uint32_t, double, uint32_t) {},
+						[&](uint32_t, double width)
+						{
+							lineOffsets.push_back((std::max)(0.0f, command.AlignWidth - static_cast<float>(width) * size) * command.Align);
+						});
+				}
 				TextLayout::Walk(source, text, params,
 					[&](TextLayout::FontGlyphSource::Glyph glyph, uint32_t, double penX, uint32_t line)
 					{
@@ -290,9 +304,10 @@ namespace Dingo::Internal
 							return;
 
 						const float baseline = firstBaseline + static_cast<float>(line) * lineAdvance;
+						const float originX = origin.x + (line < lineOffsets.size() ? lineOffsets[line] : 0.0f);
 						UIRect quad;
-						quad.Min = { origin.x + static_cast<float>((penX + planeLeft * scale) * size), baseline - static_cast<float>(planeTop * scale * size) };
-						quad.Max = { origin.x + static_cast<float>((penX + planeRight * scale) * size), baseline - static_cast<float>(planeBottom * scale * size) };
+						quad.Min = { originX + static_cast<float>((penX + planeLeft * scale) * size), baseline - static_cast<float>(planeTop * scale * size) };
+						quad.Max = { originX + static_cast<float>((penX + planeRight * scale) * size), baseline - static_cast<float>(planeBottom * scale * size) };
 						if (quad.IsEmpty() || !quad.Overlaps(command.Clip))
 						{
 							builder.Cull();

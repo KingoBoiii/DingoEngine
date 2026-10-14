@@ -110,8 +110,9 @@ namespace Dingo::Internal
 		// stands upright. A null texture draws the tint alone.
 		void AddImage(const UIRect& rect, Texture* texture, const glm::vec2& uvMin = glm::vec2(0.0f), const glm::vec2& uvMax = glm::vec2(1.0f), const glm::vec4& tint = glm::vec4(1.0f), const UIRect& clip = k_UINoClip);
 		// position is the top-left of the first line's box; size is the ascender-to-descender
-		// height in pixels, as Font::MeasureText measures it. maxWidth > 0 wraps.
-		void AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth = 0.0f, const UIRect& clip = k_UINoClip);
+		// height in pixels, as Font::MeasureText measures it. maxWidth > 0 wraps. align (0 left,
+		// 0.5 centre, 1 right) places each line within alignWidth pixels from position.
+		void AddText(const glm::vec2& position, const Font* font, std::string_view text, float size, const glm::vec4& color, float maxWidth = 0.0f, const UIRect& clip = k_UINoClip, float align = 0.0f, float alignWidth = 0.0f);
 
 		void Clear();
 		bool IsEmpty() const { return m_Commands.empty(); }
@@ -145,6 +146,8 @@ namespace Dingo::Internal
 			float BorderWidth = 0.0f;
 			float TextSize = 0.0f;
 			float MaxWidth = 0.0f;
+			float Align = 0.0f;
+			float AlignWidth = 0.0f;
 			Dingo::Texture* Image = nullptr;
 			const Dingo::Font* TextFont = nullptr;
 			uint32_t TextOffset = 0;
