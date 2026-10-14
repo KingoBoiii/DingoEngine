@@ -90,10 +90,12 @@ namespace Dingo
 	void Material::SetSampler(uint32_t slot, Sampler* sampler)
 	{
 		DE_CORE_ASSERT(slot < k_MaxSamplerSlots, "Sampler slot out of range");
-		if (m_Samplers[slot] == sampler)
+		const uint64_t samplerId = sampler ? sampler->GetId() : 0;
+		if (m_Samplers[slot] == sampler && m_SamplerIds[slot] == samplerId)
 			return;
 
 		m_Samplers[slot] = sampler;
+		m_SamplerIds[slot] = samplerId;
 		++m_BindingRevision;
 		InvalidatePipelineCache();
 	}
