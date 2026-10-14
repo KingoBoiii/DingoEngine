@@ -4,8 +4,9 @@
     name | exe | cwd | args | waitSec | env (K=V;K=V or -) | crop (x,y,w,h or full or -) | dbwin (1/0) | action
   action: - | min (minimize at 8 s, close while minimized) | keys:<vk hex,...> (posted 10 s after launch; non-extended keys only: arrows, Home, End, Insert and Delete arrive as numpad keys)
   Posted mouse messages never reach ImGui widgets: its GLFW backend reads the real cursor.
-  Per job writes <OutDir>\<name>.log (Dingo.log copy), .stdout, .stderr, .png, .dbwin.txt, and a
-  summary line to <OutDir>\summary.txt.
+  Each job gets --log-here unless its args name --log-dir=; a job whose log can't be found reports
+  fail=no-log. Per job writes <OutDir>\<name>.log (Dingo.log copy), .stdout, .stderr, .png,
+  .dbwin.txt, and a summary line to <OutDir>\summary.txt.
 #>
 param(
     [Parameter(Mandatory)] [string]$Jobs,
@@ -179,7 +180,15 @@ foreach ($line in Get-Content $Jobs) {
     if (-not $line.Trim() -or $line.TrimStart().StartsWith("#")) { continue }
     $f = $line -split '\|' | ForEach-Object { $_.Trim() }
     $name, $exe, $cwd, $jobArgs, $wait, $envs, $crop, $dbwin, $action = $f
-    $dlog = Join-Path $cwd "Dingo.log"
+    # v1 builds log to the per-user folder unless told otherwise; older builds ignore --log-here.
+    $logDir = $cwd
+    $named = if ($jobArgs -match '(^|\s)"?--log-dir=("([^"]*)"|(\S*))') { "$($Matches[3])$($Matches[4])".Trim('"') } else { "" }
+    if ($named) {
+        $logDir = if ([IO.Path]::IsPathRooted($named)) { $named } else { Join-Path $cwd $named }
+    } elseif ($jobArgs -notmatch '(^|\s)--log-here(\s|$)') {
+        $jobArgs = if ($jobArgs -and $jobArgs -ne "-") { "$jobArgs --log-here" } else { "--log-here" }
+    }
+    $dlog = Join-Path $logDir "Dingo.log"
     if (Test-Path $dlog) { Remove-Item $dlog -Force }
     $saved = @{}
     if ($envs -and $envs -ne "-") {
@@ -230,10 +239,13 @@ foreach ($line in Get-Content $Jobs) {
     $p.WaitForExit()
     if ($dbwin -eq "1") { Set-Content -Path (Join-Path $OutDir "$name.dbwin.txt") -Value ([DbWin]::Stop() + [DbWin]::Error) }
     Start-Sleep -Milliseconds 300
-    if (Test-Path $dlog) { Copy-Item $dlog (Join-Path $OutDir "$name.log") -Force }
-    $logText = if (Test-Path $dlog) { Get-Content $dlog -Raw } else { "" }
+    $sideLog = Join-Path $logDir "Dingo-$($p.Id).log"
+    if ((Test-Path $sideLog) -and (Get-Item $sideLog).LastWriteTime -ge $t0) { $dlog = $sideLog }
+    $hasLog = Test-Path $dlog
+    if ($hasLog) { Copy-Item $dlog (Join-Path $OutDir "$name.log") -Force }
+    $logText = if ($hasLog) { Get-Content $dlog -Raw } else { "" }
     $pass = ([regex]::Matches($logText, '\[PASS\]')).Count
-    $fail = ([regex]::Matches($logText, '\[FAIL\]')).Count
+    $fail = if ($hasLog) { ([regex]::Matches($logText, '\[FAIL\]')).Count } else { "no-log" }
     $sync = ([regex]::Matches($logText, 'hazard')).Count
     $vuid = ([regex]::Matches($logText, 'VUID-')).Count
     $errs = ([regex]::Matches($logText, '\[(error|critical)\]')).Count
