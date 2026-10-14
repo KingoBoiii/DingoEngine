@@ -101,23 +101,24 @@ namespace Dingo
 		///@}
 
 		/// Reads the value as that type. The fallback when the value has another type. A number
-		/// reads as either kind: a Float reads as an Int only when it is whole and in range.
+		/// reads as either kind: a Float reads as an Int only when it is whole and in range, and
+		/// as a float only when it is finite and within float's range.
 		///@{
 		bool AsBool(bool fallback = false) const;
 		int64_t AsInt(int64_t fallback = 0) const;
 		double AsDouble(double fallback = 0.0) const;
-		float AsFloat(float fallback = 0.0f) const { return static_cast<float>(AsDouble(fallback)); }
+		float AsFloat(float fallback = 0.0f) const;
 		std::string AsString(std::string_view fallback = {}) const;
 		///@}
 		/// Reads an array of at least as many numbers as the vector has components (extra ones
-		/// ignored); the fallback otherwise.
+		/// ignored); the fallback otherwise, also when an item does not read as a float.
 		///@{
 		glm::vec2 AsVec2(const glm::vec2& fallback = glm::vec2(0.0f)) const;
 		glm::vec3 AsVec3(const glm::vec3& fallback = glm::vec3(0.0f)) const;
 		glm::vec4 AsVec4(const glm::vec4& fallback = glm::vec4(0.0f)) const;
 		///@}
 		/// Reads an array of at least as many integers as the vector has components (extra ones
-		/// ignored); the fallback otherwise, also when an item is a Float.
+		/// ignored); the fallback otherwise, also when an item is a Float or out of int's range.
 		///@{
 		glm::ivec2 AsIVec2(const glm::ivec2& fallback = glm::ivec2(0)) const;
 		glm::ivec3 AsIVec3(const glm::ivec3& fallback = glm::ivec3(0)) const;
@@ -127,7 +128,7 @@ namespace Dingo
 		glm::quat AsQuat(const glm::quat& fallback = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) const;
 
 		/// The member's value read as T, or the fallback when the member is missing or of another
-		/// type, or an integer out of T's range. An enum reads its stored integer. A 64-bit
+		/// type, or a number out of T's range (for float, as AsFloat). An enum reads its stored integer. A 64-bit
 		/// unsigned T reads an Int's bits, so every uint64_t (a UUID, say) round-trips.
 		template<typename T>
 		T Get(std::string_view key, const T& fallback) const;
@@ -201,6 +202,7 @@ namespace Dingo
 	private:
 		size_t LowerBound(std::string_view key) const;
 		bool ReadComponents(float* out, size_t count) const;
+		bool ReadIntComponents(int* out, size_t count) const;
 
 	private:
 		SaveValueType m_Type = SaveValueType::Null;
@@ -241,6 +243,8 @@ namespace Dingo
 				return fallback;
 			return static_cast<T>(number);
 		}
+		else if constexpr (std::same_as<std::remove_cv_t<T>, float>)
+			return value->AsFloat(fallback);
 		else if constexpr (std::floating_point<T>)
 			return static_cast<T>(value->AsDouble(static_cast<double>(fallback)));
 		else if constexpr (std::same_as<T, std::string>)

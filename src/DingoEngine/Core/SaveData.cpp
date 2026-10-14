@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <thread>
 
@@ -31,6 +32,12 @@ namespace Dingo
 		{
 			const std::u8string text = path.u8string();
 			return std::string(text.begin(), text.end());
+		}
+
+		// A double-to-float conversion outside float's range is undefined.
+		bool FitsFloat(double value)
+		{
+			return std::isfinite(value) && std::abs(value) <= static_cast<double>((std::numeric_limits<float>::max)());
 		}
 
 		std::filesystem::path WithSuffix(const std::filesystem::path& path, const char* suffix)
@@ -340,6 +347,14 @@ namespace Dingo
 		return fallback;
 	}
 
+	float SaveData::AsFloat(float fallback) const
+	{
+		if (!IsNumber())
+			return fallback;
+		const double value = AsDouble();
+		return FitsFloat(value) ? static_cast<float>(value) : fallback;
+	}
+
 	std::string SaveData::AsString(std::string_view fallback) const
 	{
 		return m_Type == SaveValueType::String ? m_String : std::string(fallback);
@@ -351,9 +366,9 @@ namespace Dingo
 			return false;
 		for (size_t i = 0; i < count; i++)
 		{
-			if (!m_Items[i]->IsNumber())
+			if (!m_Items[i]->IsNumber() || !FitsFloat(m_Items[i]->AsDouble()))
 				return false;
-			out[i] = m_Items[i]->AsFloat();
+			out[i] = static_cast<float>(m_Items[i]->AsDouble());
 		}
 		return true;
 	}
@@ -376,18 +391,29 @@ namespace Dingo
 		return ReadComponents(&value.x, 4) ? value : fallback;
 	}
 
+	bool SaveData::ReadIntComponents(int* out, size_t count) const
+	{
+		if (m_Type != SaveValueType::Array || m_Items.size() < count)
+			return false;
+		for (size_t i = 0; i < count; i++)
+		{
+			if (!m_Items[i]->IsInt() || !std::in_range<int>(m_Items[i]->AsInt()))
+				return false;
+			out[i] = static_cast<int>(m_Items[i]->AsInt());
+		}
+		return true;
+	}
+
 	glm::ivec2 SaveData::AsIVec2(const glm::ivec2& fallback) const
 	{
-		if (m_Type != SaveValueType::Array || m_Items.size() < 2 || !m_Items[0]->IsInt() || !m_Items[1]->IsInt())
-			return fallback;
-		return glm::ivec2(static_cast<int>(m_Items[0]->AsInt()), static_cast<int>(m_Items[1]->AsInt()));
+		glm::ivec2 value;
+		return ReadIntComponents(&value.x, 2) ? value : fallback;
 	}
 
 	glm::ivec3 SaveData::AsIVec3(const glm::ivec3& fallback) const
 	{
-		if (m_Type != SaveValueType::Array || m_Items.size() < 3 || !m_Items[0]->IsInt() || !m_Items[1]->IsInt() || !m_Items[2]->IsInt())
-			return fallback;
-		return glm::ivec3(static_cast<int>(m_Items[0]->AsInt()), static_cast<int>(m_Items[1]->AsInt()), static_cast<int>(m_Items[2]->AsInt()));
+		glm::ivec3 value;
+		return ReadIntComponents(&value.x, 3) ? value : fallback;
 	}
 
 	glm::quat SaveData::AsQuat(const glm::quat& fallback) const
