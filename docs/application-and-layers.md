@@ -60,8 +60,9 @@ The log goes to `Dingo.log` in the game's per-user folder, `GetUserDataDir(Name)
 `$XDG_DATA_HOME`) on Linux. The folder is `Name` made into one Windows can create, on every
 platform: control characters, a backslash, a double quote and `<>:/|?*` become `_`, trailing
 dots and spaces go, and a device name such as `CON` or `com1.save` gets a leading `_`. So
-`"Hearthvale: The Hollow"` writes to `Hearthvale_ The Hollow`. On Linux a folder an earlier
-version made under the unchanged name is still used while the new one doesn't exist. A game installed under Program Files can't write beside itself,
+`"Hearthvale: The Hollow"` writes to `Hearthvale_ The Hollow`. A folder an earlier version
+made under the unchanged name (`Studio/Game` nested, or a `:` on Linux) is still used while the
+new one doesn't exist. A game installed under Program Files can't write beside itself,
 and a player's bug report needs last session's log, so each run keeps the four before it as
 `Dingo.1.log` (the last run) to `Dingo.4.log`. A second instance running at the same time
 writes `Dingo-<pid>.log` instead of moving a log that is still open (the newest four of those

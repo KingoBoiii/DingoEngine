@@ -2,6 +2,7 @@
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/PathText.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <string_view>
@@ -79,15 +80,17 @@ namespace Dingo::Platform
 			DE_CORE_ERROR("Neither XDG_DATA_HOME nor HOME environment variables are set. Falling back to current directory for user data.");
 			directory = std::filesystem::current_path() / folder;
 		}
-
-		// Linux could always create the unsanitised folder, so a game that shipped with such a
-		// name keeps its players' logs and saves there.
-		const std::filesystem::path legacy = directory.parent_path() / Internal::PathFromUtf8(appName);
-		std::error_code error;
-		if (appName.find('/') == std::string::npos && legacy != directory
-			&& !std::filesystem::exists(directory, error) && std::filesystem::is_directory(legacy, error))
-			directory = legacy;
 #endif
+
+		// A name the old rule kept as is ("Studio/Game" nested, a ':' on Linux) made a folder a
+		// shipped game's players already have: it keeps its logs and saves there.
+		const std::filesystem::path original = Internal::PathFromUtf8(appName);
+		const bool relative = !original.has_root_path()
+			&& std::none_of(original.begin(), original.end(), [](const std::filesystem::path& part) { return part == ".."; });
+		const std::filesystem::path legacy = directory.parent_path() / original;
+		std::error_code error;
+		if (relative && legacy != directory && !std::filesystem::exists(directory, error) && std::filesystem::is_directory(legacy, error))
+			directory = legacy;
 
 		if (!std::filesystem::exists(directory))
 		{

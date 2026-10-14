@@ -556,6 +556,10 @@ TEST_SUITE("Platform")
 			CHECK(std::filesystem::is_directory(path));
 		}
 
+		std::filesystem::create_directories(directory.Path / "Studio" / "Game");
+		CHECK(Platform::GetUserDataDir("Studio/Game") == directory.Path / "Studio" / "Game");
+		CHECK(Platform::GetUserDataDir("Studio/Other") == directory.Path / "Studio_Other");
+		CHECK(Platform::GetUserDataDir("../Escape") == directory.Path / ".._Escape");
 #if !defined(DE_PLATFORM_WINDOWS)
 		std::filesystem::create_directories(directory.Path / "Shipped: Game");
 		CHECK(Platform::GetUserDataDir("Shipped: Game") == directory.Path / "Shipped: Game");
