@@ -1,40 +1,51 @@
 <#
 .SYNOPSIS
   The v1.0 soak: Marionette's tournament and Candlewick side by side for -Minutes, sampling each
-  process's private bytes every minute.
+  process's private bytes every -SampleSeconds.
 
 .DESCRIPTION
-  A game fails when its private bytes at the end are more than -MaxGrowth percent above its sample
-  at the -SettleMinutes mark, when it exits with a non-zero code, or when its output has a
-  LOG ERROR or a [FAIL]. Marionette's --tournament is capped at 1000 bouts, which can end before
-  -Minutes; the tournament is then started again on the next seeds, and each process is judged on
-  its own (a process shorter than twice -SettleMinutes is judged on its exit and log only).
-  A game that exits within a minute three times in a row isn't started again.
-  Candlewick has no autoplay, so it idles in -Room with its wardens, flames and lights running.
-  Both are closed through WM_CLOSE at the end, so teardown runs too. Output goes to -Out.
+  Each process is judged on its own samples from -SettleMinutes after it started: a Theil-Sen
+  slope above -MaxSlope MB per minute fails it, and so does a process with fewer than -MinSamples
+  settled samples, so a soak can't pass without measuring anything. A process also fails when it
+  exits with a non-zero code or its output has a LOG ERROR or a [FAIL].
+  Marionette runs one --tournament long enough to outlast -Minutes, so a leak can build up inside
+  one process; if it exits early it is started again on the next seeds. Candlewick has no
+  autoplay, so it idles in -Room with its wardens, flames and lights running, and --background
+  keeps it updating while its window is unfocused. A game that exits within a minute three times
+  in a row isn't started again. Both are closed through WM_CLOSE at the end, so teardown runs too.
+  Output goes to -Out.
+
+  A sign-off runs the 20-minute default; the run before a release tag uses -Minutes 60.
 
 .EXAMPLE
-  powershell -File scripts\soak.ps1 -Bin build\bin\Release-windows-x86_64 -Graphics vulkan -Minutes 60
+  powershell -File scripts\soak.ps1 -Bin build\bin\Release-windows-x86_64 -Graphics vulkan -Minutes 20
 #>
 [CmdletBinding()]
 param(
     [string]$Bin = "build\bin\Release-windows-x86_64",
     [ValidateSet("vulkan", "dx11", "dx12")]
     [string]$Graphics = "vulkan",
-    [int]$Minutes = 60,
+    [int]$Minutes = 20,
     [int]$SettleMinutes = 5,
-    [double]$MaxGrowth = 5.0,
+    [int]$SampleSeconds = 15,
+    [double]$MaxSlope = 0.1,
+    [int]$MinSamples = 20,
     [int]$Room = 1,
     [string]$Out = "build\soak"
 )
 
 $ErrorActionPreference = "Stop"
+if ($Minutes * 60 -lt $SettleMinutes * 60 + $MinSamples * $SampleSeconds) {
+    [Console]::Error.WriteLine("-Minutes $Minutes is too short to judge: it needs -SettleMinutes plus -MinSamples samples ($SettleMinutes min + $MinSamples x $SampleSeconds s).")
+    exit 2
+}
 $root = Split-Path -Parent $PSScriptRoot
 $Bin = if ([System.IO.Path]::IsPathRooted($Bin)) { $Bin } else { Join-Path $root $Bin }
 $Out = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path $root $Out }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $graphicsArg = @(if ($Graphics -ne "vulkan") { "--graphics=$Graphics" })
-$tournamentBouts = 1000
+# Marionette's cap (TOURNAMENT_MAX): about 350 bouts a minute on the GPU machine, so hours of play.
+$tournamentBouts = 100000
 $maxShortRuns = 3
 
 # WM_CLOSE to every visible top-level window of the process, as windows-smoke-test.ps1 does:
@@ -92,8 +103,24 @@ function Start-Game($game) {
     $game | Add-Member -Force NoteProperty Process $process
     $game | Add-Member -Force NoteProperty Tag $tag
     $game | Add-Member -Force NoteProperty Started (Get-Date)
-    $game | Add-Member -Force NoteProperty Samples (New-Object System.Collections.Generic.List[double])
+    $game | Add-Member -Force NoteProperty Samples (New-Object System.Collections.Generic.List[object])
     Write-Host "$tag started: $($arguments -join ' ')"
+}
+
+# The median of the pairwise slopes (Theil-Sen), in MB per minute: one transient 41 MB dip moved a
+# least-squares fit of a Marionette run between 0.15 and 1.8 MB/min.
+function Get-Slope($samples) {
+    $slopes = New-Object System.Collections.Generic.List[double]
+    for ($i = 0; $i -lt $samples.Count; $i++) {
+        for ($j = $i + 1; $j -lt $samples.Count; $j++) {
+            $dt = $samples[$j].Minutes - $samples[$i].Minutes
+            if ($dt -gt 0) { $slopes.Add(($samples[$j].MB - $samples[$i].MB) / $dt) }
+        }
+    }
+    if ($slopes.Count -eq 0) { return 0.0 }
+    $sorted = $slopes.ToArray()
+    [Array]::Sort($sorted)
+    return $sorted[[int][math]::Floor($sorted.Length / 2)]
 }
 
 $results = New-Object System.Collections.Generic.List[object]
@@ -119,19 +146,22 @@ function Finish-Game($game) {
     if ($text -match "\[FAIL\]") { $problems += "fail" }
 
     $samples = $game.Samples
-    $settled = $null; $last = $null; $growth = $null
-    if ($samples.Count -gt 2 * $SettleMinutes) {
-        $settled = $samples[$SettleMinutes]
-        $last = $samples[$samples.Count - 1]
-        $growth = 100.0 * ($last - $settled) / $settled
-        if ($growth -gt $MaxGrowth) { $problems += ("growth {0:N1}%" -f $growth) }
+    $settled = @($samples | Where-Object { $_.Minutes -ge $SettleMinutes })
+    $slope = $null
+    if ($settled.Count -ge $MinSamples) {
+        $slope = Get-Slope $settled
+        if ($slope -gt $MaxSlope) { $problems += [string]::Format([cultureinfo]::InvariantCulture, "growth {0:F3} MB/min", $slope) }
+    }
+    else {
+        $problems += "unjudged ($($settled.Count) settled samples)"
     }
     $results.Add([pscustomobject]@{
-        Run = $game.Tag; Minutes = $samples.Count - 1
-        StartMB = $(if ($samples.Count) { [math]::Round($samples[0], 1) } else { $null })
-        SettledMB = $(if ($settled) { [math]::Round($settled, 1) } else { $null })
-        EndMB = $(if ($last) { [math]::Round($last, 1) } else { $null })
-        GrowthPct = $(if ($null -ne $growth) { [math]::Round($growth, 2) } else { $null })
+        Run = $game.Tag
+        Minutes = $(if ($samples.Count) { [math]::Round($samples[$samples.Count - 1].Minutes, 1) } else { 0 })
+        FirstMB = $(if ($samples.Count) { [math]::Round($samples[0].MB, 1) } else { $null })
+        SettledMB = $(if ($settled.Count) { [math]::Round($settled[0].MB, 1) } else { $null })
+        EndMB = $(if ($samples.Count) { [math]::Round($samples[$samples.Count - 1].MB, 1) } else { $null })
+        SlopeMBPerMin = $(if ($null -ne $slope) { [math]::Round($slope, 4) } else { $null })
         Result = $(if ($problems.Count) { $problems -join ", " } else { "ok" })
     })
 }
@@ -139,16 +169,18 @@ function Finish-Game($game) {
 function Add-Sample($game) {
     $game.Process.Refresh()
     if (-not $game.Process.HasExited) {
+        $minutes = ((Get-Date) - $game.Started).TotalMinutes
         $mb = $game.Process.PrivateMemorySize64 / 1MB
-        $game.Samples.Add($mb)
-        $line = [string]::Format([cultureinfo]::InvariantCulture, "{0},{1:F1},{2:F1}", $game.Tag, ((Get-Date) - $game.Started).TotalMinutes, $mb)
+        $game.Samples.Add([pscustomobject]@{ Minutes = $minutes; MB = $mb })
+        $line = [string]::Format([cultureinfo]::InvariantCulture, "{0},{1:F2},{2:F1}", $game.Tag, $minutes, $mb)
         Add-Content -Path (Join-Path $Out "$($game.Name)-memory.csv") -Value $line
     }
 }
 
 foreach ($game in $games) { Start-Game $game }
 $deadline = (Get-Date).AddMinutes($Minutes)
-$nextSample = Get-Date
+# The first sample waits one interval, so it never reads a process that hasn't initialised yet.
+$nextSample = (Get-Date).AddSeconds($SampleSeconds)
 while ((Get-Date) -lt $deadline) {
     foreach ($game in $games) {
         if ($game.Process -and $game.Process.HasExited) {
@@ -166,9 +198,9 @@ while ((Get-Date) -lt $deadline) {
     }
     if ((Get-Date) -ge $nextSample) {
         foreach ($game in $games) { if ($game.Process) { Add-Sample $game } }
-        $nextSample = $nextSample.AddMinutes(1)
+        $nextSample = $nextSample.AddSeconds($SampleSeconds)
     }
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 1
 }
 foreach ($game in $games) {
     if (-not $game.Process) { continue }
@@ -176,7 +208,7 @@ foreach ($game in $games) {
     Finish-Game $game
 }
 
-$results | Format-Table -AutoSize | Out-String | Tee-Object -FilePath (Join-Path $Out "summary.txt") | Write-Host
+$results | Format-Table -AutoSize | Out-String -Width 200 | Tee-Object -FilePath (Join-Path $Out "summary.txt") | Write-Host
 $failed = @($results | Where-Object { $_.Result -ne "ok" }).Count
-Write-Host "Soak ($Graphics, $Minutes min): $failed of $($results.Count) run(s) failed. Output: $Out"
+Write-Host "Soak ($Graphics, $Minutes min, max $MaxSlope MB/min): $failed of $($results.Count) run(s) failed. Output: $Out"
 exit [int]($failed -gt 0)

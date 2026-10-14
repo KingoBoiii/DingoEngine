@@ -424,7 +424,7 @@ skin palette arena and animation LOD (P6), per-user logs, the crash handler and 
 and [conventions](docs/conventions.md) (P9), third-party notices, the Inter font and executable
 metadata (P10), and the Doxygen reference and 1.0 guides (P11). Left: DingoUI, the review pass
 (P12), *Hearthvale* (P13), the run on real Linux hardware ([L26](LINUX-SUPPORT.md#l26)), a
-60-minute soak and the release candidate.
+soak (20 minutes per sign-off, 60 before the release tag) and the release candidate.
 
 Performance profiling (Optick or Tracy), full API documentation, cross-platform validation
 (Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term
