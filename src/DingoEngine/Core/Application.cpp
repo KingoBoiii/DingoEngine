@@ -26,12 +26,68 @@
 #include <cstdlib>
 #include <thread>
 
+#ifdef DE_PLATFORM_WINDOWS
+#include <shellapi.h>
+#pragma comment(lib, "Shell32.lib")
+#endif
+
 namespace Dingo
 {
 	namespace
 	{
 		constexpr float k_PacedUpdateInterval = 1.0f / 60.0f;
 		constexpr float k_PausedWaitTimeout = 0.1f;
+
+#ifdef DE_PLATFORM_WINDOWS
+		std::string ToAnsi(std::wstring_view text)
+		{
+			const int length = WideCharToMultiByte(CP_ACP, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+			std::string narrow(static_cast<size_t>((std::max)(length, 0)), '\0');
+			WideCharToMultiByte(CP_ACP, 0, text.data(), static_cast<int>(text.size()), narrow.data(), length, nullptr, nullptr);
+			return narrow;
+		}
+#endif
+
+		// `--name=<path>`, nullopt when absent or empty. Windows' narrow argv has already turned
+		// every character outside the ANSI code page into '?', so the path comes from the wide
+		// command line there, when the process's own argument is the one the game passed on.
+		std::optional<std::filesystem::path> PathOption(const ApplicationCommandLineArgs& args, std::string_view name)
+		{
+			const std::optional<std::string_view> value = args.Get(name);
+			if (!value || value->empty())
+				return std::nullopt;
+#ifdef DE_PLATFORM_WINDOWS
+			int count = 0;
+			if (LPWSTR* wide = CommandLineToArgvW(GetCommandLineW(), &count))
+			{
+				const std::wstring prefix = L"--" + std::wstring(name.begin(), name.end()) + L"=";
+				std::optional<std::filesystem::path> found;
+				for (int i = 1; i < count && !found; ++i)
+				{
+					const std::wstring_view argument = wide[i];
+					if (argument.starts_with(prefix) && argument.size() > prefix.size() && ToAnsi(argument.substr(prefix.size())) == *value)
+						found = std::filesystem::path(argument.substr(prefix.size()));
+				}
+				LocalFree(wide);
+				if (found)
+					return found;
+			}
+			// Arguments a game built itself: UTF-8 if valid, else the ANSI code page argv uses.
+			try
+			{
+				return Internal::PathFromUtf8(*value);
+			}
+			catch (const std::exception&)
+			{
+				const int length = MultiByteToWideChar(CP_ACP, 0, value->data(), static_cast<int>(value->size()), nullptr, 0);
+				std::wstring text(static_cast<size_t>((std::max)(length, 0)), L'\0');
+				MultiByteToWideChar(CP_ACP, 0, value->data(), static_cast<int>(value->size()), text.data(), length);
+				return std::filesystem::path(text);
+			}
+#else
+			return Internal::PathFromUtf8(*value);
+#endif
+		}
 	}
 
 	Application::Application(const ApplicationParams& params)
@@ -49,15 +105,15 @@ namespace Dingo
 			m_Params.Name = Internal::PathToUtf8(Platform::GetExecutablePath().stem());
 
 		std::filesystem::path logDirectory = m_Params.LogDirectory;
-		if (auto directory = m_Params.CommandLineArgs.Get("log-dir"); directory && !directory->empty())
-			logDirectory = std::filesystem::path(*directory);
+		if (std::optional<std::filesystem::path> directory = PathOption(m_Params.CommandLineArgs, "log-dir"))
+			logDirectory = *directory;
 		else if (m_Params.CommandLineArgs.Get("log-here"))
 			logDirectory = std::filesystem::current_path();
 		if (logDirectory.empty())
 			logDirectory = Platform::GetUserDataDir(m_Params.Name) / "logs";
 
-		if (auto directory = m_Params.CommandLineArgs.Get("save-dir"); directory && !directory->empty())
-			m_Params.SaveDirectory = std::filesystem::path(*directory);
+		if (std::optional<std::filesystem::path> directory = PathOption(m_Params.CommandLineArgs, "save-dir"))
+			m_Params.SaveDirectory = *directory;
 		if (m_Params.SaveDirectory.empty())
 			m_Params.SaveDirectory = Platform::GetUserDataDir(m_Params.Name) / "saves";
 
