@@ -1620,6 +1620,18 @@ namespace Dingo
 			m_WNavResult[8] = {};
 			m_WNavResult[9] = {};
 		}
+		if (m_WNavInfo)
+		{
+			DingoUI::BeginRoot("n_info", UIRootParams().SetNavigable(true).SetOffset({ 20.0f, 300.0f }).SetLayout(UIBoxParams().SetPadding(10.0f)));
+			DingoUI::Text("No buttons here");
+			DingoUI::EndRoot();
+		}
+		if (m_WNavSoftModal)
+		{
+			DingoUI::BeginRoot("n_soft", UIRootParams().SetBlocksInput(false).SetModal(true).SetOffset({ 600.0f, 300.0f }).SetLayer(2).SetLayout(UIBoxParams().SetPadding(10.0f)));
+			DingoUI::Button("NS1", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			DingoUI::EndRoot();
+		}
 		m_WNavFocus.clear();
 	}
 
@@ -1945,6 +1957,43 @@ namespace Dingo
 			InputBackend::SimulateKey(Key::Escape, false);
 			idle();
 			m_WNavModal = false;
+			m_WNavInfo = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed(), "Navigation: a navigable root with nothing focusable still reports back");
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavInfo = false;
+			m_WNavSoftModal = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetFocusId() != 0, "Navigation: a modal root that asked not to block input still blocks it and takes the focus");
+			idle();
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed() && !Input::IsKeyDown(Key::Escape), "Navigation: that modal root also takes Escape as back");
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavSoftModal = false;
 			m_WNavHud = false;
 			return done();
 		}

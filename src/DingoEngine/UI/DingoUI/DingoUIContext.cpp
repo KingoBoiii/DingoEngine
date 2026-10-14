@@ -154,6 +154,7 @@ namespace Dingo::Internal
 		m_NavCandidates.clear();
 		m_NavElements.clear();
 		m_NavRoots.clear();
+		m_NavigableRootUp = false;
 		if (!m_Params.Nav.Enabled)
 			return;
 
@@ -171,7 +172,10 @@ namespace Dingo::Internal
 		{
 			const UIElement& element = elements[i];
 			if (element.Kind == UIElementKind::Root)
+			{
 				root = i;
+				m_NavigableRootUp = m_NavigableRootUp || (element.Navigable && element.BlocksInput);
+			}
 			if (!element.Focusable || root == k_UINoElement || element.Rect.IsEmpty())
 				continue;
 			const UIElement& owner = elements[root];
@@ -263,8 +267,19 @@ namespace Dingo::Internal
 
 		CollectNavCandidates();
 		const std::vector<UIElement>& elements = m_LastTree.GetElements();
+		const bool backDown = m_NavigableRootUp && input.Nav.Back;
 		if (m_NavCandidates.empty())
 		{
+			if (backDown && (m_FocusVisible || m_ModalActive))
+			{
+				UINavInput back;
+				back.Back = true;
+				back.BackKeys = input.Nav.BackKeys;
+				back.BackPad = input.Nav.BackPad;
+				back.Gamepad = input.Nav.Gamepad;
+				ConsumeNavInput(back, input.KeyboardAvailable, nav);
+			}
+			m_BackPressed = backDown;
 			m_FocusId = 0;
 			m_SeenDefault.clear();
 			m_DirectionHeld = {};
@@ -360,7 +375,7 @@ namespace Dingo::Internal
 			moving = moving || pulse[direction];
 		}
 
-		m_BackPressed = in.Back;
+		m_BackPressed = backDown;
 		const bool ringShown = m_FocusVisible;
 		if (moving || in.Accept || in.Next || in.Previous)
 		{

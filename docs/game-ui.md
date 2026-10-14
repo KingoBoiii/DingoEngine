@@ -61,7 +61,7 @@ pinned to the screen, and there is one open at a time. Boxes, text and images go
 | `Pivot` | The point of the root that goes on the anchor, `(0,0)` top left to `(1,1)` bottom right. Defaults to the anchor's own point, so a `BottomRight` root sits inside the corner. |
 | `Scale` | See [Scaling](#scaling). |
 | `Layer` | Roots draw by `Layer`, then in the order declared; a higher layer is in front. |
-| `BlocksInput` | Default `true`: a press, scroll or hover over a part of the root that draws something belongs to the UI (`IsPointerOverUI`, `Handled` events). `false` for a HUD that must never take the mouse. |
+| `BlocksInput` | Default `true`: a press, scroll or hover over a part of the root that draws something belongs to the UI (`IsPointerOverUI`, `Handled` events). `false` for a HUD that must never take the mouse; a `Modal` root blocks input whatever this says. |
 | `Layout` | The root's own box (below). |
 
 ## Boxes and layout
@@ -259,7 +259,7 @@ reported by `DingoUI::IsBackPressed()` for the frame it went down.
   not pressed in `Input`, so a pause key bound to Escape does not also fire; use `IsBackPressed()`.
   Only the input that is actually down is taken: Enter pressed while Space is held leaves Space alone,
   and a keyboard direction leaves the D-pad alone. Back is reported by `IsBackPressed()` whenever a
-  navigable root is up, but taken from `Input` only in the two cases above.
+  navigable root is up, even one with no focusable widget, but taken from `Input` only in the two cases above.
 - The left stick moves the focus but is never hidden from `Input::GetGamepadLeftStick`. A game that
   does not want its character to walk while the stick moves the focus checks
   `DingoUI::IsCapturingInput()` (true while the ring shows or a modal is up) before it reads the stick.

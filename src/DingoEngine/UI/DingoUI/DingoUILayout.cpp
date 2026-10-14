@@ -201,7 +201,7 @@ namespace Dingo::Internal
 		element.Offset = params.Offset * m_RootScale;
 		element.Pivot = params.HasPivot ? params.Pivot : AnchorFraction(params.Anchor);
 		element.Layer = params.Layer;
-		element.BlocksInput = params.BlocksInput;
+		element.BlocksInput = params.BlocksInput || params.Modal;
 		element.Modal = params.Modal;
 		element.Navigable = params.Navigable || params.Modal;
 		element.Transition = params.Transition;

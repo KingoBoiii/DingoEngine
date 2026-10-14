@@ -167,6 +167,8 @@ namespace Dingo
 		bool m_WNavModal = false;
 		bool m_WNavHide = false;
 		bool m_WNavHud = false;
+		bool m_WNavInfo = false;
+		bool m_WNavSoftModal = false;
 		bool m_WNavToggle = false;
 		std::string m_WNavFocus;
 		float m_WNavSlider = 0.5f;

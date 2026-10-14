@@ -260,6 +260,7 @@ namespace Dingo::Internal
 		bool m_HadPointer = false;
 		bool m_FocusVisible = false;
 		bool m_BackPressed = false;
+		bool m_NavigableRootUp = false;
 		int m_NavAdjust = 0;
 		uint64_t m_NavAcceptId = 0;
 	};

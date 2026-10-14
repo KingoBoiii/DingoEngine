@@ -3,6 +3,7 @@
 #include "DingoEngine/UI/DingoUI/DingoUITextCache.h"
 
 #include <string>
+#include <vector>
 
 using namespace Dingo::Internal;
 
@@ -65,4 +66,24 @@ TEST_CASE("UITextMetricsCache: an entry survives one idle frame and is dropped a
 	cache.Advance();
 	cache.Get(1, 18.0f, 0.0f, "Play", measure);
 	CHECK(measured == 2);
+}
+
+TEST_CASE("UITextMetricsCache: different strings of equal length are separate entries")
+{
+	UITextMetricsCache cache;
+	int measured = 0;
+	const auto measure = [&] { return glm::vec2(static_cast<float>(++measured), 1.0f); };
+
+	std::vector<glm::vec2> sizes;
+	for (int i = 0; i < 2000; ++i)
+		sizes.push_back(cache.Get(1, 18.0f, 0.0f, std::to_string(100000 + i), measure));
+	CHECK(measured == 2000);
+	CHECK(cache.Size() == 2000);
+	for (int i = 0; i < 2000; ++i)
+		CHECK(cache.Get(1, 18.0f, 0.0f, std::to_string(100000 + i), measure) == sizes[i]);
+	CHECK(measured == 2000);
+
+	cache.Get(1, 18.0f, 0.0f, "ab", measure);
+	cache.Get(1, 18.0f, 0.0f, "abc", measure);
+	CHECK(measured == 2002);
 }

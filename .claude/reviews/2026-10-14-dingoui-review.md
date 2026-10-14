@@ -185,3 +185,20 @@ Checked and found sound (no finding):
 **Fix:**
 - :220: write `Input::GetMouseScrollDelta`.
 - :283: say "the real frame time (the `OnUpdate` delta)".
+
+## Final review of the fixes and U10 (2026-10-14, Opus high, `f6c3a2a..d1c4bfb`)
+
+No High findings. Fix status:
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| R1 | Med | Marionette declared the HUD once per scene step (8 per frame in tournament runs) | fixed `fbd94a4`: `Hud::Update` simulates per step, `Hud::Declare` runs once per frame from `MarionetteLayer` |
+| R2 | Med | An arena launch declared UI from `OnStart`, spending the "declare from OnUpdate" warning | fixed `fbd94a4`: nothing declares outside `OnUpdate` |
+| R3 | Low | Dead `Overlay::AnyInputPressed`/`IsMenuKey` | fixed `fbd94a4` |
+| R4 | Low | Title/end screens: a refocus click could press Play; pad/keyboard needs one press to reveal the ring | refocus guard fixed `fbd94a4`; the reveal press is the engine's design (U9 N1), kept |
+| R5 | Low | HUD roots scaled with match 0.5 while the layout assumes height | fixed `fbd94a4`: `Overlay::Scale()` matches height |
+| R6 | Low | `IsBackPressed` false on a navigable root with no focusable widget | fixed (engine commit after `fbd94a4`) |
+| R7 | Low | A modal root that does not block input got no navigation but still consumed Back | fixed: modal implies `BlocksInput` |
+| R8 | Low | Text-metrics key had one hash | fixed: key adds the length and an FNV-1a hash |
+| R9 | Low | `NvrhiTexture.cpp` includes a DingoUI header (layering) | kept: one internal hook, no public surface; a generic texture-destroyed callback list is worth it only when a second listener appears |
+| R10 | Low | A held direction reaches the game while the ring is hidden | intended and documented in `docs/game-ui.md` (games gate on `IsCapturingInput`) |

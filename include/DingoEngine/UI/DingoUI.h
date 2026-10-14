@@ -463,10 +463,11 @@ namespace Dingo
 		int Layer = 0;                       ///< Roots draw in order of Layer, then of declaration.
 		/// A press on one of its elements is taken from the game (the elements that draw something
 		/// count; a bare layout box does not). Turn off for a HUD the pointer should pass through.
+		/// A Modal root always blocks input, whatever this says.
 		bool BlocksInput = true;
 		/// While this root is declared, the roots below it (lower Layer, or the same Layer and
 		/// declared earlier) get no hover or clicks, and every press and scroll, wherever the
-		/// pointer is, is taken from the game.
+		/// pointer is, is taken from the game. A Modal root blocks input and is navigable.
 		bool Modal = false;
 		/// The widgets of this root can take keyboard and gamepad focus, and the keys and buttons
 		/// that move it are then taken from the game. Off by default, so a HUD never touches the
