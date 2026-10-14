@@ -78,6 +78,7 @@ Then:
 - **Triage:**
   - `KILLED(no exit)` or `NO-WINDOW(killed)`: either shaders were still compiling on a cold cache, or a Debug assert dialog is open on the hidden desktop (EnTT asserts print to `<job>.stderr`). Retry once under a new tag. If it happens again, it's a hang: report it.
   - `EXITED-EARLY` or `EXITED-NO-WINDOW`: a crash, or a mode that closes itself. Read `<job>.stderr` and the log.
+  - `fail=no-log`: the job's `Dingo.log` wasn't where the runner looked (the working directory, or the job's `--log-dir=`). Jobs without `--log-dir=` get `--log-here`, so check the exe honours it and read `<job>.stdout`. Give `--log-dir=` a relative path: the backends run in parallel with the same args, and an absolute one makes them share a log.
   - A real failure goes to the owner with the log lines. Don't post anything yet.
 - **New noise:** when an error or warning turns out to be noise that master already has, file an issue for it. Add it to `$knownErrors` or `$knownD3D12` in `gpu-test.ps1`, with the issue number, in that issue's fix PR or a skill update.
 
