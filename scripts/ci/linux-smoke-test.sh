@@ -161,6 +161,14 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	fi
 fi
 
+# The loader's report of the validation layer reaches a Distribution log only through the
+# engine's messenger.
+if [[ $CONFIG == Distribution ]]; then
+	rm -rf "$LOGS/validation"
+	EXPECT_LOG='\[Vulkan\].*VK_LAYER_KHRONOS_validation' EXPECT_LOG_FILE=$LOGS/validation/Dingo.log \
+		run "distribution-validation" "$ROOT/test" "$BIN/Dingo-TestFramework/Dingo-TestFramework" --test=Text --vulkan-validation "--log-dir=$LOGS/validation"
+fi
+
 # Shipped the way a release ships them: a copy of the executable beside its encrypted .dpak, no
 # assets/ anywhere, started from another directory.
 packed=$(mktemp -d)
