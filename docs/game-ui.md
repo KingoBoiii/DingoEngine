@@ -36,6 +36,12 @@ void MenuLayer::OnUpdate(float deltaTime)
 }
 ```
 
+## Setup
+
+DingoUI is created with the application and needs no call to start. Options go on
+`ApplicationParams::DingoUI` (`DingoUIParams`): `Enabled`, `Style` (the theme) and `Nav` (navigation, below).
+It draws over everything the layers drew to the swap chain, before the ImGui debug window.
+
 ## The font
 
 `Text` needs a font. Load one once the graphics device exists (`OnInitialize` or a layer's
@@ -137,7 +143,7 @@ take their look from the current style (see [Styles and themes](#styles-and-them
 | `BeginScrollArea(label, params)` / `EndScrollArea()` | A clipped column that scrolls with the wheel (and by dragging with `DragScroll`); `BeginScrollArea` returns `true`, and every `true` gets its `EndScrollArea`. |
 
 `UIInteraction` has `Hovered`, `Pressed` (the press frame), `Down` (held), `Clicked`, `Changed`
-(the value was changed by the player this call) and `Focused` (reserved for keyboard focus; always false for now).
+(the value was changed by the player this call) and `Focused` (the widget has keyboard or gamepad focus and the ring is showing; see [Keyboard and gamepad focus](#keyboard-and-gamepad-focus)).
 A disabled widget (`UIWidgetParams::Enabled = false`) is drawn dimmed and reports nothing.
 
 ```cpp
@@ -238,7 +244,8 @@ reported by `DingoUI::IsBackPressed()` for the frame it went down.
 
 - Only a `Modal` root, or a root that blocks input and sets `UIRootParams::SetNavigable(true)`, takes
   part in navigation. Every other screen root is a HUD: its widgets work with the mouse and never
-  touch the game's keys. A `Modal` root confines the focus to itself; closing it gives the focus
+  touch the game's keys. A world root can opt in with `UIWorldRootParams::SetNavigable(true)` (it needs
+  `BlocksInput`). A `Modal` root confines the focus to itself; closing it gives the focus
   back to the widget it interrupted.
 - The first widget with `DefaultFocus` set the frame it appears gets the focus; without one the
   first widget does. A focused widget that vanishes hands the focus to its nearest neighbour.
@@ -341,7 +348,7 @@ its scene's primary camera). Give each root its own name.
   `MaxScale`, on top of `Scale`. `FadeDistance` fades the root out over the last units before `MaxDistance`.
   The distance is the depth in front of the camera; an orthographic camera has none, so these do nothing.
 - World roots draw below every `BeginRoot` root, farther ones first (`Layer` orders them first). They do
-  not block the pointer unless `SetBlocksInput(true)`, and are not focus-navigable.
+  not block the pointer unless `SetBlocksInput(true)`, and take no focus unless `SetNavigable(true)` on top of it.
 - Roots are positioned from the point of the frame they are declared in, so declare them after the
   entity has moved (an `OnUpdate` after the scene's own).
 - There is no depth test against the scene, and no panel drawn onto a mesh; a world root is a screen-space
@@ -349,7 +356,7 @@ its scene's primary camera). Give each root its own name.
 
 ## Debugging and performance
 
-**The DingoUI tab.** Open the Debug window (F3 to F9, or any tab) and pick **DingoUI**; it has no key of
+**The DingoUI tab.** Open the Debug window (F3 to F9 open its tabs) and pick **DingoUI**; it has no key of
 its own. It shows the last frame:
 
 - counts: roots, elements, widgets, quads, vertices, draw calls, whether the vertex cache hit or the
@@ -377,6 +384,11 @@ It first runs a static 500-element menu. Both phases log their CPU averages once
 itself. `--dingoui-frames=N` sets the heavy phase's length (default 600). The same builder runs for
 about 50 frames in the ordinary `--test=dingoui` with assertions: one draw call, a bounded state map,
 and nothing left over (state, tweens, exiting roots) once the UI stops declaring.
+
+**Provisional numbers.** The CPU figures come from the Mesa llvmpipe box, not a GPU machine. A Release
+build of the static 500-element menu costs about 0.17 ms of engine time there (layout, emit, hash and
+batch; an unchanged frame skips the build and the upload). The goal of under 0.1 ms for that menu is
+still to be confirmed on a real GPU machine; the stress mode prints the averages to compare.
 
 ## Rules the frame follows
 

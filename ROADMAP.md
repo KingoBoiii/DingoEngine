@@ -422,8 +422,9 @@ culling (P2), per-object surface overrides (P3), GPU instancing (P4), static geo
 skin palette arena and animation LOD (P6), per-user logs, the crash handler and unit tests (P7),
 `SaveData`, `Settings` and display modes (P8), the API pass with [versioning](docs/versioning.md)
 and [conventions](docs/conventions.md) (P9), third-party notices, the Inter font and executable
-metadata (P10), and the Doxygen reference and 1.0 guides (P11). Left: DingoUI, the review pass
-(P12), *Hearthvale* (P13), a
+metadata (P10), the Doxygen reference and 1.0 guides (P11), and DingoUI (U0–U9, with its review in
+`.claude/reviews/2026-10-14-dingoui-review.md`). DingoUI done; left: *Hearthvale* (P13), then the
+release: the review pass (P12), a
 soak (20 minutes per sign-off, 60 before the release tag) and the release candidate. The run on real
 Linux hardware ([L26](LINUX-SUPPORT.md#l26)) is deferred past v1.0 ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
 
@@ -444,7 +445,7 @@ was called "Advanced Rendering & Performance" but was never scheduled anywhere:
 - **Material sharing**: a shared-material path so the first custom material in a scene doesn't
   fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
   costing a material each: v0.7's lit materials are per-material, not per-mesh.
-- **DingoUI, a game UI framework** ([#98](https://github.com/KingoBoiii/DingoEngine/issues/98)):
+- **DingoUI, a game UI framework** (done; [#98](https://github.com/KingoBoiii/DingoEngine/issues/98)):
   games have no UI layer of their own today (`Dingo::UI` is an ImGui facade for debug panels), so
   every example builds its HUD and menus from sprites and text by hand. `DingoUI` is an
   immediate-mode API (`DingoUI::Button("Play")`) for HUDs and menus: flexbox-style layout anchored to
