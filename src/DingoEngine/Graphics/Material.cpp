@@ -205,6 +205,16 @@ namespace Dingo
 
 	RenderPass* Material::GetOrCreateRenderPass(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode)
 	{
+		if (!m_Params.Shader || !framebuffer)
+		{
+			if (!m_MissingPipelineInputWarned)
+			{
+				DE_CORE_ERROR("Material '{}': no {}, so it does not draw", m_Params.DebugName, m_Params.Shader ? "target framebuffer" : "shader");
+				m_MissingPipelineInputWarned = true;
+			}
+			return nullptr;
+		}
+
 		// A hot-reloaded shader can have a different binding layout, and a cached pass only
 		// knows the bindings this function set the first time. Re-baking the old desc
 		// against the new layout writes descriptors NVRHI cannot validate, so throw the
@@ -254,6 +264,8 @@ namespace Dingo
 			.SetDepthWrite(m_Params.DepthWrite && !m_Params.Translucent)
 			.SetDepthCompare(m_Params.DepthFunction)
 			.SetDepthBias(m_Params.DepthBias, m_Params.SlopeScaledDepthBias));
+		if (!pipeline)
+			return nullptr;
 
 		RenderPass* renderPass = RenderPass::Create(RenderPassParams().SetPipeline(pipeline));
 

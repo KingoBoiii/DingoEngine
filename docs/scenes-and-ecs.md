@@ -575,6 +575,7 @@ intensity is pulsed each frame (see `GameScripts.cpp`).
 are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's winding. `MaterialParams` matches that by default (`CullMode::Back` with
 `FrontCounterClockwise = true`), so a custom material hides back faces with no extra settings, on
 Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
+`CreateSphere` raises `rings` to at least 2 and `segments` to at least 3.
 
 Renderer3D transforms vertices on the CPU and keeps their order, so an entity mirrored by a
 negative scale on one or three axes is drawn inside out by a culling material. Give mirrored

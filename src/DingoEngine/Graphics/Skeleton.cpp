@@ -69,7 +69,11 @@ namespace Dingo
 
 	void Skeleton::ComputeGlobalTransforms(std::span<const JointPose> localPoses, std::span<glm::mat4> outGlobals) const
 	{
-		DE_CORE_ASSERT(localPoses.size() >= m_Joints.size() && outGlobals.size() >= m_Joints.size(), "Skeleton::ComputeGlobalTransforms needs one pose and one output per joint");
+		if (localPoses.size() < m_Joints.size() || outGlobals.size() < m_Joints.size())
+		{
+			DE_CORE_ERROR("Skeleton::ComputeGlobalTransforms needs one pose and one output per joint ({} joints, {} poses, {} outputs)", m_Joints.size(), localPoses.size(), outGlobals.size());
+			return;
+		}
 
 		for (size_t i = 0; i < m_Joints.size(); ++i)
 		{
@@ -81,7 +85,11 @@ namespace Dingo
 
 	void Skeleton::ComputeSkinningPalette(std::span<const glm::mat4> globals, std::span<glm::mat4> outPalette) const
 	{
-		DE_CORE_ASSERT(globals.size() >= m_SkinJointCount && outPalette.size() >= m_SkinJointCount, "Skeleton::ComputeSkinningPalette needs a global and an output per skin joint");
+		if (globals.size() < m_SkinJointCount || outPalette.size() < m_SkinJointCount)
+		{
+			DE_CORE_ERROR("Skeleton::ComputeSkinningPalette needs a global and an output per skin joint ({} skin joints, {} globals, {} outputs)", m_SkinJointCount, globals.size(), outPalette.size());
+			return;
+		}
 
 		// Most files have no transform above the skeleton; multiplying by identity changes nothing.
 		if (m_RootTransform == glm::mat4(1.0f))

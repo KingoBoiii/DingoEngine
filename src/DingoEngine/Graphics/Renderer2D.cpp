@@ -483,6 +483,16 @@ void main() {
 		if (m_SceneSkipped)
 			return;
 
+		if (!font)
+		{
+			if (!m_NullFontWarned)
+			{
+				DE_CORE_WARN("Renderer2D::DrawText: the font is null, so the text is not drawn");
+				m_NullFontWarned = true;
+			}
+			return;
+		}
+
 		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
 		const auto& metrics = fontGeometry.getMetrics();
 		auto fontAtlas = font->GetAtlasTexture();

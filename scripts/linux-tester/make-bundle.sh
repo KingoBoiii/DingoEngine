@@ -17,7 +17,12 @@ pkg=$work/DingoEngine-linux-tester
 mkdir -p "$pkg/test" "$pkg/examples"
 
 cp "$ROOT"/scripts/linux-tester/{README.md,run-checks.sh,play.sh} "$ROOT/scripts/ci/close-windows.py" "$pkg/"
-grep -oP '^\s*m_Tests\.push_back\(\{ "\K[^"]+' "$ROOT/test/src/TestLayer.cpp" > "$pkg/tests.txt"
+grep -oP '^\s*m_Tests\.push_back\(\{ "\K[^"]+' "$ROOT/test/src/TestLayer.cpp" > "$pkg/tests.txt" || true
+count=$(wc -l < "$pkg/tests.txt")
+if (( count < 20 )); then
+	echo "found $count test cases in test/src/TestLayer.cpp, expected at least 20" >&2
+	exit 1
+fi
 
 cp "$BIN/Dingo-TestFramework/Dingo-TestFramework" "$pkg/test/"
 cp -r "$ROOT/test/assets" "$ROOT/test/imgui.ini" "$pkg/test/"
