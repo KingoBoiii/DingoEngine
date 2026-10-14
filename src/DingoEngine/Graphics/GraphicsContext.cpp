@@ -20,9 +20,10 @@ namespace Dingo
 			case GraphicsAPI::DirectX11: return new DirectX11GraphicsContext(params);
 			case GraphicsAPI::DirectX12: return new DirectX12GraphicsContext(params);
 #endif
+			case GraphicsAPI::Headless: return nullptr;
 			default: break;
 		}
-		DE_CORE_ERROR("GraphicsAPI {} has no graphics context on this platform (Headless renders nothing).", (int)params.GraphicsAPI);
+		DE_CORE_ERROR("GraphicsAPI {} has no graphics context on this platform.", (int)params.GraphicsAPI);
 		DE_CORE_VERIFY(false, "Unsupported or unavailable GraphicsAPI on this platform.");
 		return nullptr;
 	}

@@ -134,8 +134,12 @@ namespace Dingo
 		static bool HasPendingRestart() { return s_PendingRestart; }
 		static GraphicsAPI ConsumePendingRestart();
 
-		Window& GetWindow() { return *m_Window; }
-		const Window& GetWindow() const { return *m_Window; }
+		// GraphicsAPI::Headless: no window, graphics context, swap chain, renderers or UI. Run() still
+		// calls every layer's OnUpdate, at a fixed 60 Hz; Close() is the only way out of it.
+		bool IsHeadless() const { return m_Params.Graphics.GraphicsAPI == GraphicsAPI::Headless; }
+
+		Window& GetWindow() { DE_CORE_ASSERT(m_Window, "A headless application has no window."); return *m_Window; }
+		const Window& GetWindow() const { DE_CORE_ASSERT(m_Window, "A headless application has no window."); return *m_Window; }
 
 		// From a zero-sized WindowResizeEvent until the next real size. Nothing renders meanwhile
 		// (Renderer::SkipFrame) and Window::GetWidth/GetHeight read 0.
@@ -143,12 +147,12 @@ namespace Dingo
 
 		void SetUpdateInBackground(bool updateInBackground) { m_Params.UpdateInBackground = updateInBackground; }
 		bool GetUpdateInBackground() const { return m_Params.UpdateInBackground; }
-		const GraphicsContext& GetGraphicsContext() const { return *m_GraphicsContext; }
+		const GraphicsContext& GetGraphicsContext() const { DE_CORE_ASSERT(m_GraphicsContext, "A headless application has no graphics context."); return *m_GraphicsContext; }
 		const ApplicationCommandLineArgs& GetCommandLineArgs() const { return m_Params.CommandLineArgs; }
-		Renderer2D& GetRenderer2D() const { return *m_Renderer2D; }
-		Renderer3D& GetRenderer3D() const { return *m_Renderer3D; }
-		SceneRenderer& GetSceneRenderer() const { return *m_SceneRenderer; }
-		SwapChain* GetSwapChain() const { return m_SwapChain; }
+		Renderer2D& GetRenderer2D() const { DE_CORE_ASSERT(m_Renderer2D, "A headless application has no renderer."); return *m_Renderer2D; }
+		Renderer3D& GetRenderer3D() const { DE_CORE_ASSERT(m_Renderer3D, "A headless application has no renderer."); return *m_Renderer3D; }
+		SceneRenderer& GetSceneRenderer() const { DE_CORE_ASSERT(m_SceneRenderer, "A headless application has no renderer."); return *m_SceneRenderer; }
+		SwapChain* GetSwapChain() const { return m_SwapChain; } // null when headless
 		AudioEngine& GetAudioEngine() const { return *m_AudioEngine; }
 		AssetManager& GetAssetManager() const { return *m_AssetManager; }
 		const FrameTimings& GetFrameTimings() const { return m_FrameTimings; }
@@ -174,6 +178,9 @@ namespace Dingo
 		// tabs) inside the ImGui frame. Gated at runtime by
 		// ApplicationParams::EnableDebugOverlays.
 		void RenderDebugOverlays();
+
+		void RunWindowed();
+		void RunHeadless();
 
 		void RunPostExecutionCallbacks();
 
