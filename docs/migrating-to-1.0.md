@@ -173,11 +173,11 @@ function nobody calls, so the layer silently stops drawing. Mark every layer fun
 
 ### The debug-panel functions are no longer public
 
-**Why:** 18 functions had no caller outside the engine, and each was a promise to keep a debug
+**Why:** these functions had no caller outside the engine, and each was a promise to keep a debug
 layout stable.
 
 `UI::RendererStatsWindow`, `EngineStatsWindow`, `InputStatsWindow`, `AssetStatsWindow`,
-`AnimationStatsWindow`, `ProfilerStatsWindow`, every `...Section()` function, `UI::DebugWindow`
+`AnimationStatsWindow`, `ProfilerStatsWindow`, `SceneStatsWindow`, every `...Section()` function, `UI::DebugWindow`
 and `UI::DebugTab`, together with `UI/DebugPanels.h`, are now engine-internal.
 
 The built-in Debug window is unchanged: F3 to F9 open its tabs in every build that keeps

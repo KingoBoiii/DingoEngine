@@ -110,6 +110,17 @@ namespace Dingo
 					return "?";
 				}
 
+				const char* CullingModeName(AnimatorCullingMode mode)
+				{
+					switch (mode)
+					{
+						case AnimatorCullingMode::AlwaysAnimate: return "always animate";
+						case AnimatorCullingMode::PauseWhenCulled: return "pause when culled";
+						case AnimatorCullingMode::ReduceWhenCulled: return "reduce when culled";
+					}
+					return "?";
+				}
+
 				const char* RootMotionName(RootMotionMode mode)
 				{
 					switch (mode)
@@ -356,6 +367,11 @@ namespace Dingo
 							++row.DisabledLocalLights;
 							return;
 						}
+						if (HierarchySystem::IsInactive(registry, handle))
+						{
+							++row.InactiveLocalLights;
+							return;
+						}
 						++count;
 						row.ShadowedLocalLights += castShadows ? 1 : 0;
 					};
@@ -460,6 +476,8 @@ namespace Dingo
 
 				out.Id = id;
 				out.Name = EntityName(registry, handle);
+				out.Active = !registry.all_of<InactiveSelfComponent>(handle);
+				out.ActiveInHierarchy = !HierarchySystem::IsInactive(registry, handle);
 				const entt::entity parent = HierarchySystem::GetParent(registry, handle);
 				if (parent != entt::null)
 				{
@@ -641,6 +659,17 @@ namespace Dingo
 					Add(section, "Visible", Text(renderer->Visible));
 					Add(section, "Shadows", ShadowCastingName(renderer->Shadows));
 					Add(section, "Shadow groups", Hex(renderer->ShadowGroups));
+					Add(section, "Static", Text(renderer->Static));
+					if (renderer->Surface)
+					{
+						const SurfaceOverride& surface = *renderer->Surface;
+						Add(section, "Surface emissive", std::format("{} x {:.3f}", Text(surface.EmissiveColor), surface.EmissiveStrength));
+						Add(section, "Surface roughness / specular", std::format("{:.3f} / {:.3f}", surface.Roughness, surface.Specular));
+					}
+					else
+					{
+						Add(section, "Surface", "the material's");
+					}
 				}
 
 				if (const SkinnedMeshRendererComponent* renderer = registry.try_get<SkinnedMeshRendererComponent>(handle))
@@ -663,6 +692,7 @@ namespace Dingo
 					Add(section, "Speed", Text(animator->Speed));
 					Add(section, "Root motion", RootMotionName(animator->RootMotion));
 					Add(section, "Apply root motion", Text(animator->ApplyRootMotion));
+					Add(section, "Culling mode", CullingModeName(animator->CullingMode));
 				}
 
 				if (const ParticleEmitterComponent* emitter = registry.try_get<ParticleEmitterComponent>(handle))

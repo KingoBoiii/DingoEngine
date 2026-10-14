@@ -1232,6 +1232,8 @@ namespace Dingo::Internal
 		std::string lights = std::format("Lights: {} directional, {} ambient, {} point, {} spot", scene.DirectionalLights, scene.AmbientLights, scene.PointLights, scene.SpotLights);
 		if (scene.DisabledLocalLights > 0)
 			lights += std::format(" ({} disabled)", scene.DisabledLocalLights);
+		if (scene.InactiveLocalLights > 0)
+			lights += std::format(" ({} inactive)", scene.InactiveLocalLights);
 		ImGui::TextUnformatted(lights.c_str());
 		if (scene.UnplacedLocalLights > 0)
 			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "%u point or spot lights have no Transform3DComponent and are ignored", scene.UnplacedLocalLights);
@@ -1369,6 +1371,10 @@ namespace Dingo::Internal
 		else
 			ImGui::TextDisabled("Parent: none (a root)");
 		ImGui::Text("Children: %u", s_Detail.ChildCount);
+		if (!s_Detail.Active)
+			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "Inactive (SetActive(false)): not drawn, simulated or updated");
+		else if (!s_Detail.ActiveInHierarchy)
+			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "Inactive through an ancestor: not drawn, simulated or updated");
 
 		for (size_t index = 0; index < s_Detail.Sections.size(); ++index)
 		{

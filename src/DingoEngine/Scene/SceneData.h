@@ -45,7 +45,7 @@ namespace Dingo
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
 
-			// Joined to the F7 tab's list at the first OnUpdate, on the main thread, so a scene built on
+			// Joined to SceneDebug's live-scene list (the F7 and F9 tabs) at the first OnUpdate, on the main thread, so a scene built on
 			// a loading thread isn't read while it is filled.
 			bool DebugRegistered = false;
 

@@ -490,6 +490,15 @@ namespace Dingo
 				std::format("the Scene tab's inspector shows the child's world transform through its parent: ({:.3f}, {:.3f}, {:.3f})",
 					detail.WorldPosition.x, detail.WorldPosition.y, detail.WorldPosition.z));
 
+			parent.SetActive(false);
+			SD::CollectScenes(scenes);
+			const auto inactiveRow = std::find_if(scenes.begin(), scenes.end(), [serial](const SD::SceneRow& r) { return r.Serial == serial; });
+			SD::EntityDetail inactiveChild;
+			Check(inactiveRow != scenes.end() && inactiveRow->PointLights == 0 && inactiveRow->InactiveLocalLights == 1
+				&& SD::CollectEntity(serial, childId, inactiveChild) && inactiveChild.Active && !inactiveChild.ActiveInHierarchy,
+				"the Scene tab counts a light under an inactive parent apart, as the renderer skips it, and marks the child inactive");
+			parent.SetActive(true);
+
 			scene.DestroyEntity(child);
 			Check(!SD::CollectEntity(serial, childId, detail) && detail.Sections.empty(), "the Scene tab's inspector lets go of a destroyed entity");
 		}

@@ -60,7 +60,7 @@ namespace Dingo
 				uint64_t Sequence = 0;
 			};
 
-			// Every live scene's animators that have a runtime animator, scenes in creation order.
+			// Every live scene's animators that have a runtime animator, scenes in the order they first updated.
 			void CollectAnimators(std::vector<AnimatorRow>& out);
 			// The row's scene, entity and model names; "(gone)" for a scene or entity gone since.
 			AnimatorNames DescribeAnimator(const AnimatorRow& row);

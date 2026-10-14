@@ -76,13 +76,15 @@ namespace Dingo
 				uint32_t Roots = 0;
 				uint32_t Scripts = 0;
 
-				// Light components. Point and spot count only enabled ones on an entity with a
+				// Light components. Point and spot count only enabled ones on an active entity with a
 				// Transform3DComponent; the renderer ignores the others, as UnplacedLocalLights says.
 				uint32_t DirectionalLights = 0;
 				uint32_t AmbientLights = 0;
 				uint32_t PointLights = 0;
 				uint32_t SpotLights = 0;
 				uint32_t DisabledLocalLights = 0;
+				// Enabled, but on an entity that is inactive or under an inactive ancestor (Entity::SetActive).
+				uint32_t InactiveLocalLights = 0;
 				uint32_t UnplacedLocalLights = 0;
 				uint32_t ShadowedLocalLights = 0;
 				// Whether any component turns the default directional light off, as LightSystem decides it.
@@ -142,6 +144,9 @@ namespace Dingo
 			{
 				UUID Id;
 				std::string Name;
+				// Entity::IsActive and IsActiveInHierarchy.
+				bool Active = true;
+				bool ActiveInHierarchy = true;
 				bool HasParent = false;
 				UUID Parent;
 				std::string ParentName;
