@@ -518,9 +518,10 @@ namespace Dingo
 		for (uint32_t button = 0; button < Internal::UIInputState::k_PointerButtonCount; ++button)
 		{
 			const MouseButton mouseButton = static_cast<MouseButton>(button);
-			input.PointerDown[button] = Input::IsMouseButtonDown(mouseButton);
+			// A press the UI took reads as up to Input until released, yet the UI follows it to the end.
+			input.PointerDown[button] = Internal::InputBackend::IsMouseButtonDownUnconsumed(mouseButton);
 			input.PointerPressed[button] = Input::IsMouseButtonPressed(mouseButton);
-			input.PointerReleased[button] = Input::IsMouseButtonReleased(mouseButton);
+			input.PointerReleased[button] = Internal::InputBackend::IsMouseButtonReleasedUnconsumed(mouseButton);
 		}
 		input.PointerAvailable = !imguiMouse && Input::GetCursorMode() != CursorMode::Locked;
 		input.KeyboardAvailable = !imguiKeyboard;

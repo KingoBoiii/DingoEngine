@@ -42,6 +42,72 @@ namespace Dingo
 			context->Image(texture, params);
 	}
 
+	UIInteraction DingoUI::Button(std::string_view label, const UIWidgetParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->Button(label, params) : UIInteraction{};
+	}
+
+	UIInteraction DingoUI::Toggle(std::string_view label, bool* value, const UIWidgetParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->Toggle(label, value, params) : UIInteraction{};
+	}
+
+	UIInteraction DingoUI::Slider(std::string_view label, float* value, float min, float max, const UISliderParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->Slider(label, value, min, max, params) : UIInteraction{};
+	}
+
+	UIInteraction DingoUI::SliderInt(std::string_view label, int* value, int min, int max, const UISliderParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->SliderInt(label, value, min, max, params) : UIInteraction{};
+	}
+
+	void DingoUI::ProgressBar(std::string_view id, float value, const UIWidgetParams& params)
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->ProgressBar(id, value, params);
+	}
+
+	UIInteraction DingoUI::Selectable(std::string_view label, bool selected, const UIWidgetParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->Selectable(label, selected, params) : UIInteraction{};
+	}
+
+	bool DingoUI::BeginScrollArea(std::string_view label, const UIScrollParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->BeginScrollArea(label, params);
+	}
+
+	void DingoUI::EndScrollArea()
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->EndScrollArea();
+	}
+
+	void DingoUI::PushId(std::string_view id)
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->PushId(id);
+	}
+
+	void DingoUI::PushId(int id)
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->PushId(id);
+	}
+
+	void DingoUI::PopId()
+	{
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+			context->PopId();
+	}
+
 	void DingoUI::SetDefaultFont(Font* font)
 	{
 		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())

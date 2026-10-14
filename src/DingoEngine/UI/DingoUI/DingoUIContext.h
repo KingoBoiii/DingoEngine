@@ -2,6 +2,7 @@
 #include "DingoEngine/UI/DingoUI.h"
 #include "DingoUIDrawList.h"
 #include "DingoUILayout.h"
+#include "DingoUIState.h"
 
 #include <glm/glm.hpp>
 
@@ -10,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace Dingo
@@ -78,6 +80,18 @@ namespace Dingo::Internal
 		void Text(std::string_view text, const UITextParams& params);
 		void Image(Texture* texture, const UIImageParams& params);
 
+		UIInteraction Button(std::string_view label, const UIWidgetParams& params);
+		UIInteraction Toggle(std::string_view label, bool* value, const UIWidgetParams& params);
+		UIInteraction Slider(std::string_view label, float* value, float min, float max, const UISliderParams& params);
+		UIInteraction SliderInt(std::string_view label, int* value, int min, int max, const UISliderParams& params);
+		void ProgressBar(std::string_view id, float value, const UIWidgetParams& params);
+		UIInteraction Selectable(std::string_view label, bool selected, const UIWidgetParams& params);
+		bool BeginScrollArea(std::string_view label, const UIScrollParams& params);
+		void EndScrollArea();
+		void PushId(std::string_view id);
+		void PushId(int id);
+		void PopId();
+
 		void SetDefaultFont(Font* font) { m_Params.DefaultFont = font; }
 		Font* GetDefaultFont() const { return m_Params.DefaultFont; }
 
@@ -94,22 +108,37 @@ namespace Dingo::Internal
 		const DingoUIParams& GetParams() const { return m_Params; }
 		uint64_t GetFrameIndex() const { return m_FrameIndex; }
 
-		// Against last frame's layout.
+		// Against last frame's layout: over an element of a blocking root, or any modal root exists.
 		bool HitTestBlocking(const glm::vec2& point) const;
 		bool IsPointerOverUI() const { return m_PointerOverUI; }
 		bool IsCapturingInput() const { return m_CapturingInput; }
+
+		// Interaction as BeginFrame resolved it; 0 for none.
+		uint64_t GetHoverId() const { return m_HoverId; }
+		uint64_t GetActiveId() const { return m_ActiveId; }
+		uint64_t GetScrollTargetId() const { return m_ScrollTargetId; }
+		const UIStateMap& GetStates() const { return m_States; }
+		// Widgets declared with an id another widget already used in the same frame, since the start.
+		uint32_t GetIdCollisionCount() const { return m_IdCollisionCount; }
 
 	private:
 		glm::vec2 ComputeTargetSize() const;
 		bool CanDeclare();
 		void WarnMismatch(const char* what);
+		void ResolveInteraction();
+		// Touches the state of `id` for this frame (reporting a reuse of the id) and reads what
+		// the pointer did to it.
+		UIInteraction Interact(uint64_t id, std::string_view label, bool enabled, UIWidgetState*& state);
+		// 0 (with a warning once) when no root is open.
+		uint64_t WidgetId(std::string_view label);
+		void BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll = false, const glm::vec2& scrollOffset = glm::vec2(0.0f));
+		UIInteraction SliderImpl(std::string_view label, double* value, double min, double max, double step, bool integer, const UISliderParams& params);
 
 	private:
 		DingoUIParams m_Params;
 		Framebuffer* m_Target = nullptr;
 		const UIInputState* m_InputOverride = nullptr;
 		UIInputState m_Input;
-		std::vector<UIRect> m_BlockingRects;
 		UILayoutTree m_Tree;
 		UILayoutTree m_LastTree;
 		UITextMeasureFn m_Measure;
@@ -126,6 +155,21 @@ namespace Dingo::Internal
 		uint64_t m_FrameIndex = 0;
 		bool m_PointerOverUI = false;
 		bool m_CapturingInput = false;
+		bool m_ModalActive = false;
+
+		UIStateMap m_States;
+		UIHit m_Hit;
+		uint64_t m_HoverId = 0;
+		uint64_t m_ActiveId = 0;
+		uint64_t m_PressedId = 0;
+		uint64_t m_ClickedId = 0;
+		uint64_t m_ReleasedId = 0;
+		uint64_t m_ScrollTargetId = 0;
+		glm::vec2 m_ScrollDelta{ 0.0f };
+		std::array<bool, UIInputState::k_PointerButtonCount> m_ConsumedDown{};
+		std::unordered_set<uint64_t> m_WarnedCollisions;
+		uint32_t m_IdCollisionCount = 0;
+		std::vector<uint64_t> m_ScrollStack;
 	};
 
 	// The Application's context, or nullptr (headless, DingoUIParams::Enabled false, or outside

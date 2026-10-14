@@ -209,6 +209,10 @@ namespace Dingo
 		/// A press on one of its elements is taken from the game (the elements that draw something
 		/// count; a bare layout box does not). Turn off for a HUD the pointer should pass through.
 		bool BlocksInput = true;
+		/// While this root is declared, the roots below it (lower Layer, or the same Layer and
+		/// declared earlier) get no hover or clicks, and every press and scroll, wherever the
+		/// pointer is, is taken from the game.
+		bool Modal = false;
 		/// The root's own layout; its Width and Height are the root's size.
 		UIBoxParams Layout;
 
@@ -224,6 +228,8 @@ namespace Dingo
 		UIRootParams& SetLayer(int layer) { Layer = layer; return *this; }
 		/// Sets BlocksInput.
 		UIRootParams& SetBlocksInput(bool blocks) { BlocksInput = blocks; return *this; }
+		/// Sets Modal.
+		UIRootParams& SetModal(bool modal) { Modal = modal; return *this; }
 		/// Sets Layout.
 		UIRootParams& SetLayout(const UIBoxParams& layout) { Layout = layout; return *this; }
 	};
@@ -281,17 +287,83 @@ namespace Dingo
 		UIImageParams& SetPreserveAspect(bool preserve) { PreserveAspect = preserve; return *this; }
 	};
 
+	/// What the pointer did to a widget this frame. Resolved against the previous frame's layout,
+	/// so a widget that appears or moves reacts one frame late; one that did not exist last frame
+	/// ignores a press that lands on it.
+	struct UIInteraction
+	{
+		bool Hovered = false; ///< The pointer is over it (and no other widget is being held).
+		bool Pressed = false; ///< The left button went down on it this frame.
+		bool Down = false;    ///< It took a press and the button is still held, wherever the pointer went.
+		bool Clicked = false; ///< The button was released over it after going down on it.
+		bool Changed = false; ///< A Toggle, Slider or SliderInt changed its value this frame.
+		bool Focused = false; ///< Reserved for keyboard and gamepad focus; always false for now.
+	};
+
+	/// The size and state of a Button, Toggle, Selectable or ProgressBar. Chain the setters.
+	struct UIWidgetParams
+	{
+		UISize Width;         ///< Width; Fit is the label's width plus padding (a ProgressBar defaults to 200 design pixels).
+		UISize Height;        ///< Height; Fit is the label's height plus padding (a ProgressBar defaults to 14 design pixels).
+		bool Enabled = true;  ///< Off, the widget is drawn dimmed and ignores the pointer.
+
+		/// Sets Width and Height.
+		UIWidgetParams& SetSize(const UISize& width, const UISize& height) { Width = width; Height = height; return *this; }
+		/// Sets Width.
+		UIWidgetParams& SetWidth(const UISize& width) { Width = width; return *this; }
+		/// Sets Height.
+		UIWidgetParams& SetHeight(const UISize& height) { Height = height; return *this; }
+		/// Sets Enabled.
+		UIWidgetParams& SetEnabled(bool enabled) { Enabled = enabled; return *this; }
+	};
+
+	/// A Slider or SliderInt. Chain the setters.
+	struct UISliderParams
+	{
+		UISize Width = UISize::Fixed(200.0f); ///< Width of the track and handle.
+		float Step = 0.0f;                    ///< Values snap to multiples of this from the minimum; 0 for none (SliderInt always steps by 1).
+		bool ShowValue = true;                ///< Draw the value after the track.
+		bool Enabled = true;                  ///< Off, the slider is drawn dimmed and ignores the pointer.
+
+		/// Sets Width.
+		UISliderParams& SetWidth(const UISize& width) { Width = width; return *this; }
+		/// Sets Step.
+		UISliderParams& SetStep(float step) { Step = step; return *this; }
+		/// Sets ShowValue.
+		UISliderParams& SetShowValue(bool show) { ShowValue = show; return *this; }
+		/// Sets Enabled.
+		UISliderParams& SetEnabled(bool enabled) { Enabled = enabled; return *this; }
+	};
+
+	/// A vertically scrolling area. Chain the setters.
+	struct UIScrollParams
+	{
+		/// The area's own layout; give it a Height (Fixed, or Percent/Grow in a sized parent) or it
+		/// grows to fit its content and never scrolls. ClipChildren is always on.
+		UIBoxParams Layout;
+		float WheelStep = 40.0f;  ///< Design pixels one wheel notch scrolls.
+		bool DragScroll = false;  ///< Dragging the area's empty background scrolls it.
+
+		/// Sets Layout.
+		UIScrollParams& SetLayout(const UIBoxParams& layout) { Layout = layout; return *this; }
+		/// Sets WheelStep.
+		UIScrollParams& SetWheelStep(float step) { WheelStep = step; return *this; }
+		/// Sets DragScroll.
+		UIScrollParams& SetDragScroll(bool drag) { DragScroll = drag; return *this; }
+	};
+
 	/// The game UI: HUDs and menus declared every frame from OnUpdate, laid out, drawn over the
 	/// scene and its post chain, and taking the pointer from the game where it lands on them.
 	/// Static, like Input; call it from the main thread. ImGui stays the debug UI (Dingo::UI).
 	///
-	/// A frame declares roots, each holding boxes, text and images; the engine lays them out after
+	/// A frame declares roots, each holding boxes, text, images and widgets; the engine lays them out after
 	/// the last OnUpdate and draws them in one pass. Every Begin must be matched by its End, and
 	/// the End is called only when the Begin returned true:
 	/// @code
 	/// if (DingoUI::BeginRoot("hud", UIRootParams().SetAnchor(UIAnchor::TopLeft).SetOffset({ 16, 16 })))
 	/// {
 	///     DingoUI::Text("Score 120");
+	///     if (DingoUI::Button("Pause").Clicked) m_Paused = true;
 	///     DingoUI::EndRoot();
 	/// }
 	/// @endcode
@@ -318,16 +390,51 @@ namespace Dingo
 		/// size of its own.
 		static void Image(Texture* texture, const UIImageParams& params = {});
 
+		/// Adds a push button showing `label` to the current container. The label is also the
+		/// widget's id: text after `##` is part of the id but not shown, so two buttons that read
+		/// the same need `"OK##first"` and `"OK##second"` (or a PushId around each).
+		static UIInteraction Button(std::string_view label, const UIWidgetParams& params = {});
+		/// Adds a switch with `label`; a click flips `*value` and sets Changed. A null `value` draws it off.
+		static UIInteraction Toggle(std::string_view label, bool* value, const UIWidgetParams& params = {});
+		/// Adds a horizontal slider with `label` that edits `*value` between `min` and `max`, by
+		/// click or drag. The value is clamped (and snapped to params.Step) on every
+		/// call; Changed is set when it moved. A null `value` draws it at `min`.
+		static UIInteraction Slider(std::string_view label, float* value, float min, float max, const UISliderParams& params = {});
+		/// As Slider, for whole numbers.
+		static UIInteraction SliderInt(std::string_view label, int* value, int min, int max, const UISliderParams& params = {});
+		/// Adds a bar filled `value` (0 to 1, clamped) of the way; `id` names its element and shows
+		/// nowhere. Takes no input, but a bar in a blocking root still blocks the pointer.
+		static void ProgressBar(std::string_view id, float value, const UIWidgetParams& params = {});
+		/// Adds a list row showing `label`, highlighted while `selected`. The game stores the
+		/// selection: set it when Clicked is true.
+		static UIInteraction Selectable(std::string_view label, bool selected, const UIWidgetParams& params = {});
+		/// Opens a vertically scrolling, clipped container named `label` inside the current
+		/// container. The mouse wheel over it scrolls it and is taken from the game. Returns false,
+		/// and EndScrollArea must not be called, when no root is open.
+		static bool BeginScrollArea(std::string_view label, const UIScrollParams& params = {});
+		/// Closes the area opened by the matching BeginScrollArea.
+		static void EndScrollArea();
+
+		/// Mixes `id` into the ids of the widgets declared until the matching PopId, so a loop can
+		/// give each iteration's widgets their own id. Pops that outnumber pushes inside a
+		/// container are ignored.
+		static void PushId(std::string_view id);
+		/// As PushId, for a number such as a loop index.
+		static void PushId(int id);
+		/// Removes the id pushed last. Ids pushed inside a box or root are dropped when it ends.
+		static void PopId();
+
 		/// Sets the font Text uses when its params name none. Pass nullptr before deleting the font.
 		static void SetDefaultFont(Font* font);
 		/// The font set by DingoUIParams::DefaultFont or SetDefaultFont, or nullptr.
 		static Font* GetDefaultFont();
 
 		/// True while the pointer is over an element that blocks input (as of the last frame's
-		/// layout), for a game that reads the raw mouse and wants to ignore clicks on the UI.
+		/// layout) or a modal root is up. A press or scroll that lands there is hidden from Input
+		/// (the button reads up until it is released); this is for a game that wants the picture anyway.
 		static bool IsPointerOverUI();
-		/// True while the UI holds the pointer or the keyboard (a press it took and has not
-		/// released, or a modal), so the game should leave that input alone.
+		/// True while the UI holds the pointer (a press it took and has not released, a widget being
+		/// held, or a modal root), so the game should leave that input alone.
 		static bool IsCapturingInput();
 	};
 

@@ -68,7 +68,13 @@ namespace Dingo::Internal
 		glm::vec2 Pivot{ 0.0f };
 		int Layer = 0;
 		bool BlocksInput = true;
+		bool Modal = false;
 		float Scale = 1.0f;
+
+		// Widgets
+		bool Interactive = false;        // takes the pointer: hover, press, click
+		bool Scroll = false;             // a scroll area: wheel target, children move by ScrollOffset
+		glm::vec2 ScrollOffset{ 0.0f };  // pixels
 
 		// Text
 		const Font* TextFont = nullptr;
@@ -93,9 +99,29 @@ namespace Dingo::Internal
 		// Layout scratch and result
 		std::array<float, 2> Natural{};  // content size, padding included
 		std::array<float, 2> Resolved{}; // final size
+		glm::vec2 ContentSize{ 0.0f };   // extent of the children along both axes, padding included
 		glm::vec2 Origin{ 0.0f };        // top-left before pixel snapping
 		UIRect Rect;                     // final, snapped to whole pixels
 		UIRect Clip = k_UINoClip;        // what the element's own drawing is clipped to
+	};
+
+	// What makes a box a widget: its id replaces the positional one.
+	struct UIWidgetInfo
+	{
+		uint64_t Id = 0;
+		uint64_t NameHash = 0;
+		bool Interactive = false;
+		bool Scroll = false;
+		glm::vec2 ScrollOffset{ 0.0f };
+	};
+
+	// What a point of the screen is over, in last frame's layout.
+	struct UIHit
+	{
+		uint64_t HoverId = 0;       // topmost interactive element under the point, 0 for none
+		uint64_t ScrollId = 0;      // innermost scroll area under the point in the same root, 0 for none
+		bool OverBlocking = false;  // over something of a blocking root, or a modal root exists
+		bool Modal = false;         // a modal root exists
 	};
 
 	// Measures `text` at `size` pixels, wrapping at `maxWidth` when above zero: width of the widest
@@ -112,7 +138,7 @@ namespace Dingo::Internal
 
 		// False (nothing added) when a root is already open, or no root is open for the others.
 		bool BeginRoot(std::string_view name, const UIRootParams& params);
-		bool BeginBox(const UIBoxParams& params);
+		bool BeginBox(const UIBoxParams& params, const UIWidgetInfo* widget = nullptr);
 		bool AddText(std::string_view text, const UITextParams& params, const Font* font);
 		// naturalSize is the texture's size in pixels; the texture is never dereferenced.
 		bool AddImage(Texture* texture, const glm::vec2& naturalSize, const UIImageParams& params);
@@ -133,8 +159,24 @@ namespace Dingo::Internal
 		std::string_view GetText(const UIElement& element) const { return std::string_view(m_Text).substr(element.TextOffset, element.TextLength); }
 		// The first element whose name (UIBoxParams::Id or a root's name) is `name`, or nullptr.
 		const UIElement* FindByName(std::string_view name) const;
-		// Rects of the elements of input-blocking roots that draw something.
+		const UIElement* FindById(uint64_t id) const;
+		// Rects of the elements of input-blocking roots that draw something or take the pointer.
 		void CollectBlockingRects(std::vector<UIRect>& rects) const;
+		bool HasModal() const;
+		// Roots are tried from the topmost (highest Layer, then latest declared) down; the first
+		// with an interactive element under the point owns the hover, and a blocking root with
+		// anything under the point hides the roots below it. A modal root hides all below it.
+		UIHit HitTest(const glm::vec2& point) const;
+
+		// The id a widget called `label` gets in the open container, under the pushed ids; 0 when
+		// nothing is open. The same label gives the same id every frame.
+		uint64_t MakeId(std::string_view label) const;
+		void PushId(std::string_view id);
+		void PushId(int id);
+		// False when this container has no id of its own pushed.
+		bool PopId();
+		uint32_t GetIdStackDepth() const { return static_cast<uint32_t>(m_IdStack.size()); }
+		float GetRootScale() const { return m_RootScale; }
 
 		static uint64_t HashName(std::string_view name);
 
@@ -146,12 +188,16 @@ namespace Dingo::Internal
 		void MeasureText(UIElement& element, float maxWidth);
 		void ComputeMinContent(UIElement& element);
 		void Place();
+		void SortRoots() const;
+		void CloseElement();
 		float ContentOf(const UIElement& child, uint32_t axis) const;
 		static float Clamp(const UIAxisSize& size, float value);
 
 	private:
 		std::vector<UIElement> m_Elements;
 		std::vector<int32_t> m_Open;
+		std::vector<uint64_t> m_IdStack;
+		std::vector<uint32_t> m_OpenIdDepth; // id stack size when each open element began
 		mutable std::vector<int32_t> m_Order; // scratch: roots by layer
 		std::string m_Text;
 		glm::vec2 m_Viewport{ 0.0f };

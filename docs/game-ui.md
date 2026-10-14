@@ -119,6 +119,59 @@ pointer arrives in window coordinates and is converted by the ratio of the two, 
 `IsPointerOverUI()` and the later hit-tests agree with what is on screen. A resize changes the scale
 the next frame.
 
+## Widgets
+
+Widgets are declared like boxes and answer in the same call. They sit inside a root (or any box),
+look the same everywhere (one hard-coded look until the style system), and return a `UIInteraction`.
+
+| Call | |
+|---|---|
+| `Button(label, params)` | `Clicked` on the frame the button is released with the pointer still over it. |
+| `Toggle(label, &bool, params)` | Flips the bool on a click; `Changed` that frame. |
+| `Slider(label, &float, min, max, params)` | Drag the track; the value is clamped (and snapped to `Step`) on every call. `ShowValue` prints it. |
+| `SliderInt(label, &int, min, max, params)` | The same, whole numbers. |
+| `ProgressBar(id, value, params)` | A 0 to 1 bar; takes no input. |
+| `Selectable(label, selected, params)` | A row that is `Clicked` to pick it; you keep the selection. |
+| `BeginScrollArea(label, params)` / `EndScrollArea()` | A clipped column that scrolls with the wheel (and by dragging with `DragScroll`); `BeginScrollArea` returns `true`, and every `true` gets its `EndScrollArea`. |
+
+`UIInteraction` has `Hovered`, `Pressed` (the press frame), `Down` (held), `Clicked`, `Changed`
+(the value was changed by the player this call) and `Focused` (reserved for keyboard focus; always false for now).
+A disabled widget (`UIWidgetParams::Enabled = false`) is drawn dimmed and reports nothing.
+
+```cpp
+DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Column).SetGap(8.0f));
+if (DingoUI::Button("Play").Clicked)
+    StartGame();
+DingoUI::Toggle("Music", &m_Music);
+DingoUI::Slider("Volume", &m_Volume, 0.0f, 1.0f);
+DingoUI::EndBox();
+```
+
+### Ids
+
+A widget's state (hover, held, a scroll offset) is kept by id: the hash of its label, the ids of the
+boxes around it and the `PushId` stack. Two widgets with the same id in one frame share the state
+and warn once (Debug builds); fix it with a suffix after `##`, which is hashed but not shown
+(`"Delete##row3"`), or with `PushId(i)` / `PopId()` around a loop.
+State of a widget that isn't declared for a couple of frames is dropped.
+
+## Pointer, hit-testing and the input you keep
+
+The UI answers from **the last frame's layout**: a press hits what was on screen when the player
+pressed. A widget that is new this frame (a popup that opens on the same click) ignores that press, so a
+click can't go through to a button that appears under it. Where roots overlap, the root on the higher
+`Layer` (then declared later) wins; inside it the deepest widget does. A `Modal` root
+(`UIRootParams::SetModal`) takes everything on the screen, also where it draws nothing.
+
+When the pointer is over a part of a blocking root that draws something, a press or scroll there is
+consumed: `Input::IsMouseButtonPressed/Down` and `Input::GetScroll` read as not happening for the game,
+and a consumed button stays up until the player releases it, so a drag that began on the UI
+never turns into a game click on the way out. A root with `BlocksInput = false` never consumes.
+
+- `DingoUI::IsPointerOverUI()`: the pointer is over a blocking element (or a modal is up).
+- `DingoUI::IsCapturingInput()`: the UI holds the pointer: a press it took is still held, or a modal
+  is up. Keep game drag-and-drop and camera input off while it is `true`.
+
 ## Rules the frame follows
 
 - Declare from `OnUpdate`; the layout and the draw happen after all layers have updated, and the UI
@@ -126,7 +179,7 @@ the next frame.
 - A `Begin...` that returns `false` declared nothing; its `End...` must not be called. Every `true`
   gets its `End...`. A mismatched call is ignored, and a `Begin` left open is closed when the frame
   ends; each warns once. The next frame starts clean.
-- The same declarations in the same order give the same ids and the same layout, which the
-  interaction state of later releases will key on. Give siblings an `Id` when their order can change.
+- The same declarations in the same order give the same ids and the same layout, which widget
+  state is keyed on. Give widgets distinct labels (or `PushId`) when their order can change.
 - A UI that didn't change draws the same vertices as the last frame and uploads nothing; a menu of
   boxes, text and images with up to 32 textures is one draw call.

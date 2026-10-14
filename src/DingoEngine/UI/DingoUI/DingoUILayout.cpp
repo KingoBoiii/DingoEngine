@@ -1,6 +1,8 @@
 #include "depch.h"
 #include "DingoUILayout.h"
 
+#include "DingoUIWidgetLook.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -59,6 +61,8 @@ namespace Dingo::Internal
 			return result;
 		}
 
+		bool Covers(const UIElement& element);
+
 		bool Draws(const UIElement& element)
 		{
 			switch (element.Kind)
@@ -71,6 +75,11 @@ namespace Dingo::Internal
 				return element.Background.a > 0.0f || (element.BorderWidth > 0.0f && element.BorderColor.a > 0.0f);
 			}
 			return false;
+		}
+
+		bool Covers(const UIElement& element)
+		{
+			return element.Interactive || element.Scroll || Draws(element);
 		}
 
 		bool IsContainer(const UIElement& element)
@@ -113,6 +122,8 @@ namespace Dingo::Internal
 	{
 		m_Elements.clear();
 		m_Open.clear();
+		m_IdStack.clear();
+		m_OpenIdDepth.clear();
 		m_Text.clear();
 		m_Viewport = viewport;
 		m_RootScale = 1.0f;
@@ -180,18 +191,32 @@ namespace Dingo::Internal
 		element.Pivot = params.HasPivot ? params.Pivot : AnchorFraction(params.Anchor);
 		element.Layer = params.Layer;
 		element.BlocksInput = params.BlocksInput;
+		element.Modal = params.Modal;
 		m_Open.push_back(index);
+		m_OpenIdDepth.push_back(static_cast<uint32_t>(m_IdStack.size()));
 		return true;
 	}
 
-	bool UILayoutTree::BeginBox(const UIBoxParams& params)
+	bool UILayoutTree::BeginBox(const UIBoxParams& params, const UIWidgetInfo* widget)
 	{
 		if (m_Open.empty())
 			return false;
 
 		const int32_t index = Append(UIElementKind::Box);
-		ApplyBox(m_Elements[index], params);
+		UIElement& element = m_Elements[index];
+		ApplyBox(element, params);
+		if (widget)
+		{
+			element.Id = widget->Id;
+			element.NameHash = widget->NameHash;
+			element.Interactive = widget->Interactive;
+			element.Scroll = widget->Scroll;
+			element.ScrollOffset = widget->ScrollOffset;
+			if (widget->Scroll)
+				element.ClipChildren = true;
+		}
 		m_Open.push_back(index);
+		m_OpenIdDepth.push_back(static_cast<uint32_t>(m_IdStack.size()));
 		return true;
 	}
 
@@ -233,11 +258,18 @@ namespace Dingo::Internal
 		return true;
 	}
 
+	void UILayoutTree::CloseElement()
+	{
+		m_IdStack.resize((std::min)(m_IdStack.size(), static_cast<size_t>(m_OpenIdDepth.back())));
+		m_OpenIdDepth.pop_back();
+		m_Open.pop_back();
+	}
+
 	bool UILayoutTree::EndRoot()
 	{
 		if (m_Open.empty() || m_Elements[m_Open.back()].Kind != UIElementKind::Root)
 			return false;
-		m_Open.pop_back();
+		CloseElement();
 		return true;
 	}
 
@@ -245,7 +277,7 @@ namespace Dingo::Internal
 	{
 		if (m_Open.empty() || m_Elements[m_Open.back()].Kind != UIElementKind::Box)
 			return false;
-		m_Open.pop_back();
+		CloseElement();
 		return true;
 	}
 
@@ -253,7 +285,39 @@ namespace Dingo::Internal
 	{
 		const uint32_t count = static_cast<uint32_t>(m_Open.size());
 		m_Open.clear();
+		m_OpenIdDepth.clear();
+		m_IdStack.clear();
 		return count;
+	}
+
+	uint64_t UILayoutTree::MakeId(std::string_view label) const
+	{
+		if (m_Open.empty())
+			return 0;
+		const uint64_t pushed = m_IdStack.empty() ? 0 : m_IdStack.back();
+		const uint64_t id = Mix(Mix(m_Elements[m_Open.back()].Id, pushed), HashName(label));
+		return id != 0 ? id : 1;
+	}
+
+	void UILayoutTree::PushId(std::string_view id)
+	{
+		const uint64_t pushed = m_IdStack.empty() ? 0 : m_IdStack.back();
+		m_IdStack.push_back(Mix(pushed, HashName(id)));
+	}
+
+	void UILayoutTree::PushId(int id)
+	{
+		const uint64_t pushed = m_IdStack.empty() ? 0 : m_IdStack.back();
+		m_IdStack.push_back(Mix(pushed, static_cast<uint64_t>(static_cast<int64_t>(id)) + 0x51ed270b3ull));
+	}
+
+	bool UILayoutTree::PopId()
+	{
+		const size_t base = m_OpenIdDepth.empty() ? 0 : m_OpenIdDepth.back();
+		if (m_IdStack.size() <= base)
+			return false;
+		m_IdStack.pop_back();
+		return true;
 	}
 
 	float UILayoutTree::Clamp(const UIAxisSize& size, float value)
@@ -541,12 +605,16 @@ namespace Dingo::Internal
 
 			uint32_t count = 0;
 			float total = 0.0f;
+			float widest = 0.0f;
 			for (int32_t child = element.FirstChild; child != k_UINoElement; child = m_Elements[child].NextSibling)
 			{
 				total += m_Elements[child].Resolved[mainAxis];
+				widest = (std::max)(widest, m_Elements[child].Resolved[crossAxis]);
 				++count;
 			}
 			total += element.Gap * static_cast<float>(count - 1);
+			element.ContentSize[mainAxis] = total + padMin[mainAxis] + padMax[mainAxis];
+			element.ContentSize[crossAxis] = widest + padMin[crossAxis] + padMax[crossAxis];
 
 			const float free = (std::max)(0.0f, inner[mainAxis] - total);
 			float cursor = 0.0f;
@@ -575,7 +643,7 @@ namespace Dingo::Internal
 				glm::vec2 offset;
 				offset[mainAxis] = cursor;
 				offset[crossAxis] = cross;
-				item.Origin = element.Origin + padMin + offset;
+				item.Origin = element.Origin + padMin + offset - (element.Scroll ? element.ScrollOffset : glm::vec2(0.0f));
 				cursor += item.Resolved[mainAxis] + element.Gap + extraGap;
 			}
 		}
@@ -600,6 +668,17 @@ namespace Dingo::Internal
 		m_Measure = nullptr;
 	}
 
+	void UILayoutTree::SortRoots() const
+	{
+		m_Order.clear();
+		for (size_t i = 0; i < m_Elements.size(); ++i)
+		{
+			if (m_Elements[i].Kind == UIElementKind::Root)
+				m_Order.push_back(static_cast<int32_t>(i));
+		}
+		std::stable_sort(m_Order.begin(), m_Order.end(), [this](int32_t a, int32_t b) { return m_Elements[a].Layer < m_Elements[b].Layer; });
+	}
+
 	void UILayoutTree::Emit(UIDrawList& list) const
 	{
 		DE_PROFILE_FUNCTION();
@@ -607,14 +686,8 @@ namespace Dingo::Internal
 		if (m_Elements.empty())
 			return;
 
-		std::vector<int32_t>& roots = m_Order;
-		roots.clear();
-		for (size_t i = 0; i < m_Elements.size(); ++i)
-		{
-			if (m_Elements[i].Kind == UIElementKind::Root)
-				roots.push_back(static_cast<int32_t>(i));
-		}
-		std::stable_sort(roots.begin(), roots.end(), [this](int32_t a, int32_t b) { return m_Elements[a].Layer < m_Elements[b].Layer; });
+		SortRoots();
+		const std::vector<int32_t>& roots = m_Order;
 
 		const int32_t elementCount = static_cast<int32_t>(m_Elements.size());
 		for (const int32_t root : roots)
@@ -658,7 +731,99 @@ namespace Dingo::Internal
 				}
 				}
 			}
+
+			for (int32_t i = root; i < end; ++i)
+			{
+				const UIElement& element = m_Elements[i];
+				const float height = element.Rect.Max.y - element.Rect.Min.y;
+				const float range = element.ContentSize.y - height;
+				if (!element.Scroll || range <= 0.5f || height <= 0.0f)
+					continue;
+
+				const float width = UILook::k_ScrollThumbWidth * element.Scale;
+				const float margin = UILook::k_ScrollThumbMargin * element.Scale;
+				const float thumb = (std::min)(height, (std::max)(UILook::k_ScrollThumbMin * element.Scale, height * height / element.ContentSize.y));
+				const float travel = (height - thumb) * std::clamp(element.ScrollOffset.y / range, 0.0f, 1.0f);
+				UIRect rect;
+				rect.Min = { Snap(element.Rect.Max.x - margin - width), Snap(element.Rect.Min.y + travel) };
+				rect.Max = { Snap(element.Rect.Max.x - margin), Snap(element.Rect.Min.y + travel + thumb) };
+				list.AddRect(rect, UILook::k_ScrollThumb, width * 0.5f, 0.0f, glm::vec4(0.0f), element.Clip);
+			}
 		}
+	}
+
+	const UIElement* UILayoutTree::FindById(uint64_t id) const
+	{
+		for (const UIElement& element : m_Elements)
+		{
+			if (element.Id == id)
+				return &element;
+		}
+		return nullptr;
+	}
+
+	bool UILayoutTree::HasModal() const
+	{
+		for (const UIElement& element : m_Elements)
+		{
+			if (element.Kind == UIElementKind::Root && element.Modal)
+				return true;
+		}
+		return false;
+	}
+
+	UIHit UILayoutTree::HitTest(const glm::vec2& point) const
+	{
+		UIHit hit;
+		if (m_Elements.empty())
+			return hit;
+
+		SortRoots();
+		const int32_t elementCount = static_cast<int32_t>(m_Elements.size());
+		bool resolved = false;
+		for (auto it = m_Order.rbegin(); it != m_Order.rend(); ++it)
+		{
+			const int32_t root = *it;
+			const UIElement& rootElement = m_Elements[root];
+			int32_t end = root + 1;
+			while (end < elementCount && m_Elements[end].Kind != UIElementKind::Root)
+				++end;
+
+			int32_t hover = k_UINoElement;
+			int32_t scroll = k_UINoElement;
+			bool covers = false;
+			for (int32_t i = root; i < end; ++i)
+			{
+				const UIElement& element = m_Elements[i];
+				if (!Covers(element) || !Intersect(element.Rect, element.Clip).Contains(point))
+					continue;
+				covers = true;
+				if (element.Interactive)
+					hover = i;
+				if (element.Scroll)
+					scroll = i;
+			}
+
+			if (rootElement.BlocksInput && covers)
+				hit.OverBlocking = true;
+
+			if (!resolved)
+			{
+				if (hover != k_UINoElement)
+					hit.HoverId = m_Elements[hover].Id;
+				if (scroll != k_UINoElement)
+					hit.ScrollId = m_Elements[scroll].Id;
+				resolved = hover != k_UINoElement || scroll != k_UINoElement || (rootElement.BlocksInput && covers);
+			}
+
+			if (rootElement.Modal)
+			{
+				hit.Modal = true;
+				hit.OverBlocking = true;
+				break;
+			}
+		}
+		return hit;
 	}
 
 	const UIElement* UILayoutTree::FindByName(std::string_view name) const
@@ -680,7 +845,7 @@ namespace Dingo::Internal
 		{
 			if (element.Kind == UIElementKind::Root)
 				root = &element;
-			if (root && root->BlocksInput && Draws(element))
+			if (root && root->BlocksInput && Covers(element))
 			{
 				const UIRect rect = Intersect(element.Rect, element.Clip);
 				if (!rect.IsEmpty())

@@ -1,6 +1,7 @@
 #include "DingoUITest.h"
 #include "DingoEngine/Core/InputBackend.h"
 #include "DingoEngine/UI/DingoUI/DingoUIContext.h"
+#include "UI/TestViewportPanel.h"
 
 #include <imgui.h>
 
@@ -27,6 +28,7 @@ namespace Dingo
 		const glm::vec4 k_Green = { 0.0f, 1.0f, 0.0f, 1.0f };
 		const glm::vec4 k_Blue = { 0.0f, 0.0f, 1.0f, 1.0f };
 		const glm::vec4 k_Yellow = { 1.0f, 1.0f, 0.0f, 1.0f };
+		const glm::vec2 k_WidgetEmpty = { 880.0f, 60.0f };
 
 		bool NearColor(const glm::vec4& a, const glm::vec4& b, float epsilon = 0.02f)
 		{
@@ -684,7 +686,7 @@ namespace Dingo
 		DingoUI::EndRoot();
 	}
 
-	bool DingoUITest::StepLayout(Framebuffer* output)
+	bool DingoUITest::StepLayout(Framebuffer*)
 	{
 		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
 		if (!context || !m_LayoutTarget || !m_Font || !m_Font->IsValid())
@@ -711,13 +713,13 @@ namespace Dingo
 		constexpr uint32_t count = static_cast<uint32_t>(sizeof(cases) / sizeof(cases[0]));
 
 		const uint32_t stage = m_LayoutStage;
-		if (stage > count * 2 + 1)
+		if (stage > count * 2)
 			return false;
 		++m_LayoutStage;
 
 		if (stage == 0)
 			context->SetTarget(m_LayoutTarget);
-		else if (stage <= count * 2)
+		else
 		{
 			const Case& current = cases[(stage - 1) / 2];
 			if ((stage - 1) % 2 == 0)
@@ -725,20 +727,594 @@ namespace Dingo
 			else
 				(this->*current.Verify)();
 		}
-		else
-		{
-			context->SetInputOverride(nullptr);
-			context->SetTarget(output);
-		}
 		return true;
+	}
+
+	const Internal::UIElement* DingoUITest::LastElement(const char* name) const
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->GetLastLayout().FindByName(name) : nullptr;
+	}
+
+	glm::vec2 DingoUITest::CenterOf(const char* name) const
+	{
+		const Internal::UIElement* element = LastElement(name);
+		return element ? (element->Rect.Min + element->Rect.Max) * 0.5f : glm::vec2(k_WidgetEmpty);
+	}
+
+	void DingoUITest::SetPointer(const glm::vec2& position, bool down, bool pressed, bool released, const glm::vec2& scroll)
+	{
+		m_WidgetInput = {};
+		m_WidgetInput.ViewportSize = { k_LayoutW, k_LayoutH };
+		m_WidgetInput.PointerPosition = position;
+		m_WidgetInput.Scroll = scroll;
+		m_WidgetInput.PointerDown[0] = down;
+		m_WidgetInput.PointerPressed[0] = pressed;
+		m_WidgetInput.PointerReleased[0] = released;
+		m_WidgetInput.PointerAvailable = true;
+		m_WidgetInput.KeyboardAvailable = true;
+		m_WidgetInput.DeltaTime = 1.0f / 60.0f;
+	}
+
+	void DingoUITest::DeclareWidgetScene()
+	{
+		const glm::vec4 panel = { 0.08f, 0.1f, 0.16f, 0.9f };
+		if (m_WWidgets)
+		{
+			DingoUI::BeginRoot("w_main", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
+				.SetWidth(UISize::Fixed(500.0f)).SetGap(10.0f).SetPadding(10.0f).SetBackground(panel)));
+			m_WPlayResult = DingoUI::Button("Play");
+			m_WToggleResult = DingoUI::Toggle("Music", &m_WToggleValue);
+			m_WSliderResult = DingoUI::Slider("Volume", &m_WSliderValue, 0.0f, 1.0f);
+			m_WIntResult = DingoUI::SliderInt("Count", &m_WIntValue, 0, 10);
+			DingoUI::ProgressBar("Load", 0.5f);
+			m_WItemResult[0] = DingoUI::Selectable("Item A", m_WSelected == 0);
+			m_WItemResult[1] = DingoUI::Selectable("Item B", m_WSelected == 1);
+			if (DingoUI::BeginScrollArea("List", UIScrollParams().SetLayout(UIBoxParams()
+				.SetWidth(UISize::Fixed(240.0f)).SetHeight(UISize::Fixed(100.0f)).SetAlign(UIAlign::Stretch).SetBackground({ 0.04f, 0.05f, 0.09f, 1.0f }))))
+			{
+				for (int i = 0; i < 12; ++i)
+				{
+					DingoUI::PushId(i);
+					DingoUI::Selectable("Row", false);
+					DingoUI::PopId();
+				}
+				DingoUI::EndScrollArea();
+			}
+			DingoUI::EndRoot();
+		}
+		if (m_WOverlap)
+		{
+			DingoUI::BeginRoot("w_over", UIRootParams().SetOffset(m_WOverOffset).SetLayer(1));
+			m_WOverResult = DingoUI::Button("Over", UIWidgetParams().SetSize(UISize::Fixed(400.0f), UISize::Fixed(80.0f)));
+			DingoUI::EndRoot();
+		}
+		if (m_WGhost)
+		{
+			DingoUI::BeginRoot("w_ghost", UIRootParams().SetOffset({ 600.0f, 200.0f }).SetBlocksInput(false));
+			m_WGhostResult = DingoUI::Button("Ghost", UIWidgetParams().SetSize(UISize::Fixed(120.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+		}
+		if (m_WLate)
+		{
+			DingoUI::BeginRoot("w_late", UIRootParams().SetOffset({ 700.0f, 450.0f }));
+			m_WLateResult = DingoUI::Button("Late", UIWidgetParams().SetSize(UISize::Fixed(120.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+		}
+		if (m_WModal)
+		{
+			DingoUI::BeginRoot("w_modal", UIRootParams().SetOffset({ 650.0f, 100.0f }).SetLayer(2).SetModal(true));
+			DingoUI::Button("Close");
+			DingoUI::EndRoot();
+		}
+		if (m_WCollide)
+		{
+			DingoUI::BeginRoot("w_dup", UIRootParams().SetOffset({ 600.0f, 300.0f }));
+			DingoUI::Button("Same");
+			DingoUI::Button("Same");
+			DingoUI::Button("Same##b");
+			DingoUI::PushId(1);
+			DingoUI::Button("Same");
+			DingoUI::PopId();
+			DingoUI::EndRoot();
+		}
+	}
+
+	bool DingoUITest::StepWidgets(Framebuffer* output)
+	{
+		using Internal::InputBackend;
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_WidgetsDone || !context || !m_LayoutTarget || !m_Font || !m_Font->IsValid())
+			return false;
+
+		const MouseButton left = MouseButton::Left;
+		if (m_WidgetStage == 0)
+		{
+			SetPointer(k_WidgetEmpty);
+			context->SetInputOverride(&m_WidgetInput);
+		}
+		DeclareWidgetScene();
+
+		uint32_t n = 0;
+		const auto at = [&]() { return m_WidgetStage == n++; };
+		const auto done = [&]() { ++m_WidgetStage; return true; };
+		const auto trackX = [&](const char* name, float t)
+		{
+			const Internal::UIElement* element = LastElement(name);
+			return element ? element->Rect.Min.x + 8.0f + t * (element->Rect.Max.x - element->Rect.Min.x - 16.0f) : 0.0f;
+		};
+		const auto trackY = [&](const char* name) { return CenterOf(name).y; };
+
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			Check(LastElement("Play") && LastElement("Volume") && LastElement("List") && LastElement("Item B"), "Widgets: every widget has an element named by its label");
+			Check(context->GetStates().Size() >= 10, "Widgets: each widget keeps a state entry");
+			Check(context->GetIdCollisionCount() == 0, "Widgets: PushId gives identical labels in a loop their own ids");
+			Check(!m_WPlayResult.Hovered, "Widgets: nothing is hovered with the pointer on empty screen");
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Hovered && !m_WPlayResult.Pressed && !m_WPlayResult.Down, "Widgets: a pointer over a button hovers it");
+			Check(!m_WToggleResult.Hovered, "Widgets: only the widget under the pointer is hovered");
+			Check(DingoUI::IsPointerOverUI() && context->GetHoverId() != 0, "Widgets: a hovered widget of a blocking root means the pointer is over the UI");
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Pressed && m_WPlayResult.Down && m_WPlayResult.Hovered, "Widgets: a press on a button reports Pressed and Down");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(!Input::IsMouseButtonPressed(left) && !Input::IsMouseButtonDown(left), "Widgets: a press the UI took does not reach the game");
+			Check(DingoUI::IsCapturingInput(), "Widgets: a held UI press is capturing input");
+			SetPointer(CenterOf("Play"), true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Down && !m_WPlayResult.Pressed && !m_WPlayResult.Clicked, "Widgets: a held button stays Down without a new Pressed");
+			Check(!Input::IsMouseButtonDown(left), "Widgets: a held UI press stays hidden from the game");
+			SetPointer(CenterOf("Play"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Clicked && !m_WPlayResult.Down, "Widgets: release over the button after pressing it is a click");
+			if (m_WPlayResult.Clicked)
+				++m_WPlayClicks;
+			InputBackend::SimulateMouseButton(left, false);
+			Check(!Input::IsMouseButtonReleased(left), "Widgets: the release of a UI press is hidden from the game");
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WPlayResult.Hovered && !DingoUI::IsCapturingInput() && !DingoUI::IsPointerOverUI(), "Widgets: after the release the UI holds nothing");
+			SetPointer(k_WidgetEmpty, true, true);
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Widgets: a press on empty screen reaches the game");
+			Check(!DingoUI::IsPointerOverUI() && !DingoUI::IsCapturingInput(), "Widgets: empty screen is not over the UI");
+			SetPointer(k_WidgetEmpty, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(Input::IsMouseButtonDown(left), "Widgets: a held press on empty screen stays visible to the game");
+			SetPointer(k_WidgetEmpty, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, false);
+			Check(Input::IsMouseButtonReleased(left), "Widgets: the release of a press on empty screen reaches the game");
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Pressed, "Widgets: a second press on the button is seen");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(k_WidgetEmpty, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Down && !m_WPlayResult.Hovered && !m_WPlayResult.Clicked, "Widgets: dragging off a held button keeps it Down but not hovered");
+			SetPointer(k_WidgetEmpty, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WPlayResult.Clicked && !m_WPlayResult.Down, "Widgets: press inside and release outside is no click");
+			Check(m_WPlayClicks == 1, "Widgets: only the first press and release clicked the button");
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer(CenterOf("Music"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WToggleResult.Pressed && !m_WToggleValue, "Widgets: a toggle does not flip on press");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(CenterOf("Music"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WToggleResult.Clicked && m_WToggleResult.Changed && m_WToggleValue, "Widgets: a click flips a toggle and reports Changed");
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer({ trackX("Volume", 0.25f), trackY("Volume") }, true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderResult.Pressed && m_WSliderResult.Changed && std::abs(m_WSliderValue - 0.25f) < 0.02f, "Widgets: pressing on a slider's track sets the value there");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer({ trackX("Volume", 0.75f), trackY("Volume") }, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderResult.Down && std::abs(m_WSliderValue - 0.75f) < 0.02f, "Widgets: dragging a slider follows the pointer");
+			SetPointer({ trackX("Volume", 0.0f) + 400.0f, trackY("Volume") + 200.0f }, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderValue == 1.0f, "Widgets: dragging past the end clamps a slider to its maximum");
+			SetPointer({ trackX("Volume", 0.0f) - 400.0f, trackY("Volume") }, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderValue == 0.0f && m_WSliderResult.Changed, "Widgets: dragging before the start clamps a slider to its minimum");
+			SetPointer({ trackX("Volume", 0.0f) - 400.0f, trackY("Volume") }, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderValue == 0.0f && !m_WSliderResult.Changed, "Widgets: releasing a slider keeps its value");
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer({ trackX("Count", 0.5f), trackY("Count") }, true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WIntValue == 5 && m_WIntResult.Changed, "Widgets: a SliderInt snaps to whole numbers");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer({ trackX("Count", 0.5f), trackY("Count") }, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer(CenterOf("Item B"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WItemResult[1].Pressed && !m_WItemResult[0].Pressed, "Widgets: a selectable reports the press on its own row");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(CenterOf("Item B"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WItemResult[1].Clicked, "Widgets: a selectable reports a click");
+			if (m_WItemResult[1].Clicked)
+				m_WSelected = 1;
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer(CenterOf("List"), false, false, false, { 0.0f, -1.0f });
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateScroll(0.0f, -1.0f);
+			Check(Input::GetMouseScrollDelta().y == 0.0f, "Widgets: a wheel turn over a blocking scroll area does not reach the game");
+			SetPointer(CenterOf("List"));
+			return done();
+		}
+		if (at())
+		{
+			const Internal::UIElement* list = LastElement("List");
+			const Internal::UIElement* row = LastElement("Row");
+			Check(list && std::abs(list->ScrollOffset.y - 40.0f) < 0.01f, "Widgets: one wheel notch scrolls a scroll area by its WheelStep");
+			Check(list && row && row->Rect.Min.y < list->Rect.Min.y && row->Clip.Min.y == list->Rect.Min.y && row->Clip.Max.y == list->Rect.Max.y, "Widgets: scrolled content moves and is clipped to the area");
+			Check(list && list->ContentSize.y > list->Rect.Max.y - list->Rect.Min.y, "Widgets: a scroll area knows its content overflows");
+			Check(context->GetRenderStatistics().DrawCalls == 1, "Widgets: the whole widget scene, scroll area included, is one draw call");
+			SetPointer(k_WidgetEmpty, false, false, false, { 0.0f, -1.0f });
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateScroll(0.0f, -1.0f);
+			Check(Input::GetMouseScrollDelta().y != 0.0f, "Widgets: a wheel turn over empty screen reaches the game");
+			SetPointer(CenterOf("List"), false, false, false, { 0.0f, -100.0f });
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("List"));
+			return done();
+		}
+		if (at())
+		{
+			const Internal::UIElement* list = LastElement("List");
+			Check(list && std::abs(list->ScrollOffset.y - (list->ContentSize.y - (list->Rect.Max.y - list->Rect.Min.y))) < 0.01f, "Widgets: scrolling stops at the end of the content");
+			SetPointer(CenterOf("List"), false, false, false, { 0.0f, 100.0f });
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("List"));
+			return done();
+		}
+		if (at())
+		{
+			const Internal::UIElement* list = LastElement("List");
+			Check(list && list->ScrollOffset.y == 0.0f, "Widgets: scrolling stops at the start of the content");
+			SetPointer(k_WidgetEmpty);
+			m_WLate = false;
+			return done();
+		}
+
+		// A widget that did not exist last frame ignores the press that lands on it.
+		const glm::vec2 latePoint = { 760.0f, 470.0f };
+		if (at())
+		{
+			SetPointer(latePoint, true, true);
+			m_WLate = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WLateResult.Pressed && !m_WLateResult.Down && !m_WLateResult.Hovered, "Widgets: a widget that appears this frame ignores a press on it");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Widgets: that press was on empty screen, so it reaches the game");
+			SetPointer(latePoint, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WLateResult.Down && !m_WLateResult.Pressed, "Widgets: holding the button over the new widget does not press it");
+			SetPointer(latePoint, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WLateResult.Clicked, "Widgets: releasing over the new widget is no click");
+			InputBackend::SimulateMouseButton(left, false);
+			m_WLate = false;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+
+		// Overlapping roots: the topmost wins.
+		if (at())
+		{
+			if (const Internal::UIElement* play = LastElement("Play"))
+				m_WOverOffset = play->Rect.Min;
+			m_WOverlap = true;
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WOverResult.Hovered && !m_WPlayResult.Hovered, "Widgets: where two roots overlap, the higher layer takes the hover");
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WOverResult.Pressed && !m_WPlayResult.Pressed, "Widgets: the press goes to the top root only");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(CenterOf("Play"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WOverResult.Clicked && !m_WPlayResult.Clicked, "Widgets: the click goes to the top root only");
+			InputBackend::SimulateMouseButton(left, false);
+			m_WOverlap = false;
+			m_WGhost = true;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+
+		// A root that doesn't block input: widgets react, the game still gets the press.
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("Ghost"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WGhostResult.Pressed && m_WGhostResult.Hovered, "Widgets: a widget of a non-blocking root still reacts");
+			Check(!DingoUI::IsPointerOverUI(), "Widgets: a non-blocking root is not over the UI");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Widgets: a press on a non-blocking root reaches the game");
+			SetPointer(CenterOf("Ghost"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WGhostResult.Clicked, "Widgets: a click on a non-blocking root's widget is seen");
+			InputBackend::SimulateMouseButton(left, false);
+			Check(Input::IsMouseButtonReleased(left), "Widgets: the release over a non-blocking root reaches the game");
+			m_WGhost = false;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+
+		// A modal root takes everything.
+		if (at())
+		{
+			m_WModal = true;
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WPlayResult.Hovered && !m_WPlayResult.Pressed, "Widgets: roots below a modal root get no hover or press");
+			Check(DingoUI::IsPointerOverUI() && DingoUI::IsCapturingInput(), "Widgets: a modal root makes the whole screen UI");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(!Input::IsMouseButtonPressed(left), "Widgets: a press anywhere is taken from the game while a modal root is up");
+			SetPointer(k_WidgetEmpty, false, false, true, { 0.0f, -1.0f });
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, false);
+			Check(!Input::IsMouseButtonReleased(left), "Widgets: the release of a press a modal root took is hidden");
+			InputBackend::SimulateScroll(0.0f, -1.0f);
+			Check(Input::GetMouseScrollDelta().y == 0.0f, "Widgets: a wheel turn anywhere is taken from the game while a modal root is up");
+			m_WModal = false;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsPointerOverUI() && !DingoUI::IsCapturingInput(), "Widgets: the screen is the game's again once the modal root is gone");
+			m_WWidgets = false;
+			return done();
+		}
+
+		// State of widgets that stop being declared is dropped.
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetStates().Size() > 0, "Widgets: state survives a single frame without its widget");
+			return done();
+		}
+		if (at())
+		{
+			Check(context->GetStates().Size() == 0, "Widgets: state of widgets undeclared for a few frames is evicted");
+			m_WWidgets = true;
+			m_WCollide = true;
+			return done();
+		}
+
+		// Two widgets with the same id in one frame.
+		if (at())
+			return done();
+		if (at())
+			return done();
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetIdCollisionCount() == 1, "Widgets: a shared id is reported once, not every frame, and ##suffix or PushId avoid it");
+			m_WCollide = false;
+			return done();
+		}
+
+		m_WidgetsDone = true;
+		context->SetTarget(output);
+		context->SetInputOverride(&m_LiveInput);
+		m_LiveInput = {};
+		return true;
+	}
+
+	void DingoUITest::UpdateLiveInput(Framebuffer* output)
+	{
+		using Internal::InputBackend;
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (!context)
+			return;
+
+		const glm::vec2 targetSize = output ? glm::vec2(static_cast<float>(output->GetWidth()), static_cast<float>(output->GetHeight())) : context->GetTargetSize();
+		m_LiveInput = {};
+		m_LiveInput.ViewportSize = targetSize;
+		m_LiveInput.PointerPosition = Input::GetMousePosition() - TestViewportPanel::GetImageOrigin();
+		m_LiveInput.Scroll = Input::GetMouseScrollDelta();
+		for (uint32_t button = 0; button < Internal::UIInputState::k_PointerButtonCount; ++button)
+		{
+			const MouseButton mouseButton = static_cast<MouseButton>(button);
+			m_LiveInput.PointerDown[button] = InputBackend::IsMouseButtonDownUnconsumed(mouseButton);
+			m_LiveInput.PointerPressed[button] = Input::IsMouseButtonPressed(mouseButton);
+			m_LiveInput.PointerReleased[button] = InputBackend::IsMouseButtonReleasedUnconsumed(mouseButton);
+		}
+		m_LiveInput.PointerAvailable = TestViewportPanel::IsImageHovered();
+		m_LiveInput.KeyboardAvailable = true;
+		m_LiveInput.DeltaTime = 1.0f / 60.0f;
+	}
+
+	void DingoUITest::DeclareLivePage()
+	{
+		DeclareDemo();
+
+		DingoUI::BeginRoot("live", UIRootParams().SetAnchor(UIAnchor::TopRight).SetOffset({ -16.0f, 16.0f }).SetLayout(UIBoxParams()
+			.SetWidth(UISize::Fixed(340.0f)).SetGap(10.0f).SetPadding(14.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.92f }).SetBorder(2.0f, { 0.5f, 0.65f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
+		DingoUI::Text("Widgets: click, drag and scroll", UITextParams().SetSize(20.0f));
+
+		DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f).SetAlign(UIAlign::Center));
+		if (DingoUI::Button("Click me").Clicked)
+			++m_LiveClicks;
+		DingoUI::Text("clicked " + std::to_string(m_LiveClicks) + " times", UITextParams().SetSize(18.0f).SetWrap(false));
+		DingoUI::EndBox();
+
+		DingoUI::Toggle("Sound", &m_LiveToggle);
+		DingoUI::Slider("Volume", &m_LiveSlider, 0.0f, 1.0f);
+		DingoUI::SliderInt("Lives", &m_LiveInt, 1, 9, UISliderParams().SetWidth(UISize::Fixed(120.0f)));
+		DingoUI::ProgressBar("progress", m_LiveSlider);
+
+		const char* items[] = { "Easy", "Normal", "Hard" };
+		for (int i = 0; i < 3; ++i)
+		{
+			if (DingoUI::Selectable(items[i], m_LiveSelected == i, UIWidgetParams().SetWidth(UISize::Grow())).Clicked)
+				m_LiveSelected = i;
+		}
+
+		if (DingoUI::BeginScrollArea("Log", UIScrollParams().SetDragScroll(true).SetLayout(UIBoxParams()
+			.SetHeight(UISize::Fixed(110.0f)).SetAlign(UIAlign::Stretch).SetBackground({ 0.04f, 0.05f, 0.09f, 1.0f }).SetCornerRadius(6.0f))))
+		{
+			for (int i = 0; i < 20; ++i)
+				DingoUI::Selectable("Entry " + std::to_string(i), false);
+			DingoUI::EndScrollArea();
+		}
+		DingoUI::Text(DingoUI::IsPointerOverUI() ? "Pointer: over the UI" : "Pointer: over the scene", UITextParams().SetSize(16.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }).SetWrap(false));
+		DingoUI::EndRoot();
 	}
 
 	void DingoUITest::Update(float deltaTime)
 	{
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
-		if (!StepBatcher() && !StepLayout(output))
-			DeclareDemo();
+		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output))
+		{
+			UpdateLiveInput(output);
+			DeclareLivePage();
+		}
 
 		m_Renderer->BeginScene(m_ProjectionViewMatrix);
 		m_Renderer->Clear(m_ClearColor);
@@ -761,7 +1337,7 @@ namespace Dingo
 		Renderer2DTest::ImGuiRender();
 
 		ImGui::Separator();
-		ImGui::Text("Pointer over UI: %s", DingoUI::IsPointerOverUI() ? "yes" : "no");
+		ImGui::Text("Pointer over UI: %s, capturing input: %s", DingoUI::IsPointerOverUI() ? "yes" : "no", DingoUI::IsCapturingInput() ? "yes" : "no");
 		if (const Internal::DingoUIContext* context = Internal::GetDingoUIContext())
 		{
 			const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();

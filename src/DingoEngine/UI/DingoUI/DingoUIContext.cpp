@@ -58,11 +58,127 @@ namespace Dingo::Internal
 		m_Input.PointerPosition *= m_WindowToTarget;
 		m_Input.ViewportSize = m_TargetSize;
 
-		m_PointerOverUI = m_Input.PointerAvailable && HitTestBlocking(m_Input.PointerPosition);
-		m_CapturingInput = false;
+		ResolveInteraction();
 
 		m_Tree.Begin(m_TargetSize);
+		m_ScrollStack.clear();
 		m_InFrame = true;
+	}
+
+	void DingoUIContext::ResolveInteraction()
+	{
+		const UIInputState& input = m_Input;
+		const bool available = input.PointerAvailable;
+
+		m_Hit = available ? m_LastTree.HitTest(input.PointerPosition) : UIHit{};
+		m_PointerOverUI = available && (m_ModalActive || m_Hit.OverBlocking);
+
+		m_PressedId = 0;
+		m_ClickedId = 0;
+		m_ReleasedId = 0;
+
+		if (available && input.PointerPressed[0] && m_ActiveId == 0 && m_Hit.HoverId != 0)
+		{
+			m_ActiveId = m_Hit.HoverId;
+			m_PressedId = m_ActiveId;
+		}
+
+		if (m_ActiveId != 0 && (input.PointerReleased[0] || !input.PointerDown[0]))
+		{
+			m_ReleasedId = m_ActiveId;
+			if (available && m_Hit.HoverId == m_ActiveId)
+				m_ClickedId = m_ActiveId;
+			m_ActiveId = 0;
+		}
+
+		m_HoverId = available && (m_ActiveId == 0 || m_Hit.HoverId == m_ActiveId) ? m_Hit.HoverId : 0;
+
+		m_ScrollDelta = input.Scroll;
+		m_ScrollTargetId = available ? m_Hit.ScrollId : 0;
+		if (m_PointerOverUI && (input.Scroll.x != 0.0f || input.Scroll.y != 0.0f))
+			InputBackend::ConsumeScroll();
+
+		bool anyConsumed = false;
+		for (size_t button = 0; button < UIInputState::k_PointerButtonCount; ++button)
+		{
+			if (!input.PointerDown[button] && !input.PointerPressed[button])
+				m_ConsumedDown[button] = false;
+			if (m_PointerOverUI && input.PointerPressed[button])
+			{
+				InputBackend::ConsumeMouseButton(static_cast<MouseButton>(button));
+				m_ConsumedDown[button] = true;
+			}
+			anyConsumed = anyConsumed || m_ConsumedDown[button];
+		}
+
+		m_CapturingInput = m_ModalActive || anyConsumed;
+	}
+
+	UIInteraction DingoUIContext::Interact(uint64_t id, std::string_view label, bool enabled, UIWidgetState*& state)
+	{
+		const UIStateMap::TouchResult touch = m_States.Touch(id, m_FrameIndex);
+		state = touch.State;
+		if (touch.DeclaredAlready && m_WarnedCollisions.insert(id).second)
+		{
+			++m_IdCollisionCount;
+#if defined(DE_DEBUG)
+			DE_CORE_WARN("DingoUI: two widgets in one frame share the id of \"{}\"; add a ##suffix to one label or wrap them in PushId/PopId", label);
+#else
+			(void)label;
+#endif
+		}
+
+		UIInteraction result;
+		if (enabled)
+		{
+			result.Hovered = id == m_HoverId;
+			result.Pressed = id == m_PressedId;
+			result.Down = id == m_ActiveId;
+			result.Clicked = id == m_ClickedId;
+		}
+		result.Focused = state->Focused;
+		state->Hovered = result.Hovered;
+		state->Active = result.Down;
+		return result;
+	}
+
+	uint64_t DingoUIContext::WidgetId(std::string_view label)
+	{
+		if (!CanDeclare())
+			return 0;
+		const uint64_t id = m_Tree.MakeId(label);
+		if (id == 0)
+			WarnMismatch("a widget outside a root; the call was ignored");
+		return id;
+	}
+
+	void DingoUIContext::BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll, const glm::vec2& scrollOffset)
+	{
+		UIWidgetInfo info;
+		info.Id = id;
+		info.NameHash = UILayoutTree::HashName(label);
+		info.Interactive = interactive;
+		info.Scroll = scroll;
+		info.ScrollOffset = scrollOffset;
+		m_Tree.BeginBox(box, &info);
+	}
+
+	void DingoUIContext::PushId(std::string_view id)
+	{
+		if (m_InFrame)
+			m_Tree.PushId(id);
+	}
+
+	void DingoUIContext::PushId(int id)
+	{
+		if (m_InFrame)
+			m_Tree.PushId(id);
+	}
+
+	void DingoUIContext::PopId()
+	{
+		if (m_InFrame && !m_Tree.PopId())
+			WarnMismatch("PopId without a PushId in this container; the call was ignored");
 	}
 
 	glm::vec2 DingoUIContext::ComputeTargetSize() const
@@ -167,13 +283,25 @@ namespace Dingo::Internal
 			WarnMismatch("a Begin call was never closed; the frame's elements were closed for you");
 
 		m_Tree.Layout(m_Measure);
-		m_Tree.CollectBlockingRects(m_BlockingRects);
+
+		for (const UIElement& element : m_Tree.GetElements())
+		{
+			if (!element.Interactive && !element.Scroll)
+				continue;
+			if (UIWidgetState* state = m_States.Find(element.Id))
+			{
+				state->LastRect = element.Rect;
+				if (element.Scroll)
+					state->ContentSize = element.ContentSize;
+			}
+		}
 
 		m_RenderStatistics = {};
 		const bool draw = render && !Renderer::IsFrameSkipped();
 		if (draw)
 			m_Tree.Emit(m_DrawList);
 		std::swap(m_Tree, m_LastTree);
+		m_ModalActive = m_LastTree.HasModal();
 
 		if (draw && !m_DrawList.IsEmpty())
 		{
@@ -183,17 +311,13 @@ namespace Dingo::Internal
 		}
 
 		m_DrawList.Clear();
+		m_States.Evict(m_FrameIndex);
 		++m_FrameIndex;
 	}
 
 	bool DingoUIContext::HitTestBlocking(const glm::vec2& point) const
 	{
-		for (const UIRect& rect : m_BlockingRects)
-		{
-			if (rect.Contains(point))
-				return true;
-		}
-		return false;
+		return m_ModalActive || m_LastTree.HitTest(point).OverBlocking;
 	}
 
 }

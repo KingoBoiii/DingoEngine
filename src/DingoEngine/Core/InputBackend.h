@@ -18,11 +18,17 @@ namespace Dingo::Internal
 		// the DingoUI context.
 		static void ClearConsumed() { Input::ClearConsumed(); }
 
+		// The mouse button as the window reported it, consumed or not.
+		static bool IsMouseButtonDownUnconsumed(MouseButton button) { return Input::IsMouseButtonDownUnconsumed(button); }
+		static bool IsMouseButtonReleasedUnconsumed(MouseButton button) { return Input::IsMouseButtonReleasedUnconsumed(button); }
+		static bool IsMouseButtonPressedUnconsumed(MouseButton button) { return Input::IsMouseButtonPressedUnconsumed(button); }
+
 		// Engine hotkeys (the debug window's F-keys) answer even while a capture hides the key.
 		static bool IsKeyPressedUnconsumed(KeyCode keycode) { return Input::IsKeyPressedUnconsumed(keycode); }
 
 		// The test app's simulated devices: sets the live state the window callbacks would.
 		static void SimulateMouseButton(MouseButton button, bool pressed) { Input::UpdateMouseButtonState(button, pressed); }
+		static void SimulateScroll(float x, float y) { Input::AccumulateMouseScroll(x, y); }
 		static void SimulateKey(KeyCode keycode, bool pressed) { Input::UpdateKeyState(keycode, pressed); }
 	};
 

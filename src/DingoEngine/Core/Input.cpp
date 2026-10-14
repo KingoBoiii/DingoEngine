@@ -331,19 +331,34 @@ namespace Dingo
 		return !IsKeyDown(keycode);
 	}
 
+	bool Input::IsMouseButtonPressedUnconsumed(MouseButton button)
+	{
+		return ValidMouseButton(button) && s_CurrentMouseButtons[static_cast<size_t>(button)] && !s_PreviousMouseButtons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsMouseButtonDownUnconsumed(MouseButton button)
+	{
+		return ValidMouseButton(button) && s_CurrentMouseButtons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsMouseButtonReleasedUnconsumed(MouseButton button)
+	{
+		return ValidMouseButton(button) && !s_CurrentMouseButtons[static_cast<size_t>(button)] && s_PreviousMouseButtons[static_cast<size_t>(button)];
+	}
+
 	bool Input::IsMouseButtonPressed(MouseButton button)
 	{
-		return ValidMouseButton(button) && s_CurrentMouseButtons[static_cast<size_t>(button)] && !s_PreviousMouseButtons[static_cast<size_t>(button)] && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
+		return IsMouseButtonPressedUnconsumed(button) && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
 	}
 
 	bool Input::IsMouseButtonDown(MouseButton button)
 	{
-		return ValidMouseButton(button) && s_CurrentMouseButtons[static_cast<size_t>(button)] && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
+		return IsMouseButtonDownUnconsumed(button) && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
 	}
 
 	bool Input::IsMouseButtonReleased(MouseButton button)
 	{
-		return ValidMouseButton(button) && !s_CurrentMouseButtons[static_cast<size_t>(button)] && s_PreviousMouseButtons[static_cast<size_t>(button)] && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
+		return IsMouseButtonReleasedUnconsumed(button) && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
 	}
 
 	bool Input::IsMouseButtonUp(MouseButton button)

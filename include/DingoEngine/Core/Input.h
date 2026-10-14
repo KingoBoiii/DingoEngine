@@ -183,6 +183,11 @@ namespace Dingo
 		static void ConsumeScroll();
 		static void ConsumeGamepadButton(GamepadButton button, uint32_t gamepad);
 		static void ClearConsumed();
+		// The mouse button as the window reported it, consumed or not: the game UI follows a press
+		// it took until the release.
+		static bool IsMouseButtonDownUnconsumed(MouseButton button);
+		static bool IsMouseButtonReleasedUnconsumed(MouseButton button);
+		static bool IsMouseButtonPressedUnconsumed(MouseButton button);
 		// Consumes every button (mouse) or key (keyboard) that went down this frame, and the scroll
 		// with the mouse: what a capturing ImGui takes from the game.
 		static void ConsumeNewPresses(bool mouse, bool keyboard);

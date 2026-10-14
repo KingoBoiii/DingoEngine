@@ -16,8 +16,11 @@ namespace Dingo
 	// target: one draw, the vertex cache, the texture-slot split and pixels read back. Then the
 	// element API on a 960x540 target: anchors, row and column layout, grow, fit, wrap, percent,
 	// min and max, scaling, recovery from unmatched Begin/End, the window-to-target pointer ratio
-	// and one draw call for a menu. The view shows the wrapped text at its MaxWidth under a
-	// DingoUI panel built with the element API.
+	// and one draw call for a menu. Then the widgets, driven by an input override and simulated
+	// mouse buttons: hover, click, drag-out, a late widget, a slider drag, a scroll area, roots
+	// that overlap, don't block or are modal, the consume mask, state eviction and id collisions.
+	// The view shows the wrapped text at its MaxWidth under a DingoUI panel built with the element
+	// API, and a panel of live widgets to click by hand inside the viewport.
 	class DingoUITest : public Renderer2DTest
 	{
 	public:
@@ -38,6 +41,13 @@ namespace Dingo
 		void StepConsumeMask();
 		bool StepBatcher();
 		bool StepLayout(Framebuffer* output);
+		bool StepWidgets(Framebuffer* output);
+		void DeclareWidgetScene();
+		void SetPointer(const glm::vec2& position, bool down = false, bool pressed = false, bool released = false, const glm::vec2& scroll = glm::vec2(0.0f));
+		const Internal::UIElement* LastElement(const char* name) const;
+		glm::vec2 CenterOf(const char* name) const;
+		void UpdateLiveInput(Framebuffer* output);
+		void DeclareLivePage();
 		void DeclareDemo();
 		void DeclareAnchors();
 		void VerifyAnchors();
@@ -79,6 +89,29 @@ namespace Dingo
 		Framebuffer* m_CheckTarget = nullptr;
 		Framebuffer* m_LayoutTarget = nullptr;
 		Internal::UIInputState m_PointerState;
+		Internal::UIInputState m_WidgetInput;
+		Internal::UIInputState m_LiveInput;
+		uint32_t m_WidgetStage = 0;
+		bool m_WidgetsDone = false;
+		bool m_WWidgets = true;
+		bool m_WOverlap = false;
+		bool m_WGhost = false;
+		bool m_WLate = false;
+		bool m_WModal = false;
+		bool m_WCollide = false;
+		glm::vec2 m_WOverOffset{ 0.0f };
+		UIInteraction m_WPlayResult, m_WOverResult, m_WGhostResult, m_WLateResult, m_WToggleResult, m_WSliderResult, m_WIntResult;
+		UIInteraction m_WItemResult[2];
+		bool m_WToggleValue = false;
+		float m_WSliderValue = 0.5f;
+		int m_WIntValue = 3;
+		int m_WSelected = 0;
+		uint32_t m_WPlayClicks = 0;
+		bool m_LiveToggle = true;
+		float m_LiveSlider = 0.4f;
+		int m_LiveInt = 3;
+		int m_LiveSelected = 0;
+		uint32_t m_LiveClicks = 0;
 		Texture* m_ImageTexture = nullptr;
 		std::vector<Texture*> m_SlotTextures;
 		std::shared_ptr<int> m_Alive;
