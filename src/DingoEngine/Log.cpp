@@ -62,6 +62,23 @@ namespace Dingo
 					file->flush();
 				return true;
 			}
+
+			// Every sink but the console, under one hold of the lock, then the file flushed. The
+			// console sink takes stdout's lock, which a thread parked inside printf never gives back.
+			bool TryLogFatal(const spdlog::details::log_msg& message, const spdlog::sink_ptr& console, const spdlog::sink_ptr& file)
+			{
+				std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+				if (!lock.owns_lock())
+					return false;
+				for (const spdlog::sink_ptr& sink : sinks_)
+				{
+					if (sink != console && sink->should_log(message.level))
+						sink->log(message);
+				}
+				if (file)
+					file->flush();
+				return true;
+			}
 		};
 
 		// spdlog's file sinks take a narrow name, which on Windows can't hold every user's
@@ -94,6 +111,7 @@ namespace Dingo
 	}
 
 	static std::shared_ptr<LogSinks> s_Sinks;
+	static spdlog::sink_ptr s_ConsoleSink;
 	static spdlog::sink_ptr s_FileSink;
 	static std::filesystem::path s_FilePath;
 
@@ -365,6 +383,22 @@ namespace Dingo
 		return false;
 	}
 
+	bool Internal::TryLogFatal(std::string_view message)
+	{
+		LoggingScope scope;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+		while (s_Sinks && s_EngineLogger)
+		{
+			const spdlog::details::log_msg line(s_EngineLogger->name(), spdlog::level::critical, spdlog::string_view_t(message.data(), message.size()));
+			if (s_Sinks->TryLogFatal(line, s_ConsoleSink, s_FileSink))
+				return true;
+			if (std::chrono::steady_clock::now() >= deadline)
+				return false;
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		return false;
+	}
+
 	namespace Utils
 	{
 
@@ -401,6 +435,7 @@ namespace Dingo
 		auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 		console->set_pattern("%^[%T] %n: %v%$");
 		s_EarlySink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_EarlyMessages);
+		s_ConsoleSink = console;
 		s_Sinks = std::make_shared<LogSinks>(std::vector<spdlog::sink_ptr>{ console, s_EarlySink });
 		std::vector<spdlog::sink_ptr> logSinks{ s_Sinks };
 
@@ -426,6 +461,7 @@ namespace Dingo
 		s_EngineLogger.reset();
 		s_EarlySink.reset();
 		s_FileSink.reset();
+		s_ConsoleSink.reset();
 		s_Sinks.reset();
 		spdlog::drop_all();
 	}

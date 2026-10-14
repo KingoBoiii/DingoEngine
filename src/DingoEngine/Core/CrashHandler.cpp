@@ -114,17 +114,18 @@ namespace Dingo
 				Internal::TryFlushLog();
 		}
 
-		// Through spdlog when it is up, this thread isn't inside it and no crashed thread holds its
-		// lock, else straight to the log file and stderr, so a message logged after
-		// Internal::ShutdownLog or from inside a log call still lands. Fatal flushes as it logs.
+		// Into the log through spdlog when it is up, this thread isn't inside it and no crashed thread
+		// holds its lock, else straight to the log file, so a message logged after
+		// Internal::ShutdownLog or from inside a log call still lands. The console copy always goes
+		// to stderr directly: stdout's lock may be held by a thread parked inside printf.
 		void ReportFatal(const std::string& message)
 		{
-			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal) && Internal::TryFlushLog())
+			const std::string line = std::format("\n*** {}\n", message);
+			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal) && Internal::TryLogFatal(message))
 			{
-				DE_CORE_FATAL("{}", message);
+				WriteStdErr(line.data(), line.size());
 				return;
 			}
-			const std::string line = std::format("\n*** {}\n", message);
 			WriteBoth(line.data(), line.size());
 		}
 
@@ -775,8 +776,6 @@ namespace Dingo
 			: std::format("{}\n\nThe log is in:\n{}", message, Utf8(logFile));
 		Internal::CrashHandler::ShowMessage(s_AppName, text);
 
-		std::fflush(stdout);
-		std::fflush(stderr);
 		std::_Exit(1);
 	}
 
