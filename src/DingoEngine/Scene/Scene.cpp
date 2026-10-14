@@ -9,7 +9,7 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/Model.h"
 
-#include "DingoEngine/Scene/AnimationDebug.h"
+#include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/AudioSync.h"
@@ -31,12 +31,12 @@ namespace Dingo
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
-		Internal::AnimationDebug::RegisterScene(this, m_Data);
+		Internal::SceneDebug::RegisterScene(this, m_Data);
 	}
 
 	Scene::~Scene()
 	{
-		Internal::AnimationDebug::UnregisterScene(this);
+		Internal::SceneDebug::UnregisterScene(this);
 		Clear();
 		delete m_Data;
 	}

@@ -16,6 +16,7 @@
 #include "DingoEngine/Asset/AssetManager.h"
 #include "DingoEngine/Graphics/Animator.h"
 #include "DingoEngine/Scene/AnimationDebug.h"
+#include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Version.h"
 #include "DingoEngine/BuildInfo.h"
 
@@ -23,7 +24,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <cstdint>
 #include <format>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1103,6 +1107,264 @@ namespace Dingo::UI
 		ImGui::End();
 	}
 
+	void SceneSection()
+	{
+		namespace SD = Internal::SceneDebug;
+
+		// Keyed on the scene's serial and the entity's UUID, never on an address.
+		static uint64_t s_SelectedScene = 0;
+		static UUID s_SelectedEntity;
+		static std::array<char, 64> s_NameFilter = {};
+		static int s_ComponentFilter = -1;
+		static std::vector<SD::SceneRow> s_Scenes;
+		static std::vector<SD::EntityRow> s_Entities;
+		static SD::EntityDetail s_Detail;
+
+		SD::CollectScenes(s_Scenes);
+		ImGui::TextUnformatted(std::format("Scenes ({})", s_Scenes.size()).c_str());
+		ImGui::Separator();
+		if (s_Scenes.empty())
+		{
+			ImGui::TextDisabled("No scene exists.");
+			return;
+		}
+
+		const auto selected = std::find_if(s_Scenes.begin(), s_Scenes.end(), [](const SD::SceneRow& row) { return row.Serial == s_SelectedScene; });
+		if (selected == s_Scenes.end())
+		{
+			s_SelectedScene = s_Scenes.front().Serial;
+			s_SelectedEntity = UUID();
+		}
+
+		const uint32_t localBudget = Application::Get().GetRenderer3D().GetLocalLightBudget();
+		if (ImGui::BeginTable("##scenes", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Scene");
+			ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+			ImGui::TableSetupColumn("Entities", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+			ImGui::TableSetupColumn("Local lights", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+			ImGui::TableSetupColumn("Bodies", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+			ImGui::TableHeadersRow();
+
+			for (const SD::SceneRow& row : s_Scenes)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::PushID(static_cast<int>(row.Serial));
+				if (ImGui::Selectable(row.Name.c_str(), row.Serial == s_SelectedScene, ImGuiSelectableFlags_SpanAllColumns))
+				{
+					if (s_SelectedScene != row.Serial)
+						s_SelectedEntity = UUID();
+					s_SelectedScene = row.Serial;
+				}
+				ImGui::PopID();
+
+				ImGui::TableSetColumnIndex(1);
+				ImGui::TextUnformatted(!row.Running ? "stopped" : row.PhysicsRunning ? "running, physics" : "running");
+				ImGui::TableSetColumnIndex(2);
+				ImGui::Text("%u", row.Entities);
+				ImGui::TableSetColumnIndex(3);
+				ImGui::Text("%u / %u", row.PointLights + row.SpotLights, localBudget);
+				ImGui::TableSetColumnIndex(4);
+				ImGui::Text("%u", row.Bodies2D + row.Bodies3D + row.Controllers);
+			}
+
+			ImGui::EndTable();
+		}
+
+		const SD::SceneRow& scene = *std::find_if(s_Scenes.begin(), s_Scenes.end(), [](const SD::SceneRow& row) { return row.Serial == s_SelectedScene; });
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted(std::format("{}  ({} entities, {} roots, {} scripts)", scene.Name, scene.Entities, scene.Roots, scene.Scripts).c_str());
+		ImGui::Separator();
+		if (scene.Camera.empty())
+			ImGui::TextDisabled("Camera: none");
+		else
+			ImGui::Text("Camera: %s (%s)", scene.Camera.c_str(), scene.CameraProjection.c_str());
+
+		const uint32_t localLights = scene.PointLights + scene.SpotLights;
+		std::string lights = std::format("Lights: {} directional, {} ambient, {} point, {} spot", scene.DirectionalLights, scene.AmbientLights, scene.PointLights, scene.SpotLights);
+		if (scene.DisabledLocalLights > 0)
+			lights += std::format(" ({} disabled)", scene.DisabledLocalLights);
+		ImGui::TextUnformatted(lights.c_str());
+		if (scene.UnplacedLocalLights > 0)
+			ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.25f, 1.0f), "%u point or spot lights have no Transform3DComponent and are ignored", scene.UnplacedLocalLights);
+		ImGui::TextUnformatted(std::format("Local lights: {} enabled against a budget of {} in view, {} casting shadows", localLights, localBudget, scene.ShadowedLocalLights).c_str());
+		if (localLights > localBudget)
+			ImGui::TextDisabled("More than the budget: past it, the lowest-priority lights in view are dropped (F4 shows the frame's count).");
+		if (!scene.HasLight)
+			ImGui::TextDisabled("No light component the renderer uses: lit by the default directional light.");
+		ImGui::Text("Fog components: %u   Clear colour: (%.2f, %.2f, %.2f, %.2f)", scene.FogComponents,
+			scene.ClearColor.r, scene.ClearColor.g, scene.ClearColor.b, scene.ClearColor.a);
+
+		if (!scene.Has2DWorld && !scene.Has3DWorld)
+			ImGui::TextDisabled(scene.Running ? "Physics: no world (the scene has no bodies or controllers)" : "Physics: not started");
+		if (scene.Has2DWorld)
+			ImGui::Text("Physics 2D: %u bodies, gravity (%.2f, %.2f)", scene.Bodies2D, scene.Gravity2D.x, scene.Gravity2D.y);
+		if (scene.Has3DWorld)
+			ImGui::Text("Physics 3D: %u bodies (%u sensors), %u controllers, gravity (%.2f, %.2f, %.2f)", scene.Bodies3D, scene.Sensors3D,
+				scene.Controllers, scene.Gravity3D.x, scene.Gravity3D.y, scene.Gravity3D.z);
+
+		SD::CollectEntities(scene.Serial, s_Entities);
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Entities");
+		ImGui::Separator();
+		ImGui::SetNextItemWidth(180.0f);
+		ImGui::InputTextWithHint("##namefilter", "filter by name", s_NameFilter.data(), s_NameFilter.size());
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(180.0f);
+		const char* componentLabel = s_ComponentFilter < 0 ? "any component" : SD::ComponentName(static_cast<SD::Component>(s_ComponentFilter));
+		if (ImGui::BeginCombo("##componentfilter", componentLabel))
+		{
+			if (ImGui::Selectable("any component", s_ComponentFilter < 0))
+				s_ComponentFilter = -1;
+			for (int component = 0; component < static_cast<int>(SD::Component::Count); ++component)
+			{
+				if (ImGui::Selectable(SD::ComponentName(static_cast<SD::Component>(component)), component == s_ComponentFilter))
+					s_ComponentFilter = component;
+			}
+			ImGui::EndCombo();
+		}
+
+		const std::string nameFilter = s_NameFilter.data();
+		const bool filtering = !nameFilter.empty() || s_ComponentFilter >= 0;
+		auto matches = [&](const SD::EntityRow& row)
+		{
+			if (s_ComponentFilter >= 0 && (row.Components & SD::ComponentBit(static_cast<SD::Component>(s_ComponentFilter))) == 0)
+				return false;
+			if (nameFilter.empty())
+				return true;
+			auto lower = [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
+			return std::search(row.Name.begin(), row.Name.end(), nameFilter.begin(), nameFilter.end(),
+				[&](char a, char b) { return lower(a) == lower(b); }) != row.Name.end();
+		};
+		auto label = [](const SD::EntityRow& row)
+		{
+			std::string text = row.Name;
+			if (!row.Socket.empty())
+				text += std::format("  @{}", row.Socket);
+			return text + std::format("###{}:{}", static_cast<uint64_t>(row.Id), row.Index);
+		};
+
+		ImGui::BeginChild("##entities", ImVec2(0.0f, 220.0f), ImGuiChildFlags_Borders);
+		if (s_Entities.empty())
+			ImGui::TextDisabled("The scene has no entities.");
+		else if (filtering)
+		{
+			static std::vector<size_t> s_Matches;
+			s_Matches.clear();
+			for (size_t index = 0; index < s_Entities.size(); ++index)
+			{
+				if (matches(s_Entities[index]))
+					s_Matches.push_back(index);
+			}
+
+			ImGuiListClipper clipper;
+			clipper.Begin(static_cast<int>(s_Matches.size()));
+			while (clipper.Step())
+			{
+				for (int line = clipper.DisplayStart; line < clipper.DisplayEnd; ++line)
+				{
+					const SD::EntityRow& row = s_Entities[s_Matches[static_cast<size_t>(line)]];
+					if (ImGui::Selectable(label(row).c_str(), row.Id == s_SelectedEntity))
+						s_SelectedEntity = row.Id;
+				}
+			}
+			if (s_Matches.empty())
+				ImGui::TextDisabled("No entity matches.");
+		}
+		else
+		{
+			// A collapsed node skips its subtree, which follows it in the depth-first list.
+			uint32_t pushed = 0;
+			uint32_t skipBelow = (std::numeric_limits<uint32_t>::max)();
+			for (const SD::EntityRow& row : s_Entities)
+			{
+				if (row.Depth > skipBelow)
+					continue;
+				skipBelow = (std::numeric_limits<uint32_t>::max)();
+				for (; pushed > row.Depth; --pushed)
+					ImGui::TreePop();
+
+				ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+				if (row.ChildCount == 0)
+					flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+				if (row.Id == s_SelectedEntity)
+					flags |= ImGuiTreeNodeFlags_Selected;
+
+				const bool open = ImGui::TreeNodeEx(label(row).c_str(), flags);
+				if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+					s_SelectedEntity = row.Id;
+				if (row.ChildCount > 0)
+				{
+					if (open)
+						++pushed;
+					else
+						skipBelow = row.Depth;
+				}
+			}
+			for (; pushed > 0; --pushed)
+				ImGui::TreePop();
+		}
+		ImGui::EndChild();
+
+		ImGui::Spacing();
+		if (!SD::CollectEntity(scene.Serial, s_SelectedEntity, s_Detail))
+		{
+			ImGui::TextDisabled("Select an entity to inspect its components.");
+			return;
+		}
+
+		ImGui::TextUnformatted(std::format("{}  (UUID {})", s_Detail.Name, static_cast<uint64_t>(s_Detail.Id)).c_str());
+		ImGui::Separator();
+		if (s_Detail.HasParent)
+			ImGui::Text("Parent: %s%s%s", s_Detail.ParentName.c_str(), s_Detail.Socket.empty() ? "" : ", socket ", s_Detail.Socket.c_str());
+		else
+			ImGui::TextDisabled("Parent: none (a root)");
+		ImGui::Text("Children: %u", s_Detail.ChildCount);
+
+		for (size_t index = 0; index < s_Detail.Sections.size(); ++index)
+		{
+			const SD::Section& section = s_Detail.Sections[index];
+			ImGui::PushID(section.Title.c_str());
+			const std::string title = section.Runtime ? section.Title + "  (runtime, read-only)###section" : section.Title + "###section";
+			if (section.Runtime)
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.80f, 0.95f, 1.0f));
+			const bool open = ImGui::CollapsingHeader(title.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+			if (section.Runtime)
+				ImGui::PopStyleColor();
+			if (open && ImGui::BeginTable("##fields", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+			{
+				ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 190.0f);
+				ImGui::TableSetupColumn("Value");
+				for (const SD::Field& field : section.Fields)
+				{
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextUnformatted(field.Name.c_str());
+					ImGui::TableSetColumnIndex(1);
+					ImGui::TextUnformatted(field.Value.c_str());
+				}
+				ImGui::EndTable();
+			}
+			ImGui::PopID();
+		}
+	}
+
+	void SceneStatsWindow(bool* open)
+	{
+		if (!ImGui::Begin("Scene", open))
+		{
+			ImGui::End();
+			return;
+		}
+
+		SceneSection();
+
+		ImGui::End();
+	}
+
 	void InputStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Input Stats", open))
@@ -1189,6 +1451,8 @@ namespace Dingo::UI
 			tab("Animation", DebugTab::Animation, [] { AnimationSection(); });
 
 			tab("Profiler", DebugTab::Profiler, [] { ProfilerSection(); });
+
+			tab("Scene", DebugTab::Scene, [] { SceneSection(); });
 
 			ImGui::EndTabBar();
 		}
