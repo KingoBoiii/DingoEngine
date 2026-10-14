@@ -78,6 +78,9 @@ namespace Dingo::Internal
 
 		// The declarations. Valid between BeginFrame and EndFrame; false outside, with a warning once.
 		bool BeginRoot(std::string_view name, const UIRootParams& params);
+		bool BeginWorldRoot(std::string_view name, const glm::mat4& viewProjection, const glm::vec3& worldPosition, const UIWorldRootParams& params);
+		bool BeginWorldRoot(std::string_view name, Scene& scene, const glm::vec3& worldPosition, const UIWorldRootParams& params);
+		bool BeginWorldRoot(std::string_view name, Entity entity, const glm::vec3& worldOffset, const UIWorldRootParams& params);
 		void EndRoot();
 		bool BeginBox(const UIBoxParams& params);
 		void EndBox();

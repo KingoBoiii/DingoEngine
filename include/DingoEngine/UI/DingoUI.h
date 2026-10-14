@@ -13,7 +13,10 @@
 namespace Dingo
 {
 
+	class Entity;
 	class Font;
+	class PerspectiveCamera;
+	class Scene;
 	class Texture;
 
 	/// How a tween or transition moves from its start to its end over its duration. The In curves
@@ -501,6 +504,75 @@ namespace Dingo
 		UIRootParams& SetTransition(const UITransition& transition) { Transition = transition; return *this; }
 	};
 
+	/// What a world-space root is seen through: a combined view-projection. With a perspective
+	/// projection the distance used for scaling, fading and culling is the depth in front of the
+	/// camera; with an orthographic one it is always 1, so the distance settings do nothing.
+	struct UIWorldCamera
+	{
+		glm::mat4 ViewProjection{ 1.0f }; ///< Projection times view, as the renderer uses it.
+
+		/// A camera from a view and a projection matrix.
+		static UIWorldCamera FromMatrices(const glm::mat4& view, const glm::mat4& projection)
+		{
+			UIWorldCamera camera;
+			camera.ViewProjection = projection * view;
+			return camera;
+		}
+		/// A camera from a PerspectiveCamera's current matrices.
+		static UIWorldCamera FromCamera(const PerspectiveCamera& camera);
+	};
+
+	/// How a root hangs on a point in the world. Chain the setters. Roots behind the camera,
+	/// beyond MaxDistance or farther than CullMargin outside the screen are not declared at all:
+	/// BeginWorldRoot returns false and the elements cost nothing.
+	struct UIWorldRootParams
+	{
+		/// Which point of the root sits on the projected point, as a fraction of its size; the
+		/// default is bottom-centre, for a bar floating above a head.
+		glm::vec2 Pivot{ 0.5f, 1.0f };
+		glm::vec2 Offset{ 0.0f };            ///< Moves the root from the projected point, in design pixels.
+		UIScale Scale;                       ///< Design pixels to screen pixels, before the distance scale.
+		/// Above zero, the root scales by ReferenceDistance / distance (clamped to MinScale and
+		/// MaxScale), so it is drawn at its design size at that distance. Zero keeps one size.
+		float ReferenceDistance = 0.0f;
+		float MinScale = 0.25f;              ///< Smallest distance scale.
+		float MaxScale = 4.0f;               ///< Largest distance scale.
+		float MaxDistance = 0.0f;            ///< Beyond this distance the root is culled; zero for no limit.
+		/// The root fades out over this many units before MaxDistance; zero culls it abruptly.
+		float FadeDistance = 0.0f;
+		/// Pixels beyond the screen's edge where a root is still declared, so one whose point
+		/// just left the screen can still show its edge. Zero culls at the edge.
+		float CullMargin = 128.0f;
+		int Layer = 0;                       ///< Among world roots: higher draws over lower, whatever the depth.
+		/// A press on the root is taken from the game. Off by default: a bar over an enemy should
+		/// not stop a click on the enemy.
+		bool BlocksInput = false;
+		/// The widgets of the root can take keyboard and gamepad focus (only while BlocksInput).
+		bool Navigable = false;
+		UIBoxParams Layout;                  ///< The root's own layout.
+
+		/// Sets Pivot.
+		UIWorldRootParams& SetPivot(const glm::vec2& pivot) { Pivot = pivot; return *this; }
+		/// Sets Offset.
+		UIWorldRootParams& SetOffset(const glm::vec2& offset) { Offset = offset; return *this; }
+		/// Sets Scale.
+		UIWorldRootParams& SetScale(const UIScale& scale) { Scale = scale; return *this; }
+		/// Sets ReferenceDistance, MinScale and MaxScale.
+		UIWorldRootParams& SetDistanceScale(float referenceDistance, float minScale = 0.25f, float maxScale = 4.0f) { ReferenceDistance = referenceDistance; MinScale = minScale; MaxScale = maxScale; return *this; }
+		/// Sets MaxDistance and FadeDistance.
+		UIWorldRootParams& SetMaxDistance(float maxDistance, float fadeDistance = 0.0f) { MaxDistance = maxDistance; FadeDistance = fadeDistance; return *this; }
+		/// Sets CullMargin.
+		UIWorldRootParams& SetCullMargin(float margin) { CullMargin = margin; return *this; }
+		/// Sets Layer.
+		UIWorldRootParams& SetLayer(int layer) { Layer = layer; return *this; }
+		/// Sets BlocksInput.
+		UIWorldRootParams& SetBlocksInput(bool blocks) { BlocksInput = blocks; return *this; }
+		/// Sets Navigable.
+		UIWorldRootParams& SetNavigable(bool navigable) { Navigable = navigable; return *this; }
+		/// Sets Layout.
+		UIWorldRootParams& SetLayout(const UIBoxParams& layout) { Layout = layout; return *this; }
+	};
+
 	/// A line or block of text. Chain the setters.
 	struct UITextParams
 	{
@@ -671,6 +743,18 @@ namespace Dingo
 		static bool BeginRoot(std::string_view name, const UIRootParams& params = {});
 		/// Closes the root opened by the matching BeginRoot.
 		static void EndRoot();
+		/// Opens a root hung on `worldPosition`, projected through `camera` onto the UI's target.
+		/// The root is positioned at that pixel (rounded, so it does not shimmer) by `params.Pivot`,
+		/// laid out and drawn like any root but below every BeginRoot root, farther ones first.
+		/// Returns false, and EndRoot must not be called, when there is no game UI, the point is
+		/// behind the camera, beyond MaxDistance or off the screen past CullMargin. Close with
+		/// EndRoot. Give each root its own `name`, e.g. one per enemy.
+		static bool BeginWorldRoot(std::string_view name, const UIWorldCamera& camera, const glm::vec3& worldPosition, const UIWorldRootParams& params = {});
+		/// As above, through `scene`'s primary camera. Returns false when the scene has no camera.
+		static bool BeginWorldRoot(std::string_view name, Scene& scene, const glm::vec3& worldPosition, const UIWorldRootParams& params = {});
+		/// As above, hung on `entity`'s world position (through its hierarchy) plus `worldOffset`,
+		/// seen through the entity's scene's primary camera. Returns false for an invalid entity.
+		static bool BeginWorldRoot(std::string_view name, Entity entity, const glm::vec3& worldOffset = glm::vec3(0.0f), const UIWorldRootParams& params = {});
 		/// Opens a container inside the current root or box. Returns false, and EndBox must not be
 		/// called, when no root is open.
 		static bool BeginBox(const UIBoxParams& params = {});

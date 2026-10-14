@@ -1,5 +1,8 @@
 #include "depch.h"
 #include "DingoUIContext.h"
+#include "DingoUIWorld.h"
+#include "DingoEngine/Scene/Entity.h"
+#include "DingoEngine/Scene/Scene.h"
 #include "DingoUIBatcher.h"
 
 #include "DingoEngine/Core/InputBackend.h"
@@ -557,6 +560,35 @@ namespace Dingo::Internal
 		return true;
 	}
 
+	bool DingoUIContext::BeginWorldRoot(std::string_view name, const glm::mat4& viewProjection, const glm::vec3& worldPosition, const UIWorldRootParams& params)
+	{
+		if (!CanDeclare())
+			return false;
+		const UIWorldPlacement placement = ComputeWorldPlacement(viewProjection, worldPosition, m_TargetSize, params);
+		if (!placement.Visible)
+			return false;
+		if (!m_Tree.BeginWorldRoot(name, params, placement.Point, placement.Depth, placement.Scale, placement.Alpha))
+		{
+			WarnMismatch("BeginWorldRoot inside another root or box; the call was ignored (a missing EndRoot or EndBox?)");
+			return false;
+		}
+		return true;
+	}
+
+	bool DingoUIContext::BeginWorldRoot(std::string_view name, Scene& scene, const glm::vec3& worldPosition, const UIWorldRootParams& params)
+	{
+		if (!CanDeclare() || m_TargetSize.x <= 0.0f || m_TargetSize.y <= 0.0f || !scene.GetPrimaryCamera().IsValid())
+			return false;
+		return BeginWorldRoot(name, scene.GetActiveCameraViewProjection(m_TargetSize.x / m_TargetSize.y), worldPosition, params);
+	}
+
+	bool DingoUIContext::BeginWorldRoot(std::string_view name, Entity entity, const glm::vec3& worldOffset, const UIWorldRootParams& params)
+	{
+		if (!entity.IsValid())
+			return false;
+		return BeginWorldRoot(name, entity.GetScene(), entity.GetWorldPosition() + worldOffset, params);
+	}
+
 	void DingoUIContext::EndRoot()
 	{
 		if (m_InFrame && !m_Tree.EndRoot())
@@ -704,17 +736,24 @@ namespace Dingo::Internal
 			UIRootTransitions::Entry* entry = declared[i];
 			if (!entry)
 			{
-				m_Tree.EmitRoot(index, m_DrawList);
+				if (root.Alpha >= 1.0f)
+				{
+					m_Tree.EmitRoot(index, m_DrawList);
+					continue;
+				}
+				m_RootScratch.Clear();
+				m_Tree.EmitRoot(index, m_RootScratch);
+				m_DrawList.AppendTransformed(m_RootScratch, root.Alpha, glm::vec2(0.0f), 1.0f, glm::vec2(0.0f));
 				continue;
 			}
 
 			m_RootScratch.Clear();
 			m_Tree.EmitRoot(index, m_RootScratch);
 			const UIRootVisual visual = UIRootTransitions::VisualOf(*entry);
-			if (visual.IsIdentity())
+			if (visual.IsIdentity() && root.Alpha >= 1.0f)
 				m_DrawList.Append(m_RootScratch);
 			else
-				m_DrawList.AppendTransformed(m_RootScratch, visual.Alpha, visual.Offset * root.Scale, visual.Scale, (root.Rect.Min + root.Rect.Max) * 0.5f);
+				m_DrawList.AppendTransformed(m_RootScratch, visual.Alpha * root.Alpha, visual.Offset * root.Scale, visual.Scale, (root.Rect.Min + root.Rect.Max) * 0.5f);
 			entry->Pivot = (root.Rect.Min + root.Rect.Max) * 0.5f;
 			entry->RootScale = root.Scale;
 			std::swap(entry->Kept, m_RootScratch);

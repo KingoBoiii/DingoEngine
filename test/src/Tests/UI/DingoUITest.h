@@ -24,9 +24,14 @@ namespace Dingo
 	// Tweens and transitions are checked with a simulated frame time: eased values at fixed steps, a
 	// root fading, sliding and scaling in and out by pixels, an exiting root that takes no clicks, one
 	// draw call throughout and a vertex cache hit once the animation has ended.
+	// World roots are checked through a perspective camera with known matrices: a label lands at the
+	// expected pixel, moves with its point and the camera, a point behind the camera or far off screen
+	// is not declared, distance scaling and fading, depth order below a screen root, entities through
+	// their hierarchy, the pointer passing through (or stopped by) a world root, and 50 bars in one
+	// draw call.
 	// The view shows the wrapped text at its MaxWidth under a DingoUI panel built with the element
 	// API, and a panel of live widgets to click by hand inside the viewport, with a themed panel and a
-	// 9-slice panel beside them, and a panel that fades and slides in and out.
+	// 9-slice panel beside them, and a panel that fades and slides in and out, and health bars orbiting in the world.
 	class DingoUITest : public Renderer2DTest
 	{
 	public:
@@ -50,6 +55,8 @@ namespace Dingo
 		bool StepWidgets(Framebuffer* output);
 		bool StepNavigation(Framebuffer* output);
 		bool StepTransitions(Framebuffer* output);
+		bool StepWorld(Framebuffer* output);
+		void DeclareLiveWorld();
 		void DeclareNavScene();
 		void DeclareWidgetScene();
 		void SetPointer(const glm::vec2& position, bool down = false, bool pressed = false, bool released = false, const glm::vec2& scroll = glm::vec2(0.0f));
@@ -150,6 +157,13 @@ namespace Dingo
 		Texture* m_SliceTexture = nullptr;
 		std::vector<Texture*> m_SlotTextures;
 		std::shared_ptr<int> m_Alive;
+		Scene* m_WorldScene = nullptr;
+		Entity m_WorldParent;
+		Entity m_WorldChild;
+		Entity m_WorldCamera;
+		uint32_t m_WorldStage = 0;
+		bool m_WorldDone = false;
+		float m_LiveTime = 0.0f;
 		TestChecks m_Checks;
 	};
 

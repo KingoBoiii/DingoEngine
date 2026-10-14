@@ -1,6 +1,9 @@
 #include "depch.h"
 #include "DingoEngine/UI/DingoUI.h"
 
+#include "DingoEngine/Core/PerspectiveCamera.h"
+#include "DingoEngine/Scene/Entity.h"
+#include "DingoEngine/Scene/Scene.h"
 #include "DingoUIContext.h"
 
 namespace Dingo
@@ -10,6 +13,31 @@ namespace Dingo
 	{
 		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
 		return context && context->BeginRoot(name, params);
+	}
+
+	UIWorldCamera UIWorldCamera::FromCamera(const PerspectiveCamera& camera)
+	{
+		UIWorldCamera result;
+		result.ViewProjection = camera.GetViewProjectionMatrix();
+		return result;
+	}
+
+	bool DingoUI::BeginWorldRoot(std::string_view name, const UIWorldCamera& camera, const glm::vec3& worldPosition, const UIWorldRootParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->BeginWorldRoot(name, camera.ViewProjection, worldPosition, params);
+	}
+
+	bool DingoUI::BeginWorldRoot(std::string_view name, Scene& scene, const glm::vec3& worldPosition, const UIWorldRootParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->BeginWorldRoot(name, scene, worldPosition, params);
+	}
+
+	bool DingoUI::BeginWorldRoot(std::string_view name, Entity entity, const glm::vec3& worldOffset, const UIWorldRootParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->BeginWorldRoot(name, entity, worldOffset, params);
 	}
 
 	void DingoUI::EndRoot()

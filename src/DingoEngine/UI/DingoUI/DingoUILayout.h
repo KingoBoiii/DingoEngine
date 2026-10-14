@@ -73,6 +73,9 @@ namespace Dingo::Internal
 		bool Navigable = true;
 		float Scale = 1.0f;
 		UITransition Transition;
+		bool World = false;   // hung on a world point: below the screen roots, far ones first
+		float Depth = 0.0f;
+		float Alpha = 1.0f;
 
 		// Widgets
 		bool Interactive = false;        // takes the pointer: hover, press, click
@@ -151,6 +154,8 @@ namespace Dingo::Internal
 
 		// False (nothing added) when a root is already open, or no root is open for the others.
 		bool BeginRoot(std::string_view name, const UIRootParams& params);
+		// A root at `point` (target pixels) by params.Pivot; `distanceScale` multiplies the root's scale.
+		bool BeginWorldRoot(std::string_view name, const UIWorldRootParams& params, const glm::vec2& point, float depth, float distanceScale, float alpha);
 		bool BeginBox(const UIBoxParams& params, const UIWidgetInfo* widget = nullptr);
 		bool AddText(std::string_view text, const UITextParams& params, const Font* font);
 		// naturalSize is the texture's size in pixels; the texture is never dereferenced.
@@ -198,6 +203,7 @@ namespace Dingo::Internal
 		static uint64_t HashName(std::string_view name);
 
 	private:
+		bool BeginRootScaled(std::string_view name, const UIRootParams& params, float scaleMultiplier);
 		int32_t Append(UIElementKind kind);
 		void ApplyBox(UIElement& element, const UIBoxParams& params);
 		void FitAxis(uint32_t axis);

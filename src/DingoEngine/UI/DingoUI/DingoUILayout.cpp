@@ -180,10 +180,15 @@ namespace Dingo::Internal
 
 	bool UILayoutTree::BeginRoot(std::string_view name, const UIRootParams& params)
 	{
+		return BeginRootScaled(name, params, 1.0f);
+	}
+
+	bool UILayoutTree::BeginRootScaled(std::string_view name, const UIRootParams& params, float scaleMultiplier)
+	{
 		if (!m_Open.empty())
 			return false;
 
-		m_RootScale = ComputeUIScale(params.Scale, m_Viewport);
+		m_RootScale = ComputeUIScale(params.Scale, m_Viewport) * scaleMultiplier;
 		const int32_t index = Append(UIElementKind::Root);
 		UIElement& element = m_Elements[index];
 		ApplyBox(element, params.Layout);
@@ -199,6 +204,27 @@ namespace Dingo::Internal
 		element.Transition = params.Transition;
 		m_Open.push_back(index);
 		m_OpenIdDepth.push_back(static_cast<uint32_t>(m_IdStack.size()));
+		return true;
+	}
+
+	bool UILayoutTree::BeginWorldRoot(std::string_view name, const UIWorldRootParams& params, const glm::vec2& point, float depth, float distanceScale, float alpha)
+	{
+		UIRootParams root;
+		root.Anchor = UIAnchor::TopLeft;
+		root.Scale = params.Scale;
+		root.Layer = params.Layer;
+		root.BlocksInput = params.BlocksInput;
+		root.Navigable = params.Navigable && params.BlocksInput;
+		root.Layout = params.Layout;
+		if (!BeginRootScaled(name, root, distanceScale))
+			return false;
+
+		UIElement& element = m_Elements.back();
+		element.World = true;
+		element.Depth = depth;
+		element.Alpha = alpha;
+		element.Pivot = params.Pivot;
+		element.Offset = point + params.Offset * m_RootScale;
 		return true;
 	}
 
@@ -686,7 +712,16 @@ namespace Dingo::Internal
 			if (m_Elements[i].Kind == UIElementKind::Root)
 				m_Order.push_back(static_cast<int32_t>(i));
 		}
-		std::stable_sort(m_Order.begin(), m_Order.end(), [this](int32_t a, int32_t b) { return m_Elements[a].Layer < m_Elements[b].Layer; });
+		std::stable_sort(m_Order.begin(), m_Order.end(), [this](int32_t a, int32_t b)
+		{
+			const UIElement& left = m_Elements[a];
+			const UIElement& right = m_Elements[b];
+			if (left.World != right.World)
+				return left.World;
+			if (left.Layer != right.Layer)
+				return left.Layer < right.Layer;
+			return left.World && left.Depth > right.Depth;
+		});
 	}
 
 	void UILayoutTree::Emit(UIDrawList& list) const

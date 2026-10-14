@@ -6,7 +6,10 @@
 
 #include <imgui.h>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <cmath>
+#include <optional>
 #include <string_view>
 
 namespace Dingo
@@ -96,6 +99,25 @@ namespace Dingo
 		m_LayoutStage = 0;
 		DingoUI::SetDefaultFont(m_Font);
 
+		m_WorldScene = new Scene("DingoUI Test: world");
+		m_WorldCamera = m_WorldScene->CreateEntity("Camera");
+		m_WorldCamera.AddComponent<Transform3DComponent>().Position = { 0.0f, 0.0f, 10.0f };
+		{
+			CameraComponent& camera = m_WorldCamera.AddComponent<CameraComponent>();
+			camera.Type = CameraComponent::ProjectionType::Perspective;
+			camera.FOV = 60.0f;
+			camera.PerspNear = 0.1f;
+			camera.PerspFar = 1000.0f;
+		}
+		m_WorldParent = m_WorldScene->CreateEntity("Parent");
+		m_WorldParent.AddComponent<Transform3DComponent>().Position = { 1.0f, 0.0f, 0.0f };
+		m_WorldChild = m_WorldScene->CreateEntity("Child");
+		m_WorldChild.AddComponent<Transform3DComponent>().Position = { 1.0f, 1.0f, 0.0f };
+		m_WorldChild.SetParent(m_WorldParent, false);
+		m_WorldStage = 0;
+		m_WorldDone = false;
+		m_LiveTime = 0.0f;
+
 		Check(Internal::GetDingoUIContext() != nullptr, "DingoUI context exists in a windowed app");
 		Check(DingoUI::GetDefaultFont() == m_Font, "SetDefaultFont sets the font Text uses");
 		CheckFontMetrics();
@@ -126,6 +148,11 @@ namespace Dingo
 		DestroyAndDelete(m_CheckTarget);
 		DestroyAndDelete(m_LayoutTarget);
 		DestroyAndDelete(m_Font);
+		m_WorldParent = Entity();
+		m_WorldChild = Entity();
+		m_WorldCamera = Entity();
+		delete m_WorldScene;
+		m_WorldScene = nullptr;
 		Renderer2DTest::Cleanup();
 	}
 
@@ -1935,12 +1962,6 @@ namespace Dingo
 		if (finished)
 		{
 			m_TransDone = true;
-			context->SetTarget(output);
-			context->SetInputOverride(&m_LiveInput);
-			m_LiveInput = {};
-			UIStyle live = UIStyle::Default();
-			live.SetTransition(0.15f);
-			DingoUI::SetTheme(live);
 			return true;
 		}
 
@@ -1988,6 +2009,313 @@ namespace Dingo
 		return true;
 	}
 
+	namespace
+	{
+		const glm::vec2 k_WorldViewport = { 960.0f, 540.0f };
+
+		glm::mat4 WorldViewProjection(float cameraX = 0.0f)
+		{
+			const glm::mat4 view = glm::lookAt(glm::vec3(cameraX, 0.0f, 10.0f), glm::vec3(cameraX, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+			return glm::perspective(glm::radians(60.0f), k_WorldViewport.x / k_WorldViewport.y, 0.1f, 1000.0f) * view;
+		}
+
+		glm::vec2 ExpectedPixel(const glm::vec3& point, float cameraX = 0.0f)
+		{
+			const std::optional<glm::vec2> projected = WorldToScreenPoint(point, k_WorldViewport, glm::mat4(1.0f), WorldViewProjection(cameraX));
+			return projected ? glm::vec2(std::round(projected->x), std::round(projected->y)) : glm::vec2(-1.0f);
+		}
+
+		UIWorldRootParams WorldBox(float width, float height, const glm::vec4& color)
+		{
+			return UIWorldRootParams().SetLayout(UIBoxParams().SetSize(UISize::Fixed(width), UISize::Fixed(height)).SetBackground(color));
+		}
+
+		UIWorldCamera WorldCameraFor(float cameraX = 0.0f)
+		{
+			UIWorldCamera camera;
+			camera.ViewProjection = WorldViewProjection(cameraX);
+			return camera;
+		}
+	}
+
+	bool DingoUITest::StepWorld(Framebuffer* output)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_WorldDone || !m_TransDone || !context || !m_LayoutTarget || !m_WorldScene)
+			return false;
+
+		const auto finish = [&]()
+		{
+			m_WorldDone = true;
+			context->SetTarget(output);
+			context->SetInputOverride(&m_LiveInput);
+			m_LiveInput = {};
+			UIStyle live = UIStyle::Default();
+			live.SetTransition(0.15f);
+			DingoUI::SetTheme(live);
+		};
+
+		const auto centreOf = [this](const char* name, glm::vec2& centre, glm::vec2& size)
+		{
+			const Internal::UIElement* element = LastElement(name);
+			if (!element)
+				return false;
+			centre = (element->Rect.Min + element->Rect.Max) * 0.5f;
+			size = element->Rect.Max - element->Rect.Min;
+			return true;
+		};
+		const auto closeTo = [](const glm::vec2& a, const glm::vec2& b) { return std::abs(a.x - b.x) <= 1.0f && std::abs(a.y - b.y) <= 1.0f; };
+		const auto text = [](const glm::vec2& v) { return "(" + std::to_string(v.x) + ", " + std::to_string(v.y) + ")"; };
+		const glm::vec3 labelPoint = { 2.0f, 1.0f, 0.0f };
+		const glm::vec3 movedPoint = { 3.0f, 1.0f, 0.0f };
+
+		const uint32_t stage = m_WorldStage++;
+		const std::weak_ptr<int> alive = m_Alive;
+
+		if (stage == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			SetPointer(k_WidgetEmpty);
+			return true;
+		}
+
+		SetPointer(k_WidgetEmpty);
+		m_WidgetInput.DeltaTime = 0.0f;
+		if (stage != 2)
+			Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+
+		if (stage == 1)
+		{
+			const UIWorldCamera camera = WorldCameraFor();
+			const bool label = DingoUI::BeginWorldRoot("w_label", camera, labelPoint, WorldBox(40.0f, 20.0f, k_Red));
+			if (label) DingoUI::EndRoot();
+			Check(label, "World: a point in front of the camera and on screen is declared");
+			const bool behind = DingoUI::BeginWorldRoot("w_behind", camera, { 0.0f, 0.0f, 20.0f }, WorldBox(100.0f, 100.0f, k_Red));
+			if (behind) DingoUI::EndRoot();
+			Check(!behind, "World: a point behind the camera is culled (BeginWorldRoot returns false)");
+			const bool off = DingoUI::BeginWorldRoot("w_off", camera, { 50.0f, 0.0f, 0.0f }, WorldBox(100.0f, 100.0f, k_Red));
+			if (off) DingoUI::EndRoot();
+			Check(!off, "World: a point far off screen is culled");
+			const bool scaled = DingoUI::BeginWorldRoot("w_scale", camera, { -2.0f, 0.0f, 0.0f }, WorldBox(40.0f, 20.0f, k_Blue).SetDistanceScale(20.0f).SetPivot({ 0.0f, 0.0f }));
+			if (scaled) DingoUI::EndRoot();
+			Check(scaled, "World: a distance-scaled root is declared");
+			const bool scene = DingoUI::BeginWorldRoot("w_scene", *m_WorldScene, labelPoint, WorldBox(10.0f, 10.0f, k_Yellow));
+			if (scene) DingoUI::EndRoot();
+			Check(scene, "World: the scene overload projects through the primary camera");
+			const bool entity = DingoUI::BeginWorldRoot("w_entity", m_WorldChild, { 0.0f, 0.5f, 0.0f }, WorldBox(10.0f, 10.0f, k_Yellow));
+			if (entity) DingoUI::EndRoot();
+			Check(entity, "World: the entity overload is declared");
+			const bool invalid = DingoUI::BeginWorldRoot("w_invalid", Entity(), glm::vec3(0.0f), WorldBox(10.0f, 10.0f, k_Yellow));
+			if (invalid) DingoUI::EndRoot();
+			Check(!invalid, "World: an invalid entity is culled");
+			const bool nearRoot = DingoUI::BeginWorldRoot("w_near", camera, { 0.0f, 0.0f, 5.0f }, WorldBox(30.0f, 30.0f, k_Green).SetPivot({ 0.5f, 0.5f }));
+			if (nearRoot) DingoUI::EndRoot();
+			const bool farRoot = DingoUI::BeginWorldRoot("w_far", camera, { 0.0f, 0.0f, -5.0f }, WorldBox(60.0f, 60.0f, k_Blue).SetPivot({ 0.5f, 0.5f }));
+			if (farRoot) DingoUI::EndRoot();
+			Check(nearRoot && farRoot, "World: near and far roots on the view axis are declared");
+			const bool fade = DingoUI::BeginWorldRoot("w_fade", camera, { -4.0f, -2.0f, -5.0f }, WorldBox(30.0f, 30.0f, k_Red).SetPivot({ 0.5f, 0.5f }).SetMaxDistance(20.0f, 10.0f));
+			if (fade) DingoUI::EndRoot();
+			Check(fade, "World: a root inside MaxDistance is declared");
+			const bool beyond = DingoUI::BeginWorldRoot("w_beyond", camera, { 0.0f, 3.0f, -12.0f }, WorldBox(30.0f, 30.0f, k_Red).SetMaxDistance(20.0f, 10.0f));
+			if (beyond) DingoUI::EndRoot();
+			Check(!beyond, "World: a root beyond MaxDistance is culled");
+			DingoUI::BeginRoot("w_screen", UIRootParams().SetLayout(UIBoxParams().SetSize(UISize::Fixed(10.0f), UISize::Fixed(10.0f)).SetBackground({ 1.0f, 0.0f, 1.0f, 1.0f })));
+			DingoUI::EndRoot();
+			return true;
+		}
+
+		if (stage == 2)
+		{
+			glm::vec2 centre, size;
+			const glm::vec2 expected = ExpectedPixel(labelPoint);
+			Check(closeTo(expected, glm::vec2(574.0f, 223.0f)), "World: the test's own projection of (2, 1, 0) is about (573.5, 223.2), got " + text(expected));
+			Check(centreOf("w_label", centre, size), "World: the label is laid out");
+			const Internal::UIElement* label = LastElement("w_label");
+			Check(label && closeTo(glm::vec2(centre.x, label->Rect.Max.y), expected), "World: the label's bottom-centre is at the projected pixel " + text(expected) + ", got " + text(centre));
+			Check(!LastElement("w_behind") && !LastElement("w_off") && !LastElement("w_beyond") && !LastElement("w_invalid"), "World: culled roots have no element");
+			size_t roots = 0;
+			for (const Internal::UIElement& element : context->GetLastLayout().GetElements())
+				roots += element.Kind == Internal::UIElementKind::Root ? 1 : 0;
+			Check(roots == 8, "World: eight roots were laid out, got " + std::to_string(roots));
+			Check(centreOf("w_scale", centre, size) && std::abs(size.x - 80.0f) <= 1.0f && std::abs(size.y - 40.0f) <= 1.0f, "World: distance scale 2 doubles the root, got " + text(size));
+			const Internal::UIElement* viaScene = LastElement("w_scene");
+			Check(viaScene && label && std::abs((viaScene->Rect.Min.x + viaScene->Rect.Max.x) * 0.5f - (label->Rect.Min.x + label->Rect.Max.x) * 0.5f) <= 1.0f && std::abs(viaScene->Rect.Max.y - label->Rect.Max.y) <= 1.0f,
+				"World: the scene overload lands where the matrix camera does");
+			const glm::vec2 childExpected = ExpectedPixel({ 2.0f, 1.5f, 0.0f });
+			const Internal::UIElement* entity = LastElement("w_entity");
+			Check(entity && closeTo(glm::vec2((entity->Rect.Min.x + entity->Rect.Max.x) * 0.5f, entity->Rect.Max.y), childExpected), "World: the entity overload follows the parent through the hierarchy (world (2, 1.5, 0) -> " + text(childExpected) + ")");
+
+			std::vector<int32_t> order;
+			context->GetLastLayout().GetRootOrder(order);
+			const auto& elements = context->GetLastLayout().GetElements();
+			const auto position = [&](const char* name) { for (size_t i = 0; i < order.size(); ++i) { if (elements[order[i]].NameHash == Internal::UILayoutTree::HashName(name)) return static_cast<int>(i); } return -1; };
+			Check(!order.empty() && elements[order.back()].NameHash == Internal::UILayoutTree::HashName("w_screen"), "World: the screen root is above every world root");
+			Check(position("w_far") >= 0 && position("w_far") < position("w_near"), "World: a farther world root is below a nearer one");
+
+			const glm::vec2 fadeCentre = ExpectedPixel({ -4.0f, -2.0f, -5.0f });
+			m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, expected, fadeCentre](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				const auto px = [&](float x, float y) { return pixels.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y)); };
+				Check(NearColor(px(480.0f, 270.0f), k_Green), "World: the near root draws over the far one");
+				Check(NearColor(px(502.0f, 270.0f), k_Blue), "World: the far root shows around the near one");
+				Check(NearColor(px(expected.x + 14.0f, expected.y - 8.0f), k_Red), "World: the label is painted above its pivot");
+				Check(px(expected.x, expected.y + 6.0f).r < 0.1f, "World: nothing is painted below the label's pivot");
+				Check(std::abs(px(fadeCentre.x, fadeCentre.y).r - 0.5f) < 0.06f, "World: a root at depth 15 of 20 (fade 10) is half transparent, got " + std::to_string(px(fadeCentre.x, fadeCentre.y).r));
+			});
+		}
+
+		if (stage == 2)
+		{
+			Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+			const UIWorldCamera camera = WorldCameraFor();
+			if (DingoUI::BeginWorldRoot("w_label", camera, movedPoint, WorldBox(40.0f, 20.0f, k_Red))) DingoUI::EndRoot();
+			if (DingoUI::BeginWorldRoot("w_cam", WorldCameraFor(1.0f), labelPoint, WorldBox(40.0f, 20.0f, k_Red))) DingoUI::EndRoot();
+			return true;
+		}
+
+		if (stage == 3)
+		{
+			glm::vec2 moved, camera, size;
+			const bool found = centreOf("w_label", moved, size) && centreOf("w_cam", camera, size);
+			Check(found, "World: the moved labels are laid out");
+			if (found)
+			{
+				const Internal::UIElement* label = LastElement("w_label");
+				const Internal::UIElement* shifted = LastElement("w_cam");
+				const glm::vec2 expectedMoved = ExpectedPixel(movedPoint);
+				const glm::vec2 expectedCamera = ExpectedPixel(labelPoint, 1.0f);
+				Check(closeTo(glm::vec2(moved.x, label->Rect.Max.y), expectedMoved) && moved.x > ExpectedPixel(labelPoint).x + 20.0f, "World: moving the point moves the rect to " + text(expectedMoved) + ", got " + text(moved));
+				Check(closeTo(glm::vec2(camera.x, shifted->Rect.Max.y), expectedCamera) && camera.x < ExpectedPixel(labelPoint).x - 20.0f, "World: moving the camera moves the rect to " + text(expectedCamera) + ", got " + text(camera));
+			}
+		}
+
+		const glm::vec2 buttonCentre = ExpectedPixel(movedPoint) - glm::vec2(0.0f, 12.0f);
+		const auto declareButton = [&](bool blocks) -> UIInteraction
+		{
+			UIInteraction result;
+			if (DingoUI::BeginWorldRoot("w_btn", WorldCameraFor(), movedPoint, UIWorldRootParams().SetBlocksInput(blocks)))
+			{
+				result = DingoUI::Button("World button", UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(24.0f)));
+				DingoUI::EndRoot();
+			}
+			return result;
+		};
+
+		if (stage == 3 || stage == 4)
+		{
+			SetPointer(buttonCentre);
+			declareButton(false);
+			return true;
+		}
+		if (stage == 5)
+		{
+			const UIInteraction button = declareButton(false);
+			Check(button.Hovered, "World: a non-blocking world root still gets hover");
+			Check(!DingoUI::IsPointerOverUI(), "World: a non-blocking world root is not 'pointer over UI'");
+			SetPointer(buttonCentre, true, true, false);
+			return true;
+		}
+		if (stage == 6)
+		{
+			declareButton(false);
+			Check(!DingoUI::IsCapturingInput(), "World: a click on a non-blocking world root is not taken from the game");
+			SetPointer(buttonCentre, false, false, true);
+			return true;
+		}
+		if (stage == 7)
+		{
+			declareButton(true);
+			SetPointer(buttonCentre);
+			return true;
+		}
+		if (stage == 8)
+		{
+			const UIInteraction button = declareButton(true);
+			Check(button.Hovered && DingoUI::IsPointerOverUI(), "World: a blocking world root stops the pointer");
+			SetPointer(buttonCentre, true, true, false);
+			return true;
+		}
+		if (stage == 9)
+		{
+			declareButton(true);
+			Check(DingoUI::IsCapturingInput(), "World: a click on a blocking world root is taken from the game");
+			SetPointer(k_WidgetEmpty, false, false, true);
+			return true;
+		}
+		if (stage == 10)
+		{
+			const UIWorldCamera camera = WorldCameraFor();
+			for (int i = 0; i < 50; ++i)
+			{
+				const glm::vec3 point = { -5.0f + static_cast<float>(i % 10), 3.0f - 0.5f * static_cast<float>(i / 10), static_cast<float>(i % 7) };
+				if (DingoUI::BeginWorldRoot("w_bar" + std::to_string(i), camera, point, UIWorldRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Column).SetGap(2.0f))))
+				{
+					DingoUI::Text("E" + std::to_string(i), UITextParams().SetSize(10.0f).SetWrap(false));
+					DingoUI::ProgressBar("hp", 0.5f, UIWidgetParams().SetSize(UISize::Fixed(30.0f), UISize::Fixed(4.0f)));
+					DingoUI::EndRoot();
+				}
+			}
+			return true;
+		}
+		if (stage == 11)
+		{
+			const UIWorldCamera camera = WorldCameraFor();
+			for (int i = 0; i < 50; ++i)
+			{
+				const glm::vec3 point = { -5.0f + static_cast<float>(i % 10), 3.0f - 0.5f * static_cast<float>(i / 10), static_cast<float>(i % 7) };
+				if (DingoUI::BeginWorldRoot("w_bar" + std::to_string(i), camera, point, UIWorldRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Column).SetGap(2.0f))))
+				{
+					DingoUI::Text("E" + std::to_string(i), UITextParams().SetSize(10.0f).SetWrap(false));
+					DingoUI::ProgressBar("hp", 0.5f, UIWidgetParams().SetSize(UISize::Fixed(30.0f), UISize::Fixed(4.0f)));
+					DingoUI::EndRoot();
+				}
+			}
+			size_t roots = 0;
+			for (const Internal::UIElement& element : context->GetLastLayout().GetElements())
+				roots += element.Kind == Internal::UIElementKind::Root ? 1 : 0;
+			Check(roots == 50, "World: 50 world bars are laid out, got " + std::to_string(roots));
+			Check(context->GetRenderStatistics().DrawCalls == 1, "World: 50 world bars with text are one draw call, got " + std::to_string(context->GetRenderStatistics().DrawCalls));
+			return true;
+		}
+		if (stage == 12)
+		{
+			Check(context->GetRenderStatistics().CacheHits == 1 && context->GetRenderStatistics().Uploads == 0, "World: still world bars hit the vertex cache");
+			finish();
+			return true;
+		}
+		finish();
+		return true;
+	}
+
+	void DingoUITest::DeclareLiveWorld()
+	{
+		if (!m_WorldScene || !m_WorldChild.IsValid())
+			return;
+
+		for (int i = 0; i < 6; ++i)
+		{
+			const float angle = m_LiveTime * 0.6f + static_cast<float>(i) * 1.0471976f;
+			const glm::vec3 point = { 5.0f * std::cos(angle), 0.5f + 0.6f * std::sin(m_LiveTime + static_cast<float>(i)), 4.0f * std::sin(angle) };
+			const float health = 0.5f + 0.5f * std::sin(m_LiveTime * 0.7f + static_cast<float>(i) * 1.3f);
+			if (!DingoUI::BeginWorldRoot("live_enemy" + std::to_string(i), *m_WorldScene, point,
+				UIWorldRootParams().SetDistanceScale(10.0f, 0.5f, 1.5f).SetMaxDistance(18.0f, 4.0f).SetOffset({ 0.0f, -4.0f })
+				.SetLayout(UIBoxParams().SetAlign(UIAlign::Center).SetGap(2.0f))))
+				continue;
+			DingoUI::Text("Enemy " + std::to_string(i + 1), UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::ProgressBar("hp", health, UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(8.0f)));
+			DingoUI::EndRoot();
+		}
+
+		if (DingoUI::BeginWorldRoot("live_child", m_WorldChild, { 0.0f, 0.4f, 0.0f }, UIWorldRootParams().SetLayout(UIBoxParams().SetPadding(4.0f).SetBackground({ 0.1f, 0.4f, 0.2f, 0.9f }).SetCornerRadius(4.0f))))
+		{
+			DingoUI::Text("Child entity", UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::EndRoot();
+		}
+	}
+
 	void DingoUITest::UpdateLiveInput(Framebuffer* output)
 	{
 		using Internal::InputBackend;
@@ -2011,11 +2339,13 @@ namespace Dingo
 		m_LiveInput.KeyboardAvailable = true;
 		Internal::ReadNavInput(m_LiveInput.Nav, true, UINavParams(), Internal::FindNavGamepad());
 		m_LiveInput.DeltaTime = 1.0f / 60.0f;
+		m_LiveTime += m_LiveInput.DeltaTime;
 	}
 
 	void DingoUITest::DeclareLivePage()
 	{
 		DeclareDemo();
+		DeclareLiveWorld();
 
 		DingoUI::BeginRoot("live", UIRootParams().SetAnchor(UIAnchor::TopRight).SetOffset({ -16.0f, 16.0f }).SetLayout(UIBoxParams()
 			.SetWidth(UISize::Fixed(340.0f)).SetGap(10.0f).SetPadding(14.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.92f }).SetBorder(2.0f, { 0.5f, 0.65f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
@@ -2103,7 +2433,7 @@ namespace Dingo
 	{
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
-		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output) && !StepNavigation(output) && !StepTransitions(output))
+		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output) && !StepNavigation(output) && !StepTransitions(output) && !StepWorld(output))
 		{
 			UpdateLiveInput(output);
 			DeclareLivePage();

@@ -283,6 +283,45 @@ after the animation draws from the cache again.
 The animations run on the real frame time (`UIInputState::DeltaTime`). The engine has no time scale,
 so they keep running while a scene is paused.
 
+## World-space UI
+
+A root can hang on a point in the world, for a health bar over a head or a name over a door.
+`BeginWorldRoot` projects the point to a pixel of the UI's target, puts the root's `Pivot` on it
+(bottom-centre by default) and otherwise behaves like `BeginRoot`: lay out boxes, text and widgets
+inside, then `EndRoot`.
+
+```cpp
+for (size_t i = 0; i < enemies.size(); ++i)
+{
+    if (DingoUI::BeginWorldRoot("hp" + std::to_string(i), enemies[i], { 0.0f, 1.8f, 0.0f },
+            UIWorldRootParams().SetDistanceScale(12.0f).SetMaxDistance(40.0f, 8.0f)))
+    {
+        DingoUI::ProgressBar("hp", health, UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(6.0f)));
+        DingoUI::EndRoot();
+    }
+}
+```
+
+The point comes from a position (`BeginWorldRoot(name, camera, position)` with a `UIWorldCamera` from a
+view and projection or a `PerspectiveCamera`; `BeginWorldRoot(name, scene, position)` through the scene's
+primary camera) or from an entity (its world position, through the hierarchy, plus an offset, seen by
+its scene's primary camera). Give each root its own name.
+
+- A root is not declared at all, and `BeginWorldRoot` returns `false` (no `EndRoot`), when the point is
+  behind the camera, beyond `MaxDistance`, or outside the screen by more than `CullMargin` pixels.
+  Nothing of it is laid out, drawn or hit-tested.
+- The anchor pixel is rounded, so a moving point does not shimmer. `Offset` moves the root from it, in
+  design pixels.
+- `ReferenceDistance` scales the root by `ReferenceDistance / distance`, clamped to `MinScale` and
+  `MaxScale`, on top of `Scale`. `FadeDistance` fades the root out over the last units before `MaxDistance`.
+  The distance is the depth in front of the camera; an orthographic camera has none, so these do nothing.
+- World roots draw below every `BeginRoot` root, farther ones first (`Layer` orders them first). They do
+  not block the pointer unless `SetBlocksInput(true)`, and are not focus-navigable.
+- Roots are positioned from the point of the frame they are declared in, so declare them after the
+  entity has moved (an `OnUpdate` after the scene's own).
+- There is no depth test against the scene, and no panel drawn onto a mesh; a world root is a screen-space
+  overlay placed by a world point.
+
 ## Rules the frame follows
 
 - Declare from `OnUpdate`; the layout and the draw happen after all layers have updated, and the UI

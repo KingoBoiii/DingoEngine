@@ -16,11 +16,11 @@ namespace
 
 	const UITextMeasureFn k_Measure = [](const Font*, std::string_view, float, float) { return glm::vec2(0.0f); };
 
-	struct Scene
+	struct UITestScene
 	{
 		UILayoutTree Tree;
 
-		Scene() { Tree.Begin(k_Viewport); }
+		UITestScene() { Tree.Begin(k_Viewport); }
 
 		void OpenRoot(const char* name, const glm::vec2& offset, const glm::vec2& size, int layer = 0, bool blocks = true, bool modal = false)
 		{
@@ -54,7 +54,7 @@ namespace
 
 	uint64_t IdOf(const char* label)
 	{
-		Scene scene;
+		UITestScene scene;
 		scene.OpenRoot("r", { 0.0f, 0.0f }, { 100.0f, 100.0f });
 		return scene.Tree.MakeId(label);
 	}
@@ -76,7 +76,7 @@ TEST_CASE("UI ids are 0 with nothing open and differ between containers")
 	empty.Begin(k_Viewport);
 	CHECK(empty.MakeId("Play") == 0);
 
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("a", { 0.0f, 0.0f }, { 100.0f, 100.0f });
 	const uint64_t inA = scene.Tree.MakeId("Play");
 	scene.CloseRoot();
@@ -86,7 +86,7 @@ TEST_CASE("UI ids are 0 with nothing open and differ between containers")
 
 TEST_CASE("UI PushId scopes ids until PopId")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 0.0f, 0.0f }, { 100.0f, 100.0f });
 	const uint64_t plain = scene.Tree.MakeId("Row");
 
@@ -119,7 +119,7 @@ TEST_CASE("UI PushId scopes ids until PopId")
 
 TEST_CASE("UI PopId cannot pop an id pushed outside the container, and a container drops its pushes")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 0.0f, 0.0f }, { 100.0f, 100.0f });
 	scene.Tree.PushId("outer");
 	const uint64_t outer = scene.Tree.MakeId("Row");
@@ -191,7 +191,7 @@ TEST_CASE("UIStateMap stays small while widgets come and go")
 
 TEST_CASE("UI hit-test finds the interactive element under the point")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 100.0f, 100.0f }, { 300.0f, 200.0f });
 	const uint64_t a = scene.Widget("a", { 100.0f, 50.0f });
 	const uint64_t b = scene.Widget("b", { 100.0f, 50.0f });
@@ -208,7 +208,7 @@ TEST_CASE("UI hit-test finds the interactive element under the point")
 
 TEST_CASE("UI hit-test gives overlapping roots to the higher layer, then the later declared")
 {
-	Scene layered;
+	UITestScene layered;
 	layered.OpenRoot("low", { 100.0f, 100.0f }, { 200.0f, 200.0f }, 0);
 	const uint64_t low = layered.Widget("low", { 200.0f, 200.0f });
 	layered.CloseRoot();
@@ -220,7 +220,7 @@ TEST_CASE("UI hit-test gives overlapping roots to the higher layer, then the lat
 	CHECK(layered.Tree.HitTest({ 200.0f, 200.0f }).HoverId == high);
 	CHECK(layered.Tree.HitTest({ 120.0f, 120.0f }).HoverId == low);
 
-	Scene reversed;
+	UITestScene reversed;
 	reversed.OpenRoot("high", { 150.0f, 150.0f }, { 200.0f, 200.0f }, 5);
 	const uint64_t top = reversed.Widget("high", { 200.0f, 200.0f });
 	reversed.CloseRoot();
@@ -231,7 +231,7 @@ TEST_CASE("UI hit-test gives overlapping roots to the higher layer, then the lat
 	reversed.Tree.Layout(k_Measure);
 	CHECK(reversed.Tree.HitTest({ 200.0f, 200.0f }).HoverId == top);
 
-	Scene sameLayer;
+	UITestScene sameLayer;
 	sameLayer.OpenRoot("first", { 100.0f, 100.0f }, { 200.0f, 200.0f });
 	sameLayer.Widget("first", { 200.0f, 200.0f });
 	sameLayer.CloseRoot();
@@ -245,7 +245,7 @@ TEST_CASE("UI hit-test gives overlapping roots to the higher layer, then the lat
 
 TEST_CASE("UI hit-test: a later interactive child wins over its parent")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 0.0f, 0.0f }, { 400.0f, 400.0f });
 	UIWidgetInfo parentInfo;
 	parentInfo.Id = scene.Tree.MakeId("parent");
@@ -262,7 +262,7 @@ TEST_CASE("UI hit-test: a later interactive child wins over its parent")
 
 TEST_CASE("UI hit-test: a blocking root hides what is under it, a non-blocking one does not")
 {
-	Scene blocking;
+	UITestScene blocking;
 	blocking.OpenRoot("under", { 100.0f, 100.0f }, { 200.0f, 200.0f }, 0);
 	blocking.Widget("under", { 200.0f, 200.0f });
 	blocking.CloseRoot();
@@ -275,7 +275,7 @@ TEST_CASE("UI hit-test: a blocking root hides what is under it, a non-blocking o
 	CHECK(blocked.HoverId == 0);
 	CHECK(blocked.OverBlocking);
 
-	Scene passing;
+	UITestScene passing;
 	passing.OpenRoot("under", { 100.0f, 100.0f }, { 200.0f, 200.0f }, 0);
 	const uint64_t under = passing.Widget("under", { 200.0f, 200.0f });
 	passing.CloseRoot();
@@ -291,7 +291,7 @@ TEST_CASE("UI hit-test: a blocking root hides what is under it, a non-blocking o
 
 TEST_CASE("UI hit-test: a non-blocking root takes hover but is never over the UI")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("hud", { 100.0f, 100.0f }, { 200.0f, 200.0f }, 0, false);
 	const uint64_t widget = scene.Widget("w", { 200.0f, 200.0f });
 	scene.CloseRoot();
@@ -302,7 +302,7 @@ TEST_CASE("UI hit-test: a non-blocking root takes hover but is never over the UI
 
 TEST_CASE("UI hit-test: a bare layout box of a blocking root takes nothing")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 100.0f, 100.0f }, { 200.0f, 200.0f });
 	scene.CloseRoot();
 	const UIHit hit = scene.Hit({ 150.0f, 150.0f });
@@ -312,7 +312,7 @@ TEST_CASE("UI hit-test: a bare layout box of a blocking root takes nothing")
 
 TEST_CASE("UI hit-test: a modal root hides everything below it")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("game", { 0.0f, 0.0f }, { 400.0f, 400.0f }, 0);
 	scene.Widget("game", { 400.0f, 400.0f });
 	scene.CloseRoot();
@@ -337,7 +337,7 @@ TEST_CASE("UI hit-test: a modal root hides everything below it")
 	CHECK(above.Modal);
 	CHECK(scene.Tree.HitTest({ 900.0f, 20.0f }).OverBlocking);
 
-	Scene plain;
+	UITestScene plain;
 	plain.OpenRoot("r", { 0.0f, 0.0f }, { 10.0f, 10.0f });
 	plain.CloseRoot();
 	plain.Tree.CloseAll();
@@ -346,7 +346,7 @@ TEST_CASE("UI hit-test: a modal root hides everything below it")
 
 TEST_CASE("UI hit-test ignores the part of an element a clipping parent hides")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 0.0f, 0.0f }, { 400.0f, 400.0f });
 	UIWidgetInfo areaInfo;
 	areaInfo.Id = scene.Tree.MakeId("area");
@@ -367,7 +367,7 @@ TEST_CASE("UI hit-test ignores the part of an element a clipping parent hides")
 
 TEST_CASE("UI scroll areas report their content size and move their children")
 {
-	Scene scene;
+	UITestScene scene;
 	scene.OpenRoot("r", { 0.0f, 0.0f }, { 400.0f, 400.0f });
 	UIWidgetInfo areaInfo;
 	areaInfo.Id = scene.Tree.MakeId("area");
