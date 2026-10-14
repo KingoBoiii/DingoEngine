@@ -143,6 +143,7 @@ namespace Dingo
 	class Pipeline
 	{
 	public:
+		// Returns nullptr when params has no Shader or no Framebuffer.
 		static Pipeline* Create(const PipelineParams& params);
 
 	public:

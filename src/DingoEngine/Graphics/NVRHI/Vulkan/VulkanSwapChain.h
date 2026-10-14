@@ -52,6 +52,7 @@ namespace Dingo
 		vk::Extent2D m_SwapChainExtent = {};
 		bool m_ImageAcquired = false;
 		bool m_ImageWaitPending = false;
+		bool m_AcquireSignalPending = false;
 
 		std::vector<vk::Semaphore> m_AcquireSemaphores;
 		std::vector<vk::Semaphore> m_PresentSemaphores;

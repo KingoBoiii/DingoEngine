@@ -41,6 +41,7 @@ namespace Dingo
 		Scene& operator=(const Scene&) = delete;
 
 		Entity CreateEntity(const std::string& name = std::string());
+		// Returns an invalid Entity, and warns, when the UUID is already in use in this scene.
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
 		// Destroys the entity and every descendant, children first, so a child's OnDestroy still
 		// sees its parent. Called from a script, the whole subtree waits for the end of the pass.

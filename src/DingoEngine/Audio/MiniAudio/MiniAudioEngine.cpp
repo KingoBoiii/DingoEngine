@@ -6,6 +6,7 @@
 #include "DingoEngine/Core/VirtualFileSystem.h"
 
 #include <algorithm>
+#include <cstring>
 
 // All miniaudio usage is confined to this .cpp (+ the engine-internal MiniAudioData.h).
 #include "DingoEngine/Audio/MiniAudio/MiniAudioData.h"
@@ -19,6 +20,29 @@
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
+
+namespace Dingo::Internal
+{
+
+	// A data source over a lock-free single-producer, single-consumer ring: the game thread
+	// writes, the device thread reads. Reads always return every frame asked for (miniaudio turns
+	// an empty or short read into MA_AT_END, which ends the sound), so a dry buffer holds
+	// the last frame and fades it out, and new data fades back in, which keeps an underrun from
+	// clicking. Once silent, a stream resumes only when a whole read is queued: ma_sound reads
+	// a period at a time, and resuming on less would alternate scraps of data with silence.
+	struct MiniAudioStream
+	{
+		ma_data_source_base Base{}; // first, so the stream is its own ma_data_source*
+		ma_pcm_rb Ring{};
+		std::uint32_t Channels = 1;
+		std::uint32_t SampleRate = 48000;
+		std::uint32_t BufferFrames = 0;
+		float FadeStep = 1.0f;
+		float Envelope = 0.0f;
+		std::vector<float> Held;
+	};
+
+}
 
 namespace Dingo
 {
@@ -72,6 +96,73 @@ namespace Dingo
 			ma_sound_set_rolloff(sound, attenuation.Model == AudioAttenuationModel::None ? 0.0f : attenuation.Rolloff);
 			ma_sound_set_min_gain(sound, attenuation.MinGain);
 			ma_sound_set_max_gain(sound, attenuation.MaxGain);
+		}
+
+		constexpr std::uint32_t k_MinStreamSampleRate = 8000;
+		constexpr std::uint32_t k_MaxStreamSampleRate = 384000;
+		constexpr float k_StreamFadeSeconds = 0.005f;
+
+		ma_result StreamRead(ma_data_source* source, void* framesOut, ma_uint64 frameCount, ma_uint64* framesRead)
+		{
+			auto* stream = static_cast<Internal::MiniAudioStream*>(source);
+			const std::uint32_t channels = stream->Channels;
+			float* out = static_cast<float*>(framesOut);
+
+			const ma_uint64 resumeFrames = (std::min)(frameCount, static_cast<ma_uint64>(stream->BufferFrames));
+			const bool waiting = stream->Envelope == 0.0f && ma_pcm_rb_available_read(&stream->Ring) < resumeFrames;
+
+			ma_uint64 done = 0;
+			while (!waiting && done < frameCount)
+			{
+				ma_uint32 count = static_cast<ma_uint32>((std::min)(frameCount - done, static_cast<ma_uint64>(0xFFFFFFFFu)));
+				void* buffer = nullptr;
+				if (ma_pcm_rb_acquire_read(&stream->Ring, &count, &buffer) != MA_SUCCESS || count == 0)
+					break;
+
+				const float* in = static_cast<const float*>(buffer);
+				for (ma_uint32 frame = 0; frame < count; ++frame)
+				{
+					stream->Envelope = (std::min)(stream->Envelope + stream->FadeStep, 1.0f);
+					for (std::uint32_t channel = 0; channel < channels; ++channel)
+					{
+						const float sample = in[frame * channels + channel];
+						stream->Held[channel] = sample;
+						out[(done + frame) * channels + channel] = sample * stream->Envelope;
+					}
+				}
+
+				ma_pcm_rb_commit_read(&stream->Ring, count);
+				done += count;
+			}
+
+			for (; done < frameCount; ++done)
+			{
+				stream->Envelope = (std::max)(stream->Envelope - stream->FadeStep, 0.0f);
+				for (std::uint32_t channel = 0; channel < channels; ++channel)
+					out[done * channels + channel] = stream->Held[channel] * stream->Envelope;
+			}
+
+			*framesRead = frameCount;
+			return MA_SUCCESS;
+		}
+
+		ma_result StreamGetDataFormat(ma_data_source* source, ma_format* format, ma_uint32* channels, ma_uint32* sampleRate, ma_channel* channelMap, size_t channelMapCap)
+		{
+			const auto* stream = static_cast<const Internal::MiniAudioStream*>(source);
+			*format = ma_format_f32;
+			*channels = stream->Channels;
+			*sampleRate = stream->SampleRate;
+			ma_channel_map_init_standard(ma_standard_channel_map_default, channelMap, channelMapCap, stream->Channels);
+			return MA_SUCCESS;
+		}
+
+		const ma_data_source_vtable k_StreamVTable = { StreamRead, nullptr, StreamGetDataFormat, nullptr, nullptr, nullptr, 0 };
+
+		void DestroyStream(Internal::MiniAudioStream* stream)
+		{
+			ma_pcm_rb_uninit(&stream->Ring);
+			ma_data_source_uninit(&stream->Base);
+			delete stream;
 		}
 
 		// The concrete clip: owns a "template" ma_sound loaded fully into memory via the
@@ -252,43 +343,29 @@ namespace Dingo
 		return static_cast<std::uint32_t>(data.Slots.size() - 1);
 	}
 
-	// Shared setup for Play / PlayOneShot: clones the clip into a fresh slot, applies
-	// params, and starts it. Returns k_InvalidSound on any failure. The returned id
-	// stays valid until the sound is Stop()ped or, if non-looping, finishes and is
-	// reaped by Update() (which bumps the slot generation so the id then goes stale).
-	static AudioSoundId StartInstance(Internal::MiniAudioData& data,
-		const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params,
-		const SoundAttenuation& defaultAttenuation, std::optional<std::uint32_t> bus)
+	static std::uint32_t BusOrMaster(Internal::MiniAudioData& data, std::optional<std::uint32_t> bus)
 	{
-		if (!clip)
-			return k_InvalidSound;
+		if (bus)
+			return *bus;
 
-		auto* concrete = static_cast<MiniAudioClip*>(clip.get());
-		if (!concrete->m_Loaded)
-			return k_InvalidSound;
-
-		if (!bus)
+		if (!data.StaleBusWarned)
 		{
-			if (!data.StaleBusWarned)
-			{
-				DE_CORE_WARN("AudioEngine: a sound was played on a destroyed or invalid bus; it plays on the master bus");
-				data.StaleBusWarned = true;
-			}
-			bus = k_MasterBusIndex;
+			DE_CORE_WARN("AudioEngine: a sound was played on a destroyed or invalid bus; it plays on the master bus");
+			data.StaleBusWarned = true;
 		}
+		return k_MasterBusIndex;
+	}
 
-		auto* sound = new ma_sound();
-		const ma_result result = ma_sound_init_copy(data.Engine, concrete->Template(), 0, data.Buses[*bus].Group, sound);
-		if (result != MA_SUCCESS)
-		{
-			DE_CORE_ERROR("AudioEngine: failed to instantiate sound ({})", (int)result);
-			delete sound;
-			return k_InvalidSound;
-		}
-
+	// Applies params to an initialised sound, gives it a slot and starts it. The returned id
+	// stays valid until the sound is Stop()ped or, for a non-looping clip, finishes and is
+	// reaped by Update() (which bumps the slot generation so the id then goes stale).
+	static AudioSoundId StartSound(Internal::MiniAudioData& data, ma_sound* sound, const SoundPlayParams& params,
+		const SoundAttenuation& defaultAttenuation, std::uint32_t bus, const std::shared_ptr<AudioClip>& clip, Internal::MiniAudioStream* stream)
+	{
 		ma_sound_set_volume(sound, params.Volume);
 		ma_sound_set_pitch(sound, params.Pitch);
-		ma_sound_set_looping(sound, params.Looping ? MA_TRUE : MA_FALSE);
+		if (!stream)
+			ma_sound_set_looping(sound, params.Looping ? MA_TRUE : MA_FALSE);
 		ma_sound_set_spatialization_enabled(sound, params.Spatialized ? MA_TRUE : MA_FALSE);
 		if (params.Spatialized)
 		{
@@ -300,10 +377,38 @@ namespace Dingo
 		Internal::SoundSlot& slot = data.Slots[index];
 		slot.Sound = sound;
 		slot.Clip = clip; // keep the decoded data alive for this instance's lifetime
-		slot.Bus = *bus;
+		slot.Stream = stream;
+		slot.Bus = bus;
 
 		ma_sound_start(sound);
 		return MakeId(index, slot.Generation);
+	}
+
+	// Shared setup for Play / PlayOneShot: clones the clip into a fresh slot and starts it.
+	// Returns k_InvalidSound on any failure.
+	static AudioSoundId StartInstance(Internal::MiniAudioData& data,
+		const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params,
+		const SoundAttenuation& defaultAttenuation, std::optional<std::uint32_t> bus)
+	{
+		if (!clip)
+			return k_InvalidSound;
+
+		auto* concrete = static_cast<MiniAudioClip*>(clip.get());
+		if (!concrete->m_Loaded)
+			return k_InvalidSound;
+
+		const std::uint32_t busIndex = BusOrMaster(data, bus);
+
+		auto* sound = new ma_sound();
+		const ma_result result = ma_sound_init_copy(data.Engine, concrete->Template(), 0, data.Buses[busIndex].Group, sound);
+		if (result != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("AudioEngine: failed to instantiate sound ({})", (int)result);
+			delete sound;
+			return k_InvalidSound;
+		}
+
+		return StartSound(data, sound, params, defaultAttenuation, busIndex, clip, nullptr);
 	}
 
 	AudioSoundId MiniAudioEngine::Play(const std::shared_ptr<AudioClip>& clip, const SoundPlayParams& params)
@@ -343,6 +448,120 @@ namespace Dingo
 		params.Position = position;
 		params.Bus = bus;
 		Play(clip, params);
+	}
+
+	AudioSoundId MiniAudioEngine::CreateStream(const AudioStreamDesc& desc, const SoundPlayParams& params)
+	{
+		if (!m_Data)
+			return k_InvalidSound;
+
+		if (desc.BufferFrames == 0 || desc.Channels == 0 || desc.Channels > MA_MAX_CHANNELS
+			|| desc.BufferFrames > 0x7FFFFFFFu / (sizeof(float) * desc.Channels)
+			|| desc.SampleRate < k_MinStreamSampleRate || desc.SampleRate > k_MaxStreamSampleRate)
+		{
+			DE_CORE_ERROR("AudioEngine::CreateStream: invalid stream ({} Hz, {} channels, {} frames)", desc.SampleRate, desc.Channels, desc.BufferFrames);
+			return k_InvalidSound;
+		}
+
+		auto* stream = new Internal::MiniAudioStream();
+		stream->Channels = desc.Channels;
+		stream->SampleRate = desc.SampleRate;
+		stream->BufferFrames = desc.BufferFrames;
+		stream->FadeStep = 1.0f / (std::max)(desc.SampleRate * k_StreamFadeSeconds, 1.0f);
+		stream->Held.assign(desc.Channels, 0.0f);
+
+		const ma_result ringResult = ma_pcm_rb_init(ma_format_f32, desc.Channels, desc.BufferFrames, nullptr, nullptr, &stream->Ring);
+		if (ringResult != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("AudioEngine::CreateStream: ring buffer of {} frames failed ({})", desc.BufferFrames, (int)ringResult);
+			delete stream;
+			return k_InvalidSound;
+		}
+
+		ma_data_source_config sourceConfig = ma_data_source_config_init();
+		sourceConfig.vtable = &k_StreamVTable;
+		const ma_result sourceResult = ma_data_source_init(&sourceConfig, &stream->Base);
+		if (sourceResult != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("AudioEngine::CreateStream: ma_data_source_init failed ({})", (int)sourceResult);
+			ma_pcm_rb_uninit(&stream->Ring);
+			delete stream;
+			return k_InvalidSound;
+		}
+
+		const std::uint32_t busIndex = BusOrMaster(*m_Data, ResolveBus(params.Bus));
+
+		auto* sound = new ma_sound();
+		const ma_result result = ma_sound_init_from_data_source(m_Data->Engine, &stream->Base, 0, m_Data->Buses[busIndex].Group, sound);
+		if (result != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("AudioEngine::CreateStream: failed to instantiate sound ({})", (int)result);
+			delete sound;
+			DestroyStream(stream);
+			return k_InvalidSound;
+		}
+
+		return StartSound(*m_Data, sound, params, m_DefaultAttenuation, busIndex, nullptr, stream);
+	}
+
+	Internal::MiniAudioStream* MiniAudioEngine::ResolveStream(AudioSoundId id) const
+	{
+		Internal::SoundSlot* slot = ResolveSlot(id);
+		return slot ? slot->Stream : nullptr;
+	}
+
+	std::uint32_t MiniAudioEngine::PushStreamFrames(AudioSoundId id, const std::int16_t* frames, std::uint32_t frameCount)
+	{
+		Internal::MiniAudioStream* stream = ResolveStream(id);
+		if (!stream || !frames)
+			return 0;
+
+		const std::uint32_t channels = stream->Channels;
+		std::uint32_t pushed = 0;
+		while (pushed < frameCount)
+		{
+			ma_uint32 count = frameCount - pushed;
+			void* buffer = nullptr;
+			if (ma_pcm_rb_acquire_write(&stream->Ring, &count, &buffer) != MA_SUCCESS || count == 0)
+				break;
+
+			float* out = static_cast<float*>(buffer);
+			const std::int16_t* in = frames + static_cast<std::size_t>(pushed) * channels;
+			for (std::size_t i = 0; i < static_cast<std::size_t>(count) * channels; ++i)
+				out[i] = static_cast<float>(in[i]) * (1.0f / 32768.0f);
+
+			ma_pcm_rb_commit_write(&stream->Ring, count);
+			pushed += count;
+		}
+		return pushed;
+	}
+
+	std::uint32_t MiniAudioEngine::PushStreamFrames(AudioSoundId id, const float* frames, std::uint32_t frameCount)
+	{
+		Internal::MiniAudioStream* stream = ResolveStream(id);
+		if (!stream || !frames)
+			return 0;
+
+		const std::uint32_t channels = stream->Channels;
+		std::uint32_t pushed = 0;
+		while (pushed < frameCount)
+		{
+			ma_uint32 count = frameCount - pushed;
+			void* buffer = nullptr;
+			if (ma_pcm_rb_acquire_write(&stream->Ring, &count, &buffer) != MA_SUCCESS || count == 0)
+				break;
+
+			std::memcpy(buffer, frames + static_cast<std::size_t>(pushed) * channels, static_cast<std::size_t>(count) * channels * sizeof(float));
+			ma_pcm_rb_commit_write(&stream->Ring, count);
+			pushed += count;
+		}
+		return pushed;
+	}
+
+	std::uint32_t MiniAudioEngine::GetQueuedStreamFrames(AudioSoundId id) const
+	{
+		Internal::MiniAudioStream* stream = ResolveStream(id);
+		return stream ? ma_pcm_rb_available_read(&stream->Ring) : 0;
 	}
 
 	std::optional<std::uint32_t> MiniAudioEngine::ResolveBus(AudioBusId id) const
@@ -615,6 +834,11 @@ namespace Dingo
 		delete slot.Sound;
 		slot.Sound = nullptr;
 		slot.Clip.reset();
+		if (slot.Stream)
+		{
+			DestroyStream(slot.Stream);
+			slot.Stream = nullptr;
+		}
 		++slot.Generation;
 	}
 
@@ -658,7 +882,8 @@ namespace Dingo
 
 	void MiniAudioEngine::SetLooping(AudioSoundId sound, bool looping)
 	{
-		if (Internal::SoundSlot* slot = ResolveSlot(sound))
+		Internal::SoundSlot* slot = ResolveSlot(sound);
+		if (slot && !slot->Stream)
 			ma_sound_set_looping(slot->Sound, looping ? MA_TRUE : MA_FALSE);
 	}
 

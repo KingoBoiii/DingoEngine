@@ -103,6 +103,7 @@ namespace Dingo
 
 		// `string` is UTF-8; a byte that is not valid UTF-8 reads as Latin-1. The atlas bakes
 		// Latin-1, the printable General Punctuation and the euro sign; anything else draws '?'.
+		// A null font draws nothing (warned once).
 		void DrawText(const std::string& string, const Font* font, const glm::vec2& position, float size = 1.0f, const TextParameters& textParameters = {});
 		void DrawText(const std::string& string, const Font* font, const glm::vec3& position, float size = 1.0f, const TextParameters& textParameters = {});
 
@@ -348,6 +349,7 @@ namespace Dingo
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
 		bool m_GpuTimerOpen = false;
+		bool m_NullFontWarned = false;
 		uint64_t m_GpuTimerFrame = 0;
 
 		struct CameraData
