@@ -166,6 +166,7 @@ namespace Dingo
 		bool m_WNav = false;
 		bool m_WNavModal = false;
 		bool m_WNavHide = false;
+		bool m_WNavHud = false;
 		bool m_WNavToggle = false;
 		std::string m_WNavFocus;
 		float m_WNavSlider = 0.5f;
@@ -206,6 +207,8 @@ namespace Dingo
 		uint32_t m_StressMaxExiting = 0;
 		uint32_t m_StressMenuElements = 0;
 		uint32_t m_StressMenuBadCache = 0;
+		uint32_t m_StressMenuTextMisses = 0;
+		uint64_t m_StressLastTextMisses = 0;
 		StressTotals m_StressMenuTotals;
 		StressTotals m_StressHeavyTotals;
 		Internal::DingoUIDebug::Snapshot m_StressSnapshot;

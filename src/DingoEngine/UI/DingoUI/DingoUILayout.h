@@ -15,6 +15,8 @@
 namespace Dingo::Internal
 {
 
+	struct UIWidgetState;
+
 	enum class UIElementKind : uint8_t
 	{
 		Root,
@@ -70,7 +72,7 @@ namespace Dingo::Internal
 		int Layer = 0;
 		bool BlocksInput = true;
 		bool Modal = false;
-		bool Navigable = true;
+		bool Navigable = false;
 		float Scale = 1.0f;
 		UITransition Transition;
 		bool World = false;   // hung on a world point: below the screen roots, far ones first
@@ -78,6 +80,7 @@ namespace Dingo::Internal
 		float Alpha = 1.0f;
 
 		// Widgets
+		UIWidgetState* State = nullptr;  // the widget's state; only valid until the frame's state eviction
 		bool Interactive = false;        // takes the pointer: hover, press, click
 		bool Scroll = false;             // a scroll area: wheel target, children move by ScrollOffset
 		bool Focusable = false;          // can take keyboard and gamepad focus
@@ -120,6 +123,7 @@ namespace Dingo::Internal
 	struct UIWidgetInfo
 	{
 		uint64_t Id = 0;
+		UIWidgetState* State = nullptr;
 		uint64_t NameHash = 0;
 		bool Interactive = false;
 		bool Scroll = false;

@@ -48,7 +48,7 @@ namespace Dingo::Internal::DingoUIDebug
 		bool World = false;
 		bool BlocksInput = true;
 		bool Modal = false;
-		bool Navigable = true;
+		bool Navigable = false;
 		bool HasTransition = false;
 		float TransitionProgress = 1.0f;
 	};

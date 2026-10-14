@@ -18,20 +18,27 @@ namespace Dingo::Internal
 			return (rect.Min + rect.Max) * 0.5f;
 		}
 
-		bool AnyDown(const std::vector<KeyCode>& keys)
+		bool IsDown(KeyCode key) { return InputBackend::IsKeyDownUnconsumed(key); }
+		bool IsPressed(KeyCode key) { return InputBackend::IsKeyPressedUnconsumed(key); }
+
+		uint32_t MaskOf(const std::vector<KeyCode>& keys, bool (*test)(KeyCode))
 		{
-			return std::any_of(keys.begin(), keys.end(), [](KeyCode key) { return InputBackend::IsKeyDownUnconsumed(key); });
+			uint32_t mask = 0;
+			for (size_t i = 0; i < keys.size() && i < 32; ++i)
+			{
+				if (test(keys[i]))
+					mask |= 1u << i;
+			}
+			return mask;
 		}
 
-		bool AnyPressed(const std::vector<KeyCode>& keys)
+		void ConsumeMasked(const std::vector<KeyCode>& keys, uint32_t mask)
 		{
-			return std::any_of(keys.begin(), keys.end(), [](KeyCode key) { return InputBackend::IsKeyPressedUnconsumed(key); });
-		}
-
-		void ConsumeKeys(const std::vector<KeyCode>& keys)
-		{
-			for (const KeyCode key : keys)
-				InputBackend::ConsumeKey(key);
+			for (size_t i = 0; i < keys.size() && i < 32; ++i)
+			{
+				if (mask & (1u << i))
+					InputBackend::ConsumeKey(keys[i]);
+			}
 		}
 
 		const std::vector<KeyCode>& KeysOf(const UINavParams& params, size_t direction)
@@ -160,10 +167,16 @@ namespace Dingo::Internal
 		if (keyboard)
 		{
 			for (size_t direction = 0; direction < k_UINavDirectionCount; ++direction)
-				out.Direction[direction] = AnyDown(KeysOf(params, direction));
-			out.Accept = AnyPressed(params.AcceptKeys);
-			out.Back = AnyPressed(params.BackKeys);
-			if (AnyPressed(params.NextKeys))
+			{
+				out.DirectionKeys[direction] = MaskOf(KeysOf(params, direction), &IsDown);
+				out.Direction[direction] = out.DirectionKeys[direction] != 0;
+			}
+			out.AcceptKeys = MaskOf(params.AcceptKeys, &IsPressed);
+			out.BackKeys = MaskOf(params.BackKeys, &IsPressed);
+			out.NextKeys = MaskOf(params.NextKeys, &IsPressed);
+			out.Accept = out.AcceptKeys != 0;
+			out.Back = out.BackKeys != 0;
+			if (out.NextKeys != 0)
 			{
 				const bool shift = InputBackend::IsKeyDownUnconsumed(Key::LeftShift) || InputBackend::IsKeyDownUnconsumed(Key::RightShift);
 				out.Next = !shift;
@@ -174,7 +187,10 @@ namespace Dingo::Internal
 		if (Input::IsGamepadConnected(gamepad))
 		{
 			for (size_t direction = 0; direction < k_UINavDirectionCount; ++direction)
-				out.Direction[direction] = out.Direction[direction] || InputBackend::IsGamepadButtonDownUnconsumed(DPadOf(direction), gamepad);
+			{
+				out.DirectionPad[direction] = InputBackend::IsGamepadButtonDownUnconsumed(DPadOf(direction), gamepad);
+				out.Direction[direction] = out.Direction[direction] || out.DirectionPad[direction];
+			}
 
 			const glm::vec2 stick = Input::GetGamepadLeftStick(gamepad);
 			const float threshold = params.StickThreshold;
@@ -186,8 +202,10 @@ namespace Dingo::Internal
 					out.Direction[static_cast<size_t>(stick.y < 0.0f ? UINavDirection::Up : UINavDirection::Down)] = true;
 			}
 
-			out.Accept = out.Accept || InputBackend::IsGamepadButtonPressedUnconsumed(params.AcceptButton, gamepad);
-			out.Back = out.Back || InputBackend::IsGamepadButtonPressedUnconsumed(params.BackButton, gamepad);
+			out.AcceptPad = InputBackend::IsGamepadButtonPressedUnconsumed(params.AcceptButton, gamepad);
+			out.BackPad = InputBackend::IsGamepadButtonPressedUnconsumed(params.BackButton, gamepad);
+			out.Accept = out.Accept || out.AcceptPad;
+			out.Back = out.Back || out.BackPad;
 		}
 	}
 
@@ -198,23 +216,26 @@ namespace Dingo::Internal
 			if (!fired.Direction[direction])
 				continue;
 			if (keyboard)
-				ConsumeKeys(KeysOf(params, direction));
-			InputBackend::ConsumeGamepadButton(DPadOf(direction), fired.Gamepad);
+				ConsumeMasked(KeysOf(params, direction), fired.DirectionKeys[direction]);
+			if (fired.DirectionPad[direction])
+				InputBackend::ConsumeGamepadButton(DPadOf(direction), fired.Gamepad);
 		}
 		if (fired.Accept)
 		{
 			if (keyboard)
-				ConsumeKeys(params.AcceptKeys);
-			InputBackend::ConsumeGamepadButton(params.AcceptButton, fired.Gamepad);
+				ConsumeMasked(params.AcceptKeys, fired.AcceptKeys);
+			if (fired.AcceptPad)
+				InputBackend::ConsumeGamepadButton(params.AcceptButton, fired.Gamepad);
 		}
 		if (fired.Back)
 		{
 			if (keyboard)
-				ConsumeKeys(params.BackKeys);
-			InputBackend::ConsumeGamepadButton(params.BackButton, fired.Gamepad);
+				ConsumeMasked(params.BackKeys, fired.BackKeys);
+			if (fired.BackPad)
+				InputBackend::ConsumeGamepadButton(params.BackButton, fired.Gamepad);
 		}
 		if (keyboard && (fired.Next || fired.Previous))
-			ConsumeKeys(params.NextKeys);
+			ConsumeMasked(params.NextKeys, fired.NextKeys);
 	}
 
 }

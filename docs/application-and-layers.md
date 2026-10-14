@@ -420,8 +420,10 @@ fire the gun.
 - **`ImGuiParams::BlockGameInput`** (default `true`) turns this off when `false`: for a tool whose
   game view is itself an ImGui window, where ImGui always holds the mouse.
 - **DingoUI** (`ApplicationParams::DingoUI`, a `DingoUIParams`; `Enabled` by default) sits under
-  ImGui and over your overlays: a press or scroll over one of its blocking panels is marked
-  `Handled`. `DingoUI::IsPointerOverUI()` and `DingoUI::IsCapturingInput()` say whether it has the
+  ImGui and over the overlays you push in the constructor or `OnInitialize`: a press or scroll over
+  one of its blocking panels is marked `Handled`. Both engine layers are pushed at the end of
+  start-up, so an overlay you push later (from `OnUpdate`, say) sits above them and sees a press
+  first; the polled `Input` queries are protected either way. `DingoUI::IsPointerOverUI()` and `DingoUI::IsCapturingInput()` say whether it has the
   pointer; both are `false` headless or with `Enabled = false`.
 
 ```cpp

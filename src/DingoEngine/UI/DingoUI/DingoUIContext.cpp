@@ -10,6 +10,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
+#include "DingoEngine/Graphics/TextLayout.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Texture.h"
 
@@ -46,9 +47,13 @@ namespace Dingo::Internal
 		{
 			if (!font || !font->IsValid() || text.empty())
 				return glm::vec2(0.0f);
-			m_MeasureScratch.assign(text);
-			const TextMetrics metrics = font->MeasureText(m_MeasureScratch, size, maxWidth);
-			return { metrics.Width, metrics.Height };
+			return m_TextCache.Get(font->GetAtlasTexture()->GetId(), size, maxWidth, text, [&]
+			{
+				const TextLayout::FontGlyphSource source(*font);
+				const TextLayout::Measurement measurement = TextLayout::Measure(source, text, { .Size = size, .MaxWidth = maxWidth });
+				return glm::vec2(static_cast<float>(measurement.Width * size),
+					static_cast<float>((source.Ascender - source.Descender) * size + (measurement.LineCount - 1) * source.LineHeight * size));
+			});
 		};
 	}
 
@@ -75,6 +80,8 @@ namespace Dingo::Internal
 
 		ResolveInteraction();
 		ResolveNavigation();
+		if (m_FocusVisible && m_FocusId != 0)
+			m_CapturingInput = true;
 
 		m_Tree.Begin(m_TargetSize);
 		m_ScrollStack.clear();
@@ -336,15 +343,14 @@ namespace Dingo::Internal
 				if (m_LastTree.FindById(id))
 					defaults.insert(id);
 			}
-			m_SeenDefault = std::move(defaults);
+			m_SeenDefault.swap(defaults);
 			if (fresh >= 0)
 				focus = fresh;
 		}
 
 		const UINavInput& in = input.Nav;
 		std::array<bool, k_UINavDirectionCount> pulse{};
-		UINavInput fired;
-		fired.Gamepad = in.Gamepad;
+		UINavInput fired = in;
 		bool moving = false;
 		for (size_t direction = 0; direction < k_UINavDirectionCount; ++direction)
 		{
@@ -353,12 +359,9 @@ namespace Dingo::Internal
 			m_DirectionHeld[direction] = in.Direction[direction];
 			moving = moving || pulse[direction];
 		}
-		fired.Accept = in.Accept;
-		fired.Back = in.Back;
-		fired.Next = in.Next;
-		fired.Previous = in.Previous;
 
 		m_BackPressed = in.Back;
+		const bool ringShown = m_FocusVisible;
 		if (moving || in.Accept || in.Next || in.Previous)
 		{
 			if (!m_FocusVisible)
@@ -382,6 +385,14 @@ namespace Dingo::Internal
 					focus = StepNavOrder(static_cast<int32_t>(m_NavCandidates.size()), focus, in.Next);
 			}
 		}
+		if (!ringShown)
+		{
+			fired.Direction = {};
+			fired.Accept = false;
+			fired.Next = false;
+			fired.Previous = false;
+		}
+		fired.Back = fired.Back && (ringShown || m_ModalActive);
 		if (fired.Any())
 			ConsumeNavInput(fired, input.KeyboardAvailable, nav);
 
@@ -440,10 +451,11 @@ namespace Dingo::Internal
 		return id;
 	}
 
-	void DingoUIContext::BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll, const glm::vec2& scrollOffset, const UIStyle* thumbStyle)
+	void DingoUIContext::BeginWidgetBox(uint64_t id, UIWidgetState* state, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll, const glm::vec2& scrollOffset, const UIStyle* thumbStyle)
 	{
 		UIWidgetInfo info;
 		info.Id = id;
+		info.State = state;
 		info.NameHash = UILayoutTree::HashName(label);
 		info.Interactive = interactive;
 		info.Scroll = scroll;
@@ -627,13 +639,13 @@ namespace Dingo::Internal
 		if (!CanDeclare())
 			return;
 
-		const Font* font = params.TextFont ? params.TextFont : (m_StyleStack.back().TextFont ? m_StyleStack.back().TextFont : m_Params.DefaultFont);
+		const Font* font = params.TextFont ? params.TextFont : (m_StyleStack.back().TextFont ? m_StyleStack.back().TextFont : m_DefaultFont);
 		if (!font || !font->IsValid())
 		{
 			if (!m_WarnedNoFont)
 			{
 				m_WarnedNoFont = true;
-				DE_CORE_WARN("DingoUI: Text has no usable font (set DingoUIParams::DefaultFont, DingoUI::SetDefaultFont or UITextParams::TextFont); text is skipped");
+				DE_CORE_WARN("DingoUI: Text has no usable font (set DingoUI::SetDefaultFont or UITextParams::TextFont); text is skipped");
 			}
 			return;
 		}
@@ -673,6 +685,7 @@ namespace Dingo::Internal
 			DE_PROFILE_SCOPE("DingoUI::Layout");
 			const UICpuTimer timer;
 			m_Tree.Layout(m_Measure);
+			m_TextCache.Advance();
 			m_FrameCosts.LayoutMs = timer.ElapsedMs();
 		}
 
@@ -680,7 +693,7 @@ namespace Dingo::Internal
 		{
 			if (!element.Interactive && !element.Scroll)
 				continue;
-			if (UIWidgetState* state = m_States.Find(element.Id))
+			if (UIWidgetState* state = element.State)
 			{
 				state->LastRect = element.Rect;
 				if (element.Scroll)
@@ -727,7 +740,8 @@ namespace Dingo::Internal
 		const std::vector<UIElement>& elements = m_Tree.GetElements();
 
 		m_Tree.GetRootOrder(m_RootOrder);
-		std::vector<UIRootTransitions::Entry*> declared(m_RootOrder.size(), nullptr);
+		std::vector<UIRootTransitions::Entry*>& declared = m_DeclaredScratch;
+		declared.assign(m_RootOrder.size(), nullptr);
 		for (size_t i = 0; i < m_RootOrder.size(); ++i)
 		{
 			const UIElement& root = elements[m_RootOrder[i]];

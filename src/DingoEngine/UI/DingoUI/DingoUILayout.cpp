@@ -203,7 +203,7 @@ namespace Dingo::Internal
 		element.Layer = params.Layer;
 		element.BlocksInput = params.BlocksInput;
 		element.Modal = params.Modal;
-		element.Navigable = params.Navigable;
+		element.Navigable = params.Navigable || params.Modal;
 		element.Transition = params.Transition;
 		m_Open.push_back(index);
 		m_OpenIdDepth.push_back(static_cast<uint32_t>(m_IdStack.size()));
@@ -244,6 +244,7 @@ namespace Dingo::Internal
 			element.Id = widget->Id;
 			element.NameHash = widget->NameHash;
 			element.Interactive = widget->Interactive;
+			element.State = widget->State;
 			element.Scroll = widget->Scroll;
 			element.Focusable = widget->Focusable;
 			element.DefaultFocus = widget->DefaultFocus;

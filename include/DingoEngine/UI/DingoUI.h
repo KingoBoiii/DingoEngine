@@ -78,7 +78,7 @@ namespace Dingo
 	/// through its params. All sizes are design pixels. Chain the setters.
 	struct UIStyle
 	{
-		/// The font of widget text; null uses the DefaultFont.
+		/// The font of widget text; null uses the font set with DingoUI::SetDefaultFont.
 		const Font* TextFont = nullptr;
 		float TextSize = 18.0f;                                 ///< Height of a line of widget text.
 		glm::vec4 TextColor{ 0.95f, 0.96f, 1.0f, 1.0f };        ///< Widget text.
@@ -232,11 +232,6 @@ namespace Dingo
 		/// Create the game UI. It costs nothing while no element is declared; off, every DingoUI
 		/// call returns an empty result. A headless application never has one.
 		bool Enabled = true;
-		/// The font Text uses when its UITextParams names none. The game owns it and must keep it
-		/// alive while it is set; DingoUI::SetDefaultFont changes it at run time, which is how a
-		/// game that loads its font after the Application exists sets it. Text with no font at all
-		/// warns once and is skipped.
-		Font* DefaultFont = nullptr;
 		/// The theme the widgets start from; DingoUI::SetTheme changes it at run time.
 		UIStyle Style;
 		/// Keyboard and gamepad navigation.
@@ -473,9 +468,11 @@ namespace Dingo
 		/// declared earlier) get no hover or clicks, and every press and scroll, wherever the
 		/// pointer is, is taken from the game.
 		bool Modal = false;
-		/// The widgets of this root can take keyboard and gamepad focus. A root that does not block
-		/// input never does; turn this off for a permanent panel of a game that uses the arrow keys itself.
-		bool Navigable = true;
+		/// The widgets of this root can take keyboard and gamepad focus, and the keys and buttons
+		/// that move it are then taken from the game. Off by default, so a HUD never touches the
+		/// game's keys; turn it on for a menu. A Modal root is always navigable. A root that does
+		/// not block input never is.
+		bool Navigable = false;
 		/// The root's own layout; its Width and Height are the root's size.
 		UIBoxParams Layout;
 		/// How the root appears and leaves; the default does neither. While a root is appearing it
@@ -584,7 +581,7 @@ namespace Dingo
 		bool Wrap = true;
 		float MaxWidth = 0.0f;              ///< Wrap at this many design pixels at most; 0 for none.
 		UISize Width;                       ///< Width of the element; Fit is the text's own width, shrunk to what the parent has when Wrap is on.
-		const Font* TextFont = nullptr;     ///< The font; null uses the DefaultFont.
+		const Font* TextFont = nullptr;     ///< The font; null uses the font set with DingoUI::SetDefaultFont.
 
 		/// Sets Size.
 		UITextParams& SetSize(float size) { Size = size; return *this; }
@@ -761,7 +758,7 @@ namespace Dingo
 		/// Closes the box opened by the matching BeginBox.
 		static void EndBox();
 		/// Adds text to the current container. Skipped, with one warning, when neither `params`
-		/// nor DingoUIParams::DefaultFont names a font. `text` is UTF-8; it is copied.
+		/// nor DingoUI::SetDefaultFont names a font. `text` is UTF-8; it is copied.
 		static void Text(std::string_view text, const UITextParams& params = {});
 		/// Adds a picture to the current container. A null texture draws the tint alone, with no
 		/// size of its own.
@@ -831,15 +828,17 @@ namespace Dingo
 
 		/// Sets the font Text uses when its params name none. Pass nullptr before deleting the font.
 		static void SetDefaultFont(Font* font);
-		/// The font set by DingoUIParams::DefaultFont or SetDefaultFont, or nullptr.
+		/// The font set by SetDefaultFont, or nullptr.
 		static Font* GetDefaultFont();
 
 		/// True while the pointer is over an element that blocks input (as of the last frame's
 		/// layout) or a modal root is up. A press or scroll that lands there is hidden from Input
 		/// (the button reads up until it is released); this is for a game that wants the picture anyway.
 		static bool IsPointerOverUI();
-		/// True while the UI holds the pointer (a press it took and has not released, a widget being
-		/// held, or a modal root), so the game should leave that input alone.
+		/// True while the UI holds the input (a press it took and has not released, a widget being
+		/// held, a modal root, or the focus ring showing), so the game should leave that input
+		/// alone. The left stick is never hidden from Input::GetGamepadLeftStick, so a game that
+		/// does not want its character to walk while the stick moves the focus checks this first.
 		static bool IsCapturingInput();
 
 		/// Gives the focus to the widget `label` names, declared in the container this is called
@@ -849,9 +848,9 @@ namespace Dingo
 		/// True while the player navigates with keys or a pad, false once the mouse moves again.
 		/// Focus rings and UIInteraction::Focused show only while it is true.
 		static bool IsFocusVisible();
-		/// True for the frame the back input (Escape, pad B by default) went down while a root with
-		/// focusable widgets is up. Those inputs are then hidden from Input, so a pause key does not
-		/// also fire; use this to close the menu instead.
+		/// True for the frame the back input (Escape, pad B by default) went down while a navigable
+		/// root is up. It is hidden from Input only while the focus ring shows or a modal root is
+		/// up, so a pause key is not also read by the game then; use this to close the menu instead.
 		static bool IsBackPressed();
 	};
 

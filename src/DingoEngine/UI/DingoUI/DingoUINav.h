@@ -32,6 +32,16 @@ namespace Dingo::Internal
 		bool Previous = false;
 		uint32_t Gamepad = 0; // the pad whose buttons were read, and whose buttons are taken from the game
 
+		// Which source gave each action, so only that input is taken from the game: bit i is the i-th
+		// key of the action's list in UINavParams, and the pad flags are the D-pad and buttons (never the stick).
+		std::array<uint32_t, k_UINavDirectionCount> DirectionKeys{};
+		std::array<bool, k_UINavDirectionCount> DirectionPad{};
+		uint32_t AcceptKeys = 0;
+		uint32_t BackKeys = 0;
+		uint32_t NextKeys = 0;
+		bool AcceptPad = false;
+		bool BackPad = false;
+
 		bool Any() const { return Direction[0] || Direction[1] || Direction[2] || Direction[3] || Accept || Back || Next || Previous; }
 	};
 

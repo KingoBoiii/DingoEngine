@@ -2,6 +2,7 @@
 
 #include "DingoEngine/UI/DingoUI/DingoUILayout.h"
 #include "DingoEngine/UI/DingoUI/DingoUINav.h"
+#include "DingoEngine/Core/InputBackend.h"
 
 #include <vector>
 
@@ -153,4 +154,22 @@ TEST_CASE("UINav: the tree carries the focus flags of a widget and the navigable
 	tree.GetRootOrder(order);
 	REQUIRE(order.size() == 1);
 	CHECK(order[0] == 0);
+}
+
+TEST_CASE("UINav: a direction consumes the held direction key and leaves the other keys")
+{
+	InputBackend::ClearConsumed();
+	const UINavParams params;
+	InputBackend::SimulateKey(Key::Left, true);
+	InputBackend::SimulateKey(Key::Up, true);
+	UINavInput fired;
+	ReadNavInput(fired, true, params, 0);
+	fired.Direction[static_cast<size_t>(UINavDirection::Up)] = false;
+	ConsumeNavInput(fired, true, params);
+	CHECK_FALSE(Input::IsKeyDown(Key::Left));
+	CHECK(Input::IsKeyDown(Key::Up));
+
+	InputBackend::SimulateKey(Key::Left, false);
+	InputBackend::SimulateKey(Key::Up, false);
+	InputBackend::ClearConsumed();
 }

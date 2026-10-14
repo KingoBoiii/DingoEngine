@@ -132,6 +132,8 @@ namespace Dingo
 		m_StressMaxExiting = 0;
 		m_StressMenuElements = 0;
 		m_StressMenuBadCache = 0;
+		m_StressMenuTextMisses = 0;
+		m_StressLastTextMisses = 0;
 		m_StressMenuTotals = {};
 		m_StressHeavyTotals = {};
 		m_StressMode = false;
@@ -1569,7 +1571,15 @@ namespace Dingo
 		if (!m_WNav)
 			return;
 		const char* const names[] = { "N1", "N2", "N3", "N4", "N5", "N6" };
-		DingoUI::BeginRoot("n_main", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
+		if (m_WNavHud)
+		{
+			DingoUI::BeginRoot("n_hud", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams().SetPadding(10.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f })));
+			DingoUI::Button("HUD1", UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+		}
+		else
+		{
+		DingoUI::BeginRoot("n_main", UIRootParams().SetNavigable(true).SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
 			.SetWidth(UISize::Fixed(500.0f)).SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f })));
 		for (int row = 0; row < 2; ++row)
 		{
@@ -1593,6 +1603,7 @@ namespace Dingo
 		m_WNavResult[6] = DingoUI::Slider("NVol", &m_WNavSlider, 0.0f, 1.0f, UISliderParams().SetWidth(UISize::Grow()));
 		m_WNavResult[7] = DingoUI::Toggle("NTog", &m_WNavToggle);
 		DingoUI::EndRoot();
+		}
 
 		if (m_WNavModal)
 		{
@@ -1889,6 +1900,94 @@ namespace Dingo
 			Check(focusedIs("N5"), "Navigation: the Down key moves the focus");
 			Check(!Input::IsKeyDown(Key::Down), "Navigation: the arrow key the UI took is hidden from the game");
 			InputBackend::SimulateKey(Key::Down, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			m_WNavHud = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			InputBackend::SimulateKey(Key::Down, true);
+			InputBackend::SimulateKey(Key::Space, true);
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(Input::IsKeyDown(Key::Down) && Input::IsKeyDown(Key::Space) && Input::IsKeyDown(Key::Escape), "Navigation: a HUD root with a button takes no arrow, Space or Escape from the game");
+			Check(!DingoUI::IsBackPressed(), "Navigation: a HUD root does not report back");
+			InputBackend::SimulateKey(Key::Down, false);
+			InputBackend::SimulateKey(Key::Space, false);
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavModal = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed() && !Input::IsKeyDown(Key::Escape), "Navigation: a modal root takes Escape and reports it as back");
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavModal = false;
+			m_WNavHud = false;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty + glm::vec2(20.0f, 0.0f));
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsFocusVisible(), "Navigation: the ring is hidden before the reveal press");
+			idle();
+			InputBackend::SimulateKey(Key::Down, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsFocusVisible() && Input::IsKeyDown(Key::Down), "Navigation: the press that only reveals the ring stays with the game");
+			InputBackend::SimulateKey(Key::Down, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Space, true);
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Enter, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(!Input::IsKeyDown(Key::Enter) && Input::IsKeyDown(Key::Space), "Navigation: only the key that was pressed is taken, a held Space stays with the game");
+			InputBackend::SimulateKey(Key::Space, false);
+			InputBackend::SimulateKey(Key::Enter, false);
 			idle();
 			return done();
 		}
@@ -2593,6 +2692,10 @@ namespace Dingo
 			m_StressMenuElements = static_cast<uint32_t>(elements.size());
 			if (frameInPhase >= 3 && (render.CacheHits != 1 || render.Uploads != 0))
 				++m_StressMenuBadCache;
+			const uint64_t textMisses = context.GetTextCache().Misses();
+			if (frameInPhase >= 3 && textMisses != m_StressLastTextMisses)
+				++m_StressMenuTextMisses;
+			m_StressLastTextMisses = textMisses;
 		}
 		else
 		{
@@ -2608,6 +2711,7 @@ namespace Dingo
 
 		Check(m_StressBadSnapshots == 0, "Stress: the debug snapshot matched the context on every frame, " + std::to_string(m_StressBadSnapshots) + " mismatches");
 		Check(m_StressMenuElements >= 400 && m_StressMenuElements <= 700, "Stress: the menu has about 500 elements, got " + std::to_string(m_StressMenuElements));
+		Check(m_StressMenuTextMisses == 0 && context.GetTextCache().Hits() > 0, "Stress: the still menu measures no text anew from its fourth frame on, " + std::to_string(m_StressMenuTextMisses) + " frames did");
 		Check(m_StressMenuBadCache == 0, "Stress: the still menu hits the vertex cache from its fourth frame on, " + std::to_string(m_StressMenuBadCache) + " frames did not");
 		Check(m_StressBadDraws == 0, "Stress: every UI frame was one draw call, " + std::to_string(m_StressBadDraws) + " were not");
 		const uint32_t limit = m_StressStableWidgets + m_StressWorldDeclared + 3 * 100 + 64;

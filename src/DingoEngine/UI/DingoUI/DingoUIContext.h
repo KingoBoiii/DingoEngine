@@ -4,6 +4,7 @@
 #include "DingoUILayout.h"
 #include "DingoUINav.h"
 #include "DingoUIState.h"
+#include "DingoUITextCache.h"
 #include "DingoUITween.h"
 
 #include <glm/glm.hpp>
@@ -89,6 +90,7 @@ namespace Dingo::Internal
 		// What the last EndFrame drew; zero when it drew nothing.
 		const UIRenderStatistics& GetRenderStatistics() const { return m_RenderStatistics; }
 		const UIFrameCosts& GetFrameCosts() const { return m_FrameCosts; }
+		const UITextMetricsCache& GetTextCache() const { return m_TextCache; }
 
 		// The declarations. Valid between BeginFrame and EndFrame; false outside, with a warning once.
 		bool BeginRoot(std::string_view name, const UIRootParams& params);
@@ -125,8 +127,8 @@ namespace Dingo::Internal
 		void OnTextureDestroyed(const Texture* texture);
 		const UITweenMap& GetTweens() const { return m_Tweens; }
 
-		void SetDefaultFont(Font* font) { m_Params.DefaultFont = font; }
-		Font* GetDefaultFont() const { return m_Params.DefaultFont; }
+		void SetDefaultFont(Font* font) { m_DefaultFont = font; }
+		Font* GetDefaultFont() const { return m_DefaultFont; }
 
 		// Last frame's elements with their final rects, in target pixels: what the next frame's
 		// hit-testing reads. Replaced by EndFrame.
@@ -177,7 +179,7 @@ namespace Dingo::Internal
 		UIInteraction Interact(uint64_t id, std::string_view label, bool enabled, UIWidgetState*& state);
 		// 0 (with a warning once) when no root is open.
 		uint64_t WidgetId(std::string_view label);
-		void BeginWidgetBox(uint64_t id, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll = false, const glm::vec2& scrollOffset = glm::vec2(0.0f), const UIStyle* thumbStyle = nullptr);
+		void BeginWidgetBox(uint64_t id, UIWidgetState* state, std::string_view label, const UIBoxParams& box, bool interactive, bool scroll = false, const glm::vec2& scrollOffset = glm::vec2(0.0f), const UIStyle* thumbStyle = nullptr);
 		const UIStyle& Resolve(const UIStyle* override) const { return override ? *override : m_StyleStack.back(); }
 		// Steps the widget's looks toward `hover`, `press`, `focus` and `on` by the style's transition and returns them eased.
 		std::array<float, 4> StepLook(UIWidgetState& state, const UIStyle& style, bool hover, bool press, bool focus, bool on) const;
@@ -186,6 +188,7 @@ namespace Dingo::Internal
 
 	private:
 		DingoUIParams m_Params;
+		Font* m_DefaultFont = nullptr;
 		Framebuffer* m_Target = nullptr;
 		const UIInputState* m_InputOverride = nullptr;
 		glm::vec2 m_DebugOrigin{ 0.0f };
@@ -193,7 +196,7 @@ namespace Dingo::Internal
 		UILayoutTree m_Tree;
 		UILayoutTree m_LastTree;
 		UITextMeasureFn m_Measure;
-		std::string m_MeasureScratch;
+		UITextMetricsCache m_TextCache;
 		glm::vec2 m_TargetSize{ 0.0f };
 		glm::vec2 m_WindowToTarget{ 1.0f };
 		bool m_InFrame = false;
@@ -244,6 +247,8 @@ namespace Dingo::Internal
 		std::array<bool, k_UINavDirectionCount> m_DirectionHeld{};
 		std::unordered_map<uint64_t, uint64_t> m_RootFocus;
 		std::unordered_set<uint64_t> m_SeenDefault;
+		std::unordered_set<uint64_t> m_DefaultScratch;
+		std::vector<UIRootTransitions::Entry*> m_DeclaredScratch;
 		uint64_t m_FocusId = 0;
 		uint64_t m_FocusRootId = 0;
 		uint64_t m_SavedFocusId = 0;

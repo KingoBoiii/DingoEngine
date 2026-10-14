@@ -14,6 +14,13 @@ Items the plan's "As built" notes already leave open (U9's metrics cache idea, n
 |---|---|---|
 | [U1](#u1) | fixed (commit pending) | `Internal::DingoUIOnTextureDestroyed` (`DingoUITextureHook.h`), called from `NvrhiTexture::Destroy` and its destructor, so a font's atlas is covered: an exiting root whose kept commands draw the texture is erased, a still-declared one's `Kept` is emptied (dropped if it then exits), and the batcher drops its cached upload when a batch binds it. No-op without a context. `UIDrawList::AddText` now skips a font with no atlas, so every kept font is freed through the hook. `--test=dingoui` "Free:" checks (font freed after the last declared frame, texture freed mid-exit, next frame rebuilds); not run under ASan. `docs/game-ui.md` says freeing mid-exit is safe and ends the exit. |
 | [F1](#f1) | fixed (commit pending) | `UIDrawList::Hash` mixes 8-byte words: one header word (kind, flags, text length), one id word, each command's floats as one block, text in 8-byte chunks with a sized tail. New `UIRenderStatistics::HashMs`, shown in the F9 DingoUI tab. Existing cache-hit/upload checks in `--test=dingoui` and the 153 unit tests pass; not re-benchmarked. |
+| [N1](#n1) | fixed (commit pending) | `UIRootParams::Navigable` is off by default; only a `Modal` root or `SetNavigable(true)` joins focus navigation (`DingoUILayout.cpp` `BeginRootScaled`). The press that reveals the ring is not consumed, and Back is consumed only while the ring shows or a modal is up. HUD recipe in `docs/game-ui.md`. `--test=dingoui` stages: HUD root takes no arrows/Back/Space, the reveal press stays with the game, a modal takes Escape; the menu stages call `SetNavigable(true)`. |
+| [N2](#n2) | fixed (commit pending) | `ReadNavInput` records the keys and pad buttons actually down (or pressed) this frame in `UINavInput`; `ConsumeNavInput` consumes only those. The stick is not consumed (documented; games gate their own read with `DingoUI::IsCapturingInput()`). Test-app stage: a held Space stays with the game; unit case for a single direction key. |
+| [F2](#f2) | fixed (commit pending) | `UITextMetricsCache` (`DingoUITextCache.h`): two generations keyed on atlas id, size, max width and text hash, `string_view` lookup, no allocation on a hit. 4 unit cases, plus a stress check that the still menu measures no text anew from its fourth frame. Release `--dingoui=stress`, menu500 (3 runs): DingoUIMs 0.160 / 0.180 / 0.179 (HEAD with F1: 0.196-0.200; before F1: 0.216-0.250), layout 0.087-0.100 (HEAD 0.111-0.113); heavy 3.4-4.0 ms (before 4.0-5.1). Still above the 0.1 ms menu budget. |
+| [F3](#f3) | fixed (commit pending) | `UIElement::State` holds the `UIWidgetState*` found at declare time, so `EndFrame` and `BeginWidgetBox` do not look it up again; the default-seen and declared-id scratch containers are members reused every frame. |
+| [A1](#a1) | fixed (commit pending) | `DingoUIParams::DefaultFont` removed; `DingoUI::SetDefaultFont` is the only way. Test app, docs and header comments updated; no example used the field. |
+| [D1](#d1) | fixed (commit pending) | `docs/game-ui.md` names `Input::GetMouseScrollDelta` and no longer mentions `UIInputState::DeltaTime`. |
+| [I1](#i1) | fixed (commit pending) | Docs corrected, `LayerStack` unchanged (owner's call). `Application::Initialize` pushes the DingoUI and ImGui layers last, so only overlays pushed after start-up sit above them; `docs/application-and-layers.md` and `.claude/reference/engine-patterns.md` say so. |
 
 ---
 
@@ -22,14 +29,14 @@ Items the plan's "As built" notes already leave open (U9's metrics cache idea, n
 | ID | Severity | Area | Finding | Status |
 |---|---|---|---|---|
 | [U1](#u1) | High | Lifetime / renderer | An exiting root's kept commands dereference textures and fonts the game has already freed | fixed |
-| [N1](#n1) | Medium | Input core | With default params, one focusable HUD widget takes the arrows, Space, Enter, Escape, Tab and the pad's D-pad/A/B from the game | open |
+| [N1](#n1) | Medium | Input core | With default params, one focusable HUD widget takes the arrows, Space, Enter, Escape, Tab and the pad's D-pad/A/B from the game | fixed |
 | [F1](#f1) | Medium | Performance / renderer | The vertex-cache hash runs byte by byte every drawn frame, outside every phase timer | fixed |
-| [F2](#f2) | Medium | Performance | Every text is re-measured through msdf's maps every frame, with a string copy per measure | open |
-| [F3](#f3) | Low | Performance | A second state lookup per widget and two heap allocations every frame | open |
-| [N2](#n2) | Low | Input core | Nav consumption takes every key bound to an action, not the one pressed; the stick is never consumed | open |
-| [I1](#i1) | Low | Input core / docs | Game overlays sit above the ImGui and DingoUI layers in event order, against the docs | open |
-| [A1](#a1) | Low | API | `DingoUIParams::DefaultFont` can't be used: no `Font` can exist before the `Application` | open |
-| [D1](#d1) | Low | Docs | `docs/game-ui.md` names `Input::GetScroll` (doesn't exist) and the internal `UIInputState` | open |
+| [F2](#f2) | Medium | Performance | Every text is re-measured through msdf's maps every frame, with a string copy per measure | fixed |
+| [F3](#f3) | Low | Performance | A second state lookup per widget and two heap allocations every frame | fixed |
+| [N2](#n2) | Low | Input core | Nav consumption takes every key bound to an action, not the one pressed; the stick is never consumed | fixed |
+| [I1](#i1) | Low | Input core / docs | Game overlays sit above the ImGui and DingoUI layers in event order, against the docs | fixed |
+| [A1](#a1) | Low | API | `DingoUIParams::DefaultFont` can't be used: no `Font` can exist before the `Application` | fixed |
+| [D1](#d1) | Low | Docs | `docs/game-ui.md` names `Input::GetScroll` (doesn't exist) and the internal `UIInputState` | fixed |
 
 Checked and found sound (no finding):
 - **Consume mask** (`Input.cpp` `Update`, ~:228-253): a consumed key, button or pad button reads as up from press to release, the release frame included, and the next press after it is visible. `IsAny*` honour it. Engine F3–F9 keys use `IsKeyPressedUnconsumed`. `Resume` and `RequestRestart` paths leave no stuck bits (`Application.cpp:225-231`, the context's destructor).

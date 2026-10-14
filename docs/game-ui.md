@@ -38,9 +38,9 @@ void MenuLayer::OnUpdate(float deltaTime)
 
 ## The font
 
-`Text` needs a font. Set it once, on `ApplicationParams::DingoUI.DefaultFont` if you have one
-before the `Application` exists, or with `DingoUI::SetDefaultFont(font)` after you load it (the font
-stays yours: unset it before you destroy it). `UITextParams::SetFont` overrides it per text. A text
+`Text` needs a font. Load one once the graphics device exists (`OnInitialize` or a layer's
+`OnAttach`) and give it to `DingoUI::SetDefaultFont(font)` (the font stays yours: unset it before you
+destroy it). `UITextParams::SetFont` overrides it per text. A text
 with no usable font is skipped, with one warning in the log.
 
 ## Roots
@@ -175,7 +175,7 @@ Three ways to change it:
   `GetStyle()` returns the current one.
 - **One widget**: `UIWidgetParams::SetStyle(&style)` (also on `UISliderParams`, `UIScrollParams`).
 
-`TextFont` null falls back to `DingoUIParams::DefaultFont` / `SetDefaultFont`. Plain `Text` keeps its
+`TextFont` null falls back to the font set with `DingoUI::SetDefaultFont`. Plain `Text` keeps its
 own size and colour but takes the style's font when its params name none.
 
 `BeginPanel(params)` / `EndPanel()` open a box dressed from the style: `PanelColor` (or the `Panel`
@@ -219,13 +219,13 @@ click can't go through to a button that appears under it. Where roots overlap, t
 (`UIRootParams::SetModal`) takes everything on the screen, also where it draws nothing.
 
 When the pointer is over a part of a blocking root that draws something, a press or scroll there is
-consumed: `Input::IsMouseButtonPressed/Down` and `Input::GetScroll` read as not happening for the game,
+consumed: `Input::IsMouseButtonPressed/Down` and `Input::GetMouseScrollDelta` read as not happening for the game,
 and a consumed button stays up until the player releases it, so a drag that began on the UI
 never turns into a game click on the way out. A root with `BlocksInput = false` never consumes.
 
 - `DingoUI::IsPointerOverUI()`: the pointer is over a blocking element (or a modal is up).
-- `DingoUI::IsCapturingInput()`: the UI holds the pointer: a press it took is still held, or a modal
-  is up. Keep game drag-and-drop and camera input off while it is `true`.
+- `DingoUI::IsCapturingInput()`: the UI holds the input: a press it took is still held, a modal
+  is up, or the focus ring is showing. Keep game drag-and-drop and camera input off while it is `true`.
 
 ## Keyboard and gamepad focus
 
@@ -236,18 +236,26 @@ declaration order. Enter, Space or pad A accepts: a Button, Selectable or Toggle
 and a focused Slider steps with Left and Right instead of moving the focus. Escape or pad B is
 reported by `DingoUI::IsBackPressed()` for the frame it went down.
 
-- Only roots that block input and have `Navigable` set (the default) take part, so a HUD that
-  does not block input never takes the arrow keys from the game. A `Modal` root confines the focus
-  to itself; closing it gives the focus back to the widget it interrupted.
+- Only a `Modal` root, or a root that blocks input and sets `UIRootParams::SetNavigable(true)`, takes
+  part in navigation. Every other screen root is a HUD: its widgets work with the mouse and never
+  touch the game's keys. A `Modal` root confines the focus to itself; closing it gives the focus
+  back to the widget it interrupted.
 - The first widget with `DefaultFocus` set the frame it appears gets the focus; without one the
   first widget does. A focused widget that vanishes hands the focus to its nearest neighbour.
 - `DingoUI::SetFocus(label)` focuses a widget from code. Call it in the container the widget is
   declared in, with the same label, and it takes effect next frame.
 - The ring (`UIStyle::FocusedColor`, `FocusWidth`) and `UIInteraction::Focused` show only while the
   player navigates: moving the mouse hides them (`DingoUI::IsFocusVisible()`), and the first key or
-  pad press afterwards only brings the ring back without moving it.
-- While a root with focusable widgets is up, the keys and pad buttons the UI acted on read as not
-  pressed in `Input`, so a pause key bound to Escape does not also fire; use `IsBackPressed()`.
+  pad press afterwards only brings the ring back without moving it. That press is not taken from
+  the game.
+- While the ring is showing, or a modal root is up, the keys and pad buttons the UI acted on read as
+  not pressed in `Input`, so a pause key bound to Escape does not also fire; use `IsBackPressed()`.
+  Only the input that is actually down is taken: Enter pressed while Space is held leaves Space alone,
+  and a keyboard direction leaves the D-pad alone. Back is reported by `IsBackPressed()` whenever a
+  navigable root is up, but taken from `Input` only in the two cases above.
+- The left stick moves the focus but is never hidden from `Input::GetGamepadLeftStick`. A game that
+  does not want its character to walk while the stick moves the focus checks
+  `DingoUI::IsCapturingInput()` (true while the ring shows or a modal is up) before it reads the stick.
 - `DingoUIParams::Nav` (`UINavParams`) turns navigation off or rebinds the keys, the pad buttons and
   the repeat timing. With `KeyboardAvailable` off (a capturing ImGui) the keys are ignored and the pad
   still works. `UIWidgetParams::SetFocusable(false)` skips a widget.
@@ -258,6 +266,21 @@ if (DingoUI::Button("Resume", UIWidgetParams().SetDefaultFocus()).Clicked) Resum
 if (DingoUI::Button("Quit").Clicked) Quit();
 DingoUI::EndRoot();
 if (DingoUI::IsBackPressed()) Resume();
+```
+
+**The HUD recipe.** A HUD with a clickable button (pause, an inventory slot) needs no setting: a
+default root blocks the pointer over its elements, so a click on the button does not also reach the
+game, and it never takes an arrow key, Space, Enter, Escape or Tab. A menu that is not modal, such as
+a main menu, opts in with `SetNavigable(true)`:
+
+```cpp
+DingoUI::BeginRoot("hud", UIRootParams().SetAnchor(UIAnchor::TopRight));
+if (DingoUI::Button("Pause").Clicked) Pause();
+DingoUI::EndRoot();
+
+DingoUI::BeginRoot("main_menu", UIRootParams().SetAnchor(UIAnchor::Center).SetNavigable(true));
+if (DingoUI::Button("Play", UIWidgetParams().SetDefaultFocus()).Clicked) Play();
+DingoUI::EndRoot();
 ```
 
 ## Tweens and transitions
@@ -282,7 +305,7 @@ block the widgets under it. Freeing a texture or font it drew ends the exit at o
 and are applied to the drawn vertices, so a transitioning UI is still one draw call, and the frame
 after the animation draws from the cache again.
 
-The animations run on the real frame time (`UIInputState::DeltaTime`). The engine has no time scale,
+The animations run on the real frame time (the `OnUpdate` delta). The engine has no time scale,
 so they keep running while a scene is paused.
 
 ## World-space UI

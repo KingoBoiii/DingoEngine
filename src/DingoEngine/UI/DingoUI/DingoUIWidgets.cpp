@@ -153,7 +153,7 @@ namespace Dingo::Internal
 			ApplyFace(box, style, FaceOf(result, params.Enabled));
 		ApplyRing(box, style, animate ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
-		BeginWidgetBox(id, label, box, params.Enabled);
+		BeginWidgetBox(id, state, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
 		return result;
@@ -189,7 +189,7 @@ namespace Dingo::Internal
 		const bool animate = style.TransitionDuration > 0.0f && params.Enabled;
 		ApplyRing(row, style, animate ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
-		BeginWidgetBox(id, label, row, params.Enabled);
+		BeginWidgetBox(id, state, label, row, params.Enabled);
 
 		glm::vec4 trackColor = style.TrackColor;
 		if (!params.Enabled)
@@ -282,7 +282,7 @@ namespace Dingo::Internal
 		track.Direction = UIDirection::Row;
 		track.Align = UIAlign::Center;
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, true };
-		BeginWidgetBox(id, label, track, params.Enabled);
+		BeginWidgetBox(id, state, label, track, params.Enabled);
 
 		const auto leaf = [this](const UIBoxParams& box)
 		{
@@ -350,7 +350,7 @@ namespace Dingo::Internal
 
 		UIBoxParams bar = Solid(width, height, params.Enabled ? style.TrackColor : style.DisabledColor, style.ProgressSize.y * 0.5f);
 		bar.Direction = UIDirection::Row;
-		BeginWidgetBox(id, idText, bar, false);
+		BeginWidgetBox(id, state, idText, bar, false);
 		if (t > 0.0f)
 			leaf(Solid(UISize::Grow(t), UISize::Grow(1.0f), params.Enabled ? style.ProgressFillColor : style.DisabledTextColor, style.ProgressSize.y * 0.5f));
 		if (t > 0.0f && t < 1.0f)
@@ -409,7 +409,7 @@ namespace Dingo::Internal
 		}
 		ApplyRing(box, style, style.TransitionDuration > 0.0f && params.Enabled ? look[2] : (result.Focused ? 1.0f : 0.0f));
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
-		BeginWidgetBox(id, label, box, params.Enabled);
+		BeginWidgetBox(id, state, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
 		m_Tree.EndBox();
 		return result;
@@ -444,7 +444,7 @@ namespace Dingo::Internal
 		offset.y = std::clamp(offset.y, 0.0f, range);
 		state->ScrollOffset = offset;
 
-		BeginWidgetBox(id, label, params.Layout, params.DragScroll, true, offset, params.Style);
+		BeginWidgetBox(id, state, label, params.Layout, params.DragScroll, true, offset, params.Style);
 		m_ScrollStack.push_back(id);
 		return true;
 	}
