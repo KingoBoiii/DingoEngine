@@ -6,6 +6,7 @@
 #include "DingoEngine/Scene/Components.h"
 #include "DingoEngine/Scene/Scene.h"
 #include "DingoEngine/Scene/SceneData.h"
+#include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
 #include <algorithm>
@@ -22,13 +23,6 @@ namespace Dingo
 			namespace
 			{
 
-				std::vector<std::pair<Scene*, SceneData*>>& Scenes()
-				{
-					// Leaked: a Scene destroyed during static destruction still unregisters.
-					static auto* s_Scenes = new std::vector<std::pair<Scene*, SceneData*>>();
-					return *s_Scenes;
-				}
-
 				std::string EntityName(const entt::registry& registry, entt::entity handle)
 				{
 					const TagComponent* tag = registry.try_get<TagComponent>(handle);
@@ -37,23 +31,12 @@ namespace Dingo
 
 			}
 
-			void RegisterScene(Scene* scene, SceneData* data)
-			{
-				Scenes().emplace_back(scene, data);
-			}
-
-			void UnregisterScene(Scene* scene)
-			{
-				std::vector<std::pair<Scene*, SceneData*>>& scenes = Scenes();
-				std::erase_if(scenes, [scene](const std::pair<Scene*, SceneData*>& entry) { return entry.first == scene; });
-			}
-
 			void CollectAnimators(std::vector<AnimatorRow>& out)
 			{
 				out.clear();
-				for (const auto& [scene, data] : Scenes())
+				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{
-					entt::registry& registry = data->Registry;
+					entt::registry& registry = live.Data->Registry;
 					auto view = registry.view<const AnimatorComponent, const AnimatorRuntime>();
 					for (entt::entity handle : view)
 					{
@@ -63,7 +46,7 @@ namespace Dingo
 
 						const AnimatorComponent& settings = view.get<const AnimatorComponent>(handle);
 						AnimatorRow& row = out.emplace_back();
-						row.Scene = scene->GetName();
+						row.Scene = live.Instance->GetName();
 						row.Entity = EntityName(registry, handle);
 						row.Enabled = settings.Enabled;
 						row.Speed = settings.Speed;
@@ -90,11 +73,11 @@ namespace Dingo
 				};
 
 				std::vector<Candidate> candidates;
-				for (const auto& entry : Scenes())
+				for (const SceneDebug::LiveScene& live : SceneDebug::LiveScenes())
 				{
-					const AnimationSystem::EventScratch& scratch = entry.second->AnimationEvents;
+					const AnimationSystem::EventScratch& scratch = live.Data->AnimationEvents;
 					for (size_t i = 0; i < scratch.RecentCount; ++i)
-						candidates.push_back({ entry.second, &scratch.Recent[i] });
+						candidates.push_back({ live.Data, &scratch.Recent[i] });
 				}
 
 				std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b)

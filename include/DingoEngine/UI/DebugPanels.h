@@ -144,6 +144,24 @@ namespace Dingo::UI
 	void ProfilerStatsWindow(bool* open = nullptr);
 
 	// ----------------------------------------------------------------------
+	// SceneStatsWindow section
+	// ----------------------------------------------------------------------
+
+	// Every live scene (state, entity count, the lights against the local-light budget, the primary
+	// camera, live bodies and controllers), the selected scene's entities as a parent/child tree with a
+	// name filter and a has-component filter, and the selected entity's components: each settings
+	// component's fields, local and world transforms, and the live body, controller, sound, animator,
+	// emitters and script behind them. Read-only. Reads the engine's scenes, so no arguments are needed;
+	// the selection is kept by entity UUID.
+	void SceneSection();
+
+	// SceneSection in a window of its own.
+	//
+	// When 'open' is non-null a close button is shown and *open is set to false when
+	// clicked -- pass the address of your own visibility bool to make it toggleable.
+	void SceneStatsWindow(bool* open = nullptr);
+
+	// ----------------------------------------------------------------------
 	// The combined debug window
 	// ----------------------------------------------------------------------
 
@@ -155,12 +173,13 @@ namespace Dingo::UI
 		Input,
 		Assets,
 		Animation,
-		Profiler
+		Profiler,
+		Scene
 	};
 
 	// Everything above composed into one tabbed "Debug" window (Engine / Renderer /
-	// Input / Assets / Animation / Profiler). This is what the engine's built-in overlays show
-	// (F3/F4/F5/F6/F7/F8 select the matching tab; the same key again closes the window).
+	// Input / Assets / Animation / Profiler / Scene). This is what the engine's built-in overlays show
+	// (F3/F4/F5/F6/F7/F8/F9 select the matching tab; the same key again closes the window).
 	//
 	// 'select' forces that tab active this frame (DebugTab::None leaves the user's
 	// choice alone). Returns the tab currently shown so callers can implement

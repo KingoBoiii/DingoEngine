@@ -1,5 +1,7 @@
 #include "HierarchyTest.h"
 
+#include "DingoEngine/Scene/SceneDebug.h"
+
 #include <glm/gtc/constants.hpp>
 #include <imgui.h>
 
@@ -134,6 +136,8 @@ namespace Dingo
 		m_Time = 0.0f;
 		m_LightProbeDone = false;
 		m_PhysicsChecksDone = false;
+		m_SceneTabChecked = false;
+		m_SceneTabFrames = 0;
 		m_MaxCrateBodyGap = 0.0f;
 		m_MaxPaddleBodyGap = 0.0f;
 		m_MaxPaddleAngleGap = 0.0f;
@@ -164,6 +168,7 @@ namespace Dingo
 		}
 
 		RunStructuralChecks();
+		RunSceneDebugChecks();
 		RunCollisionFilterChecks();
 		RunStructuralChecks2D();
 		BuildScene();
@@ -423,6 +428,78 @@ namespace Dingo
 				&& Near(ray.Origin, position + forward * camera.PerspNear, 1e-2f) && !Near(position, { 0.0f, 1.0f, 5.0f }, 0.5f),
 				"a camera on a child views and picks from its world transform");
 		}
+	}
+
+	void HierarchyTest::RunSceneDebugChecks()
+	{
+		namespace SD = Internal::SceneDebug;
+
+		uint64_t serial = 0;
+		UUID childId;
+		{
+			Scene scene("Scene Tab Checks");
+			Entity parent = MakeEntity(scene, "Tab Parent", { 2.0f, 1.0f, -3.0f }, { 0.0f, 90.0f, 0.0f }, glm::vec3(2.0f));
+			Entity child = MakeEntity(scene, "Tab Child", { 1.0f, 0.0f, 0.0f }, glm::vec3(0.0f), glm::vec3(1.0f));
+			Entity loose = scene.CreateEntity("Tab Loose");
+			child.SetParent(parent, false);
+			child.AddComponent<PointLightComponent>();
+			loose.AddComponent<SpotLightComponent>();
+			childId = child.GetUUID();
+
+			for (const SD::LiveScene& live : SD::LiveScenes())
+			{
+				if (live.Instance == &scene)
+					serial = live.Serial;
+			}
+
+			std::vector<SD::SceneRow> scenes;
+			SD::CollectScenes(scenes);
+			const auto row = std::find_if(scenes.begin(), scenes.end(), [serial](const SD::SceneRow& r) { return r.Serial == serial; });
+			Check(serial != 0 && row != scenes.end() && row->Name == "Scene Tab Checks" && row->Entities == 3 && row->Roots == 2
+				&& row->PointLights == 1 && row->SpotLights == 0 && row->UnplacedLocalLights == 1 && row->HasLight && !row->Running,
+				"the Scene tab lists a new scene with its entity, root and light counts, a spot light without a Transform3D apart");
+
+			std::vector<SD::EntityRow> entities;
+			const bool listed = SD::CollectEntities(serial, entities);
+			Check(listed && entities.size() == 3
+				&& entities[0].Id == parent.GetUUID() && entities[0].Depth == 0 && entities[0].ChildCount == 1
+				&& entities[1].Id == childId && entities[1].Depth == 1 && entities[1].Name == "Tab Child"
+				&& entities[2].Id == loose.GetUUID() && entities[2].Depth == 0
+				&& (entities[1].Components & SD::ComponentBit(SD::Component::PointLight)) != 0
+				&& (entities[0].Components & SD::ComponentBit(SD::Component::PointLight)) == 0
+				&& (entities[2].Components & SD::ComponentBit(SD::Component::Transform3D)) == 0,
+				"the Scene tab's hierarchy lists each root followed by its children, with their components");
+
+			SD::EntityDetail detail;
+			const bool found = SD::CollectEntity(serial, childId, detail);
+			const bool hasLightSection = std::any_of(detail.Sections.begin(), detail.Sections.end(), [](const SD::Section& section) { return section.Title == "PointLight"; });
+			Check(found && detail.Has3D && detail.HasParent && detail.Parent == parent.GetUUID() && detail.ParentName == "Tab Parent"
+				&& Near(detail.WorldPosition, { 2.0f, 1.0f, -5.0f }) && Near(detail.WorldPosition, child.GetWorldPosition())
+				&& Near(detail.WorldRotation, child.GetWorldRotation()) && Near(detail.WorldScale, glm::vec3(2.0f)) && hasLightSection,
+				std::format("the Scene tab's inspector shows the child's world transform through its parent: ({:.3f}, {:.3f}, {:.3f})",
+					detail.WorldPosition.x, detail.WorldPosition.y, detail.WorldPosition.z));
+
+			scene.DestroyEntity(child);
+			Check(!SD::CollectEntity(serial, childId, detail) && detail.Sections.empty(), "the Scene tab's inspector lets go of a destroyed entity");
+		}
+
+		std::vector<SD::EntityRow> entities;
+		Check(!SD::CollectEntities(serial, entities) && entities.empty(), "a destroyed scene leaves the Scene tab");
+	}
+
+	void HierarchyTest::CheckSceneTabOpens()
+	{
+		if (m_SceneTabChecked)
+			return;
+
+		// ImGui applies a programmatic tab selection a frame late.
+		bool open = true;
+		const UI::DebugTab shown = UI::DebugWindow(&open, UI::DebugTab::Scene);
+		if (shown != UI::DebugTab::Scene && ++m_SceneTabFrames < 10)
+			return;
+
+		m_SceneTabChecked = true;
+		Check(shown == UI::DebugTab::Scene, std::format("the Debug window opens on the Scene tab and draws it (after {} frames)", m_SceneTabFrames));
 	}
 
 	void HierarchyTest::RunCollisionFilterChecks()
@@ -893,6 +970,8 @@ namespace Dingo
 
 	void HierarchyTest::ImGuiRender()
 	{
+		CheckSceneTabOpens();
+
 		GraphicsTest::ImGuiRender();
 		ImGui::Separator();
 

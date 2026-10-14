@@ -15,12 +15,9 @@ namespace Dingo
 {
 
 	class Animator;
-	class Scene;
 
 	namespace Internal
 	{
-
-		struct SceneData;
 
 		namespace AnimationDebug
 		{
@@ -50,9 +47,6 @@ namespace Dingo
 				uint32_t Layer = 0;
 				uint64_t Sequence = 0;
 			};
-
-			void RegisterScene(Scene* scene, SceneData* data);
-			void UnregisterScene(Scene* scene);
 
 			// Every live scene's animators that have a runtime animator, scenes in creation order.
 			void CollectAnimators(std::vector<AnimatorRow>& out);
