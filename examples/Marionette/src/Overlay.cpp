@@ -1,4 +1,5 @@
 #include "Overlay.h"
+#include "GameTuning.h"
 
 #include <cstdint>
 
@@ -24,27 +25,35 @@ namespace Dingo::Overlay
 		}
 	}
 
-	Entity MakeCamera(Scene& scene, const char* name, float orthoSize)
+	UIStyle MenuStyle()
 	{
-		Entity entity = scene.CreateEntity(name);
-		auto& camera = entity.AddComponent<CameraComponent>();
-		camera.Type = CameraComponent::ProjectionType::Orthographic;
-		camera.OrthographicSize = orthoSize;
-		camera.Primary = true;
-		return entity;
+		return UIStyle::Default()
+			.SetTextSize(UiPx(MENU_BUTTON_SIZE))
+			.SetTextColor(COLOR_TEXT)
+			.SetBackground(COLOR_BAR_BACK)
+			.SetHoverColor({ 0.22f, 0.16f, 0.09f, 0.95f })
+			.SetPressedColor({ 0.12f, 0.09f, 0.06f, 0.95f })
+			.SetFocusedColor(COLOR_TITLE)
+			.SetBorder(2.0f, { COLOR_TITLE.r, COLOR_TITLE.g, COLOR_TITLE.b, 0.45f })
+			.SetCornerRadius(8.0f)
+			.SetPadding(48.0f, 14.0f)
+			.SetFocusWidth(3.0f)
+			.SetTransition(0.12f);
 	}
 
-	Entity MakeText(Scene& scene, Font* font, const char* name, float size, const glm::vec4& color, const glm::vec3& position, const char* text)
+	UIRootParams HudRoot(UIAnchor anchor)
 	{
-		Entity entity = scene.CreateEntity(name);
-		auto& component = entity.AddComponent<TextComponent>();
-		component.Font = font;
-		component.Size = size;
-		component.Color = color;
-		component.Centered = true;
-		component.Text = text;
-		entity.GetComponent<TransformComponent>().Position = position;
-		return entity;
+		return UIRootParams().SetAnchor(anchor).SetScale(UIScale::ScaleWithScreen()).SetBlocksInput(false);
+	}
+
+	UIRootParams MenuRoot(const UIBoxParams& layout)
+	{
+		return UIRootParams()
+			.SetAnchor(UIAnchor::Stretch)
+			.SetScale(UIScale::ScaleWithScreen())
+			.SetNavigable(true)
+			.SetTransition(UITransition::Fade(UI_FADE_SECONDS))
+			.SetLayout(layout);
 	}
 
 	void NoteFocus(bool focused)

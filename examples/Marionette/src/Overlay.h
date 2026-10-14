@@ -5,8 +5,12 @@
 
 namespace Dingo::Overlay
 {
-	Entity MakeCamera(Scene& scene, const char* name, float orthoSize);
-	Entity MakeText(Scene& scene, Font* font, const char* name, float size, const glm::vec4& color, const glm::vec3& position, const char* text);
+	// The theme of every button, set once by the layer.
+	UIStyle MenuStyle();
+	// A root for what is drawn over the game and never takes the mouse or a key.
+	UIRootParams HudRoot(UIAnchor anchor);
+	// A full-screen root that fades with the screen and whose buttons the keyboard and pad can reach.
+	UIRootParams MenuRoot(const UIBoxParams& layout);
 
 	// The window gained or lost focus: the click that focused it must not count as an input in the next frame.
 	void NoteFocus(bool focused);

@@ -41,7 +41,6 @@ namespace Dingo
 		void OnDestroy() override;
 
 	private:
-		void ShowMissingAssets();
 		void BuildBout(const FighterContext& context, const LaunchOptions& options);
 		void UpdateBout(float deltaTime);
 		void OnEventsChanged();

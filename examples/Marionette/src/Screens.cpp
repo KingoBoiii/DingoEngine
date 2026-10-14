@@ -7,8 +7,42 @@
 
 #include <format>
 
+namespace
+{
+	using namespace Dingo;
+
+	const char* const k_BackLabel = "Back to title";
+
+	UITextParams Heading(float size, const glm::vec4& color)
+	{
+		return UITextParams().SetSize(UiPx(size)).SetColor(color).SetWrap(false).SetAlign(UITextAlign::Center);
+	}
+
+	UIBoxParams Buttons()
+	{
+		return UIBoxParams().SetWidth(UISize::Fixed(UiPx(MENU_BUTTON_WIDTH))).SetGap(UiPx(0.2f)).SetAlign(UIAlign::Stretch);
+	}
+
+	float TopMargin(float centerY, float size)
+	{
+		return UiPx(0.5f * HUD_ORTHO_SIZE - centerY - 0.5f * size);
+	}
+}
+
 namespace Dingo
 {
+
+	bool DeclareMissingAssetsScreen()
+	{
+		bool back = false;
+		if (DingoUI::BeginRoot("missing", Overlay::MenuRoot(UIBoxParams().SetAlign(UIAlign::Center).SetJustify(UIJustify::Center).SetGap(UiPx(MISSING_GAP)))))
+		{
+			DingoUI::Text("assets missing (see log)", Heading(MISSING_HEADING_SIZE, COLOR_TEXT_ALERT));
+			back = DingoUI::Button(k_BackLabel, UIWidgetParams().SetDefaultFocus()).Clicked;
+			DingoUI::EndRoot();
+		}
+		return back || DingoUI::IsBackPressed();
+	}
 
 	TitleControllerScript::TitleControllerScript(const GameAssets* assets)
 		: m_Assets(assets)
@@ -18,19 +52,11 @@ namespace Dingo
 
 	void TitleControllerScript::OnStart()
 	{
-		Scene& scene = GetScene();
-		Font* font = nullptr;
-		if (m_Assets)
-		{
-			ShowcaseParams params;
-			params.Kind = ShowcaseKind::Title;
-			m_Showcase = std::make_unique<Showcase>(scene, *m_Assets, params);
-			font = m_Assets->GetFont();
-		}
-
-		Overlay::MakeCamera(scene, "TitleCamera", HUD_ORTHO_SIZE);
-		Overlay::MakeText(scene, font, "Title", TITLE_HEADING_SIZE, COLOR_TITLE, { 0.0f, TITLE_HEADING_Y, 0.0f }, "MARIONETTE");
-		Overlay::MakeText(scene, font, "Prompt", TITLE_PROMPT_SIZE, COLOR_TEXT, { 0.0f, TITLE_PROMPT_Y, 0.0f }, "press any key / button");
+		if (!m_Assets)
+			return;
+		ShowcaseParams params;
+		params.Kind = ShowcaseKind::Title;
+		m_Showcase = std::make_unique<Showcase>(GetScene(), *m_Assets, params);
 	}
 
 	void TitleControllerScript::OnUpdate(float deltaTime)
@@ -39,15 +65,24 @@ namespace Dingo
 			m_Showcase->Update(deltaTime);
 
 		m_Age += deltaTime;
-		if (Input::IsKeyPressed(Key::Escape))
+		bool play = false;
+		bool quit = false;
+		const UIBoxParams layout = UIBoxParams().SetAlign(UIAlign::Center).SetJustify(UIJustify::SpaceBetween)
+			.SetPadding(0.0f, TopMargin(TITLE_HEADING_Y, TITLE_HEADING_SIZE), 0.0f, UiPx(MENU_BOTTOM_MARGIN));
+		if (DingoUI::BeginRoot("title", Overlay::MenuRoot(layout)))
 		{
-			if (m_Age >= TITLE_ESC_GRACE)
-				Application::Get().Close();
+			DingoUI::Text("MARIONETTE", Heading(TITLE_HEADING_SIZE, COLOR_TITLE));
+			DingoUI::BeginBox(Buttons());
+			play = DingoUI::Button("Play", UIWidgetParams().SetDefaultFocus()).Clicked;
+			quit = DingoUI::Button("Quit").Clicked;
+			DingoUI::EndBox();
+			DingoUI::EndRoot();
 		}
-		else if (Overlay::AnyInputPressed())
-		{
+
+		if (play)
 			RequestSceneTransition(SCENE_ARENA);
-		}
+		else if (quit || (m_Age >= TITLE_ESC_GRACE && (Input::IsKeyPressed(Key::Escape) || DingoUI::IsBackPressed())))
+			Application::Get().Close();
 	}
 
 	void TitleControllerScript::OnDestroy()
@@ -63,28 +98,18 @@ namespace Dingo
 
 	void EndControllerScript::OnStart()
 	{
-		const bool won = m_Match && m_Match->Victory;
-		Scene& scene = GetScene();
-		Font* font = nullptr;
-		if (m_Assets)
-		{
-			ShowcaseParams params;
-			params.Kind = ShowcaseKind::Victory;
-			params.Taunt = won;
-			m_Showcase = std::make_unique<Showcase>(scene, *m_Assets, params);
-			font = m_Assets->GetFont();
-		}
-
-		Overlay::MakeCamera(scene, "EndCamera", HUD_ORTHO_SIZE);
-		Overlay::MakeText(scene, font, "EndTitle", END_HEADING_SIZE, COLOR_TITLE, { 0.0f, END_HEADING_Y, 0.0f }, won ? "VICTORY" : "THE END");
-		if (won)
+		m_Won = m_Match && m_Match->Victory;
+		if (m_Won)
 		{
 			const int total = static_cast<int>(m_Match->Seconds);
-			Overlay::MakeText(scene, font, "EndSubtitle", END_SUBTITLE_SIZE, COLOR_TEXT, { 0.0f, END_SUBTITLE_Y, 0.0f }, "All three opponents are down");
-			Overlay::MakeText(scene, font, "EndStats", END_STATS_SIZE, COLOR_TEXT_DIM, { 0.0f, END_STATS_Y, 0.0f },
-				std::format("Time in the ring  {}:{:02}      Bouts lost  {}", total / 60, total % 60, m_Match->Retries).c_str());
+			m_StatsText = std::format("Time in the ring  {}:{:02}      Bouts lost  {}", total / 60, total % 60, m_Match->Retries);
 		}
-		Overlay::MakeText(scene, font, "EndPrompt", END_PROMPT_SIZE, COLOR_TEXT, { 0.0f, END_PROMPT_Y, 0.0f }, "press any key / button");
+		if (!m_Assets)
+			return;
+		ShowcaseParams params;
+		params.Kind = ShowcaseKind::Victory;
+		params.Taunt = m_Won;
+		m_Showcase = std::make_unique<Showcase>(GetScene(), *m_Assets, params);
 	}
 
 	void EndControllerScript::OnUpdate(float deltaTime)
@@ -93,7 +118,30 @@ namespace Dingo
 			m_Showcase->Update(deltaTime);
 
 		m_Age += deltaTime;
-		if (m_Age >= END_INPUT_DELAY && Overlay::AnyInputPressed())
+		const bool ready = m_Age >= END_INPUT_DELAY;
+		bool back = false;
+		const UIBoxParams layout = UIBoxParams().SetAlign(UIAlign::Center).SetJustify(UIJustify::SpaceBetween)
+			.SetPadding(0.0f, TopMargin(END_HEADING_Y, END_HEADING_SIZE), 0.0f, UiPx(MENU_BOTTOM_MARGIN));
+		if (DingoUI::BeginRoot("end", Overlay::MenuRoot(layout)))
+		{
+			DingoUI::BeginBox(UIBoxParams().SetAlign(UIAlign::Center).SetGap(UiPx(0.1f)));
+			DingoUI::Text(m_Won ? "VICTORY" : "THE END", Heading(END_HEADING_SIZE, COLOR_TITLE));
+			if (m_Won)
+			{
+				DingoUI::Text("All three opponents are down", Heading(END_SUBTITLE_SIZE, COLOR_TEXT));
+				DingoUI::Text(m_StatsText, Heading(END_STATS_SIZE, COLOR_TEXT_DIM));
+			}
+			DingoUI::EndBox();
+			if (ready)
+			{
+				DingoUI::BeginBox(Buttons());
+				back = DingoUI::Button(k_BackLabel, UIWidgetParams().SetDefaultFocus()).Clicked;
+				DingoUI::EndBox();
+			}
+			DingoUI::EndRoot();
+		}
+
+		if (back || (ready && DingoUI::IsBackPressed()))
 			RequestSceneTransition(SCENE_TITLE);
 	}
 
