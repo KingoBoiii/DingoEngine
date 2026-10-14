@@ -286,7 +286,7 @@ namespace Dingo
 		/// The slot's file, `<directory>/<slot>.json`; the slot name is not validated here.
 		static std::filesystem::path GetPath(std::string_view slot);
 		/// True when the name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-', and not one of Windows'
-		/// device names (CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9, in any case) on any platform.
+		/// device names (CON, PRN, AUX, NUL, COM0-COM9, LPT0-LPT9, in any case) on any platform.
 		static bool IsValidName(std::string_view slot);
 
 		/// Writes the data with SaveData::WriteFile; false (logged) for an invalid name or a failed

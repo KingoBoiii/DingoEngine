@@ -252,7 +252,7 @@ namespace Dingo
 			std::transform(lower.begin(), lower.end(), lower.begin(), [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; });
 			if (lower == "con" || lower == "prn" || lower == "aux" || lower == "nul")
 				return true;
-			return lower.size() == 4 && (lower.starts_with("com") || lower.starts_with("lpt")) && lower[3] >= '1' && lower[3] <= '9';
+			return lower.size() == 4 && (lower.starts_with("com") || lower.starts_with("lpt")) && lower[3] >= '0' && lower[3] <= '9';
 		}
 
 		// With <path> missing, a .tmp that parses is a write stopped between its renames.

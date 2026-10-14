@@ -86,7 +86,7 @@ so the generation `ReadFile` returned becomes the `.bak`. Writes from several th
 | `Write(slot, data)` / `Read(slot)` | `<slot>.json`, through `WriteFile` / `ReadFile`. |
 | `Exists(slot)` / `Delete(slot)` | A slot exists when its file or its `.bak` is on disk, or a complete `.tmp` without the file. `Delete` removes the `.bak` and any leftover `.tmp` too. |
 | `List()` | Every slot `Exists` reports, most recently written first, with its `LastWriteTime`. |
-| `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`, and not a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, in any case), which can't be saved there. The rule is the same on every platform, so saves move between them. Any other name fails with an error. |
+| `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`, and not a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9`, in any case), which can't be saved there. The rule is the same on every platform, so saves move between them. Any other name fails with an error. |
 
 The directory is `GetUserDataDir(Name)/saves` (`%LOCALAPPDATA%\<Name>\saves`,
 `~/.local/share/<Name>/saves`), beside the logs. `ApplicationParams::SaveDirectory` moves it, and
