@@ -24,8 +24,8 @@ namespace Dingo
 			HashCombine(seed, static_cast<size_t>(sceneBuffer ? sceneBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(skinBuffer ? skinBuffer->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(shadowBuffer ? shadowBuffer->GetId() : 0));
-			HashCombine(seed, reinterpret_cast<uintptr_t>(shadowAtlas));
-			HashCombine(seed, reinterpret_cast<uintptr_t>(shadowSampler));
+			HashCombine(seed, static_cast<size_t>(shadowAtlas ? shadowAtlas->GetId() : 0));
+			HashCombine(seed, static_cast<size_t>(shadowSampler ? shadowSampler->GetId() : 0));
 			HashCombine(seed, static_cast<size_t>(layout.Stride));
 			HashCombine(seed, layout.Attributes.size());
 			for (const auto& attr : layout.Attributes)

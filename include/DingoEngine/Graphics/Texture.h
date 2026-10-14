@@ -171,6 +171,8 @@ namespace Dingo
 		// slot each flush. Every texture draws it from one counter, so a texture created
 		// at a freed texture's address never matches what was cached for the old one.
 		uint32_t GetGeneration() const { return m_Generation; }
+		// Never reused, unlike the address, and kept across Reinitialize, unlike the generation.
+		uint64_t GetId() const { return m_Id; }
 
 		virtual uint32_t GetWidth() const { return m_Params.Width; }
 		virtual uint32_t GetHeight() const { return m_Params.Height; }
@@ -180,9 +182,15 @@ namespace Dingo
 	protected:
 		static uint32_t NextGeneration();
 
+	private:
+		static uint64_t AllocateId();
+
 	protected:
 		TextureParams m_Params;
 		uint32_t m_Generation = NextGeneration();
+
+	private:
+		uint64_t m_Id = AllocateId();
 	};
 
 }

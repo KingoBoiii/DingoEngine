@@ -5,7 +5,7 @@
 namespace Dingo
 {
 
-	namespace Internal { struct MiniAudioData; struct SoundSlot; }
+	namespace Internal { struct MiniAudioData; struct SoundSlot; struct MiniAudioStream; }
 
 	// miniaudio implementation of the AudioEngine interface. miniaudio is fully hidden
 	// behind an opaque pointer (Internal::MiniAudioData) — no miniaudio type appears in
@@ -45,6 +45,11 @@ namespace Dingo
 		bool IsBusPaused(AudioBusId bus) const override;
 		void StopBus(AudioBusId bus) override;
 
+		AudioSoundId CreateStream(const AudioStreamDesc& desc, const SoundPlayParams& params) override;
+		std::uint32_t PushStreamFrames(AudioSoundId stream, const std::int16_t* frames, std::uint32_t frameCount) override;
+		std::uint32_t PushStreamFrames(AudioSoundId stream, const float* frames, std::uint32_t frameCount) override;
+		std::uint32_t GetQueuedStreamFrames(AudioSoundId stream) const override;
+
 		void Stop(AudioSoundId sound) override;
 		void Pause(AudioSoundId sound) override;
 		void Resume(AudioSoundId sound) override;
@@ -69,6 +74,7 @@ namespace Dingo
 	private:
 		// Resolves a handle to its live slot, or nullptr if the handle is invalid/stale.
 		Internal::SoundSlot* ResolveSlot(AudioSoundId id) const;
+		Internal::MiniAudioStream* ResolveStream(AudioSoundId id) const;
 
 		// Tears down a live slot's ma_sound and bumps its generation so any handle
 		// pointing at it goes stale. Shared by Stop(), the Update() reap, and Shutdown().
