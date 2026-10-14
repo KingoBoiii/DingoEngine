@@ -47,6 +47,15 @@ namespace Dingo::Internal
 		float DeltaTime = 0.0f;
 	};
 
+	// CPU time of the last frame's phases; the batcher's own are in UIRenderStatistics.
+	struct UIFrameCosts
+	{
+		float BeginMs = 0.0f;
+		float LayoutMs = 0.0f;
+		float EmitMs = 0.0f;
+		uint32_t ExitingRoots = 0;
+	};
+
 	// The state behind the static DingoUI calls. The Application creates one (never headless) and
 	// drives BeginFrame before the layers' OnUpdate and EndFrame after them.
 	class DingoUIContext
@@ -69,12 +78,17 @@ namespace Dingo::Internal
 		Framebuffer* GetTarget() const { return m_Target; }
 		void SetInputOverride(const UIInputState* input) { m_InputOverride = input; }
 		bool HasInputOverride() const { return m_InputOverride != nullptr; }
+		// Where target pixel (0, 0) lands in window pixels, for the F9 overlay when the target is shown
+		// inside the window (the test app's viewport panel). Zero when the target is the window.
+		void SetDebugOrigin(const glm::vec2& origin) { m_DebugOrigin = origin; }
+		const glm::vec2& GetDebugOrigin() const { return m_DebugOrigin; }
 
 		// Commands drawn at this frame's EndFrame, then cleared, before the elements' own. The test
 		// app fills it directly to check the batcher alone.
 		UIDrawList& GetDrawList() { return m_DrawList; }
 		// What the last EndFrame drew; zero when it drew nothing.
 		const UIRenderStatistics& GetRenderStatistics() const { return m_RenderStatistics; }
+		const UIFrameCosts& GetFrameCosts() const { return m_FrameCosts; }
 
 		// The declarations. Valid between BeginFrame and EndFrame; false outside, with a warning once.
 		bool BeginRoot(std::string_view name, const UIRootParams& params);
@@ -173,6 +187,7 @@ namespace Dingo::Internal
 		DingoUIParams m_Params;
 		Framebuffer* m_Target = nullptr;
 		const UIInputState* m_InputOverride = nullptr;
+		glm::vec2 m_DebugOrigin{ 0.0f };
 		UIInputState m_Input;
 		UILayoutTree m_Tree;
 		UILayoutTree m_LastTree;
@@ -187,6 +202,7 @@ namespace Dingo::Internal
 		UIDrawList m_DrawList;
 		std::unique_ptr<DingoUIBatcher> m_Batcher;
 		UIRenderStatistics m_RenderStatistics;
+		UIFrameCosts m_FrameCosts;
 		uint64_t m_FrameIndex = 0;
 		bool m_PointerOverUI = false;
 		bool m_CapturingInput = false;

@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -96,6 +97,19 @@ namespace Dingo::Internal
 		uint32_t CacheHits = 0;    // 1 when the frame drew last frame's vertices again
 		uint32_t Uploads = 0;      // 1 when the frame rebuilt and uploaded them
 		uint64_t UploadBytes = 0;
+		float BuildMs = 0.0f;      // CPU time turning the draw list into vertices
+		float UploadMs = 0.0f;     // CPU time uploading them and baking the binding sets
+		float DrawMs = 0.0f;       // CPU time recording the draws
+	};
+
+	class UICpuTimer
+	{
+	public:
+		UICpuTimer() : m_Start(std::chrono::steady_clock::now()) {}
+		float ElapsedMs() const { return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - m_Start).count(); }
+
+	private:
+		std::chrono::steady_clock::time_point m_Start;
 	};
 
 	// One frame of game UI as drawing commands, in painter's order. Each command keeps its own clip

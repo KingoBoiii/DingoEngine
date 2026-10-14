@@ -322,6 +322,37 @@ its scene's primary camera). Give each root its own name.
 - There is no depth test against the scene, and no panel drawn onto a mesh; a world root is a screen-space
   overlay placed by a world point.
 
+## Debugging and performance
+
+**The DingoUI tab.** Open the Debug window (F3 to F9, or any tab) and pick **DingoUI**; it has no key of
+its own. It shows the last frame:
+
+- counts: roots, elements, widgets, quads, vertices, draw calls, whether the vertex cache hit or the
+  frame was uploaded (and its bytes), the size of the widget state map, tweens, transition roots,
+  exiting roots and id collisions;
+- CPU milliseconds for `BeginFrame`, layout, emit, batch build, upload and draw (the frame's total is
+  `FrameTimings::DingoUIMs`, also a row in the F8 Profiler);
+- the roots (name, layer, screen or world, blocks input, modal, navigable, transition progress), the
+  hovered, active and focused ids, and a tree of last frame's elements with their rects.
+
+Three overlay checkboxes draw over the window: **Show rects** outlines every element (roots orange,
+widgets blue, the hovered one yellow, the pressed one red), **Show hit-test/blocking rects** tints what
+a blocking root covers, and **Show focus** rings the focused element. The overlay maps target pixels to
+the window the way the pointer does, and is drawn only while the tab is open. Under
+`GraphicsAPI::Headless`, or with `DingoUIParams::Enabled` off, the tab says DingoUI is off.
+
+**Tracy.** With `premake5 --profile`, the zones `DingoUI::BeginFrame`, `DingoUI::EndFrame`,
+`DingoUI::Layout`, `DingoUI::Emit`, `DingoUI::Batch`, `DingoUI::Upload` and `DingoUI::Draw` show where
+the frame goes. The GPU pass is the `DingoUI` timer in the F8 Profiler.
+
+**Stress mode.** `Dingo-TestFramework --test=dingoui --dingoui=stress` (run from `test/`) builds a heavy
+UI every frame: 2,000 widgets in ten scroll areas with nested styles, 200 world labels, 20 tweens, a
+column of 100 widgets whose ids change every frame and a root that fades in and out every ten frames.
+It first runs a static 500-element menu. Both phases log their CPU averages once, then the app closes
+itself. `--dingoui-frames=N` sets the heavy phase's length (default 600). The same builder runs for
+about 50 frames in the ordinary `--test=dingoui` with assertions: one draw call, a bounded state map,
+and nothing left over (state, tweens, exiting roots) once the UI stops declaring.
+
 ## Rules the frame follows
 
 - Declare from `OnUpdate`; the layout and the draw happen after all layers have updated, and the UI

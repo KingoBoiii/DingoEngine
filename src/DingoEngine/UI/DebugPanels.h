@@ -175,12 +175,13 @@ namespace Dingo::Internal
 		Assets,
 		Animation,
 		Profiler,
-		Scene
+		Scene,
+		DingoUI
 	};
 
 	// Everything above composed into one tabbed "Debug" window (Engine / Renderer /
-	// Input / Assets / Animation / Profiler / Scene). This is what the engine's built-in overlays show
-	// (F3/F4/F5/F6/F7/F8/F9 select the matching tab; the same key again closes the window).
+	// Input / Assets / Animation / Profiler / Scene / DingoUI). This is what the engine's built-in overlays show
+	// (F3/F4/F5/F6/F7/F8/F9 select the matching tab, the DingoUI tab has no key; the same key again closes the window).
 	//
 	// 'select' forces that tab active this frame (DebugTab::None leaves the user's
 	// choice alone). Returns the tab currently shown so callers can implement

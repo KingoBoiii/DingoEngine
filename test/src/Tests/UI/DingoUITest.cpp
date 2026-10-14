@@ -9,6 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cmath>
+#include <cstdlib>
 #include <optional>
 #include <string_view>
 
@@ -117,6 +118,42 @@ namespace Dingo
 		m_WorldStage = 0;
 		m_WorldDone = false;
 		m_LiveTime = 0.0f;
+
+		m_StressDone = false;
+		m_StressStep = 0;
+		m_StressPrev = StressPhase::None;
+		m_StressPhaseFrame = 0;
+		m_StressDeclareMs = 0.0f;
+		m_StressStableWidgets = 0;
+		m_StressWorldDeclared = 0;
+		m_StressBadDraws = 0;
+		m_StressBadSnapshots = 0;
+		m_StressMaxStates = 0;
+		m_StressMaxExiting = 0;
+		m_StressMenuElements = 0;
+		m_StressMenuBadCache = 0;
+		m_StressMenuTotals = {};
+		m_StressHeavyTotals = {};
+		m_StressMode = false;
+		m_StressMenuFrames = 6;
+		m_StressHeavyFrames = 30;
+		if (auto mode = Application::Get().GetCommandLineArgs().Get("dingoui"))
+		{
+			if (*mode == "stress")
+			{
+				m_StressMode = true;
+				m_StressMenuFrames = 300;
+				m_StressHeavyFrames = 600;
+				if (auto frames = Application::Get().GetCommandLineArgs().Get("dingoui-frames"))
+				{
+					const int parsed = std::atoi(std::string(*frames).c_str());
+					if (parsed > 0)
+						m_StressHeavyFrames = static_cast<uint32_t>(parsed);
+				}
+			}
+			else
+				DE_WARN("DingoUI Test: unknown --dingoui={}; use stress.", *mode);
+		}
 
 		Check(Internal::GetDingoUIContext() != nullptr, "DingoUI context exists in a windowed app");
 		Check(DingoUI::GetDefaultFont() == m_Font, "SetDefaultFont sets the font Text uses");
@@ -2316,10 +2353,267 @@ namespace Dingo
 		}
 	}
 
+	void DingoUITest::DeclareStressMenu()
+	{
+		DingoUI::BeginRoot("stress_menu", UIRootParams().SetLayout(UIBoxParams().SetSize(UISize::Fixed(k_LayoutW), UISize::Fixed(k_LayoutH)).SetPadding(8.0f).SetGap(2.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 1.0f })));
+		for (int row = 0; row < 125; ++row)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(8.0f).SetAlign(UIAlign::Center));
+			DingoUI::Text("Row " + std::to_string(row), UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::Button("go" + std::to_string(row));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::DeclareStressHeavy(uint32_t frame)
+	{
+		constexpr int k_Columns = 10;
+		constexpr int k_PerColumn = 200;
+		constexpr int k_Churn = 100;
+		constexpr int k_WorldLabels = 200;
+
+		static bool s_Toggles[8] = {};
+		static float s_Sliders[8] = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f };
+		static int s_Ints[8] = {};
+
+		UIStyle outer = UIStyle::Default();
+		outer.SetTextSize(12.0f);
+		UIStyle inner = outer;
+		inner.SetBackground({ 0.2f, 0.25f, 0.4f, 1.0f }).SetCornerRadius(4.0f);
+
+		uint32_t stable = 0;
+		DingoUI::BeginRoot("stress_main", UIRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetSize(UISize::Fixed(k_LayoutW), UISize::Fixed(k_LayoutH)).SetGap(4.0f)));
+		for (int column = 0; column < k_Columns; ++column)
+		{
+			DingoUI::PushId(column);
+			DingoUI::PushStyle(outer);
+			if (DingoUI::BeginScrollArea("column", UIScrollParams().SetLayout(UIBoxParams().SetWidth(UISize::Fixed(84.0f)).SetHeight(UISize::Fixed(k_LayoutH - 8.0f)).SetAlign(UIAlign::Stretch).SetGap(1.0f))))
+			{
+				++stable;
+				for (int i = 0; i < k_PerColumn; ++i)
+				{
+					if (i == k_PerColumn / 2)
+						DingoUI::PushStyle(inner);
+					const std::string label = "w" + std::to_string(i);
+					switch (i % 5)
+					{
+					case 0: DingoUI::Button(label); break;
+					case 1: DingoUI::Toggle(label, &s_Toggles[column % 8]); break;
+					case 2: DingoUI::Slider(label, &s_Sliders[column % 8], 0.0f, 1.0f); break;
+					case 3: DingoUI::Selectable(label, i % 10 == 3); break;
+					default: DingoUI::ProgressBar(label, s_Sliders[column % 8]); break;
+					}
+					++stable;
+				}
+				DingoUI::PopStyle();
+				DingoUI::EndScrollArea();
+			}
+			DingoUI::PopStyle();
+			DingoUI::PopId();
+		}
+
+		DingoUI::PushStyle(outer);
+		if (DingoUI::BeginScrollArea("churn", UIScrollParams().SetLayout(UIBoxParams().SetWidth(UISize::Fixed(84.0f)).SetHeight(UISize::Fixed(k_LayoutH - 8.0f)).SetAlign(UIAlign::Stretch))))
+		{
+			++stable;
+			for (int i = 0; i < k_Churn; ++i)
+				DingoUI::Selectable("c" + std::to_string(frame * k_Churn + i), false);
+			DingoUI::EndScrollArea();
+		}
+		DingoUI::PopStyle();
+
+		const float target = ((frame / 30) % 2 == 0) ? 0.0f : 1.0f;
+		for (int i = 0; i < 20; ++i)
+			s_Ints[0] += DingoUI::Tween("tw" + std::to_string(i), target, 0.25f) > 2.0f ? 1 : 0;
+		DingoUI::EndRoot();
+		m_StressStableWidgets = stable;
+
+		const UIWorldCamera camera = WorldCameraFor();
+		uint32_t world = 0;
+		for (int i = 0; i < k_WorldLabels; ++i)
+		{
+			const glm::vec3 point = { -9.0f + static_cast<float>(i % 20) * 0.95f, 4.5f - static_cast<float>(i / 20) * 0.9f, -static_cast<float>(i % 7) * 2.0f };
+			if (DingoUI::BeginWorldRoot("wl" + std::to_string(i), camera, point, UIWorldRootParams().SetLayout(UIBoxParams().SetGap(1.0f))))
+			{
+				DingoUI::Text("L" + std::to_string(i), UITextParams().SetSize(10.0f).SetWrap(false));
+				DingoUI::ProgressBar("hp", 0.5f, UIWidgetParams().SetSize(UISize::Fixed(24.0f), UISize::Fixed(3.0f)));
+				DingoUI::EndRoot();
+				++world;
+			}
+		}
+		m_StressWorldDeclared = world;
+
+		if ((frame / 10) % 2 == 0)
+		{
+			DingoUI::BeginRoot("stress_toast", UIRootParams().SetAnchor(UIAnchor::BottomRight).SetOffset({ -16.0f, -16.0f })
+				.SetTransition(UITransition::Fade(0.15f).WithSlide({ 20.0f, 0.0f })).SetLayout(UIBoxParams().SetPadding(10.0f).SetBackground({ 0.1f, 0.3f, 0.1f, 0.95f })));
+			DingoUI::Text("Toast", UITextParams().SetSize(16.0f).SetWrap(false));
+			DingoUI::EndRoot();
+		}
+	}
+
+	void DingoUITest::SampleStress(Internal::DingoUIContext& context)
+	{
+		namespace DD = Internal::DingoUIDebug;
+		const Internal::UIRenderStatistics& render = context.GetRenderStatistics();
+		const Internal::UIFrameCosts& costs = context.GetFrameCosts();
+		const std::vector<Internal::UIElement>& elements = context.GetLastLayout().GetElements();
+		size_t rootCount = 0;
+		for (const Internal::UIElement& element : elements)
+			rootCount += element.Kind == Internal::UIElementKind::Root ? 1 : 0;
+
+		const bool collected = DD::Collect(m_StressSnapshot, true);
+		const DD::Snapshot& snapshot = m_StressSnapshot;
+		const bool matches = collected && snapshot.Frame.Roots == rootCount && snapshot.Roots.size() == rootCount && snapshot.Frame.Elements == elements.size()
+			&& snapshot.Elements.size() == elements.size() && snapshot.Frame.DrawCalls == render.DrawCalls && snapshot.Frame.Quads == render.Quads
+			&& snapshot.Frame.Vertices == render.Vertices && snapshot.Frame.StateMapSize == context.GetStates().Size() && snapshot.Frame.TweenCount == context.GetTweens().Size()
+			&& snapshot.Frame.TransitionRoots == context.GetRootTransitions().Size() && snapshot.Frame.ExitingRoots == costs.ExitingRoots && snapshot.Frame.Frame == context.GetFrameIndex();
+		if (!matches)
+			++m_StressBadSnapshots;
+
+		const uint32_t frameInPhase = m_StressPhaseFrame;
+		if (m_StressPrev == StressPhase::Menu && frameInPhase == 3)
+		{
+			Check(collected, "Debug: the snapshot is available while a context exists");
+			Check(snapshot.Frame.Roots == rootCount && snapshot.Roots.size() == rootCount, "Debug: the snapshot's root count matches the layout, got " + std::to_string(snapshot.Frame.Roots) + " of " + std::to_string(rootCount));
+			Check(snapshot.Frame.Elements == elements.size() && snapshot.Elements.size() == elements.size(), "Debug: the snapshot's element count matches the layout, got " + std::to_string(snapshot.Frame.Elements) + " of " + std::to_string(elements.size()));
+			Check(snapshot.Frame.DrawCalls == render.DrawCalls && snapshot.Frame.Quads == render.Quads && snapshot.Frame.Vertices == render.Vertices, "Debug: the snapshot's draw calls, quads and vertices match the render statistics");
+			Check(snapshot.Frame.CacheHits == render.CacheHits && snapshot.Frame.Uploads == render.Uploads && snapshot.Frame.UploadBytes == render.UploadBytes, "Debug: the snapshot's cache and upload numbers match the render statistics");
+			Check(!snapshot.Roots.empty() && snapshot.Roots.front().Name == "stress_menu", "Debug: the snapshot names its roots");
+			Check(snapshot.TargetSize == context.GetTargetSize() && snapshot.Frame.StateMapSize == context.GetStates().Size(), "Debug: the snapshot carries the target size and the state map size");
+			Check(snapshot.Frame.LayoutMs == costs.LayoutMs && snapshot.Frame.EmitMs == costs.EmitMs && snapshot.Frame.BuildMs == render.BuildMs, "Debug: the snapshot carries the CPU timings");
+			DD::Snapshot light;
+			DD::Collect(light, false);
+			Check(light.Elements.empty() && light.Frame.Elements == elements.size(), "Debug: a collection without detail skips the element rows");
+		}
+
+		if (m_StressPrev == StressPhase::Cooldown)
+			return;
+
+		const uint32_t warmup = 5;
+		StressTotals& totals = m_StressPrev == StressPhase::Menu ? m_StressMenuTotals : m_StressHeavyTotals;
+		if (frameInPhase >= warmup || m_StressHeavyFrames + m_StressMenuFrames <= 40)
+		{
+			++totals.Samples;
+			totals.DingoUIMs += Application::Get().GetFrameTimings().DingoUIMs;
+			totals.DeclareMs += m_StressDeclareMs;
+			totals.BeginMs += costs.BeginMs;
+			totals.LayoutMs += costs.LayoutMs;
+			totals.EmitMs += costs.EmitMs;
+			totals.BuildMs += render.BuildMs;
+			totals.UploadMs += render.UploadMs;
+			totals.DrawMs += render.DrawMs;
+			totals.Quads += render.Quads;
+			totals.DrawCalls += render.DrawCalls;
+			totals.Elements += static_cast<double>(elements.size());
+			totals.States += static_cast<double>(context.GetStates().Size());
+			totals.Uploads += render.Uploads;
+		}
+
+		if (render.DrawCalls != 1)
+			++m_StressBadDraws;
+
+		if (m_StressPrev == StressPhase::Menu)
+		{
+			m_StressMenuElements = static_cast<uint32_t>(elements.size());
+			if (frameInPhase >= 3 && (render.CacheHits != 1 || render.Uploads != 0))
+				++m_StressMenuBadCache;
+		}
+		else
+		{
+			m_StressMaxStates = (std::max)(m_StressMaxStates, static_cast<uint32_t>(context.GetStates().Size()));
+			m_StressMaxExiting = (std::max)(m_StressMaxExiting, costs.ExitingRoots);
+		}
+	}
+
+	void DingoUITest::FinishStress(Internal::DingoUIContext& context, Framebuffer* output)
+	{
+		const auto average = [](double sum, uint32_t samples) { return samples ? sum / samples : 0.0; };
+		const size_t states = context.GetStates().Size();
+
+		Check(m_StressBadSnapshots == 0, "Stress: the debug snapshot matched the context on every frame, " + std::to_string(m_StressBadSnapshots) + " mismatches");
+		Check(m_StressMenuElements >= 400 && m_StressMenuElements <= 700, "Stress: the menu has about 500 elements, got " + std::to_string(m_StressMenuElements));
+		Check(m_StressMenuBadCache == 0, "Stress: the still menu hits the vertex cache from its fourth frame on, " + std::to_string(m_StressMenuBadCache) + " frames did not");
+		Check(m_StressBadDraws == 0, "Stress: every UI frame was one draw call, " + std::to_string(m_StressBadDraws) + " were not");
+		const uint32_t limit = m_StressStableWidgets + m_StressWorldDeclared + 3 * 100 + 64;
+		Check(m_StressMaxStates >= m_StressStableWidgets / 2 && m_StressMaxStates <= limit, "Stress: the state map stayed bounded while ids churned, peak " + std::to_string(m_StressMaxStates) + " of " + std::to_string(limit));
+		Check(m_StressMaxExiting >= 1 && m_StressMaxExiting <= 2, "Stress: the toggling root was seen exiting, peak " + std::to_string(m_StressMaxExiting));
+		Check(m_StressWorldDeclared >= 100, "Stress: the world labels were declared, got " + std::to_string(m_StressWorldDeclared));
+		Check(states == 0, "Stress: the state map drained once nothing was declared, " + std::to_string(states) + " left");
+		Check(context.GetTweens().Size() == 0, "Stress: the tweens drained, " + std::to_string(context.GetTweens().Size()) + " left");
+		Check(context.GetRootTransitions().Size() == 0 && context.GetRenderStatistics().DrawCalls == 0, "Stress: no root is left exiting, " + std::to_string(context.GetRootTransitions().Size()) + " left");
+
+		if (m_StressMode)
+		{
+			const auto line = [&](const char* name, const StressTotals& t)
+			{
+				const uint32_t n = t.Samples;
+				DE_INFO("[DingoUI stress] {}: {} frames, DingoUIMs {:.3f}, declare {:.3f}, begin {:.3f}, layout {:.3f}, emit {:.3f}, build {:.3f}, upload {:.3f}, draw {:.3f} ms; elements {:.0f}, quads {:.0f}, draws {:.2f}, uploads {:.2f}, states {:.0f}",
+					name, n, average(t.DingoUIMs, n), average(t.DeclareMs, n), average(t.BeginMs, n), average(t.LayoutMs, n), average(t.EmitMs, n), average(t.BuildMs, n), average(t.UploadMs, n),
+					average(t.DrawMs, n), average(t.Elements, n), average(t.Quads, n), average(t.DrawCalls, n), average(t.Uploads, n), average(t.States, n));
+			};
+			line("menu", m_StressMenuTotals);
+			line("heavy", m_StressHeavyTotals);
+			DE_INFO("[DingoUI stress] done: {} checks failed, state map peak {}, closing.", m_Checks.FailedCount(), m_StressMaxStates);
+			Application::Get().Close();
+		}
+
+		m_StressDone = true;
+		context.SetTarget(output);
+		context.SetInputOverride(&m_LiveInput);
+		m_LiveInput = {};
+	}
+
+	bool DingoUITest::StepStress(Framebuffer* output)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_StressDone || !context || !m_LayoutTarget)
+			return false;
+		if (!m_StressMode && !m_WorldDone)
+			return false;
+
+		const uint32_t step = m_StressStep++;
+		if (step == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			SetPointer({ -10.0f, -10.0f });
+			Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+			return true;
+		}
+
+		const uint32_t cooldownFrames = 20;
+		const uint32_t frame = step - 1;
+		const StressPhase phase = frame < m_StressMenuFrames ? StressPhase::Menu
+			: frame < m_StressMenuFrames + m_StressHeavyFrames ? StressPhase::Heavy
+			: frame < m_StressMenuFrames + m_StressHeavyFrames + cooldownFrames ? StressPhase::Cooldown : StressPhase::None;
+
+		if (m_StressPrev != StressPhase::None)
+			SampleStress(*context);
+		if (phase == StressPhase::None)
+		{
+			FinishStress(*context, output);
+			return !m_StressDone;
+		}
+
+		m_StressPhaseFrame = phase == m_StressPrev ? m_StressPhaseFrame + 1 : 0;
+		m_StressPrev = phase;
+		SetPointer({ -10.0f, -10.0f });
+
+		const Internal::UICpuTimer timer;
+		if (phase == StressPhase::Menu)
+			DeclareStressMenu();
+		else if (phase == StressPhase::Heavy)
+			DeclareStressHeavy(m_StressPhaseFrame);
+		m_StressDeclareMs = timer.ElapsedMs();
+		return true;
+	}
+
 	void DingoUITest::UpdateLiveInput(Framebuffer* output)
 	{
 		using Internal::InputBackend;
-		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
 		if (!context)
 			return;
 
@@ -2340,6 +2634,7 @@ namespace Dingo
 		Internal::ReadNavInput(m_LiveInput.Nav, true, UINavParams(), Internal::FindNavGamepad());
 		m_LiveInput.DeltaTime = 1.0f / 60.0f;
 		m_LiveTime += m_LiveInput.DeltaTime;
+		context->SetDebugOrigin(output ? TestViewportPanel::GetImageOrigin() : glm::vec2(0.0f));
 	}
 
 	void DingoUITest::DeclareLivePage()
@@ -2433,7 +2728,9 @@ namespace Dingo
 	{
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
-		if (!StepBatcher() && !StepLayout(output) && !StepWidgets(output) && !StepNavigation(output) && !StepTransitions(output) && !StepWorld(output))
+		const bool busy = m_StressMode ? StepStress(output)
+			: (StepBatcher() || StepLayout(output) || StepWidgets(output) || StepNavigation(output) || StepTransitions(output) || StepWorld(output) || StepStress(output));
+		if (!busy)
 		{
 			UpdateLiveInput(output);
 			DeclareLivePage();

@@ -126,6 +126,12 @@ namespace Dingo::Internal
 		return &entry;
 	}
 
+	const UIRootTransitions::Entry* UIRootTransitions::Find(uint64_t id) const
+	{
+		const auto it = m_Entries.find(id);
+		return it == m_Entries.end() ? nullptr : &it->second;
+	}
+
 	void UIRootTransitions::AdvanceExiting(uint64_t frame, float dt, std::vector<Entry*>& exiting)
 	{
 		exiting.clear();

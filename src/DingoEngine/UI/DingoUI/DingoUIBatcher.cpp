@@ -101,7 +101,12 @@ namespace Dingo::Internal
 		}
 		else
 		{
-			drawList.Build(m_Geometry);
+			{
+				DE_PROFILE_SCOPE("DingoUI::Batch");
+				const UICpuTimer timer;
+				drawList.Build(m_Geometry);
+				statistics.BuildMs = timer.ElapsedMs();
+			}
 			m_HasUpload = false;
 			if (m_Geometry.QuadCount == 0)
 			{
@@ -109,6 +114,8 @@ namespace Dingo::Internal
 				return;
 			}
 
+			DE_PROFILE_SCOPE("DingoUI::Upload");
+			const UICpuTimer uploadTimer;
 			ReserveQuads(m_Geometry.QuadCount, frame);
 			const uint64_t bytes = sizeof(UIVertex) * m_Geometry.Vertices.size();
 			Renderer::Upload(m_VertexBuffer, m_Geometry.Vertices.data(), bytes);
@@ -143,12 +150,15 @@ namespace Dingo::Internal
 			m_HasUpload = true;
 			statistics.Uploads = 1;
 			statistics.UploadBytes = bytes;
+			statistics.UploadMs = uploadTimer.ElapsedMs();
 		}
 
 		statistics.Vertices = static_cast<uint32_t>(m_Geometry.Vertices.size());
 		statistics.Quads = m_Geometry.QuadCount;
 		statistics.CulledQuads = m_Geometry.CulledQuads;
 
+		DE_PROFILE_SCOPE("DingoUI::Draw");
+		const UICpuTimer drawTimer;
 		Renderer::BeginGpuTimer("DingoUI");
 
 		const FrameData frameData{ glm::vec2(1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height)) };
@@ -162,6 +172,7 @@ namespace Dingo::Internal
 		}
 
 		Renderer::EndGpuTimer();
+		statistics.DrawMs = drawTimer.ElapsedMs();
 	}
 
 	DingoUIBatcher::TargetPipeline* DingoUIBatcher::GetTargetPipeline(Framebuffer* target, uint64_t formatKey)

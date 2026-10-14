@@ -194,6 +194,9 @@ namespace Dingo::Internal
 		ApplyBox(element, params.Layout);
 		element.NameHash = HashName(name);
 		element.Id = Mix(k_FnvOffset, element.NameHash);
+		element.TextOffset = static_cast<uint32_t>(m_Text.size());
+		element.TextLength = static_cast<uint32_t>(name.size());
+		m_Text.append(name);
 		element.Anchor = params.Anchor;
 		element.Offset = params.Offset * m_RootScale;
 		element.Pivot = params.HasPivot ? params.Pivot : AnchorFraction(params.Anchor);

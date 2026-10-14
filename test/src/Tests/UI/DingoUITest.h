@@ -2,6 +2,7 @@
 #include "Tests/Renderer2D/Renderer2DTest.h"
 #include "Tests/TestChecks.h"
 #include "DingoEngine/UI/DingoUI/DingoUIContext.h"
+#include "DingoEngine/UI/DingoUI/DingoUIDebug.h"
 
 #include <memory>
 #include <string>
@@ -29,6 +30,12 @@ namespace Dingo
 	// is not declared, distance scaling and fading, depth order below a screen root, entities through
 	// their hierarchy, the pointer passing through (or stopped by) a world root, and 50 bars in one
 	// draw call.
+	// The debug snapshot the F9 DingoUI tab reads is checked against the context's own numbers. A stress
+	// builder runs for about 50 frames after the world checks: a 500-element static menu, then 2,000
+	// widgets in scroll areas with nested styles, 200 world labels, tweens, ids that change every frame
+	// and a root fading in and out, asserting one draw call, a bounded state map, and that the state, the
+	// tweens and the transitions drain once the UI stops declaring. --dingoui=stress runs the same
+	// builder for --dingoui-frames=N frames (default 600), logs the CPU averages and closes the app.
 	// The view shows the wrapped text at its MaxWidth under a DingoUI panel built with the element
 	// API, and a panel of live widgets to click by hand inside the viewport, with a themed panel and a
 	// 9-slice panel beside them, and a panel that fades and slides in and out, and health bars orbiting in the world.
@@ -56,6 +63,11 @@ namespace Dingo
 		bool StepNavigation(Framebuffer* output);
 		bool StepTransitions(Framebuffer* output);
 		bool StepWorld(Framebuffer* output);
+		bool StepStress(Framebuffer* output);
+		void SampleStress(Internal::DingoUIContext& context);
+		void FinishStress(Internal::DingoUIContext& context, Framebuffer* output);
+		void DeclareStressMenu();
+		void DeclareStressHeavy(uint32_t frame);
 		void DeclareLiveWorld();
 		void DeclareNavScene();
 		void DeclareWidgetScene();
@@ -105,6 +117,15 @@ namespace Dingo
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 
 	private:
+		enum class StressPhase : uint8_t { None, Menu, Heavy, Cooldown };
+
+		struct StressTotals
+		{
+			uint32_t Samples = 0;
+			double DingoUIMs = 0.0, DeclareMs = 0.0, BeginMs = 0.0, LayoutMs = 0.0, EmitMs = 0.0, BuildMs = 0.0, UploadMs = 0.0, DrawMs = 0.0;
+			double Quads = 0.0, DrawCalls = 0.0, Elements = 0.0, States = 0.0, Uploads = 0.0;
+		};
+
 		Font* m_Font = nullptr;
 		uint32_t m_Stage = 0;
 		uint32_t m_DrawStage = 0;
@@ -164,6 +185,25 @@ namespace Dingo
 		uint32_t m_WorldStage = 0;
 		bool m_WorldDone = false;
 		float m_LiveTime = 0.0f;
+		bool m_StressMode = false;
+		bool m_StressDone = false;
+		uint32_t m_StressStep = 0;
+		uint32_t m_StressMenuFrames = 0;
+		uint32_t m_StressHeavyFrames = 0;
+		StressPhase m_StressPrev = StressPhase::None;
+		uint32_t m_StressPhaseFrame = 0;
+		float m_StressDeclareMs = 0.0f;
+		uint32_t m_StressStableWidgets = 0;
+		uint32_t m_StressWorldDeclared = 0;
+		uint32_t m_StressBadDraws = 0;
+		uint32_t m_StressBadSnapshots = 0;
+		uint32_t m_StressMaxStates = 0;
+		uint32_t m_StressMaxExiting = 0;
+		uint32_t m_StressMenuElements = 0;
+		uint32_t m_StressMenuBadCache = 0;
+		StressTotals m_StressMenuTotals;
+		StressTotals m_StressHeavyTotals;
+		Internal::DingoUIDebug::Snapshot m_StressSnapshot;
 		TestChecks m_Checks;
 	};
 

@@ -54,7 +54,8 @@ namespace Dingo::Internal
 
 	void DingoUIContext::BeginFrame(const UIInputState& input)
 	{
-		DE_PROFILE_FUNCTION();
+		DE_PROFILE_SCOPE("DingoUI::BeginFrame");
+		const UICpuTimer timer;
 
 		m_Input = m_InputOverride ? *m_InputOverride : input;
 
@@ -71,6 +72,7 @@ namespace Dingo::Internal
 		m_Tree.Begin(m_TargetSize);
 		m_ScrollStack.clear();
 		m_InFrame = true;
+		m_FrameCosts.BeginMs = timer.ElapsedMs();
 	}
 
 	void DingoUIContext::ResolveInteraction()
@@ -644,7 +646,7 @@ namespace Dingo::Internal
 
 	void DingoUIContext::EndFrame(bool render)
 	{
-		DE_PROFILE_FUNCTION();
+		DE_PROFILE_SCOPE("DingoUI::EndFrame");
 
 		m_InFrame = false;
 		if (m_Tree.CloseAll() > 0)
@@ -660,7 +662,12 @@ namespace Dingo::Internal
 			}
 		}
 
-		m_Tree.Layout(m_Measure);
+		{
+			DE_PROFILE_SCOPE("DingoUI::Layout");
+			const UICpuTimer timer;
+			m_Tree.Layout(m_Measure);
+			m_FrameCosts.LayoutMs = timer.ElapsedMs();
+		}
 
 		for (const UIElement& element : m_Tree.GetElements())
 		{
@@ -676,7 +683,13 @@ namespace Dingo::Internal
 
 		m_RenderStatistics = {};
 		const bool draw = render && !Renderer::IsFrameSkipped();
-		BuildDrawList(draw);
+		{
+			DE_PROFILE_SCOPE("DingoUI::Emit");
+			const UICpuTimer timer;
+			BuildDrawList(draw);
+			m_FrameCosts.EmitMs = timer.ElapsedMs();
+			m_FrameCosts.ExitingRoots = static_cast<uint32_t>(m_ExitingRoots.size());
+		}
 		std::swap(m_Tree, m_LastTree);
 		m_ModalActive = m_LastTree.HasModal();
 

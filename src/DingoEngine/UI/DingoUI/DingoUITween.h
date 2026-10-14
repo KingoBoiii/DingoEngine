@@ -78,6 +78,7 @@ namespace Dingo::Internal
 		// nothing kept, and lists the rest by layer.
 		void AdvanceExiting(uint64_t frame, float dt, std::vector<Entry*>& exiting);
 		size_t Size() const { return m_Entries.size(); }
+		const Entry* Find(uint64_t id) const;
 
 		static UIRootVisual VisualOf(const Entry& entry);
 
