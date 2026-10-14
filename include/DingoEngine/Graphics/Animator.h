@@ -477,6 +477,7 @@ namespace Dingo
 		// Set when a layer above 0 changed m_LocalPoses in the last Evaluate; layer 0's own result is
 		// then kept in its Pose.
 		bool m_UpperLayersApplied = false;
+		mutable bool m_LayerRangeWarned = false;
 		std::vector<JointPose> m_Scratch;
 		std::vector<JointPose> m_BlendScratch;
 		std::vector<JointPose> m_Underneath;

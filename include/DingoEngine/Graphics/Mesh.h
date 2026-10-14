@@ -37,10 +37,10 @@ namespace Dingo
 		/// Copies the vertices and indices (three per triangle) into a new mesh and computes its
 		/// bounds. The caller owns the result and deletes it; a Model's meshes belong to the Model.
 		[[nodiscard]] static Mesh* Create(const std::vector<MeshVertex>& vertices, const std::vector<uint32_t>& indices);
-		/// A skinned mesh; takes ownership of the data, one skin vertex per rest vertex (asserted).
-		/// restVertices are the skin posed at the skeleton's rest pose, in model space; they are
-		/// what GetVertices() returns, so physics and SubmitMesh see the rest pose. The caller owns
-		/// the result and deletes it.
+		/// A skinned mesh; takes ownership of the data. restVertices are the skin posed at the
+		/// skeleton's rest pose, in model space; they are what GetVertices() returns, so physics and
+		/// SubmitMesh see the rest pose. Returns nullptr unless there is one skin vertex per rest
+		/// vertex. The caller owns the result and deletes it.
 		[[nodiscard]] static Mesh* CreateSkinned(std::vector<MeshVertex> restVertices, std::vector<SkinnedMeshVertex> skinVertices, std::vector<uint32_t> indices);
 
 		// Primitive factories
@@ -48,8 +48,8 @@ namespace Dingo
 		/// world units; 24 vertices so each face has its own normal and UVs. The caller owns it.
 		[[nodiscard]] static Mesh* CreateBox(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
 		/// A UV sphere centred on the origin with its poles on the Y axis. `rings` split it from
-		/// pole to pole and `segments` around the Y axis; both must be at least 1. The caller owns
-		/// it.
+		/// pole to pole and `segments` around the Y axis; rings is raised to at least 2 and
+		/// segments to at least 3, the fewest that enclose a volume. The caller owns it.
 		[[nodiscard]] static Mesh* CreateSphere(float radius = 0.5f, uint32_t rings = 16, uint32_t segments = 16);
 
 	public:

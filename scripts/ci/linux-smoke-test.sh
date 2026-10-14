@@ -112,6 +112,10 @@ else
 fi
 
 mapfile -t tests < <(grep -oP '^\s*m_Tests\.push_back\(\{ "\K[^"]+' "$ROOT/test/src/TestLayer.cpp")
+if (( ${#tests[@]} < 20 )); then
+	echo "::error::found ${#tests[@]} test cases in test/src/TestLayer.cpp, expected at least 20"
+	exit 1
+fi
 for test in "${tests[@]}"; do
 	run "test-${test//[^A-Za-z0-9]/_}" "$ROOT/test" "$BIN/Dingo-TestFramework/Dingo-TestFramework" "--test=$test"
 done

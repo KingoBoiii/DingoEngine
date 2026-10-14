@@ -12,7 +12,8 @@ namespace Dingo
 	///
 	/// A default-constructed UUID is the null id 0, so an uninitialised member or a
 	/// resize()d vector slot reads as "no id" rather than as a random, valid-looking one.
-	/// Fresh ids come from Generate(), which never returns 0.
+	/// Fresh ids come from Generate(), which never returns 0 and may be called from any
+	/// thread.
 	class UUID
 	{
 	public:

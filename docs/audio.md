@@ -74,6 +74,49 @@ audio.SetAttenuation(id, falloff);               // re-tune it live
 An `AudioSourceComponent` has the same `Attenuation` (empty = the engine default), and an
 `AudioListenerComponent` entity drives the listener.
 
+## Streams
+
+A stream is a sound you feed with PCM while the game runs, instead of a clip from disk: voice
+chat, procedural audio, a video's soundtrack. It takes the same `SoundPlayParams` as `Play`, so
+it can be spatialized, attenuated, routed to a bus and moved with `SetPosition`.
+
+```cpp
+AudioStreamDesc desc;
+desc.SampleRate = 16000;      // the pushed data's rate; the engine resamples to the device
+desc.Channels = 1;
+desc.BufferFrames = 16000 / 2; // ring buffer capacity: 0.5 s here
+
+SoundPlayParams params;
+params.Spatialized = true;
+params.Position = speakerPosition;
+params.Bus = voiceBus;
+AudioSoundId voice = audio.CreateStream(desc, params);
+
+// Each time data arrives (interleaved frames, int16_t or float in [-1, 1]):
+uint32_t taken = audio.PushStreamFrames(voice, pcm, frameCount); // fewer when the buffer is full
+audio.SetPosition(voice, speakerPosition);
+
+// A jitter buffer: hold data back until ~60 ms is queued, drop old data when it grows.
+uint32_t queued = audio.GetQueuedStreamFrames(voice);
+
+audio.Stop(voice); // the only way it ends, with StopBus, DestroyBus and Shutdown
+```
+
+- A stream never finishes on its own and `Update` never reaps it. When the buffer runs dry it
+  fades to silence over 5 ms and stays alive (`IsPlaying` stays true). Pushed data fades back in.
+- Once silent, a stream resumes when one device read is queued: the device period's frame
+  count (often 480, 1024 on some devices, more at 96 or 192 kHz), counted at the stream's rate,
+  or the whole buffer if that is smaller. 480 frames is 30 ms at 16 kHz and 60 ms at 8 kHz. A
+  jitter buffer that drops data must keep its target above that, or the stream stays silent.
+- `Looping` is ignored, and `SetLooping` on a stream is a no-op. `Pause`, `Resume`, `SetPitch`,
+  `SetVolume` and `SetAttenuation` work as on any sound. Pitch changes how fast the stream drains.
+- `CreateStream` fails (`k_InvalidSound`, logged) with `BufferFrames` 0 or past 2 GB of floats,
+  `Channels` 0 or above 254, or `SampleRate` outside 8000–384000 Hz.
+- Call `PushStreamFrames` and `GetQueuedStreamFrames` on the thread that drives the engine (the
+  main thread), like every other `AudioEngine` call; only the device thread's read is lock-free.
+  Data a network thread receives goes through the game's own queue. Both return 0 for a handle
+  that is no live stream.
+
 ## Buses
 
 A bus mixes the sounds routed to it and its sub-buses, then feeds its parent. `k_MasterBus` is
@@ -143,10 +186,13 @@ and the bus count.
 
 ## Test
 
-The test framework's Audio Bus Test (`--test=bus`) runs `[PASS]`/`[FAIL]` checks of the bus API
-at start-up. Then it plays a looping beep on a "Music" bus and gives the Properties panel a
-volume slider and mute and pause boxes for Master, Music and SFX, plus a one-shot button for
-SFX. Use it to hear that a bus change reaches a sound that is already playing.
+The test framework's Audio Bus Test (`--test=bus`) runs `[PASS]`/`[FAIL]` checks of the bus and
+stream APIs at start-up, plus one a second later that a stream played what was pushed and
+survived the underrun. Then it plays a looping beep on a "Music" bus and gives the Properties
+panel a volume slider and mute and pause boxes for Master, Music and SFX, plus a one-shot button
+for SFX. Use it to hear that a bus change reaches a sound that is already playing. "Stream a
+tone on SFX" streams a 440 Hz tone that circles the listener; "Gaps" leaves 300 ms of every
+second unfed, to listen for clicks at each underrun.
 
 ## Limits
 
@@ -154,3 +200,4 @@ SFX. Use it to hear that a bus change reaches a sound that is already playing.
 - Buses have volume, mute and pause only. There are no effects (filters, reverb) and no
   ducking.
 - Bus volume changes apply at once, with no fade.
+- No microphone capture; a stream plays PCM the game already has.

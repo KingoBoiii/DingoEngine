@@ -119,9 +119,17 @@ namespace Dingo
 
 		/// The params the sampler was created with.
 		virtual const SamplerParams& GetParams() const { return m_Params; }
+		/// Never reused, unlike the address, which a freed sampler can hand to a new one.
+		uint64_t GetId() const { return m_Id; }
+
+	private:
+		static uint64_t AllocateId();
 
 	protected:
 		SamplerParams m_Params; ///< The params the sampler was created with.
+
+	private:
+		uint64_t m_Id = AllocateId();
 	};
 
 }

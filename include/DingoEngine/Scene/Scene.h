@@ -49,8 +49,8 @@ namespace Dingo
 		/// TagComponent; an empty name becomes "Entity". The scene owns the entity; the handle dies
 		/// with DestroyEntity, Clear or the scene.
 		Entity CreateEntity(const std::string& name = std::string());
-		/// As CreateEntity, with the given UUID (for loading or syncing); the UUID must be unused
-		/// in this scene.
+		/// As CreateEntity, with the given UUID (for loading or syncing). Returns an invalid Entity,
+		/// and warns, when the UUID is already in use in this scene.
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
 		/// Destroys the entity and every descendant, children first, so a child's OnDestroy still
 		/// sees its parent. Called from a script, the whole subtree waits for the end of the pass.

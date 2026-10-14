@@ -85,6 +85,12 @@ namespace Dingo
 
 	Entity Scene::CreateEntityWithUUID(UUID uuid, const std::string& name)
 	{
+		if (m_Data->EntityMap.contains(uuid))
+		{
+			DE_CORE_WARN("Scene '{}': an entity with UUID {} already exists; '{}' was not created.", m_Name, static_cast<uint64_t>(uuid), name);
+			return {};
+		}
+
 		entt::entity handle = m_Data->Registry.create();
 		m_Data->Registry.emplace<IDComponent>(handle, uuid);
 		m_Data->Registry.emplace<TransformComponent>(handle);

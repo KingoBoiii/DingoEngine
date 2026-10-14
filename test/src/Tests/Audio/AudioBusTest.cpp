@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 
+#include <cmath>
 #include <format>
 
 namespace Dingo
@@ -24,6 +25,7 @@ namespace Dingo
 		}
 
 		RunChecks();
+		RunStreamChecks();
 
 		m_Sfx = audio.CreateBus("Bus Test SFX");
 		m_Music = audio.CreateBus("Bus Test Music");
@@ -127,6 +129,135 @@ namespace Dingo
 		Check(audio.GetBusCount() == buses && audio.GetActiveSoundCount() == sounds, "the checks leave no bus or sound behind");
 	}
 
+	void AudioBusTest::RunStreamChecks()
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		const uint32_t sounds = audio.GetActiveSoundCount();
+
+		AudioStreamDesc bad;
+		bad.Channels = 0;
+		const bool noChannels = audio.CreateStream(bad) == k_InvalidSound;
+		bad = {};
+		bad.SampleRate = 0;
+		const bool noRate = audio.CreateStream(bad) == k_InvalidSound;
+		bad = {};
+		bad.BufferFrames = 0;
+		const bool noBuffer = audio.CreateStream(bad) == k_InvalidSound;
+		Check(noChannels && noRate && noBuffer && audio.GetActiveSoundCount() == sounds, "CreateStream without channels, a sample rate or a buffer fails");
+
+		// A paused bus keeps the device from draining the stream, so the counts below are exact.
+		const AudioBusId held = audio.CreateBus("Stream Check");
+		audio.PauseBus(held);
+
+		AudioStreamDesc desc;
+		desc.SampleRate = 16000;
+		desc.BufferFrames = 1600;
+		SoundPlayParams params;
+		params.Volume = 0.0f;
+		params.Bus = held;
+		const AudioSoundId stream = audio.CreateStream(desc, params);
+		Check(stream != k_InvalidSound && audio.IsPlaying(stream) && audio.GetActiveSoundCount() == sounds + 1, "CreateStream starts a live sound");
+		Check(audio.GetQueuedStreamFrames(stream) == 0, "a new stream has nothing queued");
+
+		const std::vector<std::int16_t> pcm16(1000, 1000);
+		const std::vector<float> pcmFloat(2000, 0.25f);
+		const uint32_t first = audio.PushStreamFrames(stream, pcm16.data(), 1000);
+		const uint32_t second = audio.PushStreamFrames(stream, pcmFloat.data(), 1000);
+		Check(first == 1000 && second == 600 && audio.GetQueuedStreamFrames(stream) == 1600,
+			std::format("pushing past the buffer takes what fits (took {} + {}, {} queued)", first, second, audio.GetQueuedStreamFrames(stream)));
+		Check(audio.PushStreamFrames(stream, pcmFloat.data(), 1) == 0, "a full stream takes nothing");
+
+		SoundPlayParams loop;
+		loop.Looping = true;
+		loop.Volume = 0.0f;
+		loop.Bus = held;
+		const AudioSoundId clipSound = audio.Play(m_Clip, loop);
+		Check(audio.PushStreamFrames(clipSound, pcmFloat.data(), 10) == 0 && audio.GetQueuedStreamFrames(clipSound) == 0
+			&& audio.PushStreamFrames(k_InvalidSound, pcm16.data(), 10) == 0 && audio.GetQueuedStreamFrames(k_InvalidSound) == 0,
+			"a clip's sound or an invalid handle is no stream");
+
+		audio.Stop(stream);
+		Check(!audio.IsPlaying(stream) && audio.GetQueuedStreamFrames(stream) == 0 && audio.PushStreamFrames(stream, pcm16.data(), 10) == 0,
+			"a stopped stream's handle is stale");
+
+		desc.Channels = 2;
+		desc.BufferFrames = 4;
+		const AudioSoundId stereo = audio.CreateStream(desc, params);
+		const uint32_t stereoPushed = audio.PushStreamFrames(stereo, pcmFloat.data(), 3);
+		Check(stereoPushed == 3 && audio.GetQueuedStreamFrames(stereo) == 3, "a stereo stream counts frames, not samples");
+
+		audio.DestroyBus(held);
+		Check(!audio.IsPlaying(stereo) && !audio.IsPlaying(clipSound) && audio.GetActiveSoundCount() == sounds, "DestroyBus ends its streams");
+
+		// A full ring, so the resume threshold (a device period, capped at BufferFrames) is met on any device.
+		desc = {};
+		desc.SampleRate = 16000;
+		desc.BufferFrames = 800;
+		SoundPlayParams quiet;
+		quiet.Volume = 0.0f;
+		m_UnderrunStream = audio.CreateStream(desc, quiet);
+		audio.PushStreamFrames(m_UnderrunStream, pcm16.data(), 800);
+		m_UnderrunTime = 0.0f;
+	}
+
+	void AudioBusTest::StartTone()
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		audio.Stop(m_Tone);
+
+		SoundPlayParams params;
+		params.Volume = 0.5f;
+		params.Bus = m_Sfx;
+		params.Spatialized = true;
+		params.Position = glm::vec3(2.0f, 0.0f, 0.0f);
+		m_Tone = audio.CreateStream(AudioStreamDesc(), params);
+		m_ToneTime = 0.0f;
+		m_TonePhase = 0.0;
+	}
+
+	void AudioBusTest::UpdateStreams(float deltaTime)
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+
+		if (m_UnderrunStream != k_InvalidSound)
+		{
+			m_UnderrunTime += deltaTime;
+			if (m_UnderrunTime >= 1.0f)
+			{
+				Check(audio.GetQueuedStreamFrames(m_UnderrunStream) == 0 && audio.IsPlaying(m_UnderrunStream),
+					"a stream plays what was pushed and stays alive through the underrun and the engine's updates");
+				audio.Stop(m_UnderrunStream);
+				m_UnderrunStream = k_InvalidSound;
+			}
+		}
+
+		if (!audio.IsPlaying(m_Tone))
+			return;
+
+		m_ToneTime += deltaTime;
+		if (m_ToneOrbit)
+			audio.SetPosition(m_Tone, glm::vec3(2.0f * std::cos(m_ToneTime), 0.0f, 2.0f * std::sin(m_ToneTime)));
+
+		const bool gap = m_ToneGaps && std::fmod(m_ToneTime, 1.0f) > 0.7f;
+		if (gap)
+			return;
+
+		constexpr uint32_t sampleRate = AudioStreamDesc().SampleRate;
+		constexpr uint32_t target = sampleRate / 10;
+		const uint32_t queued = audio.GetQueuedStreamFrames(m_Tone);
+		if (queued >= target)
+			return;
+
+		constexpr double step = 2.0 * 3.14159265358979323846 * 440.0 / sampleRate;
+		m_ToneScratch.resize(target - queued);
+		for (std::int16_t& sample : m_ToneScratch)
+		{
+			sample = static_cast<std::int16_t>(std::sin(m_TonePhase) * 12000.0);
+			m_TonePhase = std::fmod(m_TonePhase + step, 2.0 * 3.14159265358979323846);
+		}
+		audio.PushStreamFrames(m_Tone, m_ToneScratch.data(), static_cast<uint32_t>(m_ToneScratch.size()));
+	}
+
 	void AudioBusTest::Check(bool condition, const std::string& name)
 	{
 		m_Checks.push_back({ name, condition });
@@ -138,6 +269,8 @@ namespace Dingo
 
 	void AudioBusTest::Update(float deltaTime)
 	{
+		UpdateStreams(deltaTime);
+
 		const AudioEngine& audio = Application::Get().GetAudioEngine();
 
 		m_Renderer->BeginScene(m_ProjectionViewMatrix);
@@ -217,6 +350,21 @@ namespace Dingo
 			audio.PlayOneShot(m_Clip, m_Sfx);
 
 		ImGui::Separator();
+		if (!audio.IsPlaying(m_Tone))
+		{
+			if (ImGui::Button("Stream a tone on SFX"))
+				StartTone();
+		}
+		else if (ImGui::Button("Stop the tone"))
+		{
+			audio.Stop(m_Tone);
+		}
+		ImGui::Checkbox("Gaps (underruns)", &m_ToneGaps);
+		ImGui::SameLine();
+		ImGui::Checkbox("Circle the listener", &m_ToneOrbit);
+		ImGui::Text("Queued: %u frames", audio.GetQueuedStreamFrames(m_Tone));
+
+		ImGui::Separator();
 		for (const CheckResult& check : m_Checks)
 		{
 			const ImVec4 color = check.Passed ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
@@ -227,6 +375,10 @@ namespace Dingo
 	void AudioBusTest::Cleanup()
 	{
 		AudioEngine& audio = Application::Get().GetAudioEngine();
+		audio.Stop(m_UnderrunStream);
+		audio.Stop(m_Tone);
+		m_UnderrunStream = k_InvalidSound;
+		m_Tone = k_InvalidSound;
 		audio.DestroyBus(m_Sfx);
 		audio.DestroyBus(m_Music);
 		m_Sfx = k_InvalidBus;

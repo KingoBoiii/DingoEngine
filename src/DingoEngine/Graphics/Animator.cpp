@@ -311,11 +311,10 @@ namespace Dingo
 		if (index < k_MaxLayers)
 			return true;
 
-		static bool s_Warned = false;
-		if (!s_Warned)
+		if (!m_LayerRangeWarned)
 		{
 			DE_CORE_WARN("Animator: layer {} is past the {} an animator can have, so the call is ignored", index, k_MaxLayers);
-			s_Warned = true;
+			m_LayerRangeWarned = true;
 		}
 		return false;
 	}

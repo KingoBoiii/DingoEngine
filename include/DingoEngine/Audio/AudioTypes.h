@@ -73,4 +73,13 @@ namespace Dingo
 		SoundPlayParams() = default;
 	};
 
+	/// A live sound fed with PCM at runtime (AudioEngine::CreateStream). The engine resamples
+	/// SampleRate to the device's rate.
+	struct AudioStreamDesc
+	{
+		std::uint32_t SampleRate = 48000;      ///< Frames per second of the pushed PCM, 8000 to 384000.
+		std::uint32_t Channels = 1;            ///< Interleaved channels per frame, 1 to 254.
+		std::uint32_t BufferFrames = 48000 / 2; ///< Ring buffer capacity in frames.
+	};
+
 }

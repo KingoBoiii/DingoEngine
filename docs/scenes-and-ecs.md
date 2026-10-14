@@ -30,6 +30,9 @@ player.AddComponent<SpriteRendererComponent>(SpriteRendererComponent{ glm::vec4{
 
 Every entity created via `CreateEntity` automatically gets a stable `UUID`, a name
 (`TagComponent`), and a `TransformComponent`.
+`CreateEntityWithUUID(uuid, name)` does the same with a UUID you choose. If an entity in the
+scene already has that UUID, it creates nothing, logs a warning and returns an invalid `Entity`.
+An entity destroyed from a script keeps its UUID until the end of that update pass.
 
 ### Entity API
 
@@ -715,6 +718,7 @@ since the translucent pass draws no instances.
 are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's winding. `MaterialParams` matches that by default (`CullMode::Back` with
 `FrontCounterClockwise = true`), so a custom material hides back faces with no extra settings, on
 Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
+`CreateSphere` raises `rings` to at least 2 and `segments` to at least 3.
 
 Renderer3D keeps the vertices' order, whether it transforms them on the CPU or instances them on
 the GPU, so an entity mirrored by a negative scale on one or three axes is drawn inside out by a

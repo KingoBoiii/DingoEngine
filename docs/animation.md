@@ -271,7 +271,8 @@ matrices, from any of:
 - `Animator::GetSkinningPalette()`,
 - `Skeleton::GetRestPalette()`,
 - your own joint poses, through `Skeleton::ComputeGlobalTransforms(localPoses, globals)` (one matrix
-  per joint) and `Skeleton::ComputeSkinningPalette(globals, palette)` (one per skin joint).
+  per joint) and `Skeleton::ComputeSkinningPalette(globals, palette)` (one per skin joint). A span
+  shorter than that logs an error and nothing is written.
 
 ```cpp
 Animator animator(model->GetSkeleton());
@@ -619,7 +620,8 @@ animator->Stop(0.2f, 1);                                  // let the layers belo
 - A null clip on a layer above 0 is **transparent**: the pose below shows. That is how a layer fades
   in from nothing and how `Stop` fades out.
 - Layers apply in index order. `SetLayer(0, ...)` is ignored. `GetLayerCount()` and `GetLayer(i)`
-  read them back.
+  read them back. An animator has at most 32 layers: a larger index is ignored, with a warning the
+  first time on each animator.
 - A mask root or exclusion that the skeleton lacks warns when the layer is set. A missing root leaves
   the mask empty, so the layer moves nothing.
 - **Additive layers are not supported.**

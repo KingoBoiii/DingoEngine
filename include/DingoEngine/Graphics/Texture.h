@@ -177,6 +177,8 @@ namespace Dingo
 		/// slot each flush. Every texture draws it from one counter, so a texture created
 		/// at a freed texture's address never matches what was cached for the old one.
 		uint32_t GetGeneration() const { return m_Generation; }
+		/// Never reused, unlike the address, and kept across Reinitialize, unlike the generation.
+		uint64_t GetId() const { return m_Id; }
 
 		/// Width in texels.
 		virtual uint32_t GetWidth() const { return m_Params.Width; }
@@ -195,9 +197,15 @@ namespace Dingo
 		/// The next value of the counter every texture's generation is drawn from.
 		static uint32_t NextGeneration();
 
+	private:
+		static uint64_t AllocateId();
+
 	protected:
 		TextureParams m_Params; ///< The params the texture was created or last Reinitialized with.
 		uint32_t m_Generation = NextGeneration(); ///< See GetGeneration.
+
+	private:
+		uint64_t m_Id = AllocateId();
 	};
 
 }

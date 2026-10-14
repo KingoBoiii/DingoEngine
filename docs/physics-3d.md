@@ -70,8 +70,9 @@ world->SetLinearVelocity(ballId, { 0.0f, 2.0f, -25.0f });
 | `Dynamic`   | Fully simulated — gravity, forces, collisions. |
 | `Kinematic` | Moves only by the velocity you set; ignores forces and gravity. |
 
-`world->DestroyBody(id)` removes a body. Box uses `HalfExtents`; Sphere uses `Radius`; Capsule
-uses `Radius` plus `HalfHeight`; Mesh and ConvexHull use `Mesh` plus `MeshScale`.
+`world->DestroyBody(id)` removes a body; on a handle already destroyed it does nothing. Box uses
+`HalfExtents`; Sphere uses `Radius`; Capsule uses `Radius` plus `HalfHeight`; Mesh and ConvexHull
+use `Mesh` plus `MeshScale`.
 
 ## Mesh colliders (v0.6.2)
 

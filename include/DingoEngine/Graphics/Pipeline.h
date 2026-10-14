@@ -173,7 +173,8 @@ namespace Dingo
 	class Pipeline
 	{
 	public:
-		/// Builds the pipeline and returns it ready to bind. The caller owns the result.
+		/// Builds the pipeline and returns it ready to bind, or nullptr when params has no Shader or
+		/// no Framebuffer. The caller owns the result.
 		[[nodiscard]] static Pipeline* Create(const PipelineParams& params);
 
 	public:

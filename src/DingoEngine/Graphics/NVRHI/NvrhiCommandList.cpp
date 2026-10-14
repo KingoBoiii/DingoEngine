@@ -58,7 +58,7 @@ namespace Dingo
 		Execute();
 	}
 
-	void NvrhiCommandList::Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor)
+	void NvrhiCommandList::Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor)
 	{
 		DE_CORE_ASSERT(framebuffer, "Framebuffer is null.");
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before clearing framebuffer.");
@@ -75,7 +75,7 @@ namespace Dingo
 
 		// A depth-only framebuffer (a shadow map) has no colour to clear.
 		if (attachmentIndex < nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments.size())
-			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, 1.0f });
+			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, clearColor.a });
 
 		if (hasDepth)
 			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);

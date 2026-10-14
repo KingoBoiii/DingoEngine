@@ -264,6 +264,35 @@ namespace Dingo
 			Check(inward == 0, std::format("CreateSphere({}, {}) winds every triangle outward ({} inward)", detail.x, detail.y, inward));
 		}
 
+		std::unique_ptr<Mesh> flatSphere(Mesh::CreateSphere(0.5f, 0, 0));
+		const auto finite = [](const auto& v)
+		{
+			for (int i = 0; i < v.length(); ++i)
+			{
+				if (!std::isfinite(v[i]))
+					return false;
+			}
+			return true;
+		};
+		const bool flatFinite = std::all_of(flatSphere->GetVertices().begin(), flatSphere->GetVertices().end(), [&](const MeshVertex& vertex)
+		{
+			return finite(vertex.Position) && finite(vertex.Normal) && finite(vertex.TexCoord);
+		});
+		const size_t flatIndices = flatSphere->GetIndices().size();
+		Check(flatFinite && flatIndices == 36 && CountInwardTriangles(*flatSphere) == 0,
+			std::format("CreateSphere(0, 0) builds the 2-ring, 3-segment sphere with finite vertices ({} indices)", flatIndices));
+
+		const PerspectiveCamera defaultCamera;
+		const PerspectiveCamera explicitCamera(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+		float cameraDifference = 0.0f;
+		for (int column = 0; column < 4; ++column)
+		{
+			for (int row = 0; row < 4; ++row)
+				cameraDifference = (std::max)(cameraDifference, std::abs(defaultCamera.GetViewProjectionMatrix()[column][row] - explicitCamera.GetViewProjectionMatrix()[column][row]));
+		}
+		Check(cameraDifference < 1e-5f && defaultCamera.GetViewProjectionMatrix() != glm::mat4(1.0f),
+			"A default PerspectiveCamera has the matrices of its documented defaults");
+
 		// A draw that reads past the buffer looks the same as one that doesn't (out-of-range indices read
 		// as 0 on D3D), so the "rest of the buffer" count is checked as a number.
 		const uint32_t rest[] = { Renderer::GetIndexCount(m_CheckIB), Renderer::GetIndexCount(m_CheckIB, 18), Renderer::GetIndexCount(m_CheckIB, 24), Renderer::GetIndexCount(m_CheckIB, 30) };

@@ -25,7 +25,7 @@ namespace Dingo
 
 		virtual bool IsRecording() const override { return m_HasBegun; }
 
-		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec3& clearColor = glm::vec3(0.3f)) override;
+		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor = glm::vec4(0.3f, 0.3f, 0.3f, 1.0f)) override;
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) override;
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) override;

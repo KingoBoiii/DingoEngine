@@ -13,8 +13,12 @@ namespace Dingo
 	{
 	public:
 		/// Position (0, 5, 10) looking at the origin, y up, 45 degrees vertical FOV, 16:9, clip 0.1
-		/// to 1000. The matrices stay identity until a setter is called.
-		PerspectiveCamera() = default;
+		/// to 1000, with its matrices already computed.
+		PerspectiveCamera()
+		{
+			RecalculateProjection();
+			RecalculateView();
+		}
 
 		/// fov is the vertical field of view in degrees, aspectRatio is width / height and the
 		/// clip distances are in world units. Position, target and up take their defaults.

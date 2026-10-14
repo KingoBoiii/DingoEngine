@@ -79,7 +79,7 @@ handles instead of tracking raw pointers.
 - `k_InvalidAsset` is the null handle; test with `IsValidAssetHandle(h)`. A
   default-constructed `AssetHandle` is `k_InvalidAsset` (v0.6.3 — before that it was
   a random value that passed the check), so an unset member reads as "no asset".
-  `UUID::Generate()` makes a fresh id; `UUID()` is 0.
+  `UUID::Generate()` makes a fresh id, from any thread; `UUID()` is 0.
 - The same path always maps to the same handle: loading
   `"sprites/player.png"` twice returns the same handle *and the same loaded
   object* — no duplicate file reads, no duplicate GPU textures.
@@ -194,7 +194,7 @@ With `EnableHotReload` on, the manager polls the source files of every loaded
 - **Textures** re-decode on the loader thread and swap their contents inside
   the *same* `Texture` object — every `Texture*` held by game code (and every
   cached binding set, through `Texture::GetGeneration`) keeps working, even if the new image
-  has different dimensions.
+  has different dimensions. `GetId()` stays the same; `GetGeneration()` changes.
 - **Shaders** recompile from source, bypassing and rewriting the bytecode disk
   cache. On success the shader's *generation* is bumped and every `Pipeline` /
   `RenderPass` built from it lazily rebuilds on its next bind — no game code

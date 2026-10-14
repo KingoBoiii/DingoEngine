@@ -148,4 +148,10 @@ namespace Dingo
 		return s_Next.fetch_add(1, std::memory_order_relaxed);
 	}
 
+	uint64_t Texture::AllocateId()
+	{
+		static std::atomic<uint64_t> s_NextId{ 1 };
+		return s_NextId.fetch_add(1, std::memory_order_relaxed);
+	}
+
 }

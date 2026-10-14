@@ -152,7 +152,7 @@ namespace Dingo
 
 		/// Draws string with font from position, the left end of the first line's baseline (its
 		/// middle when textParameters.Centered). size scales the font: 1.0 makes its
-		/// ascender-to-descender height one world unit. font must be non-null and valid. The
+		/// ascender-to-descender height one world unit. A null font draws nothing (warned once). The
 		/// overloads take a 2D or 3D position. `string` is UTF-8; a byte that is not valid UTF-8
 		/// reads as Latin-1. The atlas bakes Latin-1, the printable General Punctuation and the
 		/// euro sign; anything else draws '?'.
@@ -424,6 +424,7 @@ namespace Dingo
 		GraphicsBuffer* m_QuadIndexBuffer = nullptr;
 		bool m_SceneSkipped = false; // begun in a Renderer::SkipFrame frame: every call until EndScene is a no-op
 		bool m_GpuTimerOpen = false;
+		bool m_NullFontWarned = false;
 		uint64_t m_GpuTimerFrame = 0;
 
 		struct CameraData

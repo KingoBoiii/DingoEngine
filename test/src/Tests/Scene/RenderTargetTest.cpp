@@ -313,24 +313,27 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 
 	void RenderTargetTest::RunGroundworkChecks()
 	{
-		// Every format clears and reads back; float formats keep a value past 1. Clears write alpha 1.
+		// Every format clears and reads back; float formats keep a value past 1. An RGBA target keeps
+		// the clear's alpha, so a transparent clear stays transparent.
 		for (const FormatTarget& target : m_FormatTargets)
 		{
 			const bool unorm = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::R8;
 			const glm::vec3 clear = unorm ? glm::vec3(0.25f, 0.5f, 0.75f) : glm::vec3(2.5f, 0.5f, 0.75f);
-			Renderer::Clear(target.Target, glm::vec4(clear, 1.0f));
+			Renderer::Clear(target.Target, glm::vec4(clear, 0.0f));
 
 			const bool singleChannel = target.Format == TextureFormat::R8 || target.Format == TextureFormat::R16F || target.Format == TextureFormat::R32F;
+			const bool hasAlpha = target.Format == TextureFormat::RGBA8_UNORM || target.Format == TextureFormat::RGBA16F || target.Format == TextureFormat::RGBA32F;
 			const char* name = target.Name;
 			const TextureFormat format = target.Format;
-			ReadBack(target.Target, [this, clear, unorm, singleChannel, name, format](const TexturePixels& pixels)
+			ReadBack(target.Target, [this, clear, unorm, singleChannel, hasAlpha, name, format](const TexturePixels& pixels)
 			{
 				const glm::vec4 value = pixels.GetPixel(1, 2);
 				const float tolerance = unorm ? 1.5f / 255.0f : 1e-3f;
 				const bool red = Near(value.r, clear.r, tolerance);
 				const bool rest = singleChannel || (Near(value.g, clear.g, tolerance) && Near(value.b, clear.b, tolerance));
-				Check(pixels.Format == format && red && rest,
-					std::format("{} clears to ({}, {}, {}) and reads back ({:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b));
+				const bool alpha = !hasAlpha || Near(value.a, 0.0f, tolerance);
+				Check(pixels.Format == format && red && rest && alpha,
+					std::format("{} clears to ({}, {}, {}, 0) and reads back ({:.3f}, {:.3f}, {:.3f}, {:.3f})", name, clear.r, clear.g, clear.b, value.r, value.g, value.b, value.a));
 			});
 		}
 
@@ -370,10 +373,11 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		DrawFullscreen(m_ResizeCopyMaterial, m_ResizeCopy);
 		Texture* before = m_ResizeTarget->GetAttachment(0);
 		const uint32_t generation = before->GetGeneration();
+		const uint64_t textureId = before->GetId();
 		m_ResizeTarget->Resize(32, 24);
 		Texture* after = m_ResizeTarget->GetAttachment(0);
-		Check(after == before && after->GetGeneration() != generation && after->GetWidth() == 32 && after->GetHeight() == 24 && m_ResizeTarget->GetWidth() == 32,
-			"Framebuffer::Resize keeps its attachment's Texture, with a new generation and the new size");
+		Check(after == before && after->GetGeneration() != generation && after->GetId() == textureId && after->GetWidth() == 32 && after->GetHeight() == 24 && m_ResizeTarget->GetWidth() == 32,
+			"Framebuffer::Resize keeps its attachment's Texture, with its id, a new generation and the new size");
 		Renderer::Clear(m_ResizeTarget, { 0.0f, 1.0f, 0.0f, 1.0f });
 		DrawFullscreen(m_ResizeCopyMaterial, m_ResizeCopy);
 		ReadBack(m_ResizeCopy, [this](const TexturePixels& pixels)
@@ -399,6 +403,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		Framebuffer* freed = MakeColorTarget("RenderTargetTest freed", TextureFormat::RGBA16F, 16, 16);
 		DrawFullscreen(m_FillMaterial, freed);
 		const uint64_t freedId = freed->GetId();
+		const uint64_t freedTextureId = freed->GetAttachment(0)->GetId();
 		DestroyAndDelete(freed);
 		m_ReusedTarget = Framebuffer::Create(FramebufferParams()
 			.SetDebugName("RenderTargetTest reused")
@@ -407,6 +412,13 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 			.AddAttachment({ TextureFormat::RGBA8_UNORM })
 			.SetEnableDepth(true));
 		Check(m_ReusedTarget->GetId() != freedId, "a new framebuffer never takes a freed one's id");
+		Check(m_ReusedTarget->GetAttachment(0)->GetId() != freedTextureId, "a new texture never takes a freed one's id");
+		Sampler* freedSampler = Sampler::Create(SamplerParams().SetCompare(true));
+		const uint64_t freedSamplerId = freedSampler->GetId();
+		DestroyAndDelete(freedSampler);
+		Sampler* newSampler = Sampler::Create(SamplerParams().SetCompare(true));
+		Check(newSampler->GetId() != freedSamplerId, "a new sampler never takes a freed one's id");
+		DestroyAndDelete(newSampler);
 		Renderer::Clear(m_ReusedTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
 		DrawFullscreen(m_FillMaterial, m_ReusedTarget);
 		ReadBack(m_ReusedTarget, [this](const TexturePixels& pixels)

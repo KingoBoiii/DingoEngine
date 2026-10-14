@@ -188,7 +188,12 @@ namespace Dingo
 		if (vd)
 		{
 			vd->Renderer->Shutdown();
-			delete vd;
+			if (vd->WindowOwned && vd->SwapChain)
+			{
+				vd->SwapChain->Destroy();
+				delete vd->SwapChain;
+			}
+			IM_DELETE(vd);
 		}
 		viewport->RendererUserData = nullptr;
 	}

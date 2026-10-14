@@ -592,7 +592,7 @@ namespace Dingo
 		}
 
 		RenderPass* renderPass = Internal::MaterialAccess::GetOrCreateRenderPass(material, layout, target, cullMode);
-		if (!s_Data->CommandList->SetRenderPass(renderPass))
+		if (!renderPass || !s_Data->CommandList->SetRenderPass(renderPass))
 			return nullptr;
 
 		const glm::uvec4& drawConstants = Internal::MaterialAccess::GetDrawConstants(material);
