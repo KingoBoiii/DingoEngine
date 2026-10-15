@@ -2313,9 +2313,13 @@ namespace Dingo
 					Check(stats.SkinnedDraws == 0, std::format("{} static foxes take the batched path", m_CrowdCount));
 					break;
 				}
-				const uint32_t expected = (std::min)(m_CrowdCount, budget);
-				Check(stats.SkinnedDraws == expected && stats.DroppedSkinnedDraws == m_CrowdCount - expected,
-					std::format("{} foxes: {} skinned draws and {} dropped past MaxSkinnedInstances ({})", m_CrowdCount, expected, m_CrowdCount - expected, budget));
+				{
+					// The crowd overflows a narrow viewport, and a culled fox takes nothing of the budget.
+					const uint32_t live = m_CrowdCount - (std::min)(stats.CulledSkinned, m_CrowdCount);
+					const uint32_t expected = (std::min)(live, budget);
+					Check(stats.CulledSkinned <= m_CrowdCount && stats.SkinnedDraws == expected && stats.DroppedSkinnedDraws == live - expected,
+						std::format("{} foxes: {} skinned draws, {} dropped past MaxSkinnedInstances ({}), {} culled", m_CrowdCount, stats.SkinnedDraws, stats.DroppedSkinnedDraws, budget, stats.CulledSkinned));
+				}
 				break;
 		}
 	}
