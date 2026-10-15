@@ -207,7 +207,8 @@ namespace Dingo
 			return;
 
 		m_Params.VSync = vsync;
-		Internal::RendererBackend::QueueVSync(vsync);
+		if (!m_VSyncForcedOff)
+			Internal::RendererBackend::QueueVSync(vsync);
 	}
 
 	GLFWmonitor* Window::GetCurrentMonitor() const

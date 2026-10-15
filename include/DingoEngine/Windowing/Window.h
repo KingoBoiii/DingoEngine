@@ -4,6 +4,7 @@
 #include "DingoEngine/Windowing/DisplayMode.h"
 
 #include <functional>
+#include <optional>
 
 struct GLFWwindow;
 struct GLFWmonitor;
@@ -128,7 +129,8 @@ namespace Dingo
 		DisplayMode GetDesktopDisplayMode() const;
 
 		/// The windowed client size, in pixels. While fullscreen it is kept as the size to restore
-		/// to. Ignored, with a warning, unless both sides are above 0.
+		/// to. Ignored, with a warning, unless both sides are above 0. Works under `--window`
+		/// too; only Settings::Apply leaves the window alone then.
 		void SetSize(int32_t width, int32_t height);
 		/// The windowed width in pixels: the current width while windowed, the one to restore to
 		/// while fullscreen.
@@ -138,9 +140,11 @@ namespace Dingo
 		int32_t GetWindowedHeight() const;
 
 		/// Safe from event handlers; the swap chain takes it after the next present (Vulkan
-		/// recreates it, as a resize does). A restart goes back to WindowParams::VSync.
+		/// recreates it, as a resize does). A restart goes back to WindowParams::VSync. Started
+		/// with `--no-vsync`, the swap chain stays off for the whole run; the request is kept.
 		void SetVSync(bool vsync);
-		/// The requested value; it changes at once, before the swap chain takes it.
+		/// The requested value; it changes at once, before the swap chain takes it. `--no-vsync`
+		/// doesn't change it, so a settings screen saves the player's choice.
 		bool IsVSync() const { return m_Params.VSync; }
 
 		/// True while the window has input focus.
@@ -168,6 +172,7 @@ namespace Dingo
 		GLFWwindow* GetNativeWindowHandle() const { return m_WindowHandle; }
 
 		friend class Application;
+		friend struct Settings;
 
 		void SetupGLFWCallbacks() const;
 		GLFWmonitor* GetCurrentMonitor() const;
@@ -175,6 +180,10 @@ namespace Dingo
 	private:
 		WindowParams m_Params;
 		GLFWwindow* m_WindowHandle = nullptr;
+		bool m_VSyncForcedOff = false;
+		// While --window holds the window: the mode and size the game asked for, which Settings
+		// reads and writes instead of the window's.
+		std::optional<WindowParams> m_DisplayRequest;
 
 		// Windowed geometry to restore when leaving fullscreen.
 		int32_t m_WindowedPosX = 0;
