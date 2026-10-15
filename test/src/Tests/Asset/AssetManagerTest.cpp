@@ -136,6 +136,22 @@ namespace Dingo
 				&& std::abs(spin->GetDuration() - 1.0f) < 1e-3f && nodes->GetSubMeshCount() == 2,
 				"AnimateNodes loads a model without bones with its node skeleton, clip and both meshes");
 
+			if (spinner != Skeleton::k_InvalidJoint)
+			{
+				uint32_t followers = 0;
+				uint32_t statics = 0;
+				for (const SubMesh& subMesh : nodes->GetSubMeshes())
+				{
+					const std::vector<SkinnedMeshVertex>& vertices = subMesh.Mesh->GetSkinVertices();
+					statics += vertices.empty() ? 1 : 0;
+					const bool follows = !vertices.empty() && std::all_of(vertices.begin(), vertices.end(), [&](const SkinnedMeshVertex& v)
+						{ return v.Joints.x == static_cast<uint16_t>(spinner) && v.Weights.x == 1.0f; });
+					followers += follows ? 1 : 0;
+				}
+				Check(followers == 1 && statics == 1,
+					"AnimateNodes binds the animated node's mesh rigidly to its joint and leaves the other mesh static");
+			}
+
 			if (spin && spinner != Skeleton::k_InvalidJoint)
 			{
 				Animator animator(skeleton);

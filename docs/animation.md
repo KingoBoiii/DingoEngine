@@ -201,8 +201,8 @@ The skeleton is the node subtree under the deepest node that holds every animate
 node. Each mesh on a node inside it follows that node's joint rigidly, so the clips move it; meshes
 elsewhere in the file stay where the file puts them. `IsSkinned()`, `GetAnimation(i)` and an
 `Animator` or `AnimatorComponent` then work as for a skinned model, and `ClipsOnly` loads the node
-skeleton and clips without the meshes. The option does nothing for a file with bones, and a file
-whose animated nodes are not in the node graph still loads as a static mesh with no clips.
+skeleton and clips without the meshes. The option does nothing for a file with bones. A file whose
+clips move no node in its graph loads its meshes in place with no clips and a warning.
 
 ### When the file is odd
 
