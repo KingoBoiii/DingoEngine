@@ -2,7 +2,8 @@
 #
 # The Windows twin of linux-smoke-test.sh, for runners without a GPU: the unit tests, then every
 # Dingo-TestFramework case on each -Graphics API (on WARP: D3D11 takes it as the default adapter and
-# D3D12 falls back to it; Vulkan has no driver there), then the test app's deliberate crashes
+# D3D12 falls back to it; Vulkan has no driver there), then the test app headless
+# (--graphics=headless), then the test app's deliberate crashes
 # (--crash=), which must leave their report and a minidump in the log folder, and with -Tournament
 # Marionette's tournament. Apps that don't exit by themselves are closed after -Seconds through
 # WM_CLOSE, so teardown runs too. A run fails on an unexpected exit code, a hang, a [FAIL]
@@ -201,6 +202,8 @@ if ($Tournament)
 		-Arguments @('--tournament=10', '--seed=1', '--player-tier=3', "--graphics=$($Graphics[0])") -RunSeconds 1800 -ExpectLog '\[PASS\] tournament'
 }
 
+Invoke-Run -Name 'headless-check' -Cwd $testDir -Exe $testApp -Arguments @('--graphics=headless') -ExpectLog 'Headless: \d+ updates'
+
 # The crash reports land in the log file, beside a minidump.
 # Hex literals with the top bit set are negative Int32s in PowerShell, as Windows exit codes are.
 function Invoke-Crash([string] $Kind, [int] $ExpectExit, [string] $ExpectLog)
@@ -228,5 +231,5 @@ Invoke-Crash 'throw' 3 "std::terminate called on an uncaught exception: the test
 Invoke-Crash 'stack' 0xC00000FD 'crashed: stack overflow[\s\S]*Minidump: '
 Invoke-Crash 'verify' 0x80000003 'crashed: breakpoint[\s\S]*Minidump: '
 
-Write-Output "Unit tests, $($tests.Count) test cases on $($Graphics -join ', '), the crash reports$(if ($Tournament) { ' and the tournament' }): $($script:Failures) failed"
+Write-Output "Unit tests, $($tests.Count) test cases on $($Graphics -join ', '), the headless check, the crash reports$(if ($Tournament) { ' and the tournament' }): $($script:Failures) failed"
 exit [int] ($script:Failures -gt 0)
