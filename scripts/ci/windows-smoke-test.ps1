@@ -199,6 +199,22 @@ foreach ($api in $Graphics)
 	}
 }
 
+foreach ($api in $Graphics)
+{
+	$movedText = ''
+	foreach ($file in @("$api-test-Throughput_Test.log", "$api-test-Throughput_Test.stderr.log"))
+	{
+		if (Test-Path (Join-Path $Logs $file)) { $movedText += [System.IO.File]::ReadAllText((Join-Path $Logs $file)) }
+	}
+	$movedWarnings = ([regex]::Matches($movedText, 'a MeshRendererComponent with Static set moved')).Count
+	if ($movedWarnings -ne 1)
+	{
+		$script:Failures++
+		Write-Output "::error title=Smoke test $api-test-Throughput_Test ($Config)::$movedWarnings static-moved warnings, expected 1"
+		Write-Output "FAIL  $api-test-Throughput_Test: $movedWarnings static-moved warnings, expected exactly 1"
+	}
+}
+
 if ($Tournament)
 {
 	Invoke-Run -Name 'marionette-tournament' -Cwd (Join-Path $Root 'examples/Marionette') -Exe (Join-Path $Bin 'Marionette/Marionette.exe') `

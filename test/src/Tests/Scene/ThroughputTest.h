@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -90,6 +91,9 @@ namespace Dingo
 		void RunCullingChecks();
 		void RunInstancingChecks();
 		void RunStaticChecks();
+		void RunStaticChangeChecks(Entity moving, const PerspectiveCamera& camera);
+		void CheckStaticChange(const std::string& what, Entity entity, const PerspectiveCamera& camera, uint32_t meshes, uint32_t maxCells,
+			const std::function<void()>& apply, const std::function<void()>& restore);
 		void SetStatic(bool isStatic);
 		Renderer3D::Statistics RenderView(Framebuffer* target, const PerspectiveCamera& camera);
 		void RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats);

@@ -120,6 +120,15 @@ for test in "${tests[@]}"; do
 	run "test-${test//[^A-Za-z0-9]/_}" "$ROOT/test" "$BIN/Dingo-TestFramework/Dingo-TestFramework" "--test=$test"
 done
 
+# The Throughput case moves a static mesh more than once; the scene warns about the first move only.
+moved_log=$LOGS/test-Throughput_Test.log
+moved_warnings=$(grep -c 'a MeshRendererComponent with Static set moved' "$moved_log" 2> /dev/null)
+if [[ ${moved_warnings:-0} -ne 1 ]]; then
+	failures=$((failures + 1))
+	echo "::error title=Smoke test test-Throughput_Test ($CONFIG)::${moved_warnings:-0} static-moved warnings, expected 1"
+	echo "FAIL  test-Throughput_Test: ${moved_warnings:-0} static-moved warnings, expected exactly 1"
+fi
+
 for dir in "$ROOT"/examples/*/; do
 	example=$(basename "$dir")
 	run "example-$example" "$dir" "$BIN/$example/$example"

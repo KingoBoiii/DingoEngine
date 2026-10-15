@@ -8,6 +8,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -997,8 +998,109 @@ namespace Dingo
 				delete mesh;
 		}
 
+		if (moving)
+			RunStaticChangeChecks(moving, camera);
+
 		SetStatic(m_Static);
 		renderer.SetInstancingEnabled(wasInstancing);
+	}
+
+	void ThroughputTest::CheckStaticChange(const std::string& what, Entity entity, const PerspectiveCamera& camera, uint32_t meshes, uint32_t maxCells,
+		const std::function<void()>& apply, const std::function<void()>& restore)
+	{
+		apply();
+		const Renderer3D::Statistics changed = RenderView(m_StaticTargets[0], camera);
+		Check(changed.StaticMeshes == meshes && changed.StaticCellsBaked >= 1 && changed.StaticCellsBaked <= maxCells,
+			std::format("{}: {} static meshes (expected {}), {} cells rebaked (expected 1 to {})", what, changed.StaticMeshes, meshes, changed.StaticCellsBaked, maxCells));
+
+		auto images = std::make_shared<std::array<std::vector<uint8_t>, 2>>();
+		auto remaining = std::make_shared<int>(2);
+		const std::weak_ptr<int> alive = m_Alive;
+		auto read = [&](int i)
+		{
+			m_StaticTargets[i]->GetAttachment(0)->ReadPixels([this, alive, images, remaining, i, what](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				(*images)[i] = pixels.Data;
+				if (--*remaining > 0)
+					return;
+
+				const std::vector<uint8_t>& a = (*images)[0];
+				const std::vector<uint8_t>& b = (*images)[1];
+				size_t differing = ~size_t(0);
+				if (!a.empty() && a.size() == b.size())
+				{
+					differing = 0;
+					for (size_t p = 0; p < a.size(); p += 4)
+						differing += std::memcmp(&a[p], &b[p], 4) != 0 ? 1 : 0;
+				}
+				Check(differing == 0, std::format("{}: the rebaked view matches SubmitMesh ({} of {} px differ)", what, differing, a.size() / 4));
+			});
+		};
+		read(0);
+
+		entity.GetComponent<MeshRendererComponent>().Static = false;
+		RenderView(m_StaticTargets[1], camera);
+		read(1);
+
+		entity.GetComponent<MeshRendererComponent>().Static = true;
+		restore();
+		RenderView(m_StaticTargets[1], camera);
+	}
+
+	void ThroughputTest::RunStaticChangeChecks(Entity moving, const PerspectiveCamera& camera)
+	{
+		SetStatic(true);
+		RenderView(m_StaticTargets[1], camera);
+
+		auto mesh = [moving]() mutable -> MeshRendererComponent& { return moving.GetComponent<MeshRendererComponent>(); };
+		const MeshRendererComponent original = mesh();
+		auto restoreMesh = [&mesh, original]()
+		{
+			MeshRendererComponent& component = mesh();
+			component.Color = original.Color;
+			component.Surface = original.Surface;
+			component.Shadows = original.Shadows;
+			component.Visible = original.Visible;
+		};
+
+		CheckStaticChange("a static entity's colour changes", moving, camera, m_Count, 1,
+			[&mesh] { mesh().Color = glm::vec4(0.1f, 0.9f, 0.2f, 1.0f); }, restoreMesh);
+		CheckStaticChange("a static entity's surface changes", moving, camera, m_Count, 1,
+			[&mesh] { mesh().SetSurface(SurfaceOverride().SetEmissiveColor({ 1.0f, 0.2f, 0.2f }).SetEmissiveStrength(2.0f).SetRoughness(0.1f).SetSpecular(1.0f)); }, restoreMesh);
+		CheckStaticChange("a static entity's shadows change to ShadowsOnly", moving, camera, m_Count, 1,
+			[&mesh] { mesh().Shadows = ShadowCasting::ShadowsOnly; }, restoreMesh);
+		CheckStaticChange("a static entity is hidden", moving, camera, m_Count - 1, 1,
+			[&mesh] { mesh().Visible = false; }, restoreMesh);
+		CheckStaticChange("a static entity is deactivated", moving, camera, m_Count - 1, 1,
+			[moving]() mutable { moving.SetActive(false); }, [moving]() mutable { moving.SetActive(true); });
+
+		Entity parent = m_Scene->CreateEntity("StaticParent");
+		parent.AddComponent<Transform3DComponent>(Transform3DComponent());
+		moving.SetParent(parent, false);
+		RenderView(m_StaticTargets[1], camera);
+
+		CheckStaticChange("a static entity's parent is deactivated", moving, camera, m_Count - 1, 1,
+			[parent]() mutable { parent.SetActive(false); }, [parent]() mutable { parent.SetActive(true); });
+		// Moves a second time (and back a third) while static: the warning is once for the scene.
+		CheckStaticChange("a static entity's parent moves", moving, camera, m_Count, 2,
+			[parent]() mutable
+			{
+				Transform3DComponent& transform = parent.GetComponent<Transform3DComponent>();
+				transform.Position += glm::vec3(0.35f, 0.25f, 0.0f);
+				transform.Rotation = glm::angleAxis(0.4f, glm::vec3(0.0f, 1.0f, 0.0f)) * transform.Rotation;
+			},
+			[parent]() mutable
+			{
+				Transform3DComponent& transform = parent.GetComponent<Transform3DComponent>();
+				transform.Position = glm::vec3(0.0f);
+				transform.Rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+			});
+
+		moving.RemoveParent(false);
+		m_Scene->DestroyEntity(parent);
+		RenderView(m_StaticTargets[1], camera);
 	}
 
 	void ThroughputTest::RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats)
