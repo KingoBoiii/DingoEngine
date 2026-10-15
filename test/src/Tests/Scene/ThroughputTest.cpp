@@ -349,6 +349,7 @@ namespace Dingo
 
 		m_Checks.clear();
 		m_ChecksDone = false;
+		m_EdgeChecksDone = false;
 		m_Frame = 0;
 		m_WasInstancing = Application::Get().GetRenderer3D().IsInstancingEnabled();
 		Application::Get().GetRenderer3D().SetInstancingEnabled(m_Instancing);
@@ -851,7 +852,7 @@ namespace Dingo
 		Renderer3D::Statistics stats[5];
 		for (int slot = 0; slot < 5; ++slot)
 		{
-			renderer.SetCullingEnabled(slot == 1 || slot == 2 || slot == 4);
+			renderer.SetCullingEnabled(slot == 1 || slot == 4);
 			Renderer::SetRenderTarget(m_EdgeTargets[slot]);
 			if (slot < 3)
 				renderer.BeginScene(camera);
@@ -873,9 +874,9 @@ namespace Dingo
 		// Left out of the perspective view: the mirrored box and the default box far to its side, the
 		// translucent one, the default box past the far plane, and the one past its CullDistance. The
 		// box whose material opts out, and those past the far plane whose material can still draw there, stay.
-		Check(stats[0].CulledMeshes == 0 && stats[1].CulledMeshes == 5 && stats[2].CulledMeshes == 4,
-			std::format("a perspective view culls the boxes outside it, past its far plane and past their CullDistance, and no others ({} culled, {} without the one past its distance, {} with culling off)",
-				stats[1].CulledMeshes, stats[2].CulledMeshes, stats[0].CulledMeshes));
+		Check(stats[0].CulledMeshes == 0 && stats[1].CulledMeshes == 5 && stats[2].CulledMeshes == 0,
+			std::format("a perspective view culls the boxes outside it, past its far plane and past their CullDistance, and no others ({} culled, {} with culling off, {} with culling off and no mesh past its distance)",
+				stats[1].CulledMeshes, stats[0].CulledMeshes, stats[2].CulledMeshes));
 		// An orthographic view has no distance to cull by, and its box behind the camera is not left out for the near plane.
 		Check(stats[3].CulledMeshes == 0 && stats[4].CulledMeshes == 5,
 			std::format("an orthographic view culls the boxes outside it and past its far plane, not by CullDistance ({} culled, {} with culling off)", stats[4].CulledMeshes, stats[3].CulledMeshes));
