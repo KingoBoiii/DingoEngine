@@ -2761,6 +2761,8 @@ namespace Dingo
 
 	void Renderer3D::PrepareStaticBatch(Internal::StaticBatchData& data)
 	{
+		data.LastBaked.clear();
+
 		// A hot-reloaded mesh keeps its address and gets a new id.
 		if (data.MeshRevision != Mesh::GetReinitializeCount())
 		{
@@ -2858,6 +2860,7 @@ namespace Dingo
 		cell.Ranges.clear();
 		cell.Dirty = false;
 		++data.BakeCount;
+		data.LastBaked.push_back(cell.Coord);
 		++m_Statistics.StaticCellsBaked;
 		if (cell.Members.empty())
 			return;

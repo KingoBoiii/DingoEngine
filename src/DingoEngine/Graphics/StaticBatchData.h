@@ -103,6 +103,7 @@ namespace Dingo::Internal
 		uint32_t MeshCount = 0;
 		uint32_t OccupiedCells = 0;
 		uint64_t BakeCount = 0;
+		std::vector<glm::ivec3> LastBaked;
 
 		void MarkPending(StaticMeshId id);
 		void Detach(StaticMeshId id);
