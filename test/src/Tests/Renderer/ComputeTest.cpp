@@ -142,6 +142,7 @@ void main() { o_Color = v_Color; }
 				seed[i] = i * 7 + 2;
 			m_Seeded = GraphicsBuffer::CreateStorageBuffer(k_ValueCount * sizeof(uint32_t), "ComputeTest seeded", seed.data());
 		}
+		m_Deferred = GraphicsBuffer::CreateVertexBuffer(k_DeferredCount * sizeof(uint32_t), nullptr, BufferUpload::Deferred, "ComputeTest deferred");
 		m_Image = Texture::Create(TextureParams()
 			.SetDebugName("ComputeTest image")
 			.SetWidth(k_ImageSize)
@@ -258,6 +259,25 @@ void main() { o_Color = v_Color; }
 				wrong += value != expected ? 1 : 0;
 			}
 			Check(wrong == 0, std::format("a storage buffer holds its initial data and a later GraphicsBuffer::Upload ({} of {} wrong)", wrong, k_ValueCount));
+		});
+
+		const std::vector<uint32_t> zeros(k_DeferredCount, 0u);
+		Renderer::Upload(m_Deferred, zeros.data(), zeros.size() * sizeof(uint32_t));
+		m_Deferred->Upload(m_DeferredPatch, sizeof(m_DeferredPatch), 4 * sizeof(uint32_t));
+		Renderer::Upload(m_Deferred);
+		m_Deferred->ReadBack([this, alive](const std::vector<uint8_t>& bytes)
+		{
+			if (alive.expired())
+				return;
+			uint32_t wrong = bytes.size() == k_DeferredCount * sizeof(uint32_t) ? 0 : k_DeferredCount;
+			for (uint32_t i = 0; wrong == 0 && i < k_DeferredCount; ++i)
+			{
+				uint32_t value = 0;
+				std::memcpy(&value, bytes.data() + i * sizeof(uint32_t), sizeof(value));
+				const uint32_t expected = i == 4 ? 2000u : i == 5 ? 2001u : 0u;
+				wrong += value != expected ? 1 : 0;
+			}
+			Check(wrong == 0, std::format("a Deferred buffer's Upload at an offset is re-sent there and no further by Renderer::Upload(buffer) ({} of {} wrong)", wrong, k_DeferredCount));
 		});
 
 		// The read material's buffers swapped and drawn, then put back: its cached pass re-points its
@@ -400,6 +420,7 @@ void main() { o_Color = v_Color; }
 		DestroyAndDelete(m_Sums);
 		DestroyAndDelete(m_Steps);
 		DestroyAndDelete(m_Seeded);
+		DestroyAndDelete(m_Deferred);
 		DestroyAndDelete(m_Image);
 		DestroyAndDelete(m_Strip);
 		DestroyAndDelete(m_SwapStrip);

@@ -47,6 +47,8 @@ namespace Dingo::Internal
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor = glm::vec4(0.3f, 0.3f, 0.3f, 1.0f)) = 0;
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
+		// Re-sends the range the buffer's last Upload named, from the pointer it kept.
+		virtual void UploadKeptData(GraphicsBuffer* buffer) = 0;
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) = 0;
 
 		// Binds the framebuffer with a viewport covering all of it.

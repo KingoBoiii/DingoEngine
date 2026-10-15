@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <DingoEngine/Core/FileSystem.h>
 #include <DingoEngine/Core/Platform.h>
 #include <DingoEngine/Core/SaveData.h>
 #include <DingoEngine/Core/UUID.h>
@@ -566,5 +567,49 @@ TEST_SUITE("SaveData")
 		}
 		INFO("generations written: ", newest);
 		CHECK(newest > 0);
+	}
+}
+
+TEST_SUITE("Platform")
+{
+	TEST_CASE("user data folders get a name Windows can create")
+	{
+		TempDirectory directory("userdata");
+#if defined(DE_PLATFORM_WINDOWS)
+		EnvironmentOverride dataHome(L"LOCALAPPDATA", directory.Path);
+#else
+		EnvironmentOverride dataHome("XDG_DATA_HOME", directory.Path);
+#endif
+		const struct { const char* Name; const char* Folder; } cases[] = {
+			{ "Game: Deluxe?", "Game_ Deluxe_" },
+			{ "a<b>c\"d/e\\f|g*h", "a_b_c_d_e_f_g_h" },
+			{ "Tab\tName", "Tab_Name" },
+			{ "Trailing. . ", "Trailing" },
+			{ "...", "_" },
+			{ "con", "_con" },
+			{ "Lpt9.save", "_Lpt9.save" },
+			{ "NUL .txt", "_NUL .txt" },
+			{ "conout$", "_conout$" },
+			{ "COM\xC2\xB9", "_COM\xC2\xB9" },
+			{ "COM10", "COM10" },
+			{ "Console", "Console" },
+			{ "Caf\xC3\xA9", "Caf\xC3\xA9" },
+		};
+		for (const auto& [name, folder] : cases)
+		{
+			INFO("name: ", name);
+			const std::filesystem::path path = Platform::GetUserDataDir(name);
+			CHECK(path == directory.Path / FileSystem::PathFromUtf8(folder));
+			CHECK(std::filesystem::is_directory(path));
+		}
+
+		std::filesystem::create_directories(directory.Path / "Studio" / "Game");
+		CHECK(Platform::GetUserDataDir("Studio/Game") == directory.Path / "Studio" / "Game");
+		CHECK(Platform::GetUserDataDir("Studio/Other") == directory.Path / "Studio_Other");
+		CHECK(Platform::GetUserDataDir("../Escape") == directory.Path / ".._Escape");
+#if !defined(DE_PLATFORM_WINDOWS)
+		std::filesystem::create_directories(directory.Path / "Shipped: Game");
+		CHECK(Platform::GetUserDataDir("Shipped: Game") == directory.Path / "Shipped: Game");
+#endif
 	}
 }

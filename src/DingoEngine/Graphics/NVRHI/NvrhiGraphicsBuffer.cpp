@@ -110,6 +110,8 @@ namespace Dingo
 		}
 
 		m_Data = data;
+		m_DataSize = size;
+		m_DataOffset = offset;
 	}
 
 	void NvrhiGraphicsBuffer::Write(nvrhi::ICommandList* commandList, const void* data, uint64_t size, uint64_t offset)

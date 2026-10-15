@@ -114,17 +114,18 @@ namespace Dingo
 				Internal::TryFlushLog();
 		}
 
-		// Through spdlog when it is up, this thread isn't inside it and no crashed thread holds its
-		// lock, else straight to the log file and stderr, so a message logged after
-		// Internal::ShutdownLog or from inside a log call still lands. Fatal flushes as it logs.
+		// Into the log through spdlog when it is up, this thread isn't inside it and no crashed thread
+		// holds its lock, else straight to the log file, so a message logged after
+		// Internal::ShutdownLog or from inside a log call still lands. The console copy always goes
+		// to stderr directly: stdout's lock may be held by a thread parked inside printf.
 		void ReportFatal(const std::string& message)
 		{
-			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal) && Internal::TryFlushLog())
+			const std::string line = std::format("\n*** {}\n", message);
+			if (!Internal::IsLoggingOnThisThread() && Log::ShouldLog(Log::Type::Engine, Log::Level::Fatal) && Internal::TryLogFatal(message))
 			{
-				DE_CORE_FATAL("{}", message);
+				WriteStdErr(line.data(), line.size());
 				return;
 			}
-			const std::string line = std::format("\n*** {}\n", message);
 			WriteBoth(line.data(), line.size());
 		}
 
@@ -258,6 +259,67 @@ namespace Dingo
 			return WaitForSingleObject(s_DumpDone, k_DumpTimeoutMs) == WAIT_OBJECT_0 && s_DumpWritten;
 		}
 
+#ifdef DE_DISTRIBUTION
+		// A box on the crashed thread would pump its windows' messages, running the game's event
+		// handlers on the state that just faulted: a thread made at Install shows it instead.
+		HANDLE s_BoxThread = nullptr;
+		HANDLE s_BoxRequest = nullptr;
+		HANDLE s_BoxDone = nullptr;
+		DWORD s_BoxThreadId = 0;
+		const wchar_t* s_BoxText = nullptr;
+		const wchar_t* s_BoxTitle = nullptr;
+
+		constexpr DWORD k_BoxStyle = MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST;
+		constexpr DWORD k_BoxAppearMs = 10 * 1000;
+
+		DWORD WINAPI BoxThreadMain(void*)
+		{
+			for (;;)
+			{
+				WaitForSingleObject(s_BoxRequest, INFINITE);
+				__try
+				{
+					MessageBoxW(nullptr, s_BoxText, s_BoxTitle, k_BoxStyle);
+				}
+				__except (EXCEPTION_EXECUTE_HANDLER)
+				{
+				}
+				SetEvent(s_BoxDone);
+			}
+		}
+
+		BOOL CALLBACK FindVisibleWindow(HWND window, LPARAM found)
+		{
+			if (!IsWindowVisible(window))
+				return TRUE;
+			*reinterpret_cast<bool*>(found) = true;
+			return FALSE;
+		}
+
+		// The crashed thread no longer pumps, so a fullscreen window stays topmost (hence
+		// MB_TOPMOST) and keeps its cursor clip. A box that never appears (user32 waiting on a lock
+		// the crashed thread holds) is given up on rather than hanging the exit.
+		void ShowBox(const wchar_t* text, const wchar_t* title)
+		{
+			if (!s_BoxThread || GetCurrentThreadId() == s_BoxThreadId)
+			{
+				MessageBoxW(nullptr, text, title, k_BoxStyle);
+				return;
+			}
+			ClipCursor(nullptr);
+			s_BoxText = text;
+			s_BoxTitle = title;
+			SetEvent(s_BoxRequest);
+			const HANDLE waits[] = { s_BoxDone, s_BoxThread };
+			if (WaitForMultipleObjects(2, waits, FALSE, k_BoxAppearMs) != WAIT_TIMEOUT)
+				return;
+			bool shown = false;
+			EnumThreadWindows(s_BoxThreadId, FindVisibleWindow, reinterpret_cast<LPARAM>(&shown));
+			if (shown)
+				WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+		}
+#endif
+
 		void WriteCrashReport(EXCEPTION_POINTERS* exception, const LineBuilder& what)
 		{
 			if (!BeginReport())
@@ -279,7 +341,7 @@ namespace Dingo
 			WriteBoth(footer);
 
 #ifdef DE_DISTRIBUTION
-			MessageBoxW(nullptr, s_CrashMessage, L"Crash", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+			ShowBox(s_CrashMessage, L"Crash");
 #endif
 		}
 
@@ -439,6 +501,13 @@ namespace Dingo
 			s_DumpDone = CreateEventW(nullptr, FALSE, FALSE, nullptr);
 			if (s_DumpRequest && s_DumpDone)
 				s_DumpThread = CreateThread(nullptr, 256 * 1024, DumpThreadMain, nullptr, 0, nullptr);
+
+#ifdef DE_DISTRIBUTION
+			s_BoxRequest = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+			s_BoxDone = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+			if (s_BoxRequest && s_BoxDone)
+				s_BoxThread = CreateThread(nullptr, 64 * 1024, BoxThreadMain, nullptr, 0, &s_BoxThreadId);
+#endif
 
 			s_PreviousFilter = SetUnhandledExceptionFilter(OnUnhandledException);
 			std::signal(SIGABRT, OnAbortSignal);
@@ -683,7 +752,9 @@ namespace Dingo
 	void Internal::CrashHandler::ShowMessage(std::string_view title, std::string_view message)
 	{
 #if defined(DE_PLATFORM_WINDOWS) && defined(DE_DISTRIBUTION)
-		MessageBoxW(nullptr, Widen(message).c_str(), Widen(title).c_str(), MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+		const std::wstring text = Widen(message);
+		const std::wstring caption = Widen(title);
+		ShowBox(text.c_str(), caption.c_str());
 #else
 		(void)title;
 		(void)message;
@@ -705,8 +776,6 @@ namespace Dingo
 			: std::format("{}\n\nThe log is in:\n{}", message, Utf8(logFile));
 		Internal::CrashHandler::ShowMessage(s_AppName, text);
 
-		std::fflush(stdout);
-		std::fflush(stderr);
 		std::_Exit(1);
 	}
 

@@ -47,7 +47,7 @@ What Distribution changes:
 | `DE_ASSERT`, `DE_CORE_ASSERT` | Debug only: log, then break into the debugger | compiled out, as in Release |
 | `DE_VERIFY`, `DE_CORE_VERIFY` | log, then break into the debugger (`SIGTRAP` on Linux) | `FatalError("Verify Failed ...")`: log, message box on Windows, exit code 1 |
 | Crash on Windows | dump and log line | the same, plus a message box naming the folder |
-| Vulkan validation | on in Debug only; `--vulkan-validation` turns it on elsewhere | off, and the engine creates no validation-message callback |
+| Vulkan validation | on in Debug only; `--vulkan-validation` turns it on elsewhere | off; `--vulkan-validation` turns it on, and its messages reach `Dingo.log` as in Release. Without it the engine creates no validation-message callback |
 | Symbols | Debug builds only | a PDB on Windows with `distributionSymbols()`, never shipped: see [Reading a minidump](#reading-a-minidump) |
 
 Two things Distribution does **not** change:

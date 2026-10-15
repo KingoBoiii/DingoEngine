@@ -76,12 +76,16 @@ namespace Dingo
 			return;
 		}
 
-#ifndef DE_DISTRIBUTION
-		if (enabledExtensions.instance.contains(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+#ifdef DE_DISTRIBUTION
+		constexpr bool k_Distribution = true;
+#else
+		constexpr bool k_Distribution = false;
+#endif
+		// Without a messenger the layer prints to stdout, which a Distribution build never shows.
+		if (enabledExtensions.instance.contains(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) && (!k_Distribution || WantsValidation()))
 		{
 			CreateDebugMessenger();
 		}
-#endif
 
 		// Create a throwaway surface for the application's main window so device selection can
 		// verify which GPU/queue can actually present to the display the window lives on (the

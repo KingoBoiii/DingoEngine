@@ -462,7 +462,7 @@ namespace Dingo
 			return;
 
 		DE_CORE_ASSERT(buffer->GetData(), "Renderer::Upload(buffer) re-sends the data the buffer kept; a storage buffer keeps none.");
-		s_Data->CommandList->UploadBuffer(buffer, buffer->GetData(), buffer->GetByteSize());
+		s_Data->CommandList->UploadKeptData(buffer);
 	}
 
 	void Renderer::Upload(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)

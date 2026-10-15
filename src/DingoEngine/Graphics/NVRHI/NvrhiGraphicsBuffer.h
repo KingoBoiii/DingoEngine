@@ -41,6 +41,8 @@ namespace Dingo
 	protected:
 		nvrhi::BufferHandle m_BufferHandle;
 		bool m_PadsWrites = false;
+		uint64_t m_DataSize = 0;
+		uint64_t m_DataOffset = 0;
 
 		friend class NvrhiCommandList;
 		friend class NvrhiPipeline;

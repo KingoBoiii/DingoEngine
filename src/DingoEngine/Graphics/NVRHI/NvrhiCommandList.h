@@ -28,6 +28,7 @@ namespace Dingo
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor = glm::vec4(0.3f, 0.3f, 0.3f, 1.0f)) override;
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) override;
+		virtual void UploadKeptData(GraphicsBuffer* buffer) override;
 		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) override;
 
 		virtual void SetFramebuffer(Framebuffer* framebuffer) override;
