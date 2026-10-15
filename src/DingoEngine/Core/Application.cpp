@@ -7,6 +7,7 @@
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/LogLifecycle.h"
 #include "DingoEngine/Core/CrashHandler.h"
+#include "DingoEngine/Core/HeadlessSignals.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/Layers/EmptyLayer.h"
@@ -355,11 +356,19 @@ namespace Dingo
 	{
 		Timer timer;
 		auto next = std::chrono::steady_clock::now();
+		const Internal::HeadlessSignalGuard signals;
 
 		DE_PROFILE_THREAD("Main");
 
 		while (m_IsRunning)
 		{
+			if (const char* stop = signals.StopRequest())
+			{
+				DE_CORE_INFO("Stop requested by {}; closing.", stop);
+				Close();
+				break;
+			}
+
 			DE_PROFILE_FRAME();
 			DE_PROFILE_SCOPE("Application::Run");
 
