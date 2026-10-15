@@ -8,19 +8,24 @@ namespace
 {
 	using namespace Dingo;
 
-	Entity AddLine(Scene& scene, Font* font, const char* name, float size, const glm::vec4& color, const glm::vec3& position, const std::string& text)
+	void AddCamera(Scene& scene, const char* name)
 	{
-		Entity entity = Overlay::MakeText(scene, font, name, size, color, true);
-		entity.GetComponent<TextComponent>().Text = text;
-		entity.GetComponent<TransformComponent>().Position = position;
-		return entity;
+		Entity entity = scene.CreateEntity(name);
+		auto& camera = entity.AddComponent<CameraComponent>();
+		camera.Type = CameraComponent::ProjectionType::Perspective;
+		camera.Primary = true;
 	}
 
-	void SetLineText(Entity& line, const std::string& text)
+	void Line(float& bottom, float baseline, float size, const glm::vec4& color, const std::string& text)
 	{
-		auto& lineText = line.GetComponent<TextComponent>();
-		if (lineText.Text != text)
-			lineText.Text = text;
+		const Overlay::Band band(bottom, Overlay::TextTop(ScreenTop(baseline), size), UiPx(size));
+		DingoUI::Text(text, UITextParams().SetWrap(false).SetAlign(UITextAlign::Center).SetSize(UiPx(size)).SetColor(color));
+	}
+
+	bool ButtonLine(float& bottom, float baseline, float size, const std::string& label, bool prompt)
+	{
+		const Overlay::Band band(bottom, Overlay::ButtonTop(ScreenTop(baseline), size), Overlay::ButtonHeight(size));
+		return Overlay::Button(label, size, prompt ? UIWidgetParams().SetDefaultFocus() : UIWidgetParams(), prompt);
 	}
 
 	std::string TimeLine(float seconds)
@@ -44,58 +49,50 @@ namespace Dingo
 
 	void TitleControllerScript::OnStart()
 	{
-		m_Font = Overlay::LoadFont("title");
-
-		Scene& scene = GetScene();
-		Overlay::MakeCamera(scene, "TitleCamera", HUD_ORTHO_SIZE);
-
-		AddLine(scene, m_Font, "Title", TITLE_HEADING_SIZE, COLOR_TITLE, { 0.0f, TITLE_HEADING_Y, 0.0f }, "CANDLEWICK");
-		AddLine(scene, m_Font, "Tagline", TITLE_TAGLINE_SIZE, COLOR_TEXT_DIM, { 0.0f, TITLE_TAGLINE_Y, 0.0f },
-			"A lantern, a keep, and the wardens who hunt by light.");
-		m_Prompt = AddLine(scene, m_Font, "Prompt", TITLE_PROMPT_SIZE, COLOR_TEXT, { 0.0f, TITLE_PROMPT_Y, 0.0f }, m_PromptText.Get());
-		m_Controls = AddLine(scene, m_Font, "Controls", TITLE_CONTROLS_SIZE, COLOR_TEXT_DIM, { 0.0f, TITLE_CONTROLS_Y, 0.0f }, m_ControlsText.Get());
+		AddCamera(GetScene(), "TitleCamera");
 	}
 
 	void TitleControllerScript::OnUpdate(float)
 	{
-		SetLineText(m_Prompt, m_PromptText.Get());
-		SetLineText(m_Controls, m_ControlsText.Get());
+		bool enter = false;
+		bool quit = false;
+		if (DingoUI::BeginRoot("title", Overlay::MenuRoot()))
+		{
+			float bottom = 0.0f;
+			Line(bottom, TITLE_HEADING_Y, TITLE_HEADING_SIZE, COLOR_TITLE, "CANDLEWICK");
+			Line(bottom, TITLE_TAGLINE_Y, TITLE_TAGLINE_SIZE, COLOR_TEXT_DIM, "A lantern, a keep, and the wardens who hunt by light.");
+			enter = ButtonLine(bottom, TITLE_PROMPT_Y, TITLE_PROMPT_SIZE, m_PromptText.Get(), true);
+			Line(bottom, TITLE_CONTROLS_Y, TITLE_CONTROLS_SIZE, COLOR_TEXT_DIM, m_ControlsText.Get());
+			quit = ButtonLine(bottom, TITLE_QUIT_Y, TITLE_QUIT_SIZE, "Quit", false);
+			DingoUI::EndRoot();
+		}
 
-		if (Input::IsKeyPressed(Key::Escape))
+		if (quit || Overlay::BackPressed())
 			Application::Get().Close();
-		else if (Overlay::ConfirmPressed())
+		else if (enter || Overlay::ConfirmPressed())
 			RequestSceneTransition(SCENE_KEEP);
-	}
-
-	void TitleControllerScript::OnDestroy()
-	{
-		DestroyAndDelete(m_Font);
 	}
 
 	void EndControllerScript::OnStart()
 	{
-		m_Font = Overlay::LoadFont("end");
-
-		Scene& scene = GetScene();
-		Overlay::MakeCamera(scene, "EndCamera", HUD_ORTHO_SIZE);
-
-		AddLine(scene, m_Font, "EndTitle", END_HEADING_SIZE, COLOR_TITLE, { 0.0f, END_HEADING_Y, 0.0f }, "The altar burns.");
-		AddLine(scene, m_Font, "EndTime", END_TIME_SIZE, COLOR_TEXT, { 0.0f, END_TIME_Y, 0.0f }, TimeLine(m_Result->Seconds));
-		AddLine(scene, m_Font, "EndCatches", END_CATCHES_SIZE, COLOR_TEXT_DIM, { 0.0f, END_CATCHES_Y, 0.0f }, CatchesLine(m_Result->Catches));
-		m_Prompt = AddLine(scene, m_Font, "EndPrompt", END_PROMPT_SIZE, COLOR_TEXT, { 0.0f, END_PROMPT_Y, 0.0f }, m_PromptText.Get());
+		AddCamera(GetScene(), "EndCamera");
 	}
 
 	void EndControllerScript::OnUpdate(float)
 	{
-		SetLineText(m_Prompt, m_PromptText.Get());
+		bool back = false;
+		if (DingoUI::BeginRoot("end", Overlay::MenuRoot()))
+		{
+			float bottom = 0.0f;
+			Line(bottom, END_HEADING_Y, END_HEADING_SIZE, COLOR_TITLE, "The altar burns.");
+			Line(bottom, END_TIME_Y, END_TIME_SIZE, COLOR_TEXT, TimeLine(m_Result->Seconds));
+			Line(bottom, END_CATCHES_Y, END_CATCHES_SIZE, COLOR_TEXT_DIM, CatchesLine(m_Result->Catches));
+			back = ButtonLine(bottom, END_PROMPT_Y, END_PROMPT_SIZE, m_PromptText.Get(), true);
+			DingoUI::EndRoot();
+		}
 
-		if (Input::IsKeyPressed(Key::Escape) || Overlay::ConfirmPressed())
+		if (back || Overlay::BackPressed() || Overlay::ConfirmPressed())
 			RequestSceneTransition(SCENE_TITLE);
-	}
-
-	void EndControllerScript::OnDestroy()
-	{
-		DestroyAndDelete(m_Font);
 	}
 
 }
