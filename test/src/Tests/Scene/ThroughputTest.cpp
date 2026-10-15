@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
@@ -570,6 +571,11 @@ namespace Dingo
 			m_LastStats = renderer.GetStatistics();
 			if (!m_ChecksDone)
 				RunChecks(m_LastStats);
+			else if (!m_EdgeChecksDone)
+			{
+				m_EdgeChecksDone = true;
+				RunCullingEdgeChecks();
+			}
 
 			const double renderMs = Milliseconds(renderStart, endSceneStart);
 			const double endSceneMs = Milliseconds(endSceneStart, endSceneEnd);
@@ -683,6 +689,7 @@ namespace Dingo
 
 		const uint32_t culled = stats[1].CulledMeshes + stats[1].CulledSkinned;
 		Check(stats[0].CulledMeshes + stats[0].CulledSkinned + stats[0].CulledCasters == 0, "with culling off, nothing is culled");
+		Check(culled > 0, std::format("the view compared culls something ({} culled)", culled));
 		if (m_Mode == Mode::Skinned)
 			Check(stats[1].CulledSkinned > 0 && stats[1].SkinnedDraws > 0, std::format("a view along a row culls the foxes behind it ({} culled, {} drawn)", stats[1].CulledSkinned, stats[1].SkinnedDraws));
 		if (m_Mode == Mode::Shadow)
@@ -726,6 +733,152 @@ namespace Dingo
 		const double lapPercent = 100.0 * static_cast<double>(lapCulled) / (static_cast<double>(k_CullSamples) * m_Count);
 		Check(lapPercent >= k_MinCulledPercent, std::format("over the lap the camera's view culls at least {}% of the meshes ({:.1f}% over {} frames)", k_MinCulledPercent,
 			lapPercent, k_CullSamples));
+	}
+
+	void ThroughputTest::RunCullingEdgeChecks()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		for (int i = 0; i < 5; ++i)
+		{
+			if (!m_EdgeTargets[i])
+				m_EdgeTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName("ThroughputCullEdge")
+					.SetWidth(k_CullCheckWidth)
+					.SetHeight(k_CullCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+		if (!m_EdgeMaterials[0])
+		{
+			m_EdgeMaterials[0] = renderer.CreateLitMaterial(MaterialParams().SetDebugName("ThroughputEdgeOptOut").SetFrustumCulled(false));
+			m_EdgeMaterials[1] = renderer.CreateLitMaterial(MaterialParams().SetDebugName("ThroughputEdgeLessOrEqual").SetDepthCompare(DepthCompare::LessEqual));
+			m_EdgeMaterials[2] = renderer.CreateLitMaterial(MaterialParams().SetDebugName("ThroughputEdgeNoDepth").SetDepthTest(false));
+			m_EdgeMaterials[3] = renderer.CreateLitMaterial(MaterialParams().SetDebugName("ThroughputEdgeTranslucent").SetTranslucent(true));
+		}
+		Material* const optOut = m_EdgeMaterials[0];
+		Material* const lessOrEqual = m_EdgeMaterials[1];
+		Material* const noDepth = m_EdgeMaterials[2];
+		Material* const translucent = m_EdgeMaterials[3];
+		Check(optOut && lessOrEqual && noDepth && translucent, "the culling edge cases' materials are made");
+		if (!optOut || !lessOrEqual || !noDepth || !translucent)
+			return;
+
+		Mesh* box = Mesh::CreateBox(2.0f, 2.0f, 2.0f);
+		auto place = [](const glm::vec3& position, const glm::vec3& scale = glm::vec3(1.0f), float yaw = 0.0f)
+		{
+			return glm::translate(glm::mat4(1.0f), position) * glm::rotate(glm::mat4(1.0f), yaw, glm::vec3(0.0f, 1.0f, 0.0f)) * glm::scale(glm::mat4(1.0f), scale);
+		};
+		const glm::vec4 red(0.9f, 0.2f, 0.2f, 1.0f);
+		const glm::vec4 green(0.2f, 0.8f, 0.3f, 1.0f);
+		const glm::vec4 blue(0.3f, 0.4f, 0.9f, 1.0f);
+		const glm::vec4 glass(0.9f, 0.8f, 0.2f, 0.5f);
+
+		// The camera sits at z = 10 and sees x within 7.4 and y within 4.1 at z = 0. The boxes at
+		// (-3, -2, 0) and (3, -2, 0) are 9.27 away at their nearest, between the two distances below.
+		auto perspective = [&](bool pastDistance)
+		{
+			renderer.SubmitMesh(box, place({ 0.0f, 0.0f, 0.0f }), red);
+			renderer.SubmitMesh(box, place({ 7.2f, 0.0f, 0.0f }, { -1.0f, 1.0f, 1.0f }, 0.3f), green);
+			renderer.SubmitMesh(box, place({ -7.2f, 0.0f, 0.0f }, { 1.0f, -1.0f, 1.0f }, 0.6f), blue);
+			renderer.SubmitMesh(box, place({ 0.0f, 4.2f, 0.0f }, { -1.0f, -1.0f, -1.0f }, 0.9f), green);
+			renderer.SubmitMesh(box, place({ 30.0f, 0.0f, 0.0f }, { -1.0f, 1.0f, 1.0f }), red);
+			renderer.SubmitMesh(box, place({ 40.0f, 0.0f, 0.0f }), red, optOut);
+			renderer.SubmitMesh(box, place({ -40.0f, 0.0f, 0.0f }), red);
+			renderer.SubmitMesh(box, place({ -3.0f, -2.0f, 0.0f }), blue, nullptr, ShadowCasting::On, 1, 9.4f);
+			if (pastDistance)
+				renderer.SubmitMesh(box, place({ 3.0f, -2.0f, 0.0f }), green, nullptr, ShadowCasting::On, 1, 9.1f);
+			renderer.SubmitMesh(box, place({ 0.0f, 0.0f, -150.0f }), red);
+			renderer.SubmitMesh(box, place({ -4.0f, 0.0f, -150.0f }), red, lessOrEqual);
+			renderer.SubmitMesh(box, place({ 4.0f, 0.0f, -150.0f }), red, noDepth);
+			renderer.SubmitMesh(box, place({ 7.0f, 2.0f, 1.0f }), glass, translucent);
+			renderer.SubmitMesh(box, place({ 35.0f, 0.0f, 0.0f }), glass, translucent);
+		};
+		auto orthographic = [&]()
+		{
+			renderer.SubmitMesh(box, place({ 0.0f, 0.0f, 0.0f }), red);
+			renderer.SubmitMesh(box, place({ 7.5f, 0.0f, 0.0f }, { -1.0f, 1.0f, 1.0f }, 0.3f), green);
+			renderer.SubmitMesh(box, place({ -8.2f, 4.4f, 0.0f }, glm::vec3(1.0f), 0.7f), blue);
+			renderer.SubmitMesh(box, place({ 30.0f, 0.0f, 0.0f }), red);
+			renderer.SubmitMesh(box, place({ 0.0f, -20.0f, 0.0f }), red);
+			renderer.SubmitMesh(box, place({ -3.0f, -2.0f, 0.0f }), blue, nullptr, ShadowCasting::On, 1, 0.5f);
+			renderer.SubmitMesh(box, place({ 40.0f, 0.0f, 0.0f }), red, optOut);
+			renderer.SubmitMesh(box, place({ -30.0f, 0.0f, 0.0f }, { -1.0f, -1.0f, -1.0f }), green);
+			renderer.SubmitMesh(box, place({ 0.0f, 0.0f, -150.0f }), red);
+			renderer.SubmitMesh(box, place({ 2.0f, 1.0f, 20.0f }), blue);
+			renderer.SubmitMesh(box, place({ 7.8f, -3.0f, 0.0f }), glass, translucent);
+			renderer.SubmitMesh(box, place({ 0.0f, 25.0f, 0.0f }), glass, translucent);
+		};
+
+		PerspectiveCamera camera(45.0f, static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight), 0.1f, 100.0f);
+		camera.SetPosition({ 0.0f, 0.0f, 10.0f });
+		camera.SetTarget(glm::vec3(0.0f));
+		const glm::mat4 orthoViewProjection = glm::ortho(-8.0f, 8.0f, -4.5f, 4.5f, 0.1f, 100.0f)
+			* glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+		auto images = std::make_shared<std::array<std::vector<uint8_t>, 5>>();
+		auto remaining = std::make_shared<int>(5);
+		const std::weak_ptr<int> alive = m_Alive;
+		auto capture = [&](int slot)
+		{
+			m_EdgeTargets[slot]->GetAttachment(0)->ReadPixels([this, alive, images, remaining, slot](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				(*images)[slot] = pixels.Data;
+				if (--*remaining > 0)
+					return;
+
+				auto differing = [&images](int a, int b)
+				{
+					const std::vector<uint8_t>& x = (*images)[a];
+					const std::vector<uint8_t>& y = (*images)[b];
+					if (x.empty() || x.size() != y.size())
+						return ~size_t(0);
+					size_t count = 0;
+					for (size_t p = 0; p < x.size(); p += 4)
+						count += std::memcmp(&x[p], &y[p], 4) != 0 ? 1 : 0;
+					return count;
+				};
+				const size_t total = (*images)[0].size() / 4;
+				Check(differing(1, 2) == 0, std::format("culling changes no pixel of the perspective edge cases but the mesh past its CullDistance ({} of {} differ from the scene without it)", differing(1, 2), total));
+				Check(differing(0, 1) > 0 && differing(0, 1) != ~size_t(0), std::format("the mesh past its CullDistance is in the view without culling ({} px)", differing(0, 1)));
+				Check(differing(3, 4) == 0, std::format("culling changes no pixel of the orthographic edge cases ({} of {} differ)", differing(3, 4), total));
+			});
+		};
+
+		const bool wasCulling = renderer.IsCullingEnabled();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer3D::Statistics stats[5];
+		for (int slot = 0; slot < 5; ++slot)
+		{
+			renderer.SetCullingEnabled(slot == 1 || slot == 2 || slot == 4);
+			Renderer::SetRenderTarget(m_EdgeTargets[slot]);
+			if (slot < 3)
+				renderer.BeginScene(camera);
+			else
+				renderer.BeginScene(orthoViewProjection);
+			renderer.Clear(m_ClearColor);
+			if (slot < 3)
+				perspective(slot != 2);
+			else
+				orthographic();
+			renderer.EndScene();
+			stats[slot] = renderer.GetStatistics();
+			capture(slot);
+		}
+		Renderer::SetRenderTarget(previous);
+		renderer.SetCullingEnabled(wasCulling);
+		delete box;
+
+		// Left out of the perspective view: the mirrored box and the default box far to its side, the
+		// translucent one, the default box past the far plane, and the one past its CullDistance. The
+		// box whose material opts out, and those past the far plane whose material can still draw there, stay.
+		Check(stats[0].CulledMeshes == 0 && stats[1].CulledMeshes == 5 && stats[2].CulledMeshes == 4,
+			std::format("a perspective view culls the boxes outside it, past its far plane and past their CullDistance, and no others ({} culled, {} without the one past its distance, {} with culling off)",
+				stats[1].CulledMeshes, stats[2].CulledMeshes, stats[0].CulledMeshes));
+		// An orthographic view has no distance to cull by, and its box behind the camera is not left out for the near plane.
+		Check(stats[3].CulledMeshes == 0 && stats[4].CulledMeshes == 5,
+			std::format("an orthographic view culls the boxes outside it and past its far plane, not by CullDistance ({} culled, {} with culling off)", stats[4].CulledMeshes, stats[3].CulledMeshes));
 	}
 
 	void ThroughputTest::RunInstancingChecks()
@@ -1143,6 +1296,10 @@ namespace Dingo
 		m_InstanceOffPixels.clear();
 		for (Framebuffer*& target : m_StaticTargets)
 			DestroyAndDelete(target);
+		for (Framebuffer*& target : m_EdgeTargets)
+			DestroyAndDelete(target);
+		for (Material*& material : m_EdgeMaterials)
+			DestroyAndDelete(material);
 
 		m_Renderables.clear();
 		delete m_Scene;
