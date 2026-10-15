@@ -5,9 +5,13 @@ Linux merge). Every file:line below was read that day. This is P13 of
 `.claude/plans/2026-10-08-v1.0-plan.md` (its §6 and decision D1). *Hearthvale* is a working title;
 HD9 settles the name.
 
-**Status**: draft, no code. HD1–HD10 in §9 were settled by the owner on 2026-10-08, each as
-recommended. The asset choices also depend on downloads that could not be
-made from the planning machine (§2.7).
+**Status**: refreshed 2026-10-15 (phase P0) on `feat/1-0-hearthvale` against master `f414ba0`
+(v1.0 P0–P9 and DingoUI U0–U6 landed) plus `7f4c1e0` (the Kenney packs). Every anchor in §1, §2.7,
+§3, §5, §7 and §10 was re-read that day. HD1–HD10 in §9 were settled by the owner on 2026-10-08,
+each as recommended. The game is now built in **cloud-only phases P0–P18** (§11.1), which replace
+the H0–H7 milestones of §4 as the execution order; §4 stays as the content and estimate reference.
+The Kenney packs are on disk (§2.7); music and ambience are synthesized placeholders until the
+owner picks tracks.
 
 **What it is**: a cozy 3D builder/farm sim. You inherit an overgrown valley, then clear it, fence it,
 plant it and build it up, day by day through a year of seasons, until the old village festival can be
@@ -37,36 +41,121 @@ and it lives in `examples/Hearthvale` beside the other examples.
 
 | Area | Today | Anchor |
 |---|---|---|
-| Picking | `Scene::ScreenPointToRay(screenPos, viewportSize)` (top-left origin, primary perspective camera); `Ray::IntersectGroundPlane(height, outHit)` (false when parallel or behind) | `Scene.h:160`, `Core/Ray.h:24,40,53` |
-| Physics casts | `Physics3D::RayCast(ray, maxDistance, outHit, filter)`, `ShapeCastSphere`, `OverlapSphere`, each with an optional `QueryFilter3D` (ignored bodies, layers, sensors); sensors and `Scene::GetEntityFromBody3D` / `GetSensorOverlaps` (#149) | `Physics3D.h:121-135`, `PhysicsTypes3D.h:99`, `Scene.h:262-265` |
-| Character | `CharacterController3DComponent { Radius 0.3, Height 1.8, StepHeight 0.3, MaxSlopeAngle 45 }`. The game applies gravity, sets velocity and fetches the controller every frame; `Scene::OnUpdate` steps it | `Components.h:574-585`, `CharacterController3D.h:38-95` |
-| Movement pattern | Candlewick's `Player::Update`: WASD, D-pad and stick on world axes, gravity by hand, yaw toward the move direction | `examples/Candlewick/src/Player.cpp:93-135` |
+| Picking | `Scene::ScreenPointToRay(screenPos, viewportSize)` (top-left origin, primary perspective camera); `Ray::IntersectGroundPlane(height, outHit)` (false when parallel or behind) | `Scene/Scene.h:193`, `Core/Ray.h:10,44` |
+| Physics casts | `Physics3D::RayCast(ray, maxDistance, outHit, filter)`, `ShapeCastSphere`, `OverlapSphere`, each with an optional `QueryFilter3D` (ignored bodies, layers, sensors); sensors and `Scene::GetEntityFromBody3D` / `GetSensorOverlaps` (#149) | `Physics/3D/Physics3D.h:152-171`, `Physics/3D/PhysicsTypes3D.h:115`, `Scene/Scene.h:298-302`, `docs/physics-3d.md:235` |
+| Character | `CharacterController3DComponent { Radius 0.3, Height 1.8, StepHeight 0.3, MaxSlopeAngle 45, CollideWithCharacters }`. The game applies gravity, sets velocity and fetches the controller every frame; `Scene::OnUpdate` steps it | `Scene/Components.h:800-812`, `Physics/3D/CharacterController3D.h:68` |
+| Movement pattern | Candlewick's `Player::Update`: WASD, D-pad and stick on world axes, gravity by hand, yaw toward the move direction | `examples/Candlewick/src/Player.cpp:78-135` |
 | Follow camera | Candlewick's `CameraRig::Update`: a lagged focus plus a fixed view direction | `examples/Candlewick/src/CameraRig.cpp:110-139` |
-| Sun | `DirectionalLightComponent { Direction, Color, Intensity, Ambient 0.35, CastShadows, ShadowStrength }`; `Ambient = 0` plus an `AmbientLightComponent` is the clean setup (Marionette's moon) | `Components.h:179-208`, `examples/Marionette/src/ArenaWorld.cpp:86-94` |
-| Cascades and a moving sun | Cascades are sphere-fit and texel-snapped, so a moving *camera* doesn't shimmer. Nothing covers a moving *light*. The light view switches its up vector when `abs(dir.y) > 0.99` | `docs/shadows.md:162-165`, `Renderer3D.cpp:1388,1409-1410` |
-| Light budget | 32 local lights, 16 shadowed at most; *Candlewick*'s `LightLod` keeps in-view lights under the budget so none pops | `Renderer3D.h:55,248-259`, `examples/Candlewick/src/LightLod.h:14-17` |
-| Text and HUD | `TextComponent`, `Renderer2D::DrawText` (no word wrap), `Font::GetStringWidth`. *Marionette* builds its HUD from sprite quads and text entities on an ortho camera, its screens as `ScriptableEntity` controllers | `Components.h:104-114`, `Renderer2D.h:40-56,106-107`, `examples/Marionette/src/Overlay.cpp:27-48`, `Screens.cpp:19-98`, `Hud.cpp:41-66` |
-| Audio | `AudioEngine::Play(clip, SoundPlayParams{ Looping, Spatialized, Position, ... })`, `AudioSourceComponent`; the examples' sounds are synthesized by `scripts/generate_audio.ps1`, so no licences | `examples/Candlewick/src/Audio.cpp:83-106`, `Components.h:593-608` |
-| Particles | `ParticleEffectParams` (shape, rate, bursts, lifetime, gravity, drag, noise, size, spin, 4 colour keys, blend, flipbook, soft distance); *Candlewick*'s `Flames.h` owns its effects and spawns emitters | `Graphics/Particles.h:44-120`, `examples/Candlewick/src/Flames.h:12-26` |
-| Fixed step | No engine helper (v1.0 P9 adds `OnFixedUpdate`). *Marionette*'s `--fixed-dt` steps the `SceneManager` `StepsPerFrame` times with a fixed delta | `Core/Timer.h:7-18`, `examples/Marionette/src/MarionetteLayer.cpp:153-170` |
-| Checks | `CheckReport.h`: `Check(bool, name)` logs `[PASS]`/`[FAIL]` and counts; suites log a summary; the exit code is unchanged; CI fails on any `[FAIL]` | `examples/Marionette/src/CheckReport.h:8-31`, `scripts/ci/linux-smoke-test.sh:50-54` |
-| Launch options | A struct plus `ParseInt`/`ParseSeconds`/`ParseFlag` over `ApplicationCommandLineArgs`, cached once; scripted runs set `UpdateInBackground` | `examples/Marionette/src/LaunchOptions.cpp:16-239`, `main.cpp:62,86` |
+| Sun | `DirectionalLightComponent { Direction, Color, Intensity, CastShadows, ShadowStrength, ShadowCasterGroups }`. `Ambient` is **deprecated with default 0** (v1.0 P9, A305): light the scene with an `AmbientLightComponent`, as *Marionette* does | `Scene/Components.h:227-240,254`, `examples/Marionette/src/ArenaWorld.cpp:84-94` |
+| Cascades and a moving sun | Cascades are sphere-fit and texel-snapped, so a moving *camera* doesn't shimmer. Nothing covers a moving *light*. The light view switches its up vector when `abs(dir.y) > 0.99` | `docs/shadows.md:187-191`, `Renderer3D.cpp:3199,3384` |
+| Light budget | 32 local lights, 16 shadowed at most; a light whose range reaches nothing in view is skipped before the budget picks (v1.0); *Candlewick*'s `LightLod` keeps in-view lights under the budget so none pops | `Graphics/Renderer3D.h:339,354`, `docs/performance.md:53`, `examples/Candlewick/src/LightLod.h:14-20` |
+| Text and HUD | **DingoUI** (§1.3) for every screen and the HUD. `Font::MeasureText` wraps (E3 done). *Marionette* now builds its HUD and screens on DingoUI: `Overlay::HudRoot`/`MenuRoot` root presets, a title root, a world root over heads, a row of bars | `docs/game-ui.md`, `Graphics/Font.h:76`, `examples/Marionette/src/Overlay.cpp:36-48`, `Screens.cpp:77`, `Hud.cpp:132,234`, `MarionetteLayer.cpp:30,71` (`SetDefaultFont`) |
+| Audio | `AudioEngine::Play(clip, SoundPlayParams{ Looping, Spatialized, Position, ... })`, `AudioSourceComponent`; clips load `.wav`, `.ogg` or `.mp3`. The examples' sounds are synthesized by a per-example `scripts/generate_audio.ps1` (PowerShell; the cloud has no `pwsh`, so Hearthvale's generator is Python) | `examples/Candlewick/src/Audio.cpp:80-106`, `Scene/Components.h:822`, `docs/audio.md:15`, `examples/Marionette/scripts/generate_audio.ps1` |
+| Particles | `ParticleEffectParams` (shape, rate, bursts, lifetime, gravity, drag, noise, size, spin, 4 colour keys, blend, flipbook, soft distance); *Candlewick*'s `Flames.h` owns its effects and spawns emitters | `Graphics/Particles.h:47`, `examples/Candlewick/src/Flames.h:12-26` |
+| Fixed step | **Landed (v1.0 P9)**: `ScriptableEntity::OnFixedUpdate(step)` runs before `OnUpdate` from the scene's own accumulator; `Scene::SetFixedTimeStep` (default 1/60, clamped to [1/1000, 1/4]), `GetFixedTimeAlpha`, at most `k_MaxFixedStepsPerUpdate` = 8 steps an update (the rest is dropped). Physics stays on the variable step. *Marionette*'s `--fixed-dt` still steps the `SceneManager` `StepsPerFrame` times itself | `Scene/ScriptableEntity.h:43-46`, `Scene/Scene.h:94-113`, `docs/scenes-and-ecs.md:802`, `examples/Marionette/src/MarionetteLayer.cpp:156-175` |
+| Checks | `CheckReport.h`: `Check(bool, name)` logs `[PASS]`/`[FAIL]` and counts; suites log a summary; the exit code is unchanged; CI fails on any `[FAIL]` | `examples/Marionette/src/CheckReport.h:9-32`, `scripts/ci/linux-smoke-test.sh:128` |
+| Launch options | A struct plus `ParseInt`/`ParseSeed`/`ParseSeconds`/`ParseRange`/`ParseFlag` over `ApplicationCommandLineArgs`, `Parse` cached once; `ParseVSync` in `main.cpp`; scripted runs set `UpdateInBackground` | `examples/Marionette/src/LaunchOptions.cpp:16-246` (`Parse` at `:140`), `main.cpp:33,59-75` |
+| Engine flags | The engine itself reads `--graphics=vulkan\|dx11\|dx12\|headless`, `--window=WxH`, `--no-vsync`, `--log-here`/`--log-dir`, `--save-dir=<path>`, `--vulkan-validation`; the game does not parse these | `docs/application-and-layers.md:170-185` |
+| Active flag | `Entity::SetActive/IsActive/IsActiveInHierarchy` (v1.0 P9) switch a subtree off without destroying it | `docs/scenes-and-ecs.md:51,812` |
 
 ### 1.2 What models bring with them
 
-- **The loader reads only diffuse textures.** `MeshVertex` is position, normal and uv
-  (`Mesh.h:12-17`). `AssignMaterial` creates a plain `Material` and sets slot 0 from the diffuse
-  texture path (`Model.cpp:252-265`). Embedded GLB/FBX textures load since #149 (#99).
-  **Vertex colours and material base colours are dropped**, so a pack coloured that way loads
-  white. Engine gap **E1** (§10).
-- **What works today**: a model whose material points at an **external PNG**, which is how KayKit
-  ships its gradient atlases and how Kenney's kits reference `Textures/colormap.png`. *Marionette*
-  makes one lit material per PNG and puts the texture in slot 0 (`examples/Marionette/src/GameAssets.cpp:42-60`).
-- **Characters and clips**: KayKit `Rig_Medium` characters (23 joints) and the five KayKit clip
-  libraries already load, retarget by joint name, and play in *Marionette*
-  (`2026-10-03-marionette-plan.md:160-174`).
+- **Base colours: E1 landed (v1.0 P1).** `SubMesh::BaseColor` is glTF's `baseColorFactor`, else
+  the diffuse colour; **nothing applies it**: the game passes it as `MeshRendererComponent::Color`
+  (one entity, or one `Color`, per submesh). Vertex colours stay out (48 B vertex frozen).
+  `include/DingoEngine/Graphics/Model.h:15-30`, `docs/asset-pipeline.md:115`, `docs/migrating-to-1.0.md:285`.
+- **Textured packs**: a material pointing at an **external PNG** loads it into `SubMesh::DiffuseTexture`.
+  *Marionette* makes one lit material per PNG (`Renderer3D::CreateLitMaterial`, texture in slot 0;
+  `examples/Marionette/src/GameAssets.cpp:42-60`). Kenney's Fantasy Town, Survival and Cube Pets GLBs
+  reference `Textures/colormap.png` beside them: one material per pack, one batch key.
+- **Nature Kit is colour-only**: its GLBs carry no image, and several materials per model
+  (`crop_carrot`: `grass` + `leafsFall`; `tree_oak`: `leafsGreen` + `woodBark`), so each submesh
+  needs its own `BaseColor` as its `Color` on the default lit material.
+- **Bone-less animation is dropped**: a model without bones loads its meshes pre-transformed and
+  drops its clips with a warning (`docs/asset-pipeline.md:120-129`; a clips-only load of one fails,
+  `docs/animation.md:184`). Kenney Cube Pets carry node animations (`static`, `idle`, `walk`, `run`,
+  `eat`, ...) and no skin, so **animals animate procedurally** (bob, hop, turn) in game code.
+- **Characters and clips**: KayKit `Rig_Medium` characters and the clip libraries load, retarget by
+  joint name, and play in *Marionette* (`2026-10-03-marionette-plan.md:160-174`). Only **two
+  Adventurers** are on disk (`Barbarian.glb`, `Knight.glb`, with `barbarian_texture.png`,
+  `knight_texture.png`), plus `Skeleton_Minion`/`Skeleton_Warrior`; the farmer and four villagers
+  share them (tint, or a recoloured texture copy; see §2.7). Clips: `Rig_Medium_General` (`Idle_A/B`,
+  `Interact`, `PickUp`, `Use_Item`, `Throw`, `Hit_A/B`), `Rig_Medium_MovementBasic` (`Walking_A/B/C`,
+  `Running_A/B`, jumps), plus `MovementAdvanced`, `CombatMelee`, `Special`.
 
-### 1.3 Scale reference
+### 1.3 DingoUI (workstream U, U0–U6 landed)
+
+`docs/game-ui.md`, `include/DingoEngine/UI/DingoUI.h` (static class `DingoUI`). Immediate mode,
+declared every frame from `OnUpdate`:
+
+- `DingoUI::BeginRoot(name, UIRootParams)` / `EndRoot()`; `BeginBox(UIBoxParams)` / `EndBox()`
+  (flexbox: `Direction`, `Gap`, `Padding`, `Justify`, `Align`, `UISize::Fit/Fixed/Grow/Percent`);
+  `Text` (wraps by default), `Image(texture, UIImageParams)`; widgets `Button`, `Toggle`,
+  `Slider`, `SliderInt`, `ProgressBar`, `Selectable`, `BeginScrollArea`, each returning
+  `UIInteraction { Hovered, Pressed, Down, Clicked, Changed, Focused }`; `BeginPanel`/`EndPanel`;
+  `UIStyle` themes with `PushStyle`/`SetTheme` and `UINineSlice` (`Surface`, `Panel`) for the Kenney
+  UI pack's frames; `Tween`, root `UITransition`s; `BeginWorldRoot` over an entity or point.
+- `UIScale::ScaleWithScreen()` (1920x1080 reference) for resolution independence.
+- **Focus (U5)**: arrows, D-pad and left stick move focus; Enter/Space/pad A accept; Escape/pad B is
+  `DingoUI::IsBackPressed()`. Only `SetModal(true)` roots or `BlocksInput` roots with
+  `SetNavigable(true)` take focus; `UIWidgetParams().SetDefaultFocus()`; `DingoUI::SetFocus(label)`
+  (next frame, call in the widget's container). The game checks `DingoUI::IsCapturingInput()` before
+  reading the stick or clicks for the farmer. `docs/game-ui.md:236-291`.
+- Font: `DingoUI::SetDefaultFont(font)` after the device exists; unset before deleting.
+- **Off headless**: every call returns at once, `BeginRoot` returns `false`.
+- **No public way to drive focus from a check**: simulated pads (`InputBackend::Simulate*`) are
+  private to the engine's test app, and there is no focused-id query. See E7 (§10).
+
+### 1.4 Culling, instancing and static geometry (v1.0 P2–P5)
+
+`docs/performance.md`:
+
+- **Culling** is automatic (`:31-55`); `MeshRendererComponent::CullDistance` for small far props
+  (a mesh with one is never baked, `:56-72`). `Renderer3D::SetCullingEnabled(false)` is `--no-cull`.
+- **Instancing** is automatic for ≥ `InstanceThreshold` (8) copies of one `Mesh` with one material
+  and shadow setting (`:212-250`); `Renderer3D::SetInstancingEnabled(false)` is `--no-instancing`.
+  **Baked (`Static`) meshes are never instanced** (`:238-239,512`): each kind is either baked or
+  instanced, a choice P3 records.
+- **Static** is `MeshRendererComponent::Static = true` (`Scene/Components.h:519-525`). The scene's
+  bake uses a **fixed 32-unit cell grid** (`StaticBatchParams::CellSize` default, not settable for a
+  scene's `Static` entities: `Scene/Systems/StaticGeometry.cpp:58`); a mesh belongs to the cell its
+  bounds' centre falls in (`docs/performance.md:136-140`). So the 96 × 96 valley is 3 × 3 engine
+  cells, and a placement rebakes a 32 × 32 m cell. A hand-held `StaticBatch` with
+  `SetCellSize(16)` is the alternative (`:182-210`), drawn with `SubmitStaticBatch` between
+  `BeginScene`/`EndScene`.
+- **Change detection (E2 landed)**: every frame the scene compares each `Static` entity's draw state
+  (mesh and mesh id, `Color`, material and id, shadows, shadow groups, surface override) **bitwise**
+  with its bake (`StaticGeometry.cpp:12-25,91-92`). A colour change rebakes quietly; moving one warns
+  once. Write the same float values for "unchanged", or every frame rebakes.
+- Baked meshes cost 52 B a vertex and 4 B an index of GPU memory each, copies included (`:176-180`).
+- Stats: `Renderer3D::GetStatistics()` (`StaticMeshes`, `StaticCellsBaked`, `InstancedMeshes`,
+  `CulledMeshes`, `DrawCalls`), complete after `EndScene` (`:420-428`). None headless.
+
+### 1.5 Saves and settings (v1.0 P8)
+
+`docs/saves-and-settings.md`, `Core/SaveData.h`, `Core/Settings.h`:
+
+- `SaveData`: JSON tree, `operator[]`/`Push` to write, const `Get(key, fallback)`/`As*` to read (read
+  through a const ref), sorted keys so the same data writes the same file; `WriteFile` is atomic with
+  `.tmp` and `.bak`, `ReadFile` falls back to `.bak` and logs it.
+- `SaveSlots::Write/Read/Exists/Delete/List` in `Application::GetSaveDirectory()`; the engine's own
+  `--save-dir=<path>` redirects it. Slot names `A-Z a-z 0-9 _ -`.
+- `Settings` (`Display`, `Audio.MasterVolume`/`BusVolumes`, `Input.GamepadDeadzone`, `Game` as a
+  `SaveData`): `Load()`, `Apply()` (create the buses first), `Save()`;
+  `ApplicationParams::SettingsSlot` opens the window in the saved mode.
+- **No save versioning in the engine**: the game writes its own `schema` integer and migrates.
+
+### 1.6 Headless (`--graphics=headless`)
+
+`docs/application-and-layers.md:285-315`: no window, renderers, ImGui or DingoUI; `Input` reads all
+up; `Run()` calls `OnUpdate` about **60 times a second in real time**; `AssetManager`, `AudioEngine`,
+scenes, scripts and physics work. Loading any GPU asset (texture, model, font, shader, or the
+renderer's `GetBoxMesh`) **crashes** (issue #248, open). So the headless `--check` runs only the
+simulation suites (grid, calendar, crops, economy, board, saves, determinism), and a fast `--days`
+run steps the simulation many times per `OnUpdate` in its own loop: `OnFixedUpdate` caps at 8
+steps an update, which at 60 updates a second is far too slow for a 12-minute day.
+
+### 1.7 Scale reference
 
 - *Candlewick*: about 330 meshes, 15 draws, about 33k indices; Release 1.8–2.1 ms, Debug 13–14 ms
   (`2026-10-01-candlewick-plan.md:559-562`).
@@ -171,25 +260,31 @@ coin and error sounds.
 
 ### 2.7 Assets (HD1, HD2, HD3, HD4)
 
-The planning machine's network policy blocked kenney.nl, quaternius.com, itch.io, opengameart.org
-and freesound.org. What was **verified** came from official GitHub repos and from licence files
-mirrored on GitHub; everything else is marked unverified and is checked in H0.
+**On disk since `7f4c1e0`** (2026-10-15), each pack with Kenney's own `License.txt` saying **CC0**
+(`game-icons/license.txt` lower-case), under `examples/Hearthvale/assets/kenney/<pack>/` (22 MB). The
+2026-10-08 candidates that were not downloaded (KayKit Hexagon, Furniture and Restaurant Bits,
+Quaternius Farm Animals, Fantasy UI Borders, the OpenGameArt music and ambience, Fredoka) are out
+unless the owner adds them.
 
-| Need | Candidate | Licence | Status |
-|---|---|---|---|
-| Crops (stages), fences, trees, rocks, grass, paths | **Kenney Nature Kit** | CC0 | Kit contents and licence **unverified** here. The Kenney pattern of an external `colormap.png` that this engine loads is verified from Kenney's own MIT GitHub starter kits |
-| Houses, shop, well, market props | **Kenney Fantasy Town Kit** (modular, square footprint) | CC0 | Unverified |
-| Tools, chests, barrels, crates | **Kenney Survival Kit** | CC0 | Unverified |
-| Alternative world set | KayKit Medieval Hexagon Pack (221 glTFs: windmill, well, market, homes, fences, trees, rocks; one external atlas) | CC0, verified (GitHub `KayKit-Game-Assets`) | Verified, but **hex footprints**, and no crops |
-| Interiors and produce props | KayKit Furniture Bits (53), Restaurant Bits (144) | CC0, verified | Verified |
-| Farmer and villagers | **KayKit Adventurers** (4 characters on `Rig_Medium`) plus the KayKit **Character Animations** libraries (Idle, Interact, PickUp, Use_Item, Throw, walks and runs) | CC0, verified; already in `examples/Marionette/assets` | Verified and working in the engine |
-| Farm animals | Quaternius Farm Animals (cow and horse fully animated; pig and sheep idle and jump only) | CC0 in the mirrored `License.txt`, but *Marionette*'s plan recorded a non-CC0 "Quaternius Asset License v1.0" on quaternius.com in 2026-08 | **Material colours only** (needs E1); **licence contested** |
-| UI sounds | Kenney Interface Sounds (100), Kenney UI Audio (50) | CC0, verified (Kenney's `License.txt` in GitHub mirrors) | Verified |
-| UI art, icons | Kenney UI Pack, Fantasy UI Borders (nine-slice), Game Icons | CC0 | Unverified |
-| Music | OpenGameArt CC0 tracks: *Sunset Plains* (Yoiyami), *Forest Charm* (Melox6), *Cozy Puzzle In-Game 1* (MintoDog), *Calm Loop* (wipics) | CC0 per search results | **Unverified** |
-| Ambience | *Crickets Ambient Noise* (Wolfgang_), *Forest Ambience* (TinyWorlds); *Cozy Farm SFX* (roberto mellado) has every loop needed but is **CC-BY 4.0** | per search results | Unverified |
-| Body font | **Inter 4.1**, static `Inter-Regular.ttf`/`Inter-SemiBold.ttf` from the release zip's `extras/ttf` | OFL 1.1, verified | Covers Latin-1 except the invisible U+00AD; General Punctuation 63 of the 71 the atlas bakes (missing only U+2056, U+2058–205E) |
-| Heading font | **Fredoka** as a static SemiBold instance cut with `fonttools varLib.instancer` | OFL 1.1, verified | Latin-1 complete except U+00AD; the common punctuation (– — ‘ ’ “ ” • … ‰ ‹ › €) present |
+| Pack | Path and format | What Hearthvale uses (real file stems) |
+|---|---|---|
+| **Nature Kit 2.1** | `nature-kit/Models/*.glb` (329, flat folder, **colour-only, no texture**: needs `SubMesh::BaseColor`) | **Crops**: `crop_carrot`, `crop_melon`, `crop_pumpkin`, `crop_turnip` (ripe, single model each); staged `crops_cornStageA`–`D`, `crops_wheatStageA`/`B`, `crops_bambooStageA`/`B`, `crops_leafsStageA`/`B` (generic sprout/young); soil `crops_dirtSingle`, `crops_dirtRow*`, `crops_dirtDoubleRow*`. **Fences**: `fence_simple`, `fence_simpleCenter`, `fence_simpleHigh`/`Low`, `fence_planks`, `fence_planksDouble`, `fence_corner`, `fence_bend*`, `fence_gate`. **Trees**: `tree_default`, `tree_oak`, `tree_fat`, `tree_simple`, `tree_small`, `tree_tall`, `tree_thin`, `tree_cone`, `tree_detailed`, `tree_plateau`, `tree_blocks`, each with `_dark` and `_fall` variants (autumn swap; note the typo `tree_fat_darkh`), pines `tree_pine{Default,Ground,Round,Small,Tall}*`. **Clearables**: `stump_old`, `stump_round`, `stump_square*`, `log`, `log_large`, `log_stack*`, `rock_small{A..I}`, `rock_large{A..F}`, `rock_tall{A..J}` (and `stone_*` twins), `grass`, `grass_large`, `grass_leafs*`, `plant_bush*`, `plant_flat*`, `flower_{purple,red,yellow}{A,B,C}`, `mushroom_*`. **Paths**: `path_stone*`, `path_wood*`, `ground_path*`, `ground_grass`; **water**: `ground_river*`, `lily_large`/`small`, `bridge_*`. **Props**: `sign`, `campfire_*`, `pot_large`/`small`, `tent_*`, `statue_*`, `cliff_*` (valley rim) |
+| **Fantasy Town Kit** | `fantasy-town-kit/Models/GLB format/*.glb` (167), texture `GLB format/Textures/colormap.png`; alternate `Models/Textures/variation-a.png` | Modular houses: `wall-*`, `wall-wood-*` (doors `wall-door`, windows `wall-window-glass`/`-shutters`/`-round`/`-small`), `roof-*`, `roof-high-*`, `chimney*`, `stairs-*`, `planks*`, `pillar-*`, `overhang`. Village: `stall`, `stall-green`, `stall-red`, `stall-bench` (bench), `stall-stool`, `lantern` (lamp post), `fountain-*` (square), `windmill`, `watermill`, `wheel`, `cart`, `cart-high`, `banner-green`/`-red`, `hedge*`, `fence`, `fence-gate`, `fence-curved`, `fence-broken`, `road-*`, `rock-large`/`-small`/`-wide`, `tree`, `tree-crooked`, `tree-high*` |
+| **Survival Kit** | `survival-kit/Models/GLB format/*.glb` (80), `GLB format/Textures/colormap.png` | **Tools**: `tool-hoe`, `tool-axe`, `tool-pickaxe`, `tool-shovel`, `tool-hammer` (+ `-upgraded`); **no watering can or scythe** (use `bucket` for the can; the scythe is a primitive or `tool-shovel` stand-in). `chest`, `barrel`, `box*`, `bucket`, `workbench*`, `signpost`, `signpost-single`, `fence`, `fence-doorway`, `fence-fortified`, `resource-wood`, `resource-planks`, `resource-stone*` (drops), `tree`, `tree-tall`, `tree-autumn*`, `tree-log*`, `tree-trunk`, `rock-a/b/c`, `patch-grass*`, `campfire-*` |
+| **Cube Pets** | `cube-pets/Models/GLB format/animal-*.glb` (24), `Textures/colormap.png` | **Animals (HD3 resolved: CC0)**: `animal-chick` (coop), `animal-cow` (barn), `animal-pig`, `animal-hog`, `animal-bunny`, `animal-dog`, `animal-cat`. Node-animated, **no skin**: the loader drops their clips, so they move procedurally |
+| **UI Pack** | `ui-pack/PNG/{Blue,Green,Grey,Red,Yellow,Extra}/{Default,Double}/*.png` (434), `Font/Kenney Future.ttf`, `Kenney Future Narrow.ttf`, `Sounds/{click,switch,tap}-{a,b}.ogg` | 9-slice faces `button_rectangle_*`, `button_square_*`, `button_round_*`, `check_*`, `slide_*`, `arrow_*`, `icon_*`, `star*`, `input_*`, `divider*`. Kenney Future is a CC0 heading-font candidate (replaces Fredoka) |
+| **Game Icons** | `game-icons/PNG/{Black,White}/{1x,2x}/*.png` | Menu glyphs only: `gear`, `home`, `pause`, `save`, `musicOn/Off`, `audioOn/Off`, `basket`, `cart`, `trashcan`, `wrench`, `star`, `trophy`, `information`, `warning`, `exitLeft/Right`, pad prompts `buttonA/B/X/Y`, `buttonL1/R1`, `buttonStart/Select`, `gamepad`. **No item icons** (crops, seeds, tools, resources): inventory slots use colour swatches plus text until P14 picks a source |
+| **Interface Sounds** | `interface-sounds/Audio/<name>_00N.ogg` (100) | `click`, `select`, `back`, `open`, `close`, `confirmation`, `error`, `drop`, `toggle`, `switch`, `tick`, `scroll`, `pluck`, `bong`, `glass`, `maximize`/`minimize` |
+| **UI Audio** | `ui-audio/Audio/*.ogg` (50) | `click1`–`5`, `rollover1`–`6`, `switch1`–`38`, `mouseclick1`, `mouserelease1` |
+| **RPG Audio** | `rpg-audio/Audio/*.ogg` (51) | `chop` (axe), `footstep00`–`09`, `handleCoins`, `handleCoins2` (sell/buy), `doorOpen_1/2`, `doorClose_1`–`4`, `creak1`–`3`, `metalPot1`–`3`, `metalClick`, `metalLatch`, `cloth1`–`4`, `bookFlip1`–`3` (board), `dropLeather` |
+
+Still from elsewhere:
+
+| Need | Source | Status |
+|---|---|---|
+| Farmer and villagers | KayKit Adventurers `Barbarian.glb`, `Knight.glb` (+ `Skeleton_*`), clip libraries `Rig_Medium_*.glb` in `examples/Marionette/assets/{characters,animations}`, licences `LICENSE-KayKit-*.txt` there (CC0) | Copy what is used, with its licence file. Only two Adventurers: the five people share them, told apart by tint or a recoloured copy of the texture |
+| Body font | Inter (OFL 1.1): `Inter-Bold.ttf` in every example (`examples/Marionette/assets/fonts/`), `Inter-Regular.ttf` in `test/assets/fonts/`; licence `examples/Marionette/assets/LICENSE-Inter.txt`, `scripts/notices/licenses/inter.txt` | Copy `Inter-Regular.ttf` and `Inter-Bold.ttf` with `LICENSE-Inter.txt` (no SemiBold on disk) |
+| Music, ambience | Synthesized placeholders by a Python generator (no `pwsh` in the cloud), as the examples' `generate_audio.ps1` do | HD4 tracks wait for the owner |
 
 Two traps found in the research:
 
@@ -197,12 +292,13 @@ Two traps found in the research:
   bakes at its default instance: Fredoka at Light (300), Nunito at ExtraLight (200). *Hearthvale*
   ships static instances only.
 - **Mixed styles**: Kenney and KayKit are both low-poly gradient-atlas styles but not identical.
-  KayKit's characters are chunkier. H0 puts them side by side in one frame before committing (HD2).
+  KayKit's characters are chunkier. P14 puts them side by side and P18 (owner, GPU) judges it (HD2).
 
 **Licence handling**: every pack's own `License.txt` (or `OFL.txt`) is kept beside its files under
 `examples/Hearthvale/assets/<pack>/`, and the credits screen and `README.md` list every author. The
-v1.0 `THIRD-PARTY-NOTICES.md` (P10) gathers them into the release archive. A Quaternius pack is used
-only if the `License.txt` inside the downloaded zip says CC0.
+v1.0 `THIRD-PARTY-NOTICES.md` gathers them into the release archive through
+`scripts/notices/components.txt` and `scripts/notices/licenses/` (P15). Packaging (P15) packs only the
+files the art registry names, not all 877 UI-pack files.
 
 ---
 
@@ -268,14 +364,21 @@ stage, days watered). Saves write the grid and the occupant list, never entities
 
 `ValleyWorld` turns the grid into entities:
 
-- **Ground**: 16 × 16-tile cells, each a handful of merged quads per ground state, `Static`.
-- **Decoration and buildables**: one entity each, `Static`, on the default or atlas material. Kenney
-  and KayKit share one texture atlas per pack, so a pack is one material and one batch key.
+- **Ground**: 16 × 16-tile cells, each a handful of merged quads per ground state, `Static`. The
+  16 × 16 cell is the game's own merge and dirty unit; the engine bakes a scene's `Static` meshes in
+  fixed 32 m cells by bounds centre (§1.4), so one engine cell holds up to four game cells and a
+  change rebakes all of that 32 m cell. P3 records whether that is good enough or a game-held
+  `StaticBatch` with `SetCellSize(16)` replaces scene `Static`.
+- **Decoration and buildables**: one entity each, on the default material (Nature Kit, colour per
+  submesh from `BaseColor`) or the pack's atlas material (Fantasy Town, Survival, Cube Pets: one
+  `colormap.png` each, one material and one batch key per pack). Baked meshes never instance (§1.4),
+  so each kind is either `Static` (buildables, few copies, change rarely) or left dynamic to instance
+  (thousands of copies of a few decoration meshes); P3 picks per kind and records it.
 - **Crops**: one entity each, `Static`. A stage change at the day roll swaps the mesh; the rebakes
   all happen behind the sleep fade.
-- **Watered soil**: the tilled tile's colour darkens through its `Color`. This is why v1.0's static
-  change detection must compare colour and surface overrides, not only transforms and meshes (E2,
-  §10).
+- **Watered soil**: each tilled tile is its own entity (one shared quad or `crops_dirtSingle`), and
+  watering darkens its `Color`. E2 landed: the scene compares colour bitwise, so the change rebakes
+  its cell quietly, and the same two constant colours must be written every time (§1.4).
 - **Characters, animals, the ghost preview and particles**: dynamic.
 
 Placing or removing one object changes one cell, so a build session is a stream of single-cell
@@ -309,16 +412,18 @@ of save and load) and perf (`--perf` over a fixed autoplay day).
 | `--seed=N` | Valley and weather seed |
 | `--day=N`, `--season=spring|summer|fall|winter`, `--time=HH:MM` | Start at that point of a fresh game |
 | `--weather=clear|rain|snow` | Forces today's weather |
-| `--load=<slot>`, `--save-dir=<path>` | Loads a slot; redirects saves (tests never touch a player's saves) |
+| `--load=<slot>` | Loads a slot. `--save-dir=<path>` (tests never touch a player's saves) is the engine's own flag, not parsed by the game |
 | `--layout=demo` | A pre-built late-game farm: every buildable placed, every crop planted (captures, perf) |
 | `--perf` | Mean frame, `Scene::OnUpdate`, render and GPU timers over 600 frames, as `[PERF]` lines |
 | `--freeze` | Stops time and animation (captures) |
 | `--no-post`, `--no-shadows`, `--no-particles`, `--no-fog` | Feature before/afters |
-| `--no-instancing`, `--no-static`, `--no-cull` | The v1.0 throughput before/afters (forces the engine's fallbacks) |
-| `--graphics=`, `--vsync=` | As every example |
+| `--no-instancing`, `--no-static`, `--no-cull` | The v1.0 throughput before/afters: `Renderer3D::SetInstancingEnabled(false)`, `Static = false` on every game entity, `Renderer3D::SetCullingEnabled(false)` |
+| `--graphics=`, `--vsync=` | `--graphics` is the engine's (`headless` runs the simulation suites only, §1.6); `--vsync=on\|off` parsed as *Marionette*'s `ParseVSync` |
 
 Scripted runs (`--check`, `--autoplay`, `--days`, `--perf`) set `UpdateInBackground`, as *Marionette*
-does, so an unfocused window doesn't pause them.
+does, so an unfocused window doesn't pause them. Under `--days` the director runs its own loop of
+fixed sim steps (`--steps-per-frame` per `OnUpdate`), not `OnFixedUpdate`, whose 8-step cap would
+make a headless 12-minute day take minutes (§1.6).
 
 ---
 
@@ -392,8 +497,14 @@ so more of *Hearthvale* needs the GPU machine than the engine phases do.
 ## 5. Checks (`--check`)
 
 Every suite logs a summary line (`Placement checks: N passed, M failed`). CI's smoke test runs
-`Hearthvale --check` explicitly, as it does *Marionette*'s (`scripts/ci/linux-smoke-test.sh:77`), so
-any `[FAIL]` fails CI.
+`Hearthvale --check` explicitly, as it does *Marionette*'s (`scripts/ci/linux-smoke-test.sh:128`), so
+any `[FAIL]` fails CI. The smoke test also launches every `examples/*/` directory plainly
+(`:123-126`), so `examples/Hearthvale` must build a binary before anything reaches master.
+
+**Headless or windowed**: Generation, Placement (grid side), Growth, Economy, Save and Determinism
+are plain C++ and run under `--check --graphics=headless`. Assets, Static (reads
+`Renderer3D::GetStatistics()`) and UI (DingoUI is off headless) need a window (`xvfb-run` on
+llvmpipe in the cloud).
 
 | Suite | Checks |
 |---|---|
@@ -404,7 +515,7 @@ any `[FAIL]` fails CI.
 | Growth | A crop watered every day is ripe on its def's day and not before; an unwatered day delays it by one; out of season it withers at the season change, except in the greenhouse; regrowing crops come back on schedule; rain waters everything |
 | Economy | Every price is positive; selling pays at the day roll, not before; the shop refuses what you can't afford; a full inventory refuses a pickup and leaves the item on the ground |
 | Save | A seeded game played 7 days with `--fixed-dt`, saved, loaded and played 7 more matches a straight 14-day run (grid hash, coins, inventory, board); a truncated save falls back to `.bak` with a warning; an older schema version migrates |
-| UI | On every screen, every interactive widget is reachable with pad focus moves and returns focus where it came from; nothing overflows its panel at 1280 × 720 and 3840 × 2160 |
+| UI | On every screen, every interactive widget is reachable with pad focus moves and returns focus where it came from; nothing overflows its panel at 1280 × 720 and 3840 × 2160. The game cannot inject pad input or read the focused id (E7), so this suite checks the game's own screen model (each screen's widget list, default focus, back target) plus layout sizes from `Font::MeasureText`; a real pad pass is P18 |
 | Determinism | `--days=7 --seed=1` logs the same `[Day]` lines twice in a row |
 
 ---
@@ -430,10 +541,15 @@ any `[FAIL]` fails CI.
 
 ## 7. New-executable and docs checklist
 
-- `examples/Hearthvale/premake5.lua` calls `copyAssimpRuntime()` and defines `NOMINMAX` on Windows.
-- Root `premake5.lua` includes it in the Examples group (`:427-438`).
+- `examples/Hearthvale/premake5.lua` as *Marionette*'s (`examples/Marionette/premake5.lua`):
+  `NOMINMAX` on Windows, `WindowedApp` in Distribution, then `distributionSymbols()`,
+  `copyAssimpRuntime()`, `exeMetadata { Name, Description, Company, Copyright }` and `embedPackKey()`
+  (root `premake5.lua:150,194,268`), with `icon.ico`/`icon.png` from `scripts/icons/make-icons.sh`
+  (a row in `scripts/icons/icons.txt`). Packed assets: `ApplicationParams.Assets` with
+  `SetPackageKey(Dingo::Generated::GetPackageKey())` (`examples/Marionette/src/main.cpp:59-75`).
+- Root `premake5.lua` includes it in the Examples group (`:644-655`).
 - `.github/workflows/build-release.yml`: an `example-game-hearthvale` job and its upload step (as
-  `:190-195`, `:647-695`). Linux packaging, the smoke test and the tester bundle find it through
+  Marionette's `:202-207`, `:650-689`). Linux packaging, the smoke test and the tester bundle find it through
   `examples/*/`; the smoke test and `run-checks.sh` get an explicit `--check` run; the tester
   `README.md` table gets a row.
 - `.vscode/tasks.json` and `launch.json`: Windows and Linux entries, cwd = the example directory.
@@ -448,7 +564,7 @@ any `[FAIL]` fails CI.
 
 | Risk | Mitigation |
 |---|---|
-| A chosen pack's licence turns out not to be CC0 (Quaternius' licence change) | Only packs whose own `License.txt`, read in H0, says CC0 (or CC-BY, if HD4 allows it); the animals are the likeliest cut |
+| A chosen pack's licence turns out not to be CC0 (Quaternius' licence change) | **Resolved 2026-10-15**: every pack on disk carries Kenney's CC0 `License.txt`; Quaternius is not used |
 | Kenney and KayKit look mismatched | H0's side-by-side frame before any building; fallback: Kenney's own characters or recoloured KayKit textures |
 | The moving sun makes cascades crawl | The sun moves in 0.25° steps (a step every ~22 real seconds), each step a quick 1 s blend; elevation capped at 65°, far from the `abs(dir.y) > 0.99` basis switch; checked in H1 against a still sun |
 | Rebaking on every placement hitches | Rebakes happen at most once per cell per frame; a cell is ≤ 64k vertices; measured in H2 with 500 placements |
@@ -466,7 +582,7 @@ any `[FAIL]` fails CI.
 |---|---|---|---|
 | HD1 ✅ | Grid shape | **Square 1 m tiles**: fences, paths and crop rows read naturally, and Kenney's kits are square | Hex tiles with KayKit's Medieval Hexagon Pack: distinctive, but crops and fences on hexes are awkward and that pack has no crops |
 | HD2 ✅ | Art set | **Kenney Nature, Fantasy Town and Survival Kits for the world; KayKit Adventurers and clip libraries for people**, confirmed by H0's side-by-side frame | All KayKit (verified licences, no crops) or all Kenney (unverified characters) |
-| HD3 ✅ | Animals | **Conditional**: chickens and cows only if a pack's own licence says CC0 in H0, with E1 for material colours; otherwise cut, and the coop and barn go with them | Always (model them from primitives), or never |
+| HD3 ✅ | Animals | **Conditional**: chickens and cows only if a pack's own licence says CC0 in H0, with E1 for material colours; otherwise cut, and the coop and barn go with them. **Resolved 2026-10-15**: Kenney Cube Pets (CC0) `animal-chick` and `animal-cow`, moved procedurally (their node clips don't load) | Always (model them from primitives), or never |
 | HD4 ✅ | Audio licences | **CC0 first; CC-BY 4.0 allowed** with the credits screen and README naming the author | CC0 only (fewer tracks), or synthesized like the other examples (not release quality) |
 | HD5 ✅ | Day length | **12 real minutes**, time stopped in menus | 15 minutes; or a setting in options |
 | HD6 ✅ | Ending | **The Lantern Festival when the four boards are done**, then sandbox | Pure sandbox, no ending |
@@ -481,15 +597,81 @@ any `[FAIL]` fails CI.
 
 | # | Gap | Where it goes |
 |---|---|---|
-| E1 | The model loader drops material base colours and vertex colours (`Model.cpp:252-265`, `Mesh.h:12-17`); a colour-only pack loads white | v1.0 **P1**: `SubMesh::BaseColor` from `AI_MATKEY_BASE_COLOR`, falling back to `AI_MATKEY_COLOR_DIFFUSE`, which games pass as `MeshRendererComponent::Color` (vertex colours stay out: the 48 B vertex layout is frozen) |
-| E2 | v1.0 P5's static change detection compared only transforms and meshes; a watered tile changes only its colour | v1.0 **§2.6**, now comparing the whole draw state (transform, mesh id, colour, surface override, shadow mode) |
-| E3 | `Renderer2D::DrawText` has no word wrap; dialogue and tooltips need it | DingoUI's U0 (`2026-10-08-v1.0-game-ui-plan.md` §3.1): `Font::MeasureText` with wrap, shared by `DrawText` and DingoUI's `Text` |
-| E4 | No body-to-entity lookup | Done on master (#149): `Scene::GetEntityFromBody3D` |
-| E5 | No fixed-step hook | Already v1.0 P9 (`OnFixedUpdate`); until then the director steps the scene itself, as *Marionette* does |
-| E6 | Cascades are stable for a still light only | Game-side mitigation (§8); an engine fix is post-1.0 unless H1 shows the stepped sun isn't enough |
+| E1 ✅ | The model loader dropped material base colours | **Landed** (v1.0 P1): `SubMesh::BaseColor` (`include/DingoEngine/Graphics/Model.h:15-30`, `docs/asset-pipeline.md:115`). The game passes it as `MeshRendererComponent::Color`; vertex colours stay out |
+| E2 ✅ | Static change detection compared only transforms and meshes | **Landed** (v1.0 P5): the whole draw state, bitwise (`src/DingoEngine/Scene/Systems/StaticGeometry.cpp:12-25,91-92`, `docs/performance.md:148-162`) |
+| E3 ✅ | No word wrap | **Landed** (DingoUI U0): `Font::MeasureText` (`Graphics/Font.h:76`, `docs/rendering-2d.md:134`); DingoUI `Text` wraps by default |
+| E4 ✅ | No body-to-entity lookup | **Landed** (#149): `Scene::GetEntityFromBody3D` (`Scene/Scene.h:298`, `docs/physics-3d.md:235`). Use it to pick a villager or animal from a `Physics3D::RayCast` hit |
+| E5 ✅ | No fixed-step hook | **Landed** (v1.0 P9): `ScriptableEntity::OnFixedUpdate(step)`, `Scene::SetFixedTimeStep` (`Scene/ScriptableEntity.h:43-46`, `Scene/Scene.h:94-113`, `docs/scenes-and-ecs.md:802`). The `ValleyDirector` advances the simulation in `OnFixedUpdate` at normal speed; `--days` runs its own loop (§3.6) |
+| E6 | Cascades are stable for a still light only | Game-side mitigation (§8); an engine fix is post-1.0 unless P18 shows the stepped sun isn't enough |
+| E7 | No public way for a game's `--check` to drive DingoUI focus: simulated pads are private (`Core/Input.h:186-190`, reached only through `friend struct Internal::InputBackend`), and no focused-widget query exists | File as an `enhancement`; until then the UI suite checks the game's own screen model (§5) |
+| E8 | A bone-less model's node animations are dropped (`docs/asset-pipeline.md:126-129`), so Kenney Cube Pets don't animate | File as an `enhancement` (rigid node clips); game-side procedural motion until then |
+| E9 | A scene's `Static` bake has a fixed 32 m cell (`StaticGeometry.cpp:58` uses the default `StaticBatchParams`) | File as an `enhancement` (a scene-level cell size) only if P3/P17 show the 32 m rebake costs; else note it |
+| #248 | Loading a GPU asset headless crashes instead of failing | Open `enhancement`. Hearthvale's sim code never loads GPU assets, and the headless `--check` skips the world, assets and UI |
 
 ---
 
 ## 11. As built
 
-*(filled in per milestone)*
+### 11.1 Cloud build phases (P0–P18)
+
+The game is built in cloud sessions (Linux, GCC, no GPU; llvmpipe under Xvfb), one phase per agent,
+in this order. Each phase appends its "As built" note below; those notes override §2–§3. Game code
+lives only in `examples/Hearthvale`; an engine gap is a note for an issue, never an engine patch.
+P0–P15 only have to compile warning-free in the files they touch and write the `--check` suites for
+their area; P13 and P17 run them.
+
+| Phase | Name | Scope |
+|---|---|---|
+| P0 | Refresh plan | Re-verify anchors against master, mark landed engine work, this phase list |
+| P1 | Scaffold | `premake5.lua` (§7), `main.cpp`, `HearthvaleLayer`, `LaunchOptions` per §3.6, `CheckReport.h`, `GameTuning.h`, the art registry, the Inter font (§2.7) |
+| P2 | Sim data core | `TileGrid` + grid hash; def tables: 12 crops, 20 buildables, items, 4 villagers, boards 4 × 4; the seeded 96 × 96 valley; `Calendar` 6:00–2:00 in 12 real minutes, 4 seasons × 14 days; the fixed-step `ValleyDirector` per §3.2 |
+| P3 | ValleyWorld | Grid → entities, 16 × 16 cells, `Static`, a dirty-cell queue, colour-only watered soil, a rebake counter, `--no-static` / `--no-instancing` / `--no-cull` |
+| P4 | Farmer, camera, sky | Controller and animation, the three-quarter camera rig, sun/moon/ambient/fog curves |
+| P5 | Build and clear | Target tile, ghost, placement rules and costs, place/remove/rotate, axe, pickaxe, scythe |
+| P6 | Crops, weather, day roll | Tilling, seeds, watering, growth, regrowth, seasons, weather, sleep and the day roll, sprinklers |
+| P7 | Economy logic | Inventory, prices, shipping bin, shop, board requests and the festival condition |
+| P8 | DingoUI HUD | HUD, hotbar, inventory, build palette |
+| P9 | Menus | Title, save slots, pause, options, dialogue, shop, board, credits |
+| P10 | Villagers and animals | Schedules, dialogue, gifts; animals in pens, daily produce |
+| P11 | Lights, effects, audio | Lamps and windows under a light LOD, particles, buses, music and ambience (synthesized placeholders) |
+| P12 | Saves | Schema, version and migration, slots, autosave at the day roll, `.bak` fallback |
+| P13 | Autoplay and checks | The farmer bot (§3.5), `--days`, every §5 suite wired and run |
+| P14 | Real art | Swap the registry's primitives for the Kenney and KayKit files of §2.7 |
+| P15 | Packaging and docs | §7 checklist, README, credits, notices, release workflow |
+| P16 | Fresh review | One fresh review agent over the whole diff; fix High and Medium |
+| P17 | Cloud test run and balance | `--check` headless and under Xvfb, `--days=56` logs, tune `GameTuning.h` |
+| P18 | Owner GPU sign-off | The owner runs the §6 GPU, pad and playthrough checks on Windows |
+
+**Placeholder art first.** Every visual goes through an **art registry**: an id maps to either a
+model path (with its material kind: atlas or `BaseColor`) or an engine primitive plus a colour. Until
+P14 every id is a primitive (`Renderer3D` box, sphere and the like) with a colour, so P3–P13 never
+depend on a model. P14 changes the registry's entries, not game code.
+
+**GPU-free simulation.** Grid, valley generation, calendar, crops, economy, board and saves are plain
+C++ that never touches the renderer, a texture, a model, a font or DingoUI, so `--check
+--graphics=headless` runs their suites (§1.6, issue #248). Anything that creates entities with
+meshes, reads renderer statistics or declares UI checks `Application::Get().IsHeadless()` and stays
+off.
+
+### 11.2 P0 (2026-10-15): plan refreshed
+
+- Re-read every anchor in §1, §3, §5, §7 and §10 on `feat/1-0-hearthvale` (master `f414ba0` plus
+  the Kenney packs, `7f4c1e0`) and fixed the stale ones in place. Added §1.3 DingoUI, §1.4 culling,
+  instancing and static, §1.5 saves and settings, §1.6 headless; renumbered the scale reference
+  to §1.7. Rewrote §2.7 from the files on disk.
+- **Landed and marked**: E1 (`SubMesh::BaseColor`), E2, E3, E4 (`GetEntityFromBody3D`), E5
+  (`OnFixedUpdate`), U5 (DingoUI focus navigation, `docs/game-ui.md:236-291`), v1.0 P9 (the API pass:
+  `OnFixedUpdate`, `Entity::SetActive`, `DirectionalLightComponent::Ambient` deprecated to 0,
+  `EnableImGui`/`OnImGuiRender`, `CreateApplication` no longer calls `Initialize`;
+  `.claude/plans/2026-10-08-v1.0-plan.md:1746`).
+- **Assumptions that changed** (later phases must know):
+  - The scene's static bake cell is a fixed 32 m, not the game's 16 × 16 (§1.4, E9).
+  - Baked meshes never instance: per kind, `Static` or instanced (§3.3).
+  - Static change detection is bitwise: write identical colour values (§1.4).
+  - Nature Kit is colour-only and multi-material; Cube Pets' clips don't load (E8); only two
+    KayKit Adventurers; no watering-can, scythe or item-icon art (§2.7).
+  - Headless: no DingoUI, renderers or GPU assets; 60 real updates a second, so `--days` steps its
+    own loop (§1.6, §3.6). `--save-dir` and `--graphics` are engine flags.
+  - The UI pad check can't drive focus (E7); it checks a screen model (§5).
+  - No `pwsh` in the cloud: the audio generator is Python.
+  - Animals are in (HD3 resolved by Cube Pets, CC0).
