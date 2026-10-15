@@ -1228,8 +1228,11 @@ made as the [2D](physics-2d.md#spawning-bodies-at-runtime) and
 An entity holds one script. Before, a second `AddScript` deleted the first without calling its
 `OnDestroy`, and a script that replaced itself was freed in the middle of its own call. Now
 `AddScript` calls the old script's `OnDestroy`, replaces it, and logs a warning.
-`Entity::RemoveScript()` detaches a script the same way. A script detached from inside one of its
-own callbacks is freed as soon as no script callback is on the stack.
+`Entity::RemoveScript()` detaches a script the same way. The old script's `OnDestroy` runs at once,
+but the object is freed only once no script callback is on the stack: at the end of the scene's
+current or next `OnUpdate`, at `OnStop` or `Clear`, or when an entity is destroyed outside an
+update. On a scene that isn't being updated, such as one parked in a `SceneManager`, the object and
+whatever its destructor frees can live until then.
 
 ```cpp
 entity.AddScript<EnemyScript>();

@@ -43,7 +43,7 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
 | `AddScript<T>(args...)` | Attach a behaviour (see below). An entity holds one script: a second `AddScript` destroys the first, with a warning. |
-| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed at the end of the update). |
+| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed after the scene's update pass, or its next `OnStop` or `Clear`). |
 | `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
 | `GetUUID()` / `GetName()` / `SetName(name)` (v1.0) | The entity's id / name; a null entity reads `UUID()` and `""`, and an empty name becomes `"Entity"`. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
