@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <memory>
 
@@ -119,6 +120,35 @@ namespace Dingo
 
 			std::unique_ptr<Model> staticClips(Model::LoadFromFile("models/Duck/Duck.gltf", ModelLoadParams().SetClipsOnly(true)));
 			Check(!staticClips, "ClipsOnly fails for a model without bones");
+		}
+
+		{
+			constexpr const char* path = "models/NodeAnimated/NodeAnimated.gltf";
+			std::unique_ptr<Model> plain(Model::LoadFromFile(path));
+			Check(plain && !plain->GetSkeleton() && plain->GetAnimationCount() == 0 && plain->GetSubMeshCount() > 0,
+				"a model without bones loads as a static mesh by default");
+
+			std::unique_ptr<Model> nodes(Model::LoadFromFile(path, ModelLoadParams().SetAnimateNodes(true)));
+			const Skeleton* skeleton = nodes ? nodes->GetSkeleton() : nullptr;
+			const int32_t spinner = skeleton ? skeleton->FindJoint("Spinner") : Skeleton::k_InvalidJoint;
+			const AnimationClip* spin = nodes ? nodes->FindAnimation("Spin") : nullptr;
+			Check(spinner != Skeleton::k_InvalidJoint && nodes->GetAnimationCount() == 1 && spin
+				&& std::abs(spin->GetDuration() - 1.0f) < 1e-3f && nodes->GetSubMeshCount() == 2,
+				"AnimateNodes loads a model without bones with its node skeleton, clip and both meshes");
+
+			if (spin && spinner != Skeleton::k_InvalidJoint)
+			{
+				Animator animator(skeleton);
+				animator.Play(spin);
+				animator.Update(0.5f);
+				const glm::quat expected = glm::angleAxis(glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+				Check(std::abs(glm::dot(animator.GetLocalPoses()[spinner].Rotation, expected)) > 0.9999f,
+					"an animated node's clip turns its joint: 45 degrees about +Y at half the clip");
+			}
+
+			std::unique_ptr<Model> library(Model::LoadFromFile(path, ModelLoadParams().SetClipsOnly(true).SetAnimateNodes(true)));
+			Check(library && library->GetSubMeshCount() == 0 && library->GetAnimationCount() == 1,
+				"ClipsOnly with AnimateNodes loads the node clips without the meshes");
 		}
 
 		// Another test may still hold the Fox, with the default params it would keep.

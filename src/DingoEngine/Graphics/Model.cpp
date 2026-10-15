@@ -976,7 +976,7 @@ namespace Dingo
 		importer.SetPropertyBool(AI_CONFIG_IMPORT_NO_SKELETON_MESHES, true);
 		const aiScene* scene = importer.ReadFile(assimpPath, 0);
 
-		const bool skinned = scene && (HasBones(scene) || IsClipLibrary(scene));
+		const bool skinned = scene && (HasBones(scene) || IsClipLibrary(scene) || (params.AnimateNodes && scene->mNumAnimations > 0));
 		if (skinned && scene->mRootNode && HasFbxPivotNodes(scene->mRootNode))
 		{
 			// Pivot helper nodes would sit between the joints and take over their names and
@@ -990,6 +990,7 @@ namespace Dingo
 		if (skinned)
 			importer.SetPropertyBool(AI_CONFIG_IMPORT_REMOVE_EMPTY_BONES, false);
 
+		const uint32_t clipCount = scene ? scene->mNumAnimations : 0;
 		if (scene)
 			scene = importer.ApplyPostProcessing(skinned ? k_SkinnedImportFlags : k_StaticImportFlags);
 
@@ -1004,11 +1005,11 @@ namespace Dingo
 		const std::string modelName = Internal::PathToUtf8(resolvedPath.filename());
 		if (params.ClipsOnly && !skinned)
 		{
-			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones, so it has no clips to load", Internal::PathToUtf8(resolvedPath));
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones or clips to load (ModelLoadParams::AnimateNodes loads clips that move its nodes)", Internal::PathToUtf8(resolvedPath));
 			return nullptr;
 		}
-		if (!skinned && scene->mNumAnimations > 0)
-			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh.", modelName, scene->mNumAnimations);
+		if (!skinned && clipCount > 0)
+			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh (ModelLoadParams::AnimateNodes plays clips that move its nodes).", modelName, clipCount);
 
 		Model* model = new Model();
 		model->m_FilePath = std::filesystem::absolute(resolvedPath);
