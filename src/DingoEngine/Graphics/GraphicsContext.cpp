@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 
 #include "DingoEngine/Graphics/NVRHI/Vulkan/VulkanGraphicsContext.h"
 
@@ -8,8 +9,33 @@
 #include "DingoEngine/Graphics/NVRHI/DirectX12/DirectX12GraphicsContext.h"
 #endif
 
+#include <atomic>
+
 namespace Dingo
 {
+
+	namespace
+	{
+		std::atomic<bool> s_HasDevice{ false };
+	}
+
+	namespace Internal
+	{
+
+		bool HasGraphicsDevice()
+		{
+			return s_HasDevice.load(std::memory_order_acquire);
+		}
+
+		bool RequireGraphicsDevice(const char* factory)
+		{
+			if (HasGraphicsDevice())
+				return true;
+			DE_CORE_ERROR("{}: no graphics device (a headless app has no GPU)", factory);
+			return false;
+		}
+
+	}
 
 	GraphicsContext* GraphicsContext::Create(const GraphicsParams& params, GLFWwindow* window)
 	{
@@ -38,10 +64,12 @@ namespace Dingo
 		: m_Params(params)
 	{
 		s_Instance = this;
+		s_HasDevice.store(true, std::memory_order_release);
 	}
 
 	GraphicsContext::~GraphicsContext()
 	{
+		s_HasDevice.store(false, std::memory_order_release);
 		s_Instance = nullptr;
 	}
 

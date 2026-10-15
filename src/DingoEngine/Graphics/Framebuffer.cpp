@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Framebuffer.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 
 #include "DingoEngine/Graphics/NVRHI/NvrhiFramebuffer.h"
 
@@ -10,6 +11,9 @@ namespace Dingo
 
 	Framebuffer* Framebuffer::Create(const FramebufferParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("Framebuffer::Create"))
+			return nullptr;
+
 		Framebuffer* framebuffer = new NvrhiFramebuffer(params);
 		framebuffer->Initialize();
 		return framebuffer;

@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Shader.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 
@@ -83,6 +84,9 @@ namespace Dingo
 
 	Shader* Shader::Create(const ShaderParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("Shader::Create"))
+			return nullptr;
+
 		ShaderParams resolvedParams = params;
 		resolvedParams.FilePath = Internal::ResolveRawAssetPath(params.FilePath);
 

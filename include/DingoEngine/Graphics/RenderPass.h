@@ -30,7 +30,8 @@ namespace Dingo
 	class RenderPass
 	{
 	public:
-		/// Creates the pass; the caller deletes it. Asserts when params.Pipeline is null.
+		/// Creates the pass; the caller deletes it. Returns nullptr (with an error) when there is no
+		/// graphics device, as in a headless app. Asserts when params.Pipeline is null.
 		[[nodiscard]] static RenderPass* Create(const RenderPassParams& params);
 
 	public:

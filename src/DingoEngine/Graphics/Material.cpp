@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 
 #include <atomic>
 
@@ -133,6 +134,9 @@ namespace Dingo
 			static_cast<const uint8_t*>(data) + size);
 
 		m_UniformUploadFrame = 0;
+
+		if (!Internal::HasGraphicsDevice())
+			return;
 
 		// Recreate the GPU buffer if it doesn't exist or is too small.
 		// This also invalidates the pipeline cache so new render passes will

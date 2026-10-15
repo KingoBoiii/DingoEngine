@@ -31,9 +31,11 @@ type by type.
 | `SceneManager` | the scenes `CreateScene` returns |
 | `Scene` | entities, scripts, animators, particle emitters, character controllers, physics worlds |
 
-**One exception:** `Shader::Create` never returns `nullptr`. A shader that fails to compile comes
-back invalid (`IsValid()` is false), because the asset manager and hot-reload keep an object in
-place while its file is fixed. Check `IsValid()` instead.
+**One exception:** with a graphics device, `Shader::Create` never returns `nullptr`. A shader that
+fails to compile comes back invalid (`IsValid()` is false), because the asset manager and
+hot-reload keep an object in place while its file is fixed. Check `IsValid()` instead. Without a
+graphics device (a headless app) every GPU factory, `Shader::Create` included, returns `nullptr`
+with an error.
 
 **Order:** a lit material is deleted before the `Renderer3D` that made it, an `AudioClip` released
 before the engine shuts down, a `ParticleEffect` deleted after its emitters.

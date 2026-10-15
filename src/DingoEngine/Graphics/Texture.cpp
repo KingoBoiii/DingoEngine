@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/Texture.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 
@@ -87,6 +88,9 @@ namespace Dingo
 
 	Texture* Texture::CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName)
 	{
+		if (!Internal::RequireGraphicsDevice("Texture::CreateFromFile"))
+			return nullptr;
+
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
 
 		uint32_t width = 0, height = 0, channels = 0;
@@ -123,6 +127,9 @@ namespace Dingo
 
 	Texture* Texture::Create(const TextureParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("Texture::Create"))
+			return nullptr;
+
 		Texture* texture = new NvrhiTexture(params);
 		texture->Initialize();
 		if (params.InitialData)

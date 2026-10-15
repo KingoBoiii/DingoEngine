@@ -8,12 +8,16 @@
 #include "NvrhiTexture.h"
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 
 namespace Dingo
 {
 
 	ComputePass* ComputePass::Create(const ComputePassParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("ComputePass::Create"))
+			return nullptr;
+
 		DE_CORE_ASSERT(params.Shader, "A ComputePass needs a shader.");
 
 		ComputePass* pass = new NvrhiComputePass(params);
