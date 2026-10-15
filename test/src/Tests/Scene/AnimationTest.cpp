@@ -181,6 +181,7 @@ void main()
 	constexpr uint32_t k_LodReturnFrames = 3;   // the paused fox brought into view
 	constexpr uint32_t k_LodHeadlessFrames = 4; // the scene stepped without being drawn
 	constexpr float k_LodStep = 1.0f / 15.0f;
+	constexpr float k_LodTravel = 100.0f; // model units a lap of the culling check's travelling Walk
 
 	constexpr uint32_t k_GhostCheckWidth = 160;
 	constexpr uint32_t k_GhostCheckHeight = 120;
@@ -2541,7 +2542,36 @@ namespace Dingo
 				fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).CullingMode = modes[i];
 				m_LodFoxes[i] = fox;
 			}
+
+			// The docs promise a culled animator's root motion goes on and its sockets hold the last pose.
+			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+			m_LodClip = walk ? TravellingWalk(*m_Fox->GetSkeleton(), *walk, "LodAhead", glm::vec3(0.0f, 0.0f, k_LodTravel), 0.0f, 0.0f) : nullptr;
+			Check(m_LodClip != nullptr, "the culling check's travelling clip builds from Walk's hips");
+			const AnimatorCullingMode rootModes[2] = { AnimatorCullingMode::AlwaysAnimate, AnimatorCullingMode::PauseWhenCulled };
+			const char* rootNames[2] = { "RootAlways", "RootPaused" };
+			for (int i = 0; i < 2; ++i)
+			{
+				Entity fox = m_LodScene->CreateEntity(rootNames[i]);
+				fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(5.0f + static_cast<float>(i) * 2.5f, 0.0f, 12.0f), glm::vec3(m_FoxScale)));
+				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+				AnimatorComponent& animator = fox.AddComponent<AnimatorComponent>();
+				animator.RootMotion = RootMotionMode::XZ;
+				animator.CullingMode = rootModes[i];
+				m_LodRootFoxes[i] = fox;
+			}
+			for (int i = 0; i < 2; ++i)
+			{
+				Entity box = m_LodScene->CreateEntity(i == 0 ? "SocketAlways" : "SocketPaused");
+				box.AddComponent<Transform3DComponent>(Transform3DComponent(k_HatOffset, glm::vec3(k_HatSize)));
+				box.SetParent(m_LodFoxes[i], k_HatJoint, false);
+				m_LodSockets[i] = box;
+			}
 			m_LodScene->OnStart();
+			for (Entity fox : m_LodRootFoxes)
+			{
+				if (Animator* animator = m_LodScene->GetAnimator(fox))
+					animator->Play(m_LodClip.get());
+			}
 			m_LodTarget = Framebuffer::Create(FramebufferParams()
 				.SetDebugName("AnimationLod")
 				.SetWidth(k_GhostCheckWidth)
@@ -2555,8 +2585,23 @@ namespace Dingo
 		if (m_LodFrame == k_LodSettleFrames + k_LodMeasuredFrames)
 			m_LodFoxes[Paused].GetComponent<Transform3DComponent>().Position = m_FoxOffset;
 
+		if (m_LodFrame == k_LodSettleFrames)
+		{
+			for (int i = 0; i < 2; ++i)
+				m_LodRootStart[i] = m_LodRootFoxes[i].GetComponent<Transform3DComponent>().Position;
+		}
 		m_LodScene->OnUpdate(k_LodStep);
 		const bool measuring = m_LodFrame >= k_LodSettleFrames && !returning;
+		for (int i = 0; i < 2; ++i)
+		{
+			const glm::mat4 world = m_LodSockets[i].GetWorldTransform();
+			if (measuring)
+			{
+				m_LodRootEnd[i] = m_LodRootFoxes[i].GetComponent<Transform3DComponent>().Position;
+				m_LodSocketChanges[i] += world != m_LodSocketWorld[i] ? 1 : 0;
+			}
+			m_LodSocketWorld[i] = world;
+		}
 		for (int i = 0; i < 4; ++i)
 		{
 			const Animator* animator = m_LodScene->GetAnimator(m_LodFoxes[i]);
@@ -2605,6 +2650,13 @@ namespace Dingo
 		Check(m_LodChanges[Paused] == 0 && m_LodEvents[Always] > 0 && m_LodEvents[Paused] == m_LodEvents[Always] && sameTime,
 			std::format("a culled PauseWhenCulled fox keeps its pose ({} changes) but keeps its time and fires the same {} events as an animated one ({})",
 				m_LodChanges[Paused], m_LodEvents[Always], m_LodEvents[Paused]));
+		const glm::vec3 alwaysTravel = m_LodRootEnd[0] - m_LodRootStart[0];
+		const glm::vec3 pausedTravel = m_LodRootEnd[1] - m_LodRootStart[1];
+		const float expectedTravel = k_LodTravel * m_FoxScale * static_cast<float>(k_LodMeasuredFrames) * k_LodStep / (m_LodClip ? m_LodClip->GetDuration() : 1.0f);
+		Check(m_LodClip && glm::length(alwaysTravel) > 0.0f && std::abs(glm::length(alwaysTravel) - expectedTravel) < 0.02f * expectedTravel && glm::length(pausedTravel - alwaysTravel) < 1e-4f * glm::length(alwaysTravel),
+			std::format("a culled PauseWhenCulled walker with root motion moves its entity as far as an AlwaysAnimate twin ({:.4f} against {:.4f}, {:.4f} expected)", glm::length(pausedTravel), glm::length(alwaysTravel), expectedTravel));
+		Check(m_LodSocketChanges[0] == k_LodMeasuredFrames && m_LodSocketChanges[1] == 0,
+			std::format("a box on a culled fox's head socket follows an AlwaysAnimate fox ({} of {} updates) and holds still on a PauseWhenCulled one ({})", m_LodSocketChanges[0], k_LodMeasuredFrames, m_LodSocketChanges[1]));
 		Check(m_LodChanges[Reduced] == k_LodMeasuredFrames / 4 && m_LodEvents[Reduced] == m_LodEvents[Always],
 			std::format("a culled ReduceWhenCulled fox is posed every 4th update ({} of {}) and fires every event ({})", m_LodChanges[Reduced], k_LodMeasuredFrames, m_LodEvents[Reduced]));
 		Check(m_LodChanges[Seen] == k_LodMeasuredFrames,
@@ -2690,6 +2742,11 @@ namespace Dingo
 		DestroyAndDelete(m_LodTarget);
 		for (Entity& fox : m_LodFoxes)
 			fox = {};
+		for (Entity& entity : m_LodRootFoxes)
+			entity = {};
+		for (Entity& entity : m_LodSockets)
+			entity = {};
+		m_LodClip.reset();
 		m_GhostPixels.clear();
 		m_GhostRig.reset();
 		m_Alive = std::make_shared<int>(0);
