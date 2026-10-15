@@ -41,9 +41,16 @@ namespace Dingo
 
 		std::array<GamepadState, k_MaxGamepads> s_CurrentGamepads{};
 		std::array<GamepadState, k_MaxGamepads> s_PreviousGamepads{};
+
+		std::array<bool, MaxKeys> s_ConsumedKeys{};
+		std::array<bool, MaxMouseButtons> s_ConsumedMouseButtons{};
+		std::array<std::array<bool, k_GamepadButtonCount>, k_MaxGamepads> s_ConsumedGamepadButtons{};
+		bool s_ScrollConsumed = false;
 		std::array<std::string, k_MaxGamepads> s_GamepadNames{};
 		std::array<GamepadType, k_MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
+		// Slots the test app drives itself; polling leaves them alone.
+		std::array<bool, k_MaxGamepads> s_SimulatedGamepads{};
 
 		using RumbleClock = std::chrono::steady_clock;
 		constexpr int k_NoXInputUser = -1;
@@ -192,6 +199,8 @@ namespace Dingo
 			for (uint32_t jid = 0; jid < k_MaxGamepads; jid++)
 			{
 				GamepadState& state = s_CurrentGamepads[jid];
+				if (s_SimulatedGamepads[jid])
+					continue;
 
 				GLFWgamepadstate glfwState;
 				if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
@@ -229,6 +238,18 @@ namespace Dingo
 
 		s_PreviousGamepads = s_CurrentGamepads;
 		PollGamepads();
+
+		// Released last frame: the release frame has been hidden, so the next press is visible.
+		s_ScrollConsumed = false;
+		for (size_t i = 0; i < MaxKeys; i++)
+			s_ConsumedKeys[i] = s_ConsumedKeys[i] && s_PreviousKeys[i];
+		for (size_t i = 0; i < MaxMouseButtons; i++)
+			s_ConsumedMouseButtons[i] = s_ConsumedMouseButtons[i] && s_PreviousMouseButtons[i];
+		for (uint32_t pad = 0; pad < k_MaxGamepads; pad++)
+		{
+			for (size_t i = 0; i < k_GamepadButtonCount; i++)
+				s_ConsumedGamepadButtons[pad][i] = s_ConsumedGamepadButtons[pad][i] && s_PreviousGamepads[pad].Buttons[i];
+		}
 	}
 
 	void Input::Resume()
@@ -238,22 +259,108 @@ namespace Dingo
 		// the scroll and cursor motion an inactive window collected while paused are dropped.
 		PollGamepads();
 		s_MouseScrollDelta = glm::vec2(0.0f);
+		s_ScrollConsumed = false;
 		s_PreviousMousePosition = s_MousePosition;
 	}
 
-	bool Input::IsKeyPressed(KeyCode keycode)
+	void Input::ConsumeKey(KeyCode keycode)
+	{
+		if (ValidKey(keycode))
+			s_ConsumedKeys[static_cast<size_t>(keycode)] = true;
+	}
+
+	void Input::ConsumeMouseButton(MouseButton button)
+	{
+		if (ValidMouseButton(button))
+			s_ConsumedMouseButtons[static_cast<size_t>(button)] = true;
+	}
+
+	void Input::ConsumeScroll()
+	{
+		s_ScrollConsumed = true;
+	}
+
+	void Input::ConsumeGamepadButton(GamepadButton button, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadButton(button))
+			s_ConsumedGamepadButtons[gamepad][static_cast<size_t>(button)] = true;
+	}
+
+	void Input::SimulateGamepadConnected(uint32_t gamepad, bool connected)
+	{
+		if (!ValidGamepad(gamepad))
+			return;
+		s_SimulatedGamepads[gamepad] = connected;
+		s_CurrentGamepads[gamepad] = GamepadState{};
+		s_CurrentGamepads[gamepad].Connected = connected;
+		s_PreviousGamepads[gamepad] = s_CurrentGamepads[gamepad];
+		s_ConsumedGamepadButtons[gamepad].fill(false);
+		if (connected)
+		{
+			s_GamepadNames[gamepad] = "Simulated Gamepad";
+			s_GamepadTypes[gamepad] = GamepadType::Unknown;
+		}
+	}
+
+	void Input::SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadButton(button) && s_SimulatedGamepads[gamepad])
+			s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)] = pressed;
+	}
+
+	void Input::SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadAxis(axis) && s_SimulatedGamepads[gamepad])
+			s_CurrentGamepads[gamepad].Axes[static_cast<size_t>(axis)] = value;
+	}
+
+	void Input::ClearConsumed()
+	{
+		s_ConsumedKeys.fill(false);
+		s_ConsumedMouseButtons.fill(false);
+		for (auto& buttons : s_ConsumedGamepadButtons)
+			buttons.fill(false);
+		s_ScrollConsumed = false;
+	}
+
+	void Input::ConsumeNewPresses(bool mouse, bool keyboard)
+	{
+		if (mouse)
+		{
+			for (size_t i = 0; i < MaxMouseButtons; i++)
+				s_ConsumedMouseButtons[i] = s_ConsumedMouseButtons[i] || (s_CurrentMouseButtons[i] && !s_PreviousMouseButtons[i]);
+			s_ScrollConsumed = true;
+		}
+		if (keyboard)
+		{
+			for (size_t i = 0; i < MaxKeys; i++)
+				s_ConsumedKeys[i] = s_ConsumedKeys[i] || (s_CurrentKeys[i] && !s_PreviousKeys[i]);
+		}
+	}
+
+	bool Input::IsKeyPressedUnconsumed(KeyCode keycode)
 	{
 		return ValidKey(keycode) && s_CurrentKeys[static_cast<size_t>(keycode)] && !s_PreviousKeys[static_cast<size_t>(keycode)];
 	}
 
-	bool Input::IsKeyDown(KeyCode keycode)
+	bool Input::IsKeyDownUnconsumed(KeyCode keycode)
 	{
 		return ValidKey(keycode) && s_CurrentKeys[static_cast<size_t>(keycode)];
 	}
 
+	bool Input::IsKeyPressed(KeyCode keycode)
+	{
+		return IsKeyPressedUnconsumed(keycode) && !s_ConsumedKeys[static_cast<size_t>(keycode)];
+	}
+
+	bool Input::IsKeyDown(KeyCode keycode)
+	{
+		return ValidKey(keycode) && s_CurrentKeys[static_cast<size_t>(keycode)] && !s_ConsumedKeys[static_cast<size_t>(keycode)];
+	}
+
 	bool Input::IsKeyReleased(KeyCode keycode)
 	{
-		return ValidKey(keycode) && !s_CurrentKeys[static_cast<size_t>(keycode)] && s_PreviousKeys[static_cast<size_t>(keycode)];
+		return ValidKey(keycode) && !s_CurrentKeys[static_cast<size_t>(keycode)] && s_PreviousKeys[static_cast<size_t>(keycode)] && !s_ConsumedKeys[static_cast<size_t>(keycode)];
 	}
 
 	bool Input::IsKeyUp(KeyCode keycode)
@@ -261,19 +368,34 @@ namespace Dingo
 		return !IsKeyDown(keycode);
 	}
 
-	bool Input::IsMouseButtonPressed(MouseButton button)
+	bool Input::IsMouseButtonPressedUnconsumed(MouseButton button)
 	{
 		return ValidMouseButton(button) && s_CurrentMouseButtons[static_cast<size_t>(button)] && !s_PreviousMouseButtons[static_cast<size_t>(button)];
 	}
 
-	bool Input::IsMouseButtonDown(MouseButton button)
+	bool Input::IsMouseButtonDownUnconsumed(MouseButton button)
 	{
 		return ValidMouseButton(button) && s_CurrentMouseButtons[static_cast<size_t>(button)];
 	}
 
-	bool Input::IsMouseButtonReleased(MouseButton button)
+	bool Input::IsMouseButtonReleasedUnconsumed(MouseButton button)
 	{
 		return ValidMouseButton(button) && !s_CurrentMouseButtons[static_cast<size_t>(button)] && s_PreviousMouseButtons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsMouseButtonPressed(MouseButton button)
+	{
+		return IsMouseButtonPressedUnconsumed(button) && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsMouseButtonDown(MouseButton button)
+	{
+		return IsMouseButtonDownUnconsumed(button) && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsMouseButtonReleased(MouseButton button)
+	{
+		return IsMouseButtonReleasedUnconsumed(button) && !s_ConsumedMouseButtons[static_cast<size_t>(button)];
 	}
 
 	bool Input::IsMouseButtonUp(MouseButton button)
@@ -295,6 +417,8 @@ namespace Dingo
 
 	glm::vec2 Input::GetMouseScrollDelta()
 	{
+		if (s_ScrollConsumed)
+			return glm::vec2(0.0f);
 		return s_MouseScrollDelta;
 	}
 
@@ -358,6 +482,19 @@ namespace Dingo
 		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
 			return false;
 		const size_t index = static_cast<size_t>(button);
+		return s_CurrentGamepads[gamepad].Buttons[index] && !s_PreviousGamepads[gamepad].Buttons[index] && !s_ConsumedGamepadButtons[gamepad][index];
+	}
+
+	bool Input::IsGamepadButtonDownUnconsumed(GamepadButton button, uint32_t gamepad)
+	{
+		return ValidGamepad(gamepad) && ValidGamepadButton(button) && s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)];
+	}
+
+	bool Input::IsGamepadButtonPressedUnconsumed(GamepadButton button, uint32_t gamepad)
+	{
+		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
+			return false;
+		const size_t index = static_cast<size_t>(button);
 		return s_CurrentGamepads[gamepad].Buttons[index] && !s_PreviousGamepads[gamepad].Buttons[index];
 	}
 
@@ -365,7 +502,8 @@ namespace Dingo
 	{
 		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
 			return false;
-		return s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)];
+		const size_t index = static_cast<size_t>(button);
+		return s_CurrentGamepads[gamepad].Buttons[index] && !s_ConsumedGamepadButtons[gamepad][index];
 	}
 
 	bool Input::IsGamepadButtonReleased(GamepadButton button, uint32_t gamepad)
@@ -373,7 +511,7 @@ namespace Dingo
 		if (!ValidGamepad(gamepad) || !ValidGamepadButton(button))
 			return false;
 		const size_t index = static_cast<size_t>(button);
-		return !s_CurrentGamepads[gamepad].Buttons[index] && s_PreviousGamepads[gamepad].Buttons[index];
+		return !s_CurrentGamepads[gamepad].Buttons[index] && s_PreviousGamepads[gamepad].Buttons[index] && !s_ConsumedGamepadButtons[gamepad][index];
 	}
 
 	float Input::GetGamepadAxis(GamepadAxis axis, uint32_t gamepad)
@@ -458,7 +596,7 @@ namespace Dingo
 	{
 		for (size_t i = 0; i < MaxKeys; i++)
 		{
-			if (s_CurrentKeys[i] && !s_PreviousKeys[i])
+			if (s_CurrentKeys[i] && !s_PreviousKeys[i] && !s_ConsumedKeys[i])
 				return true;
 		}
 		return false;
@@ -468,7 +606,7 @@ namespace Dingo
 	{
 		for (size_t i = 0; i < MaxKeys; i++)
 		{
-			if (s_CurrentKeys[i])
+			if (s_CurrentKeys[i] && !s_ConsumedKeys[i])
 				return true;
 		}
 		return false;
@@ -478,7 +616,7 @@ namespace Dingo
 	{
 		for (size_t i = 0; i < MaxMouseButtons; i++)
 		{
-			if (s_CurrentMouseButtons[i] && !s_PreviousMouseButtons[i])
+			if (s_CurrentMouseButtons[i] && !s_PreviousMouseButtons[i] && !s_ConsumedMouseButtons[i])
 				return true;
 		}
 		return false;
@@ -488,7 +626,7 @@ namespace Dingo
 	{
 		for (size_t i = 0; i < MaxMouseButtons; i++)
 		{
-			if (s_CurrentMouseButtons[i])
+			if (s_CurrentMouseButtons[i] && !s_ConsumedMouseButtons[i])
 				return true;
 		}
 		return false;
@@ -587,6 +725,7 @@ namespace Dingo
 			s_PreviousGamepads.fill(GamepadState{});
 			s_GamepadNames.fill(std::string{});
 			s_GamepadTypes.fill(GamepadType{});
+			ClearConsumed();
 			return;
 		}
 		ApplyCursorModeToWindow();

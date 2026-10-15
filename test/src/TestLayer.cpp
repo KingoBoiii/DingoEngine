@@ -32,6 +32,8 @@
 
 #include "Tests/Audio/AudioBusTest.h"
 
+#include "Tests/UI/DingoUITest.h"
+
 #include <imgui.h>
 
 namespace Dingo
@@ -74,6 +76,7 @@ namespace Dingo
 		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
 		m_Tests.push_back({ "Display Mode Test", [&]() { return new DisplayModeTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Pack Test", [&]() { return new PackTest(m_Renderer2D); } });
+		m_Tests.push_back({ "DingoUI Test", [&]() { return new DingoUITest(m_Renderer2D); } });
 
 		// --test=<name substring, case-insensitive> starts on that test.
 		if (auto requested = Application::Get().GetCommandLineArgs().Get("test"))

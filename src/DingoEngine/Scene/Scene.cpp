@@ -756,6 +756,11 @@ namespace Dingo
 		return Internal::CameraUtils::ScreenPointToRay(m_Data->Registry, screenPos, viewportSize);
 	}
 
+	std::optional<glm::vec2> Scene::WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize) const
+	{
+		return Internal::CameraUtils::WorldToScreenPoint(m_Data->Registry, worldPos, viewportSize);
+	}
+
 	// --- Lifecycle ----------------------------------------------------------------
 
 	void Scene::OnStart()

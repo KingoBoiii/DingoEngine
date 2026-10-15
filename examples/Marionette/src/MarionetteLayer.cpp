@@ -27,6 +27,8 @@ namespace Dingo
 		const LaunchOptions& options = GetLaunchOptions();
 
 		m_Assets = std::make_unique<GameAssets>();
+		DingoUI::SetDefaultFont(m_Assets->GetFont());
+		DingoUI::SetTheme(Overlay::MenuStyle());
 		m_Reach = std::make_unique<ReachTable>(*m_Assets);
 		if (options.LiveEditDemo)
 			m_LiveEdit = std::make_unique<LiveEditDemo>(*m_Assets);
@@ -66,6 +68,7 @@ namespace Dingo
 		m_SceneManager.Clear();
 		m_LiveEdit.reset();
 		m_Reach.reset();
+		DingoUI::SetDefaultFont(nullptr);
 		m_Assets.reset();
 		if (GetLaunchOptions().LiveEditDemo)
 			CleanupLiveEditAssets();
@@ -90,7 +93,7 @@ namespace Dingo
 	void MarionetteLayer::RebuildArenaScene()
 	{
 		m_ArenaScene->Clear();
-		m_ArenaScene->CreateEntity("ArenaDirector").AddScript<ArenaDirectorScript>(m_Assets.get(), m_Reach.get(), &m_Match);
+		m_ArenaDirector = &m_ArenaScene->CreateEntity("ArenaDirector").AddScript<ArenaDirectorScript>(m_Assets.get(), m_Reach.get(), &m_Match);
 	}
 
 	void MarionetteLayer::RebuildEndScene()
@@ -132,12 +135,13 @@ namespace Dingo
 		m_PerfFrameMilliseconds += 1000.0 * static_cast<double>(deltaTime);
 		m_PerfUpdateMilliseconds += static_cast<double>(updateMilliseconds);
 		m_PerfRenderMilliseconds += static_cast<double>(renderMilliseconds);
+		m_PerfUiMilliseconds += static_cast<double>(Application::Get().GetFrameTimings().DingoUIMs);
 		if (++m_PerfFrames < PERF_FRAMES)
 			return;
 
 		const double frames = static_cast<double>(m_PerfFrames);
-		DE_INFO("[Perf] frame {:.3f} ms, Scene::OnUpdate {:.3f} ms, render {:.3f} ms (mean of {} frames)", m_PerfFrameMilliseconds / frames,
-			m_PerfUpdateMilliseconds / frames, m_PerfRenderMilliseconds / frames, m_PerfFrames);
+		DE_INFO("[Perf] frame {:.3f} ms, Scene::OnUpdate {:.3f} ms, render {:.3f} ms, DingoUI {:.3f} ms (mean of {} frames)", m_PerfFrameMilliseconds / frames,
+			m_PerfUpdateMilliseconds / frames, m_PerfRenderMilliseconds / frames, m_PerfUiMilliseconds / frames, m_PerfFrames);
 		m_PerfDone = true;
 	}
 
@@ -177,6 +181,8 @@ namespace Dingo
 		const Scene* activeAfter = m_SceneManager.GetActiveScene();
 		if (activeAfter == m_ArenaScene && m_Match.Restart && !m_Match.Done)
 			RestartArena();
+		if (m_SceneManager.GetActiveScene() == m_ArenaScene)
+			m_ArenaDirector->DeclareUi();
 		const Clock::time_point renderStart = Clock::now();
 		m_SceneManager.OnRender();
 		if (measuring)

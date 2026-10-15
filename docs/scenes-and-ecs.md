@@ -575,6 +575,24 @@ if (Physics3D* physics = GetScene().GetPhysics3D(); physics && body != k_Invalid
 
 `examples/DungeonCrawler3D/` is a worked dungeon-crawler prototype built entirely on this path.
 
+### Screen points and world points (v1.0)
+
+`Scene::ScreenPointToRay(screenPos, viewportSize)` turns a pixel (origin top-left, +Y down, as
+`Input::GetMousePosition()` reports it) into a world-space ray through the primary perspective
+camera, for picking. `Scene::WorldToScreenPoint(worldPos, viewportSize)` goes the other way, for a
+health bar or a name over a 3D entity: it returns the pixel the point projects to through the
+primary camera, or `std::nullopt` when the point is on or behind the camera plane, there is no
+camera, or the viewport is empty. A point in front of the camera but out of view projects outside
+`0..viewportSize`, so check the bounds if that matters. `PerspectiveCamera` has the same pair, and
+`Dingo::WorldToScreenPoint(worldPos, viewportSize, view, projection)` in `Core/Ray.h` takes the
+matrices directly.
+
+```cpp
+const glm::vec2 viewport = { (float)window.GetWidth(), (float)window.GetHeight() };
+if (auto pixel = scene->WorldToScreenPoint(enemy.GetWorldPosition() + glm::vec3(0, 2, 0), viewport))
+    DrawHealthBar(*pixel);
+```
+
 ### Custom materials (per-mesh shaders)
 
 By default meshes draw with Renderer3D's built-in lit material, which responds to the scene's

@@ -52,8 +52,8 @@ What Distribution changes:
 
 Two things Distribution does **not** change:
 
-- The built-in Debug window (F3 to F9: engine, renderer, input, assets, animation, profiler and scene
-  tabs) is on in every configuration. Set `EnableDebugOverlays = false` in `ApplicationParams`
+- The built-in Debug window (F3 to F9: engine, renderer, input, assets, animation, profiler, scene and
+  DingoUI tabs) is on in every configuration. Set `EnableDebugOverlays = false` in `ApplicationParams`
   to strip it from the shipped game (see
   [Application & Layers](application-and-layers.md#applicationparams)).
 - The command-line options (`--log-dir=`, `--log-here`, `--save-dir=`, `--vulkan-validation`)

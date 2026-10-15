@@ -15,6 +15,7 @@
 #include "DingoEngine/Events/WindowEvents.h"
 
 #include "DingoEngine/UI/ImGuiParams.h"
+#include "DingoEngine/UI/DingoUI.h"
 
 #include <filesystem>
 #include <optional>
@@ -112,6 +113,9 @@ namespace Dingo
 		/// minimized window renders nothing either way. Changeable at runtime, from the main
 		/// thread, with Application::SetUpdateInBackground.
 		bool UpdateInBackground = false;
+
+		/// Parameters for the game UI (DingoUI); on by default, never created headless.
+		DingoUIParams DingoUI;
 	};
 
 	class ImGuiLayer;
@@ -123,6 +127,7 @@ namespace Dingo
 		int Main(int argc, char** argv);
 		enum class DebugTab : uint8_t;
 		class SwapChain;
+		class DingoUIContext;
 	}
 
 	/// The main thread's last frame, split up, for the F8 Profiler tab. Zero in a paused frame.
@@ -137,6 +142,9 @@ namespace Dingo
 		/// Milliseconds in ImGui: every layer's OnImGuiRender, the debug window and recording
 		/// ImGui's draws.
 		float UIMs = 0.0f;
+		/// Milliseconds in the game UI (DingoUI): resolving input before the layers' OnUpdate,
+		/// and laying out and recording its draws after them. Not part of UpdateMs.
+		float DingoUIMs = 0.0f;
 	};
 
 	/// The program's one application: owns the window, renderers, audio, assets and the layer
@@ -282,6 +290,9 @@ namespace Dingo
 
 		void RunPostExecutionCallbacks();
 
+		// Applies ImGui's capture to Input, then hands the game UI its input for the frame.
+		void BeginDingoUIFrame();
+
 	private:
 		ApplicationParams m_Params;
 		Window* m_Window = nullptr;
@@ -294,6 +305,7 @@ namespace Dingo
 		AssetManager* m_AssetManager = nullptr;
 		Internal::LayerStack m_LayerStack;
 		ImGuiLayer* m_ImGuiLayer = nullptr;
+		Internal::DingoUIContext* m_DingoUIContext = nullptr;
 		bool m_ShowDebugWindow = false; // built-in tabbed debug window (F3-F9 select a tab)
 		Internal::DebugTab m_ActiveDebugTab{};
 		Internal::DebugTab m_PendingDebugTab{}; // tab selection requested but not yet applied

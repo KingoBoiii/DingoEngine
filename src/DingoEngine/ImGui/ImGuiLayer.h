@@ -16,9 +16,15 @@ namespace Dingo
 	public:
 		virtual void OnAttach() override;
 		virtual void OnDetach() override;
+		virtual void OnEvent(Event& e) override;
 
 		void Begin();
 		void End();
+
+		// As of ImGui's last NewFrame, so one frame behind the input they gate.
+		bool WantsMouse() const;
+		bool WantsKeyboard() const;
+		bool BlocksGameInput() const { return m_Params.BlockGameInput; }
 
 	private:
 		void SeupImGuiConfigFlags(ImGuiIO& io);

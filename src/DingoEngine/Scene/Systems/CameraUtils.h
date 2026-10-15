@@ -8,6 +8,8 @@
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
+#include <optional>
+
 namespace Dingo
 {
 
@@ -38,6 +40,10 @@ namespace Dingo
 			// Unprojects a screen pixel through the primary perspective camera. Returns a
 			// default Ray when there is no perspective camera.
 			Ray ScreenPointToRay(const entt::registry& registry, const glm::vec2& screenPos, const glm::vec2& viewportSize);
+
+			// Projects through the primary camera (FindPrimaryCamera). nullopt when there is no
+			// camera, the viewport is empty or the point is behind the camera.
+			std::optional<glm::vec2> WorldToScreenPoint(const entt::registry& registry, const glm::vec3& worldPos, const glm::vec2& viewportSize);
 
 		}
 

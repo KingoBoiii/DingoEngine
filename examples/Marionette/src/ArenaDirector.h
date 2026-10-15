@@ -35,13 +35,16 @@ namespace Dingo
 		ArenaDirectorScript(const GameAssets* assets, const ReachTable* reach, MatchState* match);
 		~ArenaDirectorScript() override;
 
+		// The HUD, once per rendered frame after the steps; a script's OnStart and OnUpdate run outside or several
+		// times per DingoUI frame.
+		void DeclareUi();
+
 	protected:
 		void OnStart() override;
 		void OnUpdate(float deltaTime) override;
 		void OnDestroy() override;
 
 	private:
-		void ShowMissingAssets();
 		void BuildBout(const FighterContext& context, const LaunchOptions& options);
 		void UpdateBout(float deltaTime);
 		void OnEventsChanged();

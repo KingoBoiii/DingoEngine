@@ -136,6 +136,16 @@ namespace Dingo
 				return Dingo::ScreenPointToRay(screenPos, viewportSize, PerspectiveView(registry, perspective), projection);
 			}
 
+			std::optional<glm::vec2> WorldToScreenPoint(const entt::registry& registry, const glm::vec3& worldPos, const glm::vec2& viewportSize)
+			{
+				entt::entity camera = entt::null;
+				if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f || !FindPrimaryCamera(registry, camera))
+					return std::nullopt;
+
+				const glm::mat4 viewProjection = ViewProjection(registry, camera, viewportSize.x / viewportSize.y);
+				return Dingo::WorldToScreenPoint(worldPos, viewportSize, glm::mat4(1.0f), viewProjection);
+			}
+
 		}
 
 	}
