@@ -235,7 +235,9 @@ On Windows, `distributionSymbols()` (called after the Distribution block) gives 
 Distribution build a PDB. The engine's Distribution library has no debug info, so engine frames
 show only the names of the engine functions the game calls, with no file or line. Archive the PDB of every build you release, and don't ship
 it: the engine's own release workflow moves its examples' PDBs out of their packages into a
-separate `DingoEngine-<version>-Distribution-symbols-windows-x86_64.zip`.
+separate `DingoEngine-<version>-Distribution-symbols-windows-x86_64.zip`. The executable records
+only the PDB's file name, not the build machine's path, so put the PDB beside the `.dmp` or on the
+debugger's symbol path.
 
 Linux Distribution builds have no symbols. Add `symbols "On"` under the Distribution filter for
 Linux too, and the build gives `addr2line -C -f -e <executable> <offset>` a function
