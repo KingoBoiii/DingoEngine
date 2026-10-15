@@ -152,6 +152,9 @@ crash fatal 1 "Fatal error: The test app's --crash=fatal"
 if [[ $CONFIG != Debug-ASan ]]; then
 	crash segv 139 'End of backtrace'
 	crash thread 139 'End of backtrace'
+	crash engine-thread 139 'End of backtrace'
+	crash engine-stack 139 'crashed: SIGSEGV'
+	crash prepared-stack 139 'crashed: SIGSEGV'
 	crash threads 139 'End of backtrace'
 	crash segv-after-info 139 'End of backtrace'
 	if ! awk '/last info line/{i=NR} /crashed: SIGSEGV/{c=NR} END{exit !(i && i<c)}' "$LOGS/crash-segv-after-info/Dingo.log" 2>/dev/null; then
@@ -163,6 +166,8 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	crash abort 134 'crashed: SIGABRT'
 	crash terminate 134 "std::terminate called on an uncaught exception: the test app's --crash=terminate"
 	crash throw 134 "std::terminate called on an uncaught exception: the test app's --crash=throw"
+	crash engine-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
+	crash prepared-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
 	if [[ $CONFIG == Distribution ]]; then
 		crash verify 1 "Fatal error: Verify Failed the test app's --crash=verify"
 	else

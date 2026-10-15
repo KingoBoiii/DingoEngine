@@ -240,6 +240,11 @@ function Invoke-Crash([string] $Kind, [int] $ExpectExit, [string] $ExpectLog)
 Invoke-Crash 'fatal' 1 "Fatal error: The test app's --crash=fatal"
 Invoke-Crash 'segv' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'thread' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
+Invoke-Crash 'engine-thread' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
+Invoke-Crash 'engine-throw' 3 "std::terminate called on an uncaught exception: the test app's engine-thread throw[\s\S]*Minidump: "
+Invoke-Crash 'engine-stack' 0xC00000FD 'crashed: stack overflow[\s\S]*Minidump: '
+Invoke-Crash 'prepared-throw' 3 'std::terminate called[\s\S]*Minidump: '
+Invoke-Crash 'prepared-stack' 0xC00000FD 'crashed: stack overflow[\s\S]*Minidump: '
 Invoke-Crash 'threads' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'segv-after-info' 0xC0000005 'last info line[\s\S]*crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'abort' 3 'crashed: abort\(\)[\s\S]*Minidump: '
