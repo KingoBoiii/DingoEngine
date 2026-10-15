@@ -87,6 +87,7 @@ namespace Dingo::Internal
 		{
 			struct sigaction action = {};
 			action.sa_handler = OnSignal;
+			action.sa_flags = SA_RESTART;
 			sigemptyset(&action.sa_mask);
 			sigaction(k_Signals[i], nullptr, &s_Previous[i]);
 			if (s_Previous[i].sa_handler == SIG_IGN)
