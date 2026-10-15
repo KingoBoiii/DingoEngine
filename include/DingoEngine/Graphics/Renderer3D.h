@@ -359,9 +359,10 @@ namespace Dingo
 
 		/// Adds a mesh to the scene's batch for the given material (null => the built-in lit
 		/// default); EndScene culls it and transforms what is drawn into world space on the CPU,
-		/// or, for a mesh with enough copies in view (Renderer3DCapabilities::InstanceThreshold),
-		/// draws its copies instanced from the mesh's own buffers, so the mesh must stay alive and
-		/// unchanged until then. It is culled when its bounds (Mesh::GetBoundsMin/Max placed by
+		/// or, for a mesh with enough copies of one material and shadow setting in the scene,
+		/// counted before culling (Renderer3DCapabilities::InstanceThreshold), draws its copies
+		/// instanced from the mesh's own buffers, so the mesh must stay alive and unchanged until
+		/// then. It is culled when its bounds (Mesh::GetBoundsMin/Max placed by
 		/// transform) lie outside the camera's view, and, for a perspective camera, when
 		/// cullDistance is above 0 and the camera is farther than that from its bounds; a culled
 		/// caster still casts into any shadow view its bounds reach, unless it is past its
@@ -519,7 +520,8 @@ namespace Dingo
 		/// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
-			/// One indexed draw per non-empty batch, and one per instanced mesh; a material may
+			/// One indexed draw per non-empty batch, and one per instanced (mesh, batch) group, so
+			/// a mesh in two batches (two materials or shadow settings) takes two; a material may
 			/// take several.
 			uint32_t DrawCalls = 0;
 			/// Static meshes accepted this scene, culled ones included, and skinned meshes drawn.

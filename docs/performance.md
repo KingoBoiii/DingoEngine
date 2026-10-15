@@ -109,7 +109,10 @@ if (view.Intersects(box))
 ```
 
 `Intersects` is false only when the box lies wholly behind one plane, so a box near a corner can
-pass while outside. That suits a cull, which can afford a few extra.
+pass while outside. That suits a cull, which can afford a few extra. The other way round, the
+transformed box holds the transformed mesh only up to float rounding, so a vertex can lie a few
+ulps outside it. Pad the box a little (about `1e-5` of its distance from the origin) when a mesh that
+touches the edge of the view must never be dropped; the renderer pads its own boxes that way.
 
 ## Static geometry
 
