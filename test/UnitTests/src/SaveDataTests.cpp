@@ -499,6 +499,8 @@ TEST_SUITE("SaveData")
 
 		CHECK(SaveSlots::List().empty());
 		CHECK_FALSE(SaveSlots::Write("bad name", SaveData(1)));
+		CHECK_FALSE(SaveSlots::Write("nul", SaveData(1)));
+		CHECK_FALSE(SaveSlots::Exists("nul"));
 
 		REQUIRE(SaveSlots::Write("older", SaveData(1)));
 		REQUIRE(SaveSlots::Write("newer", SaveData(2)));
