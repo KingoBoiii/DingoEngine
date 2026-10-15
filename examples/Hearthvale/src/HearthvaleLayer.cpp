@@ -1,5 +1,5 @@
 #include "HearthvaleLayer.h"
-#include "Checks/CheckReport.h"
+#include "Checks/Checks.h"
 #include "GameTuning.h"
 #include "LaunchOptions.h"
 #include "Look/ArtRegistry.h"
@@ -18,6 +18,7 @@ namespace Dingo
 
 	void HearthvaleLayer::OnAttach()
 	{
+		m_Director = std::make_unique<ValleyDirector>(MakeDirectorConfig(GetLaunchOptions()));
 		m_ValleyScene = m_SceneManager.CreateScene(SCENE_VALLEY);
 		m_ValleyScene->SetClearColor(COLOR_SKY);
 		BuildValleyScene();
@@ -30,6 +31,7 @@ namespace Dingo
 			active->OnStop();
 		m_SceneManager.Clear();
 		m_ValleyScene = nullptr;
+		m_Director.reset();
 	}
 
 	void HearthvaleLayer::BuildValleyScene()
@@ -77,6 +79,7 @@ namespace Dingo
 		{
 			m_ChecksDone = true;
 			CheckReport report;
+			RunSimChecks(report);
 			DE_INFO("[Checks] {} passed, {} failed", report.GetPassed(), report.GetFailed());
 			if (Application::Get().IsHeadless())
 			{
@@ -88,7 +91,10 @@ namespace Dingo
 		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
 		const int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
 		for (int i = 0; i < steps; ++i)
+		{
+			m_Director->Advance(step, SIM_MAX_STEPS_REAL_TIME);
 			m_SceneManager.OnUpdate(step);
+		}
 		m_SceneManager.OnRender();
 	}
 

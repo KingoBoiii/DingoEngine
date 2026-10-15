@@ -1,6 +1,10 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include "ValleyDirector.h"
+
+#include <memory>
+
 namespace Dingo
 {
 
@@ -18,6 +22,7 @@ namespace Dingo
 		void BuildValleyScene();
 
 	private:
+		std::unique_ptr<ValleyDirector> m_Director;
 		SceneManager m_SceneManager;
 		Scene* m_ValleyScene = nullptr;
 		bool m_ChecksDone = false;
