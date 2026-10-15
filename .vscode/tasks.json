@@ -394,6 +394,31 @@
             }
         },
         {
+            "label": "Build Hearthvale Debug",
+            "type": "shell",
+            "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/examples/Hearthvale/Hearthvale.vcxproj",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64",
+                "/m",
+                "/nologo"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "make -j\"$(nproc)\" config=debug Hearthvale",
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
+                "problemMatcher": "$gcc"
+            }
+        },
+        {
             "label": "Build ArenaShooter Debug",
             "type": "shell",
             "command": "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe",

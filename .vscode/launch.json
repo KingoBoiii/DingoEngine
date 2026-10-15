@@ -110,6 +110,18 @@
             "preLaunchTask": "Build Marionette Debug"
         },
         {
+            "name": "Debug Hearthvale",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-windows-x86_64/Hearthvale/Hearthvale.exe",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Hearthvale",
+            "environment": [],
+            "console": "internalConsole",
+            "preLaunchTask": "Build Hearthvale Debug"
+        },
+        {
             "name": "Debug ArenaShooter",
             "type": "cppvsdbg",
             "request": "launch",
@@ -288,6 +300,22 @@
                 { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
             ],
             "preLaunchTask": "Build Marionette Debug"
+        },
+        {
+            "name": "Debug Hearthvale (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug-linux-x86_64/Hearthvale/Hearthvale",
+            "args": ["--graphics=vulkan"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/examples/Hearthvale",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                { "description": "Enable pretty-printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+            ],
+            "preLaunchTask": "Build Hearthvale Debug"
         },
         {
             "name": "Debug ArenaShooter (Linux)",
