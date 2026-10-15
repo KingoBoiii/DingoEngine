@@ -116,9 +116,14 @@ namespace Dingo
 				const std::string name = confirming ? "Overwrite?" : std::format("Slot {}", slot + 1);
 				PageCell button = ButtonCell(std::format("{}##slot{}", name, slot), SAVE_SLOT_W, SAVE_SLOT_H, 18.0f, PageAction::SlotPick, slot, enabled);
 				button.Tone = confirming ? PageTone::Bad : PageTone::Normal;
-				const std::string summary = info.Occupied ? info.Summary : std::string("Empty");
+				const bool deleting = view.SlotDeleteConfirm == slot;
+				PageCell erase = ButtonCell(std::format("{}##slotdel{}", deleting ? "Sure?" : "Delete", slot), SLOT_DELETE_W, SAVE_SLOT_H, ROW_SIZE, PageAction::SlotDelete, slot,
+					info.Occupied || info.Damaged);
+				erase.Tone = deleting ? PageTone::Bad : PageTone::Normal;
+				const std::string summary = info.Occupied || info.Damaged ? info.Summary : std::string("Empty");
+				const PageTone tone = info.Damaged ? PageTone::Bad : (info.Occupied ? PageTone::Normal : PageTone::Dim);
 				page.Rows.push_back(MakeRow({ button,
-					TextCell(summary, SLOTS_W - SAVE_SLOT_W - GAP, SAVE_SLOT_H, NOTE_SIZE, info.Occupied ? PageTone::Normal : PageTone::Dim, true) }));
+					TextCell(summary, SLOTS_W - SAVE_SLOT_W - SLOT_DELETE_W - 2.0f * GAP, SAVE_SLOT_H, NOTE_SIZE, tone, true), erase }));
 			}
 			page.Rows.push_back(StatusRow(view, SLOTS_W));
 			page.Rows.push_back(BackRow("Back##slots"));

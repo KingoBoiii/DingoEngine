@@ -80,6 +80,9 @@ namespace Dingo
 		uint64_t Hash() const;
 
 	private:
+		friend struct SaveCodec;
+
+	private:
 		static int CountBuilt(const TileGrid& grid, const BoardRequest& request);
 		void Arm(const TileGrid& grid);
 

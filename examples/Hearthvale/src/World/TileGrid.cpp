@@ -68,6 +68,28 @@ namespace Dingo
 		return Insert(kind, defId, x, y, w, h, rotation, variant);
 	}
 
+	bool TileGrid::RestoreOccupant(const Occupant& occupant)
+	{
+		if (occupant.Id == k_NoOccupant || (!m_Occupants.empty() && occupant.Id <= m_Occupants.back().Id))
+			return false;
+		if (!IsAreaEmpty(occupant.X, occupant.Y, occupant.W, occupant.H))
+			return false;
+		m_Occupants.push_back(occupant);
+		for (int j = occupant.Y; j < occupant.Y + occupant.H; ++j)
+			for (int i = occupant.X; i < occupant.X + occupant.W; ++i)
+				At(i, j).Occupant = occupant.Id;
+		m_NextOccupantId = (std::max)(m_NextOccupantId, occupant.Id + 1);
+		return true;
+	}
+
+	bool TileGrid::SetNextOccupantId(uint32_t next)
+	{
+		if (next == k_NoOccupant || (!m_Occupants.empty() && next <= m_Occupants.back().Id))
+			return false;
+		m_NextOccupantId = next;
+		return true;
+	}
+
 	const Occupant* TileGrid::FindOccupant(uint32_t id) const
 	{
 		const auto it = std::lower_bound(m_Occupants.begin(), m_Occupants.end(), id,

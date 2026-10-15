@@ -1,0 +1,37 @@
+{
+  "seed": 7,
+  "day": 4,
+  "tick": 0,
+  "weather": 1,
+  "coins": 812,
+  "grid": {
+    "width": 96,
+    "height": 96,
+    "tiles": [[25, 43, 1], [26, 43, 2], [27, 43, 1], [40, 47, 3]],
+    "built": ["40 47 4"],
+    "crops": ["26 43 0 1 2 2"],
+    "occupants": ["3 1 0 30 44 1 1 0 0", "9 0 0 12 30 1 1 0 2"],
+    "nextOccupant": 12
+  },
+  "pack": {
+    "selected": 1,
+    "slots": [
+      { "slot": 0, "item": "Hoe", "count": 1 },
+      { "slot": 1, "item": "Watering Can", "count": 1 },
+      { "slot": 2, "item": "Parsnip Seeds", "count": 5 },
+      { "slot": 9, "item": "Wood", "count": 14 }
+    ],
+    "plans": [14]
+  },
+  "bin": { "Parsnip": 3 },
+  "board": {
+    "festival": 0,
+    "tier": 0,
+    "boards": [
+      [[2, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]],
+      [[0, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]],
+      [[0, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]],
+      [[0, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]]
+    ]
+  }
+}

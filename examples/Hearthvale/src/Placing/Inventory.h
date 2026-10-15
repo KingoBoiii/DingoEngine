@@ -68,6 +68,9 @@ namespace Dingo
 		uint64_t Hash() const;
 
 	private:
+		friend struct SaveCodec;
+
+	private:
 		std::array<ItemStack, INVENTORY_SLOTS> m_Slots{};
 		std::array<bool, BUILD_COUNT> m_Plans{};
 		int m_Selected = 0;

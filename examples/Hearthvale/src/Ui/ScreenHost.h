@@ -109,6 +109,7 @@ namespace Dingo
 		std::string FocusSameSlot(const PageSpec& before, const PageSpec& after, const std::string& label) const;
 		void ActTitleOrPause(PageAction action, const std::string& label);
 		void ActSlots(int slot);
+		void ActSlotDelete(int slot);
 		void ActShop(PageAction action, int arg);
 		void ActBin(PageAction action, int arg);
 		void ActBoard(PageAction action, int arg);
@@ -137,6 +138,7 @@ namespace Dingo
 		uint32_t m_StackSerial = 0;
 		SlotMode m_SlotsMode = SlotMode::NewGame;
 		int m_SlotConfirm = -1;
+		int m_SlotDeleteConfirm = -1;
 		Merchant m_Seller = Merchant::Shopkeeper;
 		int m_Tab = 0;
 		int m_QuantityIndex = 0;

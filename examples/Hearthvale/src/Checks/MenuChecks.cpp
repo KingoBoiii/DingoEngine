@@ -33,13 +33,30 @@ namespace Dingo
 		{
 		public:
 			bool Used[SLOT_COUNT] = {};
+			bool Damaged[SLOT_COUNT] = {};
 			bool Refuse = false;
 			int Started = -1;
 			int Loaded = -1;
 			int Saved = -1;
+			int Deleted = -1;
 			int Calls = 0;
 
-			SlotInfo Describe(int slot) const override { return { Used[slot], Used[slot] ? "Day 3, 120 coins" : "" }; }
+			SlotInfo Describe(int slot) const override
+			{
+				return { Used[slot], Used[slot] ? "Day 3, 120 coins" : (Damaged[slot] ? "Damaged" : ""), Damaged[slot] };
+			}
+
+			bool Delete(int slot, std::string& message) override
+			{
+				++Calls;
+				message = Refuse ? "Refused" : "Deleted";
+				if (Refuse)
+					return false;
+				Deleted = slot;
+				Used[slot] = false;
+				Damaged[slot] = false;
+				return true;
+			}
 
 			bool StartNew(int slot, std::string& message) override
 			{
@@ -311,7 +328,10 @@ namespace Dingo
 				view.Board = &board;
 				for (int occupied = 0; occupied < 2; ++occupied)
 				{
-					view.Slots.assign(SlotProvider::SLOT_COUNT, SlotInfo{ occupied == 1, occupied == 1 ? "Day 118 of the third year, 123456 coins, the long summary of a game" : "" });
+					view.Slots.assign(SlotProvider::SLOT_COUNT, SlotInfo{ occupied == 1, occupied == 1 ? "Summer 14, year 12 - 1234567 coins - 999h 59m played (from its backup)" : "" });
+					view.Slots[2].Damaged = occupied == 1;
+					view.Slots[2].Occupied = false;
+					view.Slots[2].Summary = occupied == 1 ? "Damaged: no copy of this save can be read" : "";
 					audit.Add(std::format("title occupied {}", occupied), BuildMenuPage(ScreenId::Title, view));
 					for (const SlotMode mode : { SlotMode::NewGame, SlotMode::Load, SlotMode::Save })
 					{
@@ -319,6 +339,7 @@ namespace Dingo
 						for (int confirm = -1; confirm < SlotProvider::SLOT_COUNT; ++confirm)
 						{
 							view.SlotConfirm = confirm;
+							view.SlotDeleteConfirm = confirm;
 							for (const std::string& status : { std::string(), longest })
 							{
 								view.Status = status;
@@ -680,10 +701,44 @@ namespace Dingo
 					"Slots: without a save provider the screen says so, and the bin and board need the game state");
 			}
 			{
+				MenuRig rig;
+				rig.Slots.Used[0] = true;
+				rig.Host.OpenSlots(SlotMode::Load);
+				const bool gated = rig.WidgetEnabled("Delete##slotdel0") && !rig.WidgetEnabled("Delete##slotdel1") && !rig.WidgetEnabled("Delete##slotdel2");
+				rig.Press("Delete##slotdel0");
+				const bool asked = rig.Slots.Calls == 0 && rig.HasWidget("Sure?##slotdel0") && rig.Host.GetStatus().find("Sure?") != std::string::npos;
+				rig.Press("Sure?##slotdel0");
+				report.Check(gated && asked && rig.Slots.Deleted == 0 && rig.Host.IsOpen() && !rig.WidgetEnabled("Slot 1##slot0") && rig.HasWidget("Delete##slotdel0"),
+					"Slots: Delete is offered for used slots only, asks once, and the screen stays with the slot now empty");
+			}
+			{
+				MenuRig rig;
+				rig.Slots.Used[1] = true;
+				rig.Host.OpenSlots(SlotMode::NewGame);
+				rig.Press("Delete##slotdel1");
+				rig.Press("Slot 1##slot0");
+				report.Check(rig.Slots.Deleted < 0 && rig.Slots.Started == 0, "Slots: another pick drops the delete question");
+			}
+			{
+				MenuRig rig;
+				rig.Slots.Damaged[2] = true;
+				rig.Host.OpenTitle();
+				const bool noContinue = !rig.WidgetEnabled("Continue##title");
+				rig.Host.OpenSlots(SlotMode::Load);
+				const bool noLoad = !rig.WidgetEnabled("Slot 3##slot2") && rig.WidgetEnabled("Delete##slotdel2");
+				rig.Back();
+				rig.Host.OpenSlots(SlotMode::Save);
+				rig.Press("Slot 3##slot2");
+				const bool asked = rig.Slots.Saved < 0 && rig.HasWidget("Overwrite?##slot2");
+				rig.Press("Overwrite?##slot2");
+				report.Check(noContinue && noLoad && asked && rig.Slots.Saved == 2, "Slots: a damaged slot cannot be loaded or continued, but can be deleted or overwritten after a question");
+			}
+			{
 				NullSlotProvider null;
 				std::string message;
-				report.Check(!null.Describe(0).Occupied && null.StartNew(0, message) && !null.Load(0, message) && !message.empty() && !null.Save(0, message) && !message.empty(),
-					"Slots: the placeholder provider starts a new game and refuses to load or save");
+				report.Check(!null.Describe(0).Occupied && null.StartNew(0, message) && !null.Load(0, message) && !message.empty() && !null.Save(0, message) && !message.empty()
+					&& !null.Delete(0, message) && !message.empty(),
+					"Slots: the placeholder provider starts a new game and refuses to load, save or delete");
 			}
 		}
 

@@ -34,7 +34,7 @@ namespace Dingo
 	{
 		None, Back,
 		TitleNew, TitleContinue, OpenOptions, OpenCredits, QuitGame,
-		SlotPick,
+		SlotPick, SlotDelete,
 		PauseResume, PauseSave,
 		Tab, Row, CycleQuantity, PrevPage, NextPage,
 		BoardGive, FestivalStart,

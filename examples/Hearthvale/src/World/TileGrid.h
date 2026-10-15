@@ -79,6 +79,12 @@ namespace Dingo
 		bool RemoveOccupant(uint32_t id);
 		const Occupant* FindOccupant(uint32_t id) const;
 		const std::vector<Occupant>& GetOccupants() const { return m_Occupants; }
+		uint32_t GetNextOccupantId() const { return m_NextOccupantId; }
+
+		// Saves only: puts an occupant back under its own id. Ids must ascend, and the footprint must be in bounds and empty.
+		bool RestoreOccupant(const Occupant& occupant);
+		// Saves only: refuses an id that is not past every occupant's, so ids are never reused.
+		bool SetNextOccupantId(uint32_t next);
 
 		int CountGround(Ground ground) const;
 		int CountOccupants(OccupantKind kind) const;

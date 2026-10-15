@@ -206,6 +206,7 @@ namespace Dingo
 		m_Page = 0;
 		m_Status.clear();
 		m_SlotConfirm = -1;
+		m_SlotDeleteConfirm = -1;
 		m_DialoguePage = 0;
 	}
 

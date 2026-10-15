@@ -216,6 +216,13 @@ namespace Dingo
 			Wander(grid, motion, dt);
 	}
 
+	void AnimalSim::Reset(uint32_t seed)
+	{
+		m_Seed = seed;
+		m_Motions.clear();
+		m_Last = AnimalRollReport{};
+	}
+
 	void AnimalSim::Sync(const TileGrid& grid)
 	{
 		std::erase_if(m_Motions, [this](const AnimalMotion& motion) { return !m_Herd.Find(motion.Id); });

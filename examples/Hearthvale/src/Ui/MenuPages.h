@@ -29,6 +29,7 @@ namespace Dingo
 
 		inline constexpr float SAVE_SLOT_W = 170.0f;
 		inline constexpr float SAVE_SLOT_H = 64.0f;
+		inline constexpr float SLOT_DELETE_W = 96.0f;
 		inline constexpr float SLOTS_W = 560.0f;
 
 		inline constexpr float OPTION_LABEL_W = 150.0f;
@@ -80,6 +81,7 @@ namespace Dingo
 		std::vector<SlotInfo> Slots;
 		SlotMode SlotsMode = SlotMode::NewGame;
 		int SlotConfirm = -1;
+		int SlotDeleteConfirm = -1;
 
 		OptionsState Options;
 

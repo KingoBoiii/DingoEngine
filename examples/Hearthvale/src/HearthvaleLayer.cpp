@@ -49,6 +49,12 @@ namespace Dingo
 		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
 		m_Build->SetFeedbackHandler([this](ActionFeedback feedback, int x, int y) { OnActionFeedback(feedback, x, y); });
 		m_State.Pack.GiveStarterLoadout();
+		m_Saves = std::make_unique<GameSaves>(*m_Director, m_State, SaveStore(SaveSlots::GetDirectory()));
+		if (options.HasSeed)
+			m_Saves->SetNewGameSeed(options.Seed);
+		m_Saves->SetOnGameReplaced([this] { OnGameReplaced(); });
+		if (!options.Load.empty())
+			LoadAtLaunch(options.Load);
 		m_Screens = std::make_unique<ScreenHost>(*m_Director, m_State.Pack, *m_Build);
 		if (!Application::Get().IsHeadless())
 		{
@@ -61,6 +67,42 @@ namespace Dingo
 		BuildValleyScene();
 		m_SceneManager.SetActiveScene(SCENE_VALLEY);
 		SetUpMenus();
+	}
+
+	void HearthvaleLayer::LoadAtLaunch(const std::string& slotText)
+	{
+		const int slot = GameSaves::ParseSlot(slotText);
+		std::string message;
+		if (slot < 0)
+			DE_WARN("Hearthvale: --load={} names no slot (1 to {} or slot1 to slot{}); starting a new game", slotText, SlotProvider::SLOT_COUNT, SlotProvider::SLOT_COUNT);
+		else if (!m_Saves->Load(slot, message))
+			DE_WARN("Hearthvale: --load: {}; starting a new game", message);
+		else
+		{
+			DE_INFO("Hearthvale: {}", message);
+			m_LoadedAtLaunch = true;
+		}
+	}
+
+	void HearthvaleLayer::OnGameReplaced()
+	{
+		if (m_Build)
+			m_Build->SetMode(BuildMode::Tools);
+		if (m_Villagers)
+			m_Villagers->InvalidatePlans();
+		if (m_AnimalSim)
+			m_AnimalSim->Reset(m_Director->GetSeed());
+		if (m_World)
+			m_World->MarkAll();
+		m_LightsSeenCells = ~0ull;
+		if (m_Player)
+		{
+			const LandmarkSpec& home = GetLandmarkSpec(Landmark::FarmHouse);
+			m_Player->Teleport(glm::vec3((static_cast<float>(home.DoorX) + 0.5f) * TILE_SIZE, GROUND_TOP + PLAYER_SPAWN_LIFT,
+				(static_cast<float>(home.DoorY) + 1.5f) * TILE_SIZE));
+		}
+		m_LastCoins = m_State.Pack.GetCoins();
+		m_LastSlot = m_State.Pack.GetSelectedSlot();
 	}
 
 	void HearthvaleLayer::SetUpMenus()
@@ -84,7 +126,7 @@ namespace Dingo
 
 		MenuServices services;
 		services.State = &m_State;
-		services.Slots = &m_Slots;
+		services.Slots = m_Saves.get();
 		services.OnQuit = [] { Application::Get().Close(); };
 		services.OnClick = [this]
 		{
@@ -123,7 +165,7 @@ namespace Dingo
 			const OptionsState saved = OptionsFromSettings(m_SettingsBase);
 			m_Screens->SetOptions(saved);
 			ApplyOptions(saved, true);
-			if (!app.IsHeadless() && m_Player)
+			if (!app.IsHeadless() && m_Player && !m_LoadedAtLaunch)
 				m_Screens->OpenTitle();
 		}
 	}
@@ -152,6 +194,7 @@ namespace Dingo
 		m_ValleyScene = nullptr;
 		m_Ghost.reset();
 		m_Screens.reset();
+		m_Saves.reset();
 		m_Build.reset();
 		m_Sleep.reset();
 		m_Dialogue.reset();
@@ -504,6 +547,8 @@ namespace Dingo
 
 		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
 		const int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
+		if (m_Saves && !(m_Screens && m_Screens->IsOpen(ScreenId::Title)))
+			m_Saves->AddPlayTime(step * static_cast<float>(steps));
 		for (int i = 0; i < steps; ++i)
 		{
 			m_Director->Advance(step, SIM_MAX_STEPS_REAL_TIME);

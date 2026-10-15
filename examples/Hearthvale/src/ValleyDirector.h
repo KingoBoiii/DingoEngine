@@ -74,6 +74,9 @@ namespace Dingo
 		void SetTimePaused(bool paused) { m_TimePaused = paused; }
 		bool IsTimePaused() const { return m_TimePaused; }
 
+		// Replaces the valley and the clock with a saved or new game's. Handlers, the step count and the time pause stay.
+		void Restore(uint32_t seed, TileGrid grid, int absoluteDay, int tickOfDay, Weather weather);
+
 		uint32_t GetSeed() const { return m_Seed; }
 		TileGrid& GetGrid() { return m_Grid; }
 		const TileGrid& GetGrid() const { return m_Grid; }

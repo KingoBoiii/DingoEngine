@@ -74,6 +74,9 @@ namespace Dingo
 		uint64_t Hash() const;
 
 	private:
+		friend struct SaveCodec;
+
+	private:
 		std::array<int, ITEM_COUNT> m_Held{};
 	};
 

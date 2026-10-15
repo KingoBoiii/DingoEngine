@@ -4,6 +4,7 @@
 #include "Audio/GameAudio.h"
 #include "Placing/BuildController.h"
 #include "Placing/Inventory.h"
+#include "Save/GameSaves.h"
 #include "Checks/CheckReport.h"
 #include "Checks/LifeWorldChecks.h"
 #include "Checks/StaticChecks.h"
@@ -29,7 +30,6 @@
 #include "Ui/GameUi.h"
 #include "Ui/OptionsModel.h"
 #include "Ui/ScreenHost.h"
-#include "Ui/SlotProvider.h"
 #include "ValleyDirector.h"
 #include "World/ValleyWorld.h"
 
@@ -57,6 +57,8 @@ namespace Dingo
 		void UpdateMouseAim();
 		std::optional<VillagerId> FindTalkTarget(const PlayerIntent& intent) const;
 		void SetUpMenus();
+		void LoadAtLaunch(const std::string& slotText);
+		void OnGameReplaced();
 		void ApplyOptions(const OptionsState& state, bool toEngine);
 		const PlayerIntent& ActiveIntent() const;
 		void UpdateVfxAudio(const ValleyDirector& director, float dt);
@@ -95,7 +97,8 @@ namespace Dingo
 		std::unique_ptr<BuildGhost> m_Ghost;
 		std::unique_ptr<BuildController> m_Build;
 		std::unique_ptr<ScreenHost> m_Screens;
-		NullSlotProvider m_Slots;
+		std::unique_ptr<GameSaves> m_Saves;
+		bool m_LoadedAtLaunch = false;
 		Settings m_SettingsBase;
 		AimInput m_Aim;
 		Ray m_MouseRay;

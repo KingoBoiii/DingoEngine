@@ -4,6 +4,7 @@
 #include "World/Valley.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace Dingo
 {
@@ -57,6 +58,17 @@ namespace Dingo
 		m_Calendar.Reset(config.StartDay, config.StartTick);
 		if (config.HasForcedWeather)
 			m_Calendar.ForceWeather(config.ForcedWeather);
+	}
+
+	void ValleyDirector::Restore(uint32_t seed, TileGrid grid, int absoluteDay, int tickOfDay, Weather weather)
+	{
+		m_Seed = seed;
+		m_Grid = std::move(grid);
+		m_Calendar = Calendar(seed);
+		m_Calendar.Reset(absoluteDay, tickOfDay);
+		m_Calendar.ForceWeather(weather);
+		m_Accumulator = 0.0;
+		m_SleepRequested = false;
 	}
 
 	void ValleyDirector::OnStage(SimStage stage, StageFn fn)

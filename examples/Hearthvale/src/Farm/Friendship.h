@@ -43,6 +43,9 @@ namespace Dingo
 		uint64_t Hash() const;
 
 	private:
+		friend struct SaveCodec;
+
+	private:
 		VillagerBond& Bond(VillagerId villager) { return m_Bonds[static_cast<size_t>(villager)]; }
 		void AddPoints(VillagerId villager, int points);
 

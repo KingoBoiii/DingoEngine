@@ -19,6 +19,7 @@ namespace Dingo
 		RunMenuChecks(report);
 		RunLifeChecks(report);
 		RunLookChecks(report);
+		RunSaveChecks(report);
 	}
 
 }

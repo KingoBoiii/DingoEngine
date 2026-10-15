@@ -108,6 +108,7 @@ namespace Dingo
 			view.Slots.push_back(m_Services.Slots ? m_Services.Slots->Describe(slot) : SlotInfo{});
 		view.SlotsMode = m_SlotsMode;
 		view.SlotConfirm = m_SlotConfirm;
+		view.SlotDeleteConfirm = m_SlotDeleteConfirm;
 		view.Options = m_Options;
 		view.Seller = m_Seller;
 		view.Tab = m_Tab;
@@ -178,6 +179,8 @@ namespace Dingo
 		const PageSpec before = BuildPage();
 		if (action != PageAction::SlotPick)
 			m_SlotConfirm = -1;
+		if (action != PageAction::SlotDelete)
+			m_SlotDeleteConfirm = -1;
 
 		switch (screen)
 		{
@@ -188,6 +191,8 @@ namespace Dingo
 		case ScreenId::Slots:
 			if (action == PageAction::SlotPick)
 				ActSlots(arg);
+			else if (action == PageAction::SlotDelete)
+				ActSlotDelete(arg);
 			break;
 		case ScreenId::Options:
 			ActOptions(action);
@@ -279,7 +284,7 @@ namespace Dingo
 			return;
 		}
 		const SlotInfo info = m_Services.Slots->Describe(slot);
-		if (m_SlotsMode != SlotMode::Load && info.Occupied && m_SlotConfirm != slot)
+		if (m_SlotsMode != SlotMode::Load && (info.Occupied || info.Damaged) && m_SlotConfirm != slot)
 		{
 			m_SlotConfirm = slot;
 			SetStatus(std::format("Slot {} is in use. Press it again to overwrite.", slot + 1));
@@ -303,6 +308,23 @@ namespace Dingo
 		if (!message.empty())
 			Say(message);
 		CloseAll();
+	}
+
+	void ScreenHost::ActSlotDelete(int slot)
+	{
+		if (!m_Services.Slots || slot < 0 || slot >= SlotProvider::SLOT_COUNT)
+			return;
+		if (m_SlotDeleteConfirm != slot)
+		{
+			m_SlotDeleteConfirm = slot;
+			SetStatus(std::format("Press Sure? to delete slot {} for good.", slot + 1));
+			return;
+		}
+		m_SlotDeleteConfirm = -1;
+
+		std::string message;
+		const bool ok = m_Services.Slots->Delete(slot, message);
+		SetStatus(message.empty() ? (ok ? std::format("Slot {} deleted", slot + 1) : std::string("That did not work")) : message);
 	}
 
 	void ScreenHost::ActOptions(PageAction action)

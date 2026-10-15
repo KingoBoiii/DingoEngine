@@ -35,7 +35,7 @@ namespace
 		out = parsed;
 	}
 
-	void ParseSeed(const ApplicationCommandLineArgs& args, uint32_t& out)
+	void ParseSeed(const ApplicationCommandLineArgs& args, uint32_t& out, bool& given)
 	{
 		const std::optional<std::string_view> value = args.Get("seed");
 		if (!value)
@@ -49,6 +49,7 @@ namespace
 		}
 
 		out = parsed;
+		given = true;
 	}
 
 	void ParseSeconds(const ApplicationCommandLineArgs& args, std::string_view name, float max, float& out)
@@ -185,7 +186,7 @@ namespace
 		ParseSeason(args, options);
 		ParseTime(args, options.TimeHours);
 		ParseWeather(args, options.Weather);
-		ParseSeed(args, options.Seed);
+		ParseSeed(args, options.Seed, options.HasSeed);
 		if (const std::optional<std::string_view> load = args.Get("load"); load && !load->empty())
 			options.Load = std::string(*load);
 

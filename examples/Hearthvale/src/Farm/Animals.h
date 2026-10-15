@@ -44,6 +44,9 @@ namespace Dingo
 		uint64_t Hash() const;
 
 	private:
+		friend struct SaveCodec;
+
+	private:
 		std::vector<Animal> m_Animals;
 		uint32_t m_NextId = 1;
 	};
@@ -109,6 +112,8 @@ namespace Dingo
 		uint64_t MotionHash() const;
 
 		void Step(const TileGrid& grid, float dt);
+		// After a load or a new game: every animal starts again at its pen, with wander streams from `seed`.
+		void Reset(uint32_t seed);
 
 	private:
 		void Sync(const TileGrid& grid);
