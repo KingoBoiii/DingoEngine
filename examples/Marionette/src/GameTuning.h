@@ -13,27 +13,27 @@ namespace Dingo
 	inline constexpr const char* SCENE_ARENA   = "Arena";
 	inline constexpr const char* SCENE_END     = "End";
 
+	// UI sizes are in units of a screen HUD_ORTHO_SIZE tall; UiPx turns them into design pixels of a 1080p layout.
 	inline constexpr float HUD_ORTHO_SIZE      = 11.0f;
+	inline constexpr float UI_DESIGN_HEIGHT    = 1080.0f;
+	constexpr float UiPx(float units) { return units * UI_DESIGN_HEIGHT / HUD_ORTHO_SIZE; }
+
 	inline constexpr float TITLE_HEADING_SIZE  = 1.9f;
 	inline constexpr float TITLE_HEADING_Y     = 3.1f;
-	inline constexpr float TITLE_PROMPT_SIZE   = 0.5f;
-	inline constexpr float TITLE_PROMPT_Y      = -4.6f;
+	inline constexpr float MENU_BUTTON_SIZE    = 0.45f;
+	inline constexpr float MENU_BUTTON_WIDTH   = 4.5f;
+	inline constexpr float MENU_BOTTOM_MARGIN  = 0.7f;
 	inline constexpr float END_HEADING_SIZE    = 1.5f;
 	inline constexpr float END_HEADING_Y       = 4.5f;
-	inline constexpr float END_PROMPT_SIZE     = 0.5f;
-	inline constexpr float END_PROMPT_Y        = -4.8f;
 	inline constexpr float END_SUBTITLE_SIZE   = 0.55f;
-	inline constexpr float END_SUBTITLE_Y      = 3.35f;
 	inline constexpr float END_STATS_SIZE      = 0.42f;
-	inline constexpr float END_STATS_Y         = 2.75f;
+	inline constexpr float UI_FADE_SECONDS     = 0.4f;
 	// The last blows of a win are still being pressed; the screen waits them out.
 	inline constexpr float END_INPUT_DELAY     = 1.0f;
 	// The Esc that left a bout must not also quit from the Title it lands on.
 	inline constexpr float TITLE_ESC_GRACE     = 0.5f;
 	inline constexpr float MISSING_HEADING_SIZE = 0.9f;
-	inline constexpr float MISSING_HEADING_Y   = 0.6f;
-	inline constexpr float MISSING_PROMPT_SIZE = 0.45f;
-	inline constexpr float MISSING_PROMPT_Y    = -0.6f;
+	inline constexpr float MISSING_GAP         = 0.5f;
 	// What --end shows for the run's result.
 	inline constexpr float END_DEMO_SECONDS    = 312.0f;
 	inline constexpr int   END_DEMO_RETRIES    = 2;
@@ -463,7 +463,6 @@ namespace Dingo
 	inline constexpr float REACH_SANE_DELAY     = 1.5f;
 
 	// --- HUD -----------------------------------------------------------------------
-	inline constexpr float HUD_PADDING          = 0.5f;
 	inline constexpr float HUD_BAR_WIDTH        = 6.2f;
 	inline constexpr float HUD_BAR_HEIGHT       = 0.46f;
 	inline constexpr float HUD_BAR_INSET        = 0.06f;
@@ -473,14 +472,13 @@ namespace Dingo
 	inline constexpr float HUD_NAME_DROP        = 0.55f;
 	inline constexpr float HUD_BOUT_LABEL_SIZE  = 0.38f;
 	inline constexpr float HUD_BOUT_LABEL_DROP  = 0.55f;
-	inline constexpr float HUD_FILL_LIFT        = 0.1f;
-	inline constexpr float HUD_TRAIL_LIFT       = 0.05f;
 	inline constexpr float HUD_TRAIL_DELAY      = 0.5f;
 	inline constexpr float HUD_TRAIL_RATE       = 0.5f;
-	inline constexpr float HUD_FADE_Z           = 0.5f;
-	// Above the fade, which the text fades with by itself: a scene draws text in z order with sprites.
-	inline constexpr float HUD_TEXT_Z           = 0.6f;
-	inline constexpr float HUD_FADE_MARGIN      = 1.0f;
+	inline constexpr float HUD_WORLD_BAR_WIDTH  = 1.6f;
+	inline constexpr float HUD_WORLD_BAR_HEIGHT = 0.17f;
+	inline constexpr float HUD_WORLD_BAR_INSET  = 0.03f;
+	inline constexpr float HUD_WORLD_BAR_LIFT   = 0.12f;
+	inline constexpr float HUD_WORLD_REFERENCE_DISTANCE = 12.0f;
 	inline constexpr float HUD_FADE_IN_SECONDS  = 0.5f;
 	inline constexpr float HUD_FADE_OUT_SECONDS = 0.5f;
 	inline constexpr float HUD_BANNER_BIG_SIZE  = 1.7f;

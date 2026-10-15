@@ -12,6 +12,12 @@ namespace Dingo
 		bool EnableViewports = false;
 		bool EnableKeyboardNavigation = true; ///< Enable keyboard navigation by default
 		bool EnableGamepadNavigation = false; ///< Disable gamepad navigation by default
+		/// While the pointer is over an ImGui window (or ImGui holds a press), mouse presses and
+		/// the scroll are hidden from Input and the layers' mouse events; while ImGui edits a
+		/// widget (a text field, a dragged slider) or shows a modal, so are key presses. A press
+		/// that started in the game stays the game's until it is released. Set false when the
+		/// game itself is drawn inside an ImGui window (an editor-style viewport).
+		bool BlockGameInput = true;
 	};
 
 }

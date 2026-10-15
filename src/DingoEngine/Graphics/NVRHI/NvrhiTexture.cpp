@@ -8,6 +8,7 @@
 #include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
+#include "DingoEngine/UI/DingoUI/DingoUITextureHook.h"
 
 #include <cstring>
 
@@ -102,8 +103,14 @@ namespace Dingo
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);
 	}
 
+	NvrhiTexture::~NvrhiTexture()
+	{
+		Internal::DingoUIOnTextureDestroyed(this);
+	}
+
 	void NvrhiTexture::Destroy()
 	{
+		Internal::DingoUIOnTextureDestroyed(this);
 		m_Handle = nullptr;
 	}
 

@@ -1,0 +1,3001 @@
+#include "DingoUITest.h"
+#include "DingoEngine/Core/InputBackend.h"
+#include "DingoEngine/UI/DingoUI/DingoUIContext.h"
+#include "DingoEngine/UI/DingoUI/DingoUINav.h"
+#include "UI/TestViewportPanel.h"
+
+#include <imgui.h>
+
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <cmath>
+#include <cstdlib>
+#include <optional>
+#include <string_view>
+
+namespace Dingo
+{
+
+	namespace
+	{
+		constexpr const char* k_WrapText = "The quick brown fox jumps over the lazy dog";
+		constexpr float k_WrapTextSize = 0.4f;
+		constexpr float k_WrapWidth = 4.0f;
+		constexpr KeyCode k_TestKey = Key::Pause;
+
+		constexpr uint32_t k_CheckTargetSize = 128;
+		constexpr uint32_t k_LayoutWidth = 960;
+		constexpr uint32_t k_LayoutHeight = 540;
+		constexpr float k_LayoutW = static_cast<float>(k_LayoutWidth);
+		constexpr float k_LayoutH = static_cast<float>(k_LayoutHeight);
+		constexpr uint32_t k_SlotTextureCount = 33;
+		const glm::vec4 k_Background = { 0.1f, 0.1f, 0.1f, 1.0f };
+		const glm::vec4 k_Red = { 1.0f, 0.0f, 0.0f, 1.0f };
+		const glm::vec4 k_Green = { 0.0f, 1.0f, 0.0f, 1.0f };
+		const glm::vec4 k_Blue = { 0.0f, 0.0f, 1.0f, 1.0f };
+		const glm::vec4 k_Yellow = { 1.0f, 1.0f, 0.0f, 1.0f };
+		const glm::vec2 k_WidgetEmpty = { 880.0f, 60.0f };
+
+		bool NearColor(const glm::vec4& a, const glm::vec4& b, float epsilon = 0.02f)
+		{
+			return std::abs(a.r - b.r) <= epsilon && std::abs(a.g - b.g) <= epsilon && std::abs(a.b - b.b) <= epsilon;
+		}
+
+		bool Near(float a, float b, float epsilon = 1e-4f)
+		{
+			return std::abs(a - b) <= epsilon;
+		}
+	}
+
+	void DingoUITest::Initialize()
+	{
+		Renderer2DTest::Initialize();
+		m_Font = Font::Create("fonts/Inter-Bold.ttf");
+		m_Stage = 0;
+		m_DrawStage = 0;
+		m_Checks.clear();
+		m_Alive = std::make_shared<int>(0);
+
+		m_CheckTarget = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("DingoUITest_CheckTarget")
+			.SetWidth(static_cast<int32_t>(k_CheckTargetSize))
+			.SetHeight(static_cast<int32_t>(k_CheckTargetSize))
+			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+
+		const uint8_t yellow[4] = { 255, 255, 0, 255 };
+		m_ImageTexture = Texture::CreateFromData(1, 1, yellow, TextureFormat::RGBA8_UNORM, "DingoUITest_Image");
+		for (uint32_t i = 0; i < k_SlotTextureCount; ++i)
+		{
+			const uint8_t pixel[4] = { static_cast<uint8_t>(i * 7), static_cast<uint8_t>(255 - i * 7), 128, 255 };
+			m_SlotTextures.push_back(Texture::CreateFromData(1, 1, pixel, TextureFormat::RGBA8_UNORM, "DingoUITest_Slot"));
+		}
+
+		{
+			struct Rgb { uint8_t R, G, B; };
+			const Rgb topLeft{ 255, 0, 0 }, topRight{ 0, 255, 0 }, bottomRight{ 0, 0, 255 }, bottomLeft{ 255, 255, 0 };
+			const Rgb top{ 255, 0, 255 }, right{ 255, 128, 0 }, bottom{ 0, 255, 255 }, left{ 128, 0, 255 }, center{ 128, 128, 128 };
+			uint8_t data[8 * 8 * 4];
+			for (int row = 0; row < 8; ++row)
+			{
+				for (int x = 0; x < 8; ++x)
+				{
+					const bool isLeft = x < 2, isRight = x >= 6, isTop = row < 2, isBottom = row >= 6;
+					Rgb c = center;
+					if (isTop) c = isLeft ? topLeft : (isRight ? topRight : top);
+					else if (isBottom) c = isLeft ? bottomLeft : (isRight ? bottomRight : bottom);
+					else if (isLeft) c = left;
+					else if (isRight) c = right;
+					uint8_t* pixel = data + ((7 - row) * 8 + x) * 4; // CreateFromData row 0 is the picture's bottom
+					pixel[0] = c.R; pixel[1] = c.G; pixel[2] = c.B; pixel[3] = 255;
+				}
+			}
+			m_SliceTexture = Texture::CreateFromData(8, 8, data, TextureFormat::RGBA8_UNORM, "DingoUITest_Slice");
+		}
+
+		m_LayoutTarget = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("DingoUITest_LayoutTarget")
+			.SetWidth(static_cast<int32_t>(k_LayoutWidth))
+			.SetHeight(static_cast<int32_t>(k_LayoutHeight))
+			.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		m_LayoutStage = 0;
+		DingoUI::SetDefaultFont(m_Font);
+
+		m_WorldScene = new Scene("DingoUI Test: world");
+		m_WorldCamera = m_WorldScene->CreateEntity("Camera");
+		m_WorldCamera.AddComponent<Transform3DComponent>().Position = { 0.0f, 0.0f, 10.0f };
+		{
+			CameraComponent& camera = m_WorldCamera.AddComponent<CameraComponent>();
+			camera.Type = CameraComponent::ProjectionType::Perspective;
+			camera.FOV = 60.0f;
+			camera.PerspNear = 0.1f;
+			camera.PerspFar = 1000.0f;
+		}
+		m_WorldParent = m_WorldScene->CreateEntity("Parent");
+		m_WorldParent.AddComponent<Transform3DComponent>().Position = { 1.0f, 0.0f, 0.0f };
+		m_WorldChild = m_WorldScene->CreateEntity("Child");
+		m_WorldChild.AddComponent<Transform3DComponent>().Position = { 1.0f, 1.0f, 0.0f };
+		m_WorldChild.SetParent(m_WorldParent, false);
+		m_WorldStage = 0;
+		m_WorldDone = false;
+		m_LiveTime = 0.0f;
+
+		m_StressDone = false;
+		m_StressStep = 0;
+		m_StressPrev = StressPhase::None;
+		m_StressPhaseFrame = 0;
+		m_StressDeclareMs = 0.0f;
+		m_StressStableWidgets = 0;
+		m_StressWorldDeclared = 0;
+		m_StressBadDraws = 0;
+		m_StressBadSnapshots = 0;
+		m_StressMaxStates = 0;
+		m_StressMaxExiting = 0;
+		m_StressMenuElements = 0;
+		m_StressMenuBadCache = 0;
+		m_StressMenuTextMisses = 0;
+		m_StressLastTextMisses = 0;
+		m_StressMenuTotals = {};
+		m_StressHeavyTotals = {};
+		m_StressMode = false;
+		m_StressMenuFrames = 6;
+		m_StressHeavyFrames = 30;
+		if (auto mode = Application::Get().GetCommandLineArgs().Get("dingoui"))
+		{
+			if (*mode == "stress")
+			{
+				m_StressMode = true;
+				m_StressMenuFrames = 300;
+				m_StressHeavyFrames = 600;
+				if (auto frames = Application::Get().GetCommandLineArgs().Get("dingoui-frames"))
+				{
+					const int parsed = std::atoi(std::string(*frames).c_str());
+					if (parsed > 0)
+						m_StressHeavyFrames = static_cast<uint32_t>(parsed);
+				}
+			}
+			else
+				DE_WARN("DingoUI Test: unknown --dingoui={}; use stress.", *mode);
+		}
+
+		Check(Internal::GetDingoUIContext() != nullptr, "DingoUI context exists in a windowed app");
+		Check(DingoUI::GetDefaultFont() == m_Font, "SetDefaultFont sets the font Text uses");
+		CheckFontMetrics();
+		CheckWorldToScreen();
+	}
+
+	void DingoUITest::Cleanup()
+	{
+		Internal::InputBackend::SimulateMouseButton(MouseButton::Left, false);
+		Internal::InputBackend::SimulateKey(k_TestKey, false);
+		Internal::InputBackend::SimulateKey(Key::Down, false);
+		Internal::InputBackend::SimulateGamepadConnected(0, false);
+		Internal::InputBackend::ClearConsumed();
+		if (Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+		{
+			context->SetTarget(nullptr);
+			context->SetInputOverride(nullptr);
+			context->GetDrawList().Clear();
+		}
+		DingoUI::SetDefaultFont(nullptr);
+		DingoUI::SetTheme(UIStyle::Default());
+		m_Alive.reset();
+		for (Texture*& texture : m_SlotTextures)
+			DestroyAndDelete(texture);
+		m_SlotTextures.clear();
+		DestroyAndDelete(m_ImageTexture);
+		DestroyAndDelete(m_SliceTexture);
+		DestroyAndDelete(m_FreeTexture);
+		DestroyAndDelete(m_FreeFont);
+		DestroyAndDelete(m_CheckTarget);
+		DestroyAndDelete(m_LayoutTarget);
+		DestroyAndDelete(m_Font);
+		m_WorldParent = Entity();
+		m_WorldChild = Entity();
+		m_WorldCamera = Entity();
+		delete m_WorldScene;
+		m_WorldScene = nullptr;
+		Renderer2DTest::Cleanup();
+	}
+
+	void DingoUITest::CheckFontMetrics()
+	{
+		Check(m_Font && m_Font->IsValid(), "Font loads");
+		if (!m_Font || !m_Font->IsValid())
+			return;
+
+		const float size = 0.5f;
+		Check(m_Font->GetLineHeight(size) > 0.0f, "GetLineHeight is positive");
+		Check(Near(m_Font->GetLineHeight(size, 0.2f), m_Font->GetLineHeight(size) + 0.2f * size), "GetLineHeight adds lineSpacing in units of the size");
+		Check(m_Font->GetAscender(size) > 0.0f && m_Font->GetDescender(size) < 0.0f, "Ascender above the baseline, descender below");
+		Check(Near(m_Font->GetAscender(size) - m_Font->GetDescender(size), size), "Ascender minus descender is the size");
+
+		const TextMetrics single = m_Font->MeasureText(k_WrapText, k_WrapTextSize);
+		Check(single.LineCount == 1, "Unwrapped text is one line");
+		Check(single.Width == m_Font->GetStringWidth(k_WrapText, k_WrapTextSize), "MeasureText width matches GetStringWidth");
+		Check(Near(single.Height, k_WrapTextSize), "One line is one size high");
+		Check(m_Font->MeasureText(k_WrapText, k_WrapTextSize, single.Width * 2.0f).Width == single.Width, "A MaxWidth wider than the text changes nothing");
+		Check(m_Font->MeasureText(k_WrapText, k_WrapTextSize, 0.0f, 0.05f).Width == m_Font->GetStringWidth(k_WrapText, k_WrapTextSize, 0.05f), "Kerning measures the same both ways");
+
+		const TextMetrics wrapped = m_Font->MeasureText(k_WrapText, k_WrapTextSize, k_WrapWidth);
+		Check(wrapped.LineCount > 1, "Text wider than MaxWidth wraps");
+		Check(wrapped.Width <= k_WrapWidth, "Wrapped lines fit MaxWidth");
+
+		const TextMetrics lines = m_Font->MeasureText("one\ntwo\n", size);
+		Check(lines.LineCount == 3, "A trailing newline ends on an empty line");
+		Check(Near(lines.Height, size + 2.0f * m_Font->GetLineHeight(size)), "Height adds a line height per extra line");
+		Check(m_Font->MeasureText("", size).LineCount == 0, "Empty text has no lines");
+	}
+
+	void DingoUITest::CheckWorldToScreen()
+	{
+		const glm::vec2 viewport = { 1280.0f, 720.0f };
+		PerspectiveCamera camera(45.0f, viewport.x / viewport.y, 0.1f, 100.0f);
+		camera.SetPosition({ 0.0f, 0.0f, 5.0f });
+		camera.SetTarget({ 0.0f, 0.0f, 0.0f });
+
+		const std::optional<glm::vec2> center = camera.WorldToScreenPoint({ 0.0f, 0.0f, 0.0f }, viewport);
+		Check(center && Near(center->x, viewport.x * 0.5f, 0.01f) && Near(center->y, viewport.y * 0.5f, 0.01f), "The camera's target projects to the viewport centre");
+
+		const glm::vec3 point = { 1.0f, 0.5f, -1.0f };
+		const std::optional<glm::vec2> screen = camera.WorldToScreenPoint(point, viewport);
+		bool roundTrip = false;
+		if (screen)
+		{
+			const Ray ray = camera.ScreenPointToRay(*screen, viewport);
+			const glm::vec3 toPoint = point - ray.Origin;
+			roundTrip = glm::length(toPoint - ray.Direction * glm::dot(toPoint, ray.Direction)) < 1e-3f;
+		}
+		Check(roundTrip, "ScreenPointToRay of WorldToScreenPoint passes through the point");
+		Check(screen && screen->y < viewport.y * 0.5f, "Up in the world is up on screen (+Y down)");
+		Check(!camera.WorldToScreenPoint({ 0.0f, 0.0f, 10.0f }, viewport), "A point behind the camera has no screen position");
+
+		Scene scene("DingoUI Test");
+		Check(!scene.WorldToScreenPoint({ 0.0f, 0.0f, 0.0f }, viewport), "Scene without a camera projects nothing");
+		Entity cameraEntity = scene.CreateEntity("Camera");
+		cameraEntity.AddComponent<Transform3DComponent>().Position = { 0.0f, 0.0f, 5.0f };
+		cameraEntity.AddComponent<CameraComponent>().Type = CameraComponent::ProjectionType::Perspective;
+		const std::optional<glm::vec2> sceneCenter = scene.WorldToScreenPoint({ 0.0f, 0.0f, 0.0f }, viewport);
+		Check(sceneCenter && Near(sceneCenter->x, viewport.x * 0.5f, 0.01f) && Near(sceneCenter->y, viewport.y * 0.5f, 0.01f), "Scene::WorldToScreenPoint projects through the primary camera");
+		Check(!scene.WorldToScreenPoint({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f }), "Scene::WorldToScreenPoint of an empty viewport is nullopt");
+	}
+
+	// One step per frame: Input::Update between them moves current state into previous and
+	// releases mask bits, which is what is under test.
+	void DingoUITest::StepConsumeMask()
+	{
+		using Internal::InputBackend;
+		const MouseButton left = MouseButton::Left;
+
+		switch (m_Stage)
+		{
+		case 0:
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Simulated press is visible");
+			InputBackend::ConsumeMouseButton(left);
+			Check(!Input::IsMouseButtonPressed(left) && !Input::IsMouseButtonDown(left), "Consumed press reads as up");
+			Check(!Input::IsAnyMouseButtonDown(), "Consumed press hides from IsAnyMouseButtonDown");
+			break;
+		case 1:
+			Check(!Input::IsMouseButtonDown(left), "Consumed button stays hidden while held");
+			InputBackend::SimulateMouseButton(left, false);
+			Check(!Input::IsMouseButtonReleased(left), "Release of a consumed button is hidden");
+			break;
+		case 2:
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "The press after a consumed release is visible");
+			break;
+		case 3:
+			Check(Input::IsMouseButtonDown(left), "An unconsumed held button stays visible");
+			InputBackend::ConsumeNewPresses(true, true);
+			Check(Input::IsMouseButtonDown(left), "ConsumeNewPresses leaves a press that started earlier");
+			InputBackend::SimulateKey(k_TestKey, true);
+			InputBackend::ConsumeNewPresses(false, true);
+			Check(!Input::IsKeyPressed(k_TestKey) && !Input::IsKeyDown(k_TestKey), "ConsumeNewPresses hides a new key press");
+			Check(InputBackend::IsKeyPressedUnconsumed(k_TestKey), "Engine hotkeys still see a consumed key");
+			break;
+		case 4:
+			InputBackend::SimulateMouseButton(left, false);
+			Check(Input::IsMouseButtonReleased(left), "An unconsumed release is visible");
+			InputBackend::SimulateKey(k_TestKey, false);
+			Check(!Input::IsKeyReleased(k_TestKey), "Release of a consumed key is hidden");
+			break;
+		case 5:
+			InputBackend::SimulateKey(k_TestKey, true);
+			Check(Input::IsKeyPressed(k_TestKey), "The key press after a consumed release is visible");
+			InputBackend::SimulateKey(k_TestKey, false);
+			break;
+		default:
+			return;
+		}
+		++m_Stage;
+	}
+
+	void DingoUITest::SubmitBaseList(const glm::vec4& fill)
+	{
+		Internal::UIDrawList& list = Internal::GetDingoUIContext()->GetDrawList();
+		list.AddRect({ { 10.0f, 10.0f }, { 60.0f, 40.0f } }, fill, 6.0f, 2.0f, k_Green);
+		list.AddRect({ { 70.0f, 10.0f }, { 120.0f, 60.0f } }, k_Blue, 0.0f, 0.0f, glm::vec4(0.0f), { { 70.0f, 10.0f }, { 95.0f, 60.0f } });
+		list.AddImage({ { 10.0f, 70.0f }, { 40.0f, 100.0f } }, m_ImageTexture);
+		list.AddText({ 50.0f, 70.0f }, m_Font, "UI", 16.0f, glm::vec4(1.0f));
+	}
+
+	void DingoUITest::SubmitTextureList()
+	{
+		Internal::UIDrawList& list = Internal::GetDingoUIContext()->GetDrawList();
+		for (uint32_t i = 0; i < k_SlotTextureCount; ++i)
+		{
+			const float x = static_cast<float>(i % 11) * 10.0f;
+			const float y = static_cast<float>(i / 11) * 10.0f;
+			list.AddImage({ { x, y }, { x + 8.0f, y + 8.0f } }, m_SlotTextures[i]);
+		}
+	}
+
+	void DingoUITest::CheckPixels(const TexturePixels& pixels)
+	{
+		Check(pixels.Width == k_CheckTargetSize && pixels.Height == k_CheckTargetSize, "DingoUI check target reads back");
+		Check(NearColor(pixels.GetPixel(35, 25), k_Red), "Inside a rect is its fill colour");
+		Check(NearColor(pixels.GetPixel(11, 25), k_Green), "A rect's border is inset from its edge");
+		Check(NearColor(pixels.GetPixel(10, 10), k_Background), "A rounded corner leaves the background");
+		Check(NearColor(pixels.GetPixel(80, 30), k_Blue), "Inside the clip rect draws");
+		Check(NearColor(pixels.GetPixel(110, 30), k_Background), "Outside the clip rect is the background");
+		Check(NearColor(pixels.GetPixel(25, 85), k_Yellow), "An image draws its texture");
+
+		bool text = false;
+		for (uint32_t y = 70; y < 90 && !text; ++y)
+			for (uint32_t x = 50; x < k_CheckTargetSize && !text; ++x)
+				text = pixels.GetPixel(x, y).r > 0.5f;
+		Check(text, "Text draws glyphs");
+	}
+
+	// One stage per frame: each reads the statistics and pixels of the frame before it, whose
+	// EndFrame drew after that frame's Update.
+	bool DingoUITest::StepBatcher()
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (!context || !m_CheckTarget || !m_Font || !m_Font->IsValid())
+			return false;
+
+		const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+		switch (m_DrawStage)
+		{
+		case 0:
+			break;
+		case 1:
+		{
+			Check(statistics.DrawCalls == 1, "A frame of UI is one draw call");
+			Check(statistics.Uploads == 1 && statistics.CacheHits == 0, "The first frame uploads its vertices");
+			Check(statistics.Quads > 4 && statistics.CulledQuads == 0, "Every command builds quads");
+			const std::weak_ptr<int> alive = m_Alive;
+			m_CheckTarget->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+			{
+				if (!alive.expired())
+					CheckPixels(pixels);
+			});
+			break;
+		}
+		case 2:
+			Check(statistics.CacheHits == 1 && statistics.Uploads == 0, "An identical frame draws the cached vertices");
+			Check(statistics.DrawCalls == 1, "A cached frame is still one draw call");
+			break;
+		case 3:
+			Check(statistics.Uploads == 1 && statistics.CacheHits == 0, "A colour change uploads again");
+			break;
+		case 4:
+			Check(statistics.DrawCalls == 2, "33 textures split into two draws");
+			Check(statistics.Quads == k_SlotTextureCount, "Every image is one quad");
+			break;
+		default:
+			return false;
+		}
+
+		Renderer::Clear(m_CheckTarget, k_Background);
+		context->SetTarget(m_CheckTarget);
+		if (m_DrawStage == 3)
+			SubmitTextureList();
+		else
+			SubmitBaseList(m_DrawStage == 2 ? glm::vec4(1.0f, 0.0f, 0.0f, 0.99f) : k_Red);
+		++m_DrawStage;
+		return true;
+	}
+
+	bool DingoUITest::RectIs(const char* name, float minX, float minY, float maxX, float maxY, float tolerance)
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UIElement* element = context ? context->GetLastLayout().FindByName(name) : nullptr;
+		if (!element)
+			return false;
+		const Internal::UIRect& rect = element->Rect;
+		return Near(rect.Min.x, minX, tolerance) && Near(rect.Min.y, minY, tolerance) && Near(rect.Max.x, maxX, tolerance) && Near(rect.Max.y, maxY, tolerance);
+	}
+
+	bool DingoUITest::SizeIs(const char* name, float width, float height, float tolerance)
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UIElement* element = context ? context->GetLastLayout().FindByName(name) : nullptr;
+		if (!element)
+			return false;
+		const Internal::UIRect& rect = element->Rect;
+		return Near(rect.Max.x - rect.Min.x, width, tolerance) && Near(rect.Max.y - rect.Min.y, height, tolerance);
+	}
+
+	void DingoUITest::DeclareAnchors()
+	{
+		struct Entry { const char* Name; UIAnchor Anchor; };
+		const Entry entries[] = {
+			{ "a_tl", UIAnchor::TopLeft }, { "a_t", UIAnchor::Top }, { "a_tr", UIAnchor::TopRight },
+			{ "a_l", UIAnchor::Left }, { "a_c", UIAnchor::Center }, { "a_r", UIAnchor::Right },
+			{ "a_bl", UIAnchor::BottomLeft }, { "a_b", UIAnchor::Bottom }, { "a_br", UIAnchor::BottomRight },
+			{ "a_stretch", UIAnchor::Stretch } };
+		for (const Entry& entry : entries)
+		{
+			DingoUI::BeginRoot(entry.Name, UIRootParams()
+				.SetAnchor(entry.Anchor)
+				.SetLayout(UIBoxParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(50.0f))));
+			DingoUI::EndRoot();
+		}
+		DingoUI::BeginRoot("a_offset", UIRootParams()
+			.SetOffset({ 10.0f, 20.0f })
+			.SetLayout(UIBoxParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(50.0f))));
+		DingoUI::EndRoot();
+		DingoUI::BeginRoot("a_pivot", UIRootParams()
+			.SetAnchor(UIAnchor::Center)
+			.SetPivot({ 1.0f, 1.0f })
+			.SetLayout(UIBoxParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(50.0f))));
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyAnchors()
+	{
+		const float cx = k_LayoutW * 0.5f;
+		const float cy = k_LayoutH * 0.5f;
+		Check(RectIs("a_tl", 0, 0, 100, 50), "Anchor TopLeft");
+		Check(RectIs("a_t", cx - 50, 0, cx + 50, 50), "Anchor Top");
+		Check(RectIs("a_tr", k_LayoutW - 100, 0, k_LayoutW, 50), "Anchor TopRight");
+		Check(RectIs("a_l", 0, cy - 25, 100, cy + 25), "Anchor Left");
+		Check(RectIs("a_c", cx - 50, cy - 25, cx + 50, cy + 25), "Anchor Center");
+		Check(RectIs("a_r", k_LayoutW - 100, cy - 25, k_LayoutW, cy + 25), "Anchor Right");
+		Check(RectIs("a_bl", 0, k_LayoutH - 50, 100, k_LayoutH), "Anchor BottomLeft");
+		Check(RectIs("a_b", cx - 50, k_LayoutH - 50, cx + 50, k_LayoutH), "Anchor Bottom");
+		Check(RectIs("a_br", k_LayoutW - 100, k_LayoutH - 50, k_LayoutW, k_LayoutH), "Anchor BottomRight");
+		Check(RectIs("a_stretch", 0, 0, k_LayoutW, k_LayoutH), "Anchor Stretch fills the target");
+		Check(RectIs("a_offset", 10, 20, 110, 70), "A root's Offset moves it from its anchor");
+		Check(RectIs("a_pivot", cx - 100, cy - 50, cx, cy), "A Pivot replaces the anchor's own point");
+	}
+
+	void DingoUITest::DeclareStacks()
+	{
+		const UISize fixed20 = UISize::Fixed(20.0f);
+		DingoUI::BeginRoot("s_row", UIRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f).SetPadding(5.0f)));
+		for (const char* id : { "s_a", "s_b", "s_c" })
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(id).SetSize(UISize::Fixed(40.0f), fixed20));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("s_col", UIRootParams().SetOffset({ 300.0f, 0.0f }).SetLayout(UIBoxParams().SetGap(8.0f).SetPadding(4.0f, 6.0f)));
+		for (const char* id : { "s_d", "s_e" })
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(id).SetSize(UISize::Fixed(30.0f), UISize::Fixed(10.0f)));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("s_between", UIRootParams().SetOffset({ 0.0f, 200.0f }).SetLayout(UIBoxParams()
+			.SetDirection(UIDirection::Row).SetJustify(UIJustify::SpaceBetween).SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f))));
+		for (const char* id : { "s_s0", "s_s1", "s_s2" })
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(id).SetSize(fixed20, UISize::Fixed(10.0f)));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("s_center", UIRootParams().SetOffset({ 200.0f, 200.0f }).SetLayout(UIBoxParams()
+			.SetDirection(UIDirection::Row).SetAlign(UIAlign::Center).SetJustify(UIJustify::End).SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f))));
+		DingoUI::BeginBox(UIBoxParams().SetId("s_cc").SetSize(fixed20, UISize::Fixed(10.0f)));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("s_stretch", UIRootParams().SetOffset({ 400.0f, 200.0f }).SetLayout(UIBoxParams()
+			.SetAlign(UIAlign::Stretch).SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f))));
+		DingoUI::BeginBox(UIBoxParams().SetId("s_st").SetHeight(UISize::Fixed(10.0f)));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyStacks()
+	{
+		Check(RectIs("s_row", 0, 0, 150, 30), "A row fits its children, gaps and padding");
+		Check(RectIs("s_a", 5, 5, 45, 25) && RectIs("s_b", 55, 5, 95, 25) && RectIs("s_c", 105, 5, 145, 25), "A row places children left to right with the gap");
+		Check(RectIs("s_col", 300, 0, 338, 40), "A column fits its children, gaps and padding");
+		Check(RectIs("s_d", 304, 6, 334, 16) && RectIs("s_e", 304, 24, 334, 34), "A column places children top to bottom with the gap");
+		Check(RectIs("s_s0", 0, 200, 20, 210) && RectIs("s_s1", 40, 200, 60, 210) && RectIs("s_s2", 80, 200, 100, 210), "SpaceBetween spreads the children to both ends");
+		Check(RectIs("s_cc", 280, 215, 300, 225), "Justify End and Align Center place a child in the container");
+		Check(RectIs("s_st", 400, 200, 500, 210), "Align Stretch widens a fit child across the direction");
+	}
+
+	void DingoUITest::DeclareGrow()
+	{
+		DingoUI::BeginRoot("g_row", UIRootParams().SetOffset({ 0.0f, 100.0f }).SetLayout(UIBoxParams()
+			.SetDirection(UIDirection::Row).SetSize(UISize::Fixed(400.0f), UISize::Fixed(50.0f))));
+		DingoUI::BeginBox(UIBoxParams().SetId("g_0").SetSize(UISize::Fixed(100.0f), UISize::Grow()));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("g_1").SetSize(UISize::Grow(1.0f), UISize::Grow()));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("g_2").SetSize(UISize::Grow(3.0f), UISize::Grow()));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("g_cap", UIRootParams().SetOffset({ 0.0f, 200.0f + 100.0f }).SetLayout(UIBoxParams()
+			.SetDirection(UIDirection::Row).SetSize(UISize::Fixed(600.0f), UISize::Fixed(100.0f))));
+		DingoUI::BeginBox(UIBoxParams().SetId("g_pc").SetSize(UISize::Percent(0.5f), UISize::Percent(0.25f)));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("g_mn").SetSize(UISize::Fixed(10.0f).SetMin(50.0f), UISize::Fixed(10.0f)));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("g_mx").SetSize(UISize::Grow().SetMax(80.0f), UISize::Fixed(10.0f)));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("g_gr").SetSize(UISize::Grow(), UISize::Fixed(10.0f)));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyGrow()
+	{
+		Check(RectIs("g_0", 0, 100, 100, 150), "A fixed child keeps its size next to grow children");
+		Check(RectIs("g_1", 100, 100, 175, 150) && RectIs("g_2", 175, 100, 400, 150), "Grow children split the rest by weight (1:3 of 300)");
+		Check(RectIs("g_pc", 0, 300, 300, 325), "Percent is a fraction of the parent's content area on each axis");
+		Check(RectIs("g_mn", 300, 300, 350, 310), "MinSize lifts a fixed size");
+		Check(RectIs("g_mx", 350, 300, 430, 310), "MaxSize caps a grow size");
+		Check(RectIs("g_gr", 430, 300, 600, 310), "What a capped grow child leaves goes to the others");
+	}
+
+	void DingoUITest::DeclareText()
+	{
+		const std::string_view paragraph = "The quick brown fox jumps over the lazy dog and keeps running";
+		DingoUI::BeginRoot("t_root", UIRootParams().SetLayout(UIBoxParams().SetGap(10.0f)));
+		DingoUI::BeginBox(UIBoxParams().SetId("t_fit").SetPadding(10.0f));
+		DingoUI::Text("Play", UITextParams().SetSize(20.0f).SetWrap(false));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("t_wrap").SetWidth(UISize::Fixed(120.0f)));
+		DingoUI::Text(paragraph, UITextParams().SetSize(20.0f));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("t_max").SetWidth(UISize::Fixed(400.0f)));
+		DingoUI::Text(paragraph, UITextParams().SetSize(20.0f).SetMaxWidth(100.0f));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("t_nowrap").SetWidth(UISize::Fixed(120.0f)));
+		DingoUI::Text(paragraph, UITextParams().SetSize(20.0f).SetWrap(false));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyText()
+	{
+		const std::string paragraph = "The quick brown fox jumps over the lazy dog and keeps running";
+		const TextMetrics play = m_Font->MeasureText("Play", 20.0f);
+		const TextMetrics wrapped = m_Font->MeasureText(paragraph, 20.0f, 120.0f);
+		const TextMetrics capped = m_Font->MeasureText(paragraph, 20.0f, 100.0f);
+		const TextMetrics oneLine = m_Font->MeasureText(paragraph, 20.0f);
+		Check(SizeIs("t_fit", play.Width + 20.0f, play.Height + 20.0f, 1.0f), "A fit box wraps around its text and padding");
+		Check(wrapped.LineCount > 1 && SizeIs("t_wrap", 120.0f, wrapped.Height, 1.0f), "Text wraps at the parent's width and makes a taller box");
+		Check(SizeIs("t_wrap", 120.0f, wrapped.Height, 1.0f) && wrapped.Height > play.Height * 1.5f, "A wrapped box is taller than a one-line box");
+		Check(capped.LineCount > 1 && SizeIs("t_max", 400.0f, capped.Height, 1.0f), "MaxWidth wraps text narrower than its parent");
+		Check(SizeIs("t_nowrap", 120.0f, oneLine.Height, 1.0f), "Wrap off keeps the text on one line");
+	}
+
+	void DingoUITest::DeclareSizing()
+	{
+		DingoUI::BeginRoot("z_root", UIRootParams().SetOffset({ 0.0f, 400.0f }).SetLayout(UIBoxParams()
+			.SetDirection(UIDirection::Row).SetPadding(10.0f).SetGap(4.0f)));
+		DingoUI::BeginBox(UIBoxParams().SetId("z_img").SetSize(UISize::Fixed(30.0f), UISize::Fixed(30.0f)));
+		DingoUI::Image(m_ImageTexture, UIImageParams().SetSize(UISize::Fixed(30.0f), UISize::Fixed(30.0f)));
+		DingoUI::EndBox();
+		DingoUI::Image(m_ImageTexture, UIImageParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(20.0f)).SetPreserveAspect(false));
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifySizing()
+	{
+		Check(RectIs("z_root", 0, 400, 114, 450), "Images take their requested size in a fit container");
+		Check(RectIs("z_img", 10, 410, 40, 440), "A box around an image keeps its fixed size");
+	}
+
+	void DingoUITest::DeclareScale()
+	{
+		DingoUI::BeginRoot("c_half", UIRootParams().SetScale(UIScale::ScaleWithScreen({ 1920.0f, 1080.0f }, 0.5f)).SetLayout(UIBoxParams()
+			.SetPadding(10.0f).SetSize(UISize::Fixed(200.0f), UISize::Fixed(100.0f))));
+		DingoUI::BeginBox(UIBoxParams().SetId("c_child").SetSize(UISize::Fixed(40.0f), UISize::Fixed(20.0f)));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("c_const", UIRootParams().SetOffset({ 100.0f, 0.0f }).SetScale(UIScale::ConstantPixel(2.0f)).SetLayout(UIBoxParams()
+			.SetSize(UISize::Fixed(50.0f), UISize::Fixed(50.0f))));
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("c_h", UIRootParams().SetOffset({ 0.0f, 200.0f }).SetScale(UIScale::ScaleWithScreen({ 1920.0f, 540.0f }, 1.0f)).SetLayout(UIBoxParams()
+			.SetSize(UISize::Fixed(100.0f), UISize::Fixed(10.0f))));
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("c_w", UIRootParams().SetOffset({ 0.0f, 300.0f }).SetScale(UIScale::ScaleWithScreen({ 1920.0f, 540.0f }, 0.0f)).SetLayout(UIBoxParams()
+			.SetSize(UISize::Fixed(100.0f), UISize::Fixed(10.0f))));
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyScale()
+	{
+		Check(Near(Internal::ComputeUIScale(UIScale::ScaleWithScreen({ 1920.0f, 1080.0f }, 0.5f), { k_LayoutW, k_LayoutH }), 0.5f), "A 1920x1080 reference on 960x540 scales by 0.5");
+		Check(RectIs("c_half", 0, 0, 100, 50), "ScaleWithScreen scales a root's fixed size");
+		Check(RectIs("c_child", 5, 5, 25, 15), "ScaleWithScreen scales padding and children");
+		Check(RectIs("c_const", 200, 0, 300, 100), "ConstantPixel scales size and Offset by its factor");
+		Check(RectIs("c_h", 0, 200, 100, 210), "Match 1 follows the height ratio");
+		Check(RectIs("c_w", 0, 150, 50, 155), "Match 0 follows the width ratio");
+	}
+
+	void DingoUITest::DeclarePixels()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		DingoUI::BeginRoot("p_root", UIRootParams().SetOffset({ 10.0f, 10.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		DingoUI::BeginBox(UIBoxParams().SetId("p_red").SetSize(UISize::Fixed(100.0f), UISize::Fixed(50.0f)).SetBackground(k_Red));
+		DingoUI::EndBox();
+		DingoUI::Image(m_ImageTexture, UIImageParams().SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)));
+		DingoUI::Text("Ag", UITextParams().SetSize(40.0f).SetWrap(false));
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyPixels()
+	{
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			Check(pixels.Width == k_LayoutWidth && pixels.Height == k_LayoutHeight, "The element check target reads back");
+			Check(NearColor(pixels.GetPixel(60, 35), k_Red), "A box's background draws at its laid-out rect");
+			Check(NearColor(pixels.GetPixel(115, 35), k_Background), "The gap between children is untouched");
+			Check(NearColor(pixels.GetPixel(140, 30), k_Yellow), "An Image element draws its texture");
+			Check(NearColor(pixels.GetPixel(300, 300), k_Background), "Outside the elements stays the background");
+			bool text = false;
+			for (uint32_t y = 10; y < 60 && !text; ++y)
+				for (uint32_t x = 165; x < 260 && !text; ++x)
+					text = pixels.GetPixel(x, y).r > 0.5f && pixels.GetPixel(x, y).g > 0.5f;
+			Check(text, "A Text element draws glyphs");
+		});
+	}
+
+	void DingoUITest::DeclareMenu()
+	{
+		DingoUI::BeginRoot("m_root", UIRootParams().SetAnchor(UIAnchor::Center).SetLayout(UIBoxParams()
+			.SetWidth(UISize::Fixed(300.0f)).SetGap(8.0f).SetPadding(16.0f).SetAlign(UIAlign::Stretch)
+			.SetBackground({ 0.1f, 0.1f, 0.15f, 0.9f }).SetBorder(2.0f, { 0.6f, 0.7f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
+		DingoUI::Text("Main menu", UITextParams().SetSize(28.0f).SetAlign(UITextAlign::Center));
+		const char* labels[] = { "Continue", "New game", "Load", "Options", "Credits", "Quit" };
+		for (const char* label : labels)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetPadding(8.0f).SetBackground({ 0.25f, 0.3f, 0.45f, 1.0f }).SetCornerRadius(4.0f).SetAlign(UIAlign::Center));
+			DingoUI::Text(label, UITextParams().SetSize(18.0f).SetAlign(UITextAlign::Center));
+			DingoUI::EndBox();
+		}
+		DingoUI::Image(m_ImageTexture, UIImageParams().SetSize(UISize::Fixed(16.0f), UISize::Fixed(16.0f)));
+		DingoUI::Text("Version 1.0", UITextParams().SetSize(12.0f).SetColor({ 0.7f, 0.7f, 0.7f, 1.0f }));
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyMenu()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+		Check(context->GetLastLayout().GetElements().size() >= 10, "The menu has about ten or more elements");
+		Check(statistics.DrawCalls == 1, "A ten-element menu with text and an image is one draw call");
+		Check(statistics.Quads >= 10, "Every element's drawing reaches the batcher");
+	}
+
+	UINineSlice DingoUITest::MakeSlice(bool point, float scale) const
+	{
+		return UINineSlice().SetImage(m_SliceTexture, glm::vec4(2.0f)).SetPointFilter(point).SetScale(scale);
+	}
+
+	void DingoUITest::DeclareStyle()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		const UIStyle fallback = UIStyle::Default();
+		const UIStyle green = UIStyle::Default().SetBackground(k_Green).SetDisabledColor(k_Yellow);
+		UIStyle blue = green;
+		blue.SetBackground(k_Blue);
+		const UIWidgetParams size = UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f));
+
+		Check(DingoUI::GetStyle().Background == fallback.Background, "Styles: with nothing pushed the style is the theme");
+		DingoUI::BeginRoot("s_root", UIRootParams().SetOffset({ 10.0f, 10.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		DingoUI::Button("##sa", size);
+		DingoUI::PushStyle(green);
+		Check(DingoUI::GetStyle().Background == k_Green, "Styles: PushStyle makes the style current");
+		DingoUI::Button("##sb", size);
+		DingoUI::PushStyle(blue);
+		DingoUI::Button("##sc", size);
+		DingoUI::PopStyle();
+		Check(DingoUI::GetStyle().Background == k_Green, "Styles: PopStyle returns to the one pushed before");
+		DingoUI::Button("##sd", size);
+		DingoUI::PopStyle();
+		Check(DingoUI::GetStyle().Background == fallback.Background, "Styles: the last PopStyle returns to the theme");
+		DingoUI::Button("##se", size);
+		DingoUI::Button("##sf", UIWidgetParams(size).SetEnabled(false));
+		DingoUI::PushStyle(green);
+		DingoUI::Button("##sg", UIWidgetParams(size).SetEnabled(false));
+		DingoUI::PopStyle();
+		DingoUI::Button("##sh", UIWidgetParams(size).SetStyle(&blue));
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("s_root2", UIRootParams().SetOffset({ 10.0f, 70.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		DingoUI::SetTheme(green);
+		DingoUI::Button("##sx", size);
+		DingoUI::SetTheme(fallback);
+		DingoUI::Button("##sy", size);
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyStyle()
+	{
+		const Internal::UIElement* elements[10] = {};
+		const char* names[10] = { "##sa", "##sb", "##sc", "##sd", "##se", "##sf", "##sg", "##sh", "##sx", "##sy" };
+		for (size_t i = 0; i < 10; ++i)
+			elements[i] = LastElement(names[i]);
+		Check(elements[0] && elements[9], "Styles: the buttons are laid out");
+		if (!elements[0] || !elements[9])
+			return;
+
+		glm::vec2 points[10];
+		for (size_t i = 0; i < 10; ++i)
+			points[i] = elements[i] ? elements[i]->Rect.Min + glm::vec2(12.0f, 4.0f) : glm::vec2(0.0f);
+
+		const UIStyle fallback = UIStyle::Default();
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, points, fallback](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			const auto at = [&](size_t i) { return pixels.GetPixel(static_cast<uint32_t>(points[i].x), static_cast<uint32_t>(points[i].y)); };
+			Check(NearColor(at(0), fallback.Background), "Styles: a button with nothing pushed has the theme's fill");
+			Check(NearColor(at(1), k_Green), "Styles: a pushed style changes a button's fill");
+			Check(NearColor(at(2), k_Blue), "Styles: a nested style overrides the outer one");
+			Check(NearColor(at(3), k_Green), "Styles: after the inner PopStyle the outer style is back");
+			Check(NearColor(at(4), fallback.Background), "Styles: after the last PopStyle the fill is the theme's again");
+			Check(NearColor(at(5), fallback.DisabledColor), "Styles: a disabled button has the disabled fill");
+			Check(NearColor(at(6), k_Yellow), "Styles: a disabled button uses the pushed style's disabled fill");
+			Check(NearColor(at(7), k_Blue), "Styles: a style in the widget's params overrides the current one");
+			Check(NearColor(at(8), k_Green), "Styles: SetTheme changes the style when nothing is pushed");
+			Check(NearColor(at(9), fallback.Background), "Styles: SetTheme back restores it");
+		});
+	}
+
+	void DingoUITest::DeclareNineSlice()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		const UISize sizes[3][2] = { { UISize::Fixed(16.0f), UISize::Fixed(16.0f) }, { UISize::Fixed(40.0f), UISize::Fixed(24.0f) }, { UISize::Fixed(70.0f), UISize::Fixed(70.0f) } };
+		const char* linear[3] = { "n1", "n2", "n3" };
+		DingoUI::BeginRoot("n_root", UIRootParams().SetOffset({ 10.0f, 10.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		for (size_t i = 0; i < 3; ++i)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(linear[i]).SetSize(sizes[i][0], sizes[i][1]).SetNineSlice(MakeSlice(false, 1.0f)));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+
+		const char* point[3] = { "n4", "n5", "n6" };
+		DingoUI::BeginRoot("n_root2", UIRootParams().SetOffset({ 10.0f, 120.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f)));
+		for (size_t i = 0; i < 3; ++i)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetId(point[i]).SetSize(UISize::Fixed(20.0f + 30.0f * static_cast<float>(i)), UISize::Fixed(20.0f + 30.0f * static_cast<float>(i))).SetNineSlice(MakeSlice(true, 2.0f)));
+			DingoUI::EndBox();
+		}
+		UINineSlice frame = MakeSlice(false, 1.0f);
+		frame.SetFillCenter(false);
+		DingoUI::BeginBox(UIBoxParams().SetId("n7").SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)).SetNineSlice(frame));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("n_root3", UIRootParams().SetOffset({ 10.0f, 220.0f }).SetScale(UIScale::ConstantPixel(2.0f)).SetLayout(UIBoxParams()));
+		DingoUI::BeginBox(UIBoxParams().SetId("n8").SetSize(UISize::Fixed(20.0f), UISize::Fixed(20.0f)).SetNineSlice(MakeSlice(true, 1.0f)));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyNineSlice()
+	{
+		struct Sample
+		{
+			Internal::UIRect Rect;
+			bool Present = false;
+		};
+		Sample samples[8];
+		const char* names[8] = { "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8" };
+		for (size_t i = 0; i < 8; ++i)
+		{
+			if (const Internal::UIElement* element = LastElement(names[i]))
+			{
+				samples[i].Rect = element->Rect;
+				samples[i].Present = true;
+			}
+		}
+		Check(samples[0].Present && samples[7].Present, "9-slice: the boxes are laid out");
+		if (!samples[0].Present || !samples[7].Present)
+			return;
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, samples](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			const auto px = [&](float x, float y) { return pixels.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y)); };
+			const glm::vec4 red = k_Red, green = k_Green, blue = k_Blue, yellow = k_Yellow;
+			const glm::vec4 magenta{ 1.0f, 0.0f, 1.0f, 1.0f }, orange{ 1.0f, 0.5f, 0.0f, 1.0f }, cyan{ 0.0f, 1.0f, 1.0f, 1.0f };
+			const glm::vec4 purple{ 0.5f, 0.0f, 1.0f, 1.0f }, grey{ 0.5f, 0.5f, 0.5f, 1.0f };
+
+			// inset: how far inside the corner a pixel is sampled; the corner is `corner` pixels wide.
+			const auto corners = [&](const Sample& s, float inset, const char* what)
+			{
+				const Internal::UIRect& r = s.Rect;
+				const std::string name = std::string("9-slice: ") + what;
+				Check(NearColor(px(r.Min.x + inset, r.Min.y + inset), red), name + " keeps its top-left corner");
+				Check(NearColor(px(r.Max.x - 1.0f - inset, r.Min.y + inset), green), name + " keeps its top-right corner");
+				Check(NearColor(px(r.Max.x - 1.0f - inset, r.Max.y - 1.0f - inset), blue), name + " keeps its bottom-right corner");
+				Check(NearColor(px(r.Min.x + inset, r.Max.y - 1.0f - inset), yellow), name + " keeps its bottom-left corner");
+				const float cx = std::floor((r.Min.x + r.Max.x) * 0.5f), cy = std::floor((r.Min.y + r.Max.y) * 0.5f);
+				Check(NearColor(px(cx, r.Min.y + inset), magenta), name + " stretches its top edge");
+				Check(NearColor(px(r.Max.x - 1.0f - inset, cy), orange), name + " stretches its right edge");
+				Check(NearColor(px(cx, r.Max.y - 1.0f - inset), cyan), name + " stretches its bottom edge");
+				Check(NearColor(px(r.Min.x + inset, cy), purple), name + " stretches its left edge");
+				Check(NearColor(px(cx, cy), grey), name + " fills its centre");
+			};
+			corners(samples[0], 0.0f, "a 16x16 slice");
+			corners(samples[1], 1.0f, "a 40x24 slice");
+			corners(samples[2], 1.0f, "a 70x70 slice");
+			corners(samples[3], 3.0f, "a 20x20 point-filtered slice at scale 2");
+			corners(samples[4], 3.0f, "a 50x50 point-filtered slice at scale 2");
+			corners(samples[5], 3.0f, "a 80x80 point-filtered slice at scale 2");
+
+			const Internal::UIRect& hole = samples[6].Rect;
+			Check(NearColor(px(hole.Min.x, hole.Min.y), red), "9-slice: a frame without its centre keeps the corners");
+			Check(NearColor(px(std::floor((hole.Min.x + hole.Max.x) * 0.5f), std::floor((hole.Min.y + hole.Max.y) * 0.5f)), k_Background), "9-slice: a frame without its centre leaves a hole");
+
+			const Internal::UIRect& scaled = samples[7].Rect;
+			Check(scaled.Max.x - scaled.Min.x == 40.0f, "9-slice: a root scale of 2 doubles the box");
+			Check(NearColor(px(scaled.Min.x + 3.0f, scaled.Min.y + 3.0f), red) && NearColor(px(scaled.Min.x + 4.0f, scaled.Min.y + 1.0f), magenta), "9-slice: a root scale of 2 doubles the borders");
+		});
+	}
+
+	void DingoUITest::DeclareStyledMenu()
+	{
+		Renderer::Clear(m_LayoutTarget, k_Background);
+		UIStyle style = UIStyle::Default();
+		style.SetSurface(MakeSlice(true, 1.0f)).SetPanel(MakeSlice(true, 2.0f)).SetPanelPadding(10.0f);
+		DingoUI::PushStyle(style);
+		DingoUI::BeginRoot("t_root", UIRootParams().SetOffset({ 20.0f, 20.0f }));
+		DingoUI::BeginPanel(UIBoxParams().SetId("t_panel").SetWidth(UISize::Fixed(260.0f)).SetGap(8.0f).SetAlign(UIAlign::Stretch));
+		DingoUI::Text("Styled menu", UITextParams().SetSize(24.0f));
+		DingoUI::Button("Continue");
+		DingoUI::Button("Options##t");
+		DingoUI::Button("Disabled", UIWidgetParams().SetEnabled(false));
+		DingoUI::Selectable("Row", true);
+		bool on = true;
+		DingoUI::Toggle("Sound", &on);
+		float volume = 0.5f;
+		DingoUI::Slider("Volume", &volume, 0.0f, 1.0f);
+		DingoUI::EndPanel();
+		DingoUI::EndRoot();
+		DingoUI::PopStyle();
+	}
+
+	void DingoUITest::VerifyStyledMenu()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+		Check(statistics.DrawCalls == 1, "Styles: a styled menu with a 9-slice panel and 9-slice buttons is one draw call");
+		Check(statistics.Quads >= 9 * 4, "Styles: the 9-slice faces reach the batcher");
+
+		const Internal::UIElement* panel = LastElement("t_panel");
+		const Internal::UIElement* button = LastElement("Continue");
+		const Internal::UIElement* disabled = LastElement("Disabled");
+		Check(panel && button && disabled, "Styles: the styled menu is laid out");
+		if (!panel || !button || !disabled)
+			return;
+
+		const glm::vec2 points[3] = { panel->Rect.Min, button->Rect.Min, disabled->Rect.Min };
+		const std::weak_ptr<int> alive = m_Alive;
+		m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, points](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			const auto px = [&](const glm::vec2& p) { return pixels.GetPixel(static_cast<uint32_t>(p.x) + 1, static_cast<uint32_t>(p.y) + 1); };
+			Check(NearColor(px(points[0]), k_Red), "Styles: BeginPanel draws the style's Panel 9-slice");
+			Check(NearColor(px(points[1]), k_Red), "Styles: a button draws the style's Surface 9-slice");
+			Check(NearColor(px(points[2]), glm::vec4(0.5f, 0.0f, 0.0f, 1.0f)), "Styles: a disabled button dims the Surface 9-slice");
+		});
+	}
+
+	void DingoUITest::DeclareUnmatched()
+	{
+		DingoUI::EndBox();
+		DingoUI::BeginRoot("u_root", UIRootParams().SetLayout(UIBoxParams().SetPadding(5.0f)));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetId("u_box").SetSize(UISize::Fixed(30.0f), UISize::Fixed(10.0f)));
+		DingoUI::BeginBox(UIBoxParams().SetId("u_inner").SetSize(UISize::Fixed(10.0f), UISize::Fixed(5.0f)));
+	}
+
+	void DingoUITest::VerifyUnmatched()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UILayoutTree& tree = context->GetLastLayout();
+		const Internal::UIElement* box = tree.FindByName("u_box");
+		const Internal::UIElement* inner = tree.FindByName("u_inner");
+		Check(box && inner && inner->Parent >= 0 && &tree.GetElements()[inner->Parent] == box, "Unclosed Begin calls are closed at frame end with the tree intact");
+		Check(RectIs("u_root", 0, 0, 40, 20), "An unclosed root still lays out");
+		Check(tree.GetOpenCount() == 0, "A mismatched frame leaves nothing open for the next one");
+	}
+
+	void DingoUITest::DeclareNoFont()
+	{
+		DingoUI::SetDefaultFont(nullptr);
+		DingoUI::BeginRoot("f_root", UIRootParams().SetLayout(UIBoxParams().SetPadding(5.0f)));
+		DingoUI::BeginBox(UIBoxParams().SetId("f_box").SetPadding(5.0f));
+		DingoUI::Text("No font");
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+		DingoUI::SetDefaultFont(m_Font);
+	}
+
+	void DingoUITest::VerifyNoFont()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const Internal::UIElement* box = context->GetLastLayout().FindByName("f_box");
+		Check(box && box->ChildCount == 0 && RectIs("f_box", 5, 5, 15, 15), "Text with no font is skipped");
+		Check(context->GetRenderStatistics().DrawCalls == 0, "A frame with nothing to draw makes no draw call");
+	}
+
+	void DingoUITest::DeclarePointerBlocking()
+	{
+		m_PointerState = {};
+		m_PointerState.ViewportSize = { 1920.0f, 1080.0f };
+		m_PointerState.PointerPosition = { 400.0f, 300.0f };
+		m_PointerState.PointerAvailable = true;
+		Internal::GetDingoUIContext()->SetInputOverride(&m_PointerState);
+		DeclarePointerRoots();
+	}
+
+	void DingoUITest::DeclarePointerRoots()
+	{
+		DingoUI::BeginRoot("n_block", UIRootParams().SetOffset({ 150.0f, 100.0f }).SetLayout(UIBoxParams()
+			.SetSize(UISize::Fixed(100.0f), UISize::Fixed(100.0f)).SetBackground({ 0.3f, 0.3f, 0.3f, 1.0f })));
+		DingoUI::EndRoot();
+		DingoUI::BeginRoot("n_pass", UIRootParams().SetOffset({ 500.0f, 100.0f }).SetBlocksInput(false).SetLayout(UIBoxParams()
+			.SetSize(UISize::Fixed(100.0f), UISize::Fixed(100.0f)).SetBackground({ 0.3f, 0.5f, 0.3f, 1.0f })));
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::VerifyPointerBlocking()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		const glm::vec2 mapped = context->WindowToTarget({ 400.0f, 300.0f });
+		Check(Near(mapped.x, 200.0f, 0.01f) && Near(mapped.y, 150.0f, 0.01f), "A window point maps to target pixels by the size ratio");
+		Check(Near(context->GetInput().PointerPosition.x, 200.0f, 0.01f) && Near(context->GetInput().PointerPosition.y, 150.0f, 0.01f), "The pointer is handed to the UI in target pixels");
+		Check(DingoUI::IsPointerOverUI(), "A pointer over a blocking root is over the UI");
+	}
+
+	void DingoUITest::DeclarePointerPassive()
+	{
+		m_PointerState.PointerPosition = { 1100.0f, 300.0f };
+		DeclarePointerRoots();
+	}
+
+	void DingoUITest::VerifyPointerPassive()
+	{
+		Check(!DingoUI::IsPointerOverUI(), "A pointer over a root that doesn't block input is not over the UI");
+	}
+
+	void DingoUITest::DeclareDemo()
+	{
+		DingoUI::BeginRoot("demo", UIRootParams().SetOffset({ 16.0f, 16.0f }).SetScale(UIScale::ScaleWithScreen()).SetLayout(UIBoxParams()
+			.SetGap(8.0f).SetPadding(12.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f }).SetBorder(2.0f, { 0.5f, 0.65f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
+		DingoUI::Text("DingoUI element API", UITextParams().SetSize(28.0f));
+		DingoUI::BeginBox(UIBoxParams().SetWidth(UISize::Fixed(360.0f)));
+		DingoUI::Text("Roots anchor to the screen, boxes stack their children and text wraps at the width its parent gives it.", UITextParams().SetSize(20.0f).SetColor({ 0.8f, 0.85f, 0.95f, 1.0f }));
+		DingoUI::EndBox();
+		DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(8.0f).SetAlign(UIAlign::Center));
+		DingoUI::Image(m_ImageTexture, UIImageParams().SetSize(UISize::Fixed(24.0f), UISize::Fixed(24.0f)));
+		DingoUI::Text("Image + text", UITextParams().SetSize(20.0f).SetWrap(false));
+		DingoUI::EndBox();
+		DingoUI::EndRoot();
+	}
+
+	bool DingoUITest::StepLayout(Framebuffer*)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (!context || !m_LayoutTarget || !m_Font || !m_Font->IsValid())
+			return false;
+
+		struct Case
+		{
+			void (DingoUITest::*Declare)();
+			void (DingoUITest::*Verify)();
+		};
+		static constexpr Case cases[] = {
+			{ &DingoUITest::DeclareAnchors, &DingoUITest::VerifyAnchors },
+			{ &DingoUITest::DeclareStacks, &DingoUITest::VerifyStacks },
+			{ &DingoUITest::DeclareGrow, &DingoUITest::VerifyGrow },
+			{ &DingoUITest::DeclareText, &DingoUITest::VerifyText },
+			{ &DingoUITest::DeclareSizing, &DingoUITest::VerifySizing },
+			{ &DingoUITest::DeclareScale, &DingoUITest::VerifyScale },
+			{ &DingoUITest::DeclarePixels, &DingoUITest::VerifyPixels },
+			{ &DingoUITest::DeclareMenu, &DingoUITest::VerifyMenu },
+			{ &DingoUITest::DeclareUnmatched, &DingoUITest::VerifyUnmatched },
+			{ &DingoUITest::DeclareStyle, &DingoUITest::VerifyStyle },
+			{ &DingoUITest::DeclareNineSlice, &DingoUITest::VerifyNineSlice },
+			{ &DingoUITest::DeclareStyledMenu, &DingoUITest::VerifyStyledMenu },
+			{ &DingoUITest::DeclareNoFont, &DingoUITest::VerifyNoFont },
+			{ &DingoUITest::DeclarePointerBlocking, &DingoUITest::VerifyPointerBlocking },
+			{ &DingoUITest::DeclarePointerPassive, &DingoUITest::VerifyPointerPassive } };
+		constexpr uint32_t count = static_cast<uint32_t>(sizeof(cases) / sizeof(cases[0]));
+
+		const uint32_t stage = m_LayoutStage;
+		if (stage > count * 2)
+			return false;
+		++m_LayoutStage;
+
+		if (stage == 0)
+			context->SetTarget(m_LayoutTarget);
+		else
+		{
+			const Case& current = cases[(stage - 1) / 2];
+			if ((stage - 1) % 2 == 0)
+				(this->*current.Declare)();
+			else
+				(this->*current.Verify)();
+		}
+		return true;
+	}
+
+	const Internal::UIElement* DingoUITest::LastElement(const char* name) const
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->GetLastLayout().FindByName(name) : nullptr;
+	}
+
+	glm::vec2 DingoUITest::CenterOf(const char* name) const
+	{
+		const Internal::UIElement* element = LastElement(name);
+		return element ? (element->Rect.Min + element->Rect.Max) * 0.5f : glm::vec2(k_WidgetEmpty);
+	}
+
+	void DingoUITest::SetPointer(const glm::vec2& position, bool down, bool pressed, bool released, const glm::vec2& scroll)
+	{
+		m_WidgetInput = {};
+		m_WidgetInput.ViewportSize = { k_LayoutW, k_LayoutH };
+		m_WidgetInput.PointerPosition = position;
+		m_WidgetInput.Scroll = scroll;
+		m_WidgetInput.PointerDown[0] = down;
+		m_WidgetInput.PointerPressed[0] = pressed;
+		m_WidgetInput.PointerReleased[0] = released;
+		m_WidgetInput.PointerAvailable = true;
+		m_WidgetInput.KeyboardAvailable = true;
+		m_WidgetInput.DeltaTime = 1.0f / 60.0f;
+	}
+
+	void DingoUITest::DeclareWidgetScene()
+	{
+		const glm::vec4 panel = { 0.08f, 0.1f, 0.16f, 0.9f };
+		if (m_WWidgets)
+		{
+			DingoUI::BeginRoot("w_main", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
+				.SetWidth(UISize::Fixed(500.0f)).SetGap(10.0f).SetPadding(10.0f).SetBackground(panel)));
+			m_WPlayResult = DingoUI::Button("Play");
+			m_WToggleResult = DingoUI::Toggle("Music", &m_WToggleValue);
+			m_WSliderResult = DingoUI::Slider("Volume", &m_WSliderValue, 0.0f, 1.0f);
+			m_WIntResult = DingoUI::SliderInt("Count", &m_WIntValue, 0, 10);
+			DingoUI::ProgressBar("Load", 0.5f);
+			m_WItemResult[0] = DingoUI::Selectable("Item A", m_WSelected == 0);
+			m_WItemResult[1] = DingoUI::Selectable("Item B", m_WSelected == 1);
+			if (DingoUI::BeginScrollArea("List", UIScrollParams().SetLayout(UIBoxParams()
+				.SetWidth(UISize::Fixed(240.0f)).SetHeight(UISize::Fixed(100.0f)).SetAlign(UIAlign::Stretch).SetBackground({ 0.04f, 0.05f, 0.09f, 1.0f }))))
+			{
+				for (int i = 0; i < 12; ++i)
+				{
+					DingoUI::PushId(i);
+					DingoUI::Selectable("Row", false);
+					DingoUI::PopId();
+				}
+				DingoUI::EndScrollArea();
+			}
+			DingoUI::EndRoot();
+		}
+		if (m_WOverlap)
+		{
+			DingoUI::BeginRoot("w_over", UIRootParams().SetOffset(m_WOverOffset).SetLayer(1));
+			m_WOverResult = DingoUI::Button("Over", UIWidgetParams().SetSize(UISize::Fixed(400.0f), UISize::Fixed(80.0f)));
+			DingoUI::EndRoot();
+		}
+		if (m_WGhost)
+		{
+			DingoUI::BeginRoot("w_ghost", UIRootParams().SetOffset({ 600.0f, 200.0f }).SetBlocksInput(false));
+			m_WGhostResult = DingoUI::Button("Ghost", UIWidgetParams().SetSize(UISize::Fixed(120.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+		}
+		if (m_WLate)
+		{
+			DingoUI::BeginRoot("w_late", UIRootParams().SetOffset({ 700.0f, 450.0f }));
+			m_WLateResult = DingoUI::Button("Late", UIWidgetParams().SetSize(UISize::Fixed(120.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+		}
+		if (m_WModal)
+		{
+			DingoUI::BeginRoot("w_modal", UIRootParams().SetOffset({ 650.0f, 100.0f }).SetLayer(2).SetModal(true));
+			DingoUI::Button("Close");
+			DingoUI::EndRoot();
+		}
+		if (m_WCollide)
+		{
+			DingoUI::BeginRoot("w_dup", UIRootParams().SetOffset({ 600.0f, 300.0f }));
+			DingoUI::Button("Same");
+			DingoUI::Button("Same");
+			DingoUI::Button("Same##b");
+			DingoUI::PushId(1);
+			DingoUI::Button("Same");
+			DingoUI::PopId();
+			DingoUI::EndRoot();
+		}
+	}
+
+	bool DingoUITest::StepWidgets(Framebuffer* output)
+	{
+		using Internal::InputBackend;
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_WidgetsDone || !context || !m_LayoutTarget || !m_Font || !m_Font->IsValid())
+			return false;
+
+		const MouseButton left = MouseButton::Left;
+		if (m_WidgetStage == 0)
+		{
+			SetPointer(k_WidgetEmpty);
+			context->SetInputOverride(&m_WidgetInput);
+		}
+		DeclareWidgetScene();
+
+		uint32_t n = 0;
+		const auto at = [&]() { return m_WidgetStage == n++; };
+		const auto done = [&]() { ++m_WidgetStage; return true; };
+		const auto trackX = [&](const char* name, float t)
+		{
+			const Internal::UIElement* element = LastElement(name);
+			return element ? element->Rect.Min.x + 8.0f + t * (element->Rect.Max.x - element->Rect.Min.x - 16.0f) : 0.0f;
+		};
+		const auto trackY = [&](const char* name) { return CenterOf(name).y; };
+
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			Check(LastElement("Play") && LastElement("Volume") && LastElement("List") && LastElement("Item B"), "Widgets: every widget has an element named by its label");
+			Check(context->GetStates().Size() >= 10, "Widgets: each widget keeps a state entry");
+			Check(context->GetIdCollisionCount() == 0, "Widgets: PushId gives identical labels in a loop their own ids");
+			Check(!m_WPlayResult.Hovered, "Widgets: nothing is hovered with the pointer on empty screen");
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Hovered && !m_WPlayResult.Pressed && !m_WPlayResult.Down, "Widgets: a pointer over a button hovers it");
+			Check(!m_WToggleResult.Hovered, "Widgets: only the widget under the pointer is hovered");
+			Check(DingoUI::IsPointerOverUI() && context->GetHoverId() != 0, "Widgets: a hovered widget of a blocking root means the pointer is over the UI");
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Pressed && m_WPlayResult.Down && m_WPlayResult.Hovered, "Widgets: a press on a button reports Pressed and Down");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(!Input::IsMouseButtonPressed(left) && !Input::IsMouseButtonDown(left), "Widgets: a press the UI took does not reach the game");
+			Check(DingoUI::IsCapturingInput(), "Widgets: a held UI press is capturing input");
+			SetPointer(CenterOf("Play"), true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Down && !m_WPlayResult.Pressed && !m_WPlayResult.Clicked, "Widgets: a held button stays Down without a new Pressed");
+			Check(!Input::IsMouseButtonDown(left), "Widgets: a held UI press stays hidden from the game");
+			SetPointer(CenterOf("Play"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Clicked && !m_WPlayResult.Down, "Widgets: release over the button after pressing it is a click");
+			if (m_WPlayResult.Clicked)
+				++m_WPlayClicks;
+			InputBackend::SimulateMouseButton(left, false);
+			Check(!Input::IsMouseButtonReleased(left), "Widgets: the release of a UI press is hidden from the game");
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WPlayResult.Hovered && !DingoUI::IsCapturingInput() && !DingoUI::IsPointerOverUI(), "Widgets: after the release the UI holds nothing");
+			SetPointer(k_WidgetEmpty, true, true);
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Widgets: a press on empty screen reaches the game");
+			Check(!DingoUI::IsPointerOverUI() && !DingoUI::IsCapturingInput(), "Widgets: empty screen is not over the UI");
+			SetPointer(k_WidgetEmpty, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(Input::IsMouseButtonDown(left), "Widgets: a held press on empty screen stays visible to the game");
+			SetPointer(k_WidgetEmpty, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, false);
+			Check(Input::IsMouseButtonReleased(left), "Widgets: the release of a press on empty screen reaches the game");
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Pressed, "Widgets: a second press on the button is seen");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(k_WidgetEmpty, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WPlayResult.Down && !m_WPlayResult.Hovered && !m_WPlayResult.Clicked, "Widgets: dragging off a held button keeps it Down but not hovered");
+			SetPointer(k_WidgetEmpty, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WPlayResult.Clicked && !m_WPlayResult.Down, "Widgets: press inside and release outside is no click");
+			Check(m_WPlayClicks == 1, "Widgets: only the first press and release clicked the button");
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer(CenterOf("Music"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WToggleResult.Pressed && !m_WToggleValue, "Widgets: a toggle does not flip on press");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(CenterOf("Music"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WToggleResult.Clicked && m_WToggleResult.Changed && m_WToggleValue, "Widgets: a click flips a toggle and reports Changed");
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer({ trackX("Volume", 0.25f), trackY("Volume") }, true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderResult.Pressed && m_WSliderResult.Changed && std::abs(m_WSliderValue - 0.25f) < 0.02f, "Widgets: pressing on a slider's track sets the value there");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer({ trackX("Volume", 0.75f), trackY("Volume") }, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderResult.Down && std::abs(m_WSliderValue - 0.75f) < 0.02f, "Widgets: dragging a slider follows the pointer");
+			SetPointer({ trackX("Volume", 0.0f) + 400.0f, trackY("Volume") + 200.0f }, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderValue == 1.0f, "Widgets: dragging past the end clamps a slider to its maximum");
+			SetPointer({ trackX("Volume", 0.0f) - 400.0f, trackY("Volume") }, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderValue == 0.0f && m_WSliderResult.Changed, "Widgets: dragging before the start clamps a slider to its minimum");
+			SetPointer({ trackX("Volume", 0.0f) - 400.0f, trackY("Volume") }, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WSliderValue == 0.0f && !m_WSliderResult.Changed, "Widgets: releasing a slider keeps its value");
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer({ trackX("Count", 0.5f), trackY("Count") }, true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WIntValue == 5 && m_WIntResult.Changed, "Widgets: a SliderInt snaps to whole numbers");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer({ trackX("Count", 0.5f), trackY("Count") }, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer(CenterOf("Item B"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WItemResult[1].Pressed && !m_WItemResult[0].Pressed, "Widgets: a selectable reports the press on its own row");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(CenterOf("Item B"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WItemResult[1].Clicked, "Widgets: a selectable reports a click");
+			if (m_WItemResult[1].Clicked)
+				m_WSelected = 1;
+			InputBackend::SimulateMouseButton(left, false);
+			SetPointer(CenterOf("List"), false, false, false, { 0.0f, -1.0f });
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateScroll(0.0f, -1.0f);
+			Check(Input::GetMouseScrollDelta().y == 0.0f, "Widgets: a wheel turn over a blocking scroll area does not reach the game");
+			SetPointer(CenterOf("List"));
+			return done();
+		}
+		if (at())
+		{
+			const Internal::UIElement* list = LastElement("List");
+			const Internal::UIElement* row = LastElement("Row");
+			Check(list && std::abs(list->ScrollOffset.y - 40.0f) < 0.01f, "Widgets: one wheel notch scrolls a scroll area by its WheelStep");
+			Check(list && row && row->Rect.Min.y < list->Rect.Min.y && row->Clip.Min.y == list->Rect.Min.y && row->Clip.Max.y == list->Rect.Max.y, "Widgets: scrolled content moves and is clipped to the area");
+			Check(list && list->ContentSize.y > list->Rect.Max.y - list->Rect.Min.y, "Widgets: a scroll area knows its content overflows");
+			Check(context->GetRenderStatistics().DrawCalls == 1, "Widgets: the whole widget scene, scroll area included, is one draw call");
+			SetPointer(k_WidgetEmpty, false, false, false, { 0.0f, -1.0f });
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateScroll(0.0f, -1.0f);
+			Check(Input::GetMouseScrollDelta().y != 0.0f, "Widgets: a wheel turn over empty screen reaches the game");
+			SetPointer(CenterOf("List"), false, false, false, { 0.0f, -100.0f });
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("List"));
+			return done();
+		}
+		if (at())
+		{
+			const Internal::UIElement* list = LastElement("List");
+			Check(list && std::abs(list->ScrollOffset.y - (list->ContentSize.y - (list->Rect.Max.y - list->Rect.Min.y))) < 0.01f, "Widgets: scrolling stops at the end of the content");
+			SetPointer(CenterOf("List"), false, false, false, { 0.0f, 100.0f });
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("List"));
+			return done();
+		}
+		if (at())
+		{
+			const Internal::UIElement* list = LastElement("List");
+			Check(list && list->ScrollOffset.y == 0.0f, "Widgets: scrolling stops at the start of the content");
+			SetPointer(k_WidgetEmpty);
+			m_WLate = false;
+			return done();
+		}
+
+		// A widget that did not exist last frame ignores the press that lands on it.
+		const glm::vec2 latePoint = { 760.0f, 470.0f };
+		if (at())
+		{
+			SetPointer(latePoint, true, true);
+			m_WLate = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WLateResult.Pressed && !m_WLateResult.Down && !m_WLateResult.Hovered, "Widgets: a widget that appears this frame ignores a press on it");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Widgets: that press was on empty screen, so it reaches the game");
+			SetPointer(latePoint, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WLateResult.Down && !m_WLateResult.Pressed, "Widgets: holding the button over the new widget does not press it");
+			SetPointer(latePoint, false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WLateResult.Clicked, "Widgets: releasing over the new widget is no click");
+			InputBackend::SimulateMouseButton(left, false);
+			m_WLate = false;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+
+		// Overlapping roots: the topmost wins.
+		if (at())
+		{
+			if (const Internal::UIElement* play = LastElement("Play"))
+				m_WOverOffset = play->Rect.Min;
+			m_WOverlap = true;
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WOverResult.Hovered && !m_WPlayResult.Hovered, "Widgets: where two roots overlap, the higher layer takes the hover");
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WOverResult.Pressed && !m_WPlayResult.Pressed, "Widgets: the press goes to the top root only");
+			InputBackend::SimulateMouseButton(left, true);
+			SetPointer(CenterOf("Play"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WOverResult.Clicked && !m_WPlayResult.Clicked, "Widgets: the click goes to the top root only");
+			InputBackend::SimulateMouseButton(left, false);
+			m_WOverlap = false;
+			m_WGhost = true;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+
+		// A root that doesn't block input: widgets react, the game still gets the press.
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("Ghost"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WGhostResult.Pressed && m_WGhostResult.Hovered, "Widgets: a widget of a non-blocking root still reacts");
+			Check(!DingoUI::IsPointerOverUI(), "Widgets: a non-blocking root is not over the UI");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(Input::IsMouseButtonPressed(left), "Widgets: a press on a non-blocking root reaches the game");
+			SetPointer(CenterOf("Ghost"), false, false, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WGhostResult.Clicked, "Widgets: a click on a non-blocking root's widget is seen");
+			InputBackend::SimulateMouseButton(left, false);
+			Check(Input::IsMouseButtonReleased(left), "Widgets: the release over a non-blocking root reaches the game");
+			m_WGhost = false;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+
+		// A modal root takes everything.
+		if (at())
+		{
+			m_WModal = true;
+			SetPointer(CenterOf("Play"));
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(CenterOf("Play"), true, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!m_WPlayResult.Hovered && !m_WPlayResult.Pressed, "Widgets: roots below a modal root get no hover or press");
+			Check(DingoUI::IsPointerOverUI() && DingoUI::IsCapturingInput(), "Widgets: a modal root makes the whole screen UI");
+			InputBackend::SimulateMouseButton(left, true);
+			Check(!Input::IsMouseButtonPressed(left), "Widgets: a press anywhere is taken from the game while a modal root is up");
+			SetPointer(k_WidgetEmpty, false, false, true, { 0.0f, -1.0f });
+			return done();
+		}
+		if (at())
+		{
+			InputBackend::SimulateMouseButton(left, false);
+			Check(!Input::IsMouseButtonReleased(left), "Widgets: the release of a press a modal root took is hidden");
+			InputBackend::SimulateScroll(0.0f, -1.0f);
+			Check(Input::GetMouseScrollDelta().y == 0.0f, "Widgets: a wheel turn anywhere is taken from the game while a modal root is up");
+			m_WModal = false;
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty);
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsPointerOverUI() && !DingoUI::IsCapturingInput(), "Widgets: the screen is the game's again once the modal root is gone");
+			m_WWidgets = false;
+			return done();
+		}
+
+		// State of widgets that stop being declared is dropped.
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetStates().Size() > 0, "Widgets: state survives a single frame without its widget");
+			return done();
+		}
+		if (at())
+		{
+			Check(context->GetStates().Size() == 0, "Widgets: state of widgets undeclared for a few frames is evicted");
+			m_WWidgets = true;
+			m_WCollide = true;
+			return done();
+		}
+
+		// Two widgets with the same id in one frame.
+		if (at())
+			return done();
+		if (at())
+			return done();
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetIdCollisionCount() == 1, "Widgets: a shared id is reported once, not every frame, and ##suffix or PushId avoid it");
+			m_WCollide = false;
+			return done();
+		}
+
+		m_WidgetsDone = true;
+		m_WWidgets = false;
+		m_WNav = true;
+		SetPointer(k_WidgetEmpty);
+		return true;
+	}
+
+	void DingoUITest::DeclareNavScene()
+	{
+		if (!m_WNav)
+			return;
+		const char* const names[] = { "N1", "N2", "N3", "N4", "N5", "N6" };
+		if (m_WNavHud)
+		{
+			DingoUI::BeginRoot("n_hud", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams().SetPadding(10.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f })));
+			DingoUI::Button("HUD1", UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+		}
+		else
+		{
+		DingoUI::BeginRoot("n_main", UIRootParams().SetNavigable(true).SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
+			.SetWidth(UISize::Fixed(500.0f)).SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f })));
+		for (int row = 0; row < 2; ++row)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f));
+			for (int column = 0; column < 3; ++column)
+			{
+				const int index = row * 3 + column;
+				if (index == 4 && m_WNavHide)
+				{
+					m_WNavResult[4] = {};
+					continue;
+				}
+				m_WNavResult[index] = DingoUI::Button(names[index], UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f)).SetDefaultFocus(index == 0));
+				if (m_WNavResult[index].Clicked)
+					++m_WNavClicks;
+			}
+			if (m_WNavFocus.size() == 2 && m_WNavFocus[1] != 'M' && (m_WNavFocus[1] - '1') / 3 == row)
+				DingoUI::SetFocus(m_WNavFocus);
+			DingoUI::EndBox();
+		}
+		m_WNavResult[6] = DingoUI::Slider("NVol", &m_WNavSlider, 0.0f, 1.0f, UISliderParams().SetWidth(UISize::Grow()));
+		m_WNavResult[7] = DingoUI::Toggle("NTog", &m_WNavToggle);
+		DingoUI::EndRoot();
+		}
+
+		if (m_WNavModal)
+		{
+			DingoUI::BeginRoot("n_modal", UIRootParams().SetOffset({ 600.0f, 200.0f }).SetLayer(1).SetModal(true).SetLayout(UIBoxParams()
+				.SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.2f, 0.1f, 0.1f, 0.95f })));
+			m_WNavResult[8] = DingoUI::Button("NM1", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			m_WNavResult[9] = DingoUI::Button("NM2", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			if (!m_WNavFocus.empty() && m_WNavFocus[1] == 'M')
+				DingoUI::SetFocus(m_WNavFocus);
+			DingoUI::EndRoot();
+		}
+		else
+		{
+			m_WNavResult[8] = {};
+			m_WNavResult[9] = {};
+		}
+		if (m_WNavInfo)
+		{
+			DingoUI::BeginRoot("n_info", UIRootParams().SetNavigable(true).SetOffset({ 20.0f, 300.0f }).SetLayout(UIBoxParams().SetPadding(10.0f)));
+			DingoUI::Text("No buttons here");
+			DingoUI::EndRoot();
+		}
+		if (m_WNavSoftModal)
+		{
+			DingoUI::BeginRoot("n_soft", UIRootParams().SetBlocksInput(false).SetModal(true).SetOffset({ 600.0f, 300.0f }).SetLayer(2).SetLayout(UIBoxParams().SetPadding(10.0f)));
+			DingoUI::Button("NS1", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			DingoUI::EndRoot();
+		}
+		m_WNavFocus.clear();
+	}
+
+	bool DingoUITest::StepNavigation(Framebuffer* output)
+	{
+		using Internal::InputBackend;
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_NavDone || !m_WidgetsDone || !context)
+			return false;
+		DeclareNavScene();
+
+		const char* const names[k_NavCount] = { "N1", "N2", "N3", "N4", "N5", "N6", "NVol", "NTog", "NM1", "NM2" };
+		struct Move { Internal::UINavDirection Direction; const char* Expect; };
+		uint32_t n = 0;
+		const auto at = [&]() { return m_NavStage == n++; };
+		const auto done = [&]() { ++m_NavStage; m_NavCounter = 0; return true; };
+		const auto idle = [&]() { SetPointer(k_WidgetEmpty); };
+		const auto press = [&](Internal::UINavDirection direction) { idle(); m_WidgetInput.Nav.Direction[static_cast<size_t>(direction)] = true; };
+		const auto focused = [&]() -> const char* {
+			for (uint32_t i = 0; i < k_NavCount; ++i)
+			{
+				if (m_WNavResult[i].Focused)
+					return names[i];
+			}
+			return "";
+		};
+		const auto focusedIs = [&](const char* name) { return std::string_view(focused()) == name; };
+		const auto walk = [&](const Move* moves, uint32_t count)
+		{
+			const uint32_t index = m_NavCounter / 2;
+			if (index >= count)
+				return true;
+			if (m_NavCounter % 2 == 0)
+				press(moves[index].Direction);
+			else
+			{
+				Check(focusedIs(moves[index].Expect), std::string("Navigation: move ") + std::to_string(index) + " lands on " + moves[index].Expect + ", got " + focused());
+				idle();
+			}
+			++m_NavCounter;
+			return false;
+		};
+
+		if (at())
+		{
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsFocusVisible() && focused()[0] == '\0', "Navigation: no focus ring until the player navigates");
+			press(Internal::UINavDirection::Right);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsFocusVisible() && focusedIs("N1"), "Navigation: the first navigation input shows the ring on the default focus without moving");
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			static const Move moves[] = {
+				{ Internal::UINavDirection::Right, "N2" }, { Internal::UINavDirection::Right, "N3" }, { Internal::UINavDirection::Right, "N3" },
+				{ Internal::UINavDirection::Down, "N6" }, { Internal::UINavDirection::Left, "N5" }, { Internal::UINavDirection::Left, "N4" },
+				{ Internal::UINavDirection::Up, "N1" }, { Internal::UINavDirection::Down, "N4" }, { Internal::UINavDirection::Down, "NVol" },
+				{ Internal::UINavDirection::Down, "NTog" }, { Internal::UINavDirection::Up, "NVol" } };
+			return walk(moves, 11) ? done() : true;
+		}
+		if (at())
+		{
+			m_NavSliderBefore = m_WNavSlider;
+			press(Internal::UINavDirection::Right);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("NVol") && m_WNavSlider > m_NavSliderBefore, "Navigation: right steps a focused slider up and keeps the focus on it");
+			press(Internal::UINavDirection::Left);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("NVol") && std::abs(m_WNavSlider - m_NavSliderBefore) < 1e-4f, "Navigation: left steps a focused slider back down");
+			press(Internal::UINavDirection::Down);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("NTog") && !m_WNavToggle, "Navigation: moving to the toggle does not change it");
+			idle();
+			m_WidgetInput.Nav.Accept = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WNavToggle && focusedIs("NTog"), "Navigation: accept flips a focused toggle");
+			idle();
+			m_WNavFocus = "N2";
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("N2"), "Navigation: SetFocus puts the focus on the named widget");
+			m_WNavClicks = 0;
+			idle();
+			m_WidgetInput.Nav.Accept = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WNavResult[1].Clicked && m_WNavClicks == 1 && !m_WNavResult[1].Pressed, "Navigation: accept clicks the focused button once");
+			idle();
+			m_WidgetInput.Nav.Back = true;
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed(), "Navigation: back is reported to the game");
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsBackPressed(), "Navigation: back is reported for one frame");
+			m_WNavFocus = "N1";
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N1"), "Navigation: SetFocus back to the first button");
+			return done();
+		}
+		if (at())
+		{
+			if (m_NavCounter == 10)
+				Check(focusedIs("N2"), "Navigation: a held direction moves once at first");
+			if (m_NavCounter == 27)
+			{
+				Check(focusedIs("N3"), "Navigation: a held direction repeats after the delay, not before");
+				idle();
+				return done();
+			}
+			press(Internal::UINavDirection::Right);
+			++m_NavCounter;
+			return true;
+		}
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty + glm::vec2(40.0f, 0.0f));
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsFocusVisible() && focused()[0] == '\0', "Navigation: moving the mouse hides the focus ring");
+			press(Internal::UINavDirection::Right);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsFocusVisible() && focusedIs("N3"), "Navigation: navigating again shows the ring where the focus was");
+			idle();
+			m_WNavModal = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("NM1") || focusedIs("NM2"), "Navigation: a modal root takes the focus when it opens");
+			m_WNavFocus = "NM1";
+			return done();
+		}
+		if (at())
+		{
+			static const Move moves[] = { { Internal::UINavDirection::Up, "NM1" }, { Internal::UINavDirection::Down, "NM2" }, { Internal::UINavDirection::Down, "NM2" },
+				{ Internal::UINavDirection::Left, "NM2" }, { Internal::UINavDirection::Right, "NM2" }, { Internal::UINavDirection::Up, "NM1" } };
+			return walk(moves, 6) ? done() : true;
+		}
+		if (at())
+		{
+			m_WNavModal = false;
+			idle();
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("N3"), std::string("Navigation: closing a modal root restores the focus it interrupted, got ") + focused());
+			m_WNavFocus = "N5";
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focusedIs("N5"), "Navigation: SetFocus on a button of the grid");
+			m_WNavHide = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(focused()[0] != '\0' && !focusedIs("N5"), "Navigation: a focused widget that vanishes hands the focus to a neighbour");
+			m_WNavHide = false;
+			m_WNavFocus = "N6";
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateGamepadConnected(0, true);
+			InputBackend::SimulateGamepadButton(GamepadButton::DPadUp, true, 0);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N3"), "Navigation: a pad D-pad press moves the focus");
+			Check(!Input::IsGamepadButtonDown(GamepadButton::DPadUp, 0), "Navigation: the D-pad press the UI took is hidden from the game");
+			InputBackend::SimulateGamepadButton(GamepadButton::DPadUp, false, 0);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateGamepadAxis(GamepadAxis::LeftX, -1.0f, 0);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N2"), "Navigation: the left stick moves the focus");
+			InputBackend::SimulateGamepadAxis(GamepadAxis::LeftX, 0.0f, 0);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			m_WNavClicks = 0;
+			idle();
+			InputBackend::SimulateGamepadButton(GamepadButton::A, true, 0);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(m_WNavClicks == 1 && m_WNavResult[1].Clicked, "Navigation: pad A clicks the focused button");
+			Check(!Input::IsGamepadButtonDown(GamepadButton::A, 0), "Navigation: the A press the UI took is hidden from the game");
+			InputBackend::SimulateGamepadButton(GamepadButton::A, false, 0);
+			InputBackend::SimulateGamepadConnected(0, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Down, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			Internal::UINavInput without;
+			Internal::ReadNavInput(without, false, UINavParams(), 0);
+			Check(!without.Any(), "Navigation: with the keyboard unavailable the keys are not read");
+			return done();
+		}
+		if (at())
+		{
+			Check(focusedIs("N5"), "Navigation: the Down key moves the focus");
+			Check(!Input::IsKeyDown(Key::Down), "Navigation: the arrow key the UI took is hidden from the game");
+			InputBackend::SimulateKey(Key::Down, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			m_WNavHud = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			InputBackend::SimulateKey(Key::Down, true);
+			InputBackend::SimulateKey(Key::Space, true);
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(Input::IsKeyDown(Key::Down) && Input::IsKeyDown(Key::Space) && Input::IsKeyDown(Key::Escape), "Navigation: a HUD root with a button takes no arrow, Space or Escape from the game");
+			Check(!DingoUI::IsBackPressed(), "Navigation: a HUD root does not report back");
+			InputBackend::SimulateKey(Key::Down, false);
+			InputBackend::SimulateKey(Key::Space, false);
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavModal = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed() && !Input::IsKeyDown(Key::Escape), "Navigation: a modal root takes Escape and reports it as back");
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavModal = false;
+			m_WNavInfo = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed(), "Navigation: a navigable root with nothing focusable still reports back");
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavInfo = false;
+			m_WNavSoftModal = true;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetFocusId() != 0, "Navigation: a modal root that asked not to block input still blocks it and takes the focus");
+			idle();
+			InputBackend::SimulateKey(Key::Escape, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsBackPressed() && !Input::IsKeyDown(Key::Escape), "Navigation: that modal root also takes Escape as back");
+			InputBackend::SimulateKey(Key::Escape, false);
+			idle();
+			m_WNavSoftModal = false;
+			m_WNavHud = false;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			SetPointer(k_WidgetEmpty + glm::vec2(20.0f, 0.0f));
+			return done();
+		}
+		if (at())
+		{
+			Check(!DingoUI::IsFocusVisible(), "Navigation: the ring is hidden before the reveal press");
+			idle();
+			InputBackend::SimulateKey(Key::Down, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::IsFocusVisible() && Input::IsKeyDown(Key::Down), "Navigation: the press that only reveals the ring stays with the game");
+			InputBackend::SimulateKey(Key::Down, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Space, true);
+			return done();
+		}
+		if (at())
+		{
+			idle();
+			InputBackend::SimulateKey(Key::Enter, true);
+			Internal::ReadNavInput(m_WidgetInput.Nav, true, UINavParams(), 0);
+			return done();
+		}
+		if (at())
+		{
+			Check(!Input::IsKeyDown(Key::Enter) && Input::IsKeyDown(Key::Space), "Navigation: only the key that was pressed is taken, a held Space stays with the game");
+			InputBackend::SimulateKey(Key::Space, false);
+			InputBackend::SimulateKey(Key::Enter, false);
+			idle();
+			return done();
+		}
+		if (at())
+		{
+			m_WNav = false;
+			return done();
+		}
+		if (at())
+			return done();
+		if (at())
+		{
+			Check(context->GetFocusId() == 0, "Navigation: without focusable widgets there is no focus");
+			return done();
+		}
+
+		m_NavDone = true;
+		m_WNav = false;
+		InputBackend::ClearConsumed();
+		context->SetTarget(output);
+		context->SetInputOverride(&m_LiveInput);
+		m_LiveInput = {};
+		return true;
+	}
+
+	bool DingoUITest::StepTransitions(Framebuffer* output)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_TransDone || !m_NavDone || !context || !m_LayoutTarget)
+			return false;
+
+		constexpr uint32_t k_TweenFrames = 7;
+		constexpr float k_Progress[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.0f, 0.75f, 0.5f, 0.25f, 0.0f, 0.0f, 0.0f, 0.0f };
+		constexpr bool k_Declared[] = { true, true, true, true, true, true, false, false, false, false, false, false, false };
+		constexpr uint32_t k_RootFrames = static_cast<uint32_t>(sizeof(k_Progress) / sizeof(k_Progress[0]));
+		const glm::vec2 underPoint = { 130.0f, 120.0f };
+
+		const uint32_t stage = m_TransStage++;
+		if (stage == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			SetPointer(k_WidgetEmpty);
+			return true;
+		}
+
+		if (stage <= k_TweenFrames)
+		{
+			const uint32_t t = stage - 1;
+			SetPointer(k_WidgetEmpty);
+			m_WidgetInput.DeltaTime = 0.25f;
+			const float target = t >= 1 ? 1.0f : 0.0f;
+			const float linearExpect[k_TweenFrames] = { 0.0f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.0f };
+			const float quadExpect[k_TweenFrames] = { 0.0f, 0.0f, 0.0625f, 0.25f, 0.5625f, 1.0f, 1.0f };
+			const float linear = DingoUI::Tween("t_lin", target, 1.0f, UIEase::Linear);
+			const float quad = DingoUI::Tween("t_quad", target, 1.0f, UIEase::QuadIn);
+			const glm::vec4 color = DingoUI::TweenColor("t_col", { target, 0.5f * target, 0.0f, 1.0f }, 1.0f, UIEase::Linear);
+			const std::string suffix = " at step " + std::to_string(t);
+			Check(Near(linear, linearExpect[t], 1e-3f), "Tween: linear value" + suffix + ", got " + std::to_string(linear));
+			Check(Near(quad, quadExpect[t], 1e-3f), "Tween: quad-in value" + suffix + ", got " + std::to_string(quad));
+			Check(Near(color.x, linearExpect[t], 1e-3f) && Near(color.y, 0.5f * linearExpect[t], 1e-3f) && Near(color.w, 1.0f, 1e-3f), "Tween: colour channels move together" + suffix);
+			Check(DingoUI::Tween("t_zero", static_cast<float>(t), 0.0f) == static_cast<float>(t), "Tween: a zero duration follows the target at once" + suffix);
+			if (t == 0 || t == 6)
+			{
+				const float gone = DingoUI::Tween("t_gone", t == 0 ? 0.0f : 5.0f, 1.0f, UIEase::Linear);
+				Check(Near(gone, t == 0 ? 0.0f : 5.0f, 1e-3f), "Tween: one not declared for two frames is forgotten and snaps again" + suffix);
+			}
+			if (stage == k_TweenFrames)
+				Check(context->GetTweens().Size() >= 1, "Tween: the live tweens are kept");
+			return true;
+		}
+
+		const uint32_t r = stage - 1 - k_TweenFrames;
+		const bool finished = r >= k_RootFrames;
+
+		if (r > 0)
+		{
+			const uint32_t previous = r - 1;
+			const float p = k_Progress[previous];
+			const bool visible = previous <= 8;
+			const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+			const std::string tag = " (frame " + std::to_string(previous) + ")";
+			Check(statistics.DrawCalls == 1, "Transition: one draw call" + tag);
+			if (previous == 5 || previous == 12)
+				Check(statistics.CacheHits == 1 && statistics.Uploads == 0, "Transition: the first identical frame after the animation is a cache hit" + tag);
+			else if (previous >= 1)
+				Check(statistics.Uploads == 1 && statistics.CacheHits == 0, "Transition: an animating frame rebuilds and uploads once" + tag);
+
+			const std::weak_ptr<int> alive = m_Alive;
+			m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, p, visible, tag](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				const auto px = [&](float x, float y) { return pixels.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y)); };
+				Check(std::abs(px(250.0f, 180.0f).r - p) < 0.03f, "Transition: fade alpha reads " + std::to_string(p) + tag + ", got " + std::to_string(px(250.0f, 180.0f).r));
+				if (visible)
+				{
+					const float slideMin = 400.0f + 100.0f * (1.0f - p);
+					Check(px(slideMin + 5.0f, 150.0f).g > 0.9f && px(slideMin - 5.0f, 150.0f).g < 0.1f, "Transition: slide box starts at x " + std::to_string(slideMin) + tag);
+					const float half = 50.0f * (0.5f + 0.5f * p);
+					Check(px(750.0f + half - 4.0f, 150.0f).b > 0.9f && px(750.0f + half + 4.0f, 150.0f).b < 0.1f, "Transition: scale box is " + std::to_string(half * 2.0f) + " wide" + tag);
+				}
+				else
+				{
+					Check(px(450.0f, 150.0f).g < 0.1f && px(750.0f, 150.0f).b < 0.1f, "Transition: the leaving boxes are gone" + tag);
+				}
+			});
+		}
+
+		if (finished)
+		{
+			m_TransDone = true;
+			return true;
+		}
+
+		glm::vec2 pointer = underPoint;
+		bool down = false, pressed = false, released = false;
+		if (r == 8)
+			down = pressed = true;
+		else if (r == 9)
+			released = true;
+		else if (r >= 10)
+			pointer = k_WidgetEmpty;
+		SetPointer(pointer, down, pressed, released);
+		m_WidgetInput.DeltaTime = 0.05f;
+
+		Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		DingoUI::BeginRoot("t_under", UIRootParams().SetOffset({ 100.0f, 100.0f }));
+		const UIInteraction under = DingoUI::Button("Under", UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(40.0f)));
+		DingoUI::EndRoot();
+		if (k_Declared[r])
+		{
+			const auto box = [](const glm::vec4& color) { return UIBoxParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(100.0f)).SetBackground(color); };
+			DingoUI::BeginRoot("t_fade", UIRootParams().SetOffset({ 100.0f, 100.0f }).SetLayer(1).SetTransition(UITransition::Fade(0.2f).SetEase(UIEase::Linear))
+				.SetLayout(UIBoxParams().SetSize(UISize::Fixed(200.0f), UISize::Fixed(100.0f)).SetBackground({ 1.0f, 0.0f, 0.0f, 1.0f })));
+			DingoUI::EndRoot();
+			DingoUI::BeginRoot("t_slide", UIRootParams().SetOffset({ 400.0f, 100.0f }).SetBlocksInput(false)
+				.SetTransition(UITransition::Slide({ 100.0f, 0.0f }, 0.2f).SetEase(UIEase::Linear)).SetLayout(box({ 0.0f, 1.0f, 0.0f, 1.0f })));
+			DingoUI::EndRoot();
+			DingoUI::BeginRoot("t_scale", UIRootParams().SetOffset({ 700.0f, 100.0f }).SetBlocksInput(false)
+				.SetTransition(UITransition::Scale(0.5f, 0.2f).SetEase(UIEase::Linear)).SetLayout(box({ 0.0f, 0.0f, 1.0f, 1.0f })));
+			DingoUI::EndRoot();
+		}
+
+		if (r == 5)
+			Check(!under.Hovered && DingoUI::IsPointerOverUI(), "Transition: a fully shown root blocks the widget under it");
+		if (r == 7)
+			Check(under.Hovered, "Transition: a leaving root no longer blocks input; the widget under it is hovered");
+		if (r == 9)
+			Check(under.Pressed, "Transition: the widget under a leaving root takes the press");
+		if (r == 10)
+			Check(under.Clicked, "Transition: the click on the widget under a leaving root completes");
+		if (r == 7)
+			Check(context->GetRootTransitions().Size() == 3, "Transition: the three leaving roots are still kept");
+		if (r == 10)
+			Check(context->GetRootTransitions().Size() == 0, "Transition: finished roots are dropped");
+		return true;
+	}
+
+	// An exiting root keeps its last frame's commands; freeing what they draw must drop the root
+	// rather than leave the exit reading a freed font or texture.
+	bool DingoUITest::StepTextureFree()
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_FreeDone || !m_TransDone || !context || !m_LayoutTarget)
+			return false;
+
+		constexpr uint32_t k_DeclaredFrames = 3;
+		const uint32_t stage = m_FreeStage++;
+		if (stage == 0)
+		{
+			const uint8_t cyan[4] = { 0, 255, 255, 255 };
+			m_FreeTexture = Texture::CreateFromData(1, 1, cyan, TextureFormat::RGBA8_UNORM, "DingoUITest_FreeImage");
+			m_FreeFont = Font::Create("fonts/Inter-Bold.ttf");
+			Check(m_FreeTexture && m_FreeFont && m_FreeFont->IsValid(), "Free: the test's own texture and font load");
+			if (!m_FreeTexture || !m_FreeFont)
+			{
+				m_FreeDone = true;
+				return true;
+			}
+		}
+
+		SetPointer(k_WidgetEmpty);
+		m_WidgetInput.DeltaTime = 0.05f;
+		const Internal::UIRootTransitions& transitions = context->GetRootTransitions();
+
+		if (stage == k_DeclaredFrames)
+		{
+			Check(transitions.Size() == 2, "Free: both transitioning roots are kept, got " + std::to_string(transitions.Size()));
+			DestroyAndDelete(m_FreeFont);
+			Check(transitions.Size() == 2, "Free: a root still declared last frame keeps its entry when its font is freed");
+		}
+		else if (stage == k_DeclaredFrames + 1)
+		{
+			Check(transitions.Size() == 1, "Free: the root whose font was freed is dropped instead of exiting, got " + std::to_string(transitions.Size()));
+			Check(context->GetFrameCosts().ExitingRoots == 1 && context->GetRenderStatistics().DrawCalls == 1, "Free: the image root plays its exit");
+			DestroyAndDelete(m_FreeTexture);
+			Check(transitions.Size() == 0, "Free: freeing an exiting root's texture drops it at once");
+		}
+		else if (stage == k_DeclaredFrames + 2)
+		{
+			Check(transitions.Size() == 0 && context->GetFrameCosts().ExitingRoots == 0, "Free: nothing exits after its texture was freed");
+		}
+		else if (stage == k_DeclaredFrames + 3)
+		{
+			const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+			Check(statistics.DrawCalls == 1 && statistics.Uploads == 1, "Free: the next frame rebuilds and draws without the freed texture");
+			m_FreeDone = true;
+			return true;
+		}
+
+		Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+		if (stage < k_DeclaredFrames)
+		{
+			const UITransition fade = UITransition::Fade(0.2f).SetEase(UIEase::Linear);
+			DingoUI::BeginRoot("t_free_image", UIRootParams().SetOffset({ 100.0f, 100.0f }).SetTransition(fade));
+			DingoUI::Image(m_FreeTexture, UIImageParams().SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)));
+			DingoUI::EndRoot();
+			DingoUI::BeginRoot("t_free_text", UIRootParams().SetOffset({ 300.0f, 100.0f }).SetTransition(fade));
+			DingoUI::Text("Freed", UITextParams().SetFont(m_FreeFont).SetSize(20.0f));
+			DingoUI::EndRoot();
+		}
+		else if (stage == k_DeclaredFrames + 2)
+		{
+			DingoUI::BeginRoot("t_free_after", UIRootParams().SetOffset({ 100.0f, 100.0f })
+				.SetLayout(UIBoxParams().SetSize(UISize::Fixed(40.0f), UISize::Fixed(40.0f)).SetBackground({ 1.0f, 1.0f, 1.0f, 1.0f })));
+			DingoUI::EndRoot();
+		}
+		return true;
+	}
+
+	namespace
+	{
+		const glm::vec2 k_WorldViewport = { 960.0f, 540.0f };
+
+		glm::mat4 WorldViewProjection(float cameraX = 0.0f)
+		{
+			const glm::mat4 view = glm::lookAt(glm::vec3(cameraX, 0.0f, 10.0f), glm::vec3(cameraX, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+			return glm::perspective(glm::radians(60.0f), k_WorldViewport.x / k_WorldViewport.y, 0.1f, 1000.0f) * view;
+		}
+
+		glm::vec2 ExpectedPixel(const glm::vec3& point, float cameraX = 0.0f)
+		{
+			const std::optional<glm::vec2> projected = WorldToScreenPoint(point, k_WorldViewport, glm::mat4(1.0f), WorldViewProjection(cameraX));
+			return projected ? glm::vec2(std::round(projected->x), std::round(projected->y)) : glm::vec2(-1.0f);
+		}
+
+		UIWorldRootParams WorldBox(float width, float height, const glm::vec4& color)
+		{
+			return UIWorldRootParams().SetLayout(UIBoxParams().SetSize(UISize::Fixed(width), UISize::Fixed(height)).SetBackground(color));
+		}
+
+		UIWorldCamera WorldCameraFor(float cameraX = 0.0f)
+		{
+			UIWorldCamera camera;
+			camera.ViewProjection = WorldViewProjection(cameraX);
+			return camera;
+		}
+	}
+
+	bool DingoUITest::StepWorld(Framebuffer* output)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_WorldDone || !m_FreeDone || !context || !m_LayoutTarget || !m_WorldScene)
+			return false;
+
+		const auto finish = [&]()
+		{
+			m_WorldDone = true;
+			context->SetTarget(output);
+			context->SetInputOverride(&m_LiveInput);
+			m_LiveInput = {};
+			UIStyle live = UIStyle::Default();
+			live.SetTransition(0.15f);
+			DingoUI::SetTheme(live);
+		};
+
+		const auto centreOf = [this](const char* name, glm::vec2& centre, glm::vec2& size)
+		{
+			const Internal::UIElement* element = LastElement(name);
+			if (!element)
+				return false;
+			centre = (element->Rect.Min + element->Rect.Max) * 0.5f;
+			size = element->Rect.Max - element->Rect.Min;
+			return true;
+		};
+		const auto closeTo = [](const glm::vec2& a, const glm::vec2& b) { return std::abs(a.x - b.x) <= 1.0f && std::abs(a.y - b.y) <= 1.0f; };
+		const auto text = [](const glm::vec2& v) { return "(" + std::to_string(v.x) + ", " + std::to_string(v.y) + ")"; };
+		const glm::vec3 labelPoint = { 2.0f, 1.0f, 0.0f };
+		const glm::vec3 movedPoint = { 3.0f, 1.0f, 0.0f };
+
+		const uint32_t stage = m_WorldStage++;
+		const std::weak_ptr<int> alive = m_Alive;
+
+		if (stage == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			SetPointer(k_WidgetEmpty);
+			return true;
+		}
+
+		SetPointer(k_WidgetEmpty);
+		m_WidgetInput.DeltaTime = 0.0f;
+		if (stage != 2)
+			Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+
+		if (stage == 1)
+		{
+			const UIWorldCamera camera = WorldCameraFor();
+			const bool label = DingoUI::BeginWorldRoot("w_label", camera, labelPoint, WorldBox(40.0f, 20.0f, k_Red));
+			if (label) DingoUI::EndRoot();
+			Check(label, "World: a point in front of the camera and on screen is declared");
+			const bool behind = DingoUI::BeginWorldRoot("w_behind", camera, { 0.0f, 0.0f, 20.0f }, WorldBox(100.0f, 100.0f, k_Red));
+			if (behind) DingoUI::EndRoot();
+			Check(!behind, "World: a point behind the camera is culled (BeginWorldRoot returns false)");
+			const bool off = DingoUI::BeginWorldRoot("w_off", camera, { 50.0f, 0.0f, 0.0f }, WorldBox(100.0f, 100.0f, k_Red));
+			if (off) DingoUI::EndRoot();
+			Check(!off, "World: a point far off screen is culled");
+			const bool scaled = DingoUI::BeginWorldRoot("w_scale", camera, { -2.0f, 0.0f, 0.0f }, WorldBox(40.0f, 20.0f, k_Blue).SetDistanceScale(20.0f).SetPivot({ 0.0f, 0.0f }));
+			if (scaled) DingoUI::EndRoot();
+			Check(scaled, "World: a distance-scaled root is declared");
+			const bool scene = DingoUI::BeginWorldRoot("w_scene", *m_WorldScene, labelPoint, WorldBox(10.0f, 10.0f, k_Yellow));
+			if (scene) DingoUI::EndRoot();
+			Check(scene, "World: the scene overload projects through the primary camera");
+			const bool entity = DingoUI::BeginWorldRoot("w_entity", m_WorldChild, { 0.0f, 0.5f, 0.0f }, WorldBox(10.0f, 10.0f, k_Yellow));
+			if (entity) DingoUI::EndRoot();
+			Check(entity, "World: the entity overload is declared");
+			const bool invalid = DingoUI::BeginWorldRoot("w_invalid", Entity(), glm::vec3(0.0f), WorldBox(10.0f, 10.0f, k_Yellow));
+			if (invalid) DingoUI::EndRoot();
+			Check(!invalid, "World: an invalid entity is culled");
+			const bool nearRoot = DingoUI::BeginWorldRoot("w_near", camera, { 0.0f, 0.0f, 5.0f }, WorldBox(30.0f, 30.0f, k_Green).SetPivot({ 0.5f, 0.5f }));
+			if (nearRoot) DingoUI::EndRoot();
+			const bool farRoot = DingoUI::BeginWorldRoot("w_far", camera, { 0.0f, 0.0f, -5.0f }, WorldBox(60.0f, 60.0f, k_Blue).SetPivot({ 0.5f, 0.5f }));
+			if (farRoot) DingoUI::EndRoot();
+			Check(nearRoot && farRoot, "World: near and far roots on the view axis are declared");
+			const bool fade = DingoUI::BeginWorldRoot("w_fade", camera, { -4.0f, -2.0f, -5.0f }, WorldBox(30.0f, 30.0f, k_Red).SetPivot({ 0.5f, 0.5f }).SetMaxDistance(20.0f, 10.0f));
+			if (fade) DingoUI::EndRoot();
+			Check(fade, "World: a root inside MaxDistance is declared");
+			const bool beyond = DingoUI::BeginWorldRoot("w_beyond", camera, { 0.0f, 3.0f, -12.0f }, WorldBox(30.0f, 30.0f, k_Red).SetMaxDistance(20.0f, 10.0f));
+			if (beyond) DingoUI::EndRoot();
+			Check(!beyond, "World: a root beyond MaxDistance is culled");
+			DingoUI::BeginRoot("w_screen", UIRootParams().SetLayout(UIBoxParams().SetSize(UISize::Fixed(10.0f), UISize::Fixed(10.0f)).SetBackground({ 1.0f, 0.0f, 1.0f, 1.0f })));
+			DingoUI::EndRoot();
+			return true;
+		}
+
+		if (stage == 2)
+		{
+			glm::vec2 centre, size;
+			const glm::vec2 expected = ExpectedPixel(labelPoint);
+			Check(closeTo(expected, glm::vec2(574.0f, 223.0f)), "World: the test's own projection of (2, 1, 0) is about (573.5, 223.2), got " + text(expected));
+			Check(centreOf("w_label", centre, size), "World: the label is laid out");
+			const Internal::UIElement* label = LastElement("w_label");
+			Check(label && closeTo(glm::vec2(centre.x, label->Rect.Max.y), expected), "World: the label's bottom-centre is at the projected pixel " + text(expected) + ", got " + text(centre));
+			Check(!LastElement("w_behind") && !LastElement("w_off") && !LastElement("w_beyond") && !LastElement("w_invalid"), "World: culled roots have no element");
+			size_t roots = 0;
+			for (const Internal::UIElement& element : context->GetLastLayout().GetElements())
+				roots += element.Kind == Internal::UIElementKind::Root ? 1 : 0;
+			Check(roots == 8, "World: eight roots were laid out, got " + std::to_string(roots));
+			Check(centreOf("w_scale", centre, size) && std::abs(size.x - 80.0f) <= 1.0f && std::abs(size.y - 40.0f) <= 1.0f, "World: distance scale 2 doubles the root, got " + text(size));
+			const Internal::UIElement* viaScene = LastElement("w_scene");
+			Check(viaScene && label && std::abs((viaScene->Rect.Min.x + viaScene->Rect.Max.x) * 0.5f - (label->Rect.Min.x + label->Rect.Max.x) * 0.5f) <= 1.0f && std::abs(viaScene->Rect.Max.y - label->Rect.Max.y) <= 1.0f,
+				"World: the scene overload lands where the matrix camera does");
+			const glm::vec2 childExpected = ExpectedPixel({ 2.0f, 1.5f, 0.0f });
+			const Internal::UIElement* entity = LastElement("w_entity");
+			Check(entity && closeTo(glm::vec2((entity->Rect.Min.x + entity->Rect.Max.x) * 0.5f, entity->Rect.Max.y), childExpected), "World: the entity overload follows the parent through the hierarchy (world (2, 1.5, 0) -> " + text(childExpected) + ")");
+
+			std::vector<int32_t> order;
+			context->GetLastLayout().GetRootOrder(order);
+			const auto& elements = context->GetLastLayout().GetElements();
+			const auto position = [&](const char* name) { for (size_t i = 0; i < order.size(); ++i) { if (elements[order[i]].NameHash == Internal::UILayoutTree::HashName(name)) return static_cast<int>(i); } return -1; };
+			Check(!order.empty() && elements[order.back()].NameHash == Internal::UILayoutTree::HashName("w_screen"), "World: the screen root is above every world root");
+			Check(position("w_far") >= 0 && position("w_far") < position("w_near"), "World: a farther world root is below a nearer one");
+
+			const glm::vec2 fadeCentre = ExpectedPixel({ -4.0f, -2.0f, -5.0f });
+			m_LayoutTarget->GetAttachment(0)->ReadPixels([this, alive, expected, fadeCentre](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				const auto px = [&](float x, float y) { return pixels.GetPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y)); };
+				Check(NearColor(px(480.0f, 270.0f), k_Green), "World: the near root draws over the far one");
+				Check(NearColor(px(502.0f, 270.0f), k_Blue), "World: the far root shows around the near one");
+				Check(NearColor(px(expected.x + 14.0f, expected.y - 8.0f), k_Red), "World: the label is painted above its pivot");
+				Check(px(expected.x, expected.y + 6.0f).r < 0.1f, "World: nothing is painted below the label's pivot");
+				Check(std::abs(px(fadeCentre.x, fadeCentre.y).r - 0.5f) < 0.06f, "World: a root at depth 15 of 20 (fade 10) is half transparent, got " + std::to_string(px(fadeCentre.x, fadeCentre.y).r));
+			});
+		}
+
+		if (stage == 2)
+		{
+			Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+			const UIWorldCamera camera = WorldCameraFor();
+			if (DingoUI::BeginWorldRoot("w_label", camera, movedPoint, WorldBox(40.0f, 20.0f, k_Red))) DingoUI::EndRoot();
+			if (DingoUI::BeginWorldRoot("w_cam", WorldCameraFor(1.0f), labelPoint, WorldBox(40.0f, 20.0f, k_Red))) DingoUI::EndRoot();
+			return true;
+		}
+
+		if (stage == 3)
+		{
+			glm::vec2 moved, camera, size;
+			const bool found = centreOf("w_label", moved, size) && centreOf("w_cam", camera, size);
+			Check(found, "World: the moved labels are laid out");
+			if (found)
+			{
+				const Internal::UIElement* label = LastElement("w_label");
+				const Internal::UIElement* shifted = LastElement("w_cam");
+				const glm::vec2 expectedMoved = ExpectedPixel(movedPoint);
+				const glm::vec2 expectedCamera = ExpectedPixel(labelPoint, 1.0f);
+				Check(closeTo(glm::vec2(moved.x, label->Rect.Max.y), expectedMoved) && moved.x > ExpectedPixel(labelPoint).x + 20.0f, "World: moving the point moves the rect to " + text(expectedMoved) + ", got " + text(moved));
+				Check(closeTo(glm::vec2(camera.x, shifted->Rect.Max.y), expectedCamera) && camera.x < ExpectedPixel(labelPoint).x - 20.0f, "World: moving the camera moves the rect to " + text(expectedCamera) + ", got " + text(camera));
+			}
+		}
+
+		const glm::vec2 buttonCentre = ExpectedPixel(movedPoint) - glm::vec2(0.0f, 12.0f);
+		const auto declareButton = [&](bool blocks) -> UIInteraction
+		{
+			UIInteraction result;
+			if (DingoUI::BeginWorldRoot("w_btn", WorldCameraFor(), movedPoint, UIWorldRootParams().SetBlocksInput(blocks)))
+			{
+				result = DingoUI::Button("World button", UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(24.0f)));
+				DingoUI::EndRoot();
+			}
+			return result;
+		};
+
+		if (stage == 3 || stage == 4)
+		{
+			SetPointer(buttonCentre);
+			declareButton(false);
+			return true;
+		}
+		if (stage == 5)
+		{
+			const UIInteraction button = declareButton(false);
+			Check(button.Hovered, "World: a non-blocking world root still gets hover");
+			Check(!DingoUI::IsPointerOverUI(), "World: a non-blocking world root is not 'pointer over UI'");
+			SetPointer(buttonCentre, true, true, false);
+			return true;
+		}
+		if (stage == 6)
+		{
+			declareButton(false);
+			Check(!DingoUI::IsCapturingInput(), "World: a click on a non-blocking world root is not taken from the game");
+			SetPointer(buttonCentre, false, false, true);
+			return true;
+		}
+		if (stage == 7)
+		{
+			declareButton(true);
+			SetPointer(buttonCentre);
+			return true;
+		}
+		if (stage == 8)
+		{
+			const UIInteraction button = declareButton(true);
+			Check(button.Hovered && DingoUI::IsPointerOverUI(), "World: a blocking world root stops the pointer");
+			SetPointer(buttonCentre, true, true, false);
+			return true;
+		}
+		if (stage == 9)
+		{
+			declareButton(true);
+			Check(DingoUI::IsCapturingInput(), "World: a click on a blocking world root is taken from the game");
+			SetPointer(k_WidgetEmpty, false, false, true);
+			return true;
+		}
+		if (stage == 10)
+		{
+			const UIWorldCamera camera = WorldCameraFor();
+			for (int i = 0; i < 50; ++i)
+			{
+				const glm::vec3 point = { -5.0f + static_cast<float>(i % 10), 3.0f - 0.5f * static_cast<float>(i / 10), static_cast<float>(i % 7) };
+				if (DingoUI::BeginWorldRoot("w_bar" + std::to_string(i), camera, point, UIWorldRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Column).SetGap(2.0f))))
+				{
+					DingoUI::Text("E" + std::to_string(i), UITextParams().SetSize(10.0f).SetWrap(false));
+					DingoUI::ProgressBar("hp", 0.5f, UIWidgetParams().SetSize(UISize::Fixed(30.0f), UISize::Fixed(4.0f)));
+					DingoUI::EndRoot();
+				}
+			}
+			return true;
+		}
+		if (stage == 11)
+		{
+			const UIWorldCamera camera = WorldCameraFor();
+			for (int i = 0; i < 50; ++i)
+			{
+				const glm::vec3 point = { -5.0f + static_cast<float>(i % 10), 3.0f - 0.5f * static_cast<float>(i / 10), static_cast<float>(i % 7) };
+				if (DingoUI::BeginWorldRoot("w_bar" + std::to_string(i), camera, point, UIWorldRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Column).SetGap(2.0f))))
+				{
+					DingoUI::Text("E" + std::to_string(i), UITextParams().SetSize(10.0f).SetWrap(false));
+					DingoUI::ProgressBar("hp", 0.5f, UIWidgetParams().SetSize(UISize::Fixed(30.0f), UISize::Fixed(4.0f)));
+					DingoUI::EndRoot();
+				}
+			}
+			size_t roots = 0;
+			for (const Internal::UIElement& element : context->GetLastLayout().GetElements())
+				roots += element.Kind == Internal::UIElementKind::Root ? 1 : 0;
+			Check(roots == 50, "World: 50 world bars are laid out, got " + std::to_string(roots));
+			Check(context->GetRenderStatistics().DrawCalls == 1, "World: 50 world bars with text are one draw call, got " + std::to_string(context->GetRenderStatistics().DrawCalls));
+			return true;
+		}
+		if (stage == 12)
+		{
+			Check(context->GetRenderStatistics().CacheHits == 1 && context->GetRenderStatistics().Uploads == 0, "World: still world bars hit the vertex cache");
+			finish();
+			return true;
+		}
+		finish();
+		return true;
+	}
+
+	void DingoUITest::DeclareLiveWorld()
+	{
+		if (!m_WorldScene || !m_WorldChild.IsValid())
+			return;
+
+		for (int i = 0; i < 6; ++i)
+		{
+			const float angle = m_LiveTime * 0.6f + static_cast<float>(i) * 1.0471976f;
+			const glm::vec3 point = { 5.0f * std::cos(angle), 0.5f + 0.6f * std::sin(m_LiveTime + static_cast<float>(i)), 4.0f * std::sin(angle) };
+			const float health = 0.5f + 0.5f * std::sin(m_LiveTime * 0.7f + static_cast<float>(i) * 1.3f);
+			if (!DingoUI::BeginWorldRoot("live_enemy" + std::to_string(i), *m_WorldScene, point,
+				UIWorldRootParams().SetDistanceScale(10.0f, 0.5f, 1.5f).SetMaxDistance(18.0f, 4.0f).SetOffset({ 0.0f, -4.0f })
+				.SetLayout(UIBoxParams().SetAlign(UIAlign::Center).SetGap(2.0f))))
+				continue;
+			DingoUI::Text("Enemy " + std::to_string(i + 1), UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::ProgressBar("hp", health, UIWidgetParams().SetSize(UISize::Fixed(60.0f), UISize::Fixed(8.0f)));
+			DingoUI::EndRoot();
+		}
+
+		if (DingoUI::BeginWorldRoot("live_child", m_WorldChild, { 0.0f, 0.4f, 0.0f }, UIWorldRootParams().SetLayout(UIBoxParams().SetPadding(4.0f).SetBackground({ 0.1f, 0.4f, 0.2f, 0.9f }).SetCornerRadius(4.0f))))
+		{
+			DingoUI::Text("Child entity", UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::EndRoot();
+		}
+	}
+
+	void DingoUITest::DeclareStressMenu()
+	{
+		DingoUI::BeginRoot("stress_menu", UIRootParams().SetLayout(UIBoxParams().SetSize(UISize::Fixed(k_LayoutW), UISize::Fixed(k_LayoutH)).SetPadding(8.0f).SetGap(2.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 1.0f })));
+		for (int row = 0; row < 125; ++row)
+		{
+			DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(8.0f).SetAlign(UIAlign::Center));
+			DingoUI::Text("Row " + std::to_string(row), UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::Button("go" + std::to_string(row));
+			DingoUI::EndBox();
+		}
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::DeclareStressHeavy(uint32_t frame)
+	{
+		constexpr int k_Columns = 10;
+		constexpr int k_PerColumn = 200;
+		constexpr int k_Churn = 100;
+		constexpr int k_WorldLabels = 200;
+
+		static bool s_Toggles[8] = {};
+		static float s_Sliders[8] = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f };
+		static int s_Ints[8] = {};
+
+		UIStyle outer = UIStyle::Default();
+		outer.SetTextSize(12.0f);
+		UIStyle inner = outer;
+		inner.SetBackground({ 0.2f, 0.25f, 0.4f, 1.0f }).SetCornerRadius(4.0f);
+
+		uint32_t stable = 0;
+		DingoUI::BeginRoot("stress_main", UIRootParams().SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetSize(UISize::Fixed(k_LayoutW), UISize::Fixed(k_LayoutH)).SetGap(4.0f)));
+		for (int column = 0; column < k_Columns; ++column)
+		{
+			DingoUI::PushId(column);
+			DingoUI::PushStyle(outer);
+			if (DingoUI::BeginScrollArea("column", UIScrollParams().SetLayout(UIBoxParams().SetWidth(UISize::Fixed(84.0f)).SetHeight(UISize::Fixed(k_LayoutH - 8.0f)).SetAlign(UIAlign::Stretch).SetGap(1.0f))))
+			{
+				++stable;
+				for (int i = 0; i < k_PerColumn; ++i)
+				{
+					if (i == k_PerColumn / 2)
+						DingoUI::PushStyle(inner);
+					const std::string label = "w" + std::to_string(i);
+					switch (i % 5)
+					{
+					case 0: DingoUI::Button(label); break;
+					case 1: DingoUI::Toggle(label, &s_Toggles[column % 8]); break;
+					case 2: DingoUI::Slider(label, &s_Sliders[column % 8], 0.0f, 1.0f); break;
+					case 3: DingoUI::Selectable(label, i % 10 == 3); break;
+					default: DingoUI::ProgressBar(label, s_Sliders[column % 8]); break;
+					}
+					++stable;
+				}
+				DingoUI::PopStyle();
+				DingoUI::EndScrollArea();
+			}
+			DingoUI::PopStyle();
+			DingoUI::PopId();
+		}
+
+		DingoUI::PushStyle(outer);
+		if (DingoUI::BeginScrollArea("churn", UIScrollParams().SetLayout(UIBoxParams().SetWidth(UISize::Fixed(84.0f)).SetHeight(UISize::Fixed(k_LayoutH - 8.0f)).SetAlign(UIAlign::Stretch))))
+		{
+			++stable;
+			for (int i = 0; i < k_Churn; ++i)
+				DingoUI::Selectable("c" + std::to_string(frame * k_Churn + i), false);
+			DingoUI::EndScrollArea();
+		}
+		DingoUI::PopStyle();
+
+		const float target = ((frame / 30) % 2 == 0) ? 0.0f : 1.0f;
+		for (int i = 0; i < 20; ++i)
+			s_Ints[0] += DingoUI::Tween("tw" + std::to_string(i), target, 0.25f) > 2.0f ? 1 : 0;
+		DingoUI::EndRoot();
+		m_StressStableWidgets = stable;
+
+		const UIWorldCamera camera = WorldCameraFor();
+		uint32_t world = 0;
+		for (int i = 0; i < k_WorldLabels; ++i)
+		{
+			const glm::vec3 point = { -9.0f + static_cast<float>(i % 20) * 0.95f, 4.5f - static_cast<float>(i / 20) * 0.9f, -static_cast<float>(i % 7) * 2.0f };
+			if (DingoUI::BeginWorldRoot("wl" + std::to_string(i), camera, point, UIWorldRootParams().SetLayout(UIBoxParams().SetGap(1.0f))))
+			{
+				DingoUI::Text("L" + std::to_string(i), UITextParams().SetSize(10.0f).SetWrap(false));
+				DingoUI::ProgressBar("hp", 0.5f, UIWidgetParams().SetSize(UISize::Fixed(24.0f), UISize::Fixed(3.0f)));
+				DingoUI::EndRoot();
+				++world;
+			}
+		}
+		m_StressWorldDeclared = world;
+
+		if ((frame / 10) % 2 == 0)
+		{
+			DingoUI::BeginRoot("stress_toast", UIRootParams().SetAnchor(UIAnchor::BottomRight).SetOffset({ -16.0f, -16.0f })
+				.SetTransition(UITransition::Fade(0.15f).WithSlide({ 20.0f, 0.0f })).SetLayout(UIBoxParams().SetPadding(10.0f).SetBackground({ 0.1f, 0.3f, 0.1f, 0.95f })));
+			DingoUI::Text("Toast", UITextParams().SetSize(16.0f).SetWrap(false));
+			DingoUI::EndRoot();
+		}
+	}
+
+	void DingoUITest::SampleStress(Internal::DingoUIContext& context)
+	{
+		namespace DD = Internal::DingoUIDebug;
+		const Internal::UIRenderStatistics& render = context.GetRenderStatistics();
+		const Internal::UIFrameCosts& costs = context.GetFrameCosts();
+		const std::vector<Internal::UIElement>& elements = context.GetLastLayout().GetElements();
+		size_t rootCount = 0;
+		for (const Internal::UIElement& element : elements)
+			rootCount += element.Kind == Internal::UIElementKind::Root ? 1 : 0;
+
+		const bool collected = DD::Collect(m_StressSnapshot, true);
+		const DD::Snapshot& snapshot = m_StressSnapshot;
+		const bool matches = collected && snapshot.Frame.Roots == rootCount && snapshot.Roots.size() == rootCount && snapshot.Frame.Elements == elements.size()
+			&& snapshot.Elements.size() == elements.size() && snapshot.Frame.DrawCalls == render.DrawCalls && snapshot.Frame.Quads == render.Quads
+			&& snapshot.Frame.Vertices == render.Vertices && snapshot.Frame.StateMapSize == context.GetStates().Size() && snapshot.Frame.TweenCount == context.GetTweens().Size()
+			&& snapshot.Frame.TransitionRoots == context.GetRootTransitions().Size() && snapshot.Frame.ExitingRoots == costs.ExitingRoots && snapshot.Frame.Frame == context.GetFrameIndex();
+		if (!matches)
+			++m_StressBadSnapshots;
+
+		const uint32_t frameInPhase = m_StressPhaseFrame;
+		if (m_StressPrev == StressPhase::Menu && frameInPhase == 3)
+		{
+			Check(collected, "Debug: the snapshot is available while a context exists");
+			Check(snapshot.Frame.Roots == rootCount && snapshot.Roots.size() == rootCount, "Debug: the snapshot's root count matches the layout, got " + std::to_string(snapshot.Frame.Roots) + " of " + std::to_string(rootCount));
+			Check(snapshot.Frame.Elements == elements.size() && snapshot.Elements.size() == elements.size(), "Debug: the snapshot's element count matches the layout, got " + std::to_string(snapshot.Frame.Elements) + " of " + std::to_string(elements.size()));
+			Check(snapshot.Frame.DrawCalls == render.DrawCalls && snapshot.Frame.Quads == render.Quads && snapshot.Frame.Vertices == render.Vertices, "Debug: the snapshot's draw calls, quads and vertices match the render statistics");
+			Check(snapshot.Frame.CacheHits == render.CacheHits && snapshot.Frame.Uploads == render.Uploads && snapshot.Frame.UploadBytes == render.UploadBytes, "Debug: the snapshot's cache and upload numbers match the render statistics");
+			Check(!snapshot.Roots.empty() && snapshot.Roots.front().Name == "stress_menu", "Debug: the snapshot names its roots");
+			Check(snapshot.TargetSize == context.GetTargetSize() && snapshot.Frame.StateMapSize == context.GetStates().Size(), "Debug: the snapshot carries the target size and the state map size");
+			Check(snapshot.Frame.LayoutMs == costs.LayoutMs && snapshot.Frame.EmitMs == costs.EmitMs && snapshot.Frame.BuildMs == render.BuildMs, "Debug: the snapshot carries the CPU timings");
+			DD::Snapshot light;
+			DD::Collect(light, false);
+			Check(light.Elements.empty() && light.Frame.Elements == elements.size(), "Debug: a collection without detail skips the element rows");
+		}
+
+		if (m_StressPrev == StressPhase::Cooldown)
+			return;
+
+		const uint32_t warmup = 5;
+		StressTotals& totals = m_StressPrev == StressPhase::Menu ? m_StressMenuTotals : m_StressHeavyTotals;
+		if (frameInPhase >= warmup || m_StressHeavyFrames + m_StressMenuFrames <= 40)
+		{
+			++totals.Samples;
+			totals.DingoUIMs += Application::Get().GetFrameTimings().DingoUIMs;
+			totals.DeclareMs += m_StressDeclareMs;
+			totals.BeginMs += costs.BeginMs;
+			totals.LayoutMs += costs.LayoutMs;
+			totals.EmitMs += costs.EmitMs;
+			totals.BuildMs += render.BuildMs;
+			totals.UploadMs += render.UploadMs;
+			totals.DrawMs += render.DrawMs;
+			totals.Quads += render.Quads;
+			totals.DrawCalls += render.DrawCalls;
+			totals.Elements += static_cast<double>(elements.size());
+			totals.States += static_cast<double>(context.GetStates().Size());
+			totals.Uploads += render.Uploads;
+		}
+
+		if (render.DrawCalls != 1)
+			++m_StressBadDraws;
+
+		if (m_StressPrev == StressPhase::Menu)
+		{
+			m_StressMenuElements = static_cast<uint32_t>(elements.size());
+			if (frameInPhase >= 3 && (render.CacheHits != 1 || render.Uploads != 0))
+				++m_StressMenuBadCache;
+			const uint64_t textMisses = context.GetTextCache().Misses();
+			if (frameInPhase >= 3 && textMisses != m_StressLastTextMisses)
+				++m_StressMenuTextMisses;
+			m_StressLastTextMisses = textMisses;
+		}
+		else
+		{
+			m_StressMaxStates = (std::max)(m_StressMaxStates, static_cast<uint32_t>(context.GetStates().Size()));
+			m_StressMaxExiting = (std::max)(m_StressMaxExiting, costs.ExitingRoots);
+		}
+	}
+
+	void DingoUITest::FinishStress(Internal::DingoUIContext& context, Framebuffer* output)
+	{
+		const auto average = [](double sum, uint32_t samples) { return samples ? sum / samples : 0.0; };
+		const size_t states = context.GetStates().Size();
+
+		Check(m_StressBadSnapshots == 0, "Stress: the debug snapshot matched the context on every frame, " + std::to_string(m_StressBadSnapshots) + " mismatches");
+		Check(m_StressMenuElements >= 400 && m_StressMenuElements <= 700, "Stress: the menu has about 500 elements, got " + std::to_string(m_StressMenuElements));
+		Check(m_StressMenuTextMisses == 0 && context.GetTextCache().Hits() > 0, "Stress: the still menu measures no text anew from its fourth frame on, " + std::to_string(m_StressMenuTextMisses) + " frames did");
+		Check(m_StressMenuBadCache == 0, "Stress: the still menu hits the vertex cache from its fourth frame on, " + std::to_string(m_StressMenuBadCache) + " frames did not");
+		Check(m_StressBadDraws == 0, "Stress: every UI frame was one draw call, " + std::to_string(m_StressBadDraws) + " were not");
+		const uint32_t limit = m_StressStableWidgets + m_StressWorldDeclared + 3 * 100 + 64;
+		Check(m_StressMaxStates >= m_StressStableWidgets / 2 && m_StressMaxStates <= limit, "Stress: the state map stayed bounded while ids churned, peak " + std::to_string(m_StressMaxStates) + " of " + std::to_string(limit));
+		Check(m_StressMaxExiting >= 1 && m_StressMaxExiting <= 2, "Stress: the toggling root was seen exiting, peak " + std::to_string(m_StressMaxExiting));
+		Check(m_StressWorldDeclared >= 100, "Stress: the world labels were declared, got " + std::to_string(m_StressWorldDeclared));
+		Check(states == 0, "Stress: the state map drained once nothing was declared, " + std::to_string(states) + " left");
+		Check(context.GetTweens().Size() == 0, "Stress: the tweens drained, " + std::to_string(context.GetTweens().Size()) + " left");
+		Check(context.GetRootTransitions().Size() == 0 && context.GetRenderStatistics().DrawCalls == 0, "Stress: no root is left exiting, " + std::to_string(context.GetRootTransitions().Size()) + " left");
+
+		if (m_StressMode)
+		{
+			const auto line = [&](const char* name, const StressTotals& t)
+			{
+				const uint32_t n = t.Samples;
+				DE_INFO("[DingoUI stress] {}: {} frames, DingoUIMs {:.3f}, declare {:.3f}, begin {:.3f}, layout {:.3f}, emit {:.3f}, build {:.3f}, upload {:.3f}, draw {:.3f} ms; elements {:.0f}, quads {:.0f}, draws {:.2f}, uploads {:.2f}, states {:.0f}",
+					name, n, average(t.DingoUIMs, n), average(t.DeclareMs, n), average(t.BeginMs, n), average(t.LayoutMs, n), average(t.EmitMs, n), average(t.BuildMs, n), average(t.UploadMs, n),
+					average(t.DrawMs, n), average(t.Elements, n), average(t.Quads, n), average(t.DrawCalls, n), average(t.Uploads, n), average(t.States, n));
+			};
+			line("menu", m_StressMenuTotals);
+			line("heavy", m_StressHeavyTotals);
+			DE_INFO("[DingoUI stress] done: {} checks failed, state map peak {}, closing.", m_Checks.FailedCount(), m_StressMaxStates);
+			Application::Get().Close();
+		}
+
+		m_StressDone = true;
+		context.SetTarget(output);
+		context.SetInputOverride(&m_LiveInput);
+		m_LiveInput = {};
+	}
+
+	bool DingoUITest::StepStress(Framebuffer* output)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_StressDone || !context || !m_LayoutTarget)
+			return false;
+		if (!m_StressMode && !m_WorldDone)
+			return false;
+
+		const uint32_t step = m_StressStep++;
+		if (step == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			SetPointer({ -10.0f, -10.0f });
+			Renderer::Clear(m_LayoutTarget, { 0.0f, 0.0f, 0.0f, 1.0f });
+			return true;
+		}
+
+		const uint32_t cooldownFrames = 20;
+		const uint32_t frame = step - 1;
+		const StressPhase phase = frame < m_StressMenuFrames ? StressPhase::Menu
+			: frame < m_StressMenuFrames + m_StressHeavyFrames ? StressPhase::Heavy
+			: frame < m_StressMenuFrames + m_StressHeavyFrames + cooldownFrames ? StressPhase::Cooldown : StressPhase::None;
+
+		if (m_StressPrev != StressPhase::None)
+			SampleStress(*context);
+		if (phase == StressPhase::None)
+		{
+			FinishStress(*context, output);
+			return !m_StressDone;
+		}
+
+		m_StressPhaseFrame = phase == m_StressPrev ? m_StressPhaseFrame + 1 : 0;
+		m_StressPrev = phase;
+		SetPointer({ -10.0f, -10.0f });
+
+		const Internal::UICpuTimer timer;
+		if (phase == StressPhase::Menu)
+			DeclareStressMenu();
+		else if (phase == StressPhase::Heavy)
+			DeclareStressHeavy(m_StressPhaseFrame);
+		m_StressDeclareMs = timer.ElapsedMs();
+		return true;
+	}
+
+	void DingoUITest::UpdateLiveInput(Framebuffer* output)
+	{
+		using Internal::InputBackend;
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (!context)
+			return;
+
+		const glm::vec2 targetSize = output ? glm::vec2(static_cast<float>(output->GetWidth()), static_cast<float>(output->GetHeight())) : context->GetTargetSize();
+		m_LiveInput = {};
+		m_LiveInput.ViewportSize = targetSize;
+		m_LiveInput.PointerPosition = Input::GetMousePosition() - TestViewportPanel::GetImageOrigin();
+		m_LiveInput.Scroll = Input::GetMouseScrollDelta();
+		for (uint32_t button = 0; button < Internal::UIInputState::k_PointerButtonCount; ++button)
+		{
+			const MouseButton mouseButton = static_cast<MouseButton>(button);
+			m_LiveInput.PointerDown[button] = InputBackend::IsMouseButtonDownUnconsumed(mouseButton);
+			m_LiveInput.PointerPressed[button] = Input::IsMouseButtonPressed(mouseButton);
+			m_LiveInput.PointerReleased[button] = InputBackend::IsMouseButtonReleasedUnconsumed(mouseButton);
+		}
+		m_LiveInput.PointerAvailable = TestViewportPanel::IsImageHovered();
+		m_LiveInput.KeyboardAvailable = true;
+		Internal::ReadNavInput(m_LiveInput.Nav, true, UINavParams(), Internal::FindNavGamepad());
+		m_LiveInput.DeltaTime = 1.0f / 60.0f;
+		m_LiveTime += m_LiveInput.DeltaTime;
+		context->SetDebugOrigin(output ? TestViewportPanel::GetImageOrigin() : glm::vec2(0.0f));
+	}
+
+	void DingoUITest::DeclareLivePage()
+	{
+		DeclareDemo();
+		DeclareLiveWorld();
+
+		DingoUI::BeginRoot("live", UIRootParams().SetAnchor(UIAnchor::TopRight).SetOffset({ -16.0f, 16.0f }).SetLayout(UIBoxParams()
+			.SetWidth(UISize::Fixed(340.0f)).SetGap(10.0f).SetPadding(14.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.92f }).SetBorder(2.0f, { 0.5f, 0.65f, 1.0f, 1.0f }).SetCornerRadius(8.0f)));
+		UIStyle hover = UIStyle::Default();
+		hover.SetTransition(0.15f);
+		DingoUI::PushStyle(hover);
+		DingoUI::Text("Widgets: click, drag and scroll", UITextParams().SetSize(20.0f));
+		DingoUI::Text("Tab / arrows / D-pad move, Enter / A press, Esc / B back", UITextParams().SetSize(14.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }));
+		if (DingoUI::IsBackPressed())
+			++m_LiveBacks;
+		DingoUI::Text("back pressed " + std::to_string(m_LiveBacks) + " times", UITextParams().SetSize(14.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }).SetWrap(false));
+
+		DingoUI::BeginBox(UIBoxParams().SetDirection(UIDirection::Row).SetGap(10.0f).SetAlign(UIAlign::Center));
+		if (DingoUI::Button("Click me").Clicked)
+			++m_LiveClicks;
+		DingoUI::Text("clicked " + std::to_string(m_LiveClicks) + " times", UITextParams().SetSize(18.0f).SetWrap(false));
+		DingoUI::EndBox();
+
+		DingoUI::Toggle("Sound", &m_LiveToggle);
+		DingoUI::Slider("Volume", &m_LiveSlider, 0.0f, 1.0f);
+		DingoUI::SliderInt("Lives", &m_LiveInt, 1, 9, UISliderParams().SetWidth(UISize::Fixed(120.0f)));
+		DingoUI::ProgressBar("progress", m_LiveSlider);
+
+		const char* items[] = { "Easy", "Normal", "Hard" };
+		for (int i = 0; i < 3; ++i)
+		{
+			if (DingoUI::Selectable(items[i], m_LiveSelected == i, UIWidgetParams().SetWidth(UISize::Grow())).Clicked)
+				m_LiveSelected = i;
+		}
+
+		if (DingoUI::BeginScrollArea("Log", UIScrollParams().SetDragScroll(true).SetLayout(UIBoxParams()
+			.SetHeight(UISize::Fixed(110.0f)).SetAlign(UIAlign::Stretch).SetBackground({ 0.04f, 0.05f, 0.09f, 1.0f }).SetCornerRadius(6.0f))))
+		{
+			for (int i = 0; i < 20; ++i)
+				DingoUI::Selectable("Entry " + std::to_string(i), false);
+			DingoUI::EndScrollArea();
+		}
+		DingoUI::Text(DingoUI::IsPointerOverUI() ? "Pointer: over the UI" : "Pointer: over the scene", UITextParams().SetSize(16.0f).SetColor({ 0.7f, 0.8f, 0.9f, 1.0f }).SetWrap(false));
+		DingoUI::PopStyle();
+		DingoUI::EndRoot();
+
+		DingoUI::BeginRoot("live_toggle", UIRootParams().SetAnchor(UIAnchor::TopLeft).SetOffset({ 16.0f, 16.0f }).SetLayout(UIBoxParams().SetGap(8.0f)));
+		DingoUI::PushStyle(hover);
+		if (DingoUI::Button(m_LivePanelOpen ? "Hide panel" : "Show panel").Clicked)
+			m_LivePanelOpen = !m_LivePanelOpen;
+		DingoUI::PopStyle();
+		DingoUI::EndRoot();
+
+		if (m_LivePanelOpen)
+		{
+			DingoUI::BeginRoot("live_fade", UIRootParams().SetAnchor(UIAnchor::TopLeft).SetOffset({ 16.0f, 64.0f })
+				.SetTransition(UITransition::Fade(0.3f).WithSlide({ -40.0f, 0.0f })).SetLayout(UIBoxParams()
+				.SetGap(8.0f).SetPadding(14.0f).SetBackground({ 0.12f, 0.2f, 0.12f, 0.95f }).SetBorder(2.0f, { 0.5f, 1.0f, 0.6f, 1.0f }).SetCornerRadius(8.0f)));
+			DingoUI::Text("Fade + slide panel", UITextParams().SetSize(20.0f).SetWrap(false));
+			DingoUI::Text("Toggle it with the button above", UITextParams().SetSize(14.0f).SetWrap(false));
+			DingoUI::EndRoot();
+		}
+
+		UIStyle warm = UIStyle::Default();
+		warm.SetBackground({ 0.55f, 0.28f, 0.12f, 1.0f }).SetHoverColor({ 0.75f, 0.4f, 0.18f, 1.0f }).SetPressedColor({ 0.4f, 0.2f, 0.08f, 1.0f })
+			.SetAccent({ 0.95f, 0.65f, 0.15f, 1.0f }, { 1.0f, 0.78f, 0.35f, 1.0f }).SetPanelColor({ 0.2f, 0.1f, 0.05f, 0.95f })
+			.SetBorder(2.0f, { 0.95f, 0.65f, 0.15f, 1.0f }).SetCornerRadius(12.0f).SetTextSize(20.0f);
+		UIStyle sliced = UIStyle::Default();
+		sliced.SetSurface(MakeSlice(true, 3.0f)).SetPanel(MakeSlice(true, 5.0f)).SetPanelPadding(24.0f).SetTextSize(20.0f);
+
+		DingoUI::BeginRoot("live_themes", UIRootParams().SetAnchor(UIAnchor::BottomLeft).SetOffset({ 16.0f, -16.0f }).SetLayout(UIBoxParams().SetDirection(UIDirection::Row).SetGap(16.0f).SetAlign(UIAlign::End)));
+		DingoUI::PushStyle(warm);
+		DingoUI::BeginPanel(UIBoxParams().SetId("live_warm").SetGap(8.0f));
+		DingoUI::Text("Themed panel", UITextParams().SetSize(22.0f).SetColor({ 1.0f, 0.85f, 0.5f, 1.0f }));
+		DingoUI::Button("Warm button");
+		DingoUI::Toggle("Warm toggle", &m_LiveToggle);
+		DingoUI::EndPanel();
+		DingoUI::PopStyle();
+		DingoUI::PushStyle(sliced);
+		DingoUI::BeginPanel(UIBoxParams().SetId("live_sliced").SetGap(8.0f));
+		DingoUI::Text("9-slice panel", UITextParams().SetSize(22.0f));
+		DingoUI::Button("Sliced button");
+		DingoUI::Selectable("Sliced row", m_LiveSelected == 1);
+		DingoUI::EndPanel();
+		DingoUI::PopStyle();
+		DingoUI::EndRoot();
+	}
+
+	void DingoUITest::Update(float deltaTime)
+	{
+		StepConsumeMask();
+		Framebuffer* output = Renderer::GetRenderTarget();
+		const bool busy = m_StressMode ? StepStress(output)
+			: (StepBatcher() || StepLayout(output) || StepWidgets(output) || StepNavigation(output) || StepTransitions(output) || StepTextureFree() || StepWorld(output) || StepStress(output));
+		if (!busy)
+		{
+			UpdateLiveInput(output);
+			DeclareLivePage();
+		}
+
+		m_Renderer->BeginScene(m_ProjectionViewMatrix);
+		m_Renderer->Clear(m_ClearColor);
+		if (m_Font)
+		{
+			const glm::vec2 origin = { -k_WrapWidth * 0.5f, 1.5f };
+			const TextMetrics metrics = m_Font->MeasureText(k_WrapText, k_WrapTextSize, k_WrapWidth);
+			m_Renderer->DrawQuad(glm::vec2(0.0f, origin.y + m_Font->GetAscender(k_WrapTextSize) - metrics.Height * 0.5f), glm::vec2(k_WrapWidth, metrics.Height), glm::vec4(0.2f, 0.25f, 0.35f, 1.0f));
+
+			Renderer2DTextParameters params;
+			params.MaxWidth = k_WrapWidth;
+			m_Renderer->DrawText(k_WrapText, m_Font, origin, k_WrapTextSize, params);
+			m_Renderer->DrawText(k_WrapText, m_Font, glm::vec2(-4.5f, -1.5f), k_WrapTextSize * 0.75f);
+		}
+		m_Renderer->EndScene();
+	}
+
+	void DingoUITest::ImGuiRender()
+	{
+		Renderer2DTest::ImGuiRender();
+
+		ImGui::Separator();
+		ImGui::Text("Pointer over UI: %s, capturing input: %s", DingoUI::IsPointerOverUI() ? "yes" : "no", DingoUI::IsCapturingInput() ? "yes" : "no");
+		if (const Internal::DingoUIContext* context = Internal::GetDingoUIContext())
+		{
+			const Internal::UIRenderStatistics& statistics = context->GetRenderStatistics();
+			ImGui::Text("UI draws %u, quads %u, culled %u, vertices %u", statistics.DrawCalls, statistics.Quads, statistics.CulledQuads, statistics.Vertices);
+			ImGui::Text("UI cache hit %u, upload %u (%llu bytes)", statistics.CacheHits, statistics.Uploads, static_cast<unsigned long long>(statistics.UploadBytes));
+		}
+		for (const CheckResult& check : m_Checks)
+		{
+			const ImVec4 color = check.Passed ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+			ImGui::TextColored(color, "%s %s", check.Passed ? "[PASS]" : "[FAIL]", check.Name.c_str());
+		}
+	}
+
+}

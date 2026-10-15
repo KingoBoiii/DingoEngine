@@ -250,7 +250,10 @@ params.Renderer3D.Capabilities.AssertOnOverflow = true;     // assert instead of
   draws. With the default of 1024, 1024 foxes in view draw and a 1025th is dropped.
 - A custom shader with the older, **deprecated** `SkinData` block (below) takes a whole palette
   upload per draw instead, and at most 256 instances a frame draw with such
-  shaders; the rest are dropped whole, from their shadows too, with a warning.
+  shaders; the rest are dropped whole, from their shadows too, with a warning. On Vulkan their
+  uniform buffer, made on the first such draw, takes about 16.5 MiB of host-visible memory at the
+  default budget: eight palette versions of about 8 KiB for each of the 256 (two writes a frame,
+  four frames in flight).
 
 ### Draw order and translucency
 

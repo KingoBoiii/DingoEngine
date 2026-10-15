@@ -1,0 +1,42 @@
+#pragma once
+#include "DingoEngine/Core/Input.h"
+
+namespace Dingo::Internal
+{
+
+	// The engine's side of Input: the consume mask that DingoUI and a capturing ImGui use to hide
+	// presses from the game. A consumed button or key reads as up to every Input query until it
+	// is released, the release frame included; consumed scroll reads zero for the frame.
+	struct InputBackend
+	{
+		static void ConsumeKey(KeyCode keycode) { Input::ConsumeKey(keycode); }
+		static void ConsumeMouseButton(MouseButton button) { Input::ConsumeMouseButton(button); }
+		static void ConsumeScroll() { Input::ConsumeScroll(); }
+		static void ConsumeGamepadButton(GamepadButton button, uint32_t gamepad) { Input::ConsumeGamepadButton(button, gamepad); }
+		static void ConsumeNewPresses(bool mouse, bool keyboard) { Input::ConsumeNewPresses(mouse, keyboard); }
+		// Input statics outlive an Application across RequestRestart, so the mask is cleared with
+		// the DingoUI context.
+		static void ClearConsumed() { Input::ClearConsumed(); }
+
+		// The mouse button as the window reported it, consumed or not.
+		static bool IsMouseButtonDownUnconsumed(MouseButton button) { return Input::IsMouseButtonDownUnconsumed(button); }
+		static bool IsMouseButtonReleasedUnconsumed(MouseButton button) { return Input::IsMouseButtonReleasedUnconsumed(button); }
+		static bool IsMouseButtonPressedUnconsumed(MouseButton button) { return Input::IsMouseButtonPressedUnconsumed(button); }
+
+		// Engine hotkeys (the debug window's F-keys) answer even while a capture hides the key.
+		static bool IsKeyPressedUnconsumed(KeyCode keycode) { return Input::IsKeyPressedUnconsumed(keycode); }
+		// The navigation keys and buttons a game UI took stay held for the UI, which repeats them.
+		static bool IsKeyDownUnconsumed(KeyCode keycode) { return Input::IsKeyDownUnconsumed(keycode); }
+		static bool IsGamepadButtonDownUnconsumed(GamepadButton button, uint32_t gamepad) { return Input::IsGamepadButtonDownUnconsumed(button, gamepad); }
+		static bool IsGamepadButtonPressedUnconsumed(GamepadButton button, uint32_t gamepad) { return Input::IsGamepadButtonPressedUnconsumed(button, gamepad); }
+
+		// The test app's simulated devices: sets the live state the window callbacks would.
+		static void SimulateMouseButton(MouseButton button, bool pressed) { Input::UpdateMouseButtonState(button, pressed); }
+		static void SimulateScroll(float x, float y) { Input::AccumulateMouseScroll(x, y); }
+		static void SimulateKey(KeyCode keycode, bool pressed) { Input::UpdateKeyState(keycode, pressed); }
+		static void SimulateGamepadConnected(uint32_t gamepad, bool connected) { Input::SimulateGamepadConnected(gamepad, connected); }
+		static void SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad) { Input::SimulateGamepadButton(button, pressed, gamepad); }
+		static void SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad) { Input::SimulateGamepadAxis(axis, value, gamepad); }
+	};
+
+}

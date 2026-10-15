@@ -1,6 +1,8 @@
 #pragma once
 #include <glm/glm.hpp>
 
+#include <optional>
+
 namespace Dingo
 {
 
@@ -68,6 +70,22 @@ namespace Dingo
 		const glm::vec3 farWorld = glm::vec3(farClip) / farClip.w;
 
 		return Ray(nearWorld, glm::normalize(farWorld - nearWorld));
+	}
+
+	/// Projects a world-space point to a screen/client pixel position (origin top-left, +Y down,
+	/// matching Input::GetMousePosition()), the inverse of ScreenPointToRay for the same view,
+	/// projection and viewportSize. Returns nullopt for a point on or behind the camera's plane
+	/// (clip w <= 0), where a perspective projection has no screen position. A point in front
+	/// but outside the view projects outside 0..viewportSize; the depth is not checked.
+	inline std::optional<glm::vec2> WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize, const glm::mat4& view, const glm::mat4& projection)
+	{
+		const glm::vec4 clip = projection * view * glm::vec4(worldPos, 1.0f);
+		if (clip.w <= 0.0f)
+			return std::nullopt;
+
+		const float ndcX = clip.x / clip.w;
+		const float ndcY = clip.y / clip.w;
+		return glm::vec2((ndcX + 1.0f) * 0.5f * viewportSize.x, (1.0f - ndcY) * 0.5f * viewportSize.y);
 	}
 
 }

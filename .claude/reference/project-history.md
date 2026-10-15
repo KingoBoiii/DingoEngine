@@ -9,7 +9,8 @@ include/DingoEngine/       Public API headers (Core, Graphics, Events, Windowing
                            Physics/2D, Physics/3D, Scene, UI, Audio, Asset)
 src/DingoEngine/           Implementations, incl. backend-only code:
   Graphics/NVRHI/          NVRHI wrappers (Vulkan/, DirectX11/, DirectX12/)
-  Graphics/Shaders/        engine GLSL (Renderer3D_Lit.glsl), embedded into the lib
+  Graphics/Shaders/        engine GLSL (Renderer3D_Lit.glsl, DingoUI.glsl), embedded into the lib
+  UI/DingoUI/              DingoUI internals (context, layout, nav, tweens, batcher, world roots, debug)
   Physics/2D/Box2D/        the only box2d.h includer
   Physics/3D/JoltPhysics/  the only Jolt includer
   Scene/SceneData.h        the scene PIMPL; EnTT stays inside src/Scene/
