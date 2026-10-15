@@ -178,6 +178,37 @@ namespace Dingo
 	inline constexpr float WEATHER_SNOW_SUN_SCALE  = 0.75f;
 	inline constexpr float WEATHER_SNOW_FOG_SCALE  = 0.65f;
 
+	// Coop and barn animals are one switch: off, no animal moves in, none is saved or hashed and nothing is spawned.
+	inline constexpr bool ANIMALS_ENABLED          = true;
+
+	inline constexpr float VILLAGER_WALK_TILES_PER_MINUTE = 1.5f;
+	inline constexpr float VILLAGER_RADIUS         = 0.25f;
+	inline constexpr float VILLAGER_TALK_RADIUS    = 1.8f;
+	inline constexpr float VILLAGER_TALK_ARC_DEG   = 70.0f;
+	inline constexpr float VILLAGER_PICK_REACH     = 4.0f;
+	inline constexpr float VILLAGER_PICK_RAY_LENGTH = 200.0f;
+
+	inline constexpr int FRIENDSHIP_POINTS_PER_HEART = 100;
+	inline constexpr int FRIENDSHIP_HEARTS_MAX     = 10;
+	inline constexpr int FRIENDSHIP_TALK_POINTS    = 20;
+	inline constexpr int FRIENDSHIP_GIFT_LIKED     = 80;
+	inline constexpr int FRIENDSHIP_GIFT_FINE      = 20;
+	inline constexpr int FRIENDSHIP_GIFTS_PER_DAY  = 1;
+
+	inline constexpr int COOP_CAPACITY             = 4;
+	inline constexpr int BARN_CAPACITY             = 3;
+	inline constexpr int ANIMAL_HAPPINESS_MAX      = 100;
+	inline constexpr int ANIMAL_HAPPINESS_START    = 50;
+	inline constexpr int ANIMAL_HAPPINESS_FED      = 8;
+	inline constexpr int ANIMAL_HAPPINESS_HUNGRY   = 12;
+	inline constexpr int ANIMAL_HAPPINESS_PRODUCE  = 20;
+	inline constexpr int ANIMAL_WANDER_TILES       = 3;
+	inline constexpr float ANIMAL_RADIUS           = 0.2f;
+	inline constexpr float CHICKEN_SPEED           = 0.9f;
+	inline constexpr float COW_SPEED               = 0.5f;
+	inline constexpr int ANIMAL_IDLE_STEPS_MIN     = 60;
+	inline constexpr int ANIMAL_IDLE_STEPS_MAX     = 240;
+
 	inline constexpr int UI_HUD_LAYER              = 0;
 	inline constexpr int UI_SCREEN_LAYER           = 10;
 	inline constexpr float UI_TOAST_SECONDS        = 2.5f;

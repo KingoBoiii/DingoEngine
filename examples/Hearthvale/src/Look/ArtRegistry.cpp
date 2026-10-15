@@ -1,4 +1,5 @@
 #include "Look/ArtRegistry.h"
+#include "Farm/Animals.h"
 #include "GameTuning.h"
 
 #include <glm/gtc/constants.hpp>
@@ -67,6 +68,19 @@ namespace Dingo::Art
 			ArtEntry{ "landmark_cottage",      P::Box, vec4(0.85f, 0.7f, 0.6f, 1.0f),  vec3(3.6f, 2.8f, 3.6f) },
 			ArtEntry{ "landmark_notice_board", P::Box, vec4(0.55f, 0.4f, 0.25f, 1.0f), vec3(1.8f, 1.6f, 0.2f) },
 
+			ArtEntry{ "villager_mira",     P::Box,    vec4(0.82f, 0.35f, 0.3f, 1.0f),  vec3(0.5f, 0.9f, 0.36f) },
+			ArtEntry{ "villager_bram",     P::Box,    vec4(0.3f, 0.45f, 0.7f, 1.0f),   vec3(0.56f, 0.98f, 0.42f) },
+			ArtEntry{ "villager_odette",   P::Box,    vec4(0.55f, 0.32f, 0.6f, 1.0f),  vec3(0.54f, 1.0f, 0.42f) },
+			ArtEntry{ "villager_pip",      P::Box,    vec4(0.95f, 0.8f, 0.25f, 1.0f),  vec3(0.4f, 0.62f, 0.3f) },
+			ArtEntry{ "villager_head",     P::Sphere, vec4(0.95f, 0.78f, 0.62f, 1.0f), vec3(0.34f) },
+
+			ArtEntry{ "animal_chicken",      P::Sphere, vec4(0.97f, 0.95f, 0.9f, 1.0f),  vec3(0.3f, 0.28f, 0.4f) },
+			ArtEntry{ "animal_chicken_head", P::Sphere, vec4(0.9f, 0.25f, 0.2f, 1.0f),   vec3(0.14f) },
+			ArtEntry{ "animal_cow",          P::Box,    vec4(0.92f, 0.9f, 0.85f, 1.0f),  vec3(0.6f, 0.55f, 1.0f) },
+			ArtEntry{ "animal_cow_head",     P::Box,    vec4(0.35f, 0.28f, 0.24f, 1.0f), vec3(0.32f, 0.3f, 0.34f) },
+			ArtEntry{ "produce_egg",         P::Sphere, vec4(0.98f, 0.93f, 0.8f, 1.0f),  vec3(0.14f, 0.18f, 0.14f) },
+			ArtEntry{ "produce_milk",        P::Box,    vec4(0.9f, 0.95f, 1.0f, 1.0f),   vec3(0.16f, 0.2f, 0.16f) },
+
 			ArtEntry{ "crop_seed",         P::Sphere, vec4(0.4f, 0.3f, 0.18f, 1.0f),   vec3(0.15f) },
 			ArtEntry{ "crop_sprout",       P::Sphere, vec4(0.45f, 0.72f, 0.3f, 1.0f),  vec3(0.25f) },
 			ArtEntry{ "crop_young",        P::Sphere, vec4(0.3f, 0.6f, 0.25f, 1.0f),   vec3(0.45f) },
@@ -111,6 +125,10 @@ namespace Dingo::Art
 			"crop_pumpkin", "crop_cabbage", "crop_beetroot", "crop_kale", "crop_leek", "crop_turnip",
 		};
 
+		constexpr std::array<std::string_view, VILLAGER_COUNT> k_Villagers = {
+			"villager_mira", "villager_bram", "villager_odette", "villager_pip",
+		};
+
 		template<typename Table>
 		std::string_view Lookup(const Table& table, size_t index)
 		{
@@ -140,6 +158,12 @@ namespace Dingo::Art
 			return Lookup(k_CropStages, static_cast<size_t>((std::max)(stage, 0)));
 		return Lookup(k_CropsRipe, static_cast<size_t>(crop));
 	}
+
+	std::string_view ForVillager(VillagerId villager) { return Lookup(k_Villagers, static_cast<size_t>(villager)); }
+	std::string_view ForVillagerHead() { return "villager_head"; }
+	std::string_view ForAnimal(AnimalKind kind) { return kind == AnimalKind::Cow ? "animal_cow" : "animal_chicken"; }
+	std::string_view ForAnimalHead(AnimalKind kind) { return kind == AnimalKind::Cow ? "animal_cow_head" : "animal_chicken_head"; }
+	std::string_view ForProduce(AnimalKind kind) { return kind == AnimalKind::Cow ? "produce_milk" : "produce_egg"; }
 
 	Mesh* GetMesh(const ArtEntry& entry)
 	{

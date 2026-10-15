@@ -33,6 +33,7 @@ namespace Dingo
 		using SleepFn = std::function<void()>;
 		// Called when the interact pulse lands on a landmark other than the farmhouse; true when it opened something.
 		using InteractFn = std::function<bool(Landmark)>;
+		using TileInteractFn = std::function<bool(int, int)>;
 
 		BuildController(TileGrid& grid, Inventory& inventory, DirtyFn onDirty);
 
@@ -63,6 +64,8 @@ namespace Dingo
 		void SetCalendar(const Calendar* calendar) { m_Calendar = calendar; }
 		void SetSleepHandler(SleepFn onSleep) { m_OnSleep = std::move(onSleep); }
 		void SetInteractHandler(InteractFn onInteract) { m_OnInteract = std::move(onInteract); }
+		// Asked after the landmarks with the aimed tile; true when something there (a pen, the well, the pond) took the press.
+		void SetTileInteractHandler(TileInteractFn onInteract) { m_OnTileInteract = std::move(onInteract); }
 		// In build mode, holding Use after a placing press places on each new tile the aim reaches.
 		void SetHoldToPlace(bool enabled);
 		bool GetHoldToPlace() const { return m_HoldToPlace; }
@@ -100,6 +103,7 @@ namespace Dingo
 		DirtyFn m_OnDirty;
 		SleepFn m_OnSleep;
 		InteractFn m_OnInteract;
+		TileInteractFn m_OnTileInteract;
 		bool m_HoldToPlace = false;
 		bool m_HoldArmed = false;
 		int m_HoldX = -1;

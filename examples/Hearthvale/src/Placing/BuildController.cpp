@@ -349,6 +349,9 @@ namespace Dingo
 				return true;
 		}
 
+		if (m_OnTileInteract && m_OnTileInteract(x, y))
+			return true;
+
 		const LandmarkSpec& home = GetLandmarkSpec(Landmark::FarmHouse);
 		if (home.Footprint.Contains(x, y) || (x == home.DoorX && y == home.DoorY))
 		{

@@ -211,6 +211,12 @@ namespace Dingo
 				else
 					++m_DialoguePage;
 			}
+			else if (action == PageAction::DialogueGift && m_VillagerGift && m_Dialogue.GiftTo >= 0)
+			{
+				m_Dialogue = m_VillagerGift(static_cast<VillagerId>(m_Dialogue.GiftTo));
+				m_DialoguePage = 0;
+				SyncHeld();
+			}
 			break;
 		case ScreenId::None:
 		case ScreenId::Inventory:

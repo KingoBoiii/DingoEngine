@@ -55,10 +55,14 @@ namespace Dingo
 		std::string Speaker;
 		std::string Text;
 		DialogueEnd End = DialogueEnd::None;
+		// A VillagerId the last page offers to give a gift to; -1 for a speech with no gift button.
+		int GiftTo = -1;
 	};
 
 	// The hook the villagers' own lines plug into: asked each time the player talks to one.
 	using VillagerLineFn = std::function<DialogueScript(VillagerId)>;
+	// The reply to the held item given to a villager, from the Give gift button.
+	using VillagerGiftFn = std::function<DialogueScript(VillagerId)>;
 
 	DialogueScript PlaceholderVillagerLine(VillagerId villager);
 	DialogueScript FestivalScript();

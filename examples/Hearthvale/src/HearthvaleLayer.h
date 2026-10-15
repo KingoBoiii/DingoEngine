@@ -4,14 +4,19 @@
 #include "Placing/BuildController.h"
 #include "Placing/Inventory.h"
 #include "Checks/CheckReport.h"
+#include "Checks/LifeWorldChecks.h"
 #include "Checks/StaticChecks.h"
 #include "Checks/UiChecks.h"
 #include "Farm/EconomySim.h"
 #include "Farm/FarmSim.h"
 #include "Farm/GameState.h"
 #include "Farm/SleepFlow.h"
+#include "Life/AnimalWorld.h"
 #include "Life/Player.h"
 #include "Life/PlayerIntent.h"
+#include "Life/VillagerDialogue.h"
+#include "Life/VillagerSim.h"
+#include "Life/VillagerWorld.h"
 #include "Look/BuildGhost.h"
 #include "Look/CameraRig.h"
 #include "Look/FadeOverlay.h"
@@ -26,6 +31,7 @@
 #include "World/ValleyWorld.h"
 
 #include <memory>
+#include <optional>
 
 namespace Dingo
 {
@@ -46,6 +52,7 @@ namespace Dingo
 		void RegisterStages();
 		void RunChecks();
 		void UpdateMouseAim();
+		std::optional<VillagerId> FindTalkTarget(const PlayerIntent& intent) const;
 		void SetUpMenus();
 		void ApplyOptions(const OptionsState& state, bool toEngine);
 		const PlayerIntent& ActiveIntent() const;
@@ -56,6 +63,11 @@ namespace Dingo
 		std::unique_ptr<FarmSim> m_Farm;
 		std::unique_ptr<EconomySim> m_Economy;
 		std::unique_ptr<SleepFlow> m_Sleep;
+		std::unique_ptr<VillagerSim> m_Villagers;
+		std::unique_ptr<AnimalSim> m_AnimalSim;
+		std::unique_ptr<VillagerDialogue> m_Dialogue;
+		std::unique_ptr<VillagerWorld> m_VillagerWorld;
+		std::unique_ptr<AnimalWorld> m_AnimalWorld;
 		WeatherFx m_WeatherFx;
 		std::unique_ptr<FadeOverlay> m_Fade;
 		std::unique_ptr<ValleyWorld> m_World;
@@ -70,6 +82,7 @@ namespace Dingo
 		NullSlotProvider m_Slots;
 		Settings m_SettingsBase;
 		AimInput m_Aim;
+		Ray m_MouseRay;
 		glm::vec2 m_LastMouse{ 0.0f };
 		bool m_MouseSeen = false;
 		PlayerIntent m_Intent;
@@ -78,8 +91,10 @@ namespace Dingo
 		Scene* m_ValleyScene = nullptr;
 		CheckReport m_Report;
 		std::unique_ptr<StaticCheckRun> m_StaticChecks;
+		std::unique_ptr<LifeWorldCheckRun> m_LifeChecks;
 		std::unique_ptr<UiCheckRun> m_UiChecks;
 		bool m_SimChecksDone = false;
+		bool m_LifeChecksStarted = false;
 		bool m_UiChecksStarted = false;
 		bool m_ChecksDone = false;
 	};

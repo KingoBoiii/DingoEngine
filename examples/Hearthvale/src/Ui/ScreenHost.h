@@ -70,6 +70,7 @@ namespace Dingo
 
 		void SetServices(MenuServices services) { m_Services = std::move(services); }
 		void SetVillagerLines(VillagerLineFn lines) { m_VillagerLines = std::move(lines); }
+		void SetVillagerGift(VillagerGiftFn gift) { m_VillagerGift = std::move(gift); }
 		void SetOptions(const OptionsState& options) { m_Options = ClampOptions(options); }
 		const OptionsState& GetOptions() const { return m_Options; }
 
@@ -128,6 +129,7 @@ namespace Dingo
 
 		MenuServices m_Services;
 		VillagerLineFn m_VillagerLines;
+		VillagerGiftFn m_VillagerGift;
 		OptionsState m_Options;
 		std::string m_Status;
 		uint32_t m_StackSerial = 0;

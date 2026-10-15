@@ -18,6 +18,8 @@ namespace Dingo
 		digest.Pack = state.Pack.Hash();
 		digest.Bin = state.Bin.Hash();
 		digest.Board = state.Board.Hash();
+		digest.Bonds = state.Bonds.Hash();
+		digest.Animals = state.Animals.Hash();
 		digest.Time = time.Value();
 
 		Fnv1a all;
@@ -25,6 +27,8 @@ namespace Dingo
 		all.U64(digest.Pack);
 		all.U64(digest.Bin);
 		all.U64(digest.Board);
+		all.U64(digest.Bonds);
+		all.U64(digest.Animals);
 		all.U64(digest.Time);
 		digest.All = all.Value();
 		return digest;

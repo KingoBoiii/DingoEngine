@@ -405,7 +405,16 @@ namespace Dingo
 			page.PageCount = slice.Count;
 			page.Rows.push_back(MakeRow({ TextCell(pages[static_cast<size_t>(slice.Page)], DIALOGUE_W, DIALOGUE_H, DIALOGUE_SIZE, PageTone::Normal, true) }));
 			const bool last = slice.Page + 1 >= slice.Count;
-			page.Rows.push_back(MakeRow({ ButtonCell(std::string(last ? "Close" : "Next") + "##dialogue", 160.0f, NAV_H, ROW_SIZE, PageAction::DialogueNext) }));
+			std::vector<PageCell> buttons;
+			if (last && view.Dialogue.GiftTo >= 0)
+			{
+				const ItemStack held = view.Pack ? view.Pack->GetSelected() : ItemStack{};
+				const bool giftable = !held.Empty() && GetItemDef(held.Item).Kind != ItemKind::Tool;
+				const std::string label = giftable ? std::format("Give {}", GetItemDef(held.Item).Name) : std::string("Give gift");
+				buttons.push_back(ButtonCell(label + "##gift", 280.0f, NAV_H, ROW_SIZE, PageAction::DialogueGift, view.Dialogue.GiftTo, giftable));
+			}
+			buttons.push_back(ButtonCell(std::string(last ? "Close" : "Next") + "##dialogue", 160.0f, NAV_H, ROW_SIZE, PageAction::DialogueNext));
+			page.Rows.push_back(MakeRow(std::move(buttons)));
 			page.DefaultFocus = std::string(last ? "Close" : "Next") + "##dialogue";
 			return page;
 		}

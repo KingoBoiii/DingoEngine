@@ -1,10 +1,13 @@
 #include "HearthvaleLayer.h"
 #include "Checks/Checks.h"
+#include "Checks/LifeWorldChecks.h"
 #include "GameTuning.h"
 #include "LaunchOptions.h"
 #include "Life/PlayerInput.h"
+#include "Life/PlayerMath.h"
 #include "Look/ArtRegistry.h"
 #include "Placing/Interactions.h"
+#include "Placing/PlaceInteract.h"
 #include "World/ValleyLayout.h"
 
 namespace Dingo
@@ -27,11 +30,16 @@ namespace Dingo
 		});
 		m_Farm = std::make_unique<FarmSim>(*m_Director, m_State.Pack);
 		m_Economy = std::make_unique<EconomySim>(*m_Director, m_State);
+		m_Villagers = std::make_unique<VillagerSim>(*m_Director);
+		m_AnimalSim = std::make_unique<AnimalSim>(*m_Director, m_State.Animals);
+		m_Dialogue = std::make_unique<VillagerDialogue>(*m_Director, m_State);
 		m_Sleep = std::make_unique<SleepFlow>(*m_Director);
 		m_Build = std::make_unique<BuildController>(m_Director->GetGrid(), m_State.Pack, [this](const TileRect& area)
 		{
 			if (m_World)
 				m_World->MarkArea(area.X, area.Y, area.W, area.H);
+			if (m_Villagers)
+				m_Villagers->InvalidatePlans();
 		});
 		m_Build->SetCalendar(&m_Director->GetCalendar());
 		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
@@ -80,6 +88,15 @@ namespace Dingo
 		}
 		m_Screens->SetServices(std::move(services));
 		m_Build->SetInteractHandler([this](Landmark landmark) { return m_Screens->OpenLandmark(landmark); });
+		m_Build->SetTileInteractHandler([this](int x, int y)
+		{
+			const PlaceInteraction interaction = InteractWithPlace(m_Director->GetGrid(), m_State, x, y);
+			if (interaction.Handled)
+				m_Screens->Say(interaction.Message);
+			return interaction.Handled;
+		});
+		m_Screens->SetVillagerLines([this](VillagerId villager) { return m_Dialogue->Talk(villager); });
+		m_Screens->SetVillagerGift([this](VillagerId villager) { return m_Dialogue->Gift(villager); });
 
 		if (interactive)
 		{
@@ -104,6 +121,7 @@ namespace Dingo
 	void HearthvaleLayer::OnDetach()
 	{
 		m_StaticChecks.reset();
+		m_LifeChecks.reset();
 		m_UiChecks.reset();
 		ReleaseScenePieces();
 		m_World.reset();
@@ -116,6 +134,9 @@ namespace Dingo
 		m_Screens.reset();
 		m_Build.reset();
 		m_Sleep.reset();
+		m_Dialogue.reset();
+		m_AnimalSim.reset();
+		m_Villagers.reset();
 		m_Economy.reset();
 		m_Farm.reset();
 		m_Director.reset();
@@ -128,6 +149,8 @@ namespace Dingo
 		m_Fade.reset();
 		m_Ui.reset();
 		m_Camera.reset();
+		m_AnimalWorld.reset();
+		m_VillagerWorld.reset();
 		m_Player.reset();
 		m_Sky.reset();
 	}
@@ -148,7 +171,19 @@ namespace Dingo
 			const PlayerIntent& intent = ActiveIntent();
 			if (intent.Move != glm::vec2(0.0f))
 				m_Aim.HasMouse = false;
-			m_Build->Step(intent, m_Aim);
+			PlayerIntent stepIntent = intent;
+			if (m_Build->GetMode() == BuildMode::Tools && (intent.Interact || intent.Use))
+			{
+				if (const std::optional<VillagerId> talk = FindTalkTarget(intent))
+				{
+					const glm::vec2 toVillager = m_Villagers->GetPlace(*talk).Position - m_Aim.Feet;
+					if (glm::length(toVillager) > 0.01f)
+						m_Player->SetYaw(PlayerMath::YawOf(toVillager));
+					if (m_Screens->OpenVillager(*talk))
+						stepIntent.Interact = stepIntent.Use = false;
+				}
+			}
+			m_Build->Step(stepIntent, m_Aim);
 			if (m_Build->GetAim().FromMouse && intent.Move == glm::vec2(0.0f))
 				m_Player->SetYaw(m_Build->GetAim().FaceYaw);
 		});
@@ -210,6 +245,9 @@ namespace Dingo
 			(static_cast<float>(home.DoorY) + 1.5f) * TILE_SIZE);
 		m_Player = std::make_unique<Player>(*m_ValleyScene, feet, m_FarmerAssets.get());
 		m_Camera = std::make_unique<CameraRig>(*m_ValleyScene, feet);
+		m_VillagerWorld = std::make_unique<VillagerWorld>(*m_ValleyScene);
+		if (ANIMALS_ENABLED)
+			m_AnimalWorld = std::make_unique<AnimalWorld>(*m_ValleyScene);
 		m_Ghost = std::make_unique<BuildGhost>(*m_ValleyScene);
 		m_Ui = std::make_unique<GameUi>(*m_Director, m_State.Pack, *m_Build, *m_Screens);
 		m_Fade = std::make_unique<FadeOverlay>();
@@ -231,10 +269,27 @@ namespace Dingo
 			return;
 
 		const Window& window = Application::Get().GetWindow();
-		const Ray ray = m_ValleyScene->ScreenPointToRay(mouse, glm::vec2(static_cast<float>(window.GetWidth()), static_cast<float>(window.GetHeight())));
+		m_MouseRay = m_ValleyScene->ScreenPointToRay(mouse, glm::vec2(static_cast<float>(window.GetWidth()), static_cast<float>(window.GetHeight())));
 		glm::vec3 hit(0.0f);
-		m_Aim.HasMouse = ray.IntersectGroundPlane(GROUND_TOP, hit);
+		m_Aim.HasMouse = m_MouseRay.IntersectGroundPlane(GROUND_TOP, hit);
 		m_Aim.MouseGround = glm::vec2(hit.x, hit.z);
+	}
+
+	std::optional<VillagerId> HearthvaleLayer::FindTalkTarget(const PlayerIntent& intent) const
+	{
+		const VillagerPlaces& places = m_Villagers->GetPlaces();
+		if (m_Aim.HasMouse && m_VillagerWorld)
+		{
+			const std::optional<VillagerId> hit = m_VillagerWorld->Pick(m_MouseRay, VILLAGER_PICK_RAY_LENGTH);
+			if (hit && glm::length(places[static_cast<size_t>(*hit)].Position - m_Aim.Feet) <= VILLAGER_PICK_REACH)
+				return hit;
+		}
+		if (!intent.Interact)
+			return std::nullopt;
+		const std::optional<VillagerPick> near = PickNearby(places, m_Aim.Feet, m_Aim.Yaw, VILLAGER_TALK_RADIUS, VILLAGER_TALK_ARC_DEG);
+		if (!near)
+			return std::nullopt;
+		return near->Who;
 	}
 
 	void HearthvaleLayer::RunChecks()
@@ -250,6 +305,16 @@ namespace Dingo
 			return;
 
 		m_StaticChecks.reset();
+		if (!m_LifeChecksStarted)
+		{
+			m_LifeChecksStarted = true;
+			if (!Application::Get().IsHeadless() && m_VillagerWorld)
+				m_LifeChecks = std::make_unique<LifeWorldCheckRun>();
+		}
+		if (m_LifeChecks && !m_LifeChecks->Tick(m_Report, *m_Director, *m_Villagers, m_VillagerWorld.get(), m_AnimalWorld.get(), m_State.Animals))
+			return;
+
+		m_LifeChecks.reset();
 		if (!m_UiChecksStarted)
 		{
 			m_UiChecksStarted = true;
@@ -294,6 +359,10 @@ namespace Dingo
 		}
 		if (m_World)
 			m_World->Sync();
+		if (m_VillagerWorld)
+			m_VillagerWorld->Sync(m_Villagers->GetPlaces(), step);
+		if (m_AnimalWorld)
+			m_AnimalWorld->Sync(m_State.Animals, *m_AnimalSim, step);
 		if (m_Ui)
 			m_Ui->Draw(deltaTime);
 		if (m_Ghost && m_Build)

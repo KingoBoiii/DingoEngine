@@ -38,7 +38,7 @@ namespace Dingo
 		PauseResume, PauseSave,
 		Tab, Row, CycleQuantity, PrevPage, NextPage,
 		BoardGive, FestivalStart,
-		DialogueNext,
+		DialogueNext, DialogueGift,
 		OptionVSync, OptionFullscreen, OptionFullscreenKind, OptionHoldToPlace, OptionSlider
 	};
 

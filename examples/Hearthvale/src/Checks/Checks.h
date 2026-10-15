@@ -36,6 +36,7 @@ namespace Dingo
 	void RunBoardChecks(CheckReport& report);
 	void RunUiLayoutChecks(CheckReport& report);
 	void RunMenuChecks(CheckReport& report);
+	void RunLifeChecks(CheckReport& report);
 	void RunSimChecks(CheckReport& report);
 
 }

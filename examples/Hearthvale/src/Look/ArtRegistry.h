@@ -4,6 +4,7 @@
 #include "Defs/BuildDefs.h"
 #include "Defs/CropDefs.h"
 #include "Defs/DecorDefs.h"
+#include "Defs/VillagerDefs.h"
 #include "World/ValleyLayout.h"
 #include "World/WorldCells.h"
 
@@ -14,6 +15,8 @@
 
 namespace Dingo
 {
+
+	enum class AnimalKind : uint8_t;
 
 	enum class ArtPrimitive : uint8_t { Box, Sphere };
 
@@ -45,6 +48,11 @@ namespace Dingo
 		std::string_view ForBuild(BuildId id);
 		std::string_view ForLandmark(Landmark id);
 		std::string_view ForCrop(CropId crop, int stage);
+		std::string_view ForVillager(VillagerId villager);
+		std::string_view ForVillagerHead();
+		std::string_view ForAnimal(AnimalKind kind);
+		std::string_view ForAnimalHead(AnimalKind kind);
+		std::string_view ForProduce(AnimalKind kind);
 
 		Mesh* GetMesh(const ArtEntry& entry);
 
