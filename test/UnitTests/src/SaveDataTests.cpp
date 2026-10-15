@@ -211,12 +211,17 @@ TEST_SUITE("SaveData")
 		CHECK(data.Get("cell", glm::ivec2(7)) == glm::ivec2(7));
 		CHECK(SaveData::FromJson("[1, 2, -2147483649]")->AsIVec3(glm::ivec3(7)) == glm::ivec3(7));
 		CHECK(SaveData::FromJson("[2147483647, -2147483648]")->AsIVec2() == glm::ivec2(2147483647, (std::numeric_limits<int>::min)()));
-		CHECK(SaveData::FromJson("1e400")->AsFloat(2.0f) == 2.0f);
+		CHECK_FALSE(SaveData::FromJson("1e400").has_value());
+		CHECK(SaveData(std::numeric_limits<double>::infinity()).AsFloat(2.0f) == 2.0f);
 		CHECK(SaveData::FromJson("-1e39")->AsFloat(2.0f) == 2.0f);
 		CHECK(SaveData::FromJson("1e38")->AsFloat(2.0f) == 1e38f);
 		data["far"] = SaveData::FromJson("1e39").value();
 		CHECK(data.Get("far", 3.0f) == 3.0f);
-		CHECK(SaveData::FromJson("[1, 1e400, 3]")->AsVec3(glm::vec3(9.0f)) == glm::vec3(9.0f));
+		SaveData infinite;
+		infinite.Push(1);
+		infinite.Push(std::numeric_limits<double>::infinity());
+		infinite.Push(3);
+		CHECK(infinite.AsVec3(glm::vec3(9.0f)) == glm::vec3(9.0f));
 	}
 
 	TEST_CASE("every uint64_t survives a save, UUIDs included")
