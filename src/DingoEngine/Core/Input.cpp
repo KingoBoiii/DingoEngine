@@ -8,6 +8,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 
 namespace Dingo
@@ -300,6 +301,7 @@ namespace Dingo
 	{
 		if (!ValidGamepad(gamepad))
 			return;
+		StopRumble(gamepad);
 		s_SimulatedGamepads[gamepad] = connected;
 		s_SimulatedInput[gamepad] = GamepadState{};
 		s_SimulatedInput[gamepad].Connected = connected;
@@ -351,7 +353,7 @@ namespace Dingo
 	void Input::SetSimulatedGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad)
 	{
 		if (ValidGamepad(gamepad) && ValidGamepadAxis(axis) && s_SimulatedGamepads[gamepad])
-			s_SimulatedInput[gamepad].Axes[static_cast<size_t>(axis)] = std::clamp(value, -1.0f, 1.0f);
+			s_SimulatedInput[gamepad].Axes[static_cast<size_t>(axis)] = std::isfinite(value) ? std::clamp(value, -1.0f, 1.0f) : 0.0f;
 	}
 
 	void Input::ClearConsumed()
@@ -619,7 +621,7 @@ namespace Dingo
 
 	bool Input::IsGamepadRumbleSupported(uint32_t gamepad)
 	{
-		return IsGamepadConnected(gamepad) && s_XInputUsers[gamepad] != k_NoXInputUser;
+		return IsGamepadConnected(gamepad) && !s_SimulatedGamepads[gamepad] && s_XInputUsers[gamepad] != k_NoXInputUser;
 	}
 
 	void Input::UpdateRumble()
@@ -674,7 +676,7 @@ namespace Dingo
 
 	GamepadType Input::RegisterGamepadConnection(uint32_t gamepad, std::string& outName)
 	{
-		if (!ValidGamepad(gamepad))
+		if (!ValidGamepad(gamepad) || s_SimulatedGamepads[gamepad])
 			return GamepadType::Unknown;
 
 		const char* name = glfwGetGamepadName(gamepad);
@@ -688,7 +690,7 @@ namespace Dingo
 
 	GamepadType Input::UnregisterGamepadConnection(uint32_t gamepad, std::string& outName)
 	{
-		if (!ValidGamepad(gamepad))
+		if (!ValidGamepad(gamepad) || s_SimulatedGamepads[gamepad])
 			return GamepadType::Unknown;
 
 		outName = s_GamepadNames[gamepad];
@@ -765,6 +767,8 @@ namespace Dingo
 			s_PreviousGamepads.fill(GamepadState{});
 			s_GamepadNames.fill(std::string{});
 			s_GamepadTypes.fill(GamepadType{});
+			s_SimulatedGamepads.fill(false);
+			s_SimulatedInput.fill(GamepadState{});
 			ClearConsumed();
 			return;
 		}

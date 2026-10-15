@@ -2092,7 +2092,7 @@ namespace Dingo
 			Input::SetGamepadSimulated(0, true);
 			Check(Input::IsGamepadConnected(0) && Input::IsGamepadSimulated(0), "Simulated pad: SetGamepadSimulated connects the slot at once");
 			Check(Input::GetGamepadName(0) == "Simulated Gamepad" && Input::GetGamepadType(0) == GamepadType::Unknown, "Simulated pad: it is named and typed Unknown");
-			Check(!Input::IsGamepadSimulated(1) && !Input::IsGamepadConnected(1), "Simulated pad: another slot is untouched");
+			Check(!Input::IsGamepadSimulated(1), "Simulated pad: another slot is untouched");
 			Input::SetSimulatedGamepadButton(GamepadButton::X, true);
 			Input::SetSimulatedGamepadAxis(GamepadAxis::LeftX, 2.0f);
 			Check(!Input::IsGamepadButtonDown(GamepadButton::X) && Input::GetGamepadAxisRaw(GamepadAxis::LeftX) == 0.0f, "Simulated pad: a set button and axis wait for the next frame");

@@ -506,14 +506,17 @@ void Player::OnHit()
 }
 ```
 
-**Simulated pads.** For tests, demos and headless check runs, `Input::SetGamepadSimulated(slot, true)`
+**Simulated pads.** For tests and demos, `Input::SetGamepadSimulated(slot, true)`
 makes a slot a pad you feed from code: it reads connected at once ("Simulated Gamepad", type
-`Unknown`, everything up), and a real pad in that slot is ignored until you turn it off again (the
+`Unknown`, everything up), and a real pad in that slot is ignored until you turn it off again: it sends
+no events and gets no rumble (the
 slot is then polled from the device from the next frame; no connect or disconnect event is sent either
 way). `Input::SetSimulatedGamepadButton` and `SetSimulatedGamepadAxis` set what the pad reports. They
 take effect at the next frame's input snapshot, like a real pad being polled: a press set in `OnUpdate`
 of frame N reads as `IsGamepadButtonPressed` in frame N + 1, DingoUI's navigation sees it too, and the
-value stays until it is set again. `IsGamepadSimulated(slot)` says whether a slot is simulated.
+value stays until it is set again. `IsGamepadSimulated(slot)` says whether a slot is simulated. It
+needs a window: a [headless](#headless) app takes no input snapshot, so the setters never reach it. A
+graphics-API restart turns simulation off.
 
 ```cpp
 Input::SetGamepadSimulated(0, true);
