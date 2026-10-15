@@ -86,6 +86,7 @@ namespace Dingo
 		Shader*      m_StaticGhostShader = nullptr;
 		Material*    m_StaticGhost = nullptr;
 		Framebuffer* m_GhostTargets[2] = {};
+		std::unique_ptr<Model> m_GhostRig;
 		std::vector<uint8_t> m_GhostPixels;
 		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		bool      m_SkinnedMaterialChecked = false;

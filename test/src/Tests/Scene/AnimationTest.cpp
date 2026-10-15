@@ -2430,7 +2430,10 @@ namespace Dingo
 
 		// Each ghost into a target of its own, three Foxes in different Walk poses, turned and tinted
 		// apart: the arena must place every vertex, and turn every normal, where SkinData does, for
-		// instances past the first too.
+		// instances past the first too. SkinData ignores the arena, so the arena ghost's scene is
+		// laid out differently: reversed, with a culled Fox in the gap (packing skips it) and a rig
+		// of another joint count in the middle (a different stride). Every base then differs from
+		// the first scene's arena, and from a fixed-stride or an every-instance count.
 		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
 		std::vector<glm::mat4> poses[3];
 		glm::mat4 places[3];
@@ -2448,8 +2451,22 @@ namespace Dingo
 				* glm::translate(glm::mat4(1.0f), m_FoxOffset) * glm::scale(glm::mat4(1.0f), glm::vec3(m_FoxScale));
 		}
 		Check(poses[0] != poses[1] && poses[1] != poses[2], "the arena check's three Walk poses differ");
+
+		m_GhostRig.reset(Model::LoadFromFile("assets/models/SceneRig/SceneRig.gltf"));
+		const SubMesh* rigSub = m_GhostRig ? FindSkinnedSubMesh(*m_GhostRig) : nullptr;
+		const std::span<const glm::mat4> rigPalette = rigSub ? m_GhostRig->GetSkeleton()->GetRestPalette() : std::span<const glm::mat4>();
+		const bool rigUsable = rigSub && rigPalette.size() >= rigSub->Mesh->GetSkinJointCount() && rigSub->Mesh->GetSkinJointCount() != skinned->Mesh->GetSkinJointCount();
+		Check(rigUsable, "the arena check's second skinned model has another joint count than the Fox");
+		if (!rigUsable)
+			return;
+		const glm::mat4 rigPlace = glm::translate(glm::mat4(1.0f), glm::vec3(0.55f * k_FoxLength, 0.0f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.6f));
+		const glm::vec4 rigColor(0.95f, 0.9f, 0.2f, 1.0f);
+
 		PerspectiveCamera camera = m_Camera;
 		camera.SetAspectRatio(static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight));
+		const glm::vec3 behind = camera.GetPosition() - glm::normalize(camera.GetTarget() - camera.GetPosition()) * (3.0f * k_FoxLength);
+		const glm::mat4 behindPlace = glm::translate(glm::mat4(1.0f), behind) * places[1];
+
 		Framebuffer* previous = Renderer::GetRenderTarget();
 		for (int i = 0; i < 2; ++i)
 		{
@@ -2461,13 +2478,27 @@ namespace Dingo
 					.SetEnableDepth(true)
 					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 			Renderer::SetRenderTarget(m_GhostTargets[i]);
+			Material* material = i == 0 ? m_Ghost : m_PaletteGhost;
 			renderer.BeginScene(camera);
 			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-			for (int f = 0; f < 3; ++f)
-				renderer.SubmitSkinnedMesh(skinned->Mesh, places[f], poses[f], colors[f], i == 0 ? m_Ghost : m_PaletteGhost);
+			if (i == 0)
+			{
+				for (int f = 0; f < 3; ++f)
+					renderer.SubmitSkinnedMesh(skinned->Mesh, places[f], poses[f], colors[f], material);
+				renderer.SubmitSkinnedMesh(rigSub->Mesh, rigPlace, rigPalette, rigColor, material);
+			}
+			else
+			{
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[2], poses[2], colors[2], material);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, behindPlace, poses[1], colors[1], material);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[1], poses[1], colors[1], material);
+				renderer.SubmitSkinnedMesh(rigSub->Mesh, rigPlace, rigPalette, rigColor, material);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[0], poses[0], colors[0], material);
+			}
 			renderer.EndScene();
 			if (i == 1)
-				Check(renderer.GetStatistics().SkinnedInstances == 3, std::format("the arena check draws three instances ({})", renderer.GetStatistics().SkinnedInstances));
+				Check(renderer.GetStatistics().SkinnedInstances == 4 && renderer.GetStatistics().CulledSkinned == 1,
+					std::format("the arena check draws four instances around a culled one ({} drawn, {} culled)", renderer.GetStatistics().SkinnedInstances, renderer.GetStatistics().CulledSkinned));
 		}
 		Renderer::SetRenderTarget(previous);
 
@@ -2489,7 +2520,7 @@ namespace Dingo
 				covered += pixels.Data[i] != 0 ? 1 : 0;
 			}
 			Check(!pixels.Data.empty() && pixels.Data.size() == m_GhostPixels.size() && differing == 0 && covered > 0,
-				std::format("a custom shader reading the skin arena draws three posed Foxes exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
+				std::format("a custom shader reading the skin arena draws three posed Foxes and a rig, reordered around a culled Fox, exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
 		});
 	}
 
@@ -2660,6 +2691,7 @@ namespace Dingo
 		for (Entity& fox : m_LodFoxes)
 			fox = {};
 		m_GhostPixels.clear();
+		m_GhostRig.reset();
 		m_Alive = std::make_shared<int>(0);
 		if (m_FoxAsset != k_InvalidAsset)
 		{
