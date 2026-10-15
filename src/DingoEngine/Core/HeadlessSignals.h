@@ -2,7 +2,8 @@
 
 // Engine-internal: how a headless Application hears Ctrl+C, SIGTERM and a console close. The guard
 // installs handlers for SIGINT and SIGTERM (Linux) or SetConsoleCtrlHandler (Windows) while it
-// lives and puts the earlier ones back. A handler only sets an atomic; the run loop polls
+// lives and puts the earlier ones back, except after a Windows close, logoff or shutdown event,
+// whose handler stays until the process ends. A handler only sets an atomic; the run loop polls
 // StopRequest. A second signal while the first is still being handled falls back to the default
 // action and ends the process at once. A signal that was ignored when the guard started stays
 // ignored, as for a job started in the background of a non-interactive shell.

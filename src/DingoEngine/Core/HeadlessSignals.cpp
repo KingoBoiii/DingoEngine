@@ -55,6 +55,11 @@ namespace Dingo::Internal
 			}
 		}
 
+		bool IsClosing(int caught)
+		{
+			return caught - 1 == CTRL_CLOSE_EVENT || caught - 1 == CTRL_LOGOFF_EVENT || caught - 1 == CTRL_SHUTDOWN_EVENT;
+		}
+
 #else
 
 		constexpr int k_Signals[] = { SIGINT, SIGTERM };
@@ -79,10 +84,14 @@ namespace Dingo::Internal
 
 	HeadlessSignalGuard::HeadlessSignalGuard()
 	{
-		s_Caught.store(0);
 #ifdef DE_PLATFORM_WINDOWS
+		// A close caught by the run before a restart still ends the process when its handler
+		// wakes, so the restarted run has to stop too.
+		if (!IsClosing(s_Caught.load()))
+			s_Caught.store(0);
 		s_Installed = SetConsoleCtrlHandler(OnConsoleControl, TRUE) != 0;
 #else
+		s_Caught.store(0);
 		for (size_t i = 0; i < 2; ++i)
 		{
 			struct sigaction action = {};
@@ -100,7 +109,9 @@ namespace Dingo::Internal
 	HeadlessSignalGuard::~HeadlessSignalGuard()
 	{
 #ifdef DE_PLATFORM_WINDOWS
-		if (s_Installed)
+		// After a close, logoff or shutdown the handler is still in its grace sleep. Removing it
+		// waits for that sleep, and the OS then ends the process mid-teardown, so it stays.
+		if (s_Installed && !IsClosing(s_Caught.load()))
 			SetConsoleCtrlHandler(OnConsoleControl, FALSE);
 		s_Installed = false;
 #else
