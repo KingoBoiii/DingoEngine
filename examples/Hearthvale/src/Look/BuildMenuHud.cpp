@@ -14,6 +14,12 @@ namespace Dingo
 		constexpr float k_PaddingX = 14.0f;
 		constexpr float k_PaddingY = 8.0f;
 
+		const char* HeldName(const BuildController& controller)
+		{
+			const ItemId held = controller.GetHeld();
+			return held == ItemId::Count ? "empty hands" : GetItemDef(held).Name;
+		}
+
 		std::string CostText(const BuildCost& cost)
 		{
 			std::string text;
@@ -66,7 +72,7 @@ namespace Dingo
 
 		if (controller.GetMode() == BuildMode::Tools)
 		{
-			Line(std::format("Tool: {}   [1-5 / wheel] switch   [Space / click] use   [F] plant / harvest / sleep   [B] build", GetItemDef(controller.GetTool()).Name), HUD_TEXT_PICK_COLOR);
+			Line(std::format("Hand: {}   [1-9 / wheel] switch   [Space / click] use   [F] plant / harvest / sleep   [B] build", HeldName(controller)), HUD_TEXT_PICK_COLOR);
 			const CropId seed = controller.GetSeed();
 			if (seed < CropId::Count)
 				Line(std::format("Seed: {} x{}   [T] next", GetCropDef(seed).Name, inventory.Count(SeedItem(seed))), HUD_TEXT_COLOR);

@@ -37,13 +37,30 @@ namespace Dingo
 		: m_Grid(grid), m_Inventory(inventory), m_OnDirty(std::move(onDirty))
 	{}
 
+	ItemId BuildController::GetHeld() const
+	{
+		const ItemStack& held = m_Inventory.GetSelected();
+		return held.Empty() ? ItemId::Count : held.Item;
+	}
+
+	ItemId BuildController::GetTool() const
+	{
+		const ItemId held = GetHeld();
+		return held < ItemId::Count && GetItemDef(held).Kind == ItemKind::Tool ? held : ItemId::Count;
+	}
+
 	void BuildController::SelectTool(ItemId tool)
 	{
-		for (int i = 0; i < BUILD_TOOL_COUNT; ++i)
-		{
-			if (BUILD_TOOLS[i] == tool)
-				m_ToolIndex = i;
-		}
+		const int slot = m_Inventory.FindSlot(tool);
+		if (slot >= 0 && slot < HOTBAR_SLOTS)
+			m_Inventory.SelectSlot(slot);
+	}
+
+	void BuildController::SyncSeedToHeld()
+	{
+		const ItemId held = GetHeld();
+		if (held < ItemId::Count && GetItemDef(held).Kind == ItemKind::Seed)
+			m_Seed = GetItemDef(held).Crop;
 	}
 
 	void BuildController::Say(std::string text)
@@ -68,7 +85,8 @@ namespace Dingo
 	{
 		if (m_Mode == BuildMode::Tools)
 		{
-			m_ToolIndex = (m_ToolIndex + direction + BUILD_TOOL_COUNT) % BUILD_TOOL_COUNT;
+			m_Inventory.CycleSelection(direction);
+			SyncSeedToHeld();
 			return;
 		}
 		const int next = (static_cast<int>(m_Buildable) + direction + BUILD_COUNT) % BUILD_COUNT;
@@ -88,8 +106,11 @@ namespace Dingo
 			CycleSelection(-1);
 		if (intent.HotbarSlot >= 0)
 		{
-			if (m_Mode == BuildMode::Tools && intent.HotbarSlot < BUILD_TOOL_COUNT)
-				m_ToolIndex = intent.HotbarSlot;
+			if (m_Mode == BuildMode::Tools && intent.HotbarSlot < HOTBAR_SLOTS)
+			{
+				m_Inventory.SelectSlot(intent.HotbarSlot);
+				SyncSeedToHeld();
+			}
 			else if (m_Mode == BuildMode::Build && intent.HotbarSlot < BUILD_COUNT)
 				m_Buildable = static_cast<BuildId>(intent.HotbarSlot);
 		}
@@ -139,6 +160,10 @@ namespace Dingo
 			m_OnDirty(outcome.Dirty);
 			Say(std::format("Removed {} (refund {})", GetBuildDef(outcome.Id).Name, Cost(outcome.Refund)));
 		}
+		else if (outcome.InventoryFull)
+		{
+			Say("Inventory full");
+		}
 		else
 		{
 			Say("Nothing to remove here");
@@ -161,6 +186,9 @@ namespace Dingo
 				break;
 			case ToolResult::WrongTool:
 				Say(std::format("{} needs the {}", GetDecorDef(outcome.Kind).Name, ItemName(outcome.Needed)));
+				break;
+			case ToolResult::InventoryFull:
+				Say("Inventory full");
 				break;
 			case ToolResult::NotMine:
 				Say(std::format("The {} clears nothing", ItemName(tool)));
@@ -254,8 +282,17 @@ namespace Dingo
 
 	void BuildController::UseSelectedTool()
 	{
+		const ItemId held = GetHeld();
+		if (held < ItemId::Count && GetItemDef(held).Kind == ItemKind::Seed)
+		{
+			SyncSeedToHeld();
+			Plant();
+			return;
+		}
 		switch (GetTool())
 		{
+			case ItemId::Count:
+				break;
 			case ItemId::Hoe:
 				Till();
 				break;

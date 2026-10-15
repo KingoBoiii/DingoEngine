@@ -13,6 +13,8 @@ namespace Dingo
 		RunPlayerChecks(report);
 		RunPlacementChecks(report);
 		RunGrowthChecks(report);
+		RunEconomyChecks(report);
+		RunBoardChecks(report);
 	}
 
 }

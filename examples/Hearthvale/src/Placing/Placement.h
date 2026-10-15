@@ -8,7 +8,7 @@
 namespace Dingo
 {
 
-	enum class PlaceResult : uint8_t { Ok, OutOfBounds, BadGround, Occupied, CannotAfford };
+	enum class PlaceResult : uint8_t { Ok, OutOfBounds, BadGround, Occupied, PlanLocked, CannotAfford };
 
 	const char* ToString(PlaceResult result);
 
@@ -32,6 +32,7 @@ namespace Dingo
 	struct RemoveOutcome
 	{
 		bool Removed = false;
+		bool InventoryFull = false;           // the refund would not fit, so nothing was removed
 		BuildId Id = BuildId::WoodFence;
 		BuildCost Refund;
 		TileRect Dirty;
@@ -44,8 +45,9 @@ namespace Dingo
 	// The share of the cost given back on removal, per resource, rounded down.
 	BuildCost RefundFor(const BuildDef& def);
 
-	// The rules, with no side effects: bounds, ground, occupants (cosmetic decoration does not count), crops, and the
-	// cost. The first failing rule wins, in that order.
+	// The rules, with no side effects: bounds, ground, occupants (cosmetic decoration does not count), crops, the
+	// building plan (a def with a PlanPrice must have been bought), and the cost. The first failing rule wins, in
+	// that order.
 	PlaceResult CheckPlacement(const TileGrid& grid, const Inventory& inventory, const PlaceSpec& spec);
 
 	// Clears cosmetic decoration under the footprint for free, charges the cost, then adds the occupant (or sets the
@@ -53,7 +55,8 @@ namespace Dingo
 	PlaceOutcome PlaceBuilding(TileGrid& grid, Inventory& inventory, const PlaceSpec& spec);
 
 	// Removes the player's building covering the tile, or the player's own path on it, and refunds its share. Generated
-	// paths, decoration, landmarks and anything with a crop are left alone.
+	// paths, decoration, landmarks and anything with a crop are left alone. A refund that does not fit the inventory
+	// removes nothing and sets InventoryFull.
 	RemoveOutcome RemoveBuilding(TileGrid& grid, Inventory& inventory, int x, int y);
 
 	TileRect UnionOf(const TileRect& a, const TileRect& b);

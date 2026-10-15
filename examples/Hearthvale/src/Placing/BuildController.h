@@ -17,14 +17,14 @@ namespace Dingo
 	enum class BuildMode : uint8_t { Tools, Build };
 
 	inline constexpr ItemId BUILD_TOOLS[] = { ItemId::Hoe, ItemId::WateringCan, ItemId::Axe, ItemId::Pickaxe, ItemId::Scythe };
-	inline constexpr int BUILD_TOOL_COUNT = static_cast<int>(sizeof(BUILD_TOOLS) / sizeof(BUILD_TOOLS[0]));
 
 	// The ToolsAndPlacement stage: what the farmer aims at, which tool or buildable is picked, and the swing, place
 	// and remove actions the intent asks for. Plain C++ over the grid, so --check drives it headless. Every grid edit
 	// is reported through `onDirty` with the tiles it touched; the layer forwards that to the ValleyWorld, so one edit
-	// is one rebuilt cell. The tool slots stand in for P7's hotbar. In tool mode Use swings the selected tool (hoe
-	// tills, can waters, scythe harvests a ripe crop, else clears) and Interact goes to bed at the farmhouse, harvests
-	// a ripe crop or plants the selected seed.
+	// is one rebuilt cell. In tool mode the inventory's hotbar picks what the farmer holds: Use swings a held tool
+	// (hoe tills, can waters, scythe harvests a ripe crop, else clears) or plants a held seed, and Interact goes to
+	// bed at the farmhouse, harvests a ripe crop or plants the selected seed. A pickup that does not fit the
+	// inventory is refused and leaves the target standing.
 	class BuildController
 	{
 	public:
@@ -37,7 +37,10 @@ namespace Dingo
 		void Step(const PlayerIntent& intent, const AimInput& aim);
 
 		BuildMode GetMode() const { return m_Mode; }
-		ItemId GetTool() const { return BUILD_TOOLS[m_ToolIndex]; }
+		// What the selected hotbar slot holds; ItemId::Count when it is empty.
+		ItemId GetHeld() const;
+		// The held item when it is a tool, else ItemId::Count.
+		ItemId GetTool() const;
 		BuildId GetBuildable() const { return m_Buildable; }
 		int GetRotation() const { return m_Rotation; }
 		const Aim& GetAim() const { return m_Aim; }
@@ -48,6 +51,7 @@ namespace Dingo
 		uint32_t GetMessageSerial() const { return m_MessageSerial; }
 
 		void SetMode(BuildMode mode) { m_Mode = mode; }
+		// Selects the hotbar slot holding `tool`; nothing changes when no hotbar slot does.
 		void SelectTool(ItemId tool);
 		void SelectBuildable(BuildId id) { m_Buildable = id; }
 		void SetRotation(int quarterTurns) { m_Rotation = quarterTurns & 3; }
@@ -76,6 +80,7 @@ namespace Dingo
 	private:
 		void Refresh(const AimInput& aim);
 		void CycleSelection(int direction);
+		void SyncSeedToHeld();
 		void Say(std::string text);
 		void Report(const FarmOutcome& outcome, const char* done);
 		int Day() const { return m_Calendar ? m_Calendar->GetAbsoluteDay() : 0; }
@@ -90,7 +95,6 @@ namespace Dingo
 		const Calendar* m_Calendar = nullptr;
 		CropId m_Seed = CropId::Parsnip;
 		BuildMode m_Mode = BuildMode::Tools;
-		int m_ToolIndex = 2;
 		BuildId m_Buildable = BuildId::WoodFence;
 		int m_Rotation = 0;
 		Aim m_Aim;

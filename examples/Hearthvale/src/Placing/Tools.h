@@ -12,6 +12,7 @@ namespace Dingo
 		Nothing,        // no decoration on the tile
 		NotMine,        // the hoe and the watering can belong to P6
 		WrongTool,      // `Needed` clears it
+		InventoryFull,  // the right tool, but the yield does not fit: the decoration stays
 		Cleared,
 	};
 
@@ -31,7 +32,8 @@ namespace Dingo
 	}
 
 	// One swing at the decoration on the tile: the right tool removes it and puts its yield in the inventory. The
-	// scythe also clears cosmetic grass and flowers for nothing. Anything with another tool changes nothing.
+	// scythe also clears cosmetic grass and flowers for nothing. Anything with another tool changes nothing, and a
+	// yield that does not fit the inventory leaves the decoration standing (InventoryFull).
 	ToolOutcome UseClearingTool(TileGrid& grid, Inventory& inventory, ItemId tool, int x, int y);
 
 }

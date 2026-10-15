@@ -23,7 +23,8 @@ namespace Dingo
 		NoCrop,
 		NotRipe,
 		WrongSeason,
-		NoSeed
+		NoSeed,
+		InventoryFull   // a harvest that does not fit: the crop stays
 	};
 
 	const char* ToString(FarmResult result);
@@ -55,7 +56,8 @@ namespace Dingo
 	// Takes one seed and plants it in empty tilled soil, if the crop grows in `season` or the tile is in a greenhouse.
 	FarmOutcome PlantSeed(TileGrid& grid, Inventory& inventory, int day, Season season, int x, int y, CropId crop);
 
-	// A ripe crop gives its yield. A regrowing crop stays and is ripe again after its RegrowDays watered days.
+	// A ripe crop gives its yield. A regrowing crop stays and is ripe again after its RegrowDays watered days. A yield
+	// that does not fit the inventory changes nothing (InventoryFull).
 	FarmOutcome HarvestTile(TileGrid& grid, Inventory& inventory, int x, int y);
 
 	// First seed (starting at `preferred`, in crop order) held in `inventory` that grows in `season`; CropId::Count if none.

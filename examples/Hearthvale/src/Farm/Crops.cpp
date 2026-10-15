@@ -35,6 +35,7 @@ namespace Dingo
 			case FarmResult::NotRipe:     return "Not ripe yet";
 			case FarmResult::WrongSeason: return "Wrong season for this seed";
 			case FarmResult::NoSeed:      return "No seeds";
+			case FarmResult::InventoryFull: return "Inventory full";
 		}
 		return "";
 	}
@@ -197,6 +198,11 @@ namespace Dingo
 		outcome.Crop = def.Id;
 		outcome.Yield = HarvestItem(def.Id);
 		outcome.YieldCount = def.HarvestYield;
+		if (!inventory.CanAdd(outcome.Yield, outcome.YieldCount))
+		{
+			outcome.Result = FarmResult::InventoryFull;
+			return outcome;
+		}
 		inventory.Add(outcome.Yield, outcome.YieldCount);
 		outcome.Dirty = Tile1(x, y);
 

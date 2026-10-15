@@ -42,6 +42,14 @@ namespace Dingo
 				inventory.Add(entry.Item, cost.*entry.Member);
 		}
 
+		bool CanTake(const Inventory& inventory, const BuildCost& cost)
+		{
+			ItemStack stacks[std::size(k_Costs)];
+			for (size_t i = 0; i < std::size(k_Costs); ++i)
+				stacks[i] = ItemStack{ k_Costs[i].Item, cost.*k_Costs[i].Member };
+			return inventory.CanAddAll(stacks);
+		}
+
 		bool IsPathable(Ground ground)
 		{
 			return ground == Ground::Grass || ground == Ground::Tilled || ground == Ground::Watered;
@@ -68,6 +76,7 @@ namespace Dingo
 			case PlaceResult::OutOfBounds:  return "Out of bounds";
 			case PlaceResult::BadGround:    return "Can't build on this ground";
 			case PlaceResult::Occupied:     return "Something is in the way";
+			case PlaceResult::PlanLocked:   return "Buy the plan at the carpenter";
 			case PlaceResult::CannotAfford: return "Not enough materials";
 		}
 		return "";
@@ -138,6 +147,8 @@ namespace Dingo
 			}
 		}
 
+		if (!inventory.KnowsPlan(spec.Id))
+			return PlaceResult::PlanLocked;
 		return CanAfford(inventory, def.Cost) ? PlaceResult::Ok : PlaceResult::CannotAfford;
 	}
 
@@ -206,6 +217,13 @@ namespace Dingo
 			outcome.Id = id;
 			outcome.Dirty = TileRect{ occupant->X, occupant->Y, occupant->W, occupant->H };
 			outcome.Refund = RefundFor(GetBuildDef(id));
+			if (!CanTake(inventory, outcome.Refund))
+			{
+				outcome.Refund = BuildCost{};
+				outcome.Dirty = TileRect{};
+				outcome.InventoryFull = true;
+				return outcome;
+			}
 			grid.RemoveOccupant(tile.Occupant);
 			Give(inventory, outcome.Refund);
 			outcome.Removed = true;
@@ -218,6 +236,13 @@ namespace Dingo
 			outcome.Id = id;
 			outcome.Dirty = TileRect{ x, y, 1, 1 };
 			outcome.Refund = RefundFor(GetBuildDef(id));
+			if (!CanTake(inventory, outcome.Refund))
+			{
+				outcome.Refund = BuildCost{};
+				outcome.Dirty = TileRect{};
+				outcome.InventoryFull = true;
+				return outcome;
+			}
 			Tile& edit = grid.At(x, y);
 			edit.GroundState = Ground::Grass;
 			edit.Built = 0;

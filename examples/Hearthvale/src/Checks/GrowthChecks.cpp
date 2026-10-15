@@ -32,8 +32,11 @@ namespace Dingo
 				: Director(MakeConfig(startDay, seed, freeze)), DawnHooked(HookDawn()), Sim(Director, Stock)
 			{
 				Stock.AddCoins(5000);
+				Stock.LearnAllPlans();
+				for (const ItemId tool : BUILD_TOOLS)
+					Stock.Add(tool, 1);
 				for (const ItemId item : { ItemId::Wood, ItemId::Stone, ItemId::Fibre })
-					Stock.Add(item, 500);
+					Stock.Add(item, 297);
 				for (int crop = 0; crop < CROP_COUNT; ++crop)
 					Stock.Add(SeedItem(static_cast<CropId>(crop)), 99);
 			}

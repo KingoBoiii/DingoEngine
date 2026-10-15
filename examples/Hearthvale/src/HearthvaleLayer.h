@@ -5,7 +5,9 @@
 #include "Placing/Inventory.h"
 #include "Checks/CheckReport.h"
 #include "Checks/StaticChecks.h"
+#include "Farm/EconomySim.h"
 #include "Farm/FarmSim.h"
+#include "Farm/GameState.h"
 #include "Farm/SleepFlow.h"
 #include "Life/Player.h"
 #include "Life/PlayerIntent.h"
@@ -44,8 +46,10 @@ namespace Dingo
 		const PlayerIntent& ActiveIntent() const;
 
 	private:
+		GameState m_State;
 		std::unique_ptr<ValleyDirector> m_Director;
 		std::unique_ptr<FarmSim> m_Farm;
+		std::unique_ptr<EconomySim> m_Economy;
 		std::unique_ptr<SleepFlow> m_Sleep;
 		WeatherFx m_WeatherFx;
 		std::unique_ptr<FadeOverlay> m_Fade;
@@ -57,7 +61,6 @@ namespace Dingo
 		std::unique_ptr<ClockHud> m_Hud;
 		std::unique_ptr<BuildGhost> m_Ghost;
 		std::unique_ptr<BuildMenuHud> m_BuildHud;
-		Inventory m_Inventory;
 		std::unique_ptr<BuildController> m_Build;
 		AimInput m_Aim;
 		glm::vec2 m_LastMouse{ 0.0f };

@@ -28,8 +28,11 @@ namespace Dingo
 			Fixture()
 			{
 				Stock.AddCoins(5000);
+				Stock.LearnAllPlans();
+				for (const ItemId tool : BUILD_TOOLS)
+					Stock.Add(tool, 1);
 				for (const ItemId item : { ItemId::Wood, ItemId::Stone, ItemId::Fibre })
-					Stock.Add(item, 500);
+					Stock.Add(item, 297);
 			}
 		};
 
@@ -504,6 +507,9 @@ namespace Dingo
 
 			AddDecor(f.Grid, DecorKind::Tree, 10, 11);
 			AddDecor(f.Grid, DecorKind::Rock, 11, 10);
+			f.Stock.SelectSlot(f.Stock.FindSlot(ItemId::Axe));
+			const int wood0 = f.Stock.Count(ItemId::Wood);
+			const int stone0 = f.Stock.Count(ItemId::Stone);
 			AimInput aim;
 			aim.Feet = glm::vec2(10.5f, 10.5f);
 			aim.Yaw = 0.0f;
@@ -516,21 +522,21 @@ namespace Dingo
 			PlayerIntent swing;
 			swing.Use = true;
 			controller.Step(swing, aim);
-			report.Check(f.Stock.Count(ItemId::Wood) == 503 && dirtyCalls == 1 && lastDirty.X == 10 && lastDirty.Y == 11 && f.Grid.CountOccupants(OccupantKind::Decoration) == 1,
+			report.Check(f.Stock.Count(ItemId::Wood) == wood0 + 3 && dirtyCalls == 1 && lastDirty.X == 10 && lastDirty.Y == 11 && f.Grid.CountOccupants(OccupantKind::Decoration) == 1,
 				"Controller: a Use pulse swings the axe at the tile in front, yields wood and reports one edit");
 
 			PlayerIntent east;
 			aim.Yaw = 0.5f * PlayerMath::PI;
 			controller.Step(east, aim);
 			controller.Step(swing, aim);
-			report.Check(f.Stock.Count(ItemId::Stone) == 500 && dirtyCalls == 1 && !controller.GetMessage().empty(),
+			report.Check(f.Stock.Count(ItemId::Stone) == stone0 && dirtyCalls == 1 && !controller.GetMessage().empty(),
 				"Controller: the axe on a rock changes nothing and says which tool it needs");
 
 			PlayerIntent pick;
 			pick.HotbarSlot = 3;
 			controller.Step(pick, aim);
 			controller.Step(swing, aim);
-			report.Check(controller.GetTool() == ItemId::Pickaxe && f.Stock.Count(ItemId::Stone) == 502 && dirtyCalls == 2, "Controller: hotbar slot 4 picks the pickaxe, which breaks the rock");
+			report.Check(controller.GetTool() == ItemId::Pickaxe && f.Stock.Count(ItemId::Stone) == stone0 + 2 && dirtyCalls == 2, "Controller: hotbar slot 4 picks the pickaxe, which breaks the rock");
 
 			PlayerIntent next;
 			next.HotbarNext = true;

@@ -1,4 +1,6 @@
 #pragma once
+#include "Defs/ItemDefs.h"
+
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -45,7 +47,29 @@ namespace Dingo
 	inline constexpr int BUILD_REFUND_PERMILLE     = 500;
 
 	inline constexpr int PASSOUT_COIN_LOSS_PERMILLE = 100;
-	inline constexpr int STARTER_SEED_COUNT        = 10;
+
+	// Nine hotbar slots (keys 1-9) lead a 6 x 4 backpack; all 33 are plain stack slots and items fill them in order.
+	inline constexpr int HOTBAR_SLOTS              = 9;
+	inline constexpr int INVENTORY_COLUMNS         = 6;
+	inline constexpr int INVENTORY_ROWS            = 4;
+	inline constexpr int BACKPACK_SLOTS            = INVENTORY_COLUMNS * INVENTORY_ROWS;
+	inline constexpr int INVENTORY_SLOTS           = HOTBAR_SLOTS + BACKPACK_SLOTS;
+
+	struct StarterStack
+	{
+		ItemId Item;
+		int Count;
+	};
+
+	// A new game: the five tools fill the hotbar's first slots, then a few spring seeds.
+	inline constexpr int STARTER_COINS             = 500;
+	inline constexpr StarterStack STARTER_LOADOUT[] = {
+		{ ItemId::Hoe, 1 }, { ItemId::WateringCan, 1 }, { ItemId::Axe, 1 }, { ItemId::Pickaxe, 1 }, { ItemId::Scythe, 1 },
+		{ SeedItem(CropId::Parsnip), 8 }, { SeedItem(CropId::Radish), 4 }, { SeedItem(CropId::Strawberry), 2 },
+	};
+
+	// The shop pays this share of an item's ship price at once; the shipping bin pays the full price at the day roll.
+	inline constexpr int SHOP_SELL_BACK_PERMILLE   = 500;
 	inline constexpr float FADE_OUT_SECONDS        = 0.8f;
 	inline constexpr float FADE_HOLD_SECONDS       = 0.6f;
 	inline constexpr float FADE_IN_SECONDS         = 0.8f;

@@ -24,20 +24,17 @@ namespace Dingo
 			if (m_World)
 				m_World->OnDayRoll();
 		});
-		m_Farm = std::make_unique<FarmSim>(*m_Director, m_Inventory);
+		m_Farm = std::make_unique<FarmSim>(*m_Director, m_State.Pack);
+		m_Economy = std::make_unique<EconomySim>(*m_Director, m_State);
 		m_Sleep = std::make_unique<SleepFlow>(*m_Director);
-		m_Build = std::make_unique<BuildController>(m_Director->GetGrid(), m_Inventory, [this](const TileRect& area)
+		m_Build = std::make_unique<BuildController>(m_Director->GetGrid(), m_State.Pack, [this](const TileRect& area)
 		{
 			if (m_World)
 				m_World->MarkArea(area.X, area.Y, area.W, area.H);
 		});
 		m_Build->SetCalendar(&m_Director->GetCalendar());
 		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
-		for (const CropDef& crop : GetCropDefs())
-		{
-			if (crop.GrowSeason == m_Director->GetCalendar().GetSeason())
-				m_Inventory.Add(SeedItem(crop.Id), STARTER_SEED_COUNT);
-		}
+		m_State.Pack.GiveStarterLoadout();
 		if (!Application::Get().IsHeadless())
 		{
 			Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -63,6 +60,7 @@ namespace Dingo
 		m_Ghost.reset();
 		m_Build.reset();
 		m_Sleep.reset();
+		m_Economy.reset();
 		m_Farm.reset();
 		m_Director.reset();
 	}
@@ -231,7 +229,7 @@ namespace Dingo
 		if (m_Ghost && m_Build)
 			m_Ghost->Update(*m_Build, m_Director->GetGrid());
 		if (m_BuildHud && m_Build)
-			m_BuildHud->Draw(*m_Build, m_Inventory, deltaTime);
+			m_BuildHud->Draw(*m_Build, m_State.Pack, deltaTime);
 		if (m_Fade && m_Sleep)
 			m_Fade->Draw(m_Sleep->GetAlpha());
 		m_SceneManager.OnRender();
