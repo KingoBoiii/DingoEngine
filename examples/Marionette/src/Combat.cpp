@@ -45,6 +45,11 @@ namespace Dingo
 		}
 	}
 
+	bool IsOutsideWindow(const std::optional<ClipRange>& window, float time)
+	{
+		return !window || time < window->Begin - k_RangeSlack || time >= window->End;
+	}
+
 	Combat::Combat(const GameAudio& audio, bool log, ArenaVfx* vfx)
 		: m_Audio(audio), m_Log(log), m_Vfx(vfx)
 	{}
@@ -148,7 +153,7 @@ namespace Dingo
 				record.Kind = Outcome::Blocked;
 				record.Damage = move->Damage * BLOCK_CHIP_FRACTION;
 				record.ParryDenied = target.IsParryDenied();
-				record.InWindow = record.ParryDenied || !Inside(record.Window, record.DefenceTime);
+				record.InWindow = record.ParryDenied || IsOutsideWindow(record.Window, record.DefenceTime);
 			}
 		}
 		return decision;
