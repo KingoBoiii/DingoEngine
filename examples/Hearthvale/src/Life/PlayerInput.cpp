@@ -48,7 +48,7 @@ namespace Dingo
 				intent.HotbarSlot = slot;
 		}
 
-		// E is the camera here, so the keyboard's interact is F; the plan gave both to E.
+		// E is the camera here, so the keyboard's interact is F.
 		if (Input::IsKeyPressed(Key::Q) || Input::IsGamepadButtonPressed(GamepadButton::DPadLeft))
 			intent.CameraSteps -= 1;
 		if (Input::IsKeyPressed(Key::E) || Input::IsGamepadButtonPressed(GamepadButton::DPadRight))

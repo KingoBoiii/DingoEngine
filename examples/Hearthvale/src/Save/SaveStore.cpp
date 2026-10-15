@@ -78,7 +78,7 @@ namespace Dingo
 
 		const std::filesystem::path backup = FileOf(name, ".bak");
 		std::error_code ec;
-		if (data && source == path && std::filesystem::exists(backup, ec))
+		if (data && source != backup && std::filesystem::exists(backup, ec))
 		{
 			DE_WARN("Hearthvale: save '{}' is damaged ({}); trying its backup", FileSystem::PathToUtf8(path), error);
 			std::string backupError;

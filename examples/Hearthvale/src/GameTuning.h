@@ -17,7 +17,7 @@ namespace Dingo
 	inline constexpr int CELL_TILES                = 16;
 	inline constexpr float TILE_SIZE               = 1.0f;
 
-	// The scene bakes Static meshes in fixed 32 m cells by bounds centre (plan 1.4, E9); game cells nest in them.
+	// The scene bakes Static meshes in fixed 32 m cells by bounds centre; game cells nest in them.
 	inline constexpr float ENGINE_STATIC_CELL      = 32.0f;
 
 	// Every slab's bounds centre stays above y = 0, so ground and what stands on it share an engine cell.
@@ -225,7 +225,7 @@ namespace Dingo
 	inline constexpr glm::vec4 UI_FOCUS_COLOR      = glm::vec4(1.0f, 0.9f, 0.45f, 1.0f);
 	inline constexpr glm::vec4 UI_SELECTED_COLOR   = glm::vec4(0.95f, 0.75f, 0.2f, 1.0f);
 
-	// Look and sound (P11). Every value is a first guess: nobody has seen or heard them on a device yet.
+	// Look and sound. Every value is a first guess: nobody has seen or heard them on a device yet.
 	inline constexpr float NIGHT_DUSK_START_HOUR   = 18.0f;
 	inline constexpr float NIGHT_DUSK_END_HOUR     = 20.0f;
 	inline constexpr float NIGHT_DAWN_START_HOUR   = 6.0f;

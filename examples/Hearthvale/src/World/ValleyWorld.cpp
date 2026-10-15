@@ -27,6 +27,22 @@ namespace Dingo
 		m_Dirty.MarkAll();
 	}
 
+	void ValleyWorld::Reset()
+	{
+		for (auto& [id, visual] : m_Occupants)
+			Destroy(visual.Handle);
+		m_Occupants.clear();
+		for (CellState& state : m_CellStates)
+			state.Occupants.clear();
+		m_Dirty.MarkAll();
+	}
+
+	bool ValleyWorld::HasOccupantVisual(uint32_t occupantId) const
+	{
+		const auto found = m_Occupants.find(occupantId);
+		return found != m_Occupants.end() && found->second.Handle.IsValid();
+	}
+
 	void ValleyWorld::Sync()
 	{
 		m_Last = {};

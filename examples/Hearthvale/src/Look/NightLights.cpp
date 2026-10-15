@@ -76,8 +76,16 @@ namespace Dingo
 			if (!Wants(occupant))
 				continue;
 			present.insert(occupant.Id);
-			if (m_Sites.find(occupant.Id) == m_Sites.end())
-				Create(occupant);
+			const auto found = m_Sites.find(occupant.Id);
+			if (found != m_Sites.end())
+			{
+				const Occupant& was = found->second.Source;
+				if (was.Kind == occupant.Kind && was.DefId == occupant.DefId && was.X == occupant.X && was.Y == occupant.Y)
+					continue;
+				Destroy(found->second);
+				m_Sites.erase(found);
+			}
+			Create(occupant);
 		}
 		for (auto it = m_Sites.begin(); it != m_Sites.end();)
 		{
@@ -104,6 +112,7 @@ namespace Dingo
 	void NightLights::Create(const Occupant& occupant)
 	{
 		Site site;
+		site.Source = occupant;
 		const float ground = GroundAt(m_Grid, occupant);
 		const float cx = (static_cast<float>(occupant.X) + 0.5f * static_cast<float>(occupant.W)) * TILE_SIZE;
 		const float cz = (static_cast<float>(occupant.Y) + 0.5f * static_cast<float>(occupant.H)) * TILE_SIZE;

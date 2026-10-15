@@ -126,30 +126,6 @@ def thump(freq, seconds, decay, rng, grit=0.0):
     return out
 
 
-def sfx_ui(rng):
-    write_wav("ui_click.wav", fade_edges(normalise(tone(1250.0, 0.07, 55.0, harmonics=((1, 1), (2, 0.3))), 0.5)))
-    write_wav("ui_focus.wav", fade_edges(normalise(tone(900.0, 0.035, 90.0), 0.3)))
-    up = buf(0.18)
-    add(up, tone(600.0, 0.1, 20.0), 0)
-    add(up, tone(900.0, 0.1, 20.0), int(0.06 * RATE))
-    write_wav("ui_open.wav", fade_edges(normalise(up, 0.5)))
-    down = buf(0.18)
-    add(down, tone(900.0, 0.1, 20.0), 0)
-    add(down, tone(600.0, 0.1, 20.0), int(0.06 * RATE))
-    write_wav("ui_close.wav", fade_edges(normalise(down, 0.5)))
-    coin = buf(0.5)
-    add(coin, tone(1568.0, 0.4, 9.0, harmonics=((1, 1), (3, 0.2))), 0)
-    add(coin, tone(2093.0, 0.4, 7.0, harmonics=((1, 1), (3, 0.15))), int(0.07 * RATE))
-    write_wav("ui_coin.wav", fade_edges(normalise(coin, 0.55)))
-    n = int(0.22 * RATE)
-    err = [0.0] * n
-    for i in range(n):
-        t = i / RATE
-        sq = 1.0 if math.sin(TWO_PI * 170.0 * t) >= 0.0 else -1.0
-        err[i] = sq * math.exp(-t * 9.0) * 0.35
-    write_wav("ui_error.wav", fade_edges(normalise(lowpass(err, 900.0), 0.5)))
-
-
 def sfx_tools(rng):
     hoe = thump(110.0, 0.2, 22.0, rng, 0.9)
     write_wav("tool_hoe.wav", fade_edges(normalise(hoe, 0.7)))
@@ -158,10 +134,6 @@ def sfx_tools(rng):
     water = lowpass(highpass(noise(rng, n), 1200.0), 5000.0)
     water = [v * math.sin(math.pi * i / n) ** 0.7 for i, v in enumerate(water)]
     write_wav("tool_water.wav", fade_edges(normalise(water, 0.45)))
-
-    axe = thump(150.0, 0.26, 16.0, rng, 0.7)
-    add(axe, tone(520.0, 0.1, 40.0), 0, 0.3)
-    write_wav("tool_axe.wav", fade_edges(normalise(axe, 0.7)))
 
     pick = buf(0.3)
     add(pick, tone(2400.0, 0.3, 22.0, harmonics=((1, 1), (1.51, 0.6), (2.3, 0.3))), 0)
@@ -312,7 +284,6 @@ def make_music():
 def main():
     rng = random.Random(4711)
     print("Writing Hearthvale audio to", os.path.normpath(OUT_DIR))
-    sfx_ui(rng)
     sfx_tools(rng)
     sfx_world(rng)
     ambience(rng)

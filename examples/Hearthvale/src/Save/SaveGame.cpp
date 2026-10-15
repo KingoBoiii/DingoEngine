@@ -2,6 +2,7 @@
 #include "Defs/BuildDefs.h"
 #include "Defs/DecorDefs.h"
 #include "Defs/ItemDefs.h"
+#include "Farm/Crops.h"
 #include "World/Valley.h"
 #include "World/ValleyLayout.h"
 
@@ -214,6 +215,8 @@ namespace Dingo
 				if (!ParseInts(built[i], v) || !InRange(v[0], 0, grid.GetWidth() - 1) || !InRange(v[1], 0, grid.GetHeight() - 1) || !InRange(v[2], 1, BUILD_COUNT))
 					return Fail(error, std::format("grid: built entry {} is malformed", i));
 				Tile& tile = grid.At(static_cast<int>(v[0]), static_cast<int>(v[1]));
+				if (tile.GroundState != Ground::Path)
+					return Fail(error, std::format("grid: built entry {} is not on a path", i));
 				if (tile.Built != 0)
 					return Fail(error, std::format("grid: built entry {} repeats a tile", i));
 				tile.Built = static_cast<uint8_t>(v[2]);
@@ -228,7 +231,10 @@ namespace Dingo
 				if (!ParseInts(crops[i], v) || !InRange(v[0], 0, grid.GetWidth() - 1) || !InRange(v[1], 0, grid.GetHeight() - 1)
 					|| !InRange(v[2], 0, CROP_COUNT - 1) || !InRange(v[3], 0, CROP_STAGES - 1) || !InRange(v[4], 0, 255) || !InRange(v[5], -DAY_LIMIT, DAY_LIMIT))
 					return Fail(error, std::format("grid: crop entry {} is malformed", i));
-				CropRecord& crop = grid.At(static_cast<int>(v[0]), static_cast<int>(v[1])).Crop;
+				Tile& cropTile = grid.At(static_cast<int>(v[0]), static_cast<int>(v[1]));
+				if (cropTile.GroundState != Ground::Tilled && cropTile.GroundState != Ground::Watered)
+					return Fail(error, std::format("grid: crop entry {} is not on soil", i));
+				CropRecord& crop = cropTile.Crop;
 				if (crop.Present())
 					return Fail(error, std::format("grid: crop entry {} repeats a tile", i));
 				crop.Def = static_cast<uint8_t>(v[2]);
@@ -261,8 +267,24 @@ namespace Dingo
 				occupant.H = static_cast<uint8_t>(v[6]);
 				occupant.Rotation = static_cast<uint8_t>(v[7]);
 				occupant.Variant = static_cast<uint8_t>(v[8]);
+				if (kind == OccupantKind::Building)
+				{
+					const Footprint footprint = RotatedFootprint(GetBuildDef(static_cast<BuildId>(occupant.DefId)), occupant.Rotation);
+					if (occupant.W != footprint.W || occupant.H != footprint.H)
+						return Fail(error, std::format("grid: occupant {} does not match its building's footprint", occupant.Id));
+				}
 				if (!grid.RestoreOccupant(occupant))
 					return Fail(error, std::format("grid: occupant {} overlaps another, leaves the valley or is out of order", occupant.Id));
+			}
+
+			for (int y = 0; y < grid.GetHeight(); ++y)
+			{
+				for (int x = 0; x < grid.GetWidth(); ++x)
+				{
+					const Tile& tile = grid.At(x, y);
+					if (tile.Crop.Present() && tile.Occupant != k_NoOccupant && !IsGreenhouseTile(grid, x, y))
+						return Fail(error, std::format("grid: the crop at {}, {} is under a building or decoration", x, y));
+				}
 			}
 
 			int64_t next = 0;
@@ -495,6 +517,8 @@ namespace Dingo
 					request.Progress = static_cast<int>(progress);
 					request.Baseline = static_cast<int>(baseline);
 					request.Done = entry[2].AsBool();
+					if (request.Done && request.Progress < board.TargetCount(static_cast<int>(b), static_cast<int>(r)))
+						return Fail(error, std::format("board {}: request {} is done before its target", b, r));
 				}
 			}
 			return true;

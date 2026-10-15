@@ -12,7 +12,7 @@ namespace Dingo
 	class VillagerSim;
 	class VillagerWorld;
 
-	// The Life suite's scene half (plan 5): villagers found by a physics ray, animal entities following the herd. Needs
+	// The Life suite's scene half: villagers found by a physics ray, animal entities following the herd. Needs
 	// a window and a scene; never run headless.
 	class LifeWorldCheckRun
 	{
@@ -21,7 +21,7 @@ namespace Dingo
 		bool Tick(CheckReport& report, ValleyDirector& director, const VillagerSim& sim, VillagerWorld* villagers, AnimalWorld* animals, Herd& herd);
 
 	private:
-		enum class Step : uint8_t { Start, Settle, Villagers, Animals, Cleared, Done };
+		enum class Step : uint8_t { Start, Settle, Villagers, Animals, Replaced, Cleared, Done };
 
 		bool Finish(CheckReport& report, ValleyDirector& director);
 

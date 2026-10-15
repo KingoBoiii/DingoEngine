@@ -83,12 +83,10 @@ Everything below is CC0 unless stated; each pack's licence text is kept beside i
 | What | Author | Licence | Where |
 |---|---|---|---|
 | Nature Kit 2.1, Survival Kit 2.0, Fantasy Town Kit 2.0, Cube Pets 2.0 (3D models) | Kenney, [www.kenney.nl](https://www.kenney.nl) | CC0 | `assets/kenney/` |
-| UI Pack 2.0, Game Icons (2D graphics, UI) | Kenney | CC0 | `assets/kenney/ui-pack`, `assets/kenney/game-icons` |
-| Interface Sounds 1.0, RPG Audio, UI SFX Set (sound effects) | Kenney | CC0 | `assets/kenney/` |
+| Interface Sounds 1.0, RPG Audio (sound effects) | Kenney | CC0 | `assets/kenney/` |
 | KayKit Adventurers 2.0 (Barbarian, Knight), Character Animations 1.1 | Kay Lousberg, [www.kaylousberg.com](https://www.kaylousberg.com) | CC0 | `assets/kaykit/` |
 | Fredoka SemiBold (headings) | The Fredoka Project Authors, [Fredoka](https://github.com/hafontia/Fredoka-One) | SIL OFL 1.1 | `assets/fonts/`, `LICENSE-Fredoka.txt` |
 | Inter Bold (body text) | The Inter Project Authors, [Inter](https://rsms.me/inter) | SIL OFL 1.1 | `assets/fonts/`, `LICENSE-Inter.txt` |
 | Music, ambience and the other sound effects | Synthesized for this project | same as the repository | `assets/audio/` |
 
-Not every pack on disk is used by every build: the Game Icons PNGs are not drawn yet. The engine's own
-components and their licences are in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).
+The engine's own components and their licences are in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

@@ -4,7 +4,7 @@
 namespace Dingo
 {
 
-	// What the farmer wants this step: the keyboard and pad fill it, and the autoplay bot (P13) fills the same
+	// What the farmer wants this step: the keyboard and pad fill it, and the autoplay bot fills the same
 	// struct instead. Move is relative to the camera (x right, y forward). The pulse fields are true for the one
 	// step that follows a press; ClearPulses ends them.
 	struct PlayerIntent

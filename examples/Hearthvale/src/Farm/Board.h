@@ -41,7 +41,7 @@ namespace Dingo
 		bool FestivalTriggered = false;
 	};
 
-	// The community board (plan 2.1): one board per season, four requests each, filled by delivery. A board opens when its
+	// The community board: one board per season, four requests each, filled by delivery. A board opens when its
 	// season starts and stays open until done. Rewards are paid by Settle, once per request. After the festival every
 	// request comes back scaled by (1 + tier) in count and reward. Plain data; the sim owns one.
 	class CommunityBoard

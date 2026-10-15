@@ -8,6 +8,7 @@
 #include "Checks/Autoplay.h"
 #include "Checks/CheckReport.h"
 #include "Checks/LifeWorldChecks.h"
+#include "Checks/ReplaceChecks.h"
 #include "Checks/StaticChecks.h"
 #include "Checks/UiChecks.h"
 #include "Farm/DemoLayout.h"
@@ -122,9 +123,11 @@ namespace Dingo
 		std::unique_ptr<StaticCheckRun> m_StaticChecks;
 		std::unique_ptr<LifeWorldCheckRun> m_LifeChecks;
 		std::unique_ptr<UiCheckRun> m_UiChecks;
+		std::unique_ptr<ReplaceCheckRun> m_ReplaceChecks;
 		bool m_SimChecksDone = false;
 		bool m_LifeChecksStarted = false;
 		bool m_UiChecksStarted = false;
+		bool m_ReplaceChecksStarted = false;
 		bool m_ChecksDone = false;
 	};
 

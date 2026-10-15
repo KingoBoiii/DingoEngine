@@ -12,7 +12,7 @@ namespace Dingo
 
 	struct LaunchOptions;
 
-	// The per-step order of plan 3.2. Nothing else updates game state. Crops grow only at the day roll,
+	// The per-step order. Nothing else updates game state. Crops grow only at the day roll,
 	// so they sit in DayRollStep, not here.
 	enum class SimStage : uint8_t
 	{

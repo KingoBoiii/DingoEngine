@@ -413,7 +413,13 @@ namespace Dingo
 		if (arg < 0 || arg >= ITEM_COUNT)
 			return;
 		const ItemId item = static_cast<ItemId>(arg);
-		const int count = (std::min)(quantity, m_Inventory.Count(item));
+		const int held = m_Inventory.Count(item);
+		if (held <= 0)
+		{
+			SetStatus(ToString(TradeResult::NotEnough));
+			return;
+		}
+		const int count = (std::min)(quantity, held);
 		const int price = ShopSellBackPrice(item);
 		const TradeResult result = ShopSellItem(m_Inventory, item, count);
 		SetStatus(result == TradeResult::Ok ? std::format("Sold {} {} for {} coins", count, GetItemDef(item).Name, price * count) : std::string(ToString(result)));
@@ -450,13 +456,25 @@ namespace Dingo
 		const int quantity = GetQuantity();
 		if (m_Tab == 0)
 		{
-			const int count = (std::min)(quantity, m_Inventory.Count(item));
+			const int held = m_Inventory.Count(item);
+			if (held <= 0)
+			{
+				SetStatus(ToString(TradeResult::NotEnough));
+				return;
+			}
+			const int count = (std::min)(quantity, held);
 			const TradeResult result = bin.Ship(m_Inventory, item, count);
 			SetStatus(result == TradeResult::Ok ? std::format("Put {} {} in the bin", count, GetItemDef(item).Name) : std::string(ToString(result)));
 		}
 		else
 		{
-			const int count = (std::min)(quantity, bin.Held(item));
+			const int held = bin.Held(item);
+			if (held <= 0)
+			{
+				SetStatus(ToString(TradeResult::NotEnough));
+				return;
+			}
+			const int count = (std::min)(quantity, held);
 			const TradeResult result = bin.Retrieve(m_Inventory, item, count);
 			SetStatus(result == TradeResult::Ok ? std::format("Took {} {} back", count, GetItemDef(item).Name) : std::string(ToString(result)));
 		}

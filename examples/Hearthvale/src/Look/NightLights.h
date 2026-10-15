@@ -38,6 +38,7 @@ namespace Dingo
 		struct Site
 		{
 			Kind What = Kind::Lamp;
+			Occupant Source;
 			glm::vec3 Position{ 0.0f };
 			glm::vec3 Color{ 1.0f };
 			float Intensity = 1.0f;

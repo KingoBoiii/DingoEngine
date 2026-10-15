@@ -117,7 +117,7 @@ namespace Dingo
 		if (m_AnimalSim)
 			m_AnimalSim->Reset(m_Director->GetSeed());
 		if (m_World)
-			m_World->MarkAll();
+			m_World->Reset();
 		m_LightsSeenCells = ~0ull;
 		if (m_Player)
 		{
@@ -209,6 +209,7 @@ namespace Dingo
 		m_StaticChecks.reset();
 		m_LifeChecks.reset();
 		m_UiChecks.reset();
+		m_ReplaceChecks.reset();
 		m_Perf.reset();
 		ReleaseScenePieces();
 		m_World.reset();
@@ -432,7 +433,7 @@ namespace Dingo
 				for (const AnimalMotion& motion : m_AnimalSim->GetMotions())
 				{
 					if (motion.Kind == AnimalKind::Chicken)
-						frame.Chickens.emplace_back(motion.Position.x * TILE_SIZE, GROUND_TOP, motion.Position.y * TILE_SIZE);
+						frame.Chickens.emplace_back(motion.Position.x, GROUND_TOP, motion.Position.y);
 				}
 			}
 			m_Audio->Update(frame);
@@ -525,10 +526,10 @@ namespace Dingo
 		}
 		if (!intent.Interact)
 			return std::nullopt;
-		const std::optional<VillagerPick> near = PickNearby(places, m_Aim.Feet, m_Aim.Yaw, VILLAGER_TALK_RADIUS, VILLAGER_TALK_ARC_DEG);
-		if (!near)
+		const std::optional<VillagerPick> nearby = PickNearby(places, m_Aim.Feet, m_Aim.Yaw, VILLAGER_TALK_RADIUS, VILLAGER_TALK_ARC_DEG);
+		if (!nearby)
 			return std::nullopt;
-		return near->Who;
+		return nearby->Who;
 	}
 
 	void HearthvaleLayer::RunChecks()
@@ -564,6 +565,16 @@ namespace Dingo
 			return;
 
 		m_UiChecks.reset();
+		if (!m_ReplaceChecksStarted)
+		{
+			m_ReplaceChecksStarted = true;
+			if (!Application::Get().IsHeadless() && m_World)
+				m_ReplaceChecks = std::make_unique<ReplaceCheckRun>();
+		}
+		if (m_ReplaceChecks && !m_ReplaceChecks->Tick(m_Report, *m_Director, m_State, *m_World, [this] { OnGameReplaced(); }))
+			return;
+
+		m_ReplaceChecks.reset();
 		m_ChecksDone = true;
 		m_Report.LogSummary();
 		if (Application::Get().IsHeadless())
@@ -597,7 +608,7 @@ namespace Dingo
 		if (days && !options.HasStepsPerFrame)
 			steps = headless ? DAY_TICKS : DAYS_STEPS_WINDOWED;
 		const float simSeconds = days ? SIM_STEP_SECONDS : step;
-		if (m_Saves && !(m_Screens && m_Screens->IsOpen(ScreenId::Title)))
+		if (m_Saves && !(m_Screens && m_Screens->IsOpen()))
 			m_Saves->AddPlayTime(simSeconds * static_cast<float>(steps));
 
 		PerfSample perf{};

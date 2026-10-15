@@ -12,7 +12,7 @@ namespace Dingo
 	class ScreenHost;
 	class ValleyDirector;
 
-	// The UI suite's windowed half (plan 5): measures every label with the real font, then opens each screen on the
+	// The UI suite's windowed half: measures every label with the real font, then opens each screen on the
 	// live host and reads what DingoUI reports. The pad cannot be driven from a game (Input's simulated pad is
 	// private), so focus moves are covered by the pure suite's mirror of DingoUI's navigation, and a pad pass is
 	// P18's. Needs a window and the renderer; never run headless.

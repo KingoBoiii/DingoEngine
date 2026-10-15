@@ -27,7 +27,7 @@ namespace Dingo
 	// Derives the valley's entities from the grid, which stays the truth. Edits mark tiles; Sync rebuilds each
 	// marked 16 x 16 cell once and touches only what changed, so an unchanged cell writes identical draw state
 	// and the engine does not rebake it. Ground, soil, crops, buildables and landmarks are Static; decoration is
-	// dynamic so its thousands of copies instance (plan 11.5). GPU side: never constructed headless.
+	// dynamic so its thousands of copies instance. GPU side: never constructed headless.
 	class ValleyWorld
 	{
 	public:
@@ -38,6 +38,8 @@ namespace Dingo
 		void MarkTile(int x, int y) { m_Dirty.MarkTile(x, y); }
 		void MarkArea(int x, int y, int w, int h) { m_Dirty.MarkArea(x, y, w, h); }
 		void MarkAll() { m_Dirty.MarkAll(); }
+		// Drops every occupant visual and rebuilds all cells; for a replaced game, whose occupant ids restart at 1.
+		void Reset();
 		// Queues every cell a day roll can change (crops and soil); the director's day roll calls it.
 		void OnDayRoll() { m_DayRollPending = true; }
 
@@ -48,6 +50,8 @@ namespace Dingo
 		uint64_t GetCellsRebuiltTotal() const { return m_CellsRebuiltTotal; }
 		const DirtyCells& GetCells() const { return m_Dirty; }
 		bool IsStatic() const { return m_Options.Static; }
+		bool HasOccupantVisual(uint32_t occupantId) const;
+		size_t GetOccupantVisualCount() const { return m_Occupants.size(); }
 
 	private:
 		struct CellState

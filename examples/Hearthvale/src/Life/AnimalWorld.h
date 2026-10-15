@@ -3,6 +3,7 @@
 
 #include "Farm/Animals.h"
 
+#include <optional>
 #include <unordered_map>
 
 namespace Dingo
@@ -19,6 +20,7 @@ namespace Dingo
 		void Sync(const Herd& herd, const AnimalSim& sim, float dt);
 
 		int EntityCount() const { return static_cast<int>(m_Pieces.size()); }
+		std::optional<AnimalKind> KindOf(uint32_t animalId) const;
 
 	private:
 		struct Piece

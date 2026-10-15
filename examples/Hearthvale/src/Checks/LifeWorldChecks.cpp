@@ -116,6 +116,20 @@ namespace Dingo
 					return false;
 				report.Check(animals->EntityCount() == 2, "Life world: each animal in the herd gets an entity");
 				herd.Clear();
+				herd.Add(AnimalKind::Cow, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
+				herd.Add(AnimalKind::Chicken, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
+				m_Frames = 0;
+				m_Step = Step::Replaced;
+				return false;
+			}
+
+			case Step::Replaced:
+			{
+				if (++m_Frames < 4)
+					return false;
+				report.Check(animals->EntityCount() == 2 && animals->KindOf(1) == AnimalKind::Cow && animals->KindOf(2) == AnimalKind::Chicken,
+					"Life world: a replaced herd whose ids repeat gets the new kinds' bodies");
+				herd.Clear();
 				m_Frames = 0;
 				m_Step = Step::Cleared;
 				return false;

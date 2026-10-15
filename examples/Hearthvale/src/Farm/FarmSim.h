@@ -16,7 +16,7 @@ namespace Dingo
 		DayRollReason Reason = DayRollReason::Sleep;
 	};
 
-	// The farm's part of the day roll (plan 3.2), registered on the director's hooks: at the Crops step a pass-out
+	// The farm's part of the day roll, registered on the director's hooks: at the Crops step a pass-out
 	// costs coins, then crops grow or wither and the soil dries; at Sprinklers the dawn water goes out for the new day;
 	// at Weather a rainy new day waters the outdoor soil. Plain C++: no renderer, runs headless.
 	class FarmSim

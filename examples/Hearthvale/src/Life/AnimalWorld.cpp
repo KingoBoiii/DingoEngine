@@ -22,6 +22,14 @@ namespace Dingo
 	{
 	}
 
+	std::optional<AnimalKind> AnimalWorld::KindOf(uint32_t animalId) const
+	{
+		const auto found = m_Pieces.find(animalId);
+		if (found == m_Pieces.end() || !found->second.Root.IsValid())
+			return std::nullopt;
+		return found->second.Kind;
+	}
+
 	AnimalWorld::Piece AnimalWorld::Create(const Animal& animal)
 	{
 		Piece piece;
@@ -62,7 +70,8 @@ namespace Dingo
 		std::vector<uint32_t> gone;
 		for (const auto& [id, piece] : m_Pieces)
 		{
-			if (!herd.Find(id))
+			const Animal* animal = herd.Find(id);
+			if (!animal || animal->Kind != piece.Kind)
 				gone.push_back(id);
 		}
 		for (uint32_t id : gone)

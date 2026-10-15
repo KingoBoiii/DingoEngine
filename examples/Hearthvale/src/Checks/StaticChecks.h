@@ -11,7 +11,7 @@ namespace Dingo
 	class ValleyDirector;
 	class ValleyWorld;
 
-	// The Static suite (plan 5): edits the live grid one step a frame and reads what the next frame rebaked.
+	// The Static suite: edits the live grid one step a frame and reads what the next frame rebaked.
 	// Needs a window and the renderer; never run headless.
 	class StaticCheckRun
 	{

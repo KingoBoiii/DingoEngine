@@ -18,7 +18,7 @@ namespace Dingo
 		int GiftsOnLastGiftDay = 0;
 	};
 
-	// What each villager feels about the farmer (plan 2.2). Plain data like the rest of GameState; the day is passed in,
+	// What each villager feels about the farmer. Plain data like the rest of GameState; the day is passed in,
 	// so the daily limits need no day-roll hook.
 	class Friendship
 	{

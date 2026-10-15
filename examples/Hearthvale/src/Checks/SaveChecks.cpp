@@ -279,6 +279,29 @@ namespace Dingo
 			report.Check(refuses([](SaveData& s) { s["grid"]["ground"][3] = "gg"; }), "Save: a short ground row is refused");
 			report.Check(refuses([](SaveData& s) { s.Remove("animals"); }), "Save: a missing section is refused");
 
+			const auto reasonFor = [&save](auto&& edit)
+			{
+				SaveData broken = save;
+				edit(broken);
+				LoadedGame target;
+				std::string why;
+				return ReadSave(broken, target, why) ? std::string() : why;
+			};
+			report.Check(reasonFor([](SaveData& s) { s["grid"]["crops"].Push(std::string("0 0 0 0 0 0")); }).find("not on soil") != std::string::npos,
+				"Save: a crop on ground that is not soil is refused");
+			report.Check(reasonFor([](SaveData& s) { s["grid"]["built"].Push(std::string("0 0 1")); }).find("not on a path") != std::string::npos,
+				"Save: a built tile on ground that is not a path is refused");
+			report.Check(reasonFor([](SaveData& s) { s["grid"]["occupants"].Push(std::string("4000000000 1 0 0 0 5 5 0 0")); }).find("footprint") != std::string::npos,
+				"Save: a building whose size is not its footprint is refused");
+			report.Check(reasonFor([](SaveData& s)
+			{
+				SaveData request = SaveData::MakeArray();
+				request.Push(0);
+				request.Push(0);
+				request.Push(true);
+				s["board"]["boards"][0][0] = std::move(request);
+			}).find("done before its target") != std::string::npos, "Save: a board request done before its target is refused");
+
 			SaveData newer = save;
 			newer["schema"] = SAVE_SCHEMA + 1;
 			LoadedGame ignored;
@@ -347,29 +370,62 @@ namespace Dingo
 			read = store.Read("slot1", out);
 			report.Check(read.State == SlotState::Ok && read.FromBackup && out.Seed == 31, "Save store: a write killed before its rename is recovered from the complete .tmp");
 
+			const bool restored = store.Write("slot1", saveA) && store.Write("slot1", saveB);
+			std::filesystem::remove(path, ec);
+			WriteText(tmp, invalid.ToJson());
+			read = store.Read("slot1", out);
+			report.Check(restored && read.State == SlotState::Ok && read.FromBackup && out.Seed == 31,
+				"Save store: a missing save with an unusable .tmp still falls back to its .bak");
+
 			report.Check(store.Delete("slot1") && !store.Exists("slot1") && store.Read("slot1", out).State == SlotState::Empty && !FileExists(tmp),
 				"Save store: delete leaves no file, backup or temp behind");
 			report.Check(!store.Write("../escape", saveA) && !store.Exists("../escape"), "Save store: a name that is not a plain slot name is refused");
 		}
 
-		std::optional<std::string> ReadFixture()
-		{
-			for (const char* path : { "test/saves/hearthvale-v0.json", "assets/test/saves/hearthvale-v0.json" })
-			{
-				if (const std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(FileSystem::PathFromUtf8(path)))
-					return std::string(bytes->begin(), bytes->end());
-			}
-			return std::nullopt;
-		}
+		constexpr const char* k_FixtureV0 = R"json(
+{
+  "seed": 7,
+  "day": 4,
+  "tick": 0,
+  "weather": 1,
+  "coins": 812,
+  "grid": {
+    "width": 96,
+    "height": 96,
+    "tiles": [[25, 43, 1], [26, 43, 2], [27, 43, 1], [40, 47, 3]],
+    "built": ["40 47 4"],
+    "crops": ["26 43 0 1 2 2"],
+    "occupants": ["3 1 0 30 44 1 1 0 0", "9 0 0 12 30 1 1 0 2"],
+    "nextOccupant": 12
+  },
+  "pack": {
+    "selected": 1,
+    "slots": [
+      { "slot": 0, "item": "Hoe", "count": 1 },
+      { "slot": 1, "item": "Watering Can", "count": 1 },
+      { "slot": 2, "item": "Parsnip Seeds", "count": 5 },
+      { "slot": 9, "item": "Wood", "count": 14 }
+    ],
+    "plans": [14]
+  },
+  "bin": { "Parsnip": 3 },
+  "board": {
+    "festival": 0,
+    "tier": 0,
+    "boards": [
+      [[2, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]],
+      [[0, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]],
+      [[0, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]],
+      [[0, 0, false], [0, 0, false], [0, 0, false], [0, 0, false]]
+    ]
+  }
+}
+)json";
 
 		void MigrationChecks(CheckReport& report)
 		{
-			const std::optional<std::string> text = ReadFixture();
-			report.Check(text.has_value(), "Save: the schema 0 fixture is found");
-			if (!text)
-				return;
 			std::string error;
-			const std::optional<SaveData> fixture = SaveData::FromJson(*text, &error);
+			const std::optional<SaveData> fixture = SaveData::FromJson(k_FixtureV0, &error);
 			report.Check(fixture && SaveSchemaOf(*fixture) == 0, "Save: the fixture parses and has no schema");
 			if (!fixture)
 				return;

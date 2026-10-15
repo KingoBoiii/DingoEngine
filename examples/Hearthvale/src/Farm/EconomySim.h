@@ -12,7 +12,7 @@ namespace Dingo
 		BoardReport Board;
 	};
 
-	// The economy's part of the day roll (plan 3.2), on the director's hooks: at Shipping the bin pays out, and what
+	// The economy's part of the day roll, on the director's hooks: at Shipping the bin pays out, and what
 	// it paid counts toward the board's shipping and earning requests; at Board the board is settled for the new day and
 	// its rewards are banked. The pass-out coin loss is FarmSim's, at the earlier Crops step, so the payout is never taxed.
 	// Plain C++: no renderer, runs headless.
