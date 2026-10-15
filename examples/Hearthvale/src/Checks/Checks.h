@@ -31,6 +31,7 @@ namespace Dingo
 	void RunSkyChecks(CheckReport& report);
 	void RunPlayerChecks(CheckReport& report);
 	void RunPlacementChecks(CheckReport& report);
+	void RunGrowthChecks(CheckReport& report);
 	void RunSimChecks(CheckReport& report);
 
 }

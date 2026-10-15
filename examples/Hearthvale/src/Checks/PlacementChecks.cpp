@@ -594,7 +594,7 @@ namespace Dingo
 			controller.SetMode(BuildMode::Tools);
 			controller.SelectTool(ItemId::Hoe);
 			controller.Step(swing, aim);
-			report.Check(controller.GetTool() == ItemId::Hoe && dirtyCalls == callsBefore + 2, "Controller: the hoe is selectable and does nothing until P6");
+			report.Check(controller.GetTool() == ItemId::Hoe && dirtyCalls == callsBefore + 3, "Controller: the hoe is selectable and tills the tile in front");
 
 			Fixture g;
 			BuildController mouse(g.Grid, g.Stock, [](const TileRect&) {});

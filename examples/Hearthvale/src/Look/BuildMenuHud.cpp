@@ -66,7 +66,12 @@ namespace Dingo
 
 		if (controller.GetMode() == BuildMode::Tools)
 		{
-			Line(std::format("Tool: {}   [1-5 / wheel] switch   [Space / click] use   [B] build", GetItemDef(controller.GetTool()).Name), HUD_TEXT_PICK_COLOR);
+			Line(std::format("Tool: {}   [1-5 / wheel] switch   [Space / click] use   [F] plant / harvest / sleep   [B] build", GetItemDef(controller.GetTool()).Name), HUD_TEXT_PICK_COLOR);
+			const CropId seed = controller.GetSeed();
+			if (seed < CropId::Count)
+				Line(std::format("Seed: {} x{}   [T] next", GetCropDef(seed).Name, inventory.Count(SeedItem(seed))), HUD_TEXT_COLOR);
+			else
+				Line("Seed: none for this season", HUD_TEXT_DIM_COLOR);
 		}
 		else
 		{

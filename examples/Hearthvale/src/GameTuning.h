@@ -44,6 +44,13 @@ namespace Dingo
 
 	inline constexpr int BUILD_REFUND_PERMILLE     = 500;
 
+	inline constexpr int PASSOUT_COIN_LOSS_PERMILLE = 100;
+	inline constexpr int STARTER_SEED_COUNT        = 10;
+	inline constexpr float FADE_OUT_SECONDS        = 0.8f;
+	inline constexpr float FADE_HOLD_SECONDS       = 0.6f;
+	inline constexpr float FADE_IN_SECONDS         = 0.8f;
+	inline constexpr int FADE_UI_LAYER             = 100;
+
 	inline constexpr int TARGET_MOUSE_REACH_TILES  = 3;
 	inline constexpr float TARGET_MARKER_HEIGHT    = 0.04f;
 	inline constexpr float TARGET_MARKER_LIFT      = 0.03f;

@@ -36,6 +36,7 @@ namespace Dingo
 		intent.RotatePlacement |= Input::IsKeyPressed(Key::R) || Input::IsGamepadButtonPressed(GamepadButton::Y);
 		intent.ToggleInventory |= Input::IsKeyPressed(Key::Tab) || Input::IsGamepadButtonPressed(GamepadButton::Back);
 		intent.ToggleBuild |= Input::IsKeyPressed(Key::B);
+		intent.CycleSeed |= Input::IsKeyPressed(Key::T) || Input::IsGamepadButtonPressed(GamepadButton::DPadUp);
 		intent.Pause |= Input::IsKeyPressed(Key::Escape) || Input::IsGamepadButtonPressed(GamepadButton::Start);
 
 		intent.HotbarPrevious |= Input::IsGamepadButtonPressed(GamepadButton::LeftBumper) || (!control && scroll.y > 0.0f);

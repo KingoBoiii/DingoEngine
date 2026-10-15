@@ -19,6 +19,7 @@ namespace Dingo
 		bool RotatePlacement = false;
 		bool ToggleInventory = false;
 		bool ToggleBuild = false;
+		bool CycleSeed = false;
 		bool Pause = false;
 
 		int CameraSteps = 0;
@@ -27,7 +28,7 @@ namespace Dingo
 
 		void ClearPulses()
 		{
-			Use = Interact = HotbarPrevious = HotbarNext = RotatePlacement = ToggleInventory = ToggleBuild = Pause = false;
+			Use = Interact = HotbarPrevious = HotbarNext = RotatePlacement = ToggleInventory = ToggleBuild = CycleSeed = Pause = false;
 			HotbarSlot = -1;
 			CameraSteps = 0;
 			CameraZoomWheel = 0.0f;

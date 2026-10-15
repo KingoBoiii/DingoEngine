@@ -24,11 +24,20 @@ namespace Dingo
 			if (m_World)
 				m_World->OnDayRoll();
 		});
+		m_Farm = std::make_unique<FarmSim>(*m_Director, m_Inventory);
+		m_Sleep = std::make_unique<SleepFlow>(*m_Director);
 		m_Build = std::make_unique<BuildController>(m_Director->GetGrid(), m_Inventory, [this](const TileRect& area)
 		{
 			if (m_World)
 				m_World->MarkArea(area.X, area.Y, area.W, area.H);
 		});
+		m_Build->SetCalendar(&m_Director->GetCalendar());
+		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
+		for (const CropDef& crop : GetCropDefs())
+		{
+			if (crop.GrowSeason == m_Director->GetCalendar().GetSeason())
+				m_Inventory.Add(SeedItem(crop.Id), STARTER_SEED_COUNT);
+		}
 		if (!Application::Get().IsHeadless())
 		{
 			Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -53,6 +62,8 @@ namespace Dingo
 		m_ValleyScene = nullptr;
 		m_Ghost.reset();
 		m_Build.reset();
+		m_Sleep.reset();
+		m_Farm.reset();
 		m_Director.reset();
 	}
 
@@ -60,6 +71,7 @@ namespace Dingo
 	{
 		if (m_Ghost)
 			m_Ghost->Release();
+		m_Fade.reset();
 		m_BuildHud.reset();
 		m_Hud.reset();
 		m_Camera.reset();
@@ -72,7 +84,7 @@ namespace Dingo
 		m_Director->OnStage(SimStage::PlayerIntent, [this](ValleyDirector& director, const StepInfo& step)
 		{
 			if (m_Player)
-				m_Player->Step(m_Intent, director.GetGrid(), m_Camera ? m_Camera->GetYaw() : 0.0f, step.Dt);
+				m_Player->Step(ActiveIntent(), director.GetGrid(), m_Camera ? m_Camera->GetYaw() : 0.0f, step.Dt);
 		});
 		m_Director->OnStage(SimStage::ToolsAndPlacement, [this](ValleyDirector& director, const StepInfo&)
 		{
@@ -80,16 +92,21 @@ namespace Dingo
 				return;
 			m_Aim.Feet = glm::vec2(m_Player->GetFeet().x, m_Player->GetFeet().z);
 			m_Aim.Yaw = m_Player->GetYaw();
-			if (m_Intent.Move != glm::vec2(0.0f))
+			const PlayerIntent& intent = ActiveIntent();
+			if (intent.Move != glm::vec2(0.0f))
 				m_Aim.HasMouse = false;
-			m_Build->Step(m_Intent, m_Aim);
-			if (m_Build->GetAim().FromMouse && m_Intent.Move == glm::vec2(0.0f))
+			m_Build->Step(intent, m_Aim);
+			if (m_Build->GetAim().FromMouse && intent.Move == glm::vec2(0.0f))
 				m_Player->SetYaw(m_Build->GetAim().FaceYaw);
 		});
 		m_Director->OnStage(SimStage::Sky, [this](ValleyDirector& director, const StepInfo& step)
 		{
 			if (m_Sky)
 				m_Sky->Update(step.Dt, director.GetCalendar().GetHours(), director.GetCalendar().GetWeather());
+		});
+		m_Director->OnStage(SimStage::VfxAudio, [this](ValleyDirector& director, const StepInfo&)
+		{
+			m_WeatherFx.SetWeather(director.GetCalendar().GetWeather());
 		});
 		m_Director->OnStage(SimStage::Camera, [this](ValleyDirector&, const StepInfo& step)
 		{
@@ -140,6 +157,12 @@ namespace Dingo
 		m_Hud = std::make_unique<ClockHud>();
 		m_Ghost = std::make_unique<BuildGhost>(*m_ValleyScene);
 		m_BuildHud = std::make_unique<BuildMenuHud>();
+		m_Fade = std::make_unique<FadeOverlay>();
+	}
+
+	const PlayerIntent& HearthvaleLayer::ActiveIntent() const
+	{
+		return m_Sleep && m_Sleep->BlocksInput() ? m_NoIntent : m_Intent;
 	}
 
 	void HearthvaleLayer::UpdateMouseAim()
@@ -209,6 +232,8 @@ namespace Dingo
 			m_Ghost->Update(*m_Build, m_Director->GetGrid());
 		if (m_BuildHud && m_Build)
 			m_BuildHud->Draw(*m_Build, m_Inventory, deltaTime);
+		if (m_Fade && m_Sleep)
+			m_Fade->Draw(m_Sleep->GetAlpha());
 		m_SceneManager.OnRender();
 	}
 

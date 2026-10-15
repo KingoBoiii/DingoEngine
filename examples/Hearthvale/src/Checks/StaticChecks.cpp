@@ -203,9 +203,9 @@ namespace Dingo
 				report.Check(bakedLastFrame == m_FarmEngineCells && m_FarmEngineCells == 2,
 					std::format("Static: planting in two engine cells rebakes those two ({} baked)", bakedLastFrame));
 
-				// Stand-in for P6's growth: the stages change with no tile marked, so only the day roll can find them.
-				grid.At(m_AX, m_AY).Crop.Stage = 1;
-				grid.At(m_BX, m_BY).Crop.Stage = 1;
+				// Growth changes the stages with no tile marked, so only the day roll can find them.
+				grid.SetGround(m_AX, m_AY, Ground::Watered);
+				grid.SetGround(m_BX, m_BY, Ground::Watered);
 				const int rolls = director.GetDayRollCount();
 				director.RequestSleep();
 				director.Step();

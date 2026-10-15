@@ -5,14 +5,18 @@
 #include "Placing/Inventory.h"
 #include "Checks/CheckReport.h"
 #include "Checks/StaticChecks.h"
+#include "Farm/FarmSim.h"
+#include "Farm/SleepFlow.h"
 #include "Life/Player.h"
 #include "Life/PlayerIntent.h"
 #include "Look/BuildGhost.h"
 #include "Look/BuildMenuHud.h"
 #include "Look/CameraRig.h"
+#include "Look/FadeOverlay.h"
 #include "Look/ClockHud.h"
 #include "Look/FarmerAssets.h"
 #include "Look/Sky.h"
+#include "Look/WeatherFx.h"
 #include "ValleyDirector.h"
 #include "World/ValleyWorld.h"
 
@@ -37,9 +41,14 @@ namespace Dingo
 		void RegisterStages();
 		void RunChecks();
 		void UpdateMouseAim();
+		const PlayerIntent& ActiveIntent() const;
 
 	private:
 		std::unique_ptr<ValleyDirector> m_Director;
+		std::unique_ptr<FarmSim> m_Farm;
+		std::unique_ptr<SleepFlow> m_Sleep;
+		WeatherFx m_WeatherFx;
+		std::unique_ptr<FadeOverlay> m_Fade;
 		std::unique_ptr<ValleyWorld> m_World;
 		std::unique_ptr<Sky> m_Sky;
 		std::unique_ptr<FarmerAssets> m_FarmerAssets;
@@ -54,6 +63,7 @@ namespace Dingo
 		glm::vec2 m_LastMouse{ 0.0f };
 		bool m_MouseSeen = false;
 		PlayerIntent m_Intent;
+		PlayerIntent m_NoIntent;
 		SceneManager m_SceneManager;
 		Scene* m_ValleyScene = nullptr;
 		CheckReport m_Report;

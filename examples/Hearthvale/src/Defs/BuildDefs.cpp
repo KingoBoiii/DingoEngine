@@ -27,7 +27,7 @@ namespace Dingo
 			{ BuildId::Beehive,          "Beehive",           BuildCategory::Farm,     1, 1, { 150, 10, 0, 0 }, R, 400,  false, true,  0 },
 			{ BuildId::Coop,             "Coop",              BuildCategory::Building, 3, 2, { 400, 30, 10, 0 }, R, 500, false, true,  0 },
 			{ BuildId::Barn,             "Barn",              BuildCategory::Building, 4, 3, { 900, 60, 30, 0 }, R, 1200, false, true, 0 },
-			{ BuildId::Greenhouse,       "Greenhouse",        BuildCategory::Building, 4, 4, { 1500, 40, 40, 0 }, R, 2000, false, true, 0 },
+			{ BuildId::Greenhouse,       "Greenhouse",        BuildCategory::Building, 4, 4, { 1500, 40, 40, 0 }, R, 2000, false, false, 0 },
 			{ BuildId::Mailbox,          "Mailbox",           BuildCategory::Decor,    1, 1, { 30,  4,  0, 0 }, R, 0,    false, true,  0 },
 			{ BuildId::Sign,             "Sign",              BuildCategory::Decor,    1, 1, { 0,   3,  0, 0 }, R, 0,    false, true,  0 },
 			{ BuildId::FestivalLantern,  "Festival Lantern",  BuildCategory::Light,    1, 1, { 60,  2,  0, 6 }, R, 300,  false, true,  0 },

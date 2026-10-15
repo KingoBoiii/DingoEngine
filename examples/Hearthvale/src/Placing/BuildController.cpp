@@ -93,6 +93,8 @@ namespace Dingo
 			else if (m_Mode == BuildMode::Build && intent.HotbarSlot < BUILD_COUNT)
 				m_Buildable = static_cast<BuildId>(intent.HotbarSlot);
 		}
+		if (intent.CycleSeed && m_Mode == BuildMode::Tools)
+			CycleSeed();
 		if (intent.RotatePlacement && m_Mode == BuildMode::Build)
 			m_Rotation = (m_Rotation + 1) & 3;
 
@@ -103,10 +105,15 @@ namespace Dingo
 			if (m_Mode == BuildMode::Build)
 				Place();
 			else
-				UseTool();
+				UseSelectedTool();
 		}
-		if (intent.Interact && m_Mode == BuildMode::Build)
-			Remove();
+		if (intent.Interact)
+		{
+			if (m_Mode == BuildMode::Build)
+				Remove();
+			else
+				InteractTool();
+		}
 	}
 
 	PlaceOutcome BuildController::Place()
@@ -156,12 +163,140 @@ namespace Dingo
 				Say(std::format("{} needs the {}", GetDecorDef(outcome.Kind).Name, ItemName(outcome.Needed)));
 				break;
 			case ToolResult::NotMine:
-				Say(std::format("The {} is not ready yet", ItemName(tool)));
+				Say(std::format("The {} clears nothing", ItemName(tool)));
 				break;
 			case ToolResult::Nothing:
 				break;
 		}
 		return outcome;
+	}
+
+	void BuildController::CycleSeed()
+	{
+		const int first = m_Seed < CropId::Count ? static_cast<int>(m_Seed) : 0;
+		for (int i = 1; i <= CROP_COUNT; ++i)
+		{
+			const CropId crop = static_cast<CropId>((first + i) % CROP_COUNT);
+			if (m_Inventory.Count(SeedItem(crop)) > 0)
+			{
+				m_Seed = crop;
+				Say(std::format("Seed: {} ({})", GetCropDef(crop).Name, m_Inventory.Count(SeedItem(crop))));
+				return;
+			}
+		}
+		Say("No seeds");
+	}
+
+	CropId BuildController::GetSeed() const
+	{
+		if (m_Seed < CropId::Count && m_Inventory.Count(SeedItem(m_Seed)) > 0)
+			return m_Seed;
+		return PickSeed(m_Inventory, m_Seed, CurrentSeason());
+	}
+
+	void BuildController::Report(const FarmOutcome& outcome, const char* done)
+	{
+		if (outcome.Result == FarmResult::Ok)
+		{
+			if (outcome.Dirty.W > 0 && outcome.Dirty.H > 0)
+				m_OnDirty(outcome.Dirty);
+			Say(done);
+		}
+		else if (outcome.Result != FarmResult::OutOfBounds)
+		{
+			Say(ToString(outcome.Result));
+		}
+	}
+
+	FarmOutcome BuildController::Till()
+	{
+		const FarmOutcome outcome = TillTile(m_Grid, m_Aim.Target.X, m_Aim.Target.Y, CurrentWeather());
+		Report(outcome, "Tilled");
+		return outcome;
+	}
+
+	FarmOutcome BuildController::Water()
+	{
+		const FarmOutcome outcome = WaterTile(m_Grid, m_Aim.Target.X, m_Aim.Target.Y);
+		Report(outcome, "Watered");
+		return outcome;
+	}
+
+	FarmOutcome BuildController::Harvest()
+	{
+		const FarmOutcome outcome = HarvestTile(m_Grid, m_Inventory, m_Aim.Target.X, m_Aim.Target.Y);
+		if (outcome.Result == FarmResult::Ok)
+		{
+			m_OnDirty(outcome.Dirty);
+			Say(std::format("{} +{} {}", GetCropDef(outcome.Crop).Name, outcome.YieldCount, ItemName(outcome.Yield)));
+		}
+		else if (outcome.Result != FarmResult::OutOfBounds)
+		{
+			Say(ToString(outcome.Result));
+		}
+		return outcome;
+	}
+
+	FarmOutcome BuildController::Plant()
+	{
+		const CropId seed = GetSeed();
+		if (seed >= CropId::Count)
+		{
+			Say("No seeds for this season");
+			FarmOutcome none;
+			none.Result = FarmResult::NoSeed;
+			return none;
+		}
+		const FarmOutcome outcome = PlantSeed(m_Grid, m_Inventory, Day(), CurrentSeason(), m_Aim.Target.X, m_Aim.Target.Y, seed);
+		Report(outcome, std::format("Planted {}", GetCropDef(seed).Name).c_str());
+		return outcome;
+	}
+
+	void BuildController::UseSelectedTool()
+	{
+		switch (GetTool())
+		{
+			case ItemId::Hoe:
+				Till();
+				break;
+			case ItemId::WateringCan:
+				Water();
+				break;
+			case ItemId::Scythe:
+				if (m_Grid.InBounds(m_Aim.Target.X, m_Aim.Target.Y) && IsRipe(m_Grid.At(m_Aim.Target.X, m_Aim.Target.Y).Crop))
+					Harvest();
+				else
+					UseTool();
+				break;
+			default:
+				UseTool();
+				break;
+		}
+	}
+
+	bool BuildController::InteractTool()
+	{
+		const int x = m_Aim.Target.X;
+		const int y = m_Aim.Target.Y;
+		if (!m_Grid.InBounds(x, y))
+			return false;
+
+		const LandmarkSpec& home = GetLandmarkSpec(Landmark::FarmHouse);
+		if (home.Footprint.Contains(x, y) || (x == home.DoorX && y == home.DoorY))
+		{
+			if (!m_OnSleep)
+				return false;
+			Say("Going to bed");
+			m_OnSleep();
+			return true;
+		}
+
+		const Tile& tile = m_Grid.At(x, y);
+		if (tile.Crop.Present())
+			return Harvest().Result == FarmResult::Ok;
+		if (tile.GroundState == Ground::Tilled || tile.GroundState == Ground::Watered)
+			return Plant().Result == FarmResult::Ok;
+		return false;
 	}
 
 }

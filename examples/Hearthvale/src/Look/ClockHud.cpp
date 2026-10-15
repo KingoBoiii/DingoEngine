@@ -33,7 +33,7 @@ namespace Dingo
 			.SetLayout(UIBoxParams().SetPadding(k_PaddingX, k_PaddingY).SetBackground(HUD_PANEL_COLOR))))
 			return;
 
-		const std::string text = std::format("{} {}  {}", ToString(calendar.GetSeason()), calendar.GetDayOfSeason(), calendar.GetClockText());
+		const std::string text = std::format("{} {}  {}  {}", ToString(calendar.GetSeason()), calendar.GetDayOfSeason(), calendar.GetClockText(), ToString(calendar.GetWeather()));
 		DingoUI::Text(text, UITextParams().SetSize(HUD_CLOCK_SIZE).SetColor(HUD_TEXT_COLOR).SetWrap(false).SetFont(m_Font));
 		DingoUI::EndRoot();
 	}
