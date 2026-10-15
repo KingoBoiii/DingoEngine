@@ -161,7 +161,9 @@ namespace Dingo
 		/// inside a frame, at once before the first frame, else at the next frame's start. The
 		/// bytes are copied, never kept.
 		[[nodiscard]] static GraphicsBuffer* CreateStorageBuffer(uint64_t size, const std::string& debugName = "Storage Buffer", const void* initialData = nullptr);
-		/// Creates a buffer from params, ready to use; uploads InitialData when set.
+		/// Creates a buffer from params, ready to use; uploads InitialData when set. This and the
+		/// Create*Buffer helpers above return nullptr (with an error) when there is no graphics
+		/// device, as in a headless app.
 		[[nodiscard]] static GraphicsBuffer* Create(const GraphicsBufferParams& params);
 
 		/// Never reused, unlike the buffer's address, so a cache keyed on it cannot hand a freed

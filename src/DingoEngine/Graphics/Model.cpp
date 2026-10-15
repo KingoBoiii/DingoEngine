@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/EventsFile.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Graphics/AssimpVfsIO.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
@@ -174,7 +175,7 @@ namespace Dingo
 
 	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const aiScene* scene, const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
-		if (aiMat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
+		if (!Internal::HasGraphicsDevice() || aiMat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
 			return nullptr;
 
 		aiString aiPath;

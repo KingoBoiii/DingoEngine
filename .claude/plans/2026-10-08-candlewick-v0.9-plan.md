@@ -187,8 +187,7 @@ owed on the GPU machine.
   `NormalBias` for the game alone (`Renderer3DShadowSettings`).
 - **Late probes:** answers come one to three frames late. Stepping out of cover is noticed up to 50 ms
   late at 60 fps, well under `SUSPICION_INVESTIGATE`'s 0.4 s of exposure.
-- **Particles over HUD text:** HUD text already draws at `HUD_TEXT_Z`; particles are 3D, under the
-  2D overlay.
+- **Particles over HUD text:** the HUD is DingoUI (#251), drawn after the scene; particles are 3D, under it.
 
 ## 6. Verification (on the GPU machine)
 

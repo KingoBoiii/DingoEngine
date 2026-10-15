@@ -9,7 +9,20 @@ namespace Dingo
 	inline constexpr const char* SCENE_KEEP    = "Keep";
 	inline constexpr const char* SCENE_END     = "End";
 
-	inline constexpr float HUD_ORTHO_SIZE      = 11.0f;
+	// UI sizes and positions are in units of a screen UI_SCREEN_UNITS tall; UiPx turns them into design pixels of a 1080p layout.
+	inline constexpr float UI_SCREEN_UNITS     = 11.0f;
+	inline constexpr float UI_DESIGN_HEIGHT    = 1080.0f;
+	constexpr float UiPx(float units) { return units * UI_DESIGN_HEIGHT / UI_SCREEN_UNITS; }
+	// A height in units above the screen's middle, as a distance in units below its top.
+	constexpr float ScreenTop(float aboveMiddle) { return 0.5f * UI_SCREEN_UNITS - aboveMiddle; }
+
+	// Roots draw by layer: the fade covers the meters, and the pause dim covers both; text stays above all three.
+	inline constexpr int UI_LAYER_METER        = 0;
+	inline constexpr int UI_LAYER_FADE         = 1;
+	inline constexpr int UI_LAYER_PAUSE        = 2;
+	inline constexpr int UI_LAYER_TEXT         = 3;
+	inline constexpr float UI_FADE_SECONDS     = 0.3f;
+
 	inline constexpr float HUD_PADDING         = 0.45f;
 	inline constexpr float HUD_ROOM_LABEL_SIZE = 0.55f;
 	inline constexpr float HUD_ROOM_LABEL_DROP = 0.95f;
@@ -21,8 +34,6 @@ namespace Dingo
 	inline constexpr float HUD_OIL_STATE_RISE  = 0.42f;
 	inline constexpr float HUD_OIL_HINT_SIZE   = 0.32f;
 	inline constexpr float HUD_OIL_HINT_DROP   = 0.78f;
-	inline constexpr float HUD_OIL_FILL_LIFT   = 0.1f;
-	inline constexpr float HUD_FADE_MARGIN     = 1.0f;
 	inline constexpr float HUD_PROMPT_SIZE     = 0.5f;
 	inline constexpr float HUD_PROMPT_RISE     = 2.3f;
 	inline constexpr float HUD_PROGRESS_WIDTH  = 3.6f;
@@ -32,11 +43,17 @@ namespace Dingo
 	inline constexpr float HUD_TOAST_SIZE      = 0.75f;
 	inline constexpr float HUD_TOAST_DROP      = 1.3f;
 	inline constexpr float HUD_TOAST_FADE_TIME = 0.5f;
-	inline constexpr float HUD_PAUSE_Z         = 0.45f;
 	inline constexpr float HUD_PAUSE_TITLE_SIZE = 1.2f;
 	inline constexpr float HUD_PAUSE_TITLE_RISE = 0.9f;
 	inline constexpr float HUD_PAUSE_HINT_SIZE = 0.42f;
 	inline constexpr float HUD_PAUSE_HINT_DROP = 0.3f;
+	inline constexpr float HUD_PAUSE_BUTTON_Y  = -1.7f;
+
+	inline constexpr float MENU_BUTTON_SIZE    = 0.45f;
+	inline constexpr float MENU_BUTTON_WIDTH   = 4.5f;
+	inline constexpr float MENU_BUTTON_GAP     = 0.2f;
+	inline constexpr float MENU_BUTTON_PAD_X   = 0.5f;
+	inline constexpr float MENU_BUTTON_PAD_Y   = 0.14f;
 
 	inline constexpr float TITLE_HEADING_SIZE  = 1.5f;
 	inline constexpr float TITLE_HEADING_Y     = 2.4f;
@@ -46,6 +63,8 @@ namespace Dingo
 	inline constexpr float TITLE_PROMPT_Y      = -2.2f;
 	inline constexpr float TITLE_CONTROLS_SIZE = 0.34f;
 	inline constexpr float TITLE_CONTROLS_Y    = -3.7f;
+	inline constexpr float TITLE_QUIT_SIZE     = 0.4f;
+	inline constexpr float TITLE_QUIT_Y        = -4.5f;
 	inline constexpr float END_HEADING_SIZE    = 1.2f;
 	inline constexpr float END_HEADING_Y       = 1.8f;
 	inline constexpr float END_TIME_SIZE       = 0.7f;
@@ -332,9 +351,6 @@ namespace Dingo
 	inline constexpr glm::vec3 DEBUG_SHADOWED_COLOR = { 0.6f, 0.3f, 1.0f };
 
 	inline constexpr glm::vec4 COLOR_FADE          = { 0.0f, 0.0f, 0.0f, 1.0f };
-	inline constexpr float HUD_FADE_Z              = 0.5f;
-	// Above the pause dim and the fade: a scene draws text in z order with its sprites.
-	inline constexpr float HUD_TEXT_Z              = 0.6f;
 
 	inline constexpr glm::vec4 COLOR_METER_BG      = { 0.07f, 0.06f, 0.06f, 0.88f };
 	inline constexpr glm::vec4 COLOR_METER_LIT     = { 1.0f, 0.7f, 0.26f, 1.0f };
