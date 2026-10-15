@@ -1351,6 +1351,10 @@ namespace Dingo
 			Check(list && std::abs(list->ScrollOffset.y - 40.0f) < 0.01f, "Widgets: one wheel notch scrolls a scroll area by its WheelStep");
 			Check(list && row && row->Rect.Min.y < list->Rect.Min.y && row->Clip.Min.y == list->Rect.Min.y && row->Clip.Max.y == list->Rect.Max.y, "Widgets: scrolled content moves and is clipped to the area");
 			Check(list && list->ContentSize.y > list->Rect.Max.y - list->Rect.Min.y, "Widgets: a scroll area knows its content overflows");
+			UILayoutRect listRect, rowRect;
+			Check(list && row && DingoUI::GetRect("List", listRect) && DingoUI::GetRect("Row", rowRect), "Layout rects: a scroll area and a row inside it are found by name");
+			Check(rowRect.Min == row->Rect.Min && rowRect.Max == row->Rect.Max && listRect.VisibleMin == listRect.Min && listRect.VisibleMax == listRect.Max, "Layout rects: a scrolled row keeps its real rect; the area itself is not clipped");
+			Check(rowRect.VisibleMin == rowRect.VisibleMax || (rowRect.VisibleMin.y >= listRect.Min.y && rowRect.VisibleMax.y <= listRect.Max.y), "Layout rects: a scrolled row's visible part stays inside the scroll area");
 			Check(context->GetRenderStatistics().DrawCalls == 1, "Widgets: the whole widget scene, scroll area included, is one draw call");
 			SetPointer(k_WidgetEmpty, false, false, false, { 0.0f, -1.0f });
 			return done();
@@ -1590,9 +1594,11 @@ namespace Dingo
 				if (index == 4 && m_WNavHide)
 				{
 					m_WNavResult[4] = {};
+					m_WNavIds[4] = 0;
 					continue;
 				}
 				m_WNavResult[index] = DingoUI::Button(names[index], UIWidgetParams().SetSize(UISize::Fixed(100.0f), UISize::Fixed(40.0f)).SetDefaultFocus(index == 0));
+				m_WNavIds[index] = DingoUI::GetId(names[index]);
 				if (m_WNavResult[index].Clicked)
 					++m_WNavClicks;
 			}
@@ -1601,7 +1607,9 @@ namespace Dingo
 			DingoUI::EndBox();
 		}
 		m_WNavResult[6] = DingoUI::Slider("NVol", &m_WNavSlider, 0.0f, 1.0f, UISliderParams().SetWidth(UISize::Grow()));
+		m_WNavIds[6] = DingoUI::GetId("NVol");
 		m_WNavResult[7] = DingoUI::Toggle("NTog", &m_WNavToggle);
+		m_WNavIds[7] = DingoUI::GetId("NTog");
 		DingoUI::EndRoot();
 		}
 
@@ -1611,6 +1619,8 @@ namespace Dingo
 				.SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.2f, 0.1f, 0.1f, 0.95f })));
 			m_WNavResult[8] = DingoUI::Button("NM1", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
 			m_WNavResult[9] = DingoUI::Button("NM2", UIWidgetParams().SetWidth(UISize::Fixed(120.0f)));
+			m_WNavIds[8] = DingoUI::GetId("NM1");
+			m_WNavIds[9] = DingoUI::GetId("NM2");
 			if (!m_WNavFocus.empty() && m_WNavFocus[1] == 'M')
 				DingoUI::SetFocus(m_WNavFocus);
 			DingoUI::EndRoot();
@@ -1619,6 +1629,8 @@ namespace Dingo
 		{
 			m_WNavResult[8] = {};
 			m_WNavResult[9] = {};
+			m_WNavIds[8] = 0;
+			m_WNavIds[9] = 0;
 		}
 		if (m_WNavInfo)
 		{
@@ -1659,6 +1671,15 @@ namespace Dingo
 			return "";
 		};
 		const auto focusedIs = [&](const char* name) { return std::string_view(focused()) == name; };
+		const auto focusedIdIs = [&](const char* name)
+		{
+			for (uint32_t i = 0; i < k_NavCount; ++i)
+			{
+				if (std::string_view(names[i]) == name)
+					return m_WNavIds[i] != 0 && DingoUI::GetFocusedId() == m_WNavIds[i];
+			}
+			return false;
+		};
 		const auto walk = [&](const Move* moves, uint32_t count)
 		{
 			const uint32_t index = m_NavCounter / 2;
@@ -1689,6 +1710,18 @@ namespace Dingo
 		if (at())
 		{
 			Check(DingoUI::IsFocusVisible() && focusedIs("N1"), "Navigation: the first navigation input shows the ring on the default focus without moving");
+			Check(focusedIdIs("N1"), "Navigation: GetFocusedId is the id GetId gave the focused widget");
+			{
+				UILayoutRect byId, byName, missing;
+				const Internal::UIElement* element = context->GetLastLayout().FindById(m_WNavIds[0]);
+				Check(element && DingoUI::GetRect(m_WNavIds[0], byId) && byId.Min == element->Rect.Min && byId.Max == element->Rect.Max, "Layout rects: GetRect by id matches the last layout's element");
+				Check(DingoUI::GetRect(DingoUI::GetFocusedId(), missing) && missing.Max.x - missing.Min.x == 100.0f && missing.Max.y - missing.Min.y == 40.0f, "Layout rects: the focused widget's rect has the size it was given");
+				Check(DingoUI::GetRect("N1", byName) && byName.Min == byId.Min && byName.Max == byId.Max, "Layout rects: GetRect by name finds the same element as by id");
+				Check(byName.VisibleMin == byName.Min && byName.VisibleMax == byName.Max, "Layout rects: an unclipped element is entirely visible");
+				missing = {};
+				Check(!DingoUI::GetRect("NoSuchWidget", missing) && !DingoUI::GetRect(uint64_t(0), missing) && !DingoUI::GetRect(uint64_t(0x123456789abcdefULL), missing), "Layout rects: an unknown name or id reports false");
+				Check(missing.Min == glm::vec2(0.0f) && missing.Max == glm::vec2(0.0f), "Layout rects: a failed GetRect leaves the output alone");
+			}
 			idle();
 			return done();
 		}
@@ -1738,6 +1771,7 @@ namespace Dingo
 		if (at())
 		{
 			Check(focusedIs("N2"), "Navigation: SetFocus puts the focus on the named widget");
+			Check(focusedIdIs("N2") && !focusedIdIs("N1"), "Navigation: GetFocusedId follows SetFocus");
 			m_WNavClicks = 0;
 			idle();
 			m_WidgetInput.Nav.Accept = true;
@@ -2050,6 +2084,45 @@ namespace Dingo
 		if (at())
 		{
 			Check(context->GetFocusId() == 0, "Navigation: without focusable widgets there is no focus");
+			return done();
+		}
+		if (at())
+		{
+			Check(DingoUI::GetFocusedId() == 0, "Navigation: GetFocusedId is 0 without a focused widget");
+			Input::SetGamepadSimulated(0, true);
+			Check(Input::IsGamepadConnected(0) && Input::IsGamepadSimulated(0), "Simulated pad: SetGamepadSimulated connects the slot at once");
+			Check(Input::GetGamepadName(0) == "Simulated Gamepad" && Input::GetGamepadType(0) == GamepadType::Unknown, "Simulated pad: it is named and typed Unknown");
+			Check(!Input::IsGamepadSimulated(1) && !Input::IsGamepadConnected(1), "Simulated pad: another slot is untouched");
+			Input::SetSimulatedGamepadButton(GamepadButton::X, true);
+			Input::SetSimulatedGamepadAxis(GamepadAxis::LeftX, 2.0f);
+			Check(!Input::IsGamepadButtonDown(GamepadButton::X) && Input::GetGamepadAxisRaw(GamepadAxis::LeftX) == 0.0f, "Simulated pad: a set button and axis wait for the next frame");
+			return done();
+		}
+		if (at())
+		{
+			Check(Input::IsGamepadButtonPressed(GamepadButton::X) && Input::IsGamepadButtonDown(GamepadButton::X), "Simulated pad: a button set last frame is pressed and down now");
+			Check(Input::GetGamepadAxisRaw(GamepadAxis::LeftX) == 1.0f && Input::GetGamepadAxis(GamepadAxis::LeftX) == 1.0f, "Simulated pad: an axis is clamped to 1 and passes the deadzone");
+			Input::SetSimulatedGamepadAxis(GamepadAxis::LeftX, 0.05f);
+			return done();
+		}
+		if (at())
+		{
+			Check(!Input::IsGamepadButtonPressed(GamepadButton::X) && Input::IsGamepadButtonDown(GamepadButton::X), "Simulated pad: the press edge lasts one frame and the button stays down");
+			Check(Input::GetGamepadAxisRaw(GamepadAxis::LeftX) == 0.05f && Input::GetGamepadAxis(GamepadAxis::LeftX) == 0.0f, "Simulated pad: the deadzone applies to a small raw axis");
+			Input::SetSimulatedGamepadButton(GamepadButton::X, false);
+			return done();
+		}
+		if (at())
+		{
+			Check(Input::IsGamepadButtonReleased(GamepadButton::X) && !Input::IsGamepadButtonDown(GamepadButton::X), "Simulated pad: a released button reads released for a frame");
+			Input::SetGamepadSimulated(0, false);
+			Check(!Input::IsGamepadSimulated(0) && !Input::IsGamepadConnected(0), "Simulated pad: turning it off drops the slot at once");
+			Input::SetSimulatedGamepadButton(GamepadButton::X, true);
+			return done();
+		}
+		if (at())
+		{
+			Check(!Input::IsGamepadButtonDown(GamepadButton::X), "Simulated pad: a setter on a slot that is not simulated is ignored");
 			return done();
 		}
 
