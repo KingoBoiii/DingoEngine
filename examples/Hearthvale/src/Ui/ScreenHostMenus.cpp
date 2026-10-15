@@ -165,6 +165,8 @@ namespace Dingo
 	{
 		if (!IsOpen())
 			return;
+		if (m_Services.OnClick)
+			m_Services.OnClick();
 		if (action == PageAction::Back)
 		{
 			Back();

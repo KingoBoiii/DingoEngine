@@ -22,6 +22,7 @@ namespace Dingo
 		float GetDistance() const { return m_Distance; }
 		int GetSteps() const { return m_Steps; }
 		Entity GetEntity() const { return m_Entity; }
+		const glm::vec3& GetFocus() const { return m_Focus; }
 
 	private:
 		void Apply();

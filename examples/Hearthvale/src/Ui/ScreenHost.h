@@ -26,6 +26,8 @@ namespace Dingo
 		// Called when the options screen closes, so the layer can write them to disk.
 		std::function<void(const OptionsState&)> OnOptionsClosed;
 		std::function<void()> OnQuit;
+		// Called when a menu button is pressed, before its action runs.
+		std::function<void()> OnClick;
 	};
 
 	// What the screens do, with no renderer: opening and closing, which input the farmer loses while one is open,

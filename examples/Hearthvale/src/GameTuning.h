@@ -225,5 +225,92 @@ namespace Dingo
 	inline constexpr glm::vec4 UI_FOCUS_COLOR      = glm::vec4(1.0f, 0.9f, 0.45f, 1.0f);
 	inline constexpr glm::vec4 UI_SELECTED_COLOR   = glm::vec4(0.95f, 0.75f, 0.2f, 1.0f);
 
+	// Look and sound (P11). Every value is a first guess: nobody has seen or heard them on a device yet.
+	inline constexpr float NIGHT_DUSK_START_HOUR   = 18.0f;
+	inline constexpr float NIGHT_DUSK_END_HOUR     = 20.0f;
+	inline constexpr float NIGHT_DAWN_START_HOUR   = 6.0f;
+	inline constexpr float NIGHT_DAWN_END_HOUR     = 7.0f;
+	// Lamps and windows glow this much in the day when it rains or snows.
+	inline constexpr float NIGHT_GLOOM_RAIN        = 0.35f;
+	inline constexpr float NIGHT_GLOOM_SNOW        = 0.25f;
+
+	inline constexpr glm::vec3 LAMP_COLOR          = glm::vec3(1.0f, 0.78f, 0.45f);
+	inline constexpr float LAMP_INTENSITY          = 2.2f;
+	inline constexpr float LAMP_RANGE              = 9.0f;
+	inline constexpr float LAMP_HEIGHT             = 2.1f;
+	inline constexpr glm::vec3 LANTERN_COLOR       = glm::vec3(1.0f, 0.55f, 0.3f);
+	inline constexpr float LANTERN_INTENSITY       = 1.4f;
+	inline constexpr float LANTERN_RANGE           = 6.0f;
+	inline constexpr float LANTERN_HEIGHT          = 0.9f;
+	inline constexpr glm::vec3 HOUSE_LIGHT_COLOR   = glm::vec3(1.0f, 0.72f, 0.4f);
+	inline constexpr float HOUSE_LIGHT_INTENSITY   = 1.3f;
+	inline constexpr float HOUSE_LIGHT_RANGE       = 7.0f;
+	inline constexpr float HOUSE_LIGHT_HEIGHT      = 1.6f;
+	inline constexpr float HOUSE_LIGHT_FORWARD     = 1.2f;
+
+	inline constexpr int   LIGHT_LOD_HEADROOM      = 2;
+	inline constexpr float LIGHT_LOD_STICKINESS    = 0.6f;
+	inline constexpr float LIGHT_LOD_FADE_TIME     = 0.4f;
+	inline constexpr float LIGHT_LOD_VIEW_MARGIN   = 2.0f;
+
+	inline constexpr glm::vec3 WINDOW_GLOW_COLOR   = glm::vec3(1.0f, 0.72f, 0.35f);
+	inline constexpr float WINDOW_GLOW_STRENGTH    = 2.5f;
+	inline constexpr glm::vec3 BULB_GLOW_COLOR     = glm::vec3(1.0f, 0.82f, 0.5f);
+	inline constexpr float BULB_GLOW_STRENGTH      = 3.0f;
+	// A glow change under this is not written, so a lit window does not rebuild every frame.
+	inline constexpr float GLOW_WRITE_EPSILON      = 0.01f;
+
+	inline constexpr float FIREFLY_START_HOUR      = 19.5f;
+	inline constexpr float FIREFLY_FULL_HOUR       = 20.5f;
+	inline constexpr float FIREFLY_FADE_OUT_START  = 25.0f;
+	inline constexpr float FIREFLY_FADE_OUT_END    = 26.0f;
+	inline constexpr float FIREFLY_SEASON_AMOUNT[] = { 0.6f, 1.0f, 0.3f, 0.0f };
+	inline constexpr float CHIMNEY_SEASON_AMOUNT[] = { 0.4f, 0.2f, 0.7f, 1.0f };
+
+	inline constexpr float MIST_SEASON_AMOUNT[]    = { 0.8f, 0.4f, 1.0f, 0.6f };
+	inline constexpr float MIST_FADE_OUT_START     = 8.0f;
+	inline constexpr float MIST_FADE_OUT_END       = 10.5f;
+
+	inline constexpr float VFX_FOLLOW_HEIGHT_RAIN  = 12.0f;
+	inline constexpr float VFX_FOLLOW_HEIGHT_SNOW  = 10.0f;
+	inline constexpr float VFX_RAIN_RATE           = 700.0f;
+	inline constexpr float VFX_SNOW_RATE           = 260.0f;
+	inline constexpr float VFX_FIREFLY_RATE        = 12.0f;
+	inline constexpr float VFX_MIST_RATE           = 7.0f;
+	inline constexpr float VFX_CHIMNEY_RATE        = 5.0f;
+	inline constexpr float VFX_SPARK_RATE          = 4.0f;
+	inline constexpr float VFX_AREA_HALF_EXTENT    = 14.0f;
+	inline constexpr uint32_t VFX_BURST_HARVEST    = 18;
+	inline constexpr uint32_t VFX_BURST_DUST       = 22;
+	inline constexpr uint32_t VFX_BURST_CHIPS      = 12;
+	inline constexpr uint32_t VFX_BURST_SPRAY      = 20;
+
+	inline constexpr float MUSIC_FADE_IN_START_HOUR = 6.0f;
+	inline constexpr float MUSIC_FADE_IN_END_HOUR   = 6.4f;
+	inline constexpr float MUSIC_FADE_OUT_START_HOUR = 19.5f;
+	inline constexpr float MUSIC_FADE_OUT_END_HOUR  = 20.0f;
+	inline constexpr float MUSIC_CROSSFADE_SECONDS  = 6.0f;
+	inline constexpr float MUSIC_VOLUME             = 0.8f;
+	inline constexpr float AMBIENCE_FADE_SECONDS    = 3.0f;
+	inline constexpr float AMBIENCE_VOLUME          = 0.7f;
+	inline constexpr float SFX_VOLUME_TOOL          = 0.8f;
+	inline constexpr float SFX_VOLUME_STEP          = 0.45f;
+	inline constexpr float SFX_VOLUME_PLACE         = 0.85f;
+	inline constexpr float SFX_VOLUME_UI            = 0.7f;
+	inline constexpr float SFX_VOLUME_POND          = 0.6f;
+	inline constexpr float SFX_VOLUME_CHICKEN       = 0.7f;
+	inline constexpr float SFX_NEAR                 = 2.0f;
+	inline constexpr float SFX_FAR                  = 22.0f;
+	inline constexpr float SFX_STEP_FAR             = 12.0f;
+	inline constexpr float POND_NEAR                = 3.0f;
+	inline constexpr float POND_FAR                 = 26.0f;
+	inline constexpr float CHICKEN_NEAR             = 2.0f;
+	inline constexpr float CHICKEN_FAR              = 16.0f;
+	inline constexpr float FOOTSTEP_STRIDE          = 1.4f;
+	// A move longer than this in one step is a teleport (sleep, load), not walking.
+	inline constexpr float FOOTSTEP_MAX_JUMP        = 1.0f;
+	inline constexpr float CLUCK_INTERVAL_MIN       = 3.0f;
+	inline constexpr float CLUCK_INTERVAL_MAX       = 9.0f;
+
 	inline constexpr float PERF_FRAMES             = 600.0f;
 }

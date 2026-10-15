@@ -168,10 +168,12 @@ namespace Dingo
 		{
 			m_OnDirty(outcome.Dirty);
 			Say(std::format("Built {}", GetBuildDef(m_Spec.Id).Name));
+			Notify(ActionFeedback::Place);
 		}
 		else
 		{
 			Say(ToString(outcome.Result));
+			Notify(ActionFeedback::Denied);
 		}
 		return outcome;
 	}
@@ -183,14 +185,17 @@ namespace Dingo
 		{
 			m_OnDirty(outcome.Dirty);
 			Say(std::format("Removed {} (refund {})", GetBuildDef(outcome.Id).Name, Cost(outcome.Refund)));
+			Notify(ActionFeedback::Remove);
 		}
 		else if (outcome.InventoryFull)
 		{
 			Say("Inventory full");
+			Notify(ActionFeedback::Denied);
 		}
 		else
 		{
 			Say("Nothing to remove here");
+			Notify(ActionFeedback::Denied);
 		}
 		return outcome;
 	}
@@ -207,12 +212,15 @@ namespace Dingo
 					Say(std::format("{} +{} {}", GetDecorDef(outcome.Kind).Name, outcome.YieldCount, ItemName(outcome.Yield)));
 				else
 					Say(std::format("Cleared {}", GetDecorDef(outcome.Kind).Name));
+				Notify(tool == ItemId::Axe ? ActionFeedback::Chop : tool == ItemId::Pickaxe ? ActionFeedback::Mine : ActionFeedback::Cut);
 				break;
 			case ToolResult::WrongTool:
 				Say(std::format("{} needs the {}", GetDecorDef(outcome.Kind).Name, ItemName(outcome.Needed)));
+				Notify(ActionFeedback::Denied);
 				break;
 			case ToolResult::InventoryFull:
 				Say("Inventory full");
+				Notify(ActionFeedback::Denied);
 				break;
 			case ToolResult::NotMine:
 				Say(std::format("The {} clears nothing", ItemName(tool)));
@@ -246,31 +254,33 @@ namespace Dingo
 		return PickSeed(m_Inventory, m_Seed, CurrentSeason());
 	}
 
-	void BuildController::Report(const FarmOutcome& outcome, const char* done)
+	void BuildController::Report(const FarmOutcome& outcome, const char* done, ActionFeedback feedback)
 	{
 		if (outcome.Result == FarmResult::Ok)
 		{
 			if (outcome.Dirty.W > 0 && outcome.Dirty.H > 0)
 				m_OnDirty(outcome.Dirty);
 			Say(done);
+			Notify(feedback);
 		}
 		else if (outcome.Result != FarmResult::OutOfBounds)
 		{
 			Say(ToString(outcome.Result));
+			Notify(ActionFeedback::Denied);
 		}
 	}
 
 	FarmOutcome BuildController::Till()
 	{
 		const FarmOutcome outcome = TillTile(m_Grid, m_Aim.Target.X, m_Aim.Target.Y, CurrentWeather());
-		Report(outcome, "Tilled");
+		Report(outcome, "Tilled", ActionFeedback::Till);
 		return outcome;
 	}
 
 	FarmOutcome BuildController::Water()
 	{
 		const FarmOutcome outcome = WaterTile(m_Grid, m_Aim.Target.X, m_Aim.Target.Y);
-		Report(outcome, "Watered");
+		Report(outcome, "Watered", ActionFeedback::Water);
 		return outcome;
 	}
 
@@ -281,10 +291,12 @@ namespace Dingo
 		{
 			m_OnDirty(outcome.Dirty);
 			Say(std::format("{} +{} {}", GetCropDef(outcome.Crop).Name, outcome.YieldCount, ItemName(outcome.Yield)));
+			Notify(ActionFeedback::Harvest);
 		}
 		else if (outcome.Result != FarmResult::OutOfBounds)
 		{
 			Say(ToString(outcome.Result));
+			Notify(ActionFeedback::Denied);
 		}
 		return outcome;
 	}
@@ -295,12 +307,13 @@ namespace Dingo
 		if (seed >= CropId::Count)
 		{
 			Say("No seeds for this season");
+			Notify(ActionFeedback::Denied);
 			FarmOutcome none;
 			none.Result = FarmResult::NoSeed;
 			return none;
 		}
 		const FarmOutcome outcome = PlantSeed(m_Grid, m_Inventory, Day(), CurrentSeason(), m_Aim.Target.X, m_Aim.Target.Y, seed);
-		Report(outcome, std::format("Planted {}", GetCropDef(seed).Name).c_str());
+		Report(outcome, std::format("Planted {}", GetCropDef(seed).Name).c_str(), ActionFeedback::Plant);
 		return outcome;
 	}
 

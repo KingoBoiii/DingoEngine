@@ -17,6 +17,9 @@ namespace Dingo
 
 	enum class BuildMode : uint8_t { Tools, Build };
 
+	// What a farm, tool or build action did, for the look and sound layer: the tile it hit.
+	enum class ActionFeedback : uint8_t { Till, Water, Plant, Harvest, Chop, Mine, Cut, Place, Remove, Denied };
+
 	inline constexpr ItemId BUILD_TOOLS[] = { ItemId::Hoe, ItemId::WateringCan, ItemId::Axe, ItemId::Pickaxe, ItemId::Scythe };
 
 	// The ToolsAndPlacement stage: what the farmer aims at, which tool or buildable is picked, and the swing, place
@@ -34,6 +37,7 @@ namespace Dingo
 		// Called when the interact pulse lands on a landmark other than the farmhouse; true when it opened something.
 		using InteractFn = std::function<bool(Landmark)>;
 		using TileInteractFn = std::function<bool(int, int)>;
+		using FeedbackFn = std::function<void(ActionFeedback, int, int)>;
 
 		BuildController(TileGrid& grid, Inventory& inventory, DirtyFn onDirty);
 
@@ -63,6 +67,8 @@ namespace Dingo
 		// The calendar gives the day, season and weather the farm actions use; without one it is a clear spring day 0.
 		void SetCalendar(const Calendar* calendar) { m_Calendar = calendar; }
 		void SetSleepHandler(SleepFn onSleep) { m_OnSleep = std::move(onSleep); }
+		// Called once per action that landed or was refused, with the aimed tile.
+		void SetFeedbackHandler(FeedbackFn onFeedback) { m_OnFeedback = std::move(onFeedback); }
 		void SetInteractHandler(InteractFn onInteract) { m_OnInteract = std::move(onInteract); }
 		// Asked after the landmarks with the aimed tile; true when something there (a pen, the well, the pond) took the press.
 		void SetTileInteractHandler(TileInteractFn onInteract) { m_OnTileInteract = std::move(onInteract); }
@@ -92,7 +98,8 @@ namespace Dingo
 		void CycleSelection(int direction);
 		void SyncSeedToHeld();
 		void Say(std::string text);
-		void Report(const FarmOutcome& outcome, const char* done);
+		void Report(const FarmOutcome& outcome, const char* done, ActionFeedback feedback);
+		void Notify(ActionFeedback feedback) const { if (m_OnFeedback) m_OnFeedback(feedback, m_Aim.Target.X, m_Aim.Target.Y); }
 		int Day() const { return m_Calendar ? m_Calendar->GetAbsoluteDay() : 0; }
 		Season CurrentSeason() const { return m_Calendar ? m_Calendar->GetSeason() : Season::Spring; }
 		Weather CurrentWeather() const { return m_Calendar ? m_Calendar->GetWeather() : Weather::Clear; }
@@ -104,6 +111,7 @@ namespace Dingo
 		SleepFn m_OnSleep;
 		InteractFn m_OnInteract;
 		TileInteractFn m_OnTileInteract;
+		FeedbackFn m_OnFeedback;
 		bool m_HoldToPlace = false;
 		bool m_HoldArmed = false;
 		int m_HoldX = -1;

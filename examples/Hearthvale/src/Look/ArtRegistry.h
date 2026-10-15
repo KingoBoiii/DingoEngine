@@ -41,6 +41,10 @@ namespace Dingo
 		inline constexpr std::string_view SOIL         = "soil";
 		inline constexpr std::string_view SOIL_WATERED = "soil_watered";
 
+		// The glowing parts NightLights places: a lamp's bulb and a house's window pane.
+		inline constexpr std::string_view LAMP_BULB    = "lamp_bulb";
+		inline constexpr std::string_view WINDOW       = "window";
+
 		const ArtEntry* Find(std::string_view id);
 
 		std::string_view ForGround(GroundLook look);

@@ -1,6 +1,7 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include "Audio/GameAudio.h"
 #include "Placing/BuildController.h"
 #include "Placing/Inventory.h"
 #include "Checks/CheckReport.h"
@@ -21,7 +22,9 @@
 #include "Look/CameraRig.h"
 #include "Look/FadeOverlay.h"
 #include "Look/FarmerAssets.h"
+#include "Look/NightLights.h"
 #include "Look/Sky.h"
+#include "Look/Vfx.h"
 #include "Look/WeatherFx.h"
 #include "Ui/GameUi.h"
 #include "Ui/OptionsModel.h"
@@ -56,6 +59,9 @@ namespace Dingo
 		void SetUpMenus();
 		void ApplyOptions(const OptionsState& state, bool toEngine);
 		const PlayerIntent& ActiveIntent() const;
+		void UpdateVfxAudio(const ValleyDirector& director, float dt);
+		void OnActionFeedback(ActionFeedback feedback, int x, int y);
+		void PollUiSounds();
 
 	private:
 		GameState m_State;
@@ -76,6 +82,16 @@ namespace Dingo
 		std::unique_ptr<Player> m_Player;
 		std::unique_ptr<CameraRig> m_Camera;
 		std::unique_ptr<GameUi> m_Ui;
+		std::unique_ptr<Vfx> m_Vfx;
+		std::unique_ptr<NightLights> m_Lights;
+		std::unique_ptr<GameAudio> m_Audio;
+		AudioFrame m_AudioFrame;
+		uint64_t m_LightsSeenCells = ~0ull;
+		glm::vec3 m_LastFeet{ 0.0f };
+		bool m_HasLastFeet = false;
+		bool m_ScreenWasOpen = false;
+		int m_LastCoins = 0;
+		int m_LastSlot = 0;
 		std::unique_ptr<BuildGhost> m_Ghost;
 		std::unique_ptr<BuildController> m_Build;
 		std::unique_ptr<ScreenHost> m_Screens;

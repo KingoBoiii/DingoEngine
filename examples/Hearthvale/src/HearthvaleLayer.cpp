@@ -6,9 +6,13 @@
 #include "Life/PlayerInput.h"
 #include "Life/PlayerMath.h"
 #include "Look/ArtRegistry.h"
+#include "Look/NightCurve.h"
 #include "Placing/Interactions.h"
 #include "Placing/PlaceInteract.h"
 #include "World/ValleyLayout.h"
+
+#include <algorithm>
+#include <cmath>
 
 namespace Dingo
 {
@@ -43,6 +47,7 @@ namespace Dingo
 		});
 		m_Build->SetCalendar(&m_Director->GetCalendar());
 		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
+		m_Build->SetFeedbackHandler([this](ActionFeedback feedback, int x, int y) { OnActionFeedback(feedback, x, y); });
 		m_State.Pack.GiveStarterLoadout();
 		m_Screens = std::make_unique<ScreenHost>(*m_Director, m_State.Pack, *m_Build);
 		if (!Application::Get().IsHeadless())
@@ -81,13 +86,28 @@ namespace Dingo
 		services.State = &m_State;
 		services.Slots = &m_Slots;
 		services.OnQuit = [] { Application::Get().Close(); };
+		services.OnClick = [this]
+		{
+			if (m_Audio)
+				m_Audio->Play(Sfx::UiClick);
+		};
 		if (interactive)
 		{
 			services.OnOptionsChanged = [this](const OptionsState& state) { ApplyOptions(state, true); };
 			services.OnOptionsClosed = [this](const OptionsState& state) { (void)OptionsToSettings(state, m_SettingsBase).Save(); };
 		}
 		m_Screens->SetServices(std::move(services));
-		m_Build->SetInteractHandler([this](Landmark landmark) { return m_Screens->OpenLandmark(landmark); });
+		m_Build->SetInteractHandler([this](Landmark landmark)
+		{
+			const bool opened = m_Screens->OpenLandmark(landmark);
+			if (opened && m_Audio && (landmark == Landmark::Shop || landmark == Landmark::ShippingBin))
+			{
+				const LandmarkSpec& spec = GetLandmarkSpec(landmark);
+				m_Audio->PlayAt(landmark == Landmark::Shop ? Sfx::ShopBell : Sfx::BinThunk,
+					glm::vec3((static_cast<float>(spec.DoorX) + 0.5f) * TILE_SIZE, GROUND_TOP, (static_cast<float>(spec.DoorY) + 0.5f) * TILE_SIZE));
+			}
+			return opened;
+		});
 		m_Build->SetTileInteractHandler([this](int x, int y)
 		{
 			const PlaceInteraction interaction = InteractWithPlace(m_Director->GetGrid(), m_State, x, y);
@@ -147,6 +167,10 @@ namespace Dingo
 		if (m_Ghost)
 			m_Ghost->Release();
 		m_Fade.reset();
+		m_Lights.reset();
+		m_Vfx.reset();
+		m_Audio.reset();
+		m_HasLastFeet = false;
 		m_Ui.reset();
 		m_Camera.reset();
 		m_AnimalWorld.reset();
@@ -192,9 +216,9 @@ namespace Dingo
 			if (m_Sky)
 				m_Sky->Update(step.Dt, director.GetCalendar().GetHours(), director.GetCalendar().GetWeather());
 		});
-		m_Director->OnStage(SimStage::VfxAudio, [this](ValleyDirector& director, const StepInfo&)
+		m_Director->OnStage(SimStage::VfxAudio, [this](ValleyDirector& director, const StepInfo& step)
 		{
-			m_WeatherFx.SetWeather(director.GetCalendar().GetWeather());
+			UpdateVfxAudio(director, step.Dt);
 		});
 		m_Director->OnStage(SimStage::Camera, [this](ValleyDirector&, const StepInfo& step)
 		{
@@ -251,6 +275,134 @@ namespace Dingo
 		m_Ghost = std::make_unique<BuildGhost>(*m_ValleyScene);
 		m_Ui = std::make_unique<GameUi>(*m_Director, m_State.Pack, *m_Build, *m_Screens);
 		m_Fade = std::make_unique<FadeOverlay>();
+
+		m_Vfx = std::make_unique<Vfx>(*m_ValleyScene, !options.NoParticles);
+		m_Lights = std::make_unique<NightLights>(*m_ValleyScene, m_Director->GetGrid(), *m_Vfx);
+		m_Audio = std::make_unique<GameAudio>(calendar.GetSeason());
+		m_LightsSeenCells = ~0ull;
+		m_LastCoins = m_State.Pack.GetCoins();
+		m_LastSlot = m_State.Pack.GetSelectedSlot();
+		m_ScreenWasOpen = false;
+	}
+
+	void HearthvaleLayer::UpdateVfxAudio(const ValleyDirector& director, float dt)
+	{
+		const Calendar& calendar = director.GetCalendar();
+		m_WeatherFx.SetWeather(calendar.GetWeather());
+		if (!m_Camera || !m_Player)
+			return;
+
+		const float hours = calendar.GetHours();
+		const Season season = calendar.GetSeason();
+		const Weather weather = m_WeatherFx.GetWeather();
+		const glm::vec3 focus = m_Camera->GetFocus();
+
+		if (m_Lights)
+		{
+			if (m_World && m_World->GetCellsRebuiltTotal() != m_LightsSeenCells)
+			{
+				m_LightsSeenCells = m_World->GetCellsRebuiltTotal();
+				m_Lights->Rescan();
+			}
+			const Window& window = Application::Get().GetWindow();
+			const float aspect = static_cast<float>(window.GetWidth()) / (std::max)(1.0f, static_cast<float>(window.GetHeight()));
+			m_Lights->Update(dt, NightCurve::LampAmount(hours, weather), NightCurve::ChimneyAmount(hours, season),
+				m_ValleyScene->GetActiveCameraViewProjection(aspect), focus);
+		}
+
+		if (m_Vfx)
+		{
+			VfxFrame frame;
+			frame.Focus = focus;
+			frame.WeatherNow = weather;
+			frame.FireflyAmount = NightCurve::FireflyAmount(hours, season, weather);
+			frame.MistAmount = NightCurve::MistAmount(hours, season, weather);
+			m_Vfx->Update(frame);
+		}
+
+		if (m_Audio)
+		{
+			const glm::vec3 feet = m_Player->GetFeet();
+			const float moved = m_HasLastFeet ? glm::length(glm::vec2(feet.x - m_LastFeet.x, feet.z - m_LastFeet.z)) : 0.0f;
+			m_LastFeet = feet;
+			m_HasLastFeet = true;
+
+			AudioFrame& frame = m_AudioFrame;
+			frame.Dt = dt;
+			frame.Hours = hours;
+			frame.SeasonNow = season;
+			frame.WeatherNow = weather;
+			frame.Listener = m_Camera->GetEntity().GetComponent<Transform3DComponent>().Position;
+			frame.Feet = feet;
+			frame.Walked = moved < FOOTSTEP_MAX_JUMP ? moved : 0.0f;
+			const TileGrid& grid = director.GetGrid();
+			const int tileX = static_cast<int>(std::floor(feet.x / TILE_SIZE));
+			const int tileY = static_cast<int>(std::floor(feet.z / TILE_SIZE));
+			frame.Under = grid.InBounds(tileX, tileY) ? grid.GetGround(tileX, tileY) : Ground::Grass;
+			frame.Chickens.clear();
+			if (m_AnimalSim)
+			{
+				for (const AnimalMotion& motion : m_AnimalSim->GetMotions())
+				{
+					if (motion.Kind == AnimalKind::Chicken)
+						frame.Chickens.emplace_back(motion.Position.x * TILE_SIZE, GROUND_TOP, motion.Position.y * TILE_SIZE);
+				}
+			}
+			m_Audio->Update(frame);
+		}
+	}
+
+	void HearthvaleLayer::OnActionFeedback(ActionFeedback feedback, int x, int y)
+	{
+		if (!m_Audio && !m_Vfx)
+			return;
+		const glm::vec3 at((static_cast<float>(x) + 0.5f) * TILE_SIZE, GROUND_TOP, (static_cast<float>(y) + 0.5f) * TILE_SIZE);
+		const auto sound = [&](Sfx sfx)
+		{
+			if (m_Audio)
+				m_Audio->PlayAt(sfx, at);
+		};
+		const auto burst = [&](VfxBurst kind)
+		{
+			if (m_Vfx)
+				m_Vfx->Burst(kind, at);
+		};
+		switch (feedback)
+		{
+			case ActionFeedback::Till:    sound(Sfx::ToolHoe); burst(VfxBurst::Dust); break;
+			case ActionFeedback::Water:   sound(Sfx::ToolWater); burst(VfxBurst::Spray); break;
+			case ActionFeedback::Plant:   sound(Sfx::Plant); break;
+			case ActionFeedback::Harvest: sound(Sfx::Harvest); burst(VfxBurst::Harvest); break;
+			case ActionFeedback::Chop:    sound(Sfx::ToolAxe); burst(VfxBurst::Chips); break;
+			case ActionFeedback::Mine:    sound(Sfx::ToolPick); burst(VfxBurst::Dust); break;
+			case ActionFeedback::Cut:     sound(Sfx::ToolScythe); break;
+			case ActionFeedback::Place:   sound(Sfx::Place); burst(VfxBurst::Dust); break;
+			case ActionFeedback::Remove:  sound(Sfx::Remove); burst(VfxBurst::Dust); break;
+			case ActionFeedback::Denied:
+				if (m_Audio)
+					m_Audio->Play(Sfx::UiError);
+				break;
+		}
+	}
+
+	void HearthvaleLayer::PollUiSounds()
+	{
+		if (!m_Audio || !m_Screens)
+			return;
+		const bool open = m_Screens->IsOpen();
+		if (open != m_ScreenWasOpen)
+			m_Audio->Play(open ? Sfx::UiOpen : Sfx::UiClose);
+		m_ScreenWasOpen = open;
+
+		const int coins = m_State.Pack.GetCoins();
+		if (coins > m_LastCoins)
+			m_Audio->Play(Sfx::UiCoin);
+		m_LastCoins = coins;
+
+		const int slot = m_State.Pack.GetSelectedSlot();
+		if (slot != m_LastSlot)
+			m_Audio->Play(Sfx::UiFocus);
+		m_LastSlot = slot;
 	}
 
 	const PlayerIntent& HearthvaleLayer::ActiveIntent() const
@@ -363,6 +515,7 @@ namespace Dingo
 			m_VillagerWorld->Sync(m_Villagers->GetPlaces(), step);
 		if (m_AnimalWorld)
 			m_AnimalWorld->Sync(m_State.Animals, *m_AnimalSim, step);
+		PollUiSounds();
 		if (m_Ui)
 			m_Ui->Draw(deltaTime);
 		if (m_Ghost && m_Build)

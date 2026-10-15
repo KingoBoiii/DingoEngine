@@ -4,8 +4,8 @@
 namespace Dingo
 {
 
-	// The hook P11 attaches rain and snow emitters to. Until then it only tracks the current weather and logs a
-	// change. Plain C++, so the sim can drive it headless.
+	// The current weather as the look and sound layer last saw it; Vfx and GameAudio read it from here. Plain C++, so
+	// the sim can drive it headless.
 	class WeatherFx
 	{
 	public:

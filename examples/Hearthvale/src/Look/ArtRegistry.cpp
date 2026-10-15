@@ -68,6 +68,9 @@ namespace Dingo::Art
 			ArtEntry{ "landmark_cottage",      P::Box, vec4(0.85f, 0.7f, 0.6f, 1.0f),  vec3(3.6f, 2.8f, 3.6f) },
 			ArtEntry{ "landmark_notice_board", P::Box, vec4(0.55f, 0.4f, 0.25f, 1.0f), vec3(1.8f, 1.6f, 0.2f) },
 
+			ArtEntry{ LAMP_BULB,           P::Sphere, vec4(0.9f, 0.8f, 0.6f, 1.0f),    vec3(0.22f) },
+			ArtEntry{ WINDOW,              P::Box,    vec4(0.16f, 0.2f, 0.28f, 1.0f),  vec3(0.55f, 0.6f, 0.06f) },
+
 			ArtEntry{ "villager_mira",     P::Box,    vec4(0.82f, 0.35f, 0.3f, 1.0f),  vec3(0.5f, 0.9f, 0.36f) },
 			ArtEntry{ "villager_bram",     P::Box,    vec4(0.3f, 0.45f, 0.7f, 1.0f),   vec3(0.56f, 0.98f, 0.42f) },
 			ArtEntry{ "villager_odette",   P::Box,    vec4(0.55f, 0.32f, 0.6f, 1.0f),  vec3(0.54f, 1.0f, 0.42f) },
