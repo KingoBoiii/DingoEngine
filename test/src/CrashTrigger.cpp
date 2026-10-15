@@ -1,6 +1,7 @@
 #include "CrashTrigger.h"
 
 #include <DingoEngine/Assertion.h>
+#include <DingoEngine/Core/CrashHandler.h>
 #include <DingoEngine/Core/FatalError.h>
 
 #include <atomic>
@@ -55,6 +56,33 @@ namespace Dingo
 				thread.join();
 		}
 
+		void ThrowRuntimeError()
+		{
+			throw std::runtime_error("the test app's engine-thread throw");
+		}
+
+		void RunOnEngineThread(void (*body)())
+		{
+			std::thread([&body]
+			{
+				Internal::CrashHandler::RunThread([](void* context) { (*static_cast<void (**)()>(context))(); }, &body);
+			}).join();
+		}
+
+		void RunOnPreparedThread(void (*body)())
+		{
+			std::thread([body]
+			{
+				Internal::CrashHandler::PrepareThread();
+				body();
+			}).join();
+		}
+
+		void CrashByRecursing()
+		{
+			DE_WARN("[Crash] {}", Recurse(0));
+		}
+
 		[[noreturn]] void TerminateWithException()
 		{
 			try
@@ -75,6 +103,16 @@ namespace Dingo
 			WriteThroughNull();
 		else if (kind == "thread")
 			std::thread(WriteThroughNull).join();
+		else if (kind == "engine-thread")
+			RunOnEngineThread(WriteThroughNull);
+		else if (kind == "engine-throw")
+			RunOnEngineThread(ThrowRuntimeError);
+		else if (kind == "engine-stack")
+			RunOnEngineThread(CrashByRecursing);
+		else if (kind == "prepared-throw")
+			RunOnPreparedThread(ThrowRuntimeError);
+		else if (kind == "prepared-stack")
+			RunOnPreparedThread(CrashByRecursing);
 		else if (kind == "threads")
 			CrashThreadsTogether();
 		else if (kind == "segv-after-info")
@@ -89,7 +127,7 @@ namespace Dingo
 		else if (kind == "throw")
 			throw std::runtime_error("the test app's --crash=throw");
 		else if (kind == "stack")
-			DE_WARN("[Crash] {}", Recurse(0));
+			CrashByRecursing();
 		else if (kind == "verify")
 		{
 			DE_VERIFY(false, "the test app's --crash=verify");
@@ -97,7 +135,7 @@ namespace Dingo
 		else if (kind == "fatal")
 			FatalError("The test app's --crash=fatal.");
 		else
-			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, threads, segv-after-info, abort, terminate, throw, stack, verify or fatal", kind);
+			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, engine-thread, engine-throw, engine-stack, prepared-throw, prepared-stack, threads, segv-after-info, abort, terminate, throw, stack, verify or fatal", kind);
 	}
 
 }

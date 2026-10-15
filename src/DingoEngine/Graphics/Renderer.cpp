@@ -595,8 +595,7 @@ namespace Dingo
 		if (!renderPass || !s_Data->CommandList->SetRenderPass(renderPass))
 			return nullptr;
 
-		const glm::uvec4& drawConstants = Internal::MaterialAccess::GetDrawConstants(material);
-		s_Data->CommandList->SetPushConstants(&drawConstants, sizeof(drawConstants));
+		s_Data->CommandList->SetPushConstants(Internal::MaterialAccess::GetPushConstantData(material), Shader::k_MaxPushConstantSize);
 		return renderPass;
 	}
 

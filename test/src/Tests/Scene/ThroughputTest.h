@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -31,12 +32,17 @@ namespace Dingo
 	// MeshRendererComponent::Static on every mesh, so the scene draws from its baked static geometry.
 	//
 	// The first frame also draws its view twice more, with Renderer3D's culling off and on, and checks by
-	// readback that the two match; mixed and shadow must cull at least 85% of their meshes. Then twice
-	// with instancing off and on: static must match exactly, the others within the instancing tolerance
+	// readback that the two match and that the view culled something; mixed and shadow must cull at least
+	// 85% of their meshes. Then twice with instancing off and on: static must match exactly, the others
+	// within the instancing tolerance
 	// (no channel off by more than 2/255, at most 0.1% of pixels off, no geometry missing or added), and
 	// repeat must take at most 15 draws. Then, with instancing off, the view through the scene's static
 	// geometry and without it must match exactly, again after one entity in view moves (its cell alone
-	// rebaking), and a hot-reloaded model's static entity must rebake.
+	// rebaking), and a hot-reloaded model's static entity must rebake. That entity's colour, surface,
+	// shadows, visibility, active flag and its parent's active flag and movement each rebake its cell
+	// and leave the view as SubmitMesh draws it. The next frame draws a small scene of edge cases with
+	// culling off and on: an orthographic view, mirrored boxes, a material that opts out of culling,
+	// a CullDistance, the far plane and translucency.
 	class ThroughputTest : public GraphicsTest
 	{
 	public:
@@ -88,8 +94,12 @@ namespace Dingo
 		// The frame command list's Internal::CommandList::GetUploadPassBreaks, 0 outside a frame.
 		static uint64_t UploadPassBreaks();
 		void RunCullingChecks();
+		void RunCullingEdgeChecks();
 		void RunInstancingChecks();
 		void RunStaticChecks();
+		void RunStaticChangeChecks(Entity moving, const PerspectiveCamera& camera);
+		void CheckStaticChange(const std::string& what, Entity entity, const PerspectiveCamera& camera, uint32_t meshes, uint32_t maxCells,
+			const std::function<void()>& apply, const std::function<void()>& restore);
 		void SetStatic(bool isStatic);
 		Renderer3D::Statistics RenderView(Framebuffer* target, const PerspectiveCamera& camera);
 		void RecordPerf(float deltaTime, double updateMs, double renderEntitiesMs, double endSceneMs, const Renderer3D::Statistics& stats);
@@ -128,6 +138,7 @@ namespace Dingo
 		PerspectiveCamera m_Camera;
 		uint64_t m_Frame = 0;
 		bool     m_ChecksDone = false;
+		bool     m_EdgeChecksDone = false;
 
 		Renderer3D::Statistics m_LastStats;
 		uint64_t m_PassBreaks = 0; // the last EndScene's, see UploadPassBreaks
@@ -136,6 +147,8 @@ namespace Dingo
 		Framebuffer* m_InstanceTargets[2] = {}; // instancing off, on
 		std::vector<uint8_t> m_InstanceOffPixels;
 		Framebuffer* m_StaticTargets[5] = {}; // dynamic, static, moved static, moved dynamic, static with culling off
+		Framebuffer* m_EdgeTargets[5] = {}; // perspective: culling off, on, off without the mesh past its CullDistance; orthographic: off, on
+		Material* m_EdgeMaterials[4] = {}; // not FrustumCulled, LessOrEqual, no depth test, translucent
 		Model* m_Duck = nullptr;
 		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		double m_RollingFrameMs = 0.0;

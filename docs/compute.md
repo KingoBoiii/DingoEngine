@@ -66,6 +66,28 @@ Renderer::Draw(material, 6, 16); // 16 instances: gl_InstanceIndex picks each on
 
 `RenderPass::SetStorageBuffer` does the same for a pass of your own.
 
+## Push constants
+
+A compute shader may declare one push-constant block for small per-dispatch values, and the pass
+sets it:
+
+```glsl
+layout(push_constant) uniform PushData { uvec4 Slot; uvec4 Extra; };
+```
+
+```cpp
+const glm::uvec4 slot(1, 0xB0B, 0, 0);
+pass->SetPushConstants(&slot, sizeof(slot)); // the rest of the block is zeroed
+Renderer::Dispatch(pass, 1);
+```
+
+`ComputePass::SetPushConstants` copies the bytes at once and every later `Renderer::Dispatch` of the
+pass pushes them, so two dispatches with different values each set their own first. A shader has at
+most one block, at most 128 bytes and a multiple of 4 (`Shader::GetPushConstantBlockSize`). The call
+logs an error, changes nothing and returns false when the shader declares no block or the data is
+larger than it. On D3D11 and D3D12 the block takes the lowest constant-buffer register (`b0` to
+`b13`) that no uniform block of the shader uses, so leave one of the fourteen free.
+
 ## Rules
 
 - **Readonly or writable is the shader's choice.** A block every stage declares `readonly` binds as a
@@ -97,7 +119,8 @@ R32F strip, and places sixteen instanced quads from the buffer in the vertex sta
 value, sum, pixel and quad by readback. It also dispatches one incrementing pass four times, reads
 its buffer back, dispatches it four more times, uploads into its first element and dispatches four
 more, checking each count; it reads back a buffer made with initial data and patched by
-`GraphicsBuffer::Upload`, and draws from it in a fragment stage.
+`GraphicsBuffer::Upload`, and draws from it in a fragment stage. It dispatches a push-constant
+kernel twice with different values and draws a push-only material twice, checking each result.
 
 ## Limits
 

@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -55,6 +56,8 @@ namespace Dingo
 		void TrackPhysics2D();
 		void RunPhysicsChecks2D();
 		void Render2D();
+		// Sprites and circles round the view's edges, culling off and on: the same picture, and something culled.
+		void RunCullingChecks2D();
 		static glm::vec2 Platform2DPosition(float time);
 		// The muzzle's world position from the test's own arithmetic, not the engine's.
 		glm::vec2 ExpectedMuzzlePosition() const;
@@ -117,6 +120,8 @@ namespace Dingo
 		Scene* m_Scene2D = nullptr;
 		Font*  m_Font = nullptr;
 		View   m_View = View::Scene3D;
+		Framebuffer* m_Cull2DTargets[2] = {}; // culling off, on
+		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 
 		Entity m_Hull2D;
 		Entity m_Turret2D;

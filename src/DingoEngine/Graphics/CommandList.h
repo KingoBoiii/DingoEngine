@@ -66,7 +66,7 @@ namespace Dingo::Internal
 		virtual void AddVertexBuffer(GraphicsBuffer* vertexBuffer, uint32_t slot = 0, uint64_t offset = 0) = 0;
 		virtual void SetIndexBuffer(GraphicsBuffer* indexBuffer, uint64_t offset = 0) = 0;
 		// The bytes the next draws pass to the shader's push-constant block, up to its size; the rest
-		// stays zero. SetPipeline/SetRenderPass zero them.
+		// stays zero. SetPipeline/SetRenderPass zero them. A dispatch pushes its pass's own bytes.
 		virtual void SetPushConstants(const void* data, uint32_t size) = 0;
 
 		virtual void Draw(uint32_t vertexCount, uint32_t instanceCount = 1) = 0;

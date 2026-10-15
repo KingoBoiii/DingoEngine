@@ -150,6 +150,11 @@ namespace Dingo
 		/// The size in bytes of the push-constant block with that name in any stage, or 0. Only
 		/// reflected shaders know their blocks.
 		uint32_t FindPushConstantBlockSize(std::string_view blockName) const;
+		/// The largest push-constant block a shader may declare, in bytes.
+		static constexpr uint32_t k_MaxPushConstantSize = 128;
+		/// The size in bytes of the shader's push-constant block, whatever its name, or 0 when it
+		/// declares none. Only reflected shaders know their blocks.
+		uint32_t GetPushConstantBlockSize() const;
 
 		/// Every file the source pulled in with `#include` on its last build (see ShaderParams),
 		/// which a hot-reload watches as well as the shader's own file. Engine shaders read from

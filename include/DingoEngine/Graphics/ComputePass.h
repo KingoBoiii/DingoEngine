@@ -75,12 +75,18 @@ namespace Dingo
 		virtual void SetStorageTexture(uint32_t binding, Texture* texture) = 0;
 		/// Binds a sampler at the shader's `binding`.
 		virtual void SetSampler(uint32_t binding, Sampler* sampler) = 0;
+		/// Copies `size` bytes to the start of the shader's push-constant block and zeroes the rest;
+		/// size 0 zeroes it all. Every later Renderer::Dispatch of the pass pushes them, so two
+		/// dispatches with different values each set their own first. Logs an error, changes nothing
+		/// and returns false when the shader declares no push-constant block or size is larger than it.
+		bool SetPushConstants(const void* data, uint32_t size);
 
 		/// The params the pass was created with.
 		const ComputePassParams& GetParams() const { return m_Params; }
 
 	protected:
 		ComputePassParams m_Params;	///< The params the pass was created with.
+		uint8_t m_PushConstants[Shader::k_MaxPushConstantSize] = {}; ///< What SetPushConstants set.
 	};
 
 }

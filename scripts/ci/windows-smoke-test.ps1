@@ -186,12 +186,32 @@ $testApp = Join-Path $Bin 'Dingo-TestFramework/Dingo-TestFramework.exe'
 $testDir = Join-Path $Root 'test'
 $tests = Select-String -Path (Join-Path $testDir 'src/TestLayer.cpp') -Pattern '^\s*m_Tests\.push_back\(\{ "([^"]+)"' |
 	ForEach-Object { $_.Matches[0].Groups[1].Value }
+if (@($tests).Count -lt 20)
+{
+	throw "found $(@($tests).Count) test cases in test/src/TestLayer.cpp, expected at least 20"
+}
 
 foreach ($api in $Graphics)
 {
 	foreach ($test in $tests)
 	{
 		Invoke-Run -Name ("$api-test-" + ($test -replace '[^A-Za-z0-9]', '_')) -Cwd $testDir -Exe $testApp -Arguments @("--test=$test", "--graphics=$api")
+	}
+}
+
+foreach ($api in $Graphics)
+{
+	$movedText = ''
+	foreach ($file in @("$api-test-Throughput_Test.log", "$api-test-Throughput_Test.stderr.log"))
+	{
+		if (Test-Path (Join-Path $Logs $file)) { $movedText += [System.IO.File]::ReadAllText((Join-Path $Logs $file)) }
+	}
+	$movedWarnings = ([regex]::Matches($movedText, 'a MeshRendererComponent with Static set moved')).Count
+	if ($movedWarnings -ne 1)
+	{
+		$script:Failures++
+		Write-Output "::error title=Smoke test $api-test-Throughput_Test ($Config)::$movedWarnings static-moved warnings, expected 1"
+		Write-Output "FAIL  $api-test-Throughput_Test: $movedWarnings static-moved warnings, expected exactly 1"
 	}
 }
 
@@ -220,6 +240,11 @@ function Invoke-Crash([string] $Kind, [int] $ExpectExit, [string] $ExpectLog)
 Invoke-Crash 'fatal' 1 "Fatal error: The test app's --crash=fatal"
 Invoke-Crash 'segv' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'thread' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
+Invoke-Crash 'engine-thread' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
+Invoke-Crash 'engine-throw' 3 "std::terminate called on an uncaught exception: the test app's engine-thread throw[\s\S]*Minidump: "
+Invoke-Crash 'engine-stack' 0xC00000FD 'crashed: stack overflow[\s\S]*Minidump: '
+Invoke-Crash 'prepared-throw' 3 'std::terminate called[\s\S]*Minidump: '
+Invoke-Crash 'prepared-stack' 0xC00000FD 'crashed: stack overflow[\s\S]*Minidump: '
 Invoke-Crash 'threads' 0xC0000005 'crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'segv-after-info' 0xC0000005 'last info line[\s\S]*crashed: access violation[\s\S]*Minidump: '
 Invoke-Crash 'abort' 3 'crashed: abort\(\)[\s\S]*Minidump: '
