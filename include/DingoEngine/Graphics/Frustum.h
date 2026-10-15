@@ -29,8 +29,10 @@ namespace Dingo
 		glm::vec3 GetExtents() const { return (Max - Min) * 0.5f; }
 
 		/// The box around this one moved by an affine transform (Arvo's method): exact for a box,
-		/// so the box of a mesh's bounds holds every vertex of the transformed mesh. An empty box
-		/// stays empty. A projective transform (bottom row other than 0, 0, 0, 1) is not supported.
+		/// so the box of a mesh's bounds holds every vertex of the transformed mesh up to float
+		/// rounding (a vertex can lie a few ulps outside); pad it before a cull that must never
+		/// drop a visible mesh. An empty box stays empty. A projective transform (bottom row other
+		/// than 0, 0, 0, 1) is not supported.
 		[[nodiscard]] AABB Transformed(const glm::mat4& transform) const;
 	};
 

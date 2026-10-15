@@ -3,7 +3,7 @@
 
 #include "FramebufferFormat.h"
 #include "MSDFData.h"
-#include "Utf8.h"
+#include "TextLayout.h"
 
 #include "DingoEngine/Core/Application.h"
 
@@ -497,8 +497,9 @@ void main() {
 			return;
 		}
 
-		const auto& fontGeometry = font->GetMSDFData()->FontGeometry;
-		const auto& metrics = fontGeometry.getMetrics();
+		const Internal::TextLayout::FontGlyphSource source(*font);
+		if (!source.Geometry)
+			return;
 		auto fontAtlas = font->GetAtlasTexture();
 
 		// A batch samples one atlas, and the glyph UVs are atlas-relative: switching font
@@ -525,7 +526,7 @@ void main() {
 			shiftAfterEmit = m_TextPass.HasRoomForQuads(string.size());
 			if (!shiftAfterEmit)
 			{
-				const float halfWidth = font->GetStringWidth(string, size, textParameters.Kerning) * 0.5f;
+				const float halfWidth = font->MeasureText(string, size, textParameters.MaxWidth, textParameters.Kerning).Width * 0.5f;
 				origin.x -= axis.x * halfWidth;
 				origin.y -= axis.y * halfWidth;
 			}
@@ -535,118 +536,64 @@ void main() {
 
 		TextVertex* const firstVertex = m_TextPass.VertexBufferPtr;
 		double widestLine = 0.0;
+		double y = 0.0;
 
-		double x = 0.0;
-		double fsScale = 1.0 / (metrics.ascenderY - metrics.descenderY);
-		double y = 0.0f; // -fsScale * metrics.ascenderY;
-		//double y = -fsScale * metrics.ascenderY;
+		const float texelWidth = 1.0f / fontAtlas->GetWidth();
+		const float texelHeight = 1.0f / fontAtlas->GetHeight();
 
-		// A charset without a space is degenerate but must not crash: GetStringWidth guards
-		// the same lookup, and the two have to stay measurable against each other.
-		auto spaceGlyph = fontGeometry.getGlyph(' ');
-		float spaceGlyphAdvance = spaceGlyph ? (float)spaceGlyph->getAdvance() : 0.0f;
-
-		const std::string_view text = string;
-		size_t index = 0;
-		while (index < text.size())
-		{
-			const uint32_t character = Internal::DecodeUtf8(text, index);
-			size_t lookahead = index;
-			const bool hasNext = lookahead < text.size();
-			const uint32_t nextCharacter = hasNext ? Internal::DecodeUtf8(text, lookahead) : 0;
-
-			if (character == '\n')
+		const Internal::TextLayout::Params layoutParams{ .Kerning = textParameters.Kerning, .Size = size, .MaxWidth = textParameters.MaxWidth };
+		Internal::TextLayout::Walk(source, string, layoutParams,
+			[&](Internal::TextLayout::FontGlyphSource::Glyph glyph, uint32_t, double x, uint32_t)
 			{
-				if (x > widestLine)
-					widestLine = x;
+				double al, ab, ar, at;
+				glyph->getQuadAtlasBounds(al, ab, ar, at);
+				glm::vec2 texCoordMin((float)al, (float)ab);
+				glm::vec2 texCoordMax((float)ar, (float)at);
 
-				x = 0.0;
-				y -= fsScale * metrics.lineHeight + textParameters.LineSpacing;
-				continue;
-			}
+				double pl, pb, pr, pt;
+				glyph->getQuadPlaneBounds(pl, pb, pr, pt);
+				glm::vec2 quadMin((float)pl, (float)pb);
+				glm::vec2 quadMax((float)pr, (float)pt);
 
-			if (character == ' ')
+				quadMin *= source.Scale, quadMax *= source.Scale;
+				quadMin += glm::vec2(x, y);
+				quadMax += glm::vec2(x, y);
+
+				texCoordMin *= glm::vec2(texelWidth, texelHeight);
+				texCoordMax *= glm::vec2(texelWidth, texelHeight);
+
+				if (!m_TextPass.HasRoomForQuad())
+					FlushText();
+
+				m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
+				m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+				m_TextPass.VertexBufferPtr->TexCoord = texCoordMin;
+				m_TextPass.VertexBufferPtr++;
+
+				m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin.x, quadMax.y, 0.0f, 1.0f);
+				m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+				m_TextPass.VertexBufferPtr->TexCoord = { texCoordMin.x, texCoordMax.y };
+				m_TextPass.VertexBufferPtr++;
+
+				m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax, 0.0f, 1.0f);
+				m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+				m_TextPass.VertexBufferPtr->TexCoord = texCoordMax;
+				m_TextPass.VertexBufferPtr++;
+
+				m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax.x, quadMin.y, 0.0f, 1.0f);
+				m_TextPass.VertexBufferPtr->Color = textParameters.Color;
+				m_TextPass.VertexBufferPtr->TexCoord = { texCoordMax.x, texCoordMin.y };
+				m_TextPass.VertexBufferPtr++;
+
+				m_TextPass.IndexCount += 6;
+				++m_Statistics.TextQuadCount;
+			},
+			[&](uint32_t, double width)
 			{
-				// getAdvance leaves its out-param untouched when either glyph is missing.
-				double advance = spaceGlyphAdvance;
-				if (hasNext)
-					fontGeometry.getAdvance(advance, character, nextCharacter);
-				x += fsScale * advance + textParameters.Kerning;
-				continue;
-			}
-
-			if (character == '\t')
-			{
-				x += 4.0f * (fsScale * spaceGlyphAdvance + textParameters.Kerning);
-				continue;
-			}
-
-			auto glyph = fontGeometry.getGlyph(character);
-			if (!glyph)
-			{
-				glyph = fontGeometry.getGlyph('?');
-			}
-			if (!glyph)
-			{
-				break;
-			}
-
-			double al, ab, ar, at;
-			glyph->getQuadAtlasBounds(al, ab, ar, at);
-			glm::vec2 texCoordMin((float)al, (float)ab);
-			glm::vec2 texCoordMax((float)ar, (float)at);
-
-			double pl, pb, pr, pt;
-			glyph->getQuadPlaneBounds(pl, pb, pr, pt);
-			glm::vec2 quadMin((float)pl, (float)pb);
-			glm::vec2 quadMax((float)pr, (float)pt);
-
-			quadMin *= fsScale, quadMax *= fsScale;
-			quadMin += glm::vec2(x, y);
-			quadMax += glm::vec2(x, y);
-
-			float texelWidth = 1.0f / fontAtlas->GetWidth();
-			float texelHeight = 1.0f / fontAtlas->GetHeight();
-			texCoordMin *= glm::vec2(texelWidth, texelHeight);
-			texCoordMax *= glm::vec2(texelWidth, texelHeight);
-
-			if (!m_TextPass.HasRoomForQuad())
-				FlushText();
-
-			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin, 0.0f, 1.0f);
-			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextPass.VertexBufferPtr->TexCoord = texCoordMin;
-			m_TextPass.VertexBufferPtr++;
-
-			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMin.x, quadMax.y, 0.0f, 1.0f);
-			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextPass.VertexBufferPtr->TexCoord = { texCoordMin.x, texCoordMax.y };
-			m_TextPass.VertexBufferPtr++;
-
-			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax, 0.0f, 1.0f);
-			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextPass.VertexBufferPtr->TexCoord = texCoordMax;
-			m_TextPass.VertexBufferPtr++;
-
-			m_TextPass.VertexBufferPtr->Position = transform * glm::vec4(quadMax.x, quadMin.y, 0.0f, 1.0f);
-			m_TextPass.VertexBufferPtr->Color = textParameters.Color;
-			m_TextPass.VertexBufferPtr->TexCoord = { texCoordMax.x, texCoordMin.y };
-			m_TextPass.VertexBufferPtr++;
-
-			m_TextPass.IndexCount += 6;
-			++m_Statistics.TextQuadCount;
-
-			// Advance past the last glyph too, so the pen ends on the line's full width —
-			// what GetStringWidth reports, and what centering below has to agree with.
-			double advance = glyph->getAdvance();
-			if (hasNext)
-				fontGeometry.getAdvance(advance, character, nextCharacter);
-
-			x += fsScale * advance + textParameters.Kerning;
-		}
-
-		if (x > widestLine)
-			widestLine = x;
+				if (width > widestLine)
+					widestLine = width;
+				y -= source.LineHeight + textParameters.LineSpacing;
+			});
 
 		if (shiftAfterEmit)
 		{

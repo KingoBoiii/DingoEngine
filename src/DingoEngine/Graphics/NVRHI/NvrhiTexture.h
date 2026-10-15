@@ -12,7 +12,7 @@ namespace Dingo
 		NvrhiTexture(const TextureParams& params)
 			: Texture(params)
 		{}
-		virtual ~NvrhiTexture() = default;
+		virtual ~NvrhiTexture();
 
 	public:
 		virtual void Initialize() override;

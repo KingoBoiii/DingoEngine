@@ -101,23 +101,24 @@ namespace Dingo
 		///@}
 
 		/// Reads the value as that type. The fallback when the value has another type. A number
-		/// reads as either kind: a Float reads as an Int only when it is whole and in range.
+		/// reads as either kind: a Float reads as an Int only when it is whole and in range, and
+		/// as a float only when it is finite and within float's range.
 		///@{
 		bool AsBool(bool fallback = false) const;
 		int64_t AsInt(int64_t fallback = 0) const;
 		double AsDouble(double fallback = 0.0) const;
-		float AsFloat(float fallback = 0.0f) const { return static_cast<float>(AsDouble(fallback)); }
+		float AsFloat(float fallback = 0.0f) const;
 		std::string AsString(std::string_view fallback = {}) const;
 		///@}
 		/// Reads an array of at least as many numbers as the vector has components (extra ones
-		/// ignored); the fallback otherwise.
+		/// ignored); the fallback otherwise, also when an item does not read as a float.
 		///@{
 		glm::vec2 AsVec2(const glm::vec2& fallback = glm::vec2(0.0f)) const;
 		glm::vec3 AsVec3(const glm::vec3& fallback = glm::vec3(0.0f)) const;
 		glm::vec4 AsVec4(const glm::vec4& fallback = glm::vec4(0.0f)) const;
 		///@}
 		/// Reads an array of at least as many integers as the vector has components (extra ones
-		/// ignored); the fallback otherwise, also when an item is a Float.
+		/// ignored); the fallback otherwise, also when an item is a Float or out of int's range.
 		///@{
 		glm::ivec2 AsIVec2(const glm::ivec2& fallback = glm::ivec2(0)) const;
 		glm::ivec3 AsIVec3(const glm::ivec3& fallback = glm::ivec3(0)) const;
@@ -127,7 +128,7 @@ namespace Dingo
 		glm::quat AsQuat(const glm::quat& fallback = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) const;
 
 		/// The member's value read as T, or the fallback when the member is missing or of another
-		/// type, or an integer out of T's range. An enum reads its stored integer. A 64-bit
+		/// type, or a number out of T's range (for float, as AsFloat). An enum reads its stored integer. A 64-bit
 		/// unsigned T reads an Int's bits, so every uint64_t (a UUID, say) round-trips.
 		template<typename T>
 		T Get(std::string_view key, const T& fallback) const;
@@ -188,7 +189,9 @@ namespace Dingo
 
 		/// Atomic: the JSON goes to `<path>.tmp`, flushed to disk, then the current file becomes
 		/// `<path>.bak` and the new one takes its place, so a crash or kill at any point leaves a
-		/// complete file under one of the three names. Writes from several threads take turns.
+		/// complete file under one of the three names. A complete `<path>.tmp` left without a
+		/// `<path>` is moved to `<path>` first, so it becomes the .bak; when that move fails, nothing
+		/// is written. Writes from several threads take turns.
 		/// Creates the directory. False (logged) on failure.
 		bool WriteFile(const std::filesystem::path& path) const;
 		/// Reads `<path>`; when that is missing, a complete `<path>.tmp` (a write stopped between
@@ -199,6 +202,7 @@ namespace Dingo
 	private:
 		size_t LowerBound(std::string_view key) const;
 		bool ReadComponents(float* out, size_t count) const;
+		bool ReadIntComponents(int* out, size_t count) const;
 
 	private:
 		SaveValueType m_Type = SaveValueType::Null;
@@ -239,6 +243,8 @@ namespace Dingo
 				return fallback;
 			return static_cast<T>(number);
 		}
+		else if constexpr (std::same_as<std::remove_cv_t<T>, float>)
+			return value->AsFloat(fallback);
 		else if constexpr (std::floating_point<T>)
 			return static_cast<T>(value->AsDouble(static_cast<double>(fallback)));
 		else if constexpr (std::same_as<T, std::string>)
@@ -269,7 +275,8 @@ namespace Dingo
 	};
 
 	/// Named save files under Application::GetSaveDirectory(): `<slot>.json` beside its .bak.
-	/// A slot name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-'; any other name fails (logged).
+	/// A slot name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-', and not a Windows device name; any
+	/// other name fails (logged).
 	class SaveSlots
 	{
 	public:
@@ -278,7 +285,8 @@ namespace Dingo
 		static std::filesystem::path GetDirectory();
 		/// The slot's file, `<directory>/<slot>.json`; the slot name is not validated here.
 		static std::filesystem::path GetPath(std::string_view slot);
-		/// True when the name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-'.
+		/// True when the name is 1 to 64 of A-Z, a-z, 0-9, '_' and '-', and not one of Windows'
+		/// device names (CON, PRN, AUX, NUL, COM0-COM9, LPT0-LPT9, in any case) on any platform.
 		static bool IsValidName(std::string_view slot);
 
 		/// Writes the data with SaveData::WriteFile; false (logged) for an invalid name or a failed
@@ -287,11 +295,12 @@ namespace Dingo
 		/// Reads the slot with SaveData::ReadFile, falling back to its .bak; nullopt for an
 		/// invalid name or no readable file, with the reason in error.
 		static std::optional<SaveData> Read(std::string_view slot, std::string* error = nullptr);
-		/// True when the slot or its .bak is on disk.
+		/// True when the slot or its .bak is on disk, or, with the slot missing, a complete .tmp.
 		static bool Exists(std::string_view slot);
 		/// Removes the slot, its .bak and any leftover .tmp. True when nothing of it is left.
 		static bool Delete(std::string_view slot);
-		/// Every slot in the directory (a .bak alone counts), most recently written first.
+		/// Every slot in the directory (a .bak alone counts, and so does a complete .tmp with the
+		/// slot missing), most recently written first.
 		static std::vector<SaveSlotInfo> List();
 	};
 

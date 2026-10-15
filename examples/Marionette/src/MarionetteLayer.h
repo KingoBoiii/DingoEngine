@@ -8,6 +8,7 @@
 namespace Dingo
 {
 
+	class ArenaDirectorScript;
 	class GameAssets;
 	class LiveEditDemo;
 	class ReachTable;
@@ -41,6 +42,7 @@ namespace Dingo
 		Scene* m_TitleScene = nullptr;
 		Scene* m_ArenaScene = nullptr;
 		Scene* m_EndScene = nullptr;
+		ArenaDirectorScript* m_ArenaDirector = nullptr;
 		int m_FrozenSteps = 0;
 
 		float m_PerfClock = 0.0f;
@@ -48,6 +50,7 @@ namespace Dingo
 		double m_PerfFrameMilliseconds = 0.0;
 		double m_PerfUpdateMilliseconds = 0.0;
 		double m_PerfRenderMilliseconds = 0.0;
+		double m_PerfUiMilliseconds = 0.0;
 		bool m_PerfDone = false;
 	};
 

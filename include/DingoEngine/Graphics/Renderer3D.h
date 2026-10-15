@@ -117,8 +117,9 @@ namespace Dingo
 		uint32_t InstanceThreshold = 8;
 		///@}
 
-		/// When true, a mesh too large for an empty batch, a light past the light budget or a
-		/// skinned instance past MaxSkinnedInstances trips an assert instead of the default
+		/// When true, a mesh too large for an empty batch, a light past the light budget, a
+		/// skinned instance past MaxSkinnedInstances or instanced draws booked past
+		/// Renderer3D::k_MaxInstancedDrawsPerFrame trip an assert instead of the default
 		/// warn-once-and-drop. Asserts are compiled out in release, where it warns and drops
 		/// regardless.
 		bool AssertOnOverflow = false;
@@ -359,9 +360,10 @@ namespace Dingo
 
 		/// Adds a mesh to the scene's batch for the given material (null => the built-in lit
 		/// default); EndScene culls it and transforms what is drawn into world space on the CPU,
-		/// or, for a mesh with enough copies in view (Renderer3DCapabilities::InstanceThreshold),
-		/// draws its copies instanced from the mesh's own buffers, so the mesh must stay alive and
-		/// unchanged until then. It is culled when its bounds (Mesh::GetBoundsMin/Max placed by
+		/// or, for a mesh with enough copies of one material and shadow setting in the scene,
+		/// counted before culling (Renderer3DCapabilities::InstanceThreshold), draws its copies
+		/// instanced from the mesh's own buffers, so the mesh must stay alive and unchanged until
+		/// then. It is culled when its bounds (Mesh::GetBoundsMin/Max placed by
 		/// transform) lie outside the camera's view, and, for a perspective camera, when
 		/// cullDistance is above 0 and the camera is farther than that from its bounds; a culled
 		/// caster still casts into any shadow view its bounds reach, unless it is past its
@@ -372,7 +374,8 @@ namespace Dingo
 		/// FrustumCulled. The vertex stream is a_Position (0), a_Normal (1), a_Color (2, the color
 		/// passed here) and a_TexCoord (3, the mesh's UVs, for custom materials that sample a
 		/// texture); a MaterialParams::Instancing material reads the mesh's own vertices and its
-		/// instance record instead. No-op outside a Begin/EndScene pair. Every material casts
+		/// instance record instead. No-op outside a Begin/EndScene pair, and for a mesh with no
+		/// vertices or no indices (not counted in SubmittedMeshes). Every material casts
 		/// through the renderer's own depth-only pass, so a custom vertex shader's displacement
 		/// isn't in its shadow, and a translucent mesh casts a full one. shadowGroups is a bit
 		/// mask: a casting light takes the mesh into its shadows only when it shares a bit with the
@@ -398,10 +401,11 @@ namespace Dingo
 		/// BeginScene and EndScene bakes what changed since the last submission, then culls each
 		/// cell's draws against the camera and the shadow views as SubmitMesh culls a mesh, and
 		/// keeps the batch alive until EndScene. A cell draws before the CPU batches of the same
-		/// material, its meshes by cell and then in the order they were added, and its materials
-		/// join the scene's draw order at the submission, so two meshes meeting at exactly equal
-		/// depth can resolve the other way than through SubmitMesh. Call it before Shutdown; the
-		/// batch it returns is never null.
+		/// material, its meshes by cell, then by material and shadow setting, then by StaticMeshId
+		/// (ids are reused, so not necessarily the order of Add), and its materials join the
+		/// scene's draw order at the submission, so two meshes meeting at exactly equal depth can
+		/// resolve the other way than through SubmitMesh. Call it before Shutdown; the batch it
+		/// returns is never null.
 		[[nodiscard]] std::shared_ptr<StaticBatch> CreateStaticBatch(const StaticBatchParams& params = {});
 		/// Bakes what changed in the batch and draws it this scene; does nothing outside a
 		/// Begin/EndScene pair, or for a batch another renderer made.
@@ -428,7 +432,10 @@ namespace Dingo
 		/// holds its palette in a stretch of the skin arena.
 		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
 		/// Instances a frame drawn with a custom material whose shader has the deprecated SkinData
-		/// block, each holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
+		/// block. On Vulkan each holds eight SkinData versions in host-visible memory (two writes a
+		/// frame, four frames in flight), each about 8 KiB padded to the device's uniform-buffer
+		/// alignment: about 66 KiB for each of the first 256 instances of the skinned budget
+		/// (16.5 MiB at the default), made on the first such draw.
 		[[deprecated("the SkinData block is deprecated: declare Skinning.glsl's DE_SKIN_PALETTE blocks; removed in 2.0")]]
 		static constexpr uint32_t k_MaxSkinDataInstances = Internal::k_MaxSkinDataInstances;
 
@@ -510,15 +517,17 @@ namespace Dingo
 
 		/// Instanced draws a frame, lit and shadow, across every scene this renderer runs: each
 		/// writes a small volatile buffer that has room for this many writes a frame on Vulkan.
-		/// Groups past it are batched on the CPU instead, and a MaterialParams::Instancing
-		/// material's meshes are skipped, with a warning.
+		/// Each mesh of a material books its draws before culling, in submission order, so
+		/// culling never changes which fit. Meshes past it are batched on the CPU instead, and a
+		/// MaterialParams::Instancing material's meshes are skipped, with a warning.
 		static constexpr uint32_t k_MaxInstancedDrawsPerFrame = 512;
 
 		/// Per-scene render statistics: reset each BeginScene, complete after EndScene. A scene
 		/// begun while Renderer::IsFrameSkipped() draws nothing and leaves them as they were.
 		struct Statistics
 		{
-			/// One indexed draw per non-empty batch, and one per instanced mesh; a material may
+			/// One indexed draw per non-empty batch, and one per instanced (mesh, batch) group, so
+			/// a mesh in two batches (two materials or shadow settings) takes two; a material may
 			/// take several.
 			uint32_t DrawCalls = 0;
 			/// Static meshes accepted this scene, culled ones included, and skinned meshes drawn.
@@ -888,9 +897,8 @@ namespace Dingo
 			uint32_t Count = 0;
 			uint32_t FirstRecord = 0;
 			uint32_t Placed = 0;
-			bool Forced = false;  // a MaterialParams::Instancing material's lit slot: there is no CPU path
 			bool Instanced = false;
-			bool Dropped = false; // forced, past the frame's instanced draws
+			bool Dropped = false; // a forced material's lit slot, past the frame's instanced draws: there is no CPU path
 		};
 		// A batch's copies of one mesh, culled or not: whether they are instanced, in every slot they reach.
 		struct InstanceCopies
@@ -898,8 +906,14 @@ namespace Dingo
 			Dingo::Material* Material = nullptr;
 			const Dingo::Mesh* Mesh = nullptr;
 			uint32_t Count = 0;
+			// Booked before culling: its lit slot's draws (lit, and shadow when it casts), and the one draw
+			// of the shadow-only slot its culled casters join.
+			uint32_t LitWrites = 0;
+			uint32_t CasterWrites = 0;
 			bool Forced = false;
-			bool Instanced = false;
+			bool Instanced = false;        // its lit slot's group
+			bool CastersInstanced = false; // its shadow-only slot's group
+			bool Dropped = false;
 		};
 		struct InstanceCopyKey
 		{
@@ -1164,6 +1178,8 @@ namespace Dingo
 		void BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
 		static bool IsSkinningShader(const Shader* shader);
 		static bool UsesSkinPalette(const Shader* shader);
+		// Its DE_SkinPalette or SkinData block sits at a binding the material leaves free.
+		static bool HasUsableSkinBlock(const Material* material);
 
 		// Made on the first skinned draw, so an app that never skins compiles no second lit program.
 		Shader* m_SkinnedShader = nullptr;

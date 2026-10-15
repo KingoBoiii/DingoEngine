@@ -59,6 +59,12 @@ namespace Dingo
 		/// Degrees, counter-clockwise, about the position: where the first line's baseline starts,
 		/// or its middle when Centered.
 		float Rotation = 0.0f;
+
+		/// Wrap lines wider than this, in the units Font::GetStringWidth returns (the size
+		/// applied); 0 = no wrap. Breaks at spaces, and inside a word wider than the line; a
+		/// wrapped line sits one Font::GetLineHeight below the one before, as after a '\n'.
+		/// Font::MeasureText with the same values reports the block DrawText draws.
+		float MaxWidth = 0.0f;
 	};
 
 	/// Batched immediate-mode 2D renderer: quads, circles and MSDF text drawn between BeginScene

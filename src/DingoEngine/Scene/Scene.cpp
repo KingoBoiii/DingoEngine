@@ -360,7 +360,7 @@ namespace Dingo
 			DE_PROFILE_SCOPE("AnimationSystem::Update");
 			m_Data->Updating = true;
 			// A scene no longer rendered (stepped headless, behind a menu) animates as if seen.
-			const bool rendered = m_Data->SkinnedViewFrame + 1 >= Renderer::GetFrameIndex();
+			const bool rendered = m_Data->SkinnedViewFrame.RenderedLately(Renderer::GetFrameIndex());
 			Internal::AnimationSystem::Update(m_Data->Registry, m_Data->Scripts, m_Data->Physics, m_Data->AnimationEvents, deltaTime,
 				rendered ? std::span<const std::weak_ptr<const Internal::SkinnedVisibility>>(m_Data->SkinnedViews) : std::span<const std::weak_ptr<const Internal::SkinnedVisibility>>());
 			Internal::ParticleSync::ApplyAnimationEvents(m_Data->Registry, m_Data->EntityMap, m_Data->AnimationEvents.ParticleEvents);
@@ -573,7 +573,7 @@ namespace Dingo
 		void TrackSkinnedView(Internal::SceneData& data, Renderer3D& renderer)
 		{
 			std::shared_ptr<const Internal::SkinnedVisibility> visibility = renderer.GetSkinnedVisibility();
-			data.SkinnedViewFrame = Renderer::GetFrameIndex();
+			data.SkinnedViewFrame.Stamp(Renderer::GetFrameIndex(), Renderer::IsFrameSkipped());
 			std::erase_if(data.SkinnedViews, [](const std::weak_ptr<const Internal::SkinnedVisibility>& view) { return view.expired(); });
 			for (const std::weak_ptr<const Internal::SkinnedVisibility>& view : data.SkinnedViews)
 			{
@@ -754,6 +754,11 @@ namespace Dingo
 	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
 	{
 		return Internal::CameraUtils::ScreenPointToRay(m_Data->Registry, screenPos, viewportSize);
+	}
+
+	std::optional<glm::vec2> Scene::WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize) const
+	{
+		return Internal::CameraUtils::WorldToScreenPoint(m_Data->Registry, worldPos, viewportSize);
 	}
 
 	// --- Lifecycle ----------------------------------------------------------------
