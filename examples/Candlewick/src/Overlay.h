@@ -10,13 +10,12 @@
 namespace Dingo::Overlay
 {
 	Font* LoadFont();
-	// Makes `font` the one every DingoUI text uses and sets the theme; DropFont undoes both before the font is destroyed.
+	// Makes `font` the one every DingoUI text uses and sets the theme; DropFont clears the font before it is destroyed.
 	void UseFont(Font* font);
 	void DropFont();
 
 	// The scale of every root: it follows the screen's height, which UiPx is measured in.
 	UIScale Scale();
-	// The theme of every button.
 	UIStyle MenuStyle();
 	// A root for what is drawn over the game and never takes the mouse or a key.
 	UIRootParams HudRoot(UIAnchor anchor);
@@ -27,7 +26,6 @@ namespace Dingo::Overlay
 	float TextTop(float baseline, float size);
 	// The same for a button, whose label is `size` units tall and starts that baseline.
 	float ButtonTop(float baseline, float size);
-	// The height of a button whose label is `size` units tall.
 	float ButtonHeight(float size);
 	// A button of the menu theme with a label `size` units tall. True when it was clicked, or accepted from the keyboard or pad.
 	// A bare button has no fill or border until it is hovered or focused, so it reads as plain text.

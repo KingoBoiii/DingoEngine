@@ -94,14 +94,14 @@ namespace Dingo
 
 	void KeepDirectorScript::OnUpdate(float deltaTime)
 	{
-		const bool toggle = Overlay::BackPressed() || Input::IsGamepadButtonPressed(GamepadButton::Start);
+		// With the focus ring hidden, pad B reaches Input instead of DingoUI's back.
+		const bool toggle = Overlay::BackPressed() || Input::IsGamepadButtonPressed(GamepadButton::Start)
+			|| (m_Paused && Input::IsGamepadButtonPressed(GamepadButton::B));
 		if (toggle && m_WinTime < 0.0f)
 			SetPaused(!m_Paused);
 
 		if (m_Paused)
 		{
-			if (Input::IsKeyPressed(Key::Enter) || Input::IsGamepadButtonPressed(GamepadButton::B))
-				RequestSceneTransition(SCENE_TITLE);
 			m_Hud->Update(0.0f, *m_Lantern);
 			switch (m_Hud->TakePauseChoice())
 			{

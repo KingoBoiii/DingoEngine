@@ -28,12 +28,9 @@ namespace
 
 	std::string PauseHint()
 	{
-		const bool pad = Input::IsGamepadConnected();
-		std::string hint = pad ? std::string("Esc / ") + Overlay::PadLabel(GamepadButton::Start) : std::string("Esc");
-		hint += "  resume   " "\xC2\xB7" "   Enter";
-		if (pad)
-			hint += std::string(" / ") + Overlay::PadLabel(GamepadButton::B);
-		return hint + "  title";
+		if (!Input::IsGamepadConnected())
+			return "Esc  resume";
+		return std::string("Esc / ") + Overlay::PadLabel(GamepadButton::Start) + " / " + Overlay::PadLabel(GamepadButton::B) + "  resume";
 	}
 
 	void DeclareText(const char* id, UIAnchor anchor, float left, float baseline, float size, std::string_view text, const glm::vec4& color)

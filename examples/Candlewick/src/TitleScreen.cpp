@@ -67,7 +67,7 @@ namespace Dingo
 			DingoUI::EndRoot();
 		}
 
-		if (quit || Overlay::BackPressed())
+		if (quit || Input::IsKeyPressed(Key::Escape))
 			Application::Get().Close();
 		else if (enter || Overlay::ConfirmPressed())
 			RequestSceneTransition(SCENE_KEEP);
