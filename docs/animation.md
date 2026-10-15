@@ -357,7 +357,8 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    `k_MaxSkinDataInstances` and `Material::k_SkinDataBlockName`): a uniform block named `SkinData`, in
    std140, exactly this, at a binding from 2 to 13 that the material's textures and samplers leave
    free. Each of its draws uploads the whole palette, and such shaders have their own budget of 256
-   instances a frame:
+   instances a frame (a material whose block is missing or at a taken binding draws with the default
+   lit material instead and doesn't count against it):
 
    ```glsl
    layout(std140, binding = 6) uniform SkinData   // any free binding from 2 to 13

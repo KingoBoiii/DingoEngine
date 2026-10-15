@@ -1081,7 +1081,16 @@ namespace Dingo
 			{
 				const auto [it, inserted] = m_InstanceCopyLookup.try_emplace(InstanceCopyKey{ submission.Batch, meshId }, static_cast<uint32_t>(m_InstanceCopies.size()));
 				if (inserted)
-					m_InstanceCopies.push_back({ submission.Material, submission.Mesh });
+				{
+					// A batch casts one way, so its copies reach at most one lit slot and one shadow-only slot.
+					InstanceCopies& added = m_InstanceCopies.emplace_back();
+					added.Material = submission.Material;
+					added.Mesh = submission.Mesh;
+					const uint32_t lit = submission.Shadows != ShadowCasting::ShadowsOnly ? 1u : 0u;
+					const uint32_t casts = shadows && submission.Shadows != ShadowCasting::Off ? 1u : 0u;
+					added.LitWrites = lit + casts * lit;
+					added.CasterWrites = casts;
+				}
 				lastBatch = submission.Batch;
 				lastMesh = meshId;
 				lastCopies = it->second;
@@ -1097,13 +1106,64 @@ namespace Dingo
 			copies.Instanced = copies.Forced || (worth && CanInstance(copies.Material));
 		}
 
+		const uint64_t frame = Renderer::GetFrameIndex();
+		if (frame != m_InstanceDrawFrame)
+		{
+			m_InstanceDrawFrame = frame;
+			m_InstanceDrawsThisFrame = 0;
+		}
+
+		// The budget is booked before culling, in submission order, so culling never decides which meshes
+		// fit. A forced material's lit draws have no CPU path, so they book first; its culled casters can
+		// cast from the CPU, so they book with the rest.
+		auto book = [&](uint32_t writes)
+		{
+			if (m_InstanceDrawsThisFrame + writes <= k_MaxInstancedDrawsPerFrame)
+			{
+				m_InstanceDrawsThisFrame += writes;
+				return true;
+			}
+			DE_CORE_ASSERT(!caps.AssertOnOverflow,
+				"Renderer3D: more instanced draws booked in a frame than k_MaxInstancedDrawsPerFrame and AssertOnOverflow is set.");
+			if (!m_InstanceBudgetWarned)
+			{
+				DE_CORE_WARN("Renderer3D: more than {} instanced draws booked in one frame, culled copies included; the rest are batched on the CPU, and meshes of a material with Instancing are skipped.",
+					k_MaxInstancedDrawsPerFrame);
+				m_InstanceBudgetWarned = true;
+			}
+			return false;
+		};
+		for (InstanceCopies& copies : m_InstanceCopies)
+		{
+			if (copies.Instanced && copies.Forced && copies.LitWrites > 0 && !book(copies.LitWrites))
+			{
+				copies.Instanced = false;
+				copies.Dropped = true;
+			}
+		}
+		for (InstanceCopies& copies : m_InstanceCopies)
+		{
+			if (!copies.Instanced)
+				continue;
+			if (copies.Forced)
+				copies.CastersInstanced = book(copies.CasterWrites);
+			else
+				copies.Instanced = copies.CastersInstanced = book(copies.LitWrites + copies.CasterWrites);
+		}
+
 		m_InstanceGroupLookup.clear();
 		for (StaticSubmission& submission : m_StaticSubmissions)
 		{
-			if (submission.Slot == ~0u || submission.Copies == ~0u || !m_InstanceCopies[submission.Copies].Instanced)
+			if (submission.Slot == ~0u || submission.Copies == ~0u)
 				continue;
 
+			const InstanceCopies& copies = m_InstanceCopies[submission.Copies];
 			DrawSlot& slot = m_DrawSlots[submission.Slot];
+			const bool litSlot = slot.Key.Material != nullptr;
+			const bool dropped = litSlot && copies.Dropped;
+			if (!dropped && !(litSlot ? copies.Instanced : copies.CastersInstanced))
+				continue;
+
 			const uint64_t meshId = submission.Mesh->GetId();
 			uint32_t group = slot.LastGroup;
 			if (group == ~0u || m_InstanceGroups[group].MeshId != meshId)
@@ -1115,51 +1175,14 @@ namespace Dingo
 					added.Slot = submission.Slot;
 					added.Mesh = submission.Mesh;
 					added.MeshId = meshId;
-					// Only a lit slot draws with the material; a shadow-only slot can always fall back.
-					added.Forced = slot.Key.Material && m_InstanceCopies[submission.Copies].Forced;
+					added.Instanced = !dropped;
+					added.Dropped = dropped;
 				}
 				group = it->second;
 				slot.LastGroup = group;
 			}
 			++m_InstanceGroups[group].Count;
 			submission.Group = group;
-		}
-
-		const uint64_t frame = Renderer::GetFrameIndex();
-		if (frame != m_InstanceDrawFrame)
-		{
-			m_InstanceDrawFrame = frame;
-			m_InstanceDrawsThisFrame = 0;
-		}
-
-		// A forced group has no CPU path, so it takes the frame's draws first.
-		for (const bool forcedPass : { true, false })
-		{
-			for (InstanceGroup& group : m_InstanceGroups)
-			{
-				if (group.Forced != forcedPass)
-					continue;
-
-				// A lit slot's group draws once lit and, when it casts, once into the shadows; a shadow-only
-				// slot's only into the shadows.
-				const DrawSlot& slot = m_DrawSlots[group.Slot];
-				const uint32_t writes = (slot.Key.Material ? 1u : 0u) + (shadows && slot.Key.Shadows != ShadowCasting::Off ? 1u : 0u);
-				if (m_InstanceDrawsThisFrame + writes > k_MaxInstancedDrawsPerFrame)
-				{
-					group.Dropped = group.Forced;
-					DE_CORE_ASSERT(!caps.AssertOnOverflow,
-						"Renderer3D: more instanced draws in a frame than k_MaxInstancedDrawsPerFrame and AssertOnOverflow is set.");
-					if (!m_InstanceBudgetWarned)
-					{
-						DE_CORE_WARN("Renderer3D: more than {} instanced draws in one frame; the rest are batched on the CPU, and meshes of a material with Instancing are skipped.",
-							k_MaxInstancedDrawsPerFrame);
-						m_InstanceBudgetWarned = true;
-					}
-					continue;
-				}
-				m_InstanceDrawsThisFrame += writes;
-				group.Instanced = true;
-			}
 		}
 
 		uint32_t records = 0;
@@ -1893,15 +1916,11 @@ namespace Dingo
 		return shader && shader->FindPushConstantBlockSize(Material::k_SkinDrawBlockName) >= sizeof(glm::uvec4);
 	}
 
-	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
+	bool Renderer3D::HasUsableSkinBlock(const Material* material)
 	{
-		Material* requested = material ? material : m_Material;
-		if (IsLitShader(requested->GetShader()))
-			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
-
 		// The binding must not collide with the scene and material blocks or with a texture or
 		// sampler the material binds, or its binding set fails and the mesh silently vanishes.
-		auto freeBinding = [requested](int32_t binding)
+		auto freeBinding = [material](int32_t binding)
 		{
 			if (binding < 2)
 				return false;
@@ -1909,18 +1928,23 @@ namespace Dingo
 			const bool samplerBinding = (binding - 2) % 2 == 1;
 			if (samplerBinding ? slot >= Material::k_MaxSamplerSlots : slot >= Material::k_MaxTextureSlots)
 				return true;
-			return samplerBinding ? !requested->GetSampler(slot) : !requested->GetTexture(slot);
+			return samplerBinding ? !material->GetSampler(slot) : !material->GetTexture(slot);
 		};
-		const Shader* shader = requested->GetShader();
-		const bool palette = UsesSkinPalette(shader);
-		bool usable = false;
-		if (palette)
-			usable = freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
-		else
-		{
-			const int32_t binding = shader ? shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
-			usable = binding <= static_cast<int32_t>(k_MaxSkinUniformBinding) && freeBinding(binding);
-		}
+		const Shader* shader = material->GetShader();
+		if (UsesSkinPalette(shader))
+			return freeBinding(shader->FindStorageBufferBinding(Material::k_SkinPaletteBlockName));
+		const int32_t binding = shader ? shader->FindUniformBufferBinding(Internal::k_SkinDataBlockName) : -1;
+		return binding <= static_cast<int32_t>(k_MaxSkinUniformBinding) && freeBinding(binding);
+	}
+
+	Material* Renderer3D::ResolveSkinnedMaterial(Material* material)
+	{
+		Material* requested = material ? material : m_Material;
+		if (IsLitShader(requested->GetShader()))
+			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
+
+		const bool palette = UsesSkinPalette(requested->GetShader());
+		const bool usable = HasUsableSkinBlock(requested);
 		if (usable && !palette && !m_SkinDataWarned)
 		{
 			const std::string& name = requested->GetParams().DebugName;
@@ -2008,12 +2032,13 @@ namespace Dingo
 		}
 
 		// A SkinData shader's instances are a budget of their own, decided here so every pass agrees.
+		// A material ResolveSkinnedMaterial replaces with the default twin draws through the arena.
 		m_SkinnedInstanceSkinData.assign(m_SkinnedInstances.size(), 0);
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)
 		{
 			const Material* requested = submission.Material ? submission.Material : m_Material;
 			if (submission.Shadows != ShadowCasting::ShadowsOnly && !submission.CameraCulled &&
-				!IsLitShader(requested->GetShader()) && !UsesSkinPalette(requested->GetShader()))
+				!IsLitShader(requested->GetShader()) && !UsesSkinPalette(requested->GetShader()) && HasUsableSkinBlock(requested))
 				m_SkinnedInstanceSkinData[submission.Instance] = 1;
 		}
 
@@ -2560,7 +2585,8 @@ namespace Dingo
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface)
 	{
-		if (!m_SceneActive || m_SceneSkipped || !mesh)
+		// The arena layout reserves nothing for an empty mesh, so no pass may draw one.
+		if (!m_SceneActive || m_SceneSkipped || !mesh || mesh->GetVertexCount() == 0 || mesh->GetIndexCount() == 0)
 			return;
 		if (shadows == ShadowCasting::Off)
 			shadowGroups = 1;
