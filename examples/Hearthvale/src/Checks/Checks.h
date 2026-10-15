@@ -30,6 +30,7 @@ namespace Dingo
 	void RunWorldChecks(CheckReport& report);
 	void RunSkyChecks(CheckReport& report);
 	void RunPlayerChecks(CheckReport& report);
+	void RunPlacementChecks(CheckReport& report);
 	void RunSimChecks(CheckReport& report);
 
 }

@@ -44,6 +44,15 @@ namespace Dingo
 
 	inline constexpr int BUILD_REFUND_PERMILLE     = 500;
 
+	inline constexpr int TARGET_MOUSE_REACH_TILES  = 3;
+	inline constexpr float TARGET_MARKER_HEIGHT    = 0.04f;
+	inline constexpr float TARGET_MARKER_LIFT      = 0.03f;
+	inline constexpr glm::vec4 TARGET_COLOR_TOOL    = glm::vec4(1.0f, 0.95f, 0.6f, 0.45f);
+	inline constexpr glm::vec4 TARGET_COLOR_VALID   = glm::vec4(0.35f, 1.0f, 0.4f, 0.5f);
+	inline constexpr glm::vec4 TARGET_COLOR_INVALID = glm::vec4(1.0f, 0.3f, 0.25f, 0.5f);
+	inline constexpr glm::vec4 GHOST_COLOR_VALID    = glm::vec4(0.55f, 1.0f, 0.6f, 0.55f);
+	inline constexpr glm::vec4 GHOST_COLOR_INVALID  = glm::vec4(1.0f, 0.4f, 0.35f, 0.55f);
+
 	// Valley generation densities, in per-mille of eligible tiles.
 	inline constexpr int RIM_DEPTH_MIN             = 6;
 	inline constexpr int RIM_DEPTH_MAX             = 9;
@@ -141,6 +150,12 @@ namespace Dingo
 	inline constexpr float HUD_CLOCK_SIZE          = 24.0f;
 	inline constexpr glm::vec4 HUD_TEXT_COLOR      = glm::vec4(1.0f, 0.97f, 0.9f, 1.0f);
 	inline constexpr glm::vec4 HUD_PANEL_COLOR     = glm::vec4(0.1f, 0.08f, 0.06f, 0.55f);
+
+	inline constexpr float HUD_MENU_SIZE           = 18.0f;
+	inline constexpr float HUD_MESSAGE_SECONDS     = 2.5f;
+	inline constexpr int HUD_MENU_ROWS             = 9;
+	inline constexpr glm::vec4 HUD_TEXT_DIM_COLOR  = glm::vec4(0.65f, 0.6f, 0.55f, 1.0f);
+	inline constexpr glm::vec4 HUD_TEXT_PICK_COLOR = glm::vec4(1.0f, 0.88f, 0.4f, 1.0f);
 
 	inline constexpr float PERF_FRAMES             = 600.0f;
 }

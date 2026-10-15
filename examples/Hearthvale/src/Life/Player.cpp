@@ -117,6 +117,12 @@ namespace Dingo
 		Animate(m_Moving);
 	}
 
+	void Player::SetYaw(float yaw)
+	{
+		m_Yaw = PlayerMath::WrapAngle(yaw);
+		m_Entity.GetComponent<Transform3DComponent>().Rotation = YawQuat(m_Yaw);
+	}
+
 	void Player::Animate(bool moving)
 	{
 		if (!m_Model)

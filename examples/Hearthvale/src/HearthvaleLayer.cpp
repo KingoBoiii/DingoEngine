@@ -24,6 +24,11 @@ namespace Dingo
 			if (m_World)
 				m_World->OnDayRoll();
 		});
+		m_Build = std::make_unique<BuildController>(m_Director->GetGrid(), m_Inventory, [this](const TileRect& area)
+		{
+			if (m_World)
+				m_World->MarkArea(area.X, area.Y, area.W, area.H);
+		});
 		if (!Application::Get().IsHeadless())
 		{
 			Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -46,11 +51,16 @@ namespace Dingo
 		m_SceneManager.Clear();
 		m_FarmerAssets.reset();
 		m_ValleyScene = nullptr;
+		m_Ghost.reset();
+		m_Build.reset();
 		m_Director.reset();
 	}
 
 	void HearthvaleLayer::ReleaseScenePieces()
 	{
+		if (m_Ghost)
+			m_Ghost->Release();
+		m_BuildHud.reset();
 		m_Hud.reset();
 		m_Camera.reset();
 		m_Player.reset();
@@ -63,6 +73,18 @@ namespace Dingo
 		{
 			if (m_Player)
 				m_Player->Step(m_Intent, director.GetGrid(), m_Camera ? m_Camera->GetYaw() : 0.0f, step.Dt);
+		});
+		m_Director->OnStage(SimStage::ToolsAndPlacement, [this](ValleyDirector& director, const StepInfo&)
+		{
+			if (!m_Player || !m_Build)
+				return;
+			m_Aim.Feet = glm::vec2(m_Player->GetFeet().x, m_Player->GetFeet().z);
+			m_Aim.Yaw = m_Player->GetYaw();
+			if (m_Intent.Move != glm::vec2(0.0f))
+				m_Aim.HasMouse = false;
+			m_Build->Step(m_Intent, m_Aim);
+			if (m_Build->GetAim().FromMouse && m_Intent.Move == glm::vec2(0.0f))
+				m_Player->SetYaw(m_Build->GetAim().FaceYaw);
 		});
 		m_Director->OnStage(SimStage::Sky, [this](ValleyDirector& director, const StepInfo& step)
 		{
@@ -85,6 +107,7 @@ namespace Dingo
 		ReleaseScenePieces();
 		m_World.reset();
 		m_ValleyScene->Clear();
+		m_Ghost.reset();
 		if (Application::Get().IsHeadless())
 			return;
 
@@ -115,6 +138,24 @@ namespace Dingo
 		m_Player = std::make_unique<Player>(*m_ValleyScene, feet, m_FarmerAssets.get());
 		m_Camera = std::make_unique<CameraRig>(*m_ValleyScene, feet);
 		m_Hud = std::make_unique<ClockHud>();
+		m_Ghost = std::make_unique<BuildGhost>(*m_ValleyScene);
+		m_BuildHud = std::make_unique<BuildMenuHud>();
+	}
+
+	void HearthvaleLayer::UpdateMouseAim()
+	{
+		const glm::vec2 mouse = Input::GetMousePosition();
+		const bool moved = m_MouseSeen && mouse != m_LastMouse;
+		m_LastMouse = mouse;
+		m_MouseSeen = true;
+		if (!moved && !m_Aim.HasMouse)
+			return;
+
+		const Window& window = Application::Get().GetWindow();
+		const Ray ray = m_ValleyScene->ScreenPointToRay(mouse, glm::vec2(static_cast<float>(window.GetWidth()), static_cast<float>(window.GetHeight())));
+		glm::vec3 hit(0.0f);
+		m_Aim.HasMouse = ray.IntersectGroundPlane(GROUND_TOP, hit);
+		m_Aim.MouseGround = glm::vec2(hit.x, hit.z);
 	}
 
 	void HearthvaleLayer::RunChecks()
@@ -148,7 +189,10 @@ namespace Dingo
 		}
 
 		if (m_Player && !options.Autoplay)
+		{
 			PollPlayerIntent(m_Intent);
+			UpdateMouseAim();
+		}
 
 		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
 		const int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
@@ -161,6 +205,10 @@ namespace Dingo
 			m_World->Sync();
 		if (m_Hud)
 			m_Hud->Draw(m_Director->GetCalendar());
+		if (m_Ghost && m_Build)
+			m_Ghost->Update(*m_Build, m_Director->GetGrid());
+		if (m_BuildHud && m_Build)
+			m_BuildHud->Draw(*m_Build, m_Inventory, deltaTime);
 		m_SceneManager.OnRender();
 	}
 

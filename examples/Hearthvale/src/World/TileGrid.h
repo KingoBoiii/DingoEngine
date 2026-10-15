@@ -34,6 +34,8 @@ namespace Dingo
 		Ground GroundState = Ground::Grass;
 		uint32_t Occupant = k_NoOccupant;
 		CropRecord Crop;
+		// A ground-only buildable the player placed here (BuildId + 1), so removing it knows what to refund; 0 = none.
+		uint8_t Built = 0;
 	};
 
 	// Origin is the minimum corner; W and H are the footprint after rotation.

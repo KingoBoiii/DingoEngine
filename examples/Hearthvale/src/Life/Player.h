@@ -21,6 +21,8 @@ namespace Dingo
 		void Step(const PlayerIntent& intent, const TileGrid& grid, float cameraYaw, float dt);
 
 		void Teleport(const glm::vec3& feet);
+		// Turns the farmer on the spot, e.g. toward a mouse target; the next Step keeps it.
+		void SetYaw(float yaw);
 
 		glm::vec3 GetFeet() const;
 		float GetYaw() const { return m_Yaw; }

@@ -32,6 +32,8 @@ namespace Dingo
 		inline constexpr std::string_view FARMER       = "farmer";
 		inline constexpr std::string_view FARMER_HEAD  = "farmer_head";
 		inline constexpr std::string_view FARMER_FACE  = "farmer_face";
+		// One tile wide and flat; the build ghost scales it to a footprint.
+		inline constexpr std::string_view TARGET_TILE  = "target_tile";
 		// The two must share primitive (or model) and size: watering changes only the colour.
 		inline constexpr std::string_view SOIL         = "soil";
 		inline constexpr std::string_view SOIL_WATERED = "soil_watered";

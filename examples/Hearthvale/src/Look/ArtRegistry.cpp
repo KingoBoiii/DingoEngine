@@ -20,6 +20,8 @@ namespace Dingo::Art
 			ArtEntry{ FARMER_HEAD,         P::Sphere, vec4(0.85f, 0.45f, 0.25f, 1.0f), vec3(0.38f) },
 			ArtEntry{ FARMER_FACE,         P::Box,    vec4(0.95f, 0.78f, 0.62f, 1.0f), vec3(0.22f, 0.12f, 0.1f) },
 
+			ArtEntry{ TARGET_TILE,         P::Box,    vec4(1.0f),                      vec3(1.0f, TARGET_MARKER_HEIGHT, 1.0f) },
+
 			ArtEntry{ "ground_land",       P::Box,    vec4(0.36f, 0.6f, 0.28f, 1.0f),  vec3(1.0f, GROUND_TOP, 1.0f) },
 			ArtEntry{ "ground_path",       P::Box,    vec4(0.66f, 0.56f, 0.4f, 1.0f),  vec3(1.0f, GROUND_TOP, 1.0f) },
 			ArtEntry{ "ground_water",      P::Box,    vec4(0.25f, 0.45f, 0.7f, 1.0f),  vec3(1.0f, WATER_TOP, 1.0f) },

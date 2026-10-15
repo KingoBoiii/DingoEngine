@@ -132,6 +132,14 @@ namespace Dingo
 			hash.Byte(tile.Crop.DaysWatered);
 			hash.U32(static_cast<uint32_t>(tile.Crop.PlantedDay));
 		}
+		for (size_t i = 0; i < m_Tiles.size(); ++i)
+		{
+			if (m_Tiles[i].Built != 0)
+			{
+				hash.U32(static_cast<uint32_t>(i));
+				hash.Byte(m_Tiles[i].Built);
+			}
+		}
 		hash.U32(static_cast<uint32_t>(m_Occupants.size()));
 		for (const Occupant& occupant : m_Occupants)
 		{

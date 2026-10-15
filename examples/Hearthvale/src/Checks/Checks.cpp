@@ -11,6 +11,7 @@ namespace Dingo
 		RunWorldChecks(report);
 		RunSkyChecks(report);
 		RunPlayerChecks(report);
+		RunPlacementChecks(report);
 	}
 
 }
