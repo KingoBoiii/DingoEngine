@@ -28,6 +28,7 @@ namespace Dingo
 		LaunchWeather Weather = LaunchWeather::Auto;
 		std::string Load;           // slot to load; empty = a new game
 		bool LayoutDemo = false;    // --layout=demo
+		bool FarmerModel = false;   // --farmer=model draws the KayKit character; the default is the placeholder body
 		bool Perf = false;
 		bool Freeze = false;
 		bool NoPost = false;

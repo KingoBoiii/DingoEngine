@@ -3,6 +3,12 @@
 
 #include "Checks/CheckReport.h"
 #include "Checks/StaticChecks.h"
+#include "Life/Player.h"
+#include "Life/PlayerIntent.h"
+#include "Look/CameraRig.h"
+#include "Look/ClockHud.h"
+#include "Look/FarmerAssets.h"
+#include "Look/Sky.h"
 #include "ValleyDirector.h"
 #include "World/ValleyWorld.h"
 
@@ -23,11 +29,19 @@ namespace Dingo
 
 	private:
 		void BuildValleyScene();
+		void ReleaseScenePieces();
+		void RegisterStages();
 		void RunChecks();
 
 	private:
 		std::unique_ptr<ValleyDirector> m_Director;
 		std::unique_ptr<ValleyWorld> m_World;
+		std::unique_ptr<Sky> m_Sky;
+		std::unique_ptr<FarmerAssets> m_FarmerAssets;
+		std::unique_ptr<Player> m_Player;
+		std::unique_ptr<CameraRig> m_Camera;
+		std::unique_ptr<ClockHud> m_Hud;
+		PlayerIntent m_Intent;
 		SceneManager m_SceneManager;
 		Scene* m_ValleyScene = nullptr;
 		CheckReport m_Report;

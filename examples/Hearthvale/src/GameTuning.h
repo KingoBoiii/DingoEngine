@@ -58,14 +58,89 @@ namespace Dingo
 	inline constexpr float CAMERA_NEAR             = 0.1f;
 	inline constexpr float CAMERA_FAR              = 400.0f;
 	inline constexpr float CAMERA_PITCH_DEG        = 45.0f;
+	inline constexpr float CAMERA_YAW_STEP_DEG     = 90.0f;
+	inline constexpr float CAMERA_YAW_SPEED_DEG    = 360.0f;
+	inline constexpr float CAMERA_FOCUS_HEIGHT     = 0.7f;
+	inline constexpr float CAMERA_LAG              = 7.0f;
 	inline constexpr float CAMERA_DISTANCE         = 14.0f;
+	inline constexpr float CAMERA_DISTANCE_MIN     = 8.0f;
+	inline constexpr float CAMERA_DISTANCE_MAX     = 26.0f;
+	inline constexpr float CAMERA_ZOOM_SPEED       = 10.0f;
+	inline constexpr float CAMERA_ZOOM_WHEEL_STEP  = 1.5f;
+	inline constexpr float BLOOM_INTENSITY         = 0.3f;
+	inline constexpr float BLOOM_THRESHOLD         = 1.0f;
 
-	inline constexpr glm::vec4 COLOR_SKY           = glm::vec4(0.55f, 0.72f, 0.88f, 1.0f);
-	inline constexpr glm::vec3 SUN_DIRECTION       = glm::vec3(-0.4f, -1.0f, -0.35f);
-	inline constexpr glm::vec3 SUN_COLOR           = glm::vec3(1.0f, 0.96f, 0.88f);
-	inline constexpr float SUN_INTENSITY           = 1.1f;
-	inline constexpr glm::vec3 AMBIENT_COLOR       = glm::vec3(0.62f, 0.7f, 0.85f);
-	inline constexpr float AMBIENT_INTENSITY       = 0.35f;
+	inline constexpr float PLAYER_SPEED            = 4.0f;
+	inline constexpr float PLAYER_TURN_SPEED       = 14.0f;
+	inline constexpr float PLAYER_RADIUS           = 0.25f;
+	inline constexpr float PLAYER_HEIGHT           = 1.4f;
+	inline constexpr float PLAYER_STEP_HEIGHT      = 0.25f;
+	inline constexpr float PLAYER_SLOPE_DEG        = 50.0f;
+	inline constexpr float PLAYER_GRAVITY_Y        = -18.0f;
+	inline constexpr float PLAYER_TERMINAL_Y       = -30.0f;
+	inline constexpr float PLAYER_SPAWN_LIFT       = 0.05f;
+	inline constexpr float PLAYER_MOVE_THRESHOLD   = 0.1f;
+	inline constexpr float PLAYER_BLOCK_LOOKAHEAD  = 1.0f / 30.0f;
+	inline constexpr float PLAYER_ANIM_FADE        = 0.2f;
+	inline constexpr float PLAYER_WALK_ANIM_SPEED  = 2.0f;
+	inline constexpr float PLAYER_MODEL_HEIGHT     = 1.5f;
+	inline constexpr float PLAYER_MODEL_ROUGHNESS  = 0.85f;
+
+	// One sample of the day. Keys are evaluated by SkyCurve (Look/SkyCurve.h): linear between neighbours in
+	// hours, with the elevation capped at SKY_ELEVATION_MAX_DEG.
+	struct SkyKey
+	{
+		float Hour;
+		float ElevationDeg;
+		glm::vec3 SunColor;
+		float SunIntensity;
+		glm::vec3 AmbientColor;
+		float AmbientIntensity;
+		glm::vec3 SkyColor;
+		float FogStart;
+		float FogEnd;
+	};
+
+	// Six keys: dawn, morning, noon, late afternoon, just after sunset (the sun is below the horizon by 20:00), deep night.
+	inline constexpr SkyKey SKY_KEYS[] = {
+		{  6.0f,  10.0f, glm::vec3(1.00f, 0.62f, 0.38f), 0.70f, glm::vec3(0.55f, 0.60f, 0.80f), 0.22f, glm::vec3(0.95f, 0.72f, 0.55f), 60.0f, 220.0f },
+		{  9.0f,  38.0f, glm::vec3(1.00f, 0.93f, 0.82f), 1.00f, glm::vec3(0.60f, 0.70f, 0.88f), 0.32f, glm::vec3(0.62f, 0.78f, 0.92f), 70.0f, 240.0f },
+		{ 12.0f,  65.0f, glm::vec3(1.00f, 0.97f, 0.90f), 1.15f, glm::vec3(0.62f, 0.72f, 0.90f), 0.38f, glm::vec3(0.55f, 0.74f, 0.93f), 80.0f, 260.0f },
+		{ 16.0f,  40.0f, glm::vec3(1.00f, 0.82f, 0.55f), 1.00f, glm::vec3(0.64f, 0.68f, 0.85f), 0.34f, glm::vec3(0.70f, 0.76f, 0.86f), 70.0f, 240.0f },
+		{ 20.0f,  -4.0f, glm::vec3(1.00f, 0.45f, 0.25f), 0.10f, glm::vec3(0.40f, 0.42f, 0.68f), 0.22f, glm::vec3(0.30f, 0.26f, 0.42f), 45.0f, 180.0f },
+		{ 26.0f, -40.0f, glm::vec3(0.30f, 0.35f, 0.60f), 0.00f, glm::vec3(0.22f, 0.30f, 0.58f), 0.16f, glm::vec3(0.04f, 0.06f, 0.14f), 35.0f, 140.0f },
+	};
+
+	inline constexpr float SKY_ELEVATION_MAX_DEG   = 65.0f;
+	inline constexpr float SKY_ANGLE_STEP_DEG      = 0.25f;
+	inline constexpr float SKY_BLEND_SECONDS       = 1.0f;
+	// The sun crosses from east (0) through south (90) to west (180) between these hours.
+	inline constexpr float SKY_AZIMUTH_START_HOUR  = 6.0f;
+	inline constexpr float SKY_AZIMUTH_END_HOUR    = 20.0f;
+	inline constexpr float SKY_AZIMUTH_START_DEG   = 0.0f;
+	inline constexpr float SKY_AZIMUTH_END_DEG     = 180.0f;
+	// A shadow-casting sun flips its cascades as it grazes the horizon, so it stops casting below this.
+	inline constexpr float SKY_SHADOW_MIN_ELEVATION_DEG = 3.0f;
+	inline constexpr float SUN_SHADOW_STRENGTH     = 0.85f;
+	inline constexpr float SKY_SUN_FADE_DEG        = 6.0f;
+
+	inline constexpr glm::vec3 MOON_COLOR          = glm::vec3(0.55f, 0.65f, 1.00f);
+	inline constexpr float MOON_INTENSITY          = 0.28f;
+	inline constexpr float MOON_FADE_DEG           = 12.0f;
+
+	// Morning mist: strongest at the first hour, gone by the end hour.
+	inline constexpr float MIST_START_HOUR         = 6.0f;
+	inline constexpr float MIST_END_HOUR           = 9.0f;
+	inline constexpr float MIST_FOG_SCALE          = 0.30f;
+	inline constexpr float MIST_CLEAR_WEIGHT       = 0.70f;
+	inline constexpr float WEATHER_RAIN_SUN_SCALE  = 0.55f;
+	inline constexpr float WEATHER_RAIN_FOG_SCALE  = 0.45f;
+	inline constexpr float WEATHER_SNOW_SUN_SCALE  = 0.75f;
+	inline constexpr float WEATHER_SNOW_FOG_SCALE  = 0.65f;
+
+	inline constexpr float HUD_CLOCK_SIZE          = 24.0f;
+	inline constexpr glm::vec4 HUD_TEXT_COLOR      = glm::vec4(1.0f, 0.97f, 0.9f, 1.0f);
+	inline constexpr glm::vec4 HUD_PANEL_COLOR     = glm::vec4(0.1f, 0.08f, 0.06f, 0.55f);
 
 	inline constexpr float PERF_FRAMES             = 600.0f;
 }

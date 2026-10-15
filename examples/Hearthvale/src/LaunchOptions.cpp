@@ -150,6 +150,20 @@ namespace
 			DE_WARN("Hearthvale: ignoring --layout={} (expected demo)", *value);
 	}
 
+	void ParseFarmer(const ApplicationCommandLineArgs& args, bool& out)
+	{
+		const std::optional<std::string_view> value = args.Get("farmer");
+		if (!value)
+			return;
+
+		if (*value == "model")
+			out = true;
+		else if (*value == "box")
+			out = false;
+		else
+			DE_WARN("Hearthvale: ignoring --farmer={} (expected model or box)", *value);
+	}
+
 	LaunchOptions Parse(const ApplicationCommandLineArgs& args)
 	{
 		LaunchOptions options;
@@ -165,6 +179,7 @@ namespace
 		ParseFlag(args, "no-static", options.NoStatic);
 		ParseFlag(args, "no-cull", options.NoCull);
 		ParseLayout(args, options.LayoutDemo);
+		ParseFarmer(args, options.FarmerModel);
 		ParseInt(args, "days", 1, DAYS_MAX, options.Days);
 		ParseInt(args, "day", 1, DAYS_PER_SEASON, options.Day);
 		ParseSeason(args, options);

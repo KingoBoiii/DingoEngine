@@ -9,6 +9,8 @@ namespace Dingo
 		RunGenerationChecks(report);
 		RunCalendarChecks(report);
 		RunWorldChecks(report);
+		RunSkyChecks(report);
+		RunPlayerChecks(report);
 	}
 
 }

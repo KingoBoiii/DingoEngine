@@ -30,6 +30,8 @@ namespace Dingo
 	namespace Art
 	{
 		inline constexpr std::string_view FARMER       = "farmer";
+		inline constexpr std::string_view FARMER_HEAD  = "farmer_head";
+		inline constexpr std::string_view FARMER_FACE  = "farmer_face";
 		// The two must share primitive (or model) and size: watering changes only the colour.
 		inline constexpr std::string_view SOIL         = "soil";
 		inline constexpr std::string_view SOIL_WATERED = "soil_watered";

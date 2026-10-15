@@ -2,11 +2,9 @@
 #include "Checks/Checks.h"
 #include "GameTuning.h"
 #include "LaunchOptions.h"
+#include "Life/PlayerInput.h"
 #include "Look/ArtRegistry.h"
 #include "World/ValleyLayout.h"
-
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
 namespace Dingo
 {
@@ -33,7 +31,7 @@ namespace Dingo
 			renderer.SetInstancingEnabled(!options.NoInstancing);
 		}
 		m_ValleyScene = m_SceneManager.CreateScene(SCENE_VALLEY);
-		m_ValleyScene->SetClearColor(COLOR_SKY);
+		RegisterStages();
 		BuildValleyScene();
 		m_SceneManager.SetActiveScene(SCENE_VALLEY);
 	}
@@ -41,57 +39,82 @@ namespace Dingo
 	void HearthvaleLayer::OnDetach()
 	{
 		m_StaticChecks.reset();
+		ReleaseScenePieces();
 		m_World.reset();
 		if (Scene* active = m_SceneManager.GetActiveScene())
 			active->OnStop();
 		m_SceneManager.Clear();
+		m_FarmerAssets.reset();
 		m_ValleyScene = nullptr;
 		m_Director.reset();
 	}
 
+	void HearthvaleLayer::ReleaseScenePieces()
+	{
+		m_Hud.reset();
+		m_Camera.reset();
+		m_Player.reset();
+		m_Sky.reset();
+	}
+
+	void HearthvaleLayer::RegisterStages()
+	{
+		m_Director->OnStage(SimStage::PlayerIntent, [this](ValleyDirector& director, const StepInfo& step)
+		{
+			if (m_Player)
+				m_Player->Step(m_Intent, director.GetGrid(), m_Camera ? m_Camera->GetYaw() : 0.0f, step.Dt);
+		});
+		m_Director->OnStage(SimStage::Sky, [this](ValleyDirector& director, const StepInfo& step)
+		{
+			if (m_Sky)
+				m_Sky->Update(step.Dt, director.GetCalendar().GetHours(), director.GetCalendar().GetWeather());
+		});
+		m_Director->OnStage(SimStage::Camera, [this](ValleyDirector&, const StepInfo& step)
+		{
+			if (m_Camera && m_Player)
+				m_Camera->Update(step.Dt, m_Player->GetFeet(), m_Intent.CameraSteps, m_Intent.CameraZoomAxis, m_Intent.CameraZoomWheel);
+		});
+		m_Director->OnStage(SimStage::Ui, [this](ValleyDirector&, const StepInfo&)
+		{
+			m_Intent.ClearPulses();
+		});
+	}
+
 	void HearthvaleLayer::BuildValleyScene()
 	{
+		ReleaseScenePieces();
 		m_World.reset();
 		m_ValleyScene->Clear();
 		if (Application::Get().IsHeadless())
 			return;
 
-		Entity ambient = m_ValleyScene->CreateEntity("Ambient");
-		ambient.AddComponent<Transform3DComponent>();
-		ambient.AddComponent<AmbientLightComponent>(AmbientLightComponent(AMBIENT_COLOR, AMBIENT_INTENSITY));
-
-		Entity sun = m_ValleyScene->CreateEntity("Sun");
-		DirectionalLightComponent& sunLight = sun.AddComponent<DirectionalLightComponent>();
-		sunLight.Direction = SUN_DIRECTION;
-		sunLight.Color = SUN_COLOR;
-		sunLight.Intensity = SUN_INTENSITY;
-		sunLight.CastShadows = !GetLaunchOptions().NoShadows;
+		const LaunchOptions& options = GetLaunchOptions();
+		const Calendar& calendar = m_Director->GetCalendar();
+		m_Sky = std::make_unique<Sky>(*m_ValleyScene, !options.NoShadows, !options.NoFog);
+		m_Sky->Update(0.0f, calendar.GetHours(), calendar.GetWeather());
 
 		ValleyWorldOptions worldOptions;
-		worldOptions.Static = !GetLaunchOptions().NoStatic;
+		worldOptions.Static = !options.NoStatic;
 		m_World = std::make_unique<ValleyWorld>(*m_ValleyScene, m_Director->GetGrid(), worldOptions);
 		m_World->Sync();
 
+		Player::SpawnFloor(*m_ValleyScene, m_Director->GetGrid().GetWidth(), m_Director->GetGrid().GetHeight());
+
+		if (options.FarmerModel)
+		{
+			m_FarmerAssets = std::make_unique<FarmerAssets>();
+			if (!m_FarmerAssets->IsUsable())
+			{
+				DE_WARN("Hearthvale: the farmer model did not load; using the placeholder body");
+			}
+		}
+
 		const LandmarkSpec& home = GetLandmarkSpec(Landmark::FarmHouse);
-		Art::SpawnOnGround(*m_ValleyScene, Art::FARMER, "Farmer", (static_cast<float>(home.DoorX) + 0.5f) * TILE_SIZE,
-			(static_cast<float>(home.DoorY) + 1.5f) * TILE_SIZE, GROUND_TOP);
-
-		Entity camera = m_ValleyScene->CreateEntity("Camera");
-		auto& cameraComponent = camera.AddComponent<CameraComponent>();
-		cameraComponent.Type = CameraComponent::ProjectionType::Perspective;
-		cameraComponent.FOV = CAMERA_FOV;
-		cameraComponent.PerspNear = CAMERA_NEAR;
-		cameraComponent.PerspFar = CAMERA_FAR;
-		cameraComponent.Primary = true;
-		auto& transform = camera.AddComponent<Transform3DComponent>();
-		camera.AddComponent<AudioListenerComponent>();
-
-		const float pitch = glm::radians(CAMERA_PITCH_DEG);
-		const glm::vec3 target((static_cast<float>(FARM_PLOT.X) + 0.5f * static_cast<float>(FARM_PLOT.W)) * TILE_SIZE, GROUND_TOP,
-			(static_cast<float>(FARM_PLOT.Y) + 0.5f * static_cast<float>(FARM_PLOT.H)) * TILE_SIZE);
-		const glm::vec3 eye = target + glm::vec3(0.0f, std::sin(pitch), std::cos(pitch)) * CAMERA_DISTANCE;
-		transform.Position = eye;
-		transform.Rotation = glm::quat_cast(glm::inverse(glm::lookAt(eye, target, glm::vec3(0.0f, 1.0f, 0.0f))));
+		const glm::vec3 feet((static_cast<float>(home.DoorX) + 0.5f) * TILE_SIZE, GROUND_TOP + PLAYER_SPAWN_LIFT,
+			(static_cast<float>(home.DoorY) + 1.5f) * TILE_SIZE);
+		m_Player = std::make_unique<Player>(*m_ValleyScene, feet, m_FarmerAssets.get());
+		m_Camera = std::make_unique<CameraRig>(*m_ValleyScene, feet);
+		m_Hud = std::make_unique<ClockHud>();
 	}
 
 	void HearthvaleLayer::RunChecks()
@@ -124,6 +147,9 @@ namespace Dingo
 				return;
 		}
 
+		if (m_Player && !options.Autoplay)
+			PollPlayerIntent(m_Intent);
+
 		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
 		const int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
 		for (int i = 0; i < steps; ++i)
@@ -133,6 +159,8 @@ namespace Dingo
 		}
 		if (m_World)
 			m_World->Sync();
+		if (m_Hud)
+			m_Hud->Draw(m_Director->GetCalendar());
 		m_SceneManager.OnRender();
 	}
 

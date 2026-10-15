@@ -28,6 +28,8 @@ namespace Dingo
 	void RunGenerationChecks(CheckReport& report);
 	void RunCalendarChecks(CheckReport& report);
 	void RunWorldChecks(CheckReport& report);
+	void RunSkyChecks(CheckReport& report);
+	void RunPlayerChecks(CheckReport& report);
 	void RunSimChecks(CheckReport& report);
 
 }
