@@ -10,6 +10,7 @@
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Model.h"
@@ -229,6 +230,8 @@ namespace Dingo
 		void (*Publish)(AssetManagerData&, AsyncResult&) = nullptr;
 
 		bool HotReloadWatched = false;
+		// The load creates GPU resources, so it can't succeed without a graphics device (a headless app).
+		bool NeedsGraphicsDevice = false;
 		// A second file the load reads, watched with the asset's own, and what a change to it alone
 		// refreshes (ReloadInPlace when null).
 		std::filesystem::path (*Companion)(const Internal::AssetRecord&) = nullptr;
@@ -298,17 +301,19 @@ namespace Dingo
 					}
 					else
 					{
-						data.Textures[result.Handle] = Texture::Create(textureParams);
+						if (Texture* texture = Texture::Create(textureParams))
+							data.Textures[result.Handle] = texture;
 					}
 				},
-				.HotReloadWatched = true
+				.HotReloadWatched = true,
+				.NeedsGraphicsDevice = true
 			},
 			{
 				.Type = AssetType::Shader,
 				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
 				{
-					// Shader::Create never returns nullptr - a failed compile/read yields an
-					// object with no program, detected via IsValid().
+					// With a device, Shader::Create never returns nullptr - a failed compile/read
+					// yields an object with no program, detected via IsValid().
 					Shader* shader = Shader::CreateFromFile(Utils::SanitizeAssetName(metadata.FilePath), metadata.AbsolutePath);
 					if (shader && !shader->IsValid())
 					{
@@ -333,7 +338,8 @@ namespace Dingo
 				},
 				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Shaders, handle); },
 				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Shaders.contains(handle); },
-				.HotReloadWatched = true
+				.HotReloadWatched = true,
+				.NeedsGraphicsDevice = true
 			},
 			{
 				.Type = AssetType::Model,
@@ -393,7 +399,8 @@ namespace Dingo
 					return true;
 				},
 				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Fonts, handle); },
-				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Fonts.contains(handle); }
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Fonts.contains(handle); },
+				.NeedsGraphicsDevice = true
 			},
 			{
 				.Type = AssetType::AudioClip,
@@ -508,8 +515,21 @@ namespace Dingo
 		metadata.LastWriteTime = Utils::ReadShaderWriteTime(FindLoadedShader(data, metadata), metadata.AbsolutePath);
 	}
 
+	static bool RefuseWithoutGraphicsDevice(Internal::AssetRecord& metadata)
+	{
+		if (Internal::HasGraphicsDevice() || !PolicyFor(metadata.Type).NeedsGraphicsDevice)
+			return false;
+
+		DE_CORE_ERROR("AssetManager: can't load {} '{}': a headless app has no GPU.", ToString(metadata.Type), Internal::PathToGenericUtf8(metadata.FilePath));
+		metadata.State = AssetState::Failed;
+		return true;
+	}
+
 	static bool LoadInternal(AssetManagerData& data, Internal::AssetRecord& metadata)
 	{
+		if (RefuseWithoutGraphicsDevice(metadata))
+			return false;
+
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 		StampCompanion(data, metadata);
 		if (policy.Load && (*policy.Load)(data, metadata))
@@ -662,13 +682,15 @@ namespace Dingo
 		// Publish is what turns a payload into a loaded object, so a policy row carrying a
 		// Decode without one has nowhere to put the result: count that as a failed load rather
 		// than leaving the asset in flight forever with its counter already released.
-		const bool published = stillWanted && result.Success && policy.Publish;
+		bool published = stillWanted && result.Success && policy.Publish;
 		if (published)
 		{
 			(*policy.Publish)(data, result);
-			it->second.State = AssetState::Ready;
+			published = policy.IsLoaded && (*policy.IsLoaded)(data, result.Handle);
+			if (published)
+				it->second.State = AssetState::Ready;
 		}
-		else if (stillWanted)
+		if (!published && stillWanted)
 		{
 			DE_CORE_ERROR("AssetManager: async load failed for {} '{}'.", ToString(result.Type), result.DebugName);
 			// A failed hot-reload keeps serving the still-loaded previous version.
@@ -724,6 +746,9 @@ namespace Dingo
 			// reload already in flight) is skipped.
 			const bool recovering = metadata.State == AssetState::Failed;
 			if (metadata.State != AssetState::Ready && !recovering)
+				continue;
+
+			if (recovering && !Internal::HasGraphicsDevice() && PolicyFor(metadata.Type).NeedsGraphicsDevice)
 				continue;
 
 			// Both are read every poll, so a save of both that settles in one poll reloads once.
@@ -962,6 +987,9 @@ namespace Dingo
 		AssetManagerData& data = *m_Data;
 		Internal::AssetRecord& metadata = data.Registry.at(handle);
 		if (metadata.State != AssetState::Unloaded && metadata.State != AssetState::Failed)
+			return handle;
+
+		if (RefuseWithoutGraphicsDevice(metadata))
 			return handle;
 
 		if (PolicyFor(metadata.Type).Decode)

@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Core/CacheManager.h"
@@ -171,6 +172,9 @@ namespace Dingo
 
 	Font* Font::Create(const std::filesystem::path& filepath, const FontParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("Font::Create"))
+			return nullptr;
+
 		Font* font = new Font(Internal::ResolveRawAssetPath(filepath), params);
 		if (!font->Initialize())
 		{
