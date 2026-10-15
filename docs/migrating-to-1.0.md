@@ -534,8 +534,10 @@ entity.
   `"Entity"`). Reading either component with `GetComponent` or `HasComponent` still works.
 - `AddComponent<T>` on an entity that has `T` replaces it and logs a warning. Before it was an
   EnTT assert.
-- `GetComponent<T>` asserts with the type's name when the entity has none. Check `HasComponent<T>()`
-  first when you aren't sure.
+- `GetComponent<T>` asserts in Debug and Debug-ASan when the entity has none; the message doesn't
+  name the type. Release and Distribution compile that assert out, and the call falls through to
+  EnTT's own assert ("Set does not contain entity"), as in 0.9. Check `HasComponent<T>()` first
+  when you aren't sure.
 - `HasComponent` is false and `RemoveComponent` does nothing on a null or destroyed entity.
   `GetUUID()` and `GetName()` return `0` and `""`.
 
