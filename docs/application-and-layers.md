@@ -506,6 +506,23 @@ void Player::OnHit()
 }
 ```
 
+**Simulated pads.** For tests, demos and headless check runs, `Input::SetGamepadSimulated(slot, true)`
+makes a slot a pad you feed from code: it reads connected at once ("Simulated Gamepad", type
+`Unknown`, everything up), and a real pad in that slot is ignored until you turn it off again (the
+slot is then polled from the device from the next frame; no connect or disconnect event is sent either
+way). `Input::SetSimulatedGamepadButton` and `SetSimulatedGamepadAxis` set what the pad reports. They
+take effect at the next frame's input snapshot, like a real pad being polled: a press set in `OnUpdate`
+of frame N reads as `IsGamepadButtonPressed` in frame N + 1, DingoUI's navigation sees it too, and the
+value stays until it is set again. `IsGamepadSimulated(slot)` says whether a slot is simulated.
+
+```cpp
+Input::SetGamepadSimulated(0, true);
+Input::SetSimulatedGamepadButton(GamepadButton::A, true);        // pressed edge next frame
+Input::SetSimulatedGamepadAxis(GamepadAxis::LeftX, 1.0f);        // raw; the deadzone applies in the getters
+// ... later, to hand the slot back to the device:
+Input::SetGamepadSimulated(0, false);
+```
+
 GLFW's gamepad API is input only, so rumble goes through XInput: Xbox-compatible pads on Windows.
 On any other pad, or platform, it does nothing and returns false;
 `Input::IsGamepadRumbleSupported(gamepad)` says which, e.g. to hide a VIBRATION setting. The F5

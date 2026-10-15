@@ -49,8 +49,9 @@ namespace Dingo
 		std::array<std::string, k_MaxGamepads> s_GamepadNames{};
 		std::array<GamepadType, k_MaxGamepads> s_GamepadTypes{};
 		float s_GamepadDeadzone = 0.15f;
-		// Slots the test app drives itself; polling leaves them alone.
+		// Slots fed from code instead of a device; polling copies s_SimulatedInput into them.
 		std::array<bool, k_MaxGamepads> s_SimulatedGamepads{};
+		std::array<GamepadState, k_MaxGamepads> s_SimulatedInput{};
 
 		using RumbleClock = std::chrono::steady_clock;
 		constexpr int k_NoXInputUser = -1;
@@ -200,7 +201,16 @@ namespace Dingo
 			{
 				GamepadState& state = s_CurrentGamepads[jid];
 				if (s_SimulatedGamepads[jid])
+				{
+					if (!state.Connected)
+					{
+						s_GamepadNames[jid] = "Simulated Gamepad";
+						s_GamepadTypes[jid] = GamepadType::Unknown;
+					}
+					state = s_SimulatedInput[jid];
+					state.Connected = true;
 					continue;
+				}
 
 				GLFWgamepadstate glfwState;
 				if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &glfwState))
@@ -291,8 +301,9 @@ namespace Dingo
 		if (!ValidGamepad(gamepad))
 			return;
 		s_SimulatedGamepads[gamepad] = connected;
-		s_CurrentGamepads[gamepad] = GamepadState{};
-		s_CurrentGamepads[gamepad].Connected = connected;
+		s_SimulatedInput[gamepad] = GamepadState{};
+		s_SimulatedInput[gamepad].Connected = connected;
+		s_CurrentGamepads[gamepad] = s_SimulatedInput[gamepad];
 		s_PreviousGamepads[gamepad] = s_CurrentGamepads[gamepad];
 		s_ConsumedGamepadButtons[gamepad].fill(false);
 		if (connected)
@@ -305,13 +316,42 @@ namespace Dingo
 	void Input::SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad)
 	{
 		if (ValidGamepad(gamepad) && ValidGamepadButton(button) && s_SimulatedGamepads[gamepad])
+		{
 			s_CurrentGamepads[gamepad].Buttons[static_cast<size_t>(button)] = pressed;
+			s_SimulatedInput[gamepad].Buttons[static_cast<size_t>(button)] = pressed;
+		}
 	}
 
 	void Input::SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad)
 	{
 		if (ValidGamepad(gamepad) && ValidGamepadAxis(axis) && s_SimulatedGamepads[gamepad])
+		{
 			s_CurrentGamepads[gamepad].Axes[static_cast<size_t>(axis)] = value;
+			s_SimulatedInput[gamepad].Axes[static_cast<size_t>(axis)] = value;
+		}
+	}
+
+	void Input::SetGamepadSimulated(uint32_t gamepad, bool simulated)
+	{
+		if (ValidGamepad(gamepad) && s_SimulatedGamepads[gamepad] != simulated)
+			SimulateGamepadConnected(gamepad, simulated);
+	}
+
+	bool Input::IsGamepadSimulated(uint32_t gamepad)
+	{
+		return ValidGamepad(gamepad) && s_SimulatedGamepads[gamepad];
+	}
+
+	void Input::SetSimulatedGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadButton(button) && s_SimulatedGamepads[gamepad])
+			s_SimulatedInput[gamepad].Buttons[static_cast<size_t>(button)] = pressed;
+	}
+
+	void Input::SetSimulatedGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad)
+	{
+		if (ValidGamepad(gamepad) && ValidGamepadAxis(axis) && s_SimulatedGamepads[gamepad])
+			s_SimulatedInput[gamepad].Axes[static_cast<size_t>(axis)] = std::clamp(value, -1.0f, 1.0f);
 	}
 
 	void Input::ClearConsumed()
