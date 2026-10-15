@@ -48,6 +48,7 @@ void main()
 
 #elif defined(DE_INSTANCED)
 
+#define DE_INSTANCE_DRAW_PUSH
 #include <DingoEngine/Instancing.glsl>
 
 layout(location = 0) in vec3 a_Position;
