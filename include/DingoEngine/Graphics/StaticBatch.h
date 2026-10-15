@@ -106,9 +106,10 @@ namespace Dingo
 		/// Cells baked since the batch was made, for tooling and tests.
 		uint64_t GetBakeCount() const;
 		/// Grid coordinates of the cells the batch's latest submission baked, in bake order, cells it
-		/// emptied included; empty when that submission baked none. A cell's coordinate is
-		/// floor(centre / GetCellSize()) per axis, centre being the world-space bounds centre of the
-		/// meshes it holds. A submission skipped because no scene is active leaves it as it was.
+		/// emptied included; empty when that submission baked none. A mesh lands in the cell
+		/// floor(its world-bounds centre / GetCellSize()), per axis. A submission that draws nothing
+		/// (no active scene, a skipped frame, a renderer other than the batch's) and Clear() leave it
+		/// as it was.
 		/// Valid until the next submission of this batch.
 		const std::vector<glm::ivec3>& GetLastBakedCells() const;
 		/// The coordinate of the cell the entry is baked into, as of the last submission. Empty for an
