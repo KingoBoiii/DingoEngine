@@ -90,22 +90,22 @@ namespace Dingo
 		return m_PushConstantBlocks.empty() ? 0 : m_PushConstantBlocks.front().second;
 	}
 
-	bool Internal::CopyPushConstants(const Shader* shader, const void* data, uint32_t size, uint8_t* destination, std::string_view owner)
+	bool Internal::CopyPushConstants(const Shader* shader, const void* data, uint32_t size, uint8_t* destination, std::string_view ownerKind, std::string_view ownerName)
 	{
 		const uint32_t blockSize = shader ? shader->GetPushConstantBlockSize() : 0;
 		if (blockSize == 0)
 		{
-			DE_CORE_ERROR("{}: shader '{}' declares no push-constant block.", owner, shader ? shader->GetParams().Name : std::string("(none)"));
+			DE_CORE_ERROR("{} '{}': shader '{}' declares no push-constant block.", ownerKind, ownerName, shader ? shader->GetParams().Name : std::string("(none)"));
 			return false;
 		}
 		if (size > blockSize)
 		{
-			DE_CORE_ERROR("{}: {} bytes of push constants, but shader '{}' has a {}-byte block.", owner, size, shader->GetParams().Name, blockSize);
+			DE_CORE_ERROR("{} '{}': {} bytes of push constants, but shader '{}' has a {}-byte block.", ownerKind, ownerName, size, shader->GetParams().Name, blockSize);
 			return false;
 		}
 		if (size > 0 && !data)
 		{
-			DE_CORE_ERROR("{}: push constants with {} bytes but no data.", owner, size);
+			DE_CORE_ERROR("{} '{}': push constants with {} bytes but no data.", ownerKind, ownerName, size);
 			return false;
 		}
 

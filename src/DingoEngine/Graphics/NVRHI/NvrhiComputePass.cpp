@@ -87,7 +87,7 @@ namespace Dingo
 
 	bool ComputePass::SetPushConstants(const void* data, uint32_t size)
 	{
-		return Internal::CopyPushConstants(m_Params.Shader, data, size, m_PushConstants, "ComputePass '" + m_Params.DebugName + "'");
+		return Internal::CopyPushConstants(m_Params.Shader, data, size, m_PushConstants, "ComputePass", m_Params.DebugName);
 	}
 
 	bool NvrhiComputePass::Prepare()
