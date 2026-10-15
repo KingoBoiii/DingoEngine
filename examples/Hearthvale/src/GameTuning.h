@@ -15,6 +15,16 @@ namespace Dingo
 	inline constexpr int CELL_TILES                = 16;
 	inline constexpr float TILE_SIZE               = 1.0f;
 
+	// The scene bakes Static meshes in fixed 32 m cells by bounds centre (plan 1.4, E9); game cells nest in them.
+	inline constexpr float ENGINE_STATIC_CELL      = 32.0f;
+
+	// Every slab's bounds centre stays above y = 0, so ground and what stands on it share an engine cell.
+	inline constexpr float GROUND_TOP              = 0.2f;
+	inline constexpr float WATER_TOP               = 0.12f;
+	inline constexpr float RIM_TOP                 = 0.6f;
+	inline constexpr float SOIL_TOP                = 0.24f;
+	inline constexpr float DECOR_VARIANT_SCALE[]   = { 0.85f, 1.0f, 1.15f };
+
 	inline constexpr float DAY_START_HOUR          = 6.0f;
 	inline constexpr float DAY_END_HOUR            = 26.0f;
 	inline constexpr float DAY_REAL_SECONDS        = 12.0f * 60.0f;

@@ -1,6 +1,12 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include "Defs/BuildDefs.h"
+#include "Defs/CropDefs.h"
+#include "Defs/DecorDefs.h"
+#include "World/ValleyLayout.h"
+#include "World/WorldCells.h"
+
 #include <glm/glm.hpp>
 
 #include <string>
@@ -23,15 +29,26 @@ namespace Dingo
 
 	namespace Art
 	{
-		inline constexpr std::string_view GROUND = "ground";
-		inline constexpr std::string_view FARMER = "farmer";
-		inline constexpr std::string_view TREE   = "tree";
-		inline constexpr std::string_view ROCK   = "rock";
+		inline constexpr std::string_view FARMER       = "farmer";
+		// The two must share primitive (or model) and size: watering changes only the colour.
+		inline constexpr std::string_view SOIL         = "soil";
+		inline constexpr std::string_view SOIL_WATERED = "soil_watered";
 
 		const ArtEntry* Find(std::string_view id);
 
+		std::string_view ForGround(GroundLook look);
+		std::string_view ForDecor(DecorKind kind);
+		std::string_view ForBuild(BuildId id);
+		std::string_view ForLandmark(Landmark id);
+		std::string_view ForCrop(CropId crop, int stage);
+
+		Mesh* GetMesh(const ArtEntry& entry);
+
 		// Null headless (no renderer) or for an unknown id; model entries are not loaded yet.
-		Entity Spawn(Scene& scene, std::string_view id, const std::string& name, const glm::vec3& position);
+		// `position` is the mesh's centre; the entry's Size times `scale` is its scale.
+		Entity Spawn(Scene& scene, std::string_view id, const std::string& name, const glm::vec3& position, int quarterTurns = 0, float scale = 1.0f);
+		// As Spawn, standing on `groundY` at (x, z).
+		Entity SpawnOnGround(Scene& scene, std::string_view id, const std::string& name, float x, float z, float groundY, int quarterTurns = 0, float scale = 1.0f);
 	}
 
 }

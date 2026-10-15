@@ -8,6 +8,7 @@ namespace Dingo
 		RunDefChecks(report);
 		RunGenerationChecks(report);
 		RunCalendarChecks(report);
+		RunWorldChecks(report);
 	}
 
 }

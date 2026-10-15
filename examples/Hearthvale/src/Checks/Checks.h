@@ -27,6 +27,7 @@ namespace Dingo
 	void RunDefChecks(CheckReport& report);
 	void RunGenerationChecks(CheckReport& report);
 	void RunCalendarChecks(CheckReport& report);
+	void RunWorldChecks(CheckReport& report);
 	void RunSimChecks(CheckReport& report);
 
 }

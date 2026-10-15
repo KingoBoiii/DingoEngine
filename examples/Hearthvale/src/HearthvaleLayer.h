@@ -1,7 +1,10 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include "Checks/CheckReport.h"
+#include "Checks/StaticChecks.h"
 #include "ValleyDirector.h"
+#include "World/ValleyWorld.h"
 
 #include <memory>
 
@@ -20,11 +23,16 @@ namespace Dingo
 
 	private:
 		void BuildValleyScene();
+		void RunChecks();
 
 	private:
 		std::unique_ptr<ValleyDirector> m_Director;
+		std::unique_ptr<ValleyWorld> m_World;
 		SceneManager m_SceneManager;
 		Scene* m_ValleyScene = nullptr;
+		CheckReport m_Report;
+		std::unique_ptr<StaticCheckRun> m_StaticChecks;
+		bool m_SimChecksDone = false;
 		bool m_ChecksDone = false;
 	};
 
