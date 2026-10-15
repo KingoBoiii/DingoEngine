@@ -28,24 +28,22 @@ namespace Dingo
 		piece.Kind = animal.Kind;
 
 		const ArtEntry* body = Art::Find(Art::ForAnimal(animal.Kind));
-		const ArtEntry* head = Art::Find(Art::ForAnimalHead(animal.Kind));
-		if (!body || !head)
+		if (!body)
 			return piece;
 
 		piece.Lift = 0.5f * body->Size.y;
 		piece.Root = m_Scene.CreateEntity(animal.Kind == AnimalKind::Cow ? "Cow" : "Chicken");
 		piece.Root.AddComponent<Transform3DComponent>();
 
-		const float forward = 0.5f * body->Size.z;
-		const struct { std::string_view Id; const char* Name; glm::vec3 Position; } parts[] = {
-			{ Art::ForAnimal(animal.Kind),     "Body", glm::vec3(0.0f) },
-			{ Art::ForAnimalHead(animal.Kind), "Head", glm::vec3(0.0f, 0.3f * body->Size.y, forward) },
-		};
-		for (const auto& part : parts)
+		const std::string_view headId = Art::ForAnimalHead(animal.Kind);
+		Entity visual = Art::Spawn(m_Scene, Art::ForAnimal(animal.Kind), "Body", glm::vec3(0.0f));
+		if (visual)
+			visual.SetParent(piece.Root, false);
+		if (!headId.empty())
 		{
-			Entity visual = Art::Spawn(m_Scene, part.Id, part.Name, part.Position);
-			if (visual)
-				visual.SetParent(piece.Root, false);
+			Entity head = Art::Spawn(m_Scene, headId, "Head", glm::vec3(0.0f, 0.3f * body->Size.y, 0.5f * body->Size.z));
+			if (head)
+				head.SetParent(piece.Root, false);
 		}
 
 		piece.Marker = Art::Spawn(m_Scene, Art::ForProduce(animal.Kind), "Produce", glm::vec3(0.0f, body->Size.y * 0.5f + k_MarkerLift, 0.0f));

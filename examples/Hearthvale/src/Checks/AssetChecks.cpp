@@ -39,11 +39,11 @@ namespace Dingo
 			}
 			for (int villager = 0; villager < VILLAGER_COUNT; ++villager)
 				ok = HasArt(Art::ForVillager(static_cast<VillagerId>(villager))) && ok;
-			ok = HasArt(Art::ForVillagerHead()) && ok;
+			ok = (Art::ForVillagerHead().empty() || HasArt(Art::ForVillagerHead())) && ok;
 			for (const AnimalKind kind : { AnimalKind::Chicken, AnimalKind::Cow })
 			{
 				ok = HasArt(Art::ForAnimal(kind)) && ok;
-				ok = HasArt(Art::ForAnimalHead(kind)) && ok;
+				ok = (Art::ForAnimalHead(kind).empty() || HasArt(Art::ForAnimalHead(kind))) && ok;
 				ok = HasArt(Art::ForProduce(kind)) && ok;
 			}
 			for (const std::string_view id : { Art::FARMER, Art::FARMER_HEAD, Art::FARMER_FACE, Art::TARGET_TILE, Art::SOIL, Art::SOIL_WATERED, Art::LAMP_BULB, Art::WINDOW })
@@ -70,10 +70,11 @@ namespace Dingo
 			for (const char* path : FarmerAssetPaths())
 				files.push_back(path);
 			files.push_back(GameUiFontPath());
+			files.push_back(GameUiHeadingFontPath());
 			for (const ArtEntry& entry : Art::All())
 			{
-				if (!entry.ModelPath.empty())
-					files.emplace_back(entry.ModelPath);
+				for (const std::string_view path : Art::ModelPathsOf(entry))
+					files.emplace_back(path);
 			}
 			return files;
 		}
@@ -99,15 +100,22 @@ namespace Dingo
 				"Assets: the farmer's model, texture and idle and walk clips load and resolve on its skeleton");
 
 			Font* font = assets.GetFont(assets.Load(FileSystem::PathFromUtf8(GameUiFontPath())));
-			report.Check(font != nullptr, "Assets: the UI font loads");
+			Font* headingFont = assets.GetFont(assets.Load(FileSystem::PathFromUtf8(GameUiHeadingFontPath())));
+			report.Check(font != nullptr && headingFont != nullptr, "Assets: the UI body and heading fonts load");
 
-			bool modelsLoad = true;
+			int modelsFailed = 0;
 			for (const ArtEntry& entry : Art::All())
+				modelsFailed += Art::LoadModels(entry);
+			report.Check(modelsFailed == 0, std::format("Assets: every model an art entry uses loads and has geometry ({} did not)", modelsFailed));
+
+			bool villagersLoad = true;
+			for (int villager = 0; villager < VILLAGER_COUNT; ++villager)
 			{
-				if (!entry.ModelPath.empty())
-					modelsLoad = assets.GetModel(assets.Load(FileSystem::PathFromUtf8(entry.ModelPath))) != nullptr && modelsLoad;
+				const VillagerLook look = Art::ForVillagerCharacter(static_cast<VillagerId>(villager));
+				const Model* model = farmer.FindCharacter(look.ModelPath) ? farmer.FindCharacter(look.ModelPath)->Loaded : nullptr;
+				villagersLoad = model != nullptr && model->GetSkeleton() != nullptr && look.Height > 0.0f && villagersLoad;
 			}
-			report.Check(modelsLoad, "Assets: every art entry with a model path loads it");
+			report.Check(villagersLoad, "Assets: every villager's character model loads with a skeleton");
 
 			AudioEngine& audio = app.GetAudioEngine();
 			if (!audio.IsValid())

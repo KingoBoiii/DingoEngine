@@ -19,15 +19,15 @@ namespace
 
 	constexpr SfxDef k_Sfx[] =
 	{
-		{ "audio/ui_click.wav",       SFX_VOLUME_UI,      0.0f, 0.0f },
-		{ "audio/ui_focus.wav",       SFX_VOLUME_UI,      0.0f, 0.0f },
-		{ "audio/ui_open.wav",        SFX_VOLUME_UI,      0.0f, 0.0f },
-		{ "audio/ui_close.wav",       SFX_VOLUME_UI,      0.0f, 0.0f },
-		{ "audio/ui_coin.wav",        SFX_VOLUME_UI,      0.0f, 0.0f },
-		{ "audio/ui_error.wav",       SFX_VOLUME_UI,      0.0f, 0.0f },
+		{ "kenney/interface-sounds/Audio/click_001.ogg",       SFX_VOLUME_UI,      0.0f, 0.0f },
+		{ "kenney/interface-sounds/Audio/tick_001.ogg",       SFX_VOLUME_UI,      0.0f, 0.0f },
+		{ "kenney/interface-sounds/Audio/open_001.ogg",        SFX_VOLUME_UI,      0.0f, 0.0f },
+		{ "kenney/interface-sounds/Audio/close_001.ogg",       SFX_VOLUME_UI,      0.0f, 0.0f },
+		{ "kenney/rpg-audio/Audio/handleCoins.ogg",        SFX_VOLUME_UI,      0.0f, 0.0f },
+		{ "kenney/interface-sounds/Audio/error_001.ogg",       SFX_VOLUME_UI,      0.0f, 0.0f },
 		{ "audio/tool_hoe.wav",       SFX_VOLUME_TOOL,    SFX_NEAR, SFX_FAR },
 		{ "audio/tool_water.wav",     SFX_VOLUME_TOOL,    SFX_NEAR, SFX_FAR },
-		{ "audio/tool_axe.wav",       SFX_VOLUME_TOOL,    SFX_NEAR, SFX_FAR },
+		{ "kenney/rpg-audio/Audio/chop.ogg",       SFX_VOLUME_TOOL,    SFX_NEAR, SFX_FAR },
 		{ "audio/tool_pick.wav",      SFX_VOLUME_TOOL,    SFX_NEAR, SFX_FAR },
 		{ "audio/tool_scythe.wav",    SFX_VOLUME_TOOL,    SFX_NEAR, SFX_FAR },
 		{ "audio/place.wav",          SFX_VOLUME_PLACE,   SFX_NEAR, SFX_FAR },

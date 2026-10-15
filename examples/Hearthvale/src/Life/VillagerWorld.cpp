@@ -1,6 +1,7 @@
 #include "Life/VillagerWorld.h"
 #include "GameTuning.h"
 #include "Look/ArtRegistry.h"
+#include "Look/FarmerAssets.h"
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -9,23 +10,31 @@ namespace Dingo
 
 	namespace
 	{
-		constexpr float k_HeadLift = 0.1f;
 		constexpr std::uint32_t k_VillagerLayer = 2u;
 	}
 
-	VillagerWorld::VillagerWorld(Scene& scene)
+	VillagerWorld::VillagerWorld(Scene& scene, const FarmerAssets* assets)
 		: m_Scene(scene)
 	{
+		if (assets)
+		{
+			m_Idle = assets->GetIdle();
+			m_Walk = assets->GetWalk();
+		}
+
 		for (int i = 0; i < VILLAGER_COUNT; ++i)
 		{
 			const VillagerId id = static_cast<VillagerId>(i);
 			const ArtEntry* body = Art::Find(Art::ForVillager(id));
-			const ArtEntry* head = Art::Find(Art::ForVillagerHead());
-			if (!body || !head)
+			if (!body)
 				continue;
 
-			const float headCenter = body->Size.y + k_HeadLift;
-			const float half = 0.5f * (headCenter + 0.5f * head->Size.y);
+			const VillagerLook look = Art::ForVillagerCharacter(id);
+			const CharacterAsset* character = assets ? assets->FindCharacter(look.ModelPath) : nullptr;
+			const bool skinned = character && character->Loaded && character->Loaded->GetSkeleton() && character->Height > 0.0f && m_Idle && m_Walk;
+
+			const float height = skinned ? look.Height : body->Size.y;
+			const float half = 0.5f * height;
 			m_HalfHeight[static_cast<size_t>(i)] = half;
 
 			Entity root = scene.CreateEntity(GetVillagerDef(id).Name);
@@ -38,16 +47,28 @@ namespace Dingo
 			box.HalfExtents = glm::vec3(0.3f, half, 0.3f);
 			root.AddComponent<BoxCollider3DComponent>(box);
 
-			const struct { std::string_view Id; const char* Name; glm::vec3 Position; } parts[] = {
-				{ Art::ForVillager(id),       "Body", glm::vec3(0.0f, 0.5f * body->Size.y - half, 0.0f) },
-				{ Art::ForVillagerHead(),     "Head", glm::vec3(0.0f, headCenter - half, 0.0f) },
-			};
-			for (const auto& part : parts)
+			Entity visual;
+			if (skinned)
 			{
-				Entity visual = Art::Spawn(scene, part.Id, part.Name, part.Position);
-				if (visual)
-					visual.SetParent(root, false);
+				visual = scene.CreateEntity("Character");
+				auto& transform = visual.AddComponent<Transform3DComponent>();
+				transform.Position = glm::vec3(0.0f, -half, 0.0f);
+				transform.Scale = glm::vec3(look.Height / character->Height);
+				SkinnedMeshRendererComponent renderer(character->Loaded);
+				renderer.Material = character->Lit;
+				renderer.Color = look.Tint;
+				visual.AddComponent<SkinnedMeshRendererComponent>(renderer);
+				AnimatorComponent animator;
+				animator.PlayOnStart = false;
+				visual.AddComponent<AnimatorComponent>(animator);
 			}
+			else
+			{
+				visual = Art::Spawn(scene, Art::ForVillager(id), "Body", glm::vec3(0.0f, 0.5f * body->Size.y - half, 0.0f));
+			}
+			if (visual)
+				visual.SetParent(root, false);
+			m_Visuals[static_cast<size_t>(i)] = skinned ? visual : Entity();
 
 			root.SetActive(false);
 			m_Roots[static_cast<size_t>(i)] = root;
@@ -71,7 +92,22 @@ namespace Dingo
 			const bool visible = !place.Indoors;
 			if (root.IsActive() != visible)
 				root.SetActive(visible);
-			if (!visible || !physics || dt <= 0.0f)
+			if (!visible)
+				continue;
+
+			Entity visual = m_Visuals[static_cast<size_t>(i)];
+			if (visual.IsValid())
+			{
+				if (Animator* animator = m_Scene.GetAnimator(visual))
+				{
+					const AnimationClip* wanted = place.Moving ? m_Walk : m_Idle;
+					if (animator->GetCurrentClip() != wanted)
+						animator->Play(wanted, PLAYER_ANIM_FADE);
+					visual.GetComponent<AnimatorComponent>().Speed = place.Moving ? PLAYER_WALK_ANIM_SPEED : 1.0f;
+				}
+			}
+
+			if (!physics || dt <= 0.0f)
 				continue;
 
 			const PhysicsBodyId3D body = m_Scene.GetRuntimeBody3D(root);

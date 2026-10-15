@@ -10,9 +10,11 @@
 
 #include <glm/glm.hpp>
 
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Dingo
 {
@@ -21,7 +23,23 @@ namespace Dingo
 
 	enum class ArtPrimitive : uint8_t { Box, Sphere };
 
-	// Until P14 every entry is a primitive; ModelPath, when set, wins over Primitive.
+	// Contain scales the model uniformly to fit inside Size; Stretch scales each axis to fill it.
+	enum class ArtFit : uint8_t { Contain, Stretch };
+
+	// One model inside a composite: the box it fills (in the composite's axes, after YawDegrees) and where that
+	// box's bottom centre sits relative to the composite's bottom centre.
+	struct ArtPart
+	{
+		std::string_view ModelPath;
+		glm::vec3 Size{ 1.0f };
+		glm::vec3 Offset{ 0.0f };
+		float YawDegrees = 0.0f;
+		ArtFit Fit = ArtFit::Contain;
+		glm::vec4 Tint{ 1.0f };
+	};
+
+	// Size is the box the entry occupies (its centre is the spawn position). ModelPath, when set and loadable, wins
+	// over Primitive and Color; Parts, when set, replace ModelPath. Tint multiplies the model's colours.
 	struct ArtEntry
 	{
 		std::string_view Id;
@@ -29,6 +47,19 @@ namespace Dingo
 		glm::vec4 Color{ 1.0f };
 		glm::vec3 Size{ 1.0f };
 		std::string_view ModelPath;
+		float YawDegrees = 0.0f;
+		ArtFit Fit = ArtFit::Contain;
+		glm::vec4 Tint{ 1.0f };
+		std::span<const ArtPart> Parts;
+	};
+
+	// What a villager is drawn with: a KayKit character, a tint over its texture, and its standing height.
+	struct VillagerLook
+	{
+		std::string_view ModelPath;
+		std::string_view TexturePath;
+		glm::vec4 Tint{ 1.0f };
+		float Height = 1.0f;
 	};
 
 	namespace Art
@@ -64,8 +95,22 @@ namespace Dingo
 
 		Mesh* GetMesh(const ArtEntry& entry);
 
-		// Null headless (no renderer) or for an unknown id; model entries are not loaded yet.
-		// `position` is the mesh's centre; the entry's Size times `scale` is its scale.
+		// The paths of every model an entry uses (one for a single model, one per part for a composite).
+		std::vector<std::string_view> ModelPathsOf(const ArtEntry& entry);
+
+		VillagerLook ForVillagerCharacter(VillagerId villager);
+
+		// Loads the entry's models and returns how many failed (0 when all load, or the entry is a primitive).
+		// GPU side: never headless.
+		int LoadModels(const ArtEntry& entry);
+		// Forgets the cached model bounds; the AssetManager keeps the models. Call when the scene is torn down.
+		void ReleaseModels();
+
+		// Calls fn for the entity and each descendant that draws a mesh.
+		void ForEachMesh(Entity root, const std::function<void(MeshRendererComponent&)>& fn);
+
+		// Null headless (no renderer) or for an unknown id. The entity is a pivot at `position` (the centre of the
+		// entry's Size box) scaled by `scale`; the meshes hang under it, so use ForEachMesh to reach them.
 		Entity Spawn(Scene& scene, std::string_view id, const std::string& name, const glm::vec3& position, int quarterTurns = 0, float scale = 1.0f);
 		// As Spawn, standing on `groundY` at (x, z).
 		Entity SpawnOnGround(Scene& scene, std::string_view id, const std::string& name, float x, float z, float groundY, int quarterTurns = 0, float scale = 1.0f);

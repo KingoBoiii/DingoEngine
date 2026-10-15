@@ -49,7 +49,8 @@ namespace Dingo
 
 	UITextParams LineText(const UiKit& kit, float size, const glm::vec4& color, bool wrap)
 	{
-		return UITextParams().SetSize(size).SetColor(color).SetWrap(wrap).SetFont(kit.TextFont);
+		Font* font = kit.HeadingFont && size >= UiMetrics::TITLE_SIZE ? kit.HeadingFont : kit.TextFont;
+		return UITextParams().SetSize(size).SetColor(color).SetWrap(wrap).SetFont(font);
 	}
 
 	UIRootParams ScreenRoot()

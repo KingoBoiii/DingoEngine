@@ -71,7 +71,7 @@ namespace Dingo
 	void BuildGhost::HideGhost()
 	{
 		if (m_Ghost)
-			m_Ghost.GetComponent<MeshRendererComponent>().Visible = false;
+			Art::ForEachMesh(m_Ghost, [](MeshRendererComponent& mesh) { mesh.Visible = false; });
 	}
 
 	void BuildGhost::Update(const BuildController& controller, const TileGrid& grid)
@@ -109,17 +109,20 @@ namespace Dingo
 			m_Ghost = Art::Spawn(m_Scene, artId, "BuildGhost", position);
 			if (!m_Ghost)
 				return;
-			MeshRendererComponent& mesh = m_Ghost.GetComponent<MeshRendererComponent>();
-			mesh.Material = m_Material;
-			mesh.Shadows = ShadowCasting::Off;
+			Art::ForEachMesh(m_Ghost, [this](MeshRendererComponent& mesh) {
+				mesh.Material = m_Material;
+				mesh.Shadows = ShadowCasting::Off;
+			});
 			m_GhostBuild = spec.Id;
 		}
 		Transform3DComponent& transform = m_Ghost.GetComponent<Transform3DComponent>();
 		transform.Position = position;
 		transform.Rotation = glm::angleAxis(glm::half_pi<float>() * static_cast<float>(spec.Rotation & 3), glm::vec3(0.0f, 1.0f, 0.0f));
-		MeshRendererComponent& mesh = m_Ghost.GetComponent<MeshRendererComponent>();
-		mesh.Visible = true;
-		mesh.Color = valid ? GHOST_COLOR_VALID : GHOST_COLOR_INVALID;
+		const glm::vec4 color = valid ? GHOST_COLOR_VALID : GHOST_COLOR_INVALID;
+		Art::ForEachMesh(m_Ghost, [color](MeshRendererComponent& mesh) {
+			mesh.Visible = true;
+			mesh.Color = color;
+		});
 	}
 
 }

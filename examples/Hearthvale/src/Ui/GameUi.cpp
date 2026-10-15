@@ -9,11 +9,17 @@ namespace Dingo
 	namespace
 	{
 		constexpr const char* k_FontPath = "fonts/Inter-Bold.ttf";
+		constexpr const char* k_HeadingFontPath = "fonts/Fredoka-SemiBold.ttf";
 	}
 
 	const char* GameUiFontPath()
 	{
 		return k_FontPath;
+	}
+
+	const char* GameUiHeadingFontPath()
+	{
+		return k_HeadingFontPath;
 	}
 
 	GameUi::GameUi(ValleyDirector& director, Inventory& inventory, BuildController& controller, ScreenHost& host)
@@ -27,6 +33,11 @@ namespace Dingo
 			return;
 		}
 		m_Kit = MakeKit(font);
+		m_Kit.HeadingFont = assets.GetFont(assets.Load(k_HeadingFontPath));
+		if (!m_Kit.HeadingFont)
+		{
+			DE_WARN("Hearthvale: failed to load font '{}'; headings use the body font", k_HeadingFontPath);
+		}
 		DingoUI::SetDefaultFont(font);
 		DingoUI::SetTheme(m_Kit.Theme);
 		m_SeenControllerSerial = m_Controller.GetMessageSerial();

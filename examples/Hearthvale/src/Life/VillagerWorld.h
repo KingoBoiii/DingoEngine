@@ -10,11 +10,14 @@ namespace Dingo
 {
 
 	// The four villagers in the scene: a kinematic sensor box each (so the mouse ray finds them and the farmer never
-	// bumps into them) carrying the placeholder body and head from the art registry. GPU side: never constructed headless.
+	// bumps into them) carrying a tinted KayKit character, or the registry's placeholder body when it did not load.
+	// GPU side: never constructed headless.
+	class FarmerAssets;
+
 	class VillagerWorld
 	{
 	public:
-		explicit VillagerWorld(Scene& scene);
+		VillagerWorld(Scene& scene, const FarmerAssets* assets);
 
 		// Moves each villager to its place and hides the ones indoors.
 		void Sync(const VillagerPlaces& places, float dt);
@@ -28,6 +31,9 @@ namespace Dingo
 		Scene& m_Scene;
 		std::array<Entity, VILLAGER_COUNT> m_Roots{};
 		std::array<float, VILLAGER_COUNT> m_HalfHeight{};
+		std::array<Entity, VILLAGER_COUNT> m_Visuals{};
+		const AnimationClip* m_Idle = nullptr;
+		const AnimationClip* m_Walk = nullptr;
 	};
 
 }

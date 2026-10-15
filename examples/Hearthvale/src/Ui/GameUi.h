@@ -9,6 +9,7 @@ namespace Dingo
 
 	// The UI font file, relative to the asset root.
 	const char* GameUiFontPath();
+	const char* GameUiHeadingFontPath();
 
 	// Owns the UI font and theme and declares the HUD and the open screens each frame. GPU-side: build it only when
 	// the application has a renderer.

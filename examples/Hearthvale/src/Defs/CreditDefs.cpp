@@ -19,6 +19,7 @@ namespace Dingo
 			CreditEntry{ "ui-pack",          "UI Pack",             "Kenney", "CC0", "kenney.nl" },
 			CreditEntry{ "kaykit",           "KayKit Adventurers",  "Kay Lousberg", "CC0", "kaylousberg.com" },
 			CreditEntry{ "kaykit",           "KayKit Animations",   "Kay Lousberg", "CC0", "kaylousberg.com" },
+			CreditEntry{ "",                 "Fredoka font",        "Fredoka Project Authors", "OFL-1.1", "fonts.google.com" },
 			CreditEntry{ "",                 "Inter font",          "The Inter Project Authors", "OFL-1.1", "github.com/rsms/inter" },
 			CreditEntry{ "",                 "DingoEngine",         "Victor Hansen", "MIT", "github.com/KingoBoiii" },
 			CreditEntry{ "",                 "Engine libraries",    "See THIRD-PARTY-NOTICES.md", "Various", "github.com/KingoBoiii" },

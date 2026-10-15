@@ -212,9 +212,11 @@ namespace Dingo
 	{
 		if (!entity)
 			return;
-		MeshRendererComponent& mesh = entity.GetComponent<MeshRendererComponent>();
-		mesh.Static = isStatic && m_Options.Static;
-		mesh.Shadows = shadows;
+		const bool fixedInPlace = isStatic && m_Options.Static;
+		Art::ForEachMesh(entity, [&](MeshRendererComponent& mesh) {
+			mesh.Static = fixedInPlace;
+			mesh.Shadows = shadows;
+		});
 		++m_Last.Created;
 	}
 

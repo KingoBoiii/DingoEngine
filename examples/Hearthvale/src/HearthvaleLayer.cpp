@@ -216,6 +216,7 @@ namespace Dingo
 			active->OnStop();
 		m_SceneManager.Clear();
 		m_FarmerAssets.reset();
+		Art::ReleaseModels();
 		m_ValleyScene = nullptr;
 		m_Ghost.reset();
 		m_Screens.reset();
@@ -344,21 +345,18 @@ namespace Dingo
 
 		Player::SpawnFloor(*m_ValleyScene, m_Director->GetGrid().GetWidth(), m_Director->GetGrid().GetHeight());
 
-		if (options.FarmerModel)
+		m_FarmerAssets = std::make_unique<FarmerAssets>();
+		if (!m_FarmerAssets->IsUsable())
 		{
-			m_FarmerAssets = std::make_unique<FarmerAssets>();
-			if (!m_FarmerAssets->IsUsable())
-			{
-				DE_WARN("Hearthvale: the farmer model did not load; using the placeholder body");
-			}
+			DE_WARN("Hearthvale: the character models did not load; using the placeholder bodies");
 		}
 
 		const LandmarkSpec& home = GetLandmarkSpec(Landmark::FarmHouse);
 		const glm::vec3 feet((static_cast<float>(home.DoorX) + 0.5f) * TILE_SIZE, GROUND_TOP + PLAYER_SPAWN_LIFT,
 			(static_cast<float>(home.DoorY) + 1.5f) * TILE_SIZE);
-		m_Player = std::make_unique<Player>(*m_ValleyScene, feet, m_FarmerAssets.get());
+		m_Player = std::make_unique<Player>(*m_ValleyScene, feet, options.FarmerModel ? m_FarmerAssets.get() : nullptr);
 		m_Camera = std::make_unique<CameraRig>(*m_ValleyScene, feet);
-		m_VillagerWorld = std::make_unique<VillagerWorld>(*m_ValleyScene);
+		m_VillagerWorld = std::make_unique<VillagerWorld>(*m_ValleyScene, m_FarmerAssets.get());
 		if (ANIMALS_ENABLED)
 			m_AnimalWorld = std::make_unique<AnimalWorld>(*m_ValleyScene);
 		m_Ghost = std::make_unique<BuildGhost>(*m_ValleyScene);

@@ -10,6 +10,7 @@ namespace Dingo
 	struct UiKit
 	{
 		Font* TextFont = nullptr;
+		Font* HeadingFont = nullptr;
 		UIStyle Theme;
 		UIStyle Tab;
 		UIStyle Cell;
