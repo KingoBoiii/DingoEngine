@@ -85,7 +85,9 @@ namespace Dingo::Platform
 		// A name the old rule kept as is ("Studio/Game" nested, a ':' on Linux) made a folder a
 		// shipped game's players already have: it keeps its logs and saves there.
 		const std::filesystem::path original = Internal::PathFromUtf8(appName);
-		const bool relative = !original.has_root_path()
+		// Windows drops trailing dots and spaces, so "..." would name the parent folder itself.
+		const bool aliased =appName.back() == '.' || appName.back() == ' ';
+		const bool relative = !aliased && !original.has_root_path()
 			&& std::none_of(original.begin(), original.end(), [](const std::filesystem::path& part) { return part == ".."; });
 		const std::filesystem::path legacy = directory.parent_path() / original;
 		std::error_code error;
