@@ -23,8 +23,10 @@ namespace Dingo
 		bool Tick(CheckReport& report, GameUi& ui, ScreenHost& host, Inventory& inventory, BuildController& controller, ValleyDirector& director);
 
 	private:
-		enum class Step : uint8_t { Start, OpenInventory, InventoryOpen, Moved, Palette, PaletteOpen, Chosen, Resumed, Done };
+		enum class Step : uint8_t { Start, OpenInventory, InventoryOpen, Moved, Palette, PaletteOpen, Chosen, Resumed, MenuSweep, Done };
 
+		void CheckMenuFonts(CheckReport& report, GameUi& ui);
+		bool SweepMenus(CheckReport& report, ScreenHost& host, ValleyDirector& director);
 		void CheckFonts(CheckReport& report, GameUi& ui, const Inventory& inventory, BuildController& controller, const ValleyDirector& director);
 		bool Finish(CheckReport& report);
 
@@ -32,6 +34,8 @@ namespace Dingo
 		Step m_Step = Step::Start;
 		int m_Frames = 0;
 		int m_TickAtOpen = 0;
+		int m_MenuIndex = 0;
+		bool m_MenuOpen = false;
 		int m_PassedAtStart = 0;
 		int m_FailedAtStart = 0;
 	};

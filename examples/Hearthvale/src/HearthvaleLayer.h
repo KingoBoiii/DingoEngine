@@ -19,7 +19,9 @@
 #include "Look/Sky.h"
 #include "Look/WeatherFx.h"
 #include "Ui/GameUi.h"
+#include "Ui/OptionsModel.h"
 #include "Ui/ScreenHost.h"
+#include "Ui/SlotProvider.h"
 #include "ValleyDirector.h"
 #include "World/ValleyWorld.h"
 
@@ -44,6 +46,8 @@ namespace Dingo
 		void RegisterStages();
 		void RunChecks();
 		void UpdateMouseAim();
+		void SetUpMenus();
+		void ApplyOptions(const OptionsState& state, bool toEngine);
 		const PlayerIntent& ActiveIntent() const;
 
 	private:
@@ -63,6 +67,8 @@ namespace Dingo
 		std::unique_ptr<BuildGhost> m_Ghost;
 		std::unique_ptr<BuildController> m_Build;
 		std::unique_ptr<ScreenHost> m_Screens;
+		NullSlotProvider m_Slots;
+		Settings m_SettingsBase;
 		AimInput m_Aim;
 		glm::vec2 m_LastMouse{ 0.0f };
 		bool m_MouseSeen = false;

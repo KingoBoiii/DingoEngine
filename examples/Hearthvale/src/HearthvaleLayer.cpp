@@ -4,6 +4,7 @@
 #include "LaunchOptions.h"
 #include "Life/PlayerInput.h"
 #include "Look/ArtRegistry.h"
+#include "Placing/Interactions.h"
 #include "World/ValleyLayout.h"
 
 namespace Dingo
@@ -46,6 +47,58 @@ namespace Dingo
 		RegisterStages();
 		BuildValleyScene();
 		m_SceneManager.SetActiveScene(SCENE_VALLEY);
+		SetUpMenus();
+	}
+
+	void HearthvaleLayer::SetUpMenus()
+	{
+		const LaunchOptions& options = GetLaunchOptions();
+		const bool interactive = !IsScripted(options);
+		Application& app = Application::Get();
+
+		if (!app.IsHeadless())
+		{
+			AudioEngine& audio = app.GetAudioEngine();
+			for (const char* bus : { k_BusMusic, k_BusAmbience, k_BusSfx, k_BusUi })
+			{
+				if (audio.FindBus(bus) == k_InvalidBus)
+					(void)audio.CreateBus(bus);
+			}
+		}
+
+		const Settings defaults = OptionsToSettings(OptionsState{}, Settings{});
+		m_SettingsBase = interactive ? Settings::Load() : defaults;
+
+		MenuServices services;
+		services.State = &m_State;
+		services.Slots = &m_Slots;
+		services.OnQuit = [] { Application::Get().Close(); };
+		if (interactive)
+		{
+			services.OnOptionsChanged = [this](const OptionsState& state) { ApplyOptions(state, true); };
+			services.OnOptionsClosed = [this](const OptionsState& state) { (void)OptionsToSettings(state, m_SettingsBase).Save(); };
+		}
+		m_Screens->SetServices(std::move(services));
+		m_Build->SetInteractHandler([this](Landmark landmark) { return m_Screens->OpenLandmark(landmark); });
+
+		if (interactive)
+		{
+			const OptionsState saved = OptionsFromSettings(m_SettingsBase);
+			m_Screens->SetOptions(saved);
+			ApplyOptions(saved, true);
+			if (!app.IsHeadless() && m_Player)
+				m_Screens->OpenTitle();
+		}
+	}
+
+	void HearthvaleLayer::ApplyOptions(const OptionsState& state, bool toEngine)
+	{
+		if (m_Camera)
+			m_Camera->SetSpeedScale(state.CameraSpeed);
+		if (m_Build)
+			m_Build->SetHoldToPlace(state.HoldToPlace);
+		if (toEngine)
+			OptionsToSettings(state, m_SettingsBase).Apply();
 	}
 
 	void HearthvaleLayer::OnDetach()

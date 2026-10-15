@@ -5,6 +5,7 @@
 #include "Placing/Placement.h"
 #include "Placing/Targeting.h"
 #include "Placing/Tools.h"
+#include "World/ValleyLayout.h"
 #include "Life/PlayerIntent.h"
 
 #include <cstdint>
@@ -30,6 +31,8 @@ namespace Dingo
 	public:
 		using DirtyFn = std::function<void(const TileRect&)>;
 		using SleepFn = std::function<void()>;
+		// Called when the interact pulse lands on a landmark other than the farmhouse; true when it opened something.
+		using InteractFn = std::function<bool(Landmark)>;
 
 		BuildController(TileGrid& grid, Inventory& inventory, DirtyFn onDirty);
 
@@ -59,6 +62,10 @@ namespace Dingo
 		// The calendar gives the day, season and weather the farm actions use; without one it is a clear spring day 0.
 		void SetCalendar(const Calendar* calendar) { m_Calendar = calendar; }
 		void SetSleepHandler(SleepFn onSleep) { m_OnSleep = std::move(onSleep); }
+		void SetInteractHandler(InteractFn onInteract) { m_OnInteract = std::move(onInteract); }
+		// In build mode, holding Use after a placing press places on each new tile the aim reaches.
+		void SetHoldToPlace(bool enabled);
+		bool GetHoldToPlace() const { return m_HoldToPlace; }
 		void SelectSeed(CropId crop) { m_Seed = crop; }
 		void CycleSeed();
 		// The seed Plant would use: the selected one if held, else the first held seed that grows this season.
@@ -92,6 +99,11 @@ namespace Dingo
 		Inventory& m_Inventory;
 		DirtyFn m_OnDirty;
 		SleepFn m_OnSleep;
+		InteractFn m_OnInteract;
+		bool m_HoldToPlace = false;
+		bool m_HoldArmed = false;
+		int m_HoldX = -1;
+		int m_HoldY = -1;
 		const Calendar* m_Calendar = nullptr;
 		CropId m_Seed = CropId::Parsnip;
 		BuildMode m_Mode = BuildMode::Tools;

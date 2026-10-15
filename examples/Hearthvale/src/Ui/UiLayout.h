@@ -46,6 +46,13 @@ namespace Dingo
 	// Whether `text` laid out at `size` inside a box of boxW x boxH stays inside it; maxWidth is boxW when wrapping, else 0.
 	bool TextFitsBox(const std::string& text, float size, float boxW, float boxH, bool wrap, const UiMeasure& measure);
 
+	// Greedy word wrap: every line measures at most maxWidth unless a single word is wider, which is broken between
+	// characters. A newline in the text starts a new line; blank lines stay.
+	std::vector<std::string> WrapLines(const std::string& text, float size, float maxWidth, const UiMeasure& measure);
+	// WrapLines grouped into pages of at most maxLines lines; each page joins its lines with newlines. Never empty:
+	// an empty text is one empty page.
+	std::vector<std::string> PaginateText(const std::string& text, float size, float maxWidth, int maxLines, const UiMeasure& measure);
+
 	// Breaks a name longer than maxChars at the space nearest its middle; a name with no space stays whole.
 	std::string SplitName(const std::string& name, int maxChars);
 

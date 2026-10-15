@@ -111,6 +111,88 @@ namespace Dingo
 		return metrics.Width <= boxW + k_Epsilon && metrics.Height <= boxH + k_Epsilon;
 	}
 
+	std::vector<std::string> WrapLines(const std::string& text, float size, float maxWidth, const UiMeasure& measure)
+	{
+		std::vector<std::string> lines;
+		const auto fits = [&](const std::string& candidate) { return maxWidth <= 0.0f || measure(candidate, size, 0.0f).Width <= maxWidth + k_Epsilon; };
+
+		size_t paragraphStart = 0;
+		while (paragraphStart <= text.size())
+		{
+			size_t paragraphEnd = text.find('\n', paragraphStart);
+			if (paragraphEnd == std::string::npos)
+				paragraphEnd = text.size();
+			const std::string paragraph = text.substr(paragraphStart, paragraphEnd - paragraphStart);
+			paragraphStart = paragraphEnd + 1;
+
+			std::string line;
+			size_t cursor = 0;
+			bool any = false;
+			while (cursor < paragraph.size())
+			{
+				while (cursor < paragraph.size() && paragraph[cursor] == ' ')
+					++cursor;
+				if (cursor >= paragraph.size())
+					break;
+				size_t wordEnd = paragraph.find(' ', cursor);
+				if (wordEnd == std::string::npos)
+					wordEnd = paragraph.size();
+				std::string word = paragraph.substr(cursor, wordEnd - cursor);
+				cursor = wordEnd;
+				any = true;
+
+				const std::string joined = line.empty() ? word : line + " " + word;
+				if (fits(joined))
+				{
+					line = joined;
+					continue;
+				}
+				if (!line.empty())
+				{
+					lines.push_back(line);
+					line.clear();
+				}
+				while (!fits(word) && word.size() > 1)
+				{
+					size_t cut = word.size() - 1;
+					while (cut > 1 && (static_cast<unsigned char>(word[cut]) & 0xC0) == 0x80)
+						--cut;
+					while (cut > 1 && !fits(word.substr(0, cut)))
+					{
+						--cut;
+						while (cut > 1 && (static_cast<unsigned char>(word[cut]) & 0xC0) == 0x80)
+							--cut;
+					}
+					lines.push_back(word.substr(0, cut));
+					word = word.substr(cut);
+				}
+				line = word;
+			}
+			if (!line.empty() || !any)
+				lines.push_back(line);
+			if (paragraphEnd == text.size())
+				break;
+		}
+		return lines;
+	}
+
+	std::vector<std::string> PaginateText(const std::string& text, float size, float maxWidth, int maxLines, const UiMeasure& measure)
+	{
+		const std::vector<std::string> lines = WrapLines(text, size, maxWidth, measure);
+		const size_t perPage = static_cast<size_t>((std::max)(1, maxLines));
+		std::vector<std::string> pages;
+		for (size_t first = 0; first < lines.size(); first += perPage)
+		{
+			std::string page;
+			for (size_t i = first; i < (std::min)(lines.size(), first + perPage); ++i)
+				page += (i == first ? "" : "\n") + lines[i];
+			pages.push_back(page);
+		}
+		if (pages.empty())
+			pages.emplace_back();
+		return pages;
+	}
+
 	std::string SplitName(const std::string& name, int maxChars)
 	{
 		if (static_cast<int>(name.size()) <= maxChars)

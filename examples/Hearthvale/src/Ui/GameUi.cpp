@@ -69,6 +69,17 @@ namespace Dingo
 		case ScreenId::BuildPalette:
 			DrawBuildPaletteScreen(m_Kit, m_Host, m_Inventory, m_Controller, focusRequest);
 			break;
+		case ScreenId::Title:
+		case ScreenId::Slots:
+		case ScreenId::Pause:
+		case ScreenId::Options:
+		case ScreenId::Credits:
+		case ScreenId::Shop:
+		case ScreenId::ShippingBin:
+		case ScreenId::Board:
+		case ScreenId::Dialogue:
+			DrawPage(m_Kit, m_Host, m_Host.BuildPage(), focusRequest);
+			break;
 		case ScreenId::None:
 			break;
 		}

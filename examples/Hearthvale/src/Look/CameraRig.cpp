@@ -48,10 +48,11 @@ namespace Dingo
 	void CameraRig::Update(float dt, const glm::vec3& farmerFeet, int steps, float zoomAxis, float zoomWheel)
 	{
 		m_Steps += steps;
-		m_Yaw = CameraMath::EaseYaw(m_Yaw, CameraMath::YawForSteps(m_Steps), dt);
+		const float easeDt = dt * m_SpeedScale;
+		m_Yaw = CameraMath::EaseYaw(m_Yaw, CameraMath::YawForSteps(m_Steps), easeDt);
 
-		m_DistanceTarget = CameraMath::NextDistanceTarget(m_DistanceTarget, zoomAxis, zoomWheel, dt);
-		m_Distance = CameraMath::EaseDistance(m_Distance, m_DistanceTarget, dt);
+		m_DistanceTarget = CameraMath::NextDistanceTarget(m_DistanceTarget, zoomAxis, zoomWheel, easeDt);
+		m_Distance = CameraMath::EaseDistance(m_Distance, m_DistanceTarget, easeDt);
 
 		const glm::vec3 target = farmerFeet + glm::vec3(0.0f, CAMERA_FOCUS_HEIGHT, 0.0f);
 		m_Focus = dt > 0.0f ? glm::mix(m_Focus, target, std::min(1.0f, CAMERA_LAG * dt)) : target;

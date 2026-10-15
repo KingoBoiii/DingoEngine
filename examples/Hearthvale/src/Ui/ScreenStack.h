@@ -6,13 +6,16 @@
 namespace Dingo
 {
 
-	enum class ScreenId : uint8_t { None, Inventory, BuildPalette };
+	enum class ScreenId : uint8_t
+	{
+		None, Inventory, BuildPalette,
+		Title, Slots, Pause, Options, Credits, Shop, ShippingBin, Board, Dialogue
+	};
 
 	const char* ToString(ScreenId id);
 
 	// The open screens, topmost last. Each entry remembers the label of the widget that opened it, so closing it hands
-	// the focus back to that widget in the screen underneath. Plain data; P9's shop, bin and pause screens join by
-	// adding a ScreenId.
+	// the focus back to that widget in the screen underneath. Plain data.
 	class ScreenStack
 	{
 	public:

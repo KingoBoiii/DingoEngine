@@ -14,6 +14,10 @@ namespace Dingo
 		// `steps` quarter turns to add (any sign), `zoomAxis` held (positive = out), `zoomWheel` notches (positive = in).
 		void Update(float dt, const glm::vec3& farmerFeet, int steps, float zoomAxis, float zoomWheel);
 
+		// Scales how fast the yaw and zoom ease; 1 is the tuned speed.
+		void SetSpeedScale(float scale) { m_SpeedScale = scale; }
+		float GetSpeedScale() const { return m_SpeedScale; }
+
 		float GetYaw() const { return m_Yaw; }
 		float GetDistance() const { return m_Distance; }
 		int GetSteps() const { return m_Steps; }
@@ -29,6 +33,7 @@ namespace Dingo
 		int m_Steps = 0;
 		float m_Distance;
 		float m_DistanceTarget;
+		float m_SpeedScale = 1.0f;
 	};
 
 }

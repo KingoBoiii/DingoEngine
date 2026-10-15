@@ -66,6 +66,55 @@ namespace Dingo
 		return -1;
 	}
 
+	std::vector<UiRect> ScreenLayout::FocusRects() const
+	{
+		std::vector<UiRect> rects;
+		for (const ScreenWidget& widget : Widgets)
+		{
+			if (widget.Focusable)
+				rects.push_back(widget.Rect);
+		}
+		return rects;
+	}
+
+	std::vector<bool> ScreenLayout::FocusAdjusts() const
+	{
+		std::vector<bool> adjusts;
+		for (const ScreenWidget& widget : Widgets)
+		{
+			if (widget.Focusable)
+				adjusts.push_back(widget.Adjusts);
+		}
+		return adjusts;
+	}
+
+	int ScreenLayout::FocusIndexOf(const std::string& label) const
+	{
+		int index = 0;
+		for (const ScreenWidget& widget : Widgets)
+		{
+			if (!widget.Focusable)
+				continue;
+			if (widget.Label == label)
+				return index;
+			++index;
+		}
+		return -1;
+	}
+
+	int ScreenLayout::FocusableCount() const
+	{
+		int count = 0;
+		for (const ScreenWidget& widget : Widgets)
+			count += widget.Focusable ? 1 : 0;
+		return count;
+	}
+
+	int ScreenLayout::ReachableFrom(const std::string& start) const
+	{
+		return CountReachable(FocusRects(), FocusIndexOf(start), FocusAdjusts());
+	}
+
 	std::string VisibleLabel(const std::string& label)
 	{
 		const size_t split = label.find("##");
@@ -257,6 +306,11 @@ namespace Dingo
 
 	int CountReachable(const std::vector<UiRect>& rects, int start)
 	{
+		return CountReachable(rects, start, std::vector<bool>(rects.size(), false));
+	}
+
+	int CountReachable(const std::vector<UiRect>& rects, int start, const std::vector<bool>& adjusts)
+	{
 		if (start < 0 || start >= static_cast<int>(rects.size()))
 			return 0;
 		std::vector<bool> seen(rects.size(), false);
@@ -268,8 +322,9 @@ namespace Dingo
 			const int current = pending.back();
 			pending.pop_back();
 			++reached;
+			const bool keepsSideways = adjusts[static_cast<size_t>(current)];
 			const int neighbours[] = {
-				FindNavTarget(rects, current, NavDir::Left), FindNavTarget(rects, current, NavDir::Right),
+				keepsSideways ? -1 : FindNavTarget(rects, current, NavDir::Left), keepsSideways ? -1 : FindNavTarget(rects, current, NavDir::Right),
 				FindNavTarget(rects, current, NavDir::Up), FindNavTarget(rects, current, NavDir::Down),
 				FindTabTarget(static_cast<int>(rects.size()), current, false), FindTabTarget(static_cast<int>(rects.size()), current, true) };
 			for (const int next : neighbours)

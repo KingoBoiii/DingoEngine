@@ -1,5 +1,6 @@
 #include "Placing/BuildController.h"
 #include "GameTuning.h"
+#include "Placing/Interactions.h"
 
 #include <algorithm>
 #include <format>
@@ -124,10 +125,26 @@ namespace Dingo
 		if (intent.Use)
 		{
 			if (m_Mode == BuildMode::Build)
+			{
 				Place();
+				m_HoldArmed = m_HoldToPlace;
+				m_HoldX = m_Aim.Target.X;
+				m_HoldY = m_Aim.Target.Y;
+			}
 			else
 				UseSelectedTool();
 		}
+		else if (m_HoldArmed && m_Mode == BuildMode::Build && intent.UseHeld)
+		{
+			if (m_Aim.Target.X != m_HoldX || m_Aim.Target.Y != m_HoldY)
+			{
+				Place();
+				m_HoldX = m_Aim.Target.X;
+				m_HoldY = m_Aim.Target.Y;
+			}
+		}
+		if (!intent.UseHeld || m_Mode != BuildMode::Build)
+			m_HoldArmed = false;
 		if (intent.Interact)
 		{
 			if (m_Mode == BuildMode::Build)
@@ -135,6 +152,13 @@ namespace Dingo
 			else
 				InteractTool();
 		}
+	}
+
+	void BuildController::SetHoldToPlace(bool enabled)
+	{
+		m_HoldToPlace = enabled;
+		if (!enabled)
+			m_HoldArmed = false;
 	}
 
 	PlaceOutcome BuildController::Place()
@@ -317,6 +341,13 @@ namespace Dingo
 		const int y = m_Aim.Target.Y;
 		if (!m_Grid.InBounds(x, y))
 			return false;
+
+		if (m_OnInteract)
+		{
+			const std::optional<Landmark> landmark = LandmarkAt(m_Grid, x, y);
+			if (landmark && *landmark != Landmark::FarmHouse && m_OnInteract(*landmark))
+				return true;
+		}
 
 		const LandmarkSpec& home = GetLandmarkSpec(Landmark::FarmHouse);
 		if (home.Footprint.Contains(x, y) || (x == home.DoorX && y == home.DoorY))

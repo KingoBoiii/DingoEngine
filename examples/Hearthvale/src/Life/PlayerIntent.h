@@ -21,6 +21,8 @@ namespace Dingo
 		bool ToggleBuild = false;
 		bool CycleSeed = false;
 		bool Pause = false;
+		// Level, not a pulse: true for as long as the use button is held. ClearPulses leaves it.
+		bool UseHeld = false;
 
 		int CameraSteps = 0;
 		float CameraZoomAxis = 0.0f;

@@ -75,6 +75,9 @@ namespace Dingo
 		std::string Label;
 		UiRect Rect;
 		float TextSize = 0.0f;
+		bool Focusable = true;
+		// A slider: DingoUI gives it Left and Right, so those moves change its value instead of moving the focus.
+		bool Adjusts = false;
 	};
 
 	struct ScreenText
@@ -96,6 +99,13 @@ namespace Dingo
 
 		std::vector<UiRect> WidgetRects() const;
 		int IndexOf(const std::string& label) const;
+		// The widgets the pad can focus, in order: a disabled widget is drawn but skipped.
+		std::vector<UiRect> FocusRects() const;
+		std::vector<bool> FocusAdjusts() const;
+		int FocusIndexOf(const std::string& label) const;
+		// How many focusable widgets a player reaches from the widget labelled `start`, the start included.
+		int ReachableFrom(const std::string& start) const;
+		int FocusableCount() const;
 	};
 
 	// The part of a label DingoUI shows: everything before "##".
@@ -122,6 +132,8 @@ namespace Dingo
 	int FindTabTarget(int count, int origin, bool backwards);
 	// How many widgets a player reaches from `start` with directional moves and Tab, the start included.
 	int CountReachable(const std::vector<UiRect>& rects, int start);
+	// As above, where `adjusts[i]` marks a slider that keeps Left and Right for itself.
+	int CountReachable(const std::vector<UiRect>& rects, int start, const std::vector<bool>& adjusts);
 
 	struct HudSlot
 	{

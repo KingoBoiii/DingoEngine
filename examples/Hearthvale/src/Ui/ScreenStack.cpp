@@ -12,6 +12,15 @@ namespace Dingo
 		case ScreenId::None: return "None";
 		case ScreenId::Inventory: return "Inventory";
 		case ScreenId::BuildPalette: return "BuildPalette";
+		case ScreenId::Title: return "Title";
+		case ScreenId::Slots: return "Slots";
+		case ScreenId::Pause: return "Pause";
+		case ScreenId::Options: return "Options";
+		case ScreenId::Credits: return "Credits";
+		case ScreenId::Shop: return "Shop";
+		case ScreenId::ShippingBin: return "ShippingBin";
+		case ScreenId::Board: return "Board";
+		case ScreenId::Dialogue: return "Dialogue";
 		}
 		return "?";
 	}

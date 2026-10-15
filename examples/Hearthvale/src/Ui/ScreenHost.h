@@ -1,15 +1,32 @@
 #pragma once
+#include "Farm/GameState.h"
 #include "Life/PlayerIntent.h"
 #include "Placing/BuildController.h"
 #include "Placing/Inventory.h"
+#include "Ui/MenuPages.h"
 #include "Ui/ScreenLayouts.h"
 #include "Ui/ScreenStack.h"
 #include "ValleyDirector.h"
+#include "World/ValleyLayout.h"
 
+#include <functional>
 #include <string>
 
 namespace Dingo
 {
+
+	// What the menus reach outside the host. Every member is optional: a screen whose service is missing shows what it can.
+	struct MenuServices
+	{
+		// The shipping bin and the community board.
+		GameState* State = nullptr;
+		SlotProvider* Slots = nullptr;
+		// Called after every change to an option, with the new state; the layer applies it.
+		std::function<void(const OptionsState&)> OnOptionsChanged;
+		// Called when the options screen closes, so the layer can write them to disk.
+		std::function<void(const OptionsState&)> OnOptionsClosed;
+		std::function<void()> OnQuit;
+	};
 
 	// What the screens do, with no renderer: opening and closing, which input the farmer loses while one is open,
 	// the pause of the sim clock (HD5), the inventory's pick-up and put-down, and what the build palette selects. The
@@ -51,6 +68,30 @@ namespace Dingo
 		// The label a screen should give the focus to this frame, once; empty when none.
 		std::string TakeFocusRequest();
 
+		void SetServices(MenuServices services) { m_Services = std::move(services); }
+		void SetVillagerLines(VillagerLineFn lines) { m_VillagerLines = std::move(lines); }
+		void SetOptions(const OptionsState& options) { m_Options = ClampOptions(options); }
+		const OptionsState& GetOptions() const { return m_Options; }
+
+		bool OpenTitle() { return Open(ScreenId::Title); }
+		bool OpenSlots(SlotMode mode, std::string openerLabel = {});
+		bool OpenShop(Merchant seller, std::string openerLabel = {});
+		bool OpenBin(std::string openerLabel = {});
+		bool OpenBoard(std::string openerLabel = {});
+		bool OpenDialogue(DialogueScript script, std::string openerLabel = {});
+		bool OpenVillager(VillagerId villager, std::string openerLabel = {});
+		// What interacting with a landmark opens; false for the farmhouse (which is bed) or when its screen is already up.
+		bool OpenLandmark(Landmark landmark);
+
+		// The page the top screen draws, from the live state. Also clamps the paging the lists keep to what exists.
+		PageSpec BuildPage();
+		// A button the player picked. `label` is the widget's label, which the host uses to keep the focus in place.
+		void Act(PageAction action, int arg, const std::string& label);
+		// A slider the player moved to `value`; arg is the cell's Arg.
+		void SetSlider(int arg, float value);
+		const std::string& GetStatus() const { return m_Status; }
+		int GetQuantity() const;
+
 		void Say(std::string text);
 		const std::string& GetToast() const { return m_Toast; }
 		uint32_t GetToastSerial() const { return m_ToastSerial; }
@@ -58,6 +99,19 @@ namespace Dingo
 	private:
 		void AfterStackChange();
 		void SyncHeld();
+		void ResetScreenState();
+		void NoteClosing(bool all);
+		void SetStatus(std::string text) { m_Status = std::move(text); }
+		MenuView MakeView() const;
+		std::string FocusSameSlot(const PageSpec& before, const PageSpec& after, const std::string& label) const;
+		void ActTitleOrPause(PageAction action, const std::string& label);
+		void ActSlots(int slot);
+		void ActShop(PageAction action, int arg);
+		void ActBin(PageAction action, int arg);
+		void ActBoard(PageAction action, int arg);
+		void ActOptions(PageAction action);
+		void FlipPage(int direction, int pageCount);
+		void FinishDialogue();
 
 	private:
 		ValleyDirector& m_Director;
@@ -71,6 +125,21 @@ namespace Dingo
 		std::string m_FocusRequest;
 		std::string m_Toast;
 		uint32_t m_ToastSerial = 0;
+
+		MenuServices m_Services;
+		VillagerLineFn m_VillagerLines;
+		OptionsState m_Options;
+		std::string m_Status;
+		uint32_t m_StackSerial = 0;
+		SlotMode m_SlotsMode = SlotMode::NewGame;
+		int m_SlotConfirm = -1;
+		Merchant m_Seller = Merchant::Shopkeeper;
+		int m_Tab = 0;
+		int m_QuantityIndex = 0;
+		int m_Page = 0;
+		int m_BoardIndex = 0;
+		DialogueScript m_Dialogue;
+		int m_DialoguePage = 0;
 	};
 
 }

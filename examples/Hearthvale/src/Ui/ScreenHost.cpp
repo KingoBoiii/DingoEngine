@@ -17,9 +17,14 @@ namespace Dingo
 		{
 			intent.ToggleInventory = false;
 			if (IsOpen())
-				CloseAll();
+			{
+				if (Top() == ScreenId::Inventory || Top() == ScreenId::BuildPalette)
+					CloseAll();
+			}
 			else if (!blocked)
+			{
 				Open(ScreenId::Inventory);
+			}
 		}
 		else if (intent.ToggleBuild)
 		{
@@ -47,6 +52,10 @@ namespace Dingo
 			else if (intent.HotbarSlot >= 0 && Top() == ScreenId::Inventory)
 				EquipHotbarSlot(intent.HotbarSlot);
 		}
+		else if (intent.Pause && !blocked && !m_Changed)
+		{
+			Open(ScreenId::Pause);
+		}
 
 		if (IsOpen() || m_Changed)
 			intent.ClearPulses();
@@ -57,13 +66,15 @@ namespace Dingo
 		if (!m_Stack.Open(id, std::move(openerLabel)))
 			return false;
 		m_Changed = true;
+		++m_StackSerial;
+		ResetScreenState();
 		AfterStackChange();
 		return true;
 	}
 
 	void ScreenHost::Back()
 	{
-		if (m_Changed || !IsOpen())
+		if (m_Changed || !IsOpen() || Top() == ScreenId::Title)
 			return;
 		if (Top() == ScreenId::Inventory && m_Picked >= 0)
 		{
@@ -71,8 +82,10 @@ namespace Dingo
 			m_Changed = true;
 			return;
 		}
+		NoteClosing(false);
 		m_Stack.Close();
 		m_Changed = true;
+		++m_StackSerial;
 		m_FocusRequest = m_Stack.TakeReturnFocus();
 		AfterStackChange();
 	}
@@ -81,8 +94,10 @@ namespace Dingo
 	{
 		if (!IsOpen())
 			return;
+		NoteClosing(true);
 		m_Stack.CloseAll();
 		m_Changed = true;
+		++m_StackSerial;
 		m_FocusRequest.clear();
 		AfterStackChange();
 	}
@@ -97,6 +112,7 @@ namespace Dingo
 		if (!m_Stack.Replace(target))
 			return;
 		m_Changed = true;
+		++m_StackSerial;
 		m_Picked = -1;
 		m_FocusRequest = viaTab ? (target == ScreenId::Inventory ? TAB_INVENTORY_LABEL : TAB_BUILD_LABEL) : std::string();
 	}
@@ -182,6 +198,22 @@ namespace Dingo
 			m_Director.SetTimePaused(m_WasPaused);
 			m_HoldsPause = false;
 		}
+	}
+
+	void ScreenHost::ResetScreenState()
+	{
+		m_Tab = 0;
+		m_Page = 0;
+		m_Status.clear();
+		m_SlotConfirm = -1;
+		m_DialoguePage = 0;
+	}
+
+	void ScreenHost::NoteClosing(bool all)
+	{
+		const bool closesOptions = all ? m_Stack.Contains(ScreenId::Options) : Top() == ScreenId::Options;
+		if (closesOptions && m_Services.OnOptionsClosed)
+			m_Services.OnOptionsClosed(m_Options);
 	}
 
 	void ScreenHost::SyncHeld()

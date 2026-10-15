@@ -32,6 +32,7 @@ namespace Dingo
 		const glm::vec2 scroll = Input::GetMouseScrollDelta();
 
 		intent.Use |= Input::IsMouseButtonPressed(MouseButton::Left) || Input::IsKeyPressed(Key::Space) || Input::IsGamepadButtonPressed(GamepadButton::A);
+		intent.UseHeld = Input::IsMouseButtonDown(MouseButton::Left) || Input::IsKeyDown(Key::Space) || Input::IsGamepadButtonDown(GamepadButton::A);
 		intent.Interact |= Input::IsMouseButtonPressed(MouseButton::Right) || Input::IsKeyPressed(Key::F) || Input::IsGamepadButtonPressed(GamepadButton::X);
 		intent.RotatePlacement |= Input::IsKeyPressed(Key::R) || Input::IsGamepadButtonPressed(GamepadButton::Y);
 		intent.ToggleInventory |= Input::IsKeyPressed(Key::Tab) || Input::IsGamepadButtonPressed(GamepadButton::Back);

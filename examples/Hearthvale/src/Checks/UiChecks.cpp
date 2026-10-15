@@ -1,3 +1,4 @@
+#include "Checks/MenuChecks.h"
 #include "Checks/UiChecks.h"
 #include "GameTuning.h"
 #include "LaunchOptions.h"
@@ -5,6 +6,7 @@
 #include "Ui/ScreenHost.h"
 
 #include <format>
+#include <vector>
 
 namespace Dingo
 {
@@ -107,6 +109,67 @@ namespace Dingo
 		report.Check(hud, "UI fonts: the clock, coin, material and hint lines fit their panels in tool and build mode for every buildable");
 	}
 
+	void UiCheckRun::CheckMenuFonts(CheckReport& report, GameUi& ui)
+	{
+		const Font* font = ui.GetKit().TextFont;
+		if (!font)
+			return;
+		const UiMeasure measure = MeasureWith(*font);
+		int pages = 0;
+		std::vector<std::string> failed;
+		ForEachMenuPage([&](const std::string& name, const PageSpec& page)
+		{
+			++pages;
+			if (!LayoutFits(LayoutPage(page), measure))
+				failed.push_back(name);
+		});
+		report.Check(pages > 300 && failed.empty(), failed.empty() ? std::format("UI fonts: every label and text of all {} menu page variants fits its box when measured with the real font", pages)
+			: std::format("UI fonts: {} of {} menu page variants overflow with the real font, first: {}", failed.size(), pages, failed.front()));
+	}
+
+	bool UiCheckRun::SweepMenus(CheckReport& report, ScreenHost& host, ValleyDirector& director)
+	{
+		struct Menu
+		{
+			const char* Name;
+			ScreenId Id;
+			bool (*Open)(ScreenHost&);
+		};
+		static const Menu menus[] = {
+			{ "title", ScreenId::Title, [](ScreenHost& h) { h.OpenTitle(); return h.IsOpen(ScreenId::Title); } },
+			{ "pause", ScreenId::Pause, [](ScreenHost& h) { h.Open(ScreenId::Pause); return h.IsOpen(ScreenId::Pause); } },
+			{ "options", ScreenId::Options, [](ScreenHost& h) { h.Open(ScreenId::Options); return h.IsOpen(ScreenId::Options); } },
+			{ "credits", ScreenId::Credits, [](ScreenHost& h) { h.Open(ScreenId::Credits); return h.IsOpen(ScreenId::Credits); } },
+			{ "shop", ScreenId::Shop, [](ScreenHost& h) { return h.OpenShop(Merchant::Shopkeeper) && h.IsOpen(ScreenId::Shop); } },
+			{ "workshop", ScreenId::Shop, [](ScreenHost& h) { return h.OpenShop(Merchant::Carpenter) && h.IsOpen(ScreenId::Shop); } },
+			{ "shipping bin", ScreenId::ShippingBin, [](ScreenHost& h) { return h.OpenBin() && h.IsOpen(ScreenId::ShippingBin); } },
+			{ "community board", ScreenId::Board, [](ScreenHost& h) { return h.OpenBoard() && h.IsOpen(ScreenId::Board); } },
+			{ "dialogue", ScreenId::Dialogue, [](ScreenHost& h) { h.OpenVillager(VillagerId::Mayor); return h.IsOpen(ScreenId::Dialogue); } },
+		};
+		constexpr int count = static_cast<int>(sizeof(menus) / sizeof(menus[0]));
+
+		if (m_MenuIndex >= count)
+			return true;
+		const Menu& menu = menus[m_MenuIndex];
+		if (!m_MenuOpen)
+		{
+			const bool opened = menu.Open(host);
+			report.Check(opened, std::format("UI menus: the {} screen opens on the live host", menu.Name));
+			m_MenuOpen = true;
+			m_Frames = 0;
+			return false;
+		}
+		if (!Waited(m_Frames))
+			return false;
+		report.Check(host.Top() == menu.Id && director.IsTimePaused() && DingoUI::IsCapturingInput(),
+			std::format("UI menus: the {} screen draws for several frames, holds the input and keeps the clock stopped {} {} {}", menu.Name, host.Top() == menu.Id, director.IsTimePaused(), DingoUI::IsCapturingInput()));
+		host.CloseAll();
+		m_MenuOpen = false;
+		++m_MenuIndex;
+		m_Frames = 0;
+		return false;
+	}
+
 	bool UiCheckRun::Finish(CheckReport& report)
 	{
 		DE_INFO("UI window checks: {} passed, {} failed", report.GetPassed() - m_PassedAtStart, report.GetFailed() - m_FailedAtStart);
@@ -122,6 +185,7 @@ namespace Dingo
 			m_PassedAtStart = report.GetPassed();
 			m_FailedAtStart = report.GetFailed();
 			CheckFonts(report, ui, inventory, controller, director);
+			CheckMenuFonts(report, ui);
 			if (!ui.IsUsable())
 				return Finish(report);
 			m_TickAtOpen = director.GetCalendar().GetTickOfDay();
@@ -201,6 +265,16 @@ namespace Dingo
 			return false;
 
 		case Step::Resumed:
+			m_MenuIndex = 0;
+			m_MenuOpen = false;
+			m_Frames = 0;
+			m_Step = Step::MenuSweep;
+			return false;
+
+		case Step::MenuSweep:
+			if (!SweepMenus(report, host, director))
+				return false;
+			report.Check(!host.IsOpen() && !director.IsTimePaused(), "UI menus: with every menu closed again the clock runs");
 			return Finish(report);
 
 		case Step::Done:
