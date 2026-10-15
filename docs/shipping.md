@@ -56,8 +56,9 @@ Two things Distribution does **not** change:
   DingoUI tabs) is on in every configuration. Set `EnableDebugOverlays = false` in `ApplicationParams`
   to strip it from the shipped game (see
   [Application & Layers](application-and-layers.md#applicationparams)).
-- The command-line options (`--log-dir=`, `--log-here`, `--save-dir=`, `--vulkan-validation`)
-  work in every build, so a player can use them if you tell them to.
+- The command-line options (`--log-dir=`, `--log-here`, `--save-dir=`, `--vulkan-validation`,
+  `--graphics=`, `--window=`, `--no-vsync`) work in every build, so a player can use them if you
+  tell them to.
 
 ## Put the folder together
 

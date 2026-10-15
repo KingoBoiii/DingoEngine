@@ -315,6 +315,7 @@ namespace Dingo
 		bool m_Focused = true;
 		float m_LastFrameTime = 0.0f;
 		std::optional<float> m_StartupMasterVolume;
+		std::optional<WindowParams> m_LaunchDisplayRequest;
 		float m_DeltaTime = 0.0f;
 		FrameTimings m_FrameTimings;
 

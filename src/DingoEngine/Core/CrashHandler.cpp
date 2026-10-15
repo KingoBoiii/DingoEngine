@@ -286,6 +286,7 @@ namespace Dingo
 				}
 				SetEvent(s_BoxDone);
 			}
+			return 0;
 		}
 
 		BOOL CALLBACK FindVisibleWindow(HWND window, LPARAM found)

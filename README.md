@@ -110,6 +110,15 @@ cd examples/FlappyBird && ../../build/bin/Debug-linux-x86_64/FlappyBird/FlappyBi
 
 Linux has been verified headless on Mesa's software Vulkan driver; real GPUs and desktops are still being validated (see [LINUX-SUPPORT.md](LINUX-SUPPORT.md)).
 
+**Standard launch flags.** Every app on the engine reads these, and they override what the app set in its `ApplicationParams` ([Application & Layers](docs/application-and-layers.md#command-line-arguments)):
+
+| Flag | Does |
+|---|---|
+| `--graphics=vulkan\|dx11\|dx12\|headless` | Picks the back-end (`headless` only for apps written for it) |
+| `--window=WxH` | Starts windowed at that client size (640x360 to 16384x16384) |
+| `--no-vsync` | Keeps VSync off for the whole run |
+| `--log-here`, `--log-dir=<path>`, `--save-dir=<path>`, `--vulkan-validation[=off]` | Where logs and saves go, and the Vulkan validation layer ([Shipping](docs/shipping.md)) |
+
 ## Examples
 
 | Project | Description |

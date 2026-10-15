@@ -26,6 +26,9 @@ namespace Dingo
 
 	const char* ToString(Outcome outcome);
 
+	// A time on the window's end is past it: the animator closes a range as the playhead reaches its end.
+	bool IsOutsideWindow(const std::optional<ClipRange>& window, float time);
+
 	struct OutcomeRecord
 	{
 		Outcome Kind = Outcome::Hit;
@@ -42,7 +45,7 @@ namespace Dingo
 		std::string DefenceClip;
 		float DefenceTime = 0.0f;
 		std::optional<ClipRange> Window;
-		// A parry and a dodge fall inside their window; a block falls past the parry window, or has none.
+		// A parry and a dodge fall inside their window; a block falls outside the parry window (IsOutsideWindow), or has none.
 		bool InWindow = false;
 		// The parry stood on a raise the animator had not reported yet: it opens at the first frame of the raise.
 		bool ParryPending = false;

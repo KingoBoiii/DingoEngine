@@ -46,11 +46,21 @@ namespace Dingo
 		if (!application.IsHeadless())
 		{
 			const Window& window = application.GetWindow();
-			settings.Display.Mode = window.GetWindowMode();
-			settings.Display.Width = window.GetWindowedWidth();
-			settings.Display.Height = window.GetWindowedHeight();
-			if (window.GetWindowMode() == WindowMode::ExclusiveFullscreen)
-				settings.Display.FullscreenMode = window.GetFullscreenDisplayMode();
+			if (const std::optional<WindowParams>& request = window.m_DisplayRequest)
+			{
+				settings.Display.Mode = request->Mode;
+				settings.Display.Width = request->Width;
+				settings.Display.Height = request->Height;
+				settings.Display.FullscreenMode = request->FullscreenMode;
+			}
+			else
+			{
+				settings.Display.Mode = window.GetWindowMode();
+				settings.Display.Width = window.GetWindowedWidth();
+				settings.Display.Height = window.GetWindowedHeight();
+				if (window.GetWindowMode() == WindowMode::ExclusiveFullscreen)
+					settings.Display.FullscreenMode = window.GetFullscreenDisplayMode();
+			}
 			settings.Display.VSync = window.IsVSync();
 		}
 
@@ -79,13 +89,23 @@ namespace Dingo
 		if (!application.IsHeadless())
 		{
 			Window& window = application.GetWindow();
-			// The mode first: a SetSize while fullscreen only stores the size to return to.
-			const bool exclusiveChanged = Display.Mode == WindowMode::ExclusiveFullscreen
-				&& window.GetFullscreenDisplayMode() != ChooseDisplayMode(window.GetDisplayModes(), Display.FullscreenMode.IsValid() ? Display.FullscreenMode : window.GetDesktopDisplayMode());
-			if (window.GetWindowMode() != Display.Mode || exclusiveChanged)
-				window.SetWindowMode(Display.Mode, Display.FullscreenMode);
-			if (window.GetWindowedWidth() != Display.Width || window.GetWindowedHeight() != Display.Height)
-				window.SetSize(Display.Width, Display.Height);
+			if (std::optional<WindowParams>& request = window.m_DisplayRequest)
+			{
+				request->Mode = Display.Mode;
+				request->Width = Display.Width;
+				request->Height = Display.Height;
+				request->FullscreenMode = Display.FullscreenMode;
+			}
+			else
+			{
+				// The mode first: a SetSize while fullscreen only stores the size to return to.
+				const bool exclusiveChanged = Display.Mode == WindowMode::ExclusiveFullscreen
+					&& window.GetFullscreenDisplayMode() != ChooseDisplayMode(window.GetDisplayModes(), Display.FullscreenMode.IsValid() ? Display.FullscreenMode : window.GetDesktopDisplayMode());
+				if (window.GetWindowMode() != Display.Mode || exclusiveChanged)
+					window.SetWindowMode(Display.Mode, Display.FullscreenMode);
+				if (window.GetWindowedWidth() != Display.Width || window.GetWindowedHeight() != Display.Height)
+					window.SetSize(Display.Width, Display.Height);
+			}
 			window.SetVSync(Display.VSync);
 		}
 
