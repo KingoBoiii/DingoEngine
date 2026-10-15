@@ -35,6 +35,7 @@ namespace Dingo
 		m_Build->SetCalendar(&m_Director->GetCalendar());
 		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
 		m_State.Pack.GiveStarterLoadout();
+		m_Screens = std::make_unique<ScreenHost>(*m_Director, m_State.Pack, *m_Build);
 		if (!Application::Get().IsHeadless())
 		{
 			Renderer3D& renderer = Application::Get().GetRenderer3D();
@@ -50,6 +51,7 @@ namespace Dingo
 	void HearthvaleLayer::OnDetach()
 	{
 		m_StaticChecks.reset();
+		m_UiChecks.reset();
 		ReleaseScenePieces();
 		m_World.reset();
 		if (Scene* active = m_SceneManager.GetActiveScene())
@@ -58,6 +60,7 @@ namespace Dingo
 		m_FarmerAssets.reset();
 		m_ValleyScene = nullptr;
 		m_Ghost.reset();
+		m_Screens.reset();
 		m_Build.reset();
 		m_Sleep.reset();
 		m_Economy.reset();
@@ -70,8 +73,7 @@ namespace Dingo
 		if (m_Ghost)
 			m_Ghost->Release();
 		m_Fade.reset();
-		m_BuildHud.reset();
-		m_Hud.reset();
+		m_Ui.reset();
 		m_Camera.reset();
 		m_Player.reset();
 		m_Sky.reset();
@@ -109,7 +111,10 @@ namespace Dingo
 		m_Director->OnStage(SimStage::Camera, [this](ValleyDirector&, const StepInfo& step)
 		{
 			if (m_Camera && m_Player)
-				m_Camera->Update(step.Dt, m_Player->GetFeet(), m_Intent.CameraSteps, m_Intent.CameraZoomAxis, m_Intent.CameraZoomWheel);
+				{
+				const PlayerIntent& intent = ActiveIntent();
+				m_Camera->Update(step.Dt, m_Player->GetFeet(), intent.CameraSteps, intent.CameraZoomAxis, intent.CameraZoomWheel);
+			}
 		});
 		m_Director->OnStage(SimStage::Ui, [this](ValleyDirector&, const StepInfo&)
 		{
@@ -152,15 +157,15 @@ namespace Dingo
 			(static_cast<float>(home.DoorY) + 1.5f) * TILE_SIZE);
 		m_Player = std::make_unique<Player>(*m_ValleyScene, feet, m_FarmerAssets.get());
 		m_Camera = std::make_unique<CameraRig>(*m_ValleyScene, feet);
-		m_Hud = std::make_unique<ClockHud>();
 		m_Ghost = std::make_unique<BuildGhost>(*m_ValleyScene);
-		m_BuildHud = std::make_unique<BuildMenuHud>();
+		m_Ui = std::make_unique<GameUi>(*m_Director, m_State.Pack, *m_Build, *m_Screens);
 		m_Fade = std::make_unique<FadeOverlay>();
 	}
 
 	const PlayerIntent& HearthvaleLayer::ActiveIntent() const
 	{
-		return m_Sleep && m_Sleep->BlocksInput() ? m_NoIntent : m_Intent;
+		const bool blocked = (m_Sleep && m_Sleep->BlocksInput()) || (m_Screens && m_Screens->IsOpen());
+		return blocked ? m_NoIntent : m_Intent;
 	}
 
 	void HearthvaleLayer::UpdateMouseAim()
@@ -192,6 +197,16 @@ namespace Dingo
 			return;
 
 		m_StaticChecks.reset();
+		if (!m_UiChecksStarted)
+		{
+			m_UiChecksStarted = true;
+			if (!Application::Get().IsHeadless() && m_Ui && m_Screens && !GetLaunchOptions().Autoplay)
+				m_UiChecks = std::make_unique<UiCheckRun>();
+		}
+		if (m_UiChecks && !m_UiChecks->Tick(m_Report, *m_Ui, *m_Screens, m_State.Pack, *m_Build, *m_Director))
+			return;
+
+		m_UiChecks.reset();
 		m_ChecksDone = true;
 		DE_INFO("[Checks] {} passed, {} failed", m_Report.GetPassed(), m_Report.GetFailed());
 		if (Application::Get().IsHeadless())
@@ -212,6 +227,8 @@ namespace Dingo
 		if (m_Player && !options.Autoplay)
 		{
 			PollPlayerIntent(m_Intent);
+			if (m_Screens)
+				m_Screens->Update(m_Intent, m_Sleep && m_Sleep->BlocksInput());
 			UpdateMouseAim();
 		}
 
@@ -224,12 +241,10 @@ namespace Dingo
 		}
 		if (m_World)
 			m_World->Sync();
-		if (m_Hud)
-			m_Hud->Draw(m_Director->GetCalendar());
+		if (m_Ui)
+			m_Ui->Draw(deltaTime);
 		if (m_Ghost && m_Build)
 			m_Ghost->Update(*m_Build, m_Director->GetGrid());
-		if (m_BuildHud && m_Build)
-			m_BuildHud->Draw(*m_Build, m_State.Pack, deltaTime);
 		if (m_Fade && m_Sleep)
 			m_Fade->Draw(m_Sleep->GetAlpha());
 		m_SceneManager.OnRender();

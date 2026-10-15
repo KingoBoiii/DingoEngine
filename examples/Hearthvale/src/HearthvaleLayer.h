@@ -5,6 +5,7 @@
 #include "Placing/Inventory.h"
 #include "Checks/CheckReport.h"
 #include "Checks/StaticChecks.h"
+#include "Checks/UiChecks.h"
 #include "Farm/EconomySim.h"
 #include "Farm/FarmSim.h"
 #include "Farm/GameState.h"
@@ -12,13 +13,13 @@
 #include "Life/Player.h"
 #include "Life/PlayerIntent.h"
 #include "Look/BuildGhost.h"
-#include "Look/BuildMenuHud.h"
 #include "Look/CameraRig.h"
 #include "Look/FadeOverlay.h"
-#include "Look/ClockHud.h"
 #include "Look/FarmerAssets.h"
 #include "Look/Sky.h"
 #include "Look/WeatherFx.h"
+#include "Ui/GameUi.h"
+#include "Ui/ScreenHost.h"
 #include "ValleyDirector.h"
 #include "World/ValleyWorld.h"
 
@@ -58,10 +59,10 @@ namespace Dingo
 		std::unique_ptr<FarmerAssets> m_FarmerAssets;
 		std::unique_ptr<Player> m_Player;
 		std::unique_ptr<CameraRig> m_Camera;
-		std::unique_ptr<ClockHud> m_Hud;
+		std::unique_ptr<GameUi> m_Ui;
 		std::unique_ptr<BuildGhost> m_Ghost;
-		std::unique_ptr<BuildMenuHud> m_BuildHud;
 		std::unique_ptr<BuildController> m_Build;
+		std::unique_ptr<ScreenHost> m_Screens;
 		AimInput m_Aim;
 		glm::vec2 m_LastMouse{ 0.0f };
 		bool m_MouseSeen = false;
@@ -71,7 +72,9 @@ namespace Dingo
 		Scene* m_ValleyScene = nullptr;
 		CheckReport m_Report;
 		std::unique_ptr<StaticCheckRun> m_StaticChecks;
+		std::unique_ptr<UiCheckRun> m_UiChecks;
 		bool m_SimChecksDone = false;
+		bool m_UiChecksStarted = false;
 		bool m_ChecksDone = false;
 	};
 

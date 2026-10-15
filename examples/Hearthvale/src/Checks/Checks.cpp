@@ -15,6 +15,7 @@ namespace Dingo
 		RunGrowthChecks(report);
 		RunEconomyChecks(report);
 		RunBoardChecks(report);
+		RunUiLayoutChecks(report);
 	}
 
 }

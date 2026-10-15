@@ -178,15 +178,21 @@ namespace Dingo
 	inline constexpr float WEATHER_SNOW_SUN_SCALE  = 0.75f;
 	inline constexpr float WEATHER_SNOW_FOG_SCALE  = 0.65f;
 
-	inline constexpr float HUD_CLOCK_SIZE          = 24.0f;
-	inline constexpr glm::vec4 HUD_TEXT_COLOR      = glm::vec4(1.0f, 0.97f, 0.9f, 1.0f);
-	inline constexpr glm::vec4 HUD_PANEL_COLOR     = glm::vec4(0.1f, 0.08f, 0.06f, 0.55f);
-
-	inline constexpr float HUD_MENU_SIZE           = 18.0f;
-	inline constexpr float HUD_MESSAGE_SECONDS     = 2.5f;
-	inline constexpr int HUD_MENU_ROWS             = 9;
-	inline constexpr glm::vec4 HUD_TEXT_DIM_COLOR  = glm::vec4(0.65f, 0.6f, 0.55f, 1.0f);
-	inline constexpr glm::vec4 HUD_TEXT_PICK_COLOR = glm::vec4(1.0f, 0.88f, 0.4f, 1.0f);
+	inline constexpr int UI_HUD_LAYER              = 0;
+	inline constexpr int UI_SCREEN_LAYER           = 10;
+	inline constexpr float UI_TOAST_SECONDS        = 2.5f;
+	inline constexpr glm::vec4 UI_TEXT_COLOR       = glm::vec4(1.0f, 0.97f, 0.9f, 1.0f);
+	inline constexpr glm::vec4 UI_TEXT_DIM_COLOR   = glm::vec4(0.65f, 0.6f, 0.55f, 1.0f);
+	inline constexpr glm::vec4 UI_TEXT_PICK_COLOR  = glm::vec4(1.0f, 0.88f, 0.4f, 1.0f);
+	inline constexpr glm::vec4 UI_TEXT_BAD_COLOR   = glm::vec4(1.0f, 0.55f, 0.45f, 1.0f);
+	inline constexpr glm::vec4 UI_HUD_PANEL_COLOR  = glm::vec4(0.1f, 0.08f, 0.06f, 0.55f);
+	inline constexpr glm::vec4 UI_PANEL_COLOR      = glm::vec4(0.13f, 0.1f, 0.08f, 0.96f);
+	inline constexpr glm::vec4 UI_BACKDROP_COLOR   = glm::vec4(0.0f, 0.0f, 0.0f, 0.55f);
+	inline constexpr glm::vec4 UI_BUTTON_COLOR     = glm::vec4(0.24f, 0.2f, 0.16f, 1.0f);
+	inline constexpr glm::vec4 UI_BUTTON_HOVER     = glm::vec4(0.34f, 0.28f, 0.21f, 1.0f);
+	inline constexpr glm::vec4 UI_BUTTON_PRESSED   = glm::vec4(0.18f, 0.15f, 0.12f, 1.0f);
+	inline constexpr glm::vec4 UI_FOCUS_COLOR      = glm::vec4(1.0f, 0.9f, 0.45f, 1.0f);
+	inline constexpr glm::vec4 UI_SELECTED_COLOR   = glm::vec4(0.95f, 0.75f, 0.2f, 1.0f);
 
 	inline constexpr float PERF_FRAMES             = 600.0f;
 }
