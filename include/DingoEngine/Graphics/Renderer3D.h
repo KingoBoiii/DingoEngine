@@ -430,7 +430,10 @@ namespace Dingo
 		/// holds its palette in a stretch of the skin arena.
 		static constexpr uint32_t k_MaxSkinnedInstancesLimit = 4096;
 		/// Instances a frame drawn with a custom material whose shader has the deprecated SkinData
-		/// block, each holding two SkinData versions (8 KiB each) in host-visible memory on Vulkan.
+		/// block. On Vulkan each holds eight SkinData versions in host-visible memory (two writes a
+		/// frame, four frames in flight), each about 8 KiB padded to the device's uniform-buffer
+		/// alignment: about 66 KiB for each of the first 256 instances of the skinned budget
+		/// (16.5 MiB at the default), made on the first such draw.
 		[[deprecated("the SkinData block is deprecated: declare Skinning.glsl's DE_SKIN_PALETTE blocks; removed in 2.0")]]
 		static constexpr uint32_t k_MaxSkinDataInstances = Internal::k_MaxSkinDataInstances;
 

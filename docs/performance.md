@@ -341,7 +341,8 @@ An instance past the budget is dropped **whole**, with a warning
 *Instances* bar is full or something is dropped. A custom skinned shader with the older `SkinData`
 block keeps working, but through the old path: at most 256 instances a frame, an upload before each
 draw, and on Vulkan every upload ends the render pass. Instanced static draws still upload between
-draws, with the same cost. See
+draws, with the same cost. On Vulkan the `SkinData` buffer also takes about 16.5 MiB of
+host-visible memory at the default budget. See
 [Animation](animation.md#instances-and-the-per-frame-budget).
 
 ### Culled animators
