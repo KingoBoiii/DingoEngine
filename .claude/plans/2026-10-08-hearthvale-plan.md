@@ -675,3 +675,29 @@ off.
   - The UI pad check can't drive focus (E7); it checks a screen model (§5).
   - No `pwsh` in the cloud: the audio generator is Python.
   - Animals are in (HD3 resolved by Cube Pets, CC0).
+
+### 11.3 P1 (2026-10-15): scaffold
+
+- `examples/Hearthvale/premake5.lua` (modelled on Marionette's: `distributionSymbols()`, `copyAssimpRuntime()`,
+  `exeMetadata`, `embedPackKey()`), its own `dpak.key`, `icon.png`/`icon.ico` (green tile "H"; the row was
+  added to `scripts/icons/icons.txt`), and `include "examples/Hearthvale"` in the root `premake5.lua`.
+  Not yet done (P15): `build-release.yml`, `.vscode` entries, packaging.
+- `src/main.cpp`: `HearthvaleApplication`, `ParseVSync` (as Marionette; default off under `--autoplay`/`--perf`),
+  asset root by `FindDirectoryUpward("assets")`, `UpdateInBackground = IsScripted(options)`. No hot-reload flags.
+- `src/LaunchOptions.{h,cpp}`: every §3.6 flag except the engine's `--graphics`/`--save-dir`: `Check, Autoplay,
+  Days, FixedDt, StepsPerFrame, Seed, Day, Season/HasSeason, TimeHours (negative = morning), Weather, Load,
+  LayoutDemo, Perf, Freeze, NoPost/NoShadows/NoParticles/NoFog/NoInstancing/NoStatic/NoCull`. `--days` implies
+  `--autoplay` and `--fixed-dt=1/60`; `--steps-per-frame` needs a fixed delta; `--perf` needs `--autoplay`.
+  `LaunchSeason`/`LaunchWeather` are launch-only enums; P2's calendar maps them to its own.
+- `src/GameTuning.h`: constants only (sim step, 96 grid, 16 tile cell, day 6:00-26:00 in 720 s, 14 days x 4
+  seasons, camera, sun/ambient). Scene name `SCENE_VALLEY`.
+- `src/Look/ArtRegistry.{h,cpp}`: `Art::Find(id)` and `Art::Spawn(scene, id, name, position)`; entries are
+  `ArtEntry{Id, Primitive, Color, Size, ModelPath}` (ids `ground, farmer, tree, rock`, all primitives; P14 fills
+  `ModelPath`). `Spawn` returns an empty entity headless.
+- `src/HearthvaleLayer.{h,cpp}`: one `Valley` scene (ambient, shadowed sun, ground, farmer box, perspective camera
+  at 45 degrees); the scene is empty headless. `OnUpdate` steps `m_SceneManager` with `FixedDt`/`StepsPerFrame`
+  and renders. `--check` runs the (empty) suite list, logs `[Checks] N passed, M failed`, and closes when headless.
+  Suites go where `m_ChecksDone` is set.
+- `src/Checks/CheckReport.h` is Marionette's (the plan's `Debug/` folder is `Checks/`: .gitignore ignores any `Debug/`; Autoplay goes there too). `assets/fonts/Inter-Bold.ttf` + `assets/LICENSE-Inter.txt` copied.
+- Verified: Debug build has no warnings in these files; the empty scene runs 20 s under xvfb with no VUID/LOG ERROR
+  (one Vulkan "shader validation cache missing" info warning, environmental); `--check --graphics=headless` exits 0.
