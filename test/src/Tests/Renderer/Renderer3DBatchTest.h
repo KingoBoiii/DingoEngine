@@ -43,7 +43,7 @@ namespace Dingo
 		void ReadAll(std::vector<Framebuffer*> targets, std::function<void(const std::vector<TexturePixels>&)> done);
 		Framebuffer* CreateCheckTarget(uint32_t size);
 		template<typename Submit>
-		Renderer3D::Statistics RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit);
+		Renderer3D::Statistics RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit, Renderer3D* renderer = nullptr);
 		void ReadCheck(Framebuffer* target, const glm::vec3& expected, const std::string& name);
 		void DrawTranslucentShowcase();
 
