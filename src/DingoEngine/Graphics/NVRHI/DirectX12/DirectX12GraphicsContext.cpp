@@ -119,6 +119,23 @@ namespace Dingo
 		hr = D3D12CreateDevice(m_DXGIAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&m_D3D12Device));
 		DE_CORE_ASSERT(SUCCEEDED(hr), "Failed to create D3D12 device.");
 
+#if defined(DE_DEBUG)
+		{
+			// Colour clears take a runtime colour and DXGI back buffers have no clear value, so no
+			// colour target can match one; left on, this warning fires on every colour clear.
+			ID3D12InfoQueue* infoQueue = nullptr;
+			if (SUCCEEDED(m_D3D12Device->QueryInterface(IID_PPV_ARGS(&infoQueue))))
+			{
+				D3D12_MESSAGE_ID deniedIds[] = { D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE };
+				D3D12_INFO_QUEUE_FILTER filter = {};
+				filter.DenyList.NumIDs = static_cast<UINT>(std::size(deniedIds));
+				filter.DenyList.pIDList = deniedIds;
+				infoQueue->AddStorageFilterEntries(&filter);
+				infoQueue->Release();
+			}
+		}
+#endif
+
 		auto createQueue = [&](D3D12_COMMAND_LIST_TYPE type) -> ID3D12CommandQueue*
 		{
 			D3D12_COMMAND_QUEUE_DESC queueDesc = {};

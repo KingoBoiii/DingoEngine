@@ -6,6 +6,10 @@
 namespace Dingo
 {
 
+	// Every D3D depth target is created with this as its optimized clear value and every depth clear
+	// uses it: D3D12 warns on, and can't fast-clear, a clear that differs from the created value.
+	inline constexpr float k_DepthClearValue = 1.0f;
+
 	class NvrhiTexture : public Texture
 	{
 	public:
