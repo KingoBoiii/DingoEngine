@@ -175,9 +175,12 @@ end
 
 -- A Windows Distribution build keeps its PDB, or a player's minidump can't be read. The PDB never
 -- ships: build-release.yml moves every executable's PDB into a separate symbols archive.
+-- /PDBALTPATH keeps the build machine's path out of the executable; a debugger matches the PDB
+-- by its file name and GUID.
 function distributionSymbols()
     filter { "system:windows", "configurations:Distribution" }
         symbols "On"
+        linkoptions { "/PDBALTPATH:%_PDB%" }
 
     filter {}
 end

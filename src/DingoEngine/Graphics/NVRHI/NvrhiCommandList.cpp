@@ -16,6 +16,8 @@
 namespace Dingo
 {
 
+	static_assert(Shader::k_MaxPushConstantSize == nvrhi::c_MaxPushConstantSize);
+
 	void NvrhiCommandList::Initialize()
 	{
 		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
@@ -328,6 +330,9 @@ namespace Dingo
 			state.addBindingSet(nvrhiPass->GetBindingSetHandle());
 		RequireStorageStates(nvrhiPass->GetStorageItems());
 		m_CommandListHandle->setComputeState(state);
+		const NvrhiShader* shader = static_cast<const NvrhiShader*>(pass->GetParams().Shader);
+		if (shader->m_PushConstantSize)
+			m_CommandListHandle->setPushConstants(nvrhiPass->GetPushConstantData(), shader->m_PushConstantSize);
 		m_CommandListHandle->dispatch(groupsX, groupsY, groupsZ);
 		m_LastDrawFramebuffer = nullptr;
 		return true;

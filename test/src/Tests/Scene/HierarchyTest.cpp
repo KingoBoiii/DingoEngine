@@ -952,6 +952,7 @@ namespace Dingo
 		{
 			m_LightProbeDone = true;
 			RunLightProbe();
+			RunCullingChecks2D();
 		}
 
 		if (m_StressScene)
@@ -1003,6 +1004,8 @@ namespace Dingo
 		m_Scene = nullptr;
 		delete m_Scene2D;
 		m_Scene2D = nullptr;
+		for (Framebuffer*& target : m_Cull2DTargets)
+			DestroyAndDelete(target);
 		DestroyAndDelete(m_Font);
 		m_Fallers2D.clear();
 		delete m_StressScene;

@@ -20,7 +20,9 @@ namespace Dingo
 	// image, a uniform buffer in compute, readonly storage buffers in the fragment and vertex stages,
 	// the barriers between them, between dispatches of one pass and after a ReadBack, a storage
 	// buffer's initial data and GraphicsBuffer::Upload, a material drawing from storage buffers
-	// swapped under it, and a Deferred buffer's Upload at an offset re-sent by Renderer::Upload.
+	// swapped under it, a Deferred buffer's Upload at an offset re-sent by Renderer::Upload, and push
+	// constants: a compute pass dispatched twice with different values, and a push-only material drawn
+	// twice with different values.
 	class ComputeTest : public GraphicsTest
 	{
 	public:
@@ -76,6 +78,14 @@ namespace Dingo
 		Framebuffer* m_Strip = nullptr;     // k_ValueCount x 2 R32F: values, then sums
 		Framebuffer* m_SwapStrip = nullptr; // the same, drawn with the read material's buffers swapped
 		Framebuffer* m_Instanced = nullptr; // 256 x 16 RGBA8: a quad per instance
+
+		Shader* m_PushComputeShader = nullptr;
+		Shader* m_PushDrawShader = nullptr;
+		ComputePass* m_PushPass = nullptr;
+		Material* m_PushMaterial = nullptr;
+		GraphicsBuffer* m_PushOut = nullptr;
+		Framebuffer* m_PushStripA = nullptr; // 4 x 1 R32F: the push-constant draw's first values
+		Framebuffer* m_PushStripB = nullptr; // the same, drawn with shorter constants
 	};
 
 }

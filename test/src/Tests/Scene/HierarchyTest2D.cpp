@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <format>
 
 namespace
@@ -336,6 +337,126 @@ namespace Dingo
 			lowest = (std::min)(lowest, faller.GetWorldPosition2D().y);
 		Check(m_MaxFaller2DGap < 1e-4f && m_Fallers2D.size() == 3 && lowest < -5.0f,
 			std::format("2D: nested dynamic bodies are written back parents first (gap {:.1e} while falling)", m_MaxFaller2DGap));
+	}
+
+	void HierarchyTest::RunCullingChecks2D()
+	{
+		constexpr uint32_t k_Width = 160;
+		constexpr uint32_t k_Height = 120;
+		const glm::vec2 half(4.0f, 3.0f);
+
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_Cull2DTargets[i])
+				m_Cull2DTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "Hierarchy2DCullOff" : "Hierarchy2DCullOn")
+					.SetWidth(k_Width)
+					.SetHeight(k_Height)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		Scene scene("Culling Checks 2D");
+		uint32_t count = 0;
+		auto add = [&](const glm::vec2& position, const glm::vec2& size, float rotation) -> Entity
+		{
+			Entity entity = MakeEntity2D(scene, std::format("Quad {}", count), { position.x, position.y, 0.001f * static_cast<float>(count) }, rotation, size);
+			const glm::vec4 color(0.25f + 0.75f * std::fmod(0.37f * static_cast<float>(count), 1.0f), 0.25f + 0.75f * std::fmod(0.61f * static_cast<float>(count), 1.0f),
+				0.25f + 0.75f * std::fmod(0.83f * static_cast<float>(count), 1.0f), 1.0f);
+			if (count % 2 == 0)
+				entity.AddComponent<SpriteRendererComponent>(color);
+			else
+				entity.AddComponent<CircleRendererComponent>().Color = color;
+			++count;
+			return entity;
+		};
+
+		// The sprite's circumcircle reaches 0.76 from its centre: past that the quad is left out,
+		// inside it the quad is kept even where no pixel of it lies in the view.
+		for (int edge = 0; edge < 4; ++edge)
+		{
+			const glm::vec2 normal = edge < 2 ? glm::vec2(edge == 0 ? 1.0f : -1.0f, 0.0f) : glm::vec2(0.0f, edge == 2 ? 1.0f : -1.0f);
+			const glm::vec2 tangent(-normal.y, normal.x);
+			const float reach = edge < 2 ? half.x : half.y;
+			const float along = edge < 2 ? half.y : half.x;
+			for (int k = 0; k < 5; ++k)
+			{
+				for (const float past : { -0.6f, 0.0f, 0.5f, 1.0f, 1.6f, 3.0f })
+					add(normal * (reach + past) + tangent * (along * (-0.8f + 0.4f * static_cast<float>(k))), { 1.4f, 0.6f }, 23.0f * static_cast<float>(count));
+			}
+		}
+		for (const float sx : { -1.0f, 1.0f })
+		{
+			for (const float sy : { -1.0f, 1.0f })
+			{
+				add({ sx * (half.x + 0.3f), sy * (half.y + 0.3f) }, { 1.4f, 0.6f }, 45.0f);
+				add({ sx * (half.x + 2.0f), sy * (half.y + 2.0f) }, { 1.4f, 0.6f }, 45.0f);
+			}
+		}
+		add({ 0.0f, 5.2f }, { 16.0f, 0.5f }, 80.0f);
+		add({ 9.0f, 0.0f }, { 12.0f, 12.0f }, 0.0f);
+
+		// A parent outside the view keeps children inside it, and one inside keeps children outside.
+		auto group = [&](const glm::vec2& parentPosition, float parentRotation, const std::vector<glm::vec2>& children)
+		{
+			Entity parent = add(parentPosition, { 0.5f, 0.5f }, parentRotation);
+			Entity previous = parent;
+			for (const glm::vec2& position : children)
+			{
+				Entity child = add(position, { 1.2f, 0.4f }, 30.0f * static_cast<float>(count));
+				child.SetParent(previous, true);
+				previous = child;
+			}
+		};
+		group({ 7.0f, 6.0f }, 140.0f, { { 3.8f, 2.8f }, { -3.9f, -2.9f }, { 4.4f, 0.5f }, { 10.0f, 0.0f } });
+		group({ -5.0f, 0.5f }, 90.0f, { { -3.7f, 1.0f }, { -9.0f, 4.0f } });
+		group({ 0.0f, 0.0f }, 25.0f, { { 3.6f, 2.4f }, { 8.0f, 6.0f }, { -3.2f, -2.8f }, { -7.0f, -2.0f } });
+
+		const glm::mat4 viewProjection = glm::ortho(-half.x, half.x, -half.y, half.y, -1.0f, 1.0f);
+		const bool wasCulling = m_Renderer2D->IsCullingEnabled();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		Renderer2D::Statistics stats[2];
+		for (int i = 0; i < 2; ++i)
+		{
+			m_Renderer2D->SetCullingEnabled(i == 1);
+			Renderer::SetRenderTarget(m_Cull2DTargets[i]);
+			m_Renderer2D->BeginScene(viewProjection);
+			m_Renderer2D->Clear(m_ClearColor);
+			scene.RenderEntities(*m_Renderer2D);
+			m_Renderer2D->EndScene();
+			stats[i] = m_Renderer2D->GetStatistics();
+		}
+		Renderer::SetRenderTarget(previous);
+		m_Renderer2D->SetCullingEnabled(wasCulling);
+
+		Check(stats[0].CulledQuads == 0 && stats[1].CulledQuads > 0 && stats[1].GetTotalQuads() > 0 && stats[0].GetTotalQuads() == stats[1].GetTotalQuads() + stats[1].CulledQuads,
+			std::format("2D: culling leaves out sprites and circles beyond the view's edges ({} of {} culled, none with culling off)", stats[1].CulledQuads, count));
+
+		auto off = std::make_shared<std::vector<uint8_t>>();
+		const std::weak_ptr<int> alive = m_Alive;
+		m_Cull2DTargets[0]->GetAttachment(0)->ReadPixels([off, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				*off = pixels.Data;
+		});
+		const uint32_t culled = stats[1].CulledQuads;
+		m_Cull2DTargets[1]->GetAttachment(0)->ReadPixels([this, off, alive, culled](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			size_t differing = 0;
+			size_t drawn = 0;
+			const glm::u8vec4 clear = glm::u8vec4(glm::round(glm::clamp(m_ClearColor, 0.0f, 1.0f) * 255.0f));
+			const bool sized = !pixels.Data.empty() && pixels.Data.size() == off->size();
+			for (size_t i = 0; sized && i < pixels.Data.size(); i += 4)
+			{
+				differing += std::memcmp(&pixels.Data[i], &(*off)[i], 4) != 0 ? 1 : 0;
+				bool background = true;
+				for (int c = 0; c < 3; ++c)
+					background = background && std::abs(static_cast<int>(pixels.Data[i + c]) - static_cast<int>(clear[c])) <= 1;
+				drawn += background ? 0 : 1;
+			}
+			Check(sized && differing == 0 && drawn > 0, std::format("2D: culling ({} quads) changes no pixel of a view with {} px drawn ({} of {} differ)", culled, drawn, differing, pixels.Data.size() / 4));
+		});
 	}
 
 	void HierarchyTest::Render2D()

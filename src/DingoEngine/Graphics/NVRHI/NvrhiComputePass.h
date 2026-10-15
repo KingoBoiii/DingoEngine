@@ -29,6 +29,7 @@ namespace Dingo
 		// Builds what changed since the last dispatch; false when the pipeline or binding set can't be built.
 		bool Prepare();
 
+		const uint8_t* GetPushConstantData() const { return m_PushConstants; }
 		nvrhi::ComputePipelineHandle GetPipelineHandle() const { return m_PipelineHandle; }
 		nvrhi::BindingSetHandle GetBindingSetHandle() const { return m_BindingSetHandle; }
 		const std::vector<nvrhi::BindingSetItem>& GetStorageItems() const { return m_StorageItems; }

@@ -7,6 +7,8 @@
 #include "NvrhiShader.h"
 #include "NvrhiTexture.h"
 
+#include "../PushConstants.h"
+
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/GraphicsDevice.h"
 
@@ -87,6 +89,11 @@ namespace Dingo
 		SetItem(nvrhi::BindingSetItem::Sampler(binding, static_cast<NvrhiSampler*>(sampler)->m_Handle));
 	}
 
+	bool ComputePass::SetPushConstants(const void* data, uint32_t size)
+	{
+		return Internal::CopyPushConstants(m_Params.Shader, data, size, m_PushConstants, "ComputePass", m_Params.DebugName);
+	}
+
 	bool NvrhiComputePass::Prepare()
 	{
 		NvrhiShader* shader = static_cast<NvrhiShader*>(m_Params.Shader);
@@ -136,11 +143,14 @@ namespace Dingo
 				if (NvrhiCommandList::IsRawBufferItem(binding.Item))
 					binding.Item.type = shader->IsStorageBufferReadOnly(binding.Item.slot) ? nvrhi::ResourceType::RawBuffer_SRV : nvrhi::ResourceType::RawBuffer_UAV;
 			}
-			if (!m_Bindings.empty() && shader->m_BindingLayoutHandle)
+			if ((!m_Bindings.empty() || shader->m_PushConstantSize) && shader->m_BindingLayoutHandle)
 			{
 				nvrhi::BindingSetDesc desc;
 				for (const Binding& binding : m_Bindings)
 					desc.addItem(binding.Item);
+				// D3D11 binds its push-constant buffer through the binding set.
+				if (shader->m_PushConstantSize)
+					desc.addItem(nvrhi::BindingSetItem::PushConstants(shader->m_PushConstantRegister, shader->m_PushConstantSize));
 				NvrhiCommandList::SortBySlot(desc);
 				m_BindingSetHandle = device->createBindingSet(desc, shader->m_BindingLayoutHandle);
 				if (!m_BindingSetHandle)

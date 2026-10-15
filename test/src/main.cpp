@@ -3,11 +3,16 @@
 #include "TestLayer.h"
 #include "Tests/TestChecks.h"
 
+#include <chrono>
+#include <thread>
+
 namespace Dingo
 {
 
 	// --graphics=headless: no window or GPU, so none of the TestLayer cases can run. This checks the
-	// headless loop itself (paced OnUpdate, a scene stepping physics) and then closes the app.
+	// headless loop itself (paced OnUpdate, a scene stepping physics) and then closes the app, or with
+	// --headless-wait keeps running until a signal (Ctrl+C, SIGTERM) ends it, and --headless-stall makes
+	// each of those updates take a second, so a second signal can arrive before the loop reacts.
 	class HeadlessCheckLayer : public Layer
 	{
 	public:
@@ -42,6 +47,7 @@ namespace Dingo
 		{
 			m_Scenes.GetActiveScene()->OnStop();
 			m_Scenes.Clear();
+			DE_INFO("Headless: OnDetach ran.");
 		}
 
 		virtual void OnUpdate(float deltaTime) override
@@ -49,6 +55,12 @@ namespace Dingo
 			m_Scenes.OnUpdate(deltaTime);
 			m_Scenes.OnRender();
 
+			if (m_Updates >= k_Updates)
+			{
+				if (Application::Get().GetCommandLineArgs().Get("headless-stall"))
+					std::this_thread::sleep_for(std::chrono::seconds(1));
+				return;
+			}
 			if (++m_Updates > 1)
 				m_SteppedTime += deltaTime;
 			if (m_Updates < k_Updates)
@@ -61,7 +73,10 @@ namespace Dingo
 			m_Checks.Check(m_Body.GetComponent<Transform3DComponent>().Position.y < 9.5f, "headless: scene physics steps");
 			m_Checks.Check(m_Collider && m_Scenes.GetActiveScene()->GetRuntimeBody3D(m_Collider) != k_InvalidBody3D, "headless: a mesh collider from a model gets a body");
 			DE_INFO("Headless: {} updates, average delta {:.2f} ms, {} failed.", m_Updates, averageDelta * 1000.0f, m_Checks.FailedCount());
-			Application::Get().Close();
+			if (app.GetCommandLineArgs().Get("headless-wait"))
+				DE_INFO("Headless: waiting for a stop signal.");
+			else
+				Application::Get().Close();
 		}
 
 	private:
@@ -105,6 +120,12 @@ namespace Dingo
 		virtual ~TestFrameworkApplication() = default;
 
 	protected:
+		virtual void OnDestroy() override
+		{
+			if (IsHeadless())
+				DE_INFO("Headless: OnDestroy ran.");
+		}
+
 		virtual void OnInitialize() override
 		{
 			if (IsHeadless())

@@ -104,7 +104,7 @@ A crash leaves its report there too:
 can't go on from: it logs the message with the file and line it was called from, flushes the
 log, shows a message box (Windows Distribution builds) and exits with code 1. In Distribution
 builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than breaking into a
-debugger that isn't there. The test app's `--crash=segv|thread|threads|segv-after-info|abort|terminate|throw|stack|verify|fatal`
+debugger that isn't there. The test app's `--crash=segv|thread|engine-thread|engine-throw|engine-stack|prepared-throw|prepared-stack|threads|segv-after-info|abort|terminate|throw|stack|verify|fatal`
 crashes on purpose, which is how CI checks all of this.
 
 ### Window modes
@@ -300,7 +300,11 @@ or, on any app's command line, `--graphics=headless`.
   There is no `OnImGuiRender`, no debug window and no events; `EnableImGui` and
   `EnableDebugOverlays` are ignored.
 - There is no window to close, so `Close()` is the only way out of the loop. `RequestRestart`
-  works, to or from Headless.
+  works, to or from Headless. Ctrl+C, `SIGTERM` (Linux) and a console close (Windows) end the run
+  through `Close()` too, so `OnDetach` and `OnDestroy` run and the process exits with code 0; a
+  second signal while it shuts down kills it at once. Windows allows a closing console about five
+  seconds, then ends the process. A signal that was ignored at start-up (a job started in the
+  background of a script) stays ignored.
 - The `AssetManager`, `AudioEngine`, scenes, scripts and physics all work. `SceneManager::OnRender`
   does nothing. GPU resources can't be made: the `Texture`, `Shader`, `Sampler`, `Framebuffer`,
   `GraphicsBuffer`, `RenderPass`, `ComputePass` and `Font` factories return `nullptr` with one
