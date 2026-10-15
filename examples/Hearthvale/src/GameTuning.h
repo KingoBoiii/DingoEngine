@@ -312,5 +312,7 @@ namespace Dingo
 	inline constexpr float CLUCK_INTERVAL_MIN       = 3.0f;
 	inline constexpr float CLUCK_INTERVAL_MAX       = 9.0f;
 
-	inline constexpr float PERF_FRAMES             = 600.0f;
+	inline constexpr int PERF_WARMUP_FRAMES       = 180;
+	inline constexpr int PERF_WINDOW_FRAMES       = 600;
+	inline constexpr int DAYS_STEPS_WINDOWED       = 60;
 }

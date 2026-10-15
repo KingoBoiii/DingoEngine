@@ -21,6 +21,9 @@ namespace Dingo
 
 	bool IsUiSfx(Sfx sfx);
 
+	// Every clip path GameAudio loads, relative to the asset root.
+	std::vector<const char*> GameAudioPaths();
+
 	struct AudioFrame
 	{
 		float Dt = 0.0f;

@@ -72,6 +72,17 @@ namespace
 namespace Dingo
 {
 
+	std::vector<const char*> GameAudioPaths()
+	{
+		std::vector<const char*> paths;
+		for (const SfxDef& sfx : k_Sfx)
+			paths.push_back(sfx.Path);
+		paths.insert(paths.end(), std::begin(k_MusicPaths), std::end(k_MusicPaths));
+		paths.insert(paths.end(), std::begin(k_AmbiencePaths), std::end(k_AmbiencePaths));
+		paths.push_back(k_PondPath);
+		return paths;
+	}
+
 	bool IsUiSfx(Sfx sfx)
 	{
 		return sfx <= Sfx::UiError;

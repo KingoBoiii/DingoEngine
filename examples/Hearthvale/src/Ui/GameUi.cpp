@@ -11,6 +11,11 @@ namespace Dingo
 		constexpr const char* k_FontPath = "fonts/Inter-Bold.ttf";
 	}
 
+	const char* GameUiFontPath()
+	{
+		return k_FontPath;
+	}
+
 	GameUi::GameUi(ValleyDirector& director, Inventory& inventory, BuildController& controller, ScreenHost& host)
 		: m_Director(director), m_Inventory(inventory), m_Controller(controller), m_Host(host)
 	{

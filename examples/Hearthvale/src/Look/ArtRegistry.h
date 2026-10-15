@@ -10,6 +10,7 @@
 
 #include <glm/glm.hpp>
 
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -44,6 +45,9 @@ namespace Dingo
 		// The glowing parts NightLights places: a lamp's bulb and a house's window pane.
 		inline constexpr std::string_view LAMP_BULB    = "lamp_bulb";
 		inline constexpr std::string_view WINDOW       = "window";
+
+		// Every registered entry, in table order.
+		std::span<const ArtEntry> All();
 
 		const ArtEntry* Find(std::string_view id);
 

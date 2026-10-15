@@ -139,6 +139,11 @@ namespace Dingo::Art
 		}
 	}
 
+	std::span<const ArtEntry> All()
+	{
+		return k_Entries;
+	}
+
 	const ArtEntry* Find(std::string_view id)
 	{
 		for (const ArtEntry& entry : k_Entries)

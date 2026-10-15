@@ -23,7 +23,10 @@ namespace Dingo
 		calendar.Reset(m_Day, m_Tick);
 		calendar.ForceWeather(static_cast<Weather>(m_Weather));
 		director.SetTimePaused(m_Paused);
-		DE_INFO("Life world checks: {} passed, {} failed", report.GetPassed() - m_PassedAtStart, report.GetFailed() - m_FailedAtStart);
+		const int passed = report.GetPassed() - m_PassedAtStart;
+		const int failed = report.GetFailed() - m_FailedAtStart;
+		report.AddSuite("Life world", passed, failed);
+		DE_INFO("Life world checks: {} passed, {} failed", passed, failed);
 		m_Step = Step::Done;
 		return true;
 	}

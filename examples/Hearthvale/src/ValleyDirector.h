@@ -47,6 +47,7 @@ namespace Dingo
 		int StartTick = 0;
 		bool HasForcedWeather = false;
 		Weather ForcedWeather = Weather::Clear;
+		// The clock stays put and the villagers and animals stand still; the player, camera and building still step.
 		bool FreezeTime = false;
 	};
 
@@ -100,6 +101,7 @@ namespace Dingo
 		int m_DayRollCount = 0;
 		bool m_SleepRequested = false;
 		bool m_TimePaused = false;
+		bool m_Frozen = false;
 	};
 
 }

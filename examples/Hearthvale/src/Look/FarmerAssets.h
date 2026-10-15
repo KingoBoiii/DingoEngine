@@ -1,8 +1,13 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include <vector>
+
 namespace Dingo
 {
+
+	// The model, texture and two clip libraries the farmer loads, relative to the asset root.
+	std::vector<const char*> FarmerAssetPaths();
 
 	// The KayKit farmer: the character model, its texture and lit material, and the idle and walk clips retargeted
 	// from two clips-only libraries. GPU side: never constructed headless.

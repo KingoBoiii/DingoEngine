@@ -20,6 +20,7 @@ namespace Dingo
 		int Days = 0;               // with Autoplay: plays this many days and closes; implies FixedDt
 		float FixedDt = 0.0f;       // seconds; 0 = the measured delta
 		int StepsPerFrame = 1;      // sim steps per OnUpdate; only with a fixed delta
+		bool HasStepsPerFrame = false;
 		uint32_t Seed = 1;          // valley and weather
 		bool HasSeed = false;       // --seed given: a new game from the slots screen uses it instead of a random one
 		int Day = 0;                // 1-based day of the season to start on; 0 = a fresh game's

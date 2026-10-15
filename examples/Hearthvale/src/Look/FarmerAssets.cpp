@@ -16,6 +16,11 @@ namespace Dingo
 		constexpr const char* k_WalkName = "Walking_A";
 	}
 
+	std::vector<const char*> FarmerAssetPaths()
+	{
+		return { k_ModelPath, k_TexturePath, k_GeneralPath, k_MovementPath };
+	}
+
 	FarmerAssets::FarmerAssets()
 	{
 		AssetManager& assets = Application::Get().GetAssetManager();

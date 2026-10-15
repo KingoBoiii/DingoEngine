@@ -13,7 +13,10 @@ namespace Dingo
 
 		~SuiteScope()
 		{
-			DE_INFO("{} checks: {} passed, {} failed", m_Name, m_Report.GetPassed() - m_Passed, m_Report.GetFailed() - m_Failed);
+			const int passed = m_Report.GetPassed() - m_Passed;
+			const int failed = m_Report.GetFailed() - m_Failed;
+			m_Report.AddSuite(m_Name, passed, failed);
+			DE_INFO("{} checks: {} passed, {} failed", m_Name, passed, failed);
 		}
 
 	private:
@@ -39,6 +42,9 @@ namespace Dingo
 	void RunLifeChecks(CheckReport& report);
 	void RunLookChecks(CheckReport& report);
 	void RunSaveChecks(CheckReport& report);
+	void RunAssetChecks(CheckReport& report);
+	void RunAutoplayChecks(CheckReport& report);
+	void RunDeterminismChecks(CheckReport& report);
 	void RunSimChecks(CheckReport& report);
 
 }

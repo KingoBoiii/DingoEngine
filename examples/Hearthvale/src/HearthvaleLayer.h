@@ -5,10 +5,12 @@
 #include "Placing/BuildController.h"
 #include "Placing/Inventory.h"
 #include "Save/GameSaves.h"
+#include "Checks/Autoplay.h"
 #include "Checks/CheckReport.h"
 #include "Checks/LifeWorldChecks.h"
 #include "Checks/StaticChecks.h"
 #include "Checks/UiChecks.h"
+#include "Farm/DemoLayout.h"
 #include "Farm/EconomySim.h"
 #include "Farm/FarmSim.h"
 #include "Farm/GameState.h"
@@ -27,6 +29,7 @@
 #include "Look/Sky.h"
 #include "Look/Vfx.h"
 #include "Look/WeatherFx.h"
+#include "Sim/PerfWindow.h"
 #include "Ui/GameUi.h"
 #include "Ui/OptionsModel.h"
 #include "Ui/ScreenHost.h"
@@ -64,6 +67,8 @@ namespace Dingo
 		void UpdateVfxAudio(const ValleyDirector& director, float dt);
 		void OnActionFeedback(ActionFeedback feedback, int x, int y);
 		void PollUiSounds();
+		void RecordPerf(const PerfSample& sample);
+		void FinishAutoplay();
 
 	private:
 		GameState m_State;
@@ -96,6 +101,11 @@ namespace Dingo
 		int m_LastSlot = 0;
 		std::unique_ptr<BuildGhost> m_Ghost;
 		std::unique_ptr<BuildController> m_Build;
+		std::unique_ptr<AutoplayFarmer> m_Bot;
+		int m_DaysPlayed = 0;
+		bool m_AutoplayDone = false;
+		std::unique_ptr<PerfWindow> m_Perf;
+		bool m_PerfReported = false;
 		std::unique_ptr<ScreenHost> m_Screens;
 		std::unique_ptr<GameSaves> m_Saves;
 		bool m_LoadedAtLaunch = false;

@@ -201,11 +201,17 @@ namespace
 			if (!(options.FixedDt > 0.0f))
 				options.FixedDt = SIM_STEP_SECONDS;
 		}
-		ParseInt(args, "steps-per-frame", 1, STEPS_PER_FRAME_MAX, options.StepsPerFrame);
-		if (options.StepsPerFrame > 1 && !(options.FixedDt > 0.0f))
+		int stepsPerFrame = 0;
+		ParseInt(args, "steps-per-frame", 1, STEPS_PER_FRAME_MAX, stepsPerFrame);
+		if (stepsPerFrame > 0)
 		{
-			DE_WARN("Hearthvale: --steps-per-frame needs --fixed-dt (or --days); using 1");
-			options.StepsPerFrame = 1;
+			if (options.FixedDt > 0.0f)
+			{
+				options.StepsPerFrame = stepsPerFrame;
+				options.HasStepsPerFrame = true;
+			}
+			else if (stepsPerFrame > 1)
+				DE_WARN("Hearthvale: --steps-per-frame needs --fixed-dt (or --days); using 1");
 		}
 		if (options.Perf && !options.Autoplay)
 		{

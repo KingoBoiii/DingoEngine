@@ -80,7 +80,10 @@ namespace Dingo
 
 	bool StaticCheckRun::Finish(CheckReport& report)
 	{
-		DE_INFO("Static checks: {} passed, {} failed", report.GetPassed() - m_PassedAtStart, report.GetFailed() - m_FailedAtStart);
+		const int passed = report.GetPassed() - m_PassedAtStart;
+		const int failed = report.GetFailed() - m_FailedAtStart;
+		report.AddSuite("Static", passed, failed);
+		DE_INFO("Static checks: {} passed, {} failed", passed, failed);
 		m_Step = Step::Done;
 		return true;
 	}

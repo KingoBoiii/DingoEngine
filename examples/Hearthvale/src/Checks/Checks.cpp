@@ -6,6 +6,7 @@ namespace Dingo
 	void RunSimChecks(CheckReport& report)
 	{
 		RunDefChecks(report);
+		RunAssetChecks(report);
 		RunGenerationChecks(report);
 		RunCalendarChecks(report);
 		RunWorldChecks(report);
@@ -20,6 +21,8 @@ namespace Dingo
 		RunLifeChecks(report);
 		RunLookChecks(report);
 		RunSaveChecks(report);
+		RunAutoplayChecks(report);
+		RunDeterminismChecks(report);
 	}
 
 }

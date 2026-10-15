@@ -11,6 +11,8 @@
 #include "Placing/PlaceInteract.h"
 #include "World/ValleyLayout.h"
 
+#include <DingoEngine/Core/Timer.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -49,12 +51,32 @@ namespace Dingo
 		m_Build->SetSleepHandler([this] { m_Sleep->RequestSleep(); });
 		m_Build->SetFeedbackHandler([this](ActionFeedback feedback, int x, int y) { OnActionFeedback(feedback, x, y); });
 		m_State.Pack.GiveStarterLoadout();
+		if (options.Autoplay)
+			m_Bot = std::make_unique<AutoplayFarmer>(*m_Director, m_State, *m_Build, *m_Sleep, m_Villagers.get());
 		m_Saves = std::make_unique<GameSaves>(*m_Director, m_State, SaveStore(SaveSlots::GetDirectory()));
 		if (options.HasSeed)
 			m_Saves->SetNewGameSeed(options.Seed);
 		m_Saves->SetOnGameReplaced([this] { OnGameReplaced(); });
 		if (!options.Load.empty())
 			LoadAtLaunch(options.Load);
+		if (options.LayoutDemo && !m_LoadedAtLaunch)
+		{
+			const DemoLayoutResult demo = ApplyDemoLayout(m_Director->GetGrid(), m_State.Pack, m_Director->GetCalendar().GetAbsoluteDay());
+			m_Villagers->InvalidatePlans();
+			m_Saves->TakeSnapshot();
+			DE_INFO("Hearthvale: --layout=demo placed {} buildings ({} kinds) and {} crops ({} kinds)", demo.Buildings, demo.BuildKinds, demo.Crops, demo.CropKinds);
+		}
+		if (options.Autoplay)
+		{
+			m_Director->OnDayRoll(DayRollStep::Autosave, [this](ValleyDirector& director, DayRollReason)
+			{
+				DE_INFO("{}", FormatDayLine(director, m_State));
+				++m_DaysPlayed;
+				const int days = GetLaunchOptions().Days;
+				if (days > 0 && m_DaysPlayed >= days && !m_AutoplayDone)
+					FinishAutoplay();
+			});
+		}
 		m_Screens = std::make_unique<ScreenHost>(*m_Director, m_State.Pack, *m_Build);
 		if (!Application::Get().IsHeadless())
 		{
@@ -88,6 +110,8 @@ namespace Dingo
 	{
 		if (m_Build)
 			m_Build->SetMode(BuildMode::Tools);
+		if (m_Bot)
+			m_Bot->Reset();
 		if (m_Villagers)
 			m_Villagers->InvalidatePlans();
 		if (m_AnimalSim)
@@ -185,6 +209,7 @@ namespace Dingo
 		m_StaticChecks.reset();
 		m_LifeChecks.reset();
 		m_UiChecks.reset();
+		m_Perf.reset();
 		ReleaseScenePieces();
 		m_World.reset();
 		if (Scene* active = m_SceneManager.GetActiveScene())
@@ -195,6 +220,7 @@ namespace Dingo
 		m_Ghost.reset();
 		m_Screens.reset();
 		m_Saves.reset();
+		m_Bot.reset();
 		m_Build.reset();
 		m_Sleep.reset();
 		m_Dialogue.reset();
@@ -226,11 +252,31 @@ namespace Dingo
 	{
 		m_Director->OnStage(SimStage::PlayerIntent, [this](ValleyDirector& director, const StepInfo& step)
 		{
-			if (m_Player)
-				m_Player->Step(ActiveIntent(), director.GetGrid(), m_Camera ? m_Camera->GetYaw() : 0.0f, step.Dt);
+			if (!m_Player)
+				return;
+			if (m_Bot)
+			{
+				PlayerIntent walk;
+				const glm::vec2 heading = m_Bot->GetHeading();
+				walk.Move = glm::vec2(heading.x, -heading.y);
+				m_Player->Step(walk, director.GetGrid(), 0.0f, step.Dt);
+				return;
+			}
+			m_Player->Step(ActiveIntent(), director.GetGrid(), m_Camera ? m_Camera->GetYaw() : 0.0f, step.Dt);
 		});
 		m_Director->OnStage(SimStage::ToolsAndPlacement, [this](ValleyDirector& director, const StepInfo&)
 		{
+			if (m_Bot)
+			{
+				m_Bot->Step(m_Screens && m_Screens->IsOpen());
+				if (m_Player)
+				{
+					const glm::vec2 feet = m_Bot->GetFeet();
+					m_Player->Teleport(glm::vec3(feet.x, m_Player->GetFeet().y, feet.y));
+					m_Player->SetYaw(m_Bot->GetYaw());
+				}
+				return;
+			}
 			if (!m_Player || !m_Build)
 				return;
 			m_Aim.Feet = glm::vec2(m_Player->GetFeet().x, m_Player->GetFeet().z);
@@ -257,7 +303,7 @@ namespace Dingo
 		m_Director->OnStage(SimStage::Sky, [this](ValleyDirector& director, const StepInfo& step)
 		{
 			if (m_Sky)
-				m_Sky->Update(step.Dt, director.GetCalendar().GetHours(), director.GetCalendar().GetWeather());
+				m_Sky->Update(GetLaunchOptions().Freeze ? 0.0f : step.Dt, director.GetCalendar().GetHours(), director.GetCalendar().GetWeather());
 		});
 		m_Director->OnStage(SimStage::VfxAudio, [this](ValleyDirector& director, const StepInfo& step)
 		{
@@ -521,7 +567,7 @@ namespace Dingo
 
 		m_UiChecks.reset();
 		m_ChecksDone = true;
-		DE_INFO("[Checks] {} passed, {} failed", m_Report.GetPassed(), m_Report.GetFailed());
+		m_Report.LogSummary();
 		if (Application::Get().IsHeadless())
 			Application::Get().Close();
 	}
@@ -545,29 +591,102 @@ namespace Dingo
 			UpdateMouseAim();
 		}
 
+		const bool headless = Application::Get().IsHeadless();
+		const bool days = options.Days > 0;
 		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
-		const int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
+		const float animationDt = options.Freeze ? 0.0f : step;
+		int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
+		if (days && !options.HasStepsPerFrame)
+			steps = headless ? DAY_TICKS : DAYS_STEPS_WINDOWED;
+		const float simSeconds = days ? SIM_STEP_SECONDS : step;
 		if (m_Saves && !(m_Screens && m_Screens->IsOpen(ScreenId::Title)))
-			m_Saves->AddPlayTime(step * static_cast<float>(steps));
-		for (int i = 0; i < steps; ++i)
+			m_Saves->AddPlayTime(simSeconds * static_cast<float>(steps));
+
+		PerfSample perf{};
+		const auto perfAdd = [&perf](PerfMetric metric, float value) { perf[static_cast<size_t>(metric)] += value; };
+		Timer timer;
+		for (int i = 0; i < steps && !m_AutoplayDone; ++i)
 		{
-			m_Director->Advance(step, SIM_MAX_STEPS_REAL_TIME);
-			m_SceneManager.OnUpdate(step);
+			timer.Reset();
+			if (days)
+				m_Director->Step();
+			else
+				m_Director->Advance(step, SIM_MAX_STEPS_REAL_TIME);
+			perfAdd(PerfMetric::Sim, timer.ElapsedMillis());
+			if (days && headless)
+				continue;
+			timer.Reset();
+			m_SceneManager.OnUpdate(animationDt);
+			perfAdd(PerfMetric::Scene, timer.ElapsedMillis());
 		}
+
+		timer.Reset();
 		if (m_World)
 			m_World->Sync();
 		if (m_VillagerWorld)
-			m_VillagerWorld->Sync(m_Villagers->GetPlaces(), step);
+			m_VillagerWorld->Sync(m_Villagers->GetPlaces(), animationDt);
 		if (m_AnimalWorld)
-			m_AnimalWorld->Sync(m_State.Animals, *m_AnimalSim, step);
+			m_AnimalWorld->Sync(m_State.Animals, *m_AnimalSim, animationDt);
+		perfAdd(PerfMetric::Sync, timer.ElapsedMillis());
 		PollUiSounds();
+		timer.Reset();
 		if (m_Ui)
 			m_Ui->Draw(deltaTime);
+		perfAdd(PerfMetric::Ui, timer.ElapsedMillis());
 		if (m_Ghost && m_Build)
 			m_Ghost->Update(*m_Build, m_Director->GetGrid());
 		if (m_Fade && m_Sleep)
 			m_Fade->Draw(m_Sleep->GetAlpha());
+		timer.Reset();
 		m_SceneManager.OnRender();
+		perfAdd(PerfMetric::Render, timer.ElapsedMillis());
+
+		if (options.Perf)
+		{
+			perfAdd(PerfMetric::Frame, deltaTime * 1000.0f);
+			if (!headless)
+				perfAdd(PerfMetric::DrawCalls, static_cast<float>(Application::Get().GetRenderer3D().GetStatistics().DrawCalls));
+			RecordPerf(perf);
+		}
+	}
+
+	void HearthvaleLayer::RecordPerf(const PerfSample& sample)
+	{
+		if (!m_Perf)
+		{
+			if (m_PerfReported)
+				return;
+			m_Perf = std::make_unique<PerfWindow>(PERF_WARMUP_FRAMES, PERF_WINDOW_FRAMES);
+		}
+		m_Perf->Add(sample);
+		if (!m_Perf->IsDone())
+			return;
+
+		DE_INFO("[PERF] {} frames after {} warm-up frames", m_Perf->GetCounted(), m_Perf->GetWarmup());
+		for (size_t i = 0; i < static_cast<size_t>(PerfMetric::Count); ++i)
+		{
+			const PerfMetric metric = static_cast<PerfMetric>(i);
+			if (metric == PerfMetric::DrawCalls)
+				DE_INFO("[PERF] {}: mean {:.0f} max {:.0f}", ToString(metric), m_Perf->Mean(metric), m_Perf->Max(metric));
+			else
+				DE_INFO("[PERF] {}: mean {:.3f} ms max {:.3f} ms", ToString(metric), m_Perf->Mean(metric), m_Perf->Max(metric));
+		}
+		if (!Application::Get().IsHeadless())
+		{
+			for (const GpuTimerStats& timer : Renderer::GetGpuTimers())
+				DE_INFO("[PERF] GPU {}: mean {:.3f} ms max {:.3f} ms over {} frames", timer.Name, timer.MeanMs, timer.MaxMs, timer.Samples);
+		}
+		m_Perf.reset();
+		m_PerfReported = true;
+		Application::Get().Close();
+	}
+
+	void HearthvaleLayer::FinishAutoplay()
+	{
+		m_AutoplayDone = true;
+		if (m_Bot)
+			DE_INFO("[Autoplay] {} days: coins {}, {}", m_DaysPlayed, m_State.Pack.GetCoins(), FormatAutoplayStats(m_Bot->GetStats()));
+		Application::Get().Close();
 	}
 
 }

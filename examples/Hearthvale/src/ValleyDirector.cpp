@@ -52,7 +52,7 @@ namespace Dingo
 	}
 
 	ValleyDirector::ValleyDirector(const DirectorConfig& config)
-		: m_Seed(config.Seed), m_Grid(VALLEY_SIZE, VALLEY_SIZE), m_Calendar(config.Seed), m_TimePaused(config.FreezeTime)
+		: m_Seed(config.Seed), m_Grid(VALLEY_SIZE, VALLEY_SIZE), m_Calendar(config.Seed), m_TimePaused(config.FreezeTime), m_Frozen(config.FreezeTime)
 	{
 		GenerateValley(m_Grid, m_Seed);
 		m_Calendar.Reset(config.StartDay, config.StartTick);
@@ -126,8 +126,11 @@ namespace Dingo
 		}
 		run(SimStage::Calendar);
 
-		run(SimStage::Villagers);
-		run(SimStage::Animals);
+		if (!m_Frozen)
+		{
+			run(SimStage::Villagers);
+			run(SimStage::Animals);
+		}
 		run(SimStage::Sky);
 		run(SimStage::VfxAudio);
 		run(SimStage::Camera);
