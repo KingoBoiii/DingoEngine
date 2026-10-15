@@ -358,6 +358,23 @@ namespace
 		Run(animator, CHECK_BLOCK_HIT_WATCH, held);
 		report.Check(finished && afterRaise == 1 && held.ParryBegin == 1,
 			std::format("holding the block ({}) and being hit on it ({}) opens no further parry window ({} in all)", Clips::BLOCKING, Clips::BLOCK_HIT, held.ParryBegin));
+
+		const std::optional<ClipRange> parry = FindRange(*raise, Events::PARRY);
+		auto raiseFor = [&](float seconds, bool& open)
+		{
+			Animator edge = MakeAnimator(skeleton, states, 0.0f);
+			edge.Play(AnimationState::Clip(raise).SetLoop(false), BLOCK_RAISE_FADE, BLOCK_LAYER);
+			edge.Update(seconds);
+			open = edge.IsEventActive(Events::PARRY);
+			return edge.GetTime(BLOCK_LAYER);
+		};
+		bool openAtStart = false;
+		bool openAtEnd = true;
+		const float startTime = raiseFor(CHECK_ANIMATOR_STEP, openAtStart);
+		const float endTime = raiseFor(parry ? parry->End : 0.0f, openAtEnd);
+		report.Check(parry && openAtStart && !IsOutsideWindow(parry, startTime) && !openAtEnd && IsOutsideWindow(parry, endTime),
+			std::format("a block counts as inside the parry window {} where the animator holds it open (t={:.3f}) and past it from its end (t={:.3f}), where the range has closed",
+				Describe(parry), startTime, endTime));
 	}
 
 	void CheckHitReaction(CheckReport& report, const Skeleton& skeleton, const LocomotionStates& states, const GameAssets& assets)
