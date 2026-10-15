@@ -186,6 +186,10 @@ $testApp = Join-Path $Bin 'Dingo-TestFramework/Dingo-TestFramework.exe'
 $testDir = Join-Path $Root 'test'
 $tests = Select-String -Path (Join-Path $testDir 'src/TestLayer.cpp') -Pattern '^\s*m_Tests\.push_back\(\{ "([^"]+)"' |
 	ForEach-Object { $_.Matches[0].Groups[1].Value }
+if (@($tests).Count -lt 20)
+{
+	throw "found $(@($tests).Count) test cases in test/src/TestLayer.cpp, expected at least 20"
+}
 
 foreach ($api in $Graphics)
 {
