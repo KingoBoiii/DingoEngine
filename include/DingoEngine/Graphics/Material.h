@@ -189,6 +189,14 @@ namespace Dingo
 		template<typename T>
 		void SetUniform(const T& data) { SetUniformData(&data, sizeof(T)); }
 
+		/// Copies `size` bytes to the start of the shader's push-constant block and zeroes the rest;
+		/// size 0 zeroes it all. A draw pushes the bytes as they are when it is recorded: at the
+		/// Renderer::Draw/DrawIndexed call, or at Renderer3D::EndScene for every mesh of that scene.
+		/// Logs an error, changes nothing and returns false when the shader declares no push-constant
+		/// block, when its block is DE_SkinDraw (the renderer's), or when size is larger than the block
+		/// (Shader::GetPushConstantBlockSize).
+		bool SetPushConstants(const void* data, uint32_t size);
+
 		/// The old per-draw skinning uniform block's name.
 		[[deprecated("the SkinData block is deprecated: declare Skinning.glsl's DE_SKIN_PALETTE blocks; removed in 2.0")]]
 		static constexpr const char* k_SkinDataBlockName = "SkinData";
@@ -275,8 +283,8 @@ namespace Dingo
 
 		// Pushed with each draw of this material to the shader's push-constant block (DE_SkinDraw);
 		// Renderer3D sets them just before the draw.
-		void SetDrawConstants(const glm::uvec4& constants) { m_DrawConstants = constants; }
-		const glm::uvec4& GetDrawConstants() const { return m_DrawConstants; }
+		void SetDrawConstants(const glm::uvec4& constants);
+		const uint8_t* GetPushConstantData() const { return m_PushConstants; }
 
 		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
 		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it.
@@ -335,7 +343,7 @@ namespace Dingo
 		GraphicsBuffer*      m_InstanceDrawBuffer = nullptr;
 		GraphicsBuffer*      m_SkinPaletteBuffer  = nullptr;
 		uint64_t             m_SkinPaletteBufferId = 0;
-		glm::uvec4           m_DrawConstants{ 0u };
+		uint8_t              m_PushConstants[Shader::k_MaxPushConstantSize] = {};
 
 		struct StorageBinding
 		{
