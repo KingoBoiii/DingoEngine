@@ -6,6 +6,7 @@
 
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
@@ -73,7 +74,7 @@ namespace Dingo
 
 			// The renderers RenderEntities3D drew with, which the animate pass asks what was culled.
 			std::vector<std::weak_ptr<const SkinnedVisibility>> SkinnedViews;
-			uint64_t SkinnedViewFrame = 0; // the frame of the last RenderEntities3D
+			SkinnedViewStamp SkinnedViewFrame; // the frame of the last RenderEntities3D that drew
 		};
 
 	}

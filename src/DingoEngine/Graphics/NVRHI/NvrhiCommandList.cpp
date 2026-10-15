@@ -92,6 +92,12 @@ namespace Dingo
 		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
 	}
 
+	void NvrhiCommandList::UploadKeptData(GraphicsBuffer* buffer)
+	{
+		NvrhiGraphicsBuffer* nvrhiBuffer = static_cast<NvrhiGraphicsBuffer*>(buffer);
+		UploadBuffer(buffer, nvrhiBuffer->m_Data, nvrhiBuffer->m_DataSize, nvrhiBuffer->m_DataOffset);
+	}
+
 	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading a texture.");

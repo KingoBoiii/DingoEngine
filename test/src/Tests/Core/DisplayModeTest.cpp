@@ -159,7 +159,13 @@ namespace Dingo
 				"SetSize while fullscreen keeps the window fullscreen and the size to restore to");
 		} });
 
-		m_Steps.push_back({ "SetFullscreen(false)", [] { Application::Get().GetWindow().SetFullscreen(false); },
+		m_Steps.push_back({ "SetFullscreen(false)", [this]
+		{
+			Window& window = Application::Get().GetWindow();
+			window.SetFullscreen(false);
+			Check(window.GetWindowedWidth() == m_RestoreSize.x && window.GetWindowedHeight() == m_RestoreSize.y,
+				std::format("SetFullscreen(false) reports the size set while fullscreen before the window manager's size event ({}x{})", window.GetWindowedWidth(), window.GetWindowedHeight()));
+		},
 			[this] { return m_RestoreSize; }, [this]
 		{
 			Check(!Application::Get().GetWindow().IsFullscreen(), "SetFullscreen(false) restores the size set while fullscreen");

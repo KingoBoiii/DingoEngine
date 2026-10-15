@@ -43,7 +43,7 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
 | `AddScript<T>(args...)` | Attach a behaviour (see below). An entity holds one script: a second `AddScript` destroys the first, with a warning. |
-| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed at the end of the update). |
+| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed after the scene's update pass, or its next `OnStop` or `Clear`). |
 | `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
 | `GetUUID()` / `GetName()` / `SetName(name)` (v1.0) | The entity's id / name; a null entity reads `UUID()` and `""`, and an empty name becomes `"Entity"`. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
@@ -300,9 +300,10 @@ culled against the camera and every shadow view by the box around its meshes, as
 and drawn into the shadows as its meshes would be. The picture is the one the same meshes draw
 without `Static` on the CPU, pixel for pixel; where they would have been instanced, within the
 instancing tolerance, since baked meshes are never instanced. The order differs: a cell draws
-before the material's other meshes, its own meshes by cell and then in the order they were baked,
-and the static materials join the scene's draw order after the moving meshes'. So two meshes meeting
-at exactly equal depth can resolve the other way.
+before the material's other meshes, its own meshes by cell, then by material and shadow setting,
+then by an internal id that reuses freed ones (so not necessarily the order the meshes were made
+`Static`), and the static materials join the scene's draw order after the moving meshes'. So two
+meshes meeting at exactly equal depth can resolve the other way.
 
 Change is allowed but costs a rebake of the cell the mesh is in: changing its mesh, colour,
 material, surface override or shadow setting (or hot-reloading its model) rebakes it quietly;
@@ -574,6 +575,24 @@ if (Physics3D* physics = GetScene().GetPhysics3D(); physics && body != k_Invalid
 
 `examples/DungeonCrawler3D/` is a worked dungeon-crawler prototype built entirely on this path.
 
+### Screen points and world points (v1.0)
+
+`Scene::ScreenPointToRay(screenPos, viewportSize)` turns a pixel (origin top-left, +Y down, as
+`Input::GetMousePosition()` reports it) into a world-space ray through the primary perspective
+camera, for picking. `Scene::WorldToScreenPoint(worldPos, viewportSize)` goes the other way, for a
+health bar or a name over a 3D entity: it returns the pixel the point projects to through the
+primary camera, or `std::nullopt` when the point is on or behind the camera plane, there is no
+camera, or the viewport is empty. A point in front of the camera but out of view projects outside
+`0..viewportSize`, so check the bounds if that matters. `PerspectiveCamera` has the same pair, and
+`Dingo::WorldToScreenPoint(worldPos, viewportSize, view, projection)` in `Core/Ray.h` takes the
+matrices directly.
+
+```cpp
+const glm::vec2 viewport = { (float)window.GetWidth(), (float)window.GetHeight() };
+if (auto pixel = scene->WorldToScreenPoint(enemy.GetWorldPosition() + glm::vec3(0, 2, 0), viewport))
+    DrawHealthBar(*pixel);
+```
+
 ### Custom materials (per-mesh shaders)
 
 By default meshes draw with Renderer3D's built-in lit material, which responds to the scene's
@@ -706,8 +725,9 @@ Such a material draws every mesh given it instanced, however few copies and even
 turned off, since its shader can't read the CPU batches (its copies culled from the camera may still
 cast through the CPU batches, which the shadow pass draws with its own shader). Past
 `Renderer3D::k_MaxInstancedDrawsPerFrame` instanced draws in a frame its meshes are skipped
-(`Statistics::DroppedInstancedMeshes`, warned once). A shader missing either block, or putting one
-on a binding the material's textures or samplers use (texture slot *i* binds at `2 + 2i`, sampler
+(`Statistics::DroppedInstancedMeshes`, warned once). The draws are booked before culling, so culled
+copies count too, and the camera never decides which meshes are skipped. A shader missing either
+block, or putting one on a binding the material's textures or samplers use (texture slot *i* binds at `2 + 2i`, sampler
 slot *i* at `3 + 2i`, so slot 4's texture or slot 3's sampler meet the default 10 and 9), draws
 nothing and casts no shadow (warned once), and so does a translucent material with `Instancing`,
 since the translucent pass draws no instances.

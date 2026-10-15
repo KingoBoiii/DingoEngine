@@ -97,6 +97,8 @@ Dingo::Application* Dingo::CreateApplication(ApplicationCommandLineArgs args)
 		.ImGui = {
 			.EnableDocking = true,
 			.EnableViewports = false,
+			// Every test draws inside an ImGui window, so ImGui wants the mouse over the game view.
+			.BlockGameInput = false,
 		},
 		.UpdateInBackground = true,
 	};

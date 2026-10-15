@@ -4,11 +4,18 @@
 // palette they were submitted with, for this frame and the one before. A scene's animation pass reads
 // it to leave the pose of a culled animator unevaluated (AnimatorComponent::CullingMode). Main thread
 // only. Shared, so a scene holding it weakly outlives a freed renderer safely.
+//
+// Keyed by address, against the ids-not-addresses rule, because no lookup here can return a wrong
+// object: a reused address makes a new animator count as seen for at most two frames (it animates),
+// and a palette reallocated between render and update counts as culled for one update, after
+// EnsureAnimator has already evaluated it.
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <cstdint>
-#include <unordered_set>
+#include <functional>
+#include <vector>
 
 namespace Dingo::Internal
 {
@@ -24,31 +31,59 @@ namespace Dingo::Internal
 				return;
 			slot.Frame = frame;
 			slot.Palettes.clear();
+			slot.Sorted = true;
 		}
 
 		void Record(uint64_t frame, const glm::mat4* palette)
 		{
-			m_Slots[frame & 1].Palettes.insert(palette);
+			Slot& slot = m_Slots[frame & 1];
+			slot.Sorted = slot.Sorted && (slot.Palettes.empty() || std::less<>()(slot.Palettes.back(), palette));
+			slot.Palettes.push_back(palette);
 		}
 
 		// False also when the renderer drew no scene in either frame.
 		bool WasDrawn(uint64_t frame, const glm::mat4* palette) const
 		{
-			for (const Slot& slot : m_Slots)
+			for (Slot& slot : m_Slots)
 			{
-				if ((slot.Frame == frame || slot.Frame + 1 == frame) && slot.Palettes.contains(palette))
+				if (slot.Frame != frame && slot.Frame + 1 != frame)
+					continue;
+				if (!slot.Sorted)
+				{
+					std::sort(slot.Palettes.begin(), slot.Palettes.end(), std::less<>());
+					slot.Sorted = true;
+				}
+				if (std::binary_search(slot.Palettes.begin(), slot.Palettes.end(), palette, std::less<>()))
 					return true;
 			}
 			return false;
 		}
 
 	private:
+		// A vector keeps its capacity across frames, so recording allocates nothing once warm.
 		struct Slot
 		{
 			uint64_t Frame = ~0ull;
-			std::unordered_set<const glm::mat4*> Palettes;
+			std::vector<const glm::mat4*> Palettes;
+			bool Sorted = true;
 		};
-		Slot m_Slots[2];
+		mutable Slot m_Slots[2];
+	};
+
+	// The frame a scene last rendered its skinned meshes in. A frame the renderer skipped records no
+	// palettes, so it must not count, or the next update would find every animator culled.
+	struct SkinnedViewStamp
+	{
+		uint64_t Frame = 0;
+
+		void Stamp(uint64_t frame, bool frameSkipped)
+		{
+			if (!frameSkipped)
+				Frame = frame;
+		}
+
+		// When false, the scene animates as if seen (stepped headless, behind a menu, or skipped).
+		bool RenderedLately(uint64_t frame) const { return Frame + 1 >= frame; }
 	};
 
 }

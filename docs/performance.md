@@ -109,7 +109,10 @@ if (view.Intersects(box))
 ```
 
 `Intersects` is false only when the box lies wholly behind one plane, so a box near a corner can
-pass while outside. That suits a cull, which can afford a few extra.
+pass while outside. That suits a cull, which can afford a few extra. The other way round, the
+transformed box holds the transformed mesh only up to float rounding, so a vertex can lie a few
+ulps outside it. Pad the box a little (about `1e-5` of its distance from the origin) when a mesh that
+touches the edge of the view must never be dropped; the renderer pads its own boxes that way.
 
 ## Static geometry
 
@@ -235,7 +238,12 @@ What decides whether your copies instance:
 - **Opaque, not skinned, not baked.** Translucent meshes are sorted mesh by mesh and so never
   instance. Skinned meshes and [`Static`](#static-geometry) ones don't either.
 - **A budget of draws.** `Renderer3D::k_MaxInstancedDrawsPerFrame` (512) instanced draws a frame,
-  lit and shadow together. Groups past it batch on the CPU instead.
+  lit and shadow together. Each mesh of a material books its draws before culling, in submission
+  order, culled copies included. A mesh books 1 draw, or 3 while the scene has shadows and it casts:
+  its lit draw, its shadow draw, and one for its copies the camera culls but that still cast. A
+  `ShadowsOnly` mesh books 1. Meshes past the budget batch on the CPU instead. So culling never
+  changes which meshes are instanced. Three things do: the order you submit in, the scenes this
+  renderer drew earlier in the frame, and whether the scene has shadows at all.
 
 Copies culled from the camera but still casting are instanced into the shadow atlas the same way,
 every copy once per shadow view in one draw.
@@ -338,7 +346,8 @@ An instance past the budget is dropped **whole**, with a warning
 *Instances* bar is full or something is dropped. A custom skinned shader with the older `SkinData`
 block keeps working, but through the old path: at most 256 instances a frame, an upload before each
 draw, and on Vulkan every upload ends the render pass. Instanced static draws still upload between
-draws, with the same cost. See
+draws, with the same cost. On Vulkan the `SkinData` buffer also takes about 16.5 MiB of
+host-visible memory at the default budget. See
 [Animation](animation.md#instances-and-the-per-frame-budget).
 
 ### Culled animators

@@ -18,6 +18,7 @@
 #include "DingoEngine/Graphics/Animator.h"
 #include "DingoEngine/Scene/AnimationDebug.h"
 #include "DingoEngine/Scene/SceneDebug.h"
+#include "DingoEngine/UI/DingoUI/DingoUIDebug.h"
 #include "DingoEngine/Version.h"
 #include "DingoEngine/BuildInfo.h"
 
@@ -1069,13 +1070,13 @@ namespace Dingo::Internal
 
 		// One sample a frame while this tab is drawn.
 		constexpr int k_History = 120;
-		constexpr int k_Rows = 5;
+		constexpr int k_Rows = 6;
 		static float s_History[k_Rows][k_History] = {};
 		static int s_Cursor = 0;
 		static int s_Count = 0;
 
 		const FrameTimings& frame = Application::Get().GetFrameTimings();
-		const float samples[k_Rows] = { frame.FrameMs, frame.WaitMs, frame.UpdateMs, frame.UIMs, Renderer::GetRenderThreadMilliseconds() };
+		const float samples[k_Rows] = { frame.FrameMs, frame.WaitMs, frame.UpdateMs, frame.DingoUIMs, frame.UIMs, Renderer::GetRenderThreadMilliseconds() };
 		for (int row = 0; row < k_Rows; ++row)
 			s_History[row][s_Cursor] = samples[row];
 		s_Cursor = (s_Cursor + 1) % k_History;
@@ -1109,8 +1110,8 @@ namespace Dingo::Internal
 		ImGui::Spacing();
 		ImGui::TextUnformatted("CPU  (last 120 frames while this tab is open)");
 		ImGui::Separator();
-		static constexpr const char* s_RowNames[k_Rows] = { "Frame", "Wait for render thread", "Update", "UI", "Render thread (execute + present)" };
-		static constexpr int s_RowIndent[k_Rows] = { 0, 1, 1, 1, 0 };
+		static constexpr const char* s_RowNames[k_Rows] = { "Frame", "Wait for render thread", "Update", "Game UI", "ImGui", "Render thread (execute + present)" };
+		static constexpr int s_RowIndent[k_Rows] = { 0, 1, 1, 1, 1, 0 };
 		timingTable("##cputimes", "Main thread", [&]
 		{
 			for (int row = 0; row < k_Rows; ++row)
@@ -1411,6 +1412,185 @@ namespace Dingo::Internal
 		}
 	}
 
+	void DingoUISection()
+	{
+		namespace DD = Internal::DingoUIDebug;
+
+		static DD::Snapshot s_Snapshot;
+		static bool s_ShowRects = false;
+		static bool s_ShowBlocking = false;
+		static bool s_ShowFocus = false;
+		static bool s_ShowIds = false;
+		static bool s_ShowTree = true;
+
+		const bool detail = s_ShowRects || s_ShowBlocking || s_ShowFocus || s_ShowTree;
+		if (!DD::Collect(s_Snapshot, detail))
+		{
+			ImGui::TextDisabled("DingoUI is off (headless, or DingoUIParams::Enabled is false).");
+			return;
+		}
+
+		const DD::Snapshot& snapshot = s_Snapshot;
+		const DD::Stats& stats = snapshot.Frame;
+
+		ImGui::Text("Frame %llu, target %.0f x %.0f", static_cast<unsigned long long>(stats.Frame), snapshot.TargetSize.x, snapshot.TargetSize.y);
+		ImGui::Text("Roots %u, elements %u, widgets %u", stats.Roots, stats.Elements, stats.Widgets);
+		ImGui::Text("Draw calls %u, quads %u (culled %u), vertices %u", stats.DrawCalls, stats.Quads, stats.CulledQuads, stats.Vertices);
+		ImGui::Text("Vertex cache: %s, uploads %u, upload bytes %llu", stats.CacheHits ? "hit" : (stats.Uploads ? "rebuilt" : "none"), stats.Uploads, static_cast<unsigned long long>(stats.UploadBytes));
+		ImGui::Text("State map %u, tweens %u, transition roots %u, exiting roots %u, id collisions %u", stats.StateMapSize, stats.TweenCount, stats.TransitionRoots, stats.ExitingRoots, stats.IdCollisions);
+		ImGui::Text("CPU ms: begin %.3f, layout %.3f, emit %.3f, hash %.3f, build %.3f, upload %.3f, draw %.3f", stats.BeginMs, stats.LayoutMs, stats.EmitMs, stats.HashMs, stats.BuildMs, stats.UploadMs, stats.DrawMs);
+		ImGui::Text("Pointer over UI: %s, capturing input: %s, modal: %s", snapshot.PointerOverUI ? "yes" : "no", snapshot.CapturingInput ? "yes" : "no", snapshot.Modal ? "yes" : "no");
+		ImGui::Text("Hover 0x%llx, active 0x%llx, focus 0x%llx%s", static_cast<unsigned long long>(snapshot.HoverId), static_cast<unsigned long long>(snapshot.ActiveId),
+			static_cast<unsigned long long>(snapshot.FocusId), snapshot.FocusId && !snapshot.FocusVisible ? " (hidden)" : "");
+
+		ImGui::Separator();
+		ImGui::Checkbox("Show rects", &s_ShowRects);
+		ImGui::SameLine();
+		ImGui::Checkbox("Show hit-test/blocking rects", &s_ShowBlocking);
+		ImGui::SameLine();
+		ImGui::Checkbox("Show focus", &s_ShowFocus);
+		ImGui::Checkbox("Ids on overlay", &s_ShowIds);
+		ImGui::SameLine();
+		ImGui::Checkbox("Element tree", &s_ShowTree);
+
+		ImGui::Separator();
+		if (ImGui::CollapsingHeader(std::format("Roots ({})", snapshot.Roots.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			if (ImGui::BeginTable("##DingoUIRoots", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 160.0f)))
+			{
+				ImGui::TableSetupScrollFreeze(0, 1);
+				ImGui::TableSetupColumn("Name");
+				ImGui::TableSetupColumn("Layer");
+				ImGui::TableSetupColumn("Space");
+				ImGui::TableSetupColumn("Blocks");
+				ImGui::TableSetupColumn("Modal");
+				ImGui::TableSetupColumn("Nav");
+				ImGui::TableSetupColumn("Transition");
+				ImGui::TableHeadersRow();
+				ImGuiListClipper clipper;
+				clipper.Begin(static_cast<int>(snapshot.Roots.size()));
+				while (clipper.Step())
+				{
+					for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+					{
+						const DD::RootRow& root = snapshot.Roots[static_cast<size_t>(row)];
+						ImGui::TableNextRow();
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted(root.Name.c_str());
+						ImGui::TableNextColumn();
+						ImGui::Text("%d", root.Layer);
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted(root.World ? "world" : "screen");
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted(root.BlocksInput ? "yes" : "no");
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted(root.Modal ? "yes" : "no");
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted(root.Navigable ? "yes" : "no");
+						ImGui::TableNextColumn();
+						if (!root.HasTransition)
+							ImGui::TextDisabled("-");
+						else
+							ImGui::Text("%s %.0f%%", root.TransitionProgress >= 1.0f ? "shown" : "in", root.TransitionProgress * 100.0f);
+					}
+				}
+				ImGui::EndTable();
+			}
+		}
+
+		const auto kindName = [](DD::ElementKind kind)
+		{
+			switch (kind)
+			{
+			case DD::ElementKind::Root: return "Root";
+			case DD::ElementKind::Box: return "Box";
+			case DD::ElementKind::Text: return "Text";
+			case DD::ElementKind::Image: return "Image";
+			}
+			return "?";
+		};
+
+		if (s_ShowTree && ImGui::CollapsingHeader(std::format("Elements ({}), last frame", snapshot.Elements.size()).c_str()))
+		{
+			if (ImGui::BeginChild("##DingoUITree", ImVec2(0.0f, 240.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar))
+			{
+				ImGuiListClipper clipper;
+				clipper.Begin(static_cast<int>(snapshot.Elements.size()));
+				while (clipper.Step())
+				{
+					for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+					{
+						const DD::ElementRow& element = snapshot.Elements[static_cast<size_t>(row)];
+						ImGui::Indent(static_cast<float>(element.Depth) * 12.0f);
+						std::string text = std::format("{} 0x{:x}", kindName(element.Kind), element.Id);
+						if (!element.Label.empty())
+							text += std::format(" \"{}\"", element.Label.size() > 40 ? element.Label.substr(0, 40) : element.Label);
+						text += std::format("  [{:.0f},{:.0f} - {:.0f},{:.0f}]", element.Min.x, element.Min.y, element.Max.x, element.Max.y);
+						if (element.Interactive) text += " interactive";
+						if (element.Scroll) text += " scroll";
+						if (element.Focusable) text += " focusable";
+						ImVec4 color = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+						if (element.Active) color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+						else if (element.Hovered) color = ImVec4(1.0f, 0.9f, 0.3f, 1.0f);
+						else if (element.Focused) color = ImVec4(0.4f, 0.9f, 1.0f, 1.0f);
+						ImGui::TextColored(color, "%s", text.c_str());
+						ImGui::Unindent(static_cast<float>(element.Depth) * 12.0f);
+					}
+				}
+			}
+			ImGui::EndChild();
+		}
+
+		if (!s_ShowRects && !s_ShowBlocking && !s_ShowFocus)
+			return;
+
+		ImDrawList* draw = ImGui::GetForegroundDrawList();
+		const ImVec2 base = ImGui::GetMainViewport()->Pos;
+		const auto map = [&](const glm::vec2& p)
+		{
+			return ImVec2(base.x + snapshot.Origin.x + p.x * snapshot.TargetToWindow.x, base.y + snapshot.Origin.y + p.y * snapshot.TargetToWindow.y);
+		};
+
+		if (s_ShowBlocking)
+		{
+			for (const auto& rect : snapshot.BlockingRects)
+				draw->AddRectFilled(map(rect.first), map(rect.second), IM_COL32(255, 80, 80, 40));
+		}
+
+		if (s_ShowRects)
+		{
+			for (const DD::ElementRow& element : snapshot.Elements)
+			{
+				ImU32 color = IM_COL32(120, 200, 120, 150);
+				float thickness = 1.0f;
+				if (element.Kind == DD::ElementKind::Root) color = IM_COL32(255, 160, 40, 220);
+				else if (element.Interactive || element.Scroll) color = IM_COL32(80, 160, 255, 200);
+				if (element.Active) { color = IM_COL32(255, 70, 70, 255); thickness = 2.0f; }
+				else if (element.Hovered) { color = IM_COL32(255, 230, 70, 255); thickness = 2.0f; }
+				draw->AddRect(map(element.Min), map(element.Max), color, 0.0f, 0, thickness);
+				if (s_ShowIds && (element.Interactive || element.Scroll || element.Kind == DD::ElementKind::Root))
+				{
+					const std::string id = std::format("{:x}", element.Id & 0xffffff);
+					draw->AddText(map(element.Min), color, id.c_str());
+				}
+			}
+		}
+
+		if (s_ShowFocus && snapshot.FocusId != 0)
+		{
+			for (const DD::ElementRow& element : snapshot.Elements)
+			{
+				if (!element.Focused)
+					continue;
+				const ImU32 color = snapshot.FocusVisible ? IM_COL32(60, 230, 255, 255) : IM_COL32(60, 230, 255, 110);
+				draw->AddRect(map(element.Min - glm::vec2(2.0f)), map(element.Max + glm::vec2(2.0f)), color, 0.0f, 0, 3.0f);
+				const std::string text = std::format("focus 0x{:x}{}", element.Id, snapshot.FocusVisible ? "" : " (hidden)");
+				draw->AddText(map(element.Min - glm::vec2(0.0f, 16.0f)), color, text.c_str());
+				break;
+			}
+		}
+	}
+
 	void SceneStatsWindow(bool* open)
 	{
 		if (!ImGui::Begin("Scene", open))
@@ -1512,6 +1692,8 @@ namespace Dingo::Internal
 			tab("Profiler", DebugTab::Profiler, [] { ProfilerSection(); });
 
 			tab("Scene", DebugTab::Scene, [] { SceneSection(); });
+
+			tab("DingoUI", DebugTab::DingoUI, [] { DingoUISection(); });
 
 			ImGui::EndTabBar();
 		}

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <thread>
 
@@ -31,6 +32,12 @@ namespace Dingo
 		{
 			const std::u8string text = path.u8string();
 			return std::string(text.begin(), text.end());
+		}
+
+		// A double-to-float conversion outside float's range is undefined.
+		bool FitsFloat(double value)
+		{
+			return std::isfinite(value) && std::abs(value) <= static_cast<double>((std::numeric_limits<float>::max)());
 		}
 
 		std::filesystem::path WithSuffix(const std::filesystem::path& path, const char* suffix)
@@ -237,6 +244,27 @@ namespace Dingo
 			}
 			return SaveData::FromJson(text, &error);
 		}
+
+		// Windows opens the device for these base names whatever the extension, so `nul.json` can't be saved.
+		bool IsWindowsDeviceName(std::string_view name)
+		{
+			std::string lower(name);
+			std::transform(lower.begin(), lower.end(), lower.begin(), [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; });
+			if (lower == "con" || lower == "prn" || lower == "aux" || lower == "nul")
+				return true;
+			return lower.size() == 4 && (lower.starts_with("com") || lower.starts_with("lpt")) && lower[3] >= '0' && lower[3] <= '9';
+		}
+
+		// With <path> missing, a .tmp that parses is a write stopped between its renames.
+		bool IsRecoverableTemporary(const std::filesystem::path& path)
+		{
+			std::error_code errorCode;
+			if (std::filesystem::exists(path, errorCode))
+				return false;
+			const std::filesystem::path temporary = WithSuffix(path, ".tmp");
+			std::string ignored;
+			return std::filesystem::exists(temporary, errorCode) && ReadOne(temporary, ignored).has_value();
+		}
 	}
 
 	SaveData::SaveData(const glm::vec2& value) : m_Type(SaveValueType::Array) { for (int i = 0; i < 2; i++) m_Items.push_back(std::make_unique<SaveData>(value[i])); }
@@ -329,6 +357,14 @@ namespace Dingo
 		return fallback;
 	}
 
+	float SaveData::AsFloat(float fallback) const
+	{
+		if (!IsNumber())
+			return fallback;
+		const double value = AsDouble();
+		return FitsFloat(value) ? static_cast<float>(value) : fallback;
+	}
+
 	std::string SaveData::AsString(std::string_view fallback) const
 	{
 		return m_Type == SaveValueType::String ? m_String : std::string(fallback);
@@ -340,9 +376,9 @@ namespace Dingo
 			return false;
 		for (size_t i = 0; i < count; i++)
 		{
-			if (!m_Items[i]->IsNumber())
+			if (!m_Items[i]->IsNumber() || !FitsFloat(m_Items[i]->AsDouble()))
 				return false;
-			out[i] = m_Items[i]->AsFloat();
+			out[i] = static_cast<float>(m_Items[i]->AsDouble());
 		}
 		return true;
 	}
@@ -365,18 +401,29 @@ namespace Dingo
 		return ReadComponents(&value.x, 4) ? value : fallback;
 	}
 
+	bool SaveData::ReadIntComponents(int* out, size_t count) const
+	{
+		if (m_Type != SaveValueType::Array || m_Items.size() < count)
+			return false;
+		for (size_t i = 0; i < count; i++)
+		{
+			if (!m_Items[i]->IsInt() || !std::in_range<int>(m_Items[i]->AsInt()))
+				return false;
+			out[i] = static_cast<int>(m_Items[i]->AsInt());
+		}
+		return true;
+	}
+
 	glm::ivec2 SaveData::AsIVec2(const glm::ivec2& fallback) const
 	{
-		if (m_Type != SaveValueType::Array || m_Items.size() < 2 || !m_Items[0]->IsInt() || !m_Items[1]->IsInt())
-			return fallback;
-		return glm::ivec2(static_cast<int>(m_Items[0]->AsInt()), static_cast<int>(m_Items[1]->AsInt()));
+		glm::ivec2 value;
+		return ReadIntComponents(&value.x, 2) ? value : fallback;
 	}
 
 	glm::ivec3 SaveData::AsIVec3(const glm::ivec3& fallback) const
 	{
-		if (m_Type != SaveValueType::Array || m_Items.size() < 3 || !m_Items[0]->IsInt() || !m_Items[1]->IsInt() || !m_Items[2]->IsInt())
-			return fallback;
-		return glm::ivec3(static_cast<int>(m_Items[0]->AsInt()), static_cast<int>(m_Items[1]->AsInt()), static_cast<int>(m_Items[2]->AsInt()));
+		glm::ivec3 value;
+		return ReadIntComponents(&value.x, 3) ? value : fallback;
 	}
 
 	glm::quat SaveData::AsQuat(const glm::quat& fallback) const
@@ -560,6 +607,16 @@ namespace Dingo
 		}
 
 		const std::filesystem::path temporary = WithSuffix(path, ".tmp");
+		// The recovered .tmp is the generation ReadFile returns: promoted, it rotates to .bak below; left
+		// in place, writing would destroy it, so the write waits for a later try.
+		if (IsRecoverableTemporary(path) && !MoveOver(temporary, path, error))
+		{
+			DE_CORE_ERROR("SaveData: cannot recover '{}', so '{}' isn't written: {}", DisplayPath(temporary), DisplayPath(path), error);
+			return false;
+		}
+
+		std::error_code errorCode;
+
 		if (!WriteDurably(temporary, text, error))
 		{
 			DE_CORE_ERROR("SaveData: cannot write '{}': {}", DisplayPath(temporary), error);
@@ -568,7 +625,6 @@ namespace Dingo
 			return false;
 		}
 
-		std::error_code errorCode;
 		if (std::filesystem::exists(path, errorCode) && !MoveOver(path, WithSuffix(path, ".bak"), error))
 		{
 			DE_CORE_ERROR("SaveData: {}", error);
@@ -646,10 +702,11 @@ namespace Dingo
 	{
 		if (slot.empty() || slot.size() > k_MaxSlotNameLength)
 			return false;
-		return std::all_of(slot.begin(), slot.end(), [](char c)
+		const bool validCharacters = std::all_of(slot.begin(), slot.end(), [](char c)
 		{
 			return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 		});
+		return validCharacters && !IsWindowsDeviceName(slot);
 	}
 
 	std::filesystem::path SaveSlots::GetPath(std::string_view slot)
@@ -661,7 +718,7 @@ namespace Dingo
 	{
 		if (!IsValidName(slot))
 		{
-			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-').", slot);
+			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-', not a Windows device name).", slot);
 			return false;
 		}
 		return data.WriteFile(GetPath(slot));
@@ -671,7 +728,7 @@ namespace Dingo
 	{
 		if (!IsValidName(slot))
 		{
-			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-').", slot);
+			DE_CORE_ERROR("SaveSlots: '{}' is not a valid slot name (1 to 64 of A-Z, a-z, 0-9, '_', '-', not a Windows device name).", slot);
 			if (error)
 				*error = "invalid slot name";
 			return std::nullopt;
@@ -685,7 +742,7 @@ namespace Dingo
 			return false;
 		std::error_code errorCode;
 		const std::filesystem::path path = GetPath(slot);
-		return std::filesystem::exists(path, errorCode) || std::filesystem::exists(WithSuffix(path, ".bak"), errorCode);
+		return std::filesystem::exists(path, errorCode) || std::filesystem::exists(WithSuffix(path, ".bak"), errorCode) || IsRecoverableTemporary(path);
 	}
 
 	bool SaveSlots::Delete(std::string_view slot)
@@ -735,10 +792,14 @@ namespace Dingo
 				name.remove_suffix(9);
 				isBackup = true;
 			}
+			else if (name.ends_with(u8".json.tmp"))
+				name.remove_suffix(9);
 			else
 				continue;
 			const std::string slot(name.begin(), name.end());
 			if (!IsValidName(slot))
+				continue;
+			if (fileName.ends_with(u8".tmp") && !IsRecoverableTemporary(GetPath(slot)))
 				continue;
 
 			const std::filesystem::file_time_type time = entry.last_write_time(entryError);

@@ -57,7 +57,12 @@ window or GPU: see [Headless](#headless).
 
 The log goes to `Dingo.log` in the game's per-user folder, `GetUserDataDir(Name)/logs`:
 `%LOCALAPPDATA%\<Name>\logs` on Windows and `~/.local/share/<Name>/logs` (or under
-`$XDG_DATA_HOME`) on Linux. A game installed under Program Files can't write beside itself,
+`$XDG_DATA_HOME`) on Linux. The folder is `Name` made into one Windows can create, on every
+platform: control characters, a backslash, a double quote and `<>:/|?*` become `_`, trailing
+dots and spaces go, and a device name such as `CON` or `com1.save` gets a leading `_`. So
+`"Hearthvale: The Hollow"` writes to `Hearthvale_ The Hollow`. A folder an earlier version
+made under the unchanged name (`Studio/Game` nested, or a `:` on Linux) is still used while the
+new one doesn't exist. A game installed under Program Files can't write beside itself,
 and a player's bug report needs last session's log, so each run keeps the four before it as
 `Dingo.1.log` (the last run) to `Dingo.4.log`. A second instance running at the same time
 writes `Dingo-<pid>.log` instead of moving a log that is still open (the newest four of those
@@ -237,7 +242,8 @@ Once running, each frame the `Application`:
 2. Polls window events (which fan out through `OnEvent`).
 3. Begins the frame: waits for the render thread to finish the last one and opens the frame's
    command list (engine-internal; `Renderer::IsFrameSkipped()` says when there is nothing to draw into).
-4. Calls `OnUpdate(deltaTime)` on every layer, bottom to top.
+4. Calls `OnUpdate(deltaTime)` on every layer, bottom to top, between the start and the end of
+   the game UI's frame (DingoUI, not with `GraphicsAPI::Headless`).
 5. If ImGui is enabled, calls `OnImGuiRender()` on every layer.
 6. Ends the frame: hands the command list to the render thread, which submits and presents it.
 
@@ -413,6 +419,36 @@ void OnUpdate(float dt) override
   there, or the pause menu comes back with a locked cursor.
 - The debug window's **F5** Input tab shows the current mode, focus and raw-motion
   state. The test app's **Cursor Test** (`--test=Cursor`) lets you try all three.
+
+### Input and the UI (v1.0)
+
+The debug UI and the game UI take the presses meant for them, so a click on a button doesn't also
+fire the gun.
+
+- **ImGui wins.** While an ImGui window holds the mouse (the pointer is over it, or a widget is
+  being dragged), a mouse press or scroll is marked `Handled` before it reaches your layers, and
+  the button reads as up to every `Input` query until it is released, the release frame included.
+  The keyboard is held only while a widget is active (a text field being typed into) or a modal is
+  open, not because a window has focus, so an always-visible debug panel doesn't eat your
+  controls. Presses that started before ImGui took the device stay yours, releases always reach
+  the game, and the F3–F9 debug keys answer either way. ImGui reports this a frame late, so a
+  press can reach the game on the frame the pointer first enters a window.
+- **`ImGuiParams::BlockGameInput`** (default `true`) turns this off when `false`: for a tool whose
+  game view is itself an ImGui window, where ImGui always holds the mouse.
+- **DingoUI** (`ApplicationParams::DingoUI`, a `DingoUIParams`; `Enabled` by default) sits under
+  ImGui and over the overlays you push in the constructor or `OnInitialize`: a press or scroll over
+  one of its blocking panels is marked `Handled`. Both engine layers are pushed at the end of
+  start-up, so an overlay you push later (from `OnUpdate`, say) sits above them and sees a press
+  first; the polled `Input` queries are protected either way. `DingoUI::IsPointerOverUI()` and `DingoUI::IsCapturingInput()` say whether it has the
+  pointer; both are `false` headless or with `Enabled = false`.
+
+```cpp
+ApplicationParams params{
+    .EnableImGui = true,
+    .ImGui = { .BlockGameInput = false },   // the game view is an ImGui window
+    .DingoUI = { .Enabled = true },
+};
+```
 
 ### Gamepads (v0.5.1)
 

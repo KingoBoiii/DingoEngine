@@ -35,6 +35,7 @@ namespace
 	}
 
 	constexpr uint32_t k_StaticBoxCount = 24;
+	constexpr uint32_t k_BudgetQuadCount = Dingo::Renderer3D::k_MaxInstancedDrawsPerFrame + 8;
 	constexpr uint32_t k_StaticCasterCount = 2;
 	constexpr uint32_t k_StaticMeshCount = k_StaticBoxCount + k_StaticCasterCount;
 	constexpr uint32_t k_MinShadowPixels = 100;
@@ -190,6 +191,8 @@ namespace Dingo
 			skinVertices.push_back({ vertex.Position, vertex.Normal, vertex.TexCoord, glm::u16vec4(0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f) });
 		m_Quad = Mesh::Create(vertices, indices);
 		m_SkinnedQuad = Mesh::CreateSkinned(vertices, skinVertices, indices);
+		for (uint32_t i = 0; i < k_BudgetQuadCount; ++i)
+			m_BudgetQuads.push_back(Mesh::Create(vertices, indices));
 
 		// The front and back of a unit box: a quad facing +z at z = 0.5 listed before one facing -z at
 		// z = -0.5, both wound counter-clockwise seen from outside.
@@ -209,6 +212,7 @@ namespace Dingo
 			closedSkinVertices.push_back({ vertex.Position, vertex.Normal, vertex.TexCoord, glm::u16vec4(0), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f) });
 		m_ClosedQuads = Mesh::Create(closedVertices, closedIndices);
 		m_SkinnedClosedQuads = Mesh::CreateSkinned(closedVertices, closedSkinVertices, closedIndices);
+		m_IndicesOnly = Mesh::Create({}, { 0, 1, 2 });
 		m_Palette.assign(1, glm::mat4(1.0f));
 
 		m_Alive = std::make_shared<int>(0);
@@ -323,6 +327,17 @@ namespace Dingo
 
 		statsStep([this](Renderer3D& renderer)
 		{
+			renderer.SubmitMesh(m_IndicesOnly, WallAt(-6.0f), k_HalfGreen, m_TranslucentA);
+			renderer.SubmitMesh(m_Quad, WallAt(-9.0f), k_HalfGreen, m_TranslucentA);
+			renderer.SubmitMesh(m_IndicesOnly, WallAt(-12.0f), glm::vec4(1.0f));
+		}, [this](const Renderer3D::Statistics& stats)
+		{
+			Check(stats.TranslucentMeshes == 1 && stats.TranslucentDraws == 1 && stats.DrawCalls == 1 && stats.SubmittedMeshes == 1,
+				std::format("a mesh with indices but no vertices is skipped, translucent or not ({})", Counts(stats)));
+		});
+
+		statsStep([this](Renderer3D& renderer)
+		{
 			renderer.SubmitMesh(m_Quad, WallAt(-9.0f), k_HalfGreen, m_TranslucentA, ShadowCasting::ShadowsOnly);
 		}, [this](const Renderer3D::Statistics& stats)
 		{
@@ -352,6 +367,7 @@ namespace Dingo
 
 		probeStep("two translucent meshes submitted near first blend far to near", k_GreenOverRed, CheckViewProjection(), [this](Renderer3D& renderer)
 		{
+			renderer.SubmitMesh(m_IndicesOnly, WallAt(-8.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitMesh(m_Quad, WallAt(-10.0f), k_HalfGreen, m_TranslucentA);
 			renderer.SubmitMesh(m_Quad, WallAt(-12.0f), k_HalfRed, m_TranslucentA);
 		});
@@ -617,6 +633,67 @@ namespace Dingo
 			ReadCheck(first, glm::vec3(0.0f, 0.0f, 0.5f), "a scene keeps its instances when a later scene of the frame outgrows the record buffer");
 			ReadCheck(many, glm::vec3(0.5f, 0.0f, 0.0f), "a scene of 1100 instances keeps its own when a later scene of the frame rewrites the records");
 			ReadCheck(last, glm::vec3(0.0f, 0.5f, 0.0f), "a scene after them reads its own instances");
+		});
+
+		// Distinct meshes behind the camera fill the budget before culling drops them, so the boxes in
+		// view after them get none of it whether culling is on or off.
+		auto pastBudget = [this](uint32_t quads, Material* material, bool cast)
+		{
+			return [this, quads, material, cast](Renderer3D& renderer)
+			{
+				if (cast)
+				{
+					DirectionalLight light;
+					light.Direction = glm::normalize(glm::vec3(0.3f, -1.0f, -0.4f));
+					light.CastShadows = true;
+					renderer.SubmitLight(light);
+				}
+				for (uint32_t q = 0; q < quads; ++q)
+				{
+					for (uint32_t i = 0; i < 8; ++i)
+						renderer.SubmitMesh(m_BudgetQuads[q], glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, 10.0f }), glm::vec4(1.0f), material);
+				}
+				for (uint32_t i = 0; i < 8; ++i)
+					renderer.SubmitMesh(renderer.GetBoxMesh(), glm::translate(glm::mat4(1.0f), { 0.0f, 0.0f, -30.0f - 0.05f * static_cast<float>(i) }), glm::vec4(1.0f), material);
+			};
+		};
+		auto culledAndNot = [this](std::function<void(Renderer3D&)> submit, std::function<void(const Renderer3D::Statistics&, bool)> check)
+		{
+			for (const bool culling : { true, false })
+			{
+				m_CheckSteps.push_back([this, submit, check, culling]
+				{
+					m_CheckRenderer->SetCullingEnabled(culling);
+					const Renderer3D::Statistics stats = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), submit);
+					m_CheckRenderer->SetCullingEnabled(true);
+					check(stats, culling);
+				});
+			}
+		};
+
+		const uint32_t budget = Renderer3D::k_MaxInstancedDrawsPerFrame;
+		culledAndNot(pastBudget(k_BudgetQuadCount, nullptr, false), [this, budget](const Renderer3D::Statistics& stats, bool culling)
+		{
+			const uint32_t instanced = culling ? 0 : budget * 8;
+			const uint32_t batched = 8 * 24 + (culling ? 0 : (k_BudgetQuadCount - budget) * 8 * 4);
+			Check(stats.InstancedMeshes == instanced && stats.VertexCount == batched,
+				std::format("past the instanced budget, culled copies keep their place in it, so the boxes in view after them batch on the CPU (culling {}: {} instanced, {} vertices batched; expected {} and {})",
+					culling ? "on" : "off", stats.InstancedMeshes, stats.VertexCount, instanced, batched));
+		});
+		culledAndNot(pastBudget(k_BudgetQuadCount, m_InstancedMaterial, false), [this, budget](const Renderer3D::Statistics& stats, bool culling)
+		{
+			const uint32_t dropped = 8 + (culling ? 0 : (k_BudgetQuadCount - budget) * 8);
+			Check(stats.DroppedInstancedMeshes == dropped && stats.InstancedMeshes == (culling ? 0 : budget * 8),
+				std::format("past the instanced budget, a material with Instancing skips the boxes in view after culled copies too (culling {}: {} dropped, expected {}; {} instanced)",
+					culling ? "on" : "off", stats.DroppedInstancedMeshes, dropped, stats.InstancedMeshes));
+		});
+		// A caster books three draws: lit, shadow, and the shadow-only group its culled copies may join.
+		const uint32_t casters = budget / 3;
+		culledAndNot(pastBudget(casters, nullptr, true), [this, casters](const Renderer3D::Statistics& stats, bool culling)
+		{
+			Check(stats.VertexCount == 8 * 24 && stats.InstancedMeshes <= casters * 8 && (culling || (stats.InstancedMeshes == casters * 8 && stats.InstancedShadowDraws > 0)),
+				std::format("{} casting meshes take the budget a caster needs, so the casting boxes after them batch on the CPU (culling {}: {} vertices batched, {} instanced, {} instanced shadow draws)",
+					casters, culling ? "on" : "off", stats.VertexCount, stats.InstancedMeshes, stats.InstancedShadowDraws));
 		});
 	}
 
@@ -969,10 +1046,15 @@ namespace Dingo
 		delete m_SkinnedQuad;
 		delete m_ClosedQuads;
 		delete m_SkinnedClosedQuads;
+		delete m_IndicesOnly;
+		for (Mesh* quad : m_BudgetQuads)
+			delete quad;
+		m_BudgetQuads.clear();
 		m_Quad = nullptr;
 		m_SkinnedQuad = nullptr;
 		m_ClosedQuads = nullptr;
 		m_SkinnedClosedQuads = nullptr;
+		m_IndicesOnly = nullptr;
 
 		if (m_CheckRenderer)
 		{

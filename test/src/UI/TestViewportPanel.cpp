@@ -16,6 +16,9 @@ namespace Dingo
 		m_ViewportSize = glm::vec2(viewport.x, viewport.y);
 
 		ImGui::Image(texture->GetTextureHandle(), viewport);
+		const ImVec2 origin = ImGui::GetItemRectMin();
+		s_ImageOrigin = glm::vec2(origin.x, origin.y);
+		s_ImageHovered = ImGui::IsItemHovered();
 
 		ImGui::End();
 

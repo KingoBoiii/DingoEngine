@@ -29,9 +29,12 @@ for (const Item& item : inventory)
 
 `glm::vec2/3/4`, `ivec2/3` and `quat` are written as arrays of numbers (a quaternion as x, y, z,
 w). Reading never throws: each `As*` takes a fallback for a value of another type, and `Get` reads
-a member by key with a fallback for a missing one:
+a member by key with a fallback for a missing one. Read through a const reference, as below: the
+non-const `operator[]` creates every member it names and turns a value of another type into an empty
+object, so reading a loaded save that way and saving it again rewrites the file.
 
 ```cpp
+const SaveData& save = *loaded;   // from ReadFile or SaveSlots::Read
 const int level = save.Get("level", 1);
 const glm::vec3 position = save["player"]["position"].AsVec3();
 const std::string name = save["player"].Get("name", std::string("Nobody"));
@@ -41,6 +44,9 @@ for (size_t i = 0; i < save["inventory"].Size(); i++)
 ```
 
 A number reads as either kind: an integer as a float, and a float as an integer when it is whole.
+A float that isn't finite or is beyond `float`'s range (`1e400` in a file reads as infinity) gives
+the fallback in `AsFloat`, `Get<float>` and the vector and quaternion reads, and so does an `ivec`
+item outside `int`'s range.
 `Get<T>` with an integer type gives the fallback for a value outside `T`'s range, except a 64-bit
 unsigned `T`: a `uint64_t` from 2^63 up is stored as the negative integer with the same bits, so
 `Get<uint64_t>` (a UUID, say) reads the bits back, and a negative value reads as a large one. The const
@@ -70,7 +76,8 @@ A write is atomic. The JSON goes to `<path>.tmp` and is flushed to the disk; the
 becomes `<path>.bak` and the new one takes its place. A crash, a kill or a power cut at any moment
 leaves a complete save under one of those names. `ReadFile` reads `<path>`; when it is missing (a
 write stopped between its two renames) a complete `<path>.tmp`, then `<path>.bak`; when it doesn't
-parse, `<path>.bak`, logging which it used. Writes from several threads take turns.
+parse, `<path>.bak`, logging which it used. The next write first moves such a `.tmp` to `<path>`,
+so the generation `ReadFile` returned becomes the `.bak`. Writes from several threads take turns.
 `Dingo-UnitTests` checks all this by killing a process in the middle of its writes.
 
 ## Save slots
@@ -80,9 +87,9 @@ parse, `<path>.bak`, logging which it used. Writes from several threads take tur
 | | |
 |---|---|
 | `Write(slot, data)` / `Read(slot)` | `<slot>.json`, through `WriteFile` / `ReadFile`. |
-| `Exists(slot)` / `Delete(slot)` | `Delete` removes the `.bak` and any leftover `.tmp` too. |
-| `List()` | Every slot, most recently written first, with its `LastWriteTime`. |
-| `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`. Any other name fails with an error. |
+| `Exists(slot)` / `Delete(slot)` | A slot exists when its file or its `.bak` is on disk, or a complete `.tmp` without the file. `Delete` removes the `.bak` and any leftover `.tmp` too. |
+| `List()` | Every slot `Exists` reports, most recently written first, with its `LastWriteTime`. |
+| `IsValidName(slot)` | 1 to 64 of `A-Z a-z 0-9 _ -`, and not a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9`, in any case), which can't be saved there. The rule is the same on every platform, so saves move between them. Any other name fails with an error. |
 
 The directory is `GetUserDataDir(Name)/saves` (`%LOCALAPPDATA%\<Name>\saves`,
 `~/.local/share/<Name>/saves`), beside the logs. `ApplicationParams::SaveDirectory` moves it, and
@@ -152,6 +159,6 @@ See [Window modes](application-and-layers.md#window-modes) for switching.
 - A save is plain JSON, neither encrypted nor signed.
 - Numbers are `int64_t` and `double`; a non-finite float is written as null, and `FromJson` refuses
   nesting deeper than 256.
-- Slot names are 1 to 64 of `A-Z a-z 0-9 _ -`.
+- Slot names are 1 to 64 of `A-Z a-z 0-9 _ -`, and not a Windows device name.
 - `Settings` keeps the volume of the buses it already names only, since the engine can't list a
   game's buses, and `Apply()` sets only buses that exist when it runs.

@@ -98,7 +98,7 @@ r.DrawText("Score: 42", font, { x, y }, /*size*/ 0.5f, { .Color = { 1, 1, 1, 1 }
 ```
 
 `DrawText` parameters: the string, the font, a position (`vec2`/`vec3`), a `size` in
-world units, and a `TextParameters { Color, Kerning, LineSpacing, Centered, Rotation }`. The
+world units, and a `TextParameters { Color, Kerning, LineSpacing, Centered, Rotation, MaxWidth }`. The
 position is the **left baseline-ish origin** of the text (it grows to the right). A null font
 draws nothing and warns once.
 
@@ -120,6 +120,25 @@ r.DrawText(text, font, { centerX - w * 0.5f, y }, size, { .Color = color });
 `Font::GetStringWidth(text, size, kerning)` returns the width of the widest line, in the units
 `DrawText` lays glyphs out in — pass the same `Kerning` you draw with. `TextParameters::Centered`
 centers a string in one pass without measuring it first. `delete` the font in `OnDetach`.
+
+**Wrapping and metrics (v1.0).** `TextParameters::MaxWidth` (in the same units as `size`) wraps
+the string: lines break at spaces, the spaces at a break are dropped, a word wider than the line
+breaks between characters, and `'\n'` still starts a new line. A line always holds at least one
+character, so only a single character wider than `MaxWidth` overflows it. `0` (the default) never
+wraps.
+
+```cpp
+r.DrawText(description, font, { left, top }, 0.35f, { .MaxWidth = 6.0f });
+```
+
+`Font::MeasureText(text, size, maxWidth, kerning, lineSpacing)` returns a `TextMetrics { Width,
+Height, LineCount }` for the block `DrawText` draws with the same values: `Width` is the widest
+line (what `GetStringWidth` returns), `Height` runs from the first line's ascender to the last
+line's descender. The font's own metrics are `GetLineHeight(size, lineSpacing)` (baseline to
+baseline), `GetAscender(size)` (above the baseline) and `GetDescender(size)` (below it, negative);
+the ascender minus the descender is `size`. Measuring, drawing and DingoUI share one layout, so
+they never disagree about a width or a line break. A character the atlas lacks draws as `?`; if
+the font has no `?` either, it is skipped (before v1.0 `DrawText` stopped the string there).
 
 **Encoding (v0.6.2).** Strings are UTF-8. The atlas bakes Latin-1 (`U+0020`–`U+00FF`), the
 printable General Punctuation (dashes, curly quotes, bullet, ellipsis, primes, guillemets) and

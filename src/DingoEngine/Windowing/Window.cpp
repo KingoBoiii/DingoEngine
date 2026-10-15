@@ -225,7 +225,12 @@ namespace Dingo
 			m_Mode = WindowMode::Windowed;
 			m_FullscreenMode = {};
 			if (IsFullscreen())
+			{
+				// Some window managers deliver the restored size only in a later poll.
+				m_Data.WindowedWidth = m_WindowedWidth;
+				m_Data.WindowedHeight = m_WindowedHeight;
 				glfwSetWindowMonitor(m_WindowHandle, nullptr, m_WindowedPosX, m_WindowedPosY, m_WindowedWidth, m_WindowedHeight, 0);
+			}
 			return;
 		}
 

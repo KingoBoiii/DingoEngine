@@ -534,8 +534,10 @@ entity.
   `"Entity"`). Reading either component with `GetComponent` or `HasComponent` still works.
 - `AddComponent<T>` on an entity that has `T` replaces it and logs a warning. Before it was an
   EnTT assert.
-- `GetComponent<T>` asserts with the type's name when the entity has none. Check `HasComponent<T>()`
-  first when you aren't sure.
+- `GetComponent<T>` asserts in Debug and Debug-ASan when the entity has none; the message doesn't
+  name the type. Release and Distribution compile that assert out, and the call falls through to
+  EnTT's own assert ("Set does not contain entity"), as in 0.9. Check `HasComponent<T>()` first
+  when you aren't sure.
 - `HasComponent` is false and `RemoveComponent` does nothing on a null or destroyed entity.
   `GetUUID()` and `GetName()` return `0` and `""`.
 
@@ -1228,8 +1230,11 @@ made as the [2D](physics-2d.md#spawning-bodies-at-runtime) and
 An entity holds one script. Before, a second `AddScript` deleted the first without calling its
 `OnDestroy`, and a script that replaced itself was freed in the middle of its own call. Now
 `AddScript` calls the old script's `OnDestroy`, replaces it, and logs a warning.
-`Entity::RemoveScript()` detaches a script the same way. A script detached from inside one of its
-own callbacks is freed as soon as no script callback is on the stack.
+`Entity::RemoveScript()` detaches a script the same way. The old script's `OnDestroy` runs at once,
+but the object is freed only once no script callback is on the stack: at the end of the scene's
+current or next `OnUpdate`, at `OnStop` or `Clear`, or when an entity is destroyed outside an
+update. On a scene that isn't being updated, such as one parked in a `SceneManager`, the object and
+whatever its destructor frees can live until then.
 
 ```cpp
 entity.AddScript<EnemyScript>();
@@ -1305,7 +1310,8 @@ Not breaks, but worth a look while you are here:
 - [Logs and crashes](application-and-layers.md#logs-and-crashes): rotated logs, crash reports
   and minidumps, `FatalError`.
 - [Culling](scenes-and-ecs.md#culling-v10), [instancing](scenes-and-ecs.md#instancing-v10) and
-  [static geometry](scenes-and-ecs.md#static-geometry-v10): fewer draw calls for big scenes.
+  [static geometry](scenes-and-ecs.md#static-geometry-v10): fewer draw calls (culling and
+  instancing) and less CPU per frame (static geometry) for big scenes.
 - [Surface overrides](lighting.md#surface-overrides-v10): per-mesh emissive and roughness
   without a material each.
 - [Active and inactive entities](scenes-and-ecs.md#active-and-inactive-entities-v10):

@@ -68,6 +68,14 @@ namespace Dingo
 			return Dingo::ScreenPointToRay(screenPos, viewportSize, m_ViewMatrix, m_ProjectionMatrix);
 		}
 
+		/// Projects a world-space point through this camera to a pixel position (origin top-left,
+		/// +Y down) on a surface of viewportSize pixels; nullopt behind the camera. The inverse
+		/// of ScreenPointToRay.
+		std::optional<glm::vec2> WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize) const
+		{
+			return Dingo::WorldToScreenPoint(worldPos, viewportSize, m_ViewMatrix, m_ProjectionMatrix);
+		}
+
 	private:
 		void RecalculateView()
 		{

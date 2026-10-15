@@ -16,9 +16,9 @@
 #include "Hud.h"
 #include "MatchState.h"
 #include "Moveset.h"
-#include "Overlay.h"
 #include "PlayerBrain.h"
 #include "ReachTable.h"
+#include "Screens.h"
 #include "Showcase.h"
 
 #include <algorithm>
@@ -52,7 +52,7 @@ namespace Dingo
 
 		if (!m_Assets->IsPlayable())
 		{
-			ShowMissingAssets();
+			m_AssetsMissing = true;
 			return;
 		}
 
@@ -73,16 +73,6 @@ namespace Dingo
 		const bool logCombat = options.Check || options.DebugHitbox || m_Drive != DriveMode::None || (options.Autoplay && !m_Tournament);
 		const FighterContext context{ scene, *m_Assets, *m_Audio, m_Time, logSteps, logCombat, m_Assets->GetDebugView(), m_Vfx.get() };
 		BuildBout(context, options);
-	}
-
-	void ArenaDirectorScript::ShowMissingAssets()
-	{
-		Scene& scene = GetScene();
-		Font* font = m_Assets->GetFont();
-		Overlay::MakeCamera(scene, "MissingCamera", HUD_ORTHO_SIZE);
-		Overlay::MakeText(scene, font, "MissingHeading", MISSING_HEADING_SIZE, COLOR_TEXT_ALERT, { 0.0f, MISSING_HEADING_Y, 0.0f }, "assets missing (see log)");
-		Overlay::MakeText(scene, font, "MissingPrompt", MISSING_PROMPT_SIZE, COLOR_TEXT, { 0.0f, MISSING_PROMPT_Y, 0.0f }, "press any key / button to return to the title");
-		m_AssetsMissing = true;
 	}
 
 	void ArenaDirectorScript::BuildBout(const FighterContext& context, const LaunchOptions& options)
@@ -161,7 +151,7 @@ namespace Dingo
 			m_Flow = std::make_unique<BoutFlow>(rules, m_Audio.get());
 			m_Flow->Begin(opponent);
 
-			m_Hud = std::make_unique<Hud>(scene, *m_Assets, m_BoutNumber, !m_Freeze && !m_Tournament, !options.Autoplay && !m_Freeze && m_BoutNumber == 1);
+			m_Hud = std::make_unique<Hud>(scene, m_BoutNumber, !m_Freeze && !m_Tournament, !options.Autoplay && !m_Freeze && m_BoutNumber == 1);
 
 			if (!m_Tournament && !m_Freeze && m_Reach)
 			{
@@ -200,7 +190,7 @@ namespace Dingo
 		{
 			if (IsScripted(GetLaunchOptions()))
 				Application::Get().Close();
-			else if (Overlay::AnyInputPressed())
+			else if (DeclareMissingAssetsScreen())
 				RequestSceneTransition(SCENE_TITLE);
 			return;
 		}
@@ -220,6 +210,13 @@ namespace Dingo
 
 		if (m_Camera)
 			m_Camera->Update();
+	}
+
+	void ArenaDirectorScript::DeclareUi()
+	{
+		if (m_Match->Done || !m_Bout || !m_Hud)
+			return;
+		m_Hud->Declare(*m_Fighters[0], *m_Fighters[1], *m_Flow);
 	}
 
 	void ArenaDirectorScript::OnEventsChanged()
@@ -298,7 +295,7 @@ namespace Dingo
 		}
 
 		if (m_Hud)
-			m_Hud->Update(deltaTime, player, opponent, *m_Flow);
+			m_Hud->Update(deltaTime, player, opponent);
 		if (m_Flow && m_Flow->IsFinished() && !m_BoutDone)
 			FinishBout();
 

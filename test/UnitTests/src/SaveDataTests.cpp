@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <DingoEngine/Core/FileSystem.h>
 #include <DingoEngine/Core/Platform.h>
 #include <DingoEngine/Core/SaveData.h>
 #include <DingoEngine/Core/UUID.h>
@@ -206,6 +207,22 @@ TEST_SUITE("SaveData")
 		CHECK(data.Get("name", 4) == 4);
 		CHECK(data.Get("missing", true) == true);
 		CHECK(data.Get("volume", false) == false);
+
+		data["cell"] = SaveData::FromJson("[4294967296, 1]").value();
+		CHECK(data.Get("cell", glm::ivec2(7)) == glm::ivec2(7));
+		CHECK(SaveData::FromJson("[1, 2, -2147483649]")->AsIVec3(glm::ivec3(7)) == glm::ivec3(7));
+		CHECK(SaveData::FromJson("[2147483647, -2147483648]")->AsIVec2() == glm::ivec2(2147483647, (std::numeric_limits<int>::min)()));
+		CHECK_FALSE(SaveData::FromJson("1e400").has_value());
+		CHECK(SaveData(std::numeric_limits<double>::infinity()).AsFloat(2.0f) == 2.0f);
+		CHECK(SaveData::FromJson("-1e39")->AsFloat(2.0f) == 2.0f);
+		CHECK(SaveData::FromJson("1e38")->AsFloat(2.0f) == 1e38f);
+		data["far"] = SaveData::FromJson("1e39").value();
+		CHECK(data.Get("far", 3.0f) == 3.0f);
+		SaveData infinite;
+		infinite.Push(1);
+		infinite.Push(std::numeric_limits<double>::infinity());
+		infinite.Push(3);
+		CHECK(infinite.AsVec3(glm::vec3(9.0f)) == glm::vec3(9.0f));
 	}
 
 	TEST_CASE("every uint64_t survives a save, UUIDs included")
@@ -417,6 +434,17 @@ TEST_SUITE("SaveData")
 		CHECK(source == temporary);
 		WriteText(temporary, "{\"generation\": ");
 		CHECK(SaveData::ReadFile(path) == first);
+
+		WriteText(temporary, third.ToJson());
+		SaveData fourth;
+		fourth["generation"] = 4;
+		REQUIRE(fourth.WriteFile(path));
+		CHECK(SaveData::ReadFile(path) == fourth);
+		CHECK(SaveData::ReadFile(backup) == third);
+		CHECK_FALSE(std::filesystem::exists(temporary));
+		std::filesystem::rename(path, temporary);
+		WriteText(temporary, "{\"generation\": ");
+		CHECK(SaveData::ReadFile(path) == third);
 		std::filesystem::remove(temporary);
 
 		WriteText(backup, "garbage");
@@ -463,10 +491,17 @@ TEST_SUITE("SaveData")
 		CHECK_FALSE(SaveSlots::IsValidName("../escape"));
 		CHECK_FALSE(SaveSlots::IsValidName("a.b"));
 		CHECK_FALSE(SaveSlots::IsValidName(std::string(65, 'a')));
+		for (const char* reserved : { "nul", "CON", "Prn", "aux", "com0", "COM1", "com9", "lpt0", "lpt1", "LPT9" })
+			CHECK_FALSE(SaveSlots::IsValidName(reserved));
+		CHECK(SaveSlots::IsValidName("console"));
+		CHECK(SaveSlots::IsValidName("com10"));
+		CHECK(SaveSlots::IsValidName("nul_"));
 		CHECK(SaveSlots::GetDirectory().parent_path().parent_path() == directory.Path);
 
 		CHECK(SaveSlots::List().empty());
 		CHECK_FALSE(SaveSlots::Write("bad name", SaveData(1)));
+		CHECK_FALSE(SaveSlots::Write("nul", SaveData(1)));
+		CHECK_FALSE(SaveSlots::Exists("nul"));
 
 		REQUIRE(SaveSlots::Write("older", SaveData(1)));
 		REQUIRE(SaveSlots::Write("newer", SaveData(2)));
@@ -483,6 +518,19 @@ TEST_SUITE("SaveData")
 		CHECK(SaveSlots::Delete("newer"));
 		CHECK_FALSE(SaveSlots::Exists("newer"));
 		CHECK(SaveSlots::List().size() == 1);
+
+		std::filesystem::path recovered = SaveSlots::GetPath("recovered");
+		recovered += ".tmp";
+		WriteText(recovered, "{\"generation\": ");
+		CHECK_FALSE(SaveSlots::Exists("recovered"));
+		CHECK(SaveSlots::List().size() == 1);
+		WriteText(recovered, SaveData(5).ToJson());
+		CHECK(SaveSlots::Exists("recovered"));
+		CHECK(SaveSlots::List().size() == 2);
+		CHECK(SaveSlots::Read("recovered")->AsInt() == 5);
+		REQUIRE(SaveSlots::Write("recovered", SaveData(6)));
+		CHECK(SaveSlots::Read("recovered")->AsInt() == 6);
+		CHECK(SaveSlots::List().size() == 2);
 
 	}
 
@@ -519,5 +567,49 @@ TEST_SUITE("SaveData")
 		}
 		INFO("generations written: ", newest);
 		CHECK(newest > 0);
+	}
+}
+
+TEST_SUITE("Platform")
+{
+	TEST_CASE("user data folders get a name Windows can create")
+	{
+		TempDirectory directory("userdata");
+#if defined(DE_PLATFORM_WINDOWS)
+		EnvironmentOverride dataHome(L"LOCALAPPDATA", directory.Path);
+#else
+		EnvironmentOverride dataHome("XDG_DATA_HOME", directory.Path);
+#endif
+		const struct { const char* Name; const char* Folder; } cases[] = {
+			{ "Game: Deluxe?", "Game_ Deluxe_" },
+			{ "a<b>c\"d/e\\f|g*h", "a_b_c_d_e_f_g_h" },
+			{ "Tab\tName", "Tab_Name" },
+			{ "Trailing. . ", "Trailing" },
+			{ "...", "_" },
+			{ "con", "_con" },
+			{ "Lpt9.save", "_Lpt9.save" },
+			{ "NUL .txt", "_NUL .txt" },
+			{ "conout$", "_conout$" },
+			{ "COM\xC2\xB9", "_COM\xC2\xB9" },
+			{ "COM10", "COM10" },
+			{ "Console", "Console" },
+			{ "Caf\xC3\xA9", "Caf\xC3\xA9" },
+		};
+		for (const auto& [name, folder] : cases)
+		{
+			INFO("name: ", name);
+			const std::filesystem::path path = Platform::GetUserDataDir(name);
+			CHECK(path == directory.Path / FileSystem::PathFromUtf8(folder));
+			CHECK(std::filesystem::is_directory(path));
+		}
+
+		std::filesystem::create_directories(directory.Path / "Studio" / "Game");
+		CHECK(Platform::GetUserDataDir("Studio/Game") == directory.Path / "Studio" / "Game");
+		CHECK(Platform::GetUserDataDir("Studio/Other") == directory.Path / "Studio_Other");
+		CHECK(Platform::GetUserDataDir("../Escape") == directory.Path / ".._Escape");
+#if !defined(DE_PLATFORM_WINDOWS)
+		std::filesystem::create_directories(directory.Path / "Shipped: Game");
+		CHECK(Platform::GetUserDataDir("Shipped: Game") == directory.Path / "Shipped: Game");
+#endif
 	}
 }
