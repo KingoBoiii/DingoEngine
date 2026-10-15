@@ -105,6 +105,8 @@ namespace Dingo
 		Entity       m_LodSockets[2];
 		glm::mat4    m_LodSocketWorld[2]{};
 		uint32_t     m_LodSocketChanges[2] = {};
+		uint32_t     m_LodRootPoseChanges[2] = {};
+		std::vector<glm::mat4> m_LodRootPalettes[2];
 		std::vector<glm::mat4> m_LodPalettes[4];
 		uint32_t     m_LodChanges[4] = {};
 		uint32_t     m_LodEvents[4] = {};

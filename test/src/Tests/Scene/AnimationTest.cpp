@@ -421,6 +421,13 @@ namespace Dingo
 			m_LodChanges[i] = m_LodEvents[i] = 0;
 			m_LodPalettes[i].clear();
 		}
+		for (uint32_t i = 0; i < 2; ++i)
+		{
+			m_LodSocketChanges[i] = m_LodRootPoseChanges[i] = 0;
+			m_LodSocketWorld[i] = glm::mat4(1.0f);
+			m_LodRootStart[i] = m_LodRootEnd[i] = glm::vec3(0.0f);
+			m_LodRootPalettes[i].clear();
+		}
 		m_Time = 0.0f;
 		m_TimedFrames = 0;
 		m_FrameMs = m_UpdateMs = m_RenderMs = m_EndSceneMs = 0.0;
@@ -2601,6 +2608,13 @@ namespace Dingo
 				m_LodSocketChanges[i] += world != m_LodSocketWorld[i] ? 1 : 0;
 			}
 			m_LodSocketWorld[i] = world;
+			if (const Animator* animator = m_LodScene->GetAnimator(m_LodRootFoxes[i]))
+			{
+				const std::span<const glm::mat4> palette = animator->GetSkinningPalette();
+				if (measuring && !std::equal(palette.begin(), palette.end(), m_LodRootPalettes[i].begin(), m_LodRootPalettes[i].end()))
+					++m_LodRootPoseChanges[i];
+				m_LodRootPalettes[i].assign(palette.begin(), palette.end());
+			}
 		}
 		for (int i = 0; i < 4; ++i)
 		{
@@ -2653,8 +2667,8 @@ namespace Dingo
 		const glm::vec3 alwaysTravel = m_LodRootEnd[0] - m_LodRootStart[0];
 		const glm::vec3 pausedTravel = m_LodRootEnd[1] - m_LodRootStart[1];
 		const float expectedTravel = k_LodTravel * m_FoxScale * static_cast<float>(k_LodMeasuredFrames) * k_LodStep / (m_LodClip ? m_LodClip->GetDuration() : 1.0f);
-		Check(m_LodClip && glm::length(alwaysTravel) > 0.0f && std::abs(glm::length(alwaysTravel) - expectedTravel) < 0.02f * expectedTravel && glm::length(pausedTravel - alwaysTravel) < 1e-4f * glm::length(alwaysTravel),
-			std::format("a culled PauseWhenCulled walker with root motion moves its entity as far as an AlwaysAnimate twin ({:.4f} against {:.4f}, {:.4f} expected)", glm::length(pausedTravel), glm::length(alwaysTravel), expectedTravel));
+		Check(m_LodClip && m_LodRootPoseChanges[1] == 0 && glm::length(alwaysTravel) > 0.0f && std::abs(glm::length(alwaysTravel) - expectedTravel) < 0.02f * expectedTravel && glm::length(pausedTravel - alwaysTravel) < 1e-4f * glm::length(alwaysTravel),
+			std::format("a culled PauseWhenCulled walker with root motion keeps its pose ({} changes) but moves its entity as far as an AlwaysAnimate twin ({:.4f} against {:.4f}, {:.4f} expected)", m_LodRootPoseChanges[1], glm::length(pausedTravel), glm::length(alwaysTravel), expectedTravel));
 		Check(m_LodSocketChanges[0] == k_LodMeasuredFrames && m_LodSocketChanges[1] == 0,
 			std::format("a box on a culled fox's head socket follows an AlwaysAnimate fox ({} of {} updates) and holds still on a PauseWhenCulled one ({})", m_LodSocketChanges[0], k_LodMeasuredFrames, m_LodSocketChanges[1]));
 		Check(m_LodChanges[Reduced] == k_LodMeasuredFrames / 4 && m_LodEvents[Reduced] == m_LodEvents[Always],
