@@ -300,9 +300,10 @@ culled against the camera and every shadow view by the box around its meshes, as
 and drawn into the shadows as its meshes would be. The picture is the one the same meshes draw
 without `Static` on the CPU, pixel for pixel; where they would have been instanced, within the
 instancing tolerance, since baked meshes are never instanced. The order differs: a cell draws
-before the material's other meshes, its own meshes by cell and then in the order they were baked,
-and the static materials join the scene's draw order after the moving meshes'. So two meshes meeting
-at exactly equal depth can resolve the other way.
+before the material's other meshes, its own meshes by cell, then by material and shadow setting,
+then by an internal id that reuses freed ones (so not necessarily the order the meshes were made
+`Static`), and the static materials join the scene's draw order after the moving meshes'. So two
+meshes meeting at exactly equal depth can resolve the other way.
 
 Change is allowed but costs a rebake of the cell the mesh is in: changing its mesh, colour,
 material, surface override or shadow setting (or hot-reloading its model) rebakes it quietly;

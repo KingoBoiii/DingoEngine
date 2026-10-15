@@ -1310,7 +1310,8 @@ Not breaks, but worth a look while you are here:
 - [Logs and crashes](application-and-layers.md#logs-and-crashes): rotated logs, crash reports
   and minidumps, `FatalError`.
 - [Culling](scenes-and-ecs.md#culling-v10), [instancing](scenes-and-ecs.md#instancing-v10) and
-  [static geometry](scenes-and-ecs.md#static-geometry-v10): fewer draw calls for big scenes.
+  [static geometry](scenes-and-ecs.md#static-geometry-v10): fewer draw calls (culling and
+  instancing) and less CPU per frame (static geometry) for big scenes.
 - [Surface overrides](lighting.md#surface-overrides-v10): per-mesh emissive and roughness
   without a material each.
 - [Active and inactive entities](scenes-and-ecs.md#active-and-inactive-entities-v10):
