@@ -3,6 +3,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 
+#include <algorithm>
+#include <array>
 #include <cstring>
 #include <format>
 
@@ -107,6 +109,35 @@ layout(location = 0) out vec4 o_Color;
 void main() { o_Color = v_Color; }
 )";
 
+		constexpr const char* k_PushComputeSource = R"(
+#type compute
+#version 450
+layout(local_size_x = 1) in;
+layout(push_constant) uniform PushData { uvec4 Slot; uvec4 Extra; };
+layout(std430, binding = 0) writeonly buffer PushOut { uint pushOut[]; };
+void main()
+{
+	pushOut[Slot.x * 2u] = Slot.y;
+	pushOut[Slot.x * 2u + 1u] = Extra.x;
+}
+)";
+
+		constexpr const char* k_PushDrawSource = R"(
+#type vertex
+#version 450
+#include <DingoEngine/Fullscreen.glsl>
+
+#type fragment
+#version 450
+layout(location = 0) in vec2 v_TexCoord;
+layout(push_constant) uniform DrawPush { vec4 Values; };
+layout(location = 0) out vec4 o_Value;
+void main()
+{
+	o_Value = vec4(Values[int(gl_FragCoord.x)]);
+}
+)";
+
 		Material* MakeMaterial(const char* name, Shader* shader)
 		{
 			return Material::Create(MaterialParams()
@@ -164,6 +195,26 @@ void main() { o_Color = v_Color; }
 		m_StepPass->SetStorageBuffer(0, m_Steps);
 		m_ZeroPass = ComputePass::Create(ComputePassParams().SetDebugName("ComputeTest zero").SetShader(m_ZeroShader));
 		m_ZeroPass->SetStorageBuffer(0, m_Steps);
+
+		m_PushComputeShader = Shader::CreateFromSource("ComputeTestPushCompute", k_PushComputeSource);
+		m_PushDrawShader = Shader::CreateFromSource("ComputeTestPushDraw", k_PushDrawSource);
+		{
+			const uint32_t unset[4] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
+			m_PushOut = GraphicsBuffer::CreateStorageBuffer(sizeof(unset), "ComputeTest push out", unset);
+		}
+		m_PushPass = ComputePass::Create(ComputePassParams().SetDebugName("ComputeTest push").SetShader(m_PushComputeShader));
+		m_PushPass->SetStorageBuffer(0, m_PushOut);
+		m_PushMaterial = MakeMaterial("ComputeTest push draw", m_PushDrawShader);
+		m_PushStripA = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("ComputeTest push strip A")
+			.SetWidth(4)
+			.SetHeight(1)
+			.AddAttachment({ TextureFormat::R32F }));
+		m_PushStripB = Framebuffer::Create(FramebufferParams()
+			.SetDebugName("ComputeTest push strip B")
+			.SetWidth(4)
+			.SetHeight(1)
+			.AddAttachment({ TextureFormat::R32F }));
 
 		m_ReadMaterial = MakeMaterial("ComputeTest read", m_ReadShader);
 		m_ReadMaterial->SetStorageBuffer(0, m_Values);
@@ -310,6 +361,58 @@ void main() { o_Color = v_Color; }
 			Check(wrong == 0, std::format("a material whose storage buffers are swapped draws from the new ones ({} of {} wrong)", wrong, 2 * k_ValueCount));
 		});
 
+		{
+			const glm::uvec4 first[2] = { glm::uvec4(0, 0xA11CE, 0, 0), glm::uvec4(7, 0, 0, 0) };
+			const glm::uvec4 second(1, 0xB0B, 0, 0);
+			Check(m_PushPass->SetPushConstants(first, sizeof(first)), "a compute pass takes push constants");
+			Renderer::Dispatch(m_PushPass, 1);
+			Check(m_PushPass->SetPushConstants(&second, sizeof(second)), "a compute pass takes shorter push constants");
+			Renderer::Dispatch(m_PushPass, 1);
+			m_PushOut->ReadBack([this, alive](const std::vector<uint8_t>& bytes)
+			{
+				if (alive.expired())
+					return;
+				uint32_t values[4] = {};
+				const bool sized = bytes.size() == sizeof(values);
+				if (sized)
+					std::memcpy(values, bytes.data(), sizeof(values));
+				const bool match = sized && values[0] == 0xA11CE && values[1] == 7 && values[2] == 0xB0B && values[3] == 0;
+				Check(match, std::format("two dispatches of one pass each push their own constants, the unset tail zeroed ({:X} {:X} {:X} {:X})", values[0], values[1], values[2], values[3]));
+			});
+
+			Framebuffer* previous = Renderer::GetRenderTarget();
+			Renderer::SetRenderTarget(m_PushStripA);
+			Renderer::Clear(m_PushStripA, glm::vec4(-1.0f));
+			const glm::vec4 a(1.5f, 2.5f, 3.5f, 4.5f);
+			Check(m_PushMaterial->SetPushConstants(&a, sizeof(a)), "a material takes push constants");
+			Renderer::Draw(m_PushMaterial, 3);
+			Renderer::SetRenderTarget(m_PushStripB);
+			Renderer::Clear(m_PushStripB, glm::vec4(-1.0f));
+			const float b[2] = { 10.0f, 20.0f };
+			Check(m_PushMaterial->SetPushConstants(b, sizeof(b)), "a material takes shorter push constants");
+			Renderer::Draw(m_PushMaterial, 3);
+			Renderer::SetRenderTarget(previous);
+		}
+		auto checkPushStrip = [readBack, this](Framebuffer* strip, const float (&expected)[4], const char* name)
+		{
+			std::array<float, 4> want;
+			std::copy(expected, expected + 4, want.begin());
+			readBack(strip->GetAttachment(0), [this, want, name](const TexturePixels& pixels)
+			{
+				if (pixels.Data.empty())
+				{
+					Check(false, std::format("{} reads back", name));
+					return;
+				}
+				uint32_t wrong = 0;
+				for (uint32_t i = 0; i < 4; ++i)
+					wrong += pixels.GetPixel(i, 0).r != want[i] ? 1 : 0;
+				Check(wrong == 0, std::format("{} ({} of 4 wrong)", name, wrong));
+			});
+		};
+		checkPushStrip(m_PushStripA, { 1.5f, 2.5f, 3.5f, 4.5f }, "a material draw pushes the constants set when it was recorded");
+		checkPushStrip(m_PushStripB, { 10.0f, 20.0f, 0.0f, 0.0f }, "a later draw of the same material pushes its own, the unset tail zeroed");
+
 		Renderer::Dispatch(m_ZeroPass, k_StepCount / 64);
 		for (uint32_t i = 0; i < k_StepDispatches; ++i)
 			Renderer::Dispatch(m_StepPass, k_StepCount / 64);
@@ -407,6 +510,13 @@ void main() { o_Color = v_Color; }
 		DestroyAndDelete(m_SumPass);
 		DestroyAndDelete(m_StepPass);
 		DestroyAndDelete(m_ZeroPass);
+		DestroyAndDelete(m_PushPass);
+		DestroyAndDelete(m_PushMaterial);
+		DestroyAndDelete(m_PushComputeShader);
+		DestroyAndDelete(m_PushDrawShader);
+		DestroyAndDelete(m_PushOut);
+		DestroyAndDelete(m_PushStripA);
+		DestroyAndDelete(m_PushStripB);
 		DestroyAndDelete(m_ReadMaterial);
 		DestroyAndDelete(m_InstanceMaterial);
 		DestroyAndDelete(m_FillShader);

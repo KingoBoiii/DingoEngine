@@ -253,17 +253,18 @@ namespace Dingo
 
 	// Lit by a white ambient alone, so a mesh shows its own colour.
 	template<typename Submit>
-	Renderer3D::Statistics Renderer3DBatchTest::RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit)
+	Renderer3D::Statistics Renderer3DBatchTest::RenderCheck(Framebuffer* target, const glm::mat4& viewProjection, Submit&& submit, Renderer3D* renderer)
 	{
+		Renderer3D& drawn = renderer ? *renderer : *m_CheckRenderer;
 		Framebuffer* previous = Renderer::GetRenderTarget();
 		Renderer::SetRenderTarget(target);
-		m_CheckRenderer->BeginScene(viewProjection);
-		m_CheckRenderer->Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
-		m_CheckRenderer->SetAmbientLight(glm::vec3(1.0f), 1.0f);
-		submit(*m_CheckRenderer);
-		m_CheckRenderer->EndScene();
+		drawn.BeginScene(viewProjection);
+		drawn.Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+		drawn.SetAmbientLight(glm::vec3(1.0f), 1.0f);
+		submit(drawn);
+		drawn.EndScene();
 		Renderer::SetRenderTarget(previous);
-		return m_CheckRenderer->GetStatistics();
+		return drawn.GetStatistics();
 	}
 
 	void Renderer3DBatchTest::ReadCheck(Framebuffer* target, const glm::vec3& expected, const std::string& name)
@@ -955,6 +956,40 @@ namespace Dingo
 					for (uint32_t x = 0; x < images[0].Width; ++x)
 						lit += images[0].GetPixel(x, y).r > 0.05f ? 1 : 0;
 				Check(differing == 0 && lit > 50, std::format("the rebaked duck draws as before ({} px differ, {} px of duck)", differing, lit));
+			});
+		});
+
+		// m_BatchRenderer's 40-vertex batches: five 24-vertex boxes in one cell (none left of x = 0, which
+		// would be another cell) cannot share a range.
+		m_CheckSteps.push_back([this]
+		{
+			Framebuffer* direct = CreateCheckTarget(64);
+			Framebuffer* baked = CreateCheckTarget(64);
+			auto place = [](uint32_t i) { return glm::scale(glm::translate(glm::mat4(1.0f), { static_cast<float>(i) * 0.8f, 0.0f, -6.0f }), glm::vec3(0.7f)); };
+			auto tint = [](uint32_t i) { return glm::vec4(0.2f + 0.15f * static_cast<float>(i), 0.9f - 0.15f * static_cast<float>(i), 0.5f, 1.0f); };
+
+			const std::shared_ptr<StaticBatch> boxes = m_BatchRenderer->CreateStaticBatch();
+			for (uint32_t i = 0; i < k_BoxCount; ++i)
+				boxes->Add(StaticMesh().SetMesh(m_BatchRenderer->GetBoxMesh()).SetTransform(place(i)).SetColor(tint(i)));
+			const Renderer3D::Statistics directStats = RenderCheck(direct, CheckViewProjection(), [&](Renderer3D& renderer)
+			{
+				for (uint32_t i = 0; i < k_BoxCount; ++i)
+					renderer.SubmitMesh(renderer.GetBoxMesh(), place(i), tint(i));
+			}, m_BatchRenderer);
+			const Renderer3D::Statistics bakedStats = RenderCheck(baked, CheckViewProjection(), [&](Renderer3D& renderer) { renderer.SubmitStaticBatch(*boxes); }, m_BatchRenderer);
+			Check(boxes->GetCellCount() == 1 && bakedStats.StaticMeshes == k_BoxCount && bakedStats.StaticDraws == k_BoxCount && directStats.DrawCalls == k_BoxCount,
+				std::format("five boxes baked into one cell split into one range each at 40 vertices ({} cells, {} meshes, {} static draws, {} direct draws)",
+					boxes->GetCellCount(), bakedStats.StaticMeshes, bakedStats.StaticDraws, directStats.DrawCalls));
+			ReadAll({ direct, baked }, [this](const std::vector<TexturePixels>& images)
+			{
+				float worst = 0.0f;
+				const uint32_t differing = CountDiffering(images[0], images[1], worst);
+				uint32_t lit = 0;
+				for (uint32_t y = 0; y < images[0].Height; ++y)
+					for (uint32_t x = 0; x < images[0].Width; ++x)
+						lit += images[0].GetPixel(x, y).g > 0.05f ? 1 : 0;
+				Check(differing == 0 && lit > 20,
+					std::format("the split ranges draw as the same boxes through SubmitMesh ({} px differ, by up to {:.0f}/255, {} px of boxes)", differing, worst * 255.0f, lit));
 			});
 		});
 

@@ -181,6 +181,7 @@ void main()
 	constexpr uint32_t k_LodReturnFrames = 3;   // the paused fox brought into view
 	constexpr uint32_t k_LodHeadlessFrames = 4; // the scene stepped without being drawn
 	constexpr float k_LodStep = 1.0f / 15.0f;
+	constexpr float k_LodTravel = 100.0f; // model units a lap of the culling check's travelling Walk
 
 	constexpr uint32_t k_GhostCheckWidth = 160;
 	constexpr uint32_t k_GhostCheckHeight = 120;
@@ -419,6 +420,13 @@ namespace Dingo
 		{
 			m_LodChanges[i] = m_LodEvents[i] = 0;
 			m_LodPalettes[i].clear();
+		}
+		for (uint32_t i = 0; i < 2; ++i)
+		{
+			m_LodSocketChanges[i] = m_LodRootPoseChanges[i] = 0;
+			m_LodSocketWorld[i] = glm::mat4(1.0f);
+			m_LodRootStart[i] = m_LodRootEnd[i] = glm::vec3(0.0f);
+			m_LodRootPalettes[i].clear();
 		}
 		m_Time = 0.0f;
 		m_TimedFrames = 0;
@@ -2430,7 +2438,10 @@ namespace Dingo
 
 		// Each ghost into a target of its own, three Foxes in different Walk poses, turned and tinted
 		// apart: the arena must place every vertex, and turn every normal, where SkinData does, for
-		// instances past the first too.
+		// instances past the first too. SkinData ignores the arena, so the arena ghost's scene is
+		// laid out differently: reversed, with a culled Fox in the gap (packing skips it) and a rig
+		// of another joint count in the middle (a different stride). Every base then differs from
+		// the first scene's arena, and from a fixed-stride or an every-instance count.
 		const AnimationClip* walk = m_Fox->FindAnimation("Walk");
 		std::vector<glm::mat4> poses[3];
 		glm::mat4 places[3];
@@ -2448,8 +2459,22 @@ namespace Dingo
 				* glm::translate(glm::mat4(1.0f), m_FoxOffset) * glm::scale(glm::mat4(1.0f), glm::vec3(m_FoxScale));
 		}
 		Check(poses[0] != poses[1] && poses[1] != poses[2], "the arena check's three Walk poses differ");
+
+		m_GhostRig.reset(Model::LoadFromFile("assets/models/SceneRig/SceneRig.gltf"));
+		const SubMesh* rigSub = m_GhostRig ? FindSkinnedSubMesh(*m_GhostRig) : nullptr;
+		const std::span<const glm::mat4> rigPalette = rigSub ? m_GhostRig->GetSkeleton()->GetRestPalette() : std::span<const glm::mat4>();
+		const bool rigUsable = rigSub && rigPalette.size() >= rigSub->Mesh->GetSkinJointCount() && rigSub->Mesh->GetSkinJointCount() != skinned->Mesh->GetSkinJointCount();
+		Check(rigUsable, "the arena check's second skinned model has another joint count than the Fox");
+		if (!rigUsable)
+			return;
+		const glm::mat4 rigPlace = glm::translate(glm::mat4(1.0f), glm::vec3(0.55f * k_FoxLength, 0.0f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.6f));
+		const glm::vec4 rigColor(0.95f, 0.9f, 0.2f, 1.0f);
+
 		PerspectiveCamera camera = m_Camera;
 		camera.SetAspectRatio(static_cast<float>(k_GhostCheckWidth) / static_cast<float>(k_GhostCheckHeight));
+		const glm::vec3 behind = camera.GetPosition() - glm::normalize(camera.GetTarget() - camera.GetPosition()) * (3.0f * k_FoxLength);
+		const glm::mat4 behindPlace = glm::translate(glm::mat4(1.0f), behind) * places[1];
+
 		Framebuffer* previous = Renderer::GetRenderTarget();
 		for (int i = 0; i < 2; ++i)
 		{
@@ -2461,13 +2486,27 @@ namespace Dingo
 					.SetEnableDepth(true)
 					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
 			Renderer::SetRenderTarget(m_GhostTargets[i]);
+			Material* material = i == 0 ? m_Ghost : m_PaletteGhost;
 			renderer.BeginScene(camera);
 			renderer.Clear(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-			for (int f = 0; f < 3; ++f)
-				renderer.SubmitSkinnedMesh(skinned->Mesh, places[f], poses[f], colors[f], i == 0 ? m_Ghost : m_PaletteGhost);
+			if (i == 0)
+			{
+				for (int f = 0; f < 3; ++f)
+					renderer.SubmitSkinnedMesh(skinned->Mesh, places[f], poses[f], colors[f], material);
+				renderer.SubmitSkinnedMesh(rigSub->Mesh, rigPlace, rigPalette, rigColor, material);
+			}
+			else
+			{
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[2], poses[2], colors[2], material);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, behindPlace, poses[1], colors[1], material);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[1], poses[1], colors[1], material);
+				renderer.SubmitSkinnedMesh(rigSub->Mesh, rigPlace, rigPalette, rigColor, material);
+				renderer.SubmitSkinnedMesh(skinned->Mesh, places[0], poses[0], colors[0], material);
+			}
 			renderer.EndScene();
 			if (i == 1)
-				Check(renderer.GetStatistics().SkinnedInstances == 3, std::format("the arena check draws three instances ({})", renderer.GetStatistics().SkinnedInstances));
+				Check(renderer.GetStatistics().SkinnedInstances == 4 && renderer.GetStatistics().CulledSkinned == 1,
+					std::format("the arena check draws four instances around a culled one ({} drawn, {} culled)", renderer.GetStatistics().SkinnedInstances, renderer.GetStatistics().CulledSkinned));
 		}
 		Renderer::SetRenderTarget(previous);
 
@@ -2489,7 +2528,7 @@ namespace Dingo
 				covered += pixels.Data[i] != 0 ? 1 : 0;
 			}
 			Check(!pixels.Data.empty() && pixels.Data.size() == m_GhostPixels.size() && differing == 0 && covered > 0,
-				std::format("a custom shader reading the skin arena draws three posed Foxes exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
+				std::format("a custom shader reading the skin arena draws three posed Foxes and a rig, reordered around a culled Fox, exactly as one with a SkinData block ({} px covered, {} differ)", covered, differing));
 		});
 	}
 
@@ -2510,7 +2549,36 @@ namespace Dingo
 				fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk")).CullingMode = modes[i];
 				m_LodFoxes[i] = fox;
 			}
+
+			// The docs promise a culled animator's root motion goes on and its sockets hold the last pose.
+			const AnimationClip* walk = m_Fox->FindAnimation("Walk");
+			m_LodClip = walk ? TravellingWalk(*m_Fox->GetSkeleton(), *walk, "LodAhead", glm::vec3(0.0f, 0.0f, k_LodTravel), 0.0f, 0.0f) : nullptr;
+			Check(m_LodClip != nullptr, "the culling check's travelling clip builds from Walk's hips");
+			const AnimatorCullingMode rootModes[2] = { AnimatorCullingMode::AlwaysAnimate, AnimatorCullingMode::PauseWhenCulled };
+			const char* rootNames[2] = { "RootAlways", "RootPaused" };
+			for (int i = 0; i < 2; ++i)
+			{
+				Entity fox = m_LodScene->CreateEntity(rootNames[i]);
+				fox.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(5.0f + static_cast<float>(i) * 2.5f, 0.0f, 12.0f), glm::vec3(m_FoxScale)));
+				fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+				AnimatorComponent& animator = fox.AddComponent<AnimatorComponent>();
+				animator.RootMotion = RootMotionMode::XZ;
+				animator.CullingMode = rootModes[i];
+				m_LodRootFoxes[i] = fox;
+			}
+			for (int i = 0; i < 2; ++i)
+			{
+				Entity box = m_LodScene->CreateEntity(i == 0 ? "SocketAlways" : "SocketPaused");
+				box.AddComponent<Transform3DComponent>(Transform3DComponent(k_HatOffset, glm::vec3(k_HatSize)));
+				box.SetParent(m_LodFoxes[i], k_HatJoint, false);
+				m_LodSockets[i] = box;
+			}
 			m_LodScene->OnStart();
+			for (Entity fox : m_LodRootFoxes)
+			{
+				if (Animator* animator = m_LodScene->GetAnimator(fox))
+					animator->Play(m_LodClip.get());
+			}
 			m_LodTarget = Framebuffer::Create(FramebufferParams()
 				.SetDebugName("AnimationLod")
 				.SetWidth(k_GhostCheckWidth)
@@ -2524,8 +2592,30 @@ namespace Dingo
 		if (m_LodFrame == k_LodSettleFrames + k_LodMeasuredFrames)
 			m_LodFoxes[Paused].GetComponent<Transform3DComponent>().Position = m_FoxOffset;
 
+		if (m_LodFrame == k_LodSettleFrames)
+		{
+			for (int i = 0; i < 2; ++i)
+				m_LodRootStart[i] = m_LodRootFoxes[i].GetComponent<Transform3DComponent>().Position;
+		}
 		m_LodScene->OnUpdate(k_LodStep);
 		const bool measuring = m_LodFrame >= k_LodSettleFrames && !returning;
+		for (int i = 0; i < 2; ++i)
+		{
+			const glm::mat4 world = m_LodSockets[i].GetWorldTransform();
+			if (measuring)
+			{
+				m_LodRootEnd[i] = m_LodRootFoxes[i].GetComponent<Transform3DComponent>().Position;
+				m_LodSocketChanges[i] += world != m_LodSocketWorld[i] ? 1 : 0;
+			}
+			m_LodSocketWorld[i] = world;
+			if (const Animator* animator = m_LodScene->GetAnimator(m_LodRootFoxes[i]))
+			{
+				const std::span<const glm::mat4> palette = animator->GetSkinningPalette();
+				if (measuring && !std::equal(palette.begin(), palette.end(), m_LodRootPalettes[i].begin(), m_LodRootPalettes[i].end()))
+					++m_LodRootPoseChanges[i];
+				m_LodRootPalettes[i].assign(palette.begin(), palette.end());
+			}
+		}
 		for (int i = 0; i < 4; ++i)
 		{
 			const Animator* animator = m_LodScene->GetAnimator(m_LodFoxes[i]);
@@ -2574,6 +2664,13 @@ namespace Dingo
 		Check(m_LodChanges[Paused] == 0 && m_LodEvents[Always] > 0 && m_LodEvents[Paused] == m_LodEvents[Always] && sameTime,
 			std::format("a culled PauseWhenCulled fox keeps its pose ({} changes) but keeps its time and fires the same {} events as an animated one ({})",
 				m_LodChanges[Paused], m_LodEvents[Always], m_LodEvents[Paused]));
+		const glm::vec3 alwaysTravel = m_LodRootEnd[0] - m_LodRootStart[0];
+		const glm::vec3 pausedTravel = m_LodRootEnd[1] - m_LodRootStart[1];
+		const float expectedTravel = k_LodTravel * m_FoxScale * static_cast<float>(k_LodMeasuredFrames) * k_LodStep / (m_LodClip ? m_LodClip->GetDuration() : 1.0f);
+		Check(m_LodClip && m_LodRootPoseChanges[1] == 0 && glm::length(alwaysTravel) > 0.0f && std::abs(glm::length(alwaysTravel) - expectedTravel) < 0.02f * expectedTravel && glm::length(pausedTravel - alwaysTravel) < 1e-4f * glm::length(alwaysTravel),
+			std::format("a culled PauseWhenCulled walker with root motion keeps its pose ({} changes) but moves its entity as far as an AlwaysAnimate twin ({:.4f} against {:.4f}, {:.4f} expected)", m_LodRootPoseChanges[1], glm::length(pausedTravel), glm::length(alwaysTravel), expectedTravel));
+		Check(m_LodSocketChanges[0] == k_LodMeasuredFrames && m_LodSocketChanges[1] == 0,
+			std::format("a box on a culled fox's head socket follows an AlwaysAnimate fox ({} of {} updates) and holds still on a PauseWhenCulled one ({})", m_LodSocketChanges[0], k_LodMeasuredFrames, m_LodSocketChanges[1]));
 		Check(m_LodChanges[Reduced] == k_LodMeasuredFrames / 4 && m_LodEvents[Reduced] == m_LodEvents[Always],
 			std::format("a culled ReduceWhenCulled fox is posed every 4th update ({} of {}) and fires every event ({})", m_LodChanges[Reduced], k_LodMeasuredFrames, m_LodEvents[Reduced]));
 		Check(m_LodChanges[Seen] == k_LodMeasuredFrames,
@@ -2659,7 +2756,13 @@ namespace Dingo
 		DestroyAndDelete(m_LodTarget);
 		for (Entity& fox : m_LodFoxes)
 			fox = {};
+		for (Entity& entity : m_LodRootFoxes)
+			entity = {};
+		for (Entity& entity : m_LodSockets)
+			entity = {};
+		m_LodClip.reset();
 		m_GhostPixels.clear();
+		m_GhostRig.reset();
 		m_Alive = std::make_shared<int>(0);
 		if (m_FoxAsset != k_InvalidAsset)
 		{

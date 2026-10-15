@@ -86,6 +86,7 @@ namespace Dingo
 		Shader*      m_StaticGhostShader = nullptr;
 		Material*    m_StaticGhost = nullptr;
 		Framebuffer* m_GhostTargets[2] = {};
+		std::unique_ptr<Model> m_GhostRig;
 		std::vector<uint8_t> m_GhostPixels;
 		std::shared_ptr<int> m_Alive = std::make_shared<int>(0);
 		bool      m_SkinnedMaterialChecked = false;
@@ -96,6 +97,16 @@ namespace Dingo
 		Scene*       m_LodScene = nullptr;
 		Framebuffer* m_LodTarget = nullptr;
 		Entity       m_LodFoxes[4];
+		// Two walkers with root motion, culled, and a box on the head socket of the first two foxes above.
+		std::unique_ptr<AnimationClip> m_LodClip;
+		Entity       m_LodRootFoxes[2];
+		glm::vec3    m_LodRootStart[2]{};
+		glm::vec3    m_LodRootEnd[2]{};
+		Entity       m_LodSockets[2];
+		glm::mat4    m_LodSocketWorld[2]{};
+		uint32_t     m_LodSocketChanges[2] = {};
+		uint32_t     m_LodRootPoseChanges[2] = {};
+		std::vector<glm::mat4> m_LodRootPalettes[2];
 		std::vector<glm::mat4> m_LodPalettes[4];
 		uint32_t     m_LodChanges[4] = {};
 		uint32_t     m_LodEvents[4] = {};

@@ -2,8 +2,10 @@
 #include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/Renderer.h"
+#include "PushConstants.h"
 
 #include <atomic>
+#include <cstring>
 
 namespace Dingo
 {
@@ -154,6 +156,21 @@ namespace Dingo
 				.SetMaxWritesPerFrame(std::max(m_Params.UniformWritesPerFrame, 1u)));
 			InvalidatePipelineCache();
 		}
+	}
+
+	void Material::SetDrawConstants(const glm::uvec4& constants)
+	{
+		std::memcpy(m_PushConstants, &constants, sizeof(constants));
+	}
+
+	bool Material::SetPushConstants(const void* data, uint32_t size)
+	{
+		if (m_Params.Shader && m_Params.Shader->FindPushConstantBlockSize(k_SkinDrawBlockName) > 0)
+		{
+			DE_CORE_ERROR("Material '{}': shader '{}' declares DE_SkinDraw, whose push constants the renderer owns.", m_Params.DebugName, m_Params.Shader->GetParams().Name);
+			return false;
+		}
+		return Internal::CopyPushConstants(m_Params.Shader, data, size, m_PushConstants, "Material", m_Params.DebugName);
 	}
 
 	void Material::SetSceneUniformBuffer(GraphicsBuffer* buffer)

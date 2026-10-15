@@ -343,7 +343,7 @@ A skinned vertex stage differs from a static one in two ways. Copy it from `Rend
    renderer finds both by name and feeds them itself.
 
    The renderer owns the push constants of a skinned shader: it declares no push-constant block but
-   `DE_SkinDraw`. Every stage that declares a push-constant block declares the same one, at most 128
+   `DE_SkinDraw`, and `Material::SetPushConstants` refuses a shader that declares it. Every stage that declares a push-constant block declares the same one, at most 128
    bytes and a multiple of 4 (`Shader::FindPushConstantBlockSize` reports a block's size). On D3D11 and D3D12 the block
    takes the lowest constant-buffer register, b0 to b13, that no uniform block of the shader uses, so
    a shader whose uniform blocks take all fourteen fails to build.
