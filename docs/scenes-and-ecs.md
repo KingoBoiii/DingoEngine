@@ -43,7 +43,7 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
 | `AddScript<T>(args...)` | Attach a behaviour (see below). An entity holds one script: a second `AddScript` destroys the first, with a warning. |
-| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed at the end of the update). |
+| `RemoveScript()` (v1.0) | Destroy the entity's script (its `OnDestroy` runs now, the object is freed after the scene's update pass, or its next `OnStop` or `Clear`). |
 | `GetScript<T>()` / `HasScript<T>()` | The attached `T` behaviour, or null. |
 | `GetUUID()` / `GetName()` / `SetName(name)` (v1.0) | The entity's id / name; a null entity reads `UUID()` and `""`, and an empty name becomes `"Entity"`. |
 | `IsValid()` / `operator bool` | `false` for a null or destroyed entity. |
@@ -300,9 +300,10 @@ culled against the camera and every shadow view by the box around its meshes, as
 and drawn into the shadows as its meshes would be. The picture is the one the same meshes draw
 without `Static` on the CPU, pixel for pixel; where they would have been instanced, within the
 instancing tolerance, since baked meshes are never instanced. The order differs: a cell draws
-before the material's other meshes, its own meshes by cell and then in the order they were baked,
-and the static materials join the scene's draw order after the moving meshes'. So two meshes meeting
-at exactly equal depth can resolve the other way.
+before the material's other meshes, its own meshes by cell, then by material and shadow setting,
+then by an internal id that reuses freed ones (so not necessarily the order the meshes were made
+`Static`), and the static materials join the scene's draw order after the moving meshes'. So two
+meshes meeting at exactly equal depth can resolve the other way.
 
 Change is allowed but costs a rebake of the cell the mesh is in: changing its mesh, colour,
 material, surface override or shadow setting (or hot-reloading its model) rebakes it quietly;

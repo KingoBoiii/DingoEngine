@@ -29,9 +29,12 @@ for (const Item& item : inventory)
 
 `glm::vec2/3/4`, `ivec2/3` and `quat` are written as arrays of numbers (a quaternion as x, y, z,
 w). Reading never throws: each `As*` takes a fallback for a value of another type, and `Get` reads
-a member by key with a fallback for a missing one:
+a member by key with a fallback for a missing one. Read through a const reference, as below: the
+non-const `operator[]` creates every member it names and turns a value of another type into an empty
+object, so reading a loaded save that way and saving it again rewrites the file.
 
 ```cpp
+const SaveData& save = *loaded;   // from ReadFile or SaveSlots::Read
 const int level = save.Get("level", 1);
 const glm::vec3 position = save["player"]["position"].AsVec3();
 const std::string name = save["player"].Get("name", std::string("Nobody"));
