@@ -14,6 +14,7 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -797,6 +798,10 @@ namespace Dingo
 		};
 		std::unordered_map<BatchKey, MaterialBatch, BatchKeyHash> m_Batches;
 		static constexpr uint32_t k_MaxIdleBatchScenes = 300;
+		// EnqueueBatch's last answer, for the scene in progress: a run of submissions mostly shares one key.
+		BatchKey m_LastBatchKey;
+		MaterialBatch* m_LastBatch = nullptr;
+		Dingo::Material* m_LastBatchMaterial = nullptr;
 
 		// Batches in the order they were first submitted to this scene. Draw order has to
 		// come from here, not from the map: unordered_map iteration follows pointer hashing,
@@ -881,10 +886,14 @@ namespace Dingo
 		// std430, mirrored by InstanceRecord in Instancing.glsl: one copy of a mesh.
 		struct InstanceRecord
 		{
+			// Left unset, so a frame's resize costs nothing: TransformStaticSubmissions writes every record
+			// the layout places.
+			InstanceRecord() {}
+
 			glm::vec4 ModelRows[3];
 			glm::vec4 NormalColumns[3];
-			glm::vec4 Color{ 1.0f };
-			glm::uvec4 Misc{ 0u }; // x = ObjectIndex
+			glm::vec4 Color;
+			glm::uvec4 Misc; // x = ObjectIndex
 		};
 		static_assert(sizeof(InstanceRecord) == 128, "InstanceRecord must match the std430 struct in Instancing.glsl");
 
@@ -941,6 +950,77 @@ namespace Dingo
 				return std::hash<uint64_t>()(key.MeshId * 0x9e3779b97f4a7c15ull + key.Slot);
 			}
 		};
+		// A frame's key to index map, emptied by Clear() without freeing anything: a scene's thousands of
+		// distinct meshes cost no allocation once the table has grown to hold them.
+		template<typename K, typename Hash>
+		class FrameLookup
+		{
+		public:
+			void Clear()
+			{
+				m_Count = 0;
+				if (++m_Stamp == 0)
+				{
+					for (Entry& entry : m_Entries)
+						entry.Stamp = 0;
+					m_Stamp = 1;
+				}
+			}
+			// The index this frame gave `key`, or `index` given it now (second = true).
+			std::pair<uint32_t, bool> TryEmplace(const K& key, uint32_t index)
+			{
+				if ((m_Count + 1) * 2 > m_Entries.size())
+					Grow();
+				const size_t mask = m_Entries.size() - 1;
+				for (size_t slot = Home(key, mask);; slot = (slot + 1) & mask)
+				{
+					Entry& entry = m_Entries[slot];
+					if (entry.Stamp != m_Stamp)
+					{
+						entry = Entry{ key, index, m_Stamp };
+						++m_Count;
+						return { index, true };
+					}
+					if (entry.Key == key)
+						return { entry.Index, false };
+				}
+			}
+
+		private:
+			struct Entry
+			{
+				K Key{};
+				uint32_t Index = 0;
+				uint32_t Stamp = 0;
+			};
+
+			static size_t Home(const K& key, size_t mask)
+			{
+				uint64_t hash = static_cast<uint64_t>(Hash()(key));
+				hash = (hash ^ (hash >> 31)) * 0xbf58476d1ce4e5b9ull;
+				return static_cast<size_t>(hash ^ (hash >> 29)) & mask;
+			}
+
+			void Grow()
+			{
+				std::vector<Entry> entries((std::max)(m_Entries.size() * 2, size_t(64)));
+				std::swap(entries, m_Entries);
+				const size_t mask = m_Entries.size() - 1;
+				for (const Entry& entry : entries)
+				{
+					if (entry.Stamp != m_Stamp)
+						continue;
+					size_t slot = Home(entry.Key, mask);
+					while (m_Entries[slot].Stamp == m_Stamp)
+						slot = (slot + 1) & mask;
+					m_Entries[slot] = entry;
+				}
+			}
+
+			std::vector<Entry> m_Entries;
+			size_t m_Count = 0;
+			uint32_t m_Stamp = 1;
+		};
 
 		// Whether a material's meshes can be drawn instanced: a lit material through its instanced twin,
 		// a custom one with MaterialParams::Instancing and a shader declaring both blocks at bindings its
@@ -959,8 +1039,8 @@ namespace Dingo
 
 		std::vector<InstanceGroup> m_InstanceGroups;
 		std::vector<InstanceCopies> m_InstanceCopies;
-		std::unordered_map<InstanceCopyKey, uint32_t, InstanceCopyKeyHash> m_InstanceCopyLookup;
-		std::unordered_map<InstanceGroupKey, uint32_t, InstanceGroupKeyHash> m_InstanceGroupLookup;
+		FrameLookup<InstanceCopyKey, InstanceCopyKeyHash> m_InstanceCopyLookup;
+		FrameLookup<InstanceGroupKey, InstanceGroupKeyHash> m_InstanceGroupLookup;
 		std::vector<InstanceRecord> m_InstanceRecords;
 		GraphicsBuffer* m_InstanceBuffer = nullptr;
 		uint64_t m_InstanceCapacity = 0;

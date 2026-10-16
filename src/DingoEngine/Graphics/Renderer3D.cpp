@@ -55,18 +55,29 @@ namespace
 	}
 
 	// The mesh's bounds placed by an affine transform, padded by far more than the rounding of either
-	// this or the vertex transform, so the box holds every transformed vertex.
+	// this or the vertex transform, so the box holds every transformed vertex. AABB::Transformed's
+	// arithmetic, in its order, fused with the padding's loop.
 	Dingo::AABB WorldBounds(const Dingo::Mesh& mesh, const glm::mat4& transform)
 	{
 		const Dingo::AABB local(mesh.GetBoundsMin(), mesh.GetBoundsMax());
-		Dingo::AABB bounds = local.Transformed(transform);
-		if (bounds.IsEmpty())
-			return bounds;
+		if (local.IsEmpty())
+			return local;
 
 		const glm::vec3 reach = glm::max(glm::abs(local.Min), glm::abs(local.Max));
-		glm::vec3 magnitude = glm::abs(glm::vec3(transform[3]));
+		const glm::vec3 translation(transform[3]);
+		Dingo::AABB bounds(translation, translation);
+		glm::vec3 magnitude = glm::abs(translation);
 		for (int column = 0; column < 3; ++column)
-			magnitude += glm::abs(glm::vec3(transform[column])) * reach[column];
+		{
+			const glm::vec3 axis(transform[column]);
+			const glm::vec3 low = axis * local.Min[column];
+			const glm::vec3 high = axis * local.Max[column];
+			bounds.Min += glm::min(low, high);
+			bounds.Max += glm::max(low, high);
+			magnitude += glm::abs(axis) * reach[column];
+		}
+		if (bounds.IsEmpty())
+			return bounds;
 		bounds.Min -= magnitude * 1e-5f;
 		bounds.Max += magnitude * 1e-5f;
 		return bounds;
@@ -322,6 +333,7 @@ namespace Dingo
 		m_SceneVertices.clear();
 		m_SceneIndices.clear();
 		m_Batches.clear();
+		m_LastBatch = nullptr;
 		m_DrawOrder.clear();
 		m_StaticSubmissions.clear();
 		m_SceneChunks.clear();
@@ -346,7 +358,7 @@ namespace Dingo
 			DestroyAndDelete(entry.Twin);
 		m_InstancedTwins.clear();
 		m_InstanceGroups.clear();
-		m_InstanceGroupLookup.clear();
+		m_InstanceGroupLookup.Clear();
 		m_InstanceRecords.clear();
 		DestroyAndDelete(m_InstanceBuffer);
 		m_InstanceCapacity = 0;
@@ -422,6 +434,7 @@ namespace Dingo
 
 		// Nothing tells the renderer when a material is deleted, so a batch that has sat unused for
 		// a while is released, or every deleted material would keep an entry forever.
+		m_LastBatch = nullptr;
 		for (auto it = m_Batches.begin(); it != m_Batches.end();)
 		{
 			MaterialBatch& matBatch = it->second;
@@ -1065,7 +1078,7 @@ namespace Dingo
 		// Whether a mesh is instanced comes from its copies in the batch before culling, so the camera
 		// never moves a copy between the GPU's transform and the CPU's, which round differently.
 		const uint32_t threshold = std::max(caps.InstanceThreshold, 1u);
-		m_InstanceCopyLookup.clear();
+		m_InstanceCopyLookup.Clear();
 		m_InstanceCopies.clear();
 		const MaterialBatch* lastBatch = nullptr;
 		uint64_t lastMesh = 0;
@@ -1079,7 +1092,7 @@ namespace Dingo
 			const uint64_t meshId = submission.Mesh->GetId();
 			if (lastCopies == ~0u || lastBatch != submission.Batch || lastMesh != meshId)
 			{
-				const auto [it, inserted] = m_InstanceCopyLookup.try_emplace(InstanceCopyKey{ submission.Batch, meshId }, static_cast<uint32_t>(m_InstanceCopies.size()));
+				const auto [index, inserted] = m_InstanceCopyLookup.TryEmplace(InstanceCopyKey{ submission.Batch, meshId }, static_cast<uint32_t>(m_InstanceCopies.size()));
 				if (inserted)
 				{
 					// A batch casts one way, so its copies reach at most one lit slot and one shadow-only slot.
@@ -1093,7 +1106,7 @@ namespace Dingo
 				}
 				lastBatch = submission.Batch;
 				lastMesh = meshId;
-				lastCopies = it->second;
+				lastCopies = index;
 			}
 			++m_InstanceCopies[lastCopies].Count;
 			submission.Copies = lastCopies;
@@ -1151,7 +1164,7 @@ namespace Dingo
 				copies.Instanced = copies.CastersInstanced = book(copies.LitWrites + copies.CasterWrites);
 		}
 
-		m_InstanceGroupLookup.clear();
+		m_InstanceGroupLookup.Clear();
 		for (StaticSubmission& submission : m_StaticSubmissions)
 		{
 			if (submission.Slot == ~0u || submission.Copies == ~0u)
@@ -1168,7 +1181,7 @@ namespace Dingo
 			uint32_t group = slot.LastGroup;
 			if (group == ~0u || m_InstanceGroups[group].MeshId != meshId)
 			{
-				const auto [it, inserted] = m_InstanceGroupLookup.try_emplace(InstanceGroupKey{ meshId, submission.Slot }, static_cast<uint32_t>(m_InstanceGroups.size()));
+				const auto [index, inserted] = m_InstanceGroupLookup.TryEmplace(InstanceGroupKey{ meshId, submission.Slot }, static_cast<uint32_t>(m_InstanceGroups.size()));
 				if (inserted)
 				{
 					InstanceGroup& added = m_InstanceGroups.emplace_back();
@@ -1178,7 +1191,7 @@ namespace Dingo
 					added.Instanced = !dropped;
 					added.Dropped = dropped;
 				}
-				group = it->second;
+				group = index;
 				slot.LastGroup = group;
 			}
 			++m_InstanceGroups[group].Count;
@@ -2652,7 +2665,13 @@ namespace Dingo
 	{
 		if (!material)
 			material = m_Material;
-		MaterialBatch* batch = &m_Batches[BatchKey{ material, shadows, shadowGroups }];
+		const BatchKey key{ material, shadows, shadowGroups };
+		if (m_LastBatch && key == m_LastBatchKey)
+		{
+			material = m_LastBatchMaterial;
+			return m_LastBatch;
+		}
+		MaterialBatch* batch = &m_Batches[key];
 		if (!batch->Enqueued)
 		{
 			// A skinned shader can't draw the static vertex stream, and no skin block is bound here.
@@ -2679,6 +2698,9 @@ namespace Dingo
 				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
 			}
 		}
+		m_LastBatchKey = key;
+		m_LastBatch = batch;
+		m_LastBatchMaterial = material;
 		return batch;
 	}
 
