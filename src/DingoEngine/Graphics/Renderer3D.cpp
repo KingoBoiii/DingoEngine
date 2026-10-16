@@ -336,6 +336,7 @@ namespace Dingo
 		m_LastBatch = nullptr;
 		m_DrawOrder.clear();
 		m_StaticSubmissions.clear();
+		m_StaticSubmissionData.clear();
 		m_SceneChunks.clear();
 		m_DrawSlots.clear();
 		m_ChunkDraws.clear();
@@ -449,6 +450,7 @@ namespace Dingo
 		}
 		m_DrawOrder.clear();
 		m_StaticSubmissions.clear();
+		m_StaticSubmissionData.clear();
 		m_ObjectRecords.resize(1);
 		m_SceneStaticBatches.clear();
 		if (m_StaticShared)
@@ -587,6 +589,7 @@ namespace Dingo
 		DrawSkinnedSubmissions();
 		DrawTranslucentPass(shadowAtlas);
 		m_StaticSubmissions.clear();
+		m_StaticSubmissionData.clear();
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
@@ -713,10 +716,9 @@ namespace Dingo
 		// A static caster's own vertices bound it, as if every one were transformed: the cascades fit
 		// their depth to this box, so it must not change with what is culled. A mesh whose padded box
 		// already lies inside needn't be transformed for it, and the farthest meshes go first so most do.
-		auto foldVertices = [&low, &high, &casters](const StaticSubmission& submission)
+		auto foldVertices = [&low, &high, &casters](const Dingo::Mesh& mesh, const glm::mat4& transform)
 		{
-			const glm::mat4& transform = submission.Transform;
-			for (const MeshVertex& v : submission.Mesh->GetVertices())
+			for (const MeshVertex& v : mesh.GetVertices())
 			{
 				const glm::vec3 position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
 				low = glm::min(low, position);
@@ -730,15 +732,17 @@ namespace Dingo
 		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
 		{
 			StaticSubmission& submission = m_StaticSubmissions[index];
-			submission.Bounded = IsAffine(submission.Transform);
-			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, submission.Transform) : AABB();
-			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, submission.CullDistance);
+			const StaticSubmissionData& data = m_StaticSubmissionData[index];
+			submission.Bounded = IsAffine(data.Transform);
+			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, data.Transform) : AABB();
+			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, data.CullDistance);
+			submission.Seen = !m_CullingEnabled || !submission.Bounded || (!submission.PastDistance && CameraSees(submission.Bounds, data.Material));
 			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
 				continue;
 
 			if (!submission.Bounded)
 			{
-				foldVertices(submission);
+				foldVertices(*submission.Mesh, data.Transform);
 				continue;
 			}
 			for (int axis = 0; axis < 3; ++axis)
@@ -756,7 +760,7 @@ namespace Dingo
 		for (size_t i = 0; i < extremes.size(); ++i)
 		{
 			if (extremes[i] >= 0 && (i == 0 || extremes[i] != extremes[i - 1]))
-				foldVertices(m_StaticSubmissions[extremes[i]]);
+				foldVertices(*m_StaticSubmissions[extremes[i]].Mesh, m_StaticSubmissionData[extremes[i]].Transform);
 		}
 		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
 		{
@@ -766,7 +770,7 @@ namespace Dingo
 			if (std::binary_search(extremes.begin(), extremes.end(), static_cast<int32_t>(index)))
 				continue;
 			if (!BoxInside(submission.Bounds, low, high))
-				foldVertices(submission);
+				foldVertices(*submission.Mesh, m_StaticSubmissionData[index].Transform);
 		}
 
 		m_HasCasters = casters;
@@ -840,6 +844,7 @@ namespace Dingo
 
 	void Renderer3D::LayoutStaticSubmissions(bool shadows)
 	{
+		DE_CORE_ASSERT(m_StaticSubmissions.size() == m_StaticSubmissionData.size(), "Renderer3D: every static submission has exactly one data record.");
 		m_SceneChunks.clear();
 		m_UsedDrawSlots = 0;
 		m_TranslucentMaterials.clear();
@@ -903,8 +908,9 @@ namespace Dingo
 		const bool culling = m_CullingEnabled;
 		uint64_t translucentVertices = 0;
 		uint64_t translucentIndices = 0;
-		for (StaticSubmission& submission : m_StaticSubmissions)
+		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
 		{
+			StaticSubmission& submission = m_StaticSubmissions[index];
 			submission.Chunk = ~0u;
 			submission.Slot = ~0u;
 			submission.Group = ~0u;
@@ -914,7 +920,7 @@ namespace Dingo
 				continue;
 
 			const bool casts = shadows && submission.Shadows != ShadowCasting::Off;
-			const bool seen = !culling || !submission.Bounded || (!submission.PastDistance && CameraSees(submission.Bounds, submission.Material));
+			const bool seen = submission.Seen;
 			auto castIfReached = [&]()
 			{
 				if (!culling || !submission.Bounded || (!submission.PastDistance && ReachesShadowView(submission.Bounds, submission.ShadowGroups)))
@@ -928,20 +934,21 @@ namespace Dingo
 				}
 			};
 
-			if (submission.Translucent >= 0)
+			if (!submission.Batch)
 			{
-				m_TranslucentSubmissions[submission.Translucent].Culled = !seen;
+				const StaticSubmissionData& data = m_StaticSubmissionData[index];
+				m_TranslucentSubmissions[data.Translucent].Culled = !seen;
 				if (seen)
 				{
 					const uint64_t copies = casts && submission.Shadows == ShadowCasting::On ? 2 : 1;
 					translucentVertices += copies * vertexCount;
 					translucentIndices += copies * indexCount;
-					if (IsTranslucentDrawable(submission.Material))
+					if (IsTranslucentDrawable(data.Material))
 						m_Statistics.ShadowCasters += static_cast<uint32_t>(copies - 1);
 					continue;
 				}
 				++m_Statistics.CulledMeshes;
-				if (casts && submission.Shadows == ShadowCasting::On && IsTranslucentDrawable(submission.Material))
+				if (casts && submission.Shadows == ShadowCasting::On && IsTranslucentDrawable(data.Material))
 					castIfReached();
 				continue;
 			}
@@ -969,16 +976,18 @@ namespace Dingo
 		// Placed in submission order, slot by slot, so a scene with nothing instanced is laid out exactly
 		// as it would be without instancing.
 		const bool grouped = GroupInstances(shadows);
-		for (StaticSubmission& submission : m_StaticSubmissions)
+		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
 		{
+			StaticSubmission& submission = m_StaticSubmissions[index];
 			if (submission.Slot == ~0u)
 				continue;
+			StaticSubmissionData& data = m_StaticSubmissionData[index];
 			if (grouped && submission.Group != ~0u)
 			{
 				InstanceGroup& group = m_InstanceGroups[submission.Group];
 				if (group.Instanced)
 				{
-					submission.Record = group.FirstRecord + group.Placed++;
+					data.Record = group.FirstRecord + group.Placed++;
 					++m_Statistics.InstancedMeshes;
 					continue;
 				}
@@ -989,7 +998,7 @@ namespace Dingo
 					continue;
 				}
 			}
-			PlaceInSlot(submission.Slot, submission.Mesh->GetVertexCount(), submission.Mesh->GetIndexCount(), submission.Chunk, submission.ChunkVertex, submission.ChunkIndex);
+			PlaceInSlot(submission.Slot, submission.Mesh->GetVertexCount(), submission.Mesh->GetIndexCount(), submission.Chunk, data.ChunkVertex, data.ChunkIndex);
 		}
 
 		uint32_t vertexTotal = 0;
@@ -1097,7 +1106,7 @@ namespace Dingo
 				{
 					// A batch casts one way, so its copies reach at most one lit slot and one shadow-only slot.
 					InstanceCopies& added = m_InstanceCopies.emplace_back();
-					added.Material = submission.Material;
+					added.Material = submission.Batch->Material;
 					added.Mesh = submission.Mesh;
 					const uint32_t lit = submission.Shadows != ShadowCasting::ShadowsOnly ? 1u : 0u;
 					const uint32_t casts = shadows && submission.Shadows != ShadowCasting::Off ? 1u : 0u;
@@ -1259,38 +1268,42 @@ namespace Dingo
 	void Renderer3D::TransformStaticSubmissions()
 	{
 		DE_PROFILE_SCOPE("Renderer3D::TransformStaticSubmissions");
-		auto transform = [this](const StaticSubmission& submission, Vertex* out)
+		auto writeVertices = [this](const StaticSubmission& submission, const StaticSubmissionData& data, Vertex* out)
 		{
-			TransformVertices(*submission.Mesh, submission.Transform, submission.Color, DynamicObjectIndex(submission.Object), out);
+			TransformVertices(*submission.Mesh, data.Transform, data.Color, DynamicObjectIndex(data.Object), out);
 		};
 
 		uint32_t vertices = 0;
 		uint32_t indices = 0;
-		for (const StaticSubmission& submission : m_StaticSubmissions)
+		for (uint32_t s = 0; s < m_StaticSubmissions.size(); ++s)
 		{
-			if (submission.Group != ~0u && m_InstanceGroups[submission.Group].Instanced)
+			const StaticSubmission& submission = m_StaticSubmissions[s];
+			const bool instanced = submission.Group != ~0u && m_InstanceGroups[submission.Group].Instanced;
+			if (!instanced && submission.Chunk == ~0u)
+				continue;
+
+			const StaticSubmissionData& data = m_StaticSubmissionData[s];
+			if (instanced)
 			{
-				const glm::mat4& transform = submission.Transform;
+				const glm::mat4& transform = data.Transform;
 				const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
-				InstanceRecord& record = m_InstanceRecords[submission.Record];
+				InstanceRecord& record = m_InstanceRecords[data.Record];
 				for (int i = 0; i < 3; ++i)
 				{
 					record.ModelRows[i] = glm::row(transform, i);
 					record.NormalColumns[i] = glm::vec4(normalMatrix[i], 0.0f);
 				}
-				record.Color = submission.Color;
-				record.Misc = glm::uvec4(DynamicObjectIndex(submission.Object), 0u, 0u, 0u);
+				record.Color = data.Color;
+				record.Misc = glm::uvec4(DynamicObjectIndex(data.Object), 0u, 0u, 0u);
 				continue;
 			}
-			if (submission.Chunk == ~0u)
-				continue;
 
 			const SceneChunk& chunk = m_SceneChunks[submission.Chunk];
-			const uint32_t firstVertex = chunk.FirstVertex + submission.ChunkVertex;
-			transform(submission, m_SceneVertices.data() + firstVertex);
+			const uint32_t firstVertex = chunk.FirstVertex + data.ChunkVertex;
+			writeVertices(submission, data, m_SceneVertices.data() + firstVertex);
 
 			const uint32_t base = m_ArenaVertexBase + firstVertex;
-			uint32_t* out = m_SceneIndices.data() + chunk.FirstIndex + submission.ChunkIndex;
+			uint32_t* out = m_SceneIndices.data() + chunk.FirstIndex + data.ChunkIndex;
 			for (const uint32_t index : submission.Mesh->GetIndices())
 				*out++ = index + base;
 			vertices += submission.Mesh->GetVertexCount();
@@ -1306,15 +1319,16 @@ namespace Dingo
 				continue;
 
 			const StaticSubmission& submission = m_StaticSubmissions[translucent.Static];
+			const StaticSubmissionData& data = m_StaticSubmissionData[translucent.Static];
 			translucent.VertexCount = submission.Mesh->GetVertexCount();
 			translucent.IndexCount = submission.Mesh->GetIndexCount();
 			translucent.FirstVertex = static_cast<uint32_t>(m_TranslucentVertices.size());
 			translucent.FirstIndex = static_cast<uint32_t>(m_TranslucentIndices.size());
 			m_TranslucentVertices.resize(m_TranslucentVertices.size() + translucent.VertexCount);
-			transform(submission, m_TranslucentVertices.data() + translucent.FirstVertex);
+			writeVertices(submission, data, m_TranslucentVertices.data() + translucent.FirstVertex);
 			m_TranslucentIndices.insert(m_TranslucentIndices.end(), submission.Mesh->GetIndices().begin(), submission.Mesh->GetIndices().end());
 
-			glm::vec3 center = glm::vec3(submission.Transform[3]);
+			glm::vec3 center = glm::vec3(data.Transform[3]);
 			if (translucent.VertexCount > 0)
 			{
 				glm::vec3 sum(0.0f);
@@ -2627,16 +2641,13 @@ namespace Dingo
 		}
 
 		StaticSubmission& submission = m_StaticSubmissions.emplace_back();
+		StaticSubmissionData& data = m_StaticSubmissionData.emplace_back(transform, color, batchMaterial, cullDistance);
 		submission.Mesh = mesh;
-		submission.Transform = transform;
-		submission.Color = color;
-		submission.Material = batchMaterial;
 		submission.Shadows = shadows;
 		submission.ShadowGroups = shadowGroups;
-		submission.CullDistance = cullDistance;
 		if (surface && shadows != ShadowCasting::ShadowsOnly && IsLitShader(batchMaterial->GetShader()))
 		{
-			submission.Object = static_cast<uint32_t>(m_ObjectRecords.size());
+			data.Object = static_cast<uint32_t>(m_ObjectRecords.size());
 			ObjectRecord& record = m_ObjectRecords.emplace_back();
 			FillObjectRecord(*surface, record.Emissive, record.Surface);
 			++m_Statistics.SurfaceOverrides;
@@ -2644,7 +2655,7 @@ namespace Dingo
 		if (batch->Translucent)
 		{
 			// Its place in the translucent list keeps its submission order among the skinned ones.
-			submission.Translucent = static_cast<int32_t>(m_TranslucentSubmissions.size());
+			data.Translucent = static_cast<int32_t>(m_TranslucentSubmissions.size());
 			TranslucentSubmission& translucent = m_TranslucentSubmissions.emplace_back();
 			translucent.Material = batchMaterial;
 			translucent.Static = static_cast<int32_t>(m_StaticSubmissions.size() - 1);
@@ -2698,6 +2709,7 @@ namespace Dingo
 				m_DrawOrder.push_back(BatchKey{ m_Material, shadows, shadowGroups });
 			}
 		}
+		batch->Material = material;
 		m_LastBatchKey = key;
 		m_LastBatch = batch;
 		m_LastBatchMaterial = material;

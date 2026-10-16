@@ -779,6 +779,7 @@ namespace Dingo
 			uint32_t IdleScenes = 0;
 			bool Usable = false; // EndScene: its material can be drawn
 			uint32_t Slot = ~0u; // EndScene: its m_DrawSlots entry; a ShadowsOnly batch's meshes go to the shadow-only slots
+			Dingo::Material* Material = nullptr; // the key's material, set by EnqueueBatch for a batch it returns
 		};
 		// A material's meshes batch apart by how they cast, so a pass can take or leave a whole batch.
 		struct BatchKey
@@ -809,36 +810,41 @@ namespace Dingo
 		// invisible for depth-tested opaques, but not for anything blended.
 		std::vector<BatchKey> m_DrawOrder;
 
-		// A SubmitMesh call, kept until EndScene culls and transforms it.
+		// A SubmitMesh call, kept until EndScene culls and transforms it: the fields every EndScene pass reads.
 		struct StaticSubmission
 		{
-			// Set by the layout: the slot it draws in, its m_InstanceCopies entry, and the instance group
-			// and record when instanced.
+			AABB Bounds;                       // world bounds, padded for rounding; empty without vertices
+			const Dingo::Mesh* Mesh = nullptr;
+			MaterialBatch* Batch = nullptr;    // the batch it draws in (the default material's for a SkinnedOnly one); null for a translucent mesh
+			// Set by the layout: the slot it draws in, its m_InstanceCopies entry and instance group.
 			uint32_t Slot = ~0u;
 			uint32_t Copies = ~0u;
 			uint32_t Group = ~0u;
-			uint32_t Record = 0;
-
-			const Dingo::Mesh* Mesh = nullptr;
-			glm::mat4 Transform{ 1.0f };
-			glm::vec4 Color{ 1.0f };
-			MaterialBatch* Batch = nullptr; // the batch it draws in (the default material's for a SkinnedOnly one); null for a translucent mesh
-			Dingo::Material* Material = nullptr; // what it draws with
-			ShadowCasting Shadows = ShadowCasting::On;
+			uint32_t Chunk = ~0u;              // the m_SceneChunks entry it is transformed into, ~0u when culled
 			uint32_t ShadowGroups = 1;
-			float CullDistance = 0.0f;
-			int32_t Translucent = -1; // into m_TranslucentSubmissions
-			uint32_t Object = 0;      // its m_ObjectRecords entry, 0 for none
-
-			// Worked out by EndScene.
-			AABB Bounds;               // world bounds, padded for rounding; empty without vertices
-			bool Bounded = false;      // false for a non-affine transform, which is never culled
+			ShadowCasting Shadows = ShadowCasting::On;
+			bool Bounded = false;              // false for a non-affine transform, which is never culled
 			bool PastDistance = false;
-			uint32_t Chunk = ~0u;      // the m_SceneChunks entry it is transformed into, ~0u when culled
-			uint32_t ChunkVertex = 0;  // where in that chunk
+			bool Seen = false;                 // the camera sees it (or culling is off, or it is unbounded)
+		};
+		static_assert(sizeof(StaticSubmission) == 64, "StaticSubmission is one cache line");
+		// The rest of a submission, read only by the bounds pass and for the meshes that draw; same index as m_StaticSubmissions.
+		struct StaticSubmissionData
+		{
+			StaticSubmissionData(const glm::mat4& transform, const glm::vec4& color, Dingo::Material* material, float cullDistance)
+				: Transform(transform), Color(color), Material(material), CullDistance(cullDistance) {}
+			glm::mat4 Transform;
+			glm::vec4 Color;
+			Dingo::Material* Material;   // what it draws with
+			float CullDistance;
+			int32_t Translucent = -1;    // into m_TranslucentSubmissions
+			uint32_t Object = 0;         // its m_ObjectRecords entry, 0 for none
+			uint32_t Record = 0;         // its instance record when instanced
+			uint32_t ChunkVertex = 0;    // where in its chunk
 			uint32_t ChunkIndex = 0;
 		};
 		std::vector<StaticSubmission> m_StaticSubmissions;
+		std::vector<StaticSubmissionData> m_StaticSubmissionData;
 
 		// One draw's run of a slot's meshes in the scene's upload. A slot is a batch of the draw order,
 		// or the shadow pass's batch of the casters the camera culled, one per caster mask.
@@ -1137,7 +1143,7 @@ namespace Dingo
 		struct TranslucentSubmission
 		{
 			Dingo::Material* Material = nullptr;
-			int32_t Static = -1; // into m_StaticSubmissions
+			int32_t Static = -1; // into m_StaticSubmissions and m_StaticSubmissionData
 			bool Culled = false;
 			uint32_t FirstVertex = 0;
 			uint32_t VertexCount = 0;
