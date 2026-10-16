@@ -55,8 +55,8 @@ namespace
 	}
 
 	// The mesh's bounds placed by an affine transform, padded by far more than the rounding of either
-	// this or the vertex transform, so the box holds every transformed vertex. AABB::Transformed's
-	// arithmetic, in its order, fused with the padding's loop.
+	// this or the vertex transform, so the box holds every transformed vertex. Must match
+	// AABB::Transformed's arithmetic and order: docs/performance.md gives games that for their own culling.
 	Dingo::AABB WorldBounds(const Dingo::Mesh& mesh, const glm::mat4& transform)
 	{
 		const Dingo::AABB local(mesh.GetBoundsMin(), mesh.GetBoundsMax());

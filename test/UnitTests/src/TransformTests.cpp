@@ -22,10 +22,14 @@ TEST_SUITE("Transform3DComponent")
 
 		for (int sample = 0; sample < 2000; ++sample)
 		{
+			float values[10];
+			for (int i = 0; i < 10; ++i)
+				values[i] = i < 3 ? next(-1000.0f, 1000.0f) : i < 7 ? next(-1.0f, 1.0f) : next(-4.0f, 4.0f);
+
 			Transform3DComponent transform;
-			transform.Position = glm::vec3(next(-1000.0f, 1000.0f), next(-1000.0f, 1000.0f), next(-1000.0f, 1000.0f));
-			transform.Rotation = glm::normalize(glm::quat(next(-1.0f, 1.0f), next(-1.0f, 1.0f), next(-1.0f, 1.0f), next(-1.0f, 1.0f)));
-			transform.Scale = glm::vec3(next(-4.0f, 4.0f), next(-4.0f, 4.0f), next(-4.0f, 4.0f));
+			transform.Position = glm::vec3(values[0], values[1], values[2]);
+			transform.Rotation = glm::normalize(glm::quat(values[3], values[4], values[5], values[6]));
+			transform.Scale = glm::vec3(values[7], values[8], values[9]);
 			if (sample % 7 == 0)
 				transform.Scale.y = 0.0f;
 			if (sample % 11 == 0)
