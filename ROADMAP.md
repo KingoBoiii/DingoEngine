@@ -466,7 +466,7 @@ instead of a moving target.
   release workflow and the Linux packaging ship every example this way. Deterrence, not
   protection: [docs/distribution.md](docs/distribution.md) has the threat model.
 
-**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6).
+**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6). The game's own plan is `.claude/plans/2026-10-08-hearthvale-plan.md`; its cloud build (P0–P15) is in `examples/Hearthvale/`, with the how-to-play, flags and licences in its README, and the GPU and playthrough passes still to do.
 
 ---
 

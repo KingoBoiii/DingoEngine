@@ -37,6 +37,7 @@ layout(location = 0) in vec3 a_Position;
 layout(location = 1) in uvec4 a_Joints;
 layout(location = 2) in vec4 a_Weights;
 #elif defined(DE_INSTANCED)
+#define DE_INSTANCE_DRAW_PUSH
 #include <DingoEngine/Instancing.glsl>
 #endif
 

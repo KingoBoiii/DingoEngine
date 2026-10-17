@@ -58,6 +58,7 @@ namespace
 	constexpr int32_t k_CullCheckHeight = 360;
 	constexpr uint32_t k_MaxRepeatDraws = 15;
 	constexpr uint64_t k_MaxSkinnedPassBreaks = 4;
+	constexpr uint64_t k_MaxInstancedPassBreaks = 8;
 	constexpr uint32_t k_MinCulledPercent = 85;
 	constexpr uint32_t k_CullSamples = 8;
 
@@ -615,6 +616,11 @@ namespace Dingo
 		else
 		{
 			Check(stats.SubmittedMeshes == m_Count, std::format("every entity's mesh reaches a batch ({} of {})", stats.SubmittedMeshes, m_Count));
+			// Only a material's first draw of a frame writes its uniform block; each instanced draw pushes its
+			// first record. Writing it instead broke the 10 instanced shadow draws' pass 9 more times.
+			if (m_Mode == Mode::Repeat || m_Mode == Mode::Shadow)
+				Check(m_PassBreaks <= k_MaxInstancedPassBreaks, std::format("{} {}: {} buffer writes between draws of one pass ({} instanced draws, {} instanced shadow draws)",
+					m_Count, ModeName(m_Mode), m_PassBreaks, stats.InstancedDraws, stats.InstancedShadowDraws));
 		}
 		// Baked cells cull by range and never instance; RunStaticChecks holds them to these pictures.
 		SetStatic(false);

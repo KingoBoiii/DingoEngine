@@ -98,6 +98,7 @@ namespace Dingo
 		{
 			textureDesc.isShaderResource = m_Params.IsShaderResource;
 			textureDesc.isTypeless = m_Params.IsShaderResource;
+			textureDesc.setClearValue(nvrhi::Color(k_DepthClearValue, 0.0f, 0.0f, 0.0f));
 		}
 
 		m_Handle = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createTexture(textureDesc);

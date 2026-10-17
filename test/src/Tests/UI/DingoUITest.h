@@ -175,6 +175,7 @@ namespace Dingo
 		float m_NavSliderBefore = 0.0f;
 		uint32_t m_WNavClicks = 0;
 		UIInteraction m_WNavResult[k_NavCount];
+		uint64_t m_WNavIds[k_NavCount]{};
 		uint32_t m_TransStage = 0;
 		bool m_TransDone = false;
 		uint32_t m_FreeStage = 0;

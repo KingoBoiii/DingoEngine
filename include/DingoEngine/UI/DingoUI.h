@@ -637,6 +637,19 @@ namespace Dingo
 		bool Focused = false; ///< It has keyboard or gamepad focus and the player is navigating (see DingoUI::IsFocusVisible).
 	};
 
+	/// Where an element was laid out in the last finished frame, in pixels of the UI's target (the window
+	/// unless redirected), origin top-left, +Y down. Root transitions (fade, slide, scale) are not applied.
+	struct UILayoutRect
+	{
+		glm::vec2 Min{ 0.0f }; ///< The top-left corner of the element's final, pixel-snapped rect.
+		glm::vec2 Max{ 0.0f }; ///< The bottom-right corner (exclusive) of the same rect.
+		/// The top-left corner of the part left after the scroll areas and clipping boxes around the
+		/// element cut it. Equal to Min and Max when nothing clips it; when it is clipped away
+		/// entirely VisibleMin equals VisibleMax.
+		glm::vec2 VisibleMin{ 0.0f };
+		glm::vec2 VisibleMax{ 0.0f }; ///< The bottom-right corner of the visible part; see VisibleMin.
+	};
+
 	/// The size and state of a Button, Toggle, Selectable or ProgressBar. Chain the setters.
 	struct UIWidgetParams
 	{
@@ -849,6 +862,22 @@ namespace Dingo
 		/// True while the player navigates with keys or a pad, false once the mouse moves again.
 		/// Focus rings and UIInteraction::Focused show only while it is true.
 		static bool IsFocusVisible();
+		/// The id DingoUI gives the widget `label` declared in the open container, PushId included:
+		/// the same id SetFocus aims at and GetFocusedId and GetRect take. 0 when no root is open or
+		/// there is no game UI.
+		static uint64_t GetId(std::string_view label);
+		/// The widget holding keyboard or gamepad focus as of this frame's BeginFrame, whether or not
+		/// the focus ring shows (see IsFocusVisible); 0 for none or when there is no game UI.
+		static uint64_t GetFocusedId();
+		/// Where the element with `id` (from GetId or GetFocusedId) was laid out in the last finished
+		/// frame. False, leaving `outRect` alone, when no element had that id then or there is no game
+		/// UI. Valid any time on the main thread; during OnUpdate it reports the previous frame's layout.
+		static bool GetRect(uint64_t id, UILayoutRect& outRect);
+		/// Where the element called `name` was laid out in the last finished frame: a root's name, a
+		/// box's UIBoxParams::Id, or a widget's label as declared (its `##` part included); the first
+		/// in declaration order. False, leaving `outRect` alone, when there is none or there is no game
+		/// UI. Valid any time on the main thread.
+		static bool GetRect(std::string_view name, UILayoutRect& outRect);
 		/// True for the frame the back input (Escape, pad B by default) went down while a navigable
 		/// root is up. It is hidden from Input only while the focus ring shows or a modal root is
 		/// up, so a pause key is not also read by the game then; use this to close the menu instead.

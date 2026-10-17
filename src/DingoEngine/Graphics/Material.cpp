@@ -169,10 +169,13 @@ namespace Dingo
 
 	bool Material::SetPushConstants(const void* data, uint32_t size)
 	{
-		if (m_Params.Shader && m_Params.Shader->FindPushConstantBlockSize(k_SkinDrawBlockName) > 0)
+		for (const char* block : { k_SkinDrawBlockName, k_InstanceDrawBlockName })
 		{
-			DE_CORE_ERROR("Material '{}': shader '{}' declares DE_SkinDraw, whose push constants the renderer owns.", m_Params.DebugName, m_Params.Shader->GetParams().Name);
-			return false;
+			if (m_Params.Shader && m_Params.Shader->FindPushConstantBlockSize(block) > 0)
+			{
+				DE_CORE_ERROR("Material '{}': shader '{}' declares {}, whose push constants the renderer owns.", m_Params.DebugName, m_Params.Shader->GetParams().Name, block);
+				return false;
+			}
 		}
 		return Internal::CopyPushConstants(m_Params.Shader, data, size, m_PushConstants, "Material", m_Params.DebugName);
 	}

@@ -24,6 +24,7 @@ stb_vorbis | https://github.com/nothings/stb | MIT or public domain | Ogg Vorbis
 nlohmann/json | https://github.com/nlohmann/json | MIT | save data | vendor/json/LICENSE.MIT
 Tracy | https://github.com/wolfpld/tracy | BSD-3-Clause | profiler (profiling builds only) | vendor/tracy/LICENSE
 Inter | https://rsms.me/inter | OFL-1.1 | on-screen text in the examples and the test app | scripts/notices/licenses/inter.txt
+Fredoka | https://github.com/hafontia/Fredoka-One | OFL-1.1 | Hearthvale's heading font | examples/Hearthvale/assets/fonts/LICENSE-Fredoka.txt
 shaderc | https://github.com/google/shaderc | Apache-2.0 | shader compilation | scripts/notices/licenses/shaderc.txt
 glslang | https://github.com/KhronosGroup/glslang | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0 and others | shader compilation | scripts/notices/licenses/glslang.txt
 SPIRV-Tools | https://github.com/KhronosGroup/SPIRV-Tools | Apache-2.0 | shader compilation | scripts/notices/licenses/spirv-tools.txt

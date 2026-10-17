@@ -206,6 +206,13 @@ jobs:
         name: marionette-binary-windows
         path: .\build\bin\Distribution-windows-x86_64\Marionette
 
+    - name: Upload Hearthvale binary
+      if: matrix.build-configuration == 'Distribution'
+      uses: actions/upload-artifact@v4
+      with:
+        name: hearthvale-binary-windows
+        path: .\build\bin\Distribution-windows-x86_64\Hearthvale
+
   example-game-flappy-bird:
     needs: build-windows
     runs-on: windows-latest
@@ -695,6 +702,55 @@ jobs:
       with:
         name: marionette-windows-distribution-${{steps.version.outputs.VERSION}}
         path: .\marionette
+
+  example-game-hearthvale:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+        submodules: false
+        fetch-depth: 0
+
+    - name: Download Hearthvale binary
+      uses: actions/download-artifact@v4
+      with:
+        name: hearthvale-binary-windows
+        path: .\hearthvale
+
+    - name: Get version
+      id: version
+      run: |
+        $tag = "${{ github.ref_name }}"
+        if ($tag -cnotmatch '^v\d+\.\d+\.\d+(-rc\.\d+)?$') {
+          Write-Host "::error::Tag $tag must look like vX.Y.Z or vX.Y.Z-rc.N"
+          exit 1
+        }
+        $ver = $tag.TrimStart('v')
+        $parts = $ver.Split('-')[0].Split('.')
+        $commits = git rev-list --count HEAD
+        echo "VERSION=$ver.$commits" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MAJOR=$($parts[0])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_MINOR=$($parts[1])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_PATCH=$($parts[2])" >> $env:GITHUB_OUTPUT
+        echo "VERSION_BUILD=$commits" >> $env:GITHUB_OUTPUT
+
+    - name: Create ZIP archive
+      run: |
+        $zipName = "Hearthvale-${{steps.version.outputs.VERSION}}-windows-x86_64.zip"
+        Compress-Archive -Path ".\hearthvale\*" -DestinationPath ".\$zipName" -Force
+
+    - name: Upload to GitHub Release
+      run: gh release upload "${{ github.ref_name }}" "Hearthvale-${{steps.version.outputs.VERSION}}-windows-x86_64.zip" --clobber
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: hearthvale-windows-distribution-${{steps.version.outputs.VERSION}}
+        path: .\hearthvale
 
   build-linux:
     runs-on: ubuntu-24.04
