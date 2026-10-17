@@ -56,7 +56,7 @@ namespace Dingo
 		/// Loads the model and creates its textures, reading the `<stem>.events` sidecar if the
 		/// file has clips. Returns nullptr on failure (error is logged). Caller owns the returned
 		/// Model. A relative filepath is looked up under the asset root first, then the working
-		/// directory.
+		/// directory. A headless app loads it without textures.
 		[[nodiscard]] static Model* LoadFromFile(const std::filesystem::path& filepath);
 		/// As above with options. Reload() reads the file again with the same params.
 		[[nodiscard]] static Model* LoadFromFile(const std::filesystem::path& filepath, const ModelLoadParams& params);

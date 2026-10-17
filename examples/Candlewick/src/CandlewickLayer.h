@@ -15,6 +15,7 @@ namespace Dingo
 		void OnAttach() override;
 		void OnDetach() override;
 		void OnUpdate(float deltaTime) override;
+		void OnEvent(Event& e) override;
 
 	private:
 		void RebuildKeepScene();
@@ -35,6 +36,7 @@ namespace Dingo
 		};
 
 	private:
+		Font* m_Font = nullptr;
 		RunResult m_Result;
 		SceneManager m_SceneManager;
 		Scene* m_TitleScene = nullptr;

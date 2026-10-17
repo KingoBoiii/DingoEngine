@@ -12,11 +12,12 @@ namespace Dingo
 	class KeepMap;
 	class Lantern;
 
+	enum class PauseChoice { None, Resume, Title };
+
 	class Hud
 	{
 	public:
-		Hud(Scene& scene, const KeepMap& map, const Lantern& lantern, int startRoom);
-		~Hud();
+		Hud(const KeepMap& map, const Lantern& lantern, int startRoom);
 
 		Hud(const Hud&) = delete;
 		Hud& operator=(const Hud&) = delete;
@@ -29,30 +30,24 @@ namespace Dingo
 		void SetBrazierPrompt(BrazierPrompt prompt, float progress);
 		void ShowToast(const std::string& text);
 		void SetPaused(bool paused);
+		// Declares the whole HUD and, while paused, the pause menu; call it once a frame, paused or not.
 		void Update(float deltaTime, const Lantern& lantern);
+		// What the pause menu's buttons asked for in the last Update, once.
+		PauseChoice TakePauseChoice();
+
+	private:
+		void DeclarePause();
 
 	private:
 		const KeepMap& m_Map;
-		Font* m_Font = nullptr;
-		Entity m_Fade;
-		Entity m_RoomLabel;
-		Entity m_OilBackground;
-		Entity m_OilFill;
-		Entity m_LanternState;
-		Entity m_KeyHint;
-		Entity m_Prompt;
-		Entity m_ProgressBackground;
-		Entity m_ProgressFill;
-		Entity m_Toast;
-		Entity m_PauseDim;
-		Entity m_PauseTitle;
-		Entity m_PauseHint;
 		int m_Room = -1;
+		float m_Fade = 0.0f;
 		BrazierPrompt m_PromptKind = BrazierPrompt::None;
 		float m_Progress = 0.0f;
 		std::string m_ToastText;
 		float m_ToastTime = 0.0f;
 		bool m_Paused = false;
+		PauseChoice m_PauseChoice = PauseChoice::None;
 		Overlay::PadText m_SnuffHint;
 		Overlay::PadText m_LightBrazierPrompt;
 		Overlay::PadText m_LightAltarPrompt;

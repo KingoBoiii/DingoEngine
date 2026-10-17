@@ -97,7 +97,8 @@ namespace Dingo
 	class Sampler : public IBindableShaderResource
 	{
 	public:
-		/// Builds the sampler and returns it ready to bind. The caller owns the result.
+		/// Builds the sampler and returns it ready to bind. The caller owns the result. Returns nullptr
+		/// (with an error) when there is no graphics device, as in a headless app.
 		[[nodiscard]] static Sampler* Create(const SamplerParams& params);
 
 	public:

@@ -2,6 +2,7 @@
 #include "GameTuning.h"
 #include "KeepDirector.h"
 #include "LaunchOptions.h"
+#include "Overlay.h"
 #include "TitleScreen.h"
 
 #include <algorithm>
@@ -12,6 +13,9 @@ namespace Dingo
 
 	void CandlewickLayer::OnAttach()
 	{
+		m_Font = Overlay::LoadFont();
+		Overlay::UseFont(m_Font);
+
 		m_TitleScene = m_SceneManager.CreateScene(SCENE_TITLE);
 		m_KeepScene = m_SceneManager.CreateScene(SCENE_KEEP);
 		m_EndScene = m_SceneManager.CreateScene(SCENE_END);
@@ -30,6 +34,18 @@ namespace Dingo
 	{
 		if (Scene* active = m_SceneManager.GetActiveScene())
 			active->OnStop();
+		Overlay::DropFont();
+		DestroyAndDelete(m_Font);
+	}
+
+	void CandlewickLayer::OnEvent(Event& e)
+	{
+		EventDispatcher dispatcher(e);
+		dispatcher.Dispatch<WindowFocusEvent>([](WindowFocusEvent& focus)
+		{
+			Overlay::NoteFocus(focus.IsFocused());
+			return false;
+		});
 	}
 
 	void CandlewickLayer::RebuildKeepScene()
@@ -55,6 +71,7 @@ namespace Dingo
 		const LaunchOptions& options = GetLaunchOptions();
 		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
 		m_Result.FrameSeconds = step;
+		Overlay::BeginFrame();
 
 		Scene* activeBefore = m_SceneManager.GetActiveScene();
 		const bool measuring = options.Perf && !m_PerfDone && activeBefore == m_KeepScene;

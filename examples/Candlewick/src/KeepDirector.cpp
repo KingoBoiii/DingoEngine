@@ -78,7 +78,7 @@ namespace Dingo
 		m_Braziers = std::make_unique<Braziers>(scene, m_Map, *m_World, *m_LightLod, *m_Audio, startOil, checkpointTile, !options.Freeze, options.AllLit);
 		m_LightLod->Update(0.0f, m_Camera->GetFocus(), m_Camera->GetViewProjection());
 
-		m_Hud = std::make_unique<Hud>(scene, m_Map, *m_Lantern, labelRoom);
+		m_Hud = std::make_unique<Hud>(m_Map, *m_Lantern, labelRoom);
 		m_Audio->StartDrone();
 	}
 
@@ -94,15 +94,26 @@ namespace Dingo
 
 	void KeepDirectorScript::OnUpdate(float deltaTime)
 	{
-		const bool toggle = Input::IsKeyPressed(Key::Escape) || Input::IsGamepadButtonPressed(GamepadButton::Start);
+		// With the focus ring hidden, pad B reaches Input instead of DingoUI's back.
+		const bool toggle = Overlay::BackPressed() || Input::IsGamepadButtonPressed(GamepadButton::Start)
+			|| (m_Paused && Input::IsGamepadButtonPressed(GamepadButton::B));
 		if (toggle && m_WinTime < 0.0f)
 			SetPaused(!m_Paused);
 
 		if (m_Paused)
 		{
-			if (Input::IsKeyPressed(Key::Enter) || Input::IsGamepadButtonPressed(GamepadButton::B))
-				RequestSceneTransition(SCENE_TITLE);
 			m_Hud->Update(0.0f, *m_Lantern);
+			switch (m_Hud->TakePauseChoice())
+			{
+			case PauseChoice::Resume:
+				SetPaused(false);
+				break;
+			case PauseChoice::Title:
+				RequestSceneTransition(SCENE_TITLE);
+				break;
+			case PauseChoice::None:
+				break;
+			}
 			return;
 		}
 

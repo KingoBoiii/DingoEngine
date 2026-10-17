@@ -90,12 +90,15 @@ namespace Dingo
 	{
 	public:
 		/// A relative filepath is looked up under the asset root first, then the working
-		/// directory. Never returns nullptr: check IsValid.
+		/// directory. Returns nullptr (with an error) when there is no graphics device, as in a
+		/// headless app; otherwise never: check IsValid.
 		[[nodiscard]] static Shader* CreateFromFile(const std::string& name, const std::filesystem::path& filepath, bool reflect = true);
-		/// Compiles inline source. Never returns nullptr: check IsValid.
+		/// Compiles inline source. Returns nullptr (with an error) when there is no graphics device,
+		/// as in a headless app; otherwise never: check IsValid.
 		[[nodiscard]] static Shader* CreateFromSource(const std::string& name, const std::string& source, bool reflect = true);
-		/// Compiles the shader from params, using the bytecode disk cache. Never returns nullptr:
-		/// check IsValid.
+		/// Compiles the shader from params, using the bytecode disk cache. Returns nullptr (with an
+		/// error) when there is no graphics device, as in a headless app; otherwise never: check
+		/// IsValid.
 		[[nodiscard]] static Shader* Create(const ShaderParams& params);
 
 	public:
