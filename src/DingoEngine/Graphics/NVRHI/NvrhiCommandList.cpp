@@ -80,7 +80,7 @@ namespace Dingo
 			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, clearColor.a });
 
 		if (hasDepth)
-			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, 1.0f, 0);
+			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, k_DepthClearValue, 0);
 
 		m_LastDrawFramebuffer = nullptr;
 	}

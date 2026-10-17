@@ -3,6 +3,7 @@
 
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/NVRHI/NvrhiGraphicsContext.h"
+#include "DingoEngine/Graphics/NVRHI/NvrhiTexture.h"
 
 namespace Dingo
 {
@@ -36,7 +37,8 @@ namespace Dingo
 				.setDimension(nvrhi::TextureDimension::Texture2D)
 				.setIsRenderTarget(true)
 				.setInitialState(nvrhi::ResourceStates::DepthWrite)
-				.setKeepInitialState(true);
+				.setKeepInitialState(true)
+				.setClearValue(nvrhi::Color(k_DepthClearValue, 0.0f, 0.0f, 0.0f));
 			// Depth-only target: we never sample it. isShaderResource defaults to true, but
 			// on D3D a non-typeless depth format (D32) cannot back a shader-resource view, so
 			// leaving it on makes CreateTexture2D fail with E_INVALIDARG and the back-end ends
