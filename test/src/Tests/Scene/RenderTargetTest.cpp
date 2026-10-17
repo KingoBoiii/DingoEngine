@@ -177,7 +177,7 @@ void main() { o_Color = vec4(texture(sampler2DShadow(u_Depth, u_Compare), vec3(v
 		m_ProbePixels.clear();
 		m_Alive = std::make_shared<int>(0);
 
-		m_TempDirectory = std::filesystem::temp_directory_path() / "DingoRenderTargetTest";
+		m_TempDirectory = TestTempDirectory("DingoRenderTargetTest");
 		std::error_code error;
 		std::filesystem::create_directories(m_TempDirectory, error);
 
