@@ -249,8 +249,8 @@ namespace Dingo
 					"UI: a buildable whose plan is not bought is refused with a message and the palette stays open");
 			}
 			const bool chosen = host.ChooseBuildable(BuildId::WoodFence);
-			report.Check(chosen && !host.IsOpen() && controller.GetMode() == BuildMode::Build && controller.GetBuildable() == BuildId::WoodFence && !director.IsTimePaused(),
-				"UI: choosing a buildable enters build mode with it, closes the palette and restarts the clock");
+			report.Check(chosen && !host.IsOpen() && controller.GetMode() == BuildMode::Build && controller.GetBuildable() == BuildId::WoodFence && director.IsTimePaused() == GetLaunchOptions().Freeze,
+				"UI: choosing a buildable enters build mode with it, closes the palette and puts the clock back as it was");
 			m_TickAtOpen = director.GetCalendar().GetTickOfDay();
 			m_Frames = 0;
 			m_Step = Step::Chosen;
@@ -277,7 +277,7 @@ namespace Dingo
 		case Step::MenuSweep:
 			if (!SweepMenus(report, host, director))
 				return false;
-			report.Check(!host.IsOpen() && !director.IsTimePaused(), "UI menus: with every menu closed again the clock runs");
+			report.Check(!host.IsOpen() && director.IsTimePaused() == GetLaunchOptions().Freeze, "UI menus: with every menu closed again the clock is back as it was");
 			return Finish(report);
 
 		case Step::Done:
