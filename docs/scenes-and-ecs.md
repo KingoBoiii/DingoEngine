@@ -748,7 +748,9 @@ since the translucent pass draws no instances.
 are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's winding. `MaterialParams` matches that by default (`CullMode::Back` with
 `FrontCounterClockwise = true`), so a custom material hides back faces with no extra settings, on
 Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
-`CreateSphere` raises `rings` to at least 2 and `segments` to at least 3.
+`CreateSphere` raises `rings` to at least 2 and `segments` to at least 3. Its UVs wrap a loaded texture
+upright and unmirrored seen from outside: `v = 1` at the +Y pole, and the image's left and right
+edges meet at +X. Before 1.0 the texture showed turned half a turn.
 
 Renderer3D keeps the vertices' order, whether it transforms them on the CPU or instances them on
 the GPU, so an entity mirrored by a negative scale on one or three axes is drawn inside out by a

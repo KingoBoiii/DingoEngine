@@ -49,7 +49,9 @@ namespace Dingo
 		[[nodiscard]] static Mesh* CreateBox(float width = 1.0f, float height = 1.0f, float depth = 1.0f);
 		/// A UV sphere centred on the origin with its poles on the Y axis. `rings` split it from
 		/// pole to pole and `segments` around the Y axis; rings is raised to at least 2 and
-		/// segments to at least 3, the fewest that enclose a volume. The caller owns it.
+		/// segments to at least 3, the fewest that enclose a volume. V runs from 0 at the -Y pole
+		/// to 1 at the +Y pole, so a loaded texture wraps it upright and unmirrored seen from
+		/// outside, with its left and right edges meeting at +X. The caller owns it.
 		[[nodiscard]] static Mesh* CreateSphere(float radius = 0.5f, uint32_t rings = 16, uint32_t segments = 16);
 
 	public:
