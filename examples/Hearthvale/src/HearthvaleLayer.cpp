@@ -1,6 +1,7 @@
 #include "HearthvaleLayer.h"
 #include "Checks/Checks.h"
 #include "Checks/LifeWorldChecks.h"
+#include "Checks/ProcessMemory.h"
 #include "GameTuning.h"
 #include "LaunchOptions.h"
 #include "Life/PlayerInput.h"
@@ -70,7 +71,7 @@ namespace Dingo
 		{
 			m_Director->OnDayRoll(DayRollStep::Autosave, [this](ValleyDirector& director, DayRollReason)
 			{
-				DE_INFO("{}", FormatDayLine(director, m_State));
+				DE_INFO("{} mem {:.1f} MB", FormatDayLine(director, m_State), static_cast<double>(GetProcessPrivateBytes()) / (1024.0 * 1024.0));
 				++m_DaysPlayed;
 				const int days = GetLaunchOptions().Days;
 				if (days > 0 && m_DaysPlayed >= days && !m_AutoplayDone)

@@ -43,7 +43,7 @@ The game saves at the start of each day, into the active one of three slots, and
 |---|---|
 | `--check` | Runs the check suites and logs `[PASS]`/`[FAIL]` lines, then `[Checks] <suite> N passed, M failed` per suite and the total. Headless it exits by itself; windowed the game stays open afterwards |
 | `--autoplay` | The farmer bot plays through the same player intent the input fills |
-| `--days=N` | Plays N days (forces `--autoplay` and a fixed step) and closes, logging one `[Day]` line per day with the state hash |
+| `--days=N` | Plays N days (forces `--autoplay` and a fixed step) and closes, logging one `[Day]` line per day with the state hash and the process's private memory |
 | `--fixed-dt=<s>`, `--steps-per-frame=K` | A fixed simulation step, and how many run per frame (needs a fixed step) |
 | `--seed=N` | Valley and weather seed |
 | `--day=N`, `--season=spring\|summer\|fall\|winter`, `--time=HH:MM` | Start a fresh game at that point |

@@ -398,8 +398,8 @@ rebakes: the P5 path exercised every few seconds, not once at load.
 `Autoplay` drives the same `PlayerIntent` the input fills, as *Marionette*'s brains do. Each day it
 waters every crop, harvests what is ripe, replants, ships the harvest, buys seeds, places one fence
 run and one lamp, and sleeps. With `--days=N --fixed-dt=1/60 --steps-per-frame=K` it plays N days
-fast. That serves balance (coins and board progress by day), the soak (memory flat over 60 seasons
-of save and load) and perf (`--perf` over a fixed autoplay day).
+fast. That serves balance (coins and board progress by day), the soak (memory flat over a year of daily
+autosaves) and perf (`--perf` over a fixed autoplay day).
 
 ### 3.6 Flags
 
@@ -442,7 +442,7 @@ diff. Estimates are focused dev days.
 | **H4** | Economy and UI: inventory, hotbar, shop, prices, the board and its requests, every menu on DingoUI | 4 d | U5 (DingoUI with focus navigation) | Every screen works with a pad only; the UI navigation check passes |
 | **H5** | Life: villagers (schedules, dialogue, gifts), animals (HD3), the coop and barn, the greenhouse and pond, lamps and windows, mist, particles, music and ambience on buses | 4.5 d | P6 | A night in the square stays in the light budget with no popping; the greenhouse grows in winter |
 | **H6** | Saves and shipping: slots, autosave, schema versioning, the `.bak` fallback, options, title, credits, the festival ending, icons and exe metadata, Windows and Linux packages, the itch.io page (cover, screenshots, description) | 3.5 d | P7, P8, P10 | Save checks pass, including a kill mid-write; a full year plays start to festival with `--autoplay` |
-| **H7** | Balance, review and perf: tune prices, growth and board goals from `--days=56` logs; a fresh-agent review (`.claude/reviews/<date>-hearthvale-review.md`); `--perf` on all three backends with `--layout=demo`; a 60-minute soak; the name settled (HD9) | 4 d | P10 RC | Review Criticals and Highs fixed; perf targets met (§6); soak flat |
+| **H7** | Balance, review and perf: tune prices, growth and board goals from `--days=56` logs; a fresh-agent review (`.claude/reviews/<date>-hearthvale-review.md`); `--perf` on all three backends with `--layout=demo`; a soak (`--days=56` on Vulkan, the `[Day]` lines' `mem` flat); the name settled (HD9) | 4 d | P10 RC | Review Criticals and Highs fixed; perf targets met (§6); soak flat |
 
 **Total: about 30 dev days, about 6 weeks.** H0–H3 need only P2–P5 (perf) and run in parallel with
 P6–P9; H4 waits for DingoUI's U5 (v1.0 §3.1). Before U5 lands, H1–H3 use *Marionette*-style text
@@ -484,7 +484,7 @@ so more of *Hearthvale* needs the GPU machine than the engine phases do.
 | H4 | Cloud, GPU sign-off | The pad-only check is simulated; one pass with a **real pad** |
 | H5 | **GPU machine** | Lights, mist, bloom, particles and the light budget at night are tuned by eye; music and ambience levels by ear. The cloud can wire it all; it can't tune it |
 | H6 | Cloud, GPU sign-off | Saves, options, packaging and the ending are Cloud. Windows packaging runs in the release job. The itch.io page (cover, screenshots) needs captures from the GPU machine and the owner's account |
-| H7 | **GPU machine** | `--perf` on three backends, the 60-minute soak, and a person's full-year playthrough on a pad. Balancing from `--days=56` logs is Cloud |
+| H7 | **GPU machine** | `--perf` on three backends, the `--days=56` soak (minutes, not an hour), and a person's full-year playthrough on a pad. Balancing from `--days=56` logs is Cloud |
 
 **Sign-off rhythm**:
 
