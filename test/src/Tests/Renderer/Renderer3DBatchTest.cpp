@@ -3,9 +3,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <format>
 #include <numeric>
+#include <optional>
+#include <vector>
 
 namespace
 {
@@ -880,6 +883,11 @@ namespace Dingo
 			Check(bakedStats.CulledMeshes >= k_StaticCasterCount,
 				std::format("the box beside the view and the pillar behind the camera are culled by the camera ({} culled, {} culled from the shadows)", bakedStats.CulledMeshes, bakedStats.CulledCasters));
 			Check(updatedStats.StaticCellsBaked == 1, std::format("changing one mesh's colour rebakes its cell alone ({} baked)", updatedStats.StaticCellsBaked));
+			const std::optional<glm::ivec3> recolouredCell = m_StaticBatch->GetMeshCell(m_StaticIds[5]);
+			Check(m_StaticBatch->GetLastBakedCells().size() == 1 && recolouredCell && m_StaticBatch->GetLastBakedCells()[0] == *recolouredCell,
+				std::format("the one cell a changed mesh rebaked is the cell the batch reports for it ({} baked cells listed)", m_StaticBatch->GetLastBakedCells().size()));
+			Check(m_StaticBatch->GetCellSize() == k_CellSize && m_CheckRenderer->CreateStaticBatch(StaticBatchParams().SetCellSize(-1.0f))->GetCellSize() == 32.0f,
+				"a batch reports its cell size, and 32 for a bad one");
 			ReadAll({ direct, baked, updated, withoutCasters, sideOnly, pillarOnly }, [this](const std::vector<TexturePixels>& images)
 			{
 				float worst = 0.0f;
@@ -909,8 +917,10 @@ namespace Dingo
 			});
 			Check(again.StaticCellsBaked == 0 && again.StaticMeshes == k_StaticMeshCount && again.VertexCount == 0,
 				std::format("a batch submitted again unchanged bakes nothing and transforms no vertex ({} baked, {} static, {} vertices)", again.StaticCellsBaked, again.StaticMeshes, again.VertexCount));
+			Check(m_StaticBatch->GetLastBakedCells().empty(), std::format("an unchanged submission leaves no baked cells listed ({} listed)", m_StaticBatch->GetLastBakedCells().size()));
 
 			m_StaticBatch->Remove(m_StaticIds[0]);
+			Check(!m_StaticBatch->GetMeshCell(m_StaticIds[0]) && !m_StaticBatch->GetMeshCell(k_InvalidStaticMesh), "a removed or invalid id has no cell");
 			const StaticMeshId distant = m_StaticBatch->Add(StaticMesh().SetMesh(m_CheckRenderer->GetBoxMesh()).SetTransform(glm::translate(glm::mat4(1.0f), { 200.0f, 0.0f, -7.0f })));
 			const StaticMeshId glass = m_StaticBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-5.5f)).SetColor(k_HalfGreen).SetMaterial(m_TranslucentA));
 			const Renderer3D::Statistics changed = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
@@ -921,6 +931,10 @@ namespace Dingo
 			Check(changed.StaticMeshes == k_StaticMeshCount && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= k_StaticCasterCount + 1,
 				std::format("removing a mesh and adding one far off screen rebakes two cells, and the far one is culled ({} static, {} baked, {} culled)",
 					changed.StaticMeshes, changed.StaticCellsBaked, changed.CulledMeshes));
+			const std::optional<glm::ivec3> distantCell = m_StaticBatch->GetMeshCell(distant);
+			const std::vector<glm::ivec3>& lastBaked = m_StaticBatch->GetLastBakedCells();
+			Check(distantCell && *distantCell == glm::ivec3(100, 0, -4) && lastBaked.size() == 2 && std::find(lastBaked.begin(), lastBaked.end(), *distantCell) != lastBaked.end() && !m_StaticBatch->GetMeshCell(glass),
+				std::format("the far mesh's cell is among the two rebaked, and the translucent mesh drawn loose has no cell ({} listed)", lastBaked.size()));
 			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == k_StaticMeshCount + 1,
 				std::format("a translucent mesh in a static batch draws in the translucent pass ({} translucent, {} submitted)", changed.TranslucentMeshes, changed.SubmittedMeshes));
 			m_StaticBatch->Remove(distant);

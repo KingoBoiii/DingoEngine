@@ -34,9 +34,17 @@ $knownErrors = [ordered]@{
     "SetParent: parenting '.*' to '.*' would make a cycle" = "expected: Hierarchy Test's deliberate bad SetParent"
     "SetParent: '.*' can't take a parent from another scene" = "expected: Hierarchy Test's deliberate bad SetParent"
     "Model::LoadFromFile failed for .*DingoAnimationTest.*Fox\.gltf" = "expected: Animation Test's broken-file reload"
+    "Failed to load image: .*textures.does_not_exist\.png" = "expected: Asset Manager Test's missing-file load"
+    "AssetManager: failed to load Texture2D '.*textures.does_not_exist\.png" = "expected: Asset Manager Test's missing-file load"
+    "AssetManager: cannot import 'data/unknown\.xyz'" = "expected: Asset Manager Test's unknown-extension import"
+    "Model::LoadFromFile failed for .*Duck\.gltf': ClipsOnly, but the file has no bones" = "expected: Asset Manager Test's ClipsOnly on a static model"
+    "AudioEngine::CreateBus: a bus needs a name" = "expected: Audio Bus Test's unnamed bus"
+    "AudioEngine::CreateBus: the parent of bus 'Bus Check Child' is destroyed" = "expected: Audio Bus Test's destroyed parent"
+    "AudioEngine::CreateStream: invalid stream \(" = "expected: Audio Bus Test's invalid stream formats"
+    "AssetManager: can't open package '.*pack-test.*\.dpak'" = "expected: Pack Test's wrong-key, missing and damaged packages"
+    "Package 'damaged\.dpak': 'textures/container\.jpg' is damaged \(CRC mismatch\)" = "expected: Pack Test's damaged entry"
 }
 $knownD3D12 = [ordered]@{
-    "did not pass any clear value to resource creation" = "known: #236"
     "Renderer3D_ShadowAtlas \(Depth\)" = "known: duplicate shadow-atlas barrier, on master since v0.9"
 }
 

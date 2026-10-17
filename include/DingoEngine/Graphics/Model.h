@@ -34,13 +34,27 @@ namespace Dingo
 	{
 		/// Loads the skeleton and clips (with the .events sidecar) but no meshes, materials or
 		/// textures: a clip library that carries a preview mesh. The skeleton is the one a full
-		/// load builds. A file without bones has no clips to keep, so it fails to load.
+		/// load builds. A file without bones has no clips to keep, so it fails to load, unless
+		/// AnimateNodes is on and its clips move its nodes.
 		bool ClipsOnly = false;
 
 		/// Sets ClipsOnly and returns *this, for chaining.
 		ModelLoadParams& SetClipsOnly(bool clipsOnly)
 		{
 			ClipsOnly = clipsOnly;
+			return *this;
+		}
+
+		/// On, a file without bones whose clips move its nodes loads like a skinned model: its
+		/// skeleton is the animated node subtree, each mesh under it follows its node's joint,
+		/// and an Animator plays the clips; meshes outside it stay static. Off, such a file loads
+		/// as a static mesh and its clips are ignored. No effect on a file with bones.
+		bool AnimateNodes = false;
+
+		/// Sets AnimateNodes and returns *this, for chaining.
+		ModelLoadParams& SetAnimateNodes(bool animateNodes)
+		{
+			AnimateNodes = animateNodes;
 			return *this;
 		}
 

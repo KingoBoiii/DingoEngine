@@ -209,6 +209,25 @@ rebuilt with `Update`. `StaticBatchParams::CellSize` is the grid's side, 32 by d
 cell culls finer and makes more draws. Ids are reused after `Remove` and `Clear`. A batch may
 outlive its renderer, drawing nothing. `GetMeshCount()` and `GetCellCount()` tell you what it holds.
 
+To check that a change rebaked only the cells you expect, read the cell coordinates after the
+submission. A coordinate is `floor(centre / GetCellSize())` per axis, centre being the middle of a
+mesh's world bounds.
+
+```cpp
+level->Update(ids[3], StaticMesh(*level->Get(ids[3])).SetColor(red));
+renderer.BeginScene(camera);
+renderer.SubmitStaticBatch(*level);
+renderer.EndScene();
+
+const std::vector<glm::ivec3>& rebaked = level->GetLastBakedCells();   // one entry: ids[3]'s cell
+bool expected = rebaked.size() == 1 && level->GetMeshCell(ids[3]) == rebaked[0];
+```
+
+`GetLastBakedCells()` lists the cells the latest submission baked, cells it emptied included, and is
+empty when nothing changed. `GetMeshCell(id)` is empty for an id the batch doesn't hold, a mesh
+changed since the last submission, and a mesh drawn loose (translucent, non-affine, oversized or
+with no geometry).
+
 ## GPU instancing
 
 A mesh drawn many times in one scene (trees, crates, rubble, coins) is drawn **instanced**: every
