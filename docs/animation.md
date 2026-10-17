@@ -181,10 +181,28 @@ AssetHandle handle = assets.Load("animations/Rig_Medium_General.glb", ModelLoadP
 `ClipsOnly` keeps the skeleton (the one a full load builds), the clips and the `.events` sidecar, and
 skips every mesh, material and texture. `Reload` and hot-reload keep the params; the AssetManager keeps
 a model's params with its registration, so a model already loaded with other params keeps them (it
-warns; `Remove` it first). A file without bones fails a clips-only load: it has no clips to keep.
+warns; `Remove` it first). A file without bones fails a clips-only load, unless `AnimateNodes` is on and its clips move its
+nodes ([Models without bones](#models-without-bones)).
 
 See `examples/Marionette` (`GameAssets`, `Moveset`): five KayKit libraries, one per category of clip,
 serve four characters.
+
+### Models without bones
+
+A file with clips but no skin (a pack whose pieces are separate meshes that the clips move) loads as
+a static mesh by default: the clips are dropped with a warning that names the option below.
+`ModelLoadParams::AnimateNodes` makes it load like a skinned model instead:
+
+```cpp
+Model* pet = Model::LoadFromFile("models/Pet.gltf", ModelLoadParams().SetAnimateNodes(true));
+```
+
+The skeleton is the node subtree under the deepest node that holds every animated node, one joint per
+node. Each mesh on a node inside it follows that node's joint rigidly, so the clips move it; meshes
+elsewhere in the file stay where the file puts them. `IsSkinned()`, `GetAnimation(i)` and an
+`Animator` or `AnimatorComponent` then work as for a skinned model, and `ClipsOnly` loads the node
+skeleton and clips without the meshes. The option does nothing for a file with bones. A file whose
+clips move no node in its graph loads its meshes in place with no clips and a warning.
 
 ### When the file is odd
 

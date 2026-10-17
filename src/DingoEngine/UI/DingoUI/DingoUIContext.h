@@ -163,6 +163,12 @@ namespace Dingo::Internal
 		bool IsBackPressed() const { return m_BackPressed; }
 		// Applied in the next BeginFrame once the widget exists.
 		void SetFocus(std::string_view label);
+		// The id `label` gets in the open container; 0 outside a frame. Unlike WidgetId it never warns.
+		uint64_t GetId(std::string_view label) const { return m_InFrame ? m_Tree.MakeId(label) : 0; }
+		// An element of the last finished frame by id or by name, with the part of it the clipping
+		// leaves; false when there is none.
+		bool GetRect(uint64_t id, UILayoutRect& outRect) const;
+		bool GetRect(std::string_view name, UILayoutRect& outRect) const;
 
 	private:
 		glm::vec2 ComputeTargetSize() const;

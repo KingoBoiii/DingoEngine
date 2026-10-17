@@ -126,7 +126,7 @@ several characters can share one set of animations; `Load(path, ModelLoadParams(
 rest pose in `GetVertices()`, so physics and `Renderer3D::SubmitMesh` see the
 character standing in that pose. A model without bones loads exactly as before:
 every mesh is pre-transformed into model space, and any clips it has are dropped
-with a warning. Drawing and animating skinned models is covered in
+with a warning, unless `ModelLoadParams().SetAnimateNodes(true)` loads clips that move its nodes. Drawing and animating skinned models is covered in
 [Animation & Skinned Models](animation.md).
 
 A model with clips also reads a text file of clip events beside it, named after it

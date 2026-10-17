@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace Dingo
 {
@@ -104,6 +105,20 @@ namespace Dingo
 		uint32_t GetCellCount() const;
 		/// Cells baked since the batch was made, for tooling and tests.
 		uint64_t GetBakeCount() const;
+		/// Grid coordinates of the cells the batch's latest submission baked, in bake order, cells it
+		/// emptied included; empty when that submission baked none. A mesh lands in the cell
+		/// floor(its world-bounds centre / GetCellSize()), per axis. A submission that draws nothing
+		/// (no active scene, a skipped frame, a renderer other than the batch's) and Clear() leave it
+		/// as it was.
+		/// Valid until the next submission of this batch.
+		const std::vector<glm::ivec3>& GetLastBakedCells() const;
+		/// The coordinate of the cell the entry is baked into, as of the last submission. Empty for an
+		/// id the batch doesn't hold, an entry added or changed since that submission, and an entry
+		/// that is in no cell: one submitted through SubmitMesh every time, or with a null or empty mesh.
+		std::optional<glm::ivec3> GetMeshCell(StaticMeshId id) const;
+		/// The cell size in use, in world units: StaticBatchParams::CellSize, or 32 when that was
+		/// not finite or not above 0.
+		float GetCellSize() const;
 		/// False once the renderer that made it has shut down: it draws nothing anywhere.
 		bool IsRendererAlive() const;
 
