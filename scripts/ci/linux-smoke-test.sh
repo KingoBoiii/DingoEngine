@@ -2,15 +2,16 @@
 # Usage: scripts/ci/linux-smoke-test.sh <Debug|Debug-ASan|Release|Distribution>
 #
 # Runs the unit tests, then every Dingo-TestFramework case, every example and Marionette's --check
-# from an existing build, each from its own source directory, then the test app's deliberate
-# crashes (--crash=), which must leave their report in the log, then Marionette's --check and
-# Candlewick packed (a copy of the executable beside its .dpak, started from elsewhere). A hung
-# app's thread stacks are dumped with gdb before it is killed. Apps that don't exit by themselves
-# are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so teardown runs too. A run
-# fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan validation error, an
-# AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR. SMOKE_TOURNAMENT=1 adds
-# Marionette's tournament (about 5 minutes in Release). Needs an X display (DISPLAY) and
-# python3-xlib; logs go to build/smoke/<config>/.
+# from an existing build, each from its own source directory, then the test app headless with
+# DISPLAY unset (--graphics=headless), then the test app's deliberate crashes (--crash=), which
+# must leave their report in the log, then Marionette's --check and Candlewick packed (a copy of
+# the executable beside its .dpak, started from elsewhere). A hung app's thread stacks are dumped
+# with gdb before it is killed. Apps that don't exit by themselves are closed after SMOKE_SECONDS
+# (default 20) through WM_DELETE_WINDOW, so teardown runs too. A run fails on an unexpected exit
+# code, a hang, a [FAIL] self-check, a Vulkan validation error, an AddressSanitizer or
+# LeakSanitizer report or an spdlog LOG ERROR. SMOKE_TOURNAMENT=1 adds Marionette's tournament
+# (about 5 minutes in Release). Needs an X display (DISPLAY) and python3-xlib; logs go to
+# build/smoke/<config>/.
 set -uo pipefail
 
 CONFIG=${1:?usage: $0 <Debug|Debug-ASan|Release|Distribution>}
@@ -43,14 +44,14 @@ dump_threads() {
 	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -400
 }
 
-# RUN_SECONDS, EXPECT_EXIT (default 0) and EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
-# default the run's output) apply to one call.
+# RUN_SECONDS, EXPECT_EXIT (default 0), EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
+# default the run's output) and NO_DISPLAY=1 (DISPLAY and WAYLAND_DISPLAY unset) apply to one call.
 run() {
 	local name=$1 cwd=$2 exe=$3; shift 3
 	local log=$LOGS/$name.log status problems=""
 	local seconds=${RUN_SECONDS:-$SECONDS_PER_RUN} expected=${EXPECT_EXIT:-0}
 
-	(cd "$cwd" && LD_PRELOAD=$APP_PRELOAD exec "$exe" "$@") > "$log" 2>&1 &
+	(cd "$cwd" && { [[ -z ${NO_DISPLAY:-} ]] || unset DISPLAY WAYLAND_DISPLAY; } && LD_PRELOAD=$APP_PRELOAD exec "$exe" "$@") > "$log" 2>&1 &
 	local pid=$!
 	for ((i = 0; i < seconds; i++)); do
 		kill -0 $pid 2>/dev/null || break
@@ -141,6 +142,9 @@ if [[ ${SMOKE_TOURNAMENT:-0} == 1 ]]; then
 		run "marionette-tournament" "$ROOT/examples/Marionette" "$BIN/Marionette/Marionette" --tournament=10 --seed=1 --player-tier=3
 fi
 
+NO_DISPLAY=1 EXPECT_LOG='Headless: [0-9]+ updates' \
+	run "headless-check" "$ROOT/test" "$BIN/Dingo-TestFramework/Dingo-TestFramework" --graphics=headless
+
 # The crash reports land in the log file, not only on stderr. ASan catches the signals itself.
 crash() {
 	local kind=$1 dir=$LOGS/crash-$1
@@ -196,5 +200,5 @@ done
 EXPECT_LOG="mounted package 'Marionette\\.dpak'" run "packed-marionette-check" "$packed/cwd" "$packed/Marionette/Marionette" --check
 EXPECT_LOG="mounted package 'Candlewick\\.dpak'" run "packed-candlewick" "$packed/cwd" "$packed/Candlewick/Candlewick"
 
-echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
+echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check, the headless check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
 exit $((failures > 0))

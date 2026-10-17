@@ -306,8 +306,11 @@ or, on any app's command line, `--graphics=headless`.
   seconds, then ends the process. A signal that was ignored at start-up (a job started in the
   background of a script) stays ignored.
 - The `AssetManager`, `AudioEngine`, scenes, scripts and physics all work. `SceneManager::OnRender`
-  does nothing. Loading anything that lives on the GPU (textures, models, fonts, shaders, or a
-  scene file that refers to them) crashes: load only audio clips and plain files.
+  does nothing. GPU resources can't be made: the `Texture`, `Shader`, `Sampler`, `Framebuffer`,
+  `GraphicsBuffer`, `RenderPass`, `ComputePass` and `Font` factories return `nullptr` with one
+  error, and an `AssetManager` load of a texture, shader or font logs one error and leaves the
+  asset `Failed` (`Get*` returns `nullptr`). Meshes, materials and models still load, models
+  without their textures, so mesh colliders, skeletons and animation clips work.
 - `GetWindow()`, `GetGraphicsContext()`, `GetRenderer2D()`, `GetRenderer3D()` and
   `GetSceneRenderer()` must not be called (they assert in Debug), nor anything on `Renderer`.
   Check `Application::Get().IsHeadless()` in code a client and a server share.

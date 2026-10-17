@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 
 #include "NVRHI/NvrhiGraphicsBuffer.h"
 
@@ -58,6 +59,9 @@ namespace Dingo
 
 	GraphicsBuffer* GraphicsBuffer::Create(const GraphicsBufferParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("GraphicsBuffer::Create"))
+			return nullptr;
+
 		GraphicsBuffer* buffer = new NvrhiGraphicsBuffer(params);
 		buffer->Initialize();
 

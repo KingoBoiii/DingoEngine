@@ -75,8 +75,9 @@ namespace Dingo
 	class Framebuffer
 	{
 	public:
-		/// Creates the framebuffer and its attachment textures; the caller deletes it. Not for the
-		/// swap chain: that framebuffer comes from Renderer::GetSwapChainFramebuffer.
+		/// Creates the framebuffer and its attachment textures; the caller deletes it. Returns nullptr
+		/// (with an error) when there is no graphics device, as in a headless app. Not for the swap
+		/// chain: that framebuffer comes from Renderer::GetSwapChainFramebuffer.
 		[[nodiscard]] static Framebuffer* Create(const FramebufferParams& params);
 
 	public:

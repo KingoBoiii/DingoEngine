@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/Sampler.h"
+#include "DingoEngine/Graphics/GraphicsDevice.h"
 
 #include "NVRHI/NvrhiSampler.h"
 
@@ -10,6 +11,9 @@ namespace Dingo
 
 	Sampler* Sampler::Create(const SamplerParams& params)
 	{
+		if (!Internal::RequireGraphicsDevice("Sampler::Create"))
+			return nullptr;
+
 		Sampler* sampler = new NvrhiSampler(params);
 		sampler->Initialize();
 		return sampler;

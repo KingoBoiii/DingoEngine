@@ -44,7 +44,8 @@ namespace Dingo
 	class ComputePass
 	{
 	public:
-		/// Creates the pass; the caller deletes it. Asserts when params.Shader is null.
+		/// Creates the pass; the caller deletes it. Returns nullptr (with an error) when there is no
+		/// graphics device, as in a headless app. Asserts when params.Shader is null.
 		[[nodiscard]] static ComputePass* Create(const ComputePassParams& params);
 
 	public:
