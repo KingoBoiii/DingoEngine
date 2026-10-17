@@ -108,6 +108,28 @@ namespace Dingo
 				modelsFailed += Art::LoadModels(entry);
 			report.Check(modelsFailed == 0, std::format("Assets: every model an art entry uses loads and has geometry ({} did not)", modelsFailed));
 
+			int textured = 0;
+			int undrawable = 0;
+			for (const ArtEntry& entry : Art::All())
+			{
+				for (const std::string_view path : Art::ModelPathsOf(entry))
+				{
+					const Model* model = assets.GetModel(assets.Load(FileSystem::PathFromUtf8(path)));
+					if (!model)
+						continue;
+					for (const SubMesh& submesh : model->GetSubMeshes())
+					{
+						if (!submesh.DiffuseTexture)
+							continue;
+						const Material* material = Art::MaterialFor(submesh);
+						++textured;
+						undrawable += material && material->GetShader() ? 0 : 1;
+					}
+				}
+			}
+			report.Check(textured > 0 && undrawable == 0,
+				std::format("Assets: every textured art submesh draws with a lit material ({} of {} have none)", undrawable, textured));
+
 			bool villagersLoad = true;
 			for (int villager = 0; villager < VILLAGER_COUNT; ++villager)
 			{

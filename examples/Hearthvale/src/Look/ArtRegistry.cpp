@@ -344,6 +344,12 @@ namespace Dingo::Art
 			return inserted->second.Loaded ? &inserted->second : nullptr;
 		}
 
+		std::unordered_map<uint64_t, Material*>& TextureMaterials()
+		{
+			static std::unordered_map<uint64_t, Material*> materials;
+			return materials;
+		}
+
 		void AddMeshes(Scene& scene, Entity part, const ModelInfo& info, const glm::vec4& tint)
 		{
 			bool first = true;
@@ -362,11 +368,8 @@ namespace Dingo::Art
 				first = false;
 
 				MeshRendererComponent renderer(submesh.Mesh, submesh.BaseColor * tint);
-				if (submesh.DiffuseTexture && submesh.Material)
-				{
-					renderer.Material = submesh.Material;
-					renderer.Color = tint;
-				}
+				if (Material* material = MaterialFor(submesh))
+					renderer.Material = material;
 				target.AddComponent<MeshRendererComponent>(renderer);
 			}
 		}
@@ -437,9 +440,29 @@ namespace Dingo::Art
 		return failed;
 	}
 
+	Material* MaterialFor(const SubMesh& submesh)
+	{
+		Texture* texture = submesh.DiffuseTexture;
+		if (!texture)
+			return nullptr;
+
+		auto& materials = TextureMaterials();
+		if (const auto found = materials.find(texture->GetId()); found != materials.end())
+			return found->second;
+
+		Material* material = Application::Get().GetRenderer3D().CreateLitMaterial(MaterialParams().SetDebugName("ArtTextured"));
+		if (material)
+			material->SetTexture(0, texture);
+		materials.emplace(texture->GetId(), material);
+		return material;
+	}
+
 	void ReleaseModels()
 	{
 		ModelCache().clear();
+		for (auto& [id, material] : TextureMaterials())
+			DestroyAndDelete(material);
+		TextureMaterials().clear();
 	}
 
 	void ForEachMesh(Entity root, const std::function<void(MeshRendererComponent&)>& fn)

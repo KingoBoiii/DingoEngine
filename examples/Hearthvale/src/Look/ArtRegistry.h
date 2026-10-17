@@ -103,7 +103,11 @@ namespace Dingo
 		// Loads the entry's models and returns how many failed (0 when all load, or the entry is a primitive).
 		// GPU side: never headless.
 		int LoadModels(const ArtEntry& entry);
-		// Forgets the cached model bounds; the AssetManager keeps the models. Call when the scene is torn down.
+		// The lit material a submesh draws with: one per diffuse texture, or null to draw with the default lit
+		// material and the submesh's colour. A model's own SubMesh::Material has no shader and never draws.
+		Material* MaterialFor(const SubMesh& submesh);
+		// Forgets the cached model bounds and frees the textured materials; the AssetManager keeps the models. Call
+		// when the scene is torn down.
 		void ReleaseModels();
 
 		// Calls fn for the entity and each descendant that draws a mesh.
