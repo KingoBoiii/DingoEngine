@@ -37,7 +37,11 @@ examples/                  FlappyBird, Breakout3D, SpaceInvaders (Scene/ECS show
                            layer, five clip libraries retargeted onto four
                            characters, three AI tiers, live .events editing;
                            v0.9: VFX from clip events, impact sparks,
-                           moonlit skinned shadows, bloom, AO)
+                           moonlit skinned shadows, bloom, AO),
+                           Hearthvale (v1.0 release game: cozy farm-and-build sim,
+                           grid-owned valley, crops and seasons, DingoUI screens,
+                           saves, skinned villagers, autoplay farmer bot and nine
+                           --check suites; plan 2026-10-08-hearthvale-plan.md)
 test/UnitTests/            Dingo-UnitTests — headless doctest unit tests of pure code
 test/                      Dingo-TestFramework — interactive graphics/renderer/asset
                            tests, one per feature under src/Tests/

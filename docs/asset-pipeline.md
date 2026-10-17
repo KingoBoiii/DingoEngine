@@ -112,6 +112,8 @@ Asset types are inferred from the file extension:
 A submesh's `DiffuseTexture` is its material's first diffuse image, from a file
 beside the model or embedded in it (a GLB's images, an FBX's embedded files);
 `Model::Reload` re-reads an embedded one with its model and keeps its `Texture*`.
+The mesh UVs are kept as the file stores them, so the texture lands the way the
+modelling tool shows it; before 1.0 it was sampled upside down (#272).
 Its `BaseColor` is the material's colour: glTF's `baseColorFactor`, else the
 diffuse colour with the material's opacity as alpha, white when the file has
 neither (OBJ's importer fills in 0.6 grey for a material without `Kd`). Nothing

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/linux-smoke-test.sh <Debug|Debug-ASan|Release|Distribution>
 #
-# Runs the unit tests, then every Dingo-TestFramework case, every example and Marionette's --check
-# from an existing build, each from its own source directory, then the test app headless with
-# DISPLAY unset (--graphics=headless), then the test app's deliberate crashes (--crash=), which
-# must leave their report in the log, then Marionette's --check and Candlewick packed (a copy of
-# the executable beside its .dpak, started from elsewhere). A hung app's thread stacks are dumped
-# with gdb before it is killed. Apps that don't exit by themselves are closed after SMOKE_SECONDS
-# (default 20) through WM_DELETE_WINDOW, so teardown runs too. A run fails on an unexpected exit
-# code, a hang, a [FAIL] self-check, a Vulkan validation error, an AddressSanitizer or
-# LeakSanitizer report or an spdlog LOG ERROR. SMOKE_TOURNAMENT=1 adds Marionette's tournament
-# (about 5 minutes in Release). Needs an X display (DISPLAY) and python3-xlib; logs go to
-# build/smoke/<config>/.
+# Runs the unit tests, then every Dingo-TestFramework case, every example, the --check of Marionette
+# and of Hearthvale (headless, then windowed) from an existing build, each from its own source
+# directory, then the test app headless with DISPLAY unset (--graphics=headless), then the test
+# app's deliberate crashes (--crash=), which must leave their report in the log, then Marionette's
+# --check and Candlewick packed (a copy of the executable beside its .dpak, started from
+# elsewhere). A hung app's thread stacks are dumped with gdb before it is killed. Apps that don't
+# exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so
+# teardown runs too. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
+# validation error, an AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR.
+# SMOKE_TOURNAMENT=1 adds Marionette's tournament (about 5 minutes in Release). Needs an X display
+# (DISPLAY) and python3-xlib; logs go to build/smoke/<config>/.
 set -uo pipefail
 
 CONFIG=${1:?usage: $0 <Debug|Debug-ASan|Release|Distribution>}
@@ -136,6 +136,9 @@ for dir in "$ROOT"/examples/*/; do
 done
 
 run "marionette-check" "$ROOT/examples/Marionette" "$BIN/Marionette/Marionette" --check
+run "hearthvale-check-headless" "$ROOT/examples/Hearthvale" "$BIN/Hearthvale/Hearthvale" --check --graphics=headless
+RUN_SECONDS=${SMOKE_CHECK_SECONDS:-150} EXPECT_LOG='\[Checks\] [0-9]+ passed, 0 failed' \
+	run "hearthvale-check" "$ROOT/examples/Hearthvale" "$BIN/Hearthvale/Hearthvale" --check
 
 if [[ ${SMOKE_TOURNAMENT:-0} == 1 ]]; then
 	RUN_SECONDS=1200 EXPECT_LOG='\[PASS\] tournament' \
@@ -200,5 +203,5 @@ done
 EXPECT_LOG="mounted package 'Marionette\\.dpak'" run "packed-marionette-check" "$packed/cwd" "$packed/Marionette/Marionette" --check
 EXPECT_LOG="mounted package 'Candlewick\\.dpak'" run "packed-candlewick" "$packed/cwd" "$packed/Candlewick/Candlewick"
 
-echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check, the headless check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
+echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette and Hearthvale --check, the headless check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
 exit $((failures > 0))

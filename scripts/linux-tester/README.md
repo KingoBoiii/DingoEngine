@@ -37,7 +37,7 @@ cd DingoEngine-linux-tester
 ./run-checks.sh
 ```
 
-This opens each of the 15 test-app pages and 10 games in turn, for 15 seconds each, then closes
+This opens each of the 15 test-app pages and 11 games in turn, for 15 seconds each, then closes
 it the way clicking the window's X would. Leave the mouse and keyboard alone while it runs:
 windows will pop up and close by themselves. Most of the test pages check their own results,
 and the script also looks for crashes, hangs on close and Vulkan errors. At the end it
@@ -63,6 +63,7 @@ to list the programs. Each run also saves its log in `logs/`.
 | EchoVault | 3D platformer, **gamepad**, **3D sound** | WASD/stick moves, Space/A jumps. Esc quits |
 | Candlewick | 3D stealth with lights, **gamepad**, **3D sound** | WASD/stick moves, Q/X lantern, hold E/A to light a brazier, Esc/Start pauses |
 | Marionette | 3D melee duel, **gamepad**, **sound** | WASD/stick moves, J/left click light attack, K/right click heavy, hold Shift/RB to block, Space/A dodges, Esc back to the title |
+| Hearthvale | cozy farm-and-build sim, **gamepad**, **sound** | WASD/left stick moves, Space or left click/A uses the tool, F or right click/X interacts, 1-9 or wheel/LB-RB picks a slot, Q and E/D-pad rotate the camera, Tab/View opens the inventory, B opens the build menu, Esc/Start pauses |
 | TestFramework | the engine's test app | Pick a page in the "Tests" panel. Cursor Test: keys 1/2/3 switch the cursor between normal, hidden and locked |
 
 In every program, **F3 to F7** open the engine's debug window (Engine, Renderer, Input, Assets,
@@ -77,8 +78,8 @@ Anything that goes wrong is useful, but these are the things a headless CI can't
 - [ ] **Focus**: alt-tab away. The games pause while unfocused and should carry on cleanly when you come back.
 - [ ] **Mouse**: Cursor Test in the test app: does mode 3 (locked) give smooth mouse-look, and does Esc give the cursor back?
 - [ ] **Keyboard**: on a non-US layout (AZERTY, QWERTZ), do WASD games move the way you'd expect?
-- [ ] **Gamepad** (if you have one): ArenaShooter, EchoVault, Candlewick, Marionette. Unplug it and plug it back in while a game runs. F5 shows what the engine sees. (Rumble only works on Windows so far.)
-- [ ] **Sound**: ArenaShooter, EchoVault, Candlewick, Marionette. In EchoVault and Candlewick, sounds should pan left and right as you move.
+- [ ] **Gamepad** (if you have one): ArenaShooter, EchoVault, Candlewick, Marionette, Hearthvale. Unplug it and plug it back in while a game runs. F5 shows what the engine sees. (Rumble only works on Windows so far.)
+- [ ] **Sound**: ArenaShooter, EchoVault, Candlewick, Marionette, Hearthvale. In EchoVault and Candlewick, sounds should pan left and right as you move.
 - [ ] **Scaling and monitors**: with display scaling above 100%, is the debug window's text sized right? Can you drag a window to a second monitor? In the test app, can you drag an ImGui panel out of the main window?
 - [ ] **Session**: if your desktop offers both X11 and Wayland at login, try `./run-checks.sh` in the other one too. On Wayland the engine runs through XWayland for now.
 - [ ] **Speed**: does anything stutter? The F3 tab shows the frame time.

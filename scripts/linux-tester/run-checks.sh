@@ -129,6 +129,7 @@ for dir in "$HERE"/examples/*/; do
 done
 
 run "marionette-check" examples/Marionette Marionette --check
+SECONDS_PER_RUN=$((SECONDS_PER_RUN > 90 ? SECONDS_PER_RUN : 90)) run "hearthvale-check" examples/Hearthvale Hearthvale --check
 SECONDS_PER_RUN=$((SECONDS_PER_RUN > 30 ? SECONDS_PER_RUN : 30)) run "marionette-perf" examples/Marionette Marionette --autoplay --perf --vsync=off
 
 say ""
