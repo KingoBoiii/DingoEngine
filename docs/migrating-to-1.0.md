@@ -45,7 +45,7 @@ still don't own what they point at, and physics still steps once per `Scene::OnU
 
 ## Changes that compile but behave differently
 
-Most breaks are compile errors, which the compiler finds for you. These six are not. Check
+Most breaks are compile errors, which the compiler finds for you. These seven are not. Check
 them by hand.
 
 | Change | Where |
@@ -56,6 +56,7 @@ them by hand.
 | `PipelineParams::FrontCounterClockwise` defaults to `true`, so a pipeline that culls back faces culls the other triangles. | [PipelineParams winds counter-clockwise by default](#pipelineparams-winds-counter-clockwise-by-default) |
 | The first `SceneManager::SetActiveScene` starts the scene. | [The first SetActiveScene starts the scene](#the-first-setactivescene-starts-the-scene) |
 | `Dingo.log` is no longer written beside the executable. | [Dingo.log moved to the per-user folder](#dingolog-moved-to-the-per-user-folder) |
+| A model's textures are no longer sampled upside down, so a workaround for that now flips them. | [Model textures are the right way up](#model-textures-are-the-right-way-up) |
 
 ## Entry point and Application
 
@@ -1265,6 +1266,15 @@ entity.SetActive(true);     // the body is rebuilt at the current transform, at 
 
 `Scene::DestroyEntity` and `Scene::CreateRigidBody` also ignore an `Entity` that belongs to
 another scene; before, they used its handle in their own registry.
+
+### Model textures are the right way up
+
+`Model` kept its meshes' UVs flipped while every image loads flipped too, so each model texture
+was sampled upside down (#272). An atlas-textured model drew the wrong part of its atlas, and
+one with a mostly black row drew black. 1.0 keeps the UVs as the file stores them. A game that
+compensated, with a flipped image file or `1.0 - uv.y` in a custom shader for model meshes,
+must remove that, or its models now draw upside down. Engine primitives (`Mesh::CreateBox` and
+the rest) are unchanged.
 
 ### Arial became Inter in the examples
 

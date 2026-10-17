@@ -33,7 +33,6 @@ namespace Dingo
 	static constexpr uint32_t k_StaticImportFlags =
 		aiProcess_Triangulate           |
 		aiProcess_GenSmoothNormals      |
-		aiProcess_FlipUVs               |
 		aiProcess_CalcTangentSpace      |
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_PreTransformVertices;
@@ -41,7 +40,6 @@ namespace Dingo
 	static constexpr uint32_t k_SkinnedImportFlags =
 		aiProcess_Triangulate           |
 		aiProcess_GenSmoothNormals      |
-		aiProcess_FlipUVs               |
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_LimitBoneWeights;
 
