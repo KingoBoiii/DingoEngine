@@ -57,6 +57,7 @@ them by hand.
 | The first `SceneManager::SetActiveScene` starts the scene. | [The first SetActiveScene starts the scene](#the-first-setactivescene-starts-the-scene) |
 | `Dingo.log` is no longer written beside the executable. | [Dingo.log moved to the per-user folder](#dingolog-moved-to-the-per-user-folder) |
 | A model's textures are no longer sampled upside down, so a workaround for that now flips them. | [Model textures are the right way up](#model-textures-are-the-right-way-up) |
+| A texture on `Mesh::CreateSphere` is no longer upside down, so a workaround for that now flips it. | [Sphere textures are the right way up](#sphere-textures-are-the-right-way-up) |
 
 ## Entry point and Application
 
@@ -1273,8 +1274,25 @@ another scene; before, they used its handle in their own registry.
 was sampled upside down (#272). An atlas-textured model drew the wrong part of its atlas, and
 one with a mostly black row drew black. 1.0 keeps the UVs as the file stores them. A game that
 compensated, with a flipped image file or `1.0 - uv.y` in a custom shader for model meshes,
-must remove that, or its models now draw upside down. Engine primitives (`Mesh::CreateBox` and
-the rest) are unchanged.
+must remove that, or its models now draw upside down. `Mesh::CreateBox` is unchanged;
+`Mesh::CreateSphere` changed too, in the next entry.
+
+### Sphere textures are the right way up
+
+`Mesh::CreateSphere` gave its +Y pole `v = 0`, which is the bottom row of a loaded image, and ran
+`u` the other way round the sphere, so a texture on it showed turned half a turn (#273). 1.0 puts
+`v = 1` at the +Y pole and runs `u` so the image reads left to right seen from outside, with its
+edges meeting at +X. Every vertex's UV is now `1 - uv` of the old one. A game that compensated,
+with an image turned half a turn or `1.0 - uv` in a custom shader for spheres, must remove that.
+A plain-coloured sphere looks the same.
+
+```glsl
+// before (0.9): undoing the old sphere mapping
+vec2 uv = 1.0 - v_TexCoord;
+
+// after (1.0)
+vec2 uv = v_TexCoord;
+```
 
 ### Arial became Inter in the examples
 

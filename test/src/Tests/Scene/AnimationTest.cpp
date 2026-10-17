@@ -362,7 +362,7 @@ void main()
 	std::filesystem::path CopyFox(std::string_view folder)
 	{
 		const std::filesystem::path source = Application::Get().GetAssetManager().GetRootDirectory() / std::filesystem::path(k_FoxPath).parent_path();
-		const std::filesystem::path target = std::filesystem::temp_directory_path() / "DingoAnimationTest" / folder;
+		const std::filesystem::path target = TestTempDirectory("DingoAnimationTest") / folder;
 		std::error_code error;
 		std::filesystem::remove_all(target, error);
 		std::filesystem::create_directories(target, error);
@@ -1063,7 +1063,7 @@ namespace Dingo
 				&& end.Text == begin.Text,
 				"an event's payload reads back by key, and its RangeEnd carries its begin's");
 
-			const std::filesystem::path folder = std::filesystem::temp_directory_path() / "DingoAnimationTest";
+			const std::filesystem::path folder = TestTempDirectory("DingoAnimationTest");
 			std::error_code error;
 			std::filesystem::create_directories(folder, error);
 			const std::filesystem::path eventsPath = folder / "Payload.events";
@@ -2777,6 +2777,8 @@ namespace Dingo
 			if (!folder.empty())
 				std::filesystem::remove_all(folder, error);
 		}
+		std::error_code error;
+		std::filesystem::remove(TestTempDirectory("DingoAnimationTest"), error);
 		DestroyAndDelete(m_Fox);
 		m_PosePalette.clear();
 	}
