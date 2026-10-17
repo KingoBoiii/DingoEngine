@@ -565,6 +565,12 @@ namespace Dingo
 			return;
 		m_InstancedMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_Instanced").SetShader(m_InstancedShader).SetInstancing(true));
 		m_BlocklessMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_Blockless").SetShader(m_BlocklessShader).SetInstancing(true));
+		m_PushedInstanceShader = Shader::Create(ShaderParams().SetName("BatchTestInstancedPush").SetSourceCode(k_InstancedShader).AddDefine("DE_INSTANCE_DRAW_PUSH"));
+		const bool pushes = m_PushedInstanceShader && m_PushedInstanceShader->IsValid() &&
+			m_PushedInstanceShader->FindPushConstantBlockSize(Material::k_InstanceDrawBlockName) == sizeof(glm::uvec4);
+		Check(pushes, "with DE_INSTANCE_DRAW_PUSH a custom instanced shader declares DE_InstanceDraw as a 16-byte push-constant block");
+		if (pushes)
+			m_PushedInstanceMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_InstancedPush").SetShader(m_PushedInstanceShader).SetInstancing(true));
 
 		// Back to front, so the readback sees the last copy, and after as many boxes hidden behind them,
 		// so the quads' records start past the boxes': a wrong instance index or base reads another colour.
@@ -602,6 +608,15 @@ namespace Dingo
 			const Renderer3D::Statistics forced = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_InstancedMaterial); });
 			m_CheckRenderer->SetInstancingEnabled(true);
 			Check(forced.InstancedDraws == 2, std::format("a material with Instancing draws instanced with instancing off too ({} instanced draws)", forced.InstancedDraws));
+
+			if (!m_PushedInstanceMaterial)
+				return;
+			Framebuffer* pushedTarget = CreateCheckTarget(k_CheckTargetSize);
+			const Renderer3D::Statistics pushed = RenderCheck(pushedTarget, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_PushedInstanceMaterial); });
+			Check(pushed.DrawCalls == 2 && pushed.InstancedDraws == 2 && pushed.InstancedMeshes == 6 && pushed.VertexCount == 0,
+				std::format("a material whose shader pushes DE_InstanceDraw draws three quads and three boxes in one instanced draw each ({} draws, {} instanced, {} meshes)",
+					pushed.DrawCalls, pushed.InstancedDraws, pushed.InstancedMeshes));
+			ReadCheck(pushedTarget, glm::vec3(0.5f, 0.0f, 0.0f), "a custom instanced shader that pushes DE_InstanceDraw places each copy from its record");
 		});
 
 		m_CheckSteps.push_back([this, quads]
@@ -1114,8 +1129,10 @@ namespace Dingo
 			m_SurfaceMaterials.clear();
 			DestroyAndDelete(m_InstancedMaterial);
 			DestroyAndDelete(m_BlocklessMaterial);
+			DestroyAndDelete(m_PushedInstanceMaterial);
 			DestroyAndDelete(m_InstancedShader);
 			DestroyAndDelete(m_BlocklessShader);
+			DestroyAndDelete(m_PushedInstanceShader);
 			m_CheckRenderer->Shutdown();
 			delete m_CheckRenderer;
 			m_CheckRenderer = nullptr;

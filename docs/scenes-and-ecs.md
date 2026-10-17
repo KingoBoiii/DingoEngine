@@ -622,7 +622,8 @@ The binding convention a custom mesh shader follows:
   the bytes as they are when it is recorded: `Renderer::Draw` records at the call, `Renderer3D` at
   `EndScene`, so a scene gives every mesh of a material one value. A skinned shader's only block is
   `DE_SkinDraw`, which the renderer owns, and `SetPushConstants` refuses it
-  ([custom skinned shaders](animation.md#custom-skinned-shaders)).
+  ([custom skinned shaders](animation.md#custom-skinned-shaders)), as it refuses an instanced shader's
+  push-constant `DE_InstanceDraw` ([below](#instanced-custom-shaders-v10)).
 
 The whole of binding 0, as the engine's own lit shader declares it:
 
@@ -706,6 +707,12 @@ engine include `<DingoEngine/Instancing.glsl>` declares the record buffer (`DE_I
 readonly storage block at binding 9) and the draw's first record (`DE_InstanceDraw`, a uniform
 block at binding 10), both found by name: define `DE_INSTANCE_DATA_BINDING` /
 `DE_INSTANCE_DRAW_BINDING` before the include to move them off a texture's binding.
+
+Define `DE_INSTANCE_DRAW_PUSH` before the include to make `DE_InstanceDraw` a push-constant block
+instead, as the engine's own shaders do. Each draw then sets its first record without writing a
+buffer, so on Vulkan the instanced draws of a pass no longer end and restart the render pass. The
+renderer owns that block: the shader declares no other push-constant block, `Material::SetPushConstants`
+refuses it, and `DE_INSTANCE_DRAW_BINDING` no longer applies.
 
 ```glsl
 #include <DingoEngine/Instancing.glsl>

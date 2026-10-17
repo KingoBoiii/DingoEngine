@@ -60,8 +60,10 @@ namespace Dingo
 		std::vector<Material*> m_SurfaceMaterials;
 		Shader* m_InstancedShader = nullptr;
 		Shader* m_BlocklessShader = nullptr;
+		Shader* m_PushedInstanceShader = nullptr;
 		Material* m_InstancedMaterial = nullptr;
 		Material* m_BlocklessMaterial = nullptr;
+		Material* m_PushedInstanceMaterial = nullptr;
 		Mesh* m_Quad = nullptr;
 		Mesh* m_SkinnedQuad = nullptr;
 		Mesh* m_ClosedQuads = nullptr;

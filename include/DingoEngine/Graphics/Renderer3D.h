@@ -515,8 +515,9 @@ namespace Dingo
 		/// Whether instancing is on; see SetInstancingEnabled.
 		bool IsInstancingEnabled() const { return m_Params.Capabilities.Instancing; }
 
-		/// Instanced draws a frame, lit and shadow, across every scene this renderer runs: each
-		/// writes a small volatile buffer that has room for this many writes a frame on Vulkan.
+		/// Instanced draws a frame, lit and shadow, across every scene this renderer runs. A draw
+		/// whose shader takes DE_InstanceDraw as a uniform block writes a small volatile buffer
+		/// that has room for this many writes a frame on Vulkan; the built-in shaders push it.
 		/// Each mesh of a material books its draws before culling, in submission order, so
 		/// culling never changes which fit. Meshes past it are batched on the CPU instead, and a
 		/// MaterialParams::Instancing material's meshes are skipped, with a warning.
@@ -953,8 +954,10 @@ namespace Dingo
 		void EnsureInstancingResources();
 		void EnsureStaticBuffers(const Mesh* mesh);
 		void UploadInstanceRecords();
-		// Writes the per-draw base; GroupInstances keeps the frame's writes within k_MaxInstancedDrawsPerFrame.
-		void UploadInstanceDraw(uint32_t firstRecord, uint32_t views);
+		// Sets the draw's base in the material's push constants when its shader takes DE_InstanceDraw as
+		// one, else writes it to the uniform block; GroupInstances keeps the frame's draws within
+		// k_MaxInstancedDrawsPerFrame.
+		void SetInstanceDraw(Material* material, uint32_t firstRecord, uint32_t views);
 		Material* ResolveInstancedMaterial(Material* material);
 
 		std::vector<InstanceGroup> m_InstanceGroups;
@@ -1178,6 +1181,7 @@ namespace Dingo
 		void BindSkinInstance(Material* material, uint32_t instance, SkinUploads& uploads);
 		static bool IsSkinningShader(const Shader* shader);
 		static bool UsesSkinPalette(const Shader* shader);
+		static bool PushesInstanceDraw(const Shader* shader);
 		// Its DE_SkinPalette or SkinData block sits at a binding the material leaves free.
 		static bool HasUsableSkinBlock(const Material* material);
 

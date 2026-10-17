@@ -364,10 +364,13 @@ An instance past the budget is dropped **whole**, with a warning
 (`Statistics::DroppedSkinnedDraws`), so a character never loses parts. Raise it only when F4's
 *Instances* bar is full or something is dropped. A custom skinned shader with the older `SkinData`
 block keeps working, but through the old path: at most 256 instances a frame, an upload before each
-draw, and on Vulkan every upload ends the render pass. Instanced static draws still upload between
-draws, with the same cost. On Vulkan the `SkinData` buffer also takes about 16.5 MiB of
-host-visible memory at the default budget. See
+draw, and on Vulkan every upload ends the render pass. On Vulkan the `SkinData` buffer also takes
+about 16.5 MiB of host-visible memory at the default budget. See
 [Animation](animation.md#instances-and-the-per-frame-budget).
+
+Instanced static draws also push their first record, so they share a render pass too. A custom
+instanced shader that keeps `DE_InstanceDraw` a uniform block still writes it before each draw
+(see [Scenes & ECS](scenes-and-ecs.md#instanced-custom-shaders-v10)).
 
 ### Culled animators
 

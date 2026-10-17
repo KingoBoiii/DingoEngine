@@ -551,7 +551,7 @@ namespace Dingo
 					const InstanceGroup& group = m_InstanceGroups[draw.Group];
 					EnsureStaticBuffers(group.Mesh);
 					Internal::MaterialAccess::SetInstanceBuffers(material, m_InstanceBuffer, m_InstanceDrawBuffer);
-					UploadInstanceDraw(group.FirstRecord, 1);
+					SetInstanceDraw(material, group.FirstRecord, 1);
 					Renderer::DrawIndexed(material, m_MeshLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer, group.Mesh->GetIndexCount(), group.Count);
 					++m_Statistics.DrawCalls;
 					++m_Statistics.InstancedDraws;
@@ -860,7 +860,7 @@ namespace Dingo
 				if (!m_InstanceMaterialWarned)
 				{
 					const std::string& name = material->GetParams().DebugName;
-					DE_CORE_WARN("Renderer3D: material '{}' has Instancing set but its shader lacks the {} storage block or the {} uniform block (Instancing.glsl), or puts one on a binding its textures or samplers use or past {}; its meshes are not drawn.",
+					DE_CORE_WARN("Renderer3D: material '{}' has Instancing set but its shader lacks the {} storage block or the {} uniform or push-constant block (Instancing.glsl), or puts one on a binding its textures or samplers use or past {}; its meshes are not drawn.",
 						name.empty() ? "<unnamed>" : name.c_str(), Material::k_InstanceDataBlockName, Material::k_InstanceDrawBlockName, k_MaxSkinUniformBinding);
 					m_InstanceMaterialWarned = true;
 				}
@@ -1030,9 +1030,13 @@ namespace Dingo
 				return slot >= Material::k_MaxSamplerSlots || !material->GetSampler(slot);
 			return slot >= Material::k_MaxTextureSlots || !material->GetTexture(slot);
 		};
+		if (!free(shader->FindStorageBufferBinding(Material::k_InstanceDataBlockName)))
+			return false;
+		// A stage still declaring the uniform form would bind a volatile buffer no draw writes.
+		if (PushesInstanceDraw(shader))
+			return shader->FindUniformBufferBinding(Material::k_InstanceDrawBlockName) < 0;
 		const int32_t draw = shader->FindUniformBufferBinding(Material::k_InstanceDrawBlockName);
-		return free(shader->FindStorageBufferBinding(Material::k_InstanceDataBlockName)) && free(draw) &&
-			draw <= static_cast<int32_t>(k_MaxSkinUniformBinding);
+		return free(draw) && draw <= static_cast<int32_t>(k_MaxSkinUniformBinding);
 	}
 
 	bool Renderer3D::ForcesInstancing(const Material* material) const
@@ -1421,10 +1425,13 @@ namespace Dingo
 		Renderer::Upload(m_InstanceBuffer, m_InstanceRecords.data(), m_InstanceRecords.size() * sizeof(InstanceRecord));
 	}
 
-	void Renderer3D::UploadInstanceDraw(uint32_t firstRecord, uint32_t views)
+	void Renderer3D::SetInstanceDraw(Material* material, uint32_t firstRecord, uint32_t views)
 	{
 		const glm::uvec4 draw(firstRecord, views, 0u, 0u);
-		Renderer::Upload(m_InstanceDrawBuffer, &draw, sizeof(draw));
+		if (PushesInstanceDraw(material->GetShader()))
+			Internal::MaterialAccess::SetDrawConstants(material, draw);
+		else
+			Renderer::Upload(m_InstanceDrawBuffer, &draw, sizeof(draw));
 	}
 
 	void Renderer3D::EnsureInstancingResources()
@@ -1914,6 +1921,11 @@ namespace Dingo
 	bool Renderer3D::UsesSkinPalette(const Shader* shader)
 	{
 		return shader && shader->FindPushConstantBlockSize(Material::k_SkinDrawBlockName) >= sizeof(glm::uvec4);
+	}
+
+	bool Renderer3D::PushesInstanceDraw(const Shader* shader)
+	{
+		return shader && shader->FindPushConstantBlockSize(Material::k_InstanceDrawBlockName) >= sizeof(glm::uvec4);
 	}
 
 	bool Renderer3D::HasUsableSkinBlock(const Material* material)
@@ -3439,8 +3451,9 @@ namespace Dingo
 				}
 				const InstanceGroup& group = m_InstanceGroups[draw.Group];
 				EnsureStaticBuffers(group.Mesh);
-				UploadInstanceDraw(group.FirstRecord, m_ShadowViewCount);
-				Renderer::DrawIndexed(GetShadowMaterial(ShadowVariant::Instanced, draw.Key.ShadowGroups), m_MeshShadowLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer,
+				Material* shadowMaterial = GetShadowMaterial(ShadowVariant::Instanced, draw.Key.ShadowGroups);
+				SetInstanceDraw(shadowMaterial, group.FirstRecord, m_ShadowViewCount);
+				Renderer::DrawIndexed(shadowMaterial, m_MeshShadowLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer,
 					group.Mesh->GetIndexCount(), group.Count * m_ShadowViewCount);
 				++m_Statistics.ShadowDrawCalls;
 				++m_Statistics.InstancedShadowDraws;
