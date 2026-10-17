@@ -26,6 +26,8 @@ namespace Dingo
 		std::optional<VillagerId> Pick(const Ray& ray, float reach) const;
 		std::optional<VillagerId> VillagerOf(Entity entity) const;
 		Entity GetEntity(VillagerId villager) const { return m_Roots[static_cast<size_t>(villager)]; }
+		// Where the villager's physics body is, or nothing while it has none (indoors, or no physics).
+		std::optional<glm::vec3> GetBodyPosition(VillagerId villager) const;
 
 	private:
 		Scene& m_Scene;

@@ -116,6 +116,18 @@ namespace Dingo
 		}
 	}
 
+	std::optional<glm::vec3> VillagerWorld::GetBodyPosition(VillagerId villager) const
+	{
+		const Physics3D* physics = m_Scene.GetPhysics3D();
+		const Entity root = m_Roots[static_cast<size_t>(villager)];
+		if (!physics || !root.IsValid())
+			return std::nullopt;
+		const PhysicsBodyId3D body = m_Scene.GetRuntimeBody3D(root);
+		if (body == k_InvalidBody3D)
+			return std::nullopt;
+		return physics->GetPosition(body);
+	}
+
 	std::optional<VillagerId> VillagerWorld::Pick(const Ray& ray, float reach) const
 	{
 		const Physics3D* physics = m_Scene.GetPhysics3D();

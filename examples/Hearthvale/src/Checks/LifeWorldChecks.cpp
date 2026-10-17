@@ -1,12 +1,15 @@
 #include "Checks/LifeWorldChecks.h"
 #include "Farm/Animals.h"
 #include "GameTuning.h"
+#include "LaunchOptions.h"
 #include "Life/AnimalWorld.h"
 #include "Life/VillagerSim.h"
 #include "Life/VillagerWorld.h"
 #include "ValleyDirector.h"
 
+#include <cmath>
 #include <format>
+#include <limits>
 
 namespace Dingo
 {
@@ -14,6 +17,7 @@ namespace Dingo
 	namespace
 	{
 		constexpr int k_SettleFrames = 8;
+		constexpr int k_DriftFrames = 30;
 		constexpr int k_NoonTick = (720 - DAY_START_MINUTES) * TICKS_PER_MINUTE;
 	}
 
@@ -29,6 +33,21 @@ namespace Dingo
 		DE_INFO("Life world checks: {} passed, {} failed", passed, failed);
 		m_Step = Step::Done;
 		return true;
+	}
+
+	bool LifeWorldCheckRun::StartAnimals(CheckReport& report, ValleyDirector& director, AnimalWorld* animals, Herd& herd)
+	{
+		if (!animals)
+		{
+			report.Check(!ANIMALS_ENABLED, "Life world: with animals off no animal world exists");
+			return Finish(report, director);
+		}
+		report.Check(animals->EntityCount() == herd.Count(), "Life world: the animal entities match the herd");
+		herd.Add(AnimalKind::Chicken, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
+		herd.Add(AnimalKind::Cow, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
+		m_Frames = 0;
+		m_Step = Step::Animals;
+		return false;
 	}
 
 	bool LifeWorldCheckRun::Tick(CheckReport& report, ValleyDirector& director, const VillagerSim& sim, VillagerWorld* villagers, AnimalWorld* animals, Herd& herd)
@@ -49,8 +68,8 @@ namespace Dingo
 					report.Check(false, "Life world: the scene has a villager world");
 					return Finish(report, director);
 				}
-				calendar.ForceWeather(Weather::Clear);
 				calendar.Reset(m_Day, k_NoonTick);
+				calendar.ForceWeather(Weather::Clear);
 				director.SetTimePaused(true);
 				m_Frames = 0;
 				m_Step = Step::Settle;
@@ -97,17 +116,60 @@ namespace Dingo
 				const Ray empty(glm::vec3(1.5f, GROUND_TOP + 4.0f, 1.5f), glm::vec3(0.0f, -1.0f, 0.0f));
 				report.Check(!villagers->Pick(empty, 10.0f), "Life world: a ray over empty ground finds nobody");
 
-				if (!animals)
+				// Frozen, the sim never moves a villager and the scene never steps, so there is no drift to measure.
+				if (GetLaunchOptions().Freeze)
+					return StartAnimals(report, director, animals, herd);
+
+				int walkTick = -1;
+				for (int i = 0; i < VILLAGER_COUNT && walkTick < 0; ++i)
 				{
-					report.Check(!ANIMALS_ENABLED, "Life world: with animals off no animal world exists");
-					return Finish(report, director);
+					for (const PlanStop& stop : sim.GetPlan(static_cast<VillagerId>(i)).Stops)
+					{
+						if (stop.Route.size() >= 2 && stop.Minute >= DAY_START_MINUTES && stop.Minute < DAY_START_MINUTES + DAY_MINUTES - 10)
+						{
+							walkTick = (stop.Minute - DAY_START_MINUTES) * TICKS_PER_MINUTE;
+							break;
+						}
+					}
 				}
-				report.Check(animals->EntityCount() == herd.Count(), "Life world: the animal entities match the herd");
-				herd.Add(AnimalKind::Chicken, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
-				herd.Add(AnimalKind::Cow, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
+				report.Check(walkTick >= 0, "Life world: some villager walks a route today");
+				if (walkTick >= 0)
+				{
+					director.GetCalendar().Reset(m_Day, walkTick);
+					director.GetCalendar().ForceWeather(Weather::Clear);
+				}
+				director.SetTimePaused(false);
 				m_Frames = 0;
-				m_Step = Step::Animals;
+				m_Measured = 0;
+				m_Drift = 0.0f;
+				m_Walked = false;
+				m_Step = Step::Drift;
 				return false;
+			}
+
+			case Step::Drift:
+			{
+				const VillagerPlaces& places = sim.GetPlaces();
+				for (int i = 0; i < VILLAGER_COUNT; ++i)
+				{
+					const VillagerPlace& place = places[static_cast<size_t>(i)];
+					if (place.Indoors)
+						continue;
+					m_Walked = m_Walked || place.Moving;
+					const std::optional<glm::vec3> body = villagers->GetBodyPosition(static_cast<VillagerId>(i));
+					if (!body)
+						continue;
+					++m_Measured;
+					const float drift = glm::length(glm::vec2(body->x, body->z) - place.Position);
+					m_Drift = std::isfinite(drift) ? (std::max)(m_Drift, drift) : std::numeric_limits<float>::infinity();
+				}
+				if (++m_Frames < k_DriftFrames)
+					return false;
+
+				director.SetTimePaused(true);
+				report.Check(m_Walked, "Life world: a villager walks while time runs at several steps a frame");
+				report.Check(m_Measured > 0 && m_Drift < 0.1f, std::format("Life world: each villager's body stays on its place at {} sim steps a frame ({} bodies measured, off by up to {:.3f} m)", k_DriftSteps, m_Measured, m_Drift));
+				return StartAnimals(report, director, animals, herd);
 			}
 
 			case Step::Animals:

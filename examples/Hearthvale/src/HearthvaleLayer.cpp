@@ -603,11 +603,13 @@ namespace Dingo
 
 		const bool headless = Application::Get().IsHeadless();
 		const bool days = options.Days > 0;
-		const float step = options.FixedDt > 0.0f ? options.FixedDt : deltaTime;
+		const int checkSteps = m_LifeChecks ? m_LifeChecks->GetStepsPerFrame() : 1;
+		const float step = options.FixedDt > 0.0f ? options.FixedDt : checkSteps > 1 ? SIM_STEP_SECONDS : deltaTime;
 		const float animationDt = options.Freeze ? 0.0f : step;
 		int steps = options.FixedDt > 0.0f ? options.StepsPerFrame : 1;
 		if (days && !options.HasStepsPerFrame)
 			steps = headless ? DAY_TICKS : DAYS_STEPS_WINDOWED;
+		steps = (std::max)(steps, checkSteps);
 		const float simSeconds = days ? SIM_STEP_SECONDS : step;
 		if (m_Saves && !(m_Screens && m_Screens->IsOpen()))
 			m_Saves->AddPlayTime(simSeconds * static_cast<float>(steps));
@@ -626,6 +628,11 @@ namespace Dingo
 			if (days && headless)
 				continue;
 			timer.Reset();
+			// MoveKinematic covers exactly the next physics step, so the villagers sync before every scene step.
+			if (m_VillagerWorld)
+				m_VillagerWorld->Sync(m_Villagers->GetPlaces(), animationDt);
+			perfAdd(PerfMetric::Sync, timer.ElapsedMillis());
+			timer.Reset();
 			m_SceneManager.OnUpdate(animationDt);
 			perfAdd(PerfMetric::Scene, timer.ElapsedMillis());
 		}
@@ -633,8 +640,6 @@ namespace Dingo
 		timer.Reset();
 		if (m_World)
 			m_World->Sync();
-		if (m_VillagerWorld)
-			m_VillagerWorld->Sync(m_Villagers->GetPlaces(), animationDt);
 		if (m_AnimalWorld)
 			m_AnimalWorld->Sync(m_State.Animals, *m_AnimalSim, animationDt);
 		perfAdd(PerfMetric::Sync, timer.ElapsedMillis());
