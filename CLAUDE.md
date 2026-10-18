@@ -155,6 +155,7 @@ Read the relevant file before changing that area. They hold the detail that used
 | [.claude/reference/build-details.md](.claude/reference/build-details.md) | Linux build and packaging, the new-executable checklist, profiling, Debug-ASan, versioning, devices without a GPU |
 | [.claude/reference/project-history.md](.claude/reference/project-history.md) | The full source tree with every example, where issues and reviews live, and what each release shipped |
 | [ROADMAP.md](ROADMAP.md) | The plan, v0.1 → v1.0, and the out-of-band modules |
+| [ROADMAP-1.x.md](ROADMAP-1.x.md) | After 1.0: the 1.x milestones, 2.0 candidates and modules, with the open decisions R1–R3 |
 | [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status and Appendix A (why the toolchain is built from source; `scripts/build-linux-toolchain.sh` does it) |
 | `docs/` | One page per feature (see `docs/README.md`). Keep the relevant page in step with a public API change |
 | `.claude/plans/`, `.claude/reviews/` | Milestone plans (their "As built" notes win) and dated review reports (trust the fix-status section, and check `git log`) |
