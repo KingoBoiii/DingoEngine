@@ -632,9 +632,20 @@ namespace Dingo
 		TrackSkinnedView(*m_Data, renderer);
 
 		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
-		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
-		for (auto [entity, transform, mesh] : view.each())
+		entt::registry& registry = m_Data->Registry;
+		const auto& transforms = registry.storage<Transform3DComponent>();
+		auto& meshes = registry.storage<MeshRendererComponent>();
+		const auto& inactive = registry.storage<Internal::InactiveComponent>();
+		const bool anyInactive = !inactive.empty();
+		// Walks the view's own lead pool, so submission order, and with it batching, stays the view's.
+		const entt::sparse_set& lead = *registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>).handle();
+		const entt::sparse_set& other = &lead == &meshes ? static_cast<const entt::sparse_set&>(transforms) : meshes;
+		for (const entt::entity entity : lead)
 		{
+			if (!other.contains(entity) || (anyInactive && inactive.contains(entity)))
+				continue;
+			const Transform3DComponent& transform = transforms.get(entity);
+			MeshRendererComponent& mesh = meshes.get(entity);
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
