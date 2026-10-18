@@ -21,6 +21,7 @@
 #include <array>
 #include <cstring>
 #include <type_traits>
+#include <xmmintrin.h>
 
 namespace
 {
@@ -64,23 +65,32 @@ namespace
 			return local;
 
 		const glm::vec3 reach = glm::max(glm::abs(local.Min), glm::abs(local.Max));
-		const glm::vec3 translation(transform[3]);
-		Dingo::AABB bounds(translation, translation);
-		glm::vec3 magnitude = glm::abs(translation);
+		const __m128 sign = _mm_set1_ps(-0.0f);
+		const __m128 translation = _mm_loadu_ps(&transform[3][0]);
+		__m128 low = translation;
+		__m128 high = translation;
+		__m128 magnitude = _mm_andnot_ps(sign, translation);
 		for (int column = 0; column < 3; ++column)
 		{
-			const glm::vec3 axis(transform[column]);
-			const glm::vec3 low = axis * local.Min[column];
-			const glm::vec3 high = axis * local.Max[column];
-			bounds.Min += glm::min(low, high);
-			bounds.Max += glm::max(low, high);
-			magnitude += glm::abs(axis) * reach[column];
+			const __m128 axis = _mm_loadu_ps(&transform[column][0]);
+			const __m128 a = _mm_mul_ps(axis, _mm_set1_ps(local.Min[column]));
+			const __m128 b = _mm_mul_ps(axis, _mm_set1_ps(local.Max[column]));
+			// MINPS and MAXPS return their second operand on a tie or a NaN, as std::min and std::max return their first.
+			low = _mm_add_ps(low, _mm_min_ps(b, a));
+			high = _mm_add_ps(high, _mm_max_ps(b, a));
+			magnitude = _mm_add_ps(magnitude, _mm_mul_ps(_mm_andnot_ps(sign, axis), _mm_set1_ps(reach[column])));
 		}
-		if (bounds.IsEmpty())
-			return bounds;
-		bounds.Min -= magnitude * 1e-5f;
-		bounds.Max += magnitude * 1e-5f;
-		return bounds;
+		if ((_mm_movemask_ps(_mm_cmpgt_ps(low, high)) & 0x7) == 0)
+		{
+			const __m128 pad = _mm_mul_ps(magnitude, _mm_set1_ps(1e-5f));
+			low = _mm_sub_ps(low, pad);
+			high = _mm_add_ps(high, pad);
+		}
+		alignas(16) float lows[4];
+		alignas(16) float highs[4];
+		_mm_store_ps(lows, low);
+		_mm_store_ps(highs, high);
+		return Dingo::AABB(glm::vec3(lows[0], lows[1], lows[2]), glm::vec3(highs[0], highs[1], highs[2]));
 	}
 
 	// Wholly behind the plane, by more than the GPU's own rounding of the same test could undo:
@@ -104,6 +114,43 @@ namespace
 		}
 		return false;
 	}
+
+	// BoxOutsideSides with the four sides in the lanes of one register, each lane in BoxBehindPlane's
+	// arithmetic and order, so both cull the same boxes.
+	class SidePlanes
+	{
+	public:
+		explicit SidePlanes(const std::array<glm::vec4, Dingo::Frustum::PlaneCount>& planes)
+		{
+			m_X = _mm_loadu_ps(&planes[Dingo::Frustum::Left].x);
+			m_Y = _mm_loadu_ps(&planes[Dingo::Frustum::Right].x);
+			m_Z = _mm_loadu_ps(&planes[Dingo::Frustum::Bottom].x);
+			m_W = _mm_loadu_ps(&planes[Dingo::Frustum::Top].x);
+			_MM_TRANSPOSE4_PS(m_X, m_Y, m_Z, m_W);
+			m_AbsW = _mm_andnot_ps(_mm_set1_ps(-0.0f), m_W);
+		}
+
+		// |n| * |f| is |n * f| exactly, so the scale reuses the distance's products.
+		bool BoxOutside(const Dingo::AABB& box) const
+		{
+			const __m128 sign = _mm_set1_ps(-0.0f);
+			const __m128 zero = _mm_setzero_ps();
+			const auto farthest = [zero](__m128 normal, float low, float high)
+			{
+				const __m128 positive = _mm_cmpge_ps(normal, zero);
+				return _mm_or_ps(_mm_and_ps(positive, _mm_set1_ps(high)), _mm_andnot_ps(positive, _mm_set1_ps(low)));
+			};
+			const __m128 x = _mm_mul_ps(m_X, farthest(m_X, box.Min.x, box.Max.x));
+			const __m128 y = _mm_mul_ps(m_Y, farthest(m_Y, box.Min.y, box.Max.y));
+			const __m128 z = _mm_mul_ps(m_Z, farthest(m_Z, box.Min.z, box.Max.z));
+			const __m128 distance = _mm_add_ps(_mm_add_ps(_mm_add_ps(x, y), z), m_W);
+			const __m128 scale = _mm_add_ps(_mm_add_ps(_mm_add_ps(_mm_andnot_ps(sign, x), _mm_andnot_ps(sign, y)), _mm_andnot_ps(sign, z)), m_AbsW);
+			return _mm_movemask_ps(_mm_cmplt_ps(distance, _mm_mul_ps(_mm_set1_ps(-1e-5f), scale))) != 0;
+		}
+
+	private:
+		__m128 m_X, m_Y, m_Z, m_W, m_AbsW;
+	};
 
 	bool BoxInside(const Dingo::AABB& box, const glm::vec3& low, const glm::vec3& high)
 	{
@@ -727,6 +774,16 @@ namespace Dingo
 			casters = true;
 		};
 
+		const SidePlanes sides(m_CullPlanes);
+		auto cameraSees = [this, &sides](const AABB& bounds, const Material* material)
+		{
+			if (!material->GetParams().FrustumCulled)
+				return true;
+			if (sides.BoxOutside(bounds))
+				return false;
+			return !(m_CullFarPlane && IsDepthPastFarRejected(*material) && BoxBehindPlane(m_CullPlanes[Frustum::Far], bounds));
+		};
+
 		std::array<int32_t, 6> extremes;
 		extremes.fill(-1);
 		for (uint32_t index = 0; index < m_StaticSubmissions.size(); ++index)
@@ -736,7 +793,7 @@ namespace Dingo
 			submission.Bounded = IsAffine(data.Transform);
 			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, data.Transform) : AABB();
 			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, data.CullDistance);
-			submission.Seen = !m_CullingEnabled || !submission.Bounded || (!submission.PastDistance && CameraSees(submission.Bounds, data.Material));
+			submission.Seen = !m_CullingEnabled || !submission.Bounded || (!submission.PastDistance && cameraSees(submission.Bounds, data.Material));
 			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
 				continue;
 
