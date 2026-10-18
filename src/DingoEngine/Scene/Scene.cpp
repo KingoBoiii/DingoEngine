@@ -593,9 +593,8 @@ namespace Dingo
 
 		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
 		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
-		for (entt::entity entity : view)
+		for (auto [entity, transform, mesh] : view.each())
 		{
-			auto [transform, mesh] = view.get<Transform3DComponent, MeshRendererComponent>(entity);
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 

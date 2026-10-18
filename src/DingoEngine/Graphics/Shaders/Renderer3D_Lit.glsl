@@ -22,6 +22,15 @@ layout(location = 2) out vec3 v_WorldPosition;
 layout(location = 3) out vec2 v_TexCoord;
 layout(location = 4) flat out uint v_ObjectIndex;
 
+// Written out under precise rather than as a matrix product, which a driver may fuse differently in two
+// programs (and SPIR-V to HLSL drops precise from): every variant then projects a world position to the
+// same bits, so an instanced copy covers exactly the CPU batch's pixels.
+vec4 ProjectPosition(mat4 viewProjection, vec4 position)
+{
+	precise vec4 clip = (viewProjection[0] * position.x + viewProjection[1] * position.y) + (viewProjection[2] * position.z + viewProjection[3] * position.w);
+	return clip;
+}
+
 #ifdef DE_SKINNED
 
 #define DE_SKIN_PALETTE
@@ -38,7 +47,7 @@ void main()
 	mat4 skin = SkinMatrix(a_Joints, a_Weights);
 	vec4 worldPosition = SkinModel() * (skin * vec4(a_Position, 1.0));
 
-	gl_Position     = ViewProjection * worldPosition;
+	gl_Position     = ProjectPosition(ViewProjection, worldPosition);
 	v_Normal        = SkinNormal(skin, a_Normal);
 	v_Color         = SkinColor();
 	v_WorldPosition = worldPosition.xyz;
@@ -60,7 +69,7 @@ void main()
 	InstanceRecord instance = GetInstance(uint(gl_InstanceIndex));
 	vec3 worldPosition = InstanceWorldPosition(instance, a_Position);
 
-	gl_Position     = ViewProjection * vec4(worldPosition, 1.0);
+	gl_Position     = ProjectPosition(ViewProjection, vec4(worldPosition, 1.0));
 	v_Normal        = InstanceWorldNormal(instance, a_Normal);
 	v_Color         = instance.Color;
 	v_WorldPosition = worldPosition;
@@ -78,7 +87,7 @@ layout(location = 4) in uint a_ObjectIndex;
 
 void main()
 {
-	gl_Position     = ViewProjection * vec4(a_Position, 1.0);
+	gl_Position     = ProjectPosition(ViewProjection, vec4(a_Position, 1.0));
 	v_Normal        = a_Normal;
 	v_Color         = a_Color;
 	v_WorldPosition = a_Position;
