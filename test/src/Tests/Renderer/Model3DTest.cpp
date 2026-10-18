@@ -120,7 +120,7 @@ namespace Dingo
 				"a textured submesh without a colour factor keeps a white BaseColor");
 		}
 
-		const std::filesystem::path folder = std::filesystem::temp_directory_path() / "DingoModel3DTest";
+		const std::filesystem::path folder = TestTempDirectory("DingoModel3DTest");
 		const std::filesystem::path copy = folder / "ColorQuads.gltf";
 		std::error_code error;
 		std::filesystem::create_directories(folder, error);
