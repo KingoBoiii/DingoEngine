@@ -51,7 +51,7 @@ The game saves at the start of each day, into the active one of three slots, and
 | `--load=<slot>` | Loads slot 1 to 3, or a slot's file name |
 | `--layout=demo` | A pre-built late-game farm: every building placed, every crop planted (for captures and perf) |
 | `--perf` | With `--autoplay`, logs `[PERF]` frame and stage timers over 600 frames, then closes |
-| `--freeze` | Stops time and animation |
+| `--freeze` | Stops time and animation. With `--check`, the checks that need the clock, the villagers or the animals to move are left out, and the clock stays stopped after a screen closes |
 | `--farmer=model\|box` | The skinned farmer, or a box placeholder |
 | `--no-post`, `--no-shadows`, `--no-particles`, `--no-fog` | Switch a rendering feature off |
 | `--no-instancing`, `--no-static`, `--no-cull` | Switch a v1.0 throughput feature off |
