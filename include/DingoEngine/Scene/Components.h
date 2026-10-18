@@ -451,9 +451,10 @@ namespace Dingo
 		/// Entity::GetWorldTransform).
 		glm::mat4 GetTransform() const
 		{
-			return glm::translate(glm::mat4(1.0f), Position)
-				* glm::mat4_cast(Rotation)
-				* glm::scale(glm::mat4(1.0f), Scale);
+			// The product written out: for finite values it equals the three matrices multiplied, up to the sign of a zero.
+			const glm::mat3 rotation = glm::mat3_cast(Rotation);
+			return glm::mat4(glm::vec4(rotation[0] * Scale.x, 0.0f), glm::vec4(rotation[1] * Scale.y, 0.0f),
+				glm::vec4(rotation[2] * Scale.z, 0.0f), glm::vec4(Position, 1.0f));
 		}
 
 		/// Authoring convenience: set the rotation from XYZ Euler angles in degrees.
