@@ -9,13 +9,13 @@ The order is a proposal, not a schedule. Releases ship when they're done, as bef
 gets its own plan in `.claude/plans/` before it starts, and ships or upgrades an example that uses
 it.
 
-## Open decisions
+## Decisions (owner, 2026-10-18)
 
-| # | Question | Options | Recommendation |
-|---|---|---|---|
-| R1 | How does the editor (its own repo) get at ImGui? | (a) It brings its own copy. (b) It builds against the engine's copy, with an engine hook to host its panels. | **(b).** The engine's static library already links ImGui, so a second copy in the same executable breaks the one-definition rule. The editor compiles against the same `vendor/` ImGui, and the engine exposes the context and a panel hook without putting ImGui types in a public header. The 1.3 plan settles the details. |
-| R2 | Does PBR stay opt-in for good? | (a) Opt-in through 1.x, the default in 2.0. (b) Opt-in forever, next to Blinn-Phong. | **(a).** Two lighting models forever doubles the shader work behind every lighting change. |
-| R3 | Where do engine-support APIs for the editor live? | (a) Ordinary public API under SemVer. (b) A separate `DingoEngine/Editor/` header set with a looser promise. | **(a)** where a game would use it too (picking, serialization, reflection), **(b)** for editor-only hooks, so the editor can move faster than 1.x allows. |
+| # | Question | Decision |
+|---|---|---|
+| R1 | How does the editor (its own repo) get at ImGui? | **It builds against the engine's copy**, with an engine hook to host its panels. The engine's static library already links ImGui, so a second copy in the same executable would break the one-definition rule. The editor compiles against the same `vendor/` ImGui, and the engine exposes the context and a panel hook without putting ImGui types in a public header. The 1.3 plan settles the details. |
+| R2 | Does PBR stay opt-in for good? | **Opt-in through 1.x, the default in 2.0.** Two lighting models forever would double the shader work behind every lighting change. |
+| R3 | Where do engine-support APIs for the editor live? | **Ordinary public API under SemVer**, including editor-only hooks. There is no separate editor header set with a looser promise, so an editor need waits for a minor release like any other addition. |
 
 ## v1.0.x — Bug sweep
 
@@ -89,7 +89,7 @@ itself lives in its own repo, pins `DingoEngine ^1.3` and ships out of band (see
   rebuilt on start as today.
 - **Asset browser support**: listing assets, generating thumbnails, and the existing hot-reload as
   the live link.
-- **The ImGui host hook** (R1) and any editor-only API (R3).
+- **The ImGui host hook** (R1), public API under SemVer like the rest (R3).
 
 **Example**: the editor opening and saving the 1.1 example's scenes.
 
