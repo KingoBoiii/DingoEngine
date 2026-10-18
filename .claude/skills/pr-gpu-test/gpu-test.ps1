@@ -5,8 +5,7 @@
                "--test=hierarchy@30;--test=light --fog"
     -Examples  ';'-separated "Name|args|waitSec|action": "Marionette|--check|75;Candlewick||30|keys:77"
     -Apis      "vulkan,dx11,dx12" (default)
-  Each backend runs in parallel; every --test=anim job runs afterwards, one at a time, because
-  all of them share %TEMP%\DingoAnimationTest.
+  Each backend runs in parallel, its jobs one after another.
 #>
 param(
     [Parameter(Mandatory)] [string]$Tag,
@@ -43,6 +42,7 @@ $knownErrors = [ordered]@{
     "AudioEngine::CreateStream: invalid stream \(" = "expected: Audio Bus Test's invalid stream formats"
     "AssetManager: can't open package '.*pack-test.*\.dpak'" = "expected: Pack Test's wrong-key, missing and damaged packages"
     "Package 'damaged\.dpak': 'textures/container\.jpg' is damaged \(CRC mismatch\)" = "expected: Pack Test's damaged entry"
+    "SaveData: cannot read a save: '.*check-saves.(store|slots).slot\d+\.json': \[json\.exception\.parse_error" = "expected: Hearthvale --check's damaged-save checks"
 }
 $knownD3D12 = [ordered]@{
     "Renderer3D_ShadowAtlas \(Depth\)" = "known: duplicate shadow-atlas barrier, on master since v0.9"
@@ -84,7 +84,6 @@ if (-not $ReportOnly) {
     Get-ChildItem $root -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "jobs-*.txt" -or $_.Name -like "runner-*" } | Remove-Item -Force
     New-Item -ItemType Directory -Force $out | Out-Null
 
-    $anim = @()
     foreach ($api in $Apis) {
         $g = if ($api -eq "vulkan") { "" } else { "--graphics=$api" }
         $db = if ($api -eq "dx12") { "1" } else { "0" }
@@ -96,7 +95,7 @@ if (-not $ReportOnly) {
             $name = "$api-" + (($spec -replace '--test=', '' -replace '[^A-Za-z0-9]+', '-').Trim('-'))
             while ($names.ContainsKey($name)) { $name += "x" }; $names[$name] = 1
             $line = @($name, $testExe, (Get-RunDir $api "test" (Join-Path $Worktree "test")), $args1, $wait, "-", "full", $db, "-")
-            if ($spec -match '--test=anim') { $anim += ($line -join " | ") } else { $jobs += , $line }
+            $jobs += , $line
         }
         foreach ($e in $Examples) {
             $n, $eargs, $wait, $action = $e -split '\|'
@@ -123,10 +122,6 @@ if (-not $ReportOnly) {
         if (Test-Path $jf) { Start-Runner $jf $api }
     }
     $procs | ForEach-Object { $_.WaitForExit() }
-    if ($anim.Count) {
-        Write-Jobs (Join-Path $root "jobs-anim.txt") $anim
-        (Start-Runner (Join-Path $root "jobs-anim.txt") "anim").WaitForExit()
-    }
     "Ran in {0:N0} s. Output: $out" -f ((Get-Date) - $t0).TotalSeconds
 }
 if (-not (Test-Path $out)) { throw "no output at $($out): run without -ReportOnly first" }

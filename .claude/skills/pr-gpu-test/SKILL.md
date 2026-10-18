@@ -55,13 +55,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .claude/skills/pr-gpu-test/g
 ```
 
 - **Tests:** `;`-separated argument sets, each with an optional `@seconds` wait (default 15). The first job on each backend waits at least 30 s: after a build, the shader and font caches beside the exe (`build/bin/.../.cache`) are cold. Collider tests need `@30`, and the Animation Test `@20`. The script refuses a `--test=` name that matches no test in `TestLayer.cpp`, because the app would silently start the first test.
-- **Examples:** `Name|args|seconds|action`. Marionette `--check` needs 75 s.
+- **Examples:** `Name|args|seconds|action`. Marionette `--check` needs 75 s. Hearthvale `--check` needs 150 s and runs on one backend at a time (`-Apis "vulkan"`, then the next), because every backend writes the same `check-saves/` beside the exe.
 - **Actions:**
   - `keys:<vk hex,…>` posts keys 10 s after launch. Useful codes: F3 = `72` and up, one per Debug window tab (see `Application.cpp`), Space = `20`. Extended keys (arrows, Home, End, Insert, Delete) arrive as numpad keys.
   - `min` minimizes the window at 8 s and closes it while it is minimized. It takes no PNG.
 - **Backends:** Vulkan with validation, DX11 and DX12 with the debug layer read through OutputDebugString. Use `-Apis "vulkan"` to narrow them. The D3D12 listener is one per machine, so run only one DX12 job at a time on the machine (another session's run, or DebugView, would take its messages).
-- **How jobs run:** the backends run in parallel. Every `--test=anim` job runs afterwards, one at a time, because they all share `%TEMP%\DingoAnimationTest`.
-- **Output:** `build/gpu-test/<Tag>/out/<api>/`, and `out/anim/` for the Animation Test. Each job leaves its `Dingo.log` copy, stdout, stderr, a PNG of the window just before it closes, and its D3D12 messages. Re-running with the same tag replaces the output, so retry under a new tag (`prN-retry`) to keep the first run's logs. `-ReportOnly` prints the report again.
+- **How jobs run:** the backends run in parallel, and each backend runs its jobs one after another. Each test app process gets its own `%TEMP%\<name>-<pid>` folders, so the backends don't share files. Pack Test is the exception: its `pack-test` folder sits in the shared cache, so run `--test=pack` on one backend at a time.
+- **Output:** `build/gpu-test/<Tag>/out/<api>/`. Each job leaves its `Dingo.log` copy, stdout, stderr, a PNG of the window just before it closes, and its D3D12 messages. Re-running with the same tag replaces the output, so retry under a new tag (`prN-retry`) to keep the first run's logs. `-ReportOnly` prints the report again.
 - **Bigger Debug window:** `build/gpu-test/<Tag>/<api>/<project>/imgui.ini` is copied once per tag and then kept, so you can raise `Size=` under `[Window][Debug]` there before a re-run to fit more of a debug tab in the PNG.
 - Never stop processes by name: another session's runs share the machine. A job that ignores `WM_CLOSE` is killed after 15 s on its own.
 - Expect about 2–5 min for a typical PR. A build adds 2–5 min when it's incremental, more from cold.
