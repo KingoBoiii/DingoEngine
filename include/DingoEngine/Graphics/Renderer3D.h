@@ -32,6 +32,7 @@ namespace Dingo
 	{
 		class FullscreenShader;
 		class ParticleRenderer;
+		struct Renderer3DAccess;
 		class ShadowAtlasAllocator;
 		class SkinnedVisibility;
 		class TextureReadback;
@@ -630,6 +631,10 @@ namespace Dingo
 		explicit Renderer3D(const Renderer3DParams& params);
 		void Initialize();
 
+		// `bounds` null: EndScene works them out from the transform.
+		void SubmitMeshWithBounds(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows,
+			uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface, const AABB* bounds, bool bounded);
+
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
 		void ClearSceneLights();
@@ -637,6 +642,8 @@ namespace Dingo
 		void EnsureShadowResources();
 		void DrawShadowPass();
 		void ResolveSkinnedBudget();
+
+		friend struct Internal::Renderer3DAccess;
 
 	private:
 		Renderer3DParams m_Params;
@@ -843,6 +850,7 @@ namespace Dingo
 			uint32_t Record = 0;         // its instance record when instanced
 			uint32_t ChunkVertex = 0;    // where in its chunk
 			uint32_t ChunkIndex = 0;
+			bool BoundsGiven = false;    // the submitter set the submission's Bounds and Bounded
 		};
 		std::vector<StaticSubmission> m_StaticSubmissions;
 		std::vector<StaticSubmissionData> m_StaticSubmissionData;

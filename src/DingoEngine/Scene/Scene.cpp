@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Graphics/Model.h"
 
 #include "DingoEngine/Scene/SceneDebug.h"
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -582,6 +584,44 @@ namespace Dingo
 			}
 			data.SkinnedViews.push_back(visibility);
 		}
+
+		template<typename T>
+		bool SameBits(const T& a, const T& b)
+		{
+			return std::memcmp(&a, &b, sizeof(T)) == 0;
+		}
+
+		const Internal::SceneData::MeshRenderMemo& RenderMemo(std::vector<Internal::SceneData::MeshRenderMemo>& entries, Internal::HierarchySystem::WorldMemo& memo,
+			entt::entity entity, const Transform3DComponent& transform, const Mesh& mesh)
+		{
+			const std::size_t index = static_cast<std::size_t>(entt::to_entity(entity));
+			if (index >= entries.size())
+				entries.resize(index + 1);
+			Internal::SceneData::MeshRenderMemo& entry = entries[index];
+
+			const bool root = !memo.HasParent(entity);
+			if (!root || !entry.Root || !SameBits(entry.Position, transform.Position) || !SameBits(entry.Rotation, transform.Rotation) || !SameBits(entry.Scale, transform.Scale))
+			{
+				const glm::mat4 world = memo.Transform(entity, transform);
+				if (!SameBits(entry.World, world))
+				{
+					entry.World = world;
+					entry.HasBounds = false;
+				}
+				entry.Root = root;
+				entry.Position = transform.Position;
+				entry.Rotation = transform.Rotation;
+				entry.Scale = transform.Scale;
+			}
+			if (!entry.HasBounds || !SameBits(entry.MeshMin, mesh.GetBoundsMin()) || !SameBits(entry.MeshMax, mesh.GetBoundsMax()))
+			{
+				entry.MeshMin = mesh.GetBoundsMin();
+				entry.MeshMax = mesh.GetBoundsMax();
+				entry.Bounded = Internal::Renderer3DAccess::WorldBounds(mesh, entry.World, entry.Bounds);
+				entry.HasBounds = true;
+			}
+			return entry;
+		}
 	}
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
@@ -608,7 +648,9 @@ namespace Dingo
 				m_Data->StaticMeshes.Track(*bake, entity, baked);
 				continue;
 			}
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance, mesh.Surface ? &*mesh.Surface : nullptr);
+			const Internal::SceneData::MeshRenderMemo& entry = RenderMemo(m_Data->MeshMemo, memo, entity, transform, *mesh.Mesh);
+			Internal::Renderer3DAccess::SubmitMesh(renderer, mesh.Mesh, entry.World, mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance,
+				mesh.Surface ? &*mesh.Surface : nullptr, entry.Bounds, entry.Bounded);
 		}
 		if (bake)
 			m_Data->StaticMeshes.Submit(*bake, renderer);
