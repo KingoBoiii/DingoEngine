@@ -411,6 +411,16 @@ namespace Dingo
 			m_Props[Rock] = Mesh::CreateSphere(0.5f, 6, 8);
 			m_Props[Barrel] = BuildPrism({ 12, 0.4f, 0.4f, 1.0f, 0.0f });
 		}
+		if (m_Mode != Mode::Skinned && !m_PropMaterial)
+		{
+			// One-sided, which the closed props allow: a lit material's back faces tie its front faces in
+			// depth along every silhouette, and a GPU may keep either, so two-sided views of the same
+			// scene could differ by a pixel from run to run (#224).
+			Renderer3D& renderer = Application::Get().GetRenderer3D();
+			m_PropMaterial = Material::Create(MaterialParams().SetDebugName("ThroughputProps").SetShader(renderer.GetDefaultMaterial()->GetShader()));
+			m_PropMaterial->SetTexture(0, Renderer::GetWhiteTexture());
+			m_PropMaterial->SetSampler(0, Renderer::GetClampSampler());
+		}
 		m_UniqueMeshes.reserve(m_Layout.Prisms.size());
 		for (const Prism& prism : m_Layout.Prisms)
 			m_UniqueMeshes.push_back(BuildPrism(prism));
@@ -432,7 +442,9 @@ namespace Dingo
 			else
 			{
 				Mesh* mesh = placement.Prop >= 0 ? m_Props[placement.Prop] : m_UniqueMeshes[placement.Unique];
-				entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, placement.Color)).Static = m_Static;
+				MeshRendererComponent& meshRenderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, placement.Color));
+				meshRenderer.Material = m_PropMaterial;
+				meshRenderer.Static = m_Static;
 			}
 			m_Renderables.push_back(entity);
 		}
@@ -624,6 +636,7 @@ namespace Dingo
 		}
 		// Baked cells cull by range and never instance; RunStaticChecks holds them to these pictures.
 		SetStatic(false);
+		RunDepthTieCheck();
 		RunCullingChecks();
 		RunInstancingChecks();
 		SetStatic(m_Static);
@@ -643,6 +656,64 @@ namespace Dingo
 		}
 		Check(built.Get() == expected.Get(),
 			std::format("the entities' transforms are the layout's (0x{:016x})", built.Get()));
+	}
+
+	void ThroughputTest::RunDepthTieCheck()
+	{
+		if (!m_PropMaterial)
+			return;
+
+		if (!m_TieMaterial)
+		{
+			MaterialParams params = m_PropMaterial->GetParams();
+			m_TieMaterial = Material::Create(params.SetDebugName("ThroughputPropsLessEqual").SetDepthCompare(DepthCompare::LessEqual));
+			m_TieMaterial->SetTexture(0, Renderer::GetWhiteTexture());
+			m_TieMaterial->SetSampler(0, Renderer::GetClampSampler());
+		}
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_TieTargets[i])
+				m_TieTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "ThroughputTieLess" : "ThroughputTieLessEqual")
+					.SetWidth(k_CullCheckWidth)
+					.SetHeight(k_CullCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight));
+		PlaceCamera(camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
+		// Past the far plane D3D clamps depth to 1, which LessEqual passes and Less doesn't, and the lap's
+		// view ends inside the layout.
+		camera.SetClip(0.1f, 4.0f * m_Extent + 50.0f);
+
+		for (int i = 0; i < 2; ++i)
+		{
+			for (Entity entity : m_Renderables)
+				entity.GetComponent<MeshRendererComponent>().Material = i == 0 ? m_PropMaterial : m_TieMaterial;
+			RenderView(m_TieTargets[i], camera);
+		}
+		for (Entity entity : m_Renderables)
+			entity.GetComponent<MeshRendererComponent>().Material = m_PropMaterial;
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_TieTargets[0]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				m_LessPixels = pixels.Data;
+		});
+		m_TieTargets[1]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			size_t differing = 0;
+			for (size_t i = 0; i < pixels.Data.size() && i < m_LessPixels.size(); i += 4)
+				differing += std::memcmp(&pixels.Data[i], &m_LessPixels[i], 4) != 0 ? 1 : 0;
+			Check(!pixels.Data.empty() && pixels.Data.size() == m_LessPixels.size() && differing == 0,
+				std::format("no visible fragment of the view ties another in depth, so draw order can't change the exact comparisons (Less and LessEqual differ in {} of {} px)",
+					differing, pixels.Data.size() / 4));
+		});
 	}
 
 	void ThroughputTest::RunCullingChecks()
@@ -1298,6 +1369,9 @@ namespace Dingo
 		for (Framebuffer*& target : m_CullTargets)
 			DestroyAndDelete(target);
 		m_CullOffPixels.clear();
+		for (Framebuffer*& target : m_TieTargets)
+			DestroyAndDelete(target);
+		m_LessPixels.clear();
 		for (Framebuffer*& target : m_InstanceTargets)
 			DestroyAndDelete(target);
 		m_InstanceOffPixels.clear();
@@ -1321,6 +1395,8 @@ namespace Dingo
 		m_Layout = {};
 
 		DestroyAndDelete(m_FoxMaterial);
+		DestroyAndDelete(m_PropMaterial);
+		DestroyAndDelete(m_TieMaterial);
 		DestroyAndDelete(m_Fox);
 		DestroyAndDelete(m_Duck);
 	}
