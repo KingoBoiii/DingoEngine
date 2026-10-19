@@ -55,6 +55,26 @@ namespace
 		return transform[0][3] == 0.0f && transform[1][3] == 0.0f && transform[2][3] == 0.0f && transform[3][3] == 1.0f;
 	}
 
+	// glm's mat4 * vec4 at w = 1, in its order of operations, so every point comes out bit-identical.
+	// GCC leaves glm's operator an out-of-line call in the per-vertex loops otherwise.
+	struct PointTransform
+	{
+		explicit PointTransform(const glm::mat4& transform)
+			: X(transform[0]), Y(transform[1]), Z(transform[2]), Origin(transform[3])
+		{
+		}
+
+		glm::vec3 operator()(const glm::vec3& point) const
+		{
+			return (X * point.x + Y * point.y) + (Z * point.z + Origin);
+		}
+
+		glm::vec3 X;
+		glm::vec3 Y;
+		glm::vec3 Z;
+		glm::vec3 Origin;
+	};
+
 	// The mesh's bounds placed by an affine transform, padded by far more than the rounding of either
 	// this or the vertex transform, so the box holds every transformed vertex. Must match
 	// AABB::Transformed's arithmetic and order: docs/performance.md gives games that for their own culling.
@@ -765,9 +785,10 @@ namespace Dingo
 		// already lies inside needn't be transformed for it, and the farthest meshes go first so most do.
 		auto foldVertices = [&low, &high, &casters](const Dingo::Mesh& mesh, const glm::mat4& transform)
 		{
+			const PointTransform place(transform);
 			for (const MeshVertex& v : mesh.GetVertices())
 			{
-				const glm::vec3 position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+				const glm::vec3 position = place(v.Position);
 				low = glm::min(low, position);
 				high = glm::max(high, position);
 			}
@@ -2790,9 +2811,10 @@ namespace Dingo
 		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
 		// doesn't skew them; positions just use the model matrix.
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+		const PointTransform place(transform);
 		for (const MeshVertex& v : mesh.GetVertices())
 		{
-			out->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			out->Position = place(v.Position);
 			out->Normal = normalMatrix * v.Normal;
 			out->Color = color;
 			out->TexCoord = v.TexCoord;
