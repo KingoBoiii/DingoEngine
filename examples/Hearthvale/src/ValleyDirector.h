@@ -38,6 +38,7 @@ namespace Dingo
 	{
 		float Dt = 0.0f;
 		uint64_t Step = 0;
+		bool Frozen = false;
 	};
 
 	struct DirectorConfig

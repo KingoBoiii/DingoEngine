@@ -107,12 +107,17 @@ namespace Dingo
 				}
 			}
 
-			if (!physics || dt <= 0.0f)
+			if (!physics)
 				continue;
 
 			const PhysicsBodyId3D body = m_Scene.GetRuntimeBody3D(root);
-			if (body != k_InvalidBody3D)
+			if (body == k_InvalidBody3D)
+				continue;
+			// A zero step (always under --freeze) cannot move a kinematic body, so it is placed directly or picking misses it.
+			if (dt > 0.0f)
 				physics->MoveKinematic(body, transform.Position, transform.Rotation, dt);
+			else
+				physics->SetPositionAndRotation(body, transform.Position, transform.Rotation);
 		}
 	}
 

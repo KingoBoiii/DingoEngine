@@ -42,9 +42,6 @@ namespace Dingo
 			report.Check(!ANIMALS_ENABLED, "Life world: with animals off no animal world exists");
 			return Finish(report, director);
 		}
-		// Frozen, the director never runs the Animals stage, so no animal gets an entity.
-		if (GetLaunchOptions().Freeze)
-			return Finish(report, director);
 		report.Check(animals->EntityCount() == herd.Count(), "Life world: the animal entities match the herd");
 		herd.Add(AnimalKind::Chicken, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
 		herd.Add(AnimalKind::Cow, k_NoOccupant, ANIMAL_HAPPINESS_START, true);
@@ -111,20 +108,16 @@ namespace Dingo
 					++outdoors;
 					pickedOutdoors = pickedOutdoors && hit && *hit == id;
 				}
-				// Frozen, the director never runs the Villagers stage and the scene never steps, so nobody is
-				// placed outdoors and there is no walk or drift to measure.
-				const bool frozen = GetLaunchOptions().Freeze;
-				if (!frozen)
-					report.Check(outdoors >= 1, std::format("Life world: {} villagers are out at noon", outdoors));
+				report.Check(outdoors >= 1, std::format("Life world: {} villagers are out at noon", outdoors));
 				report.Check(visibleMatches, "Life world: a villager is visible exactly when outdoors");
-				if (!frozen)
-					report.Check(pickedOutdoors, "Life world: a ray from above finds each outdoor villager and maps back to it");
+				report.Check(pickedOutdoors, "Life world: a ray from above finds each outdoor villager and maps back to it");
 				report.Check(ignoredIndoors, "Life world: a villager indoors cannot be picked");
 
 				const Ray empty(glm::vec3(1.5f, GROUND_TOP + 4.0f, 1.5f), glm::vec3(0.0f, -1.0f, 0.0f));
 				report.Check(!villagers->Pick(empty, 10.0f), "Life world: a ray over empty ground finds nobody");
 
-				if (frozen)
+				// Frozen, the scene never steps, so nobody walks and there is no drift to measure.
+				if (GetLaunchOptions().Freeze)
 					return StartAnimals(report, director, animals, herd);
 
 				int walkTick = -1;

@@ -99,7 +99,7 @@ namespace Dingo
 
 	void ValleyDirector::Step()
 	{
-		const StepInfo info{ SIM_STEP_SECONDS, m_StepCount };
+		const StepInfo info{ SIM_STEP_SECONDS, m_StepCount, m_Frozen };
 
 		const auto run = [this, &info](SimStage stage)
 		{
@@ -126,11 +126,8 @@ namespace Dingo
 		}
 		run(SimStage::Calendar);
 
-		if (!m_Frozen)
-		{
-			run(SimStage::Villagers);
-			run(SimStage::Animals);
-		}
+		run(SimStage::Villagers);
+		run(SimStage::Animals);
 		run(SimStage::Sky);
 		run(SimStage::VfxAudio);
 		run(SimStage::Camera);
