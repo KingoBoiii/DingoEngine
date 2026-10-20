@@ -16,7 +16,8 @@ Run `git fetch origin`, then `gh pr view N --json title,headRefName,body,mergeab
 From **Needs testing on a real GPU**, list:
 - the test cases (`--test=…` with their extra flags);
 - the examples (`--check` modes, and anything to look at);
-- the "look at it" items.
+- the "look at it" items;
+- any **Re-time** or `--perf` line, even one marked optional. Run it (step 4b) without being asked, and never leave it under "Not checked".
 
 If the section says **No**, tell the owner there is nothing to run, and stop.
 
@@ -66,6 +67,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .claude/skills/pr-gpu-test/g
 - Never stop processes by name: another session's runs share the machine. A job that ignores `WM_CLOSE` is killed after 15 s on its own.
 - Expect about 2–5 min for a typical PR. A build adds 2–5 min when it's incremental, more from cold.
 
+## 4b. Re-time (when the PR body asks for `--perf`)
+
+Do this after the pass/fail run is clean. Time **Release** on Vulkan, master against the PR. A Debug exe says nothing about a CPU-cost change. If the PR is stacked on an unmerged PR, the baseline is that PR's head instead of master.
+
+1. Build the PR as Release: `MSBuild test/Dingo-TestFramework.vcxproj -p:Configuration=Release …` (same flags as step 3), then `cp -r build/bin/Release-windows-x86_64 build/bin/ReleaseNew-windows-x86_64`.
+2. Put the baseline's version of the PR's changed source files in the worktree: `git checkout origin/master -- <the files from git diff --name-only origin/master...HEAD>`. Build Release again (incremental), then `cp -r build/bin/Release-windows-x86_64 build/bin/ReleaseBase-windows-x86_64`. Restore with `git checkout HEAD -- <the same files>`, and check `git status -sb` is clean. The base and new `Dingo-TestFramework.exe` must have different `md5sum`s.
+3. Run 3 interleaved pairs, one tag per run, with the `-Config` naming the copied folder (the `@45` wait lets the PERF line print):
+   ```
+   for i in 1 2 3; do for v in Base New; do
+     powershell -NoProfile -ExecutionPolicy Bypass -File .claude/skills/pr-gpu-test/gpu-test.ps1 -Tag perf$v$i -Config Release$v -Apis vulkan \
+       -Tests "--test=throughput --throughput=mixed --perf@45;--test=throughput --throughput=repeat --perf@45"
+   done; done
+   ```
+   Use the modes and flags the PR body names. About 1.5 min per run, so run it in the background.
+4. Read the `[PERF]` line in each job's log (`build/gpu-test/perf<v><i>/out/vulkan/*.log`). Report the metric the PR names (e.g. `render_entities_ms`) per run and as an average, plus `end_scene_ms` or whatever else shouldn't have moved.
+5. A `--perf` job can show a 1-px `[FAIL]` that a plain run doesn't (it happens on master too). Note which runs and which build, and don't treat it as the PR's fault unless it repeats on the PR only.
+
+Compare with the PR's own claim (e.g. its instruction-count cut) and with the issue's targets, and say whether they are met.
+
 ## 5. Read the results
 
 The report ends with `RESULT: all clean` or a count of items to look at:
@@ -114,9 +134,17 @@ Windows 11, RX 7900 XTX, VS 2026 (MSVC), **Debug**. Tested at `<sha>` (<this PR,
 
 **<Look-at-it item>:** <what each backend showed, from the PNGs.>
 
-**Not checked:** <what needs a person, and why.>
+**Re-time (Release, Vulkan, `--perf`):** <master (or the stacked base) vs this PR at `<sha>`, same flags, 3 runs each, interleaved.>
+
+| Mode | master | this PR | Change |
+|---|---|---|---|
+| <mode> | <a / b / c (avg x)> | <a / b / c (avg x)> | <±N%> |
+
+<What didn't move, how it compares with the PR's claim and the issue's targets, and any 1-px `--perf` flakes with the build they hit.> <Omit this block when the PR has no re-time.>
+
+**Not checked:** <what needs a person, and why. "Nothing else outstanding" if all of the PR's list ran.>
 ```
 
-Never claim a result you didn't see: no Release, other configs or other examples unless they ran. When the owner checks the "not checked" items by hand, update the comment to say so.
+Never claim a result you didn't see: no Release, other configs or other examples unless they ran. A re-time listed in the PR is not a "not checked" item: run it. When the owner checks the "not checked" items by hand, update the comment to say so.
 
 When the owner later says **done**, the CLAUDE.md keyword applies. For a GPU-test session, cleaning up means deleting the local `gpu-test/prN` branch. Leave the PR branch's deletion to the merge.
