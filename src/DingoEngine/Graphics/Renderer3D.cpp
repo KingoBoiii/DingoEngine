@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
@@ -54,6 +55,26 @@ namespace
 	{
 		return transform[0][3] == 0.0f && transform[1][3] == 0.0f && transform[2][3] == 0.0f && transform[3][3] == 1.0f;
 	}
+
+	// glm's mat4 * vec4 at w = 1, in its order of operations, so every point comes out bit-identical.
+	// GCC leaves glm's operator an out-of-line call in the per-vertex loops otherwise.
+	struct PointTransform
+	{
+		explicit PointTransform(const glm::mat4& transform)
+			: X(transform[0]), Y(transform[1]), Z(transform[2]), Origin(transform[3])
+		{
+		}
+
+		glm::vec3 operator()(const glm::vec3& point) const
+		{
+			return (X * point.x + Y * point.y) + (Z * point.z + Origin);
+		}
+
+		glm::vec3 X;
+		glm::vec3 Y;
+		glm::vec3 Z;
+		glm::vec3 Origin;
+	};
 
 	// The mesh's bounds placed by an affine transform, padded by far more than the rounding of either
 	// this or the vertex transform, so the box holds every transformed vertex. Must match
@@ -765,9 +786,10 @@ namespace Dingo
 		// already lies inside needn't be transformed for it, and the farthest meshes go first so most do.
 		auto foldVertices = [&low, &high, &casters](const Dingo::Mesh& mesh, const glm::mat4& transform)
 		{
+			const PointTransform place(transform);
 			for (const MeshVertex& v : mesh.GetVertices())
 			{
-				const glm::vec3 position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+				const glm::vec3 position = place(v.Position);
 				low = glm::min(low, position);
 				high = glm::max(high, position);
 			}
@@ -790,8 +812,11 @@ namespace Dingo
 		{
 			StaticSubmission& submission = m_StaticSubmissions[index];
 			const StaticSubmissionData& data = m_StaticSubmissionData[index];
-			submission.Bounded = IsAffine(data.Transform);
-			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, data.Transform) : AABB();
+			if (!data.BoundsGiven)
+			{
+				submission.Bounded = IsAffine(data.Transform);
+				submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, data.Transform) : AABB();
+			}
 			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, data.CullDistance);
 			submission.Seen = !m_CullingEnabled || !submission.Bounded || (!submission.PastDistance && cameraSees(submission.Bounds, data.Material));
 			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
@@ -2084,7 +2109,7 @@ namespace Dingo
 		if (!entry.Twin)
 		{
 			MaterialParams twinParams = source->GetParams();
-			twinParams.SetDebugName(twinParams.DebugName + suffix).SetShader(shader).SetCullMode(CullMode::None);
+			twinParams.SetDebugName(twinParams.DebugName + suffix).SetShader(shader);
 			entry.Twin = Material::Create(twinParams);
 		}
 		entry.Used = true;
@@ -2681,14 +2706,32 @@ namespace Dingo
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface)
 	{
+		SubmitMeshWithBounds(mesh, transform, color, material, shadows, shadowGroups, cullDistance, surface, nullptr, false);
+	}
+
+	bool Internal::Renderer3DAccess::WorldBounds(const Mesh& mesh, const glm::mat4& transform, AABB& bounds)
+	{
+		const bool bounded = IsAffine(transform);
+		bounds = bounded ? ::WorldBounds(mesh, transform) : AABB();
+		return bounded;
+	}
+
+	void Renderer3D::SubmitMeshWithBounds(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows,
+		uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface, const AABB* bounds, bool bounded)
+	{
 		// The arena layout reserves nothing for an empty mesh, so no pass may draw one.
 		if (!m_SceneActive || m_SceneSkipped || !mesh || mesh->GetVertexCount() == 0 || mesh->GetIndexCount() == 0)
 			return;
 		if (shadows == ShadowCasting::Off)
 			shadowGroups = 1;
 
-		Material* batchMaterial = material;
-		MaterialBatch* batch = EnqueueBatch(batchMaterial, shadows, shadowGroups);
+		// EnqueueBatch's last-key hit, spelled out here because compilers keep the call otherwise.
+		Material* batchMaterial = material ? material : m_Material;
+		MaterialBatch* batch = m_LastBatch;
+		if (batch && BatchKey{ batchMaterial, shadows, shadowGroups } == m_LastBatchKey)
+			batchMaterial = m_LastBatchMaterial;
+		else
+			batch = EnqueueBatch(batchMaterial, shadows, shadowGroups);
 
 		// A mesh bigger than one draw fits no batch at all, so spilling cannot help.
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
@@ -2714,6 +2757,12 @@ namespace Dingo
 		submission.Mesh = mesh;
 		submission.Shadows = shadows;
 		submission.ShadowGroups = shadowGroups;
+		if (bounds)
+		{
+			submission.Bounds = *bounds;
+			submission.Bounded = bounded;
+			data.BoundsGiven = true;
+		}
 		if (surface && shadows != ShadowCasting::ShadowsOnly && IsLitShader(batchMaterial->GetShader()))
 		{
 			data.Object = static_cast<uint32_t>(m_ObjectRecords.size());
@@ -2746,6 +2795,7 @@ namespace Dingo
 		if (!material)
 			material = m_Material;
 		const BatchKey key{ material, shadows, shadowGroups };
+		// SubmitMeshWithBounds repeats this hit path inline; keep the two in step.
 		if (m_LastBatch && key == m_LastBatchKey)
 		{
 			material = m_LastBatchMaterial;
@@ -2790,9 +2840,10 @@ namespace Dingo
 		// Normals need the inverse-transpose so non-uniform scale (stretched walls)
 		// doesn't skew them; positions just use the model matrix.
 		const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(transform));
+		const PointTransform place(transform);
 		for (const MeshVertex& v : mesh.GetVertices())
 		{
-			out->Position = glm::vec3(transform * glm::vec4(v.Position, 1.0f));
+			out->Position = place(v.Position);
 			out->Normal = normalMatrix * v.Normal;
 			out->Color = color;
 			out->TexCoord = v.TexCoord;

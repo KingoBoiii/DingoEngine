@@ -411,6 +411,16 @@ namespace Dingo
 			m_Props[Rock] = Mesh::CreateSphere(0.5f, 6, 8);
 			m_Props[Barrel] = BuildPrism({ 12, 0.4f, 0.4f, 1.0f, 0.0f });
 		}
+		if (m_Mode != Mode::Skinned && !m_PropMaterial)
+		{
+			// One-sided, which the closed props allow: a lit material's back faces tie its front faces in
+			// depth along every silhouette, and a GPU may keep either, so two-sided views of the same
+			// scene could differ by a pixel from run to run (#224).
+			Renderer3D& renderer = Application::Get().GetRenderer3D();
+			m_PropMaterial = Material::Create(MaterialParams().SetDebugName("ThroughputProps").SetShader(renderer.GetDefaultMaterial()->GetShader()));
+			m_PropMaterial->SetTexture(0, Renderer::GetWhiteTexture());
+			m_PropMaterial->SetSampler(0, Renderer::GetClampSampler());
+		}
 		m_UniqueMeshes.reserve(m_Layout.Prisms.size());
 		for (const Prism& prism : m_Layout.Prisms)
 			m_UniqueMeshes.push_back(BuildPrism(prism));
@@ -432,7 +442,9 @@ namespace Dingo
 			else
 			{
 				Mesh* mesh = placement.Prop >= 0 ? m_Props[placement.Prop] : m_UniqueMeshes[placement.Unique];
-				entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, placement.Color)).Static = m_Static;
+				MeshRendererComponent& meshRenderer = entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(mesh, placement.Color));
+				meshRenderer.Material = m_PropMaterial;
+				meshRenderer.Static = m_Static;
 			}
 			m_Renderables.push_back(entity);
 		}
@@ -577,6 +589,7 @@ namespace Dingo
 			{
 				m_EdgeChecksDone = true;
 				RunCullingEdgeChecks();
+				RunSceneMemoChecks();
 			}
 
 			const double renderMs = Milliseconds(renderStart, endSceneStart);
@@ -624,6 +637,7 @@ namespace Dingo
 		}
 		// Baked cells cull by range and never instance; RunStaticChecks holds them to these pictures.
 		SetStatic(false);
+		RunDepthTieCheck();
 		RunCullingChecks();
 		RunInstancingChecks();
 		SetStatic(m_Static);
@@ -643,6 +657,64 @@ namespace Dingo
 		}
 		Check(built.Get() == expected.Get(),
 			std::format("the entities' transforms are the layout's (0x{:016x})", built.Get()));
+	}
+
+	void ThroughputTest::RunDepthTieCheck()
+	{
+		if (!m_PropMaterial)
+			return;
+
+		if (!m_TieMaterial)
+		{
+			MaterialParams params = m_PropMaterial->GetParams();
+			m_TieMaterial = Material::Create(params.SetDebugName("ThroughputPropsLessEqual").SetDepthCompare(DepthCompare::LessEqual));
+			m_TieMaterial->SetTexture(0, Renderer::GetWhiteTexture());
+			m_TieMaterial->SetSampler(0, Renderer::GetClampSampler());
+		}
+		for (int i = 0; i < 2; ++i)
+		{
+			if (!m_TieTargets[i])
+				m_TieTargets[i] = Framebuffer::Create(FramebufferParams()
+					.SetDebugName(i == 0 ? "ThroughputTieLess" : "ThroughputTieLessEqual")
+					.SetWidth(k_CullCheckWidth)
+					.SetHeight(k_CullCheckHeight)
+					.SetEnableDepth(true)
+					.AddAttachment({ TextureFormat::RGBA8_UNORM }));
+		}
+
+		PerspectiveCamera camera = m_Camera;
+		camera.SetAspectRatio(static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight));
+		PlaceCamera(camera, m_HeldFrame >= 0 ? static_cast<uint64_t>(m_HeldFrame) : m_Frame);
+		// Past the far plane D3D clamps depth to 1, which LessEqual passes and Less doesn't, and the lap's
+		// view ends inside the layout.
+		camera.SetClip(0.1f, 4.0f * m_Extent + 50.0f);
+
+		for (int i = 0; i < 2; ++i)
+		{
+			for (Entity entity : m_Renderables)
+				entity.GetComponent<MeshRendererComponent>().Material = i == 0 ? m_PropMaterial : m_TieMaterial;
+			RenderView(m_TieTargets[i], camera);
+		}
+		for (Entity entity : m_Renderables)
+			entity.GetComponent<MeshRendererComponent>().Material = m_PropMaterial;
+
+		const std::weak_ptr<int> alive = m_Alive;
+		m_TieTargets[0]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (!alive.expired())
+				m_LessPixels = pixels.Data;
+		});
+		m_TieTargets[1]->GetAttachment(0)->ReadPixels([this, alive](const TexturePixels& pixels)
+		{
+			if (alive.expired())
+				return;
+			size_t differing = 0;
+			for (size_t i = 0; i < pixels.Data.size() && i < m_LessPixels.size(); i += 4)
+				differing += std::memcmp(&pixels.Data[i], &m_LessPixels[i], 4) != 0 ? 1 : 0;
+			Check(!pixels.Data.empty() && pixels.Data.size() == m_LessPixels.size() && differing == 0,
+				std::format("no visible fragment of the view ties another in depth, so draw order can't change the exact comparisons (Less and LessEqual differ in {} of {} px)",
+					differing, pixels.Data.size() / 4));
+		});
 	}
 
 	void ThroughputTest::RunCullingChecks()
@@ -886,6 +958,83 @@ namespace Dingo
 		// An orthographic view has no distance to cull by, and its box behind the camera is not left out for the near plane.
 		Check(stats[3].CulledMeshes == 0 && stats[4].CulledMeshes == 5,
 			std::format("an orthographic view culls the boxes outside it and past its far plane, not by CullDistance ({} culled, {} with culling off)", stats[4].CulledMeshes, stats[3].CulledMeshes));
+	}
+
+	// RenderEntities3D reuses an entity's world matrix and bounds from earlier frames while their
+	// inputs are unchanged; each change here has to reach the culling in the next frame.
+	void ThroughputTest::RunSceneMemoChecks()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		Mesh* box = Mesh::CreateBox(2.0f, 2.0f, 2.0f);
+		std::vector<MeshVertex> farVertices = box->GetVertices();
+		for (MeshVertex& vertex : farVertices)
+			vertex.Position.x += 40.0f;
+		Mesh* farBox = Mesh::Create(farVertices, box->GetIndices());
+
+		PerspectiveCamera camera(45.0f, static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight), 0.1f, 100.0f);
+		camera.SetPosition({ 0.0f, 0.0f, 10.0f });
+		camera.SetTarget(glm::vec3(0.0f));
+
+		Scene scene("Throughput Memo");
+		auto add = [&scene, box](const glm::vec3& position)
+		{
+			Entity entity = scene.CreateEntity();
+			entity.AddComponent<Transform3DComponent>(Transform3DComponent(position));
+			entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(box, glm::vec4(0.8f, 0.6f, 0.3f, 1.0f)));
+			return entity;
+		};
+		Entity root = add({ 0.0f, 0.0f, 0.0f });
+		Entity parent = scene.CreateEntity("Parent");
+		parent.AddComponent<Transform3DComponent>(Transform3DComponent());
+		Entity child = add({ 0.0f, 2.0f, 0.0f });
+		child.SetParent(parent, false);
+		Entity swapped = add({ 2.0f, 0.0f, 0.0f });
+
+		const bool wasCulling = renderer.IsCullingEnabled();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		renderer.SetCullingEnabled(true);
+		Renderer::SetRenderTarget(m_EdgeTargets[1]);
+		auto culled = [&]()
+		{
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			scene.RenderEntities3D(renderer);
+			renderer.EndScene();
+			return renderer.GetStatistics().CulledMeshes;
+		};
+
+		const uint32_t first = culled();
+		const uint32_t again = culled();
+		root.GetComponent<Transform3DComponent>().Position = { 30.0f, 0.0f, 0.0f };
+		parent.GetComponent<Transform3DComponent>().Position = { -40.0f, 0.0f, 0.0f };
+		swapped.GetComponent<MeshRendererComponent>().Mesh = farBox;
+		const uint32_t moved = culled();
+		root.Destroy();
+		Entity reused = add({ 0.0f, -2.0f, 0.0f });
+		const uint32_t replaced = culled();
+		parent.GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+		parent.GetComponent<Transform3DComponent>().Position = glm::vec3(0.0f);
+		swapped.GetComponent<MeshRendererComponent>().Mesh = box;
+		const uint32_t back = culled();
+		reused.GetComponent<Transform3DComponent>().Scale = glm::vec3(0.5f, 1.0f, 1.0f);
+		reused.GetComponent<Transform3DComponent>().Position = { -30.0f, 0.0f, 0.0f };
+		const uint32_t flattened = culled();
+		Entity widened = add({ 11.0f, 0.0f, 0.0f });
+		Entity turned = add({ 0.0f, 0.0f, 0.0f });
+		turned.GetComponent<MeshRendererComponent>().Mesh = farBox;
+		const uint32_t added = culled();
+		widened.GetComponent<Transform3DComponent>().Scale = glm::vec3(6.0f, 1.0f, 1.0f);
+		turned.GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(0.5f * glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+		const uint32_t reshaped = culled();
+
+		Renderer::SetRenderTarget(previous);
+		renderer.SetCullingEnabled(wasCulling);
+		delete farBox;
+		delete box;
+
+		Check(first == 0 && again == 0 && moved == 3 && replaced == 2 && back == 0 && flattened == 1 && added == 3 && reshaped == 1,
+			std::format("a scene entity's move, scale and turn, its parent's move and turn, a mesh swap and a recycled entity each reach the next frame's culling "
+				"({}, {}, {}, {}, {}, {}, {}, {} culled; expected 0, 0, 3, 2, 0, 1, 3, 1)", first, again, moved, replaced, back, flattened, added, reshaped));
 	}
 
 	void ThroughputTest::RunInstancingChecks()
@@ -1298,6 +1447,9 @@ namespace Dingo
 		for (Framebuffer*& target : m_CullTargets)
 			DestroyAndDelete(target);
 		m_CullOffPixels.clear();
+		for (Framebuffer*& target : m_TieTargets)
+			DestroyAndDelete(target);
+		m_LessPixels.clear();
 		for (Framebuffer*& target : m_InstanceTargets)
 			DestroyAndDelete(target);
 		m_InstanceOffPixels.clear();
@@ -1321,6 +1473,8 @@ namespace Dingo
 		m_Layout = {};
 
 		DestroyAndDelete(m_FoxMaterial);
+		DestroyAndDelete(m_PropMaterial);
+		DestroyAndDelete(m_TieMaterial);
 		DestroyAndDelete(m_Fox);
 		DestroyAndDelete(m_Duck);
 	}
