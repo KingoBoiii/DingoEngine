@@ -607,7 +607,7 @@ group "Engine"
 		filter "configurations:Release"
 			runtime "Release"
 			optimize "On"
-			defines { "DE_RELEASE" }
+			defines { "DE_RELEASE", "ENTT_DISABLE_ASSERT" }
 
 			links {
 				"%{Library.ShaderC_Release}",
@@ -621,7 +621,7 @@ group "Engine"
 			runtime "Release"
 			optimize "On"
 			symbols "Off"
-			defines { "DE_DISTRIBUTION" }
+			defines { "DE_DISTRIBUTION", "ENTT_DISABLE_ASSERT" }
 
 			links {
 				"%{Library.ShaderC_Release}",
