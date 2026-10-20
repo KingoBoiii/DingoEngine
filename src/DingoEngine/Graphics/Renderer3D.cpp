@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
@@ -790,8 +791,11 @@ namespace Dingo
 		{
 			StaticSubmission& submission = m_StaticSubmissions[index];
 			const StaticSubmissionData& data = m_StaticSubmissionData[index];
-			submission.Bounded = IsAffine(data.Transform);
-			submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, data.Transform) : AABB();
+			if (!data.BoundsGiven)
+			{
+				submission.Bounded = IsAffine(data.Transform);
+				submission.Bounds = submission.Bounded ? WorldBounds(*submission.Mesh, data.Transform) : AABB();
+			}
 			submission.PastDistance = submission.Bounded && pastDistance(submission.Bounds, data.CullDistance);
 			submission.Seen = !m_CullingEnabled || !submission.Bounded || (!submission.PastDistance && cameraSees(submission.Bounds, data.Material));
 			if (!casting || submission.Shadows == ShadowCasting::Off || submission.Mesh->GetVertices().empty())
@@ -2681,6 +2685,19 @@ namespace Dingo
 
 	void Renderer3D::SubmitMesh(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows, uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface)
 	{
+		SubmitMeshWithBounds(mesh, transform, color, material, shadows, shadowGroups, cullDistance, surface, nullptr, false);
+	}
+
+	bool Internal::Renderer3DAccess::WorldBounds(const Mesh& mesh, const glm::mat4& transform, AABB& bounds)
+	{
+		const bool bounded = IsAffine(transform);
+		bounds = bounded ? ::WorldBounds(mesh, transform) : AABB();
+		return bounded;
+	}
+
+	void Renderer3D::SubmitMeshWithBounds(const Mesh* mesh, const glm::mat4& transform, const glm::vec4& color, Material* material, ShadowCasting shadows,
+		uint32_t shadowGroups, float cullDistance, const SurfaceOverride* surface, const AABB* bounds, bool bounded)
+	{
 		// The arena layout reserves nothing for an empty mesh, so no pass may draw one.
 		if (!m_SceneActive || m_SceneSkipped || !mesh || mesh->GetVertexCount() == 0 || mesh->GetIndexCount() == 0)
 			return;
@@ -2714,6 +2731,12 @@ namespace Dingo
 		submission.Mesh = mesh;
 		submission.Shadows = shadows;
 		submission.ShadowGroups = shadowGroups;
+		if (bounds)
+		{
+			submission.Bounds = *bounds;
+			submission.Bounded = bounded;
+			data.BoundsGiven = true;
+		}
 		if (surface && shadows != ShadowCasting::ShadowsOnly && IsLitShader(batchMaterial->GetShader()))
 		{
 			data.Object = static_cast<uint32_t>(m_ObjectRecords.size());

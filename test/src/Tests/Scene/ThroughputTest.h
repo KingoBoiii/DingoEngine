@@ -95,6 +95,7 @@ namespace Dingo
 		static uint64_t UploadPassBreaks();
 		void RunCullingChecks();
 		void RunCullingEdgeChecks();
+		void RunSceneMemoChecks();
 		void RunInstancingChecks();
 		void RunStaticChecks();
 		void RunStaticChangeChecks(Entity moving, const PerspectiveCamera& camera);
