@@ -177,7 +177,10 @@ namespace Dingo
 
 		director.OnStage(SimStage::Animals, [this](ValleyDirector& d, const StepInfo& step)
 		{
-			Step(d.GetGrid(), step.Dt);
+			if (step.Frozen)
+				Sync(d.GetGrid());
+			else
+				Step(d.GetGrid(), step.Dt);
 		});
 		director.OnDayRoll(DayRollStep::Sprinklers, [this](ValleyDirector& d, DayRollReason)
 		{

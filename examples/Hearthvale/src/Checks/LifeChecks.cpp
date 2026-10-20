@@ -114,15 +114,16 @@ namespace Dingo
 			AnimalSim Animals;
 			VillagerDialogue Dialogue;
 
-			explicit LifeRig(int startDay = 0, bool animals = true, uint32_t seed = 1)
-				: Director(MakeConfig(startDay, seed)), Villagers(Director), Animals(Director, State.Animals, animals), Dialogue(Director, State)
+			explicit LifeRig(int startDay = 0, bool animals = true, uint32_t seed = 1, bool freeze = false)
+				: Director(MakeConfig(startDay, seed, freeze)), Villagers(Director), Animals(Director, State.Animals, animals), Dialogue(Director, State)
 			{}
 
-			static DirectorConfig MakeConfig(int startDay, uint32_t seed)
+			static DirectorConfig MakeConfig(int startDay, uint32_t seed, bool freeze)
 			{
 				DirectorConfig config;
 				config.Seed = seed;
 				config.StartDay = startDay;
+				config.FreezeTime = freeze;
 				return config;
 			}
 
@@ -867,6 +868,38 @@ namespace Dingo
 			const GameStateDigest herded = HashGameState(rig.Director, rig.State);
 			report.Check(herded.Animals != talked.Animals && herded.All != talked.All && herded.Bonds == talked.Bonds, "Life: the herd is in the state hash");
 		}
+
+		void FrozenChecks(CheckReport& report)
+		{
+			LifeRig rig(0, true, 1, true);
+			PlacePen(rig.Director.GetGrid(), BuildId::Coop);
+			for (int i = 0; i < 3; ++i)
+				rig.Sleep();
+			Calendar& calendar = rig.Director.GetCalendar();
+			calendar.Reset(calendar.GetAbsoluteDay(), (720 - k_DayStart) * TICKS_PER_MINUTE);
+			calendar.ForceWeather(Weather::Clear);
+			rig.Director.Step();
+
+			const VillagerPlaces placed = rig.Villagers.GetPlaces();
+			const int outdoors = static_cast<int>(std::count_if(placed.begin(), placed.end(), [](const VillagerPlace& place) { return !place.Indoors; }));
+			report.Check(outdoors >= 1, std::format("Life: frozen at noon, the villagers still take their places ({} outdoors)", outdoors));
+
+			const uint64_t motionsBefore = rig.Animals.MotionHash();
+			bool atHome = rig.Animals.GetMotions().size() == 3;
+			for (const AnimalMotion& motion : rig.Animals.GetMotions())
+				atHome = atHome && !motion.Moving && PlayerMath::IsClear(rig.Director.GetGrid(), motion.Position, ANIMAL_RADIUS);
+			report.Check(atHome, "Life: frozen, each animal in the herd is placed by its pen");
+
+			for (int i = 0; i < 600; ++i)
+				rig.Director.Step();
+			bool still = calendar.GetTickOfDay() == (720 - k_DayStart) * TICKS_PER_MINUTE && rig.Animals.MotionHash() == motionsBefore;
+			for (size_t i = 0; i < placed.size(); ++i)
+			{
+				const VillagerPlace& place = rig.Villagers.GetPlaces()[i];
+				still = still && place.Indoors == placed[i].Indoors && place.Position == placed[i].Position;
+			}
+			report.Check(still, "Life: frozen, the clock, the villagers and the animals stay where they are");
+		}
 	}
 
 	void RunLifeChecks(CheckReport& report)
@@ -881,6 +914,7 @@ namespace Dingo
 		LineChecks(report);
 		DialogueChecks(report);
 		AnimalChecks(report);
+		FrozenChecks(report);
 		PlaceChecks(report);
 		HashChecks(report);
 	}
