@@ -31,7 +31,9 @@ namespace Dingo
 	// --instancing=off turns Renderer3D's instancing off while the test runs. --static sets
 	// MeshRendererComponent::Static on every mesh, so the scene draws from its baked static geometry.
 	//
-	// The first frame also draws its view twice more, with Renderer3D's culling off and on, and checks by
+	// The first frame draws its view with the props' depth test Less and LessEqual and checks that no visible
+	// fragments tie in depth: a tie a GPU breaks either way would make the exact comparisons flake.
+	// It also draws its view twice more, with Renderer3D's culling off and on, and checks by
 	// readback that the two match and that the view culled something; mixed and shadow must cull at least
 	// 85% of their meshes. Then twice with instancing off and on: static must match exactly, the others
 	// within the instancing tolerance
@@ -93,6 +95,7 @@ namespace Dingo
 		void RunChecks(const Renderer3D::Statistics& stats);
 		// The frame command list's Internal::CommandList::GetUploadPassBreaks, 0 outside a frame.
 		static uint64_t UploadPassBreaks();
+		void RunDepthTieCheck();
 		void RunCullingChecks();
 		void RunCullingEdgeChecks();
 		void RunSceneMemoChecks();
@@ -129,6 +132,7 @@ namespace Dingo
 		std::vector<Entity> m_Renderables;
 		Model*    m_Fox = nullptr;
 		Material* m_FoxMaterial = nullptr;
+		Material* m_PropMaterial = nullptr;
 		float     m_FoxScale = 1.0f;
 		glm::vec3 m_FoxOffset{ 0.0f };
 		uint32_t  m_FoxSubMeshes = 0;
@@ -143,6 +147,9 @@ namespace Dingo
 
 		Renderer3D::Statistics m_LastStats;
 		uint64_t m_PassBreaks = 0; // the last EndScene's, see UploadPassBreaks
+		Framebuffer* m_TieTargets[2] = {}; // Less, LessEqual
+		Material* m_TieMaterial = nullptr; // m_PropMaterial with LessEqual
+		std::vector<uint8_t> m_LessPixels;
 		Framebuffer* m_CullTargets[2] = {}; // culling off, on
 		std::vector<uint8_t> m_CullOffPixels;
 		Framebuffer* m_InstanceTargets[2] = {}; // instancing off, on

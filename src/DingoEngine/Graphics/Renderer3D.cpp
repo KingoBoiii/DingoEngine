@@ -2109,7 +2109,7 @@ namespace Dingo
 		if (!entry.Twin)
 		{
 			MaterialParams twinParams = source->GetParams();
-			twinParams.SetDebugName(twinParams.DebugName + suffix).SetShader(shader).SetCullMode(CullMode::None);
+			twinParams.SetDebugName(twinParams.DebugName + suffix).SetShader(shader);
 			entry.Twin = Material::Create(twinParams);
 		}
 		entry.Used = true;
