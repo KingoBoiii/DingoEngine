@@ -70,6 +70,12 @@ workspace "DingoEngine"
         filter {}
     end
 
+    -- Workspace-wide: Jolt (JPH_DEBUG) and vulkan.hpp change class layouts with NDEBUG, and box2d
+    -- its exported symbols, so every project that sees their headers must agree. Release keeps vendor asserts for testers.
+    filter "configurations:Distribution"
+        defines { "NDEBUG" }
+    filter {}
+
     filter "action:vs*"
         --sanitize { "Address" }
         --flags { "NoRuntimeChecks", "NoIncrementalLink" }
