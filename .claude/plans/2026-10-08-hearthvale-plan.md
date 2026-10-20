@@ -5,7 +5,7 @@ Linux merge). Every file:line below was read that day. This is P13 of
 `.claude/plans/2026-10-08-v1.0-plan.md` (its §6 and decision D1). *Hearthvale* is a working title;
 HD9 settles the name.
 
-**Status**: refreshed 2026-10-15 (phase P0) on `feat/1-0-hearthvale` against master `f414ba0`
+**Status**: **complete** (2026-10-20, the owner's call; §11.18). Earlier: refreshed 2026-10-15 (phase P0) on `feat/1-0-hearthvale` against master `f414ba0`
 (v1.0 P0–P9 and DingoUI U0–U6 landed) plus `7f4c1e0` (the Kenney packs). Every anchor in §1, §2.7,
 §3, §5, §7 and §10 was re-read that day. HD1–HD10 in §9 were settled by the owner on 2026-10-08,
 each as recommended. The game is now built in **cloud-only phases P0–P18** (§11.1), which replace
@@ -912,3 +912,12 @@ No C++ touched, nothing built. YAML and JSON parse (`python3 -I`), `bash -n` pas
 - **Docs**: `README.md` examples row, the Windows startup-project list and Hearthvale credits (the roadmap row already said "in progress"); `.claude/reference/project-history.md` tree entry; `ROADMAP.md` v1.0 game paragraph gets a pointer; `scripts/notices/components.txt` gained Fredoka (OFL, licence from `examples/Hearthvale/assets/fonts/LICENSE-Fredoka.txt`) and `THIRD-PARTY-NOTICES.md` was regenerated. Kenney and KayKit (CC0 art) are not in that file, as Marionette's KayKit is not, so no rows. `CLAUDE.md` (the version here) has no project-structure or examples listing, so it is unchanged.
 - **`examples/Hearthvale/README.md`**: how to play (pad and keyboard table), every flag, check and autoplay usage, a credits table with every author and licence.
 - **Deviations**: the plan §2.3 says Interact is E and the camera is Q/E; the code has F for Interact and Q/E for the camera, and the README follows the code.
+
+### 11.18 Complete (2026-10-20)
+
+The owner marked the game complete on 2026-10-20. P16's review (`.claude/reviews/2026-10-15-hearthvale-review.md`)
+was fixed in `32deba6`. The test-run and sign-off fixes after it: `a50320d` (villagers synced before every
+physics step), `271b507` (process memory on the day lines), `76cc07e` (textured art on a lit material),
+`6dc1941` (#276, `--check` under `--freeze`) and `58d0552` (#277, villagers and animals under `--freeze`).
+No Hearthvale issue is open. What remains belongs to the engine release, not the game: the itch.io
+build comes from `v1.0.0`'s release job.
