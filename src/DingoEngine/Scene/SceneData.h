@@ -6,6 +6,7 @@
 
 #include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Graphics/Frustum.h"
 #include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
@@ -16,6 +17,7 @@
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -65,6 +67,25 @@ namespace Dingo
 
 			// Scratch for the per-entity readers (rendering, lights, audio); reset by each pass.
 			HierarchySystem::WorldMemo Memo;
+
+			// RenderEntities3D's results from earlier frames, by entity index, reused only while what
+			// they were worked out from comes back bit-identical: a root's world from its position,
+			// rotation and scale, the world bounds from the world and the mesh's bounds. Each is a pure
+			// function of those, so a reused value is the one the frame would have worked out.
+			struct MeshRenderMemo
+			{
+				glm::mat4 World;
+				glm::vec3 Position;
+				glm::quat Rotation;
+				glm::vec3 Scale;
+				glm::vec3 MeshMin;
+				glm::vec3 MeshMax;
+				AABB Bounds;
+				bool Root = false;      // World is the root's Position, Rotation and Scale
+				bool HasBounds = false; // Bounds and Bounded are World's with MeshMin and MeshMax
+				bool Bounded = false;
+			};
+			std::vector<MeshRenderMemo> MeshMemo;
 
 			AnimationSystem::EventScratch AnimationEvents;
 
