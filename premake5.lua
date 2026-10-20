@@ -76,6 +76,13 @@ workspace "DingoEngine"
         defines { "NDEBUG" }
     filter {}
 
+    -- vendor/ scripts filter on "Dist" or leave Distribution out, so without this ImGui, NVRHI, GLFW,
+    -- spdlog, msdf-atlas-gen, msdfgen and freetype ship unoptimised. A project's own setting still wins.
+    filter "configurations:Distribution"
+        runtime "Release"
+        optimize "On"
+    filter {}
+
     filter "action:vs*"
         --sanitize { "Address" }
         --flags { "NoRuntimeChecks", "NoIncrementalLink" }
@@ -441,6 +448,19 @@ group "Dependencies"
 		filter "system:linux"
 			includedirs { "%{VULKAN_SDK}/include" }
 		filter {}
+
+	-- NVRHI builds Release at "Speed"; Distribution matches it rather than the workspace's "On".
+	local nvrhiProjects = { "NVRHI", "NVRHI-Vulkan" }
+	if os.istarget("windows") then
+		table.insert(nvrhiProjects, "NVRHI-D3D11")
+		table.insert(nvrhiProjects, "NVRHI-D3D12")
+	end
+	for _, name in ipairs(nvrhiProjects) do
+		project(name)
+			filter "configurations:Distribution"
+				optimize "Speed"
+			filter {}
+	end
 
 	-- gmake writes each makefile next to its project's script, inside the submodule, where it
 	-- would overwrite FreeType's own tracked Makefile. Visual Studio's projects stay where they are.
