@@ -1,10 +1,14 @@
 #include "CrashTrigger.h"
 
 #include <DingoEngine/Assertion.h>
+#include <DingoEngine/Asset/AssetManager.h>
+#include <DingoEngine/Core/Application.h>
 #include <DingoEngine/Core/CrashHandler.h>
 #include <DingoEngine/Core/FatalError.h>
+#include <DingoEngine/Physics/3D/Physics3D.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -83,6 +87,29 @@ namespace Dingo
 			DE_WARN("[Crash] {}", Recurse(0));
 		}
 
+		void CrashOnAssetWorker(Internal::CrashHandler::ProbeFunction body)
+		{
+			Internal::CrashHandler::ArmProbe(Internal::CrashHandler::ProbeThread::AssetWorker, body);
+			AssetManager& assets = Application::Get().GetAssetManager();
+			if (assets.GetState(assets.LoadAsync("textures/hd2.png")) != AssetState::Loading)
+			{
+				Internal::CrashHandler::TakeProbe(Internal::CrashHandler::ProbeThread::AssetWorker);
+				DE_WARN("[Crash] --crash=asset-throw queued no decode job; run it on a case that hasn't loaded textures/hd2.png");
+			}
+		}
+
+		// The world has to outlive the job Step queues, and deleting it would run the job on this
+		// thread, so this waits for the crash and never deletes it.
+		void CrashOnPhysicsWorker(Internal::CrashHandler::ProbeFunction body)
+		{
+			Physics3D* physics = Physics3D::Create();
+			physics->Initialize(Physics3DParams());
+			Internal::CrashHandler::ArmProbe(Internal::CrashHandler::ProbeThread::PhysicsWorker, body);
+			physics->Step(1.0f / 60.0f);
+			std::this_thread::sleep_for(std::chrono::seconds(10));
+			FatalError("No Jolt worker crashed within 10 s.");
+		}
+
 		[[noreturn]] void TerminateWithException()
 		{
 			try
@@ -99,6 +126,8 @@ namespace Dingo
 	void TriggerCrash(std::string_view kind)
 	{
 		DE_WARN("[Crash] --crash={}: crashing on purpose", kind);
+		if (Application::Get().IsHeadless() && (kind.starts_with("render-") || kind == "asset-throw"))
+			DE_WARN("[Crash] --crash={} has no render thread or asset decode to crash when headless", kind);
 		if (kind == "segv")
 			WriteThroughNull();
 		else if (kind == "thread")
@@ -113,6 +142,14 @@ namespace Dingo
 			RunOnPreparedThread(ThrowRuntimeError);
 		else if (kind == "prepared-stack")
 			RunOnPreparedThread(CrashByRecursing);
+		else if (kind == "render-throw")
+			Internal::CrashHandler::ArmProbe(Internal::CrashHandler::ProbeThread::Render, ThrowRuntimeError);
+		else if (kind == "render-stack")
+			Internal::CrashHandler::ArmProbe(Internal::CrashHandler::ProbeThread::Render, CrashByRecursing);
+		else if (kind == "asset-throw")
+			CrashOnAssetWorker(ThrowRuntimeError);
+		else if (kind == "physics-stack")
+			CrashOnPhysicsWorker(CrashByRecursing);
 		else if (kind == "threads")
 			CrashThreadsTogether();
 		else if (kind == "segv-after-info")
@@ -135,7 +172,7 @@ namespace Dingo
 		else if (kind == "fatal")
 			FatalError("The test app's --crash=fatal.");
 		else
-			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, engine-thread, engine-throw, engine-stack, prepared-throw, prepared-stack, threads, segv-after-info, abort, terminate, throw, stack, verify or fatal", kind);
+			DE_WARN("[Crash] unknown --crash={}; expected segv, thread, engine-thread, engine-throw, engine-stack, prepared-throw, prepared-stack, render-throw, render-stack, asset-throw, physics-stack, threads, segv-after-info, abort, terminate, throw, stack, verify or fatal", kind);
 	}
 
 }

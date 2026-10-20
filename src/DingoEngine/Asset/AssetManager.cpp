@@ -637,6 +637,9 @@ namespace Dingo
 				data.Jobs.pop_front();
 			}
 
+			if (Internal::CrashHandler::ProbeFunction probe = Internal::CrashHandler::TakeProbe(Internal::CrashHandler::ProbeThread::AssetWorker))
+				probe();
+
 			AsyncResult result;
 			result.Handle = job.Handle;
 			result.Type = job.Type;

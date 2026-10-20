@@ -317,6 +317,9 @@ namespace Dingo
 			if (!running)
 				break;
 
+			if (Internal::CrashHandler::ProbeFunction probe = Internal::CrashHandler::TakeProbe(Internal::CrashHandler::ProbeThread::Render))
+				probe();
+
 			Timer timer;
 			{
 				DE_PROFILE_SCOPE("Renderer::Execute");

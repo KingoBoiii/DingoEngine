@@ -162,6 +162,8 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	crash engine-thread 139 'End of backtrace'
 	crash engine-stack 139 'crashed: SIGSEGV'
 	crash prepared-stack 139 'crashed: SIGSEGV'
+	crash render-stack 139 'crashed: SIGSEGV'
+	crash physics-stack 139 'crashed: SIGSEGV'
 	crash threads 139 'End of backtrace'
 	crash segv-after-info 139 'End of backtrace'
 	if ! awk '/last info line/{i=NR} /crashed: SIGSEGV/{c=NR} END{exit !(i && i<c)}' "$LOGS/crash-segv-after-info/Dingo.log" 2>/dev/null; then
@@ -175,6 +177,8 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	crash throw 134 "std::terminate called on an uncaught exception: the test app's --crash=throw"
 	crash engine-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
 	crash prepared-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
+	crash render-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
+	crash asset-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
 	if [[ $CONFIG == Distribution ]]; then
 		crash verify 1 "Fatal error: Verify Failed the test app's --crash=verify"
 	else

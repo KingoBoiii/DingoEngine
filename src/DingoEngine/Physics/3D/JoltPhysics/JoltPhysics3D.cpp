@@ -409,6 +409,8 @@ namespace Dingo
 	{
 		if (!m_Data || deltaTime <= 0.0f)
 			return;
+		if (Internal::CrashHandler::ProbeFunction probe = Internal::CrashHandler::TakeProbe(Internal::CrashHandler::ProbeThread::PhysicsWorker))
+			m_Data->JobSystem.CreateJob("CrashProbe", JPH::Color::sRed, [probe] { probe(); });
 		m_Data->PhysicsSystem.Update(deltaTime, collisionSteps, &m_Data->TempAllocator, &m_Data->JobSystem);
 	}
 

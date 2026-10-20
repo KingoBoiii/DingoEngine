@@ -46,6 +46,16 @@ namespace Dingo::Internal
 		// exception into a terminate with no exception to log.
 		void RunThread(void (*body)(void*), void* context);
 
+		enum class ProbeThread : uint8_t { Render, AssetWorker, PhysicsWorker, Count };
+		using ProbeFunction = void (*)();
+
+		// Test only: `fn` runs once on that thread's next turn, outside any catch the thread has:
+		// the render thread's next frame, the asset worker's next job, and a Jolt worker job queued
+		// by the next Physics3D::Step.
+		void ArmProbe(ProbeThread thread, ProbeFunction fn);
+		// The armed function, once, for its thread to run; nullptr when none is armed.
+		ProbeFunction TakeProbe(ProbeThread thread);
+
 		// The message box FatalError and a Windows crash show: Windows Distribution builds only, so
 		// a CI run or a developer's console never blocks on one. Once Install has run, another thread
 		// shows it while the caller waits, so the caller's windows dispatch no events meanwhile.
