@@ -109,6 +109,8 @@ When the run is clean, push the merge: `git push origin HEAD:<head>`. Check `git
 - Posted mouse messages never reach ImGui, because its GLFW backend reads the real cursor. So clicking widgets, tree nodes, filters and drags needs the owner.
 - Gamepads, sound, and anything on a second monitor also need the owner.
 
+Before anything goes under "Not checked", try to run it yourself: a different `--layout`, `--time`, camera or seed that puts the item in frame, a `keys:` action, extra `--check` flags, or a Release `--perf` run. Re-run under a new tag (`prN-look`) and Read the new PNG. Only what truly needs a person (the list above, or something you tried and could not get on screen) goes to the owner, and the comment says what you tried.
+
 Give the owner the exact steps. When they ask, launch the example on their screen with `Start-Process <exe> -WorkingDirectory examples/<X>`. That takes focus, so only do it when asked.
 
 A visible run rewrites the tracked `imgui.ini` (`test/`, `examples/Breakout3D`, `examples/DungeonCrawler3D`). Afterwards, run `git checkout --` on it.
@@ -142,9 +144,9 @@ Windows 11, RX 7900 XTX, VS 2026 (MSVC), **Debug**. Tested at `<sha>` (<this PR,
 
 <What didn't move, how it compares with the PR's claim and the issue's targets, and any 1-px `--perf` flakes with the build they hit.> <Omit this block when the PR has no re-time.>
 
-**Not checked:** <what needs a person, and why. "Nothing else outstanding" if all of the PR's list ran.>
+**Not checked:** <only what needs a person's eyes or input, with what you already tried and the exact steps for them. "Nothing else outstanding" if all of the PR's list ran.>
 ```
 
-Never claim a result you didn't see: no Release, other configs or other examples unless they ran. A re-time listed in the PR is not a "not checked" item: run it. When the owner checks the "not checked" items by hand, update the comment to say so.
+Never claim a result you didn't see: no Release, other configs or other examples unless they ran. A re-time listed in the PR is not a "not checked" item: run it. Nor is anything else you can run or get on screen yourself: "Not checked" is only for what needs a person. When the owner checks the "not checked" items by hand, update the comment to say so.
 
 When the owner later says **done**, the CLAUDE.md keyword applies. For a GPU-test session, cleaning up means deleting the local `gpu-test/prN` branch. Leave the PR branch's deletion to the merge.
