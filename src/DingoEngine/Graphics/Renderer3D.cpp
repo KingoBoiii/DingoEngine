@@ -2704,8 +2704,13 @@ namespace Dingo
 		if (shadows == ShadowCasting::Off)
 			shadowGroups = 1;
 
-		Material* batchMaterial = material;
-		MaterialBatch* batch = EnqueueBatch(batchMaterial, shadows, shadowGroups);
+		// EnqueueBatch's last-key hit, spelled out here because compilers keep the call otherwise.
+		Material* batchMaterial = material ? material : m_Material;
+		MaterialBatch* batch = m_LastBatch;
+		if (batch && BatchKey{ batchMaterial, shadows, shadowGroups } == m_LastBatchKey)
+			batchMaterial = m_LastBatchMaterial;
+		else
+			batch = EnqueueBatch(batchMaterial, shadows, shadowGroups);
 
 		// A mesh bigger than one draw fits no batch at all, so spilling cannot help.
 		const Renderer3DCapabilities& caps = m_Params.Capabilities;
@@ -2769,6 +2774,7 @@ namespace Dingo
 		if (!material)
 			material = m_Material;
 		const BatchKey key{ material, shadows, shadowGroups };
+		// SubmitMeshWithBounds repeats this hit path inline; keep the two in step.
 		if (m_LastBatch && key == m_LastBatchKey)
 		{
 			material = m_LastBatchMaterial;
