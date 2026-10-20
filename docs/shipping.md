@@ -45,6 +45,7 @@ What Distribution changes:
 |---|---|---|
 | Console (Windows) | `main`, a console window | `WinMain`, no console: stderr goes nowhere, so the log is the only record |
 | `DE_ASSERT`, `DE_CORE_ASSERT` | Debug only: log, then break into the debugger | compiled out, as in Release |
+| Third-party asserts (`assert()`, Jolt's `JPH_ASSERT`, Box2D's `B2_ASSERT`; GLM, ImGui, NVRHI, ...) | on | off: the engine's workspace defines `NDEBUG` for every project in it, a game project inside it included |
 | `DE_VERIFY`, `DE_CORE_VERIFY` | log, then break into the debugger (`SIGTRAP` on Linux) | `FatalError("Verify Failed ...")`: log, message box on Windows, exit code 1 |
 | Crash on Windows | dump and log line | the same, plus a message box naming the folder |
 | Vulkan validation | on in Debug only; `--vulkan-validation` turns it on elsewhere | off; `--vulkan-validation` turns it on, and its messages reach `Dingo.log` as in Release. Without it the engine creates no validation-message callback |
