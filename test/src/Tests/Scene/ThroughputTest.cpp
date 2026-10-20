@@ -589,6 +589,7 @@ namespace Dingo
 			{
 				m_EdgeChecksDone = true;
 				RunCullingEdgeChecks();
+				RunSceneMemoChecks();
 			}
 
 			const double renderMs = Milliseconds(renderStart, endSceneStart);
@@ -957,6 +958,83 @@ namespace Dingo
 		// An orthographic view has no distance to cull by, and its box behind the camera is not left out for the near plane.
 		Check(stats[3].CulledMeshes == 0 && stats[4].CulledMeshes == 5,
 			std::format("an orthographic view culls the boxes outside it and past its far plane, not by CullDistance ({} culled, {} with culling off)", stats[4].CulledMeshes, stats[3].CulledMeshes));
+	}
+
+	// RenderEntities3D reuses an entity's world matrix and bounds from earlier frames while their
+	// inputs are unchanged; each change here has to reach the culling in the next frame.
+	void ThroughputTest::RunSceneMemoChecks()
+	{
+		Renderer3D& renderer = Application::Get().GetRenderer3D();
+		Mesh* box = Mesh::CreateBox(2.0f, 2.0f, 2.0f);
+		std::vector<MeshVertex> farVertices = box->GetVertices();
+		for (MeshVertex& vertex : farVertices)
+			vertex.Position.x += 40.0f;
+		Mesh* farBox = Mesh::Create(farVertices, box->GetIndices());
+
+		PerspectiveCamera camera(45.0f, static_cast<float>(k_CullCheckWidth) / static_cast<float>(k_CullCheckHeight), 0.1f, 100.0f);
+		camera.SetPosition({ 0.0f, 0.0f, 10.0f });
+		camera.SetTarget(glm::vec3(0.0f));
+
+		Scene scene("Throughput Memo");
+		auto add = [&scene, box](const glm::vec3& position)
+		{
+			Entity entity = scene.CreateEntity();
+			entity.AddComponent<Transform3DComponent>(Transform3DComponent(position));
+			entity.AddComponent<MeshRendererComponent>(MeshRendererComponent(box, glm::vec4(0.8f, 0.6f, 0.3f, 1.0f)));
+			return entity;
+		};
+		Entity root = add({ 0.0f, 0.0f, 0.0f });
+		Entity parent = scene.CreateEntity("Parent");
+		parent.AddComponent<Transform3DComponent>(Transform3DComponent());
+		Entity child = add({ 0.0f, 2.0f, 0.0f });
+		child.SetParent(parent, false);
+		Entity swapped = add({ 2.0f, 0.0f, 0.0f });
+
+		const bool wasCulling = renderer.IsCullingEnabled();
+		Framebuffer* previous = Renderer::GetRenderTarget();
+		renderer.SetCullingEnabled(true);
+		Renderer::SetRenderTarget(m_EdgeTargets[1]);
+		auto culled = [&]()
+		{
+			renderer.BeginScene(camera);
+			renderer.Clear(m_ClearColor);
+			scene.RenderEntities3D(renderer);
+			renderer.EndScene();
+			return renderer.GetStatistics().CulledMeshes;
+		};
+
+		const uint32_t first = culled();
+		const uint32_t again = culled();
+		root.GetComponent<Transform3DComponent>().Position = { 30.0f, 0.0f, 0.0f };
+		parent.GetComponent<Transform3DComponent>().Position = { -40.0f, 0.0f, 0.0f };
+		swapped.GetComponent<MeshRendererComponent>().Mesh = farBox;
+		const uint32_t moved = culled();
+		root.Destroy();
+		Entity reused = add({ 0.0f, -2.0f, 0.0f });
+		const uint32_t replaced = culled();
+		parent.GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+		parent.GetComponent<Transform3DComponent>().Position = glm::vec3(0.0f);
+		swapped.GetComponent<MeshRendererComponent>().Mesh = box;
+		const uint32_t back = culled();
+		reused.GetComponent<Transform3DComponent>().Scale = glm::vec3(0.5f, 1.0f, 1.0f);
+		reused.GetComponent<Transform3DComponent>().Position = { -30.0f, 0.0f, 0.0f };
+		const uint32_t flattened = culled();
+		Entity widened = add({ 11.0f, 0.0f, 0.0f });
+		Entity turned = add({ 0.0f, 0.0f, 0.0f });
+		turned.GetComponent<MeshRendererComponent>().Mesh = farBox;
+		const uint32_t added = culled();
+		widened.GetComponent<Transform3DComponent>().Scale = glm::vec3(6.0f, 1.0f, 1.0f);
+		turned.GetComponent<Transform3DComponent>().Rotation = glm::angleAxis(0.5f * glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+		const uint32_t reshaped = culled();
+
+		Renderer::SetRenderTarget(previous);
+		renderer.SetCullingEnabled(wasCulling);
+		delete farBox;
+		delete box;
+
+		Check(first == 0 && again == 0 && moved == 3 && replaced == 2 && back == 0 && flattened == 1 && added == 3 && reshaped == 1,
+			std::format("a scene entity's move, scale and turn, its parent's move and turn, a mesh swap and a recycled entity each reach the next frame's culling "
+				"({}, {}, {}, {}, {}, {}, {}, {} culled; expected 0, 0, 3, 2, 0, 1, 3, 1)", first, again, moved, replaced, back, flattened, added, reshaped));
 	}
 
 	void ThroughputTest::RunInstancingChecks()
