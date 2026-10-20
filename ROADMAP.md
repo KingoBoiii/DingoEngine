@@ -423,8 +423,8 @@ skin palette arena and animation LOD (P6), per-user logs, the crash handler and 
 `SaveData`, `Settings` and display modes (P8), the API pass with [versioning](docs/versioning.md)
 and [conventions](docs/conventions.md) (P9), third-party notices, the Inter font and executable
 metadata (P10), the Doxygen reference and 1.0 guides (P11), and DingoUI (U0–U9, with its review in
-`.claude/reviews/2026-10-14-dingoui-review.md`). DingoUI done; left: *Hearthvale* (P13), then the
-release: the review pass (P12), a
+`.claude/reviews/2026-10-14-dingoui-review.md`). DingoUI and *Hearthvale* (P13, complete 2026-10-20) done; left: the
+release: a
 soak (20 minutes per sign-off, 60 before the release tag) and the release candidate. The run on real
 Linux hardware ([L26](LINUX-SUPPORT.md#l26)) is deferred past v1.0 ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
 
@@ -466,7 +466,7 @@ instead of a moving target.
   release workflow and the Linux packaging ship every example this way. Deterrence, not
   protection: [docs/distribution.md](docs/distribution.md) has the threat model.
 
-**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6). The game's own plan is `.claude/plans/2026-10-08-hearthvale-plan.md`; its cloud build (P0–P15) is in `examples/Hearthvale/`, with the how-to-play, flags and licences in its README, and the GPU and playthrough passes still to do.
+**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6). The game's own plan is `.claude/plans/2026-10-08-hearthvale-plan.md`; it is complete (2026-10-20) in `examples/Hearthvale/`, with the how-to-play, flags and licences in its README, and ships on itch.io from the v1.0.0 release job.
 
 ---
 
