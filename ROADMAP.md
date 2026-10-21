@@ -416,7 +416,7 @@ game asks for it.
 the Linux smoke test, runs on the release's merge commit before it is tagged.
 
 ## v1.0.0 — Stability, Performance & Polish
-**Status**: release in preparation, committed straight to master (no release PR).
+**Status**: released on 2026-10-21 (straight to master → `4145806f`, no release PR).
 
 The first release with a stable API. It absorbed the renderer throughput work that v0.9's "Advanced
 Rendering & Performance" implied but never scheduled, and it is the last release allowed to break the
@@ -456,7 +456,7 @@ API: from 1.0.0 [versioning](docs/versioning.md) applies. The plan is
   [#263](https://github.com/KingoBoiii/DingoEngine/pull/263),
   [#262](https://github.com/KingoBoiii/DingoEngine/pull/262)). Distribution builds define `NDEBUG` and
   optimise every vendor library ([#291](https://github.com/KingoBoiii/DingoEngine/pull/291),
-  [#292](https://github.com/KingoBoiii/DingoEngine/pull/292)).
+  [#292](https://github.com/KingoBoiii/DingoEngine/pull/292)). The smoke tests also crash the render thread, the asset worker and Jolt's workers on purpose, so a lost crash hook on an engine thread turns CI red ([#294](https://github.com/KingoBoiii/DingoEngine/pull/294), closes [#217](https://github.com/KingoBoiii/DingoEngine/issues/217)).
 - **Shipping** (P8, P10). `SaveData`, `SaveSlots` and `Settings`; borderless and exclusive fullscreen
   with `Window::GetDisplayModes()`; engine-owned launch flags `--graphics`, `--window` and `--no-vsync`
   ([#254](https://github.com/KingoBoiii/DingoEngine/pull/254)); `THIRD-PARTY-NOTICES.md` (39
@@ -539,8 +539,7 @@ surfaces against v0.9.0, accepted),
 [#232](https://github.com/KingoBoiii/DingoEngine/issues/232) (*Marionette*'s render CPU measured 6–9%
 above v0.9.0, to re-time on a quiet machine),
 [#239](https://github.com/KingoBoiii/DingoEngine/issues/239) (the soak script does not judge
-*Marionette*'s memory growth),
-[#217](https://github.com/KingoBoiii/DingoEngine/issues/217) (no crash run reaches an engine thread) and
+*Marionette*'s memory growth) and
 [#247](https://github.com/KingoBoiii/DingoEngine/issues/247) (the run on real Linux hardware,
 [L26](LINUX-SUPPORT.md#l26), is deferred past 1.0).
 
