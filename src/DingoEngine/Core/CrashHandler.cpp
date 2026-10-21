@@ -39,6 +39,7 @@ namespace Dingo
 	{
 
 		bool s_Installed = false;
+		std::atomic<Internal::CrashHandler::ProbeFunction> s_Probes[static_cast<size_t>(Internal::CrashHandler::ProbeThread::Count)] = {};
 		char s_AppName[128] = "The application";
 
 		// Appends to a fixed buffer without allocating, for the handlers.
@@ -748,6 +749,17 @@ namespace Dingo
 	{
 		PrepareThisThread();
 		RunGuarded(body, context);
+	}
+
+	void Internal::CrashHandler::ArmProbe(ProbeThread thread, ProbeFunction fn)
+	{
+		s_Probes[static_cast<size_t>(thread)].store(fn);
+	}
+
+	Internal::CrashHandler::ProbeFunction Internal::CrashHandler::TakeProbe(ProbeThread thread)
+	{
+		std::atomic<ProbeFunction>& probe = s_Probes[static_cast<size_t>(thread)];
+		return probe.load(std::memory_order_relaxed) ? probe.exchange(nullptr) : nullptr;
 	}
 
 	void Internal::CrashHandler::ShowMessage(std::string_view title, std::string_view message)

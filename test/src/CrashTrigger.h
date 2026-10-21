@@ -10,6 +10,8 @@ namespace Dingo
 	// engine-thread, engine-throw and engine-stack run on a thread started through
 	// CrashHandler::RunThread, as the render and asset threads are; prepared-throw and
 	// prepared-stack on one that called CrashHandler::PrepareThread, as Jolt's workers do.
+	// render-throw, render-stack, asset-throw and physics-stack crash the engine's own render
+	// thread, asset worker and a Jolt worker.
 	void TriggerCrash(std::string_view kind);
 
 }
