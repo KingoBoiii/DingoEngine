@@ -47,25 +47,30 @@ Keep it to the smallest check that proves the change. CI (`build-linux.yml` with
 
 ## Sub-agent selection
 
-The main session runs Opus at high effort (`.claude/settings.json`) and orchestrates. Each agent call sets `model` and `effort` from this table:
+The main session runs Sonnet at medium effort (`.claude/settings.json`) and orchestrates. Each agent call sets `model` and `effort` from this table; the three rules under "Sub-agents" below are its summary:
 
 | Need | Agent | Model | Effort |
 |---|---|---|---|
 | One known file, symbol or string | No agent: `Grep`/`Read` directly | | |
 | Find where something lives across many files (call sites, every reader of a component, every place a format is written) | `Explore` ("medium" or "very thorough") | `haiku` | `low` |
+| Run a build, a test case or any command and report the errors and `[FAIL]`/`VUID-`/`LOG ERROR` lines | `general-purpose` | `haiku` | `low` |
 | Mechanical sweeps: check docs against code, update every reference to a renamed API, fill a test case from a clear spec | `general-purpose` | `sonnet` | `medium` |
-| Implement a well-specified, contained change (one issue, one phase step, a test, an example's game code) | `general-purpose`, one per change, parallel with `isolation: "worktree"` when the files don't overlap | `sonnet` | `high` |
-| Design a phase, a multi-file change, or any engine-core change (render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals) before writing it | `Plan`, result recorded in the plan file with `file:line` anchors | `opus` | `high` |
-| Implement an engine-core change from that design | `general-purpose`, the prompt carries the design | `sonnet` | `high` |
-| Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) | `opus` | `high` (`xhigh` for renderer, threading or synchronisation diffs) |
-| Root-cause a hard bug (device lost, validation error, race, a wrong frame) | `general-purpose` | `opus` | `xhigh` |
+| Implement a well-specified, contained change (one issue, one phase step, a test, an example's game code) | `general-purpose`, one per change, parallel with `isolation: "worktree"` when the files don't overlap | `sonnet` | `medium` |
+| Mockups, and Blender or art work | `general-purpose` | `sonnet` | `medium` |
+| Design a phase or a multi-file change | `Plan`, result recorded in the plan file with `file:line` anchors | `sonnet` | `medium` |
+| Design an engine-core change (render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals, save formats, netcode) before writing it | `Plan`, result recorded in the plan file with `file:line` anchors | `opus` | `high` |
+| Implement an engine-core change from that design | `general-purpose`, the prompt carries the design | `sonnet` | `medium` |
+| Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) | `sonnet` | `medium` |
+| Pre-push review of a diff that touches engine internals (renderer, threading, GPU synchronisation, save formats, netcode) | Same, fresh agent | `opus` | `high` (`xhigh` for renderer, threading or synchronisation) |
+| Root-cause a bug in Vulkan/GPU work (device lost, validation error, a wrong frame), a Jolt NaN, netcode, a save format or an engine-internal race | `general-purpose` | `opus` | `xhigh` |
+| Root-cause any other bug | `general-purpose` | `sonnet` | `medium` |
 | Milestone review, or a bug Opus failed on twice | `general-purpose` | `fable` | `high`, only when the owner asks |
 | Questions about Claude Code, hooks, skills, the API | `claude-code-guide` | its default | |
 
 Why these picks (prices per million input/output tokens, October 2026):
-- **Haiku 5.5** ($0.10/$0.50, a fortieth of Opus) is for reading-heavy work that returns facts, not judgement. Never let it edit engine code or review.
-- **Sonnet 5.5** ($2/$10, half of Opus) is the practical model for everyday coding when the task is fully specified: the prompt names the files, the rule, and what done looks like.
-- **Opus 5.5** ($4/$20) is for judgement: design, review and root-causing. Engine-core code, where a subtle mistake only shows on a real GPU, gets an Opus design first and an Opus review after, so Sonnet writes it in between. For judgement work, lower Opus's effort before switching to a cheaper model.
+- **Haiku 5.5** ($0.10/$0.50, a fortieth of Opus) is for searching, reading and running commands, work that returns facts, not judgement. Never let it edit engine code or review.
+- **Sonnet 5.5** ($2/$10, half of Opus) is the default for everyday work, the main session included: implementation, diff reviews, ordinary design and bugs. The prompt names the files, the rule, and what done looks like.
+- **Opus 5.5** ($4/$20) is reserved for the engine-internals list under "Sub-agents". Engine-core code, where a subtle mistake only shows on a real GPU, gets an Opus design first and an Opus review after, so Sonnet writes it in between. For judgement work, lower Opus's effort before switching to a cheaper model.
 - **Fable 5.1** ($10/$50) costs 2.5 times Opus; it is the owner's call.
 - Judge cost per finished task: a cheaper agent whose work has to be redone or re-reviewed isn't cheaper. If a Sonnet agent's change fails review twice, redo it on Opus.
 
@@ -86,7 +91,7 @@ Rules for every agent:
 Most of the cost is context re-read on every call (context size × number of calls), not the text you write. Measured: the v0.8.0 animation milestone ran three days in one session, reached 967k context and cost 13 units per prompt; single-phase sessions cost 2–5.
 
 - **One session, one job.** A plan, each phase, each issue group, each PR test and each release get their own session. The plan's "As built" notes and the PR's phases checklist carry the state between them. When a job is done, say so in one line and suggest **handoff** plus a new session. Past ~200k context or a day old: stop at the next clean point (phase committed and pushed).
-- **The session model fits the job.** Opus stays the default for engine work. For docs, plan wording, CI and scripts, release bookkeeping, PR write-ups and an example's game code, say so at the start and suggest the owner switch the session to Sonnet.
+- **The session model fits the job.** Sonnet is the default. For work in the engine-internals list under "Sub-agents" (Vulkan/GPU root-causing, Jolt NaN, netcode, save formats, render-thread and synchronisation changes), say so at the start and suggest the owner switch the session to Opus.
 - **Agents follow "Sub-agent selection" above.** One agent per independent job. Continue an agent with SendMessage for follow-ups on the same work instead of starting a new one.
 - **Read narrowly:** the `.claude/reference/` file for the area first, then Grep, then Read only the lines you need. Never read these whole (1.1k–2.3k lines each): `test/src/Tests/Scene/AnimationTest.cpp`, `Graphics/Renderer3D.cpp`, `UI/ImGui/ImGuiDebugPanels.cpp`, `Graphics/Animator.cpp`, `Graphics/Model.cpp`, `Asset/AssetManager.cpp`, `test/src/Tests/Renderer/LightingTest.cpp`.
 - **Long command output:** send builds and test runs to a file in the scratchpad, then read only the errors, warnings in files you changed, and `[FAIL]`, `VUID-` and `LOG ERROR` lines.
