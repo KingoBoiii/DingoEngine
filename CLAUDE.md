@@ -75,6 +75,12 @@ Rules for every agent:
 - Don't delegate and then search the same thing yourself, and don't spawn an agent for a one-step lookup.
 - An agent's report isn't shown to the owner; relay what matters. Check an agent's claims about code before acting on them, and review code a `sonnet` agent wrote before it is committed.
 
+## Sub-agents
+
+- Diff reviews, implementation, mockups and Blender/art: use model "sonnet", effort medium.
+- Haiku for search, reading and running commands.
+- Opus only for Vulkan/GPU root-cause debugging, Jolt NaN, netcode, save formats and engine internals.
+
 ## Token budget
 
 Most of the cost is context re-read on every call (context size × number of calls), not the text you write. Measured: the v0.8.0 animation milestone ran three days in one session, reached 967k context and cost 13 units per prompt; single-phase sessions cost 2–5.
