@@ -1,6 +1,8 @@
 ---
 name: pr-gpu-test
 description: GPU-test a DingoEngine pull request on the owner's Windows machine — merge master into the PR branch, build, run the PR's "Needs testing on a real GPU" cases on Vulkan, DX11 and DX12 on hidden desktops, read the logs and the D3D12 debug layer, and draft the results comment. Use when the owner says "GPU test PR #N", "test #N on the GPU", "pr-gpu-test N", "run the GPU checks for #N", or asks to verify a PR on real hardware. Windows only; a Linux or cloud session has no GPU.
+model: claude-sonnet-5-5
+effort: low
 ---
 
 # PR GPU test
