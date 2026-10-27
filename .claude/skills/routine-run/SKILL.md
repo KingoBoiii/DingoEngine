@@ -57,7 +57,7 @@ Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you 
 
 - The SessionStart hook has already set the toolchain up (CLAUDE.md "Build and run", Cloud sessions): start at `./Generate-Linux.sh`. Only if the hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".
-- Before committing, a **fresh sub-agent** (not the one that wrote the code; `opus`, effort per CLAUDE.md "Sub-agent selection") reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
+- Before committing, a **fresh sub-agent** (not the one that wrote the code; model and effort from CLAUDE.md "Sub-agent selection": Sonnet medium for ordinary diffs, Opus high or xhigh for engine-internals diffs) reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
 
 ## 6. Commits, pushes and hard rules
 
