@@ -207,7 +207,8 @@ namespace Dingo
 		/// without motors or a non-finite value is ignored. Wakes both bodies only on a change.
 		virtual void SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity) = 0;
 		/// The magnitude in N*m the motor applied in the last step; 0 when it is off, the bodies sleep or the
-		/// handle or axis is invalid. For Swing it is the larger of the two cone axes.
+		/// handle or axis is invalid. For Swing it is the larger of the two cone axes. While both bodies sleep no
+		/// solver torque is applied, so a motor holding a pose against gravity reads 0 once it sleeps.
 		virtual float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
 
 		// --- Scene queries ----------------------------------------------------

@@ -322,7 +322,8 @@ the axis (`MotorAxis3D::Hinge` for a hinge; `Swing` or `Twist` for a swing-twist
   is flipped, as for `GetConstraintValue`.
 - `GetMotorParams`, `GetMotorMode` read the settings back; `GetMotorTorque(constraint, axis)` is the
   magnitude of the torque applied last step, and 0 when the motor is off, both bodies are asleep or the
-  handle is stale.
+  handle is stale. No solver torque is applied while both bodies sleep, so a motor holding a pose
+  against gravity reads 0 once it sleeps.
 - A change wakes both bodies; setting the same values again does nothing. A stale handle, a
   negative or non-finite value, or an axis the joint doesn't have is ignored (the last logs a warning).
 

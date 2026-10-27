@@ -826,9 +826,14 @@ namespace Dingo
 						: std::format("missing {}", static_cast<uint64_t>(constraint->Other)));
 					Add(section, "Anchors", std::format("{} / {}", Text(constraint->AnchorA), Text(constraint->AnchorB)));
 					Add(section, "Axes", std::format("{} / {}", Text(constraint->AxisA), Text(constraint->AxisB)));
-					Add(section, "Limits", std::format("{:.3f} .. {:.3f}", constraint->MinLimit, constraint->MaxLimit));
-					Add(section, "Swing Y / Z", std::format("{:.3f} / {:.3f}", constraint->SwingLimitY, constraint->SwingLimitZ));
-					Add(section, "Twist", std::format("{:.3f} .. {:.3f}", constraint->TwistMin, constraint->TwistMax));
+					const ConstraintType3D type = constraint->Type;
+					if (type == ConstraintType3D::Hinge || type == ConstraintType3D::Slider || type == ConstraintType3D::Distance)
+						Add(section, "Limits", std::format("{:.3f} .. {:.3f}", constraint->MinLimit, constraint->MaxLimit));
+					if (type == ConstraintType3D::SwingTwist)
+					{
+						Add(section, "Swing Y / Z", std::format("{:.3f} / {:.3f}", constraint->SwingLimitY, constraint->SwingLimitZ));
+						Add(section, "Twist", std::format("{:.3f} .. {:.3f}", constraint->TwistMin, constraint->TwistMax));
+					}
 					Add(section, "Collide connected", Text(constraint->CollideConnected));
 
 					if (constraint->Type == ConstraintType3D::Hinge || constraint->Type == ConstraintType3D::SwingTwist)
@@ -925,7 +930,10 @@ namespace Dingo
 							Add(section, "Type", ConstraintTypeName(settings->Type));
 						Add(section, "Other", runtime->Other != entt::null && registry.valid(runtime->Other) ? EntityName(registry, runtime->Other) : std::string("world"));
 						Add(section, "Enabled", Text(physics->IsConstraintEnabled(runtime->Constraint)));
-						Add(section, "Value", Text(physics->GetConstraintValue(runtime->Constraint)));
+						if (settings && settings->Type == ConstraintType3D::Hinge)
+							Add(section, "Value", Text(physics->GetConstraintValue(runtime->Constraint)) + " rad");
+						else if (settings && (settings->Type == ConstraintType3D::Slider || settings->Type == ConstraintType3D::Distance))
+							Add(section, "Value", Text(physics->GetConstraintValue(runtime->Constraint)) + " m");
 					}
 				}
 
