@@ -4,6 +4,7 @@
 // simulation bodies in step. Lives under src/ so EnTT stays a private
 // implementation detail.
 
+#include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
 #include "DingoEngine/Physics/3D/CharacterController3D.h"
@@ -15,6 +16,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Dingo
@@ -30,7 +33,7 @@ namespace Dingo
 			static constexpr float k_MaxStepTime = k_MaxCollisionSteps / 60.0f;
 
 			// Removing a body, controller or sound settings component releases what it built.
-			void Connect(entt::registry& registry);
+			void Connect(entt::registry& registry, const std::unordered_map<UUID, entt::entity>& entityMap);
 
 			// Creates a 2D world only if the registry has 2D rigid bodies, and a 3D world
 			// only if it has 3D rigid bodies or character controllers, so a scene pays for
@@ -77,6 +80,7 @@ namespace Dingo
 			void DropBody2D(entt::registry& registry, entt::entity handle);
 			void DropBody3D(entt::registry& registry, entt::entity handle);
 			void DropController(entt::registry& registry, entt::entity handle);
+			void DropConstraint(entt::registry& registry, entt::entity handle);
 
 			// Start's bake passes `memo`; a single late body works its pose out on demand.
 			void CreateBody2D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo = nullptr);
@@ -101,6 +105,12 @@ namespace Dingo
 			// and every ancestor's controller ignores it. Recomputed each step and diffed against the
 			// last one, so reparenting, detaching and bodies coming and going all settle before the step.
 			void SyncAncestorFilters(entt::registry& registry);
+
+			// Drops the joints whose bodies are gone, then builds one for every active entity with a
+			// Constraint3DComponent and a body whose Other has its body too. Runs at Start and every step,
+			// which also covers reactivation, duplication and bodies created late.
+			void SyncConstraints(entt::registry& registry);
+			void BuildConstraint(entt::registry& registry, entt::entity handle);
 
 		private:
 			struct ChildWriteBack
@@ -159,6 +169,13 @@ namespace Dingo
 
 			// Applied last step, sorted: (child body << 32 | ancestor body) and (controller slot << 32 |
 			// child body). The Wanted vectors are this step's scratch.
+			const std::unordered_map<UUID, entt::entity>* m_EntityMap = nullptr;
+			// Entities already logged for a constraint that cannot build yet (retried silently), and
+			// those the physics world rejected (not retried until their constraint or body is dropped).
+			std::unordered_set<entt::entity> m_ConstraintReported;
+			std::unordered_set<entt::entity> m_ConstraintRejected;
+			std::vector<entt::entity> m_ConstraintScratch;
+
 			std::vector<std::uint64_t> m_IgnoredPairs;
 			std::vector<std::uint64_t> m_IgnoredControllerBodies;
 			std::vector<std::uint64_t> m_WantedPairs;

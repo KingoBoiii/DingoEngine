@@ -1457,6 +1457,60 @@ namespace Dingo::Internal
 			}
 			ImGui::PopID();
 		}
+
+		if (s_Detail.Motor.Present)
+		{
+			SD::MotorView motor = s_Detail.Motor;
+			bool changed = false;
+			ImGui::PushID("##motor");
+			if (ImGui::CollapsingHeader("Constraint motor (editable)", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				const char* modes[] = { "Off", "Velocity", "Position" };
+				int mode = static_cast<int>(motor.Mode);
+				ImGui::SetNextItemWidth(160.0f);
+				if (ImGui::Combo("Mode", &mode, modes, 3))
+				{
+					motor.Mode = static_cast<MotorMode3D>(mode);
+					changed = true;
+				}
+
+				auto params = [&](const char* label, MotorParams3D& value)
+				{
+					ImGui::PushID(label);
+					ImGui::TextUnformatted(label);
+					changed |= ImGui::SliderFloat("Stiffness (N*m/rad)", &value.Stiffness, 0.0f, 100000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+					changed |= ImGui::SliderFloat("Damping (N*m per rad/s)", &value.Damping, 0.0f, 10000.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+					changed |= ImGui::SliderFloat("MaxTorque (N*m)", &value.MaxTorque, 0.0f, 20000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+					ImGui::PopID();
+				};
+				params(motor.SwingTwist ? "Swing motor" : "Hinge motor", motor.Motor);
+				if (motor.SwingTwist)
+					params("Twist motor", motor.TwistMotor);
+
+				changed |= ImGui::SliderAngle("Target angle", &motor.TargetAngle, -180.0f, 180.0f);
+				changed |= ImGui::SliderFloat("Target velocity (rad/s)", &motor.TargetVelocity, -20.0f, 20.0f);
+
+				if (!motor.Live)
+					ImGui::TextDisabled("No built joint: physics is not running or the bodies are missing.");
+				else
+				{
+					if (!motor.SwingTwist)
+						ImGui::Text("Current angle: %.1f deg", glm::degrees(motor.Angle));
+					auto bar = [](const char* label, float torque, float maxTorque)
+					{
+						const float fraction = maxTorque > 0.0f ? (std::min)(torque / maxTorque, 1.0f) : 0.0f;
+						const std::string text = std::format("{}: {:.1f} / {:.1f} N*m", label, torque, maxTorque);
+						ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), text.c_str());
+					};
+					bar(motor.SwingTwist ? "Swing torque" : "Torque", motor.Torque, motor.Motor.MaxTorque);
+					if (motor.SwingTwist)
+						bar("Twist torque", motor.TwistTorque, motor.TwistMotor.MaxTorque);
+				}
+			}
+			ImGui::PopID();
+			if (changed)
+				SD::WriteMotor(scene.Serial, s_SelectedEntity, motor);
+		}
 	}
 
 	void DingoUISection()

@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <cmath>
 #include <Jolt/Physics/Body/BodyFilter.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -83,6 +84,114 @@ namespace Dingo
 
 		inline std::uint32_t QueryLayersOf(const JPH::Body& body) { return static_cast<std::uint32_t>(body.GetUserData() >> 32); }
 
+		// Unit axis, and a normal made perpendicular to it; false for a zero axis or a parallel normal.
+		bool ResolveAxes(const glm::vec3& axis, const glm::vec3& normal, JPH::Vec3& outAxis, JPH::Vec3& outNormal)
+		{
+			if (!(glm::dot(axis, axis) > 1e-12f) || !(glm::dot(normal, normal) > 1e-12f))
+				return false;
+
+			const glm::vec3 unitAxis = glm::normalize(axis);
+			glm::vec3 unitNormal = glm::normalize(normal);
+			unitNormal -= unitAxis * glm::dot(unitAxis, unitNormal);
+			if (!(glm::dot(unitNormal, unitNormal) > 1e-6f))
+				return false;
+
+			outAxis = ToJolt(unitAxis);
+			outNormal = ToJolt(glm::normalize(unitNormal));
+			return true;
+		}
+
+		using MotorState = Internal::JoltPhysics3DData::ConstraintRecord::MotorState;
+
+		bool IsMotorValue(float value)
+		{
+			return std::isfinite(value) && value >= 0.0f;
+		}
+
+		bool JointHasMotorAxis(ConstraintType3D type, MotorAxis3D axis)
+		{
+			if (type == ConstraintType3D::Hinge)
+				return axis == MotorAxis3D::Hinge;
+			if (type == ConstraintType3D::SwingTwist)
+				return axis == MotorAxis3D::Swing || axis == MotorAxis3D::Twist;
+			return false;
+		}
+
+		bool JointHasMotors(ConstraintType3D type)
+		{
+			return type == ConstraintType3D::Hinge || type == ConstraintType3D::SwingTwist;
+		}
+
+		JPH::EMotorState WriteMotorSettings(JPH::MotorSettings& settings, const MotorState& motor)
+		{
+			float stiffness = motor.Params.Stiffness;
+			JPH::EMotorState state = JPH::EMotorState::Off;
+			if (motor.Mode != MotorMode3D::Off && motor.Params.MaxTorque > 0.0f)
+			{
+				if (motor.Mode == MotorMode3D::Position)
+					state = JPH::EMotorState::PositionAndVelocity;
+				else if (motor.Params.Damping > 0.0f)
+				{
+					state = JPH::EMotorState::PositionAndVelocity;
+					stiffness = 0.0f;
+				}
+				else
+					state = JPH::EMotorState::Velocity;
+			}
+			settings.mSpringSettings = JPH::SpringSettings(JPH::ESpringMode::StiffnessAndDamping, stiffness, motor.Params.Damping);
+			settings.SetTorqueLimit(motor.Params.MaxTorque);
+			return state;
+		}
+
+		void ApplyMotors(Internal::JoltPhysics3DData::ConstraintRecord& record)
+		{
+			const MotorState& hingeMotor = record.Motors[static_cast<int>(MotorAxis3D::Hinge)];
+			const MotorState& swingMotor = record.Motors[static_cast<int>(MotorAxis3D::Swing)];
+			const MotorState& twistMotor = record.Motors[static_cast<int>(MotorAxis3D::Twist)];
+			const JPH::Quat targetRotation = ToJolt(record.TargetRotation);
+			const JPH::Vec3 targetVelocity = ToJolt(record.TargetVelocity);
+
+			if (record.Type == ConstraintType3D::Hinge)
+			{
+				auto* hinge = static_cast<JPH::HingeConstraint*>(record.Constraint.GetPtr());
+				const JPH::EMotorState state = WriteMotorSettings(hinge->GetMotorSettings(), hingeMotor);
+				hinge->SetTargetOrientationBS(targetRotation);
+				hinge->SetTargetAngularVelocity(hingeMotor.Mode == MotorMode3D::Velocity ? record.HingeAxisA.Dot(targetVelocity) : 0.0f);
+				hinge->SetMotorState(state);
+			}
+			else if (record.Type == ConstraintType3D::SwingTwist)
+			{
+				auto* joint = static_cast<JPH::SwingTwistConstraint*>(record.Constraint.GetPtr());
+				const JPH::EMotorState swingState = WriteMotorSettings(joint->GetSwingMotorSettings(), swingMotor);
+				const JPH::EMotorState twistState = WriteMotorSettings(joint->GetTwistMotorSettings(), twistMotor);
+				joint->SetTargetOrientationBS(targetRotation);
+
+				const JPH::Vec3 local = joint->GetConstraintToBody1().InverseRotate(targetVelocity);
+				const float swing = swingMotor.Mode == MotorMode3D::Velocity ? 1.0f : 0.0f;
+				const float twist = twistMotor.Mode == MotorMode3D::Velocity ? 1.0f : 0.0f;
+				joint->SetTargetAngularVelocityCS(JPH::Vec3(local.GetX() * twist, local.GetY() * swing, local.GetZ() * swing));
+				joint->SetSwingMotorState(swingState);
+				joint->SetTwistMotorState(twistState);
+			}
+		}
+
+		bool AnyMotorInMode(const Internal::JoltPhysics3DData::ConstraintRecord& record, MotorMode3D mode)
+		{
+			for (const MotorState& motor : record.Motors)
+			{
+				if (motor.Mode == mode)
+					return true;
+			}
+			return false;
+		}
+
+		void WakeConstraintBodies(JPH::BodyInterface& bodyInterface, const Internal::JoltPhysics3DData::ConstraintRecord& record)
+		{
+			bodyInterface.ActivateBody(ToBodyId(record.BodyA));
+			if (record.BodyB != k_InvalidBody3D)
+				bodyInterface.ActivateBody(ToBodyId(record.BodyB));
+		}
+
 		class QueryBodyFilter final : public JPH::BodyFilter
 		{
 		public:
@@ -138,6 +247,106 @@ namespace Dingo
 		}
 	}
 
+	// Owns a body's CollisionGroup: it names the filter only while the body has a user group or an
+	// ignored partner, so ungrouped, unpaired bodies never reach the filter.
+	static void ApplyCollisionGroup(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body)
+	{
+		JPH::BodyInterface& bodyInterface = data.PhysicsSystem.GetBodyInterface();
+		const auto group = data.BodyGroups.find(body);
+		if (group == data.BodyGroups.end() && !data.IgnoredPartners.contains(body))
+		{
+			bodyInterface.SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup());
+			return;
+		}
+
+		const std::uint32_t userGroup = group != data.BodyGroups.end() ? group->second.Group : 0;
+		const bool within = group != data.BodyGroups.end() && group->second.Within;
+		const std::uint32_t sub = body | (within ? Internal::CollisionGroupFilter::k_WithinBit : 0u);
+		bodyInterface.SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup(data.PairFilter.GetPtr(), userGroup, sub));
+	}
+
+	static void LinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
+	{
+		std::vector<std::uint32_t>& partners = data.IgnoredPartners[body];
+		const bool first = partners.empty();
+		partners.push_back(partner);
+		if (first)
+			ApplyCollisionGroup(data, body);
+	}
+
+	static void UnlinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
+	{
+		auto it = data.IgnoredPartners.find(body);
+		if (it == data.IgnoredPartners.end())
+			return;
+
+		std::erase(it->second, partner);
+		if (it->second.empty())
+		{
+			data.IgnoredPartners.erase(it);
+			ApplyCollisionGroup(data, body);
+		}
+	}
+
+	static void AddPairIgnore(Internal::JoltPhysics3DData& data, PhysicsBodyId3D a, PhysicsBodyId3D b)
+	{
+		Internal::CollisionGroupFilter& filter = *data.PairFilter;
+		const bool fresh = filter.Find(a, b) == nullptr;
+		++filter.Entry(a, b).Constraints;
+		if (fresh)
+		{
+			LinkIgnoredPartner(data, a, b);
+			LinkIgnoredPartner(data, b, a);
+		}
+	}
+
+	static void ReleasePairIgnore(Internal::JoltPhysics3DData& data, PhysicsBodyId3D a, PhysicsBodyId3D b)
+	{
+		Internal::CollisionGroupFilter& filter = *data.PairFilter;
+		if (!filter.Find(a, b))
+			return;
+
+		Internal::CollisionGroupFilter::PairSources& sources = filter.Entry(a, b);
+		if (sources.Constraints > 0)
+			--sources.Constraints;
+		if (!sources.User && sources.Constraints == 0)
+		{
+			filter.Erase(a, b);
+			UnlinkIgnoredPartner(data, a, b);
+			UnlinkIgnoredPartner(data, b, a);
+		}
+	}
+
+	void JoltPhysics3D::DestroyConstraintInternal(Internal::JoltPhysics3DData& data, ConstraintId3D id)
+	{
+		auto it = data.Constraints.find(id);
+		if (it == data.Constraints.end())
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord record = std::move(it->second);
+		data.Constraints.erase(it);
+
+		data.PhysicsSystem.RemoveConstraint(record.Constraint.GetPtr());
+
+		JPH::BodyInterface& bodyInterface = data.PhysicsSystem.GetBodyInterface();
+		bodyInterface.ActivateBody(ToBodyId(record.BodyA));
+		if (record.BodyB != k_InvalidBody3D)
+			bodyInterface.ActivateBody(ToBodyId(record.BodyB));
+
+		for (PhysicsBodyId3D body : { record.BodyA, record.BodyB })
+		{
+			auto list = data.BodyConstraints.find(body);
+			if (list == data.BodyConstraints.end())
+				continue;
+			std::erase(list->second, id);
+			if (list->second.empty())
+				data.BodyConstraints.erase(list);
+		}
+
+		if (record.IgnoresPair)
+			ReleasePairIgnore(data, record.BodyA, record.BodyB);
+	}
+
 	JoltPhysics3D::~JoltPhysics3D()
 	{
 		Shutdown();
@@ -157,6 +366,15 @@ namespace Dingo
 	{
 		if (!m_Data)
 			return;
+
+		// A constraint holds raw Body pointers, so each goes before the bodies the world frees.
+		std::vector<ConstraintId3D> ids;
+		ids.reserve(m_Data->Constraints.size());
+		for (const auto& entry : m_Data->Constraints)
+			ids.push_back(entry.first);
+		std::sort(ids.begin(), ids.end());
+		for (ConstraintId3D id : ids)
+			DestroyConstraintInternal(*m_Data, id);
 
 		delete m_Data; // tears down PhysicsSystem, job system, allocators
 		m_Data = nullptr;
@@ -302,6 +520,16 @@ namespace Dingo
 		return new JPH::ScaledShape(shape, scale);
 	}
 
+	static void StoreCollisionGroup(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, std::uint32_t group, bool within)
+	{
+		data.NextCollisionGroup = (std::max)(data.NextCollisionGroup, static_cast<std::uint64_t>(group) + 1);
+		if (group == k_NoCollisionGroup)
+			data.BodyGroups.erase(body);
+		else
+			data.BodyGroups[body] = { group, within };
+		ApplyCollisionGroup(data, body);
+	}
+
 	PhysicsBodyId3D JoltPhysics3D::CreateBody(const RigidBodyParams3D& params)
 	{
 		if (!m_Data)
@@ -346,31 +574,10 @@ namespace Dingo
 		if (id.IsInvalid())
 			return k_InvalidBody3D;
 
-		return id.GetIndexAndSequenceNumber();
-	}
-
-	// A body joins the filter's group with its first ignored partner and leaves it with its last, so
-	// the pairs of bodies that ignore nothing never reach the filter.
-	static void LinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
-	{
-		std::vector<std::uint32_t>& partners = data.IgnoredPartners[body];
-		if (partners.empty())
-			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup(data.PairFilter.GetPtr(), body, 0));
-		partners.push_back(partner);
-	}
-
-	static void UnlinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
-	{
-		auto it = data.IgnoredPartners.find(body);
-		if (it == data.IgnoredPartners.end())
-			return;
-
-		std::erase(it->second, partner);
-		if (it->second.empty())
-		{
-			data.IgnoredPartners.erase(it);
-			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup());
-		}
+		const PhysicsBodyId3D body = id.GetIndexAndSequenceNumber();
+		if (params.CollisionGroup != k_NoCollisionGroup)
+			StoreCollisionGroup(*m_Data, body, params.CollisionGroup, params.CollideWithinGroup);
+		return body;
 	}
 
 	void JoltPhysics3D::DestroyBody(PhysicsBodyId3D body)
@@ -383,13 +590,22 @@ namespace Dingo
 		if (!bodyInterface.IsAdded(id))
 			return;
 
+		if (auto it = m_Data->BodyConstraints.find(body); it != m_Data->BodyConstraints.end())
+		{
+			const std::vector<ConstraintId3D> constraints = it->second;
+			for (ConstraintId3D constraint : constraints)
+				DestroyConstraintInternal(*m_Data, constraint);
+		}
+
+		m_Data->BodyGroups.erase(body);
+
 		if (auto it = m_Data->IgnoredPartners.find(body); it != m_Data->IgnoredPartners.end())
 		{
 			const std::vector<std::uint32_t> partners = std::move(it->second);
 			m_Data->IgnoredPartners.erase(it);
 			for (std::uint32_t partner : partners)
 			{
-				m_Data->PairFilter->Remove(body, partner);
+				m_Data->PairFilter->Erase(body, partner);
 				UnlinkIgnoredPartner(*m_Data, partner, body);
 			}
 		}
@@ -411,6 +627,8 @@ namespace Dingo
 			return;
 		if (Internal::CrashHandler::ProbeFunction probe = Internal::CrashHandler::TakeProbe(Internal::CrashHandler::ProbeThread::PhysicsWorker))
 			m_Data->JobSystem.CreateJob("CrashProbe", JPH::Color::sRed, [probe] { probe(); });
+		m_Data->LastDeltaTime = deltaTime;
+		m_Data->LastCollisionSteps = (std::max)(collisionSteps, 1);
 		m_Data->PhysicsSystem.Update(deltaTime, collisionSteps, &m_Data->TempAllocator, &m_Data->JobSystem);
 	}
 
@@ -484,8 +702,9 @@ namespace Dingo
 		if (!m_Data || a == k_InvalidBody3D || b == k_InvalidBody3D || a == b)
 			return;
 
-		Internal::IgnoredPairFilter& filter = *m_Data->PairFilter;
-		if (filter.Contains(a, b) == ignore)
+		Internal::CollisionGroupFilter& filter = *m_Data->PairFilter;
+		const Internal::CollisionGroupFilter::PairSources* existing = filter.Find(a, b);
+		if ((existing && existing->User) == ignore)
 			return;
 
 		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
@@ -494,21 +713,71 @@ namespace Dingo
 			if (!bodyInterface.IsAdded(ToBodyId(a)) || !bodyInterface.IsAdded(ToBodyId(b)))
 				return;
 
-			filter.Add(a, b);
-			LinkIgnoredPartner(*m_Data, a, b);
-			LinkIgnoredPartner(*m_Data, b, a);
+			const bool fresh = existing == nullptr;
+			filter.Entry(a, b).User = true;
+			if (fresh)
+			{
+				LinkIgnoredPartner(*m_Data, a, b);
+				LinkIgnoredPartner(*m_Data, b, a);
+			}
 		}
 		else
 		{
-			filter.Remove(a, b);
-			UnlinkIgnoredPartner(*m_Data, a, b);
-			UnlinkIgnoredPartner(*m_Data, b, a);
+			Internal::CollisionGroupFilter::PairSources& sources = filter.Entry(a, b);
+			sources.User = false;
+			if (sources.Constraints == 0)
+			{
+				filter.Erase(a, b);
+				UnlinkIgnoredPartner(*m_Data, a, b);
+				UnlinkIgnoredPartner(*m_Data, b, a);
+			}
 		}
 
 		// The broad phase only pairs a body that is awake: a sleeping pair would keep its old
 		// contact state until something else woke one of them.
 		bodyInterface.ActivateBody(ToBodyId(a));
 		bodyInterface.ActivateBody(ToBodyId(b));
+	}
+
+	void JoltPhysics3D::SetCollisionGroup(PhysicsBodyId3D body, std::uint32_t group, bool collideWithinGroup)
+	{
+		if (!m_Data || body == k_InvalidBody3D)
+			return;
+
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		if (!bodyInterface.IsAdded(ToBodyId(body)))
+			return;
+
+		StoreCollisionGroup(*m_Data, body, group, group != k_NoCollisionGroup && collideWithinGroup);
+		bodyInterface.ActivateBody(ToBodyId(body));
+	}
+
+	std::uint32_t JoltPhysics3D::GetCollisionGroup(PhysicsBodyId3D body) const
+	{
+		if (!m_Data || !IsBodyValid(body))
+			return k_NoCollisionGroup;
+		const auto it = m_Data->BodyGroups.find(body);
+		return it != m_Data->BodyGroups.end() ? it->second.Group : k_NoCollisionGroup;
+	}
+
+	bool JoltPhysics3D::GetCollideWithinGroup(PhysicsBodyId3D body) const
+	{
+		if (!m_Data || !IsBodyValid(body))
+			return false;
+		const auto it = m_Data->BodyGroups.find(body);
+		return it != m_Data->BodyGroups.end() && it->second.Within;
+	}
+
+	std::uint32_t JoltPhysics3D::AllocateCollisionGroup()
+	{
+		if (!m_Data)
+			return k_NoCollisionGroup;
+		if (m_Data->NextCollisionGroup > 0xFFFFFFFFull)
+		{
+			DE_CORE_ERROR("Physics3D: out of collision group ids");
+			return k_NoCollisionGroup;
+		}
+		return static_cast<std::uint32_t>(m_Data->NextCollisionGroup++);
 	}
 
 	bool JoltPhysics3D::IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const
@@ -566,6 +835,402 @@ namespace Dingo
 		if (!m_Data || body == k_InvalidBody3D)
 			return glm::vec3(0.0f);
 		return ToGlm(m_Data->PhysicsSystem.GetBodyInterface().GetAngularVelocity(ToBodyId(body)));
+	}
+
+	ConstraintId3D JoltPhysics3D::CreateConstraint(const ConstraintParams3D& params)
+	{
+		if (!m_Data)
+			return k_InvalidConstraint3D;
+
+		Internal::JoltPhysics3DData& data = *m_Data;
+		JPH::BodyInterface& bodyInterface = data.PhysicsSystem.GetBodyInterface();
+
+		auto fail = [](const char* reason)
+		{
+			DE_CORE_WARN("Physics3D::CreateConstraint: {}", reason);
+			return k_InvalidConstraint3D;
+		};
+
+		const bool pinned = params.BodyB == k_InvalidBody3D;
+		if (params.BodyA == k_InvalidBody3D || !bodyInterface.IsAdded(ToBodyId(params.BodyA)))
+			return fail("BodyA is invalid or destroyed");
+		if (!pinned && !bodyInterface.IsAdded(ToBodyId(params.BodyB)))
+			return fail("BodyB is destroyed");
+		if (params.BodyA == params.BodyB)
+			return fail("the constraint needs two different bodies");
+
+		const JPH::BodyID idA = ToBodyId(params.BodyA);
+		const JPH::BodyID idB = pinned ? JPH::BodyID() : ToBodyId(params.BodyB);
+		const bool staticA = bodyInterface.GetMotionType(idA) == JPH::EMotionType::Static;
+		const bool staticB = pinned || bodyInterface.GetMotionType(idB) == JPH::EMotionType::Static;
+		if (staticA && staticB)
+			return fail("both sides are static (a world pin counts as static)");
+		if (data.NextConstraintId == k_InvalidConstraint3D)
+			return fail("constraint ids are exhausted");
+
+		const bool readsAxes = params.Type != ConstraintType3D::Point && params.Type != ConstraintType3D::Distance;
+		JPH::Vec3 axisA = JPH::Vec3::sAxisY(), axisB = JPH::Vec3::sAxisY();
+		JPH::Vec3 normalA = JPH::Vec3::sAxisX(), normalB = JPH::Vec3::sAxisX();
+		if (readsAxes)
+		{
+			if (!ResolveAxes(params.AxisA, params.NormalAxisA, axisA, normalA)
+				|| !ResolveAxes(params.AxisB, params.NormalAxisB, axisB, normalB))
+				return fail("an axis is zero or NormalAxis is parallel to Axis");
+		}
+
+		const JPH::Vec3 pointA = ToJolt(params.AnchorA) - bodyInterface.GetShape(idA)->GetCenterOfMass();
+		const JPH::Vec3 pointB = pinned ? ToJolt(params.AnchorB) : ToJolt(params.AnchorB) - bodyInterface.GetShape(idB)->GetCenterOfMass();
+		const JPH::EConstraintSpace space = JPH::EConstraintSpace::LocalToBodyCOM;
+
+		JPH::Ref<JPH::TwoBodyConstraint> constraint;
+		auto create = [&](const JPH::TwoBodyConstraintSettings& settings)
+		{
+			constraint = bodyInterface.CreateConstraint(&settings, idA, idB);
+		};
+
+		switch (params.Type)
+		{
+			case ConstraintType3D::Fixed:
+			{
+				JPH::FixedConstraintSettings settings;
+				settings.mSpace = space;
+				settings.mPoint1 = JPH::RVec3(pointA);
+				settings.mPoint2 = JPH::RVec3(pointB);
+				settings.mAxisX1 = normalA;
+				settings.mAxisY1 = axisA;
+				settings.mAxisX2 = normalB;
+				settings.mAxisY2 = axisB;
+				create(settings);
+				break;
+			}
+			case ConstraintType3D::Point:
+			{
+				JPH::PointConstraintSettings settings;
+				settings.mSpace = space;
+				settings.mPoint1 = JPH::RVec3(pointA);
+				settings.mPoint2 = JPH::RVec3(pointB);
+				create(settings);
+				break;
+			}
+			case ConstraintType3D::Hinge:
+			{
+				if (!std::isfinite(params.MinLimit) || !std::isfinite(params.MaxLimit))
+					return fail("hinge limits must be finite");
+				JPH::HingeConstraintSettings settings;
+				settings.mSpace = space;
+				settings.mPoint1 = JPH::RVec3(pointA);
+				settings.mPoint2 = JPH::RVec3(pointB);
+				settings.mHingeAxis1 = axisA;
+				settings.mNormalAxis1 = normalA;
+				settings.mHingeAxis2 = axisB;
+				settings.mNormalAxis2 = normalB;
+				if (params.MinLimit < params.MaxLimit)
+				{
+					if (params.MinLimit < -JPH::JPH_PI || params.MinLimit > 0.0f || params.MaxLimit < 0.0f || params.MaxLimit > JPH::JPH_PI)
+						return fail("hinge limits must satisfy -pi <= MinLimit <= 0 <= MaxLimit <= pi");
+					settings.mLimitsMin = params.MinLimit;
+					settings.mLimitsMax = params.MaxLimit;
+				}
+				create(settings);
+				break;
+			}
+			case ConstraintType3D::SwingTwist:
+			{
+				if (!std::isfinite(params.SwingLimitY) || !std::isfinite(params.SwingLimitZ) || !std::isfinite(params.TwistMin) || !std::isfinite(params.TwistMax))
+					return fail("swing and twist limits must be finite");
+				if (params.TwistMin > params.TwistMax)
+					return fail("TwistMin is above TwistMax");
+				JPH::SwingTwistConstraintSettings settings;
+				settings.mSpace = space;
+				settings.mPosition1 = JPH::RVec3(pointA);
+				settings.mPosition2 = JPH::RVec3(pointB);
+				settings.mTwistAxis1 = axisA;
+				settings.mPlaneAxis1 = normalA;
+				settings.mTwistAxis2 = axisB;
+				settings.mPlaneAxis2 = normalB;
+				settings.mSwingType = JPH::ESwingType::Cone;
+				settings.mNormalHalfConeAngle = std::clamp(params.SwingLimitY, 0.0f, JPH::JPH_PI);
+				settings.mPlaneHalfConeAngle = std::clamp(params.SwingLimitZ, 0.0f, JPH::JPH_PI);
+				settings.mTwistMinAngle = std::clamp(params.TwistMin, -JPH::JPH_PI, JPH::JPH_PI);
+				settings.mTwistMaxAngle = std::clamp(params.TwistMax, -JPH::JPH_PI, JPH::JPH_PI);
+				create(settings);
+				break;
+			}
+			case ConstraintType3D::Distance:
+			{
+				if (!std::isfinite(params.MinLimit) || !std::isfinite(params.MaxLimit))
+					return fail("distance limits must be finite");
+				if (!(params.MinLimit >= 0.0f) || !(params.MaxLimit >= 0.0f))
+					return fail("distance limits may not be negative");
+				if (params.MinLimit > params.MaxLimit)
+					return fail("distance MinLimit is above MaxLimit");
+				JPH::DistanceConstraintSettings settings;
+				settings.mSpace = space;
+				settings.mPoint1 = JPH::RVec3(pointA);
+				settings.mPoint2 = JPH::RVec3(pointB);
+				settings.mMinDistance = params.MinLimit;
+				settings.mMaxDistance = params.MaxLimit;
+				create(settings);
+				break;
+			}
+			case ConstraintType3D::Slider:
+			{
+				if (!std::isfinite(params.MinLimit) || !std::isfinite(params.MaxLimit))
+					return fail("slider limits must be finite");
+				if (params.MinLimit < params.MaxLimit && (params.MinLimit > 0.0f || params.MaxLimit < 0.0f))
+					return fail("slider limits must satisfy MinLimit <= 0 <= MaxLimit");
+				JPH::SliderConstraintSettings settings;
+				settings.mSpace = space;
+				settings.mPoint1 = JPH::RVec3(pointA);
+				settings.mPoint2 = JPH::RVec3(pointB);
+				settings.mSliderAxis1 = axisA;
+				settings.mNormalAxis1 = normalA;
+				settings.mSliderAxis2 = axisB;
+				settings.mNormalAxis2 = normalB;
+				if (params.MinLimit < params.MaxLimit)
+				{
+					settings.mLimitsMin = params.MinLimit;
+					settings.mLimitsMax = params.MaxLimit;
+				}
+				create(settings);
+				break;
+			}
+		}
+
+		if (!constraint)
+			return fail("the physics engine rejected the constraint");
+
+		data.PhysicsSystem.AddConstraint(constraint.GetPtr());
+		bodyInterface.ActivateBody(idA);
+		if (!pinned)
+			bodyInterface.ActivateBody(idB);
+
+		const ConstraintId3D id = data.NextConstraintId++;
+		Internal::JoltPhysics3DData::ConstraintRecord record;
+		record.Constraint = constraint;
+		record.Type = params.Type;
+		record.BodyA = params.BodyA;
+		record.BodyB = params.BodyB;
+		record.LocalA = pointA;
+		record.LocalB = pointB;
+		record.UserData = params.UserData;
+		record.HingeAxisA = axisA;
+		if (!params.CollideConnected && !pinned)
+		{
+			AddPairIgnore(data, params.BodyA, params.BodyB);
+			record.IgnoresPair = true;
+		}
+		data.Constraints.emplace(id, std::move(record));
+
+		data.BodyConstraints[params.BodyA].push_back(id);
+		if (!pinned)
+			data.BodyConstraints[params.BodyB].push_back(id);
+		return id;
+	}
+
+	void JoltPhysics3D::DestroyConstraint(ConstraintId3D constraint)
+	{
+		if (m_Data)
+			DestroyConstraintInternal(*m_Data, constraint);
+	}
+
+	bool JoltPhysics3D::IsConstraintValid(ConstraintId3D constraint) const
+	{
+		return m_Data && m_Data->Constraints.contains(constraint);
+	}
+
+	void JoltPhysics3D::SetConstraintEnabled(ConstraintId3D constraint, bool enabled)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return;
+
+		it->second.Constraint->SetEnabled(enabled);
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		bodyInterface.ActivateBody(ToBodyId(it->second.BodyA));
+		if (it->second.BodyB != k_InvalidBody3D)
+			bodyInterface.ActivateBody(ToBodyId(it->second.BodyB));
+	}
+
+	bool JoltPhysics3D::IsConstraintEnabled(ConstraintId3D constraint) const
+	{
+		if (!m_Data)
+			return false;
+		auto it = m_Data->Constraints.find(constraint);
+		return it != m_Data->Constraints.end() && it->second.Constraint->GetEnabled();
+	}
+
+	PhysicsBodyId3D JoltPhysics3D::GetConstraintBody(ConstraintId3D constraint, int index) const
+	{
+		if (!m_Data)
+			return k_InvalidBody3D;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return k_InvalidBody3D;
+		return index == 0 ? it->second.BodyA : index == 1 ? it->second.BodyB : k_InvalidBody3D;
+	}
+
+	float JoltPhysics3D::GetConstraintValue(ConstraintId3D constraint) const
+	{
+		if (!m_Data)
+			return 0.0f;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return 0.0f;
+
+		const Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		switch (record.Type)
+		{
+			case ConstraintType3D::Hinge:
+				return static_cast<const JPH::HingeConstraint*>(record.Constraint.GetPtr())->GetCurrentAngle();
+			case ConstraintType3D::Slider:
+				return static_cast<const JPH::SliderConstraint*>(record.Constraint.GetPtr())->GetCurrentPosition();
+			case ConstraintType3D::Distance:
+			{
+				const JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+				const JPH::RVec3 a = bodyInterface.GetCenterOfMassTransform(ToBodyId(record.BodyA)) * JPH::RVec3(record.LocalA);
+				const JPH::RVec3 b = record.BodyB == k_InvalidBody3D
+					? JPH::RVec3(record.LocalB)
+					: bodyInterface.GetCenterOfMassTransform(ToBodyId(record.BodyB)) * JPH::RVec3(record.LocalB);
+				return static_cast<float>((b - a).Length());
+			}
+			default:
+				return 0.0f;
+		}
+	}
+
+	std::uint32_t JoltPhysics3D::GetConstraintUserData(ConstraintId3D constraint) const
+	{
+		if (!m_Data)
+			return 0;
+		auto it = m_Data->Constraints.find(constraint);
+		return it != m_Data->Constraints.end() ? it->second.UserData : 0;
+	}
+
+	void JoltPhysics3D::SetMotor(ConstraintId3D constraint, MotorAxis3D axis, MotorMode3D mode, const MotorParams3D& params)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return;
+		if (!IsMotorValue(params.Stiffness) || !IsMotorValue(params.Damping) || !IsMotorValue(params.MaxTorque))
+			return;
+		if (mode != MotorMode3D::Off && mode != MotorMode3D::Velocity && mode != MotorMode3D::Position)
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		if (!JointHasMotorAxis(record.Type, axis))
+		{
+			DE_CORE_WARN("Physics3D::SetMotor: the constraint has no such motor axis; ignored");
+			return;
+		}
+
+		MotorState& motor = record.Motors[static_cast<int>(axis)];
+		if (motor.Mode == mode && motor.Params == params)
+			return;
+
+		const bool wasActive = motor.Mode != MotorMode3D::Off;
+		motor.Mode = mode;
+		motor.Params = params;
+		ApplyMotors(record);
+		if (wasActive || mode != MotorMode3D::Off)
+			WakeConstraintBodies(m_Data->PhysicsSystem.GetBodyInterface(), record);
+	}
+
+	MotorParams3D JoltPhysics3D::GetMotorParams(ConstraintId3D constraint, MotorAxis3D axis) const
+	{
+		if (!m_Data)
+			return {};
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotorAxis(it->second.Type, axis))
+			return {};
+		return it->second.Motors[static_cast<int>(axis)].Params;
+	}
+
+	MotorMode3D JoltPhysics3D::GetMotorMode(ConstraintId3D constraint, MotorAxis3D axis) const
+	{
+		if (!m_Data)
+			return MotorMode3D::Off;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotorAxis(it->second.Type, axis))
+			return MotorMode3D::Off;
+		return it->second.Motors[static_cast<int>(axis)].Mode;
+	}
+
+	void JoltPhysics3D::SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotors(it->second.Type))
+			return;
+
+		const float lengthSquared = glm::dot(rotation, rotation);
+		if (!std::isfinite(lengthSquared) || !(lengthSquared > 1e-12f))
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		const glm::quat unit = rotation / std::sqrt(lengthSquared);
+		if (unit == record.TargetRotation)
+			return;
+
+		record.TargetRotation = unit;
+		ApplyMotors(record);
+		if (AnyMotorInMode(record, MotorMode3D::Position))
+			WakeConstraintBodies(m_Data->PhysicsSystem.GetBodyInterface(), record);
+	}
+
+	void JoltPhysics3D::SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotors(it->second.Type))
+			return;
+		if (!std::isfinite(angularVelocity.x) || !std::isfinite(angularVelocity.y) || !std::isfinite(angularVelocity.z))
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		if (angularVelocity == record.TargetVelocity)
+			return;
+
+		record.TargetVelocity = angularVelocity;
+		ApplyMotors(record);
+		if (AnyMotorInMode(record, MotorMode3D::Velocity))
+			WakeConstraintBodies(m_Data->PhysicsSystem.GetBodyInterface(), record);
+	}
+
+	float JoltPhysics3D::GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const
+	{
+		if (!m_Data || !(m_Data->LastDeltaTime > 0.0f))
+			return 0.0f;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotorAxis(it->second.Type, axis))
+			return 0.0f;
+
+		const Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		const MotorState& motor = record.Motors[static_cast<int>(axis)];
+		if (motor.Mode == MotorMode3D::Off || !(motor.Params.MaxTorque > 0.0f))
+			return 0.0f;
+
+		const JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		const bool awake = bodyInterface.IsActive(ToBodyId(record.BodyA))
+			|| (record.BodyB != k_InvalidBody3D && bodyInterface.IsActive(ToBodyId(record.BodyB)));
+		if (!awake)
+			return 0.0f;
+
+		float lambda = 0.0f;
+		if (record.Type == ConstraintType3D::Hinge)
+			lambda = static_cast<const JPH::HingeConstraint*>(record.Constraint.GetPtr())->GetTotalLambdaMotor();
+		else
+		{
+			const JPH::Vec3 total = static_cast<const JPH::SwingTwistConstraint*>(record.Constraint.GetPtr())->GetTotalLambdaMotor();
+			lambda = axis == MotorAxis3D::Twist ? total.GetX() : (std::max)(std::abs(total.GetY()), std::abs(total.GetZ()));
+		}
+		return std::abs(lambda) * static_cast<float>(m_Data->LastCollisionSteps) / m_Data->LastDeltaTime;
 	}
 
 	bool JoltPhysics3D::RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit, const QueryFilter3D& filter) const

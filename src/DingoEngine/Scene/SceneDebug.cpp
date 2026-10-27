@@ -18,8 +18,12 @@
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <typeinfo>
 
@@ -86,6 +90,20 @@ namespace Dingo
 				std::string EulerText(const glm::quat& q)
 				{
 					return Text(glm::degrees(glm::eulerAngles(q))) + " deg";
+				}
+
+				const char* ConstraintTypeName(ConstraintType3D type)
+				{
+					switch (type)
+					{
+						case ConstraintType3D::Fixed: return "Fixed";
+						case ConstraintType3D::Point: return "Point";
+						case ConstraintType3D::Hinge: return "Hinge";
+						case ConstraintType3D::SwingTwist: return "SwingTwist";
+						case ConstraintType3D::Distance: return "Distance";
+						case ConstraintType3D::Slider: return "Slider";
+					}
+					return "?";
 				}
 
 				const char* BodyTypeName(int type)
@@ -207,6 +225,7 @@ namespace Dingo
 						Set<CapsuleCollider3DComponent>(Component::CapsuleCollider3D);
 						Set<MeshCollider3DComponent>(Component::MeshCollider3D);
 						Set<CharacterController3DComponent>(Component::CharacterController3D);
+						Set<Constraint3DComponent>(Component::Constraint3D);
 						Set<AudioSourceComponent>(Component::AudioSource);
 						Set<AudioListenerComponent>(Component::AudioListener);
 					}
@@ -318,6 +337,7 @@ namespace Dingo
 					case Component::CapsuleCollider3D: return "CapsuleCollider3D";
 					case Component::MeshCollider3D: return "MeshCollider3D";
 					case Component::CharacterController3D: return "CharacterController3D";
+					case Component::Constraint3D: return "Constraint3D";
 					case Component::AudioSource: return "AudioSource";
 					case Component::AudioListener: return "AudioListener";
 					case Component::Script: return "Script";
@@ -463,6 +483,31 @@ namespace Dingo
 							stack.push_back({ *it, next.Depth + 1 });
 					}
 				}
+				return true;
+			}
+
+			bool WriteMotor(uint64_t sceneSerial, UUID id, const MotorView& motor)
+			{
+				std::lock_guard lock(ScenesMutex());
+				const LiveScene* live = FindScene(sceneSerial);
+				if (!live)
+					return false;
+
+				SceneData& data = *live->Data;
+				const auto found = data.EntityMap.find(id);
+				if (found == data.EntityMap.end() || !data.Registry.valid(found->second))
+					return false;
+				Constraint3DComponent* constraint = data.Registry.try_get<Constraint3DComponent>(found->second);
+				if (!constraint || (constraint->Type != ConstraintType3D::Hinge && constraint->Type != ConstraintType3D::SwingTwist))
+					return false;
+
+				constraint->MotorMode = motor.Mode;
+				constraint->Motor = motor.Motor;
+				constraint->TwistMotor = motor.TwistMotor;
+				const float axisLength = glm::length(constraint->AxisA);
+				const glm::vec3 axis = axisLength > 1e-6f ? constraint->AxisA / axisLength : glm::vec3(0.0f, 1.0f, 0.0f);
+				constraint->TargetRotation = glm::angleAxis(motor.TargetAngle, axis);
+				constraint->TargetAngularVelocity = axis * motor.TargetVelocity;
 				return true;
 			}
 
@@ -737,6 +782,8 @@ namespace Dingo
 					Add(section, "Sensor", Text(body->IsSensor));
 					Add(section, "Query layers", Hex(body->QueryLayers));
 					Add(section, "Interpolate", Text(body->Interpolate));
+					Add(section, "Collision group", std::to_string(body->CollisionGroup));
+					Add(section, "Collide within group", Text(body->CollideWithinGroup));
 				}
 
 				if (const BoxCollider3DComponent* box = registry.try_get<BoxCollider3DComponent>(handle))
@@ -776,6 +823,64 @@ namespace Dingo
 					Add(section, "Step height", Text(controller->StepHeight));
 					Add(section, "Max slope", Text(controller->MaxSlopeAngle) + " deg");
 					Add(section, "Collide with characters", Text(controller->CollideWithCharacters));
+				}
+
+				if (const Constraint3DComponent* constraint = registry.try_get<Constraint3DComponent>(handle))
+				{
+					Section& section = AddSection(out, "Constraint3D");
+					Add(section, "Type", ConstraintTypeName(constraint->Type));
+					const auto other = data.EntityMap.find(constraint->Other);
+					Add(section, "Other", !constraint->Other ? std::string("world")
+						: other != data.EntityMap.end() && registry.valid(other->second) ? EntityName(registry, other->second)
+						: std::format("missing {}", static_cast<uint64_t>(constraint->Other)));
+					Add(section, "Anchors", std::format("{} / {}", Text(constraint->AnchorA), Text(constraint->AnchorB)));
+					Add(section, "Axes", std::format("{} / {}", Text(constraint->AxisA), Text(constraint->AxisB)));
+					const ConstraintType3D type = constraint->Type;
+					if (type == ConstraintType3D::Hinge || type == ConstraintType3D::Slider || type == ConstraintType3D::Distance)
+						Add(section, "Limits", std::format("{:.3f} .. {:.3f}", constraint->MinLimit, constraint->MaxLimit));
+					if (type == ConstraintType3D::SwingTwist)
+					{
+						Add(section, "Swing Y / Z", std::format("{:.3f} / {:.3f}", constraint->SwingLimitY, constraint->SwingLimitZ));
+						Add(section, "Twist", std::format("{:.3f} .. {:.3f}", constraint->TwistMin, constraint->TwistMax));
+					}
+					Add(section, "Collide connected", Text(constraint->CollideConnected));
+
+					if (constraint->Type == ConstraintType3D::Hinge || constraint->Type == ConstraintType3D::SwingTwist)
+					{
+						MotorView& motor = out.Motor;
+						motor.Present = true;
+						motor.SwingTwist = constraint->Type == ConstraintType3D::SwingTwist;
+						motor.Mode = constraint->MotorMode;
+						motor.Motor = constraint->Motor;
+						motor.TwistMotor = constraint->TwistMotor;
+						const float axisLength = glm::length(constraint->AxisA);
+						motor.Axis = axisLength > 1e-6f ? constraint->AxisA / axisLength : glm::vec3(0.0f, 1.0f, 0.0f);
+						const glm::quat target = glm::normalize(constraint->TargetRotation);
+						const float sine = glm::dot(glm::vec3(target.x, target.y, target.z), motor.Axis);
+						motor.TargetAngle = 2.0f * std::atan2(sine, target.w);
+						if (motor.TargetAngle > glm::pi<float>())
+							motor.TargetAngle -= glm::two_pi<float>();
+						else if (motor.TargetAngle < -glm::pi<float>())
+							motor.TargetAngle += glm::two_pi<float>();
+						motor.TargetVelocity = glm::dot(constraint->TargetAngularVelocity, motor.Axis);
+
+						const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle);
+						const Physics3D* physics = data.Physics.Get3D();
+						if (runtime && physics && physics->IsConstraintValid(runtime->Constraint))
+						{
+							motor.Live = true;
+							if (motor.SwingTwist)
+							{
+								motor.Torque = physics->GetMotorTorque(runtime->Constraint, MotorAxis3D::Swing);
+								motor.TwistTorque = physics->GetMotorTorque(runtime->Constraint, MotorAxis3D::Twist);
+							}
+							else
+							{
+								motor.Angle = physics->GetConstraintValue(runtime->Constraint);
+								motor.Torque = physics->GetMotorTorque(runtime->Constraint, MotorAxis3D::Hinge);
+							}
+						}
+					}
 				}
 
 				if (const AudioSourceComponent* source = registry.try_get<AudioSourceComponent>(handle))
@@ -819,6 +924,25 @@ namespace Dingo
 						Add(section, "Position", Text(physics->GetPosition(runtime->Body)));
 						Add(section, "Linear velocity", Text(physics->GetLinearVelocity(runtime->Body)));
 						Add(section, "Angular velocity", Text(physics->GetAngularVelocity(runtime->Body)));
+					}
+				}
+
+				if (const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle))
+				{
+					Section& section = AddSection(out, "Constraint", true);
+					Add(section, "Constraint", runtime->Constraint == k_InvalidConstraint3D ? "none" : std::format("{:#x}", runtime->Constraint));
+					const Physics3D* physics = data.Physics.Get3D();
+					if (physics && physics->IsConstraintValid(runtime->Constraint))
+					{
+						const Constraint3DComponent* settings = registry.try_get<Constraint3DComponent>(handle);
+						if (settings)
+							Add(section, "Type", ConstraintTypeName(settings->Type));
+						Add(section, "Other", runtime->Other != entt::null && registry.valid(runtime->Other) ? EntityName(registry, runtime->Other) : std::string("world"));
+						Add(section, "Enabled", Text(physics->IsConstraintEnabled(runtime->Constraint)));
+						if (settings && settings->Type == ConstraintType3D::Hinge)
+							Add(section, "Value", Text(physics->GetConstraintValue(runtime->Constraint)) + " rad");
+						else if (settings && (settings->Type == ConstraintType3D::Slider || settings->Type == ConstraintType3D::Distance))
+							Add(section, "Value", Text(physics->GetConstraintValue(runtime->Constraint)) + " m");
 					}
 				}
 

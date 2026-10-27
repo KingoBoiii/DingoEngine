@@ -36,6 +36,9 @@ namespace Dingo
 	/// The "no body" handle, 0xFFFFFFFF. Not 0: 0 is a valid body.
 	inline constexpr PhysicsBodyId3D k_InvalidBody3D = 0xFFFFFFFFu;
 
+	/// The collision group of a body that is in none (Physics3D::SetCollisionGroup).
+	inline constexpr std::uint32_t k_NoCollisionGroup = 0;
+
 	/// Describes a rigid body to create. Box uses HalfExtents; Sphere uses Radius;
 	/// Capsule uses Radius plus HalfHeight (half the length of the cylinder section
 	/// between the two hemispherical caps - the total capsule height is
@@ -89,10 +92,107 @@ namespace Dingo
 		/// Free for the caller (Physics3D::GetUserData). A Scene keeps its entity here.
 		std::uint32_t UserData = 0;
 
+		/// The collision group the body starts in (Physics3D::SetCollisionGroup); k_NoCollisionGroup is none.
+		std::uint32_t CollisionGroup = k_NoCollisionGroup;
+		/// Whether the body collides with others of its group that also set this (Physics3D::SetCollisionGroup).
+		bool CollideWithinGroup = false;
+
 		/// A Static box at the origin with default material.
 		RigidBodyParams3D() = default;
 		/// Sets the body type and collider shape; everything else keeps its default.
 		RigidBodyParams3D(BodyType3D type, ColliderShape3D shape) : Type(type), Shape(shape) {}
+	};
+
+	/// Opaque handle to a constraint (joint) inside a Physics3D world. Never reused within a world, so a
+	/// handle to a destroyed constraint stays invalid. k_InvalidConstraint3D is "none" (not 0).
+	using ConstraintId3D = std::uint32_t;
+	/// The "no constraint" handle, 0xFFFFFFFF. Not 0: 0 is a valid constraint.
+	inline constexpr ConstraintId3D k_InvalidConstraint3D = 0xFFFFFFFFu;
+
+	/// The kind of joint a ConstraintParams3D builds; the params say which fields each one reads.
+	enum class ConstraintType3D
+	{
+		Fixed,      ///< Welds the two anchors and orientations together; no relative motion.
+		Point,      ///< Joins the two anchors; the bodies rotate freely about it (ball and socket).
+		Hinge,      ///< Rotation about one axis only, optionally limited to MinLimit..MaxLimit radians.
+		SwingTwist, ///< A ball joint limited to a cone (SwingLimitY, SwingLimitZ) and a twist range (TwistMin..TwistMax).
+		Distance,   ///< Keeps the two anchors between MinLimit and MaxLimit metres apart; Min == Max is a rigid rod.
+		Slider,     ///< Translation along one axis only, optionally limited to MinLimit..MaxLimit metres.
+	};
+
+	/// Describes a constraint to create (Physics3D::CreateConstraint). Anchors and axes are in each body's
+	/// local space; with BodyB invalid, BodyA is pinned to the world and AnchorB, AxisB and NormalAxisB are
+	/// world values. Fields a type does not read are ignored. Axes need not be normalised, but an axis the
+	/// type reads may not be zero, and NormalAxis may not be parallel to Axis.
+	struct ConstraintParams3D
+	{
+		ConstraintType3D Type = ConstraintType3D::Fixed; ///< Which joint to build.
+
+		/// The first body. Required; it may not be Static when BodyB is invalid or Static.
+		PhysicsBodyId3D BodyA = k_InvalidBody3D;
+		/// The second body, or k_InvalidBody3D to pin BodyA to the world.
+		PhysicsBodyId3D BodyB = k_InvalidBody3D;
+
+		glm::vec3 AnchorA{ 0.0f }; ///< The joint point in BodyA's local space (Distance, Fixed, Point, Hinge, SwingTwist, Slider).
+		glm::vec3 AnchorB{ 0.0f }; ///< The joint point in BodyB's local space, or a world point when BodyB is invalid.
+
+		/// Hinge axis, SwingTwist twist axis or Slider axis in BodyA's local space; Fixed uses it as its Y axis.
+		glm::vec3 AxisA{ 0.0f, 1.0f, 0.0f };
+		/// The same axis in BodyB's local space, or in world space when BodyB is invalid.
+		glm::vec3 AxisB{ 0.0f, 1.0f, 0.0f };
+		/// A direction perpendicular to AxisA in BodyA's local space (Fixed, Hinge, SwingTwist plane axis, Slider); made perpendicular for you.
+		glm::vec3 NormalAxisA{ 1.0f, 0.0f, 0.0f };
+		/// The same direction in BodyB's local space, or in world space when BodyB is invalid.
+		glm::vec3 NormalAxisB{ 1.0f, 0.0f, 0.0f };
+
+		/// Lower limit: Hinge radians in [-pi, 0], Slider and Distance metres. For Hinge and Slider, MinLimit >= MaxLimit
+		/// means unlimited. For Distance, Min == Max is a rigid rod, Min < Max a rope that may slack and stretch within
+		/// the range, and Min > Max or a negative value fails.
+		float MinLimit = 0.0f;
+		float MaxLimit = 0.0f; ///< Upper limit, see MinLimit; Hinge radians in [0, pi].
+		/// SwingTwist: the half cone angle in radians, in [0, pi], of the swing about the plane axis (NormalAxis).
+		float SwingLimitY = 0.0f;
+		float SwingLimitZ = 0.0f; ///< SwingTwist: the half cone angle in radians, in [0, pi], of the swing about the axis perpendicular to both.
+		float TwistMin = 0.0f;    ///< SwingTwist: the lowest twist about the twist axis in radians, in [-pi, pi].
+		float TwistMax = 0.0f;    ///< SwingTwist: the highest twist, in [TwistMin, pi].
+
+		/// False (the default) stops the two bodies colliding while the constraint exists, like
+		/// Physics3D::IgnoreCollision; true lets them collide.
+		bool CollideConnected = false;
+		/// Free for the caller (Physics3D::GetConstraintUserData).
+		std::uint32_t UserData = 0;
+
+		/// A Fixed constraint with no bodies; CreateConstraint fails until BodyA is set.
+		ConstraintParams3D() = default;
+		/// Sets the type and the two bodies (b invalid pins a to the world); everything else keeps its default.
+		ConstraintParams3D(ConstraintType3D type, PhysicsBodyId3D a, PhysicsBodyId3D b) : Type(type), BodyA(a), BodyB(b) {}
+	};
+
+	/// Which rotation axis of a constraint a motor drives (Physics3D::SetMotor).
+	enum class MotorAxis3D
+	{
+		Hinge, ///< The one axis of a Hinge.
+		Swing, ///< Both cone axes of a SwingTwist, driven together.
+		Twist, ///< The twist axis of a SwingTwist.
+	};
+
+	/// How a motor drives its axis.
+	enum class MotorMode3D
+	{
+		Off,      ///< No drive: the joint is passive.
+		Velocity, ///< Drives the relative angular velocity toward the target velocity, within MaxTorque.
+		Position, ///< Drives the relative rotation toward the target rotation like a spring, within MaxTorque.
+	};
+
+	/// The strength of one motor (Physics3D::SetMotor). A negative or NaN field makes SetMotor ignore the call.
+	struct MotorParams3D
+	{
+		float Stiffness = 0.0f; ///< Position mode spring constant, N*m per radian of error.
+		float Damping = 0.0f;   ///< N*m per rad/s of velocity error; in Velocity mode above 0 the drive is a damper toward the target velocity.
+		float MaxTorque = 0.0f; ///< Cap on the torque in N*m; 0 turns the motor off whatever the mode.
+
+		/// Compares all three fields.
+		bool operator==(const MotorParams3D&) const = default;
 	};
 
 	/// A single hit from a Physics3D scene query (ray cast / shape cast). Body is the

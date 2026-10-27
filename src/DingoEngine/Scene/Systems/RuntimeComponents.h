@@ -14,6 +14,7 @@
 #include "DingoEngine/Graphics/Animator.h"
 #include "DingoEngine/Graphics/Particles.h"
 
+#include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -41,6 +42,13 @@ namespace Dingo
 		{
 			PhysicsBodyId3D Body = k_InvalidBody3D;
 			BodyType3D Type = BodyType3D::Static;
+		};
+
+		// The Constraint3DComponent's built joint; Other is the entity it joins to, null for the world.
+		struct Constraint3DRuntime
+		{
+			ConstraintId3D Constraint = k_InvalidConstraint3D;
+			entt::entity Other = entt::null;
 		};
 
 		// Slot in PhysicsSync's controller store.
