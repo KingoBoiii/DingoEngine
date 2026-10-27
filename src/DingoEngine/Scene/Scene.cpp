@@ -65,7 +65,7 @@ namespace Dingo
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
 		Internal::AudioSync::Connect(m_Data->Registry);
-		m_Data->Physics.Connect(m_Data->Registry);
+		m_Data->Physics.Connect(m_Data->Registry, m_Data->EntityMap);
 	}
 
 	Scene::~Scene()
@@ -123,7 +123,7 @@ namespace Dingo
 		std::vector<std::pair<UUID, UUID>> copies;
 		Entity clone = DuplicateSubtree(source, source.GetParent(), copies);
 
-		// A copied ParticleEventComponent still names the source's emitters; one inside the copied
+		// A copied ParticleEventComponent still names the source's emitters, and a Constraint3DComponent its source's other body; one inside the copied
 		// subtree is the clone's own counterpart now. Bindings to emitters outside it stay.
 		std::unordered_map<UUID, UUID> remap(copies.begin(), copies.end());
 		entt::registry& registry = m_Data->Registry;
@@ -140,6 +140,12 @@ namespace Dingo
 					if (target != remap.end())
 						binding.Emitter = target->second;
 				}
+			}
+			if (Constraint3DComponent* constraint = registry.try_get<Constraint3DComponent>(it->second))
+			{
+				const auto target = remap.find(constraint->Other);
+				if (target != remap.end())
+					constraint->Other = target->second;
 			}
 		}
 		return clone;
@@ -191,6 +197,7 @@ namespace Dingo
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<CapsuleCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<MeshCollider3DComponent>(registry, dst, src);
+		CopyComponentIfExists<Constraint3DComponent>(registry, dst, src);
 		CopyComponentIfExists<CharacterController3DComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);

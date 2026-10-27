@@ -75,6 +75,8 @@ namespace Dingo
 
 				for (entt::entity handle : cc3dView)
 					CreateController(registry, handle, &m_Memo);
+
+				SyncConstraints(registry);
 			}
 		}
 
@@ -92,6 +94,9 @@ namespace Dingo
 				// Character controllers hold the world, so tear them down BEFORE the Physics3D.
 				m_Controllers.clear();
 				registry.clear<CharacterController3DRuntime>();
+				registry.clear<Constraint3DRuntime>();
+				m_ConstraintReported.clear();
+				m_ConstraintRejected.clear();
 
 				m_Physics3D->Shutdown(); // destroys all 3D bodies
 				m_Physics3D.reset();
@@ -148,6 +153,7 @@ namespace Dingo
 			// k_MaxStepTime, so a stall never stretches a step past 1/60 s.
 			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
 
+			SyncConstraints(registry);
 			SyncAncestorFilters(registry);
 			DriveKinematicChildren(registry, deltaTime);
 			m_Physics3D->Step(deltaTime, collisionSteps);
@@ -197,6 +203,109 @@ namespace Dingo
 			}
 
 			WriteBackChildren(registry);
+		}
+
+		void PhysicsSync::SyncConstraints(entt::registry& registry)
+		{
+			if (!m_Physics3D || !m_Physics3D->IsValid())
+				return;
+
+			m_ConstraintScratch.clear();
+			auto built = registry.view<Constraint3DRuntime>();
+			for (entt::entity handle : built)
+			{
+				if (!m_Physics3D->IsConstraintValid(built.get<Constraint3DRuntime>(handle).Constraint))
+					m_ConstraintScratch.push_back(handle);
+			}
+			for (entt::entity handle : m_ConstraintScratch)
+				registry.remove<Constraint3DRuntime>(handle);
+
+			m_ConstraintScratch.clear();
+			auto pending = registry.view<Constraint3DComponent>(entt::exclude<Constraint3DRuntime, InactiveComponent>);
+			for (entt::entity handle : pending)
+				m_ConstraintScratch.push_back(handle);
+			for (entt::entity handle : m_ConstraintScratch)
+				BuildConstraint(registry, handle);
+		}
+
+		void PhysicsSync::BuildConstraint(entt::registry& registry, entt::entity handle)
+		{
+			if (m_ConstraintRejected.contains(handle))
+				return;
+
+			const std::string name = registry.all_of<TagComponent>(handle) ? registry.get<TagComponent>(handle).Tag : std::string();
+			auto reportOnce = [&](const char* reason)
+			{
+				if (m_ConstraintReported.insert(handle).second)
+					DE_CORE_WARN("Constraint3DComponent on '{}': {}; no constraint built", name, reason);
+			};
+
+			const RigidBody3DRuntime* own = registry.try_get<RigidBody3DRuntime>(handle);
+			if (!own)
+			{
+				if (!registry.all_of<RigidBody3DComponent>(handle))
+					reportOnce("the entity has no RigidBody3DComponent");
+				return;
+			}
+
+			const Constraint3DComponent& settings = registry.get<Constraint3DComponent>(handle);
+			entt::entity other = entt::null;
+			PhysicsBodyId3D otherBody = k_InvalidBody3D;
+			if (settings.Other)
+			{
+				if (m_EntityMap)
+				{
+					const auto found = m_EntityMap->find(settings.Other);
+					if (found != m_EntityMap->end() && registry.valid(found->second))
+						other = found->second;
+				}
+				if (other == entt::null)
+				{
+					reportOnce("Other names no entity");
+					return;
+				}
+				if (!registry.all_of<RigidBody3DComponent>(other))
+				{
+					reportOnce("Other has no RigidBody3DComponent");
+					return;
+				}
+
+				const RigidBody3DRuntime* otherRuntime = registry.try_get<RigidBody3DRuntime>(other);
+				if (!otherRuntime)
+					return;
+				otherBody = otherRuntime->Body;
+			}
+
+			glm::vec3 position, scale(1.0f);
+			glm::quat rotation;
+			if (const Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle))
+				HierarchySystem::WorldPose(registry, handle, *transform, position, rotation, scale);
+
+			ConstraintParams3D params(settings.Type, own->Body, otherBody);
+			params.AnchorA = scale * settings.AnchorA;
+			params.AnchorB = settings.AnchorB;
+			params.AxisA = settings.AxisA;
+			params.AxisB = settings.AxisB;
+			params.NormalAxisA = settings.NormalAxisA;
+			params.NormalAxisB = settings.NormalAxisB;
+			params.MinLimit = settings.MinLimit;
+			params.MaxLimit = settings.MaxLimit;
+			params.SwingLimitY = settings.SwingLimitY;
+			params.SwingLimitZ = settings.SwingLimitZ;
+			params.TwistMin = settings.TwistMin;
+			params.TwistMax = settings.TwistMax;
+			params.CollideConnected = settings.CollideConnected;
+			params.UserData = static_cast<std::uint32_t>(handle);
+
+			const ConstraintId3D constraint = m_Physics3D->CreateConstraint(params);
+			if (constraint == k_InvalidConstraint3D)
+			{
+				m_ConstraintRejected.insert(handle);
+				return;
+			}
+
+			m_ConstraintReported.erase(handle);
+			registry.emplace<Constraint3DRuntime>(handle) = { constraint, other };
 		}
 
 		void PhysicsSync::SyncAncestorFilters(entt::registry& registry)
@@ -487,16 +596,19 @@ namespace Dingo
 			CreateController(registry, handle);
 		}
 
-		void PhysicsSync::Connect(entt::registry& registry)
+		void PhysicsSync::Connect(entt::registry& registry, const std::unordered_map<UUID, entt::entity>& entityMap)
 		{
+			m_EntityMap = &entityMap;
 			// The hooks run while destroy and clear walk the registry's pools, where creating a
 			// runtime pool on first use would invalidate that walk.
 			registry.storage<RigidBody2DRuntime>();
 			registry.storage<RigidBody3DRuntime>();
 			registry.storage<CharacterController3DRuntime>();
+			registry.storage<Constraint3DRuntime>();
 			registry.on_destroy<RigidBody2DComponent>().connect<&PhysicsSync::DropBody2D>(*this);
 			registry.on_destroy<RigidBody3DComponent>().connect<&PhysicsSync::DropBody3D>(*this);
 			registry.on_destroy<CharacterController3DComponent>().connect<&PhysicsSync::DropController>(*this);
+			registry.on_destroy<Constraint3DComponent>().connect<&PhysicsSync::DropConstraint>(*this);
 		}
 
 		void PhysicsSync::DropBody2D(entt::registry& registry, entt::entity handle)
@@ -508,8 +620,21 @@ namespace Dingo
 			}
 		}
 
+		void PhysicsSync::DropConstraint(entt::registry& registry, entt::entity handle)
+		{
+			m_ConstraintReported.erase(handle);
+			m_ConstraintRejected.erase(handle);
+			if (const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle))
+			{
+				if (m_Physics3D)
+					m_Physics3D->DestroyConstraint(runtime->Constraint);
+				registry.remove<Constraint3DRuntime>(handle);
+			}
+		}
+
 		void PhysicsSync::DropBody3D(entt::registry& registry, entt::entity handle)
 		{
+			DropConstraint(registry, handle);
 			if (const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(handle))
 			{
 				m_Physics3D->DestroyBody(runtime->Body);
@@ -529,6 +654,7 @@ namespace Dingo
 
 		void PhysicsSync::DestroyBodiesForEntity(entt::registry& registry, entt::entity handle)
 		{
+			DropConstraint(registry, handle);
 			DropBody2D(registry, handle);
 			DropBody3D(registry, handle);
 			DropController(registry, handle);

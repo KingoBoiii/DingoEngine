@@ -200,6 +200,64 @@ destroyed at runtime all take effect on the next step; until the first step afte
 nothing is ignored yet. The scene owns these pairs: calling `IgnoreCollision` on one by hand is
 undone on the next step.
 
+## Constraints
+
+A constraint joins two bodies, or pins one body to the world, so they move together under a rule.
+`CreateConstraint` returns a `ConstraintId3D`, or `k_InvalidConstraint3D` (0xFFFFFFFF, not 0) with
+a warning in the log when the params are rejected:
+
+```cpp
+ConstraintParams3D door(ConstraintType3D::Hinge, doorId, k_InvalidBody3D); // B invalid: pinned to the world
+door.AnchorA = { -0.5f, 0.0f, 0.0f };    // in the door's local space
+door.AnchorB = { 10.0f, 1.0f, 4.0f };    // a world point, because B is invalid
+door.AxisA = door.AxisB = { 0.0f, 1.0f, 0.0f };
+door.MinLimit = -1.5f;                   // radians, in [-pi, 0]
+door.MaxLimit = 0.0f;                    // radians, in [0, pi]
+ConstraintId3D hinge = world->CreateConstraint(door);
+
+float angle = world->GetConstraintValue(hinge);  // Hinge angle, Slider displacement, Distance in metres
+world->SetConstraintEnabled(hinge, false);       // keeps the handle; IsConstraintEnabled reads it back
+world->DestroyConstraint(hinge);
+```
+
+| Type | Allows | Reads |
+|---|---|---|
+| `Fixed` | nothing: a weld | anchors, `AxisA/B` (Y) and `NormalAxisA/B` (X) |
+| `Point` | rotation about the anchor (ball and socket) | anchors |
+| `Hinge` | rotation about `AxisA/B` | anchors, axes, normals, `MinLimit`/`MaxLimit` |
+| `SwingTwist` | a cone of swing plus a twist range about `AxisA/B` | anchors, axes, normals, `SwingLimitY/Z`, `TwistMin/Max` |
+| `Distance` | any motion that keeps the anchors `MinLimit`..`MaxLimit` apart | anchors, `MinLimit`/`MaxLimit` |
+| `Slider` | translation along `AxisA/B` | anchors, axes, normals, `MinLimit`/`MaxLimit` |
+
+- Anchors and axes are in each body's local space; with `BodyB` invalid, `AnchorB`, `AxisB` and
+  `NormalAxisB` are world values. Axes need not be unit length but may not be zero, and a normal is
+  made perpendicular to its axis (it may not be parallel to it).
+- **Pin the moving body as `BodyA`.** A world pin needs `BodyA` to be Dynamic or Kinematic; a Static
+  `BodyA` pinned to the world fails. Two Static bodies fail too.
+- Hinge limits: `MinLimit >= MaxLimit` means unlimited (-pi..pi); otherwise `-pi <= Min <= 0 <= Max <= pi`.
+  Slider limits: `MinLimit >= MaxLimit` is unlimited; otherwise `Min <= 0 <= Max`. The zero point is
+  where the anchors and normals coincide at creation.
+- `Distance` differs from the others: `MinLimit == MaxLimit` is a rigid rod, `Min < Max` a rope that
+  may slack or stretch inside the range, and a negative value or `Min > Max` fails. Both zero is
+  therefore a rod of length zero, not "unlimited".
+- `SwingTwist` is a cone: `SwingLimitY` is the half angle of the swing about `NormalAxis` and
+  `SwingLimitZ` the half angle about the third axis (both in [0, pi]); `TwistMin`..`TwistMax` is the
+  twist about the axis in [-pi, pi], and Min > Max fails.
+- `GetConstraintValue` is the quantity the limits constrain. For a `Slider` or `Hinge` it is the
+  position or angle of `BodyB`'s anchor relative to `BodyA`'s, so with a world pin and a moving `BodyA`
+  its sign is the opposite of `BodyA`'s own motion. `Fixed`, `Point` and `SwingTwist` return 0.
+- `CollideConnected = false` (the default) makes the two bodies ignore each other's contacts. It
+  shares the pair with `IgnoreCollision`: the pair is ignored while either the user or any constraint
+  asks for it, and `IgnoreCollision(a, b, false)` does not withdraw a constraint's ignore. A disabled
+  constraint keeps its ignore; destroying it releases it.
+- Only that pair is affected, and queries still report both bodies.
+- Destroying either body destroys its constraints. The handle never comes back, and every call
+  with a stale or none handle is a no-op (the getters return false, none or 0).
+- Creating or changing a constraint wakes both bodies. `Shutdown` removes constraints before bodies.
+
+In a `Scene`, a `Constraint3DComponent` on the entity that is `BodyA` builds the constraint; see
+[Scenes & ECS](scenes-and-ecs.md).
+
 ## Sensors, query filters and body lookup
 
 A **sensor** is a trigger volume: `RigidBodyParams3D::IsSensor` (or `RigidBody3DComponent::IsSensor`).
@@ -263,6 +321,8 @@ worlds, so it is initialised with the first world and torn down with the last.
   driving this world through the ECS (the player, enemies, and walls are `RigidBody3D` entities).
 - The test app's **Mesh Collider Test** (`test/`, run with `--test=collider`) — a triangle-mesh
   terrain bowl, a kinematic mesh lift, and convex-hull pebbles, with pass/fail checks.
+- The test app's **Constraint Test** (`--test=constraint`) — every joint type, limits,
+  collide-connected, destruction and rejected params, then the same through a `Scene`.
 - The test app's **Hierarchy Test** (`--test=hierarchy`) — bodies under parents, including the
   checks for the ancestor filter above.
 
@@ -279,5 +339,8 @@ worlds, so it is initialised with the first world and torn down with the last.
   `OnStop`/`OnStart`.
 - A collider is baked into its body when the body is built (`OnStart`, `CreateRigidBody`, or
   `SetActive(true)`); editing a component on a live body changes nothing until then.
+- A constraint is limited to what Jolt solves: a very stiff chain of light bodies against a heavy
+  one stretches, and a joint between bodies far from its anchors is violated until the solver
+  catches up. `Distance` with `Min == Max == 0` is a rod of length zero, not unlimited.
 - A Scene's kinematic-ancestor filter is recomputed every step, so a hand-made `IgnoreCollision` on
   such a pair is undone.

@@ -54,7 +54,7 @@ namespace Dingo
 				DirectionalLight, AmbientLight, PointLight, SpotLight, Fog,
 				RigidBody2D, BoxCollider2D, CircleCollider2D,
 				MeshRenderer, SkinnedMeshRenderer, Animator, ParticleEmitter, ParticleEvent,
-				RigidBody3D, BoxCollider3D, SphereCollider3D, CapsuleCollider3D, MeshCollider3D, CharacterController3D,
+				RigidBody3D, BoxCollider3D, SphereCollider3D, CapsuleCollider3D, MeshCollider3D, CharacterController3D, Constraint3D,
 				AudioSource, AudioListener,
 				Script,
 				Count

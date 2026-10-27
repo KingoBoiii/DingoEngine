@@ -137,10 +137,36 @@ namespace Dingo
 		/// is untouched, and scene queries still hit both. Symmetric, dropped when either body
 		/// is destroyed, and a change wakes both so it holds from the next Step. A Scene owns
 		/// the pairs between a kinematic child and its ancestors' bodies: it applies them on
-		/// every step and withdraws them when the child leaves. No-op on an invalid/stale handle.
+		/// every step and withdraws them when the child leaves. A pair a constraint ignores
+		/// (CollideConnected false) stays ignored until that constraint is destroyed, whatever
+		/// ignore says here. No-op on an invalid/stale handle.
 		virtual void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore = true) = 0;
 		/// True if contacts between the two bodies are currently ignored (see IgnoreCollision).
 		virtual bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const = 0;
+
+		// --- Constraints ------------------------------------------------------
+
+		/// Joins two bodies (or one body and the world) with a joint and wakes both. Returns
+		/// k_InvalidConstraint3D and logs an error for a stale or invalid BodyA, a stale BodyB, the
+		/// same body twice, a Static/Static pair (a world pin with a Static BodyA counts), a zero or
+		/// parallel axis the type reads, or limits the type rejects. Destroying either body destroys
+		/// the constraint first. Unless CollideConnected is set the pair stops colliding for as long as
+		/// the constraint exists, even while it is disabled.
+		virtual ConstraintId3D CreateConstraint(const ConstraintParams3D& params) = 0;
+		/// Removes the constraint and wakes its bodies. No-op on a stale or invalid handle.
+		virtual void DestroyConstraint(ConstraintId3D constraint) = 0;
+		/// True while the constraint exists: false once destroyed, once either of its bodies was destroyed, or for an invalid handle.
+		virtual bool IsConstraintValid(ConstraintId3D constraint) const = 0;
+		/// Switches the constraint off or on without destroying it, and wakes its bodies. No-op on a stale handle.
+		virtual void SetConstraintEnabled(ConstraintId3D constraint, bool enabled) = 0;
+		/// True if the constraint exists and is enabled.
+		virtual bool IsConstraintEnabled(ConstraintId3D constraint) const = 0;
+		/// The constraint's body: index 0 is BodyA, 1 is BodyB; k_InvalidBody3D for a world pin's second body, any other index or a stale handle.
+		virtual PhysicsBodyId3D GetConstraintBody(ConstraintId3D constraint, int index) const = 0;
+		/// The current hinge angle in radians, or the slider position or distance between the anchors in metres; 0 for other types and stale handles.
+		virtual float GetConstraintValue(ConstraintId3D constraint) const = 0;
+		/// The UserData the constraint was created with; 0 for a stale handle.
+		virtual std::uint32_t GetConstraintUserData(ConstraintId3D constraint) const = 0;
 
 		// --- Scene queries ----------------------------------------------------
 

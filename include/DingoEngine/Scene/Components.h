@@ -791,6 +791,46 @@ namespace Dingo
 			: Mesh(mesh), Convex(convex) {}
 	};
 
+	/// A joint between this entity's 3D body and another entity's (or the world), built when the Scene's
+	/// physics starts, once every body exists. Needs a RigidBody3DComponent here; Other must have one
+	/// too, or be null to pin this body to the world. An entity without a body, or an Other that names
+	/// no entity or one without a body, logs once and builds nothing. The constraint lives with this
+	/// entity's body: destroying either entity, or SetActive(false) on either, removes it, and
+	/// reactivating rebuilds it. See ConstraintParams3D for what each field means; the Scene fills in
+	/// the bodies. AnchorA is scaled by this entity's world scale like a collider, the axes are not.
+	/// With Other null, AnchorB, AxisB and NormalAxisB are world values, so the default pins the body's
+	/// AnchorA to the world origin. The first body of a world pin should be the moving one.
+	struct Constraint3DComponent
+	{
+		ConstraintType3D Type = ConstraintType3D::Fixed; ///< Which joint to build.
+		/// IDComponent::ID of the entity to join to; null (the default) pins to the world.
+		UUID Other;
+
+		glm::vec3 AnchorA{ 0.0f };         ///< Joint point in this entity's local space, scaled by its world scale.
+		glm::vec3 AnchorB{ 0.0f };         ///< Joint point in Other's local space, or a world point when Other is null.
+		glm::vec3 AxisA{ 0.0f, 1.0f, 0.0f };      ///< Hinge, twist or slider axis in this entity's local space.
+		glm::vec3 AxisB{ 0.0f, 1.0f, 0.0f };      ///< The same axis in Other's local space, or in world space.
+		glm::vec3 NormalAxisA{ 1.0f, 0.0f, 0.0f }; ///< A direction perpendicular to AxisA.
+		glm::vec3 NormalAxisB{ 1.0f, 0.0f, 0.0f }; ///< A direction perpendicular to AxisB.
+
+		float MinLimit = 0.0f;   ///< Hinge radians or Slider/Distance metres; see ConstraintParams3D::MinLimit.
+		float MaxLimit = 0.0f;   ///< Upper limit; see ConstraintParams3D::MinLimit.
+		float SwingLimitY = 0.0f; ///< SwingTwist half cone angle about the plane axis, radians.
+		float SwingLimitZ = 0.0f; ///< SwingTwist half cone angle about the other swing axis, radians.
+		float TwistMin = 0.0f;   ///< SwingTwist lowest twist, radians.
+		float TwistMax = 0.0f;   ///< SwingTwist highest twist, radians.
+
+		/// True lets the two bodies collide; false (the default) ignores their contacts.
+		bool CollideConnected = false;
+
+		/// A Fixed constraint to the world origin.
+		Constraint3DComponent() = default;
+		/// Copies all fields.
+		Constraint3DComponent(const Constraint3DComponent&) = default;
+		/// A constraint of the given type to `other` (null for the world).
+		Constraint3DComponent(ConstraintType3D type, UUID other = UUID()) : Type(type), Other(other) {}
+	};
+
 	/// A kinematic character controller for player/enemy movement, wrapping Jolt's
 	/// CharacterVirtual behind the Scene's Physics3D. The Scene creates the controller
 	/// at Scene::OnStart from the params below (positioned at the entity's Transform3D),

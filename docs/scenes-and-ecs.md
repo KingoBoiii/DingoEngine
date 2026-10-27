@@ -175,10 +175,20 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9), `float CullDistance` (v1.0). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
+| `Constraint3DComponent` | `ConstraintType3D Type`, `UUID Other` (null pins to the world), `AnchorA/B`, `AxisA/B`, `NormalAxisA/B`, `MinLimit`/`MaxLimit`, `SwingLimitY/Z`, `TwistMin/Max`, `bool CollideConnected` — joins this entity's body (`BodyA`) to `Other`'s, see [Constraints](physics-3d.md#constraints) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
 | `CapsuleCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `float HalfHeight` (fraction of `Scale.y`), `Friction`, `Restitution` |
 | `MeshCollider3DComponent` (v0.6.2) | `Mesh* Mesh` (not owned; null = the entity's `MeshRendererComponent::Mesh`), `bool Convex`, `Friction`, `Restitution` — scaled by the full `Scale`, see [Mesh colliders](physics-3d.md#mesh-colliders-v062) |
+
+> **Constraints in a scene.** The scene builds a `Constraint3DComponent` at `OnStart`, or on the next
+> physics step for one added later, once both entities have bodies. `AnchorA` is multiplied by the
+> entity's world scale; `AnchorB`, the axes and the normals are used as given (world values when
+> `Other` is null). `Other` is a `UUID` so a copy can follow it: `DuplicateEntity` remaps an `Other`
+> inside the copied subtree to the copy and leaves one outside it alone. The constraint goes away with
+> either entity, with the component, or while an entity is inactive (`SetActive(false)`), and is
+> rebuilt when both are active again. A missing or bodiless `Other` logs once and retries; params the
+> physics world rejects log once and are not retried until the component is re-added.
 
 > A 3D entity still receives the default 2D `TransformComponent` on creation; it simply goes
 > unused. The collider shape is **baked into the body at creation** (so a rigid-body entity
@@ -965,7 +975,7 @@ shown.
   through the hierarchy. The runtime state behind the settings components (the live 2D or 3D body
   with its position and velocity, the character controller and whether it is grounded, the playing sound, the
   bound animator and each layer's clip, the particle emitters, and the attached script's type and
-  whether it has started) follows in its own sections, marked *runtime, read-only*.
+  whether it has started, and a constraint's id, type, other entity, enabled flag and value) follows in its own sections, marked *runtime, read-only*.
 
 The selection is kept by entity UUID and a scene serial that is never reused: destroying the
 selected entity empties the inspector, and destroying the selected scene falls back to the first

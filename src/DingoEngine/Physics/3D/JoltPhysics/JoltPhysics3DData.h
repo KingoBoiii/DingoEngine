@@ -25,8 +25,16 @@
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/GroupFilter.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
+#include <Jolt/Physics/Constraints/TwoBodyConstraint.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/PointConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
+#include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/SliderConstraint.h>
 
 #include "DingoEngine/Core/CrashHandler.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -105,10 +113,17 @@ namespace Dingo::Internal
 
 	// The group filter of every body in an ignored pair, whose group id is its own body id. Jolt
 	// calls CanCollide from its job threads inside PhysicsSystem::Update, so the pairs may only
-	// change between steps.
+	// change between steps. A pair is ignored while the caller (IgnoreCollision) or any constraint
+	// asks for it; each source is withdrawn on its own.
 	class IgnoredPairFilter final : public JPH::GroupFilter
 	{
 	public:
+		struct PairSources
+		{
+			bool User = false;
+			std::uint32_t Constraints = 0;
+		};
+
 		virtual bool CanCollide(const JPH::CollisionGroup& inGroup1, const JPH::CollisionGroup& inGroup2) const override
 		{
 			if (inGroup1.GetGroupFilter() != inGroup2.GetGroupFilter())
@@ -117,8 +132,15 @@ namespace Dingo::Internal
 		}
 
 		bool Contains(std::uint32_t a, std::uint32_t b) const { return m_Pairs.contains(Key(a, b)); }
-		void Add(std::uint32_t a, std::uint32_t b) { m_Pairs.insert(Key(a, b)); }
-		void Remove(std::uint32_t a, std::uint32_t b) { m_Pairs.erase(Key(a, b)); }
+
+		const PairSources* Find(std::uint32_t a, std::uint32_t b) const
+		{
+			auto it = m_Pairs.find(Key(a, b));
+			return it != m_Pairs.end() ? &it->second : nullptr;
+		}
+
+		PairSources& Entry(std::uint32_t a, std::uint32_t b) { return m_Pairs[Key(a, b)]; }
+		void Erase(std::uint32_t a, std::uint32_t b) { m_Pairs.erase(Key(a, b)); }
 
 	private:
 		static std::uint64_t Key(std::uint32_t a, std::uint32_t b)
@@ -126,7 +148,7 @@ namespace Dingo::Internal
 			return a < b ? (static_cast<std::uint64_t>(a) << 32) | b : (static_cast<std::uint64_t>(b) << 32) | a;
 		}
 
-		std::unordered_set<std::uint64_t> m_Pairs;
+		std::unordered_map<std::uint64_t, PairSources> m_Pairs;
 	};
 
 	class ObjectVsBroadPhaseLayerFilterImpl : public JPH::ObjectVsBroadPhaseLayerFilter
@@ -207,6 +229,25 @@ namespace Dingo::Internal
 		// partners; a body leaves the group with its last one.
 		JPH::Ref<IgnoredPairFilter> PairFilter = new IgnoredPairFilter();
 		std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> IgnoredPartners;
+
+		// One per live constraint. A Jolt constraint holds raw Body pointers, so every one of a body's
+		// is removed (BodyConstraints, in creation order) before the body is. Ids are never reused, so
+		// a stale one simply misses the map.
+		struct ConstraintRecord
+		{
+			JPH::Ref<JPH::TwoBodyConstraint> Constraint;
+			ConstraintType3D Type = ConstraintType3D::Fixed;
+			PhysicsBodyId3D BodyA = k_InvalidBody3D;
+			PhysicsBodyId3D BodyB = k_InvalidBody3D;
+			JPH::Vec3 LocalA = JPH::Vec3::sZero();
+			JPH::Vec3 LocalB = JPH::Vec3::sZero();
+			bool IgnoresPair = false;
+			std::uint32_t UserData = 0;
+		};
+
+		std::unordered_map<ConstraintId3D, ConstraintRecord> Constraints;
+		std::unordered_map<PhysicsBodyId3D, std::vector<ConstraintId3D>> BodyConstraints;
+		ConstraintId3D NextConstraintId = 0;
 
 		// The controllers that block one another (CharacterControllerParams3D::CollideWithCharacters).
 		// Each removes itself when destroyed, which the world outlives.

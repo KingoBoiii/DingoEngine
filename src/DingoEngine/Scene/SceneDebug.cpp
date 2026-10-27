@@ -88,6 +88,20 @@ namespace Dingo
 					return Text(glm::degrees(glm::eulerAngles(q))) + " deg";
 				}
 
+				const char* ConstraintTypeName(ConstraintType3D type)
+				{
+					switch (type)
+					{
+						case ConstraintType3D::Fixed: return "Fixed";
+						case ConstraintType3D::Point: return "Point";
+						case ConstraintType3D::Hinge: return "Hinge";
+						case ConstraintType3D::SwingTwist: return "SwingTwist";
+						case ConstraintType3D::Distance: return "Distance";
+						case ConstraintType3D::Slider: return "Slider";
+					}
+					return "?";
+				}
+
 				const char* BodyTypeName(int type)
 				{
 					switch (type)
@@ -207,6 +221,7 @@ namespace Dingo
 						Set<CapsuleCollider3DComponent>(Component::CapsuleCollider3D);
 						Set<MeshCollider3DComponent>(Component::MeshCollider3D);
 						Set<CharacterController3DComponent>(Component::CharacterController3D);
+						Set<Constraint3DComponent>(Component::Constraint3D);
 						Set<AudioSourceComponent>(Component::AudioSource);
 						Set<AudioListenerComponent>(Component::AudioListener);
 					}
@@ -318,6 +333,7 @@ namespace Dingo
 					case Component::CapsuleCollider3D: return "CapsuleCollider3D";
 					case Component::MeshCollider3D: return "MeshCollider3D";
 					case Component::CharacterController3D: return "CharacterController3D";
+					case Component::Constraint3D: return "Constraint3D";
 					case Component::AudioSource: return "AudioSource";
 					case Component::AudioListener: return "AudioListener";
 					case Component::Script: return "Script";
@@ -769,6 +785,22 @@ namespace Dingo
 					Add(section, "Collide with characters", Text(controller->CollideWithCharacters));
 				}
 
+				if (const Constraint3DComponent* constraint = registry.try_get<Constraint3DComponent>(handle))
+				{
+					Section& section = AddSection(out, "Constraint3D");
+					Add(section, "Type", ConstraintTypeName(constraint->Type));
+					const auto other = data.EntityMap.find(constraint->Other);
+					Add(section, "Other", !constraint->Other ? std::string("world")
+						: other != data.EntityMap.end() && registry.valid(other->second) ? EntityName(registry, other->second)
+						: std::format("missing {}", static_cast<uint64_t>(constraint->Other)));
+					Add(section, "Anchors", std::format("{} / {}", Text(constraint->AnchorA), Text(constraint->AnchorB)));
+					Add(section, "Axes", std::format("{} / {}", Text(constraint->AxisA), Text(constraint->AxisB)));
+					Add(section, "Limits", std::format("{:.3f} .. {:.3f}", constraint->MinLimit, constraint->MaxLimit));
+					Add(section, "Swing Y / Z", std::format("{:.3f} / {:.3f}", constraint->SwingLimitY, constraint->SwingLimitZ));
+					Add(section, "Twist", std::format("{:.3f} .. {:.3f}", constraint->TwistMin, constraint->TwistMax));
+					Add(section, "Collide connected", Text(constraint->CollideConnected));
+				}
+
 				if (const AudioSourceComponent* source = registry.try_get<AudioSourceComponent>(handle))
 				{
 					Section& section = AddSection(out, "AudioSource");
@@ -810,6 +842,22 @@ namespace Dingo
 						Add(section, "Position", Text(physics->GetPosition(runtime->Body)));
 						Add(section, "Linear velocity", Text(physics->GetLinearVelocity(runtime->Body)));
 						Add(section, "Angular velocity", Text(physics->GetAngularVelocity(runtime->Body)));
+					}
+				}
+
+				if (const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle))
+				{
+					Section& section = AddSection(out, "Constraint", true);
+					Add(section, "Constraint", runtime->Constraint == k_InvalidConstraint3D ? "none" : std::format("{:#x}", runtime->Constraint));
+					const Physics3D* physics = data.Physics.Get3D();
+					if (physics && physics->IsConstraintValid(runtime->Constraint))
+					{
+						const Constraint3DComponent* settings = registry.try_get<Constraint3DComponent>(handle);
+						if (settings)
+							Add(section, "Type", ConstraintTypeName(settings->Type));
+						Add(section, "Other", runtime->Other != entt::null && registry.valid(runtime->Other) ? EntityName(registry, runtime->Other) : std::string("world"));
+						Add(section, "Enabled", Text(physics->IsConstraintEnabled(runtime->Constraint)));
+						Add(section, "Value", Text(physics->GetConstraintValue(runtime->Constraint)));
 					}
 				}
 
