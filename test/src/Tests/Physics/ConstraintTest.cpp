@@ -777,6 +777,267 @@ namespace Dingo
 		Check(angle() < -0.3f, "scene: switching the component's motor Off lets gravity take the arm");
 	}
 
+	void ConstraintTest::RunGroupChecks()
+	{
+		auto overlapping = [](Physics3D& world, std::uint32_t groupA, bool withinA, std::uint32_t groupB, bool withinB)
+		{
+			const PhysicsBodyId3D a = Box(world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			world.SetCollisionGroup(a, groupA, withinA);
+			world.SetCollisionGroup(b, groupB, withinB);
+			Run(world, 1.0f);
+			return Distance(world.GetPosition(a), world.GetPosition(b));
+		};
+
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			Check(overlapping(*world, 5, false, 5, false) < 0.6f, "group: bodies in the same group pass through each other");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			Check(overlapping(*world, 5, false, 6, false) > 0.95f, "group: bodies in different groups collide");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			Check(overlapping(*world, 5, false, k_NoCollisionGroup, false) > 0.95f, "group: a grouped body collides with an ungrouped one");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			Check(overlapping(*world, 0xFFFFFFFFu, false, 0xFFFFFFFFu, false) < 0.6f, "group: any uint32 is a legal group");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			Check(overlapping(*world, 5, true, 5, true) > 0.95f, "group: bodies that both opt in collide within their group");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			Check(overlapping(*world, 5, true, 5, false) < 0.6f, "group: a one-sided opt-in still passes through");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			world->SetCollisionGroup(a, 7, true);
+			world->SetCollisionGroup(b, 7, true);
+			Check(world->GetCollisionGroup(a) == 7 && world->GetCollideWithinGroup(a) && world->GetCollisionGroup(b) == 7, "group: getters report the group and the opt-in");
+			world->SetCollisionGroup(a, k_NoCollisionGroup, true);
+			Check(world->GetCollisionGroup(a) == k_NoCollisionGroup && !world->GetCollideWithinGroup(a), "group: group 0 leaves the group and clears the opt-in");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			world->SetCollisionGroup(a, 4);
+			world->SetCollisionGroup(b, 4);
+			Run(*world, 0.5f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) < 0.6f, "group: the pair overlaps while grouped");
+			world->SetCollisionGroup(a, k_NoCollisionGroup);
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) > 0.95f, "group: a body moved to group 0 collides again from the next Step");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			std::vector<PhysicsBodyId3D> bodies;
+			for (int i = 0; i < 15; i++)
+				bodies.push_back(Box(*world, BodyType3D::Dynamic, { i * 3.0f, 0.0f, 0.0f }));
+			for (PhysicsBodyId3D body : bodies)
+				world->SetCollisionGroup(body, 9);
+			bool anyIgnored = false;
+			for (size_t i = 0; i < bodies.size(); i++)
+				for (size_t j = i + 1; j < bodies.size(); j++)
+					anyIgnored = anyIgnored || world->IsCollisionIgnored(bodies[i], bodies[j]);
+			Check(!anyIgnored, "group: 15 bodies in one group leave no IgnoreCollision entries");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			world->SetCollisionGroup(a, 3);
+			world->SetCollisionGroup(b, 3);
+			std::vector<PhysicsBodyId3D> hits;
+			world->OverlapSphere({ 0.25f, 0.0f, 0.0f }, 0.1f, hits);
+			const bool both = std::find(hits.begin(), hits.end(), a) != hits.end() && std::find(hits.begin(), hits.end(), b) != hits.end();
+			Check(both, "group: OverlapSphere still reports grouped bodies");
+			RayCastHit3D hit;
+			Check(world->RayCast(Ray({ -3.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }), 10.0f, hit) && hit.Body == a, "group: RayCast still hits a grouped body");
+			RayCastHit3D swept;
+			Check(world->ShapeCastSphere({ -3.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, 0.1f, 10.0f, swept) && swept.Body == a, "group: ShapeCastSphere still hits a grouped body");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			world->SetCollisionGroup(a, 2);
+			world->SetCollisionGroup(b, 2);
+			world->IgnoreCollision(a, b, true);
+			Check(world->IsCollisionIgnored(a, b), "group + ignore: the pair is ignored");
+			world->IgnoreCollision(a, b, false);
+			Check(!world->IsCollisionIgnored(a, b) && world->GetCollisionGroup(a) == 2 && world->GetCollisionGroup(b) == 2,
+				"group + ignore: the group survives the pair's removal");
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) < 0.6f, "group + ignore: the group still passes through after the pair is removed");
+			world->SetCollisionGroup(a, k_NoCollisionGroup);
+			world->SetCollisionGroup(b, k_NoCollisionGroup);
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) > 0.95f, "group + ignore: leaving the group collides again");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			world->SetCollisionGroup(a, 2);
+			world->SetCollisionGroup(b, 2);
+			world->IgnoreCollision(a, b, true);
+			world->SetCollisionGroup(a, k_NoCollisionGroup);
+			world->SetCollisionGroup(b, k_NoCollisionGroup);
+			Check(world->IsCollisionIgnored(a, b), "group + ignore: the pair survives leaving the group");
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) < 0.6f, "group + ignore: the pair still passes through after the group is removed");
+			world->IgnoreCollision(a, b, false);
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) > 0.95f, "group + ignore: removing the last mechanism collides again");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			const PhysicsBodyId3D c = Box(*world, BodyType3D::Dynamic, { 0.0f, 0.6f, 0.0f });
+			world->SetCollisionGroup(a, 8);
+			ConstraintParams3D params(ConstraintType3D::Distance, a, b);
+			params.MaxLimit = 5.0f;
+			const ConstraintId3D id = world->CreateConstraint(params);
+			Check(world->IsConstraintValid(id) && world->IsCollisionIgnored(a, b) && world->GetCollisionGroup(a) == 8,
+				"group: CollideConnected false still ignores the pair of a grouped body");
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(b)) < 0.6f, "group: a constraint's pass-through works on a grouped body");
+			Check(Distance(world->GetPosition(a), world->GetPosition(c)) > 0.95f, "group: a grouped body still collides with an ungrouped third body");
+			world->DestroyConstraint(id);
+			Check(world->GetCollisionGroup(a) == 8, "group: destroying the constraint keeps the group");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.5f, 0.0f, 0.0f });
+			const PhysicsBodyId3D c = Box(*world, BodyType3D::Dynamic, { 0.0f, 0.6f, 0.0f });
+			world->SetCollisionGroup(a, 1);
+			world->SetCollisionGroup(b, 1);
+			world->SetCollisionGroup(c, 1);
+			world->DestroyBody(c);
+			Check(world->GetCollisionGroup(c) == k_NoCollisionGroup && !world->GetCollideWithinGroup(c), "group: a destroyed body reports no group");
+			Run(*world, 0.5f);
+			Check(world->IsBodyValid(a) && world->IsBodyValid(b) && Distance(world->GetPosition(a), world->GetPosition(b)) < 0.6f, "group: destroying a grouped body leaves the others grouped");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			RigidBodyParams3D sensor(BodyType3D::Static, ColliderShape3D::Box);
+			sensor.HalfExtents = glm::vec3(2.0f);
+			sensor.IsSensor = true;
+			sensor.CollisionGroup = 6;
+			const PhysicsBodyId3D trigger = world->CreateBody(sensor);
+			const PhysicsBodyId3D inside = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			world->SetCollisionGroup(inside, 6);
+			Run(*world, 0.2f);
+			std::vector<PhysicsBodyId3D> found;
+			world->GetSensorOverlaps(trigger, found);
+			Check(std::find(found.begin(), found.end(), inside) != found.end(), "group: a sensor still reports an overlapping body of its group");
+		}
+		{
+			Mesh* floorMesh = Mesh::CreateBox();
+			for (const bool sameGroup : { true, false })
+			{
+				auto world = MakeWorld({ 0.0f, -9.81f, 0.0f });
+				RigidBodyParams3D floor(BodyType3D::Static, ColliderShape3D::Mesh);
+				floor.Mesh = floorMesh;
+				floor.MeshScale = { 10.0f, 1.0f, 10.0f };
+				floor.CollisionGroup = 12;
+				world->CreateBody(floor);
+				RigidBodyParams3D faller(BodyType3D::Dynamic, ColliderShape3D::Box);
+				faller.Position = { 0.0f, 3.0f, 0.0f };
+				faller.CollisionGroup = sameGroup ? 12 : 13;
+				const PhysicsBodyId3D body = world->CreateBody(faller);
+				Run(*world, 2.0f);
+				if (sameGroup)
+					Check(world->GetPosition(body).y < -2.0f, "group: a body falls through a mesh collider of its group");
+				else
+					Check(world->GetPosition(body).y > 0.5f, "group: a body in another group lands on a mesh collider");
+			}
+			delete floorMesh;
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			world->DestroyBody(a);
+			world->SetCollisionGroup(a, 3, true);
+			world->SetCollisionGroup(k_InvalidBody3D, 3);
+			Check(world->GetCollisionGroup(a) == k_NoCollisionGroup && !world->GetCollideWithinGroup(a), "group: a stale handle reports no group");
+			Check(world->GetCollisionGroup(k_InvalidBody3D) == k_NoCollisionGroup && !world->GetCollideWithinGroup(k_InvalidBody3D), "group: k_InvalidBody3D reports no group");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const std::uint32_t first = world->AllocateCollisionGroup();
+			const std::uint32_t second = world->AllocateCollisionGroup();
+			Check(first != k_NoCollisionGroup && second != k_NoCollisionGroup && first != second, "group: AllocateCollisionGroup returns distinct non-zero ids");
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Dynamic, glm::vec3(0.0f));
+			world->SetCollisionGroup(a, second + 5);
+			RigidBodyParams3D created(BodyType3D::Dynamic, ColliderShape3D::Box);
+			created.CollisionGroup = second + 20;
+			world->CreateBody(created);
+			bool unique = true;
+			for (int i = 0; i < 40; i++)
+			{
+				const std::uint32_t id = world->AllocateCollisionGroup();
+				unique = unique && id != first && id != second && id != second + 5 && id > second + 20;
+			}
+			Check(unique, "group: AllocateCollisionGroup skips ids already used by SetCollisionGroup and CreateBody");
+		}
+	}
+
+	void ConstraintTest::RunGroupSceneChecks()
+	{
+		Scene scene("Collision Group Scene Check");
+
+		auto Body = [&](const char* name, const glm::vec3& position, std::uint32_t group, bool within)
+		{
+			Entity entity = scene.CreateEntity(name);
+			entity.AddComponent<Transform3DComponent>(Transform3DComponent(position));
+			RigidBody3DComponent body(BodyType3D::Dynamic);
+			body.CollisionGroup = group;
+			body.CollideWithinGroup = within;
+			entity.AddComponent<RigidBody3DComponent>(body);
+			return entity;
+		};
+
+		Entity floor = scene.CreateEntity("Floor");
+		floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.5f, 0.0f }, { 40.0f, 1.0f, 40.0f }));
+		floor.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
+
+		Entity lower = Body("Lower", { 0.0f, 0.5f, 0.0f }, 21, false);
+		Entity upper = Body("Upper", { 0.0f, 2.0f, 0.0f }, 21, false);
+		Entity otherLower = Body("Other Lower", { 5.0f, 0.5f, 0.0f }, 22, false);
+		Entity otherUpper = Body("Other Upper", { 5.0f, 2.0f, 0.0f }, 23, false);
+		Entity optLower = Body("Opt Lower", { 10.0f, 0.5f, 0.0f }, 24, true);
+		Entity optUpper = Body("Opt Upper", { 10.0f, 2.0f, 0.0f }, 24, true);
+
+		scene.OnStart();
+		for (int i = 0; i < 120; i++)
+			scene.OnUpdate(1.0f / 60.0f);
+
+		const auto y = [](Entity entity) { return entity.GetComponent<Transform3DComponent>().Position.y; };
+		Check(y(upper) < 0.6f && std::abs(y(upper) - y(lower)) < 0.3f, "scene: entities in one group pass through each other");
+		Check(y(otherUpper) > y(otherLower) + 0.8f, "scene: entities in different groups stack");
+		Check(y(optUpper) > y(optLower) + 0.8f, "scene: entities that both opt in stack within their group");
+
+		Entity copy = scene.DuplicateEntity(lower);
+		Check(copy.IsValid() && copy.GetComponent<RigidBody3DComponent>().CollisionGroup == 21 && !copy.GetComponent<RigidBody3DComponent>().CollideWithinGroup,
+			"scene: a duplicate stays in the same group");
+
+		Entity late = Body("Late", { 0.0f, 4.0f, 0.0f }, 21, false);
+		scene.CreateRigidBody(late);
+		for (int i = 0; i < 120; i++)
+			scene.OnUpdate(1.0f / 60.0f);
+		Check(y(late) < 0.6f, "scene: a body created while running joins its group");
+	}
+
 	void ConstraintTest::Initialize()
 	{
 		m_Checks.clear();
@@ -787,6 +1048,8 @@ namespace Dingo
 		RunSceneChecks();
 		RunMotorChecks();
 		RunMotorSceneChecks();
+		RunGroupChecks();
+		RunGroupSceneChecks();
 
 		m_BoxMesh = Mesh::CreateBox();
 		m_Scene = new Scene("Constraint Test");

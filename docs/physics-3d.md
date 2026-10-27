@@ -200,6 +200,44 @@ destroyed at runtime all take effect on the next step; until the first step afte
 nothing is ignored yet. The scene owns these pairs: calling `IgnoreCollision` on one by hand is
 undone on the next step.
 
+## Collision groups
+
+Bodies in the same group pass through each other, without a pair per combination:
+
+```cpp
+const std::uint32_t crowd = world->AllocateCollisionGroup();   // an id nobody has used
+world->SetCollisionGroup(a, crowd);                            // a and b now pass through each other
+world->SetCollisionGroup(b, crowd);
+world->SetCollisionGroup(c, crowd, true);                      // opts in to colliding within the group
+world->SetCollisionGroup(a, k_NoCollisionGroup);               // out of the group: collides again
+
+RigidBodyParams3D params;
+params.CollisionGroup = crowd;                                 // or set it at creation
+params.CollideWithinGroup = false;
+```
+
+- Two bodies in the same non-zero group pass through each other unless **both** set
+  `collideWithinGroup`; a one-sided opt-in still passes through. Bodies in different groups, and
+  bodies in group 0 (`k_NoCollisionGroup`, the default), collide as usual. Group 0 takes a body out of
+  its group and clears its opt-in; it collides again from the next `Step`.
+- Any `uint32_t` is a group. `AllocateCollisionGroup()` returns an id that no body of this world has
+  used through `SetCollisionGroup` or `RigidBodyParams3D`, so it never repeats; it logs an error and
+  returns 0 if the ids run out.
+- A group stores nothing per pair: 15 bodies in one group have no `IgnoreCollision` entries
+  (`IsCollisionIgnored` stays false).
+- Only contacts are affected: `RayCast`, `ShapeCastSphere` and `OverlapSphere` still report grouped
+  bodies, and character controllers are unaffected. It works with sensors and mesh colliders.
+- It composes with `IgnoreCollision` and a constraint's `CollideConnected = false`: a pair is dropped
+  if either mechanism drops it, and removing one leaves the other in force.
+- `SetCollisionGroup` wakes the body; `GetCollisionGroup` and `GetCollideWithinGroup` return 0 and
+  false for an invalid or stale handle, and the setters do nothing on one. Change groups between
+  `Step`s.
+- In a `Scene`, `RigidBody3DComponent::CollisionGroup` and `CollideWithinGroup` are read when the body
+  is built. A duplicated entity copies them, so the duplicate stays in the same group (and passes
+  through its original).
+
+The test for this lives in the Constraint Test (`--test=constraint`, "Collision Group" checks).
+
 ## Constraints
 
 A constraint joins two bodies, or pins one body to the world, so they move together under a rule.
@@ -351,7 +389,8 @@ worlds, so it is initialised with the first world and torn down with the last.
 - The test app's **Mesh Collider Test** (`test/`, run with `--test=collider`) — a triangle-mesh
   terrain bowl, a kinematic mesh lift, and convex-hull pebbles, with pass/fail checks.
 - The test app's **Constraint Test** (`--test=constraint`) — every joint type, limits,
-  collide-connected, destruction and rejected params, then the same through a `Scene`.
+  collide-connected, destruction and rejected params, then the same through a `Scene`; also the
+  collision group checks.
 - The test app's **Hierarchy Test** (`--test=hierarchy`) — bodies under parents, including the
   checks for the ancestor filter above.
 
@@ -362,6 +401,7 @@ worlds, so it is initialised with the first world and torn down with the last.
 - A `Mesh` collider is one-sided, can't be Dynamic (a Dynamic body gets the mesh's convex hull, with
   a warning), and a hull is capped at 256 vertices.
 - A thin triangle needs `ContinuousCollision` for fast bodies.
+- Collision groups filter contacts only, are per world, and cannot be changed while a `Step` runs.
 - A Mesh-shaped sensor finds only what crosses its surface and doesn't find Mesh colliders.
 - A character controller is not a body: ray, shape and overlap queries don't find it. Controllers
   are rebuilt on `OnStart`, so a script never keeps a `CharacterController3D*` across

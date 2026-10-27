@@ -773,6 +773,8 @@ namespace Dingo
 					Add(section, "Continuous collision", Text(body->ContinuousCollision));
 					Add(section, "Sensor", Text(body->IsSensor));
 					Add(section, "Query layers", Hex(body->QueryLayers));
+					Add(section, "Collision group", std::to_string(body->CollisionGroup));
+					Add(section, "Collide within group", Text(body->CollideWithinGroup));
 				}
 
 				if (const BoxCollider3DComponent* box = registry.try_get<BoxCollider3DComponent>(handle))

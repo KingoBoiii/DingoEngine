@@ -48,6 +48,10 @@ namespace Dingo
 
 		void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore) override;
 		bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const override;
+		void SetCollisionGroup(PhysicsBodyId3D body, std::uint32_t group, bool collideWithinGroup) override;
+		std::uint32_t GetCollisionGroup(PhysicsBodyId3D body) const override;
+		bool GetCollideWithinGroup(PhysicsBodyId3D body) const override;
+		std::uint32_t AllocateCollisionGroup() override;
 
 		using Physics3D::RayCast;
 		using Physics3D::ShapeCastSphere;

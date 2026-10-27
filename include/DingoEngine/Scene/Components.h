@@ -703,6 +703,11 @@ namespace Dingo
 		bool IsSensor = false;
 		/// Bit mask of query layers the body is in; not a collision filter.
 		std::uint32_t QueryLayers = 1u;
+		/// See Physics3D::SetCollisionGroup: bodies in the same non-zero group pass through each other.
+		/// Read when the body is created; a duplicated entity stays in the same group.
+		std::uint32_t CollisionGroup = k_NoCollisionGroup;
+		/// See Physics3D::SetCollisionGroup: collide with others of the group that also set this.
+		bool CollideWithinGroup = false;
 
 		/// A static body.
 		RigidBody3DComponent() = default;

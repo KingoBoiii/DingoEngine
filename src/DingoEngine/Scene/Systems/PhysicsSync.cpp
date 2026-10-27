@@ -857,6 +857,8 @@ namespace Dingo
 			params.ContinuousCollision = rigidBody.ContinuousCollision;
 			params.IsSensor = rigidBody.IsSensor;
 			params.QueryLayers = rigidBody.QueryLayers;
+			params.CollisionGroup = rigidBody.CollisionGroup;
+			params.CollideWithinGroup = rigidBody.CollideWithinGroup;
 			params.UserData = static_cast<std::uint32_t>(handle);
 
 			// The collider shape is baked into the body at creation. Collider sizes are

@@ -247,14 +247,31 @@ namespace Dingo
 		}
 	}
 
-	// A body joins the filter's group with its first ignored partner and leaves it with its last, so
-	// the pairs of bodies that ignore nothing never reach the filter.
+	// Owns a body's CollisionGroup: it names the filter only while the body has a user group or an
+	// ignored partner, so ungrouped, unpaired bodies never reach the filter.
+	static void ApplyCollisionGroup(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body)
+	{
+		JPH::BodyInterface& bodyInterface = data.PhysicsSystem.GetBodyInterface();
+		const auto group = data.BodyGroups.find(body);
+		if (group == data.BodyGroups.end() && !data.IgnoredPartners.contains(body))
+		{
+			bodyInterface.SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup());
+			return;
+		}
+
+		const std::uint32_t userGroup = group != data.BodyGroups.end() ? group->second.Group : 0;
+		const bool within = group != data.BodyGroups.end() && group->second.Within;
+		const std::uint32_t sub = body | (within ? Internal::CollisionGroupFilter::k_WithinBit : 0u);
+		bodyInterface.SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup(data.PairFilter.GetPtr(), userGroup, sub));
+	}
+
 	static void LinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
 	{
 		std::vector<std::uint32_t>& partners = data.IgnoredPartners[body];
-		if (partners.empty())
-			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup(data.PairFilter.GetPtr(), body, 0));
+		const bool first = partners.empty();
 		partners.push_back(partner);
+		if (first)
+			ApplyCollisionGroup(data, body);
 	}
 
 	static void UnlinkIgnoredPartner(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, PhysicsBodyId3D partner)
@@ -267,13 +284,13 @@ namespace Dingo
 		if (it->second.empty())
 		{
 			data.IgnoredPartners.erase(it);
-			data.PhysicsSystem.GetBodyInterface().SetCollisionGroup(ToBodyId(body), JPH::CollisionGroup());
+			ApplyCollisionGroup(data, body);
 		}
 	}
 
 	static void AddPairIgnore(Internal::JoltPhysics3DData& data, PhysicsBodyId3D a, PhysicsBodyId3D b)
 	{
-		Internal::IgnoredPairFilter& filter = *data.PairFilter;
+		Internal::CollisionGroupFilter& filter = *data.PairFilter;
 		const bool fresh = filter.Find(a, b) == nullptr;
 		++filter.Entry(a, b).Constraints;
 		if (fresh)
@@ -285,11 +302,11 @@ namespace Dingo
 
 	static void ReleasePairIgnore(Internal::JoltPhysics3DData& data, PhysicsBodyId3D a, PhysicsBodyId3D b)
 	{
-		Internal::IgnoredPairFilter& filter = *data.PairFilter;
+		Internal::CollisionGroupFilter& filter = *data.PairFilter;
 		if (!filter.Find(a, b))
 			return;
 
-		Internal::IgnoredPairFilter::PairSources& sources = filter.Entry(a, b);
+		Internal::CollisionGroupFilter::PairSources& sources = filter.Entry(a, b);
 		if (sources.Constraints > 0)
 			--sources.Constraints;
 		if (!sources.User && sources.Constraints == 0)
@@ -503,6 +520,16 @@ namespace Dingo
 		return new JPH::ScaledShape(shape, scale);
 	}
 
+	static void StoreCollisionGroup(Internal::JoltPhysics3DData& data, PhysicsBodyId3D body, std::uint32_t group, bool within)
+	{
+		data.NextCollisionGroup = (std::max)(data.NextCollisionGroup, static_cast<std::uint64_t>(group) + 1);
+		if (group == k_NoCollisionGroup)
+			data.BodyGroups.erase(body);
+		else
+			data.BodyGroups[body] = { group, within };
+		ApplyCollisionGroup(data, body);
+	}
+
 	PhysicsBodyId3D JoltPhysics3D::CreateBody(const RigidBodyParams3D& params)
 	{
 		if (!m_Data)
@@ -547,7 +574,10 @@ namespace Dingo
 		if (id.IsInvalid())
 			return k_InvalidBody3D;
 
-		return id.GetIndexAndSequenceNumber();
+		const PhysicsBodyId3D body = id.GetIndexAndSequenceNumber();
+		if (params.CollisionGroup != k_NoCollisionGroup)
+			StoreCollisionGroup(*m_Data, body, params.CollisionGroup, params.CollideWithinGroup);
+		return body;
 	}
 
 	void JoltPhysics3D::DestroyBody(PhysicsBodyId3D body)
@@ -566,6 +596,8 @@ namespace Dingo
 			for (ConstraintId3D constraint : constraints)
 				DestroyConstraintInternal(*m_Data, constraint);
 		}
+
+		m_Data->BodyGroups.erase(body);
 
 		if (auto it = m_Data->IgnoredPartners.find(body); it != m_Data->IgnoredPartners.end())
 		{
@@ -670,8 +702,8 @@ namespace Dingo
 		if (!m_Data || a == k_InvalidBody3D || b == k_InvalidBody3D || a == b)
 			return;
 
-		Internal::IgnoredPairFilter& filter = *m_Data->PairFilter;
-		const Internal::IgnoredPairFilter::PairSources* existing = filter.Find(a, b);
+		Internal::CollisionGroupFilter& filter = *m_Data->PairFilter;
+		const Internal::CollisionGroupFilter::PairSources* existing = filter.Find(a, b);
 		if ((existing && existing->User) == ignore)
 			return;
 
@@ -691,7 +723,7 @@ namespace Dingo
 		}
 		else
 		{
-			Internal::IgnoredPairFilter::PairSources& sources = filter.Entry(a, b);
+			Internal::CollisionGroupFilter::PairSources& sources = filter.Entry(a, b);
 			sources.User = false;
 			if (sources.Constraints == 0)
 			{
@@ -705,6 +737,47 @@ namespace Dingo
 		// contact state until something else woke one of them.
 		bodyInterface.ActivateBody(ToBodyId(a));
 		bodyInterface.ActivateBody(ToBodyId(b));
+	}
+
+	void JoltPhysics3D::SetCollisionGroup(PhysicsBodyId3D body, std::uint32_t group, bool collideWithinGroup)
+	{
+		if (!m_Data || body == k_InvalidBody3D)
+			return;
+
+		JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		if (!bodyInterface.IsAdded(ToBodyId(body)))
+			return;
+
+		StoreCollisionGroup(*m_Data, body, group, group != k_NoCollisionGroup && collideWithinGroup);
+		bodyInterface.ActivateBody(ToBodyId(body));
+	}
+
+	std::uint32_t JoltPhysics3D::GetCollisionGroup(PhysicsBodyId3D body) const
+	{
+		if (!m_Data || !IsBodyValid(body))
+			return k_NoCollisionGroup;
+		const auto it = m_Data->BodyGroups.find(body);
+		return it != m_Data->BodyGroups.end() ? it->second.Group : k_NoCollisionGroup;
+	}
+
+	bool JoltPhysics3D::GetCollideWithinGroup(PhysicsBodyId3D body) const
+	{
+		if (!m_Data || !IsBodyValid(body))
+			return false;
+		const auto it = m_Data->BodyGroups.find(body);
+		return it != m_Data->BodyGroups.end() && it->second.Within;
+	}
+
+	std::uint32_t JoltPhysics3D::AllocateCollisionGroup()
+	{
+		if (!m_Data)
+			return k_NoCollisionGroup;
+		if (m_Data->NextCollisionGroup > 0xFFFFFFFFull)
+		{
+			DE_CORE_ERROR("Physics3D: out of collision group ids");
+			return k_NoCollisionGroup;
+		}
+		return static_cast<std::uint32_t>(m_Data->NextCollisionGroup++);
 	}
 
 	bool JoltPhysics3D::IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const

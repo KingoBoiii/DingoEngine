@@ -144,6 +144,23 @@ namespace Dingo
 		/// True if contacts between the two bodies are currently ignored (see IgnoreCollision).
 		virtual bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const = 0;
 
+		/// Puts a body in a collision group: bodies in the same non-zero group pass through each other,
+		/// unless both were given collideWithinGroup = true. Different groups, and bodies in
+		/// k_NoCollisionGroup, collide as usual. Group 0 takes the body out of its group (and clears
+		/// collideWithinGroup). Any value is a legal group; AllocateCollisionGroup hands out unused ones.
+		/// A group costs no per-pair state and composes with IgnoreCollision and CollideConnected: either
+		/// one dropping a pair drops it. Only contacts are affected; scene queries and character
+		/// controllers see grouped bodies as before. Wakes the body so it holds from the next Step; call
+		/// it between Steps. No-op on an invalid/stale handle.
+		virtual void SetCollisionGroup(PhysicsBodyId3D body, std::uint32_t group, bool collideWithinGroup = false) = 0;
+		/// The body's collision group; k_NoCollisionGroup for none or an invalid/stale handle.
+		virtual std::uint32_t GetCollisionGroup(PhysicsBodyId3D body) const = 0;
+		/// True if the body collides with others of its group that also opted in; false for none or an invalid/stale handle.
+		virtual bool GetCollideWithinGroup(PhysicsBodyId3D body) const = 0;
+		/// Returns a group id no body has used so far in this world (counting groups set by hand or
+		/// through RigidBodyParams3D). Logs an error and returns k_NoCollisionGroup when the ids run out.
+		virtual std::uint32_t AllocateCollisionGroup() = 0;
+
 		// --- Constraints ------------------------------------------------------
 
 		/// Joins two bodies (or one body and the world) with a joint and wakes both. Returns

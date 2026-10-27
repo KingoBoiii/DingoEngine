@@ -36,6 +36,9 @@ namespace Dingo
 	/// The "no body" handle, 0xFFFFFFFF. Not 0: 0 is a valid body.
 	inline constexpr PhysicsBodyId3D k_InvalidBody3D = 0xFFFFFFFFu;
 
+	/// The collision group of a body that is in none (Physics3D::SetCollisionGroup).
+	inline constexpr std::uint32_t k_NoCollisionGroup = 0;
+
 	/// Describes a rigid body to create. Box uses HalfExtents; Sphere uses Radius;
 	/// Capsule uses Radius plus HalfHeight (half the length of the cylinder section
 	/// between the two hemispherical caps - the total capsule height is
@@ -88,6 +91,11 @@ namespace Dingo
 		std::uint32_t QueryLayers = 1u;
 		/// Free for the caller (Physics3D::GetUserData). A Scene keeps its entity here.
 		std::uint32_t UserData = 0;
+
+		/// The collision group the body starts in (Physics3D::SetCollisionGroup); k_NoCollisionGroup is none.
+		std::uint32_t CollisionGroup = k_NoCollisionGroup;
+		/// Whether the body collides with others of its group that also set this (Physics3D::SetCollisionGroup).
+		bool CollideWithinGroup = false;
 
 		/// A Static box at the origin with default material.
 		RigidBodyParams3D() = default;
