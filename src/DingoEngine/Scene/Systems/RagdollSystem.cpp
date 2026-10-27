@@ -126,10 +126,84 @@ namespace Dingo
 				return glm::normalize(result);
 			}
 
-			const Skeleton* SkeletonOf(const entt::registry& registry, entt::entity handle)
+			const Model* ModelOf(const entt::registry& registry, entt::entity handle)
 			{
 				const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
-				return skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
+				return skinned ? skinned->Model : nullptr;
+			}
+
+			const Skeleton* SkeletonOf(const entt::registry& registry, entt::entity handle)
+			{
+				const Model* model = ModelOf(registry, handle);
+				return model ? model->GetSkeleton() : nullptr;
+			}
+
+			uint32_t RecipeRevisionOf(const entt::registry& registry, entt::entity handle)
+			{
+				const Model* model = ModelOf(registry, handle);
+				return model ? model->GetRagdollRecipeRevision() : 0;
+			}
+
+			float CapsuleVolume(float radius, float halfHeight)
+			{
+				return glm::pi<float>() * radius * radius * (2.0f * halfHeight + 4.0f / 3.0f * radius);
+			}
+
+			// Per part, the median distance from its bone of the rest-pose vertices whose heaviest joint
+			// rides on it, as a fraction of the bone's rest length; 0 where too few vertices say.
+			std::vector<float> MeasureRadii(const Model& model, const Skeleton& skeleton, const RagdollRuntime& runtime,
+				const std::vector<int32_t>& mainChild, const std::vector<glm::vec3>& restPositions)
+			{
+				constexpr size_t k_MinSamples = 8;
+				std::vector<std::vector<float>> distances(runtime.Parts.size());
+				const uint32_t jointCount = skeleton.GetJointCount();
+				for (const SubMesh& submesh : model.GetSubMeshes())
+				{
+					if (!submesh.Mesh)
+						continue;
+					const std::vector<MeshVertex>& vertices = submesh.Mesh->GetVertices();
+					const std::vector<SkinnedMeshVertex>& skin = submesh.Mesh->GetSkinVertices();
+					if (skin.size() != vertices.size())
+						continue;
+
+					for (size_t v = 0; v < skin.size(); ++v)
+					{
+						int heaviest = 0;
+						for (int k = 1; k < 4; ++k)
+						{
+							if (skin[v].Weights[k] > skin[v].Weights[heaviest])
+								heaviest = k;
+						}
+						const uint32_t joint = skin[v].Joints[heaviest];
+						if (joint >= jointCount || runtime.PartOfJoint[joint] < 0)
+							continue;
+
+						const int32_t p = runtime.PartOfJoint[joint];
+						const int32_t boneJoint = runtime.Parts[p].Joint;
+						const glm::vec3 from = restPositions[boneJoint];
+						const glm::vec3 bone = restPositions[mainChild[boneJoint]] - from;
+						const float lengthSquared = glm::dot(bone, bone);
+						if (lengthSquared <= 0.0f)
+							continue;
+						const glm::vec3 offset = vertices[v].Position - from;
+						const float t = glm::dot(offset, bone) / lengthSquared;
+						if (t < 0.0f || t > 1.0f)
+							continue;
+						distances[p].push_back(glm::length(offset - t * bone) / (std::sqrt)(lengthSquared));
+					}
+				}
+
+				std::vector<float> radii(runtime.Parts.size(), 0.0f);
+				for (size_t p = 0; p < distances.size(); ++p)
+				{
+					std::vector<float>& samples = distances[p];
+					if (samples.size() < k_MinSamples)
+						continue;
+					auto middle = samples.begin() + static_cast<std::ptrdiff_t>(samples.size() / 2);
+					std::nth_element(samples.begin(), middle, samples.end());
+					radii[p] = *middle;
+				}
+				return radii;
 			}
 
 			std::string NameOf(const entt::registry& registry, entt::entity handle)
@@ -198,6 +272,8 @@ namespace Dingo
 				const RagdollRuntime& runtime = built.get<RagdollRuntime>(handle);
 				const Skeleton* skeleton = SkeletonOf(registry, handle);
 				bool stale = !skeleton || skeleton->GetId() != runtime.SkeletonId || skeleton->GetRevision() != runtime.SkeletonRevision;
+				const RagdollComponent* settings = registry.try_get<RagdollComponent>(handle);
+				stale = stale || !settings || settings->Recipe != runtime.Recipe || RecipeRevisionOf(registry, handle) != runtime.RecipeRevision;
 				// An AnimatorComponent added or removed after the build changes which animator poses it.
 				stale = stale || registry.all_of<AnimatorComponent>(handle) == (runtime.Instance != nullptr);
 				for (const RagdollRuntime::Part& part : runtime.Parts)
@@ -227,20 +303,25 @@ namespace Dingo
 
 		void RagdollSystem::Build(entt::registry& registry, Physics3D& physics, entt::entity handle)
 		{
+			const Model* model = ModelOf(registry, handle);
 			const Skeleton* skeleton = SkeletonOf(registry, handle);
-			if (!skeleton || skeleton->GetJointCount() == 0)
+			if (!model || !skeleton || skeleton->GetJointCount() == 0)
 				return;
 
+			const RagdollComponent& settings = registry.get<RagdollComponent>(handle);
+			const uint32_t recipeRevision = model->GetRagdollRecipeRevision();
 			if (const auto rejected = m_Rejected.find(handle); rejected != m_Rejected.end())
 			{
-				if (rejected->second.SkeletonId == skeleton->GetId() && rejected->second.Revision == skeleton->GetRevision())
+				const Rejection& previous = rejected->second;
+				if (previous.SkeletonId == skeleton->GetId() && previous.Revision == skeleton->GetRevision()
+					&& previous.Recipe == settings.Recipe && previous.RecipeRevision == recipeRevision)
 					return;
 				m_Rejected.erase(rejected);
 			}
 
 			auto reject = [&](const char* reason)
 			{
-				m_Rejected[handle] = { skeleton->GetId(), skeleton->GetRevision() };
+				m_Rejected[handle] = { skeleton->GetId(), skeleton->GetRevision(), settings.Recipe, recipeRevision };
 				DE_CORE_ERROR("RagdollComponent on '{}': {}; no ragdoll built", NameOf(registry, handle), reason);
 			};
 
@@ -248,6 +329,8 @@ namespace Dingo
 			RagdollRuntime& runtime = registry.emplace<RagdollRuntime>(handle);
 			runtime.SkeletonId = skeleton->GetId();
 			runtime.SkeletonRevision = skeleton->GetRevision();
+			runtime.Recipe = settings.Recipe;
+			runtime.RecipeRevision = recipeRevision;
 			if (!registry.all_of<AnimatorComponent>(handle))
 				runtime.Instance = std::make_unique<Animator>(skeleton);
 
@@ -257,6 +340,10 @@ namespace Dingo
 				registry.remove<RagdollRuntime>(handle);
 				return;
 			}
+
+			const RagdollRecipe* recipe = model->FindRagdollRecipe(settings.Recipe);
+			if (!recipe && !settings.Recipe.empty())
+				DE_CORE_WARN("RagdollComponent on '{}': the model has no ragdoll recipe '{}', so it builds without one", NameOf(registry, handle), settings.Recipe);
 
 			const std::vector<Joint>& joints = skeleton->GetJoints();
 			const int32_t count = static_cast<int32_t>(joints.size());
@@ -272,7 +359,7 @@ namespace Dingo
 				RigidFrame(m_JointWorlds[i], positions[i], rotations[i]);
 				names[i] = Lowercase(joints[i].Name);
 				const int32_t parent = joints[i].Parent;
-				excluded[i] = IsFoldedByName(names[i]) || (parent >= 0 && excluded[parent]);
+				excluded[i] = IsFoldedByName(names[i]) || (recipe && recipe->IsExcluded(joints[i].Name)) || (parent >= 0 && excluded[parent]);
 				if (parent >= 0)
 					children[parent].push_back(i);
 			}
@@ -368,13 +455,38 @@ namespace Dingo
 				runtime.PartOfJoint[i] = static_cast<int32_t>(runtime.Parts.size() - 1);
 			}
 
-			// Capsules along each bone, sized from its length and how far its other children sit off it.
+			std::vector<const RagdollJointRecipe*> entries(runtime.Parts.size(), nullptr);
+			if (recipe)
+			{
+				for (size_t p = 0; p < runtime.Parts.size(); ++p)
+					entries[p] = recipe->FindJoint(joints[runtime.Parts[p].Joint].Name);
+				for (const RagdollJointRecipe& entry : recipe->Joints)
+				{
+					const int32_t joint = skeleton->FindJoint(entry.Joint);
+					const int32_t part = joint >= 0 ? runtime.PartOfJoint[joint] : -1;
+					if (part < 0 || runtime.Parts[part].Joint != joint)
+						DE_CORE_WARN("RagdollComponent on '{}': joint '{}' gets no body, so its recipe line does nothing", NameOf(registry, handle), entry.Joint);
+				}
+			}
+
+			// Model space (the rest vertices' space) per joint, for radii given in or measured from it.
+			std::vector<glm::vec3> restPositions(count);
+			const std::vector<glm::mat4>& restGlobals = skeleton->GetRestGlobalTransforms();
+			for (int32_t i = 0; i < count && i < static_cast<int32_t>(restGlobals.size()); ++i)
+				restPositions[i] = glm::vec3(skeleton->GetRootTransform() * restGlobals[i][3]);
+			const std::vector<float> measured = MeasureRadii(*model, *skeleton, runtime, main, restPositions);
+			const float entityScale = glm::length(glm::vec3(entityWorld[1]));
+
+			// Each bone's collider, sized by its recipe, else by the vertices it moves, else (automatic) by
+			// its length and how far its other children sit off it.
 			struct Shape
 			{
 				glm::vec3 Position;
 				glm::quat Rotation;
+				RagdollShape Type;
 				float Radius;
 				float HalfHeight;
+				float Volume;
 			};
 			std::vector<Shape> shapes(runtime.Parts.size());
 			float totalVolume = 0.0f;
@@ -383,6 +495,9 @@ namespace Dingo
 				const int32_t joint = runtime.Parts[p].Joint;
 				const float length = lengths[joint];
 				const glm::vec3 direction = (positions[main[joint]] - positions[joint]) / length;
+				const float restLength = glm::length(restPositions[main[joint]] - restPositions[joint]);
+				// Model space to world along this bone, which also absorbs a pose that stretches it.
+				const float toWorld = restLength > 1e-6f ? length / restLength : entityScale;
 
 				float lateral = 0.0f;
 				for (const int32_t child : children[joint])
@@ -390,17 +505,63 @@ namespace Dingo
 					const glm::vec3 offset = positions[child] - positions[joint];
 					lateral = (std::max)(lateral, glm::length(offset - glm::dot(offset, direction) * direction));
 				}
+				const float automatic = (std::max)(0.22f * length, (std::min)(0.5f * lateral, 0.6f * length));
 
 				Shape& shape = shapes[p];
-				shape.Radius = (std::max)(0.22f * length, (std::min)(0.5f * lateral, 0.6f * length));
-				shape.HalfHeight = (std::max)(0.5f * length - shape.Radius, 0.05f * length);
+				shape.Type = entries[p] ? entries[p]->Shape : RagdollShape::Capsule;
+				if (entries[p] && entries[p]->Radius > 0.0f)
+					shape.Radius = entries[p]->Radius * toWorld;
+				else if (measured[p] > 0.0f)
+					shape.Radius = std::clamp(measured[p] * length, 0.08f * length, 0.6f * length);
+				else
+					shape.Radius = automatic;
+				if (!std::isfinite(shape.Radius) || shape.Radius <= 0.0f)
+					shape.Radius = automatic;
+
+				shape.HalfHeight = shape.Type == RagdollShape::Box ? 0.5f * length : (std::max)(0.5f * length - shape.Radius, 0.05f * length);
 				shape.Position = positions[joint] + direction * (0.5f * length);
 				shape.Rotation = FromTo(rotations[joint] * glm::vec3(0.0f, 1.0f, 0.0f), direction) * rotations[joint];
-				totalVolume += glm::pi<float>() * shape.Radius * shape.Radius * (2.0f * shape.HalfHeight + 4.0f / 3.0f * shape.Radius);
+				// Mass follows the bone's size, not its collider's: a skin's fur and silhouette would weigh
+				// a fluffy tail like a torso, and joints between such unequal bodies won't hold a pose.
+				shape.Volume = CapsuleVolume(automatic, (std::max)(0.5f * length - automatic, 0.05f * length));
+				totalVolume += shape.Volume;
 			}
 
-			const RagdollComponent& settings = registry.get<RagdollComponent>(handle);
 			const float totalMass = settings.TotalMass > 0.0f && std::isfinite(settings.TotalMass) ? settings.TotalMass : 70.0f;
+
+			// A recipe's mass shares are exact while they leave room; the other parts split the rest by
+			// volume. Shares that fill the total are scaled down with the others' volume shares.
+			std::vector<float> fractions(runtime.Parts.size());
+			float listed = 0.0f;
+			float unlistedVolume = 0.0f;
+			for (size_t p = 0; p < runtime.Parts.size(); ++p)
+			{
+				if (entries[p] && entries[p]->MassShare > 0.0f)
+					listed += entries[p]->MassShare;
+				else
+					unlistedVolume += shapes[p].Volume;
+			}
+			const bool room = unlistedVolume <= 0.0f ? listed > 0.0f : listed < 1.0f;
+			if (!room && unlistedVolume > 0.0f)
+				DE_CORE_WARN("RagdollComponent on '{}': the recipe's mass shares add up to {:.2f}, leaving nothing for the other bones; all shares are scaled to fit", NameOf(registry, handle), listed);
+			float sum = 0.0f;
+			for (size_t p = 0; p < runtime.Parts.size(); ++p)
+			{
+				const bool share = entries[p] && entries[p]->MassShare > 0.0f;
+				if (unlistedVolume <= 0.0f)
+					fractions[p] = share ? entries[p]->MassShare : 0.0f;
+				else if (room)
+					fractions[p] = share ? entries[p]->MassShare : (1.0f - listed) * shapes[p].Volume / unlistedVolume;
+				else
+					fractions[p] = share ? entries[p]->MassShare : shapes[p].Volume / totalVolume;
+				sum += fractions[p];
+			}
+			if (!(sum > 0.0f))
+			{
+				std::fill(fractions.begin(), fractions.end(), 1.0f);
+				sum = static_cast<float>(fractions.size());
+			}
+
 			runtime.Group = physics.AllocateCollisionGroup();
 
 			auto fail = [&](const char* reason)
@@ -418,14 +579,16 @@ namespace Dingo
 			{
 				RagdollRuntime::Part& part = runtime.Parts[p];
 				const Shape& shape = shapes[p];
-				const float volume = glm::pi<float>() * shape.Radius * shape.Radius * (2.0f * shape.HalfHeight + 4.0f / 3.0f * shape.Radius);
-				part.Mass = totalMass * volume / totalVolume;
+				part.Mass = totalMass * fractions[p] / sum;
 
-				RigidBodyParams3D params(BodyType3D::Dynamic, ColliderShape3D::Capsule);
+				const ColliderShape3D collider = shape.Type == RagdollShape::Sphere ? ColliderShape3D::Sphere
+					: shape.Type == RagdollShape::Box ? ColliderShape3D::Box : ColliderShape3D::Capsule;
+				RigidBodyParams3D params(BodyType3D::Dynamic, collider);
 				params.Position = shape.Position;
 				params.Rotation = shape.Rotation;
 				params.Radius = shape.Radius;
 				params.HalfHeight = shape.HalfHeight;
+				params.HalfExtents = glm::vec3(shape.Radius, shape.HalfHeight, shape.Radius);
 				params.Mass = part.Mass;
 				params.Friction = 0.8f;
 				params.CollisionGroup = runtime.Group;
@@ -472,7 +635,12 @@ namespace Dingo
 				const glm::vec3 anchor = positions[part.Joint];
 				const glm::vec3 directionA = shapeA.Rotation * glm::vec3(0.0f, 1.0f, 0.0f);
 				const glm::vec3 directionB = shapeB.Rotation * glm::vec3(0.0f, 1.0f, 0.0f);
-				const JointClass type = Classify(names[part.Joint]);
+				const RagdollJointRecipe* entry = entries[p];
+				JointClass type = Classify(names[part.Joint]);
+				if (entry && entry->Type == RagdollJointType::Hinge)
+					type = JointClass::Hinge;
+				else if (entry && entry->Type == RagdollJointType::SwingTwist && type == JointClass::Hinge)
+					type = JointClass::Other;
 				part.Hinge = type == JointClass::Hinge;
 
 				ConstraintParams3D params(type == JointClass::Hinge ? ConstraintType3D::Hinge : ConstraintType3D::SwingTwist, parent.Body, part.Body);
@@ -486,17 +654,23 @@ namespace Dingo
 					const glm::vec3 bendAxis = glm::cross(directionA, directionB);
 					const float bend = std::atan2(glm::length(bendAxis), glm::dot(directionA, directionB));
 					glm::vec3 axis;
+					const bool limited = entry && entry->HasHingeLimits;
+					const float lowest = limited ? entry->HingeMin : -k_HingeOverextension;
+					const float highest = limited ? entry->HingeMax : k_HingeMaxBend;
 					if (bend > glm::radians(10.0f))
 					{
+						// The limits are from straight; the build pose sits inside them whatever they say.
 						axis = glm::normalize(bendAxis);
-						params.MinLimit = (std::max)(-bend - k_HingeOverextension, -glm::pi<float>());
-						params.MaxLimit = (std::max)(k_HingeMaxBend - bend, 0.0f);
+						params.MinLimit = std::clamp(lowest - bend, -glm::pi<float>(), 0.0f);
+						params.MaxLimit = std::clamp(highest - bend, 0.0f, glm::pi<float>());
 					}
 					else
 					{
+						// Straight, nothing says which way it bends: a recipe's positive side turns about this
+						// axis, and without one it gets the full bend both ways.
 						axis = Perpendicular(rotations[part.Joint] * glm::vec3(1.0f, 0.0f, 0.0f), directionB, rotations[part.Joint] * glm::vec3(0.0f, 0.0f, 1.0f));
-						params.MinLimit = -k_HingeMaxBend;
-						params.MaxLimit = k_HingeMaxBend;
+						params.MinLimit = limited ? std::clamp(lowest, -glm::pi<float>(), 0.0f) : -k_HingeMaxBend;
+						params.MaxLimit = limited ? std::clamp(highest, 0.0f, glm::pi<float>()) : k_HingeMaxBend;
 					}
 					const glm::vec3 normal = Perpendicular(directionB, axis, directionA);
 					params.AxisA = inverseA * axis;
@@ -506,7 +680,19 @@ namespace Dingo
 				}
 				else
 				{
-					const SwingTwistLimits limits = LimitsOf(type);
+					SwingTwistLimits limits = LimitsOf(type);
+					float twistMin = -limits.Twist;
+					float twistMax = limits.Twist;
+					if (entry && entry->HasSwing)
+					{
+						limits.SwingY = entry->SwingY;
+						limits.SwingZ = entry->SwingZ;
+					}
+					if (entry && entry->HasTwist)
+					{
+						twistMin = entry->TwistMin;
+						twistMax = entry->TwistMax;
+					}
 					const glm::vec3 normal = Perpendicular(rotations[part.Joint] * glm::vec3(1.0f, 0.0f, 0.0f), directionB, rotations[part.Joint] * glm::vec3(0.0f, 0.0f, 1.0f));
 					params.AxisA = inverseA * directionB;
 					params.AxisB = inverseB * directionB;
@@ -514,8 +700,8 @@ namespace Dingo
 					params.NormalAxisB = inverseB * normal;
 					params.SwingLimitY = limits.SwingY;
 					params.SwingLimitZ = limits.SwingZ;
-					params.TwistMin = -limits.Twist;
-					params.TwistMax = limits.Twist;
+					params.TwistMin = twistMin;
+					params.TwistMax = twistMax;
 				}
 
 				part.Constraint = physics.CreateConstraint(params);

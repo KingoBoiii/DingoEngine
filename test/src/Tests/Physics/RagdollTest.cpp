@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <set>
@@ -69,11 +71,11 @@ namespace Dingo
 		world->Shutdown();
 	}
 
-	Entity RagdollTest::AddFox(const std::string& name, const glm::vec3& position, bool animated)
+	Entity RagdollTest::AddFox(const std::string& name, const glm::vec3& position, bool animated, Model* model)
 	{
 		Entity fox = m_Scene->CreateEntity(name);
 		fox.AddComponent<Transform3DComponent>(Transform3DComponent(position + glm::vec3(0.0f, m_FoxLift, 0.0f), glm::vec3(m_FoxScale)));
-		fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(m_Fox));
+		fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(model ? model : m_Fox));
 		if (animated)
 			fox.AddComponent<AnimatorComponent>(AnimatorComponent("Survey"));
 		return fox;
@@ -199,6 +201,64 @@ namespace Dingo
 		Check(DistinctBodies(*m_Scene, m_Driven, skeleton) == std::size(k_ExpectedBodies), "lifecycle: OnStart builds them again");
 	}
 
+	void RagdollTest::RunRecipeChecks()
+	{
+		const std::filesystem::path source = Application::Get().GetAssetManager().GetRootDirectory() / std::filesystem::path(k_FoxPath).parent_path();
+		const std::filesystem::path folder = TestTempDirectory("DingoRagdollTest");
+		std::error_code error;
+		std::filesystem::remove_all(folder, error);
+		std::filesystem::create_directories(folder, error);
+		bool copied = true;
+		for (const char* file : { "Fox.gltf", "Fox.bin", "Texture.png" })
+			copied = copied && std::filesystem::copy_file(source / file, folder / file, std::filesystem::copy_options::overwrite_existing, error);
+		auto writeRecipes = [&](const char* text)
+		{
+			std::ofstream out(folder / "Fox.ragdoll", std::ios::binary | std::ios::trunc);
+			out << text;
+		};
+		writeRecipes("exclude b_Tail02_013\n[heavy]\nb_Hip_01 mass=0.5\nb_Neck_04 shape=sphere\n");
+		m_RecipeFox = copied ? Model::LoadFromFile(folder / "Fox.gltf") : nullptr;
+		Check(m_RecipeFox && m_RecipeFox->GetRagdollRecipes().size() == 2 && m_RecipeFox->FindRagdollRecipe("heavy"),
+			"recipe: the Fox's .ragdoll sidecar loads its default and [heavy] recipes");
+		if (!m_RecipeFox || !m_RecipeFox->GetSkeleton())
+			return;
+
+		const Skeleton& skeleton = *m_RecipeFox->GetSkeleton();
+		Entity fox = AddFox("Recipe Fox", { 0.0f, 0.3f, -3.0f }, false, m_RecipeFox);
+		RagdollComponent settings;
+		settings.DriveToAnimation = false;
+		fox.AddComponent<RagdollComponent>(settings);
+		m_Scene->OnUpdate(k_Dt);
+		Check(DistinctBodies(*m_Scene, fox, skeleton) == std::size(k_ExpectedBodies) - 1
+			&& m_Scene->GetRagdollBody(fox, "b_Tail02_013") == m_Scene->GetRagdollBody(fox, "b_Tail01_012"),
+			"recipe: the default recipe's exclude leaves the tail tip on the body above");
+
+		Physics3D& physics = *m_Scene->GetPhysics3D();
+		// The velocity an impulse of `kilograms` (in kg m/s) gives the hip: 1 m/s when that is its mass.
+		auto hipKick = [&](float kilograms)
+		{
+			const PhysicsBodyId3D hip = m_Scene->GetRagdollBody(fox, "b_Hip_01");
+			if (hip == k_InvalidBody3D)
+				return 0.0f;
+			const float before = physics.GetLinearVelocity(hip).z;
+			physics.ApplyImpulse(hip, { 0.0f, 0.0f, kilograms });
+			return physics.GetLinearVelocity(hip).z - before;
+		};
+
+		fox.GetComponent<RagdollComponent>().Recipe = "heavy";
+		m_Scene->OnUpdate(k_Dt);
+		Check(DistinctBodies(*m_Scene, fox, skeleton) == std::size(k_ExpectedBodies), "recipe: naming another recipe rebuilds with it");
+		Check(std::abs(hipKick(0.5f * settings.TotalMass) - 1.0f) < 0.01f, "recipe: mass=0.5 gives the hip half the TotalMass");
+
+		writeRecipes("[heavy]\nb_Hip_01 mass=0.25\n");
+		Check(m_RecipeFox->ReloadRagdollRecipes(), "recipe: ReloadRagdollRecipes reads the edited file");
+		m_Scene->OnUpdate(k_Dt);
+		Check(std::abs(hipKick(0.25f * settings.TotalMass) - 1.0f) < 0.01f, "recipe: an edited recipe rebuilds the ragdoll with its new mass");
+
+		m_Scene->DestroyEntity(fox);
+		m_Scene->OnUpdate(k_Dt);
+	}
+
 	void RagdollTest::Initialize()
 	{
 		m_Checks.clear();
@@ -226,6 +286,7 @@ namespace Dingo
 		BuildScene();
 		m_Scene->OnStart();
 		RunSceneChecks();
+		RunRecipeChecks();
 
 		m_Camera = PerspectiveCamera(45.0f, m_AspectRatio, 0.1f, 200.0f);
 		m_Camera.SetPosition({ 0.0f, 1.5f, 5.0f });
@@ -255,6 +316,8 @@ namespace Dingo
 		m_Driven = {};
 		delete m_Fox;
 		m_Fox = nullptr;
+		delete m_RecipeFox;
+		m_RecipeFox = nullptr;
 	}
 
 	void RagdollTest::Resize(uint32_t width, uint32_t height)

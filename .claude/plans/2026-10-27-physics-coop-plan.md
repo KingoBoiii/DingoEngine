@@ -51,11 +51,35 @@ As built:
 - Fixed tick: the drive uses the previous frame's animation and the pose reads uninterpolated bodies
   (documented in docs/animation.md).
 
-### P2 — recipes and hot-reload
+### P2 — recipes and hot-reload (done)
 
-- [ ] A `.ragdoll` sidecar (per-joint shape, radius, limits, mass share, excluded joints) loaded beside
+- [x] A `.ragdoll` sidecar (per-joint shape, radius, limits, mass share, excluded joints) loaded beside
   the model, and `RagdollComponent::Recipe` to name one. Radii from vertex weights when no recipe gives
   them. A model reload already rebuilds (skeleton revision); add a check that a recipe edit does too.
+
+As built:
+- One file per model, `<stem>.ragdoll`, with `[name]` sections; the lines before the first section are
+  the default recipe. `RagdollComponent::Recipe` names a section (empty = the default), not a file, so
+  the AssetManager's watch covers every recipe a model has. Format and keys: docs/animation.md,
+  "Ragdoll recipes". Parsed by `Internal::ParseRagdollRecipes` (`Graphics/RagdollRecipeFile.h`, doctest
+  `RagdollRecipeFile`), sharing the `.events` tokenizer (`Internal::TokenizeSidecarLine`).
+- `Model::GetRagdollRecipes/FindRagdollRecipe/ReloadRagdollRecipes/GetRagdollRecipeRevision`. The
+  revision moves on every load, reload and `Adopt`; with the recipe name it joins the rebuild key
+  (`RagdollRuntime::Recipe/RecipeRevision`) and the rejection key.
+- The AssetManager's single companion became a list (`CompanionFile { Extension, Reload }`, the model
+  row `.events` → `ReloadEvents`, `.ragdoll` → `ReloadRagdollRecipes`); a change to the model file
+  itself still runs one full `ReloadInPlace`.
+- `radius=` is in model units (the space of `Mesh::GetVertices()`), scaled per bone by its world/rest
+  length. Hinge limits are degrees from the bone lying straight, re-centred on the build pose's bend.
+  Mass shares are exact when they leave room; the rest is split by size, and shares of 1 or more are
+  scaled with the others (warned).
+- Measured radius: the median distance of the rest vertices each part moves most, from its bone,
+  clamped to 0.08–0.6 × length, at least 8 samples, else the P1 rule. **Mass still splits by the P1
+  automatic capsule volume**, not the measured collider: with measured volumes the Fox's fluffy tail
+  tip weighed 12 kg on a 0.4 kg base and the torso outweighed the hips 5:1, and the driven hip drifted
+  0.47 m (the check allows 0.05). Clamping neighbour mass ratios or adding an integral term to the root
+  drive didn't hold it either. Now 0.034 m.
+- Left out: an `include` key (forcing a body on a folded joint) and a hinge axis override.
 
 ### P3 — showcase and tooling
 

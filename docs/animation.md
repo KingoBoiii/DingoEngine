@@ -1077,8 +1077,9 @@ scene->GetPhysics3D()->ApplyImpulse(scene->GetRagdollBody(fox, "b_Spine02_03"), 
 | `Blend` (1) | 0 shows the animation untouched (the bodies still simulate), 1 the simulated bones, between mixes each simulated joint. Read every frame. |
 | `Strength` (1) | Scales the joint motors and how firmly the hips track the animated root. 0 is limp. |
 | `DriveToAnimation` (true) | False turns the motors off and leaves the root untracked. |
-| `TotalMass` (70 kg) | Shared out by capsule volume. Read at build. |
+| `TotalMass` (70 kg) | Shared out by bone size, or by a recipe's `mass=` shares. Read at build. |
 | `CollideWithinRagdoll` (false) | Lets the ragdoll's limbs hit each other, except two joined by a joint. Read at build. |
+| `Recipe` (empty) | The model's [ragdoll recipe](#ragdoll-recipes) to build with; empty uses the `.ragdoll` file's default recipe, if any. Changing it rebuilds. |
 
 **What gets a body.** The root body is the first joint with two or more children (the hips). Below it
 every bone with a child gets a capsule along the bone to its main child, unless its name marks it as a
@@ -1091,6 +1092,13 @@ pose rather than on an anatomical rest. More
 than 20 bodies, or a skeleton without a branching joint, logs an error once and builds nothing. The
 Fox in `test/assets/models/Fox` gets 16: hips, two spine bones, neck (the head rides on it), two
 bones per arm, two per hind leg plus the foot, and two tail bones.
+
+**Size and mass.** A capsule's radius is the median distance from its bone of the rest-pose vertices
+that bone (or a joint folded into it) moves most, between 0.08 and 0.6 times the bone's length. A bone
+with fewer than 8 such vertices falls back to its length and how far its other children sit off it.
+Mass follows the bone's size rather than the measured skin: a skinny bone under a lot of fur (the
+Fox's tail tip) would otherwise outweigh the hips, and a joint between bodies that unequal won't hold
+a pose. A recipe overrides both.
 
 **Driving.** Each physics step sets every joint's motor target to the animated pose's relative
 rotation, with gains scaled by the bone's own inertia (a 6 Hz spring at `Strength` 1), and moves the
@@ -1120,10 +1128,51 @@ call itself on a standalone `Animator` after `Update`.
 **Fixed tick.** Under `SceneParams::FixedTick` the motors target the previous frame's animation, and
 the blended bones are the latest tick's bodies, not interpolated between ticks.
 
+### Ragdoll recipes
+
+A model with a skeleton reads `<stem>.ragdoll` beside it, if one is there (`Fox.gltf` →
+`Fox.ragdoll`). It overrides the automatic build per joint: which joints get no body, and each body's
+shape, radius, mass share and joint limits. Lines before the first `[name]` form the default recipe,
+which every `RagdollComponent` with an empty `Recipe` uses; a `[name]` starts a recipe that
+`RagdollComponent::Recipe = "name"` picks. A named recipe starts empty: it inherits nothing from
+the default one, its excludes included.
+
+```text
+# Fox.ragdoll
+exclude b_Tail02_013               # no body; it rides on b_Tail01_012
+b_Hip_01   shape=box radius=12 mass=0.2
+b_Neck_04  shape=sphere
+b_LeftLeg02_016  hinge=-5..140     # degrees, from the bone lying straight
+b_Spine02_03     swing=30,20 twist=15
+
+[heavy]
+b_Hip_01 mass=0.5
+```
+
+| Key | Meaning |
+|---|---|
+| `exclude <joint>...` | Those joints, and every joint below them, get no body. |
+| `shape=capsule\|sphere\|box` | The collider. A sphere sits halfway along the bone; a box runs along it, `radius` across. |
+| `radius=<r>` | In the model's units (the space of `Mesh::GetVertices()`), scaled with the entity. Replaces the measured radius. |
+| `mass=<share>` | The bone's share of `TotalMass`, above 0 and at most 1. The bones without one share the rest by size; shares that add up to 1 or more are scaled down with the others (logged), and shares on every body that add up to less than 1 are scaled up to the whole `TotalMass`. |
+| `hinge=<min>..<max>` | Makes it a hinge, with limits in degrees from the bone lying straight along its parent (positive bends it further). The build pose stays inside them. A bone built straight has no bend side to go by: positive turns it about its joint's own X axis. |
+| `swing=<a>` or `swing=<y>,<z>` | Makes it a swing-twist joint, with these cone half-angles in degrees. |
+| `twist=<t>` or `twist=<min>..<max>` | Swing-twist too, with the twist limits in degrees from the build pose, so min ≤ 0 ≤ max. |
+
+Joint names match the skeleton exactly. A line naming a joint the skeleton lacks, an unknown key or a
+bad value logs a warning with its line number and is skipped (a bad value drops only its key). So is a
+line that asks for both a hinge and swing or twist limits. A recipe line for a joint that gets no body
+(excluded, folded or above the hips) logs a warning when the ragdoll is built. An unknown
+`RagdollComponent::Recipe` logs a warning once and builds without a recipe.
+
+`Model::GetRagdollRecipes()` and `Model::FindRagdollRecipe(name)` read the parsed file, and
+`Model::ReloadRagdollRecipes()` re-reads it. Every ragdoll built from the model rebuilds on its next
+physics step after a reload of the file or the model.
+
 ## Hot-reload
 
 With the AssetManager's hot-reload on (`params.Assets.EnableHotReload = true`, or the toggle in the F6
-tab), saving a model's file, or its `.events` file, reloads it **in place**, while the game runs. For
+tab), saving a model's file, its `.events` file or its `.ragdoll` file, reloads it **in place**, while the game runs. For
 an unmanaged model call `Model::Reload()`; for a managed one `AssetManager::Reload(handle)`.
 
 - Every pointer a game may hold survives: the `Model*`, each `Mesh*` (with a new `GetId()`), each
@@ -1134,8 +1183,11 @@ an unmanaged model call `Model::Reload()`; for a managed one `AssetManager::Relo
   still bound to it. A scene's animators start over on the new skeleton with their `DefaultClip`. A
   standalone `Animator` keeps running on the old one until you `SetSkeleton`.
 - A save of the `.events` file alone only replaces the clips' events (`Model::ReloadEvents()`).
+- A save of the `.ragdoll` file alone only replaces the [ragdoll recipes](#ragdoll-recipes)
+  (`Model::ReloadRagdollRecipes()`), and the model's ragdolls rebuild.
 - A file that no longer loads logs an error and leaves the model as it was.
-- `Model::GetGeneration()` counts the successful reloads, `ReloadEvents` included.
+- `Model::GetGeneration()` counts the successful reloads, `ReloadEvents` and `ReloadRagdollRecipes`
+  included.
 - **Events you added in code with `AddEvent` are dropped by a reload**, replaced by the file's and the
   `.events` file's. Prefer the sidecar for anything that should survive, or add them again when the
   generation moves:

@@ -853,7 +853,7 @@ namespace Dingo
 	};
 
 	/// An active ragdoll for the entity's SkinnedMeshRendererComponent::Model: one dynamic capsule per
-	/// bone, joined by Hinge (elbows, knees) and SwingTwist joints, built from the current pose when the
+	/// bone (or the collider its recipe names), joined by Hinge (elbows, knees) and SwingTwist joints, built from the current pose when the
 	/// Scene's physics starts (and rebuilt when the model or its skeleton changes). Each physics step
 	/// drives the joints toward the AnimatorComponent's pose with motors; without an AnimatorComponent
 	/// the target is the rest pose. The bodies share one collision group. Destroying the entity,
@@ -879,8 +879,12 @@ namespace Dingo
 		/// True lets the ragdoll's bodies collide with each other, except two joined by a joint.
 		/// Read when the ragdoll is built.
 		bool CollideWithinRagdoll = false;
+		/// The Model's ragdoll recipe to build with (Model::FindRagdollRecipe): empty for its `.ragdoll`
+		/// file's default recipe, if it has one. An unknown name warns once and builds without a recipe.
+		/// Changing it, or a reload of the recipes, rebuilds the ragdoll.
+		std::string Recipe;
 
-		/// Blend 1, Strength 1, driven, 70 kg, no self-collision.
+		/// Blend 1, Strength 1, driven, 70 kg, no self-collision, the default recipe.
 		RagdollComponent() = default;
 		/// Copies all fields.
 		RagdollComponent(const RagdollComponent&) = default;

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <span>
 
 namespace Dingo
 {
@@ -211,6 +212,22 @@ namespace Dingo
 	// the answer "this type does not do that": no Load, no in-place refresh, no worker
 	// decode. SupportsInPlaceReload is read straight off ReloadInPlace, so the public
 	// promise and the implementation cannot drift apart.
+	// A file a type's load reads beside the asset's own, watched with it, and what a change to it
+	// alone refreshes (ReloadInPlace when null).
+	struct CompanionFile
+	{
+		const char* Extension = nullptr;
+		RefreshResult (*Reload)(AssetManagerData&, const Internal::AssetRecord&) = nullptr;
+	};
+
+	static RefreshResult ReloadModelEvents(AssetManagerData& data, const Internal::AssetRecord& metadata);
+	static RefreshResult ReloadModelRagdollRecipes(AssetManagerData& data, const Internal::AssetRecord& metadata);
+
+	static constexpr CompanionFile s_ModelCompanions[] = {
+		{ ".events", &ReloadModelEvents },
+		{ ".ragdoll", &ReloadModelRagdollRecipes },
+	};
+
 	struct AssetTypePolicy
 	{
 		AssetType Type = AssetType::None;
@@ -232,10 +249,8 @@ namespace Dingo
 		bool HotReloadWatched = false;
 		// The load creates GPU resources, so it can't succeed without a graphics device (a headless app).
 		bool NeedsGraphicsDevice = false;
-		// A second file the load reads, watched with the asset's own, and what a change to it alone
-		// refreshes (ReloadInPlace when null).
-		std::filesystem::path (*Companion)(const Internal::AssetRecord&) = nullptr;
-		RefreshResult (*ReloadCompanion)(AssetManagerData&, const Internal::AssetRecord&) = nullptr;
+		// At most 32: PollHotReload tracks which changed in a bit mask.
+		std::span<const CompanionFile> Companions;
 	};
 
 	static const AssetTypePolicy& PolicyFor(AssetType type)
@@ -370,19 +385,7 @@ namespace Dingo
 				.Unload = [](AssetManagerData& data, AssetHandle handle) { Utils::DestroyFrom(data.Models, handle); },
 				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Models.contains(handle); },
 				.HotReloadWatched = true,
-				.Companion = [](const Internal::AssetRecord& metadata)
-				{
-					std::filesystem::path events = metadata.AbsolutePath;
-					events.replace_extension(".events");
-					return events;
-				},
-				.ReloadCompanion = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> RefreshResult
-				{
-					auto it = data.Models.find(metadata.Handle);
-					if (it == data.Models.end())
-						return RefreshResult::NotLoaded;
-					return it->second->ReloadEvents() ? RefreshResult::Refreshed : RefreshResult::KeptPrevious;
-				}
+				.Companions = s_ModelCompanions
 			},
 			{
 				.Type = AssetType::Font,
@@ -462,44 +465,72 @@ namespace Dingo
 		return Utils::FoldPathCase(Internal::PathToGenericUtf8(NormalizeRelativePath(data, path)));
 	}
 
+	static RefreshResult ReloadModelEvents(AssetManagerData& data, const Internal::AssetRecord& metadata)
+	{
+		auto it = data.Models.find(metadata.Handle);
+		if (it == data.Models.end())
+			return RefreshResult::NotLoaded;
+		return it->second->ReloadEvents() ? RefreshResult::Refreshed : RefreshResult::KeptPrevious;
+	}
+
+	static RefreshResult ReloadModelRagdollRecipes(AssetManagerData& data, const Internal::AssetRecord& metadata)
+	{
+		auto it = data.Models.find(metadata.Handle);
+		if (it == data.Models.end())
+			return RefreshResult::NotLoaded;
+		return it->second->ReloadRagdollRecipes() ? RefreshResult::Refreshed : RefreshResult::KeptPrevious;
+	}
+
 	static void StampCompanion(AssetManagerData& data, const Internal::AssetRecord& metadata)
 	{
 		const AssetTypePolicy& policy = PolicyFor(metadata.Type);
-		if (!policy.Companion)
+		if (policy.Companions.empty())
 			return;
 
-		CompanionWatch& watch = data.Companions[metadata.Handle];
-		watch.Path = (*policy.Companion)(metadata);
-		watch.LastWriteTime = Utils::ReadWriteTime(watch.Path);
-		watch.PendingWriteTime = {};
-		watch.Pending = false;
+		std::vector<CompanionWatch>& watches = data.Companions[metadata.Handle];
+		watches.resize(policy.Companions.size());
+		for (size_t i = 0; i < watches.size(); ++i)
+		{
+			CompanionWatch& watch = watches[i];
+			watch.Path = metadata.AbsolutePath;
+			watch.Path.replace_extension(policy.Companions[i].Extension);
+			watch.LastWriteTime = Utils::ReadWriteTime(watch.Path);
+			watch.PendingWriteTime = {};
+			watch.Pending = false;
+		}
 	}
 
-	static bool CompanionChanged(AssetManagerData& data, AssetHandle handle)
+	// One bit per policy companion whose file settled into a new write time.
+	static uint32_t CompanionsChanged(AssetManagerData& data, AssetHandle handle)
 	{
 		auto it = data.Companions.find(handle);
 		if (it == data.Companions.end())
-			return false;
+			return 0;
 
-		// A missing file reads as the epoch, so adding or deleting one counts as a change. Like any other,
-		// it must be seen twice: an editor that saves by delete and rename is caught in the gap.
-		CompanionWatch& watch = it->second;
-		const std::filesystem::file_time_type writeTime = Utils::ReadWriteTime(watch.Path);
-		if (writeTime == watch.LastWriteTime)
+		uint32_t changed = 0;
+		for (size_t i = 0; i < it->second.size(); ++i)
 		{
+			// A missing file reads as the epoch, so adding or deleting one counts as a change. Like any
+			// other, it must be seen twice: an editor that saves by delete and rename is caught in the gap.
+			CompanionWatch& watch = it->second[i];
+			const std::filesystem::file_time_type writeTime = Utils::ReadWriteTime(watch.Path);
+			if (writeTime == watch.LastWriteTime)
+			{
+				watch.Pending = false;
+				continue;
+			}
+			if (!watch.Pending || watch.PendingWriteTime != writeTime)
+			{
+				watch.Pending = true;
+				watch.PendingWriteTime = writeTime;
+				continue;
+			}
+
 			watch.Pending = false;
-			return false;
+			watch.LastWriteTime = writeTime;
+			changed |= 1u << i;
 		}
-		if (!watch.Pending || watch.PendingWriteTime != writeTime)
-		{
-			watch.Pending = true;
-			watch.PendingWriteTime = writeTime;
-			return false;
-		}
-
-		watch.Pending = false;
-		watch.LastWriteTime = writeTime;
-		return true;
+		return changed;
 	}
 
 	static const Shader* FindLoadedShader(const AssetManagerData& data, const Internal::AssetRecord& metadata)
@@ -756,8 +787,8 @@ namespace Dingo
 
 			// Both are read every poll, so a save of both that settles in one poll reloads once.
 			const bool changed = Utils::ConsumeSettledWrite(FindLoadedShader(data, metadata), metadata.AbsolutePath, metadata.LastWriteTime, metadata.PendingWriteTime);
-			const bool companionChanged = CompanionChanged(data, metadata.Handle);
-			if (!changed && !companionChanged)
+			const uint32_t companionsChanged = CompanionsChanged(data, metadata.Handle);
+			if (!changed && companionsChanged == 0)
 				continue;
 
 			if (recovering)
@@ -765,7 +796,14 @@ namespace Dingo
 			else if (changed)
 				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading.", Internal::PathToGenericUtf8(metadata.FilePath));
 			else
-				DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading '{}'.", Internal::PathToGenericUtf8(data.Companions.at(metadata.Handle).Path.filename()), Internal::PathToGenericUtf8(metadata.FilePath));
+			{
+				const std::vector<CompanionWatch>& watches = data.Companions.at(metadata.Handle);
+				for (size_t i = 0; i < watches.size(); ++i)
+				{
+					if (companionsChanged & (1u << i))
+						DE_CORE_INFO("AssetManager: '{}' changed on disk - hot-reloading '{}'.", Internal::PathToGenericUtf8(watches[i].Path.filename()), Internal::PathToGenericUtf8(metadata.FilePath));
+				}
+			}
 
 			const AssetTypePolicy& policy = PolicyFor(metadata.Type);
 			if (policy.Decode)
@@ -781,9 +819,23 @@ namespace Dingo
 				continue;
 			}
 
-			// The stamp above is already committed, so the refresh must not stamp again.
-			const auto refresh = !changed && policy.ReloadCompanion ? policy.ReloadCompanion : policy.ReloadInPlace;
-			const RefreshResult refreshed = refresh ? (*refresh)(data, metadata) : RefreshResult::NotLoaded;
+			// The stamp above is already committed, so the refresh must not stamp again. The asset's own
+			// change reloads everything, its companions included.
+			RefreshResult refreshed = RefreshResult::Refreshed;
+			if (changed)
+			{
+				refreshed = policy.ReloadInPlace ? (*policy.ReloadInPlace)(data, metadata) : RefreshResult::NotLoaded;
+			}
+			else
+			{
+				for (size_t i = 0; i < policy.Companions.size() && refreshed != RefreshResult::NotLoaded; ++i)
+				{
+					if (!(companionsChanged & (1u << i)))
+						continue;
+					const auto refresh = policy.Companions[i].Reload ? policy.Companions[i].Reload : policy.ReloadInPlace;
+					refreshed = refresh ? (*refresh)(data, metadata) : RefreshResult::NotLoaded;
+				}
+			}
 			if (refreshed == RefreshResult::NotLoaded)
 			{
 				// Nothing to reload in place: a shader that failed its first load was

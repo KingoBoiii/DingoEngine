@@ -10,6 +10,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -53,11 +54,13 @@ namespace Dingo
 			// The world frame of every joint in the animated pose (no blend), into m_JointWorlds.
 			bool AnimatedJointWorlds(entt::registry& registry, entt::entity handle, const Skeleton& skeleton, glm::mat4& entityWorld);
 
-			// Entities whose ragdoll can't be built for this skeleton id and revision (logged once).
+			// Entities whose ragdoll can't be built for this skeleton and recipe (logged once).
 			struct Rejection
 			{
 				uint64_t SkeletonId = 0;
 				uint32_t Revision = 0;
+				std::string Recipe;
+				uint32_t RecipeRevision = 0;
 			};
 			std::unordered_map<entt::entity, Rejection> m_Rejected;
 

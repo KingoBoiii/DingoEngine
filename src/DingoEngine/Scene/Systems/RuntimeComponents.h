@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace Dingo
@@ -99,7 +100,7 @@ namespace Dingo
 		};
 
 		// A RagdollComponent's bodies and joints (RagdollSystem), dropped with the component, the entity's
-		// deactivation or the 3D world, and rebuilt when the skeleton's id or revision changes.
+		// deactivation or the 3D world, and rebuilt when the skeleton's id or revision or the recipe changes.
 		struct RagdollRuntime
 		{
 			// Rigid: the scale a joint carries is the animated one, never simulated.
@@ -125,6 +126,9 @@ namespace Dingo
 			std::unique_ptr<Animator> Instance;
 			uint64_t SkeletonId = 0;
 			uint32_t SkeletonRevision = 0;
+			// The RagdollComponent::Recipe and Model::GetRagdollRecipeRevision it was built with.
+			std::string Recipe;
+			uint32_t RecipeRevision = 0;
 			std::uint32_t Group = k_NoCollisionGroup;
 			// The entity's position followed the root body last frame, so clip root motion stays off.
 			bool FollowsRoot = false;
