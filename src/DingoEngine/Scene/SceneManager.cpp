@@ -15,13 +15,18 @@ namespace Dingo
 
 	Scene* SceneManager::CreateScene(const std::string& name)
 	{
+		return CreateScene(name, SceneParams());
+	}
+
+	Scene* SceneManager::CreateScene(const std::string& name, const SceneParams& params)
+	{
 		if (auto it = m_Scenes.find(name); it != m_Scenes.end())
 		{
 			DE_CORE_WARN("SceneManager: scene '{}' already exists; returning the existing scene.", name);
 			return it->second;
 		}
 
-		Scene* scene = new Scene(name);
+		Scene* scene = new Scene(name, params);
 		m_Scenes[name] = scene;
 		return scene;
 	}

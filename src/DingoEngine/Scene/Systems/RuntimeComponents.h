@@ -16,6 +16,7 @@
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -54,6 +55,24 @@ namespace Dingo
 		struct CharacterController3DRuntime
 		{
 			std::uint32_t Index = 0;
+		};
+
+		// The local pose physics wrote at the last two fixed ticks (SceneParams::FixedTick), which
+		// PhysicsInterpolation draws between. Dropped when the body or controller goes.
+		struct InterpolatedPose3D
+		{
+			glm::vec3 PreviousPosition{ 0.0f };
+			glm::vec3 Position{ 0.0f };
+			glm::quat PreviousRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+			glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+		};
+
+		struct InterpolatedPose2D
+		{
+			glm::vec2 PreviousPosition{ 0.0f };
+			glm::vec2 Position{ 0.0f };
+			float PreviousRotation = 0.0f; // degrees, as TransformComponent
+			float Rotation = 0.0f;
 		};
 
 		struct AudioSourceRuntime

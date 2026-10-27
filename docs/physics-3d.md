@@ -403,7 +403,8 @@ worlds, so it is initialised with the first world and torn down with the last.
 ## Limits
 
 - The step is the frame's delta, cut to 4/60 s, in `ceil(dt * 60 - 0.1)` collision steps (at most 4)
-  in a `Scene`; `OnFixedUpdate` does not change that ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)).
+  in a `Scene`, unless the scene has `SceneParams::FixedTick`, which steps it once per fixed tick and
+  draws bodies between ticks ([Scenes & ECS](scenes-and-ecs.md#fixed-simulation-tick-v11)).
 - A `Mesh` collider is one-sided, can't be Dynamic (a Dynamic body gets the mesh's convex hull, with
   a warning), and a hull is capped at 256 vertices.
 - A thin triangle needs `ContinuousCollision` for fast bodies.

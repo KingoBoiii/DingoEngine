@@ -58,7 +58,12 @@ namespace Dingo
 {
 
 	Scene::Scene(const std::string& name)
-		: m_Data(new Internal::SceneData()), m_Name(name)
+		: Scene(name, SceneParams())
+	{
+	}
+
+	Scene::Scene(const std::string& name, const SceneParams& params)
+		: m_Data(new Internal::SceneData()), m_Name(name), m_Params(params)
 	{
 		static std::atomic<uint64_t> s_ProbeSalt = 0;
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
@@ -338,6 +343,7 @@ namespace Dingo
 			m_Data->DebugRegistered = true;
 		}
 
+		const bool fixedTick = m_Params.FixedTick;
 		{
 			DE_PROFILE_SCOPE("ScriptSystem::Update");
 			m_Data->Updating = true;
@@ -352,17 +358,31 @@ namespace Dingo
 				carried -= step;
 				++steps;
 				m_Data->Scripts.FixedUpdate(step);
+				if (fixedTick)
+				{
+					// A tick is whole: the destroys its scripts asked for land before its physics step.
+					m_Data->Updating = false;
+					FlushPendingDestroys();
+					DE_PROFILE_SCOPE("PhysicsSync::Step");
+					m_Data->Interpolation.BeforeTick(m_Data->Registry, m_Data->Physics);
+					m_Data->Physics.Step(m_Data->Registry, step);
+					m_Data->Interpolation.AfterTick(m_Data->Registry);
+					++m_Data->Tick;
+					m_Data->Updating = true;
+				}
 			}
 			if (carried >= step)
+			{
+				m_Data->DroppedFixedSteps += static_cast<uint64_t>(carried / step);
 				carried = std::fmod(carried, step);
+			}
+			m_Data->FixedStepsLastUpdate = steps;
 
 			m_Data->Scripts.Update(deltaTime);
 			m_Data->Updating = false;
 		}
 
-		for (entt::entity handle : m_Data->PendingDestroy)
-			DestroyEntityNow(static_cast<std::uint32_t>(handle));
-		m_Data->PendingDestroy.clear();
+		FlushPendingDestroys();
 
 		// Animation events reach scripts here, so their destroys wait as theirs do in OnUpdate.
 		{
@@ -377,12 +397,11 @@ namespace Dingo
 			m_Data->Updating = false;
 		}
 
-		for (entt::entity handle : m_Data->PendingDestroy)
-			DestroyEntityNow(static_cast<std::uint32_t>(handle));
-		m_Data->PendingDestroy.clear();
+		FlushPendingDestroys();
 
 		// Step physics after the script pass (scripts may have applied forces this
 		// frame), then write the simulated transforms back onto the entities.
+		if (!fixedTick)
 		{
 			DE_PROFILE_SCOPE("PhysicsSync::Step");
 			m_Data->Physics.Step(m_Data->Registry, deltaTime);
@@ -394,7 +413,54 @@ namespace Dingo
 		m_Data->Scripts.FreeDetached();
 
 		DE_PROFILE_SCOPE("AudioSync");
+		InterpolatedView view(*this);
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
+	}
+
+	void Scene::FlushPendingDestroys()
+	{
+		for (entt::entity handle : m_Data->PendingDestroy)
+			DestroyEntityNow(static_cast<std::uint32_t>(handle));
+		m_Data->PendingDestroy.clear();
+	}
+
+	Scene::InterpolatedView::InterpolatedView(const Scene& scene)
+		: m_Scene(scene.m_Params.FixedTick && scene.m_Params.InterpolatePhysics ? &scene : nullptr)
+	{
+		if (m_Scene)
+			m_Scene->m_Data->Interpolation.Begin(m_Scene->m_Data->Registry, m_Scene->m_Data->Physics, m_Scene->GetFixedTimeAlpha());
+	}
+
+	Scene::InterpolatedView::~InterpolatedView()
+	{
+		if (m_Scene)
+			m_Scene->m_Data->Interpolation.End(m_Scene->m_Data->Registry);
+	}
+
+	std::uint64_t Scene::GetTick() const
+	{
+		return m_Data->Tick;
+	}
+
+	void Scene::SetTick(std::uint64_t tick)
+	{
+		m_Data->Tick = tick;
+	}
+
+	std::uint32_t Scene::GetFixedStepsLastUpdate() const
+	{
+		return m_Data->FixedStepsLastUpdate;
+	}
+
+	std::uint64_t Scene::GetDroppedFixedSteps() const
+	{
+		return m_Data->DroppedFixedSteps;
+	}
+
+	glm::mat4 Scene::GetDrawnWorldTransform(Entity entity) const
+	{
+		InterpolatedView view(*this);
+		return entity.GetWorldTransform();
 	}
 
 	void Scene::SetFixedTimeStep(float seconds)
@@ -474,6 +540,7 @@ namespace Dingo
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
+		InterpolatedView view(*this);
 		DE_PROFILE_SCOPE("Scene::RenderEntities");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
@@ -633,6 +700,7 @@ namespace Dingo
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
+		InterpolatedView view(*this);
 		DE_PROFILE_SCOPE("Scene::RenderEntities3D");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
@@ -719,6 +787,7 @@ namespace Dingo
 
 	void Scene::SubmitLights(Renderer3D& renderer, Entity camera, bool shadowProbes)
 	{
+		InterpolatedView view(*this);
 		const entt::entity cameraHandle = IsValid(camera) ? static_cast<entt::entity>(camera.m_Handle) : entt::null;
 		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr, cameraHandle);
 	}
@@ -798,6 +867,7 @@ namespace Dingo
 
 	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
 	{
+		InterpolatedView view(*this);
 		if (!IsValid(cameraEntity))
 			return glm::mat4(1.0f);
 
@@ -812,11 +882,13 @@ namespace Dingo
 
 	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
 	{
+		InterpolatedView view(*this);
 		return Internal::CameraUtils::ScreenPointToRay(m_Data->Registry, screenPos, viewportSize);
 	}
 
 	std::optional<glm::vec2> Scene::WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize) const
 	{
+		InterpolatedView view(*this);
 		return Internal::CameraUtils::WorldToScreenPoint(m_Data->Registry, worldPos, viewportSize);
 	}
 
@@ -829,6 +901,8 @@ namespace Dingo
 
 		m_IsRunning = true;
 		m_Data->FixedTimeAccumulator = 0.0f;
+		m_Data->Tick = 0;
+		m_Data->DroppedFixedSteps = 0;
 
 		// Discard any transition requested before this run (or left over from a
 		// previous run) so a stale request can't fire the instant this scene reactivates.
@@ -900,6 +974,7 @@ namespace Dingo
 
 	void Scene::StopPhysics()
 	{
+		m_Data->Interpolation.Clear(m_Data->Registry);
 		m_Data->Physics.Stop(m_Data->Registry);
 	}
 

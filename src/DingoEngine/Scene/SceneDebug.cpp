@@ -425,6 +425,13 @@ namespace Dingo
 					row.ClearColor = scene.GetClearColor();
 					row.Gravity2D = scene.GetGravity2D();
 					row.Gravity3D = scene.GetGravity3D();
+					row.FixedTick = scene.GetParams().FixedTick;
+					row.InterpolatePhysics = scene.GetParams().InterpolatePhysics;
+					row.FixedStep = scene.GetFixedTimeStep();
+					row.FixedAlpha = scene.GetFixedTimeAlpha();
+					row.Tick = scene.GetTick();
+					row.FixedStepsLastUpdate = scene.GetFixedStepsLastUpdate();
+					row.DroppedFixedSteps = scene.GetDroppedFixedSteps();
 				}
 			}
 
@@ -676,6 +683,7 @@ namespace Dingo
 				{
 					Section& section = AddSection(out, "RigidBody2D");
 					Add(section, "Type", BodyTypeName(static_cast<int>(body->Type)));
+					Add(section, "Interpolate", Text(body->Interpolate));
 					Add(section, "Fixed rotation", Text(body->FixedRotation));
 				}
 
@@ -773,6 +781,7 @@ namespace Dingo
 					Add(section, "Continuous collision", Text(body->ContinuousCollision));
 					Add(section, "Sensor", Text(body->IsSensor));
 					Add(section, "Query layers", Hex(body->QueryLayers));
+					Add(section, "Interpolate", Text(body->Interpolate));
 					Add(section, "Collision group", std::to_string(body->CollisionGroup));
 					Add(section, "Collide within group", Text(body->CollideWithinGroup));
 				}

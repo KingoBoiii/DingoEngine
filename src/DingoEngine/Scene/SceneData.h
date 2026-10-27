@@ -11,6 +11,7 @@
 #include "DingoEngine/Scene/Systems/AnimationSystem.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 #include "DingoEngine/Scene/Systems/LightSystem.h"
+#include "DingoEngine/Scene/Systems/PhysicsInterpolation.h"
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 #include "DingoEngine/Scene/Systems/ScriptSystem.h"
 #include "DingoEngine/Scene/Systems/StaticGeometry.h"
@@ -41,6 +42,12 @@ namespace Dingo
 
 			float FixedTimeStep = 1.0f / 60.0f;
 			float FixedTimeAccumulator = 0.0f;
+
+			// SceneParams::FixedTick only.
+			std::uint64_t Tick = 0;
+			std::uint32_t FixedStepsLastUpdate = 0;
+			std::uint64_t DroppedFixedSteps = 0;
+			PhysicsInterpolation Interpolation;
 
 			// Deferred-destruction support: while scripts are updating we queue
 			// destroys and apply them after the update pass, so a script can safely

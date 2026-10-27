@@ -105,6 +105,13 @@ namespace Dingo
 				glm::vec4 ClearColor{ 0.0f };
 				glm::vec2 Gravity2D{ 0.0f };
 				glm::vec3 Gravity3D{ 0.0f };
+				bool FixedTick = false;
+				bool InterpolatePhysics = false;
+				float FixedStep = 0.0f;
+				float FixedAlpha = 0.0f;
+				uint64_t Tick = 0;
+				uint32_t FixedStepsLastUpdate = 0;
+				uint64_t DroppedFixedSteps = 0;
 			};
 
 			void CollectScenes(std::vector<SceneRow>& out);
