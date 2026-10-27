@@ -1295,6 +1295,13 @@ namespace Dingo::Internal
 			return std::search(row.Name.begin(), row.Name.end(), nameFilter.begin(), nameFilter.end(),
 				[&](char a, char b) { return lower(a) == lower(b); }) != row.Name.end();
 		};
+		if (scene.FixedTick)
+			ImGui::Text("Fixed tick: on, step %.4f s, tick %llu, alpha %.2f, %u this update, %llu dropped, interpolation %s", scene.FixedStep,
+				static_cast<unsigned long long>(scene.Tick), scene.FixedAlpha, scene.FixedStepsLastUpdate,
+				static_cast<unsigned long long>(scene.DroppedFixedSteps), scene.InterpolatePhysics ? "on" : "off");
+		else
+			ImGui::Text("Fixed tick: off (physics steps per update), fixed step %.4f s, %u this update, %llu dropped", scene.FixedStep,
+				scene.FixedStepsLastUpdate, static_cast<unsigned long long>(scene.DroppedFixedSteps));
 		auto label = [](const SD::EntityRow& row)
 		{
 			std::string text = row.Name;

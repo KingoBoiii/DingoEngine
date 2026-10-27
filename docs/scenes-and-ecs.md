@@ -816,8 +816,49 @@ the scene's fixed step (`Scene::SetFixedTimeStep`, 1/60 s by default): none in a
 in a 1/30 s one. Time left over carries into the next frame, and `Scene::GetFixedTimeAlpha()` says
 how far it reaches into the next step, for drawing between the last two. At most
 `Scene::k_MaxFixedStepsPerUpdate` (8) run in one `OnUpdate`; the rest is dropped. Use it for logic
-whose result must not depend on the frame rate (a counter, a cooldown in steps, a replay). Physics
-still steps once a frame with the frame's delta, so forces set in `OnFixedUpdate` act over that.
+whose result must not depend on the frame rate (a counter, a cooldown in steps, a replay). By
+default physics still steps once a frame with the frame's delta, so forces set in `OnFixedUpdate`
+act over that.
+
+### Fixed simulation tick (v1.1)
+
+A scene made with `SceneParams::FixedTick` steps physics on the fixed step too, so the whole
+simulation advances in ticks that don't depend on the frame rate: the same inputs give bitwise the
+same bodies at 30, 60 or 144 frames a second, as long as the game moves them from `OnFixedUpdate`.
+Each tick runs every `OnFixedUpdate(step)`, then the entities destroyed during it are removed, then
+one physics step of exactly `step` (3D in `ceil(step * 60 - 0.1)` collision steps however long the
+step is, 2D with 4 substeps). `OnUpdate`, the animators and audio then run once with the frame's
+delta, so velocities set in `OnUpdate`, root motion and bodies on sockets still depend on the frame
+timing, and a socketed kinematic child follows the previous frame's pose.
+
+```cpp
+Dingo::SceneParams params;
+params.FixedTick = true;
+Dingo::Scene* scene = sceneManager.CreateScene("Match", params);
+scene->SetFixedTimeStep(1.0f / 30.0f);
+```
+
+`Scene::GetTick()` numbers the ticks: 0 after `OnStart`, one more after each tick, so a tick's
+`OnFixedUpdate` sees the number of the ticks before it. `SetTick(n)` renumbers the clock (to line
+up with a server, or after loading a save) and runs nothing. `GetFixedStepsLastUpdate()` says how
+many ticks the last `OnUpdate` ran and `GetDroppedFixedSteps()` how many have been dropped by the
+cap since `OnStart`; the F9 panel shows both.
+
+Physics bodies move only on ticks, so drawn as they are they would stutter whenever the frame rate
+isn't a multiple of the tick rate. With `SceneParams::InterpolatePhysics` (on by default) the scene
+draws each dynamic body, kinematic root body, character controller and their children between
+their last two ticks, by `GetFixedTimeAlpha()`. Only drawing sees that: the scene's render calls, lights,
+`GetCameraViewProjection`, `ScreenPointToRay`, `WorldToScreenPoint` and the audio listener and
+sources. Scripts, queries and `GetComponent` always read the latest tick. A body snaps instead of
+sliding when its position was moved since the tick (`SetPosition`, a teleport, a transform the
+game wrote); a rotation the game sets every frame (a player turning to face its input) is drawn as
+set while the position stays smooth. `RigidBody3DComponent::Interpolate` /
+`RigidBody2DComponent::Interpolate = false` draws one body at its latest tick; a character
+controller always interpolates.
+
+Game code that places something from a body's position (a follow camera, a health bar) reads the
+latest tick, one tick ahead of what is drawn, and would shake against it. Place it from
+`scene.GetDrawnWorldTransform(entity)` instead, or make it the body's child.
 
 ### Active and inactive entities (v1.0)
 
@@ -1005,8 +1046,12 @@ in a real game.
   frame the rest are skipped or batched on the CPU.
 - A `Static` mesh is not drawn static when it has a `CullDistance`, a translucent or skinned-only
   material, too many vertices for one draw or a non-affine transform; moving one rebakes its cell.
-- `OnFixedUpdate` runs at most `Scene::k_MaxFixedStepsPerUpdate` (8) times an update; physics stays
-  on the variable step.
+- `OnFixedUpdate` runs at most `Scene::k_MaxFixedStepsPerUpdate` (8) times an update, and the
+  frame's delta is capped at 4/60 s, so a very small fixed step falls behind real time. Physics
+  stays on the variable step unless the scene has `SceneParams::FixedTick`.
+- Interpolation lerps a body's local position and slerps its rotation; it does not interpolate
+  animation, particles or entities that only scripts move. A teleported body or controller that
+  has a parent slides over one tick instead of snapping, unless its transform was written too.
 - A settings component is read when the object it describes is built; editing it on a live body
   changes nothing until the body is rebuilt.
 - 2D and 3D transforms don't convert into each other in a mixed hierarchy.

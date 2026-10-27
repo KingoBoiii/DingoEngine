@@ -144,9 +144,9 @@ namespace Dingo
 
 			// One collision step per 1/60 s, as Jolt recommends: a single step over a 30 fps frame
 			// lets a falling body cross a mesh collider's zero-thickness triangles. The 0.1
-			// tolerance keeps 60 Hz frame jitter at one step. Scene::OnUpdate caps the delta at
-			// k_MaxStepTime, so a stall never stretches a step past 1/60 s.
-			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
+			// tolerance keeps 60 Hz frame jitter at one step. The per-frame delta is capped at
+			// k_MaxStepTime; a long fixed tick (SceneParams::FixedTick) gets as many steps as it needs.
+			const int collisionSteps = (std::max)(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1);
 
 			SyncAncestorFilters(registry);
 			DriveKinematicChildren(registry, deltaTime);

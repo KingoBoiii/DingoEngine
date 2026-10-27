@@ -371,6 +371,9 @@ namespace Dingo
 		/// Static, Kinematic or Dynamic; read when the body is created.
 		BodyType Type = BodyType::Static;
 		bool FixedRotation = false; ///< Lock rotation about Z (e.g. a player character).
+		/// With SceneParams::FixedTick and InterpolatePhysics, draw the body between its last two
+		/// ticks; false draws the latest tick.
+		bool Interpolate = true;
 
 		/// A static body that may rotate.
 		RigidBody2DComponent() = default;
@@ -703,6 +706,9 @@ namespace Dingo
 		bool IsSensor = false;
 		/// Bit mask of query layers the body is in; not a collision filter.
 		std::uint32_t QueryLayers = 1u;
+		/// With SceneParams::FixedTick and InterpolatePhysics, draw the body between its last two
+		/// ticks; false draws the latest tick.
+		bool Interpolate = true;
 
 		/// A static body.
 		RigidBody3DComponent() = default;
