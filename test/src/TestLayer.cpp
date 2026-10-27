@@ -32,6 +32,7 @@
 #include "Tests/Core/DisplayModeTest.h"
 
 #include "Tests/Audio/AudioBusTest.h"
+#include "Tests/Audio/AudioCaptureTest.h"
 
 #include "Tests/UI/DingoUITest.h"
 
@@ -65,12 +66,13 @@ namespace Dingo
 		m_Tests.push_back({ "Asset Manager Test", [&]() { return new AssetManagerTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Cursor Test", [&]() { return new CursorTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Mesh Collider Test", []() { return new MeshColliderTest(); } });
-		m_Tests.push_back({ "Hierarchy Test", [&]() { return new HierarchyTest(m_Renderer2D); } });
 		m_Tests.push_back({ "FixedTick Test", []() { return new FixedTickTest(); } });
+		m_Tests.push_back({ "Hierarchy Test", [&]() { return new HierarchyTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Animation Test", []() { return new AnimationTest(); } });
 		m_Tests.push_back({ "Background Test", [&]() { return new BackgroundTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Render Target Test", [&]() { return new RenderTargetTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Audio Bus Test", [&]() { return new AudioBusTest(m_Renderer2D); } });
+		m_Tests.push_back({ "Audio Capture Test", [&]() { return new AudioCaptureTest(m_Renderer2D); } });
 		m_Tests.push_back({ "Post Test", []() { return new PostTest(); } });
 		m_Tests.push_back({ "Shadow Test", []() { return new ShadowTest(); } });
 		m_Tests.push_back({ "Compute Test", []() { return new ComputeTest(); } });

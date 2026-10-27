@@ -525,6 +525,45 @@ namespace Dingo::Internal
 		FpsLine();
 	}
 
+	// Enumerating asks the OS, so the list is read when the node opens or on Refresh.
+	void CaptureSection()
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		const AudioCaptureState state = audio.GetCaptureState();
+		const char* stateName = state == AudioCaptureState::Running ? "Running" : state == AudioCaptureState::Lost ? "Lost" : "Stopped";
+		ImGui::Text("Capture       : %s", stateName);
+		if (state == AudioCaptureState::Stopped)
+			return;
+
+		ImGui::Text("Queued frames : %u (overruns %llu)", audio.GetCapturedFrames(), static_cast<unsigned long long>(audio.GetCaptureOverruns()));
+		ImGui::ProgressBar(audio.GetCaptureLevel(), ImVec2(-FLT_MIN, 0.0f), audio.IsCaptureGateOpen() ? "gate open" : "gate closed");
+
+		static std::vector<AudioCaptureDevice> s_Devices;
+		static bool s_Listed = false;
+		const bool open = ImGui::TreeNode("Capture devices");
+		if (!open)
+		{
+			s_Devices.clear();
+			s_Listed = false;
+			return;
+		}
+		if (!s_Listed || ImGui::SmallButton("Refresh"))
+		{
+			s_Devices = audio.EnumerateCaptureDevices();
+			s_Listed = true;
+		}
+		const std::string current = audio.GetCaptureDeviceId();
+		for (const AudioCaptureDevice& device : s_Devices)
+		{
+			ImGui::PushID(device.Id.c_str());
+			const std::string label = device.IsDefault ? device.Name + " (default)" : device.Name;
+			if (ImGui::Selectable(label.c_str(), device.Id == current) && device.Id != current)
+				audio.SetCaptureDevice(device.Id);
+			ImGui::PopID();
+		}
+		ImGui::TreePop();
+	}
+
 	void AudioStatsSection()
 	{
 		const AudioEngine& audio = Application::Get().GetAudioEngine();
@@ -535,6 +574,7 @@ namespace Dingo::Internal
 		ImGui::Text("Master volume : %.2f", audio.GetMasterVolume());
 		ImGui::Text("Active sounds : %u", audio.GetActiveSoundCount());
 		ImGui::Text("Buses         : %u", audio.GetBusCount());
+		CaptureSection();
 	}
 
 	void EngineStatsWindow(bool* open)
@@ -1260,6 +1300,13 @@ namespace Dingo::Internal
 		if (scene.Has3DWorld)
 			ImGui::Text("Physics 3D: %u bodies (%u sensors), %u controllers, gravity (%.2f, %.2f, %.2f)", scene.Bodies3D, scene.Sensors3D,
 				scene.Controllers, scene.Gravity3D.x, scene.Gravity3D.y, scene.Gravity3D.z);
+		if (scene.FixedTick)
+			ImGui::Text("Fixed tick: on, step %.4f s, tick %llu, alpha %.2f, %u this update, %llu dropped, interpolation %s", scene.FixedStep,
+				static_cast<unsigned long long>(scene.Tick), scene.FixedAlpha, scene.FixedStepsLastUpdate,
+				static_cast<unsigned long long>(scene.DroppedFixedSteps), scene.InterpolatePhysics ? "on" : "off");
+		else
+			ImGui::Text("Fixed tick: off (physics steps per update), fixed step %.4f s, %u this update, %llu dropped", scene.FixedStep,
+				scene.FixedStepsLastUpdate, static_cast<unsigned long long>(scene.DroppedFixedSteps));
 
 		SD::CollectEntities(scene.Serial, s_Entities);
 
@@ -1295,13 +1342,6 @@ namespace Dingo::Internal
 			return std::search(row.Name.begin(), row.Name.end(), nameFilter.begin(), nameFilter.end(),
 				[&](char a, char b) { return lower(a) == lower(b); }) != row.Name.end();
 		};
-		if (scene.FixedTick)
-			ImGui::Text("Fixed tick: on, step %.4f s, tick %llu, alpha %.2f, %u this update, %llu dropped, interpolation %s", scene.FixedStep,
-				static_cast<unsigned long long>(scene.Tick), scene.FixedAlpha, scene.FixedStepsLastUpdate,
-				static_cast<unsigned long long>(scene.DroppedFixedSteps), scene.InterpolatePhysics ? "on" : "off");
-		else
-			ImGui::Text("Fixed tick: off (physics steps per update), fixed step %.4f s, %u this update, %llu dropped", scene.FixedStep,
-				scene.FixedStepsLastUpdate, static_cast<unsigned long long>(scene.DroppedFixedSteps));
 		auto label = [](const SD::EntityRow& row)
 		{
 			std::string text = row.Name;

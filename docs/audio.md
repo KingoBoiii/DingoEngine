@@ -117,6 +117,57 @@ audio.Stop(voice); // the only way it ends, with StopBus, DestroyBus and Shutdow
   Data a network thread receives goes through the game's own queue. Both return 0 for a handle
   that is no live stream.
 
+## Capture (v1.1)
+
+`AudioEngine` records from one microphone at a time and hands the game raw PCM. The codec, the
+network and voice activity beyond a simple gate are the game's: it compresses what it reads,
+sends it, and plays what comes back through a [stream](#streams).
+
+```cpp
+for (const AudioCaptureDevice& device : audio.EnumerateCaptureDevices()) // default first
+	menu.Add(device.Name, device.Id);
+
+AudioCaptureDesc mic;            // DeviceId empty: the system default
+mic.SampleRate = 48000;          // what you read back; the engine resamples from the device
+mic.Channels = 1;
+mic.NoiseGate = true;            // silence below GateThresholdDb (-50 dB)
+if (audio.StartCapture(mic))
+{
+	// every frame
+	std::int16_t pcm[960];
+	while (std::uint32_t n = audio.ReadCaptured(pcm, 960))
+		encoder.Push(pcm, n);   // game-owned codec and transport
+}
+
+audio.SetCaptureDevice(menu.SelectedId()); // queued frames stay readable
+audio.SetCaptureGain(2.0f);
+meter.Set(audio.GetCaptureLevel(), audio.IsCaptureGateOpen());
+audio.StopCapture();
+```
+
+- The device thread writes a lock-free ring buffer of `BufferFrames` frames (0.5 s by default)
+  and the game reads it. A full buffer drops the new frames and counts them in
+  `GetCaptureOverruns()`, so a stalled game never grows memory. Read every frame.
+- Gain (0 to 8) applies first, then the gate, then a clamp to [-1, 1]. The gate decides once a
+  device period (about 10 ms) on that period's loudest sample, fades in over `GateAttackMs` and
+  out over `GateReleaseMs`. `GetCaptureLevel` is the last period's loudest sample after both, and
+  `IsCaptureGateOpen` is always true with the gate off. A capture started with the gate on
+  starts closed. All of them change live; out-of-range values are clamped, not refused.
+- `SetCaptureDevice` opens the new device before closing the old one, so a failure (logged,
+  `false`) leaves the old device running. Ids are opaque strings from `EnumerateCaptureDevices`;
+  `GetCaptureDeviceId` is the open one, empty for the system default.
+- A device that stops on its own (unplugged) moves the capture to `Lost` at the next
+  `AudioEngine` update, and the engine tries the system default once. If that opens, it is
+  `Running` again; if not, it stays `Lost`, and `ReadCaptured` returns 0, until
+  `SetCaptureDevice` or `StartCapture` succeeds or the OS restarts the old device. A suspend
+  that leaves the device started (sleep, a Bluetooth profile switch) is not a loss.
+- `StartCapture` closes any running capture first, so on failure capture is `Stopped`. It
+  returns `false` with a logged reason, never a crash or a wait on a prompt,
+  when there is no capture device, the OS denies microphone access, or the desc is out of range
+  (`Channels` 1 or 2, `SampleRate` 8000–384000 Hz, `BufferFrames` above 0). On a machine without
+  a microphone miniaudio may offer its null device, which captures silence.
+- Call every capture function on the thread that drives the engine (the main thread).
+
 ## Buses
 
 A bus mixes the sounds routed to it and its sub-buses, then feeds its parent. `k_MasterBus` is
@@ -182,7 +233,9 @@ keep them across scene switches.
 ## Debug panel
 
 The F3 Engine tab shows whether the engine is valid, the master volume, the live sound count
-and the bus count.
+and the bus count. While capturing it also shows the capture state, the queued frames and
+overruns, a level meter labelled with the gate's state, and a "Capture devices" list that
+switches device on a click.
 
 ## Test
 
@@ -194,10 +247,20 @@ for SFX. Use it to hear that a bus change reaches a sound that is already playin
 tone on SFX" streams a 440 Hz tone that circles the listener; "Gaps" leaves 300 ms of every
 second unfed, to listen for clicks at each underrun.
 
+The Audio Capture Test (`--test=capture`) checks capture at start-up on the default device
+(miniaudio's null device without a microphone): it closes the device and feeds known frames
+through the device thread's processing to check reads, int16 conversion, overruns, gain and the
+gate, then switches device, recovers from a simulated loss and loops captured frames into a
+stream. After that the default microphone runs with a level bar and a gate light; the
+Properties panel switches device, sets gain and the gate, and can monitor the microphone
+through a stream (use headphones).
+
 ## Limits
 
 - One listener.
 - Buses have volume, mute and pause only. There are no effects (filters, reverb) and no
   ducking.
 - Bus volume changes apply at once, with no fade.
-- No microphone capture; a stream plays PCM the game already has.
+- One capture device at a time, and no echo cancellation, codec or voice detection beyond the
+  gate. A capture device can't be told apart from a loss on a backend that reroutes the default
+  device by itself (WASAPI follows the new default without a `Lost`).

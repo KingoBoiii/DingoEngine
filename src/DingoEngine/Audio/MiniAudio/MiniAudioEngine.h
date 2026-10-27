@@ -5,7 +5,7 @@
 namespace Dingo
 {
 
-	namespace Internal { struct MiniAudioData; struct SoundSlot; struct MiniAudioStream; }
+	namespace Internal { struct MiniAudioData; struct SoundSlot; struct MiniAudioStream; struct MiniAudioCapture; }
 
 	// miniaudio implementation of the AudioEngine interface. miniaudio is fully hidden
 	// behind an opaque pointer (Internal::MiniAudioData) — no miniaudio type appears in
@@ -50,6 +50,27 @@ namespace Dingo
 		std::uint32_t PushStreamFrames(AudioSoundId stream, const float* frames, std::uint32_t frameCount) override;
 		std::uint32_t GetQueuedStreamFrames(AudioSoundId stream) const override;
 
+		std::vector<AudioCaptureDevice> EnumerateCaptureDevices() const override;
+		bool StartCapture(const AudioCaptureDesc& desc) override;
+		void StopCapture() override;
+		AudioCaptureState GetCaptureState() const override;
+		std::string GetCaptureDeviceId() const override;
+		std::uint32_t ReadCaptured(std::int16_t* frames, std::uint32_t maxFrames) override;
+		std::uint32_t ReadCaptured(float* frames, std::uint32_t maxFrames) override;
+		std::uint32_t GetCapturedFrames() const override;
+		std::uint64_t GetCaptureOverruns() const override;
+		bool SetCaptureDevice(const std::string& deviceId) override;
+		void SetCaptureGain(float gain) override;
+		void SetCaptureNoiseGate(bool enabled, float thresholdDb, float attackMs, float releaseMs) override;
+		float GetCaptureLevel() const override;
+		bool IsCaptureGateOpen() const override;
+
+		// Test hooks: the capture test closes the device and feeds known frames through the
+		// device thread's processing, so gain, gate and overruns are checked without a microphone.
+		void DetachCaptureDeviceForTest();
+		void FeedCaptureForTest(const float* frames, std::uint32_t frameCount);
+		void SimulateCaptureLossForTest();
+
 		void Stop(AudioSoundId sound) override;
 		void Pause(AudioSoundId sound) override;
 		void Resume(AudioSoundId sound) override;
@@ -75,6 +96,10 @@ namespace Dingo
 		// Resolves a handle to its live slot, or nullptr if the handle is invalid/stale.
 		Internal::SoundSlot* ResolveSlot(AudioSoundId id) const;
 		Internal::MiniAudioStream* ResolveStream(AudioSoundId id) const;
+		Internal::MiniAudioCapture* RunningCapture() const;
+		bool SwitchCaptureDevice(const std::string& deviceId, const char* caller);
+		// Moves a capture whose device stopped on its own to Lost and tries the default once.
+		void PollCaptureDevice();
 
 		// Tears down a live slot's ma_sound and bumps its generation so any handle
 		// pointing at it goes stale. Shared by Stop(), the Update() reap, and Shutdown().
