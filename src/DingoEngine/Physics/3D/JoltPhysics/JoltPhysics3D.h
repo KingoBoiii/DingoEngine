@@ -48,6 +48,10 @@ namespace Dingo
 
 		void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore) override;
 		bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const override;
+		void SetCollisionGroup(PhysicsBodyId3D body, std::uint32_t group, bool collideWithinGroup) override;
+		std::uint32_t GetCollisionGroup(PhysicsBodyId3D body) const override;
+		bool GetCollideWithinGroup(PhysicsBodyId3D body) const override;
+		std::uint32_t AllocateCollisionGroup() override;
 
 		using Physics3D::RayCast;
 		using Physics3D::ShapeCastSphere;
@@ -62,9 +66,26 @@ namespace Dingo
 		std::uint32_t GetUserData(PhysicsBodyId3D body) const override;
 		void SetUserData(PhysicsBodyId3D body, std::uint32_t userData) override;
 
+		ConstraintId3D CreateConstraint(const ConstraintParams3D& params) override;
+		void DestroyConstraint(ConstraintId3D constraint) override;
+		bool IsConstraintValid(ConstraintId3D constraint) const override;
+		void SetConstraintEnabled(ConstraintId3D constraint, bool enabled) override;
+		bool IsConstraintEnabled(ConstraintId3D constraint) const override;
+		PhysicsBodyId3D GetConstraintBody(ConstraintId3D constraint, int index) const override;
+		float GetConstraintValue(ConstraintId3D constraint) const override;
+		std::uint32_t GetConstraintUserData(ConstraintId3D constraint) const override;
+		void SetMotor(ConstraintId3D constraint, MotorAxis3D axis, MotorMode3D mode, const MotorParams3D& params) override;
+		MotorParams3D GetMotorParams(ConstraintId3D constraint, MotorAxis3D axis) const override;
+		MotorMode3D GetMotorMode(ConstraintId3D constraint, MotorAxis3D axis) const override;
+		void SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation) override;
+		void SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity) override;
+		float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const override;
+
 		std::unique_ptr<CharacterController3D> CreateCharacterController(const CharacterControllerParams3D& params) override;
 
 	private:
+		static void DestroyConstraintInternal(Internal::JoltPhysics3DData& data, ConstraintId3D id);
+
 		Internal::JoltPhysics3DData* m_Data = nullptr;
 	};
 

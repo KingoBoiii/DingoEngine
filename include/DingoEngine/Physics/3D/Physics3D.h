@@ -137,10 +137,79 @@ namespace Dingo
 		/// is untouched, and scene queries still hit both. Symmetric, dropped when either body
 		/// is destroyed, and a change wakes both so it holds from the next Step. A Scene owns
 		/// the pairs between a kinematic child and its ancestors' bodies: it applies them on
-		/// every step and withdraws them when the child leaves. No-op on an invalid/stale handle.
+		/// every step and withdraws them when the child leaves. A pair a constraint ignores
+		/// (CollideConnected false) stays ignored until that constraint is destroyed, whatever
+		/// ignore says here. No-op on an invalid/stale handle.
 		virtual void IgnoreCollision(PhysicsBodyId3D a, PhysicsBodyId3D b, bool ignore = true) = 0;
 		/// True if contacts between the two bodies are currently ignored (see IgnoreCollision).
 		virtual bool IsCollisionIgnored(PhysicsBodyId3D a, PhysicsBodyId3D b) const = 0;
+
+		/// Puts a body in a collision group: bodies in the same non-zero group pass through each other,
+		/// unless both were given collideWithinGroup = true. Different groups, and bodies in
+		/// k_NoCollisionGroup, collide as usual. Group 0 takes the body out of its group (and clears
+		/// collideWithinGroup). Any value is a legal group; AllocateCollisionGroup hands out unused ones.
+		/// A group costs no per-pair state and composes with IgnoreCollision and CollideConnected: either
+		/// one dropping a pair drops it. Only contacts are affected; scene queries and character
+		/// controllers see grouped bodies as before. Wakes the body so it holds from the next Step; call
+		/// it between Steps. No-op on an invalid/stale handle.
+		virtual void SetCollisionGroup(PhysicsBodyId3D body, std::uint32_t group, bool collideWithinGroup = false) = 0;
+		/// The body's collision group; k_NoCollisionGroup for none or an invalid/stale handle.
+		virtual std::uint32_t GetCollisionGroup(PhysicsBodyId3D body) const = 0;
+		/// True if the body collides with others of its group that also opted in; false for none or an invalid/stale handle.
+		virtual bool GetCollideWithinGroup(PhysicsBodyId3D body) const = 0;
+		/// Returns a group id no body has used so far in this world (counting groups set by hand or
+		/// through RigidBodyParams3D). Logs an error and returns k_NoCollisionGroup when the ids run out.
+		virtual std::uint32_t AllocateCollisionGroup() = 0;
+
+		// --- Constraints ------------------------------------------------------
+
+		/// Joins two bodies (or one body and the world) with a joint and wakes both. Returns
+		/// k_InvalidConstraint3D and logs an error for a stale or invalid BodyA, a stale BodyB, the
+		/// same body twice, a Static/Static pair (a world pin with a Static BodyA counts), a zero or
+		/// parallel axis the type reads, or limits the type rejects. Destroying either body destroys
+		/// the constraint first. Unless CollideConnected is set the pair stops colliding for as long as
+		/// the constraint exists, even while it is disabled.
+		virtual ConstraintId3D CreateConstraint(const ConstraintParams3D& params) = 0;
+		/// Removes the constraint and wakes its bodies. No-op on a stale or invalid handle.
+		virtual void DestroyConstraint(ConstraintId3D constraint) = 0;
+		/// True while the constraint exists: false once destroyed, once either of its bodies was destroyed, or for an invalid handle.
+		virtual bool IsConstraintValid(ConstraintId3D constraint) const = 0;
+		/// Switches the constraint off or on without destroying it, and wakes its bodies. No-op on a stale handle.
+		virtual void SetConstraintEnabled(ConstraintId3D constraint, bool enabled) = 0;
+		/// True if the constraint exists and is enabled.
+		virtual bool IsConstraintEnabled(ConstraintId3D constraint) const = 0;
+		/// The constraint's body: index 0 is BodyA, 1 is BodyB; k_InvalidBody3D for a world pin's second body, any other index or a stale handle.
+		virtual PhysicsBodyId3D GetConstraintBody(ConstraintId3D constraint, int index) const = 0;
+		/// The current hinge angle in radians, or the slider position or distance between the anchors in metres; 0 for other types and stale handles.
+		virtual float GetConstraintValue(ConstraintId3D constraint) const = 0;
+		/// The UserData the constraint was created with; 0 for a stale handle.
+		virtual std::uint32_t GetConstraintUserData(ConstraintId3D constraint) const = 0;
+
+		/// Sets one motor of a Hinge (axis Hinge) or SwingTwist (axis Swing or Twist) constraint. Values are read
+		/// every step, so call it again to retune. Off, or MaxTorque 0, leaves the joint passive. Position mode is a
+		/// spring toward the target rotation (SetMotorTargetRotation); Velocity mode drives toward the target
+		/// velocity (SetMotorTargetVelocity). An axis the joint lacks is ignored with a warning; a stale handle or
+		/// a negative or NaN value is ignored silently. Wakes both bodies only when the motor actually changed.
+		virtual void SetMotor(ConstraintId3D constraint, MotorAxis3D axis, MotorMode3D mode, const MotorParams3D& params) = 0;
+		/// The params last accepted by SetMotor for the axis; all zero for a stale handle or an axis the joint lacks.
+		virtual MotorParams3D GetMotorParams(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
+		/// The mode last accepted by SetMotor for the axis; Off for a stale handle or an axis the joint lacks.
+		virtual MotorMode3D GetMotorMode(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
+		/// The Position mode target: B's rotation relative to A in body space (R_B = R_A * q), the same for
+		/// every motor of the joint. A Hinge reads only the angle about its axis, clamped to its limits, which
+		/// equals GetConstraintValue when both bodies were created with equal rotations; a SwingTwist takes the
+		/// whole rotation, clamped to its limits. A target past a limit pushes against the limit. A stale
+		/// handle, a joint without motors or a non-finite value is ignored. Wakes both bodies only on a change.
+		virtual void SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation) = 0;
+		/// The Velocity mode target in rad/s of B relative to A, in A's body space, the same for every motor of
+		/// the joint. A Hinge uses the component along its axis. A SwingTwist applies it per axis (twist along
+		/// its twist axis, swing across the cone axes), exact near the rest pose only. A stale handle, a joint
+		/// without motors or a non-finite value is ignored. Wakes both bodies only on a change.
+		virtual void SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity) = 0;
+		/// The magnitude in N*m the motor applied in the last step; 0 when it is off, the bodies sleep or the
+		/// handle or axis is invalid. For Swing it is the larger of the two cone axes. While both bodies sleep no
+		/// solver torque is applied, so a motor holding a pose against gravity reads 0 once it sleeps.
+		virtual float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
 
 		// --- Scene queries ----------------------------------------------------
 

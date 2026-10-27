@@ -479,6 +479,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(ParticleEmitterComponent)
 	DE_INSTANTIATE_COMPONENT(ParticleEventComponent)
 	DE_INSTANTIATE_COMPONENT(RigidBody3DComponent)
+	DE_INSTANTIATE_COMPONENT(Constraint3DComponent)
 	DE_INSTANTIATE_COMPONENT(BoxCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(SphereCollider3DComponent)
 	DE_INSTANTIATE_COMPONENT(CapsuleCollider3DComponent)
