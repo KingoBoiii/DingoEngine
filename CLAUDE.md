@@ -169,3 +169,8 @@ Read the relevant file before changing that area. They hold the detail that used
 | [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status and Appendix A (why the toolchain is built from source; `scripts/build-linux-toolchain.sh` does it) |
 | `docs/` | One page per feature (see `docs/README.md`). Keep the relevant page in step with a public API change |
 | `.claude/plans/`, `.claude/reviews/` | Milestone plans (their "As built" notes win) and dated review reports (trust the fix-status section, and check `git log`) |
+
+## Sub-agent rules
+
+- Diff reviews use model "sonnet", effort "medium".
+- Opus only for Vulkan, Jolt or netcode root-cause work.
