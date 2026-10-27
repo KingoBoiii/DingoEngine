@@ -914,6 +914,8 @@ namespace Dingo
 			}
 			case ConstraintType3D::Hinge:
 			{
+				if (!std::isfinite(params.MinLimit) || !std::isfinite(params.MaxLimit))
+					return fail("hinge limits must be finite");
 				JPH::HingeConstraintSettings settings;
 				settings.mSpace = space;
 				settings.mPoint1 = JPH::RVec3(pointA);
@@ -934,6 +936,8 @@ namespace Dingo
 			}
 			case ConstraintType3D::SwingTwist:
 			{
+				if (!std::isfinite(params.SwingLimitY) || !std::isfinite(params.SwingLimitZ) || !std::isfinite(params.TwistMin) || !std::isfinite(params.TwistMax))
+					return fail("swing and twist limits must be finite");
 				if (params.TwistMin > params.TwistMax)
 					return fail("TwistMin is above TwistMax");
 				JPH::SwingTwistConstraintSettings settings;
@@ -954,6 +958,8 @@ namespace Dingo
 			}
 			case ConstraintType3D::Distance:
 			{
+				if (!std::isfinite(params.MinLimit) || !std::isfinite(params.MaxLimit))
+					return fail("distance limits must be finite");
 				if (!(params.MinLimit >= 0.0f) || !(params.MaxLimit >= 0.0f))
 					return fail("distance limits may not be negative");
 				if (params.MinLimit > params.MaxLimit)
@@ -969,6 +975,8 @@ namespace Dingo
 			}
 			case ConstraintType3D::Slider:
 			{
+				if (!std::isfinite(params.MinLimit) || !std::isfinite(params.MaxLimit))
+					return fail("slider limits must be finite");
 				if (params.MinLimit < params.MaxLimit && (params.MinLimit > 0.0f || params.MaxLimit < 0.0f))
 					return fail("slider limits must satisfy MinLimit <= 0 <= MaxLimit");
 				JPH::SliderConstraintSettings settings;

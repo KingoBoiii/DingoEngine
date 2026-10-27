@@ -830,6 +830,43 @@ namespace Dingo
 					Add(section, "Swing Y / Z", std::format("{:.3f} / {:.3f}", constraint->SwingLimitY, constraint->SwingLimitZ));
 					Add(section, "Twist", std::format("{:.3f} .. {:.3f}", constraint->TwistMin, constraint->TwistMax));
 					Add(section, "Collide connected", Text(constraint->CollideConnected));
+
+					if (constraint->Type == ConstraintType3D::Hinge || constraint->Type == ConstraintType3D::SwingTwist)
+					{
+						MotorView& motor = out.Motor;
+						motor.Present = true;
+						motor.SwingTwist = constraint->Type == ConstraintType3D::SwingTwist;
+						motor.Mode = constraint->MotorMode;
+						motor.Motor = constraint->Motor;
+						motor.TwistMotor = constraint->TwistMotor;
+						const float axisLength = glm::length(constraint->AxisA);
+						motor.Axis = axisLength > 1e-6f ? constraint->AxisA / axisLength : glm::vec3(0.0f, 1.0f, 0.0f);
+						const glm::quat target = glm::normalize(constraint->TargetRotation);
+						const float sine = glm::dot(glm::vec3(target.x, target.y, target.z), motor.Axis);
+						motor.TargetAngle = 2.0f * std::atan2(sine, target.w);
+						if (motor.TargetAngle > glm::pi<float>())
+							motor.TargetAngle -= glm::two_pi<float>();
+						else if (motor.TargetAngle < -glm::pi<float>())
+							motor.TargetAngle += glm::two_pi<float>();
+						motor.TargetVelocity = glm::dot(constraint->TargetAngularVelocity, motor.Axis);
+
+						const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle);
+						const Physics3D* physics = data.Physics.Get3D();
+						if (runtime && physics && physics->IsConstraintValid(runtime->Constraint))
+						{
+							motor.Live = true;
+							if (motor.SwingTwist)
+							{
+								motor.Torque = physics->GetMotorTorque(runtime->Constraint, MotorAxis3D::Swing);
+								motor.TwistTorque = physics->GetMotorTorque(runtime->Constraint, MotorAxis3D::Twist);
+							}
+							else
+							{
+								motor.Angle = physics->GetConstraintValue(runtime->Constraint);
+								motor.Torque = physics->GetMotorTorque(runtime->Constraint, MotorAxis3D::Hinge);
+							}
+						}
+					}
 				}
 
 				if (const AudioSourceComponent* source = registry.try_get<AudioSourceComponent>(handle))

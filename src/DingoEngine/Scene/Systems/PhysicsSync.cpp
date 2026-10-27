@@ -233,7 +233,16 @@ namespace Dingo
 					m_ConstraintScratch.push_back(handle);
 			}
 			for (entt::entity handle : m_ConstraintScratch)
+			{
 				registry.remove<Constraint3DRuntime>(handle);
+				const Constraint3DComponent* settings = registry.try_get<Constraint3DComponent>(handle);
+				if (settings && settings->Other && m_EntityMap)
+				{
+					const auto found = m_EntityMap->find(settings->Other);
+					if (found == m_EntityMap->end() || !registry.valid(found->second))
+						m_ConstraintReported.insert(handle);
+				}
+			}
 
 			for (auto [handle, runtime, settings] : registry.view<Constraint3DRuntime, Constraint3DComponent>().each())
 				WriteMotors(*m_Physics3D, runtime.Constraint, settings);

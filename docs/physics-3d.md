@@ -223,6 +223,9 @@ params.CollideWithinGroup = false;
 - Any `uint32_t` is a group. `AllocateCollisionGroup()` returns an id that no body of this world has
   used through `SetCollisionGroup` or `RigidBodyParams3D`, so it never repeats; it logs an error and
   returns 0 if the ids run out.
+- A very high id set directly (for example `0xFFFFFFFF`) counts as used and exhausts
+  `AllocateCollisionGroup` for the rest of the world's life. Pick small ids yourself, or use only
+  `AllocateCollisionGroup`.
 - A group stores nothing per pair: 15 bodies in one group have no `IgnoreCollision` entries
   (`IsCollisionIgnored` stays false).
 - Only contacts are affected: `RayCast`, `ShapeCastSphere` and `OverlapSphere` still report grouped
@@ -272,6 +275,8 @@ world->DestroyConstraint(hinge);
   made perpendicular to its axis (it may not be parallel to it).
 - **Pin the moving body as `BodyA`.** A world pin needs `BodyA` to be Dynamic or Kinematic; a Static
   `BodyA` pinned to the world fails. Two Static bodies fail too.
+- A Kinematic body joined to another Kinematic body or to a world pin is accepted, but Jolt never
+  solves it: neither side can be moved by the constraint.
 - Hinge limits: `MinLimit >= MaxLimit` means unlimited (-pi..pi); otherwise `-pi <= Min <= 0 <= Max <= pi`.
   Slider limits: `MinLimit >= MaxLimit` is unlimited; otherwise `Min <= 0 <= Max`. The zero point is
   where the anchors and normals coincide at creation.

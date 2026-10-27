@@ -913,6 +913,10 @@ namespace Dingo
 			Check(Distance(world->GetPosition(a), world->GetPosition(c)) > 0.95f, "group: a grouped body still collides with an ungrouped third body");
 			world->DestroyConstraint(id);
 			Check(world->GetCollisionGroup(a) == 8, "group: destroying the constraint keeps the group");
+			const PhysicsBodyId3D d = Box(*world, BodyType3D::Dynamic, { 0.0f, -0.6f, 0.0f });
+			world->SetCollisionGroup(d, 8);
+			Run(*world, 1.0f);
+			Check(Distance(world->GetPosition(a), world->GetPosition(d)) < 0.6f, "group: after the constraint is gone the group still passes through");
 		}
 		{
 			auto world = MakeWorld(glm::vec3(0.0f));
