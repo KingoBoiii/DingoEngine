@@ -1052,6 +1052,74 @@ position += rotation * (scale * step.Translation);
 rotation  = rotation * step.Rotation;
 ```
 
+## Ragdolls
+
+A `RagdollComponent` beside a `SkinnedMeshRendererComponent` gives the character an active ragdoll:
+one dynamic capsule per bone, joined by joints whose motors pull it toward the animated pose. The
+scene builds it when its 3D physics starts, or on the next physics step for one added later, from
+the pose the model is in at that moment.
+
+```cpp
+Entity fox = scene->CreateEntity("Fox");
+fox.AddComponent<Transform3DComponent>(Transform3DComponent(position, glm::vec3(scale)));
+fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(model));
+fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+fox.AddComponent<RagdollComponent>();          // driven: holds the walk
+
+// Later, on a hit:
+RagdollComponent& ragdoll = fox.GetComponent<RagdollComponent>();
+ragdoll.DriveToAnimation = false;              // limp: falls, and the entity follows its hips
+scene->GetPhysics3D()->ApplyImpulse(scene->GetRagdollBody(fox, "b_Spine02_03"), push);
+```
+
+| Field | Meaning |
+|---|---|
+| `Blend` (1) | 0 shows the animation untouched (the bodies still simulate), 1 the simulated bones, between mixes each simulated joint. Read every frame. |
+| `Strength` (1) | Scales the joint motors and how firmly the hips track the animated root. 0 is limp. |
+| `DriveToAnimation` (true) | False turns the motors off and leaves the root untracked. |
+| `TotalMass` (70 kg) | Shared out by capsule volume. Read at build. |
+| `CollideWithinRagdoll` (false) | Lets the ragdoll's limbs hit each other, except two joined by a joint. Read at build. |
+
+**What gets a body.** The root body is the first joint with two or more children (the hips). Below it
+every bone with a child gets a capsule along the bone to its main child, unless its name marks it as a
+finger, toe, face, twist helper or attachment point, or it is shorter than 0.3 times its parent bone;
+those fold into the nearest body above them. A joint whose name says elbow, forearm, knee, calf or shin
+is a `Hinge` that bends the way the bone already bends; the rest are `SwingTwist` joints whose cone and
+twist limits depend on the name (torso, arm, leg, other). Limits are measured from the build pose: a
+hinge built straight has no bend side to go by and gets ±150°, and each cone is centred on the build
+pose rather than on an anatomical rest. More
+than 20 bodies, or a skeleton without a branching joint, logs an error once and builds nothing. The
+Fox in `test/assets/models/Fox` gets 16: hips, two spine bones, neck (the head rides on it), two
+bones per arm, two per hind leg plus the foot, and two tail bones.
+
+**Driving.** Each physics step sets every joint's motor target to the animated pose's relative
+rotation, with gains scaled by the bone's own inertia (a 6 Hz spring at `Strength` 1), and moves the
+hips toward the animated root. With `Strength` 0 or `DriveToAnimation` off, the ragdoll is limp.
+Without an `AnimatorComponent` the target is the model's rest pose, and the ragdoll keeps its own
+animator to draw the result. At `Strength` 1 the hips take the animated root's velocity every step,
+so an impulse on the hips is undone at once while the limbs still give way; use a `Strength` below 1
+to let a shove move the whole body. A driven ragdoll never sleeps, `Blend` 0 still simulates it, and
+teleporting the entity yanks the hips across to the new place.
+
+**The entity follows a limp ragdoll.** While `Blend` is above 0 and the ragdoll isn't driven, the
+entity's position moves with the hips body every frame, so its children, sockets and a following
+camera go where the body went, and clip root motion is ignored. An entity with its own
+`RigidBody3DComponent` or `CharacterController3DComponent` never follows: switch the controller off
+(or remove it) before letting the body fall.
+
+**Bodies.** `Scene::GetRagdollBody(entity, "jointName")` returns a bone's body, or its nearest
+simulated ancestor's (a hand finds its forearm's), for impulses, ray-cast filters or sensors.
+`Scene::GetEntityFromBody3D` maps every ragdoll body back to the entity. The bodies share one
+collision group, and go with the component, the entity, `SetActive(false)` and `OnStop`.
+Reactivating or restarting rebuilds them; so does a model swap or a skeleton reload. The entity's
+scale is read at build: rescaling it later needs a rebuild (remove and re-add the component).
+
+The blended bones reach the animator through `Animator::BlendGlobalTransforms`, which a game can also
+call itself on a standalone `Animator` after `Update`.
+
+**Fixed tick.** Under `SceneParams::FixedTick` the motors target the previous frame's animation, and
+the blended bones are the latest tick's bodies, not interpolated between ticks.
+
 ## Hot-reload
 
 With the AssetManager's hot-reload on (`params.Assets.EnableHotReload = true`, or the toggle in the F6
@@ -1187,7 +1255,8 @@ Not available:
 - [Asset Pipeline](asset-pipeline.md) - loading models, the `.events` sidecar, and
   [Model hot-reload](asset-pipeline.md#model-hot-reload-v08).
 - [Lighting & Shading](lighting.md) - lit materials, which skinned meshes draw with.
-- [3D Physics](physics-3d.md) - kinematic bodies and character controllers.
+- [3D Physics](physics-3d.md) - kinematic bodies, character controllers, and the
+  [constraints](physics-3d.md#constraints) a [ragdoll](#ragdolls) is built from.
 - The test app's **Animation Test** (`test/`, `--test=anim`, flags [above](#debugging)).
 - `examples/Marionette` - the worked example: combat windows from `.events`, a masked block layer,
   weapons and hit spheres on sockets, clip libraries shared by four characters, and live `.events`

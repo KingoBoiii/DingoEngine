@@ -203,6 +203,7 @@ namespace Dingo
 		CopyComponentIfExists<CapsuleCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<MeshCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<Constraint3DComponent>(registry, dst, src);
+		CopyComponentIfExists<RagdollComponent>(registry, dst, src);
 		CopyComponentIfExists<CharacterController3DComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
@@ -405,6 +406,11 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("PhysicsSync::Step");
 			m_Data->Physics.Step(m_Data->Registry, deltaTime);
+		}
+
+		{
+			DE_PROFILE_SCOPE("PhysicsSync::PoseRagdolls");
+			m_Data->Physics.PoseRagdolls(m_Data->Registry);
 		}
 
 		// Transforms are final for the frame now (physics + controller write-back
@@ -1024,6 +1030,14 @@ namespace Dingo
 			return k_InvalidBody3D;
 
 		return m_Data->Physics.RuntimeBody3D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
+	}
+
+	PhysicsBodyId3D Scene::GetRagdollBody(Entity entity, std::string_view joint) const
+	{
+		if (!IsValid(entity))
+			return k_InvalidBody3D;
+
+		return m_Data->Physics.RagdollBody(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle), joint);
 	}
 
 	Entity Scene::GetEntityFromBody3D(PhysicsBodyId3D body)

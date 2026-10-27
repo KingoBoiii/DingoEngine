@@ -98,6 +98,38 @@ namespace Dingo
 			uint32_t CulledUpdates = 0;
 		};
 
+		// A RagdollComponent's bodies and joints (RagdollSystem), dropped with the component, the entity's
+		// deactivation or the 3D world, and rebuilt when the skeleton's id or revision changes.
+		struct RagdollRuntime
+		{
+			// Rigid: the scale a joint carries is the animated one, never simulated.
+			struct Part
+			{
+				int32_t Joint = -1;
+				int32_t Parent = -1; // index into Parts, below its own; -1 for the root body
+				PhysicsBodyId3D Body = k_InvalidBody3D;
+				ConstraintId3D Constraint = k_InvalidConstraint3D; // to Parent's body
+				// The body's frame in its joint's world frame (joint position, rotation without scale).
+				glm::vec3 OffsetPosition{ 0.0f };
+				glm::quat OffsetRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+				float Mass = 0.0f;
+				// The subtree's moment of inertia about the joint, which the motor's gains scale with.
+				float Inertia = 0.0f;
+				bool Hinge = false; // else swing-twist
+			};
+
+			std::vector<Part> Parts; // parents first
+			// Per skeleton joint, its part or its nearest simulated ancestor's; -1 above the root body.
+			std::vector<int32_t> PartOfJoint;
+			// The rest-pose animator posed in place of an AnimatorComponent's, for an entity without one.
+			std::unique_ptr<Animator> Instance;
+			uint64_t SkeletonId = 0;
+			uint32_t SkeletonRevision = 0;
+			std::uint32_t Group = k_NoCollisionGroup;
+			// The entity's position followed the root body last frame, so clip root motion stays off.
+			bool FollowsRoot = false;
+		};
+
 		// A ParticleEmitterComponent's emitter, made by the renderer that first draws it (ParticleSync).
 		// Freed with the component; its particles vanish with it.
 		struct ParticleEmitterRuntime

@@ -852,6 +852,40 @@ namespace Dingo
 		Constraint3DComponent(ConstraintType3D type, UUID other = UUID()) : Type(type), Other(other) {}
 	};
 
+	/// An active ragdoll for the entity's SkinnedMeshRendererComponent::Model: one dynamic capsule per
+	/// bone, joined by Hinge (elbows, knees) and SwingTwist joints, built from the current pose when the
+	/// Scene's physics starts (and rebuilt when the model or its skeleton changes). Each physics step
+	/// drives the joints toward the AnimatorComponent's pose with motors; without an AnimatorComponent
+	/// the target is the rest pose. The bodies share one collision group. Destroying the entity,
+	/// removing the component or SetActive(false) removes every body and joint; reactivating rebuilds
+	/// them. A skeleton needs a joint with two or more children (the hips); bones shorter than 0.3x
+	/// their parent's, end bones and "slot"/"socket" joints fold into their parent, and more than 20
+	/// bodies is an error that builds nothing. Scene::GetRagdollBody returns a bone's body.
+	struct RagdollComponent
+	{
+		/// 0 shows the animation untouched, 1 the simulated bones; between the two each simulated
+		/// joint is mixed. Above 0 the entity's own position follows the root (hips) body while it isn't
+		/// driven (DriveToAnimation off or Strength 0), so children and cameras follow a fall, and clip
+		/// root motion is ignored; an entity with its own RigidBody3DComponent or controller never
+		/// follows. Read every frame.
+		float Blend = 1.0f;
+		/// Scales the motors' stiffness and torque cap, and how firmly the root body tracks the
+		/// animated root: 0 is limp, 1 follows the pose firmly, above 1 is allowed. Read every step.
+		float Strength = 1.0f;
+		/// False turns the motors off and leaves the root untracked: a limp body, whatever Strength.
+		bool DriveToAnimation = true;
+		/// The ragdoll's mass in kg, shared out by capsule volume. Read when the ragdoll is built.
+		float TotalMass = 70.0f;
+		/// True lets the ragdoll's bodies collide with each other, except two joined by a joint.
+		/// Read when the ragdoll is built.
+		bool CollideWithinRagdoll = false;
+
+		/// Blend 1, Strength 1, driven, 70 kg, no self-collision.
+		RagdollComponent() = default;
+		/// Copies all fields.
+		RagdollComponent(const RagdollComponent&) = default;
+	};
+
 	/// A kinematic character controller for player/enemy movement, wrapping Jolt's
 	/// CharacterVirtual behind the Scene's Physics3D. The Scene creates the controller
 	/// at Scene::OnStart from the params below (positioned at the entity's Transform3D),

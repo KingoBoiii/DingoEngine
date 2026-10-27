@@ -1,0 +1,724 @@
+#include "depch.h"
+#include "DingoEngine/Scene/Systems/RagdollSystem.h"
+
+#include "DingoEngine/Graphics/Animator.h"
+#include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/Skeleton.h"
+#include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/Systems/AnimationSystem.h"
+#include "DingoEngine/Scene/Systems/HierarchySystem.h"
+#include "DingoEngine/Scene/Systems/RuntimeComponents.h"
+
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cmath>
+#include <string>
+
+namespace Dingo
+{
+
+	namespace Internal
+	{
+
+		namespace
+		{
+
+			enum class JointClass
+			{
+				Hinge,
+				Torso,
+				Arm,
+				Leg,
+				Other,
+			};
+
+			struct SwingTwistLimits
+			{
+				float SwingY;
+				float SwingZ;
+				float Twist;
+			};
+
+			// The motors' natural frequency: stiff enough to hold a pose against gravity and a walk
+			// cycle's accelerations, soft enough to give way to a shove.
+			constexpr float k_DriveFrequency = 6.0f;
+			constexpr float k_FoldRatio = 0.3f;
+			constexpr float k_HingeMaxBend = glm::radians(150.0f);
+			constexpr float k_HingeOverextension = glm::radians(5.0f);
+
+			std::string Lowercase(std::string_view text)
+			{
+				std::string lower(text);
+				std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+				return lower;
+			}
+
+			bool ContainsAny(const std::string& name, std::initializer_list<std::string_view> words)
+			{
+				return std::any_of(words.begin(), words.end(), [&](std::string_view word) { return name.find(word) != std::string::npos; });
+			}
+
+			// Fingers, faces, twist and IK helpers and attachment points never get a body of their own.
+			bool IsFoldedByName(const std::string& name)
+			{
+				return ContainsAny(name, { "finger", "thumb", "index", "middle", "ring", "pinky", "toe", "eye", "jaw", "tongue", "twist", "slot", "socket", "ik_", "_ik", "pole" });
+			}
+
+			bool EndsWith(const std::string& name, std::string_view suffix)
+			{
+				return name.size() >= suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+			}
+
+			JointClass Classify(const std::string& name)
+			{
+				if (ContainsAny(name, { "forearm", "lowerarm", "lower_arm", "elbow", "knee", "calf", "shin", "lowerleg", "lower_leg" }))
+					return JointClass::Hinge;
+				// Mixamo's knee is "LeftLeg", below "LeftUpLeg".
+				if (EndsWith(name, "leg") && !ContainsAny(name, { "up", "thigh" }))
+					return JointClass::Hinge;
+				if (ContainsAny(name, { "arm", "shoulder", "clavicle", "hand", "wrist" }))
+					return JointClass::Arm;
+				if (ContainsAny(name, { "leg", "thigh", "foot", "ankle" }))
+					return JointClass::Leg;
+				if (ContainsAny(name, { "hip", "pelvis", "spine", "chest", "neck", "head" }))
+					return JointClass::Torso;
+				return JointClass::Other;
+			}
+
+			SwingTwistLimits LimitsOf(JointClass type)
+			{
+				switch (type)
+				{
+					case JointClass::Torso: return { glm::radians(30.0f), glm::radians(30.0f), glm::radians(20.0f) };
+					case JointClass::Arm:   return { glm::radians(70.0f), glm::radians(70.0f), glm::radians(45.0f) };
+					case JointClass::Leg:   return { glm::radians(60.0f), glm::radians(45.0f), glm::radians(30.0f) };
+					default:                return { glm::radians(25.0f), glm::radians(25.0f), glm::radians(15.0f) };
+				}
+			}
+
+			glm::quat FromTo(const glm::vec3& from, const glm::vec3& to)
+			{
+				const float d = glm::dot(from, to);
+				if (d < -0.9999f)
+				{
+					glm::vec3 axis = glm::cross(glm::vec3(1.0f, 0.0f, 0.0f), from);
+					if (glm::dot(axis, axis) < 1e-6f)
+						axis = glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), from);
+					return glm::angleAxis(glm::pi<float>(), glm::normalize(axis));
+				}
+				const glm::vec3 c = glm::cross(from, to);
+				return glm::normalize(glm::quat(1.0f + d, c.x, c.y, c.z));
+			}
+
+			// `direction` with its component along `axis` removed, normalised; `fallback` (likewise) when
+			// that leaves nothing.
+			glm::vec3 Perpendicular(const glm::vec3& direction, const glm::vec3& axis, const glm::vec3& fallback)
+			{
+				glm::vec3 result = direction - glm::dot(direction, axis) * axis;
+				if (glm::dot(result, result) < 1e-6f)
+					result = fallback - glm::dot(fallback, axis) * axis;
+				if (glm::dot(result, result) < 1e-6f)
+					result = glm::cross(axis, std::abs(axis.x) < 0.9f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f));
+				return glm::normalize(result);
+			}
+
+			const Skeleton* SkeletonOf(const entt::registry& registry, entt::entity handle)
+			{
+				const SkinnedMeshRendererComponent* skinned = registry.try_get<SkinnedMeshRendererComponent>(handle);
+				return skinned && skinned->Model ? skinned->Model->GetSkeleton() : nullptr;
+			}
+
+			std::string NameOf(const entt::registry& registry, entt::entity handle)
+			{
+				const TagComponent* tag = registry.try_get<TagComponent>(handle);
+				return tag ? tag->Tag : std::string();
+			}
+
+			void RigidFrame(const glm::mat4& matrix, glm::vec3& position, glm::quat& rotation)
+			{
+				glm::vec3 scale;
+				HierarchySystem::Decompose(matrix, position, rotation, scale);
+			}
+
+			bool Driven(const RagdollComponent& settings)
+			{
+				return settings.DriveToAnimation && settings.Strength > 0.0f;
+			}
+
+			bool Finite(const glm::vec3& v)
+			{
+				return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+			}
+
+		}
+
+		Animator* RagdollSystem::PosingAnimator(entt::registry& registry, entt::entity handle, const Skeleton& skeleton)
+		{
+			Animator* animator = nullptr;
+			if (registry.all_of<AnimatorComponent>(handle))
+				animator = AnimationSystem::GetAnimator(registry, handle);
+			else if (RagdollRuntime* runtime = registry.try_get<RagdollRuntime>(handle))
+				animator = runtime->Instance.get();
+
+			if (!animator || !animator->GetSkeleton() || animator->GetSkeleton()->GetId() != skeleton.GetId())
+				return nullptr;
+			if (animator->GetLocalPoses().size() < skeleton.GetJointCount())
+				return nullptr;
+			return animator;
+		}
+
+		bool RagdollSystem::AnimatedJointWorlds(entt::registry& registry, entt::entity handle, const Skeleton& skeleton, glm::mat4& entityWorld)
+		{
+			const Animator* animator = PosingAnimator(registry, handle, skeleton);
+			if (!animator)
+				return false;
+
+			const size_t count = skeleton.GetJointCount();
+			m_Globals.resize(count);
+			m_JointWorlds.resize(count);
+			skeleton.ComputeGlobalTransforms(animator->GetLocalPoses(), m_Globals);
+
+			entityWorld = HierarchySystem::WorldTransform(registry, handle);
+			const glm::mat4 model = entityWorld * skeleton.GetRootTransform();
+			for (size_t i = 0; i < count; ++i)
+				m_JointWorlds[i] = model * m_Globals[i];
+			return true;
+		}
+
+		void RagdollSystem::Sync(entt::registry& registry, Physics3D& physics, float deltaTime)
+		{
+			m_Scratch.clear();
+			auto built = registry.view<RagdollRuntime>();
+			for (entt::entity handle : built)
+			{
+				const RagdollRuntime& runtime = built.get<RagdollRuntime>(handle);
+				const Skeleton* skeleton = SkeletonOf(registry, handle);
+				bool stale = !skeleton || skeleton->GetId() != runtime.SkeletonId || skeleton->GetRevision() != runtime.SkeletonRevision;
+				// An AnimatorComponent added or removed after the build changes which animator poses it.
+				stale = stale || registry.all_of<AnimatorComponent>(handle) == (runtime.Instance != nullptr);
+				for (const RagdollRuntime::Part& part : runtime.Parts)
+					stale = stale || !physics.IsBodyValid(part.Body) || (part.Parent >= 0 && !physics.IsConstraintValid(part.Constraint));
+				if (stale)
+					m_Scratch.push_back(handle);
+			}
+			for (entt::entity handle : m_Scratch)
+				Drop(registry, &physics, handle);
+
+			m_Scratch.clear();
+			auto pending = registry.view<RagdollComponent, SkinnedMeshRendererComponent, Transform3DComponent>(entt::exclude<RagdollRuntime, InactiveComponent>);
+			for (entt::entity handle : pending)
+				m_Scratch.push_back(handle);
+			for (entt::entity handle : m_Scratch)
+				Build(registry, physics, handle);
+
+			if (deltaTime <= 0.0f)
+				return;
+
+			m_Scratch.clear();
+			for (entt::entity handle : registry.view<RagdollRuntime>())
+				m_Scratch.push_back(handle);
+			for (entt::entity handle : m_Scratch)
+				Drive(registry, physics, handle, deltaTime);
+		}
+
+		void RagdollSystem::Build(entt::registry& registry, Physics3D& physics, entt::entity handle)
+		{
+			const Skeleton* skeleton = SkeletonOf(registry, handle);
+			if (!skeleton || skeleton->GetJointCount() == 0)
+				return;
+
+			if (const auto rejected = m_Rejected.find(handle); rejected != m_Rejected.end())
+			{
+				if (rejected->second.SkeletonId == skeleton->GetId() && rejected->second.Revision == skeleton->GetRevision())
+					return;
+				m_Rejected.erase(rejected);
+			}
+
+			auto reject = [&](const char* reason)
+			{
+				m_Rejected[handle] = { skeleton->GetId(), skeleton->GetRevision() };
+				DE_CORE_ERROR("RagdollComponent on '{}': {}; no ragdoll built", NameOf(registry, handle), reason);
+			};
+
+			// The rest-pose animator joins the registry first so PosingAnimator finds it.
+			RagdollRuntime& runtime = registry.emplace<RagdollRuntime>(handle);
+			runtime.SkeletonId = skeleton->GetId();
+			runtime.SkeletonRevision = skeleton->GetRevision();
+			if (!registry.all_of<AnimatorComponent>(handle))
+				runtime.Instance = std::make_unique<Animator>(skeleton);
+
+			glm::mat4 entityWorld;
+			if (!AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+			{
+				registry.remove<RagdollRuntime>(handle);
+				return;
+			}
+
+			const std::vector<Joint>& joints = skeleton->GetJoints();
+			const int32_t count = static_cast<int32_t>(joints.size());
+
+			std::vector<glm::vec3> positions(count);
+			std::vector<glm::quat> rotations(count);
+			std::vector<std::string> names(count);
+			std::vector<bool> excluded(count, false);
+			std::vector<std::vector<int32_t>> children(count);
+			std::vector<int32_t> descendants(count, 0);
+			for (int32_t i = 0; i < count; ++i)
+			{
+				RigidFrame(m_JointWorlds[i], positions[i], rotations[i]);
+				names[i] = Lowercase(joints[i].Name);
+				const int32_t parent = joints[i].Parent;
+				excluded[i] = IsFoldedByName(names[i]) || (parent >= 0 && excluded[parent]);
+				if (parent >= 0)
+					children[parent].push_back(i);
+			}
+			for (int32_t i = count - 1; i >= 0; --i)
+			{
+				if (joints[i].Parent >= 0)
+					descendants[joints[i].Parent] += descendants[i] + 1;
+			}
+
+			auto mainChild = [&](int32_t joint)
+			{
+				int32_t best = -1;
+				for (const int32_t child : children[joint])
+				{
+					if (best < 0 || (excluded[best] && !excluded[child]) || (excluded[best] == excluded[child] && descendants[child] > descendants[best]))
+						best = child;
+				}
+				return best;
+			};
+
+			// The hips by name when they branch, so a root bone fanning out to IK targets or props doesn't
+			// become a floor-to-pelvis body.
+			int32_t root = -1;
+			int32_t namedRoot = -1;
+			for (int32_t i = 0; i < count && namedRoot < 0; ++i)
+			{
+				if (excluded[i])
+					continue;
+				const auto kept = std::count_if(children[i].begin(), children[i].end(), [&](int32_t child) { return !excluded[child]; });
+				if (kept < 2)
+					continue;
+				if (root < 0)
+					root = i;
+				if (ContainsAny(names[i], { "hip", "pelvis" }))
+					namedRoot = i;
+			}
+			if (namedRoot >= 0)
+				root = namedRoot;
+			if (root < 0)
+			{
+				registry.remove<RagdollRuntime>(handle);
+				reject("the skeleton has no joint with two or more children to root it at");
+				return;
+			}
+
+			std::vector<float> lengths(count, 0.0f);
+			std::vector<int32_t> main(count, -1);
+			for (int32_t i = 0; i < count; ++i)
+			{
+				main[i] = mainChild(i);
+				if (main[i] >= 0)
+					lengths[i] = glm::length(positions[main[i]] - positions[i]);
+			}
+
+			const float scale = glm::length(glm::vec3(entityWorld[1])) * glm::length(glm::vec3(skeleton->GetRootTransform()[1]));
+			const float minLength = 1e-4f * (scale > 0.0f && std::isfinite(scale) ? scale : 1.0f);
+
+			runtime.PartOfJoint.assign(count, -1);
+			std::vector<bool> inRagdoll(count, false);
+			for (int32_t i = root; i < count; ++i)
+			{
+				const int32_t parent = joints[i].Parent;
+				if (i != root && (parent < 0 || !inRagdoll[parent]))
+					continue;
+				inRagdoll[i] = true;
+
+				const int32_t ancestor = i == root ? -1 : runtime.PartOfJoint[parent];
+				bool body = main[i] >= 0 && !excluded[i] && lengths[i] > minLength;
+				if (body && ancestor >= 0)
+					body = lengths[i] >= k_FoldRatio * lengths[runtime.Parts[ancestor].Joint];
+				if (!body)
+				{
+					if (i == root)
+					{
+						registry.remove<RagdollRuntime>(handle);
+						reject("the root joint's bone has no length");
+						return;
+					}
+					runtime.PartOfJoint[i] = ancestor;
+					continue;
+				}
+
+				if (runtime.Parts.size() >= k_MaxBodies)
+				{
+					registry.remove<RagdollRuntime>(handle);
+					reject("the skeleton needs more than 20 bodies");
+					return;
+				}
+
+				RagdollRuntime::Part& part = runtime.Parts.emplace_back();
+				part.Joint = i;
+				part.Parent = ancestor;
+				runtime.PartOfJoint[i] = static_cast<int32_t>(runtime.Parts.size() - 1);
+			}
+
+			// Capsules along each bone, sized from its length and how far its other children sit off it.
+			struct Shape
+			{
+				glm::vec3 Position;
+				glm::quat Rotation;
+				float Radius;
+				float HalfHeight;
+			};
+			std::vector<Shape> shapes(runtime.Parts.size());
+			float totalVolume = 0.0f;
+			for (size_t p = 0; p < runtime.Parts.size(); ++p)
+			{
+				const int32_t joint = runtime.Parts[p].Joint;
+				const float length = lengths[joint];
+				const glm::vec3 direction = (positions[main[joint]] - positions[joint]) / length;
+
+				float lateral = 0.0f;
+				for (const int32_t child : children[joint])
+				{
+					const glm::vec3 offset = positions[child] - positions[joint];
+					lateral = (std::max)(lateral, glm::length(offset - glm::dot(offset, direction) * direction));
+				}
+
+				Shape& shape = shapes[p];
+				shape.Radius = (std::max)(0.22f * length, (std::min)(0.5f * lateral, 0.6f * length));
+				shape.HalfHeight = (std::max)(0.5f * length - shape.Radius, 0.05f * length);
+				shape.Position = positions[joint] + direction * (0.5f * length);
+				shape.Rotation = FromTo(rotations[joint] * glm::vec3(0.0f, 1.0f, 0.0f), direction) * rotations[joint];
+				totalVolume += glm::pi<float>() * shape.Radius * shape.Radius * (2.0f * shape.HalfHeight + 4.0f / 3.0f * shape.Radius);
+			}
+
+			const RagdollComponent& settings = registry.get<RagdollComponent>(handle);
+			const float totalMass = settings.TotalMass > 0.0f && std::isfinite(settings.TotalMass) ? settings.TotalMass : 70.0f;
+			runtime.Group = physics.AllocateCollisionGroup();
+
+			auto fail = [&](const char* reason)
+			{
+				for (const RagdollRuntime::Part& part : runtime.Parts)
+				{
+					physics.DestroyConstraint(part.Constraint);
+					physics.DestroyBody(part.Body);
+				}
+				registry.remove<RagdollRuntime>(handle);
+				reject(reason);
+			};
+
+			for (size_t p = 0; p < runtime.Parts.size(); ++p)
+			{
+				RagdollRuntime::Part& part = runtime.Parts[p];
+				const Shape& shape = shapes[p];
+				const float volume = glm::pi<float>() * shape.Radius * shape.Radius * (2.0f * shape.HalfHeight + 4.0f / 3.0f * shape.Radius);
+				part.Mass = totalMass * volume / totalVolume;
+
+				RigidBodyParams3D params(BodyType3D::Dynamic, ColliderShape3D::Capsule);
+				params.Position = shape.Position;
+				params.Rotation = shape.Rotation;
+				params.Radius = shape.Radius;
+				params.HalfHeight = shape.HalfHeight;
+				params.Mass = part.Mass;
+				params.Friction = 0.8f;
+				params.CollisionGroup = runtime.Group;
+				params.CollideWithinGroup = settings.CollideWithinRagdoll;
+				params.UserData = static_cast<std::uint32_t>(handle);
+				part.Body = physics.CreateBody(params);
+				if (part.Body == k_InvalidBody3D)
+				{
+					fail("a bone's capsule could not be created");
+					return;
+				}
+
+				const glm::quat inverseJoint = glm::inverse(rotations[part.Joint]);
+				part.OffsetPosition = inverseJoint * (shape.Position - positions[part.Joint]);
+				part.OffsetRotation = glm::normalize(inverseJoint * shape.Rotation);
+			}
+
+			for (size_t p = 0; p < runtime.Parts.size(); ++p)
+			{
+				RagdollRuntime::Part& part = runtime.Parts[p];
+				float inertia = 0.0f;
+				for (size_t q = p; q < runtime.Parts.size(); ++q)
+				{
+					int32_t up = static_cast<int32_t>(q);
+					while (up > static_cast<int32_t>(p))
+						up = runtime.Parts[up].Parent;
+					if (up != static_cast<int32_t>(p))
+						continue;
+
+					const float length = lengths[runtime.Parts[q].Joint];
+					const glm::vec3 lever = shapes[q].Position - positions[part.Joint];
+					inertia += runtime.Parts[q].Mass * (glm::dot(lever, lever) + length * length / 12.0f);
+				}
+				part.Inertia = inertia;
+
+				if (part.Parent < 0)
+					continue;
+
+				const RagdollRuntime::Part& parent = runtime.Parts[part.Parent];
+				const Shape& shapeA = shapes[part.Parent];
+				const Shape& shapeB = shapes[p];
+				const glm::quat inverseA = glm::inverse(shapeA.Rotation);
+				const glm::quat inverseB = glm::inverse(shapeB.Rotation);
+				const glm::vec3 anchor = positions[part.Joint];
+				const glm::vec3 directionA = shapeA.Rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+				const glm::vec3 directionB = shapeB.Rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+				const JointClass type = Classify(names[part.Joint]);
+				part.Hinge = type == JointClass::Hinge;
+
+				ConstraintParams3D params(type == JointClass::Hinge ? ConstraintType3D::Hinge : ConstraintType3D::SwingTwist, parent.Body, part.Body);
+				params.AnchorA = inverseA * (anchor - shapeA.Position);
+				params.AnchorB = inverseB * (anchor - shapeB.Position);
+				params.UserData = static_cast<std::uint32_t>(handle);
+				if (type == JointClass::Hinge)
+				{
+					// Bent, the hinge turns the way it already bends: a positive angle bends it further.
+					// Straight, the joint's own X axis is the best guess at the bend axis.
+					const glm::vec3 bendAxis = glm::cross(directionA, directionB);
+					const float bend = std::atan2(glm::length(bendAxis), glm::dot(directionA, directionB));
+					glm::vec3 axis;
+					if (bend > glm::radians(10.0f))
+					{
+						axis = glm::normalize(bendAxis);
+						params.MinLimit = (std::max)(-bend - k_HingeOverextension, -glm::pi<float>());
+						params.MaxLimit = (std::max)(k_HingeMaxBend - bend, 0.0f);
+					}
+					else
+					{
+						axis = Perpendicular(rotations[part.Joint] * glm::vec3(1.0f, 0.0f, 0.0f), directionB, rotations[part.Joint] * glm::vec3(0.0f, 0.0f, 1.0f));
+						params.MinLimit = -k_HingeMaxBend;
+						params.MaxLimit = k_HingeMaxBend;
+					}
+					const glm::vec3 normal = Perpendicular(directionB, axis, directionA);
+					params.AxisA = inverseA * axis;
+					params.AxisB = inverseB * axis;
+					params.NormalAxisA = inverseA * normal;
+					params.NormalAxisB = inverseB * normal;
+				}
+				else
+				{
+					const SwingTwistLimits limits = LimitsOf(type);
+					const glm::vec3 normal = Perpendicular(rotations[part.Joint] * glm::vec3(1.0f, 0.0f, 0.0f), directionB, rotations[part.Joint] * glm::vec3(0.0f, 0.0f, 1.0f));
+					params.AxisA = inverseA * directionB;
+					params.AxisB = inverseB * directionB;
+					params.NormalAxisA = inverseA * normal;
+					params.NormalAxisB = inverseB * normal;
+					params.SwingLimitY = limits.SwingY;
+					params.SwingLimitZ = limits.SwingZ;
+					params.TwistMin = -limits.Twist;
+					params.TwistMax = limits.Twist;
+				}
+
+				part.Constraint = physics.CreateConstraint(params);
+				if (part.Constraint == k_InvalidConstraint3D)
+				{
+					fail("a joint could not be created");
+					return;
+				}
+			}
+		}
+
+		void RagdollSystem::Drive(entt::registry& registry, Physics3D& physics, entt::entity handle, float deltaTime)
+		{
+			const RagdollComponent* settings = registry.try_get<RagdollComponent>(handle);
+			const Skeleton* skeleton = SkeletonOf(registry, handle);
+			if (!settings || !skeleton)
+				return;
+
+			const bool driven = Driven(*settings);
+			glm::mat4 entityWorld;
+			if (driven && !AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+				return;
+
+			RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
+			const float strength = std::isfinite(settings->Strength) ? settings->Strength : 0.0f;
+			const float omega = glm::two_pi<float>() * k_DriveFrequency;
+			for (const RagdollRuntime::Part& part : runtime.Parts)
+			{
+				if (part.Parent < 0)
+					continue;
+
+				MotorParams3D motor;
+				MotorMode3D mode = MotorMode3D::Off;
+				if (driven)
+				{
+					const float stiffness = part.Inertia * omega * omega;
+					motor.Stiffness = stiffness * strength;
+					motor.Damping = 2.0f * part.Inertia * omega * (std::sqrt)(strength);
+					motor.MaxTorque = 2.0f * stiffness * strength;
+					mode = MotorMode3D::Position;
+				}
+
+				if (part.Hinge)
+					physics.SetMotor(part.Constraint, MotorAxis3D::Hinge, mode, motor);
+				else
+				{
+					physics.SetMotor(part.Constraint, MotorAxis3D::Swing, mode, motor);
+					physics.SetMotor(part.Constraint, MotorAxis3D::Twist, mode, motor);
+				}
+
+				if (!driven)
+					continue;
+
+				const RagdollRuntime::Part& parent = runtime.Parts[part.Parent];
+				glm::vec3 position;
+				glm::quat jointA, jointB;
+				RigidFrame(m_JointWorlds[parent.Joint], position, jointA);
+				RigidFrame(m_JointWorlds[part.Joint], position, jointB);
+				const glm::quat bodyA = jointA * parent.OffsetRotation;
+				const glm::quat bodyB = jointB * part.OffsetRotation;
+				physics.SetMotorTargetRotation(part.Constraint, glm::normalize(glm::inverse(bodyA) * bodyB));
+			}
+
+			if (!driven)
+				return;
+
+			const RagdollRuntime::Part& root = runtime.Parts.front();
+			glm::vec3 jointPosition;
+			glm::quat jointRotation;
+			RigidFrame(m_JointWorlds[root.Joint], jointPosition, jointRotation);
+			const glm::vec3 targetPosition = jointPosition + jointRotation * root.OffsetPosition;
+			const glm::quat targetRotation = glm::normalize(jointRotation * root.OffsetRotation);
+
+			const glm::vec3 position = physics.GetPosition(root.Body);
+			glm::quat error = targetRotation * glm::inverse(physics.GetRotation(root.Body));
+			if (error.w < 0.0f)
+				error = -error;
+			const float angle = 2.0f * std::acos(std::clamp(error.w, -1.0f, 1.0f));
+			const glm::vec3 axis = glm::vec3(error.x, error.y, error.z);
+			const float axisLength = glm::length(axis);
+			const glm::vec3 angular = axisLength > 1e-6f ? axis / axisLength * (angle / deltaTime) : glm::vec3(0.0f);
+			const glm::vec3 linear = (targetPosition - position) / deltaTime;
+			if (!Finite(linear) || !Finite(angular))
+				return;
+
+			const float follow = std::clamp(strength, 0.0f, 1.0f);
+			physics.SetLinearVelocity(root.Body, glm::mix(physics.GetLinearVelocity(root.Body), linear, follow));
+			physics.SetAngularVelocity(root.Body, glm::mix(physics.GetAngularVelocity(root.Body), angular, follow));
+		}
+
+		void RagdollSystem::Pose(entt::registry& registry, Physics3D& physics)
+		{
+			m_Scratch.clear();
+			for (entt::entity handle : registry.view<RagdollRuntime>())
+				m_Scratch.push_back(handle);
+
+			for (entt::entity handle : m_Scratch)
+			{
+				RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
+				const RagdollComponent* settings = registry.try_get<RagdollComponent>(handle);
+				const Skeleton* skeleton = SkeletonOf(registry, handle);
+				Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle);
+				if (!settings || !skeleton || !transform || skeleton->GetId() != runtime.SkeletonId)
+					continue;
+
+				const float blend = std::isfinite(settings->Blend) ? std::clamp(settings->Blend, 0.0f, 1.0f) : 0.0f;
+				runtime.FollowsRoot = blend > 0.0f && !Driven(*settings)
+					&& !registry.any_of<RigidBody3DComponent, CharacterController3DComponent>(handle);
+				if (blend <= 0.0f)
+					continue;
+
+				Animator* animator = PosingAnimator(registry, handle, *skeleton);
+				glm::mat4 entityWorld;
+				if (!animator || !AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+					continue;
+
+				auto simulatedJoint = [&](const RagdollRuntime::Part& part, glm::vec3& position, glm::quat& rotation)
+				{
+					rotation = glm::normalize(physics.GetRotation(part.Body) * glm::inverse(part.OffsetRotation));
+					position = physics.GetPosition(part.Body) - rotation * part.OffsetPosition;
+				};
+
+				if (runtime.FollowsRoot)
+				{
+					glm::vec3 simulated;
+					glm::quat rotation;
+					simulatedJoint(runtime.Parts.front(), simulated, rotation);
+					const glm::vec3 shift = simulated - glm::vec3(m_JointWorlds[runtime.Parts.front().Joint][3]);
+					if (Finite(shift) && glm::dot(shift, shift) > 0.0f)
+					{
+						HierarchySystem::SetWorldPosition(registry, handle, *transform, glm::vec3(entityWorld[3]) + shift);
+						if (!AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+							continue;
+					}
+				}
+
+				const size_t count = skeleton->GetJointCount();
+				m_Weights.assign(count, 0.0f);
+				const glm::mat4 toModel = glm::inverse(entityWorld * skeleton->GetRootTransform());
+				for (const RagdollRuntime::Part& part : runtime.Parts)
+				{
+					glm::vec3 position;
+					glm::quat rotation;
+					simulatedJoint(part, position, rotation);
+					if (!Finite(position) || !std::isfinite(rotation.w) || !Finite(glm::vec3(rotation.x, rotation.y, rotation.z)))
+						continue;
+
+					const glm::mat4& animated = m_JointWorlds[part.Joint];
+					const glm::vec3 scale(glm::length(glm::vec3(animated[0])), glm::length(glm::vec3(animated[1])), glm::length(glm::vec3(animated[2])));
+					const glm::mat4 world = glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
+					m_Globals[part.Joint] = toModel * world;
+					m_Weights[part.Joint] = blend;
+				}
+
+				animator->BlendGlobalTransforms(m_Globals, m_Weights);
+			}
+		}
+
+		void RagdollSystem::Drop(entt::registry& registry, Physics3D* physics, entt::entity handle)
+		{
+			m_Rejected.erase(handle);
+			RagdollRuntime* runtime = registry.try_get<RagdollRuntime>(handle);
+			if (!runtime)
+				return;
+
+			if (physics)
+			{
+				for (auto part = runtime->Parts.rbegin(); part != runtime->Parts.rend(); ++part)
+				{
+					physics->DestroyConstraint(part->Constraint);
+					physics->DestroyBody(part->Body);
+				}
+			}
+			registry.remove<RagdollRuntime>(handle);
+		}
+
+		void RagdollSystem::Clear(entt::registry& registry)
+		{
+			m_Rejected.clear();
+			registry.clear<RagdollRuntime>();
+		}
+
+		bool RagdollSystem::OwnsBody(const entt::registry& registry, entt::entity handle, PhysicsBodyId3D body) const
+		{
+			const RagdollRuntime* runtime = registry.valid(handle) ? registry.try_get<RagdollRuntime>(handle) : nullptr;
+			return runtime && std::any_of(runtime->Parts.begin(), runtime->Parts.end(), [body](const RagdollRuntime::Part& part) { return part.Body == body; });
+		}
+
+		PhysicsBodyId3D RagdollSystem::Body(const entt::registry& registry, entt::entity handle, std::string_view joint) const
+		{
+			const RagdollRuntime* runtime = registry.valid(handle) ? registry.try_get<RagdollRuntime>(handle) : nullptr;
+			const Skeleton* skeleton = runtime ? SkeletonOf(registry, handle) : nullptr;
+			if (!skeleton || skeleton->GetId() != runtime->SkeletonId)
+				return k_InvalidBody3D;
+
+			const int32_t index = skeleton->FindJoint(joint);
+			if (index == Skeleton::k_InvalidJoint || static_cast<size_t>(index) >= runtime->PartOfJoint.size())
+				return k_InvalidBody3D;
+
+			const int32_t part = runtime->PartOfJoint[index];
+			return part >= 0 ? runtime->Parts[part].Body : k_InvalidBody3D;
+		}
+
+	}
+
+}

@@ -74,6 +74,9 @@ world->SetLinearVelocity(ballId, { 0.0f, 2.0f, -25.0f });
 `HalfExtents`; Sphere uses `Radius`; Capsule uses `Radius` plus `HalfHeight`; Mesh and ConvexHull
 use `Mesh` plus `MeshScale`.
 
+A dynamic body weighs 1000 kg per cubic metre of its shape unless `RigidBodyParams3D::Mass` gives it
+a mass in kg; its inertia is then scaled from the shape to match.
+
 ## Mesh colliders (v0.6.2)
 
 Two shapes build a collider from a `Mesh`'s vertex positions and indices (a `Model` submesh's
@@ -397,6 +400,8 @@ worlds, so it is initialised with the first world and torn down with the last.
 - The test app's **Constraint Test** (`--test=constraint`) — every joint type, limits,
   collide-connected, destruction and rejected params, then the same through a `Scene`; also the
   collision group checks.
+- [Ragdolls](animation.md#ragdolls) — `RagdollComponent` builds a skinned character's bodies and
+  joints from its skeleton; the test app's **Ragdoll Test** (`--test=ragdoll`) checks it.
 - The test app's **Hierarchy Test** (`--test=hierarchy`) — bodies under parents, including the
   checks for the ancestor filter above.
 

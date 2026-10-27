@@ -54,8 +54,12 @@ namespace Dingo
 				// Bound to the runtime's skeleton by id: its stored Skeleton* may belong to a freed model.
 				const Animator* BoundAnimator(const entt::registry& registry, entt::entity handle, const Skeleton& skeleton)
 				{
-					const AnimatorRuntime* runtime = registry.try_get<AnimatorRuntime>(handle);
-					return runtime && runtime->SkeletonId == skeleton.GetId() ? runtime->Instance.get() : nullptr;
+					if (const AnimatorRuntime* runtime = registry.try_get<AnimatorRuntime>(handle); runtime && runtime->SkeletonId == skeleton.GetId())
+						return runtime->Instance.get();
+
+					// Without an AnimatorComponent, a ragdoll poses the skeleton through its own animator.
+					const RagdollRuntime* ragdoll = registry.try_get<RagdollRuntime>(handle);
+					return ragdoll && ragdoll->SkeletonId == skeleton.GetId() ? ragdoll->Instance.get() : nullptr;
 				}
 
 				Animator& EnsureAnimator(entt::registry& registry, entt::entity handle, const Model& model)
@@ -267,7 +271,9 @@ namespace Dingo
 					}
 
 					animator.Update(deltaTime * settings.Speed, evaluate);
-					if (settings.RootMotion != RootMotionMode::Off && settings.ApplyRootMotion)
+					const RagdollRuntime* ragdoll = registry.try_get<RagdollRuntime>(handle);
+					const bool ragdollMovesEntity = ragdoll && ragdoll->FollowsRoot;
+					if (settings.RootMotion != RootMotionMode::Off && settings.ApplyRootMotion && !ragdollMovesEntity)
 					{
 						if (ApplyRootMotion(registry, physics, handle, settings.RootMotion, animator.GetRootMotionDelta(), deltaTime))
 							runtime.DroveController = true;

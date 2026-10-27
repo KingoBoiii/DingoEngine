@@ -77,7 +77,8 @@ namespace Dingo
 
 			auto rb3dView = registry.view<RigidBody3DComponent>();
 			auto cc3dView = registry.view<CharacterController3DComponent>();
-			const bool needs3D = rb3dView.begin() != rb3dView.end() || cc3dView.begin() != cc3dView.end();
+			auto ragdollView = registry.view<RagdollComponent>();
+			const bool needs3D = rb3dView.begin() != rb3dView.end() || cc3dView.begin() != cc3dView.end() || ragdollView.begin() != ragdollView.end();
 			if ((!m_Physics3D || !m_Physics3D->IsValid()) && needs3D)
 			{
 				Physics3DParams params;
@@ -92,6 +93,7 @@ namespace Dingo
 					CreateController(registry, handle, &m_Memo);
 
 				SyncConstraints(registry);
+				m_Ragdolls.Sync(registry, *m_Physics3D, 0.0f);
 			}
 		}
 
@@ -110,6 +112,7 @@ namespace Dingo
 				m_Controllers.clear();
 				registry.clear<CharacterController3DRuntime>();
 				registry.clear<Constraint3DRuntime>();
+				m_Ragdolls.Clear(registry);
 				m_ConstraintReported.clear();
 				m_ConstraintRejected.clear();
 
@@ -169,6 +172,7 @@ namespace Dingo
 			const int collisionSteps = (std::max)(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1);
 
 			SyncConstraints(registry);
+			m_Ragdolls.Sync(registry, *m_Physics3D, deltaTime);
 			SyncAncestorFilters(registry);
 			DriveKinematicChildren(registry, deltaTime);
 			m_Physics3D->Step(deltaTime, collisionSteps);
@@ -355,6 +359,26 @@ namespace Dingo
 						m_WantedPairs.push_back(PackPair(body, runtime->Body));
 					if (const CharacterController3DRuntime* slot = registry.try_get<CharacterController3DRuntime>(ancestor))
 						m_WantedControllerBodies.push_back(PackPair(slot->Index, body));
+					if (const RagdollRuntime* ragdoll = registry.try_get<RagdollRuntime>(ancestor))
+					{
+						for (const RagdollRuntime::Part& part : ragdoll->Parts)
+							m_WantedPairs.push_back(PackPair(body, part.Body));
+					}
+				}
+			}
+
+			// A ragdoll's limbs sit inside its entity's own body or controller capsule.
+			auto ragdolls = registry.view<RagdollRuntime>();
+			for (entt::entity handle : ragdolls)
+			{
+				const RigidBody3DRuntime* own = registry.try_get<RigidBody3DRuntime>(handle);
+				const CharacterController3DRuntime* slot = registry.try_get<CharacterController3DRuntime>(handle);
+				for (const RagdollRuntime::Part& part : ragdolls.get<RagdollRuntime>(handle).Parts)
+				{
+					if (own)
+						m_WantedPairs.push_back(PackPair(part.Body, own->Body));
+					if (slot)
+						m_WantedControllerBodies.push_back(PackPair(slot->Index, part.Body));
 				}
 			}
 
@@ -633,10 +657,17 @@ namespace Dingo
 			registry.storage<RigidBody3DRuntime>();
 			registry.storage<CharacterController3DRuntime>();
 			registry.storage<Constraint3DRuntime>();
+			registry.storage<RagdollRuntime>();
 			registry.on_destroy<RigidBody2DComponent>().connect<&PhysicsSync::DropBody2D>(*this);
 			registry.on_destroy<RigidBody3DComponent>().connect<&PhysicsSync::DropBody3D>(*this);
 			registry.on_destroy<CharacterController3DComponent>().connect<&PhysicsSync::DropController>(*this);
 			registry.on_destroy<Constraint3DComponent>().connect<&PhysicsSync::DropConstraint>(*this);
+			registry.on_destroy<RagdollComponent>().connect<&PhysicsSync::DropRagdoll>(*this);
+		}
+
+		void PhysicsSync::DropRagdoll(entt::registry& registry, entt::entity handle)
+		{
+			m_Ragdolls.Drop(registry, m_Physics3D.get(), handle);
 		}
 
 		void PhysicsSync::DropBody2D(entt::registry& registry, entt::entity handle)
@@ -686,6 +717,7 @@ namespace Dingo
 			DropBody2D(registry, handle);
 			DropBody3D(registry, handle);
 			DropController(registry, handle);
+			DropRagdoll(registry, handle);
 		}
 
 		bool PhysicsSync::IsRunning() const
@@ -739,7 +771,20 @@ namespace Dingo
 				return entt::null;
 
 			const entt::entity handle = static_cast<entt::entity>(m_Physics3D->GetUserData(body));
-			return RuntimeBody3D(registry, handle) == body ? handle : entt::null;
+			if (!registry.valid(handle))
+				return entt::null;
+			return RuntimeBody3D(registry, handle) == body || m_Ragdolls.OwnsBody(registry, handle, body) ? handle : entt::null;
+		}
+
+		void PhysicsSync::PoseRagdolls(entt::registry& registry)
+		{
+			if (m_Physics3D && m_Physics3D->IsValid())
+				m_Ragdolls.Pose(registry, *m_Physics3D);
+		}
+
+		PhysicsBodyId3D PhysicsSync::RagdollBody(const entt::registry& registry, entt::entity handle, std::string_view joint) const
+		{
+			return m_Ragdolls.Body(registry, handle, joint);
 		}
 
 		void PhysicsSync::SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const
@@ -751,10 +796,12 @@ namespace Dingo
 
 			std::vector<PhysicsBodyId3D> bodies;
 			m_Physics3D->GetSensorOverlaps(sensorBody, bodies);
+			// A ragdoll's limbs all map to its entity, which is reported once.
+			auto seen = [&out](entt::entity handle) { return std::find(out.begin(), out.end(), handle) != out.end(); };
 			for (const PhysicsBodyId3D body : bodies)
 			{
 				const entt::entity handle = EntityOfBody3D(registry, body);
-				if (handle != entt::null)
+				if (handle != entt::null && !seen(handle))
 					out.push_back(handle);
 			}
 
@@ -765,7 +812,7 @@ namespace Dingo
 			for (const entt::entity handle : view)
 			{
 				const CharacterController3D* controller = m_Controllers[view.get<CharacterController3DRuntime>(handle).Index].get();
-				if (controller && controller->IsOverlapping(sensorBody))
+				if (controller && controller->IsOverlapping(sensorBody) && !seen(handle))
 					out.push_back(handle);
 			}
 		}
