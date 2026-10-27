@@ -39,10 +39,54 @@ changes the picture, so the UV flips belong here, each with a **For games** note
 - Linux on real GPUs and desktops ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247),
   L26). It needs hardware, so it waits for the owner or a tester.
 
-## v1.1 — Scenes on Disk
+## v1.1 — Engine Layers and Scenes on Disk
 
-A scene can't be saved today: `SaveData` stores only what a game puts in it. This milestone is
-what an editor needs first, and games want it on its own for level files and prefabs.
+### Engine layers
+
+Games keep linking one library, `DingoEngine`. Inside it, each folder is laid out as if it were a
+library of its own: it uses only the layers below it, never one beside or above it. Today the
+bottom depends on the top. The public `Core/Application.h` includes the renderers,
+`SceneRenderer` and DingoUI. `AssetManager` creates textures, models, fonts and sounds itself.
+Physics includes `Graphics/Mesh.h`, and DingoUI and the ImGui panels include `Scene`.
+
+| Layer (bottom to top) | Folders | May use |
+|---|---|---|
+| Core | `Core/` (log, file system, VFS, saves, crash handler, timer, UUID), `Events/` | nothing |
+| Platform | `Windowing/`, input | Core |
+| Asset | `Asset/` | Core |
+| Graphics | `Graphics/` | Core, Platform, Asset |
+| Audio | `Audio/` | Core, Asset |
+| Physics | `Physics/2D/`, `Physics/3D/` | Core |
+| UI | `UI/` (DingoUI, ImGui) | Core, Platform, Asset, Graphics, Audio |
+| Scene | `Scene/` | every layer above |
+| Application | `Application`, `Layer`, `LayerStack`, the entry point | everything |
+
+- **Registration instead of reaching up.** A layer exposes a hook and the layer above fills it:
+  - Graphics and Audio register their loaders with the `AssetManager`.
+  - Scene registers its components and systems, plus its debug panels with UI. That is the same
+    panel hook the editor needs (R1).
+  - The Application layer starts the subsystems. 1.1's component reflection uses the same
+    registration.
+- **The cycles to break**:
+  - Asset ↔ Graphics, and Asset → Audio: loaders get registered from above.
+  - Physics → Graphics: a mesh collider takes vertices and indices.
+  - UI → Scene: world-space widgets take a position from the caller, and the scene panels move up
+    to Scene.
+  - Core → everything: `Application` and `Settings` move up a layer.
+- **Source compatible**: a public header that moves to its layer's folder (`Application.h`,
+  `Input.h`, the key codes, `PerspectiveCamera.h`, `Ray.h`) leaves a forwarding header at its old
+  path. Public calls stay as they are, so a 1.0 game compiles unchanged.
+- **Enforced**: a script in `lint.yml` checks every `#include` against the table above and fails
+  the PR on a forbidden one. Building each layer as an internal library merged into
+  `DingoEngine` would enforce it in the linker too. The plan weighs that against the extra build
+  steps.
+- **A side effect to measure, not a promise**: once nothing references a subsystem a game doesn't
+  use, the linker can leave it out. A 2D game, for example, would carry no Jolt.
+
+### Scenes on disk
+
+A scene can't be saved today: `SaveData` stores only what a game puts in it. This half of the
+milestone is what an editor needs first, and games want it on its own for level files and prefabs.
 
 - **Scene serialization**: write and read a whole scene (entities, hierarchy, every built-in
   component, asset references by id) to a text format that diffs well, plus a packed form for
