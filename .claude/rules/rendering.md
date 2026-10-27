@@ -2,6 +2,8 @@
 paths:
   - "src/DingoEngine/Graphics/**"
   - "include/DingoEngine/Graphics/**"
+  - "**/*.glsl"
+  - "test/src/Tests/Renderer/**"
 ---
 
 **Rendering**

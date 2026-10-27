@@ -67,7 +67,7 @@ The main session runs Sonnet at medium effort (`.claude/settings.json`) and orch
 | Milestone review, or a bug Opus failed on twice | `general-purpose` | `fable` | `high`, only when the owner asks |
 | Questions about Claude Code, hooks, skills, the API | `claude-code-guide` | its default | |
 
-Why these picks: Haiku returns facts, not judgement, so it searches and runs commands but never edits engine code or reviews. Sonnet is the default for everyday work, the main session included. Opus is reserved for the engine-internals rows because a subtle mistake there only shows on a real GPU, so engine-core code gets an Opus design first and an Opus review after, with Sonnet writing it in between; Fable is the owner's call. Judge cost per finished task: a cheaper agent whose work has to be redone isn't cheaper, and if a Sonnet agent's change fails review twice, redo it on Opus.
+Why these picks: Haiku returns facts, not judgement, so it searches and runs commands but never edits engine code or reviews. Sonnet is the default for everyday work, the main session included. Opus is reserved for the engine-internals rows because a subtle mistake there only shows on a real GPU, so engine-core code gets an Opus design first and an Opus review after, with Sonnet writing it in between; Fable is the owner's call. For judgement work, lower Opus's effort before switching to a cheaper model. Judge cost per finished task: a cheaper agent whose work has to be redone isn't cheaper, and if a Sonnet agent's change fails review twice, redo it on Opus.
 
 Rules for every agent:
 - Give it a self-contained prompt: the goal, the files involved, the rule that applies from this file or a reference file, and what to return (a conclusion and `file:line`s, not file dumps).
@@ -117,7 +117,6 @@ Most of the cost is context re-read on every call (context size × number of cal
 - Paths become text only through `Internal::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8` (`Core/PathText.h`). Never call `path.string()`/`generic_string()` in the engine, or build a `path` from a `std::string`: on Windows they go through the ANSI code page and throw on a name it can't map. Games and the test app follow the same rule through the public `FileSystem::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8`.
 
 Rendering and engine-invariant rules load from `.claude/rules/` when their files are touched.
-
 
 ## Comments — keep them to a minimum
 

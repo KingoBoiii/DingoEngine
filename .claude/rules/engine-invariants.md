@@ -1,11 +1,11 @@
 ---
 paths:
   - "src/DingoEngine/Scene/**"
-  - "include/DingoEngine/Scene/**"
+  - "include/DingoEngine/**"
   - "src/DingoEngine/Asset/**"
   - "src/DingoEngine/UI/**"
   - "src/DingoEngine/Core/**"
-  - "include/DingoEngine/UI/**"
+  - "src/DingoEngine/Physics/**"
 ---
 
 **Engine invariants**
