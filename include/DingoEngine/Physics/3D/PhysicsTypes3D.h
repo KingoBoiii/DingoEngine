@@ -160,6 +160,33 @@ namespace Dingo
 		ConstraintParams3D(ConstraintType3D type, PhysicsBodyId3D a, PhysicsBodyId3D b) : Type(type), BodyA(a), BodyB(b) {}
 	};
 
+	/// Which rotation axis of a constraint a motor drives (Physics3D::SetMotor).
+	enum class MotorAxis3D
+	{
+		Hinge, ///< The one axis of a Hinge.
+		Swing, ///< Both cone axes of a SwingTwist, driven together.
+		Twist, ///< The twist axis of a SwingTwist.
+	};
+
+	/// How a motor drives its axis.
+	enum class MotorMode3D
+	{
+		Off,      ///< No drive: the joint is passive.
+		Velocity, ///< Drives the relative angular velocity toward the target velocity, within MaxTorque.
+		Position, ///< Drives the relative rotation toward the target rotation like a spring, within MaxTorque.
+	};
+
+	/// The strength of one motor (Physics3D::SetMotor). A negative or NaN field makes SetMotor ignore the call.
+	struct MotorParams3D
+	{
+		float Stiffness = 0.0f; ///< Position mode spring constant, N*m per radian of error.
+		float Damping = 0.0f;   ///< N*m per rad/s of velocity error; in Velocity mode above 0 the drive is a damper toward the target velocity.
+		float MaxTorque = 0.0f; ///< Cap on the torque in N*m; 0 turns the motor off whatever the mode.
+
+		/// Compares all three fields.
+		bool operator==(const MotorParams3D&) const = default;
+	};
+
 	/// A single hit from a Physics3D scene query (ray cast / shape cast). Body is the
 	/// hit body's handle; a query that misses returns false and leaves the hit as it
 	/// was, so a default-constructed one still reads k_InvalidBody3D. Point is the

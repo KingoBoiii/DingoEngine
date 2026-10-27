@@ -21,6 +21,21 @@ namespace Dingo
 				return (static_cast<std::uint64_t>(first) << 32) | second;
 			}
 
+			void WriteMotors(Physics3D& physics, ConstraintId3D constraint, const Constraint3DComponent& settings)
+			{
+				if (settings.Type == ConstraintType3D::Hinge)
+					physics.SetMotor(constraint, MotorAxis3D::Hinge, settings.MotorMode, settings.Motor);
+				else if (settings.Type == ConstraintType3D::SwingTwist)
+				{
+					physics.SetMotor(constraint, MotorAxis3D::Swing, settings.MotorMode, settings.Motor);
+					physics.SetMotor(constraint, MotorAxis3D::Twist, settings.MotorMode, settings.TwistMotor);
+				}
+				else
+					return;
+				physics.SetMotorTargetRotation(constraint, settings.TargetRotation);
+				physics.SetMotorTargetVelocity(constraint, settings.TargetAngularVelocity);
+			}
+
 			// Withdraws every pair in `applied` that `wanted` no longer has, then (re)applies all of
 			// `wanted`, which becomes the new `applied`. apply(first, second, ignore) must be a no-op
 			// for a pair that is already in that state.
@@ -220,6 +235,9 @@ namespace Dingo
 			for (entt::entity handle : m_ConstraintScratch)
 				registry.remove<Constraint3DRuntime>(handle);
 
+			for (auto [handle, runtime, settings] : registry.view<Constraint3DRuntime, Constraint3DComponent>().each())
+				WriteMotors(*m_Physics3D, runtime.Constraint, settings);
+
 			m_ConstraintScratch.clear();
 			auto pending = registry.view<Constraint3DComponent>(entt::exclude<Constraint3DRuntime, InactiveComponent>);
 			for (entt::entity handle : pending)
@@ -305,6 +323,7 @@ namespace Dingo
 			}
 
 			m_ConstraintReported.erase(handle);
+			WriteMotors(*m_Physics3D, constraint, settings);
 			registry.emplace<Constraint3DRuntime>(handle) = { constraint, other };
 		}
 

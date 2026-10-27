@@ -10,7 +10,9 @@ namespace Dingo
 	// Drives Physics3D constraints: every joint type in standalone worlds (limits, collide-connected,
 	// the ignore bookkeeping, destruction, stale handles, rejected params), then the same through a
 	// Scene with Constraint3DComponent (build at OnStart, duplicate, removal, SetActive). A pendulum
-	// and a slider are left swinging for the eye. Check results show in the Properties panel and the log.
+	// and a slider are left swinging for the eye, beside a motor-driven arm whose F-panel sliders
+	// retune the Constraint3DComponent's motor live. The motor checks cover Hinge and SwingTwist motors in
+	// standalone worlds and through a Scene. Check results show in the Properties panel and the log.
 	class ConstraintTest : public GraphicsTest
 	{
 	public:
@@ -32,6 +34,8 @@ namespace Dingo
 		void RunPairChecks();
 		void RunLifetimeChecks();
 		void RunSceneChecks();
+		void RunMotorChecks();
+		void RunMotorSceneChecks();
 
 	private:
 		TestChecks m_Checks;
@@ -40,6 +44,8 @@ namespace Dingo
 		Mesh*  m_BoxMesh = nullptr;
 		Entity m_Pendulum;
 		Entity m_Anchor;
+		Entity m_MotorJoint;
+		Entity m_MotorArm;
 
 		PerspectiveCamera m_Camera;
 	};

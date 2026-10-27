@@ -243,7 +243,21 @@ namespace Dingo::Internal
 			JPH::Vec3 LocalB = JPH::Vec3::sZero();
 			bool IgnoresPair = false;
 			std::uint32_t UserData = 0;
+
+			// Indexed by MotorAxis3D: a Hinge uses Hinge, a SwingTwist Swing and Twist.
+			struct MotorState
+			{
+				MotorMode3D Mode = MotorMode3D::Off;
+				MotorParams3D Params;
+			};
+			MotorState Motors[3];
+			glm::quat TargetRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+			glm::vec3 TargetVelocity{ 0.0f };
+			JPH::Vec3 HingeAxisA = JPH::Vec3::sAxisY();
 		};
+
+		float LastDeltaTime = 0.0f;
+		int LastCollisionSteps = 1;
 
 		std::unordered_map<ConstraintId3D, ConstraintRecord> Constraints;
 		std::unordered_map<PhysicsBodyId3D, std::vector<ConstraintId3D>> BodyConstraints;

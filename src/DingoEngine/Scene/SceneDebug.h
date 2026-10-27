@@ -5,6 +5,7 @@
 // the list of live scenes the F7 tab (AnimationDebug) reads.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -140,6 +141,25 @@ namespace Dingo
 				std::vector<Field> Fields;
 			};
 
+			// The motor of a Hinge or SwingTwist Constraint3DComponent: the live settings the F9 tab edits
+			// (WriteMotor) and what the joint is doing. Angles are about Axis (the component's AxisA).
+			struct MotorView
+			{
+				bool Present = false;
+				bool SwingTwist = false;
+				// A built joint exists, so Angle and the torques mean something.
+				bool Live = false;
+				MotorMode3D Mode = MotorMode3D::Off;
+				MotorParams3D Motor;
+				MotorParams3D TwistMotor;
+				glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+				float TargetAngle = 0.0f;
+				float TargetVelocity = 0.0f;
+				float Angle = 0.0f;
+				float Torque = 0.0f;
+				float TwistTorque = 0.0f;
+			};
+
 			struct EntityDetail
 			{
 				UUID Id;
@@ -164,10 +184,16 @@ namespace Dingo
 				float WorldRotation2D = 0.0f;
 
 				std::vector<Section> Sections;
+				MotorView Motor;
 			};
 
 			// False (out reset) when the scene or the entity is gone.
 			bool CollectEntity(uint64_t sceneSerial, UUID id, EntityDetail& out);
+
+			// Writes the motor fields of the entity's Constraint3DComponent from `motor`, under the scenes lock
+			// CollectEntity takes; the scene applies them at its next physics step. False when the scene or
+			// the entity is gone or has no Hinge or SwingTwist constraint.
+			bool WriteMotor(uint64_t sceneSerial, UUID id, const MotorView& motor);
 
 		}
 

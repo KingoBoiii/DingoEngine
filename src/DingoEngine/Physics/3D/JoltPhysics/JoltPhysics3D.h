@@ -70,6 +70,12 @@ namespace Dingo
 		PhysicsBodyId3D GetConstraintBody(ConstraintId3D constraint, int index) const override;
 		float GetConstraintValue(ConstraintId3D constraint) const override;
 		std::uint32_t GetConstraintUserData(ConstraintId3D constraint) const override;
+		void SetMotor(ConstraintId3D constraint, MotorAxis3D axis, MotorMode3D mode, const MotorParams3D& params) override;
+		MotorParams3D GetMotorParams(ConstraintId3D constraint, MotorAxis3D axis) const override;
+		MotorMode3D GetMotorMode(ConstraintId3D constraint, MotorAxis3D axis) const override;
+		void SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation) override;
+		void SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity) override;
+		float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const override;
 
 		std::unique_ptr<CharacterController3D> CreateCharacterController(const CharacterControllerParams3D& params) override;
 

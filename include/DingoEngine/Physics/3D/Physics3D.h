@@ -168,6 +168,31 @@ namespace Dingo
 		/// The UserData the constraint was created with; 0 for a stale handle.
 		virtual std::uint32_t GetConstraintUserData(ConstraintId3D constraint) const = 0;
 
+		/// Sets one motor of a Hinge (axis Hinge) or SwingTwist (axis Swing or Twist) constraint. Values are read
+		/// every step, so call it again to retune. Off, or MaxTorque 0, leaves the joint passive. Position mode is a
+		/// spring toward the target rotation (SetMotorTargetRotation); Velocity mode drives toward the target
+		/// velocity (SetMotorTargetVelocity). An axis the joint lacks is ignored with a warning; a stale handle or
+		/// a negative or NaN value is ignored silently. Wakes both bodies only when the motor actually changed.
+		virtual void SetMotor(ConstraintId3D constraint, MotorAxis3D axis, MotorMode3D mode, const MotorParams3D& params) = 0;
+		/// The params last accepted by SetMotor for the axis; all zero for a stale handle or an axis the joint lacks.
+		virtual MotorParams3D GetMotorParams(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
+		/// The mode last accepted by SetMotor for the axis; Off for a stale handle or an axis the joint lacks.
+		virtual MotorMode3D GetMotorMode(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
+		/// The Position mode target: B's rotation relative to A in body space (R_B = R_A * q), the same for
+		/// every motor of the joint. A Hinge reads only the angle about its axis, clamped to its limits, which
+		/// equals GetConstraintValue when both bodies were created with equal rotations; a SwingTwist takes the
+		/// whole rotation, clamped to its limits. A target past a limit pushes against the limit. A stale
+		/// handle, a joint without motors or a non-finite value is ignored. Wakes both bodies only on a change.
+		virtual void SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation) = 0;
+		/// The Velocity mode target in rad/s of B relative to A, in A's body space, the same for every motor of
+		/// the joint. A Hinge uses the component along its axis. A SwingTwist applies it per axis (twist along
+		/// its twist axis, swing across the cone axes), exact near the rest pose only. A stale handle, a joint
+		/// without motors or a non-finite value is ignored. Wakes both bodies only on a change.
+		virtual void SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity) = 0;
+		/// The magnitude in N*m the motor applied in the last step; 0 when it is off, the bodies sleep or the
+		/// handle or axis is invalid. For Swing it is the larger of the two cone axes.
+		virtual float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
+
 		// --- Scene queries ----------------------------------------------------
 
 		/// Casts a ray and reports the closest body it hits within maxDistance. Returns

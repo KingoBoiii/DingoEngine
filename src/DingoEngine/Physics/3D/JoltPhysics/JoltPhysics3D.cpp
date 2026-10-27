@@ -22,6 +22,7 @@
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <cmath>
 #include <Jolt/Physics/Body/BodyFilter.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -98,6 +99,97 @@ namespace Dingo
 			outAxis = ToJolt(unitAxis);
 			outNormal = ToJolt(glm::normalize(unitNormal));
 			return true;
+		}
+
+		using MotorState = Internal::JoltPhysics3DData::ConstraintRecord::MotorState;
+
+		bool IsMotorValue(float value)
+		{
+			return std::isfinite(value) && value >= 0.0f;
+		}
+
+		bool JointHasMotorAxis(ConstraintType3D type, MotorAxis3D axis)
+		{
+			if (type == ConstraintType3D::Hinge)
+				return axis == MotorAxis3D::Hinge;
+			if (type == ConstraintType3D::SwingTwist)
+				return axis == MotorAxis3D::Swing || axis == MotorAxis3D::Twist;
+			return false;
+		}
+
+		bool JointHasMotors(ConstraintType3D type)
+		{
+			return type == ConstraintType3D::Hinge || type == ConstraintType3D::SwingTwist;
+		}
+
+		JPH::EMotorState WriteMotorSettings(JPH::MotorSettings& settings, const MotorState& motor)
+		{
+			float stiffness = motor.Params.Stiffness;
+			JPH::EMotorState state = JPH::EMotorState::Off;
+			if (motor.Mode != MotorMode3D::Off && motor.Params.MaxTorque > 0.0f)
+			{
+				if (motor.Mode == MotorMode3D::Position)
+					state = JPH::EMotorState::PositionAndVelocity;
+				else if (motor.Params.Damping > 0.0f)
+				{
+					state = JPH::EMotorState::PositionAndVelocity;
+					stiffness = 0.0f;
+				}
+				else
+					state = JPH::EMotorState::Velocity;
+			}
+			settings.mSpringSettings = JPH::SpringSettings(JPH::ESpringMode::StiffnessAndDamping, stiffness, motor.Params.Damping);
+			settings.SetTorqueLimit(motor.Params.MaxTorque);
+			return state;
+		}
+
+		void ApplyMotors(Internal::JoltPhysics3DData::ConstraintRecord& record)
+		{
+			const MotorState& hingeMotor = record.Motors[static_cast<int>(MotorAxis3D::Hinge)];
+			const MotorState& swingMotor = record.Motors[static_cast<int>(MotorAxis3D::Swing)];
+			const MotorState& twistMotor = record.Motors[static_cast<int>(MotorAxis3D::Twist)];
+			const JPH::Quat targetRotation = ToJolt(record.TargetRotation);
+			const JPH::Vec3 targetVelocity = ToJolt(record.TargetVelocity);
+
+			if (record.Type == ConstraintType3D::Hinge)
+			{
+				auto* hinge = static_cast<JPH::HingeConstraint*>(record.Constraint.GetPtr());
+				const JPH::EMotorState state = WriteMotorSettings(hinge->GetMotorSettings(), hingeMotor);
+				hinge->SetTargetOrientationBS(targetRotation);
+				hinge->SetTargetAngularVelocity(hingeMotor.Mode == MotorMode3D::Velocity ? record.HingeAxisA.Dot(targetVelocity) : 0.0f);
+				hinge->SetMotorState(state);
+			}
+			else if (record.Type == ConstraintType3D::SwingTwist)
+			{
+				auto* joint = static_cast<JPH::SwingTwistConstraint*>(record.Constraint.GetPtr());
+				const JPH::EMotorState swingState = WriteMotorSettings(joint->GetSwingMotorSettings(), swingMotor);
+				const JPH::EMotorState twistState = WriteMotorSettings(joint->GetTwistMotorSettings(), twistMotor);
+				joint->SetTargetOrientationBS(targetRotation);
+
+				const JPH::Vec3 local = joint->GetConstraintToBody1().InverseRotate(targetVelocity);
+				const float swing = swingMotor.Mode == MotorMode3D::Velocity ? 1.0f : 0.0f;
+				const float twist = twistMotor.Mode == MotorMode3D::Velocity ? 1.0f : 0.0f;
+				joint->SetTargetAngularVelocityCS(JPH::Vec3(local.GetX() * twist, local.GetY() * swing, local.GetZ() * swing));
+				joint->SetSwingMotorState(swingState);
+				joint->SetTwistMotorState(twistState);
+			}
+		}
+
+		bool AnyMotorInMode(const Internal::JoltPhysics3DData::ConstraintRecord& record, MotorMode3D mode)
+		{
+			for (const MotorState& motor : record.Motors)
+			{
+				if (motor.Mode == mode)
+					return true;
+			}
+			return false;
+		}
+
+		void WakeConstraintBodies(JPH::BodyInterface& bodyInterface, const Internal::JoltPhysics3DData::ConstraintRecord& record)
+		{
+			bodyInterface.ActivateBody(ToBodyId(record.BodyA));
+			if (record.BodyB != k_InvalidBody3D)
+				bodyInterface.ActivateBody(ToBodyId(record.BodyB));
 		}
 
 		class QueryBodyFilter final : public JPH::BodyFilter
@@ -503,6 +595,8 @@ namespace Dingo
 			return;
 		if (Internal::CrashHandler::ProbeFunction probe = Internal::CrashHandler::TakeProbe(Internal::CrashHandler::ProbeThread::PhysicsWorker))
 			m_Data->JobSystem.CreateJob("CrashProbe", JPH::Color::sRed, [probe] { probe(); });
+		m_Data->LastDeltaTime = deltaTime;
+		m_Data->LastCollisionSteps = (std::max)(collisionSteps, 1);
 		m_Data->PhysicsSystem.Update(deltaTime, collisionSteps, &m_Data->TempAllocator, &m_Data->JobSystem);
 	}
 
@@ -839,6 +933,7 @@ namespace Dingo
 		record.LocalA = pointA;
 		record.LocalB = pointB;
 		record.UserData = params.UserData;
+		record.HingeAxisA = axisA;
 		if (!params.CollideConnected && !pinned)
 		{
 			AddPairIgnore(data, params.BodyA, params.BodyB);
@@ -931,6 +1026,130 @@ namespace Dingo
 			return 0;
 		auto it = m_Data->Constraints.find(constraint);
 		return it != m_Data->Constraints.end() ? it->second.UserData : 0;
+	}
+
+	void JoltPhysics3D::SetMotor(ConstraintId3D constraint, MotorAxis3D axis, MotorMode3D mode, const MotorParams3D& params)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return;
+		if (!IsMotorValue(params.Stiffness) || !IsMotorValue(params.Damping) || !IsMotorValue(params.MaxTorque))
+			return;
+		if (mode != MotorMode3D::Off && mode != MotorMode3D::Velocity && mode != MotorMode3D::Position)
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		if (!JointHasMotorAxis(record.Type, axis))
+		{
+			DE_CORE_WARN("Physics3D::SetMotor: the constraint has no such motor axis; ignored");
+			return;
+		}
+
+		MotorState& motor = record.Motors[static_cast<int>(axis)];
+		if (motor.Mode == mode && motor.Params == params)
+			return;
+
+		const bool wasActive = motor.Mode != MotorMode3D::Off;
+		motor.Mode = mode;
+		motor.Params = params;
+		ApplyMotors(record);
+		if (wasActive || mode != MotorMode3D::Off)
+			WakeConstraintBodies(m_Data->PhysicsSystem.GetBodyInterface(), record);
+	}
+
+	MotorParams3D JoltPhysics3D::GetMotorParams(ConstraintId3D constraint, MotorAxis3D axis) const
+	{
+		if (!m_Data)
+			return {};
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotorAxis(it->second.Type, axis))
+			return {};
+		return it->second.Motors[static_cast<int>(axis)].Params;
+	}
+
+	MotorMode3D JoltPhysics3D::GetMotorMode(ConstraintId3D constraint, MotorAxis3D axis) const
+	{
+		if (!m_Data)
+			return MotorMode3D::Off;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotorAxis(it->second.Type, axis))
+			return MotorMode3D::Off;
+		return it->second.Motors[static_cast<int>(axis)].Mode;
+	}
+
+	void JoltPhysics3D::SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotors(it->second.Type))
+			return;
+
+		const float lengthSquared = glm::dot(rotation, rotation);
+		if (!std::isfinite(lengthSquared) || !(lengthSquared > 1e-12f))
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		const glm::quat unit = rotation / std::sqrt(lengthSquared);
+		if (unit == record.TargetRotation)
+			return;
+
+		record.TargetRotation = unit;
+		ApplyMotors(record);
+		if (AnyMotorInMode(record, MotorMode3D::Position))
+			WakeConstraintBodies(m_Data->PhysicsSystem.GetBodyInterface(), record);
+	}
+
+	void JoltPhysics3D::SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity)
+	{
+		if (!m_Data)
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotors(it->second.Type))
+			return;
+		if (!std::isfinite(angularVelocity.x) || !std::isfinite(angularVelocity.y) || !std::isfinite(angularVelocity.z))
+			return;
+
+		Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		if (angularVelocity == record.TargetVelocity)
+			return;
+
+		record.TargetVelocity = angularVelocity;
+		ApplyMotors(record);
+		if (AnyMotorInMode(record, MotorMode3D::Velocity))
+			WakeConstraintBodies(m_Data->PhysicsSystem.GetBodyInterface(), record);
+	}
+
+	float JoltPhysics3D::GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const
+	{
+		if (!m_Data || !(m_Data->LastDeltaTime > 0.0f))
+			return 0.0f;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end() || !JointHasMotorAxis(it->second.Type, axis))
+			return 0.0f;
+
+		const Internal::JoltPhysics3DData::ConstraintRecord& record = it->second;
+		const MotorState& motor = record.Motors[static_cast<int>(axis)];
+		if (motor.Mode == MotorMode3D::Off || !(motor.Params.MaxTorque > 0.0f))
+			return 0.0f;
+
+		const JPH::BodyInterface& bodyInterface = m_Data->PhysicsSystem.GetBodyInterface();
+		const bool awake = bodyInterface.IsActive(ToBodyId(record.BodyA))
+			|| (record.BodyB != k_InvalidBody3D && bodyInterface.IsActive(ToBodyId(record.BodyB)));
+		if (!awake)
+			return 0.0f;
+
+		float lambda = 0.0f;
+		if (record.Type == ConstraintType3D::Hinge)
+			lambda = static_cast<const JPH::HingeConstraint*>(record.Constraint.GetPtr())->GetTotalLambdaMotor();
+		else
+		{
+			const JPH::Vec3 total = static_cast<const JPH::SwingTwistConstraint*>(record.Constraint.GetPtr())->GetTotalLambdaMotor();
+			lambda = axis == MotorAxis3D::Twist ? total.GetX() : (std::max)(std::abs(total.GetY()), std::abs(total.GetZ()));
+		}
+		return std::abs(lambda) * static_cast<float>(m_Data->LastCollisionSteps) / m_Data->LastDeltaTime;
 	}
 
 	bool JoltPhysics3D::RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit, const QueryFilter3D& filter) const

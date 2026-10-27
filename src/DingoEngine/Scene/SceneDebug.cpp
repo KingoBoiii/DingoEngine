@@ -18,8 +18,12 @@
 #include "DingoEngine/Scene/Systems/CameraUtils.h"
 #include "DingoEngine/Scene/Systems/RuntimeComponents.h"
 
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <typeinfo>
 
@@ -472,6 +476,31 @@ namespace Dingo
 							stack.push_back({ *it, next.Depth + 1 });
 					}
 				}
+				return true;
+			}
+
+			bool WriteMotor(uint64_t sceneSerial, UUID id, const MotorView& motor)
+			{
+				std::lock_guard lock(ScenesMutex());
+				const LiveScene* live = FindScene(sceneSerial);
+				if (!live)
+					return false;
+
+				SceneData& data = *live->Data;
+				const auto found = data.EntityMap.find(id);
+				if (found == data.EntityMap.end() || !data.Registry.valid(found->second))
+					return false;
+				Constraint3DComponent* constraint = data.Registry.try_get<Constraint3DComponent>(found->second);
+				if (!constraint || (constraint->Type != ConstraintType3D::Hinge && constraint->Type != ConstraintType3D::SwingTwist))
+					return false;
+
+				constraint->MotorMode = motor.Mode;
+				constraint->Motor = motor.Motor;
+				constraint->TwistMotor = motor.TwistMotor;
+				const float axisLength = glm::length(constraint->AxisA);
+				const glm::vec3 axis = axisLength > 1e-6f ? constraint->AxisA / axisLength : glm::vec3(0.0f, 1.0f, 0.0f);
+				constraint->TargetRotation = glm::angleAxis(motor.TargetAngle, axis);
+				constraint->TargetAngularVelocity = axis * motor.TargetVelocity;
 				return true;
 			}
 

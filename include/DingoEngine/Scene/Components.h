@@ -823,6 +823,16 @@ namespace Dingo
 		/// True lets the two bodies collide; false (the default) ignores their contacts.
 		bool CollideConnected = false;
 
+		/// The motor fields below only drive a Hinge or SwingTwist. They are live: the Scene writes them to the
+		/// joint at the start of every physics step (Physics3D::SetMotor), so editing them needs no rebuild.
+		/// How the motors drive; a SwingTwist uses the same mode for Motor and TwistMotor.
+		Dingo::MotorMode3D MotorMode = MotorMode3D::Off;
+		MotorParams3D Motor;      ///< The Hinge motor, or the SwingTwist swing motor.
+		MotorParams3D TwistMotor; ///< The SwingTwist twist motor.
+		/// Position mode target, B relative to A in body space; see Physics3D::SetMotorTargetRotation.
+		glm::quat TargetRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+		glm::vec3 TargetAngularVelocity{ 0.0f }; ///< Velocity mode target in rad/s; see Physics3D::SetMotorTargetVelocity.
+
 		/// A Fixed constraint to the world origin.
 		Constraint3DComponent() = default;
 		/// Copies all fields.

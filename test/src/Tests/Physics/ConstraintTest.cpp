@@ -41,6 +41,38 @@ namespace
 	}
 
 	float Distance(const glm::vec3& a, const glm::vec3& b) { return glm::length(a - b); }
+
+	const MotorParams3D k_Hold{ 100000.0f, 10000.0f, 100000.0f };
+	const glm::vec3 k_AxisZ{ 0.0f, 0.0f, 1.0f };
+
+	struct Arm
+	{
+		std::unique_ptr<Physics3D> World;
+		PhysicsBodyId3D Anchor = k_InvalidBody3D;
+		PhysicsBodyId3D Body = k_InvalidBody3D;
+		ConstraintId3D Joint = k_InvalidConstraint3D;
+	};
+
+	Arm MakeArm(const glm::vec3& gravity, float minLimit = 0.0f, float maxLimit = 0.0f)
+	{
+		Arm arm;
+		arm.World = MakeWorld(gravity);
+		arm.Anchor = Box(*arm.World, BodyType3D::Static, glm::vec3(0.0f), glm::vec3(0.25f));
+		arm.Body = Box(*arm.World, BodyType3D::Dynamic, { 2.0f, 0.0f, 0.0f }, glm::vec3(0.25f));
+		ConstraintParams3D params(ConstraintType3D::Hinge, arm.Anchor, arm.Body);
+		params.AnchorB = { -2.0f, 0.0f, 0.0f };
+		params.AxisA = params.AxisB = k_AxisZ;
+		params.MinLimit = minLimit;
+		params.MaxLimit = maxLimit;
+		arm.Joint = arm.World->CreateConstraint(params);
+		return arm;
+	}
+
+	float Angle(const Arm& arm) { return arm.World->GetConstraintValue(arm.Joint); }
+
+	glm::quat AboutZ(float angle) { return glm::angleAxis(angle, k_AxisZ); }
+
+	float AngleOf(const glm::quat& rotation) { return 2.0f * std::atan2(rotation.z, rotation.w); }
 }
 
 namespace Dingo
@@ -509,6 +541,242 @@ namespace Dingo
 		Check(toggled.IsValid() && toggled.GetComponent<Transform3DComponent>().Position.y > 49.0f, "scene: SetActive false then true rebuilds the constraint");
 	}
 
+	void ConstraintTest::RunMotorChecks()
+	{
+		const glm::vec3 gravity(0.0f, -9.81f, 0.0f);
+
+		{
+			Arm arm = MakeArm(gravity);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, k_Hold);
+			float torque = 0.0f;
+			for (int i = 0; i < 60; i++)
+			{
+				arm.World->Step(k_Dt, 1);
+				torque = (std::max)(torque, arm.World->GetMotorTorque(arm.Joint, MotorAxis3D::Hinge));
+			}
+			Run(*arm.World, 2.0f);
+			Check(arm.World->IsConstraintValid(arm.Joint) && std::abs(Angle(arm)) < 0.1f, "motor: a Position motor holds a loaded arm against gravity");
+			Check(torque > 500.0f && torque < k_Hold.MaxTorque, "motor: GetMotorTorque reports the holding torque");
+			Check(arm.World->GetMotorMode(arm.Joint, MotorAxis3D::Hinge) == MotorMode3D::Position && arm.World->GetMotorParams(arm.Joint, MotorAxis3D::Hinge) == k_Hold,
+				"motor: the mode and params read back as set");
+		}
+		{
+			Arm arm = MakeArm(gravity);
+			MotorParams3D off = k_Hold;
+			off.MaxTorque = 0.0f;
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, off);
+			Run(*arm.World, 1.0f);
+			Check(std::abs(Angle(arm)) > 0.8f && arm.World->GetMotorTorque(arm.Joint, MotorAxis3D::Hinge) == 0.0f,
+				"motor: MaxTorque 0 leaves the joint passive");
+
+			Arm offMode = MakeArm(gravity);
+			offMode.World->SetMotor(offMode.Joint, MotorAxis3D::Hinge, MotorMode3D::Off, k_Hold);
+			Run(*offMode.World, 1.0f);
+			Check(std::abs(Angle(offMode)) > 0.8f && offMode.World->GetMotorTorque(offMode.Joint, MotorAxis3D::Hinge) == 0.0f,
+				"motor: mode Off leaves the joint passive");
+		}
+		{
+			Arm arm = MakeArm(gravity);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, k_Hold);
+			arm.World->SetMotorTargetRotation(arm.Joint, AboutZ(0.6f));
+			float reachedAt = -1.0f;
+			for (int i = 0; i < 480; i++)
+			{
+				arm.World->Step(k_Dt, 1);
+				if (reachedAt < 0.0f && std::abs(Angle(arm) - 0.6f) < 0.05f)
+					reachedAt = static_cast<float>(i + 1) * k_Dt;
+			}
+			Check(reachedAt > 0.0f && reachedAt < 1.5f, "motor: a Position motor reaches its target within a set time");
+			Check(std::abs(Angle(arm) - 0.6f) < 0.05f, "motor: a Position motor settles on its target");
+		}
+		{
+			Arm arm = MakeArm(gravity, -0.5f, 0.5f);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, k_Hold);
+			arm.World->SetMotorTargetRotation(arm.Joint, AboutZ(1.2f));
+			Run(*arm.World, 2.0f);
+			Check(std::abs(Angle(arm) - 0.5f) < 0.05f, "motor: a Position target past a hinge limit pushes to the limit");
+		}
+		{
+			Arm arm = MakeArm(glm::vec3(0.0f));
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Velocity, { 0.0f, 0.0f, 100000.0f });
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, 2.0f });
+			Run(*arm.World, 1.0f);
+			Check(std::abs(arm.World->GetAngularVelocity(arm.Body).z - 2.0f) < 0.1f, "motor: a Velocity drive spins at the target rate");
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, -3.0f });
+			Run(*arm.World, 1.0f);
+			Check(std::abs(arm.World->GetAngularVelocity(arm.Body).z + 3.0f) < 0.1f, "motor: a Velocity drive reverses with the target");
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 5.0f, 5.0f, 1.0f });
+			Run(*arm.World, 1.0f);
+			Check(std::abs(arm.World->GetAngularVelocity(arm.Body).z - 1.0f) < 0.1f, "motor: a hinge Velocity drive uses the component along its axis");
+		}
+		{
+			Arm arm = MakeArm(glm::vec3(0.0f));
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Velocity, { 0.0f, 5000.0f, 100000.0f });
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, 1.5f });
+			Run(*arm.World, 3.0f);
+			Check(std::abs(arm.World->GetAngularVelocity(arm.Body).z - 1.5f) < 0.05f, "motor: a damped Velocity drive approaches the target rate");
+		}
+		{
+			Arm arm = MakeArm(gravity);
+			const MotorParams3D weak{ 100000.0f, 1000.0f, 800.0f };
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, weak);
+			arm.World->SetMotorTargetRotation(arm.Joint, AboutZ(1.5f));
+			float peak = 0.0f;
+			for (int i = 0; i < 240; i++)
+			{
+				arm.World->Step(k_Dt, 1);
+				peak = (std::max)(peak, arm.World->GetMotorTorque(arm.Joint, MotorAxis3D::Hinge));
+			}
+			Check(peak <= weak.MaxTorque * 1.02f && peak > weak.MaxTorque * 0.9f, "motor: the torque saturates at MaxTorque and never exceeds it");
+		}
+		{
+			Arm arm = MakeArm(glm::vec3(0.0f));
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, 2.0f });
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Velocity, { 0.0f, 5000.0f, 100000.0f });
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, 0.0f });
+			Run(*arm.World, 3.0f);
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, 2.0f });
+			Run(*arm.World, 3.0f);
+			Check(std::abs(arm.World->GetAngularVelocity(arm.Body).z - 2.0f) < 0.1f, "motor: a new velocity target set on a sleeping pair takes effect on the next step");
+		}
+		{
+			Arm arm = MakeArm(glm::vec3(0.0f));
+			Run(*arm.World, 3.0f);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Velocity, { 0.0f, 0.0f, 100000.0f });
+			arm.World->SetMotorTargetVelocity(arm.Joint, { 0.0f, 0.0f, 2.0f });
+			Run(*arm.World, 1.0f);
+			Check(std::abs(arm.World->GetAngularVelocity(arm.Body).z - 2.0f) < 0.1f, "motor: switching a sleeping pair's motor on wakes it");
+		}
+		{
+			Arm arm = MakeArm(glm::vec3(0.0f));
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, k_Hold);
+			Run(*arm.World, 3.0f);
+			arm.World->SetMotorTargetRotation(arm.Joint, AboutZ(0.5f));
+			Run(*arm.World, 2.0f);
+			Check(std::abs(Angle(arm) - 0.5f) < 0.05f, "motor: a new rotation target set on a sleeping pair takes effect on the next step");
+		}
+		{
+			Arm arm = MakeArm(gravity);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, k_Hold);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, { -1.0f, 10.0f, 10.0f });
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, { 1.0f, -10.0f, 10.0f });
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, { 1.0f, 10.0f, -10.0f });
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Hinge, MotorMode3D::Position, { std::nanf(""), 10.0f, 10.0f });
+			arm.World->SetMotorTargetRotation(arm.Joint, glm::quat(std::nanf(""), 0.0f, 0.0f, 0.0f));
+			arm.World->SetMotorTargetVelocity(arm.Joint, glm::vec3(std::nanf(""), 0.0f, 0.0f));
+			Check(arm.World->GetMotorParams(arm.Joint, MotorAxis3D::Hinge) == k_Hold && arm.World->GetMotorMode(arm.Joint, MotorAxis3D::Hinge) == MotorMode3D::Position,
+				"motor: negative and NaN params are ignored");
+			Run(*arm.World, 2.0f);
+			Check(std::abs(Angle(arm)) < 0.1f, "motor: the motor keeps its last good settings after a rejected call");
+
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Swing, MotorMode3D::Velocity, k_Hold);
+			arm.World->SetMotor(arm.Joint, MotorAxis3D::Twist, MotorMode3D::Velocity, k_Hold);
+			Check(arm.World->GetMotorMode(arm.Joint, MotorAxis3D::Swing) == MotorMode3D::Off && arm.World->GetMotorMode(arm.Joint, MotorAxis3D::Twist) == MotorMode3D::Off
+				&& arm.World->GetMotorTorque(arm.Joint, MotorAxis3D::Swing) == 0.0f && arm.World->GetMotorParams(arm.Joint, MotorAxis3D::Twist) == MotorParams3D(),
+				"motor: a Hinge ignores the Swing and Twist axes");
+			Check(arm.World->GetMotorMode(arm.Joint, MotorAxis3D::Hinge) == MotorMode3D::Position, "motor: an ignored axis leaves the other motor alone");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Static, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.0f, -1.0f, 0.0f });
+			ConstraintParams3D params(ConstraintType3D::SwingTwist, a, b);
+			params.AnchorB = { 0.0f, 1.0f, 0.0f };
+			params.SwingLimitY = params.SwingLimitZ = 0.8f;
+			params.TwistMin = -3.0f;
+			params.TwistMax = 3.0f;
+			const ConstraintId3D joint = world->CreateConstraint(params);
+
+			world->SetMotor(joint, MotorAxis3D::Hinge, MotorMode3D::Velocity, k_Hold);
+			Check(world->GetMotorMode(joint, MotorAxis3D::Hinge) == MotorMode3D::Off, "motor: a SwingTwist ignores the Hinge axis");
+
+			world->SetMotor(joint, MotorAxis3D::Twist, MotorMode3D::Velocity, { 0.0f, 0.0f, 100000.0f });
+			world->SetMotorTargetVelocity(joint, { 0.0f, 1.5f, 0.0f });
+			Run(*world, 1.0f);
+			Check(std::abs(world->GetAngularVelocity(b).y - 1.5f) < 0.1f, "motor: a SwingTwist twist motor spins at the target rate");
+			Check(world->GetMotorTorque(joint, MotorAxis3D::Swing) == 0.0f && world->GetMotorMode(joint, MotorAxis3D::Swing) == MotorMode3D::Off,
+				"motor: the SwingTwist swing motor stays off when only twist is set");
+
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Static, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 0.0f, -1.0f, 0.0f });
+			ConstraintParams3D params(ConstraintType3D::SwingTwist, a, b);
+			params.AnchorB = { 0.0f, 1.0f, 0.0f };
+			params.SwingLimitY = params.SwingLimitZ = 0.8f;
+			params.TwistMin = -3.0f;
+			params.TwistMax = 3.0f;
+			const ConstraintId3D joint = world->CreateConstraint(params);
+			world->SetMotor(joint, MotorAxis3D::Swing, MotorMode3D::Position, k_Hold);
+			world->SetMotorTargetRotation(joint, glm::angleAxis(0.4f, glm::vec3(1.0f, 0.0f, 0.0f)));
+			Run(*world, 2.0f);
+			const glm::quat rotation = world->GetRotation(b);
+			Check(std::abs(2.0f * std::atan2(rotation.x, rotation.w) - 0.4f) < 0.06f, "motor: a SwingTwist swing motor drives toward a rotation target");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D a = Box(*world, BodyType3D::Static, glm::vec3(0.0f));
+			const PhysicsBodyId3D b = Box(*world, BodyType3D::Dynamic, { 3.0f, 0.0f, 0.0f });
+			const ConstraintId3D point = world->CreateConstraint(ConstraintParams3D(ConstraintType3D::Point, a, b));
+			world->SetMotor(point, MotorAxis3D::Hinge, MotorMode3D::Velocity, k_Hold);
+			world->SetMotorTargetVelocity(point, { 0.0f, 0.0f, 2.0f });
+			Run(*world, 0.5f);
+			Check(world->GetMotorMode(point, MotorAxis3D::Hinge) == MotorMode3D::Off && std::abs(world->GetAngularVelocity(b).z) < 0.01f,
+				"motor: a joint without motors ignores them");
+
+			for (const ConstraintId3D stale : { k_InvalidConstraint3D, ConstraintId3D(123456) })
+			{
+				world->SetMotor(stale, MotorAxis3D::Hinge, MotorMode3D::Position, k_Hold);
+				world->SetMotorTargetRotation(stale, AboutZ(1.0f));
+				world->SetMotorTargetVelocity(stale, k_AxisZ);
+				Check(world->GetMotorMode(stale, MotorAxis3D::Hinge) == MotorMode3D::Off && world->GetMotorParams(stale, MotorAxis3D::Hinge) == MotorParams3D()
+					&& world->GetMotorTorque(stale, MotorAxis3D::Hinge) == 0.0f, "motor: a stale handle is a no-op on every motor call");
+			}
+		}
+	}
+
+	void ConstraintTest::RunMotorSceneChecks()
+	{
+		Scene scene("Constraint Motor Scene Check");
+
+		Entity anchor = scene.CreateEntity("Motor Anchor");
+		anchor.AddComponent<Transform3DComponent>(Transform3DComponent(glm::vec3(0.0f), glm::vec3(0.5f)));
+		anchor.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
+		Entity arm = scene.CreateEntity("Motor Arm");
+		arm.AddComponent<Transform3DComponent>(Transform3DComponent({ 2.0f, 0.0f, 0.0f }, glm::vec3(0.5f)));
+		arm.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+
+		Constraint3DComponent joint(ConstraintType3D::Hinge, arm.GetUUID());
+		joint.AnchorB = { -2.0f, 0.0f, 0.0f };
+		joint.AxisA = joint.AxisB = k_AxisZ;
+		joint.MotorMode = MotorMode3D::Position;
+		joint.Motor = k_Hold;
+		anchor.AddComponent<Constraint3DComponent>(joint);
+
+		scene.OnStart();
+		auto angle = [&] { return AngleOf(arm.GetComponent<Transform3DComponent>().Rotation); };
+		auto run = [&](int frames) { for (int i = 0; i < frames; i++) scene.OnUpdate(1.0f / 60.0f); };
+
+		run(120);
+		Check(std::abs(angle()) < 0.1f, "scene: a motor on the component holds the arm from OnStart");
+
+		anchor.GetComponent<Constraint3DComponent>().TargetRotation = AboutZ(0.5f);
+		run(120);
+		Check(std::abs(angle() - 0.5f) < 0.06f, "scene: editing TargetRotation retunes the live motor without a rebuild");
+
+		anchor.GetComponent<Constraint3DComponent>().MotorMode = MotorMode3D::Velocity;
+		anchor.GetComponent<Constraint3DComponent>().Motor = { 0.0f, 0.0f, 100000.0f };
+		anchor.GetComponent<Constraint3DComponent>().TargetAngularVelocity = { 0.0f, 0.0f, -1.0f };
+		run(30);
+		Check(angle() < 0.5f - 0.5f * 0.5f, "scene: switching the component to Velocity drives the arm at the target rate");
+
+		anchor.GetComponent<Constraint3DComponent>().MotorMode = MotorMode3D::Off;
+		anchor.GetComponent<Constraint3DComponent>().TargetAngularVelocity = glm::vec3(0.0f);
+		run(30);
+		Check(angle() < -0.3f, "scene: switching the component's motor Off lets gravity take the arm");
+	}
+
 	void ConstraintTest::Initialize()
 	{
 		m_Checks.clear();
@@ -517,6 +785,8 @@ namespace Dingo
 		RunPairChecks();
 		RunLifetimeChecks();
 		RunSceneChecks();
+		RunMotorChecks();
+		RunMotorSceneChecks();
 
 		m_BoxMesh = Mesh::CreateBox();
 		m_Scene = new Scene("Constraint Test");
@@ -537,6 +807,23 @@ namespace Dingo
 		joint.NormalAxisA = { 1.0f, 0.0f, 0.0f };
 		joint.NormalAxisB = { 1.0f, 0.0f, 0.0f };
 		m_Pendulum.AddComponent<Constraint3DComponent>(joint);
+
+		m_MotorJoint = m_Scene->CreateEntity("Motor Anchor");
+		m_MotorJoint.AddComponent<Transform3DComponent>(Transform3DComponent({ -7.0f, 6.0f, 0.0f }, { 0.4f, 0.4f, 0.4f }));
+		m_MotorJoint.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_BoxMesh, { 0.8f, 0.3f, 0.3f, 1.0f }));
+		m_MotorJoint.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
+
+		m_MotorArm = m_Scene->CreateEntity("Motor Arm");
+		m_MotorArm.AddComponent<Transform3DComponent>(Transform3DComponent({ -5.0f, 6.0f, 0.0f }, { 4.0f, 0.2f, 0.2f }));
+		m_MotorArm.AddComponent<MeshRendererComponent>(MeshRendererComponent(m_BoxMesh, { 0.3f, 0.8f, 0.4f, 1.0f }));
+		m_MotorArm.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+		Constraint3DComponent motorJoint(ConstraintType3D::Hinge, m_MotorArm.GetUUID());
+		motorJoint.AnchorB = { -2.0f, 0.0f, 0.0f };
+		motorJoint.AxisA = motorJoint.AxisB = { 0.0f, 0.0f, 1.0f };
+		motorJoint.MotorMode = MotorMode3D::Position;
+		motorJoint.Motor = { 30000.0f, 3000.0f, 6000.0f };
+		motorJoint.TargetRotation = glm::angleAxis(0.8f, glm::vec3(0.0f, 0.0f, 1.0f));
+		m_MotorJoint.AddComponent<Constraint3DComponent>(motorJoint);
 
 		m_Scene->OnStart();
 
@@ -563,6 +850,8 @@ namespace Dingo
 		m_Scene = nullptr;
 		m_Pendulum = {};
 		m_Anchor = {};
+		m_MotorJoint = {};
+		m_MotorArm = {};
 		delete m_BoxMesh;
 		m_BoxMesh = nullptr;
 	}
@@ -582,6 +871,27 @@ namespace Dingo
 			Cleanup();
 			Initialize();
 			return;
+		}
+
+		if (m_MotorJoint.IsValid() && m_MotorJoint.HasComponent<Constraint3DComponent>())
+		{
+			Constraint3DComponent& joint = m_MotorJoint.GetComponent<Constraint3DComponent>();
+			ImGui::Separator();
+			ImGui::TextUnformatted("Motor arm");
+			const char* modes[] = { "Off", "Velocity", "Position" };
+			int mode = static_cast<int>(joint.MotorMode);
+			if (ImGui::Combo("Mode", &mode, modes, 3))
+				joint.MotorMode = static_cast<MotorMode3D>(mode);
+			ImGui::SliderFloat("Stiffness", &joint.Motor.Stiffness, 0.0f, 100000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+			ImGui::SliderFloat("Damping", &joint.Motor.Damping, 0.0f, 10000.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+			ImGui::SliderFloat("MaxTorque", &joint.Motor.MaxTorque, 0.0f, 20000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+			float target = AngleOf(joint.TargetRotation);
+			if (ImGui::SliderAngle("Target angle", &target, -90.0f, 90.0f))
+				joint.TargetRotation = AboutZ(target);
+			float velocity = joint.TargetAngularVelocity.z;
+			if (ImGui::SliderFloat("Target velocity", &velocity, -5.0f, 5.0f))
+				joint.TargetAngularVelocity = { 0.0f, 0.0f, velocity };
+			ImGui::Text("Current angle %.1f deg", glm::degrees(AngleOf(m_MotorArm.GetComponent<Transform3DComponent>().Rotation)));
 		}
 
 		ImGui::Separator();
