@@ -391,6 +391,38 @@ namespace Dingo
 		Check(lag < 0.04f, "push: a driven fox carried at 1.5 m/s keeps its hip within 4 cm (a frame plus 15 mm) of the animated pose");
 	}
 
+	void RagdollTest::RunRecoverChecks()
+	{
+		Entity fox = AddFox("Recovering Fox", { 4.0f, 0.3f, -2.0f }, false);
+		fox.AddComponent<RagdollComponent>();
+		m_Scene->OnUpdate(k_Dt);
+
+		Physics3D& physics = *m_Scene->GetPhysics3D();
+		const PhysicsBodyId3D hip = m_Scene->GetRagdollBody(fox, "b_Hip_01");
+		if (hip == k_InvalidBody3D)
+		{
+			Check(false, "recover: the fox builds its ragdoll");
+			return;
+		}
+		Run(*m_Scene, 1.0f);
+		const float standingHip = physics.GetPosition(hip).y;
+		RagdollComponent& settings = fox.GetComponent<RagdollComponent>();
+
+		settings.Strength = 0.0f;
+		Run(*m_Scene, 3.0f);
+		const float limpHip = physics.GetPosition(hip).y;
+		const float limpEntity = fox.GetComponent<Transform3DComponent>().Position.y;
+
+		settings.Strength = 1.0f;
+		Run(*m_Scene, 4.0f);
+		const float risenHip = physics.GetPosition(hip).y;
+		DE_INFO("Ragdoll recover: hip {:.3f} m standing, {:.3f} m limp (entity y {:.3f}), {:.3f} m after Strength returns to 1",
+			standingHip, limpHip, limpEntity, risenHip);
+
+		Check(limpHip < standingHip - 0.3f, "recover: at Strength 0 the fox drops well below its standing hip height");
+		Check(std::abs(risenHip - standingHip) < 0.1f, "recover: a limp fox stands back up within 10 cm of its hip height when Strength returns to 1");
+	}
+
 	void RagdollTest::RunStairChecks()
 	{
 		const Skeleton& skeleton = *m_Fox->GetSkeleton();
@@ -564,6 +596,7 @@ namespace Dingo
 		RunSceneChecks();
 		RunRecipeChecks();
 		RunPushChecks();
+		RunRecoverChecks();
 		RunStairChecks();
 		RunCrowdChecks();
 		RunFixedTickChecks();

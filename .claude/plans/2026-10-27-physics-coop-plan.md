@@ -108,3 +108,8 @@ As built:
   drawn bones, so joint reads and sockets on ragdoll bones lag up to a tick under `FixedTick`.
 - F9: `SceneDebug::RagdollView`/`WriteRagdoll` and an inspector section; `Blend`, `Strength` and
   `DriveToAnimation` are editable, each body shows joint type, mass, speed and motor torque / limit.
+- Recovery (found on the GPU run): a limp ragdoll carries its entity down (y -0.415 for the Fox), so
+  `Strength` back to 1 aimed the pose into the floor and the hip stalled at 0.16 m. The runtime now keeps
+  the entity's height above the ground under the hips when it goes limp (`HasGroundHeight`, `GroundHeight`)
+  and `Drive` puts the entity back that high above the ground below the hips when it is driven again
+  (`Carried`). `Ragdoll Test` +2 checks (38): hip 0.799 m standing, 0.082 m limp, 0.797 m after.

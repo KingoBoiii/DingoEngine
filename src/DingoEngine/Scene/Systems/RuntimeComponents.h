@@ -140,6 +140,11 @@ namespace Dingo
 			// The entity's position followed the root body at the last step, so clip root motion stays
 			// off and PhysicsInterpolation draws the entity between steps like a body.
 			bool FollowsRoot = false;
+			// The entity was carried down by a limp ragdoll. Its height above the ground under the root body
+			// when it went limp, so a ragdoll driven again is put back that high above the ground it now lies on.
+			bool Carried = false;
+			bool HasGroundHeight = false;
+			float GroundHeight = 0.0f;
 			// A step has run since the build, so the parts' recorded poses are set.
 			bool Recorded = false;
 			// The animated root pose the last driven step aimed for, so the drive can match its velocity.
