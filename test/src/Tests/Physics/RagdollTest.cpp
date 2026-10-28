@@ -345,22 +345,29 @@ namespace Dingo
 		RagdollComponent settings;
 		settings.Strength = 0.0f;
 		weak.AddComponent<RagdollComponent>(settings);
+		Entity snappy = AddFox("6 Hz Fox", { 0.0f, 0.3f, 2.0f }, false);
+		settings.Strength = 1.0f;
+		settings.DriveFrequency = 6.0f;
+		snappy.AddComponent<RagdollComponent>(settings);
 		m_Scene->OnUpdate(k_Dt);
 
 		Physics3D& physics = *m_Scene->GetPhysics3D();
 		const PhysicsBodyId3D chest = m_Scene->GetRagdollBody(firm, "b_Spine02_03");
 		const PhysicsBodyId3D weakHip = m_Scene->GetRagdollBody(weak, "b_Hip_01");
-		if (chest == k_InvalidBody3D || weakHip == k_InvalidBody3D)
+		const PhysicsBodyId3D snappyChest = m_Scene->GetRagdollBody(snappy, "b_Spine02_03");
+		if (chest == k_InvalidBody3D || weakHip == k_InvalidBody3D || snappyChest == k_InvalidBody3D)
 		{
-			Check(false, "push: both foxes build their ragdolls");
+			Check(false, "push: all three foxes build their ragdolls");
 			return;
 		}
 		const glm::vec3 weakStart = physics.GetPosition(weakHip);
 		Run(*m_Scene, 2.0f);
 
 		const glm::vec3 chestStart = physics.GetPosition(chest);
+		const glm::vec3 snappyStart = physics.GetPosition(snappyChest);
 		const glm::vec3 shove(0.0f, 0.0f, 60.0f);
 		physics.ApplyImpulse(chest, shove);
+		physics.ApplyImpulse(snappyChest, shove);
 		physics.ApplyImpulse(m_Scene->GetRagdollBody(weak, "b_Spine02_03"), shove);
 		float bent = 0.0f;
 		for (int i = 0; i < 18; i++)
@@ -370,10 +377,12 @@ namespace Dingo
 		}
 		Run(*m_Scene, 2.0f);
 		const float back = glm::length(physics.GetPosition(chest) - chestStart);
-		DE_INFO("Ragdoll push: the driven chest moved {:.1f} mm and ended {:.2f} mm from its pose", bent * 1000.0f, back * 1000.0f);
+		const float snappyBack = glm::length(physics.GetPosition(snappyChest) - snappyStart);
+		DE_INFO("Ragdoll push: the driven chest moved {:.1f} mm and ended {:.2f} mm from its pose ({:.2f} mm at 6 Hz)", bent * 1000.0f, back * 1000.0f, snappyBack * 1000.0f);
 
 		Check(bent > 0.008f, "push: a 60 N*s impulse on a driven fox's chest bends its pose");
 		Check(back < 0.005f, "push: at Strength 1 the chest returns within 5 mm of the animated pose in 2 s");
+		Check(snappyBack < 0.005f, "push: at DriveFrequency 6 the chest also returns within 5 mm, the light tail and limb bodies stable");
 		Check(physics.GetPosition(weakHip).y < weakStart.y - 0.05f, "push: at Strength 0 the fox stays limp and collapses");
 
 		const PhysicsBodyId3D firmHip = m_Scene->GetRagdollBody(firm, "b_Hip_01");
@@ -625,6 +634,7 @@ namespace Dingo
 			ImGui::Separator();
 			ImGui::TextUnformatted("Driven fox");
 			ImGui::SliderFloat("Strength", &ragdoll.Strength, 0.0f, 2.0f);
+			ImGui::SliderFloat("Drive frequency (Hz)", &ragdoll.DriveFrequency, 0.0f, 12.0f);
 			ImGui::SliderFloat("Blend", &ragdoll.Blend, 0.0f, 1.0f);
 			ImGui::Checkbox("Drive to animation", &ragdoll.DriveToAnimation);
 		}

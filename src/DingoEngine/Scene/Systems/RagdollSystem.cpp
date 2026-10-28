@@ -43,10 +43,11 @@ namespace Dingo
 				float Twist;
 			};
 
-			// The motors' natural frequency: stiff enough to hold a pose against gravity and a walk
-			// cycle's accelerations, soft enough to give way to a shove. At 4 and 6 Hz the solver fed
-			// energy into the Fox's light tail chain until the driven pose swung.
-			constexpr float k_DriveFrequency = 3.0f;
+			// A motor's stiffness on its own body alone stays below this fraction of the step rate. A light
+			// body holding a heavy subtree (the Fox's tail root) otherwise rings near the step rate under
+			// the subtree's gains, and the iterative solver feeds energy into it until the pose swings.
+			constexpr float k_MaxBodyFrequencyPerStep = 0.25f;
+			constexpr float k_MaxDriveFrequency = 1000.0f;
 			constexpr float k_MaxTargetStep = 0.5f;
 			constexpr float k_MaxTargetTurn = 1.0f;
 			constexpr float k_FoldRatio = 0.3f;
@@ -223,7 +224,7 @@ namespace Dingo
 
 			bool Driven(const RagdollComponent& settings)
 			{
-				return settings.DriveToAnimation && settings.Strength > 0.0f;
+				return settings.DriveToAnimation && settings.Strength > 0.0f && settings.DriveFrequency > 0.0f;
 			}
 
 			bool Finite(const glm::vec3& v)
@@ -626,6 +627,9 @@ namespace Dingo
 					inertia += runtime.Parts[q].Mass * (glm::dot(lever, lever) + length * length / 12.0f);
 				}
 				part.Inertia = inertia;
+				const float length = lengths[part.Joint];
+				const glm::vec3 lever = shapes[p].Position - positions[part.Joint];
+				part.BodyInertia = part.Mass * (glm::dot(lever, lever) + length * length / 12.0f);
 
 				if (part.Parent < 0)
 					continue;
@@ -730,7 +734,9 @@ namespace Dingo
 
 			RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
 			const float strength = std::isfinite(settings->Strength) ? settings->Strength : 0.0f;
-			const float omega = glm::two_pi<float>() * k_DriveFrequency;
+			const float frequency = (std::min)(settings->DriveFrequency, k_MaxDriveFrequency);
+			const float omega = glm::two_pi<float>() * frequency;
+			const float maxBodyOmega = deltaTime > 0.0f ? glm::two_pi<float>() * k_MaxBodyFrequencyPerStep / deltaTime : omega;
 			for (RagdollRuntime::Part& part : runtime.Parts)
 			{
 				if (part.Parent < 0)
@@ -740,10 +746,10 @@ namespace Dingo
 				MotorMode3D mode = MotorMode3D::Off;
 				if (driven)
 				{
-					const float stiffness = part.Inertia * omega * omega;
-					motor.Stiffness = stiffness * strength;
-					motor.Damping = 2.0f * part.Inertia * omega * (std::sqrt)(strength);
-					motor.MaxTorque = 2.0f * stiffness * strength;
+					const float stiffness = part.Inertia * omega * omega * strength;
+					motor.Stiffness = (std::min)(stiffness, part.BodyInertia * maxBodyOmega * maxBodyOmega);
+					motor.Damping = 2.0f * (std::sqrt)(motor.Stiffness * part.Inertia);
+					motor.MaxTorque = 2.0f * stiffness;
 					mode = MotorMode3D::Position;
 				}
 				part.MaxTorque = motor.MaxTorque;

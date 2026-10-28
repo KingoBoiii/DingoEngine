@@ -116,6 +116,8 @@ namespace Dingo
 				float Mass = 0.0f;
 				// The subtree's moment of inertia about the joint, which the motor's gains scale with.
 				float Inertia = 0.0f;
+				// The body's own moment of inertia about the joint, which caps the motor's stiffness.
+				float BodyInertia = 0.0f;
 				bool Hinge = false; // else swing-twist
 				// The motors' torque cap at the last step; 0 while limp.
 				float MaxTorque = 0.0f;

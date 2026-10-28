@@ -865,14 +865,19 @@ namespace Dingo
 	{
 		/// 0 shows the animation untouched, 1 the simulated bones; between the two each simulated
 		/// joint is mixed. Above 0 the entity's own position follows the root (hips) body while it isn't
-		/// driven (DriveToAnimation off or Strength 0), so children and cameras follow a fall, and clip
+		/// driven (DriveToAnimation off, or Strength or DriveFrequency 0), so children and cameras follow a fall, and clip
 		/// root motion is ignored; an entity with its own RigidBody3DComponent or controller never
 		/// follows. Read every frame.
 		float Blend = 1.0f;
 		/// Scales the motors' stiffness and torque cap, and how firmly the root body tracks the
 		/// animated root: 0 is limp, 1 follows the pose firmly, above 1 is allowed. Read every step.
 		float Strength = 1.0f;
-		/// False turns the motors off and leaves the root untracked: a limp body, whatever Strength.
+		/// The motors' natural frequency in Hz: higher holds the pose more snappily and gives way less
+		/// to a shove, 0 is limp. Each motor is capped so it never rings its own body above a quarter
+		/// of the physics step rate, which keeps light bodies under heavy subtrees stable; the hips'
+		/// pull toward the animated root stops growing at the step rate. Read every step.
+		float DriveFrequency = 3.0f;
+		/// False turns the motors off and leaves the root untracked: a limp body, whatever Strength and DriveFrequency.
 		bool DriveToAnimation = true;
 		/// The ragdoll's mass in kg, shared out by capsule volume. Read when the ragdoll is built.
 		float TotalMass = 70.0f;
@@ -884,7 +889,7 @@ namespace Dingo
 		/// Changing it, or a reload of the recipes, rebuilds the ragdoll.
 		std::string Recipe;
 
-		/// Blend 1, Strength 1, driven, 70 kg, no self-collision, the default recipe.
+		/// Blend 1, Strength 1, 3 Hz, driven, 70 kg, no self-collision, the default recipe.
 		RagdollComponent() = default;
 		/// Copies all fields.
 		RagdollComponent(const RagdollComponent&) = default;

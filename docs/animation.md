@@ -1076,6 +1076,7 @@ scene->GetPhysics3D()->ApplyImpulse(scene->GetRagdollBody(fox, "b_Spine02_03"), 
 |---|---|
 | `Blend` (1) | 0 shows the animation untouched (the bodies still simulate), 1 the simulated bones, between mixes each simulated joint. Read every frame. |
 | `Strength` (1) | Scales the joint motors and how firmly the hips track the animated root. 0 is limp. |
+| `DriveFrequency` (3 Hz) | The motors' natural frequency and the hips' pull toward the animated root (which stops growing at the step rate, about 9.5 Hz at a 60 Hz step). Higher holds the pose more snappily and gives way less to a shove; 0 is limp. Read every step. |
 | `DriveToAnimation` (true) | False turns the motors off and leaves the root untracked. |
 | `TotalMass` (70 kg) | Shared out by bone size, or by a recipe's `mass=` shares. Read at build. |
 | `CollideWithinRagdoll` (false) | Lets the ragdoll's limbs hit each other, except two joined by a joint. Read at build. |
@@ -1101,12 +1102,19 @@ Fox's tail tip) would otherwise outweigh the hips, and a joint between bodies th
 a pose. A recipe overrides both.
 
 **Driving.** Each physics step sets every joint's motor target to the animated pose's relative
-rotation, with gains scaled by the bone's own inertia (a 3 Hz spring at `Strength` 1), and moves the
+rotation, with gains scaled by the inertia of the bone and everything below it (a `DriveFrequency` spring,
+3 Hz by default, at `Strength` 1), and moves the
 hips toward the animated root. The root correction moves the whole ragdoll as one rigid body, so the
-limbs below the hips don't soak it up and leave the body swinging on a pinned hip. With `Strength` 0 or `DriveToAnimation` off, the ragdoll is limp.
+limbs below the hips don't soak it up and leave the body swinging on a pinned hip. Each motor's stiffness is capped so that, on its own body
+alone, it rings at no more than a quarter of the physics step rate (15 Hz at the default 60 Hz step):
+a light bone holding a heavy subtree, such as a tail root, would otherwise ring near the step rate,
+and the solver would feed energy into it until the pose swung. The cap already applies at 3 Hz to a
+joint whose subtree has more than 25 times its own bone's inertia (the Fox's tail root has 95), and a
+raised `DriveFrequency` or a `Strength` above 1 stiffens the heavy joints but not the light ones. With
+`Strength` or `DriveFrequency` 0, or `DriveToAnimation` off, the ragdoll is limp.
 Without an `AnimatorComponent` the target is the model's rest pose, and the ragdoll keeps its own
 animator to draw the result. At `Strength` 1 the ragdoll's mean motion takes the animated root's
-velocity plus a 3 Hz pull toward it every step, so a shove on the hips is undone within a fraction
+velocity plus a `DriveFrequency` pull toward it every step, so a shove on the hips is undone within a fraction
 of a second while the limbs still give way; use a `Strength` below 1 to let a shove move the whole
 body. The drive aims at the previous frame's animation, so a moving character's hips trail it by one
 frame. A driven ragdoll never sleeps, `Blend` 0 still simulates it, and teleporting the entity drags
