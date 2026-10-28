@@ -1019,7 +1019,7 @@ shown.
   through the hierarchy. The runtime state behind the settings components (the live 2D or 3D body
   with its position and velocity, the character controller and whether it is grounded, the playing sound, the
   bound animator and each layer's clip, the particle emitters, and the attached script's type and
-  whether it has started, and a constraint's id, type, other entity, enabled flag and value) follows in its own sections, marked *runtime, read-only*. A constraint's motor panel is the exception: mode, parameters and targets are editable and show the live angle and torque.
+  whether it has started, and a constraint's id, type, other entity, enabled flag and value) follows in its own sections, marked *runtime, read-only*. A constraint's motor panel is the exception: mode, parameters and targets are editable and show the live angle and torque. So is a ragdoll's section: `Blend`, `Strength` and `DriveToAnimation` are editable, above each body's joint, mass, speed and motor torque.
 
 The selection is kept by entity UUID and a scene serial that is never reused: destroying the
 selected entity empties the inspector, and destroying the selected scene falls back to the first

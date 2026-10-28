@@ -31,9 +31,14 @@ namespace Dingo
 			// pose, then sets every motor and root velocity for a step of deltaTime (0 builds only).
 			void Sync(entt::registry& registry, Physics3D& physics, float deltaTime);
 
+			// After each step's write-back: moves a following entity onto its root body, then records
+			// every body's pose as the latest of the two a FixedTick scene draws between.
+			void AfterStep(entt::registry& registry, Physics3D& physics);
+
 			// After the frame's animation and physics: blends the simulated bones into each animator by
-			// RagdollComponent::Blend and moves a following entity onto its root body.
-			void Pose(entt::registry& registry, Physics3D& physics);
+			// RagdollComponent::Blend. An alpha in [0, 1] poses the bodies that far from their previous
+			// step's pose to their latest (inside the scene's interpolated view); below 0, as they are.
+			void Pose(entt::registry& registry, Physics3D& physics, float alpha);
 
 			void Drop(entt::registry& registry, Physics3D* physics, entt::entity handle);
 			// The world is going: forgets every ragdoll, its bodies left to the world's shutdown.

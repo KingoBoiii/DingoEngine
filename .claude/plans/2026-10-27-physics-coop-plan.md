@@ -81,8 +81,30 @@ As built:
   drive didn't hold it either. Now 0.034 m.
 - Left out: an `include` key (forcing a body on a folded joint) and a hinge axis override.
 
-### P3 — showcase and tooling
+### P3 — showcase and tooling (done)
 
-- [ ] The issue's full scene test: a push that topples a driven character, a fall down stairs, and 8
+- [x] The issue's full scene test: a push that topples a driven character, a fall down stairs, and 8
   ragdolls at once with a frame-time budget. The F9 Scene tab shows a ragdoll's bodies, motors and
   Blend/Strength live. Interpolate the posed bodies under `FixedTick`.
+
+As built:
+- Test (`RagdollTest`): the push checks bend and recovery rather than a topple (a driven fox at
+  `Strength` 1 must come back; the `Strength` 0 fox collapses): a 60 N·s shove on the chest bends it
+  over 8 mm and it ends within 5 mm of its pose after 2 s (measured 14.2 / 0.40 mm). A driven fox
+  carried at 1.5 m/s keeps its hip within 4 cm (25 mm, one frame of the previous-frame target). A limp
+  fox shoved 150 N·s off a 1.44 m landing must leave it and drop 0.5 m. Eight foxes (128 bodies, 120
+  joints) log their `Scene::OnUpdate` time (Debug ~4.2 ms mean) and assert an 8 ms mean outside Debug
+  and ASan. A mesh collider added after `OnStart` needs `Scene::CreateRigidBody`.
+- **Motors are 3 Hz, not 6** (`k_DriveFrequency`): at 6 and 4 Hz the Fox's light tail and limb
+  bodies gained energy in Jolt's solver and the driven pose swung by centimetres (it predated P3,
+  hidden by the old sampling); 3 and 2 Hz settle.
+- **The root drive moves the whole ragdoll rigidly**: the correction (spring `min(ω, 1/dt)` plus the
+  target's own velocity fed forward, skipped past a 0.5 m / 1 rad jump) is measured against the
+  parts' mass-weighted mean velocity and added to every part. On the root alone the chain absorbed it
+  and the body swung on a pinned hip.
+- Interpolation: `RagdollSystem::AfterStep` (end of `PhysicsSync::Step`) records each part's pose and
+  moves a following entity; `PoseRagdolls(alpha)` blends them inside an `InterpolatedView` (only when
+  a ragdoll exists), and `PhysicsInterpolation` tracks a `FollowsRoot` entity. The animator holds the
+  drawn bones, so joint reads and sockets on ragdoll bones lag up to a tick under `FixedTick`.
+- F9: `SceneDebug::RagdollView`/`WriteRagdoll` and an inspector section; `Blend`, `Strength` and
+  `DriveToAnimation` are editable, each body shows joint type, mass, speed and motor torque / limit.

@@ -222,6 +222,7 @@ namespace Dingo
 			}
 
 			WriteBackChildren(registry);
+			m_Ragdolls.AfterStep(registry, *m_Physics3D);
 		}
 
 		void PhysicsSync::SyncConstraints(entt::registry& registry)
@@ -776,10 +777,15 @@ namespace Dingo
 			return RuntimeBody3D(registry, handle) == body || m_Ragdolls.OwnsBody(registry, handle, body) ? handle : entt::null;
 		}
 
-		void PhysicsSync::PoseRagdolls(entt::registry& registry)
+		void PhysicsSync::PoseRagdolls(entt::registry& registry, float alpha)
 		{
 			if (m_Physics3D && m_Physics3D->IsValid())
-				m_Ragdolls.Pose(registry, *m_Physics3D);
+				m_Ragdolls.Pose(registry, *m_Physics3D, alpha);
+		}
+
+		bool PhysicsSync::HasRagdolls(const entt::registry& registry) const
+		{
+			return registry.view<const RagdollRuntime>().size() != 0;
 		}
 
 		PhysicsBodyId3D PhysicsSync::RagdollBody(const entt::registry& registry, entt::entity handle, std::string_view joint) const

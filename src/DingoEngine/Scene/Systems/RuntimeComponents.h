@@ -117,6 +117,13 @@ namespace Dingo
 				// The subtree's moment of inertia about the joint, which the motor's gains scale with.
 				float Inertia = 0.0f;
 				bool Hinge = false; // else swing-twist
+				// The motors' torque cap at the last step; 0 while limp.
+				float MaxTorque = 0.0f;
+				// The body's world pose after the last two steps (RagdollRuntime::Recorded).
+				glm::vec3 PreviousPosition{ 0.0f };
+				glm::vec3 Position{ 0.0f };
+				glm::quat PreviousRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+				glm::quat Rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
 			};
 
 			std::vector<Part> Parts; // parents first
@@ -130,8 +137,15 @@ namespace Dingo
 			std::string Recipe;
 			uint32_t RecipeRevision = 0;
 			std::uint32_t Group = k_NoCollisionGroup;
-			// The entity's position followed the root body last frame, so clip root motion stays off.
+			// The entity's position followed the root body at the last step, so clip root motion stays
+			// off and PhysicsInterpolation draws the entity between steps like a body.
 			bool FollowsRoot = false;
+			// A step has run since the build, so the parts' recorded poses are set.
+			bool Recorded = false;
+			// The animated root pose the last driven step aimed for, so the drive can match its velocity.
+			glm::vec3 TargetPosition{ 0.0f };
+			glm::quat TargetRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+			bool HasTarget = false;
 		};
 
 		// A ParticleEmitterComponent's emitter, made by the renderer that first draws it (ParticleSync).

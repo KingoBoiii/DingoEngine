@@ -1,10 +1,13 @@
 #pragma once
 
 // Engine-internal: render interpolation for SceneParams::FixedTick. After each tick it records the
-// local pose physics wrote for every moving body and controller; while a scene is drawn (or
+// local pose physics wrote for every moving body and controller, and for an entity following its
+// ragdoll's root body; while a scene is drawn (or
 // heard) it puts the pose between the last two ticks into the transform components and then
 // puts the latest tick back, so every world reader (children, lights, audio, sockets) follows
-// the drawn pose and scripts only ever see the simulated one.
+// the drawn pose and scripts only ever see the simulated one. The exception is a ragdoll's bones:
+// RagdollSystem::Pose writes the drawn pose into its animator, so a joint read or socket on a
+// simulated bone sits up to one tick behind the bodies.
 
 #include "DingoEngine/Scene/Systems/PhysicsSync.h"
 

@@ -1101,16 +1101,19 @@ Fox's tail tip) would otherwise outweigh the hips, and a joint between bodies th
 a pose. A recipe overrides both.
 
 **Driving.** Each physics step sets every joint's motor target to the animated pose's relative
-rotation, with gains scaled by the bone's own inertia (a 6 Hz spring at `Strength` 1), and moves the
-hips toward the animated root. With `Strength` 0 or `DriveToAnimation` off, the ragdoll is limp.
+rotation, with gains scaled by the bone's own inertia (a 3 Hz spring at `Strength` 1), and moves the
+hips toward the animated root. The root correction moves the whole ragdoll as one rigid body, so the
+limbs below the hips don't soak it up and leave the body swinging on a pinned hip. With `Strength` 0 or `DriveToAnimation` off, the ragdoll is limp.
 Without an `AnimatorComponent` the target is the model's rest pose, and the ragdoll keeps its own
-animator to draw the result. At `Strength` 1 the hips take the animated root's velocity every step,
-so an impulse on the hips is undone at once while the limbs still give way; use a `Strength` below 1
-to let a shove move the whole body. A driven ragdoll never sleeps, `Blend` 0 still simulates it, and
-teleporting the entity yanks the hips across to the new place.
+animator to draw the result. At `Strength` 1 the ragdoll's mean motion takes the animated root's
+velocity plus a 3 Hz pull toward it every step, so a shove on the hips is undone within a fraction
+of a second while the limbs still give way; use a `Strength` below 1 to let a shove move the whole
+body. The drive aims at the previous frame's animation, so a moving character's hips trail it by one
+frame. A driven ragdoll never sleeps, `Blend` 0 still simulates it, and teleporting the entity drags
+the whole ragdoll across to the new place over a fraction of a second.
 
 **The entity follows a limp ragdoll.** While `Blend` is above 0 and the ragdoll isn't driven, the
-entity's position moves with the hips body every frame, so its children, sockets and a following
+entity's position moves with the hips body every physics step, so its children, sockets and a following
 camera go where the body went, and clip root motion is ignored. An entity with its own
 `RigidBody3DComponent` or `CharacterController3DComponent` never follows: switch the controller off
 (or remove it) before letting the body fall.
@@ -1125,8 +1128,16 @@ scale is read at build: rescaling it later needs a rebuild (remove and re-add th
 The blended bones reach the animator through `Animator::BlendGlobalTransforms`, which a game can also
 call itself on a standalone `Animator` after `Update`.
 
-**Fixed tick.** Under `SceneParams::FixedTick` the motors target the previous frame's animation, and
-the blended bones are the latest tick's bodies, not interpolated between ticks.
+**Fixed tick.** Under `SceneParams::FixedTick` the motors target the previous frame's animation. The
+blended bones, and a following entity, are interpolated between the last two ticks like any other
+body. A body moved by hand between ticks (`Physics3D::SetPosition`) slides there over one tick.
+The animator holds the drawn bones, so under `FixedTick` a script's `Animator::GetJointTransform` or
+a socket on a simulated bone can sit up to one tick behind the bodies.
+
+**Debugging.** The F9 Scene tab's inspector has a **Ragdoll** section: `Blend`, `Strength` and
+`DriveToAnimation` are editable, and each body lists its joint type, mass, speed and live motor
+torque against its limit. The Ragdoll Test (`--test=ragdoll`) shoves a driven and a limp fox, drops
+one down a flight of stairs, and steps eight at once against a frame-time budget.
 
 ### Ragdoll recipes
 

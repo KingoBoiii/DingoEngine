@@ -408,9 +408,12 @@ namespace Dingo
 			m_Data->Physics.Step(m_Data->Registry, deltaTime);
 		}
 
+		if (m_Data->Physics.HasRagdolls(m_Data->Registry))
 		{
 			DE_PROFILE_SCOPE("PhysicsSync::PoseRagdolls");
-			m_Data->Physics.PoseRagdolls(m_Data->Registry);
+			// Posed in the frame the scene is drawn in, so the bones land where their bodies are drawn.
+			InterpolatedView view(*this);
+			m_Data->Physics.PoseRagdolls(m_Data->Registry, fixedTick && m_Params.InterpolatePhysics ? GetFixedTimeAlpha() : -1.0f);
 		}
 
 		// Transforms are final for the frame now (physics + controller write-back

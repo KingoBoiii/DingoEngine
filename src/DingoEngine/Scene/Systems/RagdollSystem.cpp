@@ -44,8 +44,11 @@ namespace Dingo
 			};
 
 			// The motors' natural frequency: stiff enough to hold a pose against gravity and a walk
-			// cycle's accelerations, soft enough to give way to a shove.
-			constexpr float k_DriveFrequency = 6.0f;
+			// cycle's accelerations, soft enough to give way to a shove. At 4 and 6 Hz the solver fed
+			// energy into the Fox's light tail chain until the driven pose swung.
+			constexpr float k_DriveFrequency = 3.0f;
+			constexpr float k_MaxTargetStep = 0.5f;
+			constexpr float k_MaxTargetTurn = 1.0f;
 			constexpr float k_FoldRatio = 0.3f;
 			constexpr float k_HingeMaxBend = glm::radians(150.0f);
 			constexpr float k_HingeOverextension = glm::radians(5.0f);
@@ -728,7 +731,7 @@ namespace Dingo
 			RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
 			const float strength = std::isfinite(settings->Strength) ? settings->Strength : 0.0f;
 			const float omega = glm::two_pi<float>() * k_DriveFrequency;
-			for (const RagdollRuntime::Part& part : runtime.Parts)
+			for (RagdollRuntime::Part& part : runtime.Parts)
 			{
 				if (part.Parent < 0)
 					continue;
@@ -743,6 +746,7 @@ namespace Dingo
 					motor.MaxTorque = 2.0f * stiffness * strength;
 					mode = MotorMode3D::Position;
 				}
+				part.MaxTorque = motor.MaxTorque;
 
 				if (part.Hinge)
 					physics.SetMotor(part.Constraint, MotorAxis3D::Hinge, mode, motor);
@@ -766,7 +770,10 @@ namespace Dingo
 			}
 
 			if (!driven)
+			{
+				runtime.HasTarget = false;
 				return;
+			}
 
 			const RagdollRuntime::Part& root = runtime.Parts.front();
 			glm::vec3 jointPosition;
@@ -782,17 +789,61 @@ namespace Dingo
 			const float angle = 2.0f * std::acos(std::clamp(error.w, -1.0f, 1.0f));
 			const glm::vec3 axis = glm::vec3(error.x, error.y, error.z);
 			const float axisLength = glm::length(axis);
-			const glm::vec3 angular = axisLength > 1e-6f ? axis / axisLength * (angle / deltaTime) : glm::vec3(0.0f);
-			const glm::vec3 linear = (targetPosition - position) / deltaTime;
+			const float gain = (std::min)(omega, 1.0f / deltaTime);
+			glm::vec3 angular = axisLength > 1e-6f ? axis / axisLength * (angle * gain) : glm::vec3(0.0f);
+			glm::vec3 linear = (targetPosition - position) * gain;
+
+			// The target's own velocity, so a moving animation is matched rather than trailed by v/omega.
+			// A jump further than k_MaxTargetStep or k_MaxTargetTurn is a teleport and is closed by the spring alone.
+			const glm::vec3 targetStep = targetPosition - runtime.TargetPosition;
+			if (runtime.HasTarget && deltaTime > 0.0f && glm::dot(targetStep, targetStep) < k_MaxTargetStep * k_MaxTargetStep)
+			{
+				glm::quat turn = targetRotation * glm::inverse(runtime.TargetRotation);
+				if (turn.w < 0.0f)
+					turn = -turn;
+				const glm::vec3 turnAxis(turn.x, turn.y, turn.z);
+				const float turnLength = glm::length(turnAxis);
+				const float turnAngle = 2.0f * std::acos(std::clamp(turn.w, -1.0f, 1.0f));
+				linear += targetStep / deltaTime;
+				if (turnLength > 1e-6f && turnAngle < k_MaxTargetTurn)
+					angular += turnAxis / turnLength * (turnAngle / deltaTime);
+			}
+			runtime.TargetPosition = targetPosition;
+			runtime.TargetRotation = targetRotation;
+			runtime.HasTarget = true;
 			if (!Finite(linear) || !Finite(angular))
 				return;
 
+			// The whole ragdoll takes the root's correction as one rigid motion: on the root alone the
+			// solve hands it to the heavier chain below, and the body swings on a pinned hip. Its
+			// current motion is the mass-weighted mean, since the root's own velocity carries the
+			// reaction of a swinging limb and correcting by it feeds the swing.
+			float mass = 0.0f;
+			glm::vec3 centre(0.0f), momentum(0.0f), spin(0.0f);
+			for (const RagdollRuntime::Part& part : runtime.Parts)
+			{
+				mass += part.Mass;
+				centre += part.Mass * physics.GetPosition(part.Body);
+				momentum += part.Mass * physics.GetLinearVelocity(part.Body);
+				spin += part.Mass * physics.GetAngularVelocity(part.Body);
+			}
+			if (!(mass > 0.0f))
+				return;
+			const glm::vec3 meanAngular = spin / mass;
+			const glm::vec3 meanLinear = momentum / mass - glm::cross(meanAngular, centre / mass - position);
+
 			const float follow = std::clamp(strength, 0.0f, 1.0f);
-			physics.SetLinearVelocity(root.Body, glm::mix(physics.GetLinearVelocity(root.Body), linear, follow));
-			physics.SetAngularVelocity(root.Body, glm::mix(physics.GetAngularVelocity(root.Body), angular, follow));
+			const glm::vec3 deltaLinear = (linear - meanLinear) * follow;
+			const glm::vec3 deltaAngular = (angular - meanAngular) * follow;
+			for (const RagdollRuntime::Part& part : runtime.Parts)
+			{
+				const glm::vec3 offset = physics.GetPosition(part.Body) - position;
+				physics.SetLinearVelocity(part.Body, physics.GetLinearVelocity(part.Body) + deltaLinear + glm::cross(deltaAngular, offset));
+				physics.SetAngularVelocity(part.Body, physics.GetAngularVelocity(part.Body) + deltaAngular);
+			}
 		}
 
-		void RagdollSystem::Pose(entt::registry& registry, Physics3D& physics)
+		void RagdollSystem::AfterStep(entt::registry& registry, Physics3D& physics)
 		{
 			m_Scratch.clear();
 			for (entt::entity handle : registry.view<RagdollRuntime>())
@@ -804,12 +855,54 @@ namespace Dingo
 				const RagdollComponent* settings = registry.try_get<RagdollComponent>(handle);
 				const Skeleton* skeleton = SkeletonOf(registry, handle);
 				Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle);
-				if (!settings || !skeleton || !transform || skeleton->GetId() != runtime.SkeletonId)
+				if (settings && skeleton && transform && skeleton->GetId() == runtime.SkeletonId)
+				{
+					const float blend = std::isfinite(settings->Blend) ? std::clamp(settings->Blend, 0.0f, 1.0f) : 0.0f;
+					runtime.FollowsRoot = blend > 0.0f && !Driven(*settings)
+						&& !registry.any_of<RigidBody3DComponent, CharacterController3DComponent>(handle);
+					glm::mat4 entityWorld;
+					if (runtime.FollowsRoot && AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+					{
+						const RagdollRuntime::Part& root = runtime.Parts.front();
+						const glm::quat rotation = glm::normalize(physics.GetRotation(root.Body) * glm::inverse(root.OffsetRotation));
+						const glm::vec3 simulated = physics.GetPosition(root.Body) - rotation * root.OffsetPosition;
+						const glm::vec3 shift = simulated - glm::vec3(m_JointWorlds[root.Joint][3]);
+						if (Finite(shift) && glm::dot(shift, shift) > 0.0f)
+							HierarchySystem::SetWorldPosition(registry, handle, *transform, glm::vec3(entityWorld[3]) + shift);
+					}
+				}
+
+				for (RagdollRuntime::Part& part : runtime.Parts)
+				{
+					part.PreviousPosition = part.Position;
+					part.PreviousRotation = part.Rotation;
+					part.Position = physics.GetPosition(part.Body);
+					part.Rotation = physics.GetRotation(part.Body);
+					if (!runtime.Recorded)
+					{
+						part.PreviousPosition = part.Position;
+						part.PreviousRotation = part.Rotation;
+					}
+				}
+				runtime.Recorded = true;
+			}
+		}
+
+		void RagdollSystem::Pose(entt::registry& registry, Physics3D& physics, float alpha)
+		{
+			m_Scratch.clear();
+			for (entt::entity handle : registry.view<RagdollRuntime>())
+				m_Scratch.push_back(handle);
+
+			for (entt::entity handle : m_Scratch)
+			{
+				RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
+				const RagdollComponent* settings = registry.try_get<RagdollComponent>(handle);
+				const Skeleton* skeleton = SkeletonOf(registry, handle);
+				if (!settings || !skeleton || skeleton->GetId() != runtime.SkeletonId)
 					continue;
 
 				const float blend = std::isfinite(settings->Blend) ? std::clamp(settings->Blend, 0.0f, 1.0f) : 0.0f;
-				runtime.FollowsRoot = blend > 0.0f && !Driven(*settings)
-					&& !registry.any_of<RigidBody3DComponent, CharacterController3DComponent>(handle);
 				if (blend <= 0.0f)
 					continue;
 
@@ -818,34 +911,17 @@ namespace Dingo
 				if (!animator || !AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
 					continue;
 
-				auto simulatedJoint = [&](const RagdollRuntime::Part& part, glm::vec3& position, glm::quat& rotation)
-				{
-					rotation = glm::normalize(physics.GetRotation(part.Body) * glm::inverse(part.OffsetRotation));
-					position = physics.GetPosition(part.Body) - rotation * part.OffsetPosition;
-				};
-
-				if (runtime.FollowsRoot)
-				{
-					glm::vec3 simulated;
-					glm::quat rotation;
-					simulatedJoint(runtime.Parts.front(), simulated, rotation);
-					const glm::vec3 shift = simulated - glm::vec3(m_JointWorlds[runtime.Parts.front().Joint][3]);
-					if (Finite(shift) && glm::dot(shift, shift) > 0.0f)
-					{
-						HierarchySystem::SetWorldPosition(registry, handle, *transform, glm::vec3(entityWorld[3]) + shift);
-						if (!AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
-							continue;
-					}
-				}
-
+				const bool between = alpha >= 0.0f && runtime.Recorded;
+				const float t = (std::min)(alpha, 1.0f);
 				const size_t count = skeleton->GetJointCount();
 				m_Weights.assign(count, 0.0f);
 				const glm::mat4 toModel = glm::inverse(entityWorld * skeleton->GetRootTransform());
 				for (const RagdollRuntime::Part& part : runtime.Parts)
 				{
-					glm::vec3 position;
-					glm::quat rotation;
-					simulatedJoint(part, position, rotation);
+					const glm::quat bodyRotation = between ? glm::slerp(part.PreviousRotation, part.Rotation, t) : physics.GetRotation(part.Body);
+					const glm::vec3 bodyPosition = between ? glm::mix(part.PreviousPosition, part.Position, t) : physics.GetPosition(part.Body);
+					const glm::quat rotation = glm::normalize(bodyRotation * glm::inverse(part.OffsetRotation));
+					const glm::vec3 position = bodyPosition - rotation * part.OffsetPosition;
 					if (!Finite(position) || !std::isfinite(rotation.w) || !Finite(glm::vec3(rotation.x, rotation.y, rotation.z)))
 						continue;
 
