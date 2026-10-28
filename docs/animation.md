@@ -1093,7 +1093,7 @@ than 20 bodies, or a skeleton without a branching joint, logs an error once and 
 Fox in `test/assets/models/Fox` gets 16: hips, two spine bones, neck (the head rides on it), two
 bones per arm, two per hind leg plus the foot, and two tail bones.
 
-**Size and mass.** A capsule's radius is the median distance from its bone of the rest-pose vertices
+**Size and mass.** A capsule's radius is the 85th-percentile distance from its bone of the rest-pose vertices
 that bone (or a joint folded into it) moves most, between 0.08 and 0.6 times the bone's length. A bone
 with fewer than 8 such vertices falls back to its length and how far its other children sit off it.
 Mass follows the bone's size rather than the measured skin: a skinny bone under a lot of fur (the

@@ -152,12 +152,13 @@ namespace Dingo
 				return glm::pi<float>() * radius * radius * (2.0f * halfHeight + 4.0f / 3.0f * radius);
 			}
 
-			// Per part, the median distance from its bone of the rest-pose vertices whose heaviest joint
+			// Per part, the 85th-percentile distance from its bone of the rest-pose vertices whose heaviest joint
 			// rides on it, as a fraction of the bone's rest length; 0 where too few vertices say.
 			std::vector<float> MeasureRadii(const Model& model, const Skeleton& skeleton, const RagdollRuntime& runtime,
 				const std::vector<int32_t>& mainChild, const std::vector<glm::vec3>& restPositions)
 			{
 				constexpr size_t k_MinSamples = 8;
+				constexpr float k_RadiusPercentile = 0.85f;
 				std::vector<std::vector<float>> distances(runtime.Parts.size());
 				const uint32_t jointCount = skeleton.GetJointCount();
 				for (const SubMesh& submesh : model.GetSubMeshes())
@@ -202,7 +203,7 @@ namespace Dingo
 					std::vector<float>& samples = distances[p];
 					if (samples.size() < k_MinSamples)
 						continue;
-					auto middle = samples.begin() + static_cast<std::ptrdiff_t>(samples.size() / 2);
+					auto middle = samples.begin() + static_cast<std::ptrdiff_t>(static_cast<float>(samples.size() - 1) * k_RadiusPercentile);
 					std::nth_element(samples.begin(), middle, samples.end());
 					radii[p] = *middle;
 				}

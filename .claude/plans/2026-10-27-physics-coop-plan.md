@@ -73,7 +73,7 @@ As built:
   length. Hinge limits are degrees from the bone lying straight, re-centred on the build pose's bend.
   Mass shares are exact when they leave room; the rest is split by size, and shares of 1 or more are
   scaled with the others (warned).
-- Measured radius: the median distance of the rest vertices each part moves most, from its bone,
+- Measured radius: the 85th-percentile distance (first built as the median, which left the skin clipping into the floor) of the rest vertices each part moves most, from its bone,
   clamped to 0.08–0.6 × length, at least 8 samples, else the P1 rule. **Mass still splits by the P1
   automatic capsule volume**, not the measured collider: with measured volumes the Fox's fluffy tail
   tip weighed 12 kg on a 0.4 kg base and the torso outweighed the hips 5:1, and the driven hip drifted
