@@ -50,6 +50,9 @@ namespace Dingo
 			constexpr float k_MaxTargetStep = 0.5f;
 			constexpr float k_MaxTargetTurn = 1.0f;
 			constexpr float k_GroundProbe = 100.0f;
+			constexpr float k_SeatSpeed = 2.0f;
+			constexpr float k_SoftStrength = 0.25f;
+			constexpr float k_SoftSeconds = 1.0f;
 			constexpr float k_FoldRatio = 0.3f;
 			constexpr float k_HingeMaxBend = glm::radians(150.0f);
 			constexpr float k_HingeOverextension = glm::radians(5.0f);
@@ -739,6 +742,7 @@ namespace Dingo
 
 			RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
 			const bool driven = Driven(*settings);
+			runtime.DrivenFor = driven ? runtime.DrivenFor + deltaTime : 0.0f;
 			glm::mat4 entityWorld;
 			if (driven && !AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
 				return;
@@ -748,17 +752,30 @@ namespace Dingo
 			if (driven && runtime.Carried)
 			{
 				runtime.Carried = false;
-				if (transform && runtime.HasGroundHeight && GroundUnderRoot(physics, runtime, groundY))
-				{
-					glm::vec3 seated(entityWorld[3]);
-					seated.y = groundY + runtime.GroundHeight;
-					HierarchySystem::SetWorldPosition(registry, handle, *transform, seated);
-					if (!AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
-						return;
-				}
+				runtime.Seating = transform && runtime.HasGroundHeight && GroundUnderRoot(physics, runtime, groundY);
+				if (runtime.Seating)
+					runtime.SeatHeight = groundY + runtime.GroundHeight;
 			}
+			if (driven && runtime.Seating && transform)
+			{
+				glm::vec3 seated(entityWorld[3]);
+				const float step = k_SeatSpeed * deltaTime;
+				const float remaining = runtime.SeatHeight - seated.y;
+				if (std::abs(remaining) <= step)
+				{
+					seated.y = runtime.SeatHeight;
+					runtime.Seating = false;
+				}
+				else
+					seated.y += remaining > 0.0f ? step : -step;
+				HierarchySystem::SetWorldPosition(registry, handle, *transform, seated);
+				if (!AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+					return;
+			}
+			if (!driven)
+				runtime.Seating = false;
 
-			const float strength = std::isfinite(settings->Strength) ? settings->Strength : 0.0f;
+			const float strength = (std::isfinite(settings->Strength) ? settings->Strength : 0.0f) * (runtime.DrivenFor < k_SoftSeconds ? k_SoftStrength : 1.0f);
 			const float omega = glm::two_pi<float>() * k_DriveFrequency;
 			for (RagdollRuntime::Part& part : runtime.Parts)
 			{

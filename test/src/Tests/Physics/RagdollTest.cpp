@@ -416,11 +416,14 @@ namespace Dingo
 		settings.Strength = 1.0f;
 		Run(*m_Scene, 4.0f);
 		const float risenHip = physics.GetPosition(hip).y;
-		DE_INFO("Ragdoll recover: hip {:.3f} m standing, {:.3f} m limp (entity y {:.3f}), {:.3f} m after Strength returns to 1",
-			standingHip, limpHip, limpEntity, risenHip);
+		Run(*m_Scene, 2.0f);
+		const float tailSpin = glm::length(physics.GetAngularVelocity(m_Scene->GetRagdollBody(fox, "b_Tail01_012")));
+		DE_INFO("Ragdoll recover: hip {:.3f} m standing, {:.3f} m limp (entity y {:.3f}), {:.3f} m after Strength returns to 1, tail spin {:.2f} rad/s",
+			standingHip, limpHip, limpEntity, risenHip, tailSpin);
 
 		Check(limpHip < standingHip - 0.3f, "recover: at Strength 0 the fox drops well below its standing hip height");
 		Check(std::abs(risenHip - standingHip) < 0.1f, "recover: a limp fox stands back up within 10 cm of its hip height when Strength returns to 1");
+		Check(tailSpin < 2.0f, "recover: the tail settles instead of ringing after Strength returns to 1");
 	}
 
 	void RagdollTest::RunStairChecks()

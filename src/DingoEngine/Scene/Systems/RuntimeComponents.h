@@ -145,6 +145,10 @@ namespace Dingo
 			bool Carried = false;
 			bool HasGroundHeight = false;
 			float GroundHeight = 0.0f;
+			bool Seating = false;
+			float SeatHeight = 0.0f;
+			// Seconds driven since the last limp spell. Full strength straight out of a limp spell leaves the tail ringing at the drive frequency, so the first second runs soft.
+			float DrivenFor = 1.0e9f;
 			// A step has run since the build, so the parts' recorded poses are set.
 			bool Recorded = false;
 			// The animated root pose the last driven step aimed for, so the drive can match its velocity.

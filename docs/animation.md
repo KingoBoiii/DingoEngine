@@ -1119,7 +1119,7 @@ camera go where the body went, and clip root motion is ignored. An entity with i
 (or remove it) before letting the body fall. When the ragdoll is driven again (`Strength` back above 0 with
 `DriveToAnimation` on), the entity is put back at the height above the ground it had when it went limp,
 measured by a ray down from the hips: the pose then stands up from the ground the body lies on, not from
-where the fall left the entity. With no ground under the hips it stays where it is.
+where the fall left the entity. The height is eased in at 2 m/s rather than snapped, and the first second after a limp spell runs at a quarter of `Strength`: full strength straight out of limp leaves the tail ringing. The entity stays where it fell sideways. With no ground under the hips it stays where it is.
 
 **Bodies.** `Scene::GetRagdollBody(entity, "jointName")` returns a bone's body, or its nearest
 simulated ancestor's (a hand finds its forearm's), for impulses, ray-cast filters or sensors.
