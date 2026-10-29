@@ -7,6 +7,7 @@ namespace Dingo
 {
 
 	struct AnimationEvent;
+	struct ConstraintBreak3D;
 
 	/// Base class for entity behaviours. Subclass it, override the lifecycle hooks,
 	/// and attach an instance with entity.AddScript<MyScript>(). The owning Scene
@@ -56,6 +57,13 @@ namespace Dingo
 		/// order, after every script's OnUpdate and before physics. A DestroyEntity from here waits
 		/// for the end of the pass, like one from OnUpdate.
 		virtual void OnAnimationEvent(const AnimationEvent& event) {}
+
+		/// A Constraint3DComponent joining this entity's body broke (BreakForce or BreakTorque exceeded).
+		/// `other` is the entity on the far side, null for a world pin; `info` has the measured force and
+		/// torque. Delivered after the physics step that broke it, outside the physics lock: first to the
+		/// script of the entity that owned the component, then to the other's, in constraint id order. The
+		/// owner's component is already removed, and a DestroyEntity from here waits for the end of the pass.
+		virtual void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) {}
 
 		/// The entity's T; asserts the entity has one (see Entity::GetComponent).
 		template<typename T>

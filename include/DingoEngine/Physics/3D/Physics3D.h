@@ -211,6 +211,23 @@ namespace Dingo
 		/// solver torque is applied, so a motor holding a pose against gravity reads 0 once it sleeps.
 		virtual float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const = 0;
 
+		/// Sets the thresholds above which the constraint breaks (ConstraintParams3D::BreakForce, BreakTorque); 0 for a
+		/// threshold turns it off. A negative, NaN or infinite value ignores the whole call; a stale handle is ignored
+		/// silently. It does not wake the bodies: a sleeping pair is checked once something wakes it.
+		virtual void SetConstraintBreakLimits(ConstraintId3D constraint, float breakForce, float breakTorque) = 0;
+		/// Reads the thresholds into the outputs and returns true; false (outputs unchanged) for a stale handle.
+		virtual bool GetConstraintBreakLimits(ConstraintId3D constraint, float& outBreakForce, float& outBreakTorque) const = 0;
+		/// Reads the reaction the constraint applied in the last step: force in N and torque in N*m, from the last
+		/// collision sub-step's impulse (Jolt keeps no earlier one), so with collisionSteps above 1 a spike in an
+		/// earlier sub-step goes unseen. Motor impulses are not counted; Point and Distance report a torque of 0.
+		/// Returns false (outputs unchanged) for a stale handle; reads 0 when the last Step did not solve it (both
+		/// bodies asleep as that step began, or a body woken since), while it is disabled and before the first Step.
+		virtual bool GetConstraintReaction(ConstraintId3D constraint, float& outForce, float& outTorque) const = 0;
+		/// Appends the constraints that broke since the last call, in the order they broke, and clears the list. A
+		/// constraint breaks at the end of Step when its force or torque exceeds a non-zero threshold; it is then
+		/// destroyed like DestroyConstraint. The world keeps at most 4096 undrained entries and drops the oldest.
+		virtual void ConsumeBrokenConstraints(std::vector<ConstraintBreak3D>& outBroken) = 0;
+
 		// --- Scene queries ----------------------------------------------------
 
 		/// Casts a ray and reports the closest body it hits within maxDistance. Returns

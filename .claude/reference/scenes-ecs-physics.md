@@ -7,7 +7,7 @@ Index of `##` headings (Grep the heading, then Read just that range):
 - Scene and physics worlds, Lifecycle, Scene rendering, Scripts.
 - Fixed tick, Components, Lights, Fog.
 - Hierarchy, Sockets, Active, Ragdolls.
-- Character controllers, Runtime handles, Physics stepping, Physics shapes and queries.
+- Character controllers, Runtime handles, Physics stepping, Physics shapes and queries, Breakable constraints.
 
 ## Scene and physics worlds
 
@@ -159,3 +159,12 @@ Index of `##` headings (Grep the heading, then Read just that range):
 - Sensors (#102):
 - `IsSensor` bodies never collide, queries skip them by default, `Physics3D::GetSensorOverlaps` / `CharacterController3D::IsOverlapping` / `Scene::GetSensorOverlaps` ask what is inside; `QueryFilter3D` (ignored bodies, `QueryLayers` mask, sensors) on every query; Jolt user data = `QueryLayers << 32 | UserData`, and a Scene keeps the entity in `UserData` (`Scene::GetEntityFromBody3D`).
 - Controllers block each other unless `CollideWithCharacters` is off (#101, one `CharacterVsCharacterCollisionSimple` per world).
+
+## Breakable constraints
+
+- `Constraint3DComponent::BreakForce/BreakTorque` (#309) go into `ConstraintParams3D` in `BuildConstraint`.
+- Order inside `PhysicsSync::Step`: `SyncConstraints` → `Physics3D::Step` (Jolt's break pass destroys the joints) → `DrainBrokenConstraints`.
+- `DrainBrokenConstraints` maps `ConstraintBreak3D::UserData` to the owning entity, checks `Constraint3DRuntime::Constraint` still matches, removes the `Constraint3DComponent` so `SyncConstraints` doesn't rebuild it, and queues a `BrokenConstraint{BodyA, BodyB (runtime Other), Info}`.
+- `Scene::DeliverConstraintBreaks` runs after each `Physics.Step` (under FixedTick after `Interpolation.AfterTick`, before `++Tick`), sets `Updating` so destroys defer, and calls `ScriptSystem::DeliverConstraintBroken` for BodyA then BodyB.
+- The reaction is read only from constraints active before `Update` (`ConstraintRecord::SolvedLastStep`): Jolt fixes its solved set when a step starts, so a pair woken mid-step still holds its pre-sleep lambda.
+- The F9 Constraint3D section shows the limits and the live reaction.

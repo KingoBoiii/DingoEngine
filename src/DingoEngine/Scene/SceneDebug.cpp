@@ -868,6 +868,14 @@ namespace Dingo
 						Add(section, "Twist", std::format("{:.3f} .. {:.3f}", constraint->TwistMin, constraint->TwistMax));
 					}
 					Add(section, "Collide connected", Text(constraint->CollideConnected));
+					Add(section, "Break force / torque", std::format("{:.1f} N / {:.1f} Nm", constraint->BreakForce, constraint->BreakTorque));
+					{
+						const Constraint3DRuntime* reactionRuntime = registry.try_get<Constraint3DRuntime>(handle);
+						const Physics3D* reactionPhysics = data.Physics.Get3D();
+						float force = 0.0f, torque = 0.0f;
+						if (reactionRuntime && reactionPhysics && reactionPhysics->GetConstraintReaction(reactionRuntime->Constraint, force, torque))
+							Add(section, "Reaction force / torque", std::format("{:.1f} N / {:.1f} Nm", force, torque));
+					}
 
 					if (constraint->Type == ConstraintType3D::Hinge || constraint->Type == ConstraintType3D::SwingTwist)
 					{

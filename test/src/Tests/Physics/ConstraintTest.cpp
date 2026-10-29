@@ -6,7 +6,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
+#include <set>
+#include <vector>
 
 namespace
 {
@@ -1042,6 +1045,319 @@ namespace Dingo
 		Check(y(late) < 0.6f, "scene: a body created while running joins its group");
 	}
 
+	namespace
+	{
+		class BreakListener : public ScriptableEntity
+		{
+		public:
+			explicit BreakListener(std::function<void(Entity, const ConstraintBreak3D&)> sink) : m_Sink(std::move(sink)) {}
+
+			void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) override { m_Sink(other, info); }
+
+		private:
+			std::function<void(Entity, const ConstraintBreak3D&)> m_Sink;
+		};
+
+		struct ShelfBreak
+		{
+			ConstraintId3D Constraint;
+			std::uint32_t UserData;
+			std::uint64_t Tick;
+
+			bool operator==(const ShelfBreak&) const = default;
+		};
+
+		struct ShelfResult
+		{
+			std::vector<ShelfBreak> Breaks;
+			std::uint32_t Calls = 0;
+			std::uint32_t ExpectedCalls = 0;
+			std::uint32_t BreaksBeforeDrop = 0;
+			float Lowest = 1000.0f;
+		};
+
+		constexpr float k_ShelfBreakForce = 1500.0f;
+
+		ShelfResult RunShelf(float holdSeconds, float afterSeconds)
+		{
+			ShelfResult result;
+			SceneParams params;
+			params.FixedTick = true;
+			Scene scene("Shelf", params);
+			constexpr float k_Step = 1.0f / 60.0f;
+			scene.SetFixedTimeStep(k_Step);
+
+			Entity floor = scene.CreateEntity("Floor");
+			floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.5f, 0.0f }, { 10.0f, 1.0f, 4.0f }));
+			floor.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
+
+			std::set<ConstraintId3D> seen;
+			auto sink = [&](Entity, const ConstraintBreak3D& info)
+			{
+				++result.Calls;
+				if (seen.insert(info.Constraint).second)
+				{
+					result.Breaks.push_back({ info.Constraint, info.UserData, scene.GetTick() });
+					result.ExpectedCalls += info.BodyB == k_InvalidBody3D ? 1 : 2;
+				}
+			};
+
+			std::vector<Entity> bricks;
+			std::vector<Entity> column(5, Entity());
+			for (int row = 0; row < 4; row++)
+			{
+				for (int col = 0; col < 5; col++)
+				{
+					const glm::vec3 position(col * 0.4f - 0.8f, 0.1f + 0.2f * row, 0.0f);
+					Entity brick = scene.CreateEntity("Brick");
+					brick.AddComponent<Transform3DComponent>(Transform3DComponent(position, { 0.4f, 0.2f, 0.2f }));
+					brick.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+					Constraint3DComponent weld(ConstraintType3D::Fixed, row == 0 ? UUID() : column[col].GetUUID());
+					if (row == 0)
+						weld.AnchorB = position;
+					else
+					{
+						weld.AnchorA = { 0.0f, -0.1f, 0.0f };
+						weld.AnchorB = { 0.0f, 0.1f, 0.0f };
+					}
+					weld.BreakForce = k_ShelfBreakForce;
+					brick.AddComponent<Constraint3DComponent>(weld);
+					brick.AddScript<BreakListener>(sink);
+					column[col] = brick;
+					bricks.push_back(brick);
+				}
+			}
+
+			scene.OnStart();
+			auto trackLowest = [&]()
+			{
+				for (Entity brick : bricks)
+					result.Lowest = (std::min)(result.Lowest, brick.GetComponent<Transform3DComponent>().Position.y - 0.1f);
+			};
+
+			const int holdTicks = static_cast<int>(holdSeconds / k_Step);
+			for (int i = 0; i < holdTicks; i++)
+			{
+				scene.OnUpdate(k_Step);
+				trackLowest();
+			}
+			result.BreaksBeforeDrop = static_cast<std::uint32_t>(result.Breaks.size());
+
+			Entity weight = scene.CreateEntity("Weight");
+			weight.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, 2.95f, 0.0f }, { 0.3f, 0.3f, 0.3f }));
+			weight.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+			scene.CreateRigidBody(weight);
+
+			const int afterTicks = static_cast<int>(afterSeconds / k_Step);
+			for (int i = 0; i < afterTicks; i++)
+			{
+				scene.OnUpdate(k_Step);
+				trackLowest();
+			}
+			return result;
+		}
+	}
+
+	void ConstraintTest::RunBreakSceneChecks()
+	{
+		{
+			Scene scene("Hand");
+			std::uint32_t calls = 0;
+			UUID reportedOther;
+			Entity hand = scene.CreateEntity("Hand");
+			hand.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, 50.0f, 0.0f }));
+			hand.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+			Entity crate = scene.CreateEntity("Crate");
+			crate.AddComponent<Transform3DComponent>(Transform3DComponent({ 1.0f, 50.0f, 0.0f }));
+			crate.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+
+			Constraint3DComponent grip(ConstraintType3D::Point, crate.GetUUID());
+			grip.AnchorA = { 0.5f, 0.0f, 0.0f };
+			grip.AnchorB = { -0.5f, 0.0f, 0.0f };
+			grip.BreakForce = 300.0f;
+			hand.AddComponent<Constraint3DComponent>(grip);
+			hand.AddScript<BreakListener>([&](Entity other, const ConstraintBreak3D&)
+			{
+				++calls;
+				if (other.IsValid())
+					reportedOther = other.GetUUID();
+			});
+
+			scene.OnStart();
+			for (int i = 0; i < 30; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(calls == 0 && hand.HasComponent<Constraint3DComponent>(), "break scene: a hand holding a crate in free fall does not break");
+
+			scene.ApplyImpulse(crate, { 0.0f, 0.0f, 50000.0f });
+			for (int i = 0; i < 30; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(calls == 1, "break scene: the hand's script receives OnConstraintBroken exactly once");
+			Check(reportedOther == crate.GetUUID(), "break scene: other is the crate");
+			Check(!hand.HasComponent<Constraint3DComponent>(), "break scene: the component is removed");
+
+			for (int i = 0; i < 60; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(calls == 1, "break scene: a broken joint does not fire again or rebuild");
+
+			const float apart = glm::length(hand.GetComponent<Transform3DComponent>().Position - crate.GetComponent<Transform3DComponent>().Position);
+			grip.BreakForce = 0.0f;
+			hand.AddComponent<Constraint3DComponent>(grip);
+			for (int i = 0; i < 180; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			const float rejoined = glm::length(hand.GetComponent<Transform3DComponent>().Position - crate.GetComponent<Transform3DComponent>().Position);
+			Check(apart > 3.0f && rejoined < apart * 0.5f, "break scene: re-adding the component rebuilds the joint");
+		}
+
+		const ShelfResult held = RunShelf(10.0f, 4.0f);
+		Check(held.BreaksBeforeDrop == 0, "shelf: the wall holds for 10 s");
+		Check(!held.Breaks.empty(), "shelf: a dropped weight breaks welds");
+		Check(held.Calls == held.ExpectedCalls, "shelf: each break reaches both bodies' scripts once (" + std::to_string(held.Calls) + " of " + std::to_string(held.ExpectedCalls) + ")");
+		Check(held.Lowest > -0.06f, "shelf: no brick sinks into the floor (lowest " + std::to_string(held.Lowest) + ")");
+
+		const ShelfResult first = RunShelf(1.0f, 3.0f);
+		const ShelfResult second = RunShelf(1.0f, 3.0f);
+		Check(!first.Breaks.empty() && first.Breaks == second.Breaks, "shelf: the same welds break on the same tick in two FixedTick runs");
+	}
+
+	void ConstraintTest::RunBreakChecks()
+	{
+		constexpr float g = 9.81f;
+		constexpr float loadMass = 200.0f;
+
+		auto heavyBox = [](Physics3D& world, const glm::vec3& position, float halfExtent, float mass)
+		{
+			RigidBodyParams3D params;
+			params.Type = BodyType3D::Dynamic;
+			params.Shape = ColliderShape3D::Box;
+			params.Position = position;
+			params.HalfExtents = glm::vec3(halfExtent);
+			params.Mass = mass;
+			return world.CreateBody(params);
+		};
+		auto rod = [](PhysicsBodyId3D a, PhysicsBodyId3D b, float length, float breakForce, std::uint32_t userData)
+		{
+			ConstraintParams3D params(ConstraintType3D::Distance, a, b);
+			params.MinLimit = params.MaxLimit = length;
+			params.BreakForce = breakForce;
+			params.UserData = userData;
+			return params;
+		};
+
+		{
+			auto world = MakeWorld({ 0.0f, -g, 0.0f });
+			PhysicsBodyId3D bodies[7];
+			bodies[0] = Box(*world, BodyType3D::Static, { 0.0f, 10.0f, 0.0f }, glm::vec3(0.1f));
+			for (int i = 1; i < 6; i++)
+				bodies[i] = heavyBox(*world, { 0.0f, 10.0f - i, 0.0f }, 0.1f, 1.0f);
+			bodies[6] = heavyBox(*world, { 0.0f, 4.0f, 0.0f }, 0.3f, loadMass);
+
+			ConstraintId3D links[6];
+			for (int i = 0; i < 6; i++)
+				links[i] = world->CreateConstraint(rod(bodies[i], bodies[i + 1], 1.0f, i == 3 ? 1500.0f : 3000.0f, 100 + i));
+
+			std::vector<ConstraintBreak3D> broken;
+			Run(*world, 4.0f);
+			world->ConsumeBrokenConstraints(broken);
+			Check(broken.size() == 1, "break: a rope with one weak link under a 200 kg load breaks exactly one link");
+			if (broken.size() == 1)
+			{
+				Check(broken[0].Constraint == links[3] && broken[0].BodyA == bodies[3] && broken[0].BodyB == bodies[4] && broken[0].UserData == 103,
+					"break: the report names the weak link, its bodies and its user data");
+				Check(broken[0].Force > 1500.0f, "break: the reported force is above the threshold");
+			}
+			Check(!world->IsConstraintValid(links[3]), "break: the broken handle is stale");
+			Check(world->IsConstraintValid(links[0]) && world->IsConstraintValid(links[2]) && world->IsConstraintValid(links[4]) && world->IsConstraintValid(links[5]),
+				"break: the other links stay");
+			std::vector<ConstraintBreak3D> again;
+			world->ConsumeBrokenConstraints(again);
+			Check(again.empty(), "break: a broken constraint is reported once");
+
+			ConstraintParams3D fresh(ConstraintType3D::Distance, bodies[0], bodies[1]);
+			fresh.MinLimit = fresh.MaxLimit = 1.0f;
+			const ConstraintId3D next = world->CreateConstraint(fresh);
+			Check(next != k_InvalidConstraint3D && next > links[3], "break: a new constraint's id is greater than the broken one's");
+			Check(!world->IsConstraintValid(links[3]), "break: the broken handle stays stale after a new constraint");
+		}
+		{
+			auto world = MakeWorld({ 0.0f, -g, 0.0f });
+			const PhysicsBodyId3D anchor = Box(*world, BodyType3D::Static, { 0.0f, 10.0f, 0.0f }, glm::vec3(0.1f));
+			const PhysicsBodyId3D load = heavyBox(*world, { 0.0f, 8.0f, 0.0f }, 0.3f, loadMass);
+			const ConstraintId3D joint = world->CreateConstraint(rod(anchor, load, 2.0f, 0.0f, 0));
+			Run(*world, 0.25f);
+			float force = -1.0f, torque = -1.0f;
+			Check(world->GetConstraintReaction(joint, force, torque), "reaction: a live constraint reports its reaction");
+			Check(std::abs(force - loadMass * g) < 0.05f * loadMass * g, "reaction: a static hang reads about m*g");
+			Check(torque == 0.0f, "reaction: a Distance constraint has no torque");
+			Check(world->IsConstraintValid(joint), "reaction: a constraint without limits never breaks");
+			world->SetConstraintEnabled(joint, false);
+			world->GetConstraintReaction(joint, force, torque);
+			Check(force == 0.0f, "reaction: a disabled constraint reads 0");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D anchor = Box(*world, BodyType3D::Static, { 0.0f, 10.0f, 0.0f }, glm::vec3(0.1f));
+			const PhysicsBodyId3D load = heavyBox(*world, { 0.0f, 8.0f, 0.0f }, 0.3f, loadMass);
+			const ConstraintId3D joint = world->CreateConstraint(rod(anchor, load, 2.0f, 1.0f, 0));
+			Run(*world, 3.0f);
+			world->SetGravity({ 0.0f, -g, 0.0f });
+			Run(*world, 0.5f);
+			float force = -1.0f, torque = -1.0f;
+			world->GetConstraintReaction(joint, force, torque);
+			Check(world->GetPosition(load).y > 7.999f, "reaction: the pair fell asleep and stays asleep when gravity changes");
+			Check(force == 0.0f && torque == 0.0f, "reaction: a sleeping pair reads 0");
+			Check(world->IsConstraintValid(joint), "break: a sleeping pair does not break");
+		}
+		{
+			auto world = MakeWorld({ 0.0f, -g, 0.0f });
+			const PhysicsBodyId3D anchor = Box(*world, BodyType3D::Static, { 0.0f, 10.0f, 0.0f }, glm::vec3(0.1f));
+			const PhysicsBodyId3D load = heavyBox(*world, { 0.0f, 8.0f, 0.0f }, 0.3f, loadMass);
+			const ConstraintId3D joint = world->CreateConstraint(rod(anchor, load, 2.0f, 10.0f * loadMass * g, 0));
+			Run(*world, 3.0f);
+			world->SetConstraintBreakLimits(joint, 0.5f * loadMass * g, 0.0f);
+			Run(*world, 0.5f);
+			float force = -1.0f, torque = -1.0f;
+			world->GetConstraintReaction(joint, force, torque);
+			Check(world->IsConstraintValid(joint) && force == 0.0f, "break: a loaded joint asleep under gravity holds below its lowered limit");
+			world->ApplyImpulse(load, { 1.0f, 0.0f, 0.0f });
+			world->GetConstraintReaction(joint, force, torque);
+			Check(force == 0.0f, "reaction: a pair woken since the last step reads 0, not its pre-sleep load");
+			world->Step(k_Dt, 1);
+			Check(!world->IsConstraintValid(joint), "break: a woken pair over its limit breaks on the next step");
+		}
+		{
+			auto world = MakeWorld(glm::vec3(0.0f));
+			const PhysicsBodyId3D anchor = Box(*world, BodyType3D::Static, { 0.0f, 10.0f, 0.0f }, glm::vec3(0.1f));
+			const PhysicsBodyId3D load = heavyBox(*world, { 0.0f, 8.0f, 0.0f }, 0.3f, 10.0f);
+			ConstraintParams3D params = rod(anchor, load, 2.0f, 100.0f, 0);
+			params.BreakTorque = 50.0f;
+			const ConstraintId3D joint = world->CreateConstraint(params);
+			float force = -1.0f, torque = -1.0f;
+			Check(world->GetConstraintBreakLimits(joint, force, torque) && force == 100.0f && torque == 50.0f, "limits: the creation params round-trip");
+			world->SetConstraintBreakLimits(joint, 200.0f, 0.0f);
+			world->GetConstraintBreakLimits(joint, force, torque);
+			Check(force == 200.0f && torque == 0.0f, "limits: SetConstraintBreakLimits round-trips");
+			world->SetConstraintBreakLimits(joint, -1.0f, 5.0f);
+			world->SetConstraintBreakLimits(joint, std::nanf(""), 5.0f);
+			world->SetConstraintBreakLimits(joint, 5.0f, std::nanf(""));
+			world->GetConstraintBreakLimits(joint, force, torque);
+			Check(force == 200.0f && torque == 0.0f, "limits: negative and NaN values are ignored");
+			world->SetConstraintBreakLimits(joint, 0.0f, 0.0f);
+			world->GetConstraintBreakLimits(joint, force, torque);
+			Check(force == 0.0f && torque == 0.0f, "limits: 0 turns breaking off");
+
+			ConstraintParams3D bad = rod(anchor, load, 2.0f, -5.0f, 0);
+			bad.BreakTorque = std::nanf("");
+			const ConstraintId3D badJoint = world->CreateConstraint(bad);
+			world->GetConstraintBreakLimits(badJoint, force, torque);
+			Check(force == 0.0f && torque == 0.0f, "limits: negative and NaN creation values become 0");
+
+			world->DestroyConstraint(joint);
+			force = torque = -1.0f;
+			Check(!world->GetConstraintBreakLimits(joint, force, torque) && force == -1.0f && torque == -1.0f, "limits: a stale handle reports false and leaves the outputs");
+			Check(!world->GetConstraintReaction(joint, force, torque) && force == -1.0f, "reaction: a stale handle reports false and leaves the outputs");
+		}
+	}
+
 	void ConstraintTest::Initialize()
 	{
 		m_Checks.clear();
@@ -1054,6 +1370,8 @@ namespace Dingo
 		RunMotorSceneChecks();
 		RunGroupChecks();
 		RunGroupSceneChecks();
+		RunBreakChecks();
+		RunBreakSceneChecks();
 
 		m_BoxMesh = Mesh::CreateBox();
 		m_Scene = new Scene("Constraint Test");

@@ -334,6 +334,47 @@ In a `Scene` the same settings are fields on `Constraint3DComponent` and are wri
 [Scenes & ECS](scenes-and-ecs.md). The test app's Constraint Test (`--test=constraint`) has a motor arm
 and a panel to drive it.
 
+### Breaking
+
+A joint can let go when it is hit hard enough. Set `ConstraintParams3D::BreakForce` (newtons) and
+`BreakTorque` (newton-metres) when you create it, or later with `SetConstraintBreakLimits`; `0` (the
+default) never breaks. At the end of each `Step`, a constraint whose reaction exceeds a non-zero limit is
+destroyed exactly as `DestroyConstraint` would, so its handle goes stale and the bodies wake. Ids are
+never reused, so a constraint created afterwards has a higher id.
+
+`ConsumeBrokenConstraints(out)` appends what broke since the last call, in the order it broke (constraint
+id order within one step), and clears the list. Each `ConstraintBreak3D` is a snapshot of the handle, both
+bodies, the `UserData` and the force and torque at the break; the bodies may be gone by the time you read it.
+The world keeps at most 4096 undrained entries and drops the oldest with one warning.
+
+`GetConstraintReaction(constraint, force, torque)` reads the same numbers for a live joint, and
+`GetConstraintBreakLimits` reads the limits back. What counts as force and torque, from the solver's
+accumulated impulse:
+
+| Type | Force | Torque |
+|---|---|---|
+| Fixed | position impulse | rotation impulse |
+| Point | position impulse | none |
+| Hinge | position impulse | rotation impulse plus rotation-limit impulse |
+| SwingTwist | position impulse | largest of swing Y, swing Z and twist impulse |
+| Distance | position impulse (limits included) | none |
+| Slider | position impulse plus position-limit impulse | rotation impulse |
+
+Motor impulses never count, so a strong motor does not break its own joint. `BreakTorque` on a Point or
+Distance joint is stored and has no effect.
+
+- The reaction is the last collision sub-step's impulse scaled to a rate (`|λ| · collisionSteps / dt`, as
+  `GetMotorTorque` does). Jolt keeps no earlier sub-step, so with `collisionSteps` above 1 a spike in an
+  earlier sub-step goes unseen.
+- A constraint the last `Step` did not solve reads 0 and cannot break: both bodies were asleep when the step
+  began, or it is disabled. Nothing loads a sleeping joint. A pair woken during a step (a hit, a destroyed
+  neighbour) or between steps (an impulse from a script) reads 0 until the next step solves it, which can
+  delay a break by one step.
+  `SetConstraintBreakLimits` does not wake bodies, so lowering a limit below a sleeping joint's load acts
+  once something wakes it. A hung body at rest sleeps after about half a second and then reads 0.
+- A negative, NaN or infinite limit is ignored by `SetConstraintBreakLimits` and treated as 0 with a
+  warning by `CreateConstraint`.
+
 ## Sensors, query filters and body lookup
 
 A **sensor** is a trigger volume: `RigidBodyParams3D::IsSensor` (or `RigidBody3DComponent::IsSensor`).

@@ -263,6 +263,10 @@ namespace Dingo::Internal
 			JPH::Vec3 LocalB = JPH::Vec3::sZero();
 			bool IgnoresPair = false;
 			std::uint32_t UserData = 0;
+			float BreakForce = 0.0f;
+			float BreakTorque = 0.0f;
+			// Jolt fixes the set of solved constraints when a step starts, so a pair woken during Update keeps stale lambdas.
+			bool SolvedLastStep = false;
 
 			// Indexed by MotorAxis3D: a Hinge uses Hinge, a SwingTwist Swing and Twist.
 			struct MotorState
@@ -282,6 +286,12 @@ namespace Dingo::Internal
 		std::unordered_map<ConstraintId3D, ConstraintRecord> Constraints;
 		std::unordered_map<PhysicsBodyId3D, std::vector<ConstraintId3D>> BodyConstraints;
 		ConstraintId3D NextConstraintId = 0;
+
+		// Constraints with a non-zero break limit, ascending by id, so the break pass never depends on hash order.
+		std::vector<ConstraintId3D> Breakable;
+		static constexpr std::size_t k_MaxBroken = 4096;
+		std::vector<ConstraintBreak3D> Broken;
+		bool BrokenOverflowWarned = false;
 
 		// The controllers that block one another (CharacterControllerParams3D::CollideWithCharacters).
 		// Each removes itself when destroyed, which the world outlives.
