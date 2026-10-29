@@ -366,8 +366,10 @@ Distance joint is stored and has no effect.
 - The reaction is the last collision sub-step's impulse scaled to a rate (`|λ| · collisionSteps / dt`, as
   `GetMotorTorque` does). Jolt keeps no earlier sub-step, so with `collisionSteps` above 1 a spike in an
   earlier sub-step goes unseen.
-- A constraint whose bodies both sleep, or that is disabled, reads 0 and cannot break. Nothing loads a
-  sleeping joint, and a change that wakes a body (a hit, a destroyed neighbour) is checked on the next step.
+- A constraint the last `Step` did not solve reads 0 and cannot break: both bodies were asleep when the step
+  began, or it is disabled. Nothing loads a sleeping joint. A pair woken during a step (a hit, a destroyed
+  neighbour) or between steps (an impulse from a script) reads 0 until the next step solves it, which can
+  delay a break by one step.
   `SetConstraintBreakLimits` does not wake bodies, so lowering a limit below a sleeping joint's load acts
   once something wakes it. A hung body at rest sleeps after about half a second and then reads 0.
 - A negative, NaN or infinite limit is ignored by `SetConstraintBreakLimits` and treated as 0 with a

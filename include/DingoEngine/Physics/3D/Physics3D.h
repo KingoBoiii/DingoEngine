@@ -220,8 +220,8 @@ namespace Dingo
 		/// Reads the reaction the constraint applied in the last step: force in N and torque in N*m, from the last
 		/// collision sub-step's impulse (Jolt keeps no earlier one), so with collisionSteps above 1 a spike in an
 		/// earlier sub-step goes unseen. Motor impulses are not counted; Point and Distance report a torque of 0.
-		/// Returns false (outputs unchanged) for a stale handle; reads 0 while both bodies sleep, while the
-		/// constraint is disabled and before the first Step.
+		/// Returns false (outputs unchanged) for a stale handle; reads 0 when the last Step did not solve it (both
+		/// bodies asleep as that step began, or a body woken since), while it is disabled and before the first Step.
 		virtual bool GetConstraintReaction(ConstraintId3D constraint, float& outForce, float& outTorque) const = 0;
 		/// Appends the constraints that broke since the last call, in the order they broke, and clears the list. A
 		/// constraint breaks at the end of Step when its force or torque exceeds a non-zero threshold; it is then

@@ -265,6 +265,8 @@ namespace Dingo::Internal
 			std::uint32_t UserData = 0;
 			float BreakForce = 0.0f;
 			float BreakTorque = 0.0f;
+			// Jolt fixes the set of solved constraints when a step starts, so a pair woken during Update keeps stale lambdas.
+			bool SolvedLastStep = false;
 
 			// Indexed by MotorAxis3D: a Hinge uses Hinge, a SwingTwist Swing and Twist.
 			struct MotorState

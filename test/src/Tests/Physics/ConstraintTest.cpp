@@ -1071,6 +1071,7 @@ namespace Dingo
 		{
 			std::vector<ShelfBreak> Breaks;
 			std::uint32_t Calls = 0;
+			std::uint32_t ExpectedCalls = 0;
 			std::uint32_t BreaksBeforeDrop = 0;
 			float Lowest = 1000.0f;
 		};
@@ -1095,7 +1096,10 @@ namespace Dingo
 			{
 				++result.Calls;
 				if (seen.insert(info.Constraint).second)
+				{
 					result.Breaks.push_back({ info.Constraint, info.UserData, scene.GetTick() });
+					result.ExpectedCalls += info.BodyB == k_InvalidBody3D ? 1 : 2;
+				}
 			};
 
 			std::vector<Entity> bricks;
@@ -1207,7 +1211,7 @@ namespace Dingo
 		const ShelfResult held = RunShelf(10.0f, 4.0f);
 		Check(held.BreaksBeforeDrop == 0, "shelf: the wall holds for 10 s");
 		Check(!held.Breaks.empty(), "shelf: a dropped weight breaks welds");
-		Check(held.Calls >= held.Breaks.size() && held.Calls <= held.Breaks.size() * 2, "shelf: each break reaches its bodies' scripts once");
+		Check(held.Calls == held.ExpectedCalls, "shelf: each break reaches both bodies' scripts once (" + std::to_string(held.Calls) + " of " + std::to_string(held.ExpectedCalls) + ")");
 		Check(held.Lowest > -0.06f, "shelf: no brick sinks into the floor (lowest " + std::to_string(held.Lowest) + ")");
 
 		const ShelfResult first = RunShelf(1.0f, 3.0f);
@@ -1302,6 +1306,23 @@ namespace Dingo
 			Check(world->GetPosition(load).y > 7.999f, "reaction: the pair fell asleep and stays asleep when gravity changes");
 			Check(force == 0.0f && torque == 0.0f, "reaction: a sleeping pair reads 0");
 			Check(world->IsConstraintValid(joint), "break: a sleeping pair does not break");
+		}
+		{
+			auto world = MakeWorld({ 0.0f, -g, 0.0f });
+			const PhysicsBodyId3D anchor = Box(*world, BodyType3D::Static, { 0.0f, 10.0f, 0.0f }, glm::vec3(0.1f));
+			const PhysicsBodyId3D load = heavyBox(*world, { 0.0f, 8.0f, 0.0f }, 0.3f, loadMass);
+			const ConstraintId3D joint = world->CreateConstraint(rod(anchor, load, 2.0f, 10.0f * loadMass * g, 0));
+			Run(*world, 3.0f);
+			world->SetConstraintBreakLimits(joint, 0.5f * loadMass * g, 0.0f);
+			Run(*world, 0.5f);
+			float force = -1.0f, torque = -1.0f;
+			world->GetConstraintReaction(joint, force, torque);
+			Check(world->IsConstraintValid(joint) && force == 0.0f, "break: a loaded joint asleep under gravity holds below its lowered limit");
+			world->ApplyImpulse(load, { 1.0f, 0.0f, 0.0f });
+			world->GetConstraintReaction(joint, force, torque);
+			Check(force == 0.0f, "reaction: a pair woken since the last step reads 0, not its pre-sleep load");
+			world->Step(k_Dt, 1);
+			Check(!world->IsConstraintValid(joint), "break: a woken pair over its limit breaks on the next step");
 		}
 		{
 			auto world = MakeWorld(glm::vec3(0.0f));

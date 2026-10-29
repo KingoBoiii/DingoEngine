@@ -213,13 +213,7 @@ namespace Dingo
 		{
 			force = 0.0f;
 			torque = 0.0f;
-			if (!(data.LastDeltaTime > 0.0f) || !record.Constraint->GetEnabled())
-				return;
-
-			const JPH::BodyInterface& bodyInterface = data.PhysicsSystem.GetBodyInterface();
-			const bool awake = bodyInterface.IsActive(ToBodyId(record.BodyA))
-				|| (record.BodyB != k_InvalidBody3D && bodyInterface.IsActive(ToBodyId(record.BodyB)));
-			if (!awake)
+			if (!(data.LastDeltaTime > 0.0f) || !record.SolvedLastStep || !record.Constraint->GetEnabled())
 				return;
 
 			const JPH::TwoBodyConstraint* joint = record.Constraint.GetPtr();
@@ -712,6 +706,8 @@ namespace Dingo
 			m_Data->JobSystem.CreateJob("CrashProbe", JPH::Color::sRed, [probe] { probe(); });
 		m_Data->LastDeltaTime = deltaTime;
 		m_Data->LastCollisionSteps = (std::max)(collisionSteps, 1);
+		for (auto& [id, record] : m_Data->Constraints)
+			record.SolvedLastStep = record.Constraint->IsActive();
 		m_Data->PhysicsSystem.Update(deltaTime, collisionSteps, &m_Data->TempAllocator, &m_Data->JobSystem);
 
 		Internal::JoltPhysics3DData& data = *m_Data;
@@ -1132,7 +1128,7 @@ namespace Dingo
 		record.BreakForce = ValidBreakLimit(params.BreakForce) ? params.BreakForce : 0.0f;
 		record.BreakTorque = ValidBreakLimit(params.BreakTorque) ? params.BreakTorque : 0.0f;
 		if (record.BreakForce != params.BreakForce || record.BreakTorque != params.BreakTorque)
-			DE_CORE_WARN("Physics3D::CreateConstraint: a negative or NaN break limit was treated as 0");
+			DE_CORE_WARN("Physics3D::CreateConstraint: a negative, NaN or infinite break limit was treated as 0");
 		const bool breakable = record.BreakForce > 0.0f || record.BreakTorque > 0.0f;
 		if (!params.CollideConnected && !pinned)
 		{

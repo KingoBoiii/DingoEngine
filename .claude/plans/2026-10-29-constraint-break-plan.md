@@ -119,10 +119,14 @@ Verification: full Debug build, `--test=constraint`, doxygen. A Haiku agent runs
 
 Model: whole-diff review with a fresh `general-purpose` / `opus` / `high` agent; fixes by `sonnet` / `medium`.
 
-- [ ] Run one fresh review of the full diff, fix every High and Medium, and fix or explain each Low in the PR.
-- [ ] Write the PR with the `pr-writeup` skill. `Closes #309`. Needs testing on a real GPU: Yes, `--test=constraint` on
+- [x] Run one fresh review of the full diff, fix every High and Medium, and fix or explain each Low in the PR.
+- [x] Write the PR with the `pr-writeup` skill. `Closes #309`. Needs testing on a real GPU: Yes, `--test=constraint` on
   Vulkan, DX11 and DX12 (Jolt is backend-independent, but the F9 panel and the test app render), plus
   a look at the F9 reaction values by hand.
+
+**As built (P3).**
+- Whole-diff review (Opus, high): no High. M1: Jolt fixes its solved-constraint set when a collision step starts (`PhysicsSystem.cpp:734`), so a pair woken during `Update` kept its pre-sleep lambda and was read at the new `dt` (a spurious break on variable dt; a stale F9/script reading after an impulse). Fixed: `Step` snapshots `Constraint->IsActive()` into `ConstraintRecord::SolvedLastStep` before `Update`, and `ReadReaction` reads only solved constraints. With `collisionSteps > 1` a pair woken mid-`Update` reads 0 until the next step (one step of break delay). M2: the sleep tests ran under zero gravity, so they passed without the gate; added a loaded-asleep check plus a woken-pair check.
+- Lows fixed: the shelf's delivery count is exact (1 call for a world weld, 2 otherwise); the `CreateConstraint` warning names infinite limits. Lows explained in the PR: the 10 s hold mostly sleeps, the free-fall check is trivially 0, Hinge/SwingTwist/Slider readback is untested, delivery skips no inactive entity (as `OnAnimationEvent`), and the two P2 Lows.
 
 Left out: a showcase example (NEDRIVNING is the consumer, not an `examples/` project), 2D constraints, and
 break events for Jolt's own sub-steps (D1).
