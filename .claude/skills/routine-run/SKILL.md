@@ -64,7 +64,7 @@ Follow CLAUDE.md "Verifying changes" (and "Build and run", Cloud sessions, for t
 Follow the Branches and Commits bullets of CLAUDE.md "How we work", and its "Rules that break things if forgotten". Routine-specific:
 
 - Exactly one commit per phase (Mode A) or per issue (Mode B); an extra commit only to fix build or CI breakage of that same work, named as such. Never mention Claude or AI in the subject or body text; the session's attribution trailers still go at the end.
-- Never push to `master`, never merge a PR.
+- Never force-push or rebase a pushed branch (the `guard-git` hook enforces it), never push to `master`, never merge a PR.
 - Never merge, close or delete PRs, issues or branches. Never change repository settings, secrets or labels other than adding and removing `routine:claimed`; never touch `routine:skip`.
 - Session title, if you have a tool to set it: `Routine: PR #<n> <phase>` or `Routine: <group> issues → PR #<n>`.
 - If nothing is workable in either mode, change nothing and write only the run log as the session's final message.

@@ -130,7 +130,7 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 
 ### v0.7.2
 
-- (released 2026-10-03, branch `v0.7.2`): `ApplicationParams::UpdateInBackground` (engine-patterns.md "In the background", K20; default off pauses while minimized or unfocused), the K14 test-app minimize crash fixed, the Background Test (`--test=background`), and K21 filed.
+- (released 2026-10-03, branch `v0.7.2`): `ApplicationParams::UpdateInBackground` (engine-patterns.md "Background updates", K20; default off pauses while minimized or unfocused), the K14 test-app minimize crash fixed, the Background Test (`--test=background`), and K21 filed.
 
 ### v0.8.0
 
@@ -146,7 +146,7 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 ### v0.8.2
 
 - (branch `v0.8.2`, PR #84): start-up on a machine without a GPU.
-- D3D12 falls back to WARP when no hardware adapter supports feature level 12_0 (it asserted), and Vulkan without a driver stops with a logged `DE_CORE_VERIFY` instead of crashing on a null instance; plus the render-target alpha fix in rendering.md "Blending".
+- D3D12 falls back to WARP when no hardware adapter supports feature level 12_0 (it asserted), and Vulkan without a driver stops with a logged `DE_CORE_VERIFY` instead of crashing on a null instance; plus the render-target alpha fix in rendering.md "Pipeline state and winding".
 - All three were found and fixed together, so none was filed as an issue.
 
 ### v0.8.3
@@ -154,7 +154,7 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 - (branch `v0.8.3`): closes every open `bug` issue, one commit each:
 - #77 (texture generations from one counter), #78 (wireframe falls back to solid), #79 (the Vulkan acquire wait, in rendering.md), #80–#82 (animator range ends on a rebind, a disabled animator's events, a hidden layer's freeze), #86 (ImGui index padding, then every `GraphicsBuffer` upload, in rendering.md), #96 (`AudioAttenuationModel::None`), #97 (`GetAspectRatio` while minimized).
 - Plus five *Headstone* requests:
-- #93 (text rotation), #94 (text in z order), #89 (`SceneRenderer::Render(scene, target)`), #90 (`FileSystem::WriteImage`, `Texture::ReadPixels`/`SaveToFile`, in rendering.md "Readback") and #88 (XInput rumble, engine-patterns.md "Input").
+- #93 (text rotation), #94 (text in z order), #89 (`SceneRenderer::Render(scene, target)`), #90 (`FileSystem::WriteImage`, `Texture::ReadPixels`/`SaveToFile`, in rendering.md "Render targets and readback") and #88 (XInput rumble, engine-patterns.md "Input").
 - New checks in the Animation, Background and Asset Manager Tests, and the Render Target Test (`--test=target`).
 - The Vulkan fixes were never run, nor rumble: the dev machine has no Vulkan driver and no pad.
 

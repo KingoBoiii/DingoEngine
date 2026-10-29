@@ -15,6 +15,7 @@ block() { echo "guard-git: $1" >&2; exit 2; }
 current_branch() { git symbolic-ref --quiet --short HEAD 2>/dev/null; }
 
 segments=$(printf '%s' "$cmd" | sed 's/&&/;/g; s/||/;/g; s/|/;/g')
+segments=${segments//[\"\']/ }
 IFS=';' read -ra parts <<< "$segments"
 for part in "${parts[@]}"; do
 	read -ra w <<< "$part"
@@ -53,6 +54,7 @@ for part in "${parts[@]}"; do
 		[ ${#refs[@]} -eq 0 ] && refs=("$(current_branch)")
 		for ref in "${refs[@]}"; do
 			dst=${ref##*:}
+			[ "$dst" = HEAD ] && dst=$(current_branch)
 			dst=${dst#refs/heads/}
 			case "$dst" in
 				master|main)

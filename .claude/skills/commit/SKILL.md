@@ -1,4 +1,5 @@
 ---
+name: commit
 description: Stage changed files, generate a conventional commit message, and push to origin when the argument is `push`
 argument-hint: "[push]"
 ---

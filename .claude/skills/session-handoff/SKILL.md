@@ -28,7 +28,7 @@ Do these in order. Don't skip the reflection: a good handoff needs actual though
 
 - **Plan**: if the work belongs to a plan, add or extend the "As built" notes for the phase worked on: what was built, where (`file:line` or commit), what differs from the design and why, and what is left of the phase.
 - **PR**: if a PR exists for the branch, update its body with the `pr-writeup` skill: tick the finished phases, extend the Run log (Did / Verification / Questions I answered myself / Skipped / Next). If no PR exists and the owner hasn't asked for one, put the same Run log at the end of the plan's As built notes instead.
-- Commit (`docs(plan): as built for <phase>` or similar, CLAUDE.md "Commits") and push to the session's branch. Uncommitted state is lost with the container.
+- Commit (`docs(plan): as built for <phase>` or similar, the Commits bullet of CLAUDE.md "How we work") and push to the session's branch. Uncommitted state is lost with the container.
 - If auto memory is available in this session, also save durable repo-wide learnings there (a convention, a gotcha that matters beyond this task). Read it first and don't duplicate entries. Never put task state there.
 
 ### 3. Compose the handoff prompt
